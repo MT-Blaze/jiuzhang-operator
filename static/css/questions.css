@@ -1,0 +1,259 @@
+.topnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.topnav-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 13px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.topnav-link:hover,
+.topnav-link:focus-visible {
+  background: var(--card);
+  color: var(--ink);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.topnav-link.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.questions-main {
+  padding: 52px 0 24px;
+}
+
+.q-head {
+  max-width: 760px;
+}
+
+.q-head h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.9rem, 4.4vw, 2.8rem);
+  line-height: 1.25;
+}
+
+.q-lede {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.85;
+}
+
+.q-lede code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.84em;
+}
+
+.q-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 28px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.q-field {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.q-field span {
+  color: var(--faint);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.q-field input,
+.q-field select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.q-field input:focus-visible,
+.q-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.q-field-small {
+  flex: 0 0 110px;
+  min-width: 110px;
+}
+
+.q-button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.q-button:hover:not(:disabled) {
+  background: var(--card-hover);
+  border-color: var(--accent);
+}
+
+.q-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.q-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.q-renderer-note {
+  margin: 12px 0 22px;
+  color: var(--faint);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.q-renderer-note[data-tone="warn"] {
+  color: var(--accent);
+}
+
+.q-state {
+  padding: 40px 22px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.88rem;
+  line-height: 1.8;
+}
+
+.q-state[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--down) 45%, transparent);
+  color: var(--down);
+}
+
+.q-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qcard {
+  min-width: 0;
+}
+
+.fallback-card {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 14px;
+  background: var(--card);
+}
+
+.fallback-meta {
+  margin: 0;
+  color: var(--faint);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
+.fallback-stem {
+  margin: 10px 0 0;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fallback-note {
+  margin: 12px 0 0;
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 30px;
+}
+
+.pager-info {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-runtime {
+  position: fixed;
+  top: 0;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  .questions-main {
+    padding-top: 36px;
+  }
+
+  .topbar {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .q-toolbar {
+    padding: 12px;
+  }
+
+  .q-field,
+  .q-field-small {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .q-button {
+    flex: 1 1 auto;
+  }
+
+  .pager {
+    gap: 10px;
+  }
+}

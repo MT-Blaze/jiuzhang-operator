@@ -1,0 +1,154 @@
+[data-jzo-plugin="org.jiuzhang.classic-card"] {
+  display: block;
+  padding: 18px 20px;
+  border: 1px solid rgba(31, 28, 24, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-badge {
+  padding: 2px 9px;
+  border: 1px solid rgba(31, 28, 24, 0.18);
+  border-radius: 999px;
+  color: #4a443b;
+  letter-spacing: 0.06em;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="basic"] {
+  color: #2f7d5b;
+  border-color: rgba(47, 125, 91, 0.35);
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="medium"] {
+  color: #8a6a1f;
+  border-color: rgba(138, 106, 31, 0.35);
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="hard"],
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="novel"] {
+  color: #a63b2b;
+  border-color: rgba(166, 59, 43, 0.35);
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(31, 28, 24, 0.06);
+  color: #6f675c;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-id {
+  margin-left: auto;
+  color: #9a9184;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-stem {
+  margin: 14px 0 0;
+  font-size: 1rem;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-option {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(31, 28, 24, 0.035);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-key {
+  color: #a63b2b;
+  font-weight: 700;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 14px;
+  color: #776f63;
+  font-size: 0.74rem;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(166, 59, 43, 0.08);
+  color: #a63b2b;
+}
+
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-source {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  [data-jzo-plugin="org.jiuzhang.classic-card"] {
+    padding: 14px 14px;
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-options {
+    grid-template-columns: 1fr;
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-id,
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-source {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-jzo-plugin="org.jiuzhang.classic-card"] {
+    border-color: rgba(241, 235, 224, 0.15);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-badge {
+    border-color: rgba(241, 235, 224, 0.2);
+    color: #d9d0c1;
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-status {
+    background: rgba(241, 235, 224, 0.08);
+    color: #b0a697;
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-id,
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-foot {
+    color: #9a9184;
+  }
+
+  [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-option {
+    background: rgba(241, 235, 224, 0.05);
+  }
+}

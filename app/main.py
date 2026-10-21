@@ -6,13 +6,25 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.health import router as health_router
+from app.api.plugins import router as plugins_router
+from app.api.questions import router as questions_router
 from app.core.config import settings
+from app.core.db import init_db
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    yield
 
 
 def create_app() -> FastAPI:
@@ -23,14 +35,21 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     app.include_router(health_router)
+    app.include_router(questions_router)
+    app.include_router(plugins_router)
     app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
     @app.get("/", include_in_schema=False)
     async def read_index() -> FileResponse:
         return FileResponse(settings.static_dir / "index.html")
+
+    @app.get("/questions", include_in_schema=False)
+    async def read_questions_page() -> FileResponse:
+        return FileResponse(settings.static_dir / "questions.html")
 
     @app.get("/schemas/question.json", include_in_schema=False)
     async def read_question_schema() -> FileResponse:

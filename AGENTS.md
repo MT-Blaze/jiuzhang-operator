@@ -41,7 +41,7 @@
 
 - 后端：Python 3.10+、FastAPI、Uvicorn。
 - 前端：原生 HTML + CSS + JavaScript，无打包器、无 Node 运行时依赖；资源必须本地化，可完全离线运行。
-- 数据库（后续）：SQLite；迁移必须版本化、可回滚、备份优先。
+- 数据库：SQLite（`app/core/db.py`，标准库 `sqlite3`，WAL 优先）；结构版本写入 `PRAGMA user_version`，升级必须版本化、可回滚、备份优先；题目写入按 `schemas/question.json` 校验。
 - 路径唯一来源：`app/core/config.py`。禁止依赖当前工作目录拼路径。
 - 目录约定：
   - `app/api/`：底座级 HTTP 路由（健康检查、鉴权、导航、总线）。

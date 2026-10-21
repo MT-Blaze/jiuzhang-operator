@@ -14,9 +14,9 @@ static/uploads/
 .system_generated/
 *.log
 
-# Plugin build output (source stays in plugins/)
+# Build output
 node_modules/
-dist/
+/dist/
 
 # OS / editor
 .DS_Store

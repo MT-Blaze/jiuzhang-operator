@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.classic-card",
+  "name": "经典题卡",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "renderer",
+  "description": "以传统试卷风格渲染题库列表中的题目卡片。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["question.card"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read", "assets:read"]
+}

@@ -16,15 +16,15 @@
 
 ## 当前状态
 
-`v0.1.0` 是底座骨架，已包含：
+`v0.2.0` 在骨架上落地了题库主干：
 
-- FastAPI 应用入口与静态资源服务；
-- `GET /healthz` 健康检查；
-- 题目标准结构 `schemas/question.json`（JSON Schema 2020-12，含示例）；
-- 插件接入规范 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；
-- 可访问的首页、Schema 与规范只读入口。
+- SQLite 持久化（`data/jiuzhang.db`，WAL 优先、`PRAGMA user_version` 版本化、墓碑表防止 ID 复用）；
+- 题目 CRUD：`GET/POST /api/questions`、`GET/PUT/DELETE /api/questions/{id}`，写入按 `schemas/question.json` 校验，`meta.revision` 提供乐观并发；
+- 写入鉴权：POST/PUT/DELETE 必须携带 `X-JZO-Token`，令牌由 `JZO_LOCAL_TOKEN` 或 `data/.local_token`（首次启动生成，权限 0600）提供；
+- 插件宿主最小实现：清单发现与校验、沙箱 iframe、消息封包、HTML 净化、作用域 CSS 校验、连续失败兜底；
+- 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页。
 
-尚未实现：鉴权、数据库、题目 CRUD、插件宿主运行时。它们会按规范逐步落地，不会以“先写死再说”的方式进入底座。
+尚未实现：题目编辑表单、导入/组卷/导出、后端插件与 AI 能力。
 
 ## 快速开始
 
@@ -36,7 +36,18 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>，健康检查位于 <http://127.0.0.1:8000/healthz>。
+打开 <http://127.0.0.1:8000>，题库页位于 <http://127.0.0.1:8000/questions>，健康检查位于 <http://127.0.0.1:8000/healthz>。
+
+写入接口需要本地令牌。可以通过 `JZO_LOCAL_TOKEN` 显式指定，也可以读取首次启动生成在 `data/.local_token` 的令牌：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/questions \
+  -H "Content-Type: application/json" \
+  -H "X-JZO-Token: $(cat data/.local_token)" \
+  -d '{"type":"single_choice","stem":"若 $x+1=2$，则 $x=$（  ）","difficulty":"basic","options":{"A":"$0$","B":"$1$","C":"$2$","D":"$3$"},"answer":{"value":"B"},"meta":{"author":"local"}}'
+```
+
+服务端会补齐 `id`、`schema_version` 与 `meta` 时间戳，返回 `201`。
 
 预期响应：
 
@@ -44,7 +55,7 @@ uvicorn app.main:app --reload --port 8000
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -56,17 +67,27 @@ jiuzhang-operator/
 ├── app/
 │   ├── main.py              # FastAPI 应用装配：路由、静态资源、只读规范入口
 │   ├── api/
-│   │   └── health.py        # GET /healthz
+│   │   ├── health.py        # GET /healthz
+│   │   ├── questions.py     # /api/questions CRUD
+│   │   └── plugins.py       # /api/plugins 与插件资源分发
 │   └── core/
-│       └── config.py        # 路径与环境变量（唯一配置入口）
+│       ├── config.py        # 路径与环境变量（唯一配置入口）
+│       ├── db.py            # SQLite 连接、版本化表结构、事务
+│       ├── questions.py     # Schema 校验与题目仓库
+│       ├── plugins.py       # 插件发现、清单校验与静态资源解析
+│       └── security.py      # 本地写入令牌
 ├── static/
 │   ├── index.html           # 底座首页（无框架、无 CDN）
-│   ├── css/app.css
-│   └── js/app.js
+│   ├── questions.html       # 题库列表页
+│   ├── css/{app,questions}.css
+│   └── js/{app,questions}.js
 ├── schemas/
 │   └── question.json        # 题目交换格式（唯一事实来源）
 ├── plugins/
-│   └── README.md            # 插件目录约定
+│   ├── README.md            # 插件目录约定
+│   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
+├── tests/
+│   └── test_questions_api.py # 接口契约与安全边界回归
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范
 ├── LICENSE                  # Apache License 2.0 全文
@@ -79,6 +100,9 @@ jiuzhang-operator/
 | 路径 | 内容 |
 | --- | --- |
 | `/healthz` | 健康检查 JSON |
+| `/questions` | 题库列表页（插件渲染 + 分页） |
+| `/api/questions` | 题目列表（分页、搜索、筛选） |
+| `/api/plugins` | 已加载插件清单 |
 | `/schemas/question.json` | 题目 JSON Schema |
 | `/spec/plugin` | 插件接入规范（Markdown） |
 | `/api/openapi.json` | 机器可读的 OpenAPI 接口描述 |

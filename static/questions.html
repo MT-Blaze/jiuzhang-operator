@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>题库管理 · 九章算子</title>
+  <meta name="description" content="九章算子题库管理：分页浏览题库，并由 question.card 插件在沙箱中渲染题卡。">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/questions.css">
+</head>
+<body>
+  <div class="page questions-page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="九章算子首页">
+        <span class="seal" aria-hidden="true">九</span>
+        <span class="brand-text">
+          <span class="brand-cn">九章算子</span>
+          <span class="brand-en">JIUZHANG OPERATOR</span>
+        </span>
+      </a>
+
+      <nav class="topnav" aria-label="主导航">
+        <a class="topnav-link is-active" href="/questions" aria-current="page">题库管理</a>
+        <a class="topnav-link" href="/">底座首页</a>
+      </nav>
+    </header>
+
+    <main class="questions-main">
+      <section class="q-head" aria-labelledby="q-title">
+        <p class="eyebrow">LIBRARY · QUESTION 1.0 · PLUGIN RENDERED</p>
+        <h1 id="q-title">题库管理</h1>
+        <p class="q-lede">底座负责数据总线与安全边界，题卡由 <code>question.card</code> 插件在沙箱 iframe 中渲染；公式当前按 Markdown + LaTeX 源码显示。</p>
+      </section>
+
+      <section class="q-toolbar" aria-label="筛选条件">
+        <label class="q-field">
+          <span>搜索题干</span>
+          <input id="qSearch" type="search" placeholder="输入关键词或完整题目 ID" autocomplete="off">
+        </label>
+
+        <label class="q-field">
+          <span>题型</span>
+          <select id="qType">
+            <option value="">全部题型</option>
+            <option value="single_choice">单选</option>
+            <option value="multiple_choice">多选</option>
+            <option value="fill_blank">填空</option>
+            <option value="solution">解答</option>
+            <option value="proof">证明</option>
+            <option value="unknown">待定</option>
+          </select>
+        </label>
+
+        <label class="q-field q-field-small">
+          <span>每页</span>
+          <select id="qPageSize">
+            <option value="5">5 题</option>
+            <option value="10" selected>10 题</option>
+            <option value="20">20 题</option>
+            <option value="50">50 题</option>
+          </select>
+        </label>
+
+        <button id="qRefresh" class="q-button" type="button">刷新</button>
+      </section>
+
+      <p class="q-renderer-note" id="rendererNote" role="status" aria-live="polite">正在发现渲染插件…</p>
+
+      <section id="qResultRegion" aria-live="polite" aria-busy="false">
+        <div class="q-state" id="qState" hidden></div>
+        <ol class="q-list" id="qList"></ol>
+      </section>
+
+      <nav class="pager" aria-label="分页">
+        <button id="prevPage" class="q-button" type="button">上一页</button>
+        <span id="pageInfo" class="pager-info">第 1 / 1 页 · 共 0 题</span>
+        <button id="nextPage" class="q-button" type="button">下一页</button>
+      </nav>
+    </main>
+
+    <footer class="footer">
+      <span>Apache License 2.0</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span>Jiuzhang Operator v0.2.0</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span>题库数据保存在本机 SQLite</span>
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="q-state">题库管理需要 JavaScript 才能读取数据总线。</p>
+  </noscript>
+
+  <script src="/static/js/questions.js"></script>
+</body>
+</html>
