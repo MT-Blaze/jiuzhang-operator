@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>九章算子 · Jiuzhang Operator — 本地优先的模块化数学题库底座</title>
+<meta name="description" content="九章算子：为独立教师打造的模块化数学题库底座。永久免费、完全本地、插件自由。Apache-2.0 开源。">
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<style>
+/* ============================================================
+   九章算子 · 静态橱窗页
+   单文件自包含：内联样式、零 JavaScript、零外部请求、零 CDN。
+   可直接 file:// 打开，可挂 GitHub Pages，可完全离线。
+   与底座 static/css/app.css 同源视觉语言（宣纸 + 朱砂）。
+   ============================================================ */
+
+:root {
+  --paper: #f6f2e9;
+  --paper-deep: #efe8da;
+  --ink: #1f1c18;
+  --muted: #6f675c;
+  --faint: #9a9184;
+  --line: rgba(31, 28, 24, 0.14);
+  --line-strong: rgba(31, 28, 24, 0.24);
+  --accent: #a63b2b;
+  --accent-soft: rgba(166, 59, 43, 0.1);
+  --ok: #2f7d5b;
+  --card: rgba(255, 255, 255, 0.5);
+  --card-hover: rgba(255, 255, 255, 0.78);
+  --code-bg: rgba(31, 28, 24, 0.045);
+  --shadow: 0 18px 50px rgba(31, 28, 24, 0.08);
+  --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+  --sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "Consolas", "Menlo", monospace;
+  --hit: 44px;
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171512;
+    --paper-deep: #1e1b17;
+    --ink: #f1ebe0;
+    --muted: #b0a697;
+    --faint: #776f63;
+    --line: rgba(241, 235, 224, 0.13);
+    --line-strong: rgba(241, 235, 224, 0.24);
+    --accent: #de6a51;
+    --accent-soft: rgba(222, 106, 81, 0.13);
+    --ok: #6fbd94;
+    --card: rgba(255, 255, 255, 0.035);
+    --card-hover: rgba(255, 255, 255, 0.07);
+    --code-bg: rgba(255, 255, 255, 0.05);
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.7;
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(circle at 12% 4%, var(--accent-soft), transparent 34%),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px),
+    linear-gradient(var(--line) 1px, transparent 1px);
+  background-size: auto, 36px 36px, 36px 36px;
+  background-attachment: fixed;
+}
+
+a { color: inherit; }
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 10;
+  padding: 12px 20px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 0 0 var(--radius) 0;
+}
+
+.skip:focus { left: 0; }
+
+.page {
+  width: min(1000px, 100%);
+  margin: 0 auto;
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---------- 顶栏 ---------- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--hit);
+  text-decoration: none;
+}
+
+.seal {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--serif);
+  font-size: 1.42rem;
+  font-weight: 700;
+  transform: rotate(-2deg);
+  background: var(--accent-soft);
+}
+
+.brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+
+.brand-cn {
+  font-family: var(--serif);
+  font-size: 1.06rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.brand-en {
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  color: var(--faint);
+}
+
+.badges { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.74rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge-strong { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* ---------- 页内导航 ---------- */
+
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 18px;
+}
+
+.toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.toc a:hover { background: var(--card-hover); color: var(--ink); }
+
+/* ---------- 主标题区 ---------- */
+
+.hero { padding: 62px 0 44px; max-width: 820px; }
+
+.eyebrow {
+  margin: 0 0 18px;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(2.1rem, 5.4vw, 3.7rem);
+  font-weight: 700;
+  line-height: 1.24;
+}
+
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  padding-bottom: 0.04em;
+}
+
+.lede {
+  max-width: 640px;
+  margin: 24px 0 0;
+  color: var(--muted);
+  font-size: 1.04rem;
+  line-height: 1.95;
+}
+
+.hero-note {
+  margin: 22px 0 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--card);
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+/* ---------- 通用区块 ---------- */
+
+section { scroll-margin-top: 20px; }
+
+.block { padding: 46px 0; border-top: 1px solid var(--line); }
+
+.block-head { margin-bottom: 26px; max-width: 720px; }
+
+.block-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.4rem, 3.2vw, 1.85rem);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.block-head p { margin: 10px 0 0; color: var(--muted); font-size: 0.94rem; }
+
+.rule {
+  display: block;
+  width: 30px;
+  height: 3px;
+  margin-bottom: 14px;
+  background: var(--accent);
+}
+
+/* ---------- 白嫖宣言 ---------- */
+
+.manifesto {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 28px;
+  box-shadow: var(--shadow);
+}
+
+.manifesto h3 {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: 1.24rem;
+  font-weight: 700;
+}
+
+.manifesto .sub {
+  margin: 0 0 22px;
+  color: var(--faint);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+}
+
+.free-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.free-grid li {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-deep);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.free-grid .tick {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ok);
+  border-radius: 50%;
+  color: var(--ok);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.free-grid b { display: block; font-size: 0.9rem; }
+.free-grid span { color: var(--muted); }
+
+.manifesto-foot {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line-strong);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+/* ---------- 使用说明 ---------- */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  counter-increment: step;
+  padding: 22px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.steps li::before {
+  content: counter(step, decimal-leading-zero);
+  display: block;
+  margin-bottom: 12px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+}
+
+.steps h3 { margin: 0 0 8px; font-family: var(--serif); font-size: 1.04rem; font-weight: 700; }
+.steps p { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.75; }
+
+pre {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+code { font-family: var(--mono); font-size: 0.86em; }
+
+p code, li code, td code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--code-bg);
+  overflow-wrap: anywhere;
+}
+
+.prompt { color: var(--accent); user-select: none; }
+
+.callout {
+  margin: 24px 0 0;
+  padding: 16px 18px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--accent-soft);
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.callout b { color: var(--accent); }
+
+/* ---------- 功能卡片 ---------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.card-index {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+}
+
+.card-title {
+  margin-top: auto;
+  padding-top: 20px;
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+
+.card-desc { margin-top: 6px; color: var(--muted); font-size: 0.79rem; line-height: 1.7; }
+
+.tag {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--faint);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+}
+
+.tag-done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.tag-todo { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ---------- 插件生态 ---------- */
+
+.flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  margin: 0 0 26px;
+  padding: 0;
+  list-style: none;
+}
+
+.flow li {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 0.84rem;
+}
+
+.flow b { display: block; font-family: var(--serif); font-size: 0.96rem; margin-bottom: 5px; }
+.flow span { color: var(--muted); font-size: 0.79rem; line-height: 1.65; }
+
+.vision {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 22px;
+  margin: 0;
+}
+
+.vision > div h3 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.vision > div p { margin: 0; color: var(--muted); font-size: 0.87rem; line-height: 1.85; }
+
+/* ---------- 表格 ---------- */
+
+.table-wrap { overflow-x: auto; max-width: 100%; }
+
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+
+caption {
+  text-align: left;
+  padding-bottom: 12px;
+  color: var(--faint);
+  font-size: 0.78rem;
+}
+
+th, td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+th { color: var(--muted); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; }
+
+td { color: var(--muted); }
+td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+/* ---------- FAQ ---------- */
+
+.faq { border-top: 1px solid var(--line); }
+
+.faq details { border-bottom: 1px solid var(--line); }
+
+.faq summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--hit);
+  padding: 12px 4px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.faq summary::-webkit-details-marker { display: none; }
+
+.faq summary::before {
+  content: "+";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.faq details[open] summary::before { content: "\2212"; }
+
+.faq summary:hover { color: var(--accent); }
+
+.faq .answer {
+  padding: 0 4px 18px 32px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.85;
+}
+
+/* ---------- 文档索引 ---------- */
+
+.doclist { margin: 0; padding: 0; list-style: none; }
+
+.doclist a {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-height: var(--hit);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  margin-bottom: 8px;
+  text-decoration: none;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.doclist a:hover { background: var(--card-hover); border-color: var(--line-strong); }
+
+.doclist .fname {
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.doclist .fdesc { color: var(--muted); font-size: 0.82rem; }
+
+/* ---------- 页脚 ---------- */
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding: 46px 0 8px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 0.74rem;
+}
+
+.footer .motto {
+  font-family: var(--serif);
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.sep { width: 18px; height: 1px; background: var(--line-strong); flex: none; }
+
+/* ---------- 窄屏 ---------- */
+
+@media (max-width: 600px) {
+  .page { padding: 22px 16px 18px; }
+  .topbar { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .hero { padding: 44px 0 34px; }
+  .block { padding: 36px 0; }
+  .manifesto { padding: 20px 18px; }
+  .grid { grid-template-columns: 1fr; }
+  .card { min-height: 132px; }
+  .faq .answer { padding-left: 4px; }
+  td:first-child { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+
+<div class="page">
+
+  <header class="topbar">
+    <a class="brand" href="#main" aria-label="九章算子 · 页首">
+      <span class="seal" aria-hidden="true">九</span>
+      <span class="brand-text">
+        <span class="brand-cn">九章算子</span>
+        <span class="brand-en">JIUZHANG OPERATOR</span>
+      </span>
+    </a>
+    <div class="badges">
+      <span class="badge badge-strong">Apache-2.0</span>
+      <span class="badge">v0.2.0 内测</span>
+      <span class="badge">完全本地运行</span>
+      <span class="badge">仅 3 个依赖</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="页内导航">
+    <a href="#manifesto">白嫖宣言</a>
+    <a href="#start">三步上手</a>
+    <a href="#features">功能</a>
+    <a href="#plugins">插件生态</a>
+    <a href="#boundary">现状与边界</a>
+    <a href="#faq">常见问题</a>
+    <a href="#docs">文档</a>
+  </nav>
+
+  <main id="main">
+
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">CLEAN ROOM · LOCAL FIRST · PLUGIN HARNESS</p>
+      <h1 id="hero-title">装在自己电脑里的<br><em>数学题库底座</em></h1>
+      <p class="lede">
+        为独立教师而做。底座只管四件事——鉴权、导航、数据总线、插件生命周期；
+        题目怎么渲染、怎么导入、怎么组卷，全交给可插拔的「算子」。
+        你的题存在你自己的硬盘上，断网照样用。
+      </p>
+      <p class="hero-note">
+        本页是仓库的静态橱窗，纯 HTML + CSS，不含脚本、不发任何网络请求，可直接离线打开。
+        启动程序后，真正的应用首页在 <code>http://127.0.0.1:8000</code>。
+      </p>
+    </section>
+
+    <!-- ========== 白嫖宣言 ========== -->
+    <section class="block" id="manifesto" aria-labelledby="manifesto-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="manifesto-title">白嫖宣言（不可撤销）</h2>
+        <p>这不是宣传语，是写进 <code>PLUGIN_SPEC.md</code> §1.1 的硬约束，改它等于毁约。</p>
+      </div>
+
+      <div class="manifesto">
+        <h3>个人版永久开源免费</h3>
+        <p class="sub">底座与所有插件，一律遵守以下四条</p>
+
+        <ul class="free-grid">
+          <li>
+            <span class="tick" aria-hidden="true">✓</span>
+            <span><b>免注册</b><span>不要账号、不要邮箱、不要手机号。</span></span>
+          </li>
+          <li>
+            <span class="tick" aria-hidden="true">✓</span>
+            <span><b>免卡密</b><span>无激活码、无授权校验、无到期时间。</span></span>
+          </li>
+          <li>
+            <span class="tick" aria-hidden="true">✓</span>
+            <span><b>免联网校验</b><span>无签名摘要校验、无回连验证、无远程禁用开关。</span></span>
+          </li>
+          <li>
+            <span class="tick" aria-hidden="true">✓</span>
+            <span><b>免专属格式</b><span>插件就是主流纯 zip，解压即用，不搞 <code>.jzo</code> 之类私后缀。</span></span>
+          </li>
+        </ul>
+
+        <p class="manifesto-foot">
+          底座<b>不写死、也不自动拉取</b>任何远程下载源——防的就是「作者跑路，软件变砖」。
+          全仓唯一允许的出网口子，是你在「插件索引」页<b>亲手粘贴</b>的清单地址；
+          底座只发一次只读 GET，不解压、不安装、不执行。
+        </p>
+      </div>
+    </section>
+
+    <!-- ========== 三步上手 ========== -->
+    <section class="block" id="start" aria-labelledby="start-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="start-title">三步上手，不用敲命令</h2>
+        <p>面向不懂技术的老师。全程只需要「双击」和「用记事本改几个字」。</p>
+      </div>
+
+      <ol class="steps">
+        <li>
+          <h3>装一次 Python</h3>
+          <p>
+            到 python.org 下载并安装，<b>务必勾选「Add Python to PATH」</b>。
+            装过一次以后就不用再装。
+          </p>
+        </li>
+        <li>
+          <h3>双击 start.bat</h3>
+          <p>
+            弹出一个黑色窗口，它会自动建虚拟环境、装依赖、起服务。
+            第一次约 1～3 分钟，之后可以完全离线。
+          </p>
+          <pre><code><span class="prompt">&gt;</span> [1/4] Virtual environment found.
+<span class="prompt">&gt;</span> [2/4] Installing dependencies ...
+<span class="prompt">&gt;</span> [3/4] Opening your browser ...
+<span class="prompt">&gt;</span> [4/4] Starting server.</code></pre>
+        </li>
+        <li>
+          <h3>浏览器自动打开</h3>
+          <p>
+            没自动打开就手动访问下面的地址。
+            <b>黑色窗口别关</b>——它就是服务本身，关掉即停止。
+          </p>
+          <pre><code>http://127.0.0.1:8000</code></pre>
+        </li>
+      </ol>
+
+      <div class="callout">
+        <b>AI 是可选的。</b>
+        想用「导入原卷 → 自动拆题」，就把 <code>.env.example</code> 复制成 <code>.env</code>，
+        用记事本填三行（密钥、接口地址、模型名）再重启；不填也能正常用题库，
+        只有 AI 那一步显式降级为 Mock，绝不偷偷上传。
+      </div>
+    </section>
+
+    <!-- ========== 功能介绍 ========== -->
+    <section class="block" id="features" aria-labelledby="features-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="features-title">现在能做什么</h2>
+        <p>标「已通」的是 v0.2.0 已落地并可跑通的；标「待做」的是明确缺口，不粉饰。</p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <span class="card-index">01</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">题库主干</span>
+          <span class="card-desc">SQLite 持久化、WAL、版本化表结构；题目增删改查、搜索、筛选、分页；写入严格按 Schema 校验。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">02</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">拆题工作台</span>
+          <span class="card-desc">导入原卷 → 发指令 → 出题目卡片 → 确认入库的闭环；左栏实时显示真实模型或 Mock 降级。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">03</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">插件宿主</span>
+          <span class="card-desc">清单发现与校验、沙箱 iframe、postMessage 封包、HTML 净化、连续失败兜底——插件坏了底座还能用。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">04</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">多厂商 AI 切换</span>
+          <span class="card-desc">扫描式 Provider 注册表；对外只暴露「是否已配置 + 接口主机名」，密钥永不回传、永不入库、永不进插件。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">05</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">多工作区</span>
+          <span class="card-desc">一机多库，每位老师一套独立题库、上传目录与配置，互不干扰。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">06</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">写入鉴权</span>
+          <span class="card-desc">改数据的接口必须带一次性本地令牌，用后即焚轮换；写入失败也烧掉令牌。不靠前端隐藏按钮装安全。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">07</span>
+          <span class="tag tag-todo">待做</span>
+          <span class="card-title">题目录入 / 编辑表单</span>
+          <span class="card-desc">接口与列表渲染已就绪，缺手工录入与编辑的界面。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">08</span>
+          <span class="tag tag-todo">待做</span>
+          <span class="card-title">导入 / 组卷 / 导出插件</span>
+          <span class="card-desc">架构已为它们留好位置，业务插件本体尚未开写。</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 插件生态愿景 ========== -->
+    <section class="block" id="plugins" aria-labelledby="plugins-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="plugins-title">插件生态：底座要薄，算子要自由</h2>
+        <p>
+          名字取自《九章算术》——术是通用底座，算是具体解法。
+          底座定契约与边界，解法交给任何人写的插件。
+        </p>
+      </div>
+
+      <ul class="flow">
+        <li><b>底座 Harness</b><span>鉴权 · 导航 · 数据总线 · 插件生命周期 · 安全边界</span></li>
+        <li><b>数据契约</b><span>question.json 是题目在底座、插件、导入导出之间流转的唯一标准结构</span></li>
+        <li><b>沙箱插件</b><span>纯 zip 解压拖进 plugins 目录，跑在 iframe 里，只能经 Host API 读写被授权的数据</span></li>
+      </ul>
+
+      <div class="vision">
+        <div>
+          <h3>装插件 = 解压 + 拖拽</h3>
+          <p>
+            拿到一个 <code>org.example.card.zip</code>，右键全部解压，
+            把含 <code>plugin.json</code> 的那层文件夹拖进 <code>plugins</code> 目录，
+            刷新页面即可。<b>不用重启、不用联网、不用注册、不用签名。</b>
+            卸载就是把文件夹删掉。
+          </p>
+        </div>
+        <div>
+          <h3>没有内置市场，是故意的</h3>
+          <p>
+            底座不预置任何插件源。想要清单，就在 <code>/plugins</code> 页
+            把别人给你的 <code>plugins.json</code> 地址<b>亲手粘贴</b>进去，
+            底座只读拉一次，把条目列给你看；下载与解压永远由你亲手完成。
+            源失效了，你已经装好的插件照样能跑。
+          </p>
+        </div>
+        <div>
+          <h3>愿景：一人写算子，众人得利器</h3>
+          <p>
+            手写板书风格的卡片渲染、几何图OCR、按考向组卷、讲义排版、错因统计——
+            每一样都该是一个独立插件，而不是一次底座大改。
+            写插件的人不必碰数据库和密钥，用插件的人不必信任任何人。
+          </p>
+        </div>
+        <div>
+          <h3>坏插件拖不垮底座</h3>
+          <p>
+            加载失败、渲染超时、连续报错都有兜底渲染与隔离记录。
+            插件的 HTML 禁 <code>&lt;script&gt;</code>、禁内联事件、禁
+            <code>javascript:</code>、禁远程样式；图片只允许底座托管路径或
+            <code>asset://</code> 逻辑地址。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 现状与边界 ========== -->
+    <section class="block" id="boundary" aria-labelledby="boundary-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="boundary-title">技术边界</h2>
+        <p>刻意保持寒酸的技术栈，是为了让十年后还能一键跑起来。</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <caption>九章算子 v0.2.0 技术栈与约束</caption>
+          <thead>
+            <tr><th scope="col">层面</th><th scope="col">选型</th><th scope="col">约束</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>后端</td>
+              <td>Python 3.11+ · FastAPI · Uvicorn</td>
+              <td>异步 handler 内禁阻塞；SQL 必须参数化；删除一律墓碑软删</td>
+            </tr>
+            <tr>
+              <td>前端</td>
+              <td>原生 HTML + CSS + JavaScript</td>
+              <td>无打包器、无 Node 运行时依赖、资源本地化、可完全离线</td>
+            </tr>
+            <tr>
+              <td>数据库</td>
+              <td>SQLite（标准库 sqlite3）</td>
+              <td>WAL 优先；结构版本写入 PRAGMA user_version，升级版本化可回滚</td>
+            </tr>
+            <tr>
+              <td>数据契约</td>
+              <td>schemas/question.json</td>
+              <td>Markdown + LaTeX 为唯一文本表达；全局身份只有 q_ 前缀的 id</td>
+            </tr>
+            <tr>
+              <td>依赖</td>
+              <td>fastapi · jsonschema · uvicorn</td>
+              <td>就这三个，锁版本；许可白名单 Apache/MIT/BSD/ISC，禁 AGPL/GPL</td>
+            </tr>
+            <tr>
+              <td>开发方式</td>
+              <td>干净房间 Clean Room</td>
+              <td>全部代码从零手写，严禁复制历史项目任何源码、样式、文档与数据</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <b>数据永远是你的。</b>
+        所有题目都存在项目目录下的 <code>data</code> 文件夹里，明文 SQLite、不加密。
+        备份就是把 <code>data</code> 拷走；卸载软件不会销毁它。
+      </div>
+    </section>
+
+    <!-- ========== FAQ ========== -->
+    <section class="block" id="faq" aria-labelledby="faq-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="faq-title">常见问题</h2>
+        <p>用键盘 Tab 与 Enter 即可展开收起，无需鼠标。</p>
+      </div>
+
+      <div class="faq">
+        <details>
+          <summary>会不会偷偷上传我的题目？会不会突然收费？</summary>
+          <div class="answer">
+            不会。题库、渲染、组卷、导入导出全部在你本机跑，断网可用。
+            只有「AI 拆题」这一步会连你自己在 <code>.env</code> 里填的那个地址；
+            不填或断网，它就显式降级为 Mock，绝不静默上传、绝不弹窗催费。
+            这是写进项目规范的硬承诺。
+          </div>
+        </details>
+
+        <details>
+          <summary>双击 start.bat 后黑窗口一闪就没了？</summary>
+          <div class="answer">
+            多半是没装 Python，或装的时候没勾「Add Python to PATH」。
+            重新运行 Python 安装包 → 选 Modify → 勾上 Add Python to PATH → 完成后再双击。
+          </div>
+        </details>
+
+        <details>
+          <summary>浏览器提示「无法访问此网站 / 连接被拒绝」？</summary>
+          <div class="answer">
+            说明服务没起来或已停止。确认黑色窗口还开着、且里面已经打到
+            <code>[4/4] Starting server</code>，等几秒再刷新。
+          </div>
+        </details>
+
+        <details>
+          <summary>提示端口被占用（address already in use / 8000）？</summary>
+          <div class="answer">
+            说明你已经开着另一个九章算子了。直接用浏览器访问
+            <code>http://127.0.0.1:8000</code> 即可，不用重复启动；
+            或者先关掉之前的黑窗口再双击。
+          </div>
+        </details>
+
+        <details>
+          <summary>工作台显示红色「Mock 降级」？</summary>
+          <div class="answer">
+            AI 没接通。检查 <code>.env</code> 是否已从 <code>.env.example</code> 复制出来、
+            密钥/接口地址/模型名三行是否填对、<b>填完是否重启过</b>。
+            不填 AI 不影响题库等基础功能。
+          </div>
+        </details>
+
+        <details>
+          <summary>插件拖进去了但页面没反应？</summary>
+          <div class="answer">
+            ① 确认拖进 <code>plugins</code> 的是<b>含 plugin.json 的那层文件夹</b>，
+            不是 zip 本身、也没多套一层目录；② 刷新浏览器；
+            ③ 到插件索引页看它是否被识别——不合规的插件会被列出具体原因。
+          </div>
+        </details>
+
+        <details>
+          <summary>为什么不做成网页版或装个客户端就好？</summary>
+          <div class="answer">
+            网页版意味着数据在别人服务器上，服务一停你就什么都没了；
+            本地优先是为了让题库的寿命比任何一个托管平台都长。
+            打包成桌面客户端的方案在评估中，但前提是不把 Node 构建链拖进主干。
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ========== 文档索引 ========== -->
+    <section class="block" id="docs" aria-labelledby="docs-title">
+      <div class="block-head">
+        <span class="rule" aria-hidden="true"></span>
+        <h2 id="docs-title">读代码之前先读这几份</h2>
+        <p>规范与实现冲突时，一律以规范为准并修正实现。</p>
+      </div>
+
+      <ul class="doclist">
+        <li><a href="README.md">
+          <span class="fname">README.md</span>
+          <span class="fdesc">产品说明与总览</span>
+        </a></li>
+        <li><a href="AGENTS.md">
+          <span class="fname">AGENTS.md</span>
+          <span class="fdesc">开发与 AI 代理铁律：干净房间、插件化架构、安全规范</span>
+        </a></li>
+        <li><a href="PLUGIN_SPEC.md">
+          <span class="fname">PLUGIN_SPEC.md</span>
+          <span class="fdesc">插件契约唯一事实来源，含白嫖宣言原文</span>
+        </a></li>
+        <li><a href="STACK.md">
+          <span class="fname">STACK.md</span>
+          <span class="fdesc">技术语法规约与红线条款</span>
+        </a></li>
+        <li><a href="PROMPT_SPEC.md">
+          <span class="fname">PROMPT_SPEC.md</span>
+          <span class="fdesc">AI 提示词规范</span>
+        </a></li>
+        <li><a href="schemas/question.json">
+          <span class="fname">schemas/question.json</span>
+          <span class="fdesc">题目交换格式 · 唯一标准结构</span>
+        </a></li>
+        <li><a href="内测安装与使用指南.md">
+          <span class="fname">内测安装与使用指南.md</span>
+          <span class="fdesc">面向零技术基础老师的完整图文步骤</span>
+        </a></li>
+        <li><a href="当前架构与开发进度快照.md">
+          <span class="fname">当前架构与开发进度快照.md</span>
+          <span class="fdesc">进度视角索引，新协作者读完即可接手</span>
+        </a></li>
+        <li><a href="https://github.com/MT-Blaze/jiuzhang-operator">
+          <span class="fname">GitHub 仓库</span>
+          <span class="fdesc">源码、提交历史与 Issue</span>
+        </a></li>
+      </ul>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <span class="motto">九章算术，算子至简</span>
+    <span class="sep" aria-hidden="true"></span>
+    <span>Apache License 2.0</span>
+    <span class="sep" aria-hidden="true"></span>
+    <span>Jiuzhang Operator v0.2.0</span>
+    <span class="sep" aria-hidden="true"></span>
+    <span>本页零脚本、零外部请求，可完全离线</span>
+  </footer>
+
+</div>
+</body>
+</html>
