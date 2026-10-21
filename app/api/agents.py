@@ -8,11 +8,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, HTTPException
+from pydantic import BaseModel, Field
 
 from app.core import ai_client
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
+
+
+# --- Request models (Pydantic contracts) ---
+class ChatRequest(BaseModel):
+    user_input: str = Field(..., description="用户指令")
+    task_id: str = Field("", description="任务唯一标识")
+
+
+class SplitRequest(BaseModel):
+    ocr_markdown: str = Field(..., description="OCR 后的整卷 Markdown")
+    task_id: str = Field("", description="任务唯一标识")
+
+
+class ReviewRequest(BaseModel):
+    question_json: dict[str, Any] = Field(..., description="单题完整 JSON 结构")
+    task_id: str = Field("", description="任务唯一标识")
 
 
 # --- Prompt templates (fixed prefixes for cache friendliness) ---
@@ -54,11 +71,10 @@ REVIEW_SYSTEM_PROMPT = """你是九章算子的审题质检员。给定一道题
 
 
 @router.post("/chat", summary="对话 Agent")
-async def agent_chat(request: Request) -> dict[str, Any]:
+async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
     """处理自然语言指令，返回结构化操作建议。"""
-    body = await request.json()
-    user_input = body.get("user_input", "")
-    task_id = body.get("task_id", "")
+    user_input = body.user_input
+    task_id = body.task_id
     try:
         result = await ai_client.chat_completion(
             system_prompt=CHAT_SYSTEM_PROMPT,
@@ -83,11 +99,10 @@ async def agent_chat(request: Request) -> dict[str, Any]:
 
 
 @router.post("/split", summary="拆题 Agent")
-async def agent_split(request: Request) -> dict[str, Any]:
+async def agent_split(body: SplitRequest = Body(...)) -> dict[str, Any]:
     """将整卷 OCR 文本切分为独立题目卡片。"""
-    body = await request.json()
-    ocr_markdown = body.get("ocr_markdown", "")
-    task_id = body.get("task_id", "")
+    ocr_markdown = body.ocr_markdown
+    task_id = body.task_id
     try:
         result = await ai_client.chat_completion(
             system_prompt=SPLIT_SYSTEM_PROMPT,
@@ -112,11 +127,10 @@ async def agent_split(request: Request) -> dict[str, Any]:
 
 
 @router.post("/review", summary="审题 Agent")
-async def agent_review(request: Request) -> dict[str, Any]:
+async def agent_review(body: ReviewRequest = Body(...)) -> dict[str, Any]:
     """对单道题目进行质量审查。"""
-    body = await request.json()
-    question_json = body.get("question_json", {})
-    task_id = body.get("task_id", "")
+    question_json = body.question_json
+    task_id = body.task_id
     try:
         user_msg = f"请审查以下题目：\n\n{question_json}"
         result = await ai_client.chat_completion(
