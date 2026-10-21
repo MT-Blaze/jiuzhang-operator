@@ -256,9 +256,10 @@ class OneTimeTokenTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tmp = tempfile.TemporaryDirectory()
         cls.port = _free_port()
-        # Do NOT set JZO_LOCAL_TOKEN - use file-based one-time tokens
+        # Use file-based one-time tokens: pin empty so the repo .env can't refill it
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = cls.tmp.name
+        env["JZO_LOCAL_TOKEN"] = ""
         cls.process = subprocess.Popen(
             [
                 sys.executable,
@@ -350,9 +351,8 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         # Use single server with workspace switching capability
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = cls.tmp_base.name
-        # Do NOT set JZO_LOCAL_TOKEN - use file-based tokens for workspace tests
-        if "JZO_LOCAL_TOKEN" in env:
-            del env["JZO_LOCAL_TOKEN"]
+        # Use file-based tokens for workspace tests: pin empty so .env can't refill it
+        env["JZO_LOCAL_TOKEN"] = ""
         
         cls.process = subprocess.Popen(
             [
