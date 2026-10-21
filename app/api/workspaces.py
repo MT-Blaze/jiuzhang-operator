@@ -11,7 +11,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Request
 
 from app.core.config import settings, switch_workspace
 from app.core.db import init_db
@@ -71,8 +71,13 @@ async def list_workspaces() -> dict[str, Any]:
 
 
 @router.post("/switch", summary="切换工作区")
-async def switch_workspace_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+async def switch_workspace_endpoint(request: Request) -> dict[str, Any]:
     """切换到指定工作区。"""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="无效的请求体")
+    
     workspace_id = payload.get("workspace_id")
     
     if workspace_id == "default":
@@ -96,8 +101,13 @@ async def switch_workspace_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("", summary="创建工作区")
-async def create_workspace(payload: dict[str, Any]) -> dict[str, Any]:
+async def create_workspace(request: Request) -> dict[str, Any]:
     """创建新工作区并切换到该工作区。"""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="无效的请求体")
+    
     name = payload.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="工作区名称不能为空")
