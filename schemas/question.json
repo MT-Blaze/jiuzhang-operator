@@ -1,0 +1,506 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.jiuzhang.local/question-1.0.json",
+  "title": "九章算子题目交换格式",
+  "description": "题目（Question）在底座、插件与导入导出之间流转的唯一标准结构。文本字段统一使用 Markdown + LaTeX：行内公式 $...$，独立公式 $$...$$。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "type", "stem", "difficulty", "meta"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "description": "结构版本。破坏性变更必须升主版本，并提供迁移说明。"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^q_[A-Za-z0-9_-]{8,64}$",
+      "description": "题目全局稳定标识。进入交换层后永不复用；删除题目也不得把该 ID 分配给新题。"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["single_choice", "multiple_choice", "fill_blank", "solution", "proof", "unknown"],
+      "description": "题型：single_choice=单选，multiple_choice=多选，fill_blank=填空，solution=解答，proof=证明，unknown=待定。"
+    },
+    "stem": {
+      "$ref": "#/$defs/richText",
+      "description": "题干。"
+    },
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 12,
+      "items": {
+        "$ref": "#/$defs/option"
+      },
+      "description": "选择题选项。选项 key 必须唯一；单选与多选必填。"
+    },
+    "answer": {
+      "$ref": "#/$defs/answer",
+      "description": "答案。尚未求解时可省略。"
+    },
+    "solution": {
+      "$ref": "#/$defs/richText",
+      "description": "解析。可包含【分析】【详解】等小标题；没有解析时省略。"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["basic", "medium", "hard", "novel"],
+      "description": "难度：basic=基础，medium=中档，hard=压轴，novel=新定义。"
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      },
+      "description": "自由标签。插件不得把展示态标签写回题目。"
+    },
+    "taxonomy": {
+      "$ref": "#/$defs/taxonomy",
+      "description": "教材分类。展示名与稳定 ID 分离；插件只读。"
+    },
+    "source": {
+      "$ref": "#/$defs/source",
+      "description": "来源信息。原卷题号只属于来源关系，不是全局身份。"
+    },
+    "images": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/image"
+      },
+      "description": "题目关联的配图资产。正文中的图片引用必须能在本数组中找到对应的 id。"
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$"
+      },
+      "additionalProperties": true,
+      "description": "插件私有数据。键必须使用反向域名前缀，例如 org.example.handwriting；底座原样保存，不解释。"
+    },
+    "meta": {
+      "$ref": "#/$defs/meta",
+      "description": "审计与并发元数据。"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": ["single_choice", "multiple_choice"]
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["options"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "single_choice"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "properties": {
+              "kind": {
+                "const": "choice"
+              },
+              "choice_keys": {
+                "minItems": 1,
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "multiple_choice"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "properties": {
+              "kind": {
+                "const": "choice"
+              },
+              "choice_keys": {
+                "minItems": 2,
+                "maxItems": 8
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "fill_blank"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "properties": {
+              "kind": {
+                "enum": ["text", "expression"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": ["solution", "proof"]
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "properties": {
+              "kind": {
+                "enum": ["text", "expression", "proof"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "richText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50000,
+      "description": "Markdown + LaTeX 文本。禁止内联 HTML 事件属性与脚本。"
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "content"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-H]$",
+          "description": "选项标号，从 A 开始连续使用。"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 5000,
+          "description": "选项内容（Markdown + LaTeX）。纯图片选项可以为空字符串。"
+        },
+        "image_ids": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^img_[A-Za-z0-9_-]{1,63}$"
+          },
+          "description": "该选项使用的配图 id。"
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["choice", "text", "expression", "proof", "unknown"],
+          "description": "答案形态：choice=选项字母，text=文字/数值，expression=数学表达式，proof=证明，unknown=未确定。"
+        },
+        "choice_keys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-H]$"
+          },
+          "description": "选择题答案标号；kind=choice 时必填。"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 20000,
+          "description": "非选择题答案文本（Markdown + LaTeX）；kind=text/expression/proof 时必填。"
+        },
+        "final": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "最终结论的规范化短文本，便于对账、搜索与导出。"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "choice"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["choice_keys"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": ["text", "expression", "proof"]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["content"]
+          }
+        }
+      ]
+    },
+    "taxonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "textbook": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "chapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "section": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "topic": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "topic_ids": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": "考点的稳定 ID。展示名可再命名，ID 不变。"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "year": {
+          "type": "integer",
+          "minimum": 1900,
+          "maximum": 2100
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "school": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "exam_type": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "paper_title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "question_no": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "该题在这份原卷中的题号，不是全局身份。"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "uri"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^img_[A-Za-z0-9_-]{1,63}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["stem", "option", "solution"],
+          "description": "配图归属：题干、选项或解析。"
+        },
+        "option_key": {
+          "type": "string",
+          "pattern": "^[A-H]$",
+          "description": "role=option 时必填，指向对应选项。"
+        },
+        "uri": {
+          "type": "string",
+          "pattern": "^(asset://img_[A-Za-z0-9_-]+|/static/uploads/[^\\s]+)$",
+          "description": "仅允许 asset:// 逻辑地址或底座托管的 /static/uploads/ 路径；禁止远程 URL、data: 与 file:。"
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "可选的内容哈希，用于查重与缓存。"
+        },
+        "layout": {
+          "$ref": "#/$defs/imageLayout"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "option"
+              }
+            },
+            "required": ["role"]
+          },
+          "then": {
+            "required": ["option_key"]
+          }
+        }
+      ]
+    },
+    "imageLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "align": {
+          "type": "string",
+          "enum": ["inline", "left", "center", "right"],
+          "default": "center"
+        },
+        "size": {
+          "type": "string",
+          "enum": ["auto", "small", "medium", "large"],
+          "default": "auto"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at", "revision", "status"],
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "乐观并发版本号，每次成功写入 +1。"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "published", "archived"]
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0",
+      "id": "q_01J9Z3K4M5N6P7Q8R9S0T1V2W3",
+      "type": "single_choice",
+      "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则 $A$ 中元素的个数为（　　）",
+      "options": [
+        { "key": "A", "content": "$0$" },
+        { "key": "B", "content": "$1$" },
+        { "key": "C", "content": "$2$" },
+        { "key": "D", "content": "$3$" }
+      ],
+      "answer": {
+        "kind": "choice",
+        "choice_keys": ["C"],
+        "final": "C"
+      },
+      "solution": "由 $x^2-3x+2=0$ 得 $x=1$ 或 $x=2$，故 $A=\\{1,2\\}$，元素个数为 $2$。",
+      "difficulty": "basic",
+      "tags": ["集合", "一元二次方程"],
+      "taxonomy": {
+        "textbook": "人教A版",
+        "chapter": "集合与常用逻辑用语",
+        "section": "集合的概念",
+        "topic": "集合中元素的个数",
+        "topic_ids": ["topic.set.elements"]
+      },
+      "source": {
+        "year": 2026,
+        "region": "示例",
+        "school": "九章算子",
+        "exam_type": "示例题",
+        "paper_title": "九章算子 Schema 示例卷",
+        "question_no": "1"
+      },
+      "images": [],
+      "extensions": {},
+      "meta": {
+        "created_at": "2026-10-21T20:00:00+08:00",
+        "updated_at": "2026-10-21T20:00:00+08:00",
+        "revision": 1,
+        "status": "published",
+        "author": "九章算子"
+      }
+    }
+  ]
+}

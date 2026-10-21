@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>九章算子 · Jiuzhang Operator</title>
+  <meta name="description" content="九章算子：为独立教师打造的模块化数学题库底座。">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="九章算子首页">
+        <span class="seal" aria-hidden="true">九</span>
+        <span class="brand-text">
+          <span class="brand-cn">九章算子</span>
+          <span class="brand-en">JIUZHANG OPERATOR</span>
+        </span>
+      </a>
+
+      <div class="status" id="health" data-state="checking" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-label">正在连接底座</span>
+        <span class="status-version" id="version">v0.1.0</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">CLEAN ROOM · APACHE-2.0 · PLUGIN FIRST</p>
+        <h1 id="hero-title">为独立教师打造的<br><em>模块化数学题库底座</em></h1>
+        <p class="lede">主底座只做三件事：鉴权、导航、数据总线。题目如何呈现、如何导入、如何组卷，交给可插拔的算子。</p>
+
+        <div class="hero-meta">
+          <span>诞生于 2026 年 10 月 21 日</span>
+          <span class="sep" aria-hidden="true"></span>
+          <span>九章算术，算子至简</span>
+        </div>
+      </section>
+
+      <section class="grid" aria-label="仓库入口">
+        <a class="card" href="/schemas/question.json">
+          <span class="card-index">01</span>
+          <span class="card-title">题目 Schema</span>
+          <span class="card-desc">Question 1.0 · JSON Schema 2020-12</span>
+          <span class="card-arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="card" href="/spec/plugin">
+          <span class="card-index">02</span>
+          <span class="card-title">插件接入规范</span>
+          <span class="card-desc">Harness · 数据总线 · 沙箱渲染</span>
+          <span class="card-arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="card" href="/healthz">
+          <span class="card-index">03</span>
+          <span class="card-title">健康检查</span>
+          <span class="card-desc">GET /healthz · 底座存活与版本</span>
+          <span class="card-arrow" aria-hidden="true">→</span>
+        </a>
+
+        <a class="card" href="/api/openapi.json">
+          <span class="card-index">04</span>
+          <span class="card-title">OpenAPI 描述</span>
+          <span class="card-desc">GET /api/openapi.json · 机器可读契约</span>
+          <span class="card-arrow" aria-hidden="true">→</span>
+        </a>
+      </section>
+
+      <section class="principles" aria-label="设计原则">
+        <div class="principle">
+          <span class="principle-mark" aria-hidden="true"></span>
+          <h2>干净房间</h2>
+          <p>全部代码从零手写，不复用任何 AGPL 项目代码。</p>
+        </div>
+        <div class="principle">
+          <span class="principle-mark" aria-hidden="true"></span>
+          <h2>底座要薄</h2>
+          <p>业务能力插件化；底座只保留契约、安全与数据流。</p>
+        </div>
+        <div class="principle">
+          <span class="principle-mark" aria-hidden="true"></span>
+          <h2>数学优先</h2>
+          <p>Markdown + LaTeX 是原生表达，公式与中文混排是常态。</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Apache License 2.0</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span>Jiuzhang Operator v0.1.0</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span id="health-time">等待健康检查</span>
+    </footer>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
