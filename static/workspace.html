@@ -28,6 +28,9 @@
             <li><a href="#">讲义中心</a></li>
           </ul>
         </section>
+        <section class="ws-import-section" aria-label="导入原卷">
+          <button class="ws-btn ws-btn-block" id="wsImportOcrBtn">导入原卷文本</button>
+        </section>
       </div>
     </aside>
 
@@ -76,6 +79,24 @@
         </section>
       </div>
     </aside>
+
+    <!-- OCR Import Modal -->
+    <div class="ws-modal-overlay" id="wsOcrModal" role="dialog" aria-modal="true" aria-labelledby="wsOcrTitle" hidden>
+      <div class="ws-modal">
+        <header class="ws-modal-head">
+          <h3 id="wsOcrTitle">导入原卷文本</h3>
+          <button class="ws-btn ws-btn-icon" data-modal-close aria-label="关闭">&times;</button>
+        </header>
+        <div class="ws-modal-body">
+          <label for="wsOcrText">粘贴 OCR 识别后的 Markdown 文本：</label>
+          <textarea id="wsOcrText" rows="12" placeholder="# 试卷标题\n\n1. 第一题...\n2. 第二题..."></textarea>
+        </div>
+        <footer class="ws-modal-foot">
+          <button class="ws-btn" data-modal-close>取消</button>
+          <button class="ws-btn ws-btn-primary" id="wsOcrSubmitBtn">开始拆题</button>
+        </footer>
+      </div>
+    </div>
   </div>
 
   <script src="/static/js/workspace.js"></script>

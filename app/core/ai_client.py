@@ -108,10 +108,45 @@ async def chat_completion(
 
 def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
     """Mock 实现：返回预设假数据，保持接口签名一致。"""
-    # 简单规则：根据关键词返回不同响应
     lower_msg = user_message.lower()
 
-    if "拆分" in user_message or "split" in lower_msg:
+    # Split agent: return question list directly
+    if "拆题专家" in system_prompt or "split" in system_prompt.lower():
+        content = json.dumps(
+            [
+                {
+                    "id": "q1",
+                    "type": "single_choice",
+                    "stem": "已知集合 $A=\\{x \\mid x^2 - 3x + 2 = 0\\}$，则 $A$ 的元素个数为（  ）",
+                    "options": {"A": "$0$", "B": "$1$", "C": "$2$", "D": "$3$"},
+                    "answer": "C",
+                    "difficulty": "basic",
+                },
+                {
+                    "id": "q2",
+                    "type": "fill_blank",
+                    "stem": "若函数 $f(x) = \\ln(x+1)$，则 $f'(0) = $ ______。",
+                    "answer": "$1$",
+                    "difficulty": "medium",
+                },
+            ],
+            ensure_ascii=False,
+        )
+    # Review agent: return quality checks
+    elif "审题质检" in system_prompt or "review" in system_prompt.lower():
+        content = json.dumps(
+            {
+                "checks": [
+                    {"field": "answer", "status": "pass"},
+                    {"field": "solution", "status": "warning", "detail": "解析略简"},
+                ],
+                "overall_score": 4,
+                "note": "[Mock] 模拟审题质检",
+            },
+            ensure_ascii=False,
+        )
+    # Chat agent: return action based on keywords
+    elif "拆分" in user_message or "split" in lower_msg:
         content = json.dumps(
             {
                 "action": "split_paper",

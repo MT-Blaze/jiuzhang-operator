@@ -392,4 +392,90 @@
 
   // --- Init ---
   renderReviewList();
+
+  // --- OCR Import Modal ---
+  var importBtn = document.getElementById("wsImportOcrBtn");
+  var ocrModal = document.getElementById("wsOcrModal");
+  var ocrText = document.getElementById("wsOcrText");
+  var ocrSubmitBtn = document.getElementById("wsOcrSubmitBtn");
+  var closeButtons = document.querySelectorAll("[data-modal-close]");
+
+  if (importBtn && ocrModal) {
+    importBtn.addEventListener("click", function () {
+      ocrModal.hidden = false;
+      ocrText.value = "";
+      ocrText.focus();
+    });
+  }
+
+  if (closeButtons) {
+    closeButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        ocrModal.hidden = true;
+      });
+    });
+  }
+
+  if (ocrSubmitBtn) {
+    ocrSubmitBtn.addEventListener("click", function () {
+      var text = ocrText.value.trim();
+      if (!text) {
+        showToast("请输入原卷文本", true);
+        return;
+      }
+
+      ocrSubmitBtn.disabled = true;
+      ocrSubmitBtn.textContent = "拆题中…";
+
+      callSplitApi(text)
+        .then(function (items) {
+          reviewItems = items;
+          renderReviewList();
+          ocrModal.hidden = true;
+          showToast("已拆分 " + items.length + " 道题目");
+        })
+        .catch(function () {
+          showToast("拆题失败，请重试", true);
+        })
+        .finally(function () {
+          ocrSubmitBtn.disabled = false;
+          ocrSubmitBtn.textContent = "开始拆题";
+        });
+    });
+  }
+
+  // --- Call /api/agent/split ---
+  function callSplitApi(ocrMarkdown) {
+    return fetch("/api/agent/split", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ocr_markdown: ocrMarkdown, task_id: "ws_" + Date.now() }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (response) {
+        var content = response.data && response.data.content;
+        if (!content) throw new Error("Empty response from split agent");
+
+        var questions;
+        try {
+          questions = JSON.parse(content);
+        } catch (e) {
+          throw new Error("Invalid JSON in split response");
+        }
+
+        if (!Array.isArray(questions)) {
+          throw new Error("Expected array of questions");
+        }
+
+        // Add source metadata
+        return questions.map(function (q, idx) {
+          return Object.assign({}, q, {
+            source: "AI 拆题 · 第" + (idx + 1) + "题",
+          });
+        });
+      });
+  }
 })();
