@@ -70,30 +70,65 @@
       });
   }
 
-  // --- Mock API: send instruction → receive cards ---
-  function mockSendInstruction(prompt) {
-    // Simulate async response with fake data
-    return new Promise(function (resolve) {
-      setTimeout(function () {
-        var items = [
-          {
-            id: "mock_1",
-            stem: "已知集合 $A=\\{x \\mid x^2 - 3x + 2 = 0\\}$，则 $A$ 的元素个数为（  ）",
-            type: "single_choice",
-            difficulty: "basic",
-            options: { A: "$0$", B: "$1$", C: "$2$", D: "$3$" },
-            answer: "C",
-          },
-          {
-            id: "mock_2",
-            stem: "若函数 $f(x) = \\ln(x+1)$，则 $f'(0) = $ ______。",
-            type: "fill_blank",
-            difficulty: "medium",
-          },
-        ];
-        resolve(items);
-      }, 600);
-    });
+  // --- Real API: send instruction → receive cards via /api/agent/chat ---
+  function sendInstruction(prompt) {
+    return fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_input: prompt, task_id: "ws_" + Date.now() }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (response) {
+        var content = response.data && response.data.content;
+        if (!content) throw new Error("Empty response from agent");
+
+        var parsed;
+        try {
+          parsed = JSON.parse(content);
+        } catch (e) {
+          parsed = { action: "clarify", question: content };
+        }
+
+        // Render based on action type
+        if (parsed.action === "split_paper") {
+          showToast("已解析拆题指令：第" + parsed.page_range[0] + "-" + parsed.page_range[1] + "页");
+          // In real implementation, this would trigger actual paper splitting
+          // For now, show a placeholder card list
+          return [
+            {
+              id: "split_1",
+              stem: "集合 $A=\\{x \\mid x^2 - 3x + 2 = 0\\}$ 的元素个数为（  ）",
+              type: "single_choice",
+              difficulty: "basic",
+              options: { A: "$0$", B: "$1$", C: "$2$", D: "$3$" },
+              answer: "C",
+              source: "AI 拆题 · 第" + parsed.page_range[0] + "页",
+            },
+            {
+              id: "split_2",
+              stem: "若函数 $f(x) = \\ln(x+1)$，则 $f'(0) = $ ______。",
+              type: "fill_blank",
+              difficulty: "medium",
+              source: "AI 拆题 · 第" + parsed.page_range[1] + "页",
+            },
+          ];
+        } else if (parsed.action === "tag_question") {
+          showToast("已标记题目：" + parsed.question_id);
+          return [];
+        } else if (parsed.action === "export_paper") {
+          showToast("正在导出为 " + parsed.format + " 格式...");
+          return [];
+        } else if (parsed.action === "clarify") {
+          showToast(parsed.question || "请明确指令", true);
+          return [];
+        } else {
+          showToast("未识别的操作：" + (parsed.action || "未知"), true);
+          return [];
+        }
+      });
   }
 
   // --- Mock confirm action (with token) ---
@@ -279,7 +314,7 @@
         sendBtn.textContent = "发送中…";
       }
 
-      mockSendInstruction(prompt)
+      sendInstruction(prompt)
         .then(function (items) {
           reviewItems = items;
           renderReviewList();
