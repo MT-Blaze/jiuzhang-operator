@@ -131,12 +131,40 @@
       });
   }
 
-  // --- Mock confirm action (with token) ---
+  // --- Confirm action (with one-time token) ---
   function mockConfirmItem(itemId) {
     return fetchMockToken().then(function (token) {
-      // In real implementation: POST /api/questions/{id}/confirm with X-JZO-Token
-      console.log("[Mock] Confirming item", itemId, "with token present:", !!token);
-      return { ok: true, id: itemId };
+      if (!token) {
+        throw new Error("No write token available");
+      }
+
+      // Real write operation with token
+      return fetch("/api/questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-JZO-Token": token,
+        },
+        body: JSON.stringify({
+          type: "single_choice",
+          stem: "确认的题目 #" + itemId,
+          difficulty: "basic",
+        }),
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            if (r.status === 401) {
+              throw new Error("令牌已失效，请刷新页面获取新令牌");
+            }
+            throw new Error("HTTP " + r.status);
+          }
+          return r.json();
+        })
+        .then(function (result) {
+          // Token consumed - refresh for next operation
+          mockToken = null;
+          return { ok: true, id: result.id || itemId };
+        });
     });
   }
 

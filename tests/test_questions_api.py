@@ -249,5 +249,95 @@ class QuestionsApiContractTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
+class OneTimeTokenTest(unittest.TestCase):
+    """一次性令牌机制测试：令牌用后即焚，二次使用必被拦截。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.port = _free_port()
+        # Do NOT set JZO_LOCAL_TOKEN - use file-based one-time tokens
+        env = os.environ.copy()
+        env["JZO_DATA_DIR"] = cls.tmp.name
+        cls.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(cls.port),
+            ],
+            env=env,
+            cwd=str(ROOT),
+        )
+        for _ in range(30):
+            try:
+                with socket.create_connection(("127.0.0.1", cls.port), timeout=1):
+                    break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise RuntimeError("Server did not start")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.process.terminate()
+        cls.process.wait(timeout=5)
+        cls.tmp.cleanup()
+
+    def call(self, method: str, path: str, body: dict | None = None, token: str | None = None) -> tuple[int, bytes, dict]:
+        url = f"http://127.0.0.1:{self.port}{path}"
+        data = json.dumps(body).encode() if body else None
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["X-JZO-Token"] = token
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            resp = urllib.request.urlopen(req)
+            return resp.status, resp.read(), dict(resp.headers)
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read(), dict(exc.headers)
+
+    def test_01_token_rotation_after_use(self) -> None:
+        """令牌使用后必须轮换，旧令牌失效。"""
+        # Get initial token from settings
+        status, body, _ = self.call("GET", "/api/settings")
+        self.assertEqual(status, 200)
+        settings = json.loads(body)
+        token1 = settings["local_token"]
+        self.assertTrue(len(token1) > 20)
+
+        # Use token for write operation (minimal payload as per existing tests)
+        payload = {"type": "fill_blank", "stem": "令牌测试1", "difficulty": "basic"}
+        status, _, _ = self.call("POST", "/api/questions", payload, token=token1)
+        self.assertEqual(status, 201, f"First use should succeed, got {status}")
+
+        # Try to reuse the same token - should be rejected
+        payload2 = {"type": "fill_blank", "stem": "令牌测试2", "difficulty": "basic"}
+        status, body2, _ = self.call("POST", "/api/questions", payload2, token=token1)
+        self.assertEqual(status, 401, "Second use of same token should be rejected")
+        error = json.loads(body2)
+        # Error message contains "失效" or "过期" indicating token is consumed
+        detail = error["detail"]
+        self.assertTrue("已失效" in detail or "已过期" in detail or "用后即焚" in detail,
+                       f"Expected token expired message, got: {detail}")
+
+    def test_02_new_token_after_rotation(self) -> None:
+        """令牌轮换后应能获取新令牌并成功写入。"""
+        # Get new token after first rotation
+        status, body, _ = self.call("GET", "/api/settings")
+        self.assertEqual(status, 200)
+        settings = json.loads(body)
+        token2 = settings["local_token"]
+
+        # Use new token - should succeed
+        payload = {"type": "fill_blank", "stem": "新令牌测试", "difficulty": "medium"}
+        status, _, _ = self.call("POST", "/api/questions", payload, token=token2)
+        self.assertEqual(status, 201, "New token should work")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
