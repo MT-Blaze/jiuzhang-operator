@@ -67,10 +67,32 @@ def create_app() -> FastAPI:
         """返回当前有效的写操作令牌（一次性，用后即焚）。"""
         return {"local_token": local_write_token()}
 
+    @app.get("/plugins", include_in_schema=False)
+    async def read_plugins_page() -> FileResponse:
+        return FileResponse(settings.static_dir / "plugins.html")
+
+    @app.get("/plugins/index-example", include_in_schema=False)
+    async def read_example_index() -> FileResponse:
+        """本机自带的示例索引，供「先试一次」按钮用同源地址走通流程。
+
+        它不是内置插件市场：底座不会自动读它，也只有用户点了按钮才会访问。
+        """
+        return FileResponse(
+            settings.project_root / "examples" / "plugins-index.example.json",
+            media_type="application/json; charset=utf-8",
+        )
+
     @app.get("/schemas/question.json", include_in_schema=False)
     async def read_question_schema() -> FileResponse:
         return FileResponse(
             settings.schemas_dir / "question.json",
+            media_type="application/schema+json",
+        )
+
+    @app.get("/schemas/plugins-index.json", include_in_schema=False)
+    async def read_plugins_index_schema() -> FileResponse:
+        return FileResponse(
+            settings.schemas_dir / "plugins-index.json",
             media_type="application/schema+json",
         )
 

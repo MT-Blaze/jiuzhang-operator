@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.jiuzhang.local/plugins-index-1.0.json",
+  "title": "九章算子插件索引格式（plugins.json）",
+  "description": "一份插件索引就是一份让人一眼看完「有哪些插件、什么版本、zip 包在哪」的纯文本清单。索引本身不是安装器：底座只按用户亲手填入的地址读它，绝不自动下载、解压或执行任何条目（PLUGIN_SPEC §1.3）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index_version", "entries"],
+  "properties": {
+    "index_version": {
+      "const": "1.0",
+      "description": "索引结构版本。字段语义破坏性变更必须升主版本。"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "索引的显示名，例如「教研组共享清单」。仅用于界面标注来源，不参与任何校验。"
+    },
+    "updated_at": {
+      "type": "string",
+      "maxLength": 40,
+      "description": "清单维护时间，建议 ISO 8601。底座只原样展示，不据此判断新鲜度，也绝不因它过期而拒绝功能。"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 200,
+      "description": "插件条目数组。单条写错只让该条出局并在界面上列出原因，不得让整份索引判死。",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "httpUrl": {
+      "type": "string",
+      "pattern": "^https?://[^/\\s]+(/[^\\s]*)?$",
+      "maxLength": 2000,
+      "description": "明文 http(s) 绝对地址。禁止 file/data 等本地协议，禁止在地址里携带用户名或密钥——索引服务永远不需要凭证。"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "zip_url"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$",
+          "description": "插件 id（反向域名），必须与 zip 解压出的顶层目录名、其 plugin.json 的 id 三处一致。"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "显示名称。"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
+          "description": "语义化版本。底座不做「新版强制升级」，旧版本照常可用。"
+        },
+        "zip_url": {
+          "$ref": "#/$defs/httpUrl",
+          "description": "插件 zip 包的下载地址。任何国内可达的静态托管都可用：Gitee 附件、阿里云 OSS、腾讯云 COS、自建 Nginx、局域网共享目录的 http 服务。"
+        },
+        "mirrors": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/httpUrl" },
+          "description": "可选镜像列表，仅作为给人挑着用的并列入口；底座不会自动逐个回退试下载。"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["renderer", "importer", "exporter", "tool"],
+          "description": "可选：插件类型，与 plugin.json 的 kind 同口径。仅用于列表分组展示。"
+        },
+        "api_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+$",
+          "description": "可选：该条目声明适配的插件协议主版本。仅显示，底座不据此拒绝用户手动安装。"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "可选：一句话说明。"
+        },
+        "homepage": {
+          "$ref": "#/$defs/httpUrl",
+          "description": "可选：源码或说明页地址，便于用户自己审计插件。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,228 @@
+.plugins-page .pl-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.pl-head h1 {
+  margin: 6px 0 10px;
+  font-size: clamp(26px, 4vw, 38px);
+  letter-spacing: 0.5px;
+}
+
+.pl-lede {
+  margin: 0;
+  max-width: 70ch;
+  line-height: 1.75;
+  color: var(--ink-soft, inherit);
+}
+
+.pl-lede code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.14);
+}
+
+.pl-pull,
+.pl-results-wrap,
+.pl-howto {
+  padding: 18px 20px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.28));
+  border-radius: 14px;
+}
+
+.pl-pull h2,
+.pl-results-wrap h2,
+.pl-howto h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.pl-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+.pl-url-field {
+  flex: 1 1 320px;
+}
+
+.pl-url-field input {
+  min-height: 44px;
+}
+
+.pl-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pl-fetch,
+.pl-demo {
+  min-height: 44px;
+}
+
+.pl-demo {
+  background: transparent;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.4));
+}
+
+.pl-status {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 4px solid var(--line, rgba(127, 127, 127, 0.4));
+  background: rgba(127, 127, 127, 0.08);
+  line-height: 1.6;
+}
+
+.pl-status[data-tone="ok"] {
+  border-left-color: #2f9e6f;
+  background: rgba(47, 158, 111, 0.12);
+}
+
+.pl-status[data-tone="warn"] {
+  border-left-color: #d8a13b;
+  background: rgba(216, 161, 59, 0.14);
+}
+
+.pl-status[data-tone="down"] {
+  border-left-color: #cf5b5b;
+  background: rgba(207, 91, 91, 0.14);
+}
+
+.pl-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.pl-entry {
+  padding: 14px 16px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.24));
+  border-radius: 12px;
+}
+
+.pl-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+
+.pl-entry-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.pl-entry-meta {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.pl-entry-desc {
+  margin: 8px 0 0;
+  line-height: 1.65;
+}
+
+.pl-entry-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pl-link {
+  display: inline-flex;
+  align-items: center;
+  /* 【下载 zip】就是这页的主操作，触屏下必须够大 */
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.35));
+  font-size: 13px;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.pl-link-ghost {
+  background: transparent;
+  opacity: 0.85;
+}
+
+.pl-empty {
+  padding: 14px 16px;
+  border-style: dashed;
+  border-width: 1px;
+  border-radius: 12px;
+  border-color: var(--line, rgba(127, 127, 127, 0.35));
+  opacity: 0.8;
+}
+
+.pl-rejected-title {
+  margin-top: 20px !important;
+  font-size: 15px !important;
+  opacity: 0.85;
+}
+
+.pl-rejected {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 作者样式里的 display: grid 会盖掉 UA 的 [hidden]{display:none}，必须显式补一刀 */
+.pl-rejected[hidden] {
+  display: none;
+}
+
+.pl-reject {
+  color: #b4682f;
+}
+
+.pl-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 8px;
+  line-height: 1.7;
+}
+
+.pl-legal {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line, rgba(127, 127, 127, 0.3));
+  font-size: 13px;
+  line-height: 1.7;
+  opacity: 0.9;
+}
+
+@media (max-width: 640px) {
+  .pl-form-actions {
+    width: 100%;
+  }
+
+  .pl-fetch,
+  .pl-demo {
+    flex: 1 1 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pl-link,
+  .pl-fetch,
+  .pl-demo {
+    transition: none;
+  }
+}

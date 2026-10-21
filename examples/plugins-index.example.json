@@ -1,0 +1,28 @@
+{
+  "index_version": "1.0",
+  "name": "示例索引（地址全部不可用，只示范结构）",
+  "updated_at": "2026-10-21T23:30:00+08:00",
+  "entries": [
+    {
+      "id": "org.jiuzhang.classic-card",
+      "name": "经典题卡",
+      "version": "0.1.0",
+      "kind": "renderer",
+      "api_version": "1.0",
+      "description": "以传统试卷风格渲染题目卡片。",
+      "zip_url": "https://plugins.example.org/classic-card/org.jiuzhang.classic-card-0.1.0.zip",
+      "mirrors": [
+        "https://mirror.example.cn/plugins/org.jiuzhang.classic-card-0.1.0.zip"
+      ],
+      "homepage": "https://example.org/jiuzhang/classic-card"
+    },
+    {
+      "id": "cn.example.paper-export",
+      "name": "整卷导出（示例）",
+      "version": "1.2.0",
+      "kind": "exporter",
+      "description": "演示条目：展示 exporter 与镜像列表的写法。",
+      "zip_url": "https://oss.example.cn/jiuzhang/plugins/cn.example.paper-export-1.2.0.zip"
+    }
+  ]
+}

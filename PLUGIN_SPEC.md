@@ -32,9 +32,11 @@
 - 违反本节的插件在评审阶段直接拒收；已落地的按 [AGENTS.md](AGENTS.md) 铁律二处理并移除。
 - 能力不可用（缺密钥、断网、超时）时插件必须**显式降级**并给出可读提示，不得弹窗阻断、不得伪装成「需要激活」。底座对「静默失效」零容忍。
 
-### 1.2 插件分发格式：纯本地 zip 包
+### 1.2 插件分发格式：纯 zip 包，无专属后缀
 
-- **唯一格式**：一个 zip 包，**解压即用**。zip 只是打包与传输容器，不是运行时格式：底座**不解析 zip**，也不内置任何远程下载源或插件市场。
+- **唯一格式**：一个标准 zip 包，**解压即用**。禁止 `.jzo` 或任何自定义后缀/容器格式——对齐主流生态，任何压缩软件、浏览器下载、`unzip` 都能打开它，跑路风险为零。
+- zip 只是打包与传输容器，不是运行时格式：底座**不解析 zip、不自动安装**，装插件这一步永远由用户亲手解压并放入 `plugins/`。
+- **底座禁止写死任何远程下载源**（防跑路）：代码与配置里不得出现任何内置的插件市场地址、CDN 域名或自动更新 URL。唯一例外是 §1.3 那条**由用户亲手粘贴地址**的只读拉取。
 - **包结构**：zip 顶层目录名即插件 id，其内含 `plugin.json` 与 `dist/`、`templates/` 等资源：
 
 ```text
@@ -46,8 +48,45 @@ org.example.card.zip
 ```
 
 - **禁止项**：嵌套 zip、加密条目、绝对路径、`..` 路径穿越、符号链接、超出清单声明的可执行文件。底座对插件资源的解析一律拒绝越界路径（`app/core/plugins.py`）。
+- **无签名 / 无摘要 / 无授权校验**：底座不验插件包的数字签名、不比对哈希白名单、不检查许可证状态。清单是否可信由用户自行判断（见 §1.3「地址是用户选的，底座只负责读」）。
 - **安装**：把解压出的目录放进 `plugins/` 即可，无需注册、无需联网、无需重启（发现阶段见 §4）。
 - **卸载**：删除该目录。底座不得在别处留存插件运行态残留；插件私有数据只能写在题目 `extensions`（反向域名前缀），随题目数据一起被用户拷走或删除。
+
+### 1.3 plugins.json 插件索引标准
+
+索引是一份**纯静态 JSON**，任何人（个人 Gitee 仓库、对象存储、局域网 Nginx）都能发布；底座对它只做「拉取 + 结构校验 + 展示」，**不解压、不安装、不执行**。
+
+- **拉取入口**：`POST /api/plugins/index`，请求体 `{"url": "..."}`。地址**只能来自用户**在前端「自定义源地址」输入框里的粘贴（`static/plugins.html`），底座代码里不存在任何默认地址。
+- **为什么这个只读接口要带写令牌**：它是底座唯一会替用户向外部发起请求的口子，不给令牌等于让浏览器里另一个页面的脚本白嫖本机网络身份。令牌仍是 [`AGENTS.md`](AGENTS.md) 约定的一次性轮换令牌。
+- **地址守卫**（`app/core/plugin_index.validate_index_url`）：只接受 `http` / `https`；必须有主机名；**拒绝携带用户名口令**；拒绝 `file:`、`data:` 与相对路径——即不发任何请求前先拒。单次拉取上限 512 KB、超时 10 秒、条目上限 200。
+- **容错口径**：单条写错只让那一条出局并给出可读原因（`rejected[]`），**不得**把整份清单判死；网络失败、非 JSON、版本不符一律返回 400 + 人话，不得 500。
+
+结构（JSON Schema 见 [`schemas/plugins-index.json`](schemas/plugins-index.json)，可运行样例见 [`examples/plugins-index.example.json`](examples/plugins-index.example.json)）：
+
+```json
+{
+  "index_version": "1.0",
+  "name": "示例索引",
+  "updated_at": "2026-10-21",
+  "entries": [
+    {
+      "id": "org.example.card",
+      "name": "经典卡片渲染器",
+      "version": "1.0.0",
+      "zip_url": "https://example.org/plugins/org.example.card-1.0.0.zip",
+      "mirrors": ["https://example.cn/plugins/org.example.card-1.0.0.zip"],
+      "kind": "renderer",
+      "api_version": "jzo-plugin/1",
+      "description": "一句话说明，最长 200 字",
+      "homepage": "https://example.org/plugins/card"
+    }
+  ]
+}
+```
+
+- **必填**：`index_version`（恒为 `"1.0"`）、`entries`；每条必填 `id`（反向域名，与目录名一致）、`name`、`version`（语义化）、`zip_url`（http(s) 可直达的 zip 地址）。
+- **可选**：`mirrors`（≤8 条备用地址，同样必须 http(s) 且不带凭证）、`kind`、`api_version`、`description`、`homepage`。
+- **索引不是授权体系**：`updated_at`、`api_version` 只用于展示与人工判断，底座**绝不**据此拒绝加载旧插件、强制升级或远程禁用——那会直接违反 §1.1。
 
 ---
 

@@ -23,7 +23,8 @@
 - **免卡密**：没有激活码、序列号、许可证文件、试用天数、到期时间，也没有机器指纹绑定。代码里**根本没有这一类校验分支**，底座也不给插件提供「授权校验」接口。
 - **绝无云端锁喉**：题库、组卷、渲染、导入导出 100% 在本机跑，断网可用。AI 能力只连你自己在 `.env` 里填写的模型网关；不填密钥或关掉网络，AI 那一步显式降级为不可用，底座与全部插件照常工作——**绝不弹窗催费、绝不偷偷上传题目数据、绝不让云端一句话就把功能关掉**。
 - **不锁数据**：题目是本机 `data/` 目录里的明文 SQLite + [JSON Schema](schemas/question.json)，随时整目录拷走、任何工具都能读；卸载不销毁、不加密、不留水印。
-- **插件同样白嫖**：插件是**纯本地 zip 包，解压即用**，规范禁止任何注册、卡密与联网回连激活，详见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1、§1.2。
+- **插件同样白嫖**：插件就是**标准 zip 包，解压即用**（没有 `.jzo` 之类专属后缀，也不验签名、不验摘要），规范禁止任何注册、卡密与联网回连激活，详见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1、§1.2。
+- **插件清单不绑任何厂商**：底座**没有内置插件市场，也绝不写死远程地址**（防跑路）。想做「国内可达的橱窗」，自己发一份 `plugins.json` 静态清单（§1.3），在 `/plugins` 页把它的 http(s) 地址粘进输入框即可拉取列表；底座只读这一份 JSON，下载与解压永远由你亲手做。
 
 ## 开箱即用：配一次密钥就能用 AI
 
@@ -47,8 +48,8 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 
 - SQLite 持久化（`data/jiuzhang.db`，WAL 优先、`PRAGMA user_version` 版本化、墓碑表防止 ID 复用）；
 - 题目 CRUD：`GET/POST /api/questions`、`GET/PUT/DELETE /api/questions/{id}`，写入按 `schemas/question.json` 校验，`meta.revision` 提供乐观并发；
-- 写入鉴权：POST/PUT/DELETE 必须携带 `X-JZO-Token`，令牌由 `JZO_LOCAL_TOKEN` 或 `data/.local_token`（首次启动生成，权限 0600）提供；
-- 插件宿主最小实现：清单发现与校验、沙箱 iframe、消息封包、HTML 净化、作用域 CSS 校验、连续失败兜底；
+- 写入鉴权：POST/PUT/DELETE 必须携带 `X-JZO-Token`，令牌由 `JZO_LOCAL_TOKEN` 或 `data/.local_token`（首次启动生成，权限 0600）提供；文件令牌为**一次性**——校验通过即轮换，旧令牌第二次使用必被拒（设了 `JZO_LOCAL_TOKEN` 时走环境变量档，不轮换）；
+- 插件宿主最小实现：清单发现与校验、沙箱 iframe、消息封包、HTML 净化、作用域 CSS 校验、连续失败兜底；`plugins.json` 索引只按**用户亲手填入**的地址拉取（`/plugins` + `POST /api/plugins/index`），底座零内置源、不解压不安装；
 - 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页；
 - AI 能力：`app/core/providers/` 扫描式 Provider 注册表（密钥只走环境变量）、`/api/agent/chat|split|review` 三个智能体、工作台 `/workspace` 「导入原卷 → 发指令 → 出真卡片 → 确认入库」闭环，以及 `/api/providers` 多厂商切换。
 
@@ -72,10 +73,10 @@ uvicorn app.main:app --reload --port 8000
 curl -X POST http://127.0.0.1:8000/api/questions \
   -H "Content-Type: application/json" \
   -H "X-JZO-Token: $(cat data/.local_token)" \
-  -d '{"type":"single_choice","stem":"若 $x+1=2$，则 $x=$（  ）","difficulty":"basic","options":{"A":"$0$","B":"$1$","C":"$2$","D":"$3$"},"answer":{"value":"B"},"meta":{"author":"local"}}'
+  -d '{"type":"single_choice","stem":"若 $x+1=2$，则 $x=$（  ）","difficulty":"basic","options":[{"key":"A","content":"$0$"},{"key":"B","content":"$1$"},{"key":"C","content":"$2$"},{"key":"D","content":"$3$"}],"answer":{"kind":"choice","choice_keys":["B"]},"meta":{"author":"local"}}'
 ```
 
-服务端会补齐 `id`、`schema_version` 与 `meta` 时间戳，返回 `201`。
+服务端会补齐 `id`、`schema_version` 与 `meta` 时间戳，返回 `201`。`options` 是**数组**（每项 `{key, content}`），答案形态由 `answer.kind` 声明——一切以 [schemas/question.json](schemas/question.json) 为准，写法不符会被写入侧拒绝并给出可读原因。
 
 预期响应：
 
@@ -98,7 +99,7 @@ jiuzhang-operator/
 │   ├── api/
 │   │   ├── health.py        # GET /healthz
 │   │   ├── questions.py     # /api/questions CRUD
-│   │   ├── plugins.py       # /api/plugins 与插件资源分发
+│   │   ├── plugins.py       # /api/plugins 与插件资源分发，含 POST /api/plugins/index
 │   │   ├── providers.py     # /api/providers 注册表与活跃档切换
 │   │   ├── agents.py        # /api/agent/chat|split|review
 │   │   └── workspaces.py    # 多工作区列表/新建/切换
@@ -107,6 +108,7 @@ jiuzhang-operator/
 │       ├── db.py            # SQLite 连接、版本化表结构、事务
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
+│       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取（底座无内置源）
 │       ├── provider.py      # AIProvider 抽象基类
 │       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
 │       ├── ai_client.py     # OpenAI 兼容客户端（标准库 urllib，无额外依赖）
@@ -115,15 +117,20 @@ jiuzhang-operator/
 │   ├── index.html           # 底座首页（无框架、无 CDN）
 │   ├── questions.html       # 题库列表页
 │   ├── workspace.html       # 拆题工作台（三栏：任务 / 指令+清单 / 上下文）
-│   ├── css/{app,questions,workspace}.css
-│   └── js/{app,questions,workspace}.js
+│   ├── plugins.html         # 插件索引页（自定义源地址输入框）
+│   ├── css/{app,questions,workspace,plugins}.css
+│   └── js/{app,questions,workspace,plugins}.js
 ├── schemas/
-│   └── question.json        # 题目交换格式（唯一事实来源）
+│   ├── question.json        # 题目交换格式（唯一事实来源）
+│   └── plugins-index.json   # plugins.json 索引格式
+├── examples/
+│   └── plugins-index.example.json  # 示例清单（地址全部不可用，只示范结构）
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
 ├── tests/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
+│   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
 │   └── test_providers_api.py       # Provider 注册表与切换契约
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
@@ -140,10 +147,14 @@ jiuzhang-operator/
 | `/healthz` | 健康检查 JSON |
 | `/questions` | 题库列表页（插件渲染 + 分页） |
 | `/workspace` | 拆题工作台（导入原卷 → 发指令 → 出真卡片） |
+| `/plugins` | 插件索引页（自填 `plugins.json` 地址拉取清单，只读、不安装） |
 | `/api/questions` | 题目列表（分页、搜索、筛选） |
 | `/api/plugins` | 已加载插件清单 |
+| `POST /api/plugins/index` | 按**用户填入**的地址拉取一份插件索引（只读 GET，需一次性写令牌；底座无默认地址） |
+| `/plugins/index-example` | 仓库自带的示例索引，给「试一试」按钮一个同源可跑通的地址 |
 | `/api/providers` | Provider 注册表（只暴露是否已配置与接口主机名） |
 | `/schemas/question.json` | 题目 JSON Schema |
+| `/schemas/plugins-index.json` | 插件索引 JSON Schema |
 | `/spec/plugin` | 插件接入规范（Markdown） |
 | `/api/openapi.json` | 机器可读的 OpenAPI 接口描述 |
 
