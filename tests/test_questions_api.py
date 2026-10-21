@@ -225,6 +225,41 @@ class QuestionsApiContractTest(unittest.TestCase):
         self.assertEqual(filtered["total"], 1)
         self.assertEqual(filtered["items"][0]["id"], solution["id"])
 
+    def test_06b_choice_options_stay_an_array_through_read_models(self) -> None:
+        """回归：options 是数组（schemas/question.json 的口径），响应模型不得按 dict 校验。
+
+        曾经 ``app/core/models.Question.options`` 声明为 dict[str, str]，写入侧按 Schema
+        放行了数组，读取侧 ResponseValidationError 直接把 500 打到 GET /api/questions
+        与单题详情上——只要库里有一道选择题，整个题库列表就整页挂掉。
+        """
+        options = [
+            {"key": "A", "content": "$0$"},
+            {"key": "B", "content": "$1$"},
+            {"key": "C", "content": "$2$"},
+            {"key": "D", "content": "$3$"},
+        ]
+        marker = "选项数组契约_" + str(int(time.time() * 1000))
+        document = self.create(
+            marker + "：集合 $A=\\{0,1,2\\}$ 的元素个数为（　　）",
+            type="single_choice",
+            options=options,
+            answer={"kind": "choice", "choice_keys": ["C"]},
+        )
+
+        status, detail, _ = self.call("GET", "/api/questions/" + document["id"])
+        self.assertEqual(status, 200, detail)
+        self.assertIsInstance(detail["options"], list)
+        self.assertEqual(detail["options"], options)
+        self.assertEqual(detail["answer"]["choice_keys"], ["C"])
+
+        status, page, _ = self.call(
+            "GET", "/api/questions?q=" + urllib.parse.quote(marker) + "&page=1&page_size=10"
+        )
+        self.assertEqual(status, 200, page)
+        self.assertEqual(page["total"], 1)
+        self.assertIsInstance(page["items"][0]["options"], list)
+        self.assertEqual([item["key"] for item in page["items"][0]["options"]], ["A", "B", "C", "D"])
+
     def test_07_plugin_discovery_and_scoped_assets(self) -> None:
         status, discovery, _ = self.call("GET", "/api/plugins")
         self.assertEqual(status, 200)
@@ -338,6 +373,30 @@ class OneTimeTokenTest(unittest.TestCase):
         payload = {"type": "fill_blank", "stem": "新令牌测试", "difficulty": "medium"}
         status, _, _ = self.call("POST", "/api/questions", payload, token=token2)
         self.assertEqual(status, 201, "New token should work")
+
+    def test_03_rejected_write_still_consumes_the_token(self) -> None:
+        """令牌在鉴权那一刻就烧掉，与业务成没成功无关。
+
+        前端如果只在 2xx 清缓存，用户在界面上改坏一次写法（400）之后，
+        下一次点【确认入库】必然 401，只能刷新页面——这条把前提钉死。
+        """
+        status, body, _ = self.call("GET", "/api/settings")
+        token = json.loads(body)["local_token"]
+
+        bad = {"type": "single_choice", "difficulty": "basic"}  # 缺 stem，Schema 拒
+        status, rejected, _ = self.call("POST", "/api/questions", bad, token=token)
+        self.assertEqual(status, 400, rejected)
+
+        good = {"type": "fill_blank", "stem": "同一枚令牌第二次", "difficulty": "basic"}
+        status, reused, _ = self.call("POST", "/api/questions", good, token=token)
+        self.assertEqual(status, 401, "被 400 拒掉的写入也必须已经用完这枚令牌")
+
+        status, fresh, _ = self.call("GET", "/api/settings")
+        self.assertEqual(status, 200)
+        new_token = json.loads(fresh)["local_token"]
+        self.assertNotEqual(new_token, token)
+        status, _, _ = self.call("POST", "/api/questions", good, token=new_token)
+        self.assertEqual(status, 201, "换到新令牌后写入应当立即恢复")
 
 
 class MultiWorkspaceIsolationTest(unittest.TestCase):

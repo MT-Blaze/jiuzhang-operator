@@ -188,7 +188,7 @@
         .then(function (r) {
           if (!r.ok) {
             if (r.status === 401) {
-              throw new Error("令牌已失效，请刷新页面获取新令牌");
+              throw new Error("令牌已失效，再点一次【确认入库】即可（会自动换新令牌，无需刷新页面）");
             }
             return r.json().then(function (body) {
               var detail = body && body.detail;
@@ -200,9 +200,13 @@
           return r.json();
         })
         .then(function (result) {
-          // Token consumed - refresh for next operation
-          writeToken = null;
           return { ok: true, id: result.id };
+        })
+        // 一次性令牌在 require_write_token 校验通过的那一刻就已被服务端轮换，
+        // 与业务成没成功无关：400（写法不合法）同样把令牌吃掉了。
+        // 只在成功路径清缓存会让下一次写入必然 401，逼用户刷新页面。
+        .finally(function () {
+          writeToken = null;
         });
     });
   }
@@ -796,7 +800,6 @@
         return r.json();
       })
       .then(function (data) {
-        writeToken = null;
         showToast(
           data.mock
             ? "已切到「" + data.active + "」：未配置密钥，走 Mock"
@@ -804,6 +807,9 @@
           data.mock
         );
         return loadProviders();
+      })
+      .finally(function () {
+        writeToken = null;
       });
   }
 
