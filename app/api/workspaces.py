@@ -11,12 +11,23 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from app.core.config import settings, switch_workspace
 from app.core.db import init_db
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
+
+
+class WorkspaceCreateRequest(BaseModel):
+    """创建工作区请求体。"""
+    name: str = Field(..., min_length=1, description="工作区名称")
+
+
+class WorkspaceSwitchRequest(BaseModel):
+    """切换工作区请求体。"""
+    workspace_id: str = Field(..., min_length=1, description="目标工作区ID")
 
 
 def _workspace_config_path() -> Path:
@@ -71,14 +82,9 @@ async def list_workspaces() -> dict[str, Any]:
 
 
 @router.post("/switch", summary="切换工作区")
-async def switch_workspace_endpoint(request: Request) -> dict[str, Any]:
+async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str, Any]:
     """切换到指定工作区。"""
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="无效的请求体")
-    
-    workspace_id = payload.get("workspace_id")
+    workspace_id = payload.workspace_id
     
     if workspace_id == "default":
         switch_workspace(None)
@@ -101,14 +107,9 @@ async def switch_workspace_endpoint(request: Request) -> dict[str, Any]:
 
 
 @router.post("", summary="创建工作区")
-async def create_workspace(request: Request) -> dict[str, Any]:
+async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
     """创建新工作区并切换到该工作区。"""
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="无效的请求体")
-    
-    name = payload.get("name", "").strip()
+    name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="工作区名称不能为空")
     
