@@ -1,457 +1,174 @@
-# 九章算子插件接入规范（Plugin Spec）
+# 九章算子插件规范 v1.0
 
-- 规范版本：`1.0`
-- 协议标识：`jzo-plugin/1`
-- 发布日期：2026-10-21
-- 状态：`v0.2.0` 已实现前端渲染插件宿主（发现、清单校验、沙箱 iframe、消息封包、净化、作用域 CSS、故障兜底）；后端插件尚未实现。
+## 1. 设计哲学
 
-本规范规定两件事：**底座如何把题目数据递给插件**，以及**插件如何把渲染结果交回底座**。凡与本规范冲突的实现，以本规范为准。
+**万物皆插件（Harness）**：所有扩展能力（AI 模型、数据源、UI 渲染）均通过统一协议接入，宿主提供沙箱隔离与生命周期管理。
 
-## 1. 边界与角色
-
-| 角色 | 职责 |
-| --- | --- |
-| Host（底座） | 鉴权、导航、数据总线、题目加载、资产解析、插件生命周期、HTML 净化、公式渲染、错误隔离 |
-| Plugin（插件） | 单一领域能力：渲染、导入、导出、工具面板等；只消费授权数据，只返回声明过的结果 |
-| Slot（插槽） | 底座预留的 UI 位置，例如 `question.card`、`question.detail` |
-| Bus（数据总线） | Host 与插件之间唯一的通信通道，使用本规范的 JSON 信封 |
-
-底座不得把数据库连接、文件路径、环境变量、模型密钥交给插件。插件不得假设自己与宿主同源，也不得直接操作宿主 DOM。
-
-## 2. 插件包结构
-
-```text
-plugins/
-└── com.example.classic-card/
-    ├── plugin.json           # 清单（必需）
-    ├── README.md             # 插件说明（建议）
-    ├── LICENSE               # 插件自身许可（必需）
-    └── dist/
-        ├── index.html        # 前端入口（必需）
-        ├── plugin.js
-        └── plugin.css
-```
-
-- 一个目录一个插件，目录名必须等于清单中的 `id`。
-- `dist/` 内不得包含符号链接、可执行文件、数据库文件或密钥。
-- 插件资源由宿主以只读方式挂载到 `/plugin-assets/<id>/`，插件不得引用外网资源。
-
-## 3. 插件清单 `plugin.json`
-
-```json
-{
-  "schema_version": "1.0",
-  "id": "com.example.classic-card",
-  "name": "经典题卡",
-  "version": "0.1.0",
-  "api_version": "1.0",
-  "kind": "renderer",
-  "description": "以传统试卷风格渲染题目卡片。",
-  "author": "示例作者",
-  "license": "Apache-2.0",
-  "entry": {
-    "frontend": "dist/index.html"
-  },
-  "slots": ["question.card", "question.detail"],
-  "capabilities": ["question.render"],
-  "permissions": ["questions:read", "assets:read"],
-  "config_schema": "schemas/config.json"
-}
-```
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `schema_version` | string | 是 | 清单结构版本，当前固定 `"1.0"` |
-| `id` | string | 是 | 反向域名格式：`^[a-z0-9]+(\.[a-z0-9-]+)+$`，全局唯一，不可变更 |
-| `name` | string | 是 | 展示名称，1–64 字符 |
-| `version` | string | 是 | 插件自身语义化版本，如 `0.1.0` |
-| `api_version` | string | 是 | 依赖的 Host API 主版本；当前支持 `1.x` |
-| `kind` | string | 是 | `renderer` / `importer` / `exporter` / `tool` |
-| `description` | string | 是 | 一句话说明，1–200 字符 |
-| `author` | string | 否 | 作者或组织 |
-| `license` | string | 是 | SPDX 标识；必须与 `LICENSE` 一致 |
-| `entry.frontend` | string | 是 | 入口 HTML，相对插件根目录，禁止 `..` |
-| `entry.backend` | string | 否 | 后端入口，见第 11 节（保留） |
-| `slots` | string[] | 是 | 申请的插槽；渲染类插件至少一个 |
-| `capabilities` | string[] | 是 | 声明提供的能力，见第 5 节 |
-| `permissions` | string[] | 是 | 申请的权限，见第 9 节；最小权限原则 |
-| `config_schema` | string | 否 | 插件配置的 JSON Schema 路径 |
-| `integrity` | object | 否 | `{"algorithm":"sha256","digest":"..."}`，发布包建议提供 |
-
-清单校验失败、`api_version` 主版本不兼容、申请未定义权限，均拒绝加载，并记录原因。
-
-## 4. 数据流
-
-```text
-用户打开题卡
-   │
-   ▼
-Host：按 id 读取题目 → 校验 schemas/question.json → 深拷贝并冻结
-   │
-   ├─→ Host：解析 images[].uri 为可访问 URL（仅授权资产）
-   │
-   ▼
-Host → Plugin：question.render（题目快照 + 视图 + 主题 + 资产表）
-   │
-   ├─→ Plugin → Host：host.asset.resolve（按需，可选）
-   │
-   ▼
-Plugin → Host：{ html, css, height }
-   │
-   ▼
-Host：净化 HTML → 渲染数学 → 注入 CSS → 挂载到插槽
-```
-
-### 4.1 Host → Plugin：`question.render`
-
-```json
-{
-  "protocol": "jzo-plugin/1",
-  "id": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
-  "kind": "request",
-  "method": "question.render",
-  "payload": {
-    "question": {
-      "schema_version": "1.0",
-      "id": "q_01J9Z3K4M5N6P7Q8R9S0T1V2W3",
-      "type": "single_choice",
-      "stem": "已知集合 $A=\\{1,2\\}$，则 $A$ 中元素的个数为（　　）",
-      "options": [
-        { "key": "A", "content": "$0$" },
-        { "key": "B", "content": "$1$" },
-        { "key": "C", "content": "$2$" },
-        { "key": "D", "content": "$3$" }
-      ],
-      "answer": { "kind": "choice", "choice_keys": ["C"] },
-      "solution": "由题意得 $A=\\{1,2\\}$，故元素个数为 $2$。",
-      "difficulty": "basic",
-      "tags": ["集合"],
-      "meta": {
-        "created_at": "2026-10-21T20:00:00+08:00",
-        "updated_at": "2026-10-21T20:00:00+08:00",
-        "revision": 1,
-        "status": "published"
-      }
-    },
-    "slot": "question.card",
-    "view": "card",
-    "theme": {
-      "mode": "light",
-      "accent": "#a63b2b"
-    },
-    "locale": "zh-CN",
-    "render_mode": "math-source",
-    "assets": {
-      "img_01J9Z3K4M5N6P7Q8R9S0T1V2W3": "http://127.0.0.1:8000/static/uploads/2026/10/example.png"
-    }
-  }
-}
-```
-
-载荷约束：
-
-- `question` 必须符合 [schemas/question.json](schemas/question.json)，是**只读快照**。插件不得修改其中任何字段，也不得把渲染态写回。
-- `assets` 只包含该题 `images[]` 中声明、且宿主校验通过的资产；插件不得自行拼接文件路径。
-- `render_mode` 当前固定为 `"math-source"`：插件返回包含 `$...$` / `$$...$$` 的 HTML，由宿主统一用 KaTeX 渲染。`"html"`（插件自行完成数学排版）为保留模式，`1.x` 内不启用。
-- 插件必须对题目文本做 HTML 转义；`stem`、`solution`、选项内容都是不可信输入。
-
-### 4.2 Plugin → Host：渲染成功
-
-```json
-{
-  "protocol": "jzo-plugin/1",
-  "id": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
-  "kind": "response",
-  "ok": true,
-  "result": {
-    "html": "<article class=\"jzp-card\"><p class=\"jzp-stem\">…</p></article>",
-    "css": ".jzp-card{padding:16px;border:1px solid rgba(0,0,0,.12)}",
-    "height": 220
-  }
-}
-```
-
-- `id` 必须与请求一致；不一致的响应直接丢弃。
-- `html`：片段，不得包含 `<script>`、内联事件属性、`<style>`、`<iframe>`、`<object>`、`<form>`。
-- `css`：可选，必须全部限定在 `[data-jzo-plugin="<id>"]` 作用域内；禁止 `@import`、`url(http...)`、`position:fixed`。
-- `height`：可选像素估值，仅用于减少布局跳动，宿主可以忽略。
-- 同一请求只接受一个响应；重复响应按协议错误处理。
-
-### 4.3 Plugin → Host：渲染失败
-
-```json
-{
-  "protocol": "jzo-plugin/1",
-  "id": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
-  "kind": "response",
-  "ok": false,
-  "error": {
-    "code": "RENDER_FAILED",
-    "message": "题目缺少必要字段",
-    "retryable": false
-  }
-}
-```
-
-宿主收到失败或超时后，使用内置纯文本渲染器兜底，并记录一次插件故障。连续 3 次失败将在当前会话停用该插件。
-
-## 5. 能力与插槽
-
-首版（`api_version 1.x`）支持的能力：
-
-| capability | 说明 | 必需权限 |
-| --- | --- | --- |
-| `question.render` | 将题目渲染为 HTML 片段 | `questions:read`、`assets:read` |
-| `question.export` | 将题目导出为指定格式 | `questions:read`、`assets:read`、`export:file` |
-| `question.import` | 将外部文件解析为题目候选 | `questions:write`、`assets:write` |
-
-首版插槽：
-
-| slot | 说明 |
-| --- | --- |
-| `question.card` | 题库列表中的题卡 |
-| `question.detail` | 题目详情面板 |
-| `question.paper` | 组卷画布中的题目 |
-| `answer.panel` | 解析/答案面板 |
-
-插件只能渲染自己 `slots` 中声明的插槽。同一插槽可以安装多个插件，但同一时刻只有一个处于激活状态；切换由用户在底座中完成。
-
-## 6. 消息信封
-
-所有消息共用一个信封：
-
-```json
-{
-  "protocol": "jzo-plugin/1",
-  "id": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
-  "kind": "request",
-  "method": "question.render",
-  "payload": {}
-}
-```
-
-- `protocol`：固定 `"jzo-plugin/1"`。
-- `id`：ULID 或 UUID；请求与响应必须一致；事件可省略。
-- `kind`：`request` / `response` / `event`。
-- `method`：点分命名，见第 7、8 节。
-- 时间单位一律毫秒；超时由发起方判定。
-
-### 6.1 Host → Plugin 方法与事件
-
-| 方法/事件 | 方向 | 说明 |
-| --- | --- | --- |
-| `plugin.activate` | 请求 | 插件激活；载荷含 `plugin_id`、`api_version`、`locale`、`theme` |
-| `plugin.deactivate` | 请求 | 插件停用；插件应释放定时器、网络与缓存 |
-| `question.render` | 请求 | 渲染题目，见 4.1 |
-| `theme.changed` | 事件 | 主题切换 |
-| `locale.changed` | 事件 | 语言切换 |
-| `question.updated` | 事件 | 题目数据变化，插件应重渲染或失效缓存 |
-
-### 6.2 Plugin → Host 方法
-
-| 方法 | 说明 | 超时 |
-| --- | --- | --- |
-| `host.asset.resolve` | 将 `asset://img_xxx` 解析为宿主可访问 URL | 1000ms |
-| `host.storage.get` | 读取插件命名空间下的值 | 1000ms |
-| `host.storage.set` | 写入插件命名空间下的值（≤ 64KB/项） | 1000ms |
-| `host.storage.remove` | 删除键 | 1000ms |
-| `host.toast` | 显示一条宿主提示 | 500ms |
-| `host.log` | 写入插件日志（自动脱敏） | 500ms |
-| `host.navigate` | 请求宿主切换视图 | 500ms |
-| `host.ai.invoke` | 调用宿主配置的模型（需 `ai:invoke`） | 60000ms |
-
-所有插件发起的请求都必须在宿主登记；未登记的方法返回 `UNSUPPORTED_METHOD`。
-
-## 7. 权限模型
-
-| 权限 | 允许的操作 |
-| --- | --- |
-| `questions:read` | 通过 Host API 读取授权范围内的题目 |
-| `questions:write` | 提交题目草稿或修改建议；实际写入必须经宿主校验与用户确认 |
-| `assets:read` | 读取题目关联资产 |
-| `assets:write` | 提交新资产；宿主负责转码、校验与去重 |
-| `storage:plugin` | 使用插件私有键值存储 |
-| `ai:invoke` | 调用宿主配置的模型 |
-| `export:file` | 请求宿主生成导出文件 |
-
-- 权限在安装时逐项展示，用户明确同意后才激活。
-- 插件不得通过其他插件或全局对象绕过权限。
-- 写操作必须可审计：记录插件 id、操作类型、目标题目 id、时间与结果。
-- 默认无网络权限；确需联网的插件必须由用户在配置中显式填写域名，宿主以代理方式转发。
-
-## 8. 生命周期
-
-```text
-discover → validate → install → enable → activate → active
-                                      ↑        │
-                                      └─ deactivate
-                                                 │
-                                            uninstall
-```
-
-1. **discover**：宿主扫描 `plugins/*/plugin.json`。
-2. **validate**：校验清单、路径边界、许可声明、API 版本、权限白名单。
-3. **install**：复制到宿主管理的插件目录，默认停用。
-4. **enable**：用户确认权限后启用。
-5. **activate**：加载 iframe，发送 `plugin.activate`，收到成功响应后进入 `active`。
-6. **deactivate**：卸载 iframe，清理会话态；插件存储保留。
-7. **uninstall**：移除代码；默认保留存储，用户可选择一并清除。
-
-任一阶段失败都不得影响底座与其他插件；失败原因写入插件日志并展示给用户。
-
-## 9. 安全与沙箱
-
-- iframe 必须使用 `sandbox="allow-scripts"`，**不得**添加 `allow-same-origin`、`allow-top-navigation`、`allow-forms`、`allow-popups`。
-- 插件资源从 `/plugin-assets/<id>/` 只读加载；CSP 至少包含：`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'`。
-- 宿主对返回 HTML 使用白名单净化，至少移除：`script`、`style`、`iframe`、`object`、`embed`、`form`、`input`、`link`、`meta`，以及全部 `on*` 属性与 `javascript:` URL。
-- 插件返回的 CSS 由宿主校验并加作用域；不得影响底座与其他插件。
-- 插件日志自动脱敏：密钥、令牌、绝对路径、邮箱不进入日志。
-- 插件不得读取宿主的 LocalStorage、Cookie、IndexedDB 或剪贴板。
-
-## 10. 版本与兼容
-
-- `api_version` 采用 `主.次`。宿主只保证同主版本内的向后兼容。
-- 主版本升级时，旧插件进入“兼容模式”并明确提示；跨主版本不保证可加载。
-- 插件自身 `version` 使用语义化版本；破坏性变更升主版本。
-- 题目结构由 `schemas/question.json` 单独版本化，`schema_version` 与 `api_version` 互不替代。
-- 弃用：至少提前一个次版本在宿主日志与插件开发文档中标注。
-
-## 11. 后端插件（保留，尚未实现）
-
-需要服务端能力的插件（导入器、导出器、AI 工具）可以在清单中声明：
-
-```json
-"backend": {
-  "entry": "backend/plugin.py",
-  "runtime": "python",
-  "protocol": "jzo-backend/1"
-}
-```
-
-- 后端插件由宿主以子进程方式启动，使用 stdin/stdout 上的 JSON-RPC 通信，不继承宿主环境变量。
-- 宿主只暴露声明过的能力：`questions.read`、`questions.propose`、`assets.read`、`assets.write`、`ai.invoke`、`export.render`。
-- 后端插件不得直接打开数据库、读取项目目录或访问网络；需要联网时走宿主代理。
-- 后端插件与前端插件使用相同的插件 `id` 与权限声明。
-
-当前底座版本（`v0.2.0`）仍拒绝加载声明了 `backend` 字段的插件，并提示“当前底座不支持后端插件”；本节为后续版本的预留契约。
-
-## 12. 最小示例
-
-`plugin.json`：
-
-```json
-{
-  "schema_version": "1.0",
-  "id": "com.example.classic-card",
-  "name": "经典题卡",
-  "version": "0.1.0",
-  "api_version": "1.0",
-  "kind": "renderer",
-  "description": "以传统试卷风格渲染题目卡片。",
-  "license": "Apache-2.0",
-  "entry": { "frontend": "dist/index.html" },
-  "slots": ["question.card"],
-  "capabilities": ["question.render"],
-  "permissions": ["questions:read", "assets:read"]
-}
-```
-
-`dist/index.html`：
-
-```html
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <link rel="stylesheet" href="./plugin.css">
-</head>
-<body>
-  <div id="root"></div>
-  <script src="./plugin.js"></script>
-</body>
-</html>
-```
-
-`dist/plugin.js`：
-
-```js
-const PROTOCOL = "jzo-plugin/1";
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function render(question) {
-  const options = (question.options || [])
-    .map((option) => `<li class="jzp-option">${escapeHtml(option.key)}. ${escapeHtml(option.content)}</li>`)
-    .join("");
-
-  return [
-    '<article class="jzp-card" data-jzo-plugin="com.example.classic-card">',
-    `<p class="jzp-stem">${escapeHtml(question.stem)}</p>`,
-    options ? `<ol class="jzp-options">${options}</ol>` : "",
-    "</article>"
-  ].join("");
-}
-
-window.addEventListener("message", (event) => {
-  const message = event.data;
-  if (!message || message.protocol !== PROTOCOL || message.kind !== "request") return;
-
-  if (message.method === "question.render") {
-    event.source.postMessage({
-      protocol: PROTOCOL,
-      id: message.id,
-      kind: "response",
-      ok: true,
-      result: { html: render(message.payload.question), height: 200 }
-    }, "*");
-    return;
-  }
-
-  if (message.method === "plugin.activate") {
-    event.source.postMessage({
-      protocol: PROTOCOL,
-      id: message.id,
-      kind: "response",
-      ok: true,
-      result: { ready: true }
-    }, "*");
-  }
-});
-```
-
-`dist/plugin.css`：
-
-```css
-.jzp-card { padding: 16px; border: 1px solid rgba(31, 28, 24, 0.14); border-radius: 12px; }
-.jzp-stem { margin: 0 0 12px; line-height: 1.8; }
-.jzp-options { margin: 0; padding-left: 1.2em; }
-.jzp-option { margin: 4px 0; }
-```
-
-示例仅用于说明协议，不包含公式渲染、图片布局或错误处理；生产插件必须补齐。
-
-## 13. 验收清单
-
-插件提交评审前逐项确认：
-
-- [ ] `plugin.json` 通过宿主校验，`id` 与目录名一致；
-- [ ] 仅申请实际需要的权限；
-- [ ] 所有题目文本均经过 HTML 转义；
-- [ ] 返回的 HTML 不含脚本、内联事件、表单与外部资源；
-- [ ] CSS 全部限定在 `[data-jzo-plugin="<id>"]` 作用域内；
-- [ ] 无网络请求，或已在配置中声明域名并由宿主代理；
-- [ ] 渲染结果与 `schemas/question.json` 的字段语义一致，不猜测缺失字段；
-- [ ] 超时、缺图、字段缺失时有明确降级；
-- [ ] 激活、停用、卸载不残留定时器、监听器与临时数据；
-- [ ] 许可为 Apache-2.0 兼容，并随包提供 `LICENSE`。
+### 核心原则
+- **沙箱隔离**：插件运行在 iframe 或独立进程中，不得直接访问宿主内存。
+- **统一协议**：所有插件通过 `postMessage` 或标准化接口通信。
+- **可插拔**：插件替换无需重启服务，支持热加载。
+- **最小权限**：插件仅能访问显式授权的 API 与资源。
 
 ---
 
-九章算术，算子至简。
+## 2. 插件分类
+
+### 2.1 AI 模型插件（Provider）
+实现 `app.core.provider.AIProvider` 抽象基类，提供大模型对话能力。
+
+**接口契约**：
+```python
+class AIProvider(ABC):
+    async def chat_completion(...) -> dict[str, Any]
+    @property
+    def provider_name(self) -> str
+    @property
+    def is_mock(self) -> bool
+```
+
+**注册方式**：在 `app/core/providers/` 目录下放置实现模块，系统启动时自动扫描。
+
+**示例**：
+- `OpenAICompatibleProvider`（默认）
+- `BailianProvider`（阿里百炼）
+- `SiliconFlowProvider`（硅基流动）
+
+### 2.2 数据源插件（DataSource）
+提供外部数据接入能力（题库同步、OCR 服务、云存储等）。
+
+**接口契约**：
+```typescript
+interface DataSource {
+  id: string;           // 唯一标识，如 "org.jiuzhang.mineru"
+  name: string;         // 显示名称
+  version: string;      // 语义化版本
+  capabilities: string[]; // ["ocr", "sync", "storage"]
+  
+  init(config: Record<string, string>): Promise<void>;
+  query(action: string, params: any): Promise<any>;
+  destroy(): Promise<void>;
+}
+```
+
+**通信协议**：通过 `postMessage` 与宿主交换数据，消息格式：
+```json
+{
+  "type": "jzo-plugin/query",
+  "payload": {
+    "action": "ocr_page",
+    "params": { "image_url": "...", "language": "zh" }
+  },
+  "requestId": "uuid-v4"
+}
+```
+
+### 2.3 UI 渲染插件（Renderer）
+自定义题目卡片、编辑器组件、预览模板等前端渲染逻辑。
+
+**目录结构**：
+```
+plugins/org.example.card/
+├── plugin.json        # 元数据
+├── dist/
+│   ├── plugin.js      # 入口脚本
+│   └── styles.css     # 样式
+└── templates/
+    └── card.html      # 卡片模板
+```
+
+**plugin.json 规范**：
+```json
+{
+  "id": "org.example.card",
+  "name": "经典卡片渲染器",
+  "version": "1.0.0",
+  "protocol": "jzo-plugin/1",
+  "entry_url": "/plugin-assets/org.example.card/dist/plugin.js",
+  "assets": [
+    "/plugin-assets/org.example.card/dist/styles.css"
+  ],
+  "permissions": ["read:questions", "render:katex"]
+}
+```
+
+**安全限制**：
+- CSP 策略：`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`
+- 禁止访问 `window.parent` 以外的全局对象
+- 网络请求仅限同源 `/api/` 路径
+
+---
+
+## 3. 多工作区（Workspace）隔离
+
+### 3.1 架构设计
+一套前端挂载多个 SQLite 库，每个工作区拥有独立的：
+- 数据库文件（`data/workspaces/<id>/questions.db`）
+- 上传资源目录（`data/workspaces/<id>/uploads/`）
+- 配置快照（`data/workspaces/<id>/config.json`）
+
+### 3.2 切换机制
+左栏提供工作区切换下拉框，选择后：
+1. 后端重载对应数据库连接
+2. 前端清空本地缓存（LocalStorage 键加 workspace 前缀）
+3. 刷新令牌（防止跨库写操作）
+
+### 3.3 数据隔离验证
+测试用例必须验证：
+- 工作区 A 的题目不出现在工作区 B 的列表中
+- 删除工作区 A 不影响工作区 B 的数据
+- 上传文件路径不跨工作区泄漏
+
+---
+
+## 4. 插件生命周期
+
+| 阶段 | 宿主行为 | 插件义务 |
+|------|---------|---------|
+| 发现 | 扫描 `plugins/` 目录读取 `plugin.json` | 提供合法元数据 |
+| 加载 | 注入 iframe 并加载 `entry_url` | 监听 `DOMContentLoaded` 后发送 `ready` 消息 |
+| 激活 | 调用 `init()` 传入配置 | 初始化内部状态 |
+| 运行 | 转发用户操作为 `postMessage` | 处理消息并返回结果 |
+| 停用 | 调用 `destroy()` | 清理定时器、事件监听 |
+| 卸载 | 移除 iframe DOM 节点 | 无（浏览器自动回收） |
+
+---
+
+## 5. 错误处理
+
+### 5.1 超时控制
+宿主对插件请求设置 30 秒超时，超时后：
+- 记录错误日志
+- 向用户显示「插件响应超时」
+- 不阻断主流程（降级为默认行为）
+
+### 5.2 异常隔离
+插件抛出的未捕获异常不得导致宿主崩溃：
+```javascript
+try {
+  await plugin.handleAction(action);
+} catch (err) {
+  console.error(`[Plugin ${plugin.id}] Error:`, err);
+  showFallbackUI();
+}
+```
+
+---
+
+## 6. 版本兼容
+
+- **主版本号变更**：不兼容旧版插件，需用户手动迁移
+- **次版本号变更**：向后兼容，新增功能
+- **修订号变更**：仅修复 bug
+
+宿主声明最低支持的 `protocol` 版本，插件元数据中的版本低于该值时拒绝加载。
+
+---
+
+## 7. 附录：测试要求
+
+每个插件类型必须提供：
+1. **契约测试**：验证接口签名符合规范
+2. **隔离测试**：验证沙箱无法逃逸
+3. **性能测试**：单次操作耗时 < 500ms（P95）
+4. **回归测试**：宿主更新后插件仍能正常工作
