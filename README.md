@@ -14,6 +14,33 @@
 - **数据**：题目以 [JSON Schema](schemas/question.json) 为唯一交换格式，Markdown + LaTeX 表达数学内容。
 - **运行**：Python 3.10+ / FastAPI；前端为原生 HTML、CSS、JavaScript，无构建链、可完全离线。
 
+## 白嫖宣言（个人版永久开源免费）
+
+九章算子个人版**永久免费、永久开源**，并且把这份免费写成不可撤销的承诺：
+
+- **免注册**：不要邮箱、不要手机号、不要账号。下载、启动即可用全部功能。
+- **免破解**：不存在需要破解的东西——源码全公开（Apache License 2.0），不分发加密二进制，不埋功能开关。
+- **免卡密**：没有激活码、序列号、许可证文件、试用天数、到期时间，也没有机器指纹绑定。代码里**根本没有这一类校验分支**，底座也不给插件提供「授权校验」接口。
+- **绝无云端锁喉**：题库、组卷、渲染、导入导出 100% 在本机跑，断网可用。AI 能力只连你自己在 `.env` 里填写的模型网关；不填密钥或关掉网络，AI 那一步显式降级为不可用，底座与全部插件照常工作——**绝不弹窗催费、绝不偷偷上传题目数据、绝不让云端一句话就把功能关掉**。
+- **不锁数据**：题目是本机 `data/` 目录里的明文 SQLite + [JSON Schema](schemas/question.json)，随时整目录拷走、任何工具都能读；卸载不销毁、不加密、不留水印。
+- **插件同样白嫖**：插件是**纯本地 zip 包，解压即用**，规范禁止任何注册、卡密与联网回连激活，详见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1、§1.2。
+
+## 开箱即用：配一次密钥就能用 AI
+
+底座自带 OpenAI 兼容通道，配好密钥即出真实模型结果；不配则自动降级为 Mock，界面照样能跑。
+
+```bash
+# 仓库根目录建 .env（已被 .gitignore 拦住，绝不会进版本库）
+JZO_AI_BASE_URL=https://你的网关地址/compatible-mode/v1
+JZO_AI_API_KEY=你的密钥
+JZO_AI_MODEL=模型名
+JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启生成 data/.local_token
+```
+
+重启服务后，工作台 `/workspace` 左栏的「模型 Provider」状态行会写明当前用的是谁：
+绿色「真实模型 · <模型名> · <接口主机>」即已接通；红色「Mock 降级」表示没有密钥。
+多厂商切换、注册表扫描与密钥边界见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §2.1 与 [STACK.md](STACK.md) §1.6。
+
 ## 当前状态
 
 `v0.2.0` 在骨架上落地了题库主干：
@@ -22,9 +49,10 @@
 - 题目 CRUD：`GET/POST /api/questions`、`GET/PUT/DELETE /api/questions/{id}`，写入按 `schemas/question.json` 校验，`meta.revision` 提供乐观并发；
 - 写入鉴权：POST/PUT/DELETE 必须携带 `X-JZO-Token`，令牌由 `JZO_LOCAL_TOKEN` 或 `data/.local_token`（首次启动生成，权限 0600）提供；
 - 插件宿主最小实现：清单发现与校验、沙箱 iframe、消息封包、HTML 净化、作用域 CSS 校验、连续失败兜底；
-- 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页。
+- 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页；
+- AI 能力：`app/core/providers/` 扫描式 Provider 注册表（密钥只走环境变量）、`/api/agent/chat|split|review` 三个智能体、工作台 `/workspace` 「导入原卷 → 发指令 → 出真卡片 → 确认入库」闭环，以及 `/api/providers` 多厂商切换。
 
-尚未实现：题目编辑表单、导入/组卷/导出、后端插件与 AI 能力。
+尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
 
@@ -65,31 +93,41 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 ```text
 jiuzhang-operator/
 ├── app/
+│   ├── __init__.py          # 版本号 + 仓库根 .env 装载器（STACK §1.6）
 │   ├── main.py              # FastAPI 应用装配：路由、静态资源、只读规范入口
 │   ├── api/
 │   │   ├── health.py        # GET /healthz
 │   │   ├── questions.py     # /api/questions CRUD
-│   │   └── plugins.py       # /api/plugins 与插件资源分发
+│   │   ├── plugins.py       # /api/plugins 与插件资源分发
+│   │   ├── providers.py     # /api/providers 注册表与活跃档切换
+│   │   ├── agents.py        # /api/agent/chat|split|review
+│   │   └── workspaces.py    # 多工作区列表/新建/切换
 │   └── core/
 │       ├── config.py        # 路径与环境变量（唯一配置入口）
 │       ├── db.py            # SQLite 连接、版本化表结构、事务
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
+│       ├── provider.py      # AIProvider 抽象基类
+│       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
+│       ├── ai_client.py     # OpenAI 兼容客户端（标准库 urllib，无额外依赖）
 │       └── security.py      # 本地写入令牌
 ├── static/
 │   ├── index.html           # 底座首页（无框架、无 CDN）
 │   ├── questions.html       # 题库列表页
-│   ├── css/{app,questions}.css
-│   └── js/{app,questions}.js
+│   ├── workspace.html       # 拆题工作台（三栏：任务 / 指令+清单 / 上下文）
+│   ├── css/{app,questions,workspace}.css
+│   └── js/{app,questions,workspace}.js
 ├── schemas/
 │   └── question.json        # 题目交换格式（唯一事实来源）
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
 ├── tests/
-│   └── test_questions_api.py # 接口契约与安全边界回归
+│   ├── test_questions_api.py       # 接口契约与安全边界回归
+│   └── test_providers_api.py       # Provider 注册表与切换契约
 ├── AGENTS.md                # 开发与 AI 代理铁律
-├── PLUGIN_SPEC.md           # 插件接入规范
+├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
+├── STACK.md                 # 技术语法规约（含 §1.6 密钥与环境变量装载）
 ├── LICENSE                  # Apache License 2.0 全文
 ├── README.md
 └── requirements.txt
@@ -101,8 +139,10 @@ jiuzhang-operator/
 | --- | --- |
 | `/healthz` | 健康检查 JSON |
 | `/questions` | 题库列表页（插件渲染 + 分页） |
+| `/workspace` | 拆题工作台（导入原卷 → 发指令 → 出真卡片） |
 | `/api/questions` | 题目列表（分页、搜索、筛选） |
 | `/api/plugins` | 已加载插件清单 |
+| `/api/providers` | Provider 注册表（只暴露是否已配置与接口主机名） |
 | `/schemas/question.json` | 题目 JSON Schema |
 | `/spec/plugin` | 插件接入规范（Markdown） |
 | `/api/openapi.json` | 机器可读的 OpenAPI 接口描述 |
@@ -115,10 +155,13 @@ jiuzhang-operator/
 4. **本地优先**：数据留在本机，默认不出网；需要联网的能力必须显式配置。
 5. **安全默认**：不可信内容一律净化，插件渲染一律在沙箱中完成。
 6. **数学优先**：所有文本字段原生支持 Markdown + LaTeX，公式与中文混排是常态而非补丁。
+7. **白嫖不可撤销**：免费、免注册、免卡密、无云端锁喉是产品底线，已写进 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1 成为对插件作者的硬约束，而不是 README 上的一句口号。
 
 ## 许可
 
 本项目以 [Apache License 2.0](LICENSE) 发布。你可以自由使用、修改、分发，包括商业用途；请保留许可证与版权声明。
+
+个人版的免费与开源承诺见上文「白嫖宣言」：本仓库的代码与全部内置插件不含任何授权校验、激活回连或功能开关。
 
 ---
 
