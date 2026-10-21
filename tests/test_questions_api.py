@@ -341,11 +341,162 @@ class OneTimeTokenTest(unittest.TestCase):
 
 class MultiWorkspaceIsolationTest(unittest.TestCase):
     """多工作区隔离测试：不同工作区的数据完全独立，互不干扰。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp_base = tempfile.TemporaryDirectory()
+        cls.port = _free_port()
+        
+        # Use single server with workspace switching capability
+        env = os.environ.copy()
+        env["JZO_DATA_DIR"] = cls.tmp_base.name
+        # Do NOT set JZO_LOCAL_TOKEN - use file-based tokens for workspace tests
+        if "JZO_LOCAL_TOKEN" in env:
+            del env["JZO_LOCAL_TOKEN"]
+        
+        cls.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(cls.port),
+            ],
+            env=env,
+            cwd=str(ROOT),
+        )
+        
+        # Wait longer for server startup (60 attempts * 0.5s = 30s max)
+        for _ in range(60):
+            try:
+                with socket.create_connection(("127.0.0.1", cls.port), timeout=1):
+                    # Additional wait to ensure app is fully initialized
+                    time.sleep(1)
+                    break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            raise RuntimeError(f"Server did not start on port {cls.port}")
+        
+        # Get initial token from settings endpoint
+        cls.token = cls._get_initial_token(cls.port)
     
-    @unittest.skip("工作区切换端点路由匹配问题待修复，先跳过以免阻塞主线")
+    @classmethod
+    def _get_initial_token(cls, port: int) -> str:
+        """Get initial token from settings endpoint."""
+        url = f"http://127.0.0.1:{port}/api/settings"
+        req = urllib.request.Request(url)
+        try:
+            resp = urllib.request.urlopen(req)
+            data = json.loads(resp.read())
+            return data.get("local_token", "")
+        except Exception:
+            return ""
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.process.terminate()
+        cls.process.wait(timeout=5)
+        cls.tmp_base.cleanup()
+
+    def call(self, method: str, path: str, body: dict | None = None, token: str | None = None) -> tuple[int, bytes, dict]:
+        url = f"http://127.0.0.1:{self.port}{path}"
+        data = json.dumps(body).encode() if body else None
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["X-JZO-Token"] = token
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            resp = urllib.request.urlopen(req)
+            return resp.status, resp.read(), dict(resp.headers)
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read(), dict(exc.headers)
+
     def test_01_workspace_isolation_via_switching(self) -> None:
         """通过切换工作区验证数据隔离。"""
-        pass
+        # Create workspace A
+        status, body, _ = self.call("POST", "/api/workspaces", {"name": "测试工作区A"}, token=self.token)
+        self.assertIn(status, [200, 201], f"Should create workspace A, got {status}: {body}")
+        ws_a = json.loads(body)
+        
+        # Create workspace B
+        status, body, _ = self.call("POST", "/api/workspaces", {"name": "测试工作区B"}, token=self.token)
+        self.assertIn(status, [200, 201], f"Should create workspace B, got {status}: {body}")
+        ws_b = json.loads(body)
+        
+        # Switch to workspace A and get new token
+        status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws_a["id"]}, token=self.token)
+        self.assertEqual(status, 200, f"Should switch to workspace A")
+        self.token = self._get_current_token()
+        
+        payload_a = {"type": "fill_blank", "stem": "工作区A专属题目", "difficulty": "basic"}
+        status, _, _ = self.call("POST", "/api/questions", payload_a, token=self.token)
+        self.assertEqual(status, 201, f"Should create question in workspace A, got {status}")
+        
+        # Switch to workspace B and get new token
+        status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws_b["id"]}, token=self.token)
+        self.assertEqual(status, 200, f"Should switch to workspace B")
+        self.token = self._get_current_token()
+        
+        # List questions in workspace B - should be empty
+        status, body_b, _ = self.call("GET", "/api/questions")
+        self.assertEqual(status, 200)
+        data_b = json.loads(body_b)
+        questions_b = data_b.get("items", []) if isinstance(data_b, dict) else data_b
+        self.assertEqual(len(questions_b), 0, "Workspace B should have no questions from A")
+        
+        # Switch back to workspace A and verify question exists
+        status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws_a["id"]}, token=self.token)
+        self.assertEqual(status, 200, f"Should switch back to workspace A")
+        self.token = self._get_current_token()
+        
+        status, body_a, _ = self.call("GET", "/api/questions")
+        self.assertEqual(status, 200)
+        data_a = json.loads(body_a)
+        questions_a = data_a.get("items", []) if isinstance(data_a, dict) else data_a
+        self.assertTrue(len(questions_a) >= 1, "Workspace A should have at least one question")
+        self.assertEqual(questions_a[0]["stem"], "工作区A专属题目")
+    
+    def _get_current_token(self) -> str:
+        """Get current token from settings endpoint."""
+        status, body, _ = self.call("GET", "/api/settings")
+        if status == 200:
+            data = json.loads(body)
+            return data.get("local_token", "")
+        return ""
+    
+    def test_02_token_refresh_on_workspace_switch(self) -> None:
+        """切换工作区后令牌应刷新。"""
+        # Get initial token
+        status, body, _ = self.call("GET", "/api/settings")
+        self.assertEqual(status, 200)
+        initial_settings = json.loads(body)
+        token_before = initial_settings["local_token"]
+        
+        # Create and switch to new workspace
+        status, ws_body, _ = self.call("POST", "/api/workspaces", {"name": "令牌测试工作区"}, token=self.token)
+        self.assertIn(status, [200, 201])
+        ws = json.loads(ws_body)
+        
+        status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws["id"]}, token=self.token)
+        self.assertEqual(status, 200)
+        
+        # Get new token
+        status, body, _ = self.call("GET", "/api/settings")
+        self.assertEqual(status, 200)
+        new_settings = json.loads(body)
+        token_after = new_settings["local_token"]
+        
+        # Token should be different after workspace switch
+        self.assertNotEqual(token_before, token_after, "Token should change after workspace switch")
+        
+        # Old token should be invalid
+        payload = {"type": "fill_blank", "stem": "旧令牌测试", "difficulty": "basic"}
+        status, _, _ = self.call("POST", "/api/questions", payload, token=token_before)
+        self.assertEqual(status, 401, "Old token should be rejected after workspace switch")
 
 
 if __name__ == "__main__":

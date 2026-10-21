@@ -20,8 +20,11 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
 def _workspace_config_path() -> Path:
-    """Return path to workspace registry file."""
-    return Path(settings.data_dir) / "workspaces.json"
+    """Return path to workspace registry file (always in root data dir)."""
+    # Use PROJECT_ROOT/data as the base, not affected by workspace switching
+    from app.core.config import PROJECT_ROOT
+    base = Path(os.environ.get("JZO_DATA_DIR", str(PROJECT_ROOT / "data")))
+    return base / "workspaces.json"
 
 
 def _load_workspaces() -> list[dict[str, Any]]:
