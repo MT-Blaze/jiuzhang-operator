@@ -51,6 +51,10 @@ def create_app() -> FastAPI:
     async def read_questions_page() -> FileResponse:
         return FileResponse(settings.static_dir / "questions.html")
 
+    @app.get("/workspace", include_in_schema=False)
+    async def read_workspace_page() -> FileResponse:
+        return FileResponse(settings.static_dir / "workspace.html")
+
     @app.get("/schemas/question.json", include_in_schema=False)
     async def read_question_schema() -> FileResponse:
         return FileResponse(

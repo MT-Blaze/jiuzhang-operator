@@ -1,0 +1,443 @@
+/* 工作台三栏布局 */
+
+.ws-page {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  gap: 0;
+  min-height: 100vh;
+  background: var(--paper);
+}
+
+/* Sidebar (left) */
+.ws-sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--card);
+  overflow-y: auto;
+  transition: width 200ms ease, transform 200ms ease;
+}
+
+.ws-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-sidebar-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ws-sidebar-body {
+  padding: 12px 0;
+}
+
+.ws-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px;
+}
+
+.ws-task-item {
+  display: block;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.88rem;
+  transition: background 150ms ease;
+}
+
+.ws-task-item:hover,
+.ws-task-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.ws-plugin-entry {
+  margin-top: 20px;
+  padding: 0 12px;
+}
+
+.ws-plugin-entry h3 {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ws-plugin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-plugin-list li a {
+  display: block;
+  padding: 8px 12px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.84rem;
+  border-radius: 4px;
+}
+
+.ws-plugin-list li a:hover {
+  background: var(--accent-soft);
+}
+
+/* Center */
+.ws-center {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ws-chat {
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-chat-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.92rem;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.ws-chat-form textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.ws-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ws-review {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ws-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-review-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ws-toggle-group {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ws-toggle-btn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.ws-toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ws-toggle-btn:hover:not(.active) {
+  background: var(--accent-soft);
+}
+
+.ws-review-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.ws-empty-hint {
+  color: var(--faint);
+  font-size: 0.84rem;
+  text-align: center;
+  margin-top: 40px;
+}
+
+/* Review items (original / split dual view) */
+.ws-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-review-item {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.ws-review-item:hover,
+.ws-review-item:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  outline: none;
+}
+
+.ws-review-item-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ws-review-item-meta {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.ws-review-item-detail {
+  display: none;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.ws-review-item.expanded .ws-review-item-detail {
+  display: block;
+}
+
+/* Split view: two columns */
+.ws-split-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ws-split-col h4 {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+  color: var(--faint);
+}
+
+/* Context (right) */
+.ws-context {
+  border-left: 1px solid var(--line);
+  background: var(--card);
+  overflow-y: auto;
+  transition: width 200ms ease, transform 200ms ease;
+}
+
+.ws-context-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-context-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.ws-context-body {
+  padding: 12px 16px;
+}
+
+.ws-section {
+  margin-bottom: 16px;
+}
+
+.ws-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.ws-placeholder {
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+
+.ws-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-history li {
+  padding: 6px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-history li:last-child {
+  border-bottom: none;
+}
+
+/* Buttons */
+.ws-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.ws-btn:hover {
+  background: var(--card-hover);
+  border-color: var(--accent);
+}
+
+.ws-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.ws-btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+
+.ws-btn-sm {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+/* Collapsed states */
+.ws-sidebar.collapsed {
+  width: 0;
+  overflow: hidden;
+  border-right: none;
+}
+
+.ws-context.collapsed {
+  width: 0;
+  overflow: hidden;
+  border-left: none;
+}
+
+/* Screen-reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Responsive: 375px safe */
+@media (max-width: 768px) {
+  .ws-page {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-sidebar,
+  .ws-context {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 100;
+    width: 260px;
+    box-shadow: var(--shadow);
+  }
+
+  .ws-sidebar {
+    left: 0;
+    transform: translateX(-100%);
+  }
+
+  .ws-sidebar:not(.collapsed) {
+    transform: translateX(0);
+  }
+
+  .ws-context {
+    right: 0;
+    transform: translateX(100%);
+  }
+
+  .ws-context:not(.collapsed) {
+    transform: translateX(0);
+  }
+
+  .ws-sidebar.collapsed,
+  .ws-context.collapsed {
+    width: 260px;
+    transform: translateX(0);
+  }
+
+  .ws-split-view {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 375px) {
+  .ws-chat-form textarea {
+    font-size: 0.88rem;
+  }
+
+  .ws-review-item {
+    padding: 8px 10px;
+  }
+
+  .ws-toggle-btn {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .ws-toggle-btn.active {
+    color: #fff;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .ws-sidebar,
+  .ws-context {
+    transition-duration: 0.001ms !important;
+  }
+}
