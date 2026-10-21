@@ -45,16 +45,29 @@ if not exist "%VENV_PY%" (
 rem ---------- Step 2: install dependencies ----------
 echo [2/4] Installing dependencies ^(needs internet on first run^)...
 "%VENV_PY%" -m pip install --disable-pip-version-check -r requirements.txt
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Dependency installation failed.
-    echo         Check your internet connection, then double-click
-    echo         start.bat again.
-    echo.
-    pause
-    exit /b 1
-)
+if not errorlevel 1 goto deps_ok
 
+rem  Default source failed. On many machines pip is pointed at a domestic
+rem  mirror that may not have synced a pinned version yet, so retry once
+rem  from the official PyPI. This keeps a double-click working for novices
+rem  without loosening the version pins in requirements.txt.
+echo.
+echo         First attempt failed. This is usually a stale or partial
+echo         mirror ^(e.g. a domestic PyPI mirror missing a pinned version^).
+echo         Retrying from the official source: https://pypi.org/simple
+echo.
+"%VENV_PY%" -m pip install --disable-pip-version-check --index-url https://pypi.org/simple -r requirements.txt
+if not errorlevel 1 goto deps_ok
+
+echo.
+echo [ERROR] Dependency installation failed on both the default source
+echo         and the official source. Check your internet connection,
+echo         then double-click start.bat again.
+echo.
+pause
+exit /b 1
+
+:deps_ok
 rem ---------- Step 3: open the browser once the server is up ----------
 echo [3/4] Opening your browser at %URL% ...
 start "" /min cmd /c "timeout /t 4 /nobreak >nul && start %URL%"
