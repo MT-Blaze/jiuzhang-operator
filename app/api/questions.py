@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from app.core import questions as store
+from app.core.models import Question, QuestionPage
 from app.core.security import require_write_token
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/questions", tags=["questions"])
 ListBody = dict[str, Any]
 
 
-@router.get("", summary="分页浏览题目")
+@router.get("", summary="分页浏览题目", response_model=QuestionPage)
 async def list_questions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=store.MAX_PAGE_SIZE),
@@ -48,7 +49,7 @@ async def list_questions(
     }
 
 
-@router.get("/{question_id}", summary="读取单题")
+@router.get("/{question_id}", summary="读取单题", response_model=Question)
 async def read_question(question_id: str) -> dict[str, Any]:
     try:
         return store.get_question(question_id)
