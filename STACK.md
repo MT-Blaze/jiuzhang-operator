@@ -25,7 +25,13 @@
 - 枚举字段必须用 `Literal` 或 `Enum`，禁止裸 `str` 放任。
 - `question.json` 校验必须严格，禁止 `extra="allow"` 放行未知字段。
 
-### 1.4 sqlite3
+### 1.4 AI 请求与缓存友好原则
+- 大模型请求的系统提示词（system prompt）与工具定义（tools/function calling schema）必须固定前置，不得随用户输入动态拼接。
+- 不绑定具体模型版本（如不硬编码 `qwen-4.1-flash-1017`），模型选择通过配置项或环境变量注入，保持可插拔。
+- 相同任务的提示词前缀必须字节级一致，确保云端缓存命中；可变部分（题干、上下文）仅追加在尾部。
+- 流式响应必须支持中断与重试，超时阈值可配置，失败时返回结构化错误而非静默吞掉。
+
+### 1.5 sqlite3
 - 必须开 `PRAGMA journal_mode=WAL` 与 `PRAGMA user_version`。
 - 事务应当用 `with conn:` 上下文管理；若需 IMMEDIATE/WAL 等特殊隔离级别，可手动 BEGIN 但必须在 finally 中保证 rollback。
 - 删除必须墓碑软删，禁止物理 `DELETE` 导致 ID 复用。
