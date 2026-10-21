@@ -506,4 +506,127 @@
         });
       });
   }
+
+  // --- Workspace Management ---
+  var workspaceSelect = document.getElementById("wsWorkspaceSelect");
+  var newWorkspaceBtn = document.getElementById("wsNewWorkspaceBtn");
+
+  function loadWorkspaces() {
+    return fetch("/api/workspaces")
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        populateWorkspaceSelector(data.workspaces || []);
+        return data;
+      });
+  }
+
+  function populateWorkspaceSelector(workspaces) {
+    if (!workspaceSelect) return;
+
+    workspaceSelect.innerHTML = "";
+
+    workspaces.forEach(function (ws) {
+      var option = document.createElement("option");
+      option.value = ws.id;
+      option.textContent = ws.name || ws.id;
+      if (ws.is_active) {
+        option.selected = true;
+      }
+      workspaceSelect.appendChild(option);
+    });
+  }
+
+  function switchWorkspace(workspaceId) {
+    return fetch("/api/workspaces/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace_id: workspaceId }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        // Clear local state on workspace switch
+        reviewItems = [];
+        renderReviewList();
+
+        // Refresh token for new workspace
+        mockToken = null;
+        loadSettings();
+
+        showToast("已切换到工作区: " + (data.name || workspaceId));
+        return data;
+      });
+  }
+
+  function createWorkspace(name) {
+    return fetch("/api/workspaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name }),
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        showToast("工作区创建成功: " + data.name);
+        return loadWorkspaces().then(function () {
+          // Auto-switch to new workspace
+          if (workspaceSelect) {
+            workspaceSelect.value = data.id;
+          }
+          return switchWorkspace(data.id);
+        });
+      });
+  }
+
+  function loadSettings() {
+    return fetch("/api/settings")
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (data.local_token) {
+          mockToken = data.local_token;
+        }
+      });
+  }
+
+  // Event listeners for workspace controls
+  if (workspaceSelect) {
+    workspaceSelect.addEventListener("change", function () {
+      var workspaceId = workspaceSelect.value;
+      if (workspaceId) {
+        switchWorkspace(workspaceId).catch(function (err) {
+          showToast("切换工作区失败: " + err.message, true);
+          // Revert selector to previous value
+          loadWorkspaces();
+        });
+      }
+    });
+  }
+
+  if (newWorkspaceBtn) {
+    newWorkspaceBtn.addEventListener("click", function () {
+      var name = prompt("请输入新工作区名称：");
+      if (name && name.trim()) {
+        createWorkspace(name.trim()).catch(function (err) {
+          showToast("创建工作区失败: " + err.message, true);
+        });
+      }
+    });
+  }
+
+  // Load initial workspace list
+  loadWorkspaces().then(function () {
+    loadSettings();
+  }).catch(function (err) {
+    console.error("Failed to load workspaces:", err);
+  });
 })();

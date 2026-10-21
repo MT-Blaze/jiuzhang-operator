@@ -16,6 +16,13 @@
         <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarContent">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarContent">
+        <!-- Workspace selector -->
+        <section class="ws-workspace-selector" aria-label="工作区切换">
+          <label for="wsWorkspaceSelect" class="ws-workspace-label">当前工作区</label>
+          <select id="wsWorkspaceSelect" class="ws-workspace-select"></select>
+          <button class="ws-btn ws-btn-sm ws-btn-block" id="wsNewWorkspaceBtn">+ 新建工作区</button>
+        </section>
+        
         <nav class="ws-task-list" aria-label="任务列表">
           <a class="ws-task-item" href="#">今日拆题</a>
           <a class="ws-task-item" href="#">校对解析</a>
