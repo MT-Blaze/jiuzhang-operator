@@ -622,12 +622,12 @@
         return r.json();
       })
       .then(function (data) {
-        populateWorkspaceSelector(data.workspaces || []);
+        populateWorkspaceSelector(data.workspaces || [], data.current);
         return data;
       });
   }
 
-  function populateWorkspaceSelector(workspaces) {
+  function populateWorkspaceSelector(workspaces, currentId) {
     if (!workspaceSelect) return;
 
     workspaceSelect.innerHTML = "";
@@ -636,7 +636,9 @@
       var option = document.createElement("option");
       option.value = ws.id;
       option.textContent = ws.name || ws.id;
-      if (ws.is_active) {
+      // is_active 由后端逐项标注；currentId 是顶层当前库，二者任一命中即选中，
+      // 保证刷新页面后下拉框真实反映当前活跃工作区。
+      if (ws.is_active || (currentId && ws.id === currentId)) {
         option.selected = true;
       }
       workspaceSelect.appendChild(option);
@@ -654,15 +656,22 @@
         return r.json();
       })
       .then(function (data) {
-        // Clear local state on workspace switch
+        // Clear local state on workspace switch — 清单是上一库的数据，绝不留到新库
         reviewItems = [];
+        lastOcrText = "";
         renderReviewList();
 
-        // Refresh token for new workspace
+        // Refresh token for new workspace（每库独立 .local_token，必须重取）
         writeToken = null;
         loadSettings();
 
-        showToast("已切换到工作区: " + (data.name || workspaceId));
+        // 让下拉框与后端 is_active 保持一致（新建后自动切换、或从别处触发时）
+        if (workspaceSelect) {
+          workspaceSelect.value = data.workspace_id || workspaceId;
+        }
+        loadWorkspaces().catch(function () {});
+
+        showToast("已切换到工作区：" + (data.name || workspaceId));
         return data;
       });
   }

@@ -557,6 +557,61 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         status, _, _ = self.call("POST", "/api/questions", payload, token=token_before)
         self.assertEqual(status, 401, "Old token should be rejected after workspace switch")
 
+    def test_03_list_marks_single_active_and_honest_db_path(self) -> None:
+        """列表必须逐项标注 is_active，恰好一个命中 current；default 库名要真实。
+
+        回归：后端曾只回顶层 current，前端逐项查 ws.is_active，导致下拉框
+        永远选不中当前库；且 default 登记的是虚构的 questions.db。
+        """
+        # 回到 default，保证干净起点
+        status, _, _ = self.call(
+            "POST", "/api/workspaces/switch", {"workspace_id": "default"}, token=self.token
+        )
+        self.assertEqual(status, 200)
+        self.token = self._get_current_token()
+
+        status, body, _ = self.call("GET", "/api/workspaces")
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual(data["current"], "default")
+
+        actives = [w for w in data["workspaces"] if w.get("is_active")]
+        self.assertEqual(len(actives), 1, "恰好一个工作区被标为活跃")
+        self.assertEqual(actives[0]["id"], data["current"])
+
+        default_entry = next(w for w in data["workspaces"] if w["id"] == "default")
+        self.assertTrue(
+            default_entry["database"].endswith("jiuzhang.db"),
+            f"default 库路径应为真实的 jiuzhang.db，实为 {default_entry['database']}",
+        )
+
+    def test_04_switch_returns_workspace_name(self) -> None:
+        """切换响应要带 name，前端 toast 才不至于只显示裸 id。"""
+        status, body, _ = self.call(
+            "POST", "/api/workspaces", {"name": "名字回传工作区"}, token=self.token
+        )
+        self.assertIn(status, [200, 201])
+        ws = json.loads(body)
+        self.token = self._get_current_token()
+
+        status, body, _ = self.call(
+            "POST", "/api/workspaces/switch", {"workspace_id": ws["id"]}, token=self.token
+        )
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual(result["name"], "名字回传工作区")
+        self.assertEqual(result["workspace_id"], ws["id"])
+        self.assertTrue(result["is_active"])
+        self.token = self._get_current_token()
+
+        # 切回 default 也要回传规范名，而不是裸 id
+        status, body, _ = self.call(
+            "POST", "/api/workspaces/switch", {"workspace_id": "default"}, token=self.token
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["name"], "默认工作区")
+        self.token = self._get_current_token()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

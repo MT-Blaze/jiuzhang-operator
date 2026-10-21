@@ -14,10 +14,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.config import settings, switch_workspace
+from app.core.config import default_database_path, settings, switch_workspace
 from app.core.db import init_db
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
+
+DEFAULT_WORKSPACE_ID = "default"
+DEFAULT_WORKSPACE_NAME = "默认工作区"
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -63,18 +66,26 @@ async def list_workspaces() -> dict[str, Any]:
     workspaces = _load_workspaces()
     
     # Ensure default workspace exists
-    has_default = any(w["id"] == "default" for w in workspaces)
+    has_default = any(w["id"] == DEFAULT_WORKSPACE_ID for w in workspaces)
     if not has_default:
         workspaces.insert(0, {
-            "id": "default",
-            "name": "默认工作区",
+            "id": DEFAULT_WORKSPACE_ID,
+            "name": DEFAULT_WORKSPACE_NAME,
             "created_at": "system",
-            "database": str(settings.database_path),
+            "database": str(default_database_path()),
         })
         _save_workspaces(workspaces)
     
-    current_id = settings.workspace_id or "default"
-    
+    current_id = settings.workspace_id or DEFAULT_WORKSPACE_ID
+
+    # is_active 是前端下拉框选中当前工作区的唯一依据；此前后端只回顶层 current，
+    # 前端却逐项查 ws.is_active，导致选择器永远显示不出真正活跃的库。这里补齐。
+    for entry in workspaces:
+        if entry.get("id") == DEFAULT_WORKSPACE_ID:
+            # default 的库路径按当前 config 现算，纠正历史登记里写错的 questions.db。
+            entry["database"] = str(default_database_path())
+        entry["is_active"] = entry.get("id") == current_id
+
     return {
         "workspaces": workspaces,
         "current": current_id,
@@ -85,24 +96,32 @@ async def list_workspaces() -> dict[str, Any]:
 async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str, Any]:
     """切换到指定工作区。"""
     workspace_id = payload.workspace_id
-    
+    workspaces = _load_workspaces()
+
     if workspace_id == "default":
         switch_workspace(None)
     else:
         # Verify workspace exists
-        workspaces = _load_workspaces()
         workspace_ids = [w["id"] for w in workspaces]
         if workspace_id not in workspace_ids:
             raise HTTPException(status_code=404, detail=f"工作区 {workspace_id} 不存在")
-        
+
         switch_workspace(workspace_id)
-    
+
     # Reinitialize database for new workspace
     init_db()
-    
+
+    resolved_id = workspace_id or "default"
+    resolved_name = next(
+        (w["name"] for w in workspaces if w["id"] == resolved_id),
+        DEFAULT_WORKSPACE_NAME if resolved_id == DEFAULT_WORKSPACE_ID else resolved_id,
+    )
+
     return {
-        "workspace_id": workspace_id or "default",
+        "workspace_id": resolved_id,
+        "name": resolved_name,
         "database": str(settings.database_path),
+        "is_active": True,
     }
 
 

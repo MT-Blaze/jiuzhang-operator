@@ -11,10 +11,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from app.core.config import settings
+from app.core.config import DATABASE_FILENAME, settings
 
 SCHEMA_VERSION = 1
-DATABASE_FILENAME = "jiuzhang.db"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS questions (
