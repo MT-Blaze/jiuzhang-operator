@@ -1,6 +1,7 @@
 """OpenAI 兼容的大模型客户端（Provider 实现）。
 
-从环境变量读取 API Key 与 Base URL；缺失时自动降级为 Mock 实现，保证前端不挂。
+配置一律来自 ``app.core.providers`` 的注册表（密钥只走环境变量 / 仓库根 .env）；
+配置档缺席密钥时自动降级为 Mock 实现，保证前端不挂。
 遵循 STACK §1.4 缓存友好原则：系统提示词固定前置，可变内容仅追加尾部。
 
 使用标准库 urllib 实现 HTTP 请求，不引入额外依赖。
@@ -14,13 +15,10 @@ import urllib.request
 import urllib.error
 from typing import Any
 
+from app.core import providers
 from app.core.provider import AIProvider
 
-
-# --- Configuration ---
-AI_API_KEY = os.environ.get("JZO_AI_API_KEY", "").strip()
-AI_BASE_URL = os.environ.get("JZO_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-AI_MODEL = os.environ.get("JZO_AI_MODEL", "gpt-3.5-turbo")
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
 AI_TIMEOUT = int(os.environ.get("JZO_AI_TIMEOUT_SECONDS", "30"))
 
 
@@ -29,20 +27,22 @@ class OpenAICompatibleProvider(AIProvider):
 
     def __init__(
         self,
-        api_key: str | None = None,
-        base_url: str | None = None,
-        default_model: str | None = None,
+        api_key: str = "",
+        base_url: str = "",
+        default_model: str = "",
         timeout: int | None = None,
+        label: str = "openai-compatible",
     ):
-        self._api_key = api_key or AI_API_KEY
-        self._base_url = (base_url or AI_BASE_URL).rstrip("/")
-        self._default_model = default_model or AI_MODEL
+        self._api_key = (api_key or "").strip()
+        self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        self._default_model = default_model
+        self._label = label
         self._timeout = timeout or AI_TIMEOUT
         self._mock_mode = not bool(self._api_key)
 
     @property
     def provider_name(self) -> str:
-        return "openai-compatible" if not self._mock_mode else "mock"
+        return self._label if not self._mock_mode else "mock"
 
     @property
     def is_mock(self) -> bool:
@@ -82,6 +82,8 @@ class OpenAICompatibleProvider(AIProvider):
             return _mock_chat(system_prompt, user_message)
 
         target_model = model or self._default_model
+        if not target_model:
+            raise ValueError(f"Provider「{self._label}」未配置模型名（检查对应 *_MODEL 环境变量）。")
         url = f"{self._base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -126,8 +128,20 @@ class OpenAICompatibleProvider(AIProvider):
         }
 
 
-# --- Module-level singleton for backward compatibility ---
-_default_provider = OpenAICompatibleProvider()
+# --- Provider resolution (active profile wins at call time) ---
+def get_client(name: str | None = None) -> OpenAICompatibleProvider:
+    """按注册表配置档构造客户端；``name`` 为 None 时取当前活跃档。"""
+    if name is None:
+        profile = providers.active_profile()
+    else:
+        profile = providers.registry()[name]
+    configured = profile.is_configured
+    return OpenAICompatibleProvider(
+        api_key=profile.api_key if configured else "",
+        base_url=profile.base_url or DEFAULT_BASE_URL,
+        default_model=profile.model,
+        label=profile.name,
+    )
 
 
 async def chat_completion(
@@ -138,8 +152,8 @@ async def chat_completion(
     max_tokens: int | None = None,
     stream: bool = False,
 ) -> dict[str, Any]:
-    """向后兼容的模块级函数，委托给默认 Provider。"""
-    return await _default_provider.chat_completion(
+    """向后兼容的模块级函数，委托给当前活跃 Provider。"""
+    return await get_client().chat_completion(
         system_prompt, user_message, model, temperature, max_tokens, stream
     )
 

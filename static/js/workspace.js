@@ -1,13 +1,15 @@
 /**
- * 工作台空壳：三栏布局 + 清单舞台 + Mock 闭环
+ * 工作台：三栏布局 + 清单舞台 + 真实模型闭环
  */
 (function () {
   "use strict";
 
   // --- State ---
   var currentView = "original"; // "original" | "split"
-  var mockToken = null;
+  var writeToken = null;
   var reviewItems = [];
+  var lastOcrText = "";
+  var providerList = [];
 
   // --- DOM refs ---
   var sidebar = document.getElementById("wsSidebar");
@@ -18,6 +20,8 @@
   var promptInput = document.getElementById("wsPrompt");
   var reviewBody = document.getElementById("wsReviewBody");
   var toggleBtns = document.querySelectorAll(".ws-toggle-btn");
+  var providerSelect = document.getElementById("wsProviderSelect");
+  var providerStatus = document.getElementById("wsProviderStatus");
 
   // --- Sidebar collapse ---
   if (sidebarToggle && sidebar) {
@@ -52,25 +56,33 @@
     });
   });
 
-  // --- Mock token fetch ---
-  function fetchMockToken() {
-    if (mockToken) return Promise.resolve(mockToken);
+  // --- Write token fetch (一次性令牌，用后即焚) ---
+  function ensureWriteToken() {
+    if (writeToken) return Promise.resolve(writeToken);
     return fetch("/api/settings", { cache: "no-store" })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then(function (settings) {
-        mockToken = settings.local_token || "";
-        return mockToken;
+        writeToken = settings.local_token || "";
+        return writeToken;
       })
       .catch(function () {
-        mockToken = "";
+        writeToken = "";
         return "";
       });
   }
 
-  // --- Real API: send instruction → receive cards via /api/agent/chat ---
+  // --- Real API: send instruction → cards produced by the active provider ---
+  function describeSource(response) {
+    var data = response.data || {};
+    if (response.mock) {
+      return "Mock 降级（当前 Provider 未配置密钥）";
+    }
+    return "模型 " + (data.model || "未知") + " 产出";
+  }
+
   function sendInstruction(prompt) {
     return fetch("/api/agent/chat", {
       method: "POST",
@@ -85,6 +97,8 @@
         var content = response.data && response.data.content;
         if (!content) throw new Error("Empty response from agent");
 
+        var source = describeSource(response);
+
         var parsed;
         try {
           parsed = JSON.parse(content);
@@ -94,81 +108,118 @@
 
         // Render based on action type
         if (parsed.action === "split_paper") {
-          showToast("已解析拆题指令：第" + parsed.page_range[0] + "-" + parsed.page_range[1] + "页");
-          // In real implementation, this would trigger actual paper splitting
-          // For now, show a placeholder card list
-          return [
-            {
-              id: "split_1",
-              stem: "集合 $A=\\{x \\mid x^2 - 3x + 2 = 0\\}$ 的元素个数为（  ）",
-              type: "single_choice",
-              difficulty: "basic",
-              options: { A: "$0$", B: "$1$", C: "$2$", D: "$3$" },
-              answer: "C",
-              source: "AI 拆题 · 第" + parsed.page_range[0] + "页",
-            },
-            {
-              id: "split_2",
-              stem: "若函数 $f(x) = \\ln(x+1)$，则 $f'(0) = $ ______。",
-              type: "fill_blank",
-              difficulty: "medium",
-              source: "AI 拆题 · 第" + parsed.page_range[1] + "页",
-            },
-          ];
+          var range = Array.isArray(parsed.page_range) ? parsed.page_range : [];
+          var pageText = range.length === 2 ? "第" + range[0] + "-" + range[1] + "页" : "全卷";
+          if (!lastOcrText) {
+            return {
+              items: [],
+              message: "已识别拆题指令（" + pageText + "），但尚未导入原卷文本。" + source,
+              isError: true,
+            };
+          }
+          return callSplitApi(lastOcrText).then(function (result) {
+            return {
+              items: result.items,
+              message: "已拆分 " + result.items.length + " 道题目（" + pageText + " · " + result.source + "）",
+              isError: false,
+            };
+          });
         } else if (parsed.action === "tag_question") {
-          showToast("已标记题目：" + parsed.question_id);
-          return [];
+          return { items: [], message: "已标记题目：" + parsed.question_id + "（" + source + "）", isError: false };
         } else if (parsed.action === "export_paper") {
-          showToast("正在导出为 " + parsed.format + " 格式...");
-          return [];
+          return { items: [], message: "正在导出为 " + parsed.format + " 格式…（" + source + "）", isError: false };
         } else if (parsed.action === "clarify") {
-          showToast(parsed.question || "请明确指令", true);
-          return [];
+          return { items: [], message: parsed.question || "请明确指令", isError: true };
         } else {
-          showToast("未识别的操作：" + (parsed.action || "未知"), true);
-          return [];
+          return { items: [], message: "未识别的操作：" + (parsed.action || "未知"), isError: true };
         }
       });
   }
 
-  // --- Confirm action (with one-time token) ---
-  function mockConfirmItem(itemId) {
-    return fetchMockToken().then(function (token) {
+  // --- Confirm action (with one-time token): 入库模型产出的真实题面 ---
+  var CARD_TYPES = ["single_choice", "multiple_choice", "fill_blank", "solution", "proof"];
+  var CARD_DIFFICULTIES = ["basic", "medium", "hard", "novel"];
+
+  function buildQuestionPayload(card) {
+    var payload = {
+      type: CARD_TYPES.indexOf(card.type) >= 0 ? card.type : "unknown",
+      stem: card.stem,
+      difficulty: CARD_DIFFICULTIES.indexOf(card.difficulty) >= 0 ? card.difficulty : "basic",
+    };
+    var options = normalizeOptions(card.options);
+    if (options.length) payload.options = options;
+    if (card.answer) payload.answer = buildAnswer(card, options);
+    if (card.solution) payload.solution = card.solution;
+    return payload;
+  }
+
+  function buildAnswer(card, options) {
+    var raw = String(card.answer).trim();
+    var isChoice = card.type === "single_choice" || card.type === "multiple_choice";
+    var keys = options.map(function (item) {
+      return item.key;
+    });
+    var letters = raw
+      .toUpperCase()
+      .split("")
+      .filter(function (ch, idx, all) {
+        return ch >= "A" && ch <= "H" && all.indexOf(ch) === idx;
+      });
+    if (isChoice && letters.length && keys.length && letters.every(function (k) { return keys.indexOf(k) >= 0; })) {
+      return { kind: "choice", choice_keys: letters };
+    }
+    return { kind: "text", content: raw };
+  }
+
+  function confirmItem(card) {
+    return ensureWriteToken().then(function (token) {
       if (!token) {
         throw new Error("No write token available");
       }
 
-      // Real write operation with token
       return fetch("/api/questions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-JZO-Token": token,
         },
-        body: JSON.stringify({
-          type: "single_choice",
-          stem: "确认的题目 #" + itemId,
-          difficulty: "basic",
-        }),
+        body: JSON.stringify(buildQuestionPayload(card)),
       })
         .then(function (r) {
           if (!r.ok) {
             if (r.status === 401) {
               throw new Error("令牌已失效，请刷新页面获取新令牌");
             }
-            throw new Error("HTTP " + r.status);
+            return r.json().then(function (body) {
+              var detail = body && body.detail;
+              var message = typeof detail === "string" ? detail : (detail && detail.message) || "";
+              var errors = (detail && detail.errors) || [];
+              throw new Error(message || ("HTTP " + r.status) + (errors.length ? "：" + errors.join("；") : ""));
+            });
           }
           return r.json();
         })
         .then(function (result) {
           // Token consumed - refresh for next operation
-          mockToken = null;
-          return { ok: true, id: result.id || itemId };
+          writeToken = null;
+          return { ok: true, id: result.id };
         });
     });
   }
 
   // --- Render review list ---
+  function sourceBadge(item) {
+    if (!item.source) return "";
+    var isMock = item.source.indexOf("Mock") >= 0;
+    return (
+      ' · <span class="ws-review-item-source' +
+      (isMock ? " ws-source-mock" : "") +
+      '">' +
+      escapeHtml(item.source) +
+      "</span>"
+    );
+  }
+
   function renderReviewList() {
     if (!reviewBody) return;
 
@@ -200,6 +251,7 @@
         typeLabel(item.type) +
         " · " +
         difficultyLabel(item.difficulty) +
+        sourceBadge(item) +
         "</div>" +
         '<div class="ws-review-item-detail">' +
         "<p><strong>题干：</strong>" +
@@ -278,6 +330,7 @@
         "</div>" +
         '<div class="ws-review-item-meta">' +
         difficultyLabel(item.difficulty) +
+        sourceBadge(item) +
         " · <button class='ws-btn ws-btn-sm ws-confirm-btn' data-id='" +
         escapeHtml(item.id) +
         "'>确认</button>" +
@@ -312,20 +365,25 @@
   }
 
   function handleConfirm(itemId, btn) {
+    var card = reviewItems.filter(function (item) {
+      return item.id === itemId;
+    })[0];
+    if (!card) {
+      showToast("清单里已找不到题目 " + itemId + "，请重新拆题", true);
+      return;
+    }
     btn.disabled = true;
     btn.textContent = "处理中…";
-    mockConfirmItem(itemId)
+    confirmItem(card)
       .then(function (result) {
-        if (result.ok) {
-          btn.textContent = "已确认";
-          btn.classList.add("ws-btn-primary");
-          showToast("题目 #" + itemId + " 已确认入库");
-        }
+        btn.textContent = "已确认";
+        btn.classList.add("ws-btn-primary");
+        showToast("已入库，服务端 ID：" + result.id);
       })
-      .catch(function () {
+      .catch(function (error) {
         btn.disabled = false;
         btn.textContent = "确认入库";
-        showToast("确认失败，请重试", true);
+        showToast("确认失败：" + error.message, true);
       });
   }
 
@@ -343,22 +401,25 @@
       }
 
       sendInstruction(prompt)
-        .then(function (items) {
-          reviewItems = items;
-          renderReviewList();
+        .then(function (result) {
+          // 只在新结果真的带卡片时替换清单，clarify/报错不得清空已有卡片
+          if (result.items && result.items.length) {
+            reviewItems = result.items;
+            renderReviewList();
+          }
           promptInput.value = "";
           if (sendBtn) {
             sendBtn.disabled = false;
             sendBtn.textContent = "发送";
           }
-          showToast("收到 " + items.length + " 道题目");
+          showToast(result.message, result.isError);
         })
-        .catch(function () {
+        .catch(function (err) {
           if (sendBtn) {
             sendBtn.disabled = false;
             sendBtn.textContent = "发送";
           }
-          showToast("指令执行失败", true);
+          showToast("指令执行失败：" + err.message, true);
         });
     });
   }
@@ -400,11 +461,10 @@
     return map[diff] || diff;
   }
 
-  function formatOptions(opts) {
-    if (!opts || typeof opts !== "object") return "";
-    return Object.keys(opts)
-      .map(function (k) {
-        return k + ". " + opts[k];
+  function formatOptions(options) {
+    return normalizeOptions(options)
+      .map(function (item) {
+        return item.key + ". " + item.content;
       })
       .join("； ");
   }
@@ -456,14 +516,15 @@
       ocrSubmitBtn.textContent = "拆题中…";
 
       callSplitApi(text)
-        .then(function (items) {
-          reviewItems = items;
+        .then(function (result) {
+          lastOcrText = text;
+          reviewItems = result.items;
           renderReviewList();
           ocrModal.hidden = true;
-          showToast("已拆分 " + items.length + " 道题目");
+          showToast("已拆分 " + result.items.length + " 道题目（" + result.source + "）");
         })
-        .catch(function () {
-          showToast("拆题失败，请重试", true);
+        .catch(function (err) {
+          showToast("拆题失败：" + err.message, true);
         })
         .finally(function () {
           ocrSubmitBtn.disabled = false;
@@ -487,6 +548,8 @@
         var content = response.data && response.data.content;
         if (!content) throw new Error("Empty response from split agent");
 
+        var source = describeSource(response);
+
         var questions;
         try {
           questions = JSON.parse(content);
@@ -498,13 +561,50 @@
           throw new Error("Expected array of questions");
         }
 
-        // Add source metadata
-        return questions.map(function (q, idx) {
-          return Object.assign({}, q, {
-            source: "AI 拆题 · 第" + (idx + 1) + "题",
-          });
-        });
+        return {
+          source: source,
+          items: questions.map(function (q, idx) {
+            return normalizeCard(q, idx, source);
+          }),
+        };
       });
+  }
+
+  // --- Normalize one model card into the card shape this page renders ---
+  function normalizeCard(raw, idx, source) {
+    var card = {
+      id: typeof raw.id === "string" && raw.id ? raw.id : "card_" + (idx + 1),
+      type: raw.type || "unknown",
+      stem: raw.stem || "",
+      difficulty: raw.difficulty || "basic",
+      source: source,
+    };
+    var options = normalizeOptions(raw.options);
+    if (options.length) card.options = options;
+    if (raw.answer) card.answer = raw.answer;
+    if (raw.solution) card.solution = raw.solution;
+    if (raw.status) card.status = raw.status;
+    return card;
+  }
+
+  // 模型可能给数组、{A:"..."} 字典，或 [{key,content}]；统一成 [{key, content}]
+  function normalizeOptions(options) {
+    if (!options) return [];
+    if (Array.isArray(options)) {
+      return options.map(function (item, idx) {
+        var key = "ABCDEFGH".charAt(idx) || String(idx);
+        if (item && typeof item === "object") {
+          return { key: String(item.key || key), content: String(item.content || item.text || "") };
+        }
+        return { key: key, content: String(item == null ? "" : item) };
+      });
+    }
+    if (typeof options === "object") {
+      return Object.keys(options).map(function (key) {
+        return { key: String(key), content: String(options[key] == null ? "" : options[key]) };
+      });
+    }
+    return [];
   }
 
   // --- Workspace Management ---
@@ -555,7 +655,7 @@
         renderReviewList();
 
         // Refresh token for new workspace
-        mockToken = null;
+        writeToken = null;
         loadSettings();
 
         showToast("已切换到工作区: " + (data.name || workspaceId));
@@ -593,7 +693,7 @@
       })
       .then(function (data) {
         if (data.local_token) {
-          mockToken = data.local_token;
+          writeToken = data.local_token;
         }
       });
   }
@@ -623,10 +723,110 @@
     });
   }
 
+  // --- AI Provider 注册表：只展示「是否已配置 + 模型名 + 接口主机」，密钥不下发 ---
+  function findActiveProvider() {
+    for (var i = 0; i < providerList.length; i += 1) {
+      if (providerList[i].active) return providerList[i];
+    }
+    return null;
+  }
+
+  function renderProviderStatus() {
+    if (!providerStatus) return;
+    var active = findActiveProvider();
+    if (!active) {
+      providerStatus.textContent = "未读取到 Provider 注册表";
+      providerStatus.classList.add("ws-provider-mock");
+      return;
+    }
+    if (!active.configured || active.mock) {
+      providerStatus.textContent = "Mock 降级：「" + active.label + "」未配置 API Key";
+      providerStatus.classList.add("ws-provider-mock");
+      return;
+    }
+    providerStatus.textContent =
+      "真实模型 · " + (active.model || "未填模型名") + (active.host ? " · " + active.host : "");
+    providerStatus.classList.remove("ws-provider-mock");
+  }
+
+  function loadProviders() {
+    return fetch("/api/providers", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        providerList = data.providers || [];
+        if (providerSelect) {
+          providerSelect.innerHTML = "";
+          providerList.forEach(function (p) {
+            var option = document.createElement("option");
+            option.value = p.name;
+            option.textContent = p.label + (p.configured ? "" : "（未配置）");
+            if (p.active) option.selected = true;
+            providerSelect.appendChild(option);
+          });
+        }
+        renderProviderStatus();
+        return data;
+      });
+  }
+
+  function switchProvider(name) {
+    return ensureWriteToken()
+      .then(function (token) {
+        return fetch("/api/providers/active", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-JZO-Token": token,
+          },
+          body: JSON.stringify({ name: name }),
+        });
+      })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(function (body) {
+            var detail = body && body.detail;
+            throw new Error(
+              (typeof detail === "string" ? detail : (detail && detail.message)) || "HTTP " + r.status
+            );
+          });
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        writeToken = null;
+        showToast(
+          data.mock
+            ? "已切到「" + data.active + "」：未配置密钥，走 Mock"
+            : "已切到「" + data.active + "」：真实模型 " + data.model,
+          data.mock
+        );
+        return loadProviders();
+      });
+  }
+
+  if (providerSelect) {
+    providerSelect.addEventListener("change", function () {
+      var name = providerSelect.value;
+      if (!name) return;
+      switchProvider(name).catch(function (err) {
+        showToast("切换 Provider 失败：" + err.message, true);
+        loadProviders().catch(function () {});
+      });
+    });
+  }
+
   // Load initial workspace list
   loadWorkspaces().then(function () {
     loadSettings();
   }).catch(function (err) {
     console.error("Failed to load workspaces:", err);
+  });
+
+  loadProviders().catch(function (err) {
+    console.error("Failed to load providers:", err);
+    renderProviderStatus();
   });
 })();

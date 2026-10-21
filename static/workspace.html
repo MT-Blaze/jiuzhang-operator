@@ -22,6 +22,13 @@
           <select id="wsWorkspaceSelect" class="ws-workspace-select"></select>
           <button class="ws-btn ws-btn-sm ws-btn-block" id="wsNewWorkspaceBtn">+ 新建工作区</button>
         </section>
+
+        <!-- AI Provider 切换 -->
+        <section class="ws-provider-selector" aria-label="模型 Provider 切换">
+          <label for="wsProviderSelect" class="ws-workspace-label">模型 Provider</label>
+          <select id="wsProviderSelect" class="ws-workspace-select"></select>
+          <p class="ws-provider-status" id="wsProviderStatus" role="status">正在读取 Provider 注册表…</p>
+        </section>
         
         <nav class="ws-task-list" aria-label="任务列表">
           <a class="ws-task-item" href="#">今日拆题</a>
@@ -46,7 +53,7 @@
       <section class="ws-chat" aria-label="指令输入">
         <form class="ws-chat-form" id="wsChatForm" aria-label="发送指令">
           <label for="wsPrompt" class="sr-only">指令</label>
-          <textarea id="wsPrompt" rows="3" placeholder="输入指令，例如：拆分第 3–5 题"></textarea>
+          <textarea id="wsPrompt" rows="3" placeholder="输入指令，例如：拆分第 1–2 页 / 导出为 PDF"></textarea>
           <div class="ws-chat-actions">
             <button type="submit" class="ws-btn ws-btn-primary" id="wsSendBtn">发送</button>
           </div>

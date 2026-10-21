@@ -84,7 +84,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
         )
         return {
             "type": "complete",
-            "data": {"content": result["content"], "usage": result["usage"]},
+            "data": {"content": result["content"], "usage": result["usage"], "model": result["model"]},
             "task_id": task_id or "unknown",
             "mock": result["mock"],
         }
@@ -112,7 +112,7 @@ async def agent_split(body: SplitRequest = Body(...)) -> dict[str, Any]:
         )
         return {
             "type": "complete",
-            "data": {"content": result["content"], "usage": result["usage"]},
+            "data": {"content": result["content"], "usage": result["usage"], "model": result["model"]},
             "task_id": task_id or "unknown",
             "mock": result["mock"],
         }
@@ -141,7 +141,7 @@ async def agent_review(body: ReviewRequest = Body(...)) -> dict[str, Any]:
         )
         return {
             "type": "complete",
-            "data": {"content": result["content"], "usage": result["usage"]},
+            "data": {"content": result["content"], "usage": result["usage"], "model": result["model"]},
             "task_id": task_id or "unknown",
             "mock": result["mock"],
         }

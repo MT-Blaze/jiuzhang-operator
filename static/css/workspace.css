@@ -225,6 +225,14 @@
   color: var(--muted);
 }
 
+.ws-review-item-source {
+  color: var(--ok);
+}
+
+.ws-review-item-source.ws-source-mock {
+  color: var(--down);
+}
+
 .ws-review-item-detail {
   display: none;
   margin-top: 8px;
@@ -385,6 +393,7 @@
 
   .ws-sidebar {
     left: 0;
+    z-index: 110;
     transform: translateX(-100%);
   }
 
@@ -401,14 +410,33 @@
     transform: translateX(0);
   }
 
+  /* 折叠 = 滑出画布外；宽度必须保留，否则 translateX(-100%) 位移量为 0 等于没收起 */
   .ws-sidebar.collapsed,
   .ws-context.collapsed {
     width: 260px;
-    transform: translateX(0);
+    overflow: visible;
+    border-right: none;
+  }
+
+  .ws-sidebar.collapsed {
+    transform: translateX(-100%);
+  }
+
+  .ws-context.collapsed {
+    transform: translateX(100%);
   }
 
   .ws-split-view {
     grid-template-columns: 1fr;
+  }
+
+  /* STACK §2.2 触控热区不小于 44px */
+  .ws-btn,
+  .ws-btn-sm,
+  .ws-btn-icon,
+  .ws-toggle-btn,
+  .ws-workspace-select {
+    min-height: 44px;
   }
 }
 
@@ -451,6 +479,11 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+}
+
+/* display:flex 会顶掉 [hidden] 的默认 display:none，必须显式收回 */
+.ws-modal-overlay[hidden] {
+  display: none;
 }
 
 .ws-modal {
@@ -558,4 +591,23 @@
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* AI Provider selector */
+.ws-provider-selector {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-provider-status {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--ok);
+  word-break: break-all;
+}
+
+.ws-provider-status.ws-provider-mock {
+  color: var(--down);
 }
