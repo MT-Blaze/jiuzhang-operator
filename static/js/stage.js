@@ -1,5 +1,5 @@
 /**
- * Stage：中栏画布的 Tabs 宿主（v0.6.0）。
+ * Stage：中栏画布的 Tabs 宿主（v0.6.1）。
  *
  * 职责边界（军令任务 3）：中栏只是「通用舞台」，底座负责挂标签页、挂 iframe、
  * 转发事件；业务画面一律由插件自己画。左、右、下三区仍由底座托管，
@@ -11,7 +11,7 @@
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
  *
  * 协议：jzo-plugin/1（PLUGIN_SPEC §2.3.3）。宿主发 request，插件回 response；
- * v0.6.0 新增单向 notification（无 id、不等回复、插件必须幂等）。
+ * v0.6.1 新增单向 notification（无 id、不等回复、插件必须幂等）。
  * 沙箱只给 allow-scripts：插件文档处于不透明源，碰不到宿主 DOM 与令牌。
  */
 (function () {

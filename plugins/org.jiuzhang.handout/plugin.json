@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.handout",
+  "name": "讲义排版",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["stage.center"],
+  "capabilities": ["handout.render"],
+  "permissions": [],
+  "ui": {
+    "title": "讲义设置",
+    "hint": "在左侧改 Markdown，右侧 A4 会随输入实时重排；所有渲染都在本机完成。",
+    "controls": [
+      {
+        "type": "select",
+        "key": "size",
+        "label": "字号",
+        "options": [
+          {"value": "标准", "label": "标准"},
+          {"value": "大字", "label": "大字"}
+        ],
+        "default": "标准"
+      }
+    ]
+  },
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "讲义排版",
+    "priority": 60,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["ui.params.changed"],
+    "publish": ["region.dock"]
+  }
+}

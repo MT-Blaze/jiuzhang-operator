@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-10-24",
+  "updated_at": "2026-10-23",
   "entries": [
     {
       "id": "org.jiuzhang.demo-bank",
@@ -32,6 +32,51 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.placeholder.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/examples/placeholder_plugin"
+    },
+    {
+      "id": "org.jiuzhang.core-bank",
+      "name": "真题题库",
+      "version": "0.1.0",
+      "kind": "tool",
+      "api_version": "1.0",
+      "description": "456 道高中数学真题的本地 SQLite 题库：按年级、难度、题型与关键词筛选，支持预览与加入题篮。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.core-bank.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.core-bank.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.core-bank.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.core-bank.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.core-bank"
+    },
+    {
+      "id": "org.jiuzhang.paper-gen",
+      "name": "组卷排版",
+      "version": "0.1.0",
+      "kind": "tool",
+      "api_version": "1.0",
+      "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.paper-gen.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.paper-gen"
+    },
+    {
+      "id": "org.jiuzhang.handout",
+      "name": "讲义排版",
+      "version": "0.1.0",
+      "kind": "tool",
+      "api_version": "1.0",
+      "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.handout.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.handout"
     }
   ]
 }

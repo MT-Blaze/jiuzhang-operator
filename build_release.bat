@@ -46,7 +46,7 @@ rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
 rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
   /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.placeholder" ^
-  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store "%~dp0examples\placeholder_plugin.zip"
+  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal "%~dp0examples\placeholder_plugin.zip"
 if errorlevel 8 (
     echo.
     echo [ERROR] File copy failed. Nothing was packaged.

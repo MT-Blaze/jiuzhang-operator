@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>讲义排版</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div class="hp-app" id="root" hidden>
+    <header class="hp-bar">
+      <div class="hp-brand">
+        <strong>讲义排版</strong>
+        <span>Markdown → A4</span>
+      </div>
+      <div class="hp-actions">
+        <span class="hp-stat" id="hpStats">0 字</span>
+        <button type="button" id="hpSample" class="hp-btn">载入示例</button>
+        <button type="button" id="hpPrint" class="hp-btn hp-primary">打印 / PDF</button>
+      </div>
+    </header>
+
+    <main class="hp-main">
+      <section class="hp-editor" aria-label="Markdown 原稿">
+        <label class="hp-editor-label" for="hpInput">Markdown 原稿</label>
+        <textarea id="hpInput" spellcheck="false" autocomplete="off"
+                  placeholder="# 标题&#10;&#10;正文支持 **粗体**、*斜体*、列表、表格与 $x^2$ 公式。"></textarea>
+        <p class="hp-tip">改字即重排，不上传、不联网。支持 # 级标题、列表、表格、引用、代码块与 LaTeX 公式。</p>
+      </section>
+
+      <section class="hp-preview" id="hpPreview" aria-label="A4 讲义预览">
+        <div id="hpPages" class="hp-pages" data-size="normal"></div>
+      </section>
+    </main>
+
+    <div id="hpMeasure" class="hp-measure" aria-hidden="true"></div>
+    <div id="hpMetrics" hidden></div>
+    <div id="hpToast" class="hp-toast" role="status" aria-live="polite" data-show="false"></div>
+  </div>
+
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>
