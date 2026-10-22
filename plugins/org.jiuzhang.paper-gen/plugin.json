@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.paper-gen",
+  "name": "组卷排版",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["question.card", "stage.center"],
+  "capabilities": ["paper.generate"],
+  "permissions": ["questions:read"],
+  "ui": {
+    "title": "组卷设置",
+    "hint": "切换答案或排版密度，右侧 A4 预览会立刻重排；题篮加减题也会自动跟随。",
+    "controls": [
+      {
+        "type": "select",
+        "key": "answers",
+        "label": "答案",
+        "options": [
+          {"value": "隐藏", "label": "隐藏"},
+          {"value": "显示", "label": "显示"}
+        ],
+        "default": "隐藏"
+      },
+      {
+        "type": "select",
+        "key": "density",
+        "label": "排版",
+        "options": [
+          {"value": "标准", "label": "标准"},
+          {"value": "紧凑", "label": "紧凑"}
+        ],
+        "default": "标准"
+      }
+    ]
+  },
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "组卷排版",
+    "priority": 70,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["ui.params.changed", "basket.changed", "stage.tab.activated"],
+    "publish": ["region.dock"]
+  }
+}

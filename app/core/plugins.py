@@ -30,7 +30,14 @@ _SLOTS = {
     # v0.6.0：中栏画布。声明它的插件可以在舞台开一个 Tabs 页（沙箱 iframe）
     "stage.center",
 }
-_CAPABILITIES = {"question.render", "question.export", "question.import"}
+_CAPABILITIES = {
+    "question.render",
+    "question.export",
+    "question.import",
+    # 组卷与讲义是「消费题篮、产出 A4」的能力，不等同于单题渲染/导出
+    "paper.generate",
+    "handout.render",
+}
 _PERMISSIONS = {
     "questions:read",
     "questions:write",
@@ -57,6 +64,7 @@ _BUS_SUBSCRIBE = {
     "stage.tab.sleep",
     "theme.changed",
     "question.updated",
+    "basket.changed",
 }
 _BUS_MAX_TOPICS = 8
 

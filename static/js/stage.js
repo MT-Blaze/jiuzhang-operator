@@ -774,6 +774,8 @@
     if (bus && typeof bus.on === "function") {
       // 右栏改参数 → 直达中栏所有活着的插件（军令任务 3.3）
       bus.on("ui.params.changed", function (event) { broadcast("ui.params.changed", event.payload); });
+      // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
+      bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
       bus.on("stage.broadcast", function (event) {
         var payload = event.payload || {};
         if (typeof payload.event === "string") broadcast(payload.event, payload.payload);

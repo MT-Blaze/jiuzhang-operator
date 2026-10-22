@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>组卷排版</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div id="root" class="pg-root" hidden>
+    <header class="pg-top">
+      <div class="pg-brand">
+        <h1>组卷排版</h1>
+        <p class="pg-sub">题篮 → A4 练习卷 · 自动分页 · 公式本地渲染</p>
+      </div>
+      <label class="pg-title-field">
+        <span>卷名</span>
+        <input id="pgTitle" type="text" maxlength="48" value="九章算子 · 数学练习卷" aria-label="试卷标题">
+      </label>
+      <div class="pg-actions">
+        <button type="button" id="pgReflow" class="pg-btn">重新排版</button>
+        <button type="button" id="pgPrint" class="pg-btn">打印 / PDF</button>
+        <button type="button" id="pgClear" class="pg-btn pg-btn-ghost">清空题篮</button>
+      </div>
+    </header>
+
+    <div class="pg-meta">
+      <span id="pgMetrics" data-render-ms="" data-pages="" data-questions="">等待题篮…</span>
+      <span class="pg-legend">A4 210×297mm · 页内安全区 · 公式不跨页</span>
+    </div>
+
+    <main class="pg-shell">
+      <aside class="pg-side" aria-label="题篮题目">
+        <div class="pg-side-head">
+          <h2>题篮 <span id="pgCount">0</span></h2>
+          <button type="button" id="pgRefresh" class="pg-mini">刷新</button>
+        </div>
+        <ol id="pgList" class="pg-list"></ol>
+        <p id="pgEmpty" class="pg-empty">题篮是空的。去「真题题库」点几道题的「入篮」，这里会自动出现。</p>
+      </aside>
+
+      <section class="pg-preview" id="pgPreview" aria-label="A4 预览">
+        <div id="pgPages" class="pg-pages pg-doc" data-density="normal"></div>
+      </section>
+    </main>
+
+    <div id="pgMeasure" class="pg-measure" aria-hidden="true"></div>
+    <div id="pgToast" class="pg-toast" role="status" aria-live="polite" data-show="false"></div>
+  </div>
+
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>
