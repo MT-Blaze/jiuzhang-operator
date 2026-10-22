@@ -3,8 +3,10 @@
 
   var statusEl = document.getElementById("health");
   var labelEl = statusEl ? statusEl.querySelector(".status-label") : null;
-  var versionEl = document.getElementById("version");
   var timeEl = document.getElementById("health-time");
+
+  // 版本号不在此处盖章：交给 version.js 统一以 /healthz 为准，
+  // 避免同一段文案有两个写入者、互相覆盖。
 
   function setState(state, label) {
     if (statusEl) statusEl.dataset.state = state;
@@ -26,8 +28,7 @@
       if (!response.ok) throw new Error("HTTP " + response.status);
 
       var data = await response.json();
-      if (versionEl && data.version) versionEl.textContent = "v" + data.version;
-      if (timeEl) timeEl.textContent = "底座时间 " + formatTime(data.time);
+      if (timeEl && data.time) timeEl.textContent = "底座时间 " + formatTime(data.time);
       setState("ok", "底座在线");
     } catch (error) {
       setState("down", "底座离线");

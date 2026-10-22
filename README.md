@@ -58,6 +58,11 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 插件一键装：把本地 `.zip` 拖到工作台页面任意位置（或点「安装插件 zip 包」选文件），`POST /api/plugins/install`（过一次性写令牌）先解压到临时暂存区、逐条目安检（拒加密 / 符号链接 / 绝对路径 / 盘符 / `..` 穿越 / 嵌套 zip，条目≤2000、解压≤256MB、包体≤50MB 防炸弹）、过完 `plugin.json` 全套契约才落地 `plugins/`；同名已装默认拒绝、确认后才覆盖。**安装永远由用户亲手发起，底座不自动拉远程源、不自动更新**；
 - 多模型配置面板：工作台左栏「模型 Provider」区加「配置」按钮，填 Base URL / API Key / 模型名并测试连通性，保存即热生效（不重启）；密钥只写本机 `.env`，永不回显、永不入库；新增 `ollama` 本地档，为本地模型预留座位。
 
+`v0.3.1` 是内测首日的抢修版，只动两处体验硬伤：
+
+- 版本号单一事实来源：页面右上角徽章与页脚一律由 `static/js/version.js` 读 `/healthz` 盖章（`app/__init__.py` 的 `__version__` 为唯一来源），HTML 里写死的版本号只是无 JS 时的兜底，并由 `tests/test_version_consistency.py` 锁死一致；`start.bat` 启动前自检端口，若 8000 已被陈留实例占用则明确提示，不再让人对着旧进程的旧版本号发愣；
+- `start.bat` pip 自愈：装依赖前先验 `.venv` 内 pip 是否可用，缺失则自动 `ensurepip` 修复，修不好再重建 venv，最后才报错退出。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -89,7 +94,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
