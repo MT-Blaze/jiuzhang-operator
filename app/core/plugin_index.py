@@ -231,4 +231,6 @@ def fetch_index(url: str, allow_mirrors: bool = True) -> dict[str, Any]:
     detail = "；".join(
         "%s（%s）" % (item["host"], item["reason"]) for item in attempts
     )
-    raise IndexRejected("所有索引地址均不可用：%s" % detail)
+    raise IndexRejected(
+        "所有索引地址均不可用：%s。可在上方输入框手动填写其他索引地址后重试" % detail
+    )

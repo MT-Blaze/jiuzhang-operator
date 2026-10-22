@@ -26,7 +26,7 @@
 - **绝无云端锁喉**：题库、组卷、渲染、导入导出 100% 在本机跑，断网可用。AI 能力只连你自己在 `.env` 里填写的模型网关；不填密钥或关掉网络，AI 那一步显式降级为不可用，底座与全部插件照常工作——**绝不弹窗催费、绝不偷偷上传题目数据、绝不让云端一句话就把功能关掉**。
 - **不锁数据**：题目是本机 `data/` 目录里的明文 SQLite + [JSON Schema](schemas/question.json)，随时整目录拷走、任何工具都能读；卸载不销毁、不加密、不留水印。
 - **插件同样白嫖**：插件就是**标准 zip 包，解压即用**（没有 `.jzo` 之类专属后缀，也不验签名、不验摘要），规范禁止任何注册、卡密与联网回连激活，详见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1、§1.2。
-- **插件清单不绑任何厂商**：底座**没有内置插件市场，也绝不自动拉取、自动更新任何远程源**（防跑路）。官方索引 `plugins.json` 的 Raw 直链默认预填在 `/plugins` 页输入框里（可当场改成任何自信任地址），点【拉取清单】只读这一份 JSON；点【在线安装】才按条目直链下载那一个 zip，校验门槛与本机拖装完全相同（PLUGIN_SPEC §1.3、§1.4）。
+- **插件清单不绑任何厂商**：底座**没有内置插件市场，也绝不自动拉取、自动更新任何远程源**（防跑路）。官方插件仓库 `jiuzhang-plugins` 的 `plugins.json` 经 gh-proxy 加速后默认预填在 `/plugins` 页输入框里（可当场改成任何自信任地址），点【拉取清单】只读这一份 JSON；点【在线安装】才按条目直链下载那一个 zip，校验门槛与本机拖装完全相同（PLUGIN_SPEC §1.3、§1.4）。
 
 ## 开箱即用：配一次密钥就能用 AI
 
@@ -99,6 +99,13 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 模型漏判或 Provider 不支持工具时，宿主按高置信句式（明确题号 + 拆分 / 渲染 / 导入）兜底，响应 `route=host` 如实标注；前端气泡新增「[已调用插件]」标识与来源说明；
 - 执行边界：后端不执行插件 JS，工具只读插件自带的 `seed/questions.json` 与工作区题库，不写库、不触网；Mock 模式下输入「拆分第一题」也能走宿主兜底，直接返回第 1 题、答案与解析。
 
+`v0.5.2` 插件仓库独立与索引对接——底座轻装、插件集中：
+
+- 官方索引迁到独立仓库 `MT-Blaze/jiuzhang-plugins`，默认预填其 gh-proxy 加速地址；插件 zip 集中放该仓库 `plugins/`，主仓库只保留底座源码与本地镜像清单；
+- 主源失败仍按 ghfast → jsDelivr → fastly.jsDelivr → Raw 自动回退；全部不可用时逐源列出失败原因，并提示用户可在输入框手动改填其他索引地址；
+- 插件仓库初始收录 `org.jiuzhang.demo-bank` 与 `org.jiuzhang.placeholder`，zip 顶层目录与 `plugin.json` 的 `id` 一致，可直接在线安装；
+- 边界不变：不自动拉取、不自动更新、不批量下载，装包仍由用户逐次点击发起。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -130,7 +137,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -156,7 +163,7 @@ jiuzhang-operator/
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
 │       ├── plugin_install.py # 插件 zip 安检与落地安装
-│       ├── plugin_sources.py # 官方索引镜像序列（唯一允许内置的远程索引地址）
+│       ├── plugin_sources.py # 官方插件仓库索引的镜像序列（唯一允许内置的远程索引地址）
 │       ├── plugin_download.py # 在线安装：按需下载单个 zip，失败按条目 mirrors 重试（§1.4）
 │       ├── plugin_tools.py  # 插件能力 → OpenAI tools，工具执行与宿主意图兜底（§1.5）
 │       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
@@ -203,7 +210,7 @@ jiuzhang-operator/
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
-├── plugins.json             # 官方插件索引（索引页默认预填其国内镜像直链）
+├── plugins.json             # 官方插件仓库索引的本地镜像（索引页默认预填其 gh-proxy 加速地址）
 ├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）

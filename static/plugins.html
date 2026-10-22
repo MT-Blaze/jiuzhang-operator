@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>插件索引 · 九章算子</title>
-  <meta name="description" content="九章算子插件索引：默认预填官方 plugins.json 的国内可达镜像（gh-proxy，jsDelivr/ghfast 等自动备用），主源失败自动切换；拉取清单后点【在线安装】即可由底座下载单个 zip、校验落地。不自动更新、不联网回连校验。">
+  <meta name="description" content="九章算子插件索引：默认预填官方 jiuzhang-plugins 仓库 plugins.json 的国内可达镜像（gh-proxy，jsDelivr/ghfast 等自动备用），主源失败自动切换并可改填其他地址；拉取清单后点【在线安装】即可由底座下载单个 zip、校验落地。不自动更新、不联网回连校验。">
   <meta name="theme-color" content="#a63b2b">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -36,9 +36,10 @@
         <p class="eyebrow">PLUGINS · INDEX 1.0 · ZIP ONLY</p>
         <h1 id="pl-title">插件索引</h1>
         <p class="pl-lede">
-          输入框里<strong>默认预填了官方索引的国内可达镜像</strong>（gh-proxy 反代），
-          主源失败时会自动切换到 ghfast / jsDelivr 等备用镜像；地址随时可以改成你自己信任的任何
-          <code>plugins.json</code> 地址（改成第三方地址后底座只访问那一个，不替你换源）。
+          输入框里<strong>默认预填了官方插件仓库 <code>jiuzhang-plugins</code> 索引的国内可达镜像</strong>（gh-proxy 反代），
+          主源失败时会自动切换到 ghfast / jsDelivr 等备用镜像；若全部不可用，页面会逐源列出原因，
+          也可以直接把地址改成你自己信任的任何 <code>plugins.json</code> 地址
+          （改成第三方地址后底座只访问那一个，不替你换源）。
           点【拉取清单】后，这一页把条目渲染成卡片；点卡片上的【在线安装】，底座只去下载那一个 zip，
           过完与本机拖装同款的全套契约校验后落地 <code>plugins/</code>。
           底座<strong>不自动拉取、不自动更新、不联网回连校验</strong>——每一次下载都由你当场点击发起。
@@ -56,7 +57,7 @@
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              value="https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
+              value="https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins.json"
               placeholder="https://你的国内镜像或自建静态托管/plugins.json"
             >
           </label>

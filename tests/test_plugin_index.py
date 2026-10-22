@@ -224,17 +224,21 @@ class PluginIndexApiTest(unittest.TestCase):
         self.assertTrue(str(body.get("detail", "")).strip())
 
     def test_05_official_mirrors_are_registered_in_one_place(self) -> None:
-        """v0.5.1 出网口径：官方索引主源 + 至少两套备用镜像，只在 plugin_sources 登记。
+        """v0.5.2 出网口径：官方索引主源 + 至少两套备用镜像，只在 plugin_sources 登记。
 
-        与 v0.5.0 的区别：raw.githubusercontent.com 国内不可达，默认主源改成
-        gh-proxy 反代（jsDelivr 的 @main 分支缓存会滞后），并在主源失败时自动回退。
-        底座依然不自动拉取、不自动更新，备用源只在本机用户点击【拉取清单】后按序尝试。
+        与 v0.5.1 的区别：官方索引迁到独立仓库 ``MT-Blaze/jiuzhang-plugins``，
+        主源仍是 gh-proxy 反代（jsDelivr 的 @main 分支缓存会滞后），主源失败时
+        自动回退。底座依然不自动拉取、不自动更新，备用源只在本机用户点击
+        【拉取清单】后按序尝试。
         """
         sources = plugin_sources.OFFICIAL_INDEX_SOURCES
         self.assertGreaterEqual(len(sources), 3, "主源之外至少要有两套备用镜像")
         self.assertEqual(sources[0], plugin_sources.OFFICIAL_INDEX_PRIMARY)
         self.assertIn("gh-proxy.com", sources[0])
         self.assertFalse(sources[0].startswith("https://raw.githubusercontent.com"))
+        self.assertIn("jiuzhang-plugins/main/plugins.json", sources[0])
+        for url in sources:
+            self.assertIn("MT-Blaze/jiuzhang-plugins", url, "官方源必须全部指向插件仓库")
         self.assertIn("ghfast.top", " ".join(sources))
         self.assertIn("cdn.jsdelivr.net", " ".join(sources))
         self.assertEqual(len(sources), len(set(sources)), "镜像地址不得重复")
@@ -305,6 +309,7 @@ class IndexFallbackTest(unittest.TestCase):
         message = str(ctx.exception)
         for url in plugin_sources.OFFICIAL_INDEX_SOURCES:
             self.assertIn(plugin_index.describe_public_url(url), message)
+        self.assertIn("手动", message, "全部失败时必须提示用户可以手改索引地址")
 
 
 if __name__ == "__main__":

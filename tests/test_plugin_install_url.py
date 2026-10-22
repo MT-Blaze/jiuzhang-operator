@@ -35,6 +35,7 @@ from app.core.plugins import validate_plugin  # noqa: E402
 
 TOKEN = "install-url-test-token"
 PLACEHOLDER_ID = "org.jiuzhang.placeholder"
+DEMO_ID = "org.jiuzhang.demo-bank"
 OFFICIAL_PRIMARY = plugin_sources.OFFICIAL_INDEX_PRIMARY
 
 
@@ -45,7 +46,7 @@ def _free_port() -> int:
 
 
 class OfficialIndexFileTest(unittest.TestCase):
-    """仓库根 plugins.json 是官方索引的唯一事实来源，必须自洽且包体不夹带插件。"""
+    """主仓库根 plugins.json 是官方索引的本地镜像，必须与插件仓库口径一致且不夹带 zip。"""
 
     def test_01_root_plugins_json_parses_with_zero_rejections(self) -> None:
         payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
@@ -53,16 +54,19 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertEqual(parsed["rejected"], [])
         ids = [entry["id"] for entry in parsed["entries"]]
         self.assertIn(PLACEHOLDER_ID, ids)
+        self.assertIn(DEMO_ID, ids)
 
-    def test_02_placeholder_entry_uses_reachable_mirror_and_has_backups(self) -> None:
-        """v0.5.1：zip 主地址改成国内可达反代，jsDelivr/Raw 退居镜像。"""
+    def test_02_official_entries_use_plugin_repo_mirrors(self) -> None:
+        """v0.5.2：索引与 zip 全部指向独立插件仓库，主地址走 gh-proxy。"""
         payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
-        entry = next(item for item in payload["entries"] if item["id"] == PLACEHOLDER_ID)
-        self.assertTrue(entry["zip_url"].startswith("https://gh-proxy.com/"))
-        self.assertTrue(entry["zip_url"].endswith(".zip"))
-        self.assertGreaterEqual(len(entry["mirrors"]), 2)
-        self.assertTrue(any("ghfast.top" in item for item in entry["mirrors"]))
-        self.assertTrue(any("cdn.jsdelivr.net" in item for item in entry["mirrors"]))
+        for plugin_id in (PLACEHOLDER_ID, DEMO_ID):
+            entry = next(item for item in payload["entries"] if item["id"] == plugin_id)
+            self.assertTrue(entry["zip_url"].startswith("https://gh-proxy.com/"))
+            self.assertIn("MT-Blaze/jiuzhang-plugins/main/plugins/", entry["zip_url"])
+            self.assertTrue(entry["zip_url"].endswith(".zip"))
+            self.assertGreaterEqual(len(entry["mirrors"]), 2)
+            self.assertTrue(any("ghfast.top" in item for item in entry["mirrors"]))
+            self.assertTrue(any("cdn.jsdelivr.net" in item for item in entry["mirrors"]))
 
     def test_03_placeholder_zip_passes_full_plugin_contract(self) -> None:
         """官方占位包必须能过 validate_plugin 全套契约——否则在线安装必翻车。"""
@@ -77,7 +81,20 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertEqual(info["id"], PLACEHOLDER_ID)
         self.assertEqual(info["kind"], "renderer")
 
-    def test_04_index_page_prefills_official_cdn_primary(self) -> None:
+    def test_03b_demo_plugin_zip_passes_full_plugin_contract(self) -> None:
+        """示例题库包也要能过全套契约——它是插件仓库里第一个真实可装条目。"""
+        zip_path = ROOT / "examples" / "demo_plugin.zip"
+        self.assertTrue(zip_path.is_file(), "先运行 examples/build_demo_plugin.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp)
+            plugin_dir = Path(tmp) / DEMO_ID
+            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            info = validate_plugin(plugin_dir, manifest)
+        self.assertEqual(info["id"], DEMO_ID)
+        self.assertEqual(info["kind"], "importer")
+
+    def test_04_index_page_prefills_official_primary(self) -> None:
         html = (ROOT / "static" / "plugins.html").read_text(encoding="utf-8")
         self.assertIn('value="%s"' % OFFICIAL_PRIMARY, html)
         self.assertIn("拉取清单", html)
@@ -94,7 +111,7 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertIn("confirm", js)
 
     def test_06_build_release_excludes_plugin_zips_from_dist(self) -> None:
-        """胖仓库红线：占位插件 zip 走 Raw 直链分发，不得进发放包。"""
+        """胖仓库红线：官方插件 zip 走插件仓库分发，不得进发放包。"""
         bat = (ROOT / "build_release.bat").read_bytes().decode("ascii")
         xf_lines = [line for line in bat.splitlines() if "/XF" in line]
         self.assertTrue(xf_lines, "打包脚本缺少 /XF 排除清单")
