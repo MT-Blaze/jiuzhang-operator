@@ -4,132 +4,105 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>工作台 · 九章算子</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="stylesheet" href="/static/css/workspace.css" />
 </head>
-<body class="theme-obsidian">
+<body>
   <div class="ws-page">
-    <!-- Left: tasks + plugin entry -->
+    <!-- 左栏：任务 / 插件简单入口（不放状态面板） -->
     <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="任务与插件入口">
       <header class="ws-sidebar-head">
         <h2>任务</h2>
-        <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarContent">折叠</button>
+        <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
-      <div class="ws-sidebar-body" id="wsSidebarContent">
-        <!-- Workspace selector -->
-        <section class="ws-workspace-selector" aria-label="工作区切换">
-          <label for="wsWorkspaceSelect" class="ws-workspace-label">当前工作区</label>
-          <select id="wsWorkspaceSelect" class="ws-workspace-select"></select>
-          <button class="ws-btn ws-btn-sm ws-btn-block" id="wsNewWorkspaceBtn">+ 新建工作区</button>
-        </section>
-
-        <!-- AI Provider 切换 -->
-        <section class="ws-provider-selector" aria-label="模型 Provider 切换">
-          <label for="wsProviderSelect" class="ws-workspace-label">模型 Provider</label>
-          <div class="ws-provider-row">
-            <select id="wsProviderSelect" class="ws-workspace-select"></select>
-            <button class="ws-btn ws-btn-sm" id="wsProviderConfigBtn" title="配置 API Key 与 Base URL">配置</button>
-          </div>
-          <p class="ws-provider-status" id="wsProviderStatus" role="status">正在读取 Provider 注册表…</p>
-        </section>
-        
-        <nav class="ws-task-list" aria-label="任务列表">
-          <a class="ws-task-item" href="#">今日拆题</a>
-          <a class="ws-task-item" href="#">校对解析</a>
-          <a class="ws-task-item" href="#">组卷预览</a>
+      <div class="ws-sidebar-body" id="wsSidebarBody">
+        <nav class="ws-task-list" id="wsTaskList" aria-label="任务入口">
+          <button class="ws-task-item" type="button" data-task="拆分试卷" data-seed="我要拆分一份试卷，请告诉我下一步。">拆分试卷</button>
+          <button class="ws-task-item" type="button" data-task="校对解析" data-seed="帮我校对一道题的答案与解析。">校对解析</button>
+          <button class="ws-task-item" type="button" data-task="组卷导出" data-seed="我想组一份卷子并导出。">组卷导出</button>
+          <button class="ws-task-item" type="button" data-task="自由对话" data-seed="">自由对话</button>
         </nav>
+
         <section class="ws-plugin-entry" aria-label="插件入口">
           <h3>插件</h3>
-          <ul class="ws-plugin-list" id="wsPluginList">
-            <li><a href="/questions">题库管理</a></li>
-            <li><a href="/plugins">插件索引</a></li>
-          </ul>
-          <h3 class="ws-plugin-subtitle">已安装插件</h3>
-          <ul class="ws-plugin-list ws-plugin-installed" id="wsInstalledList" aria-live="polite"></ul>
-          <p class="ws-plugin-status" id="wsPluginStatus" role="status"></p>
-          <button class="ws-btn ws-btn-sm ws-btn-block" id="wsPluginInstallBtn">安装插件 zip 包</button>
+          <button class="ws-btn ws-btn-block" id="wsPluginInstallBtn" type="button">安装插件 zip 包</button>
           <p class="ws-plugin-drop-hint">或把 .zip 直接拖进本页任意位置</p>
-          <input type="file" id="wsPluginFile" accept=".zip,application/zip" hidden>
-        </section>
-        <section class="ws-import-section" aria-label="导入原卷">
-          <button class="ws-btn ws-btn-block" id="wsImportOcrBtn">导入原卷文本</button>
+          <ul class="ws-plugin-links">
+            <li><a href="/plugins">插件索引</a></li>
+            <li><a href="/">底座首页</a></li>
+          </ul>
+          <input type="file" id="wsPluginFile" accept=".zip,application/zip" hidden />
         </section>
       </div>
     </aside>
 
-    <!-- Center: chat + review list -->
-    <main class="ws-center" role="main" aria-label="对话与审题清单">
-      <section class="ws-chat" aria-label="指令输入">
-        <form class="ws-chat-form" id="wsChatForm" aria-label="发送指令">
-          <label for="wsPrompt" class="sr-only">指令</label>
-          <textarea id="wsPrompt" rows="3" placeholder="输入指令，例如：拆分第 1–2 页 / 导出为 PDF"></textarea>
-          <div class="ws-chat-actions">
-            <button type="submit" class="ws-btn ws-btn-primary" id="wsSendBtn">发送</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="ws-review" aria-label="审题清单">
-        <header class="ws-review-head">
-          <h2>审题清单</h2>
-          <div class="ws-toggle-group" role="group" aria-label="视图切换">
-            <button class="ws-toggle-btn active" data-view="original" aria-pressed="true">原卷</button>
-            <button class="ws-toggle-btn" data-view="split" aria-pressed="false">拆题</button>
-          </div>
-        </header>
-        <div class="ws-review-body" id="wsReviewBody" tabindex="0" role="listbox" aria-label="题目列表">
-          <p class="ws-empty-hint">暂无题目。发送指令后卡片将出现在此处。</p>
+    <!-- 中栏：对话流主区，兼当前任务舞台 -->
+    <main class="ws-center" role="main" aria-label="对话流与当前任务舞台">
+      <header class="ws-stage-head">
+        <div class="ws-stage-title">
+          <span class="ws-stage-kicker">当前任务舞台</span>
+          <h1 id="wsStageTitle">新会话</h1>
         </div>
-      </section>
+        <div class="ws-stage-tools">
+          <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button" aria-controls="wsSidebarBody" aria-expanded="false">任务</button>
+          <button class="ws-chip" id="wsModelBtn" type="button" title="配置模型 Provider">
+            <span class="ws-chip-dot" aria-hidden="true"></span>
+            <span id="wsModelLabel">模型 · 未就绪</span>
+          </button>
+          <button class="ws-btn ws-btn-sm" id="wsToggleContext" type="button" aria-expanded="true" aria-controls="wsContextBody">上下文</button>
+        </div>
+      </header>
+
+      <div class="ws-thread" id="wsThread" role="log" aria-live="polite" aria-label="对话流" tabindex="0"></div>
+
+      <form class="ws-composer" id="wsChatForm" aria-label="发送指令">
+        <label for="wsPrompt" class="sr-only">指令</label>
+        <textarea id="wsPrompt" rows="1" placeholder="输入指令…（Enter 发送）"></textarea>
+        <button type="submit" class="ws-btn ws-btn-primary ws-send-btn" id="wsSendBtn">发送</button>
+      </form>
     </main>
 
-    <!-- Right: context (collapsible) -->
+    <!-- 右栏：上下文面板 -->
     <aside class="ws-context" id="wsContext" role="complementary" aria-label="上下文">
       <header class="ws-context-head">
         <h2>上下文</h2>
-        <button class="ws-btn ws-btn-sm" id="wsToggleContext" aria-expanded="true" aria-controls="wsContextBody">折叠</button>
       </header>
       <div class="ws-context-body" id="wsContextBody">
+        <section class="ws-section">
+          <h3>当前任务</h3>
+          <p class="ws-context-value" id="ctxTask">未选择</p>
+        </section>
         <section class="ws-section">
           <h3>教材大纲</h3>
           <p class="ws-placeholder">当前未选择教材版本</p>
         </section>
         <section class="ws-section">
+          <h3>模型</h3>
+          <p class="ws-context-value" id="ctxModel">未就绪</p>
+        </section>
+        <section class="ws-section">
           <h3>最近操作</h3>
-          <ul class="ws-history">
-            <li class="ws-placeholder">无记录</li>
+          <ul class="ws-history" id="ctxHistory">
+            <li class="ws-placeholder">暂无记录</li>
           </ul>
         </section>
       </div>
     </aside>
-
-    <!-- OCR Import Modal -->
-    <div class="ws-modal-overlay" id="wsOcrModal" role="dialog" aria-modal="true" aria-labelledby="wsOcrTitle" hidden>
-      <div class="ws-modal">
-        <header class="ws-modal-head">
-          <h3 id="wsOcrTitle">导入原卷文本</h3>
-          <button class="ws-btn ws-btn-icon" data-modal-close aria-label="关闭">&times;</button>
-        </header>
-        <div class="ws-modal-body">
-          <label for="wsOcrText">粘贴 OCR 识别后的 Markdown 文本：</label>
-          <textarea id="wsOcrText" rows="12" placeholder="# 试卷标题\n\n1. 第一题...\n2. 第二题..."></textarea>
-        </div>
-        <footer class="ws-modal-foot">
-          <button class="ws-btn" data-modal-close>取消</button>
-          <button class="ws-btn ws-btn-primary" id="wsOcrSubmitBtn">开始拆题</button>
-        </footer>
-      </div>
-    </div>
 
     <!-- Provider 配置面板 -->
     <div class="ws-modal-overlay" id="wsProviderModal" role="dialog" aria-modal="true" aria-labelledby="wsProviderModalTitle" hidden>
       <div class="ws-modal">
         <header class="ws-modal-head">
           <h3 id="wsProviderModalTitle">Provider 配置</h3>
-          <button class="ws-btn ws-btn-icon" data-provider-modal-close aria-label="关闭">&times;</button>
+          <button class="ws-btn ws-btn-icon" data-provider-modal-close type="button" aria-label="关闭">&times;</button>
         </header>
         <div class="ws-modal-body">
           <p class="ws-provider-target" id="wsProviderModalTarget"></p>
+          <label class="ws-field" for="wsProviderSelect">
+            <span>模型 Provider</span>
+            <select id="wsProviderSelect" class="ws-workspace-select"></select>
+          </label>
           <label class="ws-field" for="wsProviderBaseUrl">
             <span>Base URL</span>
             <input id="wsProviderBaseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
@@ -149,10 +122,10 @@
           <p class="ws-provider-test-result" id="wsProviderTestResult" role="status" hidden></p>
         </div>
         <footer class="ws-modal-foot ws-modal-foot-split">
-          <button class="ws-btn" id="wsProviderTestBtn">测试连通性</button>
+          <button class="ws-btn" id="wsProviderTestBtn" type="button">测试连通性</button>
           <span class="ws-modal-foot-group">
-            <button class="ws-btn" data-provider-modal-close>关闭</button>
-            <button class="ws-btn ws-btn-primary" id="wsProviderSaveBtn">保存配置</button>
+            <button class="ws-btn" data-provider-modal-close type="button">关闭</button>
+            <button class="ws-btn ws-btn-primary" id="wsProviderSaveBtn" type="button">保存配置</button>
           </span>
         </footer>
       </div>
@@ -166,6 +139,10 @@
       </div>
     </div>
   </div>
+
+  <noscript>
+    <p class="ws-noscript">工作台需要 JavaScript 才能进行对话与调用数据总线。</p>
+  </noscript>
 
   <script src="/static/js/workspace.js"></script>
 </body>

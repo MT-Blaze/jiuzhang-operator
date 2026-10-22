@@ -1,89 +1,215 @@
 /**
- * 工作台：三栏布局 + 清单舞台 + 真实模型闭环
+ * 工作台：三栏「智能体」空壳原型 —— 对话流驱动。
+ *
+ * 设计取向（先见形，后调逻辑）：中栏是对话流主区，兼当前任务舞台；
+ * 发送指令 → 用户气泡 → 调 /api/agent/chat → 助手气泡回显识别到的意图。
+ * 左栏只放任务/插件简单入口，不做状态面板；右栏是上下文。
+ *
+ * 安全：所有气泡文本（含模型返回、插件反馈）一律用 textContent 落 DOM，
+ * 不走 innerHTML，杜绝 XSS（AGENTS §5：不可信输入进 DOM 前必须净化）。
  */
 (function () {
   "use strict";
 
   // --- State ---
-  var currentView = "original"; // "original" | "split"
-  var writeToken = null;
-  var reviewItems = [];
-  var lastOcrText = "";
   var providerList = [];
+  var writeToken = null;
+  var currentTask = "";
 
   // --- DOM refs ---
-  var sidebar = document.getElementById("wsSidebar");
   var sidebarToggle = document.getElementById("wsToggleSidebar");
-  var contextPanel = document.getElementById("wsContext");
   var contextToggle = document.getElementById("wsToggleContext");
+  var thread = document.getElementById("wsThread");
   var chatForm = document.getElementById("wsChatForm");
   var promptInput = document.getElementById("wsPrompt");
-  var reviewBody = document.getElementById("wsReviewBody");
-  var toggleBtns = document.querySelectorAll(".ws-toggle-btn");
+  var sendBtn = document.getElementById("wsSendBtn");
+  var stageTitle = document.getElementById("wsStageTitle");
+  var ctxTask = document.getElementById("ctxTask");
+  var ctxModel = document.getElementById("ctxModel");
+  var ctxHistory = document.getElementById("ctxHistory");
+  var modelBtn = document.getElementById("wsModelBtn");
+  var modelLabel = document.getElementById("wsModelLabel");
   var providerSelect = document.getElementById("wsProviderSelect");
-  var providerStatus = document.getElementById("wsProviderStatus");
 
-  // --- Sidebar collapse ---
-  if (sidebarToggle && sidebar) {
-    sidebarToggle.addEventListener("click", function () {
-      var expanded = sidebar.classList.toggle("collapsed");
-      sidebarToggle.setAttribute("aria-expanded", String(!expanded));
-      sidebarToggle.textContent = expanded ? "展开" : "折叠";
-    });
+  // ============ 对话流：气泡工厂 ============
+  function addBubble(role, text, opts) {
+    if (!thread) return null;
+    opts = opts || {};
+    var wrap = document.createElement("div");
+    wrap.className = "ws-msg ws-msg-" + role;
+
+    var bubble = document.createElement("div");
+    bubble.className = "ws-bubble";
+    if (opts.tone) bubble.setAttribute("data-tone", opts.tone);
+    bubble.textContent = text; // 不可信内容也只当纯文本，天然免 XSS
+
+    if (opts.source) {
+      var src = document.createElement("span");
+      src.className = "ws-bubble-source";
+      src.textContent = opts.source;
+      bubble.appendChild(src);
+    }
+
+    wrap.appendChild(bubble);
+    thread.appendChild(wrap);
+    scrollThreadToBottom();
+    return wrap;
   }
 
-  // --- Context collapse ---
-  if (contextToggle && contextPanel) {
-    contextToggle.addEventListener("click", function () {
-      var collapsed = contextPanel.classList.toggle("collapsed");
-      contextToggle.setAttribute("aria-expanded", String(!collapsed));
-      contextToggle.textContent = collapsed ? "展开" : "折叠";
-    });
+  function addTyping() {
+    if (!thread) return null;
+    var wrap = document.createElement("div");
+    wrap.className = "ws-msg ws-msg-bot";
+    var bubble = document.createElement("div");
+    bubble.className = "ws-bubble";
+    var typing = document.createElement("span");
+    typing.className = "ws-typing";
+    for (var i = 0; i < 3; i += 1) typing.appendChild(document.createElement("span"));
+    bubble.appendChild(typing);
+    wrap.appendChild(bubble);
+    thread.appendChild(wrap);
+    scrollThreadToBottom();
+    return wrap;
   }
 
-  // --- View toggle (original / split) ---
-  toggleBtns.forEach(function (btn) {
+  function scrollThreadToBottom() {
+    if (thread) thread.scrollTop = thread.scrollHeight;
+  }
+
+  function logHistory(text) {
+    if (!ctxHistory) return;
+    var placeholder = ctxHistory.querySelector(".ws-placeholder");
+    if (placeholder) placeholder.remove();
+    var li = document.createElement("li");
+    var time = new Date();
+    var hh = String(time.getHours()).padStart(2, "0");
+    var mm = String(time.getMinutes()).padStart(2, "0");
+    li.textContent = hh + ":" + mm + " · " + text;
+    ctxHistory.insertBefore(li, ctxHistory.firstChild);
+    // 只留最近 8 条，避免无限增长
+    while (ctxHistory.children.length > 8) {
+      ctxHistory.removeChild(ctxHistory.lastChild);
+    }
+  }
+
+  // ============ 当前任务舞台 ============
+  function setStage(taskName) {
+    currentTask = taskName || "";
+    if (stageTitle) stageTitle.textContent = currentTask || "新会话";
+    if (ctxTask) ctxTask.textContent = currentTask || "未选择";
+  }
+
+  var taskButtons = document.querySelectorAll(".ws-task-item");
+  taskButtons.forEach(function (btn) {
     btn.addEventListener("click", function () {
-      var view = btn.getAttribute("data-view");
-      if (!view) return;
-      currentView = view;
-      toggleBtns.forEach(function (b) {
-        var isActive = b === btn;
-        b.classList.toggle("active", isActive);
-        b.setAttribute("aria-pressed", String(isActive));
+      var task = btn.getAttribute("data-task") || "";
+      var seed = btn.getAttribute("data-seed") || "";
+      taskButtons.forEach(function (b) {
+        b.setAttribute("aria-current", String(b === btn));
       });
-      renderReviewList();
+      setStage(task);
+      addBubble("sys", "已切换到任务舞台：" + task);
+      logHistory("进入任务「" + task + "」");
+      if (seed && promptInput) {
+        promptInput.value = seed;
+        autoGrow();
+      }
+      if (promptInput) promptInput.focus();
     });
   });
 
-  // --- Write token fetch (一次性令牌，用后即焚) ---
-  function ensureWriteToken() {
-    if (writeToken) return Promise.resolve(writeToken);
-    return fetch("/api/settings", { cache: "no-store" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (settings) {
-        writeToken = settings.local_token || "";
-        return writeToken;
-      })
-      .catch(function () {
-        writeToken = "";
-        return "";
-      });
+  // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
+  var wsPage = document.querySelector(".ws-page");
+  var mqMobile = window.matchMedia("(max-width: 768px)");
+  var openSidebarBtn = document.getElementById("wsOpenSidebar");
+
+  function setSide(open) {
+    if (!wsPage) return;
+    wsPage.setAttribute("data-side", open ? "open" : "hidden");
+    if (sidebarToggle) {
+      sidebarToggle.setAttribute("aria-expanded", String(open));
+      sidebarToggle.textContent = open ? "折叠" : "展开";
+    }
+    if (openSidebarBtn) openSidebarBtn.setAttribute("aria-expanded", String(open));
   }
 
-  // --- Real API: send instruction → cards produced by the active provider ---
+  function setCtx(open) {
+    if (!wsPage) return;
+    wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
+    if (contextToggle) contextToggle.setAttribute("aria-expanded", String(open));
+  }
+
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", function () {
+      setSide(wsPage.getAttribute("data-side") !== "open");
+    });
+  }
+
+  if (openSidebarBtn) {
+    openSidebarBtn.addEventListener("click", function () {
+      setSide(wsPage.getAttribute("data-side") !== "open");
+    });
+  }
+
+  if (contextToggle) {
+    contextToggle.addEventListener("click", function () {
+      setCtx(wsPage.getAttribute("data-ctx") !== "open");
+    });
+  }
+
+  // 默认态：桌面两栏展开；窄屏抽屉收起，避免一进来就糊在中栏上。
+  setSide(!mqMobile.matches);
+  setCtx(!mqMobile.matches);
+
+  // ============ 输入器：Enter 发送 / Shift+Enter 换行 / 自适应高度 ============
+  function autoGrow() {
+    if (!promptInput) return;
+    promptInput.style.height = "auto";
+    var next = Math.min(promptInput.scrollHeight, 180);
+    promptInput.style.height = next + "px";
+  }
+
+  if (promptInput) {
+    promptInput.addEventListener("input", autoGrow);
+    promptInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (chatForm) chatForm.requestSubmit();
+      }
+    });
+  }
+
+  // ============ 发送指令 → 对话 Agent → 助手气泡 ============
   function describeSource(response) {
-    var data = response.data || {};
-    if (response.mock) {
-      return "Mock 降级（当前 Provider 未配置密钥）";
-    }
+    if (response && response.mock) return "Mock 降级（当前 Provider 未配置密钥）";
+    var data = (response && response.data) || {};
     return "模型 " + (data.model || "未知") + " 产出";
   }
 
-  function sendInstruction(prompt) {
+  function summarizeAction(parsed, source) {
+    // 空壳原型：把 Agent 识别到的意图如实回显，具体执行待后续接入。
+    var action = parsed && parsed.action;
+    // 真实模型常把参数嵌在 params 下，Mock 则平铺在顶层；两处都认。
+    var p = (parsed && parsed.params) ? parsed.params : (parsed || {});
+    if (action === "split_paper") {
+      var range = Array.isArray(p.page_range) ? p.page_range : [];
+      var pageText = range.length === 2 ? "第 " + range[0] + "–" + range[1] + " 页" : "全卷";
+      return "已识别【拆题】指令：" + pageText + "。（空壳原型：拆题结果将在接入拆题 Agent 后于此展开）";
+    }
+    if (action === "tag_question") {
+      return "已识别【标记题目】指令：" + (p.question_id || "未指明题目") + "。";
+    }
+    if (action === "export_paper") {
+      return "已识别【导出】指令：格式 " + (p.format || "未指明") + "。";
+    }
+    if (action === "clarify") {
+      return p.question || (parsed && parsed.question) || "请再明确一下你的指令。";
+    }
+    if (typeof parsed === "string") return parsed;
+    return "已收到指令，但暂未识别为具体操作。（空壳原型：先见形，后调逻辑）";
+  }
+
+  function callAgent(prompt) {
     return fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,649 +220,84 @@
         return r.json();
       })
       .then(function (response) {
-        var content = response.data && response.data.content;
-        if (!content) throw new Error("Empty response from agent");
-
+        // 正常信封读 data.content；模型异常时后端回 fallback.content（仍可用）
+        var envelope = response && response.data ? response.data : response && response.fallback;
+        var content = envelope && envelope.content;
         var source = describeSource(response);
-
+        if (!content) {
+          return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn" };
+        }
         var parsed;
         try {
           parsed = JSON.parse(content);
         } catch (e) {
           parsed = { action: "clarify", question: content };
         }
-
-        // Render based on action type
-        if (parsed.action === "split_paper") {
-          var range = Array.isArray(parsed.page_range) ? parsed.page_range : [];
-          var pageText = range.length === 2 ? "第" + range[0] + "-" + range[1] + "页" : "全卷";
-          if (!lastOcrText) {
-            return {
-              items: [],
-              message: "已识别拆题指令（" + pageText + "），但尚未导入原卷文本。" + source,
-              isError: true,
-            };
-          }
-          return callSplitApi(lastOcrText).then(function (result) {
-            return {
-              items: result.items,
-              message: "已拆分 " + result.items.length + " 道题目（" + pageText + " · " + result.source + "）",
-              isError: false,
-            };
-          });
-        } else if (parsed.action === "tag_question") {
-          return { items: [], message: "已标记题目：" + parsed.question_id + "（" + source + "）", isError: false };
-        } else if (parsed.action === "export_paper") {
-          return { items: [], message: "正在导出为 " + parsed.format + " 格式…（" + source + "）", isError: false };
-        } else if (parsed.action === "clarify") {
-          return { items: [], message: parsed.question || "请明确指令", isError: true };
-        } else {
-          return { items: [], message: "未识别的操作：" + (parsed.action || "未知"), isError: true };
-        }
+        return { text: summarizeAction(parsed, source), source: source, tone: null };
       });
   }
 
-  // --- Confirm action (with one-time token): 入库模型产出的真实题面 ---
-  var CARD_TYPES = ["single_choice", "multiple_choice", "fill_blank", "solution", "proof"];
-  var CARD_DIFFICULTIES = ["basic", "medium", "hard", "novel"];
-
-  function buildQuestionPayload(card) {
-    var payload = {
-      type: CARD_TYPES.indexOf(card.type) >= 0 ? card.type : "unknown",
-      stem: card.stem,
-      difficulty: CARD_DIFFICULTIES.indexOf(card.difficulty) >= 0 ? card.difficulty : "basic",
-    };
-    var options = normalizeOptions(card.options);
-    if (options.length) payload.options = options;
-    if (card.answer) payload.answer = buildAnswer(card, options);
-    if (card.solution) payload.solution = card.solution;
-    return payload;
-  }
-
-  function buildAnswer(card, options) {
-    var raw = String(card.answer).trim();
-    var isChoice = card.type === "single_choice" || card.type === "multiple_choice";
-    var keys = options.map(function (item) {
-      return item.key;
-    });
-    var letters = raw
-      .toUpperCase()
-      .split("")
-      .filter(function (ch, idx, all) {
-        return ch >= "A" && ch <= "H" && all.indexOf(ch) === idx;
-      });
-    if (isChoice && letters.length && keys.length && letters.every(function (k) { return keys.indexOf(k) >= 0; })) {
-      return { kind: "choice", choice_keys: letters };
-    }
-    return { kind: "text", content: raw };
-  }
-
-  function confirmItem(card) {
-    return ensureWriteToken().then(function (token) {
-      if (!token) {
-        throw new Error("No write token available");
-      }
-
-      return fetch("/api/questions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-JZO-Token": token,
-        },
-        body: JSON.stringify(buildQuestionPayload(card)),
-      })
-        .then(function (r) {
-          if (!r.ok) {
-            if (r.status === 401) {
-              throw new Error("令牌已失效，再点一次【确认入库】即可（会自动换新令牌，无需刷新页面）");
-            }
-            return r.json().then(function (body) {
-              var detail = body && body.detail;
-              var message = typeof detail === "string" ? detail : (detail && detail.message) || "";
-              var errors = (detail && detail.errors) || [];
-              throw new Error(message || ("HTTP " + r.status) + (errors.length ? "：" + errors.join("；") : ""));
-            });
-          }
-          return r.json();
-        })
-        .then(function (result) {
-          return { ok: true, id: result.id };
-        })
-        // 一次性令牌在 require_write_token 校验通过的那一刻就已被服务端轮换，
-        // 与业务成没成功无关：400（写法不合法）同样把令牌吃掉了。
-        // 只在成功路径清缓存会让下一次写入必然 401，逼用户刷新页面。
-        .finally(function () {
-          writeToken = null;
-        });
-    });
-  }
-
-  // --- Render review list ---
-  function sourceBadge(item) {
-    if (!item.source) return "";
-    var isMock = item.source.indexOf("Mock") >= 0;
-    return (
-      ' · <span class="ws-review-item-source' +
-      (isMock ? " ws-source-mock" : "") +
-      '">' +
-      escapeHtml(item.source) +
-      "</span>"
-    );
-  }
-
-  function renderReviewList() {
-    if (!reviewBody) return;
-
-    if (reviewItems.length === 0) {
-      reviewBody.innerHTML = '<p class="ws-empty-hint">暂无题目。发送指令后卡片将出现在此处。</p>';
-      return;
-    }
-
-    if (currentView === "split") {
-      renderSplitView();
-    } else {
-      renderOriginalView();
-    }
-  }
-
-  function renderOriginalView() {
-    var html = '<ul class="ws-review-list" role="listbox">';
-    reviewItems.forEach(function (item, idx) {
-      html +=
-        '<li class="ws-review-item" tabindex="0" role="option" data-index="' +
-        idx +
-        '" data-id="' +
-        escapeHtml(item.id) +
-        '">' +
-        '<div class="ws-review-item-title">' +
-        escapeHtml(truncate(item.stem, 60)) +
-        "</div>" +
-        '<div class="ws-review-item-meta">' +
-        typeLabel(item.type) +
-        " · " +
-        difficultyLabel(item.difficulty) +
-        sourceBadge(item) +
-        "</div>" +
-        '<div class="ws-review-item-detail">' +
-        "<p><strong>题干：</strong>" +
-        escapeHtml(item.stem) +
-        "</p>" +
-        (item.options
-          ? "<p><strong>选项：</strong>" + formatOptions(item.options) + "</p>"
-          : "") +
-        (item.answer ? "<p><strong>答案：</strong>" + escapeHtml(String(item.answer)) + "</p>" : "") +
-        '<button class="ws-btn ws-btn-sm ws-confirm-btn" data-id="' +
-        escapeHtml(item.id) +
-        '">确认入库</button>' +
-        "</div>" +
-        "</li>";
-    });
-    html += "</ul>";
-    reviewBody.innerHTML = html;
-
-    // Bind expand on click/enter/space
-    var items = reviewBody.querySelectorAll(".ws-review-item");
-    items.forEach(function (el) {
-      el.addEventListener("click", function () {
-        toggleExpand(el);
-      });
-      el.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          toggleExpand(el);
-        }
-      });
-    });
-
-    // Bind confirm buttons
-    var confirmBtns = reviewBody.querySelectorAll(".ws-confirm-btn");
-    confirmBtns.forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var id = btn.getAttribute("data-id");
-        handleConfirm(id, btn);
-      });
-    });
-  }
-
-  function renderSplitView() {
-    var html = '<div class="ws-split-view">';
-    html +=
-      '<div class="ws-split-col"><h4>原卷</h4><ul class="ws-review-list" role="listbox">';
-    reviewItems.forEach(function (item, idx) {
-      html +=
-        '<li class="ws-review-item" tabindex="0" role="option" data-index="' +
-        idx +
-        '" data-id="' +
-        escapeHtml(item.id) +
-        '">' +
-        '<div class="ws-review-item-title">' +
-        escapeHtml(truncate(item.stem, 50)) +
-        "</div>" +
-        '<div class="ws-review-item-meta">' +
-        typeLabel(item.type) +
-        "</div>" +
-        "</li>";
-    });
-    html += "</ul></div>";
-
-    html +=
-      '<div class="ws-split-col"><h4>拆题</h4><ul class="ws-review-list" role="listbox">';
-    reviewItems.forEach(function (item, idx) {
-      html +=
-        '<li class="ws-review-item" tabindex="0" role="option" data-index="' +
-        idx +
-        '" data-id="' +
-        escapeHtml(item.id) +
-        '">' +
-        '<div class="ws-review-item-title">' +
-        escapeHtml(truncate(item.stem, 50)) +
-        "</div>" +
-        '<div class="ws-review-item-meta">' +
-        difficultyLabel(item.difficulty) +
-        sourceBadge(item) +
-        " · <button class='ws-btn ws-btn-sm ws-confirm-btn' data-id='" +
-        escapeHtml(item.id) +
-        "'>确认</button>" +
-        "</div>" +
-        "</li>";
-    });
-    html += "</ul></div></div>";
-
-    reviewBody.innerHTML = html;
-
-    // Bind confirm in split view
-    var confirmBtns = reviewBody.querySelectorAll(".ws-confirm-btn");
-    confirmBtns.forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var id = btn.getAttribute("data-id");
-        handleConfirm(id, btn);
-      });
-    });
-  }
-
-  function toggleExpand(el) {
-    var wasExpanded = el.classList.contains("expanded");
-    // Collapse all
-    reviewBody.querySelectorAll(".ws-review-item").forEach(function (item) {
-      item.classList.remove("expanded");
-    });
-    // Toggle clicked
-    if (!wasExpanded) {
-      el.classList.add("expanded");
-    }
-  }
-
-  function handleConfirm(itemId, btn) {
-    var card = reviewItems.filter(function (item) {
-      return item.id === itemId;
-    })[0];
-    if (!card) {
-      showToast("清单里已找不到题目 " + itemId + "，请重新拆题", true);
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = "处理中…";
-    confirmItem(card)
-      .then(function (result) {
-        btn.textContent = "已确认";
-        btn.classList.add("ws-btn-primary");
-        showToast("已入库，服务端 ID：" + result.id);
-      })
-      .catch(function (error) {
-        btn.disabled = false;
-        btn.textContent = "确认入库";
-        showToast("确认失败：" + error.message, true);
-      });
-  }
-
-  // --- Chat form submit ---
   if (chatForm) {
     chatForm.addEventListener("submit", function (e) {
       e.preventDefault();
-      var prompt = promptInput.value.trim();
+      var prompt = promptInput ? promptInput.value.trim() : "";
       if (!prompt) return;
 
-      var sendBtn = document.getElementById("wsSendBtn");
+      addBubble("user", prompt);
+      logHistory("发送指令：" + (prompt.length > 24 ? prompt.slice(0, 24) + "…" : prompt));
+      promptInput.value = "";
+      autoGrow();
+
       if (sendBtn) {
         sendBtn.disabled = true;
+        sendBtn.setAttribute("aria-busy", "true");
         sendBtn.textContent = "发送中…";
       }
+      var typing = addTyping();
 
-      sendInstruction(prompt)
-        .then(function (result) {
-          // 只在新结果真的带卡片时替换清单，clarify/报错不得清空已有卡片
-          if (result.items && result.items.length) {
-            reviewItems = result.items;
-            renderReviewList();
-          }
-          promptInput.value = "";
-          if (sendBtn) {
-            sendBtn.disabled = false;
-            sendBtn.textContent = "发送";
-          }
-          showToast(result.message, result.isError);
+      callAgent(prompt)
+        .then(function (res) {
+          if (typing) typing.remove();
+          addBubble("bot", res.text, { source: res.source, tone: res.tone });
         })
         .catch(function (err) {
-          if (sendBtn) {
-            sendBtn.disabled = false;
-            sendBtn.textContent = "发送";
-          }
-          showToast("指令执行失败：" + err.message, true);
-        });
-    });
-  }
-
-  // --- Utilities ---
-  function escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function truncate(str, len) {
-    if (!str) return "";
-    return str.length > len ? str.slice(0, len) + "…" : str;
-  }
-
-  function typeLabel(type) {
-    var map = {
-      single_choice: "单选",
-      multiple_choice: "多选",
-      fill_blank: "填空",
-      solution: "解答",
-      proof: "证明",
-      unknown: "未知",
-    };
-    return map[type] || type;
-  }
-
-  function difficultyLabel(diff) {
-    var map = {
-      basic: "基础",
-      medium: "中档",
-      hard: "压轴",
-      novel: "新定义",
-    };
-    return map[diff] || diff;
-  }
-
-  function formatOptions(options) {
-    return normalizeOptions(options)
-      .map(function (item) {
-        return item.key + ". " + item.content;
-      })
-      .join("； ");
-  }
-
-  function showToast(msg, isError) {
-    // Simple toast using existing app.css if available, else console
-    if (typeof window.showToast === "function") {
-      window.showToast(msg, isError);
-    } else {
-      console.log(isError ? "[Error]" : "[Info]", msg);
-    }
-  }
-
-  // --- Init ---
-  renderReviewList();
-
-  // --- OCR Import Modal ---
-  var importBtn = document.getElementById("wsImportOcrBtn");
-  var ocrModal = document.getElementById("wsOcrModal");
-  var ocrText = document.getElementById("wsOcrText");
-  var ocrSubmitBtn = document.getElementById("wsOcrSubmitBtn");
-  var closeButtons = document.querySelectorAll("[data-modal-close]");
-
-  if (importBtn && ocrModal) {
-    importBtn.addEventListener("click", function () {
-      ocrModal.hidden = false;
-      ocrText.value = "";
-      ocrText.focus();
-    });
-  }
-
-  if (closeButtons) {
-    closeButtons.forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        ocrModal.hidden = true;
-      });
-    });
-  }
-
-  if (ocrSubmitBtn) {
-    ocrSubmitBtn.addEventListener("click", function () {
-      var text = ocrText.value.trim();
-      if (!text) {
-        showToast("请输入原卷文本", true);
-        return;
-      }
-
-      ocrSubmitBtn.disabled = true;
-      ocrSubmitBtn.textContent = "拆题中…";
-
-      callSplitApi(text)
-        .then(function (result) {
-          lastOcrText = text;
-          reviewItems = result.items;
-          renderReviewList();
-          ocrModal.hidden = true;
-          showToast("已拆分 " + result.items.length + " 道题目（" + result.source + "）");
-        })
-        .catch(function (err) {
-          showToast("拆题失败：" + err.message, true);
+          if (typing) typing.remove();
+          addBubble("bot", "指令执行失败：" + err.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
         })
         .finally(function () {
-          ocrSubmitBtn.disabled = false;
-          ocrSubmitBtn.textContent = "开始拆题";
-        });
-    });
-  }
-
-  // --- Call /api/agent/split ---
-  function callSplitApi(ocrMarkdown) {
-    return fetch("/api/agent/split", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ocr_markdown: ocrMarkdown, task_id: "ws_" + Date.now() }),
-    })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (response) {
-        var content = response.data && response.data.content;
-        if (!content) throw new Error("Empty response from split agent");
-
-        var source = describeSource(response);
-
-        var questions;
-        try {
-          questions = JSON.parse(content);
-        } catch (e) {
-          throw new Error("Invalid JSON in split response");
-        }
-
-        if (!Array.isArray(questions)) {
-          throw new Error("Expected array of questions");
-        }
-
-        return {
-          source: source,
-          items: questions.map(function (q, idx) {
-            return normalizeCard(q, idx, source);
-          }),
-        };
-      });
-  }
-
-  // --- Normalize one model card into the card shape this page renders ---
-  function normalizeCard(raw, idx, source) {
-    var card = {
-      id: typeof raw.id === "string" && raw.id ? raw.id : "card_" + (idx + 1),
-      type: raw.type || "unknown",
-      stem: raw.stem || "",
-      difficulty: raw.difficulty || "basic",
-      source: source,
-    };
-    var options = normalizeOptions(raw.options);
-    if (options.length) card.options = options;
-    if (raw.answer) card.answer = raw.answer;
-    if (raw.solution) card.solution = raw.solution;
-    if (raw.status) card.status = raw.status;
-    return card;
-  }
-
-  // 模型可能给数组、{A:"..."} 字典，或 [{key,content}]；统一成 [{key, content}]
-  function normalizeOptions(options) {
-    if (!options) return [];
-    if (Array.isArray(options)) {
-      return options.map(function (item, idx) {
-        var key = "ABCDEFGH".charAt(idx) || String(idx);
-        if (item && typeof item === "object") {
-          return { key: String(item.key || key), content: String(item.content || item.text || "") };
-        }
-        return { key: key, content: String(item == null ? "" : item) };
-      });
-    }
-    if (typeof options === "object") {
-      return Object.keys(options).map(function (key) {
-        return { key: String(key), content: String(options[key] == null ? "" : options[key]) };
-      });
-    }
-    return [];
-  }
-
-  // --- Workspace Management ---
-  var workspaceSelect = document.getElementById("wsWorkspaceSelect");
-  var newWorkspaceBtn = document.getElementById("wsNewWorkspaceBtn");
-
-  function loadWorkspaces() {
-    return fetch("/api/workspaces")
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        populateWorkspaceSelector(data.workspaces || [], data.current);
-        return data;
-      });
-  }
-
-  function populateWorkspaceSelector(workspaces, currentId) {
-    if (!workspaceSelect) return;
-
-    workspaceSelect.innerHTML = "";
-
-    workspaces.forEach(function (ws) {
-      var option = document.createElement("option");
-      option.value = ws.id;
-      option.textContent = ws.name || ws.id;
-      // is_active 由后端逐项标注；currentId 是顶层当前库，二者任一命中即选中，
-      // 保证刷新页面后下拉框真实反映当前活跃工作区。
-      if (ws.is_active || (currentId && ws.id === currentId)) {
-        option.selected = true;
-      }
-      workspaceSelect.appendChild(option);
-    });
-  }
-
-  function switchWorkspace(workspaceId) {
-    return fetch("/api/workspaces/switch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ workspace_id: workspaceId }),
-    })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        // Clear local state on workspace switch — 清单是上一库的数据，绝不留到新库
-        reviewItems = [];
-        lastOcrText = "";
-        renderReviewList();
-
-        // Refresh token for new workspace（每库独立 .local_token，必须重取）
-        writeToken = null;
-        loadSettings();
-
-        // 让下拉框与后端 is_active 保持一致（新建后自动切换、或从别处触发时）
-        if (workspaceSelect) {
-          workspaceSelect.value = data.workspace_id || workspaceId;
-        }
-        loadWorkspaces().catch(function () {});
-
-        showToast("已切换到工作区：" + (data.name || workspaceId));
-        return data;
-      });
-  }
-
-  function createWorkspace(name) {
-    return fetch("/api/workspaces", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name }),
-    })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        showToast("工作区创建成功: " + data.name);
-        return loadWorkspaces().then(function () {
-          // Auto-switch to new workspace
-          if (workspaceSelect) {
-            workspaceSelect.value = data.id;
+          if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.removeAttribute("aria-busy");
+            sendBtn.textContent = "发送";
           }
-          return switchWorkspace(data.id);
+          if (promptInput) promptInput.focus();
         });
-      });
+    });
   }
 
-  function loadSettings() {
-    return fetch("/api/settings")
+  // ============ 写令牌（一次性，用后即焚） ============
+  function fetchWriteToken() {
+    return fetch("/api/settings", { cache: "no-store" })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw new Error("读取本机令牌失败（HTTP " + r.status + "）");
         return r.json();
       })
       .then(function (data) {
-        if (data.local_token) {
-          writeToken = data.local_token;
-        }
+        var token = data && data.local_token ? String(data.local_token) : "";
+        if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
+        writeToken = token;
+        return token;
       });
   }
 
-  // Event listeners for workspace controls
-  if (workspaceSelect) {
-    workspaceSelect.addEventListener("change", function () {
-      var workspaceId = workspaceSelect.value;
-      if (workspaceId) {
-        switchWorkspace(workspaceId).catch(function (err) {
-          showToast("切换工作区失败: " + err.message, true);
-          // Revert selector to previous value
-          loadWorkspaces();
-        });
-      }
-    });
+  function readErrorDetail(response, body) {
+    var detail = body && body.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail.message === "string") return detail.message;
+    return "HTTP " + response.status;
   }
 
-  if (newWorkspaceBtn) {
-    newWorkspaceBtn.addEventListener("click", function () {
-      var name = prompt("请输入新工作区名称：");
-      if (name && name.trim()) {
-        createWorkspace(name.trim()).catch(function (err) {
-          showToast("创建工作区失败: " + err.message, true);
-        });
-      }
-    });
-  }
-
-  // --- AI Provider 注册表：只展示「是否已配置 + 模型名 + 接口主机」，密钥不下发 ---
+  // ============ 模型 Provider：加载 / 切换 / 配置 ============
   function findActiveProvider() {
     for (var i = 0; i < providerList.length; i += 1) {
       if (providerList[i].active) return providerList[i];
@@ -744,22 +305,24 @@
     return null;
   }
 
-  function renderProviderStatus() {
-    if (!providerStatus) return;
+  function renderModelChip() {
     var active = findActiveProvider();
+    if (!modelLabel || !modelBtn) return;
     if (!active) {
-      providerStatus.textContent = "未读取到 Provider 注册表";
-      providerStatus.classList.add("ws-provider-mock");
+      modelLabel.textContent = "模型 · 未就绪";
+      modelBtn.setAttribute("data-state", "mock");
+      if (ctxModel) ctxModel.textContent = "未就绪";
       return;
     }
     if (!active.configured || active.mock) {
-      providerStatus.textContent = "Mock 降级：「" + active.label + "」未配置 API Key";
-      providerStatus.classList.add("ws-provider-mock");
+      modelLabel.textContent = "模型 · " + active.label + "（Mock）";
+      modelBtn.setAttribute("data-state", "mock");
+      if (ctxModel) ctxModel.textContent = active.label + " · Mock 降级（未配置密钥）";
       return;
     }
-    providerStatus.textContent =
-      "真实模型 · " + (active.model || "未填模型名") + (active.host ? " · " + active.host : "");
-    providerStatus.classList.remove("ws-provider-mock");
+    modelLabel.textContent = "模型 · " + (active.model || active.label);
+    modelBtn.setAttribute("data-state", "live");
+    if (ctxModel) ctxModel.textContent = active.label + " · " + (active.model || "已配置");
   }
 
   function loadProviders() {
@@ -780,46 +343,36 @@
             providerSelect.appendChild(option);
           });
         }
-        renderProviderStatus();
+        renderModelChip();
         return data;
       });
   }
 
   function switchProvider(name) {
-    return ensureWriteToken()
+    return fetchWriteToken()
       .then(function (token) {
         return fetch("/api/providers/active", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-JZO-Token": token,
-          },
+          headers: { "Content-Type": "application/json", "X-JZO-Token": token },
           body: JSON.stringify({ name: name }),
         });
       })
       .then(function (r) {
         if (!r.ok) {
-          return r.json().then(function (body) {
-            var detail = body && body.detail;
-            throw new Error(
-              (typeof detail === "string" ? detail : (detail && detail.message)) || "HTTP " + r.status
-            );
+          return r.json().catch(function () { return null; }).then(function (body) {
+            throw new Error(readErrorDetail(r, body));
           });
         }
         return r.json();
       })
       .then(function (data) {
-        showToast(
-          data.mock
-            ? "已切到「" + data.active + "」：未配置密钥，走 Mock"
-            : "已切到「" + data.active + "」：真实模型 " + data.model,
-          data.mock
-        );
+        addBubble("sys", data.mock
+          ? "已切到「" + data.active + "」：未配置密钥，走 Mock"
+          : "已切到「" + data.active + "」：真实模型 " + data.model);
+        logHistory("切换 Provider：" + data.active);
         return loadProviders();
       })
-      .finally(function () {
-        writeToken = null;
-      });
+      .finally(function () { writeToken = null; });
   }
 
   if (providerSelect) {
@@ -827,220 +380,13 @@
       var name = providerSelect.value;
       if (!name) return;
       switchProvider(name).catch(function (err) {
-        showToast("切换 Provider 失败：" + err.message, true);
+        addBubble("sys", "切换 Provider 失败：" + err.message, { tone: "warn" });
         loadProviders().catch(function () {});
       });
     });
   }
 
-  // Load initial workspace list
-  loadWorkspaces().then(function () {
-    loadSettings();
-  }).catch(function (err) {
-    console.error("Failed to load workspaces:", err);
-  });
-
-  loadProviders().catch(function (err) {
-    console.error("Failed to load providers:", err);
-    renderProviderStatus();
-  });
-
-  // --- 通用：每次写操作取一枚新鲜的一次性令牌（用后即焚，不缓存） ---
-  function fetchWriteToken() {
-    return fetch("/api/settings", { cache: "no-store" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("读取本机令牌失败（HTTP " + r.status + "）");
-        return r.json();
-      })
-      .then(function (data) {
-        var token = data && data.local_token ? String(data.local_token) : "";
-        if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
-        return token;
-      });
-  }
-
-  function readErrorDetail(response, body) {
-    var detail = body && body.detail;
-    if (typeof detail === "string") return detail;
-    if (detail && typeof detail.message === "string") return detail.message;
-    return "HTTP " + response.status;
-  }
-
-  // --- 插件一键装：已安装列表 + 拖拽 zip + 选文件安装 ---
-  var installedList = document.getElementById("wsInstalledList");
-  var pluginStatus = document.getElementById("wsPluginStatus");
-  var pluginInstallBtn = document.getElementById("wsPluginInstallBtn");
-  var pluginFileInput = document.getElementById("wsPluginFile");
-  var dropOverlay = document.getElementById("wsDropOverlay");
-  var dragDepth = 0;
-
-  var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };
-
-  function setPluginStatus(text, tone) {
-    if (!pluginStatus) return;
-    pluginStatus.textContent = text || "";
-    pluginStatus.setAttribute("data-tone", tone || "info");
-  }
-
-  function loadPluginList() {
-    return fetch("/api/plugins", { cache: "no-store" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        if (!installedList) return data;
-        installedList.innerHTML = "";
-        (data.plugins || []).forEach(function (plugin) {
-          var li = document.createElement("li");
-          li.className = "ws-plugin-item";
-          var name = document.createElement("span");
-          name.className = "ws-plugin-name";
-          name.textContent = plugin.name;
-          var meta = document.createElement("span");
-          meta.className = "ws-plugin-meta";
-          meta.textContent =
-            (KIND_LABELS[plugin.kind] || plugin.kind) + " · v" + plugin.version;
-          li.appendChild(name);
-          li.appendChild(meta);
-          installedList.appendChild(li);
-        });
-        if (!data.plugins || !data.plugins.length) {
-          var empty = document.createElement("li");
-          empty.className = "ws-plugin-empty";
-          empty.textContent = "还没有安装任何插件";
-          installedList.appendChild(empty);
-        }
-        var rejected = data.rejected || [];
-        setPluginStatus(
-          rejected.length ? "有 " + rejected.length + " 个目录未过校验：" + rejected[0].reason : "",
-          rejected.length ? "warn" : "info"
-        );
-        return data;
-      })
-      .catch(function (err) {
-        setPluginStatus("插件列表读取失败：" + err.message, "down");
-      });
-  }
-
-  function installPluginZip(file, replace) {
-    if (!file) return Promise.resolve();
-    if (!/\.zip$/i.test(file.name || "")) {
-      showToast("只接受 .zip 插件包（标准 zip，解压即用）", true);
-      return Promise.resolve();
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      showToast("zip 包超过 50 MB 上限", true);
-      return Promise.resolve();
-    }
-    setPluginStatus("正在安装 " + file.name + " …", "info");
-    if (pluginInstallBtn) {
-      pluginInstallBtn.disabled = true;
-      pluginInstallBtn.setAttribute("aria-busy", "true");
-    }
-    return fetchWriteToken()
-      .then(function (token) {
-        return fetch("/api/plugins/install" + (replace ? "?replace=true" : ""), {
-          method: "POST",
-          headers: { "Content-Type": "application/zip", "X-JZO-Token": token },
-          body: file,
-        });
-      })
-      .then(function (r) {
-        return r.json().catch(function () { return null; }).then(function (body) {
-          if (r.status === 409 && !replace) {
-            var question = readErrorDetail(r, body) + " 覆盖升级会先删除旧目录，继续吗？";
-            if (window.confirm(question)) return installPluginZip(file, true);
-            setPluginStatus("", "info");
-            return null;
-          }
-          if (!r.ok) throw new Error(readErrorDetail(r, body));
-          var plugin = body && body.plugin ? body.plugin : {};
-          showToast("插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
-          return loadPluginList().then(function () {
-            // 列表刷新会把状态行重置，成功提示要落在刷新之后才留得住
-            setPluginStatus(
-              "已安装 " + (plugin.name || plugin.id) + " v" + (plugin.version || "?") + "，题库页刷新即可使用",
-              "ok"
-            );
-          });
-        });
-      })
-      .catch(function (err) {
-        showToast("插件安装失败：" + err.message, true);
-        setPluginStatus("安装失败：" + err.message, "down");
-      })
-      .finally(function () {
-        if (pluginInstallBtn) {
-          pluginInstallBtn.disabled = false;
-          pluginInstallBtn.setAttribute("aria-busy", "false");
-        }
-      });
-  }
-
-  function pickFirstZip(fileList) {
-    for (var i = 0; i < (fileList || []).length; i += 1) {
-      if (/\.zip$/i.test(fileList[i].name || "")) return fileList[i];
-    }
-    return null;
-  }
-
-  function hasFiles(event) {
-    var types = (event.dataTransfer && event.dataTransfer.types) || [];
-    return Array.prototype.indexOf.call(types, "Files") !== -1;
-  }
-
-  function showDropOverlay(show) {
-    if (!dropOverlay) return;
-    dropOverlay.hidden = !show;
-  }
-
-  window.addEventListener("dragenter", function (event) {
-    if (!hasFiles(event)) return;
-    event.preventDefault();
-    dragDepth += 1;
-    showDropOverlay(true);
-  });
-  window.addEventListener("dragover", function (event) {
-    if (!hasFiles(event)) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-  });
-  window.addEventListener("dragleave", function (event) {
-    if (!hasFiles(event)) return;
-    dragDepth -= 1;
-    if (dragDepth <= 0) {
-      dragDepth = 0;
-      showDropOverlay(false);
-    }
-  });
-  window.addEventListener("drop", function (event) {
-    if (!hasFiles(event)) return;
-    event.preventDefault();
-    dragDepth = 0;
-    showDropOverlay(false);
-    var file = pickFirstZip(event.dataTransfer && event.dataTransfer.files);
-    if (!file) {
-      showToast("没看到 .zip 文件：插件包必须是标准 zip", true);
-      return;
-    }
-    installPluginZip(file, false);
-  });
-
-  if (pluginInstallBtn && pluginFileInput) {
-    pluginInstallBtn.addEventListener("click", function () {
-      pluginFileInput.click();
-    });
-    pluginFileInput.addEventListener("change", function () {
-      var file = pluginFileInput.files && pluginFileInput.files[0];
-      pluginFileInput.value = "";
-      if (file) installPluginZip(file, false);
-    });
-  }
-
-  loadPluginList();
-
-  // --- Provider 配置面板：填 Key / Base URL / 模型名，测连通，热生效 ---
+  // --- Provider 配置弹窗 ---
   var providerModal = document.getElementById("wsProviderModal");
   var providerModalTarget = document.getElementById("wsProviderModalTarget");
   var providerBaseUrlInput = document.getElementById("wsProviderBaseUrl");
@@ -1049,7 +395,6 @@
   var providerTestBtn = document.getElementById("wsProviderTestBtn");
   var providerSaveBtn = document.getElementById("wsProviderSaveBtn");
   var providerTestResult = document.getElementById("wsProviderTestResult");
-  var providerConfigBtn = document.getElementById("wsProviderConfigBtn");
   var providerModalFocusBefore = null;
 
   function currentProviderName() {
@@ -1090,8 +435,8 @@
 
   function openProviderModal() {
     if (!providerModal) return;
-    if (!currentProviderName()) {
-      showToast("Provider 注册表还没加载出来，稍候再试", true);
+    if (!providerList.length) {
+      addBubble("sys", "Provider 注册表还没加载出来，稍候再试。", { tone: "warn" });
       return;
     }
     providerModalFocusBefore = document.activeElement;
@@ -1102,7 +447,7 @@
     if (providerModelInput) providerModelInput.value = profile ? profile.model || "" : "";
     setTestResult("", "info");
     providerModal.hidden = false;
-    if (providerBaseUrlInput) providerBaseUrlInput.focus();
+    if (providerSelect) providerSelect.focus();
   }
 
   function closeProviderModal() {
@@ -1114,7 +459,7 @@
     providerModalFocusBefore = null;
   }
 
-  if (providerConfigBtn) providerConfigBtn.addEventListener("click", openProviderModal);
+  if (modelBtn) modelBtn.addEventListener("click", openProviderModal);
 
   document.querySelectorAll("[data-provider-modal-close]").forEach(function (btn) {
     btn.addEventListener("click", closeProviderModal);
@@ -1128,7 +473,6 @@
       return;
     }
     if (event.key === "Tab") {
-      // 焦点陷阱：Tab 循环锁在弹窗内
       var focusables = providerModal.querySelectorAll(
         'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
       );
@@ -1183,6 +527,7 @@
         });
       })
       .finally(function () {
+        writeToken = null;
         providerSaveBtn.disabled = false;
         providerSaveBtn.setAttribute("aria-busy", "false");
       });
@@ -1193,16 +538,15 @@
       saveProviderConfig()
         .then(function (saved) {
           if (saved) {
-            showToast("配置已保存并热生效（密钥只落在本机 .env）");
+            addBubble("sys", "配置已保存并热生效（密钥只落在本机 .env）");
+            logHistory("保存 Provider 配置");
             if (providerApiKeyInput) providerApiKeyInput.value = "";
             if (providerBaseUrlInput) providerBaseUrlInput.value = "";
           }
-          return loadProviders().then(function () {
-            renderProviderModalTarget();
-          });
+          return loadProviders().then(renderProviderModalTarget);
         })
         .catch(function (err) {
-          showToast("保存配置失败：" + err.message, true);
+          setTestResult("保存失败：" + err.message, "down");
         });
     });
   }
@@ -1230,15 +574,13 @@
           return r.json().catch(function () { return null; }).then(function (body) {
             if (!r.ok) throw new Error(readErrorDetail(r, body));
             setTestResult((body.ok ? "连通正常 ✓ " : "不通 ✗ ") + body.detail, body.ok ? "ok" : "down");
-            if (saved) {
-              return loadProviders().then(function () {
-                renderProviderModalTarget();
-              });
-            }
+            writeToken = null;
+            if (saved) return loadProviders().then(renderProviderModalTarget);
             return null;
           });
         })
         .catch(function (err) {
+          writeToken = null;
           setTestResult("测试失败：" + err.message, "down");
         })
         .finally(function () {
@@ -1247,4 +589,128 @@
         });
     });
   }
+
+  // ============ 插件一键装：拖拽 zip + 选文件（简单入口，反馈进对话流） ============
+  var pluginInstallBtn = document.getElementById("wsPluginInstallBtn");
+  var pluginFileInput = document.getElementById("wsPluginFile");
+  var dropOverlay = document.getElementById("wsDropOverlay");
+  var dragDepth = 0;
+
+  function installPluginZip(file, replace) {
+    if (!file) return Promise.resolve();
+    if (!/\.zip$/i.test(file.name || "")) {
+      addBubble("sys", "只接受 .zip 插件包（标准 zip，解压即用）。", { tone: "warn" });
+      return Promise.resolve();
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      addBubble("sys", "zip 包超过 50 MB 上限。", { tone: "warn" });
+      return Promise.resolve();
+    }
+    addBubble("sys", "正在安装 " + file.name + " …");
+    if (pluginInstallBtn) {
+      pluginInstallBtn.disabled = true;
+      pluginInstallBtn.setAttribute("aria-busy", "true");
+    }
+    return fetchWriteToken()
+      .then(function (token) {
+        return fetch("/api/plugins/install" + (replace ? "?replace=true" : ""), {
+          method: "POST",
+          headers: { "Content-Type": "application/zip", "X-JZO-Token": token },
+          body: file,
+        });
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (body) {
+          if (r.status === 409 && !replace) {
+            var question = readErrorDetail(r, body) + " 覆盖升级会先删除旧目录，继续吗？";
+            if (window.confirm(question)) return installPluginZip(file, true);
+            return null;
+          }
+          if (!r.ok) throw new Error(readErrorDetail(r, body));
+          var plugin = body && body.plugin ? body.plugin : {};
+          addBubble("sys", "插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
+          logHistory("安装插件 " + (plugin.name || plugin.id));
+          return null;
+        });
+      })
+      .catch(function (err) {
+        addBubble("sys", "插件安装失败：" + err.message, { tone: "warn" });
+      })
+      .finally(function () {
+        writeToken = null;
+        if (pluginInstallBtn) {
+          pluginInstallBtn.disabled = false;
+          pluginInstallBtn.setAttribute("aria-busy", "false");
+        }
+      });
+  }
+
+  function pickFirstZip(fileList) {
+    for (var i = 0; i < (fileList || []).length; i += 1) {
+      if (/\.zip$/i.test(fileList[i].name || "")) return fileList[i];
+    }
+    return null;
+  }
+
+  function hasFiles(event) {
+    var types = (event.dataTransfer && event.dataTransfer.types) || [];
+    return Array.prototype.indexOf.call(types, "Files") !== -1;
+  }
+
+  function showDropOverlay(show) {
+    if (!dropOverlay) return;
+    dropOverlay.hidden = !show;
+  }
+
+  window.addEventListener("dragenter", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    showDropOverlay(true);
+  });
+  window.addEventListener("dragover", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("dragleave", function (event) {
+    if (!hasFiles(event)) return;
+    dragDepth -= 1;
+    if (dragDepth <= 0) {
+      dragDepth = 0;
+      showDropOverlay(false);
+    }
+  });
+  window.addEventListener("drop", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    showDropOverlay(false);
+    var file = pickFirstZip(event.dataTransfer && event.dataTransfer.files);
+    if (!file) {
+      addBubble("sys", "没看到 .zip 文件：插件包必须是标准 zip。", { tone: "warn" });
+      return;
+    }
+    installPluginZip(file, false);
+  });
+
+  if (pluginInstallBtn && pluginFileInput) {
+    pluginInstallBtn.addEventListener("click", function () {
+      pluginFileInput.click();
+    });
+    pluginFileInput.addEventListener("change", function () {
+      var file = pluginFileInput.files && pluginFileInput.files[0];
+      pluginFileInput.value = "";
+      if (file) installPluginZip(file, false);
+    });
+  }
+
+  // ============ 初始化 ============
+  setStage("");
+  addBubble("sys", "九章算子工作台已就绪 · 对话驱动的智能体空壳原型（先见形，后调逻辑）");
+  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选一个任务，或直接在下方输入指令（如「拆分第 1–2 页」「导出为 PDF」），我会先回显识别到的意图。");
+
+  loadProviders().catch(function () {
+    renderModelChip();
+  });
 })();
