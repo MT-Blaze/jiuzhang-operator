@@ -100,7 +100,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
