@@ -127,8 +127,12 @@ org.example.card.zip
 
 ## 2. 插件分类
 
+本章分三类：§2.1 的 AI 模型档与 §2.2 的数据源是**底座内部扩展**（Python 模块，随底座一起发布）；只有 §2.3 的 UI 渲染插件是**用户可自己写、以 zip 安装的插件**。只想写插件的人可以直接跳到 §2.3。
+
 ### 2.1 AI 模型插件（Provider）
 提供大模型对话能力。**新增一家供应商只需在 `app/core/providers/` 放一个模块，不改底座、不改前端。**
+
+> 注意：Provider 是底座内置的 Python 模块，不是 zip 插件。想写可安装的插件，看 §2.3。
 
 **运行时契约**（`app/core/provider.py`）：
 ```python
@@ -166,8 +170,10 @@ class ProviderProfile:      # app/core/providers/__init__.py
 - `siliconflow` — `JZO_SILICONFLOW_BASE_URL` / `JZO_SILICONFLOW_API_KEY` / `JZO_SILICONFLOW_MODEL`
 - `ollama`（本地预留位，`local.py`）— `JZO_OLLAMA_BASE_URL` / `JZO_OLLAMA_API_KEY` / `JZO_OLLAMA_MODEL`；Ollama 自带 OpenAI 兼容接口，无需真密钥，Key 填任意占位（如 `ollama`）即可点亮。
 
-### 2.2 数据源插件（DataSource）
+### 2.2 数据源插件（DataSource）——预留，当前不可安装
 提供外部数据接入能力（题库同步、OCR 服务、云存储等）。
+
+> 底座当前**没有后端插件运行时**：清单里出现 `backend` 会直接拒装（见 §2.3.2）。本节是留给后续版本的目标契约，现在照着写是装不上的，别踩空。
 
 **接口契约**：
 ```typescript
@@ -195,39 +201,198 @@ interface DataSource {
 }
 ```
 
-### 2.3 UI 渲染插件（Renderer）
-自定义题目卡片、编辑器组件、预览模板等前端渲染逻辑。
+### 2.3 UI 渲染插件（Renderer）：从零写一个能装上的插件
 
-**目录结构**：
-```
-plugins/org.example.card/
-├── plugin.json        # 元数据
-├── dist/
-│   ├── plugin.js      # 入口脚本
-│   └── styles.css     # 样式
-└── templates/
-    └── card.html      # 卡片模板
+本节写给第一次写插件的人：照着做，半小时能装上一个自己的插件。可运行的最小样板在 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)，整目录照抄再改名最省事。
+
+#### 2.3.1 五步装上一个自己的插件
+
+1. **建目录**：目录名就是插件 `id`（反向域名，如 `com.example.card`），后面必须与 `plugin.json` 里的 `id` 一字不差。
+2. **写 `plugin.json`**：字段逐项见 §2.3.2，直接抄下面的例子。
+3. **放 `LICENSE`**：插件根目录必须有 `LICENSE` 文件，内容是 Apache-2.0 全文（复制仓库根目录那份即可）。
+4. **写入口页**：`dist/index.html` 是入口，`dist/plugin.js` 写逻辑；样式放 `dist/plugin.css`，在入口页里正常 `<link>` 即可。
+5. **打包安装**：把整个插件目录压成 zip（zip 最外层是 `id/` 目录，别只压 `dist/`），然后任选一条路：拖进工作台 / 解压后把目录放进 `plugins/` / 在插件索引页点【在线安装】。装完打开 `/api/plugins`：`plugins[]` 里有你的 id 就成功了；`rejected[]` 会用中文写清哪条不合格。
+
+目录长这样：
+
+```text
+com.example.card/
+├── plugin.json
+├── LICENSE
+├── README.md            # 可选
+└── dist/
+    ├── index.html       # entry.frontend 指向这里
+    ├── plugin.js
+    └── plugin.css       # 可选，与入口同目录
 ```
 
-**plugin.json 规范**：
+入口页最小写法（和官方占位插件同款）：
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的题卡</title>
+  <link rel="stylesheet" href="./plugin.css">
+</head>
+<body>
+  <div id="root" hidden></div>
+  <script src="./plugin.js"></script>
+</body>
+</html>
+```
+
+#### 2.3.2 plugin.json 字段逐项说明
+
+最小可用清单：
+
 ```json
 {
-  "id": "org.example.card",
-  "name": "经典卡片渲染器",
-  "version": "1.0.0",
-  "protocol": "jzo-plugin/1",
-  "entry_url": "/plugin-assets/org.example.card/dist/plugin.js",
-  "assets": [
-    "/plugin-assets/org.example.card/dist/styles.css"
-  ],
-  "permissions": ["read:questions", "render:katex"]
+  "schema_version": "1.0",
+  "id": "com.example.card",
+  "name": "我的题卡",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "renderer",
+  "description": "一句话说明这个插件做什么，最多 200 字。",
+  "author": "你的名字",
+  "license": "Apache-2.0",
+  "entry": { "frontend": "dist/index.html" },
+  "slots": ["question.card"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"]
 }
 ```
 
-**安全限制**：
-- CSP 策略：`default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`
-- 禁止访问 `window.parent` 以外的全局对象
-- 网络请求仅限同源 `/api/` 路径
+| 字段 | 必填 | 规则（写错会被拒装） |
+| --- | --- | --- |
+| `schema_version` | 是 | 固定 `"1.0"` |
+| `id` | 是 | 反向域名，全小写，至少两段（如 `com.example.card`）；**必须与目录名一致** |
+| `name` | 是 | 1–64 字，给人看的名字 |
+| `version` | 是 | 语义化版本，如 `1.0.0` |
+| `api_version` | 是 | `"1.x"` 形式；主版本不是 1 一律拒装 |
+| `kind` | 是 | `renderer` / `importer` / `exporter` / `tool` |
+| `description` | 是 | 1–200 字 |
+| `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
+| `entry` | 是 | 对象，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
+| `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` |
+| `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export`；`renderer` 必须含 `question.render` |
+| `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
+| `author` | 否 | 字符串 |
+| `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
+
+> **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
+>
+> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.json`，一个题目数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
+
+#### 2.3.3 和宿主说话：消息协议
+
+宿主把插件放在沙箱 iframe 里，双方只用 `postMessage` 交换两种消息：**宿主发请求，插件回响应**。
+
+请求（宿主 → 插件）：
+
+```json
+{
+  "protocol": "jzo-plugin/1",
+  "id": "本次请求的随机 id",
+  "kind": "request",
+  "method": "question.render",
+  "payload": { "slot": "question.card", "question": { "id": "q_...", "stem": "题干" } }
+}
+```
+
+响应（插件 → 宿主）——成功：
+
+```json
+{ "protocol": "jzo-plugin/1", "id": "原样带回", "kind": "response", "ok": true, "result": { "html": "<article>...</article>", "height": 96 } }
+```
+
+失败：
+
+```json
+{ "protocol": "jzo-plugin/1", "id": "原样带回", "kind": "response", "ok": false, "error": { "code": "INVALID_PAYLOAD", "message": "缺少 stem", "retryable": false } }
+```
+
+宿主会发来的方法：
+
+| method | 插件要做什么 |
+| --- | --- |
+| `plugin.activate` | 初始化，回 `{ "ready": true }`（可附 `plugin_id`、`api_version`） |
+| `plugin.deactivate` | 清理定时器与监听，回 `{ "ready": false }` |
+| `question.render` | 按 `payload.slot` 渲染 `payload.question`，回 `{ "html": "...", "height": 数字 }` |
+| `theme.changed` / `locale.changed` / `question.updated` | 记下变化即可，回 `{ "accepted": true }`；不需要可忽略 |
+
+完整的 `dist/plugin.js` 骨架（可以直接用）：
+
+```javascript
+(function () {
+  "use strict";
+  var PROTOCOL = "jzo-plugin/1";
+
+  function reply(target, id, result) {
+    target.postMessage(
+      { protocol: PROTOCOL, id: id, kind: "response", ok: true, result: result },
+      "*"
+    );
+  }
+
+  function fail(target, id, code, message) {
+    target.postMessage(
+      {
+        protocol: PROTOCOL, id: id, kind: "response", ok: false,
+        error: { code: code, message: message, retryable: false }
+      },
+      "*"
+    );
+  }
+
+  function escapeHtml(text) {
+    return String(text == null ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  window.addEventListener("message", function (event) {
+    var msg = event.data;
+    if (!msg || msg.protocol !== PROTOCOL || msg.kind !== "request") return;
+
+    if (msg.method === "plugin.activate") {
+      return reply(event.source, msg.id, { ready: true, plugin_id: "com.example.card" });
+    }
+    if (msg.method === "plugin.deactivate") {
+      return reply(event.source, msg.id, { ready: false });
+    }
+    if (msg.method === "question.render") {
+      var payload = msg.payload || {};
+      var question = payload.question || {};
+      if (typeof question.stem !== "string") {
+        return fail(event.source, msg.id, "INVALID_PAYLOAD", "题目缺少 stem。");
+      }
+      return reply(event.source, msg.id, {
+        html: '<article class="my-card">' + escapeHtml(question.stem) + "</article>",
+        height: 96
+      });
+    }
+    fail(event.source, msg.id, "UNSUPPORTED_METHOD", "未实现的方法：" + String(msg.method));
+  });
+})();
+```
+
+四条硬规则：① 先校验 `protocol` 和 `kind`，不是请求就丢弃；② 响应必须原样带回 `id`；③ 一律回 `event.source`，不要猜父窗口；④ 不认识的方法回 `UNSUPPORTED_METHOD`，不要静默吞掉。
+
+#### 2.3.4 安全边界（宿主兜底，但你别踩线）
+
+- **沙箱**：iframe 带 `sandbox`、无 `allow-same-origin`，插件拿不到宿主 DOM、Cookie、localStorage 或写令牌；与宿主只靠 `postMessage` 说话。
+- **只读 `dist/`**：资源只从 `/plugin-assets/<id>/dist/...` 发出，只认 `.html` / `.css` / `.js` / `.svg` / `.png` / `.webp` / `.woff2`；包外路径、`..`、符号链接一律 404。
+- **不能联网**：入口页 CSP 为 `default-src 'none'; script-src 'self' <底座源>; style-src 'self' <底座源>; img-src 'self' <底座源>; connect-src 'none'; base-uri 'none'; form-action 'none'`，`fetch` / `XHR` / 远程图片全被拦；图片只能用底座托管路径或 `asset://`。
+- **返回值会被净化**：插件回传的 HTML 过宿主白名单，`<script>`、内联事件属性、`javascript:` 链接、远程样式与 `@import` 都会被剥掉。别依赖它们，写了也白写。
+- **碰不到密钥与文件**：插件拿不到环境变量、模型密钥、数据库和文件系统；需要数据只能走宿主授权范围内的消息。
+
+#### 2.3.5 当前进度（先说清楚，免得装完找不到）
+
+`v0.5.3` 的界面以对话为主：装好的插件会出现在左栏插件区与 `/api/plugins`，`question.import` / `question.render` 会进入对话工具表（说「拆分第一题」走的就是它）。题库列表页与题卡渲染宿主已在早前版本（废弃题库列表页时）一并下线，**`question.render` 暂时不会在页面上出卡片**，渲染宿主会在后续版本接回；按本节写好的插件届时无需改动。想立刻看到「插件真的被执行」，优先写 `importer`（自带 `seed/questions.json`）。
 
 ---
 
@@ -256,13 +421,15 @@ plugins/org.example.card/
 ## 4. 插件生命周期
 
 | 阶段 | 宿主行为 | 插件义务 |
-|------|---------|---------|
-| 发现 | 扫描 `plugins/` 目录读取 `plugin.json`（zip 包由用户解压后放入，见 §1.2） | 提供合法元数据，目录名与 `id` 一致 |
-| 加载 | 注入 iframe 并加载 `entry_url` | 监听 `DOMContentLoaded` 后发送 `ready` 消息 |
-| 激活 | 调用 `init()` 传入配置 | 初始化内部状态 |
-| 运行 | 转发用户操作为 `postMessage` | 处理消息并返回结果 |
-| 停用 | 调用 `destroy()` | 清理定时器、事件监听 |
-| 卸载 | 移除 iframe DOM 节点 | 无（浏览器自动回收） |
+| --- | --- | --- |
+| 发现 | 每次 `GET /api/plugins` 扫描 `plugins/`、读取并校验 `plugin.json`（不合格进 `rejected[]`，不影响其他插件） | 清单合法，目录名与 `id` 一致 |
+| 加载 | 在沙箱 iframe 中打开 `entry.frontend`（经 `/plugin-assets/<id>/dist/...` 分发） | 页面能独立加载，不依赖宿主全局变量 |
+| 激活 | 发出 `plugin.activate` 请求 | 初始化内部状态并回响应（`ready: true`） |
+| 运行 | 按用户操作发出 `question.render` 等请求 | 处理消息并回 `result`，错误回 `error` |
+| 停用 | 发出 `plugin.deactivate` 请求 | 清理定时器、事件监听 |
+| 卸载 | 移除 iframe；用户删除目录即完成卸载 | 不要在自己目录之外写任何文件 |
+
+发现是「请求时扫描」，改清单或换插件目录无需重启服务；正在运行的 iframe 要刷新页面才会加载新代码。装错的插件会被隔离在 `rejected[]` 里，底座与其他插件照常工作。
 
 ---
 
@@ -275,25 +442,26 @@ plugins/org.example.card/
 - 不阻断主流程（降级为默认行为）
 
 ### 5.2 异常隔离
-插件抛出的未捕获异常不得导致宿主崩溃：
+插件抛出的未捕获异常不得导致宿主崩溃。处理请求时自己兜住异常，回一条结构化错误，而不是让消息石沉大海：
+
 ```javascript
 try {
-  await plugin.handleAction(action);
+  handleRequest(msg);
 } catch (err) {
-  console.error(`[Plugin ${plugin.id}] Error:`, err);
-  showFallbackUI();
+  console.error("[Plugin " + PLUGIN_ID + "] 处理失败：", err);
+  fail(event.source, msg.id, "INTERNAL_ERROR", "插件内部错误，请重试。");
 }
 ```
+
+宿主侧同样兜底：超时、连续报错或 iframe 崩溃时回落到默认展示，并记录隔离日志，不拖垮底板。
 
 ---
 
 ## 6. 版本兼容
 
-- **主版本号变更**：不兼容旧版插件，需用户手动迁移
-- **次版本号变更**：向后兼容，新增功能
-- **修订号变更**：仅修复 bug
-
-宿主声明最低支持的 `protocol` 版本，插件元数据中的版本低于该值时拒绝加载。
+- 宿主当前只认 `api_version` 主版本 **1**（写作 `"1.x"`），主版本不符直接拒装；次版本用于向后兼容的新增能力。
+- `version` 是插件自己的语义化版本，只用于展示与人工判断；底座不据此强制升级，也不会远程禁用旧版（对齐 §1.1）。
+- 协议标识固定为 `jzo-plugin/1`，出现在消息封包与 `/api/plugins` 响应的 `protocol` 字段；它**不是** `plugin.json` 的字段，别写进清单。
 
 ---
 

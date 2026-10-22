@@ -113,7 +113,7 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 点击「自由对话」或插件条目只切换工作模式：右侧「当前任务」随之更新，插件模式下把插件身份、能力与「现在处于该插件的工作模式下」注入对话上下文，不跳转、不另开页；
 - 底座仍不写死任何业务功能；插件坏了或列表读取失败时，自由对话照常可用。
 
-尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
+尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）、页内题卡渲染宿主（插件可安装、可被发现，`question.render` 暂只在对话工具里执行，页面不出卡片）。
 
 ## 快速开始
 
@@ -148,6 +148,36 @@ curl -X POST http://127.0.0.1:8000/api/questions \
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
+
+## 自己写一个插件
+
+插件就是**一个 zip 包**，不需要注册、不需要编译，也不用改底座。最短路径：
+
+1. 建目录 `com.example.card/`，放进 `plugin.json`、`LICENSE`（Apache-2.0 全文）和 `dist/index.html` + `dist/plugin.js`；
+2. 照抄这份最小清单（字段含义与全部取值见 [PLUGIN_SPEC.md §2.3.2](PLUGIN_SPEC.md)）：
+
+```json
+{
+  "schema_version": "1.0",
+  "id": "com.example.card",
+  "name": "我的题卡",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "renderer",
+  "description": "一句话说明这个插件做什么。",
+  "license": "Apache-2.0",
+  "entry": { "frontend": "dist/index.html" },
+  "slots": ["question.card"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"]
+}
+```
+
+3. 把整个目录压成 zip 拖进工作台（或解压后放进 `plugins/`），再打开 `/api/plugins`：`plugins[]` 里出现自己的 id 就算装好了，`rejected[]` 会写明没装上的原因。
+
+和宿主通信的完整消息协议（`plugin.activate` / `question.render`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
+
+> 当前 `v0.5.3` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；题卡渲染宿主尚未接回，`question.render` 暂时不会在页面上出卡片（见 PLUGIN_SPEC §2.3.5）。
 
 ## 目录结构
 
@@ -238,11 +268,11 @@ jiuzhang-operator/
 | `/healthz` | 健康检查 JSON |
 | `/` | 智能工作台（根路径直达，对话驱动） |
 | `/about` | 底座介绍页（原首页，设计原则与只读契约入口导航） |
-| `/workspace` | 智能工作台（导入原卷 → 发指令 → 出真卡片） |
-| `/plugins` | 插件索引页（自填 `plugins.json` 地址拉取清单，只读、不安装） |
+| `/workspace` | 智能工作台（导入原卷 → 发指令 → 出题目与解析） |
+| `/plugins` | 插件索引页（默认预填官方镜像，可当场改地址；拉清单只读，装包需逐条点【在线安装】） |
 | `/api/questions` | 题目列表（分页、搜索、筛选） |
-| `/api/plugins` | 已加载插件清单 |
-| `POST /api/plugins/index` | 按**用户填入**的地址拉取一份插件索引（只读 GET，需一次性写令牌；底座无默认地址） |
+| `/api/plugins` | 已加载插件清单（`rejected[]` 列出未通过校验的插件与原因） |
+| `POST /api/plugins/index` | 按用户填入的地址拉取一份插件索引（只读 GET，需一次性写令牌；官方地址失败时自动换源，不解压、不安装） |
 | `/plugins/index-example` | 仓库自带的示例索引，给「试一试」按钮一个同源可跑通的地址 |
 | `/api/providers` | Provider 注册表（只暴露是否已配置与接口主机名） |
 | `/schemas/question.json` | 题目 JSON Schema |
