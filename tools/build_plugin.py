@@ -33,7 +33,7 @@ DENY_NAMES = {
     ".local_token",
     "plugin.zip",
 }
-DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak"}
+DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal", ".db-journal"}
 DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache"}
 
 
