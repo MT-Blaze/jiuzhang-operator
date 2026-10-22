@@ -656,7 +656,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
     </a>
     <div class="badges">
       <span class="badge badge-strong">Apache-2.0</span>
-      <span class="badge">v0.6.1 内测</span>
+      <span class="badge">v0.6.2 内测</span>
       <span class="badge">完全本地运行</span>
       <span class="badge">仅 3 个依赖</span>
     </div>
@@ -777,7 +777,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
       <div class="block-head">
         <span class="rule" aria-hidden="true"></span>
         <h2 id="features-title">现在能做什么</h2>
-        <p>标「已通」的是 v0.6.1 已落地并可跑通的；标「待做」的是明确缺口，不粉饰。</p>
+        <p>标「已通」的是 v0.6.2 已落地并可跑通的；标「待做」的是明确缺口，不粉饰。</p>
       </div>
 
       <div class="grid">
@@ -846,16 +846,23 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
 
         <div class="card">
           <span class="card-index">10</span>
-          <span class="tag tag-todo">待做</span>
+          <span class="tag tag-done">已通</span>
           <span class="card-title">题目录入 / 编辑表单</span>
-          <span class="card-desc">接口与列表渲染已就绪，缺手工录入与编辑的界面。</span>
+          <span class="card-desc">录题工作台（org.jiuzhang.editor）接管中央舞台：中间表单录题干/选项/答案/解析/难度/知识点，右侧 A4 实时预览排版，一键清洗 LaTeX，经宿主 bank.create 写入真题库——令牌始终留在宿主侧。</span>
         </div>
 
         <div class="card">
           <span class="card-index">11</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">录入 / 题库 / 组卷 / 讲义插件</span>
+          <span class="card-desc">四个业务插件已落在 plugins/ 并进官方索引：真题题库（456 题 SQLite）、组卷排版（A4 分页）、讲义排版（Markdown 转 A4）、录题工作台。导出与 AI 辅助仍是缺口。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">12</span>
           <span class="tag tag-todo">待做</span>
-          <span class="card-title">导入 / 组卷 / 导出插件</span>
-          <span class="card-desc">架构已为它们留好位置，业务插件本体尚未开写。</span>
+          <span class="card-title">导出插件与批量编辑</span>
+          <span class="card-desc">导出（Word/PDF 逐题）、已入库题目的编辑与删除界面尚未开写；录题插件目前只新增、不改旧题。</span>
         </div>
       </div>
     </section>
@@ -926,7 +933,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
 
       <div class="table-wrap">
         <table>
-          <caption>九章算子 v0.6.1 技术栈与约束</caption>
+          <caption>九章算子 v0.6.2 技术栈与约束</caption>
           <thead>
             <tr><th scope="col">层面</th><th scope="col">选型</th><th scope="col">约束</th></tr>
           </thead>
@@ -1100,7 +1107,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
     <span class="sep" aria-hidden="true"></span>
     <span>Apache License 2.0</span>
     <span class="sep" aria-hidden="true"></span>
-    <span>Jiuzhang Operator v0.6.1</span>
+    <span>Jiuzhang Operator v0.6.2</span>
     <span class="sep" aria-hidden="true"></span>
     <span>本页零脚本、零外部请求，可完全离线</span>
   </footer>

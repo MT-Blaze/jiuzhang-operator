@@ -1,5 +1,5 @@
 /**
- * Stage：中栏画布的 Tabs 宿主（v0.6.1）。
+ * Stage：中栏画布的 Tabs 宿主。
  *
  * 职责边界（军令任务 3）：中栏只是「通用舞台」，底座负责挂标签页、挂 iframe、
  * 转发事件；业务画面一律由插件自己画。左、右、下三区仍由底座托管，
@@ -11,7 +11,7 @@
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
  *
  * 协议：jzo-plugin/1（PLUGIN_SPEC §2.3.3）。宿主发 request，插件回 response；
- * v0.6.1 新增单向 notification（无 id、不等回复、插件必须幂等）。
+ * 另有单向 notification（无 id、不等回复、插件必须幂等）。
  * 沙箱只给 allow-scripts：插件文档处于不透明源，碰不到宿主 DOM 与令牌。
  */
 (function () {
@@ -308,9 +308,12 @@
   // plugin.id」去查接口。插件在 payload 里自报 plugin_id 一律不认，防止串库。
   // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
   var RELAY_METHODS = [
-    "bank.list", "bank.stats", "bank.get", "bank.random",
+    "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
     "basket.list", "basket.add", "basket.remove", "basket.clear"
   ];
+  // 录题插件的写入目标：底座唯一的公共题库。插件自报 plugin_id 一律不认，
+  // 防止 A 插件把题塞进 B 插件私有库。
+  var CANONICAL_BANK_ID = "org.jiuzhang.core-bank";
   var RELAY_TIMEOUT_MS = 20000;
   var RELAY_WINDOW_MS = 10000;
   var RELAY_MAX_PER_WINDOW = 80;
@@ -450,6 +453,38 @@
         message: String((error && error.message) || "宿主请求失败").slice(0, 200),
         retryable: Boolean(error && error.status >= 500)
       });
+    }
+
+    if (method === "bank.create") {
+      var permissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (permissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能写入题库"
+        });
+        return;
+      }
+      var question = payload.question;
+      if (!question || typeof question !== "object" || Array.isArray(question)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待写入的 question 对象" });
+        return;
+      }
+      withWriteToken(
+        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: question })
+        }
+      ).then(function (result) {
+        emit("question.updated", {
+          action: "create",
+          id: result && result.id,
+          pluginId: tab.plugin.id
+        });
+        done(result);
+      }, fail);
+      return;
     }
 
     if (method === "bank.stats") {
@@ -776,6 +811,8 @@
       bus.on("ui.params.changed", function (event) { broadcast("ui.params.changed", event.payload); });
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
+      // 录题插件写库成功 → 题库画布刷新列表（宿主统一生成事件，插件之间不直连）
+      bus.on("question.updated", function (event) { broadcast("question.updated", event.payload); });
       bus.on("stage.broadcast", function (event) {
         var payload = event.payload || {};
         if (typeof payload.event === "string") broadcast(payload.event, payload.payload);

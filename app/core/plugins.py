@@ -34,6 +34,8 @@ _CAPABILITIES = {
     "question.render",
     "question.export",
     "question.import",
+    # 录题工作台：产出标准题目并写入公共题库（v0.6.2）
+    "question.edit",
     # 组卷与讲义是「消费题篮、产出 A4」的能力，不等同于单题渲染/导出
     "paper.generate",
     "handout.render",

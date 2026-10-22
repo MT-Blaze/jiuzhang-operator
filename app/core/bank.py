@@ -24,6 +24,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.core import questions as question_contract
 from app.core.config import settings
 
 PLUGIN_ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
@@ -91,6 +92,10 @@ class BankError(Exception):
 
 
 class BankNotFound(BankError):
+    pass
+
+
+class BankConflict(BankError):
     pass
 
 
@@ -206,9 +211,10 @@ def _document_row(document: dict[str, Any]) -> dict[str, Any]:
     taxonomy = document.get("taxonomy") or {}
     source = document.get("source") or {}
     legacy = (document.get("extensions") or {}).get("org.jiuzhang.legacy") or {}
+    editor = (document.get("extensions") or {}).get("org.jiuzhang.editor") or {}
     return {
         "id": document["id"],
-        "grade": str(document.get("grade") or legacy.get("grade") or ""),
+        "grade": str(document.get("grade") or legacy.get("grade") or editor.get("grade") or ""),
         "difficulty": document.get("difficulty", ""),
         "type": document.get("type", ""),
         "chapter": str(taxonomy.get("chapter") or ""),
@@ -291,6 +297,43 @@ def import_documents(
     finally:
         con.close()
     return len(rows)
+
+
+def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:
+    """往指定插件题库新增一道题，返回写入后的标准结构。
+
+    录题插件不碰数据库：它把表单整理成 ``schemas/question.json`` 结构，经宿主
+    带一次性令牌转到这里。校验与底座 ``questions`` 表共用同一份 Schema，
+    避免两份存储对同一道题各说各话。ID 由底座生成，插件不得指定历史 ID。
+    """
+    if isinstance(payload, dict) and "id" in payload:
+        # 旧 ID 可能是历史题目或他人题目：一律作废，由底座重新签发
+        payload = {key: value for key, value in payload.items() if key != "id"}
+    document = question_contract.prepare_new_question(payload)
+    question_contract.validate_question(document)
+
+    row = _document_row(document)
+    path = ensure_bank(plugin_id)
+    con = sqlite3.connect(path, timeout=10.0)
+    try:
+        con.execute("PRAGMA busy_timeout = 5000")
+        con.execute("BEGIN IMMEDIATE")
+        columns = ", ".join(_COLUMNS)
+        placeholders = ", ".join("?" for _ in _COLUMNS)
+        try:
+            con.execute(
+                f"INSERT INTO bank_questions ({columns}) VALUES ({placeholders})",
+                [row[column] for column in _COLUMNS],
+            )
+        except sqlite3.IntegrityError as exc:
+            raise BankConflict(f"题目 ID {document['id']} 已存在，请重试。") from exc
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    return document
 
 
 def metadata(plugin_id: str) -> dict[str, Any]:

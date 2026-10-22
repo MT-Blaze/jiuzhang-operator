@@ -318,6 +318,96 @@ class BankApiContractTest(unittest.TestCase):
         status, data = self._request("/api/basket")
         self.assertEqual(data["total"], 0)
 
+    # ---------- 录题写入（v0.6.2） ----------
+    def _editor_question(self, **overrides) -> dict:
+        document = {
+            "schema_version": "1.0",
+            "type": "fill_blank",
+            "stem": "录题契约题：已知 $x^2-5x+6=0$，则 $x=$ ＿＿＿＿。",
+            "answer": {"kind": "expression", "content": "$x=2$ 或 $x=3$", "final": "2,3"},
+            "solution": "因式分解得 $(x-2)(x-3)=0$。",
+            "difficulty": "basic",
+            "tags": ["一元二次方程", "因式分解"],
+            "extensions": {"org.jiuzhang.editor": {"grade": "高一"}},
+            "meta": {"status": "published", "author": "录题工作台"},
+        }
+        document.update(overrides)
+        return document
+
+    def test_z1_create_requires_token(self) -> None:
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST", {"question": self._editor_question()}
+        )
+        self.assertEqual(status, 401)
+
+    def test_z2_create_roundtrip(self) -> None:
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(stem="录题契约题：往返校验唯一题干 $\\dfrac{1}{2}$。")},
+            token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertRegex(created["id"], r"^q_[A-Za-z0-9_-]{8,64}$")
+        self.assertEqual(created["meta"]["status"], "published")
+        self.assertEqual(created["difficulty"], "basic")
+
+        status, fetched = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(fetched["stem"], created["stem"])
+        self.assertEqual(fetched["answer"]["content"], "$x=2$ 或 $x=3$")
+        self.assertEqual(fetched["grade"], "高一")   # 年级由录题扩展字段落库
+
+        status, listed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?"
+            + self._query(q="往返校验唯一题干", page_size=10)
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(any(item["id"] == created["id"] for item in listed["items"]))
+
+    def test_z3_create_ignores_supplied_id_and_rejects_bad_schema(self) -> None:
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(id="q_hijack_00000001")},
+            token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertNotEqual(created["id"], "q_hijack_00000001")
+
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(stem="")}, token=True,
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("errors", data["detail"])
+
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(difficulty="impossible")}, token=True,
+        )
+        self.assertEqual(status, 422)
+
+    def test_z4_create_multiple_choice_options(self) -> None:
+        question = self._editor_question(
+            type="multiple_choice",
+            stem="录题契约题：下列各数中，哪些是有理数？",
+            options=[
+                {"key": "A", "content": "$\\dfrac{1}{2}$"},
+                {"key": "B", "content": "$\\sqrt{2}$"},
+                {"key": "C", "content": "$0.\\overline{3}$"},
+                {"key": "D", "content": "$\\pi$"},
+            ],
+            answer={"kind": "choice", "choice_keys": ["A", "C"], "final": "AC"},
+        )
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": question}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual([item["key"] for item in created["options"]], ["A", "B", "C", "D"])
+        self.assertEqual(created["answer"]["choice_keys"], ["A", "C"])
+
     # ---------- 配图边界 ----------
     def test_upload_serving_and_traversal(self) -> None:
         with urllib.request.urlopen(self.base + "/static/uploads/probe.png", timeout=5) as response:
@@ -414,13 +504,19 @@ class StageRelayContractTest(unittest.TestCase):
 
     def test_stage_relay_whitelist_and_plugin_scoping(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-        for method in ("bank.list", "bank.stats", "bank.get", "bank.random",
+        for method in ("bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
                        "basket.list", "basket.add", "basket.remove", "basket.clear"):
             self.assertIn(f'"{method}"', source)
         self.assertNotIn('payload.plugin_id', source)
         self.assertIn("/api/bank/plugins/\" + encodeURIComponent(pluginId)", source)
         self.assertIn('"X-JZO-Token": token', source)
         self.assertIn("RELAY_MAX_PER_WINDOW", source)
+
+    def test_bank_create_is_scoped_and_permission_checked(self) -> None:
+        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('CANONICAL_BANK_ID = "org.jiuzhang.core-bank"', source)
+        self.assertIn('permissions.indexOf("questions:write")', source)
+        self.assertIn('emit("question.updated"', source)
 
 
 if __name__ == "__main__":

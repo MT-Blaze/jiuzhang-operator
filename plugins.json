@@ -77,6 +77,21 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.handout"
+    },
+    {
+      "id": "org.jiuzhang.editor",
+      "name": "录题工作台",
+      "version": "0.1.0",
+      "kind": "tool",
+      "api_version": "1.0",
+      "description": "中间表单、右侧 A4 实时预览：录题干与公式、动态增删选项、填答案与解析，一键清洗 LaTeX 后经宿主写入本地真题题库。需底座 v0.6.2 及以上。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.editor.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.editor"
     }
   ]
 }

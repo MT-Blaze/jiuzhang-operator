@@ -170,7 +170,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
 
-> 当前 `v0.6.1` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。
+> 当前 `v0.6.2` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。
 
 ## 目录结构
 
@@ -263,7 +263,11 @@ jiuzhang-operator/
 │   └── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
 ├── plugins/
 │   ├── README.md            # 插件目录约定
-│   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
+│   ├── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
+│   ├── org.jiuzhang.core-bank/     # 真题题库（456 道真题 + SQLite 随包分发，v0.6.1）
+│   ├── org.jiuzhang.paper-gen/     # 组卷排版（题篮 → A4 分页，v0.6.1）
+│   ├── org.jiuzhang.handout/       # 讲义排版（Markdown → A4 实时预览，v0.6.1）
+│   └── org.jiuzhang.editor/        # ★v0.6.2 录题工作台（表单 + A4 实时预览 → bank.create 入库）
 ├── tests/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与官方镜像换源契约
@@ -282,8 +286,11 @@ jiuzhang-operator/
 │   ├── test_agent_chat_tuning.py   # 智能体对话调参契约
 │   ├── test_agent_plugin_tools.py  # 插件工具桥、意图路由与端到端工具调用契约
 │   ├── test_rich_card_ui.py        # 富卡片、右栏双向操控与插件搜索契约（v0.5.5）
+│   ├── test_editor_contract.py     # ★v0.6.2：录题工作台清单/表单/清洗/写入通道与包体契约
 │   └── test_version_consistency.py # 版本号单一事实来源与启动脚本契约
 ├── tools/
+│   ├── build_plugin.py      # 校验并打单插件 zip（顶层为插件 id，解压即用）
+│   ├── editor_probe.py      # ★v0.6.2 取证：真机填表单 → A4 预览 → 清洗 → 入库 → 题库查得到
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
 ├── plugins.json             # 官方插件仓库索引的本地镜像（索引页默认预填其 gh-proxy 加速地址）

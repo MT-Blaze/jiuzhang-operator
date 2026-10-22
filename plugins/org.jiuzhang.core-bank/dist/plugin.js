@@ -514,6 +514,10 @@
         var payload = message.payload || {};
         applyParams(payload.values, payload.by);
       }
+      if (message.event === "question.updated") {
+        // 录题插件经宿主写库成功后，题库画布自动刷新（v0.6.2）
+        loadQuestions();
+      }
       return;
     }
 

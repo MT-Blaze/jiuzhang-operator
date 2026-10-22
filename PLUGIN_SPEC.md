@@ -288,7 +288,7 @@ com.example.card/
 | `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
 | `entry` | 是 | 对象，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
 | `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4） |
-| `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export`；`renderer` 必须含 `question.render` |
+| `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export` / `question.edit`（v0.6.2 录题写入）/ `paper.generate` / `handout.render`；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
@@ -524,7 +524,7 @@ com.example.card/
 
 ---
 
-### 2.6 插件数据通道（Host API 转发，v0.6.1）
+### 2.6 插件数据通道（Host API 转发，v0.6.1；写入通道 v0.6.2）
 
 插件在沙箱里拿不到数据库、文件系统与写令牌（§2 铁律）。需要题库/题篮数据时，插件向宿主发一条 **request**，宿主查完再回 **response**：
 
@@ -544,6 +544,7 @@ com.example.card/
 | `bank.stats` | 年级/难度/题型/章节计数 | 只读 |
 | `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
 | `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
+| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入底座公共题库**（`org.jiuzhang.core-bank`），插件自报目标无效；ID / 时间戳由底座生成 |
 | `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
 | `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
 | `basket.remove` | 移除一题 | 需要题目 id |
@@ -554,9 +555,10 @@ com.example.card/
 - **插件身份只来自页签**：宿主用 `tab.plugin.id` 拼接口，插件在 payload 里自报 `plugin_id` 一律忽略，防止 A 插件读 B 插件题库；
 - 写令牌由宿主代取（`/api/settings`，一次性），只放进宿主发出的请求头，**插件永远看不到令牌**；
 - 每次调用限流 80 次 / 10 秒 / 页签，单次转发 20 秒超时；超限回 `RATE_LIMITED`，不会把本机 SQLite 打满；
-- 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL。
+- 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL；
+- 写入类方法（`bank.create`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（456 道真题，SQLite 随包分发，首次打开由底座复制到工作区 `data/banks/`）。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（456 道真题，SQLite 随包分发，首次打开由底座复制到工作区 `data/banks/`）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题。后续组卷、讲义插件复用同一通道，不新增协议。
 
 ---
 

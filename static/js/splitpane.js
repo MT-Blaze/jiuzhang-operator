@@ -1,5 +1,5 @@
 /**
- * SplitPane：四区边界的原生拖拽调尺寸（v0.6.1，零第三方库）。
+ * SplitPane：四区边界的原生拖拽调尺寸（零第三方库）。
  *
  * 事实来源只有一个：`.ws-page` 上的三枚 CSS 变量
  *   --sidebar-width / --context-width / --dock-height

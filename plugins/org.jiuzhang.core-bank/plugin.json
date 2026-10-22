@@ -66,7 +66,7 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "stage.tab.activated"],
+    "subscribe": ["ui.params.changed", "stage.tab.activated", "question.updated"],
     "publish": ["region.dock"]
   }
 }

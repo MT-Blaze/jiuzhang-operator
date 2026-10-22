@@ -185,6 +185,15 @@ def _prepare_create(payload: Any) -> dict[str, Any]:
     return document
 
 
+def prepare_new_question(payload: Any) -> dict[str, Any]:
+    """补齐 schema_version / 新 id / meta 时间戳，供其他题库写入端复用。
+
+    录题插件写的是插件题库（core-bank 的 SQLite），与底座 ``questions`` 表
+    不是同一份存储；两边必须共用同一套题目契约，否则同题在两库字段口径不一。
+    """
+    return _prepare_create(payload)
+
+
 def create_question(payload: Any) -> dict[str, Any]:
     document = _prepare_create(payload)
     validate_question(document)

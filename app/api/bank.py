@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.core import bank, basket
+from app.core import bank, basket, questions
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["bank"])
@@ -75,6 +75,38 @@ def bank_question(plugin_id: str, question_id: str) -> dict[str, Any]:
         return bank.get_question(plugin_id, question_id)
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/bank/plugins/{plugin_id}/questions",
+    status_code=201,
+    summary="新增一道题（录题插件经宿主写入）",
+    dependencies=[Depends(require_write_token)],
+)
+def bank_create_question(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """写入插件题库。请求体形如 ``{"question": {...标准结构...}}``。
+
+    权限边界：插件声明 ``questions:write`` 才能经宿主转发到这里；ID 与时间戳
+    由底座生成，请求里带来的 ``id`` / ``meta`` 会被底座覆盖。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    question = payload.get("question")
+    if not isinstance(question, dict):
+        raise HTTPException(status_code=400, detail="缺少 question 对象")
+    try:
+        return bank.create_question(plugin_id, question)
+    except questions.QuestionValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "题目不符合 Schema", "errors": exc.errors},
+        ) from exc
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

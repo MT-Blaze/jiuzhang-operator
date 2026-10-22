@@ -1,0 +1,168 @@
+"""录题工作台（org.jiuzhang.editor）契约测试：v0.6.2。
+
+真机录题由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
+
+- 清单只申请中栏舞台与题库读写权限，不越权；
+- 表单覆盖题干/动态选项/答案/解析/难度/知识点标签；
+- 输入防抖后经宿主 ``bank.create`` 写入，插件自身不碰令牌与数据库；
+- 一键清洗只走本地规则，覆盖 \\(...\\)、\\[...\\]、\\textbf、\\fillin 与 choices；
+- A4 几何与组卷/讲义同口径，预览可缩放且不横溢；
+- 离线、无凭据、无后行断言、zip 顶层为插件 id 且无临时文件。
+
+运行：``.venv/Scripts/python.exe -m unittest tests.test_editor_contract``
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+from app.core.plugins import validate_plugin
+from tools.build_plugin import build_plugin
+
+ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+DIST = PLUGIN_DIR / "dist"
+
+
+def read(name: str) -> str:
+    return (DIST / name).read_text(encoding="utf-8")
+
+
+class EditorManifestTest(unittest.TestCase):
+    def test_01_manifest_passes_host_validation(self) -> None:
+        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        info = validate_plugin(PLUGIN_DIR, manifest)
+        self.assertEqual(info["id"], "org.jiuzhang.editor")
+        self.assertIn("stage.center", info["slots"])
+        self.assertIn("question.edit", info["capabilities"])
+        self.assertEqual(sorted(info["permissions"]), ["questions:read", "questions:write"])
+
+    def test_02_stage_is_singleton_with_priority(self) -> None:
+        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        stage = manifest["stage"]
+        self.assertEqual(stage["region"], "center")
+        self.assertEqual(stage["mode"], "takeover")
+        self.assertEqual(stage["priority"], 65)
+        self.assertIs(stage["singleton"], True)
+        self.assertLessEqual(len(stage["title"]), 24)
+
+    def test_03_bus_is_minimal(self) -> None:
+        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed"])
+        self.assertEqual(sorted(manifest["bus"]["publish"]), ["region.dock", "stage.selection"])
+
+
+class EditorFormContractTest(unittest.TestCase):
+    def test_01_required_fields_exist(self) -> None:
+        html = read("index.html")
+        for node_id in (
+            "edType", "edDifficulty", "edGrade", "edStem", "edOptions",
+            "edAddOption", "edAnswer", "edSolution", "edTags", "edSave", "edClean",
+        ):
+            self.assertIn(f'id="{node_id}"', html, f"缺少表单节点 {node_id}")
+        self.assertIn('placeholder="例：已知函数', html)
+
+    def test_02_options_are_dynamic_with_bounded_keys(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("function addOption", js)
+        self.assertIn("function renderOptions", js)
+        self.assertIn("OPTION_KEYS", js)
+        self.assertIn("state.options.length >= OPTION_KEYS.length", js)
+        self.assertIn("state.options.length <= 2", js, "选择题至少保留两项")
+        self.assertIn('remove.setAttribute("aria-label"', js)
+
+    def test_03_answer_and_solution_are_required_for_save(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("题干不能为空", js)
+        self.assertIn("请填写答案", js)
+        self.assertIn("单选题答案只能有一个字母", js)
+        self.assertIn("多选题答案至少两个字母", js)
+
+    def test_04_preview_is_debounced_and_local(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("PREVIEW_DEBOUNCE_MS = 140", js)
+        self.assertIn("schedulePreview", js)
+        self.assertIn('addEventListener("input"', js)
+        self.assertIn("katex.renderToString", js)
+        self.assertIn('event: "stage.selection"', js, "草稿需经事件总线上桥")
+
+    def test_05_a4_geometry_matches_other_printers(self) -> None:
+        css = read("plugin.css")
+        js = read("plugin.js")
+        self.assertIn("width: 794px", css)
+        self.assertIn("height: 1123px", css)
+        self.assertIn("var PAGE_W = 794", js)
+        self.assertIn("var PAGE_H = 1123", js)
+        self.assertIn("function fitPreview", js)
+        self.assertIn("ResizeObserver", js)
+
+
+class EditorWriteContractTest(unittest.TestCase):
+    def test_01_save_goes_through_host_bank_create(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('hostCall("bank.create"', js)
+        self.assertIn('schema_version: "1.0"', js)
+        self.assertIn('meta: { status: "published"', js)
+        self.assertIn('"org.jiuzhang.editor": { grade:', js)
+
+    def test_02_plugin_never_touches_token_or_database(self) -> None:
+        js = read("plugin.js")
+        for needle in ("X-JZO-Token", "local_token", "/api/", "fetch(", "localStorage", "api_key", "sk-"):
+            self.assertNotIn(needle, js, f"录题插件不得直接接触：{needle}")
+
+    def test_03_cleaner_is_local_and_covers_dirty_latex(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("\\\\\\[([\\s\\S]*?)\\\\\\]", js, "必须归一 \\[...\\]")
+        self.assertIn("\\\\\\(([\\s\\S]*?)\\\\\\)", js, "必须归一 \\(...\\)")
+        self.assertIn("\\\\textbf", js)
+        self.assertIn("\\\\fillin", js)
+        self.assertIn("\\\\begin\\{choices\\}", js)
+        self.assertIn("function cleanText", js)
+        self.assertIn("function cleanAll", js)
+        # 本地规则清洗：不出现网络调用或模型端点
+        self.assertNotIn("http", js.lower().replace("http-equiv", ""))
+
+    def test_04_no_remote_assets_or_credentials(self) -> None:
+        for name in ("index.html", "plugin.css", "plugin.js"):
+            source = read(name)
+            self.assertNotIn("http://", source, f"{name} 不得引用远程资源")
+            self.assertNotIn("https://", source, f"{name} 不得引用远程资源")
+            self.assertNotIn("@import", source, f"{name} 不得远程导入样式")
+        self.assertNotIn("(?<", read("plugin.js"), "旧浏览器会直接语法失败")
+
+    def test_05_saved_state_is_visible_to_probe(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('savedEl.setAttribute("data-id", id || "")', js)
+        self.assertIn('metricsEl.setAttribute("data-saved-id", id || "")', js)
+        self.assertIn("data-render-ms", js)
+        self.assertIn("data-katex", js)
+        self.assertIn("data-overflow", js)
+
+
+class EditorPackageTest(unittest.TestCase):
+    def test_01_zip_top_level_is_plugin_id_and_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = build_plugin(PLUGIN_DIR, Path(tmp))
+            self.assertTrue(target.is_file())
+            with zipfile.ZipFile(target) as bundle:
+                names = bundle.namelist()
+        self.assertTrue(names)
+        for name in names:
+            parts = name.split("/")
+            self.assertEqual(parts[0], "org.jiuzhang.editor", name)
+            self.assertNotIn(".env", parts)
+            self.assertNotIn("__pycache__", parts)
+        joined = "\n".join(names)
+        self.assertIn("org.jiuzhang.editor/plugin.json", joined)
+        self.assertIn("org.jiuzhang.editor/dist/index.html", joined)
+        self.assertIn("org.jiuzhang.editor/LICENSE", joined)
+        self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))
+
+
+if __name__ == "__main__":
+    unittest.main()

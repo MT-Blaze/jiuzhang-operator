@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>录题工作台</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div id="root" class="ed-root" hidden>
+    <header class="ed-top">
+      <div class="ed-brand">
+        <h1>录题工作台</h1>
+        <p class="ed-sub">表单 → A4 实时预览 · 清洗后直入本地真题库</p>
+      </div>
+      <div class="ed-actions">
+        <button type="button" id="edClean" class="ed-btn ed-btn-soft" title="本地规则清洗，不联网">
+          一键清洗 LaTeX
+        </button>
+        <button type="button" id="edReset" class="ed-btn ed-btn-ghost">清空表单</button>
+        <button type="button" id="edSave" class="ed-btn ed-btn-primary">保存入库</button>
+      </div>
+    </header>
+
+    <div class="ed-status" role="status" aria-live="polite">
+      <span id="edMetrics" data-render-ms="" data-katex="" data-overflow="" data-chars="">等待录入…</span>
+      <span id="edSaved" class="ed-saved" hidden></span>
+      <span class="ed-legend">A4 210×297mm · 公式本地 KaTeX · 写入本机 SQLite 题库</span>
+    </div>
+
+    <main class="ed-shell">
+      <section class="ed-form" aria-label="题目表单">
+        <div class="ed-row ed-row-3">
+          <label class="ed-field">
+            <span>题型</span>
+            <select id="edType">
+              <option value="single_choice">单选</option>
+              <option value="multiple_choice">多选</option>
+              <option value="fill_blank">填空</option>
+              <option value="solution">解答</option>
+            </select>
+          </label>
+          <label class="ed-field">
+            <span>难度</span>
+            <select id="edDifficulty">
+              <option value="basic">基础</option>
+              <option value="medium" selected>中档</option>
+              <option value="hard">压轴</option>
+              <option value="novel">新定义</option>
+            </select>
+          </label>
+          <label class="ed-field">
+            <span>年级</span>
+            <select id="edGrade">
+              <option value="高一">高一</option>
+              <option value="高二">高二</option>
+              <option value="高三">高三</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="ed-field ed-field-block">
+          <span>题干 <em>支持 $...$ 与 $$...$$</em></span>
+          <textarea id="edStem" rows="5" spellcheck="false"
+            placeholder="例：已知函数 $f(x)=x^2-5x+6$，则方程 $f(x)=0$ 的解为（　　）"></textarea>
+        </label>
+
+        <div class="ed-options-block" id="edOptionsBlock">
+          <div class="ed-options-head">
+            <span>选项 <em>至少两项，可增删</em></span>
+            <button type="button" id="edAddOption" class="ed-mini">+ 添加选项</button>
+          </div>
+          <div id="edOptions" class="ed-options"></div>
+        </div>
+
+        <label class="ed-field ed-field-block">
+          <span>答案 <em id="edAnswerHint">单选填一个字母，如 C</em></span>
+          <input id="edAnswer" type="text" spellcheck="false" placeholder="C">
+        </label>
+
+        <label class="ed-field ed-field-block">
+          <span>解析 <em>可选，支持 LaTeX</em></span>
+          <textarea id="edSolution" rows="4" spellcheck="false"
+            placeholder="例：由 $x^2-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。"></textarea>
+        </label>
+
+        <label class="ed-field ed-field-block">
+          <span>知识点标签 <em>逗号分隔，最多 32 个</em></span>
+          <input id="edTags" type="text" spellcheck="false" placeholder="一元二次方程, 因式分解">
+        </label>
+      </section>
+
+      <section class="ed-preview" aria-label="A4 实时预览">
+        <div class="ed-preview-head">
+          <span>实时预览</span>
+          <span class="ed-scale" id="edScale">100%</span>
+        </div>
+        <div class="ed-preview-viewport" id="edPreview">
+          <div class="ed-page-frame" id="edPageFrame">
+            <div class="ed-page" id="edPage">
+              <div class="ed-page-body" id="edPageBody"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
+  </div>
+
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>
