@@ -27,8 +27,9 @@ STATIC = ROOT / "static"
 SLOT_RE = re.compile(r"data-app-version[^>]*>\s*([^<]*?)\s*<", re.S)
 ANY_VERSION_RE = re.compile(r"v\d+\.\d+\.\d+")
 
-# 展示版本号的前端页面（橱窗 index.html 是零脚本静态页，单独一条测试管）。
-VERSIONED_PAGES = ("index.html", "questions.html")
+# 展示版本号的前端页面（橱窗 index.html 是零脚本静态页，单独一条测试管；
+# 题库列表页已于 10.24 军令废弃删除，对话工作台不写死版本号兜底位）。
+VERSIONED_PAGES = ("index.html",)
 
 
 def _read(path: Path) -> str:
@@ -52,7 +53,7 @@ class VersionSingleSourceTest(unittest.TestCase):
                     f"{name} 的兜底版本号写成 {slot!r}，底座是 {expected!r}",
                 )
                 checked += 1
-        self.assertGreaterEqual(checked, 3, "徽章 + 两处页脚至少三个兜底位")
+        self.assertGreaterEqual(checked, 2, "徽章 + 页脚至少两个兜底位")
 
     def test_02_version_script_wired_into_pages(self) -> None:
         """有兜底位的页面必须挂上 version.js，否则兜底会永远停在旧值。"""
@@ -64,7 +65,7 @@ class VersionSingleSourceTest(unittest.TestCase):
         """前端任何写死的 vX.Y.Z 都必须等于当前版本（历史叙述只留在 Markdown）。"""
         expected = "v" + __version__
         offenders: list[str] = []
-        targets = [ROOT / "index.html", STATIC / "index.html", STATIC / "questions.html"]
+        targets = [ROOT / "index.html", STATIC / "index.html"]
         targets += sorted((STATIC / "js").glob("*.js"))
         for path in targets:
             for found in ANY_VERSION_RE.findall(_read(path)):

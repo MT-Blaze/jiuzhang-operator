@@ -159,7 +159,6 @@ echo.
 echo         Starting server. KEEP THIS WINDOW OPEN.
 echo.
 echo         App:       %URL%
-echo         Questions: %URL%/questions
 echo         Workspace: %URL%/workspace
 echo         Plugins:   %URL%/plugins
 echo.
