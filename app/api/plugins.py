@@ -1,4 +1,4 @@
-"""插件发现、只读资产服务、用户自填地址的索引拉取与本机 zip 安装。"""
+"""插件发现、只读资产服务、索引拉取、本机 zip 安装与在线安装（按需下载单个 zip）。"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from app.core import plugin_index
+from app.core.plugin_download import download_plugin_zip
 from app.core.plugin_install import (
     MAX_ZIP_BYTES,
     PluginInstallError,
@@ -68,7 +69,7 @@ async def list_plugins() -> dict:
 @router.post(
     "/api/plugins/install",
     response_model=PluginInstallResponse,
-    summary="安装用户亲手上传的插件 zip 包（本机拖拽/选文件，底座不拉远程源）",
+    summary="安装用户亲手上传的插件 zip 包（本机拖拽/选文件；在线安装走 install-url）",
     dependencies=[Depends(require_write_token)],
 )
 async def install_plugin(request: Request, replace: bool = False) -> PluginInstallResponse:
@@ -102,14 +103,47 @@ async def install_plugin(request: Request, replace: bool = False) -> PluginInsta
 
 
 @router.post(
+    "/api/plugins/install-url",
+    response_model=PluginInstallResponse,
+    summary="在线安装：按用户点选的索引条目地址下载单个 zip 并走本机安装同款校验落地",
+    dependencies=[Depends(require_write_token)],
+)
+def install_plugin_from_url(payload: dict[str, Any] = Body(...)) -> PluginInstallResponse:
+    """用户点了索引卡片上的【在线安装】才会进到这里：只下载那一个 zip。
+
+    与 §1.3 索引拉取同款信任模型——地址来自用户当场点选的条目，底座不预置
+    任何下载源、不自动更新。同步函数不是省事：FastAPI 放线程池执行，下载
+    与解压都是阻塞 IO，写成 ``async def`` 会把事件循环卡死（PLUGIN_SPEC §1.4）。
+
+    失败回滚：下载半途出错只是丢弃内存里的字节；安装走暂存区校验 + 原子
+    改名落地，任何一步失败 ``plugins/`` 都不留半个文件。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    url = payload.get("url")
+    replace = bool(payload.get("replace", False))
+    if not isinstance(url, str):
+        raise HTTPException(status_code=400, detail="缺少要下载的 zip 地址（url）")
+
+    try:
+        data = download_plugin_zip(url)
+        info = install_plugin_from_zip(data, replace)
+    except PluginInstallError as exc:
+        raise HTTPException(
+            status_code=exc.status, detail={"message": exc.message, "code": exc.code}
+        ) from exc
+    return PluginInstallResponse(installed=True, plugin=InstalledPlugin(**info))
+
+
+@router.post(
     "/api/plugins/index",
     summary="按用户填入的地址拉取插件索引（只读，不解压不安装）",
     dependencies=[Depends(require_write_token)],
 )
 def read_plugin_index(payload: dict[str, Any] = Body(...)) -> dict:
-    """底座不写死任何索引地址：URL 只能由用户在这一步亲手交进来。
+    """索引地址来自前端输入框（默认预填官方 Raw 直链，用户可当场改掉）。
 
-    带写令牌不是为了「改数据」，而是因为这是唯一会替用户发起外部请求的入口，
+    带写令牌不是为了「改数据」，而是因为它会替用户发起外部请求，
     不能让浏览器里另一个页面的脚本随手驱动。
 
     同步函数不是省事：FastAPI 会把它放进线程池执行。写成 ``async def`` 会让

@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  // 底座不预置任何索引地址：url 只有一个来源——用户在这页亲手填进来。
+  // 索引地址默认预填官方 Raw 直链（写在 HTML 的 value 里，用户可当场改掉）。
+  // 底座仍不自动拉取：只有用户点【拉取清单】才会发起请求。
   var urlInput = document.getElementById("plIndexUrl");
   var form = document.getElementById("plIndexForm");
   var fetchBtn = document.getElementById("plFetchBtn");
@@ -9,6 +10,9 @@
   var resultHost = document.getElementById("plResults");
   var rejectedHost = document.getElementById("plRejected");
   var rejectedTitle = document.getElementById("pl-rejected-title");
+
+  // 已安装插件的 id -> version，用于给卡片按钮标注「已安装/覆盖安装」
+  var installedMap = {};
 
   var KIND_LABELS = {
     renderer: "渲染",
@@ -74,6 +78,7 @@
     if (entry.kind && KIND_LABELS[entry.kind]) bits.push(KIND_LABELS[entry.kind]);
     bits.push("v" + (entry.version || "?"));
     bits.push(entry.id);
+    if (installedMap[entry.id]) bits.push("本机已装 v" + installedMap[entry.id]);
     meta.appendChild(textNode(bits.join(" · ")));
     head.appendChild(meta);
     li.appendChild(head);
@@ -87,7 +92,11 @@
 
     var actions = document.createElement("div");
     actions.className = "pl-entry-actions";
-    actions.appendChild(makeLink(entry.zip_url, "下载 zip 包"));
+    actions.appendChild(makeInstallButton(entry));
+
+    var zipLink = makeLink(entry.zip_url, "下载 zip 包");
+    zipLink.className = "pl-link pl-link-ghost";
+    actions.appendChild(zipLink);
 
     (entry.mirrors || []).forEach(function (mirror, index) {
       var link = makeLink(mirror, "镜像 " + (index + 1));
@@ -137,11 +146,115 @@
     return token;
   }
 
+  async function refreshInstalledMap() {
+    try {
+      var response = await fetch("/api/plugins", { cache: "no-cache" });
+      if (!response.ok) return;
+      var body = await response.json();
+      installedMap = {};
+      (body.plugins || []).forEach(function (plugin) {
+        installedMap[plugin.id] = plugin.version;
+      });
+    } catch (error) {
+      // 已装状态只是标注用，拿不到就按「未安装」展示，不打断拉清单
+    }
+  }
+
+  function markInstalled(btn, entry) {
+    installedMap[entry.id] = entry.version;
+    btn.textContent = "覆盖安装";
+    btn.classList.add("pl-install-ghost");
+    btn.setAttribute("data-installed", "true");
+  }
+
+  async function requestInstall(entry, replace) {
+    var token = await readToken();
+    var response = await fetch("/api/plugins/install-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-JZO-Token": token },
+      body: JSON.stringify({ url: entry.zip_url, replace: replace })
+    });
+    var data = await response.json().catch(function () {
+      return null;
+    });
+    if (!response.ok) {
+      var detail = data && data.detail;
+      var message =
+        detail && typeof detail === "object" && detail.message
+          ? detail.message
+          : typeof detail === "string"
+            ? detail
+            : "HTTP " + response.status;
+      var error = new Error(message);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
+  async function installEntry(entry, btn) {
+    var replace = btn.getAttribute("data-installed") === "true";
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    var idleLabel = btn.textContent;
+    btn.textContent = "下载并安装中…";
+    setStatus("正在从 " + entry.id + " 的直链下载 zip 并校验安装…", "info");
+
+    try {
+      var data = await requestInstall(entry, replace);
+      markInstalled(btn, entry);
+      setStatus(
+        "已安装 " + data.plugin.name + " v" + data.plugin.version +
+        "。底座发现接口即刻生效，无需重启。",
+        "ok"
+      );
+    } catch (error) {
+      var message = error && error.message ? error.message : String(error);
+      if (error && error.status === 409 && !replace) {
+        // 卡片状态可能过期：底座说已存在，就当场问用户要不要覆盖
+        btn.textContent = idleLabel;
+        btn.disabled = false;
+        btn.setAttribute("aria-busy", "false");
+        if (window.confirm("本机已安装 " + entry.id + "。覆盖为清单里的 v" + entry.version + "？")) {
+          btn.setAttribute("data-installed", "true");
+          await installEntry(entry, btn);
+        } else {
+          setStatus("已取消覆盖，本机原有插件保持不变。", "info");
+        }
+        return;
+      }
+      btn.textContent = idleLabel;
+      setStatus("在线安装失败：" + message + "（可点卡片上的 zip 直链手动下载后拖进工作台安装）", "down");
+    } finally {
+      btn.disabled = false;
+      btn.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function makeInstallButton(entry) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "q-button pl-install";
+    var installedVersion = installedMap[entry.id];
+    if (installedVersion) {
+      btn.textContent = "覆盖安装";
+      btn.classList.add("pl-install-ghost");
+      btn.setAttribute("data-installed", "true");
+      btn.title = "本机已装 v" + installedVersion + "，点击覆盖为清单里的 v" + entry.version;
+    } else {
+      btn.textContent = "在线安装";
+    }
+    btn.addEventListener("click", function () {
+      installEntry(entry, btn);
+    });
+    return btn;
+  }
+
   async function pullIndex(event) {
     if (event) event.preventDefault();
     var url = (urlInput.value || "").trim();
     if (!url) {
-      setStatus("请先填入一个索引地址。本底座不会替你准备任何地址。", "warn");
+      setStatus("请先填入一个索引地址（默认已预填官方 Raw 直链）。", "warn");
       return;
     }
 
@@ -151,6 +264,7 @@
     setStatus("正在向该地址发起一次只读请求…", "info");
 
     try {
+      await refreshInstalledMap();
       var token = await readToken();
       var response = await fetch("/api/plugins/index", {
         method: "POST",
@@ -200,6 +314,6 @@
 
   // 首屏不留「可用条目」下面一个空白列表
   resultHost.appendChild(
-    makePlaceholder("还没有拉取过任何地址。填入地址并点【拉取列表】后，条目会出现在这里。")
+    makePlaceholder("还没有拉取过任何地址。输入框已预填官方索引的 Raw 直链，点【拉取清单】即可列出可在线安装的插件；也可以换成你自己信任的地址。")
   );
 })();

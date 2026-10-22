@@ -223,7 +223,8 @@ class PluginIndexApiTest(unittest.TestCase):
         self.assertTrue(str(body.get("detail", "")).strip())
 
     def test_05_no_fixed_source_is_baked_into_the_base(self) -> None:
-        """规范铁律的代码面证据：底座里不存在被写死的索引地址，地址只从请求体来。"""
+        """出网口径的代码面证据（v0.5.0 修订）：底座 py/js 里不存在写死的第三方源，
+        唯一默认地址是官方索引 Raw 直链，且只允许出现在 plugins.html 的输入框 value 里。"""
         texts: dict[str, str] = {}
         for path in list((ROOT / "app").rglob("*.py")) + list((ROOT / "static").rglob("*.js")):
             if path.is_file():
@@ -237,12 +238,19 @@ class PluginIndexApiTest(unittest.TestCase):
             "gitee.com",
             "aliyuncs.com",
             "myqcloud.com",
+            "raw.githubusercontent.com",
         ):
-            self.assertNotIn(marker, joined, "底座代码里出现了写死的外部源地址：" + marker)
+            self.assertNotIn(marker, joined, "底座 py/js 里出现了写死的外部源地址：" + marker)
         # 拉取入口只能读请求体里的 url，不得有默认值兜底
         router_source = texts["app/api/plugins.py"]
         self.assertIn('payload.get("url"', router_source)
         self.assertNotIn("DEFAULT_INDEX", router_source)
+
+        # 官方默认索引直链：钉死在页面输入框 value 上，且与仓库根 plugins.json 对得上
+        html = (ROOT / "static" / "plugins.html").read_text(encoding="utf-8")
+        official = "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
+        self.assertIn('value="%s"' % official, html)
+        self.assertEqual(html.count(official), 1, "官方直链只允许预填一处")
 
 
 if __name__ == "__main__":

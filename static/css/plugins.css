@@ -153,6 +153,23 @@
   word-break: break-all;
 }
 
+/* 【在线安装】是卡片主操作，视觉上压过手动下载链接 */
+.pl-install {
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.pl-install[aria-busy="true"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.pl-install-ghost {
+  background: transparent;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.4));
+  color: inherit;
+}
+
 .pl-link-ghost {
   background: transparent;
   opacity: 0.85;
@@ -221,6 +238,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pl-link,
+  .pl-install,
   .pl-fetch,
   .pl-demo {
     transition: none;

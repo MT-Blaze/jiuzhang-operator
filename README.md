@@ -26,7 +26,7 @@
 - **绝无云端锁喉**：题库、组卷、渲染、导入导出 100% 在本机跑，断网可用。AI 能力只连你自己在 `.env` 里填写的模型网关；不填密钥或关掉网络，AI 那一步显式降级为不可用，底座与全部插件照常工作——**绝不弹窗催费、绝不偷偷上传题目数据、绝不让云端一句话就把功能关掉**。
 - **不锁数据**：题目是本机 `data/` 目录里的明文 SQLite + [JSON Schema](schemas/question.json)，随时整目录拷走、任何工具都能读；卸载不销毁、不加密、不留水印。
 - **插件同样白嫖**：插件就是**标准 zip 包，解压即用**（没有 `.jzo` 之类专属后缀，也不验签名、不验摘要），规范禁止任何注册、卡密与联网回连激活，详见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1、§1.2。
-- **插件清单不绑任何厂商**：底座**没有内置插件市场，也绝不写死远程地址**（防跑路）。想做「国内可达的橱窗」，自己发一份 `plugins.json` 静态清单（§1.3），在 `/plugins` 页把它的 http(s) 地址粘进输入框即可拉取列表；底座只读这一份 JSON，下载与解压永远由你亲手做。
+- **插件清单不绑任何厂商**：底座**没有内置插件市场，也绝不自动拉取、自动更新任何远程源**（防跑路）。官方索引 `plugins.json` 的 Raw 直链默认预填在 `/plugins` 页输入框里（可当场改成任何自信任地址），点【拉取清单】只读这一份 JSON；点【在线安装】才按条目直链下载那一个 zip，校验门槛与本机拖装完全相同（PLUGIN_SPEC §1.3、§1.4）。
 
 ## 开箱即用：配一次密钥就能用 AI
 
@@ -84,6 +84,13 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 折叠状态机把 `data-side` / `data-ctx` 立为唯一事实来源，并支持跨断点重算；顺带修掉 360px 下舞台头标题被压成竖排一列字的问题；
 - 新增 `tests/test_workspace_fold_state.py` 22 条契约测试，配套 `tools/fold_probe.py` / `tools/pixel_scan.py` 真机取证脚本（开发期工具，不影响运行时）。
 
+`v0.5.0` 插件生态与按需下载——主库极简、插件在线装：
+
+- 仓库根新增官方索引 `plugins.json`：主仓库只放清单，插件本体不再进发放包；占位演示插件 `org.jiuzhang.placeholder` 以 Raw 直链分发（zip 存 `examples/`，`build_release.bat` 明确排除，不进 dist）；
+- 「插件索引」页默认预填官方索引 Raw 直链（可当场改成任何自信任地址），点【拉取清单】渲染插件卡片，卡片带【在线安装】按钮，已装条目自动标注「覆盖安装」；
+- 后端新增 `POST /api/plugins/install-url`：只在用户点击安装时下载那一个 zip（50 MB 上限、30 秒超时、线程池执行不阻塞主程序），复用本机拖装同款的暂存校验 + 原子落地，下载或校验失败零残留，409 需用户显式确认覆盖；
+- 契约同步：PLUGIN_SPEC §1.2/§1.3 修订、新增 §1.4「在线安装」，AGENTS.md 铁律二出网口径追认——红线不变：不自动拉取、不自动更新、不批量安装。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -115,7 +122,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -130,7 +137,7 @@ jiuzhang-operator/
 │   ├── api/
 │   │   ├── health.py        # GET /healthz
 │   │   ├── questions.py     # /api/questions CRUD
-│   │   ├── plugins.py       # /api/plugins 与插件资源分发，含 POST /api/plugins/index
+│   │   ├── plugins.py       # /api/plugins 与插件资源分发，含 index 拉取与 install-url 在线安装
 │   │   ├── providers.py     # /api/providers 注册表与活跃档切换
 │   │   ├── agents.py        # /api/agent/chat|split|review
 │   │   └── workspaces.py    # 多工作区列表/新建/切换
@@ -141,8 +148,9 @@ jiuzhang-operator/
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
 │       ├── plugin_install.py # 插件 zip 安检与落地安装
+│       ├── plugin_download.py # 在线安装：按需下载单个 zip（PLUGIN_SPEC §1.4）
 │       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
-│       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取（底座无内置源）
+│       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取
 │       ├── provider.py      # AIProvider 抽象基类
 │       ├── provider_config.py # 多模型配置（只写本机 .env，永不回显）
 │       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
@@ -151,7 +159,7 @@ jiuzhang-operator/
 ├── static/
 │   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
 │   ├── workspace.html       # 智能工作台（三栏：任务 / 对话流 / 上下文），根路径直达
-│   ├── plugins.html         # 插件索引页（自定义源地址输入框）
+│   ├── plugins.html         # 插件索引页（默认预填官方 Raw 直链，卡片支持在线安装）
 │   ├── css/{app,questions,workspace,plugins}.css
 │   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
 │   └── js/{app,workspace,plugins,pwa,version}.js
@@ -162,7 +170,10 @@ jiuzhang-operator/
 │   ├── plugins-index.example.json  # 示例清单（地址全部不可用，只示范结构）
 │   ├── demo_plugin/                # 种子题库插件源码（5 道示例题）
 │   ├── demo_plugin.zip             # 构建产物：首启静默安装的种子包
-│   └── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
+│   ├── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
+│   ├── placeholder_plugin/         # 官方占位插件源码（在线安装闭环演示用）
+│   ├── placeholder_plugin.zip      # 构建产物：走 Raw 直链分发，不进 dist 发放包
+│   └── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
@@ -170,6 +181,7 @@ jiuzhang-operator/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
 │   ├── test_plugin_install.py      # 插件 zip 安检与安装契约
+│   ├── test_plugin_install_url.py  # 在线安装：下载守卫、失败回滚与端点契约
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
 │   ├── test_pwa_contract.py        # PWA 清单、图标与 Service Worker 契约
 │   ├── test_workspace_fold_state.py # 工作台三栏折叠状态机契约（v0.4.3 死锁锁死）
@@ -180,6 +192,7 @@ jiuzhang-operator/
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
+├── plugins.json             # 官方插件索引（索引页默认预填其 Raw 直链）
 ├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）

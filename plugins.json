@@ -1,0 +1,17 @@
+{
+  "index_version": "1.0",
+  "name": "九章算子官方插件索引",
+  "updated_at": "2026-10-24",
+  "entries": [
+    {
+      "id": "org.jiuzhang.placeholder",
+      "name": "占位演示插件",
+      "version": "0.1.0",
+      "kind": "renderer",
+      "api_version": "1.0",
+      "description": "官方占位插件：跑通「拉取清单 → 在线安装 → 插件生效」闭环，渲染一张极简题卡。",
+      "zip_url": "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/examples/placeholder_plugin.zip",
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/examples/placeholder_plugin"
+    }
+  ]
+}

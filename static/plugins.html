@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>插件索引 · 九章算子</title>
-  <meta name="description" content="九章算子插件索引：填入你自己信任的 plugins.json 地址，取回一份插件清单。底座不预置任何远程源；zip 可拖进工作台由底座校验安装，不自动更新、不联网回连校验。">
+  <meta name="description" content="九章算子插件索引：默认预填官方 plugins.json 的 Raw 直链（可随时改成你自己信任的地址），拉取清单后点【在线安装】即可由底座下载单个 zip、校验落地。不自动更新、不联网回连校验。">
   <meta name="theme-color" content="#a63b2b">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -36,10 +36,11 @@
         <p class="eyebrow">PLUGINS · INDEX 1.0 · ZIP ONLY</p>
         <h1 id="pl-title">插件索引</h1>
         <p class="pl-lede">
-          底座里<strong>没有写死任何一个远程地址</strong>。这一页只做一件事：
-          把你亲手填入的 <code>plugins.json</code> 取回来、按标准校验、把 zip 包的地址列给你看。
-          下载仍然由你自己完成；安装可以亲手解压放进 <code>plugins/</code>，
-          也可以把 zip 直接拖进<a href="/workspace">工作台</a>由底座校验落地——不自动更新、不联网回连校验。
+          输入框里<strong>默认预填了官方索引</strong>（主仓库 <code>plugins.json</code> 的 Raw 直链），
+          它随时可以改成你自己信任的任何 <code>plugins.json</code> 地址。点【拉取清单】后，
+          这一页把条目渲染成卡片；点卡片上的【在线安装】，底座只去下载那一个 zip，
+          过完与本机拖装同款的全套契约校验后落地 <code>plugins/</code>。
+          底座<strong>不自动拉取、不自动更新、不联网回连校验</strong>——每一次下载都由你当场点击发起。
         </p>
       </section>
 
@@ -47,18 +48,19 @@
         <h2 id="pl-pull-title">从地址取列表</h2>
         <form class="pl-form" id="plIndexForm">
           <label class="q-field pl-url-field">
-            <span>索引地址（http/https）</span>
+            <span>索引地址（http/https，默认官方 Raw 直链，可改）</span>
             <input
               id="plIndexUrl"
               type="url"
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
+              value="https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
               placeholder="https://你的国内镜像或自建静态托管/plugins.json"
             >
           </label>
           <div class="pl-form-actions">
-            <button type="submit" class="q-button pl-fetch" id="plFetchBtn">拉取列表</button>
+            <button type="submit" class="q-button pl-fetch" id="plFetchBtn">拉取清单</button>
             <button type="button" class="q-button pl-demo" id="plDemoBtn">用本机示例清单试一次</button>
           </div>
         </form>
@@ -74,16 +76,11 @@
       </section>
 
       <section class="pl-howto" aria-labelledby="pl-howto-title">
-        <h2 id="pl-howto-title">拿到 zip 之后</h2>
+        <h2 id="pl-howto-title">安装与卸载</h2>
         <ol class="pl-steps">
-          <li>下载 zip 包（地址在你自己的网络里可达即可，Gitee 附件、阿里云 OSS、腾讯云 COS、自建 Nginx、局域网 http 服务都行）。</li>
-          <li>
-            两条安装路，任选其一：
-            把 zip 直接<strong>拖进<a href="/workspace">工作台</a>页面</strong>（或在工作台点「安装插件 zip 包」选文件），
-            底座过完契约校验自动落地 <code>plugins/</code>；
-            或者亲手解压，把整个目录放进本仓库的 <code>plugins/</code>（zip 顶层目录名必须等于插件 id）。
-          </li>
-          <li>安装成功后侧栏「已安装插件」即时刷新；题库页刷新即可使用。无需注册、无需卡密、无需重启、无需联网。</li>
+          <li><strong>在线安装（推荐）</strong>：拉取清单后点卡片上的【在线安装】，底座按该条目的 <code>zip_url</code> 只下载那一个 zip，校验通过即落地 <code>plugins/</code>；下载或校验失败不会留下半个文件。</li>
+          <li><strong>手动安装（备选）</strong>：自己下载 zip（卡片上有直链），拖进<a href="/workspace">工作台</a>由底座校验落地；或亲手解压，把整个目录放进 <code>plugins/</code>（zip 顶层目录名必须等于插件 id）。</li>
+          <li>安装成功后卡片按钮即时转为「覆盖安装」，底座发现接口（<code>/api/plugins</code>）即刻生效；题库页刷新即可使用。无需注册、无需卡密、无需重启。</li>
           <li>卸载：删除 <code>plugins/</code> 下对应目录即可，底座不在别处留运行态残留。</li>
         </ol>
         <p class="pl-legal">
