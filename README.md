@@ -71,6 +71,19 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 新增极简 PWA 清单、图标与根作用域 Service Worker：Chrome / Edge 可把本站「安装为应用」，以独立窗口运行；SW 只做网络透传、不缓存，避免装完看到旧页面；
 - `static/index.html` 头部加浏览器探针，IE 或缺少 ES Module / CSS 变量支持的老内核直接显示「请使用现代浏览器」，不白屏。
 
+`v0.4.1` 按内测反馈重排首页：介绍页卡片顺序改为 01 工作台、02 插件索引，题目 Schema / 插件规范 / 健康检查 / OpenAPI 依次后延，核心入口不再被埋没。
+
+`v0.4.2` 内测防翻车抢修，让「解压即用」真的有事可做：
+
+- 根路径 `/` 直达智能工作台，原底座介绍页改挂 `/about`；工作台边栏底部保留「关于底座（About）」入口；
+- 新增种子题库插件 `org.jiuzhang.demo-bank`：首启且无标记时静默安装**随包本地 zip**（5 道高中示例题，零网络请求，用户删掉后不强行装回），工作台欢迎语随之提示可直接输入「拆分第一题」体验。
+
+`v0.4.3` 折叠状态机抢修，专治「收起左栏后错乱、按钮点不动、再也展不开」：
+
+- 三栏各钉死 `grid-column` / `grid-row`，`display:none` 不再牵连余下两栏；两栏补 `overflow:hidden` + `min-width:0`，展开入口补层级，窄屏收起态留 `visibility:hidden`，死锁从根上解除；
+- 折叠状态机把 `data-side` / `data-ctx` 立为唯一事实来源，并支持跨断点重算；顺带修掉 360px 下舞台头标题被压成竖排一列字的问题；
+- 新增 `tests/test_workspace_fold_state.py` 22 条契约测试，配套 `tools/fold_probe.py` / `tools/pixel_scan.py` 真机取证脚本（开发期工具，不影响运行时）。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -124,11 +137,14 @@ jiuzhang-operator/
 │   └── core/
 │       ├── config.py        # 路径与环境变量（唯一配置入口）
 │       ├── db.py            # SQLite 连接、版本化表结构、事务
+│       ├── models.py        # 领域模型与序列化
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
+│       ├── plugin_install.py # 插件 zip 安检与落地安装
 │       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
 │       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取（底座无内置源）
 │       ├── provider.py      # AIProvider 抽象基类
+│       ├── provider_config.py # 多模型配置（只写本机 .env，永不回显）
 │       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
 │       ├── ai_client.py     # OpenAI 兼容客户端（标准库 urllib，无额外依赖）
 │       └── security.py      # 本地写入令牌
@@ -137,6 +153,7 @@ jiuzhang-operator/
 │   ├── workspace.html       # 智能工作台（三栏：任务 / 对话流 / 上下文），根路径直达
 │   ├── plugins.html         # 插件索引页（自定义源地址输入框）
 │   ├── css/{app,questions,workspace,plugins}.css
+│   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
 │   └── js/{app,workspace,plugins,pwa,version}.js
 ├── schemas/
 │   ├── question.json        # 题目交换格式（唯一事实来源）
@@ -152,15 +169,25 @@ jiuzhang-operator/
 ├── tests/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
+│   ├── test_plugin_install.py      # 插件 zip 安检与安装契约
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
+│   ├── test_pwa_contract.py        # PWA 清单、图标与 Service Worker 契约
 │   ├── test_workspace_fold_state.py # 工作台三栏折叠状态机契约（v0.4.3 死锁锁死）
-│   └── test_providers_api.py       # Provider 注册表与切换契约
+│   ├── test_provider_config.py     # 多模型配置面板契约
+│   ├── test_providers_api.py       # Provider 注册表与切换契约
+│   ├── test_agent_chat_tuning.py   # 智能体对话调参契约
+│   └── test_version_consistency.py # 版本号单一事实来源与启动脚本契约
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
+├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
 ├── STACK.md                 # 技术语法规约（含 §1.6 密钥与环境变量装载）
+├── 内测安装与使用指南.md      # 面向内测用户的图文指引
+├── 当前架构与开发进度快照.md  # 交接快照（架构、契约与发版账）
+├── build_release.bat        # 出包脚本（剔除 .env / data / venv 后压缩到 dist/）
+├── start.bat                # 双击启动（自检端口、自愈 pip、就绪后开浏览器）
 ├── LICENSE                  # Apache License 2.0 全文
 ├── README.md
 └── requirements.txt
