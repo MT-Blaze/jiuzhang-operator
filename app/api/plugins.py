@@ -201,8 +201,11 @@ async def plugin_asset(plugin_id: str, asset_path: str, request: Request) -> Fil
         headers["Content-Security-Policy"] = (
             "default-src 'none'; "
             f"script-src 'self' {origin}; "
-            f"style-src 'self' {origin}; "
+            # KaTeX 用内联 style 描公式间距；内联样式不能执行脚本，风险可控
+            f"style-src 'self' 'unsafe-inline' {origin}; "
             f"img-src 'self' {origin}; "
+            # 公式要字体：KaTeX 的 woff2 由宿主静态目录提供，缺了会退化成豆腐块
+            f"font-src 'self' {origin}; "
             "connect-src 'none'; base-uri 'none'; form-action 'none'"
         )
     return FileResponse(path, media_type=media_type, headers=headers)

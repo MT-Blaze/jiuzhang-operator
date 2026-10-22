@@ -303,6 +303,263 @@
     liveFrames().forEach(function (tab) { notify(tab, event, payload); });
   }
 
+  // ---------- 插件数据通道（Host API 转发） ----------
+  // 插件不直连数据库、也不联网；它只能申请下列方法，由宿主按「当前页签自己的
+  // plugin.id」去查接口。插件在 payload 里自报 plugin_id 一律不认，防止串库。
+  // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
+  var RELAY_METHODS = [
+    "bank.list", "bank.stats", "bank.get", "bank.random",
+    "basket.list", "basket.add", "basket.remove", "basket.clear"
+  ];
+  var RELAY_TIMEOUT_MS = 20000;
+  var RELAY_WINDOW_MS = 10000;
+  var RELAY_MAX_PER_WINDOW = 80;
+  var ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+
+  function replyHost(tab, message, ok, value) {
+    if (!tab.frame || !tab.frame.contentWindow) return;
+    var packet = { protocol: PROTOCOL, id: message.id, kind: "response", ok: ok };
+    if (ok) {
+      packet.result = value === undefined ? {} : value;
+    } else {
+      packet.error = {
+        code: (value && value.code) || "HOST_ERROR",
+        message: (value && value.message) || "宿主拒绝了请求",
+        retryable: Boolean(value && value.retryable)
+      };
+    }
+    try {
+      tab.frame.contentWindow.postMessage(packet, "*");
+    } catch (error) {
+      // 帧已经被摘掉：回复无处可去，忽略
+    }
+  }
+
+  /** 每页签限流，挡住插件里失控的循环把本机 SQLite 打满。 */
+  function relayBudget(tab) {
+    var now = Date.now();
+    if (!tab.relayWindow || now - tab.relayWindow > RELAY_WINDOW_MS) {
+      tab.relayWindow = now;
+      tab.relayCount = 0;
+    }
+    tab.relayCount += 1;
+    return tab.relayCount <= RELAY_MAX_PER_WINDOW;
+  }
+
+  function textValue(payload, key, max) {
+    var value = payload[key];
+    if (typeof value !== "string") return "";
+    return value.trim().slice(0, max);
+  }
+
+  /** 「全部 / all」是面板的展示值，到了查询层必须变成「不过滤」。 */
+  function filterValue(payload, key, max) {
+    var value = textValue(payload, key, max);
+    if (value === "全部" || value.toLowerCase() === "all") return "";
+    return value;
+  }
+
+  function intValue(payload, key, fallback, min, max) {
+    var value = Number(payload[key]);
+    if (!Number.isFinite(value)) return fallback;
+    value = Math.floor(value);
+    if (value < min) return fallback;
+    return Math.min(value, max);
+  }
+
+  function fetchJson(url, options) {
+    var settings = options || {};
+    settings.headers = Object.assign({ Accept: "application/json" }, settings.headers || {});
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = 0;
+    if (controller) {
+      settings.signal = controller.signal;
+      timer = window.setTimeout(function () { controller.abort(); }, RELAY_TIMEOUT_MS);
+    }
+    return fetch(url, settings)
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = null;
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (error) {
+            data = null;
+          }
+          if (!response.ok) {
+            var detail = data && data.detail;
+            var failure = new Error(typeof detail === "string" ? detail : "宿主接口返回 HTTP " + response.status);
+            failure.status = response.status;
+            throw failure;
+          }
+          if (data === null) throw new Error("宿主接口返回了非 JSON 内容");
+          return data;
+        });
+      })
+      .then(function (data) {
+        if (timer) window.clearTimeout(timer);
+        return data;
+      }, function (error) {
+        if (timer) window.clearTimeout(timer);
+        throw error;
+      });
+  }
+
+  /** 写操作：先取一次性令牌（用后即焚），再把令牌放进请求头，插件全程不可见。 */
+  function withWriteToken(url, options) {
+    return fetchJson("/api/settings").then(function (data) {
+      var token = data && data.local_token;
+      if (!token) throw new Error("拿不到本地写操作令牌");
+      options.headers = Object.assign({}, options.headers || {}, { "X-JZO-Token": token });
+      return fetchJson(url, options);
+    });
+  }
+
+  function relay(tab, message) {
+    var method = String(message.method || "");
+    if (RELAY_METHODS.indexOf(method) < 0) {
+      replyHost(tab, message, false, {
+        code: "UNSUPPORTED_METHOD",
+        message: "宿主未开放方法：" + method.slice(0, 80)
+      });
+      return;
+    }
+    if (!relayBudget(tab)) {
+      replyHost(tab, message, false, {
+        code: "RATE_LIMITED",
+        message: "请求过于频繁（每 10 秒最多 " + RELAY_MAX_PER_WINDOW + " 次），请稍后再试"
+      });
+      return;
+    }
+    var pluginId = tab.plugin && tab.plugin.id;
+    if (!pluginId) {
+      replyHost(tab, message, false, { code: "NO_PLUGIN", message: "页签没有绑定插件" });
+      return;
+    }
+    var payload = message.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) payload = {};
+
+    var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
+
+    function done(result) {
+      replyHost(tab, message, true, result);
+    }
+
+    function fail(error) {
+      replyHost(tab, message, false, {
+        code: "HOST_" + (error.status || 0),
+        message: String((error && error.message) || "宿主请求失败").slice(0, 200),
+        retryable: Boolean(error && error.status >= 500)
+      });
+    }
+
+    if (method === "bank.stats") {
+      fetchJson(base + "/stats").then(done, fail);
+      return;
+    }
+
+    if (method === "bank.list") {
+      var params = new URLSearchParams();
+      params.set("grade", filterValue(payload, "grade", 32));
+      params.set("difficulty", filterValue(payload, "difficulty", 32));
+      params.set("type", filterValue(payload, "type", 32));
+      params.set("chapter", filterValue(payload, "chapter", 64));
+      params.set("textbook", filterValue(payload, "textbook", 64));
+      var search = textValue(payload, "q", 100);
+      if (search) params.set("q", search);
+      params.set("page", String(intValue(payload, "page", 1, 1, 10000)));
+      params.set("page_size", String(intValue(payload, "page_size", 20, 1, 100)));
+      fetchJson(base + "/questions?" + params.toString()).then(done, fail);
+      return;
+    }
+
+    if (method === "bank.get") {
+      var questionId = textValue(payload, "id", 80);
+      if (!ID_RE.test(questionId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "题目 id 不合法" });
+        return;
+      }
+      fetchJson(base + "/questions/" + encodeURIComponent(questionId)).then(done, fail);
+      return;
+    }
+
+    if (method === "bank.random") {
+      var randomParams = new URLSearchParams();
+      randomParams.set("grade", filterValue(payload, "grade", 32));
+      randomParams.set("difficulty", filterValue(payload, "difficulty", 32));
+      randomParams.set("type", filterValue(payload, "type", 32));
+      var randomSearch = textValue(payload, "q", 100);
+      if (randomSearch) randomParams.set("q", randomSearch);
+      fetchJson(base + "/random?" + randomParams.toString()).then(done, fail);
+      return;
+    }
+
+    if (method === "basket.list") {
+      fetchJson("/api/basket?expand=" + (payload.expand === true ? "true" : "false")).then(done, fail);
+      return;
+    }
+
+    if (method === "basket.add") {
+      var ids = payload.ids;
+      if (typeof payload.id === "string") ids = [payload.id];
+      if (!Array.isArray(ids) || !ids.length) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "ids 必须是非空数组" });
+        return;
+      }
+      if (ids.length > 200) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "一次最多加 200 题" });
+        return;
+      }
+      var cleanIds = [];
+      for (var i = 0; i < ids.length; i += 1) {
+        var id = typeof ids[i] === "string" ? ids[i] : "";
+        if (!ID_RE.test(id)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "题目 id 不合法" });
+          return;
+        }
+        cleanIds.push(id);
+      }
+      withWriteToken("/api/basket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plugin_id: pluginId, ids: cleanIds })
+      }).then(function (result) {
+        done(result);
+        noteBasketChange(tab, "add", result, cleanIds.length);
+      }, fail);
+      return;
+    }
+
+    if (method === "basket.remove") {
+      var removeId = textValue(payload, "question_id", 80) || textValue(payload, "id", 80);
+      if (!ID_RE.test(removeId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "题目 id 不合法" });
+        return;
+      }
+      withWriteToken("/api/basket/" + encodeURIComponent(removeId), { method: "DELETE" })
+        .then(function (result) {
+          done(result);
+          noteBasketChange(tab, "remove", result, 1);
+        }, fail);
+      return;
+    }
+
+    // basket.clear
+    withWriteToken("/api/basket", { method: "DELETE" }).then(function (result) {
+      done(result);
+      noteBasketChange(tab, "clear", result, 0);
+    }, fail);
+  }
+
+  /** 题篮变动记一笔，让底栏与其它插件（如组卷）能跟上；插件名不进 DOM 以外的地方。 */
+  function noteBasketChange(tab, action, result, count) {
+    var total = result && typeof result.total === "number" ? result.total : null;
+    dock("插件「" + (tab.plugin.name || tab.plugin.id) + "」" + (
+      action === "add" ? "向题篮加入 " + count + " 题" :
+      action === "remove" ? "从题篮移除 1 题" : "清空了题篮"
+    ) + (total == null ? "。" : "，现共 " + total + " 题。"), "basket.changed");
+    emit("basket.changed", { action: action, total: total, pluginId: tab.plugin.id });
+  }
+
   // ---------- 消息入口：响应归位 + 插件事件上桥 ----------
   window.addEventListener("message", function (event) {
     var message = event.data;
@@ -315,6 +572,14 @@
       }
     }
     if (!tab) return;   // 不认识的发信人一律丢弃
+
+    // 插件主动申请宿主数据（jzo-plugin/1 的 request 方向，题库通道新增）。
+    // 只认白名单方法，id 必须是短标识；回复严格回到发信 iframe。
+    if (message.kind === "request") {
+      if (typeof message.id !== "string" || !ID_RE.test(message.id)) return;
+      relay(tab, message);
+      return;
+    }
 
     if (message.kind === "response" && tab.pending) {
       var waiter = tab.pending.get(message.id);

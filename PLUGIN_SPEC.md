@@ -453,7 +453,7 @@ com.example.card/
 底座学 VSCode：**左栏、右栏、底栏永远归宿主**，只有中央画布可以被插件接管。画布顶部是一条 Tabs：
 
 - `对话` 是**原生页签**（宿主的自由对话，不进 iframe），永远存在、不可关闭；
-- 每个声明了 `stage` 的插件占**一个页签**（按插件 id 去重，重复点击只是切回，不会开出第二个）；
+- 声明了 `stage` 的插件默认占**一个页签**（按插件 id 去重，重复点击只是切回）；若清单写 `"singleton": false`，重复点击会开出 `插件名 #2`、`#3`，各页签拥有独立 iframe 与独立 `plugin.activate`；
 - 页签可关闭；关闭即停用并摘除 iframe。
 
 清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.json`](examples/demo_plugin/plugin.json)）：
@@ -476,8 +476,8 @@ com.example.card/
 | `stage.region` | 否 | 只认 `"center"`；写别的值等于没写（左/右/底栏不接受插件接管） |
 | `stage.mode` | 否 | `embed`（默认，与其他页签共存）/ `takeover`（切到该页签即占满画布）/ `fullscreen`（额外隐藏左右栏与底栏，只看插件）。非法值回落 `embed` |
 | `stage.title` | 否 | 页签标题，≤24 字，超长截断；缺省用 `name` |
-| `stage.priority` | 否 | −100…100，超出被夹紧。**当前宿主不据此排序**，字段只做校验与发现接口回传，为将来多插件抢同一舞台留位 |
-| `stage.singleton` | 否 | 默认 `true`：同一插件只允许一个页签。当前宿主一律按单例处理（按插件 id 去重），填 `false` 暂不生效 |
+| `stage.priority` | 否 | −100…100，超出被夹紧。**v0.6.1 起真实消费**：插件页签按优先级从高到低排列（同优先级按打开先后），原生「对话」页签永远排第一；左栏插件列表也按同一数值排序。 |
+| `stage.singleton` | 否 | 默认 `true`：同一插件只允许一个页签。填 `false` 时允许开多个页签（键为 `plugin:<id>#2`…，标题追加 `#2`），用于对照阅读、双栏组卷等场景。 |
 
 硬约束：
 
@@ -504,6 +504,7 @@ com.example.card/
 | `region.dock` | 插件/宿主 → 底栏 | `{ text, topic?, pluginId? }`；`text` 截断 200 字，纯 `textContent` 落 DOM，不解析 HTML |
 | `region.left` / `region.right` / `stage.selection` | 插件 → 宿主区域 | 预留：宿主接受但不解释内容，逐条记录到底栏 |
 | `stage.tab.sleep` | 画布 → 内部 | `{ key, pluginId }`，休眠留痕 |
+| `basket.changed` | 画布 → 内部 | `{ action, total, pluginId }`；题篮被插件增删后广播，组卷/讲义插件可据此刷新（v0.6.1）。`action` 为 `add` / `remove` / `clear`。 |
 
 插件侧的发布白名单在清单 `bus` 字段里声明：
 
@@ -520,6 +521,42 @@ com.example.card/
 插件发事件的实际写法就是一条通知（见 §2.3.3）：`{ kind: "notification", event: "region.dock", payload: { text: "..." } }`。宿主收到后先查白名单，不在名单里的**丢弃并在底栏写明「想发未授权事件 xxx，已丢弃」**——不静默、不抛错、不断链。
 
 订阅者异常彼此隔离：任何一个处理函数抛错都不会中断其余订阅者，宿主只在底栏记一笔。这条与「插件坏了，底座还能用」是同一件事的两个方向。
+
+---
+
+### 2.6 插件数据通道（Host API 转发，v0.6.1）
+
+插件在沙箱里拿不到数据库、文件系统与写令牌（§2 铁律）。需要题库/题篮数据时，插件向宿主发一条 **request**，宿主查完再回 **response**：
+
+```js
+// 插件 → 宿主
+{ protocol: "jzo-plugin/1", id: "p1_x8", kind: "request",
+  method: "bank.list", payload: { grade: "高一", page: 1, page_size: 12 } }
+
+// 宿主 → 插件
+{ protocol: "jzo-plugin/1", id: "p1_x8", kind: "response", ok: true,
+  result: { items: [...], total: 456, page: 1, page_size: 12, total_pages: 38 } }
+```
+
+| 方法 | 用途 | 关键约束 |
+| --- | --- | --- |
+| `bank.list` | 分页取题 | `grade` / `difficulty` / `type` / `chapter` / `textbook` / `q` / `page` / `page_size`；`page_size` ≤100，搜索词 ≤100 字；面板的展示值「全部」由宿主翻译为「不过滤」 |
+| `bank.stats` | 年级/难度/题型/章节计数 | 只读 |
+| `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
+| `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
+| `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
+| `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
+| `basket.remove` | 移除一题 | 需要题目 id |
+| `basket.clear` | 清空 | 无参数 |
+
+安全边界：
+
+- **插件身份只来自页签**：宿主用 `tab.plugin.id` 拼接口，插件在 payload 里自报 `plugin_id` 一律忽略，防止 A 插件读 B 插件题库；
+- 写令牌由宿主代取（`/api/settings`，一次性），只放进宿主发出的请求头，**插件永远看不到令牌**；
+- 每次调用限流 80 次 / 10 秒 / 页签，单次转发 20 秒超时；超限回 `RATE_LIMITED`，不会把本机 SQLite 打满；
+- 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL。
+
+当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（456 道真题，SQLite 随包分发，首次打开由底座复制到工作区 `data/banks/`）。后续组卷、讲义插件复用同一通道，不新增协议。
 
 ---
 

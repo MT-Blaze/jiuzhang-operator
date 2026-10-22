@@ -6,15 +6,18 @@
 
 from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from pathlib import PurePosixPath
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.agents import router as agents_router
+from app.api.bank import router as bank_router
 from app.api.health import router as health_router
 from app.api.plugins import router as plugins_router
 from app.api.providers import router as providers_router
@@ -29,6 +32,7 @@ from app.core.seed_plugin import ensure_seed_plugin
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     ensure_seed_plugin()
     yield
 
@@ -50,6 +54,74 @@ def create_app() -> FastAPI:
     app.include_router(providers_router)
     app.include_router(agents_router)
     app.include_router(workspaces_router)
+    app.include_router(bank_router)
+
+    @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)
+    async def read_upload(asset_path: str) -> FileResponse:
+        """题目配图：只读当前工作区 uploads/，拒绝穿越、符号链接与非图片扩展名。
+
+        不能直接 mount 一个固定目录：工作区切换后上传根会变，路由必须按请求
+        当时的 ``settings.uploads_dir`` 解析（见 PLUGIN_SPEC §3.1）。
+        """
+        root = settings.uploads_dir.resolve()
+        relative = PurePosixPath(asset_path.replace("\\", "/"))
+        if (
+            not relative.parts
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or relative.parts[0].startswith(".")
+        ):
+            raise HTTPException(status_code=404, detail="资源路径非法")
+        target = root.joinpath(*relative.parts)
+        if target.is_symlink():
+            raise HTTPException(status_code=404, detail="不允许符号链接")
+        try:
+            target.resolve().relative_to(root)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="资源路径越界") from exc
+        media_types = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".svg": "image/svg+xml",
+            ".gif": "image/gif",
+        }
+        media_type = media_types.get(target.suffix.lower())
+        if media_type is None or not target.is_file():
+            raise HTTPException(status_code=404, detail="资源不存在")
+        return FileResponse(
+            target,
+            media_type=media_type,
+            headers={
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "public, max-age=86400",
+            },
+        )
+
+    @app.get("/static/vendor/katex/fonts/{font_name}", include_in_schema=False)
+    async def read_katex_font(font_name: str) -> FileResponse:
+        """KaTeX 字体：沙箱插件是不透明源，@font-face 属于 CORS 请求。
+
+        StaticFiles 不会替字体补 ``Access-Control-Allow-Origin``，缺了它公式
+        会退化成缺字方框；字体是公开静态资源，这里只放行白名单文件名。
+        """
+        if re.fullmatch(r"KaTeX_[A-Za-z0-9_-]+\.(?:woff2|woff|ttf)", font_name) is None:
+            raise HTTPException(status_code=404, detail="字体不存在")
+        path = settings.static_dir / "vendor" / "katex" / "fonts" / font_name
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="字体不存在")
+        return FileResponse(
+            path,
+            media_type="font/woff2" if font_name.endswith(".woff2") else "font/woff",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cross-Origin-Resource-Policy": "cross-origin",
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "public, max-age=604800",
+            },
+        )
+
     app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
     @app.get("/sw.js", include_in_schema=False)

@@ -1,0 +1,33 @@
+{
+  "plugin_id": "org.jiuzhang.core-bank",
+  "source": "E:\\math-question-bank-main\\math_question_bank.db",
+  "source_exists": true,
+  "total_read": 456,
+  "imported": 456,
+  "failed": [],
+  "failed_count": 0,
+  "choice_options_parsed": 964,
+  "images_referenced": 52,
+  "images_missing": 13,
+  "assets_available": 126,
+  "assets_copied": 0,
+  "latex_tokens_source": 19464,
+  "latex_mismatch_rows": 0,
+  "types": {
+    "single_choice": 186,
+    "multiple_choice": 55,
+    "fill_blank": 86,
+    "solution": 129
+  },
+  "grades": {
+    "高一": 420,
+    "高三": 36
+  },
+  "difficulties": {
+    "hard": 140,
+    "basic": 182,
+    "medium": 134
+  },
+  "seed_db": "E:\\jiuzhang-operator\\plugins\\org.jiuzhang.core-bank\\bank\\bank.db",
+  "seed_db_bytes": 1425408
+}
