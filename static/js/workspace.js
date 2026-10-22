@@ -1790,8 +1790,21 @@
   // ============ 已安装插件：动态渲染左栏插件区 ============
   var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };
 
+  function pluginPriority(plugin) {
+    var stage = plugin && plugin.stage;
+    var value = stage && typeof stage.priority === "number" ? stage.priority : 0;
+    return Math.max(-100, Math.min(100, value));
+  }
+
   function renderPlugins(plugins) {
-    var list = plugins || [];
+    var list = (plugins || []).slice();
+    // stage.priority 的第二个真实消费点：左栏插件区同样按优先级从高到低排，
+    // 同优先级按名称稳定排序。没有舞台声明的插件 priority=0，不抢位。
+    list.sort(function (a, b) {
+      var delta = pluginPriority(b) - pluginPriority(a);
+      if (delta !== 0) return delta;
+      return String(a.name || a.id || "").localeCompare(String(b.name || b.id || ""), "zh-CN");
+    });
     if (!pluginListEl) return;
     pluginListEl.textContent = "";
     if (!list.length) {
@@ -1826,7 +1839,22 @@
     }
   }
 
-  function loadPlugins() {
+  var pluginSignature = null;
+  var knownPluginIds = {};
+
+  function pluginSignatureOf(data, plugins) {
+    if (data && typeof data.signature === "string" && data.signature) return data.signature;
+    return plugins.map(function (p) { return p.id + "@" + p.version; }).join("|");
+  }
+
+  /**
+   * 热插拔：/api/plugins 每次请求都重新扫描 plugins/，后端另回一份清单签名。
+   * 页面只需定时比对签名，用户往 plugins/ 里解压一个新目录（或拖装成功）后，
+   * 左栏与画布无需重启即可看到变化。运行中的 iframe 代码不热替换——规范 §4
+   * 明确要求刷新页面才加载新代码，这里只负责“发现与接入”。
+   */
+  function loadPlugins(options) {
+    var opts = options || {};
     return fetch("/api/plugins", { cache: "no-store" })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -1834,6 +1862,13 @@
       })
       .then(function (data) {
         var plugins = (data && data.plugins) || [];
+        var signature = pluginSignatureOf(data, plugins);
+        var changed = pluginSignature !== null && signature !== pluginSignature;
+        var added = [];
+        plugins.forEach(function (plugin) {
+          if (!knownPluginIds[plugin.id]) added.push(plugin);
+        });
+
         installedPlugins = plugins;
         if (activePlugin) {
           var still = null;
@@ -1852,9 +1887,37 @@
           }
         }
         renderPlugins(plugins);
+        if (window.JzoStage && typeof window.JzoStage.updatePlugin === "function") {
+          plugins.forEach(function (plugin) { window.JzoStage.updatePlugin(plugin); });
+        }
+
+        if (opts.announce !== false && changed) {
+          if (added.length) {
+            addBubble("sys", "检测到新插件 " + added.map(function (p) {
+              return "「" + (p.name || p.id) + "」";
+            }).join("、") + "，已热接入左栏，无需重启。");
+          } else {
+            addBubble("sys", "插件清单已更新（覆盖安装或卸载）。左栏与页签已刷新。");
+          }
+          logHistory("插件热刷新：" + (added.length ? added.map(function (p) { return p.id; }).join(",") : signature));
+        }
+
+        pluginSignature = signature;
+        knownPluginIds = {};
+        plugins.forEach(function (plugin) { knownPluginIds[plugin.id] = true; });
         return plugins;
       });
   }
+
+  function pollPlugins() {
+    if (document.hidden) return;
+    loadPlugins({ announce: true }).catch(function () { /* 轮询失败保持现状，下次再试 */ });
+  }
+  window.setInterval(pollPlugins, 5000);
+  window.addEventListener("focus", pollPlugins);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) pollPlugins();
+  });
 
   // ============ 插件拖拽装：工作台全局兜底（选文件与索引入口在 /settings） ============
   var dropOverlay = document.getElementById("wsDropOverlay");

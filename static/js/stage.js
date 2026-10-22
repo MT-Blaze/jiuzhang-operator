@@ -33,6 +33,29 @@
   var tabs = [];
   var activeKey = null;
   var requestSeq = 0;
+  var openSeq = 0;
+
+  function priorityOf(tab) {
+    var stage = tab.plugin && tab.plugin.stage;
+    var value = stage && typeof stage.priority === "number" ? stage.priority : 0;
+    return Math.max(-100, Math.min(100, value));
+  }
+
+  /**
+   * 舞台优先级（stage.priority）的真实消费点：同排插件页签按优先级从高到低排，
+   * 同优先级按打开先后。原生页签（对话）永远排第一，不参与抢位。
+   */
+  function orderPluginTabs() {
+    if (!tabsEl) return;
+    var pluginTabs = tabs.filter(function (tab) { return tab.kind === "plugin"; });
+    pluginTabs.sort(function (a, b) {
+      var delta = priorityOf(b) - priorityOf(a);
+      return delta !== 0 ? delta : a.order - b.order;
+    });
+    pluginTabs.forEach(function (tab) {
+      if (tab.button && tab.button.parentNode === tabsEl) tabsEl.appendChild(tab.button);
+    });
+  }
 
   function emit(topic, payload) {
     if (bus && typeof bus.emit === "function") bus.emit(topic, payload, { source: "stage" });
@@ -321,10 +344,12 @@
 
   // ---------- 页签生命周期 ----------
   function addTab(tab) {
+    tab.order = tab.order == null ? ++openSeq : tab.order;
     tabs.push(tab);
     if (tabsEl) tabsEl.appendChild(buildTabButton(tab));
     if (bodyEl) bodyEl.appendChild(tab.panel);
     tab.panel.hidden = true;
+    orderPluginTabs();
     return tab;
   }
 
@@ -398,42 +423,74 @@
     return tab;
   }
 
-  /** 打开（或唤醒）一个插件页签。同一插件永远只有一个页签。 */
+  /** 打开（或唤醒）一个插件页签；singleton=false 时允许同一插件开多个页签。 */
   function openPlugin(plugin) {
     if (!plugin || !plugin.entry_url) return null;
-    var key = "plugin:" + plugin.id;
+    var singleton = !(plugin.stage && plugin.stage.singleton === false);
+    var baseKey = "plugin:" + plugin.id;
+    var key = baseKey;
     var existing = findTab(key);
-    if (existing) {
+    if (singleton && existing) {
       existing.plugin = plugin;   // 覆盖安装后清单可能变了
       existing.button.querySelector(".ws-tab-label").textContent = plugin.name || plugin.id;
       activate(key);
       return existing;
     }
 
+    var serial = 1;
+    if (!singleton) {
+      while (findTab(key)) {
+        serial += 1;
+        key = baseKey + "#" + serial;
+      }
+    }
+    var title = plugin.name || plugin.id;
+    if (!singleton && serial > 1) title += " #" + serial;
+
     var panel = document.createElement("section");
     panel.className = "ws-tab-panel";
-    panel.id = "wsPanel_" + plugin.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+    panel.id = "wsPanel_" + key.replace(/[^a-zA-Z0-9_-]/g, "_");
     panel.setAttribute("role", "tabpanel");
-    panel.setAttribute("aria-label", (plugin.name || plugin.id) + " 画布");
+    panel.setAttribute("aria-label", title + " 画布");
     panel.setAttribute("data-tab", key);
 
     var tab = {
       key: key,
       kind: "plugin",
-      title: plugin.name || plugin.id,
+      title: title,
       closable: true,
       panel: panel,
       plugin: plugin,
       state: "sleep",
       ready: false,
       pending: new Map(),
-      lastUsed: Date.now()
+      lastUsed: Date.now(),
+      priority: priorityOf({ plugin: plugin })
     };
     addTab(tab);
     activate(key);
-    dock("已为插件「" + tab.title + "」开一个画布页。", "stage.tab.opened");
+    dock("已为插件「" + title + "」开一个画布页。", "stage.tab.opened");
     emit("stage.tab.opened", { key: key, pluginId: plugin.id });
     return tab;
+  }
+
+  /**
+   * 覆盖安装 / 热插拔后刷新已打开页签的清单数据。
+   * 运行中的 iframe 不主动重载（规范 §4：新代码要刷新页面才加载），只更新标题与
+   * 优先级；页签位置随之重排，避免“装完还挂在旧坑位”的错觉。
+   */
+  function updatePlugin(plugin) {
+    if (!plugin || !plugin.id) return;
+    tabs.forEach(function (tab) {
+      if (tab.kind !== "plugin" || !tab.plugin || tab.plugin.id !== plugin.id) return;
+      tab.plugin = plugin;
+      var suffix = tab.key.indexOf("#") >= 0 ? tab.key.slice(tab.key.indexOf("#")) : "";
+      tab.title = (plugin.name || plugin.id) + suffix;
+      var label = tab.button && tab.button.querySelector(".ws-tab-label");
+      if (label) label.textContent = tab.title;
+      tab.priority = priorityOf(tab);
+    });
+    orderPluginTabs();
   }
 
   function pushParams(tab) {
@@ -463,9 +520,23 @@
 
   window.JzoStage = {
     openPlugin: openPlugin,
+    updatePlugin: updatePlugin,
     activate: activate,
     close: closeTab,
-    tabs: function () { return tabs.map(function (tab) { return { key: tab.key, title: tab.title, state: tab.state, kind: tab.kind }; }); },
+    tabs: function () {
+      return tabs.map(function (tab) {
+        return {
+          key: tab.key,
+          title: tab.title,
+          state: tab.state,
+          kind: tab.kind,
+          priority: tab.kind === "plugin" ? priorityOf(tab) : null,
+          singleton: tab.kind === "plugin" && tab.plugin && tab.plugin.stage
+            ? tab.plugin.stage.singleton !== false
+            : null
+        };
+      });
+    },
     request: function (key, method, payload) {
       var tab = findTab(key);
       return tab ? request(tab, method, payload) : Promise.reject(new Error("页签不存在"));

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path, PurePosixPath
@@ -428,6 +429,7 @@ def discover_plugins() -> dict[str, Any]:
     plugins: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
     root = Path(settings.plugins_dir)
+    fingerprint: list[str] = []
 
     if root.is_dir():
         for plugin_dir in sorted(root.iterdir(), key=lambda item: item.name):
@@ -437,12 +439,27 @@ def discover_plugins() -> dict[str, Any]:
             if not manifest_path.is_file():
                 continue
             try:
+                stat = manifest_path.stat()
+                fingerprint.append(
+                    f"{plugin_dir.name}:{stat.st_mtime_ns}:{stat.st_size}"
+                )
+            except OSError:
+                fingerprint.append(f"{plugin_dir.name}:unreadable")
+            try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 plugins.append(validate_plugin(plugin_dir, manifest))
             except (PluginRejected, OSError, json.JSONDecodeError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 
-    return {"protocol": PROTOCOL, "plugins": plugins, "rejected": rejected}
+    # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
+    # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
+    signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]
+    return {
+        "protocol": PROTOCOL,
+        "plugins": plugins,
+        "rejected": rejected,
+        "signature": signature,
+    }
 
 
 def resolve_plugin_asset(plugin_id: str, asset_path: str) -> Path:
