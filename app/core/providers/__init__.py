@@ -22,13 +22,19 @@ FALLBACK_NAME = "openai-compatible"
 
 @dataclass(frozen=True)
 class ProviderProfile:
-    """一个可选的模型供应商配置档。"""
+    """一个可选的模型供应商配置档。
+
+    ``env_prefix`` 是该档环境变量名前缀（如 ``JZO_BAILIAN_``），供配置面板
+    把用户亲手填入的 Key / Base URL / 模型名写回本机 .env 时定位变量名；
+    密钥仍然只存在环境变量与本机 .env，永不入库、永不下发前端。
+    """
 
     name: str
     label: str
     base_url: str
     api_key: str
     model: str
+    env_prefix: str = ""
 
     @property
     def is_configured(self) -> bool:

@@ -844,4 +844,407 @@
     console.error("Failed to load providers:", err);
     renderProviderStatus();
   });
+
+  // --- 通用：每次写操作取一枚新鲜的一次性令牌（用后即焚，不缓存） ---
+  function fetchWriteToken() {
+    return fetch("/api/settings", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("读取本机令牌失败（HTTP " + r.status + "）");
+        return r.json();
+      })
+      .then(function (data) {
+        var token = data && data.local_token ? String(data.local_token) : "";
+        if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
+        return token;
+      });
+  }
+
+  function readErrorDetail(response, body) {
+    var detail = body && body.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail.message === "string") return detail.message;
+    return "HTTP " + response.status;
+  }
+
+  // --- 插件一键装：已安装列表 + 拖拽 zip + 选文件安装 ---
+  var installedList = document.getElementById("wsInstalledList");
+  var pluginStatus = document.getElementById("wsPluginStatus");
+  var pluginInstallBtn = document.getElementById("wsPluginInstallBtn");
+  var pluginFileInput = document.getElementById("wsPluginFile");
+  var dropOverlay = document.getElementById("wsDropOverlay");
+  var dragDepth = 0;
+
+  var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };
+
+  function setPluginStatus(text, tone) {
+    if (!pluginStatus) return;
+    pluginStatus.textContent = text || "";
+    pluginStatus.setAttribute("data-tone", tone || "info");
+  }
+
+  function loadPluginList() {
+    return fetch("/api/plugins", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (!installedList) return data;
+        installedList.innerHTML = "";
+        (data.plugins || []).forEach(function (plugin) {
+          var li = document.createElement("li");
+          li.className = "ws-plugin-item";
+          var name = document.createElement("span");
+          name.className = "ws-plugin-name";
+          name.textContent = plugin.name;
+          var meta = document.createElement("span");
+          meta.className = "ws-plugin-meta";
+          meta.textContent =
+            (KIND_LABELS[plugin.kind] || plugin.kind) + " · v" + plugin.version;
+          li.appendChild(name);
+          li.appendChild(meta);
+          installedList.appendChild(li);
+        });
+        if (!data.plugins || !data.plugins.length) {
+          var empty = document.createElement("li");
+          empty.className = "ws-plugin-empty";
+          empty.textContent = "还没有安装任何插件";
+          installedList.appendChild(empty);
+        }
+        var rejected = data.rejected || [];
+        setPluginStatus(
+          rejected.length ? "有 " + rejected.length + " 个目录未过校验：" + rejected[0].reason : "",
+          rejected.length ? "warn" : "info"
+        );
+        return data;
+      })
+      .catch(function (err) {
+        setPluginStatus("插件列表读取失败：" + err.message, "down");
+      });
+  }
+
+  function installPluginZip(file, replace) {
+    if (!file) return Promise.resolve();
+    if (!/\.zip$/i.test(file.name || "")) {
+      showToast("只接受 .zip 插件包（标准 zip，解压即用）", true);
+      return Promise.resolve();
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      showToast("zip 包超过 50 MB 上限", true);
+      return Promise.resolve();
+    }
+    setPluginStatus("正在安装 " + file.name + " …", "info");
+    if (pluginInstallBtn) {
+      pluginInstallBtn.disabled = true;
+      pluginInstallBtn.setAttribute("aria-busy", "true");
+    }
+    return fetchWriteToken()
+      .then(function (token) {
+        return fetch("/api/plugins/install" + (replace ? "?replace=true" : ""), {
+          method: "POST",
+          headers: { "Content-Type": "application/zip", "X-JZO-Token": token },
+          body: file,
+        });
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (body) {
+          if (r.status === 409 && !replace) {
+            var question = readErrorDetail(r, body) + " 覆盖升级会先删除旧目录，继续吗？";
+            if (window.confirm(question)) return installPluginZip(file, true);
+            setPluginStatus("", "info");
+            return null;
+          }
+          if (!r.ok) throw new Error(readErrorDetail(r, body));
+          var plugin = body && body.plugin ? body.plugin : {};
+          showToast("插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
+          return loadPluginList().then(function () {
+            // 列表刷新会把状态行重置，成功提示要落在刷新之后才留得住
+            setPluginStatus(
+              "已安装 " + (plugin.name || plugin.id) + " v" + (plugin.version || "?") + "，题库页刷新即可使用",
+              "ok"
+            );
+          });
+        });
+      })
+      .catch(function (err) {
+        showToast("插件安装失败：" + err.message, true);
+        setPluginStatus("安装失败：" + err.message, "down");
+      })
+      .finally(function () {
+        if (pluginInstallBtn) {
+          pluginInstallBtn.disabled = false;
+          pluginInstallBtn.setAttribute("aria-busy", "false");
+        }
+      });
+  }
+
+  function pickFirstZip(fileList) {
+    for (var i = 0; i < (fileList || []).length; i += 1) {
+      if (/\.zip$/i.test(fileList[i].name || "")) return fileList[i];
+    }
+    return null;
+  }
+
+  function hasFiles(event) {
+    var types = (event.dataTransfer && event.dataTransfer.types) || [];
+    return Array.prototype.indexOf.call(types, "Files") !== -1;
+  }
+
+  function showDropOverlay(show) {
+    if (!dropOverlay) return;
+    dropOverlay.hidden = !show;
+  }
+
+  window.addEventListener("dragenter", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    showDropOverlay(true);
+  });
+  window.addEventListener("dragover", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("dragleave", function (event) {
+    if (!hasFiles(event)) return;
+    dragDepth -= 1;
+    if (dragDepth <= 0) {
+      dragDepth = 0;
+      showDropOverlay(false);
+    }
+  });
+  window.addEventListener("drop", function (event) {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    showDropOverlay(false);
+    var file = pickFirstZip(event.dataTransfer && event.dataTransfer.files);
+    if (!file) {
+      showToast("没看到 .zip 文件：插件包必须是标准 zip", true);
+      return;
+    }
+    installPluginZip(file, false);
+  });
+
+  if (pluginInstallBtn && pluginFileInput) {
+    pluginInstallBtn.addEventListener("click", function () {
+      pluginFileInput.click();
+    });
+    pluginFileInput.addEventListener("change", function () {
+      var file = pluginFileInput.files && pluginFileInput.files[0];
+      pluginFileInput.value = "";
+      if (file) installPluginZip(file, false);
+    });
+  }
+
+  loadPluginList();
+
+  // --- Provider 配置面板：填 Key / Base URL / 模型名，测连通，热生效 ---
+  var providerModal = document.getElementById("wsProviderModal");
+  var providerModalTarget = document.getElementById("wsProviderModalTarget");
+  var providerBaseUrlInput = document.getElementById("wsProviderBaseUrl");
+  var providerApiKeyInput = document.getElementById("wsProviderApiKey");
+  var providerModelInput = document.getElementById("wsProviderModel");
+  var providerTestBtn = document.getElementById("wsProviderTestBtn");
+  var providerSaveBtn = document.getElementById("wsProviderSaveBtn");
+  var providerTestResult = document.getElementById("wsProviderTestResult");
+  var providerConfigBtn = document.getElementById("wsProviderConfigBtn");
+  var providerModalFocusBefore = null;
+
+  function currentProviderName() {
+    return providerSelect && providerSelect.value ? providerSelect.value : "";
+  }
+
+  function findProvider(name) {
+    for (var i = 0; i < providerList.length; i += 1) {
+      if (providerList[i].name === name) return providerList[i];
+    }
+    return null;
+  }
+
+  function renderProviderModalTarget() {
+    if (!providerModalTarget) return;
+    var profile = findProvider(currentProviderName());
+    if (!profile) {
+      providerModalTarget.textContent = "未选择 Provider";
+      return;
+    }
+    providerModalTarget.textContent =
+      profile.label + " · " + (profile.configured ? "已配置" : "未配置") +
+      (profile.host ? " · " + profile.host : "") +
+      (profile.model ? " · " + profile.model : "");
+    if (providerBaseUrlInput) {
+      providerBaseUrlInput.placeholder = profile.host
+        ? "当前接口主机：" + profile.host + "（留空则不改）"
+        : "https://api.example.com/v1";
+    }
+  }
+
+  function setTestResult(text, tone) {
+    if (!providerTestResult) return;
+    providerTestResult.textContent = text || "";
+    providerTestResult.setAttribute("data-tone", tone || "info");
+    providerTestResult.hidden = !text;
+  }
+
+  function openProviderModal() {
+    if (!providerModal) return;
+    if (!currentProviderName()) {
+      showToast("Provider 注册表还没加载出来，稍候再试", true);
+      return;
+    }
+    providerModalFocusBefore = document.activeElement;
+    renderProviderModalTarget();
+    if (providerBaseUrlInput) providerBaseUrlInput.value = "";
+    if (providerApiKeyInput) providerApiKeyInput.value = "";
+    var profile = findProvider(currentProviderName());
+    if (providerModelInput) providerModelInput.value = profile ? profile.model || "" : "";
+    setTestResult("", "info");
+    providerModal.hidden = false;
+    if (providerBaseUrlInput) providerBaseUrlInput.focus();
+  }
+
+  function closeProviderModal() {
+    if (!providerModal) return;
+    providerModal.hidden = true;
+    if (providerModalFocusBefore && typeof providerModalFocusBefore.focus === "function") {
+      providerModalFocusBefore.focus();
+    }
+    providerModalFocusBefore = null;
+  }
+
+  if (providerConfigBtn) providerConfigBtn.addEventListener("click", openProviderModal);
+
+  document.querySelectorAll("[data-provider-modal-close]").forEach(function (btn) {
+    btn.addEventListener("click", closeProviderModal);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (!providerModal || providerModal.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeProviderModal();
+      return;
+    }
+    if (event.key === "Tab") {
+      // 焦点陷阱：Tab 循环锁在弹窗内
+      var focusables = providerModal.querySelectorAll(
+        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusables.length) return;
+      var first = focusables[0];
+      var last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  });
+
+  function collectProviderForm() {
+    var payload = { name: currentProviderName() };
+    var dirty = false;
+    if (providerBaseUrlInput && providerBaseUrlInput.value.trim()) {
+      payload.base_url = providerBaseUrlInput.value.trim();
+      dirty = true;
+    }
+    if (providerApiKeyInput && providerApiKeyInput.value.trim()) {
+      payload.api_key = providerApiKeyInput.value.trim();
+      dirty = true;
+    }
+    if (providerModelInput && providerModelInput.value.trim()) {
+      payload.model = providerModelInput.value.trim();
+      dirty = true;
+    }
+    return { payload: payload, dirty: dirty };
+  }
+
+  function saveProviderConfig() {
+    var form = collectProviderForm();
+    if (!form.dirty) return Promise.resolve(false);
+    providerSaveBtn.disabled = true;
+    providerSaveBtn.setAttribute("aria-busy", "true");
+    return fetchWriteToken()
+      .then(function (token) {
+        return fetch("/api/providers/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-JZO-Token": token },
+          body: JSON.stringify(form.payload),
+        });
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (body) {
+          if (!r.ok) throw new Error(readErrorDetail(r, body));
+          return true;
+        });
+      })
+      .finally(function () {
+        providerSaveBtn.disabled = false;
+        providerSaveBtn.setAttribute("aria-busy", "false");
+      });
+  }
+
+  if (providerSaveBtn) {
+    providerSaveBtn.addEventListener("click", function () {
+      saveProviderConfig()
+        .then(function (saved) {
+          if (saved) {
+            showToast("配置已保存并热生效（密钥只落在本机 .env）");
+            if (providerApiKeyInput) providerApiKeyInput.value = "";
+            if (providerBaseUrlInput) providerBaseUrlInput.value = "";
+          }
+          return loadProviders().then(function () {
+            renderProviderModalTarget();
+          });
+        })
+        .catch(function (err) {
+          showToast("保存配置失败：" + err.message, true);
+        });
+    });
+  }
+
+  if (providerTestBtn) {
+    providerTestBtn.addEventListener("click", function () {
+      providerTestBtn.disabled = true;
+      providerTestBtn.setAttribute("aria-busy", "true");
+      setTestResult("先把面板里未保存的改动存下来…", "info");
+      var saved;
+      saveProviderConfig()
+        .then(function (didSave) {
+          saved = didSave;
+          setTestResult("正在向接口发一次只读 GET /models …", "info");
+          return fetchWriteToken();
+        })
+        .then(function (token) {
+          return fetch("/api/providers/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-JZO-Token": token },
+            body: JSON.stringify({ name: currentProviderName() }),
+          });
+        })
+        .then(function (r) {
+          return r.json().catch(function () { return null; }).then(function (body) {
+            if (!r.ok) throw new Error(readErrorDetail(r, body));
+            setTestResult((body.ok ? "连通正常 ✓ " : "不通 ✗ ") + body.detail, body.ok ? "ok" : "down");
+            if (saved) {
+              return loadProviders().then(function () {
+                renderProviderModalTarget();
+              });
+            }
+            return null;
+          });
+        })
+        .catch(function (err) {
+          setTestResult("测试失败：" + err.message, "down");
+        })
+        .finally(function () {
+          providerTestBtn.disabled = false;
+          providerTestBtn.setAttribute("aria-busy", "false");
+        });
+    });
+  }
 })();

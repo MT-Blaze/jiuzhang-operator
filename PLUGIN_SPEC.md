@@ -35,8 +35,9 @@
 ### 1.2 插件分发格式：纯 zip 包，无专属后缀
 
 - **唯一格式**：一个标准 zip 包，**解压即用**。禁止 `.jzo` 或任何自定义后缀/容器格式——对齐主流生态，任何压缩软件、浏览器下载、`unzip` 都能打开它，跑路风险为零。
-- zip 只是打包与传输容器，不是运行时格式：底座**不解析 zip、不自动安装**，装插件这一步永远由用户亲手解压并放入 `plugins/`。
-- **底座禁止写死任何远程下载源**（防跑路）：代码与配置里不得出现任何内置的插件市场地址、CDN 域名或自动更新 URL。唯一例外是 §1.3 那条**由用户亲手粘贴地址**的只读拉取。
+- zip 只是打包与传输容器，不是运行时格式。安装**永远由用户亲手发起**：可以亲手解压后把目录放进 `plugins/`，也可以把本地 zip **拖进工作台 / 用文件选择器选中**，由底座校验后落地（`POST /api/plugins/install`，过一次性写令牌）。底座**绝不自动安装、绝不自动拉取任何远程 zip、绝不自动更新**——它只在用户当场把一个本地文件交到手里时才动作。
+- **底座禁止写死任何远程下载源**（防跑路）：代码与配置里不得出现任何内置的插件市场地址、CDN 域名或自动更新 URL。唯一例外是 §1.3 那条**由用户亲手粘贴地址**的只读拉取（拉回来也只是列清单，下载与安装仍是用户当场亲手发起）。
+- **安装接口的安全底线**：上传的 zip 必须先解压到临时暂存区、逐条目过安全校验、再过完 `plugin.json` 全套契约校验，才允许落地 `plugins/`。拒绝加密条目、符号链接、绝对路径、盘符路径、`..` 穿越、嵌套 zip；条目数与解压总量设上限（防 zip 炸弹）；已存在同名插件时默认拒绝（`409 exists`），只有用户显式确认 `replace` 才覆盖。落地目录名以清单 `id` 为唯一事实来源。实现见 `app/core/plugin_install.py`。
 - **包结构**：zip 顶层目录名即插件 id，其内含 `plugin.json` 与 `dist/`、`templates/` 等资源：
 
 ```text
@@ -49,7 +50,7 @@ org.example.card.zip
 
 - **禁止项**：嵌套 zip、加密条目、绝对路径、`..` 路径穿越、符号链接、超出清单声明的可执行文件。底座对插件资源的解析一律拒绝越界路径（`app/core/plugins.py`）。
 - **无签名 / 无摘要 / 无授权校验**：底座不验插件包的数字签名、不比对哈希白名单、不检查许可证状态。清单是否可信由用户自行判断（见 §1.3「地址是用户选的，底座只负责读」）。
-- **安装**：把解压出的目录放进 `plugins/` 即可，无需注册、无需联网、无需重启（发现阶段见 §4）。
+- **安装**：两条等价的路，都是用户亲手发起——① 把 zip 拖进工作台（或点「安装插件 zip 包」选中），底座校验后落地；② 自己解压，把目录放进 `plugins/`。二者都无需注册、无需联网、无需重启（发现阶段见 §4）。
 - **卸载**：删除该目录。底座不得在别处留存插件运行态残留；插件私有数据只能写在题目 `extensions`（反向域名前缀），随题目数据一起被用户拷走或删除。
 
 ### 1.3 plugins.json 插件索引标准
@@ -115,6 +116,7 @@ class ProviderProfile:      # app/core/providers/__init__.py
     base_url: str           # 只从环境变量读
     api_key: str            # 只从环境变量读，禁止硬编码
     model: str              # 只从环境变量读，禁止硬编码模型版本
+    env_prefix: str = ""    # 该档环境变量前缀（如 "JZO_BAILIAN_"），供配置面板回写 .env 时定位变量名
     is_configured -> bool   # api_key 与 base_url 均非空
 ```
 
@@ -122,10 +124,13 @@ class ProviderProfile:      # app/core/providers/__init__.py
 
 **降级红线**：`is_configured` 为假时构造出的客户端必须走 Mock 分支并在响应里回 `mock: true`，**不得**抛异常、**不得**假装是真模型产出（对齐 §1.1 的「显式降级」）。对外只暴露「是否已配置 + base_url 的 netloc」，密钥永不下发（见 [STACK.md](STACK.md) §1.6）。
 
-**内置三档**（`app/core/providers/builtin.py`，环境变量名即契约的一部分）：
+**配置面板契约**（工作台左侧「配置」按钮，已落地）：用户在面板里亲手填入的 Key / Base URL / 模型名，由 `POST /api/providers/config`（写令牌）写回本机 `.env` 并直写环境变量，热生效、不重启；`.env` 已 gitignore，密钥**永不入库、永不写日志、永不下发前端**（AGENTS §5 / STACK §1.6）。`POST /api/providers/test`（写令牌）对该档 Base URL 发一次只读 `GET /models` 做连通性测试，把成功 / 401 / 403 / 404 / 连不上收敛成 `{ok, status_code, host, detail}` 结构化结果——带令牌是因为这是底座替用户出网的口子（同 §1.3 口径）。`.env` 路径可被 `JZO_ENV_FILE` 覆盖（测试 / 启动器专用）。
+
+**内置档**（`app/core/providers/builtin.py` 与 `local.py`，环境变量名即契约的一部分）：
 - `openai-compatible` — `JZO_AI_BASE_URL` / `JZO_AI_API_KEY` / `JZO_AI_MODEL`（默认档）
 - `bailian` — `JZO_BAILIAN_BASE_URL` / `JZO_BAILIAN_API_KEY` / `JZO_BAILIAN_MODEL`
 - `siliconflow` — `JZO_SILICONFLOW_BASE_URL` / `JZO_SILICONFLOW_API_KEY` / `JZO_SILICONFLOW_MODEL`
+- `ollama`（本地预留位，`local.py`）— `JZO_OLLAMA_BASE_URL` / `JZO_OLLAMA_API_KEY` / `JZO_OLLAMA_MODEL`；Ollama 自带 OpenAI 兼容接口，无需真密钥，Key 填任意占位（如 `ollama`）即可点亮。
 
 ### 2.2 数据源插件（DataSource）
 提供外部数据接入能力（题库同步、OCR 服务、云存储等）。

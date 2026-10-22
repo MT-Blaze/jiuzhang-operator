@@ -21,6 +21,7 @@ def profiles() -> list[ProviderProfile]:
             base_url=env_value("JZO_AI_BASE_URL"),
             api_key=env_value("JZO_AI_API_KEY"),
             model=env_value("JZO_AI_MODEL"),
+            env_prefix="JZO_AI_",
         ),
         ProviderProfile(
             name=BAILIAN,
@@ -28,6 +29,7 @@ def profiles() -> list[ProviderProfile]:
             base_url=env_value("JZO_BAILIAN_BASE_URL"),
             api_key=env_value("JZO_BAILIAN_API_KEY"),
             model=env_value("JZO_BAILIAN_MODEL"),
+            env_prefix="JZO_BAILIAN_",
         ),
         ProviderProfile(
             name=SILICONFLOW,
@@ -35,5 +37,6 @@ def profiles() -> list[ProviderProfile]:
             base_url=env_value("JZO_SILICONFLOW_BASE_URL"),
             api_key=env_value("JZO_SILICONFLOW_API_KEY"),
             model=env_value("JZO_SILICONFLOW_MODEL"),
+            env_prefix="JZO_SILICONFLOW_",
         ),
     ]

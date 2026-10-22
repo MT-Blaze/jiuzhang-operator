@@ -1,4 +1,4 @@
-"""插件发现、只读资产服务与用户自填地址的索引拉取。"""
+"""插件发现、只读资产服务、用户自填地址的索引拉取与本机 zip 安装。"""
 
 from __future__ import annotations
 
@@ -7,8 +7,15 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.core import plugin_index
+from app.core.plugin_install import (
+    MAX_ZIP_BYTES,
+    PluginInstallError,
+    install_plugin_from_zip,
+)
 from app.core.plugins import (
     PluginAssetError,
     discover_plugins,
@@ -17,6 +24,30 @@ from app.core.plugins import (
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["plugins"])
+
+
+class InstalledPlugin(BaseModel):
+    """安装成功后下发的插件信息，与 GET /api/plugins 的条目同构。"""
+
+    id: str
+    name: str
+    version: str
+    api_version: str
+    kind: str
+    description: str
+    author: str | None = None
+    license: str
+    slots: list[str]
+    capabilities: list[str]
+    permissions: list[str]
+    entry_url: str
+    css_url: str | None = None
+
+
+class PluginInstallResponse(BaseModel):
+    installed: bool
+    plugin: InstalledPlugin
+
 
 _MEDIA_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -32,6 +63,42 @@ _MEDIA_TYPES = {
 @router.get("/api/plugins", summary="发现已安装插件")
 async def list_plugins() -> dict:
     return discover_plugins()
+
+
+@router.post(
+    "/api/plugins/install",
+    response_model=PluginInstallResponse,
+    summary="安装用户亲手上传的插件 zip 包（本机拖拽/选文件，底座不拉远程源）",
+    dependencies=[Depends(require_write_token)],
+)
+async def install_plugin(request: Request, replace: bool = False) -> PluginInstallResponse:
+    """把用户拖进来的 zip 校验后落地 plugins/。
+
+    安全底线（PLUGIN_SPEC §1.2）：拒绝加密条目、符号链接、绝对路径、``..``
+    穿越与嵌套 zip；条目数与解压总量设上限；先暂存校验、后落地。
+    请求体就是 zip 二进制本身（Content-Type: application/zip），
+    不走 multipart——底座不为此引入 python-multipart 依赖（STACK §0）。
+    """
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_ZIP_BYTES:
+        raise HTTPException(status_code=413, detail="zip 包超过 50 MB 上限")
+
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_ZIP_BYTES:
+            raise HTTPException(status_code=413, detail="zip 包超过 50 MB 上限")
+        chunks.append(chunk)
+
+    try:
+        # 解压与磁盘 IO 是阻塞操作，放线程池执行，不卡事件循环
+        info = await run_in_threadpool(install_plugin_from_zip, b"".join(chunks), replace)
+    except PluginInstallError as exc:
+        raise HTTPException(
+            status_code=exc.status, detail={"message": exc.message, "code": exc.code}
+        ) from exc
+    return PluginInstallResponse(installed=True, plugin=InstalledPlugin(**info))
 
 
 @router.post(

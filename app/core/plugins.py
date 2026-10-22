@@ -47,7 +47,8 @@ def _require(condition: bool, message: str) -> None:
         raise PluginRejected(message)
 
 
-def _validate(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
+def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
+    """按 PLUGIN_SPEC 校验一份清单，返回发现接口下发的插件信息。"""
     _require(isinstance(manifest, dict), "plugin.json 必须是 JSON 对象")
     _require(manifest.get("schema_version") == "1.0", "schema_version 必须为 1.0")
 
@@ -156,7 +157,7 @@ def discover_plugins() -> dict[str, Any]:
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                plugins.append(_validate(plugin_dir, manifest))
+                plugins.append(validate_plugin(plugin_dir, manifest))
             except (PluginRejected, OSError, json.JSONDecodeError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 

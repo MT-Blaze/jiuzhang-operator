@@ -53,6 +53,11 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页；
 - AI 能力：`app/core/providers/` 扫描式 Provider 注册表（密钥只走环境变量）、`/api/agent/chat|split|review` 三个智能体、工作台 `/workspace` 「导入原卷 → 发指令 → 出真卡片 → 确认入库」闭环，以及 `/api/providers` 多厂商切换。
 
+`v0.3.0` 在其上再加两项「极致体验」：
+
+- 插件一键装：把本地 `.zip` 拖到工作台页面任意位置（或点「安装插件 zip 包」选文件），`POST /api/plugins/install`（过一次性写令牌）先解压到临时暂存区、逐条目安检（拒加密 / 符号链接 / 绝对路径 / 盘符 / `..` 穿越 / 嵌套 zip，条目≤2000、解压≤256MB、包体≤50MB 防炸弹）、过完 `plugin.json` 全套契约才落地 `plugins/`；同名已装默认拒绝、确认后才覆盖。**安装永远由用户亲手发起，底座不自动拉远程源、不自动更新**；
+- 多模型配置面板：工作台左栏「模型 Provider」区加「配置」按钮，填 Base URL / API Key / 模型名并测试连通性，保存即热生效（不重启）；密钥只写本机 `.env`，永不回显、永不入库；新增 `ollama` 本地档，为本地模型预留座位。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -84,7 +89,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```

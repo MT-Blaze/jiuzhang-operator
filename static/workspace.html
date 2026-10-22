@@ -26,7 +26,10 @@
         <!-- AI Provider 切换 -->
         <section class="ws-provider-selector" aria-label="模型 Provider 切换">
           <label for="wsProviderSelect" class="ws-workspace-label">模型 Provider</label>
-          <select id="wsProviderSelect" class="ws-workspace-select"></select>
+          <div class="ws-provider-row">
+            <select id="wsProviderSelect" class="ws-workspace-select"></select>
+            <button class="ws-btn ws-btn-sm" id="wsProviderConfigBtn" title="配置 API Key 与 Base URL">配置</button>
+          </div>
           <p class="ws-provider-status" id="wsProviderStatus" role="status">正在读取 Provider 注册表…</p>
         </section>
         
@@ -37,10 +40,16 @@
         </nav>
         <section class="ws-plugin-entry" aria-label="插件入口">
           <h3>插件</h3>
-          <ul class="ws-plugin-list">
+          <ul class="ws-plugin-list" id="wsPluginList">
             <li><a href="/questions">题库管理</a></li>
-            <li><a href="#">讲义中心</a></li>
+            <li><a href="/plugins">插件索引</a></li>
           </ul>
+          <h3 class="ws-plugin-subtitle">已安装插件</h3>
+          <ul class="ws-plugin-list ws-plugin-installed" id="wsInstalledList" aria-live="polite"></ul>
+          <p class="ws-plugin-status" id="wsPluginStatus" role="status"></p>
+          <button class="ws-btn ws-btn-sm ws-btn-block" id="wsPluginInstallBtn">安装插件 zip 包</button>
+          <p class="ws-plugin-drop-hint">或把 .zip 直接拖进本页任意位置</p>
+          <input type="file" id="wsPluginFile" accept=".zip,application/zip" hidden>
         </section>
         <section class="ws-import-section" aria-label="导入原卷">
           <button class="ws-btn ws-btn-block" id="wsImportOcrBtn">导入原卷文本</button>
@@ -109,6 +118,51 @@
           <button class="ws-btn" data-modal-close>取消</button>
           <button class="ws-btn ws-btn-primary" id="wsOcrSubmitBtn">开始拆题</button>
         </footer>
+      </div>
+    </div>
+
+    <!-- Provider 配置面板 -->
+    <div class="ws-modal-overlay" id="wsProviderModal" role="dialog" aria-modal="true" aria-labelledby="wsProviderModalTitle" hidden>
+      <div class="ws-modal">
+        <header class="ws-modal-head">
+          <h3 id="wsProviderModalTitle">Provider 配置</h3>
+          <button class="ws-btn ws-btn-icon" data-provider-modal-close aria-label="关闭">&times;</button>
+        </header>
+        <div class="ws-modal-body">
+          <p class="ws-provider-target" id="wsProviderModalTarget"></p>
+          <label class="ws-field" for="wsProviderBaseUrl">
+            <span>Base URL</span>
+            <input id="wsProviderBaseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+              placeholder="https://api.example.com/v1 或 http://127.0.0.1:11434/v1">
+          </label>
+          <label class="ws-field" for="wsProviderApiKey">
+            <span>API Key</span>
+            <input id="wsProviderApiKey" type="password" autocomplete="off" spellcheck="false"
+              placeholder="只写入本机 .env，永不回显、永不入库">
+          </label>
+          <label class="ws-field" for="wsProviderModel">
+            <span>模型名</span>
+            <input id="wsProviderModel" type="text" autocomplete="off" spellcheck="false"
+              placeholder="如 qwen-plus / deepseek-ai/DeepSeek-V3 / llama3">
+          </label>
+          <p class="ws-provider-hint">本地 Ollama：Base URL 填 <code>http://127.0.0.1:11434/v1</code>，API Key 填任意占位（如 <code>ollama</code>）。保存即热生效，无需重启。</p>
+          <p class="ws-provider-test-result" id="wsProviderTestResult" role="status" hidden></p>
+        </div>
+        <footer class="ws-modal-foot ws-modal-foot-split">
+          <button class="ws-btn" id="wsProviderTestBtn">测试连通性</button>
+          <span class="ws-modal-foot-group">
+            <button class="ws-btn" data-provider-modal-close>关闭</button>
+            <button class="ws-btn ws-btn-primary" id="wsProviderSaveBtn">保存配置</button>
+          </span>
+        </footer>
+      </div>
+    </div>
+
+    <!-- 拖拽安装遮罩 -->
+    <div class="ws-drop-overlay" id="wsDropOverlay" hidden aria-hidden="true">
+      <div class="ws-drop-card">
+        <p class="ws-drop-title">松手即安装插件</p>
+        <p class="ws-drop-hint">只收标准 .zip 包；先过 plugin.json 契约校验，再落地 plugins/</p>
       </div>
     </div>
   </div>

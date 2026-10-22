@@ -34,7 +34,8 @@ class Settings:
     project_root: Path = PROJECT_ROOT
     static_dir: Path = PROJECT_ROOT / "static"
     schemas_dir: Path = PROJECT_ROOT / "schemas"
-    plugins_dir: Path = PROJECT_ROOT / "plugins"
+    # 插件目录允许环境变量覆盖：测试与便携部署专用，业务代码禁止另拼路径
+    plugins_dir: Path = Path(os.environ.get("JZO_PLUGINS_DIR", str(PROJECT_ROOT / "plugins")))
     
     # Workspace support
     workspace_id: str | None = None  # Current workspace ID, None means default

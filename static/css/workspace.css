@@ -611,3 +611,211 @@
 .ws-provider-status.ws-provider-mock {
   color: var(--down);
 }
+
+/* Provider 行：下拉 + 配置按钮 */
+.ws-provider-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.ws-provider-row .ws-workspace-select {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.ws-provider-row .ws-btn {
+  min-height: 44px;
+  min-width: 44px;
+  flex: none;
+}
+
+/* Provider 配置面板 */
+.ws-provider-target {
+  margin: 0 0 12px;
+  font-size: 0.84rem;
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.ws-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.ws-field span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ws-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.ws-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.ws-provider-hint {
+  margin: 0 0 8px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.ws-provider-hint code {
+  color: var(--muted);
+}
+
+.ws-provider-test-result {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.ws-provider-test-result[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.ws-provider-test-result[data-tone="down"] {
+  color: var(--down);
+}
+
+.ws-provider-test-result[data-tone="info"] {
+  color: var(--muted);
+}
+
+.ws-modal-foot-split {
+  justify-content: space-between;
+}
+
+.ws-modal-foot-group {
+  display: flex;
+  gap: 8px;
+}
+
+/* 已安装插件列表 */
+.ws-plugin-subtitle {
+  margin: 12px 0 4px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+
+.ws-plugin-installed {
+  margin-bottom: 8px;
+}
+
+.ws-plugin-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.ws-plugin-item:nth-child(odd) {
+  background: var(--paper-deep);
+}
+
+.ws-plugin-name {
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.ws-plugin-meta {
+  color: var(--faint);
+  font-size: 0.72rem;
+  flex: none;
+}
+
+.ws-plugin-empty {
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.ws-plugin-status {
+  margin: 0 0 8px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.ws-plugin-status[data-tone="warn"] {
+  color: var(--down);
+}
+
+.ws-plugin-status[data-tone="down"] {
+  color: var(--down);
+}
+
+.ws-plugin-status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.ws-plugin-drop-hint {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--faint);
+  text-align: center;
+}
+
+/* 拖拽安装遮罩 */
+.ws-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ws-drop-overlay[hidden] {
+  display: none;
+}
+
+.ws-drop-card {
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.ws-drop-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-drop-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
