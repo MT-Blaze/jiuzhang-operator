@@ -2,9 +2,33 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <script>
+  (function () {
+    "use strict";
+    var ua = navigator.userAgent || "";
+    var modern = window.Promise && window.fetch && window.CSS && window.CSS.supports &&
+      window.CSS.supports("--jzo", "1") && "noModule" in document.createElement("script");
+    if (!/MSIE |Trident\//.test(ua) && modern) return;
+    function warn() {
+      if (document.getElementById("browser-unsupported")) return;
+      var box = document.createElement("div");
+      box.id = "browser-unsupported";
+      box.setAttribute("role", "alert");
+      box.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:#f6f2e9;color:#1f1c18;font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif;text-align:center;line-height:1.7;";
+      box.innerHTML = '<div style="max-width:34em"><p style="margin:0 0 12px;font-size:20px;font-weight:700">请使用现代浏览器</p><p style="margin:0;font-size:15px">九章算子需要 Chrome、Edge、Firefox 或 Safari 的较新版本。请升级浏览器后重新打开本页。</p></div>';
+      document.body.appendChild(box);
+    }
+    if (document.body) warn();
+    else if (document.addEventListener) document.addEventListener("DOMContentLoaded", warn);
+    else if (window.attachEvent) window.attachEvent("onload", warn);
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>九章算子 · Jiuzhang Operator</title>
   <meta name="description" content="九章算子：为独立教师打造的模块化数学题库底座。">
+  <meta name="theme-color" content="#a63b2b">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
@@ -22,7 +46,7 @@
       <div class="status" id="health" data-state="checking" role="status" aria-live="polite">
         <span class="status-dot" aria-hidden="true"></span>
         <span class="status-label">正在连接底座</span>
-        <span class="status-version" id="version" data-app-version>v0.3.1</span>
+        <span class="status-version" id="version" data-app-version>v0.4.0</span>
       </div>
     </header>
 
@@ -105,7 +129,7 @@
     <footer class="footer">
       <span>Apache License 2.0</span>
       <span class="sep" aria-hidden="true"></span>
-      <span>Jiuzhang Operator <span data-app-version>v0.3.1</span></span>
+      <span>Jiuzhang Operator <span data-app-version>v0.4.0</span></span>
       <span class="sep" aria-hidden="true"></span>
       <span id="health-time">等待健康检查</span>
     </footer>
@@ -113,5 +137,6 @@
 
   <script src="/static/js/version.js"></script>
   <script src="/static/js/app.js"></script>
+  <script src="/static/js/pwa.js"></script>
 </body>
 </html>

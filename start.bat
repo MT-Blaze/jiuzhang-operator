@@ -151,9 +151,12 @@ echo         Close that old window if you want port %PORT% back.
 set "PORT=%FREEPORT%"
 set "URL=http://%HOST%:%PORT%"
 
-rem ---------- Step 5: open the browser once the server is up ----------
-echo [5/5] Opening your browser at %URL% ...
-start "" /min cmd /c "timeout /t 4 /nobreak >nul && start %URL%"
+rem ---------- Step 5: open the browser once /healthz answers ----------
+rem  A fixed sleep lies when the first start is slow. Poll the health
+rem  endpoint from a hidden helper window, then hand over to the default
+rem  browser only when the server is actually serving.
+echo [5/5] Waiting for the server, then opening %URL% ...
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "for ($i = 0; $i -lt 120; $i++) { try { $r = Invoke-WebRequest -UseBasicParsing -Uri '%URL%/healthz' -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process '%URL%'; break } } catch { }; Start-Sleep -Milliseconds 500 }"
 
 echo.
 echo         Starting server. KEEP THIS WINDOW OPEN.

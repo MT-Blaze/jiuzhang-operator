@@ -50,6 +50,22 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router)
     app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
+    @app.get("/sw.js", include_in_schema=False)
+    async def read_service_worker() -> FileResponse:
+        """根作用域 Service Worker，供浏览器识别「安装为应用」。
+
+        只做网络透传、不缓存，避免旧页面被 SW 锁死；放在根路径是为了让
+        scope 覆盖整站，而不是被 /static/ 限制住。
+        """
+        return FileResponse(
+            settings.static_dir / "sw.js",
+            media_type="application/javascript; charset=utf-8",
+            headers={
+                "Service-Worker-Allowed": "/",
+                "Cache-Control": "no-cache",
+            },
+        )
+
     @app.get("/", include_in_schema=False)
     async def read_index() -> FileResponse:
         return FileResponse(settings.static_dir / "index.html")

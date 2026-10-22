@@ -1,0 +1,25 @@
+{
+  "name": "九章算子 · Jiuzhang Operator",
+  "short_name": "九章算子",
+  "description": "为独立教师打造的模块化数学题库底座。永久免费、完全本地、插件自由。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f2e9",
+  "theme_color": "#a63b2b",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

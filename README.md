@@ -63,6 +63,12 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 版本号单一事实来源：页面右上角徽章与页脚一律由 `static/js/version.js` 读 `/healthz` 盖章（`app/__init__.py` 的 `__version__` 为唯一来源），HTML 里写死的版本号只是无 JS 时的兜底，并由 `tests/test_version_consistency.py` 锁死一致；`start.bat` 启动前自检端口，若 8000 已被陈留实例占用则明确提示，不再让人对着旧进程的旧版本号发愣；
 - `start.bat` pip 自愈：装依赖前先验 `.venv` 内 pip 是否可用，缺失则自动 `ensurepip` 修复，修不好再重建 venv，最后才报错退出。
 
+`v0.4.0` 把「双击即用」再往前推一步，纯浏览器极简路线：
+
+- 启动器等 `/healthz` 真正应答后再拉起系统默认浏览器，不再靠固定秒数猜启动时间；
+- 新增极简 PWA 清单、图标与根作用域 Service Worker：Chrome / Edge 可把本站「安装为应用」，以独立窗口运行；SW 只做网络透传、不缓存，避免装完看到旧页面；
+- `static/index.html` 头部加浏览器探针，IE 或缺少 ES Module / CSS 变量支持的老内核直接显示「请使用现代浏览器」，不白屏。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -94,7 +100,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
