@@ -7,7 +7,8 @@ rem  Jiuzhang Operator - beta package builder (Windows)
 rem  Double-click to produce a clean, redistributable zip in dist\.
 rem
 rem  Strips secrets and heavy/generated content:
-rem    .env, .venv, venv, data, .git, caches, logs, .system_generated
+rem    .env, .venv, venv, data, .git, caches, logs, .system_generated,
+rem    plugins\org.jiuzhang.demo-bank (runtime seed install; source is examples\demo_plugin.zip)
 rem  Keeps everything a receiver needs to run:
 rem    app, static, schemas, plugins, examples, docs, tests,
 rem    start.bat, requirements.txt, README and the guides, .env.example
@@ -41,7 +42,7 @@ echo [1/3] Copying project files (excluding secrets, venv, data, caches)...
 rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
 rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
-  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode "%~dp0dist" "%~dp0data" ^
+  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" ^
   /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store
 if errorlevel 8 (
     echo.
