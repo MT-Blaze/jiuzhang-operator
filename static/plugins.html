@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>插件索引 · 九章算子</title>
-  <meta name="description" content="九章算子插件索引：默认预填官方 plugins.json 的 Raw 直链（可随时改成你自己信任的地址），拉取清单后点【在线安装】即可由底座下载单个 zip、校验落地。不自动更新、不联网回连校验。">
+  <meta name="description" content="九章算子插件索引：默认预填官方 plugins.json 的国内 CDN 镜像（可随时改成你自己信任的地址），主源失败自动切换备用镜像；拉取清单后点【在线安装】即可由底座下载单个 zip、校验落地。不自动更新、不联网回连校验。">
   <meta name="theme-color" content="#a63b2b">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -36,9 +36,10 @@
         <p class="eyebrow">PLUGINS · INDEX 1.0 · ZIP ONLY</p>
         <h1 id="pl-title">插件索引</h1>
         <p class="pl-lede">
-          输入框里<strong>默认预填了官方索引</strong>（主仓库 <code>plugins.json</code> 的 Raw 直链），
-          它随时可以改成你自己信任的任何 <code>plugins.json</code> 地址。点【拉取清单】后，
-          这一页把条目渲染成卡片；点卡片上的【在线安装】，底座只去下载那一个 zip，
+          输入框里<strong>默认预填了官方索引的国内 CDN 镜像</strong>（jsDelivr），
+          主源失败时会自动切换到 gh-proxy / ghfast 等备用镜像；地址随时可以改成你自己信任的任何
+          <code>plugins.json</code> 地址（改成第三方地址后底座只访问那一个，不替你换源）。
+          点【拉取清单】后，这一页把条目渲染成卡片；点卡片上的【在线安装】，底座只去下载那一个 zip，
           过完与本机拖装同款的全套契约校验后落地 <code>plugins/</code>。
           底座<strong>不自动拉取、不自动更新、不联网回连校验</strong>——每一次下载都由你当场点击发起。
         </p>
@@ -48,14 +49,14 @@
         <h2 id="pl-pull-title">从地址取列表</h2>
         <form class="pl-form" id="plIndexForm">
           <label class="q-field pl-url-field">
-            <span>索引地址（http/https，默认官方 Raw 直链，可改）</span>
+            <span>索引地址（http/https，默认官方 CDN 镜像，可改）</span>
             <input
               id="plIndexUrl"
               type="url"
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              value="https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
+              value="https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-operator@main/plugins.json"
               placeholder="https://你的国内镜像或自建静态托管/plugins.json"
             >
           </label>

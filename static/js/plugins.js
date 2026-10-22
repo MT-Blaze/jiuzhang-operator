@@ -1,8 +1,9 @@
 (function () {
   "use strict";
 
-  // 索引地址默认预填官方 Raw 直链（写在 HTML 的 value 里，用户可当场改掉）。
-  // 底座仍不自动拉取：只有用户点【拉取清单】才会发起请求。
+  // 索引地址默认预填官方 CDN 镜像（写在 HTML 的 value 里，用户可当场改掉）。
+  // 底座仍不自动拉取：只有用户点【拉取清单】才会发起请求；主源失败时由后端
+  // 按官方备用镜像顺序自动重试，用户改成第三方地址后则只访问那一个。
   var urlInput = document.getElementById("plIndexUrl");
   var form = document.getElementById("plIndexForm");
   var fetchBtn = document.getElementById("plFetchBtn");
@@ -172,7 +173,11 @@
     var response = await fetch("/api/plugins/install-url", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-      body: JSON.stringify({ url: entry.zip_url, replace: replace })
+      body: JSON.stringify({
+        url: entry.zip_url,
+        mirrors: Array.isArray(entry.mirrors) ? entry.mirrors : [],
+        replace: replace
+      })
     });
     var data = await response.json().catch(function () {
       return null;
@@ -203,8 +208,9 @@
     try {
       var data = await requestInstall(entry, replace);
       markInstalled(btn, entry);
+      var via = data.source_host ? "（来自 " + data.source_host + "）" : "";
       setStatus(
-        "已安装 " + data.plugin.name + " v" + data.plugin.version +
+        "已安装 " + data.plugin.name + " v" + data.plugin.version + via +
         "。底座发现接口即刻生效，无需重启。",
         "ok"
       );
@@ -254,14 +260,18 @@
     if (event) event.preventDefault();
     var url = (urlInput.value || "").trim();
     if (!url) {
-      setStatus("请先填入一个索引地址（默认已预填官方 Raw 直链）。", "warn");
+      setStatus("请先填入一个索引地址（默认已预填官方 CDN 镜像）。", "warn");
       return;
     }
+
+    // 只有输入框仍是官方默认地址时才允许后端自动切换备用镜像；
+    // 用户亲手填了第三方地址，就只访问那一个，不擅自换源。
+    var isOfficial = url === (urlInput.defaultValue || "");
 
     clearResults();
     fetchBtn.disabled = true;
     fetchBtn.setAttribute("aria-busy", "true");
-    setStatus("正在向该地址发起一次只读请求…", "info");
+    setStatus(isOfficial ? "正在向官方主源发起一次只读请求（失败会自动切换备用镜像）…" : "正在向该地址发起一次只读请求…", "info");
 
     try {
       await refreshInstalledMap();
@@ -269,7 +279,7 @@
       var response = await fetch("/api/plugins/index", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-        body: JSON.stringify({ url: url })
+        body: JSON.stringify({ url: url, allow_mirrors: isOfficial })
       });
       var data = await response.json().catch(function () {
         return null;
@@ -290,6 +300,10 @@
         data.entry_count +
         " 条" +
         (data.rejected_count ? " · 跳过 " + data.rejected_count + " 条" : "");
+      if (data.fallback_used) {
+        var tried = Array.isArray(data.attempts) ? data.attempts.length : 0;
+        summary += " · 主源不可用，已自动切换到备用源（尝试 " + tried + " 个地址）";
+      }
       setStatus(summary, "ok");
     } catch (error) {
       setStatus("拉取失败：" + (error && error.message ? error.message : error), "down");
@@ -314,6 +328,6 @@
 
   // 首屏不留「可用条目」下面一个空白列表
   resultHost.appendChild(
-    makePlaceholder("还没有拉取过任何地址。输入框已预填官方索引的 Raw 直链，点【拉取清单】即可列出可在线安装的插件；也可以换成你自己信任的地址。")
+    makePlaceholder("还没有拉取过任何地址。输入框已预填官方索引的国内 CDN 镜像，点【拉取清单】即可列出可在线安装的插件；主源失败会自动切换备用镜像，也可以换成你自己信任的地址。")
   );
 })();

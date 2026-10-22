@@ -324,6 +324,22 @@
   color: var(--faint);
 }
 
+/* 插件调用标识：「已调用插件」必须显性可见，不能只靠颜色传达 */
+.ws-bubble-plugin {
+  display: block;
+  width: fit-content;
+  margin: 0 0 8px;
+  padding: 2px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: normal;
+}
+
 /* 打字指示 */
 .ws-typing {
   display: inline-flex;

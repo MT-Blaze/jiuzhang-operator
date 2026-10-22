@@ -65,7 +65,7 @@
           "maxItems": 8,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/httpUrl" },
-          "description": "可选镜像列表，仅作为给人挑着用的并列入口；底座不会自动逐个回退试下载。"
+          "description": "可选镜像列表，仅作为同一条目的备用下载地址：用户点【在线安装】后，主地址失败时底座按顺序各试一次；不跨条目、不批量、不自动更新。"
         },
         "kind": {
           "type": "string",

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from app.core import plugin_index
-from app.core.plugin_download import download_plugin_zip
+from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
     MAX_ZIP_BYTES,
     PluginInstallError,
@@ -48,6 +48,7 @@ class InstalledPlugin(BaseModel):
 class PluginInstallResponse(BaseModel):
     installed: bool
     plugin: InstalledPlugin
+    source_host: str | None = None
 
 
 _MEDIA_TYPES = {
@@ -125,14 +126,25 @@ def install_plugin_from_url(payload: dict[str, Any] = Body(...)) -> PluginInstal
     if not isinstance(url, str):
         raise HTTPException(status_code=400, detail="缺少要下载的 zip 地址（url）")
 
+    raw_mirrors = payload.get("mirrors", [])
+    if raw_mirrors is None:
+        raw_mirrors = []
+    if not isinstance(raw_mirrors, list):
+        raise HTTPException(status_code=400, detail="mirrors 必须是数组")
+    mirrors = [item for item in raw_mirrors[:8] if isinstance(item, str)]
+
     try:
-        data = download_plugin_zip(url)
+        data, used_url = download_plugin_zip_sources(url, mirrors)
         info = install_plugin_from_zip(data, replace)
     except PluginInstallError as exc:
         raise HTTPException(
             status_code=exc.status, detail={"message": exc.message, "code": exc.code}
         ) from exc
-    return PluginInstallResponse(installed=True, plugin=InstalledPlugin(**info))
+    return PluginInstallResponse(
+        installed=True,
+        plugin=InstalledPlugin(**info),
+        source_host=plugin_index.describe_public_url(used_url),
+    )
 
 
 @router.post(
@@ -141,18 +153,20 @@ def install_plugin_from_url(payload: dict[str, Any] = Body(...)) -> PluginInstal
     dependencies=[Depends(require_write_token)],
 )
 def read_plugin_index(payload: dict[str, Any] = Body(...)) -> dict:
-    """索引地址来自前端输入框（默认预填官方 Raw 直链，用户可当场改掉）。
+    """索引地址来自前端输入框（默认预填官方 CDN 镜像，用户可当场改掉）。
 
-    带写令牌不是为了「改数据」，而是因为它会替用户发起外部请求，
-    不能让浏览器里另一个页面的脚本随手驱动。
+    官方地址拉取失败时按 ``plugin_sources`` 的备用镜像自动回退；用户填第三方
+    地址时只访问那一个地址，不擅自换源。带写令牌不是为了「改数据」，而是因为
+    它会替用户发起外部请求，不能让浏览器里另一个页面的脚本随手驱动。
 
     同步函数不是省事：FastAPI 会把它放进线程池执行。写成 ``async def`` 会让
     阻塞的 urllib 卡住事件循环——用户填一个指向本底座自己的地址就直接自锁死。
     """
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    allow_mirrors = payload.get("allow_mirrors", True) is not False
     try:
-        return plugin_index.fetch_index(str(payload.get("url", "")))
+        return plugin_index.fetch_index(str(payload.get("url", "")), allow_mirrors=allow_mirrors)
     except plugin_index.IndexRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

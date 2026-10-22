@@ -56,6 +56,8 @@ class OpenAICompatibleProvider(AIProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = False,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """调用大模型完成对话。
 
@@ -66,10 +68,13 @@ class OpenAICompatibleProvider(AIProvider):
             temperature: 采样温度，0-2。
             max_tokens: 最大输出 token 数。
             stream: 是否流式响应（当前版本不支持，保留接口）。
+            tools: OpenAI Function Calling 工具定义数组。
+            tool_choice: ``"auto"`` / ``"none"`` 或指定函数。
 
         Returns:
             {
                 "content": "<模型输出文本>",
+                "tool_calls": [{"id", "type", "function": {"name", "arguments"}}],
                 "usage": {"prompt_tokens": N, "completion_tokens": M},
                 "model": "<实际使用模型>",
                 "mock": true|false
@@ -101,6 +106,9 @@ class OpenAICompatibleProvider(AIProvider):
             payload["max_tokens"] = max_tokens
         if stream:
             payload["stream"] = True
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice or "auto"
 
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -117,8 +125,27 @@ class OpenAICompatibleProvider(AIProvider):
         message = choice.get("message", {})
         usage = result.get("usage", {})
 
+        tool_calls: list[dict[str, Any]] = []
+        for call in message.get("tool_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function") or {}
+            if not isinstance(function, dict) or not function.get("name"):
+                continue
+            tool_calls.append(
+                {
+                    "id": str(call.get("id") or ""),
+                    "type": "function",
+                    "function": {
+                        "name": str(function.get("name")),
+                        "arguments": function.get("arguments") or "{}",
+                    },
+                }
+            )
+
         return {
-            "content": message.get("content", ""),
+            "content": message.get("content") or "",
+            "tool_calls": tool_calls,
             "usage": {
                 "prompt_tokens": usage.get("prompt_tokens", 0),
                 "completion_tokens": usage.get("completion_tokens", 0),
@@ -151,10 +178,19 @@ async def chat_completion(
     temperature: float = 0.7,
     max_tokens: int | None = None,
     stream: bool = False,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """向后兼容的模块级函数，委托给当前活跃 Provider。"""
     return await get_client().chat_completion(
-        system_prompt, user_message, model, temperature, max_tokens, stream
+        system_prompt,
+        user_message,
+        model,
+        temperature,
+        max_tokens,
+        stream,
+        tools=tools,
+        tool_choice=tool_choice,
     )
 
 
@@ -162,8 +198,10 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
     """Mock 实现：返回预设假数据，保持接口签名一致。"""
     lower_msg = user_message.lower()
 
-    # Split agent: return question list directly
-    if "拆题专家" in system_prompt or "split" in system_prompt.lower():
+    # Split agent: return question list directly。
+    # 只认拆题 Agent 的专属前缀：对话提示词里含 "split_paper" 动作名，
+    # 用 "split" 子串判断会把普通对话误当成拆题。
+    if "拆题专家" in system_prompt:
         content = json.dumps(
             [
                 {
@@ -231,6 +269,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
 
     return {
         "content": content,
+        "tool_calls": [],
         "usage": {"prompt_tokens": len(system_prompt) // 4, "completion_tokens": len(content) // 4},
         "model": "mock-agent-v1",
         "mock": True,

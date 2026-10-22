@@ -25,6 +25,8 @@ class AIProvider(ABC):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = False,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """执行对话补全。
 

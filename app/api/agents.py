@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core import ai_client
+from app.core import ai_client, plugin_tools
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
 
@@ -43,8 +44,14 @@ class ReviewRequest(BaseModel):
 # --- Prompt templates (fixed prefixes for cache friendliness) ---
 CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任务是理解教师指令并返回可执行的操作计划。
 
-约束：
-1. 输出必须是 JSON 对象，包含 action 字段。
+插件优先（最高优先级）：
+1. 当用户的意图匹配「已安装插件工具」时，必须直接发起 tool_calls 调用该工具，不要反问、不要只复述计划、也不要声称「即将执行」。
+2. 用户说「拆分第 X 题」「看看第 X 题」「导入题目」「题库里有什么」时，优先调用带 import_questions 动作的插件工具。
+3. 工具执行结果由底座交给用户，你不得编造工具没有返回的题目、答案或解析。
+4. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
+
+通用约束：
+1. 输出必须是 JSON 对象，包含 action 字段（仅在没有调用工具时）。
 2. 若指令模糊，返回 clarification 而非猜测。
 3. 不得生成题目内容本身，只返回操作元数据。
 4. 输出必须是「裸 JSON」：禁止 markdown 代码围栏（```json ... ```）、禁止 JSON 之外的任何解释文字或前后缀。
@@ -99,13 +106,25 @@ def strip_code_fences(text: str) -> str:
     return text
 
 
-def build_chat_system_prompt(context: dict[str, Any] | None) -> str:
-    """System 提示词 = 固定前缀（缓存友好）+ 右栏结构化上下文追加尾部。
+def build_chat_system_prompt(
+    context: dict[str, Any] | None,
+    tools: list[dict[str, Any]] | None = None,
+) -> str:
+    """System 提示词 = 固定前缀（缓存友好）+ 插件工具目录 + 右栏上下文。
 
-    上下文注入（10.24 军令 P0-2）：让模型知道当前任务舞台/教材/模型档位，
-    不再反问「您希望执行什么」，而是结合前文直接干活。
+    工具目录放在上下文之前、固定前缀之后：插件数量变化时只影响尾部，
+    仍然尽量保住前缀缓存；模型据此知道「现在有哪几件工具真能干活」。
     """
     prompt = CHAT_SYSTEM_PROMPT
+    if tools:
+        lines = ["\n\n## 已安装插件工具（意图匹配时必须直接发起 tool_calls）"]
+        for tool in tools:
+            function = tool.get("function") if isinstance(tool, dict) else None
+            if not isinstance(function, dict):
+                continue
+            description = str(function.get("description") or "").strip()
+            lines.append(f"- {function.get('name')}：{description[:300]}")
+        prompt += "\n".join(lines)
     if context:
         prompt += "\n\n## 当前工作台上下文（只读，供你结合决策）\n" + json.dumps(
             context, ensure_ascii=False
@@ -133,37 +152,127 @@ def build_user_message_with_history(
     return "## 此前对话记录\n" + "\n".join(lines) + "\n\n## 本轮指令\n" + user_input
 
 
+def _make_host_call(intent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "host_" + secrets.token_hex(6),
+        "type": "function",
+        "function": {
+            "name": intent["tool"],
+            "arguments": json.dumps(intent["arguments"], ensure_ascii=False),
+        },
+    }
+
+
+def _execute_calls(
+    tool_calls: list[dict[str, Any]], routed_by: str
+) -> list[dict[str, Any]]:
+    """执行模型（或宿主兜底）给出的工具调用，裁掉结果里的原始数据。"""
+    public_calls: list[dict[str, Any]] = []
+    for call in tool_calls[: plugin_tools.MAX_TOOL_CALLS]:
+        function = call.get("function") if isinstance(call, dict) else None
+        if not isinstance(function, dict):
+            continue
+        name = str(function.get("name") or "")
+        outcome = plugin_tools.execute_tool(name, function.get("arguments") or "{}")
+        public_calls.append(
+            {
+                "tool": name,
+                "plugin": outcome.get("plugin") or {},
+                "action": outcome.get("action") or "",
+                "ok": bool(outcome.get("ok")),
+                "error": outcome.get("error") or "",
+                "summary": outcome.get("summary") or "插件没有返回结果。",
+                "routed_by": routed_by,
+            }
+        )
+    return public_calls
+
+
+def _plugin_bubble(plugin_calls: list[dict[str, Any]]) -> str:
+    return "\n\n".join(call["summary"] for call in plugin_calls if call["summary"])
+
+
 @router.post("/chat", summary="对话 Agent")
 async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
-    """处理自然语言指令，返回结构化操作建议。"""
+    """处理自然语言指令：插件工具优先，其次回落到 action JSON 协议。"""
     user_input = body.user_input
     task_id = body.task_id
-    system_prompt = build_chat_system_prompt(body.context)
+    tools = plugin_tools.build_tools()
+    system_prompt = build_chat_system_prompt(body.context, tools)
     user_message = build_user_message_with_history(body.history, user_input)
     try:
         result = await ai_client.chat_completion(
             system_prompt=system_prompt,
             user_message=user_message,
-            temperature=0.7,
-            max_tokens=256,
+            temperature=0.4,
+            max_tokens=512,
+            tools=tools or None,
+            tool_choice="auto" if tools else None,
         )
+
+        tool_calls = result.get("tool_calls") or []
+        routed_by = "model"
+        if not tool_calls:
+            # 模型没发 tool_calls（漏判 / Provider 不支持）时，按高置信句式兜底，
+            # 保证「拆分第一题」这类明确指令不会退化成一句反问。
+            intent = plugin_tools.match_intent(user_input, tools)
+            if intent:
+                tool_calls = [_make_host_call(intent)]
+                routed_by = "host"
+
+        if tool_calls:
+            plugin_calls = _execute_calls(tool_calls, routed_by)
+            if plugin_calls:
+                return {
+                    "type": "complete",
+                    "data": {
+                        "content": _plugin_bubble(plugin_calls),
+                        "plugin_calls": plugin_calls,
+                        "usage": result["usage"],
+                        "model": result["model"],
+                    },
+                    "task_id": task_id or "unknown",
+                    "mock": result["mock"],
+                    "route": routed_by,
+                }
+
         return {
             "type": "complete",
             "data": {
                 "content": strip_code_fences(result["content"]),
+                "plugin_calls": [],
                 "usage": result["usage"],
                 "model": result["model"],
             },
             "task_id": task_id or "unknown",
             "mock": result["mock"],
+            "route": "model",
         }
     except Exception as exc:
+        intent = plugin_tools.match_intent(user_input, tools)
+        if intent:
+            plugin_calls = _execute_calls([_make_host_call(intent)], "host")
+            if plugin_calls:
+                return {
+                    "type": "complete",
+                    "data": {
+                        "content": _plugin_bubble(plugin_calls),
+                        "plugin_calls": plugin_calls,
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                        "model": "host-router",
+                    },
+                    "task_id": task_id or "unknown",
+                    "mock": False,
+                    "route": "host",
+                    "model_error": str(exc),
+                }
         fallback = ai_client._mock_chat(system_prompt, user_message)
         return {
             "type": "error",
             "error": {"code": "MODEL_ERROR", "message": str(exc), "retryable": True},
             "task_id": task_id or "unknown",
             "fallback": {"content": strip_code_fences(fallback["content"]), "mock": True},
+            "route": "mock",
         }
 
 

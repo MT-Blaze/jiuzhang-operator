@@ -91,6 +91,14 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 后端新增 `POST /api/plugins/install-url`：只在用户点击安装时下载那一个 zip（50 MB 上限、30 秒超时、线程池执行不阻塞主程序），复用本机拖装同款的暂存校验 + 原子落地，下载或校验失败零残留，409 需用户显式确认覆盖；
 - 契约同步：PLUGIN_SPEC §1.2/§1.3 修订、新增 §1.4「在线安装」，AGENTS.md 铁律二出网口径追认——红线不变：不自动拉取、不自动更新、不批量安装。
 
+`v0.5.1` 网络突围与智能体接驳——国内直连、插件真调用：
+
+- 官方索引默认直链改走 jsDelivr CDN（`cdn.jsdelivr.net`），拉取失败按 gh-proxy → ghfast → fastly.jsDelivr → Raw 的官方序列自动换源，单源 6 秒 / 备用源 5 秒；换源只对官方地址生效，用户改过的自定义地址仍只试一次；响应回传实际命中源、逐路失败原因与 `fallback_used`；
+- 在线安装同口径：主地址失败时按该条目 `mirrors` 顺序重试（主源 30 秒 / 镜像 20 秒），仍只下载用户点选的那一个 zip，不跨条目、不批量、不自动更新；
+- 对话引擎接入 OpenAI Function Calling：扫描已安装插件的 `question.import` / `question.render` 能力生成 `tools`，System Prompt 要求意图匹配时直接发 `tool_calls` 而非反问；后端拦截并真实执行，把结果转成自然语言气泡；
+- 模型漏判或 Provider 不支持工具时，宿主按高置信句式（明确题号 + 拆分 / 渲染 / 导入）兜底，响应 `route=host` 如实标注；前端气泡新增「[已调用插件]」标识与来源说明；
+- 执行边界：后端不执行插件 JS，工具只读插件自带的 `seed/questions.json` 与工作区题库，不写库、不触网；Mock 模式下输入「拆分第一题」也能走宿主兜底，直接返回第 1 题、答案与解析。
+
 尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）。
 
 ## 快速开始
@@ -122,7 +130,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -148,9 +156,11 @@ jiuzhang-operator/
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
 │       ├── plugin_install.py # 插件 zip 安检与落地安装
-│       ├── plugin_download.py # 在线安装：按需下载单个 zip（PLUGIN_SPEC §1.4）
+│       ├── plugin_sources.py # 官方索引镜像序列（唯一允许内置的远程索引地址）
+│       ├── plugin_download.py # 在线安装：按需下载单个 zip，失败按条目 mirrors 重试（§1.4）
+│       ├── plugin_tools.py  # 插件能力 → OpenAI tools，工具执行与宿主意图兜底（§1.5）
 │       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
-│       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取
+│       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取 + 官方换源
 │       ├── provider.py      # AIProvider 抽象基类
 │       ├── provider_config.py # 多模型配置（只写本机 .env，永不回显）
 │       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
@@ -159,7 +169,7 @@ jiuzhang-operator/
 ├── static/
 │   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
 │   ├── workspace.html       # 智能工作台（三栏：任务 / 对话流 / 上下文），根路径直达
-│   ├── plugins.html         # 插件索引页（默认预填官方 Raw 直链，卡片支持在线安装）
+│   ├── plugins.html         # 插件索引页（默认预填官方 CDN 直链，卡片支持在线安装）
 │   ├── css/{app,questions,workspace,plugins}.css
 │   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
 │   └── js/{app,workspace,plugins,pwa,version}.js
@@ -172,14 +182,14 @@ jiuzhang-operator/
 │   ├── demo_plugin.zip             # 构建产物：首启静默安装的种子包
 │   ├── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
 │   ├── placeholder_plugin/         # 官方占位插件源码（在线安装闭环演示用）
-│   ├── placeholder_plugin.zip      # 构建产物：走 Raw 直链分发，不进 dist 发放包
+│   ├── placeholder_plugin.zip      # 构建产物：走 CDN/代理镜像分发，不进 dist 发放包
 │   └── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
 ├── tests/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
-│   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
+│   ├── test_plugin_index.py        # 索引解析、地址守卫与官方镜像换源契约
 │   ├── test_plugin_install.py      # 插件 zip 安检与安装契约
 │   ├── test_plugin_install_url.py  # 在线安装：下载守卫、失败回滚与端点契约
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
@@ -188,11 +198,12 @@ jiuzhang-operator/
 │   ├── test_provider_config.py     # 多模型配置面板契约
 │   ├── test_providers_api.py       # Provider 注册表与切换契约
 │   ├── test_agent_chat_tuning.py   # 智能体对话调参契约
+│   ├── test_agent_plugin_tools.py  # 插件工具桥、意图路由与端到端工具调用契约
 │   └── test_version_consistency.py # 版本号单一事实来源与启动脚本契约
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
-├── plugins.json             # 官方插件索引（索引页默认预填其 Raw 直链）
+├── plugins.json             # 官方插件索引（索引页默认预填其 CDN 直链）
 ├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）

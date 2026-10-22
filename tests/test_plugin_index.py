@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -20,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_index  # noqa: E402
+from app.core import plugin_index, plugin_sources  # noqa: E402
 
 TOKEN = "index-test-token"
 
@@ -222,35 +223,88 @@ class PluginIndexApiTest(unittest.TestCase):
         self.assertEqual(status, 400, body)
         self.assertTrue(str(body.get("detail", "")).strip())
 
-    def test_05_no_fixed_source_is_baked_into_the_base(self) -> None:
-        """出网口径的代码面证据（v0.5.0 修订）：底座 py/js 里不存在写死的第三方源，
-        唯一默认地址是官方索引 Raw 直链，且只允许出现在 plugins.html 的输入框 value 里。"""
-        texts: dict[str, str] = {}
-        for path in list((ROOT / "app").rglob("*.py")) + list((ROOT / "static").rglob("*.js")):
-            if path.is_file():
-                texts[path.relative_to(ROOT).as_posix()] = path.read_text(
-                    encoding="utf-8", errors="replace"
-                )
-        joined = "\n".join(texts.values())
-        for marker in (
-            "https://plugins.example.org",
-            "http://mirror",
-            "gitee.com",
-            "aliyuncs.com",
-            "myqcloud.com",
-            "raw.githubusercontent.com",
-        ):
-            self.assertNotIn(marker, joined, "底座 py/js 里出现了写死的外部源地址：" + marker)
-        # 拉取入口只能读请求体里的 url，不得有默认值兜底
-        router_source = texts["app/api/plugins.py"]
-        self.assertIn('payload.get("url"', router_source)
-        self.assertNotIn("DEFAULT_INDEX", router_source)
+    def test_05_official_mirrors_are_registered_in_one_place(self) -> None:
+        """v0.5.1 出网口径：官方索引主源 + 至少两套备用镜像，只在 plugin_sources 登记。
 
-        # 官方默认索引直链：钉死在页面输入框 value 上，且与仓库根 plugins.json 对得上
+        与 v0.5.0 的区别：raw.githubusercontent.com 国内不可达，默认主源改成
+        jsDelivr，并在主源失败时自动回退。底座依然不自动拉取、不自动更新，
+        备用源只在本机用户点击【拉取清单】后按序尝试。
+        """
+        sources = plugin_sources.OFFICIAL_INDEX_SOURCES
+        self.assertGreaterEqual(len(sources), 3, "主源之外至少要有两套备用镜像")
+        self.assertEqual(sources[0], plugin_sources.OFFICIAL_INDEX_PRIMARY)
+        self.assertIn("cdn.jsdelivr.net", sources[0])
+        self.assertNotIn("raw.githubusercontent.com", sources[0])
+        self.assertIn("gh-proxy.com", " ".join(sources))
+        self.assertIn("ghfast.top", " ".join(sources))
+        self.assertEqual(len(sources), len(set(sources)), "镜像地址不得重复")
+
+        # 拉取入口仍然只读请求体里的 url，不偷偷塞默认值
+        router_source = (ROOT / "app" / "api" / "plugins.py").read_text(encoding="utf-8")
+        self.assertIn('payload.get("url"', router_source)
+        self.assertNotIn("OFFICIAL_INDEX_PRIMARY", router_source)
+
+        # 页面默认预填必须与后端主源逐字一致，且只出现一处
         html = (ROOT / "static" / "plugins.html").read_text(encoding="utf-8")
-        official = "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
+        official = plugin_sources.OFFICIAL_INDEX_PRIMARY
         self.assertIn('value="%s"' % official, html)
-        self.assertEqual(html.count(official), 1, "官方直链只允许预填一处")
+        self.assertEqual(html.count(official), 1, "官方主源只允许预填一处")
+
+        js = (ROOT / "static" / "js" / "plugins.js").read_text(encoding="utf-8")
+        self.assertIn("allow_mirrors", js, "前端必须把「是否官方地址」告诉后端")
+        self.assertIn("mirrors", js, "在线安装必须把条目镜像列表交给后端")
+
+
+class IndexFallbackTest(unittest.TestCase):
+    """主源失败自动切备用源；第三方地址只在用户填的那一个上访问。"""
+
+    def test_official_candidates_follow_registered_order(self) -> None:
+        candidates = plugin_sources.index_candidates(
+            plugin_sources.OFFICIAL_INDEX_PRIMARY, True
+        )
+        self.assertEqual(candidates[0], plugin_sources.OFFICIAL_INDEX_PRIMARY)
+        self.assertEqual(candidates, list(plugin_sources.OFFICIAL_INDEX_SOURCES))
+        for url in candidates:
+            self.assertTrue(plugin_sources.is_official_index_url(url))
+
+    def test_custom_url_never_switches_source(self) -> None:
+        custom = "https://my.school.example.cn/plugins.json"
+        self.assertEqual(plugin_sources.index_candidates(custom, True), [custom])
+        self.assertEqual(
+            plugin_sources.index_candidates(plugin_sources.OFFICIAL_INDEX_PRIMARY, False),
+            [plugin_sources.OFFICIAL_INDEX_PRIMARY],
+        )
+
+    def test_fetch_falls_back_when_primary_fails(self) -> None:
+        payload = {"index_version": "1.0", "entries": [good_entry()]}
+        seen: list[str] = []
+
+        def fake_fetch(target: str, timeout: float) -> dict:
+            seen.append(target)
+            if len(seen) == 1:
+                raise plugin_index.IndexRejected("模拟主源超时")
+            return plugin_index.parse_index(payload)
+
+        with mock.patch.object(plugin_index, "_fetch_once", side_effect=fake_fetch):
+            index = plugin_index.fetch_index(plugin_sources.OFFICIAL_INDEX_PRIMARY)
+
+        self.assertTrue(index["fallback_used"])
+        self.assertEqual(index["source_url"], plugin_sources.OFFICIAL_INDEX_SOURCES[1])
+        self.assertEqual(len(index["attempts"]), 2)
+        self.assertFalse(index["attempts"][0]["ok"])
+        self.assertTrue(index["attempts"][1]["ok"])
+        self.assertEqual(index["entry_count"], 1)
+
+    def test_all_sources_failing_lists_every_host(self) -> None:
+        def fake_fetch(target: str, timeout: float) -> dict:
+            raise plugin_index.IndexRejected("模拟断网")
+
+        with mock.patch.object(plugin_index, "_fetch_once", side_effect=fake_fetch):
+            with self.assertRaises(plugin_index.IndexRejected) as ctx:
+                plugin_index.fetch_index(plugin_sources.OFFICIAL_INDEX_PRIMARY)
+        message = str(ctx.exception)
+        for url in plugin_sources.OFFICIAL_INDEX_SOURCES:
+            self.assertIn(plugin_index.describe_public_url(url), message)
 
 
 if __name__ == "__main__":

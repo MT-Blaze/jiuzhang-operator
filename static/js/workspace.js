@@ -47,6 +47,19 @@
     if (opts.tone) bubble.setAttribute("data-tone", opts.tone);
     bubble.textContent = text; // 不可信内容也只当纯文本，天然免 XSS
 
+    // 插件调用标识：让用户一眼看见「AI 真的调用了插件」，而不是只说不练。
+    if (opts.pluginCalls && opts.pluginCalls.length) {
+      var badge = document.createElement("span");
+      badge.className = "ws-bubble-plugin";
+      badge.textContent = "[已调用插件] " + pluginCallNames(opts.pluginCalls);
+      if (opts.route === "host") {
+        badge.title = "模型未发起工具调用，由底座按明确意图直接调用插件";
+      } else {
+        badge.title = "由模型发起 tool_calls，底座执行插件并回传结果";
+      }
+      bubble.insertBefore(badge, bubble.firstChild);
+    }
+
     if (opts.source) {
       var src = document.createElement("span");
       src.className = "ws-bubble-source";
@@ -58,6 +71,15 @@
     thread.appendChild(wrap);
     scrollThreadToBottom();
     return wrap;
+  }
+
+  function pluginCallNames(calls) {
+    var names = [];
+    (calls || []).forEach(function (call) {
+      var name = call && call.plugin && call.plugin.name ? call.plugin.name : (call && call.tool) || "插件";
+      if (names.indexOf(name) === -1) names.push(name);
+    });
+    return names.join("、");
   }
 
   function addTyping() {
@@ -215,9 +237,23 @@
 
   // ============ 发送指令 → 对话 Agent → 助手气泡 ============
   function describeSource(response) {
+    if (response && response.route === "host") {
+      return "底座按意图直接调用插件（模型未参与）";
+    }
     if (response && response.mock) return "Mock 降级（当前 Provider 未配置密钥）";
     var data = (response && response.data) || {};
     return "模型 " + (data.model || "未知") + " 产出";
+  }
+
+  function describePluginSource(response, pluginCalls) {
+    if (response && response.route === "host") {
+      return "底座按意图直接调用插件（模型未参与）";
+    }
+    if (response && response.mock) {
+      return "Mock 模型发起 · 插件真实执行";
+    }
+    var data = (response && response.data) || {};
+    return "模型 " + (data.model || "未知") + " 发起 · 插件真实执行";
   }
 
   // --- 解析拦截（10.24 军令 P0-1）：系统控制 JSON 绝不进对话气泡 ---
@@ -315,9 +351,22 @@
         // 正常信封读 data.content；模型异常时后端回 fallback.content（仍可用）
         var envelope = response && response.data ? response.data : response && response.fallback;
         var content = envelope && envelope.content;
-        var source = describeSource(response);
+        var pluginCalls = envelope && Array.isArray(envelope.plugin_calls) ? envelope.plugin_calls : [];
+        var source = pluginCalls.length
+          ? describePluginSource(response, pluginCalls)
+          : describeSource(response);
         if (!content) {
           return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn" };
+        }
+        // 插件结果已经是后端整理好的自然语言，直接展示，不再当控制 JSON 解析。
+        if (pluginCalls.length) {
+          return {
+            text: stripFences(content),
+            source: source,
+            tone: null,
+            pluginCalls: pluginCalls,
+            route: response && response.route,
+          };
         }
         // 拦截：先把内容当控制 JSON 解析。命中 action 就翻译成人话，
         // 命中无 action 的普通 JSON 给通用回执，都不把原始 JSON 露给用户。
@@ -359,7 +408,15 @@
       callAgent(prompt)
         .then(function (res) {
           if (typing) typing.remove();
-          addBubble("bot", res.text, { source: res.source, tone: res.tone });
+          addBubble("bot", res.text, {
+            source: res.source,
+            tone: res.tone,
+            pluginCalls: res.pluginCalls,
+            route: res.route,
+          });
+          if (res.pluginCalls && res.pluginCalls.length) {
+            logHistory("调用插件：" + pluginCallNames(res.pluginCalls));
+          }
           pushTurn("assistant", res.text);
         })
         .catch(function (err) {
@@ -810,8 +867,8 @@
 
   // ============ 初始化 ============
   setStage("");
-  addBubble("sys", "九章算子工作台已就绪 · 对话驱动的智能体空壳原型（先见形，后调逻辑）");
-  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选一个任务，或直接在下方输入指令（如「拆分第 1–2 页」「导出为 PDF」），我会先回显识别到的意图。");
+  addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");
+  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选一个任务，或直接在下方输入指令。已安装插件时，我会直接调用插件执行，而不是只回显意图——例如输入「拆分第一题」。");
 
   // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
   fetch("/api/plugins", { cache: "no-store" })

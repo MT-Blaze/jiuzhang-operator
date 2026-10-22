@@ -9,7 +9,7 @@ rem
 rem  Strips secrets and heavy/generated content:
 rem    .env, .venv, venv, data, .git, caches, logs, .system_generated,
 rem    plugins\org.jiuzhang.demo-bank (runtime seed install; source is examples\demo_plugin.zip),
-rem    examples\placeholder_plugin.zip (v0.5.0: distributed via raw URL + online install only;
+rem    examples\placeholder_plugin.zip (v0.5.1: distributed via CDN/proxy mirrors + online install;
 rem    plugin bodies must never bloat the base package - see plugins.json index)
 rem  Keeps everything a receiver needs to run:
 rem    app, static, schemas, plugins, examples, docs, tests,

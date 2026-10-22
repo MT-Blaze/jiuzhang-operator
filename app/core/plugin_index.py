@@ -1,8 +1,10 @@
 """插件索引（plugins.json）的解析与按需拉取。
 
-索引地址来自用户在「插件索引」页的输入框（默认预填官方 Raw 直链，可当场改掉，
-点【拉取清单】才发请求，PLUGIN_SPEC §1.3）。本模块只做「取回一份 JSON 并校验
-其结构」，**不解压、不安装、不执行**，也不做任何签名/摘要/授权校验——
+索引地址来自用户在「插件索引」页的输入框（默认预填官方 CDN 镜像，可当场改掉，
+点【拉取清单】才发请求，PLUGIN_SPEC §1.3）。主源失败时按 ``plugin_sources``
+登记的顺序自动切换备用镜像——只在用户填的是官方地址时成立，用户改成第三方
+索引后底座只访问那一个地址。本模块只做「取回一份 JSON 并校验其结构」，
+**不解压、不安装、不执行**，也不做任何签名/摘要/授权校验——
 索引里的地址是不是官方，由用户自己判断。
 """
 
@@ -16,9 +18,12 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
+from app.core import plugin_sources
+
 INDEX_VERSION = "1.0"
 MAX_INDEX_BYTES = 512 * 1024
-FETCH_TIMEOUT_SECONDS = 10.0
+FETCH_TIMEOUT_SECONDS = 6.0
+MIRROR_TIMEOUT_SECONDS = 5.0
 MAX_ENTRIES = 200
 
 _ALLOWED_SCHEMES = {"http", "https"}
@@ -160,16 +165,15 @@ def parse_index(payload: Any) -> dict[str, Any]:
     }
 
 
-def fetch_index(url: str) -> dict[str, Any]:
-    """按用户填入的地址取回并解析索引；失败一律抛 IndexRejected 并带上可行动的原因。"""
-    target = validate_index_url(url)
+def _fetch_once(target: str, timeout: float) -> dict[str, Any]:
+    """向一个具体地址发一次只读 GET，返回解析后的索引（不含来源元数据）。"""
     request = urllib.request.Request(
         target,
         headers={"Accept": "application/json", "User-Agent": "jiuzhang-operator/local"},
         method="GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read(MAX_INDEX_BYTES + 1)
     except urllib.error.HTTPError as exc:
         raise IndexRejected("索引地址返回 HTTP %s" % exc.code) from exc
@@ -185,8 +189,46 @@ def fetch_index(url: str) -> dict[str, Any]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise IndexRejected("该地址返回的不是合法 JSON（%s）" % exc) from exc
 
-    index = parse_index(payload)
-    index["source_url"] = target
-    index["source_host"] = describe_public_url(target)
-    index["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    return index
+    return parse_index(payload)
+
+
+def fetch_index(url: str, allow_mirrors: bool = True) -> dict[str, Any]:
+    """按用户填入的地址取回并解析索引；主源失败时自动切换官方备用镜像。
+
+    失败一律抛 ``IndexRejected`` 并带上可行动的原因；若全部镜像都失败，
+    原因里逐条列出每个主机与失败原因，用户不必猜是哪一层挂了。
+    """
+    requested = validate_index_url(url)
+    candidates = [
+        validate_index_url(item)
+        for item in plugin_sources.index_candidates(requested, allow_mirrors)
+    ]
+
+    attempts: list[dict[str, Any]] = []
+    for position, target in enumerate(candidates):
+        timeout = FETCH_TIMEOUT_SECONDS if position == 0 else MIRROR_TIMEOUT_SECONDS
+        try:
+            index = _fetch_once(target, timeout)
+        except IndexRejected as exc:
+            attempts.append(
+                {
+                    "host": describe_public_url(target),
+                    "ok": False,
+                    "reason": str(exc),
+                }
+            )
+            continue
+
+        attempts.append({"host": describe_public_url(target), "ok": True, "reason": ""})
+        index["source_url"] = target
+        index["source_host"] = describe_public_url(target)
+        index["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        index["requested_host"] = describe_public_url(requested)
+        index["fallback_used"] = target != requested
+        index["attempts"] = attempts
+        return index
+
+    detail = "；".join(
+        "%s（%s）" % (item["host"], item["reason"]) for item in attempts
+    )
+    raise IndexRejected("所有索引地址均不可用：%s" % detail)

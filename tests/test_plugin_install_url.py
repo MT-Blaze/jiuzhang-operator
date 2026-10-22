@@ -25,14 +25,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_index  # noqa: E402
-from app.core.plugin_download import download_plugin_zip  # noqa: E402
+from app.core import plugin_index, plugin_sources  # noqa: E402
+from app.core.plugin_download import (  # noqa: E402
+    download_plugin_zip,
+    download_plugin_zip_sources,
+)
 from app.core.plugin_install import PluginInstallError  # noqa: E402
 from app.core.plugins import validate_plugin  # noqa: E402
 
 TOKEN = "install-url-test-token"
 PLACEHOLDER_ID = "org.jiuzhang.placeholder"
-OFFICIAL_RAW = "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
+OFFICIAL_PRIMARY = plugin_sources.OFFICIAL_INDEX_PRIMARY
 
 
 def _free_port() -> int:
@@ -51,11 +54,15 @@ class OfficialIndexFileTest(unittest.TestCase):
         ids = [entry["id"] for entry in parsed["entries"]]
         self.assertIn(PLACEHOLDER_ID, ids)
 
-    def test_02_placeholder_entry_points_at_main_repo_raw_zip(self) -> None:
+    def test_02_placeholder_entry_uses_reachable_mirror_and_has_backups(self) -> None:
+        """v0.5.1：zip 主地址改成国内可达反代，jsDelivr/Raw 退居镜像。"""
         payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
         entry = next(item for item in payload["entries"] if item["id"] == PLACEHOLDER_ID)
-        self.assertTrue(entry["zip_url"].startswith("https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/"))
+        self.assertTrue(entry["zip_url"].startswith("https://gh-proxy.com/"))
         self.assertTrue(entry["zip_url"].endswith(".zip"))
+        self.assertGreaterEqual(len(entry["mirrors"]), 2)
+        self.assertTrue(any("ghfast.top" in item for item in entry["mirrors"]))
+        self.assertTrue(any("cdn.jsdelivr.net" in item for item in entry["mirrors"]))
 
     def test_03_placeholder_zip_passes_full_plugin_contract(self) -> None:
         """官方占位包必须能过 validate_plugin 全套契约——否则在线安装必翻车。"""
@@ -70,11 +77,12 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertEqual(info["id"], PLACEHOLDER_ID)
         self.assertEqual(info["kind"], "renderer")
 
-    def test_04_index_page_prefills_official_raw_link_only(self) -> None:
+    def test_04_index_page_prefills_official_cdn_primary(self) -> None:
         html = (ROOT / "static" / "plugins.html").read_text(encoding="utf-8")
-        self.assertIn('value="%s"' % OFFICIAL_RAW, html)
+        self.assertIn('value="%s"' % OFFICIAL_PRIMARY, html)
         self.assertIn("拉取清单", html)
         self.assertIn("在线安装", html)
+        self.assertIn("备用镜像", html)
 
     def test_05_frontend_install_wiring(self) -> None:
         js = (ROOT / "static" / "js" / "plugins.js").read_text(encoding="utf-8")
@@ -134,6 +142,52 @@ class DownloadGuardTest(unittest.TestCase):
                 httpd.shutdown()
         self.assertEqual(ctx.exception.status, 502)
         self.assertIn("404", ctx.exception.message)
+
+
+class DownloadMirrorTest(unittest.TestCase):
+    """zip 主地址失败时按条目 mirrors 回退；镜像仍受同一套地址守卫。"""
+
+    def test_01_falls_back_to_mirror_and_reports_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "plugin.zip").write_bytes(b"PK\x03\x04mirror-test")
+            handler = partial(SimpleHTTPRequestHandler, directory=str(directory))
+            with ThreadingHTTPServer(("127.0.0.1", 0), handler) as httpd:
+                port = httpd.server_address[1]
+                thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    dead = "http://127.0.0.1:%d/plugin.zip" % _free_port()
+                    live = "http://127.0.0.1:%d/plugin.zip" % port
+                    data, source = download_plugin_zip_sources(dead, [live])
+                finally:
+                    httpd.shutdown()
+        self.assertEqual(data, b"PK\x03\x04mirror-test")
+        self.assertEqual(source, live)
+
+    def test_02_primary_still_wins_when_healthy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "a.zip").write_bytes(b"primary")
+            (directory / "b.zip").write_bytes(b"mirror")
+            handler = partial(SimpleHTTPRequestHandler, directory=str(directory))
+            with ThreadingHTTPServer(("127.0.0.1", 0), handler) as httpd:
+                port = httpd.server_address[1]
+                thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    primary = "http://127.0.0.1:%d/a.zip" % port
+                    mirror = "http://127.0.0.1:%d/b.zip" % port
+                    data, source = download_plugin_zip_sources(primary, [mirror])
+                finally:
+                    httpd.shutdown()
+        self.assertEqual(data, b"primary")
+        self.assertEqual(source, primary)
+
+    def test_03_all_bad_addresses_fail_before_network(self) -> None:
+        with self.assertRaises(PluginInstallError) as ctx:
+            download_plugin_zip_sources("file:///etc/passwd", ["data:application/zip,xx"])
+        self.assertEqual(ctx.exception.status, 400)
 
 
 class InstallUrlApiTest(unittest.TestCase):
