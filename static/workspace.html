@@ -36,6 +36,13 @@
         </section>
       </div>
       <footer class="ws-sidebar-foot">
+        <button class="ws-reset-link" id="wsResetLayout" type="button" aria-label="恢复默认布局"
+          title="恢复默认布局">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M4 12a8 8 0 1 1 2.6 5.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            <path d="M3.4 7.6 4 12.4l4.6-1.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
         <a class="ws-settings-link" id="wsSettingsLink" href="/settings" aria-label="设置与控制" title="设置与控制">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
             <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -45,8 +52,12 @@
       </footer>
     </aside>
 
-    <!-- 中栏：对话流主区，兼当前任务舞台 -->
-    <main class="ws-center" role="main" aria-label="对话流与当前任务舞台">
+    <!-- 左栏与中栏之间的拖拽手柄：隐形，命中区比视觉轨道宽 -->
+    <div class="ws-resizer ws-resizer-v" id="wsResizerSide" data-resize="side" role="separator"
+      aria-orientation="vertical" tabindex="0" aria-label="拖动调整左栏宽度"></div>
+
+    <!-- 中栏：通用画布。Tabs 承载原生对话与 iframe 插件，底座只负责渲染舞台 -->
+    <main class="ws-center" role="main" aria-label="画布与当前任务舞台">
       <header class="ws-stage-head">
         <div class="ws-stage-title">
           <span class="ws-stage-kicker">当前任务舞台</span>
@@ -62,14 +73,25 @@
         </div>
       </header>
 
-      <div class="ws-thread" id="wsThread" role="log" aria-live="polite" aria-label="对话流" tabindex="0"></div>
+      <div class="ws-canvas" id="wsCanvas">
+        <div class="ws-tabs" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
+        <div class="ws-canvas-body" id="wsCanvasBody">
+          <section class="ws-tab-panel" id="wsPanelChat" role="tabpanel" aria-label="自由对话" data-tab="chat">
+            <div class="ws-thread" id="wsThread" role="log" aria-live="polite" aria-label="对话流" tabindex="0"></div>
 
-      <form class="ws-composer" id="wsChatForm" aria-label="发送指令">
-        <label for="wsPrompt" class="sr-only">指令</label>
-        <textarea id="wsPrompt" rows="1" placeholder="输入指令…（Enter 发送）"></textarea>
-        <button type="submit" class="ws-btn ws-btn-primary ws-send-btn" id="wsSendBtn">发送</button>
-      </form>
+            <form class="ws-composer" id="wsChatForm" aria-label="发送指令">
+              <label for="wsPrompt" class="sr-only">指令</label>
+              <textarea id="wsPrompt" rows="1" placeholder="输入指令…（Enter 发送）"></textarea>
+              <button type="submit" class="ws-btn ws-btn-primary ws-send-btn" id="wsSendBtn">发送</button>
+            </form>
+          </section>
+        </div>
+      </div>
     </main>
+
+    <!-- 中栏与右栏之间的拖拽手柄 -->
+    <div class="ws-resizer ws-resizer-v" id="wsResizerCtx" data-resize="context" role="separator"
+      aria-orientation="vertical" tabindex="0" aria-label="拖动调整右栏宽度"></div>
 
     <!-- 右栏：上下文面板 -->
     <aside class="ws-context" id="wsContext" role="complementary" aria-label="上下文">
@@ -107,6 +129,26 @@
         </section>
       </div>
     </aside>
+
+    <!-- 中栏与底栏之间的拖拽手柄 -->
+    <div class="ws-resizer ws-resizer-h" id="wsResizerDock" data-resize="dock" role="separator"
+      aria-orientation="horizontal" tabindex="0" aria-label="拖动调整底栏高度"></div>
+
+    <!-- 底栏：底座托管的输出/事件区，插件只能经 EventBus 投递，不许直接写 DOM -->
+    <section class="ws-dock" id="wsDock" aria-label="输出与事件">
+      <header class="ws-dock-head">
+        <h2 id="wsDockTitle">输出</h2>
+        <div class="ws-dock-tools">
+          <button class="ws-btn ws-btn-sm" id="wsDockClear" type="button">清空</button>
+          <button class="ws-btn ws-btn-sm" id="wsToggleDock" type="button" aria-expanded="true" aria-controls="wsDockBody">折叠</button>
+        </div>
+      </header>
+      <div class="ws-dock-body" id="wsDockBody">
+        <ul class="ws-dock-log" id="wsDockLog" aria-live="polite">
+          <li class="ws-dock-empty">暂无输出。插件与面板事件会出现在这里。</li>
+        </ul>
+      </div>
+    </section>
 
     <!-- Provider 配置面板 -->
     <div class="ws-modal-overlay" id="wsProviderModal" role="dialog" aria-modal="true" aria-labelledby="wsProviderModalTitle" hidden>
@@ -163,6 +205,9 @@
   </noscript>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="/static/js/bus.js"></script>
+  <script src="/static/js/splitpane.js"></script>
+  <script src="/static/js/stage.js"></script>
   <script src="/static/js/workspace.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>

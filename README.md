@@ -106,6 +106,15 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 插件仓库初始收录 `org.jiuzhang.demo-bank` 与 `org.jiuzhang.placeholder`，zip 顶层目录与 `plugin.json` 的 `id` 一致，可直接在线安装；
 - 边界不变：不自动拉取、不自动更新、不批量下载，装包仍由用户逐次点击发起。
 
+`v0.6.0` 拖拽式 IDE 底座定型——四区可拖、画布可接管：
+
+- 工作台改为左栏 / 画布 / 右栏 / 底栏四区骨架，由 CSS Grid 五列三行承载，三条不可见分隔条支持鼠标拖拽改变尺寸；拖拽全程零第三方库，`mousedown` → `mousemove` → `mouseup` 直接改 `--sidebar-width` / `--context-width` / `--dock-height` 三个 CSS 变量，折叠态也只改变量、不重写网格轨道，账本始终只有一本；
+- 拖拽期间给所有 iframe 上 `pointer-events: none`：插件沙箱不再吞鼠标，跨区拖动不掉帧、不卡死（纯原生暗坑已封）；键盘可用（方向键微调 8px、Shift 32px、Home 复位、双击回默认），分隔条 `role="separator"` 且可聚焦；
+- 布局落 `localStorage`（键 `jzo.workspace.layout.v1`），刷新即还原；栏底新增 44px「恢复默认布局」按钮，一键回到出厂尺寸；数据损坏时静默回落默认值，不白屏；
+- 画布区新增 Tabs：对话作为**原生标签页**常驻（不进 iframe，避免为拿同源而凿安全洞），第三方插件按 `plugin.json` 的 `stage` 声明挂载为**沙箱 iframe 标签页**（`sandbox="allow-scripts"`），最多同时存活 3 个，超出按 LRU 休眠（发 `plugin.deactivate` 后摘除 DOM），点回标签自动重挂唤醒；
+- 新增最小事件总线 `JzoBus`（话题语法校验、通配订阅、订阅者异常隔离、最近 60 条留痕）：右栏面板参数改动发 `ui.params.changed`，画布以 `notification` 单向广播给插件；插件只能往白名单话题（`region.dock` / `region.left` / `region.right` / `stage.selection`）发布，`layout.*` 与 `ui.params.*` 一律拦下，不许插件反过来改宿主布局；
+- 底栏「输出」区承接总线事件与插件回报，纯 `textContent` 落 DOM、上限 120 行、可折叠可清空；窄屏（≤768px）自动收成单列并隐藏分隔条。
+
 `v0.5.5` 双向操控与富卡片——AI 能替你点面板，装插件仍由你点头：
 
 - 对话区新增 `ui_json` 富卡片：题目以可视化数学题卡渲染（本地 KaTeX 排版 LaTeX、题型/难度标签、【查看解析】就地展开），全部字段纯文本组装，零 XSS；
@@ -130,7 +139,7 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 点击「自由对话」或插件条目只切换工作模式：右侧「当前任务」随之更新，插件模式下把插件身份、能力与「现在处于该插件的工作模式下」注入对话上下文，不跳转、不另开页；
 - 底座仍不写死任何业务功能；插件坏了或列表读取失败时，自由对话照常可用。
 
-尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）、页内题卡渲染宿主（插件可安装、可被发现，`question.render` 暂只在对话工具里执行，页面不出卡片）。
+尚未实现：题目编辑表单、导入/组卷/导出、后端插件（清单里的 `backend` 仍按规范拒绝加载）、宿主逐题调度的 `question.card` 卡片位（画布内的插件是自己接管整块舞台后自渲染，宿主不再逐题下发 `question.render`；对话工具里仍会调用）。
 
 ## 快速开始
 
@@ -161,7 +170,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -192,9 +201,11 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 3. 把整个目录压成 zip 拖进工作台任意位置，或到「设置与控制」页手动安装（也可解压后放进 `plugins/`），再打开 `/api/plugins`：`plugins[]` 里出现自己的 id 就算装好了，`rejected[]` 会写明没装上的原因。
 
-和宿主通信的完整消息协议（`plugin.activate` / `question.render`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
+和宿主通信的完整消息协议（`plugin.activate` / `plugin.deactivate` / `question.render` / `notification`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
 
-> 当前 `v0.5.5` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染（v0.5.5 起）。iframe 沙箱内的插槽渲染（`question.render` → 插件卡片位）仍未接回（见 PLUGIN_SPEC §2.3.5）。
+想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
+
+> 当前 `v0.6.0` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。
 
 ## 目录结构
 
@@ -229,12 +240,16 @@ jiuzhang-operator/
 │       └── security.py      # 本地写入令牌
 ├── static/
 │   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
-│   ├── workspace.html       # 智能工作台（三栏：入口与插件 / 对话流 / 上下文），根路径直达
+│   ├── workspace.html       # 智能工作台（四区：入口与插件 / 画布 Tabs / 上下文 / 输出），根路径直达
 │   ├── settings.html        # 设置与控制（在线索引 / 手动装 zip / 关于底座），左栏齿轮进入
 │   ├── plugins.html         # 插件索引页（默认预填官方国内镜像，卡片支持在线安装）
 │   ├── css/{app,questions,workspace,plugins,settings}.css
 │   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
-│   └── js/{app,workspace,plugins,settings,pwa,version}.js
+│   ├── vendor/katex/        # 本地 KaTeX（MIT）——富卡片 LaTeX 离线渲染，零 CDN
+│   └── js/{app,workspace,bus,splitpane,stage,plugins,settings,pwa,version}.js
+│                            #   bus.js       ★v0.6.0 最小事件总线（话题校验、通配、异常隔离、留痕）
+│                            #   splitpane.js ★v0.6.0 四区原生拖拽 + localStorage 布局记忆
+│                            #   stage.js     ★v0.6.0 画布 Tabs、沙箱 iframe 挂载与 LRU 休眠
 ├── schemas/
 │   ├── question.json        # 题目交换格式（唯一事实来源）
 │   └── plugins-index.json   # plugins.json 索引格式
@@ -256,8 +271,11 @@ jiuzhang-operator/
 │   ├── test_plugin_install_url.py  # 在线安装：下载守卫、失败回滚与端点契约
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
 │   ├── test_pwa_contract.py        # PWA 清单、图标与 Service Worker 契约
-│   ├── test_workspace_fold_state.py # 工作台三栏折叠状态机契约（v0.4.3 死锁锁死）
+│   ├── test_workspace_fold_state.py # 工作台四区折叠状态机契约（v0.4.3 死锁锁死，v0.6.0 改四区钉轨）
 │   ├── test_workspace_sidebar.py   # 工作台左栏与插件工作模式契约（v0.5.3/v0.5.4）
+│   ├── test_splitpane_layout.py    # ★v0.6.0：分隔条拖拽安全（iframe 不吃鼠标）、只改变量、布局持久化
+│   ├── test_stage_canvas.py        # ★v0.6.0：画布 Tabs、沙箱边界、LRU 休眠与总线白名单
+│   ├── test_plugin_stage_contract.py # ★v0.6.0：清单 stage / bus 字段校验与发现接口口径
 │   ├── test_settings_page.py       # 设置与控制页：索引、手动安装与 About 契约
 │   ├── test_provider_config.py     # 多模型配置面板契约
 │   ├── test_providers_api.py       # Provider 注册表与切换契约

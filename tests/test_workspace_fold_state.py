@@ -71,44 +71,81 @@ def media_body_max(max_width: int) -> str:
 
 
 class PaneTrackPinningTest(unittest.TestCase):
-    """三栏必须各钉一条轨道：这是死锁的根治。"""
+    """四区各钉一条轨道，且尺寸只由 CSS 变量决定：这是死锁的根治，也是拖拽的前提。"""
 
-    def test_01_base_grid_has_three_tracks(self) -> None:
+    def test_01_base_grid_has_five_tracks_and_three_rows(self) -> None:
         body = rule_body(".ws-page")
-        self.assertRegex(body, r"grid-template-columns:\s*240px\s+minmax\(0,\s*1fr\)\s+300px")
-        # 显式一行，供 grid-row: 1 有个真实落点
-        self.assertIn("grid-template-rows", body)
+        self.assertRegex(
+            body,
+            r"grid-template-columns:\s*var\(--sidebar-width\)\s+var\(--gutter-side\)\s+"
+            r"minmax\(0,\s*1fr\)\s+var\(--gutter-ctx\)\s+var\(--context-width\)",
+        )
+        self.assertRegex(
+            body,
+            r"grid-template-rows:\s*minmax\(0,\s*1fr\)\s+var\(--gutter-dock\)\s+var\(--dock-height\)",
+        )
+        # 默认尺寸写死在唯一的基础规则里，拖拽脚本只改这三枚变量
+        for declaration in ("--sidebar-width: 240px", "--context-width: 300px", "--dock-height: 190px"):
+            self.assertIn(declaration, body, f"缺少默认尺寸声明：{declaration}")
 
     def test_02_each_pane_pins_its_track(self) -> None:
-        for selector, column in ((".ws-sidebar", 1), (".ws-center", 2), (".ws-context", 3)):
+        for selector, column in ((".ws-sidebar", 1), (".ws-center", 3), (".ws-context", 5)):
             body = rule_body(selector)
             self.assertIn(
                 f"grid-column: {column}",
                 body,
-                f"{selector} 必须显式钉在第 {column} 轨：自动定位会在 display:none 时让余栏顺位前移",
+                f"{selector} 必须显式钉在第 {column} 轨：自动定位会在 display:none 时让余区顺位前移",
             )
             self.assertIn("grid-row: 1", body)
+        dock = rule_body(".ws-dock")
+        self.assertIn("grid-column: 1 / -1", dock, "底栏必须横跨全部轨道")
+        self.assertIn("grid-row: 3", dock)
 
-    def test_03_pinned_middle_track_still_flexes(self) -> None:
-        """钉轨不许把中栏写死：它必须仍是 minmax(0, 1fr) 才吃得下折叠让出的宽度。"""
-        for selector in (
-            '.ws-page[data-side="hidden"]',
-            '.ws-page[data-ctx="hidden"]',
-            '.ws-page[data-side="hidden"][data-ctx="hidden"]',
+    def test_03_resizers_own_the_gutter_tracks(self) -> None:
+        """手柄各占一条 gutter 轨：不与任何区抢格子，收为 0 时自然消失。"""
+        for selector, column, row in (
+            ('.ws-resizer-v[data-resize="side"]', "2", "1"),
+            ('.ws-resizer-v[data-resize="context"]', "4", "1"),
+            ('.ws-resizer-h[data-resize="dock"]', "1 / -1", "2"),
         ):
-            self.assertIn(
-                "minmax(0, 1fr)",
-                rule_body(selector),
-                f"{selector} 的中栏轨道退化成固定宽度，折叠让出的空间吃不进去",
+            body = rule_body(selector)
+            self.assertIn(f"grid-column: {column}", body, f"{selector} 没钉在 gutter 轨上")
+            self.assertIn(f"grid-row: {row}", body)
+
+    def test_04_fold_states_only_touch_variables(self) -> None:
+        """折叠态只改尺寸变量，绝不重述 grid-template-columns。
+
+        两本账（属性说收起、轨道说展开）正是 v0.4.2 死锁的温床；
+        四区改造后轨道表达式只存在于基础规则一处，结构上无法再跑偏。
+        """
+        for selector, variable in (
+            ('.ws-page[data-side="hidden"]', "--sidebar-width"),
+            ('.ws-page[data-ctx="hidden"]', "--context-width"),
+            ('.ws-page[data-dock="hidden"]', "--dock-height"),
+        ):
+            body = rule_body(selector)
+            self.assertNotIn("grid-template-columns", body, f"{selector} 又重述了轨道表达式")
+            self.assertRegex(body, re.escape(variable) + r":\s*0px")
+        self.assertIn("minmax(0, 1fr)", rule_body(".ws-page"), "中栏轨道必须恒为 minmax(0, 1fr)")
+
+    def test_05_collapsed_pane_removes_its_handle(self) -> None:
+        """收起的那条边界不许再拖：0 宽轨道里的手柄既拖不动也点不着。
+
+        三条手柄规则合并写在一个选择器组里，所以这里按「选择器组包含该选择器」
+        匹配，而不是要求它独占一条规则。
+        """
+        rules = re.findall(r"([^{}]+)\{([^{}]*)\}", CSS)
+        for selector in (
+            '.ws-page[data-side="hidden"] .ws-resizer-v[data-resize="side"]',
+            '.ws-page[data-ctx="hidden"] .ws-resizer-v[data-resize="context"]',
+            '.ws-page[data-dock="hidden"] .ws-resizer-h[data-resize="dock"]',
+        ):
+            bodies = [body for group, body in rules if selector in group]
+            self.assertTrue(bodies, f"找不到手柄规则：{selector}")
+            self.assertTrue(
+                any("display: none" in body for body in bodies),
+                f"{selector} 收起后仍可命中",
             )
-
-    def test_04_hidden_side_collapses_only_first_track(self) -> None:
-        body = rule_body('.ws-page[data-side="hidden"]')
-        self.assertRegex(body, r"grid-template-columns:\s*0\s+minmax\(0,\s*1fr\)\s+300px")
-
-    def test_05_both_hidden_leaves_center_full(self) -> None:
-        body = rule_body('.ws-page[data-side="hidden"][data-ctx="hidden"]')
-        self.assertRegex(body, r"grid-template-columns:\s*0\s+minmax\(0,\s*1fr\)\s+0")
 
 
 class ReopenEntryTest(unittest.TestCase):

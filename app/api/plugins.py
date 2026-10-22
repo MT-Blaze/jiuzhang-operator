@@ -44,6 +44,8 @@ class InstalledPlugin(BaseModel):
     entry_url: str
     css_url: str | None = None
     ui: dict[str, Any] | None = None
+    stage: dict[str, Any] | None = None
+    bus: dict[str, Any] | None = None
 
 
 class PluginInstallResponse(BaseModel):

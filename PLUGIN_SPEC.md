@@ -287,11 +287,13 @@ com.example.card/
 | `description` | 是 | 1–200 字 |
 | `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
 | `entry` | 是 | 对象，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
-| `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` |
+| `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4） |
 | `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export`；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
+| `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
+| `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
 
 > **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
@@ -305,7 +307,7 @@ com.example.card/
 
 #### 2.3.3 和宿主说话：消息协议
 
-宿主把插件放在沙箱 iframe 里，双方只用 `postMessage` 交换两种消息：**宿主发请求，插件回响应**。
+宿主把插件放在沙箱 iframe 里，双方只用 `postMessage` 交换三种消息：**宿主发请求，插件回响应；另外双方都可以发单向通知**。
 
 请求（宿主 → 插件）：
 
@@ -331,14 +333,28 @@ com.example.card/
 { "protocol": "jzo-plugin/1", "id": "原样带回", "kind": "response", "ok": false, "error": { "code": "INVALID_PAYLOAD", "message": "缺少 stem", "retryable": false } }
 ```
 
+通知（双向，v0.6.0 新增）——单向、不带 `id`、不需要回复，收到就照做，**必须幂等**（同一事件重发不得产生副作用）。通知用 `event` 字段命名事件，不用 `method`：
+
+```json
+{ "protocol": "jzo-plugin/1", "kind": "notification", "event": "ui.params.changed", "payload": { "key": "difficulty", "values": { "grade": "高一", "difficulty": "基础" }, "by": "human" } }
+```
+
 宿主会发来的方法：
 
-| method | 插件要做什么 |
-| --- | --- |
-| `plugin.activate` | 初始化，回 `{ "ready": true }`（可附 `plugin_id`、`api_version`） |
-| `plugin.deactivate` | 清理定时器与监听，回 `{ "ready": false }` |
-| `question.render` | 按 `payload.slot` 渲染 `payload.question`，回 `{ "html": "...", "height": 数字 }` |
-| `theme.changed` / `locale.changed` / `question.updated` | 记下变化即可，回 `{ "accepted": true }`；不需要可忽略 |
+| method / event | kind | 插件要做什么 |
+| --- | --- | --- |
+| `plugin.activate` | request | 初始化，回 `{ "ready": true }`（可附 `plugin_id`、`api_version`）；`payload.slot` 为 `stage.center` 时表示接管中央画布，可以开始铺自己的整屏界面（§2.4）。**30 秒内必须回**，超时按插件故障处理 |
+| `plugin.deactivate` | request | 清理定时器与监听，回 `{ "ready": false }` |
+| `question.render` | request | 按 `payload.slot` 渲染 `payload.question`，回 `{ "html": "...", "height": 数字 }` |
+| `theme.changed` / `locale.changed` / `question.updated` | request | 记下变化即可，回 `{ "accepted": true }`；不需要可忽略 |
+| `ui.params.changed` | notification | 右栏面板参数变了（人改或 AI 改），按 `payload.values` 重绘自己；挂载时也会补发一次当前值 |
+| `plugin.deactivate`（`payload.reason = "lru"`） | notification | 被 LRU 休眠前的尽力通知：宿主不等回复就摘 iframe，插件应把该保存的状态提前存好 |
+
+插件可以发给宿主的通知（只有白名单话题会被转发，见 §2.5）：
+
+```json
+{ "protocol": "jzo-plugin/1", "kind": "notification", "event": "region.dock", "payload": { "text": "已按高一 + 基础筛出 3 题" } }
+```
 
 完整的 `dist/plugin.js` 骨架（可以直接用）：
 
@@ -346,6 +362,11 @@ com.example.card/
 (function () {
   "use strict";
   var PROTOCOL = "jzo-plugin/1";
+  var params = {};           // 右栏面板当前值，由 notification 维护
+
+  function redraw() {
+    // 按 params 重绘自己的界面；同参数重复调用必须得到同样结果
+  }
 
   function reply(target, id, result) {
     target.postMessage(
@@ -372,7 +393,17 @@ com.example.card/
 
   window.addEventListener("message", function (event) {
     var msg = event.data;
-    if (!msg || msg.protocol !== PROTOCOL || msg.kind !== "request") return;
+    if (!msg || msg.protocol !== PROTOCOL) return;
+
+    // 单向通知：不回复，但要幂等
+    if (msg.kind === "notification") {
+      if (msg.event === "ui.params.changed") {
+        params = (msg.payload && msg.payload.values) || {};
+        redraw();          // 重绘多少次结果都一样，才叫幂等
+      }
+      return;
+    }
+    if (msg.kind !== "request") return;
 
     if (msg.method === "plugin.activate") {
       return reply(event.source, msg.id, { ready: true, plugin_id: "com.example.card" });
@@ -396,7 +427,7 @@ com.example.card/
 })();
 ```
 
-四条硬规则：① 先校验 `protocol` 和 `kind`，不是请求就丢弃；② 响应必须原样带回 `id`；③ 一律回 `event.source`，不要猜父窗口；④ 不认识的方法回 `UNSUPPORTED_METHOD`，不要静默吞掉。
+五条硬规则：① 先校验 `protocol`，再按 `kind` 分流，不认识的消息直接丢弃；② 响应必须原样带回 `id`；③ 一律回 `event.source`，不要猜父窗口；④ 不认识的**请求**回 `UNSUPPORTED_METHOD`，不要静默吞掉；⑤ **通知**不回复、不报错，但必须幂等（宿主会重发，例如挂载时补发一次面板参数）。
 
 #### 2.3.4 安全边界（宿主兜底，但你别踩线）
 
@@ -408,7 +439,87 @@ com.example.card/
 
 #### 2.3.5 当前进度（先说清楚，免得装完找不到）
 
-`v0.5.4` 的界面以对话为主：装好的插件会出现在左栏插件区与 `/api/plugins`，`question.import` / `question.render` 会进入对话工具表（说「拆分第一题」走的就是它）。题库列表页与题卡渲染宿主已在早前版本（废弃题库列表页时）一并下线，**`question.render` 暂时不会在页面上出卡片**，渲染宿主会在后续版本接回；按本节写好的插件届时无需改动。想立刻看到「插件真的被执行」，优先写 `importer`（自带 `seed/questions.json`）。
+`v0.6.0` 的工作台是四区 IDE 骨架，插件有两条可见路径：
+
+1. **对话工具**：装好的插件出现在左栏插件区与 `/api/plugins`，`question.import` / `question.render` 进入对话工具表（说「拆分第一题」走的就是它），结果以 `ui_json` 富卡片回显在对话页签里；
+2. **中央画布**：清单里声明了 `stage` 的插件（§2.4），被点击后在画布开一个沙箱 iframe 页签，收到 `plugin.activate`（`slot: "stage.center"`）后自己铺整屏界面，并可通过 `bus` 白名单往底栏/左栏/右栏推事件（§2.5）。
+
+仍未接回的是**宿主逐题调度的 `question.card` 卡片位**——即宿主拿到一批题目后逐条下发 `question.render`、把返回的 HTML 净化后插进页面上的卡片位。随包示例 `org.jiuzhang.demo-bank`（v0.2.0）走的是第 2 条路径：它在画布里自己渲染题目列表，不依赖宿主逐题下发。按本节写好的插件届时接回卡片位无需改动。
+
+---
+
+### 2.4 舞台接管（Stage）：让插件占据中央画布（v0.6.0）
+
+底座学 VSCode：**左栏、右栏、底栏永远归宿主**，只有中央画布可以被插件接管。画布顶部是一条 Tabs：
+
+- `对话` 是**原生页签**（宿主的自由对话，不进 iframe），永远存在、不可关闭；
+- 每个声明了 `stage` 的插件占**一个页签**（按插件 id 去重，重复点击只是切回，不会开出第二个）；
+- 页签可关闭；关闭即停用并摘除 iframe。
+
+清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.json`](examples/demo_plugin/plugin.json)）：
+
+```json
+{
+  "slots": ["question.card", "stage.center"],
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "示例题库",
+    "priority": 10,
+    "singleton": true
+  }
+}
+```
+
+| 字段 | 必填 | 规则 |
+| --- | --- | --- |
+| `stage.region` | 否 | 只认 `"center"`；写别的值等于没写（左/右/底栏不接受插件接管） |
+| `stage.mode` | 否 | `embed`（默认，与其他页签共存）/ `takeover`（切到该页签即占满画布）/ `fullscreen`（额外隐藏左右栏与底栏，只看插件）。非法值回落 `embed` |
+| `stage.title` | 否 | 页签标题，≤24 字，超长截断；缺省用 `name` |
+| `stage.priority` | 否 | −100…100，超出被夹紧。**当前宿主不据此排序**，字段只做校验与发现接口回传，为将来多插件抢同一舞台留位 |
+| `stage.singleton` | 否 | 默认 `true`：同一插件只允许一个页签。当前宿主一律按单例处理（按插件 id 去重），填 `false` 暂不生效 |
+
+硬约束：
+
+- **写了 `stage` 就必须在 `slots` 里带上 `stage.center`**，否则拒装（报错原文含 `stage.center`），防止「有接管声明却没有插槽授权」这种假能力；
+- 反过来只写 `slots: ["stage.center"]` 而不写 `stage`，按 `mode: "embed"`、`title = name` 兜底，不拒装；
+- `fullscreen` 只切宿主的全屏标志位，**不会改写用户手动折叠/拖拽的偏好**：退出全屏后左右栏与四区尺寸原样回来；
+- 页签数量不设上限，但**同时存活的 iframe 最多 3 个**（LRU）：超出的按「最久未使用」休眠——宿主先发一条 `plugin.deactivate` 通知（不等回复），再摘掉 iframe，页签上标「休眠」。点回页签自动重挂并重新 `plugin.activate`。所以插件必须做到「随时可被摘掉、随时可重新激活」，别把状态只存在内存里指望它长命；
+- 激活请求 30 秒不回、iframe 加载失败，页签就地显示故障说明与「底座仍可继续使用对话页」，不影响其他页签（§5.2）。
+
+---
+
+### 2.5 事件总线（HostBus）：跨区通信与发布白名单（v0.6.0）
+
+宿主内置一条最小事件总线（`window.JzoBus`，约 130 行，零依赖）。它的职责只有一句：**让右栏的参数改动能找到中央画布里那个具体的插件，让插件的输出能找到底栏**。
+
+话题语法：`^[a-z][a-z0-9_]*(\.[a-z0-9_*]+){1,3}$`（2–4 段小写点分，支持 `*` 单段通配与 `**` 多段通配）。单话题订阅者上限 32，总线保留最近 60 条事件留痕供排查。
+
+宿主在用的话题：
+
+| 话题 | 方向 | 载荷 |
+| --- | --- | --- |
+| `ui.params.changed` | 右栏 → 画布/插件 | `{ pluginId, key, values, revisions, by }`；`by` 为 `human` / `ai`，人类手改过的字段永远压过 AI 设定 |
+| `layout.changed` | 分隔条 → 全局 | `{ by, pane, value, sizes }`；`by` 为 `drag` / `key` / `reset` / `restore`（刷新还原时发 `restore`，底栏据此不回写日志，免得刷屏） |
+| `region.dock` | 插件/宿主 → 底栏 | `{ text, topic?, pluginId? }`；`text` 截断 200 字，纯 `textContent` 落 DOM，不解析 HTML |
+| `region.left` / `region.right` / `stage.selection` | 插件 → 宿主区域 | 预留：宿主接受但不解释内容，逐条记录到底栏 |
+| `stage.tab.sleep` | 画布 → 内部 | `{ key, pluginId }`，休眠留痕 |
+
+插件侧的发布白名单在清单 `bus` 字段里声明：
+
+```json
+{ "bus": { "subscribe": ["ui.params.changed", "stage.tab.activated"], "publish": ["region.dock"] } }
+```
+
+| 字段 | 规则 |
+| --- | --- |
+| `bus.subscribe` | 只接受宿主已定义的入站事件（`ui.params.changed` / `layout.changed` / `stage.tab.*` / `theme.changed` / `question.updated`），未定义项逐条丢弃；缺省 `["ui.params.changed"]` |
+| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
+| 条目总数 | ≤8，超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
+
+插件发事件的实际写法就是一条通知（见 §2.3.3）：`{ kind: "notification", event: "region.dock", payload: { text: "..." } }`。宿主收到后先查白名单，不在名单里的**丢弃并在底栏写明「想发未授权事件 xxx，已丢弃」**——不静默、不抛错、不断链。
+
+订阅者异常彼此隔离：任何一个处理函数抛错都不会中断其余订阅者，宿主只在底栏记一笔。这条与「插件坏了，底座还能用」是同一件事的两个方向。
 
 ---
 
@@ -440,8 +551,9 @@ com.example.card/
 | --- | --- | --- |
 | 发现 | 每次 `GET /api/plugins` 扫描 `plugins/`、读取并校验 `plugin.json`（不合格进 `rejected[]`，不影响其他插件） | 清单合法，目录名与 `id` 一致 |
 | 加载 | 在沙箱 iframe 中打开 `entry.frontend`（经 `/plugin-assets/<id>/dist/...` 分发） | 页面能独立加载，不依赖宿主全局变量 |
-| 激活 | 发出 `plugin.activate` 请求 | 初始化内部状态并回响应（`ready: true`） |
-| 运行 | 按用户操作发出 `question.render` 等请求 | 处理消息并回 `result`，错误回 `error` |
+| 激活 | 发出 `plugin.activate` 请求（接管画布时带 `payload.slot = "stage.center"`，30 秒超时） | 初始化内部状态并回响应（`ready: true`） |
+| 运行 | 按用户操作发出 `question.render` 等请求；右栏参数变化以 `ui.params.changed` 通知广播 | 处理消息并回 `result`，错误回 `error`；通知按幂等处理 |
+| 休眠 | 画布同时存活的 iframe 超过 3 个时，按 LRU 发一条 `plugin.deactivate` **通知**（不等回复）后摘除 iframe，页签标「休眠」（§2.4） | 状态别只存内存；被摘后要能在重新激活时恢复 |
 | 停用 | 发出 `plugin.deactivate` 请求 | 清理定时器、事件监听 |
 | 卸载 | 移除 iframe；用户删除目录即完成卸载 | 不要在自己目录之外写任何文件 |
 

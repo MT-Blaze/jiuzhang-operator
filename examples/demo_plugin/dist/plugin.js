@@ -87,9 +87,29 @@
 
   window.addEventListener("message", function (event) {
     var message = event.data;
-    if (!message || message.protocol !== PROTOCOL || message.kind !== "request") return;
+    if (!message || message.protocol !== PROTOCOL) return;
+
+    // 单向通知（v0.6.0 新增）：宿主不等回复，插件必须幂等——
+    // 同一个参数连发两次，画面只能有一份结果。
+    if (message.kind === "notification") {
+      if (message.event === "ui.params.changed") {
+        var incoming = message.payload || {};
+        stageParams = incoming.values || {};
+        if (stageMode) renderStageView();
+        publishToHost("region.dock", "示例题库收到面板参数：" + describeParams(stageParams));
+      }
+      return;
+    }
+
+    if (message.kind !== "request") return;
 
     if (message.method === "plugin.activate") {
+      var activatePayload = message.payload || {};
+      // 宿主把本插件挂进中栏画布时会带上 slot；这时要自己画出界面
+      if (activatePayload.slot === "stage.center") {
+        stageMode = true;
+        renderStageView();
+      }
       respond(event.source, message.id, true, {
         ready: true,
         plugin_id: PLUGIN_ID,
@@ -99,6 +119,7 @@
       return;
     }
     if (message.method === "plugin.deactivate") {
+      stageMode = false;
       respond(event.source, message.id, true, { ready: false });
       return;
     }
@@ -136,6 +157,80 @@
       message: "未实现的方法：" + String(message.method)
     });
   });
+
+  // ============ 中栏画布形态（v0.6.0：宿主挂进 stage.center 时自绘） ============
+
+  var stageMode = false;
+  var stageParams = {};
+
+  function publishToHost(event, text) {
+    if (window.parent === window) return;
+    window.parent.postMessage({
+      protocol: PROTOCOL,
+      kind: "notification",
+      event: event,
+      payload: { text: text }
+    }, "*");
+  }
+
+  function describeParams(values) {
+    var grade = values && values.grade ? values.grade : "全部";
+    var difficulty = values && values.difficulty ? values.difficulty : "全部";
+    return "年级 " + grade + " · 难度 " + difficulty;
+  }
+
+  function matchesParams(question) {
+    var wanted = stageParams && stageParams.difficulty;
+    if (!wanted || wanted === "全部") return true;
+    return labelOf(DIFFICULTY_LABELS, question.difficulty) === wanted;
+  }
+
+  /** 幂等重画：先清空 root，再按当前参数出一份列表。 */
+  function renderStageView() {
+    var root = document.getElementById("root");
+    if (!root) return;
+    root.textContent = "";
+
+    var title = document.createElement("h1");
+    title.className = "jdb-preview-title";
+    title.textContent = "示例题库 · 画布页";
+    root.appendChild(title);
+
+    var picked = SEED_QUESTIONS.filter(matchesParams);
+    var hint = document.createElement("p");
+    hint.className = "jdb-preview-hint";
+    hint.textContent = "当前参数：" + describeParams(stageParams) +
+      "（右栏改下拉，这行会立刻跟着变）· 命中 " + picked.length + " / " + SEED_QUESTIONS.length + " 题";
+    root.appendChild(hint);
+
+    picked.forEach(function (question, index) {
+      var card = document.createElement("section");
+      card.className = "jdb-preview-card";
+
+      var head = document.createElement("p");
+      head.className = "jdb-preview-head";
+      head.textContent = "第 " + (index + 1) + " 题 · " +
+        labelOf(TYPE_LABELS, question.type) + " · " +
+        labelOf(DIFFICULTY_LABELS, question.difficulty);
+      card.appendChild(head);
+
+      var stem = document.createElement("p");
+      stem.className = "jdb-preview-stem";
+      stem.textContent = question.stem;
+      card.appendChild(stem);
+
+      root.appendChild(card);
+    });
+
+    if (!picked.length) {
+      var empty = document.createElement("p");
+      empty.className = "jdb-preview-hint";
+      empty.textContent = "这个难度下暂时没有示例题，换个参数试试。";
+      root.appendChild(empty);
+    }
+
+    root.hidden = false;
+  }
 
   // ============ 独立预览（直接打开页面时） ============
 

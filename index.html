@@ -656,7 +656,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
     </a>
     <div class="badges">
       <span class="badge badge-strong">Apache-2.0</span>
-      <span class="badge">v0.5.5 内测</span>
+      <span class="badge">v0.6.0 内测</span>
       <span class="badge">完全本地运行</span>
       <span class="badge">仅 3 个依赖</span>
     </div>
@@ -777,7 +777,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
       <div class="block-head">
         <span class="rule" aria-hidden="true"></span>
         <h2 id="features-title">现在能做什么</h2>
-        <p>标「已通」的是 v0.5.5 已落地并可跑通的；标「待做」的是明确缺口，不粉饰。</p>
+        <p>标「已通」的是 v0.6.0 已落地并可跑通的；标「待做」的是明确缺口，不粉饰。</p>
       </div>
 
       <div class="grid">
@@ -799,7 +799,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
           <span class="card-index">03</span>
           <span class="tag tag-done">已通</span>
           <span class="card-title">插件宿主</span>
-          <span class="card-desc">清单发现与校验、沙箱 iframe、postMessage 封包、HTML 净化、连续失败兜底——插件坏了底座还能用。</span>
+          <span class="card-desc">清单发现与校验、沙箱 iframe 真挂载、postMessage 请求/响应/通知三类封包、LRU 休眠、激活超时兜底——插件坏了底座还能用。</span>
         </div>
 
         <div class="card">
@@ -839,13 +839,20 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
 
         <div class="card">
           <span class="card-index">09</span>
+          <span class="tag tag-done">已通</span>
+          <span class="card-title">四区可拖拽工作台</span>
+          <span class="card-desc">左入口 / 中画布 / 右上下文 / 下输出，四条边界全能鼠标拖拽调尺寸，原生实现零拖拽库；尺寸落 localStorage、刷新照旧，左下角一键回默认。中画布用 Tabs 同时承载原生对话页与重型 iframe 插件页。</span>
+        </div>
+
+        <div class="card">
+          <span class="card-index">10</span>
           <span class="tag tag-todo">待做</span>
           <span class="card-title">题目录入 / 编辑表单</span>
           <span class="card-desc">接口与列表渲染已就绪，缺手工录入与编辑的界面。</span>
         </div>
 
         <div class="card">
-          <span class="card-index">10</span>
+          <span class="card-index">11</span>
           <span class="tag tag-todo">待做</span>
           <span class="card-title">导入 / 组卷 / 导出插件</span>
           <span class="card-desc">架构已为它们留好位置，业务插件本体尚未开写。</span>
@@ -919,7 +926,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
 
       <div class="table-wrap">
         <table>
-          <caption>九章算子 v0.5.5 技术栈与约束</caption>
+          <caption>九章算子 v0.6.0 技术栈与约束</caption>
           <thead>
             <tr><th scope="col">层面</th><th scope="col">选型</th><th scope="col">约束</th></tr>
           </thead>
@@ -1093,7 +1100,7 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
     <span class="sep" aria-hidden="true"></span>
     <span>Apache License 2.0</span>
     <span class="sep" aria-hidden="true"></span>
-    <span>Jiuzhang Operator v0.5.5</span>
+    <span>Jiuzhang Operator v0.6.0</span>
     <span class="sep" aria-hidden="true"></span>
     <span>本页零脚本、零外部请求，可完全离线</span>
   </footer>

@@ -21,7 +21,14 @@ _API_VERSION = re.compile(r"^(\d+)\.\d+$")
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 _KINDS = {"renderer", "importer", "exporter", "tool"}
-_SLOTS = {"question.card", "question.detail", "question.paper", "answer.panel"}
+_SLOTS = {
+    "question.card",
+    "question.detail",
+    "question.paper",
+    "answer.panel",
+    # v0.6.0：中栏画布。声明它的插件可以在舞台开一个 Tabs 页（沙箱 iframe）
+    "stage.center",
+}
 _CAPABILITIES = {"question.render", "question.export", "question.import"}
 _PERMISSIONS = {
     "questions:read",
@@ -32,6 +39,25 @@ _PERMISSIONS = {
     "ai:invoke",
     "export:file",
 }
+
+# 舞台接管（v0.6.0）：embed 内嵌一角 / takeover 占满中栏 / fullscreen 收掉左右栏
+_STAGE_MODES = {"embed", "takeover", "fullscreen"}
+_STAGE_MAX_TITLE = 24
+
+# 事件总线主题白名单。发布只许投给底座托管的三区与舞台选区——
+# 不许插件发 ui.params.* / layout.*，那是人和底座的地盘（防插件反向操控面板）。
+_BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection"}
+_BUS_SUBSCRIBE = {
+    "ui.params.changed",
+    "layout.changed",
+    "stage.tab.activated",
+    "stage.tab.opened",
+    "stage.tab.closed",
+    "stage.tab.sleep",
+    "theme.changed",
+    "question.updated",
+}
+_BUS_MAX_TOPICS = 8
 
 # 右侧面板控件（v0.5.5）：插件只能声明「文本 + 指令模板」，不能塞 HTML。
 _UI_KEY = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
@@ -228,6 +254,50 @@ def _default_ui(plugin_id: str, name: str, kind: str, capabilities: list[str]) -
     }
 
 
+def _normalize_stage(raw: Any) -> dict[str, Any] | None:
+    """校验插件自报的舞台声明（v0.6.0）。
+
+    与 ``ui`` 同口径：宽容归一而不是整包拒装——写错一个字段不该让插件装不上，
+    但非法值一律退回最保守的 ``embed``，绝不因为清单写得大就给它更大的舞台。
+    """
+    if not isinstance(raw, dict):
+        return None
+    mode = raw.get("mode")
+    if mode not in _STAGE_MODES:
+        mode = "embed"
+    title = _ui_text(raw.get("title"), _STAGE_MAX_TITLE)
+    priority = raw.get("priority")
+    if not isinstance(priority, int) or isinstance(priority, bool):
+        priority = 0
+    return {
+        "region": "center",
+        "mode": mode,
+        "title": title,
+        "priority": max(-100, min(100, priority)),
+        "singleton": bool(raw.get("singleton", True)),
+    }
+
+
+def _normalize_bus(raw: Any) -> dict[str, Any]:
+    """归一插件事件总线授权；未声明的按最小集给，白名单外的一律丢弃。"""
+    subscribe = ["ui.params.changed"]
+    publish = ["region.dock"]
+    if isinstance(raw, dict):
+        wanted_sub = raw.get("subscribe")
+        if isinstance(wanted_sub, list):
+            subscribe = [
+                item for item in wanted_sub
+                if isinstance(item, str) and item in _BUS_SUBSCRIBE
+            ][:_BUS_MAX_TOPICS]
+        wanted_pub = raw.get("publish")
+        if isinstance(wanted_pub, list):
+            publish = [
+                item for item in wanted_pub
+                if isinstance(item, str) and item in _BUS_PUBLISH
+            ][:_BUS_MAX_TOPICS]
+    return {"subscribe": subscribe, "publish": publish}
+
+
 class PluginRejected(Exception):
     """清单未通过校验。"""
 
@@ -298,6 +368,16 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
     if manifest["kind"] == "renderer":
         _require("question.render" in capabilities, "renderer 必须声明 question.render")
 
+    # 舞台声明与插槽必须自洽：写了 stage 却没要 stage.center，等于声明了没有落点的能力
+    if "stage" in manifest:
+        _require("stage.center" in slots, "声明 stage 必须同时在 slots 里带上 stage.center")
+        stage = _normalize_stage(manifest.get("stage"))
+    elif "stage.center" in slots:
+        stage = _normalize_stage({})
+    else:
+        stage = None
+    bus_grants = _normalize_bus(manifest.get("bus"))
+
     entry = manifest.get("entry")
     _require(isinstance(entry, dict), "entry 缺失")
     frontend = entry.get("frontend")
@@ -339,6 +419,8 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         "entry_url": f"/plugin-assets/{plugin_id}/{relative.as_posix()}",
         "css_url": css_url,
         "ui": ui,
+        "stage": stage,
+        "bus": bus_grants,
     }
 
 

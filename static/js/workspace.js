@@ -51,6 +51,9 @@
   var pluginControlsEl = document.getElementById("wsPluginControls");
   var pluginPanelHint = document.getElementById("wsPluginPanelHint");
   var uiStateSummary = document.getElementById("wsUiStateSummary");
+  var dockToggle = document.getElementById("wsToggleDock");
+  var dockClearBtn = document.getElementById("wsDockClear");
+  var dockLog = document.getElementById("wsDockLog");
 
   // ============ 对话流：气泡工厂 ============
   var CARD_SEQ = 0;
@@ -662,6 +665,9 @@
     markActiveEntry(chatEntry);
     setStage("自由对话");
     clearPluginPanel();
+    if (window.JzoStage && typeof window.JzoStage.activate === "function") {
+      window.JzoStage.activate("chat");
+    }
     addBubble("sys", "已进入「自由对话」模式。");
     logHistory("进入自由对话");
     if (promptInput) promptInput.focus();
@@ -674,6 +680,11 @@
     setStage(name);
     initUiState(plugin);
     renderPluginPanel(plugin);
+    // 中栏是通用舞台：只有清单里声明了 stage（slots 带 stage.center）的插件才开画布页。
+    // 没声明的插件照旧只切工作模式 + 右栏面板，不给它一块它没要过的地方。
+    if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
+      window.JzoStage.openPlugin(plugin);
+    }
     addBubble("sys", "现在处于插件「" + name + "」的工作模式下。" +
       (plugin.description ? " " + plugin.description : ""));
     var capabilities = (plugin.capabilities || []).slice(0, 4).join("、");
@@ -781,6 +792,7 @@
           uiState.revisions[control.key] = (uiState.revisions[control.key] || 0) + 1;
           updateUiStateSummary();
           logHistory("面板调整：" + (control.label || control.key) + " = " + select.value);
+          publishUiParams("human", control.key);
         });
         field.appendChild(label);
         field.appendChild(select);
@@ -897,7 +909,11 @@
       if (select) select.value = incoming;
       applied.push({ label: control.label, value: incoming });
     });
-    if (applied.length) updateUiStateSummary();
+    if (applied.length) {
+      updateUiStateSummary();
+      // AI 代人改参数同样要广播：中栏插件看到的参数必须和右栏一致
+      publishUiParams("ai", null);
+    }
     return { applied: applied, skipped: skipped };
   }
 
@@ -946,6 +962,19 @@
     if (contextToggle) contextToggle.setAttribute("aria-expanded", String(open));
   }
 
+  function dockOpen() {
+    return !!wsPage && wsPage.getAttribute("data-dock") === "open";
+  }
+
+  function setDock(open) {
+    if (!wsPage) return;
+    wsPage.setAttribute("data-dock", open ? "open" : "hidden");
+    if (dockToggle) {
+      dockToggle.setAttribute("aria-expanded", String(open));
+      dockToggle.textContent = open ? "折叠" : "展开";
+    }
+  }
+
   if (sidebarToggle) {
     sidebarToggle.addEventListener("click", function () {
       setSide(!sideOpen());
@@ -964,15 +993,23 @@
     });
   }
 
-  // 默认态：桌面两栏展开；窄屏抽屉收起，避免一进来就糊在中栏上。
+  if (dockToggle) {
+    dockToggle.addEventListener("click", function () {
+      setDock(!dockOpen());
+    });
+  }
+
+  // 默认态：桌面两栏展开、底栏展开；窄屏抽屉与底栏都收起，避免一进来就糊在中栏上。
   setSide(!mqMobile.matches);
   setCtx(!mqMobile.matches);
+  setDock(!mqMobile.matches);
 
   // 跨断点时必须重算：窄屏收起的抽屉拖宽到桌面会留下「轨道已收起、属性仍写 open」
   // 的错位；反过来桌面展开态拉到窄屏则会让抽屉直接糊住对话流。
   function onBreakpoint(matched) {
     setSide(!matched);
     setCtx(!matched);
+    setDock(!matched);
   }
   if (typeof mqMobile.addEventListener === "function") {
     mqMobile.addEventListener("change", function (e) { onBreakpoint(e.matches); });
@@ -997,6 +1034,89 @@
       }
     });
   }
+
+  // ============ 底栏输出区：EventBus 的 region.dock 落点 ============
+  // 四区里左、右、下都由底座托管。插件想往底栏写字，只能发 region.dock 事件，
+  // 底座收到后一律 textContent 落 DOM（AGENTS §5：不可信输入进 DOM 前必须净化）。
+  var DOCK_MAX = 120;
+
+  function dockLine(text, topic) {
+    if (!dockLog) return;
+    var empty = dockLog.querySelector(".ws-dock-empty");
+    if (empty) empty.remove();
+    var item = document.createElement("li");
+    item.className = "ws-dock-item";
+    var time = document.createElement("span");
+    time.className = "ws-dock-time";
+    var now = new Date();
+    time.textContent = String(now.getHours()).padStart(2, "0") + ":" +
+      String(now.getMinutes()).padStart(2, "0") + ":" +
+      String(now.getSeconds()).padStart(2, "0");
+    item.appendChild(time);
+    if (topic) {
+      var tag = document.createElement("span");
+      tag.className = "ws-dock-topic";
+      tag.textContent = topic;
+      item.appendChild(tag);
+    }
+    var body = document.createElement("span");
+    body.className = "ws-dock-text";
+    body.textContent = String(text == null ? "" : text).slice(0, 300);
+    item.appendChild(body);
+    dockLog.appendChild(item);
+    while (dockLog.children.length > DOCK_MAX) dockLog.removeChild(dockLog.firstChild);
+    if (dockOpen()) {
+      var dockBody = document.getElementById("wsDockBody");
+      if (dockBody) dockBody.scrollTop = dockBody.scrollHeight;
+    }
+  }
+
+  function wireDock() {
+    if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
+    window.JzoBus.on("region.dock", function (event) {
+      var payload = event.payload || {};
+      dockLine(payload.text || "（空消息）", payload.topic || event.topic);
+    });
+    window.JzoBus.on("layout.changed", function (event) {
+      var payload = event.payload || {};
+      if (payload.by === "restore") return;   // 刷新恢复不必刷屏
+      var sizes = payload.sizes || {};
+      dockLine("布局已调整（" + (payload.by || "drag") + "）：左 " + sizes.side +
+        " / 右 " + sizes.context + " / 下 " + sizes.dock, "layout.changed");
+    });
+    if (dockClearBtn) {
+      dockClearBtn.addEventListener("click", function () {
+        dockLog.textContent = "";
+        var empty = document.createElement("li");
+        empty.className = "ws-dock-empty";
+        empty.textContent = "已清空。";
+        dockLog.appendChild(empty);
+      });
+    }
+  }
+
+  // ============ 面板参数 → EventBus（右栏改一个值，中栏插件立刻知道） ============
+  function uiValuesCopy() {
+    var copy = {};
+    Object.keys(uiState.values).forEach(function (key) { copy[key] = uiState.values[key]; });
+    return copy;
+  }
+
+  function publishUiParams(source, changedKey) {
+    if (!window.JzoBus || typeof window.JzoBus.emit !== "function") return;
+    window.JzoBus.emit("ui.params.changed", {
+      pluginId: uiState.pluginId,
+      key: changedKey || null,
+      values: uiValuesCopy(),
+      revisions: JSON.parse(JSON.stringify(uiState.revisions)),
+      by: source
+    }, { source: "workspace" });
+  }
+
+  // 舞台挂载/唤醒插件时要补发一次当前参数，插件不必等下一次改动才对齐
+  window.JzoUiState = { snapshot: function () {
+    return { pluginId: uiState.pluginId, values: uiValuesCopy(), by: "snapshot" };
+  } };
 
   // ============ 发送指令 → 对话 Agent → 助手气泡 ============
   function describeSource(response) {
@@ -1833,6 +1953,7 @@
 
   // ============ 初始化 ============
   // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
+  wireDock();
   setStage("自由对话");
   markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");

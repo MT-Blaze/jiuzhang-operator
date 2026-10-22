@@ -2,16 +2,27 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.demo-bank",
   "name": "示例题库",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "importer",
-  "description": "内置 5 道高中数学示例题（Markdown+LaTeX），开箱即可体验拆题、渲染与入库流程。",
+  "description": "内置 5 道高中数学示例题（Markdown+LaTeX），开箱即可体验拆题、渲染、入库与中栏画布。",
   "author": "九章算子",
   "license": "Apache-2.0",
   "entry": {
     "frontend": "dist/index.html"
   },
-  "slots": ["question.card"],
+  "slots": ["question.card", "stage.center"],
   "capabilities": ["question.import", "question.render"],
-  "permissions": ["questions:read"]
+  "permissions": ["questions:read"],
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "示例题库",
+    "priority": 10,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["ui.params.changed", "stage.tab.activated"],
+    "publish": ["region.dock"]
+  }
 }
