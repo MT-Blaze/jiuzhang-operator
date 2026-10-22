@@ -1,0 +1,167 @@
+[
+  {
+    "schema_version": "1.0",
+    "id": "q_demo_bank_0001",
+    "type": "single_choice",
+    "stem": "已知集合 $A=\\{x\\mid x^2-2x-3\\le 0\\}$，$B=\\{x\\mid x>1\\}$，则 $A\\cap B=$（　　）",
+    "options": [
+      { "key": "A", "content": "$[-1,1)$" },
+      { "key": "B", "content": "$(1,3]$" },
+      { "key": "C", "content": "$[-1,3]$" },
+      { "key": "D", "content": "$(1,3)$" }
+    ],
+    "answer": { "kind": "choice", "choice_keys": ["B"], "final": "B" },
+    "solution": "由 $x^2-2x-3\\le 0$ 得 $(x-3)(x+1)\\le 0$，故 $A=[-1,3]$。又 $B=(1,+\\infty)$，所以 $A\\cap B=(1,3]$，选 B。",
+    "difficulty": "basic",
+    "tags": ["集合", "一元二次不等式"],
+    "taxonomy": {
+      "textbook": "人教A版",
+      "chapter": "集合与常用逻辑用语",
+      "section": "集合间的基本关系",
+      "topic": "交集运算"
+    },
+    "source": {
+      "school": "九章算子",
+      "exam_type": "示例题",
+      "paper_title": "九章算子示例题库",
+      "question_no": "1"
+    },
+    "meta": {
+      "created_at": "2026-10-24T17:00:00+08:00",
+      "updated_at": "2026-10-24T17:00:00+08:00",
+      "revision": 1,
+      "status": "published",
+      "author": "九章算子"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "id": "q_demo_bank_0002",
+    "type": "single_choice",
+    "stem": "设复数 $z=\\dfrac{2+\\mathrm{i}}{1-\\mathrm{i}}$（其中 $\\mathrm{i}$ 为虚数单位），则 $|z|=$（　　）",
+    "options": [
+      { "key": "A", "content": "$\\dfrac{\\sqrt{5}}{2}$" },
+      { "key": "B", "content": "$\\dfrac{\\sqrt{10}}{2}$" },
+      { "key": "C", "content": "$\\sqrt{10}$" },
+      { "key": "D", "content": "$\\dfrac{5}{2}$" }
+    ],
+    "answer": { "kind": "choice", "choice_keys": ["B"], "final": "B" },
+    "solution": "$z=\\dfrac{(2+\\mathrm{i})(1+\\mathrm{i})}{(1-\\mathrm{i})(1+\\mathrm{i})}=\\dfrac{1+3\\mathrm{i}}{2}=\\dfrac{1}{2}+\\dfrac{3}{2}\\mathrm{i}$，故 $|z|=\\sqrt{\\left(\\dfrac{1}{2}\\right)^2+\\left(\\dfrac{3}{2}\\right)^2}=\\dfrac{\\sqrt{10}}{2}$，选 B。",
+    "difficulty": "basic",
+    "tags": ["复数", "模长"],
+    "taxonomy": {
+      "textbook": "人教A版",
+      "chapter": "复数",
+      "section": "复数的四则运算",
+      "topic": "复数的模"
+    },
+    "source": {
+      "school": "九章算子",
+      "exam_type": "示例题",
+      "paper_title": "九章算子示例题库",
+      "question_no": "2"
+    },
+    "meta": {
+      "created_at": "2026-10-24T17:00:00+08:00",
+      "updated_at": "2026-10-24T17:00:00+08:00",
+      "revision": 1,
+      "status": "published",
+      "author": "九章算子"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "id": "q_demo_bank_0003",
+    "type": "fill_blank",
+    "stem": "曲线 $y=x\\ln x$ 在点 $(1,0)$ 处的切线方程为______。",
+    "answer": { "kind": "expression", "content": "$y=x-1$", "final": "y=x-1" },
+    "solution": "对 $y=x\\ln x$ 求导得 $y'=\\ln x+1$，在 $x=1$ 处斜率 $k=\\ln 1+1=1$，切线过点 $(1,0)$，故切线方程为 $y=x-1$。",
+    "difficulty": "medium",
+    "tags": ["导数", "切线方程"],
+    "taxonomy": {
+      "textbook": "人教A版",
+      "chapter": "一元函数的导数及其应用",
+      "section": "导数的几何意义",
+      "topic": "曲线在某点处的切线"
+    },
+    "source": {
+      "school": "九章算子",
+      "exam_type": "示例题",
+      "paper_title": "九章算子示例题库",
+      "question_no": "3"
+    },
+    "meta": {
+      "created_at": "2026-10-24T17:00:00+08:00",
+      "updated_at": "2026-10-24T17:00:00+08:00",
+      "revision": 1,
+      "status": "published",
+      "author": "九章算子"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "id": "q_demo_bank_0004",
+    "type": "solution",
+    "stem": "已知等差数列 $\\{a_n\\}$ 满足 $a_2=3$，$a_5=9$。\n\n（1）求 $\\{a_n\\}$ 的通项公式；\n\n（2）求前 $n$ 项和 $S_n$。",
+    "answer": {
+      "kind": "text",
+      "content": "（1）$a_n=2n-1$；（2）$S_n=n^2$。",
+      "final": "a_n=2n-1, S_n=n^2"
+    },
+    "solution": "设公差为 $d$。由 $a_5-a_2=3d$ 得 $3d=9-3=6$，即 $d=2$；再由 $a_2=a_1+d$ 得 $a_1=1$。\n\n（1）通项公式 $a_n=a_1+(n-1)d=2n-1$。\n\n（2）$S_n=na_1+\\dfrac{n(n-1)}{2}d=n+n(n-1)=n^2$。",
+    "difficulty": "medium",
+    "tags": ["数列", "等差数列", "前n项和"],
+    "taxonomy": {
+      "textbook": "人教A版",
+      "chapter": "数列",
+      "section": "等差数列及其前n项和",
+      "topic": "等差数列的基本量运算"
+    },
+    "source": {
+      "school": "九章算子",
+      "exam_type": "示例题",
+      "paper_title": "九章算子示例题库",
+      "question_no": "4"
+    },
+    "meta": {
+      "created_at": "2026-10-24T17:00:00+08:00",
+      "updated_at": "2026-10-24T17:00:00+08:00",
+      "revision": 1,
+      "status": "published",
+      "author": "九章算子"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "id": "q_demo_bank_0005",
+    "type": "solution",
+    "stem": "在 $\\triangle ABC$ 中，内角 $A,B,C$ 所对的边分别为 $a,b,c$，已知 $b\\cos C+c\\cos B=2a\\cos A$。\n\n（1）求角 $A$ 的大小；\n\n（2）若 $a=2$，求 $\\triangle ABC$ 面积的最大值。",
+    "answer": {
+      "kind": "text",
+      "content": "（1）$A=\\dfrac{\\pi}{3}$；（2）面积最大值为 $\\sqrt{3}$。",
+      "final": "A=π/3, S_max=√3"
+    },
+    "solution": "（1）由射影定理（或正弦定理展开）知 $b\\cos C+c\\cos B=a$，代入条件得 $a=2a\\cos A$，即 $\\cos A=\\dfrac{1}{2}$。又 $0<A<\\pi$，故 $A=\\dfrac{\\pi}{3}$。\n\n（2）由余弦定理 $a^2=b^2+c^2-2bc\\cos A$ 得 $4=b^2+c^2-bc$。由 $b^2+c^2\\ge 2bc$ 得 $4\\ge 2bc-bc=bc$，即 $bc\\le 4$，当且仅当 $b=c=2$ 时取等。\n\n所以 $S=\\dfrac{1}{2}bc\\sin A=\\dfrac{\\sqrt{3}}{4}bc\\le\\sqrt{3}$，即面积最大值为 $\\sqrt{3}$。",
+    "difficulty": "hard",
+    "tags": ["三角函数", "解三角形", "余弦定理", "最值"],
+    "taxonomy": {
+      "textbook": "人教A版",
+      "chapter": "三角函数",
+      "section": "解三角形",
+      "topic": "正余弦定理综合应用"
+    },
+    "source": {
+      "school": "九章算子",
+      "exam_type": "示例题",
+      "paper_title": "九章算子示例题库",
+      "question_no": "5"
+    },
+    "meta": {
+      "created_at": "2026-10-24T17:00:00+08:00",
+      "updated_at": "2026-10-24T17:00:00+08:00",
+      "revision": 1,
+      "status": "published",
+      "author": "九章算子"
+    }
+  }
+]

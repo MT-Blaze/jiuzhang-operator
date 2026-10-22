@@ -1,0 +1,123 @@
+/* 示例题库插件样式：宣纸底、朱砂点，与宿主同一视觉语言。 */
+
+.jdb-card {
+  border: 1px solid rgba(31, 28, 24, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 12px 14px;
+  font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif;
+  color: #1f1c18;
+}
+
+.jdb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jdb-badge {
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(166, 59, 43, 0.35);
+  color: #a63b2b;
+  background: rgba(166, 59, 43, 0.08);
+}
+
+.jdb-difficulty[data-level="hard"] {
+  border-color: rgba(31, 28, 24, 0.4);
+  color: #1f1c18;
+  background: rgba(31, 28, 24, 0.06);
+}
+
+.jdb-id {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9a9184;
+}
+
+.jdb-stem {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.jdb-options {
+  margin: 0 0 8px;
+  padding-left: 4px;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+.jdb-key {
+  display: inline-block;
+  min-width: 20px;
+  margin-right: 6px;
+  font-weight: 700;
+  color: #a63b2b;
+}
+
+.jdb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jdb-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(31, 28, 24, 0.05);
+  color: #6f675c;
+}
+
+/* --- 独立预览形态 --- */
+
+body {
+  margin: 0;
+  background: #f6f2e9;
+}
+
+#root {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.jdb-preview-title {
+  font-size: 20px;
+  margin: 0 0 6px;
+  color: #1f1c18;
+}
+
+.jdb-preview-hint {
+  font-size: 13px;
+  color: #6f675c;
+  margin: 0 0 20px;
+}
+
+.jdb-preview-card {
+  border: 1px solid rgba(31, 28, 24, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.jdb-preview-head {
+  font-size: 12px;
+  color: #a63b2b;
+  margin: 0 0 6px;
+}
+
+.jdb-preview-stem {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #1f1c18;
+  margin: 0;
+  white-space: pre-wrap;
+}

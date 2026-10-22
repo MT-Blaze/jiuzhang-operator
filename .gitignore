@@ -14,6 +14,9 @@ static/uploads/
 .system_generated/
 *.log
 
+# 首启静默安装的种子插件是运行时产物（源头在 examples/demo_plugin.zip）
+plugins/org.jiuzhang.demo-bank/
+
 # Build output
 node_modules/
 /dist/

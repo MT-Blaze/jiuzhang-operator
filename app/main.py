@@ -23,11 +23,13 @@ from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.security import local_write_token
+from app.core.seed_plugin import ensure_seed_plugin
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
+    ensure_seed_plugin()
     yield
 
 
@@ -67,12 +69,18 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/", include_in_schema=False)
-    async def read_index() -> FileResponse:
-        return FileResponse(settings.static_dir / "index.html")
+    async def read_root() -> FileResponse:
+        """根路径直达工作台（10.24 军令任务 1）：用户打开浏览器就该看到能干活的地方，
+        底座介绍页移挂 /about，不丢失。"""
+        return FileResponse(settings.static_dir / "workspace.html")
 
     @app.get("/workspace", include_in_schema=False)
     async def read_workspace_page() -> FileResponse:
         return FileResponse(settings.static_dir / "workspace.html")
+
+    @app.get("/about", include_in_schema=False)
+    async def read_about_page() -> FileResponse:
+        return FileResponse(settings.static_dir / "index.html")
 
     @app.get("/api/settings", summary="获取系统设置与令牌")
     async def get_settings() -> dict[str, str]:

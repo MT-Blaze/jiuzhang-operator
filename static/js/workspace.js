@@ -790,6 +790,18 @@
   addBubble("sys", "九章算子工作台已就绪 · 对话驱动的智能体空壳原型（先见形，后调逻辑）");
   addBubble("bot", "你好，我是九章算子工作台助手。从左侧选一个任务，或直接在下方输入指令（如「拆分第 1–2 页」「导出为 PDF」），我会先回显识别到的意图。");
 
+  // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
+  fetch("/api/plugins", { cache: "no-store" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      var plugins = (data && data.plugins) || [];
+      var hasDemo = plugins.some(function (p) { return p.id === "org.jiuzhang.demo-bank"; });
+      if (hasDemo) {
+        addBubble("bot", "系统已为您预置了 5 道示例数学题，您可以直接输入「拆分第一题」进行体验。");
+      }
+    })
+    .catch(function () { /* 探测失败只是少一句提示，不打扰用户 */ });
+
   loadProviders().catch(function () {
     renderModelChip();
   });

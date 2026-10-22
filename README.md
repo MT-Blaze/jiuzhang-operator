@@ -50,7 +50,7 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 题目 CRUD：`GET/POST /api/questions`、`GET/PUT/DELETE /api/questions/{id}`，写入按 `schemas/question.json` 校验，`meta.revision` 提供乐观并发；
 - 写入鉴权：POST/PUT/DELETE 必须携带 `X-JZO-Token`，令牌由 `JZO_LOCAL_TOKEN` 或 `data/.local_token`（首次启动生成，权限 0600）提供；文件令牌为**一次性**——校验通过即轮换，旧令牌第二次使用必被拒（设了 `JZO_LOCAL_TOKEN` 时走环境变量档，不轮换）；
 - 插件宿主最小实现：清单发现与校验、沙箱 iframe、消息封包、HTML 净化、作用域 CSS 校验、连续失败兜底；`plugins.json` 索引只按**用户亲手填入**的地址拉取（`/plugins` + `POST /api/plugins/index`），底座零内置源、不解压不安装；
-- 首个渲染插件 `org.jiuzhang.classic-card`，题库页 `/questions` 支持搜索、筛选与分页；
+- 首个渲染插件 `org.jiuzhang.classic-card`；种子题库插件 `org.jiuzhang.demo-bank`（首启自动静默安装，内置 5 道示例题）；
 - AI 能力：`app/core/providers/` 扫描式 Provider 注册表（密钥只走环境变量）、`/api/agent/chat|split|review` 三个智能体、工作台 `/workspace` 「导入原卷 → 发指令 → 出真卡片 → 确认入库」闭环，以及 `/api/providers` 多厂商切换。
 
 `v0.3.0` 在其上再加两项「极致体验」：
@@ -81,7 +81,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>，题库页位于 <http://127.0.0.1:8000/questions>，健康检查位于 <http://127.0.0.1:8000/healthz>。
+打开 <http://127.0.0.1:8000> 直达智能工作台，底座介绍页位于 <http://127.0.0.1:8000/about>，健康检查位于 <http://127.0.0.1:8000/healthz>。
 
 写入接口需要本地令牌。可以通过 `JZO_LOCAL_TOKEN` 显式指定，也可以读取首次启动生成在 `data/.local_token` 的令牌：
 
@@ -100,7 +100,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -124,29 +124,33 @@ jiuzhang-operator/
 │       ├── db.py            # SQLite 连接、版本化表结构、事务
 │       ├── questions.py     # Schema 校验与题目仓库
 │       ├── plugins.py       # 插件发现、清单校验与静态资源解析
+│       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
 │       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取（底座无内置源）
 │       ├── provider.py      # AIProvider 抽象基类
 │       ├── providers/       # Provider 注册表（扫描本目录模块，密钥只走环境变量）
 │       ├── ai_client.py     # OpenAI 兼容客户端（标准库 urllib，无额外依赖）
 │       └── security.py      # 本地写入令牌
 ├── static/
-│   ├── index.html           # 底座首页（无框架、无 CDN）
-│   ├── questions.html       # 题库列表页
-│   ├── workspace.html       # 拆题工作台（三栏：任务 / 指令+清单 / 上下文）
+│   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
+│   ├── workspace.html       # 智能工作台（三栏：任务 / 对话流 / 上下文），根路径直达
 │   ├── plugins.html         # 插件索引页（自定义源地址输入框）
 │   ├── css/{app,questions,workspace,plugins}.css
-│   └── js/{app,questions,workspace,plugins}.js
+│   └── js/{app,workspace,plugins,pwa,version}.js
 ├── schemas/
 │   ├── question.json        # 题目交换格式（唯一事实来源）
 │   └── plugins-index.json   # plugins.json 索引格式
 ├── examples/
-│   └── plugins-index.example.json  # 示例清单（地址全部不可用，只示范结构）
+│   ├── plugins-index.example.json  # 示例清单（地址全部不可用，只示范结构）
+│   ├── demo_plugin/                # 种子题库插件源码（5 道示例题）
+│   ├── demo_plugin.zip             # 构建产物：首启静默安装的种子包
+│   └── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   └── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
 ├── tests/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
+│   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
 │   └── test_providers_api.py       # Provider 注册表与切换契约
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
@@ -161,8 +165,9 @@ jiuzhang-operator/
 | 路径 | 内容 |
 | --- | --- |
 | `/healthz` | 健康检查 JSON |
-| `/questions` | 题库列表页（插件渲染 + 分页） |
-| `/workspace` | 拆题工作台（导入原卷 → 发指令 → 出真卡片） |
+| `/` | 智能工作台（根路径直达，对话驱动） |
+| `/about` | 底座介绍页（原首页，设计原则与只读契约入口导航） |
+| `/workspace` | 智能工作台（导入原卷 → 发指令 → 出真卡片） |
 | `/plugins` | 插件索引页（自填 `plugins.json` 地址拉取清单，只读、不安装） |
 | `/api/questions` | 题目列表（分页、搜索、筛选） |
 | `/api/plugins` | 已加载插件清单 |
