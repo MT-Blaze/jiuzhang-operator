@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,20 @@ def _tool_schema(plugin: dict[str, Any], actions: list[str]) -> dict[str, Any]:
             "minimum": 1,
             "maximum": MAX_RESULT_QUESTIONS,
             "description": "未指定题号时最多列出几题，默认 5。",
+        }
+        properties["random"] = {
+            "type": "boolean",
+            "description": "为 true 时从题库随机抽一题；与 question_no 二选一。",
+        }
+        properties["difficulty"] = {
+            "type": "string",
+            "enum": list(DIFFICULTY_LABELS.keys()),
+            "description": "随机抽题时按难度筛选：basic/medium/hard/novel，缺省不限。",
+        }
+        properties["grade"] = {
+            "type": "string",
+            "enum": ["高一", "高二", "高三"],
+            "description": "随机抽题时按年级筛选；题库未标注年级时底座会如实说明未过滤。",
         }
     if has_render:
         properties["question_id"] = {
@@ -282,6 +297,67 @@ def _select_by_number(questions: list[dict[str, Any]], question_no: int) -> dict
     return _normalize_question(questions[question_no - 1], question_no)
 
 
+def _question_grade(raw: dict[str, Any]) -> str:
+    """题目的年级标注可能在顶层、meta 或标签里；没有就返回空串。"""
+    for key in ("grade", "school_grade"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    meta = raw.get("meta")
+    if isinstance(meta, dict):
+        value = meta.get("grade")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for tag in raw.get("tags") or []:
+        if isinstance(tag, str) and tag.strip() in ("高一", "高二", "高三"):
+            return tag.strip()
+    return ""
+
+
+def _run_random(
+    plugin: dict[str, Any], seed: list[dict[str, Any]], args: dict[str, Any]
+) -> dict[str, Any]:
+    """随机抽一题（右侧面板「随机出题」与「随机出一道中档题」共用）。"""
+    difficulty = args.get("difficulty")
+    grade = args.get("grade")
+    pool = list(enumerate(seed))
+    notes: list[str] = []
+
+    if difficulty in DIFFICULTY_LABELS:
+        filtered = [(index, item) for index, item in pool if item.get("difficulty") == difficulty]
+        if not filtered:
+            raise PluginToolError(
+                "题库里没有难度为「%s」的题目" % DIFFICULTY_LABELS[difficulty]
+            )
+        pool = filtered
+
+    if grade in ("高一", "高二", "高三"):
+        if any(_question_grade(item) for _, item in pool):
+            filtered = [(index, item) for index, item in pool if _question_grade(item) == grade]
+            if not filtered:
+                raise PluginToolError("题库里没有年级为「%s」的题目" % grade)
+            pool = filtered
+        else:
+            notes.append("题库未标注年级，本次未按年级过滤")
+
+    index, raw = random.choice(pool)
+    question = _normalize_question(raw, index + 1)
+    summary = (
+        "已调用插件「%s」随机抽取第 %d 题（共 %d 题）：\n"
+        % (plugin["name"], index + 1, len(seed))
+        + _format_question(question)
+    )
+    if notes:
+        summary += "\n（" + "；".join(notes) + "）"
+    return {
+        "ok": True,
+        "plugin": {"id": plugin["id"], "name": plugin["name"]},
+        "action": ACTION_IMPORT,
+        "summary": summary,
+        "data": {"total": len(seed), "questions": [question], "random": True},
+    }
+
+
 def _run_import(plugin: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
     seed = _load_seed(plugin["id"])
     if seed is None:
@@ -290,6 +366,9 @@ def _run_import(plugin: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
         )
     if not seed:
         raise PluginToolError(f"插件「{plugin['name']}」的题库是空的")
+
+    if args.get("random"):
+        return _run_random(plugin, seed, args)
 
     question_no = args.get("question_no")
     if question_no is not None:
@@ -436,6 +515,29 @@ def parse_question_no(text: str) -> int | None:
 _RENDER_HINTS = ("渲染", "预览", "题卡", "看看", "显示", "展示")
 _SPLIT_HINTS = ("拆", "导入", "取回")
 _LIST_HINTS = ("题库", "有哪些题", "题目列表", "示例题")
+_RANDOM_HINTS = ("随机", "随便", "抽一", "抽个")
+_DIFFICULTY_HINTS = (
+    ("新定义", "novel"),
+    ("基础", "basic"),
+    ("简单", "basic"),
+    ("中档", "medium"),
+    ("中等", "medium"),
+    ("压轴", "hard"),
+    ("困难", "hard"),
+)
+_GRADE_RE = re.compile(r"(高一|高二|高三)")
+
+
+def _extract_difficulty(text: str) -> str | None:
+    for word, value in _DIFFICULTY_HINTS:
+        if word in text:
+            return value
+    return None
+
+
+def _extract_grade(text: str) -> str | None:
+    match = _GRADE_RE.search(text or "")
+    return match.group(1) if match else None
 
 
 def match_intent(user_input: str, tools: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -452,12 +554,13 @@ def match_intent(user_input: str, tools: list[dict[str, Any]]) -> dict[str, Any]
     wants_render = any(word in text for word in _RENDER_HINTS)
     wants_list = any(word in text for word in _LIST_HINTS)
     wants_split = any(word in text for word in _SPLIT_HINTS)
-    if question_no is None and not wants_list:
+    wants_random = any(word in text for word in _RANDOM_HINTS)
+    if question_no is None and not wants_list and not wants_random:
         return None
-    if question_no is not None and not (wants_split or wants_render):
+    if question_no is not None and not (wants_split or wants_render or wants_random):
         return None
 
-    action = ACTION_RENDER if wants_render else ACTION_IMPORT
+    action = ACTION_IMPORT if wants_random else (ACTION_RENDER if wants_render else ACTION_IMPORT)
     best: tuple[int, dict[str, Any]] | None = None
     for tool in tools:
         function = tool.get("function") if isinstance(tool, dict) else None
@@ -490,4 +593,12 @@ def match_intent(user_input: str, tools: list[dict[str, Any]]) -> dict[str, Any]
     arguments: dict[str, Any] = {"action": action}
     if question_no is not None:
         arguments["question_no"] = question_no
+    if wants_random:
+        arguments["random"] = True
+        difficulty = _extract_difficulty(text)
+        if difficulty:
+            arguments["difficulty"] = difficulty
+        grade = _extract_grade(text)
+        if grade:
+            arguments["grade"] = grade
     return {"tool": chosen["name"], "arguments": arguments}

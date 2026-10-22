@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from app.api.agents import (
@@ -153,6 +154,63 @@ class ChatRequestContractTest(unittest.TestCase):
         )
         self.assertEqual(req.context["current_task"], "拆题")
         self.assertEqual(req.history[0]["role"], "user")
+
+
+PANEL_SNIPPET = (
+    "\n\n## 右侧插件面板（可由 update_params / trigger_button 操控）\n"
+    "插件：org.jiuzhang.demo-bank\n"
+    "可设置参数：\n"
+    "- grade（年级）：可选 全部 / 高一 / 高二 / 高三；当前 全部\n"
+    "- difficulty（难度）：可选 全部 / 基础 / 中档 / 压轴 / 新定义；当前 全部\n"
+    "可触发按钮：\n"
+    "- random_question（随机出题）\n"
+)
+
+
+class MockPanelOverrideTest(unittest.TestCase):
+    """v0.5.5 双向操控不能只挂在真实模型上：缺密钥降级时链路必须照样走得通。"""
+
+    def test_panel_prompt_rows_are_parsed(self) -> None:
+        from app.core.ai_client import _mock_panel_params
+
+        got = _mock_panel_params(PANEL_SNIPPET, "改成高一的题")
+        self.assertIsNotNone(got)
+        self.assertEqual(got["action"], "update_params")
+        self.assertEqual(got["params"], {"grade": "高一"})
+        self.assertIn("高一", got["message"])
+
+    def test_two_params_changed_at_once(self) -> None:
+        from app.core.ai_client import _mock_panel_params
+
+        got = _mock_panel_params(PANEL_SNIPPET, "把年级换成高三、难度调成压轴")
+        self.assertEqual(got["params"], {"grade": "高三", "difficulty": "压轴"})
+
+    def test_no_panel_means_no_update_params(self) -> None:
+        from app.core.ai_client import _mock_panel_params
+
+        self.assertIsNone(_mock_panel_params("", "改成高一的题"))
+        self.assertIsNone(_mock_panel_params(PANEL_SNIPPET, "随便聊聊"))
+        self.assertIsNone(_mock_panel_params(PANEL_SNIPPET, "这道题的年级是什么"))
+
+    def test_mock_chat_dispatches_update_params(self) -> None:
+        from app.core.ai_client import _mock_chat
+
+        result = _mock_chat("前缀" + PANEL_SNIPPET, "改成高一的题")
+        self.assertEqual(json.loads(result["content"])["action"], "update_params")
+        self.assertTrue(result["mock"])
+
+    def test_split_intent_not_hijacked(self) -> None:
+        from app.core.ai_client import _mock_chat
+
+        result = _mock_chat("前缀" + PANEL_SNIPPET, "拆分第一题")
+        self.assertEqual(json.loads(result["content"])["action"], "split_paper")
+
+    def test_split_agent_prompt_still_untouched(self) -> None:
+        from app.core.ai_client import _mock_chat
+        from app.api.agents import SPLIT_SYSTEM_PROMPT
+
+        content = json.loads(_mock_chat(SPLIT_SYSTEM_PROMPT, "整卷文本")["content"])
+        self.assertIsInstance(content, list)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,200 @@ _PERMISSIONS = {
     "export:file",
 }
 
+# 右侧面板控件（v0.5.5）：插件只能声明「文本 + 指令模板」，不能塞 HTML。
+_UI_KEY = re.compile(r"^[a-z][a-z0-9_]{0,15}$")
+_UI_MAX_CONTROLS = 8
+_UI_MAX_OPTIONS = 12
+_UI_MAX_LABEL = 24
+_UI_MAX_COMMAND = 200
+
+_GRADE_OPTIONS = [
+    {"value": "全部", "label": "全部"},
+    {"value": "高一", "label": "高一"},
+    {"value": "高二", "label": "高二"},
+    {"value": "高三", "label": "高三"},
+]
+_DIFFICULTY_OPTIONS = [
+    {"value": "全部", "label": "全部"},
+    {"value": "基础", "label": "基础"},
+    {"value": "中档", "label": "中档"},
+    {"value": "压轴", "label": "压轴"},
+    {"value": "新定义", "label": "新定义"},
+]
+
+
+def _ui_text(value: Any, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", " ", value).strip()[:limit]
+
+
+def _ui_select(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict) or raw.get("type") != "select":
+        return None
+    key = raw.get("id") or raw.get("key")
+    if not isinstance(key, str) or _UI_KEY.fullmatch(key) is None:
+        return None
+    label = _ui_text(raw.get("label"), _UI_MAX_LABEL) or key
+    options: list[dict[str, str]] = []
+    for option in raw.get("options") or []:
+        if not isinstance(option, dict):
+            continue
+        value = _ui_text(option.get("value"), 32)
+        text = _ui_text(option.get("label"), _UI_MAX_LABEL) or value
+        if value and text:
+            options.append({"value": value, "label": text})
+        if len(options) >= _UI_MAX_OPTIONS:
+            break
+    if not options:
+        return None
+    default = _ui_text(raw.get("default"), 32) or options[0]["value"]
+    if default not in [item["value"] for item in options]:
+        default = options[0]["value"]
+    return {
+        "id": key,
+        "type": "select",
+        "key": key,
+        "label": label,
+        "options": options,
+        "default": default,
+    }
+
+
+def _ui_button(raw: Any, position: int, used_ids: set[str]) -> dict[str, Any] | None:
+    if not isinstance(raw, dict) or raw.get("type") != "button":
+        return None
+    label = _ui_text(raw.get("label"), _UI_MAX_LABEL)
+    command = _ui_text(raw.get("command"), _UI_MAX_COMMAND)
+    if not label or not command:
+        return None
+    control_id = _ui_text(raw.get("id"), 32) or "btn_%d" % position
+    if _UI_KEY.fullmatch(control_id) is None:
+        control_id = "btn_%d" % position
+    base = control_id
+    suffix = 2
+    while control_id in used_ids:
+        control_id = "%s_%d" % (base, suffix)
+        suffix += 1
+    used_ids.add(control_id)
+    return {"id": control_id, "type": "button", "label": label, "command": command}
+
+
+def _normalize_ui(raw: Any, plugin_id: str, name: str) -> dict[str, Any] | None:
+    """校验插件自报的右侧面板；坏控件逐条丢弃，全坏则回落到默认面板。"""
+    if not isinstance(raw, dict):
+        return None
+    controls: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for position, item in enumerate(raw.get("controls") or []):
+        if len(controls) >= _UI_MAX_CONTROLS:
+            break
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "select":
+            control = _ui_select(item)
+            if control and control["id"] not in used_ids:
+                used_ids.add(control["id"])
+                controls.append(control)
+        elif item.get("type") == "button":
+            control = _ui_button(item, position + 1, used_ids)
+            if control:
+                controls.append(control)
+    if not controls:
+        return None
+    return {
+        "plugin_id": plugin_id,
+        "title": _ui_text(raw.get("title"), 40) or (name + "快捷操作"),
+        "hint": _ui_text(raw.get("hint"), 120)
+        or "点按钮等于在对话区发送对应指令；下拉选择会同步给 AI 上下文。",
+        "controls": controls,
+    }
+
+
+def _default_ui(plugin_id: str, name: str, kind: str, capabilities: list[str]) -> dict[str, Any]:
+    """没有自报面板时，按插件类型/能力生成一套真能执行的默认控件。"""
+    controls: list[dict[str, Any]] = []
+    if "question.import" in capabilities:
+        controls.extend(
+            [
+                {
+                    "id": "grade",
+                    "type": "select",
+                    "key": "grade",
+                    "label": "年级",
+                    "options": _GRADE_OPTIONS,
+                    "default": "全部",
+                },
+                {
+                    "id": "difficulty",
+                    "type": "select",
+                    "key": "difficulty",
+                    "label": "难度",
+                    "options": _DIFFICULTY_OPTIONS,
+                    "default": "全部",
+                },
+                {
+                    "id": "random_question",
+                    "type": "button",
+                    "label": "随机出题",
+                    "command": "随机出一道题（年级：{grade}；难度：{difficulty}）",
+                },
+                {
+                    "id": "list_questions",
+                    "type": "button",
+                    "label": "列出题库",
+                    "command": "列出题库里的所有题目",
+                },
+                {
+                    "id": "show_first",
+                    "type": "button",
+                    "label": "查看第一题",
+                    "command": "渲染第一题题卡",
+                },
+            ]
+        )
+    elif "question.render" in capabilities:
+        controls.extend(
+            [
+                {
+                    "id": "render_first",
+                    "type": "button",
+                    "label": "渲染示例题",
+                    "command": "渲染一道示例题卡",
+                },
+                {
+                    "id": "show_solution",
+                    "type": "button",
+                    "label": "查看解析",
+                    "command": "查看第一题的解析",
+                },
+            ]
+        )
+    elif kind == "exporter" or "question.export" in capabilities:
+        controls.append(
+            {
+                "id": "export_pdf",
+                "type": "button",
+                "label": "导出 PDF",
+                "command": "把当前题目导出为 PDF",
+            }
+        )
+    else:
+        controls.append(
+            {
+                "id": "what_can",
+                "type": "button",
+                "label": "这个插件能做什么",
+                "command": "这个插件能做什么？",
+            }
+        )
+    return {
+        "plugin_id": plugin_id,
+        "title": name + "快捷操作",
+        "hint": "点按钮等于在对话区发送对应指令；下拉选择会同步给 AI 上下文。",
+        "controls": controls,
+    }
+
 
 class PluginRejected(Exception):
     """清单未通过校验。"""
@@ -126,6 +320,10 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
     if css_path.is_file():
         css_url = f"/plugin-assets/{plugin_id}/{css_relative.as_posix()}"
 
+    ui = _normalize_ui(manifest.get("ui"), plugin_id, name)
+    if ui is None:
+        ui = _default_ui(plugin_id, name, manifest["kind"], capabilities)
+
     return {
         "id": plugin_id,
         "name": name,
@@ -140,6 +338,7 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         "permissions": permissions,
         "entry_url": f"/plugin-assets/{plugin_id}/{relative.as_posix()}",
         "css_url": css_url,
+        "ui": ui,
     }
 
 

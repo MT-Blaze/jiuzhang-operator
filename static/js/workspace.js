@@ -14,9 +14,15 @@
 
   // --- State ---
   var providerList = [];
+  var installedPlugins = [];
   var writeToken = null;
   var currentTask = "";
   var activePlugin = null;
+  // 右侧面板状态：values 是当前参数，revisions 记录人类
+  // 手改次数。发请求时拍快照，AI 回来要改参数时只改「人没同时动过」的字段——
+  // 人类的主动点击永远覆盖 AI 的自动设定。
+  var uiState = { pluginId: null, values: {}, revisions: {} };
+  var uiPanelControls = [];
   // 对话轮次记忆：注入下一轮请求，让模型延续前文而非孤立理解（10.24 军令 P0-2）。
   var transcript = [];
   var TRANSCRIPT_MAX = 24;   // 内存里最多留多少轮
@@ -39,40 +45,106 @@
   var chatEntry = document.getElementById("wsChatEntry");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
+  var pluginPanel = document.getElementById("wsPluginPanel");
+  var pluginPanelTitle = document.getElementById("wsPluginPanelTitle");
+  var pluginPanelDesc = document.getElementById("wsPluginPanelDesc");
+  var pluginControlsEl = document.getElementById("wsPluginControls");
+  var pluginPanelHint = document.getElementById("wsPluginPanelHint");
+  var uiStateSummary = document.getElementById("wsUiStateSummary");
 
   // ============ 对话流：气泡工厂 ============
+  var CARD_SEQ = 0;
+
+  function clampText(value, limit) {
+    return String(value == null ? "" : value).trim().slice(0, limit);
+  }
+
+  // Markdown + LaTeX 的最小渲染：普通文本走 textContent，公式交给本地 KaTeX。
+  // 只把 KaTeX 自己生成的 HTML 写进节点（trust:false），不执行任何远端资源。
+  function renderMathInto(el, text) {
+    var source = String(text == null ? "" : text);
+    if (!source) return;
+    var katex = window.katex;
+    if (!katex || typeof katex.renderToString !== "function" || source.indexOf("$") === -1) {
+      el.textContent = source;
+      return;
+    }
+    var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g;
+    var last = 0;
+    var match;
+    while ((match = pattern.exec(source)) !== null) {
+      if (match.index > last) {
+        el.appendChild(document.createTextNode(source.slice(last, match.index)));
+      }
+      var token = match[0];
+      var display = token.slice(0, 2) === "$$";
+      var body = display ? token.slice(2, -2) : token.slice(1, -1);
+      var node = document.createElement(display ? "div" : "span");
+      node.className = display ? "ws-math-block" : "ws-math";
+      try {
+        node.innerHTML = katex.renderToString(body, {
+          displayMode: display,
+          throwOnError: false,
+          trust: false,
+          strict: "ignore",
+        });
+        el.appendChild(node);
+      } catch (error) {
+        el.appendChild(document.createTextNode(token));
+      }
+      last = pattern.lastIndex;
+    }
+    if (last < source.length) {
+      el.appendChild(document.createTextNode(source.slice(last)));
+    }
+  }
+
   function addBubble(role, text, opts) {
     if (!thread) return null;
     opts = opts || {};
     var wrap = document.createElement("div");
     wrap.className = "ws-msg ws-msg-" + role;
 
-    var bubble = document.createElement("div");
-    bubble.className = "ws-bubble";
-    if (opts.tone) bubble.setAttribute("data-tone", opts.tone);
-    bubble.textContent = text; // 不可信内容也只当纯文本，天然免 XSS
-
-    // 插件调用标识：让用户一眼看见「AI 真的调用了插件」，而不是只说不练。
-    if (opts.pluginCalls && opts.pluginCalls.length) {
-      var badge = document.createElement("span");
-      badge.className = "ws-bubble-plugin";
-      badge.textContent = "[已调用插件] " + pluginCallNames(opts.pluginCalls);
-      if (opts.route === "host") {
-        badge.title = "模型未发起工具调用，由底座按明确意图直接调用插件";
-      } else {
-        badge.title = "由模型发起 tool_calls，底座执行插件并回传结果";
+    var hasText = !!(String(text == null ? "" : text).trim());
+    if (hasText || opts.pluginCalls || opts.source) {
+      var bubble = document.createElement("div");
+      bubble.className = "ws-bubble";
+      if (opts.tone) bubble.setAttribute("data-tone", opts.tone);
+      if (hasText) {
+        if (opts.richText && role === "bot") {
+          renderMathInto(bubble, text);
+        } else {
+          bubble.textContent = text; // 不可信内容只当纯文本，天然免 XSS
+        }
       }
-      bubble.insertBefore(badge, bubble.firstChild);
+
+      // 插件调用标识：让用户一眼看见「AI 真的调用了插件」，而不是只说不练。
+      if (opts.pluginCalls && opts.pluginCalls.length) {
+        var badge = document.createElement("span");
+        badge.className = "ws-bubble-plugin";
+        badge.textContent = "[已调用插件] " + pluginCallNames(opts.pluginCalls);
+        if (opts.route === "host") {
+          badge.title = "模型未发起工具调用，由底座按明确意图直接调用插件";
+        } else {
+          badge.title = "由模型发起 tool_calls，底座执行插件并回传结果";
+        }
+        bubble.insertBefore(badge, bubble.firstChild);
+      }
+
+      if (opts.source) {
+        var src = document.createElement("span");
+        src.className = "ws-bubble-source";
+        src.textContent = opts.source;
+        bubble.appendChild(src);
+      }
+      wrap.appendChild(bubble);
     }
 
-    if (opts.source) {
-      var src = document.createElement("span");
-      src.className = "ws-bubble-source";
-      src.textContent = opts.source;
-      bubble.appendChild(src);
-    }
+    (opts.cards || []).forEach(function (card) {
+      var node = buildCard(card);
+      if (node) wrap.appendChild(node);
+    });
 
-    wrap.appendChild(bubble);
     thread.appendChild(wrap);
     scrollThreadToBottom();
     return wrap;
@@ -105,6 +177,444 @@
 
   function scrollThreadToBottom() {
     if (thread) thread.scrollTop = thread.scrollHeight;
+  }
+
+  // ============ 富卡片：ui_json 拦截与渲染 ============
+  var CARD_TYPE_LABELS = {
+    single_choice: "单选",
+    multiple_choice: "多选",
+    fill_blank: "填空",
+    solution: "解答",
+    proof: "证明",
+    unknown: "待定",
+  };
+  var CARD_DIFFICULTY_LABELS = {
+    basic: "基础",
+    medium: "中档",
+    hard: "压轴",
+    novel: "新定义",
+  };
+
+  function safeHttpUrl(value) {
+    try {
+      var parsed = new URL(String(value || ""));
+      return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function hostOf(url) {
+    try {
+      return new URL(String(url)).host;
+    } catch (error) {
+      return "未知来源";
+    }
+  }
+
+  function normalizeQuestionCard(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var stem = clampText(raw.stem, 4000);
+    if (!stem) return null;
+    var type = CARD_TYPE_LABELS[raw.type] ? raw.type : "unknown";
+    var difficulty = CARD_DIFFICULTY_LABELS[raw.difficulty] ? raw.difficulty : "basic";
+    var options = [];
+    (Array.isArray(raw.options) ? raw.options : []).slice(0, 10).forEach(function (option) {
+      if (!option || typeof option !== "object") return;
+      var key = clampText(option.key, 8);
+      var content = clampText(option.content, 1000);
+      if (key || content) options.push({ key: key, content: content });
+    });
+    var tags = [];
+    (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 8).forEach(function (tag) {
+      var text = clampText(tag, 24);
+      if (text) tags.push(text);
+    });
+    return {
+      id: clampText(raw.id, 80),
+      questionNo: raw.question_no > 0 ? raw.question_no : 0,
+      type: type,
+      typeLabel: clampText(raw.type_label, 16) || CARD_TYPE_LABELS[type],
+      difficulty: difficulty,
+      difficultyLabel: clampText(raw.difficulty_label, 16) || CARD_DIFFICULTY_LABELS[difficulty],
+      stem: stem,
+      options: options,
+      answer: clampText(raw.answer, 1000),
+      solution: clampText(raw.solution, 4000),
+      tags: tags,
+    };
+  }
+
+  function isKnownCard(block) {
+    if (!block || typeof block !== "object") return false;
+    if (block.type === "question_card") {
+      return Array.isArray(block.questions) && block.questions.some(function (item) {
+        return normalizeQuestionCard(item) !== null;
+      });
+    }
+    if (block.type === "install_card") {
+      return Boolean(block.plugin && typeof block.plugin === "object" && block.plugin.name);
+    }
+    if (block.type === "confirm_card") {
+      return Array.isArray(block.actions) && block.actions.length > 0;
+    }
+    return false;
+  }
+
+  // 拦截 ```ui_json 围栏（也容忍模型把卡片塞进 ```json）。不是卡片的 json
+  // 围栏原样保留，继续走动作 JSON 解析，不误伤既有控制协议。
+  function splitUiBlocks(content) {
+    var text = String(content == null ? "" : content);
+    var cards = [];
+    var sawCard = false;
+    var pattern = /```(ui_json|json)[ \t]*\r?\n([\s\S]*?)```/g;
+    text = text.replace(pattern, function (whole, language, body) {
+      var parsed;
+      try {
+        parsed = JSON.parse(body.trim());
+      } catch (error) {
+        return language === "ui_json" ? "" : whole;
+      }
+      if (!isKnownCard(parsed)) {
+        return language === "ui_json" ? "" : whole;
+      }
+      sawCard = true;
+      if (parsed.type === "question_card") {
+        parsed.questions.forEach(function (item) {
+          var card = normalizeQuestionCard(item);
+          if (card) cards.push({ type: "question", data: card });
+        });
+      } else if (parsed.type === "install_card") {
+        cards.push({ type: "install", data: parsed });
+      } else if (parsed.type === "confirm_card") {
+        cards.push({ type: "confirm", data: parsed });
+      }
+      return "";
+    });
+    return { text: text.trim(), cards: cards.slice(0, 3), sawCard: sawCard };
+  }
+
+  function buildQuestionCard(card) {
+    var article = document.createElement("article");
+    article.className = "ws-card ws-question-card";
+    article.setAttribute("data-type", card.type);
+    article.setAttribute("data-difficulty", card.difficulty);
+
+    var head = document.createElement("header");
+    head.className = "ws-card-head";
+    if (card.questionNo) {
+      var number = document.createElement("span");
+      number.className = "ws-card-no";
+      number.textContent = "第 " + card.questionNo + " 题";
+      head.appendChild(number);
+    }
+    var typeTag = document.createElement("span");
+    typeTag.className = "ws-tag ws-tag-type";
+    typeTag.textContent = card.typeLabel;
+    head.appendChild(typeTag);
+    var diffTag = document.createElement("span");
+    diffTag.className = "ws-tag ws-tag-diff";
+    diffTag.textContent = card.difficultyLabel;
+    head.appendChild(diffTag);
+    article.appendChild(head);
+
+    var stem = document.createElement("div");
+    stem.className = "ws-card-stem";
+    renderMathInto(stem, card.stem);
+    article.appendChild(stem);
+
+    if (card.options.length) {
+      var options = document.createElement("div");
+      options.className = "ws-card-options";
+      card.options.forEach(function (option) {
+        var row = document.createElement("div");
+        row.className = "ws-card-option";
+        var key = document.createElement("span");
+        key.className = "ws-option-key";
+        key.textContent = option.key || "·";
+        var body = document.createElement("span");
+        body.className = "ws-option-body";
+        renderMathInto(body, option.content);
+        row.appendChild(key);
+        row.appendChild(body);
+        options.appendChild(row);
+      });
+      article.appendChild(options);
+    }
+
+    if (card.tags.length) {
+      var tags = document.createElement("div");
+      tags.className = "ws-card-tags";
+      card.tags.forEach(function (text) {
+        var tag = document.createElement("span");
+        tag.className = "ws-tag ws-tag-topic";
+        tag.textContent = text;
+        tags.appendChild(tag);
+      });
+      article.appendChild(tags);
+    }
+
+    var detailId = "wsCardDetail" + (++CARD_SEQ);
+    var detail = document.createElement("div");
+    detail.className = "ws-card-detail";
+    detail.id = detailId;
+    detail.hidden = true;
+    if (card.answer) {
+      var answer = document.createElement("p");
+      var answerLabel = document.createElement("strong");
+      answerLabel.textContent = "答案：";
+      answer.appendChild(answerLabel);
+      var answerBody = document.createElement("span");
+      renderMathInto(answerBody, card.answer);
+      answer.appendChild(answerBody);
+      detail.appendChild(answer);
+    }
+    if (card.solution) {
+      var solution = document.createElement("p");
+      var solutionLabel = document.createElement("strong");
+      solutionLabel.textContent = "解析：";
+      solution.appendChild(solutionLabel);
+      var solutionBody = document.createElement("span");
+      renderMathInto(solutionBody, card.solution);
+      solution.appendChild(solutionBody);
+      detail.appendChild(solution);
+    }
+
+    var foot = document.createElement("footer");
+    foot.className = "ws-card-foot";
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ws-btn ws-btn-sm ws-card-toggle";
+    toggle.textContent = "查看解析";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", detailId);
+    var hasDetail = Boolean(card.answer || card.solution);
+    if (!hasDetail) {
+      toggle.disabled = true;
+      toggle.title = "本题暂无答案与解析";
+    } else {
+      toggle.addEventListener("click", function () {
+        detail.hidden = !detail.hidden;
+        toggle.setAttribute("aria-expanded", String(!detail.hidden));
+        toggle.textContent = detail.hidden ? "查看解析" : "收起解析";
+      });
+    }
+    foot.appendChild(toggle);
+    article.appendChild(foot);
+    article.appendChild(detail);
+    return article;
+  }
+
+  function buildInstallCard(block) {
+    var plugin = block.plugin || {};
+    var name = clampText(plugin.name, 64);
+    var version = clampText(plugin.version, 32);
+    var zipUrl = safeHttpUrl(plugin.zip_url);
+    if (!name || !zipUrl) return null;
+
+    var installed = installedPlugins.some(function (item) { return item.id === plugin.id; });
+    var article = document.createElement("article");
+    article.className = "ws-card ws-install-card";
+    article.setAttribute("data-state", installed ? "installed" : "suggested");
+
+    var head = document.createElement("header");
+    head.className = "ws-card-head";
+    var kicker = document.createElement("span");
+    kicker.className = "ws-tag ws-install-kicker";
+    kicker.textContent = "安装建议";
+    head.appendChild(kicker);
+    var kind = document.createElement("span");
+    kind.className = "ws-tag ws-tag-topic";
+    kind.textContent = KIND_LABELS[plugin.kind] || "插件";
+    head.appendChild(kind);
+    article.appendChild(head);
+
+    var title = document.createElement("h4");
+    title.className = "ws-card-title";
+    title.textContent = name + (version ? " v" + version : "");
+    article.appendChild(title);
+
+    if (plugin.description) {
+      var desc = document.createElement("p");
+      desc.className = "ws-card-desc";
+      desc.textContent = clampText(plugin.description, 200);
+      article.appendChild(desc);
+    }
+    if (block.reason) {
+      var reason = document.createElement("p");
+      reason.className = "ws-card-reason";
+      reason.textContent = "推荐理由：" + clampText(block.reason, 200);
+      article.appendChild(reason);
+    }
+
+    var note = document.createElement("p");
+    note.className = "ws-card-note";
+    note.textContent = "来源 " + hostOf(zipUrl) + " · 只有你点【确认安装】，底座才会下载这一个 zip 并走完整校验。";
+    article.appendChild(note);
+
+    var status = document.createElement("p");
+    status.className = "ws-card-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    article.appendChild(status);
+
+    var foot = document.createElement("footer");
+    foot.className = "ws-card-foot";
+    var installBtn = document.createElement("button");
+    installBtn.type = "button";
+    installBtn.className = "ws-btn ws-btn-primary ws-btn-sm ws-install-confirm";
+    installBtn.textContent = installed ? "已安装" : "确认安装";
+    installBtn.disabled = installed;
+    var cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ws-btn ws-btn-sm";
+    cancelBtn.textContent = "暂不安装";
+    if (installed) {
+      status.textContent = "本机已安装该插件，无需重复安装。";
+      cancelBtn.hidden = true;
+    } else {
+      cancelBtn.addEventListener("click", function () {
+        article.setAttribute("data-state", "cancelled");
+        installBtn.disabled = true;
+        cancelBtn.disabled = true;
+        status.textContent = "已取消，未下载任何内容。";
+      });
+      installBtn.addEventListener("click", function () {
+        installSuggestedPlugin(article, status, installBtn, {
+          url: zipUrl,
+          mirrors: (plugin.mirrors || []).map(function (item) { return clampText(item, 800); }).filter(Boolean),
+          name: name,
+        });
+      });
+    }
+    foot.appendChild(installBtn);
+    foot.appendChild(cancelBtn);
+    article.appendChild(foot);
+    return article;
+  }
+
+  function installSuggestedPlugin(cardEl, statusEl, buttonEl, target) {
+    var replace = false;
+    cardEl.setAttribute("data-state", "installing");
+    buttonEl.disabled = true;
+    buttonEl.setAttribute("aria-busy", "true");
+    buttonEl.textContent = "安装中…";
+    statusEl.textContent = "正在下载并校验 " + target.name + " …";
+
+    function attempt(allowReplace) {
+      return fetchWriteToken()
+        .then(function (token) {
+          return fetch("/api/plugins/install-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-JZO-Token": token },
+            body: JSON.stringify({
+              url: target.url,
+              mirrors: target.mirrors,
+              replace: allowReplace,
+            }),
+          });
+        })
+        .then(function (response) {
+          return response.json().catch(function () { return null; }).then(function (body) {
+            if (response.status === 409 && !allowReplace) {
+              var question = readErrorDetail(response, body) + " 覆盖安装会先删除旧目录，继续吗？";
+              if (window.confirm(question)) return attempt(true);
+              return { cancelled: true };
+            }
+            if (!response.ok) throw new Error(readErrorDetail(response, body));
+            return body || {};
+          });
+        })
+        .finally(function () {
+          writeToken = null;
+        });
+    }
+
+    attempt(false)
+      .then(function (result) {
+        if (result && result.cancelled) {
+          cardEl.setAttribute("data-state", "suggested");
+          buttonEl.disabled = false;
+          buttonEl.removeAttribute("aria-busy");
+          buttonEl.textContent = "确认安装";
+          statusEl.textContent = "已取消覆盖安装。";
+          return null;
+        }
+        var plugin = (result && result.plugin) || {};
+        cardEl.setAttribute("data-state", "installed");
+        buttonEl.removeAttribute("aria-busy");
+        buttonEl.textContent = "已安装";
+        statusEl.textContent = "安装成功：" + (plugin.name || target.name) +
+          (result && result.source_host ? "（来源 " + result.source_host + "）" : "");
+        addBubble("sys", "插件已安装：" + (plugin.name || plugin.id || target.name) +
+          " v" + (plugin.version || "?"));
+        logHistory("安装插件 " + (plugin.name || target.name));
+        return loadPlugins().catch(function () { return null; });
+      })
+      .catch(function (error) {
+        cardEl.setAttribute("data-state", "failed");
+        buttonEl.disabled = false;
+        buttonEl.removeAttribute("aria-busy");
+        buttonEl.textContent = "重试安装";
+        statusEl.textContent = "安装失败：" + error.message;
+      });
+  }
+
+  function buildConfirmCard(block) {
+    var title = clampText(block.title, 60) || "操作确认";
+    var actions = (Array.isArray(block.actions) ? block.actions : []).slice(0, 4);
+    if (!actions.length) return null;
+    var article = document.createElement("article");
+    article.className = "ws-card ws-confirm-card";
+
+    var head = document.createElement("header");
+    head.className = "ws-card-head";
+    var kicker = document.createElement("span");
+    kicker.className = "ws-tag ws-confirm-kicker";
+    kicker.textContent = "操作确认";
+    head.appendChild(kicker);
+    article.appendChild(head);
+
+    var heading = document.createElement("h4");
+    heading.className = "ws-card-title";
+    heading.textContent = title;
+    article.appendChild(heading);
+
+    if (block.description) {
+      var desc = document.createElement("p");
+      desc.className = "ws-card-desc";
+      desc.textContent = clampText(block.description, 400);
+      article.appendChild(desc);
+    }
+
+    var foot = document.createElement("footer");
+    foot.className = "ws-card-foot";
+    actions.forEach(function (action, index) {
+      var label = clampText(action && action.label, 20);
+      var command = clampText(action && action.command, 200);
+      if (!label || !command) return;
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "ws-btn ws-btn-sm" + (index === 0 ? " ws-btn-primary" : "");
+      button.textContent = label;
+      button.addEventListener("click", function () {
+        if (article.getAttribute("data-state") === "sent") return;
+        article.setAttribute("data-state", "sent");
+        foot.querySelectorAll("button").forEach(function (item) { item.disabled = true; });
+        sendPrompt(command, { origin: "confirm_card" });
+      });
+      foot.appendChild(button);
+    });
+    article.appendChild(foot);
+    return article;
+  }
+
+  function buildCard(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (raw.type === "question") return buildQuestionCard(raw.data);
+    if (raw.type === "install") return buildInstallCard(raw.data);
+    if (raw.type === "confirm") return buildConfirmCard(raw.data);
+    return null;
   }
 
   function logHistory(text) {
@@ -151,6 +661,7 @@
     activePlugin = null;
     markActiveEntry(chatEntry);
     setStage("自由对话");
+    clearPluginPanel();
     addBubble("sys", "已进入「自由对话」模式。");
     logHistory("进入自由对话");
     if (promptInput) promptInput.focus();
@@ -161,13 +672,247 @@
     markActiveEntry(item);
     var name = plugin.name || plugin.id || "插件";
     setStage(name);
+    initUiState(plugin);
+    renderPluginPanel(plugin);
     addBubble("sys", "现在处于插件「" + name + "」的工作模式下。" +
       (plugin.description ? " " + plugin.description : ""));
+    var capabilities = (plugin.capabilities || []).slice(0, 4).join("、");
+    var actions = uiPanelControls.filter(function (control) {
+      return control.type === "button";
+    }).slice(0, 3).map(function (control) { return "【" + control.label + "】"; });
+    var intro = "「" + name + "」支持：" + (capabilities || "见插件说明") + "。";
+    if (actions.length) {
+      intro += "右侧「" + ((plugin.ui && plugin.ui.title) || (name + "快捷操作")) +
+        "」面板可以直接点 " + actions.join(" ") + "，点一下就等于在对话区发送对应指令；" +
+        "年级、难度等下拉选择会实时同步给我。你也可以直接说话，比如「随机出一道高一基础题」。";
+    } else {
+      intro += "你也可以直接说话，我会优先调用这个插件的能力。";
+    }
+    addBubble("bot", intro);
     logHistory("进入插件「" + name + "」");
     if (promptInput) promptInput.focus();
   }
 
   if (chatEntry) chatEntry.addEventListener("click", enterChatMode);
+
+  // ============ 右侧插件面板（双向操控） ============
+  // 控件由 plugin.json 的 ui 字段（或底座按能力生成的默认面板）下发。
+  // 人类改下拉 → revisions[key] 加一；AI 改参数时用发送时的快照比对，
+  // 只要人类在请求飞行期间动过同一字段，AI 的设定就让位。
+  function panelControls(plugin) {
+    var ui = plugin && plugin.ui;
+    return ui && Array.isArray(ui.controls) ? ui.controls : [];
+  }
+
+  function initUiState(plugin) {
+    var controls = panelControls(plugin);
+    var values = {};
+    controls.forEach(function (control) {
+      if (control.type !== "select") return;
+      var options = Array.isArray(control.options) ? control.options : [];
+      var fallback = options.length ? options[0].value : "";
+      values[control.key] = control.default || fallback;
+    });
+    uiPanelControls = controls;
+    uiState = { pluginId: plugin ? plugin.id : null, values: values, revisions: {} };
+    updateUiStateSummary();
+  }
+
+  function syncUiState(plugin) {
+    var controls = panelControls(plugin);
+    var next = {};
+    controls.forEach(function (control) {
+      if (control.type !== "select") return;
+      var options = Array.isArray(control.options) ? control.options : [];
+      var fallback = options.length ? options[0].value : "";
+      var previous = uiState.values[control.key];
+      var valid = options.some(function (option) { return option.value === previous; });
+      next[control.key] = valid ? previous : (control.default || fallback);
+    });
+    uiPanelControls = controls;
+    uiState.pluginId = plugin ? plugin.id : null;
+    uiState.values = next;
+  }
+
+  function clearPluginPanel() {
+    uiPanelControls = [];
+    uiState = { pluginId: null, values: {}, revisions: {} };
+    if (pluginPanel) pluginPanel.hidden = true;
+    if (pluginControlsEl) pluginControlsEl.textContent = "";
+    if (uiStateSummary) uiStateSummary.textContent = "";
+  }
+
+  function renderPluginPanel(plugin) {
+    if (!pluginPanel || !pluginControlsEl) return;
+    var controls = panelControls(plugin);
+    if (!controls.length) {
+      clearPluginPanel();
+      return;
+    }
+    var ui = plugin.ui || {};
+    if (pluginPanelTitle) pluginPanelTitle.textContent = ui.title || ((plugin.name || "插件") + "快捷操作");
+    if (pluginPanelDesc) {
+      pluginPanelDesc.textContent = plugin.description || "该插件未提供说明。";
+    }
+    if (pluginPanelHint) {
+      pluginPanelHint.textContent = ui.hint || "点按钮等于发送对应指令；你手动改过的参数优先于 AI 的自动设定。";
+    }
+    pluginControlsEl.textContent = "";
+
+    controls.forEach(function (control) {
+      if (control.type === "select") {
+        var field = document.createElement("label");
+        field.className = "ws-ui-field";
+        var label = document.createElement("span");
+        label.className = "ws-ui-field-label";
+        label.textContent = control.label || control.key;
+        var select = document.createElement("select");
+        select.className = "ws-ui-select";
+        select.setAttribute("data-ui-key", control.key);
+        (control.options || []).forEach(function (option) {
+          var item = document.createElement("option");
+          item.value = option.value;
+          item.textContent = option.label || option.value;
+          if (uiState.values[control.key] === option.value) item.selected = true;
+          select.appendChild(item);
+        });
+        select.addEventListener("change", function () {
+          uiState.values[control.key] = select.value;
+          uiState.revisions[control.key] = (uiState.revisions[control.key] || 0) + 1;
+          updateUiStateSummary();
+          logHistory("面板调整：" + (control.label || control.key) + " = " + select.value);
+        });
+        field.appendChild(label);
+        field.appendChild(select);
+        pluginControlsEl.appendChild(field);
+        return;
+      }
+      if (control.type === "button") {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ws-btn ws-btn-sm ws-ui-action";
+        btn.setAttribute("data-ui-button", control.id);
+        btn.textContent = control.label || "执行";
+        btn.addEventListener("click", function () {
+          sendPrompt(expandCommand(control.command), {
+            origin: "ui_button",
+            buttonId: control.id,
+            label: control.label || "面板按钮",
+          });
+        });
+        pluginControlsEl.appendChild(btn);
+      }
+    });
+
+    pluginPanel.hidden = false;
+    updateUiStateSummary();
+  }
+
+  function updateUiStateSummary() {
+    if (!uiStateSummary) return;
+    var parts = [];
+    uiPanelControls.forEach(function (control) {
+      if (control.type !== "select") return;
+      var value = uiState.values[control.key];
+      if (value == null || value === "") return;
+      var edited = uiState.revisions[control.key] ? "（你已改）" : "";
+      parts.push((control.label || control.key) + "：" + value + edited);
+    });
+    uiStateSummary.textContent = parts.length
+      ? "当前参数 " + parts.join(" · ")
+      : "面板操作会实时同步给 AI。";
+  }
+
+  function currentUiValues() {
+    var values = {};
+    Object.keys(uiState.values).forEach(function (key) {
+      values[key] = uiState.values[key];
+    });
+    return values;
+  }
+
+  function compactControls() {
+    return uiPanelControls.map(function (control) {
+      if (control.type === "select") {
+        return {
+          id: control.id,
+          type: "select",
+          key: control.key,
+          label: control.label,
+          options: (control.options || []).map(function (option) {
+            return { value: option.value, label: option.label };
+          }),
+          default: control.default,
+        };
+      }
+      return { id: control.id, type: "button", label: control.label };
+    });
+  }
+
+  function expandCommand(template) {
+    return String(template || "").replace(/\{([a-z][a-z0-9_]{0,15})\}/g, function (whole, key) {
+      var value = uiState.values[key];
+      return value == null ? whole : String(value);
+    });
+  }
+
+  function findUiControl(id, type) {
+    for (var i = 0; i < uiPanelControls.length; i += 1) {
+      var control = uiPanelControls[i];
+      if (control.id === id && control.type === type) return control;
+    }
+    return null;
+  }
+
+  function snapshotRevisions() {
+    var snapshot = {};
+    Object.keys(uiState.revisions).forEach(function (key) {
+      snapshot[key] = uiState.revisions[key];
+    });
+    return snapshot;
+  }
+
+  // 应用 AI 的 update_params：只改「人没在本轮同时动过」且值合法的字段。
+  function applyUiParams(params, snapshot) {
+    var applied = [];
+    var skipped = [];
+    if (!params || typeof params !== "object") return { applied: applied, skipped: skipped };
+    Object.keys(params).forEach(function (key) {
+      var control = findUiControl(key, "select");
+      if (!control) return;
+      var incoming = params[key];
+      var valid = (control.options || []).some(function (option) { return option.value === incoming; });
+      if (!valid) {
+        skipped.push({ label: control.label, value: incoming, reason: "不是可选值" });
+        return;
+      }
+      if (snapshot && snapshot[key] !== uiState.revisions[key]) {
+        skipped.push({ label: control.label, value: incoming, reason: "你刚手动改过" });
+        return;
+      }
+      uiState.values[key] = incoming;
+      var select = pluginControlsEl
+        ? pluginControlsEl.querySelector('[data-ui-key="' + key + '"]')
+        : null;
+      if (select) select.value = incoming;
+      applied.push({ label: control.label, value: incoming });
+    });
+    if (applied.length) updateUiStateSummary();
+    return { applied: applied, skipped: skipped };
+  }
+
+  function triggerUiButton(id) {
+    var control = findUiControl(String(id || ""), "button");
+    if (!control) {
+      addBubble("sys", "AI 想触发面板按钮「" + id + "」，但当前面板没有这个按钮。", { tone: "warn" });
+      return;
+    }
+    sendPrompt(expandCommand(control.command), {
+      origin: "ai_button",
+      buttonId: control.id,
+      label: control.label,
+    });
+  }
 
   // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
   // 状态机只有一个事实来源：.ws-page 上的 data-side / data-ctx。
@@ -359,8 +1104,28 @@
         description: activePlugin.description,
         capabilities: activePlugin.capabilities || [],
       };
+      if (uiPanelControls.length) {
+        context.ui = {
+          plugin_id: activePlugin.id,
+          values: currentUiValues(),
+          controls: compactControls(),
+        };
+      }
     }
     return context;
+  }
+
+  function summarizeUiControl(parsed) {
+    var message = typeof parsed.message === "string" ? parsed.message.trim() : "";
+    if (message && !looksLikeRawJson(message)) return message;
+    if (parsed.action === "update_params") {
+      var params = parsed.params && typeof parsed.params === "object" ? parsed.params : {};
+      var pairs = Object.keys(params).map(function (key) { return key + "=" + params[key]; });
+      return pairs.length
+        ? "好，我把右侧面板调成：" + pairs.join("、") + "。"
+        : "好，我来调整右侧面板。";
+    }
+    return "好，我替你点一下右侧面板的「" + clampText(parsed.button, 32) + "」。";
   }
 
   function callAgent(prompt) {
@@ -388,33 +1153,193 @@
           ? describePluginSource(response, pluginCalls)
           : describeSource(response);
         if (!content) {
-          return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn" };
+          return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn", cards: [] };
         }
+
+        // 先摘掉 ui_json 卡片围栏：卡片由前端渲染，正文才是给人看的话。
+        var split = splitUiBlocks(content);
+        var body = stripFences(split.text);
+        var cards = split.cards;
+
         // 插件结果已经是后端整理好的自然语言，直接展示，不再当控制 JSON 解析。
         if (pluginCalls.length) {
           return {
-            text: stripFences(content),
+            text: body,
             source: source,
             tone: null,
             pluginCalls: pluginCalls,
             route: response && response.route,
+            cards: cards,
           };
         }
+
+        if (!body && cards.length) {
+          return { text: "", source: source, tone: null, cards: cards };
+        }
+
         // 拦截：先把内容当控制 JSON 解析。命中 action 就翻译成人话，
         // 命中无 action 的普通 JSON 给通用回执，都不把原始 JSON 露给用户。
-        var parsed = extractControlJson(content);
+        var parsed = body ? extractControlJson(body) : null;
         if (parsed) {
-          if (typeof parsed.action === "string") {
-            return { text: summarizeAction(parsed, source), source: source, tone: null };
+          var action = typeof parsed.action === "string" ? parsed.action : "";
+          if (action === "update_params") {
+            var params = parsed.params && typeof parsed.params === "object" ? parsed.params : {};
+            if (!Object.keys(params).length) {
+              Object.keys(parsed).forEach(function (key) {
+                if (key !== "action" && key !== "message") params[key] = parsed[key];
+              });
+            }
+            return {
+              text: summarizeUiControl(parsed),
+              source: source,
+              cards: cards,
+              control: { action: "update_params", params: params },
+            };
           }
-          return { text: "已收到模型的结构化回执（系统内部数据，已折叠）。", source: source, tone: null };
+          if (action === "trigger_button") {
+            return {
+              text: summarizeUiControl(parsed),
+              source: source,
+              cards: cards,
+              control: { action: "trigger_button", button: typeof parsed.button === "string" ? parsed.button : "" },
+            };
+          }
+          if (action) {
+            return { text: summarizeAction(parsed, source), source: source, tone: null, cards: cards };
+          }
+          return {
+            text: cards.length ? "" : "已收到模型的结构化回执（系统内部数据，已折叠）。",
+            source: source,
+            tone: null,
+            cards: cards,
+          };
         }
         // 不是 JSON：若是裸围栏/括号开头，判定为控制信令漏网，绝不直接显示。
-        if (looksLikeRawJson(content)) {
-          return { text: "模型返回了未识别的系统信令，已拦截未显示。请换种说法再试一次。", source: source, tone: "warn" };
+        if (body && looksLikeRawJson(body)) {
+          return {
+            text: "模型返回了未识别的系统信令，已拦截未显示。请换种说法再试一次。",
+            source: source,
+            tone: "warn",
+            cards: cards,
+          };
         }
-        // 真正的自然语言散文，可以直接给用户看。
-        return { text: stripFences(content), source: source, tone: null };
+        // 真正的自然语言散文，可以直接给用户看（$...$ 交本地 KaTeX 渲染）。
+        return { text: body, source: source, tone: null, cards: cards, richText: true };
+      });
+  }
+
+  function setSending(active) {
+    if (!sendBtn) return;
+    sendBtn.disabled = active;
+    if (active) {
+      sendBtn.setAttribute("aria-busy", "true");
+      sendBtn.textContent = "发送中…";
+    } else {
+      sendBtn.removeAttribute("aria-busy");
+      sendBtn.textContent = "发送";
+    }
+  }
+
+  function originNote(options) {
+    if (!options) return "";
+    if (options.origin === "ui_button") return "右侧面板 · 你点了「" + (options.label || "按钮") + "」";
+    if (options.origin === "ai_button") return "AI 操控面板 · 触发「" + (options.label || "按钮") + "」";
+    if (options.origin === "confirm_card") return "卡片按钮";
+    return "";
+  }
+
+  // 处理模型下发的界面动作。返回需要在本次请求收尾后追加发送的指令。
+  function handleControl(control, snapshot, allowUi) {
+    if (!control) return null;
+    if (control.action === "update_params") {
+      if (!uiPanelControls.length) {
+        addBubble("sys", "AI 想调整右侧面板，但当前没有可调参数，已忽略。", { tone: "warn" });
+        return null;
+      }
+      var result = applyUiParams(control.params, snapshot);
+      if (result.applied.length) {
+        var appliedText = result.applied.map(function (item) {
+          return item.label + " 设为「" + item.value + "」";
+        }).join("，");
+        addBubble("sys", "右侧面板已更新：" + appliedText + "。");
+        logHistory("AI 调整面板：" + appliedText);
+      }
+      if (result.skipped.length) {
+        var skippedText = result.skipped.map(function (item) {
+          return item.label + "（" + item.reason + "，保留当前值）";
+        }).join("，");
+        addBubble("sys", "AI 想改的以下参数没有覆盖你的操作：" + skippedText + "。", { tone: "warn" });
+      }
+      return null;
+    }
+    if (control.action === "trigger_button") {
+      if (!allowUi) {
+        addBubble("sys", "本轮指令已由面板按钮触发，AI 再次触发按钮被忽略，避免循环。", { tone: "warn" });
+        return null;
+      }
+      var button = findUiControl(control.button, "button");
+      if (!button) {
+        addBubble("sys", "AI 想触发面板按钮「" + control.button + "」，但当前面板没有这个按钮。", { tone: "warn" });
+        return null;
+      }
+      addBubble("sys", "AI 正在替你执行面板按钮「" + button.label + "」…");
+      logHistory("AI 触发面板按钮：" + button.label);
+      return {
+        prompt: expandCommand(button.command),
+        options: { origin: "ai_button", buttonId: button.id, label: button.label },
+      };
+    }
+    return null;
+  }
+
+  // 统一发送入口：人类输入、右侧面板按钮、AI 触发、确认卡片都走这里。
+  function sendPrompt(prompt, options) {
+    options = options || {};
+    var text = String(prompt == null ? "" : prompt).trim();
+    if (!text) return Promise.resolve();
+    var origin = options.origin || "human";
+    // AI 触发的按钮只允许再走一层：该轮若又拿到 trigger_button 就忽略。
+    var allowUi = origin === "human" || origin === "confirm_card";
+
+    addBubble("user", text, originNote(options) ? { source: originNote(options) } : undefined);
+    logHistory("发送指令：" + (text.length > 24 ? text.slice(0, 24) + "…" : text));
+    pushTurn("user", text);
+    if (promptInput) {
+      promptInput.value = "";
+      autoGrow();
+    }
+
+    setSending(true);
+    var typing = addTyping();
+    var snapshot = snapshotRevisions();
+    var followUp = null;
+
+    return callAgent(text)
+      .then(function (res) {
+        if (typing) typing.remove();
+        addBubble("bot", res.text, {
+          source: res.source,
+          tone: res.tone,
+          pluginCalls: res.pluginCalls,
+          route: res.route,
+          cards: res.cards,
+          richText: res.richText,
+        });
+        if (res.pluginCalls && res.pluginCalls.length) {
+          logHistory("调用插件：" + pluginCallNames(res.pluginCalls));
+        }
+        pushTurn("assistant", res.text || (res.cards && res.cards.length ? "[已展示可视化卡片]" : ""));
+        followUp = handleControl(res.control, snapshot, allowUi);
+      })
+      .catch(function (err) {
+        if (typing) typing.remove();
+        addBubble("bot", "指令执行失败：" + err.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
+        pushTurn("assistant", "指令执行失败：" + err.message);
+      })
+      .finally(function () {
+        setSending(false);
+        if (promptInput) promptInput.focus();
+        if (followUp) sendPrompt(followUp.prompt, followUp.options);
       });
   }
 
@@ -423,47 +1348,7 @@
       e.preventDefault();
       var prompt = promptInput ? promptInput.value.trim() : "";
       if (!prompt) return;
-
-      addBubble("user", prompt);
-      logHistory("发送指令：" + (prompt.length > 24 ? prompt.slice(0, 24) + "…" : prompt));
-      pushTurn("user", prompt);
-      promptInput.value = "";
-      autoGrow();
-
-      if (sendBtn) {
-        sendBtn.disabled = true;
-        sendBtn.setAttribute("aria-busy", "true");
-        sendBtn.textContent = "发送中…";
-      }
-      var typing = addTyping();
-
-      callAgent(prompt)
-        .then(function (res) {
-          if (typing) typing.remove();
-          addBubble("bot", res.text, {
-            source: res.source,
-            tone: res.tone,
-            pluginCalls: res.pluginCalls,
-            route: res.route,
-          });
-          if (res.pluginCalls && res.pluginCalls.length) {
-            logHistory("调用插件：" + pluginCallNames(res.pluginCalls));
-          }
-          pushTurn("assistant", res.text);
-        })
-        .catch(function (err) {
-          if (typing) typing.remove();
-          addBubble("bot", "指令执行失败：" + err.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
-          pushTurn("assistant", "指令执行失败：" + err.message);
-        })
-        .finally(function () {
-          if (sendBtn) {
-            sendBtn.disabled = false;
-            sendBtn.removeAttribute("aria-busy");
-            sendBtn.textContent = "发送";
-          }
-          if (promptInput) promptInput.focus();
-        });
+      sendPrompt(prompt, { origin: "human" });
     });
   }
 
@@ -829,6 +1714,7 @@
       })
       .then(function (data) {
         var plugins = (data && data.plugins) || [];
+        installedPlugins = plugins;
         if (activePlugin) {
           var still = null;
           for (var i = 0; i < plugins.length; i += 1) {
@@ -836,8 +1722,11 @@
           }
           if (still) {
             activePlugin = still;
+            syncUiState(still);
+            renderPluginPanel(still);
           } else {
             activePlugin = null;
+            clearPluginPanel();
             setStage("自由对话");
             markActiveEntry(chatEntry);
           }

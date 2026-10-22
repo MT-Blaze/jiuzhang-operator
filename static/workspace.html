@@ -9,6 +9,7 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="/static/css/workspace.css" />
 </head>
 <body>
@@ -76,6 +77,16 @@
         <h2>上下文</h2>
       </header>
       <div class="ws-context-body" id="wsContextBody">
+        <section class="ws-section ws-plugin-panel" id="wsPluginPanel" aria-label="插件快捷操作" hidden>
+          <div class="ws-plugin-panel-head">
+            <h3 id="wsPluginPanelTitle">插件快捷操作</h3>
+            <span class="ws-plugin-panel-badge">AI 可操控</span>
+          </div>
+          <p class="ws-plugin-panel-desc" id="wsPluginPanelDesc"></p>
+          <div class="ws-plugin-controls" id="wsPluginControls"></div>
+          <p class="ws-plugin-panel-state" id="wsUiStateSummary" role="status" aria-live="polite"></p>
+          <p class="ws-plugin-panel-hint" id="wsPluginPanelHint">点按钮 = 在对话区发送对应指令；你手动改过的参数优先于 AI 自动设定。</p>
+        </section>
         <section class="ws-section">
           <h3>当前任务</h3>
           <p class="ws-context-value" id="ctxTask">未选择</p>
@@ -151,6 +162,7 @@
     <p class="ws-noscript">工作台需要 JavaScript 才能进行对话与调用数据总线。</p>
   </noscript>
 
+  <script src="/static/vendor/katex/katex.min.js"></script>
   <script src="/static/js/workspace.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>

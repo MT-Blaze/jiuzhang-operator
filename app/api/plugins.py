@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.core import plugin_index
+from app.core import plugin_index, plugin_search
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
     MAX_ZIP_BYTES,
@@ -43,6 +43,7 @@ class InstalledPlugin(BaseModel):
     permissions: list[str]
     entry_url: str
     css_url: str | None = None
+    ui: dict[str, Any] | None = None
 
 
 class PluginInstallResponse(BaseModel):
@@ -166,9 +167,13 @@ def read_plugin_index(payload: dict[str, Any] = Body(...)) -> dict:
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     allow_mirrors = payload.get("allow_mirrors", True) is not False
     try:
-        return plugin_index.fetch_index(str(payload.get("url", "")), allow_mirrors=allow_mirrors)
+        index = plugin_index.fetch_index(str(payload.get("url", "")), allow_mirrors=allow_mirrors)
     except plugin_index.IndexRejected as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 只缓存用户亲手拉取成功的清单，供对话里的插件搜索离线使用；
+    # 缓存失败不影响本次拉取结果（plugin_search 会回落到「尚未拉取」提示）。
+    plugin_search.save_index_cache(index)
+    return index
 
 
 @router.get("/plugin-assets/{plugin_id}/{asset_path:path}", include_in_schema=False)

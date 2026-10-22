@@ -123,6 +123,16 @@ org.example.card.zip
 - **呈现**：插件结果作为自然语言气泡返回，前端在气泡上显式标注「[已调用插件]」，并展示真实执行的插件名。
 - **不做**：不开放插件自定义任意函数、不执行工具返回的代码、不把工具结果写回题目结构。
 
+### 1.6 AI 搜索插件索引与安装确认卡（v0.5.5）
+
+对话助手可以**找插件**，但安装权永远在人手里。
+
+- **宿主工具**：底座额外注册两件自有工具（不属于任何插件）：`search_available_plugins`（按用途关键词搜索）与 `suggest_install`（对已知 id 生成安装建议卡）。
+- **零联网搜索**：工具只读**用户亲手点过【拉取清单】之后落盘的索引缓存**（`data/plugin_index_cache.json`）；没有缓存就如实提示先去「设置与控制」拉取，底座与模型都不得替用户发起网络请求。
+- **严禁静默安装**：命中后只生成 `install_card`（安装确认卡）渲染在对话区，写明来源主机；**只有用户点击卡片上的【确认安装】**，前端才带一次性写令牌调用 `POST /api/plugins/install-url`，走与手动在线安装完全同款的守卫与校验（§1.4），409 时另行确认覆盖。
+- **呈现**：卡片数据是纯 JSON（`ui_json` 围栏），前端 `textContent` 组装；模型不得手写 install_card，也不得声称已安装。
+- **红线不变**：不自动更新、不批量下载、不跨条目猜地址——§1.1 白嫖条款与防跑路红线一寸未松。
+
 ---
 
 ## 2. 插件分类
@@ -281,11 +291,17 @@ com.example.card/
 | `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export`；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
+| `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
 
 > **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
 >
 > 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.json`，一个题目数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
+
+**`ui` 字段（v0.5.5 右侧面板）**：形如 `{"title": "…", "hint": "…", "controls": [...]}`，控件总数 ≤8。
+- `select`：`{"type":"select","key":"grade","label":"年级","options":[{"value":"高一","label":"高一"}],"default":"高一"}`；`key` 匹配 `^[a-z][a-z0-9_]{0,15}$`，选项 ≤12，值与标签纯文本。当前值随对话 `context.ui.values` 注入模型，模型可用 `update_params` 代人切换——但人类手动改过的字段以人类为准。
+- `button`：`{"type":"button","id":"random_question","label":"随机出题","command":"随机出一道题（年级：{grade}；难度：{difficulty}）"}`；`command` ≤200 字，`{key}` 占位符在点击时替换为面板当前值，点击等于在对话区发送该指令。
+- 不写 `ui` 时底座按 `kind`/`capabilities` 生成默认面板（导入类给年级/难度下拉 + 随机出题等按钮），保证右栏永远可操作。
 
 #### 2.3.3 和宿主说话：消息协议
 

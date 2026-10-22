@@ -66,7 +66,18 @@
 - "tag_question": { question_id: "...", tags: ["集合", "基础"] }
 - "export_paper": { format: "pdf" | "tex" | "docx" }
 - "clarify": { question: "<澄清问题>" }
+- "update_params": { params: { "<面板参数 key>": "<选项值>" }, message: "<给用户的一句话>" }
+- "trigger_button": { button: "<面板按钮 id>", message: "<给用户的一句话>" }
+
+富卡片（ui_json，v0.5.5 起）：
+- 需要展示具体题目时，可在回复末尾追加恰好一个 ```ui_json 围栏，内容为
+  {"version":"1.0","type":"question_card","questions":[…]}；题目必须来自工具结果或上下文，不得编造。
+- install_card 由底座在插件搜索工具执行后生成，模型不得手写，也不得声称已安装任何插件。
 ```
+
+> v0.5.5 起实际提示词还包含「插件优先」「右侧插件面板」等小节，以 `app/api/agents.py` 的
+> `CHAT_SYSTEM_PROMPT` 与 `build_chat_system_prompt` 为唯一事实来源；上文是最小骨架。
+> `update_params` / `trigger_button` 只能使用「右侧插件面板」小节列出的 key 与按钮 id。
 
 ### 2.3 示例请求
 ```json
@@ -114,6 +125,13 @@
 ```
 
 后端把整份 `context` 序列化进 System 尾部，并在「当前工作台上下文」小节之前追加「当前插件工作模式」说明，要求模型优先调用该插件对应的已安装工具。点插件条目只切换工作模式与上下文，不得跳转页面；点「自由对话」则清空插件字段，回到底座默认入口。
+
+### 2.6 双向操控与富卡片（v0.5.5 起）
+**右侧面板 → 模型**：进入插件工作模式且该插件有面板控件时，`context` 追加 `ui` 字段——`plugin_id`、`values`（当前参数值）、`controls`（归一化后的控件清单）。后端 `_ui_panel_prompt` 把它翻译成「可设置参数 / 可触发按钮」目录注入 System，模型据此下发 `update_params` / `trigger_button`，不得虚构控件。
+
+**模型 → 面板**：前端在发送请求时对人工修改计数拍快照；收到 `update_params` 后只覆盖「值合法且用户在请求飞行期间没动过」的字段，被让位的字段以系统气泡如实说明。**人类手动操作永远覆盖 AI 设定**。`trigger_button` 只允许由人类或确认卡片发起的轮次执行一次，AI 触发的轮次再收到按钮指令会被忽略，防止循环。
+
+**富卡片**：`content` 中的 ```ui_json 围栏由前端拦截渲染，绝不当纯文本展示；`question_card` 经本地 KaTeX 渲染 LaTeX，全部字段以 `textContent` 落 DOM。`install_card`（安装确认卡）只能由底座在 `search_available_plugins` / `suggest_install` 执行后生成，前端渲染【确认安装】按钮，**用户点击才**带写令牌调用 `POST /api/plugins/install-url`；渲染阶段零网络请求。缺密钥降级为 Mock 时，`update_params` 链路同样走得通。
 
 ## 3. 拆题 Agent (`agent_type: "split"`)
 ### 3.1 职责

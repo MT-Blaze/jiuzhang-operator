@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 import urllib.error
 from typing import Any
@@ -194,6 +195,46 @@ async def chat_completion(
     )
 
 
+_PANEL_ROW_RE = re.compile(
+    r"^- ([a-z][a-z0-9_]{0,15})（([^）]{1,24})）：可选 ([^；]+)；", re.M
+)
+_PANEL_CHANGE_RE = re.compile(r"(改成|改为|调成|换成|切到|换到|调整为)")
+_PANEL_GRADE_RE = re.compile(r"(高一|高二|高三)")
+
+
+def _mock_panel_params(system_prompt: str, user_message: str) -> dict[str, Any] | None:
+    """Mock 也认右侧面板：用户点名面板里的可选值时，返回 update_params。
+
+    双向操控不能只在真实模型下可验——缺密钥降级时链路必须照样走得通。
+    """
+    if "## 右侧插件面板" not in system_prompt:
+        return None
+    if not _PANEL_CHANGE_RE.search(user_message):
+        return None
+    if not _PANEL_GRADE_RE.search(user_message) and not re.search(
+        r"(基础|中档|压轴|新定义|全部)", user_message
+    ):
+        return None
+    labels: dict[str, str] = {}
+    params: dict[str, str] = {}
+    for row in _PANEL_ROW_RE.finditer(system_prompt):
+        key, label, options_text = row.group(1), row.group(2), row.group(3)
+        labels[key] = label
+        for option in [item.strip() for item in options_text.split("/") if item.strip()]:
+            if option != "全部" and option in user_message:
+                params[key] = option
+    if not params:
+        return None
+    described = "、".join(
+        "%s「%s」" % (labels.get(key, key), value) for key, value in sorted(params.items())
+    )
+    return {
+        "action": "update_params",
+        "params": params,
+        "message": "[Mock] 好，右侧面板已切到：" + described + "。",
+    }
+
+
 def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
     """Mock 实现：返回预设假数据，保持接口签名一致。"""
     lower_msg = user_message.lower()
@@ -236,6 +277,8 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
             ensure_ascii=False,
         )
     # Chat agent: return action based on keywords
+    elif (panel_params := _mock_panel_params(system_prompt, user_message)) is not None:
+        content = json.dumps(panel_params, ensure_ascii=False)
     elif "拆分" in user_message or "split" in lower_msg:
         content = json.dumps(
             {

@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core import ai_client, plugin_tools
+from app.core import ai_client, plugin_search, plugin_tools, ui_cards
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
 
@@ -51,18 +51,27 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 4. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
 
 通用约束：
-1. 输出必须是 JSON 对象，包含 action 字段（仅在没有调用工具时）。
+1. 未调用工具且不需要展示卡片时，输出必须是 JSON 对象，包含 action 字段。
 2. 若指令模糊，返回 clarification 而非猜测。
-3. 不得生成题目内容本身，只返回操作元数据。
-4. 输出必须是「裸 JSON」：禁止 markdown 代码围栏（```json ... ```）、禁止 JSON 之外的任何解释文字或前后缀。
+3. 不得生成题目内容本身，只返回操作元数据；需要展示具体题目时，用下面的 ui_json 卡片协议。
+4. 输出必须是「裸 JSON」：禁止 markdown 代码围栏包裹 action JSON、禁止 JSON 之外的额外解释（ui_json 卡片块除外）。
 5. 必须结合「当前工作台上下文」与「此前对话记录」理解本轮指令：上下文里已给出的信息（如当前任务舞台）不得再反问；本轮指令若是延续前文（如「改成第 3-4 页」「再来一次」），必须结合历史推断完整意图，而不是孤立理解。
 6. 只有当结合上下文与历史后仍无法确定意图时，才返回 clarify，且 clarify 的 question 必须是一句面向教师的自然语言问句，不得包含 JSON 或代码围栏。
+7. 右侧面板可代人操作：用户要求调整年级/难度等参数时，返回 update_params；用户要求执行面板按钮时，返回 trigger_button。只能使用「右侧插件面板」小节里列出的 key 与 button id，不得编造。人类手动改动过的参数优先，不要覆盖。
 
 可用 action：
 - "split_paper": { page_range: [3, 5] }
 - "tag_question": { question_id: "...", tags: ["集合", "基础"] }
 - "export_paper": { format: "pdf" | "tex" | "docx" }
 - "clarify": { question: "<澄清问题>" }
+- "update_params": { params: { "grade": "高一", "difficulty": "基础" }, message: "<给用户的一句话>" }
+- "trigger_button": { button: "<面板按钮 id>", message: "<给用户的一句话>" }
+
+富卡片（ui_json）：
+- 需要向教师展示一道具体题目时，可在回复末尾追加**恰好一个** ```ui_json 围栏，内容为：
+  {"version":"1.0","type":"question_card","questions":[{"type":"single_choice","type_label":"单选","difficulty":"basic","difficulty_label":"基础","stem":"题干 Markdown+LaTeX","options":[{"key":"A","content":"..."}],"answer":"...","solution":"...","tags":[]}]}
+- 题目必须真实来自工具结果或上下文，不得编造；没有真实题目就不要输出卡片。
+- 安装建议卡由底座在插件搜索工具执行后生成，你不要手写 install_card，也不得声称已安装任何插件。
 """
 
 SPLIT_SYSTEM_PROMPT = """你是九章算子的拆题专家。给定一份试卷的完整 Markdown 文本，将其按题号切分为独立题目。
@@ -100,10 +109,71 @@ def strip_code_fences(text: str) -> str:
     """
     if not text:
         return text
+    # ui_json 是富卡片载荷，不是「动作 JSON 裸奔」；保留围栏交给前端拦截渲染。
+    if text.strip().startswith("```ui_json"):
+        return text
     match = _FENCE_RE.match(text.strip())
     if match:
         return match.group("body").strip()
     return text
+
+
+def _ui_panel_prompt(context: dict[str, Any]) -> str:
+    """把前端右侧面板的控件快照翻译成模型可操控的紧凑清单。"""
+    ui = context.get("ui")
+    if not isinstance(ui, dict):
+        return ""
+    controls = ui.get("controls")
+    if not isinstance(controls, list) or not controls:
+        return ""
+    values = ui.get("values") if isinstance(ui.get("values"), dict) else {}
+    lines = ["\n\n## 右侧插件面板（可由 update_params / trigger_button 操控）"]
+    plugin_id = ui.get("plugin_id")
+    if isinstance(plugin_id, str) and plugin_id.strip():
+        lines.append("插件：" + plugin_id.strip()[:80])
+    lines.append("可设置参数：")
+    has_select = False
+    for control in controls[:8]:
+        if not isinstance(control, dict) or control.get("type") != "select":
+            continue
+        key = control.get("key")
+        label = control.get("label")
+        if not isinstance(key, str) or not isinstance(label, str):
+            continue
+        options = []
+        for option in (control.get("options") or [])[:12]:
+            if isinstance(option, dict) and isinstance(option.get("value"), str):
+                options.append(option["value"])
+        current = values.get(key)
+        lines.append(
+            "- %s（%s）：可选 %s；当前 %s"
+            % (
+                key[:16],
+                label[:24],
+                " / ".join(item[:16] for item in options),
+                str(current)[:24] if current is not None else "未设置",
+            )
+        )
+        has_select = True
+    if not has_select:
+        lines.append("- 无")
+    lines.append("可触发按钮：")
+    has_button = False
+    for control in controls[:8]:
+        if not isinstance(control, dict) or control.get("type") != "button":
+            continue
+        lines.append(
+            "- %s（%s）"
+            % (str(control.get("id") or "")[:32], str(control.get("label") or "")[:24])
+        )
+        has_button = True
+    if not has_button:
+        lines.append("- 无")
+    lines.append(
+        "规则：update_params 的 params 只能使用上面列出的参数 key，值必须是列出的选项；"
+        "trigger_button 的 button 只能使用上面列出的按钮 id。不得虚构控件。"
+    )
+    return "\n".join(lines)
 
 
 def build_chat_system_prompt(
@@ -136,6 +206,9 @@ def build_chat_system_prompt(
                     "回答、计划与工具调用都必须围绕该插件的能力展开；"
                     "优先调用与该插件对应的已安装工具，不得声称拥有该插件未声明的能力。"
                 )
+        panel = _ui_panel_prompt(context)
+        if panel:
+            prompt += panel
         prompt += "\n\n## 当前工作台上下文（只读，供你结合决策）\n" + json.dumps(
             context, ensure_ascii=False
         )
@@ -173,6 +246,12 @@ def _make_host_call(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _run_tool(name: str, arguments: Any) -> dict[str, Any]:
+    if name in plugin_search.TOOL_NAMES:
+        return plugin_search.execute_tool(name, arguments)
+    return plugin_tools.execute_tool(name, arguments)
+
+
 def _execute_calls(
     tool_calls: list[dict[str, Any]], routed_by: str
 ) -> list[dict[str, Any]]:
@@ -183,7 +262,12 @@ def _execute_calls(
         if not isinstance(function, dict):
             continue
         name = str(function.get("name") or "")
-        outcome = plugin_tools.execute_tool(name, function.get("arguments") or "{}")
+        outcome = _run_tool(name, function.get("arguments") or "{}")
+        cards = [item for item in (outcome.get("ui_cards") or []) if isinstance(item, dict)]
+        data = outcome.get("data") if isinstance(outcome.get("data"), dict) else {}
+        question_block = ui_cards.question_block(data.get("questions") or [])
+        if question_block:
+            cards.insert(0, question_block)
         public_calls.append(
             {
                 "tool": name,
@@ -193,13 +277,24 @@ def _execute_calls(
                 "error": outcome.get("error") or "",
                 "summary": outcome.get("summary") or "插件没有返回结果。",
                 "routed_by": routed_by,
+                "host_tool": bool(outcome.get("host_tool")),
+                "cards": cards,
             }
         )
     return public_calls
 
 
 def _plugin_bubble(plugin_calls: list[dict[str, Any]]) -> str:
-    return "\n\n".join(call["summary"] for call in plugin_calls if call["summary"])
+    text = "\n\n".join(call["summary"] for call in plugin_calls if call["summary"])
+    blocks: list[dict[str, Any]] = []
+    for call in plugin_calls:
+        for card in call.get("cards") or []:
+            if isinstance(card, dict):
+                blocks.append(card)
+    frames = ui_cards.frames_for_blocks(blocks)
+    if frames:
+        text = (text + "\n\n" + frames).strip() if text else frames
+    return text
 
 
 @router.post("/chat", summary="对话 Agent")
@@ -207,7 +302,8 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
     """处理自然语言指令：插件工具优先，其次回落到 action JSON 协议。"""
     user_input = body.user_input
     task_id = body.task_id
-    tools = plugin_tools.build_tools()
+    installed_tools = plugin_tools.build_tools()
+    tools = installed_tools + plugin_search.build_tools()
     system_prompt = build_chat_system_prompt(body.context, tools)
     user_message = build_user_message_with_history(body.history, user_input)
     try:
@@ -225,7 +321,9 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
         if not tool_calls:
             # 模型没发 tool_calls（漏判 / Provider 不支持）时，按高置信句式兜底，
             # 保证「拆分第一题」这类明确指令不会退化成一句反问。
-            intent = plugin_tools.match_intent(user_input, tools)
+            intent = plugin_tools.match_intent(user_input, installed_tools)
+            if not intent:
+                intent = plugin_search.match_intent(user_input)
             if intent:
                 tool_calls = [_make_host_call(intent)]
                 routed_by = "host"
@@ -259,7 +357,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
             "route": "model",
         }
     except Exception as exc:
-        intent = plugin_tools.match_intent(user_input, tools)
+        intent = plugin_tools.match_intent(user_input, installed_tools) or plugin_search.match_intent(user_input)
         if intent:
             plugin_calls = _execute_calls([_make_host_call(intent)], "host")
             if plugin_calls:

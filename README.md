@@ -106,6 +106,15 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 插件仓库初始收录 `org.jiuzhang.demo-bank` 与 `org.jiuzhang.placeholder`，zip 顶层目录与 `plugin.json` 的 `id` 一致，可直接在线安装；
 - 边界不变：不自动拉取、不自动更新、不批量下载，装包仍由用户逐次点击发起。
 
+`v0.5.5` 双向操控与富卡片——AI 能替你点面板，装插件仍由你点头：
+
+- 对话区新增 `ui_json` 富卡片：题目以可视化数学题卡渲染（本地 KaTeX 排版 LaTeX、题型/难度标签、【查看解析】就地展开），全部字段纯文本组装，零 XSS；
+- 右侧上下文面板在插件工作模式下可真人操作（年级/难度下拉、快捷按钮）；对 AI 说「改成高一的题」，AI 下发 `update_params`，前端自动把下拉切到高一——**人类手动改过的字段永远覆盖 AI 设定**，请求飞行期间动过即让位并如实播报；
+- AI 可搜索插件：新增宿主工具 `search_available_plugins` / `suggest_install`，只读**用户亲手拉取过**的索引缓存，绝不联网搜索；
+- 严禁静默安装：命中插件只渲染【安装确认卡】（含来源主机与理由），用户点【确认安装】才走 `POST /api/plugins/install-url` 的完整校验；卡片渲染阶段零网络请求；
+- 缺密钥降级 Mock 时双向链路照样可走：Mock 认面板参数，「换成高三、难度调成压轴」同样回 `update_params`；
+- 「随机出一道高一基础题」接入插件工具真实抽题（按年级/难度过滤，题库未标注年级时如实说明不过滤）。
+
 `v0.5.4` 左栏终极极简——低频操作收进「设置与控制」：
 
 - 左栏只剩折叠按钮、自由对话入口与动态插件列表；「安装插件 zip」「插件索引」「关于底座」三处入口全部移出；
@@ -152,7 +161,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -185,7 +194,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 和宿主通信的完整消息协议（`plugin.activate` / `question.render`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
 
-> 当前 `v0.5.4` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；题卡渲染宿主尚未接回，`question.render` 暂时不会在页面上出卡片（见 PLUGIN_SPEC §2.3.5）。
+> 当前 `v0.5.5` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染（v0.5.5 起）。iframe 沙箱内的插槽渲染（`question.render` → 插件卡片位）仍未接回（见 PLUGIN_SPEC §2.3.5）。
 
 ## 目录结构
 
@@ -254,6 +263,7 @@ jiuzhang-operator/
 │   ├── test_providers_api.py       # Provider 注册表与切换契约
 │   ├── test_agent_chat_tuning.py   # 智能体对话调参契约
 │   ├── test_agent_plugin_tools.py  # 插件工具桥、意图路由与端到端工具调用契约
+│   ├── test_rich_card_ui.py        # 富卡片、右栏双向操控与插件搜索契约（v0.5.5）
 │   └── test_version_consistency.py # 版本号单一事实来源与启动脚本契约
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
