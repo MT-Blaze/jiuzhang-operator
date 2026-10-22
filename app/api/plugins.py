@@ -153,7 +153,7 @@ def install_plugin_from_url(payload: dict[str, Any] = Body(...)) -> PluginInstal
     dependencies=[Depends(require_write_token)],
 )
 def read_plugin_index(payload: dict[str, Any] = Body(...)) -> dict:
-    """索引地址来自前端输入框（默认预填官方 CDN 镜像，用户可当场改掉）。
+    """索引地址来自前端输入框（默认预填官方国内镜像，用户可当场改掉）。
 
     官方地址拉取失败时按 ``plugin_sources`` 的备用镜像自动回退；用户填第三方
     地址时只访问那一个地址，不擅自换源。带写令牌不是为了「改数据」，而是因为

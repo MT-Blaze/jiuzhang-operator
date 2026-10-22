@@ -5,8 +5,11 @@
 不登记任何插件 zip 的下载源——插件 zip 的镜像仍由索引条目的 ``mirrors``
 字段声明，用户点【在线安装】时才按条目地址取包。
 
-顺序即回退顺序：jsDelivr 主源 → gh-proxy / ghfast（GitHub 反代）→
-fastly.jsDelivr（同网不同边缘）→ 官方 Raw（境外网络兜底）。
+顺序即回退顺序：gh-proxy（GitHub 反代，取到的是分支最新内容）→ ghfast
+→ jsDelivr / fastly.jsDelivr（CDN 边缘，分支缓存可能滞后）→ 官方 Raw
+（境外网络兜底）。主源放反代而不是 jsDelivr，是因为 jsDelivr 的 ``@main``
+分支缓存最长可滞后 12 小时，刚推库的新索引可能在首批用户那里仍是旧版；
+需要「点开即新版」时，反代是更稳的第一跳。
 所有地址都在用户点击后才访问，且只发只读 GET；底座不自动轮询、
 不自动更新、不批量拉取。
 """
@@ -14,13 +17,13 @@ fastly.jsDelivr（同网不同边缘）→ 官方 Raw（境外网络兜底）。
 from __future__ import annotations
 
 OFFICIAL_INDEX_PRIMARY = (
-    "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-operator@main/plugins.json"
+    "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json"
 )
 
 OFFICIAL_INDEX_SOURCES: tuple[str, ...] = (
     OFFICIAL_INDEX_PRIMARY,
-    "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json",
     "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json",
+    "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-operator@main/plugins.json",
     "https://fastly.jsdelivr.net/gh/MT-Blaze/jiuzhang-operator@main/plugins.json",
     "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-operator/main/plugins.json",
 )

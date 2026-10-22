@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  // 索引地址默认预填官方 CDN 镜像（写在 HTML 的 value 里，用户可当场改掉）。
+  // 索引地址默认预填官方国内可达镜像（写在 HTML 的 value 里，用户可当场改掉）。
   // 底座仍不自动拉取：只有用户点【拉取清单】才会发起请求；主源失败时由后端
   // 按官方备用镜像顺序自动重试，用户改成第三方地址后则只访问那一个。
   var urlInput = document.getElementById("plIndexUrl");
@@ -260,7 +260,7 @@
     if (event) event.preventDefault();
     var url = (urlInput.value || "").trim();
     if (!url) {
-      setStatus("请先填入一个索引地址（默认已预填官方 CDN 镜像）。", "warn");
+      setStatus("请先填入一个索引地址（默认已预填官方国内镜像）。", "warn");
       return;
     }
 
@@ -328,6 +328,6 @@
 
   // 首屏不留「可用条目」下面一个空白列表
   resultHost.appendChild(
-    makePlaceholder("还没有拉取过任何地址。输入框已预填官方索引的国内 CDN 镜像，点【拉取清单】即可列出可在线安装的插件；主源失败会自动切换备用镜像，也可以换成你自己信任的地址。")
+    makePlaceholder("还没有拉取过任何地址。输入框已预填官方索引的国内可达镜像，点【拉取清单】即可列出可在线安装的插件；主源失败会自动切换备用镜像，也可以换成你自己信任的地址。")
   );
 })();

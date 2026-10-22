@@ -93,7 +93,7 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 
 `v0.5.1` 网络突围与智能体接驳——国内直连、插件真调用：
 
-- 官方索引默认直链改走 jsDelivr CDN（`cdn.jsdelivr.net`），拉取失败按 gh-proxy → ghfast → fastly.jsDelivr → Raw 的官方序列自动换源，单源 6 秒 / 备用源 5 秒；换源只对官方地址生效，用户改过的自定义地址仍只试一次；响应回传实际命中源、逐路失败原因与 `fallback_used`；
+- 官方索引默认直链改走 gh-proxy 国内反代，拉取失败按 ghfast → jsDelivr → fastly.jsDelivr → Raw 的官方序列自动换源，单源 6 秒 / 备用源 5 秒；换源只对官方地址生效，用户改过的自定义地址仍只试一次；响应回传实际命中源、逐路失败原因与 `fallback_used`。主源不用 jsDelivr，是因为其 `@main` 分支缓存最长滞后 12 小时，刚推库的新索引可能仍是旧版；
 - 在线安装同口径：主地址失败时按该条目 `mirrors` 顺序重试（主源 30 秒 / 镜像 20 秒），仍只下载用户点选的那一个 zip，不跨条目、不批量、不自动更新；
 - 对话引擎接入 OpenAI Function Calling：扫描已安装插件的 `question.import` / `question.render` 能力生成 `tools`，System Prompt 要求意图匹配时直接发 `tool_calls` 而非反问；后端拦截并真实执行，把结果转成自然语言气泡；
 - 模型漏判或 Provider 不支持工具时，宿主按高置信句式（明确题号 + 拆分 / 渲染 / 导入）兜底，响应 `route=host` 如实标注；前端气泡新增「[已调用插件]」标识与来源说明；
@@ -169,7 +169,7 @@ jiuzhang-operator/
 ├── static/
 │   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
 │   ├── workspace.html       # 智能工作台（三栏：任务 / 对话流 / 上下文），根路径直达
-│   ├── plugins.html         # 插件索引页（默认预填官方 CDN 直链，卡片支持在线安装）
+│   ├── plugins.html         # 插件索引页（默认预填官方国内镜像，卡片支持在线安装）
 │   ├── css/{app,questions,workspace,plugins}.css
 │   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
 │   └── js/{app,workspace,plugins,pwa,version}.js
@@ -203,7 +203,7 @@ jiuzhang-operator/
 ├── tools/
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
 │   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
-├── plugins.json             # 官方插件索引（索引页默认预填其 CDN 直链）
+├── plugins.json             # 官方插件索引（索引页默认预填其国内镜像直链）
 ├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
