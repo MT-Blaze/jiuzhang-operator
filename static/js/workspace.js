@@ -15,6 +15,10 @@
   var providerList = [];
   var writeToken = null;
   var currentTask = "";
+  // 对话轮次记忆：注入下一轮请求，让模型延续前文而非孤立理解（10.24 军令 P0-2）。
+  var transcript = [];
+  var TRANSCRIPT_MAX = 24;   // 内存里最多留多少轮
+  var TRANSCRIPT_SEND = 8;   // 每轮最多回传多少轮给模型
 
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
@@ -90,6 +94,13 @@
     while (ctxHistory.children.length > 8) {
       ctxHistory.removeChild(ctxHistory.lastChild);
     }
+  }
+
+  // 记录一轮对话进内存 transcript，超过上限丢最旧的，供下一轮注入模型。
+  function pushTurn(role, content) {
+    if (!content) return;
+    transcript.push({ role: role, content: String(content) });
+    while (transcript.length > TRANSCRIPT_MAX) transcript.shift();
   }
 
   // ============ 当前任务舞台 ============
@@ -186,6 +197,43 @@
     return "模型 " + (data.model || "未知") + " 产出";
   }
 
+  // --- 解析拦截（10.24 军令 P0-1）：系统控制 JSON 绝不进对话气泡 ---
+  // 后端已剥一层代码围栏，前端再兜一层，双保险。
+  function stripFences(text) {
+    if (typeof text !== "string") return "";
+    var trimmed = text.trim();
+    var fence = trimmed.match(/^```[a-zA-Z0-9_-]*[ \t]*\r?\n?([\s\S]*?)\r?\n?```[ \t]*$/);
+    return fence ? fence[1].trim() : trimmed;
+  }
+
+  // 尝试把内容解析成一个「控制对象」：先剥围栏再 JSON.parse，
+  // 失败则从文本里抠出第一个 {...} 再试。解析不出对象一律返回 null。
+  function extractControlJson(content) {
+    var body = stripFences(content);
+    if (!body) return null;
+    try {
+      var direct = JSON.parse(body);
+      if (direct && typeof direct === "object") return direct;
+    } catch (e) {
+      /* 落到下面的兜底抠取 */
+    }
+    var braceMatch = body.match(/\{[\s\S]*\}/);
+    if (braceMatch) {
+      try {
+        var extracted = JSON.parse(braceMatch[0]);
+        if (extracted && typeof extracted === "object") return extracted;
+      } catch (e2) {
+        /* 仍不是合法 JSON，当作普通文本处理 */
+      }
+    }
+    return null;
+  }
+
+  // 判断一段文本是否「看起来就是裸 JSON / 代码围栏」——这种东西不许直接给用户看。
+  function looksLikeRawJson(text) {
+    return /^\s*(```|[\[{])/.test(text || "");
+  }
+
   function summarizeAction(parsed, source) {
     // 空壳原型：把 Agent 识别到的意图如实回显，具体执行待后续接入。
     var action = parsed && parsed.action;
@@ -203,17 +251,38 @@
       return "已识别【导出】指令：格式 " + (p.format || "未指明") + "。";
     }
     if (action === "clarify") {
-      return p.question || (parsed && parsed.question) || "请再明确一下你的指令。";
+      var question = p.question || (parsed && parsed.question) || "";
+      // clarify 的问句本身若又是裸 JSON，说明模型没守规矩，拦下来给友好兜底。
+      if (question && !looksLikeRawJson(question)) return question;
+      return "我还不能确定你的意图，能否说得再具体些？比如「拆分第 1–2 页」或「导出为 PDF」。";
     }
     if (typeof parsed === "string") return parsed;
     return "已收到指令，但暂未识别为具体操作。（空壳原型：先见形，后调逻辑）";
   }
 
+  // 右栏结构化上下文 → 注入 System 尾部，让模型结合前文干活而非反问。
+  function gatherContext() {
+    var active = findActiveProvider();
+    return {
+      current_task: currentTask || "未选择",
+      stage: (stageTitle && stageTitle.textContent) || currentTask || "新会话",
+      textbook: "未选择",
+      model: active ? (active.model || active.label || "未知") : "未就绪",
+      mock: active ? Boolean(active.mock || !active.configured) : true,
+    };
+  }
+
   function callAgent(prompt) {
+    var payload = {
+      user_input: prompt,
+      task_id: "ws_" + Date.now(),
+      context: gatherContext(),
+      history: transcript.slice(-TRANSCRIPT_SEND),
+    };
     return fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_input: prompt, task_id: "ws_" + Date.now() }),
+      body: JSON.stringify(payload),
     })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -227,13 +296,21 @@
         if (!content) {
           return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn" };
         }
-        var parsed;
-        try {
-          parsed = JSON.parse(content);
-        } catch (e) {
-          parsed = { action: "clarify", question: content };
+        // 拦截：先把内容当控制 JSON 解析。命中 action 就翻译成人话，
+        // 命中无 action 的普通 JSON 给通用回执，都不把原始 JSON 露给用户。
+        var parsed = extractControlJson(content);
+        if (parsed) {
+          if (typeof parsed.action === "string") {
+            return { text: summarizeAction(parsed, source), source: source, tone: null };
+          }
+          return { text: "已收到模型的结构化回执（系统内部数据，已折叠）。", source: source, tone: null };
         }
-        return { text: summarizeAction(parsed, source), source: source, tone: null };
+        // 不是 JSON：若是裸围栏/括号开头，判定为控制信令漏网，绝不直接显示。
+        if (looksLikeRawJson(content)) {
+          return { text: "模型返回了未识别的系统信令，已拦截未显示。请换种说法再试一次。", source: source, tone: "warn" };
+        }
+        // 真正的自然语言散文，可以直接给用户看。
+        return { text: stripFences(content), source: source, tone: null };
       });
   }
 
@@ -245,6 +322,7 @@
 
       addBubble("user", prompt);
       logHistory("发送指令：" + (prompt.length > 24 ? prompt.slice(0, 24) + "…" : prompt));
+      pushTurn("user", prompt);
       promptInput.value = "";
       autoGrow();
 
@@ -259,10 +337,12 @@
         .then(function (res) {
           if (typing) typing.remove();
           addBubble("bot", res.text, { source: res.source, tone: res.tone });
+          pushTurn("assistant", res.text);
         })
         .catch(function (err) {
           if (typing) typing.remove();
           addBubble("bot", "指令执行失败：" + err.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
+          pushTurn("assistant", "指令执行失败：" + err.message);
         })
         .finally(function () {
           if (sendBtn) {
