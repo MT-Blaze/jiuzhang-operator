@@ -9,6 +9,7 @@ rem
 rem  Strips secrets and heavy/generated content:
 rem    .env, .venv, venv, data, .git, caches, logs, .system_generated,
 rem    plugins\org.jiuzhang.demo-bank (runtime seed install; source is examples\demo_plugin.zip),
+rem    plugins\org.jiuzhang.placeholder (runtime online install; source is examples\placeholder_plugin),
 rem    examples\placeholder_plugin.zip (v0.5.2: distributed via jiuzhang-plugins repo + online install;
 rem    plugin bodies must never bloat the base package - see plugins.json index)
 rem  Keeps everything a receiver needs to run:
@@ -44,7 +45,7 @@ echo [1/3] Copying project files (excluding secrets, venv, data, caches)...
 rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
 rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
-  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" ^
+  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.placeholder" ^
   /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store "%~dp0examples\placeholder_plugin.zip"
 if errorlevel 8 (
     echo.

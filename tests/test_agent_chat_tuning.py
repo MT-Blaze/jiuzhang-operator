@@ -68,6 +68,41 @@ class BuildSystemPromptTest(unittest.TestCase):
         self.assertIn('"model": "qwen"', prompt)
 
 
+class PluginWorkingModePromptTest(unittest.TestCase):
+    """v0.5.3：点插件入口后，模型必须知道「现在处于该插件的工作模式下」。"""
+
+    def test_plugin_mode_section_injected(self) -> None:
+        ctx = {
+            "current_task": "示例题库",
+            "working_mode": "插件「示例题库」工作模式",
+            "plugin": {
+                "id": "org.jiuzhang.demo-bank",
+                "name": "示例题库",
+                "capabilities": ["question.import"],
+            },
+        }
+        prompt = build_chat_system_prompt(ctx)
+        self.assertTrue(prompt.startswith(CHAT_SYSTEM_PROMPT))
+        self.assertIn("当前插件工作模式", prompt)
+        self.assertIn("现在处于「示例题库」插件的工作模式下", prompt)
+        self.assertIn("优先调用与该插件对应的已安装工具", prompt)
+        # 固定前缀正文也提到「当前工作台上下文」，这里比的是尾部真正的小节标题
+        self.assertLess(
+            prompt.rindex("## 当前插件工作模式"),
+            prompt.rindex("## 当前工作台上下文"),
+        )
+
+    def test_no_plugin_keeps_prompt_unchanged(self) -> None:
+        prompt = build_chat_system_prompt({"current_task": "自由对话"})
+        self.assertNotIn("当前插件工作模式", prompt)
+        self.assertIn("当前工作台上下文", prompt)
+
+    def test_malformed_plugin_ignored(self) -> None:
+        for plugin in (None, "org.jiuzhang.demo-bank", {}, {"name": "   "}, {"name": 42}):
+            prompt = build_chat_system_prompt({"current_task": "自由对话", "plugin": plugin})
+            self.assertNotIn("当前插件工作模式", prompt)
+
+
 class BuildUserMessageTest(unittest.TestCase):
     def test_no_history_returns_input(self) -> None:
         self.assertEqual(build_user_message_with_history(None, "拆分第 3 页"), "拆分第 3 页")

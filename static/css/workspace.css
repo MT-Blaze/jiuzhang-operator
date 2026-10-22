@@ -63,7 +63,7 @@
   min-height: 0;
 }
 
-.ws-task-list {
+.ws-entry-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -71,8 +71,13 @@
   padding: 0;
 }
 
-.ws-task-item {
-  display: block;
+/* 自由对话与插件条目共用同一套命中区与选中态，保证键盘与触控口径一致 */
+.ws-entry-item,
+.ws-plugin-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -87,26 +92,72 @@
   transition: background 150ms ease, border-color 150ms ease;
 }
 
-.ws-task-item:hover,
-.ws-task-item:focus-visible {
+.ws-entry-item:hover,
+.ws-entry-item:focus-visible,
+.ws-plugin-item:hover,
+.ws-plugin-item:focus-visible {
   background: var(--accent-soft);
   border-color: var(--line-strong);
   outline: none;
 }
 
-.ws-task-item[aria-current="true"] {
+.ws-entry-item[aria-current="true"],
+.ws-plugin-item[aria-current="true"] {
   background: var(--accent-soft);
   border-color: var(--accent);
   font-weight: 600;
 }
 
-.ws-plugin-entry h3 {
+.ws-plugin-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 10px;
+}
+
+.ws-plugin-entry h3 {
+  margin: 0;
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 600;
+}
+
+.ws-plugin-count {
+  color: var(--faint);
+  font-size: 0.72rem;
+}
+
+.ws-plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-plugin-item-name {
+  font-weight: inherit;
+  word-break: break-word;
+}
+
+.ws-plugin-item-meta {
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.ws-plugin-empty {
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--faint);
+  font-size: 0.84rem;
+  text-align: center;
 }
 
 .ws-plugin-drop-hint {

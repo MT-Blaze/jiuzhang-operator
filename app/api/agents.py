@@ -126,6 +126,16 @@ def build_chat_system_prompt(
             lines.append(f"- {function.get('name')}：{description[:300]}")
         prompt += "\n".join(lines)
     if context:
+        plugin = context.get("plugin")
+        if isinstance(plugin, dict):
+            plugin_name = plugin.get("name")
+            if isinstance(plugin_name, str) and plugin_name.strip():
+                prompt += (
+                    "\n\n## 当前插件工作模式\n"
+                    f"现在处于「{plugin_name.strip()[:64]}」插件的工作模式下。"
+                    "回答、计划与工具调用都必须围绕该插件的能力展开；"
+                    "优先调用与该插件对应的已安装工具，不得声称拥有该插件未声明的能力。"
+                )
         prompt += "\n\n## 当前工作台上下文（只读，供你结合决策）\n" + json.dumps(
             context, ensure_ascii=False
         )

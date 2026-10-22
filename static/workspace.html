@@ -13,22 +13,25 @@
 </head>
 <body>
   <div class="ws-page">
-    <!-- 左栏：任务 / 插件简单入口（不放状态面板） -->
-    <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="任务与插件入口">
+    <!-- 左栏：底座默认入口 + 动态插件区（不写死任何业务功能） -->
+    <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="入口与插件">
       <header class="ws-sidebar-head">
-        <h2>任务</h2>
+        <h2>入口</h2>
         <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
-        <nav class="ws-task-list" id="wsTaskList" aria-label="任务入口">
-          <button class="ws-task-item" type="button" data-task="拆分试卷" data-seed="我要拆分一份试卷，请告诉我下一步。">拆分试卷</button>
-          <button class="ws-task-item" type="button" data-task="校对解析" data-seed="帮我校对一道题的答案与解析。">校对解析</button>
-          <button class="ws-task-item" type="button" data-task="组卷导出" data-seed="我想组一份卷子并导出。">组卷导出</button>
-          <button class="ws-task-item" type="button" data-task="自由对话" data-seed="">自由对话</button>
+        <nav class="ws-entry-list" aria-label="底座默认入口">
+          <button class="ws-entry-item" id="wsChatEntry" type="button" aria-current="true">自由对话</button>
         </nav>
 
-        <section class="ws-plugin-entry" aria-label="插件入口">
-          <h3>插件</h3>
+        <section class="ws-plugin-entry" aria-label="插件区">
+          <div class="ws-plugin-head">
+            <h3>插件</h3>
+            <span class="ws-plugin-count" id="wsPluginCount" hidden></span>
+          </div>
+          <ul class="ws-plugin-list" id="wsPluginList" aria-live="polite">
+            <li class="ws-plugin-empty">暂无插件</li>
+          </ul>
           <button class="ws-btn ws-btn-block" id="wsPluginInstallBtn" type="button">安装插件 zip 包</button>
           <p class="ws-plugin-drop-hint">或把 .zip 直接拖进本页任意位置</p>
           <ul class="ws-plugin-links">
@@ -48,7 +51,7 @@
           <h1 id="wsStageTitle">新会话</h1>
         </div>
         <div class="ws-stage-tools">
-          <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button" aria-controls="wsSidebarBody" aria-expanded="false">任务</button>
+          <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button" aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
           <button class="ws-chip" id="wsModelBtn" type="button" title="配置模型 Provider">
             <span class="ws-chip-dot" aria-hidden="true"></span>
             <span id="wsModelLabel">模型 · 未就绪</span>

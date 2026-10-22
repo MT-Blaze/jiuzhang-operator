@@ -15,6 +15,7 @@
   var providerList = [];
   var writeToken = null;
   var currentTask = "";
+  var activePlugin = null;
   // 对话轮次记忆：注入下一轮请求，让模型延续前文而非孤立理解（10.24 军令 P0-2）。
   var transcript = [];
   var TRANSCRIPT_MAX = 24;   // 内存里最多留多少轮
@@ -34,6 +35,9 @@
   var modelBtn = document.getElementById("wsModelBtn");
   var modelLabel = document.getElementById("wsModelLabel");
   var providerSelect = document.getElementById("wsProviderSelect");
+  var chatEntry = document.getElementById("wsChatEntry");
+  var pluginListEl = document.getElementById("wsPluginList");
+  var pluginCountEl = document.getElementById("wsPluginCount");
 
   // ============ 对话流：气泡工厂 ============
   function addBubble(role, text, opts) {
@@ -132,24 +136,37 @@
     if (ctxTask) ctxTask.textContent = currentTask || "未选择";
   }
 
-  var taskButtons = document.querySelectorAll(".ws-task-item");
-  taskButtons.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var task = btn.getAttribute("data-task") || "";
-      var seed = btn.getAttribute("data-seed") || "";
-      taskButtons.forEach(function (b) {
-        b.setAttribute("aria-current", String(b === btn));
-      });
-      setStage(task);
-      addBubble("sys", "已切换到任务舞台：" + task);
-      logHistory("进入任务「" + task + "」");
-      if (seed && promptInput) {
-        promptInput.value = seed;
-        autoGrow();
-      }
-      if (promptInput) promptInput.focus();
-    });
-  });
+  // ============ 入口切换：自由对话 / 插件工作模式 ============
+  // 左栏不再写死业务任务；插件条目由 /api/plugins 动态渲染。点插件只切换
+  // 工作模式与上下文，不做任何页面跳转（军令 2.3）。
+  function markActiveEntry(activeEl) {
+    var items = document.querySelectorAll(".ws-entry-item, .ws-plugin-item");
+    for (var i = 0; i < items.length; i += 1) {
+      items[i].setAttribute("aria-current", String(items[i] === activeEl));
+    }
+  }
+
+  function enterChatMode() {
+    activePlugin = null;
+    markActiveEntry(chatEntry);
+    setStage("自由对话");
+    addBubble("sys", "已进入「自由对话」模式。");
+    logHistory("进入自由对话");
+    if (promptInput) promptInput.focus();
+  }
+
+  function enterPluginMode(plugin, item) {
+    activePlugin = plugin;
+    markActiveEntry(item);
+    var name = plugin.name || plugin.id || "插件";
+    setStage(name);
+    addBubble("sys", "现在处于插件「" + name + "」的工作模式下。" +
+      (plugin.description ? " " + plugin.description : ""));
+    logHistory("进入插件「" + name + "」");
+    if (promptInput) promptInput.focus();
+  }
+
+  if (chatEntry) chatEntry.addEventListener("click", enterChatMode);
 
   // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
   // 状态机只有一个事实来源：.ws-page 上的 data-side / data-ctx。
@@ -322,13 +339,27 @@
   // 右栏结构化上下文 → 注入 System 尾部，让模型结合前文干活而非反问。
   function gatherContext() {
     var active = findActiveProvider();
-    return {
+    var context = {
       current_task: currentTask || "未选择",
       stage: (stageTitle && stageTitle.textContent) || currentTask || "新会话",
       textbook: "未选择",
       model: active ? (active.model || active.label || "未知") : "未就绪",
       mock: active ? Boolean(active.mock || !active.configured) : true,
     };
+    // 插件模式下把插件身份与能力一并注入 System 尾部；模型据此知道
+    // 「现在处于该插件的工作模式下」，优先调用对应工具而不是空谈。
+    if (activePlugin) {
+      context.working_mode = "插件「" + (activePlugin.name || activePlugin.id) + "」工作模式";
+      context.plugin = {
+        id: activePlugin.id,
+        name: activePlugin.name,
+        version: activePlugin.version,
+        kind: activePlugin.kind,
+        description: activePlugin.description,
+        capabilities: activePlugin.capabilities || [],
+      };
+    }
+    return context;
   }
 
   function callAgent(prompt) {
@@ -750,6 +781,71 @@
     });
   }
 
+  // ============ 已安装插件：动态渲染左栏插件区 ============
+  var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };
+
+  function renderPlugins(plugins) {
+    var list = plugins || [];
+    if (!pluginListEl) return;
+    pluginListEl.textContent = "";
+    if (!list.length) {
+      var empty = document.createElement("li");
+      empty.className = "ws-plugin-empty";
+      empty.textContent = "暂无插件";
+      pluginListEl.appendChild(empty);
+      if (pluginCountEl) pluginCountEl.hidden = true;
+      return;
+    }
+    list.forEach(function (plugin) {
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ws-plugin-item";
+      btn.setAttribute("aria-current", String(Boolean(activePlugin && activePlugin.id === plugin.id)));
+      var name = document.createElement("span");
+      name.className = "ws-plugin-item-name";
+      name.textContent = plugin.name || plugin.id || "未命名插件";
+      var meta = document.createElement("span");
+      meta.className = "ws-plugin-item-meta";
+      meta.textContent = "v" + (plugin.version || "?") + " · " + (KIND_LABELS[plugin.kind] || "插件");
+      btn.appendChild(name);
+      btn.appendChild(meta);
+      btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });
+      li.appendChild(btn);
+      pluginListEl.appendChild(li);
+    });
+    if (pluginCountEl) {
+      pluginCountEl.hidden = false;
+      pluginCountEl.textContent = String(list.length);
+    }
+  }
+
+  function loadPlugins() {
+    return fetch("/api/plugins", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        var plugins = (data && data.plugins) || [];
+        if (activePlugin) {
+          var still = null;
+          for (var i = 0; i < plugins.length; i += 1) {
+            if (plugins[i].id === activePlugin.id) { still = plugins[i]; break; }
+          }
+          if (still) {
+            activePlugin = still;
+          } else {
+            activePlugin = null;
+            setStage("自由对话");
+            markActiveEntry(chatEntry);
+          }
+        }
+        renderPlugins(plugins);
+        return plugins;
+      });
+  }
+
   // ============ 插件一键装：拖拽 zip + 选文件（简单入口，反馈进对话流） ============
   var pluginInstallBtn = document.getElementById("wsPluginInstallBtn");
   var pluginFileInput = document.getElementById("wsPluginFile");
@@ -790,7 +886,8 @@
           var plugin = body && body.plugin ? body.plugin : {};
           addBubble("sys", "插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
           logHistory("安装插件 " + (plugin.name || plugin.id));
-          return null;
+          // 装完立即刷新插件区；刷新失败不回滚安装结果，也不谎报安装失败。
+          return loadPlugins().catch(function () { return null; });
         });
       })
       .catch(function (err) {
@@ -866,21 +963,21 @@
   }
 
   // ============ 初始化 ============
-  setStage("");
+  // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
+  setStage("自由对话");
+  markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");
-  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选一个任务，或直接在下方输入指令。已安装插件时，我会直接调用插件执行，而不是只回显意图——例如输入「拆分第一题」。");
+  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。");
 
   // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
-  fetch("/api/plugins", { cache: "no-store" })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) {
-      var plugins = (data && data.plugins) || [];
+  loadPlugins()
+    .then(function (plugins) {
       var hasDemo = plugins.some(function (p) { return p.id === "org.jiuzhang.demo-bank"; });
       if (hasDemo) {
         addBubble("bot", "系统已为您预置了 5 道示例数学题，您可以直接输入「拆分第一题」进行体验。");
       }
     })
-    .catch(function () { /* 探测失败只是少一句提示，不打扰用户 */ });
+    .catch(function () { /* 探测失败保留「暂无插件」空态，不打扰用户 */ });
 
   loadProviders().catch(function () {
     renderModelChip();

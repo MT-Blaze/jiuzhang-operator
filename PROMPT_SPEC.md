@@ -95,6 +95,26 @@
 }
 ```
 
+### 2.5 工作台上下文（v0.5.3 起）
+`context` 由工作台右栏的结构化上下文生成，至少包含 `current_task`、`stage`、`model`、`mock`。用户点选左侧已安装插件后，追加插件工作模式字段：
+
+```json
+{
+  "current_task": "示例题库",
+  "working_mode": "插件「示例题库」工作模式",
+  "plugin": {
+    "id": "org.jiuzhang.demo-bank",
+    "name": "示例题库",
+    "version": "0.1.0",
+    "kind": "importer",
+    "description": "内置 5 道高中数学示例题……",
+    "capabilities": ["question.import", "question.render"]
+  }
+}
+```
+
+后端把整份 `context` 序列化进 System 尾部，并在「当前工作台上下文」小节之前追加「当前插件工作模式」说明，要求模型优先调用该插件对应的已安装工具。点插件条目只切换工作模式与上下文，不得跳转页面；点「自由对话」则清空插件字段，回到底座默认入口。
+
 ## 3. 拆题 Agent (`agent_type: "split"`)
 ### 3.1 职责
 将整卷 PDF/图片 OCR 后的 Markdown 文本按题号切分为独立题目卡片，识别题型、难度、选项。

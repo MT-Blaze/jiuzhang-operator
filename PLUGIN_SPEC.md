@@ -158,7 +158,7 @@ class ProviderProfile:      # app/core/providers/__init__.py
 
 **降级红线**：`is_configured` 为假时构造出的客户端必须走 Mock 分支并在响应里回 `mock: true`，**不得**抛异常、**不得**假装是真模型产出（对齐 §1.1 的「显式降级」）。对外只暴露「是否已配置 + base_url 的 netloc」，密钥永不下发（见 [STACK.md](STACK.md) §1.6）。
 
-**配置面板契约**（工作台左侧「配置」按钮，已落地）：用户在面板里亲手填入的 Key / Base URL / 模型名，由 `POST /api/providers/config`（写令牌）写回本机 `.env` 并直写环境变量，热生效、不重启；`.env` 已 gitignore，密钥**永不入库、永不写日志、永不下发前端**（AGENTS §5 / STACK §1.6）。`POST /api/providers/test`（写令牌）对该档 Base URL 发一次只读 `GET /models` 做连通性测试，把成功 / 401 / 403 / 404 / 连不上收敛成 `{ok, status_code, host, detail}` 结构化结果——带令牌是因为这是底座替用户出网的口子（同 §1.3 口径）。`.env` 路径可被 `JZO_ENV_FILE` 覆盖（测试 / 启动器专用）。
+**配置面板契约**（工作台顶部模型徽标打开，已落地）：用户在面板里亲手填入的 Key / Base URL / 模型名，由 `POST /api/providers/config`（写令牌）写回本机 `.env` 并直写环境变量，热生效、不重启；`.env` 已 gitignore，密钥**永不入库、永不写日志、永不下发前端**（AGENTS §5 / STACK §1.6）。`POST /api/providers/test`（写令牌）对该档 Base URL 发一次只读 `GET /models` 做连通性测试，把成功 / 401 / 403 / 404 / 连不上收敛成 `{ok, status_code, host, detail}` 结构化结果——带令牌是因为这是底座替用户出网的口子（同 §1.3 口径）。`.env` 路径可被 `JZO_ENV_FILE` 覆盖（测试 / 启动器专用）。
 
 **内置档**（`app/core/providers/builtin.py` 与 `local.py`，环境变量名即契约的一部分）：
 - `openai-compatible` — `JZO_AI_BASE_URL` / `JZO_AI_API_KEY` / `JZO_AI_MODEL`（默认档）
