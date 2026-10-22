@@ -3,10 +3,30 @@
 .ws-page {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 300px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
   height: 100vh;
   background: var(--paper);
   overflow: hidden;
+}
+
+/* 三栏各钉一条轨道，且只占第一行。折叠时侧栏会被 display:none 摘出网格，
+   若交给自动定位，中栏与右栏会顺位前移：中栏挤进 0px 轨道（宽度归零）、
+   右栏涨满画布盖住舞台头「任务」钮，折叠后就再也点不回来——
+   这正是 v0.4.2 内测群友反馈的死锁根因（v0.4.3 修复）。 */
+.ws-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.ws-center {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.ws-context {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 /* ============ 左栏：任务 / 插件入口 ============ */
@@ -14,9 +34,11 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  /* 轨道收为 0 时长文本与按钮一律裁在栏内，不许溢到主对话区 */
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--card);
-  transition: width 200ms ease;
 }
 
 .ws-sidebar-head {
@@ -137,6 +159,12 @@
   flex: none;
 }
 
+.ws-stage-title {
+  /* 任务名再长也只挤压自己，不许把右侧按钮推出画布 */
+  min-width: 0;
+  overflow: hidden;
+}
+
 .ws-stage-kicker {
   display: block;
   font-size: 0.68rem;
@@ -157,12 +185,20 @@
   align-items: center;
   gap: 8px;
   flex: none;
+  /* 按钮组永远压在任何栏内容之上：折叠入口不许被遮挡（军令任务 1.2） */
+  position: relative;
+  z-index: 3;
 }
 
 /* 抽屉/重开入口：侧栏可见时用它自带的折叠钮；一旦隐藏（桌面收轨道或移动滑出），
-   舞台头这枚「任务」钮出现，保证任何状态下都能把左栏叫回来。 */
+   舞台头这枚「任务」钮出现，保证任何状态下都能把左栏叫回来。
+   它随按钮组常驻舞台头，不参与挤压、不被裁剪、层级高于两侧栏。 */
 .ws-drawer-btn {
   display: none;
+  flex: none;
+  white-space: nowrap;
+  position: relative;
+  z-index: 4;
 }
 
 .ws-page[data-side="hidden"] .ws-drawer-btn {
@@ -351,9 +387,11 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  /* 同左栏：轨道收为 0 时内部内容不得溢出 */
+  overflow: hidden;
   border-left: 1px solid var(--line);
   background: var(--card);
-  transition: width 200ms ease;
 }
 
 .ws-context-head {
@@ -476,7 +514,8 @@
 }
 
 /* 折叠态：由 .ws-page 的 data 属性驱动。
-   桌面把对应 grid 轨道收为 0（避免「元素 width:0 但轨道仍占位」的空列）；
+   桌面把对应 grid 轨道收为 0（避免「元素 width:0 但轨道仍占位」的空列），
+   三栏靠上面的 grid-column 钉轨各就各位，display:none 摘走一栏也不会让剩下的顺位前移；
    移动把抽屉滑出画布外。 */
 .ws-page[data-side="hidden"] { grid-template-columns: 0 minmax(0, 1fr) 300px; }
 .ws-page[data-ctx="hidden"] { grid-template-columns: 240px minmax(0, 1fr) 0; }
@@ -683,15 +722,22 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* 抽屉脱离网格流，桌面那套钉轨声明在此必须回退，避免凭空多出隐式轨道 */
+  .ws-center {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
   .ws-sidebar,
   .ws-context {
+    grid-column: auto;
+    grid-row: auto;
     position: fixed;
     top: 0;
     bottom: 0;
     z-index: 100;
     width: min(280px, 84vw);
     box-shadow: var(--shadow);
-    transition: transform 200ms ease;
     /* 抽屉叠在中栏之上，必须不透明，否则中心内容透上来糊成一片 */
     background: var(--paper);
   }
@@ -705,15 +751,61 @@
     right: 0;
   }
 
-  .ws-page[data-side="hidden"] .ws-sidebar { transform: translateX(-100%); }
-  .ws-page[data-side="open"] .ws-sidebar { transform: translateX(0); }
-  .ws-page[data-ctx="hidden"] .ws-context { transform: translateX(100%); }
-  .ws-page[data-ctx="open"] .ws-context { transform: translateX(0); }
+  /* 收起 = 滑出画布 + 滑完再隐身：既留住 200ms 动画，又不让栏里的按钮
+     留在 tab 序列里被键盘「摸到一块看不见的东西」。 */
+  .ws-page[data-side="hidden"] .ws-sidebar,
+  .ws-page[data-ctx="hidden"] .ws-context {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 200ms ease, visibility 0s linear 200ms;
+  }
+
+  .ws-page[data-ctx="hidden"] .ws-context {
+    transform: translateX(100%);
+  }
+
+  .ws-page[data-side="open"] .ws-sidebar,
+  .ws-page[data-ctx="open"] .ws-context {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 200ms ease, visibility 0s linear 0s;
+  }
+
+  /* 抽屉浮起时，舞台头那枚入口钮让位给抽屉自带的「折叠」，避免两枚按钮抢焦点 */
+  .ws-page[data-side="open"] .ws-drawer-btn {
+    visibility: hidden;
+  }
 
   .ws-thread { padding: 16px 14px; }
   .ws-composer { padding: 12px 14px; }
   .ws-stage-head { padding: 12px 14px; }
-  .ws-stage-title h1 { font-size: 1.06rem; }
+
+  /* 窄屏舞台头：三枚按钮吃掉大半行，标题若仍按内容挤位会被压成一列竖字
+     （v0.4.2 遗留观感缺陷，360px 实测截图为证）。这里让标题独占一行，
+     按钮行下移；kicker 是装饰件，窄屏先让位。 */
+  .ws-stage-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .ws-stage-kicker { display: none; }
+
+  .ws-stage-title {
+    flex: 1 1 100%;
+  }
+
+  .ws-stage-tools {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .ws-stage-title h1 {
+    font-size: 1.06rem;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .ws-bubble { max-width: 88%; }
 
   /* STACK §2.2 触控热区不小于 44px */

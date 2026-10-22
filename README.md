@@ -102,7 +102,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -153,7 +153,11 @@ jiuzhang-operator/
 │   ├── test_questions_api.py       # 接口契约与安全边界回归
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与零写死源
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
+│   ├── test_workspace_fold_state.py # 工作台三栏折叠状态机契约（v0.4.3 死锁锁死）
 │   └── test_providers_api.py       # Provider 注册表与切换契约
+├── tools/
+│   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
+│   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
 ├── AGENTS.md                # 开发与 AI 代理铁律
 ├── PLUGIN_SPEC.md           # 插件接入规范（含 §1.1 白嫖条款）
 ├── STACK.md                 # 技术语法规约（含 §1.6 密钥与环境变量装载）

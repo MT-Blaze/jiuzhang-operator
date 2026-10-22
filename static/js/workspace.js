@@ -130,9 +130,20 @@
   });
 
   // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
+  // 状态机只有一个事实来源：.ws-page 上的 data-side / data-ctx。
+  // 样式按这两枚属性钉轨切轨（见 workspace.css 折叠态一节），脚本只负责翻属性，
+  // 绝不再往元素上补 style，避免「属性说收起、内联样式说展开」的两本账。
   var wsPage = document.querySelector(".ws-page");
   var mqMobile = window.matchMedia("(max-width: 768px)");
   var openSidebarBtn = document.getElementById("wsOpenSidebar");
+
+  function sideOpen() {
+    return !!wsPage && wsPage.getAttribute("data-side") === "open";
+  }
+
+  function ctxOpen() {
+    return !!wsPage && wsPage.getAttribute("data-ctx") === "open";
+  }
 
   function setSide(open) {
     if (!wsPage) return;
@@ -152,25 +163,37 @@
 
   if (sidebarToggle) {
     sidebarToggle.addEventListener("click", function () {
-      setSide(wsPage.getAttribute("data-side") !== "open");
+      setSide(!sideOpen());
     });
   }
 
   if (openSidebarBtn) {
     openSidebarBtn.addEventListener("click", function () {
-      setSide(wsPage.getAttribute("data-side") !== "open");
+      setSide(!sideOpen());
     });
   }
 
   if (contextToggle) {
     contextToggle.addEventListener("click", function () {
-      setCtx(wsPage.getAttribute("data-ctx") !== "open");
+      setCtx(!ctxOpen());
     });
   }
 
   // 默认态：桌面两栏展开；窄屏抽屉收起，避免一进来就糊在中栏上。
   setSide(!mqMobile.matches);
   setCtx(!mqMobile.matches);
+
+  // 跨断点时必须重算：窄屏收起的抽屉拖宽到桌面会留下「轨道已收起、属性仍写 open」
+  // 的错位；反过来桌面展开态拉到窄屏则会让抽屉直接糊住对话流。
+  function onBreakpoint(matched) {
+    setSide(!matched);
+    setCtx(!matched);
+  }
+  if (typeof mqMobile.addEventListener === "function") {
+    mqMobile.addEventListener("change", function (e) { onBreakpoint(e.matches); });
+  } else if (typeof mqMobile.addListener === "function") {
+    mqMobile.addListener(function (e) { onBreakpoint(e.matches); });
+  }
 
   // ============ 输入器：Enter 发送 / Shift+Enter 换行 / 自适应高度 ============
   function autoGrow() {
