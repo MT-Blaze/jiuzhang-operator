@@ -106,6 +106,14 @@ JZO_LOCAL_TOKEN=自定义一个本地写令牌        # 可选；不填则首启
 - 插件仓库初始收录 `org.jiuzhang.demo-bank` 与 `org.jiuzhang.placeholder`，zip 顶层目录与 `plugin.json` 的 `id` 一致，可直接在线安装；
 - 边界不变：不自动拉取、不自动更新、不批量下载，装包仍由用户逐次点击发起。
 
+`v0.5.4` 左栏终极极简——低频操作收进「设置与控制」：
+
+- 左栏只剩折叠按钮、自由对话入口与动态插件列表；「安装插件 zip」「插件索引」「关于底座」三处入口全部移出；
+- 栏底新增一枚 44px 齿轮图标，直达新页面 `/settings`：在线索引拉取、手动安装 zip（文件选择 + 拖拽区）、关于底座信息集中于此；
+- 手动安装复用插件安装器全套校验：只收标准 zip、50 MB 上限、409 需显式确认覆盖、失败零残留；
+- 工作台保留全局拖拽兜底：zip 拖进页面任意位置即可安装，不必对准某个按钮；装完左栏插件区即时刷新；
+- 旧的 `/plugins` 索引页与 `/about` 底座介绍页保持可直达，设置页复用其实现与内容。
+
 `v0.5.3` 侧栏绝对极简——底座零业务、入口全插件：
 
 - 左栏删除写死的「拆分试卷 / 校对解析 / 组卷导出」，只保留「自由对话」这一底座默认入口；
@@ -125,7 +133,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-打开 <http://127.0.0.1:8000> 直达智能工作台，底座介绍页位于 <http://127.0.0.1:8000/about>，健康检查位于 <http://127.0.0.1:8000/healthz>。
+打开 <http://127.0.0.1:8000> 直达智能工作台，设置与控制页位于 <http://127.0.0.1:8000/settings>（左栏底部齿轮），底座介绍页位于 <http://127.0.0.1:8000/about>，健康检查位于 <http://127.0.0.1:8000/healthz>。
 
 写入接口需要本地令牌。可以通过 `JZO_LOCAL_TOKEN` 显式指定，也可以读取首次启动生成在 `data/.local_token` 的令牌：
 
@@ -144,7 +152,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -173,11 +181,11 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 }
 ```
 
-3. 把整个目录压成 zip 拖进工作台（或解压后放进 `plugins/`），再打开 `/api/plugins`：`plugins[]` 里出现自己的 id 就算装好了，`rejected[]` 会写明没装上的原因。
+3. 把整个目录压成 zip 拖进工作台任意位置，或到「设置与控制」页手动安装（也可解压后放进 `plugins/`），再打开 `/api/plugins`：`plugins[]` 里出现自己的 id 就算装好了，`rejected[]` 会写明没装上的原因。
 
 和宿主通信的完整消息协议（`plugin.activate` / `question.render`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
 
-> 当前 `v0.5.3` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；题卡渲染宿主尚未接回，`question.render` 暂时不会在页面上出卡片（见 PLUGIN_SPEC §2.3.5）。
+> 当前 `v0.5.4` 的页面以对话为主：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；题卡渲染宿主尚未接回，`question.render` 暂时不会在页面上出卡片（见 PLUGIN_SPEC §2.3.5）。
 
 ## 目录结构
 
@@ -213,10 +221,11 @@ jiuzhang-operator/
 ├── static/
 │   ├── index.html           # 底座介绍页（挂 /about，无框架、无 CDN）
 │   ├── workspace.html       # 智能工作台（三栏：入口与插件 / 对话流 / 上下文），根路径直达
+│   ├── settings.html        # 设置与控制（在线索引 / 手动装 zip / 关于底座），左栏齿轮进入
 │   ├── plugins.html         # 插件索引页（默认预填官方国内镜像，卡片支持在线安装）
-│   ├── css/{app,questions,workspace,plugins}.css
+│   ├── css/{app,questions,workspace,plugins,settings}.css
 │   ├── icons/               # PWA 图标（本地资源，可离线安装为应用）
-│   └── js/{app,workspace,plugins,pwa,version}.js
+│   └── js/{app,workspace,plugins,settings,pwa,version}.js
 ├── schemas/
 │   ├── question.json        # 题目交换格式（唯一事实来源）
 │   └── plugins-index.json   # plugins.json 索引格式
@@ -239,6 +248,8 @@ jiuzhang-operator/
 │   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
 │   ├── test_pwa_contract.py        # PWA 清单、图标与 Service Worker 契约
 │   ├── test_workspace_fold_state.py # 工作台三栏折叠状态机契约（v0.4.3 死锁锁死）
+│   ├── test_workspace_sidebar.py   # 工作台左栏与插件工作模式契约（v0.5.3/v0.5.4）
+│   ├── test_settings_page.py       # 设置与控制页：索引、手动安装与 About 契约
 │   ├── test_provider_config.py     # 多模型配置面板契约
 │   ├── test_providers_api.py       # Provider 注册表与切换契约
 │   ├── test_agent_chat_tuning.py   # 智能体对话调参契约
@@ -270,6 +281,7 @@ jiuzhang-operator/
 | `/about` | 底座介绍页（原首页，设计原则与只读契约入口导航） |
 | `/workspace` | 智能工作台（导入原卷 → 发指令 → 出题目与解析） |
 | `/plugins` | 插件索引页（默认预填官方镜像，可当场改地址；拉清单只读，装包需逐条点【在线安装】） |
+| `/settings` | 设置与控制（在线索引、手动安装 zip、关于底座；工作台左栏齿轮直达） |
 | `/api/questions` | 题目列表（分页、搜索、筛选） |
 | `/api/plugins` | 已加载插件清单（`rejected[]` 列出未通过校验的插件与原因） |
 | `POST /api/plugins/index` | 按用户填入的地址拉取一份插件索引（只读 GET，需一次性写令牌；官方地址失败时自动换源，不解压、不安装） |

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设置与控制 · 九章算子</title>
+  <meta name="description" content="九章算子设置与控制：在线拉取插件索引、手动安装 zip 插件包、查看底座信息。所有出网请求都由用户当场点击发起，底座不自动拉取、不自动更新。">
+  <meta name="theme-color" content="#a63b2b">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/questions.css">
+  <link rel="stylesheet" href="/static/css/plugins.css">
+  <link rel="stylesheet" href="/static/css/settings.css">
+</head>
+<body>
+  <div class="page settings-page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="九章算子首页">
+        <span class="seal" aria-hidden="true">九</span>
+        <span class="brand-text">
+          <span class="brand-cn">九章算子</span>
+          <span class="brand-en">JIUZHANG OPERATOR</span>
+        </span>
+      </a>
+
+      <nav class="topnav" aria-label="主导航">
+        <a class="topnav-link" href="/workspace">工作台</a>
+        <a class="topnav-link is-active" href="/settings" aria-current="page">设置与控制</a>
+        <a class="topnav-link" href="/about">底座介绍</a>
+      </nav>
+    </header>
+
+    <main class="st-main">
+      <section class="st-head" aria-labelledby="st-title">
+        <p class="eyebrow">SETTINGS · PLUGINS · ABOUT</p>
+        <h1 id="st-title">设置与控制</h1>
+        <p class="st-lede">
+          低频操作集中在这里：拉取插件索引、手动安装 zip、查看底座信息。
+          工作台左栏只留「自由对话」与已安装插件，不再堆叠安装与说明入口。
+          底座<strong>不自动拉取、不自动更新、不批量下载</strong>——每一次出网都由你当场点击发起。
+        </p>
+      </section>
+
+      <section class="pl-pull st-block" id="index" aria-labelledby="pl-pull-title">
+        <h2 id="pl-pull-title">在线插件索引</h2>
+        <p class="st-note">
+          默认预填官方插件仓库 <code>jiuzhang-plugins</code> 索引的国内可达镜像（gh-proxy 反代）。
+          主源失败时会自动切换 ghfast / jsDelivr 等备用镜像；改成第三方地址后，底座只访问那一个，不替你换源。
+        </p>
+        <form class="pl-form" id="plIndexForm">
+          <label class="q-field pl-url-field">
+            <span>索引地址（http/https，默认官方国内镜像，可改）</span>
+            <input
+              id="plIndexUrl"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              value="https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins.json"
+              placeholder="https://你的国内镜像或自建静态托管/plugins.json"
+            >
+          </label>
+          <div class="pl-form-actions">
+            <button type="submit" class="q-button pl-fetch" id="plFetchBtn">拉取清单</button>
+            <button type="button" class="q-button pl-demo" id="plDemoBtn">用本机示例清单试一次</button>
+          </div>
+        </form>
+        <p class="pl-status" id="plStatus" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <section class="pl-results-wrap st-block" aria-labelledby="pl-results-title">
+        <h2 id="pl-results-title">可用条目</h2>
+        <ul class="pl-results" id="plResults"></ul>
+
+        <h2 class="pl-rejected-title" id="pl-rejected-title" hidden>被跳过的条目</h2>
+        <ul class="pl-rejected" id="plRejected" hidden></ul>
+      </section>
+
+      <section class="st-block st-install" id="install" aria-labelledby="st-install-title">
+        <h2 id="st-install-title">手动安装 zip 包</h2>
+        <p class="st-note">
+          自己下载的插件包也可以在这里装：先过 <code>plugin.json</code> 契约校验，再由底座落地
+          <code>plugins/</code>。只收标准 zip，上限 50 MB；下载或校验失败不会留下半个文件。
+        </p>
+        <div class="st-drop" id="stDropZone" role="button" tabindex="0" aria-describedby="stDropHint">
+          <span class="st-drop-icon" aria-hidden="true">&darr;</span>
+          <span class="st-drop-title">把插件 .zip 拖到这里</span>
+          <span class="st-drop-hint" id="stDropHint">或点此选择文件。<br>也可以把 zip 直接拖进工作台任意位置，由底座全局兜底安装。</span>
+        </div>
+        <div class="st-install-actions">
+          <button type="button" class="q-button" id="stPickZip">选择 zip 文件</button>
+          <input type="file" id="stZipFile" accept=".zip,application/zip" hidden>
+        </div>
+        <p class="pl-status" id="stInstallStatus" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <section class="st-block st-about" aria-labelledby="st-about-title">
+        <h2 id="st-about-title">关于底座</h2>
+        <p class="st-note">
+          九章算子（Jiuzhang Operator）是为独立教师打造的模块化数学题库底座：本地优先、插件自由、
+          <strong>Apache License 2.0</strong> 开源。个人版永久免费——免注册、免卡密、无联网回连校验。
+        </p>
+        <ul class="st-about-points">
+          <li>底座只负责身份与权限、全局导航、数据总线、插件生命周期与安全边界；业务能力一律由插件提供。</li>
+          <li>插件格式是标准 zip，解压即用；脚本运行在沙箱 iframe 内，只能通过 Host API 读写被授权的数据。</li>
+          <li>底座不自动拉取、不自动更新、不批量下载，也不远程禁用任何插件。</li>
+        </ul>
+        <p class="st-about-links">
+          <a href="/about">查看完整底座介绍（About）</a>
+          <span class="sep" aria-hidden="true">·</span>
+          <a href="/spec/plugin">插件规范</a>
+          <span class="sep" aria-hidden="true">·</span>
+          <a href="/schemas/plugins-index.json">索引 Schema</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>九章算子 · Apache License 2.0 · 个人版永久免费</span>
+      <span class="sep" aria-hidden="true">·</span>
+      <a href="/workspace">返回工作台</a>
+    </footer>
+  </div>
+
+  <script src="/static/js/plugins.js"></script>
+  <script src="/static/js/settings.js"></script>
+  <script src="/static/js/pwa.js"></script>
+</body>
+</html>

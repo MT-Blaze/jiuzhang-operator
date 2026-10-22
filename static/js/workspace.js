@@ -3,7 +3,8 @@
  *
  * 设计取向（先见形，后调逻辑）：中栏是对话流主区，兼当前任务舞台；
  * 发送指令 → 用户气泡 → 调 /api/agent/chat → 助手气泡回显识别到的意图。
- * 左栏只放任务/插件简单入口，不做状态面板；右栏是上下文。
+ * 左栏只放「自由对话」与动态渲染的已装插件；索引、手动安装与底座信息
+ * 收纳到栏底齿轮进入的 /settings，不在工作台堆低频控件。
  *
  * 安全：所有气泡文本（含模型返回、插件反馈）一律用 textContent 落 DOM，
  * 不走 innerHTML，杜绝 XSS（AGENTS §5：不可信输入进 DOM 前必须净化）。
@@ -846,9 +847,7 @@
       });
   }
 
-  // ============ 插件一键装：拖拽 zip + 选文件（简单入口，反馈进对话流） ============
-  var pluginInstallBtn = document.getElementById("wsPluginInstallBtn");
-  var pluginFileInput = document.getElementById("wsPluginFile");
+  // ============ 插件拖拽装：工作台全局兜底（选文件与索引入口在 /settings） ============
   var dropOverlay = document.getElementById("wsDropOverlay");
   var dragDepth = 0;
 
@@ -863,10 +862,6 @@
       return Promise.resolve();
     }
     addBubble("sys", "正在安装 " + file.name + " …");
-    if (pluginInstallBtn) {
-      pluginInstallBtn.disabled = true;
-      pluginInstallBtn.setAttribute("aria-busy", "true");
-    }
     return fetchWriteToken()
       .then(function (token) {
         return fetch("/api/plugins/install" + (replace ? "?replace=true" : ""), {
@@ -895,10 +890,6 @@
       })
       .finally(function () {
         writeToken = null;
-        if (pluginInstallBtn) {
-          pluginInstallBtn.disabled = false;
-          pluginInstallBtn.setAttribute("aria-busy", "false");
-        }
       });
   }
 
@@ -951,23 +942,12 @@
     installPluginZip(file, false);
   });
 
-  if (pluginInstallBtn && pluginFileInput) {
-    pluginInstallBtn.addEventListener("click", function () {
-      pluginFileInput.click();
-    });
-    pluginFileInput.addEventListener("change", function () {
-      var file = pluginFileInput.files && pluginFileInput.files[0];
-      pluginFileInput.value = "";
-      if (file) installPluginZip(file, false);
-    });
-  }
-
   // ============ 初始化 ============
   // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
   setStage("自由对话");
   markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");
-  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。");
+  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。安装插件、拉取索引或查看底座信息，点左下角齿轮进入「设置与控制」。");
 
   // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
   loadPlugins()

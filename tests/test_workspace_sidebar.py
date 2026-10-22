@@ -1,9 +1,10 @@
-"""工作台左栏契约（v0.5.3）：底座零业务入口，插件区动态渲染。
+"""工作台左栏契约（v0.5.4）：底座零业务入口，插件区动态渲染，低频入口收进设置页。
 
 军令口径：
 1. 删除写死的「拆分试卷 / 校对解析 / 组卷导出」，自由对话是唯一默认入口；
 2. 插件区按 ``/api/plugins`` 的发现结果渲染，空态显示「暂无插件」；
-3. 点插件只注入工作模式上下文并更新右栏「当前任务」，不得跳转页面。
+3. 点插件只注入工作模式上下文并更新右栏「当前任务」，不得跳转页面；
+4. 左栏只剩折叠、自由对话、插件列表与栏底齿轮；安装/索引/About 全进 ``/settings``。
 
 本测试只钉结构，不启浏览器；真机与像素证据由 ``.system_generated`` 下的探针产出。
 
@@ -53,6 +54,27 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertRegex(block.group(1), r"min-height:\s*44px")
         self.assertIn(".ws-plugin-empty", CSS)
 
+    def test_06_low_frequency_entries_moved_to_settings(self) -> None:
+        """v0.5.4：安装按钮、拖拽提示、插件索引、About 链接都不许留在左栏。"""
+        self.assertNotIn("wsPluginInstallBtn", HTML)
+        self.assertNotIn("wsPluginFile", HTML)
+        self.assertNotIn("安装插件 zip 包", HTML)
+        self.assertNotIn("ws-plugin-drop-hint", HTML)
+        self.assertNotIn("ws-plugin-links", HTML)
+        self.assertNotIn('href="/plugins"', HTML)
+        self.assertNotIn('href="/about"', HTML)
+        # 工作台脚本也不再引用已删除的安装按钮
+        self.assertNotIn("wsPluginInstallBtn", JS)
+
+    def test_07_sidebar_settings_gear_is_44px(self) -> None:
+        self.assertIn('id="wsSettingsLink"', HTML)
+        self.assertIn('href="/settings"', HTML)
+        self.assertIn('aria-label="设置与控制"', HTML)
+        block = re.search(r"\.ws-settings-link\s*\{([^}]*)\}", CSS)
+        self.assertIsNotNone(block, "缺少设置入口样式")
+        self.assertRegex(block.group(1), r"width:\s*44px")
+        self.assertRegex(block.group(1), r"height:\s*44px")
+
 
 class SidebarBehaviourTest(unittest.TestCase):
     def test_01_plugins_rendered_from_discovery_api(self) -> None:
@@ -97,6 +119,13 @@ class SidebarBehaviourTest(unittest.TestCase):
     def test_07_no_page_navigation_in_workspace_script(self) -> None:
         for token in ("location.href", "location.assign", "window.open"):
             self.assertNotIn(token, JS, f"工作台脚本出现跳转：{token}")
+
+    def test_08_global_drag_install_still_works(self) -> None:
+        """删掉左栏安装按钮后，整页拖拽兜底必须还在（军令 2.4）。"""
+        self.assertIn('window.addEventListener("drop"', JS)
+        self.assertIn("installPluginZip(file, false)", JS)
+        self.assertIn('fetch("/api/plugins/install"', JS)
+        self.assertIn('id="wsDropOverlay"', HTML)
 
 
 if __name__ == "__main__":

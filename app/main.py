@@ -91,6 +91,14 @@ def create_app() -> FastAPI:
     async def read_plugins_page() -> FileResponse:
         return FileResponse(settings.static_dir / "plugins.html")
 
+    @app.get("/settings", include_in_schema=False)
+    async def read_settings_page() -> FileResponse:
+        """低频操作统一收口：在线索引、手动安装 zip、底座信息。
+
+        工作台左栏只留入口与已装插件，齿轮入口直达这里（v0.5.4）。
+        """
+        return FileResponse(settings.static_dir / "settings.html")
+
     @app.get("/plugins/index-example", include_in_schema=False)
     async def read_example_index() -> FileResponse:
         """本机自带的示例索引，供「先试一次」按钮用同源地址走通流程。

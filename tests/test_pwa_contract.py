@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
-PAGES = ("index.html", "workspace.html", "plugins.html")
+PAGES = ("index.html", "workspace.html", "plugins.html", "settings.html")
 
 
 def _read(path: Path) -> str:

@@ -1,7 +1,7 @@
 """种子题库插件与默认路由契约（2026-10-24 军令任务 1/2）。
 
 覆盖三件事：
-1. ``/`` 直达工作台、``/about`` 保留底座介绍页、边栏有 About 链接；
+1. ``/`` 直达工作台、``/about`` 保留底座介绍页、About/索引收进 ``/settings``；
 2. ``ensure_seed_plugin`` 首启静默安装 examples/demo_plugin.zip，标记防重装；
 3. demo_plugin.zip 本体通过插件安装器的全套契约校验，且含 5 道合规题目。
 
@@ -58,14 +58,24 @@ class DefaultRouteTest(unittest.TestCase):
     def test_03_workspace_route_kept(self) -> None:
         self.assertEqual(self._served_file("/workspace"), STATIC / "workspace.html")
 
-    def test_04_sidebar_has_about_link_at_bottom(self) -> None:
+    def test_04_sidebar_has_no_about_link(self) -> None:
+        """v0.5.4：About 与插件索引不再堆在左栏，统一收进设置页。"""
         text = _read(STATIC / "workspace.html")
-        self.assertIn('href="/about"', text)
-        self.assertIn("关于底座（About）", text)
+        self.assertNotIn('href="/about"', text)
+        self.assertNotIn('href="/plugins"', text)
+        self.assertIn('href="/settings"', text)
+
+        settings_text = _read(STATIC / "settings.html")
+        self.assertIn('href="/about"', settings_text)
+        self.assertIn("关于底座", settings_text)
+        self.assertIn("（About）", settings_text)
         # 不许再留一个指回 / 的「底座首页」链接（/ 现在就是工作台自己）
         self.assertNotIn(">底座首页</a>", text)
 
-    def test_05_welcome_hint_wired_in_workspace_js(self) -> None:
+    def test_05_settings_route_serves_settings_page(self) -> None:
+        self.assertEqual(self._served_file("/settings"), STATIC / "settings.html")
+
+    def test_06_welcome_hint_wired_in_workspace_js(self) -> None:
         text = _read(STATIC / "js" / "workspace.js")
         self.assertIn("系统已为您预置了 5 道示例数学题", text)
         self.assertIn("拆分第一题", text)
