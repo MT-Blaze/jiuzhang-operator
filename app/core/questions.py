@@ -108,7 +108,13 @@ def _encode_json(value: Any) -> str | None:
 
 
 def _new_id() -> str:
-    return "q_" + secrets.token_urlsafe(18)
+    """签发题目 ID：只用十六进制，保证同时过契约与存储层 CHECK。
+
+    存储层 ``questions`` 表的 CHECK 要求 ``id GLOB 'q_[A-Za-z0-9]*'``——
+    ``token_urlsafe`` 会吐出 ``-``/``_``，撞上 CHECK 后表现为「ID 已存在」的 409，
+    是随机复现的假故障，所以这里改用纯十六进制。
+    """
+    return "q_" + secrets.token_hex(12)
 
 
 def _row_is_taken(con: sqlite3.Connection, question_id: str) -> bool:

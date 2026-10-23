@@ -100,6 +100,65 @@ def bank_topic_notes(plugin_id: str, topic_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/api/bank/plugins/{plugin_id}/review", summary="待审队列：按灌库标记筛题并给分组计数")
+def bank_review(
+    plugin_id: str,
+    flag: str = Query("", max_length=32),
+    page: int = Query(1, ge=1, le=10000),
+    page_size: int = Query(20, ge=1, le=bank.MAX_PAGE_SIZE),
+) -> dict[str, Any]:
+    try:
+        items, total = bank.list_questions(
+            plugin_id, flag=flag or "any", page=page, page_size=page_size
+        )
+        summary = bank.review_summary(plugin_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "summary": summary,
+    }
+
+
+@router.patch(
+    "/api/bank/plugins/{plugin_id}/questions/{question_id}",
+    summary="按题回写可审字段并清除审核标记（人工审核页专用）",
+    dependencies=[Depends(require_write_token)],
+)
+def bank_update_question(
+    plugin_id: str, question_id: str, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """请求体形如 ``{"question": {...可审字段..., "clear_flags": ["answer_absent"]}}``。
+
+    只接受题目内容与 ``clear_flags``；大纲挂载、来源关系与题目身份都不在此通道里改，
+    避免人工审核页变成能悄悄挪动题目归属的旁路（那属于录题插件的改题范围）。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    patch = payload.get("question")
+    if not isinstance(patch, dict):
+        raise HTTPException(status_code=400, detail="缺少 question 对象")
+    try:
+        return bank.update_question(plugin_id, question_id, patch)
+    except questions.QuestionValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "修改后的题目不符合 Schema", "errors": exc.errors},
+        ) from exc
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/api/bank/plugins/{plugin_id}/questions/{question_id}", summary="单题详情")
 def bank_question(plugin_id: str, question_id: str) -> dict[str, Any]:
     try:

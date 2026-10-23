@@ -13,6 +13,7 @@
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.jiuzhang.core-bank";
   var PAGE_SIZE = 12;
+  var REVIEW_PAGE_SIZE = 6;
   var REQUEST_TIMEOUT_MS = 15000;
 
   var root = document.getElementById("root");
@@ -36,7 +37,16 @@
     items: [],
     selected: null,
     showSolution: false,
-    loading: false
+    loading: false,
+    view: "list",
+    reviewFlag: "",
+    reviewPage: 1,
+    reviewPages: 1,
+    reviewTotal: 0,
+    reviewItems: [],
+    reviewSummary: { total: 0, flags: [] },
+    reviewLoading: false,
+    reviewError: ""
   };
 
   // 大纲树：册/章/节/考向按需懒加载，expanded 记开合，children 记已取回的一层
@@ -546,6 +556,261 @@
     host.appendChild(side);
   }
 
+  // ---------- 人工审核（待审任务） ----------
+  var FLAG_LABELS = {
+    answer_absent: "没有答案依据",
+    answer_region_empty: "答案区是空白",
+    type_manual_review: "题型待人工判",
+    structure_conflict: "选项内嵌正文",
+    topic_unmapped: "只挂到节层",
+    needs_conclusion: "结论未单独成字段",
+    solution_absent: "连答案正文都没有"
+  };
+  var EDITABLE_TYPES = [
+    ["single_choice", "单选"], ["multiple_choice", "多选"],
+    ["fill_blank", "填空"], ["solution", "解答"]
+  ];
+
+  function flagLabel(flag) { return FLAG_LABELS[flag] || flag; }
+
+  function isChoice(question) {
+    return question.type === "single_choice" || question.type === "multiple_choice";
+  }
+
+  function loadReview(page) {
+    state.view = "review";
+    state.reviewLoading = true;
+    state.reviewError = "";
+    if (page) state.reviewPage = page;
+    renderAll();
+    hostCall("bank.review", {
+      flag: state.reviewFlag,
+      page: state.reviewPage,
+      page_size: REVIEW_PAGE_SIZE
+    }).then(function (result) {
+      state.reviewItems = (result && result.items) || [];
+      state.reviewTotal = (result && result.total) || 0;
+      state.reviewPages = (result && result.total_pages) || 1;
+      state.reviewSummary = (result && result.summary) || { total: 0, flags: [] };
+      state.reviewLoading = false;
+      renderAll();
+    }).catch(function (error) {
+      state.reviewLoading = false;
+      state.reviewItems = [];
+      state.reviewError = error.message;
+      renderAll();
+    });
+  }
+
+  function submitPatch(id, patch, button, feedback) {
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    if (feedback) feedback.textContent = "提交中…";
+    hostCall("bank.update", { id: id, question: patch }).then(function (result) {
+      toast("已更新 " + ((result && result.id) || id));
+      dock("人工审核：已修复 " + ((result && result.id) || id));
+      loadReview();
+    }, function (error) {
+      if (feedback) feedback.textContent = "失败：" + error.message;
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
+    });
+  }
+
+  function buildReviewCard(question) {
+    var card = el("article", "cb-review-card");
+    card.setAttribute("data-review-id", question.id);
+
+    var head = el("div", "cb-review-head");
+    head.appendChild(el("p", "cb-review-stem", question.stem.slice(0, 160)));
+    var chips = el("div", "cb-review-chips");
+    chips.appendChild(el("span", "cb-chip", typeLabel(question.type)));
+    chips.appendChild(el("span", "cb-chip", difficultyLabel(question.difficulty)));
+    chips.appendChild(el("span", "cb-chip", question.grade || "未标注"));
+    migrationFlags(question).forEach(function (flag) {
+      chips.appendChild(el("span", "cb-chip cb-chip-review", flagLabel(flag)));
+    });
+    chips.appendChild(el("span", "cb-review-id", question.id));
+    head.appendChild(chips);
+    card.appendChild(head);
+
+    var feedback = el("span", "cb-review-feedback", "");
+    var body = el("div", "cb-review-body");
+
+    if (isChoice(question)) {
+      var picked = new Set((question.answer && question.answer.choice_keys) || []);
+      var letters = el("div", "cb-review-letters");
+      function paint() {
+        letters.textContent = "";
+        (question.options || []).forEach(function (option) {
+          var on = picked.has(option.key);
+          var btn = el("button", "cb-letter" + (on ? " cb-letter-on" : ""), option.key);
+          btn.type = "button";
+          btn.setAttribute("aria-pressed", String(on));
+          btn.addEventListener("click", function () {
+            if (question.type === "single_choice") {
+              picked.clear();
+              picked.add(option.key);
+            } else if (picked.has(option.key)) {
+              picked.delete(option.key);
+            } else {
+              picked.add(option.key);
+            }
+            paint();
+          });
+          letters.appendChild(btn);
+        });
+        if (!question.options || !question.options.length) {
+          letters.appendChild(el("span", "cb-review-hint", "这道题没有可点的选项，请先在下面改题型或补选项。"));
+        }
+      }
+      paint();
+      body.appendChild(letters);
+
+      var saveAnswer = el("button", "cb-btn cb-btn-primary", "保存答案并清标记");
+      saveAnswer.type = "button";
+      saveAnswer.addEventListener("click", function () {
+        var keys = Array.from(picked).sort();
+        if (!keys.length) {
+          feedback.textContent = "先点一个选项字母再保存。";
+          return;
+        }
+        submitPatch(question.id, {
+          answer: { kind: "choice", choice_keys: keys, final: keys.join(",") },
+          clear_flags: migrationFlags(question)
+        }, saveAnswer, feedback);
+      });
+      body.appendChild(saveAnswer);
+    } else {
+      var input = document.createElement("textarea");
+      input.className = "cb-review-input";
+      input.rows = 3;
+      input.setAttribute("aria-label", "补录答案正文");
+      input.value = (question.answer && question.answer.content) || "";
+      body.appendChild(input);
+
+      var saveText = el("button", "cb-btn cb-btn-primary", "保存答案并清标记");
+      saveText.type = "button";
+      saveText.addEventListener("click", function () {
+        var text = input.value.trim();
+        if (!text) {
+          feedback.textContent = "答案正文不能空着保存。";
+          return;
+        }
+        submitPatch(question.id, {
+          answer: { kind: "text", content: text, final: text.slice(0, 2000) },
+          clear_flags: migrationFlags(question)
+        }, saveText, feedback);
+      });
+      body.appendChild(saveText);
+    }
+
+    var typeRow = el("div", "cb-review-row");
+    typeRow.appendChild(el("span", "cb-review-hint", "改题型："));
+    var select = document.createElement("select");
+    select.className = "cb-select cb-review-select";
+    select.setAttribute("aria-label", "改成哪个题型");
+    EDITABLE_TYPES.forEach(function (pair) {
+      var option = document.createElement("option");
+      option.value = pair[0];
+      option.textContent = pair[1];
+      if (pair[0] === question.type) option.selected = true;
+      select.appendChild(option);
+    });
+    typeRow.appendChild(select);
+    var saveType = el("button", "cb-btn", "保存题型");
+    saveType.type = "button";
+    saveType.addEventListener("click", function () {
+      submitPatch(question.id, {
+        type: select.value,
+        clear_flags: ["structure_conflict", "type_manual_review"]
+      }, saveType, feedback);
+    });
+    typeRow.appendChild(saveType);
+    body.appendChild(typeRow);
+
+    var clearRow = el("div", "cb-review-row");
+    var clearOnly = el("button", "cb-btn", "确认无误，只清标记");
+    clearOnly.type = "button";
+    clearOnly.addEventListener("click", function () {
+      submitPatch(question.id, { clear_flags: migrationFlags(question) }, clearOnly, feedback);
+    });
+    clearRow.appendChild(clearOnly);
+    clearRow.appendChild(feedback);
+    body.appendChild(clearRow);
+
+    card.appendChild(body);
+    return card;
+  }
+
+  function renderReviewPanel(host) {
+    var panel = el("div", "cb-review");
+
+    var aside = el("div", "cb-review-filters");
+    aside.appendChild(el("h2", "cb-review-heading", "待审标记"));
+    var allButton = el("button", "cb-review-flag" + (state.reviewFlag ? "" : " cb-tree-active"),
+      "全部待审 " + (state.reviewSummary.total || 0));
+    allButton.type = "button";
+    allButton.addEventListener("click", function () {
+      state.reviewFlag = "";
+      loadReview(1);
+    });
+    aside.appendChild(allButton);
+    (state.reviewSummary.flags || []).forEach(function (item) {
+      var button = el("button",
+        "cb-review-flag" + (state.reviewFlag === item.name ? " cb-tree-active" : ""),
+        flagLabel(item.name) + " · " + item.count);
+      button.type = "button";
+      button.addEventListener("click", function () {
+        state.reviewFlag = item.name;
+        loadReview(1);
+      });
+      aside.appendChild(button);
+    });
+    aside.appendChild(el("p", "cb-review-note",
+      "标记来自灌库校验：答案取不到字母的一律留空，不拿 A 冒充。修一条清一条。"));
+    panel.appendChild(aside);
+
+    var list = el("div", "cb-review-list");
+    if (state.reviewLoading && !state.reviewItems.length) {
+      list.appendChild(el("p", "cb-loading", "正在读取待审队列…"));
+    } else if (state.reviewError) {
+      list.appendChild(el("p", "cb-tree-error", "待审队列读取失败：" + state.reviewError));
+      var retry = el("button", "cb-btn", "重试");
+      retry.type = "button";
+      retry.addEventListener("click", function () { loadReview(); });
+      list.appendChild(retry);
+    } else if (!state.reviewItems.length) {
+      list.appendChild(el("p", "cb-empty", "这一类没有待审题了——真题的人工审核已清账。"));
+    } else {
+      state.reviewItems.forEach(function (question) {
+        list.appendChild(buildReviewCard(question));
+      });
+      if (state.reviewPages > 1) {
+        var pager = el("div", "cb-pager");
+        var prev = el("button", "cb-btn", "上一页");
+        prev.type = "button";
+        prev.disabled = state.reviewPage <= 1;
+        prev.addEventListener("click", function () { loadReview(state.reviewPage - 1); });
+        var next = el("button", "cb-btn", "下一页");
+        next.type = "button";
+        next.disabled = state.reviewPage >= state.reviewPages;
+        next.addEventListener("click", function () { loadReview(state.reviewPage + 1); });
+        pager.appendChild(prev);
+        pager.appendChild(el("span", null, "第 " + state.reviewPage + " / " + state.reviewPages
+          + " 页 · 共 " + state.reviewTotal + " 题"));
+        pager.appendChild(next);
+        list.appendChild(pager);
+      }
+    }
+    panel.appendChild(list);
+    host.appendChild(panel);
+  }
+
   function renderAll() {
     if (!stageMode || !root) return;
     root.textContent = "";
@@ -580,15 +845,44 @@
     refresh.addEventListener("click", function () { loadTree(); loadQuestions(); });
     toolbar.appendChild(refresh);
 
-    var hint = el("span", "cb-sub", describeFilters());
+    var views = el("div", "cb-views");
+    views.setAttribute("role", "tablist");
+    views.setAttribute("aria-label", "题库视图");
+    var listButton = el("button", "cb-btn" + (state.view === "list" ? " cb-btn-primary" : ""), "题目列表");
+    listButton.type = "button";
+    listButton.setAttribute("role", "tab");
+    listButton.setAttribute("aria-selected", String(state.view === "list"));
+    listButton.addEventListener("click", function () {
+      if (state.view !== "list") {
+        state.view = "list";
+        loadQuestions();
+      }
+    });
+    var reviewCount = state.reviewSummary.total;
+    var reviewButton = el("button", "cb-btn" + (state.view === "review" ? " cb-btn-primary" : ""),
+      "待审任务" + (reviewCount ? " " + reviewCount : ""));
+    reviewButton.type = "button";
+    reviewButton.setAttribute("role", "tab");
+    reviewButton.setAttribute("aria-selected", String(state.view === "review"));
+    reviewButton.setAttribute("data-review-tab", "true");
+    reviewButton.addEventListener("click", function () { loadReview(1); });
+    views.appendChild(listButton);
+    views.appendChild(reviewButton);
+    toolbar.appendChild(views);
+
+    var hint = el("span", "cb-sub", state.view === "review" ? "人工审核：修一条清一条" : describeFilters());
     hint.setAttribute("data-filter-summary", "true");
     toolbar.appendChild(hint);
     root.appendChild(toolbar);
 
-    var body = el("div", "cb-body");
-    renderTree(body);
-    renderList(body);
-    renderDetail(body);
+    var body = el("div", state.view === "review" ? "cb-body cb-body-review" : "cb-body");
+    if (state.view === "review") {
+      renderReviewPanel(body);
+    } else {
+      renderTree(body);
+      renderList(body);
+      renderDetail(body);
+    }
     root.appendChild(body);
   }
 

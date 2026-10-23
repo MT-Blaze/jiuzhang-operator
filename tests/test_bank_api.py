@@ -68,6 +68,12 @@ def _document(index: int, grade: str, difficulty: str) -> dict:
     else:
         document["answer"] = {"kind": "text", "content": "$x=1$", "final": "1"}
     document["solution"] = "由 $x^2+1=0$ 得 $x=\\pm i$，取正根。"
+    # 每 17 题造一道带灌库审核标记的题，供「待审任务」页签取数
+    if index % 17 == 3:
+        flag = "answer_absent" if (index // 17) % 2 == 0 else "structure_conflict"
+        document["extensions"]["org.jiuzhang.core-bank.migration"] = {
+            "flags": [flag], "run_at": "2026-10-23T10:00:00+08:00"
+        }
     return document
 
 
@@ -579,6 +585,112 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual([item["key"] for item in created["options"]], ["A", "B", "C", "D"])
         self.assertEqual(created["answer"]["choice_keys"], ["A", "C"])
 
+    # ---------- 人工审核（P0#3） ----------
+    def test_z8_review_queue_groups_and_filters(self) -> None:
+        """不给 flag 就是整条待审队列；分组计数必须与逐题标记自洽。"""
+        status, data = self._request(f"/api/bank/plugins/{PLUGIN_ID}/review?page_size=50")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], data["summary"]["total"])
+        self.assertGreaterEqual(data["total"], 1)
+        for item in data["items"]:
+            flags = (item["extensions"].get("org.jiuzhang.core-bank.migration") or {}).get("flags")
+            self.assertTrue(flags, item["id"])
+        counts = {item["name"]: item["count"] for item in data["summary"]["flags"]}
+        self.assertEqual(sum(counts.values()), data["total"])   # 夹具里每题只带一个标记
+        self.assertIn("answer_absent", counts)
+
+        status, only = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/review?" + self._query(flag="answer_absent", page_size=50)
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(only["total"], counts["answer_absent"])
+        self.assertTrue(all(
+            "answer_absent" in item["extensions"]["org.jiuzhang.core-bank.migration"]["flags"]
+            for item in only["items"]
+        ))
+
+        status, bad = self._request(f"/api/bank/plugins/{PLUGIN_ID}/review?flag=nonsense")
+        self.assertEqual(status, 400, bad)
+
+    def test_z9_update_requires_token_and_clears_flags(self) -> None:
+        target = "q_test_000037"   # 夹具里带 answer_absent 标记的单选题
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"answer": {"kind": "choice", "choice_keys": ["C"], "final": "C"}}},
+        )
+        self.assertEqual(status, 401)
+
+        status, before = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertEqual(status, 200)
+        self.assertIn("answer_absent",
+                      before["extensions"]["org.jiuzhang.core-bank.migration"]["flags"])
+        status, queue_before = self._request(f"/api/bank/plugins/{PLUGIN_ID}/review?page_size=1")
+        total_before = queue_before["summary"]["total"]
+
+        status, fixed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {
+                "answer": {"kind": "choice", "choice_keys": ["C"], "final": "C"},
+                "clear_flags": ["answer_absent"],
+            }},
+            token=True,
+        )
+        self.assertEqual(status, 200, fixed)
+        self.assertEqual(fixed["answer"]["choice_keys"], ["C"])
+        self.assertNotIn("org.jiuzhang.core-bank.migration", fixed["extensions"])
+        self.assertGreaterEqual(fixed["meta"]["updated_at"], before["meta"]["updated_at"])
+
+        status, listed = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertEqual(status, 200)
+        self.assertNotIn("org.jiuzhang.core-bank.migration", listed["extensions"])
+        self.assertEqual(listed["answer"]["final"], "C")
+        status, queue_after = self._request(f"/api/bank/plugins/{PLUGIN_ID}/review?page_size=1")
+        self.assertEqual(queue_after["summary"]["total"], total_before - 1)   # 修一条少一条
+
+    def test_z10_update_rejects_unknown_flag_and_keeps_row_intact(self) -> None:
+        target = "q_test_000020"
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"clear_flags": ["definitely_not_a_flag"]}}, token=True,
+        )
+        self.assertEqual(status, 422, data)
+        self.assertIn("未知审核标记", json.dumps(data, ensure_ascii=False))
+        status, listed = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertIn("structure_conflict",
+                      listed["extensions"]["org.jiuzhang.core-bank.migration"]["flags"])
+
+        # 清一个该题没有的合法标记 = 幂等空操作，不报错也不动数据
+        status, idempotent = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"clear_flags": ["answer_absent"]}}, token=True,
+        )
+        self.assertEqual(status, 200, idempotent)
+        self.assertIn("structure_conflict",
+                      idempotent["extensions"]["org.jiuzhang.core-bank.migration"]["flags"])
+
+        status, missing = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/q_does_not_exist", "PATCH",
+            {"question": {"stem": "越权改题"}}, token=True,
+        )
+        self.assertEqual(status, 404, missing)
+
+    def test_z11_update_can_change_type_for_structure_conflict(self) -> None:
+        target = "q_test_000020"   # 选项拆不出来的那道：改判成解答题
+        status, fixed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"type": "solution", "clear_flags": ["structure_conflict"]}},
+            token=True,
+        )
+        self.assertEqual(status, 200, fixed)
+        self.assertEqual(fixed["type"], "solution")
+        self.assertNotIn("options", fixed)   # 存储层强制「无选项题型 options 为空数组」
+        self.assertNotIn("org.jiuzhang.core-bank.migration", fixed["extensions"])
+        status, listed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(q="第 20 题", page_size=20)
+        )
+        self.assertTrue(any(item["id"] == target and item["type"] == "solution"
+                            for item in listed["items"]))
+
     # ---------- 配图边界 ----------
     def test_upload_serving_and_traversal(self) -> None:
         with urllib.request.urlopen(self.base + "/static/uploads/probe.png", timeout=5) as response:
@@ -782,7 +894,7 @@ class StageRelayContractTest(unittest.TestCase):
     def test_stage_relay_whitelist_and_plugin_scoping(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         for method in ("bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
-                       "bank.topics", "bank.topic_notes",
+                       "bank.topics", "bank.topic_notes", "bank.review", "bank.update",
                        "basket.list", "basket.add", "basket.remove", "basket.clear"):
             self.assertIn(f'"{method}"', source)
         self.assertNotIn('payload.plugin_id', source)

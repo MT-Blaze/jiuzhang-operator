@@ -309,7 +309,7 @@
   // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
-    "bank.topics", "bank.topic_notes",
+    "bank.topics", "bank.topic_notes", "bank.review", "bank.update",
     "basket.list", "basket.add", "basket.remove", "basket.clear"
   ];
   // 录题插件的写入目标：底座唯一的公共题库。插件自报 plugin_id 一律不认，
@@ -487,6 +487,55 @@
         });
         done(result);
       }, fail);
+      return;
+    }
+
+    if (method === "bank.update") {
+      // 人工审核页的一键修复：与新增同权——必须先声明 questions:write，令牌仍留在宿主侧
+      var writePermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (writePermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能修改题库"
+        });
+        return;
+      }
+      var targetId = textValue(payload, "id", 80);
+      if (!ID_RE.test(targetId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "待修改的题目 id 不合法" });
+        return;
+      }
+      var patch = payload.question;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待写入的 question 对象" });
+        return;
+      }
+      withWriteToken(
+        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions/"
+          + encodeURIComponent(targetId),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: patch })
+        }
+      ).then(function (result) {
+        emit("question.updated", {
+          action: "update",
+          id: result && result.id,
+          pluginId: tab.plugin.id
+        });
+        done(result);
+      }, fail);
+      return;
+    }
+
+    if (method === "bank.review") {
+      var reviewParams = new URLSearchParams();
+      var flag = filterValue(payload, "flag", 32);
+      if (flag && flag !== "全部") reviewParams.set("flag", flag);
+      reviewParams.set("page", String(intValue(payload, "page", 1, 1, 10000)));
+      reviewParams.set("page_size", String(intValue(payload, "page_size", 20, 1, 100)));
+      fetchJson(base + "/review?" + reviewParams.toString()).then(done, fail);
       return;
     }
 

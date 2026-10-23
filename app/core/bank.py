@@ -77,6 +77,17 @@ REQUIRED_TABLES = (
 EXT_GRADE_KEY = "org.jiuzhang.core-bank.grade"
 EXT_TAXONOMY_KEY = "org.jiuzhang.core-bank.taxonomy"
 EXT_IMAGES_KEY = "org.jiuzhang.core-bank.images"
+EXT_MIGRATION_KEY = "org.jiuzhang.core-bank.migration"
+# 灌库时打下的审核标记；老师修完一条就清一条，全清完则整个迁移条目移出库
+REVIEW_FLAGS = (
+    "answer_absent",        # 选择题没有任何字母依据
+    "answer_region_empty",  # 有【答案】标记但标记后是空白
+    "type_manual_review",   # 通篇解析、无结论标记可依
+    "structure_conflict",   # 选项内嵌正文，拆不出选项
+    "topic_unmapped",       # 旧库没登记考向 id，只挂到节/章
+    "needs_conclusion",     # 结论没单独成字段，整段解析当答案
+    "solution_absent",      # 非选择题连答案正文都没有
+)
 # 库内 extensions 的展示名；同一键在数组态里必须带稳定 label
 EXTENSION_LABELS = {
     EXT_GRADE_KEY: "年级",
@@ -486,6 +497,26 @@ def _assemble(con: sqlite3.Connection, rows: Iterable[sqlite3.Row]) -> list[dict
 
 # ---------------------------------------------------------------- 过滤与读取
 
+def _flag_clause(flag: str) -> tuple[str, list[Any]]:
+    """按灌库审核标记筛题；``any`` 表示「带任何未清标记」，即整条待审队列。"""
+    if flag == "any":
+        return (
+            "EXISTS (SELECT 1 FROM json_each(q.extensions) e"
+            " WHERE json_extract(e.value, '$.key') = ?"
+            " AND json_array_length(json_extract(e.value, '$.value.flags')) > 0)",
+            [EXT_MIGRATION_KEY],
+        )
+    if flag not in REVIEW_FLAGS:
+        raise BankError(f"未知审核标记 {flag!r}，只认 any/{'/'.join(REVIEW_FLAGS)}")
+    return (
+        "EXISTS (SELECT 1 FROM json_each(q.extensions) e"
+        " WHERE json_extract(e.value, '$.key') = ?"
+        " AND EXISTS (SELECT 1 FROM json_each(json_extract(e.value, '$.value.flags')) f"
+        "             WHERE f.value = ?))",
+        [EXT_MIGRATION_KEY, flag],
+    )
+
+
 def _build_where(
     *,
     grade: str = "",
@@ -493,8 +524,8 @@ def _build_where(
     question_type: str = "",
     chapter: str = "",
     textbook: str = "",
-    topic: str = "",
     search: str = "",
+    flag: str = "",
     ids: Iterable[str] | None = None,
 ) -> tuple[str, list[Any]]:
     where: list[str] = []
@@ -534,6 +565,10 @@ def _build_where(
     if term:
         where.append("(q.stem LIKE ? ESCAPE '\\' OR q.id = ?)")
         params.extend([_like(term), term])
+    if flag:
+        flag_sql, flag_params = _flag_clause(flag)
+        where.append(flag_sql)
+        params.extend(flag_params)
     if ids is not None:
         wanted = list(ids)
         if not wanted:
@@ -574,6 +609,7 @@ def list_questions(
     textbook: str = "",
     topic: str = "",
     search: str = "",
+    flag: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -581,7 +617,7 @@ def list_questions(
     page_size = max(1, min(int(page_size), MAX_PAGE_SIZE))
     clause, params = _build_where(
         grade=grade, difficulty=difficulty, question_type=question_type,
-        chapter=chapter, textbook=textbook, search=search,
+        chapter=chapter, textbook=textbook, search=search, flag=flag,
     )
     con = connect(plugin_id)
     try:
@@ -1057,3 +1093,110 @@ def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:
     finally:
         con.close()
     return get_question(plugin_id, document["id"])
+
+
+# ---------------------------------------------------------------- 人工审核
+
+def review_summary(plugin_id: str) -> dict[str, Any]:
+    """待审队列概览：按灌库标记分组计数，供「待审任务」页签打角标。"""
+    con = connect(plugin_id)
+    try:
+        total = int(con.execute(
+            "SELECT COUNT(*) FROM questions q WHERE EXISTS ("
+            " SELECT 1 FROM json_each(q.extensions) e"
+            " WHERE json_extract(e.value, '$.key') = ?"
+            " AND json_array_length(json_extract(e.value, '$.value.flags')) > 0)",
+            (EXT_MIGRATION_KEY,),
+        ).fetchone()[0])
+        rows = con.execute(
+            "SELECT f.value AS name, COUNT(DISTINCT q.id) AS count"
+            " FROM questions q, json_each(q.extensions) e,"
+            " json_each(json_extract(e.value, '$.value.flags')) f"
+            " WHERE json_extract(e.value, '$.key') = ?"
+            " GROUP BY f.value ORDER BY count DESC, name ASC",
+            (EXT_MIGRATION_KEY,),
+        ).fetchall()
+        return {
+            "total": total,
+            "flags": [{"name": row["name"], "count": int(row["count"])} for row in rows],
+            "known_flags": list(REVIEW_FLAGS),
+        }
+    finally:
+        con.close()
+
+
+def _strip_flags(extensions: dict[str, Any], flags: Iterable[str]) -> dict[str, Any]:
+    """清掉指定审核标记；一个不剩时连迁移条目一起移出库（不留空壳）。"""
+    entry = _extension_value(extensions, EXT_MIGRATION_KEY)
+    if not entry:
+        return extensions
+    remaining = [item for item in (entry.get("flags") or []) if item not in set(flags)]
+    result = dict(extensions)
+    if remaining:
+        result[EXT_MIGRATION_KEY] = {**entry, "flags": remaining}
+    else:
+        result.pop(EXT_MIGRATION_KEY, None)
+    return result
+
+
+def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, Any]:
+    """按题回写可审字段并清除审核标记，合并后仍过同一份契约。
+
+    只接受题目内容与 ``clear_flags``；``id`` / ``meta.created_at`` / 大纲与来源挂载
+    不在此通道里改——那些属于录题插件的改题删题范围（P1），混进来会让审核页
+    变成能悄悄挪动题目身份的旁路。
+    """
+    if not isinstance(patch, dict):
+        raise question_contract.QuestionValidationError(["(root): 请求体必须是 JSON 对象"])
+    current = get_question(plugin_id, question_id)
+    document = dict(current)
+    for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade"):
+        if key in patch:
+            document[key] = patch[key]
+    # 改题型时答案形态必须跟着走：选择题的字母改判成非选择题后，那串字母就是答案正文。
+    # 留着 choice 形态会被契约的 kind 约束整条拒掉，老师反而改不动——这里保事实，不编内容。
+    answer = document.get("answer")
+    if isinstance(answer, dict) and answer.get("kind") == "choice" and document["type"] not in CHOICE_TYPES:
+        letters = ",".join(item for item in (answer.get("choice_keys") or []) if isinstance(item, str))
+        body = letters or str(answer.get("final") or "")
+        document["answer"] = {"kind": "text", "content": body, "final": body[:2000]} if body else None
+        if document["answer"] is None:
+            document.pop("answer")
+    document["schema_version"] = normalize_contract_version(document.get("schema_version"))
+    document["difficulty"] = normalize_difficulty(document.get("difficulty"))
+
+    clear = patch.get("clear_flags")
+    clear = [clear] if isinstance(clear, str) else list(clear or [])
+    unknown = [item for item in clear if item not in REVIEW_FLAGS]
+    if unknown:
+        raise question_contract.QuestionValidationError(
+            [f"clear_flags: 未知审核标记 {', '.join(map(repr, unknown))}"]
+        )
+    extensions = _strip_flags(dict(current.get("extensions") or {}), clear)
+    grade = str(document.pop("grade", "") or "")
+    if grade:
+        extensions[EXT_GRADE_KEY] = {"grade": grade}
+    document["extensions"] = extensions
+    document["meta"] = {**current["meta"], "updated_at": _now()}
+
+    document = _storage_ready(document)
+    question_contract.validate_question(document)
+
+    row = _question_row(document, _now())
+    con = connect(plugin_id)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        cursor = con.execute(
+            "UPDATE questions SET type = ?, stem = ?, options = ?, answer = ?, solution = ?,"
+            " extensions = ?, difficulty = ?, updated_at = ? WHERE id = ?",
+            [row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[9], row[0]],
+        )
+        if cursor.rowcount == 0:
+            raise BankNotFound(f"题库中没有题目 {question_id}")
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    return get_question(plugin_id, question_id)

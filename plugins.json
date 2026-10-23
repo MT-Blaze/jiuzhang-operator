@@ -36,7 +36,7 @@
     {
       "id": "org.jiuzhang.core-bank",
       "name": "真题题库",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "456 道高中数学真题的本地 SQLite 题库：按年级、难度、题型与关键词筛选，支持预览与加入题篮。",

@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.core-bank",
   "name": "真题题库",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "456 道高中数学真题的本地 SQLite 题库：按年级、难度、题型与关键词筛选，支持预览与加入题篮。",
@@ -13,7 +13,7 @@
   },
   "slots": ["question.card", "stage.center"],
   "capabilities": ["question.render"],
-  "permissions": ["questions:read"],
+  "permissions": ["questions:read", "questions:write"],
   "ui": {
     "title": "真题题库筛选",
     "hint": "下拉选择会实时同步给题库画布（经事件总线），人类手改优先于 AI。",
