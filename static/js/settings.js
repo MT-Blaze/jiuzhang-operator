@@ -176,7 +176,7 @@
     setStatus("请把 .zip 拖到虚线框内，或点【选择 zip 文件】。", "warn");
   });
 
-  // ============ 插件管理与控制（v0.8.0）============
+  // ============ 插件管理与控制 ============
   var mgList = document.getElementById("mgList");
   var mgStatus = document.getElementById("mgStatus");
   var mgRefresh = document.getElementById("mgRefresh");

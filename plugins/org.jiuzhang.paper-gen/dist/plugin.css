@@ -334,6 +334,14 @@ body {
   contain: strict;
 }
 
+/* 占位纸：还没轮到物化的页保持 A4 空壳，滚动时看到的是待发骨架而不是一片死白 */
+.pg-page[data-mat="false"] .pg-page-body {
+  background-image: linear-gradient(#efe9de, #efe9de), linear-gradient(#efe9de, #efe9de);
+  background-repeat: no-repeat;
+  background-position: 0 6px, 0 40px;
+  background-size: 58% 9px, 82% 9px;
+}
+
 .pg-page-foot {
   flex: none;
   height: 24px;
@@ -347,7 +355,8 @@ body {
   letter-spacing: 0.06em;
 }
 
-/* 题目：题内各行都是块级直系子节点，超页时可直接搬走，不必重建 */
+/* 题目：题内各行都是块级直系子节点，超页时可直接搬走，不必重建。
+   行距一律挂在类上，不依赖 .pg-q 父选择器——拆件落页时行会直接成为纸面的子节点。 */
 .pg-q { padding-bottom: 0; }
 .pg-q-gap { height: 14px; }
 .pg-q-head {
@@ -371,8 +380,8 @@ body {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.pg-q > .pg-line { margin: 0 0 4px; }
-.pg-q > .pg-line:last-of-type { margin-bottom: 0; }
+.pg-line { margin: 0 0 4px; }
+.pg-line-last { margin-bottom: 0; }
 
 .pg-option {
   display: flex;
@@ -422,13 +431,21 @@ body {
 }
 .pg-table th { background: #f5f0e7; font-weight: 600; }
 
+/* 答案段合进一个容器：切答案只摘/挂这一个子件，其余子件落位高度分毫不变，
+   这是「隐藏态总高 = 整题高 - 答案段高」这条算术分页前提的样式保障。
+   容器自己无外边距、用 padding 顶开首行，免得子件外边距穿出容器改变总高。 */
+.pg-ansbox { margin: 0; padding-top: 5px; }
+
 .pg-answer {
-  margin-top: 5px;
+  margin: 0;
   padding: 4px 8px;
   background: #f5f0e7;
   border-left: 2px solid #b9aa97;
   font-size: 12px;
 }
+
+/* 整题未超页时答案段随题块一起落纸，隐藏态靠这一条显隐，不销毁重建节点 */
+.pg-doc[data-ans="hide"] .pg-ansbox { display: none; }
 
 .pg-solution {
   margin: 2px 0 0;

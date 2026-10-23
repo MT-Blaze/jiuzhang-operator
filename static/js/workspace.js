@@ -2001,7 +2001,7 @@
     return Math.max(-100, Math.min(100, value));
   }
 
-  // 左栏插件的直白功能副标题（军令 v0.8.0 任务 4.3）：优先用 curated 文案，
+  // 左栏插件的直白功能副标题：优先用 curated 文案，
   // 其次回落插件 description，最后才是类型标签——老师一眼看懂这插件干什么，而不是版本加点类型。
   var PLUGIN_TAGLINES = {
     "org.jiuzhang.core-bank": "内置大纲与题库引擎",

@@ -97,8 +97,70 @@ class PaperGenLayoutContractTest(unittest.TestCase):
             "data-t-measure-blocks",
             "data-t-place",
             "data-t-settle",
+            "data-doc-ready",
+            "data-live",
+            "data-placed",
+            "data-virtual",
+            "data-ready-ms",
         ):
             self.assertIn('setAttribute("' + attribute + '"', js)
+
+    def test_09_reflow_reports_sync_cost_not_the_whole_doc(self) -> None:
+        """v0.8.1 口径：data-render-ms 只记同步段，全卷补齐另写 data-ready-ms。
+
+        两条必须都在同一次 reflow 里写出来，否则「切答案 261ms」会冒充全卷完成。
+        """
+        js = read("plugin.js")
+        self.assertIn('metricsEl.setAttribute("data-render-ms", String(state.renderMs))', js)
+        self.assertIn('metricsEl.setAttribute("data-ready-ms"', js)
+        self.assertRegex(js, r"if \(!doc\.complete\) scheduleIdle\(\)")
+
+    def test_10_viewport_virtualization_is_the_engine(self) -> None:
+        """视口级虚排的四个动作必须在：补页、挂页、收页、滚动驱动。"""
+        js = read("plugin.js")
+        for fn in ("function ensurePages", "function materialize", "function dematerialize",
+                   "function syncViewport", "function advance", "function measureBoxes"):
+            self.assertIn(fn, js, f"虚排引擎缺少 {fn}")
+        self.assertRegex(js, r'addEventListener\("scroll"')
+        self.assertIn("requestIdleCallback", js)
+        # 回收必须真的发生：远页清空 body，节点留在缓存里等着复用
+        self.assertRegex(js, r"record\.body\.textContent = \"\"")
+        self.assertRegex(js, r"var MAX_LIVE = (\d+);")
+        live = int(re.search(r"var MAX_LIVE = (\d+);", js).group(1))
+        self.assertLessEqual(live, 8, "同时物化的页数不得超过 8 页，否则虚排名不副实")
+
+    def test_11_answer_toggle_needs_no_second_stem_measure(self) -> None:
+        """答案段独立量高：隐藏态只量题干，切答案补量答案段，整题题干不重测。"""
+        js = read("plugin.js")
+        self.assertIn("rec.container.removeChild(rec.box)", js)
+        self.assertIn("rec.hiddenTotal + boxHeight(rec)", js)
+        css = read("plugin.css")
+        self.assertIn(".pg-doc[data-ans=\"hide\"] .pg-ansbox { display: none; }", css)
+        self.assertIn(".pg-ansbox { margin: 0; padding-top: 5px; }", css,
+                      "答案段容器必须无外边距，否则摘掉它会影响相邻子件的落位高度")
+
+    def test_12_print_materializes_the_whole_paper(self) -> None:
+        """虚拟渲染不能把缺页的卷子送进打印机：打印前必须同步补齐并全部挂上。"""
+        js = read("plugin.js")
+        self.assertRegex(js, r"function completeForPrint\(\)")
+        self.assertIn("completeForPrint();", js)
+        self.assertIn('window.addEventListener("beforeprint", completeForPrint)', js)
+        self.assertRegex(js, r"while \(!doc\.complete\) advance\(\)")
+
+    def test_13_paper_css_does_not_depend_on_question_wrapper(self) -> None:
+        """拆件落页时行会直接成为纸面的子节点，行距不能挂在 .pg-q > 父选择器上。"""
+        css = read("plugin.css")
+        self.assertNotIn(".pg-q >", css, "行距必须写在 .pg-line 类上，拆件后父选择器会失效")
+        self.assertIn(".pg-line-last", css)
+        self.assertIn('.pg-page[data-mat="false"]', css, "占位纸要有骨架，狂滚时不许大面积白屏")
+
+    def test_14_probe_red_line_is_300ms(self) -> None:
+        """性能欠账的验收口径锁在探针里：从临时放宽的 4000ms 回收到 300ms。"""
+        probe = (ROOT / "tools" / "paper_probe.py").read_text(encoding="utf-8")
+        self.assertIn('check("切答案同步重排 < 300ms"', probe)
+        self.assertIn('check("切紧凑同步重排 < 300ms"', probe)
+        self.assertNotIn("< 4000", probe, "临时放宽的 4s 上限必须撤掉，否则欠账会悄悄回来")
+        self.assertIn("def sweep_whole_doc", probe, "逐页滚动清点：虚拟渲染下只读当前页会得到假阴性")
 
     def test_03_basket_and_param_events_drive_reflow(self) -> None:
         js = read("plugin.js")

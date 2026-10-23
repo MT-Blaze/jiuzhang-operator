@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-10-24",
+  "updated_at": "2026-10-23",
   "entries": [
     {
       "id": "org.jiuzhang.placeholder",
@@ -36,7 +36,7 @@
     {
       "id": "org.jiuzhang.paper-gen",
       "name": "组卷排版",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
