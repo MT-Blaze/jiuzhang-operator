@@ -3,7 +3,7 @@
 本文件是给 AI 代理与接任者读的**跨会话交接底稿**。只记「不读代码就不知道、且下次会话必须知道」的事；
 能从仓库现状推出的（目录结构、函数签名、依赖清单）一律不写在这里，避免与代码各说各话。
 
-最后更新：2026-10-23（P0#1 API 切表完成：后端读写全走 7 张关系表，题目契约升 2.0）
+最后更新：2026-10-23（v0.6.3 封版出包：P0#1 切表 + P0#2 前端联动完成，发放包 1,791,623 B）
 
 ---
 
@@ -106,12 +106,16 @@
       `/topics`、`/topics/{id}/notes` 与 `topic=` 筛选，`stage.js` 白名单加 `bank.topics`/`bank.topic_notes`。
       真机 HTTP 已验：stats 456 / 大纲四层 / 按考向子树取题 / L4+高一 129 题 / 旧值 hard→L3 / 中文搜索。
       **剩余**：插件侧未接新通道（P0#2），种子库 `bank/bank.db` 仍是旧宽表（P0#4 封版必须换）。
-- [ ] **前端联动适配**：确保左侧大纲树（读取 `topics`，按 `parent_id` + `sort_order` 懒展开）、
-      题目列表能正确展示新表数据；`difficulty` 下拉要从 basic/medium/hard 改回 L1–L4，
-      `plugin.json` 的 `ui.controls` 与右栏面板同步改。
-      底座侧已就绪（`bank.topics`/`bank.topic_notes` 通道已开、`workspace.js` 题卡认 L 码并兜底旧值）；
-      **待办全在插件侧**：core-bank / editor / classic-card / paper-gen 的 `plugin.js` 与
-      `plugin.json`（其中 editor 写请求仍自报 `schema_version: "1.0"`，靠底座归一才没崩）。
+- [x] **前端联动适配**（2026-10-23 完成）：core-bank 画布左栏新增**大纲树**，走 `bank.topics` 按
+      `parent_id` + `sort_order` 懒展开（册→章→节→考向），每个节点带子树题量 / 笔记数 / 待补录标记，
+      点节点即按子树筛题（真机验证：点「1.1 集合的概念」得 23 题，与后端逐字一致）；
+      插件读路径全部改吃新出参（`grade` 顶层、`taxonomy` 来自路径树、`answer` 合成对象、
+      `extensions` 对象态）。难度口径：core-bank `plugin.json` 的 `ui.controls`、editor 下拉、
+      classic-card / paper-gen / demo 种子与 workspace.js + workspace.css 全部改 L1–L4，
+      中文标签按契约 2.0 = **基础 / 中档 / 难 / 压轴**（旧值 basic/medium/hard/novel 只做渲染兜底）。
+      **注意一处与军令字面口径的偏离**：发令写的是「基础/中档/压轴/新定义」，但上一道裁决已「彻底废弃
+      novel」，且 L4 在数据里是 140 道压轴题——把 L4 标成「新定义」会给最难的一档贴错标签，
+      故按已批准的契约 2.0 落地；如主公坚持「新定义」字样，改 `contract.py` 的 `DIFFICULTY_LABELS` 一处即可。
 - [ ] **人工审核页开发**：针对迁移中发现的 **31 题选择题答案为空（18 题旧库连答案正文都没有 /
       9 题有【答案】标记但标记后空白 / 4 题只有通篇解析、无结论标记可依据）、
       2 题结构冲突（选项内嵌正文、拆不出选项）、26 题只挂到节层没有考向**，
@@ -119,9 +123,18 @@
       数据入口是 `questions.extensions` 里 `org.jiuzhang.core-bank.migration` 的 flags
       （`answer_absent` / `answer_region_empty` / `type_manual_review` / `structure_conflict` /
       `topic_unmapped` / `needs_conclusion` / `solution_absent`）。
-- [ ] **真机压测 + 封版**：新库跑通「大纲树渲染正常 / 右侧列表搜索出题正常」，再出 v0.6.3 包；
-      封版需同步 `app/__init__.py` 版本、`index.html` 与 `static/*.html` 兜底文案、
-      两份 `plugins.json`（必须全等）、`当前架构与开发进度快照.md`。
+- [~] **真机压测 + 封版**（2026-10-23 出包，压测口径未全）：
+      已做——版本单源升 `0.6.3` + 前端兜底文案同步（版本锁 12 测绿）；core-bank 种子库
+      `bank/bank.db` **换成新结构 456 题**（旧宽表种子已废弃，读它会被结构守卫拒掉）；
+      插件重出 `org.jiuzhang.core-bank.zip` 0.2.0（1,183,766 B）、`editor` 0.1.1、`paper-gen` 0.1.1
+      并落 `E:\jiuzhang-plugins\plugins\`；两份 `plugins.json` 用 `tools/sync_plugin_index.py`
+      逐字全等（6 条索引）；`build_release.bat` 出 `dist/jiuzhang-operator-beta-v0.6.3.zip`
+      **1,791,623 B / 242 条目 / 0 夹带 / 0 缺失**，包内种子库经解包实测是 7 表 + 456 题 + L1–L4，
+      包内契约是 2.0。发放包自 v0.6 起**不入库**（`git ls-files dist` 只到 v0.5.2）。
+      未做——`tools/bank_stress.py` 与 `tools/paper_probe.py` 仍直读旧宽表（切表后未跟改，
+      跑真机压测前必须先修）；组卷 / 讲义两条链在新表上的回归未跑；
+      桌面三栏布局的截图未取到（应用内 Browser 面板的截图面被宿主隐藏，只拿到窄屏两张）。
+      人工审核页（上一条 P0）仍未开工。
 
 ### 二、核心业务闭环（P1 级）
 
@@ -200,3 +213,13 @@
   `examples/build_demo_plugin.py`，`examples/demo_plugin.zip` 是入库产物、不会自动跟随源目录。
   ⑤ 清理测试遗留服务时**禁止** `taskkill /F /IM python.exe`（会连坐本机其他 python 进程），
   必须记下自己起的 PID 再逐个终止。
+  ⑥ `settings.plugins_dir` 是**导入期一次性求值**的类属性（`JZO_PLUGINS_DIR` 只在进程启动前有效），
+  而 `settings.data_dir` 每次调用重读 `JZO_DATA_DIR`——所以进程内改环境变量只能换数据目录，
+  换插件目录必须走子进程；写「换种子库」类测试要直接铺 `data/banks/<id>.db` 文件。
+  ⑦ 真机验证插件 UI 时，宿主舞台的 iframe 是 `sandbox="allow-scripts"`（无 allow-same-origin），
+  顶层脚本读不到它的 DOM、a11y 快照也进不去；要驱动真实 `plugin.js` 就在工作台页里挂一个
+  **同源无沙箱**的 iframe + 手写 `jzo-plugin/1` 宿主仿真（把 `bank.*` 转发到真实 HTTP 接口），
+  本次大纲树的展开/筛题证据就是这么取的。产品行为仍以真实沙箱舞台为准。
+  ⑧ `build_release.bat` 自 v0.6.3 起额外排除 `.scratch*`（内含旧项目库的只读副本，铁律一禁止外发）
+  与 `bank/v063.db`、`bank/v063_migrated.db`（结构基线与灌库中间产物，运行时只读 `bank.db`）；
+  改打包白名单前先跑一次包体审计，别把 1.7 MB 重复库放出去。

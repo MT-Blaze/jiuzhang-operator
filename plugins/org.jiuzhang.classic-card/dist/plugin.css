@@ -22,16 +22,21 @@
   letter-spacing: 0.06em;
 }
 
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="L1"],
 [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="basic"] {
   color: #2f7d5b;
   border-color: rgba(47, 125, 91, 0.35);
 }
 
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="L2"],
 [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="medium"] {
   color: #8a6a1f;
   border-color: rgba(138, 106, 31, 0.35);
 }
 
+/* L1–L4 是契约 2.0 的口径；basic/medium/hard/novel 只做历史兜底 */
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="L3"],
+[data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="L4"],
 [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="hard"],
 [data-jzo-plugin="org.jiuzhang.classic-card"] .jzc-difficulty[data-level="novel"] {
   color: #a63b2b;

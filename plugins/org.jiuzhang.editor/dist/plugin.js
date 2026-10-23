@@ -23,7 +23,11 @@
     fill_blank: "填空",
     solution: "解答"
   };
-  var DIFF_LABEL = { basic: "基础", medium: "中档", hard: "压轴", novel: "新定义" };
+  var DIFF_LABEL = {
+    L1: "基础", L2: "中档", L3: "难", L4: "压轴",
+    // 契约 1.0 的旧值只做兜底
+    basic: "基础", medium: "中档", hard: "难", novel: "压轴"
+  };
   var OPTION_KEYS = "ABCDEFGH".split("");
 
   var root = document.getElementById("root");
@@ -602,7 +606,7 @@
     solutionEl.value = "";
     tagsEl.value = "";
     typeEl.value = "single_choice";
-    diffEl.value = "medium";
+    diffEl.value = "L2";
     gradeEl.value = "高一";
     state.options = [
       { key: "A", content: "" },

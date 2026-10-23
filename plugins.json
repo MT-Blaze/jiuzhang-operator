@@ -36,7 +36,7 @@
     {
       "id": "org.jiuzhang.core-bank",
       "name": "真题题库",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "456 道高中数学真题的本地 SQLite 题库：按年级、难度、题型与关键词筛选，支持预览与加入题篮。",
@@ -51,7 +51,7 @@
     {
       "id": "org.jiuzhang.paper-gen",
       "name": "组卷排版",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
@@ -81,7 +81,7 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "中间表单、右侧 A4 实时预览：录题干与公式、动态增删选项、填答案与解析，一键清洗 LaTeX 后经宿主写入本地真题题库。需底座 v0.6.2 及以上。",

@@ -27,6 +27,8 @@
     grade: "全部",
     difficulty: "全部",
     type: "全部",
+    topic: "",
+    topicName: "",
     search: "",
     page: 1,
     pageSize: PAGE_SIZE,
@@ -36,6 +38,9 @@
     showSolution: false,
     loading: false
   };
+
+  // 大纲树：册/章/节/考向按需懒加载，expanded 记开合，children 记已取回的一层
+  var tree = { roots: null, children: {}, expanded: {}, loading: false, error: "" };
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload) {
@@ -98,6 +103,7 @@
 
   function describeFilters() {
     return "年级 " + state.grade + " · 难度 " + state.difficulty + " · 题型 " + state.type +
+      (state.topic ? " · 考向「" + state.topicName + "」" : "") +
       (state.search ? " · 关键词「" + state.search + "」" : "");
   }
 
@@ -180,8 +186,12 @@
     return node;
   }
 
+  // 契约 2.0 只发 L1–L4；旧键留着只为渲染历史缓存里的题卡
   function difficultyLabel(value) {
-    return { basic: "基础", medium: "中档", hard: "压轴", novel: "新定义" }[value] || value;
+    return {
+      L1: "基础", L2: "中档", L3: "难", L4: "压轴",
+      basic: "基础", medium: "中档", hard: "难", novel: "压轴"
+    }[value] || value;
   }
 
   function typeLabel(value) {
@@ -195,6 +205,12 @@
     var source = question.source || {};
     return [source.paper_title, source.question_no ? "原卷 " + source.question_no + " 题" : ""]
       .filter(Boolean).join(" · ");
+  }
+
+  function migrationFlags(question) {
+    var entry = (question.extensions || {})["org.jiuzhang.core-bank.migration"];
+    var flags = entry && entry.flags;
+    return Array.isArray(flags) ? flags : [];
   }
 
   function buildRow(question, index) {
@@ -217,6 +233,10 @@
     difficulty.setAttribute("data-kind", question.difficulty);
     meta.appendChild(difficulty);
     meta.appendChild(el("span", "cb-chip", typeLabel(question.type)));
+    var flags = migrationFlags(question);
+    if (flags.length) {
+      meta.appendChild(el("span", "cb-chip cb-chip-review", "待审 " + flags.length + " 项"));
+    }
     if (question.taxonomy && question.taxonomy.chapter) {
       meta.appendChild(el("span", "cb-chip", question.taxonomy.chapter));
     }
@@ -269,6 +289,150 @@
     pager.appendChild(el("span", null, "第 " + state.page + " / " + pages + " 页 · 共 " + state.total + " 题"));
     pager.appendChild(next);
     return pager;
+  }
+
+  // ---------- 大纲树（bank.topics 懒加载） ----------
+  function fetchTopics(parentId) {
+    var payload = parentId ? { parent_id: parentId } : {};
+    return hostCall("bank.topics", payload).then(function (result) {
+      return (result && result.items) || [];
+    });
+  }
+
+  function loadTree() {
+    if (tree.loading) return Promise.resolve();
+    tree.loading = true;
+    tree.error = "";
+    renderAll();
+    return fetchTopics("")
+      .then(function (items) {
+        tree.roots = items;
+        tree.loading = false;
+        renderAll();
+      })
+      .catch(function (error) {
+        // 树坏了不能拖垮题库：列表照常，只在树栏里报错并给出重试
+        tree.roots = null;
+        tree.children = {};
+        tree.loading = false;
+        tree.error = error.message;
+        renderAll();
+      });
+  }
+
+  function toggleNode(node) {
+    if (tree.expanded[node.id]) {
+      tree.expanded[node.id] = false;
+      renderAll();
+      return;
+    }
+    tree.expanded[node.id] = true;
+    if (tree.children[node.id]) {
+      renderAll();
+      return;
+    }
+    fetchTopics(node.id).then(function (items) {
+      tree.children[node.id] = items;
+      renderAll();
+    }).catch(function () {
+      tree.children[node.id] = [];
+      renderAll();
+    });
+  }
+
+  function selectTopic(node) {
+    if (state.topic === node.id) return clearTopic();
+    state.topic = node.id;
+    state.topicName = node.name;
+    state.page = 1;
+    state.showSolution = false;
+    if (node.has_children && !tree.children[node.id]) toggleNode(node);
+    loadQuestions();
+    dock("按大纲取题：" + node.name);
+    return undefined;
+  }
+
+  function clearTopic() {
+    state.topic = "";
+    state.topicName = "";
+    state.page = 1;
+    loadQuestions();
+  }
+
+  function renderTopicNode(node) {
+    var item = el("li", "cb-tree-item");
+    item.setAttribute("role", "treeitem");
+    item.setAttribute("aria-expanded", String(Boolean(tree.expanded[node.id])));
+    item.setAttribute("aria-selected", String(state.topic === node.id));
+
+    var row = el("div", "cb-tree-row");
+    if (node.has_children) {
+      var caret = el("button", "cb-caret", tree.expanded[node.id] ? "▾" : "▸");
+      caret.type = "button";
+      caret.setAttribute("aria-label", (tree.expanded[node.id] ? "收起 " : "展开 ") + node.name);
+      caret.addEventListener("click", function () { toggleNode(node); });
+      row.appendChild(caret);
+    } else {
+      row.appendChild(el("span", "cb-caret cb-caret-leaf", "·"));
+    }
+
+    var pick = el("button", "cb-tree-name" + (state.topic === node.id ? " cb-tree-active" : ""), node.name);
+    pick.type = "button";
+    pick.setAttribute("data-layer", node.layer || "");
+    if (state.topic === node.id) pick.setAttribute("aria-current", "true");
+    pick.addEventListener("click", function () { selectTopic(node); });
+    row.appendChild(pick);
+
+    row.appendChild(el("span", "cb-tree-count", String(node.question_count || 0)));
+    if (node.note_count) row.appendChild(el("span", "cb-tree-notes", "笔记 " + node.note_count));
+    if (node.status === "draft") row.appendChild(el("span", "cb-tree-draft", "待补录"));
+    item.appendChild(row);
+
+    if (node.has_children && tree.expanded[node.id]) {
+      var branch = el("ul", "cb-tree-branch");
+      branch.setAttribute("role", "group");
+      var kids = tree.children[node.id];
+      if (kids && !kids.length) {
+        branch.appendChild(el("li", "cb-tree-empty", "这一层还没有子节点"));
+      } else if (!kids) {
+        branch.appendChild(el("li", "cb-tree-loading", "正在读取…"));
+      } else {
+        kids.forEach(function (child) { branch.appendChild(renderTopicNode(child)); });
+      }
+      item.appendChild(branch);
+    }
+    return item;
+  }
+
+  function renderTree(host) {
+    var rail = el("aside", "cb-tree");
+    rail.setAttribute("aria-label", "考向大纲树");
+
+    var head = el("div", "cb-tree-head");
+    head.appendChild(el("h2", "cb-tree-title", "大纲树"));
+    var all = el("button", "cb-tree-all" + (state.topic ? "" : " cb-tree-active"), "全部题目");
+    all.type = "button";
+    all.addEventListener("click", clearTopic);
+    head.appendChild(all);
+    rail.appendChild(head);
+
+    if (tree.loading && !tree.roots) {
+      rail.appendChild(el("p", "cb-tree-loading", "正在读取大纲…"));
+    } else if (tree.error) {
+      rail.appendChild(el("p", "cb-tree-error", "大纲树读取失败：" + tree.error));
+      var retry = el("button", "cb-btn", "重试");
+      retry.type = "button";
+      retry.addEventListener("click", loadTree);
+      rail.appendChild(retry);
+    } else if (tree.roots && tree.roots.length) {
+      var trunk = el("ul", "cb-tree-branch cb-tree-root");
+      trunk.setAttribute("role", "tree");
+      tree.roots.forEach(function (node) { trunk.appendChild(renderTopicNode(node)); });
+      rail.appendChild(trunk);
+    } else {
+      rail.appendChild(el("p", "cb-tree-empty", "大纲还是空的：先灌库再回来。"));
+    }
+    host.appendChild(rail);
   }
 
   function renderList(host) {
@@ -343,6 +507,16 @@
         answer.appendChild(document.createTextNode(question.answer.content));
       }
       card.appendChild(answer);
+    } else {
+      // 新库里 answer 是 NULL（旧库拿硬编码 A 冒充过 31 道选择题）：如实说待补，不显示空白
+      var pending = el("div", "cb-answer cb-answer-pending");
+      pending.appendChild(el("span", "cb-answer-label", "答案："));
+      pending.appendChild(document.createTextNode("待补 — 这道题在原资料里没有可依据的答案，底座不拿字母冒充"));
+      card.appendChild(pending);
+      var detailFlags = migrationFlags(question);
+      if (detailFlags.length) {
+        card.appendChild(el("p", "cb-flags", "迁移标记：" + detailFlags.join(" · ")));
+      }
     }
 
     if (state.showSolution && question.solution) {
@@ -377,7 +551,7 @@
     root.textContent = "";
     var head = el("header", "cb-head");
     head.appendChild(el("h1", "cb-title", "真题题库"));
-    head.appendChild(el("p", "cb-sub", "本地 SQLite · 456 道真题 · 筛选条件以右侧面板为准"));
+    head.appendChild(el("p", "cb-sub", "本地 SQLite · 456 道真题 · 左栏点大纲取题，筛选条件以右侧面板为准"));
     var count = el("span", "cb-count", "题篮 " + Object.keys(basketIds).length);
     count.id = "cbBasketCount";
     head.appendChild(count);
@@ -403,7 +577,7 @@
     refresh.type = "button";
     refresh.disabled = state.loading;
     refresh.setAttribute("aria-busy", String(state.loading));
-    refresh.addEventListener("click", function () { loadQuestions(); });
+    refresh.addEventListener("click", function () { loadTree(); loadQuestions(); });
     toolbar.appendChild(refresh);
 
     var hint = el("span", "cb-sub", describeFilters());
@@ -412,6 +586,7 @@
     root.appendChild(toolbar);
 
     var body = el("div", "cb-body");
+    renderTree(body);
     renderList(body);
     renderDetail(body);
     root.appendChild(body);
@@ -427,6 +602,7 @@
       grade: state.grade,
       difficulty: state.difficulty,
       type: state.type,
+      topic: state.topic,
       q: state.search,
       page: state.page,
       page_size: state.pageSize
@@ -527,6 +703,7 @@
       root.hidden = false;
       var values = (message.payload && message.payload.values) || {};
       applyParams(values, "init");
+      loadTree();
       loadBasket().then(function () {
         if (!state.selected) loadQuestions();
       });

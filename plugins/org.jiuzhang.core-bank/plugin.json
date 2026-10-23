@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.core-bank",
   "name": "真题题库",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "456 道高中数学真题的本地 SQLite 题库：按年级、难度、题型与关键词筛选，支持预览与加入题篮。",
@@ -36,10 +36,10 @@
         "label": "难度",
         "options": [
           {"value": "全部", "label": "全部"},
-          {"value": "basic", "label": "基础"},
-          {"value": "medium", "label": "中档"},
-          {"value": "hard", "label": "压轴"},
-          {"value": "novel", "label": "新定义"}
+          {"value": "L1", "label": "L1 基础"},
+          {"value": "L2", "label": "L2 中档"},
+          {"value": "L3", "label": "L3 难"},
+          {"value": "L4", "label": "L4 压轴"}
         ],
         "default": "全部"
       },

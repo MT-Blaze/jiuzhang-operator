@@ -657,7 +657,10 @@
   }
 
   function difficultyLabel(value) {
-    return { basic: "基础", medium: "中档", hard: "压轴", novel: "新定义" }[value] || value;
+    return {
+      L1: "基础", L2: "中档", L3: "难", L4: "压轴",
+      basic: "基础", medium: "中档", hard: "难", novel: "压轴"
+    }[value] || value;
   }
 
   function renderSide() {

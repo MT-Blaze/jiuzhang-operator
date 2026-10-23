@@ -978,28 +978,31 @@
   color: var(--accent);
 }
 
-.ws-question-card[data-difficulty="basic"] .ws-tag-diff {
-  border-color: color-mix(in srgb, #2e7d32 45%, transparent);
-  background: color-mix(in srgb, #2e7d32 10%, transparent);
-  color: #2e7d32;
+/* 题卡难度配色按契约 2.0 的 L1–L4；basic/medium/hard/novel 只做历史兜底 */
+.ws-question-card[data-difficulty="L1"],
+.ws-question-card[data-difficulty="basic"] {
+  --ws-diff-color: #2e7d32;
 }
 
-.ws-question-card[data-difficulty="medium"] .ws-tag-diff {
-  border-color: color-mix(in srgb, #a16207 45%, transparent);
-  background: color-mix(in srgb, #a16207 10%, transparent);
-  color: #a16207;
+.ws-question-card[data-difficulty="L2"],
+.ws-question-card[data-difficulty="medium"] {
+  --ws-diff-color: #a16207;
 }
 
-.ws-question-card[data-difficulty="hard"] .ws-tag-diff {
-  border-color: color-mix(in srgb, #b3261e 45%, transparent);
-  background: color-mix(in srgb, #b3261e 10%, transparent);
-  color: #b3261e;
+.ws-question-card[data-difficulty="L3"],
+.ws-question-card[data-difficulty="hard"] {
+  --ws-diff-color: #b3261e;
 }
 
-.ws-question-card[data-difficulty="novel"] .ws-tag-diff {
-  border-color: color-mix(in srgb, #6a3bb5 45%, transparent);
-  background: color-mix(in srgb, #6a3bb5 10%, transparent);
-  color: #6a3bb5;
+.ws-question-card[data-difficulty="L4"],
+.ws-question-card[data-difficulty="novel"] {
+  --ws-diff-color: #6a3bb5;
+}
+
+.ws-question-card[data-difficulty] .ws-tag-diff {
+  border-color: color-mix(in srgb, var(--ws-diff-color) 45%, transparent);
+  background: color-mix(in srgb, var(--ws-diff-color) 10%, transparent);
+  color: var(--ws-diff-color);
 }
 
 .ws-tag-topic {

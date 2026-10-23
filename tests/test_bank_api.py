@@ -735,30 +735,37 @@ class MigratedBankIntegrityTest(unittest.TestCase):
 
 
 class LegacyWideTableSeedTest(unittest.TestCase):
-    """v0.6.2 的 bank_questions 宽表种子必须被拒读并给出可操作提示，不许静默读空。"""
+    """v0.6.2 的 bank_questions 宽表库必须被拒读并给出可操作提示，不许静默读空。
 
-    def test_wide_table_seed_is_rejected_with_actionable_message(self) -> None:
+    注意注入点：``JZO_DATA_DIR`` 每次调用都重读，``settings.plugins_dir`` 却是导入期
+    一次性求值的类属性——所以这里直接铺工作区库文件，不靠环境变量换插件目录。
+    """
+
+    def test_wide_table_database_is_rejected_with_actionable_message(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        root = Path(tmp.name)
-        data_dir = root / "data"
-        plugins_dir = root / "plugins"
+        data_dir = Path(tmp.name) / "data"
         (data_dir / "banks").mkdir(parents=True)
-        seed_dir = plugins_dir / PLUGIN_ID / "bank"
-        seed_dir.mkdir(parents=True)
 
-        stale = sqlite3.connect(seed_dir / "bank.db")
+        stale = data_dir / "banks" / f"{PLUGIN_ID}.db"
+        con = sqlite3.connect(stale)
         try:
-            stale.execute("CREATE TABLE bank_questions (id TEXT PRIMARY KEY, stem TEXT NOT NULL)")
-            stale.execute("INSERT INTO bank_questions (id, stem) VALUES ('q_legacy_000001', '旧宽表题')")
-            stale.commit()
+            con.execute("CREATE TABLE bank_questions (id TEXT PRIMARY KEY, stem TEXT NOT NULL)")
+            con.execute("INSERT INTO bank_questions (id, stem) VALUES ('q_legacy_000001', '旧宽表题')")
+            con.commit()
         finally:
-            stale.close()
+            con.close()
 
-        previous = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"))
+        previous = os.environ.get("JZO_DATA_DIR")
         os.environ["JZO_DATA_DIR"] = str(data_dir)
-        os.environ["JZO_PLUGINS_DIR"] = str(plugins_dir)
-        self.addCleanup(self._restore_env, previous)
+
+        def restore() -> None:
+            if previous is None:
+                os.environ.pop("JZO_DATA_DIR", None)
+            else:
+                os.environ["JZO_DATA_DIR"] = previous
+
+        self.addCleanup(restore)
 
         from app.core import bank  # noqa: PLC0415
 
@@ -767,18 +774,6 @@ class LegacyWideTableSeedTest(unittest.TestCase):
         message = str(ctx.exception)
         self.assertIn("bank_questions", message)
         self.assertIn("migrate_bank_v063", message)
-
-    @staticmethod
-    def _restore_env(previous) -> None:
-        data_dir, plugins_dir = previous
-        if data_dir is None:
-            os.environ.pop("JZO_DATA_DIR", None)
-        else:
-            os.environ["JZO_DATA_DIR"] = data_dir
-        if plugins_dir is None:
-            os.environ.pop("JZO_PLUGINS_DIR", None)
-        else:
-            os.environ["JZO_PLUGINS_DIR"] = plugins_dir
 
 
 class StageRelayContractTest(unittest.TestCase):
