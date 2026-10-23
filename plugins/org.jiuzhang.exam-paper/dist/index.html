@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>试卷排版</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div id="epRoot" class="ep-root" hidden>
+    <header class="ep-top">
+      <div class="ep-brand">
+        <h1>试卷排版</h1>
+        <p class="ep-sub">题篮 → A4 · 日常小练 / 标准答题卡</p>
+      </div>
+
+      <div class="ep-modes" role="group" aria-label="排版模板">
+        <button type="button" class="ep-mode" data-mode="practice" aria-pressed="true">日常小练</button>
+        <button type="button" class="ep-mode" data-mode="card" aria-pressed="false">标准答题卡</button>
+      </div>
+
+      <label class="ep-title-field">
+        <span>卷名</span>
+        <input id="epTitle" type="text" maxlength="48" value="九章算子 · 数学练习卷" aria-label="试卷标题">
+      </label>
+
+      <div class="ep-actions">
+        <span id="epMetrics" class="ep-metrics" data-mode="practice">尚未载入</span>
+        <button type="button" id="epRefresh" class="ep-btn ep-btn-ghost">刷新</button>
+        <button type="button" id="epPrint" class="ep-btn">打印 / PDF</button>
+      </div>
+    </header>
+
+    <main class="ep-desk" id="epDesk">
+      <div class="ep-zoom" id="epZoom">
+        <div id="epPaper" class="ep-paper" data-mode="practice"></div>
+      </div>
+      <p id="epEmpty" class="ep-empty" hidden>
+        题篮是空的。去「真题题库」把题目加入题篮，这里会自动排成 A4 纸面。
+      </p>
+    </main>
+
+    <div id="epMeasure" class="ep-measure" aria-hidden="true"></div>
+  </div>
+
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>

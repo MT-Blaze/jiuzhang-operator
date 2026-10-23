@@ -1,0 +1,518 @@
+/* 试卷排版插件（org.jiuzhang.exam-paper）：纸面优先，屏幕上只负责等比预览。 */
+:root {
+  --ep-page-w: 210mm;
+  --ep-page-h: 297mm;
+  --ep-pad-side: 16mm;
+  --ep-pad-top: 16mm;
+  --ep-pad-bottom: 14mm;
+  --ep-ink: #1d1b18;
+  --ep-muted: #6d655c;
+  --ep-line: #d8d0c4;
+  --ep-paper: #fffefb;
+  --ep-desk: #e8e3da;
+  --ep-accent: #8c2f28;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #f6f3ee;
+  color: var(--ep-ink);
+  font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.ep-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ep-root[hidden] { display: none; }
+
+/* ---------- 顶部工具条 ---------- */
+.ep-top {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 12px 18px 10px;
+  border-bottom: 1px solid var(--ep-line);
+  background: #fffdf9;
+}
+
+.ep-brand h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+}
+
+.ep-sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--ep-muted);
+}
+
+.ep-modes {
+  display: flex;
+  border: 1px solid var(--ep-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ep-mode {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  background: #fff;
+  color: #4a443c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ep-mode + .ep-mode { border-left: 1px solid var(--ep-line); }
+
+.ep-mode[aria-pressed="true"] {
+  background: var(--ep-accent);
+  color: #fff;
+}
+
+.ep-mode:focus-visible,
+.ep-btn:focus-visible {
+  outline: 2px solid #1b5e8c;
+  outline-offset: 2px;
+}
+
+.ep-title-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ep-muted);
+}
+
+.ep-title-field input {
+  min-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid var(--ep-line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ep-ink);
+  font: inherit;
+}
+
+.ep-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ep-metrics {
+  font-size: 12px;
+  color: var(--ep-muted);
+  white-space: nowrap;
+}
+
+.ep-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--ep-accent);
+  border-radius: 8px;
+  background: var(--ep-accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ep-btn-ghost {
+  background: #fff;
+  border-color: var(--ep-line);
+  color: #5b5249;
+}
+
+/* ---------- 预览区 ---------- */
+.ep-desk {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 24px 40px;
+  background: var(--ep-desk);
+}
+
+.ep-zoom {
+  margin: 0 auto;
+  transform-origin: top center;
+}
+
+.ep-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: var(--ep-page-w);
+}
+
+.ep-empty {
+  max-width: 520px;
+  margin: 40px auto 0;
+  padding: 18px 20px;
+  border: 1px dashed #bdb2a3;
+  border-radius: 10px;
+  background: #fffdf8;
+  color: var(--ep-muted);
+  line-height: 1.7;
+  text-align: center;
+}
+
+.ep-empty[hidden] { display: none; }
+
+.ep-measure {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+  width: var(--ep-page-w);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------- A4 纸面 ---------- */
+.ep-sheet {
+  position: relative;
+  width: var(--ep-page-w);
+  min-height: var(--ep-page-h);
+  padding: var(--ep-pad-top) var(--ep-pad-side) var(--ep-pad-bottom);
+  background: var(--ep-paper);
+  box-shadow: 0 2px 10px rgba(60, 50, 40, 0.16);
+  color: var(--ep-ink);
+  font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  font-size: 12pt;
+  line-height: 1.75;
+}
+
+.ep-sheet[data-kind="card"] {
+  padding-left: 34mm;
+}
+
+/* flow-root 把子元素外边距留在容器内，测量页高时才不会漏算 */
+.ep-sheet-inner { display: flow-root; }
+
+.ep-paper-head {
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.ep-paper-title {
+  margin: 0;
+  font-size: 17pt;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.ep-paper-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 6px;
+  padding: 0 4mm;
+  font-size: 10.5pt;
+  color: #443e37;
+}
+
+.ep-runner {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--ep-line);
+  font-size: 9pt;
+  color: var(--ep-muted);
+}
+
+/* ---------- 大题与题目 ---------- */
+.ep-section { margin: 0 0 6px; }
+
+.ep-section-title {
+  margin: 12px 0 4px;
+  font-size: 13pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.ep-section-hint {
+  margin: 0 0 8px;
+  font-size: 9.5pt;
+  color: var(--ep-muted);
+}
+
+.ep-item {
+  margin: 0 0 10px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ep-stem {
+  display: flex;
+  gap: 7px;
+  margin: 0;
+}
+
+.ep-no {
+  flex: none;
+  font-weight: 700;
+}
+
+.ep-stem-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ep-stem-body p {
+  margin: 0 0 3px;
+  overflow-wrap: anywhere;
+}
+
+.ep-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 16px;
+  margin: 4px 0 0;
+  padding: 0 0 0 24px;
+  list-style: none;
+}
+
+.ep-options li {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  break-inside: avoid;
+}
+
+.ep-key {
+  flex: none;
+  font-weight: 600;
+}
+
+.ep-opt-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ep-figure {
+  margin: 5px 0 0 24px;
+}
+
+.ep-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 58mm;
+}
+
+.ep-lines {
+  margin: 6px 0 0 24px;
+  padding-right: 12mm;
+}
+
+.ep-line {
+  height: 24px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #b2a89b;
+}
+
+.ep-work {
+  min-height: 34mm;
+  margin: 6px 0 0 24px;
+  padding: 6px;
+  border: 1px solid #e1d9cd;
+  border-radius: 3px;
+}
+
+.ep-math-block {
+  display: block;
+  margin: 4px 0;
+  text-align: center;
+}
+
+/* ---------- 答题卡 ---------- */
+.ep-sheet[data-kind="card"] .ep-paper-title { font-size: 20pt; }
+
+.ep-seal {
+  position: absolute;
+  left: 12mm;
+  top: var(--ep-pad-top);
+  bottom: var(--ep-pad-bottom);
+  width: 12mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px dashed #a89e90;
+}
+
+.ep-seal-text {
+  writing-mode: vertical-rl;
+  font-size: 9pt;
+  letter-spacing: 0.32em;
+  color: var(--ep-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ep-card-cover { margin: 0 0 4px; }
+
+.ep-card-kicker {
+  margin: 0;
+  font-size: 9.5pt;
+  letter-spacing: 0.3em;
+  color: var(--ep-muted);
+  text-align: center;
+}
+
+.ep-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 22px;
+  margin: 14px 0 12px;
+}
+
+.ep-card-meta label {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  font-size: 10.5pt;
+  color: #443e37;
+}
+
+.ep-card-meta i {
+  flex: 1;
+  height: 20px;
+  border-bottom: 1px solid #8d8377;
+  font-style: normal;
+}
+
+.ep-rules {
+  margin: 0;
+  padding-left: 1.4em;
+  font-size: 10pt;
+  color: #5b5249;
+  line-height: 1.7;
+}
+
+.ep-omr-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 3px 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ep-omr-no {
+  width: 2.8em;
+  flex: none;
+  text-align: right;
+  font-size: 10.5pt;
+  font-weight: 600;
+}
+
+.ep-bubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #8d8377;
+  border-radius: 50%;
+  font-size: 9pt;
+  line-height: 1;
+  color: #5b5249;
+}
+
+.ep-answer-box {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #c9c0b3;
+  border-radius: 4px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.ep-answer-box-head {
+  margin: 0 0 6px;
+  font-size: 10.5pt;
+  font-weight: 600;
+}
+
+.ep-answer-box-area {
+  border-top: 1px dashed #d8d0c4;
+}
+
+/* ---------- 打印 ---------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html, body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .ep-root {
+    display: block;
+    height: auto;
+  }
+
+  .ep-top,
+  .ep-empty,
+  .ep-measure {
+    display: none !important;
+  }
+
+  .ep-desk {
+    overflow: visible;
+    padding: 0;
+    background: #fff;
+  }
+
+  .ep-zoom {
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0;
+  }
+
+  .ep-paper {
+    width: auto;
+    gap: 0;
+  }
+
+  .ep-sheet {
+    margin: 0;
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .ep-sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

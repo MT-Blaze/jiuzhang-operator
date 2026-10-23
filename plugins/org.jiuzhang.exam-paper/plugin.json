@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.exam-paper",
+  "name": "试卷排版",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "把题篮排成 A4 试卷：日常小练与标准答题卡两种模板，含大题标号、涂卡区与密封线。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["question.card", "stage.center"],
+  "capabilities": ["paper.generate"],
+  "permissions": ["questions:read"],
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "试卷排版",
+    "priority": 65,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["basket.changed", "stage.tab.activated"],
+    "publish": ["region.dock"]
+  }
+}
