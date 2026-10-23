@@ -110,6 +110,12 @@ def _parse_entry(entry: Any, position: int) -> dict[str, Any]:
 
     homepage = _validate_download_url(entry.get("homepage"), "homepage", where)
 
+    # min_host_version 只在「检查更新」时用来拦下不兼容的更新，缺省不设限；
+    # 写坏了也不牵连整条目——底座绝不据此拒绝加载已装插件（§1.1）。
+    min_host = entry.get("min_host_version")
+    if isinstance(min_host, str) and _SEMVER.fullmatch(min_host) is None:
+        min_host = None
+
     return {
         "id": plugin_id,
         "name": name,
@@ -120,6 +126,32 @@ def _parse_entry(entry: Any, position: int) -> dict[str, Any]:
         "homepage": homepage,
         "kind": entry.get("kind") if isinstance(entry.get("kind"), str) else "",
         "api_version": entry.get("api_version") if isinstance(entry.get("api_version"), str) else "",
+        "min_host_version": min_host or "",
+    }
+
+
+def _parse_host_block(raw: Any) -> dict[str, Any] | None:
+    """顶层 ``host`` 块：底座自更新的版本声明。坏块只让它自己出局。"""
+    if raw in (None, ""):
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("host 必须是对象")
+    version = raw.get("version")
+    if not isinstance(version, str) or _SEMVER.fullmatch(version) is None:
+        raise ValueError("host.version 必须是语义化版本")
+    zip_url = _validate_download_url(raw.get("zip_url"), "zip_url", "host")
+    if zip_url is None:
+        raise ValueError("host 缺少 zip_url（底座的下载地址）")
+    mirrors_raw = raw.get("mirrors", []) or []
+    if not isinstance(mirrors_raw, list):
+        raise ValueError("host.mirrors 必须是数组")
+    mirrors = [_validate_download_url(item, "mirrors[%d]" % idx, "host") for idx, item in enumerate(mirrors_raw)]
+    notes = raw.get("notes", "")
+    return {
+        "version": version,
+        "zip_url": zip_url,
+        "mirrors": [item for item in mirrors if item],
+        "notes": notes if isinstance(notes, str) and len(notes) <= 500 else "",
     }
 
 
@@ -154,6 +186,13 @@ def parse_index(payload: Any) -> dict[str, Any]:
         entries.append(entry)
 
     updated_at = payload.get("updated_at")
+    # host 块坏了只当没有底座更新，不许牵连 entries——与单条坏数据同款处置。
+    host_rejected = ""
+    try:
+        host = _parse_host_block(payload.get("host"))
+    except ValueError as exc:
+        host = None
+        host_rejected = str(exc)
     return {
         "index_version": INDEX_VERSION,
         "index_name": payload.get("name") if isinstance(payload.get("name"), str) else "",
@@ -162,6 +201,8 @@ def parse_index(payload: Any) -> dict[str, Any]:
         "rejected": rejected,
         "entry_count": len(entries),
         "rejected_count": len(rejected),
+        "host": host,
+        "host_rejected": host_rejected,
     }
 
 

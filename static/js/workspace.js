@@ -41,7 +41,6 @@
   var ctxHistory = document.getElementById("ctxHistory");
   var modelBtn = document.getElementById("wsModelBtn");
   var modelLabel = document.getElementById("wsModelLabel");
-  var providerSelect = document.getElementById("wsProviderSelect");
   var chatEntry = document.getElementById("wsChatEntry");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
@@ -1735,274 +1734,68 @@
       })
       .then(function (data) {
         providerList = data.providers || [];
-        if (providerSelect) {
-          providerSelect.innerHTML = "";
-          providerList.forEach(function (p) {
-            var option = document.createElement("option");
-            option.value = p.name;
-            option.textContent = p.label + (p.configured ? "" : "（未配置）");
-            if (p.active) option.selected = true;
-            providerSelect.appendChild(option);
-          });
-        }
         renderModelChip();
         return data;
       });
   }
 
-  function switchProvider(name) {
-    return fetchWriteToken()
-      .then(function (token) {
-        return fetch("/api/providers/active", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-          body: JSON.stringify({ name: name }),
-        });
-      })
-      .then(function (r) {
-        if (!r.ok) {
-          return r.json().catch(function () { return null; }).then(function (body) {
-            throw new Error(readErrorDetail(r, body));
-          });
-        }
-        return r.json();
-      })
-      .then(function (data) {
-        addBubble("sys", data.mock
-          ? "已切到「" + data.active + "」：未配置密钥，走 Mock"
-          : "已切到「" + data.active + "」：真实模型 " + data.model);
-        logHistory("切换 Provider：" + data.active);
-        return loadProviders();
-      })
-      .finally(function () { writeToken = null; });
-  }
-
-  if (providerSelect) {
-    providerSelect.addEventListener("change", function () {
-      var name = providerSelect.value;
-      if (!name) return;
-      switchProvider(name).catch(function (err) {
-        addBubble("sys", "切换 Provider 失败：" + err.message, { tone: "warn" });
-        loadProviders().catch(function () {});
-      });
-    });
-  }
-
-  // --- Provider 配置弹窗 ---
-  // 左栏底部纯图标入口：在画布里开【设置与控制台】页签，不跳页、不弹窗。
+  // --- 控制台页签：全仓唯一的「配置现场」 ---
   // 底座被改坏时仍可直连 /settings 强制进同一套面板（防变砖兜底，见军令例外条款）。
-  (function wireConsoleEntry() {
-    var btn = document.getElementById("wsConsoleBtn");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
-      if (!window.JzoStage || typeof window.JzoStage.activate !== "function") return;
-      window.JzoStage.activate("console");
-      btn.setAttribute("aria-expanded", "true");
-    });
-  })();
+  var consoleFrameLoaded = false;
+  var consolePanelPending = null;
 
-  var providerModal = document.getElementById("wsProviderModal");
-  var providerModalTarget = document.getElementById("wsProviderModalTarget");
-  var providerBaseUrlInput = document.getElementById("wsProviderBaseUrl");
-  var providerApiKeyInput = document.getElementById("wsProviderApiKey");
-  var providerModelInput = document.getElementById("wsProviderModel");
-  var providerTestBtn = document.getElementById("wsProviderTestBtn");
-  var providerSaveBtn = document.getElementById("wsProviderSaveBtn");
-  var providerTestResult = document.getElementById("wsProviderTestResult");
-  var providerModalFocusBefore = null;
-
-  function currentProviderName() {
-    return providerSelect && providerSelect.value ? providerSelect.value : "";
-  }
-
-  function findProvider(name) {
-    for (var i = 0; i < providerList.length; i += 1) {
-      if (providerList[i].name === name) return providerList[i];
-    }
-    return null;
-  }
-
-  function renderProviderModalTarget() {
-    if (!providerModalTarget) return;
-    var profile = findProvider(currentProviderName());
-    if (!profile) {
-      providerModalTarget.textContent = "未选择 Provider";
-      return;
-    }
-    providerModalTarget.textContent =
-      profile.label + " · " + (profile.configured ? "已配置" : "未配置") +
-      (profile.host ? " · " + profile.host : "") +
-      (profile.model ? " · " + profile.model : "");
-    if (providerBaseUrlInput) {
-      providerBaseUrlInput.placeholder = profile.host
-        ? "当前接口主机：" + profile.host + "（留空则不改）"
-        : "https://api.example.com/v1";
+  function postConsolePanel(frame, panel) {
+    try {
+      frame.contentWindow.postMessage({ jzo: "console.panel", panel: panel }, window.location.origin);
+    } catch (error) {
+      /* 内嵌面板还没起来：等 load 事件补发，不拿异常打死点击 */
     }
   }
 
-  function setTestResult(text, tone) {
-    if (!providerTestResult) return;
-    providerTestResult.textContent = text || "";
-    providerTestResult.setAttribute("data-tone", tone || "info");
-    providerTestResult.hidden = !text;
-  }
-
-  function openProviderModal() {
-    if (!providerModal) return;
-    if (!providerList.length) {
-      addBubble("sys", "Provider 注册表还没加载出来，稍候再试。", { tone: "warn" });
-      return;
-    }
-    providerModalFocusBefore = document.activeElement;
-    renderProviderModalTarget();
-    if (providerBaseUrlInput) providerBaseUrlInput.value = "";
-    if (providerApiKeyInput) providerApiKeyInput.value = "";
-    var profile = findProvider(currentProviderName());
-    if (providerModelInput) providerModelInput.value = profile ? profile.model || "" : "";
-    setTestResult("", "info");
-    providerModal.hidden = false;
-    if (providerSelect) providerSelect.focus();
-  }
-
-  function closeProviderModal() {
-    if (!providerModal) return;
-    providerModal.hidden = true;
-    if (providerModalFocusBefore && typeof providerModalFocusBefore.focus === "function") {
-      providerModalFocusBefore.focus();
-    }
-    providerModalFocusBefore = null;
-  }
-
-  if (modelBtn) modelBtn.addEventListener("click", openProviderModal);
-
-  document.querySelectorAll("[data-provider-modal-close]").forEach(function (btn) {
-    btn.addEventListener("click", closeProviderModal);
-  });
-
-  document.addEventListener("keydown", function (event) {
-    if (!providerModal || providerModal.hidden) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeProviderModal();
-      return;
-    }
-    if (event.key === "Tab") {
-      var focusables = providerModal.querySelectorAll(
-        'button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusables.length) return;
-      var first = focusables[0];
-      var last = focusables[focusables.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+  function openConsoleTab(panel) {
+    var frame = document.getElementById("wsConsoleFrame");
+    if (frame) {
+      if (!consoleFrameLoaded) {
+        frame.addEventListener("load", function () {
+          consoleFrameLoaded = true;
+          if (consolePanelPending) {
+            postConsolePanel(frame, consolePanelPending);
+            consolePanelPending = null;
+          }
+        }, { once: true });
+        // 首次水合：直接把目标面板写进地址，省一次「先开默认页再跳面板」的闪动。
+        var src = frame.getAttribute("src") || "about:blank";
+        if (src === "about:blank" && panel) {
+          frame.setAttribute("src", "/settings?embedded=1&panel=" + encodeURIComponent(panel));
+          consolePanelPending = panel;
+        } else if (panel) {
+          consolePanelPending = panel;
+        }
+      } else if (panel) {
+        postConsolePanel(frame, panel);
       }
     }
-  });
-
-  function collectProviderForm() {
-    var payload = { name: currentProviderName() };
-    var dirty = false;
-    if (providerBaseUrlInput && providerBaseUrlInput.value.trim()) {
-      payload.base_url = providerBaseUrlInput.value.trim();
-      dirty = true;
+    if (window.JzoStage && typeof window.JzoStage.activate === "function") {
+      window.JzoStage.activate("console");
     }
-    if (providerApiKeyInput && providerApiKeyInput.value.trim()) {
-      payload.api_key = providerApiKeyInput.value.trim();
-      dirty = true;
-    }
-    if (providerModelInput && providerModelInput.value.trim()) {
-      payload.model = providerModelInput.value.trim();
-      dirty = true;
-    }
-    return { payload: payload, dirty: dirty };
   }
 
-  function saveProviderConfig() {
-    var form = collectProviderForm();
-    if (!form.dirty) return Promise.resolve(false);
-    providerSaveBtn.disabled = true;
-    providerSaveBtn.setAttribute("aria-busy", "true");
-    return fetchWriteToken()
-      .then(function (token) {
-        return fetch("/api/providers/config", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-          body: JSON.stringify(form.payload),
-        });
-      })
-      .then(function (r) {
-        return r.json().catch(function () { return null; }).then(function (body) {
-          if (!r.ok) throw new Error(readErrorDetail(r, body));
-          return true;
-        });
-      })
-      .finally(function () {
-        writeToken = null;
-        providerSaveBtn.disabled = false;
-        providerSaveBtn.setAttribute("aria-busy", "false");
-      });
-  }
-
-  if (providerSaveBtn) {
-    providerSaveBtn.addEventListener("click", function () {
-      saveProviderConfig()
-        .then(function (saved) {
-          if (saved) {
-            addBubble("sys", "配置已保存并热生效（密钥只落在本机 .env）");
-            logHistory("保存 Provider 配置");
-            if (providerApiKeyInput) providerApiKeyInput.value = "";
-            if (providerBaseUrlInput) providerBaseUrlInput.value = "";
-          }
-          return loadProviders().then(renderProviderModalTarget);
-        })
-        .catch(function (err) {
-          setTestResult("保存失败：" + err.message, "down");
-        });
+  // 定调令：工作台不许再有弹窗。左栏图标与顶栏模型胶囊都只是「走到页签里」，
+  // 模型配置表单在控制台里只有那一份。
+  (function wireConsoleEntry() {
+    var btn = document.getElementById("wsConsoleBtn");
+    if (btn) {
+      btn.addEventListener("click", function () { openConsoleTab(); });
+    }
+    if (modelBtn) {
+      modelBtn.addEventListener("click", function () { openConsoleTab("provider"); });
+    }
+    // 控制台里改了模型配置 → 顶栏胶囊立即重拉状态，不让老师对着旧标签发愣。
+    window.addEventListener("message", function (event) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.jzo === "providers.changed") loadProviders().catch(function () {});
     });
-  }
-
-  if (providerTestBtn) {
-    providerTestBtn.addEventListener("click", function () {
-      providerTestBtn.disabled = true;
-      providerTestBtn.setAttribute("aria-busy", "true");
-      setTestResult("先把面板里未保存的改动存下来…", "info");
-      var saved;
-      saveProviderConfig()
-        .then(function (didSave) {
-          saved = didSave;
-          setTestResult("正在向接口发一次只读 GET /models …", "info");
-          return fetchWriteToken();
-        })
-        .then(function (token) {
-          return fetch("/api/providers/test", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-            body: JSON.stringify({ name: currentProviderName() }),
-          });
-        })
-        .then(function (r) {
-          return r.json().catch(function () { return null; }).then(function (body) {
-            if (!r.ok) throw new Error(readErrorDetail(r, body));
-            setTestResult((body.ok ? "连通正常 ✓ " : "不通 ✗ ") + body.detail, body.ok ? "ok" : "down");
-            writeToken = null;
-            if (saved) return loadProviders().then(renderProviderModalTarget);
-            return null;
-          });
-        })
-        .catch(function (err) {
-          writeToken = null;
-          setTestResult("测试失败：" + err.message, "down");
-        })
-        .finally(function () {
-          providerTestBtn.disabled = false;
-          providerTestBtn.setAttribute("aria-busy", "false");
-        });
-    });
-  }
+  })();
 
   // ============ 已安装插件：动态渲染左栏插件区 ============
   var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };

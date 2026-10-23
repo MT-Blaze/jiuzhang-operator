@@ -48,6 +48,7 @@ class InstalledPlugin(BaseModel):
     ui: dict[str, Any] | None = None
     stage: dict[str, Any] | None = None
     bus: dict[str, Any] | None = None
+    min_host_version: str = ""
 
 
 class PluginInstallResponse(BaseModel):

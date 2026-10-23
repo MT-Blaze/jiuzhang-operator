@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>设置与控制 · 九章算子</title>
-  <meta name="description" content="九章算子设置与控制：在线拉取插件索引、手动安装 zip 插件包、查看底座信息。所有出网请求都由用户当场点击发起，底座不自动拉取、不自动更新。">
+  <meta name="description" content="九章算子设置与控制：工作区与教材版本、插件管理与安装、模型 Provider 配置。所有出网请求都由用户当场点击发起，底座不自动拉取、不自动更新。">
   <meta name="theme-color" content="#a63b2b">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -34,45 +34,180 @@
 
     <main class="st-main">
       <section class="st-head" aria-labelledby="st-title">
-        <p class="eyebrow">SETTINGS · PLUGINS · ABOUT</p>
+        <p class="eyebrow">WORKSPACE · PLUGINS · MODEL</p>
         <h1 id="st-title">设置与控制</h1>
         <p class="st-lede">
-          低频操作集中在这里：拉取插件索引、手动安装 zip、查看底座信息。
-          工作台左栏只留「自由对话」与已安装插件，不再堆叠安装与说明入口。
+          底座的管理现场只有这一处：左边选分区，右边干活。
+          工作区（含教材版本）、插件（管理与安装）、模型配置（Provider 与密钥）各占一栏。
           底座<strong>不自动拉取、不自动更新、不批量下载</strong>——每一次出网都由你当场点击发起。
         </p>
       </section>
 
-      <section class="st-block st-manage" id="manage" aria-labelledby="mg-title">
-        <h2 id="mg-title">插件管理与控制</h2>
-        <p class="st-note">
-          已安装插件在这里集中管理：<strong>启用/停用</strong>（停用即从工作台左栏消失、释放内存，代码与数据原地保留）、
-          <strong>卸载</strong>（可选是否保留本地题库数据）、以及安装（下方索引/手动 zip）。
-          底座不自动装卸任何插件，一切改动都由你当场点。
-        </p>
-        <p class="pl-status" id="mgStatus" role="status" aria-live="polite" hidden></p>
-        <ul class="mg-list" id="mgList"></ul>
-        <div class="st-install-actions">
-          <button type="button" class="q-button" id="mgRefresh">刷新列表</button>
-        </div>
-      </section>
+      <!-- 左菜单 + 右面板：控制台页签内嵌的就是这一套，不再「整页塞进画布」 -->
+      <div class="st-split">
+        <nav class="st-nav" id="stNav" role="tablist" aria-orientation="vertical" aria-label="设置分区">
+          <button class="st-nav-item is-active" id="stNavWorkspace" type="button" role="tab"
+            aria-selected="true" aria-controls="stPanelWorkspace" data-panel="workspace">工作区</button>
+          <button class="st-nav-item" id="stNavPlugin" type="button" role="tab"
+            aria-selected="false" aria-controls="stPanelPlugin" data-panel="plugin" tabindex="-1">插件</button>
+          <button class="st-nav-item" id="stNavProvider" type="button" role="tab"
+            aria-selected="false" aria-controls="stPanelProvider" data-panel="provider" tabindex="-1">模型配置</button>
+        </nav>
 
-      <section class="st-block st-import" id="recover" aria-labelledby="import-title">
-        <h2 id="import-title">导入已有题库数据</h2>
-        <p class="st-note">
-          选一个本地 <code>.db</code>（须为 core-bank 七表结构），底座把它挂载成一个<strong>新的独立工作区</strong>
-          并切换过去，原文件不受影响、不覆盖任何现有库。用于换机搬迁或从备份恢复。
-        </p>
-        <label class="q-field" for="importWsName">
-          <span>新工作区名称</span>
-          <input id="importWsName" type="text" maxlength="40" autocomplete="off" placeholder="如：2026 高三真题">
-        </label>
-        <div class="st-install-actions">
-          <button type="button" class="q-button" id="dbImportBtn">选择 .db 并挂载</button>
-          <input type="file" id="dbImportFile" accept=".db,application/x-sqlite3" hidden>
+        <div class="st-panels">
+          <!-- ================= 工作区 ================= -->
+          <section class="st-panel" id="stPanelWorkspace" role="tabpanel" aria-labelledby="stNavWorkspace" tabindex="0">
+            <h2 id="ws-title">工作区管理</h2>
+            <p class="st-note">
+              一个工作区就是本机一个独立的 SQLite 库目录，切换即换库、不联网、不注册。
+              新建的库一律是<strong>空壳</strong>；「教材版本」决定大纲树按哪套目录过滤，
+              考向本身是全库并集，换版本不复制题目。
+            </p>
+            <p class="pl-status" id="stWsStatus" role="status" aria-live="polite" hidden></p>
+            <ul class="st-ws-list" id="stWsList"></ul>
+
+            <h3 class="st-sub">新建工作区</h3>
+            <label class="q-field" for="stWsName">
+              <span>工作区名称</span>
+              <input id="stWsName" type="text" maxlength="40" autocomplete="off" placeholder="如：2026 高三一轮">
+            </label>
+            <label class="q-field" for="stWsTextbook">
+              <span>教材版本</span>
+              <select id="stWsTextbook" class="st-ws-textbook">
+                <option value="">跟随默认版本</option>
+              </select>
+            </label>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="stWsCreateBtn">新建并切换过去</button>
+              <button type="button" class="q-button" id="stWsTextbookRefresh">刷新版本清单</button>
+            </div>
+
+            <h3 class="st-sub">导入已有题库数据</h3>
+            <p class="st-note">
+              选一个本地 <code>.db</code>（须为 core-bank 七表结构），底座把它挂载成一个<strong>新的独立工作区</strong>
+              并切换过去，原文件不受影响、不覆盖任何现有库。用于换机搬迁或从备份恢复。
+            </p>
+            <label class="q-field" for="importWsName">
+              <span>新工作区名称</span>
+              <input id="importWsName" type="text" maxlength="40" autocomplete="off" placeholder="如：2026 高三真题">
+            </label>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="dbImportBtn">选择 .db 并挂载</button>
+              <input type="file" id="dbImportFile" accept=".db,application/x-sqlite3" hidden>
+            </div>
+            <p class="pl-status" id="importStatus" role="status" aria-live="polite" hidden></p>
+          </section>
+
+          <!-- ================= 插件 ================= -->
+          <section class="st-panel" id="stPanelPlugin" role="tabpanel" aria-labelledby="stNavPlugin" tabindex="0" hidden>
+            <div class="st-block st-manage" id="manage" aria-labelledby="mg-title">
+              <h2 id="mg-title">插件管理与控制</h2>
+              <p class="st-note">
+                已安装插件在这里集中管理：<strong>启用/停用</strong>（停用即从工作台左栏消失、释放内存，代码与数据原地保留）、
+                <strong>卸载</strong>（可选是否保留本地题库数据）、以及安装（下方索引/手动 zip）。
+                底座不自动装卸任何插件，一切改动都由你当场点。
+              </p>
+              <p class="pl-status" id="mgStatus" role="status" aria-live="polite" hidden></p>
+              <ul class="mg-list" id="mgList"></ul>
+              <div class="st-install-actions">
+                <button type="button" class="q-button" id="mgRefresh">刷新列表</button>
+              </div>
+            </div>
+
+            <section class="pl-pull st-block" id="index" aria-labelledby="pl-pull-title">
+              <h2 id="pl-pull-title">在线插件索引</h2>
+              <p class="st-note">
+                默认预填官方插件仓库 <code>jiuzhang-plugins</code> 索引的国内可达镜像（gh-proxy 反代）。
+                主源失败时会自动切换 ghfast / jsDelivr 等备用镜像；改成第三方地址后，底座只访问那一个，不替你换源。
+              </p>
+              <form class="pl-form" id="plIndexForm">
+                <label class="q-field pl-url-field">
+                  <span>索引地址（http/https，默认官方国内镜像，可改）</span>
+                  <input
+                    id="plIndexUrl"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    value="https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins.json"
+                    placeholder="https://你的国内镜像或自建静态托管/plugins.json"
+                  >
+                </label>
+                <div class="pl-form-actions">
+                  <button type="submit" class="q-button pl-fetch" id="plFetchBtn">拉取清单</button>
+                  <button type="button" class="q-button pl-demo" id="plDemoBtn">用本机示例清单试一次</button>
+                </div>
+              </form>
+              <p class="pl-status" id="plStatus" role="status" aria-live="polite" hidden></p>
+            </section>
+
+            <section class="pl-results-wrap st-block" aria-labelledby="pl-results-title">
+              <h2 id="pl-results-title">可用条目</h2>
+              <ul class="pl-results" id="plResults"></ul>
+
+              <h2 class="pl-rejected-title" id="pl-rejected-title" hidden>被跳过的条目</h2>
+              <ul class="pl-rejected" id="plRejected" hidden></ul>
+            </section>
+
+            <section class="st-block st-install" id="install" aria-labelledby="st-install-title">
+              <h2 id="st-install-title">手动安装 zip 包</h2>
+              <p class="st-note">
+                自己下载的插件包也可以在这里装：先过 <code>plugin.json</code> 契约校验，再由底座落地
+                <code>plugins/</code>。只收标准 zip，上限 50 MB；下载或校验失败不会留下半个文件。
+              </p>
+              <div class="st-drop" id="stDropZone" role="button" tabindex="0" aria-describedby="stDropHint">
+                <span class="st-drop-icon" aria-hidden="true">&darr;</span>
+                <span class="st-drop-title">把插件 .zip 拖到这里</span>
+                <span class="st-drop-hint" id="stDropHint">或点此选择文件。<br>也可以把 zip 直接拖进工作台任意位置，由底座全局兜底安装。</span>
+              </div>
+              <div class="st-install-actions">
+                <button type="button" class="q-button" id="stPickZip">选择 zip 文件</button>
+                <input type="file" id="stZipFile" accept=".zip,application/zip" hidden>
+              </div>
+              <p class="pl-status" id="stInstallStatus" role="status" aria-live="polite" hidden></p>
+            </section>
+          </section>
+
+          <!-- ================= 模型配置 ================= -->
+          <section class="st-panel" id="stPanelProvider" role="tabpanel" aria-labelledby="stNavProvider" tabindex="0" hidden>
+            <h2 id="pv-title">模型与 API Key 配置</h2>
+            <p class="st-note">
+              全仓唯一的模型配置现场（工作台的 Provider 弹窗已退役）。切换即时生效、无需重启；
+              <strong>密钥只写本机 <code>.env</code> 与环境变量</strong>——永不入库、永不写日志、永不回显、永不进入插件上下文。
+            </p>
+            <p class="st-provider-target" id="pvTarget" role="status" aria-live="polite">正在读取 Provider 注册表…</p>
+            <label class="q-field" for="pvSelect">
+              <span>模型 Provider</span>
+              <select id="pvSelect" class="st-provider-select"></select>
+            </label>
+            <label class="q-field" for="pvBaseUrl">
+              <span>Base URL（留空则不改）</span>
+              <input id="pvBaseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                placeholder="https://api.example.com/v1 或 http://127.0.0.1:11434/v1">
+            </label>
+            <label class="q-field" for="pvApiKey">
+              <span>API Key（留空则不改；填了只落本机 .env）</span>
+              <input id="pvApiKey" type="password" autocomplete="off" spellcheck="false"
+                placeholder="永不回显、永不入库">
+            </label>
+            <label class="q-field" for="pvModel">
+              <span>模型名（留空则不改）</span>
+              <input id="pvModel" type="text" autocomplete="off" spellcheck="false"
+                placeholder="如 qwen-plus / deepseek-ai/DeepSeek-V3 / llama3">
+            </label>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="pvSwitchBtn">设为当前模型</button>
+              <button type="button" class="q-button" id="pvSaveBtn">保存配置</button>
+              <button type="button" class="q-button" id="pvTestBtn">测试连通性</button>
+            </div>
+            <p class="st-note st-provider-hint">
+              本地 Ollama：Base URL 填 <code>http://127.0.0.1:11434/v1</code>，API Key 填任意占位（如 <code>ollama</code>）。
+              未配置密钥时底座走 Mock 回显，不会伪造模型输出。
+            </p>
+            <p class="pl-status" id="pvResult" role="status" aria-live="polite" hidden></p>
+          </section>
         </div>
-        <p class="pl-status" id="importStatus" role="status" aria-live="polite" hidden></p>
-      </section>
+      </div>
 
       <div class="mg-modal-overlay" id="uninstallModal" role="dialog" aria-modal="true"
         aria-labelledby="uninstallTitle" aria-hidden="true" hidden>
@@ -92,59 +227,6 @@
           </div>
         </div>
       </div>
-
-      <section class="pl-pull st-block" id="index" aria-labelledby="pl-pull-title">
-        <h2 id="pl-pull-title">在线插件索引</h2>
-        <p class="st-note">
-          默认预填官方插件仓库 <code>jiuzhang-plugins</code> 索引的国内可达镜像（gh-proxy 反代）。
-          主源失败时会自动切换 ghfast / jsDelivr 等备用镜像；改成第三方地址后，底座只访问那一个，不替你换源。
-        </p>
-        <form class="pl-form" id="plIndexForm">
-          <label class="q-field pl-url-field">
-            <span>索引地址（http/https，默认官方国内镜像，可改）</span>
-            <input
-              id="plIndexUrl"
-              type="url"
-              inputmode="url"
-              autocomplete="off"
-              spellcheck="false"
-              value="https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins.json"
-              placeholder="https://你的国内镜像或自建静态托管/plugins.json"
-            >
-          </label>
-          <div class="pl-form-actions">
-            <button type="submit" class="q-button pl-fetch" id="plFetchBtn">拉取清单</button>
-            <button type="button" class="q-button pl-demo" id="plDemoBtn">用本机示例清单试一次</button>
-          </div>
-        </form>
-        <p class="pl-status" id="plStatus" role="status" aria-live="polite" hidden></p>
-      </section>
-
-      <section class="pl-results-wrap st-block" aria-labelledby="pl-results-title">
-        <h2 id="pl-results-title">可用条目</h2>
-        <ul class="pl-results" id="plResults"></ul>
-
-        <h2 class="pl-rejected-title" id="pl-rejected-title" hidden>被跳过的条目</h2>
-        <ul class="pl-rejected" id="plRejected" hidden></ul>
-      </section>
-
-      <section class="st-block st-install" id="install" aria-labelledby="st-install-title">
-        <h2 id="st-install-title">手动安装 zip 包</h2>
-        <p class="st-note">
-          自己下载的插件包也可以在这里装：先过 <code>plugin.json</code> 契约校验，再由底座落地
-          <code>plugins/</code>。只收标准 zip，上限 50 MB；下载或校验失败不会留下半个文件。
-        </p>
-        <div class="st-drop" id="stDropZone" role="button" tabindex="0" aria-describedby="stDropHint">
-          <span class="st-drop-icon" aria-hidden="true">&darr;</span>
-          <span class="st-drop-title">把插件 .zip 拖到这里</span>
-          <span class="st-drop-hint" id="stDropHint">或点此选择文件。<br>也可以把 zip 直接拖进工作台任意位置，由底座全局兜底安装。</span>
-        </div>
-        <div class="st-install-actions">
-          <button type="button" class="q-button" id="stPickZip">选择 zip 文件</button>
-          <input type="file" id="stZipFile" accept=".zip,application/zip" hidden>
-        </div>
-        <p class="pl-status" id="stInstallStatus" role="status" aria-live="polite" hidden></p>
-      </section>
 
       <section class="st-block st-about" aria-labelledby="st-about-title">
         <h2 id="st-about-title">关于底座</h2>

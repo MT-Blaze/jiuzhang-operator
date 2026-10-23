@@ -26,7 +26,7 @@ import urllib.request
 from pathlib import Path
 
 from app.core import plugin_lifecycle, plugin_state
-from app.core.config import settings
+from app.core.config import root_data_dir, settings
 from app.core.plugins import discover_plugins, validate_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +90,50 @@ class PluginStateTest(unittest.TestCase):
         self.assertIn("org.jiuzhang.any", persisted["disabled"])
         plugin_state.set_enabled("org.jiuzhang.any", True)
         self.assertTrue(plugin_state.is_enabled("org.jiuzhang.any"))
+
+    def test_disable_never_touches_code_or_data(self) -> None:
+        """ADR-007 禁令锁：停用只改 plugin_state.json，代码与 data/ 必须一根汗毛都不能动。
+
+        判据取整棵树快照（相对路径 + 字节数 + mtime_ns）逐条比对：
+        只断言「文件还在」会漏掉「被清空 / 被改名 / 被重写」这三种破坏。
+        """
+        pid = "org.jiuzhang.zzz-disable-probe"
+        root = Path(self.tmp.name)
+        data_root = root_data_dir()
+        plugins_root = root / "plugins"
+        saved_plugins = settings.plugins_dir
+        settings.plugins_dir = plugins_root
+        try:
+            (plugins_root / pid / "dist").mkdir(parents=True)
+            (plugins_root / pid / "dist" / "index.html").write_text("<main></main>", encoding="utf-8")
+            _make_bank_db(data_root / "banks" / f"{pid}.db", 2)
+            _make_bank_db(data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db", 3)
+            uploads = data_root / "uploads"
+            uploads.mkdir(parents=True, exist_ok=True)
+            (uploads / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+            def snapshot(base: Path) -> dict[str, tuple[int, int]]:
+                return {
+                    str(item.relative_to(base)).replace("\\", "/"): (item.stat().st_size, item.stat().st_mtime_ns)
+                    for item in sorted(base.rglob("*"))
+                    if item.is_file() and item.name != "plugin_state.json"
+                }
+
+            before_data = snapshot(data_root)
+            before_code = snapshot(plugins_root)
+            self.assertTrue(before_data, "探针没能造出 data/ 文件，这条断言会变成假阴性")
+
+            plugin_state.set_enabled(pid, False)
+            self.assertFalse(plugin_state.is_enabled(pid))
+            plugin_state.set_enabled(pid, True)
+
+            self.assertEqual(before_data, snapshot(data_root), "停用/启用改动碰了 data/（ADR-007 禁止）")
+            self.assertEqual(before_code, snapshot(plugins_root), "停用/启用改动碰了 plugins/ 代码（ADR-007 禁止）")
+            self.assertTrue((data_root / "banks" / f"{pid}.db").is_file())
+            self.assertTrue((data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db").is_file())
+            self.assertTrue((uploads / "fig.png").is_file())
+        finally:
+            settings.plugins_dir = saved_plugins
 
 
 class UninstallLifecycleTest(unittest.TestCase):

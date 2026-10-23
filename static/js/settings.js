@@ -1,10 +1,11 @@
 /**
- * 设置与控制：手动安装 zip。
+ * 设置与控制：左菜单选分区，右面板干活（工作区 / 插件 / 模型配置）。
  *
- * 在线索引的拉取/安装逻辑仍由 plugins.js 负责（同一套表单 id），本文件只补
- * 「手动安装」：文件选择 + 拖拽区 + 状态回显。
+ * 在线索引的拉取/安装逻辑仍由 plugins.js 负责（同一套表单 id），本文件负责：
+ * ① 分区导航（含宿主指定面板）；② 工作区列表、切换与新建（新建可选教材版本）；
+ * ③ 手动安装：文件选择 + 拖拽区 + 状态回显；④ 模型 Provider 的切换/保存/测连通。
  * 边界与工作台拖装一致：只收 .zip、上限 50 MB、写接口带本机令牌、409 需显式
- * 确认覆盖，失败不留半个文件。所有插件名只走 textContent。
+ * 确认覆盖，失败不留半个文件。所有插件名与状态只走 textContent，不拼 HTML。
  */
 (function () {
   "use strict";
@@ -391,4 +392,363 @@
   });
 
   loadInstalled();
+
+  // ============ 左菜单 + 右面板：分区导航 ============
+  var PANEL_KEYS = ["workspace", "plugin", "provider"];
+  var navItems = {};
+  var panelEls = {};
+  PANEL_KEYS.forEach(function (key) {
+    navItems[key] = document.getElementById("stNav" + key.charAt(0).toUpperCase() + key.slice(1));
+    panelEls[key] = document.getElementById("stPanel" + key.charAt(0).toUpperCase() + key.slice(1));
+  });
+  var activePanel = "workspace";
+
+  function selectPanel(key, focusNav) {
+    if (PANEL_KEYS.indexOf(key) === -1) return;
+    activePanel = key;
+    PANEL_KEYS.forEach(function (name) {
+      var tab = navItems[name];
+      var panel = panelEls[name];
+      var on = name === key;
+      if (tab) {
+        tab.classList.toggle("is-active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
+        if (on && focusNav) tab.focus();
+      }
+      if (panel) panel.hidden = !on;
+    });
+  }
+
+  PANEL_KEYS.forEach(function (name) {
+    var tab = navItems[name];
+    if (!tab) return;
+    tab.addEventListener("click", function () { selectPanel(name, false); });
+    tab.addEventListener("keydown", function (event) {
+      var index = PANEL_KEYS.indexOf(name);
+      var step = (event.key === "ArrowDown" || event.key === "ArrowRight") ? 1
+        : (event.key === "ArrowUp" || event.key === "ArrowLeft") ? -1 : 0;
+      if (event.key === "Home") step = -PANEL_KEYS.length;
+      if (event.key === "End") step = PANEL_KEYS.length - index;
+      if (!step) return;
+      event.preventDefault();
+      var next = PANEL_KEYS[(index + step + PANEL_KEYS.length) % PANEL_KEYS.length];
+      selectPanel(next, true);
+    });
+  });
+
+  // 宿主页签可以指定落在哪一区：首次用地址参数 ?panel=provider，后续用同源 postMessage。
+  function requestPanelFromHost(key) {
+    if (PANEL_KEYS.indexOf(key) === -1) return;
+    selectPanel(key, false);
+  }
+
+  var urlPanel = /[?&]panel=([^&]+)/.exec(window.location.search);
+  if (urlPanel) {
+    try { requestPanelFromHost(decodeURIComponent(urlPanel[1])); } catch (error) { /* 非法参数回落默认区 */ }
+  }
+  window.addEventListener("message", function (event) {
+    if (event.origin !== window.location.origin) return;
+    var data = event.data;
+    if (data && data.jzo === "console.panel") requestPanelFromHost(String(data.panel || ""));
+  });
+
+  // ============ 工作区：列出 / 切换 / 新建（含教材版本） ============
+  var wsListEl = document.getElementById("stWsList");
+  var wsStatus = document.getElementById("stWsStatus");
+  var wsNameInput = document.getElementById("stWsName");
+  var wsTextbookSelect = document.getElementById("stWsTextbook");
+  var wsCreateBtn = document.getElementById("stWsCreateBtn");
+  var wsTextbookRefresh = document.getElementById("stWsTextbookRefresh");
+  var textbookById = {};
+  var wsBusy = false;
+
+  // 独立访问 /settings 时刷新自己；被画布页签内嵌时刷新宿主，页签与左栏一起对齐新库。
+  function reloadHostPage() {
+    var target = window;
+    try {
+      if (window.top && window.top !== window.self) target = window.top;
+    } catch (error) {
+      target = window;
+    }
+    target.location.reload();
+  }
+
+  function renderWorkspaces(data) {
+    if (!wsListEl) return;
+    wsListEl.textContent = "";
+    var list = (data && data.workspaces) || [];
+    if (!list.length) {
+      wsListEl.appendChild(el("li", "st-ws-empty", "尚未登记任何工作区"));
+      return;
+    }
+    list.forEach(function (ws) {
+      var li = el("li", "st-ws-item");
+      li.setAttribute("data-active", ws.is_active ? "1" : "0");
+      li.appendChild(el("span", "st-ws-name", ws.name || ws.id));
+      var tb = ws.textbook_id ? (textbookById[ws.textbook_id] || ws.textbook_id) : "跟随默认版本";
+      li.appendChild(el("span", "st-ws-meta",
+        (ws.is_active ? "当前 · " : "") + Number(ws.question_count || 0) + " 题 · 教材：" + tb));
+      var actions = el("div", "st-ws-actions");
+      if (!ws.is_active) {
+        var go = el("button", "q-button", "切换");
+        go.type = "button";
+        go.addEventListener("click", function () { switchWorkspace(ws); });
+        actions.appendChild(go);
+      }
+      li.appendChild(actions);
+      wsListEl.appendChild(li);
+    });
+  }
+
+  function loadWorkspaces() {
+    return fetch("/api/workspaces", { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(renderWorkspaces)
+      .catch(function (error) { mgSet(wsStatus, "读取工作区失败：" + error.message, "down"); });
+  }
+
+  function switchWorkspace(ws) {
+    if (wsBusy) return;
+    wsBusy = true;
+    if (wsCreateBtn) wsCreateBtn.disabled = true;
+    mgSet(wsStatus, "正在切换到「" + (ws.name || ws.id) + "」…", "info");
+    apiCall("/api/workspaces/switch", "POST", { workspace_id: ws.id })
+      .then(function () { reloadHostPage(); })
+      .catch(function (error) {
+        wsBusy = false;
+        if (wsCreateBtn) wsCreateBtn.disabled = false;
+        mgSet(wsStatus, "切换失败：" + error.message, "down");
+      });
+  }
+
+  function loadTextbooks() {
+    if (!wsTextbookSelect) return Promise.resolve();
+    wsTextbookSelect.textContent = "";
+    var fallback = el("option");
+    fallback.value = "";
+    fallback.textContent = "跟随默认版本";
+    wsTextbookSelect.appendChild(fallback);
+    return fetch("/api/bank/textbooks", { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        var items = (data && data.items) || [];
+        textbookById = {};
+        if (!items.length) {
+          var none = el("option");
+          none.value = "";
+          none.textContent = "当前题库未登记教材版本";
+          none.disabled = true;
+          wsTextbookSelect.appendChild(none);
+          mgSet(wsStatus, "当前题库没有 textbooks 登记表（老库未升级）；新建工作区仍可用，版本待大纲导入后再选。", "warn");
+          return;
+        }
+        items.forEach(function (item) {
+          textbookById[item.id] = item.name;
+          var option = el("option");
+          option.value = item.id;
+          option.textContent = item.name + (item.is_default ? "（默认）" : "") +
+            (item.publisher ? " · " + item.publisher : "");
+          wsTextbookSelect.appendChild(option);
+        });
+      })
+      .catch(function (error) { mgSet(wsStatus, "读取教材版本清单失败：" + error.message, "down"); });
+  }
+
+  function createWorkspace() {
+    if (wsBusy || !wsNameInput) return;
+    var name = String(wsNameInput.value || "").trim();
+    if (!name) { mgSet(wsStatus, "请先填写工作区名称。", "warn"); wsNameInput.focus(); return; }
+    var textbookId = wsTextbookSelect ? String(wsTextbookSelect.value || "") : "";
+    wsBusy = true;
+    if (wsCreateBtn) {
+      wsCreateBtn.disabled = true;
+      wsCreateBtn.setAttribute("aria-busy", "true");
+    }
+    mgSet(wsStatus, "正在新建工作区「" + name + "」…", "info");
+    apiCall("/api/workspaces", "POST", { name: name })
+      .then(function (created) {
+        var newId = created && created.id ? String(created.id) : "";
+        if (textbookId && newId) {
+          mgSet(wsStatus, "工作区已建，正在登记教材版本…", "info");
+          return apiCall("/api/workspaces/textbook", "POST", {
+            workspace_id: newId,
+            textbook_id: textbookId,
+          });
+        }
+        return { workspace_id: newId, textbook_id: "" };
+      })
+      .then(function () { reloadHostPage(); })
+      .catch(function (error) {
+        wsBusy = false;
+        if (wsCreateBtn) {
+          wsCreateBtn.disabled = false;
+          wsCreateBtn.setAttribute("aria-busy", "false");
+        }
+        mgSet(wsStatus, "新建失败：" + error.message, "down");
+      });
+  }
+
+  if (wsCreateBtn) wsCreateBtn.addEventListener("click", createWorkspace);
+  if (wsTextbookRefresh) wsTextbookRefresh.addEventListener("click", function () {
+    loadTextbooks().then(loadWorkspaces);
+  });
+  loadTextbooks().then(loadWorkspaces);
+
+  // ============ 模型配置：Provider 列表 / 切换 / 保存 / 测连通 ============
+  var pvSelect = document.getElementById("pvSelect");
+  var pvTarget = document.getElementById("pvTarget");
+  var pvBaseUrl = document.getElementById("pvBaseUrl");
+  var pvApiKey = document.getElementById("pvApiKey");
+  var pvModel = document.getElementById("pvModel");
+  var pvSwitchBtn = document.getElementById("pvSwitchBtn");
+  var pvSaveBtn = document.getElementById("pvSaveBtn");
+  var pvTestBtn = document.getElementById("pvTestBtn");
+  var pvResult = document.getElementById("pvResult");
+  var pvProfiles = [];
+
+  function pvCurrent() {
+    var name = pvSelect && pvSelect.value ? pvSelect.value : "";
+    for (var i = 0; i < pvProfiles.length; i += 1) {
+      if (pvProfiles[i].name === name) return pvProfiles[i];
+    }
+    return null;
+  }
+
+  function pvRenderTarget() {
+    if (!pvTarget) return;
+    var profile = pvCurrent();
+    if (!profile) {
+      pvTarget.textContent = "未选择 Provider";
+      pvTarget.setAttribute("data-state", "off");
+      return;
+    }
+    pvTarget.textContent = profile.label + " · " + (profile.active ? "当前使用" : "未启用") +
+      " · " + (profile.configured ? "已配置密钥" : "未配置（走 Mock）") +
+      (profile.host ? " · " + profile.host : "") +
+      (profile.model ? " · " + profile.model : "");
+    pvTarget.setAttribute("data-state", profile.configured ? "on" : "off");
+    if (pvBaseUrl && !pvBaseUrl.value) {
+      pvBaseUrl.placeholder = profile.host
+        ? "当前接口主机：" + profile.host + "（留空则不改）"
+        : "https://api.example.com/v1";
+    }
+    if (pvModel && !pvModel.value) pvModel.value = profile.model || "";
+  }
+
+  function pvNotifyHost() {
+    // 宿主顶栏的模型胶囊是只读状态；配置变了就提醒它重新拉一次 /api/providers。
+    try {
+      if (window.parent && window.parent !== window.self) {
+        window.parent.postMessage({ jzo: "providers.changed" }, window.location.origin);
+      }
+    } catch (error) { /* 独立打开时没有宿主，忽略 */ }
+  }
+
+  function pvLoad() {
+    return fetch("/api/providers", { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(function (data) {
+        pvProfiles = (data && data.providers) || [];
+        if (pvSelect) {
+          pvSelect.textContent = "";
+          pvProfiles.forEach(function (p) {
+            var option = el("option");
+            option.value = p.name;
+            option.textContent = p.label + (p.configured ? "" : "（未配置）");
+            if (p.active) option.selected = true;
+            pvSelect.appendChild(option);
+          });
+        }
+        pvRenderTarget();
+      })
+      .catch(function (error) { mgSet(pvResult, "读取 Provider 注册表失败：" + error.message, "down"); });
+  }
+
+  function pvCollect() {
+    var profile = pvCurrent();
+    if (!profile) return null;
+    var payload = { name: profile.name };
+    var dirty = false;
+    if (pvBaseUrl && pvBaseUrl.value.trim()) { payload.base_url = pvBaseUrl.value.trim(); dirty = true; }
+    if (pvApiKey && pvApiKey.value.trim()) { payload.api_key = pvApiKey.value.trim(); dirty = true; }
+    if (pvModel && pvModel.value.trim()) { payload.model = pvModel.value.trim(); dirty = true; }
+    return dirty ? payload : false;
+  }
+
+  function pvSave() {
+    var payload = pvCollect();
+    if (!payload) return Promise.resolve(false);
+    return apiCall("/api/providers/config", "POST", payload).then(function () {
+      if (pvApiKey) pvApiKey.value = "";
+      if (pvBaseUrl) pvBaseUrl.value = "";
+      return pvLoad().then(function () { return true; });
+    });
+  }
+
+  function pvBusy(btn, on, label) {
+    if (!btn) return;
+    btn.disabled = on;
+    btn.setAttribute("aria-busy", on ? "true" : "false");
+    if (label) btn.textContent = label;
+  }
+
+  if (pvSelect) pvSelect.addEventListener("change", pvRenderTarget);
+
+  if (pvSwitchBtn) pvSwitchBtn.addEventListener("click", function () {
+    var profile = pvCurrent();
+    if (!profile) { mgSet(pvResult, "请先选择一个 Provider。", "warn"); return; }
+    pvBusy(pvSwitchBtn, true);
+    mgSet(pvResult, "正在切换…", "info");
+    pvSave().catch(function () { return false; }).then(function () {
+      return apiCall("/api/providers/active", "POST", { name: profile.name });
+    }).then(function (result) {
+      mgSet(pvResult, result.mock
+        ? "已切到「" + result.active + "」：未配置密钥，走 Mock 回显。"
+        : "已切到「" + result.active + "」：真实模型 " + result.model + "。", "ok");
+      return pvLoad().then(pvNotifyHost);
+    }).catch(function (error) {
+      mgSet(pvResult, "切换失败：" + error.message, "down");
+    }).finally(function () { pvBusy(pvSwitchBtn, false); });
+  });
+
+  if (pvSaveBtn) pvSaveBtn.addEventListener("click", function () {
+    pvBusy(pvSaveBtn, true);
+    pvSave().then(function (saved) {
+      mgSet(pvResult, saved
+        ? "配置已保存并热生效（密钥只落在本机 .env，永不回显）。"
+        : "表单没有改动，无需保存。", saved ? "ok" : "info");
+      if (saved) pvNotifyHost();
+    }).catch(function (error) {
+      mgSet(pvResult, "保存失败：" + error.message, "down");
+    }).finally(function () { pvBusy(pvSaveBtn, false); });
+  });
+
+  if (pvTestBtn) pvTestBtn.addEventListener("click", function () {
+    var profile = pvCurrent();
+    if (!profile) { mgSet(pvResult, "请先选择一个 Provider。", "warn"); return; }
+    pvBusy(pvTestBtn, true);
+    mgSet(pvResult, "正在保存未提交的改动，随后向接口发一次只读 GET /models…", "info");
+    pvSave().catch(function () { return false; }).then(function () {
+      return apiCall("/api/providers/test", "POST", { name: profile.name });
+    }).then(function (body) {
+      mgSet(pvResult, (body.ok ? "连通正常 · " : "不通 · ") + (body.detail || ""),
+        body.ok ? "ok" : "down");
+      return pvLoad().then(pvNotifyHost);
+    }).catch(function (error) {
+      mgSet(pvResult, "测试失败：" + error.message, "down");
+    }).finally(function () { pvBusy(pvTestBtn, false); });
+  });
+
+  pvLoad();
 })();
+

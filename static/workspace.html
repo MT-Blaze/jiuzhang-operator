@@ -79,7 +79,8 @@
         </div>
         <div class="ws-stage-tools">
           <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button" aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
-          <button class="ws-chip" id="wsModelBtn" type="button" title="配置模型 Provider">
+          <button class="ws-chip" id="wsModelBtn" type="button" aria-label="模型状态：点击查看模型配置"
+            title="在【设置与控制台】页签里配置模型">
             <span class="ws-chip-dot" aria-hidden="true"></span>
             <span id="wsModelLabel">模型 · 未就绪</span>
           </button>
@@ -196,47 +197,6 @@
         </ul>
       </div>
     </section>
-
-    <!-- Provider 配置面板 -->
-    <div class="ws-modal-overlay" id="wsProviderModal" role="dialog" aria-modal="true" aria-labelledby="wsProviderModalTitle" hidden>
-      <div class="ws-modal">
-        <header class="ws-modal-head">
-          <h3 id="wsProviderModalTitle">Provider 配置</h3>
-          <button class="ws-btn ws-btn-icon" data-provider-modal-close type="button" aria-label="关闭">&times;</button>
-        </header>
-        <div class="ws-modal-body">
-          <p class="ws-provider-target" id="wsProviderModalTarget"></p>
-          <label class="ws-field" for="wsProviderSelect">
-            <span>模型 Provider</span>
-            <select id="wsProviderSelect" class="ws-workspace-select"></select>
-          </label>
-          <label class="ws-field" for="wsProviderBaseUrl">
-            <span>Base URL</span>
-            <input id="wsProviderBaseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
-              placeholder="https://api.example.com/v1 或 http://127.0.0.1:11434/v1">
-          </label>
-          <label class="ws-field" for="wsProviderApiKey">
-            <span>API Key</span>
-            <input id="wsProviderApiKey" type="password" autocomplete="off" spellcheck="false"
-              placeholder="只写入本机 .env，永不回显、永不入库">
-          </label>
-          <label class="ws-field" for="wsProviderModel">
-            <span>模型名</span>
-            <input id="wsProviderModel" type="text" autocomplete="off" spellcheck="false"
-              placeholder="如 qwen-plus / deepseek-ai/DeepSeek-V3 / llama3">
-          </label>
-          <p class="ws-provider-hint">本地 Ollama：Base URL 填 <code>http://127.0.0.1:11434/v1</code>，API Key 填任意占位（如 <code>ollama</code>）。保存即热生效，无需重启。</p>
-          <p class="ws-provider-test-result" id="wsProviderTestResult" role="status" hidden></p>
-        </div>
-        <footer class="ws-modal-foot ws-modal-foot-split">
-          <button class="ws-btn" id="wsProviderTestBtn" type="button">测试连通性</button>
-          <span class="ws-modal-foot-group">
-            <button class="ws-btn" data-provider-modal-close type="button">关闭</button>
-            <button class="ws-btn ws-btn-primary" id="wsProviderSaveBtn" type="button">保存配置</button>
-          </span>
-        </footer>
-      </div>
-    </div>
 
     <!-- 拖拽安装遮罩 -->
     <div class="ws-drop-overlay" id="wsDropOverlay" hidden aria-hidden="true">

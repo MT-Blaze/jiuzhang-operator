@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-"""v0.8.2 控制台标签页与四区几何真机探针。
+"""控制台标签页、设置页左右分栏与四区几何真机探针。
 
-取证口径（军令「UI 术语修正与四区几何布局定调」+「控制台插件化」）：
+取证口径（军令「UI 术语修正与四区几何布局定调」+「控制台弹窗废除与页签重构」）：
 - 左栏底部是**纯图标按钮**，旧齿轮链接已退役；点它在中栏开【设置与控制台】页签；
 - 页签内是同源 iframe 装载的 ``/settings?embedded=1``，内嵌时站点外壳（主导航）必须隐藏；
+- 设置页是**左菜单（工作区/插件/模型配置）+ 右详情**的真分栏，菜单项热区 ≥44px；
+- 新建工作区表单必须带【教材版本】下拉，且选项与 ``GET /api/bank/textbooks`` 同源；
+- 工作台**不许再有弹窗**：``#wsProviderModal`` 与 ``.ws-modal-overlay`` 节点数为 0，
+  点顶栏模型胶囊只会把老师带进控制台的模型配置面板；
 - 四区几何：左栏与右栏**上下通高**（高度 == 视口高），输出日志区**只占中列**
   （宽度 == 画布宽度，明显小于视口宽，不得横跨左右两栏）；
 - 术语：底栏标题含「输出日志区」，全页不得把这一区叫成「控制台」；
-- 防变砖：直接访问 /settings 仍是完整独立页（无 embedded 标记、导航可见）；
+- 防变砖：直接访问 /settings 仍是完整独立页（无 embedded 标记、导航可见、同样分栏）；
 - 全程零 console / page error。
 
 用法：``.venv/Scripts/python.exe tools/console_probe.py <tag>``
@@ -97,7 +101,7 @@ def main() -> int:
                   tab.get_attribute("aria-selected") == "true")
 
             frame = page.frame_locator("#wsConsoleFrame")
-            expect(frame.locator("#manage")).to_be_visible(timeout=15000)
+            expect(frame.locator(".st-nav")).to_be_visible(timeout=15000)
             inner = frame.locator("body").evaluate(
                 """() => ({
                     embedded: document.documentElement.getAttribute('data-embedded'),
@@ -105,12 +109,72 @@ def main() -> int:
                         return !!n && getComputedStyle(n).display !== 'none'; })(),
                     headVisible: (() => { const h = document.querySelector('.st-head');
                         return !!h && getComputedStyle(h).display !== 'none'; })(),
-                    title: (document.querySelector('#mg-title') || {}).textContent || ''
+                    nav: Array.from(document.querySelectorAll('.st-nav-item')).map((b) => b.textContent.trim()),
+                    panels: (() => {
+                        const box = (id) => { const n = document.getElementById(id);
+                            return !!n && n.getBoundingClientRect().width > 0; };
+                        return { workspace: box('stPanelWorkspace'),
+                                 plugin: box('stPanelPlugin'),
+                                 provider: box('stPanelProvider') };
+                    })(),
+                    split: (() => {
+                        const nav = document.querySelector('.st-nav');
+                        const panels = document.querySelector('.st-panels');
+                        if (!nav || !panels) return null;
+                        const a = nav.getBoundingClientRect(), b = panels.getBoundingClientRect();
+                        return { navLeft: Math.round(a.left), navRight: Math.round(a.right),
+                                 navW: Math.round(a.width), navH: Math.round(a.height),
+                                 panelLeft: Math.round(b.left), panelW: Math.round(b.width),
+                                 navHit: Math.round(nav.getBoundingClientRect().height /
+                                     Math.max(1, nav.querySelectorAll('.st-nav-item').length)) };
+                    })()
                 })""")
             check("页签内是内嵌模式（embedded=1）", inner["embedded"] == "1", inner)
             check("内嵌时收起站点外壳（主导航/页头不可见）",
                   inner["navVisible"] is False and inner["headVisible"] is False, inner)
-            check("插件管理面板在页签里可用", "插件管理" in inner["title"] or "插件" in inner["title"], inner)
+            check("左菜单三项齐全（工作区/插件/模型配置）",
+                  inner["nav"] == ["工作区", "插件", "模型配置"], inner["nav"])
+            check("默认落在工作区面板，其余面板不占位",
+                  inner["panels"]["workspace"] is True and inner["panels"]["plugin"] is False
+                  and inner["panels"]["provider"] is False, inner["panels"])
+            check("真左右分栏（菜单在左、面板在右、菜单宽 200 上下）",
+                  inner["split"] and inner["split"]["navLeft"] < inner["split"]["panelLeft"]
+                  and inner["split"]["navRight"] <= inner["split"]["panelLeft"]
+                  and 160 <= inner["split"]["navW"] <= 260
+                  and inner["split"]["navHit"] >= 44, inner["split"])
+
+            # 菜单切区：插件区里要能看到既有的插件管理面板（内嵌整页 → 分区的回归点）
+            frame.locator("#stNavPlugin").click()
+            expect(frame.locator("#manage")).to_be_visible(timeout=10000)
+            check("插件面板在页签里可用", frame.locator("#mg-title").inner_text() == "插件管理与控制")
+
+            # 工作区面板：新建表单必须带教材版本下拉，且接的是 /api/bank/textbooks
+            frame.locator("#stNavWorkspace").click()
+            expect(frame.locator("#stWsTextbook")).to_be_visible(timeout=10000)
+            textbook = frame.locator("#stWsTextbook").evaluate(
+                """(el) => ({ count: el.options.length,
+                              values: Array.from(el.options).map((o) => o.value),
+                              labels: Array.from(el.options).map((o) => o.textContent.trim()) })""")
+            check("新建工作区含【教材版本】下拉且首项为「跟随默认版本」",
+                  textbook["count"] >= 1 and textbook["values"][0] == "", textbook)
+            backend = page.evaluate(
+                """async () => { const r = await fetch('/api/bank/textbooks', {cache:'no-store'});
+                                 return await r.json(); }""")
+            check("教材版本下拉与后端清单同源",
+                  all(i["id"] in textbook["values"] for i in backend.get("items", [])),
+                  {"backend": [i["id"] for i in backend.get("items", [])],
+                   "options": textbook["values"]})
+
+            # Provider 弹窗退役：工作台不得再有弹窗节点，模型胶囊只把老师带进控制台
+            check("Provider 弹窗节点已彻底删除",
+                  page.locator("#wsProviderModal").count() == 0
+                  and page.locator(".ws-modal-overlay").count() == 0)
+            page.locator("#wsModelBtn").click()
+            expect(frame.locator("#stPanelProvider")).to_be_visible(timeout=10000)
+            check("点模型胶囊进【设置与控制台 · 模型配置】（无弹窗）",
+                  frame.locator("#stPanelProvider").is_visible()
+                  and page.locator(".ws-modal-overlay").count() == 0,
+                  {"chip": page.locator("#wsModelLabel").inner_text()})
 
             geo = page.evaluate(
                 """() => {
@@ -143,17 +207,64 @@ def main() -> int:
             check("底栏定名【输出日志区】", "输出日志区" in geo["dockTitle"], geo)
             check("该区不被叫成控制台", "控制台" not in geo["dockTitle"] + geo["dockLabel"], geo)
 
+            frame.locator("#stNavWorkspace").click()
+            expect(frame.locator("#stWsTextbook")).to_be_visible(timeout=10000)
             page.screenshot(path=str(work / "shots" / "console-tab.png"))
             standalone = browser.new_page(viewport={"width": 1280, "height": 860})
             standalone.goto(base + "/settings", wait_until="domcontentloaded")
             fallback = standalone.evaluate(
                 """() => ({
                     embedded: document.documentElement.getAttribute('data-embedded'),
-                    navVisible: !!document.querySelector('.topnav')
+                    navVisible: !!document.querySelector('.topnav'),
+                    navCount: document.querySelectorAll('.st-nav-item').length,
+                    split: (() => { const n = document.querySelector('.st-nav'),
+                                    p = document.querySelector('.st-panels');
+                        if (!n || !p) return null;
+                        const a = n.getBoundingClientRect(), b = p.getBoundingClientRect();
+                        return { navLeft: Math.round(a.left), panelLeft: Math.round(b.left),
+                                 sameRow: Math.abs(a.top - b.top) <= 2 }; })()
                 })""")
             check("防变砖：直连 /settings 仍是完整独立页",
                   fallback["embedded"] is None and fallback["navVisible"] is True, fallback)
+            check("独立页同样是左菜单右详情",
+                  fallback["navCount"] == 3 and fallback["split"]
+                  and fallback["split"]["navLeft"] < fallback["split"]["panelLeft"]
+                  and fallback["split"]["sameRow"] is True, fallback["split"])
+            standalone.locator("#stNavProvider").click()
+            check("独立页菜单可切区（点模型配置出表单）",
+                  standalone.locator("#stPanelProvider").is_visible()
+                  and standalone.locator("#pvSelect").is_visible())
+            compact = standalone.evaluate(
+                """() => {
+                    const ids = ['pvSelect', 'pvBaseUrl', 'pvApiKey', 'pvModel'];
+                    const rects = ids.map((id) => document.getElementById(id).getBoundingClientRect());
+                    const gaps = [];
+                    for (let i = 1; i < rects.length; i += 1) {
+                        gaps.push(Math.round(rects[i].top - rects[i - 1].bottom));
+                    }
+                    return { heights: rects.map((r) => Math.round(r.height)),
+                             maxGap: Math.max.apply(null, gaps),
+                             panelH: Math.round(document.getElementById('stPanelProvider')
+                                 .getBoundingClientRect().height) };
+                }""")
+            check("表单未被拉伸（字段高 ≤60、相邻间距 ≤40）",
+                  max(compact["heights"]) <= 60 and compact["maxGap"] <= 40, compact)
             standalone.screenshot(path=str(work / "shots" / "settings-standalone.png"))
+            standalone.set_viewport_size({"width": 375, "height": 780})
+            standalone.wait_for_timeout(250)
+            narrow = standalone.evaluate(
+                """() => ({
+                    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    stacked: (() => { const n = document.querySelector('.st-nav'),
+                                       p = document.querySelector('.st-panels');
+                        return n.getBoundingClientRect().bottom <= p.getBoundingClientRect().top + 1; })(),
+                    minHit: Math.min.apply(null, Array.from(document.querySelectorAll('.st-nav-item'))
+                        .map((b) => Math.round(b.getBoundingClientRect().height)))
+                })""")
+            check("375px 窄屏不横向溢出且菜单堆到面板上方",
+                  narrow["overflow"] <= 0 and narrow["stacked"] is True, narrow)
+            check("窄屏菜单项热区仍 ≥44px", narrow["minHit"] >= 44, narrow)
+            standalone.screenshot(path=str(work / "shots" / "settings-375.png"))
             standalone.close()
             browser.close()
     finally:

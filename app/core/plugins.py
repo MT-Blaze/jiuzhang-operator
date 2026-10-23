@@ -435,6 +435,13 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         "ui": ui,
         "stage": stage,
         "bus": bus_grants,
+        # 只用于「检查更新」时判断底座是否够新；缺省不设限，底座绝不据此拒绝加载已装插件。
+        "min_host_version": (
+            manifest["min_host_version"]
+            if isinstance(manifest.get("min_host_version"), str)
+            and _SEMVER.fullmatch(manifest["min_host_version"])
+            else ""
+        ),
         # 渲染/工具类插件可显式声明 show_in_sidebar:false，不在左栏占位；缺省一律显示。
         "show_in_sidebar": manifest.get("show_in_sidebar") is not False,
     }
