@@ -31,3 +31,6 @@ Thumbs.db
 *.db-shm
 *.db-wal
 *.db-journal
+
+# 会话侦察与旧库只读快照，含第三方数据副本，永不入库
+.scratch-recon-*/
