@@ -38,6 +38,9 @@
   var bodyEl = document.getElementById("wsCanvasBody");
   var bus = window.JzoBus;
   var tabs = [];
+  // 右栏辅助面板（sidebar.right）不占画布页签，但同样要能走 Host API：
+  // 单独一张登记表，消息入口按 frame.contentWindow 反查它的插件身份。
+  var panels = [];
   var activeKey = null;
   var requestSeq = 0;
   var openSeq = 0;
@@ -304,6 +307,31 @@
 
   function broadcast(event, payload) {
     liveFrames().forEach(function (tab) { notify(tab, event, payload); });
+  }
+
+  // ---------- 右栏辅助面板（sidebar.right） ----------
+  // 面板与画布页签共用同一套 jzo-plugin/1 协议和 Host API：插件只交出一个 iframe，
+  // 身份由宿主按清单绑定，bank.* / basket.* / draft.* 的写令牌仍留在宿主侧。
+  function attachPanel(frame, plugin) {
+    var handle = {
+      kind: "panel",
+      key: "panel:" + ((plugin && plugin.id) || "unknown"),
+      plugin: plugin,
+      frame: frame,
+      pending: new Map(),
+      relayWindow: 0,
+      relayCount: 0
+    };
+    panels.push(handle);
+    return {
+      request: function (method, payload) { return request(handle, method, payload); },
+      notify: function (event, payload) { return notify(handle, event, payload); },
+      detach: function () {
+        var index = panels.indexOf(handle);
+        if (index >= 0) panels.splice(index, 1);
+        if (handle.pending) handle.pending.clear();
+      }
+    };
   }
 
   // ---------- 插件数据通道（Host API 转发） ----------
@@ -816,6 +844,14 @@
         break;
       }
     }
+    if (!tab) {
+      for (var p = 0; p < panels.length; p += 1) {
+        if (panels[p].frame && panels[p].frame.contentWindow === event.source) {
+          tab = panels[p];
+          break;
+        }
+      }
+    }
     if (!tab) return;   // 不认识的发信人一律丢弃
 
     // 插件主动申请宿主数据（jzo-plugin/1 的 request 方向，题库通道新增）。
@@ -1216,6 +1252,7 @@
     rehydratePlugin: rehydratePlugin,
     activate: activate,
     close: closeTab,
+    attachPanel: attachPanel,
     tabs: function () {
       return tabs.map(function (tab) {
         return {

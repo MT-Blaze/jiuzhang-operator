@@ -30,6 +30,8 @@ _SLOTS = {
     "answer.panel",
     # v0.6.0：中栏画布。声明它的插件可以在舞台开一个 Tabs 页（沙箱 iframe）
     "stage.center",
+    # 军令 #13：右栏辅助面板。同一时刻只挂一个，没插件认领时回退原生 AI 副驾
+    "sidebar.right",
 }
 _CAPABILITIES = {
     "question.render",

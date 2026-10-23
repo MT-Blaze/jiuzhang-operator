@@ -100,6 +100,15 @@
         <h2>上下文</h2>
       </header>
       <div class="ws-context-body" id="wsContextBody">
+        <!-- 右栏插槽（sidebar.right，军令 #13）：有插件认领就渲染插件 UI，
+             没有则整块隐藏、露出下面的原生「AI 副驾」——底座永远有兜底。 -->
+        <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏插件面板" hidden>
+          <div class="ws-context-slot-head">
+            <h3 id="wsContextSlotTitle">插件面板</h3>
+            <span class="ws-context-slot-badge">右栏插件</span>
+          </div>
+          <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
+        </section>
         <section class="ws-section ws-copilot" id="wsCopilot" aria-label="AI 副驾">
           <div class="ws-copilot-head">
             <h3>AI 副驾</h3>
@@ -201,6 +210,7 @@
   <script src="/static/js/bus.js"></script>
   <script src="/static/js/splitpane.js"></script>
   <script src="/static/js/stage.js"></script>
+  <script src="/static/js/context_panel.js"></script>
   <script src="/static/js/workspace.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>

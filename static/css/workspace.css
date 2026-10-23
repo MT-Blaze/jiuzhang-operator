@@ -467,6 +467,48 @@
   min-height: 0;
 }
 
+/* 右栏插槽（sidebar.right）：有插件认领时占住主要高度，没插件时整块 hidden，
+   原生 AI 副驾原样顶上来——插槽是加法，不是替换既有兜底。 */
+.ws-context-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ws-context-slot-head h3 {
+  margin: 0;
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-context-slot-badge {
+  flex: none;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.ws-context-slot-body {
+  height: 52vh;
+  min-height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.ws-context-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
 .ws-section {
   margin-bottom: 20px;
 }

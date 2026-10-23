@@ -315,7 +315,7 @@ com.example.card/
 | `description` | 是 | 1–200 字 |
 | `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
 | `entry` | 是 | 对象，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
-| `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4） |
+| `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4）/ `sidebar.right`（右栏辅助面板，见 §2.9） |
 | `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export` / `question.edit`（v0.6.2 录题写入）/ `paper.generate` / `handout.render`；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
@@ -685,6 +685,37 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 进隔离目录跑黄金路径 **19/19**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线同 §placeholder_plugin.zip）。
 
+### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13）
+
+右栏默认是底座自带的「AI 副驾」。插件声明 `"slots": ["sidebar.right"]` 后，底座会把右栏交给它，
+**没有插件认领时整块插槽隐藏、AI 副驾原样回来**——插槽是加法，不替换既有兜底。
+
+```json
+{
+  "id": "org.example.inspector",
+  "slots": ["sidebar.right"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"],
+  "entry": { "frontend": "dist/index.html" }
+}
+```
+
+契约：
+
+- **同一时刻只挂一个**：多个插件都声明 `sidebar.right` 时，按与画布同一套排序（`stage.priority`
+  高者优先，同优先级按名称）取第一个；停用（`enabled=false`）的插件不参与。
+- **隔离与协议不变**：面板同样是 `sandbox="allow-scripts"` 的沙箱 iframe（不透明源），
+  走 `jzo-plugin/1`；挂载后宿主发 `plugin.activate`，payload 为 `{"slot": "sidebar.right"}`，
+  插件照常回 `{ready: true}`。
+- **Host API 与画布页签完全一致**：`bank.*` / `basket.*` / `draft.*` 都可用，写操作仍由宿主代持
+  一次性令牌，插件看不到令牌；`bus.publish` 白名单同 §2.5（`region.right` 专供向本栏投递文本）。
+- **激活失败要能退回**：`plugin.activate` 超时或报错时，宿主记录 `context.panel.error`
+  并切回 AI 副驾，绝不把右栏留成白屏。
+- **尺寸自适应**：右栏可拖拽、可折叠（宽度 0），面板必须按容器宽度自适应；
+  宿主给面板的默认可视高度是 `52vh`（不小于 300px），面板内部自行滚动，禁止撑破右栏。
+- **刷新时机**：插件装卸、停用、覆盖升级都会让 `/api/plugins` 清单签名变化，右栏随之重挂；
+  运行中的面板 iframe 不热替换代码（§4），与画布页签同规则。
+
 ## 3. 多工作区（Workspace）隔离
 
 ### 3.1 架构设计
@@ -694,7 +725,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 - 配置快照（`data/workspaces/<id>/config.json`）
 
 ### 3.2 切换机制
-左栏提供工作区切换下拉框，选择后：
+工作区切换下拉框在「设置与控制台 → 题库工作区」（军令 #13 起左栏不再放题库下拉），选择后：
 1. 后端重载对应数据库连接
 2. 前端清空本地缓存（LocalStorage 键加 workspace 前缀）
 3. 刷新令牌（防止跨库写操作）

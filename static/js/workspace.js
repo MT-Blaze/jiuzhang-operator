@@ -2096,6 +2096,10 @@
           }
         }
         renderPlugins(plugins);
+        if (window.JzoContextPanel && typeof window.JzoContextPanel.sync === "function") {
+          // 右栏插槽跟着同一份清单刷新：插件装/卸/停用后不必刷新页面
+          window.JzoContextPanel.sync(plugins);
+        }
         if (window.JzoStage && typeof window.JzoStage.updatePlugin === "function") {
           plugins.forEach(function (plugin) { window.JzoStage.updatePlugin(plugin); });
         }
