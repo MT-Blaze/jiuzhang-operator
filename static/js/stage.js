@@ -309,6 +309,7 @@
   // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
+    "bank.topics", "bank.topic_notes",
     "basket.list", "basket.add", "basket.remove", "basket.clear"
   ];
   // 录题插件的写入目标：底座唯一的公共题库。插件自报 plugin_id 一律不认，
@@ -318,6 +319,8 @@
   var RELAY_WINDOW_MS = 10000;
   var RELAY_MAX_PER_WINDOW = 80;
   var ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+  // 大纲节点 ID：tp_ + 层别码（bo/ch/se/kx）+ 8 位十六进制，定长 13（bank/schema.sql）
+  var TOPIC_ID_RE = /^tp_(bo|ch|se|kx)[0-9a-f]{8}$/;
 
   function replyHost(tab, message, ok, value) {
     if (!tab.frame || !tab.frame.contentWindow) return;
@@ -499,6 +502,12 @@
       params.set("type", filterValue(payload, "type", 32));
       params.set("chapter", filterValue(payload, "chapter", 64));
       params.set("textbook", filterValue(payload, "textbook", 64));
+      var topic = textValue(payload, "topic", 20);
+      if (topic && !TOPIC_ID_RE.test(topic)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "考向节点 id 不合法" });
+        return;
+      }
+      if (topic) params.set("topic", topic);
       var search = textValue(payload, "q", 100);
       if (search) params.set("q", search);
       params.set("page", String(intValue(payload, "page", 1, 1, 10000)));
@@ -524,7 +533,39 @@
       randomParams.set("type", filterValue(payload, "type", 32));
       var randomSearch = textValue(payload, "q", 100);
       if (randomSearch) randomParams.set("q", randomSearch);
+      var randomTopic = textValue(payload, "topic", 20);
+      if (randomTopic) {
+        if (!TOPIC_ID_RE.test(randomTopic)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "考向节点 id 不合法" });
+          return;
+        }
+        randomParams.set("topic", randomTopic);
+      }
       fetchJson(base + "/random?" + randomParams.toString()).then(done, fail);
+      return;
+    }
+
+    if (method === "bank.topics") {
+      var topicParams = new URLSearchParams();
+      var parentId = textValue(payload, "parent_id", 20);
+      if (parentId && !TOPIC_ID_RE.test(parentId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "大纲节点 parent_id 不合法" });
+        return;
+      }
+      if (parentId) topicParams.set("parent_id", parentId);
+      var topicSearch = textValue(payload, "q", 100);
+      if (topicSearch) topicParams.set("q", topicSearch);
+      fetchJson(base + "/topics?" + topicParams.toString()).then(done, fail);
+      return;
+    }
+
+    if (method === "bank.topic_notes") {
+      var noteTopic = textValue(payload, "topic_id", 20);
+      if (!TOPIC_ID_RE.test(noteTopic)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "考向节点 topic_id 不合法" });
+        return;
+      }
+      fetchJson(base + "/topics/" + encodeURIComponent(noteTopic) + "/notes").then(done, fail);
       return;
     }
 

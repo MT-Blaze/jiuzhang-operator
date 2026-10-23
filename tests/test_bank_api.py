@@ -1,4 +1,7 @@
-"""core-bank 题库 Host API：筛选、分页、注入、并发、题篮鉴权与配图边界。
+"""core-bank 题库 Host API：七表筛选、分页、注入、并发、题篮鉴权与配图边界。
+
+存储层是 v0.6.3 冻结的 7 张关系表，出参是 schemas/question.json 的标准文档；
+本测同时守住两条口径：契约 2.0 的难度 L1–L4，以及 1.0 旧值的归一（basic→L1…）。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_api``
 """
@@ -9,6 +12,7 @@ import concurrent.futures
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -25,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "bank-contract-token"
 PLUGIN_ID = "org.jiuzhang.core-bank"
 GRADES = ("高一", "高二", "高三")
-LEVELS = ("basic", "medium", "hard")
+LEVELS = ("L1", "L2", "L3")
 
 
 def _free_port() -> int:
@@ -67,6 +71,43 @@ def _document(index: int, grade: str, difficulty: str) -> dict:
     return document
 
 
+def _seed_outline(db_path: Path) -> dict:
+    """往测试库里插一条 册→章→节→考向 的物化路径，并挂一题 + 两条教研笔记。"""
+    now = "2026-10-23T20:00:00+08:00"
+    book, chapter, section, kx = "tp_bo00000001", "tp_ch00000002", "tp_se00000003", "tp_kx00000004"
+    path_of = {
+        book: book,
+        chapter: f"{book}/{chapter}",
+        section: f"{book}/{chapter}/{section}",
+        kx: f"{book}/{chapter}/{section}/{kx}",
+    }
+    names = {book: "人教A版·必修第一册", chapter: "1. 集合与常用逻辑用语",
+             section: "1.1 集合的概念", kx: "集合中元素的个数"}
+    con = sqlite3.connect(db_path)
+    try:
+        for order, node in enumerate([book, chapter, section, kx]):
+            parent = None if node == book else [book, chapter, section][order - 1]
+            con.execute(
+                "INSERT INTO topics (id, parent_id, name, path, sort_order, status,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (node, parent, names[node], path_of[node], order, "active", now, now),
+            )
+        con.execute(
+            "INSERT INTO question_topics (question_id, topic_id, is_primary, sort_order, created_at)"
+            " VALUES (?, ?, 1, 0, ?)", ("q_test_000001", kx, now)
+        )
+        for order, note_type in enumerate(("method", "pitfall")):
+            con.execute(
+                "INSERT INTO topic_notes (topic_id, note_type, content, sort_order,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (kx, note_type, f"第 {order + 1} 条教研笔记", order, now, now),
+            )
+        con.commit()
+    finally:
+        con.close()
+    return {"book": book, "chapter": chapter, "section": section, "kx": kx}
+
+
 class BankApiContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -79,6 +120,9 @@ class BankApiContractTest(unittest.TestCase):
 
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
+        # 建库只认插件包里的冻结 schema.sql，测试沙箱必须带上同一份
+        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+                        seed_dir / "schema.sql")
         cls.seed_path = seed_dir / "bank.db"
 
         sys.path.insert(0, str(ROOT))
@@ -96,6 +140,7 @@ class BankApiContractTest(unittest.TestCase):
             db_path=cls.seed_path,
             source_info={"count": len(documents)},
         )
+        cls.outline = _seed_outline(cls.seed_path)
 
         # 配图路由用的真实文件
         uploads = cls.data_dir / "uploads"
@@ -181,6 +226,121 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(grades, {"高一": 40, "高二": 40, "高三": 40})
         self.assertEqual(data["meta"]["count"], 120)
 
+    def test_topics_channel_lazy_expands(self) -> None:
+        """大纲树通道：不给 parent 出册层，给 parent 出一层子节点，带子树题量。"""
+        status, data = self._request(f"/api/bank/plugins/{PLUGIN_ID}/topics")
+        self.assertEqual(status, 200)
+        self.assertEqual([item["name"] for item in data["items"]], ["人教A版·必修第一册"])
+        book = data["items"][0]
+        self.assertEqual(book["layer"], "textbook")
+        self.assertTrue(book["has_children"])
+        self.assertEqual(book["question_count"], 1)
+        self.assertEqual(book["note_count"], 0)
+
+        status, kids = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/topics?" + self._query(parent_id=book["id"])
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([item["name"] for item in kids["items"]], ["1. 集合与常用逻辑用语"])
+        self.assertEqual(kids["items"][0]["parent_id"], book["id"])
+
+        status, _data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/topics?" + self._query(parent_id="tp_zz00000000")
+        )
+        self.assertEqual(status, 400)
+
+    def test_topic_notes_channel(self) -> None:
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/topics/{self.outline['kx']}/notes"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(data["topic"]["name"], "集合中元素的个数")
+        self.assertEqual([item["note_type"] for item in data["notes"]], ["method", "pitfall"])
+        status, _data = self._request(f"/api/bank/plugins/{PLUGIN_ID}/topics/tp_zz00000000/notes")
+        self.assertEqual(status, 400)
+
+    def test_list_and_random_by_topic_subtree(self) -> None:
+        """点册/考向都要能取到挂在末级节点上的题，且出参 taxonomy 来自路径树。"""
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(topic=self.outline["book"])
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], 1)
+        item = data["items"][0]
+        self.assertEqual(item["id"], "q_test_000001")
+        self.assertEqual(item["taxonomy"]["topic_ids"], [self.outline["kx"]])
+        self.assertEqual(item["taxonomy"]["textbook"], "人教A版·必修第一册")
+        self.assertEqual(item["taxonomy"]["section"], "1.1 集合的概念")
+
+        status, one = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/random?" + self._query(topic=self.outline["kx"])
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(one["id"], "q_test_000001")
+
+    # 写路径会往同一份夹具里加题，因此一律取 z_ 前缀排在只读断言之后（本文件既有约定）
+    def test_z5_extensions_round_trip_keeps_reverse_domain_object(self) -> None:
+        """写入端收对象态、库里存数组态、读回来必须还是对象态（AGENTS §3）。"""
+        question = self._editor_question(
+            stem="扩展往返题：求 $\\varnothing$ 的子集个数。",
+            extensions={
+                "org.jiuzhang.editor": {"grade": "高一"},
+                "com.example.handwriting": {"stroke": 2},
+            },
+        )
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": question}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["extensions"]["com.example.handwriting"], {"stroke": 2})
+        self.assertEqual(created["extensions"]["org.jiuzhang.editor"], {"grade": "高一"})
+
+        con = sqlite3.connect(self.data_dir / "banks" / f"{PLUGIN_ID}.db")
+        try:
+            raw = con.execute(
+                "SELECT extensions FROM questions WHERE id = ?", (created["id"],)
+            ).fetchone()[0]
+        finally:
+            con.close()
+        stored = json.loads(raw)
+        self.assertIsInstance(stored, list)
+        self.assertTrue(all({"key", "label", "value"} == set(item) for item in stored))
+        self.assertIn("录题插件私有数据", [item["label"] for item in stored])
+
+    def test_z6_create_rejects_types_the_storage_table_cannot_hold(self) -> None:
+        """存储层 CHECK 不收 proof/unknown：如实 422，不静默折叠成 solution。"""
+        for question_type in ("proof", "unknown"):
+            status, data = self._request(
+                f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+                {"question": self._editor_question(
+                    stem=f"存储层不收的题型 {question_type}：$x^2$ 的证明题", type=question_type)},
+                token=True,
+            )
+            self.assertEqual(status, 422, (question_type, data))
+            self.assertIn("core-bank 存储层只收", json.dumps(data, ensure_ascii=False))
+
+    def test_z7_create_links_known_topic_and_rejects_unknown_one(self) -> None:
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(
+                stem="挂纲失败题：$\\mathbb{R}$ 上的恒等式",
+                taxonomy={"topic_ids": ["tp_kxdeadc0de"]})},
+            token=True,
+        )
+        self.assertEqual(status, 422, data)
+        self.assertIn("大纲里没有节点", json.dumps(data, ensure_ascii=False))
+
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(
+                stem="挂纲成功题：$\\varnothing$ 与 $\\{\\varnothing\\}$ 的区别",
+                taxonomy={"topic_ids": [self.outline["kx"]]})},
+            token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["taxonomy"]["topic_ids"], [self.outline["kx"]])
+
     def test_grade_filter_matches_exactly(self) -> None:
         status, data = self._request(
             f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(grade="高一", page_size=100)
@@ -191,16 +351,26 @@ class BankApiContractTest(unittest.TestCase):
 
     def test_filters_combine_and_paginate(self) -> None:
         url = f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(
-            grade="高二", difficulty="medium", page=2, page_size=5
+            grade="高二", difficulty="L2", page=2, page_size=5
         )
         status, data = self._request(url)
         self.assertEqual(status, 200)
-        self.assertEqual(data["total"], 14)   # 高二 & medium：41..80 中 ≡2 (mod 3) 的 14 题
+        self.assertEqual(data["total"], 14)   # 高二 & L2：41..80 中 ≡2 (mod 3) 的 14 题
         self.assertEqual(len(data["items"]), 5)
         self.assertEqual(data["page"], 2)
         self.assertEqual(data["total_pages"], 3)
         self.assertTrue(all(item["grade"] == "高二" for item in data["items"]))
-        self.assertTrue(all(item["difficulty"] == "medium" for item in data["items"]))
+        self.assertTrue(all(item["difficulty"] == "L2" for item in data["items"]))
+
+    def test_legacy_difficulty_alias_is_normalized(self) -> None:
+        """1.0 的旧难度值仍能筛，但出参只给 L 码（契约 2.0 口径）。"""
+        url = f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(
+            difficulty="medium", page_size=20
+        )
+        status, data = self._request(url)
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], 40)   # medium→L2：20..40 与 60..79 各半
+        self.assertTrue(all(item["difficulty"] == "L2" for item in data["items"]))
 
     def test_chinese_search(self) -> None:
         status, data = self._request(
@@ -211,7 +381,7 @@ class BankApiContractTest(unittest.TestCase):
         self.assertTrue(any("第 7 题" in item["stem"] for item in data["items"]))
 
     def test_sql_injection_is_a_literal_search(self) -> None:
-        for payload in ("' OR 1=1 --", "%' OR '1'='1", "'; DROP TABLE bank_questions; --", "%", "_"):
+        for payload in ("' OR 1=1 --", "%' OR '1'='1", "'; DROP TABLE questions; --", "%", "_"):
             status, data = self._request(
                 f"/api/bank/plugins/{PLUGIN_ID}/questions?" + self._query(q=payload)
             )
@@ -239,7 +409,7 @@ class BankApiContractTest(unittest.TestCase):
             )
             self.assertEqual(status, 200)
             self.assertEqual(data["grade"], "高三")
-            self.assertEqual(data["difficulty"], "hard")
+            self.assertEqual(data["difficulty"], "L3")
 
     def test_concurrent_reads_no_deadlock(self) -> None:
         grades = ["高一", "高二", "高三", ""]
@@ -349,7 +519,8 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(status, 201, created)
         self.assertRegex(created["id"], r"^q_[A-Za-z0-9_-]{8,64}$")
         self.assertEqual(created["meta"]["status"], "published")
-        self.assertEqual(created["difficulty"], "basic")
+        self.assertEqual(created["schema_version"], "2.0")
+        self.assertEqual(created["difficulty"], "L1")   # 1.0 的 basic 由底座归一成 L1
 
         status, fetched = self._request(
             f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}"
@@ -428,75 +599,186 @@ class BankApiContractTest(unittest.TestCase):
 
 
 class MigratedBankIntegrityTest(unittest.TestCase):
-    """真实迁移产物：456 道真题必须结构完整、LaTeX 配平、图片路径受控。"""
+    """真实迁移产物：456 道真题在新表上必须装配得回来、过得了 Schema、不造假。"""
 
-    seed = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
+    migrated = ROOT / "plugins" / PLUGIN_ID / "bank" / "v063_migrated.db"
 
-    def test_seed_exists(self) -> None:
-        self.assertTrue(self.seed.is_file(), "缺少迁移种子库，请先运行 tools/migrate_legacy_bank.py")
-
-    def test_all_rows_are_schema_sound(self) -> None:
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = tempfile.TemporaryDirectory()
+        data_dir = Path(cls.tmp.name) / "data"
+        (data_dir / "banks").mkdir(parents=True)
+        shutil.copyfile(cls.migrated, data_dir / "banks" / f"{PLUGIN_ID}.db")
+        cls.previous = os.environ.get("JZO_DATA_DIR")
+        os.environ["JZO_DATA_DIR"] = str(data_dir)
         sys.path.insert(0, str(ROOT))
-        from app.core.questions import validate_question  # noqa: PLC0415
+        from app.core import bank  # noqa: PLC0415
 
-        con = sqlite3.connect(f"file:{self.seed.as_posix()}?mode=ro", uri=True)
-        con.row_factory = sqlite3.Row
+        cls.bank = bank
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.previous is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = cls.previous
+        cls.tmp.cleanup()
+
+    def _documents(self) -> list[dict]:
+        collected: list[dict] = []
+        page = 1
+        while True:
+            items, _total = self.bank.list_questions(PLUGIN_ID, page=page, page_size=100)
+            if not items:
+                return collected
+            collected.extend(items)
+            page += 1
+
+    def test_seven_tables_hold_the_migrated_population(self) -> None:
+        con = sqlite3.connect(f"file:{self.migrated.as_posix()}?mode=ro", uri=True)
         try:
-            rows = con.execute("SELECT * FROM bank_questions").fetchall()
+            tables = {
+                row[0] for row in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+            self.assertNotIn("bank_questions", tables)
+            self.assertEqual(tables, {
+                "schools", "topics", "questions", "topic_notes", "sources",
+                "question_topics", "question_sources", "bank_meta",
+            })
+            counts = {t: con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
+            self.assertEqual(counts["questions"], 456)
+            self.assertEqual(counts["question_topics"], 456)
+            self.assertEqual(counts["question_sources"], 456)
+            self.assertEqual(counts["topic_notes"], 150)
+            self.assertEqual(list(con.execute("PRAGMA foreign_key_check")), [])
         finally:
             con.close()
-        self.assertEqual(len(rows), 456)
-        ids = set()
-        for row in rows:
-            self.assertRegex(row["id"], r"^q_[A-Za-z0-9_-]{8,64}$")
-            self.assertNotIn(row["id"], ids)
-            ids.add(row["id"])
-            stem = row["stem"]
-            self.assertNotIn("\\begin{choices}", stem)
-            self.assertNotIn("\\includegraphics", stem)
-            self.assertNotIn("\\paren", stem)
-            self.assertEqual(stem.count("$") % 2, 0, row["id"])
-            options = json.loads(row["options_json"]) if row["options_json"] else []
-            answer = json.loads(row["answer_json"]) if row["answer_json"] else None
-            images = json.loads(row["images_json"]) if row["images_json"] else []
-            document = {
-                "schema_version": "1.0",
-                "id": row["id"],
-                "type": row["type"],
-                "stem": stem,
-                "difficulty": row["difficulty"],
-                "meta": json.loads(row["meta_json"]),
-                "extensions": json.loads(row["extensions_json"]) if row["extensions_json"] else {},
-            }
-            if options:
-                document["options"] = options
-                keys = [option["key"] for option in options]
-                self.assertEqual(keys, list("ABCDEFGH")[: len(keys)], row["id"])
-            if answer:
-                document["answer"] = answer
-            if row["solution"]:
-                document["solution"] = row["solution"]
-                self.assertEqual(row["solution"].count("$") % 2, 0, row["id"])
-            if images:
-                document["images"] = images
-                for image in images:
-                    self.assertRegex(image["id"], r"^img_[A-Za-z0-9_-]{1,63}$")
-                    self.assertTrue(image["uri"].startswith("/static/uploads/"), image)
-            validate_question(document)
 
-    def test_filters_return_expected_populations(self) -> None:
-        con = sqlite3.connect(f"file:{self.seed.as_posix()}?mode=ro", uri=True)
+    def test_every_document_survives_the_round_trip_and_passes_schema(self) -> None:
+        from app.core.questions import validate_question  # noqa: PLC0415
+
+        documents = self._documents()
+        self.assertEqual(len(documents), 456)
+        self.assertEqual(len({item["id"] for item in documents}), 456)
+        for document in documents:
+            validate_question(document)
+            self.assertEqual(document["schema_version"], "2.0")
+            self.assertIn(document["difficulty"], ("L1", "L2", "L3", "L4"))
+            self.assertEqual(document["stem"].count("$") % 2, 0, document["id"])
+            self.assertNotIn("\\includegraphics", document["stem"])
+            if document["type"] in ("single_choice", "multiple_choice"):
+                keys = [option["key"] for option in document.get("options") or []]
+                self.assertEqual(keys, list("ABCDEFGH")[: len(keys)], document["id"])
+            for image in document.get("images") or []:
+                self.assertTrue(image["uri"].startswith("/static/uploads/"), image)
+
+    def test_answers_without_evidence_are_omitted_not_fabricated(self) -> None:
+        """31 道选择题在旧库只有硬编码 A：新库置 NULL，出参必须整个省略 answer。"""
+        con = sqlite3.connect(f"file:{self.migrated.as_posix()}?mode=ro", uri=True)
         try:
-            g1 = con.execute("SELECT COUNT(*) FROM bank_questions WHERE grade='高一'").fetchone()[0]
-            hard = con.execute("SELECT COUNT(*) FROM bank_questions WHERE difficulty='hard'").fetchone()[0]
-            chapter = con.execute(
-                "SELECT COUNT(*) FROM bank_questions WHERE chapter='1. 集合与常用逻辑用语'"
+            empty_choice = con.execute(
+                "SELECT COUNT(*) FROM questions WHERE type IN ('single_choice','multiple_choice')"
+                " AND answer IS NULL"
+            ).fetchone()[0]
+            empty_any = con.execute("SELECT COUNT(*) FROM questions WHERE answer IS NULL").fetchone()[0]
+        finally:
+            con.close()
+        self.assertEqual(empty_choice, 31)
+        self.assertEqual(empty_any, 53)
+        missing = [item for item in self._documents() if "answer" not in item]
+        self.assertEqual(len(missing), 53)
+
+    def test_grade_and_outline_populations_match_the_legacy_wide_table(self) -> None:
+        _items, g1 = self.bank.list_questions(PLUGIN_ID, grade="高一", page_size=1)
+        self.assertEqual(g1, 420)
+        _items, l3 = self.bank.list_questions(PLUGIN_ID, difficulty="L3", page_size=1)
+        self.assertEqual(l3, 134)
+        _items, chapter = self.bank.list_questions(
+            PLUGIN_ID, chapter="1. 集合与常用逻辑用语", page_size=1
+        )
+        self.assertGreater(chapter, 100)
+        stats = self.bank.stats(PLUGIN_ID)
+        self.assertEqual(stats["total"], 456)
+        self.assertEqual({g["name"]: g["count"] for g in stats["grades"]},
+                         {"高一": 420, "高三": 36})
+        self.assertEqual({d["name"]: d["count"] for d in stats["difficulties"]},
+                         {"L1": 42, "L2": 140, "L3": 134, "L4": 140})
+
+    def test_outline_tree_expends_lazily_and_carries_question_counts(self) -> None:
+        books = self.bank.topics(PLUGIN_ID)
+        self.assertEqual(len(books), 5)
+        self.assertTrue(all(book["layer"] == "textbook" for book in books))
+        book_one = next(book for book in books if book["name"] == "必修一")
+        self.assertEqual(book_one["question_count"], 428)
+        _items, subtree_total = self.bank.list_questions(PLUGIN_ID, topic=book_one["id"], page_size=1)
+        self.assertEqual(subtree_total, 428)
+        chapters = self.bank.topics(PLUGIN_ID, parent_id=book_one["id"])
+        self.assertTrue(chapters)
+        sections = self.bank.topics(PLUGIN_ID, parent_id=chapters[0]["id"])
+        self.assertTrue(all(section["parent_id"] == chapters[0]["id"] for section in sections))
+
+    def test_topic_notes_channel_returns_teaching_notes(self) -> None:
+        con = sqlite3.connect(f"file:{self.migrated.as_posix()}?mode=ro", uri=True)
+        try:
+            topic_id = con.execute(
+                "SELECT topic_id FROM topic_notes GROUP BY topic_id ORDER BY COUNT(*) DESC LIMIT 1"
             ).fetchone()[0]
         finally:
             con.close()
-        self.assertEqual(g1, 420)
-        self.assertEqual(hard, 140)
-        self.assertGreater(chapter, 100)
+        payload = self.bank.topic_notes(PLUGIN_ID, topic_id)
+        self.assertTrue(payload["notes"])
+        self.assertIn(payload["notes"][0]["note_type"], ("method", "pitfall", "knowledge", "insight"))
+        with self.assertRaises(self.bank.BankError):
+            self.bank.topic_notes(PLUGIN_ID, "tp_zzzzzzzzzz")
+
+
+class LegacyWideTableSeedTest(unittest.TestCase):
+    """v0.6.2 的 bank_questions 宽表种子必须被拒读并给出可操作提示，不许静默读空。"""
+
+    def test_wide_table_seed_is_rejected_with_actionable_message(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        data_dir = root / "data"
+        plugins_dir = root / "plugins"
+        (data_dir / "banks").mkdir(parents=True)
+        seed_dir = plugins_dir / PLUGIN_ID / "bank"
+        seed_dir.mkdir(parents=True)
+
+        stale = sqlite3.connect(seed_dir / "bank.db")
+        try:
+            stale.execute("CREATE TABLE bank_questions (id TEXT PRIMARY KEY, stem TEXT NOT NULL)")
+            stale.execute("INSERT INTO bank_questions (id, stem) VALUES ('q_legacy_000001', '旧宽表题')")
+            stale.commit()
+        finally:
+            stale.close()
+
+        previous = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"))
+        os.environ["JZO_DATA_DIR"] = str(data_dir)
+        os.environ["JZO_PLUGINS_DIR"] = str(plugins_dir)
+        self.addCleanup(self._restore_env, previous)
+
+        from app.core import bank  # noqa: PLC0415
+
+        with self.assertRaises(bank.BankError) as ctx:
+            bank.stats(PLUGIN_ID)
+        message = str(ctx.exception)
+        self.assertIn("bank_questions", message)
+        self.assertIn("migrate_bank_v063", message)
+
+    @staticmethod
+    def _restore_env(previous) -> None:
+        data_dir, plugins_dir = previous
+        if data_dir is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = data_dir
+        if plugins_dir is None:
+            os.environ.pop("JZO_PLUGINS_DIR", None)
+        else:
+            os.environ["JZO_PLUGINS_DIR"] = plugins_dir
 
 
 class StageRelayContractTest(unittest.TestCase):
@@ -505,6 +787,7 @@ class StageRelayContractTest(unittest.TestCase):
     def test_stage_relay_whitelist_and_plugin_scoping(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         for method in ("bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
+                       "bank.topics", "bank.topic_notes",
                        "basket.list", "basket.add", "basket.remove", "basket.clear"):
             self.assertIn(f'"{method}"', source)
         self.assertNotIn('payload.plugin_id', source)

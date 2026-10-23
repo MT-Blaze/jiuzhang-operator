@@ -35,7 +35,7 @@ class Question(BaseModel):
     schema_version: str = Field(..., description="Schema 版本")
     type: str = Field(..., description="题型 single_choice/multiple_choice/fill_blank/solution/proof/unknown")
     stem: str = Field(..., description="题干 Markdown + LaTeX")
-    difficulty: str = Field(..., description="难度 basic/medium/hard/novel")
+    difficulty: str = Field(..., description="难度 L1/L2/L3/L4")
     options: list[QuestionOption] | None = Field(None, description="选择题选项数组")
     answer: dict[str, Any] | None = Field(None, description="答案结构")
     solution: str | None = Field(None, description="解析")

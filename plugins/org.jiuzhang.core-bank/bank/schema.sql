@@ -108,23 +108,28 @@ CREATE INDEX      idx_topic_notes_lookup  ON topic_notes (topic_id, note_type);
 --    school_id 可空：源卷未登记办学实体时留 NULL。
 --    实测 SQLite 只在「可空 + ON DELETE SET NULL」下才能在撤档学校时保住这张卷；
 --    NOT NULL DEFAULT '' 配 SET DEFAULT 会被外键检查拦死，RESTRICT 则连卷一起删不掉。
+--    grade（高一/高二/高三）是主公 2026-10-23 裁定的年级落位：与 year/exam_type 同级，
+--    不塞进 exam_type（那会让一列两套语义）。本轮结构解冻只补这一列，其余列名与约束不动。
 CREATE TABLE sources (
     id          TEXT    NOT NULL PRIMARY KEY,
     school_id   TEXT    NULL,
     year        INTEGER NULL,
     exam_type   TEXT    NOT NULL DEFAULT '',
+    grade       TEXT    NOT NULL DEFAULT '',
     paper_name  TEXT    NOT NULL,
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL,
     CONSTRAINT ck_sources_school CHECK (school_id IS NULL OR (school_id GLOB 'sch_[0-9a-f]*' AND length(school_id) BETWEEN 7 AND 32)),
     CONSTRAINT ck_sources_year  CHECK (year IS NULL OR (year BETWEEN 1990 AND 2100)),
     CONSTRAINT ck_sources_exam  CHECK (length(exam_type) <= 40),
+    CONSTRAINT ck_sources_grade CHECK (length(grade) <= 20),
     CONSTRAINT ck_sources_paper CHECK (length(trim(paper_name)) BETWEEN 1 AND 200),
-    CONSTRAINT uq_sources_paper UNIQUE (school_id, year, exam_type, paper_name),
+    CONSTRAINT uq_sources_paper UNIQUE (school_id, year, exam_type, grade, paper_name),
     CONSTRAINT fk_sources_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE SET NULL
 );
 CREATE INDEX idx_sources_school_id ON sources (school_id);
 CREATE INDEX idx_sources_year      ON sources (year);
+CREATE INDEX idx_sources_grade     ON sources (grade);
 
 -- 6) 题目-考向多对多：出同类题直接按 topic_id 反查此表，不再另建同类题关联表。
 CREATE TABLE question_topics (

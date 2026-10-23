@@ -16,6 +16,11 @@ from typing import Any, Iterable
 from jsonschema import Draft202012Validator
 
 from app.core.config import settings
+from app.core.contract import (
+    DIFFICULTY_LEVELS,
+    normalize_contract_version,
+    normalize_difficulty,
+)
 from app.core.db import connect, transaction
 
 LOCAL_TZ = timezone(timedelta(hours=8))
@@ -51,7 +56,7 @@ COLUMN_ORDER = (
 )
 FILTER_FIELDS = {
     "type": ("single_choice", "multiple_choice", "fill_blank", "solution", "proof", "unknown"),
-    "difficulty": ("basic", "medium", "hard", "novel"),
+    "difficulty": DIFFICULTY_LEVELS,
     "status": ("draft", "published", "archived"),
 }
 
@@ -166,7 +171,9 @@ def _prepare_create(payload: Any) -> dict[str, Any]:
         raise QuestionValidationError(["(root): 请求体必须是 JSON 对象"])
 
     document = copy.deepcopy(payload)
-    document.setdefault("schema_version", "1.0")
+    document["schema_version"] = normalize_contract_version(document.get("schema_version"))
+    if "difficulty" in document:
+        document["difficulty"] = normalize_difficulty(document["difficulty"])
     if not document.get("id"):
         document["id"] = _new_id()
 
@@ -253,6 +260,8 @@ def list_questions(
         ("status", status),
     ):
         if value:
+            if column == "difficulty":
+                value = normalize_difficulty(value)
             if value not in FILTER_FIELDS[column]:
                 raise QuestionValidationError([f"{column}: 不支持的值 {value!r}"])
             where.append(f"{column} = ?")
@@ -282,7 +291,11 @@ def replace_question(question_id: str, payload: Any) -> dict[str, Any]:
     if document.get("id") and document["id"] != question_id:
         raise QuestionValidationError(["id: 不允许通过更新修改题目 ID"])
     document["id"] = question_id
-    document.setdefault("schema_version", current["schema_version"])
+    document["schema_version"] = normalize_contract_version(
+        document.get("schema_version") or current["schema_version"]
+    )
+    if "difficulty" in document:
+        document["difficulty"] = normalize_difficulty(document["difficulty"])
 
     incoming_meta = document.get("meta")
     if incoming_meta is None:

@@ -134,7 +134,7 @@ class PluginPanelContractTest(unittest.TestCase):
         self.assertIsNotNone(intent)
         self.assertEqual(intent["arguments"]["action"], "import_questions")
         self.assertTrue(intent["arguments"]["random"])
-        self.assertEqual(intent["arguments"]["difficulty"], "basic")
+        self.assertEqual(intent["arguments"]["difficulty"], "L1")
         self.assertEqual(intent["arguments"]["grade"], "高一")
 
     def test_05_random_tool_returns_question_payload(self) -> None:

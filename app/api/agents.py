@@ -69,7 +69,7 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 
 富卡片（ui_json）：
 - 需要向教师展示一道具体题目时，可在回复末尾追加**恰好一个** ```ui_json 围栏，内容为：
-  {"version":"1.0","type":"question_card","questions":[{"type":"single_choice","type_label":"单选","difficulty":"basic","difficulty_label":"基础","stem":"题干 Markdown+LaTeX","options":[{"key":"A","content":"..."}],"answer":"...","solution":"...","tags":[]}]}
+  {"version":"1.0","type":"question_card","questions":[{"type":"single_choice","type_label":"单选","difficulty":"L1","difficulty_label":"基础","stem":"题干 Markdown+LaTeX","options":[{"key":"A","content":"..."}],"answer":"...","solution":"...","tags":[]}]}
 - 题目必须真实来自工具结果或上下文，不得编造；没有真实题目就不要输出卡片。
 - 安装建议卡由底座在插件搜索工具执行后生成，你不要手写 install_card，也不得声称已安装任何插件。
 """
@@ -79,7 +79,7 @@ SPLIT_SYSTEM_PROMPT = """你是九章算子的拆题专家。给定一份试卷�
 约束：
 1. 每道题输出一个 JSON 对象，包含 id, type, stem, options(如有), difficulty。
 2. 题型枚举：single_choice, multiple_choice, fill_blank, solution, proof。
-3. 难度枚举：basic, medium, hard, novel。
+3. 难度枚举：L1, L2, L3, L4（L1=基础，L2=中档，L3=难，L4=压轴）。
 4. 保留 LaTeX 公式原样，不得转义或简化。
 5. 若某题信息不全，标记 status: "incomplete" 并说明缺失字段。
 

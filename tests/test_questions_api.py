@@ -137,7 +137,7 @@ class QuestionsApiContractTest(unittest.TestCase):
     def test_02_create_fills_server_fields_and_reads_back(self) -> None:
         document = self.create("写入并读取：$x+1=2$")
         self.assertTrue(document["id"].startswith("q_"))
-        self.assertEqual(document["schema_version"], "1.0")
+        self.assertEqual(document["schema_version"], "2.0")
         self.assertEqual(document["meta"]["revision"], 1)
         self.assertEqual(document["meta"]["status"], "draft")
         self.assertIn("created_at", document["meta"])

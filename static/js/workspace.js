@@ -192,11 +192,13 @@
     unknown: "待定",
   };
   var CARD_DIFFICULTY_LABELS = {
-    basic: "基础",
-    medium: "中档",
-    hard: "压轴",
-    novel: "新定义",
+    L1: "基础",
+    L2: "中档",
+    L3: "难",
+    L4: "压轴",
   };
+  // 契约 1.0 的题卡仍可能带旧难度值，渲染前归一到 L 码（novel 已废弃，并入 L4）
+  var CARD_DIFFICULTY_LEGACY = { basic: "L1", medium: "L2", hard: "L3", novel: "L4" };
 
   function safeHttpUrl(value) {
     try {
@@ -220,7 +222,8 @@
     var stem = clampText(raw.stem, 4000);
     if (!stem) return null;
     var type = CARD_TYPE_LABELS[raw.type] ? raw.type : "unknown";
-    var difficulty = CARD_DIFFICULTY_LABELS[raw.difficulty] ? raw.difficulty : "basic";
+    var difficultyRaw = CARD_DIFFICULTY_LEGACY[raw.difficulty] || raw.difficulty;
+    var difficulty = CARD_DIFFICULTY_LABELS[difficultyRaw] ? difficultyRaw : "L1";
     var options = [];
     (Array.isArray(raw.options) ? raw.options : []).slice(0, 10).forEach(function (option) {
       if (!option || typeof option !== "object") return;

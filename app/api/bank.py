@@ -32,7 +32,7 @@ def bank_stats(plugin_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/api/bank/plugins/{plugin_id}/questions", summary="按年级/难度/题型/关键词分页取题")
+@router.get("/api/bank/plugins/{plugin_id}/questions", summary="按年级/难度/题型/考向/关键词分页取题")
 def bank_questions(
     plugin_id: str,
     grade: str = Query("", max_length=32),
@@ -40,6 +40,7 @@ def bank_questions(
     type: str = Query("", max_length=32),
     chapter: str = Query("", max_length=64),
     textbook: str = Query("", max_length=64),
+    topic: str = Query("", max_length=20),
     q: str = Query("", max_length=100),
     page: int = Query(1, ge=1, le=10000),
     page_size: int = Query(20, ge=1, le=bank.MAX_PAGE_SIZE),
@@ -52,6 +53,7 @@ def bank_questions(
             question_type=type,
             chapter=chapter,
             textbook=textbook,
+            topic=topic,
             search=q,
             page=page,
             page_size=page_size,
@@ -67,6 +69,35 @@ def bank_questions(
         "page_size": page_size,
         "total_pages": max(1, (total + page_size - 1) // page_size),
     }
+
+
+@router.get("/api/bank/plugins/{plugin_id}/topics", summary="大纲树懒展开：不给 parent 取册层")
+def bank_topics(
+    plugin_id: str,
+    parent_id: str = Query("", max_length=20),
+    q: str = Query("", max_length=100),
+) -> dict[str, Any]:
+    """返回一层节点，带子树题量与教研笔记条数，供左侧大纲树按 sort_order 懒展开。"""
+    try:
+        items = bank.topics(plugin_id, parent_id=parent_id, search=q)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": items, "total": len(items), "parent_id": parent_id}
+
+
+@router.get(
+    "/api/bank/plugins/{plugin_id}/topics/{topic_id}/notes",
+    summary="考向节点的教研笔记（方法/易错点）",
+)
+def bank_topic_notes(plugin_id: str, topic_id: str) -> dict[str, Any]:
+    try:
+        return bank.topic_notes(plugin_id, topic_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/bank/plugins/{plugin_id}/questions/{question_id}", summary="单题详情")
@@ -117,6 +148,9 @@ def bank_random(
     grade: str = Query("", max_length=32),
     difficulty: str = Query("", max_length=32),
     type: str = Query("", max_length=32),
+    chapter: str = Query("", max_length=64),
+    textbook: str = Query("", max_length=64),
+    topic: str = Query("", max_length=20),
     q: str = Query("", max_length=100),
 ) -> dict[str, Any]:
     try:
@@ -125,6 +159,9 @@ def bank_random(
             grade=grade,
             difficulty=difficulty,
             question_type=type,
+            chapter=chapter,
+            textbook=textbook,
+            topic=topic,
             search=q,
         )
     except bank.BankNotFound as exc:

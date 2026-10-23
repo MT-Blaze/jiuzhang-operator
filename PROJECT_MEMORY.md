@@ -3,7 +3,7 @@
 本文件是给 AI 代理与接任者读的**跨会话交接底稿**。只记「不读代码就不知道、且下次会话必须知道」的事；
 能从仓库现状推出的（目录结构、函数签名、依赖清单）一律不写在这里，避免与代码各说各话。
 
-最后更新：2026-10-23（v0.6.3 结构冻结 + 首轮灌库完成）
+最后更新：2026-10-23（P0#1 API 切表完成：后端读写全走 7 张关系表，题目契约升 2.0）
 
 ---
 
@@ -33,26 +33,51 @@
 
 | 事实 | 数值 / 位置 |
 |---|---|
-| 冻结表结构 | `plugins/org.jiuzhang.core-bank/bank/schema.sql`，7 张业务表 + `bank_meta`，SHA-256 `43db4ed34725…` |
-| 空库（0 数据） | `plugins/org.jiuzhang.core-bank/bank/v063.db`，155,648 B，`user_version=1` |
+| 冻结表结构 | `plugins/org.jiuzhang.core-bank/bank/schema.sql`，7 张业务表 + `bank_meta`，SHA-256 `3ba41e999b4b…`（本轮仅补 `sources.grade`） |
+| 空库（0 数据） | `plugins/org.jiuzhang.core-bank/bank/v063.db`，159,744 B，`user_version=1` |
 | 灌库产物 | `plugins/org.jiuzhang.core-bank/bank/v063_migrated.db` |
 | 入表数据 | 题 456 · 大纲节点 701（册 5 / 章 18 / 节 84 / 考向 594，其中 draft 12）· 学校 347 · 试卷 27 · 题-考向 456 · 题-来源 456 · 教研笔记 150 |
 | 难度口径 | 恢复 L1–L4 原码（42 / 140 / 134 / 140），不再折成 basic/medium/hard |
-| 自检 | `PRAGMA foreign_key_check` 无违规，`integrity_check=ok`，全量单测 **347/347 OK** |
+| 自检 | `PRAGMA foreign_key_check` 无违规，`integrity_check=ok`，全量单测 **358/358 OK**（v0.6.3 封版时为 347） |
 | 迁移工具 | `tools/build_bank_schema.py`（建空库+自检+报告）、`tools/migrate_bank_v063.py`（灌库）、`tools/verify_bank_empty.py`（逐表 COUNT 核对） |
 | 审计报告 | `docs/v0.6.3-题型纠偏清单.md`、`docs/v0.6.3-灌库校验.md`、`data/bank_v063_migration_report.json` |
 
-**现网未切**：`app/core/bank.py` + `app/api/bank.py` + `static/js/stage.js` 仍读旧宽表
-`data/banks/org.jiuzhang.core-bank.db`（`bank_questions`，19 列文档表）。种子库
-`plugins/org.jiuzhang.core-bank/bank/bank.db` 也仍是旧结构。因此**当前发布的 v0.6.2 包不受本轮影响**，
-但新库还没被任何界面读过——「大纲树渲染 / 搜索出题」在新表上的真机验证属于下一阶段的 P0。
+**现网已切（P0#1 完成）**：`app/core/bank.py` 的读写路径、`app/api/bank.py` 的 HTTP 通道与
+`static/js/stage.js` 的数据白名单全部走 7 张关系表；现网工作区库
+`data/banks/org.jiuzhang.core-bank.db` 已是新结构（456 题，`user_version=1`）。
+旧宽表整套改名为 `data/banks/org.jiuzhang.core-bank.legacy.db`（含 `-wal`/`-shm`）作历史备份，**未覆写**。
+两处仍需下一棒当心：① **种子库 `plugins/org.jiuzhang.core-bank/bank/bank.db` 仍是 v0.6.2 宽表**——
+新装的机器首次建库会读到宽表，底座 `connect()` 有结构守卫会如实报 `BankError` 并指向
+`tools/migrate_bank_v063.py --promote`；封版（P0#4）必须把新结构库换成该种子。
+② 前端插件侧还没接新通道：`bank.topics`/`bank.topic_notes` 白名单与端点已开，
+但 core-bank 插件的 `ui.controls` 难度下拉、大纲树渲染仍是旧口径（P0#2）。
 
-**字段落位裁决（主公 2026-10-23 批复）**：`tags`（含「疑似变式#N」查重噪声）丢弃不入新库；
-`grade` 落 `sources`；章/节、`images`、`tikz`、`option_columns` 落 `questions.extensions` 有序数组。
-两处偏离已如实记录：① 年级是**新增 `sources.grade` 列**（`ALTER TABLE`，未写进冻结的 schema.sql），
-理由是塞进 `exam_type` 会让一列两套语义；② `questions.extensions` 在库里是**有序数组**
-`[{key,label,value}]`，而 `schemas/question.json` 仍规定它是对象——出参适配层必须做
-「数组 ↔ 反向域名对象」双向映射，否则录题插件的写入校验会崩。
+**字段落位与本轮裁决（主公 2026-10-23 20:00 批复三条 + 追认两处自裁）**：
+- **冲突 A → 升契约**：`schemas/question.json` 的 `difficulty` 统一为 `L1/L2/L3/L4`，
+  `novel` 彻底废弃并入 `L4`；因属破坏性变更，题目契约升主版本 **2.0**（`$id` 同步为
+  `question-2.0.json`）。底座写入端对 1.0 旧值做强制归一（`app/core/contract.py` 的
+  `normalize_difficulty`：basic→L1 / medium→L2 / hard→L3 / novel→L4），**出参只发 L 码**。
+  连带改了底座 `questions` 表的 CHECK（`app/core/db.py` `user_version` 1→2，带 `.pre-v2.bak` 备份）、
+  `plugin_tools.py` 标签与中文意图词、`ui_cards.py`、`agents.py` 提示词、`workspace.js` 题卡标签、
+  `examples/demo_plugin` 种子与其 zip。
+- **冲突 B → 备份旧库**：见上一段，严禁覆写。
+- **冲突 C → 补全 schema.sql**：`sources.grade` 已写进 `bank/schema.sql`（含 `ck_sources_grade`、
+  `idx_sources_grade`，并进入 `uq_sources_paper`），迁移脚本里的 `ALTER TABLE` 补丁已删。
+  schema.sql 的 SHA-256 由 `43db4ed34725…` 变为 **`3ba41e999b4b…`**——本轮结构解冻**只**动了 sources 这一列。
+- **自裁追认**：`type=proof/unknown` 走 422 如实报错（存储 CHECK 只收四类），不折叠成 solution；
+  `answer` 出参合成对象、库内 `NULL` 时**整个省略**该字段，不拿字母冒充答案。
+- 早前既有的口径不变：`tags`（含「疑似变式#N」查重噪声）丢弃不入新库；章/节、`images`、`tikz`、
+  `option_columns` 落 `questions.extensions` 有序数组 `[{key,label,value}]`，
+  适配层（`bank.extensions_to_array` / `extensions_to_object`）做「数组 ↔ 反向域名对象」双向映射。
+
+**出参装配的已知损失（下一棒别当 bug 查）**：
+- `answer.kind` 在库里不分列：选择题按字母合成 `choice`，非选择题一律 `text`
+  （写入时 `content` 优先、退回 `final`；因此录题往返后 `expression/proof` 会变成 `text`，
+  `final` 与 `content` 同值）。
+- `meta.status` 与 `revision` 新表没有对应列：出参恒为 `published` / `revision=1`（草稿态需要落库时另议）。
+- 年级双写：`sources.grade`（权威，筛选与统计走它）+ `extensions` 的 `org.jiuzhang.core-bank.grade`
+  （无来源时的回退）。真实库上高一 420 / 高三 36，与旧宽表逐题口径一致。
+- `source` 出参只取该题的**首个**来源行（一题多张卷的完整展开留给 P1 录题升级）。
 
 **迁移里必须知道的数据坑**：
 - 现库（旧宽表）对 31 道选择题用**硬编码 A** 冒充答案；新库已如实置 `NULL`（18 无答案正文 / 9 标记后空白 / 4 只有解析），别再当真实数据用。
@@ -73,14 +98,20 @@
 
 ### 一、当前冲刺（P0 级）
 
-- [ ] **API 切表**：后端 API 全部从旧宽表 `bank_questions` 切换到新的 7 张关系表上。
-      `app/core/bank.py` 需重写读路径（`list_questions` / `get_question` / `stats` / `random_question` /
-      `get_many`），写路径 `create_question` 要把 `schemas/question.json` 对象态 `extensions`
-      落成数组态；`app/api/bank.py` 与 `static/js/stage.js` 的 `RELAY_METHODS` 需新增
-      大纲树与教研笔记通道（如 `bank.topics` / `bank.topic_notes`）。
+- [x] **API 切表**（2026-10-23 完成）：后端 API 全部从旧宽表 `bank_questions` 切换到新的 7 张关系表。
+      读路径 `list_questions` / `get_question` / `stats` / `random_question` / `get_many` 已重写，
+      新增 `topics`（懒展开 + 子树题量）与 `topic_notes`；写路径 `create_question` 与 `import_documents`
+      把对象态 `extensions` 落成数组态，并按 `taxonomy.topic_ids` 写 `question_topics`、
+      按 `source` upsert `schools`/`sources`/`question_sources`；`app/api/bank.py` 加了
+      `/topics`、`/topics/{id}/notes` 与 `topic=` 筛选，`stage.js` 白名单加 `bank.topics`/`bank.topic_notes`。
+      真机 HTTP 已验：stats 456 / 大纲四层 / 按考向子树取题 / L4+高一 129 题 / 旧值 hard→L3 / 中文搜索。
+      **剩余**：插件侧未接新通道（P0#2），种子库 `bank/bank.db` 仍是旧宽表（P0#4 封版必须换）。
 - [ ] **前端联动适配**：确保左侧大纲树（读取 `topics`，按 `parent_id` + `sort_order` 懒展开）、
       题目列表能正确展示新表数据；`difficulty` 下拉要从 basic/medium/hard 改回 L1–L4，
       `plugin.json` 的 `ui.controls` 与右栏面板同步改。
+      底座侧已就绪（`bank.topics`/`bank.topic_notes` 通道已开、`workspace.js` 题卡认 L 码并兜底旧值）；
+      **待办全在插件侧**：core-bank / editor / classic-card / paper-gen 的 `plugin.js` 与
+      `plugin.json`（其中 editor 写请求仍自报 `schema_version: "1.0"`，靠底座归一才没崩）。
 - [ ] **人工审核页开发**：针对迁移中发现的 **31 题选择题答案为空（18 题旧库连答案正文都没有 /
       9 题有【答案】标记但标记后空白 / 4 题只有通篇解析、无结论标记可依据）、
       2 题结构冲突（选项内嵌正文、拆不出选项）、26 题只挂到节层没有考向**，
@@ -158,3 +189,14 @@
   `schools.json` / `curriculums/A.json`，而该目录已被 `.gitignore` 排除（含第三方数据副本，
   依铁律一不入库）。新会话要重跑灌库，必须先从 `E:\math-question-bank-main\math_question_bank.db`
   **连同 `-wal` 一起**复制出快照（只复制主文件会读到过期数据），复制后先核 `COUNT(*)=456` 再跑。
+- **切表轮新增的环境坑（2026-10-23）**：
+  ① 底座库 `app/core/db.py` 的 `SCHEMA_VERSION` 已是 **2**，首次打开 v1 库会走「备份
+  `jiuzhang.db.pre-v2.bak` → 重建 questions → 难度改值」的迁移；改这个文件的 DDL 必须同步加迁移分支。
+  ② `app/core/bank.py` 建库只认 `plugins/<id>/bank/schema.sql`（不再有内嵌 DDL）——
+  测试沙箱必须在临时 plugins 目录里放一份 schema.sql，否则 `init_bank` 直接 `BankNotFound`。
+  ③ `tests/test_bank_api.py` 里凡是往夹具写题的用例一律取 `test_z*` 前缀（字母序最后跑），
+  否则会污染 `test_stats_counts` / `test_sql_injection` 的 120 题硬断言。
+  ④ 改 `examples/demo_plugin/seed/questions.json` 或其 `dist/plugin.js` 后**必须重跑**
+  `examples/build_demo_plugin.py`，`examples/demo_plugin.zip` 是入库产物、不会自动跟随源目录。
+  ⑤ 清理测试遗留服务时**禁止** `taskkill /F /IM python.exe`（会连坐本机其他 python 进程），
+  必须记下自己起的 PID 再逐个终止。

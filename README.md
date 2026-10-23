@@ -159,7 +159,7 @@ uvicorn app.main:app --reload --port 8000
 curl -X POST http://127.0.0.1:8000/api/questions \
   -H "Content-Type: application/json" \
   -H "X-JZO-Token: $(cat data/.local_token)" \
-  -d '{"type":"single_choice","stem":"若 $x+1=2$，则 $x=$（  ）","difficulty":"basic","options":[{"key":"A","content":"$0$"},{"key":"B","content":"$1$"},{"key":"C","content":"$2$"},{"key":"D","content":"$3$"}],"answer":{"kind":"choice","choice_keys":["B"]},"meta":{"author":"local"}}'
+  -d '{"type":"single_choice","stem":"若 $x+1=2$，则 $x=$（  ）","difficulty":"L1","options":[{"key":"A","content":"$0$"},{"key":"B","content":"$1$"},{"key":"C","content":"$2$"},{"key":"D","content":"$3$"}],"answer":{"kind":"choice","choice_keys":["B"]},"meta":{"author":"local"}}'
 ```
 
 服务端会补齐 `id`、`schema_version` 与 `meta` 时间戳，返回 `201`。`options` 是**数组**（每项 `{key, content}`），答案形态由 `answer.kind` 声明——一切以 [schemas/question.json](schemas/question.json) 为准，写法不符会被写入侧拒绝并给出可读原因。

@@ -22,6 +22,8 @@ from typing import Any
 
 from app.core import questions as question_store
 from app.core.config import settings
+from app.core.contract import DIFFICULTY_LABELS as CONTRACT_DIFFICULTY_LABELS
+from app.core.contract import normalize_difficulty
 from app.core.plugins import discover_plugins
 
 TOOL_PREFIX = "plugin_"
@@ -47,12 +49,7 @@ TYPE_LABELS = {
     "proof": "证明",
     "unknown": "待定",
 }
-DIFFICULTY_LABELS = {
-    "basic": "基础",
-    "medium": "中档",
-    "hard": "压轴",
-    "novel": "新定义",
-}
+DIFFICULTY_LABELS = dict(CONTRACT_DIFFICULTY_LABELS)
 
 _QUESTION_ID = re.compile(r"^q_[A-Za-z0-9_-]{1,64}$")
 _CN_DIGITS = {
@@ -132,7 +129,7 @@ def _tool_schema(plugin: dict[str, Any], actions: list[str]) -> dict[str, Any]:
         properties["difficulty"] = {
             "type": "string",
             "enum": list(DIFFICULTY_LABELS.keys()),
-            "description": "随机抽题时按难度筛选：basic/medium/hard/novel，缺省不限。",
+            "description": "随机抽题时按难度筛选：L1=基础，L2=中档，L3=难，L4=压轴；缺省不限。",
         }
         properties["grade"] = {
             "type": "string",
@@ -249,7 +246,9 @@ def _normalize_question(raw: dict[str, Any], question_no: int | None = None) -> 
             )
     tags = [str(item) for item in (raw.get("tags") or []) if isinstance(item, (str, int, float))]
     question_type = raw.get("type") if raw.get("type") in TYPE_LABELS else "unknown"
-    difficulty = raw.get("difficulty") if raw.get("difficulty") in DIFFICULTY_LABELS else "basic"
+    difficulty = normalize_difficulty(raw.get("difficulty"))
+    if difficulty not in DIFFICULTY_LABELS:
+        difficulty = "L1"
     return {
         "question_no": question_no,
         "id": str(raw.get("id") or ""),
@@ -318,13 +317,18 @@ def _run_random(
     plugin: dict[str, Any], seed: list[dict[str, Any]], args: dict[str, Any]
 ) -> dict[str, Any]:
     """随机抽一题（右侧面板「随机出题」与「随机出一道中档题」共用）。"""
-    difficulty = args.get("difficulty")
+    difficulty = normalize_difficulty(args.get("difficulty"))
     grade = args.get("grade")
     pool = list(enumerate(seed))
     notes: list[str] = []
 
     if difficulty in DIFFICULTY_LABELS:
-        filtered = [(index, item) for index, item in pool if item.get("difficulty") == difficulty]
+        # 插件种子库可能仍写着 1.0 口径的旧难度值，两侧都归一到 L 码再比
+        filtered = [
+            (index, item)
+            for index, item in pool
+            if normalize_difficulty(item.get("difficulty")) == difficulty
+        ]
         if not filtered:
             raise PluginToolError(
                 "题库里没有难度为「%s」的题目" % DIFFICULTY_LABELS[difficulty]
@@ -517,13 +521,14 @@ _SPLIT_HINTS = ("拆", "导入", "取回")
 _LIST_HINTS = ("题库", "有哪些题", "题目列表", "示例题")
 _RANDOM_HINTS = ("随机", "随便", "抽一", "抽个")
 _DIFFICULTY_HINTS = (
-    ("新定义", "novel"),
-    ("基础", "basic"),
-    ("简单", "basic"),
-    ("中档", "medium"),
-    ("中等", "medium"),
-    ("压轴", "hard"),
-    ("困难", "hard"),
+    ("压轴", "L4"),
+    ("新定义", "L4"),
+    ("基础", "L1"),
+    ("简单", "L1"),
+    ("中档", "L2"),
+    ("中等", "L2"),
+    ("困难", "L3"),
+    ("较难", "L3"),
 )
 _GRADE_RE = re.compile(r"(高一|高二|高三)")
 

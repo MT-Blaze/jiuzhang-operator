@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.contract import normalize_difficulty
+
 CARD_VERSION = "1.0"
 MAX_CARDS = 3
 MAX_STEM = 4000
@@ -56,8 +58,8 @@ def question_card(question: dict[str, Any]) -> dict[str, Any]:
         else None,
         "type": _text(question.get("type"), 32) or "unknown",
         "type_label": _text(question.get("type_label"), 16) or "待定",
-        "difficulty": _text(question.get("difficulty"), 16) or "basic",
-        "difficulty_label": _text(question.get("difficulty_label"), 16) or "基础",
+        "difficulty": normalize_difficulty(_text(question.get("difficulty"), 16)) or "L2",
+        "difficulty_label": _text(question.get("difficulty_label"), 16) or "中档",
         "stem": _text(question.get("stem"), MAX_STEM),
         "options": options,
         "answer": _text(question.get("answer"), 1000),

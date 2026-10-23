@@ -11,7 +11,7 @@
 
 字段落位（主公 18:50 裁定）：
 - tags（含「疑似变式#N」查重噪声）：**丢弃**，不写入新库任何位置；
-- grade：**新增** ``sources.grade`` 列（与 year/exam_type 同级），不污染 exam_type 语义；
+- grade：落 ``sources.grade``（schema.sql 已含该列与 CHECK，与 year/exam_type 同级），不污染 exam_type 语义；
 - 章/节、images、option_columns、tikz：进 ``questions.extensions`` 有序数组；
 - 题型纠偏：按《v0.6.3-题型纠偏清单》以答案字母为准，答案区取不到时退到正文尾句「故选：XX」。
 
@@ -343,9 +343,6 @@ def main(argv: list[str] | None = None) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(out_path)
     con.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    # sources.grade：主公裁定年级落 sources；用 ALTER 明写，schema.sql 仍是冻结的 7 张表
-    con.execute("ALTER TABLE sources ADD COLUMN grade TEXT NOT NULL DEFAULT ''")
 
     con.executemany(
         "INSERT INTO schools (id, full_name, short_name, province, city, created_at, updated_at)"
