@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 import os
 import secrets
 import sqlite3
@@ -77,6 +78,12 @@ def _provision_core_bank() -> int:
 class WorkspaceCreateRequest(BaseModel):
     """创建工作区请求体。"""
     name: str = Field(..., min_length=1, description="工作区名称")
+
+
+class WorkspaceTextbookRequest(BaseModel):
+    """为工作区选定教材版本；传空串表示「跟随默认版本」。"""
+    workspace_id: str = Field(..., min_length=1, description="目标工作区ID")
+    textbook_id: str = Field("", max_length=32, description="教材版本ID，tb_ 前缀；空串=跟随默认")
 
 
 class WorkspaceSwitchRequest(BaseModel):
@@ -329,6 +336,33 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
         "question_count": question_count,
         "switched": True,
     }
+
+
+@router.post("/textbook", summary="为某个工作区选定教材版本")
+async def set_workspace_textbook(payload: WorkspaceTextbookRequest) -> dict[str, Any]:
+    """把用户选的教材版本登记进工作区档案（v0.8.2 多版本地基的控制台入口）。
+
+    与 switch/create 同口径：本机单用户开放，不占一次性写令牌那套轮换经济
+    （令牌留给题目增删改）。这里只改工作区档案里的一个偏好字段，
+    不碰任何题库数据；大纲树按所选版本过滤是下一棒的活。
+    """
+    workspaces = _load_workspaces()
+    entry = next((w for w in workspaces if w.get("id") == payload.workspace_id), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    textbook_id = (payload.textbook_id or "").strip()
+    if textbook_id and not re.match(r"^tb_[0-9a-f]{8}$", textbook_id):
+        raise HTTPException(status_code=400, detail="教材版本 ID 不合法")
+    if textbook_id:
+        try:
+            known = {item["id"] for item in core_bank.textbooks(_provider_id())}
+        except core_bank.BankError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if textbook_id not in known:
+            raise HTTPException(status_code=400, detail="该教材版本不在当前题库的并集登记表里")
+    entry["textbook_id"] = textbook_id
+    _save_workspaces(workspaces)
+    return {"workspace_id": payload.workspace_id, "textbook_id": textbook_id}
 
 
 @router.delete("/{workspace_id}", summary="删除工作区")

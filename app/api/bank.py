@@ -21,6 +21,18 @@ from app.core.security import require_write_token
 router = APIRouter(tags=["bank"])
 
 
+@router.get("/api/bank/textbooks", summary="当前题库的教材版本清单（多版本大纲地基）")
+def bank_textbooks() -> dict[str, Any]:
+    """列活跃题库 provider 里登记的教材版本；没有 textbooks 表的老库如实回空列表。"""
+    plugin_id = provider.resolve()["plugin_id"]
+    try:
+        return {"plugin_id": plugin_id, "items": bank.textbooks(plugin_id)}
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/api/bank/provider", summary="当前活跃的题库 provider（宿主与控制台都读它）")
 def bank_provider_current() -> dict[str, Any]:
     """返回底座实际使用的题库插件；配置失效时回退默认并带 ``fallback_reason``。"""

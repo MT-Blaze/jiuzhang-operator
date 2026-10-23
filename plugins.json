@@ -21,7 +21,7 @@
     {
       "id": "org.jiuzhang.core-bank",
       "name": "真题题库",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "底座公共真题库（本地 SQLite·工作区隔离）：按年级、难度、题型与关键词筛选，支持预览与加入题篮。发行版为空壳，首启自动建空库，由老师在工作区里录题自建；本机开发可挂含真题的种子库。",

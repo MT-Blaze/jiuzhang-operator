@@ -170,7 +170,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
 
-> 当前 `v0.8.1` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
+> 当前 `v0.8.2` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
 
 ## 目录结构
 

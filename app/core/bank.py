@@ -398,6 +398,23 @@ def _v082_verify(con: sqlite3.Connection, expected_map: int, snapshot: dict[str,
         raise BankError("；".join(problems))
 
 
+def textbooks(plugin_id: str) -> list[dict[str, Any]]:
+    """当前库里的教材版本清单（v0.8.2 多版本地基）。
+
+    考向是全库并集、不绑版本；版本身份只在这张表与 node_topic_map 里。
+    现网通常只有默认那一条（人教A版），第三方教材大纲导入后即在此并列多条。
+    """
+    con = connect(plugin_id)
+    try:
+        rows = con.execute(
+            "SELECT id, name, publisher, edition, is_default FROM textbooks"
+            " ORDER BY is_default DESC, name ASC"
+        ).fetchall()
+    finally:
+        con.close()   # Windows 下漏句柄会把库文件占住，读函数一律显式收回
+    return [dict(row) for row in rows]
+
+
 def upgrade_structure(plugin_id: str, path: Path | None = None) -> dict[str, Any]:
     """把 v0.6.3 七表库就地升级到 v0.8.2 多版本地基；已是 v2 直接返回。"""
     plugin_id = validate_plugin_id(plugin_id)
