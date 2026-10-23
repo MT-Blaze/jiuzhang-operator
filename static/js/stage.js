@@ -916,6 +916,7 @@
     });
     activeKey = key;
     touch(tab);
+    hydrateConsole(key);
     applyFullscreen(tab);
     if (tab.kind === "plugin" && tab.state !== "live") {
       dock("唤醒插件「" + (tab.plugin.name || tab.plugin.id) + "」…", "stage.tab.wake");
@@ -1057,9 +1058,27 @@
     if (snapshot) notify(tab, "ui.params.changed", snapshot);
   }
 
+  /**
+   * 「设置与控制台」是宿主自有的画布页签（不是沙箱插件）：
+   * 系统管理面板必须能读工作区、装卸插件、切题库——这些能力一旦放进不透明源的
+   * iframe，就得为它单开一组宿主转发方法，等于给沙箱多开一个攻击面；
+   * 而且插件可卸载，控制台被卸掉就把底座变砖了。同源自检 + /settings 强制兜底
+   * 才是「防变砖」的正解（军令的例外兜底条款）。
+   */
+  function hydrateConsole(key) {
+    if (key !== "console") return;
+    var frame = document.getElementById("wsConsoleFrame");
+    // 哨兵值是 HTML 里写死的 about:blank（不是「没设过 src」），必须按值比，
+    // 用 !getAttribute('src') 判空会永远为假、页签里就只剩一张白纸。
+    if (frame && (!frame.getAttribute("src") || frame.getAttribute("src") === "about:blank")) {
+      frame.setAttribute("src", "/settings?embedded=1");
+    }
+  }
+
   function init() {
     if (!tabsEl || !bodyEl) return;
     registerNative({ key: "chat", title: "对话", panelId: "wsPanelChat" });
+    registerNative({ key: "console", title: "设置与控制台", panelId: "wsPanelConsole" });
     activate("chat");
 
     if (bus && typeof bus.on === "function") {

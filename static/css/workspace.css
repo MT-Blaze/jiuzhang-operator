@@ -23,15 +23,17 @@
   overflow: hidden;
 }
 
-/* 每区各钉一条轨道，且只占自己那一格。折叠时侧栏会被 display:none 摘出网格，
-   若交给自动定位，中栏与右栏会顺位前移：中栏挤进 0px 轨道（宽度归零）、
-   右栏涨满画布盖住舞台头「入口」钮，折叠后就再也点不回来——
-   这正是 v0.4.2 内测群友反馈的死锁根因（v0.4.3 修复，四区改造后照旧钉死）。 */
+/* 四区通高几何（主公 2026-10-24 定调）：左栏与右栏在垂直方向上**绝对通高**，
+   画布与【输出日志区】同处中列的上下两行。每区各钉一条轨道，且只占自己那几格；
+   折叠时侧栏会被 display:none 摘出网格，若交给自动定位，中栏与右栏会顺位前移：
+   中栏挤进 0px 轨道（宽度归零）、右栏涨满画布盖住舞台头「入口」钮，折叠后就再也
+   点不回来——这正是 v0.4.2 内测群友反馈的死锁根因（v0.4.3 修复，改造后照旧钉死）。 */
 .ws-sidebar {
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 1 / -1;
 }
 
+/* 中列：上半是画布 Tabs，下半是输出日志区，宽度严格等于画布宽度 */
 .ws-center {
   grid-column: 3;
   grid-row: 1;
@@ -39,27 +41,28 @@
 
 .ws-context {
   grid-column: 5;
-  grid-row: 1;
+  grid-row: 1 / -1;
 }
 
-/* 底栏横跨全部五轨，钉在第三行；拖拽手柄各占一条 gutter 轨道 */
+/* 输出日志区（旧称「底栏」）只吃中列，绝不横跨左右两栏——
+   左右通高之后它要是还横跨，就会从两栏底下穿过去，把通高几何凿穿。 */
 .ws-dock {
-  grid-column: 1 / -1;
+  grid-column: 3;
   grid-row: 3;
 }
 
 .ws-resizer-v[data-resize="side"] {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 1 / -1;
 }
 
 .ws-resizer-v[data-resize="context"] {
   grid-column: 4;
-  grid-row: 1;
+  grid-row: 1 / -1;
 }
 
 .ws-resizer-h[data-resize="dock"] {
-  grid-column: 1 / -1;
+  grid-column: 3;
   grid-row: 2;
 }
 
@@ -105,25 +108,6 @@
   justify-content: center;
   padding: 8px 12px;
   border-top: 1px solid var(--line);
-}
-
-.ws-settings-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  color: var(--faint);
-  text-decoration: none;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.ws-settings-link:hover,
-.ws-settings-link:focus-visible {
-  background: var(--accent-soft);
-  color: var(--ink);
-  outline: none;
 }
 
 .ws-entry-list {
@@ -1673,4 +1657,40 @@ html.ws-dragging * {
 .ws-copilot-hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) {
   .ws-copilot-out { transition: none; }
+}
+
+/* 控制台页签：同源 iframe 铺满画布，设置页自己负责内嵌时收起外壳 */
+/* 左栏底部的控制台入口：44×44 热区是 AGENTS §6 的硬线（触控目标不小于 44px），
+   定调令要求左下角不再有固定齿轮，所以这是「管理抽屉」图标 + 按钮，不是跳页链接。 */
+.ws-console-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #6b645b;
+  cursor: pointer;
+}
+.ws-console-entry:hover { color: #a5382f; border-color: #e3c9c3; background: #f4e7e3; }
+.ws-console-entry:focus-visible { outline: 2px solid #a5382f; outline-offset: 2px; }
+
+.ws-console-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fffdf9;
+}
+.ws-dock-tag {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: #8a8175;
+  text-transform: uppercase;
 }

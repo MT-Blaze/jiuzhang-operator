@@ -9,6 +9,12 @@
 (function () {
   "use strict";
 
+  // 内嵌模式：/settings?embedded=1 是被工作台画布页签 iframe 装载的，
+  // 此时必须收起站点外壳（品牌头 / 主导航 / 页脚），只留面板本体，
+  // 否则「不占额外空间」的定调就被一行导航条破了。
+  var EMBEDDED = /[?&]embedded=1(&|$)/.test(window.location.search);
+  if (EMBEDDED) document.documentElement.setAttribute("data-embedded", "1");
+
   var dropZone = document.getElementById("stDropZone");
   var fileInput = document.getElementById("stZipFile");
   var pickBtn = document.getElementById("stPickZip");

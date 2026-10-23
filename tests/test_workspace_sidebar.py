@@ -66,14 +66,17 @@ class SidebarStructureTest(unittest.TestCase):
         # 工作台脚本也不再引用已删除的安装按钮
         self.assertNotIn("wsPluginInstallBtn", JS)
 
-    def test_07_sidebar_settings_gear_is_44px(self) -> None:
-        self.assertIn('id="wsSettingsLink"', HTML)
-        self.assertIn('href="/settings"', HTML)
-        self.assertIn('aria-label="设置与控制"', HTML)
-        block = re.search(r"\.ws-settings-link\s*\{([^}]*)\}", CSS)
-        self.assertIsNotNone(block, "缺少设置入口样式")
+    def test_07_console_entry_is_44px_and_not_a_gear_link(self) -> None:
+        """v0.8.2 定调：左下角不再有固定齿轮，也不再跳独立页。"""
+        self.assertNotIn('id="wsSettingsLink"', HTML, "齿轮链接应已被控制台入口取代")
+        self.assertIn('id="wsConsoleBtn"', HTML)
+        self.assertIn('aria-label="打开设置与控制台"', HTML)
+        self.assertIn('JzoStage.activate("console")', JS, "入口应开画布页签而不是跳页")
+        block = re.search(r"\.ws-console-entry\s*\{([^}]*)\}", CSS)
+        self.assertIsNotNone(block, "缺少控制台入口样式")
         self.assertRegex(block.group(1), r"width:\s*44px")
         self.assertRegex(block.group(1), r"height:\s*44px")
+        self.assertNotIn(".ws-settings-link", CSS, "旧齿轮样式已零引用，该删干净")
 
 
 class SidebarBehaviourTest(unittest.TestCase):

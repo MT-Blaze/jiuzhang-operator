@@ -63,7 +63,10 @@ class DefaultRouteTest(unittest.TestCase):
         text = _read(STATIC / "workspace.html")
         self.assertNotIn('href="/about"', text)
         self.assertNotIn('href="/plugins"', text)
-        self.assertIn('href="/settings"', text)
+        # 定调令：左下角不再有齿轮跳页链接，改为纯图标开画布页签；
+        # /settings 仍作为防变砖兜底路由存在（见 test_settings_page）。
+        self.assertIn('id="wsConsoleBtn"', text)
+        self.assertNotIn('id="wsSettingsLink"', text)
 
         settings_text = _read(STATIC / "settings.html")
         self.assertIn('href="/about"', settings_text)

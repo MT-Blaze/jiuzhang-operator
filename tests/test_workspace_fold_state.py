@@ -97,16 +97,23 @@ class PaneTrackPinningTest(unittest.TestCase):
                 f"{selector} 必须显式钉在第 {column} 轨：自动定位会在 display:none 时让余区顺位前移",
             )
             self.assertIn("grid-row: 1", body)
+        # 四区通高几何（定调令）：输出日志区只吃中列，宽度严格等于画布宽度，
+        # 绝不再横跨左右两栏——否则左右通高会被从底下凿穿。
         dock = rule_body(".ws-dock")
-        self.assertIn("grid-column: 1 / -1", dock, "底栏必须横跨全部轨道")
+        self.assertIn("grid-column: 3", dock, "输出日志区必须只占中列")
         self.assertIn("grid-row: 3", dock)
+        # 左右两栏与两条竖向手柄都要上下通高
+        for selector in (".ws-sidebar", ".ws-context",
+                         '.ws-resizer-v[data-resize="side"]', '.ws-resizer-v[data-resize="context"]'):
+            self.assertIn("grid-row: 1 / -1", rule_body(selector),
+                          f"{selector} 必须上下通高（1 / -1）")
 
     def test_03_resizers_own_the_gutter_tracks(self) -> None:
         """手柄各占一条 gutter 轨：不与任何区抢格子，收为 0 时自然消失。"""
         for selector, column, row in (
             ('.ws-resizer-v[data-resize="side"]', "2", "1"),
             ('.ws-resizer-v[data-resize="context"]', "4", "1"),
-            ('.ws-resizer-h[data-resize="dock"]', "1 / -1", "2"),
+            ('.ws-resizer-h[data-resize="dock"]', "3", "2"),
         ):
             body = rule_body(selector)
             self.assertIn(f"grid-column: {column}", body, f"{selector} 没钉在 gutter 轨上")

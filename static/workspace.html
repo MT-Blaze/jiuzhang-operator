@@ -51,12 +51,18 @@
             <path d="M3.4 7.6 4 12.4l4.6-1.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
-        <a class="ws-settings-link" id="wsSettingsLink" href="/settings" aria-label="设置与控制" title="设置与控制">
+        <button class="ws-console-entry" id="wsConsoleBtn" type="button"
+          aria-label="打开设置与控制台" title="设置与控制台">
+          <!-- 定调令：左下角不许再有固定齿轮。这枚是「抽屉式管理」图标，
+               点开在中栏开【设置与控制台】页签，不弹窗、不跳页。 -->
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-            <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <path d="M19.1 13.6a7.6 7.6 0 0 0 0-3.2l2-1.5-2-3.4-2.3.9a7.4 7.4 0 0 0-2.8-1.6L13.7 2h-3.4l-.3 2.8a7.4 7.4 0 0 0-2.8 1.6l-2.3-.9-2 3.4 2 1.5a7.6 7.6 0 0 0 0 3.2l-2 1.5 2 3.4 2.3-.9a7.4 7.4 0 0 0 2.8 1.6l.3 2.8h3.4l.3-2.8a7.4 7.4 0 0 0 2.8-1.6l2.3.9 2-3.4-2-1.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <path d="M4 7h9M17.5 7H20M4 12h4M12.5 12H20M4 17h11M19 17h1" fill="none"
+              stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            <circle cx="15.2" cy="7" r="2.1" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="10.2" cy="12" r="2.1" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <circle cx="16.7" cy="17" r="2.1" fill="none" stroke="currentColor" stroke-width="1.6" />
           </svg>
-        </a>
+        </button>
       </footer>
     </aside>
 
@@ -92,6 +98,14 @@
               <textarea id="wsPrompt" rows="1" placeholder="输入指令…（Enter 发送）"></textarea>
               <button type="submit" class="ws-btn ws-btn-primary ws-send-btn" id="wsSendBtn">发送</button>
             </form>
+          </section>
+          <section class="ws-tab-panel" id="wsPanelConsole" role="tabpanel" aria-label="设置与控制台" data-tab="console" hidden>
+            <!-- 宿主自有页签：同源装载设置面板，不挂 sandbox。
+                 挂了 sandbox 又同时给 allow-scripts + allow-same-origin，浏览器会直接警告
+                 「这等于没沙箱」——它本来就是宿主同源代码，不该假装有隔离边界。
+                 沙箱 iframe 的规矩只适用于插件（AGENTS 铁律二），控制台不是插件。 -->
+            <iframe class="ws-console-frame" id="wsConsoleFrame" title="设置与控制台"
+              src="about:blank"></iframe>
           </section>
         </div>
       </div>
@@ -164,12 +178,13 @@
 
     <!-- 中栏与底栏之间的拖拽手柄 -->
     <div class="ws-resizer ws-resizer-h" id="wsResizerDock" data-resize="dock" role="separator"
-      aria-orientation="horizontal" tabindex="0" aria-label="拖动调整底栏高度"></div>
+      aria-orientation="horizontal" tabindex="0" aria-label="拖动调整输出日志区高度"></div>
 
-    <!-- 底栏：底座托管的输出/事件区，插件只能经 EventBus 投递，不许直接写 DOM -->
-    <section class="ws-dock" id="wsDock" aria-label="输出与事件">
+    <!-- 输出日志区（Output）：底座托管的事件/日志落点，插件只能经 EventBus 投递，不许直接写 DOM。
+         术语铁律（军令 v0.8.2）：这一区叫【输出日志区】，"控制台"三个字专属于画布页签「设置与控制台」。 -->
+    <section class="ws-dock" id="wsDock" aria-label="输出日志区">
       <header class="ws-dock-head">
-        <h2 id="wsDockTitle">输出</h2>
+        <h2 id="wsDockTitle">输出日志区<span class="ws-dock-tag" aria-hidden="true">Output</span></h2>
         <div class="ws-dock-tools">
           <button class="ws-btn ws-btn-sm" id="wsDockClear" type="button">清空</button>
           <button class="ws-btn ws-btn-sm" id="wsToggleDock" type="button" aria-expanded="true" aria-controls="wsDockBody">折叠</button>

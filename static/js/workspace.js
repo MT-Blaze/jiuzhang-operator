@@ -1789,6 +1789,18 @@
   }
 
   // --- Provider 配置弹窗 ---
+  // 左栏底部纯图标入口：在画布里开【设置与控制台】页签，不跳页、不弹窗。
+  // 底座被改坏时仍可直连 /settings 强制进同一套面板（防变砖兜底，见军令例外条款）。
+  (function wireConsoleEntry() {
+    var btn = document.getElementById("wsConsoleBtn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      if (!window.JzoStage || typeof window.JzoStage.activate !== "function") return;
+      window.JzoStage.activate("console");
+      btn.setAttribute("aria-expanded", "true");
+    });
+  })();
+
   var providerModal = document.getElementById("wsProviderModal");
   var providerModalTarget = document.getElementById("wsProviderModalTarget");
   var providerBaseUrlInput = document.getElementById("wsProviderBaseUrl");

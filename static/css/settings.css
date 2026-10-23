@@ -213,3 +213,20 @@
 .mg-modal .q-button { min-height: 44px; padding: 8px 16px; }
 
 .st-import .q-field, .st-manage .q-field { margin-bottom: 10px; }
+
+/* ============ 内嵌模式（v0.8.2：设置变成画布里的一个标签页）============ */
+html[data-embedded="1"] body {
+  background: var(--paper, #fffdf9);
+}
+html[data-embedded="1"] .site-head,
+html[data-embedded="1"] .topnav,
+html[data-embedded="1"] .brand,
+html[data-embedded="1"] .site-foot,
+html[data-embedded="1"] .st-head {
+  display: none !important;
+}
+html[data-embedded="1"] .st-main {
+  max-width: none;
+  margin: 0;
+  padding: 14px 18px 24px;
+}

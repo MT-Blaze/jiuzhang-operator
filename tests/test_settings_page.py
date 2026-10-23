@@ -24,6 +24,7 @@ HTML = (STATIC / "settings.html").read_text(encoding="utf-8")
 JS = (STATIC / "js" / "settings.js").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "settings.css").read_text(encoding="utf-8")
 WORKSPACE_HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
+STAGE_JS = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
 
 
 class SettingsRouteTest(unittest.TestCase):
@@ -36,9 +37,12 @@ class SettingsRouteTest(unittest.TestCase):
         response = asyncio.run(endpoint())
         self.assertEqual(Path(response.path), STATIC / "settings.html")
 
-    def test_02_workspace_link_points_here(self) -> None:
-        self.assertIn('id="wsSettingsLink"', WORKSPACE_HTML)
-        self.assertIn('href="/settings"', WORKSPACE_HTML)
+    def test_02_console_tab_embeds_this_page_and_route_stays_alive(self) -> None:
+        """画布页签内嵌的是本页；同时 /settings 独立路由必须仍然可直达（防变砖）。"""
+        self.assertIn('id="wsConsoleBtn"', WORKSPACE_HTML)
+        self.assertIn('id="wsConsoleFrame"', WORKSPACE_HTML)
+        self.assertIn('/settings?embedded=1', STAGE_JS, "控制台页签没内嵌设置页")
+        self.assertIn('id="wsPanelConsole"', WORKSPACE_HTML)
 
 
 class IndexSectionTest(unittest.TestCase):
