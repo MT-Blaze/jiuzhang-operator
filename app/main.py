@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.agents import router as agents_router
+from app.api.assets import router as assets_router
 from app.api.bank import router as bank_router
 from app.api.health import router as health_router
 from app.api.plugins import router as plugins_router
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_router)
     app.include_router(workspaces_router)
     app.include_router(bank_router)
+    app.include_router(assets_router)
     app.include_router(settings_router)
 
     @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)

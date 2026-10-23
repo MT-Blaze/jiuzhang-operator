@@ -65,6 +65,19 @@
   var modalOkEl = document.getElementById("edModalOk");
   var modalCancelEl = document.getElementById("edModalCancel");
   var modalTextEl = document.getElementById("edModalText");
+  var sourceNameEl = document.getElementById("edSourceName");
+  var sourceEmptyEl = document.getElementById("edSourceEmpty");
+  var sourceViewEl = document.getElementById("edSourceView");
+  var sourceStageEl = document.getElementById("edSourceStage");
+  var sourceCanvasEl = document.getElementById("edSourceCanvas");
+  var sourceStatusEl = document.getElementById("edSourceStatus");
+  var cropBoxEl = document.getElementById("edCropBox");
+  var cropHintEl = document.getElementById("edCropHint");
+  var cropInsertEl = document.getElementById("edCropInsert");
+  var cropClearEl = document.getElementById("edCropClear");
+  var cropAllEl = document.getElementById("edCropAll");
+  var pickImageEl = document.getElementById("edPickImage");
+  var imageFileEl = document.getElementById("edImageFile");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -96,7 +109,10 @@
     topicIds: [],
     topicNames: {},
     images: [],
-    tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" }
+    tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" },
+    // 原图框选只服务本次录入：位图与选区都是易失态，不进草稿也不进题目结构。
+    source: { bitmap: null, width: 0, height: 0, name: "", crop: null },
+    sourceBusy: false
   };
 
   // ---------- 宿主通信 ----------
@@ -181,7 +197,36 @@
     return span;
   }
 
-  var INLINE_RE = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
+  var INLINE_RE = /(\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|!\[[^\]]*\]\([^)]*\)|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
+
+  /** 只认底座托管路径与 asset:// 逻辑地址；远程 URL / data: / file: 一律当普通文本。 */
+  function safeAssetUri(value) {
+    var uri = String(value == null ? "" : value).trim();
+    if (uri.indexOf("/static/uploads/") === 0) return uri;
+    if (uri.indexOf("asset://") === 0 && uri.length > 8) return uri;
+    return "";
+  }
+
+  function appendImageRef(parent, uri, alt, raw) {
+    var path = safeAssetUri(uri);
+    if (!path) {
+      parent.appendChild(document.createTextNode(raw || String(uri == null ? "" : uri)));
+      return;
+    }
+    if (path.indexOf("asset://") === 0) {
+      // asset:// 是逻辑地址，沙箱 iframe 不能直接渲染；如实标出配图归属。
+      parent.appendChild(el("span", "ed-opt-img", "（配图 " + path.slice(8) + "）"));
+      return;
+    }
+    var img = document.createElement("img");
+    img.className = "ed-inline-img";
+    img.setAttribute("alt", alt || "题目配图");
+    img.src = path;
+    img.addEventListener("error", function () {
+      if (img.parentNode) img.parentNode.replaceChild(el("span", "ed-opt-img", "（配图读取失败）"), img);
+    });
+    parent.appendChild(img);
+  }
 
   function appendRich(parent, text) {
     var source = String(text == null ? "" : text);
@@ -191,7 +236,13 @@
     while ((match = INLINE_RE.exec(source)) !== null) {
       if (match.index > last) parent.appendChild(document.createTextNode(source.slice(last, match.index)));
       var token = match[0];
-      if (token.slice(0, 2) === "$$" && token.slice(-2) === "$$") {
+      if (token.slice(0, 16) === "\\includegraphics") {
+        var graphic = /\{([^}]*)\}$/.exec(token);
+        appendImageRef(parent, graphic ? graphic[1] : "", "", token);
+      } else if (token.slice(0, 2) === "![") {
+        var markdown = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(token);
+        appendImageRef(parent, markdown ? markdown[2] : "", markdown ? markdown[1] : "", token);
+      } else if (token.slice(0, 2) === "$$" && token.slice(-2) === "$$") {
         parent.appendChild(mathNode(token.slice(2, -2), true));
       } else if (token.slice(0, 2) === "\\[" && token.slice(-2) === "\\]") {
         parent.appendChild(mathNode(token.slice(2, -2), true));
@@ -343,8 +394,8 @@
   function renderEmpty() {
     pageBodyEl.textContent = "";
     var empty = el("div", "ed-empty");
-    empty.appendChild(el("strong", null, "右侧是本页 A4 预览"));
-    empty.appendChild(el("span", null, "在左边写下题干与公式，排版会实时跟上"));
+    empty.appendChild(el("strong", null, "中间右侧是本页 A4 预览"));
+    empty.appendChild(el("span", null, "在中间左侧写下题干与公式，排版会实时跟上"));
     pageBodyEl.appendChild(empty);
     pageBodyEl.setAttribute("data-overflow", "false");
     metricsEl.textContent = "等待录入…";
@@ -464,7 +515,220 @@
     if (scaleEl) scaleEl.textContent = Math.round(scale * 100) + "%";
   }
 
-  // ---------- LaTeX 清洗（纯本地规则） ----------
+  // ---------- 原图框选切图（Canvas 截取 → 宿主 asset.upload） ----------
+  // 沙箱页面的 img-src 只放行底座源，data:/blob: 都会被 CSP 拦；原图用
+  // createImageBitmap 直接解码到 <canvas>，既不触网也不依赖图片 URL 白名单。
+  var cropDrag = null;
+
+  function clampValue(value, min, max) {
+    if (!Number.isFinite(value)) return min;
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function fitSource() {
+    if (!state.source.bitmap || !sourceCanvasEl || !sourceViewEl) return;
+    var availableWidth = Math.max(80, sourceViewEl.clientWidth - 24);
+    var availableHeight = Math.max(80, sourceViewEl.clientHeight - 24);
+    var ratio = Math.min(1, availableWidth / state.source.width, availableHeight / state.source.height);
+    if (!Number.isFinite(ratio) || ratio <= 0) ratio = 0.25;
+    sourceCanvasEl.style.width = Math.max(1, Math.round(state.source.width * ratio)) + "px";
+    sourceCanvasEl.style.height = Math.max(1, Math.round(state.source.height * ratio)) + "px";
+    renderCropBox();
+  }
+
+  function placeCropBox(rect, active) {
+    if (!cropBoxEl) return;
+    cropBoxEl.hidden = false;
+    cropBoxEl.setAttribute("data-active", active ? "true" : "false");
+    cropBoxEl.style.left = rect.x + "px";
+    cropBoxEl.style.top = rect.y + "px";
+    cropBoxEl.style.width = rect.w + "px";
+    cropBoxEl.style.height = rect.h + "px";
+  }
+
+  function renderCropBox() {
+    if (!state.source.crop || !sourceStageEl || !cropBoxEl) return;
+    var stage = sourceStageEl.getBoundingClientRect();
+    placeCropBox({
+      x: state.source.crop.x * stage.width,
+      y: state.source.crop.y * stage.height,
+      w: state.source.crop.w * stage.width,
+      h: state.source.crop.h * stage.height
+    }, false);
+  }
+
+  function clearCrop(message) {
+    state.source.crop = null;
+    if (cropBoxEl) cropBoxEl.hidden = true;
+    if (cropInsertEl) cropInsertEl.disabled = true;
+    if (cropClearEl) cropClearEl.disabled = true;
+    if (cropHintEl) cropHintEl.textContent = message || "尚未选择区域。";
+  }
+
+  function setSourceBusy(active) {
+    state.sourceBusy = active;
+    if (pickImageEl) pickImageEl.disabled = active;
+    if (cropAllEl) cropAllEl.disabled = active || !state.source.bitmap;
+    if (cropInsertEl) {
+      cropInsertEl.disabled = active || !state.source.crop;
+      cropInsertEl.setAttribute("aria-busy", String(active));
+      cropInsertEl.textContent = active ? "正在上传…" : "插入选区";
+    }
+    if (cropClearEl) cropClearEl.disabled = active || !state.source.crop;
+    if (sourceStageEl) sourceStageEl.setAttribute("aria-busy", String(active));
+  }
+
+  function stagePoint(event) {
+    var rect = sourceStageEl.getBoundingClientRect();
+    return {
+      x: clampValue(event.clientX - rect.left, 0, rect.width),
+      y: clampValue(event.clientY - rect.top, 0, rect.height)
+    };
+  }
+
+  function dragRect(point) {
+    var start = cropDrag.start;
+    return {
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      w: Math.abs(point.x - start.x),
+      h: Math.abs(point.y - start.y)
+    };
+  }
+
+  function loadSourceFile(file) {
+    if (!file) return;
+    if (["image/png", "image/jpeg", "image/webp"].indexOf(file.type) < 0) {
+      toast("只支持 PNG / JPEG / WebP 原图", "error");
+      return;
+    }
+    if (typeof window.createImageBitmap !== "function") {
+      toast("当前浏览器不支持本地图片解码，请换新版浏览器", "error");
+      return;
+    }
+    window.createImageBitmap(file).then(function (bitmap) {
+      if (state.source.bitmap && typeof state.source.bitmap.close === "function") state.source.bitmap.close();
+      state.source = {
+        bitmap: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        name: file.name || "原图",
+        crop: null
+      };
+      sourceCanvasEl.width = bitmap.width;
+      sourceCanvasEl.height = bitmap.height;
+      sourceCanvasEl.getContext("2d").drawImage(bitmap, 0, 0);
+      if (sourceEmptyEl) sourceEmptyEl.hidden = true;
+      if (sourceStageEl) sourceStageEl.hidden = false;
+      if (sourceNameEl) {
+        sourceNameEl.textContent = state.source.name + " · " + bitmap.width + "×" + bitmap.height;
+        sourceNameEl.title = sourceNameEl.textContent;
+      }
+      if (sourceStatusEl) {
+        sourceStatusEl.textContent = "";
+        sourceStatusEl.removeAttribute("data-asset-id");
+        sourceStatusEl.removeAttribute("data-asset-uri");
+      }
+      if (metricsEl) metricsEl.removeAttribute("data-asset-id");
+      clearCrop("拖拽框选要截取的区域；也可直接点【整图插入】。");
+      fitSource();
+      setSourceBusy(false);
+      toast("原图已载入，拖拽框选后点【插入选区】");
+      dock("原图已载入：" + state.source.name + "（" + bitmap.width + "×" + bitmap.height + "）");
+    }, function (error) {
+      toast("原图载入失败：" + ((error && error.message) || "格式不支持"), "error");
+    });
+  }
+
+  /** 从原图 Canvas 取一块像素：选区按归一化坐标存，缩放窗口后仍然准确。 */
+  function captureCrop(whole) {
+    var sourceWidth = state.source.width;
+    var sourceHeight = state.source.height;
+    var crop = (whole || !state.source.crop)
+      ? { x: 0, y: 0, w: 1, h: 1 }
+      : state.source.crop;
+    var sx = clampValue(Math.round(crop.x * sourceWidth), 0, sourceWidth - 1);
+    var sy = clampValue(Math.round(crop.y * sourceHeight), 0, sourceHeight - 1);
+    var sw = Math.max(1, Math.min(Math.round(crop.w * sourceWidth), sourceWidth - sx));
+    var sh = Math.max(1, Math.min(Math.round(crop.h * sourceHeight), sourceHeight - sy));
+    var canvas = document.createElement("canvas");
+    canvas.width = sw;
+    canvas.height = sh;
+    canvas.getContext("2d").drawImage(sourceCanvasEl, sx, sy, sw, sh, 0, 0, sw, sh);
+    return { dataUrl: canvas.toDataURL("image/png"), width: sw, height: sh };
+  }
+
+  function insertAtCursor(snippet) {
+    var value = stemEl.value;
+    var focused = document.activeElement === stemEl;
+    if (!focused) {
+      var prefix = value && !/\n$/.test(value) ? "\n\n" : "";
+      var next = value + prefix + snippet;
+      stemEl.value = next;
+      stemEl.focus();
+      stemEl.setSelectionRange(next.length, next.length);
+    } else {
+      var start = typeof stemEl.selectionStart === "number" ? stemEl.selectionStart : value.length;
+      var end = typeof stemEl.selectionEnd === "number" ? stemEl.selectionEnd : start;
+      var before = value.slice(0, start);
+      var after = value.slice(end);
+      var lead = before && !/\n$/.test(before) ? "\n\n" : "";
+      var trail = after && !/^\n/.test(after) ? "\n" : "";
+      var insert = lead + snippet + trail;
+      stemEl.value = before + insert + after;
+      var caret = before.length + insert.length;
+      stemEl.setSelectionRange(caret, caret);
+    }
+    stemEl.dispatchEvent(new Event("input", { bubbles: true }));
+    schedulePreview();
+  }
+
+  function insertCrop(whole) {
+    if (!state.source.bitmap) {
+      toast("先选择一张原图", "error");
+      return;
+    }
+    if (!whole && !state.source.crop) {
+      toast("先在原图上框选一个区域", "error");
+      return;
+    }
+    if (state.sourceBusy) return;
+    var shot;
+    try {
+      shot = captureCrop(whole);
+    } catch (error) {
+      toast("截取选区失败：" + error.message, "error");
+      return;
+    }
+    setSourceBusy(true);
+    hostCall("asset.upload", { data_url: shot.dataUrl }).then(function (result) {
+      var id = String((result && result.id) || "");
+      var uri = String((result && result.uri) || "");
+      if (!/^img_[A-Za-z0-9_-]{1,63}$/.test(id) || !/^\/static\/uploads\/[^\s]+$/.test(uri)) {
+        throw new Error("宿主返回的资产地址不合法");
+      }
+      state.images = state.images.filter(function (image) { return image.id !== id; });
+      state.images.push({ id: id, role: "stem", uri: uri });
+      insertAtCursor("\\includegraphics{" + uri + "}");
+      if (sourceStatusEl) {
+        sourceStatusEl.textContent = "已插入 " + id + " · " + shot.width + "×" + shot.height + " px";
+        sourceStatusEl.setAttribute("data-asset-id", id);
+        sourceStatusEl.setAttribute("data-asset-uri", uri);
+      }
+      metricsEl.setAttribute("data-asset-id", id);
+      toast("配图已插入题干：" + id);
+      dock("框选配图已上传并插入题干（" + id + "）");
+    }, function (error) {
+      toast("配图上传失败：" + error.message, "error");
+      dock("框选配图上传失败：" + error.message);
+    }).then(function () {
+      setSourceBusy(false);
+    }, function () {
+      setSourceBusy(false);
+    });
+  }
+
+
   function cleanText(raw) {
     var text = String(raw == null ? "" : raw);
     text = text.replace(/\\\[([\s\S]*?)\\\]/g, function (_, body) { return "$$" + body + "$$"; });
@@ -1179,6 +1443,7 @@
     if (message.method === "plugin.activate") {
       root.hidden = false;
       fitPreview();
+      fitSource();
       renderPreview();
       // 全新打开（非跳题进入）时，先看草稿箱里有没有上次没保存的新题草稿。
       if (!state.editingId) maybeRestoreDraft(NEW_DRAFT_KEY);
@@ -1207,6 +1472,75 @@
     resetEl.addEventListener("click", resetForm);
     if (variantEl) variantEl.addEventListener("click", saveAsVariant);
     if (deleteEl) deleteEl.addEventListener("click", requestDelete);
+    if (pickImageEl && imageFileEl) {
+      pickImageEl.addEventListener("click", function () { imageFileEl.click(); });
+      imageFileEl.addEventListener("change", function () {
+        var file = imageFileEl.files && imageFileEl.files[0];
+        if (file) loadSourceFile(file);
+        imageFileEl.value = "";
+      });
+    }
+    if (cropAllEl) cropAllEl.addEventListener("click", function () { insertCrop(true); });
+    if (cropInsertEl) cropInsertEl.addEventListener("click", function () { insertCrop(false); });
+    if (cropClearEl) cropClearEl.addEventListener("click", function () { clearCrop(); });
+    if (sourceStageEl) {
+      sourceStageEl.addEventListener("pointerdown", function (event) {
+        if (!state.source.bitmap || state.sourceBusy) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        event.preventDefault();
+        sourceStageEl.focus();
+        cropDrag = { start: stagePoint(event), pointerId: event.pointerId };
+        state.source.crop = null;
+        cropInsertEl.disabled = true;
+        cropClearEl.disabled = true;
+        placeCropBox({ x: cropDrag.start.x, y: cropDrag.start.y, w: 0, h: 0 }, true);
+        cropHintEl.textContent = "拖拽出矩形…";
+        try { sourceStageEl.setPointerCapture(event.pointerId); } catch (error) { /* 指针已释放 */ }
+      });
+      sourceStageEl.addEventListener("pointermove", function (event) {
+        if (!cropDrag) return;
+        event.preventDefault();
+        var rect = dragRect(stagePoint(event));
+        placeCropBox(rect, true);
+        cropHintEl.textContent = Math.round(rect.w) + " × " + Math.round(rect.h) + " px";
+      });
+      sourceStageEl.addEventListener("pointerup", function (event) {
+        if (!cropDrag) return;
+        event.preventDefault();
+        var rect = dragRect(stagePoint(event));
+        try { sourceStageEl.releasePointerCapture(cropDrag.pointerId); } catch (error) { /* 已释放 */ }
+        cropDrag = null;
+        var stage = sourceStageEl.getBoundingClientRect();
+        if (rect.w < 12 || rect.h < 12 || !stage.width || !stage.height) {
+          clearCrop("框选太小，已忽略；请重新拖拽一个更大的区域。");
+          return;
+        }
+        state.source.crop = {
+          x: rect.x / stage.width,
+          y: rect.y / stage.height,
+          w: rect.w / stage.width,
+          h: rect.h / stage.height
+        };
+        cropInsertEl.disabled = false;
+        cropClearEl.disabled = false;
+        placeCropBox(rect, false);
+        var naturalWidth = Math.max(1, Math.round(state.source.width * state.source.crop.w));
+        var naturalHeight = Math.max(1, Math.round(state.source.height * state.source.crop.h));
+        cropHintEl.textContent = "选区 " + naturalWidth + " × " + naturalHeight + " px，点【插入选区】。";
+        if (sourceStatusEl) sourceStatusEl.textContent = "";
+      });
+      sourceStageEl.addEventListener("pointercancel", function () {
+        cropDrag = null;
+        clearCrop("框选已取消。");
+      });
+      sourceStageEl.addEventListener("keydown", function (keyEvent) {
+        if (keyEvent.key === "Escape" && (state.source.crop || cropDrag)) {
+          keyEvent.preventDefault();
+          cropDrag = null;
+          clearCrop("框选已取消。");
+        }
+      });
+    }
     if (modalEl) {
       modalEl.addEventListener("keydown", function (keyEvent) {
         if (keyEvent.key === "Escape") { keyEvent.preventDefault(); closeConfirm(); }
@@ -1219,10 +1553,19 @@
       else toast("这次是直接从录题进来的，没有来源页可返回");
     });
     renderTopicChips();
+    setSourceBusy(false);
     if (typeof ResizeObserver === "function") {
-      new ResizeObserver(fitPreview).observe(previewEl);
+      var layoutObserver = new ResizeObserver(function () {
+        fitPreview();
+        fitSource();
+      });
+      layoutObserver.observe(previewEl);
+      if (sourceViewEl) layoutObserver.observe(sourceViewEl);
     } else {
-      window.addEventListener("resize", fitPreview);
+      window.addEventListener("resize", function () {
+        fitPreview();
+        fitSource();
+      });
     }
   }
 

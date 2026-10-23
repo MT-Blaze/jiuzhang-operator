@@ -582,6 +582,7 @@ com.example.card/
 | `basket.active_add` | 加题到题篮（记在**当前活跃题库**名下） | 参数与 `basket.add` 相同；供浏览型插件使用，避免题目被记到一个空库名下导致读题篮时取不到全文 |
 | `basket.remove` | 移除一题 | 需要题目 id |
 | `basket.clear` | 清空 | 无参数 |
+| `asset.upload` | 上传框选/切出的题目配图（军令 #13） | 需 `assets:write` 权限；`payload.data_url` 只接受 PNG / JPEG / WebP 的 base64 data URL，解码后 ≤8 MiB；文件名由底座生成，返回 `{id, uri, mime, bytes, sha256}`，`uri` 可直接写进 `\includegraphics{...}` 与 `images[].uri` |
 
 安全边界：
 
@@ -589,9 +590,9 @@ com.example.card/
 - 写令牌由宿主代取（`/api/settings`，一次性），只放进宿主发出的请求头，**插件永远看不到令牌**；
 - 每次调用限流 80 次 / 10 秒 / 页签，单次转发 20 秒超时；超限回 `RATE_LIMITED`，不会把本机 SQLite 打满；
 - 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL；
-- 写入类方法（`bank.create`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` 直接回 `FORBIDDEN`，不进入后端。
+- 写入类方法（`bank.create` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（SQLite 存储端，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（SQLite 存储端，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题、经 `asset.upload` 落地框选配图。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2）——底座不写死 `core-bank`
 

@@ -344,6 +344,7 @@
     "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
+    "asset.upload",
     "draft.save", "draft.load"
   ];
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
@@ -564,6 +565,33 @@
         message: String((error && error.message) || "宿主请求失败").slice(0, 200),
         retryable: Boolean(error && error.status >= 500)
       });
+    }
+
+    if (method === "asset.upload") {
+      // 框选切图只交 data URL，落盘位置与文件名全由底座决定；插件仍然看不到令牌。
+      var assetPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (assetPermissions.indexOf("assets:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 assets:write 权限，不能上传配图"
+        });
+        return;
+      }
+      var dataUrl = typeof payload.data_url === "string" ? payload.data_url : "";
+      if (!dataUrl) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待上传的 data_url" });
+        return;
+      }
+      if (dataUrl.length > 12 * 1024 * 1024) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "图片过大（解码后上限 8 MiB）" });
+        return;
+      }
+      withWriteToken("/api/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_url: dataUrl })
+      }).then(done, fail);
+      return;
     }
 
     if (method === "bank.create") {

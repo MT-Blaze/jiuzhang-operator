@@ -40,7 +40,8 @@ class EditorManifestTest(unittest.TestCase):
         self.assertEqual(info["id"], "org.jiuzhang.editor")
         self.assertIn("stage.center", info["slots"])
         self.assertIn("question.edit", info["capabilities"])
-        self.assertEqual(sorted(info["permissions"]), ["questions:read", "questions:write"])
+        self.assertEqual(sorted(info["permissions"]),
+                         ["assets:write", "questions:read", "questions:write"])
 
     def test_02_stage_is_singleton_with_priority(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
@@ -208,6 +209,75 @@ class EditorV071FeatureTest(unittest.TestCase):
         css = read("plugin.css")
         self.assertIn("width: 794px", css)
         self.assertIn("height: 1123px", css)
+
+
+class EditorCompareAndCropTest(unittest.TestCase):
+    """军令 #13：三栏对比 + 原生矩形框选 → Canvas 截取 → 宿主上传 → 插入。"""
+
+    def test_01_three_column_layout_keeps_a4_preview(self) -> None:
+        html = read("index.html")
+        css = read("plugin.css")
+        for node_id in (
+            "edStem", "edPreview", "edSourceStage", "edSourceCanvas", "edSourceEmpty",
+            "edImageFile", "edPickImage", "edCropBox", "edCropInsert", "edCropClear",
+            "edCropAll", "edCropHint", "edSourceStatus", "edSourceName",
+        ):
+            self.assertIn(f'id="{node_id}"', html, f"缺少三栏/框选节点 {node_id}")
+        self.assertIn('class="ed-compare"', html, "中栏需同时承载源码与渲染")
+        self.assertIn('class="ed-source"', html, "右栏需是原图框选区")
+        # 题干源码在中栏，不再占左表单
+        stem_at = html.index('id="edStem"')
+        self.assertGreater(stem_at, html.index('class="ed-compare"'))
+        self.assertLess(stem_at, html.index('class="ed-preview"'))
+        self.assertIn('grid-template-areas: "form compare source"', css)
+        self.assertIn("width: 794px", css)
+        self.assertIn("height: 1123px", css)
+
+    def test_02_selection_crops_with_canvas_not_remote_image(self) -> None:
+        js = read("plugin.js")
+        for needle in (
+            "createImageBitmap", "drawImage", 'toDataURL("image/png")',
+            "pointerdown", "pointermove", "pointerup", "setPointerCapture",
+            "function captureCrop", "function insertCrop",
+        ):
+            self.assertIn(needle, js, f"框选切图缺少关键实现：{needle}")
+        # 沙箱 CSP 只放行底座源：原图必须直接解码进 Canvas，不能借 data:/blob: 图片地址
+        self.assertNotIn("createObjectURL", js)
+        self.assertNotIn("FileReader", js)
+
+    def test_03_upload_goes_through_host_assets_write(self) -> None:
+        js = read("plugin.js")
+        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        spec = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+        self.assertIn('"asset.upload"', js)
+        self.assertIn('hostCall("asset.upload"', js)
+        self.assertIn("assets:write", manifest["permissions"])
+        self.assertIn('"asset.upload"', stage, "宿主必须开放 asset.upload")
+        self.assertIn('indexOf("assets:write")', stage, "宿主必须按清单校验 assets:write")
+        self.assertIn("asset.upload", spec, "契约文档必须登记新通道")
+        # 上传成功后同时进正文与 images[]，角色固定为 stem
+        self.assertIn('"\\\\includegraphics{" + uri + "}"', js)
+        self.assertIn('{ id: id, role: "stem", uri: uri }', js)
+
+    def test_04_preview_only_renders_local_asset_uris(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("function safeAssetUri", js)
+        self.assertIn('uri.indexOf("/static/uploads/") === 0', js)
+        self.assertIn('uri.indexOf("asset://") === 0', js)
+        self.assertIn("function appendImageRef", js)
+        self.assertIn("ed-inline-img", js)
+        # 远程与 data: 引用只当文本，不变成 <img src>
+        self.assertNotIn("data:image", js.split("function safeAssetUri")[0])
+
+    def test_05_crop_state_is_ephemeral_not_in_question(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("source: { bitmap: null", js)
+        form_state = js.split("function getFormState")[1].split("var TYPE_VALUES")[0]
+        self.assertNotIn("crop", form_state, "选区属于本次操作态，不写进草稿/题目")
+        self.assertNotIn("bitmap", form_state)
+        # 图片资产本身仍要随题保存
+        self.assertIn("state.images.slice()", form_state)
 
 
 class EditorPackageTest(unittest.TestCase):

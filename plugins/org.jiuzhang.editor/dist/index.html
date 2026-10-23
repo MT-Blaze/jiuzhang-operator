@@ -12,7 +12,7 @@
     <header class="ed-top">
       <div class="ed-brand">
         <h1>录题工作台</h1>
-        <p class="ed-sub">表单 → A4 实时预览 · 边写边存草稿不丢 · 右侧 AI 副驾可改写题干 · 清洗后直入本地真题库</p>
+        <p class="ed-sub">左表单 · 中栏左源码右 A4 实时渲染 · 右栏原图框选切图 · 边写边存草稿不丢 · 清洗后直入本地真题库</p>
       </div>
       <div class="ed-actions">
         <button type="button" id="edClean" class="ed-btn ed-btn-soft" title="本地规则清洗，不联网">
@@ -66,12 +66,6 @@
           </label>
         </div>
 
-        <label class="ed-field ed-field-block">
-          <span>题干 <em>支持 $...$ 与 $$...$$</em></span>
-          <textarea id="edStem" rows="5" spellcheck="false"
-            placeholder="例：已知函数 $f(x)=x^2-5x+6$，则方程 $f(x)=0$ 的解为（　　）"></textarea>
-        </label>
-
         <div class="ed-options-block" id="edOptionsBlock">
           <div class="ed-options-head">
             <span>选项 <em>至少两项，可增删</em></span>
@@ -110,18 +104,57 @@
         </p>
       </section>
 
-      <section class="ed-preview" aria-label="A4 实时预览">
-        <div class="ed-preview-head">
-          <span>实时预览</span>
-          <span class="ed-scale" id="edScale">100%</span>
-        </div>
-        <div class="ed-preview-viewport" id="edPreview">
-          <div class="ed-page-frame" id="edPageFrame">
-            <div class="ed-page" id="edPage">
-              <div class="ed-page-body" id="edPageBody"></div>
+      <section class="ed-compare" aria-label="源码与 A4 渲染对照">
+        <section class="ed-code" aria-label="题干源码">
+          <div class="ed-pane-head">
+            <span>题干源码</span>
+            <em>支持 $...$ 与 $$...$$ · 切图插入 \includegraphics{...}</em>
+          </div>
+          <textarea id="edStem" class="ed-stem-code" spellcheck="false" aria-label="题干源码"
+            placeholder="例：已知函数 $f(x)=x^2-5x+6$，则方程 $f(x)=0$ 的解为（　　）"></textarea>
+        </section>
+
+        <section class="ed-preview" aria-label="A4 实时预览">
+          <div class="ed-preview-head">
+            <span>实时渲染</span>
+            <span class="ed-scale" id="edScale">100%</span>
+          </div>
+          <div class="ed-preview-viewport" id="edPreview">
+            <div class="ed-page-frame" id="edPageFrame">
+              <div class="ed-page" id="edPage">
+                <div class="ed-page-body" id="edPageBody"></div>
+              </div>
             </div>
           </div>
+        </section>
+      </section>
+
+      <section class="ed-source" aria-label="原图框选切图">
+        <div class="ed-pane-head">
+          <span>原图框选</span>
+          <span class="ed-source-name" id="edSourceName">未载入</span>
         </div>
+        <div class="ed-source-tools">
+          <button type="button" id="edPickImage" class="ed-mini">选择原图</button>
+          <input id="edImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <button type="button" id="edCropAll" class="ed-mini" disabled>整图插入</button>
+        </div>
+        <div class="ed-source-view" id="edSourceView">
+          <p id="edSourceEmpty" class="ed-source-empty">
+            选择一张原题截图（PNG / JPEG / WebP），在图上拖拽出矩形，再点【插入选区】。
+          </p>
+          <div id="edSourceStage" class="ed-source-stage" tabindex="0" role="group"
+            aria-label="原图框选区域：用鼠标或手指拖拽出矩形" hidden>
+            <canvas id="edSourceCanvas"></canvas>
+            <div id="edCropBox" class="ed-crop-box" hidden></div>
+          </div>
+        </div>
+        <p id="edCropHint" class="ed-crop-hint">尚未选择区域。</p>
+        <div class="ed-source-actions">
+          <button type="button" id="edCropInsert" class="ed-btn ed-btn-primary" disabled>插入选区</button>
+          <button type="button" id="edCropClear" class="ed-btn ed-btn-ghost" disabled>清除选区</button>
+        </div>
+        <p id="edSourceStatus" class="ed-source-note" role="status" aria-live="polite"></p>
       </section>
     </main>
 

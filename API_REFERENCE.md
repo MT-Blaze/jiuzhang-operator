@@ -271,6 +271,19 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 
 `key` 须匹配 `^[A-Za-z0-9_.:-]{1,80}$`。
 
+### 2.16 `asset.upload` — 上传框选配图（需 `assets:write`）
+
+录题插件把 Canvas 截出的图交给宿主，宿主代取写令牌落进当前工作区 `uploads/`。
+**只接受 PNG / JPEG / WebP（按魔数复核），解码后 ≤8 MiB；文件名由底座生成**，
+远程 URL、`data:` 直链与 SVG 一律不落盘。
+
+| 方法 | payload | result |
+| --- | --- | --- |
+| `asset.upload` | `{"data_url": "data:image/png;base64,..."}` | `{id: "img_...", uri: "/static/uploads/img_....png", mime, bytes, sha256}` |
+
+`uri` 可直接写进题干（`\includegraphics{/static/uploads/...}`）和 `images[].uri`；
+题目里的 `images[].id` 用返回的 `id`。未声明 `assets:write` 时宿主回 `FORBIDDEN`。
+
 ---
 
 ## 3. 后端 HTTP 端点参考（同源页面 / 调试用；沙箱插件**不能**直接访问）
@@ -336,6 +349,13 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 
 `POST /api/agent/chat`（对话）、`POST /api/agent/refine`（AI 副驾改写题干/解析，只回候选文本不落库）、
 `POST /api/agent/split`（拆题）、`POST /api/agent/review`（审题）。缺密钥时 Mock 原样回显、`mock: true`，绝不编造。
+
+### 3.6 题目配图
+
+| 方法与路径 | 说明 |
+| --- | --- |
+| ✍ `POST /api/assets` | 上传框选配图：`{"data_url": "data:image/png;base64,..."}` → 201 `{id, uri, mime, bytes, sha256}`；只收 PNG / JPEG / WebP，魔数必须与声明一致，解码后 ≤8 MiB，文件名由底座生成 |
+| `GET /static/uploads/{path}` | 读取当前工作区配图；拒绝 `..`、符号链接与非图片扩展名 |
 
 ---
 
