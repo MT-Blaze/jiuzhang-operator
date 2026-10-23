@@ -17,44 +17,30 @@
     <!-- 左栏：底座默认入口 + 动态插件区（不写死任何业务功能） -->
     <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="入口与插件">
       <header class="ws-sidebar-head">
-        <h2>入口</h2>
+        <div class="ws-sidebar-title">
+          <h2>入口</h2>
+          <span class="ws-plugin-count" id="wsPluginCount" hidden></span>
+        </div>
         <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
-        <div class="ws-bank-switch" role="group" aria-label="当前题库工作区">
-          <label class="ws-bank-switch-label" for="wsBankSelect">当前题库</label>
-          <div class="ws-bank-switch-row">
-            <select id="wsBankSelect" class="ws-workspace-select" aria-label="切换或查看工作区题库"></select>
-            <button type="button" id="wsBankNew" class="ws-btn ws-btn-sm" title="新建一个空白工作区题库">+ 新库</button>
-          </div>
-        </div>
-
-        <nav class="ws-entry-list" aria-label="底座默认入口">
-          <button class="ws-entry-item" id="wsChatEntry" type="button" aria-current="true">自由对话</button>
-        </nav>
-
-        <section class="ws-plugin-entry" aria-label="插件区">
-          <div class="ws-plugin-head">
-            <h3>插件</h3>
-            <span class="ws-plugin-count" id="wsPluginCount" hidden></span>
-          </div>
+        <section class="ws-plugin-entry" aria-label="入口与插件">
+          <!-- 自由对话不再是独立入口：它作为列表里的普通一项，与插件同权重、可拖拽排序。 -->
           <ul class="ws-plugin-list" id="wsPluginList" aria-live="polite">
+            <li class="ws-plugin-row" data-key="chat" draggable="true">
+              <button class="ws-plugin-item" id="wsChatEntry" type="button" aria-current="true">
+                <span class="ws-plugin-item-name">自由对话</span>
+                <span class="ws-plugin-item-meta">底座内置 · 直接与 AI 对话</span>
+              </button>
+            </li>
             <li class="ws-plugin-empty">暂无插件</li>
           </ul>
         </section>
       </div>
       <footer class="ws-sidebar-foot">
-        <button class="ws-reset-link" id="wsResetLayout" type="button" aria-label="恢复默认布局"
-          title="恢复默认布局">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-            <path d="M4 12a8 8 0 1 1 2.6 5.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            <path d="M3.4 7.6 4 12.4l4.6-1.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
+        <!-- 管理入口死锁在栏底（不随插件列表滚动）：定调令要求左下角也不再放悬浮小图标。 -->
         <button class="ws-console-entry" id="wsConsoleBtn" type="button"
           aria-label="打开设置与控制台" title="设置与控制台">
-          <!-- 定调令：左下角不许再有固定齿轮。这枚是「抽屉式管理」图标，
-               点开在中栏开【设置与控制台】页签，不弹窗、不跳页。 -->
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
             <path d="M4 7h9M17.5 7H20M4 12h4M12.5 12H20M4 17h11M19 17h1" fill="none"
               stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
@@ -62,6 +48,7 @@
             <circle cx="10.2" cy="12" r="2.1" fill="none" stroke="currentColor" stroke-width="1.6" />
             <circle cx="16.7" cy="17" r="2.1" fill="none" stroke="currentColor" stroke-width="1.6" />
           </svg>
+          <span>设置与控制台</span>
         </button>
       </footer>
     </aside>
@@ -72,24 +59,15 @@
 
     <!-- 中栏：通用画布。Tabs 承载原生对话与 iframe 插件，底座只负责渲染舞台 -->
     <main class="ws-center" role="main" aria-label="画布与当前任务舞台">
-      <header class="ws-stage-head">
-        <div class="ws-stage-title">
-          <span class="ws-stage-kicker">当前任务舞台</span>
-          <h1 id="wsStageTitle">新会话</h1>
-        </div>
-        <div class="ws-stage-tools">
-          <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button" aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
-          <button class="ws-chip" id="wsModelBtn" type="button" aria-label="模型状态：点击查看模型配置"
-            title="在【设置与控制台】页签里配置模型">
-            <span class="ws-chip-dot" aria-hidden="true"></span>
-            <span id="wsModelLabel">模型 · 未就绪</span>
-          </button>
-          <button class="ws-btn ws-btn-sm" id="wsToggleContext" type="button" aria-expanded="true" aria-controls="wsContextBody">上下文</button>
-        </div>
-      </header>
+      <!-- 画布不再有独立舞台头：页签栏紧贴顶边，当前任务名只留给读屏（aria-live）。 -->
+      <h1 class="sr-only" id="wsStageTitle" aria-live="polite">新会话</h1>
 
       <div class="ws-canvas" id="wsCanvas">
-        <div class="ws-tabs" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
+        <div class="ws-tabs-wrap">
+          <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button"
+            aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
+          <div class="ws-tabs" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
+        </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
           <section class="ws-tab-panel" id="wsPanelChat" role="tabpanel" aria-label="自由对话" data-tab="chat">
             <div class="ws-thread" id="wsThread" role="log" aria-live="polite" aria-label="对话流" tabindex="0"></div>
@@ -185,14 +163,22 @@
          术语铁律（军令 v0.8.2）：这一区叫【输出日志区】，"控制台"三个字专属于画布页签「设置与控制台」。 -->
     <section class="ws-dock" id="wsDock" aria-label="输出日志区">
       <header class="ws-dock-head">
-        <h2 id="wsDockTitle">输出日志区<span class="ws-dock-tag" aria-hidden="true">Output</span></h2>
+        <h2 class="sr-only" id="wsDockTitle">输出日志区</h2>
+        <div class="ws-dock-tabs" id="wsDockTabs" role="tablist" aria-label="输出日志视图">
+          <button class="ws-dock-tab" id="wsDockTabLog" type="button" role="tab"
+            aria-selected="true" data-view="log">运行日志</button>
+          <button class="ws-dock-tab" id="wsDockTabError" type="button" role="tab"
+            aria-selected="false" data-view="error">报错诊断</button>
+          <button class="ws-dock-tab" id="wsDockTabTerminal" type="button" role="tab"
+            aria-selected="false" data-view="terminal">系统终端</button>
+        </div>
         <div class="ws-dock-tools">
           <button class="ws-btn ws-btn-sm" id="wsDockClear" type="button">清空</button>
           <button class="ws-btn ws-btn-sm" id="wsToggleDock" type="button" aria-expanded="true" aria-controls="wsDockBody">折叠</button>
         </div>
       </header>
       <div class="ws-dock-body" id="wsDockBody">
-        <ul class="ws-dock-log" id="wsDockLog" aria-live="polite">
+        <ul class="ws-dock-log" id="wsDockLog" data-view="log" aria-live="polite">
           <li class="ws-dock-empty">暂无输出。插件与面板事件会出现在这里。</li>
         </ul>
       </div>

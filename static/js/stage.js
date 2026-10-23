@@ -163,11 +163,6 @@
     tab.pending = new Map();
     panel.appendChild(frame);
 
-    var note = document.createElement("p");
-    note.className = "ws-frame-note";
-    note.textContent = "沙箱运行中：插件只能经 postMessage 与底座说话，碰不到密钥、数据库与文件系统。";
-    panel.appendChild(note);
-
     tab.state = "live";
     paintTabState(tab);
 

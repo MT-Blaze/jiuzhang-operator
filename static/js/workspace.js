@@ -30,7 +30,6 @@
 
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
-  var contextToggle = document.getElementById("wsToggleContext");
   var thread = document.getElementById("wsThread");
   var chatForm = document.getElementById("wsChatForm");
   var promptInput = document.getElementById("wsPrompt");
@@ -39,8 +38,6 @@
   var ctxTask = document.getElementById("ctxTask");
   var ctxModel = document.getElementById("ctxModel");
   var ctxHistory = document.getElementById("ctxHistory");
-  var modelBtn = document.getElementById("wsModelBtn");
-  var modelLabel = document.getElementById("wsModelLabel");
   var chatEntry = document.getElementById("wsChatEntry");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
@@ -53,6 +50,7 @@
   var dockToggle = document.getElementById("wsToggleDock");
   var dockClearBtn = document.getElementById("wsDockClear");
   var dockLog = document.getElementById("wsDockLog");
+  var dockTabs = document.getElementById("wsDockTabs");
 
   // 右侧 AI 副驾：感知录题工作台当前题，改写一个字段后回填到表单。
   var cpCtx = document.getElementById("cpCtx");
@@ -63,10 +61,6 @@
   var cpOut = document.getElementById("cpOut");
   var editorContext = { id: "", question: null, at: 0 };
   var pendingPatch = null;
-
-  // 当前题库工作区切换：左栏顶部下拉，切/建都是换物理 .db。
-  var wsBankSelect = document.getElementById("wsBankSelect");
-  var wsBankNew = document.getElementById("wsBankNew");
 
   // ============ 对话流：气泡工厂 ============
   var CARD_SEQ = 0;
@@ -670,7 +664,7 @@
   // 左栏不再写死业务任务；插件条目由 /api/plugins 动态渲染。点插件只切换
   // 工作模式与上下文，不做任何页面跳转（军令 2.3）。
   function markActiveEntry(activeEl) {
-    var items = document.querySelectorAll(".ws-entry-item, .ws-plugin-item");
+    var items = document.querySelectorAll(".ws-plugin-item");
     for (var i = 0; i < items.length; i += 1) {
       items[i].setAttribute("aria-current", String(items[i] === activeEl));
     }
@@ -994,10 +988,6 @@
     return !!wsPage && wsPage.getAttribute("data-side") === "open";
   }
 
-  function ctxOpen() {
-    return !!wsPage && wsPage.getAttribute("data-ctx") === "open";
-  }
-
   function setSide(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-side", open ? "open" : "hidden");
@@ -1011,7 +1001,6 @@
   function setCtx(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
-    if (contextToggle) contextToggle.setAttribute("aria-expanded", String(open));
   }
 
   function dockOpen() {
@@ -1036,12 +1025,6 @@
   if (openSidebarBtn) {
     openSidebarBtn.addEventListener("click", function () {
       setSide(!sideOpen());
-    });
-  }
-
-  if (contextToggle) {
-    contextToggle.addEventListener("click", function () {
-      setCtx(!ctxOpen());
     });
   }
 
@@ -1091,127 +1074,171 @@
   // 四区里左、右、下都由底座托管。插件想往底栏写字，只能发 region.dock 事件，
   // 底座收到后一律 textContent 落 DOM（AGENTS §5：不可信输入进 DOM 前必须净化）。
   var DOCK_MAX = 120;
+  var dockEntries = [];
+  var dockView = "log";
+  var DOCK_VIEWS = { log: true, error: true, terminal: true };
+  var DOCK_EMPTY = {
+    log: "暂无输出。插件与面板事件会出现在这里。",
+    error: "没有报错。插件与底座的事件流一切正常。",
+    terminal: "暂无系统事件。",
+  };
 
-  function dockLine(text, topic) {
-    if (!dockLog) return;
-    var empty = dockLog.querySelector(".ws-dock-empty");
-    if (empty) empty.remove();
-    var item = document.createElement("li");
-    item.className = "ws-dock-item";
-    var time = document.createElement("span");
-    time.className = "ws-dock-time";
+  // 三级分类只按事件主题与关键词判，不做内容猜谜：
+  // error 进【报错诊断】，宿主生命周期进【系统终端】，其余留在【运行日志】。
+  function dockLevel(topic, text) {
+    var name = String(topic || "");
+    if (/(^|[._-])(error|failed|failure|timeout)([._-]|$)/i.test(name) ||
+      /失败|错误|异常|超时/.test(text)) {
+      return "error";
+    }
+    if (/^(plugin|workspace|system|stage|layout|provider)\./.test(name)) return "system";
+    return "info";
+  }
+
+  function stamp() {
     var now = new Date();
-    time.textContent = String(now.getHours()).padStart(2, "0") + ":" +
+    return String(now.getHours()).padStart(2, "0") + ":" +
       String(now.getMinutes()).padStart(2, "0") + ":" +
       String(now.getSeconds()).padStart(2, "0");
-    item.appendChild(time);
-    if (topic) {
-      var tag = document.createElement("span");
-      tag.className = "ws-dock-topic";
-      tag.textContent = topic;
-      item.appendChild(tag);
+  }
+
+  function copyPlainText(value) {
+    var text = String(value == null ? "" : value);
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text); });
     }
-    var body = document.createElement("span");
-    body.className = "ws-dock-text";
-    body.textContent = String(text == null ? "" : text).slice(0, 300);
-    item.appendChild(body);
-    dockLog.appendChild(item);
-    while (dockLog.children.length > DOCK_MAX) dockLog.removeChild(dockLog.firstChild);
+    fallbackCopy(text);
+    return Promise.resolve();
+  }
+
+  // http 下 navigator.clipboard 不可用（非安全上下文），回落老办法。
+  function fallbackCopy(text) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand("copy"); } catch (error) { /* 浏览器连老办法也不给，保持静默 */ }
+    document.body.removeChild(area);
+  }
+
+  function entryVisible(entry) {
+    if (dockView === "error") return entry.level === "error";
+    if (dockView === "terminal") return entry.level === "system";
+    return true;
+  }
+
+  function renderDock() {
+    if (!dockLog) return;
+    dockLog.setAttribute("data-view", dockView);
+    dockLog.textContent = "";
+    var shown = dockEntries.filter(entryVisible);
+    if (!shown.length) {
+      var empty = document.createElement("li");
+      empty.className = "ws-dock-empty";
+      empty.textContent = DOCK_EMPTY[dockView] || DOCK_EMPTY.log;
+      dockLog.appendChild(empty);
+      return;
+    }
+    shown.forEach(function (entry) {
+      var item = document.createElement("li");
+      item.className = "ws-dock-item";
+      item.setAttribute("data-level", entry.level);
+      item.setAttribute("data-copy", entry.line);
+      var time = document.createElement("span");
+      time.className = "ws-dock-time";
+      time.textContent = entry.time;
+      item.appendChild(time);
+      if (entry.topic) {
+        var tag = document.createElement("span");
+        tag.className = "ws-dock-topic";
+        tag.textContent = entry.topic;
+        item.appendChild(tag);
+      }
+      var body = document.createElement("span");
+      body.className = "ws-dock-text";
+      body.textContent = entry.text;
+      item.appendChild(body);
+      if (dockView === "error") {
+        var hint = document.createElement("span");
+        hint.className = "ws-dock-copy";
+        hint.setAttribute("aria-hidden", "true");
+        hint.textContent = "双击复制";
+        item.appendChild(hint);
+      }
+      dockLog.appendChild(item);
+    });
     if (dockOpen()) {
       var dockBody = document.getElementById("wsDockBody");
       if (dockBody) dockBody.scrollTop = dockBody.scrollHeight;
     }
   }
 
-  // ============ 当前题库工作区：切换/新建物理 .db ============
-  var bankSwitching = false;
-
-  function fillBankSelect(data) {
-    if (!wsBankSelect) return;
-    var list = (data && data.workspaces) || [];
-    wsBankSelect.textContent = "";
-    wsBankSelect.setAttribute("data-current", (data && data.current) || "");
-    list.forEach(function (ws) {
-      var option = document.createElement("option");
-      option.value = ws.id;
-      var count = Number(ws.question_count || 0);
-      option.textContent = ws.name + " · " + count + " 题";
-      if (ws.id === data.current) option.selected = true;
-      wsBankSelect.appendChild(option);
-    });
-    wsBankSelect.disabled = false;
+  function setDockView(view) {
+    dockView = DOCK_VIEWS[view] ? view : "log";
+    if (dockTabs) {
+      var buttons = dockTabs.querySelectorAll(".ws-dock-tab");
+      for (var i = 0; i < buttons.length; i += 1) {
+        buttons[i].setAttribute("aria-selected", String(buttons[i].getAttribute("data-view") === dockView));
+      }
+    }
+    renderDock();
   }
 
-  function loadWorkspaces() {
-    if (!wsBankSelect) return;
-    return fetch("/api/workspaces", { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (data) { fillBankSelect(data); })
-      .catch(function () {
-        // 工作区接口拿不到时下拉留空但别拦住整页；标一行提示即可
-        wsBankSelect.textContent = "";
-        var option = document.createElement("option");
-        option.textContent = "题库工作区不可用";
-        option.selected = true;
-        wsBankSelect.appendChild(option);
-      });
-  }
-
-  function bankWorkspaceRequest(path, body) {
-    return fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    }).then(function (response) {
-      return response.json().catch(function () { return null; }).then(function (parsed) {
-        if (!response.ok) throw new Error(readErrorDetail(response, parsed) || ("HTTP " + response.status));
-        return parsed || {};
+  // 报错诊断的双击复制：原位闪绿底 + 变字，不弹 Toast、不选中文本、不抢焦点。
+  if (dockLog) {
+    dockLog.addEventListener("dblclick", function (event) {
+      if (dockView !== "error") return;
+      var item = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
+      if (!item) return;
+      event.preventDefault();
+      var selection = window.getSelection ? window.getSelection() : null;
+      if (selection) selection.removeAllRanges();
+      var hint = item.querySelector(".ws-dock-copy");
+      copyPlainText(item.getAttribute("data-copy") || "").then(function () {
+        item.classList.add("is-copied");
+        if (hint) hint.textContent = "已复制";
+        window.setTimeout(function () {
+          item.classList.remove("is-copied");
+          if (hint) hint.textContent = "双击复制";
+        }, 1200);
       });
     });
   }
 
-  function switchBankWorkspace(id) {
-    if (bankSwitching) return;
-    bankSwitching = true;
-    wsBankSelect.disabled = true;
-    bankWorkspaceRequest("/api/workspaces/switch", { workspace_id: id }).then(function () {
-      dockLine("已切换到工作区题库：" + id, "workspace.switch");
-      window.location.reload();   // 换物理库后整页重载，插件与画布重新读新库
-    }).catch(function (err) {
-      bankSwitching = false;
-      wsBankSelect.disabled = false;
-      dockLine("切换工作区失败：" + err.message, "workspace.error");
-      loadWorkspaces();
+  if (dockTabs) {
+    dockTabs.addEventListener("click", function (event) {
+      var button = event.target && event.target.closest ? event.target.closest(".ws-dock-tab") : null;
+      if (button) setDockView(button.getAttribute("data-view"));
+    });
+    dockTabs.addEventListener("keydown", function (event) {
+      var keys = { ArrowLeft: -1, ArrowRight: 1 };
+      if (!(event.key in keys)) return;
+      var buttons = Array.prototype.slice.call(dockTabs.querySelectorAll(".ws-dock-tab"));
+      var index = buttons.indexOf(document.activeElement);
+      if (index < 0) return;
+      event.preventDefault();
+      var next = buttons[(index + keys[event.key] + buttons.length) % buttons.length];
+      next.focus();
+      setDockView(next.getAttribute("data-view"));
     });
   }
 
-  function createBankWorkspace() {
-    if (bankSwitching) return;
-    var name = window.prompt("新工作区题库名称（会在本机新建一个空白 .db）：", "我的新题库");
-    if (name == null) return;
-    name = String(name).trim();
-    if (!name) { dockLine("工作区名称不能为空", "workspace.error"); return; }
-    bankSwitching = true;
-    if (wsBankNew) wsBankNew.disabled = true;
-    bankWorkspaceRequest("/api/workspaces", { name: name }).then(function () {
-      dockLine("已新建空白工作区题库：" + name, "workspace.create");
-      window.location.reload();
-    }).catch(function (err) {
-      bankSwitching = false;
-      if (wsBankNew) wsBankNew.disabled = false;
-      dockLine("新建工作区失败：" + err.message, "workspace.error");
+  function dockLine(text, topic, level) {
+    var body = String(text == null ? "" : text).slice(0, 400);
+    var name = String(topic || "");
+    var at = stamp();
+    dockEntries.push({
+      time: at,
+      topic: name,
+      text: body,
+      level: level || dockLevel(name, body),
+      line: at + (name ? " [" + name + "] " : " ") + body,
     });
-  }
-
-  function wireBank() {
-    if (!wsBankSelect) return;
-    wsBankSelect.addEventListener("change", function () {
-      var id = wsBankSelect.value;
-      var current = wsBankSelect.getAttribute("data-current") || "";
-      if (id && id !== current) switchBankWorkspace(id);
-    });
-    if (wsBankNew) wsBankNew.addEventListener("click", createBankWorkspace);
-    loadWorkspaces();
+    while (dockEntries.length > DOCK_MAX) dockEntries.shift();
+    renderDock();
   }
 
   // ============ 右侧 AI 副驾：感知录题当前题 → 改写字段 → 回填表单 ============
@@ -1326,11 +1353,8 @@
     });
     if (dockClearBtn) {
       dockClearBtn.addEventListener("click", function () {
-        dockLog.textContent = "";
-        var empty = document.createElement("li");
-        empty.className = "ws-dock-empty";
-        empty.textContent = "已清空。";
-        dockLog.appendChild(empty);
+        dockEntries = [];
+        renderDock();
       });
     }
   }
@@ -1742,24 +1766,19 @@
     return null;
   }
 
+  // 顶栏模型胶囊已随舞台头一起退役：模型状态只在右栏「模型」一节如实显示。
   function renderModelChip() {
     var active = findActiveProvider();
-    if (!modelLabel || !modelBtn) return;
+    if (!ctxModel) return;
     if (!active) {
-      modelLabel.textContent = "模型 · 未就绪";
-      modelBtn.setAttribute("data-state", "mock");
-      if (ctxModel) ctxModel.textContent = "未就绪";
+      ctxModel.textContent = "未就绪";
       return;
     }
     if (!active.configured || active.mock) {
-      modelLabel.textContent = "模型 · " + active.label + "（Mock）";
-      modelBtn.setAttribute("data-state", "mock");
-      if (ctxModel) ctxModel.textContent = active.label + " · Mock 降级（未配置密钥）";
+      ctxModel.textContent = active.label + " · Mock 降级（未配置密钥）";
       return;
     }
-    modelLabel.textContent = "模型 · " + (active.model || active.label);
-    modelBtn.setAttribute("data-state", "live");
-    if (ctxModel) ctxModel.textContent = active.label + " · " + (active.model || "已配置");
+    ctxModel.textContent = active.label + " · " + (active.model || "已配置");
   }
 
   function loadProviders() {
@@ -1823,9 +1842,6 @@
     if (btn) {
       btn.addEventListener("click", function () { openConsoleTab(); });
     }
-    if (modelBtn) {
-      modelBtn.addEventListener("click", function () { openConsoleTab("provider"); });
-    }
     // 控制台里改了模型配置 → 顶栏胶囊立即重拉状态，不让老师对着旧标签发愣。
     window.addEventListener("message", function (event) {
       if (event.origin !== window.location.origin) return;
@@ -1882,48 +1898,150 @@
     return KIND_LABELS[plugin.kind] || "插件";
   }
 
+  // 拖拽排序的落盘键：只存条目 key 的顺序，不存任何业务数据。
+  var PLUGIN_ORDER_KEY = "jzo.sidebar.order";
+
+  function readPluginOrder() {
+    try {
+      var parsed = JSON.parse(window.localStorage.getItem(PLUGIN_ORDER_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed.filter(function (key) {
+        return typeof key === "string";
+      }) : [];
+    } catch (error) {
+      return [];   // 隐私模式或脏数据：按默认顺序渲染，绝不抛到调用点
+    }
+  }
+
+  function savePluginOrder(keys) {
+    try {
+      window.localStorage.setItem(PLUGIN_ORDER_KEY, JSON.stringify(keys));
+    } catch (error) {
+      /* 写不进去只影响“记住顺序”，不影响本次拖拽结果 */
+    }
+  }
+
+  function buildPluginRow(plugin) {
+    var li = document.createElement("li");
+    li.className = "ws-plugin-row";
+    li.setAttribute("data-key", "plugin:" + String(plugin.id || ""));
+    li.setAttribute("draggable", "true");
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ws-plugin-item";
+    btn.setAttribute("data-plugin-id", String(plugin.id || ""));
+    btn.setAttribute("aria-current", String(Boolean(activePlugin && activePlugin.id === plugin.id)));
+    var name = document.createElement("span");
+    name.className = "ws-plugin-item-name";
+    name.textContent = plugin.name || plugin.id || "未命名插件";
+    var meta = document.createElement("span");
+    meta.className = "ws-plugin-item-meta";
+    meta.textContent = pluginSidebarSubtitle(plugin);
+    btn.title = "v" + (plugin.version || "?");
+    btn.appendChild(name);
+    btn.appendChild(meta);
+    btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });
+    li.appendChild(btn);
+    return li;
+  }
+
+  function clearDropMarks() {
+    if (!pluginListEl) return;
+    var rows = pluginListEl.querySelectorAll(".ws-plugin-row[data-drop]");
+    for (var i = 0; i < rows.length; i += 1) rows[i].removeAttribute("data-drop");
+  }
+
+  // 原生 HTML5 拖拽：拖起一行，落在目标行的上半/下半决定插前还是插后，
+  // 顺序只写 localStorage（宿主自有），插件代码一律碰不到浏览器存储。
+  function wirePluginDrag() {
+    if (!pluginListEl) return;
+    var draggingKey = "";
+    pluginListEl.addEventListener("dragstart", function (event) {
+      var row = event.target && event.target.closest ? event.target.closest(".ws-plugin-row") : null;
+      if (!row) return;
+      draggingKey = row.getAttribute("data-key") || "";
+      row.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        try { event.dataTransfer.setData("text/plain", draggingKey); } catch (error) { /* 旧浏览器忽略 */ }
+      }
+    });
+    pluginListEl.addEventListener("dragover", function (event) {
+      if (!draggingKey) return;
+      var row = event.target && event.target.closest ? event.target.closest(".ws-plugin-row") : null;
+      clearDropMarks();
+      if (!row || row.getAttribute("data-key") === draggingKey) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      var rect = row.getBoundingClientRect();
+      row.setAttribute("data-drop", event.clientY < rect.top + rect.height / 2 ? "before" : "after");
+    });
+    pluginListEl.addEventListener("drop", function (event) {
+      if (!draggingKey) return;
+      var row = event.target && event.target.closest ? event.target.closest(".ws-plugin-row") : null;
+      if (!row || row.getAttribute("data-key") === draggingKey) { draggingKey = ""; clearDropMarks(); return; }
+      event.preventDefault();
+      var targetKey = row.getAttribute("data-key") || "";
+      var position = row.getAttribute("data-drop") || "before";
+      var keys = [];
+      var rows = pluginListEl.querySelectorAll(".ws-plugin-row");
+      for (var i = 0; i < rows.length; i += 1) {
+        var key = rows[i].getAttribute("data-key") || "";
+        if (key && key !== draggingKey) keys.push(key);
+      }
+      var at = keys.indexOf(targetKey);
+      if (at < 0) at = keys.length;
+      if (position === "after") at += 1;
+      keys.splice(at, 0, draggingKey);
+      savePluginOrder(keys);
+      draggingKey = "";
+      clearDropMarks();
+      renderPlugins(installedPlugins);
+    });
+    pluginListEl.addEventListener("dragend", function () {
+      draggingKey = "";
+      clearDropMarks();
+      var dragging = pluginListEl.querySelectorAll(".ws-plugin-row.is-dragging");
+      for (var i = 0; i < dragging.length; i += 1) dragging[i].classList.remove("is-dragging");
+    });
+  }
+
   function renderPlugins(plugins) {
+    if (!pluginListEl) return;
     // 三态管理落到导航：停用的（enabled=false）与不占位的（show_in_sidebar=false）都不进左栏。
     var list = (plugins || []).filter(function (plugin) {
       return plugin.enabled !== false && plugin.show_in_sidebar !== false;
     });
-    // stage.priority 的第二个真实消费点：左栏插件区同样按优先级从高到低排，
-    // 同优先级按名称稳定排序。没有舞台声明的插件 priority=0，不抢位。
+    // 默认顺序：stage.priority 高者在前，同优先级按名称稳定排序；
+    // 老师拖过之后，以 localStorage 里的顺序为唯一事实来源。
     list.sort(function (a, b) {
       var delta = pluginPriority(b) - pluginPriority(a);
       if (delta !== 0) return delta;
       return String(a.name || a.id || "").localeCompare(String(b.name || b.id || ""), "zh-CN");
     });
-    if (!pluginListEl) return;
+    var saved = readPluginOrder();
+    function rank(key) {
+      var index = saved.indexOf(key);
+      return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+    }
+    var chatRow = pluginListEl.querySelector('.ws-plugin-row[data-key="chat"]');
+    var rows = [];
+    if (chatRow) {
+      var chatButton = chatRow.querySelector(".ws-plugin-item");
+      if (chatButton) chatButton.setAttribute("aria-current", String(!activePlugin));
+      rows.push(chatRow);
+    }
+    list.forEach(function (plugin) { rows.push(buildPluginRow(plugin)); });
+    rows.sort(function (a, b) {
+      return rank(a.getAttribute("data-key")) - rank(b.getAttribute("data-key"));
+    });
     pluginListEl.textContent = "";
+    rows.forEach(function (row) { pluginListEl.appendChild(row); });
     if (!list.length) {
       var empty = document.createElement("li");
       empty.className = "ws-plugin-empty";
       empty.textContent = "暂无插件";
       pluginListEl.appendChild(empty);
-      if (pluginCountEl) pluginCountEl.hidden = true;
-      return;
     }
-    list.forEach(function (plugin) {
-      var li = document.createElement("li");
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "ws-plugin-item";
-      btn.setAttribute("data-plugin-id", String(plugin.id || ""));
-      btn.setAttribute("aria-current", String(Boolean(activePlugin && activePlugin.id === plugin.id)));
-      var name = document.createElement("span");
-      name.className = "ws-plugin-item-name";
-      name.textContent = plugin.name || plugin.id || "未命名插件";
-      var meta = document.createElement("span");
-      meta.className = "ws-plugin-item-meta";
-      meta.textContent = pluginSidebarSubtitle(plugin);
-      btn.title = "v" + (plugin.version || "?");
-      btn.appendChild(name);
-      btn.appendChild(meta);
-      btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });
-      li.appendChild(btn);
-      pluginListEl.appendChild(li);
-    });
     if (pluginCountEl) {
       pluginCountEl.hidden = false;
       pluginCountEl.textContent = String(list.length);
@@ -2109,11 +2227,11 @@
   // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
   wireDock();
   wireCopilot();
-  wireBank();
+  wirePluginDrag();
   setStage("自由对话");
   markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");
-  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。安装插件、拉取索引或查看底座信息，点左下角齿轮进入「设置与控制」。");
+  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。安装插件、切换题库或配置模型，点左下角【设置与控制台】。");
 
   // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
   loadPlugins()

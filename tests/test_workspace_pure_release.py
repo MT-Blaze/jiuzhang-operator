@@ -159,19 +159,22 @@ class WorkspaceEndpointContractTest(unittest.TestCase):
 
 
 class WorkspaceFrontendTest(unittest.TestCase):
-    def test_dropdown_wired_in_left_sidebar(self) -> None:
+    def test_sidebar_dropdown_retired_into_settings(self) -> None:
+        """v0.8.4：左栏不再占一个工作区下拉，切库/建库统一收进【设置与控制台】。"""
         html = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
-        self.assertIn('id="wsBankSelect"', html)
-        self.assertIn('id="wsBankNew"', html)
-        self.assertIn("当前题库", html)
+        self.assertNotIn('id="wsBankSelect"', html)
+        self.assertNotIn('id="wsBankNew"', html)
+        settings = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
+        self.assertIn('id="stWsList"', settings, "设置页必须承接工作区列表")
+        self.assertIn("新建工作区", settings)
 
-    def test_workspace_js_calls_the_api(self) -> None:
-        js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+    def test_workspace_api_is_driven_by_settings_page(self) -> None:
+        js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
         self.assertIn('"/api/workspaces"', js)
         self.assertIn('"/api/workspaces/switch"', js)
-        self.assertIn("function wireBank", js)
-        self.assertIn("wireBank();", js)
-        self.assertNotRegex(js, r"\(\?<[=!]", "前端禁用后行断言")
+        workspace_js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        self.assertNotIn("function wireBank", workspace_js, "工作台下拉逻辑应已摘除")
+        self.assertNotRegex(workspace_js, r"\(\?<[=!]", "前端禁用后行断言")
 
 
 if __name__ == "__main__":

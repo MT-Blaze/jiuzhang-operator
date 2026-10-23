@@ -30,12 +30,15 @@ class SidebarStructureTest(unittest.TestCase):
             self.assertNotIn(label, HTML, f"左栏仍写死业务入口：{label}")
             self.assertNotIn(label, JS)
 
-    def test_02_free_chat_is_the_only_builtin_entry(self) -> None:
-        self.assertEqual(HTML.count('class="ws-entry-item"'), 1)
-        entry = re.search(r'<button class="ws-entry-item"[^>]*>(.*?)</button>', HTML, re.S)
-        self.assertIsNotNone(entry, "找不到自由对话入口")
-        self.assertEqual(entry.group(1).strip(), "自由对话")
+    def test_02_free_chat_is_a_regular_list_item(self) -> None:
+        """v0.8.4：自由对话不再是独立入口，作为列表首项与插件同权重、可拖拽排序。"""
+        self.assertNotIn('class="ws-entry-item"', HTML)
+        entry = re.search(r'<button class="ws-plugin-item" id="wsChatEntry"[^>]*>(.*?)</button>', HTML, re.S)
+        self.assertIsNotNone(entry, "找不到自由对话列表项")
+        self.assertIn("自由对话", entry.group(1))
         self.assertIn('aria-current="true"', entry.group(0))
+        row = re.search(r'<li class="ws-plugin-row" data-key="chat" draggable="true">', HTML)
+        self.assertIsNotNone(row, "自由对话必须和插件一样参与拖拽排序")
 
     def test_03_plugin_area_has_empty_state(self) -> None:
         self.assertIn('id="wsPluginList"', HTML)
@@ -49,8 +52,8 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertNotIn("href=", block.group(0))
 
     def test_05_plugin_item_hit_area_is_44px(self) -> None:
-        block = re.search(r"\.ws-entry-item,\s*\.ws-plugin-item\s*\{([^}]*)\}", CSS)
-        self.assertIsNotNone(block, "自由对话与插件条目没有共用命中区规则")
+        block = re.search(r"\.ws-plugin-item\s*\{([^}]*)\}", CSS)
+        self.assertIsNotNone(block, "插件条目没有命中区规则")
         self.assertRegex(block.group(1), r"min-height:\s*44px")
         self.assertIn(".ws-plugin-empty", CSS)
 
@@ -74,9 +77,12 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertIn('JzoStage.activate("console")', JS, "入口应开画布页签而不是跳页")
         block = re.search(r"\.ws-console-entry\s*\{([^}]*)\}", CSS)
         self.assertIsNotNone(block, "缺少控制台入口样式")
-        self.assertRegex(block.group(1), r"width:\s*44px")
+        self.assertRegex(block.group(1), r"width:\s*100%", "管理入口必须占满栏底")
         self.assertRegex(block.group(1), r"height:\s*44px")
         self.assertNotIn(".ws-settings-link", CSS, "旧齿轮样式已零引用，该删干净")
+        foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
+        self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须死锁在左栏最底部")
+        self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标已按定调令移除")
 
 
 class SidebarBehaviourTest(unittest.TestCase):

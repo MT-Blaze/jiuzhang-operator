@@ -58,16 +58,18 @@ class HandleMarkupTest(unittest.TestCase):
             orientation = "horizontal" if pane == "dock" else "vertical"
             self.assertIn(f'aria-orientation="{orientation}"', markup)
 
-    def test_03_reset_button_lives_in_sidebar_foot(self) -> None:
+    def test_03_console_entry_is_locked_in_sidebar_foot(self) -> None:
+        """v0.8.4：悬浮小图标（恢复布局）退役，栏底只留死锁的【设置与控制台】。"""
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
         self.assertIsNotNone(foot, "左栏栏底不见了")
-        self.assertIn('id="wsResetLayout"', foot.group(1), "一键恢复默认布局必须在左下角")
-        self.assertIn("恢复默认布局", foot.group(1))
-        bodies = rule_bodies(".ws-reset-link")
-        self.assertTrue(bodies, "缺少恢复按钮样式")
+        self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须固定在左下角")
+        self.assertIn("设置与控制台", foot.group(1))
+        self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标应已移除")
+        bodies = rule_bodies(".ws-console-entry")
+        self.assertTrue(bodies, "缺少管理入口样式")
         joined = "\n".join(bodies)
-        self.assertRegex(joined, r"width:\s*44px")
         self.assertRegex(joined, r"height:\s*44px")
+        self.assertRegex(joined, r"width:\s*100%")
 
 
 class DragSafetyTest(unittest.TestCase):

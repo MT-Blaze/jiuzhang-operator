@@ -158,11 +158,12 @@ class PaneTrackPinningTest(unittest.TestCase):
 class ReopenEntryTest(unittest.TestCase):
     """展开入口：任何折叠态下都必须出现、常驻、且压得过栏内容。"""
 
-    def test_01_entry_exists_in_stage_head(self) -> None:
+    def test_01_entry_lives_in_tab_bar(self) -> None:
+        """v0.8.4 定调：舞台头已删除，展开入口并入贴顶的页签栏。"""
         self.assertIn('id="wsOpenSidebar"', HTML)
-        tools = re.search(r'class="ws-stage-tools">(.*?)</div>', HTML, re.S)
-        self.assertIsNotNone(tools, "舞台头按钮组不见了")
-        self.assertIn("wsOpenSidebar", tools.group(1), "「任务」入口必须留在舞台头按钮组里")
+        wrap = re.search(r'class="ws-tabs-wrap">(.*?)</div>', HTML, re.S)
+        self.assertIsNotNone(wrap, "页签栏容器不见了")
+        self.assertIn("wsOpenSidebar", wrap.group(1), "展开入口必须留在页签栏里")
 
     def test_02_entry_appears_when_side_hidden(self) -> None:
         self.assertEqual(rule_body(".ws-drawer-btn").count("display: none"), 1)
@@ -172,12 +173,11 @@ class ReopenEntryTest(unittest.TestCase):
         )
 
     def test_03_entry_layering_is_pinned_above_panels(self) -> None:
-        """层级加固：按钮组与入口钮都要 position 定位 + z-index，且不许被 flex 挤掉。"""
-        for selector in (".ws-stage-tools", ".ws-drawer-btn"):
-            body = rule_body(selector)
-            self.assertRegex(body, r"position:\s*relative", f"{selector} 缺 position，z-index 不生效")
-            self.assertRegex(body, r"z-index:\s*\d+", f"{selector} 缺 z-index")
-        self.assertRegex(rule_body(".ws-drawer-btn"), r"flex:\s*none", "入口钮会被挤压缩窄")
+        """层级加固：入口钮要 position 定位 + z-index，且不许被 flex 挤掉。"""
+        body = rule_body(".ws-drawer-btn")
+        self.assertRegex(body, r"position:\s*relative", "入口钮缺 position，z-index 不生效")
+        self.assertRegex(body, r"z-index:\s*\d+", "入口钮缺 z-index")
+        self.assertRegex(body, r"flex:\s*none", "入口钮会被挤压缩窄")
 
     def test_04_entry_toggle_text_stays_in_sync(self) -> None:
         """折叠钮文案只能由状态机写入，且两态各有说法。"""
@@ -200,10 +200,11 @@ class ClippingTest(unittest.TestCase):
             )
             self.assertRegex(body, r"min-width:\s*0")
 
-    def test_02_stage_title_yields_to_buttons(self) -> None:
-        body = rule_body(".ws-stage-title")
+    def test_02_tab_strip_clips_its_overflow(self) -> None:
+        """页签栏贴顶后，长标题不再挤按钮：页签自己横向滚动，绝不许撑破中栏。"""
+        body = rule_body(".ws-tabs")
         self.assertRegex(body, r"min-width:\s*0")
-        self.assertRegex(body, r"overflow:\s*hidden")
+        self.assertRegex(body, r"overflow-x:\s*auto")
 
     def test_03_root_still_clips_the_canvas(self) -> None:
         self.assertRegex(rule_body(".ws-page"), r"overflow:\s*hidden")
@@ -276,20 +277,12 @@ class MobileDrawerTest(unittest.TestCase):
         self.assertIsNotNone(block)
         self.assertRegex(block.group(1), r"min-height:\s*44px")
 
-    def test_06_stage_title_survives_the_button_row(self) -> None:
-        """窄屏舞台头三枚按钮吃掉大半行：标题若仍按内容挤位会被压成一列竖字
-        （v0.4.2 遗留观感缺陷，360px 实测截图为证）。必须单行 + 省略号。"""
+    def test_06_tab_strip_survives_narrow_screens(self) -> None:
+        """窄屏没有舞台头可挤：页签栏只许横向滚动，不许把抽屉入口推出屏外。"""
         body = media_body_max(768)
-        block = re.search(r"\.ws-stage-title h1\s*\{([^}]*)\}", body)
-        self.assertIsNotNone(block, "窄屏没给标题单行省略号的处理")
-        self.assertRegex(block.group(1), r"white-space:\s*nowrap")
-        self.assertRegex(block.group(1), r"text-overflow:\s*ellipsis")
-        self.assertRegex(block.group(1), r"overflow:\s*hidden")
-        self.assertRegex(
-            re.search(r"\.ws-stage-kicker\s*\{([^}]*)\}", body).group(1),
-            r"display:\s*none",
-            "装饰性 kicker 在窄屏该让位给按钮行",
-        )
+        self.assertIn("overflow-x: auto", rule_body(".ws-tabs"))
+        self.assertIn("flex: none", rule_body(".ws-drawer-btn"))
+        self.assertNotIn("ws-stage-head", body, "窄屏仍在给已删除的舞台头写样式")
 
 
 class StateMachineTest(unittest.TestCase):
