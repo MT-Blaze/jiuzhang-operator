@@ -278,8 +278,11 @@ def run(tag: str) -> dict:
                 """, label_part)
 
             initial = snap("00-initial")
-            check("画布初始只有对话一枚原生页签",
-                  len(initial["tabs"]) == 1 and initial["tabs"][0]["key"] == "chat",
+            # 宿主自己占两枚页签：对话（原生）与设置与控制台（宿主同源 iframe）。
+            check("画布初始是对话与控制台两枚宿主页签",
+                  len(initial["tabs"]) == 2
+                  and initial["tabs"][0]["key"] == "chat"
+                  and any(t["key"] == "console" for t in initial["tabs"]),
                   json.dumps(initial["tabs"], ensure_ascii=False))
             check("对话页签不含 iframe（原生）", initial["frameCount"] == 0, str(initial["frameCount"]))
             check("左栏列出探针插件",
@@ -304,15 +307,16 @@ def run(tag: str) -> dict:
                 st = snap(f"1{index}-open-{letter}")
                 dock = dock_text()
                 live_peak = max(live_peak, st["frameCount"])
-                check(f"插件{letter.upper()} 开出画布页签", clicked is not None and len(st["tabs"]) == index + 1,
-                      f"clicked={clicked} tabs={len(st['tabs'])}")
                 probe_tab = next((t for t in st["tabs"] if t["key"] == f"plugin:{pid}"), None)
+                check(f"插件{letter.upper()} 开出画布页签",
+                      clicked is not None and probe_tab is not None,
+                      f"clicked={clicked} tabs={len(st['tabs'])}")
                 check(f"插件{letter.upper()} 页签为选中态", probe_tab and probe_tab["selected"] == "true",
                       json.dumps(probe_tab, ensure_ascii=False) if probe_tab else "无此页签")
                 panel = panel_of(st, pid)
                 frame = next((f for f in st["frames"] if f["tab"] == f"plugin:{pid}"), None)
-                check(f"插件{letter.upper()} iframe 沙箱只有 allow-scripts",
-                      bool(frame and frame["sandbox"] == "allow-scripts"),
+                check(f"插件{letter.upper()} iframe 沙箱为 allow-scripts allow-modals",
+                      bool(frame and frame["sandbox"] == "allow-scripts allow-modals"),
                       json.dumps(frame, ensure_ascii=False) if frame else "")
                 check(f"插件{letter.upper()} 挂载无故障框（activate 30s 内回 ready）",
                       bool(panel and panel["hasFrame"] and not panel["error"]),
@@ -357,7 +361,7 @@ def run(tag: str) -> dict:
             # ---------- 右栏参数 → notification → region.dock ----------
             changed = page.evaluate("""
             () => {
-              const sel = document.querySelector('#ctxPanel select, #wsContext select');
+              const sel = document.querySelector('#wsPluginControls select.ws-ui-select');
               if (!sel) return null;
               const next = Array.from(sel.options).map(o => o.value).find(v => v !== sel.value);
               sel.value = next;

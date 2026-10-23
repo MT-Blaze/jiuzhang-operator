@@ -10,7 +10,7 @@
 
 判据来自 2026-10-23 军令 #06 与 #07：
   1. 模板 zip 解进插件目录后被底座发现、零拒收；
-  2. 点左栏入口开画布页签，iframe 沙箱只有 allow-scripts，``plugin.activate`` 30s 内回 ready；
+  2. 点左栏入口开画布页签，iframe 沙箱为 allow-scripts allow-modals，``plugin.activate`` 30s 内回 ready；
   3. 沙箱内点【取一页公共真题】→ ``bank.review`` 请求真的走到宿主并拿到同 id 回执（不是超时）；
   4. 沙箱内点【向底栏广播】→ ``region.dock`` 经 bus.publish 白名单落进底栏日志；
   5. 全程宿主页无未捕获 JS 错误；
@@ -156,7 +156,7 @@ def run(tag: str) -> dict:
             st = snap("10-opened")
             check("点入口开出画布页签", clicked is not None and f"plugin:{PLUGIN_ID}" in st["tabs"],
                   f"clicked={clicked} tabs={st['tabs']}")
-            check("iframe 沙箱只有 allow-scripts", st["frameSandbox"] == "allow-scripts", st["frameSandbox"])
+            check("iframe 沙箱为 allow-scripts allow-modals", st["frameSandbox"] == "allow-scripts allow-modals", st["frameSandbox"])
             check("入口页由宿主托管", "/plugin-assets/" in (st["frameSrc"] or ""), st["frameSrc"])
             check("挂载无故障框（activate 30s 内回 ready）", not st["panelError"], st["panelError"])
 

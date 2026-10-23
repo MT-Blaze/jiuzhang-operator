@@ -151,8 +151,8 @@ def run(tag: str) -> dict:
                 return frame, handle
 
             frame, handle = open_plugin()
-            check("舞台 iframe 沙箱恰为 allow-scripts",
-                  handle.get_attribute("sandbox") == "allow-scripts",
+            check("舞台 iframe 沙箱为 allow-scripts allow-modals",
+                  handle.get_attribute("sandbox") == "allow-scripts allow-modals",
                   str(handle.get_attribute("sandbox")))
             frame.wait_for_selector('.lc-entry textarea', timeout=25000)
             page.wait_for_timeout(500)
@@ -258,6 +258,63 @@ def run(tag: str) -> dict:
               nonEmpty: Array.from(document.querySelectorAll('.lc-preview')).filter(n => n.textContent.trim()).length
             })""")
             check("打印态正文预览齐全", printed["previews"] >= 3 and printed["nonEmpty"] >= 1, printed)
+
+            # ---- PDF 导出：打印态隔离 + 真实 A4 PDF ----
+            page.emulate_media(media="print")
+            page.wait_for_timeout(300)
+            print_state = frame.evaluate("""() => {
+              const top = document.querySelector('.lc-top');
+              const src = document.querySelector('.lc-sources');
+              const doc = document.querySelector('.lc-doc');
+              const add = document.querySelectorAll('.lc-add').length;
+              const areas = document.querySelectorAll('.lc-entry textarea').length;
+              return {
+                topHidden: top ? getComputedStyle(top).display === 'none' : false,
+                sourcesHidden: src ? getComputedStyle(src).display === 'none' : false,
+                docVisible: !!doc && doc.getBoundingClientRect().width > 0,
+                addButtons: add, textareas: areas
+              };
+            }""")
+            report["notes"]["print"] = print_state
+            check("打印态隐藏工具栏与题源栏（PDF 不带网页按钮）",
+                  print_state["topHidden"] and print_state["sourcesHidden"], print_state)
+            check("打印态正文可见且编辑控件收起",
+                  print_state["docVisible"] and print_state["addButtons"] > 0, print_state)
+            snap("40-print")
+            page.emulate_media(media="screen")
+
+            console_before = len(report["console"])
+            frame.evaluate("() => window.print()")
+            page.wait_for_timeout(600)
+            ignored = [entry for entry in report["console"][console_before:]
+                       if "Ignored call to 'print()'" in entry["text"]]
+            check("沙箱放行 window.print（allow-modals）", not ignored,
+                  json.dumps(ignored[:2], ensure_ascii=False))
+
+            lecture_html = frame.evaluate(
+                "() => { const n = document.getElementById('lcRoot'); return n ? n.outerHTML : ''; }")
+            lecture_css = page.evaluate(
+                """async () => (await (await fetch('/plugin-assets/org.jiuzhang.lecture/dist/plugin.css',
+                    {cache: 'no-store'})).text())""")
+            pdf_page = browser.new_page()
+            origin = f"http://127.0.0.1:{PORT}"
+            pdf_page.set_content(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                + f"<base href='{origin}/'>"
+                + f"<link rel='stylesheet' href='{origin}/static/vendor/katex/katex.min.css'>"
+                + "<style>" + lecture_css + "</style></head><body>"
+                + lecture_html + "</body></html>",
+                wait_until="networkidle")
+            pdf_path = out / "lecture-a4.pdf"
+            pdf_page.pdf(path=str(pdf_path), format="A4", print_background=True)
+            pdf_page.close()
+            raw = pdf_path.read_bytes()
+            import re as _re
+            page_count = len(_re.findall(rb"/Type\s*/Page[^s]", raw))
+            report["notes"]["pdf"] = {"path": str(pdf_path), "bytes": len(raw), "pages": page_count}
+            check("A4 PDF 生成且非空",
+                  raw.startswith(b"%PDF") and len(raw) > 20000, len(raw))
+            check("讲义 PDF 至少一页", page_count >= 1, page_count)
 
             check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
             frame_errors = [item for item in report["console"]

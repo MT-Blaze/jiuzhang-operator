@@ -12,13 +12,15 @@
  *
  * 协议：jzo-plugin/1（PLUGIN_SPEC §2.3.3）。宿主发 request，插件回 response；
  * 另有单向 notification（无 id、不等回复、插件必须幂等）。
- * 沙箱只给 allow-scripts：插件文档处于不透明源，碰不到宿主 DOM 与令牌。
+ * 沙箱给 allow-scripts + allow-modals：前者让插件跑起来，后者是用户点「打印 / PDF」时
+ * window.print() 的必要条件（Chromium 会静默丢弃无 allow-modals 沙箱里的 print 调用）。
+ * 依旧不给 allow-same-origin：插件文档处于不透明源，碰不到宿主 DOM 与令牌。
  */
 (function () {
   "use strict";
 
   var PROTOCOL = "jzo-plugin/1";
-  var SANDBOX = "allow-scripts";
+  var SANDBOX = "allow-scripts allow-modals";
   var MAX_LIVE_FRAMES = 3;
   var REQUEST_TIMEOUT_MS = 30000;   // PLUGIN_SPEC §5.1：宿主对插件请求 30 秒超时
   var DOCK_LOG_MAX = 120;

@@ -5,7 +5,9 @@
  * 底座就在右栏给它一个沙箱 iframe；没有插件认领时整块插槽隐藏，
  * 露出底座自带的「AI 副驾」——插件坏了/卸了，右栏也不会变成空白。
  *
- * 边界与画布页签一致：iframe 只给 allow-scripts（不透明源），协议走 jzo-plugin/1，
+ * 边界与画布页签一致：iframe 给 allow-scripts + allow-modals（后者只为插件里
+ * 用户当场点下的 window.print()；Chromium 会静默丢弃缺 allow-modals 的沙箱打印），
+ * 不给 allow-same-origin（不透明源），协议走 jzo-plugin/1，
  * Host API（bank.* / basket.* / draft.*）由 stage.js 统一转发，写令牌不落到插件手里。
  * 同一时刻只挂一个面板：多个插件都声明时，按 canvas 同一套排序取第一个。
  */
@@ -13,7 +15,7 @@
   "use strict";
 
   var SLOT = "sidebar.right";
-  var SANDBOX = "allow-scripts";
+  var SANDBOX = "allow-scripts allow-modals";
 
   var slotEl = document.getElementById("wsContextSlot");
   var bodyEl = document.getElementById("wsContextSlotBody");

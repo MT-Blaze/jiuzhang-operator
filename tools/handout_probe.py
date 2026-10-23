@@ -224,6 +224,63 @@ def main() -> int:
             table_cells = frame_locator.locator(".hp-page-body table td, .hp-page-body table th").count()
             check("Markdown 表格已落成真表格", table_cells >= 8, {"cells": table_cells})
 
+            # ---------- 打印态与 A4 PDF ----------
+            page.emulate_media(media="print")
+            page.wait_for_timeout(300)
+            print_state = frame_locator.locator("body").evaluate(
+                """() => {
+                  const bar = document.querySelector('.hp-bar');
+                  const editor = document.querySelector('.hp-editor');
+                  const pages = Array.from(document.querySelectorAll('.hp-page'));
+                  return {
+                    barHidden: bar ? getComputedStyle(bar).display === 'none' : false,
+                    editorHidden: editor ? getComputedStyle(editor).display === 'none' : false,
+                    pages: pages.length,
+                    pageH: pages.length ? Math.round(pages[0].getBoundingClientRect().height) : 0,
+                    pageW: pages.length ? Math.round(pages[0].getBoundingClientRect().width) : 0
+                  };
+                }"""
+            )
+            result["metrics"]["print"] = print_state
+            check("打印态隐藏编辑栏与工具条",
+                  print_state["barHidden"] and print_state["editorHidden"], print_state)
+            check("打印态纸面为 A4 尺寸（794×1122px）",
+                  print_state["pageW"] == 794 and print_state["pageH"] == 1122, print_state)
+            page.screenshot(path=str(shots / "handout-print.png"))
+            page.emulate_media(media="screen")
+
+            console_before = len(result["console_errors"])
+            frame_locator.locator("body").evaluate("() => window.print()")
+            page.wait_for_timeout(600)
+            ignored = [entry for entry in result["console_errors"][console_before:]
+                       if "Ignored call to 'print()'" in entry]
+            check("沙箱放行 window.print（allow-modals）", not ignored, ignored[:2])
+
+            pages_html = frame_locator.locator(".hp-pages").evaluate(
+                "node => node.outerHTML")
+            pages_css = page.evaluate(
+                """async () => (await (await fetch('/plugin-assets/org.jiuzhang.handout/dist/plugin.css',
+                    {cache: 'no-store'})).text())""")
+            pdf_page = browser.new_page()
+            pdf_page.set_content(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                + f"<base href='{base}/'>"
+                + f"<link rel='stylesheet' href='{base}/static/vendor/katex/katex.min.css'>"
+                + "<style>" + pages_css + "</style></head><body>"
+                + "<div class='hp-root'><div class='hp-main'><div class='hp-preview'>"
+                + pages_html + "</div></div></div></body></html>",
+                wait_until="networkidle")
+            pdf_path = work / "handout-a4.pdf"
+            pdf_page.pdf(path=str(pdf_path), format="A4", print_background=True)
+            pdf_page.close()
+            raw = pdf_path.read_bytes()
+            pdf_pages = len(re.findall(rb"/Type\s*/Page[^s]", raw))
+            result["metrics"]["pdf"] = {"path": str(pdf_path), "bytes": len(raw), "pages": pdf_pages}
+            check("A4 PDF 生成且非空",
+                  raw.startswith(b"%PDF") and len(raw) > 20000, len(raw))
+            check("PDF 页数与纸面页数一致",
+                  pdf_pages == print_state["pages"], f"{pdf_pages}/{print_state['pages']}")
+
             page.wait_for_timeout(300)
             page.screenshot(path=str(shots / "handout-initial.png"))
             page_info = frame_locator.locator("body").evaluate(

@@ -124,9 +124,15 @@ class HandoutLayoutContractTest(unittest.TestCase):
 
     def test_06_print_styles_are_present(self) -> None:
         css = read("plugin.css")
+        printed = css.split("@media print")[1]
         self.assertIn("@media print", css)
         self.assertIn("break-after: page", css)
         self.assertIn("transform: none", css)
+        # A4 纸面必须显式声明纸张，并留出 1px 余量免得挤出空白尾页。
+        self.assertIn("size: A4", printed)
+        self.assertIn("height: 1122px", printed)
+        self.assertIn("overflow: hidden", printed)
+        self.assertIn("window.print()", read("plugin.js"))
 
 
 class HandoutPackageTest(unittest.TestCase):

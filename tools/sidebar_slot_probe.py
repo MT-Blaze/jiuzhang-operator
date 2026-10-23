@@ -9,7 +9,7 @@
 
 判据：
   1. 有插件认领插槽 → 右栏露出插槽、藏起 AI 副驾，标题为插件名；
-  2. 面板 iframe 的 sandbox 恰为 ``allow-scripts``（不得带 allow-same-origin）；
+  2. 面板 iframe 的 sandbox 为 ``allow-scripts allow-modals``（不得带 allow-same-origin）；
   3. ``plugin.activate`` 带 ``{"slot":"sidebar.right"}``，插件回 ready；
   4. 面板能走 Host API（``basket.list`` 往返成功）；
   5. 插件被停用后，右栏回退原生 AI 副驾，插槽整块隐藏；
@@ -227,7 +227,7 @@ def run(tag: str) -> dict:
                   state["copilotHidden"] is True and state["copilotDisplay"] == "none",
                   f"hidden={state['copilotHidden']} display={state['copilotDisplay']}")
             check("插槽标题就是插件名", state["title"] == "右栏探针", state["title"])
-            check("面板 iframe 沙箱恰为 allow-scripts", state["sandbox"] == "allow-scripts", str(state["sandbox"]))
+            check("面板 iframe 沙箱为 allow-scripts allow-modals", state["sandbox"] == "allow-scripts allow-modals", str(state["sandbox"]))
             check("右栏只挂一个面板", state["frameCount"] == 1, str(state["frameCount"]))
 
             panel = page.frame_locator("#wsContextSlotBody iframe")

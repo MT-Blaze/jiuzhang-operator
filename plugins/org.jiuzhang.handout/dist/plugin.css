@@ -350,6 +350,9 @@ html, body {
 
 /* ---------- 打印 ---------- */
 @media print {
+  /* A4 纸面：Chromium 的 A4 可打印高度比 1123px 少半像素，
+     照原尺寸排会多出一张空白尾页，这里统一留 1px 余量并锁高。 */
+  @page { size: A4; margin: 0; }
   html, body { background: #fff; }
   .hp-bar, .hp-editor, .hp-measure, .hp-toast { display: none !important; }
   .hp-main { display: block; }
@@ -358,7 +361,8 @@ html, body {
   .hp-page-wrap { width: auto !important; height: auto !important; break-after: page; }
   .hp-page {
     width: var(--hp-page-w);
-    height: var(--hp-page-h);
+    height: 1122px;
+    overflow: hidden;
     transform: none;
     box-shadow: none;
   }

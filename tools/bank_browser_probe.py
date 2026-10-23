@@ -8,7 +8,7 @@
 bank-browser 与 editor，不碰开发者 ``data/`` 与仓库 ``plugins/``。
 
 判据：
-  1. 插件被后端接受，点击后中栏开出 sandbox=allow-scripts 的舞台页；
+  1. 插件被后端接受，点击后中栏开出 sandbox=allow-scripts allow-modals 的舞台页；
   2. 首屏 12 张卡片、总数 456、抬头全库计数来自活跃 provider；
   3. 左树懒展开：点箭头才向宿主取下一层，点节点按子树筛题且计数对得上；
   4. 全局搜索清掉目录范围，总数与后端 `q=函数` 完全一致；
@@ -149,8 +149,8 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(500)
             snap("10-overview")
 
-            check("舞台 iframe 沙箱恰为 allow-scripts",
-                  handle.get_attribute("sandbox") == "allow-scripts",
+            check("舞台 iframe 沙箱为 allow-scripts allow-modals",
+                  handle.get_attribute("sandbox") == "allow-scripts allow-modals",
                   str(handle.get_attribute("sandbox")))
 
             overview = frame.evaluate("""() => ({

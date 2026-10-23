@@ -454,7 +454,7 @@ com.example.card/
 
 #### 2.3.4 安全边界（宿主兜底，但你别踩线）
 
-- **沙箱**：iframe 带 `sandbox`、无 `allow-same-origin`，插件拿不到宿主 DOM、Cookie、localStorage 或写令牌；与宿主只靠 `postMessage` 说话。
+- **沙箱**：iframe 带 `sandbox`、无 `allow-same-origin`，插件拿不到宿主 DOM、Cookie、localStorage 或写令牌；与宿主只靠 `postMessage` 说话。沙箱为 `allow-scripts allow-modals`：`allow-modals` 只用来放行用户当场点击的 `window.print()`（Chromium 会静默丢弃缺该关键字的沙箱打印），插件不得拿 `alert` / `confirm` / `prompt` 当常规界面。
 - **只读 `dist/`**：资源只从 `/plugin-assets/<id>/dist/...` 发出，只认 `.html` / `.css` / `.js` / `.svg` / `.png` / `.webp` / `.woff2`；包外路径、`..`、符号链接一律 404。
 - **不能联网**：入口页 CSP 为 `default-src 'none'; script-src 'self' <底座源>; style-src 'self' <底座源>; img-src 'self' <底座源>; connect-src 'none'; base-uri 'none'; form-action 'none'`，`fetch` / `XHR` / 远程图片全被拦；图片只能用底座托管路径或 `asset://`。
 - **返回值会被净化**：插件回传的 HTML 过宿主白名单，`<script>`、内联事件属性、`javascript:` 链接、远程样式与 `@import` 都会被剥掉。别依赖它们，写了也白写。
@@ -702,7 +702,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 - **同一时刻只挂一个**：多个插件都声明 `sidebar.right` 时，按与画布同一套排序（`stage.priority`
   高者优先，同优先级按名称）取第一个；停用（`enabled=false`）的插件不参与。
-- **隔离与协议不变**：面板同样是 `sandbox="allow-scripts"` 的沙箱 iframe（不透明源），
+- **隔离与协议不变**：面板同样是 `sandbox="allow-scripts allow-modals"` 的沙箱 iframe（不透明源），
   走 `jzo-plugin/1`；挂载后宿主发 `plugin.activate`，payload 为 `{"slot": "sidebar.right"}`，
   插件照常回 `{ready: true}`。
 - **Host API 与画布页签完全一致**：`bank.*` / `basket.*` / `draft.*` 都可用，写操作仍由宿主代持

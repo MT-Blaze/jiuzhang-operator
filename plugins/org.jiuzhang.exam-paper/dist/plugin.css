@@ -498,6 +498,10 @@ body {
   }
 
   .ep-sheet {
+    /* 297mm 纸面在 Chromium 里会被舍入挤出空白尾页：留 0.5mm 余量并锁死高度。 */
+    height: 296.5mm;
+    min-height: 0;
+    overflow: hidden;
     margin: 0;
     box-shadow: none;
     break-after: page;

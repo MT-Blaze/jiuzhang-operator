@@ -10,7 +10,7 @@
 
 判据：
   1. 底座发现 org.jiuzhang.dashboard、零拒收；左栏第一位就是「数据看板」；
-  2. 点入口开画布页签，iframe 沙箱只有 allow-scripts，activate 回 ready（底栏 plugin.mounted）；
+  2. 点入口开画布页签，iframe 沙箱为 allow-scripts allow-modals，activate 回 ready（底栏 plugin.mounted）；
   3. 四张卡片渲染出真实数字，且总题数与后端 /api/bank/dashboard/stats 逐字一致；
   4. 热力图是 CSS Grid 绿格子：格子总数 = 365 + 周对齐补位，非零格数与后端按日计数一致；
   5. 最近录入 ≤5 条；点击第一条 → 宿主打开活跃题库（core-bank）页签（system.open_bank 走白名单）；
@@ -155,7 +155,7 @@ def run(tag: str) -> dict:
             }
             """.replace("%ID%", PLUGIN_ID))
             check("点入口开出画布页签", f"plugin:{PLUGIN_ID}" in tabs, json.dumps(tabs))
-            check("iframe 沙箱只有 allow-scripts", frame_info["sandbox"] == "allow-scripts",
+            check("iframe 沙箱为 allow-scripts allow-modals", frame_info["sandbox"] == "allow-scripts allow-modals",
                   str(frame_info["sandbox"]))
             check("挂载无故障框", not frame_info["panelError"], frame_info["panelError"])
             snap("10-opened")

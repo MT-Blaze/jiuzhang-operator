@@ -111,9 +111,10 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn("JzoContextPanel.sync(plugins)", WORKSPACE_JS)
 
     def test_05_panel_frame_is_sandboxed(self) -> None:
-        self.assertIn('var SANDBOX = "allow-scripts"', PANEL_JS)
+        sandbox = re.search(r'var SANDBOX = "([^"]+)"', PANEL_JS).group(1)
+        self.assertEqual(sandbox, "allow-scripts allow-modals")
         self.assertIn('frame.setAttribute("sandbox", SANDBOX)', PANEL_JS)
-        self.assertNotIn("allow-same-origin", PANEL_JS, "插件面板不得同时开 allow-same-origin")
+        self.assertNotIn("allow-same-origin", sandbox, "插件面板不得同时开 allow-same-origin")
 
     def test_06_panel_activates_on_the_right_slot(self) -> None:
         self.assertIn('var SLOT = "sidebar.right"', PANEL_JS)

@@ -121,6 +121,7 @@ class LectureStructureTest(unittest.TestCase):
             self.assertIn(selector, printed)
         self.assertIn("break-inside: avoid", printed)
         self.assertIn("beforeprint", read("plugin.js"))
+        self.assertIn("window.print()", read("plugin.js"))
 
     def test_07_empty_basket_still_usable(self) -> None:
         html = read("index.html")

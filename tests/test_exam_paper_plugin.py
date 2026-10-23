@@ -143,9 +143,14 @@ class ExamPaperLayoutContractTest(unittest.TestCase):
     def test_09_print_hides_toolbar_and_breaks_pages(self) -> None:
         css = read("plugin.css")
         js = read("plugin.js")
-        self.assertIn("break-after: page", css)
-        self.assertIn(".ep-top", css.split("@media print")[1], "打印时工具条必须整块隐藏")
+        printed = css.split("@media print")[1]
+        self.assertIn("break-after: page", printed)
+        self.assertIn(".ep-top", printed, "打印时工具条必须整块隐藏")
         self.assertIn('window.addEventListener("beforeprint"', js)
+        # 297mm 在 Chromium 里会被舍入挤出空白尾页；打印态必须留余量并锁高。
+        self.assertIn("height: 296.5mm", printed)
+        self.assertIn("overflow: hidden", printed)
+        self.assertIn("window.print()", js)
 
     def test_10_empty_basket_has_a_way_out(self) -> None:
         html = read("index.html")

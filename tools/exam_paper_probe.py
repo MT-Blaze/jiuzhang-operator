@@ -148,8 +148,8 @@ def run(tag: str) -> dict:
             page.click(f'.ws-plugin-item[data-plugin-id="{PLUGIN_ID}"]')
             page.wait_for_selector("#wsCanvasBody iframe.ws-plugin-frame", timeout=20000)
             frame_handle = page.wait_for_selector("#wsCanvasBody iframe.ws-plugin-frame")
-            check("舞台 iframe 沙箱恰为 allow-scripts",
-                  frame_handle.get_attribute("sandbox") == "allow-scripts",
+            check("舞台 iframe 沙箱为 allow-scripts allow-modals",
+                  frame_handle.get_attribute("sandbox") == "allow-scripts allow-modals",
                   str(frame_handle.get_attribute("sandbox")))
             frame = frame_handle.content_frame()
             frame.wait_for_selector("#epRoot:not([hidden])", timeout=20000)
@@ -241,6 +241,73 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(400)
             after_print = frame.evaluate("() => document.querySelectorAll('.ep-sheet').length")
             check("打印前重排不丢页", after_print >= 1, after_print)
+
+            # ---- PDF 导出：打印态隔离 + 真实 A4 PDF ----
+            frame.click('button[data-mode="card"]')
+            frame.wait_for_selector('.ep-sheet[data-kind="card"]', timeout=10000)
+            page.emulate_media(media="print")
+            page.wait_for_timeout(400)
+            printed_state = frame.evaluate("""() => {
+              const sheet = document.querySelector('.ep-sheet');
+              const top = document.querySelector('.ep-top');
+              const cs = sheet ? getComputedStyle(sheet) : null;
+              return {
+                topHidden: top ? getComputedStyle(top).display === 'none' : false,
+                sheetW: sheet ? Math.round(sheet.getBoundingClientRect().width) : 0,
+                sheets: document.querySelectorAll('.ep-sheet').length,
+                seals: document.querySelectorAll('.ep-seal').length,
+                breakAfter: cs ? (cs.breakAfter || cs.pageBreakAfter) : ''
+              };
+            }""")
+            report["notes"]["print"] = printed_state
+            check("打印态工具条整块隐藏（PDF 不带网页按钮）",
+                  printed_state["topHidden"], printed_state)
+            check("打印态纸面宽 210mm", abs(printed_state["sheetW"] - 794) <= 2,
+                  printed_state["sheetW"])
+            check("打印态每页都有密封线",
+                  printed_state["seals"] == printed_state["sheets"] and printed_state["sheets"] >= 1,
+                  f"{printed_state['seals']}/{printed_state['sheets']}")
+            check("打印态每页强制分页", printed_state["breakAfter"] == "page",
+                  printed_state["breakAfter"])
+            snap("40-print-card")
+            page.emulate_media(media="screen")
+
+            # 沙箱必须放行 window.print()：Chromium 对缺 allow-modals 的沙箱会静默忽略。
+            console_before = len(report["console"])
+            frame.evaluate("() => window.print()")
+            page.wait_for_timeout(600)
+            ignored = [entry for entry in report["console"][console_before:]
+                       if "Ignored call to 'print()'" in entry["text"]]
+            check("沙箱放行 window.print（allow-modals）", not ignored,
+                  json.dumps(ignored[:2], ensure_ascii=False))
+
+            # 用同一份纸面与样式生成 A4 PDF，核对页数和不空白。
+            paper_html = frame.evaluate(
+                "() => { const p = document.getElementById('epPaper'); return p ? p.outerHTML : ''; }")
+            paper_css = page.evaluate(
+                """async () => (await (await fetch('/plugin-assets/org.jiuzhang.exam-paper/dist/plugin.css',
+                    {cache: 'no-store'})).text())""")
+            pdf_page = browser.new_page()
+            origin = f"http://127.0.0.1:{PORT}"
+            pdf_page.set_content(
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                + f"<base href='{origin}/'>"
+                + f"<link rel='stylesheet' href='{origin}/static/vendor/katex/katex.min.css'>"
+                + "<style>" + paper_css + "</style></head><body>"
+                + "<div id='epRoot' class='ep-root'><main class='ep-desk'><div class='ep-zoom'>"
+                + paper_html + "</div></main></div></body></html>",
+                wait_until="networkidle")
+            pdf_path = out / "exam-paper-a4.pdf"
+            pdf_page.pdf(path=str(pdf_path), format="A4", print_background=True)
+            pdf_page.close()
+            raw = pdf_path.read_bytes()
+            import re as _re
+            page_count = len(_re.findall(rb"/Type\s*/Page[^s]", raw))
+            report["notes"]["pdf"] = {"path": str(pdf_path), "bytes": len(raw), "pages": page_count}
+            check("A4 PDF 生成且非空",
+                  raw.startswith(b"%PDF") and len(raw) > 20000, len(raw))
+            check("PDF 页数与纸面页数一致",
+                  page_count == printed_state["sheets"], f"{page_count}/{printed_state['sheets']}")
 
             check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
             frame_errors = [item for item in report["console"]

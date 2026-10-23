@@ -58,8 +58,9 @@ class CanvasMarkupTest(unittest.TestCase):
 class SandboxTest(unittest.TestCase):
     def test_01_iframe_has_no_same_origin(self) -> None:
         self.assertIn('frame.setAttribute("sandbox", SANDBOX)', STAGE)
-        self.assertRegex(STAGE, r'var SANDBOX = "allow-scripts"')
-        self.assertNotIn("allow-same-origin", STAGE, "给了同源就等于把底座 DOM 与令牌交出去")
+        sandbox = re.search(r'var SANDBOX = "([^"]+)"', STAGE).group(1)
+        self.assertEqual(sandbox, "allow-scripts allow-modals")
+        self.assertNotIn("allow-same-origin", sandbox, "给了同源就等于把底座 DOM 与令牌交出去")
         self.assertNotIn("allow-top-navigation", STAGE)
 
     def test_02_sender_is_verified_before_trusting_a_message(self) -> None:
