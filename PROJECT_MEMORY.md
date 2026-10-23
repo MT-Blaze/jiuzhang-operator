@@ -154,3 +154,7 @@
   中文不要走 argv。正则类原型必须用 Write 落成文件再跑，heredoc 会把 `\\` 折叠成 `\` 产出假阴性。
 - 旧库快照：`.scratch-recon-063/legacy.db`（只读复制，含 WAL），现网旧库
   `data/banks/org.jiuzhang.core-bank.db`；两者都不是交付物，`.scratch-recon-063/` 不入 git。
+- **接力坑**：`tools/migrate_bank_v063.py` 依赖 `.scratch-recon-063/legacy.db` 与旧项目的
+  `schools.json` / `curriculums/A.json`，而该目录已被 `.gitignore` 排除（含第三方数据副本，
+  依铁律一不入库）。新会话要重跑灌库，必须先从 `E:\math-question-bank-main\math_question_bank.db`
+  **连同 `-wal` 一起**复制出快照（只复制主文件会读到过期数据），复制后先核 `COUNT(*)=456` 再跑。
