@@ -645,7 +645,14 @@
       ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
       : "";
     state.topicIds = ((document.taxonomy || {}).topic_ids || []).slice();
+    // 出参的 taxonomy 带着主挂载节点的中文名，chip 先按它回显；
+    // 其余挂载点没有可靠名称可取，宁可先显示 id，也不给老师贴错名字。
     state.topicNames = {};
+    if (state.topicIds.length) {
+      var primaryName = document.taxonomy.topic || document.taxonomy.section
+        || document.taxonomy.chapter || document.taxonomy.textbook || "";
+      if (primaryName) state.topicNames[state.topicIds[0]] = primaryName;
+    }
     renderOptions();
     applyType();
     renderTopicChips();
