@@ -3,7 +3,7 @@
 本文件是给 AI 代理与接任者读的**跨会话交接底稿**。只记「不读代码就不知道、且下次会话必须知道」的事；
 能从仓库现状推出的（目录结构、函数签名、依赖清单）一律不写在这里，避免与代码各说各话。
 
-最后更新：2026-10-23 21:45（军令 #06：第三方插件模板 + AI 开发铁律落档并真机取证，见 ADR-008）
+最后更新：2026-10-23 21:58（军令 #06/#07：模板与 AI 铁律落档、宿主坏 id 改为当场回执+底栏记账、协作礼包已推库，见 ADR-008）
 
 ---
 
@@ -414,13 +414,17 @@
 **验证（2026-10-23 实测，非推测）**：`test_03c_template_plugin_zip_passes_full_plugin_contract`
 钉死模板 zip 过全套 `validate_plugin`；`test_03d` 钉死模板请求 id 过得了宿主入口守卫；
 `test_06` 同时钉 `placeholder_plugin.zip` 与 `template-plugin.zip` 都在 `build_release.bat` 的 `/XF` 外；
-全量单测 **440 测全绿**（28 个模块逐个 `python -m unittest`，**必须用 `.venv/Scripts/python.exe`**，
-系统 Python 与 `.venv` 都没装 pytest）。真机探针 `tools/template_plugin_probe.py`
-（Playwright + 隔离 `JZO_DATA_DIR`/`JZO_PLUGINS_DIR`，不碰本机 `data/`、`plugins/`）：
-裸装模板 **15/15**（左栏入口→画布页签→`allow-scripts` 沙箱→`plugin.activate` 回 ready→宿主记
-`plugin.mounted`→`region.dock` 经白名单落底栏→宿主页零 JS 错误）；
-再复制官方 `core-bank` 进隔离目录跑黄金路径 **16/16**，沙箱内实测 **「取到 10 题（共 209 题）」并渲染 10 张卡**。
+全量单测 **441 测全绿**（28 个模块逐个 `.venv\Scripts\python.exe -m unittest tests.<模块>`，
+系统 Python 与 `.venv` 都没装 pytest，见 `AGENTS.md` §7 修订）。真机探针
+`tools/template_plugin_probe.py`（Playwright + 隔离 `JZO_DATA_DIR`/`JZO_PLUGINS_DIR`，
+不碰本机 `data/`、`plugins/`）：裸装模板 **18/18**（左栏入口→画布页签→`allow-scripts` 沙箱→
+`plugin.activate` 回 ready→宿主记 `plugin.mounted`→`bank.review` 当场回执→`region.dock` 经白名单
+落底栏→坏 id 当场回 `BAD_REQUEST_ID` 且底栏记 `plugin.error`→宿主页零 JS 错误）；
+再复制官方 `core-bank` 进隔离目录跑黄金路径 **19/19**，沙箱内实测 **「取到 10 题（共 209 题）」并渲染 10 张卡**。
 **模板不进官方 `plugins.json` 索引**——它是开发起点，不是市场条目。
+协作礼包由 `tools/build_dev_kit.py` 产 `dist/jiuzhang-dev-kit.zip`（81,163 B / 8 条目：指南 +
+两份规范文档 + 模板源码与 zip），脚本内置红线自审：包内出现 `.env`、`*.db`、`data/`
+或密钥形态字符串即自动删包并非零退出。
 
 **探针逼出的两处契约事实（模板原写法违反，已修，见 §2.8）**：
 ① **请求封包 `id` 的守卫**：宿主消息入口用 `^[A-Za-z0-9_-]{1,80}$` 校验 `kind:"request"` 的 `id`。

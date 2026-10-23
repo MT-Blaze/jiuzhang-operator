@@ -680,9 +680,9 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 模板 zip 必须与官方占位包一样通过全套 `validate_plugin` 契约（`tests/test_plugin_install_url.py::
 OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract` 钉死），
 请求 id 过守卫由 `test_03d_template_request_id_passes_host_message_guard` 钉死，
-真机链路（左栏入口→沙箱页签→activate 回执→宿主 API 往返→`region.dock` 落底栏）由
-`tools/template_plugin_probe.py` 取证：2026-10-23 裸装模板 **15/15**，复制官方 `core-bank`
-进隔离目录跑黄金路径 **16/16**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
+真机链路（左栏入口→沙箱页签→activate 回执→宿主 API 往返→`region.dock` 落底栏→坏 id 当场回执与底栏记账）由
+`tools/template_plugin_probe.py` 取证：2026-10-23 裸装模板 **18/18**，复制官方 `core-bank`
+进隔离目录跑黄金路径 **19/19**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线同 §placeholder_plugin.zip）。
 
 ## 3. 多工作区（Workspace）隔离
