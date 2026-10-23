@@ -30,6 +30,8 @@ PROVIDER_CAPABILITY = "bank.provider"
 SHARED_METHODS = (
     "bank.get", "bank.topics", "bank.topic_notes", "bank.review",
     "bank.create", "bank.update", "bank.delete",
+    # 浏览型插件没有自己的题库，读题/入篮都要落在活跃 provider 上
+    "bank.active_list", "bank.active_stats", "basket.active_add",
 )
 # 按页签自身 id 走的方法：题篮与题库浏览天然多库并存，不需要 provider。
 PER_TAB_METHODS = ("bank.list", "bank.stats", "bank.random", "basket.add", "basket.remove")

@@ -340,9 +340,10 @@
   // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
+    "bank.active_list", "bank.active_stats",
     "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
     "bank.dashboard_stats", "bank.dashboard_heatmap",
-    "basket.list", "basket.add", "basket.remove", "basket.clear",
+    "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "draft.save", "draft.load"
   ];
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
@@ -676,8 +677,9 @@
       return;
     }
 
-    if (method === "bank.stats") {
-      fetchJson(base + "/stats").then(done, fail);
+    if (method === "bank.stats" || method === "bank.active_stats") {
+      // 浏览型插件没有自己的题库：显式要「活跃题库」的计数，不拿页签 id 去猜库
+      fetchJson((method === "bank.active_stats" ? sharedBase : base) + "/stats").then(done, fail);
       return;
     }
 
@@ -692,7 +694,7 @@
       return;
     }
 
-    if (method === "bank.list") {
+    if (method === "bank.list" || method === "bank.active_list") {
       var params = new URLSearchParams();
       params.set("grade", filterValue(payload, "grade", 32));
       params.set("difficulty", filterValue(payload, "difficulty", 32));
@@ -709,7 +711,9 @@
       if (search) params.set("q", search);
       params.set("page", String(intValue(payload, "page", 1, 1, 10000)));
       params.set("page_size", String(intValue(payload, "page_size", 20, 1, 100)));
-      fetchJson(base + "/questions?" + params.toString()).then(done, fail);
+      // active_list 与 bank.get / bank.topics 同源：浏览端永远看当前活跃题库
+      var listBase = method === "bank.active_list" ? sharedBase : base;
+      fetchJson(listBase + "/questions?" + params.toString()).then(done, fail);
       return;
     }
 
@@ -771,7 +775,7 @@
       return;
     }
 
-    if (method === "basket.add") {
+    if (method === "basket.add" || method === "basket.active_add") {
       var ids = payload.ids;
       if (typeof payload.id === "string") ids = [payload.id];
       if (!Array.isArray(ids) || !ids.length) {
@@ -791,14 +795,25 @@
         }
         cleanIds.push(id);
       }
-      withWriteToken("/api/basket", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plugin_id: pluginId, ids: cleanIds })
-      }).then(function (result) {
-        done(result);
-        noteBasketChange(tab, "add", result, cleanIds.length);
-      }, fail);
+      // 题篮条目按「题库归属」记账：浏览型插件自己没有库，就要把题目记在当前
+      // 活跃 provider 名下，否则读题篮时找不到全文（与 bank.active_list 同源）。
+      var basketOwner = pluginId;
+      if (method === "basket.active_add") basketOwner = bankProviderId;
+      var addToBasket = function () {
+        withWriteToken("/api/basket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ plugin_id: basketOwner, ids: cleanIds })
+        }).then(function (result) {
+          done(result);
+          noteBasketChange(tab, "add", result, cleanIds.length);
+        }, fail);
+      };
+      if (method === "basket.active_add") {
+        loadBankProvider().then(addToBasket, addToBasket);
+      } else {
+        addToBasket();
+      }
       return;
     }
 

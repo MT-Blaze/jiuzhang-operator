@@ -572,11 +572,14 @@ com.example.card/
 | --- | --- | --- |
 | `bank.list` | 分页取题 | `grade` / `difficulty` / `type` / `chapter` / `textbook` / `q` / `page` / `page_size`；`page_size` ≤100，搜索词 ≤100 字；面板的展示值「全部」由宿主翻译为「不过滤」 |
 | `bank.stats` | 年级/难度/题型/章节计数 | 只读 |
+| `bank.active_list` | 分页取题（**当前活跃题库**） | 参数与 `bank.list` 完全相同；与 `bank.get` / `bank.topics` 同源，供浏览型插件跨库查看，不按页签 id 拼路由 |
+| `bank.active_stats` | 活跃题库的年级/难度/题型/章节计数 | 与 `bank.stats` 同口径，数据源为当前活跃 provider |
 | `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
 | `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
 | `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入底座公共题库**（`org.jiuzhang.core-bank`），插件自报目标无效；ID / 时间戳由底座生成 |
 | `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
 | `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
+| `basket.active_add` | 加题到题篮（记在**当前活跃题库**名下） | 参数与 `basket.add` 相同；供浏览型插件使用，避免题目被记到一个空库名下导致读题篮时取不到全文 |
 | `basket.remove` | 移除一题 | 需要题目 id |
 | `basket.clear` | 清空 | 无参数 |
 
@@ -601,6 +604,7 @@ com.example.card/
 路由口径（缺一即违规）：
 
 - **谁在用**：宿主（`static/js/stage.js`）启动时向 `GET /api/bank/provider` 取「当前活跃 provider」，把 `bank.get` / `bank.topics` / `bank.create` 等**跨页签共享**的通道指向它；`bank.list` / `bank.stats` / `bank.random` 与题篮仍按**页签自己的 plugin.id** 走 `/api/bank/plugins/{plugin_id}/…`，天然多库并存。
+- **浏览型插件怎么取题**：像题库浏览视图这种**自己没有题库**的插件，禁止用 `bank.list` / `bank.stats`（那会按它自己的页签 id 去查一个空库），必须用 `bank.active_list` / `bank.active_stats`——这两条与 `bank.get` / `bank.topics` 同源，永远指向当前活跃 provider。
 - **谁在选**：活跃 provider 落在本机 `data/bank_provider.json`，由用户在【设置与控制台 → 工作区管理】里选；写入接口需带一次性写令牌。
 - **怎么选得上**：被设置的 id 必须**已安装**且**声明了 `bank.provider` 能力**，否则底座拒绝写入并回 400；读取时若配置的 provider 已卸载或不合规，**回退默认 provider 并如实回报 `fallback_reason`**——「插件坏了，底座还能用」（AGENTS §2）。
 - **不许写死**：底座与插件代码里不得出现 `org.jiuzhang.core-bank` 字面量作为路由目标（打包/索引/测试夹具除外）。默认值只允许出现在 `app/core/bank_provider.py` 的 `DEFAULT_PROVIDER_ID` 一处。

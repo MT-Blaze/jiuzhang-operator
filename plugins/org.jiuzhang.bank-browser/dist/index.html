@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>题库浏览</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div class="bb-root" id="bbRoot" hidden>
+    <header class="bb-top">
+      <div class="bb-brand">
+        <h1>题库浏览</h1>
+        <p id="bbScope">左树筛选 · 全局搜索 · 一键入篮</p>
+      </div>
+      <div class="bb-search" role="search">
+        <label class="bb-sr" for="bbSearch">全局搜索题干或解析</label>
+        <input id="bbSearch" type="search" maxlength="100" autocomplete="off"
+               placeholder="搜索题干 / 解析关键词…">
+        <button type="button" id="bbSearchBtn">搜索</button>
+        <button type="button" id="bbClear" class="bb-ghost" hidden>清空</button>
+      </div>
+      <div class="bb-meta">
+        <span id="bbTotal" aria-live="polite">共 0 题</span>
+        <button type="button" id="bbRefresh" class="bb-ghost">刷新</button>
+      </div>
+    </header>
+
+    <div class="bb-body">
+      <aside class="bb-side" aria-label="教材目录">
+        <div class="bb-side-head">
+          <span>教材目录</span>
+          <button type="button" id="bbTreeReset" class="bb-ghost">看全部</button>
+        </div>
+        <div id="bbTree" class="bb-tree" role="tree" aria-label="教材目录树"></div>
+        <p id="bbTreeEmpty" class="bb-hint" hidden>目录为空，可直接用上方搜索。</p>
+      </aside>
+
+      <main class="bb-main">
+        <div class="bb-filterbar">
+          <span class="bb-crumb" id="bbCrumb">全部题目</span>
+          <span class="bb-status" id="bbStatus" aria-live="polite"></span>
+        </div>
+        <div id="bbList" class="bb-list"></div>
+        <p id="bbEmpty" class="bb-empty" hidden>没有匹配的题目。换个关键词，或点「看全部」。</p>
+        <nav class="bb-pager" id="bbPager" aria-label="分页">
+          <button type="button" id="bbPrev">上一页</button>
+          <span id="bbPageInfo">第 1 / 1 页</span>
+          <button type="button" id="bbNext">下一页</button>
+        </nav>
+      </main>
+    </div>
+  </div>
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>

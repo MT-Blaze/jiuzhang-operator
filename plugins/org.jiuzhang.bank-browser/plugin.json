@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.bank-browser",
+  "name": "题库浏览",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "左树右表的题库浏览视图：教材目录逐级筛选、全局搜索、一键加入题篮，并可跳转录题工作台。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["stage.center"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"],
+  "min_host_version": "0.8.2",
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "题库浏览",
+    "priority": 55,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["basket.changed", "system.question_updated", "question.updated"],
+    "publish": ["region.dock", "system.open_editor"]
+  }
+}
