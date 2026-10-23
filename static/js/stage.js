@@ -29,7 +29,8 @@
   // 改题目一律交给录题插件，由宿主负责开页签与注入题号。
   var PUBLISH_ALLOW = [
     "region.dock", "region.left", "region.right", "stage.selection",
-    "system.open_editor", "system.return_from_editor", "system.editor_close"
+    "system.open_editor", "system.return_from_editor", "system.editor_close",
+    "system.open_bank"
   ];
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
@@ -917,6 +918,37 @@
     });
   }
 
+  // ---------- 看板跳转：打开活跃题库页签（system.open_bank） ----------
+  // 与 openEditor 同构：插件只发意图，跳转由宿主完成，目标不写死——
+  // 永远打开「当前活跃 provider」的页签（bankProviderId 启动时已从 /api/bank/provider 解析）。
+  function openBank(payload) {
+    var raw = (payload && payload.raw) || {};
+    var questionId = typeof raw.question_id === "string" ? raw.question_id.slice(0, 80) : "";
+    if (questionId && !ID_RE.test(questionId)) {
+      dock("题库跳转带来的题目 id 不合法，已拒绝。", "bus.denied");
+      return;
+    }
+    var tab = findPluginTab(bankProviderId);
+    if (tab) {
+      activate(tab.key);
+      dock("已跳转到题库" + (questionId ? "（题目 " + questionId + "）" : "") + "。", "stage.bank.opened");
+      return;
+    }
+    fetchJson("/api/plugins").then(function (data) {
+      var plugin = ((data && data.plugins) || []).filter(function (item) {
+        return item.id === bankProviderId;
+      })[0];
+      if (!plugin) {
+        dock("没找到当前题库插件 " + bankProviderId + "，跳转未完成。", "stage.bank.missing");
+        return;
+      }
+      openPlugin(plugin);
+      dock("正在打开题库" + (questionId ? "（题目 " + questionId + "）" : "") + "…", "stage.bank.opened");
+    }, function (error) {
+      dock("读插件清单失败，题库跳转未完成：" + error.message, "stage.bank.missing");
+    });
+  }
+
   // ---------- 页签生命周期 ----------
   function addTab(tab) {
     tab.order = tab.order == null ? ++openSeq : tab.order;
@@ -1119,6 +1151,8 @@
       bus.on("question.updated", function (event) { broadcast("question.updated", event.payload); });
       // 存储端/输出端的「去编辑」→ 宿主开录题页签并注入题号
       bus.on("system.open_editor", function (event) { openEditor(event.payload); });
+      // 看板等只读端的「去题库」→ 宿主开活跃题库页签
+      bus.on("system.open_bank", function (event) { openBank(event.payload); });
       // 录题端「保存并返回」→ 回到发起跳转的那个页签，老师不必自己找
       bus.on("system.return_from_editor", function (event) {
         var raw = (event.payload && event.payload.raw) || {};

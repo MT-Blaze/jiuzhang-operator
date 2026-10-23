@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.dashboard",
+  "name": "数据看板",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "renderer",
+  "description": "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达题库）。全部数据来自活跃题库的只读看板通道。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "min_host_version": "0.9.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["question.card", "stage.center"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"],
+  "stage": {
+    "region": "center",
+    "mode": "embed",
+    "title": "数据看板",
+    "priority": 100,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["ui.params.changed", "question.updated"],
+    "publish": ["region.dock", "system.open_bank"]
+  },
+  "engine": {
+    "host_version": "0.9.0"
+  }
+}
