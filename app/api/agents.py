@@ -41,6 +41,13 @@ class ReviewRequest(BaseModel):
     task_id: str = Field("", description="任务唯一标识")
 
 
+class RefineRequest(BaseModel):
+    question: dict[str, Any] = Field(..., description="当前正在编辑的题目（标准结构或其表单态子集）")
+    instruction: str = Field(..., description="老师对 AI 副驾的一句话指令，如「把题干改得更简洁」")
+    field: str = Field("stem", description="要改写并回填的字段：stem / solution")
+    task_id: str = Field("", description="任务唯一标识")
+
+
 # --- Prompt templates (fixed prefixes for cache friendliness) ---
 CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任务是理解教师指令并返回可执行的操作计划。
 
@@ -94,6 +101,20 @@ REVIEW_SYSTEM_PROMPT = """你是九章算子的审题质检员。给定一道题
 4. 难度合理性：根据解题步骤复杂度判断难度标签是否恰当。
 
 输出格式：JSON 对象，包含 checks 数组与 overall_score (1-5)。
+"""
+
+REFINE_SYSTEM_PROMPT = """你是九章算子录题端的 AI 数学副驾。老师正在编辑一道题，你会看到题目当前内容与一句改写指令。
+
+任务：只改写老师指定的那一个字段（默认题干 stem），其它字段一律不动，也不要改动题目编号或身份。
+
+铁律：
+1. 数学事实不得改错：等式、不等式、定义域、选项与答案所依据的关系必须保持正确；改写题干只能换措辞、调繁简、补条件表述，不能把对的改错、把题改成另一道无解题。
+2. 文本一律 Markdown + LaTeX：行内公式 $...$，独立公式 $$...$$；保留老师原有的公式，不新增未经要求的公式。
+3. 不得编造题目里没有的数值、答案或解析。
+4. 输出「裸 JSON」：不要 markdown 代码围栏、不要 JSON 之外的任何解释。
+
+输出格式（严格 JSON）：
+{"field": "<stem 或 solution>", "<该字段名>": "<改写后的完整文本>", "note": "<一句话说明你改了什么>"}
 """
 
 
@@ -295,6 +316,100 @@ def _plugin_bubble(plugin_calls: list[dict[str, Any]]) -> str:
     if frames:
         text = (text + "\n\n" + frames).strip() if text else frames
     return text
+
+
+def build_refine_user_message(
+    question: dict[str, Any], instruction: str, field: str, original: str
+) -> str:
+    """把「当前题 + 待改字段 + 老师指令」拼成给副驾的 user 消息。
+
+    只带上题目正文的可见字段做上下文，避免把 extensions/令牌一类的东西喂给模型。
+    """
+    snapshot = {
+        key: question.get(key)
+        for key in ("type", "difficulty", "stem", "options", "answer", "solution")
+        if question.get(key) not in (None, "", [], {})
+    }
+    return (
+        "## 当前题目（只读上下文）\n"
+        + json.dumps(snapshot, ensure_ascii=False)
+        + f"\n\n## 需要改写的字段\n{field}\n\n## 该字段当前内容\n{original}\n\n"
+        + "## 老师指令\n" + instruction.strip()
+    )
+
+
+def parse_refine_reply(raw: str, field: str) -> dict[str, str]:
+    """解析副驾返回的裸 JSON，取回改写后的字段文本与一句话说明。
+
+    模型偶尔会把字段名写错或套上围栏；这里剥围栏、认 field/value/text 三种键，
+    取不到非空文本就抛错，交给路由走回显兜底——绝不把空串回填进老师表单。
+    """
+    text = strip_code_fences(raw or "")
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("AI 副驾返回的不是合法 JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("AI 副驾返回的不是 JSON 对象")
+    value = data.get(field) or data.get("value") or data.get("text") or ""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("AI 副驾没有给出可用的改写内容")
+    note = data.get("note")
+    return {"value": value.strip(), "note": note.strip() if isinstance(note, str) else ""}
+
+
+@router.post("/refine", summary="AI 副驾改写单字段（题干/解析）供回填")
+async def agent_refine(body: RefineRequest = Body(...)) -> dict[str, Any]:
+    """按老师指令改写当前题的一个字段，返回改写文本供前端「回填到表单」。
+
+    这里不落库、不覆盖原题：副驾只产出候选文本，老师点「回填」才进表单，
+    点「保存」才经录题插件走宿主写库——改题的主动权始终在老师手里。
+    """
+    field = body.field if body.field in ("stem", "solution") else "stem"
+    original = str((body.question or {}).get(field) or "")
+    task_id = body.task_id
+    user_message = build_refine_user_message(body.question or {}, body.instruction, field, original)
+    try:
+        result = await ai_client.chat_completion(
+            system_prompt=REFINE_SYSTEM_PROMPT,
+            user_message=user_message,
+            temperature=0.3,
+            max_tokens=800,
+        )
+        if result.get("mock"):
+            return {
+                "type": "complete",
+                "data": {
+                    "field": field,
+                    "value": original,
+                    "note": "未配置模型：AI 副驾需在「设置」里配好 Provider 才能真正改写，本次仅原样回显。",
+                    "model": result["model"],
+                    "usage": result["usage"],
+                },
+                "task_id": task_id or "unknown",
+                "mock": True,
+            }
+        reply = parse_refine_reply(result["content"], field)
+        return {
+            "type": "complete",
+            "data": {
+                "field": field,
+                "value": reply["value"],
+                "note": reply["note"],
+                "model": result["model"],
+                "usage": result["usage"],
+            },
+            "task_id": task_id or "unknown",
+            "mock": False,
+        }
+    except Exception as exc:
+        return {
+            "type": "error",
+            "error": {"code": "MODEL_ERROR", "message": str(exc), "retryable": True},
+            "task_id": task_id or "unknown",
+            "fallback": {"field": field, "value": original, "note": "改写失败，已原样回显。", "mock": True},
+            "route": "mock",
+        }
 
 
 @router.post("/chat", summary="对话 Agent")

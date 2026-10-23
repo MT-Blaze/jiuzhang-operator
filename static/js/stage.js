@@ -26,10 +26,10 @@
   // 插件能主动发的事件主题白名单：只许投给底座托管的三区与舞台选区，
   // 不许发 layout.* / ui.params.*（那是底座与人的地盘，防插件反向操控面板）。
   // system.open_editor 是三端分离架构的唯一跨端跳转口：存储端/输出端只读，
-  // 改题目一律交给录题插件，由宿主负责开页签与注入题号（v0.7.0）。
+  // 改题目一律交给录题插件，由宿主负责开页签与注入题号。
   var PUBLISH_ALLOW = [
     "region.dock", "region.left", "region.right", "stage.selection",
-    "system.open_editor", "system.return_from_editor"
+    "system.open_editor", "system.return_from_editor", "system.editor_close"
   ];
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
@@ -316,8 +316,9 @@
   // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
-    "bank.topics", "bank.topic_notes", "bank.review", "bank.update",
-    "basket.list", "basket.add", "basket.remove", "basket.clear"
+    "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
+    "basket.list", "basket.add", "basket.remove", "basket.clear",
+    "draft.save", "draft.load"
   ];
   // 录题插件的写入目标：底座唯一的公共题库。插件自报 plugin_id 一律不认，
   // 防止 A 插件把题塞进 B 插件私有库。
@@ -357,6 +358,47 @@
     }
     tab.relayCount += 1;
     return tab.relayCount <= RELAY_MAX_PER_WINDOW;
+  }
+
+  // ---------- 草稿托管（宿主代持 localStorage） ----------
+  // 沙箱 iframe 是不透明源（只给 allow-scripts，不同源），插件里访问
+  // localStorage 会直接抛 SecurityError——「关 Tab 不丢草稿」这件事只能由同源的宿主来做。
+  // 插件通过 draft.save / draft.load 两个 RPC 把表单态交给宿主，宿主按 plugin.id 分命名空间，
+  // A 插件读不到 B 插件的草稿。这里绝不碰后端：草稿是本地易失态，不进库、不出网。
+  var DRAFT_NS = "jzo.draft.";
+  var DRAFT_KEY_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+  var DRAFT_MAX_CHARS = 200000;
+
+  function draftSlot(pluginId, key) {
+    return DRAFT_NS + pluginId + "." + key;
+  }
+
+  /** 宿主代存草稿：value 为 null 即清除。返回是否成功（配额满/非法键都如实报失败）。 */
+  function saveDraft(pluginId, key, value) {
+    if (!DRAFT_KEY_RE.test(key)) return { ok: false, reason: "草稿键不合法" };
+    var slot = draftSlot(pluginId, key);
+    try {
+      if (value === null || value === undefined) {
+        window.localStorage.removeItem(slot);
+        return { ok: true, cleared: true };
+      }
+      var text = JSON.stringify(value);
+      if (text.length > DRAFT_MAX_CHARS) return { ok: false, reason: "草稿过大，未保存" };
+      window.localStorage.setItem(slot, text);
+      return { ok: true, saved_at: Date.now() };
+    } catch (error) {
+      return { ok: false, reason: String(error && error.name || "存储失败") };
+    }
+  }
+
+  function loadDraft(pluginId, key) {
+    if (!DRAFT_KEY_RE.test(key)) return { ok: false, reason: "草稿键不合法" };
+    try {
+      var text = window.localStorage.getItem(draftSlot(pluginId, key));
+      return { ok: true, value: text ? JSON.parse(text) : null };
+    } catch (error) {
+      return { ok: false, reason: String(error && error.name || "读取失败") };
+    }
   }
 
   function textValue(payload, key, max) {
@@ -451,6 +493,17 @@
     var payload = message.payload;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) payload = {};
 
+    // 草稿走本地托管，不出网、不进库：先于任何 HTTP 分支就地答复。
+    if (method === "draft.save" || method === "draft.load") {
+      var draftKey = textValue(payload, "key", 80);
+      if (method === "draft.save") {
+        done(saveDraft(pluginId, draftKey, payload.value === undefined ? null : payload.value));
+      } else {
+        done(loadDraft(pluginId, draftKey));
+      }
+      return;
+    }
+
     var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
     // 底座公共真题库的唯一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。
     // 录题插件要改真题，不能因为它自己的页签 id 就被引到别的库上（与 bank.create 同规则）。
@@ -532,6 +585,36 @@
         emit("system.question_updated", {
           action: "update",
           id: result && result.id,
+          pluginId: tab.plugin.id
+        });
+        done(result);
+      }, fail);
+      return;
+    }
+
+    if (method === "bank.delete") {
+      // 删题与新增同权：必须先声明 questions:write，令牌仍留在宿主侧，插件不碰。
+      var deletePermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (deletePermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能删除题库题目"
+        });
+        return;
+      }
+      var deleteId = textValue(payload, "id", 80);
+      if (!ID_RE.test(deleteId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "待删除的题目 id 不合法" });
+        return;
+      }
+      withWriteToken(
+        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions/"
+          + encodeURIComponent(deleteId),
+        { method: "DELETE" }
+      ).then(function (result) {
+        emit("system.question_updated", {
+          action: "delete",
+          id: (result && result.id) || deleteId,
           pluginId: tab.plugin.id
         });
         done(result);
@@ -966,7 +1049,7 @@
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
       // 录题插件写库成功 → 题库画布刷新列表（宿主统一生成事件，插件之间不直连）
-      // 录题插件写库成功 → 各端回流刷新（v0.7.0 统一口径 system.question_updated）。
+      // 录题插件写库成功 → 各端回流刷新（统一口径 system.question_updated）。
       // 老插件仍只认 question.updated，两个名字都广播一次，谁订谁生效，不会刷两遍。
       bus.on("system.question_updated", function (event) {
         broadcast("system.question_updated", event.payload);
@@ -985,6 +1068,21 @@
           dock("已回到「" + tab.title + "」。", "stage.editor.returned");
         } else {
           dock("没有可返回的来源页签，留在录题工作台。", "stage.editor.returned");
+        }
+      });
+      // 录题端「保存成功 1 秒后自动收页」：关掉编辑器页签，切回发起端。
+      // 列表的静默回流刷新由前面 system.question_updated 的广播负责，这里只管收尾。
+      bus.on("system.editor_close", function (event) {
+        var raw = (event.payload && event.payload.raw) || {};
+        var origin = typeof raw.plugin_id === "string" ? raw.plugin_id : "";
+        var editor = findPluginTab(EDITOR_PLUGIN_ID);
+        var target = origin && origin !== EDITOR_PLUGIN_ID ? findPluginTab(origin) : null;
+        if (editor) closeTab(editor.key);
+        if (target) {
+          activate(target.key);
+          dock("已保存，录题页自动收起，回到「" + target.title + "」。", "stage.editor.closed");
+        } else {
+          dock("已保存，录题页自动收起。", "stage.editor.closed");
         }
       });
       bus.on("stage.broadcast", function (event) {

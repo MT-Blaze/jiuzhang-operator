@@ -1226,6 +1226,31 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
     return get_question(plugin_id, question_id)
 
 
+def delete_question(plugin_id: str, question_id: str) -> dict[str, Any]:
+    """按题号删除一道题（录题插件删题专用，经宿主带令牌转发到这里）。
+
+    只删这道题本身：``question_topics`` / ``question_sources`` 两张关联表靠
+    ``ON DELETE CASCADE`` 自动摘干净，共享的来源、学校与大纲节点一律保留——
+    删一题不该顺带拆掉别人的考点。删除前确认题目在本库存在，查无即 404。
+    """
+    if not isinstance(question_id, str) or not question_id.startswith("q_"):
+        raise BankNotFound("题目 ID 非法")
+    con = connect(plugin_id)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = con.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+            if cursor.rowcount == 0:
+                raise BankNotFound(f"题库中没有题目 {question_id}")
+        except BaseException:
+            con.rollback()
+            raise
+        con.commit()
+    finally:
+        con.close()
+    return {"id": question_id, "deleted": True}
+
+
 def _remount_topics(con: sqlite3.Connection, question_id: str, taxonomy: dict[str, Any],
                     now: str) -> None:
     """重挂考向：整组换掉 ``question_topics`` 的挂载关系（录题插件改题专用）。

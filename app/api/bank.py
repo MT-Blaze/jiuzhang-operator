@@ -169,6 +169,30 @@ def bank_question(plugin_id: str, question_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.delete(
+    "/api/bank/plugins/{plugin_id}/questions/{question_id}",
+    summary="按题号删除一道题（录题插件删题经宿主写入）",
+    dependencies=[Depends(require_write_token)],
+)
+def bank_delete_question(plugin_id: str, question_id: str) -> dict[str, Any]:
+    """删题只删题目本身：关联表靠外键级联摘净，共享的来源/学校/大纲节点保留。
+
+    删成功后把该题从题篮一并摘掉——否则组卷页会留一条指向已删题目的死引用。
+    题篮摘除失败不影响删除结果（题篮是易失的展示态集合，不是事实来源）。
+    """
+    try:
+        result = bank.delete_question(plugin_id, question_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        basket.remove(question_id)
+    except basket.BasketError:
+        pass
+    return result
+
+
 @router.post(
     "/api/bank/plugins/{plugin_id}/questions",
     status_code=201,

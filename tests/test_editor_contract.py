@@ -53,10 +53,13 @@ class EditorManifestTest(unittest.TestCase):
 
     def test_03_bus_is_minimal(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        # 三端分离：录题是唯一输入端，只多要一个「被跳进来」的订阅与一个「返回」的发布
-        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed", "system.open_editor"])
+        # 三端分离：录题是唯一输入端。v0.7.1 再要两件事——
+        # 订阅一条「AI 副驾回填」下行通知，发布一条「保存后自动收页」信号。
+        self.assertEqual(sorted(manifest["bus"]["subscribe"]),
+                         ["editor.apply_patch", "system.open_editor", "ui.params.changed"])
         self.assertEqual(sorted(manifest["bus"]["publish"]),
-                         ["region.dock", "stage.selection", "system.return_from_editor"])
+                         ["region.dock", "stage.selection", "system.editor_close",
+                          "system.return_from_editor"])
 
 
 class EditorFormContractTest(unittest.TestCase):
@@ -147,6 +150,64 @@ class EditorWriteContractTest(unittest.TestCase):
         self.assertIn("data-render-ms", js)
         self.assertIn("data-katex", js)
         self.assertIn("data-overflow", js)
+
+
+class EditorV071FeatureTest(unittest.TestCase):
+    """v0.7.1 极致好用与进阶：删题、派生变式、草稿托管、选项配图、AI 回填。"""
+
+    def test_01_delete_question_with_confirm(self) -> None:
+        html = read("index.html")
+        js = read("plugin.js")
+        self.assertIn('id="edDelete"', html, "缺【删除本题】按钮")
+        self.assertIn('id="edModal"', html, "缺二次确认弹窗容器")
+        self.assertIn('"bank.delete"', js, "删题必须经宿主转发")
+        self.assertIn("function requestDelete", js)
+        self.assertIn("function openConfirm", js)
+        self.assertIn("不可撤销", js, "删除必须二次确认并说清不可逆")
+        self.assertIn('keyEvent.key === "Escape"', js, "弹窗要能用 Esc 关闭（AGENTS §6）")
+
+    def test_02_save_as_derived_variant(self) -> None:
+        html = read("index.html")
+        js = read("plugin.js")
+        self.assertIn('id="edVariant"', html, "缺【另存为新题（派生变式）】按钮")
+        self.assertIn("function saveAsVariant", js)
+        self.assertIn("派生变式", js)
+        # 派生变式一定是新题：去掉 id 走 create，绝不回写原题
+        self.assertIn("delete question.id", js)
+        self.assertIn('hostCall("bank.create"', js)
+
+    def test_03_option_image_ids_round_trip(self) -> None:
+        js = read("plugin.js")
+        # 回填：从出参读入 image_ids；保存：写回 option.image_ids；配图资产随题保留
+        self.assertIn("option.image_ids", js, "载入时必须读回选项配图")
+        self.assertIn("entry.image_ids = option.imageIds", js, "保存时必须带上选项配图")
+        self.assertIn("state.images", js, "配图资产数组需整体保留")
+        self.assertIn("imageIds", js)
+
+    def test_04_draft_is_hosted_never_localstorage(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('"draft.save"', js, "草稿必须经宿主 RPC 托管")
+        self.assertIn('"draft.load"', js)
+        self.assertIn("function getFormState", js)
+        self.assertIn("function applyFormState", js)
+        self.assertIn("function maybeRestoreDraft", js)
+        self.assertIn("addEventListener(\"beforeunload\", flushDraft)", js)
+        # 关键红线：沙箱不透明源里 localStorage 会抛异常，插件绝不能用它
+        self.assertNotIn("localStorage", js)
+
+    def test_05_auto_close_and_ai_backfill(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("AUTO_CLOSE_MS = 1000", js, "保存后 1 秒自动收页")
+        self.assertIn('"system.editor_close"', js)
+        self.assertIn('message.event === "editor.apply_patch"', js, "必须接收 AI 副驾回填通知")
+        # 回填只进表单，不自动落库：保存权仍在老师手里
+        self.assertIn("请核对后保存", js)
+
+    def test_06_a4_geometry_still_single_truth(self) -> None:
+        # 上一版守住的红线不许被本轮改动带偏
+        css = read("plugin.css")
+        self.assertIn("width: 794px", css)
+        self.assertIn("height: 1123px", css)
 
 
 class EditorPackageTest(unittest.TestCase):

@@ -99,6 +99,30 @@
         <h2>上下文</h2>
       </header>
       <div class="ws-context-body" id="wsContextBody">
+        <section class="ws-section ws-copilot" id="wsCopilot" aria-label="AI 副驾">
+          <div class="ws-copilot-head">
+            <h3>AI 副驾</h3>
+            <span class="ws-copilot-badge">改题干并回填</span>
+          </div>
+          <p class="ws-copilot-ctx" id="cpCtx" role="status" aria-live="polite">尚未打开题目</p>
+          <label class="ws-field ws-copilot-field" for="cpField">
+            <span>改写字段</span>
+            <select id="cpField" class="ws-workspace-select">
+              <option value="stem">题干</option>
+              <option value="solution">解析</option>
+            </select>
+          </label>
+          <label class="sr-only" for="cpInput">给 AI 副驾的指令</label>
+          <textarea id="cpInput" rows="2" spellcheck="false"
+            placeholder="例：把题干改得更简洁，保留 $f(x)$ 记号"></textarea>
+          <div class="ws-copilot-tools">
+            <button type="button" id="cpAsk" class="ws-btn ws-btn-sm ws-btn-primary">让 AI 改写</button>
+            <button type="button" id="cpBackfill" class="ws-btn ws-btn-sm" disabled>回填到表单</button>
+          </div>
+          <div class="ws-copilot-out" id="cpOut" role="log" aria-live="polite"></div>
+          <p class="ws-copilot-hint">先在中栏「录题工作台」打开或编辑一道题，副驾才能感知上下文；改写只回填到表单，点保存才入库。</p>
+        </section>
+
         <section class="ws-section ws-plugin-panel" id="wsPluginPanel" aria-label="插件快捷操作" hidden>
           <div class="ws-plugin-panel-head">
             <h3 id="wsPluginPanelTitle">插件快捷操作</h3>

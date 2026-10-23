@@ -585,7 +585,127 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual([item["key"] for item in created["options"]], ["A", "B", "C", "D"])
         self.assertEqual(created["answer"]["choice_keys"], ["A", "C"])
 
-    # ---------- 人工审核（P0#3） ----------
+    # ---------- v0.7.1：选项配图往返、更新保图、组卷取数、删题只删自身 ----------
+    def _rich_choice(self, **overrides) -> dict:
+        question = self._editor_question(
+            type="single_choice",
+            stem="录题契约题（配图）：如图，$f(x)=x^2-5x+6$ 的零点是（　　）",
+            options=[
+                {"key": "A", "content": "$1$", "image_ids": ["img_probe_a"]},
+                {"key": "B", "content": "$2$"},
+                {"key": "C", "content": "$2$ 或 $3$"},
+                {"key": "D", "content": "$4$"},
+            ],
+            answer={"kind": "choice", "choice_keys": ["C"], "final": "C"},
+        )
+        question["images"] = [
+            {"id": "img_probe_a", "role": "option", "option_key": "A",
+             "uri": "/static/uploads/probe.png", "alt": "函数图象"}
+        ]
+        question.update(overrides)
+        return question
+
+    def test_z5_option_image_ids_round_trip(self) -> None:
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._rich_choice()}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        status, fetched = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}"
+        )
+        self.assertEqual(status, 200)
+        option_a = next(item for item in fetched["options"] if item["key"] == "A")
+        self.assertEqual(option_a.get("image_ids"), ["img_probe_a"], "选项配图必须原样读回")
+        self.assertTrue(any(item["id"] == "img_probe_a" for item in fetched.get("images", [])),
+                        "配图资产数组必须随题落库")
+
+    def test_z6_update_preserves_image_ids(self) -> None:
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._rich_choice()}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        qid = created["id"]
+        # 老师只改题干、不带 options：更新不得把选项配图洗掉（服务端保图）
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{qid}", "PATCH",
+            {"question": {"stem": "录题契约题（配图·已改题干）：$f(x)=x^2-5x+6$ 的零点为（　　）"}},
+            token=True,
+        )
+        self.assertEqual(status, 200)
+        status, fetched = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{qid}")
+        option_a = next(item for item in fetched["options"] if item["key"] == "A")
+        self.assertEqual(option_a.get("image_ids"), ["img_probe_a"], "改题干不得丢选项配图")
+        self.assertTrue(any(item["id"] == "img_probe_a" for item in fetched.get("images", [])))
+
+    def test_z7_basket_expand_returns_full_document(self) -> None:
+        """组卷只吃 basket.expand 的整题：配图、答案、年级必须齐，否则 A4 缺件。"""
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._rich_choice()}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        status, _ = self._request(
+            "/api/basket", "POST", {"plugin_id": PLUGIN_ID, "id": created["id"]}, token=True
+        )
+        self.assertEqual(status, 200)
+        status, basket = self._request("/api/basket?expand=true")
+        self.assertEqual(status, 200)
+        item = next((entry for entry in basket["items"] if entry["question"]["id"] == created["id"]), None)
+        self.assertIsNotNone(item, "入篮题没在展开结果里")
+        document = item["question"]
+        self.assertTrue(any(o.get("image_ids") for o in document["options"]),
+                        "组卷取数必须带选项配图")
+        self.assertEqual(document["answer"]["final"], "C")
+        self.assertEqual(document["grade"], "高一")
+
+    def test_z13_delete_removes_only_the_question(self) -> None:
+        """删题只删这道题：关联级联摘净，共享的大纲节点与他人题不受牵连。"""
+        kx = self.outline["kx"]
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._rich_choice(taxonomy={"topic_ids": [kx]})}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        qid = created["id"]
+
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{qid}", "DELETE", token=True
+        )
+        self.assertEqual(status, 200)
+        status, _ = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{qid}")
+        self.assertEqual(status, 404, "删后应查无此题")
+
+        con = sqlite3.connect(self.seed_path)
+        try:
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM question_topics WHERE question_id = ?", (qid,)).fetchone()[0],
+                0, "删题后考向挂载应级联清空")
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM question_sources WHERE question_id = ?", (qid,)).fetchone()[0],
+                0, "删题后来源关系应级联清空")
+            # 共享节点仍给别的题服务（q_test_000001 仍挂在 kx 上）
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM topics WHERE id = ?", (kx,)).fetchone()[0], 1,
+                "删一题不得删共享大纲节点")
+            self.assertEqual(
+                con.execute("SELECT COUNT(*) FROM question_topics WHERE topic_id = ?", (kx,)).fetchone()[0],
+                1, "只剩那条被删的挂载，原题挂载仍在")
+        finally:
+            con.close()
+
+    def test_z14_delete_requires_token_and_rejects_unknown(self) -> None:
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/q_test_000001", "DELETE"
+        )
+        self.assertEqual(status, 401, "删题必须带令牌")
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/q_does_not_exist", "DELETE", token=True
+        )
+        self.assertEqual(status, 404, "删不存在的题应 404")
+
+
     def test_z8_review_queue_groups_and_filters(self) -> None:
         """不给 flag 就是整条待审队列；分组计数必须与逐题标记自洽。"""
         status, data = self._request(f"/api/bank/plugins/{PLUGIN_ID}/review?page_size=50")

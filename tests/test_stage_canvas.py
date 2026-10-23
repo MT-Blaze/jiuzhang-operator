@@ -163,5 +163,42 @@ class WorkspaceWiringTest(unittest.TestCase):
             self.assertIsNone(re.search(r"\(\?<[=!]", source), f"{name} 含后行断言")
 
 
+class HostRelayV071Test(unittest.TestCase):
+    """v0.7.1 宿主数据通道新增：删题转发、草稿托管、保存后自动收页。"""
+
+    def test_01_bank_delete_is_relayed_with_write_permission(self) -> None:
+        self.assertIn('"bank.delete"', STAGE, "宿主未开放 bank.delete")
+        block = STAGE[STAGE.index('if (method === "bank.delete")'):STAGE.index('if (method === "bank.review")')]
+        self.assertIn("questions:write", block, "删题必须先声明写权限")
+        self.assertIn('method: "DELETE"', block)
+        self.assertIn("CANONICAL_BANK_ID", block, "删题只能作用于底座公共真题库")
+        self.assertIn('action: "delete"', block, "删库成功要广播回流刷新")
+
+    def test_02_draft_is_hosted_locally_never_fetched(self) -> None:
+        # 草稿走宿主本地 localStorage，插件侧不碰；宿主必须先于 HTTP 分支就地答复
+        self.assertIn('"draft.save", "draft.load"', STAGE)
+        block = STAGE[STAGE.index('if (method === "draft.save"'):STAGE.index('var base = "/api/bank/plugins/')]
+        self.assertIn("saveDraft(pluginId", block)
+        self.assertIn("return;", block, "草稿答复必须短路，不发后端请求")
+        self.assertIn("window.localStorage", STAGE, "草稿由同源宿主代持")
+        self.assertIn("DRAFT_NS + pluginId", STAGE, "草稿按插件命名空间隔离，防串库")
+
+    def test_03_editor_close_closes_tab_and_returns(self) -> None:
+        self.assertIn('"system.editor_close"', STAGE, "system.editor_close 未进发布白名单")
+        handler = STAGE[STAGE.index('bus.on("system.editor_close"'):STAGE.index('bus.on("stage.broadcast"')]
+        self.assertIn("findPluginTab(EDITOR_PLUGIN_ID)", handler)
+        self.assertIn("closeTab(editor.key)", handler, "保存后要真正关掉编辑页签")
+        self.assertIn("activate(target.key)", handler, "关掉后切回发起端")
+
+    def test_04_copilot_is_hosted_in_right_region(self) -> None:
+        # 右侧 AI 副驾是底座托管区（不是插件 DOM）：订阅选区感知上下文，回填走广播
+        self.assertIn('id="wsCopilot"', HTML)
+        self.assertIn('id="cpBackfill"', HTML)
+        self.assertIn('JzoBus.on("stage.selection"', WORKSPACE)
+        self.assertIn('"/api/agent/refine"', WORKSPACE)
+        self.assertIn('broadcast("editor.apply_patch"', WORKSPACE)
+        self.assertIn("org.jiuzhang.editor", WORKSPACE, "副驾只认录题插件的选区")
+
+
 if __name__ == "__main__":
     unittest.main()

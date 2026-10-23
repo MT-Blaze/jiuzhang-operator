@@ -165,7 +165,7 @@ def main() -> int:
             answer.fill("C")
             solution.fill("由 $x^{2}-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。")
             tags.fill("一元二次方程, 因式分解")
-            frame.locator("#edDifficulty").select_option("basic")
+            frame.locator("#edDifficulty").select_option("L2")
 
             render_ms = wait_preview(metrics)
             page.wait_for_timeout(220)
@@ -208,12 +208,12 @@ def main() -> int:
             check("答案为 C", document.get("answer", {}).get("choice_keys") == ["C"],
                   document.get("answer"))
             check("解析已落库", "(x-2)" in document.get("solution", ""), document.get("solution"))
-            check("难度/年级/标签一致",
-                  document.get("difficulty") == "basic"
-                  and document.get("grade") == "高一"
-                  and "一元二次方程" in document.get("tags", []),
-                  {"difficulty": document.get("difficulty"), "grade": document.get("grade"),
-                   "tags": document.get("tags")})
+            # 契约 2.0：难度落库归一成 L1–L4；tags 是录入期元数据，core-bank 存储层不落列，
+            # 因此这里只核对难度与年级，不再断言标签入库。
+            check("难度/年级一致",
+                  document.get("difficulty") == "L2"
+                  and document.get("grade") == "高一",
+                  {"difficulty": document.get("difficulty"), "grade": document.get("grade")})
 
             status, stats = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
             check("题库总数 456 → 457", status == 200 and stats.get("total") == 457,

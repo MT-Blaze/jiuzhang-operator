@@ -55,6 +55,16 @@
   var dockClearBtn = document.getElementById("wsDockClear");
   var dockLog = document.getElementById("wsDockLog");
 
+  // 右侧 AI 副驾（v0.7.1）：感知录题工作台当前题，改写一个字段后回填到表单。
+  var cpCtx = document.getElementById("cpCtx");
+  var cpField = document.getElementById("cpField");
+  var cpInput = document.getElementById("cpInput");
+  var cpAsk = document.getElementById("cpAsk");
+  var cpBackfill = document.getElementById("cpBackfill");
+  var cpOut = document.getElementById("cpOut");
+  var editorContext = { id: "", question: null, at: 0 };
+  var pendingPatch = null;
+
   // ============ 对话流：气泡工厂 ============
   var CARD_SEQ = 0;
 
@@ -1074,6 +1084,103 @@
     }
   }
 
+  // ============ 右侧 AI 副驾：感知录题当前题 → 改写字段 → 回填表单 ============
+  function cpStatus(text) { if (cpCtx) cpCtx.textContent = text; }
+
+  function cpRefresh() {
+    var hasQ = Boolean(editorContext.question);
+    if (cpAsk) cpAsk.disabled = !hasQ;
+    if (cpBackfill) cpBackfill.disabled = !(hasQ && pendingPatch);
+  }
+
+  function cpAskNow() {
+    if (!editorContext.question) { cpStatus("先在中栏打开或编辑一道题"); return; }
+    var instruction = clampText(cpInput && cpInput.value, 400);
+    if (!instruction) { cpStatus("请先写一句改写指令"); return; }
+    var field = cpField && cpField.value === "solution" ? "solution" : "stem";
+    var targetId = editorContext.id;
+    if (cpAsk) { cpAsk.disabled = true; cpAsk.setAttribute("aria-busy", "true"); cpAsk.textContent = "改写中…"; }
+    cpStatus("AI 副驾改写中…");
+    pendingPatch = null; cpRefresh();
+    fetch("/api/agent/refine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: editorContext.question, instruction: instruction,
+        field: field, task_id: "cp_" + Date.now()
+      })
+    })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (response) {
+        var env = response && response.data ? response.data : (response && response.fallback);
+        var value = env && env.value;
+        var note = env && env.note;
+        if (typeof value !== "string" || !value.trim()) {
+          cpStatus("AI 没有给出可用的改写内容");
+          return;
+        }
+        pendingPatch = { id: targetId, field: field, value: value };
+        if (cpOut) cpOut.textContent = (note ? note + "\n\n" : "") + value;
+        cpStatus((field === "solution" ? "解析" : "题干") + "改写完成，点「回填到表单」");
+      })
+      .catch(function (err) { cpStatus("副驾调用失败：" + err.message); })
+      .then(function () {
+        if (cpAsk) { cpAsk.disabled = false; cpAsk.removeAttribute("aria-busy"); cpAsk.textContent = "让 AI 改写"; }
+        cpRefresh();
+      });
+  }
+
+  function cpBackfillNow() {
+    if (!pendingPatch) return;
+    if (window.JzoStage && typeof window.JzoStage.broadcast === "function") {
+      window.JzoStage.broadcast("editor.apply_patch", {
+        id: pendingPatch.id, field: pendingPatch.field, value: pendingPatch.value
+      });
+      cpStatus("已回填到录题表单，请核对后保存");
+      dockLine("AI 副驾把改写的" + (pendingPatch.field === "solution" ? "解析" : "题干") +
+        "回填到了录题工作台", "copilot.apply");
+    } else {
+      cpStatus("当前没有可回填的录题页签");
+    }
+    cpRefresh();
+  }
+
+  function cpResetContext() {
+    editorContext = { id: "", question: null, at: 0 };
+    pendingPatch = null;
+    cpStatus("尚未打开题目");
+    if (cpOut) cpOut.textContent = "";
+    cpRefresh();
+  }
+
+  function wireCopilot() {
+    if (!cpAsk) return;
+    cpRefresh();
+    if (window.JzoBus && typeof window.JzoBus.on === "function") {
+      // 录题工作台每次重绘都会经 stage.selection 上抛当前题目；副驾只认录题插件的选区。
+      window.JzoBus.on("stage.selection", function (event) {
+        var p = (event.payload && event.payload.raw) || {};
+        if (p.pluginId !== "org.jiuzhang.editor") return;
+        editorContext.question = p.question || null;
+        editorContext.id = typeof p.editingId === "string" ? p.editingId : "";
+        editorContext.at = Date.now();
+        pendingPatch = null;
+        cpStatus(editorContext.question
+          ? (editorContext.id ? "正在编辑 " + editorContext.id : "正在录入新题")
+          : "尚未打开题目");
+        if (cpOut) cpOut.textContent = "";
+        cpRefresh();
+      });
+      // 录题页签关闭后，副驾回到「未打开」，不把旧题当上下文继续改写。
+      window.JzoBus.on("stage.tab.closed", function (event) {
+        var key = (event.payload && event.payload.key) || "";
+        if (key.indexOf("org.jiuzhang.editor") >= 0) cpResetContext();
+      });
+    }
+    cpAsk.addEventListener("click", cpAskNow);
+    if (cpBackfill) cpBackfill.addEventListener("click", cpBackfillNow);
+  }
+
   function wireDock() {
     if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
     window.JzoBus.on("region.dock", function (event) {
@@ -2020,6 +2127,7 @@
   // ============ 初始化 ============
   // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
   wireDock();
+  wireCopilot();
   setStage("自由对话");
   markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");

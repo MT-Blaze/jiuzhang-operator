@@ -59,21 +59,35 @@
   var topicChipsEl = document.getElementById("edTopicChips");
   var editingBarEl = document.getElementById("edEditing");
   var editingIdEl = document.getElementById("edEditingId");
+  var deleteEl = document.getElementById("edDelete");
+  var variantEl = document.getElementById("edVariant");
+  var modalEl = document.getElementById("edModal");
+  var modalOkEl = document.getElementById("edModalOk");
+  var modalCancelEl = document.getElementById("edModalCancel");
+  var modalTextEl = document.getElementById("edModalText");
 
   var pending = new Map();
   var requestSeq = 0;
   var previewTimer = 0;
   var toastTimer = 0;
+  var draftTimer = 0;
+  var closeTimer = 0;
+  var lastDraftAt = 0;
+  var modalPrevFocus = null;
   var mathCache = new Map();
   var scale = 1;
   var dirtySinceSave = false;
 
+  var DRAFT_THROTTLE_MS = 1200;
+  var AUTO_CLOSE_MS = 1000;
+  var NEW_DRAFT_KEY = "__new__";
+
   var state = {
     options: [
-      { key: "A", content: "" },
-      { key: "B", content: "" },
-      { key: "C", content: "" },
-      { key: "D", content: "" }
+      { key: "A", content: "", imageIds: [] },
+      { key: "B", content: "", imageIds: [] },
+      { key: "C", content: "", imageIds: [] },
+      { key: "D", content: "", imageIds: [] }
     ],
     // 编辑态（三端分离：录题是唯一输入端，题库/组卷/讲义点「去编辑」跳进来）
     editingId: null,
@@ -81,6 +95,7 @@
     editingFlags: [],
     topicIds: [],
     topicNames: {},
+    images: [],
     tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" }
   };
 
@@ -247,6 +262,13 @@
         dirtySinceSave = true;
         schedulePreview();
       });
+      row.appendChild(input);
+      var imageCount = (option.imageIds || []).length;
+      if (imageCount) {
+        var badge = el("span", "ed-option-image", "配图 " + imageCount);
+        badge.title = "该选项带 " + imageCount + " 张配图资产（保存时随题保留）";
+        row.appendChild(badge);
+      }
       var remove = el("button", "ed-option-remove", "×");
       remove.type = "button";
       remove.setAttribute("aria-label", "删除选项 " + option.key);
@@ -258,7 +280,6 @@
         renderOptions();
         schedulePreview();
       });
-      row.appendChild(input);
       row.appendChild(remove);
       optionsEl.appendChild(row);
     });
@@ -363,6 +384,9 @@
         var content = el("span");
         appendRich(content, option.content || "（未填）");
         item.appendChild(content);
+        if ((option.imageIds || []).length) {
+          item.appendChild(el("span", "ed-opt-img", "（配图 " + option.imageIds.length + "）"));
+        }
         list.appendChild(item);
       });
       body.appendChild(list);
@@ -407,19 +431,15 @@
   }
 
   function emitDraft(question) {
-    if (!question) {
-      try {
-        window.parent.postMessage({
-          protocol: PROTOCOL, kind: "notification", event: "stage.selection",
-          payload: { question: null, pluginId: PLUGIN_ID }
-        }, "*");
-      } catch (error) { /* 忽略 */ }
-      return;
-    }
+    var base = {
+      pluginId: PLUGIN_ID,
+      editingId: state.editingId || "",
+      from: state.editingFrom || ""
+    };
     try {
       window.parent.postMessage({
         protocol: PROTOCOL, kind: "notification", event: "stage.selection",
-        payload: { question: question, pluginId: PLUGIN_ID }
+        payload: Object.assign({ question: question || null }, base)
       }, "*");
     } catch (error) { /* 忽略 */ }
   }
@@ -429,6 +449,7 @@
     if (savedEl) savedEl.hidden = true;
     window.clearTimeout(previewTimer);
     previewTimer = window.setTimeout(renderPreview, PREVIEW_DEBOUNCE_MS);
+    queueDraftSave();
   }
 
   function fitPreview() {
@@ -535,11 +556,15 @@
     if (state.topicIds.length) question.taxonomy = { topic_ids: state.topicIds.slice(0, 8) };
     var solution = solutionEl.value.trim();
     if (solution) question.solution = solution;
+    if (state.images.length) question.images = state.images.slice();
 
     if (isChoice()) {
       var keys = state.options.map(function (option) { return option.key; });
       var options = state.options.map(function (option, index) {
-        return { key: keys[index], content: option.content.trim() };
+        var entry = { key: keys[index], content: option.content.trim() };
+        // 选项配图必须随表单一起回写：老师只改文字，绝不能把选项上已挂的图片资产洗掉。
+        if (option.imageIds && option.imageIds.length) entry.image_ids = option.imageIds.slice();
+        return entry;
       });
       if (strict) {
         if (options.length < 2) throw new Error("选择题至少要有两个选项");
@@ -602,6 +627,7 @@
     state.editingFrom = from || "";
     returnEl.hidden = !id;
     editingBarEl.hidden = !id;
+    if (deleteEl) deleteEl.hidden = !id;
     if (id) editingIdEl.textContent = id;
     setSaving(false);
   }
@@ -626,37 +652,134 @@
     return resolved;
   }
 
-  function fillForm(document) {
-    typeEl.value = document.type;
-    diffEl.value = document.difficulty;
-    gradeEl.value = document.grade || "高一";
-    stemEl.value = document.stem || "";
-    solutionEl.value = document.solution || "";
-    tagsEl.value = "";
-    var options = document.options || [];
-    state.options = options.length
-      ? options.map(function (option) { return { key: option.key, content: option.content }; })
+  function draftTargetKey() {
+    return state.editingId || NEW_DRAFT_KEY;
+  }
+
+  /** 表单态：草稿托管与派生变式都基于它，字段与 DOM 一一对应，可整体存取。 */
+  function getFormState() {
+    return {
+      targetKey: draftTargetKey(),
+      editingId: state.editingId || "",
+      from: state.editingFrom || "",
+      type: currentType(),
+      difficulty: diffEl.value,
+      grade: gradeEl.value,
+      stem: stemEl.value,
+      solution: solutionEl.value,
+      answerText: answerEl.value,
+      tagsText: tagsEl.value,
+      options: state.options.map(function (option) {
+        return { key: option.key, content: option.content, imageIds: (option.imageIds || []).slice() };
+      }),
+      topicIds: state.topicIds.slice(),
+      topicNames: Object.assign({}, state.topicNames),
+      images: state.images.slice()
+    };
+  }
+
+  var TYPE_VALUES = ["single_choice", "multiple_choice", "fill_blank", "solution"];
+
+  /** keepTarget=true：只灌内容，不动编辑目标（用于载入原题 / 回填 / 草稿覆盖同一题）。 */
+  function applyFormState(source, keepTarget) {
+    if (!source || typeof source !== "object") return false;
+    if (!keepTarget) setEditMode(source.editingId || null, source.from || "");
+    if (TYPE_VALUES.indexOf(source.type) >= 0) typeEl.value = source.type;
+    if (DIFF_LABEL[source.difficulty]) diffEl.value = source.difficulty;
+    if (["高一", "高二", "高三"].indexOf(source.grade) >= 0) gradeEl.value = source.grade;
+    stemEl.value = String(source.stem || "");
+    solutionEl.value = String(source.solution || "");
+    answerEl.value = String(source.answerText || "");
+    tagsEl.value = String(source.tagsText || "");
+    var options = Array.isArray(source.options) && source.options.length >= 2
+      ? source.options
       : [
         { key: "A", content: "" }, { key: "B", content: "" },
         { key: "C", content: "" }, { key: "D", content: "" }
       ];
-    var answer = document.answer || null;
-    answerEl.value = answer
-      ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
-      : "";
-    state.topicIds = ((document.taxonomy || {}).topic_ids || []).slice();
-    // 出参的 taxonomy 带着主挂载节点的中文名，chip 先按它回显；
-    // 其余挂载点没有可靠名称可取，宁可先显示 id，也不给老师贴错名字。
-    state.topicNames = {};
-    if (state.topicIds.length) {
-      var primaryName = document.taxonomy.topic || document.taxonomy.section
-        || document.taxonomy.chapter || document.taxonomy.textbook || "";
-      if (primaryName) state.topicNames[state.topicIds[0]] = primaryName;
-    }
+    state.options = options.map(function (option) {
+      return { key: option.key, content: option.content || "", imageIds: (option.imageIds || []).slice() };
+    });
+    state.topicIds = (source.topicIds || []).slice(0, 8);
+    state.topicNames = Object.assign({}, source.topicNames || {});
+    state.images = (source.images || []).slice();
     renderOptions();
     applyType();
     renderTopicChips();
     renderPreview();
+    return true;
+  }
+
+  /** 题库出参 → 表单态：与 getFormState 口径一致，回填与草稿走同一套字段。 */
+  function documentToFormSource(document, editingId, from) {
+    var answer = document.answer || null;
+    return {
+      editingId: editingId || "",
+      from: from || "",
+      type: document.type,
+      difficulty: document.difficulty,
+      grade: document.grade || "高一",
+      stem: document.stem || "",
+      solution: document.solution || "",
+      answerText: answer
+        ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
+        : "",
+      tagsText: (document.tags || []).join(", "),
+      options: (document.options || []).map(function (option) {
+        return { key: option.key, content: option.content || "", imageIds: (option.image_ids || []).slice() };
+      }),
+      topicIds: ((document.taxonomy || {}).topic_ids || []).slice(),
+      topicNames: {},
+      images: (document.images || []).slice()
+    };
+  }
+
+  function fillForm(document) {
+    var source = documentToFormSource(document, state.editingId, state.editingFrom);
+    // 出参的 taxonomy 带着主挂载节点的中文名，chip 先按它回显；
+    // 其余挂载点没有可靠名称可取，宁可先显示 id，也不给老师贴错名字。
+    if (source.topicIds.length) {
+      var primaryName = document.taxonomy.topic || document.taxonomy.section
+        || document.taxonomy.chapter || document.taxonomy.textbook || "";
+      if (primaryName) source.topicNames[source.topicIds[0]] = primaryName;
+    }
+    applyFormState(source, true);
+  }
+
+  // ---------- 草稿托管（经宿主代持，插件不碰本地存储） ----------
+  function persistDraft() {
+    if (!dirtySinceSave) return;   // 干净态（刚保存 / 刚载入原题）不留草稿
+    var key = draftTargetKey();
+    hostCall("draft.save", { key: key, value: getFormState() }).then(function (res) {
+      if (res && res.saved_at) lastDraftAt = res.saved_at;
+    }, function () { /* 存不下不拦老师录题，静默 */ });
+  }
+
+  function queueDraftSave() {
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(persistDraft, DRAFT_THROTTLE_MS);
+  }
+
+  function flushDraft() {
+    window.clearTimeout(draftTimer);
+    persistDraft();
+  }
+
+  function clearDraft(key) {
+    hostCall("draft.save", { key: key || draftTargetKey(), value: null }).then(function () {
+    }, function () {});
+  }
+
+  function maybeRestoreDraft(id) {
+    hostCall("draft.load", { key: id || NEW_DRAFT_KEY }).then(function (res) {
+      var draft = res && res.value;
+      if (!draft) return;
+      if (!applyFormState(draft, true)) return;
+      dirtySinceSave = true;
+      if (savedEl) savedEl.hidden = true;
+      toast("已恢复未保存的草稿（关页前自动留存）");
+      dock("已从宿主草稿箱恢复未保存内容");
+    }, function () { /* 读草稿失败按无草稿处理 */ });
   }
 
   function loadForEdit(id, from) {
@@ -671,6 +794,8 @@
       fillForm(document);
       savedEl.hidden = true;
       dirtySinceSave = false;
+      // 载入原题后再查一次草稿箱：老师上次没保存就关了页，这里把内容找回来。
+      maybeRestoreDraft(id);
       var hint = state.editingFlags.length
         ? "这道题带着 " + state.editingFlags.length + " 个待审标记：" + state.editingFlags.join("、")
         : "已载入原题，改完点「保存并返回」";
@@ -689,6 +814,9 @@
     savedEl.textContent = (updating ? "已保存 · " : "已入库 · ") + id;
     savedEl.setAttribute("data-id", id || "");
     dirtySinceSave = false;
+    // 保存成功即作废该目标的草稿：老师拿到的是已落库的内容，不该再恢复旧草稿。
+    clearDraft(updating ? (id || state.editingId) : NEW_DRAFT_KEY);
+    window.clearTimeout(draftTimer);
     state.editingFlags = ((result && result.extensions) || {})["org.jiuzhang.core-bank.migration"]
       ? (result.extensions["org.jiuzhang.core-bank.migration"].flags || [])
       : [];
@@ -697,8 +825,18 @@
     metricsEl.setAttribute("data-saved-id", id || "");
     if (updating) {
       editingBarEl.textContent = "已保存 " + id + " · 各端已回流刷新";
-      if (state.editingFrom) publish("system.return_from_editor", { plugin_id: state.editingFrom });
     }
+    // 极致好用：保存后 Toast 停留，1 秒后自动收起编辑页、切回来源列表；
+    // 列表的后台静默刷新由宿主对 system.question_updated 的广播负责，无白屏。
+    if (state.editingFrom) scheduleAutoClose(state.editingFrom);
+  }
+
+  /** 保存成功后 1 秒自动收页：交回宿主关页签并切回发起端。 */
+  function scheduleAutoClose(origin) {
+    window.clearTimeout(closeTimer);
+    closeTimer = window.setTimeout(function () {
+      publish("system.editor_close", { plugin_id: origin, id: state.editingId || "" });
+    }, AUTO_CLOSE_MS);
   }
 
   function save() {
@@ -725,6 +863,101 @@
       setSaving(false);
       toast("保存失败：" + error.message, "error");
       dock("录题保存失败：" + error.message);
+    });
+  }
+
+  /** 另存为派生变式：拿当前表单内容新建一题（底座重新签发 id），绝不覆盖原题。 */
+  function saveAsVariant() {
+    var question;
+    try {
+      question = buildQuestion(true);
+    } catch (error) {
+      toast(error.message, "error");
+      dock("派生变式被拦下：" + error.message);
+      return;
+    }
+    // 派生变式一定是「新题」：去掉可能残留的 id 与审核清标，交底座重新签发。
+    delete question.id;
+    delete question.clear_flags;
+    setSaving(true);
+    hostCall("bank.create", { question: question }).then(function (result) {
+      setSaving(false);
+      var id = result && result.id;
+      var parent = state.editingId || "";
+      // 切到新变式的编辑态：后续保存改的是这道新题，不再回写原题。
+      state.images = (result && result.images) || state.images;
+      setEditMode(id, state.editingFrom);
+      clearDraft(NEW_DRAFT_KEY);
+      dirtySinceSave = false;
+      savedEl.hidden = false;
+      savedEl.textContent = "已派生 · " + id;
+      savedEl.setAttribute("data-id", id || "");
+      metricsEl.setAttribute("data-saved-id", id || "");
+      toast(parent ? "已生成派生变式：" + id + "（原题 " + parent + " 未改动）" : "已生成新题：" + id);
+      dock("派生变式已入库（" + id + "）" + (parent ? "，源自 " + parent + " 且原题保持不变" : ""));
+    }, function (error) {
+      setSaving(false);
+      toast("派生失败：" + error.message, "error");
+      dock("另存为派生变式失败：" + error.message);
+    });
+  }
+
+  // ---------- 删除本题（二次确认） ----------
+  function openConfirm(text, onOk) {
+    if (!modalEl) { onOk(); return; }
+    modalPrevFocus = document.activeElement;
+    if (modalTextEl) modalTextEl.textContent = text;
+    modalEl.hidden = false;
+    var overlay = modalEl.querySelector(".ed-modal") || modalEl;
+    overlay.setAttribute("aria-hidden", "false");
+    var ok = function () {
+      closeConfirm();
+      onOk();
+    };
+    if (modalOkEl) {
+      var newOk = modalOkEl.cloneNode(true);
+      modalOkEl.parentNode.replaceChild(newOk, modalOkEl);
+      modalOkEl = newOk;
+      modalOkEl.addEventListener("click", ok);
+    }
+    if (modalCancelEl) {
+      modalCancelEl.onclick = closeConfirm;
+    }
+    if (modalOkEl) modalOkEl.focus();
+  }
+
+  function closeConfirm() {
+    if (!modalEl) return;
+    modalEl.hidden = true;
+    var overlay = modalEl.querySelector(".ed-modal") || modalEl;
+    overlay.setAttribute("aria-hidden", "true");
+    if (modalPrevFocus && typeof modalPrevFocus.focus === "function") modalPrevFocus.focus();
+    modalPrevFocus = null;
+  }
+
+  function requestDelete() {
+    if (!state.editingId) {
+      toast("当前没有正在编辑的题目，无需删除", "error");
+      return;
+    }
+    var id = state.editingId;
+    openConfirm("确定删除题目 " + id + " 吗？此操作会把它从本地真题库移除，且不可撤销。", function () {
+      setSaving(true);
+      hostCall("bank.delete", { id: id }).then(function () {
+        setSaving(false);
+        dirtySinceSave = false;
+        clearDraft(id);
+        window.clearTimeout(closeTimer);
+        toast("已删除：" + id);
+        dock("题目已删除（" + id + "），各端自动回流刷新");
+        var origin = state.editingFrom;
+        setEditMode(null, "");
+        if (origin) publish("system.editor_close", { plugin_id: origin, id: id });
+      }, function (error) {
+        setSaving(false);
+        toast("删除失败：" + error.message, "error");
+        dock("删除题目失败：" + error.message);
+      });
     });
   }
 
@@ -855,10 +1088,12 @@
   }
 
   function resetForm() {
+    var abandoned = draftTargetKey();
     setEditMode(null, "");
     state.editingFlags = [];
     state.topicIds = [];
     state.topicNames = {};
+    state.images = [];
     stemEl.value = "";
     answerEl.value = "";
     solutionEl.value = "";
@@ -867,15 +1102,18 @@
     diffEl.value = "L2";
     gradeEl.value = "高一";
     state.options = [
-      { key: "A", content: "" },
-      { key: "B", content: "" },
-      { key: "C", content: "" },
-      { key: "D", content: "" }
+      { key: "A", content: "", imageIds: [] },
+      { key: "B", content: "", imageIds: [] },
+      { key: "C", content: "", imageIds: [] },
+      { key: "D", content: "", imageIds: [] }
     ];
     renderOptions();
     applyType();
     renderTopicChips();
     renderPreview();
+    dirtySinceSave = false;
+    window.clearTimeout(draftTimer);
+    clearDraft(abandoned);
     if (savedEl) {
       savedEl.hidden = true;
       savedEl.textContent = "";
@@ -911,6 +1149,28 @@
         if (typeof values.grade === "string" && values.grade) gradeEl.value = values.grade;
         if (DIFF_LABEL[values.difficulty]) diffEl.value = values.difficulty;
         schedulePreview();
+        return;
+      }
+      if (message.event === "editor.apply_patch") {
+        // 右侧 AI 副驾改写题干/解析后，老师点「回填」由宿主把候选文本推回来。
+        var patch = message.payload || {};
+        var patchId = typeof patch.id === "string" ? patch.id : "";
+        var field = patch.field === "solution" ? "solution" : "stem";
+        var text = typeof patch.value === "string" ? patch.value : "";
+        if (patchId && patchId !== (state.editingId || "") ) {
+          // 目标题号对不上：老师可能已经换了题，绝不回填到错的题上。
+          toast("AI 改写结果与当前编辑的题目不一致，已忽略回填", "error");
+          return;
+        }
+        if (!text) { toast("AI 没有给出可用内容", "error"); return; }
+        if (field === "solution") solutionEl.value = text;
+        else stemEl.value = text;
+        dirtySinceSave = true;
+        renderPreview();
+        queueDraftSave();
+        toast("AI 已回填" + (field === "solution" ? "解析" : "题干") + "，请核对后保存");
+        dock("AI 副驾已回填" + (field === "solution" ? "解析" : "题干"));
+        return;
       }
       return;
     }
@@ -920,9 +1180,13 @@
       root.hidden = false;
       fitPreview();
       renderPreview();
+      // 全新打开（非跳题进入）时，先看草稿箱里有没有上次没保存的新题草稿。
+      if (!state.editingId) maybeRestoreDraft(NEW_DRAFT_KEY);
       return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID });
     }
     if (message.method === "plugin.deactivate") {
+      // 宿主即将摘掉本帧（休眠/关页）：趁 postMessage 还发得出去，把未保存内容交回宿主草稿箱。
+      flushDraft();
       root.hidden = true;
       return respond(event.source, message.id, true, { ready: false });
     }
@@ -941,6 +1205,14 @@
     saveEl.addEventListener("click", save);
     cleanEl.addEventListener("click", cleanAll);
     resetEl.addEventListener("click", resetForm);
+    if (variantEl) variantEl.addEventListener("click", saveAsVariant);
+    if (deleteEl) deleteEl.addEventListener("click", requestDelete);
+    if (modalEl) {
+      modalEl.addEventListener("keydown", function (keyEvent) {
+        if (keyEvent.key === "Escape") { keyEvent.preventDefault(); closeConfirm(); }
+      });
+    }
+    window.addEventListener("beforeunload", flushDraft);
     if (topicPickEl) topicPickEl.addEventListener("click", openTopicTree);
     if (returnEl) returnEl.addEventListener("click", function () {
       if (state.editingFrom) publish("system.return_from_editor", { plugin_id: state.editingFrom });

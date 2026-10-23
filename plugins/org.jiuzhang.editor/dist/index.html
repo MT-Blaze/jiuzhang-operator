@@ -12,14 +12,19 @@
     <header class="ed-top">
       <div class="ed-brand">
         <h1>录题工作台</h1>
-        <p class="ed-sub">表单 → A4 实时预览 · 清洗后直入本地真题库</p>
+        <p class="ed-sub">表单 → A4 实时预览 · 边写边存草稿不丢 · 右侧 AI 副驾可改写题干 · 清洗后直入本地真题库</p>
       </div>
       <div class="ed-actions">
         <button type="button" id="edClean" class="ed-btn ed-btn-soft" title="本地规则清洗，不联网">
           一键清洗 LaTeX
         </button>
+        <button type="button" id="edVariant" class="ed-btn ed-btn-soft"
+          title="复制当前内容新建一题（底座重新签发题号），绝不覆盖原题">
+          另存为新题（派生变式）
+        </button>
         <button type="button" id="edReset" class="ed-btn ed-btn-ghost">清空表单</button>
         <button type="button" id="edReturn" class="ed-btn ed-btn-ghost" hidden>返回来源页</button>
+        <button type="button" id="edDelete" class="ed-btn ed-btn-danger" hidden>删除本题</button>
         <button type="button" id="edSave" class="ed-btn ed-btn-primary">保存入库</button>
       </div>
     </header>
@@ -121,6 +126,18 @@
     </main>
 
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
+
+    <div id="edModal" class="ed-modal-overlay" role="dialog" aria-modal="true"
+      aria-labelledby="edModalTitle" aria-hidden="true" hidden>
+      <div class="ed-modal">
+        <h3 id="edModalTitle">确认删除</h3>
+        <p id="edModalText">确定删除这道题吗？</p>
+        <div class="ed-modal-actions">
+          <button type="button" id="edModalCancel" class="ed-btn ed-btn-ghost">取消</button>
+          <button type="button" id="edModalOk" class="ed-btn ed-btn-danger">确认删除</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
