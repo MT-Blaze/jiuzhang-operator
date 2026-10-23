@@ -926,7 +926,7 @@ def _ensure_school(con: sqlite3.Connection, name: Any, now: str) -> str | None:
         (text[:120], text[:60]),
     ).fetchone()
     if row:
-        return row["id"]
+        return row[0]    # 位置取值：批量导入的连接不一定带 row_factory
     uid = "sch_" + hashlib.sha256(("school:" + text).encode("utf-8")).hexdigest()[:11]
     con.execute(
         "INSERT INTO schools (id, full_name, short_name, province, city, created_at, updated_at)"
@@ -1001,14 +1001,31 @@ def _link_source(con: sqlite3.Connection, document: dict[str, Any], now: str) ->
     )
 
 
-def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str) -> None:
-    con.execute(
-        "INSERT INTO questions (id, type, stem, options, answer, solution, extensions,"
-        " difficulty, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        _question_row(document, now),
-    )
+def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str,
+                    *, upsert: bool = False) -> None:
+    row = _question_row(document, now)
+    columns = ("type", "stem", "options", "answer", "solution", "extensions", "difficulty", "updated_at")
+    if upsert:
+        con.execute(
+            "INSERT INTO questions (id, type, stem, options, answer, solution, extensions,"
+            " difficulty, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(id) DO UPDATE SET " + ", ".join(f"{name} = excluded.{name}" for name in columns),
+            row,
+        )
+    else:
+        con.execute(
+            "INSERT INTO questions (id, type, stem, options, answer, solution, extensions,"
+            " difficulty, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            row,
+        )
+    if upsert:
+        # 重复导入必须幂等：整组重挂，否则 ON CONFLICT 之后挂载关系会越滚越多
+        con.execute("DELETE FROM question_sources WHERE question_id = ?", (row[0],))
     _link_source(con, document, now)
-    _link_topics(con, document["id"], document, now)
+    if upsert:
+        _remount_topics(con, row[0], document.get("taxonomy") or {}, now)
+    else:
+        _link_topics(con, row[0], document, now)
 
 
 def _wipe(con: sqlite3.Connection) -> None:
@@ -1034,12 +1051,16 @@ def import_documents(
             candidate = Path(str(path) + suffix)
             if candidate.exists():
                 candidate.unlink()
-    init_bank(plugin_id, path)
+    # 冻结的 schema.sql 没有 IF NOT EXISTS：只有缺库（或明确要求重建）时才建，
+    # 否则重放 DDL 必然炸在第二张表上。
+    if not path.exists():
+        init_bank(plugin_id, path)
 
     prepared = [_storage_ready(document) for document in documents]
     for document in prepared:
         question_contract.validate_question(document)
     con = sqlite3.connect(path, timeout=10.0)
+    con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA foreign_keys = ON")
         con.execute("PRAGMA busy_timeout = 5000")
@@ -1048,7 +1069,7 @@ def import_documents(
             _wipe(con)
         now = _now()
         for document in prepared:
-            _write_document(con, document, now)
+            _write_document(con, document, now, upsert=True)
         if source_info:
             for key, value in source_info.items():
                 con.execute(
@@ -1150,7 +1171,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
         raise question_contract.QuestionValidationError(["(root): 请求体必须是 JSON 对象"])
     current = get_question(plugin_id, question_id)
     document = dict(current)
-    for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade"):
+    for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade", "taxonomy"):
         if key in patch:
             document[key] = patch[key]
     # 改题型时答案形态必须跟着走：选择题的字母改判成非选择题后，那串字母就是答案正文。
@@ -1183,6 +1204,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
     question_contract.validate_question(document)
 
     row = _question_row(document, _now())
+    remount = "taxonomy" in patch
     con = connect(plugin_id)
     try:
         con.execute("BEGIN IMMEDIATE")
@@ -1193,6 +1215,8 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
         )
         if cursor.rowcount == 0:
             raise BankNotFound(f"题库中没有题目 {question_id}")
+        if remount:
+            _remount_topics(con, question_id, document.get("taxonomy") or {}, _now())
         con.commit()
     except BaseException:
         con.rollback()
@@ -1200,3 +1224,31 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
     finally:
         con.close()
     return get_question(plugin_id, question_id)
+
+
+def _remount_topics(con: sqlite3.Connection, question_id: str, taxonomy: dict[str, Any],
+                    now: str) -> None:
+    """重挂考向：整组换掉 ``question_topics`` 的挂载关系（录题插件改题专用）。
+
+    只认大纲里真实存在的节点；一个都不给就清空挂载——清空后这道题在树上查无，
+    比挂在错误节点上诚实。
+    """
+    wanted = [item for item in (taxonomy.get("topic_ids") or []) if isinstance(item, str)]
+    if len(wanted) > MAX_TOPIC_IDS:
+        raise question_contract.QuestionValidationError(
+            [f"taxonomy.topic_ids: 一题最多挂 {MAX_TOPIC_IDS} 个考向"]
+        )
+    for topic_id in wanted:
+        if TOPIC_ID_RE.fullmatch(topic_id) is None or con.execute(
+            "SELECT 1 FROM topics WHERE id = ?", (topic_id,)
+        ).fetchone() is None:
+            raise question_contract.QuestionValidationError(
+                [f"taxonomy.topic_ids: 大纲里没有节点 {topic_id!r}，请先把考向补进大纲树。"]
+            )
+    con.execute("DELETE FROM question_topics WHERE question_id = ?", (question_id,))
+    for index, topic_id in enumerate(wanted):
+        con.execute(
+            "INSERT INTO question_topics (question_id, topic_id, is_primary, sort_order, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (question_id, topic_id, 1 if index == 0 else 0, index, now),
+        )

@@ -59,7 +59,8 @@ class HandoutManifestTest(unittest.TestCase):
 
     def test_04_bus_is_minimal(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed"])
+        # 讲义是输出端：只多订阅「题目已更新」用来标脏，不申请任何写通道
+        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed", "system.question_updated"])
         self.assertEqual(manifest["bus"]["publish"], ["region.dock"])
 
 

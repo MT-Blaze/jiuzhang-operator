@@ -24,8 +24,14 @@
   var DOCK_LOG_MAX = 120;
 
   // 插件能主动发的事件主题白名单：只许投给底座托管的三区与舞台选区，
-  // 不许发 layout.* / ui.params.*（那是底座与人的地盘，防插件反向操控面板）
-  var PUBLISH_ALLOW = ["region.dock", "region.left", "region.right", "stage.selection"];
+  // 不许发 layout.* / ui.params.*（那是底座与人的地盘，防插件反向操控面板）。
+  // system.open_editor 是三端分离架构的唯一跨端跳转口：存储端/输出端只读，
+  // 改题目一律交给录题插件，由宿主负责开页签与注入题号（v0.7.0）。
+  var PUBLISH_ALLOW = [
+    "region.dock", "region.left", "region.right", "stage.selection",
+    "system.open_editor", "system.return_from_editor"
+  ];
+  var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
   var tabsEl = document.getElementById("wsTabs");
   var bodyEl = document.getElementById("wsCanvasBody");
@@ -182,6 +188,7 @@
             tab.ready = Boolean(result && result.ready);
             dock("插件「" + (tab.plugin.name || tab.plugin.id) + "」已挂载" + (tab.ready ? "并就绪。" : "，但未回 ready。"), "plugin.mounted");
             pushParams(tab);
+            deliverEditorIntent(tab);
             resolve(tab);
           })
           .catch(function (error) {
@@ -445,6 +452,9 @@
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) payload = {};
 
     var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
+    // 底座公共真题库的唯一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。
+    // 录题插件要改真题，不能因为它自己的页签 id 就被引到别的库上（与 bank.create 同规则）。
+    var sharedBase = "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID);
 
     function done(result) {
       replyHost(tab, message, true, result);
@@ -480,7 +490,7 @@
           body: JSON.stringify({ question: question })
         }
       ).then(function (result) {
-        emit("question.updated", {
+        emit("system.question_updated", {
           action: "create",
           id: result && result.id,
           pluginId: tab.plugin.id
@@ -519,7 +529,7 @@
           body: JSON.stringify({ question: patch })
         }
       ).then(function (result) {
-        emit("question.updated", {
+        emit("system.question_updated", {
           action: "update",
           id: result && result.id,
           pluginId: tab.plugin.id
@@ -535,7 +545,7 @@
       if (flag && flag !== "全部") reviewParams.set("flag", flag);
       reviewParams.set("page", String(intValue(payload, "page", 1, 1, 10000)));
       reviewParams.set("page_size", String(intValue(payload, "page_size", 20, 1, 100)));
-      fetchJson(base + "/review?" + reviewParams.toString()).then(done, fail);
+      fetchJson(sharedBase + "/review?" + reviewParams.toString()).then(done, fail);
       return;
     }
 
@@ -571,7 +581,7 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "题目 id 不合法" });
         return;
       }
-      fetchJson(base + "/questions/" + encodeURIComponent(questionId)).then(done, fail);
+      fetchJson(sharedBase + "/questions/" + encodeURIComponent(questionId)).then(done, fail);
       return;
     }
 
@@ -604,7 +614,7 @@
       if (parentId) topicParams.set("parent_id", parentId);
       var topicSearch = textValue(payload, "q", 100);
       if (topicSearch) topicParams.set("q", topicSearch);
-      fetchJson(base + "/topics?" + topicParams.toString()).then(done, fail);
+      fetchJson(sharedBase + "/topics?" + topicParams.toString()).then(done, fail);
       return;
     }
 
@@ -614,7 +624,7 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "考向节点 topic_id 不合法" });
         return;
       }
-      fetchJson(base + "/topics/" + encodeURIComponent(noteTopic) + "/notes").then(done, fail);
+      fetchJson(sharedBase + "/topics/" + encodeURIComponent(noteTopic) + "/notes").then(done, fail);
       return;
     }
 
@@ -732,6 +742,56 @@
     }
   });
 
+  // ---------- 三端分离：编辑跳转（存储端/输出端 → 输入端） ----------
+  // 题库与组卷/讲义一律只读；老师点「去编辑」时插件只发一个 system.open_editor，
+  // 由宿主负责开录题插件的页签并把题号注进去——插件之间不直连（AGENTS §2）。
+  var pendingEditorIntent = null;
+
+  function findPluginTab(pluginId) {
+    for (var i = 0; i < tabs.length; i += 1) {
+      if (tabs[i].kind === "plugin" && tabs[i].plugin && tabs[i].plugin.id === pluginId) return tabs[i];
+    }
+    return null;
+  }
+
+  function deliverEditorIntent(tab) {
+    if (!pendingEditorIntent || !tab || tab.state !== "live") return;
+    var intent = pendingEditorIntent;
+    pendingEditorIntent = null;
+    notify(tab, "system.open_editor", { question_id: intent.question_id, from: intent.from });
+  }
+
+  function openEditor(payload) {
+    var raw = (payload && payload.raw) || {};
+    var questionId = typeof raw.question_id === "string" ? raw.question_id.slice(0, 80) : "";
+    if (questionId && !ID_RE.test(questionId)) {
+      dock("编辑跳转带来的题目 id 不合法，已拒绝。", "bus.denied");
+      return;
+    }
+    pendingEditorIntent = { question_id: questionId, from: (payload && payload.pluginId) || "" };
+    var tab = findPluginTab(EDITOR_PLUGIN_ID);
+    if (tab) {
+      activate(tab.key);
+      deliverEditorIntent(tab);
+      return;
+    }
+    fetchJson("/api/plugins").then(function (data) {
+      var plugin = ((data && data.plugins) || []).filter(function (item) {
+        return item.id === EDITOR_PLUGIN_ID;
+      })[0];
+      if (!plugin) {
+        pendingEditorIntent = null;
+        dock("没找到录题工作台插件，编辑跳转未完成。", "stage.editor.missing");
+        return;
+      }
+      openPlugin(plugin);   // 挂载就绪后由 mountFrame 补发注入
+      dock("正在唤醒录题工作台…", "stage.editor.wake");
+    }, function (error) {
+      pendingEditorIntent = null;
+      dock("读插件清单失败，编辑跳转未完成：" + error.message, "stage.editor.missing");
+    });
+  }
+
   // ---------- 页签生命周期 ----------
   function addTab(tab) {
     tab.order = tab.order == null ? ++openSeq : tab.order;
@@ -757,9 +817,13 @@
     applyFullscreen(tab);
     if (tab.kind === "plugin" && tab.state !== "live") {
       dock("唤醒插件「" + (tab.plugin.name || tab.plugin.id) + "」…", "stage.tab.wake");
-      mountFrame(tab).then(enforceLru);
+      mountFrame(tab).then(function () {
+        enforceLru();
+        deliverEditorIntent(tab);
+      });
     } else {
       enforceLru();
+      deliverEditorIntent(tab);
     }
     emit("stage.tab.activated", { key: key, pluginId: tab.plugin ? tab.plugin.id : null });
   }
@@ -902,7 +966,27 @@
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
       // 录题插件写库成功 → 题库画布刷新列表（宿主统一生成事件，插件之间不直连）
+      // 录题插件写库成功 → 各端回流刷新（v0.7.0 统一口径 system.question_updated）。
+      // 老插件仍只认 question.updated，两个名字都广播一次，谁订谁生效，不会刷两遍。
+      bus.on("system.question_updated", function (event) {
+        broadcast("system.question_updated", event.payload);
+        broadcast("question.updated", event.payload);
+      });
       bus.on("question.updated", function (event) { broadcast("question.updated", event.payload); });
+      // 存储端/输出端的「去编辑」→ 宿主开录题页签并注入题号
+      bus.on("system.open_editor", function (event) { openEditor(event.payload); });
+      // 录题端「保存并返回」→ 回到发起跳转的那个页签，老师不必自己找
+      bus.on("system.return_from_editor", function (event) {
+        var raw = (event.payload && event.payload.raw) || {};
+        var origin = typeof raw.plugin_id === "string" ? raw.plugin_id : "";
+        var tab = origin && origin !== EDITOR_PLUGIN_ID ? findPluginTab(origin) : null;
+        if (tab) {
+          activate(tab.key);
+          dock("已回到「" + tab.title + "」。", "stage.editor.returned");
+        } else {
+          dock("没有可返回的来源页签，留在录题工作台。", "stage.editor.returned");
+        }
+      });
       bus.on("stage.broadcast", function (event) {
         var payload = event.payload || {};
         if (typeof payload.event === "string") broadcast(payload.event, payload.payload);

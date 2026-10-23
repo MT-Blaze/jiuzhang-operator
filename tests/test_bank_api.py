@@ -691,6 +691,43 @@ class BankApiContractTest(unittest.TestCase):
         self.assertTrue(any(item["id"] == target and item["type"] == "solution"
                             for item in listed["items"]))
 
+    def test_z12_update_can_remount_topics(self) -> None:
+        """考向挂载可由输入端改写：挂上真考向后按该考向取题要捞得到；清空则整组摘掉。"""
+        target = "q_test_000002"
+        status, before = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertEqual(status, 200)
+        self.assertNotIn("topic_ids", before.get("taxonomy") or {})
+
+        status, fixed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"taxonomy": {"topic_ids": [self.outline["kx"]]}}}, token=True,
+        )
+        self.assertEqual(status, 200, fixed)
+        self.assertEqual(fixed["taxonomy"]["topic_ids"], [self.outline["kx"]])
+        self.assertEqual(fixed["taxonomy"]["section"], "1.1 集合的概念")
+
+        status, listed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?"
+            + self._query(topic=self.outline["kx"], page_size=10)
+        )
+        self.assertEqual(status, 200)
+        self.assertIn(target, [item["id"] for item in listed["items"]])
+
+        status, cleared = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"taxonomy": {}}}, token=True,
+        )
+        self.assertEqual(status, 200, cleared)
+        self.assertNotIn("topic_ids", cleared.get("taxonomy") or {})
+        status, after = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?"
+            + self._query(topic=self.outline["kx"], page_size=5)
+        )
+        self.assertEqual(status, 200)
+        # 摘掉这道题后，该考向子树只剩夹具里预挂的 q_test_000001
+        self.assertEqual(after["total"], 1)
+        self.assertEqual([item["id"] for item in after["items"]], ["q_test_000001"])
+
     # ---------- 配图边界 ----------
     def test_upload_serving_and_traversal(self) -> None:
         with urllib.request.urlopen(self.base + "/static/uploads/probe.png", timeout=5) as response:
@@ -906,7 +943,29 @@ class StageRelayContractTest(unittest.TestCase):
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         self.assertIn('CANONICAL_BANK_ID = "org.jiuzhang.core-bank"', source)
         self.assertIn('permissions.indexOf("questions:write")', source)
-        self.assertIn('emit("question.updated"', source)
+        self.assertIn('emit("system.question_updated"', source)
+
+    def test_three_end_editing_protocol(self) -> None:
+        """三端分离：存储端/输出端只读，改题一律经 system.open_editor 跳录题端。"""
+        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('"system.open_editor"', source)
+        self.assertIn('"system.return_from_editor"', source)
+        self.assertIn("EDITOR_PLUGIN_ID = \"org.jiuzhang.editor\"", source)
+        # 公共真题库的只读通道也归到 canonical，录题端才不会查自己的空库
+        self.assertIn("var sharedBase = ", source)
+        for channel in ('sharedBase + "/review?', 'sharedBase + "/questions/', 'sharedBase + "/topics'):
+            self.assertIn(channel, source)
+        # 题库端不再持有写权限，也不再有行内改题；改题按钮只发跳转
+        bank_manifest = json.loads(
+            (ROOT / "plugins" / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(bank_manifest["permissions"], ["questions:read"])
+        self.assertIn("system.open_editor", bank_manifest["bus"]["publish"])
+        bank_js = (ROOT / "plugins" / PLUGIN_ID / "dist" / "plugin.js").read_text(encoding="utf-8")
+        self.assertIn('publish("system.open_editor"', bank_js)
+        self.assertNotIn('hostCall("bank.update"', bank_js)
+        for plugin in ("org.jiuzhang.paper-gen", "org.jiuzhang.handout"):
+            js = (ROOT / "plugins" / plugin / "dist" / "plugin.js").read_text(encoding="utf-8")
+            self.assertIn("system.question_updated", js, plugin)
 
 
 if __name__ == "__main__":

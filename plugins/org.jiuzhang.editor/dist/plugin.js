@@ -53,6 +53,12 @@
   var cleanEl = document.getElementById("edClean");
   var resetEl = document.getElementById("edReset");
   var toastEl = document.getElementById("edToast");
+  var returnEl = document.getElementById("edReturn");
+  var topicPickEl = document.getElementById("edTopicPick");
+  var topicTreeEl = document.getElementById("edTopicTree");
+  var topicChipsEl = document.getElementById("edTopicChips");
+  var editingBarEl = document.getElementById("edEditing");
+  var editingIdEl = document.getElementById("edEditingId");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -68,7 +74,14 @@
       { key: "B", content: "" },
       { key: "C", content: "" },
       { key: "D", content: "" }
-    ]
+    ],
+    // 编辑态（三端分离：录题是唯一输入端，题库/组卷/讲义点「去编辑」跳进来）
+    editingId: null,
+    editingFrom: "",
+    editingFlags: [],
+    topicIds: [],
+    topicNames: {},
+    tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" }
   };
 
   // ---------- 宿主通信 ----------
@@ -519,6 +532,7 @@
       extensions: { "org.jiuzhang.editor": { grade: gradeEl.value || "" } },
       meta: { status: "published", author: "九章算子·录题工作台" }
     };
+    if (state.topicIds.length) question.taxonomy = { topic_ids: state.topicIds.slice(0, 8) };
     var solution = solutionEl.value.trim();
     if (solution) question.solution = solution;
 
@@ -570,7 +584,114 @@
   function setSaving(active) {
     saveEl.disabled = active;
     saveEl.setAttribute("aria-busy", String(active));
-    saveEl.textContent = active ? "正在写入…" : "保存入库";
+    saveEl.textContent = active ? "正在写入…" : (state.editingId ? "保存并返回" : "保存入库");
+  }
+
+  function publish(event, payload) {
+    try {
+      window.parent.postMessage({
+        protocol: PROTOCOL, kind: "notification", event: event, payload: payload || {}
+      }, "*");
+    } catch (error) {
+      /* 通知丢了不致命 */
+    }
+  }
+
+  function setEditMode(id, from) {
+    state.editingId = id || null;
+    state.editingFrom = from || "";
+    returnEl.hidden = !id;
+    editingBarEl.hidden = !id;
+    if (id) editingIdEl.textContent = id;
+    setSaving(false);
+  }
+
+  /** 这次保存真正解决了哪些审核标记——只清被内容证实清掉的，不做「保存即清白」。 */
+  function resolvedFlags(question) {
+    var flags = state.editingFlags || [];
+    if (!flags.length) return [];
+    var resolved = [];
+    var hasAnswer = Boolean(question.answer);
+    if (hasAnswer) {
+      ["answer_absent", "answer_region_empty", "type_manual_review",
+       "needs_conclusion", "solution_absent"].forEach(function (flag) {
+        if (flags.indexOf(flag) >= 0) resolved.push(flag);
+      });
+    }
+    if (flags.indexOf("structure_conflict") >= 0
+        && (question.options || []).length >= 2) resolved.push("structure_conflict");
+    var mounted = question.taxonomy && (question.taxonomy.topic_ids || [])
+      .filter(function (id) { return id.indexOf("tp_kx") === 0; }).length > 0;
+    if (flags.indexOf("topic_unmapped") >= 0 && mounted) resolved.push("topic_unmapped");
+    return resolved;
+  }
+
+  function fillForm(document) {
+    typeEl.value = document.type;
+    diffEl.value = document.difficulty;
+    gradeEl.value = document.grade || "高一";
+    stemEl.value = document.stem || "";
+    solutionEl.value = document.solution || "";
+    tagsEl.value = "";
+    var options = document.options || [];
+    state.options = options.length
+      ? options.map(function (option) { return { key: option.key, content: option.content }; })
+      : [
+        { key: "A", content: "" }, { key: "B", content: "" },
+        { key: "C", content: "" }, { key: "D", content: "" }
+      ];
+    var answer = document.answer || null;
+    answerEl.value = answer
+      ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
+      : "";
+    state.topicIds = ((document.taxonomy || {}).topic_ids || []).slice();
+    state.topicNames = {};
+    renderOptions();
+    applyType();
+    renderTopicChips();
+    renderPreview();
+  }
+
+  function loadForEdit(id, from) {
+    if (!id) {
+      setEditMode(null, "");
+      state.editingFlags = [];
+      return;
+    }
+    hostCall("bank.get", { id: id }).then(function (document) {
+      setEditMode(id, from);
+      state.editingFlags = ((document.extensions || {})["org.jiuzhang.core-bank.migration"] || {}).flags || [];
+      fillForm(document);
+      savedEl.hidden = true;
+      dirtySinceSave = false;
+      var hint = state.editingFlags.length
+        ? "这道题带着 " + state.editingFlags.length + " 个待审标记：" + state.editingFlags.join("、")
+        : "已载入原题，改完点「保存并返回」";
+      toast(hint);
+      dock("录题工作台已载入 " + id + "（" + (state.editingFlags.length ? "待审 " + state.editingFlags.join("、") : "无标记") + "）");
+    }, function (error) {
+      toast("读题失败：" + error.message, "error");
+      dock("载入待编辑题目失败：" + error.message);
+    });
+  }
+
+  function afterSaved(result, updating) {
+    setSaving(false);
+    var id = result && result.id;
+    savedEl.hidden = false;
+    savedEl.textContent = (updating ? "已保存 · " : "已入库 · ") + id;
+    savedEl.setAttribute("data-id", id || "");
+    dirtySinceSave = false;
+    state.editingFlags = ((result && result.extensions) || {})["org.jiuzhang.core-bank.migration"]
+      ? (result.extensions["org.jiuzhang.core-bank.migration"].flags || [])
+      : [];
+    toast(updating ? "已保存：" + id : "保存成功：" + id);
+    dock((updating ? "题目已更新（" : "新题已写入真题题库（") + id + "），各端自动回流刷新");
+    metricsEl.setAttribute("data-saved-id", id || "");
+    if (updating) {
+      editingBarEl.textContent = "已保存 " + id + " · 各端已回流刷新";
+      if (state.editingFrom) publish("system.return_from_editor", { plugin_id: state.editingFrom });
+    }
   }
 
   function save() {
@@ -582,17 +703,17 @@
       dock("录题保存被拦下：" + error.message);
       return;
     }
+    var updating = Boolean(state.editingId);
+    var payload = { question: question };
+    if (updating) {
+      payload.question.clear_flags = resolvedFlags(question);
+      if (!payload.question.clear_flags.length) delete payload.question.clear_flags;
+    }
     setSaving(true);
-    hostCall("bank.create", { question: question }).then(function (result) {
-      setSaving(false);
-      var id = result && result.id;
-      savedEl.hidden = false;
-      savedEl.textContent = "已入库 · " + id;
-      savedEl.setAttribute("data-id", id || "");
-      dirtySinceSave = false;
-      toast("保存成功：" + id);
-      dock("新题已写入真题题库（" + id + "）");
-      metricsEl.setAttribute("data-saved-id", id || "");
+    hostCall(updating ? "bank.update" : "bank.create",
+      updating ? Object.assign({ id: state.editingId }, payload) : payload
+    ).then(function (result) {
+      afterSaved(result, updating);
     }, function (error) {
       setSaving(false);
       toast("保存失败：" + error.message, "error");
@@ -600,7 +721,137 @@
     });
   }
 
+  // ---------- 考向大纲树选择器 ----------
+  function fetchTopics(parentId) {
+    return hostCall("bank.topics", parentId ? { parent_id: parentId } : {})
+      .then(function (result) { return (result && result.items) || []; });
+  }
+
+  function toggleTopic(id) {
+    var index = state.topicIds.indexOf(id);
+    if (index >= 0) {
+      state.topicIds.splice(index, 1);
+    } else {
+      if (state.topicIds.length >= 8) {
+        toast("一题最多挂 8 个考向", "error");
+        return;
+      }
+      state.topicIds.push(id);
+    }
+    renderTopicChips();
+    renderTree();
+  }
+
+  function renderTopicChips() {
+    if (!topicChipsEl) return;
+    topicChipsEl.textContent = "";
+    if (!state.topicIds.length) {
+      topicChipsEl.textContent = "尚未挂载考向";
+      return;
+    }
+    state.topicIds.forEach(function (id) {
+      var chip = el("button", "ed-topic-chip", (state.topicNames[id] || id) + " ×");
+      chip.type = "button";
+      chip.setAttribute("aria-label", "取消挂载 " + (state.topicNames[id] || id));
+      chip.addEventListener("click", function () { toggleTopic(id); });
+      topicChipsEl.appendChild(chip);
+    });
+  }
+
+  function renderTreeNode(node) {
+    var item = document.createElement("li");
+    var row = document.createElement("div");
+    row.className = "ed-topic-rowline";
+    if (node.has_children) {
+      var caret = el("button", "ed-topic-caret", state.tree.expanded[node.id] ? "▾" : "▸");
+      caret.type = "button";
+      caret.setAttribute("aria-expanded", String(Boolean(state.tree.expanded[node.id])));
+      caret.setAttribute("aria-label", (state.tree.expanded[node.id] ? "收起 " : "展开 ") + node.name);
+      caret.addEventListener("click", function () {
+        if (state.tree.expanded[node.id]) {
+          state.tree.expanded[node.id] = false;
+          renderTree();
+          return;
+        }
+        state.tree.expanded[node.id] = true;
+        if (state.tree.children[node.id]) { renderTree(); return; }
+        fetchTopics(node.id).then(function (items) {
+          state.tree.children[node.id] = items;
+          renderTree();
+        }, function () {
+          state.tree.children[node.id] = [];
+          renderTree();
+        });
+      });
+      row.appendChild(caret);
+    } else {
+      row.appendChild(el("span", "ed-topic-caret ed-topic-leaf", "·"));
+    }
+    var picked = state.topicIds.indexOf(node.id) >= 0;
+    if (picked) state.topicNames[node.id] = node.name;
+    var name = el("button", "ed-topic-name" + (picked ? " ed-topic-on" : ""), node.name);
+    name.type = "button";
+    name.setAttribute("aria-pressed", String(picked));
+    name.addEventListener("click", function () { toggleTopic(node.id); });
+    row.appendChild(name);
+    row.appendChild(el("span", "ed-topic-count", String(node.question_count || 0)));
+    if (node.status === "draft") row.appendChild(el("span", "ed-topic-draft", "待补录"));
+    item.appendChild(row);
+    if (node.has_children && state.tree.expanded[node.id]) {
+      var branch = document.createElement("ul");
+      branch.className = "ed-topic-branch";
+      var kids = state.tree.children[node.id];
+      if (!kids) {
+        branch.appendChild(el("li", "ed-topic-loading", "正在读取…"));
+      } else if (!kids.length) {
+        branch.appendChild(el("li", "ed-topic-loading", "这一层还没有子节点"));
+      } else {
+        kids.forEach(function (child) { branch.appendChild(renderTreeNode(child)); });
+      }
+      item.appendChild(branch);
+    }
+    return item;
+  }
+
+  function renderTree() {
+    if (!topicTreeEl) return;
+    topicTreeEl.textContent = "";
+    if (state.tree.loading && !state.tree.roots) {
+      topicTreeEl.appendChild(el("p", "ed-topic-loading", "正在读取大纲…"));
+      return;
+    }
+    if (state.tree.error) {
+      topicTreeEl.appendChild(el("p", "ed-topic-error", "大纲读取失败：" + state.tree.error));
+      return;
+    }
+    var trunk = document.createElement("ul");
+    trunk.className = "ed-topic-branch";
+    (state.tree.roots || []).forEach(function (node) { trunk.appendChild(renderTreeNode(node)); });
+    topicTreeEl.appendChild(trunk);
+  }
+
+  function openTopicTree() {
+    if (!topicTreeEl) return;
+    topicTreeEl.hidden = !topicTreeEl.hidden;
+    if (topicTreeEl.hidden || state.tree.roots) return;
+    state.tree.loading = true;
+    renderTree();
+    fetchTopics("").then(function (items) {
+      state.tree.roots = items;
+      state.tree.loading = false;
+      renderTree();
+    }, function (error) {
+      state.tree.loading = false;
+      state.tree.error = error.message;
+      renderTree();
+    });
+  }
+
   function resetForm() {
+    setEditMode(null, "");
+    state.editingFlags = [];
+    state.topicIds = [];
+    state.topicNames = {};
     stemEl.value = "";
     answerEl.value = "";
     solutionEl.value = "";
@@ -616,6 +867,7 @@
     ];
     renderOptions();
     applyType();
+    renderTopicChips();
     renderPreview();
     if (savedEl) {
       savedEl.hidden = true;
@@ -640,6 +892,13 @@
     }
 
     if (message.kind === "notification") {
+      if (message.event === "system.open_editor") {
+        // 三端分离的唯一入口：题库/组卷/讲义点「去编辑」，宿主把题号注到这里
+        var wanted = (message.payload && message.payload.question_id) || "";
+        var origin = (message.payload && message.payload.from) || "";
+        if (wanted) loadForEdit(wanted, origin);
+        return;
+      }
       if (message.event === "ui.params.changed") {
         var values = (message.payload && message.payload.values) || {};
         if (typeof values.grade === "string" && values.grade) gradeEl.value = values.grade;
@@ -675,6 +934,12 @@
     saveEl.addEventListener("click", save);
     cleanEl.addEventListener("click", cleanAll);
     resetEl.addEventListener("click", resetForm);
+    if (topicPickEl) topicPickEl.addEventListener("click", openTopicTree);
+    if (returnEl) returnEl.addEventListener("click", function () {
+      if (state.editingFrom) publish("system.return_from_editor", { plugin_id: state.editingFrom });
+      else toast("这次是直接从录题进来的，没有来源页可返回");
+    });
+    renderTopicChips();
     if (typeof ResizeObserver === "function") {
       new ResizeObserver(fitPreview).observe(previewEl);
     } else {

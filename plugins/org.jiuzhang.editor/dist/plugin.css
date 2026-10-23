@@ -477,3 +477,88 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .ed-toast { transition: none; }
 }
+
+/* 三端分离：编辑态提示条与考向大纲树选择器 */
+.ed-editing {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(47, 107, 79, 0.4);
+  border-radius: 8px;
+  background: rgba(47, 107, 79, 0.08);
+  color: #2f6b4f;
+  font-size: 12px;
+}
+.ed-editing code { font-family: ui-monospace, Consolas, monospace; }
+.ed-topic-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.ed-topic-chips { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #6f675c; }
+.ed-topic-chip {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid rgba(166, 59, 43, 0.45);
+  border-radius: 999px;
+  background: rgba(166, 59, 43, 0.1);
+  color: #a63b2b;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ed-topic-tree {
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(31, 28, 24, 0.14);
+  border-radius: 8px;
+  background: #fffdf8;
+  font-size: 13px;
+}
+.ed-topic-branch { list-style: none; margin: 0; padding-left: 12px; }
+.ed-topic-rowline { display: flex; align-items: center; gap: 4px; }
+.ed-topic-caret {
+  width: 28px;
+  min-width: 28px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #6f675c;
+  font: inherit;
+  cursor: pointer;
+}
+.ed-topic-leaf { cursor: default; opacity: 0.4; }
+.ed-topic-name {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ed-topic-name:hover { border-color: rgba(166, 59, 43, 0.4); }
+.ed-topic-name:focus-visible, .ed-topic-caret:focus-visible, .ed-topic-chip:focus-visible {
+  outline: 2px solid #a63b2b;
+  outline-offset: 2px;
+}
+.ed-topic-on {
+  border-color: #a63b2b;
+  background: rgba(166, 59, 43, 0.12);
+  color: #a63b2b;
+  font-weight: 600;
+}
+.ed-topic-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(31, 28, 24, 0.06);
+  color: #6f675c;
+  font-size: 11px;
+}
+.ed-topic-draft { padding: 1px 6px; border-radius: 999px; background: #8a5a16; color: #fffaf2; font-size: 10px; }
+.ed-topic-loading, .ed-topic-error { padding: 6px 8px; font-size: 12px; color: #6f675c; }
+.ed-topic-error { color: #a63b2b; }

@@ -663,6 +663,35 @@
     }[value] || value;
   }
 
+  // ---------- 三端分离：输出端只读，改题一律跳录题工作台 ----------
+  function publish(event, payload) {
+    try {
+      window.parent.postMessage({
+        protocol: PROTOCOL, kind: "notification", event: event, payload: payload || {}
+      }, "*");
+    } catch (error) {
+      /* 跳转丢了不致命 */
+    }
+  }
+
+  function openEditor(questionId) {
+    if (!questionId) return;
+    publish("system.open_editor", { question_id: questionId });
+    dock("已请求打开录题工作台：" + questionId);
+  }
+
+  var refreshTimer = null;
+
+  function scheduleRefresh() {
+    // 宿主对新旧两个事件名各广播一次，去重成一次重排，别连着打两遍接口
+    if (refreshTimer) window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(function () {
+      refreshTimer = null;
+      loadBasket();
+      dock("录题端改了题目，A4 已静默重排。");
+    }, 300);
+  }
+
   function renderSide() {
     if (!listEl) return;
     listEl.textContent = "";
@@ -684,6 +713,15 @@
       row.appendChild(main);
       row.addEventListener("click", function () { jumpTo(question.id); });
       item.appendChild(row);
+
+      var edit = el("button", "pg-edit", "去编辑");
+      edit.type = "button";
+      edit.setAttribute("aria-label", "到录题工作台修改第 " + (index + 1) + " 题");
+      edit.addEventListener("click", function (event) {
+        event.stopPropagation();
+        openEditor(question.id);
+      });
+      item.appendChild(edit);
 
       var remove = el("button", "pg-remove", "×");
       remove.type = "button";
@@ -828,6 +866,8 @@
         applyParams((message.payload && message.payload.values) || {}, message.payload && message.payload.by);
       } else if (message.event === "basket.changed") {
         loadBasket();
+      } else if (message.event === "system.question_updated" || message.event === "question.updated") {
+        scheduleRefresh();
       }
       return;
     }

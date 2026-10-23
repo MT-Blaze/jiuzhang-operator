@@ -50,35 +50,15 @@ def free_port() -> int:
 
 
 def rows_as_documents() -> list[dict]:
-    con = sqlite3.connect(f"file:{SEED.as_posix()}?mode=ro", uri=True)
-    con.row_factory = sqlite3.Row
-    try:
-        raws = con.execute("SELECT * FROM bank_questions ORDER BY id").fetchall()
-    finally:
-        con.close()
-    documents = []
-    for row in raws:
-        document = {
-            "schema_version": "1.0",
-            "id": row["id"],
-            "type": row["type"],
-            "stem": row["stem"],
-            "difficulty": row["difficulty"],
-            "meta": json.loads(row["meta_json"]),
-            "extensions": json.loads(row["extensions_json"]) if row["extensions_json"] else {},
-        }
-        for key, column in (
-            ("options", "options_json"), ("answer", "answer_json"), ("tags", "tags_json"),
-            ("taxonomy", "taxonomy_json"), ("source", "source_json"),
-            ("images", "images_json"),
-        ):
-            if row[column]:
-                document[key] = json.loads(row[column])
-        if row["solution"]:
-            document["solution"] = row["solution"]
-        document["grade"] = row["grade"]   # 仅压测内存副本使用，不落标准结构
-        documents.append(document)
-    return documents
+    """压测语料走底座读路径装配（v0.6.3 起种子库是 7 张关系表，不再拼宽表列）。"""
+    documents: list[dict] = []
+    page = 1
+    while True:
+        items, _total = bank.list_questions(PLUGIN_ID, page=page, page_size=100)
+        if not items:
+            return documents
+        documents.extend(items)
+        page += 1
 
 
 def latex_audit(documents: list[dict]) -> dict:
@@ -143,7 +123,7 @@ def insert_phase(documents: list[dict], threads: int, rounds: int) -> dict:
     elapsed = time.perf_counter() - started
     con = sqlite3.connect(bank.bank_db_path(PLUGIN_ID), timeout=10.0)
     try:
-        count = con.execute("SELECT COUNT(*) FROM bank_questions").fetchone()[0]
+        count = bank.import_count(PLUGIN_ID)
         integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
     finally:
         con.close()
@@ -323,38 +303,17 @@ def main(argv: list[str] | None = None) -> int:
     insert = insert_phase(documents, max(2, args.threads // 3), args.rounds)
     http = http_phase(args.threads)
 
-    # 写后逐题抽检：schema 仍然合法，且筛选真的能按年级取到
-    con = sqlite3.connect(bank.bank_db_path(PLUGIN_ID))
-    con.row_factory = sqlite3.Row
-    try:
-        sample = con.execute("SELECT * FROM bank_questions ORDER BY id LIMIT 40").fetchall()
-        grades = con.execute(
-            "SELECT grade, COUNT(*) FROM bank_questions GROUP BY grade"
-        ).fetchall()
-    finally:
-        con.close()
+    # 写后逐题抽检：schema 仍然合法，且筛选真的能按年级取到（一律走底座读路径）
+    sample, _sample_total = bank.list_questions(PLUGIN_ID, page=1, page_size=40)
+    grade_totals = {
+        item["name"]: item["count"] for item in bank.stats(PLUGIN_ID)["grades"]
+    }
     schema_errors = []
-    for row in sample:
-        document = {
-            "schema_version": "1.0",
-            "id": row["id"],
-            "type": row["type"],
-            "stem": row["stem"],
-            "difficulty": row["difficulty"],
-            "meta": json.loads(row["meta_json"]),
-            "extensions": json.loads(row["extensions_json"]) if row["extensions_json"] else {},
-        }
-        for key, column in (("options", "options_json"), ("answer", "answer_json"),
-                            ("tags", "tags_json"), ("taxonomy", "taxonomy_json"),
-                            ("source", "source_json"), ("images", "images_json")):
-            if row[column]:
-                document[key] = json.loads(row[column])
-        if row["solution"]:
-            document["solution"] = row["solution"]
+    for document in sample:
         try:
             validate_question(document)
         except Exception as exc:  # noqa: BLE001
-            schema_errors.append({"id": row["id"], "reason": str(exc)[:200]})
+            schema_errors.append({"id": document["id"], "reason": str(exc)[:200]})
 
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -363,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         "latex": latex,
         "insert": insert,
         "http": http,
-        "grade_totals": {row[0]: row[1] for row in grades},
+        "grade_totals": grade_totals,
         "schema_errors": schema_errors,
         "temp_dir": str(TMP),
     }

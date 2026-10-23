@@ -76,9 +76,9 @@ def longest_questions(limit: int) -> list[str]:
     connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     try:
         rows = connection.execute(
-            """SELECT id FROM bank_questions
+            """SELECT id FROM questions
                ORDER BY (length(stem) + length(COALESCE(solution, ''))
-                         + length(COALESCE(options_json, ''))) DESC
+                         + length(COALESCE(options, ''))) DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()

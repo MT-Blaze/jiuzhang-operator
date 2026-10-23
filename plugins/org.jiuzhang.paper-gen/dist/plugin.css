@@ -528,3 +528,19 @@ body {
   .pg-page:last-child { break-after: auto; page-break-after: auto; }
   @page { size: A4; margin: 0; }
 }
+
+/* 三端分离：输出端只读，改题跳录题工作台 */
+.pg-edit {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(31, 28, 24, 0.18);
+  border-radius: 8px;
+  background: #fffdf8;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pg-edit:hover { border-color: rgba(166, 59, 43, 0.5); }
+.pg-edit:focus-visible { outline: 2px solid #a63b2b; outline-offset: 2px; }

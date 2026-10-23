@@ -65,9 +65,11 @@ class PaperGenManifestTest(unittest.TestCase):
 
     def test_05_bus_only_takes_what_it_needs(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        # 组卷是输出端：订阅回流刷新，发布只多一个「去编辑」跳转
         self.assertEqual(sorted(manifest["bus"]["subscribe"]),
-                         ["basket.changed", "stage.tab.activated", "ui.params.changed"])
-        self.assertEqual(manifest["bus"]["publish"], ["region.dock"])
+                         ["basket.changed", "stage.tab.activated", "system.question_updated",
+                          "ui.params.changed"])
+        self.assertEqual(sorted(manifest["bus"]["publish"]), ["region.dock", "system.open_editor"])
 
 
 class PaperGenLayoutContractTest(unittest.TestCase):

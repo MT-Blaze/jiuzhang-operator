@@ -95,6 +95,20 @@
   ].join("\n");
 
   // ---------- 宿主通信 ----------
+  function markStale() {
+    if (!root) return;
+    var banner = root.querySelector(".hd-stale");
+    if (!banner) {
+      banner = document.createElement("p");
+      banner.className = "hd-stale";
+      banner.setAttribute("role", "status");
+      root.insertBefore(banner, root.firstChild);
+    }
+    banner.textContent = "真题库里的题目刚被录题工作台改过：本讲义仍是发送过来的那一份，"
+      + "请从组卷端重新发送到讲义，才看得到新内容。";
+    dock("讲义内容已过期，等待重新发送。");
+  }
+
   function dock(text) {
     try {
       window.parent.postMessage({
@@ -665,6 +679,9 @@
       if (message.event === "ui.params.changed") {
         var values = (message.payload && message.payload.values) || {};
         if (Object.prototype.hasOwnProperty.call(values, "size")) setSize(values.size);
+      } else if (message.event === "system.question_updated" || message.event === "question.updated") {
+        // 讲义排的是收到的那份 HTML，内容变了不能假装重排——如实提示重新发送
+        markStale();
       }
       return;
     }

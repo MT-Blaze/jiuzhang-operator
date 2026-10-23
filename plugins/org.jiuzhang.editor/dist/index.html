@@ -19,6 +19,7 @@
           一键清洗 LaTeX
         </button>
         <button type="button" id="edReset" class="ed-btn ed-btn-ghost">清空表单</button>
+        <button type="button" id="edReturn" class="ed-btn ed-btn-ghost" hidden>返回来源页</button>
         <button type="button" id="edSave" class="ed-btn ed-btn-primary">保存入库</button>
       </div>
     </header>
@@ -89,6 +90,19 @@
           <span>知识点标签 <em>逗号分隔，最多 32 个</em></span>
           <input id="edTags" type="text" spellcheck="false" placeholder="一元二次方程, 因式分解">
         </label>
+
+        <div class="ed-field ed-field-block" id="edTopicBlock">
+          <span>考向挂载 <em>在大纲树里点节点，一题最多 8 个</em></span>
+          <div class="ed-topic-row">
+            <button type="button" id="edTopicPick" class="ed-mini">选择考向</button>
+            <span id="edTopicChips" class="ed-topic-chips"></span>
+          </div>
+          <div id="edTopicTree" class="ed-topic-tree" hidden></div>
+        </div>
+
+        <p id="edEditing" class="ed-editing" hidden>
+          正在编辑 <code id="edEditingId"></code> · 保存后题库/组卷/讲义会自动回流刷新
+        </p>
       </section>
 
       <section class="ed-preview" aria-label="A4 实时预览">

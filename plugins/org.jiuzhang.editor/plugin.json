@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "中间表单、右侧 A4 预览：录题干与公式、动态增删选项、填答案与解析，一键清洗 LaTeX 后写入本地真题题库。",
@@ -22,7 +22,7 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed"],
-    "publish": ["region.dock", "stage.selection"]
+    "subscribe": ["ui.params.changed", "system.open_editor"],
+    "publish": ["region.dock", "stage.selection", "system.return_from_editor"]
   }
 }

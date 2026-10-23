@@ -550,6 +550,11 @@
     add.type = "button";
     add.addEventListener("click", function () { addToBasket([question.id]); });
     actions.appendChild(add);
+
+    var edit = el("button", "cb-btn", "去编辑");
+    edit.type = "button";
+    edit.addEventListener("click", function () { openEditor(question.id); });
+    actions.appendChild(edit);
     card.appendChild(actions);
     detail.appendChild(card);
     side.appendChild(detail);
@@ -566,15 +571,27 @@
     needs_conclusion: "结论未单独成字段",
     solution_absent: "连答案正文都没有"
   };
-  var EDITABLE_TYPES = [
-    ["single_choice", "单选"], ["multiple_choice", "多选"],
-    ["fill_blank", "填空"], ["solution", "解答"]
-  ];
 
   function flagLabel(flag) { return FLAG_LABELS[flag] || flag; }
 
-  function isChoice(question) {
-    return question.type === "single_choice" || question.type === "multiple_choice";
+  // 向宿主发一个授权事件（三端分离里唯一允许的跨端动作：请求打开录题工作台）
+  function publish(event, payload) {
+    try {
+      window.parent.postMessage({
+        protocol: PROTOCOL,
+        kind: "notification",
+        event: event,
+        payload: payload || {}
+      }, "*");
+    } catch (error) {
+      /* 跳转丢了不致命，底栏会没声音而已 */
+    }
+  }
+
+  function openEditor(questionId) {
+    if (!questionId) return;
+    publish("system.open_editor", { question_id: questionId });
+    dock("已请求打开录题工作台：" + questionId);
   }
 
   function loadReview(page) {
@@ -602,25 +619,6 @@
     });
   }
 
-  function submitPatch(id, patch, button, feedback) {
-    if (button) {
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-    }
-    if (feedback) feedback.textContent = "提交中…";
-    hostCall("bank.update", { id: id, question: patch }).then(function (result) {
-      toast("已更新 " + ((result && result.id) || id));
-      dock("人工审核：已修复 " + ((result && result.id) || id));
-      loadReview();
-    }, function (error) {
-      if (feedback) feedback.textContent = "失败：" + error.message;
-      if (button) {
-        button.disabled = false;
-        button.removeAttribute("aria-busy");
-      }
-    });
-  }
-
   function buildReviewCard(question) {
     var card = el("article", "cb-review-card");
     card.setAttribute("data-review-id", question.id);
@@ -638,111 +636,23 @@
     head.appendChild(chips);
     card.appendChild(head);
 
-    var feedback = el("span", "cb-review-feedback", "");
+    // 三端分离：题库是存储端，只读。改题目一律交给录题工作台（输入端）。
     var body = el("div", "cb-review-body");
-
-    if (isChoice(question)) {
-      var picked = new Set((question.answer && question.answer.choice_keys) || []);
-      var letters = el("div", "cb-review-letters");
-      function paint() {
-        letters.textContent = "";
-        (question.options || []).forEach(function (option) {
-          var on = picked.has(option.key);
-          var btn = el("button", "cb-letter" + (on ? " cb-letter-on" : ""), option.key);
-          btn.type = "button";
-          btn.setAttribute("aria-pressed", String(on));
-          btn.addEventListener("click", function () {
-            if (question.type === "single_choice") {
-              picked.clear();
-              picked.add(option.key);
-            } else if (picked.has(option.key)) {
-              picked.delete(option.key);
-            } else {
-              picked.add(option.key);
-            }
-            paint();
-          });
-          letters.appendChild(btn);
-        });
-        if (!question.options || !question.options.length) {
-          letters.appendChild(el("span", "cb-review-hint", "这道题没有可点的选项，请先在下面改题型或补选项。"));
-        }
-      }
-      paint();
-      body.appendChild(letters);
-
-      var saveAnswer = el("button", "cb-btn cb-btn-primary", "保存答案并清标记");
-      saveAnswer.type = "button";
-      saveAnswer.addEventListener("click", function () {
-        var keys = Array.from(picked).sort();
-        if (!keys.length) {
-          feedback.textContent = "先点一个选项字母再保存。";
-          return;
-        }
-        submitPatch(question.id, {
-          answer: { kind: "choice", choice_keys: keys, final: keys.join(",") },
-          clear_flags: migrationFlags(question)
-        }, saveAnswer, feedback);
-      });
-      body.appendChild(saveAnswer);
-    } else {
-      var input = document.createElement("textarea");
-      input.className = "cb-review-input";
-      input.rows = 3;
-      input.setAttribute("aria-label", "补录答案正文");
-      input.value = (question.answer && question.answer.content) || "";
-      body.appendChild(input);
-
-      var saveText = el("button", "cb-btn cb-btn-primary", "保存答案并清标记");
-      saveText.type = "button";
-      saveText.addEventListener("click", function () {
-        var text = input.value.trim();
-        if (!text) {
-          feedback.textContent = "答案正文不能空着保存。";
-          return;
-        }
-        submitPatch(question.id, {
-          answer: { kind: "text", content: text, final: text.slice(0, 2000) },
-          clear_flags: migrationFlags(question)
-        }, saveText, feedback);
-      });
-      body.appendChild(saveText);
-    }
-
-    var typeRow = el("div", "cb-review-row");
-    typeRow.appendChild(el("span", "cb-review-hint", "改题型："));
-    var select = document.createElement("select");
-    select.className = "cb-select cb-review-select";
-    select.setAttribute("aria-label", "改成哪个题型");
-    EDITABLE_TYPES.forEach(function (pair) {
-      var option = document.createElement("option");
-      option.value = pair[0];
-      option.textContent = pair[1];
-      if (pair[0] === question.type) option.selected = true;
-      select.appendChild(option);
-    });
-    typeRow.appendChild(select);
-    var saveType = el("button", "cb-btn", "保存题型");
-    saveType.type = "button";
-    saveType.addEventListener("click", function () {
-      submitPatch(question.id, {
-        type: select.value,
-        clear_flags: ["structure_conflict", "type_manual_review"]
-      }, saveType, feedback);
-    });
-    typeRow.appendChild(saveType);
-    body.appendChild(typeRow);
-
-    var clearRow = el("div", "cb-review-row");
-    var clearOnly = el("button", "cb-btn", "确认无误，只清标记");
-    clearOnly.type = "button";
-    clearOnly.addEventListener("click", function () {
-      submitPatch(question.id, { clear_flags: migrationFlags(question) }, clearOnly, feedback);
-    });
-    clearRow.appendChild(clearOnly);
-    clearRow.appendChild(feedback);
-    body.appendChild(clearRow);
-
+    var edit = el("button", "cb-btn cb-btn-primary", "去编辑");
+    edit.type = "button";
+    edit.addEventListener("click", function () { openEditor(question.id); });
+    body.appendChild(edit);
+    var hints = {
+      answer_absent: "补答案：点「去编辑」在录题工作台里选选项字母或填答案正文。",
+      answer_region_empty: "补答案：原卷有【答案】标记但标记后是空白。",
+      type_manual_review: "判题型：通篇解析没有结论标记，需要老师定单选/多选/填空/解答。",
+      structure_conflict: "拆结构：选项内嵌在题干里，需要在录题工作台重排选项或改判解答题。",
+      topic_unmapped: "挂考向：在录题工作台的考向大纲树里选一个节点。",
+      needs_conclusion: "补结论：把最终答案单独填进答案栏。",
+      solution_absent: "补答案：旧库连答案正文都没有。"
+    };
+    var first = migrationFlags(question)[0];
+    body.appendChild(el("p", "cb-review-hint", hints[first] || "确认无误后可在录题工作台里清掉标记。"));
     card.appendChild(body);
     return card;
   }
@@ -925,6 +835,17 @@
       });
   }
 
+  var refreshTimer = null;
+
+  function scheduleRefresh() {
+    // 宿主对新旧两个事件名各广播一次，这里去重成一次刷新，避免连打两遍接口
+    if (refreshTimer) window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(function () {
+      refreshTimer = null;
+      if (state.view === "review") loadReview(); else loadQuestions();
+    }, 260);
+  }
+
   function loadBasket() {
     return hostCall("basket.list", {})
       .then(function (result) {
@@ -984,9 +905,9 @@
         var payload = message.payload || {};
         applyParams(payload.values, payload.by);
       }
-      if (message.event === "question.updated") {
-        // 录题插件经宿主写库成功后，题库画布自动刷新（v0.6.2）
-        loadQuestions();
+      if (message.event === "system.question_updated" || message.event === "question.updated") {
+        // 回流刷新：录题端改完题宿主广播一声，这里静默重取，不用老师按 F5
+        scheduleRefresh();
       }
       return;
     }

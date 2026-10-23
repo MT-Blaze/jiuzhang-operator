@@ -53,8 +53,10 @@ class EditorManifestTest(unittest.TestCase):
 
     def test_03_bus_is_minimal(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed"])
-        self.assertEqual(sorted(manifest["bus"]["publish"]), ["region.dock", "stage.selection"])
+        # 三端分离：录题是唯一输入端，只多要一个「被跳进来」的订阅与一个「返回」的发布
+        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed", "system.open_editor"])
+        self.assertEqual(sorted(manifest["bus"]["publish"]),
+                         ["region.dock", "stage.selection", "system.return_from_editor"])
 
 
 class EditorFormContractTest(unittest.TestCase):
@@ -105,7 +107,10 @@ class EditorFormContractTest(unittest.TestCase):
 class EditorWriteContractTest(unittest.TestCase):
     def test_01_save_goes_through_host_bank_create(self) -> None:
         js = read("plugin.js")
-        self.assertIn('hostCall("bank.create"', js)
+        # 新增走 bank.create，改题走 bank.update——两条都只能经宿主，插件不碰令牌与接口
+        self.assertIn('"bank.create"', js)
+        self.assertIn('"bank.update"', js)
+        self.assertIn("hostCall(updating ? ", js)
         self.assertIn('schema_version: "1.0"', js)
         self.assertIn('meta: { status: "published"', js)
         self.assertIn('"org.jiuzhang.editor": { grade:', js)
