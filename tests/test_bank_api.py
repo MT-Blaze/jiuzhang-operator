@@ -1061,7 +1061,10 @@ class StageRelayContractTest(unittest.TestCase):
 
     def test_bank_create_is_scoped_and_permission_checked(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-        self.assertIn('CANONICAL_BANK_ID = "org.jiuzhang.core-bank"', source)
+        # 写入目标不再写死官方库：默认值只出现在 provider 解析器一处，宿主只读它
+        self.assertIn('BANK_PROVIDER_DEFAULT = "org.jiuzhang.core-bank"', source)
+        self.assertIn("bankProviderBase()", source)
+        self.assertNotIn("CANONICAL_BANK_ID", source, "宿主里不该再有写死的公共题库常量")
         self.assertIn('permissions.indexOf("questions:write")', source)
         self.assertIn('emit("system.question_updated"', source)
 

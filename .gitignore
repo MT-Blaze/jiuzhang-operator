@@ -40,3 +40,6 @@ Thumbs.db
 # v063.db 是冻结的空基线（0 题，随包对外发布），不在剔除之列。
 plugins/org.jiuzhang.core-bank/bank/bank.db
 plugins/org.jiuzhang.core-bank/bank/v063_migrated.db
+
+# 结构升级备份（user_version 1→2 自动落盘）：只留本机回滚用，绝不进 git 与发行包。
+*.pre-v082.bak

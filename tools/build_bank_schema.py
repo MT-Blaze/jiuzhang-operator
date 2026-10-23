@@ -27,7 +27,7 @@ SCHEMA_PATH = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "schema.sql
 DB_PATH = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "v063.db"
 REPORT_PATH = ROOT / "data" / "bank_schema_freeze_report.md"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 EXPECTED_TABLES = (
     "schools",
     "topics",
@@ -37,6 +37,9 @@ EXPECTED_TABLES = (
     "question_topics",
     "question_sources",
     "bank_meta",
+    # v0.8.2 多版本地基：教材版本登记表 + 版本目录节点→考向 映射表
+    "textbooks",
+    "node_topic_map",
 )
 BUSINESS_TABLES = tuple(t for t in EXPECTED_TABLES if t != "bank_meta")
 BANNED_TABLE_TOKENS = ("fingerprint", "similar", "same_type", "dedup")

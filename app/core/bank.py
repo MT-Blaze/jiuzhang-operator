@@ -56,7 +56,7 @@ MAX_BASKET = 200
 MAX_SEARCH_NODES = 100
 MAX_TOPIC_IDS = 8
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CHOICE_TYPES = ("single_choice", "multiple_choice")
 # 存储层 questions.type 的 CHECK 只收这四类；契约里的 proof/unknown 一律如实拒绝，
@@ -72,6 +72,9 @@ LAYER_TAXONOMY_KEY = {"bo": "textbook", "ch": "chapter", "se": "section", "kx": 
 REQUIRED_TABLES = (
     "schools", "topics", "questions", "topic_notes", "sources",
     "question_topics", "question_sources", "bank_meta",
+    # v0.8.2 多版本地基：教材版本登记表 + 「版本目录节点 → 考向」映射表。
+    # 考向表本身仍是所有版本的并集，版本身份只活在这两张表里。
+    "textbooks", "node_topic_map",
 )
 
 EXT_GRADE_KEY = "org.jiuzhang.core-bank.grade"
@@ -143,6 +146,33 @@ def _schema_path(plugin_id: str) -> Path:
     return Path(settings.plugins_dir) / plugin_id / "bank" / "schema.sql"
 
 
+def _upgrade_if_older(plugin_id: str, path: Path) -> None:
+    """结构版本落后就地升级；不像 core-bank 的库一律放行给 connect 去报标准错。
+
+    这里绝不抢 ``_check_structure`` 的判词：宽表库、缺表库都有各自指向具体出路的
+    人话提示（见 ``test_wide_table_database_is_rejected_with_actionable_message``），
+    升级器插一句「不是可升级的结构」反而把那条更管用的提示盖掉了。
+    """
+    try:
+        con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=10.0)
+    except sqlite3.Error:
+        return
+    try:
+        version = int(con.execute("PRAGMA user_version").fetchone()[0])
+        names = {row[0] for row in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )}
+    except sqlite3.Error:
+        return
+    finally:
+        con.close()
+    if version < 0 or version >= SCHEMA_VERSION:
+        return
+    if "bank_questions" in names or "topics" not in names:
+        return          # 宽表 / 根本不是 core-bank：交给结构守卫如实报
+    upgrade_structure(plugin_id, path)
+
+
 def ensure_bank(plugin_id: str) -> Path:
     """确保当前工作区的题库存在。
 
@@ -156,6 +186,9 @@ def ensure_bank(plugin_id: str) -> Path:
     plugin_id = validate_plugin_id(plugin_id)
     path = bank_db_path(plugin_id)
     if path.is_file() and path.stat().st_size > 0:
+        # 老库（v0.6.3 七表）就地升级到 v0.8.2 多版本地基：用户不该为升级去跑脚本，
+        # 但也不能静默改数据——升级自带 .pre-v082.bak 备份与整事务回滚。
+        _upgrade_if_older(plugin_id, path)
         return path
 
     with _seed_lock:
@@ -267,6 +300,190 @@ def init_bank(plugin_id: str, db_path: Path | None = None) -> Path:
 
 def _now() -> str:
     return datetime.now(LOCAL_TZ).isoformat(timespec="seconds")
+
+
+# ---------- v0.8.2 结构升级：考向并集 + 教材版本映射 ----------
+# 现网只有人教A版一份数据，但地基必须先立住：考向（tp_kx）不绑版本、是各版本并集，
+# 版本身份只活在 textbooks / node_topic_map 两张表里。老库首启就地升级到 v2，
+# 升级前落 .pre-v082.bak 备份，自检不过整事务回滚——绝不留半套结构。
+V082_TEXTBOOK_NAME = "人教A版"
+V082_TOPICS_DDL = """
+CREATE TABLE topics_new (
+    id           TEXT    NOT NULL,
+    parent_id    TEXT    NULL,
+    textbook_id  TEXT    NULL,
+    name         TEXT    NOT NULL,
+    path         TEXT    NOT NULL,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    status       TEXT    NOT NULL DEFAULT 'active',
+    created_at   TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL,
+    CONSTRAINT pk_topics        PRIMARY KEY (id),
+    CONSTRAINT ck_topics_id     CHECK (length(id) = 13 AND substr(id, 1, 5) IN ('tp_bo', 'tp_ch', 'tp_se', 'tp_kx')
+                                               AND substr(id, 6, 8) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
+    CONSTRAINT ck_topics_name   CHECK (length(trim(name)) BETWEEN 1 AND 120),
+    CONSTRAINT ck_topics_path   CHECK (path GLOB 'tp_*' AND length(path) <= 512),
+    CONSTRAINT ck_topics_status CHECK (status IN ('active', 'archived', 'draft')),
+    CONSTRAINT ck_topics_sort   CHECK (sort_order >= 0),
+    CONSTRAINT ck_topics_acyclic CHECK (parent_id IS NULL OR parent_id <> id),
+    CONSTRAINT ck_topics_textbook CHECK (textbook_id IS NULL OR (textbook_id GLOB 'tb_*' AND length(textbook_id) = 11)),
+    CONSTRAINT ck_topics_taxonomy_shared CHECK (substr(id, 1, 5) <> 'tp_kx' OR textbook_id IS NULL),
+    CONSTRAINT fk_topics_parent FOREIGN KEY (parent_id) REFERENCES topics_new (id) ON DELETE CASCADE
+)
+"""
+V082_TOPICS_INDEXES = (
+    "CREATE UNIQUE INDEX uq_topics_path ON topics (path)",
+    "CREATE UNIQUE INDEX uq_topics_sibling ON topics (parent_id, sort_order)",
+    "CREATE INDEX idx_topics_parent_id ON topics (parent_id)",
+    "CREATE INDEX idx_topics_name ON topics (name)",
+    "CREATE INDEX idx_topics_textbook ON topics (textbook_id)",
+)
+# 索引在这里显式列出（与 schema.sql 逐条对齐）而不是从文本里猜边界：
+# 迁移库与新建库的结构必须完全一致，靠解析注释切段迟早切错。
+V082_NEW_TABLES = ("textbooks", "node_topic_map")
+V082_NEW_TABLE_INDEXES = {
+    "textbooks": (
+        "CREATE UNIQUE INDEX uq_textbooks_name ON textbooks (name)",
+        "CREATE UNIQUE INDEX uq_textbooks_default ON textbooks (is_default) WHERE is_default = 1",
+    ),
+    "node_topic_map": (
+        "CREATE INDEX idx_ntm_textbook ON node_topic_map (textbook_id, outline_node_id)",
+        "CREATE INDEX idx_ntm_topic ON node_topic_map (topic_id)",
+    ),
+}
+
+
+def textbook_id_of(name: str) -> str:
+    return "tb_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+
+
+def _new_table_ddl(plugin_id: str, name: str) -> str:
+    """取冻结 schema.sql 里某张新表的 CREATE TABLE 段，再拼上本文件登记的索引。"""
+    schema = _schema_path(plugin_id).read_text(encoding="utf-8")
+    start = schema.index(f"CREATE TABLE {name} (")
+    end = schema.index(");", start) + 2
+    indexes = V082_NEW_TABLE_INDEXES.get(name)
+    if indexes is None:
+        raise BankError(f"没登记 {name} 的索引，拒绝建出一张缺索引的库")
+    return schema[start:end] + "\n" + "\n".join(item.rstrip(";") + ";" for item in indexes)
+
+
+def _v082_verify(con: sqlite3.Connection, expected_map: int, snapshot: dict[str, int]) -> None:
+    """升级自检：行数、外键、完整性、并集不变量、映射可还原树、映射不静默丢行。"""
+    problems: list[str] = []
+    for table, count in snapshot.items():
+        after = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        if after != count:
+            problems.append(f"{table} 行数 {count} → {after}")
+    if con.execute("PRAGMA foreign_key_check").fetchall():
+        problems.append("外键自检有违规")
+    if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+        problems.append("integrity_check 非 ok")
+    bound = con.execute(
+        "SELECT COUNT(*) FROM topics WHERE substr(id, 1, 5) = 'tp_kx' AND textbook_id IS NOT NULL"
+    ).fetchone()[0]
+    if bound:
+        problems.append(f"{bound} 个考向被绑上版本，违反并集不变量")
+    unreproducible = con.execute(
+        """SELECT COUNT(*) FROM topics t WHERE substr(t.id, 1, 5) = 'tp_kx'
+                 AND t.parent_id IS NOT NULL AND NOT EXISTS
+           (SELECT 1 FROM node_topic_map m WHERE m.topic_id = t.id AND m.outline_node_id = t.parent_id)"""
+    ).fetchone()[0]
+    if unreproducible:
+        problems.append(f"{unreproducible} 个考向的父子关系在映射表里还原不出来")
+    actual = con.execute("SELECT COUNT(*) FROM node_topic_map").fetchone()[0]
+    if actual != expected_map:
+        problems.append(f"映射行只落 {actual} 条，期望 {expected_map} 条（有行被静默忽略）")
+    if problems:
+        raise BankError("；".join(problems))
+
+
+def upgrade_structure(plugin_id: str, path: Path | None = None) -> dict[str, Any]:
+    """把 v0.6.3 七表库就地升级到 v0.8.2 多版本地基；已是 v2 直接返回。"""
+    plugin_id = validate_plugin_id(plugin_id)
+    db_path = path or bank_db_path(plugin_id)
+    if not db_path.is_file():
+        raise BankNotFound(f"题库不存在，无从升级：{db_path}")
+    con = sqlite3.connect(db_path, timeout=30.0)
+    try:
+        version = int(con.execute("PRAGMA user_version").fetchone()[0])
+        if version > SCHEMA_VERSION:
+            raise BankError(f"题库结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级底座。")
+        names = {row[0] for row in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )}
+        if version >= SCHEMA_VERSION and set(V082_NEW_TABLES) <= names:
+            return {"upgraded": False, "user_version": version, "map_rows": 0}
+        if "topics" not in names:
+            raise BankError(f"题库 {plugin_id} 没有 topics 表，不是可升级的 core-bank 结构。")
+
+        backup = db_path.with_name(db_path.name + ".pre-v082.bak")
+        if not backup.exists():
+            shutil.copyfile(db_path, backup)
+
+        con.execute("PRAGMA foreign_keys = OFF")
+        con.execute("BEGIN IMMEDIATE")
+        try:
+            snapshot = {table: con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                        for table in ("topics", "question_topics", "topic_notes")}
+            # topics 用「建新表 → 搬数据 → 改名」而不是 ALTER ADD COLUMN：
+            # ALTER 加不上 CHECK，那样新建库有并集不变量、迁移库没有，一份代码面对两种结构。
+            con.execute(V082_TOPICS_DDL)
+            con.execute(
+                """INSERT INTO topics_new (id, parent_id, textbook_id, name, path, sort_order,
+                                           status, created_at, updated_at)
+                   SELECT id, parent_id, NULL, name, path, sort_order, status, created_at, updated_at
+                   FROM topics"""
+            )
+            con.execute("DROP TABLE topics")
+            con.execute("ALTER TABLE topics_new RENAME TO topics")
+            for ddl in V082_TOPICS_INDEXES:
+                con.execute(ddl)
+
+            names = {row[0] for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )}
+            for table in V082_NEW_TABLES:
+                if table not in names:
+                    con.executescript(_new_table_ddl(plugin_id, table))
+
+            tb_id = textbook_id_of(V082_TEXTBOOK_NAME)
+            stamp = con.execute("SELECT COALESCE(MAX(updated_at), ?) FROM topics", (_now(),)).fetchone()[0]
+            con.execute(
+                """INSERT OR IGNORE INTO textbooks (id, name, publisher, edition, is_default,
+                                                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 1, ?, ?)""",
+                (tb_id, V082_TEXTBOOK_NAME, "人民教育出版社", "2019 课标版", stamp, stamp),
+            )
+            con.execute(
+                "UPDATE topics SET textbook_id = ? WHERE substr(id, 1, 5) IN ('tp_bo', 'tp_ch', 'tp_se')",
+                (tb_id,),
+            )
+            expected = 0
+            for topic_id, path_value, sort_order in con.execute(
+                "SELECT id, path, sort_order FROM topics WHERE substr(id, 1, 5) = 'tp_kx' ORDER BY path"
+            ).fetchall():
+                # path 是 "/" 分隔的 id 链；链上除自己外都是该版本的目录节点
+                ancestors = [node for node in path_value.split("/") if node and node != topic_id]
+                expected += len(ancestors)
+                con.executemany(
+                    """INSERT OR IGNORE INTO node_topic_map
+                       (outline_node_id, topic_id, textbook_id, sort_order, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    [(node, topic_id, tb_id, sort_order, stamp) for node in ancestors],
+                )
+            _v082_verify(con, expected, snapshot)
+            con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            con.commit()
+        except BaseException:
+            if con.in_transaction:
+                con.execute("ROLLBACK")
+            raise
+        _structure_cache.clear()
+        return {"upgraded": True, "user_version": SCHEMA_VERSION,
+                "map_rows": expected, "backup": backup.name}
+    finally:
+        con.close()
 
 
 def _encode(value: Any) -> str:

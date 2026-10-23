@@ -171,7 +171,7 @@ class HostRelayV071Test(unittest.TestCase):
         block = STAGE[STAGE.index('if (method === "bank.delete")'):STAGE.index('if (method === "bank.review")')]
         self.assertIn("questions:write", block, "删题必须先声明写权限")
         self.assertIn('method: "DELETE"', block)
-        self.assertIn("CANONICAL_BANK_ID", block, "删题只能作用于底座公共真题库")
+        self.assertIn("bankProviderBase()", block, "删题只能作用于当前活跃的公共题库 provider")
         self.assertIn('action: "delete"', block, "删库成功要广播回流刷新")
 
     def test_02_draft_is_hosted_locally_never_fetched(self) -> None:

@@ -18,21 +18,28 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core import bank as core_bank
+from app.core import bank_provider
 from app.core.config import default_database_path, root_data_dir, settings, switch_workspace
 from app.core.db import init_db
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"
 DEFAULT_WORKSPACE_NAME = "默认工作区"
-# 工作区下拉里「当前题库」显示的就是这个插件库的题目数（AGENTS §2：core-bank 是唯一公共真题库）。
-CORE_BANK_PLUGIN_ID = "org.jiuzhang.core-bank"
+# 工作区下拉里「当前题库」显示的就是**活跃 provider** 的题目数（PLUGIN_SPEC §2.6.1）。
+# 默认仍是官方 core-bank，但这里不再写死它的 id——第三方题库被选为 provider 后，
+# 计数、建库、挂载都跟着走同一个解析结果。
+CORE_BANK_PLUGIN_ID = bank_provider.DEFAULT_PROVIDER_ID
+
+
+def _provider_id() -> str:
+    return bank_provider.resolve()["plugin_id"]
 
 
 def _bank_db_for(workspace_id: str | None) -> Path:
     """按工作区推导 core-bank 物理库路径，不改全局 settings，供只读计数。"""
     base = root_data_dir()
     data_dir = base / "workspaces" / workspace_id if workspace_id else base
-    return data_dir / "banks" / f"{CORE_BANK_PLUGIN_ID}.db"
+    return data_dir / "banks" / f"{_provider_id()}.db"
 
 
 def _bank_question_count(workspace_id: str | None) -> int:
@@ -61,7 +68,7 @@ def _provision_core_bank() -> int:
     否则同样建空。任何建库异常都不该让切换/新建整条失败——题目读不到时前端会再触发。
     """
     try:
-        core_bank.ensure_bank(CORE_BANK_PLUGIN_ID)
+        core_bank.ensure_bank(_provider_id())
     except Exception:  # noqa: BLE001 - 兜底：建库失败不阻断工作区操作，交由后续懒加载重试
         pass
     return _bank_question_count(settings.workspace_id)
@@ -260,7 +267,10 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
     workspace_id = f"ws_{secrets.token_hex(8)}"
     workspace_dir = Path(settings.data_dir) / "workspaces" / workspace_id / "banks"
     workspace_dir.mkdir(parents=True, exist_ok=True)
-    db_path = workspace_dir / f"{CORE_BANK_PLUGIN_ID}.db"
+    # 落成的文件名跟活跃 provider 一致：工作区「当前题库」读的就是这个路径。
+    # 导入接口本身按 core-bank 七表校验，所以只有官方库当 provider 时它才有意义
+    # （第三方 provider 接的是自己的存储，见 PLUGIN_SPEC §2.6.1 的当前边界）。
+    db_path = workspace_dir / f"{_provider_id()}.db"
     db_path.write_bytes(raw)
 
     try:

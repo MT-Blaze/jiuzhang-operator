@@ -320,9 +320,28 @@
     "basket.list", "basket.add", "basket.remove", "basket.clear",
     "draft.save", "draft.load"
   ];
-  // 录题插件的写入目标：底座唯一的公共题库。插件自报 plugin_id 一律不认，
-  // 防止 A 插件把题塞进 B 插件私有库。
-  var CANONICAL_BANK_ID = "org.jiuzhang.core-bank";
+  // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
+  // 由底座按 data/bank_provider.json 解析（PLUGIN_SPEC §2.6.1）。官方 core-bank
+  // 只是默认值——取不到 provider 时仍用它，不能让「读不到配置」打死整条数据通道。
+  var BANK_PROVIDER_DEFAULT = "org.jiuzhang.core-bank";
+  var bankProviderId = BANK_PROVIDER_DEFAULT;
+  var bankProviderCall = null;
+
+  function bankProviderBase() {
+    return "/api/bank/plugins/" + encodeURIComponent(bankProviderId);
+  }
+
+  function loadBankProvider() {
+    if (!bankProviderCall) {
+      bankProviderCall = fetchJson("/api/bank/provider").then(function (info) {
+        var id = info && info.plugin_id;
+        if (typeof id === "string" && id) bankProviderId = id;
+        return info;
+      }, function () { return null; });
+    }
+    return bankProviderCall;
+  }
+  loadBankProvider();   // 启动即取；插件要等用户点击才激活，届时已解析完
   var RELAY_TIMEOUT_MS = 20000;
   var RELAY_WINDOW_MS = 10000;
   var RELAY_MAX_PER_WINDOW = 80;
@@ -505,9 +524,9 @@
     }
 
     var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
-    // 底座公共真题库的唯一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。
+    // 活跃题库的统一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。
     // 录题插件要改真题，不能因为它自己的页签 id 就被引到别的库上（与 bank.create 同规则）。
-    var sharedBase = "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID);
+    var sharedBase = bankProviderBase();
 
     function done(result) {
       replyHost(tab, message, true, result);
@@ -536,7 +555,7 @@
         return;
       }
       withWriteToken(
-        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions",
+        bankProviderBase() + "/questions",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -574,7 +593,7 @@
         return;
       }
       withWriteToken(
-        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions/"
+        bankProviderBase() + "/questions/"
           + encodeURIComponent(targetId),
         {
           method: "PATCH",
@@ -608,7 +627,7 @@
         return;
       }
       withWriteToken(
-        "/api/bank/plugins/" + encodeURIComponent(CANONICAL_BANK_ID) + "/questions/"
+        bankProviderBase() + "/questions/"
           + encodeURIComponent(deleteId),
         { method: "DELETE" }
       ).then(function (result) {

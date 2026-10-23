@@ -40,6 +40,8 @@ _CAPABILITIES = {
     # 组卷与讲义是「消费题篮、产出 A4」的能力，不等同于单题渲染/导出
     "paper.generate",
     "handout.render",
+    # v0.8.2：声明自己可当作「活跃题库」的插件（默认仍是官方 core-bank）
+    "bank.provider",
 }
 _PERMISSIONS = {
     "questions:read",

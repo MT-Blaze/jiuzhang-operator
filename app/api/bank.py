@@ -15,9 +15,31 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.core import bank, basket, questions
+from app.core import bank_provider as provider
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["bank"])
+
+
+@router.get("/api/bank/provider", summary="当前活跃的题库 provider（宿主与控制台都读它）")
+def bank_provider_current() -> dict[str, Any]:
+    """返回底座实际使用的题库插件；配置失效时回退默认并带 ``fallback_reason``。"""
+    return provider.resolve()
+
+
+@router.get("/api/bank/provider/candidates", summary="可被选为题库的已装插件")
+def bank_provider_candidates() -> dict[str, Any]:
+    return {"active": provider.resolve()["plugin_id"], "candidates": provider.candidates()}
+
+
+@router.post("/api/bank/provider", summary="切换活跃题库 provider",
+             dependencies=[Depends(require_write_token)])
+def bank_provider_set(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """用户亲手选的题库：必须已安装且声明 ``bank.provider``，否则 400（PLUGIN_SPEC §2.6.1）。"""
+    try:
+        return provider.set_provider(str(body.get("plugin_id") or ""))
+    except provider.ProviderRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/bank/plugins/{plugin_id}/stats", summary="题库统计（年级/难度/题型/章节）")

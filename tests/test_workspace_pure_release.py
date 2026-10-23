@@ -125,6 +125,19 @@ class PluginPackagePurityTest(unittest.TestCase):
         self.assertIn("org.jiuzhang.core-bank/bank/schema.sql", joined, "空壳仍须带 schema 供建库")
         self.assertIn("org.jiuzhang.core-bank/plugin.json", joined)
 
+    def test_release_script_excludes_structural_backups(self) -> None:
+        """结构升级备份是 456 题库的整份副本，漏进发行包等于把真题再发一遍。
+
+        v0.8.2 迁移会在库旁边落 ``*.pre-v082.bak``；robocopy 的 /XF 只按后缀剔文件，
+        所以 ``*.bak`` 必须显式出现在剔除清单里。
+        """
+        bat = (ROOT / "build_release.bat").read_text(encoding="utf-8")
+        line = next((row for row in bat.splitlines() if "/XF" in row), "")
+        self.assertIn("*.bak", line, "/XF 剔除清单里没有 *.bak，升级备份会被打进发行包")
+        self.assertIn("*.db", line, "物理 .db 必须继续被剔除（纯净发版口径 ADR-003）")
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("*.pre-v082.bak", gitignore, "升级备份不该进 git")
+
 
 class WorkspaceEndpointContractTest(unittest.TestCase):
     def test_router_mounts_and_guards_writes(self) -> None:

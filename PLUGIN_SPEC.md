@@ -559,7 +559,63 @@ com.example.card/
 - 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL；
 - 写入类方法（`bank.create`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（456 道真题，SQLite 随包分发，首次打开由底座复制到工作区 `data/banks/`）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（SQLite 存储端，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题。后续组卷、讲义插件复用同一通道，不新增协议。
+
+#### 2.6.1 题库 provider 可替换（v0.8.2）——底座不写死 `core-bank`
+
+官方 `core-bank` 只是**默认的**题库 provider，不是唯一的。任何第三方插件只要满足三条，就能被底座当作活跃题库使用：
+
+1. **清单声明能力** `capabilities: ["bank.provider"]`，并在 `permissions` 里声明 `questions:read`（要接受写入再加 `questions:write`）；
+2. **实现标准读方法**：`bank.list` / `bank.stats` / `bank.get` / `bank.random`（可选 `bank.topics` / `bank.topic_notes` / `bank.review`），出参结构必须逐字符合 `schemas/question.json`（含 `id` 全局身份、Markdown + LaTeX 文本、`extensions` 反向域名键）；
+3. **不越界**：数据只经 Host API 与总线进出，插件不得直连数据库、文件系统、环境变量或密钥（AGENTS 铁律二）。
+
+路由口径（缺一即违规）：
+
+- **谁在用**：宿主（`static/js/stage.js`）启动时向 `GET /api/bank/provider` 取「当前活跃 provider」，把 `bank.get` / `bank.topics` / `bank.create` 等**跨页签共享**的通道指向它；`bank.list` / `bank.stats` / `bank.random` 与题篮仍按**页签自己的 plugin.id** 走 `/api/bank/plugins/{plugin_id}/…`，天然多库并存。
+- **谁在选**：活跃 provider 落在本机 `data/bank_provider.json`，由用户在【设置与控制台 → 工作区管理】里选；写入接口需带一次性写令牌。
+- **怎么选得上**：被设置的 id 必须**已安装**且**声明了 `bank.provider` 能力**，否则底座拒绝写入并回 400；读取时若配置的 provider 已卸载或不合规，**回退默认 provider 并如实回报 `fallback_reason`**——「插件坏了，底座还能用」（AGENTS §2）。
+- **不许写死**：底座与插件代码里不得出现 `org.jiuzhang.core-bank` 字面量作为路由目标（打包/索引/测试夹具除外）。默认值只允许出现在 `app/core/bank_provider.py` 的 `DEFAULT_PROVIDER_ID` 一处。
+- **契约不变**：换 provider 不换协议。`question.json` 是唯一标准结构（§2.5 与 AGENTS §3），provider 私有数据只能写进 `extensions`，底座不解释。
+
+> **当前边界（如实说明，别当已交付）**：官方 provider 的存储层仍是 core-bank 的 7 张关系表 + 两张版本表，`app/core/bank.py` 的结构守卫按 `bank/schema.sql` 校验。第三方若要用 JSON / MySQL / 自研结构**服务同一套 `bank.*`**，还缺一个 provider 反向 RPC 运行时（§2.2 数据源插件的预留位，与 §6.1「后端插件运行时」同源）；在那之前，可替换的是**路由与身份**，不是**存储引擎本身**。
+
+### 2.7 多版本教材与考向并集（v0.8.2 地基）
+
+主公定调的终极架构：**一个老师的题库要同时挂多套教材目录**。三条硬规则，存储层已把不变量钉进 CHECK：
+
+1. **考向表是并集**：`topics` 里层别为 `tp_kx` 的考向节点**不属于任何教材版本**——
+   `ck_topics_taxonomy_shared CHECK (substr(id,1,5) <> 'tp_kx' OR textbook_id IS NULL)` 直接拒掉「把考向绑版本」。
+   谁有新考向，就往这个池子里加；**同一考向全库只有一行**。
+2. **大纲树是子集视图**：`textbooks` 一行一个教材版本（人教A版 / 苏教版 / 北师大版…），
+   `topics` 里 `tp_bo` / `tp_ch` / `tp_se` 是**版本目录节点**，必须带 `textbook_id`；
+   左侧大纲树按版本取，取到的就是该版本的子集，不是全库。
+3. **跨版本靠映射表**：`node_topic_map(outline_node_id, topic_id, textbook_id, sort_order)` 是
+   「版本目录节点 → 考向」的多对多。同一考向可以同时出现在人教A版第三章和苏教版第五章下；
+   题目本身**一行都不复制**——题目只经 `question_topics` 指向考向，换版本不改题目、不改题-考向关联。
+   两条 CHECK 把方向钉死：`outline_node_id` 只许 `tp_bo/tp_ch/tp_se`，`topic_id` 只许 `tp_kx`。
+
+**接入第二个教材版本的正确姿势**（苏教版来了该做什么，只此一条路）：
+
+```sql
+INSERT INTO textbooks (id, name, publisher, edition, is_default, created_at, updated_at)
+     VALUES ('tb_xxxxxxxx', '苏教版', '江苏教育出版社', '', 0, …);   -- ① 只加一行版本
+INSERT INTO topics (id, parent_id, textbook_id, name, path, …)              -- ② 只加它自己的
+     VALUES ('tp_boYYYYYYYY', NULL, 'tb_xxxxxxxx', '必修第一册', …);        --    目录节点
+INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, created_at)
+     VALUES ('tp_boYYYYYYYY', 'tp_kx…', 'tb_xxxxxxxx', 0, …);               -- ③ 指向既有考向
+```
+
+**禁止**：复制考向节点、给考向填 `textbook_id`、把题目按版本再录一遍、
+在 `node_topic_map` 里挂「章→章」「节→节」这类非考向目标（CHECK 会拒）。
+
+**结构版本与升级**：`PRAGMA user_version = 2`。老库（v0.6.3 七表）由底座首启就地升级
+（`app/core/bank.py` 的 `upgrade_structure`），也可离线跑 `tools/migrate_bank_v082.py --apply`；
+升级前自动落 `<库名>.pre-v082.bak` 备份，自检（行数 / 外键 / 完整性 / 并集不变量 /
+映射可还原原树 / 映射行数对账）不过就整事务回滚。`topics` 用「建新表搬数据」而不是
+`ALTER ADD COLUMN`——ALTER 加不上 CHECK，那样新建库有不变量、迁移库没有，一份代码面对两套结构必出错。
+
+**展示口径**：`bank.topics` 目前返回**默认版本**的大纲树（现网只有人教A版）；带 `textbook=` 参数取指定版本
+是下一步（provider 反向 RPC 与多版本 UI 一起做），本轮只保证**地基能承载**，不假装 UI 已就绪。
 
 ---
 

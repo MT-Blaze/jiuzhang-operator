@@ -12,7 +12,8 @@
     "frontend": "dist/index.html"
   },
   "slots": ["question.card", "stage.center"],
-  "capabilities": ["question.render"],
+  "capabilities": ["question.render",
+    "bank.provider"],
   "permissions": ["questions:read"],
   "ui": {
     "title": "真题题库筛选",
