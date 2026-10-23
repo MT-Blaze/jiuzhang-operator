@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>专题讲义</title>
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="plugin.css">
+</head>
+<body>
+  <div id="lcRoot" class="lc-root" hidden>
+    <header class="lc-top">
+      <div class="lc-brand">
+        <h1>专题讲义</h1>
+        <p class="lc-sub">知识点 · 方法 · 易错点 · A4 打印</p>
+      </div>
+
+      <label class="lc-title-field">
+        <span>标题</span>
+        <input id="lcTitle" type="text" maxlength="48" value="九章算子 · 专题讲义" aria-label="讲义标题">
+      </label>
+
+      <div class="lc-actions">
+        <span id="lcStatus" class="lc-status" role="status" aria-live="polite"></span>
+        <button type="button" id="lcSkeleton" class="lc-btn lc-btn-ghost">从题篮生成骨架</button>
+        <button type="button" id="lcSave" class="lc-btn lc-btn-ghost">保存草稿</button>
+        <button type="button" id="lcLoad" class="lc-btn lc-btn-ghost">载入草稿</button>
+        <button type="button" id="lcPrint" class="lc-btn">打印 / PDF</button>
+      </div>
+    </header>
+
+    <main class="lc-main">
+      <aside class="lc-sources" aria-label="题源">
+        <header class="lc-sources-head">
+          <h2>题源</h2>
+          <span id="lcSourceCount" class="lc-source-count">0</span>
+        </header>
+        <p class="lc-hint">骨架按考向从题篮提炼。题篮增减后点【从题篮生成骨架】重建。</p>
+        <ol id="lcSourceList" class="lc-source-list"></ol>
+        <p id="lcSourceEmpty" class="lc-muted">题篮是空的。去「真题题库」加几道同类题，讲义骨架才有依据。</p>
+      </aside>
+
+      <section class="lc-doc" aria-label="讲义正文">
+        <header class="lc-doc-head">
+          <h1 id="lcDocTitle">九章算子 · 专题讲义</h1>
+          <p id="lcDocMeta" class="lc-doc-meta">题源 0 道</p>
+        </header>
+
+        <section class="lc-block" data-block="knowledge">
+          <header class="lc-block-head">
+            <h2>知识点</h2>
+            <span class="lc-block-count" data-count="knowledge">0</span>
+            <button type="button" class="lc-add" data-add="knowledge">＋ 添加知识点</button>
+          </header>
+          <div class="lc-entries" data-entries="knowledge"></div>
+        </section>
+
+        <section class="lc-block" data-block="methods">
+          <header class="lc-block-head">
+            <h2>方法</h2>
+            <span class="lc-block-count" data-count="methods">0</span>
+            <button type="button" class="lc-add" data-add="methods">＋ 添加方法</button>
+          </header>
+          <div class="lc-entries" data-entries="methods"></div>
+        </section>
+
+        <section class="lc-block" data-block="pitfalls">
+          <header class="lc-block-head">
+            <h2>易错点</h2>
+            <span class="lc-block-count" data-count="pitfalls">0</span>
+            <button type="button" class="lc-add" data-add="pitfalls">＋ 添加易错点</button>
+          </header>
+          <div class="lc-entries" data-entries="pitfalls"></div>
+        </section>
+
+        <p id="lcEmptyHint" class="lc-empty-hint">
+          还没有内容。点【从题篮生成骨架】按考向铺三栏，或直接用每栏的「＋ 添加」手写。
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="plugin.js"></script>
+</body>
+</html>

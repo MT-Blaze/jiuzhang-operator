@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.lecture",
+  "name": "专题讲义",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "把题篮里的同类题提炼成讲义：知识点、方法步骤、易错点三栏原生编辑与预览，A4 可打印。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["stage.center"],
+  "capabilities": ["handout.render"],
+  "permissions": ["questions:read"],
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "专题讲义",
+    "priority": 60,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["basket.changed"],
+    "publish": ["region.dock"]
+  }
+}
