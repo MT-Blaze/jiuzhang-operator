@@ -310,6 +310,8 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | `GET /api/bank/plugins/{plugin_id}/topics/{topic_id}/notes` | 考向教研笔记 |
 | `GET /api/bank/plugins/{plugin_id}/review?flag=&page=&page_size=` | 待审队列 |
 | `GET /api/bank/plugins/{plugin_id}/random?...筛选同 list` | 随机一题（无匹配 404） |
+| `GET /api/bank/export` | 导出当前工作区题库为标准交换包 `.json`（`Content-Disposition: attachment`；`{format, format_version, schema_version, exported_at, plugin_id, count, questions}`） |
+| ✍ `POST /api/bank/import` | 批量导入题目包：`{"filename", "content_base64", "mode": "upsert"\|"skip"}`；`.json`（单题/数组/`questions` 交换包）或 `.zip`（内含 `.json`）。宿主逐题校验 `schemas/question.json`，一题不过整批回滚并逐题报错（422） |
 
 ### 3.2 题篮
 

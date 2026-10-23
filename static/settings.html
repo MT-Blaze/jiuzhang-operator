@@ -98,6 +98,20 @@
               <input type="file" id="dbImportFile" accept=".db,application/x-sqlite3" hidden>
             </div>
             <p class="pl-status" id="importStatus" role="status" aria-live="polite" hidden></p>
+
+            <h3 class="st-sub">批量导入与导出题目</h3>
+            <p class="st-note">
+              导入 <code>.json</code>（单道题、题目数组，或带 <code>questions</code> 的交换包）
+              或 <code>.zip</code>（内含 <code>.json</code>）；底座按 <code>schemas/question.json</code>
+              逐题校验，<strong>一题不合格就整批回滚</strong>，并报出是包里第几道题坏了。
+              导出则把当前工作区题库打包成标准 <code>.json</code>，导出的文件能原样再导入回来。
+            </p>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="bankImportBtn">导入题目包</button>
+              <button type="button" class="q-button" id="bankExportBtn">导出当前题库</button>
+              <input type="file" id="bankImportFile" accept=".json,.zip,application/json,application/zip" hidden>
+            </div>
+            <p class="pl-status" id="bankIoStatus" role="status" aria-live="polite" hidden></p>
           </section>
 
           <!-- ================= 插件 ================= -->

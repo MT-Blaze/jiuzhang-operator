@@ -145,6 +145,14 @@ class BankConflict(BankError):
     pass
 
 
+class BankImportError(BankError):
+    """批量导入被拒：逐题校验没过。``errors`` 逐题给出序号、ID 与报错。"""
+
+    def __init__(self, errors: list[dict[str, Any]]) -> None:
+        self.errors = errors
+        super().__init__(f"{len(errors)} 道题不符合 Schema，导入已整体回滚")
+
+
 def validate_plugin_id(plugin_id: str) -> str:
     if not isinstance(plugin_id, str) or PLUGIN_ID_RE.fullmatch(plugin_id) is None:
         raise BankError("插件 ID 非法")
@@ -963,6 +971,22 @@ def list_questions(
         con.close()
 
 
+def export_documents(plugin_id: str) -> list[dict[str, Any]]:
+    """导出当前工作区题库的全部题目（标准结构，按 ID 排序）。
+
+    走读路径装配而不是直接读表：出参必须与题库浏览器、组卷插件看到的是同一份口径，
+    否则导出的文件再导入回来就会变形。
+    """
+    documents: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        items, total = list_questions(plugin_id, page=page, page_size=MAX_PAGE_SIZE)
+        documents.extend(items)
+        if not items or len(documents) >= total:
+            return documents
+        page += 1
+
+
 def get_question(plugin_id: str, question_id: str) -> dict[str, Any]:
     if not isinstance(question_id, str) or not question_id.startswith("q_"):
         raise BankNotFound("题目 ID 非法")
@@ -1469,6 +1493,101 @@ def import_documents(
     finally:
         con.close()
     return len(prepared)
+
+
+def _with_default_meta(document: Any) -> Any:
+    """补齐审计字段：外部题目包常缺 meta，底座按契约补上。
+
+    补的全是审计字段，不动题干、答案与结构——好题不该因为缺一个时间戳被整包拒收。
+    """
+    if not isinstance(document, dict):
+        return document
+    stamp = _now()
+    meta = document.get("meta")
+    filled = dict(meta) if isinstance(meta, dict) else {}
+    filled.setdefault("created_at", stamp)
+    filled.setdefault("updated_at", stamp)
+    filled.setdefault("revision", 1)
+    filled.setdefault("status", "published")
+    return {**document, "meta": filled}
+
+
+def prepare_import_documents(
+    documents: Iterable[Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """批量导入前的逐题清洗与校验。
+
+    返回 (可写入的题目, 错误清单)。错误清单每项带序号、题目 ID 与 Schema 报错：
+    老师能一眼看出包里第几道题坏了，而不是只看到一句「导入失败」。
+    """
+    prepared: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for index, document in enumerate(documents, start=1):
+        try:
+            cleaned = _storage_ready(
+                _intake_document(_with_default_meta(document), strict=False)
+            )
+            question_contract.validate_question(cleaned)
+        except question_contract.QuestionValidationError as exc:
+            errors.append({
+                "index": index,
+                "id": str(document.get("id") or "") if isinstance(document, dict) else "",
+                "errors": exc.errors[:5],
+            })
+            continue
+        prepared.append(cleaned)
+    return prepared, errors
+
+
+def import_questions(
+    plugin_id: str, documents: Iterable[Any], *, mode: str = "upsert"
+) -> dict[str, Any]:
+    """批量导入题目包：逐题校验 → 摘掉本库没有的考向节点 → 单事务写入。
+
+    ``mode="upsert"`` 同 ID 覆盖（重复导入幂等，导出再导入能还原原状）；
+    ``mode="skip"`` 同 ID 跳过。导入包里带的考向节点若本库没有就忽略并如实计数——
+    别人的题包带着别人的大纲，硬挂到自己树上才是错挂。
+    """
+    if mode not in ("upsert", "skip"):
+        raise BankError(f"未知导入模式 {mode!r}，只认 upsert / skip")
+    prepared, errors = prepare_import_documents(documents)
+    if errors:
+        raise BankImportError(errors)
+    if not prepared:
+        raise BankImportError([{"index": 0, "id": "", "errors": ["题目包里没有题目"]}])
+
+    con = connect(plugin_id)
+    try:
+        known_topics = {row[0] for row in con.execute("SELECT id FROM topics")}
+        existing = {row[0] for row in con.execute("SELECT id FROM questions")}
+    finally:
+        con.close()
+
+    dropped = 0
+    kept: list[dict[str, Any]] = []
+    for document in prepared:
+        taxonomy = document.get("taxonomy") or {}
+        wanted = [item for item in (taxonomy.get("topic_ids") or []) if isinstance(item, str)]
+        allowed = [item for item in wanted if item in known_topics]
+        dropped += len(wanted) - len(allowed)
+        if len(allowed) != len(wanted):
+            document = {**document, "taxonomy": {**taxonomy, "topic_ids": allowed}}
+        kept.append(document)
+
+    if mode == "skip":
+        todo = [document for document in kept if document["id"] not in existing]
+        skipped = len(kept) - len(todo)
+    else:
+        todo = kept
+        skipped = 0
+    written = import_documents(plugin_id, todo) if todo else 0
+    return {
+        "imported": written,
+        "updated": sum(1 for document in todo if document["id"] in existing),
+        "skipped": skipped,
+        "dropped_topics": dropped,
+        "total": len(kept),
+    }
 
 
 def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:

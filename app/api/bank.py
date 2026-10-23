@@ -10,12 +10,16 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse, Response
 
 from app.core import bank, basket, questions
 from app.core import bank_provider as provider
+from app.core import bank_transfer as transfer
 from app.core.security import require_write_token
 from app.api import workspaces as workspace_api
 
@@ -296,6 +300,85 @@ def bank_create_question(plugin_id: str, payload: dict[str, Any] = Body(...)) ->
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/bank/export", summary="导出当前工作区题库为标准 .json（可再导入回来）")
+def bank_export() -> Response:
+    """把当前工作区题库打包成交换包，直接落盘成 ``.json``。
+
+    出参是 ``schemas/question.json`` 的标准结构，与题库浏览器、组卷插件看到的是
+    同一份口径；导出的文件原样再导入回来即幂等还原。
+    """
+    plugin_id = provider.resolve()["plugin_id"]
+    try:
+        documents = bank.export_documents(plugin_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    bundle = transfer.build_bundle(plugin_id, documents, questions.now_iso())
+    filename = f"jiuzhang-bank-{plugin_id}-{questions.now_iso()[:10].replace('-', '')}.json"
+    return JSONResponse(
+        content=bundle,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post(
+    "/api/bank/import",
+    summary="批量导入 .json / .zip 题目包（宿主校验后批量写入）",
+    dependencies=[Depends(require_write_token)],
+)
+def bank_import(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """把老师选中的题目包导进当前工作区题库。
+
+    请求体形如 ``{"filename": "pack.json", "content_base64": "..."}``：包可以是单个
+    题目对象、题目数组，或带 ``questions`` 的交换包；``.zip`` 里每个 ``.json`` 成员
+    都按同一口径解析。校验在宿主做（``schemas/question.json``），任一题不合格即整批
+    回滚并逐题报错，不写半截数据。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    filename = str(payload.get("filename") or "").strip()[:160]
+    content = payload.get("content_base64")
+    if not isinstance(content, str) or not content.strip():
+        raise HTTPException(status_code=400, detail="缺少 content_base64")
+    mode = str(payload.get("mode") or "upsert")
+    if mode not in ("upsert", "skip"):
+        raise HTTPException(status_code=400, detail="mode 只能是 upsert 或 skip")
+    try:
+        raw = base64.b64decode(content, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="题目包不是合法的 base64") from exc
+    try:
+        documents = transfer.parse_bundle(raw, filename)
+    except transfer.TransferError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    plugin_id = provider.resolve()["plugin_id"]
+    try:
+        report = bank.import_questions(plugin_id, documents, mode=mode)
+    except bank.BankImportError as exc:
+        summary = "；".join(
+            f"第 {item['index']} 题" + (f"（{item['id']}）" if item.get("id") else "")
+            + "：" + "；".join(item["errors"][:2])
+            for item in exc.errors[:4]
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"message": f"{len(exc.errors)} 道题不符合 Schema，导入已整体回滚：{summary}",
+                    "errors": exc.errors},
+        ) from exc
+    except questions.QuestionValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "题目不符合 Schema", "errors": exc.errors},
+        ) from exc
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"plugin_id": plugin_id, **report}
 
 
 @router.get("/api/bank/plugins/{plugin_id}/random", summary="按筛选条件随机取一题")
