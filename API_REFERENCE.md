@@ -330,9 +330,11 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | ✍ `POST /api/plugins/index` | 拉取插件索引：`{"url", "allow_mirrors": true}`；只读 GET，不解压不执行；官方地址失败按 gh-proxy → ghfast → jsDelivr → fastly.jsDelivr → Raw 换源 |
 | ✍ `POST /api/plugins/{plugin_id}/enabled` | 启用/停用：`{"enabled": true|false}`（只写 `data/plugin_state.json`，绝不碰代码与数据） |
 | ✍ `DELETE /api/plugins/{plugin_id}?keep_data=true|false` | 卸载；`keep_data=false` 连同各工作区物理 `.db` 一并销毁（默认 `true` 只删代码目录） |
-| ✍ `POST /api/plugins/update/check` | 双轨更新·检查（军令 #11 阶段四；只在用户点击后出网） |
-| ✍ `POST /api/plugins/update/apply` | 双轨更新·下载并热更插件 |
-| `GET /api/plugins/update/pending` | 重启续更待办 |
+| ✍ `POST /api/plugins/update/check` | 双轨更新·检查：`{"url"?, "allow_mirrors"?}`；给了 `url` 才出网拉一次索引，否则复用本机缓存。回 `{host, plugins[], summary, index_source}`，每条带 `state`（`update_available` / `incompatible` / `up_to_date` / `not_in_index` / `bad_entry`）与 `reason` |
+| ✍ `POST /api/plugins/update/apply` | 双轨更新·下载并热更：`{"all": true}` 或 `{"ids": [...]}`；只处理 `update_available`，其余进 `skipped`；回 `{updated[], failed[], skipped[], host}`。只覆盖 `plugins/<id>/`，新包同名数据文件以本地为准，新包没带的本地文件原地保留 |
+| `GET /api/plugins/update/pending` | 重启续更待办：读 `data/update_state.json`，附本次进程 `last_resume` |
+| ✍ `POST /api/plugins/update/pending-clear` | 作废续更待办（补齐跑完或用户明确清空） |
+| ✍ `POST /api/plugins/update/host-apply` | 底座自更新：`{"launch": false}` 只下载校验并生成 `%TEMP%\jzo_update_<pid>.bat`；`launch=true` 才交接脚本并退出自身（开发工作树有 `.git` 时 409 `dev_worktree`）。回 `{version, current, script_path, staged_at, excluded_dirs, launchable}` |
 
 ### 3.4 工作区 / 设置 / 健康
 

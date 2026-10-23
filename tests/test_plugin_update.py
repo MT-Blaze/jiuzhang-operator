@@ -628,12 +628,16 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertEqual(HOST_EXCLUDED_DIRS,
                          ("data", ".venv", ".git", "dist", "__pycache__", ".system_generated"))
         self.assertIn("/XD", self.robocopy)
+        # 传目标绝对路径在「阶段 → 根」方向不生效（update_probe 沙箱真跑抓出），
+        # 所以 /XD 只认目录名；裸名会在源与目标两侧同时跳过该目录。
         for name in HOST_EXCLUDED_DIRS:
-            self.assertIn(f'"{self.rendered(name)}"', self.robocopy, f"{name}/ 必须被排除")
+            self.assertIn(f'"{name}"', self.robocopy, f"{name}/ 必须被排除")
+            self.assertNotIn(f'"{self.rendered(name)}"', self.robocopy,
+                             f"{name}/ 不能只写绝对路径（robocopy /XD 不生效）")
 
     def test_02_data_is_the_first_exclusion(self):
         """data/ 是老师的财产，必须排在排除清单最前面、且确实被排除。"""
-        positions = [self.robocopy.index(f'"{self.rendered(name)}"') for name in HOST_EXCLUDED_DIRS]
+        positions = [self.robocopy.index(f'"{name}"') for name in HOST_EXCLUDED_DIRS]
         self.assertEqual(positions, sorted(positions), "排除顺序应与 HOST_EXCLUDED_DIRS 一致")
         self.assertEqual(HOST_EXCLUDED_DIRS[0], "data")
 

@@ -552,8 +552,14 @@ def build_update_script(*, root: Path, staged: Path, pid: int, port: int) -> str
 
     四步：等父进程退出 → robocopy 覆盖程序文件（排除 ``data/`` 等六项）→
     重新拉起底座 → 删暂存与自身。
+
+    ``/XD`` 只写**目录名**，不写目标绝对路径：军令 #13 任务 10 的沙箱真跑抓出
+    绝对路径在这个方向（阶段→根）不生效，源包里的 ``data/``、``.git/``、``dist/``
+    会照原样覆盖过去——那就等于把老师的题库交出去了。裸名会让 robocopy 在整棵树
+    里跳过同名的目录，两侧都保护；代价是发行包里任何同名目录也不会被复制，
+    这正是 ADR-006 要的结果。
     """
-    excludes = " ".join(f'"{root / name}"' for name in HOST_EXCLUDED_DIRS)
+    excludes = " ".join(f'"{name}"' for name in HOST_EXCLUDED_DIRS)
     file_excludes = " ".join(f'"{pattern}"' for pattern in HOST_EXCLUDED_FILES)
     python_exe = root / ".venv" / "Scripts" / "python.exe"
     lines = [
