@@ -55,7 +55,7 @@
   var dockClearBtn = document.getElementById("wsDockClear");
   var dockLog = document.getElementById("wsDockLog");
 
-  // 右侧 AI 副驾（v0.7.1）：感知录题工作台当前题，改写一个字段后回填到表单。
+  // 右侧 AI 副驾：感知录题工作台当前题，改写一个字段后回填到表单。
   var cpCtx = document.getElementById("cpCtx");
   var cpField = document.getElementById("cpField");
   var cpInput = document.getElementById("cpInput");
@@ -64,6 +64,10 @@
   var cpOut = document.getElementById("cpOut");
   var editorContext = { id: "", question: null, at: 0 };
   var pendingPatch = null;
+
+  // 当前题库工作区切换（v0.7.2）：左栏顶部下拉，切/建都是换物理 .db。
+  var wsBankSelect = document.getElementById("wsBankSelect");
+  var wsBankNew = document.getElementById("wsBankNew");
 
   // ============ 对话流：气泡工厂 ============
   var CARD_SEQ = 0;
@@ -1082,6 +1086,97 @@
       var dockBody = document.getElementById("wsDockBody");
       if (dockBody) dockBody.scrollTop = dockBody.scrollHeight;
     }
+  }
+
+  // ============ 当前题库工作区：切换/新建物理 .db ============
+  var bankSwitching = false;
+
+  function fillBankSelect(data) {
+    if (!wsBankSelect) return;
+    var list = (data && data.workspaces) || [];
+    wsBankSelect.textContent = "";
+    wsBankSelect.setAttribute("data-current", (data && data.current) || "");
+    list.forEach(function (ws) {
+      var option = document.createElement("option");
+      option.value = ws.id;
+      var count = Number(ws.question_count || 0);
+      option.textContent = ws.name + " · " + count + " 题";
+      if (ws.id === data.current) option.selected = true;
+      wsBankSelect.appendChild(option);
+    });
+    wsBankSelect.disabled = false;
+  }
+
+  function loadWorkspaces() {
+    if (!wsBankSelect) return;
+    return fetch("/api/workspaces", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (data) { fillBankSelect(data); })
+      .catch(function () {
+        // 工作区接口拿不到时下拉留空但别拦住整页；标一行提示即可
+        wsBankSelect.textContent = "";
+        var option = document.createElement("option");
+        option.textContent = "题库工作区不可用";
+        option.selected = true;
+        wsBankSelect.appendChild(option);
+      });
+  }
+
+  function bankWorkspaceRequest(path, body) {
+    return fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (response) {
+      return response.json().catch(function () { return null; }).then(function (parsed) {
+        if (!response.ok) throw new Error(readErrorDetail(response, parsed) || ("HTTP " + response.status));
+        return parsed || {};
+      });
+    });
+  }
+
+  function switchBankWorkspace(id) {
+    if (bankSwitching) return;
+    bankSwitching = true;
+    wsBankSelect.disabled = true;
+    bankWorkspaceRequest("/api/workspaces/switch", { workspace_id: id }).then(function () {
+      dockLine("已切换到工作区题库：" + id, "workspace.switch");
+      window.location.reload();   // 换物理库后整页重载，插件与画布重新读新库
+    }).catch(function (err) {
+      bankSwitching = false;
+      wsBankSelect.disabled = false;
+      dockLine("切换工作区失败：" + err.message, "workspace.error");
+      loadWorkspaces();
+    });
+  }
+
+  function createBankWorkspace() {
+    if (bankSwitching) return;
+    var name = window.prompt("新工作区题库名称（会在本机新建一个空白 .db）：", "我的新题库");
+    if (name == null) return;
+    name = String(name).trim();
+    if (!name) { dockLine("工作区名称不能为空", "workspace.error"); return; }
+    bankSwitching = true;
+    if (wsBankNew) wsBankNew.disabled = true;
+    bankWorkspaceRequest("/api/workspaces", { name: name }).then(function () {
+      dockLine("已新建空白工作区题库：" + name, "workspace.create");
+      window.location.reload();
+    }).catch(function (err) {
+      bankSwitching = false;
+      if (wsBankNew) wsBankNew.disabled = false;
+      dockLine("新建工作区失败：" + err.message, "workspace.error");
+    });
+  }
+
+  function wireBank() {
+    if (!wsBankSelect) return;
+    wsBankSelect.addEventListener("change", function () {
+      var id = wsBankSelect.value;
+      var current = wsBankSelect.getAttribute("data-current") || "";
+      if (id && id !== current) switchBankWorkspace(id);
+    });
+    if (wsBankNew) wsBankNew.addEventListener("click", createBankWorkspace);
+    loadWorkspaces();
   }
 
   // ============ 右侧 AI 副驾：感知录题当前题 → 改写字段 → 回填表单 ============
@@ -2128,6 +2223,7 @@
   // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
   wireDock();
   wireCopilot();
+  wireBank();
   setStage("自由对话");
   markActiveEntry(chatEntry);
   addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");

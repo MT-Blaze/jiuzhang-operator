@@ -144,30 +144,36 @@ def _schema_path(plugin_id: str) -> Path:
 
 
 def ensure_bank(plugin_id: str) -> Path:
-    """确保工作区题库存在；缺失时从插件包自带的 bank.db 原子复制。"""
+    """确保当前工作区的题库存在。
+
+    纯净发版口径（ADR-003）：底座**不再随包携带真题库**。
+    - default 工作区（本机开发）：从插件包自带的 ``bank/bank.db`` 种子原子复制——
+      本机那颗 456 题的种子只活在本地磁盘（已从 git 与发行包剔除），一启动就能看到题。
+      种子也不在时（纯净克隆 / 首次发布环境）退回用 ``schema.sql`` 建**空库**，不报错。
+    - 其它工作区（用户在工作区下拉里新建的）：一律建**空库**，绝不把 default 的种子
+      复制过去——新库就该从白纸开始录题。
+    """
     plugin_id = validate_plugin_id(plugin_id)
     path = bank_db_path(plugin_id)
     if path.is_file() and path.stat().st_size > 0:
         return path
 
-    source = _seed_path(plugin_id)
-    if not source.is_file():
-        raise BankNotFound(
-            f"题库尚未初始化：缺少 {source}。"
-            "请先运行 tools/migrate_bank_v063.py --promote 生成新结构种子库。"
-        )
-
     with _seed_lock:
         if path.is_file() and path.stat().st_size > 0:
             return path
-        tmp = path.with_suffix(".db.part")
-        try:
-            shutil.copyfile(source, tmp)
-            tmp.replace(path)
-        finally:
-            if tmp.exists():
-                tmp.unlink()
-        _seed_assets(plugin_id)
+        seed = _seed_path(plugin_id) if settings.workspace_id is None else None
+        if seed is not None and seed.is_file():
+            tmp = path.with_suffix(".db.part")
+            try:
+                shutil.copyfile(seed, tmp)
+                tmp.replace(path)
+            finally:
+                if tmp.exists():
+                    tmp.unlink()
+            _seed_assets(plugin_id)
+            return path
+        # 无种子（非 default 工作区，或纯净环境缺种子）：按冻结 schema 建空库。
+        init_bank(plugin_id, db_path=path)   # init_bank 内部会清空结构缓存
     return path
 
 

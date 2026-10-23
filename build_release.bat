@@ -49,12 +49,25 @@ echo [1/3] Copying project files (excluding secrets, venv, data, caches)...
 rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
 rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
-  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch-recon-063 .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.placeholder" ^
-  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal "%~dp0examples\placeholder_plugin.zip" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063_migrated.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063.db"
+  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch-recon-063 .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.placeholder" "%~dp0plugins\org.jiuzhang.core-bank\bank\assets" ^
+  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal "%~dp0examples\placeholder_plugin.zip" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063_migrated.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\bank.db"
 if errorlevel 8 (
     echo.
     echo [ERROR] File copy failed. Nothing was packaged.
     echo         Close any program locking the folder, then run again.
+    echo.
+    pause
+    exit /b 1
+)
+
+rem ---------- Step 2b: ship a PURE empty seed (ADR-003) ----------
+rem The real 456-question bank.db stays on THIS dev machine only. The redistributable
+rem ships the frozen empty baseline (v063.db, ~155 KB, 0 rows) as bank.db so a fresh
+rem receiver opens an empty library and builds it up through the Workspace selector.
+copy /Y "%~dp0plugins\org.jiuzhang.core-bank\bank\v063.db" "%STAGE%\plugins\org.jiuzhang.core-bank\bank\bank.db" >nul
+if not exist "%STAGE%\plugins\org.jiuzhang.core-bank\bank\bank.db" (
+    echo.
+    echo [ERROR] Empty seed not staged - v063.db baseline is missing in the source tree.
     echo.
     pause
     exit /b 1

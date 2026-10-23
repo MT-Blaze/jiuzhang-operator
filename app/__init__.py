@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 
 
 def _load_local_env() -> None:

@@ -21,6 +21,14 @@
         <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
+        <div class="ws-bank-switch" role="group" aria-label="当前题库工作区">
+          <label class="ws-bank-switch-label" for="wsBankSelect">当前题库</label>
+          <div class="ws-bank-switch-row">
+            <select id="wsBankSelect" class="ws-workspace-select" aria-label="切换或查看工作区题库"></select>
+            <button type="button" id="wsBankNew" class="ws-btn ws-btn-sm" title="新建一个空白工作区题库">+ 新库</button>
+          </div>
+        </div>
+
         <nav class="ws-entry-list" aria-label="底座默认入口">
           <button class="ws-entry-item" id="wsChatEntry" type="button" aria-current="true">自由对话</button>
         </nav>

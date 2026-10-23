@@ -33,8 +33,12 @@ DENY_NAMES = {
     ".local_token",
     "plugin.zip",
 }
-DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal", ".db-journal"}
+DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal", ".db-journal", ".db"}
 DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache"}
+# 纯净发版（ADR-003）：插件包一律不带任何物理数据库，也不带随真题库分发的题库配图资产。
+# core-bank 的 ``bank/schema.sql`` 仍在包里，首启由底座 ensure_bank 建空库；
+# 真题库与它的配图只在本地开发机存在，绝不进任何对外发布的 zip。
+DENY_PAYLOAD_PREFIXES = ("bank/assets/",)
 
 
 class BuildError(Exception):
@@ -47,6 +51,9 @@ def _iter_payload(plugin_dir: Path):
             continue
         relative = path.relative_to(plugin_dir)
         if any(part in DENY_DIRS for part in relative.parts):
+            continue
+        relative_posix = relative.as_posix()
+        if any(relative_posix.startswith(prefix) for prefix in DENY_PAYLOAD_PREFIXES):
             continue
         if any(part.startswith(".") and part not in {".gitkeep"} for part in relative.parts):
             continue

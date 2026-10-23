@@ -14,13 +14,54 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.config import default_database_path, settings, switch_workspace
+from app.core import bank as core_bank
+from app.core.config import default_database_path, root_data_dir, settings, switch_workspace
 from app.core.db import init_db
-
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"
 DEFAULT_WORKSPACE_NAME = "默认工作区"
+# 工作区下拉里「当前题库」显示的就是这个插件库的题目数（AGENTS §2：core-bank 是唯一公共真题库）。
+CORE_BANK_PLUGIN_ID = "org.jiuzhang.core-bank"
+
+
+def _bank_db_for(workspace_id: str | None) -> Path:
+    """按工作区推导 core-bank 物理库路径，不改全局 settings，供只读计数。"""
+    base = root_data_dir()
+    data_dir = base / "workspaces" / workspace_id if workspace_id else base
+    return data_dir / "banks" / f"{CORE_BANK_PLUGIN_ID}.db"
+
+
+def _bank_question_count(workspace_id: str | None) -> int:
+    """只读统计某工作区题库的题目数；库还不存在（没打开过）算 0，绝不为计数去建库。"""
+    import sqlite3
+
+    path = _bank_db_for(workspace_id)
+    if not path.is_file():
+        return 0
+    try:
+        con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return 0
+    try:
+        return int(con.execute("SELECT COUNT(*) FROM questions").fetchone()[0])
+    except sqlite3.Error:
+        return 0
+    finally:
+        con.close()
+
+
+def _provision_core_bank() -> int:
+    """切/建工作区后立即落地该区的 core-bank 物理库，并回其题目数。
+
+    新工作区（非 default）走 ensure_bank 的 schema 兜底 → 空库；default 若有本机种子则复制、
+    否则同样建空。任何建库异常都不该让切换/新建整条失败——题目读不到时前端会再触发。
+    """
+    try:
+        core_bank.ensure_bank(CORE_BANK_PLUGIN_ID)
+    except Exception:  # noqa: BLE001 - 兜底：建库失败不阻断工作区操作，交由后续懒加载重试
+        pass
+    return _bank_question_count(settings.workspace_id)
 
 
 class WorkspaceCreateRequest(BaseModel):
@@ -85,6 +126,9 @@ async def list_workspaces() -> dict[str, Any]:
             # default 的库路径按当前 config 现算，纠正历史登记里写错的 questions.db。
             entry["database"] = str(default_database_path())
         entry["is_active"] = entry.get("id") == current_id
+        entry["question_count"] = _bank_question_count(
+            None if entry.get("id") == DEFAULT_WORKSPACE_ID else entry.get("id")
+        )
 
     return {
         "workspaces": workspaces,
@@ -110,6 +154,7 @@ async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str
 
     # Reinitialize database for new workspace
     init_db()
+    question_count = _provision_core_bank()
 
     resolved_id = workspace_id or "default"
     resolved_name = next(
@@ -121,6 +166,7 @@ async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str
         "workspace_id": resolved_id,
         "name": resolved_name,
         "database": str(settings.database_path),
+        "question_count": question_count,
         "is_active": True,
     }
 
@@ -157,10 +203,14 @@ async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
         "database": str(settings.database_path),
     })
     _save_workspaces(workspaces)
-    
+
+    # 新工作区立刻落地一个空的 core-bank 库（非 default 走 schema 兜底，不复制 default 真题）
+    question_count = _provision_core_bank()
+
     return {
         "id": workspace_id,
         "name": name,
+        "question_count": question_count,
         "switched": True,
     }
 

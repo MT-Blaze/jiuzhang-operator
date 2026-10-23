@@ -34,3 +34,9 @@ Thumbs.db
 
 # 会话侦察与旧库只读快照，含第三方数据副本，永不入库
 .scratch-recon-*/
+.scratch-safe-*/
+
+# ADR-003 纯净发版：内置真题库（456 题）只留本机开发，绝不进 git / 发行包。
+# v063.db 是冻结的空基线（0 题，随包对外发布），不在剔除之列。
+plugins/org.jiuzhang.core-bank/bank/bank.db
+plugins/org.jiuzhang.core-bank/bank/v063_migrated.db
