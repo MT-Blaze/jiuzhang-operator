@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from pathlib import PurePosixPath
@@ -24,9 +26,35 @@ from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
+from app.core import plugin_update
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.security import local_write_token
+
+# 走 uvicorn 自己的 logger：应用自建 logger 在没有 handler 时，INFO 记录会被
+# logging.lastResort 直接丢掉（它只兜 WARNING+），更新记录就真的「静默」不见了。
+logger = logging.getLogger("uvicorn.error")
+
+
+def _resume_plugin_updates() -> None:
+    """重启续更：把上一轮用户亲手点选、因底座重启没更完的插件补齐。
+
+    **只消费 ``data/update_state.json`` 与本机已下载的包，不出网**（AGENTS §2
+    出网铁律的续更例外）。放在守护线程里跑：补齐失败绝不能挡住启动，
+    用户打开设置页还能再点一次。
+    """
+    try:
+        outcome = plugin_update.resume_pending()
+    except Exception:  # noqa: BLE001 - 续更是增强能力，任何异常都不许拖垮底座
+        logger.exception("重启续更失败，已跳过；可在「设置与控制台 → 插件」里再点一次更新")
+        return
+    if not outcome.get("had_pending"):
+        return
+    for row in outcome.get("resumed") or []:
+        logger.info("续更完成：%s %s → %s（保住本机文件 %d 个）", row.get("id"),
+                    row.get("from") or "?", row.get("to"), len(row.get("preserved") or []))
+    for row in outcome.get("failed") or []:
+        logger.warning("续更失败：%s（%s）", row.get("id"), row.get("reason"))
 
 
 @asynccontextmanager
@@ -35,6 +63,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；
     # 插件一律由用户在「设置 → 插件管理与控制」里亲手装。
+    threading.Thread(target=_resume_plugin_updates, name="jzo-update-resume", daemon=True).start()
     yield
 
 

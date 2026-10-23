@@ -186,6 +186,44 @@
 .q-button-danger { color: #9b3b2d; border-color: rgba(155, 59, 45, 0.5); }
 .q-button-danger:hover { background: #f7e6e2; }
 
+/* ===== 双轨更新：检查结果卡片 + 底部静默日志区 ===== */
+.up-host {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line, rgba(31, 28, 24, 0.14));
+  border-radius: 10px;
+  background: var(--card, rgba(255, 255, 255, 0.5));
+}
+.up-host[hidden] { display: none; }
+.up-list { margin-top: 8px; }
+.up-card[data-state="incompatible"] { border-color: rgba(155, 59, 45, 0.34); }
+.up-card[data-state="up_to_date"] { opacity: 0.82; }
+.up-card .q-button[disabled] { cursor: not-allowed; opacity: 0.55; }
+
+.up-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line, rgba(31, 28, 24, 0.14));
+  border-radius: 10px;
+  background: var(--paper-deep, #efe8da);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.up-log:empty::before {
+  content: "暂无更新记录。点【检查更新】开始——底座不会自己在后台拉任何东西。";
+  color: var(--muted, #6f675c);
+}
+.up-log-line { display: flex; gap: 8px; align-items: baseline; }
+.up-log-time { flex: 0 0 auto; color: var(--faint, #9a9184); font-variant-numeric: tabular-nums; }
+.up-log-text { flex: 1 1 auto; word-break: break-word; }
+.up-log-line[data-tone="ok"] .up-log-text { color: var(--ok, #2f7d5b); }
+.up-log-line[data-tone="warn"] .up-log-text { color: #8a6a1f; }
+.up-log-line[data-tone="down"] .up-log-text { color: var(--down, #a63b2b); }
+
 .mg-modal-overlay {
   position: fixed;
   inset: 0;

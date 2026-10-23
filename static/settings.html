@@ -116,6 +116,36 @@
               </div>
             </div>
 
+            <section class="pl-pull st-block" id="update" aria-labelledby="up-title">
+              <h2 id="up-title">检查与更新</h2>
+              <p class="st-note">
+                底座<strong>不会</strong>在后台偷偷拉任何东西：只有你点【检查更新】才发一次只读请求，
+                只有你点【更新】或【一键更新全部插件】才下载对应的 zip。插件热更新只覆盖
+                <code>plugins/&lt;id&gt;/</code> 里的代码，<strong>题库、备份、题目配图与启用状态原地不动</strong>；
+                要求更新版底座的条目会灰着标「需先更新底座」，绝不覆盖本地代码。
+              </p>
+              <div class="st-install-actions">
+                <button type="button" class="q-button" id="upCheckBtn">检查更新</button>
+                <button type="button" class="q-button" id="upAllBtn" disabled>一键更新全部插件</button>
+              </div>
+              <p class="pl-status" id="upStatus" role="status" aria-live="polite" hidden></p>
+
+              <div class="up-host" id="upHost" hidden>
+                <h3 class="st-sub">底座自身</h3>
+                <p class="st-note" id="upHostText"></p>
+                <div class="st-install-actions">
+                  <button type="button" class="q-button q-button-danger" id="upHostBtn" disabled>更新并重启</button>
+                </div>
+              </div>
+
+              <h3 class="st-sub" id="upListTitle" hidden>本次检查结果</h3>
+              <ul class="mg-list up-list" id="upList"></ul>
+
+              <h3 class="st-sub" id="upLogTitle">更新日志</h3>
+              <p class="st-note">全过程只在这里逐行输出，不弹窗、不遮罩。</p>
+              <ol class="up-log" id="upLog" role="log" aria-live="polite" aria-relevant="additions"></ol>
+            </section>
+
             <section class="pl-pull st-block" id="index" aria-labelledby="pl-pull-title">
               <h2 id="pl-pull-title">在线插件索引</h2>
               <p class="st-note">

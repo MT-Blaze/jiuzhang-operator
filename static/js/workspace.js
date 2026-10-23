@@ -1831,6 +1831,29 @@
       if (event.origin !== window.location.origin) return;
       if (event.data && event.data.jzo === "providers.changed") loadProviders().catch(function () {});
     });
+    // 控制台里热更了插件（PLUGIN_SPEC §1.7）→ 左栏、页签与画布立刻接上新代码，
+    // 全程不刷新浏览器、不重启底座。宿主自己在总线上广播 plugin.updated。
+    window.addEventListener("message", function (event) {
+      if (event.origin !== window.location.origin) return;
+      var data = event.data;
+      if (!data || data.jzo !== "plugins.updated") return;
+      var updated = Array.isArray(data.updated) ? data.updated : [];
+      loadPlugins({ announce: false }).then(function () {
+        updated.forEach(function (row) {
+          var id = row && row.id;
+          if (!id) return;
+          if (window.JzoBus && typeof window.JzoBus.emit === "function") {
+            window.JzoBus.emit("plugin.updated", {
+              id: id, from: String(row.from || ""), to: String(row.to || "")
+            });
+          }
+          if (window.JzoStage && typeof window.JzoStage.rehydratePlugin === "function") {
+            window.JzoStage.rehydratePlugin(id);
+          }
+          logHistory("插件热更新：" + id + " " + (row.from || "?") + " → " + (row.to || "?"));
+        });
+      }).catch(function () {});
+    });
   })();
 
   // ============ 已安装插件：动态渲染左栏插件区 ============

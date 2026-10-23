@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.core import plugin_index, plugin_search, plugin_state
+from app.core import plugin_index, plugin_search, plugin_state, plugin_update
 from app.core.config import settings
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
@@ -27,6 +29,9 @@ from app.core.plugins import (
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["plugins"])
+
+# 用户点【更新并重启】后，先让响应回到浏览器再结束自身进程的等待时间
+RESTART_DELAY_MS = 800
 
 
 class InstalledPlugin(BaseModel):
@@ -208,6 +213,161 @@ def uninstall(plugin_id: str, keep_data: bool = True) -> dict:
         return uninstall_plugin(plugin_id, keep_data=keep_data)
     except PluginUninstallError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+
+
+# ------------------------------------------------- 双轨更新（PLUGIN_SPEC §1.7）
+#
+# 出网铁律（AGENTS §2 / 裁决 1、2）：下面五个端点没有任何一个会被定时器、启动钩子
+# 或对话工具触发——它们的唯一入口是设置页上用户当场的那一次点击。
+# 检查更新只发一次只读 GET；批量下载只发生在【一键更新全部插件】这一次点击里，
+# 跑完即止，不排队、不续跑、不重试。写范围只有 plugins/<id>/ 与底座程序文件，
+# 严禁触碰 data/（唯一例外是 data/update_state.json 这份续更清单）。
+
+def _index_for_check(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """取本次检查用的索引：给了 url 就当场拉一次，否则复用用户上一轮亲手拉回的缓存。"""
+    url = payload.get("url")
+    if isinstance(url, str) and url.strip():
+        allow_mirrors = payload.get("allow_mirrors", True) is not False
+        try:
+            index = plugin_index.fetch_index(url.strip(), allow_mirrors=allow_mirrors)
+        except plugin_index.IndexRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        plugin_search.save_index_cache(index)
+        return index, "fetched"
+
+    cached = plugin_search.load_index_cache()
+    if cached is None:
+        raise HTTPException(
+            status_code=409,
+            detail="本机还没有插件索引缓存。请先在「插件索引」页点【拉取清单】，"
+                   "或在本次请求里给出 url（底座不会自己出网）。",
+        )
+    return cached, "cache"
+
+
+@router.post(
+    "/api/plugins/update/check",
+    summary="双轨更新·检查：把已装插件与索引对账（只在用户点【检查更新】后出网）",
+    dependencies=[Depends(require_write_token)],
+)
+def check_updates_endpoint(payload: dict[str, Any] = Body(default={})) -> dict:
+    """产出「哪些插件有新版本 / 哪些需先更新底座 / 底座自己要不要更新」这张表。
+
+    只读对账，不解压、不执行、不落地任何文件。版本写坏或索引没收录的条目
+    只让它自己出局并带上原因，不牵连其他插件（PLUGIN_SPEC §1.7）。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    index, source = _index_for_check(payload)
+    result = plugin_update.check_updates(index)
+    result["index_source"] = source
+    result["source_host"] = str(index.get("source_host") or "")
+    result["saved_at"] = str(index.get("saved_at") or index.get("fetched_at") or "")
+    return result
+
+
+@router.post(
+    "/api/plugins/update/apply",
+    summary="双轨更新·执行：下载并热更插件（一次点击 = 一次批量任务，跑完即止）",
+    dependencies=[Depends(require_write_token)],
+)
+def apply_updates_endpoint(payload: dict[str, Any] = Body(...)) -> dict:
+    """``{"all": true}`` = 用户点【一键更新全部插件】；``{"ids": [...]}`` = 只更点选的那几个。
+
+    范围就是本次检查结果里「有更新且兼容」的条目，不多不少：不兼容与版本写坏的
+    一律跳过并如实列进 ``skipped``，**绝不覆盖本地代码**。串行执行、不跨条目借源，
+    失败逐条记原因，由人再点一次。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    want_all = payload.get("all") is True
+    raw_ids = payload.get("ids") or []
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ids 必须是数组")
+    wanted = [item for item in raw_ids if isinstance(item, str) and item]
+    if not want_all and not wanted:
+        raise HTTPException(status_code=400, detail="要么给出 all=true，要么列出要更新的插件 ids")
+
+    index, source = _index_for_check(payload)
+    checked = plugin_update.check_updates(index)
+    rows = checked["plugins"]
+    if not want_all:
+        rows = [row for row in rows if row["id"] in set(wanted)]
+        missing = set(wanted) - {row["id"] for row in rows}
+        if missing:
+            raise HTTPException(status_code=404,
+                                detail="这些插件本机没装，无从更新：" + "、".join(sorted(missing)))
+
+    result = plugin_update.apply_updates(rows)
+    result["index_source"] = source
+    result["host"] = checked["host"]
+    return result
+
+
+@router.get(
+    "/api/plugins/update/pending",
+    summary="双轨更新·续更待办：读 data/update_state.json（底座唯一允许写进 data/ 的更新痕迹）",
+    dependencies=[Depends(require_write_token)],
+)
+def pending_updates_endpoint() -> dict:
+    state = plugin_update.read_pending()
+    state["path"] = str(plugin_update.pending_path())
+    state["last_resume"] = plugin_update.last_resume()
+    return state
+
+
+@router.post(
+    "/api/plugins/update/pending-clear",
+    summary="双轨更新·作废续更待办（补齐跑完或用户明确要求清空）",
+    dependencies=[Depends(require_write_token)],
+)
+def clear_pending_updates_endpoint() -> dict:
+    return {"cleared": True, **plugin_update.clear_pending()}
+
+
+@router.post(
+    "/api/plugins/update/host-apply",
+    summary="双轨更新·底座自更新：下载校验新版本并生成一次性 update.bat（重启由用户点【更新并重启】触发）",
+    dependencies=[Depends(require_write_token)],
+)
+def host_update_endpoint(payload: dict[str, Any] = Body(...)) -> dict:
+    """``launch`` 缺省为 ``false``：只下载、校验、生成脚本，不动正在运行的底座。
+
+    ``launch=true``（用户点【更新并重启】）才会拉起脚本并结束自身进程；开发工作树
+    （存在 ``.git``）直接 409 拒绝——robocopy 覆盖正在运行的工作树会抹掉未提交的活儿。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    index, _source = _index_for_check(payload)
+    host_block = index.get("host")
+    if not isinstance(host_block, dict):
+        raise HTTPException(status_code=409, detail="索引没有声明底座新版本（host 块缺失）")
+
+    port = payload.get("port")
+    try:
+        prepared = plugin_update.prepare_host_update(
+            host_block, port=int(port) if isinstance(port, (int, str)) and str(port).isdigit() else None)
+    except plugin_update.UpdateRejected as exc:
+        raise HTTPException(status_code=409, detail={"message": exc.message, "code": exc.code}) from exc
+    except PluginInstallError as exc:
+        raise HTTPException(status_code=exc.status,
+                            detail={"message": exc.message, "code": exc.code}) from exc
+
+    if payload.get("launch") is not True:
+        return {"launched": False, "restart_scheduled": False, **prepared}
+
+    try:
+        plugin_update.launch_host_update(prepared["script_path"])
+    except plugin_update.UpdateRejected as exc:
+        raise HTTPException(status_code=409, detail={"message": exc.message, "code": exc.code}) from exc
+    threading.Thread(target=_terminate_after_response, daemon=True).start()
+    return {"launched": True, "restart_scheduled": True, "restart_in_ms": RESTART_DELAY_MS, **prepared}
+
+
+def _terminate_after_response() -> None:  # pragma: no cover - 只在真机重启路径上执行
+    """让 HTTP 响应先回到浏览器，再结束自身进程交给 update.bat 接管。"""
+    time.sleep(RESTART_DELAY_MS / 1000)
+    plugin_update.terminate_self()
 
 
 @router.get("/plugin-assets/{plugin_id}/{asset_path:path}", include_in_schema=False)

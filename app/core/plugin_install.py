@@ -12,12 +12,14 @@ zip 只是运输容器：
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import shutil
 import stat
 import tempfile
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -118,11 +120,14 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path, prefix: tuple[str, ...]) -
     return plugin_root
 
 
-def install_plugin_from_zip(data: bytes, replace: bool = False) -> dict[str, Any]:
-    """校验并安装一个插件 zip 包，返回发现接口同款的插件信息。
+@contextlib.contextmanager
+def staged_plugin_from_zip(data: bytes) -> Iterator[tuple[Path, dict[str, Any]]]:
+    """校验 zip，并在暂存区解出以清单 id 命名的插件根目录。
 
-    Raises:
-        PluginInstallError: 任何一步不合格；``status`` 为建议的 HTTP 状态码。
+    **安全校验只有这一份**：本机拖装、在线安装与插件热更新（PLUGIN_SPEC §1.7
+    要求「完全同款」的暂存区校验）都走这里，不给第二个实现留机会。
+    调用方在 with 块里把目录搬到最终位置；出了 with，暂存区连同里面
+    的东西一起消失——校验不通过的包在落地前就被整体丢弃，失败零残留。
     """
     if not data:
         raise PluginInstallError("上传内容为空")
@@ -139,9 +144,6 @@ def install_plugin_from_zip(data: bytes, replace: bool = False) -> dict[str, Any
             raise PluginInstallError("zip 条目数超过上限（2000），疑似 zip 炸弹")
         entries = [_check_entry(info) for info in infos]
         prefix = _find_plugin_root(entries)
-
-        plugins_dir = Path(settings.plugins_dir)
-        plugins_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(prefix="jzo-plugin-install-") as tmp:
             staging = Path(tmp)
@@ -168,19 +170,32 @@ def install_plugin_from_zip(data: bytes, replace: bool = False) -> dict[str, Any
             except OSError as exc:
                 raise PluginInstallError(f"插件包读取失败：{exc}") from exc
 
-            destination = plugins_dir / plugin_id
-            if destination.exists():
-                if not replace:
-                    raise PluginInstallError(
-                        f"插件 {plugin_id} 已安装。",
-                        status=409,
-                        code="exists",
-                    )
-                if destination.is_symlink() or not destination.is_dir():
-                    raise PluginInstallError(f"plugins/{plugin_id} 不是目录，拒绝覆盖")
-                shutil.rmtree(destination)
+            yield named_root, info
 
-            # 暂存区与 plugins/ 同盘，move 是原子改名，不会留半装状态
-            shutil.move(str(named_root), str(destination))
+
+def install_plugin_from_zip(data: bytes, replace: bool = False) -> dict[str, Any]:
+    """校验并安装一个插件 zip 包，返回发现接口同款的插件信息。
+
+    Raises:
+        PluginInstallError: 任何一步不合格；``status`` 为建议的 HTTP 状态码。
+    """
+    plugins_dir = Path(settings.plugins_dir)
+    plugins_dir.mkdir(parents=True, exist_ok=True)
+
+    with staged_plugin_from_zip(data) as (named_root, info):
+        destination = plugins_dir / info["id"]
+        if destination.exists():
+            if not replace:
+                raise PluginInstallError(
+                    f"插件 {info['id']} 已安装。",
+                    status=409,
+                    code="exists",
+                )
+            if destination.is_symlink() or not destination.is_dir():
+                raise PluginInstallError(f"plugins/{info['id']} 不是目录，拒绝覆盖")
+            shutil.rmtree(destination)
+
+        # 暂存区与 plugins/ 同盘时 move 是原子改名，不会留半装状态
+        shutil.move(str(named_root), str(destination))
 
     return info

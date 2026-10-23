@@ -1105,6 +1105,30 @@
     orderPluginTabs();
   }
 
+  /**
+   * 插件热更新后重新水合（PLUGIN_SPEC §1.7）——这是「运行中的 iframe 不主动重载」
+   * 那条默认规则的唯一例外：代码目录已被新版本覆盖，旧脚本必须退场。
+   * 正占据中央画布的那个：休眠 → 立刻重挂，加载新代码；其余页签只摘掉旧 iframe，
+   * 下次点开自然加载新代码。全程无需刷新浏览器、无需重启底座。
+   */
+  function rehydratePlugin(pluginId) {
+    if (!pluginId) return false;
+    var touched = false;
+    tabs.forEach(function (tab) {
+      if (tab.kind !== "plugin" || !tab.plugin || tab.plugin.id !== pluginId) return;
+      touched = true;
+      if (tab.state === "live" || tab.state === "error") hibernate(tab, "plugin.updated");
+      if (tab.key === activeKey) {
+        mountFrame(tab).then(function () {
+          dock("插件「" + (tab.plugin.name || tab.plugin.id) + "」已按新版本重新水合。",
+            "plugin.updated");
+        });
+      }
+    });
+    if (touched) orderPluginTabs();
+    return touched;
+  }
+
   function pushParams(tab) {
     // 挂载/唤醒后补发一次当前面板参数，插件不必等下一次改动才对齐
     var snapshot = window.JzoUiState && typeof window.JzoUiState.snapshot === "function"
@@ -1149,6 +1173,8 @@
         broadcast("question.updated", event.payload);
       });
       bus.on("question.updated", function (event) { broadcast("question.updated", event.payload); });
+      // 插件被热更新（PLUGIN_SPEC §1.7）：转给订阅了它的插件，画布水合由宿主自己处理
+      bus.on("plugin.updated", function (event) { broadcast("plugin.updated", event.payload); });
       // 存储端/输出端的「去编辑」→ 宿主开录题页签并注入题号
       bus.on("system.open_editor", function (event) { openEditor(event.payload); });
       // 看板等只读端的「去题库」→ 宿主开活跃题库页签
@@ -1192,6 +1218,7 @@
   window.JzoStage = {
     openPlugin: openPlugin,
     updatePlugin: updatePlugin,
+    rehydratePlugin: rehydratePlugin,
     activate: activate,
     close: closeTab,
     tabs: function () {

@@ -87,6 +87,9 @@ def save_index_cache(index: dict[str, Any]) -> None:
         "index_name": index.get("index_name", ""),
         "updated_at": index.get("updated_at", ""),
         "entries": index.get("entries") or [],
+        # host 块是同一份索引文档里的底座自更新声明（PLUGIN_SPEC §1.3）：
+        # 一起缓存，用户点【检查更新】时才能在离线路径上比对底座版本。
+        "host": index.get("host") if isinstance(index.get("host"), dict) else None,
     }
     path = cache_path()
     try:
@@ -117,12 +120,15 @@ def load_index_cache() -> dict[str, Any] | None:
                 "name": payload.get("index_name", ""),
                 "updated_at": payload.get("updated_at", ""),
                 "entries": entries,
+                "host": payload.get("host"),
             }
         )
     except (plugin_index.IndexRejected, ValueError):
         return None
     return {
         "entries": parsed["entries"],
+        "host": parsed["host"],
+        "host_rejected": parsed["host_rejected"],
         "source_host": str(payload.get("source_host") or ""),
         "source_url": str(payload.get("source_url") or ""),
         "saved_at": str(payload.get("saved_at") or ""),
