@@ -205,6 +205,65 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
 
+## 如何用 AI 开发九章算子插件？
+
+未来的第三方老师不手写代码，而是让 AI 代写。为了让 AI 一次就生成**不破坏底座架构**的插件，仓库提供了一份极简开发模板和一段可直接复制给任何大模型的提示词。
+
+**模板**：[`examples/template-plugin/`](examples/template-plugin/)（`plugin.json` + `dist/index.html` + `dist/plugin.js`，含宿主 API 调用与事件总线广播的注释示例）。也可以直接下载打包好的 [`template-plugin.zip`](examples/template-plugin.zip)（重新打包：`.venv/Scripts/python.exe examples/build_template_plugin.py`）。解压后改三处即可变成你自己的插件：清单里的 `id`/`name`（目录名与 `id` 一字不差）、`plugin.js` 顶部的 `PLUGIN_ID`、入口页界面。
+
+**提示词**：把下面整段连同你的需求一起发给任何大模型（DeepSeek / 千问 / GPT / Claude 均可），它生成的代码就不会踩架构红线：
+
+```text
+你要为「九章算子」本地数学题库底座开发一个浏览器插件。九章算子是纯本地、离线运行的
+FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe（sandbox="allow-scripts"，
+不透明源）里。请严格遵守以下【AI 开发铁律】，违反任何一条的代码一律视为错误：
+
+1. 严禁点对点耦合：插件之间不直接调用、不共享全局状态；所有插件间通信必须且只能经过
+   底座中转（事件总线）。
+2. 数据读写：严禁插件直接访问底座数据库、文件系统、环境变量或密钥；题库数据必须调用
+   标准宿主 API——向宿主 postMessage 一条 kind:"request" 消息，方法名只能取自白名单
+   （bank.get / bank.review / bank.topics / bank.create / bank.update / bank.delete /
+   bank.list / bank.stats / bank.random / basket.list / basket.add / basket.remove /
+   basket.clear），宿主查完回同 id 的 response。三类通道别混：bank.get / bank.review /
+   bank.topics / bank.create 读的是「公共真题库」（当前活跃 provider，底座自带数据）；
+   bank.list / bank.stats / bank.random 按插件自己的 plugin.id 读「插件自带的库」，要用就得随包
+   放 bank/schema.sql；basket.* 是工作区题篮，与具体哪个库无关。请求 id 必须匹配 ^[A-Za-z0-9_-]{1,80}$。
+3. 状态同步：改状态必须通过事件总线广播（向宿主发 kind:"notification" 消息，事件名必须在
+   plugin.json 的 bus.publish 白名单里，如 region.dock）；严禁直接调用其他插件的函数，
+   严禁伪造 ui.params.* 或 layout.* 事件。
+4. UI 隔离：所有视图封闭在自己专属的 iframe 沙箱内；严禁越权操作父窗口 DOM——与宿主唯一
+   的通道是 window.parent.postMessage，拿不到宿主页面、Cookie 和 localStorage
+   （草稿只能经宿主 RPC 代持）。
+5. 环境依赖：严禁引入 React / Vue / jQuery / Tailwind 等重型前端框架，严禁通过 CDN 加载
+   任何远程资源（入口页 CSP 的 connect-src 'none' 会全部拦截）；必须使用原生 HTML + CSS +
+   JavaScript（ES2017 以内，禁止正则后行断言），公式文本按 Markdown + LaTeX 约定处理。
+
+插件包结构（zip 顶层目录名 = 插件 id）：
+  <id>/plugin.json      # schema_version:"1.0"、id(反向域名)、name、version(语义化)、
+                        # api_version:"1.0"、kind(renderer/importer/exporter/tool)、
+                        # description、license:"Apache-2.0"、entry.frontend:"dist/index.html"、
+                        # slots、capabilities、permissions；可选 stage / bus / ui /
+                        # show_in_sidebar / min_host_version / engine.host_version。
+                        # 禁止出现 backend 字段。根目录必须有 LICENSE（Apache-2.0 全文）。
+  <id>/dist/index.html  # 入口页
+  <id>/dist/plugin.js   # 逻辑脚本
+消息封包（三个字段缺一不可）：
+  请求   {protocol:"jzo-plugin/1", id:"唯一请求id", kind:"request", method:"…", payload:{…}}
+  响应   {protocol:"jzo-plugin/1", id:"原样带回", kind:"response", ok:true, result:{…}}
+  通知   {protocol:"jzo-plugin/1", kind:"notification", event:"…", payload:{…}}
+请求 id 必须匹配 ^[A-Za-z0-9_-]{1,80}$（不要带点号，也别拿插件 id 当 id 前缀——宿主对不上这个
+形状的请求会当场拒发并回 ok:false + code:"BAD_REQUEST_ID"，同时在底栏输出日志区记账），
+并给每个请求设超时兜底，宿主不回包时给出可读提示。
+必须处理宿主的 plugin.activate（30 秒内回 ready:true）与 plugin.deactivate；
+通知一律幂等（宿主会重发）；未实现的方法回 UNSUPPORTED_METHOD，不许静默吞掉。
+插件不得要求注册/登录/卡密/联网回连/远程禁用（白嫖条款），能力不可用时显式降级并给
+可读提示。
+
+现在请以这份结构为基线，实现以下需求：<在这里写你的插件功能>
+```
+
+生成后自检三件事再安装：① 把插件目录放进 `plugins/`，打开 `/api/plugins`，`rejected[]` 里没有中文拒收原因；② 全文搜索 `fetch(`、`parent.document`、`localStorage`——出现任何一处都说明 AI 违反了铁律，退回重造；③ 全文搜索 `kind: "request"` 附近那行，看请求 id 是不是带点号的写法（如 `插件id_1`）——带点号宿主直接拒发并回 `BAD_REQUEST_ID`（底栏「输出日志区」会记这笔），改成 `p1_xxxxx` 这类形状。
+
 > 当前 `v0.8.2` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
 
 ## 目录结构
@@ -260,7 +319,10 @@ jiuzhang-operator/
 │   ├── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
 │   ├── placeholder_plugin/         # 官方占位插件源码（在线安装闭环演示用）
 │   ├── placeholder_plugin.zip      # 构建产物：走 CDN/代理镜像分发，不进 dist 发放包
-│   └── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
+│   ├── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
+│   ├── template-plugin/            # ★第三方插件开发极简模板（含宿主 API 与总线注释示例）
+│   ├── template-plugin.zip         # 构建产物：供老师下载解压改名的模板包，不进 dist 发放包
+│   └── build_template_plugin.py    # 重新打包 template-plugin.zip
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   ├── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
@@ -292,7 +354,8 @@ jiuzhang-operator/
 │   ├── build_plugin.py      # 校验并打单插件 zip（顶层为插件 id，解压即用）
 │   ├── editor_probe.py      # ★v0.6.2 取证：真机填表单 → A4 预览 → 清洗 → 入库 → 题库查得到
 │   ├── fold_probe.py        # 开发期取证：Playwright 真机跑折叠 5 轮 + 命中测试 + 截图
-│   └── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
+│   ├── pixel_scan.py        # 开发期取证：纯标准库解码 PNG，按调色板归类行像素
+│   └── template_plugin_probe.py  # ★v0.8.3 取证：隔离装模板 zip，真机跑宿主 API 与事件总线闭环
 ├── plugins.json             # 官方插件仓库索引的本地镜像（索引页默认预填其 gh-proxy 加速地址）
 ├── dist/                    # 内测离线包（仅 v0.4.2 起入库，其余版本本地留存）
 ├── AGENTS.md                # 开发与 AI 代理铁律

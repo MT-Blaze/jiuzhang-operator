@@ -813,7 +813,18 @@
     // 插件主动申请宿主数据（jzo-plugin/1 的 request 方向，题库通道新增）。
     // 只认白名单方法，id 必须是短标识；回复严格回到发信 iframe。
     if (message.kind === "request") {
-      if (typeof message.id !== "string" || !ID_RE.test(message.id)) return;
+      if (typeof message.id !== "string" || !ID_RE.test(message.id)) {
+        // 显式降级，不静默吞掉（2026-10-23 军令 #07 批复 2）：把 id 原样回包，插件的 pending
+        // 表能命中自己那条、立刻拿到可读原因；同时在底栏记一笔，开发者不再抓瞎。
+        var badName = (tab.plugin && tab.plugin.name) || tab.plugin.id || "未命名插件";
+        replyHost(tab, { id: message.id }, false, {
+          code: "BAD_REQUEST_ID",
+          message: "请求 id 不合法：宿主要求匹配 ^[A-Za-z0-9_-]{1,80}$（带点号会被拒），本次请求未转发"
+        });
+        dock("插件「" + badName + "」的请求 id 不合法，宿主已拒发（未转发到数据通道）——"
+          + "id 须匹配 ^[A-Za-z0-9_-]{1,80}$，不要用带点号的插件 id 拼", "plugin.error");
+        return;
+      }
       relay(tab, message);
       return;
     }

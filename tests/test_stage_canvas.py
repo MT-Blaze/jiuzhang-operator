@@ -133,6 +133,15 @@ class ProtocolTest(unittest.TestCase):
         block = STAGE[STAGE.index("function applyFullscreen("): STAGE.index("function closeTab(")]
         self.assertIn('data-fullscreen', block)
         self.assertNotIn("data-side", block, "全屏只能压变量，不许改用户的折叠偏好")
+
+    def test_07_bad_request_id_is_rejected_loudly(self) -> None:
+        """入口守卫拒发不合法 id 时必须当场回包 + 底栏记账，不许静默丢弃（军令 #07 批复 2）。"""
+        start = STAGE.index('if (message.kind === "request")')
+        block = STAGE[start:start + 1600]
+        self.assertIn("BAD_REQUEST_ID", block, "要回可读错误码，不能让插件干等到超时")
+        self.assertIn("dock(", block, "拒发要在底栏「输出日志区」记一笔，开发者才不抓瞎")
+        self.assertNotIn("!ID_RE.test(message.id)) return;", block, "守卫处不许裸 return")
+        self.assertIn("^[A-Za-z0-9_-]{1,80}$", block, "回执与记账都要写出正确形状，便于自查")
         self.assertNotIn("data-ctx", block)
 
 

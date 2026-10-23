@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "id": "org.example.template",
+  "name": "插件开发模板",
+  "version": "0.1.0",
+  "api_version": "1.0",
+  "kind": "renderer",
+  "description": "官方极简模板：一个清单、一个入口页、一个逻辑脚本，演示宿主 API 调用与事件总线订阅/发布。改名后即可作为第三方插件起点。",
+  "author": "你的名字",
+  "license": "Apache-2.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["question.card", "stage.center"],
+  "capabilities": ["question.render"],
+  "permissions": ["questions:read"],
+  "stage": {
+    "region": "center",
+    "mode": "takeover",
+    "title": "模板插件",
+    "priority": 50,
+    "singleton": true
+  },
+  "bus": {
+    "subscribe": ["ui.params.changed", "question.updated"],
+    "publish": ["region.dock"]
+  },
+  "min_host_version": "0.8.2",
+  "engine": {
+    "host_version": "0.8.2"
+  }
+}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模板插件</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0; padding: 16px;
+      font-family: system-ui, "Microsoft YaHei", sans-serif;
+      color: #1f2937; background: #f8fafc;
+    }
+    h1 { font-size: 16px; margin: 0 0 8px; }
+    .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    button {
+      min-height: 44px; padding: 0 16px; border: 1px solid #cbd5e1;
+      border-radius: 8px; background: #fff; cursor: pointer; font-size: 14px;
+    }
+    button:hover { border-color: #2563eb; color: #2563eb; }
+    #status { font-size: 13px; color: #64748b; }
+    #list { display: grid; gap: 8px; }
+    .item {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>九章算子 · 插件开发模板</h1>
+  <div class="bar">
+    <button id="load-btn" type="button">取一页公共真题（宿主 API 演示）</button>
+    <button id="dock-btn" type="button">向底栏广播（事件总线演示）</button>
+    <span id="status">等待宿主激活……</span>
+  </div>
+  <div id="list"></div>
+  <script src="./plugin.js"></script>
+</body>
+</html>

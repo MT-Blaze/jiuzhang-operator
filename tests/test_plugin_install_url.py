@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -36,6 +37,7 @@ from app.core.plugins import validate_plugin  # noqa: E402
 TOKEN = "install-url-test-token"
 PLACEHOLDER_ID = "org.jiuzhang.placeholder"
 DEMO_ID = "org.jiuzhang.demo-bank"
+TEMPLATE_ID = "org.example.template"
 OFFICIAL_PRIMARY = plugin_sources.OFFICIAL_INDEX_PRIMARY
 
 
@@ -96,6 +98,35 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertEqual(info["id"], DEMO_ID)
         self.assertEqual(info["kind"], "importer")
 
+    def test_03c_template_plugin_zip_passes_full_plugin_contract(self) -> None:
+        """第三方开发模板必须开箱即过全套契约：老师解压改完 id 就能装。"""
+        zip_path = ROOT / "examples" / "template-plugin.zip"
+        self.assertTrue(zip_path.is_file(), "先运行 examples/build_template_plugin.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = zf.namelist()
+                self.assertTrue(all(n.startswith(TEMPLATE_ID + "/") for n in names))
+                zf.extractall(tmp)
+            plugin_dir = Path(tmp) / TEMPLATE_ID
+            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            info = validate_plugin(plugin_dir, manifest)
+        self.assertEqual(info["id"], TEMPLATE_ID)
+        self.assertEqual(info["min_host_version"], "0.8.2")
+        self.assertTrue(info["stage"], "模板应演示 stage.center 画布接管")
+        self.assertIn("region.dock", info["bus"]["publish"])
+
+    def test_03d_template_request_id_passes_host_message_guard(self) -> None:
+        """宿主入口用 ^[A-Za-z0-9_-]{1,80}$ 校验请求 id，不带点号才不会被静默丢弃。"""
+        stage_js = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn("/^[A-Za-z0-9_-]{1,80}$/", stage_js, "宿主请求 id 守卫形状变了，请同步模板与契约")
+        plugin_js = (ROOT / "examples" / "template-plugin" / "dist" / "plugin.js").read_text(encoding="utf-8")
+        id_lines = [line for line in plugin_js.splitlines() if "var requestId" in line]
+        self.assertEqual(len(id_lines), 1, f"模板请求 id 构造应唯一，实际 {id_lines}")
+        self.assertNotIn("PLUGIN_ID +", id_lines[0], "请求 id 不能拿带点号的插件 id 当片段")
+        id_re = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+        for sample in ("p1_m0k3x9", "p12_zzzz"):
+            self.assertTrue(id_re.match(sample), sample)
+
     def test_04_index_page_prefills_official_primary(self) -> None:
         html = (ROOT / "static" / "plugins.html").read_text(encoding="utf-8")
         self.assertIn('value="%s"' % OFFICIAL_PRIMARY, html)
@@ -118,6 +149,7 @@ class OfficialIndexFileTest(unittest.TestCase):
         xf_lines = [line for line in bat.splitlines() if "/XF" in line]
         self.assertTrue(xf_lines, "打包脚本缺少 /XF 排除清单")
         self.assertIn("placeholder_plugin.zip", xf_lines[0])
+        self.assertIn("template-plugin.zip", xf_lines[0])
         # 种子包必须留在包里（首启静默安装依赖它），不许一刀切排除所有 zip
         self.assertNotIn("demo_plugin.zip", xf_lines[0])
 
