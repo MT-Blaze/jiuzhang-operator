@@ -1,11 +1,10 @@
-"""种子题库插件与默认路由契约（2026-10-24 军令任务 1/2）。
+"""默认路由与 demo_plugin.zip 契约。
 
-覆盖三件事：
+覆盖两件事：
 1. ``/`` 直达工作台、``/about`` 保留底座介绍页、About/索引收进 ``/settings``；
-2. ``ensure_seed_plugin`` 首启静默安装 examples/demo_plugin.zip，标记防重装；
-3. demo_plugin.zip 本体通过插件安装器的全套契约校验，且含 5 道合规题目。
+2. demo_plugin.zip 本体通过插件安装器的全套契约校验，且含 5 道合规题目。
 
-运行：``.venv/Scripts/python.exe -m unittest tests.test_seed_plugin``
+运行：``.venv/Scripts/python.exe -m unittest tests.test_routes_and_demo_zip``
 """
 
 from __future__ import annotations
@@ -13,19 +12,16 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import os
-import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
 from app import __version__  # noqa: F401  确保包可导入
-from app.core.config import settings
-from app.core.seed_plugin import MARKER_FILENAME, SEED_PLUGIN_ID, ensure_seed_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 DEMO_ZIP = ROOT / "examples" / "demo_plugin.zip"
+DEMO_PLUGIN_ID = "org.jiuzhang.demo-bank"
 
 
 def _read(path: Path) -> str:
@@ -82,47 +78,7 @@ class DefaultRouteTest(unittest.TestCase):
         text = _read(STATIC / "js" / "workspace.js")
         self.assertIn("系统已为您预置了 5 道示例数学题", text)
         self.assertIn("拆分第一题", text)
-        self.assertIn(SEED_PLUGIN_ID, text)
-
-
-class SeedPluginInstallTest(unittest.TestCase):
-    """首启静默安装：装一次、留标记、删了不硬塞回去。"""
-
-    def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory()
-        self.plugins_dir = Path(self.tmp.name) / "plugins"
-        self.data_dir = Path(self.tmp.name) / "data"
-        self._saved_plugins_dir = settings.plugins_dir
-        self._saved_data_dir = os.environ.get("JZO_DATA_DIR")
-        settings.plugins_dir = self.plugins_dir
-        os.environ["JZO_DATA_DIR"] = self.data_dir.as_posix()
-
-    def tearDown(self) -> None:
-        settings.plugins_dir = self._saved_plugins_dir
-        if self._saved_data_dir is None:
-            os.environ.pop("JZO_DATA_DIR", None)
-        else:
-            os.environ["JZO_DATA_DIR"] = self._saved_data_dir
-        self.tmp.cleanup()
-
-    def test_01_first_run_installs_seed_plugin(self) -> None:
-        self.assertTrue(DEMO_ZIP.is_file(), "examples/demo_plugin.zip 不存在，先跑构建脚本")
-        self.assertTrue(ensure_seed_plugin())
-        manifest = self.plugins_dir / SEED_PLUGIN_ID / "plugin.json"
-        self.assertTrue(manifest.is_file())
-        self.assertTrue((self.plugins_dir / SEED_PLUGIN_ID / "dist" / "plugin.js").is_file())
-        self.assertTrue((self.data_dir / MARKER_FILENAME).is_file())
-
-    def test_02_second_run_is_noop(self) -> None:
-        ensure_seed_plugin()
-        self.assertFalse(ensure_seed_plugin())
-
-    def test_03_user_removal_is_respected(self) -> None:
-        ensure_seed_plugin()
-        import shutil
-
-        shutil.rmtree(self.plugins_dir / SEED_PLUGIN_ID)
-        self.assertFalse(ensure_seed_plugin(), "标记还在，用户删掉的插件不许装回")
+        self.assertIn(DEMO_PLUGIN_ID, text)
 
 
 class DemoZipContractTest(unittest.TestCase):
@@ -136,20 +92,20 @@ class DemoZipContractTest(unittest.TestCase):
         self.zf.close()
 
     def _member(self, relative: str) -> bytes:
-        return self.zf.read(f"{SEED_PLUGIN_ID}/{relative}")
+        return self.zf.read(f"{DEMO_PLUGIN_ID}/{relative}")
 
     def test_01_single_top_level_dir_named_by_id(self) -> None:
         tops = {name.split("/", 1)[0] for name in self.names}
-        self.assertEqual(tops, {SEED_PLUGIN_ID})
+        self.assertEqual(tops, {DEMO_PLUGIN_ID})
 
     def test_02_required_members_present(self) -> None:
         for relative in ("plugin.json", "LICENSE", "dist/index.html", "dist/plugin.js",
                          "seed/questions.json"):
-            self.assertIn(f"{SEED_PLUGIN_ID}/{relative}", self.names)
+            self.assertIn(f"{DEMO_PLUGIN_ID}/{relative}", self.names)
 
     def test_03_manifest_matches_contract(self) -> None:
         manifest = json.loads(self._member("plugin.json"))
-        self.assertEqual(manifest["id"], SEED_PLUGIN_ID)
+        self.assertEqual(manifest["id"], DEMO_PLUGIN_ID)
         self.assertEqual(manifest["license"], "Apache-2.0")
         self.assertEqual(manifest["api_version"], "1.0")
         self.assertNotIn("backend", manifest)

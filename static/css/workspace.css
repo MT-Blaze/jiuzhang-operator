@@ -243,46 +243,6 @@
   align-items: center;
 }
 
-.ws-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--card);
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
-}
-
-.ws-chip:hover,
-.ws-chip:focus-visible {
-  border-color: var(--accent);
-  color: var(--ink);
-  outline: none;
-}
-
-.ws-chip-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--faint);
-  flex: none;
-}
-
-.ws-chip[data-state="live"] .ws-chip-dot {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
-}
-
-.ws-chip[data-state="mock"] .ws-chip-dot {
-  background: var(--down);
-}
-
 /* 对话流 */
 .ws-thread {
   flex: 1;
@@ -595,18 +555,6 @@
   font-size: 0.78rem;
 }
 
-.ws-btn-block {
-  width: 100%;
-}
-
-.ws-btn-icon {
-  min-height: 36px;
-  min-width: 36px;
-  padding: 4px 10px;
-  font-size: 1.2rem;
-  line-height: 1;
-}
-
 /* 折叠态：由 .ws-page 的 data 属性驱动，且只改尺寸变量。
    桌面把对应轨道变量收为 0（gutter 一并收，避免留下 5px 空缝），
    四区靠上面的 grid-column 钉轨各就各位，display:none 摘走一区也不会让剩下的顺位前移；
@@ -704,28 +652,6 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
-
-.ws-provider-hint {
-  margin: 4px 0 8px;
-  font-size: 0.76rem;
-  line-height: 1.5;
-  color: var(--faint);
-}
-
-.ws-provider-hint code {
-  color: var(--muted);
-}
-
-.ws-provider-test-result {
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
-.ws-provider-test-result[data-tone="ok"] { color: var(--ok); }
-.ws-provider-test-result[data-tone="down"] { color: var(--down); }
-.ws-provider-test-result[data-tone="info"] { color: var(--muted); }
 
 /* 拖拽安装遮罩 */
 .ws-drop-overlay {
@@ -1541,8 +1467,7 @@ html.ws-dragging * {
 
   /* STACK §2.2 触控热区不小于 44px */
   .ws-btn,
-  .ws-btn-sm,
-  .ws-chip {
+  .ws-btn-sm {
     min-height: 44px;
   }
 
@@ -1656,12 +1581,4 @@ html.ws-dragging * {
   min-height: 0;
   border: 0;
   background: #fffdf9;
-}
-.ws-dock-tag {
-  margin-left: 8px;
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  color: #8a8175;
-  text-transform: uppercase;
 }

@@ -273,7 +273,7 @@ class MobileDrawerTest(unittest.TestCase):
 
     def test_05_touch_targets_stay_44px(self) -> None:
         body = media_body_max(768)
-        block = re.search(r"\.ws-btn,\s*\.ws-btn-sm,\s*\.ws-chip\s*\{([^}]*)\}", body)
+        block = re.search(r"\.ws-btn,\s*\.ws-btn-sm\s*\{([^}]*)\}", body)
         self.assertIsNotNone(block)
         self.assertRegex(block.group(1), r"min-height:\s*44px")
 

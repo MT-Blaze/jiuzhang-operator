@@ -306,7 +306,6 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
-    (data_dir / ".seed-demo-bank.installed").write_text("probe\n", encoding="utf-8")
 
     for plugin_id in (BANK_ID, PAPER_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)

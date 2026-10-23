@@ -290,7 +290,6 @@ jiuzhang-operator/
 │       ├── plugin_sources.py # 官方插件仓库索引的镜像序列（唯一允许内置的远程索引地址）
 │       ├── plugin_download.py # 在线安装：按需下载单个 zip，失败按条目 mirrors 重试（§1.4）
 │       ├── plugin_tools.py  # 插件能力 → OpenAI tools，工具执行与宿主意图兜底（§1.5）
-│       ├── seed_plugin.py   # 首启静默安装种子题库插件（只装本地 zip，不触网）
 │       ├── plugin_index.py  # plugins.json 索引：地址守卫 + 只读拉取 + 官方换源
 │       ├── provider.py      # AIProvider 抽象基类
 │       ├── provider_config.py # 多模型配置（只写本机 .env，永不回显）
@@ -315,7 +314,7 @@ jiuzhang-operator/
 ├── examples/
 │   ├── plugins-index.example.json  # 示例清单（地址全部不可用，只示范结构）
 │   ├── demo_plugin/                # 种子题库插件源码（5 道示例题）
-│   ├── demo_plugin.zip             # 构建产物：首启静默安装的种子包
+│   ├── demo_plugin.zip             # 构建产物：示例与测试用插件包（不由底座自动安装）
 │   ├── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
 │   ├── placeholder_plugin/         # 官方占位插件源码（在线安装闭环演示用）
 │   ├── placeholder_plugin.zip      # 构建产物：走 CDN/代理镜像分发，不进 dist 发放包
@@ -335,7 +334,7 @@ jiuzhang-operator/
 │   ├── test_plugin_index.py        # 索引解析、地址守卫与官方镜像换源契约
 │   ├── test_plugin_install.py      # 插件 zip 安检与安装契约
 │   ├── test_plugin_install_url.py  # 在线安装：下载守卫、失败回滚与端点契约
-│   ├── test_seed_plugin.py         # 默认路由与种子插件安装契约
+│   ├── test_routes_and_demo_zip.py # 默认路由与示例插件包契约
 │   ├── test_pwa_contract.py        # PWA 清单、图标与 Service Worker 契约
 │   ├── test_workspace_fold_state.py # 工作台四区折叠状态机契约（v0.4.3 死锁锁死，v0.6.0 改四区钉轨）
 │   ├── test_workspace_sidebar.py   # 工作台左栏与插件工作模式契约（v0.5.3/v0.5.4）

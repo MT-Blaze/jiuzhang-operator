@@ -33,6 +33,20 @@
 
 ## 二、当前核心进度（v0.8.2）
 
+> **军令 #13（2026-10-24 彻夜）11 项全部交付，版本仍 0.8.2、未发版**：四大模块按序落地并逐项 commit——
+> ① 任务 1 启动行为（沿用 #11 第三阶段 `882e56b`）；② 任务 2 左栏 48px 顶线、三视图底栏与插件拖拽排序（`511bd1e`）；
+> ③ 任务 3 右栏 `sidebar.right` 动态插槽与插件化契约（`38031b0`）；④ 任务 4 `question_parser` 纯函数地基（`22b350f`）；
+> ⑤ 任务 5 FTS5 中文检索预研（`bee3d61`）；⑥ 任务 6 `exam-paper` 组卷/答题卡（`1bdaba1`）；
+> ⑦ 任务 7 `lecture` 讲义工作台（`db250b7`）；⑧ 任务 8 `bank-browser` 浏览与编辑跳转（`7041728`）；
+> ⑨ 任务 9 editor 三栏对比 + Canvas 框选切图（`54d40c1`）；⑩ 任务 10 双轨更新运行时与 21/21 真机探针（`b40e816`）；
+> ⑪ 任务 11 死代码瘦身、晨报与统一推送（本次 commit）。
+> **任务 11 清理**：删 `app/core/seed_plugin.py`（v0.8.0 起已无调用方，PLUGIN_SPEC 改为「已退役」）；
+> 清掉旧题库列表页与已删控件留下的 26 个 CSS 类（questions/workspace/settings 共 −238 行、−3,975 B），
+> 路由与 demo-zip 契约测试改名保留。`tools/audit_code.py` 仍 ERROR 0（WARN 33 均为固定 SQL 标识符/已净化 innerHTML）。
+> **验证**：全量 39 模块 **749 测全绿**（`.venv/Scripts/python.exe` 逐模块；较上轮 −3 为退役的种子安装测例）；
+> 三页真机回归 13/13（零控制台错误、375px 无横向溢出），截图与 `probe.json` 在 `.system_generated/task11_css_probe/`。
+> 详见根目录 `Morning_Report.md`。
+
 > **v0.8.2（2026-10-24）多版本地基 + 题库路由解耦 + 四区通高几何**：三件事一起落。
 > ① **考向并集地基**：`schema.sql` 解冻加 `textbooks` 与 `node_topic_map` 两张表、`topics` 加 `textbook_id`，
 > 并用 CHECK 钉死「考向（tp_kx）不许绑版本」；`user_version` 1→2，现网 456 题库与本地种子库已无损洗入
@@ -462,6 +476,9 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 
 ### 一、当前冲刺（P0 级）
 
+- [x] **军令 #13 十一项**（2026-10-24 彻夜）：启动行为 / 侧栏与底栏 / 右栏插槽 / 录题解析 / FTS5 / 组卷 / 讲义 /
+      题库浏览 / 框选切图 / 双轨更新 / 瘦身晨报，逐项 commit；全量 749 测绿、更新探针 21/21、样式回归 13/13。
+      版本仍未升、未出包，详见 `Morning_Report.md` 与 §二 顶部。
 - [x] **API 切表**（2026-10-23 完成）：后端 API 全部从旧宽表 `bank_questions` 切换到新的 7 张关系表。
       读路径 `list_questions` / `get_question` / `stats` / `random_question` / `get_many` 已重写，
       新增 `topics`（懒展开 + 子树题量）与 `topic_notes`；写路径 `create_question` 与 `import_documents`
