@@ -1798,36 +1798,70 @@
   // 底座被改坏时仍可直连 /settings 强制进同一套面板（防变砖兜底，见军令例外条款）。
   var consoleFrameLoaded = false;
   var consolePanelPending = null;
+  var UPDATE_NOTICE_KEY = "jzo.updateNotice";
+  var updateNoticeCount = 0;
+  var consoleDot = document.getElementById("wsConsoleDot");
 
-  function postConsolePanel(frame, panel) {
+  function readUpdateNotice() {
     try {
-      frame.contentWindow.postMessage({ jzo: "console.panel", panel: panel }, window.location.origin);
+      var raw = localStorage.getItem(UPDATE_NOTICE_KEY);
+      if (!raw) return 0;
+      var data = JSON.parse(raw);
+      return data && Number(data.count) > 0 ? Number(data.count) : 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function renderUpdateNotice(count) {
+    updateNoticeCount = Number(count) > 0 ? Number(count) : 0;
+    var label = updateNoticeCount > 0 ? "有 " + updateNoticeCount + " 项更新" : "";
+    if (consoleDot) {
+      consoleDot.hidden = updateNoticeCount <= 0;
+      consoleDot.textContent = label;
+    }
+    var btn = document.getElementById("wsConsoleBtn");
+    if (btn) {
+      btn.setAttribute("aria-label", updateNoticeCount > 0
+        ? "打开设置与控制台（" + label + "待处理）"
+        : "打开设置与控制台");
+      btn.title = updateNoticeCount > 0 ? "设置与控制台 · " + label : "设置与控制台";
+    }
+  }
+
+  function postConsolePanel(frame, panel, tab) {
+    var message = { jzo: "console.panel", panel: panel };
+    if (tab) message.tab = tab;
+    try {
+      frame.contentWindow.postMessage(message, window.location.origin);
     } catch (error) {
       /* 内嵌面板还没起来：等 load 事件补发，不拿异常打死点击 */
     }
   }
 
-  function openConsoleTab(panel) {
+  function openConsoleTab(panel, tab) {
     var frame = document.getElementById("wsConsoleFrame");
     if (frame) {
       if (!consoleFrameLoaded) {
         frame.addEventListener("load", function () {
           consoleFrameLoaded = true;
           if (consolePanelPending) {
-            postConsolePanel(frame, consolePanelPending);
+            postConsolePanel(frame, consolePanelPending.panel, consolePanelPending.tab);
             consolePanelPending = null;
           }
         }, { once: true });
         // 首次水合：直接把目标面板写进地址，省一次「先开默认页再跳面板」的闪动。
         var src = frame.getAttribute("src") || "about:blank";
         if (src === "about:blank" && panel) {
-          frame.setAttribute("src", "/settings?embedded=1&panel=" + encodeURIComponent(panel));
-          consolePanelPending = panel;
+          var target = "/settings?embedded=1&panel=" + encodeURIComponent(panel);
+          if (tab) target += "&tab=" + encodeURIComponent(tab);
+          frame.setAttribute("src", target);
+          consolePanelPending = { panel: panel, tab: tab || "" };
         } else if (panel) {
-          consolePanelPending = panel;
+          consolePanelPending = { panel: panel, tab: tab || "" };
         }
       } else if (panel) {
-        postConsolePanel(frame, panel);
+        postConsolePanel(frame, panel, tab);
       }
     }
     if (window.JzoStage && typeof window.JzoStage.activate === "function") {
@@ -1835,17 +1869,26 @@
     }
   }
 
-  // 定调令：工作台不许再有弹窗。左栏图标与顶栏模型胶囊都只是「走到页签里」，
-  // 模型配置表单在控制台里只有那一份。
+  // 定调令：工作台不许再有弹窗。左栏入口只把老师带进页签，
+  // 模型配置表单在控制台里只有那一份；有更新待办时直接落到「插件 · 检查更新」。
   (function wireConsoleEntry() {
+    renderUpdateNotice(readUpdateNotice());
     var btn = document.getElementById("wsConsoleBtn");
     if (btn) {
-      btn.addEventListener("click", function () { openConsoleTab(); });
+      btn.addEventListener("click", function () {
+        if (updateNoticeCount > 0) openConsoleTab("plugin", "update");
+        else openConsoleTab();
+      });
     }
     // 控制台里改了模型配置 → 顶栏胶囊立即重拉状态，不让老师对着旧标签发愣。
     window.addEventListener("message", function (event) {
       if (event.origin !== window.location.origin) return;
-      if (event.data && event.data.jzo === "providers.changed") loadProviders().catch(function () {});
+      var data = event.data;
+      if (data && data.jzo === "updates.available") {
+        renderUpdateNotice(data.count);
+        return;
+      }
+      if (data && data.jzo === "providers.changed") loadProviders().catch(function () {});
     });
     // 控制台里热更了插件（PLUGIN_SPEC §1.7）→ 左栏、页签与画布立刻接上新代码，
     // 全程不刷新浏览器、不重启底座。宿主自己在总线上广播 plugin.updated。

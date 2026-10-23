@@ -17,16 +17,19 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from app.core import bank, basket, questions
 from app.core import bank_provider as provider
 from app.core.security import require_write_token
+from app.api import workspaces as workspace_api
 
 router = APIRouter(tags=["bank"])
 
 
 @router.get("/api/bank/textbooks", summary="当前题库的教材版本清单（多版本大纲地基）")
 def bank_textbooks() -> dict[str, Any]:
-    """列活跃题库 provider 里登记的教材版本；没有 textbooks 表的老库如实回空列表。"""
+    """列活跃题库 provider 里登记的教材版本，并给出当前工作区实际生效的那一版。"""
     plugin_id = provider.resolve()["plugin_id"]
     try:
-        return {"plugin_id": plugin_id, "items": bank.textbooks(plugin_id)}
+        items = bank.textbooks(plugin_id)
+        active = workspace_api.active_textbook_id(plugin_id)
+        return {"plugin_id": plugin_id, "items": items, "active_textbook_id": active}
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except bank.BankNotFound as exc:
@@ -130,20 +133,31 @@ def bank_questions(
     }
 
 
-@router.get("/api/bank/plugins/{plugin_id}/topics", summary="大纲树懒展开：不给 parent 取册层")
+@router.get("/api/bank/plugins/{plugin_id}/topics", summary="大纲树懒展开：不给 parent 取所选版本的册层")
 def bank_topics(
     plugin_id: str,
     parent_id: str = Query("", max_length=20),
     q: str = Query("", max_length=100),
+    textbook_id: str = Query("", max_length=32),
 ) -> dict[str, Any]:
-    """返回一层节点，带子树题量与教研笔记条数，供左侧大纲树按 sort_order 懒展开。"""
+    """返回一层节点，带子树题量与教研笔记条数，供左侧大纲树按 sort_order 懒展开。
+
+    未显式给 ``textbook_id`` 时取当前工作区的教材版本偏好；偏好缺失或失效则用题库默认版本。
+    根层与搜索结果只展示该版本的目录节点，考向并集（textbook_id 为 NULL）照常出现。
+    """
+    scope = textbook_id.strip()
+    if not scope:
+        try:
+            scope = workspace_api.active_textbook_id(plugin_id)
+        except (bank.BankNotFound, bank.BankError):
+            scope = ""
     try:
-        items = bank.topics(plugin_id, parent_id=parent_id, search=q)
+        items = bank.topics(plugin_id, parent_id=parent_id, search=q, textbook_id=scope)
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": items, "total": len(items), "parent_id": parent_id}
+    return {"items": items, "total": len(items), "parent_id": parent_id, "textbook_id": scope}
 
 
 @router.get(

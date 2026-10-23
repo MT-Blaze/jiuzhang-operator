@@ -299,14 +299,14 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | `GET /api/bank/provider` | 当前活跃题库 provider（含 `fallback_reason`） |
 | `GET /api/bank/provider/candidates` | 可被选为题库的已装插件 |
 | ✍ `POST /api/bank/provider` | 切换活跃题库：`{"plugin_id": "..."}` |
-| `GET /api/bank/textbooks` | 教材版本清单（多版本大纲地基） |
+| `GET /api/bank/textbooks` | 教材版本清单 + 当前工作区生效版本（`active_textbook_id`） |
 | `GET /api/bank/plugins/{plugin_id}/stats` | 题库统计 |
 | `GET /api/bank/plugins/{plugin_id}/questions?grade=&difficulty=&type=&chapter=&textbook=&topic=&q=&page=&page_size=` | 分页取题 |
 | `GET /api/bank/plugins/{plugin_id}/questions/{question_id}` | 单题详情 |
 | ✍ `POST /api/bank/plugins/{plugin_id}/questions` | 新增：`{"question": {...}}` → 201 |
 | ✍ `PATCH /api/bank/plugins/{plugin_id}/questions/{question_id}` | 审核回写：`{"question": {..., "clear_flags": [...]}}` |
 | ✍ `DELETE /api/bank/plugins/{plugin_id}/questions/{question_id}` | 删题（级联摘关联、保留共享节点） |
-| `GET /api/bank/plugins/{plugin_id}/topics?parent_id=&q=` | 大纲树懒展开 |
+| `GET /api/bank/plugins/{plugin_id}/topics?parent_id=&q=&textbook_id=` | 大纲树懒展开；根层与搜索按教材版本过滤，考向并集照常出现 |
 | `GET /api/bank/plugins/{plugin_id}/topics/{topic_id}/notes` | 考向教研笔记 |
 | `GET /api/bank/plugins/{plugin_id}/review?flag=&page=&page_size=` | 待审队列 |
 | `GET /api/bank/plugins/{plugin_id}/random?...筛选同 list` | 随机一题（无匹配 404） |

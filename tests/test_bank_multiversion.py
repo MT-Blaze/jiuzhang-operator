@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import sqlite3
@@ -23,6 +24,7 @@ import unittest
 from pathlib import Path
 
 from app.core import bank
+from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.core-bank"
@@ -361,6 +363,79 @@ class SeedLibraryTest(unittest.TestCase):
                                "映射行应覆盖考向的每一层目录祖先，必须多于考向数")
         finally:
             con.close()
+
+
+class TopicVersionScopeTest(unittest.TestCase):
+    """大纲树按教材版本过滤：目录节点分版本，考向并集照常出现。"""
+
+    TB_A = "tb_aaaaaaaa"
+    TB_B = "tb_bbbbbbbb"
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"))
+        os.environ["JZO_DATA_DIR"] = self.tmp.name
+        settings.workspace_id = None
+        self.addCleanup(self._restore_settings)
+        bank.init_bank(PLUGIN_ID)
+        self.path = Path(self.tmp.name) / "banks" / f"{PLUGIN_ID}.db"
+        now = "2026-10-24T00:00:00+08:00"
+        con = sqlite3.connect(self.path)
+        try:
+            con.executemany(
+                "INSERT INTO textbooks (id, name, publisher, edition, is_default, created_at, updated_at)"
+                " VALUES (?, ?, '', '', ?, ?, ?)",
+                [(self.TB_A, "人教A版", 1, now, now), (self.TB_B, "苏教版", 0, now, now)],
+            )
+            rows = [
+                ("tp_boaaaaaaaa", None, self.TB_A, "人教A版·必修一", "tp_boaaaaaaaa", 0),
+                ("tp_chaaaaaaaa", "tp_boaaaaaaaa", self.TB_A, "A章", "tp_boaaaaaaaa/tp_chaaaaaaaa", 0),
+                ("tp_kxaaaaaaaa", "tp_chaaaaaaaa", None, "共享考向",
+                 "tp_boaaaaaaaa/tp_chaaaaaaaa/tp_kxaaaaaaaa", 0),
+                ("tp_boaaaaaaab", None, self.TB_B, "苏教版·必修一", "tp_boaaaaaaab", 1),
+                ("tp_chaaaaaaab", "tp_boaaaaaaab", self.TB_B, "B章", "tp_boaaaaaaab/tp_chaaaaaaab", 0),
+            ]
+            con.executemany(
+                "INSERT INTO topics (id, parent_id, textbook_id, name, path, sort_order, status,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)",
+                [(row + (now, now)) for row in rows],
+            )
+            con.commit()
+        finally:
+            con.close()
+
+    def _restore_settings(self) -> None:
+        workspace_id, data_dir = self._saved
+        settings.workspace_id = workspace_id
+        if data_dir is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = data_dir
+
+    def test_01_root_list_follows_selected_textbook(self) -> None:
+        only_a = bank.topics(PLUGIN_ID, textbook_id=self.TB_A)
+        self.assertEqual([item["name"] for item in only_a], ["人教A版·必修一"])
+        self.assertEqual(only_a[0]["textbook_id"], self.TB_A)
+        only_b = bank.topics(PLUGIN_ID, textbook_id=self.TB_B)
+        self.assertEqual([item["name"] for item in only_b], ["苏教版·必修一"])
+        self.assertEqual({item["name"] for item in bank.topics(PLUGIN_ID)},
+                         {"人教A版·必修一", "苏教版·必修一"})
+        self.assertEqual(bank.default_textbook_id(PLUGIN_ID), self.TB_A)
+
+    def test_02_search_keeps_shared_topics_but_hides_other_version_outline(self) -> None:
+        shared_a = bank.topics(PLUGIN_ID, search="共享", textbook_id=self.TB_A)
+        shared_b = bank.topics(PLUGIN_ID, search="共享", textbook_id=self.TB_B)
+        self.assertEqual([item["name"] for item in shared_a], ["共享考向"])
+        self.assertEqual([item["name"] for item in shared_b], ["共享考向"],
+                         "考向是并集，不属于任何单一版本，换版本搜索仍应命中")
+        self.assertEqual(bank.topics(PLUGIN_ID, search="B章", textbook_id=self.TB_A), [])
+        self.assertEqual([item["name"] for item in bank.topics(
+            PLUGIN_ID, search="B章", textbook_id=self.TB_B)], ["B章"])
+
+    def test_03_invalid_textbook_id_is_rejected(self) -> None:
+        with self.assertRaises(bank.BankError):
+            bank.topics(PLUGIN_ID, textbook_id="tb_zzzzzzzz")
 
 
 if __name__ == "__main__":

@@ -105,5 +105,71 @@ class AboutSectionTest(unittest.TestCase):
         self.assertIn("（About）", HTML)
 
 
+class ConsoleSubTabsTest(unittest.TestCase):
+    """插件分区是「左菜单 → 右二级菜单」：四个页签，不做弹窗、不竖着堆长页。"""
+
+    def test_01_four_subtabs_and_panels_are_wired(self) -> None:
+        self.assertIn('id="stPluginTabs"', HTML)
+        self.assertIn('role="tablist"', HTML)
+        labels = re.findall(r'class="st-subnav-item[^"]*"[^>]*>([^<]+)</button>', HTML)
+        self.assertEqual([item.strip() for item in labels], ["管理", "检查更新", "在线索引", "手动安装"])
+        for suffix in ("Manage", "Update", "Index", "Install"):
+            self.assertIn(f'id="stPluginTab{suffix}"', HTML)
+            self.assertIn(f'id="stPluginPanel{suffix}"', HTML)
+        for panel_id in ("stPluginPanelUpdate", "stPluginPanelIndex", "stPluginPanelInstall"):
+            block = re.search(rf'<section class="st-subpanel" id="{panel_id}"[^>]*>', HTML)
+            self.assertIsNotNone(block)
+            self.assertIn("hidden", block.group(0), f"{panel_id} 初始应收起")
+
+    def test_02_secondary_tabs_keep_keyboard_navigation(self) -> None:
+        self.assertIn("selectPluginTab", JS)
+        self.assertIn("PLUGIN_TABS", JS)
+        self.assertIn('event.key === "ArrowRight"', JS)
+        self.assertIn('event.key === "Home"', JS)
+        self.assertIn("console.panel", JS)
+        self.assertIn("data.tab", JS)
+
+    def test_03_subtabs_are_44px_targets(self) -> None:
+        self.assertRegex(CSS, r"\.st-subnav-item\s*\{[^}]*min-height:\s*44px")
+
+    def test_04_no_modal_for_plugin_management(self) -> None:
+        self.assertNotIn("mg-modal-overlay", HTML.split("stPluginTabs", 1)[1].split("模型配置", 1)[0])
+
+
+class WorkspaceTextbookSwitchTest(unittest.TestCase):
+    def test_01_existing_workspace_has_inline_textbook_picker(self) -> None:
+        self.assertIn("st-ws-textbook-inline", JS)
+        self.assertIn("setWorkspaceTextbook", JS)
+        self.assertIn("/api/workspaces/textbook", JS)
+        self.assertIn("active_textbook_id", JS)
+        self.assertRegex(CSS, r"\.st-ws-textbook-inline\s*\{[^}]*min-height:\s*44px")
+
+
+class UpdateNoticeAndProgressTest(unittest.TestCase):
+    def test_01_progressbar_is_aria_described_and_motion_safe(self) -> None:
+        block = re.search(r'<div class="up-progress" id="upProgress"[^>]*>', HTML)
+        self.assertIsNotNone(block)
+        self.assertIn('role="progressbar"', block.group(0))
+        self.assertIn('aria-valuetext="空闲"', block.group(0))
+        self.assertIn("upProgressSet", JS)
+        self.assertIn("prefers-reduced-motion: reduce", CSS)
+
+    def test_02_notice_is_text_plus_color_and_persisted_locally(self) -> None:
+        self.assertIn('id="wsConsoleDot"', WORKSPACE_HTML)
+        self.assertIn("有 ", WORKSPACE_HTML + JS)
+        self.assertIn("updates.available", JS)
+        self.assertIn("jzo.updateNotice", JS)
+        self.assertIn("renderUpdateNotice", (STATIC / "js" / "workspace.js").read_text(encoding="utf-8"))
+        workspace_css = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+        self.assertRegex(workspace_css, r"\.ws-console-badge\s*\{[^}]*background:")
+
+    def test_03_notice_jumps_into_plugin_update_tab(self) -> None:
+        workspace_js = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
+        self.assertIn('openConsoleTab("plugin", "update")', workspace_js)
+        self.assertIn("tab=", workspace_js)
+        self.assertIn("&tab=", workspace_js)
+        self.assertIn("[?&]tab=", JS)
+
+
 if __name__ == "__main__":
     unittest.main()

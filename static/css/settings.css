@@ -200,6 +200,39 @@
 .up-card[data-state="up_to_date"] { opacity: 0.82; }
 .up-card .q-button[disabled] { cursor: not-allowed; opacity: 0.55; }
 
+/* 出网请求没有进度事件，就如实给「不确定进度」条：只表示仍在跑，不伪造百分比。 */
+.up-progress {
+  position: relative;
+  height: 6px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(166, 59, 43, 0.12);
+}
+
+.up-progress[hidden] { display: none; }
+
+.up-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: up-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes up-progress-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .up-progress-bar {
+    width: 100%;
+    animation: none;
+  }
+}
+
 .up-log {
   list-style: none;
   margin: 8px 0 0;
@@ -369,6 +402,66 @@ html[data-embedded="1"] .st-main {
   max-width: 560px;
 }
 
+/* 左菜单下的二级菜单：插件分区用横向页签，不再竖着堆四块面板。 */
+.st-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.st-subnav-item {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.st-subnav-item:hover {
+  color: var(--ink);
+  background: var(--paper-deep);
+}
+
+.st-subnav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.st-subnav-item.is-active {
+  color: var(--accent);
+  border-color: rgba(166, 59, 43, 0.32);
+  background: var(--accent-soft);
+}
+
+.st-subpanels {
+  min-width: 0;
+}
+
+.st-subpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.st-subpanel[hidden] {
+  display: none;
+}
+
+/* 二级面板里的 st-block 不再自带外框，避免与分区面板形成双重描边。 */
+.st-subpanel > .st-block {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
 /* 工作区列表 */
 .st-ws-list {
   list-style: none;
@@ -415,6 +508,37 @@ html[data-embedded="1"] .st-main {
   padding: 8px 14px;
 }
 
+/* 已有工作区就地切换教材版本：选择器同样保证 44px 触控热区。 */
+.st-ws-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.st-ws-pick-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.st-ws-textbook-inline {
+  min-height: 44px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.st-ws-textbook-inline:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .st-ws-empty {
   font-size: 13px;
   color: var(--muted);
@@ -450,6 +574,16 @@ html[data-embedded="1"] .st-main {
 
   .st-nav-item {
     flex: 1 1 120px;
+  }
+
+  .st-ws-actions {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  .st-ws-textbook-inline {
+    max-width: 100%;
   }
 }
 

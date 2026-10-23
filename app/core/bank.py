@@ -88,6 +88,7 @@ STORAGE_YEAR_MIN, STORAGE_YEAR_MAX = 1990, 2100
 # topics.id = tp_ + 层别码 + 8 位十六进制摘要，定长 13；层别看前缀即知，不另设冗余列。
 # 因为所有节点 id 都以 "tp_" 开头且等长，路径前缀用 LIKE 直配不会误伤兄弟子树。
 TOPIC_ID_RE = re.compile(r"^tp_(bo|ch|se|kx)[0-9a-f]{8}$")
+TEXTBOOK_ID_RE = re.compile(r"^tb_[0-9a-f]{8}$")
 LAYER_TAXONOMY_KEY = {"bo": "textbook", "ch": "chapter", "se": "section", "kx": "topic"}
 
 REQUIRED_TABLES = (
@@ -434,6 +435,14 @@ def textbooks(plugin_id: str) -> list[dict[str, Any]]:
     finally:
         con.close()   # Windows 下漏句柄会把库文件占住，读函数一律显式收回
     return [dict(row) for row in rows]
+
+
+def default_textbook_id(plugin_id: str) -> str:
+    """库里登记为默认的教材版本；空库或没有默认标记时回空串。"""
+    for item in textbooks(plugin_id):
+        if item.get("is_default"):
+            return str(item["id"])
+    return ""
 
 
 def upgrade_structure(plugin_id: str, path: Path | None = None) -> dict[str, Any]:
@@ -1065,28 +1074,53 @@ def stats(plugin_id: str) -> dict[str, Any]:
         con.close()
 
 
-def topics(plugin_id: str, *, parent_id: str = "", search: str = "") -> list[dict[str, Any]]:
-    """大纲树的一层子节点（懒展开用），带题量、是否有下级与教研笔记条数。"""
+def topics(
+    plugin_id: str, *, parent_id: str = "", search: str = "", textbook_id: str = ""
+) -> list[dict[str, Any]]:
+    """大纲树的一层子节点（懒展开用），带题量、是否有下级与教研笔记条数。
+
+    ``textbook_id`` 只约束**根层与搜索结果**：册/章/节是版本目录节点，选哪版就看哪版；
+    考向（``tp_kx``）是全库并集、``textbook_id IS NULL``，永远随版本一起出现。
+    给定 ``parent_id`` 时不再过滤——父节点本身已确定了版本身份。
+    """
+    if textbook_id and TEXTBOOK_ID_RE.fullmatch(textbook_id) is None:
+        raise BankError("教材版本 ID 非法")
     con = connect(plugin_id)
     try:
         term = str(search or "").strip()[:MAX_SEARCH]
+        fields = "id, parent_id, textbook_id, name, path, sort_order, status"
         if term:
-            rows = con.execute(
-                "SELECT id, parent_id, name, path, sort_order, status FROM topics"
-                " WHERE name LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",
-                (_like(term), MAX_SEARCH_NODES),
-            ).fetchall()
+            if textbook_id:
+                rows = con.execute(
+                    f"SELECT {fields} FROM topics"
+                    " WHERE name LIKE ? ESCAPE '\\'"
+                    " AND (textbook_id = ? OR textbook_id IS NULL)"
+                    " ORDER BY path LIMIT ?",
+                    (_like(term), textbook_id, MAX_SEARCH_NODES),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    f"SELECT {fields} FROM topics"
+                    " WHERE name LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",
+                    (_like(term), MAX_SEARCH_NODES),
+                ).fetchall()
         elif parent_id:
             if TOPIC_ID_RE.fullmatch(parent_id) is None:
                 raise BankError("考向节点 ID 非法")
             rows = con.execute(
-                "SELECT id, parent_id, name, path, sort_order, status FROM topics"
+                f"SELECT {fields} FROM topics"
                 " WHERE parent_id = ? ORDER BY sort_order, name",
                 (parent_id,),
             ).fetchall()
+        elif textbook_id:
+            rows = con.execute(
+                f"SELECT {fields} FROM topics"
+                " WHERE parent_id IS NULL AND textbook_id = ? ORDER BY sort_order, name",
+                (textbook_id,),
+            ).fetchall()
         else:
             rows = con.execute(
-                "SELECT id, parent_id, name, path, sort_order, status FROM topics"
+                f"SELECT {fields} FROM topics"
                 " WHERE parent_id IS NULL ORDER BY sort_order, name"
             ).fetchall()
         result = []
@@ -1106,6 +1140,7 @@ def topics(plugin_id: str, *, parent_id: str = "", search: str = "") -> list[dic
             result.append({
                 "id": row["id"],
                 "parent_id": row["parent_id"],
+                "textbook_id": row["textbook_id"],
                 "name": row["name"],
                 "layer": LAYER_TAXONOMY_KEY.get(row["id"][3:5], ""),
                 "path": row["path"],

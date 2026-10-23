@@ -1574,6 +1574,22 @@ html.ws-dragging * {
 .ws-console-entry:hover { color: #a5382f; border-color: #e3c9c3; background: #f4e7e3; }
 .ws-console-entry:focus-visible { outline: 2px solid #a5382f; outline-offset: 2px; }
 
+/* 更新待办徽标：文字 + 颜色双通道，不靠颜色单独传达状态。 */
+.ws-console-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #a5382f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ws-console-badge[hidden] { display: none; }
+
 .ws-console-frame {
   display: block;
   width: 100%;

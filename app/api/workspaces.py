@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import re
 import os
 import secrets
 import sqlite3
@@ -60,6 +59,23 @@ def _bank_question_count(workspace_id: str | None) -> int:
         return 0
     finally:
         con.close()
+
+
+def active_textbook_id(plugin_id: str) -> str:
+    """当前工作区生效的教材版本：工作区偏好优先，失效或未选时回落默认版本。
+
+    大纲树按这个 ID 只展示对应版本的目录节点；考向并集不受影响。
+    老库没有 textbooks 表时如实回空串，让调用方按「不过滤」处理。
+    """
+    workspaces = _load_workspaces()
+    current_id = settings.workspace_id or DEFAULT_WORKSPACE_ID
+    entry = next((item for item in workspaces if item.get("id") == current_id), None)
+    chosen = str((entry or {}).get("textbook_id") or "").strip()
+    items = core_bank.textbooks(plugin_id)
+    known = {str(item["id"]) for item in items}
+    if chosen and chosen in known:
+        return chosen
+    return next((str(item["id"]) for item in items if item.get("is_default")), "")
 
 
 def _provision_core_bank() -> int:
@@ -351,7 +367,7 @@ async def set_workspace_textbook(payload: WorkspaceTextbookRequest) -> dict[str,
     if entry is None:
         raise HTTPException(status_code=404, detail="工作区不存在")
     textbook_id = (payload.textbook_id or "").strip()
-    if textbook_id and not re.match(r"^tb_[0-9a-f]{8}$", textbook_id):
+    if textbook_id and core_bank.TEXTBOOK_ID_RE.fullmatch(textbook_id) is None:
         raise HTTPException(status_code=400, detail="教材版本 ID 不合法")
     if textbook_id:
         try:

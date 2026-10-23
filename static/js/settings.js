@@ -405,11 +405,13 @@
   var upHostText = document.getElementById("upHostText");
   var upHostBtn = document.getElementById("upHostBtn");
   var upLog = document.getElementById("upLog");
+  var upProgress = document.getElementById("upProgress");
   var upIndexUrl = document.getElementById("plIndexUrl");
   var upRows = [];
   var upHostRow = null;
   var upHostArmed = false;
   var UP_LOG_MAX = 200;
+  var UP_NOTICE_KEY = "jzo.updateNotice";
 
   function upStamp() {
     var now = new Date();
@@ -435,6 +437,7 @@
         button.disabled = true;
         button.setAttribute("aria-busy", "true");
       });
+      upProgressSet(true, label);
       mgSet(upStatus, label || "正在处理…", "info");
       return;
     }
@@ -446,6 +449,39 @@
     if (upAllBtn) {
       upAllBtn.disabled = !upRows.some(function (row) { return row.state === "update_available"; });
     }
+    upProgressSet(false);
+  }
+
+  // 后端没有细粒度进度事件：只诚实展示「不确定进度」，不伪造百分比。
+  function upProgressSet(on, label) {
+    if (!upProgress) return;
+    upProgress.hidden = !on;
+    upProgress.setAttribute("aria-busy", on ? "true" : "false");
+    upProgress.setAttribute("aria-valuetext", on ? (label || "正在处理…") : "空闲");
+  }
+
+  // 检查/更新完成后把待办数同步给宿主：工作台左栏据此亮「有 N 项更新」文字徽标，
+  // 不靠颜色单独传达状态（AGENTS §6）。只写本机，不发任何网络请求。
+  function publishUpdateNotice(count) {
+    var value = Number(count) || 0;
+    try {
+      if (value > 0) {
+        localStorage.setItem(UP_NOTICE_KEY, JSON.stringify({ count: value, at: Date.now() }));
+      } else {
+        localStorage.removeItem(UP_NOTICE_KEY);
+      }
+    } catch (error) { /* 隐私模式禁用本地存储时只影响徽标，不影响更新流程 */ }
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ jzo: "updates.available", count: value }, window.location.origin);
+      }
+    } catch (error) { /* 宿主已关闭：忽略 */ }
+  }
+
+  function syncUpdateNotice() {
+    var pending = upRows.filter(function (row) { return row.state === "update_available"; }).length;
+    var host = upHostRow && upHostRow.update_available && upHostRow.available ? 1 : 0;
+    publishUpdateNotice(pending + host);
   }
 
   var UP_STATE_LABEL = {
@@ -522,6 +558,7 @@
         upHostRow = (body && body.host) || null;
         renderUpdateRows();
         renderHostRow();
+        syncUpdateNotice();
         var summary = (body && body.summary) || {};
         upLine("检查完成：共 " + (summary.checked || 0) + " 个插件，可更新 " +
           (summary.update_available || 0) + " 个，需先更新底座 " + (summary.incompatible || 0) +
@@ -608,6 +645,7 @@
         upHostRow = (body && body.host) || upHostRow;
         renderUpdateRows();
         renderHostRow();
+        syncUpdateNotice();
         upBusy(false);
       })
       .catch(function () { upBusy(false); });
@@ -636,10 +674,12 @@
       // 第一下只下载 + 校验 + 生成一次性脚本，绝不动正在运行的底座。
       upHostBtn.disabled = true;
       upHostBtn.setAttribute("aria-busy", "true");
+      upProgressSet(true, "正在下载并校验底座新版本…");
       upLine("正在下载并校验底座新版本（尚未覆盖任何文件）…");
       apiCall("/api/plugins/update/host-apply", "POST", {})
         .then(function (body) {
           upHostBtn.removeAttribute("aria-busy");
+          upProgressSet(false);
           upLine("底座新版本已下载并校验：" + body.current + " → " + body.version +
             "；一次性脚本已生成。", "ok");
           if (body.launchable === false) {
@@ -657,6 +697,7 @@
         })
         .catch(function (error) {
           upHostBtn.removeAttribute("aria-busy");
+          upProgressSet(false);
           upHostBtn.disabled = false;
           upLine("底座更新失败：" + error.message, "down");
           mgSet(upStatus, "底座更新失败：" + error.message, "down");
@@ -751,20 +792,70 @@
     });
   });
 
-  // 宿主页签可以指定落在哪一区：首次用地址参数 ?panel=provider，后续用同源 postMessage。
-  function requestPanelFromHost(key) {
+  // ============ 插件分区：左菜单下的二级菜单（页签，不做弹窗） ============
+  var PLUGIN_TABS = ["manage", "update", "index", "install"];
+  var pluginTabButtons = {};
+  var pluginTabPanels = {};
+  PLUGIN_TABS.forEach(function (key) {
+    var suffix = key.charAt(0).toUpperCase() + key.slice(1);
+    pluginTabButtons[key] = document.getElementById("stPluginTab" + suffix);
+    pluginTabPanels[key] = document.getElementById("stPluginPanel" + suffix);
+  });
+
+  function selectPluginTab(key, focusTab) {
+    if (PLUGIN_TABS.indexOf(key) === -1) return;
+    PLUGIN_TABS.forEach(function (name) {
+      var tab = pluginTabButtons[name];
+      var panel = pluginTabPanels[name];
+      var on = name === key;
+      if (tab) {
+        tab.classList.toggle("is-active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+        tab.tabIndex = on ? 0 : -1;
+        if (on && focusTab) tab.focus();
+      }
+      if (panel) panel.hidden = !on;
+    });
+  }
+
+  PLUGIN_TABS.forEach(function (name) {
+    var tab = pluginTabButtons[name];
+    if (!tab) return;
+    tab.addEventListener("click", function () { selectPluginTab(name, false); });
+    tab.addEventListener("keydown", function (event) {
+      var index = PLUGIN_TABS.indexOf(name);
+      var step = (event.key === "ArrowRight" || event.key === "ArrowDown") ? 1
+        : (event.key === "ArrowLeft" || event.key === "ArrowUp") ? -1 : 0;
+      if (event.key === "Home") step = -PLUGIN_TABS.length;
+      if (event.key === "End") step = PLUGIN_TABS.length - index;
+      if (!step) return;
+      event.preventDefault();
+      var next = PLUGIN_TABS[(index + step + PLUGIN_TABS.length) % PLUGIN_TABS.length];
+      selectPluginTab(next, true);
+    });
+  });
+
+  // 宿主页签可以指定落在哪一区、哪一二级页签：
+  // 首次用地址参数 ?panel=plugin&tab=update，后续用同源 postMessage。
+  function requestPanelFromHost(key, sub) {
     if (PANEL_KEYS.indexOf(key) === -1) return;
     selectPanel(key, false);
+    if (key === "plugin" && sub) selectPluginTab(String(sub), false);
   }
 
   var urlPanel = /[?&]panel=([^&]+)/.exec(window.location.search);
+  var urlTab = /[?&]tab=([^&]+)/.exec(window.location.search);
   if (urlPanel) {
-    try { requestPanelFromHost(decodeURIComponent(urlPanel[1])); } catch (error) { /* 非法参数回落默认区 */ }
+    try {
+      requestPanelFromHost(decodeURIComponent(urlPanel[1]), urlTab ? decodeURIComponent(urlTab[1]) : "");
+    } catch (error) { /* 非法参数回落默认区 */ }
   }
   window.addEventListener("message", function (event) {
     if (event.origin !== window.location.origin) return;
     var data = event.data;
-    if (data && data.jzo === "console.panel") requestPanelFromHost(String(data.panel || ""));
+    if (data && data.jzo === "console.panel") {
+      requestPanelFromHost(String(data.panel || ""), data.tab ? String(data.tab) : "");
+    }
   });
 
   // ============ 工作区：列出 / 切换 / 新建（含教材版本） ============
@@ -775,6 +866,8 @@
   var wsCreateBtn = document.getElementById("stWsCreateBtn");
   var wsTextbookRefresh = document.getElementById("stWsTextbookRefresh");
   var textbookById = {};
+  var textbookItems = [];
+  var activeTextbookId = "";
   var wsBusy = false;
 
   // 独立访问 /settings 时刷新自己；被画布页签内嵌时刷新宿主，页签与左栏一起对齐新库。
@@ -800,10 +893,42 @@
       var li = el("li", "st-ws-item");
       li.setAttribute("data-active", ws.is_active ? "1" : "0");
       li.appendChild(el("span", "st-ws-name", ws.name || ws.id));
-      var tb = ws.textbook_id ? (textbookById[ws.textbook_id] || ws.textbook_id) : "跟随默认版本";
+      var fallbackName = ws.is_active && activeTextbookId && textbookById[activeTextbookId]
+        ? "跟随默认版本（当前：" + textbookById[activeTextbookId] + "）"
+        : "跟随默认版本";
+      var tb = ws.textbook_id ? (textbookById[ws.textbook_id] || ws.textbook_id) : fallbackName;
       li.appendChild(el("span", "st-ws-meta",
         (ws.is_active ? "当前 · " : "") + Number(ws.question_count || 0) + " 题 · 教材：" + tb));
       var actions = el("div", "st-ws-actions");
+      if (textbookItems.length || ws.textbook_id) {
+        var picker = el("label", "st-ws-pick");
+        picker.appendChild(el("span", "st-ws-pick-label", "教材版本"));
+        var pick = el("select", "st-ws-textbook-inline");
+        pick.setAttribute("aria-label", "教材版本：" + (ws.name || ws.id));
+        var follow = el("option");
+        follow.value = "";
+        follow.textContent = "跟随默认";
+        pick.appendChild(follow);
+        textbookItems.forEach(function (item) {
+          var option = el("option");
+          option.value = item.id;
+          option.textContent = item.name + (item.is_default ? "（默认）" : "");
+          pick.appendChild(option);
+        });
+        if (ws.textbook_id && !textbookById[ws.textbook_id]) {
+          var stale = el("option");
+          stale.value = ws.textbook_id;
+          stale.textContent = ws.textbook_id + "（当前库未登记）";
+          stale.disabled = true;
+          pick.appendChild(stale);
+        }
+        pick.value = ws.textbook_id || "";
+        pick.addEventListener("change", function () {
+          setWorkspaceTextbook(ws, pick.value, pick);
+        });
+        picker.appendChild(pick);
+        actions.appendChild(picker);
+      }
       if (!ws.is_active) {
         var go = el("button", "q-button", "切换");
         go.type = "button";
@@ -839,6 +964,38 @@
       });
   }
 
+  // 已有工作区也能就地换教材版本：只改工作区档案里的偏好字段，不碰题库数据。
+  // 改的是当前活跃工作区时刷新宿主，让大纲树、题库浏览与录题页一起按新版本重建。
+  function setWorkspaceTextbook(ws, textbookId, selectEl) {
+    if (wsBusy) {
+      if (selectEl) selectEl.value = ws.textbook_id || "";
+      return;
+    }
+    wsBusy = true;
+    if (selectEl) selectEl.disabled = true;
+    mgSet(wsStatus, "正在为「" + (ws.name || ws.id) + "」保存教材版本…", "info");
+    apiCall("/api/workspaces/textbook", "POST", {
+      workspace_id: ws.id,
+      textbook_id: textbookId,
+    })
+      .then(function () {
+        if (ws.is_active) {
+          reloadHostPage();
+          return null;
+        }
+        wsBusy = false;
+        return loadWorkspaces();
+      })
+      .catch(function (error) {
+        wsBusy = false;
+        if (selectEl) {
+          selectEl.disabled = false;
+          selectEl.value = ws.textbook_id || "";
+        }
+        mgSet(wsStatus, "教材版本保存失败：" + error.message, "down");
+      });
+  }
+
   function loadTextbooks() {
     if (!wsTextbookSelect) return Promise.resolve();
     wsTextbookSelect.textContent = "";
@@ -854,6 +1011,8 @@
       .then(function (data) {
         var items = (data && data.items) || [];
         textbookById = {};
+        textbookItems = items;
+        activeTextbookId = String((data && data.active_textbook_id) || "");
         if (!items.length) {
           var none = el("option");
           none.value = "";
