@@ -1071,6 +1071,28 @@
     });
   }
 
+  /** 保存后把宿主归一过的文本回灌表单：老师看到的就是真正入库的写法。 */
+  function syncCleanText(result) {
+    if (!result || typeof result !== "object") return;
+    if (typeof result.stem === "string") stemEl.value = result.stem;
+    if (typeof result.solution === "string") solutionEl.value = result.solution;
+    var answer = result.answer || null;
+    if (answer) {
+      answerEl.value = answer.kind === "choice"
+        ? (answer.choice_keys || []).join(",")
+        : String(answer.content || "");
+    }
+    if (Array.isArray(result.options)) {
+      result.options.forEach(function (option, index) {
+        if (state.options[index] && typeof option.content === "string") {
+          state.options[index].content = option.content;
+        }
+      });
+      renderOptions();
+    }
+    renderPreview();
+  }
+
   function afterSaved(result, updating) {
     setSaving(false);
     var id = result && result.id;
@@ -1078,6 +1100,7 @@
     savedEl.textContent = (updating ? "已保存 · " : "已入库 · ") + id;
     savedEl.setAttribute("data-id", id || "");
     dirtySinceSave = false;
+    syncCleanText(result);
     // 保存成功即作废该目标的草稿：老师拿到的是已落库的内容，不该再恢复旧草稿。
     clearDraft(updating ? (id || state.editingId) : NEW_DRAFT_KEY);
     window.clearTimeout(draftTimer);

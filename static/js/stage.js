@@ -488,8 +488,18 @@
           }
           if (!response.ok) {
             var detail = data && data.detail;
-            var failure = new Error(typeof detail === "string" ? detail : "宿主接口返回 HTTP " + response.status);
+            var message = "";
+            if (typeof detail === "string") {
+              message = detail;
+            } else if (detail && typeof detail === "object") {
+              // 校验失败是 {message, errors[]}：把首条具体错误带出去，插件才能告诉老师哪里错了
+              var head = typeof detail.message === "string" ? detail.message : "";
+              var first = Array.isArray(detail.errors) && typeof detail.errors[0] === "string" ? detail.errors[0] : "";
+              message = head && first ? head + "：" + first : head || first;
+            }
+            var failure = new Error(message || "宿主接口返回 HTTP " + response.status);
             failure.status = response.status;
+            failure.detail = detail;
             throw failure;
           }
           if (data === null) throw new Error("宿主接口返回了非 JSON 内容");

@@ -11,6 +11,7 @@ LaTeX 定界符不统一（``\\(`` / ``\\[`` / 半角混排）、选项挤在题
 
 from __future__ import annotations
 
+import copy
 import re
 import unicodedata
 from typing import Any
@@ -22,6 +23,7 @@ __all__ = [
     "count_blanks",
     "sanity_check",
     "parse_question",
+    "clean_question",
 ]
 
 # 只在数学环境里做的记号归一：等价写法收敛到 KaTeX 都能稳定渲染的那一种。
@@ -49,7 +51,6 @@ _ANSWER_PATTERNS = (
 _ANSWER_TAIL = re.compile(r"【\s*(?:解析|分析|详解|点睛|点评)\s*】|(?:解析|分析)\s*[：:]")
 _SECTION_START = re.compile(r"^\s*(?:【|解析|分析|详解|点睛|点评|答案|答\s*[：:])")
 _HTML_TAG = re.compile(r"<[A-Za-z/][^>]*>")
-_REMOTE_ASSET = re.compile(r"(?:https?:)?//|data:[a-zA-Z]+/|file:")
 _IMAGE_REF = re.compile(r"\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|!\[[^\]]*\]\([^)]*\)")
 _BLANK = re.compile(r"_{2,}|＿{2,}|\\underline\{\s*\}")
 
@@ -254,6 +255,23 @@ def _issue(code: str, message: str) -> dict[str, str]:
     return {"code": code, "message": message}
 
 
+def _image_target(reference: str) -> str:
+    if "{" in reference and "}" in reference:
+        return reference[reference.find("{") + 1 : reference.rfind("}")].strip()
+    if "](" in reference and reference.endswith(")"):
+        return reference[reference.find("](") + 2 : -1].strip()
+    return reference.strip()
+
+
+def _is_remote_image(reference: str) -> bool:
+    """只有 http(s)、协议相对、data:、file: 算远程；asset:// 是底座逻辑地址，必须放行。"""
+    target = _image_target(reference).strip("\"'")
+    lowered = target.lower()
+    if lowered.startswith(("asset://", "uploads/", "/static/", "./", "../")):
+        return False
+    return lowered.startswith(("http://", "https://", "//", "data:", "file:"))
+
+
 def sanity_check(
     stem: str, options: list[dict[str, Any]] | None = None, answer: str = ""
 ) -> list[dict[str, str]]:
@@ -286,7 +304,7 @@ def sanity_check(
                 issues.append(_issue("unmatched_environment", f"环境 {name} 没有对应的 \\end"))
 
     for reference in _IMAGE_REF.findall(text):
-        if _REMOTE_ASSET.search(reference):
+        if _is_remote_image(reference):
             issues.append(_issue("remote_asset", f"图片引用必须走 asset:// 或底座托管路径：{reference[:60]}"))
             break
 
@@ -301,6 +319,57 @@ def sanity_check(
         issues.append(_issue("stray_html_answer", "答案含 HTML 标签"))
 
     return issues
+
+
+def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
+    """保存前清洗：归一文本口径并体检，返回 ``(副本, 问题列表)``。
+
+    只动文本（定界符与等价记号），不补字段、不猜答案、不改结构；入参不被修改，
+    调用方校验失败时可以直接丢弃副本。解析里的问题 code 带 ``solution_`` 前缀，
+    让 UI 能区分是题干坏了还是解析坏了。
+    """
+    if not isinstance(document, dict):
+        return document, [_issue("invalid_document", "题目必须是 JSON 对象")]
+    cleaned = copy.deepcopy(document)
+    for field in ("stem", "solution"):
+        if isinstance(cleaned.get(field), str):
+            cleaned[field] = normalize_latex(cleaned[field])
+
+    option_rows: list[dict[str, str]] = []
+    options = cleaned.get("options")
+    if isinstance(options, list):
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            if isinstance(option.get("content"), str):
+                option["content"] = normalize_latex(option["content"])
+            option_rows.append({
+                "label": str(option.get("key") or ""),
+                "text": str(option.get("content") or ""),
+            })
+
+    answer = cleaned.get("answer")
+    answer_text = ""
+    if isinstance(answer, dict):
+        for field in ("content", "final"):
+            if isinstance(answer.get(field), str):
+                answer[field] = normalize_latex(answer[field])
+        if answer.get("kind") == "choice":
+            keys = answer.get("choice_keys")
+            if isinstance(keys, list):
+                answer_text = ",".join(str(item) for item in keys)
+        else:
+            answer_text = str(answer.get("content") or answer.get("final") or "")
+
+    issues = sanity_check(cleaned.get("stem", ""), option_rows, answer_text)
+    solution = cleaned.get("solution")
+    if isinstance(solution, str) and solution.strip():
+        for issue in sanity_check(solution):
+            issues.append({
+                "code": "solution_" + issue["code"],
+                "message": issue["message"].replace("题干", "解析", 1),
+            })
+    return cleaned, issues
 
 
 def parse_question(text: str) -> dict[str, Any]:

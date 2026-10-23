@@ -11,6 +11,7 @@ from __future__ import annotations
 import unittest
 
 from app.core.question_parser import (
+    clean_question,
     count_blanks,
     extract_answer,
     normalize_latex,
@@ -172,6 +173,55 @@ class SanityCheckTest(unittest.TestCase):
 
     def test_10_answer_html(self) -> None:
         self.assertIn("stray_html_answer", self.codes("题干", None, "<b>3</b>"))
+
+    def test_11_asset_scheme_is_a_local_asset_not_a_remote_url(self) -> None:
+        self.assertNotIn("remote_asset", self.codes(r"$\includegraphics{asset://img_abc123}$"))
+        self.assertNotIn("remote_asset", self.codes("图：![x](/static/uploads/a.png)"))
+        self.assertIn("remote_asset", self.codes("图：![x](//cdn.test/a.png)"))
+
+
+class CleanQuestionTest(unittest.TestCase):
+    def document(self, **overrides) -> dict:
+        document = {
+            "schema_version": "2.0",
+            "type": "single_choice",
+            "stem": r"已知 \(x^2=1\)，则 $x$ 为（　　）",
+            "options": [
+                {"key": "A", "content": r"\(\dfrac{1}{2}\)"},
+                {"key": "B", "content": "$1$"},
+            ],
+            "answer": {"kind": "choice", "choice_keys": ["B"], "final": "B"},
+            "solution": r"由 \[x^2-1=0\] 得 $x=\pm1$。",
+        }
+        document.update(overrides)
+        return document
+
+    def test_01_every_text_field_is_normalized(self) -> None:
+        cleaned, issues = clean_question(self.document())
+        self.assertEqual(cleaned["stem"], "已知 $x^2=1$，则 $x$ 为（　　）")
+        self.assertEqual(cleaned["options"][0]["content"], r"$\frac{1}{2}$")
+        self.assertEqual(cleaned["solution"], "由 $$x^2-1=0$$ 得 $x=\\pm1$。")
+        self.assertEqual(issues, [])
+
+    def test_02_source_document_is_not_mutated(self) -> None:
+        source = self.document()
+        clean_question(source)
+        self.assertIn(r"\(\dfrac{1}{2}\)", source["options"][0]["content"])
+
+    def test_03_solution_issue_carries_its_own_prefix(self) -> None:
+        _cleaned, issues = clean_question(self.document(solution=r"由 $\frac{1}{2$ 得"))
+        self.assertEqual([item["code"] for item in issues], ["solution_unbalanced_braces"])
+
+    def test_04_answer_html_is_reported(self) -> None:
+        document = self.document()
+        document["answer"] = {"kind": "text", "content": "<b>1</b>", "final": "1"}
+        _cleaned, issues = clean_question(document)
+        self.assertIn("stray_html_answer", [item["code"] for item in issues])
+
+    def test_05_non_document_is_reported(self) -> None:
+        cleaned, issues = clean_question("不是对象")  # type: ignore[arg-type]
+        self.assertEqual(cleaned, "不是对象")
+        self.assertEqual([item["code"] for item in issues], ["invalid_document"])
 
 
 class ParseQuestionTest(unittest.TestCase):

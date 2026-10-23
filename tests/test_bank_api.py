@@ -565,6 +565,29 @@ class BankApiContractTest(unittest.TestCase):
         )
         self.assertEqual(status, 422)
 
+    def test_z3b_create_normalizes_latex_before_write(self) -> None:
+        r"""老师粘来的 \(…\) 与 \dfrac：入库前由解析器归一，读回来就是契约口径。"""
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(
+                stem=r"录题归一：求 \(\dfrac{a}{b}\) 的值，其中 $a=1$。",
+                solution=r"由 \[a=1\] 得 $b$ 任意。",
+            )},
+            token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["stem"], r"录题归一：求 $\frac{a}{b}$ 的值，其中 $a=1$。")
+        self.assertEqual(created["solution"], "由 $$a=1$$ 得 $b$ 任意。")
+
+    def test_z3c_create_rejects_broken_formula(self) -> None:
+        status, data = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(stem=r"录题防呆：求 $x^{2}$ 的值，缺右定界符 $")},
+            token=True,
+        )
+        self.assertEqual(status, 422)
+        self.assertIn("unbalanced_math", " ".join(data["detail"]["errors"]))
+
     def test_z4_create_multiple_choice_options(self) -> None:
         question = self._editor_question(
             type="multiple_choice",

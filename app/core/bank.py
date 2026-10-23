@@ -39,6 +39,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.core import bank_fts
+from app.core import question_parser
 from app.core import questions as question_contract
 from app.core.config import settings
 from app.core.contract import (
@@ -55,6 +57,25 @@ MAX_SEARCH = 100
 MAX_BASKET = 200
 MAX_SEARCH_NODES = 100
 MAX_TOPIC_IDS = 8
+
+# 保存时阻断的体检问题。这些坏法会让公式、图片引用在任何渲染/导出端只剩半截，
+# 与其入库后再靠人眼发现，不如在保存当场报错；选项标号一类交给 Schema 判。
+BLOCKING_ISSUES = frozenset({
+    "empty_stem",
+    "unbalanced_math",
+    "unbalanced_braces",
+    "unbalanced_left_right",
+    "unmatched_environment",
+    "remote_asset",
+    "stray_html",
+    "stray_html_answer",
+    "solution_unbalanced_math",
+    "solution_unbalanced_braces",
+    "solution_unbalanced_left_right",
+    "solution_unmatched_environment",
+    "solution_remote_asset",
+    "solution_stray_html",
+})
 
 SCHEMA_VERSION = 2
 
@@ -757,6 +778,54 @@ def _flag_clause(flag: str) -> tuple[str, list[Any]]:
     )
 
 
+# ---------------------------------------------------------------- 题干索引
+
+def _fts_ready(con: sqlite3.Connection) -> bool:
+    """确保 FTS5 索引存在且条数与主表一致；任何失败都让调用方退回 LIKE。
+
+    懒重建只发生在读路径：索引是派生数据，丢了可以随时从 questions 重建，
+    绝不能因为索引坏了让题库打不开。
+    """
+    if not bank_fts.available():
+        return False
+    try:
+        bank_fts.ensure_schema(con)
+        total = int(con.execute("SELECT COUNT(*) FROM questions").fetchone()[0])
+        if int(bank_fts.doc_count(con)) != total:
+            bank_fts.index_all(con, con.execute("SELECT id, stem FROM questions"))
+        return True
+    except (bank_fts.FtsUnavailable, sqlite3.DatabaseError):
+        return False
+
+
+def _fts_upsert(con: sqlite3.Connection, question_id: str, stem: str) -> None:
+    if not bank_fts.available():
+        return
+    try:
+        bank_fts.upsert(con, question_id, stem)
+    except (bank_fts.FtsUnavailable, sqlite3.DatabaseError):
+        pass
+
+
+def _fts_remove(con: sqlite3.Connection, question_id: str) -> None:
+    if not bank_fts.available():
+        return
+    try:
+        bank_fts.remove(con, question_id)
+    except (bank_fts.FtsUnavailable, sqlite3.DatabaseError):
+        pass
+
+
+def _fts_clear(con: sqlite3.Connection) -> None:
+    if not bank_fts.available():
+        return
+    try:
+        bank_fts.ensure_schema(con)
+        con.execute(f"DELETE FROM {bank_fts.TABLE}")
+    except (bank_fts.FtsUnavailable, sqlite3.DatabaseError):
+        pass
+
+
 def _build_where(
     *,
     grade: str = "",
@@ -767,6 +836,7 @@ def _build_where(
     search: str = "",
     flag: str = "",
     ids: Iterable[str] | None = None,
+    fts: bool = False,
 ) -> tuple[str, list[Any]]:
     where: list[str] = []
     params: list[Any] = []
@@ -803,8 +873,15 @@ def _build_where(
             params.append(value[:64])
     term = str(search or "").strip()[:MAX_SEARCH]
     if term:
-        where.append("(q.stem LIKE ? ESCAPE '\\' OR q.id = ?)")
-        params.extend([_like(term), term])
+        if fts:
+            where.append(
+                f"(q.id IN (SELECT question_id FROM {bank_fts.TABLE}"
+                f" WHERE {bank_fts.TABLE} MATCH ?) OR q.id = ?)"
+            )
+            params.extend([bank_fts.query_expression(term), term])
+        else:
+            where.append("(q.stem LIKE ? ESCAPE '\\' OR q.id = ?)")
+            params.extend([_like(term), term])
     if flag:
         flag_sql, flag_params = _flag_clause(flag)
         where.append(flag_sql)
@@ -855,12 +932,14 @@ def list_questions(
 ) -> tuple[list[dict[str, Any]], int]:
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), MAX_PAGE_SIZE))
-    clause, params = _build_where(
-        grade=grade, difficulty=difficulty, question_type=question_type,
-        chapter=chapter, textbook=textbook, search=search, flag=flag,
-    )
     con = connect(plugin_id)
     try:
+        use_fts = bool(str(search or "").strip()) and _fts_ready(con)
+        clause, params = _build_where(
+            grade=grade, difficulty=difficulty, question_type=question_type,
+            chapter=chapter, textbook=textbook, search=search, flag=flag,
+            fts=use_fts,
+        )
         if topic:
             scope, scope_params = _topic_subtree_sql(con, topic)
             clause = f"{clause} AND {scope}" if clause else f"WHERE {scope}"
@@ -915,12 +994,14 @@ def random_question(
     topic: str = "",
     search: str = "",
 ) -> dict[str, Any] | None:
-    clause, params = _build_where(
-        grade=grade, difficulty=difficulty, question_type=question_type,
-        chapter=chapter, textbook=textbook, search=search,
-    )
+    clause, params = "", []
     con = connect(plugin_id)
     try:
+        clause, params = _build_where(
+            grade=grade, difficulty=difficulty, question_type=question_type,
+            chapter=chapter, textbook=textbook, search=search,
+            fts=bool(str(search or "").strip()) and _fts_ready(con),
+        )
         if topic:
             scope, scope_params = _topic_subtree_sql(con, topic)
             clause = f"{clause} AND {scope}" if clause else f"WHERE {scope}"
@@ -1241,6 +1322,33 @@ def _link_source(con: sqlite3.Connection, document: dict[str, Any], now: str) ->
     )
 
 
+def _intake_document(
+    document: Any, *, strict: bool = True, baseline: Any = None
+) -> dict[str, Any]:
+    """录题入口统一清洗与防呆。
+
+    ``strict`` 时只拦**本次新引入**的致命问题：``baseline`` 传改题前的旧文档，
+    旧数据里本来就有的坏公式不挡老师改其它字段，但改坏了必须当场报错。
+    批量导入走非严格清洗：旧题库的脏文本要归一，但不能因为个别题把整批吞掉。
+    """
+    cleaned, issues = question_parser.clean_question(document)
+    if not isinstance(cleaned, dict):
+        raise question_contract.QuestionValidationError(["(root): 请求体必须是 JSON 对象"])
+    if strict:
+        known: set[str] = set()
+        if baseline is not None:
+            known = {item["code"] for item in question_parser.clean_question(baseline)[1]}
+        blocking = [
+            item for item in issues
+            if item["code"] in BLOCKING_ISSUES and item["code"] not in known
+        ]
+        if blocking:
+            raise question_contract.QuestionValidationError(
+                [f"{item['code']}: {item['message']}" for item in blocking]
+            )
+    return cleaned
+
+
 def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str,
                     *, upsert: bool = False) -> None:
     row = _question_row(document, now)
@@ -1266,6 +1374,7 @@ def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str,
         _remount_topics(con, row[0], document.get("taxonomy") or {}, now)
     else:
         _link_topics(con, row[0], document, now)
+    _fts_upsert(con, row[0], document["stem"])
 
 
 def _wipe(con: sqlite3.Connection) -> None:
@@ -1274,6 +1383,7 @@ def _wipe(con: sqlite3.Connection) -> None:
     for table in REQUIRED_TABLES:
         con.execute(f'DELETE FROM "{table}"')
     con.execute("PRAGMA foreign_keys = ON")
+    _fts_clear(con)
 
 
 def import_documents(
@@ -1296,7 +1406,7 @@ def import_documents(
     if not path.exists():
         init_bank(plugin_id, path)
 
-    prepared = [_storage_ready(document) for document in documents]
+    prepared = [_storage_ready(_intake_document(document, strict=False)) for document in documents]
     for document in prepared:
         question_contract.validate_question(document)
     con = sqlite3.connect(path, timeout=10.0)
@@ -1336,6 +1446,7 @@ def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:
     if isinstance(payload, dict) and "id" in payload:
         # 旧 ID 可能是历史题目或他人题目：一律作废，由底座重新签发
         payload = {key: value for key, value in payload.items() if key != "id"}
+    payload = _intake_document(payload)
     document = question_contract.prepare_new_question(payload)
     question_contract.validate_question(document)
     document = _storage_ready(document)
@@ -1498,6 +1609,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
             document.pop("answer")
     document["schema_version"] = normalize_contract_version(document.get("schema_version"))
     document["difficulty"] = normalize_difficulty(document.get("difficulty"))
+    document = _intake_document(document, baseline=current)
 
     clear = patch.get("clear_flags")
     clear = [clear] if isinstance(clear, str) else list(clear or [])
@@ -1528,6 +1640,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
         )
         if cursor.rowcount == 0:
             raise BankNotFound(f"题库中没有题目 {question_id}")
+        _fts_upsert(con, question_id, document["stem"])
         if remount:
             _remount_topics(con, question_id, document.get("taxonomy") or {}, _now())
         con.commit()
@@ -1555,6 +1668,7 @@ def delete_question(plugin_id: str, question_id: str) -> dict[str, Any]:
             cursor = con.execute("DELETE FROM questions WHERE id = ?", (question_id,))
             if cursor.rowcount == 0:
                 raise BankNotFound(f"题库中没有题目 {question_id}")
+            _fts_remove(con, question_id)
         except BaseException:
             con.rollback()
             raise

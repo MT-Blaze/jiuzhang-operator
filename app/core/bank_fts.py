@@ -28,6 +28,7 @@ __all__ = [
     "remove",
     "index_all",
     "rebuild",
+    "query_expression",
     "query_ids",
     "doc_count",
 ]
@@ -123,14 +124,17 @@ def rebuild(connection: sqlite3.Connection, source_table: str = "questions") -> 
     return index_all(connection, ((row[0], row[1]) for row in cursor))
 
 
-def _query_expression(text: str) -> str:
-    """拆字后包成 FTS5 短语；引号按 FTS5 规则双写转义。"""
+def query_expression(text: str) -> str:
+    """拆字后包成 FTS5 短语；引号按 FTS5 规则双写转义。
+
+    公开出来是给调用方把 ``MATCH`` 直接嵌进自己的查询（分页计数时不丢筛选条件）。
+    """
     tokens = segment(text).replace('"', '""')
     return f'"{tokens}"' if tokens else ""
 
 
 def query_ids(connection: sqlite3.Connection, text: str, limit: int = 20) -> list[str]:
-    expression = _query_expression(text)
+    expression = query_expression(text)
     if not expression:
         return []
     ensure_schema(connection)
