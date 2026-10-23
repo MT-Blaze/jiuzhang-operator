@@ -54,13 +54,15 @@ class OfficialIndexFileTest(unittest.TestCase):
         self.assertEqual(parsed["rejected"], [])
         ids = [entry["id"] for entry in parsed["entries"]]
         self.assertIn(PLACEHOLDER_ID, ids)
-        self.assertIn(DEMO_ID, ids)
+        self.assertIn("org.jiuzhang.editor", ids)
+        # v0.8.0 清理历史包袱：示例题库 demo-bank 不再进官方索引
+        self.assertNotIn(DEMO_ID, ids)
 
     def test_02_official_entries_use_plugin_repo_mirrors(self) -> None:
         """v0.5.2：索引与 zip 全部指向独立插件仓库，主地址走 gh-proxy。"""
         payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
-        for plugin_id in (PLACEHOLDER_ID, DEMO_ID):
-            entry = next(item for item in payload["entries"] if item["id"] == plugin_id)
+        self.assertTrue(payload["entries"], "官方索引不应为空")
+        for entry in payload["entries"]:
             self.assertTrue(entry["zip_url"].startswith("https://gh-proxy.com/"))
             self.assertIn("MT-Blaze/jiuzhang-plugins/main/plugins/", entry["zip_url"])
             self.assertTrue(entry["zip_url"].endswith(".zip"))

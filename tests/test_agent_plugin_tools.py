@@ -140,6 +140,13 @@ class ChatToolCallApiTest(unittest.TestCase):
         env["JZO_PLUGINS_DIR"] = str(Path(cls.tmp.name) / "plugins")
         env["JZO_LOCAL_TOKEN"] = "tool-test-token"
         env["JZO_AI_API_KEY"] = ""  # 强制 Mock，验证兜底路径
+        # 底座已不再首启自动安装示例插件（v0.8.0 清理历史包袱）；本测要验的
+        # 「对话→插件工具」桥接需要一个真实样本插件，这里显式把它装进临时插件目录，
+        # 不再依赖任何自动安装通道。
+        plugins_dir = Path(cls.tmp.name) / "plugins"
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(ROOT / "examples" / "demo_plugin.zip") as bundle:
+            bundle.extractall(plugins_dir)
         cls.process = subprocess.Popen(
             [
                 sys.executable,

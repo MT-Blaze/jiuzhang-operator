@@ -294,6 +294,7 @@ com.example.card/
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
 | `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
+| `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
 
 > **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。

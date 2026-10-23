@@ -5,9 +5,12 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import secrets
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +75,24 @@ class WorkspaceCreateRequest(BaseModel):
 class WorkspaceSwitchRequest(BaseModel):
     """切换工作区请求体。"""
     workspace_id: str = Field(..., min_length=1, description="目标工作区ID")
+
+
+class WorkspaceImportRequest(BaseModel):
+    """导入本地题库：把一个 .db 挂载成一个新的独立工作区。
+
+    不用 multipart（底座不引 python-multipart，STACK §0）：前端把文件读成 base64 传上来。
+    """
+    name: str = Field(..., min_length=1, description="新工作区名称")
+    db_base64: str = Field(..., min_length=1, description="题库 .db 文件内容的 base64")
+
+
+IMPORT_MAX_DB_BYTES = 64 * 1024 * 1024          # 单个导入库上限 64 MB
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+# 七张业务表齐全才认作 core-bank 库（bank/schema.sql 冻结口径）；缺表即拒，不静默建空。
+_REQUIRED_TABLES = {
+    "questions", "topics", "sources", "schools",
+    "question_topics", "question_sources", "topic_notes",
+}
 
 
 def _workspace_config_path() -> Path:
@@ -206,6 +227,91 @@ async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
 
     # 新工作区立刻落地一个空的 core-bank 库（非 default 走 schema 兜底，不复制 default 真题）
     question_count = _provision_core_bank()
+
+    return {
+        "id": workspace_id,
+        "name": name,
+        "question_count": question_count,
+        "switched": True,
+    }
+
+
+@router.post("/import", summary="导入本地 .db 为一个新工作区（数据备份/恢复入口）")
+async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
+    """把老师选择的一个本地 .db 挂载成独立工作区，并切换过去。
+
+    校验顺序：base64 解码 → 体积上限 → SQLite 魔数 → 七表齐全。任一不过即 400 且不留半成品文件。
+    落位到 ``data/workspaces/<wsid>/banks/org.jiuzhang.core-bank.db``，与 v0.7.2 的工作区物理隔离口径一致。
+    """
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="工作区名称不能为空")
+    try:
+        raw = base64.b64decode(payload.db_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="题库数据不是合法的 base64") from exc
+    if not raw:
+        raise HTTPException(status_code=400, detail="题库文件为空")
+    if len(raw) > IMPORT_MAX_DB_BYTES:
+        raise HTTPException(status_code=413, detail="题库文件超过 64 MB 上限")
+    if not raw.startswith(_SQLITE_MAGIC):
+        raise HTTPException(status_code=400, detail="所选文件不是有效的 SQLite 数据库")
+
+    workspace_id = f"ws_{secrets.token_hex(8)}"
+    workspace_dir = Path(settings.data_dir) / "workspaces" / workspace_id / "banks"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    db_path = workspace_dir / f"{CORE_BANK_PLUGIN_ID}.db"
+    db_path.write_bytes(raw)
+
+    try:
+        con = sqlite3.connect(db_path)
+    except sqlite3.Error as exc:
+        db_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="数据库无法打开") from exc
+    try:
+        tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = _REQUIRED_TABLES - tables
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail="所选库缺少 core-bank 业务表：" + "、".join(sorted(missing)) + "，导入被拒绝",
+            )
+        try:
+            question_count = int(con.execute("SELECT COUNT(*) FROM questions").fetchone()[0])
+        except sqlite3.Error:
+            question_count = 0
+    except HTTPException:
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
+        try:
+            db_path.unlink()
+        except OSError:
+            pass
+        # 回收半成品工作区：先删 banks 子目录再删其父，且都容错（可能已被占/已空）
+        for leftover in (workspace_dir, workspace_dir.parent):
+            try:
+                leftover.rmdir()
+            except OSError:
+                pass
+        raise
+    finally:
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
+
+    switch_workspace(workspace_id)
+    init_db()
+    workspaces = _load_workspaces()
+    workspaces.append({
+        "id": workspace_id,
+        "name": name,
+        "created_at": "import",
+        "database": str(settings.database_path),
+    })
+    _save_workspaces(workspaces)
 
     return {
         "id": workspace_id,

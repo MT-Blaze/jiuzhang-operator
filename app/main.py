@@ -26,14 +26,14 @@ from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.security import local_write_token
-from app.core.seed_plugin import ensure_seed_plugin
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    ensure_seed_plugin()
+    # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；
+    # 插件一律由用户在「设置 → 插件管理与控制」里亲手装。
     yield
 
 

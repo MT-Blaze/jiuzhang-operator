@@ -12,6 +12,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from app.core import plugin_state
 from app.core.config import settings
 
 PROTOCOL = "jzo-plugin/1"
@@ -432,6 +433,8 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         "ui": ui,
         "stage": stage,
         "bus": bus_grants,
+        # 渲染/工具类插件可显式声明 show_in_sidebar:false，不在左栏占位；缺省一律显示。
+        "show_in_sidebar": manifest.get("show_in_sidebar") is not False,
     }
 
 
@@ -440,6 +443,7 @@ def discover_plugins() -> dict[str, Any]:
     rejected: list[dict[str, str]] = []
     root = Path(settings.plugins_dir)
     fingerprint: list[str] = []
+    disabled = plugin_state.disabled_ids()
 
     if root.is_dir():
         for plugin_dir in sorted(root.iterdir(), key=lambda item: item.name):
@@ -457,10 +461,14 @@ def discover_plugins() -> dict[str, Any]:
                 fingerprint.append(f"{plugin_dir.name}:unreadable")
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                plugins.append(validate_plugin(plugin_dir, manifest))
+                info = validate_plugin(plugin_dir, manifest)
+                info["enabled"] = info["id"] not in disabled
+                plugins.append(info)
             except (PluginRejected, OSError, json.JSONDecodeError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 
+    # 启停状态也进签名：停用一个插件后左栏要能立刻知道清单变了。
+    fingerprint.append("disabled:" + ",".join(sorted(disabled)))
     # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
     # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
     signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]

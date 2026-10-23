@@ -43,6 +43,56 @@
         </p>
       </section>
 
+      <section class="st-block st-manage" id="manage" aria-labelledby="mg-title">
+        <h2 id="mg-title">插件管理与控制</h2>
+        <p class="st-note">
+          已安装插件在这里集中管理：<strong>启用/停用</strong>（停用即从工作台左栏消失、释放内存，代码与数据原地保留）、
+          <strong>卸载</strong>（可选是否保留本地题库数据）、以及安装（下方索引/手动 zip）。
+          底座不自动装卸任何插件，一切改动都由你当场点。
+        </p>
+        <p class="pl-status" id="mgStatus" role="status" aria-live="polite" hidden></p>
+        <ul class="mg-list" id="mgList"></ul>
+        <div class="st-install-actions">
+          <button type="button" class="q-button" id="mgRefresh">刷新列表</button>
+        </div>
+      </section>
+
+      <section class="st-block st-import" id="recover" aria-labelledby="import-title">
+        <h2 id="import-title">导入已有题库数据</h2>
+        <p class="st-note">
+          选一个本地 <code>.db</code>（须为 core-bank 七表结构），底座把它挂载成一个<strong>新的独立工作区</strong>
+          并切换过去，原文件不受影响、不覆盖任何现有库。用于换机搬迁或从备份恢复。
+        </p>
+        <label class="q-field" for="importWsName">
+          <span>新工作区名称</span>
+          <input id="importWsName" type="text" maxlength="40" autocomplete="off" placeholder="如：2026 高三真题">
+        </label>
+        <div class="st-install-actions">
+          <button type="button" class="q-button" id="dbImportBtn">选择 .db 并挂载</button>
+          <input type="file" id="dbImportFile" accept=".db,application/x-sqlite3" hidden>
+        </div>
+        <p class="pl-status" id="importStatus" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <div class="mg-modal-overlay" id="uninstallModal" role="dialog" aria-modal="true"
+        aria-labelledby="uninstallTitle" aria-hidden="true" hidden>
+        <div class="mg-modal">
+          <h3 id="uninstallTitle">卸载插件</h3>
+          <p id="uninstallText">确定卸载该插件吗？</p>
+          <label class="mg-keep">
+            <input type="checkbox" id="uninstallKeep" checked>
+            <span>保留本地数据（仅删代码，日后重装同名插件可继续用原题库）</span>
+          </label>
+          <p class="mg-danger" id="uninstallDanger" hidden>
+            未勾选保留：该插件在<strong>所有工作区</strong>的物理题库 <code>.db</code> 将被一并<strong>永久删除，不可恢复</strong>。
+          </p>
+          <div class="mg-modal-actions">
+            <button type="button" class="q-button" id="uninstallCancel">取消</button>
+            <button type="button" class="q-button q-button-danger" id="uninstallConfirm">确认卸载</button>
+          </div>
+        </div>
+      </div>
+
       <section class="pl-pull st-block" id="index" aria-labelledby="pl-pull-title">
         <h2 id="pl-pull-title">在线插件索引</h2>
         <p class="st-note">

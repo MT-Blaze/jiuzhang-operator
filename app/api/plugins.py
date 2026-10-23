@@ -10,13 +10,15 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.core import plugin_index, plugin_search
+from app.core import plugin_index, plugin_search, plugin_state
+from app.core.config import settings
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
     MAX_ZIP_BYTES,
     PluginInstallError,
     install_plugin_from_zip,
 )
+from app.core.plugin_lifecycle import PluginUninstallError, uninstall_plugin
 from app.core.plugins import (
     PluginAssetError,
     discover_plugins,
@@ -176,6 +178,35 @@ def read_plugin_index(payload: dict[str, Any] = Body(...)) -> dict:
     # 缓存失败不影响本次拉取结果（plugin_search 会回落到「尚未拉取」提示）。
     plugin_search.save_index_cache(index)
     return index
+
+
+@router.post(
+    "/api/plugins/{plugin_id}/enabled",
+    summary="启用/停用插件（停用只从导航摘除并释放内存，代码与数据原地保留）",
+    dependencies=[Depends(require_write_token)],
+)
+def set_plugin_enabled(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict:
+    if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
+        raise HTTPException(status_code=400, detail="enabled 必须是布尔值")
+    if not (Path(plugin_id).name == plugin_id and plugin_id):
+        raise HTTPException(status_code=400, detail="插件 ID 非法")
+    if not (Path(settings.plugins_dir) / plugin_id / "plugin.json").is_file():
+        raise HTTPException(status_code=404, detail=f"插件不存在：{plugin_id}")
+    enabled = payload["enabled"]
+    plugin_state.set_enabled(plugin_id, enabled)
+    return {"id": plugin_id, "enabled": enabled}
+
+
+@router.delete(
+    "/api/plugins/{plugin_id}",
+    summary="卸载插件；keep_data=false 时连同各工作区的物理题库一并销毁",
+    dependencies=[Depends(require_write_token)],
+)
+def uninstall(plugin_id: str, keep_data: bool = True) -> dict:
+    try:
+        return uninstall_plugin(plugin_id, keep_data=keep_data)
+    except PluginUninstallError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
 
 @router.get("/plugin-assets/{plugin_id}/{asset_path:path}", include_in_schema=False)

@@ -65,7 +65,7 @@
   var editorContext = { id: "", question: null, at: 0 };
   var pendingPatch = null;
 
-  // 当前题库工作区切换（v0.7.2）：左栏顶部下拉，切/建都是换物理 .db。
+  // 当前题库工作区切换：左栏顶部下拉，切/建都是换物理 .db。
   var wsBankSelect = document.getElementById("wsBankSelect");
   var wsBankNew = document.getElementById("wsBankNew");
 
@@ -2001,8 +2001,28 @@
     return Math.max(-100, Math.min(100, value));
   }
 
+  // 左栏插件的直白功能副标题（军令 v0.8.0 任务 4.3）：优先用 curated 文案，
+  // 其次回落插件 description，最后才是类型标签——老师一眼看懂这插件干什么，而不是版本加点类型。
+  var PLUGIN_TAGLINES = {
+    "org.jiuzhang.core-bank": "内置大纲与题库引擎",
+    "org.jiuzhang.editor": "录题、改题、删题工作台",
+    "org.jiuzhang.paper-gen": "题篮排成 A4 练习卷",
+    "org.jiuzhang.handout": "Markdown 讲义实时排 A4"
+  };
+
+  function pluginSidebarSubtitle(plugin) {
+    var tagline = PLUGIN_TAGLINES[plugin.id];
+    if (tagline) return tagline;
+    var desc = String(plugin.description || "").trim();
+    if (desc) return desc.split(/[：:。\n]/)[0].slice(0, 24);
+    return KIND_LABELS[plugin.kind] || "插件";
+  }
+
   function renderPlugins(plugins) {
-    var list = (plugins || []).slice();
+    // 三态管理落到导航：停用的（enabled=false）与不占位的（show_in_sidebar=false）都不进左栏。
+    var list = (plugins || []).filter(function (plugin) {
+      return plugin.enabled !== false && plugin.show_in_sidebar !== false;
+    });
     // stage.priority 的第二个真实消费点：左栏插件区同样按优先级从高到低排，
     // 同优先级按名称稳定排序。没有舞台声明的插件 priority=0，不抢位。
     list.sort(function (a, b) {
@@ -2031,7 +2051,8 @@
       name.textContent = plugin.name || plugin.id || "未命名插件";
       var meta = document.createElement("span");
       meta.className = "ws-plugin-item-meta";
-      meta.textContent = "v" + (plugin.version || "?") + " · " + (KIND_LABELS[plugin.kind] || "插件");
+      meta.textContent = pluginSidebarSubtitle(plugin);
+      btn.title = "v" + (plugin.version || "?");
       btn.appendChild(name);
       btn.appendChild(meta);
       btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });

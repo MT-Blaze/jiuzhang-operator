@@ -4,21 +4,6 @@
   "updated_at": "2026-10-24",
   "entries": [
     {
-      "id": "org.jiuzhang.demo-bank",
-      "name": "示例题库",
-      "version": "0.2.0",
-      "kind": "importer",
-      "api_version": "1.0",
-      "description": "内置 5 道高中数学示例题（Markdown+LaTeX），开箱即可体验拆题、渲染与入库流程。",
-      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.demo-bank.zip",
-      "mirrors": [
-        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.demo-bank.zip",
-        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.demo-bank.zip",
-        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.demo-bank.zip"
-      ],
-      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/examples/demo_plugin"
-    },
-    {
       "id": "org.jiuzhang.placeholder",
       "name": "占位演示插件",
       "version": "0.1.0",
