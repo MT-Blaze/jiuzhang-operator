@@ -317,6 +317,7 @@
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
     "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
+    "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.remove", "basket.clear",
     "draft.save", "draft.load"
   ];
@@ -653,6 +654,17 @@
 
     if (method === "bank.stats") {
       fetchJson(base + "/stats").then(done, fail);
+      return;
+    }
+
+    // 数据看板两条只读通道：全局端点，跟页签自己的库无关，永远读活跃题库
+    if (method === "bank.dashboard_stats") {
+      fetchJson("/api/bank/dashboard/stats").then(done, fail);
+      return;
+    }
+
+    if (method === "bank.dashboard_heatmap") {
+      fetchJson("/api/bank/dashboard/heatmap").then(done, fail);
       return;
     }
 

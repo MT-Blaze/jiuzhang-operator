@@ -54,6 +54,31 @@ def bank_provider_set(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/api/bank/dashboard/stats", summary="数据看板：四个数与最近录入（活跃题库，只读）")
+def bank_dashboard_stats() -> dict[str, Any]:
+    """总题数 / 今日入库 / 待审核 / 已落库 + 最近 5 题摘要；口径见 API_REFERENCE.md。"""
+    plugin_id = provider.resolve()["plugin_id"]
+    try:
+        data = bank.dashboard_stats(plugin_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"plugin_id": plugin_id, **data}
+
+
+@router.get("/api/bank/dashboard/heatmap", summary="数据看板：过去 365 天按日入库热力图（活跃题库，只读）")
+def bank_dashboard_heatmap(days: int = Query(365, ge=1, le=3650)) -> list[dict[str, Any]]:
+    """返回裸数组 ``[{"date": "YYYY-MM-DD", "count": N}, ...]``，含今天、逐日补零。"""
+    plugin_id = provider.resolve()["plugin_id"]
+    try:
+        return bank.daily_counts(plugin_id, days)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/api/bank/plugins/{plugin_id}/stats", summary="题库统计（年级/难度/题型/章节）")
 def bank_stats(plugin_id: str) -> dict[str, Any]:
     try:
