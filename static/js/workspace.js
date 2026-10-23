@@ -722,6 +722,42 @@
 
   if (chatEntry) chatEntry.addEventListener("click", enterChatMode);
 
+  /**
+   * 启动行为（军令 #11 阶段三）：老师选了「打开软件默认进入某插件」，这里执行它。
+   * 失效判定不在前端重做一遍——后端 /api/startup 已经把卸载/停用的目标回落成
+   * chat 并给了 fallback_reason，前端只负责照办与如实播报（底栏 + 对话区都记一笔）。
+   * 读不到配置就停在默认欢迎页，任何异常都不许挡住启动。
+   */
+  function applyStartupBehavior(plugins) {
+    return fetch("/api/startup", { cache: "no-store" })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (body) {
+        if (!body) return;
+        if (body.fallback_reason) {
+          addBubble("sys", String(body.fallback_reason), { tone: "warn" });
+          logHistory("启动行为回退：" + body.fallback_reason);
+        }
+        var effective = String(body.effective || "chat");
+        if (effective.indexOf("plugin:") !== 0) return;
+        var wantedId = effective.slice("plugin:".length);
+        var target = null;
+        (plugins || []).forEach(function (plugin) {
+          if (!target && plugin.id === wantedId && plugin.enabled !== false) target = plugin;
+        });
+        if (!target) {
+          logHistory("启动插件不在场，停在自由对话：" + wantedId);
+          return;
+        }
+        var item = null;
+        var buttons = pluginListEl ? pluginListEl.querySelectorAll(".ws-plugin-item") : [];
+        for (var i = 0; i < buttons.length; i += 1) {
+          if (buttons[i].getAttribute("data-plugin-id") === wantedId) { item = buttons[i]; break; }
+        }
+        enterPluginMode(target, item);
+      })
+      .catch(function () { /* 配置读不到就当没配过，默认欢迎页照旧 */ });
+  }
+
   // ============ 右侧插件面板（双向操控） ============
   // 控件由 plugin.json 的 ui 字段（或底座按能力生成的默认面板）下发。
   // 人类改下拉 → revisions[key] 加一；AI 改参数时用发送时的快照比对，
@@ -1850,6 +1886,7 @@
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ws-plugin-item";
+      btn.setAttribute("data-plugin-id", String(plugin.id || ""));
       btn.setAttribute("aria-current", String(Boolean(activePlugin && activePlugin.id === plugin.id)));
       var name = document.createElement("span");
       name.className = "ws-plugin-item-name";
@@ -2058,10 +2095,13 @@
   // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
   loadPlugins()
     .then(function (plugins) {
-      var hasDemo = plugins.some(function (p) { return p.id === "org.jiuzhang.demo-bank"; });
-      if (hasDemo) {
-        addBubble("bot", "系统已为您预置了 5 道示例数学题，您可以直接输入「拆分第一题」进行体验。");
-      }
+      // 启动行为在插件清单渲染完之后执行：左栏条目已就位，进去才能高亮对应项
+      return applyStartupBehavior(plugins).then(function () {
+        var hasDemo = plugins.some(function (p) { return p.id === "org.jiuzhang.demo-bank"; });
+        if (hasDemo && !activePlugin) {
+          addBubble("bot", "系统已为您预置了 5 道示例数学题，您可以直接输入「拆分第一题」进行体验。");
+        }
+      });
     })
     .catch(function () { /* 探测失败保留「暂无插件」空态，不打扰用户 */ });
 

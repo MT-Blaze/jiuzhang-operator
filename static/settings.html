@@ -52,6 +52,8 @@
             aria-selected="false" aria-controls="stPanelPlugin" data-panel="plugin" tabindex="-1">插件</button>
           <button class="st-nav-item" id="stNavProvider" type="button" role="tab"
             aria-selected="false" aria-controls="stPanelProvider" data-panel="provider" tabindex="-1">模型配置</button>
+          <button class="st-nav-item" id="stNavSystem" type="button" role="tab"
+            aria-selected="false" aria-controls="stPanelSystem" data-panel="system" tabindex="-1">系统设置</button>
         </nav>
 
         <div class="st-panels">
@@ -205,6 +207,31 @@
               未配置密钥时底座走 Mock 回显，不会伪造模型输出。
             </p>
             <p class="pl-status" id="pvResult" role="status" aria-live="polite" hidden></p>
+          </section>
+
+          <!-- ================= 系统设置 ================= -->
+          <section class="st-panel" id="stPanelSystem" role="tabpanel" aria-labelledby="stNavSystem" tabindex="0" hidden>
+            <h2 id="sys-title">系统设置</h2>
+            <p class="st-note">
+              底座的启动行为由你说了算：打开软件默认落在哪个界面，选一次就记住（落在本机
+              <code>data/startup.json</code>，与工作区无关、不联网）。
+              所选插件日后被卸载或停用，底座会<strong>优雅回落默认欢迎页</strong>并在服务日志与工作台底栏如实说明，
+              配置原地保留——重新装回或启用后照旧生效。
+            </p>
+
+            <h3 class="st-sub">启动行为</h3>
+            <label class="q-field" for="startupTarget">
+              <span>打开软件默认进入</span>
+              <select id="startupTarget" class="st-startup-target">
+                <option value="chat">默认欢迎页（自由对话）</option>
+              </select>
+            </label>
+            <p class="st-note" id="startupNow" hidden></p>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="startupSaveBtn">保存启动行为</button>
+              <button type="button" class="q-button" id="startupReloadBtn">重新读取</button>
+            </div>
+            <p class="pl-status" id="startupStatus" role="status" aria-live="polite" hidden></p>
           </section>
         </div>
       </div>

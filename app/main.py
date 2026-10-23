@@ -22,6 +22,7 @@ from app.api.health import router as health_router
 from app.api.plugins import router as plugins_router
 from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
+from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
 from app.core.config import settings
 from app.core.db import init_db
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_router)
     app.include_router(workspaces_router)
     app.include_router(bank_router)
+    app.include_router(settings_router)
 
     @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)
     async def read_upload(asset_path: str) -> FileResponse:

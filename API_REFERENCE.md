@@ -328,6 +328,8 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | `GET /api/workspaces` | 列工作区（带 `question_count` / `is_active`） |
 | ✍ `POST /api/workspaces/switch`、`POST /api/workspaces`、`POST /api/workspaces/import`、`POST /api/workspaces/textbook`、`DELETE /api/workspaces/{id}` | 切换 / 新建 / 导入 .db / 选教材版本 / 删除 |
 | `GET /api/settings` | 系统设置与一次性写令牌 `local_token` |
+| `GET /api/startup` | 启动行为：`{target, effective, kind, plugin_id, plugin_name, fallback_reason, candidates[]}`。`candidates` 就是设置页下拉的数据源（**只列已启用插件**）。所配插件被卸载/停用时 `effective` 回落 `chat`、`fallback_reason` 说明原因、`target` 原地保留（军令 #11 阶段三） |
+| ✍ `POST /api/startup` | 保存启动行为：`{"target": "chat" \| "plugin:<id>"}`。写入严格——形状非法、插件未安装或已停用一律 400，不落盘 |
 | `GET /healthz` | 健康检查 |
 
 ### 3.5 AI Agent（宿主自用，插件不经此通道）
