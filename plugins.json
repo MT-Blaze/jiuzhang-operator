@@ -4,21 +4,6 @@
   "updated_at": "2026-10-24",
   "entries": [
     {
-      "id": "org.jiuzhang.placeholder",
-      "name": "占位演示插件",
-      "version": "0.1.0",
-      "kind": "renderer",
-      "api_version": "1.0",
-      "description": "官方占位插件：跑通「拉取清单 → 在线安装 → 插件生效」闭环，渲染一张极简题卡。",
-      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.placeholder.zip",
-      "mirrors": [
-        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.placeholder.zip",
-        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.placeholder.zip",
-        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.placeholder.zip"
-      ],
-      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/examples/placeholder_plugin"
-    },
-    {
       "id": "org.jiuzhang.core-bank",
       "name": "真题题库",
       "version": "0.6.0",

@@ -18,7 +18,7 @@ plugins/
 
 - 接入契约：[../PLUGIN_SPEC.md](../PLUGIN_SPEC.md)（**从零上手直接看 §2.3**：五步流程、`plugin.json` 字段全表、消息协议、可照抄的 `plugin.js` 骨架）
 - 题目数据结构：[../schemas/question.json](../schemas/question.json)
-- 最小样板：[../examples/placeholder_plugin/](../examples/placeholder_plugin/)——整个目录复制出来，改目录名、`plugin.json` 的 `id` 与 `plugin.js` 里的 `PLUGIN_ID`，压成 zip 即可安装。
+- 最小样板：[../examples/template-plugin/](../examples/template-plugin/)——整个目录复制出来，改目录名、`plugin.json` 的 `id` 与 `plugin.js` 里的 `PLUGIN_ID`，压成 zip 即可安装。
 - 清单硬要求：`schema_version` 固定 `"1.0"`；`entry.frontend` 必须指向 `dist/` 下的真实文件；插件根目录必须有 `LICENSE`（Apache-2.0 全文）；`backend` 字段出现即拒装。
 - 底座 `v0.5.4` 已实现清单发现与校验、沙箱资源分发与隔离；题卡渲染宿主将在后续版本接回（PLUGIN_SPEC §2.3.5）。
 - `dist/` 是插件的运行时载荷，需随仓库提交（本项目无构建链）；请勿在其中放入符号链接、可执行文件、数据库或密钥。

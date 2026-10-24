@@ -35,10 +35,33 @@ from app.core.plugin_install import PluginInstallError  # noqa: E402
 from app.core.plugins import validate_plugin  # noqa: E402
 
 TOKEN = "install-url-test-token"
-PLACEHOLDER_ID = "org.jiuzhang.placeholder"
+ONLINE_PROBE_ID = "org.jiuzhang.online-probe"
 DEMO_ID = "org.jiuzhang.demo-bank"
 TEMPLATE_ID = "org.example.template"
 OFFICIAL_PRIMARY = plugin_sources.OFFICIAL_INDEX_PRIMARY
+
+
+def _write_online_probe_zip(target: Path) -> None:
+    """现造一个符合契约的最小插件包，测试不再依赖仓库里的示例 zip。"""
+    manifest = {
+        "schema_version": "1.0",
+        "id": ONLINE_PROBE_ID,
+        "name": "在线安装探针",
+        "version": "0.1.0",
+        "api_version": "1.0",
+        "kind": "renderer",
+        "description": "用于验证在线安装全链路的最小测试插件。",
+        "license": "Apache-2.0",
+        "entry": {"frontend": "dist/index.html"},
+        "slots": ["question.card"],
+        "capabilities": ["question.render"],
+        "permissions": ["questions:read"],
+    }
+    with zipfile.ZipFile(target, "w") as zf:
+        zf.writestr(f"{ONLINE_PROBE_ID}/plugin.json", json.dumps(manifest, ensure_ascii=False))
+        zf.writestr(f"{ONLINE_PROBE_ID}/LICENSE", "Apache License 2.0\n")
+        zf.writestr(f"{ONLINE_PROBE_ID}/dist/index.html", "<!doctype html><html><body></body></html>")
+        zf.writestr(f"{ONLINE_PROBE_ID}/dist/plugin.js", "/* probe */\n")
 
 
 def _free_port() -> int:
@@ -55,7 +78,7 @@ class OfficialIndexFileTest(unittest.TestCase):
         parsed = plugin_index.parse_index(payload)
         self.assertEqual(parsed["rejected"], [])
         ids = [entry["id"] for entry in parsed["entries"]]
-        self.assertIn(PLACEHOLDER_ID, ids)
+        self.assertNotIn("org.jiuzhang.placeholder", ids)
         self.assertIn("org.jiuzhang.editor", ids)
         # v0.8.0 清理历史包袱：示例题库 demo-bank 不再进官方索引
         self.assertNotIn(DEMO_ID, ids)
@@ -71,19 +94,6 @@ class OfficialIndexFileTest(unittest.TestCase):
             self.assertGreaterEqual(len(entry["mirrors"]), 2)
             self.assertTrue(any("ghfast.top" in item for item in entry["mirrors"]))
             self.assertTrue(any("cdn.jsdelivr.net" in item for item in entry["mirrors"]))
-
-    def test_03_placeholder_zip_passes_full_plugin_contract(self) -> None:
-        """官方占位包必须能过 validate_plugin 全套契约——否则在线安装必翻车。"""
-        zip_path = ROOT / "examples" / "placeholder_plugin.zip"
-        self.assertTrue(zip_path.is_file(), "先运行 examples/build_placeholder_plugin.py")
-        with tempfile.TemporaryDirectory() as tmp:
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(tmp)
-            plugin_dir = Path(tmp) / PLACEHOLDER_ID
-            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
-            info = validate_plugin(plugin_dir, manifest)
-        self.assertEqual(info["id"], PLACEHOLDER_ID)
-        self.assertEqual(info["kind"], "renderer")
 
     def test_03b_demo_plugin_zip_passes_full_plugin_contract(self) -> None:
         """示例题库包也要能过全套契约——它是插件仓库里第一个真实可装条目。"""
@@ -148,8 +158,8 @@ class OfficialIndexFileTest(unittest.TestCase):
         bat = (ROOT / "build_release.bat").read_bytes().decode("ascii")
         xf_lines = [line for line in bat.splitlines() if "/XF" in line]
         self.assertTrue(xf_lines, "打包脚本缺少 /XF 排除清单")
-        self.assertIn("placeholder_plugin.zip", xf_lines[0])
         self.assertIn("template-plugin.zip", xf_lines[0])
+        self.assertNotIn("placeholder_plugin.zip", xf_lines[0])
         # 种子包必须留在包里（首启静默安装依赖它），不许一刀切排除所有 zip
         self.assertNotIn("demo_plugin.zip", xf_lines[0])
 
@@ -251,8 +261,10 @@ class InstallUrlApiTest(unittest.TestCase):
         cls.data_dir = Path(cls.tmp.name) / "data"
         cls.cdn_dir = Path(cls.tmp.name) / "cdn"
         cls.cdn_dir.mkdir()
-        # 本地 CDN：真占位包 + 一个非 zip + 一个空文件
-        shutil.copy(ROOT / "examples" / "placeholder_plugin.zip", cls.cdn_dir / (PLACEHOLDER_ID + ".zip"))
+        # 本地 CDN：现造的合规插件包 + 一个非 zip + 一个空文件
+        probe_zip = Path(cls.tmp.name) / f"{ONLINE_PROBE_ID}.zip"
+        _write_online_probe_zip(probe_zip)
+        shutil.copy(probe_zip, cls.cdn_dir / f"{ONLINE_PROBE_ID}.zip")
         (cls.cdn_dir / "notazip.txt").write_text("这不是 zip", encoding="utf-8")
         (cls.cdn_dir / "empty.zip").write_bytes(b"")
 
@@ -327,9 +339,9 @@ class InstallUrlApiTest(unittest.TestCase):
             return response.status, json.loads(response.read())
 
     def test_01_requires_write_token(self) -> None:
-        status, _ = self.post_install({"url": self.cdn_base + "/" + PLACEHOLDER_ID + ".zip"}, token=None)
+        status, _ = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip"}, token=None)
         self.assertEqual(status, 401)
-        status, _ = self.post_install({"url": self.cdn_base + "/" + PLACEHOLDER_ID + ".zip"}, token="wrong")
+        status, _ = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip"}, token="wrong")
         self.assertEqual(status, 401)
 
     def test_02_missing_or_bad_url_is_400(self) -> None:
@@ -341,21 +353,21 @@ class InstallUrlApiTest(unittest.TestCase):
 
     def test_03_online_install_full_loop(self) -> None:
         """拉清单同款守卫 + 真下载 + 真落地：装完立刻能被 /api/plugins 发现。"""
-        status, body = self.post_install({"url": self.cdn_base + "/" + PLACEHOLDER_ID + ".zip"})
+        status, body = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip"})
         self.assertEqual(status, 200, body)
         self.assertTrue(body["installed"])
-        self.assertEqual(body["plugin"]["id"], PLACEHOLDER_ID)
+        self.assertEqual(body["plugin"]["id"], ONLINE_PROBE_ID)
 
         status, listing = self.get_json("/api/plugins")
         ids = {plugin["id"]: plugin for plugin in listing["plugins"]}
-        self.assertIn(PLACEHOLDER_ID, ids)
-        self.assertTrue(ids[PLACEHOLDER_ID]["entry_url"].startswith("/plugin-assets/"))
+        self.assertIn(ONLINE_PROBE_ID, ids)
+        self.assertTrue(ids[ONLINE_PROBE_ID]["entry_url"].startswith("/plugin-assets/"))
 
     def test_04_reinstall_is_409_until_explicit_replace(self) -> None:
-        status, body = self.post_install({"url": self.cdn_base + "/" + PLACEHOLDER_ID + ".zip"})
+        status, body = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip"})
         self.assertEqual(status, 409)
         self.assertEqual(body["detail"]["code"], "exists")
-        status, body = self.post_install({"url": self.cdn_base + "/" + PLACEHOLDER_ID + ".zip", "replace": True})
+        status, body = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip", "replace": True})
         self.assertEqual(status, 200, body)
 
     def test_05_download_failure_leaves_zero_residue(self) -> None:
@@ -401,7 +413,7 @@ class _SlowCdnHandler(SimpleHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path.startswith("/slow.zip"):
             time.sleep(3.0)
-            self.path = "/" + PLACEHOLDER_ID + ".zip"
+            self.path = "/" + ONLINE_PROBE_ID + ".zip"
         return super().do_GET()
 
     def log_message(self, *args):

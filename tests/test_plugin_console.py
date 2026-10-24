@@ -1,7 +1,7 @@
 """插件管理与控制台契约：v0.8.0 军令「子龙」。
 
 覆盖三态与导入的可判定部分：
-1. show_in_sidebar：classic-card 显式 false、core-bank 缺省 true，且 discover 每条带 enabled。
+1. show_in_sidebar：显式 false 生效、缺省 true，且 discover 每条带 enabled。
 2. 启停状态落盘（plugin_state），新装默认启用。
 3. 卸载两口径：保留数据只删代码目录；彻底删除连各工作区物理 .db 一起销毁（越界拒）。
 4. 工作区导入：合法 7 表 .db → 建新工作区并切换；非库 / 缺表 → 拒绝且不留半成品。
@@ -53,8 +53,15 @@ class ShowInSidebarContractTest(unittest.TestCase):
     def _manifest(self, plugin_dir: Path) -> dict:
         return validate_plugin(plugin_dir, json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8")))
 
-    def test_classic_card_hidden_core_bank_shown(self) -> None:
-        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.classic-card")["show_in_sidebar"], False)
+    def test_explicit_false_and_default_true(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "org.jiuzhang.dashboard"
+            shutil.copytree(ROOT / "plugins" / "org.jiuzhang.dashboard", sample)
+            manifest_path = sample / "plugin.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["show_in_sidebar"] = False
+            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            self.assertIs(self._manifest(sample)["show_in_sidebar"], False)
         self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.core-bank")["show_in_sidebar"], True)
 
     def test_discover_tags_enabled_flag(self) -> None:
@@ -189,7 +196,7 @@ class ConsoleAndImportApiTest(unittest.TestCase):
     """HTTP 端到端：启停开关、卸载、以及把本地 .db 挂载成新工作区。"""
 
     TOKEN = "console-test-token"
-    CARD = "org.jiuzhang.classic-card"
+    CARD = "org.jiuzhang.dashboard"
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -197,8 +204,12 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         root = Path(cls.tmp.name)
         plugins = root / "plugins"
         plugins.mkdir(parents=True)
-        # 拷一个真实、合规、且 show_in_sidebar=false 的小插件进来当被操作对象
+        # 拷一个真实、合规的小插件进来，并显式隐藏左栏入口，当被操作对象
         shutil.copytree(ROOT / "plugins" / cls.CARD, plugins / cls.CARD)
+        manifest_path = plugins / cls.CARD / "plugin.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["show_in_sidebar"] = False
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
         cls.port = cls._free_port()
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = str(root / "data")

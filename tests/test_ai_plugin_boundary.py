@@ -31,9 +31,6 @@ WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf
 CORE_BANK_JS = (ROOT / "plugins" / "org.jiuzhang.core-bank" / "dist" / "plugin.js").read_text(
     encoding="utf-8"
 )
-BANK_BROWSER_JS = (
-    ROOT / "plugins" / "org.jiuzhang.bank-browser" / "dist" / "plugin.js"
-).read_text(encoding="utf-8")
 
 from app import __version__ as HOST_VERSION  # noqa: E402
 from app.api import agents  # noqa: E402
@@ -252,11 +249,9 @@ class BankQueryDeliveryTest(unittest.TestCase):
         mount_at = STAGE_JS.index("deliverBankQuery(tab);", STAGE_JS.index("frame.addEventListener(\"load\""))
         self.assertGreater(mount_at, 0, "挂载成功后要补发一次检索意图")
 
-    def test_03_both_bank_plugins_handle_the_notification(self) -> None:
-        for source, name in ((CORE_BANK_JS, "core-bank"), (BANK_BROWSER_JS, "bank-browser")):
-            self.assertIn('message.event === "system.bank_query"', source, f"{name} 没接住跳转")
+    def test_03_core_bank_handles_the_notification(self) -> None:
+        self.assertIn('message.event === "system.bank_query"', CORE_BANK_JS, "core-bank 没接住跳转")
         self.assertIn("state.search = query", CORE_BANK_JS)
-        self.assertIn("searchInput.value = keyword", BANK_BROWSER_JS)
 
     def test_04_query_is_clamped_host_side(self) -> None:
         self.assertRegex(STAGE_JS, r"var OPEN_BANK_QUERY_MAX = \d+;")

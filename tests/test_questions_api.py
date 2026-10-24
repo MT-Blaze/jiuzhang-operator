@@ -264,22 +264,22 @@ class QuestionsApiContractTest(unittest.TestCase):
         status, discovery, _ = self.call("GET", "/api/plugins")
         self.assertEqual(status, 200)
         plugin_ids = [plugin["id"] for plugin in discovery["plugins"]]
-        self.assertIn("org.jiuzhang.classic-card", plugin_ids)
+        self.assertIn("org.jiuzhang.core-bank", plugin_ids)
         self.assertEqual(discovery["protocol"], "jzo-plugin/1")
 
-        plugin = next(item for item in discovery["plugins"] if item["id"] == "org.jiuzhang.classic-card")
+        plugin = next(item for item in discovery["plugins"] if item["id"] == "org.jiuzhang.core-bank")
         status, _, headers = self.call("GET", plugin["entry_url"])
         self.assertEqual(status, 200)
         self.assertIn("text/html", _header(headers, "content-type"))
         self.assertIn("default-src 'none'", _header(headers, "content-security-policy"))
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.classic-card/%2e%2e/plugin.json"
+            "GET", "/plugin-assets/org.jiuzhang.core-bank/%2e%2e/plugin.json"
         )
         self.assertEqual(status, 404)
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.classic-card/dist/plugin.js"
+            "GET", "/plugin-assets/org.jiuzhang.core-bank/dist/plugin.js"
         )
         self.assertEqual(status, 200)
 

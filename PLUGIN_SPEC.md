@@ -234,7 +234,7 @@ interface DataSource {
 
 ### 2.3 UI 渲染插件（Renderer）：从零写一个能装上的插件
 
-本节写给第一次写插件的人：照着做，半小时能装上一个自己的插件。可运行的最小样板在 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)，整目录照抄再改名最省事。
+本节写给第一次写插件的人：照着做，半小时能装上一个自己的插件。可运行的模板在 [`examples/template-plugin/`](examples/template-plugin/)，整目录照抄再改名最省事。
 
 #### 2.3.1 五步装上一个自己的插件
 
@@ -689,7 +689,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 真机链路（左栏入口→沙箱页签→activate 回执→宿主 API 往返→`region.dock` 落底栏→坏 id 当场回执与底栏记账）由
 `tools/template_plugin_probe.py` 取证：2026-10-23 裸装模板 **18/18**，复制官方 `core-bank`
 进隔离目录跑黄金路径 **19/19**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
-且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线同 §placeholder_plugin.zip）。
+且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线）。
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 

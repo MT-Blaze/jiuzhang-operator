@@ -222,7 +222,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 3. 把整个目录压成 zip 拖进工作台任意位置，或到「设置与控制」页手动安装（也可解压后放进 `plugins/`），再打开 `/api/plugins`：`plugins[]` 里出现自己的 id 就算装好了，`rejected[]` 会写明没装上的原因。
 
-和宿主通信的完整消息协议（`plugin.activate` / `plugin.deactivate` / `question.render` / `notification`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/placeholder_plugin/`](examples/placeholder_plugin/)。
+和宿主通信的完整消息协议（`plugin.activate` / `plugin.deactivate` / `question.render` / `notification`）、可直接照抄的 `plugin.js` 骨架与安全边界，见 [PLUGIN_SPEC.md §2.3](PLUGIN_SPEC.md)；可运行样板见 [`examples/template-plugin/`](examples/template-plugin/)。
 
 想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
 
@@ -337,9 +337,6 @@ jiuzhang-operator/
 │   ├── demo_plugin/                # 种子题库插件源码（5 道示例题）
 │   ├── demo_plugin.zip             # 构建产物：示例与测试用插件包（不由底座自动安装）
 │   ├── build_demo_plugin.py        # 重新校验并打包 demo_plugin.zip
-│   ├── placeholder_plugin/         # 官方占位插件源码（在线安装闭环演示用）
-│   ├── placeholder_plugin.zip      # 构建产物：走 CDN/代理镜像分发，不进 dist 发放包
-│   ├── build_placeholder_plugin.py # 重新打包 placeholder_plugin.zip
 │   ├── template-plugin/            # ★第三方插件开发极简模板（含宿主 API 与总线注释示例）
 │   ├── template-plugin.zip         # 构建产物：供老师下载解压改名的模板包，不进 dist 发放包
 │   └── build_template_plugin.py    # 重新打包 template-plugin.zip
