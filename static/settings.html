@@ -293,8 +293,9 @@
           <section class="st-panel" id="stPanelBackup" role="tabpanel" aria-labelledby="stNavBackup" tabindex="0" hidden>
             <h2 id="bk-title">备份与恢复</h2>
             <p class="st-note">
-              只备份<strong>当前工作区</strong>：库、边车、题目配图与工作区数据文件。
-              插件代码全局共用，<strong>备份与恢复都不碰 <code>plugins/</code></strong>。
+              只备份<strong>当前工作区</strong>：库、题目配图、本区数据文件与本区配置，
+              外加本区 <code>plugins/</code> 里的<strong>插件代码目录清单</strong>（版本库与缓存不打包）。
+              恢复时插件代码<strong>由你勾选</strong>才覆盖，覆盖后必须重启底座；凭据文件一概不进包。
               底座不做自动备份、不静默上传；每一次备份与恢复都由你当场点击发起。
             </p>
 
@@ -354,7 +355,8 @@
               恢复入口只在你点击时打开：从本地或网盘选一份备份，先看清单再决定覆盖哪些文件。
               <strong>题库数据与图片资产必选</strong>，其他数据文件默认勾选、可逐个取消。
               本次恢复只覆盖<strong>当前工作区</strong>的数据文件，不碰其他工作区，不碰底座程序；
-              备份不包含插件代码。覆盖前会自动生成 <code>.pre-restore.bak</code>（库、边车与将被覆盖的文件，只留最近 1 份）。
+              插件代码<strong>默认勾选、可取消</strong>，勾上才会覆盖该区 <code>plugins/</code>，覆盖后需重启底座。
+              覆盖前会自动生成 <code>.pre-restore.bak</code>（库、边车与将被覆盖的文件，只留最近 1 份）。
             </p>
             <div class="st-install-actions">
               <button type="button" class="q-button" id="stRestoreLocalBtn">从本地备份恢复</button>
@@ -372,7 +374,7 @@
               <p class="st-note" id="stRestoreSummary"></p>
               <div class="st-restore-groups" id="stRestoreGroups"></div>
               <p class="st-note st-restore-scope">
-                本次恢复只覆盖当前工作区的数据文件，不碰其他工作区，不碰底座程序；备份不包含插件代码。
+                本次恢复只覆盖当前工作区的数据文件，不碰其他工作区，不碰底座程序；插件代码勾上才覆盖，覆盖后需重启底座。
               </p>
               <div class="st-install-actions">
                 <button type="button" class="q-button q-button-primary" id="stRestoreCheckBtn">确认恢复</button>

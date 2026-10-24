@@ -1,10 +1,12 @@
 """当前工作区恢复：校验、覆盖前备份与可回滚落盘。
 
-边界（军令 #17 第四步）：
-- 只恢复当前工作区的数据文件；包内清单之外的文件一律不写，也不碰 plugins/；
-- 先校验包哈希、逐文件哈希与逐题哈希，任何一项不过就拒绝，不落任何数据；
+边界（军令 #17 第四步 + #18-终 阶段二）：
+- 只恢复当前工作区：包内清单之外的文件一律不写；``ws/`` 前缀的条目落回
+  ``data/workspaces/<id>/``（配置与插件代码），其余落回该区数据根，别的区一个字节都不碰；
+- 先校验包哈希、逐文件哈希、逐题哈希与**插件目录摘要**，任何一项不过就拒绝，不落任何数据；
 - 覆盖前为当前库、边车与将被覆盖的文件生成 ``.pre-restore.bak``，只留最近 1 份；
-- 落盘用「先移到回滚区、再原子替换」的可回滚流程，失败整批还原，不留半恢复状态。
+- 落盘用「先移到回滚区、再原子替换」的可回滚流程，失败整批还原，不留半恢复状态；
+- 插件代码恢复后必须重启底座才生效（``reload_required`` 一直为真，前端据此提示）。
 
 本模块不碰 HTTP；下载、勾选与二次确认由 API 层负责。
 """
@@ -25,13 +27,15 @@ from typing import Any
 from compression import zstd
 
 from app.core import backup
-from app.core.config import root_data_dir
 
 REQUIRED_CATEGORIES = {"bank", "uploads"}
-CATEGORIES = {"bank", "uploads", "other"}
+CATEGORIES = {"bank", "uploads", "other", "plugins"}
 CONFIRM_TEXT = "确认恢复"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SIDECAR_SUFFIXES = backup.SIDECAR_SUFFIXES
+# 这些文件是宿主自己的账本与钥匙，任何合法备份都不含它们；出现在清单里就是篡改。
+# 与打包侧共用一张表（backup.HOST_ONLY_FILES）：一边加名字，另一边必须同步拦住。
+HOST_ONLY_FILES = backup.HOST_ONLY_FILES
 
 
 class RestoreError(Exception):
@@ -55,6 +59,10 @@ def safe_rel(value: Any) -> str:
     parts = raw.split("/")
     if any(part in ("", ".", "..") for part in parts):
         raise RestoreError("文件路径越界")
+    if any(part.startswith(".") for part in parts):
+        raise RestoreError("备份中出现了隐藏文件")
+    if parts[0] == "workspaces":
+        raise RestoreError("恢复不得写工作区容器目录")
     if raw.endswith(".pre-restore.bak") or raw.endswith(".tmp"):
         raise RestoreError("备份中出现了工具临时文件")
     if raw.startswith(".restore-"):
@@ -69,6 +77,50 @@ def is_required(item: dict[str, Any]) -> bool:
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RestoreError(message)
+
+
+def is_host_only(relative: str) -> bool:
+    """判断某条清单路径是否是「工作区根上的宿主级文件」。
+
+    只查根与覆盖层根这两级——插件目录里真有一个叫 ``backup.json`` 的样例文件是合法的，
+    不能因为它就整包拒收。
+    """
+    parts = relative.split("/")
+    if parts[:2] == ["ws", "plugins"]:
+        return False
+    if parts[0] == "ws":
+        return len(parts) == 2 and parts[1] in HOST_ONLY_FILES
+    return len(parts) == 1 and parts[0] in HOST_ONLY_FILES
+
+
+def _validate_plugins(manifest: dict[str, Any], files: list[dict[str, Any]]) -> None:
+    """插件目录摘要必须由 files 复算得出——少一个文件、改一个字节都当场拒。
+
+    阶段二之前的旧包没有 ``plugins`` 也没有插件条目，按原样只恢复数据，不算非法。
+    """
+    declared = manifest.get("plugins")
+    has_plugin_files = any(item.get("category") == "plugins" for item in files)
+    if declared is None and not has_plugin_files:
+        return
+    _require(isinstance(declared, list), "插件清单缺失或不是数组")
+    try:
+        recomputed = backup.plugins_inventory(files)
+    except backup.BackupError as exc:
+        raise RestoreError(str(exc)) from exc
+    _require(
+        len(recomputed) == len(declared),
+        f"插件目录数不符：清单 {len(declared)} 个，文件里 {len(recomputed)} 个",
+    )
+    by_id = {str(item.get("id") or ""): item for item in declared}
+    for entry in recomputed:
+        want = by_id.get(entry["id"])
+        _require(want is not None, f"插件清单里没有 {entry['id']} 的摘要")
+        _require(
+            int(want.get("files") or -1) == entry["files"]
+            and int(want.get("bytes") or -1) == entry["bytes"]
+            and str(want.get("sha256") or "") == entry["sha256"],
+            f"插件 {entry['id']} 的摘要与文件清单不符，已拒绝恢复",
+        )
 
 
 def validate_manifest(manifest: Any, workspace_id: str) -> None:
@@ -86,6 +138,7 @@ def validate_manifest(manifest: Any, workspace_id: str) -> None:
     for item in files:
         _require(isinstance(item, dict), "备份清单条目非法")
         rel = safe_rel(item.get("path"))
+        _require(not is_host_only(rel), f"备份里出现了宿主级凭据或账本文件：{rel}")
         _require(rel not in seen, f"备份清单有重复路径：{rel}")
         seen.add(rel)
         size = item.get("size")
@@ -101,6 +154,8 @@ def validate_manifest(manifest: Any, workspace_id: str) -> None:
     )
     _require(SHA256_RE.fullmatch(str(package.get("sha256") or "")), "包哈希缺失")
     _require(isinstance(package.get("size"), int) and package["size"] > 0, "包大小非法")
+
+    _validate_plugins(manifest, files)
 
     count = manifest.get("question_count")
     _require(isinstance(count, int) and count >= 0, "题目数非法")
@@ -156,11 +211,18 @@ def verify_stage(stage_dir: str | Path, manifest: dict[str, Any]) -> None:
     """拆包后逐文件复核大小与哈希，再复算逐题哈希与图片摘要。"""
     stage = Path(stage_dir)
     expected = {item["path"]: item for item in manifest["files"]}
-    actual = {
-        path.relative_to(stage).as_posix(): path
-        for path in stage.rglob("*")
-        if path.is_file()
-    }
+    actual: dict[str, Path] = {}
+    for path in stage.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(stage).as_posix()
+        if path.name.endswith(SIDECAR_SUFFIXES):
+            # 复算逐题哈希要只读打开快照库，SQLite 顺手在同目录落下 -wal/-shm。
+            # 这是我们自己读出来的副产物，不是包内容——留着，下一次复核（确认执行时还要复核一遍）
+            # 就会把它当成「清单外文件」判整包作废，所以先清掉再比对。
+            path.unlink(missing_ok=True)
+            continue
+        actual[rel] = path
     for rel in expected:
         _require(rel in actual, f"备份缺少文件：{rel}")
     for rel in actual:
@@ -217,11 +279,12 @@ def preview_view(manifest: dict[str, Any]) -> dict[str, Any]:
         }
         for item in manifest["files"]
     ]
-    groups: dict[str, list[str]] = {"bank": [], "uploads": [], "other": []}
+    groups: dict[str, list[str]] = {"bank": [], "uploads": [], "plugins": [], "other": []}
     for item in files:
         groups[item["category"]].append(item["path"])
     package = manifest.get("package") or {}
     library = manifest.get("library") or {}
+    plugins = [item for item in (manifest.get("plugins") or []) if isinstance(item, dict)]
     return {
         "workspace_id": manifest.get("workspace_id"),
         "schema_version": manifest.get("schema_version", library.get("user_version", 0)),
@@ -231,6 +294,15 @@ def preview_view(manifest: dict[str, Any]) -> dict[str, Any]:
         "package_size": package.get("size", 0),
         "file_count": len(files),
         "image_count": len(groups["uploads"]),
+        "plugins": [
+            {
+                "id": str(item.get("id") or ""),
+                "files": int(item.get("files") or 0),
+                "bytes": int(item.get("bytes") or 0),
+                "sha256": str(item.get("sha256") or ""),
+            }
+            for item in plugins
+        ],
         "library_plugin_id": library.get("plugin_id", ""),
         "files": files,
         "groups": groups,
@@ -293,18 +365,18 @@ def _atomic_copy(source: Path, target: Path) -> None:
 def create_pre_restore_backup(workspace_id: str, selected: list[str]) -> list[str]:
     """当前库 + 边车 + 将被覆盖的文件各留一份 ``.pre-restore.bak``，只留最近 1 份。"""
     root = backup.workspace_dir(workspace_id)
+    overlay = backup.overlay_dir(workspace_id)
     selected_set = set(selected)
-    plans: list[tuple[str, Path]] = []
-    for path in backup.iter_workspace_files(workspace_id):
-        rel = path.relative_to(root).as_posix()
+    plans: list[tuple[str, str, Path]] = []
+    for rel, path in backup.backup_file_plan(workspace_id):
         if path.suffix.lower() == ".db":
-            plans.append(("sqlite" if backup._is_sqlite(path) else "copy", path))
+            plans.append((rel, "sqlite" if backup._is_sqlite(path) else "copy", path))
         elif rel in selected_set:
-            plans.append(("copy", path))
+            plans.append((rel, "copy", path))
 
     generated: set[Path] = set()
     produced: list[str] = []
-    for kind, source in plans:
+    for rel, kind, source in plans:
         target = _bak_path(source)
         temp = Path(str(target) + ".tmp")
         try:
@@ -316,7 +388,7 @@ def create_pre_restore_backup(workspace_id: str, selected: list[str]) -> list[st
         finally:
             temp.unlink(missing_ok=True)
         generated.add(target.resolve())
-        produced.append(target.relative_to(root).as_posix())
+        produced.append(rel + ".pre-restore.bak")
         if source.suffix.lower() == ".db":
             for suffix in SIDECAR_SUFFIXES:
                 sidecar = Path(str(source) + suffix)
@@ -330,24 +402,29 @@ def create_pre_restore_backup(workspace_id: str, selected: list[str]) -> list[st
                 finally:
                     sidecar_temp.unlink(missing_ok=True)
                 generated.add(sidecar_bak.resolve())
-                produced.append(sidecar_bak.relative_to(root).as_posix())
+                produced.append(rel + suffix + ".pre-restore.bak")
 
     # 上一轮可能覆盖过别的文件：只保留本轮这一套，其余旧副本删掉。
-    # default 工作区的根是 data/，必须绕开别的工作区与备份目录。
-    root_is_default = root == root_data_dir().resolve()
-    skip_dirs = set(backup.DEFAULT_ROOT_SKIP_DIRS) if root_is_default else set()
-    for base, dirs, names in os.walk(root):
-        dirs[:] = [name for name in dirs if name not in skip_dirs and not name.startswith(".")]
-        for name in names:
-            if not name.endswith(".pre-restore.bak"):
-                continue
-            stale = Path(base) / name
-            if stale.resolve() in generated:
-                continue
-            try:
-                stale.unlink()
-            except OSError:
-                continue
+    # default 工作区的数据根是 data/，必须绕开别的工作区与备份目录；
+    # 覆盖层根 data/workspaces/<id> 只属于本区，整棵都要扫（含 plugins/ 里的副本）。
+    sweeps: list[tuple[Path, set[str]]] = []
+    root_is_default = root == backup.root_data_dir().resolve()
+    sweeps.append((root, set(backup.WORKSPACE_SKIP_DIRS) if root_is_default else set()))
+    if overlay.is_dir():
+        sweeps.append((overlay, set()))
+    for base_root, skip_dirs in sweeps:
+        for base, dirs, names in os.walk(base_root):
+            dirs[:] = [name for name in dirs if name not in skip_dirs and not name.startswith(".")]
+            for name in names:
+                if not name.endswith(".pre-restore.bak"):
+                    continue
+                stale = Path(base) / name
+                if stale.resolve() in generated:
+                    continue
+                try:
+                    stale.unlink()
+                except OSError:
+                    continue
     return produced
 
 
@@ -362,13 +439,29 @@ def _rollback(applied: list[tuple[Path, bool, Path | None]]) -> None:
             continue
 
 
+def _restore_target(relative: str, workspace_id: str) -> Path:
+    """清单内相对路径 → 本机落点；``ws/`` 走覆盖层根，越界一律拒。"""
+    if relative.startswith(backup.OVERLAY_PREFIX):
+        return backup.overlay_target(relative, workspace_id)
+    root = backup.workspace_dir(workspace_id).resolve()
+    target = (root / relative).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise RestoreError(f"恢复目标越界：{relative}") from exc
+    return target
+
+
 def apply_restore(
     workspace_id: str,
     stage_dir: str | Path,
     selected: list[str],
     manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    """按勾选覆盖；任一步失败就把整批文件还原到恢复前。"""
+    """按勾选覆盖；任一步失败就把整批文件还原到恢复前。
+
+    落点分两套根：``ws/`` 前缀进本区覆盖层（配置与插件代码），其余进本区数据根。
+    """
     root = backup.workspace_dir(workspace_id).resolve()
     stage = Path(stage_dir)
     expected = {item["path"]: item for item in manifest["files"]}
@@ -383,11 +476,7 @@ def apply_restore(
             source = stage / rel
             _require(source.is_file(), f"临时区缺少文件：{rel}")
             _require(backup.sha256_file(source) == item["sha256"], f"待恢复文件哈希不符：{rel}")
-            target = (root / rel).resolve()
-            try:
-                target.relative_to(root)
-            except ValueError as exc:
-                raise RestoreError(f"恢复目标越界：{rel}") from exc
+            target = _restore_target(rel, workspace_id)
             target.parent.mkdir(parents=True, exist_ok=True)
 
             if rel.endswith(".db"):
@@ -417,7 +506,13 @@ def apply_restore(
         shutil.rmtree(rollback, ignore_errors=True)
         raise
     shutil.rmtree(rollback, ignore_errors=True)
-    return {"restored": restored, "reload_required": True}
+    return {
+        "restored": restored,
+        "plugins_restored": [
+            rel for rel in restored if rel.startswith(backup.OVERLAY_PLUGINS_PREFIX)
+        ],
+        "reload_required": True,
+    }
 
 
 def execute_restore(workspace_id: str, plan: dict[str, Any]) -> dict[str, Any]:

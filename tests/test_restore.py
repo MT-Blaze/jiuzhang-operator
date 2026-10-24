@@ -1,11 +1,14 @@
-"""军令 #17 第四步契约：恢复校验、必选/可选、覆盖前备份与失败回滚。
+"""军令 #17 第四步 + #18-终 阶段二契约：恢复校验、必选/可选、覆盖前备份与失败回滚。
 
-钉五件事：
+钉八件事：
 1. 包哈希不符直接拒，工作区一个字节都不动；
 2. 题库与图片资产必选（前端传空也补回），其他数据文件按勾选覆盖；
 3. 覆盖前生成 ``.pre-restore.bak``（库、边车、将被覆盖的文件），只留最近 1 份；
 4. 落盘中途失败整批回滚，不留半恢复状态；
-5. 网盘来源下载失败即止（不进入恢复）。
+5. 网盘来源下载失败即止（不进入恢复）；
+6. **插件代码与本区配置随包恢复**，不勾就一行不动，且只碰当前工作区；
+7. 插件目录摘要对不上、清单里塞凭据/隐藏/别区路径，一律拒在最前面；
+8. 只读打开快照库留下的 ``-wal``/``-shm`` 边车不算「清单外文件」，但真正的清单外文件照旧判废。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_restore``
 """
@@ -55,6 +58,15 @@ class RestoreTest(unittest.TestCase):
         self._write_db("旧题干")
         self.upload_path.write_bytes(b"OLD-PNG")
         self.config_path.write_text('{"v":"old"}', encoding="utf-8")
+        self.plugin_file = self.plugins / "org.jiuzhang.demo" / "dist" / "plugin.js"
+        self.plugin_file.parent.mkdir(parents=True)
+        self.plugin_file.write_text("OLD-CODE", encoding="utf-8")
+        self.plugin_json = self.plugin_file.parent.parent / "plugin.json"
+        self.plugin_json.write_text('{"id":"org.jiuzhang.demo"}', encoding="utf-8")
+        self.state_path = self.ws_dir / "plugin_state.json"
+        self.state_path.write_text('{"v":"old"}', encoding="utf-8")
+        self.plugin_rel = "ws/plugins/org.jiuzhang.demo/dist/plugin.js"
+        self.state_rel = "ws/plugin_state.json"
         self.out = self.root / "backups"
         backup.save_backup_settings(
             {"local_enabled": True, "local_dir": str(self.out)}, WS_ID
@@ -68,6 +80,8 @@ class RestoreTest(unittest.TestCase):
         self._write_db("新题干")
         self.upload_path.write_bytes(b"NEW-PNG")
         self.config_path.write_text('{"v":"new"}', encoding="utf-8")
+        self.plugin_file.write_text("NEW-CODE", encoding="utf-8")
+        self.state_path.write_text('{"v":"new"}', encoding="utf-8")
 
     def tearDown(self) -> None:
         data, plugins, ws = self._saved
@@ -225,6 +239,175 @@ class RestoreTest(unittest.TestCase):
         self.assertIn("工作区", str(caught.exception))
         with self.assertRaises(restore.RestoreError):
             restore.validate_manifest({**self._manifest(), "files": []}, WS_ID)
+
+    # 8. 插件代码与工作区配置能整批恢复（军令 #18-终 阶段二）
+    def test_08_plugin_code_and_state_round_trip(self) -> None:
+        manifest = self._manifest()
+        paths = {item["path"] for item in manifest["files"]}
+        self.assertIn(self.plugin_rel, paths)
+        self.assertIn(self.state_rel, paths)
+        self.assertEqual(["org.jiuzhang.demo"], [item["id"] for item in manifest["plugins"]])
+
+        result = self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
+                                "ws/plugins/org.jiuzhang.demo/plugin.json", self.state_rel])
+        self.assertEqual("旧题干", self._db_stem())
+        self.assertEqual("OLD-CODE", self.plugin_file.read_text(encoding="utf-8"),
+                         "插件代码必须真被覆盖回备份时的版本")
+        self.assertEqual('{"v":"old"}', self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            sorted([self.plugin_rel, "ws/plugins/org.jiuzhang.demo/plugin.json"]),
+            sorted(result["plugins_restored"]),
+        )
+        self.assertTrue(Path(str(self.plugin_file) + ".pre-restore.bak").is_file(),
+                        "覆盖插件代码前同样要留一份 .pre-restore.bak")
+
+    # 9. 不勾插件就一行代码都不动
+    def test_09_plugins_are_optional_and_stay_untouched_when_unchecked(self) -> None:
+        result = self._restore([self.bank_rel, "uploads/pic.png"])
+        self.assertEqual("旧题干", self._db_stem())
+        self.assertEqual([], result["plugins_restored"])
+        self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
+        self.assertEqual('{"v":"new"}', self.state_path.read_text(encoding="utf-8"))
+        self.assertFalse(list(self.plugins.rglob("*.pre-restore.bak")))
+
+    # 10. 恢复只碰当前区，别区的插件与库原样不动
+    def test_10_restore_leaves_other_workspaces_alone(self) -> None:
+        foreign = self.data / "workspaces" / "ws_foreign000000000"
+        foreign_code = foreign / "plugins" / "org.jiuzhang.foreign"
+        foreign_code.mkdir(parents=True)
+        (foreign_code / "plugin.json").write_text("FOREIGN", encoding="utf-8")
+        (foreign / "banks").mkdir()
+        (foreign / "banks" / "foreign.db").write_bytes(b"FOREIGN-DB")
+        self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
+                       "ws/plugins/org.jiuzhang.demo/plugin.json", self.state_rel])
+        self.assertEqual("FOREIGN", (foreign_code / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(b"FOREIGN-DB", (foreign / "banks" / "foreign.db").read_bytes())
+
+    # 11. 插件摘要对不上：拒在最前面，工作区一个字节都不动
+    def test_11_tampered_plugin_digest_blocks_restore(self) -> None:
+        manifest = self._manifest()
+        manifest["plugins"][0]["sha256"] = "f" * 64
+        self.manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        before_code = self.plugin_file.read_text(encoding="utf-8")
+        before_stem = self._db_stem()
+        with self.assertRaises(restore.RestoreError) as caught:
+            self._prepare()
+        self.assertIn("摘要", str(caught.exception))
+        self.assertEqual(before_code, self.plugin_file.read_text(encoding="utf-8"))
+        self.assertEqual(before_stem, self._db_stem())
+
+    # 12. 清单里塞凭据或隐藏文件：路径校验直接拒
+    def test_12_hidden_and_secret_paths_are_refused(self) -> None:
+        for smuggled in ("ws/.env", "ws/backup.json", "ws/plugins/.hidden/x.js",
+                         "workspaces/other/plugins/x.js"):
+            manifest = self._manifest()
+            manifest["files"].append({
+                "path": smuggled, "size": 1,
+                "sha256": "0" * 64, "category": "other", "required": False,
+            })
+            with self.assertRaises(restore.RestoreError, msg=smuggled) as caught:
+                restore.validate_manifest(manifest, WS_ID)
+            self.assertTrue(
+                any(word in str(caught.exception) for word in ("隐藏文件", "工作区容器", "宿主级")),
+                str(caught.exception),
+            )
+
+    # 13. 插件代码写坏也整批回滚，不留半恢复
+    def test_13_plugin_write_failure_rolls_everything_back(self) -> None:
+        plan = self._prepare([self.bank_rel, "uploads/pic.png", self.plugin_rel])
+        real_copy = restore._atomic_copy
+        seen: list[str] = []
+
+        def flaky(source, target):
+            seen.append(Path(target).name)
+            if Path(target).name == "plugin.js":
+                raise OSError("模拟插件写入失败")
+            real_copy(source, target)
+
+        try:
+            with mock.patch("app.core.restore._atomic_copy", side_effect=flaky):
+                with self.assertRaises(OSError):
+                    restore.execute_restore(WS_ID, plan)
+        finally:
+            restore.cleanup_plan(plan)
+
+        self.assertEqual("新题干", self._db_stem(), "插件失败必须连坐回滚题库")
+        self.assertEqual(b"NEW-PNG", self.upload_path.read_bytes())
+        self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
+        self.assertEqual([], list(self.plugins.rglob("*.restore-new")))
+
+    # 14. 读快照库留下的边车不许把整包判废（确认执行时还要再复核一遍）
+    def test_14_snapshot_sidecars_do_not_block_reverification(self) -> None:
+        plan = self._prepare()
+        stage = Path(plan["stage"])
+        stray = stage / "banks" / f"{PROVIDER}.db-shm"
+        stray.write_bytes(b"read artifact")
+        try:
+            restore.verify_stage(stage, plan["manifest"])
+            self.assertFalse(stray.exists(), "只读打开快照库留下的边车必须先清掉")
+            result = restore.execute_restore(WS_ID, plan)
+            self.assertEqual("旧题干", self._db_stem(), "复核两次都该走到落盘")
+            self.assertIn(self.bank_rel, result["restored"])
+        finally:
+            restore.cleanup_plan(plan)
+
+    # 15. 清单外文件仍然算篡改，不许顺手清掉了事
+    def test_15_foreign_files_still_rejected(self) -> None:
+        plan = self._prepare()
+        try:
+            (Path(plan["stage"]) / "banks" / "evil.txt").write_text("x", encoding="utf-8")
+            with self.assertRaises(restore.RestoreError) as caught:
+                restore.verify_stage(Path(plan["stage"]), plan["manifest"])
+            self.assertIn("清单外文件", str(caught.exception))
+        finally:
+            restore.cleanup_plan(plan)
+
+
+class RestoreUiContractTest(unittest.TestCase):
+    """恢复面板的分组必须与后端分组一一对应——漏了「插件代码」，老师就看不见刚备的插件。"""
+
+    def setUp(self) -> None:
+        self.js = (Path(__file__).resolve().parents[1] / "static" / "js" / "settings.js").read_text(
+            encoding="utf-8"
+        )
+
+    def _manifest(self) -> dict:
+        return {
+            "manifest_version": backup.MANIFEST_VERSION,
+            "workspace_id": WS_ID,
+            "question_count": 0,
+            "question_hashes": {},
+            "package": {"filename": "backup_20260101_010101_001.zst",
+                        "sha256": "0" * 64, "size": 1},
+            "plugins": [{"id": "org.jiuzhang.demo", "files": 1, "bytes": 3, "sha256": "a" * 64}],
+            "files": [
+                {"path": "banks/x.db", "size": 1, "sha256": "0" * 64,
+                 "category": "bank", "required": True},
+                {"path": "uploads/a.png", "size": 1, "sha256": "0" * 64,
+                 "category": "uploads", "required": True},
+                {"path": "ws/plugins/org.jiuzhang.demo/plugin.json", "size": 3,
+                 "sha256": "0" * 64, "category": "plugins", "required": False},
+                {"path": "config.json", "size": 1, "sha256": "0" * 64,
+                 "category": "other", "required": False},
+            ],
+        }
+
+    def test_every_backend_group_has_a_labelled_section(self) -> None:
+        preview = restore.preview_view(self._manifest())
+        self.assertEqual(
+            ["bank", "other", "plugins", "uploads"], sorted(preview["groups"])
+        )
+        self.assertEqual(
+            ["ws/plugins/org.jiuzhang.demo/plugin.json"], preview["groups"]["plugins"]
+        )
+        self.assertEqual(1, len(preview["plugins"]))
+        self.assertEqual(3, preview["plugins"][0]["bytes"])
+        for group in preview["groups"]:
+            self.assertIn('["%s",' % group, self.js, f"前端少了 {group} 这一组的标题")
+
+    def test_plugin_restore_tells_the_teacher_to_restart(self) -> None:
+        self.assertIn("result.plugins_restored", self.js)
+        self.assertIn("必须重启底座才会生效", self.js)
 
 
 if __name__ == "__main__":

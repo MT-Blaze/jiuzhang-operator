@@ -174,7 +174,19 @@ class _Base(unittest.TestCase):
         stage = self.root / f"stage-{stamp}"
         (stage / "uploads").mkdir(parents=True)
         (stage / "uploads" / "a.png").write_bytes(b"PNG-" + stamp.encode())
-        manifest = {"workspace_id": WS_ID, "files": [], "question_count": 0}
+        # 打包器只装清单点名的文件（军令 #18-终 阶段二），所以这里必须给出真实清单，
+        # 而不是靠「整目录 rglob」的旧默契。
+        manifest = {
+            "workspace_id": WS_ID,
+            "question_count": 0,
+            "files": [{
+                "path": "uploads/a.png",
+                "size": (stage / "uploads" / "a.png").stat().st_size,
+                "sha256": backup.sha256_file(stage / "uploads" / "a.png"),
+                "category": "uploads",
+                "required": True,
+            }],
+        }
         result = backup.package_snapshot(stage, manifest, self.out, stamp=stamp)
         return result["package"], result["manifest_path"]
 

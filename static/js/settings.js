@@ -2029,11 +2029,16 @@
     if (restorePreview) restorePreview.hidden = false;
     var sha = String(preview.package_sha256 || "");
     if (restoreSummary) {
+      var pluginCount = (preview.plugins || []).length;
+      var pluginBytes = (preview.plugins || []).reduce(function (sum, item) {
+        return sum + Number(item.bytes || 0);
+      }, 0);
       restoreSummary.textContent = "工作区 " + (preview.workspace_id || "") +
         " · schema " + Number(preview.schema_version || 0) +
         " · " + Number(preview.question_count || 0) + " 题" +
         " · " + Number(preview.file_count || 0) + " 个文件（图片 " +
-        Number(preview.image_count || 0) + "） · " + (preview.generated_at || "") +
+        Number(preview.image_count || 0) + " · 插件 " + pluginCount + " 个 / " +
+        Math.ceil(pluginBytes / 1024) + " KB） · " + (preview.generated_at || "") +
         " · 包哈希 " + sha.slice(0, 16) + "…";
     }
     if (!restoreGroups) return;
@@ -2043,6 +2048,7 @@
     [
       ["bank", "题库数据（必选）"],
       ["uploads", "图片资产（必选）"],
+      ["plugins", "插件代码（可选，覆盖后需重启底座）"],
       ["other", "其他数据文件（可选，默认勾选）"],
     ].forEach(function (group) {
       var paths = (preview.groups || {})[group[0]] || [];
@@ -2136,8 +2142,12 @@
     var preview = (body && body.preview) || restoreState.preview || {};
     var count = (body && body.selection ? body.selection.length : 0);
     if (restoreModalDetail) {
-      restoreModalDetail.textContent = "将恢复 " + count + " 个文件；工作区 " +
-        (preview.workspace_id || "") + " · " + Number(preview.question_count || 0) +
+      var pluginPicked = (body && body.selection ? body.selection : []).filter(function (rel) {
+        return String(rel).indexOf("ws/plugins/") === 0;
+      }).length;
+      restoreModalDetail.textContent = "将恢复 " + count + " 个文件" +
+        (pluginPicked ? "（其中 " + pluginPicked + " 个是插件代码，覆盖后必须重启底座）" : "") +
+        "；工作区 " + (preview.workspace_id || "") + " · " + Number(preview.question_count || 0) +
         " 题 · 备份时间 " + (preview.generated_at || "") + "。";
     }
     restorePrevFocus = document.activeElement;
@@ -2170,9 +2180,12 @@
         if (restorePicker) restorePicker.hidden = true;
         if (restoreDone) restoreDone.hidden = false;
         if (restoreDoneText) {
+          var pluginFiles = (result.plugins_restored || []).length;
           restoreDoneText.textContent = "恢复完成：共 " + (result.restored || []).length +
             " 个文件；覆盖前副本 " + (result.pre_restore || []).length +
-            " 份（.pre-restore.bak）。请重启底座以重载库连接；也可先点【刷新页面】查看。";
+            " 份（.pre-restore.bak）。" +
+            (pluginFiles ? "本次覆盖 " + pluginFiles + " 个插件代码文件，必须重启底座才会生效。" : "") +
+            "请重启底座以重载库连接；也可先点【刷新页面】查看。";
         }
         rSet("恢复完成。", "ok");
         loadBackup();
