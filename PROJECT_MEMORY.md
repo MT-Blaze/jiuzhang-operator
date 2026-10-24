@@ -45,7 +45,7 @@
 
 ---
 
-## 二、当前核心进度（v0.10.0）
+## 二、当前核心进度（v0.11.0）
 
 > **军令 #18 第二~四步与 #18-终 阶段一~三（2026-10-25，八阶段进行中）**：主公把「终极重构与代码审计」拆成 8 个阶段，
 > 纪律是**一阶段一 commit、记忆归档后才进下一阶段**。已交付：
@@ -288,8 +288,51 @@
 > 数 `✓`/`PASS` 标记行会把自报行本身也算进去、凭空多 1。本次复核据此把阶段七总数 **203 更正为 249**
 > （逐项数字一律不变，只是原先漏加了 stage_probe 的 46 项），复核表见
 > `.system_generated/stage8/probe_recount.json`。
-> **版本裁决悬着**：底座仍 `__version__ = "0.10.0"`、六个插件 `version` 未升，这轮修复对外不可见
-> （既有安装看不到更新）；升哪个号由主公定，定了再走 `build_release.bat` 重出。
+> **版本裁决（当时悬着，主公 2026-10-25 军令 #18-结 已拍）**：底座 `__version__` 由 0.10.0 升到
+> **0.11.0**，六个插件各升小版本（core-bank 0.7.1 / editor 0.4.1 / paper-gen 0.3.1 /
+> handout 0.1.2 / chat 1.0.1 / dashboard 0.1.1），本轮修复对外可见。落地见下面 ⑫。
+> ⑫ **#18-结 终局修复与发版结案（2026-10-25）**——四个代码任务本地提交
+> `30bcbe6`（任务一：考向读路径全量回填，`_assemble`/`_taxonomy_from_link` 不再只回首个挂载，
+> 插件读改写静默丢副考向那条欠账清零）、`67f2f0b`（任务二：`_BUS_SUBSCRIBE` 白名单补齐五个真在用的入站主题，
+> 阶段七欠账②清零）、`9c25fe3`（任务三：provider 卸载免死金牌，见 ADR-007 补记）、
+> `3be8dde`（任务四：底座定版 v0.11.0 + 六插件升小版本 + 占位 zip 从盘与索引双清 + 示例口径对齐实际）。
+> **任务五只验证、不动业务代码**，唯一的宿主改动是 `static/css/workspace.css`：
+> 沉浸态左栏是 `display:none`，栏内【折叠】钮够不着，而全局快捷键仲裁层已随 #18 第二步整层拆除——
+> 「全屏时按 Ctrl+B 呼叫左侧栏」这条能力当时是**真的断了**，现把画布上的【入口】钮
+> （`.ws-drawer-btn` / `#wsOpenSidebar`）在 `data-immersive="on"` 一并露出，唤出通道补回，
+> 探针判据同步改点这个钮（不再按 Ctrl+B）。
+> **七支探针按 ADR-012 之后的架构逐支修平**（都是「探针停在旧架构」的存量欠账，不是本轮改坏的）：
+> console 左菜单四项→五项（备份与恢复）、startup 的 `startup.json` 路径进 `workspaces/default/`
+> 且 warn 气泡通道改按 `host.warn` 落底栏、workspace_ui 与隔离底座必须显式给 `JZO_PLUGINS_DIR`、
+> sidebar_slot 的夹具要同时声明 `stage.center` 才可能成为「当前页签」（主权交替后右栏只认当前页签）、
+> update 读 `update.bat` 必须按 `_batch_encoding()` 解（ANSI 码页，UTF-8 会 `UnicodeDecodeError`）、
+> split 不许再点名「示例题库」（占位插件已退役，逐行点到画布真出 iframe 为止）、
+> tab_group 自带补位夹具（`org.example.tabfill-NN`）把页签数推过 10——仓库只剩 6 个插件，
+> 「超过 10 个页签」的军令场面在隔离底座上永远凑不出来，凑不出来不等于功能没了。
+> **取证（全绿、零 pageerror）**：插件侧十支 **254/254**（stage 46、dedupe 40、paper 41、handout 27、
+> dashboard 20、editor 19、editor_crop 16、bank 13、bank_io 12、provider_uninstall 20；四个代码任务提交后
+> 06:49–06:51 跑）＋ 宿主界面侧十支 **242/242**（console 42、startup 27、workspace_ui 20、sidebar_slot 12、
+> update 21、template_plugin 18、chat_keys 15、console_panel 16、tab_group 26、split 45）＋
+> `fold_probe` 28 步截图 0 pageerror 0 死锁；合计 **496 项判据**。
+> 全量单测 **56 模块 1045 测、失败模块 0**（`.system_generated/order18_close/t5_full_run_final.txt`，
+> 含 CSS 与探针改动之后重跑）；`tools/audit_code.py` **ERROR 0 / WARN 34 / INFO 3**；
+> 六插件 dist 三查 `fetch(` / `parent.document` / `localStorage` 全 0。
+> **重打包**：宿主 CSS 变了，底座包必须重出——`dist/jiuzhang-operator-beta-v0.11.0.zip`
+> **2,161,406 B / 275 条目 / 单顶层目录 / 违规 0**，唯一 `.db` 仍是 0 题空基线，包内 `__version__ = "0.11.0"`、
+> 索引四条 0.7.1/0.3.1/0.1.2/0.4.1；`plugins.json` 三处（主仓、`E:/jiuzhang-plugins`、包内）
+> **sha256 前缀 `09150b22ca41777d` 逐字节全等**。四个对外插件包与工作树 byte-equal、顶层==id、带 LICENSE、零 `.db`。
+> **本轮四条执行坑**：① 探针里写死的「环境里有几个插件/哪一行是示例题库」这类**人口假设**最先失真，
+> 判据要自己把场面凑出来（补位夹具），别把「凑不出场面」当「功能缺失」；② 分组归属只认清单里的 `folder_id`，
+> 而清单是 **5 秒轮询**——POST 完左栏树死等 1.6 秒必然量不到，改成「等到组名页签真的挂上栏」；
+> ③ `hidden` 的按钮 Playwright 干等 30 秒后把整条探针炸断，后半截判据一起丢——先量 `arrows` 再决定点不点；
+> ④ 起隔离底座前**必须先探端口**：10-24 遗留的两台孤儿 uvicorn（PID 12304/16800）趴在同一端口上，
+> 探针打到的是**旧代码**，拿到的红绿都不算数（runner 已加 fail-fast）。
+> **一条自曝**：修 tab_group 过程中曾直连过开发底座跑了一次，那次按默认路径临时改写过**根
+> `data/plugin_state.json`**，收尾按字节还原（现存 `disabled` 1 项 / `disabled_at` 9 项 / `sidebar` 4 节点，
+> 全是主公自己的历史偏好）；此后一律用 `JZO_STATE_FILE` 指到隔离工作区，根 `data/` 再没被探针写过。
+> **仍未清**：四个对外插件（core-bank/paper-gen/handout/editor）的 `plugin.json` 没有 `min_host_version`
+> 字段（对外包不声明底座下限）；`examples/` 里示例插件的 `min_host_version` 保留为**最低要求**口径，未跟升到 0.11.0。
+> 全程未 push、未建远端、未发 Release。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
@@ -765,6 +808,16 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 卸载是**资产层**决定（要不要连库一起烧）。两者一旦混进同一个函数，就会出现
 「我只是想让侧栏清爽一点，结果 456 题没了」这种不可挽回的事故。默认勾选【保留数据】
 就是把最坏路径留给人主动选择，而不是让底座替人决定。
+
+**题库引擎的免死金牌（军令 #18-结 任务三，2026-10-25）**：凡 `plugin.json` 声明
+`capabilities: ["bank.provider"]` 的插件（现网只有 `org.jiuzhang.core-bank`），卸载时**无视前端的
+`keep_data`**——后端 `uninstall_plugin()` 先把 `keep_data` 强制抬成 `True` 再走删除，回包多带一个
+`provider_guarded: true`；设置页卸载弹窗识别到 provider 就把【不保留数据】置灰（`disabled` +
+`aria-disabled` + 焦点改落到【取消】），并把「题库引擎已被保护，数据将原地保留」这条红字提示摆在按钮上方。
+判据只认 `plugin.json` 的 `capabilities` 数组：清单坏/缺/写成字符串一律不认，照常按 `keep_data` 办事，
+**不许用「猜它是引擎」来兜底**。锁它的三条：`tests/test_plugin_console.py`
+（`test_provider_forced_keep_ignores_keep_data_false` / `test_bad_or_missing_manifest_is_not_treated_as_provider` /
+`test_07_uninstall_provider_via_api_forces_keep`）+ 真机探针 `tools/provider_uninstall_probe.py`（20 项，含非 provider 对照组）。
 
 **实测纠偏（重要，别照抄措辞）**：定调时说的「数据在 `data/plugins/...`」**与实际落盘路径不符**。
 现网真相是插件物理题库按 provider 口径放两处：
