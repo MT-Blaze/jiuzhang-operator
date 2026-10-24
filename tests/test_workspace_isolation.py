@@ -23,6 +23,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from app.api import workspaces as workspaces_api
@@ -34,6 +35,11 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVIDER = "org.jiuzhang.core-bank"
 
 
+def _http_request(port: int | None = None):
+    """端点新增的 Request 参数只用来取重启端口；进程内直调给个替身即可。"""
+    return SimpleNamespace(url=SimpleNamespace(port=port))
+
+
 class _TempEnv(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -43,8 +49,11 @@ class _TempEnv(unittest.TestCase):
         self.data.mkdir()
         self._saved_ws = settings.workspace_id
         self._saved_env = {key: os.environ.get(key)
-                           for key in ("JZO_DATA_DIR", "JZO_PLUGINS_DIR", "JZO_ENV_FILE")}
+                           for key in ("JZO_DATA_DIR", "JZO_PLUGINS_DIR", "JZO_ENV_FILE",
+                                       "JZO_RESTART_DISABLED")}
         os.environ["JZO_DATA_DIR"] = str(self.data)
+        # 进程内直接调端点：决不能让切库端点把跑测试的进程自己重启掉。
+        os.environ["JZO_RESTART_DISABLED"] = "1"
         os.environ.pop("JZO_PLUGINS_DIR", None)
         os.environ.pop("JZO_ENV_FILE", None)
         self.addCleanup(self._restore)
@@ -126,8 +135,9 @@ class LayoutTest(_TempEnv):
     def test_03_create_workspace_lands_plugins_and_state(self) -> None:
         old_pointer = workspace_paths.read_current_workspace_pointer()
         result = asyncio.run(workspaces_api.create_workspace(
-            workspaces_api.WorkspaceCreateRequest(name="隔离区")))
+            workspaces_api.WorkspaceCreateRequest(name="隔离区"), _http_request()))
         workspace_id = result["id"]
+        self.assertFalse(result["restarting"], "JZO_RESTART_DISABLED=1 必须让进程活着回包")
         storage = self.data / "workspaces" / workspace_id
         self.assertTrue((storage / "plugins").is_dir(), "新工作区必须有独立插件目录")
         self.assertEqual("{}\n", (storage / "plugin_state.json").read_text(encoding="utf-8"))
@@ -156,8 +166,9 @@ class LayoutTest(_TempEnv):
             con.close()
         blob = base64.b64encode(source.read_bytes()).decode("ascii")
         result = asyncio.run(workspaces_api.import_workspace(
-            workspaces_api.WorkspaceImportRequest(name="导入区", db_base64=blob)))
+            workspaces_api.WorkspaceImportRequest(name="导入区", db_base64=blob), _http_request()))
         workspace_id = result["id"]
+        self.assertFalse(result["restarting"], "受控环境不该真的重启进程")
         storage = self.data / "workspaces" / workspace_id
         self.assertTrue((storage / "plugins").is_dir())
         self.assertEqual("{}\n", (storage / "plugin_state.json").read_text(encoding="utf-8"))

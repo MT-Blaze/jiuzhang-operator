@@ -13,11 +13,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core import bank as core_bank
-from app.core import bank_provider, workspace_removal
+from app.core import bank_provider, host_restart, workspace_removal
 from app.core.config import (
     default_database_path,
     root_data_dir,
@@ -85,6 +85,14 @@ def active_textbook_id(plugin_id: str) -> str:
     return next((str(item["id"]) for item in items if item.get("is_default")), "")
 
 
+def _request_port(request: Request) -> int:
+    """重启脚本要绑回用户当前访问的端口，不能盲信默认 8000。"""
+    port = request.url.port
+    if isinstance(port, int) and 0 < port < 65536:
+        return port
+    return int(settings.port)
+
+
 def _provision_core_bank() -> int:
     """切/建工作区后立即落地该区的 core-bank 物理库，并回其题目数。
 
@@ -99,8 +107,13 @@ def _provision_core_bank() -> int:
 
 
 class WorkspaceCreateRequest(BaseModel):
-    """创建工作区请求体。"""
+    """创建工作区请求体。
+
+    ``textbook_id`` 随新建一并登记：切库要重启进程，再补一刀 ``/textbook``
+    极可能撞在进程退出的当口，偏好就悄悄丢了。
+    """
     name: str = Field(..., min_length=1, description="工作区名称")
+    textbook_id: str = Field("", max_length=32, description="教材版本ID，tb_ 前缀；空串=跟随默认")
 
 
 class WorkspaceTextbookRequest(BaseModel):
@@ -197,24 +210,37 @@ async def list_workspaces() -> dict[str, Any]:
 
 
 @router.post("/switch", summary="切换工作区")
-async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str, Any]:
-    """切换到指定工作区。"""
+async def switch_workspace_endpoint(
+    payload: WorkspaceSwitchRequest, request: Request,
+) -> dict[str, Any]:
+    """切换到指定工作区，然后**重启底座**加载该区的插件与配置。
+
+    工作区的插件目录、plugin_state、.env 都是目录级隔离的；只切指针不重启，
+    界面会拿旧区的插件去读新区的库。所以这里写完指针就调度一次性重启脚本，
+    回包带 ``restarting`` 与当前 ``boot_id``，前端据此轮询新进程。
+    ``JZO_RESTART_DISABLED=1``（单测/受控环境）下退回旧的活切换语义。
+    """
     workspace_id = payload.workspace_id
     workspaces = _load_workspaces()
 
     if workspace_id == "default":
-        switch_workspace(None)
+        target = None
     else:
         # Verify workspace exists
         workspace_ids = [w["id"] for w in workspaces]
         if workspace_id not in workspace_ids:
             raise HTTPException(status_code=404, detail=f"工作区 {workspace_id} 不存在")
+        target = workspace_id
 
-        switch_workspace(workspace_id)
+    # 先准备脚本再写指针：脚本生成失败时指针不动，不出现「切了库却没重启」的半截状态。
+    prepared = host_restart.prepare_restart(port=_request_port(request))
+    switch_workspace(target)
 
-    # Reinitialize database for new workspace
+    # Reinitialize database for new workspace（新进程启动时也会做一次，这里同步建好）
     init_db()
     question_count = _provision_core_bank()
+    if prepared is not None:
+        host_restart.launch_restart(prepared)
 
     resolved_id = workspace_id or "default"
     resolved_name = next(
@@ -228,23 +254,40 @@ async def switch_workspace_endpoint(payload: WorkspaceSwitchRequest) -> dict[str
         "database": str(settings.database_path),
         "question_count": question_count,
         "is_active": True,
+        "restarting": prepared is not None,
+        "boot_id": host_restart.boot_id(),
     }
 
 
 @router.post("", summary="创建工作区")
-async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
-    """创建新工作区并切换到该工作区。"""
+async def create_workspace(payload: WorkspaceCreateRequest, request: Request) -> dict[str, Any]:
+    """创建新工作区并切换过去（同样需要重启以装配该区插件）。"""
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="工作区名称不能为空")
-    
+
+    textbook_id = (payload.textbook_id or "").strip()
+    if textbook_id and core_bank.TEXTBOOK_ID_RE.fullmatch(textbook_id) is None:
+        raise HTTPException(status_code=400, detail="教材版本 ID 不合法")
+    if textbook_id:
+        # 版本清单来自**切换前**的当前库（下拉就是它喂的）；
+        # 库还没落地（空环境/新装）时没有并集登记表可查，不拦。
+        try:
+            known = {str(item["id"]) for item in core_bank.textbooks(_provider_id())}
+        except (core_bank.BankError, sqlite3.Error):
+            known = set()
+        if known and textbook_id not in known:
+            raise HTTPException(status_code=400, detail="该教材版本不在当前题库的并集登记表里")
+
     # Generate unique ID
     workspace_id = f"ws_{secrets.token_hex(8)}"
     
     # Create workspace directory structure. 必须按根 data 解析，
     # 不能拼在当前工作区目录下（否则会生成 workspaces/<旧区>/workspaces/<新区>）。
     ensure_workspace_layout(workspace_id)
-    
+
+    prepared = host_restart.prepare_restart(port=_request_port(request))
+
     # Initialize database for new workspace
     old_workspace = settings.workspace_id
     try:
@@ -256,27 +299,34 @@ async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
     
     # Register workspace
     workspaces = _load_workspaces()
-    workspaces.append({
+    entry = {
         "id": workspace_id,
         "name": name,
         "created_at": "auto",  # Would use datetime in production
         "database": str(settings.database_path),
-    })
+    }
+    if textbook_id:
+        entry["textbook_id"] = textbook_id
+    workspaces.append(entry)
     _save_workspaces(workspaces)
 
     # 新工作区立刻落地一个空的 core-bank 库（非 default 走 schema 兜底，不复制 default 真题）
     question_count = _provision_core_bank()
+    if prepared is not None:
+        host_restart.launch_restart(prepared)
 
     return {
         "id": workspace_id,
         "name": name,
         "question_count": question_count,
         "switched": True,
+        "restarting": prepared is not None,
+        "boot_id": host_restart.boot_id(),
     }
 
 
 @router.post("/import", summary="导入本地 .db 为一个新工作区（数据备份/恢复入口）")
-async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
+async def import_workspace(payload: WorkspaceImportRequest, request: Request) -> dict[str, Any]:
     """把老师选择的一个本地 .db 挂载成独立工作区，并切换过去。
 
     校验顺序：base64 解码 → 体积上限 → SQLite 魔数 → 七表齐全。任一不过即 400 且不留半成品文件。
@@ -346,6 +396,7 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
 
     # 库校验全部通过后才生成该区的插件目录与空状态，失败路径不留半成品。
     ensure_workspace_layout(workspace_id)
+    prepared = host_restart.prepare_restart(port=_request_port(request))
     switch_workspace(workspace_id)
     init_db()
     workspaces = _load_workspaces()
@@ -356,12 +407,16 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
         "database": str(settings.database_path),
     })
     _save_workspaces(workspaces)
+    if prepared is not None:
+        host_restart.launch_restart(prepared)
 
     return {
         "id": workspace_id,
         "name": name,
         "question_count": question_count,
         "switched": True,
+        "restarting": prepared is not None,
+        "boot_id": host_restart.boot_id(),
     }
 
 

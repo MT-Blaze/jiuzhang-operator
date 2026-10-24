@@ -1,13 +1,17 @@
 """插件卸载：删代码目录；可选地连本地数据一起物理销毁。
 
-两种口径（军令 v0.8.0 任务 2.2）：
-- 保留数据：只删 ``plugins/<id>/`` 代码目录；``data/`` 里的物理 ``.db`` 原样留下，
+两种口径（军令 v0.8.0 任务 2.2、#18-续4 修订）：
+- 保留数据：只删 ``plugins/<id>/`` 代码目录；当前工作区的物理 ``.db`` 原样留下，
   以后重装同名插件即恢复取数。
-- 彻底删除：代码目录 + 该插件在所有工作区里的物理库（含 WAL/SHM/journal 边车）一并销毁，
-  不可恢复——所以前端务必二次确认并给红色警告。
+- 彻底删除：代码目录 + **当前工作区**里该插件的物理库（含 WAL/SHM/journal 边车）
+  一并销毁，不可恢复——所以前端务必二次确认并给红色警告。
 
-安全：插件 id 必须先过格式校验；只在本底座 plugins_dir 与 data_dir 之内操作，绝不接受外部路径；
-被删路径必须落在对应根目录内（防穿越）。
+**绝不跨工作区**（军令 #18-续4）：其他工作区的 ``.db`` 是老师各自的财产，卸载当前区
+的插件不能连坐。``uploads/`` 是工作区级扁平命名空间，文件不带插件标记，无法可靠归属，
+因此这里一律不删（宁可多留，不可误毁老师的图）。
+
+安全：插件 id 必须先过格式校验；只在本底座 plugins_dir 与当前工作区 data_dir 之内操作，
+绝不接受外部路径；被删路径必须落在对应根目录内（防穿越）。
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.core.config import plugins_dir, root_data_dir
+from app.core.config import plugins_dir, settings
 
 _PLUGIN_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,80}$")
 _DB_SIDECAR_SUFFIXES = (".db-shm", ".db-wal", ".db-journal")
@@ -52,16 +56,9 @@ def _db_family(bank_file: Path) -> list[Path]:
     return paths
 
 
-def _data_db_targets(plugin_id: str) -> list[Path]:
-    """该插件在 default 与所有工作区里的物理题库路径。"""
-    root = root_data_dir()
-    targets = [root / "banks" / f"{plugin_id}.db"]
-    workspaces = root / "workspaces"
-    if workspaces.is_dir():
-        for ws in sorted(workspaces.iterdir()):
-            if ws.is_dir():
-                targets.append(ws / "banks" / f"{plugin_id}.db")
-    return targets
+def _current_workspace_bank(plugin_id: str) -> Path:
+    """当前工作区里该插件的物理题库路径；其他工作区一概不碰。"""
+    return Path(settings.data_dir) / "banks" / f"{plugin_id}.db"
 
 
 def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
@@ -80,20 +77,20 @@ def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
 
     removed_data: list[str] = []
     if not keep_data:
-        for bank in _data_db_targets(plugin_id):
-            for path in _db_family(bank):
+        data_root = Path(settings.data_dir).resolve()
+        for path in _db_family(_current_workspace_bank(plugin_id)):
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if not _is_within(resolved, data_root):
+                continue
+            if resolved.is_file():
                 try:
-                    resolved = path.resolve()
+                    resolved.unlink()
+                    removed_data.append(str(resolved.relative_to(data_root)))
                 except OSError:
-                    continue
-                if not _is_within(resolved, root_data_dir()):
-                    continue
-                if resolved.is_file():
-                    try:
-                        resolved.unlink()
-                        removed_data.append(str(resolved.relative_to(root_data_dir())))
-                    except OSError:
-                        pass
+                    pass
 
     return {
         "id": plugin_id,

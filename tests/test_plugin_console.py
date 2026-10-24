@@ -3,7 +3,8 @@
 覆盖三态与导入的可判定部分：
 1. show_in_sidebar：显式 false 生效、缺省 true，且 discover 每条带 enabled。
 2. 启停状态落盘（plugin_state），新装默认启用。
-3. 卸载两口径：保留数据只删代码目录；彻底删除连各工作区物理 .db 一起销毁（越界拒）。
+3. 卸载两口径：保留数据只删代码目录；彻底删除只销毁**当前工作区**的物理 .db
+   （其他工作区连同边车必须原样保留；越界拒）。
 4. 工作区导入：合法 7 表 .db → 建新工作区并切换；非库 / 缺表 → 拒绝且不留半成品。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_plugin_console``
@@ -151,19 +152,22 @@ class UninstallLifecycleTest(unittest.TestCase):
         self.plugins_dir = root / "plugins"
         self.data_dir = root / "data"
         self.plugins_dir.mkdir(parents=True)
-        self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"))
+        self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"),
+                       os.environ.get("JZO_PLUGINS_DIR"))
         os.environ["JZO_DATA_DIR"] = str(self.data_dir)
         os.environ["JZO_PLUGINS_DIR"] = str(self.plugins_dir)
+        settings.workspace_id = None
         self.pid = "org.jiuzhang.zzz-demo"
         (self.plugins_dir / self.pid).mkdir(parents=True)
 
     def tearDown(self) -> None:
-        data, plugins = self._saved
+        ws, data, plugins = self._saved
         for key, value in (("JZO_DATA_DIR", data), ("JZO_PLUGINS_DIR", plugins)):
             if value is None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        settings.workspace_id = ws
         self.tmp.cleanup()
 
     def _seed_dbs(self) -> None:
@@ -178,13 +182,44 @@ class UninstallLifecycleTest(unittest.TestCase):
         self.assertFalse((self.plugins_dir / self.pid).exists())
         self.assertTrue((self.data_dir / "banks" / f"{self.pid}.db").exists(), "保留数据：db 必须还在")
 
-    def test_purge_removes_code_and_every_workspace_db(self) -> None:
+    def test_purge_removes_current_workspace_db_only(self) -> None:
+        """当前区是 default：只删根 data/banks，ws_x 的库与边车一根汗毛都不能动。"""
         self._seed_dbs()
+        other_db = self.data_dir / "workspaces" / "ws_x" / "banks" / f"{self.pid}.db"
+        other_wal = other_db.with_name(other_db.name + "-wal")
+        other_wal.write_bytes(b"ws_x-wal-payload")
         result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
         self.assertEqual(result["keep_data"], False)
         self.assertFalse((self.plugins_dir / self.pid).exists())
         self.assertFalse((self.data_dir / "banks" / f"{self.pid}.db").exists())
-        self.assertFalse((self.data_dir / "workspaces" / "ws_x" / "banks" / f"{self.pid}.db").exists())
+        self.assertTrue(other_db.is_file(), "彻底卸载不得连坐其他工作区的库")
+        self.assertEqual(other_wal.read_bytes(), b"ws_x-wal-payload")
+
+    def test_purge_inside_workspace_spares_default_and_siblings(self) -> None:
+        """A 区里彻底卸载：只删 A 区的库，default 与 B 区的库和边车必须原样保留。"""
+        pid = self.pid
+        default_db = self.data_dir / "banks" / f"{pid}.db"
+        ws_a_db = self.data_dir / "workspaces" / "ws_a" / "banks" / f"{pid}.db"
+        ws_b_db = self.data_dir / "workspaces" / "ws_b" / "banks" / f"{pid}.db"
+        _make_bank_db(default_db, 1)
+        _make_bank_db(ws_a_db, 2)
+        _make_bank_db(ws_b_db, 3)
+        ws_a_shm = ws_a_db.with_name(ws_a_db.name + "-shm")
+        ws_a_shm.write_bytes(b"a-shm")
+        ws_b_wal = ws_b_db.with_name(ws_b_db.name + "-wal")
+        ws_b_wal.write_bytes(b"b-wal")
+        settings.workspace_id = "ws_a"
+
+        result = plugin_lifecycle.uninstall_plugin(pid, keep_data=False)
+
+        self.assertFalse((self.plugins_dir / pid).exists())
+        removed = [item.replace("\\", "/") for item in result["removed_data"]]
+        self.assertEqual(removed, [f"banks/{pid}.db", f"banks/{pid}.db-shm"])
+        self.assertFalse(ws_a_db.exists())
+        self.assertFalse(ws_a_shm.exists())
+        self.assertTrue(default_db.is_file(), "A 区卸载不得删 default 的库")
+        self.assertTrue(ws_b_db.is_file(), "A 区卸载不得删 B 区的库")
+        self.assertEqual(ws_b_wal.read_bytes(), b"b-wal")
 
     def test_missing_plugin_and_bad_id_rejected(self) -> None:
         with self.assertRaises(plugin_lifecycle.PluginUninstallError):
@@ -217,6 +252,8 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         env["JZO_PLUGINS_DIR"] = str(plugins)
         env["JZO_LOCAL_TOKEN"] = cls.TOKEN
         env["JZO_AI_API_KEY"] = ""
+        # 这个服务器会被导入/切换工作区接口点到；关掉真实重启，免得测试进程自杀。
+        env["JZO_RESTART_DISABLED"] = "1"
         cls.process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
              "--port", str(cls.port), "--log-level", "warning"],

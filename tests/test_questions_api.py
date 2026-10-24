@@ -44,6 +44,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         env["JZO_DATA_DIR"] = cls.tmp.name
         env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
         env["JZO_LOCAL_TOKEN"] = TOKEN
+        env["JZO_RESTART_DISABLED"] = "1"
         cls.process = subprocess.Popen(
             [
                 sys.executable,
@@ -296,6 +297,7 @@ class OneTimeTokenTest(unittest.TestCase):
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = cls.tmp.name
         env["JZO_LOCAL_TOKEN"] = ""
+        env["JZO_RESTART_DISABLED"] = "1"
         cls.process = subprocess.Popen(
             [
                 sys.executable,
@@ -413,6 +415,8 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         env["JZO_DATA_DIR"] = cls.tmp_base.name
         # Use file-based tokens for workspace tests: pin empty so .env can't refill it
         env["JZO_LOCAL_TOKEN"] = ""
+        # 这个类真的会切工作区；关掉进程重启，否则服务器会自己退出。
+        env["JZO_RESTART_DISABLED"] = "1"
         
         cls.process = subprocess.Popen(
             [

@@ -64,6 +64,7 @@
             <h2 id="ws-title">工作区管理</h2>
             <p class="st-note">
               一个工作区就是本机一个独立的 SQLite 库目录，切换即换库、不联网、不注册。
+              每个工作区的<strong>插件、启停状态与凭据都各自独立</strong>，因此切换会<strong>重启底座</strong>重新装配。
               新建的库一律是<strong>空壳</strong>；「教材版本」决定大纲树按哪套目录过滤，
               考向本身是全库并集，换版本不复制题目。
             </p>
@@ -425,7 +426,8 @@
             <span>保留本地数据（仅删代码，日后重装同名插件可继续用原题库）</span>
           </label>
           <p class="mg-danger" id="uninstallDanger" hidden>
-            未勾选保留：该插件在<strong>所有工作区</strong>的物理题库 <code>.db</code> 将被一并<strong>永久删除，不可恢复</strong>。
+            未勾选保留：该插件在<strong>当前工作区</strong>的物理题库 <code>.db</code> 将被<strong>永久删除，不可恢复</strong>；
+            其他工作区的库不受影响。
           </p>
           <div class="mg-modal-actions">
             <button type="button" class="q-button" id="uninstallCancel">取消</button>
@@ -473,6 +475,31 @@
             <button type="button" class="q-button" id="wsDeleteCancel">取消</button>
             <button type="button" class="q-button q-button-danger" id="wsDeleteConfirm" disabled>移入回收站</button>
           </div>
+        </div>
+      </div>
+
+      <div class="mg-modal-overlay" id="wsSwitchModal" role="dialog" aria-modal="true"
+        aria-labelledby="wsSwitchModalTitle" aria-hidden="true" hidden>
+        <div class="mg-modal">
+          <h3 id="wsSwitchModalTitle">切换工作区？</h3>
+          <p class="mg-danger" id="wsSwitchModalText">
+            切换工作区需要重启底座以加载该区的插件与配置，且将丢弃未保存的草稿，是否继续？
+          </p>
+          <p class="st-note" id="wsSwitchTarget"></p>
+          <div class="mg-modal-actions">
+            <button type="button" class="q-button" id="wsSwitchCancel">取消</button>
+            <button type="button" class="q-button q-button-danger" id="wsSwitchConfirm">确认切换并重启</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="st-restart-overlay" id="wsRestartOverlay" role="alertdialog" aria-modal="true"
+        aria-labelledby="wsRestartTitle" aria-describedby="wsRestartText" aria-hidden="true" hidden>
+        <div class="st-restart-box" tabindex="-1">
+          <h3 id="wsRestartTitle">正在重启底座</h3>
+          <p id="wsRestartText">正在重启底座，请稍候…</p>
+          <p class="st-restart-hint" id="wsRestartHint">底座恢复后本页会自动刷新，请别关闭或手动刷新窗口。</p>
+          <button type="button" class="q-button" id="wsRestartReloadBtn" hidden>手动刷新页面</button>
         </div>
       </div>
 

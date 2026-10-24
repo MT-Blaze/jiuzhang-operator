@@ -293,6 +293,35 @@
 
 .st-manage .q-field { margin-bottom: 10px; }
 
+/* ============ 切库重启遮罩（军令 #18-续4） ============ */
+/* 比确认弹窗更高一层：确认框收起后遮罩必须继续盖住整个界面，
+   免得用户在底座进程已死的窗口里继续点操作按钮。 */
+.st-restart-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(31, 28, 24, 0.72);
+}
+.st-restart-overlay[hidden] { display: none; }
+.st-restart-box {
+  width: min(92vw, 420px);
+  padding: 22px 24px;
+  border-radius: 14px;
+  background: var(--paper, #fffdf8);
+  box-shadow: 0 18px 48px rgba(31, 28, 24, 0.32);
+  text-align: center;
+  outline: none;
+}
+.st-restart-box h3 { margin: 0 0 8px; font-size: 17px; }
+.st-restart-box p { margin: 0 0 10px; font-size: 14px; line-height: 1.6; }
+.st-restart-box[data-tone="down"] { color: #9b3b2d; }
+.st-restart-hint { color: var(--muted, #6f675c); font-size: 12px; line-height: 1.5; }
+.st-restart-box .q-button { min-height: 44px; padding: 8px 16px; }
+
 /* ============ 内嵌模式（v0.8.2：设置变成画布里的一个标签页）============ */
 html[data-embedded="1"] body {
   background: var(--paper, #fffdf9);

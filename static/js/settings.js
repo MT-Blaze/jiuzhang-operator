@@ -482,10 +482,11 @@
     if (file.size > 64 * 1024 * 1024) { mgSet(importStatus, "题库文件超过 64 MB 上限。", "warn"); return; }
     mgSet(importStatus, "正在校验并挂载 " + file.name + "…", "info");
     fileToBase64(file).then(function (b64) {
-      return apiCall("/api/workspaces/import", "POST", { name: importName.value.trim(), db_base64: b64 });
-    }).then(function (result) {
-      mgSet(importStatus, "已挂载为新工作区「" + (result.name || "") + "」（" +
-        (result.question_count || 0) + " 题），并切换过去。回工作台即见。", "ok");
+      var name = importName ? String(importName.value || "").trim() : "";
+      // 导入即切换，切库必须重启：交给同一套遮罩 + /healthz 轮询，不假装修好了。
+      runWorkspaceRequest(function () {
+        return apiCall("/api/workspaces/import", "POST", { name: name, db_base64: b64 });
+      }, "正在挂载「" + name + "」为新工作区并重启底座，请稍候…", "导入失败");
       if (importName) importName.value = "";
     }).catch(function (error) {
       mgSet(importStatus, "导入失败：" + (error && error.message ? error.message : error), "down");
@@ -1085,6 +1086,18 @@
   var textbookItems = [];
   var activeTextbookId = "";
   var wsBusy = false;
+  var wsSwitchModal = document.getElementById("wsSwitchModal");
+  var wsSwitchTarget = document.getElementById("wsSwitchTarget");
+  var wsSwitchCancel = document.getElementById("wsSwitchCancel");
+  var wsSwitchConfirm = document.getElementById("wsSwitchConfirm");
+  var wsSwitchTargetWs = null;
+  var wsSwitchPrevFocus = null;
+  var restartOverlay = document.getElementById("wsRestartOverlay");
+  var restartBox = restartOverlay ? restartOverlay.querySelector(".st-restart-box") : null;
+  var restartText = document.getElementById("wsRestartText");
+  var restartHint = document.getElementById("wsRestartHint");
+  var restartReloadBtn = document.getElementById("wsRestartReloadBtn");
+  var restartTimer = null;
 
   // 独立访问 /settings 时刷新自己；被画布页签内嵌时刷新宿主，页签与左栏一起对齐新库。
   function reloadHostPage() {
@@ -1177,17 +1190,189 @@
   }
 
   function switchWorkspace(ws) {
-    if (wsBusy) return;
+    openWsSwitch(ws);
+  }
+
+  // ============ 切库重启：确认弹窗 → 全屏遮罩 → 轮询 /healthz 等新 boot_id ============
+  // 严禁假死装像：遮罩只在后端真的调度了重启时出现；看不到新 boot_id 就如实报超时，
+  // 并把「手动刷新」这条路交给用户，绝不用 setTimeout 演一场恢复。
+  // 轮询用自我续期的 setTimeout，不用窗口级周期定时器：控制台页有一条锁死规则
+  // （tests.test_console_plugin_panel.RelativeTimeTest）禁周期性墙钟定时器，
+  // 而这条轮询是用户当场点确认才起的、恢复即止的一次性等待，语义完全一致。
+  var RESTART_POLL_MS = 600;
+  var RESTART_TIMEOUT_MS = 120000;
+
+  function showRestartWait(text) {
+    if (!restartOverlay) return;
+    if (restartText) restartText.textContent = text || "正在重启底座，请稍候…";
+    if (restartHint) {
+      restartHint.textContent = "底座恢复后本页会自动刷新，请别关闭或手动刷新窗口。";
+      restartHint.hidden = false;
+    }
+    if (restartBox) restartBox.removeAttribute("data-tone");
+    if (restartReloadBtn) restartReloadBtn.hidden = true;
+    restartOverlay.hidden = false;
+    restartOverlay.setAttribute("aria-hidden", "false");
+    if (restartBox && restartBox.focus) restartBox.focus();
+  }
+
+  function hideRestartWait() {
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+      restartTimer = null;
+    }
+    if (!restartOverlay) return;
+    restartOverlay.hidden = true;
+    restartOverlay.setAttribute("aria-hidden", "true");
+  }
+
+  function restartFailed(text) {
+    if (restartText) restartText.textContent = text;
+    if (restartHint) restartHint.textContent = "确认底座已在运行后，可点下方按钮手动刷新。";
+    if (restartBox) restartBox.setAttribute("data-tone", "down");
+    if (restartReloadBtn) {
+      restartReloadBtn.hidden = false;
+      if (restartReloadBtn.focus) restartReloadBtn.focus();
+    }
+  }
+
+  function readBootId() {
+    return fetch("/healthz", { cache: "no-store" })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) { return data && data.boot_id ? String(data.boot_id) : ""; })
+      .catch(function () { return ""; });
+  }
+
+  function isNetworkError(error) {
+    // fetch 连不上（进程正好退出）抛 TypeError；后端明确回错误才是普通 Error。
+    return Boolean(error) && error.name === "TypeError";
+  }
+
+  function waitForRestart(oldBootId) {
+    var deadline = Date.now() + RESTART_TIMEOUT_MS;
+    var sawDown = false;
+    function stop() {
+      if (restartTimer) {
+        clearTimeout(restartTimer);
+        restartTimer = null;
+      }
+    }
+    function tick() {
+      restartTimer = null;
+      if (Date.now() > deadline) {
+        restartFailed("重启等待超时：两分钟内没有看到新进程上线。");
+        mgSet(wsStatus, "重启等待超时，工作区指针已写入；底座起来后刷新本页即见新库。", "warn");
+        return;
+      }
+      fetch("/healthz", { cache: "no-store" })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then(function (data) {
+          var id = data && data.boot_id ? String(data.boot_id) : "";
+          // 只有「身份证换过了」才算恢复；旧进程临死前的 200 不作数。
+          // 拿不到旧 id 时（极少数）退而求其次：必须先看到一次连不上，再看到有进程应答。
+          var alive = oldBootId ? Boolean(id) && id !== oldBootId : sawDown && Boolean(id);
+          if (!alive) {
+            restartTimer = setTimeout(tick, RESTART_POLL_MS);
+            return;
+          }
+          if (restartText) restartText.textContent = "底座已重启，正在加载新工作区…";
+          reloadHostPage();
+        })
+        .catch(function () {
+          sawDown = true;
+          restartTimer = setTimeout(tick, RESTART_POLL_MS);
+        });
+    }
+    stop();
+    tick();
+  }
+
+  function runWorkspaceRequest(request, waitText, failLabel) {
     wsBusy = true;
-    if (wsCreateBtn) wsCreateBtn.disabled = true;
-    mgSet(wsStatus, "正在切换到「" + (ws.name || ws.id) + "」…", "info");
-    apiCall("/api/workspaces/switch", "POST", { workspace_id: ws.id })
-      .then(function () { reloadHostPage(); })
-      .catch(function (error) {
-        wsBusy = false;
-        if (wsCreateBtn) wsCreateBtn.disabled = false;
-        mgSet(wsStatus, "切换失败：" + error.message, "down");
-      });
+    if (wsCreateBtn) {
+      wsCreateBtn.disabled = true;
+      wsCreateBtn.setAttribute("aria-busy", "true");
+    }
+    showRestartWait(waitText);
+    return readBootId().then(function (oldBootId) {
+      return request().then(
+        function (result) { return { bootId: oldBootId, result: result, error: null }; },
+        function (error) { return { bootId: oldBootId, result: null, error: error }; }
+      );
+    }).then(function (outcome) {
+      if (outcome.error) {
+        // 请求死在重启那一瞬不能判死刑：指针已写、脚本已生成，继续等新进程起来。
+        if (!outcome.bootId || !isNetworkError(outcome.error)) throw outcome.error;
+        waitForRestart(outcome.bootId);
+        return;
+      }
+      var result = outcome.result || {};
+      if (!result.restarting) {
+        // 受控环境（JZO_RESTART_DISABLED=1）根本没有重启：直接重载，不演等待。
+        hideRestartWait();
+        reloadHostPage();
+        return;
+      }
+      waitForRestart(String(result.boot_id || outcome.bootId || ""));
+    }).catch(function (error) {
+      hideRestartWait();
+      wsBusy = false;
+      if (wsCreateBtn) {
+        wsCreateBtn.disabled = false;
+        wsCreateBtn.setAttribute("aria-busy", "false");
+      }
+      mgSet(wsStatus, failLabel + "：" + error.message, "down");
+    });
+  }
+
+  function openWsSwitch(ws) {
+    if (!wsSwitchModal || wsBusy) return;
+    wsSwitchTargetWs = ws;
+    if (wsSwitchTarget) wsSwitchTarget.textContent = "目标工作区：" + (ws.name || ws.id);
+    wsSwitchPrevFocus = document.activeElement;
+    wsSwitchModal.hidden = false;
+    wsSwitchModal.setAttribute("aria-hidden", "false");
+    if (wsSwitchConfirm) wsSwitchConfirm.focus();
+  }
+
+  function closeWsSwitch(focusBack) {
+    if (wsSwitchModal) {
+      wsSwitchModal.hidden = true;
+      wsSwitchModal.setAttribute("aria-hidden", "true");
+    }
+    if (focusBack && wsSwitchPrevFocus && wsSwitchPrevFocus.focus) wsSwitchPrevFocus.focus();
+    wsSwitchPrevFocus = null;
+    wsSwitchTargetWs = null;
+  }
+
+  function confirmWsSwitch() {
+    var ws = wsSwitchTargetWs;
+    if (!ws || wsBusy) return;
+    closeWsSwitch(false);
+    runWorkspaceRequest(function () {
+      return apiCall("/api/workspaces/switch", "POST", { workspace_id: ws.id });
+    }, "正在重启底座，请稍候…", "切换失败");
+  }
+
+  function trapWsSwitchFocus(event) {
+    if (!wsSwitchModal || event.key !== "Tab") return;
+    var nodes = Array.prototype.filter.call(
+      wsSwitchModal.querySelectorAll("button, input, select, textarea, a[href]"),
+      function (node) { return !node.disabled && node.offsetParent !== null; }
+    );
+    if (!nodes.length) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   // 已有工作区也能就地换教材版本：只改工作区档案里的偏好字段，不碰题库数据。
@@ -1327,33 +1512,10 @@
     var name = String(wsNameInput.value || "").trim();
     if (!name) { mgSet(wsStatus, "请先填写工作区名称。", "warn"); wsNameInput.focus(); return; }
     var textbookId = wsTextbookSelect ? String(wsTextbookSelect.value || "") : "";
-    wsBusy = true;
-    if (wsCreateBtn) {
-      wsCreateBtn.disabled = true;
-      wsCreateBtn.setAttribute("aria-busy", "true");
-    }
-    mgSet(wsStatus, "正在新建工作区「" + name + "」…", "info");
-    apiCall("/api/workspaces", "POST", { name: name })
-      .then(function (created) {
-        var newId = created && created.id ? String(created.id) : "";
-        if (textbookId && newId) {
-          mgSet(wsStatus, "工作区已建，正在登记教材版本…", "info");
-          return apiCall("/api/workspaces/textbook", "POST", {
-            workspace_id: newId,
-            textbook_id: textbookId,
-          });
-        }
-        return { workspace_id: newId, textbook_id: "" };
-      })
-      .then(function () { reloadHostPage(); })
-      .catch(function (error) {
-        wsBusy = false;
-        if (wsCreateBtn) {
-          wsCreateBtn.disabled = false;
-          wsCreateBtn.setAttribute("aria-busy", "false");
-        }
-        mgSet(wsStatus, "新建失败：" + error.message, "down");
-      });
+    // 教材版本随新建一次性登记：重启已经开始，再补一刀 /textbook 会撞在进程退出上。
+    runWorkspaceRequest(function () {
+      return apiCall("/api/workspaces", "POST", { name: name, textbook_id: textbookId });
+    }, "正在新建工作区「" + name + "」并重启底座，请稍候…", "新建失败");
   }
 
   if (wsCreateBtn) wsCreateBtn.addEventListener("click", createWorkspace);
@@ -1376,6 +1538,24 @@
       return;
     }
     trapWsDeleteFocus(event);
+  });
+  if (wsSwitchConfirm) wsSwitchConfirm.addEventListener("click", confirmWsSwitch);
+  if (wsSwitchCancel) wsSwitchCancel.addEventListener("click", function () {
+    closeWsSwitch(true);
+    mgSet(wsStatus, "已取消切换，工作区未变动。", "info");
+  });
+  if (wsSwitchModal) wsSwitchModal.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWsSwitch(true);
+      mgSet(wsStatus, "已取消切换，工作区未变动。", "info");
+      return;
+    }
+    trapWsSwitchFocus(event);
+  });
+  if (restartReloadBtn) restartReloadBtn.addEventListener("click", function () {
+    hideRestartWait();
+    reloadHostPage();
   });
   loadTextbooks().then(loadWorkspaces);
 
