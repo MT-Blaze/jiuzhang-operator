@@ -3,7 +3,7 @@
 本文件是给 AI 代理与接任者读的**跨会话交接底稿**。只记「不读代码就不知道、且下次会话必须知道」的事；
 能从仓库现状推出的（目录结构、函数签名、依赖清单）一律不写在这里，避免与代码各说各话。
 
-最后更新：2026-10-23 22:49（军令 #12：主线工作流固化为「军令任务卡 → 机械证据回传单 → 云端复审」，回传单五项锁死为长期铁律，见 §5.6 与 `AGENTS.md` §7.1；军令 #11 阶段一、二已封档，阶段三在途）
+最后更新：2026-10-24（军令 #14「彻夜六阶段闭环与 v0.9.0 封版攻坚」六阶段全部交付并封版：版本升 0.9.0、出 `dist/jiuzhang-operator-beta-v0.9.0.zip`；阶段五真机自更新压测 25/25 绿，钉死 `update.bat` 三类真机根因；另收录官方 QQ 群 1105273716）
 
 ---
 
@@ -45,7 +45,25 @@
 
 ---
 
-## 二、当前核心进度（v0.8.2）
+## 二、当前核心进度（v0.9.0）
+
+> **军令 #14（2026-10-24 彻夜）六阶段全部交付并封版**：底座版本 **0.8.2 → 0.9.0**，
+> 发行包 `dist/jiuzhang-operator-beta-v0.9.0.zip` 已出（包内种子库仍是冻结空壳，0 题）。
+> 六个阶段严格按序，每阶段一个 commit：
+> ① 阶段一 解析器与 FTS5 接进插件 UI（`8ff3c17`）；② 阶段二 清缴遗留控制台与启动项欠账（`7c02c5b`）；
+> ③ 阶段三 A4 试卷与讲义的 PDF 导出（`aa170ac`）；④ 阶段四 题库批量导入与导出（`dd8613d`）；
+> ⑤ 阶段五 真机压测自更新全流程（`1ac1224`）；⑥ 阶段六 升版、清 `dist/`、出包、统一推送（本次 commit）。
+> **阶段五的收获（三类真机根因，非推断）**：自更新脚本在真机上一直不生效，根因逐条钉死——
+> ① `update.bat` 里 `tasklist | find` 会被 **Git Bash 的 `usr/bin/find.exe` 抢占 PATH**，那行让整篇批处理当场终止，
+> 改用 `for /f` 读 tasklist 的 CSV + 绝对路径；② 无控制台的 DETACHED_PROCESS 里 `timeout` 不可靠，睡眠换 `ping -n 2`；
+> ③ **无控制台时 cmd 的 `echo` 写控制台会失败，整篇批处理停在第一行**——拉起脚本时 stdout/stderr 一律接日志文件。
+> 另：`.bat` 必须按控制台 ANSI 码页（mbcs）落盘（UTF-8 中文会被 cp936 误解出引号与管道符），
+> 且用 `write_bytes` 落盘避免 `Path.write_text` 的二次换行转换把 CRLF 变成 `\r\r\n`。
+> **robocopy 排除清单新增 `plugins/`**：发行包内自带 core-bank 空壳种子库，底座自更新覆盖它等于拿空库换掉老师的真题库；
+> 插件版本归插件热更通道（合并语义、保住本机数据文件）管。
+> **验证**：全量 42 模块 **809 测全绿**（`.venv/Scripts/python.exe` 逐模块，`tools/run_all_tests.py`）；
+> 真机自更新探针 **25/25**（`.system_generated/self_update_probe/stage5-run6/`，含截图与 `result.json`）。
+> 详见根目录 `Morning_Report.md`。
 
 > **军令 #13（2026-10-24 彻夜）11 项全部交付，版本仍 0.8.2、未发版**：四大模块按序落地并逐项 commit——
 > ① 任务 1 启动行为（沿用 #11 第三阶段 `882e56b`）；② 任务 2 左栏 48px 顶线、三视图底栏与插件拖拽排序（`511bd1e`）；
@@ -490,9 +508,14 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 
 ### 一、当前冲刺（P0 级）
 
+- [x] **军令 #14 六阶段闭环与 v0.9.0 封版**（2026-10-24 彻夜）：解析器/FTS5 接进插件 UI → 清缴控制台与启动项欠账 →
+      A4 试卷与讲义 PDF 导出 → 题库批量导入与导出 → 真机自更新全流程压测 → 升版出包统一推送。
+      底座 **0.8.2 → 0.9.0**，`dist/jiuzhang-operator-beta-v0.9.0.zip` 已出；全量 42 模块 **809 测全绿**；
+      真机自更新探针 **25/25**（钉死 `update.bat` 三类真机根因：`find` 被 Git Bash 抢占 / 无控制台 `timeout` 不可靠 /
+      无控制台 `echo` 写控制台会让整篇批处理终止）。详见 §二 顶部与 `Morning_Report.md`。
 - [x] **军令 #13 十一项**（2026-10-24 彻夜）：启动行为 / 侧栏与底栏 / 右栏插槽 / 录题解析 / FTS5 / 组卷 / 讲义 /
       题库浏览 / 框选切图 / 双轨更新 / 瘦身晨报，逐项 commit；全量 749 测绿、更新探针 21/21、样式回归 13/13。
-      版本仍未升、未出包，详见 `Morning_Report.md` 与 §二 顶部。
+      该轮**未**升版未出包，已由军令 #14 的 v0.9.0 封版补齐，详见 `Morning_Report.md` 与 §二 顶部。
 - [x] **API 切表**（2026-10-23 完成）：后端 API 全部从旧宽表 `bank_questions` 切换到新的 7 张关系表。
       读路径 `list_questions` / `get_question` / `stats` / `random_question` / `get_many` 已重写，
       新增 `topics`（懒展开 + 子树题量）与 `topic_notes`；写路径 `create_question` 与 `import_documents`
@@ -768,3 +791,16 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
   被 `IntegrityError` 分支误报成「题目 ID 已存在」的 409，是**随机复现的假故障**
   （v0.6.4 审 `q_-t1MhFqK…` 时抓到）。`app/core/questions.py:_new_id` 已改 `token_hex(12)`；
   以后想换 ID 生成式，必须同时过契约与这条 GLOB。
+- **Windows 批处理三大坑（2026-10-24 阶段五实测钉死，改 `update.bat` 前先看这段）**：
+  ① **PATH 抢占**：Git Bash 的 `C:\Program Files\Git\usr\bin\find.exe` 排在 System32 前面，
+  `tasklist | find "..."` 会让整篇批处理当场终止（底座永不重启、覆盖也没发生）；
+  一律用绝对路径 + `for /f "usebackq tokens=2 delims=," %%p in (`"..." tasklist.exe" /FI "PID eq %JZO_PID%" /NH /FO CSV`)`
+  读 CSV 再比对 `%%~p`（`usebackq`+反引号下 `2^>nul` 会被当成字面参数传给 tasklist，**不能加**）。
+  ② **无控制台不可靠**：DETACHED_PROCESS 里 `timeout` 会失灵，睡眠改 `"%SystemRoot%\System32\ping.exe" -n 2 127.0.0.1 >nul`。
+  ③ **无控制台时 `echo` 会中止整篇批处理**：cmd 往控制台写失败即 rc=1 终止（连纯 ASCII 行也照样死），
+  所以拉起脚本时 `stdout=日志文件、stderr=STDOUT、stdin=DEVNULL`，cmd 的输出必须落文件。
+  ④ `.bat` 文件用 **ANSI 码页**（`locale` 的 `mbcs`，本机 cp936）写盘，UTF-8 里的中文会被 cp936 误解出
+  引号与管道符，足以让脚本语法崩掉；用 `Path.write_bytes` 落盘，`Path.write_text` 的 newline 转换会把
+  已是 CRLF 的脚本变成 `\r\r\n`。
+  ⑤ cmd 的 `/c` 引号剥离：命令行以引号开头时 cmd 剥掉首个与末个引号，需要 `""script" > "log" 2>&1"` 的双引号写法；
+  路径无空格时干脆不加引号最稳。cmd 读 `.bat` 用 ANSI，但**无控制台时 cmd 的输出是 UTF-8**（实测日志字节 `e7 ad 89` = 等待）。
