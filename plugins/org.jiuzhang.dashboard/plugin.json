@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.dashboard",
   "name": "数据看板",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "api_version": "1.0",
   "kind": "renderer",
   "description": "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达题库）。全部数据来自活跃题库的只读看板通道。",

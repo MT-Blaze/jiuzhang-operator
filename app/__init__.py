@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 
 def _env_file_candidates() -> list[Path]:
