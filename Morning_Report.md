@@ -80,21 +80,32 @@
 
 ## 五、未决问题与偏离
 
-1. **官方插件索引与本地插件版本漂移（欠账，非本轮引入）**：根 `plugins.json` 与 `E:\jiuzhang-plugins\plugins.json`
-   的 5 个条目**内容完全一致**（规范化 JSON 逐字相同），但两份文件**不是逐字节相同**（缩进/格式差异）；
-   且两处都把 `org.jiuzhang.editor` 标成 **0.3.0**，而本地插件目录与已发布的 zip 已是 **0.4.0**。
-   影响：用户拉索引看到 editor 0.3.0，装下来却是 0.4.0；「检查更新」会判「本地版本比索引更新，不降级」（不降级，安全）。
-   **本轮未修**：修它要写 `E:\jiuzhang-plugins` 这个**另一个仓库**的工作树并另起一次 push，超出本军令授权范围，按 AGENTS §8.2 不擅自扩大改动面。
-   修法现成：`tools/sync_plugin_index.py`（会把两份一起改到逐字节全等）。
-2. **控制台三条 v0.8.2 欠账仍在**（沿用上轮登记，本轮未动）：大纲树未按所选教材版本过滤；控制台内部「左树右二级菜单」的
-   树侧筛选未接；工作台顶栏 Provider 弹窗虽已迁入控制台，但 Provider 切换后的画布联动仍待补。
+1. **官方插件索引漂移（追加军令已清缴）**：根 `plugins.json` 与 `E:\jiuzhang-plugins\plugins.json` 原先
+   **不是逐字节相同**，且两处都把 `org.jiuzhang.editor` 标成 **0.3.0**，而已发布的 editor zip 也是 0.3.0
+   （本地插件目录早已是 0.4.0，发布件没跟上）。
+   **清缴办法不是改索引数字，而是先让发布件追上**：用 `tools/build_plugin.py` 重建 editor 0.4.0 包
+   （30,187 B / 5 条目）覆盖插件仓库的 `plugins/org.jiuzhang.editor.zip`，再跑 `tools/sync_plugin_index.py`
+   把索引校准到 0.4.0 —— 只改索引会让索引宣称 0.4.0 而下载到 0.3.0，比原来的漂移更坏。
+   现在：两份索引**逐字节相同**（sha256 前 12 位 `3e4d1faa423d`）、`updated_at` 2026-10-24，
+   且 **5 个条目的索引版本与已发布 zip 的实际版本逐一相符**（0 漂移）。
+   另修了 `tools/sync_plugin_index.py` 里写死的 `updated_at: "2026-10-23"`，改为跟随当天日期。
+2. **更正一条上轮结论**：v0.8.2 的三条控制台欠账（控制台「左树右二级菜单」、顶栏 Provider 配置弹窗、
+   大纲树按教材版本过滤）**早已由阶段二提交 `7c02c5b` 清缴**，本晨报初稿把它们误列为「仍在」——
+   现核对代码后更正：设置页左侧 4 个 nav（工作区/插件/模型配置/系统设置）+ 插件区右侧 4 个二级页签；
+   顶栏模型胶囊与 Provider 弹窗节点已彻底退役（`workspace.js`/`workspace.html` 搜不到 `openProviderModal`）；
+   大纲根层与搜索按工作区生效教材版本过滤（`bank.topics` 的 `textbook_id` + `active_textbook_id`）。
 3. **`question.card` 卡片位仍未接回**：宿主不再逐题下发 `question.render`，对话工具里仍会调用；此条沿用 README「尚未实现」的表述。
-4. **时序抖动一笔**：`tests.test_plugin_update.test_10_resume_at_boot_completes_the_previous_batch_offline`
+4. **未在真实安装目录由人手点过「更新并重启」**：沙箱安装副本上已真跑全流程（真下载→真自杀→真覆盖→真重启到 v99.0.0），
+   但真实安装目录的那次「人点按钮」路径未经人手验证——按下会结束当前进程，只能由人亲手做。已登记进 PROJECT_MEMORY 待办。
+5. **时序抖动一笔**：`tests.test_plugin_update.test_10_resume_at_boot_completes_the_previous_batch_offline`
    曾在一次满负载全量跑里偶发失败（单跑与复跑均绿），属时序抖动，非逻辑缺陷；两轮全量均为 0 失败。
-5. **本轮刻意未做**：`LICENSE` 未动；AGENTS.md 铁律一、铁律二未动；`schemas/` 无破坏性变更；用户 `data/` 目录未被写入
+6. **本轮刻意未做**：`LICENSE` 未动；AGENTS.md 铁律一、铁律二未动；`schemas/` 无破坏性变更；用户 `data/` 目录未被写入
    （自更新探针实测逐字节未变）；`E:\math-question-bank-main` 等历史目录**零读取、零复制**，无一处代码来自旧项目。
-6. **追加指令的口径**：二维码原文件名为 `群二维码.jpg` 但内容实为 PNG（magic `89504e47`、含 IEND），
+7. **追加指令的口径**：二维码原文件名为 `群二维码.jpg` 但内容实为 PNG（magic `89504e47`、含 IEND），
    已重命名为 `static/assets/qq-group.png` 以便 README 用相对路径稳定渲染，README 与 `PROJECT_MEMORY.md` 引用同一张图。
+8. **一条观察（未处理）**：插件仓库与索引只收录 5 个插件，本地 `plugins/` 另有 4 个（classic-card、dashboard、
+   bank-browser、exam-paper、lecture 中的后四个）尚未对外发布。它们随底座发行包一起发货，不影响用户；
+   要对外分发得单独出 zip 并加索引条目，属另一件事，本轮未做。
 
 ---
 

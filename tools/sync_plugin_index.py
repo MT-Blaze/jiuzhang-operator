@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import sys
@@ -42,7 +43,10 @@ def main() -> int:
         text, hits = pattern.subn(replace, text)
         if hits != 1:
             raise SystemExit("索引里找不到唯一条目：%s（命中 %d 次）" % (plugin_id, hits))
-    text = re.sub(r'"updated_at": "[^"]*"', '"updated_at": "2026-10-23"', text, count=1)
+    # updated_at 跟着今天走：写死日期会让索引永远停在改它的那天。
+    text = re.sub(r'"updated_at": "[^"]*"',
+                  '"updated_at": "%s"' % datetime.date.today().isoformat(),
+                  text, count=1)
     json.loads(text)  # 语法自检
     INDEX_MAIN.write_text(text, encoding="utf-8")
     INDEX_REPO.write_text(text, encoding="utf-8")

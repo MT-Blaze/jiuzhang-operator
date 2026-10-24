@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-10-23",
+  "updated_at": "2026-10-24",
   "entries": [
     {
       "id": "org.jiuzhang.placeholder",
@@ -66,7 +66,7 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "中间表单、右侧 A4 实时预览：录题干与公式、动态增删选项（含选项配图回填）、填答案与解析；边写边存草稿不丢、一键派生变式、删题二次确认、保存后自动回流刷新；右侧 AI 副驾可改写题干并回填。一键清洗 LaTeX 后经宿主写入本地真题题库。需底座 v0.7.1 及以上。",
