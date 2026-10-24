@@ -47,7 +47,7 @@
 
 ## 二、当前核心进度（v0.10.0）
 
-> **军令 #18 第二~四步与 #18-终 阶段一~二（2026-10-25，八阶段进行中）**：主公把「终极重构与代码审计」拆成 8 个阶段，
+> **军令 #18 第二~四步与 #18-终 阶段一~三（2026-10-25，八阶段进行中）**：主公把「终极重构与代码审计」拆成 8 个阶段，
 > 纪律是**一阶段一 commit、记忆归档后才进下一阶段**。已交付：
 > ① 第二步 `df11767`——全局快捷键仲裁层整层拆除；② 第三步 `cf63345`——插件代码与主机状态按工作区物理隔离
 > （`data/workspaces/<id>/` 收 `plugins/`、`plugin_state.json`、`startup.json`、`bank_provider.json`、`update_state.json`、`.env`）；
@@ -75,6 +75,10 @@
 > 只读打开一份 WAL 库会让 SQLite 顺手在同目录落下 `-wal`/`-shm`，于是包里有、清单里没有，
 > `verify_stage` 的「清单外文件」门禁把整包判废；**库走 WAL 的 default 区 100% 中招**。修法两头各钉一道：
 > 打包只装 manifest 点名的文件，复核前先清掉自己读出来的边车（真正的清单外文件照旧判废，另有 `test_15` 钉住）。
+> ⑥ **#18-终 阶段三（2026-10-25）**——不改生产代码，把「工作区是物理隔离的容器」这件事**真机取证 + 落决策**：
+> 两支探针（隔离四场景 33/33、全程无桩的真重启 23/23）跑完四场景，决策记录新增 **ADR-012**，
+> `PLUGIN_SPEC.md` §3.2 第 1 条的切换红字逐字改为与 `settings.html` 一致（原文还停在「将丢弃未保存的草稿」，
+> 与阶段一的实现相抵触），§3.3 补四条按区隔离判据（插件清单/资产 404/清单签名/备份不越界）。
 > **验证**：阶段一全量 **53 模块 976 测**、阶段二全量 **53 模块 994 测全绿**（`FAILED_MODULES=none`，
 > 日志逐份落 `.system_generated/order18_final_stage2/logs/`）；探针两只均真人路径——
 > 阶段一 `.system_generated/order18_final_stage1/probe.py` **15/15**（真人敲题干 → default 区落带 `saved_at`
@@ -83,14 +87,30 @@
 > 与 `ws/plugin_state.json`、缓存/`.git` 不进包、代码变大包体积跟着变大、本地只留 3 份 → 改脏代码与配置后走
 > 真人恢复：预览摘要「插件 1 个 / KB」、插件框默认可取消、二次确认写「其中 N 个是插件代码…重启底座」、
 > 完成后代码与配置均回原样且生成 `.pre-restore.bak` → 取消勾选插件时代码一行不动 → 篡改包字节被判废且不弹确认；
-> 邻区插件与配置全程原样；pageerror 0；截图 `01~04-*.png`）。
-> **未验证/边界**：阶段一探针为避开拉起时延用 `JZO_RESTART_DISABLED=1` 走 `restarting=false` 的真实重载分支，
-> **真重启路径下的草稿隔离**未在同一轮取证（留给阶段三的真机四场景）；阶段二探针同样只覆盖「恢复后提示重启」的
-> UI 口径，**插件代码覆盖后不重启底座的实际加载效果**未取证；彻底卸载 provider 插件（core-bank）会连带销毁老师
-> 在该区的真题库文件，现状如此、是否加门禁待主公裁决。工作树里 `bank-browser`/`classic-card`/`exam-paper`/`lecture`
+> 邻区插件与配置全程原样；pageerror 0；截图 `01~04-*.png`）；
+> **阶段三（军令 #18 第六步）真机取证两支，四场景全覆盖**：
+> `.system_generated/order18_final_stage3/probe.py` **33/33**（不设 `JZO_PLUGINS_DIR`，两区各用自己的 `plugins/`；
+> 真人路径：控制台【手动安装】页签选 zip 装到 A 区 → 新建并切到 B 区 → B 区卡片列表只剩「尚未安装任何插件」、
+> `GET /api/plugins` 不含它、`/plugin-assets/…` 回 404、左栏无页签 → B 区装同 id 不同内容的包，两份代码互不覆盖、
+> 清单签名不同 → 切回 A 区取到的仍是 A 的代码 → A 区【立即备份】+ 真人恢复（5 组默认全选）后本区代码回原样、
+> **邻区整目录 5 个文件逐字节未变且没有 `.pre-restore.bak`** → A 区点【卸载】只删本区目录、
+> 切到 B 区那张卡片还在、资产仍是 B 的代码、左栏页签回来；pageerror 0，截图 `01-restored-in-A.png`/
+> `02-plugin-back-in-B.png`）；`.system_generated/order18_final_stage3/probe_restart.py` **23/23**
+> （**全程无桩的真重启**，补阶段一那块欠账：不设 `JZO_RESTART_DISABLED`——A 区录题插件可用、真人敲的题干落进
+> `jzo.draft.default.*`；新建并切到 B 后旧进程 `poll()` 确认退出、同端口由**另一个 PID** 应答、
+> `boot_id` 换新、页面 `window.__probeMarker` 随真导航消失；B 区插件目录为空、清单看不到 A 区 7 个插件、
+> 资产 404、左栏 `li[data-key^="plugin:"]` 归零、A 区草稿没被搬进 B 箱；切回 A 时红字弹窗逐字为
+> 「未保存的草稿会留在原工作区、切回时自动恢复」，**第二次** `boot_id` 换新后录题页自动接上原题干、
+> A 区插件清单与资产齐复；pageerror 0，截图 `01-B-after-real-restart.png`/`02-draft-after-restart.png`）。
+> 阶段三不改生产代码，因此测试数仍 **994**（逐模块日志 `.system_generated/order18_final_stage2/logs/`，
+> 阶段三汇总副本 `order18_final_stage3/regression_stage3.txt`）；新增/更新的文档口径见 **ADR-012**
+> 与 `PLUGIN_SPEC.md` §3.2 第 1 条（红字逐字）、§3.3（插件与备份按区隔离的四条判据）。
+> **未验证/边界**：阶段二探针只覆盖「恢复后提示重启」的 UI 口径，**插件代码覆盖后不重启底座的实际加载效果**
+> 仍未取证（恢复与重启两条链路各自为政，本轮不动它）；彻底卸载 provider 插件（core-bank）会连带销毁老师
+> 在该区的真题库，是否加门禁待主公裁决。工作树里 `bank-browser`/`classic-card`/`exam-paper`/`lecture`
 > 四目录的删除是主公人工操作，不恢复、不纳入提交。
-> **下一步**：阶段三全量回归与真机取证——A 区装插件 B 区看不见、A 区卸载 B 区原样保留、A 区备份恢复不影响 B 区、
-> 切库真重启 + 草稿警告弹窗 + 重启后插件隔离，并新增 ADR-012、同步 `PLUGIN_SPEC.md`。
+> **下一步**：阶段四 core-bank 查重引擎底层 API（只读扫描 → SHA-256 指纹重复组 → 合并执行接口 →
+> 收敛合并事务 + 单测）。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
@@ -774,6 +794,68 @@ CSS 层沉浸（左栏摘走、右栏与底栏保留）在真人浏览器里走�
 混进包同理（包里有、清单里没有，复核必判废）。**代价如实说**：修复前产出的旧包里，
 default 区那份若清单上仍写着 `current_workspace`，新底座会在预览后的校验环节直接拒收并说明原因，
 **不会静默绕过**；非 default 区的旧包不受影响，多余边车则改为跳过、不再连坐整包。⑤ 本轮不发 `dist` 包，版本号先升到 0.10.0。
+
+### ADR-012：工作区是物理隔离的容器——插件、状态、草稿、备份一律按区分箱，切库走真重启（主公 2026-10-24 军令 #18 与 #18-终 定调）
+
+**决策**：一个工作区不再只是「换一个库文件」，而是**一整套互不共用的运行时容器**。
+凡是启动期一次性求值的东西（插件装配、Provider 挂载、状态文件、凭据、令牌），
+一律按区落地、按区装载，切区必须让进程重来一次；共用的只有代码本身（仓库/发行包的 `app/`、`static/`）。
+
+1. **路径按区求值，不许有导入期死值**：`config.plugins_dir()`/`env_file_path()` 每次调用重新解析
+   `data/workspaces/<当前区>/`；指针 `data/current_workspace` 坏了或缺失一律回落 `default`，
+   底座不能被一个坏指针关在门外。`JZO_PLUGINS_DIR`/`JZO_ENV_FILE` 是测试与便携部署的显式覆盖口子，
+   **设了它两区就共用同一份代码目录，隔离判据当场失效**——阶段三的两支探针因此刻意不设。
+2. **容器里装什么**：`plugins/`（本区插件代码）、`plugin_state.json`（启停/昵称/左栏树）、
+   `startup.json`、`bank_provider.json`、`update_state.json`、`.env`。
+   `default` 区的**业务数据**（`jiuzhang.db`、`uploads/`、`config.json`）仍住根 `data/`（历史布局，
+   军令 #18 不搬库——贸然搬动老师的真题不可逆）；非 default 区业务数据住各自目录。
+3. **全局快捷键仲裁层整层拆除**（#18 第二步）：宿主不再维护跨区按键表，也不再有「注册即全局生效」的通道；
+   按键只在插件自己的沙箱里起作用，由 `tests/test_shortcut_removal_contract.py` 钉住不许回流。
+4. **切库 = 真重启**（#18 第四步）：不用 `os.execv`——Windows 没有真 exec，旧进程仍占监听端口，
+   新进程必 `WinError 10048`。改一次性 `.bat`：`for /f` 读 `tasklist` 的 CSV 等旧 PID 真退出 →
+   原目录用同一解释器拉起 uvicorn → `del "%~f0"` 自删；睡眠用 `ping`（DETACHED_PROCESS 无控制台，
+   `timeout` 不可靠），脚本 stdout/stderr 必须接日志文件（`echo` 写控制台失败会让整篇批处理当场终止）。
+   `/healthz` 回 `boot_id`（每进程一次），前端**只认身份证换新**，旧进程临死前的 200 不作数；
+   两分钟等不到就如实报超时并交出【手动刷新】——严禁用定时器演一场恢复。
+   测试/受控环境用 `JZO_RESTART_DISABLED=1` 关重启调度（`prepare_restart` 返回 `None`、回包 `restarting=false`）。
+5. **草稿按「工作区 + 插件」两级分箱**（#18-终 阶段一）：槽位 `jzo.draft.<区>.<插件>.<键>`，
+   开机把老命名空间逐字搬进当前区；宿主问不到区 id 时宁可拒绝存取也不把草稿挂到别区；
+   每箱 60 槽、两周未取随写清理。切换红字因此从「将丢弃未保存的草稿」改口为
+   「留在原工作区、切回时自动恢复」——**承诺必须与实现同轨**（`PLUGIN_SPEC` §3.2 第 1 条已同步）。
+6. **卸载与删除只碰当前区**（#18 第四步 + 阶段一）：`keep_data=False` 只删本区属于该插件的物理库
+   （含边车），邻区同名库、同区其他插件的库（尤其活跃 provider 的真题库）不得连坐；
+   `uploads/` 无归属标记，卸载一律不删。
+7. **备份覆盖层按区收**（#18-终 阶段二）：manifest 除题库/图片外收录本区配置与 `plugins/` 代码清单
+   （带目录摘要哈希），覆盖层统一挂 `ws/` 前缀、恢复只落回 `data/workspaces/<id>/`；
+   凭据与宿主账本（`HOST_ONLY_FILES`）打包侧跳过、校验侧见即拒收，两条共用同一张表。
+8. **隔离必须真机取证，不许只靠单测**（#18-终 阶段三）：四场景（A 装 B 看不见 / A 卸载 B 原样保留 /
+   A 备份恢复不碰 B / 切库真重启 + 草稿警告弹窗 + 重启后插件隔离）在真浏览器里走真人路径，
+   真重启那支一个桩都不打。
+
+**为什么**：#18 之前插件与宿主状态是**全局共用一份**的——切到 B 区仍跑着 A 区装的插件、
+A 区的昵称与左栏树，草稿还可能被写进别区的箱子；这在老师手里就是「换个教材版本，
+题库和界面互相污染」的事故源。物理隔离的代价是切换必须重启进程，
+但**装配的一致性**（插件、Provider、令牌、状态）只有重来一次才保证得了，
+所以宁可慢这几秒，也不做热切换。
+
+**协议落点**：`app/core/workspace_paths.py`（路径与指针唯一出处）、`app/core/config.py`（按区求值）、
+`app/core/workspace_bootstrap.py`（布局与旧数据迁移，`_isolated_run()` 保证探针不搬真实主机数据）、
+`app/core/host_restart.py`（`boot_id`/一次性脚本）、`app/api/workspaces.py`（切换/新建/删除端点）、
+`app/core/plugin_state.py` + `app/core/plugins.py`（本区状态与发现）、
+`app/core/backup.py` + `app/core/restore.py`（覆盖层与门禁）、
+`static/js/stage.js`（草稿分箱槽位）、`static/js/settings.js` + `static/settings.html`（切换弹窗与重启遮罩）；
+测试 `tests/test_workspace_isolation.py` / `test_workspace_restart.py` / `test_workspace_delete.py` /
+`test_workspace_textbook_scope.py` / `test_shortcut_removal_contract.py` / `test_backup_snapshot.py` /
+`test_backup_package.py` / `test_restore.py`；真机探针
+`.system_generated/order18_final_stage3/probe.py`（**33/33**，隔离四场景的前三场）与
+`probe_restart.py`（**23/23**，全程无桩的真重启：旧 PID 真退出、新 PID 应答、两次 boot_id 换新、
+B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
+
+**已知边界**：① 隔离靠**目录**而非沙箱强制：插件代码一旦越界读别的区的路径，靠的是 Host API 边界与
+文件权限，不是 OS 级隔离；② `default` 区业务数据仍在根 `data/`，历史布局未搬，
+备份覆盖层因此分「根」与「`ws/`」两段求值；③ 真重启有秒级窗口（等旧 PID 退出 + 拉起新进程），
+期间前端只能等，不做假恢复；④ **彻底卸载 provider 插件（core-bank）会连带销毁老师在该区的真题库文件**，
+现状如此，是否加门禁待主公裁决；⑤ uploads 的孤儿清理明确不做（无引用计数，判不出归属）。
 
 ## 四、强制待办清单
 
