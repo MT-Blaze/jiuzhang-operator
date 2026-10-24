@@ -234,7 +234,7 @@ class WorkspaceBootWiringTest(unittest.TestCase):
     def test_01_boot_reads_startup_config(self) -> None:
         self.assertIn('fetch("/api/startup"', WORKSPACE_JS)
         self.assertIn("applyStartupBehavior", WORKSPACE_JS)
-        boot = WORKSPACE_JS.split("// 种子题库插件在场时才提示示例题", 1)[1]
+        boot = WORKSPACE_JS.split("// ============ 初始化 ============", 1)[1]
         self.assertIn("applyStartupBehavior(plugins)", boot, "启动链必须真的调用它")
 
     def test_02_fallback_reason_is_reported_not_swallowed(self) -> None:

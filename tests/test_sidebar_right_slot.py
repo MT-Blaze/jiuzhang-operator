@@ -1,8 +1,9 @@
-"""右栏辅助面板（sidebar.right）契约：军令 #13 任务 3。
+"""右栏辅助面板（sidebar.right）契约：军令 #13 任务 3 + 军令 #15 任务 4。
 
 三件事必须同时成立，右栏才算「插件化」而不是换个地方写死：
 1. 清单侧：``slots`` 接受 ``sidebar.right``，未知插槽照旧拒装；
-2. 宿主侧：右栏是一块动态插槽，有插件认领就挂沙箱 iframe，没插件就回退原生 AI 副驾；
+2. 宿主侧：右栏默认由助手插件（org.jiuzhang.chat）入住；当前画布页签的插件自己声明
+   ``sidebar.right`` 时暂时接管，切走或关掉就归还助手——底座不再自带副驾对话；
 3. 数据侧：面板 iframe 与画布页签共用同一套 Host API 转发（写令牌不落插件手里）。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_sidebar_right_slot``
@@ -94,11 +95,16 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn('id="wsContextSlotBody"', HTML)
         self.assertIn('id="wsContextSlotTitle"', HTML)
 
-    def test_02_slot_and_copilot_are_mutually_exclusive_by_default(self) -> None:
-        """插槽与 AI 副驾同一时刻只露一个：没有插件时插槽必须 hidden。"""
+    def test_02_right_slot_is_visible_by_default_and_host_copilot_is_gone(self) -> None:
+        """军令 #15 任务 4：右栏默认不折叠、默认住助手插件。
+
+        底座自带的 AI 副驾（wsCopilot）必须一起删掉——右栏再留一份宿主私有对话，
+        等于给 AI 开一条不经 Host API 的后门（任务 1）。
+        """
         slot = re.search(r'<section[^>]*id="wsContextSlot"[^>]*>', HTML).group(0)
-        self.assertIn("hidden", slot, "插槽默认必须隐藏，否则右栏开场就是一块空白")
-        self.assertIn('id="wsCopilot"', HTML)
+        self.assertNotIn("hidden", slot, "右栏默认必须展开，否则开场就是折叠态")
+        self.assertNotIn('id="wsCopilot"', HTML, "宿主私有副驾已随对话一起插件化")
+        self.assertIn('id="wsContextSlotBadge"', HTML, "主权归属要在标题上看得见")
 
     def test_03_panel_script_is_loaded_after_stage(self) -> None:
         stage_at = HTML.index("/static/js/stage.js")
@@ -108,7 +114,10 @@ class HostSlotTest(unittest.TestCase):
         self.assertLess(panel_at, workspace_at, "workspace 刷新清单时要叫得动 JzoContextPanel")
 
     def test_04_plugin_list_refresh_reruns_the_slot(self) -> None:
-        self.assertIn("JzoContextPanel.sync(plugins)", WORKSPACE_JS)
+        # 主权交替后 sync 多带一个「当前画布页签」参数，插槽才知道该归谁
+        self.assertIn("JzoContextPanel.sync(installedPlugins, activeCanvasPluginId)", WORKSPACE_JS)
+        self.assertIn("stage.tab.activated", WORKSPACE_JS, "页签换主人必须驱动右栏对账")
+        self.assertIn("stage.tab.closed", WORKSPACE_JS, "关掉页签后主权要归还助手")
 
     def test_05_panel_frame_is_sandboxed(self) -> None:
         sandbox = re.search(r'var SANDBOX = "([^"]+)"', PANEL_JS).group(1)
@@ -126,8 +135,10 @@ class HostSlotTest(unittest.TestCase):
         self.assertRegex(PANEL_JS, r"unmount\(\);\s*\n\s*showFallback\(\);")
 
     def test_08_only_one_panel_at_a_time(self) -> None:
-        self.assertIn("return list[0] || null", PANEL_JS)
+        self.assertIn("return usable(plugin) ? plugin : null", PANEL_JS)
         self.assertIn("enabled !== false", PANEL_JS, "停用的插件不许继续占右栏")
+        # 换主人前先 unmount：插槽里同一时刻只能有一个 iframe
+        self.assertRegex(PANEL_JS, r"unmount\(\);\s*\n\s*if \(!window\.JzoStage")
 
     def test_09_stage_forwards_host_api_for_panels(self) -> None:
         self.assertIn("function attachPanel(frame, plugin)", STAGE_JS)
@@ -144,6 +155,25 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn("`sidebar.right`", SPEC)
         self.assertIn("### 2.9 右栏辅助面板", SPEC)
         self.assertIn("`region.right`", SPEC)
+
+    def test_12_sovereignty_follows_only_the_active_canvas_tab(self) -> None:
+        """接管者只认「当前画布页签」那一个插件，不是所有声明了槽的插件。"""
+        self.assertIn("function claimant(plugins, activePluginId)", PANEL_JS)
+        self.assertIn(
+            "if (!activePluginId || activePluginId === ASSISTANT_PLUGIN_ID) return null",
+            PANEL_JS,
+        )
+
+    def test_13_assistant_is_the_default_resident(self) -> None:
+        """军令 #15 任务 4：右栏默认住户是助手插件，切走业务页签就归还它。"""
+        self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', PANEL_JS)
+        self.assertIn("assistant.chat", PANEL_JS)
+        self.assertIn("function reclaim()", PANEL_JS)
+
+    def test_14_no_claimant_gives_a_readable_note_not_a_blank(self) -> None:
+        self.assertIn('className = "ws-context-slot-note"', PANEL_JS)
+        self.assertIn("slotEl.hidden = false", PANEL_JS)
+        self.assertNotIn("copilotEl", PANEL_JS, "兜底不许再回到宿主私有副驾那条捷径")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,546 @@
+/*
+ * AI 助手插件样式（右栏 sidebar.right）。
+ *
+ * 沙箱 iframe 与宿主不同源，CSS 变量不会继承下来，所以自带一套与底座同口径的
+ * 「纸墨」色板 + 暗色回落；字体只用系统字体，不加载任何远端资源。
+ */
+:root {
+  --paper: #f6f2e9;
+  --paper-deep: #efe8da;
+  --ink: #1f1c18;
+  --muted: #6f675c;
+  --faint: #9a9184;
+  --line: rgba(31, 28, 24, 0.14);
+  --line-strong: rgba(31, 28, 24, 0.24);
+  --accent: #a63b2b;
+  --accent-soft: rgba(166, 59, 43, 0.1);
+  --ok: #2f7d5b;
+  --ok-soft: rgba(47, 125, 91, 0.12);
+  --warn: #b46b1f;
+  --bubble-bot: #ffffff;
+  --bubble-user: rgba(166, 59, 43, 0.08);
+  --sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", Georgia, serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171512;
+    --paper-deep: #1e1b17;
+    --ink: #f1ebe0;
+    --muted: #b0a697;
+    --faint: #776f63;
+    --line: rgba(241, 235, 224, 0.13);
+    --line-strong: rgba(241, 235, 224, 0.24);
+    --accent: #de6a51;
+    --accent-soft: rgba(222, 106, 81, 0.13);
+    --ok: #6fbd94;
+    --ok-soft: rgba(111, 189, 148, 0.14);
+    --warn: #d79a52;
+    --bubble-bot: #232019;
+    --bubble-user: rgba(222, 106, 81, 0.12);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.jzochat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 10px 8px;
+  gap: 8px;
+}
+
+.jzochat[hidden] {
+  display: none;
+}
+
+/* ---------- 顶部：身份与模型状态 ---------- */
+.jzochat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
+}
+
+.jzochat-ident {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.jzochat-kicker {
+  font-family: var(--serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.jzochat-chip {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.jzochat-model {
+  margin: 0;
+  font-size: 11px;
+  color: var(--faint);
+  text-align: right;
+}
+
+/* ---------- 对话流 ---------- */
+.jzochat-thread {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.jzochat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jzochat-msg-user {
+  align-items: flex-end;
+}
+
+.jzochat-msg-bot,
+.jzochat-msg-sys {
+  align-items: flex-start;
+}
+
+.jzochat-bubble {
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bubble-bot);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jzochat-msg-user .jzochat-bubble {
+  background: var(--bubble-user);
+  border-color: rgba(166, 59, 43, 0.2);
+}
+
+.jzochat-msg-sys .jzochat-bubble {
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--paper-deep);
+  border-style: dashed;
+}
+
+.jzochat-bubble[data-tone="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.jzochat-bubble[data-tone="error"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.jzochat-badge {
+  display: block;
+  font-size: 11px;
+  color: var(--ok);
+  margin-bottom: 4px;
+}
+
+.jzochat-source {
+  display: block;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.jzochat-typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.jzochat-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+  animation: jzochat-blink 1.05s infinite ease-in-out;
+}
+
+.jzochat-typing i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.jzochat-typing i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes jzochat-blink {
+  0%, 70%, 100% { opacity: 0.25; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* 公式：KaTeX 自带样式，这里只管溢出 */
+.jzochat-math {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.jzochat-math-block {
+  display: block;
+  margin: 6px 0;
+  overflow-x: auto;
+}
+
+/* ---------- 动作按钮（智能跳转） ---------- */
+.jzochat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 「前往题库并搜索」这类跳转动作是本轮回复的唯一出口，
+   命中标题按底座铁律不小于 44px，宁可占两行也不许缩成胶囊。 */
+.jzochat-action {
+  flex: 1 1 44%;
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 10px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.jzochat-action:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.jzochat-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* ---------- 卡片 ---------- */
+.jzochat-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bubble-bot);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jzochat-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.jzochat-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+}
+
+.jzochat-tag-type {
+  color: var(--accent);
+  border-color: rgba(166, 59, 43, 0.28);
+}
+
+.jzochat-tag-diff {
+  color: var(--ok);
+  border-color: rgba(47, 125, 91, 0.3);
+}
+
+.jzochat-card-stem {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--serif);
+}
+
+.jzochat-card-options {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.jzochat-card-option {
+  display: flex;
+  gap: 6px;
+}
+
+.jzochat-option-key {
+  flex: none;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.jzochat-card-detail {
+  border-top: 1px dashed var(--line);
+  padding-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.jzochat-card-detail p {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jzochat-card-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.jzochat-card-desc,
+.jzochat-card-reason,
+.jzochat-card-note,
+.jzochat-card-status {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.jzochat-card-status {
+  color: var(--ok);
+}
+
+.jzochat-card[data-state="failed"] .jzochat-card-status {
+  color: var(--accent);
+}
+
+.jzochat-card-foot {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ---------- 按钮与输入 ---------- */
+.jzochat-btn {
+  font: inherit;
+  font-size: 12px;
+  min-height: 44px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper-deep);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.jzochat-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.jzochat-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.jzochat-btn-primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.06);
+}
+
+.jzochat-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.jzochat-btn:focus-visible,
+.jzochat-action:focus-visible,
+.jzochat textarea:focus-visible,
+.jzochat select:focus-visible,
+.jzochat-thread:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.jzochat-composer {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  flex: none;
+}
+
+.jzochat-composer textarea {
+  flex: 1 1 auto;
+  min-height: 44px;
+  max-height: 120px;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bubble-bot);
+  color: var(--ink);
+  font: inherit;
+}
+
+.jzochat-hint {
+  margin: 0;
+  flex: none;
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.45;
+}
+
+/* ---------- AI 副驾（改写当前题并回填） ---------- */
+.jzochat-copilot {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-deep);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jzochat-copilot[hidden] {
+  display: none;
+}
+
+.jzochat-copilot-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.jzochat-copilot-head h3 {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--serif);
+}
+
+.jzochat-copilot-ctx {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.jzochat-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.jzochat-field select,
+.jzochat-copilot textarea {
+  font: inherit;
+  font-size: 12px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bubble-bot);
+  color: var(--ink);
+  padding: 4px 6px;
+}
+
+.jzochat-copilot textarea {
+  resize: vertical;
+}
+
+.jzochat-copilot-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.jzochat-copilot-tools .jzochat-btn {
+  flex: 1 1 0;
+}
+
+.jzochat-copilot-out {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--serif);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.jzochat-copilot-out:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jzochat-typing i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+@media (max-width: 360px) {
+  .jzochat {
+    padding: 8px 6px 6px;
+  }
+
+  .jzochat-model {
+    display: none;
+  }
+}

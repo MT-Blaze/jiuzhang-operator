@@ -44,6 +44,8 @@ _CAPABILITIES = {
     "handout.render",
     # v0.8.2：声明自己可当作「活跃题库」的插件（默认仍是官方 core-bank）
     "bank.provider",
+    # 军令 #15：AI 助手不再是底座特权模块，而是一个走 Host API 的普通插件
+    "assistant.chat",
 }
 _PERMISSIONS = {
     "questions:read",
@@ -72,6 +74,10 @@ _BUS_SUBSCRIBE = {
     "theme.changed",
     "question.updated",
     "basket.changed",
+    # 军令 #15：人点面板按钮 → 底座把展开后的指令交给右栏助手插件代发
+    "panel.button.click",
+    # 录题插件的当前题：随对话一起搬进右栏的助手插件要能感知选区（AI 副驾）
+    "stage.selection",
 }
 _BUS_MAX_TOPICS = 8
 

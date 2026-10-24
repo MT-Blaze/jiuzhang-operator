@@ -54,8 +54,9 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 插件优先（最高优先级）：
 1. 当用户的意图匹配「已安装插件工具」时，必须直接发起 tool_calls 调用该工具，不要反问、不要只复述计划、也不要声称「即将执行」。
 2. 用户说「拆分第 X 题」「看看第 X 题」「导入题目」「题库里有什么」时，优先调用带 import_questions 动作的插件工具。
-3. 工具执行结果由底座交给用户，你不得编造工具没有返回的题目、答案或解析。
-4. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
+3. 用户问「题库里有多少道 X 题」「查一下含某关键词的题目」「题库一共多少题」时，调用 search_question_bank；数量与示例题只能照底座返回的结果说，不得自己估。
+4. 工具执行结果由底座交给用户，你不得编造工具没有返回的题目、答案或解析。
+5. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
 
 通用约束：
 1. 未调用工具且不需要展示卡片时，输出必须是 JSON 对象，包含 action 字段。
@@ -64,7 +65,7 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 4. 输出必须是「裸 JSON」：禁止 markdown 代码围栏包裹 action JSON、禁止 JSON 之外的额外解释（ui_json 卡片块除外）。
 5. 必须结合「当前工作台上下文」与「此前对话记录」理解本轮指令：上下文里已给出的信息（如当前任务舞台）不得再反问；本轮指令若是延续前文（如「改成第 3-4 页」「再来一次」），必须结合历史推断完整意图，而不是孤立理解。
 6. 只有当结合上下文与历史后仍无法确定意图时，才返回 clarify，且 clarify 的 question 必须是一句面向教师的自然语言问句，不得包含 JSON 或代码围栏。
-7. 右侧面板可代人操作：用户要求调整年级/难度等参数时，返回 update_params；用户要求执行面板按钮时，返回 trigger_button。只能使用「右侧插件面板」小节里列出的 key 与 button id，不得编造。人类手动改动过的参数优先，不要覆盖。
+7. 权限边界（军令 #15）：AI 不是操作员——不得接管鼠标键盘、不得模拟点击、不得声称自己按下了任何按钮。用户要求调整年级/难度等参数时只能返回 update_params，由底座代为设置。只能使用「右侧插件面板」小节里列出的参数 key，不得编造。人类手动改动过的参数优先，不要覆盖。
 
 可用 action：
 - "split_paper": { page_range: [3, 5] }
@@ -72,7 +73,6 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 - "export_paper": { format: "pdf" | "tex" | "docx" }
 - "clarify": { question: "<澄清问题>" }
 - "update_params": { params: { "grade": "高一", "difficulty": "基础" }, message: "<给用户的一句话>" }
-- "trigger_button": { button: "<面板按钮 id>", message: "<给用户的一句话>" }
 
 富卡片（ui_json）：
 - 需要向教师展示一道具体题目时，可在回复末尾追加**恰好一个** ```ui_json 围栏，内容为：
@@ -148,7 +148,7 @@ def _ui_panel_prompt(context: dict[str, Any]) -> str:
     if not isinstance(controls, list) or not controls:
         return ""
     values = ui.get("values") if isinstance(ui.get("values"), dict) else {}
-    lines = ["\n\n## 右侧插件面板（可由 update_params / trigger_button 操控）"]
+    lines = ["\n\n## 右侧插件面板（可由 update_params 设置）"]
     plugin_id = ui.get("plugin_id")
     if isinstance(plugin_id, str) and plugin_id.strip():
         lines.append("插件：" + plugin_id.strip()[:80])
@@ -178,21 +178,9 @@ def _ui_panel_prompt(context: dict[str, Any]) -> str:
         has_select = True
     if not has_select:
         lines.append("- 无")
-    lines.append("可触发按钮：")
-    has_button = False
-    for control in controls[:8]:
-        if not isinstance(control, dict) or control.get("type") != "button":
-            continue
-        lines.append(
-            "- %s（%s）"
-            % (str(control.get("id") or "")[:32], str(control.get("label") or "")[:24])
-        )
-        has_button = True
-    if not has_button:
-        lines.append("- 无")
     lines.append(
         "规则：update_params 的 params 只能使用上面列出的参数 key，值必须是列出的选项；"
-        "trigger_button 的 button 只能使用上面列出的按钮 id。不得虚构控件。"
+        "不得虚构控件，也不得要求底座替你点击面板按钮——AI 没有点击能力。"
     )
     return "\n".join(lines)
 
@@ -270,6 +258,8 @@ def _make_host_call(intent: dict[str, Any]) -> dict[str, Any]:
 def _run_tool(name: str, arguments: Any) -> dict[str, Any]:
     if name in plugin_search.TOOL_NAMES:
         return plugin_search.execute_tool(name, arguments)
+    if name == plugin_tools.HOST_BANK_TOOL:
+        return plugin_tools.execute_bank_tool(arguments)
     return plugin_tools.execute_tool(name, arguments)
 
 
@@ -299,10 +289,37 @@ def _execute_calls(
                 "summary": outcome.get("summary") or "插件没有返回结果。",
                 "routed_by": routed_by,
                 "host_tool": bool(outcome.get("host_tool")),
+                "jump": outcome.get("jump") if isinstance(outcome.get("jump"), dict) else None,
                 "cards": cards,
             }
         )
     return public_calls
+
+
+def _jump_actions(plugin_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把工具结果里的跳转意图收成气泡下方的动作按钮（军令 #15 任务 3）。
+
+    底座只下发白名单类型；按钮点下去后由前端交回 Host API 执行，AI 不经手跳转。
+    """
+    allowed = {"open_bank", "open_editor"}
+    actions: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for call in plugin_calls:
+        jump = call.get("jump")
+        if not isinstance(jump, dict) or jump.get("type") not in allowed:
+            continue
+        item = {
+            "type": str(jump["type"]),
+            "label": str(jump.get("label") or "")[:24] or "前往",
+            "query": str(jump.get("query") or "")[:100],
+            "plugin_id": str(jump.get("plugin_id") or "")[:100],
+        }
+        marker = (item["type"], item["query"], item["plugin_id"])
+        if marker in seen:
+            continue
+        seen.add(marker)
+        actions.append(item)
+    return actions[:3]
 
 
 def _plugin_bubble(plugin_calls: list[dict[str, Any]]) -> str:
@@ -418,9 +435,20 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
     user_input = body.user_input
     task_id = body.task_id
     installed_tools = plugin_tools.build_tools()
-    tools = installed_tools + plugin_search.build_tools()
+    bank_tool = plugin_tools.build_bank_tool()
+    tools = installed_tools + [bank_tool] + plugin_search.build_tools()
     system_prompt = build_chat_system_prompt(body.context, tools)
     user_message = build_user_message_with_history(body.history, user_input)
+
+    def host_intent() -> dict[str, Any] | None:
+        # 宿主兜底只在模型没发 tool_calls（或模型不可用）时生效：先认「题库里有多少道 X 题」，
+        # 再认插件工具的「拆分第 X 题」句式，最后才是插件搜索。
+        return (
+            plugin_tools.match_bank_intent(user_input)
+            or plugin_tools.match_intent(user_input, installed_tools)
+            or plugin_search.match_intent(user_input)
+        )
+
     try:
         result = await ai_client.chat_completion(
             system_prompt=system_prompt,
@@ -436,9 +464,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
         if not tool_calls:
             # 模型没发 tool_calls（漏判 / Provider 不支持）时，按高置信句式兜底，
             # 保证「拆分第一题」这类明确指令不会退化成一句反问。
-            intent = plugin_tools.match_intent(user_input, installed_tools)
-            if not intent:
-                intent = plugin_search.match_intent(user_input)
+            intent = host_intent()
             if intent:
                 tool_calls = [_make_host_call(intent)]
                 routed_by = "host"
@@ -451,6 +477,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
                     "data": {
                         "content": _plugin_bubble(plugin_calls),
                         "plugin_calls": plugin_calls,
+                        "actions": _jump_actions(plugin_calls),
                         "usage": result["usage"],
                         "model": result["model"],
                     },
@@ -464,6 +491,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
             "data": {
                 "content": strip_code_fences(result["content"]),
                 "plugin_calls": [],
+                "actions": [],
                 "usage": result["usage"],
                 "model": result["model"],
             },
@@ -472,7 +500,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
             "route": "model",
         }
     except Exception as exc:
-        intent = plugin_tools.match_intent(user_input, installed_tools) or plugin_search.match_intent(user_input)
+        intent = host_intent()
         if intent:
             plugin_calls = _execute_calls([_make_host_call(intent)], "host")
             if plugin_calls:
@@ -481,6 +509,7 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
                     "data": {
                         "content": _plugin_bubble(plugin_calls),
                         "plugin_calls": plugin_calls,
+                        "actions": _jump_actions(plugin_calls),
                         "usage": {"prompt_tokens": 0, "completion_tokens": 0},
                         "model": "host-router",
                     },

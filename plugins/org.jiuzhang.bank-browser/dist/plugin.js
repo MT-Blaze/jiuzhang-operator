@@ -517,6 +517,22 @@
     loadPage();
   }
 
+  /**
+   * 军令 #15 任务 3 的落点：AI 说「去哪、带什么词」，底座把检索词送到这里。
+   * 不另造一条内部通道——写进自己的搜索框后走老师同款路径，翻页/清目录一并归位。
+   */
+  function applyBankQuery(payload) {
+    var raw = payload && typeof payload.query === "string" ? payload.query : "";
+    var keyword = raw.trim().slice(0, SEARCH_MAX);
+    if (!keyword) {
+      setStatus("宿主送来的检索是空的", true);
+      return;
+    }
+    searchInput.value = keyword;
+    submitSearch();
+    setStatus("AI 带来的关键词「" + keyword + "」已填入搜索框");
+  }
+
   searchBtn.addEventListener("click", submitSearch);
   searchInput.addEventListener("keydown", function (event) {
     if (event.key === "Enter") {
@@ -576,6 +592,8 @@
       if (message.event === "basket.changed") refreshBasket();
       else if (message.event === "system.question_updated" || message.event === "question.updated") {
         scheduleReload();
+      } else if (message.event === "system.bank_query") {
+        applyBankQuery(message.payload || {});
       }
       return;
     }

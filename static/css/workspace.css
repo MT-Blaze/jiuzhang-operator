@@ -243,156 +243,42 @@
   align-items: center;
 }
 
-/* 对话流 */
-.ws-thread {
-  flex: 1;
-  min-height: 0;
+/* ============ 中栏：原生引导页 ============ */
+/* 对话流搬去右栏助手插件后，中栏的兜底页签是底座自己的落脚点：
+   插件全崩、一个都没装时，老师进来仍能看到「去哪儿、怎么开口」。 */
+.ws-home {
+  height: 100%;
   overflow-y: auto;
-  padding: 20px;
+  padding: 30px 34px 42px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  scroll-behavior: smooth;
 }
 
-.ws-thread:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+.ws-home-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
-.ws-msg {
-  display: flex;
-  max-width: 100%;
-}
-
-.ws-msg-user {
-  justify-content: flex-end;
-}
-
-.ws-msg-bot {
-  justify-content: flex-start;
-}
-
-.ws-msg-sys {
-  justify-content: center;
-}
-
-.ws-bubble {
-  max-width: min(76ch, 82%);
-  padding: 11px 15px;
-  border-radius: 14px;
+.ws-home-lede {
+  margin: 0;
+  max-width: 62ch;
   font-size: 0.92rem;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
-  border: 1px solid var(--line);
+  line-height: 1.75;
+  color: var(--muted);
 }
 
-.ws-msg-user .ws-bubble {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-.ws-msg-bot .ws-bubble {
-  background: var(--card);
-  border-color: var(--line-strong);
-  color: var(--ink);
-  border-bottom-left-radius: 4px;
-}
-
-.ws-msg-sys .ws-bubble {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--faint);
-  font-size: 0.8rem;
-  text-align: center;
-}
-
-.ws-msg-bot .ws-bubble[data-tone="warn"] {
-  border-color: color-mix(in srgb, var(--down) 45%, transparent);
-}
-
-.ws-bubble-source {
-  display: block;
-  margin-top: 6px;
-  font-size: 0.7rem;
-  color: var(--faint);
-}
-
-/* 插件调用标识：「已调用插件」必须显性可见，不能只靠颜色传达 */
-.ws-bubble-plugin {
-  display: block;
-  width: fit-content;
-  margin: 0 0 8px;
-  padding: 2px 9px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: normal;
-}
-
-/* 打字指示 */
-.ws-typing {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.ws-typing span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--faint);
-  animation: ws-blink 1.2s ease-in-out infinite;
-}
-
-.ws-typing span:nth-child(2) { animation-delay: 0.15s; }
-.ws-typing span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes ws-blink {
-  0%, 100% { opacity: 0.25; transform: translateY(0); }
-  50% { opacity: 1; transform: translateY(-2px); }
-}
-
-/* 输入器 */
-.ws-composer {
+.ws-home-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  max-width: 66ch;
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--line);
-  flex: none;
-}
-
-.ws-composer textarea {
-  flex: 1;
-  min-height: 44px;
-  max-height: 180px;
-  padding: 11px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--paper-deep);
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 0.92rem;
-  line-height: 1.5;
-  resize: none;
-}
-
-.ws-composer textarea:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.ws-send-btn {
-  min-height: 44px;
-  flex: none;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 0.88rem;
+  line-height: 1.7;
 }
 
 /* ============ 右栏：上下文面板 ============ */
@@ -467,6 +353,17 @@
   height: 100%;
   border: 0;
   background: #fff;
+}
+
+/* 右栏暂时没主人（助手插件被删/被停用）时的可读兜底：不许是一块空白 */
+.ws-context-slot-note {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  color: var(--muted);
 }
 
 .ws-section {
@@ -782,213 +679,6 @@
   font-size: 0.7rem;
   line-height: 1.5;
   color: var(--faint);
-}
-
-/* ============ 富卡片（题目 / 安装建议 / 操作确认） ============ */
-.ws-card {
-  width: min(76ch, 88%);
-  margin-top: 8px;
-  padding: 14px 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background: var(--card);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-}
-
-.ws-card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.ws-card-no {
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.ws-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--paper);
-  color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1.5;
-}
-
-.ws-tag-type {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-/* 题卡难度配色按契约 2.0 的 L1–L4；basic/medium/hard/novel 只做历史兜底 */
-.ws-question-card[data-difficulty="L1"],
-.ws-question-card[data-difficulty="basic"] {
-  --ws-diff-color: #2e7d32;
-}
-
-.ws-question-card[data-difficulty="L2"],
-.ws-question-card[data-difficulty="medium"] {
-  --ws-diff-color: #a16207;
-}
-
-.ws-question-card[data-difficulty="L3"],
-.ws-question-card[data-difficulty="hard"] {
-  --ws-diff-color: #b3261e;
-}
-
-.ws-question-card[data-difficulty="L4"],
-.ws-question-card[data-difficulty="novel"] {
-  --ws-diff-color: #6a3bb5;
-}
-
-.ws-question-card[data-difficulty] .ws-tag-diff {
-  border-color: color-mix(in srgb, var(--ws-diff-color) 45%, transparent);
-  background: color-mix(in srgb, var(--ws-diff-color) 10%, transparent);
-  color: var(--ws-diff-color);
-}
-
-.ws-tag-topic {
-  color: var(--muted);
-}
-
-.ws-card-title {
-  margin: 0 0 6px;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.ws-card-stem {
-  font-size: 0.94rem;
-  line-height: 1.8;
-  word-break: break-word;
-}
-
-.ws-card-options {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.ws-card-option {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 0.88rem;
-  line-height: 1.65;
-}
-
-.ws-option-key {
-  flex: none;
-  min-width: 22px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.ws-option-body {
-  min-width: 0;
-  word-break: break-word;
-}
-
-.ws-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.ws-card-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.ws-card-detail {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--line-strong);
-  font-size: 0.88rem;
-  line-height: 1.75;
-  color: var(--muted);
-}
-
-.ws-card-detail p {
-  margin: 0 0 8px;
-}
-
-.ws-card-detail p:last-child {
-  margin-bottom: 0;
-}
-
-.ws-card-desc,
-.ws-card-reason,
-.ws-card-note,
-.ws-card-status {
-  margin: 6px 0 0;
-  font-size: 0.82rem;
-  line-height: 1.6;
-  color: var(--muted);
-}
-
-.ws-card-note {
-  color: var(--faint);
-  font-size: 0.76rem;
-}
-
-.ws-card-status:empty {
-  display: none;
-}
-
-.ws-card-status {
-  color: var(--accent);
-}
-
-.ws-install-kicker,
-.ws-confirm-kicker {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.ws-install-card[data-state="installed"] {
-  border-color: color-mix(in srgb, #2e7d32 40%, var(--line-strong));
-}
-
-.ws-install-card[data-state="failed"] .ws-card-status {
-  color: var(--down);
-}
-
-.ws-install-card[data-state="cancelled"] {
-  opacity: 0.72;
-}
-
-/* 公式块：行内随文，独立公式允许横向滚动，绝不撑破气泡/卡片 */
-.ws-math {
-  display: inline-block;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  vertical-align: middle;
-}
-
-.ws-math-block {
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 2px 0;
-}
-
-.ws-math-block .katex-display {
-  margin: 4px 0;
 }
 
 /* ============ 拖拽手柄：视觉隐形，命中区比 gutter 宽 ============ */
@@ -1460,10 +1150,6 @@ html.ws-dragging * {
     visibility: hidden;
   }
 
-  .ws-thread { padding: 16px 14px; }
-  .ws-composer { padding: 12px 14px; }
-  .ws-bubble { max-width: 88%; }
-  .ws-card { width: 92%; padding: 12px 13px; }
 
   /* STACK §2.2 触控热区不小于 44px */
   .ws-btn,
@@ -1477,79 +1163,12 @@ html.ws-dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-thread { scroll-behavior: auto; }
   .ws-sidebar,
-  .ws-context,
-  .ws-typing span {
+  .ws-context {
     transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
   }
-}
-
-/* ============ 右侧 AI 副驾（v0.7.1） ============ */
-.ws-copilot {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: var(--card);
-}
-.ws-copilot-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ws-copilot-head h3 { margin: 0; font-size: 15px; }
-.ws-copilot-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  white-space: nowrap;
-}
-.ws-copilot-ctx {
-  margin: 8px 0;
-  font-size: 12px;
-  color: var(--muted);
-  font-family: ui-monospace, Consolas, monospace;
-  word-break: break-all;
-}
-.ws-copilot-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
-.ws-copilot-field span { color: var(--muted); }
-.ws-copilot textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-}
-.ws-copilot textarea:focus-visible,
-.ws-copilot select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.ws-copilot-tools { display: flex; gap: 8px; margin-top: 8px; }
-.ws-copilot-tools .ws-btn { flex: 1; }
-.ws-copilot-out {
-  margin-top: 10px;
-  padding: 10px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  min-height: 40px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--ink);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 220px;
-  overflow: auto;
-}
-.ws-copilot-out:empty { display: none; }
-.ws-copilot-hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
-@media (prefers-reduced-motion: reduce) {
-  .ws-copilot-out { transition: none; }
 }
 
 /* 控制台页签：同源 iframe 铺满画布，设置页自己负责内嵌时收起外壳 */

@@ -117,6 +117,26 @@
       (state.search ? " · 关键词「" + state.search + "」" : "");
   }
 
+  /**
+   * 军令 #15 任务 3 的落点：AI 只说「去哪、带什么词」，底座把检索词送到这里，
+   * 插件改自己的筛选态重查一次。工具栏里的搜索框由 renderAll 从 state.search 回填，
+   * 因此这里不伸手碰任何输入框。
+   */
+  function applyBankQuery(payload) {
+    var raw = payload && typeof payload.query === "string" ? payload.query : "";
+    var query = raw.trim().slice(0, 100);
+    if (!query) {
+      dock("宿主送来的题库检索是空的，本视图保持原样。");
+      return;
+    }
+    if (state.view === "review") state.view = "list";
+    state.search = query;
+    state.page = 1;
+    state.showSolution = false;
+    loadQuestions();
+    dock("AI 跳转带来的关键词「" + query + "」已填入搜索框。");
+  }
+
   // ---------- 安全渲染 ----------
   function renderMathToken(text) {
     var span = document.createElement("span");
@@ -908,6 +928,9 @@
       if (message.event === "system.question_updated" || message.event === "question.updated") {
         // 回流刷新：录题端改完题宿主广播一声，这里静默重取，不用老师按 F5
         scheduleRefresh();
+      }
+      if (message.event === "system.bank_query") {
+        applyBankQuery(message.payload || {});
       }
       return;
     }

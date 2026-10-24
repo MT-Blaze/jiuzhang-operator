@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "id": "org.jiuzhang.chat",
+  "name": "AI 助手",
+  "version": "1.0.0",
+  "api_version": "1.0",
+  "kind": "tool",
+  "description": "右栏对话助手：听懂教师的自然语言，经宿主 Host API 代为查题库、拆题、渲染题卡、搜插件与改写题目；回复下方附「前往题库并搜索」等跳转动作，由底座执行跳转。不直连数据库、不碰宿主 DOM、不模拟鼠标键盘点击。",
+  "author": "九章算子",
+  "license": "Apache-2.0",
+  "min_host_version": "0.9.0",
+  "entry": {
+    "frontend": "dist/index.html"
+  },
+  "slots": ["sidebar.right"],
+  "capabilities": ["assistant.chat"],
+  "permissions": ["ai:invoke"],
+  "bus": {
+    "subscribe": [
+      "ui.params.changed",
+      "stage.tab.activated",
+      "stage.tab.closed",
+      "stage.selection",
+      "question.updated",
+      "panel.button.click"
+    ],
+    "publish": ["region.dock"]
+  },
+  "ui": {
+    "title": "AI 助手快捷操作",
+    "hint": "点按钮等于把这句话发给助手；参数下拉仍归各业务插件自己的面板。",
+    "controls": [
+      {
+        "id": "ask_bank_count",
+        "type": "button",
+        "label": "题库点算",
+        "command": "题库里一共有多少道题？"
+      },
+      {
+        "id": "ask_capability",
+        "type": "button",
+        "label": "你会做什么",
+        "command": "你现在能替我做哪些事？用三条说完。"
+      },
+      {
+        "id": "ask_random",
+        "type": "button",
+        "label": "随机一道",
+        "command": "从题库里随机挑一道题给我看"
+      }
+    ]
+  }
+}

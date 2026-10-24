@@ -25,14 +25,10 @@
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
         <section class="ws-plugin-entry" aria-label="入口与插件">
-          <!-- 自由对话不再是独立入口：它作为列表里的普通一项，与插件同权重、可拖拽排序。 -->
+          <!-- 军令 #15：左栏不再有「自由对话」这条底座内置入口。
+               AI 助手是 plugins/org.jiuzhang.chat 装出来的普通插件，和别的插件同权重、
+               同样出现在下面这张动态清单里；找插件、找题目一律对右栏助手说话。 -->
           <ul class="ws-plugin-list" id="wsPluginList" aria-live="polite">
-            <li class="ws-plugin-row" data-key="chat" draggable="true">
-              <button class="ws-plugin-item" id="wsChatEntry" type="button" aria-current="true">
-                <span class="ws-plugin-item-name">自由对话</span>
-                <span class="ws-plugin-item-meta">底座内置 · 直接与 AI 对话</span>
-              </button>
-            </li>
             <li class="ws-plugin-empty">暂无插件</li>
           </ul>
         </section>
@@ -58,10 +54,10 @@
     <div class="ws-resizer ws-resizer-v" id="wsResizerSide" data-resize="side" role="separator"
       aria-orientation="vertical" tabindex="0" aria-label="拖动调整左栏宽度"></div>
 
-    <!-- 中栏：通用画布。Tabs 承载原生对话与 iframe 插件，底座只负责渲染舞台 -->
+    <!-- 中栏：通用画布。Tabs 承载原生引导页与 iframe 插件，底座只负责渲染舞台 -->
     <main class="ws-center" role="main" aria-label="画布与当前任务舞台">
       <!-- 画布不再有独立舞台头：页签栏紧贴顶边，当前任务名只留给读屏（aria-live）。 -->
-      <h1 class="sr-only" id="wsStageTitle" aria-live="polite">新会话</h1>
+      <h1 class="sr-only" id="wsStageTitle" aria-live="polite">工作台</h1>
 
       <div class="ws-canvas" id="wsCanvas">
         <div class="ws-tabs-wrap">
@@ -70,14 +66,19 @@
           <div class="ws-tabs" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
         </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
-          <section class="ws-tab-panel" id="wsPanelChat" role="tabpanel" aria-label="自由对话" data-tab="chat">
-            <div class="ws-thread" id="wsThread" role="log" aria-live="polite" aria-label="对话流" tabindex="0"></div>
-
-            <form class="ws-composer" id="wsChatForm" aria-label="发送指令">
-              <label for="wsPrompt" class="sr-only">指令</label>
-              <textarea id="wsPrompt" rows="1" placeholder="输入指令…（Enter 发送）"></textarea>
-              <button type="submit" class="ws-btn ws-btn-primary ws-send-btn" id="wsSendBtn">发送</button>
-            </form>
+          <!-- 引导页：插件全崩也还有地方落脚的永久兜底页（不可关闭）。
+               对话流已从这一栏搬走——它过去住在中栏，等于让 AI 占着底座最好的位置、
+               还天然能碰宿主 DOM；军令 #15 把它交还给右栏的沙箱插件。 -->
+          <section class="ws-tab-panel" id="wsPanelHome" role="tabpanel" aria-label="引导" data-tab="home">
+            <div class="ws-home">
+              <h2 class="ws-home-title">九章算子 · 工作台</h2>
+              <p class="ws-home-lede">中栏是通用舞台：左栏点一下插件就开一页，右侧「AI 助手」听你说人话、替你把题库与录题串起来。</p>
+              <ul class="ws-home-list">
+                <li>找题、出题、组卷：直接在右栏对 AI 说，例如「题库里有多少道导数题」。</li>
+                <li>装新能力：左下【设置与控制台】→ 插件索引，或把标准 .zip 拖进本页面。</li>
+                <li>页面不对劲：底栏【输出日志区】有运行日志与报错诊断；单个插件坏了不牵连底座。</li>
+              </ul>
+            </div>
           </section>
           <section class="ws-tab-panel" id="wsPanelConsole" role="tabpanel" aria-label="设置与控制台" data-tab="console" hidden>
             <!-- 宿主自有页签：同源装载设置面板，不挂 sandbox。
@@ -101,48 +102,26 @@
         <h2>上下文</h2>
       </header>
       <div class="ws-context-body" id="wsContextBody">
-        <!-- 右栏插槽（sidebar.right，军令 #13）：有插件认领就渲染插件 UI，
-             没有则整块隐藏、露出下面的原生「AI 副驾」——底座永远有兜底。 -->
-        <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏插件面板" hidden>
+        <!-- 右栏插槽（sidebar.right，军令 #13 + #15）：主权交替。
+             默认由 AI 助手插件（org.jiuzhang.chat）入住；当前画布插件若自己也声明了
+             sidebar.right，就暂时由它接管，切走该页签自动归还助手。 -->
+        <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏助手面板">
           <div class="ws-context-slot-head">
-            <h3 id="wsContextSlotTitle">插件面板</h3>
-            <span class="ws-context-slot-badge">右栏插件</span>
+            <h3 id="wsContextSlotTitle">AI 助手</h3>
+            <span class="ws-context-slot-badge" id="wsContextSlotBadge">右栏插件</span>
           </div>
           <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
-        </section>
-        <section class="ws-section ws-copilot" id="wsCopilot" aria-label="AI 副驾">
-          <div class="ws-copilot-head">
-            <h3>AI 副驾</h3>
-            <span class="ws-copilot-badge">改题干并回填</span>
-          </div>
-          <p class="ws-copilot-ctx" id="cpCtx" role="status" aria-live="polite">尚未打开题目</p>
-          <label class="ws-field ws-copilot-field" for="cpField">
-            <span>改写字段</span>
-            <select id="cpField" class="ws-workspace-select">
-              <option value="stem">题干</option>
-              <option value="solution">解析</option>
-            </select>
-          </label>
-          <label class="sr-only" for="cpInput">给 AI 副驾的指令</label>
-          <textarea id="cpInput" rows="2" spellcheck="false"
-            placeholder="例：把题干改得更简洁，保留 $f(x)$ 记号"></textarea>
-          <div class="ws-copilot-tools">
-            <button type="button" id="cpAsk" class="ws-btn ws-btn-sm ws-btn-primary">让 AI 改写</button>
-            <button type="button" id="cpBackfill" class="ws-btn ws-btn-sm" disabled>回填到表单</button>
-          </div>
-          <div class="ws-copilot-out" id="cpOut" role="log" aria-live="polite"></div>
-          <p class="ws-copilot-hint">先在中栏「录题工作台」打开或编辑一道题，副驾才能感知上下文；改写只回填到表单，点保存才入库。</p>
         </section>
 
         <section class="ws-section ws-plugin-panel" id="wsPluginPanel" aria-label="插件快捷操作" hidden>
           <div class="ws-plugin-panel-head">
             <h3 id="wsPluginPanelTitle">插件快捷操作</h3>
-            <span class="ws-plugin-panel-badge">AI 可操控</span>
+            <span class="ws-plugin-panel-badge">人机共设</span>
           </div>
           <p class="ws-plugin-panel-desc" id="wsPluginPanelDesc"></p>
           <div class="ws-plugin-controls" id="wsPluginControls"></div>
           <p class="ws-plugin-panel-state" id="wsUiStateSummary" role="status" aria-live="polite"></p>
-          <p class="ws-plugin-panel-hint" id="wsPluginPanelHint">点按钮 = 在对话区发送对应指令；你手动改过的参数优先于 AI 自动设定。</p>
+          <p class="ws-plugin-panel-hint" id="wsPluginPanelHint">这些控件只由你手动操作；AI 只能向底座申请设值，且你改过的参数优先。</p>
         </section>
         <section class="ws-section">
           <h3>当前任务</h3>
@@ -204,7 +183,7 @@
   </div>
 
   <noscript>
-    <p class="ws-noscript">工作台需要 JavaScript 才能进行对话与调用数据总线。</p>
+    <p class="ws-noscript">工作台需要 JavaScript 才能挂载插件与调用数据总线。</p>
   </noscript>
 
   <script src="/static/vendor/katex/katex.min.js"></script>

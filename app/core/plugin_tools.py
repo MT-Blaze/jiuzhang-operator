@@ -17,9 +17,12 @@ from __future__ import annotations
 import json
 import random
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app.core import bank as bank_store
+from app.core import bank_provider
 from app.core import questions as question_store
 from app.core.config import settings
 from app.core.contract import DIFFICULTY_LABELS as CONTRACT_DIFFICULTY_LABELS
@@ -181,6 +184,182 @@ def tool_names(tools: list[dict[str, Any]]) -> list[str]:
         for item in tools
         if isinstance(item, dict)
     ]
+
+
+# --- 宿主内置工具：按关键词检索当前工作区题库（军令 #15 任务 3）---
+# 边界：模型与插件都只交出关键词。读 SQLite、算命中数、取示例题全部由底座在
+# 本进程里代劳（bank / bank_provider 都是宿主模块），示例题只回前几条，
+# 不把整库递给模型；命中数与「前往题库并搜索」跳转动作一起回传给对话插件。
+HOST_BANK_TOOL = "search_question_bank"
+BANK_MAX_QUERY = 40
+BANK_PREVIEW_LIMIT = 3
+
+_BANK_SCOPE_WORDS = ("题库", "题集")
+_BANK_COUNT_RE = re.compile(r"(?:多少|几)\s*(?:道|题|个)")
+_BANK_QUERY_WORDS = ("搜", "查", "找", "检索", "统计", "看")
+_BANK_KEYWORD_RE = re.compile(r"(?:多少|几)\s*道\s*([^\s，,。？?、！!]{1,24}?)\s*题")
+_BANK_QUOTED_RE = re.compile(r"[「“\"'《]([^」”\"'》]{1,24})[」”\"'》]")
+_BANK_SCOPED_RE = re.compile(r"(?:里的|中的|的)\s*([^\s，,。？?、！!]{2,12}?)\s*(?:题目|题)")
+_BANK_STOP_QUERIES = {"多少", "这些", "那些", "哪些", "题目", "题", "导数题"}
+
+
+def build_bank_tool() -> dict[str, Any]:
+    """把题库检索工具塞进 OpenAI ``tools``：参数只有关键词，动作在底座侧。"""
+    return {
+        "type": "function",
+        "function": {
+            "name": HOST_BANK_TOOL,
+            "description": (
+                "按关键词检索当前工作区题库并由底座统计命中数量。"
+                "用户问「题库里有多少道导数题」「查一下含数列的题目」「题库一共有多少题」时调用；"
+                "query 传题干关键词（如「导数」「立体几何」），留空则统计全库总数。"
+                "底座会回总数、命中数与前几道示例题，并附一个「前往题库并搜索」跳转动作。"
+                "你不得编造底座没返回的题目或数量。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "maxLength": BANK_MAX_QUERY,
+                        "description": "题干关键词，例如「导数」「数列」「立体几何」；留空表示不限关键词。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": BANK_PREVIEW_LIMIT,
+                        "description": "最多回几道示例题，默认 3。",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def _bank_jump(keyword: str, provider: dict[str, Any]) -> dict[str, Any]:
+    """跳转动作：AI 只声明「去哪、带什么参数」，打开与注入由底座执行。"""
+    return {
+        "type": "open_bank",
+        "label": "前往题库并搜索" if keyword else "前往题库",
+        "query": keyword,
+        "plugin_id": str(provider.get("plugin_id") or ""),
+    }
+
+
+def _run_bank_search(args: dict[str, Any]) -> dict[str, Any]:
+    keyword_raw = args.get("query", "")
+    if keyword_raw is not None and not isinstance(keyword_raw, str):
+        raise PluginToolError("query 必须是字符串")
+    keyword = str(keyword_raw or "").strip()[:BANK_MAX_QUERY]
+    limit = args.get("limit", BANK_PREVIEW_LIMIT)
+    limit = max(1, min(int(limit), BANK_PREVIEW_LIMIT))
+
+    provider = bank_provider.resolve()
+    provider_id = str(provider.get("plugin_id") or "")
+    provider_name = str(provider.get("name") or provider_id or "本地题库")
+    base = {
+        "ok": True,
+        "host_tool": True,
+        "plugin": {"id": provider_id, "name": provider_name},
+        "action": HOST_BANK_TOOL,
+    }
+    try:
+        items, matched = bank_store.list_questions(
+            provider_id, search=keyword, page=1, page_size=limit
+        )
+        total_all = int(bank_store.stats(provider_id).get("total") or 0)
+    except (bank_store.BankError, sqlite3.Error, OSError, ValueError) as exc:
+        return {
+            **base,
+            "ok": False,
+            "error": str(exc),
+            "summary": f"读取题库「{provider_name}」失败：{exc}",
+        }
+
+    questions = [_normalize_question(item, index + 1) for index, item in enumerate(items)]
+    if keyword:
+        summary = (
+            f"题库「{provider_name}」共 {total_all} 题，含「{keyword}」的有 {matched} 道。"
+        )
+        if questions:
+            summary += _format_list(questions, matched)
+        else:
+            summary += "没有找到匹配的题目，可以换个关键词再查。"
+    else:
+        summary = f"题库「{provider_name}」共 {total_all} 题。"
+        if questions:
+            summary += _format_list(questions, total_all)
+    return {
+        **base,
+        "summary": summary,
+        "data": {
+            "total": total_all,
+            "matched": matched,
+            "query": keyword,
+            "questions": questions,
+        },
+        "jump": _bank_jump(keyword, provider),
+    }
+
+
+def execute_bank_tool(arguments: Any) -> dict[str, Any]:
+    """执行题库检索工具；参数不可信，失败也回可读结果而不是抛到路由层。"""
+    try:
+        args = _coerce_arguments(arguments)
+        return _run_bank_search(args)
+    except (PluginToolError, ValueError, TypeError) as exc:
+        return {
+            "ok": False,
+            "host_tool": True,
+            "plugin": {"id": "builtin.bank", "name": "本地题库"},
+            "action": HOST_BANK_TOOL,
+            "error": str(exc),
+            "summary": f"题库检索失败：{exc}",
+        }
+
+
+def _coerce_arguments(arguments: Any) -> dict[str, Any]:
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments or "{}")
+        except json.JSONDecodeError as exc:
+            raise PluginToolError(f"工具参数不是合法 JSON：{exc}") from exc
+    else:
+        parsed = arguments
+    if not isinstance(parsed, dict):
+        raise PluginToolError("工具参数必须是 JSON 对象")
+    return parsed
+
+
+def _extract_bank_query(text: str) -> str:
+    quoted = _BANK_QUOTED_RE.search(text)
+    if quoted:
+        return quoted.group(1).strip()
+    for pattern in (_BANK_KEYWORD_RE, _BANK_SCOPED_RE):
+        match = pattern.search(text)
+        if match:
+            token = match.group(1).strip()
+            if token and token not in _BANK_STOP_QUERIES:
+                return token
+    return ""
+
+
+def match_bank_intent(user_input: str) -> dict[str, Any] | None:
+    """「题库里有多少道导数题」这类句式在无 tool_calls 时由宿主直连题库检索工具。"""
+    text = str(user_input or "").strip()
+    if not text:
+        return None
+    if not any(word in text for word in _BANK_SCOPE_WORDS):
+        return None
+    wants_count = _BANK_COUNT_RE.search(text) is not None
+    wants_query = any(word in text for word in _BANK_QUERY_WORDS)
+    if not (wants_count or wants_query):
+        return None
+    # 「拆分/导入题目」是插件工具的活，别被题库检索抢走。
+    if any(word in text for word in ("拆", "导入", "取回", "组卷")):
+        return None
+    return {"tool": HOST_BANK_TOOL, "arguments": {"query": _extract_bank_query(text)[:BANK_MAX_QUERY]}}
 
 
 def _find_plugin(tool_name: str) -> dict[str, Any]:

@@ -31,14 +31,23 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('role="tablist"', HTML)
         self.assertIn('id="wsCanvasBody"', HTML)
 
-    def test_02_native_chat_panel_holds_thread_and_composer(self) -> None:
+    def test_02_native_home_panel_is_the_fallback_and_chat_is_a_plugin(self) -> None:
+        """军令 #15：中栏兜底换成原生「引导」页签，对话流整体交给右栏助手插件。"""
         panel = re.search(
-            r'<section class="ws-tab-panel" id="wsPanelChat".*?</section>', HTML, re.S
+            r'<section class="ws-tab-panel" id="wsPanelHome".*?</section>', HTML, re.S
         )
-        self.assertIsNotNone(panel, "对话页签的面板不见了")
-        self.assertIn('id="wsThread"', panel.group(0))
-        self.assertIn('id="wsChatForm"', panel.group(0))
+        self.assertIsNotNone(panel, "引导页签的面板不见了")
         self.assertIn('role="tabpanel"', panel.group(0))
+        self.assertIn("题库里有多少道导数题", panel.group(0), "兜底页要教老师怎么用助手")
+        # 宿主壳里不许再留一份对话流：那等于给 AI 开一条绕过 Host API 的后门
+        self.assertNotIn('id="wsThread"', HTML)
+        self.assertNotIn('id="wsChatForm"', HTML)
+        self.assertNotIn('id="wsPanelChat"', HTML)
+        plugin_html = (
+            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="chatThread"', plugin_html)
+        self.assertIn('id="chatForm"', plugin_html)
 
     def test_03_panels_stack_inside_a_relative_body(self) -> None:
         body = re.findall(r"\.ws-canvas-body\s*\{([^}]*)\}", CSS)
@@ -147,19 +156,26 @@ class ProtocolTest(unittest.TestCase):
 
 
 class WorkspaceWiringTest(unittest.TestCase):
+    ENTER_START = "function enterPluginMode(plugin, item)"
+    ENTER_END = "function applyStartupBehavior(plugins)"
+
+    def enter_block(self) -> str:
+        return WORKSPACE[WORKSPACE.index(self.ENTER_START):WORKSPACE.index(self.ENTER_END)]
+
     def test_01_only_declaring_plugins_get_a_canvas_tab(self) -> None:
-        block = WORKSPACE[
-            WORKSPACE.index("function enterPluginMode(plugin, item)"):
-            WORKSPACE.index('if (chatEntry) chatEntry.addEventListener')
-        ]
+        block = self.enter_block()
         self.assertIn("plugin.stage", block)
         self.assertIn("window.JzoStage.openPlugin(plugin)", block)
 
-    def test_02_chat_entry_returns_to_the_native_tab(self) -> None:
-        block = WORKSPACE[
-            WORKSPACE.index("function enterChatMode()"): WORKSPACE.index("function enterPluginMode(")
-        ]
-        self.assertIn('window.JzoStage.activate("chat")', block)
+    def test_02_assistant_row_returns_the_right_slot(self) -> None:
+        """军令 #15 任务 4：助手行不开画布页，点它等于把右栏主权收回来。"""
+        block = self.enter_block()
+        self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', WORKSPACE)
+        self.assertIn("plugin.id === ASSISTANT_PLUGIN_ID", block)
+        self.assertIn("window.JzoContextPanel.reclaim()", block)
+        self.assertIn('registerNative({ key: "home"', STAGE, "中栏兜底得是个原生页签")
+        self.assertIn('activate("home")', STAGE)
+        self.assertIn("引导页是兜底，不许关", STAGE)
 
     def test_03_param_changes_are_published_on_the_bus(self) -> None:
         self.assertIn("function publishUiParams(source, changedKey)", WORKSPACE)
@@ -174,7 +190,11 @@ class WorkspaceWiringTest(unittest.TestCase):
 
 
 class HostRelayV071Test(unittest.TestCase):
-    """v0.7.1 宿主数据通道新增：删题转发、草稿托管、保存后自动收页。"""
+    """v0.7.1 宿主数据通道新增：删题转发、草稿托管、保存后自动收页。
+
+    军令 #15 之后「AI 副驾」不再是底座托管区：它随助手插件住进右栏，
+    读选区靠宿主转发的 notification，改写与回填一律走 Host API。
+    """
 
     def test_01_bank_delete_is_relayed_with_write_permission(self) -> None:
         self.assertIn('"bank.delete"', STAGE, "宿主未开放 bank.delete")
@@ -200,14 +220,23 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn("closeTab(editor.key)", handler, "保存后要真正关掉编辑页签")
         self.assertIn("activate(target.key)", handler, "关掉后切回发起端")
 
-    def test_04_copilot_is_hosted_in_right_region(self) -> None:
-        # 右侧 AI 副驾是底座托管区（不是插件 DOM）：订阅选区感知上下文，回填走广播
-        self.assertIn('id="wsCopilot"', HTML)
-        self.assertIn('id="cpBackfill"', HTML)
-        self.assertIn('JzoBus.on("stage.selection"', WORKSPACE)
-        self.assertIn('"/api/agent/refine"', WORKSPACE)
-        self.assertIn('broadcast("editor.apply_patch"', WORKSPACE)
-        self.assertIn("org.jiuzhang.editor", WORKSPACE, "副驾只认录题插件的选区")
+    def test_04_copilot_now_lives_in_the_assistant_plugin(self) -> None:
+        """副驾不再是底座私产：宿主只转发选区与回填，AI 一句 DOM 都不碰。"""
+        self.assertNotIn('id="wsCopilot"', HTML, "宿主自带副驾已随对话插件化")
+        self.assertNotIn('id="cpBackfill"', HTML)
+        self.assertNotIn("/api/agent/refine", WORKSPACE, "宿主壳不得替 AI 直接调后端")
+        plugin_html = (
+            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html"
+        ).read_text(encoding="utf-8")
+        plugin_js = (
+            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="chatCopilot"', plugin_html)
+        self.assertIn('hostCall("agent.refine"', plugin_js, "改写只能请求底座代调")
+        self.assertIn('hostCall("editor.apply_patch"', plugin_js, "回填只能请求底座代广播")
+        self.assertIn('bus.on("stage.selection"', STAGE, "选区要转发给右栏面板")
+        self.assertIn('broadcast("editor.apply_patch"', STAGE)
+        self.assertIn("org.jiuzhang.editor", plugin_js, "副驾只认录题插件的选区")
 
 
 if __name__ == "__main__":

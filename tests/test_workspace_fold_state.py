@@ -292,7 +292,7 @@ class StateMachineTest(unittest.TestCase):
         self.assertIn("function sideOpen()", JS)
         self.assertIn('wsPage.getAttribute("data-side") === "open"', JS)
         # 折叠相关代码不许写 style（两本账是死锁的温床）
-        fold_block = JS[JS.index("var wsPage ="): JS.index("if (promptInput)")]
+        fold_block = JS[JS.index("var wsPage ="): JS.index("// 跨断点时必须重算")]
         self.assertNotIn(".style.", fold_block)
 
     def test_02_breakpoint_crossing_resyncs(self) -> None:

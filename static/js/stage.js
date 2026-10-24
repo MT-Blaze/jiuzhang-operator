@@ -6,7 +6,9 @@
  * 插件只能经 HostBus 向指定区域投递数据，拿不到那三区的 DOM。
  *
  * 两类页签：
- *   - 原生页签：对话流。它是舞台的永久兜底页，不可关闭（插件全崩也还有地方说话）。
+ *   - 原生页签：引导页与「设置与控制台」。引导页是舞台的永久兜底页，不可关闭
+ *     （插件全崩也还有地方落脚）。对话不再住在中栏——军令 #15 把 AI 助手交还成
+ *     右栏里的一个普通插件，底座不再为它保留任何特权入口。
  *   - 重型页签：沙箱 iframe 插件。带 LRU 休眠——同时存活的 iframe 最多 MAX_LIVE_FRAMES 个，
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
  *
@@ -55,7 +57,7 @@
 
   /**
    * 舞台优先级（stage.priority）的真实消费点：同排插件页签按优先级从高到低排，
-   * 同优先级按打开先后。原生页签（对话）永远排第一，不参与抢位。
+   * 同优先级按打开先后。原生页签（引导）永远排第一，不参与抢位。
    */
   function orderPluginTabs() {
     if (!tabsEl) return;
@@ -190,6 +192,7 @@
             dock("插件「" + (tab.plugin.name || tab.plugin.id) + "」已挂载" + (tab.ready ? "并就绪。" : "，但未回 ready。"), "plugin.mounted");
             pushParams(tab);
             deliverEditorIntent(tab);
+            deliverBankQuery(tab);
             resolve(tab);
           })
           .catch(function (error) {
@@ -219,7 +222,7 @@
     var box = document.createElement("div");
     box.className = "ws-frame-error";
     box.setAttribute("role", "alert");
-    box.textContent = message + "（底座仍可继续使用对话页）";
+    box.textContent = message + "（底座仍可继续使用引导页）";
     tab.panel.appendChild(box);
     paintTabState(tab);
   }
@@ -307,8 +310,10 @@
     }
   }
 
+  /** 广播覆盖中栏活页签与右栏面板：AI 助手住在右栏，选区、回流与参数变化都得收到。 */
   function broadcast(event, payload) {
-    liveFrames().forEach(function (tab) { notify(tab, event, payload); });
+    var targets = liveFrames().concat(panels.filter(function (panel) { return panel.frame; }));
+    targets.forEach(function (tab) { notify(tab, event, payload); });
   }
 
   // ---------- 右栏辅助面板（sidebar.right） ----------
@@ -347,8 +352,29 @@
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "asset.upload",
-    "draft.save", "draft.load"
+    "draft.save", "draft.load",
+    // 军令 #15：AI 助手降级成一个普通插件后，它能用的口子只有这一排。
+    // 对话、改写、读清单、读工作区快照、装插件、设面板参数、开页签全部由宿主代办；
+    // 数据库、写令牌与宿主 DOM 一道门都没开。
+    "agent.chat", "agent.refine", "plugins.list", "workspace.state",
+    "plugin.install_url", "ui.params.set", "editor.apply_patch",
+    "stage.open_bank", "stage.open_editor"
   ];
+  // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
+  // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
+  var AI_ONLY_METHODS = [
+    "agent.chat", "agent.refine", "plugin.install_url",
+    "ui.params.set", "editor.apply_patch", "stage.open_bank", "stage.open_editor"
+  ];
+  var AI_INVOKE_PERMISSION = "ai:invoke";
+  // 助手要读的两种清单：实现写在 relayAgent 里，分发就必须走到 relayAgent。
+  // 它们不在 AI_ONLY_METHODS 里（任何插件都可以读清单），所以得单独点名——
+  // 漏点一次，请求就会一路掉到 relay 末尾的分支上（真机曾因此把题篮清空）。
+  var AGENT_READ_METHODS = ["plugins.list", "workspace.state"];
+  var CHAT_HISTORY_MAX = 12;
+  var AGENT_TIMEOUT_MS = 60000;      // 模型一轮回答可以慢，但不能无限等
+  var OPEN_BANK_QUERY_MAX = 40;
+
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
   // 由底座按 data/bank_provider.json 解析（PLUGIN_SPEC §2.6.1）。官方 core-bank
   // 只是默认值——取不到 provider 时仍用它，不能让「读不到配置」打死整条数据通道。
@@ -475,9 +501,13 @@
     settings.headers = Object.assign({ Accept: "application/json" }, settings.headers || {});
     var controller = typeof AbortController === "function" ? new AbortController() : null;
     var timer = 0;
+    // 默认 20s 够用，智能体接口要等模型：整条转发链路的上限由调用方给。
+    var timeoutMs = Number(settings.timeout);
+    delete settings.timeout;
+    if (!(timeoutMs >= 1000)) timeoutMs = RELAY_TIMEOUT_MS;
     if (controller) {
       settings.signal = controller.signal;
-      timer = window.setTimeout(function () { controller.abort(); }, RELAY_TIMEOUT_MS);
+      timer = window.setTimeout(function () { controller.abort(); }, timeoutMs);
     }
     return fetch(url, settings)
       .then(function (response) {
@@ -513,6 +543,9 @@
         return data;
       }, function (error) {
         if (timer) window.clearTimeout(timer);
+        if (error && error.name === "AbortError") {
+          throw new Error("宿主接口超时（" + Math.round(timeoutMs / 1000) + "s）");
+        }
         throw error;
       });
   }
@@ -527,12 +560,204 @@
     });
   }
 
+  function plainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  function urlValue(value, max) {
+    var text = String(value == null ? "" : value).trim().slice(0, max || 500);
+    return /^https?:\/\//i.test(text) ? text : "";
+  }
+
+  /** 历史轮次只留 role/content 两个字符串字段，长度设限——模型不必看见插件的内部态。 */
+  function cleanHistory(value) {
+    if (!Array.isArray(value)) return [];
+    return value.slice(-CHAT_HISTORY_MAX)
+      .map(function (turn) {
+        var item = plainObject(turn);
+        var role = textValue(item, "role", 10);
+        if (role !== "assistant" && role !== "sys") role = "user";
+        return { role: role, content: textValue(item, "content", 2000) };
+      })
+      .filter(function (turn) { return turn.content; });
+  }
+
+  /**
+   * 智能体接口（军令 #15）。AI 助手是一个普通插件：它不能读库、不能碰宿主 DOM、
+   * 更没有鼠标键盘——所有「查题库 / 开页签 / 改面板 / 装插件」都只能到这里，
+   * 由宿主用它自己的身份去做，做完把结果摘要回给插件。
+   */
+  function relayAgent(method, payload, done, fail, failWith) {
+    var jsonHeaders = { "Content-Type": "application/json" };
+
+    if (method === "agent.chat") {
+      var userInput = textValue(payload, "user_input", 4000);
+      if (!userInput) { failWith("BAD_REQUEST", "user_input 不能为空"); return; }
+      fetchJson("/api/agent/chat", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify({
+          user_input: userInput,
+          task_id: textValue(payload, "task_id", 60) || "chat_" + Date.now(),
+          context: plainObject(payload.context),
+          history: cleanHistory(payload.history)
+        })
+      }).then(done, fail);
+      return;
+    }
+
+    if (method === "agent.refine") {
+      var instruction = textValue(payload, "instruction", 400);
+      if (!instruction) { failWith("BAD_REQUEST", "instruction 不能为空"); return; }
+      fetchJson("/api/agent/refine", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify({
+          question: plainObject(payload.question),
+          instruction: instruction,
+          field: textValue(payload, "field", 20) === "solution" ? "solution" : "stem",
+          task_id: textValue(payload, "task_id", 60) || "refine_" + Date.now()
+        })
+      }).then(function (response) {
+        // 后端把正文埋在 data / fallback 里：摊平成 {value, note, field}，插件不必猜信封
+        var data = plainObject(response && response.data);
+        var envelope = data.value === undefined ? plainObject(response && response.fallback) : data;
+        done({
+          ok: !(response && response.type === "error"),
+          field: textValue(envelope, "field", 20) || "stem",
+          value: textValue(envelope, "value", 20000),
+          note: textValue(envelope, "note", 300)
+        });
+      }, fail);
+      return;
+    }
+
+    if (method === "plugins.list") {
+      fetchJson("/api/plugins").then(function (data) {
+        done({
+          plugins: ((data && data.plugins) || []).map(function (item) {
+            return {
+              id: item.id,
+              name: item.name,
+              version: item.version,
+              kind: item.kind,
+              description: textValue(item, "description", 200),
+              capabilities: item.capabilities || [],
+              slots: item.slots || [],
+              enabled: item.enabled !== false
+            };
+          })
+        });
+      }, fail);
+      return;
+    }
+
+    if (method === "workspace.state") {
+      var snapshot = window.JzoWorkspace && typeof window.JzoWorkspace.stateSnapshot === "function"
+        ? window.JzoWorkspace.stateSnapshot() : null;
+      if (!snapshot) { failWith("NOT_READY", "宿主工作区快照尚未就绪"); return; }
+      done(snapshot);
+      return;
+    }
+
+    if (method === "plugin.install_url") {
+      // 与索引页【在线安装】完全同款的落地校验；令牌仍由宿主代取，插件不可见。
+      var zipUrl = urlValue(payload.url, 500);
+      if (!zipUrl) { failWith("BAD_URL", "只允许 http(s) 直链"); return; }
+      var mirrors = (Array.isArray(payload.mirrors) ? payload.mirrors : [])
+        .map(function (item) { return urlValue(item, 500); })
+        .filter(Boolean).slice(0, 6);
+      withWriteToken("/api/plugins/install-url", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify({
+          url: zipUrl, mirrors: mirrors, replace: payload.replace === true
+        })
+      }).then(function (result) {
+        if (window.JzoWorkspace && typeof window.JzoWorkspace.refreshPlugins === "function") {
+          window.JzoWorkspace.refreshPlugins();
+        }
+        done(result);
+      }, function (error) {
+        if (error && error.status === 409) {
+          failWith("PLUGIN_EXISTS",
+            String((error.detail && error.detail.message) || error.message || "插件已安装"), false);
+          return;
+        }
+        fail(error);
+      });
+      return;
+    }
+
+    if (method === "ui.params.set") {
+      if (!window.JzoWorkspace || typeof window.JzoWorkspace.applyAiParams !== "function") {
+        failWith("NOT_READY", "宿主面板仲裁器未就绪");
+        return;
+      }
+      var outcome = window.JzoWorkspace.applyAiParams(
+        payload.params, payload.snapshot, textValue(payload, "plugin_id", 80));
+      if (outcome && outcome.error) {
+        failWith(outcome.error.code || "PARAM_REJECTED", outcome.error.message);
+        return;
+      }
+      done(outcome);
+      return;
+    }
+
+    if (method === "editor.apply_patch") {
+      var patchValue = textValue(payload, "value", 20000);
+      if (!patchValue) { failWith("BAD_REQUEST", "回填内容为空"); return; }
+      var patch = {
+        id: textValue(payload, "id", 80),
+        field: textValue(payload, "field", 20) === "solution" ? "solution" : "stem",
+        value: patchValue
+      };
+      broadcast("editor.apply_patch", patch);
+      dock("AI 助手请求把改写的" + (patch.field === "solution" ? "解析" : "题干") + "回填到录题表单。",
+        "agent.patch");
+      done({ ok: true, field: patch.field, id: patch.id });
+      return;
+    }
+
+    if (method === "stage.open_bank") {
+      var bankQuery = textValue(payload, "query", OPEN_BANK_QUERY_MAX);
+      var bankQuestionId = textValue(payload, "question_id", 80);
+      if (!ID_RE.test(bankQuestionId)) bankQuestionId = "";
+      openBank({
+        pluginId: "agent",
+        raw: { query: bankQuery, question_id: bankQuestionId }
+      });
+      done({ ok: true, query: bankQuery, question_id: bankQuestionId });
+      return;
+    }
+
+    if (method === "stage.open_editor") {
+      var editorQuestionId = textValue(payload, "question_id", 80);
+      if (!editorQuestionId) { failWith("BAD_REQUEST", "question_id 不能为空"); return; }
+      openEditor({ pluginId: "agent", raw: { question_id: editorQuestionId } });
+      done({ ok: true, question_id: editorQuestionId });
+      return;
+    }
+
+    failWith("UNSUPPORTED_METHOD", "宿主未开放方法：" + String(method).slice(0, 60));
+  }
+
   function relay(tab, message) {
     var method = String(message.method || "");
     if (RELAY_METHODS.indexOf(method) < 0) {
       replyHost(tab, message, false, {
         code: "UNSUPPORTED_METHOD",
         message: "宿主未开放方法：" + method.slice(0, 80)
+      });
+      return;
+    }
+    if (AI_ONLY_METHODS.indexOf(method) >= 0 && !hasAiGrant(tab)) {
+      replyHost(tab, message, false, {
+        code: "PERMISSION_DENIED",
+        message: "方法 " + method.slice(0, 60) + " 需要清单 permissions 声明 " + AI_INVOKE_PERMISSION
       });
       return;
     }
@@ -577,6 +802,20 @@
         message: String((error && error.message) || "宿主请求失败").slice(0, 200),
         retryable: Boolean(error && error.status >= 500)
       });
+    }
+
+    function failWith(code, text, retryable) {
+      replyHost(tab, message, false, {
+        code: code,
+        message: String(text || "宿主请求失败").slice(0, 200),
+        retryable: Boolean(retryable)
+      });
+    }
+
+    // 智能体通道：AI 助手插件的申请一律在这里由宿主代执行（军令 #15）。
+    if (AI_ONLY_METHODS.indexOf(method) >= 0 || AGENT_READ_METHODS.indexOf(method) >= 0) {
+      relayAgent(method, payload, done, fail, failWith);
+      return;
     }
 
     if (method === "asset.upload") {
@@ -871,11 +1110,17 @@
       return;
     }
 
-    // basket.clear
-    withWriteToken("/api/basket", { method: "DELETE" }).then(function (result) {
-      done(result);
-      noteBasketChange(tab, "clear", result, 0);
-    }, fail);
+    if (method === "basket.clear") {
+      withWriteToken("/api/basket", { method: "DELETE" }).then(function (result) {
+        done(result);
+        noteBasketChange(tab, "clear", result, 0);
+      }, fail);
+      return;
+    }
+
+    // 白名单里挂着、但这一层没有分支的方法：明确拒回，绝不落到上面任何一条分支的兜底上。
+    // （曾经 basket.clear 是函数末尾的默认动作，任何漏分发的方法都会顺手清空老师的题篮。）
+    failWith("UNSUPPORTED_METHOD", "宿主转发表未实现方法：" + method.slice(0, 60));
   }
 
   /** 题篮变动记一笔，让底栏与其它插件（如组卷）能跟上；插件名不进 DOM 以外的地方。 */
@@ -958,6 +1203,7 @@
   // 题库与组卷/讲义一律只读；老师点「去编辑」时插件只发一个 system.open_editor，
   // 由宿主负责开录题插件的页签并把题号注进去——插件之间不直连（AGENTS §2）。
   var pendingEditorIntent = null;
+  var pendingBankQuery = null;
 
   function findPluginTab(pluginId) {
     for (var i = 0; i < tabs.length; i += 1) {
@@ -971,6 +1217,14 @@
     var intent = pendingEditorIntent;
     pendingEditorIntent = null;
     notify(tab, "system.open_editor", { question_id: intent.question_id, from: intent.from });
+  }
+
+  /** 挂载/唤醒完成后补发检索意图：iframe 文档没就绪就 postMessage，通知会丢。 */
+  function deliverBankQuery(tab) {
+    if (!pendingBankQuery || !tab || tab.state !== "live") return;
+    var intent = pendingBankQuery;
+    pendingBankQuery = null;
+    notify(tab, "system.bank_query", { query: intent.query, question_id: intent.question_id });
   }
 
   function openEditor(payload) {
@@ -1004,6 +1258,12 @@
     });
   }
 
+  /** 清单声明才算数：插件 payload 里自报的权限一律不认（与 bank 串库同规则）。 */
+  function hasAiGrant(tab) {
+    var list = tab.plugin && tab.plugin.permissions;
+    return Array.isArray(list) && list.indexOf(AI_INVOKE_PERMISSION) >= 0;
+  }
+
   // ---------- 看板跳转：打开活跃题库页签（system.open_bank） ----------
   // 与 openEditor 同构：插件只发意图，跳转由宿主完成，目标不写死——
   // 永远打开「当前活跃 provider」的页签（bankProviderId 启动时已从 /api/bank/provider 解析）。
@@ -1014,10 +1274,19 @@
       dock("题库跳转带来的题目 id 不合法，已拒绝。", "bus.denied");
       return;
     }
+    // 军令 #15：AI 回复里的「前往题库并搜索」把检索词一并交进来，
+    // 由宿主写进目标插件（system.bank_query），插件不必自己猜要不要重开页签。
+    var query = typeof raw.query === "string" ? raw.query.trim().slice(0, OPEN_BANK_QUERY_MAX) : "";
+    if (query || questionId) {
+      pendingBankQuery = { query: query, question_id: questionId };
+    }
     var tab = findPluginTab(bankProviderId);
     if (tab) {
       activate(tab.key);
-      dock("已跳转到题库" + (questionId ? "（题目 " + questionId + "）" : "") + "。", "stage.bank.opened");
+      if (tab.ready) deliverBankQuery(tab);   // 刚唤醒的交给 mountFrame 补发
+      dock("已跳转到题库"
+        + (query ? "，检索「" + query + "」" : "")
+        + (questionId ? "（题目 " + questionId + "）" : "") + "。", "stage.bank.opened");
       return;
     }
     fetchJson("/api/plugins").then(function (data) {
@@ -1025,12 +1294,16 @@
         return item.id === bankProviderId;
       })[0];
       if (!plugin) {
+        pendingBankQuery = null;
         dock("没找到当前题库插件 " + bankProviderId + "，跳转未完成。", "stage.bank.missing");
         return;
       }
       openPlugin(plugin);
-      dock("正在打开题库" + (questionId ? "（题目 " + questionId + "）" : "") + "…", "stage.bank.opened");
+      dock("正在打开题库"
+        + (query ? "，检索「" + query + "」" : "")
+        + (questionId ? "（题目 " + questionId + "）" : "") + "…", "stage.bank.opened");
     }, function (error) {
+      pendingBankQuery = null;
       dock("读插件清单失败，题库跳转未完成：" + error.message, "stage.bank.missing");
     });
   }
@@ -1092,7 +1365,7 @@
     }
     if (index < 0) return;
     var tab = tabs[index];
-    if (!tab.closable) return;   // 对话页是兜底，不许关
+    if (!tab.closable) return;   // 引导页是兜底，不许关
     if (tab.kind === "plugin" && tab.state === "live") hibernate(tab, "close");
     if (tab.button.parentNode) tab.button.parentNode.removeChild(tab.button);
     if (tab.panel.parentNode) tab.panel.parentNode.removeChild(tab.panel);
@@ -1242,13 +1515,18 @@
 
   function init() {
     if (!tabsEl || !bodyEl) return;
-    registerNative({ key: "chat", title: "对话", panelId: "wsPanelChat" });
+    registerNative({ key: "home", title: "引导", panelId: "wsPanelHome" });
     registerNative({ key: "console", title: "设置与控制台", panelId: "wsPanelConsole" });
-    activate("chat");
+    activate("home");
 
     if (bus && typeof bus.on === "function") {
       // 右栏改参数 → 直达中栏所有活着的插件（军令任务 3.3）
       bus.on("ui.params.changed", function (event) { broadcast("ui.params.changed", event.payload); });
+      // 录题插件的当前题只喂给右栏面板（AI 助手插件的副驾），不广播给中栏——
+      // 中栏插件自己就是选区的来源，回灌只会形成回声。
+      bus.on("stage.selection", function (event) {
+        panels.forEach(function (panel) { notify(panel, "stage.selection", event.payload); });
+      });
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
       // 录题插件写库成功 → 题库画布刷新列表（宿主统一生成事件，插件之间不直连）

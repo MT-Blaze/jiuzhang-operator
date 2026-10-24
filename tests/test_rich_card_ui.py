@@ -3,7 +3,8 @@
 三件事分开钉：
 1. 后端：插件面板归一化/默认面板、随机抽题参数、ui_json 卡片帧、右栏面板提示词。
 2. 搜索：只读用户拉取过的索引缓存，只出安装建议卡，绝不自动安装或联网。
-3. 前端：结构不变量（ui_json 拦截、update_params/trigger_button、本地 KaTeX）。
+3. 前端：结构不变量（助手插件里的 ui_json 拦截、update_params 与面板按钮回灌、
+   本地 KaTeX）。军令 #15 之后 AI 不再有「触发面板按钮」的能力，只能请求底座设参。
    真机行为由 ``.system_generated`` 下的 Playwright 探针产出，本文件不启浏览器。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_rich_card_ui``
@@ -41,6 +42,17 @@ STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 JS = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+# 军令 #15：对话与卡片渲染整体搬进右栏助手插件，宿主壳只留面板与总线。
+CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
+    encoding="utf-8"
+)
+CHAT_HTML = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html").read_text(
+    encoding="utf-8"
+)
+CHAT_CSS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.css").read_text(
+    encoding="utf-8"
+)
+AGENT_PY = (ROOT / "app" / "api" / "agents.py").read_text(encoding="utf-8")
 
 
 def _free_port() -> int:
@@ -264,7 +276,7 @@ class PluginSearchTest(unittest.TestCase):
 
 
 class PromptPanelTest(unittest.TestCase):
-    def test_01_panel_catalog_lists_keys_and_buttons(self) -> None:
+    def test_01_panel_catalog_lists_keys_but_never_buttons(self) -> None:
         context = {
             "current_task": "示例题库",
             "plugin": {"id": "org.jiuzhang.demo-bank", "name": "示例题库"},
@@ -292,9 +304,11 @@ class PromptPanelTest(unittest.TestCase):
         self.assertIn("## 右侧插件面板", prompt)
         self.assertIn("grade（年级）", prompt)
         self.assertIn("当前 高一", prompt)
-        self.assertIn("random_question（随机出题）", prompt)
         self.assertIn("update_params", prompt)
-        self.assertIn("trigger_button", prompt)
+        # 按钮不再是 AI 可枚举的「可触发清单」——它没有点击能力，只能请求底座设参。
+        self.assertNotIn("random_question（随机出题）", prompt)
+        self.assertNotIn("trigger_button", prompt)
+        self.assertIn("AI 没有点击能力", prompt)
 
     def test_02_no_ui_means_no_panel_section(self) -> None:
         prompt = build_chat_system_prompt({"current_task": "自由对话"})
@@ -321,48 +335,65 @@ class FrontendStructureTest(unittest.TestCase):
         self.assertTrue((STATIC / "vendor" / "katex" / "katex.min.js").is_file())
 
     def test_02_ui_json_cards_are_intercepted_before_text(self) -> None:
-        self.assertIn("function splitUiBlocks", JS)
-        self.assertIn("ui_json", JS)
-        self.assertIn("question_card", JS)
-        self.assertIn("install_card", JS)
-        self.assertIn("查看解析", JS)
-        self.assertIn("katex.renderToString", JS)
+        # 军令 #15：对话流与卡片渲染随助手插件一起搬出宿主壳，底座只留面板与总线。
+        self.assertIn("function splitUiBlocks", CHAT_JS)
+        self.assertIn("ui_json", CHAT_JS)
+        self.assertIn("question_card", CHAT_JS)
+        self.assertIn("install_card", CHAT_JS)
+        self.assertIn("查看解析", CHAT_JS)
+        self.assertIn("katex.renderToString", CHAT_JS)
         # 模型/插件返回的卡片数据只以 textContent 落 DOM，公式交给 KaTeX
-        self.assertNotIn("bubble.innerHTML", JS)
+        self.assertNotIn("bubble.innerHTML", CHAT_JS)
+        self.assertNotIn("splitUiBlocks", JS, "宿主壳不该再自己拆卡片")
 
     def test_03_ui_actions_and_human_override_are_wired(self) -> None:
-        self.assertIn("update_params", JS)
-        self.assertIn("trigger_button", JS)
+        self.assertIn("update_params", CHAT_JS)
+        self.assertIn('hostCall("ui.params.set"', CHAT_JS)
         self.assertIn("applyUiParams", JS)
         self.assertIn("snapshotRevisions", JS)
         self.assertIn("你刚手动改过", JS)
-        self.assertIn("origin: \"ai_button\"", JS)
-        self.assertIn("origin === \"ui_button\"", JS)
+        # 军令 #15 任务 2：AI 没有点击能力——trigger_button 这条通道要从两侧绝迹。
+        self.assertNotIn("trigger_button", JS)
+        self.assertNotIn("trigger_button", CHAT_JS)
+        self.assertNotIn("trigger_button", AGENT_PY)
+        self.assertIn("panel.button.click", JS)
+        self.assertIn('origin: "panel_button"', CHAT_JS)
 
     def test_04_panel_sends_commands_and_context_carries_values(self) -> None:
         self.assertIn("function renderPluginPanel", JS)
         self.assertIn("expandCommand", JS)
-        self.assertIn("origin: \"ui_button\"", JS)
-        self.assertIn("context.ui =", JS)
+        # 人点面板按钮只发总线事件，由助手插件决定这一轮对话怎么说
+        self.assertIn("publishPanelButton", JS)
+        self.assertIn("context.ui =", CHAT_JS)
         self.assertIn("controls: compactControls()", JS)
         self.assertIn("data-ui-key", JS)
         self.assertIn("data-ui-button", JS)
 
     def test_05_install_card_only_calls_install_on_click(self) -> None:
-        self.assertIn("installSuggestedPlugin", JS)
-        self.assertIn('fetch("/api/plugins/install-url"', JS)
-        # 卡片渲染阶段不得直接发起安装请求
-        card_start = JS.index("function buildInstallCard")
-        card_end = JS.index("function installSuggestedPlugin")
-        card_block = JS[card_start:card_end]
-        self.assertNotIn("/api/plugins/install-url", card_block)
+        self.assertIn("function requestInstall", CHAT_JS)
+        self.assertIn('hostCall("plugin.install_url"', CHAT_JS)
+        # 助手插件是不透明源沙箱：自己一次 fetch 都不许发，更拿不到写令牌
+        self.assertNotIn("fetch(", CHAT_JS)
+        card_start = CHAT_JS.index("function buildInstallCard")
+        card_end = CHAT_JS.index("function requestInstall")
+        card_block = CHAT_JS[card_start:card_end]
+        self.assertNotIn("plugin.install_url", card_block)
         self.assertIn("确认安装", card_block)
 
     def test_06_cards_and_controls_are_44px_and_overflow_safe(self) -> None:
-        self.assertIn(".ws-card", CSS)
-        self.assertIn(".ws-tag-type", CSS)
+        """卡片样式随助手插件出厂，命中区铁律在插件侧也要钉住。"""
+        self.assertIn(".jzochat-card", CHAT_CSS)
+        self.assertIn(".jzochat-tag-type", CHAT_CSS)
+        self.assertIn(".jzochat-math-block", CHAT_CSS)
+        self.assertIn(".jzochat-action", CHAT_CSS)
+        for token in ("jzochat-card", "jzochat-tag-type", "jzochat-math-block"):
+            self.assertNotIn(".ws-" + token.replace("jzochat-", "") + " {", CSS,
+                             "宿主壳里不该再留卡片样式：" + token)
+        self.assertRegex(CHAT_CSS, r"\.jzochat-action\s*\{[^}]*min-height:\s*44px")
+        self.assertRegex(CHAT_CSS, r"\.jzochat-btn\s*\{[^}]*min-height:\s*44px")
+        self.assertIn("@media (prefers-reduced-motion: reduce)", CHAT_CSS)
+        # 面板住户仍归底座：右栏插件面板的控件命中区不许跟着搬家
         self.assertIn(".ws-ui-select", CSS)
-        self.assertIn(".ws-math-block", CSS)
         media = CSS[CSS.index("@media (max-width: 768px)") :]
         self.assertRegex(media, r"\.ws-ui-select\s*\{[^}]*min-height:\s*44px")
         self.assertIn("@media (prefers-reduced-motion: reduce)", CSS)
@@ -372,6 +403,8 @@ class FrontendStructureTest(unittest.TestCase):
         # 这里钉的是脚本不得引入任何远程静态资源或 CDN。
         for token in ("cdn.", "fonts.googleapis", "unpkg.com", "jsdelivr"):
             self.assertNotIn(token, JS, "工作台脚本出现远程资源：" + token)
+            self.assertNotIn(token, CHAT_JS, "助手插件出现远程资源：" + token)
+            self.assertNotIn(token, CHAT_HTML, "助手插件页面出现远程资源：" + token)
         self.assertNotIn('fetch("http', JS)
 
 

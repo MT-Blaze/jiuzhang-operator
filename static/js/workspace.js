@@ -1,13 +1,12 @@
 /**
- * 工作台：三栏「智能体」空壳原型 —— 对话流驱动。
+ * 工作台宿主壳：左栏入口、右侧插槽主权交替、面板参数仲裁、底栏输出区与插件生命周期。
  *
- * 设计取向（先见形，后调逻辑）：中栏是对话流主区，兼当前任务舞台；
- * 发送指令 → 用户气泡 → 调 /api/agent/chat → 助手气泡回显识别到的意图。
- * 左栏只放「自由对话」与动态渲染的已装插件；索引、手动安装与底座信息
- * 收纳到栏底齿轮进入的 /settings，不在工作台堆低频控件。
+ * 军令 #15 的边界：对话流不再住在这里。中栏是通用舞台，右栏助手是
+ * plugins/org.jiuzhang.chat 这个普通插件——它想看什么、想改什么、想去哪个页签，
+ * 都得经 stage.js 的 Host API 白名单向底座申请，由本文件把状态快照与仲裁结果交出去
+ * （window.JzoWorkspace）。底座自身不再直接调 /api/agent/*。
  *
- * 安全：所有气泡文本（含模型返回、插件反馈）一律用 textContent 落 DOM，
- * 不走 innerHTML，杜绝 XSS（AGENTS §5：不可信输入进 DOM 前必须净化）。
+ * 安全：所有写接口由宿主代取一次性令牌；不可信文本一律走 textContent，不拼 innerHTML。
  */
 (function () {
   "use strict";
@@ -23,22 +22,17 @@
   // 人类的主动点击永远覆盖 AI 的自动设定。
   var uiState = { pluginId: null, values: {}, revisions: {} };
   var uiPanelControls = [];
-  // 对话轮次记忆：注入下一轮请求，让模型延续前文而非孤立理解（10.24 军令 P0-2）。
-  var transcript = [];
-  var TRANSCRIPT_MAX = 24;   // 内存里最多留多少轮
-  var TRANSCRIPT_SEND = 8;   // 每轮最多回传多少轮给模型
+  // 右栏主权（军令 #15 任务 4）：当前画布页签绑定的插件 id。
+  // 它若声明了 sidebar.right 就暂时接管右栏，否则右栏归还 AI 助手插件。
+  var activeCanvasPluginId = "";
+  var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat";
 
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
-  var thread = document.getElementById("wsThread");
-  var chatForm = document.getElementById("wsChatForm");
-  var promptInput = document.getElementById("wsPrompt");
-  var sendBtn = document.getElementById("wsSendBtn");
   var stageTitle = document.getElementById("wsStageTitle");
   var ctxTask = document.getElementById("ctxTask");
   var ctxModel = document.getElementById("ctxModel");
   var ctxHistory = document.getElementById("ctxHistory");
-  var chatEntry = document.getElementById("wsChatEntry");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
   var pluginPanel = document.getElementById("wsPluginPanel");
@@ -52,581 +46,19 @@
   var dockLog = document.getElementById("wsDockLog");
   var dockTabs = document.getElementById("wsDockTabs");
 
-  // 右侧 AI 副驾：感知录题工作台当前题，改写一个字段后回填到表单。
-  var cpCtx = document.getElementById("cpCtx");
-  var cpField = document.getElementById("cpField");
-  var cpInput = document.getElementById("cpInput");
-  var cpAsk = document.getElementById("cpAsk");
-  var cpBackfill = document.getElementById("cpBackfill");
-  var cpOut = document.getElementById("cpOut");
-  var editorContext = { id: "", question: null, at: 0 };
-  var pendingPatch = null;
 
-  // ============ 对话流：气泡工厂 ============
-  var CARD_SEQ = 0;
-
+  // ============ 对话流已整体迁出（军令 #15） ============
+  // 气泡、题卡、安装卡、确认卡与 KaTeX 渲染都搬进了右栏的 org.jiuzhang.chat 插件，
+  // 宿主不再自带任何对话界面，也不再直接调 /api/agent/*。
+  // 原先「往对话区说一句」的提示改落底栏输出日志区——同一段话，换个不越权的地方说。
   function clampText(value, limit) {
     return String(value == null ? "" : value).trim().slice(0, limit);
   }
 
-  // Markdown + LaTeX 的最小渲染：普通文本走 textContent，公式交给本地 KaTeX。
-  // 只把 KaTeX 自己生成的 HTML 写进节点（trust:false），不执行任何远端资源。
-  function renderMathInto(el, text) {
-    var source = String(text == null ? "" : text);
-    if (!source) return;
-    var katex = window.katex;
-    if (!katex || typeof katex.renderToString !== "function" || source.indexOf("$") === -1) {
-      el.textContent = source;
-      return;
-    }
-    var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g;
-    var last = 0;
-    var match;
-    while ((match = pattern.exec(source)) !== null) {
-      if (match.index > last) {
-        el.appendChild(document.createTextNode(source.slice(last, match.index)));
-      }
-      var token = match[0];
-      var display = token.slice(0, 2) === "$$";
-      var body = display ? token.slice(2, -2) : token.slice(1, -1);
-      var node = document.createElement(display ? "div" : "span");
-      node.className = display ? "ws-math-block" : "ws-math";
-      try {
-        node.innerHTML = katex.renderToString(body, {
-          displayMode: display,
-          throwOnError: false,
-          trust: false,
-          strict: "ignore",
-        });
-        el.appendChild(node);
-      } catch (error) {
-        el.appendChild(document.createTextNode(token));
-      }
-      last = pattern.lastIndex;
-    }
-    if (last < source.length) {
-      el.appendChild(document.createTextNode(source.slice(last)));
-    }
-  }
-
   function addBubble(role, text, opts) {
-    if (!thread) return null;
-    opts = opts || {};
-    var wrap = document.createElement("div");
-    wrap.className = "ws-msg ws-msg-" + role;
-
-    var hasText = !!(String(text == null ? "" : text).trim());
-    if (hasText || opts.pluginCalls || opts.source) {
-      var bubble = document.createElement("div");
-      bubble.className = "ws-bubble";
-      if (opts.tone) bubble.setAttribute("data-tone", opts.tone);
-      if (hasText) {
-        if (opts.richText && role === "bot") {
-          renderMathInto(bubble, text);
-        } else {
-          bubble.textContent = text; // 不可信内容只当纯文本，天然免 XSS
-        }
-      }
-
-      // 插件调用标识：让用户一眼看见「AI 真的调用了插件」，而不是只说不练。
-      if (opts.pluginCalls && opts.pluginCalls.length) {
-        var badge = document.createElement("span");
-        badge.className = "ws-bubble-plugin";
-        badge.textContent = "[已调用插件] " + pluginCallNames(opts.pluginCalls);
-        if (opts.route === "host") {
-          badge.title = "模型未发起工具调用，由底座按明确意图直接调用插件";
-        } else {
-          badge.title = "由模型发起 tool_calls，底座执行插件并回传结果";
-        }
-        bubble.insertBefore(badge, bubble.firstChild);
-      }
-
-      if (opts.source) {
-        var src = document.createElement("span");
-        src.className = "ws-bubble-source";
-        src.textContent = opts.source;
-        bubble.appendChild(src);
-      }
-      wrap.appendChild(bubble);
-    }
-
-    (opts.cards || []).forEach(function (card) {
-      var node = buildCard(card);
-      if (node) wrap.appendChild(node);
-    });
-
-    thread.appendChild(wrap);
-    scrollThreadToBottom();
-    return wrap;
-  }
-
-  function pluginCallNames(calls) {
-    var names = [];
-    (calls || []).forEach(function (call) {
-      var name = call && call.plugin && call.plugin.name ? call.plugin.name : (call && call.tool) || "插件";
-      if (names.indexOf(name) === -1) names.push(name);
-    });
-    return names.join("、");
-  }
-
-  function addTyping() {
-    if (!thread) return null;
-    var wrap = document.createElement("div");
-    wrap.className = "ws-msg ws-msg-bot";
-    var bubble = document.createElement("div");
-    bubble.className = "ws-bubble";
-    var typing = document.createElement("span");
-    typing.className = "ws-typing";
-    for (var i = 0; i < 3; i += 1) typing.appendChild(document.createElement("span"));
-    bubble.appendChild(typing);
-    wrap.appendChild(bubble);
-    thread.appendChild(wrap);
-    scrollThreadToBottom();
-    return wrap;
-  }
-
-  function scrollThreadToBottom() {
-    if (thread) thread.scrollTop = thread.scrollHeight;
-  }
-
-  // ============ 富卡片：ui_json 拦截与渲染 ============
-  var CARD_TYPE_LABELS = {
-    single_choice: "单选",
-    multiple_choice: "多选",
-    fill_blank: "填空",
-    solution: "解答",
-    proof: "证明",
-    unknown: "待定",
-  };
-  var CARD_DIFFICULTY_LABELS = {
-    L1: "基础",
-    L2: "中档",
-    L3: "难",
-    L4: "压轴",
-  };
-  // 契约 1.0 的题卡仍可能带旧难度值，渲染前归一到 L 码（novel 已废弃，并入 L4）
-  var CARD_DIFFICULTY_LEGACY = { basic: "L1", medium: "L2", hard: "L3", novel: "L4" };
-
-  function safeHttpUrl(value) {
-    try {
-      var parsed = new URL(String(value || ""));
-      return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : "";
-    } catch (error) {
-      return "";
-    }
-  }
-
-  function hostOf(url) {
-    try {
-      return new URL(String(url)).host;
-    } catch (error) {
-      return "未知来源";
-    }
-  }
-
-  function normalizeQuestionCard(raw) {
-    if (!raw || typeof raw !== "object") return null;
-    var stem = clampText(raw.stem, 4000);
-    if (!stem) return null;
-    var type = CARD_TYPE_LABELS[raw.type] ? raw.type : "unknown";
-    var difficultyRaw = CARD_DIFFICULTY_LEGACY[raw.difficulty] || raw.difficulty;
-    var difficulty = CARD_DIFFICULTY_LABELS[difficultyRaw] ? difficultyRaw : "L1";
-    var options = [];
-    (Array.isArray(raw.options) ? raw.options : []).slice(0, 10).forEach(function (option) {
-      if (!option || typeof option !== "object") return;
-      var key = clampText(option.key, 8);
-      var content = clampText(option.content, 1000);
-      if (key || content) options.push({ key: key, content: content });
-    });
-    var tags = [];
-    (Array.isArray(raw.tags) ? raw.tags : []).slice(0, 8).forEach(function (tag) {
-      var text = clampText(tag, 24);
-      if (text) tags.push(text);
-    });
-    return {
-      id: clampText(raw.id, 80),
-      questionNo: raw.question_no > 0 ? raw.question_no : 0,
-      type: type,
-      typeLabel: clampText(raw.type_label, 16) || CARD_TYPE_LABELS[type],
-      difficulty: difficulty,
-      difficultyLabel: clampText(raw.difficulty_label, 16) || CARD_DIFFICULTY_LABELS[difficulty],
-      stem: stem,
-      options: options,
-      answer: clampText(raw.answer, 1000),
-      solution: clampText(raw.solution, 4000),
-      tags: tags,
-    };
-  }
-
-  function isKnownCard(block) {
-    if (!block || typeof block !== "object") return false;
-    if (block.type === "question_card") {
-      return Array.isArray(block.questions) && block.questions.some(function (item) {
-        return normalizeQuestionCard(item) !== null;
-      });
-    }
-    if (block.type === "install_card") {
-      return Boolean(block.plugin && typeof block.plugin === "object" && block.plugin.name);
-    }
-    if (block.type === "confirm_card") {
-      return Array.isArray(block.actions) && block.actions.length > 0;
-    }
-    return false;
-  }
-
-  // 拦截 ```ui_json 围栏（也容忍模型把卡片塞进 ```json）。不是卡片的 json
-  // 围栏原样保留，继续走动作 JSON 解析，不误伤既有控制协议。
-  function splitUiBlocks(content) {
-    var text = String(content == null ? "" : content);
-    var cards = [];
-    var sawCard = false;
-    var pattern = /```(ui_json|json)[ \t]*\r?\n([\s\S]*?)```/g;
-    text = text.replace(pattern, function (whole, language, body) {
-      var parsed;
-      try {
-        parsed = JSON.parse(body.trim());
-      } catch (error) {
-        return language === "ui_json" ? "" : whole;
-      }
-      if (!isKnownCard(parsed)) {
-        return language === "ui_json" ? "" : whole;
-      }
-      sawCard = true;
-      if (parsed.type === "question_card") {
-        parsed.questions.forEach(function (item) {
-          var card = normalizeQuestionCard(item);
-          if (card) cards.push({ type: "question", data: card });
-        });
-      } else if (parsed.type === "install_card") {
-        cards.push({ type: "install", data: parsed });
-      } else if (parsed.type === "confirm_card") {
-        cards.push({ type: "confirm", data: parsed });
-      }
-      return "";
-    });
-    return { text: text.trim(), cards: cards.slice(0, 3), sawCard: sawCard };
-  }
-
-  function buildQuestionCard(card) {
-    var article = document.createElement("article");
-    article.className = "ws-card ws-question-card";
-    article.setAttribute("data-type", card.type);
-    article.setAttribute("data-difficulty", card.difficulty);
-
-    var head = document.createElement("header");
-    head.className = "ws-card-head";
-    if (card.questionNo) {
-      var number = document.createElement("span");
-      number.className = "ws-card-no";
-      number.textContent = "第 " + card.questionNo + " 题";
-      head.appendChild(number);
-    }
-    var typeTag = document.createElement("span");
-    typeTag.className = "ws-tag ws-tag-type";
-    typeTag.textContent = card.typeLabel;
-    head.appendChild(typeTag);
-    var diffTag = document.createElement("span");
-    diffTag.className = "ws-tag ws-tag-diff";
-    diffTag.textContent = card.difficultyLabel;
-    head.appendChild(diffTag);
-    article.appendChild(head);
-
-    var stem = document.createElement("div");
-    stem.className = "ws-card-stem";
-    renderMathInto(stem, card.stem);
-    article.appendChild(stem);
-
-    if (card.options.length) {
-      var options = document.createElement("div");
-      options.className = "ws-card-options";
-      card.options.forEach(function (option) {
-        var row = document.createElement("div");
-        row.className = "ws-card-option";
-        var key = document.createElement("span");
-        key.className = "ws-option-key";
-        key.textContent = option.key || "·";
-        var body = document.createElement("span");
-        body.className = "ws-option-body";
-        renderMathInto(body, option.content);
-        row.appendChild(key);
-        row.appendChild(body);
-        options.appendChild(row);
-      });
-      article.appendChild(options);
-    }
-
-    if (card.tags.length) {
-      var tags = document.createElement("div");
-      tags.className = "ws-card-tags";
-      card.tags.forEach(function (text) {
-        var tag = document.createElement("span");
-        tag.className = "ws-tag ws-tag-topic";
-        tag.textContent = text;
-        tags.appendChild(tag);
-      });
-      article.appendChild(tags);
-    }
-
-    var detailId = "wsCardDetail" + (++CARD_SEQ);
-    var detail = document.createElement("div");
-    detail.className = "ws-card-detail";
-    detail.id = detailId;
-    detail.hidden = true;
-    if (card.answer) {
-      var answer = document.createElement("p");
-      var answerLabel = document.createElement("strong");
-      answerLabel.textContent = "答案：";
-      answer.appendChild(answerLabel);
-      var answerBody = document.createElement("span");
-      renderMathInto(answerBody, card.answer);
-      answer.appendChild(answerBody);
-      detail.appendChild(answer);
-    }
-    if (card.solution) {
-      var solution = document.createElement("p");
-      var solutionLabel = document.createElement("strong");
-      solutionLabel.textContent = "解析：";
-      solution.appendChild(solutionLabel);
-      var solutionBody = document.createElement("span");
-      renderMathInto(solutionBody, card.solution);
-      solution.appendChild(solutionBody);
-      detail.appendChild(solution);
-    }
-
-    var foot = document.createElement("footer");
-    foot.className = "ws-card-foot";
-    var toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "ws-btn ws-btn-sm ws-card-toggle";
-    toggle.textContent = "查看解析";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-controls", detailId);
-    var hasDetail = Boolean(card.answer || card.solution);
-    if (!hasDetail) {
-      toggle.disabled = true;
-      toggle.title = "本题暂无答案与解析";
-    } else {
-      toggle.addEventListener("click", function () {
-        detail.hidden = !detail.hidden;
-        toggle.setAttribute("aria-expanded", String(!detail.hidden));
-        toggle.textContent = detail.hidden ? "查看解析" : "收起解析";
-      });
-    }
-    foot.appendChild(toggle);
-    article.appendChild(foot);
-    article.appendChild(detail);
-    return article;
-  }
-
-  function buildInstallCard(block) {
-    var plugin = block.plugin || {};
-    var name = clampText(plugin.name, 64);
-    var version = clampText(plugin.version, 32);
-    var zipUrl = safeHttpUrl(plugin.zip_url);
-    if (!name || !zipUrl) return null;
-
-    var installed = installedPlugins.some(function (item) { return item.id === plugin.id; });
-    var article = document.createElement("article");
-    article.className = "ws-card ws-install-card";
-    article.setAttribute("data-state", installed ? "installed" : "suggested");
-
-    var head = document.createElement("header");
-    head.className = "ws-card-head";
-    var kicker = document.createElement("span");
-    kicker.className = "ws-tag ws-install-kicker";
-    kicker.textContent = "安装建议";
-    head.appendChild(kicker);
-    var kind = document.createElement("span");
-    kind.className = "ws-tag ws-tag-topic";
-    kind.textContent = KIND_LABELS[plugin.kind] || "插件";
-    head.appendChild(kind);
-    article.appendChild(head);
-
-    var title = document.createElement("h4");
-    title.className = "ws-card-title";
-    title.textContent = name + (version ? " v" + version : "");
-    article.appendChild(title);
-
-    if (plugin.description) {
-      var desc = document.createElement("p");
-      desc.className = "ws-card-desc";
-      desc.textContent = clampText(plugin.description, 200);
-      article.appendChild(desc);
-    }
-    if (block.reason) {
-      var reason = document.createElement("p");
-      reason.className = "ws-card-reason";
-      reason.textContent = "推荐理由：" + clampText(block.reason, 200);
-      article.appendChild(reason);
-    }
-
-    var note = document.createElement("p");
-    note.className = "ws-card-note";
-    note.textContent = "来源 " + hostOf(zipUrl) + " · 只有你点【确认安装】，底座才会下载这一个 zip 并走完整校验。";
-    article.appendChild(note);
-
-    var status = document.createElement("p");
-    status.className = "ws-card-status";
-    status.setAttribute("role", "status");
-    status.setAttribute("aria-live", "polite");
-    article.appendChild(status);
-
-    var foot = document.createElement("footer");
-    foot.className = "ws-card-foot";
-    var installBtn = document.createElement("button");
-    installBtn.type = "button";
-    installBtn.className = "ws-btn ws-btn-primary ws-btn-sm ws-install-confirm";
-    installBtn.textContent = installed ? "已安装" : "确认安装";
-    installBtn.disabled = installed;
-    var cancelBtn = document.createElement("button");
-    cancelBtn.type = "button";
-    cancelBtn.className = "ws-btn ws-btn-sm";
-    cancelBtn.textContent = "暂不安装";
-    if (installed) {
-      status.textContent = "本机已安装该插件，无需重复安装。";
-      cancelBtn.hidden = true;
-    } else {
-      cancelBtn.addEventListener("click", function () {
-        article.setAttribute("data-state", "cancelled");
-        installBtn.disabled = true;
-        cancelBtn.disabled = true;
-        status.textContent = "已取消，未下载任何内容。";
-      });
-      installBtn.addEventListener("click", function () {
-        installSuggestedPlugin(article, status, installBtn, {
-          url: zipUrl,
-          mirrors: (plugin.mirrors || []).map(function (item) { return clampText(item, 800); }).filter(Boolean),
-          name: name,
-        });
-      });
-    }
-    foot.appendChild(installBtn);
-    foot.appendChild(cancelBtn);
-    article.appendChild(foot);
-    return article;
-  }
-
-  function installSuggestedPlugin(cardEl, statusEl, buttonEl, target) {
-    var replace = false;
-    cardEl.setAttribute("data-state", "installing");
-    buttonEl.disabled = true;
-    buttonEl.setAttribute("aria-busy", "true");
-    buttonEl.textContent = "安装中…";
-    statusEl.textContent = "正在下载并校验 " + target.name + " …";
-
-    function attempt(allowReplace) {
-      return fetchWriteToken()
-        .then(function (token) {
-          return fetch("/api/plugins/install-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-            body: JSON.stringify({
-              url: target.url,
-              mirrors: target.mirrors,
-              replace: allowReplace,
-            }),
-          });
-        })
-        .then(function (response) {
-          return response.json().catch(function () { return null; }).then(function (body) {
-            if (response.status === 409 && !allowReplace) {
-              var question = readErrorDetail(response, body) + " 覆盖安装会先删除旧目录，继续吗？";
-              if (window.confirm(question)) return attempt(true);
-              return { cancelled: true };
-            }
-            if (!response.ok) throw new Error(readErrorDetail(response, body));
-            return body || {};
-          });
-        })
-        .finally(function () {
-          writeToken = null;
-        });
-    }
-
-    attempt(false)
-      .then(function (result) {
-        if (result && result.cancelled) {
-          cardEl.setAttribute("data-state", "suggested");
-          buttonEl.disabled = false;
-          buttonEl.removeAttribute("aria-busy");
-          buttonEl.textContent = "确认安装";
-          statusEl.textContent = "已取消覆盖安装。";
-          return null;
-        }
-        var plugin = (result && result.plugin) || {};
-        cardEl.setAttribute("data-state", "installed");
-        buttonEl.removeAttribute("aria-busy");
-        buttonEl.textContent = "已安装";
-        statusEl.textContent = "安装成功：" + (plugin.name || target.name) +
-          (result && result.source_host ? "（来源 " + result.source_host + "）" : "");
-        addBubble("sys", "插件已安装：" + (plugin.name || plugin.id || target.name) +
-          " v" + (plugin.version || "?"));
-        logHistory("安装插件 " + (plugin.name || target.name));
-        return loadPlugins().catch(function () { return null; });
-      })
-      .catch(function (error) {
-        cardEl.setAttribute("data-state", "failed");
-        buttonEl.disabled = false;
-        buttonEl.removeAttribute("aria-busy");
-        buttonEl.textContent = "重试安装";
-        statusEl.textContent = "安装失败：" + error.message;
-      });
-  }
-
-  function buildConfirmCard(block) {
-    var title = clampText(block.title, 60) || "操作确认";
-    var actions = (Array.isArray(block.actions) ? block.actions : []).slice(0, 4);
-    if (!actions.length) return null;
-    var article = document.createElement("article");
-    article.className = "ws-card ws-confirm-card";
-
-    var head = document.createElement("header");
-    head.className = "ws-card-head";
-    var kicker = document.createElement("span");
-    kicker.className = "ws-tag ws-confirm-kicker";
-    kicker.textContent = "操作确认";
-    head.appendChild(kicker);
-    article.appendChild(head);
-
-    var heading = document.createElement("h4");
-    heading.className = "ws-card-title";
-    heading.textContent = title;
-    article.appendChild(heading);
-
-    if (block.description) {
-      var desc = document.createElement("p");
-      desc.className = "ws-card-desc";
-      desc.textContent = clampText(block.description, 400);
-      article.appendChild(desc);
-    }
-
-    var foot = document.createElement("footer");
-    foot.className = "ws-card-foot";
-    actions.forEach(function (action, index) {
-      var label = clampText(action && action.label, 20);
-      var command = clampText(action && action.command, 200);
-      if (!label || !command) return;
-      var button = document.createElement("button");
-      button.type = "button";
-      button.className = "ws-btn ws-btn-sm" + (index === 0 ? " ws-btn-primary" : "");
-      button.textContent = label;
-      button.addEventListener("click", function () {
-        if (article.getAttribute("data-state") === "sent") return;
-        article.setAttribute("data-state", "sent");
-        foot.querySelectorAll("button").forEach(function (item) { item.disabled = true; });
-        sendPrompt(command, { origin: "confirm_card" });
-      });
-      foot.appendChild(button);
-    });
-    article.appendChild(foot);
-    return article;
-  }
-
-  function buildCard(raw) {
-    if (!raw || typeof raw !== "object") return null;
-    if (raw.type === "question") return buildQuestionCard(raw.data);
-    if (raw.type === "install") return buildInstallCard(raw.data);
-    if (raw.type === "confirm") return buildConfirmCard(raw.data);
+    if (role !== "sys") return null;
+    var line = clampText(text, 300);
+    if (line) dockLine(line, opts && opts.tone === "warn" ? "host.warn" : "host.notice");
     return null;
   }
 
@@ -646,13 +78,6 @@
     }
   }
 
-  // 记录一轮对话进内存 transcript，超过上限丢最旧的，供下一轮注入模型。
-  function pushTurn(role, content) {
-    if (!content) return;
-    transcript.push({ role: role, content: String(content) });
-    while (transcript.length > TRANSCRIPT_MAX) transcript.shift();
-  }
-
   // ============ 当前任务舞台 ============
   function setStage(taskName) {
     currentTask = taskName || "";
@@ -660,27 +85,15 @@
     if (ctxTask) ctxTask.textContent = currentTask || "未选择";
   }
 
-  // ============ 入口切换：自由对话 / 插件工作模式 ============
-  // 左栏不再写死业务任务；插件条目由 /api/plugins 动态渲染。点插件只切换
-  // 工作模式与上下文，不做任何页面跳转（军令 2.3）。
+  // ============ 入口切换：插件工作模式 ============
+  // 左栏不再写死业务任务；条目完全由 /api/plugins 动态渲染（军令 #15 之后，
+  // 「自由对话」这条底座内置入口也撤了——AI 助手只是清单里的一个普通插件）。
+  // 点插件只切换工作模式与上下文，不做任何页面跳转（军令 2.3）。
   function markActiveEntry(activeEl) {
     var items = document.querySelectorAll(".ws-plugin-item");
     for (var i = 0; i < items.length; i += 1) {
       items[i].setAttribute("aria-current", String(items[i] === activeEl));
     }
-  }
-
-  function enterChatMode() {
-    activePlugin = null;
-    markActiveEntry(chatEntry);
-    setStage("自由对话");
-    clearPluginPanel();
-    if (window.JzoStage && typeof window.JzoStage.activate === "function") {
-      window.JzoStage.activate("chat");
-    }
-    addBubble("sys", "已进入「自由对话」模式。");
-    logHistory("进入自由对话");
-    if (promptInput) promptInput.focus();
   }
 
   function enterPluginMode(plugin, item) {
@@ -692,29 +105,18 @@
     renderPluginPanel(plugin);
     // 中栏是通用舞台：只有清单里声明了 stage（slots 带 stage.center）的插件才开画布页。
     // 没声明的插件照旧只切工作模式 + 右栏面板，不给它一块它没要过的地方。
-    if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
+    if (plugin.id === ASSISTANT_PLUGIN_ID) {
+      // 助手不开画布页：点它这一行等于「把右栏还给我」，并顺手展开右栏。
+      setCtx(true);
+      if (window.JzoContextPanel && typeof window.JzoContextPanel.reclaim === "function") {
+        window.JzoContextPanel.reclaim();
+      }
+    } else if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
       window.JzoStage.openPlugin(plugin);
     }
-    addBubble("sys", "现在处于插件「" + name + "」的工作模式下。" +
-      (plugin.description ? " " + plugin.description : ""));
-    var capabilities = (plugin.capabilities || []).slice(0, 4).join("、");
-    var actions = uiPanelControls.filter(function (control) {
-      return control.type === "button";
-    }).slice(0, 3).map(function (control) { return "【" + control.label + "】"; });
-    var intro = "「" + name + "」支持：" + (capabilities || "见插件说明") + "。";
-    if (actions.length) {
-      intro += "右侧「" + ((plugin.ui && plugin.ui.title) || (name + "快捷操作")) +
-        "」面板可以直接点 " + actions.join(" ") + "，点一下就等于在对话区发送对应指令；" +
-        "年级、难度等下拉选择会实时同步给我。你也可以直接说话，比如「随机出一道高一基础题」。";
-    } else {
-      intro += "你也可以直接说话，我会优先调用这个插件的能力。";
-    }
-    addBubble("bot", intro);
     logHistory("进入插件「" + name + "」");
-    if (promptInput) promptInput.focus();
   }
 
-  if (chatEntry) chatEntry.addEventListener("click", enterChatMode);
 
   /**
    * 启动行为（军令 #11 阶段三）：老师选了「打开软件默认进入某插件」，这里执行它。
@@ -739,7 +141,7 @@
           if (!target && plugin.id === wantedId && plugin.enabled !== false) target = plugin;
         });
         if (!target) {
-          logHistory("启动插件不在场，停在自由对话：" + wantedId);
+          logHistory("启动插件不在场，停在引导页：" + wantedId);
           return;
         }
         var item = null;
@@ -852,11 +254,7 @@
         btn.setAttribute("data-ui-button", control.id);
         btn.textContent = control.label || "执行";
         btn.addEventListener("click", function () {
-          sendPrompt(expandCommand(control.command), {
-            origin: "ui_button",
-            buttonId: control.id,
-            label: control.label || "面板按钮",
-          });
+          publishPanelButton(control.command, control.label || "面板按钮");
         });
         pluginControlsEl.appendChild(btn);
       }
@@ -914,6 +312,27 @@
     });
   }
 
+  /**
+   * 人点面板按钮 = 请右栏的 AI 助手把这句话发出去（军令 #15）。
+   * 宿主不再自己调对话接口：按钮只把「指令模板 + 当前参数」交给助手插件，
+   * 由它经 Host API 申请一次对话——对话的入口收在插件手里，底座不再代笔。
+   */
+  function publishPanelButton(command, label) {
+    var text = clampText(expandCommand(command), 400);
+    if (!text) {
+      dockLine("面板按钮「" + clampText(label, 40) + "」没有可用的指令模板。", "host.warn");
+      return;
+    }
+    if (window.JzoStage && typeof window.JzoStage.broadcast === "function") {
+      window.JzoStage.broadcast("panel.button.click", {
+        plugin_id: uiState.pluginId,
+        command: text,
+        label: clampText(label, 40)
+      });
+    }
+    logHistory("面板按钮：" + (label || text));
+  }
+
   function findUiControl(id, type) {
     for (var i = 0; i < uiPanelControls.length; i += 1) {
       var control = uiPanelControls[i];
@@ -963,18 +382,82 @@
     return { applied: applied, skipped: skipped };
   }
 
-  function triggerUiButton(id) {
-    var control = findUiControl(String(id || ""), "button");
-    if (!control) {
-      addBubble("sys", "AI 想触发面板按钮「" + id + "」，但当前面板没有这个按钮。", { tone: "warn" });
-      return;
+  /**
+   * AI 助手插件申请设面板参数（军令 #15 任务 1、2）。
+   * 助手交出「目标插件 + 发送时拍的修订号快照」：目标不对整批拒，
+   * 快照对不上（人在请求飞行期间手改过同一字段）单字段跳过——AI 永远赢不过人的手。
+   */
+  function applyAiParams(params, snapshot, targetPluginId) {
+    if (!uiState.pluginId) {
+      return { error: { code: "NO_PANEL", message: "当前右栏没有可调参数的插件面板" } };
     }
-    sendPrompt(expandCommand(control.command), {
-      origin: "ai_button",
-      buttonId: control.id,
-      label: control.label,
-    });
+    var wanted = String(targetPluginId || "");
+    if (wanted && wanted !== uiState.pluginId) {
+      return { error: { code: "PANEL_MOVED", message: "面板已切到「" + uiState.pluginId + "」，本次设定作废" } };
+    }
+    var outcome = applyUiParams(params, snapshot);
+    dockLine("AI 助手经宿主设定面板参数：应用 " + outcome.applied.length
+      + " 项、跳过 " + outcome.skipped.length + " 项。", "agent.params");
+    if (outcome.applied.length) {
+      logHistory("AI 设定参数：" + outcome.applied.map(function (item) {
+        return item.label + "=" + item.value;
+      }).join("、"));
+    }
+    return outcome;
   }
+
+  /**
+   * 宿主工作区快照（window.JzoWorkspace 的服务面之一）：
+   * 助手插件能看见的全部世界就是这一份 JSON——没有 DOM、没有令牌、没有库连接。
+   */
+  function stateSnapshot() {
+    var active = findActiveProvider();
+    var snapshot = {
+      current_task: currentTask || "未选择",
+      stage: (stageTitle && stageTitle.textContent) || currentTask || "工作台",
+      textbook: "未选择",
+      model: active ? (active.model || active.label || "未知") : "未就绪",
+      mock: active ? Boolean(active.mock || !active.configured) : true,
+      provider: active || null,
+      right_slot: window.JzoContextPanel ? window.JzoContextPanel.activeId() : null,
+      tabs: window.JzoStage && typeof window.JzoStage.tabs === "function" ? window.JzoStage.tabs() : []
+    };
+    if (activePlugin) {
+      snapshot.plugin = {
+        id: activePlugin.id,
+        name: activePlugin.name,
+        version: activePlugin.version,
+        kind: activePlugin.kind,
+        description: activePlugin.description,
+        capabilities: activePlugin.capabilities || []
+      };
+      if (uiPanelControls.length) {
+        snapshot.ui = {
+          plugin_id: activePlugin.id,
+          values: currentUiValues(),
+          controls: compactControls(),
+          revisions: snapshotRevisions()
+        };
+      }
+    }
+    return snapshot;
+  }
+
+  /** 右栏主权对账：画布页签换了主人，插槽跟着换（军令 #15 任务 4）。 */
+  function syncContextSlot() {
+    if (window.JzoContextPanel && typeof window.JzoContextPanel.sync === "function") {
+      window.JzoContextPanel.sync(installedPlugins, activeCanvasPluginId);
+    }
+  }
+
+  // 助手插件向底座要服务的唯一门面：白名单在 stage.js，能力在这里。
+  window.JzoWorkspace = {
+    stateSnapshot: stateSnapshot,
+    applyAiParams: applyAiParams,
+    syncContextSlot: syncContextSlot,
+    refreshPlugins: function () { return loadPlugins({ announce: true }); },
+    activeCanvasPlugin: function () { return activeCanvasPluginId; }
+  };
 
   // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
   // 状态机只有一个事实来源：.ws-page 上的 data-side / data-ctx。
@@ -1050,24 +533,6 @@
     mqMobile.addEventListener("change", function (e) { onBreakpoint(e.matches); });
   } else if (typeof mqMobile.addListener === "function") {
     mqMobile.addListener(function (e) { onBreakpoint(e.matches); });
-  }
-
-  // ============ 输入器：Enter 发送 / Shift+Enter 换行 / 自适应高度 ============
-  function autoGrow() {
-    if (!promptInput) return;
-    promptInput.style.height = "auto";
-    var next = Math.min(promptInput.scrollHeight, 180);
-    promptInput.style.height = next + "px";
-  }
-
-  if (promptInput) {
-    promptInput.addEventListener("input", autoGrow);
-    promptInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        if (chatForm) chatForm.requestSubmit();
-      }
-    });
   }
 
   // ============ 底栏输出区：EventBus 的 region.dock 落点 ============
@@ -1241,103 +706,6 @@
     renderDock();
   }
 
-  // ============ 右侧 AI 副驾：感知录题当前题 → 改写字段 → 回填表单 ============
-  function cpStatus(text) { if (cpCtx) cpCtx.textContent = text; }
-
-  function cpRefresh() {
-    var hasQ = Boolean(editorContext.question);
-    if (cpAsk) cpAsk.disabled = !hasQ;
-    if (cpBackfill) cpBackfill.disabled = !(hasQ && pendingPatch);
-  }
-
-  function cpAskNow() {
-    if (!editorContext.question) { cpStatus("先在中栏打开或编辑一道题"); return; }
-    var instruction = clampText(cpInput && cpInput.value, 400);
-    if (!instruction) { cpStatus("请先写一句改写指令"); return; }
-    var field = cpField && cpField.value === "solution" ? "solution" : "stem";
-    var targetId = editorContext.id;
-    if (cpAsk) { cpAsk.disabled = true; cpAsk.setAttribute("aria-busy", "true"); cpAsk.textContent = "改写中…"; }
-    cpStatus("AI 副驾改写中…");
-    pendingPatch = null; cpRefresh();
-    fetch("/api/agent/refine", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: editorContext.question, instruction: instruction,
-        field: field, task_id: "cp_" + Date.now()
-      })
-    })
-      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(function (response) {
-        var env = response && response.data ? response.data : (response && response.fallback);
-        var value = env && env.value;
-        var note = env && env.note;
-        if (typeof value !== "string" || !value.trim()) {
-          cpStatus("AI 没有给出可用的改写内容");
-          return;
-        }
-        pendingPatch = { id: targetId, field: field, value: value };
-        if (cpOut) cpOut.textContent = (note ? note + "\n\n" : "") + value;
-        cpStatus((field === "solution" ? "解析" : "题干") + "改写完成，点「回填到表单」");
-      })
-      .catch(function (err) { cpStatus("副驾调用失败：" + err.message); })
-      .then(function () {
-        if (cpAsk) { cpAsk.disabled = false; cpAsk.removeAttribute("aria-busy"); cpAsk.textContent = "让 AI 改写"; }
-        cpRefresh();
-      });
-  }
-
-  function cpBackfillNow() {
-    if (!pendingPatch) return;
-    if (window.JzoStage && typeof window.JzoStage.broadcast === "function") {
-      window.JzoStage.broadcast("editor.apply_patch", {
-        id: pendingPatch.id, field: pendingPatch.field, value: pendingPatch.value
-      });
-      cpStatus("已回填到录题表单，请核对后保存");
-      dockLine("AI 副驾把改写的" + (pendingPatch.field === "solution" ? "解析" : "题干") +
-        "回填到了录题工作台", "copilot.apply");
-    } else {
-      cpStatus("当前没有可回填的录题页签");
-    }
-    cpRefresh();
-  }
-
-  function cpResetContext() {
-    editorContext = { id: "", question: null, at: 0 };
-    pendingPatch = null;
-    cpStatus("尚未打开题目");
-    if (cpOut) cpOut.textContent = "";
-    cpRefresh();
-  }
-
-  function wireCopilot() {
-    if (!cpAsk) return;
-    cpRefresh();
-    if (window.JzoBus && typeof window.JzoBus.on === "function") {
-      // 录题工作台每次重绘都会经 stage.selection 上抛当前题目；副驾只认录题插件的选区。
-      window.JzoBus.on("stage.selection", function (event) {
-        var p = (event.payload && event.payload.raw) || {};
-        if (p.pluginId !== "org.jiuzhang.editor") return;
-        editorContext.question = p.question || null;
-        editorContext.id = typeof p.editingId === "string" ? p.editingId : "";
-        editorContext.at = Date.now();
-        pendingPatch = null;
-        cpStatus(editorContext.question
-          ? (editorContext.id ? "正在编辑 " + editorContext.id : "正在录入新题")
-          : "尚未打开题目");
-        if (cpOut) cpOut.textContent = "";
-        cpRefresh();
-      });
-      // 录题页签关闭后，副驾回到「未打开」，不把旧题当上下文继续改写。
-      window.JzoBus.on("stage.tab.closed", function (event) {
-        var key = (event.payload && event.payload.key) || "";
-        if (key.indexOf("org.jiuzhang.editor") >= 0) cpResetContext();
-      });
-    }
-    cpAsk.addEventListener("click", cpAskNow);
-    if (cpBackfill) cpBackfill.addEventListener("click", cpBackfillNow);
-  }
-
   function wireDock() {
     if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
     window.JzoBus.on("region.dock", function (event) {
@@ -1381,360 +749,6 @@
   window.JzoUiState = { snapshot: function () {
     return { pluginId: uiState.pluginId, values: uiValuesCopy(), by: "snapshot" };
   } };
-
-  // ============ 发送指令 → 对话 Agent → 助手气泡 ============
-  function describeSource(response) {
-    if (response && response.route === "host") {
-      return "底座按意图直接调用插件（模型未参与）";
-    }
-    if (response && response.mock) return "Mock 降级（当前 Provider 未配置密钥）";
-    var data = (response && response.data) || {};
-    return "模型 " + (data.model || "未知") + " 产出";
-  }
-
-  function describePluginSource(response, pluginCalls) {
-    if (response && response.route === "host") {
-      return "底座按意图直接调用插件（模型未参与）";
-    }
-    if (response && response.mock) {
-      return "Mock 模型发起 · 插件真实执行";
-    }
-    var data = (response && response.data) || {};
-    return "模型 " + (data.model || "未知") + " 发起 · 插件真实执行";
-  }
-
-  // --- 解析拦截（10.24 军令 P0-1）：系统控制 JSON 绝不进对话气泡 ---
-  // 后端已剥一层代码围栏，前端再兜一层，双保险。
-  function stripFences(text) {
-    if (typeof text !== "string") return "";
-    var trimmed = text.trim();
-    var fence = trimmed.match(/^```[a-zA-Z0-9_-]*[ \t]*\r?\n?([\s\S]*?)\r?\n?```[ \t]*$/);
-    return fence ? fence[1].trim() : trimmed;
-  }
-
-  // 尝试把内容解析成一个「控制对象」：先剥围栏再 JSON.parse，
-  // 失败则从文本里抠出第一个 {...} 再试。解析不出对象一律返回 null。
-  function extractControlJson(content) {
-    var body = stripFences(content);
-    if (!body) return null;
-    try {
-      var direct = JSON.parse(body);
-      if (direct && typeof direct === "object") return direct;
-    } catch (e) {
-      /* 落到下面的兜底抠取 */
-    }
-    var braceMatch = body.match(/\{[\s\S]*\}/);
-    if (braceMatch) {
-      try {
-        var extracted = JSON.parse(braceMatch[0]);
-        if (extracted && typeof extracted === "object") return extracted;
-      } catch (e2) {
-        /* 仍不是合法 JSON，当作普通文本处理 */
-      }
-    }
-    return null;
-  }
-
-  // 判断一段文本是否「看起来就是裸 JSON / 代码围栏」——这种东西不许直接给用户看。
-  function looksLikeRawJson(text) {
-    return /^\s*(```|[\[{])/.test(text || "");
-  }
-
-  function summarizeAction(parsed, source) {
-    // 空壳原型：把 Agent 识别到的意图如实回显，具体执行待后续接入。
-    var action = parsed && parsed.action;
-    // 真实模型常把参数嵌在 params 下，Mock 则平铺在顶层；两处都认。
-    var p = (parsed && parsed.params) ? parsed.params : (parsed || {});
-    if (action === "split_paper") {
-      var range = Array.isArray(p.page_range) ? p.page_range : [];
-      var pageText = range.length === 2 ? "第 " + range[0] + "–" + range[1] + " 页" : "全卷";
-      return "已识别【拆题】指令：" + pageText + "。（空壳原型：拆题结果将在接入拆题 Agent 后于此展开）";
-    }
-    if (action === "tag_question") {
-      return "已识别【标记题目】指令：" + (p.question_id || "未指明题目") + "。";
-    }
-    if (action === "export_paper") {
-      return "已识别【导出】指令：格式 " + (p.format || "未指明") + "。";
-    }
-    if (action === "clarify") {
-      var question = p.question || (parsed && parsed.question) || "";
-      // clarify 的问句本身若又是裸 JSON，说明模型没守规矩，拦下来给友好兜底。
-      if (question && !looksLikeRawJson(question)) return question;
-      return "我还不能确定你的意图，能否说得再具体些？比如「拆分第 1–2 页」或「导出为 PDF」。";
-    }
-    if (typeof parsed === "string") return parsed;
-    return "已收到指令，但暂未识别为具体操作。（空壳原型：先见形，后调逻辑）";
-  }
-
-  // 右栏结构化上下文 → 注入 System 尾部，让模型结合前文干活而非反问。
-  function gatherContext() {
-    var active = findActiveProvider();
-    var context = {
-      current_task: currentTask || "未选择",
-      stage: (stageTitle && stageTitle.textContent) || currentTask || "新会话",
-      textbook: "未选择",
-      model: active ? (active.model || active.label || "未知") : "未就绪",
-      mock: active ? Boolean(active.mock || !active.configured) : true,
-    };
-    // 插件模式下把插件身份与能力一并注入 System 尾部；模型据此知道
-    // 「现在处于该插件的工作模式下」，优先调用对应工具而不是空谈。
-    if (activePlugin) {
-      context.working_mode = "插件「" + (activePlugin.name || activePlugin.id) + "」工作模式";
-      context.plugin = {
-        id: activePlugin.id,
-        name: activePlugin.name,
-        version: activePlugin.version,
-        kind: activePlugin.kind,
-        description: activePlugin.description,
-        capabilities: activePlugin.capabilities || [],
-      };
-      if (uiPanelControls.length) {
-        context.ui = {
-          plugin_id: activePlugin.id,
-          values: currentUiValues(),
-          controls: compactControls(),
-        };
-      }
-    }
-    return context;
-  }
-
-  function summarizeUiControl(parsed) {
-    var message = typeof parsed.message === "string" ? parsed.message.trim() : "";
-    if (message && !looksLikeRawJson(message)) return message;
-    if (parsed.action === "update_params") {
-      var params = parsed.params && typeof parsed.params === "object" ? parsed.params : {};
-      var pairs = Object.keys(params).map(function (key) { return key + "=" + params[key]; });
-      return pairs.length
-        ? "好，我把右侧面板调成：" + pairs.join("、") + "。"
-        : "好，我来调整右侧面板。";
-    }
-    return "好，我替你点一下右侧面板的「" + clampText(parsed.button, 32) + "」。";
-  }
-
-  function callAgent(prompt) {
-    var payload = {
-      user_input: prompt,
-      task_id: "ws_" + Date.now(),
-      context: gatherContext(),
-      history: transcript.slice(-TRANSCRIPT_SEND),
-    };
-    return fetch("/api/agent/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-      .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (response) {
-        // 正常信封读 data.content；模型异常时后端回 fallback.content（仍可用）
-        var envelope = response && response.data ? response.data : response && response.fallback;
-        var content = envelope && envelope.content;
-        var pluginCalls = envelope && Array.isArray(envelope.plugin_calls) ? envelope.plugin_calls : [];
-        var source = pluginCalls.length
-          ? describePluginSource(response, pluginCalls)
-          : describeSource(response);
-        if (!content) {
-          return { text: "模型没有返回内容，请检查 Provider 配置。", source: source, tone: "warn", cards: [] };
-        }
-
-        // 先摘掉 ui_json 卡片围栏：卡片由前端渲染，正文才是给人看的话。
-        var split = splitUiBlocks(content);
-        var body = stripFences(split.text);
-        var cards = split.cards;
-
-        // 插件结果已经是后端整理好的自然语言，直接展示，不再当控制 JSON 解析。
-        if (pluginCalls.length) {
-          return {
-            text: body,
-            source: source,
-            tone: null,
-            pluginCalls: pluginCalls,
-            route: response && response.route,
-            cards: cards,
-          };
-        }
-
-        if (!body && cards.length) {
-          return { text: "", source: source, tone: null, cards: cards };
-        }
-
-        // 拦截：先把内容当控制 JSON 解析。命中 action 就翻译成人话，
-        // 命中无 action 的普通 JSON 给通用回执，都不把原始 JSON 露给用户。
-        var parsed = body ? extractControlJson(body) : null;
-        if (parsed) {
-          var action = typeof parsed.action === "string" ? parsed.action : "";
-          if (action === "update_params") {
-            var params = parsed.params && typeof parsed.params === "object" ? parsed.params : {};
-            if (!Object.keys(params).length) {
-              Object.keys(parsed).forEach(function (key) {
-                if (key !== "action" && key !== "message") params[key] = parsed[key];
-              });
-            }
-            return {
-              text: summarizeUiControl(parsed),
-              source: source,
-              cards: cards,
-              control: { action: "update_params", params: params },
-            };
-          }
-          if (action === "trigger_button") {
-            return {
-              text: summarizeUiControl(parsed),
-              source: source,
-              cards: cards,
-              control: { action: "trigger_button", button: typeof parsed.button === "string" ? parsed.button : "" },
-            };
-          }
-          if (action) {
-            return { text: summarizeAction(parsed, source), source: source, tone: null, cards: cards };
-          }
-          return {
-            text: cards.length ? "" : "已收到模型的结构化回执（系统内部数据，已折叠）。",
-            source: source,
-            tone: null,
-            cards: cards,
-          };
-        }
-        // 不是 JSON：若是裸围栏/括号开头，判定为控制信令漏网，绝不直接显示。
-        if (body && looksLikeRawJson(body)) {
-          return {
-            text: "模型返回了未识别的系统信令，已拦截未显示。请换种说法再试一次。",
-            source: source,
-            tone: "warn",
-            cards: cards,
-          };
-        }
-        // 真正的自然语言散文，可以直接给用户看（$...$ 交本地 KaTeX 渲染）。
-        return { text: body, source: source, tone: null, cards: cards, richText: true };
-      });
-  }
-
-  function setSending(active) {
-    if (!sendBtn) return;
-    sendBtn.disabled = active;
-    if (active) {
-      sendBtn.setAttribute("aria-busy", "true");
-      sendBtn.textContent = "发送中…";
-    } else {
-      sendBtn.removeAttribute("aria-busy");
-      sendBtn.textContent = "发送";
-    }
-  }
-
-  function originNote(options) {
-    if (!options) return "";
-    if (options.origin === "ui_button") return "右侧面板 · 你点了「" + (options.label || "按钮") + "」";
-    if (options.origin === "ai_button") return "AI 操控面板 · 触发「" + (options.label || "按钮") + "」";
-    if (options.origin === "confirm_card") return "卡片按钮";
-    return "";
-  }
-
-  // 处理模型下发的界面动作。返回需要在本次请求收尾后追加发送的指令。
-  function handleControl(control, snapshot, allowUi) {
-    if (!control) return null;
-    if (control.action === "update_params") {
-      if (!uiPanelControls.length) {
-        addBubble("sys", "AI 想调整右侧面板，但当前没有可调参数，已忽略。", { tone: "warn" });
-        return null;
-      }
-      var result = applyUiParams(control.params, snapshot);
-      if (result.applied.length) {
-        var appliedText = result.applied.map(function (item) {
-          return item.label + " 设为「" + item.value + "」";
-        }).join("，");
-        addBubble("sys", "右侧面板已更新：" + appliedText + "。");
-        logHistory("AI 调整面板：" + appliedText);
-      }
-      if (result.skipped.length) {
-        var skippedText = result.skipped.map(function (item) {
-          return item.label + "（" + item.reason + "，保留当前值）";
-        }).join("，");
-        addBubble("sys", "AI 想改的以下参数没有覆盖你的操作：" + skippedText + "。", { tone: "warn" });
-      }
-      return null;
-    }
-    if (control.action === "trigger_button") {
-      if (!allowUi) {
-        addBubble("sys", "本轮指令已由面板按钮触发，AI 再次触发按钮被忽略，避免循环。", { tone: "warn" });
-        return null;
-      }
-      var button = findUiControl(control.button, "button");
-      if (!button) {
-        addBubble("sys", "AI 想触发面板按钮「" + control.button + "」，但当前面板没有这个按钮。", { tone: "warn" });
-        return null;
-      }
-      addBubble("sys", "AI 正在替你执行面板按钮「" + button.label + "」…");
-      logHistory("AI 触发面板按钮：" + button.label);
-      return {
-        prompt: expandCommand(button.command),
-        options: { origin: "ai_button", buttonId: button.id, label: button.label },
-      };
-    }
-    return null;
-  }
-
-  // 统一发送入口：人类输入、右侧面板按钮、AI 触发、确认卡片都走这里。
-  function sendPrompt(prompt, options) {
-    options = options || {};
-    var text = String(prompt == null ? "" : prompt).trim();
-    if (!text) return Promise.resolve();
-    var origin = options.origin || "human";
-    // AI 触发的按钮只允许再走一层：该轮若又拿到 trigger_button 就忽略。
-    var allowUi = origin === "human" || origin === "confirm_card";
-
-    addBubble("user", text, originNote(options) ? { source: originNote(options) } : undefined);
-    logHistory("发送指令：" + (text.length > 24 ? text.slice(0, 24) + "…" : text));
-    pushTurn("user", text);
-    if (promptInput) {
-      promptInput.value = "";
-      autoGrow();
-    }
-
-    setSending(true);
-    var typing = addTyping();
-    var snapshot = snapshotRevisions();
-    var followUp = null;
-
-    return callAgent(text)
-      .then(function (res) {
-        if (typing) typing.remove();
-        addBubble("bot", res.text, {
-          source: res.source,
-          tone: res.tone,
-          pluginCalls: res.pluginCalls,
-          route: res.route,
-          cards: res.cards,
-          richText: res.richText,
-        });
-        if (res.pluginCalls && res.pluginCalls.length) {
-          logHistory("调用插件：" + pluginCallNames(res.pluginCalls));
-        }
-        pushTurn("assistant", res.text || (res.cards && res.cards.length ? "[已展示可视化卡片]" : ""));
-        followUp = handleControl(res.control, snapshot, allowUi);
-      })
-      .catch(function (err) {
-        if (typing) typing.remove();
-        addBubble("bot", "指令执行失败：" + err.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
-        pushTurn("assistant", "指令执行失败：" + err.message);
-      })
-      .finally(function () {
-        setSending(false);
-        if (promptInput) promptInput.focus();
-        if (followUp) sendPrompt(followUp.prompt, followUp.options);
-      });
-  }
-
-  if (chatForm) {
-    chatForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var prompt = promptInput ? promptInput.value.trim() : "";
-      if (!prompt) return;
-      sendPrompt(prompt, { origin: "human" });
-    });
-  }
 
   // ============ 写令牌（一次性，用后即焚） ============
   function fetchWriteToken() {
@@ -2134,15 +1148,13 @@
           } else {
             activePlugin = null;
             clearPluginPanel();
-            setStage("自由对话");
-            markActiveEntry(chatEntry);
+            setStage("工作台");
+            markActiveEntry(null);
           }
         }
         renderPlugins(plugins);
-        if (window.JzoContextPanel && typeof window.JzoContextPanel.sync === "function") {
-          // 右栏插槽跟着同一份清单刷新：插件装/卸/停用后不必刷新页面
-          window.JzoContextPanel.sync(plugins);
-        }
+        // 右栏主权跟着同一份清单刷新：插件装/卸/停用、画布页签换主人都不必刷新页面
+        syncContextSlot();
         if (window.JzoStage && typeof window.JzoStage.updatePlugin === "function") {
           plugins.forEach(function (plugin) { window.JzoStage.updatePlugin(plugin); });
         }
@@ -2270,24 +1282,37 @@
     installPluginZip(file, false);
   });
 
-  // ============ 初始化 ============
-  // 默认入口只有「自由对话」；插件区完全由 /api/plugins 的发现结果渲染。
-  wireDock();
-  wireCopilot();
-  wirePluginDrag();
-  setStage("自由对话");
-  markActiveEntry(chatEntry);
-  addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入对话工具（tool_calls），结果以「已调用插件」标识回显");
-  addBubble("bot", "你好，我是九章算子工作台助手。从左侧选择「自由对话」或某个已安装插件，也可以直接在下方输入指令。进入插件工作模式后，我会优先调用该插件的能力。安装插件、切换题库或配置模型，点左下角【设置与控制台】。");
+  // ============ 右栏主权监听：画布页签换主人，插槽跟着换 ============
+  function wireStageSovereignty() {
+    if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
+    window.JzoBus.on("stage.tab.activated", function (event) {
+      var payload = (event && event.payload) || {};
+      activeCanvasPluginId = typeof payload.pluginId === "string" ? payload.pluginId : "";
+      syncContextSlot();
+    });
+    // 关掉页签后 stage 会自己 emit 一次 activated；这里先清账，避免主权挂在已关插件上
+    window.JzoBus.on("stage.tab.closed", function () {
+      activeCanvasPluginId = "";
+      syncContextSlot();
+    });
+  }
 
-  // 种子题库插件在场时才提示示例题（10.24 军令任务 2）：插件被删就不许说谎。
+  // ============ 初始化 ============
+  // 中栏默认停在原生引导页，右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
+  wireDock();
+  wirePluginDrag();
+  wireStageSovereignty();
+  setStage("工作台");
+  markActiveEntry(null);
+  addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入 AI 助手的工具表（tool_calls），结果以「已调用插件」标识回显");
+
   loadPlugins()
     .then(function (plugins) {
       // 启动行为在插件清单渲染完之后执行：左栏条目已就位，进去才能高亮对应项
       return applyStartupBehavior(plugins).then(function () {
-        var hasDemo = plugins.some(function (p) { return p.id === "org.jiuzhang.demo-bank"; });
-        if (hasDemo && !activePlugin) {
-          addBubble("bot", "系统已为您预置了 5 道示例数学题，您可以直接输入「拆分第一题」进行体验。");
+        var hasAssistant = plugins.some(function (p) { return p.id === ASSISTANT_PLUGIN_ID && p.enabled !== false; });
+        if (!hasAssistant) {
+          addBubble("sys", "右栏的 AI 助手插件（org.jiuzhang.chat）不在场：装回它才能用自然语言驱动底座。", { tone: "warn" });
         }
       });
     })

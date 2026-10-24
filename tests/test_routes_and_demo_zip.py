@@ -74,11 +74,14 @@ class DefaultRouteTest(unittest.TestCase):
     def test_05_settings_route_serves_settings_page(self) -> None:
         self.assertEqual(self._served_file("/settings"), STATIC / "settings.html")
 
-    def test_06_welcome_hint_wired_in_workspace_js(self) -> None:
-        text = _read(STATIC / "js" / "workspace.js")
+    def test_06_welcome_hint_lives_in_the_assistant_plugin(self) -> None:
+        # 军令 #15：对话流不在宿主壳里，示例题提示只能由右栏助手插件当场问底座要清单
+        text = _read(ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js")
         self.assertIn("系统已为您预置了 5 道示例数学题", text)
         self.assertIn("拆分第一题", text)
         self.assertIn(DEMO_PLUGIN_ID, text)
+        host_text = _read(STATIC / "js" / "workspace.js")
+        self.assertNotIn("系统已为您预置了", host_text, "宿主壳不得替插件说谎")
 
 
 class DemoZipContractTest(unittest.TestCase):
