@@ -626,7 +626,8 @@ class UpdateScriptTest(unittest.TestCase):
 
     def test_01_every_excluded_dir_is_listed_for_robocopy(self):
         self.assertEqual(HOST_EXCLUDED_DIRS,
-                         ("data", ".venv", ".git", "dist", "__pycache__", ".system_generated"))
+                         ("data", "plugins", ".venv", ".git", "dist", "__pycache__",
+                          ".system_generated"))
         self.assertIn("/XD", self.robocopy)
         # 传目标绝对路径在「阶段 → 根」方向不生效（update_probe 沙箱真跑抓出），
         # 所以 /XD 只认目录名；裸名会在源与目标两侧同时跳过该目录。
@@ -634,6 +635,15 @@ class UpdateScriptTest(unittest.TestCase):
             self.assertIn(f'"{name}"', self.robocopy, f"{name}/ 必须被排除")
             self.assertNotIn(f'"{self.rendered(name)}"', self.robocopy,
                              f"{name}/ 不能只写绝对路径（robocopy /XD 不生效）")
+
+    def test_01b_plugins_dir_is_protected_from_the_host_update(self):
+        """发行包自带插件目录（core-bank 空壳种子库）：底座自更新覆盖它 = 拿空库换真题库。
+
+        插件版本由双轨更新的插件热更通道负责（合并语义、保留本机数据），
+        底座自更新只管程序文件。
+        """
+        self.assertIn("plugins", HOST_EXCLUDED_DIRS)
+        self.assertIn('"plugins"', self.robocopy)
 
     def test_02_data_is_the_first_exclusion(self):
         """data/ 是老师的财产，必须排在排除清单最前面、且确实被排除。"""
@@ -652,6 +662,21 @@ class UpdateScriptTest(unittest.TestCase):
         self.assertIn(":wait_exit", self.script)
         self.assertLess(self.script.index("tasklist"), self.script.index("robocopy"),
                         "必须先等父进程退出，再覆盖文件")
+
+    def test_04b_wait_loop_avoids_the_path_traps(self):
+        """PATH 陷阱：Git Bash 的 ``usr/bin/find.exe`` 排在 System32 前面，
+        ``tasklist | find`` 那行会**直接终止整篇批处理**（沙箱真跑实测：脚本停在
+        该行，底座永不重启）；``timeout`` 在没有控制台的 DETACHED_PROCESS 里同样
+        不可靠。等待循环必须走绝对路径的 tasklist + for /f，睡眠用 ping。
+        """
+        self.assertNotIn("find ", self.script)
+        self.assertNotIn("timeout", self.script)
+        self.assertIn(r"%SystemRoot%\System32\tasklist.exe", self.script)
+        self.assertIn(r"%SystemRoot%\System32\ping.exe", self.script)
+        self.assertIn('for /f "usebackq tokens=2 delims=,"', self.script)
+        self.assertIn('set "JZO_ALIVE=0"', self.script)
+        self.assertIn('do if "%%~p"=="%JZO_PID%" set "JZO_ALIVE=1"', self.script)
+        self.assertIn('if "%JZO_ALIVE%"=="1" (', self.script)
 
     def test_05_copies_stage_over_root_in_the_right_direction(self):
         self.assertIn('set "JZO_ROOT=%s"' % self.rendered(), self.script)
@@ -733,7 +758,7 @@ class PrepareHostUpdateTest(IsolatedDirsMixin):
                         port=8123, data=build_host_zip())
                     script = Path(result["script_path"])
                     self.assertTrue(script.is_file())
-                    script_text = script.read_text(encoding="utf-8")
+                    script_text = script.read_bytes().decode(plugin_update._batch_encoding())
                     staged_main = Path(result["staged_at"], "app", "main.py")
                     self.assertTrue(staged_main.is_file())
         self.assertEqual((result["current"], result["version"]), ("0.9.0", "9.9.9"))
@@ -741,6 +766,23 @@ class PrepareHostUpdateTest(IsolatedDirsMixin):
         self.assertEqual(result["excluded_dirs"], list(HOST_EXCLUDED_DIRS))
         self.assertIn("--port 8123", script_text)
         self.assertTrue(result["launchable"], "临时 project_root 里没有 .git，属发行包形态，可执行")
+
+    def test_01b_script_file_is_written_in_the_console_codepage(self):
+        """cmd 按控制台 ANSI 码页读 .bat：UTF-8 会让中文变乱码、整篇语法崩；
+        ``write_text`` 还会把已是 CRLF 的行尾再转一层，变成 ``\\r\\r\\n``。"""
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch("tempfile.gettempdir", return_value=temp):
+                with mock.patch.object(plugin_update, "__version__", "0.9.0"):
+                    result = prepare_host_update(
+                        {"version": "9.9.9", "zip_url": "https://example.invalid/h.zip",
+                         "mirrors": [], "notes": ""},
+                        port=8123, data=build_host_zip())
+                    raw = Path(result["script_path"]).read_bytes()
+        self.assertNotIn(b"\r\r\n", raw, "批处理不能有多余的 \\r")
+        self.assertTrue(raw.startswith(b"@echo off\r\n"))
+        text = raw.decode(plugin_update._batch_encoding())
+        self.assertIn("等待底座进程退出", text)
+        self.assertIn("--port 8123", text)
 
     def test_02_dev_worktree_is_not_launchable(self):
         (self.root / ".git").mkdir()
@@ -824,6 +866,24 @@ class LaunchGuardTest(IsolatedDirsMixin):
         args = fake.call_args[0][0]
         self.assertEqual(args[:2], ["cmd.exe", "/c"])
         self.assertEqual(Path(args[2]), script)
+
+    def test_04_script_output_goes_to_a_log_file_never_to_a_console(self):
+        """没有控制台时，cmd 的 ``echo`` 写控制台会失败并**终止整篇批处理**。
+
+        底座可能压根没有控制台（图标启动 / pythonw / 被别的进程拉起），
+        那时脚本停在第一行，覆盖与重启都没发生。改接日志文件后脚本一路跑完。
+        """
+        script = self.root / "jzo_update.bat"
+        script.write_text("@echo off\r\n", encoding="utf-8")
+        with mock.patch.object(plugin_update.subprocess, "Popen") as fake:
+            result = launch_host_update(str(script))
+        kwargs = fake.call_args[1]
+        self.assertIs(kwargs["stdin"], plugin_update.subprocess.DEVNULL)
+        self.assertIs(kwargs["stderr"], plugin_update.subprocess.STDOUT)
+        self.assertNotEqual(kwargs["stdout"], None)
+        self.assertTrue(Path(result["log_path"]).name.endswith(".log"))
+        self.assertTrue(Path(result["log_path"]).is_file(),
+                        "日志文件应已落盘，失败时据此追查")
 
 
 class StagePluginZipTest(IsolatedDirsMixin):
@@ -1213,7 +1273,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.assertEqual(body["excluded_dirs"], list(HOST_EXCLUDED_DIRS))
         script = Path(body["script_path"])
         self.assertTrue(script.is_file(), "一次性 update.bat 应已生成")
-        text = script.read_text(encoding="utf-8")
+        text = script.read_bytes().decode(plugin_update._batch_encoding())
         for name in HOST_EXCLUDED_DIRS:
             self.assertIn(name, text, f"{name}/ 必须出现在排除清单里")
         self.assertFalse(body["launchable"], "服务端跑在真仓库工作树上，不该允许自动覆盖重启")

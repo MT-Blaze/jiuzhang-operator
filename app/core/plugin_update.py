@@ -6,8 +6,8 @@
    【检查更新】/【更新】/【一键更新全部插件】/【更新并重启】之后，把已经
    取回的索引条目递进来，才会去下载那一个 zip（AGENTS §2 出网铁律、裁决 1/2）。
 2. **写范围只有代码目录**：插件更新只覆盖 ``plugins/<id>/``；底座更新由一次性
-   ``update.bat`` 用 robocopy 覆盖程序文件，逐条排除 ``data/``、``.venv/``、
-   ``.git/``、``dist/``、``__pycache__/``、``.system_generated/``。
+   ``update.bat`` 用 robocopy 覆盖程序文件，逐条排除 ``data/``、``plugins/``、
+   ``.venv/``、``.git/``、``dist/``、``__pycache__/``、``.system_generated/``。
 3. **本机文件必保**：官方 core-bank 的种子题库（``bank/bank.db``）、``.bak``
    备份、灌库报告与 ``bank/assets/`` 下几十张题目配图就住在插件目录里，
    ``rmtree`` 一把梭等于删老师的财产。插件更新按**合并**语义落地：新包没有的
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import io
 import json
+import locale
 import os
 import re
 import shutil
@@ -53,7 +54,12 @@ HOST_MAX_ZIP_BYTES = 200 * 1024 * 1024
 HOST_MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024
 
 # update.bat 的 robocopy 排除清单（ADR-006 死命令 1，逐条入律）
-HOST_EXCLUDED_DIRS = ("data", ".venv", ".git", "dist", "__pycache__", ".system_generated")
+# ``plugins`` 也在清单里：发行包内自带插件目录（core-bank 的**空壳**种子库），
+# 底座自更新一旦覆盖它，等于拿空库换掉老师的真题库。插件版本由双轨更新的
+# 插件热更通道负责（那边按合并语义落地并保住本机数据文件），底座自更新
+# 只管程序文件，绝不碰插件目录。
+HOST_EXCLUDED_DIRS = ("data", "plugins", ".venv", ".git", "dist", "__pycache__",
+                      ".system_generated")
 HOST_EXCLUDED_FILES = ("*.pyc", "*.pyo")
 
 # 插件目录里属于「老师财产」的文件：更新覆盖时必须原样保住
@@ -550,17 +556,28 @@ def _host_root(entries: list[PurePosixPath]) -> tuple[str, ...]:
 def build_update_script(*, root: Path, staged: Path, pid: int, port: int) -> str:
     """生成一次性 ``update.bat`` 的内容（纯字符串，便于逐条断言排除清单）。
 
-    四步：等父进程退出 → robocopy 覆盖程序文件（排除 ``data/`` 等六项）→
+    四步：等父进程退出 → robocopy 覆盖程序文件（排除 ``data/`` 等七项）→
     重新拉起底座 → 删暂存与自身。
+
+    等待循环用 ``for /f`` 读 tasklist 的 CSV 输出，**不碰 ``find``**：
+    Git Bash 的 ``usr/bin/find.exe`` 在 PATH 里排在 System32 的 ``find.exe``
+    前面，``tasklist | find`` 那行会让整篇批处理直接终止（沙箱真跑实测：
+    脚本停在该行，底座永不重启，覆盖也没发生）。``timeout`` 在没有控制台的
+    DETACHED_PROCESS 里同样不可靠，睡眠改用 ``ping -n 2 127.0.0.1``。
+    ``tasklist``/``ping`` 一律写绝对路径，躲开 PATH 抢占。
 
     ``/XD`` 只写**目录名**，不写目标绝对路径：军令 #13 任务 10 的沙箱真跑抓出
     绝对路径在这个方向（阶段→根）不生效，源包里的 ``data/``、``.git/``、``dist/``
     会照原样覆盖过去——那就等于把老师的题库交出去了。裸名会让 robocopy 在整棵树
     里跳过同名的目录，两侧都保护；代价是发行包里任何同名目录也不会被复制，
     这正是 ADR-006 要的结果。
+
+    ``plugins`` 同样在清单里：发行包内自带插件目录（core-bank 的空壳种子库），
+    覆盖它等于拿空库换掉老师的真题库。插件版本归双轨更新的插件热更通道管。
     """
     excludes = " ".join(f'"{name}"' for name in HOST_EXCLUDED_DIRS)
     file_excludes = " ".join(f'"{pattern}"' for pattern in HOST_EXCLUDED_FILES)
+    protect_hint = " ".join(name + "\\" for name in HOST_EXCLUDED_DIRS)
     python_exe = root / ".venv" / "Scripts" / "python.exe"
     lines = [
         "@echo off",
@@ -571,12 +588,13 @@ def build_update_script(*, root: Path, staged: Path, pid: int, port: int) -> str
         f'set "JZO_PID={pid}"',
         "echo [1/4] 等待底座进程退出...",
         ":wait_exit",
-        'tasklist /FI "PID eq %JZO_PID%" 2>nul | find "%JZO_PID%" >nul',
-        "if not errorlevel 1 (",
-        "  timeout /t 1 /nobreak >nul",
+        'set "JZO_ALIVE=0"',
+        r'for /f "usebackq tokens=2 delims=," %%p in (`""%SystemRoot%\System32\tasklist.exe" /FI "PID eq %JZO_PID%" /NH /FO CSV"`) do if "%%~p"=="%JZO_PID%" set "JZO_ALIVE=1"',
+        'if "%JZO_ALIVE%"=="1" (',
+        r'  "%SystemRoot%\System32\ping.exe" -n 2 127.0.0.1 >nul',
         "  goto wait_exit",
         ")",
-        "echo [2/4] 覆盖程序文件（保护 data\\ .venv\\ .git\\ dist\\ __pycache__\\ .system_generated\\）",
+        f"echo [2/4] 覆盖程序文件（保护 {protect_hint}）",
         f'robocopy "%JZO_STAGE%" "%JZO_ROOT%" /E /XD {excludes} /XF {file_excludes} /R:2 /W:2 /NFL /NDL /NJH',
         "if errorlevel 8 (",
         "  echo robocopy 失败（退出码 %errorlevel%），保留原文件不动，请手工检查",
@@ -592,6 +610,38 @@ def build_update_script(*, root: Path, staged: Path, pid: int, port: int) -> str
         "",
     ]
     return "\r\n".join(lines)
+
+
+def _batch_encoding() -> str:
+    """批处理文件的编码：cmd 按控制台 ANSI 码页读 ``.bat``。
+
+    UTF-8 无 BOM 的 ``.bat`` 里，中文会被 cp936 误解成乱码；乱码中冒出的
+    引号与管道符足以让整篇脚本语法崩掉（沙箱真跑实测：``rem`` 后半句被
+    当成命令执行）。所以这里优先用 ANSI 码页实在编码不出中文时才退 UTF-8。
+    """
+    for candidate in ("mbcs", locale.getpreferredencoding(False), "utf-8"):
+        if not candidate:
+            continue
+        try:
+            "九章算子".encode(candidate)
+        except (LookupError, UnicodeEncodeError):
+            continue
+        return candidate
+    return "utf-8"
+
+
+def _write_batch_script(path: Path, script: str) -> None:
+    """把一次性 ``.bat`` 落盘：ANSI 码页编码，行尾只有一层 CRLF。
+
+    ``Path.write_text`` 会再做一次 newline 转换：脚本本身已是 CRLF，
+    再转换就成 ``\\r\\r\\n``，cmd 会把多出来的 ``\\r`` 当成命令的一部分。
+    """
+    encoding = _batch_encoding()
+    try:
+        payload = script.encode(encoding)
+    except UnicodeEncodeError:
+        payload = script.encode(encoding, errors="replace")
+    path.write_bytes(payload)
 
 
 def prepare_host_update(host_block: dict[str, Any], *, port: int | None = None,
@@ -624,7 +674,7 @@ def prepare_host_update(host_block: dict[str, Any], *, port: int | None = None,
     script_path = Path(tempfile.gettempdir()) / f"jzo_update_{os.getpid()}.bat"
     script = build_update_script(root=Path(settings.project_root), staged=stage,
                                 pid=os.getpid(), port=int(port or settings.port))
-    script_path.write_text(script, encoding="utf-8")
+    _write_batch_script(script_path, script)
 
     state = read_pending()
     write_pending(host_version_target=available, pending=state.get("pending") or [])
@@ -646,6 +696,12 @@ def launch_host_update(script_path: str) -> dict[str, Any]:
 
     开发工作树上直接拒绝：robocopy 覆盖正在运行的工作树会抹掉未提交的改动，
     这种「不可逆 + 影响面大」的事必须由人在装好的发行包上亲手做。
+
+    脚本的 stdout/stderr 一律接**日志文件**，绝不接控制台：底座可能压根没有
+    控制台（双击图标、用 pythonw 起服务、或由别的进程拉起），此时 cmd 的
+    ``echo`` 写控制台会失败，**整篇批处理当场终止**——脚本停在第一行，
+    覆盖与重启都没发生（沙箱真机压测实测）。改接文件后 ``echo`` 只是写文件，
+    脚本一路跑完；日志同时留下失败原因，便于事后追查。
     """
     path = Path(script_path)
     if not path.is_file():
@@ -653,9 +709,16 @@ def launch_host_update(script_path: str) -> dict[str, Any]:
     if (Path(settings.project_root) / ".git").exists():
         raise UpdateRejected("当前是开发工作树（存在 .git），拒绝自动覆盖重启；"
                              "请在装好的发行包上执行该脚本", code="dev_worktree")
-    subprocess.Popen(["cmd.exe", "/c", str(path)], cwd=str(Path(settings.project_root)),
-                     creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
-    return {"launched": True, "script_path": str(path)}
+    log_path = path.with_name(path.stem + ".log")
+    handle = open(log_path, "ab")
+    try:
+        subprocess.Popen(
+            ["cmd.exe", "/c", str(path)], cwd=str(Path(settings.project_root)),
+            stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+    finally:
+        handle.close()
+    return {"launched": True, "script_path": str(path), "log_path": str(log_path)}
 
 
 def stage_plugin_zip(entry: dict[str, Any]) -> dict[str, Any]:

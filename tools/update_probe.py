@@ -409,9 +409,9 @@ def main() -> int:
             page.on("console", lambda message: console_errors.append(message.text)
                     if message.type == "error" else None)
 
-            page.goto(base_app + "/settings", wait_until="networkidle")
-            page.click("#stNavPlugin")
+            page.goto(base_app + "/settings?panel=plugin&tab=index", wait_until="networkidle")
             page.fill("#plIndexUrl", base + "/plugins.json")
+            page.click("#stPluginTabUpdate")
             page.click("#upCheckBtn")
 
             hot_card = page.locator('#upList li[data-id="%s"]' % PLUGIN_HOT)
@@ -508,7 +508,9 @@ def main() -> int:
             console_page.click("#wsConsoleBtn")
             frame = console_page.frame_locator("#wsConsoleFrame")
             frame.locator("#stNavPlugin").click()
+            frame.locator("#stPluginTabIndex").click()
             frame.locator("#plIndexUrl").fill(base + "/plugins-full.json")
+            frame.locator("#stPluginTabUpdate").click()
             frame.locator("#upCheckBtn").click()
             broadcast_card = frame.locator('#upList li[data-id="%s"]' % PLUGIN_BROADCAST)
             try:
