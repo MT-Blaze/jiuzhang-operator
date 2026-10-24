@@ -124,7 +124,7 @@ class SnapshotTest(unittest.TestCase):
             self.assertEqual("other", categories["config.json"])
             required = {item["path"]: item["required"] for item in manifest["files"]}
             self.assertTrue(required[f"banks/{PROVIDER}.db"])
-            self.assertFalse(required["uploads/pic.png"])
+            self.assertTrue(required["uploads/pic.png"])
             self.assertNotIn("backup.json", categories)
             self.assertNotIn(".local_token", categories)
         finally:

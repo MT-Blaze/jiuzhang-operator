@@ -611,6 +611,75 @@ html[data-embedded="1"] .st-main {
   color: var(--muted);
 }
 
+.st-restore-picker,
+.st-restore-preview,
+.st-restore-done {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.st-restore-groups {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.st-restore-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--page, transparent);
+}
+
+.st-restore-group h5 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.st-restore-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.st-restore-file input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.st-restore-file[data-required="1"] span {
+  color: var(--muted);
+}
+
+.st-restore-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.st-restore-scope {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+
+.st-restore-done {
+  border-color: rgba(47, 111, 79, 0.35);
+  background: rgba(47, 111, 79, 0.06);
+}
+
 @media (max-width: 860px) {
   .st-split {
     grid-template-columns: 1fr;

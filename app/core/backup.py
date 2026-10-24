@@ -159,11 +159,11 @@ def _relative(path: Path, workspace_id: str | None = None) -> str:
 
 
 def category_of(relative: str) -> tuple[str, bool]:
-    """返回 (分组, 是否必选)。题库数据必选，图片与其他默认勾选但可取消。"""
+    """返回 (分组, 是否必选)。题库与图片资产必选，其他文件默认勾选但可取消。"""
     if relative.endswith(".db"):
         return "bank", True
     if relative == "uploads" or relative.startswith("uploads/"):
-        return "uploads", False
+        return "uploads", True
     return "other", False
 
 
@@ -173,7 +173,7 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _sqlite_snapshot(source: Path, target: Path) -> None:
+def sqlite_snapshot(source: Path, target: Path) -> None:
     """用 SQLite backup API 落一份自包含快照（自动带上 WAL 里已提交的内容）。"""
     target.parent.mkdir(parents=True, exist_ok=True)
     src = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True, timeout=15.0)
@@ -205,7 +205,7 @@ def snapshot_workspace(workspace_id: str | None = None, stage_dir: Path | None =
         target = stage / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.suffix.lower() == ".db" and _is_sqlite(source):
-            _sqlite_snapshot(source, target)
+            sqlite_snapshot(source, target)
         else:
             shutil.copy2(source, target)
     manifest = build_manifest(ws_id, stage)

@@ -7,11 +7,20 @@
 
 from __future__ import annotations
 
+import json
+import secrets
+import shutil
+import tempfile
+import threading
+import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.core import backup as backup_core
+from app.core import restore as restore_core
+from app.core import webdav
 from app.core.startup_prefs import StartupRejected, resolve, set_target
 from app.core.security import require_write_token
 
@@ -121,13 +130,212 @@ def run_backup() -> dict[str, Any]:
     summary="读取某份本地备份的 manifest（恢复预览用）",
 )
 async def read_local_backup_manifest(stem: str) -> dict[str, Any]:
+    ws_id = backup_core.current_workspace_id()
     try:
-        manifest, package = backup_core.load_local_backup_manifest(stem)
-    except backup_core.BackupError as exc:
+        manifest, package = backup_core.load_local_backup_manifest(stem, None, ws_id)
+        restore_core.validate_manifest(manifest, ws_id)
+    except (backup_core.BackupError, restore_core.RestoreError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
         "source": "local",
         "stem": stem,
         "package": package.name,
-        "manifest": manifest,
+        "preview": restore_core.preview_view(manifest),
     }
+
+
+# ---------- 恢复：预览 / 校验 / 二次确认（军令 #17 第四步） ----------
+
+_RESTORE_PLANS: dict[str, dict[str, Any]] = {}
+_RESTORE_PLAN_LOCK = threading.Lock()
+_RESTORE_PLAN_TTL = 15 * 60
+
+
+def _take_plan(plan_id: Any) -> dict[str, Any] | None:
+    key = str(plan_id or "")
+    with _RESTORE_PLAN_LOCK:
+        plan = _RESTORE_PLANS.pop(key, None)
+    if plan is None:
+        return None
+    if time.time() - float(plan.get("created_at") or 0) > _RESTORE_PLAN_TTL:
+        restore_core.cleanup_plan(plan)
+        return None
+    return plan
+
+
+def _gc_plans() -> None:
+    now = time.time()
+    with _RESTORE_PLAN_LOCK:
+        expired = [
+            key for key, plan in _RESTORE_PLANS.items()
+            if now - float(plan.get("created_at") or 0) > _RESTORE_PLAN_TTL
+        ]
+        plans = [_RESTORE_PLANS.pop(key) for key in expired]
+    for plan in plans:
+        restore_core.cleanup_plan(plan)
+
+
+def _webdav_config() -> dict[str, Any]:
+    config = backup_core.load_backup_settings()
+    if not str(config.get("url") or "").strip():
+        raise restore_core.RestoreError("请先在【备份与恢复】里填写 WebDAV 地址")
+    return config
+
+
+@router.get("/api/settings/backup/remote", summary="列出网盘上的备份（由老师当场点击）")
+def list_remote_backups() -> dict[str, Any]:
+    config = backup_core.load_backup_settings()
+    if not str(config.get("url") or "").strip():
+        return {"configured": False, "entries": []}
+    try:
+        names = webdav.list_remote_names(config)
+    except webdav.WebdavError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    stems: dict[str, set[str]] = {}
+    for name in names:
+        package = backup_core.BACKUP_FILE_RE.match(name)
+        manifest = backup_core.MANIFEST_FILE_RE.match(name)
+        match = package or manifest
+        if not match:
+            continue
+        kinds = stems.setdefault(match.group(1), set())
+        kinds.add("package" if package else "manifest")
+    entries = [
+        {
+            "stem": stem,
+            "package": f"backup_{stem}.zst",
+            "manifest": f"manifest_{stem}.json",
+            "complete": {"package", "manifest"} <= kinds,
+        }
+        for stem, kinds in sorted(stems.items(), reverse=True)
+    ]
+    return {"configured": True, "entries": entries}
+
+
+@router.get(
+    "/api/settings/backup/remote/{stem}",
+    summary="下载网盘 manifest 做恢复预览（不覆盖任何数据）",
+)
+def read_remote_backup_manifest(stem: str) -> dict[str, Any]:
+    if not backup_core.BACKUP_STEM_RE.fullmatch(stem):
+        raise HTTPException(status_code=404, detail="备份标识非法")
+    try:
+        config = _webdav_config()
+    except restore_core.RestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with tempfile.TemporaryDirectory(prefix="jzo-remote-preview-") as tmp:
+        try:
+            manifest_path = webdav.download_backup(
+                config, f"manifest_{stem}.json", Path(tmp) / f"manifest_{stem}.json"
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (webdav.WebdavError, OSError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"网盘 manifest 读取失败：{exc}") from exc
+    try:
+        restore_core.validate_manifest(manifest, backup_core.current_workspace_id())
+        if (manifest.get("package") or {}).get("filename") != f"backup_{stem}.zst":
+            raise restore_core.RestoreError("远端 manifest 与备份标识不符")
+    except restore_core.RestoreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "source": "remote",
+        "stem": stem,
+        "preview": restore_core.preview_view(manifest),
+    }
+
+
+@router.post(
+    "/api/settings/backup/restore/check",
+    summary="恢复前全量校验：包哈希、文件哈希、逐题哈希（不写工作区）",
+    dependencies=[Depends(require_write_token)],
+)
+def check_restore(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    _gc_plans()
+    source = str(payload.get("source") or "")
+    stem = payload.get("stem")
+    files = payload.get("files")
+    ws_id = backup_core.current_workspace_id()
+    work: Path | None = None
+    try:
+        work = Path(tempfile.mkdtemp(prefix="jzo-restore-"))
+        if source == "local":
+            plan = restore_core.prepare_local_restore(stem, files, ws_id, work)
+        elif source == "remote":
+            if not isinstance(stem, str) or not backup_core.BACKUP_STEM_RE.fullmatch(stem):
+                raise restore_core.RestoreError("备份标识非法")
+            config = _webdav_config()
+            manifest_path = webdav.download_backup(
+                config, f"manifest_{stem}.json", work / f"manifest_{stem}.json"
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            filename = (manifest.get("package") or {}).get("filename")
+            if filename != f"backup_{stem}.zst":
+                raise restore_core.RestoreError("远端 manifest 与备份标识不符")
+            package = webdav.download_backup(config, filename, work / filename)
+            plan = restore_core.prepare_restore(package, manifest, files, ws_id, work)
+        else:
+            raise restore_core.RestoreError("恢复来源只能是 local 或 remote")
+    except (
+        restore_core.RestoreError,
+        webdav.WebdavError,
+        backup_core.BackupError,
+        ValueError,
+        OSError,
+    ) as exc:
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    plan_id = secrets.token_urlsafe(18)
+    plan.update({"source": source, "stem": stem, "created_at": time.time()})
+    with _RESTORE_PLAN_LOCK:
+        _RESTORE_PLANS[plan_id] = plan
+    return {
+        "plan_id": plan_id,
+        "source": source,
+        "stem": stem,
+        "preview": restore_core.preview_view(plan["manifest"]),
+        "selection": plan["selected"],
+    }
+
+
+@router.post(
+    "/api/settings/backup/restore/confirm",
+    summary="二次确认后执行恢复（覆盖前自动生成 .pre-restore.bak）",
+    dependencies=[Depends(require_write_token)],
+)
+def confirm_restore(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    if payload.get("confirm") != restore_core.CONFIRM_TEXT:
+        raise HTTPException(status_code=400, detail="请二次确认后再执行恢复")
+    plan = _take_plan(payload.get("plan_id"))
+    if plan is None:
+        raise HTTPException(status_code=400, detail="恢复校验已过期，请重新检查")
+    ws_id = backup_core.current_workspace_id()
+    if plan.get("workspace_id") != ws_id:
+        restore_core.cleanup_plan(plan)
+        raise HTTPException(status_code=400, detail="备份校验的工作区已变化，请重新检查")
+    try:
+        result = restore_core.execute_restore(ws_id, plan)
+    except (restore_core.RestoreError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"恢复失败，已整批回滚：{exc}") from exc
+    finally:
+        restore_core.cleanup_plan(plan)
+    return {"ok": True, **result}
+
+
+@router.post(
+    "/api/settings/backup/restore/cancel",
+    summary="放弃本次恢复校验并清理临时区",
+    dependencies=[Depends(require_write_token)],
+)
+def cancel_restore(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    plan = _take_plan(payload.get("plan_id"))
+    if plan is not None:
+        restore_core.cleanup_plan(plan)
+    return {"ok": True}
