@@ -11,7 +11,7 @@
   2. 左栏没有题库下拉、自由对话在插件列表内、管理入口死锁栏底；
   3. 画布没有舞台头 / 模型胶囊 / 上下文按钮，也没有「沙箱运行中」提示；
   4. 底栏三视图可切换，报错诊断悬停提示 + 双击原位变字、不弹 Toast；
-  5. 插件行可原生拖拽排序，顺序落 localStorage，刷新后保持；
+  5. 插件行可原生拖拽排序，顺序写回后端偏好树（data/plugin_state.json），刷新后保持；
   6. 宿主页零未捕获 JS 错误。
 """
 import json
@@ -64,7 +64,8 @@ STATE_JS = """
     modelBtn: !!document.getElementById('wsModelBtn'),
     contextBtn: !!document.getElementById('wsToggleContext'),
     stageHead: !!document.querySelector('.ws-stage-head'),
-    chatInList: !!(list && list.querySelector('#wsChatEntry')),
+    chatInList: !!(list && (list.querySelector('#wsChatEntry')
+      || list.querySelector('[data-key="plugin:org.jiuzhang.chat"]'))),
     rows: rows,
     footConsole: !!document.querySelector('.ws-sidebar-foot #wsConsoleBtn'),
     footReset: !!document.querySelector('.ws-sidebar-foot #wsResetLayout'),
@@ -132,7 +133,7 @@ def run(tag: str) -> dict:
             check("左右栏头部顶线对齐", state["sidebarHead"] and state["contextHead"]
                   and state["sidebarHead"]["top"] == state["contextHead"]["top"], "")
             check("左栏题库下拉已移入设置", not state["bankSelect"] and not state["bankNew"], "")
-            check("自由对话在插件列表内", state["chatInList"], json.dumps(state["rows"], ensure_ascii=False)[:200])
+            check("自由对话（现为 AI 助手插件行）在插件列表内", state["chatInList"], json.dumps(state["rows"], ensure_ascii=False)[:200])
             check("管理入口死锁栏底且无悬浮小图标",
                   state["footConsole"] and not state["footReset"], "")
             check("舞台头/模型胶囊/上下文按钮已删除",
@@ -201,12 +202,20 @@ def run(tag: str) -> dict:
                 keys_after = page.evaluate("""() => Array.from(
                   document.querySelectorAll('#wsPluginList .ws-plugin-row')
                 ).map(r => r.getAttribute('data-key'))""")
-                stored = page.evaluate("() => localStorage.getItem('jzo.sidebar.order')")
+                # 顺序的事实来源已经从浏览器挪到后端偏好树（PLUGIN_SPEC §2.12 第 5）条），
+                # 所以这里查的是「拖完有没有整棵树写回 /api/plugins/sidebar」。
+                stored = page.evaluate(
+                    "() => fetch('/api/plugins').then(r => r.json()).then(d => (d.sidebar || [])"
+                    ".reduce((acc, n) => { if (n.kind === 'folder') "
+                    "(n.children || []).forEach(c => acc.push(c.id || c)); else acc.push(n.id); "
+                    "return acc; }, []))"
+                )
                 report["notes"]["drag"] = {"before": keys_before, "after": keys_after, "stored": stored}
                 check("拖拽改变了行顺序", keys_after != keys_before,
                       json.dumps({"before": keys_before[:3], "after": keys_after[:3]}, ensure_ascii=False))
-                check("顺序写入 localStorage", bool(stored) and json.loads(stored) == keys_after,
-                      str(stored)[:200])
+                visible = [k for k in (stored or []) if k in keys_after]
+                check("顺序写回后端偏好树（左栏树是顺序唯一事实来源）",
+                      bool(keys_after) and visible == keys_after, str(stored)[:200])
                 check("拖拽后首行是原末行", keys_after and keys_after[0] == keys_before[-1],
                       f"{keys_after[:1]} vs {keys_before[-1:]}")
                 page.reload(wait_until="networkidle")

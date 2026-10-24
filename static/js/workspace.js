@@ -481,6 +481,26 @@
     if (openSidebarBtn) openSidebarBtn.setAttribute("aria-expanded", String(open));
   }
 
+  function immersiveOn() {
+    return !!wsPage && wsPage.getAttribute("data-immersive") === "on";
+  }
+
+  /**
+   * 左栏开关。沉浸全屏里它不许动 data-side——老师的折叠偏好是另一本账，
+   * 退出沉浸后必须原样回来；那一屏只翻 data-immersive-rail 这枚呼入位，
+   * 左栏以覆盖层浮在画布上（见 workspace.css 沉浸态一节）。
+   */
+  function toggleRail() {
+    if (!wsPage) return;
+    if (immersiveOn()) {
+      var shown = wsPage.getAttribute("data-immersive-rail") === "on";
+      if (shown) wsPage.removeAttribute("data-immersive-rail");
+      else wsPage.setAttribute("data-immersive-rail", "on");
+      return;
+    }
+    setSide(!sideOpen());
+  }
+
   function setCtx(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
@@ -505,13 +525,13 @@
 
   if (sidebarToggle) {
     sidebarToggle.addEventListener("click", function () {
-      setSide(!sideOpen());
+      toggleRail();
     });
   }
 
   if (openSidebarBtn) {
     openSidebarBtn.addEventListener("click", function () {
-      setSide(!sideOpen());
+      toggleRail();
     });
   }
 
@@ -970,7 +990,7 @@
 
   function wireShortcuts() {
     if (!window.JzoKeys) return;
-    window.JzoKeys.defineHost("sidebar.toggle", function () { setSide(!sideOpen()); });
+    window.JzoKeys.defineHost("sidebar.toggle", function () { toggleRail(); });
     window.JzoKeys.defineHost("context.toggle", function () { setCtx(!ctxOpen()); });
     window.JzoKeys.defineHost("dock.toggle", function () { setDock(!dockOpen()); });
     window.JzoKeys.defineHost("assistant.focus", function () {
@@ -1066,21 +1086,34 @@
     }
   }
 
+  /**
+   * 画布页签的分组合并只认左栏这棵树（组名也从这里取）：
+   * 树一有变化就同步给舞台，绝不让页签栏和左栏各摆各的。
+   */
+  function syncStageTree() {
+    if (window.JzoStage && typeof window.JzoStage.setSidebarTree === "function") {
+      window.JzoStage.setSidebarTree(sidebarTree);
+    }
+  }
+
   function commitTree(next) {
     var before = sidebarTree;
     sidebarTree = next;
     renderPlugins(installedPlugins);
+    syncStageTree();
     return postJson("/api/plugins/sidebar", { sidebar: next })
       .then(function (data) {
         if (data && Array.isArray(data.sidebar)) {
           sidebarTree = window.JzoPrefs ? window.JzoPrefs.readTree(data) : sidebarTree;
           renderPlugins(installedPlugins);
           notifyConsolePrefs();
+          syncStageTree();
         }
       })
       .catch(function (error) {
         sidebarTree = before;
         renderPlugins(installedPlugins);
+        syncStageTree();
         dockLine("左栏分组没能保存：" + error.message, "prefs.sidebar.error", "error");
       });
   }
@@ -1505,6 +1538,7 @@
           }
         }
         renderPlugins(plugins);
+        syncStageTree();
         // 右栏主权跟着同一份清单刷新：插件装/卸/停用、画布页签换主人都不必刷新页面
         syncContextSlot();
         if (window.JzoStage && typeof window.JzoStage.updatePlugin === "function") {

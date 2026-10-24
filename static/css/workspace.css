@@ -572,8 +572,9 @@
 
 /* 沉浸态（军令 #16 模块三）：双击页签把画布推满整块屏幕，左栏自动让位，
    右栏与输出日志区照旧在场——老师要的是「卷面独占」，不是「只剩卷面」。
-   与全屏同一套做法：只压左轨变量，绝不改 data-side，退出沉浸后偏好原样还在。
-   沉浸中按 Ctrl+B 唤出左栏时，侧栏以覆盖层浮在画布上，不再挤回网格轨道。 */
+   与全屏同一套做法：绝不改 data-side，退出沉浸后偏好原样还在。
+   0 宽轨道拦不住内容的 min-content，所以左栏是真的摘走；
+   沉浸中按 Ctrl+B 才把 data-immersive-rail 举起来，以覆盖层浮在画布上。 */
 .ws-page[data-immersive="on"] {
   --sidebar-width: 0px;
   --gutter-side: 0px;
@@ -583,7 +584,12 @@
   display: none;
 }
 
-.ws-page[data-immersive="on"][data-side="open"] .ws-sidebar {
+.ws-page[data-immersive="on"] .ws-sidebar {
+  display: none;
+}
+
+.ws-page[data-immersive="on"][data-immersive-rail="on"] .ws-sidebar {
+  display: block;
   position: fixed;
   z-index: 30;
   top: 0;
@@ -1091,6 +1097,62 @@ html.ws-dragging * {
   background: var(--accent-soft);
   color: var(--ink);
   outline: none;
+}
+
+/* ===== 页签分组合并（军令 #16 模块三第 2 条） =====
+   同组（同一文件夹，或都没进组）的页签收成一个「组名页签」，单击摊开子页签。
+   摊开的列表用 fixed 定位：#wsTabs 为横滚必须裁剪溢出，列表留在里面会「点开看不见」。 */
+.ws-tab-group {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
+.ws-tab-group-chip .ws-tab-caret {
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+.ws-tab-group-chip.is-active {
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--line-strong);
+}
+
+.ws-tab-count {
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(31, 28, 24, 0.08);
+  color: var(--muted);
+}
+
+.ws-tab-group-list {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 28px rgba(31, 28, 24, 0.18);
+  scrollbar-width: thin;
+}
+
+.ws-tab-group-list[hidden] {
+  display: none;
+}
+
+/* 下拉里的子页签占满一行，120px 固定宽只管页签栏那一条，不管摊开的列表 */
+.ws-tab-group-list .ws-tab,
+.ws-page.ws-tabs-many .ws-tab-group-list .ws-tab {
+  flex: 0 0 auto;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .ws-canvas-body {

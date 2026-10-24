@@ -248,8 +248,9 @@ def run(tag: str) -> dict:
         check("18 撞车后该键由底座执行（控制台页签起来）", env()["consoleVisible"])
         snap("10-conflict-host-wins")
 
-        # 恢复默认键位
-        api_post("/api/plugins/shortcuts", {"action": "console.open", "combo": "Ctrl+Shift+S"})
+        # 抹掉这条记录回到默认键位——写回默认值会在老师的偏好文件里留一条
+        # 与默认全等的多余覆盖，将来底座改默认键时它会把旧键钉死。
+        api_post("/api/plugins/shortcuts", {"action": "console.open", "combo": ""})
         page.reload()
         page.wait_for_timeout(2400)
         owner3 = page.evaluate("() => window.JzoKeys.ownerOf('Ctrl+Shift+K')")

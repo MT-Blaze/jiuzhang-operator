@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>舞台权重探针</title>
+  <style>
+    body { margin: 0; padding: 14px; font: 13px/1.6 system-ui, "Microsoft YaHei", sans-serif; color: #1f1c18; }
+    h1 { margin: 0 0 6px; font-size: 15px; }
+    #state { margin: 0 0 10px; font-weight: 700; }
+    #state[data-mode="suspend"] { color: #9b3b2d; }
+    #state[data-mode="resume"] { color: #2f6b4f; }
+    ol { margin: 0; padding-left: 20px; }
+    li { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <h1>舞台权重探针（light）</h1>
+  <p id="state" data-mode="idle">状态：还没收到宿主的休眠指令</p>
+  <p>下面这一栏是宿主下发的休眠/唤醒通知原话。浅休眠只该收定时器，不该被摘掉文档。</p>
+  <ol id="log" aria-live="polite"></ol>
+  <script src="./plugin.js"></script>
+</body>
+</html>

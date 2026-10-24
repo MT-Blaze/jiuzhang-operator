@@ -373,6 +373,8 @@ com.example.card/
 | `theme.changed` / `locale.changed` / `question.updated` | request | 记下变化即可，回 `{ "accepted": true }`；不需要可忽略 |
 | `ui.params.changed` | notification | 右栏面板参数变了（人改或 AI 改），按 `payload.values` 重绘自己；挂载时也会补发一次当前值 |
 | `plugin.deactivate`（`payload.reason = "lru"`） | notification | 被 LRU 休眠前的尽力通知：宿主不等回复就摘 iframe，插件应把该保存的状态提前存好 |
+| `plugin.suspend`（`payload.reason = "background"`） | notification | **只对清单里 `stage.weight = "light"` 的插件发**（军令 #16 模块三，§2.13）：该页签切到后台了，iframe 与 DOM 都还在，请自己把定时器、轮询、动画收起来；`requestAnimationFrame` 循环要停，别在看不见的页上白烧 CPU |
+| `plugin.resume`（`payload.reason = "foreground"`） | notification | 与 `plugin.suspend` 成对：该页签回到前台，把刚才收掉的定时器/循环恢复原样。两条通知都可能因快速切页而紧邻到达，插件必须幂等 |
 | `shortcut.invoke` | notification | 用户按下了**本插件自报且裁决归属为本插件**的全局快捷键，`payload` 为 `{action, combo, via}`（军令 #16，见 §2.11）。插件只执行 `action` 对应的那一件自己的事；认不出 `action` 就静默忽略 |
 
 插件可以发给宿主的通知（只有白名单话题会被转发，见 §2.5）：
@@ -510,7 +512,7 @@ com.example.card/
 - **写了 `stage` 就必须在 `slots` 里带上 `stage.center`**，否则拒装（报错原文含 `stage.center`），防止「有接管声明却没有插槽授权」这种假能力；
 - 反过来只写 `slots: ["stage.center"]` 而不写 `stage`，按 `mode: "embed"`、`title = name` 兜底，不拒装；
 - `fullscreen` 只切宿主的全屏标志位，**不会改写用户手动折叠/拖拽的偏好**：退出全屏后左右栏与四区尺寸原样回来；
-- 页签数量不设上限，但**同时存活的 iframe 最多 3 个**（LRU）：超出的按「最久未使用」休眠——宿主先发一条 `plugin.deactivate` 通知（不等回复），再摘掉 iframe，页签上标「休眠」。点回页签自动重挂并重新 `plugin.activate`。所以插件必须做到「随时可被摘掉、随时可重新激活」，别把状态只存在内存里指望它长命；
+- 页签数量不设上限，但**同时存活的重型 iframe 最多 3 个**（LRU，只数 `stage.weight = "heavy"` 的页签）：超出的按「最久未使用」休眠——宿主先发一条 `plugin.deactivate` 通知（不等回复），再摘掉 iframe，页签上标「休眠」。点回页签自动重挂并重新 `plugin.activate`。所以插件必须做到「随时可被摘掉、随时可重新激活」，别把状态只存在内存里指望它长命；`light` 页签不占这个名额、也不被摘文档，它走浅休眠（切后台收 `plugin.suspend`、回前台收 `plugin.resume`），详见 §2.13；
 - 激活请求 30 秒不回、iframe 加载失败，页签就地显示故障说明与「底座仍可继续使用对话页」，不影响其他页签（§5.2）。
 
 ---
@@ -883,6 +885,64 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 **6）安全边界不变。** 卡片、键位表、菜单文案全部 `textContent` / `createElement` 落 DOM，
 控制台这条链路里不许出现 `innerHTML`；昵称是老师自己输入的字符串，显示时同样不解析成 HTML。
 
+### 2.13 画布页签：沉浸全屏、溢出横滚、分组合并与休眠分层（2026-10-24 军令 #16 模块三）
+
+这一节四件事都发生在宿主壳里，插件**不需要也无法配合**——除了第 4）条的休眠通知。写在这里是为了
+让「插件为什么没收到 `plugin.suspend`」「为什么我的 iframe 被摘了」这类问题有据可查。
+
+**1）双击页签 = 沉浸全屏。**
+
+- 底座真调 Fullscreen API（`document.documentElement.requestFullscreen()`），浏览器地址栏随之退场；
+  拿不到真全屏（无手势、被企业策略拦）时 CSS 沉浸照旧生效，不为此打断老师的手势；
+- `.ws-page` 上只翻两枚属性：`data-immersive`（是否在沉浸中）与 `data-immersive-rail`（沉浸中左栏浮层是否被呼出）。
+  **绝不动 `data-side` / `data-ctx` / `data-dock`**——老师的折叠偏好是另一本账，退出沉浸后必须原样回来；
+- 沉浸中左栏是真的 `display:none` 摘走（0 宽轨道拦不住内容的 min-content，只压变量会留下一条 320px 的僵尸栏），
+  右栏与输出日志区照旧在场：要的是「这一页独占卷面」，不是「只剩这一页」；
+- 退出有三条通道，但只允许一条落地（`exitImmersive()` 先判 `immersiveKey`，后到的哑火，不刷两行日志）：
+  再双击同一页签、按 `Esc`、`fullscreenchange`。`Esc` 走两条腿——浏览器原生退全屏 + 底座 keydown 兜底
+  （自动化环境里浏览器常把 `Esc` 留给页面自己处理）；宿主弹窗在场（`.ws-dialog-backdrop`）时底座**不抢** `Esc`，
+  那一下属于关弹窗；
+- 沉浸中按 `Ctrl+B` 把左栏以覆盖层（`position:fixed`）呼出，再按收回，全屏不退；
+- 插件侧：沉浸全程**不重挂 iframe、不重发 `plugin.activate`**，视口变宽变高由你自己的 CSS 自适应；
+  不许假设自己占满视口，也不许去读 `document.fullscreenElement`——沙箱里读不到，读到了也不该拿它当依据。
+
+**2）超过 10 个页签：固定 120px + 横滚 + 左右小箭头。**
+
+- 阈值只数**插件页签**（`pluginTabs.length > 10`）；原生页签（引导、控制台）不计入这条账，但跟着一起横滚；
+- 挤爆后 `.ws-page.ws-tabs-many` 生效，页签一律 `flex: 0 0 120px`；
+- 只有真放不下（`scrollWidth > clientWidth`）才亮出左右两枚小箭头；滚轮在页签栏上转成横向滚动
+  （`passive: false` + `preventDefault`），**箭头隐藏时不接管滚轮**，不许抢走页面纵向滚动的地盘；
+- 箭头滑动走 `scrollBy`，`prefers-reduced-motion` 下退化为瞬时滚动；
+- 实现坑（run5 真机抓出来的）：`scroll` / `resize` 回调是不带参数调 `paintOverflowBar()` 的，
+  若照参数读 `undefined`，一滚就把挤爆态的类摘掉、箭头跟着消失，页签滚到一半再也滚不动——
+  回调没带参数时**必须自己把页签数数回来**。
+
+**3）分组合并：只在挤爆时启用，组内凑满 2 页才收。**
+
+- 分组归属只认清单里的 `folder_id`（后端从偏好树反查，见 §2.12 第 5）条），没进任何文件夹的插件共用一个【未分组】集合；
+- 组名页签的显示名来自左栏那棵树（`folder.name`）：workspace 每拉到一次清单、每改一次树都 `JzoStage.setSidebarTree(tree)`
+  同步过来，树是唯一事实来源，画布自己绝不另存一份分组；
+- 单击组名摊开子页签（`aria-expanded` / `aria-haspopup` 同步跟上），同一时刻只摊开一个，点别处即收；
+  下拉用 `position:fixed` 挂在页签栏外面——`#wsTabs` 为了横滚必须裁剪溢出，跟着被裁就等于「点开看不见」；
+- 下拉里点开一页 = 切页 + 收摊，组名页签用 `is-active` 标明「当前正在这一组」；切页只补涂标记，
+  不重排 DOM（重排会打断键盘焦点）；
+- **与军令逐字的口径偏离，如实写明**：合并与溢出阈值绑在一起，且组内只有 1 页时保持平铺——
+  单页收成下拉只是多一次点击，不换来任何横向空间；没挤爆时维持老师习惯的「一插件一页」。
+
+**4）休眠分层：light 浅休眠，heavy 才进 LRU 深休眠。**
+
+- `stage.weight = "light"`：切后台**不摘文档**，只发 `plugin.suspend`（`payload.reason = "background"`），
+  回前台补发 `plugin.resume`；页签标「浅休眠」，DOM、滚动位置、内存状态全在；
+- `stage.weight = "heavy"`（缺省，非法值回落 heavy）：同时存活的重型 iframe 上限 3 个，超出按「最久未使用」
+  发 `plugin.deactivate` 通知后摘文档，点回页签自动重挂并重新 `plugin.activate`；
+- **深休眠名额只数 heavy**：轻量页签再多也不挤占重型页签的存活名额，反之亦然；
+- 权重由插件自己声明，底座不替插件判断；声明 `light` 就要负责在收到 `plugin.suspend` 时真的把定时器、
+  轮询、`requestAnimationFrame` 循环收掉，否则浅休眠形同虚设。收/唤醒的往返样板见取证夹具
+  [`examples/stage_weight_probe_plugin/`](examples/stage_weight_probe_plugin/)（它把收到的原话经 `region.dock` 带回底栏）。
+
+**5）不许扩到插件侧的事。** 沉浸、分组、横滚都是宿主壳的 DOM 手势，插件不得反向请求「把本页签设为全屏」
+「把我归进某组」——目前没有这类 Host API，也不许新增（AGENTS §2：底座只做鉴权、导航、总线、生命周期）。
+
 
 ## 3. 多工作区（Workspace）隔离
 
@@ -914,7 +974,8 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | 加载 | 在沙箱 iframe 中打开 `entry.frontend`（经 `/plugin-assets/<id>/dist/...` 分发） | 页面能独立加载，不依赖宿主全局变量 |
 | 激活 | 发出 `plugin.activate` 请求（接管画布时带 `payload.slot = "stage.center"`，30 秒超时） | 初始化内部状态并回响应（`ready: true`） |
 | 运行 | 按用户操作发出 `question.render` 等请求；右栏参数变化以 `ui.params.changed` 通知广播 | 处理消息并回 `result`，错误回 `error`；通知按幂等处理 |
-| 休眠 | 画布同时存活的 iframe 超过 3 个时，按 LRU 发一条 `plugin.deactivate` **通知**（不等回复）后摘除 iframe，页签标「休眠」（§2.4） | 状态别只存内存；被摘后要能在重新激活时恢复 |
+| 休眠 | 画布同时存活的重型 iframe 超过 3 个时，按 LRU 发一条 `plugin.deactivate` **通知**（不等回复）后摘除 iframe，页签标「休眠」（§2.4、§2.13） | 状态别只存内存；被摘后要能在重新激活时恢复 |
+| 浅休眠 | `stage.weight = "light"` 的页签切后台时不摘文档，只发 `plugin.suspend` 通知；回前台补发 `plugin.resume`（§2.13） | 收到 `suspend` 就把定时器/轮询/动画收掉，收到 `resume` 再恢复；两条都要幂等 |
 | 停用 | 发出 `plugin.deactivate` 请求 | 清理定时器、事件监听 |
 | 卸载 | 移除 iframe；用户删除目录即完成卸载 | 不要在自己目录之外写任何文件 |
 

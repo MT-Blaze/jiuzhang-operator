@@ -9,13 +9,13 @@
 产出：截图 png + probe.json（结构化断言、页签状态轨迹、console 错误）。
 
 判据来自 2026-10-26 军令任务 3：
-  1. 画布顶部 Tabs 常驻一枚**原生**对话页签（不进 iframe）；
+  1. 画布顶部 Tabs 常驻一枚**原生**引导页签（不进 iframe）；
   2. 声明 ``stage`` 的插件被点击后开一枚沙箱 iframe 页签，``plugin.activate`` 真回 ready；
   3. 同时存活 iframe ≤3，第 4 个进来时最久未用的那个休眠（摘 iframe、页签标「休眠」），
      点回页签能唤醒重挂；
   4. 右栏面板参数一改，画布里的插件通过 notification 收到，并能往底栏回一条 region.dock；
   5. ``stage.mode = fullscreen`` 只翻全屏标志，不改用户的折叠偏好；
-  6. 插件页签可关闭；关掉后画布回到对话页签，底座照常可用。
+  6. 插件页签可关闭；关掉后画布回到引导页签，底座照常可用。
 """
 import json
 import os
@@ -278,13 +278,13 @@ def run(tag: str) -> dict:
                 """, label_part)
 
             initial = snap("00-initial")
-            # 宿主自己占两枚页签：对话（原生）与设置与控制台（宿主同源 iframe）。
-            check("画布初始是对话与控制台两枚宿主页签",
+            # 宿主自己占两枚页签：引导（原生）与设置与控制台（宿主同源 iframe）。
+            check("画布初始是引导与控制台两枚宿主页签",
                   len(initial["tabs"]) == 2
-                  and initial["tabs"][0]["key"] == "chat"
+                  and initial["tabs"][0]["key"] == "home"
                   and any(t["key"] == "console" for t in initial["tabs"]),
                   json.dumps(initial["tabs"], ensure_ascii=False))
-            check("对话页签不含 iframe（原生）", initial["frameCount"] == 0, str(initial["frameCount"]))
+            check("引导页签不含 iframe（原生）", initial["frameCount"] == 0, str(initial["frameCount"]))
             check("左栏列出探针插件",
                   page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length") >= 5,
                   str(page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length")))
@@ -392,11 +392,11 @@ def run(tag: str) -> dict:
             check("全屏不改用户的折叠偏好（data-side/data-ctx 原样）",
                   full["dataSide"] in (None, "open") and full["dataCtx"] in (None, "open"),
                   json.dumps({"side": full["dataSide"], "ctx": full["dataCtx"]}))
-            # 切回对话页签应退出全屏
-            page.locator('#wsTabs .ws-tab[data-tab="chat"]').click()
+            # 切回引导页签应退出全屏
+            page.locator('#wsTabs .ws-tab[data-tab="home"]').click()
             page.wait_for_timeout(600)
-            back = snap("18-back-to-chat")
-            check("切回对话页签即退出全屏", back["fullscreen"] in (None, "off"), str(back["fullscreen"]))
+            back = snap("18-back-to-home")
+            check("切回引导页签即退出全屏", back["fullscreen"] in (None, "off"), str(back["fullscreen"]))
             check("退出全屏后左右栏与底栏回来",
                   back["sidebarVisible"] and back["ctxVisible"],
                   json.dumps({k: back[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
@@ -408,9 +408,9 @@ def run(tag: str) -> dict:
             closed = snap("19-close-tab")
             check("插件页签可关闭", len(closed["tabs"]) == tab_count_before - 1,
                   f"{tab_count_before} → {len(closed['tabs'])}")
-            check("对话页签不可关闭（无 × 按钮）",
+            check("引导页签不可关闭（无 × 按钮）",
                   page.evaluate("""() => {
-                    const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"chat\"]');
+                    const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"home\"]');
                     return t ? !t.querySelector('.ws-tab-close') : false;
                   }"""), "")
 
