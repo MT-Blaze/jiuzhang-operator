@@ -712,17 +712,22 @@ def _source_index(con: sqlite3.Connection, qids: list[str]) -> dict[str, dict[st
     return picked
 
 
-def _taxonomy_from_link(link: dict[str, Any]) -> dict[str, Any]:
+def _taxonomy_from_links(links: list[dict[str, Any]]) -> dict[str, Any]:
+    """层名取主挂载，``topic_ids`` 必须带上**全部**挂载。
+
+    插件是「读—改—写」：读回来的 taxonomy 会原样回传，这里少列一个副考向，
+    保存时 ``_remount_topics`` 就先 DELETE 再按入参重插，副挂载就此静默消失。
+    """
     taxonomy: dict[str, Any] = {}
-    for node in link["ancestors"]:
+    for node in links[0]["ancestors"]:
         field = LAYER_TAXONOMY_KEY.get(node["id"][3:5])
         if field and node["name"]:
             taxonomy[field] = node["name"]
-    taxonomy["topic_ids"] = [link["id"]]
+    taxonomy["topic_ids"] = list(dict.fromkeys(link["id"] for link in links))
     return taxonomy
 
 
-def _document_from(row: sqlite3.Row, link: dict[str, Any] | None,
+def _document_from(row: sqlite3.Row, links: list[dict[str, Any]],
                    source: dict[str, Any] | None) -> dict[str, Any]:
     extensions = extensions_to_object(row["extensions"])
     document: dict[str, Any] = {
@@ -741,8 +746,8 @@ def _document_from(row: sqlite3.Row, link: dict[str, Any] | None,
     if row["solution"]:
         document["solution"] = row["solution"]
 
-    if link:
-        document["taxonomy"] = _taxonomy_from_link(link)
+    if links:
+        document["taxonomy"] = _taxonomy_from_links(links)
     else:
         legacy_tax = _extension_value(extensions, EXT_TAXONOMY_KEY)
         if legacy_tax:
@@ -789,7 +794,7 @@ def _assemble(con: sqlite3.Connection, rows: Iterable[sqlite3.Row]) -> list[dict
     topics_by_qid = _topic_index(con, qids)
     sources_by_qid = _source_index(con, qids)
     return [
-        _document_from(row, (topics_by_qid.get(row["id"]) or [None])[0], sources_by_qid.get(row["id"]))
+        _document_from(row, topics_by_qid.get(row["id"]) or [], sources_by_qid.get(row["id"]))
         for row in row_list
     ]
 

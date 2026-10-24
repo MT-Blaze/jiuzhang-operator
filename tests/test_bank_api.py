@@ -78,30 +78,37 @@ def _document(index: int, grade: str, difficulty: str) -> dict:
 
 
 def _seed_outline(db_path: Path) -> dict:
-    """往测试库里插一条 册→章→节→考向 的物化路径，并挂一题 + 两条教研笔记。"""
+    """往测试库里插一条 册→章→节→考向 的物化路径，并挂一题（**双考向**）+ 两条教研笔记。
+
+    副考向是刻意留的：读路径少回传一个挂载，插件「读—改—写」就会静默摘掉它，
+    只有一题两挂的夹具才能把这条底线测出来。
+    """
     now = "2026-10-23T20:00:00+08:00"
-    book, chapter, section, kx = "tp_bo00000001", "tp_ch00000002", "tp_se00000003", "tp_kx00000004"
+    book, chapter, section, kx, kx2 = ("tp_bo00000001", "tp_ch00000002", "tp_se00000003",
+                                       "tp_kx00000004", "tp_kx00000005")
+    parents = {book: None, chapter: book, section: chapter, kx: section, kx2: section}
     path_of = {
         book: book,
         chapter: f"{book}/{chapter}",
         section: f"{book}/{chapter}/{section}",
         kx: f"{book}/{chapter}/{section}/{kx}",
+        kx2: f"{book}/{chapter}/{section}/{kx2}",
     }
     names = {book: "人教A版·必修第一册", chapter: "1. 集合与常用逻辑用语",
-             section: "1.1 集合的概念", kx: "集合中元素的个数"}
+             section: "1.1 集合的概念", kx: "集合中元素的个数", kx2: "集合间的基本关系"}
     con = sqlite3.connect(db_path)
     try:
-        for order, node in enumerate([book, chapter, section, kx]):
-            parent = None if node == book else [book, chapter, section][order - 1]
+        for order, node in enumerate([book, chapter, section, kx, kx2]):
             con.execute(
                 "INSERT INTO topics (id, parent_id, name, path, sort_order, status,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (node, parent, names[node], path_of[node], order, "active", now, now),
+                (node, parents[node], names[node], path_of[node], order, "active", now, now),
             )
-        con.execute(
-            "INSERT INTO question_topics (question_id, topic_id, is_primary, sort_order, created_at)"
-            " VALUES (?, ?, 1, 0, ?)", ("q_test_000001", kx, now)
-        )
+        for index, (topic, is_primary) in enumerate(((kx, 1), (kx2, 0))):
+            con.execute(
+                "INSERT INTO question_topics (question_id, topic_id, is_primary, sort_order, created_at)"
+                " VALUES (?, ?, ?, ?, ?)", ("q_test_000001", topic, is_primary, index, now)
+            )
         for order, note_type in enumerate(("method", "pitfall")):
             con.execute(
                 "INSERT INTO topic_notes (topic_id, note_type, content, sort_order,"
@@ -111,7 +118,7 @@ def _seed_outline(db_path: Path) -> dict:
         con.commit()
     finally:
         con.close()
-    return {"book": book, "chapter": chapter, "section": section, "kx": kx}
+    return {"book": book, "chapter": chapter, "section": section, "kx": kx, "kx2": kx2}
 
 
 class BankApiContractTest(unittest.TestCase):
@@ -280,7 +287,8 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(data["total"], 1)
         item = data["items"][0]
         self.assertEqual(item["id"], "q_test_000001")
-        self.assertEqual(item["taxonomy"]["topic_ids"], [self.outline["kx"]])
+        self.assertEqual(item["taxonomy"]["topic_ids"], [self.outline["kx"], self.outline["kx2"]],
+                         "读路径必须把主考向之外的副挂载一并回传（副考向排在主考向之后）")
         self.assertEqual(item["taxonomy"]["textbook"], "人教A版·必修第一册")
         self.assertEqual(item["taxonomy"]["section"], "1.1 集合的概念")
 
@@ -906,6 +914,45 @@ class BankApiContractTest(unittest.TestCase):
         # 摘掉这道题后，该考向子树只剩夹具里预挂的 q_test_000001
         self.assertEqual(after["total"], 1)
         self.assertEqual([item["id"] for item in after["items"]], ["q_test_000001"])
+
+    def test_z12b_secondary_topics_survive_read_modify_write(self) -> None:
+        """读—改—写整圈回来：插件原样回传 taxonomy 时，副考向一个都不许丢。
+
+        锁的是「读路径只回首个挂载、写路径先 DELETE 再按入参重插」这条静默丢数路径——
+        老师用录题插件改个题干，副考向就该原地蒸发，单靠 z12 那种「只挂一个」的夹具测不出来。
+        """
+        target = "q_test_000001"
+        both = [self.outline["kx"], self.outline["kx2"]]
+        status, before = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertEqual(status, 200)
+        self.assertEqual(before["taxonomy"]["topic_ids"], both)
+
+        status, saved = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}", "PATCH",
+            {"question": {"stem": before["stem"] + "（改过一次）", "taxonomy": before["taxonomy"]}},
+            token=True,
+        )
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(saved["taxonomy"]["topic_ids"], both, "逐字回传后副考向必须还在")
+        status, after = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
+        self.assertEqual(after["taxonomy"]["topic_ids"], both, "重新读取也要是两条")
+
+        status, listed = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions?"
+            + self._query(topic=self.outline["kx2"], page_size=10)
+        )
+        self.assertEqual(status, 200, listed)
+        self.assertIn(target, [item["id"] for item in listed["items"]], "副考向子树要捞得到这道题")
+
+        con = sqlite3.connect(self.seed_path)
+        try:
+            rows = con.execute(
+                "SELECT topic_id, is_primary FROM question_topics WHERE question_id = ?"
+                " ORDER BY sort_order", (target,)).fetchall()
+        finally:
+            con.close()
+        self.assertEqual([tuple(row) for row in rows], [(both[0], 1), (both[1], 0)],
+                         "主挂载仍是 primary，副挂载不得被顶掉或复制")
 
     # ---------- 配图边界 ----------
     def test_upload_serving_and_traversal(self) -> None:
