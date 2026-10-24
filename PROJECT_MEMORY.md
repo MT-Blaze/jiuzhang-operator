@@ -58,8 +58,14 @@
 > `system.bank_query` 把检索词送进 core-bank 与 bank-browser 两只插件；④ 右栏主权只认**当前画布页签**，
 > 默认住户是助手、无认领者给可读兜底（不再隐藏、不再复活宿主私有副驾）。左栏硬编码「自由对话」入口与
 > 宿主对话 DOM 一并清除，中栏兜底改为原生不可关「引导」页签。契约修订：`PLUGIN_SPEC.md` §2.9 重写、
-> 新增 §2.10。验证：43 模块 846 测全绿（新增 `tests/test_ai_plugin_boundary.py` 34 测，重锚 7 个既有模块），
-> 死样式经审计脚本取证后删除（宿主未引用 token 48 → 3）。底座版本仍为 0.9.0（本军令不发版）。
+> 新增 §2.10。验证：43 模块 **849 测全绿**（新增 `tests/test_ai_plugin_boundary.py` 37 测，重锚 7 个既有模块），
+> 死样式经审计脚本取证后删除（宿主未引用 token 48 → 3）。真机探针 13/13（Mock provider + 宿主实执行，
+> 全程在 `.system_generated/m15_probe/` 沙箱副本上跑，不出网、不动用户 `data/`）。底座版本仍为 0.9.0（本军令不发版）。
+> **探针挖出的既有缺陷（非本军令引入）**：`stage.js` 的 `relay()` 把 `basket.clear` 写成函数末尾的默认动作，
+> 于是任何在 `RELAY_METHODS` 里挂着、却在本层没有分支的方法都会顺手清空老师的题篮——`plugins.list` 与
+> `workspace.state` 实现于 `relayAgent` 却漏了分发，真机一点助手面板按钮就清空题篮（用户真实 `data/basket.json` 10 条未动）。
+> 修法：新增 `AGENT_READ_METHODS` 补分发、`basket.clear` 收进显式分支、末尾统一 `failWith("UNSUPPORTED_METHOD")`，
+> 并由反射式回归测钉住「`relayAgent` 里实现的分支必被分发」与「未实现的方法明确拒回」。
 >
 > **军令 #14（2026-10-24 彻夜）六阶段全部交付并封版**：底座版本 **0.8.2 → 0.9.0**，
 > 发行包 `dist/jiuzhang-operator-beta-v0.9.0.zip` 已出（包内种子库仍是冻结空壳，0 题）。
