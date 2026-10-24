@@ -222,6 +222,46 @@
 > **下一步**：阶段七审计精简官方插件代码（`plugins/*/dist/`，并重跑各插件探针）。
 > 注意：发版目录下 `plugins/org.jiuzhang.{bank-browser,classic-card,exam-paper,lecture}`
 > 已由主公**人工删除**（工作树仍是 ` D`，不恢复、不暂存、不入库），阶段七的审计对象只剩现存插件。
+> ⑩ **#18-终 阶段七（2026-10-25）**——审计精简六个官方插件（提交 `2bf9d9d`）。
+> **扫描器四件套**（`.system_generated/stage7/`，每个都先跑负向对照才敢信它的 0）：
+> `plugin_dead.py`（函数/常量零引用）、`then_scan.py`（词法级单分支 `.then`，rej-handler 认
+> `.then(fn, err)` 里**参数表内深度 1 的顶层逗号**）、`css_scan.py`（未用类，动态拼接前缀白名单
+> `"…-" + role` 免误报）、`dup_scan.py`（同文件函数体归一化哈希查重）。三查 `fetch(`/`parent.document`/
+> `localStorage` 六插件全 0；后行断言、`eval`、远程 URL 全 0；`innerHTML` 只剩 KaTeX `renderToString`
+> 输出与 `= ""` 清空。收口后死符号 0、未用 CSS 类 0、同文件重复函数体 0。
+> **改了什么（逐处人工复核，非子代理报什么改什么）**：core-bank 检索词在非列表视图被静默吞掉→先切回
+> 列表；【刷新】只刷当前视图；大纲树取层失败不再伪装空层；待审翻页补并发令牌 `reviewToken`；
+> 分页器合并为 `mountPager`、答案口径合并为 `answerText`（三处各写一遍必然漂）。chat 加 `refineBusy`
+> 飞行态（否则一次点击发两遍 `agent.refine`）、覆盖安装重试补 `aria-busy`、删 4 处死代码。
+> dashboard 请求 timer 一次挂进 `pending`（原来先 `postMessage` 再回查改写，留了竞态窗口）、首屏播报
+> 与卡片共用 `num()`（不再有「共 undefined 题」）。handout 打印改为等 `reflow()` 落定再 `window.print()`、
+> `.hp-btn` 34→44px。editor 确认弹窗 `aria-hidden` 从里层挪到 `role="dialog"` 那层、Esc 上移 window、
+> 补 Tab 焦点陷阱 `trapModalFocus`、考向树失败不写空层、删只写不读的 `lastDraftAt`。
+> paper-gen 把底座报的 `missing` 从死赋值变成底栏播报、【重新排版】只做本地重排（取题篮归【刷新】）、
+> `.pg-btn`/`.pg-mini`/`.pg-remove` 抬到 44px。
+> **探针也是审计对象**：删 `bank_browser_probe`/`exam_paper_probe`/`lecture_probe`（1034 行，插件已人工删除、
+> 全仓零引用）；修三个**长期失真**的探针——`bank_probe` 还在选 v0.6.3 就废弃的 `basic/hard` 难度词（直接崩，
+> 改成 L4 且计数不再硬编码 11）、`bank_io_probe` 在设 `JZO_PLUGINS_DIR` 前就调 `bank.*`（schema.sql 被解析到
+> 默认工作区）、`dashboard_probe` 把左栏顺序锁死「看板第一位」（与 `_sidebar_with_unlisted` 的按发现序追加相悖，
+> 改成只验入口在场）。
+> **验证**：56 模块 1039 测全绿 ×2（改动前后各一轮）；`audit_code.py` ERROR 0 / WARN 34（与阶段六持平）；
+> 探针 dashboard 20/20、bank 13/13、bank_io 12/12、dedupe 40/40、handout 27/27、paper 41/41、editor 19/19、
+> editor_crop 16/16、chat_keys 15/15、stage 46/46（合计 203/203）。
+> **两条自曝**：① 阶段七自己的 Edit 把 core-bank 一行注释和 `function fetchTopics` 挤成了同一行——**语法直接坏**，
+> 全靠 `node:vm` 逐文件语法自检抓到（仓库没有 node CLI，走 node-repl MCP）；② 三个探针并行跑时
+> `paper_probe` 的「切紧凑同步重排 < 300ms」失败（311.6ms），单独重跑 240.5ms 通过——**CPU 争用造出的假阴性**，
+> 判据类探针必须独占跑。
+> **未清欠账（如实报，阶段七刻意不动）**：① `bus.subscribe` 是**纯声明**，宿主 `broadcast()` 不看它照发；
+> 六插件清单与代码监听有 6 处漂移（chat 声明 `ui.params.changed` 不处理、core-bank/paper-gen 声明
+> `stage.tab.activated` 不处理、dashboard/handout/paper-gen 处理 `question.updated` 未声明、chat 处理
+> `plugin.updated` 未声明、core-bank 处理 `system.bank_query` 未声明）。② `app/core/plugins.py:70`
+> 的 `_BUS_SUBSCRIBE` 白名单**缺** `system.question_updated`/`system.bank_query`/`plugin.updated`/
+> `editor.apply_patch`/`system.open_editor`，声明了也会被 `_normalize_bus` 静默丢弃（`tests/test_plugin_stage_contract.py:126`
+> 钉着这个丢弃行为）——扩白名单属改安全面，要主公裁决。③ 六个插件的代码都变了但 `version` 未升，
+> 【检查更新】看不到这轮修复；升哪个版本号也要主公裁决。④ `chat` 的 `announceSeedBank` 仍引用已退役的
+> `org.jiuzhang.demo-bank`，但 `tests/test_routes_and_demo_zip.py:80` 钉着那句文案、且分支由数据驱动（库真在
+> 才说），故未动。
+> **下一步**：阶段八 重打包——`tools/sync_plugin_index.py` 重算索引，两份 `plugins.json` 逐字全等，出包。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
