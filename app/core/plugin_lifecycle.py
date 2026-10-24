@@ -6,6 +6,11 @@
 - 彻底删除：代码目录 + **当前工作区**里该插件的物理库（含 WAL/SHM/journal 边车）
   一并销毁，不可恢复——所以前端务必二次确认并给红色警告。
 
+**题库引擎免死金牌**（军令 #18-结 任务三）：清单里声明了 ``capabilities: ["bank.provider"]``
+的插件（现网即 core-bank），后端**无视** ``keep_data`` 一律保数据。理由：换渲染引擎可以，
+把老师历年攒下的真题库连锅端不行；而 provider 的 ``banks/<id>.db`` 恰恰就是真题本体。
+回包里的 ``provider_guarded`` 供前端如实回显，前端弹窗同时把「不保留数据」置灰。
+
 **绝不跨工作区**（军令 #18-续4）：其他工作区的 ``.db`` 是老师各自的财产，卸载当前区
 的插件不能连坐。``uploads/`` 是工作区级扁平命名空间，文件不带插件标记，无法可靠归属，
 因此这里一律不删（宁可多留，不可误毁老师的图）——军令 #18-终 阶段一 把这条口径钉成契约：
@@ -23,11 +28,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from pathlib import Path
 from typing import Any
 
+from app.core.bank_provider import PROVIDER_CAPABILITY
 from app.core.config import plugins_dir, settings
 
 _PLUGIN_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,80}$")
@@ -68,12 +75,34 @@ def _current_workspace_bank(plugin_id: str) -> Path:
     return Path(settings.data_dir) / "banks" / f"{plugin_id}.db"
 
 
+def _declares_provider(plugin_dir: Path) -> bool:
+    """删代码之前读一眼清单：声明了 ``bank.provider`` 的插件，本区物理库就是老师的真题本体。
+
+    清单读坏或缺字段一律按「不是 provider」处理——保守方向是照常允许彻底卸载，
+    因为误判成 provider 只是多留一份库，误判成非 provider 才会毁数据，所以这里
+    只在**明文看到**能力标记时才授权销毁。
+    """
+    try:
+        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    capabilities = manifest.get("capabilities")
+    return isinstance(capabilities, list) and PROVIDER_CAPABILITY in capabilities
+
+
 def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
     _validate_id(plugin_id)
     plugins_root = plugins_dir().resolve()
     plugin_dir = (plugins_root / plugin_id).resolve()
     if not _is_within(plugin_dir, plugins_root) or plugin_dir == plugins_root:
         raise PluginUninstallError("插件路径越界")
+
+    # 军令 #18-结 任务三：题库引擎的免死金牌。前端传什么 keep_data 都不算，
+    # provider 插件的物理库一律原地保留——换引擎可以，毁真题不行。
+    provider_guarded = _declares_provider(plugin_dir)
+    keep_data = keep_data or provider_guarded
 
     removed_code = False
     if plugin_dir.is_dir():
@@ -105,6 +134,8 @@ def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
         "keep_data": keep_data,
         "removed_code": removed_code,
         "removed_data": removed_data,
+        # provider 免死金牌：True 表示这轮即便前端要求销毁数据也照样保留，前端据此如实回显
+        "provider_guarded": provider_guarded,
         # 共享配图目录：无论是否彻底卸载都不碰（归属判不出，误删即毁老师的图）
         "uploads_kept": True,
     }

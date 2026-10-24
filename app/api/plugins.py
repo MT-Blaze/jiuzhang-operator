@@ -242,7 +242,8 @@ def set_plugin_sidebar(payload: dict[str, Any] = Body(...)) -> dict:
 
 @router.delete(
     "/api/plugins/{plugin_id}",
-    summary="卸载插件；keep_data=false 时连同各工作区的物理题库一并销毁",
+    summary="卸载插件；keep_data=false 时销毁**当前工作区**内该插件的物理题库"
+            "（声明 bank.provider 的题库引擎例外：无视该参数，一律原地保数据）",
     dependencies=[Depends(require_write_token)],
 )
 def uninstall(plugin_id: str, keep_data: bool = True) -> dict:

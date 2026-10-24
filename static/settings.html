@@ -431,6 +431,11 @@
             未勾选保留：该插件在<strong>当前工作区</strong>的物理题库 <code>.db</code> 将被<strong>永久删除，不可恢复</strong>；
             其他工作区的库不受影响。
           </p>
+          <p class="mg-danger" id="uninstallProvider" hidden>
+            <strong>题库引擎已被保护，数据将原地保留</strong>：它声明了 <code>bank.provider</code>，
+            当前工作区的 <code>.db</code> 就是你攒下的真题本体。卸载只删代码目录，换回引擎即刻续用；
+            「不保留数据」对题库引擎不可选。
+          </p>
           <div class="mg-modal-actions">
             <button type="button" class="q-button" id="uninstallCancel">取消</button>
             <button type="button" class="q-button q-button-danger" id="uninstallConfirm">确认卸载</button>

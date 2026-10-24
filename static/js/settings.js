@@ -195,12 +195,19 @@
   var modalText = document.getElementById("uninstallText");
   var modalKeep = document.getElementById("uninstallKeep");
   var modalDanger = document.getElementById("uninstallDanger");
+  var modalProvider = document.getElementById("uninstallProvider");
   var modalConfirm = document.getElementById("uninstallConfirm");
   var modalCancel = document.getElementById("uninstallCancel");
   var uninstallTarget = null;
   var installedBody = { plugins: [], sidebar: [] };
   var prefsReloadBusy = false;
   var uninstallPrevFocus = null;
+
+  /** 题库引擎（声明 bank.provider）：数据是老师真题本体，卸载不许碰库。 */
+  function isProviderPlugin(plugin) {
+    return !!(plugin && Array.isArray(plugin.capabilities) &&
+      plugin.capabilities.indexOf("bank.provider") >= 0);
+  }
 
   function mgSet(box, text, tone) {
     if (!box) return;
@@ -421,13 +428,22 @@
   function openUninstall(plugin) {
     uninstallTarget = plugin;
     uninstallPrevFocus = document.activeElement;
+    var guarded = isProviderPlugin(plugin);
     if (modalText) modalText.textContent = "确定卸载「" + (plugin.name || plugin.id) + "」？";
-    if (modalKeep) modalKeep.checked = true;
+    if (modalKeep) {
+      modalKeep.checked = true;
+      // 置灰而不是隐藏：隐藏会让人以为这是个能勾却没勾上的选项
+      modalKeep.disabled = guarded;
+      if (guarded && modalKeep.parentNode) modalKeep.parentNode.setAttribute("aria-disabled", "true");
+      if (!guarded && modalKeep.parentNode) modalKeep.parentNode.removeAttribute("aria-disabled");
+    }
     if (modalDanger) modalDanger.hidden = true;
+    if (modalProvider) modalProvider.hidden = !guarded;
     if (modal) {
       modal.hidden = false;
       modal.setAttribute("aria-hidden", "false");
-      if (modalKeep) modalKeep.focus();
+      if (guarded && modalCancel) modalCancel.focus();
+      else if (modalKeep) modalKeep.focus();
     }
   }
 
@@ -443,15 +459,23 @@
 
   function confirmUninstall() {
     if (!uninstallTarget) return;
-    var keep = modalKeep ? modalKeep.checked : true;
     var plugin = uninstallTarget;
+    // 题库引擎双保险：DOM 被改坏了也照样按「保留数据」发请求
+    var keep = isProviderPlugin(plugin) || (modalKeep ? modalKeep.checked : true);
     closeUninstall();
     mgSet(mgStatus, "正在卸载 " + (plugin.name || plugin.id) + "…", "info");
     apiCall("/api/plugins/" + encodeURIComponent(plugin.id) + "?keep_data=" + (keep ? "true" : "false"), "DELETE")
       .then(function (result) {
         var removed = (result && result.removed_data && result.removed_data.length) || 0;
-        mgSet(mgStatus, "已卸载 " + (plugin.name || plugin.id) +
-          (keep ? "（保留了本地数据）。" : "（已连同 " + removed + " 个本地数据库一并物理删除）。"), "ok");
+        var outcome;
+        if (result && result.provider_guarded) {
+          outcome = "（题库引擎已被保护，数据将原地保留）。";
+        } else if (keep) {
+          outcome = "（保留了本地数据）。";
+        } else {
+          outcome = "（已连同 " + removed + " 个本地数据库一并物理删除）。";
+        }
+        mgSet(mgStatus, "已卸载 " + (plugin.name || plugin.id) + outcome, "ok");
         loadInstalled();
       })
       .catch(function (error) { mgSet(mgStatus, "卸载失败：" + error.message, "down"); });

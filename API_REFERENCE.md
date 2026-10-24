@@ -346,12 +346,12 @@ HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicate
 
 | 方法与路径 | 说明 |
 | --- | --- |
-| `GET /api/plugins` | 发现已安装插件：`{plugins: [...], rejected: [{id?, reason}]}`；每个 plugin 带 `protocol` / `entry_url` / `assets` / `min_host_version` 等宿主回填字段 |
+| `GET /api/plugins` | 发现已安装插件：`{plugins: [...], rejected: [{id?, reason}]}`；每个 plugin 带 `protocol` / `entry_url` / `assets` / `min_host_version` / `capabilities` 等宿主回填字段（`capabilities` 是设置页识别题库引擎、置灰「不保留数据」的唯一判据） |
 | ✍ `POST /api/plugins/install?replace=false` | 本地 zip 安装（请求体即 zip 二进制，≤50 MB；暂存区校验 + 原子落地；同名默认 409，`replace=true` 才覆盖） |
 | ✍ `POST /api/plugins/install-url` | 在线安装单个 zip：`{"url", "mirrors": [...], "replace": false}`（地址守卫同索引拉取） |
 | ✍ `POST /api/plugins/index` | 拉取插件索引：`{"url", "allow_mirrors": true}`；只读 GET，不解压不执行；官方地址失败按 gh-proxy → ghfast → jsDelivr → fastly.jsDelivr → Raw 换源 |
 | ✍ `POST /api/plugins/{plugin_id}/enabled` | 启用/停用：`{"enabled": true|false}`（只写 `data/plugin_state.json`，绝不碰代码与数据） |
-| ✍ `DELETE /api/plugins/{plugin_id}?keep_data=true|false` | 卸载；`keep_data=false` 连同各工作区物理 `.db` 一并销毁（默认 `true` 只删代码目录） |
+| ✍ `DELETE /api/plugins/{plugin_id}?keep_data=true|false` | 卸载；`keep_data=false` 销毁**当前工作区**内该插件的物理 `.db`（含边车，默认 `true` 只删代码目录）。声明 `capabilities: ["bank.provider"]` 的题库引擎**免死**：无视该参数一律保数据，回包 `provider_guarded=true` |
 | ✍ `POST /api/plugins/update/check` | 双轨更新·检查：`{"url"?, "allow_mirrors"?}`；给了 `url` 才出网拉一次索引，否则复用本机缓存。回 `{host, plugins[], summary, index_source}`，每条带 `state`（`update_available` / `incompatible` / `up_to_date` / `not_in_index` / `bad_entry`）与 `reason` |
 | ✍ `POST /api/plugins/update/apply` | 双轨更新·下载并热更：`{"all": true}` 或 `{"ids": [...]}`；只处理 `update_available`，其余进 `skipped`；回 `{updated[], failed[], skipped[], host}`。只覆盖 `plugins/<id>/`，新包同名数据文件以本地为准，新包没带的本地文件原地保留 |
 | `GET /api/plugins/update/pending` | 重启续更待办：读 `data/update_state.json`，附本次进程 `last_resume` |

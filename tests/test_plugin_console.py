@@ -5,6 +5,8 @@
 2. 启停状态落盘（plugin_state），新装默认启用。
 3. 卸载两口径：保留数据只删代码目录；彻底删除只销毁**当前工作区**的物理 .db
    （其他工作区连同边车必须原样保留；越界拒）。
+   军令 #18-结 任务三加了免死金牌：声明 ``capabilities: ["bank.provider"]`` 的题库引擎
+   无视 keep_data，后端强制保数据。
 4. 工作区导入：合法 7 表 .db → 建新工作区并切换；非库 / 缺表 → 拒绝且不留半成品。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_plugin_console``
@@ -259,6 +261,55 @@ class UninstallLifecycleTest(unittest.TestCase):
         self.assertEqual(removed, [f"banks/{self.pid}.db"])
         self.assertTrue(provider_db.is_file(), "卸载浏览插件不得毁掉老师的公共真题库")
 
+    def test_provider_forced_keep_ignores_keep_data_false(self) -> None:
+        """军令 #18-结 任务三：题库引擎免死金牌——前端传 keep_data=false 也照样保数据。
+
+        provider 的 ``banks/<id>.db`` 就是老师攒下的真题本体，换渲染引擎可以，连锅端不行。
+        """
+        (self.plugins_dir / self.pid / "plugin.json").write_text(
+            json.dumps({"capabilities": ["bank.provider", "question.render"]}, ensure_ascii=False),
+            encoding="utf-8")
+        db = self.data_dir / "banks" / f"{self.pid}.db"
+        _make_bank_db(db, 456)
+        payload = db.read_bytes()
+
+        result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
+
+        self.assertTrue(result["removed_code"], "免死金牌只保数据，代码目录照删")
+        self.assertFalse((self.plugins_dir / self.pid).exists())
+        self.assertEqual(result["provider_guarded"], True)
+        self.assertEqual(result["keep_data"], True, "回包必须如实声明这轮保留了数据")
+        self.assertEqual(result["removed_data"], [])
+        self.assertTrue(db.is_file(), "题库引擎的物理库不得销毁")
+        self.assertEqual(db.read_bytes(), payload)
+
+    def test_bad_or_missing_manifest_is_not_treated_as_provider(self) -> None:
+        """清单坏 / 没清单 / 能力字段写歪 → 按非 provider 处理，彻底卸载照常执行。
+
+        只有**明文看到** ``bank.provider`` 才授权免死金牌；误判成 provider 只是多留一份库，
+        误判成非 provider 才会毁数据，所以判断取保守方向，把销毁权留给显式声明。
+        """
+        for index, raw in enumerate(
+                (None, "{ this is not json", json.dumps({"capabilities": "bank.provider"}),
+                 json.dumps({"capabilities": ["question.render"]}))):
+            with self.subTest(manifest=index):
+                plugin_dir = self.plugins_dir / self.pid
+                plugin_dir.mkdir(parents=True, exist_ok=True)
+                if raw is None:
+                    self.assertFalse((plugin_dir / "plugin.json").exists(), "首轮必须是不带清单的基线")
+                else:
+                    (plugin_dir / "plugin.json").write_text(raw, encoding="utf-8")
+                db = self.data_dir / "banks" / f"{self.pid}.db"
+                _make_bank_db(db, 1)
+
+                result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
+
+                self.assertEqual(result["provider_guarded"], False)
+                self.assertEqual(result["keep_data"], False)
+                self.assertFalse(db.exists(), "非 provider 的彻底卸载不得被误升为免死金牌")
+                self.assertEqual([item.replace("\\", "/") for item in result["removed_data"]],
+                                 [f"banks/{self.pid}.db"])
+
     def test_missing_plugin_and_bad_id_rejected(self) -> None:
         with self.assertRaises(plugin_lifecycle.PluginUninstallError):
             plugin_lifecycle.uninstall_plugin("org.jiuzhang.not-there", keep_data=True)
@@ -404,6 +455,29 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         self.assertNotIn(self.CARD, self._plugins())
         status, _ = self._call("DELETE", f"/api/plugins/{self.CARD}?keep_data=true")
         self.assertEqual(status, 404)
+
+    def test_07_uninstall_provider_via_api_forces_keep(self) -> None:
+        """HTTP 端到端：keep_data=false 打到题库引擎上，后端照样保数据（免死金牌不看参数）。
+
+        同时锁前端置灰的判据来源：/api/plugins 的回包必须带 capabilities，
+        设置页才认得出谁是引擎；缺了这个字段，置灰只能靠硬编码插件 id。
+        """
+        engine = "org.jiuzhang.core-bank"
+        shutil.copytree(ROOT / "plugins" / engine, Path(self.tmp.name) / "plugins" / engine)
+        db = Path(self.tmp.name) / "data" / "banks" / f"{engine}.db"
+        _make_bank_db(db, 7)
+        payload = db.read_bytes()
+
+        entry = self._plugins()[engine]
+        self.assertIn("bank.provider", entry["capabilities"], "引擎认不出来，前端就没法置灰")
+
+        status, data = self._call("DELETE", f"/api/plugins/{engine}?keep_data=false")
+        self.assertEqual(status, 200, data)
+        self.assertIs(data["provider_guarded"], True)
+        self.assertIs(data["keep_data"], True, "接口不得顺着前端参数毁老师的真题库")
+        self.assertEqual(data["removed_data"], [])
+        self.assertNotIn(engine, self._plugins(), "代码目录仍要删掉")
+        self.assertEqual(db.read_bytes(), payload)
 
 
 if __name__ == "__main__":
