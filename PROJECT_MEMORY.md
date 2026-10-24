@@ -145,6 +145,46 @@
 > **下一步**：阶段五 core-bank 查重前端 UI——顶部【查重清洗】页签 + 【一键扫描】，审查模式接管画布与右栏
 > 1:1 双栏（2 题左 1 右 1、3 题左 2 右 1、4 题左 2 右 2），题卡单选保留项 + 【确认合并】，审一组存一组不阻塞；
 > 同时把 `bank.dedupe_scan` / `bank.dedupe_merge` 加进 `RELAY_METHODS`，并在浏览器里真人路径取证。
+> ⑧ **#18-终 阶段五（2026-10-25）**——core-bank 查重前端双栏审查面板，改动面：
+> `plugins/org.jiuzhang.core-bank/dist/plugin.js`（第三页签 `data-dupe-tab`、`loadDedupe`、`dupeChips`、
+> `markDupeKept`、`buildDupeCard`、`renderDedupeGroup`、`renderDedupePanel`、`mergeDupeGroup`，
+> `scheduleRefresh` 加 `state.view === "dedupe"` 守卫）、`dist/plugin.css`（`.cb-dupe*` 整块，含
+> `grid-template-columns:repeat(2,minmax(0,1fr))` 与 `@media (max-width:880px)` 单列兜底）、
+> `plugin.json`（0.6.0 → **0.7.0**，描述补查重清洗）、`static/js/stage.js`（`RELAY_METHODS` 加两条 +
+> provider-only 分支）、`API_REFERENCE.md`（§2 分类行 + **新增 §2.17** + §1.3 `system.question_updated`
+> 补 `merge`）、`tests/test_stage_canvas.py`（新增 `test_05_dedupe_is_provider_only_and_copys_are_bounded`）、
+> 新增真机探针 `tools/dedupe_probe.py`。
+> **1:1 双栏的实现口径（与军令字面有偏离，如实报）**：「接管画布与右栏 1:1」不能真把宿主右栏拉成等宽——
+> PLUGIN_SPEC §2.4「左栏、右栏、底栏永远归宿主，只有中央画布可以被插件接管」，§2.9 右栏宽被
+> `--context-width`（220–520px）钉死，且右栏是**同一 `entry_url` 的第二个 iframe 实例、与画布不共享 JS 状态**。
+> 因此 1:1 落在画布内：行优先 2 列等宽网格自然得出 2 题左 1 右 1、3 题左 2 右 1、4 题左 2 右 2，
+> ≤880px 并成一列。探针逐卡量 `getBoundingClientRect()` 与计算样式列数，实测四卡等宽（宽度差 0px）、
+> 375px 视口 `tracks=1 / overflowX=0`、回宽视口复位 `tracks=2`。
+> **审一组存一组**：合并/跳过后队列前进而不重载面板，跳过的组轮回队尾（探针实证：合并 2 题组后被跳过的
+> 3 题组回到队首），换组清空单选并重新禁用【确认合并】。
+> **坑（本轮真踩，四条）**：① 夹具 `FILL_2` 把 `=` 写在 `$…$` 外面（`$f'(1)$=____` vs `$f'(1)=$____`）
+> 归一后**不相等**——归一只到排版级、符号在定界符内外的位置差会保留，导致分组打成 4/2/2，探针卡在
+> 「期望 3 张卡实到 2 张」；离线用指纹分桶脚本复核后改夹具才对上 4/3/2。② 建库撞 `ck_textbooks_id`：
+> 册/教材 id 必须是 `tb_` + 8 位十六进制、考向 `tp_kx` + 8 位，随意命名的夹具 id 一律被 CHECK 拒。
+> ③ 探针库路径不能自己拼——工作区物理隔离后落点是 `data/workspaces/<id>/banks/`，只能取
+> `bank.bank_db_path(PLUGIN_ID)`。④ `dock()` 里读 `state.dupePrimary` 已被清空（报成空保留项），
+> 改在 `mergeDupeGroup` 里先局部捕获 `primary`。另外探针改成崩溃也 `dump()` + 记 `crashed` 回溯、
+> 断言用轮询式 `wait_for_cards`/`wait_text`，不再让中途失败把证据一起吞掉。
+> **提前干了阶段六的一件**：core-bank 头部文案写死「456 道真题」（发空壳版后就一直是假的），
+> 改成随库的 `state.total`，并加探针判据「头部题数随库走」。
+> **验证**：探针 `tools/dedupe_probe.py s5` **40/40 通过**，`page_errors []` / `console_errors []`，
+> 证据 `.system_generated/dedupe_probe/s5/probe.json` + 五张截图（4 卡双栏 / 375px 单列 / 3 卡 / 2 卡 / 空态）；
+> 库内六项直查 SQLite 复核（总行数 10→7→4、副本真删零残留且 `foreign_key_check` 净、解法二·三不出现解法四、
+> 考向并集 KX_A/B/C 且主挂载仍 KX_B、来源 `[src_0a#1, src_0a#9, src_0b#7]`、备注同名键保留项赢）；
+> 被删副本单题详情回 404；插件侧三查（`fetch(`/`parent.document`/`localStorage`）归零。
+> 全量回归 **54 模块 1021 测全绿**（逐模块跑，`.venv/Scripts/python.exe -m unittest tests.<模块>`）。
+> **未验证/边界（如实报）**：relay 层 `FORBIDDEN`（非 provider 页签喊 `bank.dedupe_merge`）只有静态判据，
+> **没有浏览器实证**——探针环境里只有 core-bank 一个 provider 页签；本机无 node，插件 JS 语法只能靠
+> `pageerror`/`console` 归零间接兜；插件 `appendInline` 只渲 `$…$`，`\(...\)` 打法的副本在查重卡里会露出
+> 原始 LaTeX（既有行为，列入阶段七候选）；探针夹具走裸 SQL 建库，`question_fts` 未随之填充（`fts_rows=0`），
+> 引擎的 `bank_fts.remove` 路径本轮未被这条探针覆盖（`tests/test_bank_fts.py` 覆盖）。
+> **下一步**：阶段六审计精简底座宿主代码（`app/core/`、`app/api/` 找 Bug/未捕获异常/死代码/冗余，
+> `static/js/` 清无用变量、失效监听器、废弃全局函数），功能不变、全量单测全绿前提下尽量精简行数。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：

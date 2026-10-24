@@ -46,7 +46,20 @@
     reviewItems: [],
     reviewSummary: { total: 0, flags: [] },
     reviewLoading: false,
-    reviewError: ""
+    reviewError: "",
+    // 查重清洗（军令 #18-终 阶段五）：扫描结果留在本地，审一组存一组，
+    // 合并不重扫——「一键扫描」是显式动作，回流刷新不能把老师正在比的题抽走。
+    dupeQueue: [],
+    dupePrimary: "",
+    dupeShowSolution: false,
+    dupeLoading: false,
+    dupeBusy: false,
+    dupeError: "",
+    dupeScanned: 0,
+    dupeRedundant: 0,
+    dupeTruncated: 0,
+    dupeMerged: 0,
+    dupeSkipped: 0
   };
 
   // 大纲树：册/章/节/考向按需懒加载，expanded 记开合，children 记已取回的一层
@@ -741,12 +754,272 @@
     host.appendChild(panel);
   }
 
+  // ---------- 查重清洗（军令 #18-终 阶段五） ----------
+  // 双栏 1:1 落在画布内：左栏/右栏/底栏永远归宿主，插件不得反向操控宿主布局
+  // （PLUGIN_SPEC §2.4、§2.9），而且宿主右栏上限 520px、与画布成不了 1:1。
+  // 所以审查模式接管的是插件自己的三栏浏览布局（大纲 | 列表 | 详情 → 全宽双栏题卡）。
+  var DUPE_FIELD_LABELS = {
+    answer: "答案",
+    difficulty: "难度",
+    grade: "年级",
+    solution: "解析",
+    sources: "来源关系",
+    topics: "考向挂载",
+    extensions: "单题备注"
+  };
+
+  function loadDedupe() {
+    state.view = "dedupe";
+    if (state.dupeLoading || state.dupeBusy) return;
+    state.dupeLoading = true;
+    state.dupeError = "";
+    renderAll();
+    hostCall("bank.dedupe_scan", {}).then(function (result) {
+      state.dupeQueue = (result && result.groups) || [];
+      state.dupeScanned = (result && result.scanned) || 0;
+      state.dupeRedundant = (result && result.redundant) || 0;
+      state.dupeTruncated = (result && result.truncated) || 0;
+      state.dupePrimary = "";
+      state.dupeLoading = false;
+      renderAll();
+      dock("查重扫描完成：" + state.dupeScanned + " 题里有 " + state.dupeQueue.length + " 组重复");
+    }, function (error) {
+      state.dupeLoading = false;
+      state.dupeQueue = [];
+      state.dupeError = error.message;
+      renderAll();
+      toast("查重扫描失败：" + error.message);
+    });
+  }
+
+  function dupeChips(question) {
+    var chips = el("div", "cb-dupe-chips");
+    chips.appendChild(el("span", "cb-chip", typeLabel(question.type)));
+    var difficulty = el("span", "cb-chip", difficultyLabel(question.difficulty));
+    difficulty.setAttribute("data-kind", question.difficulty);
+    chips.appendChild(difficulty);
+    chips.appendChild(el("span", "cb-chip", question.grade || "未标注"));
+    var taxonomy = question.taxonomy || {};
+    var topics = taxonomy.topic_ids || [];
+    if (topics.length) {
+      chips.appendChild(el("span", "cb-chip", "考向 " + topics.length + " 个"
+        + (taxonomy.chapter ? "（" + taxonomy.chapter + "）" : "")));
+    }
+    if (question.source && question.source.paper_title) {
+      chips.appendChild(el("span", "cb-chip", sourceLine(question)));
+    }
+    migrationFlags(question).forEach(function (flag) {
+      chips.appendChild(el("span", "cb-chip cb-chip-review", flagLabel(flag)));
+    });
+    chips.appendChild(el("span", "cb-review-id", question.id));
+    return chips;
+  }
+
+  function markDupeKept(questionId) {
+    state.dupePrimary = questionId;
+    // 只改标记不整块重画：renderAll 会把焦点从老师刚按的单选钮上抢走
+    Array.prototype.forEach.call(root.querySelectorAll(".cb-dupe-card"), function (card) {
+      var kept = card.getAttribute("data-dupe-id") === questionId;
+      card.classList.toggle("cb-dupe-kept", kept);
+      var radio = card.querySelector("input[type=radio]");
+      if (radio) radio.checked = kept;
+    });
+    var button = root.querySelector(".cb-dupe-merge");
+    if (button) button.disabled = !questionId || state.dupeBusy;
+    var tip = root.querySelector(".cb-dupe-merge-tip");
+    if (tip) {
+      var group = state.dupeQueue[0];
+      tip.textContent = questionId && group
+        ? "将删除其余 " + (group.ids.length - 1) + " 题，考向/来源/备注并进保留项"
+        : "先点一张卡上的「保留这题」";
+    }
+  }
+
+  function buildDupeCard(question) {
+    var card = el("article", "cb-dupe-card");
+    card.setAttribute("data-dupe-id", question.id);
+
+    var pick = el("label", "cb-dupe-pick");
+    var radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "cb-dupe-primary";
+    radio.value = question.id;
+    radio.checked = state.dupePrimary === question.id;
+    radio.addEventListener("change", function () { markDupeKept(question.id); });
+    pick.appendChild(radio);
+    pick.appendChild(el("span", null, "保留这题"));
+    card.appendChild(pick);
+    if (state.dupePrimary === question.id) card.classList.add("cb-dupe-kept");
+
+    card.appendChild(dupeChips(question));
+
+    var body = el("div", "cb-dupe-body");
+    appendRich(body, question.stem);
+    if (question.options && question.options.length) {
+      var options = el("ol", "cb-options");
+      question.options.forEach(function (option) {
+        var item = el("li", "cb-option");
+        item.appendChild(el("span", "cb-key", option.key + "."));
+        var text = el("span");
+        appendRich(text, option.content);
+        item.appendChild(text);
+        options.appendChild(item);
+      });
+      body.appendChild(options);
+    }
+    var answer = el("p", "cb-dupe-answer");
+    if (question.answer && question.answer.kind === "choice") {
+      answer.appendChild(el("span", "cb-answer-label", "答案："));
+      answer.appendChild(document.createTextNode((question.answer.choice_keys || []).join("、")));
+    } else if (question.answer && question.answer.content) {
+      answer.appendChild(el("span", "cb-answer-label", "答案："));
+      answer.appendChild(document.createTextNode(question.answer.content));
+    } else {
+      answer.appendChild(el("span", "cb-answer-label", "答案："));
+      answer.appendChild(document.createTextNode("待补 — 原资料里没有可依据的答案"));
+    }
+    body.appendChild(answer);
+    if (state.dupeShowSolution && question.solution) {
+      var solution = el("div", "cb-solution");
+      solution.appendChild(el("span", "cb-answer-label", "解析："));
+      appendRich(solution, question.solution);
+      body.appendChild(solution);
+    }
+    card.appendChild(body);
+    return card;
+  }
+
+  function mergeDupeGroup(group) {
+    var primary = state.dupePrimary;
+    var copies = group.ids.filter(function (id) { return id !== primary; });
+    if (!primary || !copies.length || state.dupeBusy) return;
+    state.dupeBusy = true;
+    renderAll();
+    hostCall("bank.dedupe_merge", { primary_id: primary, copy_ids: copies })
+      .then(function (result) {
+        state.dupeBusy = false;
+        state.dupeQueue = state.dupeQueue.slice(1);   // 审一组存一组：落库即出队，不用重扫
+        state.dupePrimary = "";
+        state.dupeMerged += copies.length;
+        state.dupeScanned = Math.max(0, state.dupeScanned - copies.length);
+        state.dupeRedundant = Math.max(0, state.dupeRedundant - copies.length);
+        renderAll();
+        var moved = (result && result.moved) || {};
+        toast("已收敛 " + copies.length + " 题：考向 +" + (moved.topics || []).length
+          + " · 来源 +" + (moved.sources || []).length
+          + " · 备注 +" + (moved.extensions || []).length);
+        dock("查重合并完成：保留 " + primary + "，删除 " + copies.join("、"));
+      }, function (error) {
+        state.dupeBusy = false;
+        renderAll();
+        toast("合并失败，题库一字未动：" + error.message);
+      });
+  }
+
+  function renderDedupeGroup(host, group) {
+    var head = el("div", "cb-dupe-head");
+    var difference = (group.differing_fields || []).map(function (key) {
+      return DUPE_FIELD_LABELS[key] || key;
+    });
+    head.appendChild(el("p", "cb-dupe-title",
+      group.ids.length + " 道题面完全相同（" + typeLabel(group.type) + "）· 还剩 "
+        + state.dupeQueue.length + " 组"));
+    head.appendChild(el("p", "cb-dupe-diff", difference.length
+      ? "组内不同的只有：" + difference.join("、") + "——都是「录了两遍」留下的，不冲突"
+      : "组内每一项都一样，留一条就够"));
+    host.appendChild(head);
+
+    var cards = el("div", "cb-dupe-cards");
+    cards.setAttribute("role", "radiogroup");
+    cards.setAttribute("aria-label", "重复题组，单选保留项");
+    group.documents.forEach(function (question) { cards.appendChild(buildDupeCard(question)); });
+    host.appendChild(cards);
+
+    var actions = el("div", "cb-dupe-actions");
+    var toggle = el("button", "cb-btn", state.dupeShowSolution ? "收起解析" : "展开解析");
+    toggle.type = "button";
+    toggle.addEventListener("click", function () {
+      state.dupeShowSolution = !state.dupeShowSolution;
+      renderAll();
+    });
+    actions.appendChild(toggle);
+
+    var skip = el("button", "cb-btn", "跳过这组");
+    skip.type = "button";
+    skip.addEventListener("click", function () {
+      state.dupeQueue = state.dupeQueue.slice(1).concat([group]);
+      state.dupeSkipped += 1;
+      state.dupePrimary = "";
+      renderAll();
+    });
+    actions.appendChild(skip);
+
+    var tip = el("span", "cb-dupe-merge-tip",
+      state.dupePrimary ? "将删除其余 " + (group.ids.length - 1) + " 题，考向/来源/备注并进保留项"
+        : "先点一张卡上的「保留这题」");
+    actions.appendChild(tip);
+
+    var merge = el("button", "cb-btn cb-btn-primary cb-dupe-merge", "确认合并");
+    merge.type = "button";
+    merge.disabled = !state.dupePrimary || state.dupeBusy;
+    merge.setAttribute("aria-busy", String(state.dupeBusy));
+    merge.addEventListener("click", function () { mergeDupeGroup(group); });
+    actions.appendChild(merge);
+    host.appendChild(actions);
+  }
+
+  function renderDedupePanel(host) {
+    var panel = el("div", "cb-dupe");
+    var bar = el("div", "cb-dupe-bar");
+    var scan = el("button", "cb-btn cb-btn-primary", "一键扫描");
+    scan.type = "button";
+    scan.disabled = state.dupeLoading || state.dupeBusy;
+    scan.setAttribute("aria-busy", String(state.dupeLoading));
+    scan.addEventListener("click", function () { loadDedupe(); });
+    bar.appendChild(scan);
+    var status = el("p", "cb-dupe-status",
+      state.dupeLoading ? "正在按指纹归一全库题面…"
+        : (state.dupeScanned
+          ? "已扫 " + state.dupeScanned + " 题 · 重复 " + state.dupeRedundant + " 题可清"
+            + (state.dupeMerged ? " · 本轮已收敛 " + state.dupeMerged + " 题" : "")
+            + (state.dupeSkipped ? " · 跳过 " + state.dupeSkipped + " 组" : "")
+          : "还没扫描。扫描只读，不动库里一个字。"));
+    status.setAttribute("aria-live", "polite");
+    bar.appendChild(status);
+    panel.appendChild(bar);
+    if (state.dupeTruncated) {
+      panel.appendChild(el("p", "cb-review-note",
+        "重复组太多，本次只回了前 " + state.dupeQueue.length + " 组（还有 "
+          + state.dupeTruncated + " 组被截在外），清完再扫一次。"));
+    }
+
+    if (state.dupeError) {
+      panel.appendChild(el("p", "cb-tree-error", "扫描失败：" + state.dupeError));
+    } else if (state.dupeLoading) {
+      panel.appendChild(el("p", "cb-loading", "正在读取重复组…"));
+    } else if (!state.dupeQueue.length) {
+      panel.appendChild(el("p", "cb-empty", state.dupeScanned
+        ? "没有需要清洗的重复组了——题面指纹全库唯一。"
+        : "点【一键扫描】找出题面完全相同的题（排版差异、选项顺序、配图都算在内）。"));
+    } else {
+      var group = state.dupeQueue[0];
+      if (group.ids.length <= 1) {
+        // 组里只剩一条就不叫重复了（多半是别处刚删过题），直接出队而不是空转一轮扫描
+        state.dupeQueue = state.dupeQueue.slice(1);
+        renderDedupePanel(host);
+        return;
+      }
+      renderDedupeGroup(panel, group);
+    }
+    host.appendChild(panel);
+  }
+
   function renderAll() {
     if (!stageMode || !root) return;
     root.textContent = "";
     var head = el("header", "cb-head");
     head.appendChild(el("h1", "cb-title", "真题题库"));
-    head.appendChild(el("p", "cb-sub", "本地 SQLite · 456 道真题 · 左栏点大纲取题，筛选条件以右侧面板为准"));
+    head.appendChild(el("p", "cb-sub", "本地 SQLite · 共 " + state.total + " 题 · 左栏点大纲取题，筛选条件以右侧面板为准"));
     var count = el("span", "cb-count", "题篮 " + Object.keys(basketIds).length);
     count.id = "cbBasketCount";
     head.appendChild(count);
@@ -798,16 +1071,29 @@
     reviewButton.addEventListener("click", function () { loadReview(1); });
     views.appendChild(listButton);
     views.appendChild(reviewButton);
+    var dupeCount = state.view === "dedupe" ? state.dupeQueue.length : state.dupeRedundant;
+    var dupeButton = el("button", "cb-btn" + (state.view === "dedupe" ? " cb-btn-primary" : ""),
+      "查重清洗" + (dupeCount ? " " + dupeCount : ""));
+    dupeButton.type = "button";
+    dupeButton.setAttribute("role", "tab");
+    dupeButton.setAttribute("aria-selected", String(state.view === "dedupe"));
+    dupeButton.setAttribute("data-dupe-tab", "true");
+    dupeButton.addEventListener("click", function () { loadDedupe(); });
+    views.appendChild(dupeButton);
     toolbar.appendChild(views);
 
-    var hint = el("span", "cb-sub", state.view === "review" ? "人工审核：修一条清一条" : describeFilters());
+    var hintLabels = { review: "人工审核：修一条清一条", dedupe: "题面指纹相同才算重复：答案与解析各留各的，不强行合并" };
+    var hint = el("span", "cb-sub", hintLabels[state.view] || describeFilters());
     hint.setAttribute("data-filter-summary", "true");
     toolbar.appendChild(hint);
     root.appendChild(toolbar);
 
-    var body = el("div", state.view === "review" ? "cb-body cb-body-review" : "cb-body");
+    var wide = state.view === "review" || state.view === "dedupe";
+    var body = el("div", wide ? "cb-body cb-body-review" : "cb-body");
     if (state.view === "review") {
       renderReviewPanel(body);
+    } else if (state.view === "dedupe") {
+      renderDedupePanel(body);
     } else {
       renderTree(body);
       renderList(body);
@@ -859,6 +1145,8 @@
 
   function scheduleRefresh() {
     // 宿主对新旧两个事件名各广播一次，这里去重成一次刷新，避免连打两遍接口
+    if (state.view === "dedupe") return;
+    // 查重队列是本地态：合并后宿主会广播本题更新，此刻重扫会把老师正在比的题抽走
     if (refreshTimer) window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(function () {
       refreshTimer = null;

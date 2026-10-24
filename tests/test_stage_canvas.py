@@ -239,6 +239,19 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn('broadcast("editor.apply_patch"', STAGE)
         self.assertIn("org.jiuzhang.editor", plugin_js, "副驾只认录题插件的选区")
 
+    def test_05_dedupe_is_provider_only_and_copys_are_bounded(self) -> None:
+        """军令 #18-终 阶段五：查重清洗只对 provider 自己的页签开放，副本数与 id 形状先过宿主这一关。"""
+        self.assertIn('"bank.dedupe_scan", "bank.dedupe_merge"', STAGE, "宿主未开放查重通道")
+        block = STAGE[STAGE.index('if (method === "bank.dedupe_scan"'):STAGE.index(
+            'if (method === "bank.stats"')]
+        self.assertIn("pluginId !== bankProviderId", block, "非 provider 页签必须被拒")
+        self.assertIn('code: "FORBIDDEN"', block)
+        self.assertIn("/duplicates", block, "扫描要打到查重端点")
+        self.assertIn("dedupeCopies.length > 20", block, "一次最多 20 条副本")
+        self.assertIn("ID_RE.test(String(id))", block, "副本 id 逐个过形状检查")
+        self.assertIn("withWriteToken(", block, "合并由宿主代取代填一次性令牌")
+        self.assertIn('action: "merge"', block, "合并成功要广播回流刷新")
+
 
 if __name__ == "__main__":
     unittest.main()

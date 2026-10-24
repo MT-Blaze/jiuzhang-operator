@@ -64,7 +64,7 @@
 | `question.render` | request | 按 `payload.slot` 渲染 `payload.question`，回 `{"html": "...", "height": 数字}`；返回的 HTML 会被宿主白名单净化 |
 | `ui.params.changed` | notification | `{pluginId, key, values, revisions, by}`；挂载时会补发一次当前值 |
 | `theme.changed` / `locale.changed` / `question.updated` | request | 回 `{"accepted": true}` 即可 |
-| `system.question_updated` | notification | 有题被创建/修改/删除后宿主广播；订阅端建议做 260–300ms 去重 |
+| `system.question_updated` | notification | 有题被创建/修改/删除/合并后宿主广播（`action` 为 `create`/`update`/`delete`/`merge`）；订阅端建议做 260–300ms 去重 |
 | `basket.changed` | notification | `{action: "add"/"remove"/"clear", total, pluginId}` |
 | `system.open_editor` | notification | 只发给录题插件：`{question_id, from}`，要求全量回填表单 |
 | `plugin.updated` | notification | 插件被热更新后宿主广播 `{id, from, to}`；正占画布的插件会被重载 iframe |
@@ -107,7 +107,7 @@
 两类题库要分清：
 
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
-- **活跃公共题库**（provider，默认 `org.jiuzhang.core-bank`）：`bank.get` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap`，跨页签共享。
+- **活跃公共题库**（provider，默认 `org.jiuzhang.core-bank`）：`bank.get` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签，见 §2.17）。
 
 ### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.0）
 
@@ -283,6 +283,24 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 
 `uri` 可直接写进题干（`\includegraphics{/static/uploads/...}`）和 `images[].uri`；
 题目里的 `images[].id` 用返回的 `id`。未声明 `assets:write` 时宿主回 `FORBIDDEN`。
+
+### 2.17 `bank.dedupe_scan` / `bank.dedupe_merge` — 查重清洗（军令 #18-终 阶段五新增）
+
+**只开放给当前活跃题库 provider 自己的页签**（默认 `org.jiuzhang.core-bank`）。
+扫描要读全库、合并要真删副本行，所以别的插件哪怕猜对方法名也只拿到
+`FORBIDDEN`；core-bank 依旧没声明 `questions:write`——三端分离不破，
+改题目内容仍然只有录题工作台能干，这条通道只做「同题收敛」的库内清洗。
+HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicates/merge` 两行，逐字一致。
+
+| 方法 | payload | result |
+| --- | --- | --- |
+| `bank.dedupe_scan` | 无 | `{plugin_id, scanned, group_count, redundant, truncated, groups[]}`（`groups[]` 形状同 §3.1） |
+| `bank.dedupe_merge` | `{"primary_id": "q_x", "copy_ids": ["q_y", ...]}`；`copy_ids` 1–20 条，两端 id 都须匹配 `^[A-Za-z0-9_-]{1,80}$` | 合并出参（`moved` / `solution_appended_from` / `questions_after` / `primary` 等，见 §3.1） |
+
+`bank.dedupe_merge` 的写令牌由宿主代取代填，插件看不到令牌；载荷不合法回 `BAD_REQUEST`，
+后端核对不过回 `HOST_4xx` 且**整事务回滚**（不会出现「题删了、挂载还挂着」）。
+合并成功后宿主广播一次 `system.question_updated`（`action:"merge"`，`id` 为保留项），
+题篮/组卷/讲义等下游视图据此重取；副本 id 同时自动退出题篮。
 
 ---
 
