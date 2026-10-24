@@ -128,16 +128,24 @@ def run(tag: str) -> dict:
         check("初始无横向溢出", base["hOverflow"] <= 0, str(base["hOverflow"]))
 
         # ---------- 打开插件画布页签，让 iframe 真的在场 ----------
-        opened = page.evaluate("""
-        () => {
-          const items = Array.from(document.querySelectorAll('#wsPluginList .ws-plugin-item'));
-          const target = items.find(b => /示例题库/.test(b.textContent)) || items[0];
-          if (!target) return null;
-          target.click();
-          return target.textContent.trim().slice(0, 40);
-        }
-        """)
-        page.wait_for_timeout(1800)
+        # 左栏头一行往往是「只住右栏」的对话插件（军令 #15 主权交替后它不开画布页签），
+        # 点名「示例题库」的那条路也随占位插件退役一起失效了。所以逐行点，
+        # 点到画布真的挂上沙箱 iframe 为止——本探针量的是分隔条，页签只要在场就行。
+        opened = None
+        for row in range(1, 7):
+            clicked = page.evaluate("""(n) => {
+              const items = Array.from(document.querySelectorAll('#wsPluginList .ws-plugin-item'));
+              const target = items[n - 1];
+              if (!target) return null;
+              target.click();
+              return target.textContent.trim().slice(0, 40);
+            }""", row)
+            if clicked is None:
+                break
+            opened = clicked
+            page.wait_for_timeout(1600)
+            if page.evaluate("() => document.querySelectorAll('.ws-plugin-frame').length") >= 1:
+                break
         st = snap("01-plugin-tab")
         check("点插件后画布出现沙箱 iframe 页签", st["frameCount"] >= 1 and opened is not None,
               f"clicked={opened} frames={st['frameCount']}")
@@ -258,9 +266,12 @@ def run(tag: str) -> dict:
         check("刷新后尺寸原样还原",
               all(restored["vars"][k] == dragged["vars"][k] for k in ("side", "context", "dock")),
               f"{json.dumps(dragged['vars'])} → {json.dumps(restored['vars'])}")
+        dock_lines = page.evaluate(
+            """() => Array.from(document.querySelectorAll('#wsDockLog li'))
+                    .map(n => n.textContent.replace(/\\s+/g, ' ').trim())""")
         check("还原不刷底栏（by=restore 静默）",
-              page.evaluate("() => document.querySelectorAll('#wsDockLog li').length") <= 2,
-              str(page.evaluate("() => document.querySelectorAll('#wsDockLog li').length")))
+              not any("布局已调整" in line for line in dock_lines),
+              "底栏 %d 行：%s" % (len(dock_lines), json.dumps(dock_lines, ensure_ascii=False)[:300]))
 
         # ---------- 双击分隔条回默认（悬浮复位图标已随二级菜单一起退役） ----------
         for pane in ("side", "context", "dock"):

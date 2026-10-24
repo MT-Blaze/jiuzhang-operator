@@ -5,14 +5,17 @@
 
 隔离口径：``JZO_DATA_DIR`` 与 ``JZO_PLUGINS_DIR`` 都指向
 ``.system_generated/sidebar-slot-probe/<tag>/``，不碰开发者 ``data/`` 与仓库 ``plugins/``。
-探针现场生成一个只声明 ``sidebar.right`` 的一次性插件，验完即弃（不进仓库）。
+探针现场生成一个同时声明 ``stage.center`` 与 ``sidebar.right`` 的一次性插件（前者让它
+能开画布页签、成为「当前页签」，后者才是它接管右栏的凭据），验完即弃（不进仓库）。
 
 判据：
-  1. 有插件认领插槽 → 右栏露出插槽、藏起 AI 副驾，标题为插件名；
+  1. 声明 sidebar.right 的插件被点进画布、成为当前页签后接管右栏，插槽露出、标题为插件名
+     （军令 #15 主权交替：认领者只认「当前画布页签」那一个插件，原生 AI 副驾节点已退役）；
   2. 面板 iframe 的 sandbox 为 ``allow-scripts allow-modals``（不得带 allow-same-origin）；
   3. ``plugin.activate`` 带 ``{"slot":"sidebar.right"}``，插件回 ready；
   4. 面板能走 Host API（``basket.list`` 往返成功）；
-  5. 插件被停用后，右栏回退原生 AI 副驾，插槽整块隐藏；
+  5. 插件停用后，隔离区里没有默认住户 org.jiuzhang.chat，插槽给出可读兜底文案、iframe 归零，
+     不再静默留白；
   6. 宿主页零未捕获 JS 错误。
 """
 import json
@@ -105,7 +108,7 @@ MANIFEST = {
     "description": "军令 #13 任务 3 的一次性右栏插件",
     "license": "Apache-2.0",
     "entry": {"frontend": "dist/index.html"},
-    "slots": ["sidebar.right"],
+    "slots": ["stage.center", "sidebar.right"],
     "capabilities": ["question.render"],
     "permissions": ["questions:read"],
 }
@@ -203,16 +206,18 @@ def run(tag: str) -> dict:
                 report["shots"].append(str(png))
 
             page.goto(BASE, wait_until="networkidle")
+            # 军令 #15 主权交替之后，右栏的认领者只认「当前画布页签」那一个插件：
+            # 先把探针插件点进画布，插槽才可能归它。
+            page.wait_for_selector(f'#wsPluginList .ws-plugin-item[data-plugin-id="{PLUGIN_ID}"]',
+                                   timeout=15000)
+            page.click(f'#wsPluginList .ws-plugin-item[data-plugin-id="{PLUGIN_ID}"]')
             page.wait_for_selector("#wsContextSlotBody iframe", timeout=15000)
             page.wait_for_timeout(1500)
             state = page.evaluate("""() => {
               const slot = document.getElementById('wsContextSlot');
-              const copilot = document.getElementById('wsCopilot');
               const frame = document.querySelector('#wsContextSlotBody iframe');
               return {
                 slotHidden: slot ? slot.hidden : null,
-                copilotHidden: copilot ? copilot.hidden : null,
-                copilotDisplay: copilot ? getComputedStyle(copilot).display : null,
                 title: (document.getElementById('wsContextSlotTitle') || {}).textContent || '',
                 sandbox: frame ? frame.getAttribute('sandbox') : null,
                 src: frame ? frame.getAttribute('src') : null,
@@ -222,10 +227,10 @@ def run(tag: str) -> dict:
             report["notes"]["initial"] = state
             snap("10-panel-mounted")
 
-            check("有插件认领时插槽可见", state["slotHidden"] is False, json.dumps(state, ensure_ascii=False))
-            check("AI 复驾让位（hidden + display:none）",
-                  state["copilotHidden"] is True and state["copilotDisplay"] == "none",
-                  f"hidden={state['copilotHidden']} display={state['copilotDisplay']}")
+            check("当前页签插件认领插槽后右栏可见", state["slotHidden"] is False, json.dumps(state, ensure_ascii=False))
+            check("插槽里挂的就是认领者本人",
+                  state["src"] is not None and PLUGIN_ID in str(state["src"]),
+                  f"src={state['src']}")
             check("插槽标题就是插件名", state["title"] == "右栏探针", state["title"])
             check("面板 iframe 沙箱为 allow-scripts allow-modals", state["sandbox"] == "allow-scripts allow-modals", str(state["sandbox"]))
             check("右栏只挂一个面板", state["frameCount"] == 1, str(state["frameCount"]))
@@ -253,18 +258,17 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(1500)
             fallback = page.evaluate("""() => {
               const slot = document.getElementById('wsContextSlot');
-              const copilot = document.getElementById('wsCopilot');
+              const note = document.querySelector('#wsContextSlotBody .ws-context-slot-note');
               return {
                 slotHidden: slot ? slot.hidden : null,
-                copilotHidden: copilot ? copilot.hidden : null,
+                note: note ? note.textContent : '',
                 frames: document.querySelectorAll('#wsContextSlotBody iframe').length
               };
             }""")
             report["notes"]["fallback"] = fallback
-            snap("20-fallback-copilot")
-            check("停用后回退原生 AI 复驾",
-                  fallback["copilotHidden"] is False and fallback["slotHidden"] is True
-                  and fallback["frames"] == 0,
+            snap("20-fallback-note")
+            check("停用后右栏不静默留白：给出可读兜底且不再挂 iframe",
+                  fallback["frames"] == 0 and "org.jiuzhang.chat" in fallback["note"],
                   json.dumps(fallback, ensure_ascii=False))
             check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
             browser.close()

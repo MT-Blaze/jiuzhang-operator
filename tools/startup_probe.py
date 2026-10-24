@@ -11,8 +11,9 @@
 判据：
   1. 未配置时默认落在欢迎页；POST 无令牌 401、指向不存在插件 400（写入严格）；
   2. 配好「数据看板」后打开工作台，**自动**进入看板页签、左栏对应项高亮；
-  3. 插件被停用 → 后端回退 chat 并给原因；刷新页面停在自由对话，
-     对话区出现 warn 气泡、右栏操作历史记一笔（不许静默）；
+  3. 插件被停用 → 后端回退 chat 并给原因；刷新页面停在底座原生引导页（画布页签里
+     没有它），底栏输出日志区以 host.warn 记一笔（军令 #15 之后对话区 warn 气泡整条
+     通道已退役，播报只落实到底栏——不许静默）；
   4. 插件被卸载（目录移走）→ 同款优雅回退，配置原地保留，装回即自动恢复；
   5. 设置页「系统设置」分区可选可存：下拉列出已启用插件，点保存真的落盘；
   6. 全程宿主页无未捕获 JS 错误。
@@ -43,18 +44,11 @@ JS_STATE = """
     .map(t => t.getAttribute('data-tab'));
   const title = document.getElementById('wsStageTitle');
   const active = document.querySelector('#wsPluginList .ws-plugin-item[aria-current="true"]');
-  const thread = document.getElementById('wsThread');
-  // data-tone 挂在气泡本体上（外层 .ws-msg-sys 只是行容器），别选错层级
-  const warns = thread
-    ? Array.from(thread.querySelectorAll('[data-tone="warn"]'))
-        .map(n => n.textContent.replace(/\\s+/g, ' ').trim())
-    : [];
   const dock = document.getElementById('wsDockLog');
   return {
     tabs: tabs,
     stageTitle: title ? title.textContent.replace(/\\s+/g, ' ').trim() : '',
     activePluginId: active ? active.getAttribute('data-plugin-id') : null,
-    warns: warns,
     dockText: dock ? dock.textContent.replace(/\\s+/g, ' ') : ''
   };
 }
@@ -100,6 +94,9 @@ def run(tag: str) -> dict:
         shutil.rmtree(out, ignore_errors=True)
     data_dir.mkdir(parents=True, exist_ok=True)
     plugins_dir.mkdir(parents=True, exist_ok=True)
+    # ADR-012：启动行为是工作区容器的成员，落 `data/workspaces/<区>/startup.json`，
+    # 不再住根 data/——探针按区取路径，硬编码根路径只会拿到恒假的「没落盘」。
+    startup_file = data_dir / "workspaces" / "default" / "startup.json"
 
     report = {"tag": tag, "checks": [], "console": [], "errors": [], "shots": [], "notes": {}}
 
@@ -147,14 +144,14 @@ def run(tag: str) -> dict:
         status, body = call("POST", "/api/startup", {"target": "plugin:org.example.gone"}, token=True)
         check("指向未安装插件必被拒（400，不落盘）", status == 400,
               f"status={status} detail={json.dumps(body, ensure_ascii=False)[:160]}")
-        check("被拒的目标没有污染配置文件", not (data_dir / "startup.json").is_file())
+        check("被拒的目标没有污染配置文件", not startup_file.is_file())
 
         status, body = call("POST", "/api/startup", {"target": "plugin:" + PLUGIN_ID}, token=True)
         check("带令牌保存成功并落盘",
               status == 200 and body.get("effective") == "plugin:" + PLUGIN_ID
-              and (data_dir / "startup.json").is_file(),
+              and startup_file.is_file(),
               json.dumps({k: body.get(k) for k in ("target", "effective", "plugin_name")}, ensure_ascii=False))
-        report["notes"]["startup_json"] = (data_dir / "startup.json").read_text(encoding="utf-8").strip()
+        report["notes"]["startup_json"] = startup_file.read_text(encoding="utf-8").strip()
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -190,12 +187,14 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(2000)
             state = page.evaluate(JS_STATE)
             report["notes"]["fallback_disabled"] = state
-            check("停用后启动停在自由对话（不开失效插件）",
-                  f"plugin:{PLUGIN_ID}" not in state["tabs"] and "自由对话" in state["stageTitle"],
+            check("停用后启动停在原生引导页（不开失效插件）",
+                  f"plugin:{PLUGIN_ID}" not in state["tabs"] and state["stageTitle"] == "工作台",
                   f"tabs={state['tabs']} title={state['stageTitle']}")
-            check("回退原因在对话区如实播报（warn 气泡）",
-                  any("已停用" in w for w in state["warns"]), json.dumps(state["warns"], ensure_ascii=False)[:200])
-            check("回退落到底栏输出日志区（不静默）", "启动行为回退" in state["dockText"],
+            check("回退原因在底栏如实播报（host.warn）",
+                  "host.warn" in state["dockText"] and "已停用" in state["dockText"],
+                  state["dockText"][-260:])
+            check("回退不落空：底栏写明回落默认欢迎页",
+                  "回落默认欢迎页" in state["dockText"],
                   state["dockText"][-260:])
             snap("20-fallback-disabled")
 
@@ -218,11 +217,13 @@ def run(tag: str) -> dict:
                 page.wait_for_timeout(2000)
                 state = page.evaluate(JS_STATE)
                 report["notes"]["fallback_uninstalled"] = state
-                check("卸载后启动不炸、停在自由对话",
-                      "自由对话" in state["stageTitle"] and len(report["errors"]) == 0,
-                      f"title={state['stageTitle']} errors={report['errors'][:2]}")
-                check("卸载回退同样如实播报",
-                      any("已卸载" in w for w in state["warns"]), json.dumps(state["warns"], ensure_ascii=False)[:200])
+                check("卸载后启动不炸、停在原生引导页",
+                      state["stageTitle"] == "工作台" and f"plugin:{PLUGIN_ID}" not in state["tabs"]
+                      and len(report["errors"]) == 0,
+                      f"title={state['stageTitle']} tabs={state['tabs']} errors={report['errors'][:2]}")
+                check("卸载回退同样在底栏如实播报",
+                      "host.warn" in state["dockText"] and "已卸载" in state["dockText"],
+                      state["dockText"][-260:])
                 snap("30-fallback-uninstalled")
             finally:
                 shutil.move(str(backup), str(plugins_dir / PLUGIN_ID))

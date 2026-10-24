@@ -92,6 +92,9 @@ def run(tag: str) -> dict:
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)
+    # 探针只借仓库 plugins/ 当代码目录（只读）。ADR-012 之后不设这个口子，插件区
+    # 会解析到 data/workspaces/default/plugins——空目录，左栏一行都没有。
+    env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
     env.pop("JZO_AI_API_KEY", None)
     env.pop("JZO_AI_BASE_URL", None)
 

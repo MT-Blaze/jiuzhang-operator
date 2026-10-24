@@ -5,7 +5,7 @@
 - 工作台左下入口是**带文字**的「设置与控制台」，有更新待办时挂文字徽标；
 - 工作台**不许再有弹窗**：模型胶囊与 Provider 弹窗节点全数退役；
 - 页签内是同源 iframe 装载的 ``/settings?embedded=1``，站点外壳必须隐藏；
-- 设置页左菜单四项（工作区/插件/模型配置/系统设置），右详情；
+- 设置页左菜单五项（工作区/插件/模型配置/备份与恢复/系统设置），右详情；
 - 插件分区是二级页签（管理/检查更新/在线索引/手动安装），键盘可切、不做弹窗；
 - 检查更新分区带 aria 进度条，空闲时收起；
 - 工作区列表里的教材版本下拉与 ``/api/bank/textbooks`` 的生效版本一致；
@@ -121,6 +121,7 @@ def main() -> int:
                         return { workspace: box('stPanelWorkspace'),
                                  plugin: box('stPanelPlugin'),
                                  provider: box('stPanelProvider'),
+                                 backup: box('stPanelBackup'),
                                  system: box('stPanelSystem') };
                     })(),
                     split: (() => {
@@ -138,11 +139,11 @@ def main() -> int:
             check("页签内是内嵌模式（embedded=1）", inner["embedded"] == "1", inner)
             check("内嵌时收起站点外壳（主导航/页头不可见）",
                   inner["navVisible"] is False and inner["headVisible"] is False, inner)
-            check("左菜单四项齐全（工作区/插件/模型配置/系统设置）",
-                  inner["nav"] == ["工作区", "插件", "模型配置", "系统设置"], inner["nav"])
+            check("左菜单五项齐全（工作区/插件/模型配置/备份与恢复/系统设置）",
+                  inner["nav"] == ["工作区", "插件", "模型配置", "备份与恢复", "系统设置"], inner["nav"])
             check("默认落在工作区面板，其余面板不占位",
                   inner["panels"]["workspace"] is True
-                  and not any(inner["panels"][key] for key in ("plugin", "provider", "system")),
+                  and not any(inner["panels"][key] for key in ("plugin", "provider", "backup", "system")),
                   inner["panels"])
             check("真左右分栏（菜单在左、面板在右、菜单宽 200 上下）",
                   inner["split"] and inner["split"]["navLeft"] < inner["split"]["panelLeft"]
@@ -317,8 +318,8 @@ def main() -> int:
                 })""")
             check("防变砖：直连 /settings 仍是完整独立页",
                   fallback["embedded"] is None and fallback["navVisible"] is True, fallback)
-            check("独立页同样是四项左菜单右详情",
-                  fallback["navCount"] == 4 and fallback["split"]
+            check("独立页同样是五项左菜单右详情",
+                  fallback["navCount"] == 5 and fallback["split"]
                   and fallback["split"]["navLeft"] < fallback["split"]["panelLeft"]
                   and fallback["split"]["sameRow"] is True, fallback["split"])
             standalone.locator("#stNavProvider").click()

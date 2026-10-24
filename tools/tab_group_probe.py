@@ -6,21 +6,29 @@
 
 判据逐条对应军令原文：
   - 「双击任意 Tab 进入全屏（干碎浏览器地址栏），左侧导航栏自动折叠，右侧和底部保留」，
-    「再次双击或按 Esc 退出」，「全屏时按 Ctrl+B 呼叫左侧栏」；
+    「再次双击或按 Esc 退出」，「全屏时按 Ctrl+B 呼叫左侧栏」
+    ——全局快捷键仲裁层随军令 #18 第二步整层拆除，这一唤改由画布上的【入口】按钮承担，
+    判据 06 点的就是它；
   - 「超过 10 个 Tab 固定宽度 120px、滚轮滑动或左右小箭头」；
   - 「属于文件夹的插件在顶部合并为分组名 Tab（单击下拉展开子 Tab）」，
     「未分组插件统一放进【未分组】集合 Tab」；
   - 「轻量插件后台暂停定时器（浅休眠），重型插件超过 3 个强制 LRU 深休眠」。
 
 跑之前底座必须在 8765 端口起来。探针会临时安装并随后卸载取证夹具插件
-（``examples/stage_weight_probe_plugin``），并临时改写 ``data/plugin_state.json``——
-两者都在收尾还原，判据 22 专门复核还原结果。
+（``examples/stage_weight_probe_plugin``）与若干由它改 id 生成的补位夹具
+（``org.example.tabfill-NN``，只为凑满「超过 10 个页签」的场面），
+并临时改写当前工作区的 ``plugin_state.json``（隔离底座用 ``JZO_STATE_FILE`` 指路）——
+这些都在收尾还原，判据 22 专门复核还原结果。
 探针中途炸裂时不写「全绿」假象：炸点本身记成一条失败判据，已跑到的判据照常落盘。
 """
+import io
 import json
+import os
 import subprocess
 import sys
+import time
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -31,7 +39,16 @@ ORIGIN = "http://127.0.0.1:8765"
 TOKEN = "dev-token-2026"
 FIXTURE_ID = "org.example.stage-weight"
 FIXTURE_ZIP = ROOT / "examples" / "stage_weight_probe_plugin.zip"
-STATE_FILE = ROOT / "data" / "plugin_state.json"
+FIXTURE_TABS = 2              # 夹具 singleton=false，开两页
+FILLER_PREFIX = "org.example.tabfill"
+# stage.js 里 TAB_OVERFLOW=10，判据 13/14/17/18/21 全建立在「超过 10 页」之上。
+# 仓库现只装 6 个插件，本机再怎么装也凑不出这个场面，所以探针自带补位夹具：
+# 把取证夹具改几个 id 再装上，只为把页签数推过那条线并留出分组余量，不承载任何业务。
+MIN_PLUGIN_TABS = 14
+# ADR-012 之后偏好状态住在当前工作区容器里（``<data>/workspaces/<区>/plugin_state.json``），
+# 根 data/ 那份是历史遗留、宿主根本不读。跑隔离底座时用 JZO_STATE_FILE 指到真路径，
+# 否则「还原」判据验的是一份没人看的文件——等于没验。
+STATE_FILE = Path(os.environ.get("JZO_STATE_FILE") or (ROOT / "data" / "plugin_state.json"))
 NOISE = ("ERR_FAILED", "Failed to load resource")
 
 JS_BAR = """
@@ -40,7 +57,9 @@ JS_BAR = """
   const bar = document.getElementById('wsTabs');
   const top = bar ? Array.from(bar.querySelectorAll(':scope > .ws-tab, :scope > .ws-tab-group')) : [];
   const groups = bar ? Array.from(bar.querySelectorAll(':scope > .ws-tab-group')) : [];
-  const first = top.filter(n => n.classList.contains('ws-tab'))[0];
+  // 挤爆态成员页签收进下拉，顶层只剩组名页签；120px 定宽管的是栏上这一条，
+  // 所以量「栏上第一个没进下拉的页签（平铺页或组名页签）」，别只认顶层 .ws-tab。
+  const first = bar ? bar.querySelector('.ws-tab:not(.ws-tab-in-group)') : null;
   const left = document.querySelector('.ws-tab-scroll-btn');
   const right = Array.from(document.querySelectorAll('.ws-tab-scroll-btn')).pop();
   const side = document.querySelector('.ws-sidebar');
@@ -116,6 +135,42 @@ def api_delete(path):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def filler_zip_bytes(seq: int):
+    """把取证夹具改造成「另一个插件」：只换 id 与名，包结构与 zip 口径原样保留。"""
+    plugin_id = "%s-%02d" % (FILLER_PREFIX, seq)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(FIXTURE_ZIP) as src, \
+            zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as dst:
+        for name in src.namelist():
+            data = src.read(name)
+            relative = name.split("/", 1)[1]
+            if relative == "plugin.json":
+                meta = json.loads(data.decode("utf-8"))
+                meta["id"] = plugin_id
+                meta["name"] = "补位夹具 %02d" % seq
+                meta["description"] = "军令 #16 模块三补位夹具：只为把画布页签数推过 10，供溢出与分组判据取证。"
+                data = json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8")
+            dst.writestr("%s/%s" % (plugin_id, relative), data)
+    return plugin_id, buf.getvalue()
+
+
+def install_fillers(need: int):
+    """装上 need 个补位夹具，回传装上的 id 与逐个的落位明细。"""
+    installed, detail = [], []
+    for seq in range(1, need + 1):
+        plugin_id, blob = filler_zip_bytes(seq)
+        try:
+            resp = api_upload("/api/plugins/install?replace=true", blob)
+            ok = resp.get("installed") is True
+        except Exception as exc:  # noqa: BLE001 - 少装一个就是一条红判据，别抛出去
+            detail.append((plugin_id, repr(exc)))
+            continue
+        if ok:
+            installed.append(plugin_id)
+        detail.append((plugin_id, ok))
+    return installed, detail
+
+
 def run(tag: str) -> dict:
     out = Path(".system_generated") / "tab_group_probe" / tag
     out.mkdir(parents=True, exist_ok=True)
@@ -137,6 +192,18 @@ def run(tag: str) -> dict:
     except Exception as exc:  # noqa: BLE001 - 夹具装不上就是一条红判据，别抛出去
         installed, detail = False, repr(exc)
     check("00 取证夹具插件安装成功", installed, detail)
+
+    try:
+        repo_ids = [p["id"] for p in api_get("/api/plugins")["plugins"]
+                    if p.get("enabled") is not False and not p["id"].startswith(FILLER_PREFIX)]
+    except Exception as exc:  # noqa: BLE001
+        repo_ids, installed = [], False
+        detail = repr(exc)
+    need = max(0, MIN_PLUGIN_TABS - len(repo_ids) - FIXTURE_TABS)
+    filler_ids, fill_detail = install_fillers(need) if need else ([], [])
+    check("00b 补位夹具装够（页签数须越过 10 这条线）",
+          installed and len(repo_ids) + len(filler_ids) + FIXTURE_TABS >= MIN_PLUGIN_TABS,
+          (len(repo_ids), len(filler_ids), fill_detail[:3]))
 
     def drive(pw):
         browser = pw.chromium.launch()
@@ -166,7 +233,8 @@ def run(tag: str) -> dict:
 
         # --- 1. 平铺基线：没挤爆就一插件一页，不许出现分组页签 --------------------
         ids = [p["id"] for p in api_get("/api/plugins")["plugins"] if p.get("enabled") is not False]
-        heavy_ids = [i for i in ids if i != FIXTURE_ID]
+        filler_present = [i for i in ids if i.startswith(FILLER_PREFIX)]
+        heavy_ids = [i for i in ids if i != FIXTURE_ID and i not in filler_present]
         for i in range(3):
             open_plugin(heavy_ids[i])
         state = bar()
@@ -190,11 +258,12 @@ def run(tag: str) -> dict:
               regions["context"] and regions["dock"], regions)
         snap("02-immersive")
 
-        # --- 3. 全屏中点左栏开关 → 覆盖层（#18 第二步后不再有全局键） -----------------
-        page.locator("#wsToggleSidebar").click()
+        # --- 3. 全屏中点画布【入口】→ 覆盖层（#18 第二步后不再有全局键） -------------
+        # 沉浸态左栏是 display:none，栏内的【折叠】按钮够不着；唤出只能走画布上的【入口】。
+        page.locator("#wsOpenSidebar").click()
         page.wait_for_timeout(700)
         state = bar()
-        check("06 全屏中点左栏开关把浮层唤出（position:fixed、非零宽、仍在全屏）",
+        check("06 全屏中点画布【入口】把浮层唤出（position:fixed、非零宽、仍在全屏）",
               state["rail"] == "on" and state["sidebarPos"] == "fixed"
               and state["sidebarWidth"] >= 200 and state["fullscreen"] is True, state)
         snap("03-immersive-rail")
@@ -269,10 +338,12 @@ def run(tag: str) -> dict:
         if bar()["immersive"] == "on":
             page.locator(sel).dblclick()
             page.wait_for_timeout(700)
-        page.set_viewport_size({"width": 1120, "height": 800})
+        page.set_viewport_size({"width": 1000, "height": 760})
         page.wait_for_timeout(400)
         for i in range(6, len(heavy_ids)):
             open_plugin(heavy_ids[i])
+        for filler in filler_present:
+            open_plugin(filler)
         state = bar()
         check("13 超过 10 个页签后固定宽度 120px 并进入横滚态",
               state["many"] is True and state["firstWidth"] == 120, state)
@@ -292,7 +363,7 @@ def run(tag: str) -> dict:
         check("17 挤爆后同组页签收成分组名页签，未分组的进【未分组】",
               len(groups) >= 1 and any(g["label"] == "未分组" and int(g["count"]) >= 2 for g in groups),
               [(g["key"], g["label"], g["count"]) for g in groups])
-        ungrouped = [g for g in groups if g["label"] == "未分组"][0] if groups else None
+        ungrouped = next((g for g in groups if g["label"] == "未分组"), None)
         check("18 成员页签不再占顶层，收进各自的下拉里",
               ungrouped and all(k not in
                                 page.evaluate("() => Array.from(document.querySelectorAll('#wsTabs > .ws-tab'))"
@@ -310,11 +381,14 @@ def run(tag: str) -> dict:
                        for i, chunk in enumerate(buckets)] + \
             [{"kind": "plugin", "id": k} for k in plugin_keys[len(buckets) * 2:]]
         api_send("/api/plugins/sidebar", {"sidebar": folder_tree})
-        page.wait_for_timeout(1600)
-        labels = page.evaluate(
-            "() => Array.from(document.querySelectorAll('#wsTabs > .ws-tab-group .ws-tab-label'))"
-            ".map(x => x.textContent)"
-        )
+        # 归属只认清单里的 folder_id，而清单是 5 秒一跳的轮询；死等 1.6 秒量不到新分组，
+        # 所以等到组名页签真的挂上栏为止（上限 20 秒），拿到的才是真机时序。
+        groups = read_groups()
+        deadline = time.time() + 20
+        while not any(g["label"] == "探针组1" for g in groups) and time.time() < deadline:
+            page.wait_for_timeout(1200)
+            groups = read_groups()
+        labels = [g["label"] for g in groups]
         check("21 文件夹那组用文件夹名当分组页签（左栏树是唯一事实来源）",
               "探针组1" in labels, labels)
         snap("06-groups")
@@ -323,7 +397,10 @@ def run(tag: str) -> dict:
         state = bar()
         check("14 左右小箭头在场", state["arrows"] == [True, True], state)
         before_scroll = state["scrollLeft"]
-        page.locator(".ws-tab-scroll-btn >> nth=-1").click()
+        # 箭头没在场就别硬点：hidden 的按钮只会让 Playwright 干等 30 秒然后把整条探针炸断，
+        # 后面的分组判据一条都落不了盘。缺箭头本身已由判据 14 记账。
+        if state["arrows"] == [True, True]:
+            page.locator(".ws-tab-scroll-btn >> nth=-1").click()
         page.wait_for_timeout(700)
         after_arrow = bar()["scrollLeft"]
         page.evaluate(
@@ -344,6 +421,11 @@ def run(tag: str) -> dict:
         check("19a 每个文件夹各自收成一个组名页签（计数对上）",
               target and int(target["count"]) == len(target["kids"]) >= 2,
               [(g["label"], g["count"]) for g in groups])
+        if not target:
+            check("19 单击组名摊开子页签（可见、不被页签栏裁掉）", False, "组名页签没在场，无从点开")
+            check("20 点子页签即切页并收摊，组名页签标明当前在这一组", False, "同上")
+            browser.close()
+            return
 
         chip = page.locator('.ws-tab-group[data-group="%s"] .ws-tab-group-chip' % target["key"])
         chip.click()
@@ -384,26 +466,30 @@ def run(tag: str) -> dict:
     except Exception as exc:  # noqa: BLE001 - 炸了也要落盘，不然证据全丢
         check("99 探针中途炸裂（下面这些判据只跑到炸点为止）", False, repr(exc))
 
-    # --- 收尾：卸载夹具、还原本机偏好 ------------------------------------------------
-    try:
-        api_delete("/api/plugins/%s" % FIXTURE_ID)
-        removed = True
-    except Exception as exc:  # noqa: BLE001 - 收尾失败只记账，不许盖掉前面的证据
-        removed = False
-        print("夹具卸载失败：%s" % exc)
+    # --- 收尾：卸载夹具与补位、还原本机偏好 ------------------------------------------
+    removed, leftover_errors = True, []
+    for plugin_id in [FIXTURE_ID] + filler_ids:
+        try:
+            api_delete("/api/plugins/%s" % plugin_id)
+        except Exception as exc:  # noqa: BLE001 - 收尾失败只记账，不许盖掉前面的证据
+            removed = False
+            leftover_errors.append((plugin_id, repr(exc)))
+            print("夹具卸载失败：%s -> %s" % (plugin_id, exc))
     if state_backup is not None:
         STATE_FILE.write_bytes(state_backup)
     try:
         remaining = [p["id"] for p in api_get("/api/plugins")["plugins"]]
         leftover = json.loads(STATE_FILE.read_text(encoding="utf-8") or "{}")
         restored = (FIXTURE_ID not in remaining
+                    and not [i for i in remaining if i.startswith(FILLER_PREFIX)]
                     and not leftover.get("nicknames")
                     and not [n for n in leftover.get("sidebar", [])
                              if str(n.get("id", "")).startswith("folder:")])
-        detail = (FIXTURE_ID in remaining, json.dumps(leftover, ensure_ascii=False)[:200])
+        detail = ([i for i in remaining if i == FIXTURE_ID or i.startswith(FILLER_PREFIX)],
+                  json.dumps(leftover, ensure_ascii=False)[:200])
     except Exception as exc:  # noqa: BLE001
         restored, detail = False, repr(exc)
-    check("22 夹具已卸载且本机偏好还原", removed and restored, detail)
+    check("22 夹具已卸载且本机偏好还原", removed and restored, detail or leftover_errors[:2])
 
     report = {
         "tag": tag,

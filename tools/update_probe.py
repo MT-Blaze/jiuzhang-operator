@@ -46,7 +46,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core.plugin_update import HOST_EXCLUDED_DIRS, build_update_script  # noqa: E402
+from app.core.plugin_update import (  # noqa: E402
+    HOST_EXCLUDED_DIRS,
+    _batch_encoding,
+    _write_batch_script,
+    build_update_script,
+)
 
 PLUGIN_HOT = "org.probe.hot"
 PLUGIN_BULK = "org.probe.bulk"
@@ -276,9 +281,10 @@ def verify_update_script_sandbox(work: Path) -> list[str]:
     stub_hash = sha256(stub)
 
     script_path = work / "update_sandbox.bat"
-    script_path.write_text(
-        build_update_script(root=sandbox_root, staged=staged, pid=999999, port=free_port()),
-        encoding="utf-8", newline="\r\n")
+    # 与生产写盘口径一致：cmd 按 ANSI 码页读 .bat，UTF-8 会把中文注释打成乱码语法。
+    _write_batch_script(script_path,
+                        build_update_script(root=sandbox_root, staged=staged,
+                                            pid=999999, port=free_port()))
     completed = subprocess.run(["cmd.exe", "/c", str(script_path)], cwd=str(sandbox_root),
                                capture_output=True, timeout=120)
     details.append("update.bat 退出码 %d" % completed.returncode)
@@ -469,7 +475,8 @@ def main() -> int:
             pid = found.group(1) if found else str(process.pid)
             script_path = Path(tempfile.gettempdir()) / ("jzo_update_%s.bat" % pid)
             stage_path = Path(tempfile.gettempdir()) / ("jzo_host_update_%s" % pid)
-            script_text = script_path.read_text(encoding="utf-8") if script_path.is_file() else ""
+            script_text = (script_path.read_bytes().decode(_batch_encoding(), errors="replace")
+                           if script_path.is_file() else "")
             results.append((script_path.is_file(), "底座自更新：一次性 update.bat 已生成"))
             results.append(("robocopy" in script_text and all(name in script_text
                                                             for name in HOST_EXCLUDED_DIRS),
