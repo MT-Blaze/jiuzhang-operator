@@ -1007,12 +1007,6 @@
         });
         return;
       }
-      // 底座把我申报的全局键交回给我执行（军令 #16 模块一）：
-      // 焦点在宿主时由宿主派发，键位归属仍由底座裁决——我只认清单里那个动作名。
-      if (message.event === "shortcut.invoke") {
-        if (payload && payload.action === "chat.focus") focusComposer();
-        return;
-      }
       return;
     }
 
@@ -1100,37 +1094,6 @@
       submitFromComposer();
     });
   }
-
-  // 焦点在沙箱里时按键到不了宿主文档（opaque-origin iframe 不冒泡），
-  // 所以我把自己申报的键位主动交给宿主裁决（军令 #16：冲突时底座最高权限优先）。
-  // 宿主说这一键归我，我才动手；归别人就原样让开，绝不抢别人的键。
-  var MY_KEYS = { "Ctrl+Shift+K": "chat.focus" };
-
-  function comboOfEvent(event) {
-    var mods = [];
-    if (event.ctrlKey) mods.push("Ctrl");
-    if (event.altKey) mods.push("Alt");
-    if (event.shiftKey) mods.push("Shift");
-    if (event.metaKey) mods.push("Meta");
-    if (!mods.length) return "";
-    var raw = String(event.key || "");
-    if (!raw || raw === "Unidentified") return "";
-    return mods.join("+") + "+" + (raw.length === 1 ? raw.toUpperCase() : raw);
-  }
-
-  document.addEventListener("keydown", function (event) {
-    var combo = comboOfEvent(event);
-    var action = MY_KEYS[combo];
-    if (!action) return;
-    event.preventDefault();
-    hostCall("shortcut.press", { combo: combo }, 4000).then(function (verdict) {
-      if (verdict && verdict.owner === "plugin" && verdict.action === action) focusComposer();
-    }, function () {
-      // 问不到宿主（超时或未就绪）时按我自己清单里的语义就地执行：
-      // 裁决缺席不该让这个键彻底失灵，但也不会替底座执行任何动作。
-      focusComposer();
-    });
-  });
 
   if (copilotAsk) copilotAsk.addEventListener("click", askRefine);
   if (copilotApply) copilotApply.addEventListener("click", applyRefinePatch);

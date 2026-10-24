@@ -5,8 +5,9 @@
 1. **大字昵称 / 小字官方原名**，且**坚决不设「恢复默认名」按钮**；
 2. 列表**平铺不折叠**，分组只以卡片尾部小标签出现；
 3. 「已启用」顺序与左栏导航读**同一棵后端树**，「已停用」按停用时间先后排；
-4. 相对时间**只在渲染那一瞬算一次**，全页不许有定时器；
-5. 底座键位在系统设置里逐条可改绑/回到默认，走同一个写口，不另存一份默认值。
+4. 相对时间**只在渲染那一瞬算一次**，全页不许有定时器。
+
+全局快捷键整层已在 #18 第二步删除，反向契约见 ``tests.test_shortcut_removal_contract``。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_console_plugin_panel``
 """
@@ -137,39 +138,6 @@ class RelativeTimeTest(unittest.TestCase):
         self.assertIn("base - then", block, "基准必须由调用方传入，才谈得上算一次")
 
 
-class ShortcutCustomisationTest(unittest.TestCase):
-    """模块一欠的账记在模块二还：底座键位在系统设置里逐条可改。"""
-
-    def test_01_section_exists_with_status_and_list(self) -> None:
-        self.assertIn('id="keyList"', HTML)
-        self.assertIn('id="keyStatus"', HTML)
-        self.assertIn("全局快捷键", HTML)
-        self.assertIn('role="status" aria-live="polite"', HTML.split('id="keyStatus"', 1)[1][:80])
-
-    def test_02_catalogue_is_not_duplicated_into_settings(self) -> None:
-        block = body_of(JS, "function renderShortcuts(body)")
-        self.assertIn("window.JzoKeys.catalogue()", block, "键位表只许有 shortcuts.js 那一份")
-        self.assertNotIn("sidebar.toggle", block, "这里不许再抄一遍 action 名")
-
-    def test_03_write_goes_through_the_single_endpoint(self) -> None:
-        block = body_of(JS, "function saveShortcut(action, combo, button)")
-        self.assertIn('apiCall("/api/plugins/shortcuts", "POST"', block)
-        self.assertIn("{ action: action, combo: combo }", block)
-        self.assertIn('"aria-busy"', block, "写操作中的按钮必须同步 aria-busy（AGENTS §6）")
-
-    def test_04_plugin_declared_keys_are_visible_but_readonly(self) -> None:
-        block = body_of(JS, "function renderShortcuts(body)")
-        self.assertIn("plugin.shortcuts", block)
-        self.assertIn("撞车时底座动作优先", JS)
-
-    def test_05_hit_areas_and_scripts_loaded(self) -> None:
-        self.assertRegex(CSS, r"\.key-input\s*\{[^}]*min-height:\s*44px")
-        self.assertRegex(CSS, r"\.key-row \.q-button\s*\{[^}]*min-height:\s*44px")
-        self.assertIn("/static/js/prefs.js", HTML)
-        self.assertIn("/static/js/shortcuts.js", HTML)
-        self.assertLess(HTML.index("/static/js/prefs.js"), HTML.index("/static/js/settings.js"))
-
-
 class LiveSyncTest(unittest.TestCase):
     """控制台改完偏好，工作台必须当场跟上，而不是等下一次轮询。"""
 
@@ -177,7 +145,7 @@ class LiveSyncTest(unittest.TestCase):
         block = body_of(JS, "function tellWorkspacePrefs()")
         self.assertIn('jzo: "prefs.changed"', block)
         self.assertIn("window.location.origin", block, "同源定向投递，不许用 *")
-        self.assertEqual(JS.count("tellWorkspacePrefs()"), 4, "昵称/启停/键位三处写口加函数本体")
+        self.assertEqual(JS.count("tellWorkspacePrefs()"), 3, "昵称/启停两处写口加函数本体")
 
     def test_02_workspace_reloads_the_left_rail_on_message(self) -> None:
         self.assertIn('data.jzo === "prefs.changed"', WORKSPACE_JS)

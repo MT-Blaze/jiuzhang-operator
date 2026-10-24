@@ -1,15 +1,13 @@
-"""军令 #16 模块一契约：全局快捷键、右键菜单与输入铁律。
+"""军令 #16 模块一契约（#18 第二步裁剪后）：右键分工、输入铁律与左栏树算法。
 
-三条口径逐条钉住（都只钉结构，不启浏览器；真机证据走探针）：
+快捷键整层已在 #18 第二步删除；本模块只保留与文件键位无关的交互契约：
 
-1. **输入铁律**——聊天框 Enter 发送、Shift+Enter 换行，组合态与空内容都不发送；
-   单行搜索框不是聊天框，保留 Enter 检索（同一次按键两种写法都接受）；
-2. **右键菜单感应**——左栏给新建文件夹/停用插件/重命名，底栏只给复制且**绝不给清空**，
+1. **右键菜单感应**——左栏给新建文件夹/停用插件/重命名，底栏只给复制且**绝不给清空**，
    中间画布一个监听都不挂（右键完全交给插件）；
-3. **快捷键冲突与优先级**——键位全部可自定义；装配时底座动作先占位，
-   插件自报键位撞上即作废，并逐条写进【报错诊断】红字（该视图本就支持双击复制）。
+2. **弹出层可访问性**——菜单与弹窗都能键盘操作，焦点被捕陷，代码里不拼 `innerHTML`；
+3. **左栏树与旧顺序迁移**——树算法的边界（文件夹不嵌套、掏空即消失）与 localStorage 一次性搬迁。
 
-运行：``.venv/Scripts/python.exe -m unittest tests.test_shortcut_layer``
+运行：``.venv/Scripts/python.exe -m unittest tests.test_interaction_contracts``
 """
 
 from __future__ import annotations
@@ -24,32 +22,15 @@ HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 WORKSPACE_JS = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
 STAGE_JS = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
 PREFS_JS = (STATIC / "js" / "prefs.js").read_text(encoding="utf-8")
-KEYS_JS = (STATIC / "js" / "shortcuts.js").read_text(encoding="utf-8")
 MENU_JS = (STATIC / "js" / "contextmenu.js").read_text(encoding="utf-8")
 DIALOG_JS = (STATIC / "js" / "dialogs.js").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
-CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
-    encoding="utf-8"
-)
-CHAT_HTML = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html").read_text(
-    encoding="utf-8"
-)
-CHAT_JSON = (ROOT / "plugins" / "org.jiuzhang.chat" / "plugin.json").read_text(
-    encoding="utf-8"
-)
 
 
 def body_of(source: str, signature: str) -> str:
     """取某个顶层函数（两空格缩进）的函数体，用于按函数切片断言。"""
     match = re.search(re.escape(signature) + r"\s*\{(.*?)\n  \}", source, re.S)
     assert match, f"找不到函数体：{signature}"
-    return match.group(1)
-
-
-def handler_body(source: str, signature: str) -> str:
-    """取回调式监听器（四空格缩进闭合）的函数体。"""
-    match = re.search(re.escape(signature) + r"\s*\{(.*?)\n    \}\);", source, re.S)
-    assert match, f"找不到回调体：{signature}"
     return match.group(1)
 
 
@@ -63,7 +44,7 @@ def code_only(source: str) -> str:
 
 
 class ScriptLayerTest(unittest.TestCase):
-    """偏好层四个模块必须先于拖拽与舞台加载，且不引第三方依赖。"""
+    """偏好层三个模块必须先于拖拽与舞台加载，且不引第三方依赖。"""
 
     def test_01_load_order(self) -> None:
         order = [
@@ -71,7 +52,6 @@ class ScriptLayerTest(unittest.TestCase):
             HTML.index("/static/js/prefs.js"),
             HTML.index("/static/js/dialogs.js"),
             HTML.index("/static/js/contextmenu.js"),
-            HTML.index("/static/js/shortcuts.js"),
             HTML.index("/static/js/splitpane.js"),
             HTML.index("/static/js/stage.js"),
             HTML.index("/static/js/workspace.js"),
@@ -79,8 +59,8 @@ class ScriptLayerTest(unittest.TestCase):
         self.assertEqual(order, sorted(order), "偏好层要在拖拽与舞台之前就位")
 
     def test_02_no_third_party_and_no_network(self) -> None:
-        for source, name in ((PREFS_JS, "prefs.js"), (KEYS_JS, "shortcuts.js"),
-                             (MENU_JS, "contextmenu.js"), (DIALOG_JS, "dialogs.js")):
+        for source, name in ((PREFS_JS, "prefs.js"), (MENU_JS, "contextmenu.js"),
+                             (DIALOG_JS, "dialogs.js")):
             for token in ("fetch(", "XMLHttpRequest", "localStorage.setItem", "require("):
                 if name == "prefs.js" and token == "localStorage.setItem":
                     continue   # prefs.js 只写「已迁移」标记，这是宿主自己的浏览器存储
@@ -89,109 +69,10 @@ class ScriptLayerTest(unittest.TestCase):
     def test_03_globals_are_namespaced(self) -> None:
         for source, name, global_name in (
             (PREFS_JS, "prefs.js", "JzoPrefs"),
-            (KEYS_JS, "shortcuts.js", "JzoKeys"),
             (MENU_JS, "contextmenu.js", "JzoMenu"),
             (DIALOG_JS, "dialogs.js", "JzoDialogs"),
         ):
             self.assertIn(f"window.{global_name} = ", source, f"{name} 没交出门面")
-
-
-class CanonicalComboTest(unittest.TestCase):
-    """前端与后端同一口径：至少一枚修饰键 + 一枚主键，裸键不进快捷键表。"""
-
-    def test_01_bare_keys_are_not_shortcuts(self) -> None:
-        self.assertIn("if (!key || !modifiers.length) return \"\";", PREFS_JS)
-        self.assertIn("if (!modifiers.length) return \"\";",
-                       body_of(PREFS_JS, "function comboFromEvent(event)"))
-
-    def test_02_modifier_order_is_fixed(self) -> None:
-        block = body_of(PREFS_JS, "function canonicalCombo(raw)")
-        self.assertIn('var ordered = MODIFIER_ORDER.filter', block)
-        self.assertIn('["Ctrl", "Alt", "Shift", "Meta"]', PREFS_JS)
-
-    def test_03_backend_and_frontend_share_the_shape(self) -> None:
-        # 后端 canonical_combo 是唯一裁决口，前端只是当场反馈，两边键集必须同源口径
-        self.assertIn("def canonical_combo(", (ROOT / "app" / "core" / "plugin_state.py").read_text(encoding="utf-8"))
-        self.assertIn("_COMBO_RE", (ROOT / "app" / "core" / "plugin_state.py").read_text(encoding="utf-8"))
-        self.assertIn("COMBO.test(combo)", PREFS_JS)
-
-
-class HostKeyArbitrationTest(unittest.TestCase):
-    """底座最高权限优先：装配顺序就是权重顺序，插件撞车即作废。"""
-
-    def test_01_host_actions_are_declared(self) -> None:
-        for action in ("sidebar.toggle", "context.toggle", "dock.toggle",
-                       "assistant.focus", "console.open"):
-            self.assertIn(f'action: "{action}"', KEYS_JS)
-        self.assertIn("Ctrl+B", KEYS_JS, "军令逐字：全屏时按 Ctrl+B 呼叫左侧栏")
-
-    def test_02_host_claims_before_plugins(self) -> None:
-        block = body_of(KEYS_JS, "function collect(plugins)")
-        self.assertIn("var owner = ownerOf(combo);", block)
-        self.assertIn("conflicts.push({", block)
-        self.assertIn("pluginRows.push({", block)
-        # 撞上已占位的键位：只记冲突，绝不注册（不存在“静音共存”）
-        self.assertLess(block.index("conflicts.push"), block.index("pluginRows.push"))
-
-    def test_03_conflict_carries_the_owner_for_the_error_line(self) -> None:
-        block = body_of(KEYS_JS, "function collect(plugins)")
-        self.assertIn("takenBy: owner.owner === \"host\" ? \"底座动作 \"", block)
-        self.assertIn("takenAction: owner.action", block)
-
-    def test_04_press_is_the_sandbox_path(self) -> None:
-        block = body_of(KEYS_JS, "function press(combo)")
-        self.assertIn("BAD_COMBO", block)
-        self.assertIn("UNBOUND", block)
-        self.assertIn("owner: \"host\"", block)
-
-    def test_05_listener_is_installed_once_in_capture(self) -> None:
-        block = body_of(KEYS_JS, "function install(options)")
-        self.assertIn("if (installed) return;", block)
-        self.assertIn('document.addEventListener("keydown"', block)
-        self.assertTrue(block.rstrip().endswith(", true);"), "必须 capture：输入框先吃掉冒泡阶段的键")
-
-    def test_06_menu_and_dialog_hold_the_keys(self) -> None:
-        block = body_of(KEYS_JS, "function dispatch(event)")
-        self.assertIn("JzoMenu.isOpen()", block)
-        self.assertIn("JzoDialogs.isOpen()", block)
-        self.assertIn("event.repeat", block, "按住不放不许连发底座动作")
-
-
-class HostKeyWiringTest(unittest.TestCase):
-    """workspace.js 把五个底座动作接上执行体，并把裁决结果如实播报。"""
-
-    def test_01_every_host_action_has_a_runner(self) -> None:
-        block = body_of(WORKSPACE_JS, "function wireShortcuts()")
-        for action in ("sidebar.toggle", "context.toggle", "dock.toggle",
-                       "assistant.focus", "console.open"):
-            self.assertIn(f'defineHost("{action}"', block)
-        self.assertIn("JzoKeys.install", block)
-
-    def test_02_assemble_and_collect_run_on_every_listing(self) -> None:
-        block = body_of(WORKSPACE_JS, "function applyPrefsLayer(data, plugins)")
-        self.assertIn("assemble((data && data.shortcuts) || {})", block)
-        self.assertIn("reportConflicts(window.JzoKeys.collect(plugins))", block)
-        self.assertIn("applyPrefsLayer(data, plugins)", WORKSPACE_JS)
-
-    def test_03_conflicts_land_in_error_view_as_red_lines(self) -> None:
-        block = body_of(WORKSPACE_JS, "function reportConflicts(list)")
-        self.assertIn('"shortcut.conflict", "error")', block)
-        self.assertIn("底座已禁用该键位", block)
-        # 清单每 5 秒轮询一次：同一批冲突只播一次
-        self.assertIn("if (signature === lastConflictSignature) return;", block)
-
-    def test_04_plugin_keys_are_delivered_not_executed(self) -> None:
-        block = body_of(WORKSPACE_JS, "function deliverShortcut(pluginId, info)")
-        self.assertIn('notifyPlugin(pluginId, "shortcut.invoke"', block)
-        self.assertNotIn("eval(", block)
-        self.assertNotIn("document.querySelector", block, "宿主不替插件点它的按钮")
-
-    def test_05_stage_exposes_relay_and_direct_delivery(self) -> None:
-        self.assertIn('"shortcut.press"', STAGE_JS)
-        block = body_of(STAGE_JS, 'if (method === "shortcut.press")')
-        self.assertNotIn("block", block)   # 占位：见下方显式断言
-        self.assertIn("JzoKeys.press(", STAGE_JS)
-        self.assertIn("notifyPlugin: function (pluginId, event, payload)", STAGE_JS)
 
 
 class LeftMenuTest(unittest.TestCase):

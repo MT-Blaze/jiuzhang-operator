@@ -198,7 +198,7 @@
   var modalConfirm = document.getElementById("uninstallConfirm");
   var modalCancel = document.getElementById("uninstallCancel");
   var uninstallTarget = null;
-  var installedBody = { plugins: [], sidebar: [], shortcuts: {} };
+  var installedBody = { plugins: [], sidebar: [] };
   var prefsReloadBusy = false;
   var uninstallPrevFocus = null;
 
@@ -391,80 +391,7 @@
     }
   });
 
-  // ============ 全局快捷键自定义（军令 #16 模块一「全部开放自定义」） ============
-  var keyList = document.getElementById("keyList");
-  var keyStatus = document.getElementById("keyStatus");
-  var keyReload = document.getElementById("keyReloadBtn");
-
-  function renderShortcuts(body) {
-    if (!keyList) return;
-    keyList.textContent = "";
-    var overrides = (body && body.shortcuts) || {};
-    // 键位表只有 shortcuts.js 那一份：控制台复用同一个 catalogue，绝不另抄一份默认值
-    var rows = window.JzoKeys ? window.JzoKeys.catalogue() : [];
-    rows.forEach(function (row) {
-      var effective = Object.prototype.hasOwnProperty.call(overrides, row.action)
-        ? overrides[row.action] : row.combo;
-      var li = el("li", "key-row");
-      li.appendChild(el("span", "key-label", row.label));
-      var input = el("input", "key-input");
-      input.type = "text";
-      input.value = effective || "";
-      input.placeholder = row.combo;
-      input.setAttribute("aria-label", row.label + " 的键位");
-      input.maxLength = 40;
-      li.appendChild(input);
-      var save = el("button", "q-button key-save");
-      save.type = "button";
-      save.textContent = "改绑";
-      save.addEventListener("click", function () {
-        saveShortcut(row.action, input.value.trim(), save);
-      });
-      li.appendChild(save);
-      // 本机偏好只记「你亲手改过的那一条」：清掉这条记录就等于回到底座默认键位，
-      // 底座不存「永久无键」这种状态，所以按钮说的是「回到默认」而不是「解绑」。
-      var reset = el("button", "q-button key-reset");
-      reset.type = "button";
-      reset.textContent = "回到默认";
-      reset.disabled = effective === row.combo;
-      reset.addEventListener("click", function () {
-        saveShortcut(row.action, "", reset);
-      });
-      li.appendChild(reset);
-      if (effective !== row.combo) {
-        li.appendChild(el("span", "mg-tag", "默认 " + row.combo));
-      }
-      keyList.appendChild(li);
-    });
-    var taken = {};
-    ((body && body.plugins) || []).forEach(function (plugin) {
-      if (plugin.enabled === false) return;
-      (plugin.shortcuts || []).forEach(function (sc) { taken[sc.combo] = plugin.id; });
-    });
-    Object.keys(taken).forEach(function (combo) {
-      keyList.appendChild(el("li", "key-note",
-        combo + " 已由插件 " + taken[combo] + " 自报；撞车时底座动作优先。"));
-    });
-  }
-
-  function saveShortcut(action, combo, button) {
-    if (button) { button.disabled = true; button.setAttribute("aria-busy", "true"); }
-    apiCall("/api/plugins/shortcuts", "POST", { action: action, combo: combo })
-      .then(function (result) {
-        mgSet(keyStatus, combo
-          ? "已改绑 " + action + " → " + (result.combo || combo) + "。回工作台立即生效。"
-          : "已把 " + action + " 还原为底座默认键位。", "ok");
-        tellWorkspacePrefs();
-        return loadInstalled();
-      })
-      .catch(function (error) { mgSet(keyStatus, "改绑失败：" + error.message, "down"); })
-      .then(function () {
-        if (button) { button.disabled = false; button.removeAttribute("aria-busy"); }
-      });
-  }
-
-  if (keyReload) keyReload.addEventListener("click", function () { loadInstalled(); });
-
+  // ============ 已安装插件清单 ============
   function loadInstalled() {
     return fetch("/api/plugins", { cache: "no-store" })
       .then(function (response) {
@@ -474,7 +401,6 @@
       .then(function (data) {
         installedBody = data || {};
         renderInstalled(installedBody.plugins || [], installedBody);
-        renderShortcuts(installedBody);
       })
       .catch(function (error) { mgSet(mgStatus, "读取插件列表失败：" + error.message, "down"); });
   }

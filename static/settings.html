@@ -411,19 +411,6 @@
             </div>
             <p class="pl-status" id="startupStatus" role="status" aria-live="polite" hidden></p>
 
-            <h3 class="st-sub">全局快捷键</h3>
-            <p class="st-note">
-              底座这五条键位随你改：写 <code>Ctrl+Shift+K</code> 这种「修饰键 + 主键」的规范形，
-              点【回到默认】就把你这条改绑抹掉、恢复底座默认键位。键位只记在本机
-              <code>data/plugin_state.json</code>，不联网、不进插件包。
-              插件自报的快捷键撞上车时，<strong>底座动作永远优先</strong>：被挤掉的那条自动失效，
-              并在工作台【报错诊断】记一条红字（双击即复制）。
-            </p>
-            <ul class="key-list" id="keyList"></ul>
-            <div class="st-install-actions">
-              <button type="button" class="q-button" id="keyReloadBtn">重新读取键位</button>
-            </div>
-            <p class="pl-status" id="keyStatus" role="status" aria-live="polite" hidden></p>
           </section>
         </div>
       </div>
@@ -518,7 +505,6 @@
   </div>
 
   <script src="/static/js/prefs.js"></script>
-  <script src="/static/js/shortcuts.js"></script>
   <script src="/static/js/plugins.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/pwa.js"></script>

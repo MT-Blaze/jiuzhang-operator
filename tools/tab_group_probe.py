@@ -48,6 +48,7 @@ JS_BAR = """
     many: page ? page.classList.contains('ws-tabs-many') : null,
     immersive: page ? page.getAttribute('data-immersive') : null,
     side: page ? page.getAttribute('data-side') : null,
+    rail: page ? page.getAttribute('data-immersive-rail') : null,
     fullscreen: Boolean(document.fullscreenElement),
     topCount: top.length,
     groupCount: groups.length,
@@ -189,20 +190,20 @@ def run(tag: str) -> dict:
               regions["context"] and regions["dock"], regions)
         snap("02-immersive")
 
-        # --- 3. 全屏中 Ctrl+B 唤出左栏（覆盖层） -----------------------------------
-        page.evaluate("() => document.activeElement && document.activeElement.blur()")
-        page.keyboard.press("Control+b")
+        # --- 3. 全屏中点左栏开关 → 覆盖层（#18 第二步后不再有全局键） -----------------
+        page.locator("#wsToggleSidebar").click()
         page.wait_for_timeout(700)
         state = bar()
-        check("06 全屏中 Ctrl+B 把左栏以覆盖层唤出（position:fixed、非零宽、仍在全屏）",
-              state["side"] == "open" and state["sidebarPos"] == "fixed"
+        check("06 全屏中点左栏开关把浮层唤出（position:fixed、非零宽、仍在全屏）",
+              state["rail"] == "on" and state["sidebarPos"] == "fixed"
               and state["sidebarWidth"] >= 200 and state["fullscreen"] is True, state)
         snap("03-immersive-rail")
-        page.keyboard.press("Control+b")
+        page.locator("#wsToggleSidebar").click()
         page.wait_for_timeout(700)
         state = bar()
-        check("06b 再按一次 Ctrl+B 把浮层收回（左栏让位、全屏不退）",
-              state["sidebarWidth"] == 0 and state["fullscreen"] is True, state)
+        check("06b 再点一次把浮层收回（左栏让位、全屏不退）",
+              state["rail"] is None and state["sidebarWidth"] == 0
+              and state["fullscreen"] is True, state)
 
         # --- 4. 再次双击退出 / Esc 退出 -------------------------------------------
         page.locator(sel).dblclick()
@@ -395,7 +396,7 @@ def run(tag: str) -> dict:
     try:
         remaining = [p["id"] for p in api_get("/api/plugins")["plugins"]]
         leftover = json.loads(STATE_FILE.read_text(encoding="utf-8") or "{}")
-        restored = (FIXTURE_ID not in remaining and not leftover.get("shortcuts")
+        restored = (FIXTURE_ID not in remaining
                     and not leftover.get("nicknames")
                     and not [n for n in leftover.get("sidebar", [])
                              if str(n.get("id", "")).startswith("folder:")])

@@ -896,7 +896,7 @@
         return;
       }
       if (data && data.jzo === "providers.changed") loadProviders().catch(function () {});
-      // 控制台里改了昵称/启停/键位/分组 → 左栏当场跟上，不等 5 秒轮询。
+      // 控制台里改了昵称/启停/分组 → 左栏当场跟上，不等 5 秒轮询。
       if (data && data.jzo === "prefs.changed") loadPlugins({ announce: false }).catch(function () {});
     });
     // 控制台里热更了插件（PLUGIN_SPEC §1.7）→ 左栏、页签与画布立刻接上新代码，
@@ -923,53 +923,8 @@
     });
   })();
 
-  // ============ 全局快捷键：装配、派发与撞车裁决（军令 #16 模块一） ============
-  // 键位表由 shortcuts.js 持有；这里只做三件事：给底座动作接上执行体、
-  // 把清单下发的改绑与插件自报键位装配进来、把裁决结果如实播报。
-  var lastConflictSignature = "";
+  // ============ 左栏顺序迁移（一次性） ============
   var legacyOrderMigrated = false;
-
-  /** 焦点在宿主时命中的插件键：宿主只负责投递，做什么由插件自己决定。 */
-  function deliverShortcut(pluginId, info) {
-    if (!window.JzoStage || typeof window.JzoStage.notifyPlugin !== "function") return;
-    var reached = window.JzoStage.notifyPlugin(pluginId, "shortcut.invoke", info);
-    if (!reached) {
-      dockLine("插件「" + pluginId + "」当前不在场（页签没开或已休眠），" +
-        info.combo + " 这一键没送到。", "shortcut.miss");
-    }
-  }
-
-  /** 冲突逐条写进【报错诊断】：红字、每条都挂 data-copy，双击即复制（军令逐字要求）。 */
-  function reportConflicts(list) {
-    var rows = list || [];
-    var signature = rows.map(function (row) {
-      return row.pluginId + "/" + row.action + "=" + row.combo;
-    }).sort().join("|");
-    // 清单每 5 秒轮询一次：同一批冲突只播一次，刷屏比冲突本身更烦人。
-    if (signature === lastConflictSignature) return;
-    if (!signature) { lastConflictSignature = ""; return; }
-    lastConflictSignature = signature;
-    rows.forEach(function (row) {
-      dockLine("快捷键撞车：插件「" + row.pluginName + "」自报的 " + row.combo +
-        "（" + row.label + "）已被" + row.takenBy + "占用，底座已禁用该键位。",
-        "shortcut.conflict", "error");
-    });
-  }
-
-  function wireShortcuts() {
-    if (!window.JzoKeys) return;
-    window.JzoKeys.defineHost("sidebar.toggle", function () { toggleRail(); });
-    window.JzoKeys.defineHost("context.toggle", function () { setCtx(!ctxOpen()); });
-    window.JzoKeys.defineHost("dock.toggle", function () { setDock(!dockOpen()); });
-    window.JzoKeys.defineHost("assistant.focus", function () {
-      setCtx(true);
-      if (window.JzoContextPanel && typeof window.JzoContextPanel.reclaim === "function") {
-        window.JzoContextPanel.reclaim();
-      }
-    });
-    window.JzoKeys.defineHost("console.open", function () { openConsoleTab(); });
-    window.JzoKeys.install({ deliver: deliverShortcut });
-  }
 
   /** 把早期存在浏览器里的拖拽顺序一次性搬进后端树（搬完打标记，绝不双向同步）。 */
   function migrateLegacySidebar(data) {
@@ -983,11 +938,7 @@
     commitTree(legacy);
   }
 
-  function applyPrefsLayer(data, plugins) {
-    if (window.JzoKeys) {
-      window.JzoKeys.assemble((data && data.shortcuts) || {});
-      reportConflicts(window.JzoKeys.collect(plugins));
-    }
+  function applyPrefsLayer(data) {
     migrateLegacySidebar(data);
   }
 
@@ -1486,9 +1437,9 @@
         });
 
         installedPlugins = plugins;
-        // 左栏树与键位表都来自这一份清单：先接上事实来源，再渲染、再裁决撞车。
+        // 左栏树来自这一份清单：先接上事实来源，再渲染。
         if (window.JzoPrefs) sidebarTree = window.JzoPrefs.readTree(data);
-        applyPrefsLayer(data, plugins);
+        applyPrefsLayer(data);
         if (activePlugin) {
           var still = null;
           for (var i = 0; i < plugins.length; i += 1) {
@@ -1666,7 +1617,6 @@
   wireDockMenu();
   wirePluginDrag();
   wireSidebarMenu();
-  wireShortcuts();
   wireStageSovereignty();
   setStage("工作台");
   markActiveEntry(null);

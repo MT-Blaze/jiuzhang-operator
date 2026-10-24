@@ -134,86 +134,6 @@
     return null;
   }
 
-  // ============ 组合键归一（与后端 plugin_state.canonical_combo 同一口径） ============
-  // 后端是唯一事实来源（写非法值一律 400）；前端做同一份判断只为当场反馈，
-  // 让设置页的输入框不必等一次网络往返才知道自己写歪了。
-  var MODIFIER_ORDER = ["Ctrl", "Alt", "Shift", "Meta"];
-  var MODIFIER_ALIASES = {
-    CTRL: "Ctrl", CONTROL: "Ctrl",
-    ALT: "Alt", OPTION: "Alt",
-    SHIFT: "Shift",
-    META: "Meta", CMD: "Meta", COMMAND: "Meta", SUPER: "Meta", WIN: "Meta"
-  };
-  var KEY_ALIASES = {
-    ESCAPE: "Esc", ESC: "Esc",
-    SPACE: "Space", SPACEBAR: "Space",
-    TAB: "Tab", ENTER: "Enter", RETURN: "Enter",
-    HOME: "Home", END: "End",
-    DELETE: "Delete", DEL: "Delete", BACKSPACE: "Backspace",
-    ARROWUP: "ArrowUp", ARROWDOWN: "ArrowDown",
-    ARROWLEFT: "ArrowLeft", ARROWRIGHT: "ArrowRight",
-    PAGEUP: "PageUp", PGUP: "PageUp",
-    PAGEDOWN: "PageDown", PGDN: "PageDown",
-    PLUS: "+"
-  };
-  var FUNCTION_KEY = /^F(?:[1-9]|1[0-2])$/i;
-  var COMBO = new RegExp(
-    "^(?:(?:Ctrl|Alt|Shift|Meta)\\+){1,3}" +
-    "(?:[A-Z0-9]|F[1-9]|F1[0-2]|Enter|Esc|Space|Tab|Home|End|Delete|Backspace" +
-    "|Arrow(?:Up|Down|Left|Right)|PageUp|PageDown|[-+\\[\\];',./=\\\\])$"
-  );
-
-  function canonicalCombo(raw) {
-    var text = String(raw == null ? "" : raw).trim();
-    if (!text) return "";
-    // "Ctrl++"（加号本身是主键）写作 ++：先换成哨兵再拆，免得拆出一个空段
-    var parts = text.replace("++", "+PLUS+").split("+").map(function (piece) {
-      return piece.trim();
-    });
-    if (parts.length && !parts[parts.length - 1]) parts.pop();
-    if (parts.some(function (piece) { return !piece; })) return "";
-    var modifiers = [];
-    var key = "";
-    for (var index = 0; index < parts.length; index += 1) {
-      var piece = parts[index];
-      var alias = MODIFIER_ALIASES[piece.toUpperCase()];
-      if (alias && index < parts.length - 1) {
-        if (modifiers.indexOf(alias) < 0) modifiers.push(alias);
-        continue;
-      }
-      var named = KEY_ALIASES[piece.toUpperCase()];
-      if (named) key = named;
-      else if (FUNCTION_KEY.test(piece)) key = "F" + piece.slice(1);
-      else if (piece.length === 1) key = piece.toUpperCase();
-      else key = piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase();
-      break;
-    }
-    if (!key || !modifiers.length) return "";
-    var ordered = MODIFIER_ORDER.filter(function (mod) {
-      return modifiers.indexOf(mod) >= 0;
-    }).join("+");
-    var combo = ordered + "+" + key;
-    return COMBO.test(combo) ? combo : "";
-  }
-
-  /** KeyboardEvent → 规范形组合键；不带修饰键的裸键回空串（那是输入框和控件的地盘）。 */
-  function comboFromEvent(event) {
-    if (!event) return "";
-    var modifiers = [];
-    if (event.ctrlKey) modifiers.push("Ctrl");
-    if (event.altKey) modifiers.push("Alt");
-    if (event.shiftKey) modifiers.push("Shift");
-    if (event.metaKey) modifiers.push("Meta");
-    if (!modifiers.length) return "";
-    var raw = String(event.key || "");
-    if (!raw || raw === "Unidentified") return "";
-    if (raw.length === 1 && raw !== " ") raw = raw.toUpperCase();
-    if (raw === " ") raw = "Space";
-    var key = canonicalCombo("Ctrl+" + raw).slice(5);
-    if (!key) return "";
-    return modifiers.join("+") + "+" + key;
-  }
-
   /** 卡片/条目上的显示名：老师起的昵称优先，没起过就用官方原名（军令 #16 模块二）。 */
   function displayName(plugin) {
     return asText(plugin && plugin.nickname, 40) ||
@@ -417,8 +337,6 @@
   window.JzoPrefs = {
     relTime: relTime,
     asText: asText,
-    canonicalCombo: canonicalCombo,
-    comboFromEvent: comboFromEvent,
     displayName: displayName,
     isPluginKey: isPluginKey,
     isFolderKey: isFolderKey,

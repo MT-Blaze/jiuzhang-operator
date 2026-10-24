@@ -85,7 +85,7 @@ class ImmersiveTest(unittest.TestCase):
         overlay = re.findall(
             r'\.ws-page\[data-immersive="on"\]\[data-immersive-rail="on"\] \.ws-sidebar\s*\{([^}]*)\}', CSS
         )
-        self.assertTrue(overlay, "Ctrl+B 呼出的浮层没有规则可循")
+        self.assertTrue(overlay, "沉浸中呼出的左栏浮层没有规则可循")
         self.assertIn("position: fixed", overlay[0])
         self.assertRegex(overlay[0], r"z-index:\s*\d+")
 
@@ -97,9 +97,8 @@ class ImmersiveTest(unittest.TestCase):
         self.assertIn("setSide(!sideOpen())", body, "非沉浸态还得是原来那本折叠账")
         self.assertNotIn('setAttribute("data-immersive"', WORKSPACE,
                          "data-immersive 是画布的手势，只有 stage.js 能写")
-        self.assertIn('window.JzoKeys.defineHost("sidebar.toggle", function () { toggleRail(); })',
-                      WORKSPACE, "Ctrl+B 必须走同一个开关，不许两份实现")
-        self.assertGreaterEqual(WORKSPACE.count("toggleRail()"), 3, "按钮与键位要共用一张嘴")
+        self.assertGreaterEqual(WORKSPACE.count("toggleRail()"), 3,
+                                "两枚左栏按钮共用同一个开关，不许两份实现")
 
 
 class OverflowTest(unittest.TestCase):

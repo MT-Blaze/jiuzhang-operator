@@ -375,10 +375,7 @@
     // 数据库、写令牌与宿主 DOM 一道门都没开。
     "agent.chat", "agent.refine", "plugins.list", "workspace.state",
     "plugin.install_url", "ui.params.set", "editor.apply_patch",
-    "stage.open_bank", "stage.open_editor",
-    // 军令 #16：沙箱 iframe 里的按键到不了宿主文档，插件自报的全局键只能把
-    // 组合键交给宿主裁决（归属与改绑全在 shortcuts.js，插件问不到别人的键位）。
-    "shortcut.press"
+    "stage.open_bank", "stage.open_editor"
   ];
   // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
   // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
@@ -804,19 +801,6 @@
       } else {
         done(loadDraft(pluginId, draftKey));
       }
-      return;
-    }
-
-    // 焦点在插件里时，全局键由宿主裁决归属：底座占位就底座执行，没人占位就交回插件。
-    // 判定全在 shortcuts.js，这里只搬运，插件因此问不到别人的键位表。
-    if (method === "shortcut.press") {
-      if (!window.JzoKeys || typeof window.JzoKeys.press !== "function") {
-        failWith("HOST_UNREADY", "快捷键模块尚未加载");
-        return;
-      }
-      var verdict = window.JzoKeys.press(textValue(payload, "combo", 40));
-      verdict.plugin_id = pluginId;
-      done(verdict);
       return;
     }
 

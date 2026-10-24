@@ -9,7 +9,7 @@
   - 列表平铺不折叠，分组以卡片尾部小标签出现；
   - 「已启用」顺序与左栏导航 100% 对齐，「已停用」按停用时间先后；
   - 相对时间只在点开面板那一瞬算一次（隔 3 秒重读文本必须一字不变）；
-  - 键位改绑走控制台那一个写口，改完工作台左栏当场跟上（不刷新浏览器）。
+  - 控制台改昵称/启停后工作台左栏当场跟上（不刷新浏览器）。
 
 跑之前底座必须在 8765 端口起来。
 """
@@ -93,17 +93,16 @@ def run(tag: str) -> dict:
         def snap(name):
             page.screenshot(path=str(out / ("%s.png" % name)))
 
-        # --- 1. 用底座键位打开控制台页签（顺带证明模块一的键活着） --------------
-        page.evaluate("() => document.activeElement && document.activeElement.blur()")
-        page.keyboard.press("Control+Shift+s")
+        # --- 1. 点工作台的【设置与控制台】入口（全局键已在 #18 第二步删除） --------
+        page.locator("#wsConsoleBtn").click()
         page.wait_for_timeout(1800)
         console_tab = page.evaluate(
             "() => { const c = document.getElementById('wsPanelConsole');"
             " return c ? !c.hidden : false; }"
         )
-        check("01 Ctrl+Shift+S 打开控制台页签", console_tab, console_tab)
+        check("01 点【设置与控制台】入口打开控制台页签", console_tab, console_tab)
         frame = page.frame_locator("#wsConsoleFrame")
-        # 控制台默认落在「工作区」分区，插件卡片与键位区各自要点开才可见
+        # 控制台默认落在「工作区」分区，插件卡片要点开二级导航才可见
         frame.locator("#stNavPlugin").click()
         page.wait_for_timeout(600)
         cards = frame.locator("#mgList .mg-card")
@@ -208,30 +207,7 @@ def run(tag: str) -> dict:
         frame.locator('#mgList .mg-card[data-id="%s"] .mg-toggle' % victim_id).click()
         page.wait_for_timeout(1800)
 
-        # --- 7. 键位自定义区：改绑 → 工作台当场生效 -----------------------------
-        frame.locator("#stNavSystem").click()
-        page.wait_for_timeout(600)
-        key_rows = frame.locator("#keyList .key-row")
-        check("16 系统设置里五条底座键位", key_rows.count() == 5, key_rows.count())
-        first_key = key_rows.nth(2)
-        first_key.locator(".key-input").fill("Ctrl+Shift+Q")
-        first_key.locator(".key-save").click()
-        page.wait_for_timeout(2000)
-        saved = api_get("/api/plugins")["shortcuts"]
-        bound = page.evaluate("() => window.JzoKeys.bindings()")
-        check("17 改绑写进本机偏好且工作台当场接上（无需刷新）",
-              "Ctrl+Shift+Q" in json.dumps(saved, ensure_ascii=False)
-              and bound.get("dock.toggle") == "Ctrl+Shift+Q", (saved, bound))
-        page.evaluate("() => document.activeElement && document.activeElement.blur()")
-        page.keyboard.press("Control+Shift+q")
-        page.wait_for_timeout(400)
-        side = page.evaluate("() => document.querySelector('.ws-page').getAttribute('data-dock')")
-        check("18 新键位真的能按动底座动作", side in ("hidden", "open"), side)
-        snap("05-keybound")
-
-        # 还原键位与昵称、解散分组
-        first_key.locator(".key-reset").click()
-        page.wait_for_timeout(1800)
+        # 还原昵称、解散分组
         frame.locator("#stNavPlugin").click()
         page.wait_for_timeout(600)
         prompt_answer["text"] = ""
@@ -242,11 +218,10 @@ def run(tag: str) -> dict:
         page.get_by_role("menuitem", name="解散文件夹").click()
         page.wait_for_timeout(1200)
         restored = api_get("/api/plugins")
-        check("19 探针自造的偏好全部还原",
-              not restored["shortcuts"]
-              and not [p for p in restored["plugins"] if p.get("nickname")]
+        check("16 探针自造的偏好全部还原",
+              not [p for p in restored["plugins"] if p.get("nickname")]
               and not [n for n in restored["sidebar"] if str(n.get("id", "")).startswith("folder:")],
-              (restored["shortcuts"], [p.get("nickname") for p in restored["plugins"] if p.get("nickname")]))
+              [p.get("nickname") for p in restored["plugins"] if p.get("nickname")])
 
         browser.close()
 

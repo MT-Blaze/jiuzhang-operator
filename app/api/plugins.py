@@ -56,8 +56,6 @@ class InstalledPlugin(BaseModel):
     min_host_version: str = ""
     # 渲染/工具类插件可显式声明不占左栏；缺省一律显示。
     show_in_sidebar: bool = True
-    # 插件自报的全局快捷键（军令 #16）：安装回执里带上，前端当场就能发现撞车。
-    shortcuts: list[dict[str, Any]] = []
 
 
 class PluginInstallResponse(BaseModel):
@@ -240,27 +238,6 @@ def set_plugin_sidebar(payload: dict[str, Any] = Body(...)) -> dict:
     if not isinstance(payload, dict) or not isinstance(payload.get("sidebar"), list):
         raise HTTPException(status_code=400, detail="sidebar 必须是数组")
     return {"sidebar": plugin_state.set_sidebar(payload["sidebar"])}
-
-
-@router.post(
-    "/api/plugins/shortcuts",
-    summary="改绑底座全局快捷键（不合法或空串一律抹掉改绑、回落默认键位）",
-    dependencies=[Depends(require_write_token)],
-)
-def set_plugin_shortcut(payload: dict[str, Any] = Body(...)) -> dict:
-    """键位归底座与用户所有：这里只存用户的改绑，插件自报的键位不参与持久化。
-
-    撞车由前端在装配注册表时当场裁决——底座永远赢，插件的键位被静默禁用并记红字。
-    """
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
-    action = payload.get("action")
-    if not plugin_state.is_action_key(action):
-        raise HTTPException(status_code=400, detail="action 非法")
-    combo = payload.get("combo", "")
-    if not isinstance(combo, str):
-        raise HTTPException(status_code=400, detail="combo 必须是字符串")
-    return {"action": action, "combo": plugin_state.set_shortcut(action, combo)}
 
 
 @router.delete(

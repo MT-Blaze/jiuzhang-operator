@@ -315,7 +315,6 @@ com.example.card/
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
 | `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
-| `shortcuts` | 否 | 全局快捷键自报（军令 #16 模块一，见 §2.11）；数组，最多 8 条，每条 `{"action","combo","label"}`。`action` 是插件自己的动作名（`^[a-z][a-z0-9_.]{0,63}$`），底座不解释只比撞车；`combo` 必须是「≥1 枚修饰键 + 1 枚主键」的规范形，非法条目逐条丢弃 |
 | `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `min_host_version` | 否 | 语义化版本字符串（v0.8.3）。声明本插件能跑的**最低底座版本**；【检查更新】时底座拿它与自身 `__version__` 比对，不够则该插件的更新被标为「需先更新底座」并保持原样不覆盖。**缺省视为不设限**。此字段只用于更新提示，底座**绝不**据此拒绝加载已装插件或远程禁用（§1.1） |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
@@ -375,7 +374,6 @@ com.example.card/
 | `plugin.deactivate`（`payload.reason = "lru"`） | notification | 被 LRU 休眠前的尽力通知：宿主不等回复就摘 iframe，插件应把该保存的状态提前存好 |
 | `plugin.suspend`（`payload.reason = "background"`） | notification | **只对清单里 `stage.weight = "light"` 的插件发**（军令 #16 模块三，§2.13）：该页签切到后台了，iframe 与 DOM 都还在，请自己把定时器、轮询、动画收起来；`requestAnimationFrame` 循环要停，别在看不见的页上白烧 CPU |
 | `plugin.resume`（`payload.reason = "foreground"`） | notification | 与 `plugin.suspend` 成对：该页签回到前台，把刚才收掉的定时器/循环恢复原样。两条通知都可能因快速切页而紧邻到达，插件必须幂等 |
-| `shortcut.invoke` | notification | 用户按下了**本插件自报且裁决归属为本插件**的全局快捷键，`payload` 为 `{action, combo, via}`（军令 #16，见 §2.11）。插件只执行 `action` 对应的那一件自己的事；认不出 `action` 就静默忽略 |
 
 插件可以发给宿主的通知（只有白名单话题会被转发，见 §2.5）：
 
@@ -766,11 +764,11 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 与出网铁律同源（AGENTS §2）。
 
 
-### 2.11 全局快捷键、右键分工与输入铁律（2026-10-24 军令 #16 模块一）
+### 2.11 右键分工、输入铁律与「无全局快捷键」口径（2026-10-24 军令 #16 模块一；#18 第二步裁剪）
 
-本节把「键盘归谁、右键归谁、Enter 归谁」三件事一次说死。实现侧的四个零依赖模块是
-`static/js/prefs.js`（`JzoPrefs`：键位规范形、左栏树算法、相对时间）、`static/js/shortcuts.js`
-（`JzoKeys`：键位表与裁决）、`static/js/contextmenu.js`（`JzoMenu`：右键菜单）、
+本节把「右键归谁、Enter 归谁、左栏顺序归谁」三件事一次说死，并明确底座**永不提供快捷键注册 API**。
+实现侧的三个零依赖模块是 `static/js/prefs.js`（`JzoPrefs`：左栏树算法、相对时间）、
+`static/js/contextmenu.js`（`JzoMenu`：右键菜单）、
 `static/js/dialogs.js`（`JzoDialogs`：改名/确认弹窗，替代原生 `prompt`/`confirm`）。
 
 **1）输入铁律：`Enter` 换行，`Ctrl + Enter` 发送。**
@@ -779,7 +777,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
   发送只在 `Ctrl+Enter`（`Ctrl` 与 `Meta` 同等接受）时发生，且必须走与发送按钮同一个出口函数。
 - 单行搜索框不算聊天框：`Enter` 即检索仍然有效（`Ctrl+Enter` 同样接受），不改这行为。
 - 控件上的键盘激活（`Enter`/`Space` 点按钮、拖拽手柄、工作区切换）属原生可访问性，与本铁律无冲突。
-- 这条组合键**不进全局键位表**：它的领地是「当前聚焦的那个输入框」，让底座抢它只会打断输入。
+- 这条组合键只归**当前聚焦的那个输入框**，不进任何宿主键位表——底座没有全局键位表。
 
 **2）右键分工：三区三种口径，中栏一律不拦。**
 
@@ -793,38 +791,18 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 工作台左栏与底栏是全仓仅有的两处宿主右键。菜单项一律 `textContent` 落 DOM，不拼 `innerHTML`；
 键盘可达（`↑`/`↓` 环绕、`Enter`/`Space` 执行、`Esc` 关闭、关闭后焦点还给触发元素），触控目标 ≥44px。
 
-**3）快捷键全部可自定义，冲突时底座最高权限优先。**
+**3）底座永不提供快捷键注册 API（2026-10-24 军令 #18 第二步，长期铁律）。**
 
-- 底座动作共 5 条，默认键位写死在 `HOST_ACTIONS`：`sidebar.toggle` `Ctrl+B`、`context.toggle` `Ctrl+I`、
-  `dock.toggle` `Ctrl+J`、`assistant.focus` `Ctrl+Shift+A`、`console.open` `Ctrl+Shift+S`。
-  用户可在「设置→系统设置」逐条改；改完存本机 `data/plugin_state.json` 的 `shortcuts`，**不写清单、不写浏览器**。
-- 插件自报键位走清单 `shortcuts` 字段（§2.3.2），后端 `_normalize_shortcuts` 逐条清洗：
-  组合键必须归一成 `Ctrl+Shift+K` 这样的规范形（修饰键定序 `Ctrl→Alt→Shift→Meta`）、
-  必须含至少一枚修饰键 + 一枚主键、`action` 合法、`label` ≤40 字、每插件 ≤8 条、重复键位只留第一条；
-  不合格的条目直接丢弃，不因此拒装。
-- 裁决是**确定性**的：装配时先给底座动作占位，再按清单顺序「先到先得」登记插件键位。
-  撞上已占位的键位即作废——**判废者不注册**，底座不留「静音共存」这张表。
-- 撞车必须让人看见：每条冲突逐条写进底栏【报错诊断】，级别 `error`（红字），文案含
-  「底座已禁用该键位」与「谁占的」（底座动作名或另一只插件的显示名）；底栏每条本就带 `data-copy`，
-  **双击即复制**整行。清单每 5 秒轮询一次，故按整批冲突签名去重，同一批只播一次。
+- 清单字段 `shortcuts`、插件通知 `shortcut.invoke`、插件请求 `shortcut.press`、后端
+  `/api/plugins/shortcuts` 端点，以及 `data/plugin_state.json` 里的键位持久化，已整层删除。
+  新写的清单字段不会被读取，也不存在任何隐藏开关把它打开。
+- 底座自身同样不再占用全局组合键：此前 `sidebar.toggle` 等五条宿主动作随同一层一并退役。
+  插件的键盘交互只发生在**它自己的沙箱 iframe 内**，由插件自己的监听器处理；宿主不替插件分发按键，
+  也不裁决键位归属。
+- 架构原因：不透明源 iframe 里的按键永远冒泡不到宿主文档，跨边界的「全局快捷键」在这个模型下无法
+  可靠成立。删掉它既是精简，也是把「键盘这件事归谁」说清楚——**输入框的归输入框，插件的归插件**。
 
-**4）沙箱里按不到，所以键路是双向的。**
-
-不透明源 iframe 内的按键**永远冒泡不到宿主文档**，故全局快捷键有两条腿，缺一不可：
-
-- 焦点在宿主时：宿主捕获阶段监听器调 `JzoKeys.dispatch`，命中归属为插件的键位后经
-  `JzoStage.notifyPlugin()` 向该插件的画布页签（或同名右栏面板）下发 `shortcut.invoke` 通知；
-  送达不了就在底栏记 `shortcut.miss`，不静默吞键。
-- 焦点在插件时：插件自己监听、自己 `preventDefault()`，再发 request `shortcut.press {combo}`
-  让宿主裁决。响应为 `{handled, owner, action, combo, pluginId?, reason?}`；
-  **只有 `owner === "plugin"` 且 `action` 就是自己那个动作时插件才执行**，否则什么都不做。
-  `reason` 取 `BAD_COMBO`（键形不合法）/ `UNBOUND`（无人认领）。
-- `shortcut.press` 是本地分支：不出网、不落库、不进 `ai:invoke` 门禁，也不违反 §2.10 第 3 条——
-  底座从不合成鼠标或键盘事件，它只是**判个归属**，按键动作始终来自真人手指，执行仍由插件自己的监听器完成。
-- 弹窗或菜单打开期间 `dispatch` 直接让路，避免「按 `Ctrl+J` 把菜单底下那栏关了」这类越权；
-  `event.repeat`（按住不放）不连发底座动作。
-
-**5）左栏分组与顺序的唯一事实来源是后端。**
+**4）左栏分组与顺序的唯一事实来源是后端。**
 
 左栏那棵树（文件夹与插件的顺序、归属）存在 `data/plugin_state.json` 的 `sidebar` 里，
 `/api/plugins` 以 `sidebar` + `sidebar_customized` 返回；工作台的每次拖拽、建夹、改名、解散都经
@@ -835,7 +813,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 ### 2.12 控制台插件面板：显示、排序、时间与两处对齐（2026-10-24 军令 #16 模块二）
 
 「设置→插件管理→管理与控制」那张卡片列表与工作台左栏是**同一份偏好的两个视图**，
-两者的口径由本节定死；实现侧仍是 `prefs.js` 出的算法（`displayName` / `canonicalCombo` / `relTime`），
+两者的口径由本节定死；实现侧仍是 `prefs.js` 出的算法（`displayName` / `relTime`），
 控制台不得另抄一份。
 
 **1）卡片只显示两种名字，绝不给「改回来」的出口。**
@@ -866,7 +844,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 **4）两处视图必须当场对齐，靠同源 `postMessage` 回声，不靠刷新。**
 
-- 控制台里任何一次改写偏好（启停、昵称、键位）成功后调 `tellWorkspacePrefs()`，
+- 控制台里任何一次改写偏好（启停、昵称、分组）成功后调 `tellWorkspacePrefs()`，
   向宿主发 `{jzo: "prefs.changed"}`；工作台收到即重拉 `/api/plugins` 重绘左栏。
 - 反向同理：工作台里 `commitTree`（拖拽/建夹/改名/解散）、`renamePlugin`、`disablePlugin` 成功后调
   `notifyConsolePrefs()`，向内嵌的控制台 iframe 发同一条消息；控制台收到即重读列表，
@@ -874,15 +852,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 - 两个方向都**必须校验 `event.origin === window.location.origin`**；这条通道只传「该重读了」这个信号，
   不传数据，真正的值一律回源 `/api/plugins`。
 
-**5）键位自定义的第二个视图，同一个写口。**
-
-控制台的「系统设置→全局快捷键」复用 `JzoKeys.catalogue()`（默认键位仍只有 `shortcuts.js` 那一份），
-逐条给出输入框 + 【改绑】+ 【回到默认】；改绑与还原都走 `POST /api/plugins/shortcuts` 这一个写口，
-按钮按下即 `disabled` + `aria-busy`。后端 `set_shortcut()` 对空串/非法键形的处理是**抹掉这条记录**，
-读侧回落默认，因此【回到默认】才是准确的说法——底座不存「永久无键」这种状态。
-插件自报的键位在表尾以只读小字列出（`combo` + 归属插件），撞车裁决仍按 §2.11 第 3）条：**底座动作永远优先**。
-
-**6）安全边界不变。** 卡片、键位表、菜单文案全部 `textContent` / `createElement` 落 DOM，
+**5）安全边界不变。** 卡片、菜单文案全部 `textContent` / `createElement` 落 DOM，
 控制台这条链路里不许出现 `innerHTML`；昵称是老师自己输入的字符串，显示时同样不解析成 HTML。
 
 ### 2.13 画布页签：沉浸全屏、溢出横滚、分组合并与休眠分层（2026-10-24 军令 #16 模块三）
@@ -902,7 +872,8 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
   再双击同一页签、按 `Esc`、`fullscreenchange`。`Esc` 走两条腿——浏览器原生退全屏 + 底座 keydown 兜底
   （自动化环境里浏览器常把 `Esc` 留给页面自己处理）；宿主弹窗在场（`.ws-dialog-backdrop`）时底座**不抢** `Esc`，
   那一下属于关弹窗；
-- 沉浸中按 `Ctrl+B` 把左栏以覆盖层（`position:fixed`）呼出，再按收回，全屏不退；
+- 沉浸中不提供呼出左栏的全局键（军令 #18 第二步已删掉全部宿主全局快捷键）；点左栏的折叠/展开按钮
+  仍可把左栏以覆盖层浮出（只翻 `data-immersive-rail`，不动 `data-side`），全屏不退；
 - 插件侧：沉浸全程**不重挂 iframe、不重发 `plugin.activate`**，视口变宽变高由你自己的 CSS 自适应；
   不许假设自己占满视口，也不许去读 `document.fullscreenElement`——沙箱里读不到，读到了也不该拿它当依据。
 
@@ -919,7 +890,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 **3）分组合并：只在挤爆时启用，组内凑满 2 页才收。**
 
-- 分组归属只认清单里的 `folder_id`（后端从偏好树反查，见 §2.12 第 5）条），没进任何文件夹的插件共用一个【未分组】集合；
+- 分组归属只认清单里的 `folder_id`（后端从偏好树反查，见 §2.11 第 4）条），没进任何文件夹的插件共用一个【未分组】集合；
 - 组名页签的显示名来自左栏那棵树（`folder.name`）：workspace 每拉到一次清单、每改一次树都 `JzoStage.setSidebarTree(tree)`
   同步过来，树是唯一事实来源，画布自己绝不另存一份分组；
 - 单击组名摊开子页签（`aria-expanded` / `aria-haspopup` 同步跟上），同一时刻只摊开一个，点别处即收；

@@ -64,12 +64,6 @@ _STAGE_MAX_TITLE = 24
 # 缺省一律按 heavy——底座绝不猜「这个插件很轻」，是插件自己声明才给它免死金牌。
 _STAGE_WEIGHTS = {"light", "heavy"}
 
-# 全局快捷键声明（军令 #16 模块一）：插件只能自报「组合键 + 动作名 + 文案」，
-# 撞不撞车、谁赢由底座在运行时裁决；清单里写下的键位不构成任何优先权。
-_SHORTCUT_MAX = 8
-_SHORTCUT_ACTION = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
-_SHORTCUT_MAX_LABEL = 40
-
 # 事件总线主题白名单。发布只许投给底座托管的三区与舞台选区——
 # 不许插件发 ui.params.* / layout.*，那是人和底座的地盘（防插件反向操控面板）。
 _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection"}
@@ -313,34 +307,6 @@ def _normalize_stage(raw: Any) -> dict[str, Any] | None:
     }
 
 
-def _normalize_shortcuts(raw: Any) -> list[dict[str, str]]:
-    """归一插件自报的全局快捷键（军令 #16 模块一）。
-
-    键位统一成交接给底座的规范形（``Ctrl+Shift+K``），非法条目直接丢弃；
-    ``action`` 是插件自己的动作名，底座不解释、不执行，只负责比对有没有撞车。
-    """
-    if not isinstance(raw, list):
-        return []
-    out: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        combo = plugin_state.canonical_combo(item.get("combo"))
-        action = _ui_text(item.get("action"), 64)
-        if not combo or not _SHORTCUT_ACTION.fullmatch(action) or combo in seen:
-            continue
-        seen.add(combo)
-        out.append({
-            "combo": combo,
-            "action": action,
-            "label": _ui_text(item.get("label"), _SHORTCUT_MAX_LABEL) or action,
-        })
-        if len(out) >= _SHORTCUT_MAX:
-            break
-    return out
-
-
 def _normalize_bus(raw: Any) -> dict[str, Any]:
     """归一插件事件总线授权；未声明的按最小集给，白名单外的一律丢弃。"""
     subscribe = ["ui.params.changed"]
@@ -493,8 +459,6 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         ),
         # 渲染/工具类插件可显式声明 show_in_sidebar:false，不在左栏占位；缺省一律显示。
         "show_in_sidebar": manifest.get("show_in_sidebar") is not False,
-        # 插件自报的全局快捷键（军令 #16）：底座只拿它撞车比对，撞了归底座赢。
-        "shortcuts": _normalize_shortcuts(manifest.get("shortcuts")),
     }
 
 
@@ -560,11 +524,10 @@ def discover_plugins() -> dict[str, Any]:
 
     # 启停状态也进签名：停用一个插件后左栏要能立刻知道清单变了。
     fingerprint.append("disabled:" + ",".join(sorted(disabled)))
-    # 改昵称、挪分组、重绑快捷键都算清单变化——左栏与设置面板必须当场重排，
+    # 改昵称、挪分组都算清单变化——左栏与设置面板必须当场重排，
     # 而不是等下一次重启或手动刷新。
     fingerprint.append("nick:" + json.dumps(prefs["nicknames"], sort_keys=True, ensure_ascii=False))
     fingerprint.append("side:" + json.dumps(tree, sort_keys=True, ensure_ascii=False))
-    fingerprint.append("keys:" + json.dumps(prefs["shortcuts"], sort_keys=True, ensure_ascii=False))
     # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
     # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
     signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]
@@ -576,7 +539,6 @@ def discover_plugins() -> dict[str, Any]:
         # 后端树为空 = 用户从没在设置面板拖过组。前端据此决定要不要一次性搬走
         # 早期存在浏览器里的左栏顺序（搬完即弃，不做双向同步）。
         "sidebar_customized": bool(sidebar),
-        "shortcuts": prefs["shortcuts"],
         "signature": signature,
     }
 

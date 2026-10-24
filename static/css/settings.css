@@ -188,23 +188,6 @@
 .mg-tag-folder { margin-left: auto; border: 1px solid var(--line, #d8ccb8); background: transparent; }
 .mg-empty { color: var(--muted, #6f675c); font-size: 13px; }
 
-/* ===== 全局快捷键自定义（军令 #16 模块一） ===== */
-.key-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
-.key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.key-label { flex: 1 1 200px; font-size: 13px; }
-.key-input {
-  flex: 0 0 150px;
-  min-height: 44px;
-  padding: 6px 10px;
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 13px;
-  border: 1px solid var(--line, #d8ccb8);
-  border-radius: 8px;
-  background: var(--card, #fff);
-}
-.key-input:focus-visible { outline: 2px solid var(--accent, #2f6b4f); outline-offset: 1px; }
-.key-row .q-button { min-height: 44px; }
-.key-note { font-size: 12px; color: var(--muted, #6f675c); }
 .q-button-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .q-button-primary:hover { filter: brightness(1.05); }
 .q-button-danger { color: #9b3b2d; border-color: rgba(155, 59, 45, 0.5); }
