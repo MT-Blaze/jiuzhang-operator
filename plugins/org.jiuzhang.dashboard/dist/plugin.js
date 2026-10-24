@@ -34,15 +34,14 @@
         pending.delete(id);
         reject(new Error(method + " 超时（15s）"));
       }, REQUEST_TIMEOUT_MS);
-      pending.set(id, { resolve: resolve, reject: reject });
+      pending.set(id, {
+        resolve: function (value) { window.clearTimeout(timer); resolve(value); },
+        reject: function (error) { window.clearTimeout(timer); reject(error); }
+      });
       window.parent.postMessage({
         protocol: PROTOCOL, id: id, kind: "request",
         method: method, payload: payload || {}
       }, "*");
-      // resolve/reject 时统一清 timer
-      var wrapped = pending.get(id);
-      wrapped.resolve = function (value) { window.clearTimeout(timer); resolve(value); };
-      wrapped.reject = function (error) { window.clearTimeout(timer); reject(error); };
     });
   }
 
@@ -148,6 +147,10 @@
     if (old && old.parentNode) old.parentNode.removeChild(old);
   }
 
+  function num(v) {
+    return typeof v === "number" ? String(v) : "—";
+  }
+
   function renderStats(stats) {
     var cards = document.getElementById("dbCards");
     if (!cards) return;
@@ -162,8 +165,7 @@
       var card = cardsNodes[index];
       if (!card) return;
       card.querySelector(".db-card-label").textContent = item.label;
-      card.querySelector(".db-card-value").textContent =
-        typeof item.value === "number" ? String(item.value) : "—";
+      card.querySelector(".db-card-value").textContent = num(item.value);
     });
     renderRecent(stats.recent || []);
   }
@@ -232,8 +234,9 @@
       renderStats(results[0] || {});
       renderHeatmap(results[1]);
       if (firstLoad) {
-        dock("数据看板已就绪：共 " + (results[0] || {}).total_questions + " 题，今日入库 "
-          + (results[0] || {}).today_added + " 题。");
+        var stats = results[0] || {};
+        dock("数据看板已就绪：共 " + num(stats.total_questions) + " 题，今日入库 "
+          + num(stats.today_added) + " 题。");
       }
     }).catch(function (error) {
       clearError();

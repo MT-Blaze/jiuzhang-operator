@@ -179,11 +179,6 @@ body {
   color: var(--warn);
 }
 
-.jzochat-bubble[data-tone="error"] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 .jzochat-badge {
   display: block;
   font-size: 11px;
@@ -240,12 +235,6 @@ body {
 }
 
 /* ---------- 动作按钮（智能跳转） ---------- */
-.jzochat-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 /* 「前往题库并搜索」这类跳转动作是本轮回复的唯一出口，
    命中标题按底座铁律不小于 44px，宁可占两行也不许缩成胶囊。 */
 .jzochat-action {

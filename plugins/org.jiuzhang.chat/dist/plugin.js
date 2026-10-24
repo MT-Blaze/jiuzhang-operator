@@ -22,7 +22,6 @@
   var AGENT_TIMEOUT_MS = 32000;
   var TRANSCRIPT_MAX = 24;
   var TRANSCRIPT_SEND = 8;
-  var MAX_HISTORY_ITEMS = 8;
 
   var root = document.getElementById("chatRoot");
   var thread = document.getElementById("chatThread");
@@ -48,7 +47,9 @@
   var transcript = [];
   var editorContext = { id: "", question: null, at: 0 };
   var pendingPatch = null;
-  var mounted = false;
+  // AI 改写是否在飞行中：期间的通知重渲染不许把【让 AI 改写】按钮重新点亮，
+  // 否则一次点击能发两遍 agent.refine。
+  var refineBusy = false;
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload, timeoutMs) {
@@ -488,6 +489,7 @@
         buttonEl.textContent = "覆盖安装";
         buttonEl.addEventListener("click", function () {
           buttonEl.disabled = true;
+          buttonEl.setAttribute("aria-busy", "true");
           buttonEl.textContent = "安装中…";
           requestInstall(target, statusEl, buttonEl, cardEl, true);
         }, { once: true });
@@ -626,7 +628,6 @@
       var pairs = Object.keys(params).map(function (key) { return key + "=" + params[key]; });
       return pairs.length ? "好，我请求底座把面板调成：" + pairs.join("、") + "。" : "好，我来请求调整面板参数。";
     }
-    if (typeof parsed === "string") return parsed;
     return "已收到指令，但暂未识别为具体操作。";
   }
 
@@ -874,7 +875,7 @@
       if (typing) typing.remove();
       addBubble("bot", "指令执行失败：" + error.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });
       pushTurn("assistant", "指令执行失败：" + error.message);
-    }).then(function () {
+    }).finally(function () {
       setSending(false);
       if (promptInput) promptInput.focus();
     });
@@ -890,7 +891,7 @@
   function renderCopilotVisibility() {
     if (!copilot) return;
     copilot.hidden = !editorContext.question;
-    if (copilotAsk) copilotAsk.disabled = !editorContext.question;
+    if (copilotAsk) copilotAsk.disabled = !editorContext.question || refineBusy;
     if (copilotApply) copilotApply.disabled = !(editorContext.question && pendingPatch);
     if (copilotCtx) {
       copilotCtx.textContent = editorContext.question
@@ -908,6 +909,7 @@
     }
     var field = copilotField && copilotField.value === "solution" ? "solution" : "stem";
     var targetId = editorContext.id;
+    refineBusy = true;
     copilotAsk.disabled = true;
     copilotAsk.setAttribute("aria-busy", "true");
     copilotAsk.textContent = "改写中…";
@@ -930,7 +932,8 @@
       if (copilotCtx) copilotCtx.textContent = (field === "solution" ? "解析" : "题干") + "改写完成，点「回填到表单」";
     }, function (error) {
       if (copilotCtx) copilotCtx.textContent = "改写失败：" + error.message;
-    }).then(function () {
+    }).finally(function () {
+      refineBusy = false;
       copilotAsk.disabled = false;
       copilotAsk.removeAttribute("aria-busy");
       copilotAsk.textContent = "让 AI 改写";
@@ -1012,7 +1015,6 @@
 
     if (message.kind !== "request") return;
     if (message.method === "plugin.activate") {
-      mounted = true;
       root.hidden = false;
       if (promptInput) promptInput.focus();
       bootstrap();
@@ -1022,7 +1024,6 @@
     if (message.method === "plugin.deactivate") {
       // 交还右栏主权前先把对话记忆存回宿主，切回来才接得上
       saveTranscript();
-      mounted = false;
       root.hidden = true;
       return respond(event.source, message.id, true, { ready: false });
     }
@@ -1066,11 +1067,6 @@
       return;
     }
     sendPrompt(prompt, { origin: "human" });
-  }
-
-  function focusComposer() {
-    if (!promptInput) return;
-    promptInput.focus();
   }
 
   if (sendBtn) sendBtn.addEventListener("click", submitFromComposer);

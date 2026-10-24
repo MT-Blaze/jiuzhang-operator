@@ -99,7 +99,7 @@ body {
 .pg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .pg-btn {
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 14px;
   border: 1px solid #b9aa97;
   border-radius: 6px;
@@ -164,7 +164,7 @@ body {
 }
 
 .pg-mini {
-  min-height: 30px;
+  min-height: 44px;
   padding: 3px 10px;
   border: 1px solid var(--pg-line);
   border-radius: 5px;
@@ -233,8 +233,8 @@ body {
 
 .pg-remove {
   flex: 0 0 auto;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 44px;
+  min-height: 44px;
   border: 0;
   border-radius: 4px;
   background: transparent;

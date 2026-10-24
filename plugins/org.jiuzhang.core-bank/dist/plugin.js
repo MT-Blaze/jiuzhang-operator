@@ -21,6 +21,7 @@
   var requestSeq = 0;
   var pending = new Map();
   var loadToken = 0;
+  var reviewToken = 0;
   var toastTimer = null;
   var basketIds = Object.create(null);
 
@@ -142,7 +143,9 @@
       dock("宿主送来的题库检索是空的，本视图保持原样。");
       return;
     }
-    if (state.view === "review") state.view = "list";
+    // 检索词只有列表视图会消费：待审/查重视图下必须先切回列表，
+    // 否则 loadQuestions() 白打一次接口、界面还停在原面板，AI 送来的词被静默吞掉。
+    if (state.view !== "list") state.view = "list";
     state.search = query;
     state.page = 1;
     state.showSolution = false;
@@ -313,25 +316,29 @@
     return row;
   }
 
-  function buildPager() {
-    var pages = Math.max(1, Math.ceil(state.total / state.pageSize));
+  // 列表视图与待审视图的分页器是同一个形状（上一页—页码—下一页），只差数据源与翻页动作。
+  function mountPager(page, pages, total, onGo) {
     var pager = el("div", "cb-pager");
     var prev = el("button", "cb-btn", "上一页");
     prev.type = "button";
-    prev.disabled = state.page <= 1;
-    prev.addEventListener("click", function () {
-      if (state.page > 1) { state.page -= 1; loadQuestions(); }
-    });
+    prev.disabled = page <= 1;
+    prev.addEventListener("click", function () { if (page > 1) onGo(page - 1); });
     var next = el("button", "cb-btn", "下一页");
     next.type = "button";
-    next.disabled = state.page >= pages;
-    next.addEventListener("click", function () {
-      if (state.page < pages) { state.page += 1; loadQuestions(); }
-    });
+    next.disabled = page >= pages;
+    next.addEventListener("click", function () { if (page < pages) onGo(page + 1); });
     pager.appendChild(prev);
-    pager.appendChild(el("span", null, "第 " + state.page + " / " + pages + " 页 · 共 " + state.total + " 题"));
+    pager.appendChild(el("span", null, "第 " + page + " / " + pages + " 页 · 共 " + total + " 题"));
     pager.appendChild(next);
     return pager;
+  }
+
+  // 答案口径只有一处真相：选项题报选项键、其余报正文，两者都没有就是「待补」。
+  function answerText(question) {
+    var answer = question.answer;
+    if (answer && answer.kind === "choice") return (answer.choice_keys || []).join("、");
+    if (answer && answer.content) return String(answer.content);
+    return "";
   }
 
   // ---------- 大纲树（bank.topics 懒加载） ----------
@@ -377,9 +384,13 @@
     fetchTopics(node.id).then(function (items) {
       tree.children[node.id] = items;
       renderAll();
-    }).catch(function () {
-      tree.children[node.id] = [];
+    }).catch(function (error) {
+      // 取不到不许伪装成「这一层没有子节点」：那会让老师以为大纲是空的，还查不出为什么。
+      // 收回展开态并播报失败原因，节点保持可再点一次重试。
+      delete tree.children[node.id];
+      tree.expanded[node.id] = false;
       renderAll();
+      toast("这一层子节点没取到：" + error.message);
     });
   }
 
@@ -488,7 +499,8 @@
       state.items.forEach(function (question, index) {
         list.appendChild(buildRow(question, index));
       });
-      list.appendChild(buildPager());
+      list.appendChild(mountPager(state.page, Math.max(1, Math.ceil(state.total / state.pageSize)),
+        state.total, function (page) { state.page = page; loadQuestions(); }));
     }
     host.appendChild(list);
   }
@@ -544,11 +556,8 @@
     if (question.answer) {
       var answer = el("div", "cb-answer");
       answer.appendChild(el("span", "cb-answer-label", "答案："));
-      if (question.answer.kind === "choice") {
-        answer.appendChild(document.createTextNode((question.answer.choice_keys || []).join("、")));
-      } else if (question.answer.content) {
-        answer.appendChild(document.createTextNode(question.answer.content));
-      }
+      var shown = answerText(question);
+      if (shown) answer.appendChild(document.createTextNode(shown));
       card.appendChild(answer);
     } else {
       // 新库里 answer 是 NULL（旧库拿硬编码 A 冒充过 31 道选择题）：如实说待补，不显示空白
@@ -632,12 +641,15 @@
     state.reviewLoading = true;
     state.reviewError = "";
     if (page) state.reviewPage = page;
+    // 与 loadQuestions 同款令牌：连点翻页或回流刷新并发时，慢响应不许覆盖新结果
+    var token = ++reviewToken;
     renderAll();
     hostCall("bank.review", {
       flag: state.reviewFlag,
       page: state.reviewPage,
       page_size: REVIEW_PAGE_SIZE
     }).then(function (result) {
+      if (token !== reviewToken) return;
       state.reviewItems = (result && result.items) || [];
       state.reviewTotal = (result && result.total) || 0;
       state.reviewPages = (result && result.total_pages) || 1;
@@ -645,6 +657,7 @@
       state.reviewLoading = false;
       renderAll();
     }).catch(function (error) {
+      if (token !== reviewToken) return;
       state.reviewLoading = false;
       state.reviewItems = [];
       state.reviewError = error.message;
@@ -734,20 +747,7 @@
         list.appendChild(buildReviewCard(question));
       });
       if (state.reviewPages > 1) {
-        var pager = el("div", "cb-pager");
-        var prev = el("button", "cb-btn", "上一页");
-        prev.type = "button";
-        prev.disabled = state.reviewPage <= 1;
-        prev.addEventListener("click", function () { loadReview(state.reviewPage - 1); });
-        var next = el("button", "cb-btn", "下一页");
-        next.type = "button";
-        next.disabled = state.reviewPage >= state.reviewPages;
-        next.addEventListener("click", function () { loadReview(state.reviewPage + 1); });
-        pager.appendChild(prev);
-        pager.appendChild(el("span", null, "第 " + state.reviewPage + " / " + state.reviewPages
-          + " 页 · 共 " + state.reviewTotal + " 题"));
-        pager.appendChild(next);
-        list.appendChild(pager);
+        list.appendChild(mountPager(state.reviewPage, state.reviewPages, state.reviewTotal, loadReview));
       }
     }
     panel.appendChild(list);
@@ -868,16 +868,9 @@
       body.appendChild(options);
     }
     var answer = el("p", "cb-dupe-answer");
-    if (question.answer && question.answer.kind === "choice") {
-      answer.appendChild(el("span", "cb-answer-label", "答案："));
-      answer.appendChild(document.createTextNode((question.answer.choice_keys || []).join("、")));
-    } else if (question.answer && question.answer.content) {
-      answer.appendChild(el("span", "cb-answer-label", "答案："));
-      answer.appendChild(document.createTextNode(question.answer.content));
-    } else {
-      answer.appendChild(el("span", "cb-answer-label", "答案："));
-      answer.appendChild(document.createTextNode("待补 — 原资料里没有可依据的答案"));
-    }
+    answer.appendChild(el("span", "cb-answer-label", "答案："));
+    answer.appendChild(document.createTextNode(
+      answerText(question) || "待补 — 原资料里没有可依据的答案"));
     body.appendChild(answer);
     if (state.dupeShowSolution && question.solution) {
       var solution = el("div", "cb-solution");
@@ -1045,7 +1038,14 @@
     refresh.type = "button";
     refresh.disabled = state.loading;
     refresh.setAttribute("aria-busy", String(state.loading));
-    refresh.addEventListener("click", function () { loadTree(); loadQuestions(); });
+    // 刷新要刷「正在看的那个视图」：待审与查重视图不消费 state.items，
+    // 无脑 loadQuestions() 会让这两个视图下的【刷新】点了像没反应。
+    refresh.addEventListener("click", function () {
+      loadTree();
+      if (state.view === "review") loadReview(state.reviewPage);
+      else if (state.view === "dedupe") loadDedupe();
+      else loadQuestions();
+    });
     toolbar.appendChild(refresh);
 
     var views = el("div", "cb-views");

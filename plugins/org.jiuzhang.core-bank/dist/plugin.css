@@ -85,21 +85,9 @@ html, body {
 }
 
 .cb-search:focus-visible,
-.cb-select:focus-visible,
 .cb-btn:focus-visible {
   outline: 2px solid var(--cinnabar);
   outline-offset: 2px;
-}
-
-.cb-select {
-  min-height: 44px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fffdf8;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
 }
 
 .cb-btn {
@@ -523,57 +511,7 @@ img.cb-img {
 
 .cb-review-body { display: flex; flex-direction: column; gap: 8px; }
 
-.cb-review-letters { display: flex; flex-wrap: wrap; gap: 6px; }
-
-.cb-letter {
-  min-width: 44px;
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cb-letter:hover { border-color: rgba(166, 59, 43, 0.5); }
-
-.cb-letter:focus-visible {
-  outline: 2px solid var(--cinnabar);
-  outline-offset: 2px;
-}
-
-.cb-letter-on {
-  border-color: var(--cinnabar);
-  background: var(--cinnabar);
-  color: #fffaf2;
-}
-
-.cb-review-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-
-.cb-review-input {
-  min-height: 66px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
-}
-
-.cb-review-input:focus-visible {
-  outline: 2px solid var(--cinnabar);
-  outline-offset: 1px;
-}
-
-.cb-review-select { max-width: 140px; }
-
 .cb-review-hint { font-size: 12px; color: var(--ink-soft); }
-
-.cb-review-feedback { font-size: 12px; color: var(--ok); }
 
 /* ---------- 查重清洗（画布内 1:1 双栏审查） ---------- */
 .cb-dupe {

@@ -101,14 +101,16 @@ def main() -> int:
     sys.path.insert(0, str(ROOT))
     from app.core import bank  # noqa: PLC0415
 
+    # 表结构按 plugins_dir() 现取现算（app/core/config.py:93 的 JZO_PLUGINS_DIR 口子），
+    # 所以这两个变量必须在进程内调用 bank.* 之前就位——否则 schema.sql 会去默认工作区找。
+    os.environ["JZO_DATA_DIR"] = str(data_dir)
+    os.environ["JZO_PLUGINS_DIR"] = str(plugins_dir)
     bank.import_documents(PLUGIN_ID, seed_questions(3), reset=True, db_path=seed_dir / "bank.db")
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     env = os.environ.copy()
     env["JZO_LOCAL_TOKEN"] = TOKEN
-    env["JZO_DATA_DIR"] = str(data_dir)
-    env["JZO_PLUGINS_DIR"] = str(plugins_dir)
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
          "--port", str(port), "--log-level", "warning", "--no-server-header"],

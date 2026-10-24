@@ -60,7 +60,6 @@
 
   var state = {
     items: [],
-    missing: 0,
     showAnswers: false,
     density: "normal",
     title: "九章算子 · 数学练习卷",
@@ -1141,7 +1140,12 @@
         if (token !== loadToken) return;
         var items = (result && result.items) || [];
         state.items = items.map(function (item) { return item.question; }).filter(Boolean);
-        state.missing = Number((result && result.missing) || 0);
+        // 底座会报「取不到全文」的题数：不说出来，卷面就凭空少题
+        var missing = Number((result && result.missing) || 0);
+        if (missing > 0) {
+          dock("题篮里有 " + missing + " 题取不到全文（插件或题库缺失），已按剩余 " +
+            state.items.length + " 题排版。");
+        }
         if (selectedId && !state.items.some(function (item) { return item.id === selectedId; })) {
           selectedId = null;
         }
@@ -1225,7 +1229,15 @@
   }
 
   var reflowBtn = document.getElementById("pgReflow");
-  if (reflowBtn) reflowBtn.addEventListener("click", function () { loadBasket(); });
+  if (reflowBtn) reflowBtn.addEventListener("click", function () {
+    // 「重新排版」按字面只做本地重排；重新取题篮是【刷新】的活
+    if (stageMode) {
+      reflow();
+      toast("已按当前题篮重排 " + state.items.length + " 题");
+    } else {
+      loadBasket();
+    }
+  });
 
   var refreshBtn = document.getElementById("pgRefresh");
   if (refreshBtn) refreshBtn.addEventListener("click", function () { loadBasket(); });

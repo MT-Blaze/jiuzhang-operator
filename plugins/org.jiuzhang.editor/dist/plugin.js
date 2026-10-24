@@ -85,7 +85,6 @@
   var toastTimer = 0;
   var draftTimer = 0;
   var closeTimer = 0;
-  var lastDraftAt = 0;
   var modalPrevFocus = null;
   var mathCache = new Map();
   var scale = 1;
@@ -1014,8 +1013,8 @@
   function persistDraft() {
     if (!dirtySinceSave) return;   // 干净态（刚保存 / 刚载入原题）不留草稿
     var key = draftTargetKey();
-    hostCall("draft.save", { key: key, value: getFormState() }).then(function (res) {
-      if (res && res.saved_at) lastDraftAt = res.saved_at;
+    hostCall("draft.save", { key: key, value: getFormState() }).then(function () {
+      // 存成功不需要回执；插件不许碰本地存储，草稿唯一真相在宿主侧
     }, function () { /* 存不下不拦老师录题，静默 */ });
   }
 
@@ -1195,8 +1194,8 @@
     modalPrevFocus = document.activeElement;
     if (modalTextEl) modalTextEl.textContent = text;
     modalEl.hidden = false;
-    var overlay = modalEl.querySelector(".ed-modal") || modalEl;
-    overlay.setAttribute("aria-hidden", "false");
+    // aria-hidden 必须挂在带 role="dialog" 的那层：挂到里层等于告诉读屏器「这弹窗不存在」
+    modalEl.setAttribute("aria-hidden", "false");
     var ok = function () {
       closeConfirm();
       onOk();
@@ -1213,11 +1212,33 @@
     if (modalOkEl) modalOkEl.focus();
   }
 
+  /** 焦点陷阱：Tab 只在弹窗内的可用控件之间绕，绕回头尾时回弹。 */
+  function trapModalFocus(keyEvent) {
+    var nodes = Array.prototype.filter.call(
+      modalEl.querySelectorAll("button, [href], input, select, textarea, [tabindex]"),
+      function (node) {
+        return !node.disabled && node.tabIndex !== -1 && node.offsetParent !== null;
+      }
+    );
+    if (!nodes.length) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (!modalEl.contains(document.activeElement)) {
+      keyEvent.preventDefault();
+      first.focus();
+    } else if (keyEvent.shiftKey && document.activeElement === first) {
+      keyEvent.preventDefault();
+      last.focus();
+    } else if (!keyEvent.shiftKey && document.activeElement === last) {
+      keyEvent.preventDefault();
+      first.focus();
+    }
+  }
+
   function closeConfirm() {
     if (!modalEl) return;
     modalEl.hidden = true;
-    var overlay = modalEl.querySelector(".ed-modal") || modalEl;
-    overlay.setAttribute("aria-hidden", "true");
+    modalEl.setAttribute("aria-hidden", "true");
     if (modalPrevFocus && typeof modalPrevFocus.focus === "function") modalPrevFocus.focus();
     modalPrevFocus = null;
   }
@@ -1305,9 +1326,12 @@
         fetchTopics(node.id).then(function (items) {
           state.tree.children[node.id] = items;
           renderTree();
-        }, function () {
-          state.tree.children[node.id] = [];
+        }, function (error) {
+          // 失败不写成空层：空层会被当成「这考向没子节点」，老师就再也找不到入口
+          delete state.tree.children[node.id];
+          state.tree.expanded[node.id] = false;
           renderTree();
+          toast("这一层考向没取到：" + error.message, "error");
         });
       });
       row.appendChild(caret);
@@ -1565,8 +1589,15 @@
       });
     }
     if (modalEl) {
+      // Esc 挂 window：焦点一旦跳出弹窗（比如老师点了正文），挂在 modalEl 上的 Esc 就哑了
+      window.addEventListener("keydown", function (keyEvent) {
+        if (keyEvent.key === "Escape" && !modalEl.hidden) {
+          keyEvent.preventDefault();
+          closeConfirm();
+        }
+      });
       modalEl.addEventListener("keydown", function (keyEvent) {
-        if (keyEvent.key === "Escape") { keyEvent.preventDefault(); closeConfirm(); }
+        if (keyEvent.key === "Tab") trapModalFocus(keyEvent);
       });
     }
     window.addEventListener("beforeunload", flushDraft);

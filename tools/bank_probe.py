@@ -131,13 +131,20 @@ def main() -> int:
             page.wait_for_timeout(300)
             page.screenshot(path=str(shots / "grade-gaosan.png"), full_page=False)
 
-            # 再叠难度 → 高三 hard = 11
+            # 再叠难度 → 高三 L4（v0.6.3 起难度词表是 L1–L4，旧的 basic/hard 已废）；
+            # 题数随种子库变动，判据只锁「计数吻合且逐行都是压轴」，不硬编码 11。
             difficulty = page.locator('#wsPluginControls select[data-ui-key="difficulty"]')
-            difficulty.select_option("hard")
-            expect(frame.locator(".cb-pager")).to_contain_text("共 11 题", timeout=15000)
-            check("再切难度到压轴 → 11 题", True)
+            difficulty.select_option("L4")
+            expect(frame.locator(".cb-pager")).to_contain_text("共 ", timeout=15000)
+            l4_count = int(frame.locator(".cb-pager").inner_text().split("共 ")[1].split(" 题")[0])
+            l4_rows = frame.locator("body").evaluate(
+                "() => Array.from(document.querySelectorAll('.cb-row')).map(r => r.textContent)"
+            )
+            check("再切难度到 L4 → 计数与逐行标签吻合",
+                  0 < l4_count <= 36 and all("压轴" in row for row in l4_rows),
+                  {"count": l4_count, "rows": len(l4_rows)})
             page.wait_for_timeout(300)
-            page.screenshot(path=str(shots / "grade-hard.png"), full_page=False)
+            page.screenshot(path=str(shots / "grade-l4.png"), full_page=False)
 
             # 归零 → 456，再入篮一题
             grade.select_option("全部")

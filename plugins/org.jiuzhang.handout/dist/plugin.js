@@ -611,10 +611,10 @@
       pagesEl.textContent = "";
       pages = [];
       renderEmpty(started);
-      return;
+      return Promise.resolve();
     }
     // 先预载本地配图；期间用户继续打字就作废这次结果
-    primeImages(probe).then(function () {
+    return primeImages(probe).then(function () {
       if (token === renderToken) renderPages(started);
     });
   }
@@ -657,8 +657,19 @@
   var printBtn = document.getElementById("hpPrint");
   if (printBtn) {
     printBtn.addEventListener("click", function () {
-      reflow();
-      window.print();
+      // 配图与分页是异步落定的，直接 print() 会把还没排完的版面打进纸里
+      printBtn.disabled = true;
+      printBtn.setAttribute("aria-busy", "true");
+      reflow().then(function () {
+        printBtn.disabled = false;
+        printBtn.removeAttribute("aria-busy");
+        window.print();
+      }, function (error) {
+        printBtn.disabled = false;
+        printBtn.removeAttribute("aria-busy");
+        toast("排版没走完：" + error.message + "，仍按当前版面打印。");
+        window.print();
+      });
     });
   }
 

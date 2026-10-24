@@ -9,7 +9,7 @@
 供「点击最近题目 → 跳转题库」的黄金路径取证。
 
 判据：
-  1. 底座发现 org.jiuzhang.dashboard、零拒收；左栏第一位就是「数据看板」；
+  1. 底座发现 org.jiuzhang.dashboard、零拒收；左栏列出「数据看板」入口（顺序按发现序，不锁第一位）；
   2. 点入口开画布页签，iframe 沙箱为 allow-scripts allow-modals，activate 回 ready（底栏 plugin.mounted）；
   3. 四张卡片渲染出真实数字，且总题数与后端 /api/bank/dashboard/stats 逐字一致；
   4. 热力图是 CSS Grid 绿格子：格子总数 = 365 + 周对齐补位，非零格数与后端按日计数一致；
@@ -127,7 +127,10 @@ def run(tag: str) -> dict:
             }
             """)
             report["notes"]["sidebar_order"] = sidebar_first
-            check("左栏第一位是数据看板", bool(sidebar_first) and "数据看板" in sidebar_first[0],
+            # 左栏顺序 = 用户排的序 + 树上还没有的按发现顺序追加（app/core/plugins.py
+            # _sidebar_with_unlisted 的既有设计），空树首启时 core-bank 天然排在 dashboard 前；
+            # 本判据只验「看板入口在不在、能不能点开」，不锁死第一位。
+            check("左栏列出数据看板", any("数据看板" in text for text in sidebar_first),
                   json.dumps(sidebar_first, ensure_ascii=False))
             snap("00-sidebar")
 
