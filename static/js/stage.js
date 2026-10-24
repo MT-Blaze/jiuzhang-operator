@@ -358,7 +358,10 @@
     // 数据库、写令牌与宿主 DOM 一道门都没开。
     "agent.chat", "agent.refine", "plugins.list", "workspace.state",
     "plugin.install_url", "ui.params.set", "editor.apply_patch",
-    "stage.open_bank", "stage.open_editor"
+    "stage.open_bank", "stage.open_editor",
+    // 军令 #16：沙箱 iframe 里的按键到不了宿主文档，插件自报的全局键只能把
+    // 组合键交给宿主裁决（归属与改绑全在 shortcuts.js，插件问不到别人的键位）。
+    "shortcut.press"
   ];
   // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
   // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
@@ -784,6 +787,19 @@
       } else {
         done(loadDraft(pluginId, draftKey));
       }
+      return;
+    }
+
+    // 焦点在插件里时，全局键由宿主裁决归属：底座占位就底座执行，没人占位就交回插件。
+    // 判定全在 shortcuts.js，这里只搬运，插件因此问不到别人的键位表。
+    if (method === "shortcut.press") {
+      if (!window.JzoKeys || typeof window.JzoKeys.press !== "function") {
+        failWith("HOST_UNREADY", "快捷键模块尚未加载");
+        return;
+      }
+      var verdict = window.JzoKeys.press(textValue(payload, "combo", 40));
+      verdict.plugin_id = pluginId;
+      done(verdict);
       return;
     }
 
@@ -1603,6 +1619,25 @@
     request: function (key, method, payload) {
       var tab = findTab(key);
       return tab ? request(tab, method, payload) : Promise.reject(new Error("页签不存在"));
+    },
+    /**
+     * 定向投递（军令 #16 快捷键）：同一个插件可能既开着画布页签又住在右栏，
+     * 两边都送到才算送达；休眠中的页签没有帧，如实回 false。
+     */
+    notifyPlugin: function (pluginId, event, payload) {
+      var reached = false;
+      var tab = findPluginTab(pluginId);
+      if (tab && tab.frame && tab.state === "live") {
+        notify(tab, event, payload);
+        reached = true;
+      }
+      panels.forEach(function (panel) {
+        if (panel.plugin && panel.plugin.id === pluginId && panel.frame) {
+          notify(panel, event, payload);
+          reached = true;
+        }
+      });
+      return reached;
     },
     broadcast: broadcast,
     maxLiveFrames: MAX_LIVE_FRAMES,

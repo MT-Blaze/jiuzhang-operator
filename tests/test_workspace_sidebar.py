@@ -97,7 +97,9 @@ class SidebarBehaviourTest(unittest.TestCase):
         self.assertRegex(JS, r'pluginListEl\.textContent = ""')
         self.assertIn('empty.textContent = "暂无插件"', JS)
         # 插件名是不可信清单内容，只能 textContent 落 DOM
-        self.assertIn("name.textContent = plugin.name", JS)
+        # （军令 #16 之后显示的是「昵称优先」，但仍经由同一个 textContent 出口）
+        self.assertIn("name.textContent = rowTitle(plugin)", JS)
+        self.assertIn("window.JzoPrefs.displayName(plugin)", JS)
 
     def test_02_assistant_row_only_reclaims_the_right_slot(self) -> None:
         """军令 #15 任务 4：点助手那一行不开画布页，只把右栏主权收回来。"""

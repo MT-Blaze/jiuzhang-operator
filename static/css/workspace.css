@@ -218,6 +218,79 @@
   text-align: center;
 }
 
+/* ============ 左栏文件夹（军令 #16）：组是容器，行还是同一批插件行 ============ */
+.ws-plugin-folder {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 2px;
+}
+
+.ws-plugin-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: grab;
+}
+
+.ws-plugin-folder-head:hover {
+  background: var(--card-hover);
+}
+
+.ws-plugin-folder-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ws-plugin-folder-caret {
+  color: var(--faint);
+  font-size: 0.72rem;
+  width: 10px;
+}
+
+.ws-plugin-folder-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.ws-plugin-folder-count {
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.ws-plugin-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 4px 4px 14px;
+  list-style: none;
+  border-left: 2px solid var(--line);
+  margin-left: 10px;
+}
+
+.ws-plugin-folder[data-collapsed="true"] .ws-plugin-folder-list {
+  display: none;
+}
+
+/* 拖进文件夹：整组描边亮起，比一条插入线更说得清「松手就进组」 */
+.ws-plugin-folder[data-drop="into"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ============ 中栏：对话流 + 当前任务舞台 ============ */
 .ws-center {
   display: flex;
@@ -495,6 +568,177 @@
 .ws-page[data-fullscreen="on"] .ws-dock,
 .ws-page[data-fullscreen="on"] .ws-resizer {
   display: none;
+}
+
+/* 沉浸态（军令 #16 模块三）：双击页签把画布推满整块屏幕，左栏自动让位，
+   右栏与输出日志区照旧在场——老师要的是「卷面独占」，不是「只剩卷面」。
+   与全屏同一套做法：只压左轨变量，绝不改 data-side，退出沉浸后偏好原样还在。
+   沉浸中按 Ctrl+B 唤出左栏时，侧栏以覆盖层浮在画布上，不再挤回网格轨道。 */
+.ws-page[data-immersive="on"] {
+  --sidebar-width: 0px;
+  --gutter-side: 0px;
+}
+
+.ws-page[data-immersive="on"] .ws-resizer-v[data-resize="side"] {
+  display: none;
+}
+
+.ws-page[data-immersive="on"][data-side="open"] .ws-sidebar {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(320px, 86vw);
+  box-shadow: var(--shadow);
+}
+
+/* 页签溢出（军令 #16 模块三第 2 条）：一排放得下就自适应，超过 10 个固定 120px 并横滚。 */
+.ws-page.ws-tabs-many .ws-tab {
+  flex: 0 0 120px;
+  width: 120px;
+}
+
+.ws-tab-scroll-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-tab-scroll-btn:hover { color: var(--accent); border-color: var(--line-strong); }
+.ws-tab-scroll-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-tab-scroll-btn[hidden] { display: none; }
+
+/* ============ 右键菜单（军令 #16 模块一） ============ */
+/* 菜单位于宿主文档顶层：不可信文本由 contextmenu.js 用 textContent 落 DOM，
+   这里只负责外观。触控目标 ≥44px（AGENTS §6）。 */
+.ws-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-menu-item:hover:not(:disabled),
+.ws-menu-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.ws-menu-item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.ws-menu-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ws-menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line);
+}
+
+/* ============ 宿主自绘对话框（改名/建组用；原生 prompt 样式不可控且带不上上下文） ============ */
+.ws-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(31, 28, 24, 0.42);
+}
+
+.ws-dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.ws-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.ws-dialog-lede {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.ws-dialog-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.ws-dialog-field:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.ws-dialog-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ws-dialog-error {
+  margin: 10px 0 0;
+  color: var(--down);
+  font-size: 0.8rem;
+}
+
+.ws-dialog-error[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-menu, .ws-dialog, .ws-dialog-backdrop { animation: none !important; transition: none !important; }
 }
 
 /* 读屏专用 */
@@ -807,6 +1051,14 @@ html.ws-dragging * {
   background: var(--paper);
   border-color: var(--line-strong);
   box-shadow: inset 0 2px 0 var(--accent);
+}
+
+/* 固定 120px 时标题必须省略号收尾，不许把关闭钮挤出框外 */
+.ws-tab-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ws-tab:focus-visible {

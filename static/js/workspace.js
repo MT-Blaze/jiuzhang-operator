@@ -486,6 +486,10 @@
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
   }
 
+  function ctxOpen() {
+    return !!wsPage && wsPage.getAttribute("data-ctx") === "open";
+  }
+
   function dockOpen() {
     return !!wsPage && wsPage.getAttribute("data-dock") === "open";
   }
@@ -929,6 +933,74 @@
     });
   })();
 
+  // ============ 全局快捷键：装配、派发与撞车裁决（军令 #16 模块一） ============
+  // 键位表由 shortcuts.js 持有；这里只做三件事：给底座动作接上执行体、
+  // 把清单下发的改绑与插件自报键位装配进来、把裁决结果如实播报。
+  var lastConflictSignature = "";
+  var legacyOrderMigrated = false;
+
+  /** 焦点在宿主时命中的插件键：宿主只负责投递，做什么由插件自己决定。 */
+  function deliverShortcut(pluginId, info) {
+    if (!window.JzoStage || typeof window.JzoStage.notifyPlugin !== "function") return;
+    var reached = window.JzoStage.notifyPlugin(pluginId, "shortcut.invoke", info);
+    if (!reached) {
+      dockLine("插件「" + pluginId + "」当前不在场（页签没开或已休眠），" +
+        info.combo + " 这一键没送到。", "shortcut.miss");
+    }
+  }
+
+  /** 冲突逐条写进【报错诊断】：红字、每条都挂 data-copy，双击即复制（军令逐字要求）。 */
+  function reportConflicts(list) {
+    var rows = list || [];
+    var signature = rows.map(function (row) {
+      return row.pluginId + "/" + row.action + "=" + row.combo;
+    }).sort().join("|");
+    // 清单每 5 秒轮询一次：同一批冲突只播一次，刷屏比冲突本身更烦人。
+    if (signature === lastConflictSignature) return;
+    if (!signature) { lastConflictSignature = ""; return; }
+    lastConflictSignature = signature;
+    rows.forEach(function (row) {
+      dockLine("快捷键撞车：插件「" + row.pluginName + "」自报的 " + row.combo +
+        "（" + row.label + "）已被" + row.takenBy + "占用，底座已禁用该键位。",
+        "shortcut.conflict", "error");
+    });
+  }
+
+  function wireShortcuts() {
+    if (!window.JzoKeys) return;
+    window.JzoKeys.defineHost("sidebar.toggle", function () { setSide(!sideOpen()); });
+    window.JzoKeys.defineHost("context.toggle", function () { setCtx(!ctxOpen()); });
+    window.JzoKeys.defineHost("dock.toggle", function () { setDock(!dockOpen()); });
+    window.JzoKeys.defineHost("assistant.focus", function () {
+      setCtx(true);
+      if (window.JzoContextPanel && typeof window.JzoContextPanel.reclaim === "function") {
+        window.JzoContextPanel.reclaim();
+      }
+    });
+    window.JzoKeys.defineHost("console.open", function () { openConsoleTab(); });
+    window.JzoKeys.install({ deliver: deliverShortcut });
+  }
+
+  /** 把早期存在浏览器里的拖拽顺序一次性搬进后端树（搬完打标记，绝不双向同步）。 */
+  function migrateLegacySidebar(data) {
+    if (legacyOrderMigrated || !window.JzoPrefs) return;
+    legacyOrderMigrated = true;
+    if (data && data.sidebar_customized) return;
+    var legacy = window.JzoPrefs.legacyTree();
+    if (!legacy.length) return;
+    window.JzoPrefs.markLegacyMigrated();
+    dockLine("把你以前在浏览器里排好的左栏顺序搬进了本机设置文件（此后分组随底座走）。", "prefs.sidebar");
+    commitTree(legacy);
+  }
+
+  function applyPrefsLayer(data, plugins) {
+    if (window.JzoKeys) {
+      window.JzoKeys.assemble((data && data.shortcuts) || {});
+      reportConflicts(window.JzoKeys.collect(plugins));
+    }
+    migrateLegacySidebar(data);
+  }
+
   // ============ 已安装插件：动态渲染左栏插件区 ============
   var KIND_LABELS = { renderer: "渲染", importer: "导入", exporter: "导出", tool: "工具" };
 
@@ -955,26 +1027,78 @@
     return KIND_LABELS[plugin.kind] || "插件";
   }
 
-  // 拖拽排序的落盘键：只存条目 key 的顺序，不存任何业务数据。
-  var PLUGIN_ORDER_KEY = "jzo.sidebar.order";
+  // ============ 左栏树：顺序与分组的唯一事实来源在后端（军令 #16） ============
+  // data/plugin_state.json 里的那棵树同时供左栏与设置面板读取，
+  // 「已启用列表顺序 100% 对齐左栏」因此由构造成立，不再靠浏览器 localStorage 记账。
+  var sidebarTree = [];
+  var collapsedFolders = {};   // 折叠只是视图态：留在内存，不落盘
 
-  function readPluginOrder() {
-    try {
-      var parsed = JSON.parse(window.localStorage.getItem(PLUGIN_ORDER_KEY) || "[]");
-      return Array.isArray(parsed) ? parsed.filter(function (key) {
-        return typeof key === "string";
-      }) : [];
-    } catch (error) {
-      return [];   // 隐私模式或脏数据：按默认顺序渲染，绝不抛到调用点
-    }
+  /** 宿主自有的写口：代取一次性令牌 POST，失败时把后端给的中文原因原样抛出。 */
+  function postJson(url, body) {
+    return fetchWriteToken()
+      .then(function (token) {
+        return fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-JZO-Token": token },
+          body: JSON.stringify(body || {})
+        });
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return null; }).then(function (data) {
+          if (!r.ok) throw new Error(readErrorDetail(r, data));
+          return data;
+        });
+      })
+      .finally(function () { writeToken = null; });
   }
 
-  function savePluginOrder(keys) {
-    try {
-      window.localStorage.setItem(PLUGIN_ORDER_KEY, JSON.stringify(keys));
-    } catch (error) {
-      /* 写不进去只影响“记住顺序”，不影响本次拖拽结果 */
+  /** 改树：先照新树渲染（点一下就见结果），再落盘；写不回去就回滚并记一笔红字。 */
+  function commitTree(next) {
+    var before = sidebarTree;
+    sidebarTree = next;
+    renderPlugins(installedPlugins);
+    return postJson("/api/plugins/sidebar", { sidebar: next })
+      .then(function (data) {
+        if (data && Array.isArray(data.sidebar)) {
+          sidebarTree = window.JzoPrefs ? window.JzoPrefs.readTree(data) : sidebarTree;
+          renderPlugins(installedPlugins);
+        }
+      })
+      .catch(function (error) {
+        sidebarTree = before;
+        renderPlugins(installedPlugins);
+        dockLine("左栏分组没能保存：" + error.message, "prefs.sidebar.error", "error");
+      });
+  }
+
+  function pluginVisible(plugin) {
+    return !!plugin && plugin.enabled !== false && plugin.show_in_sidebar !== false;
+  }
+
+  function keyPluginId(key) {
+    var text = String(key || "");
+    return text.indexOf("plugin:") === 0 ? text.slice("plugin:".length) : "";
+  }
+
+  function findInstalled(pluginId) {
+    for (var i = 0; i < installedPlugins.length; i += 1) {
+      if (installedPlugins[i].id === pluginId) return installedPlugins[i];
     }
+    return null;
+  }
+
+  // 大字显示老师起的昵称，没起过就用官方原名；原名与版本收进 tooltip——
+  // 一行不啰嗦，悬停全看见（军令 #16 模块二第 1 条的左栏侧镜像）。
+  function rowTitle(plugin) {
+    return window.JzoPrefs
+      ? window.JzoPrefs.displayName(plugin)
+      : String(plugin.name || plugin.id || "未命名插件");
+  }
+
+  function rowTip(plugin) {
+    var tip = (plugin.nickname ? "原名 " + String(plugin.name || "") + " · " : "") +
+      "v" + (plugin.version || "?");
+    return tip;
   }
 
   function buildPluginRow(plugin) {
@@ -989,15 +1113,53 @@
     btn.setAttribute("aria-current", String(Boolean(activePlugin && activePlugin.id === plugin.id)));
     var name = document.createElement("span");
     name.className = "ws-plugin-item-name";
-    name.textContent = plugin.name || plugin.id || "未命名插件";
+    name.textContent = rowTitle(plugin);
     var meta = document.createElement("span");
     meta.className = "ws-plugin-item-meta";
     meta.textContent = pluginSidebarSubtitle(plugin);
-    btn.title = "v" + (plugin.version || "?");
+    btn.title = rowTip(plugin);
     btn.appendChild(name);
     btn.appendChild(meta);
     btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });
     li.appendChild(btn);
+    return li;
+  }
+
+  function buildFolderRow(folder, kids) {
+    var li = document.createElement("li");
+    var collapsed = collapsedFolders[folder.id] === true;
+    li.className = "ws-plugin-row ws-plugin-folder";
+    li.setAttribute("data-key", String(folder.id));
+    li.setAttribute("data-collapsed", String(collapsed));
+    li.setAttribute("draggable", "true");
+    var head = document.createElement("button");
+    head.type = "button";
+    head.className = "ws-plugin-folder-head";
+    head.setAttribute("aria-expanded", String(!collapsed));
+    head.setAttribute("aria-controls", "ws-folder-" + String(folder.id).replace(/[^A-Za-z0-9_-]/g, ""));
+    var caret = document.createElement("span");
+    caret.className = "ws-plugin-folder-caret";
+    caret.setAttribute("aria-hidden", "true");
+    caret.textContent = collapsed ? "▸" : "▾";
+    var label = document.createElement("span");
+    label.className = "ws-plugin-folder-name";
+    label.textContent = folder.name || "未命名文件夹";
+    var count = document.createElement("span");
+    count.className = "ws-plugin-folder-count";
+    count.textContent = String(kids.length);
+    head.appendChild(caret);
+    head.appendChild(label);
+    head.appendChild(count);
+    head.addEventListener("click", function () {
+      collapsedFolders[folder.id] = collapsedFolders[folder.id] !== true;
+      renderPlugins(installedPlugins);
+    });
+    li.appendChild(head);
+    var list = document.createElement("ul");
+    list.className = "ws-plugin-folder-list";
+    list.id = "ws-folder-" + String(folder.id).replace(/[^A-Za-z0-9_-]/g, "");
+    kids.forEach(function (plugin) { list.appendChild(buildPluginRow(plugin)); });
+    li.appendChild(list);
     return li;
   }
 
@@ -1007,8 +1169,8 @@
     for (var i = 0; i < rows.length; i += 1) rows[i].removeAttribute("data-drop");
   }
 
-  // 原生 HTML5 拖拽：拖起一行，落在目标行的上半/下半决定插前还是插后，
-  // 顺序只写 localStorage（宿主自有），插件代码一律碰不到浏览器存储。
+  // 原生 HTML5 拖拽：落在插件行上按上半/下半决定插前还是插后，落在文件夹头上即「放进该组」。
+  // 结果是一次树改写，落盘到后端（顺序的唯一事实来源），不再写浏览器存储。
   function wirePluginDrag() {
     if (!pluginListEl) return;
     var draggingKey = "";
@@ -1029,30 +1191,24 @@
       if (!row || row.getAttribute("data-key") === draggingKey) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      if (row.classList.contains("ws-plugin-folder") && event.clientY > row.getBoundingClientRect().top + 26) {
+        row.setAttribute("data-drop", "into");
+        return;
+      }
       var rect = row.getBoundingClientRect();
       row.setAttribute("data-drop", event.clientY < rect.top + rect.height / 2 ? "before" : "after");
     });
     pluginListEl.addEventListener("drop", function (event) {
-      if (!draggingKey) return;
+      var dragged = draggingKey;
       var row = event.target && event.target.closest ? event.target.closest(".ws-plugin-row") : null;
-      if (!row || row.getAttribute("data-key") === draggingKey) { draggingKey = ""; clearDropMarks(); return; }
-      event.preventDefault();
-      var targetKey = row.getAttribute("data-key") || "";
-      var position = row.getAttribute("data-drop") || "before";
-      var keys = [];
-      var rows = pluginListEl.querySelectorAll(".ws-plugin-row");
-      for (var i = 0; i < rows.length; i += 1) {
-        var key = rows[i].getAttribute("data-key") || "";
-        if (key && key !== draggingKey) keys.push(key);
-      }
-      var at = keys.indexOf(targetKey);
-      if (at < 0) at = keys.length;
-      if (position === "after") at += 1;
-      keys.splice(at, 0, draggingKey);
-      savePluginOrder(keys);
+      var targetKey = row ? (row.getAttribute("data-key") || "") : "";
+      var mode = row ? (row.getAttribute("data-drop") || "") : "";
       draggingKey = "";
       clearDropMarks();
-      renderPlugins(installedPlugins);
+      if (!dragged || !targetKey || targetKey === dragged || !mode) return;
+      event.preventDefault();
+      if (!window.JzoPrefs) return;
+      commitTree(window.JzoPrefs.moveEntry(sidebarTree, dragged, { mode: mode, anchor: targetKey }));
     });
     pluginListEl.addEventListener("dragend", function () {
       draggingKey = "";
@@ -1065,32 +1221,42 @@
   function renderPlugins(plugins) {
     if (!pluginListEl) return;
     // 三态管理落到导航：停用的（enabled=false）与不占位的（show_in_sidebar=false）都不进左栏。
-    var list = (plugins || []).filter(function (plugin) {
-      return plugin.enabled !== false && plugin.show_in_sidebar !== false;
+    var list = (plugins || []).filter(pluginVisible);
+    var byId = {};
+    list.forEach(function (plugin) { byId[plugin.id] = plugin; });
+    var placed = {};
+    var rows = [];
+
+    function take(pluginId) {
+      if (!pluginId || placed[pluginId] || !byId[pluginId]) return null;
+      placed[pluginId] = true;
+      return byId[pluginId];
+    }
+
+    (sidebarTree || []).forEach(function (item) {
+      if (item.kind === "folder") {
+        var kids = [];
+        (item.children || []).forEach(function (childKey) {
+          var plugin = take(keyPluginId(childKey));
+          if (plugin) kids.push(plugin);
+        });
+        // 全员停用/卸载的文件夹不留空壳：整个不渲染，树上仍保留用户排好的位置
+        if (kids.length) rows.push(buildFolderRow(item, kids));
+        return;
+      }
+      var plugin = take(keyPluginId(item.id));
+      if (plugin) rows.push(buildPluginRow(plugin));
     });
-    // 默认顺序：stage.priority 高者在前，同优先级按名称稳定排序；
-    // 老师拖过之后，以 localStorage 里的顺序为唯一事实来源。
-    list.sort(function (a, b) {
+
+    // 默认顺序兜底（树上还没排过的、刚装进来的）：stage.priority 高者在前，同优先级按名称稳定排。
+    var tail = list.filter(function (plugin) { return !placed[plugin.id]; });
+    tail.sort(function (a, b) {
       var delta = pluginPriority(b) - pluginPriority(a);
       if (delta !== 0) return delta;
       return String(a.name || a.id || "").localeCompare(String(b.name || b.id || ""), "zh-CN");
     });
-    var saved = readPluginOrder();
-    function rank(key) {
-      var index = saved.indexOf(key);
-      return index < 0 ? Number.MAX_SAFE_INTEGER : index;
-    }
-    var chatRow = pluginListEl.querySelector('.ws-plugin-row[data-key="chat"]');
-    var rows = [];
-    if (chatRow) {
-      var chatButton = chatRow.querySelector(".ws-plugin-item");
-      if (chatButton) chatButton.setAttribute("aria-current", String(!activePlugin));
-      rows.push(chatRow);
-    }
-    list.forEach(function (plugin) { rows.push(buildPluginRow(plugin)); });
-    rows.sort(function (a, b) {
-      return rank(a.getAttribute("data-key")) - rank(b.getAttribute("data-key"));
-    });
+    tail.forEach(function (plugin) { rows.push(buildPluginRow(plugin)); });
+
     pluginListEl.textContent = "";
     rows.forEach(function (row) { pluginListEl.appendChild(row); });
     if (!list.length) {
@@ -1104,6 +1270,173 @@
       pluginCountEl.textContent = String(list.length);
     }
   }
+
+  // ============ 右键菜单（军令 #16 模块一） ============
+  // 左栏：新建文件夹 / 停用插件 / 重命名；文件夹行另给重命名与解散（改组得能改回来）。
+  // 底栏：只有复制，绝不给清空——清空是头部那颗按钮的活，右键一律不碰。
+  // 中栏画布：一个监听都不挂，右键完全交给插件自己决定。
+  function sidebarRowKey(target) {
+    var row = target && target.closest ? target.closest(".ws-plugin-row") : null;
+    return row ? (row.getAttribute("data-key") || "") : "";
+  }
+
+  /** 右键条目上的可聚焦锚点：菜单关掉后焦点要还给老师右键点的那一行。 */
+  function sidebarRowAnchor(target) {
+    var row = target && target.closest ? target.closest(".ws-plugin-row") : null;
+    if (!row) return null;
+    return row.querySelector(".ws-plugin-item, .ws-plugin-folder-head") || row;
+  }
+
+  function renamePlugin(plugin, anchor) {
+    if (!window.JzoDialogs) return;
+    window.JzoDialogs.text({
+      title: "重命名插件",
+      message: "只改这台机器上的叫法，插件本体与官方原名都不动。留空即回到原名。",
+      fieldLabel: "自定义昵称",
+      value: plugin.nickname || "",
+      placeholder: plugin.name || "自定义昵称",
+      maxLength: 40,
+      requireText: false,
+      emptyText: "",
+      anchor: anchor,
+      onAccept: function (text) {
+        postJson("/api/plugins/" + encodeURIComponent(plugin.id) + "/nickname", { nickname: text })
+          .then(function () {
+            dockLine((text ? "插件「" + (plugin.name || plugin.id) + "」已改叫「" + text + "」。"
+              : "插件「" + plugin.id + "」已回到官方原名。"), "prefs.nickname");
+            return loadPlugins({ announce: false });
+          })
+          .catch(function (error) {
+            dockLine("改昵称失败：" + error.message, "prefs.nickname.error", "error");
+          });
+      }
+    });
+  }
+
+  function disablePlugin(plugin, anchor) {
+    if (!window.JzoDialogs) return;
+    window.JzoDialogs.confirm({
+      title: "停用插件",
+      message: "停用「" + rowTitle(plugin) + "」只把它从导航摘掉并释放内存，代码与数据原地保留，随时可再启用。",
+      confirmText: "停用",
+      anchor: anchor,
+      onAccept: function () {
+        postJson("/api/plugins/" + encodeURIComponent(plugin.id) + "/enabled", { enabled: false })
+          .then(function () {
+            dockLine("插件「" + rowTitle(plugin) + "」已停用，可在【设置与控制台】里再启用。", "prefs.disable");
+            return loadPlugins({ announce: false });
+          })
+          .catch(function (error) {
+            dockLine("停用插件失败：" + error.message, "prefs.disable.error", "error");
+          });
+      }
+    });
+  }
+
+  function newFolderFor(pluginKey, anchor) {
+    if (!window.JzoDialogs || !window.JzoPrefs) return;
+    var plugin = findInstalled(keyPluginId(pluginKey));
+    window.JzoDialogs.text({
+      title: "新建文件夹",
+      message: "新组建好后把「" + rowTitle(plugin || { id: keyPluginId(pluginKey) }) +
+        "」收进去，之后可以继续往里拖。",
+      fieldLabel: "文件夹名",
+      value: "",
+      placeholder: "例如：日常录题",
+      maxLength: 24,
+      anchor: anchor,
+      onAccept: function (text) {
+        commitTree(window.JzoPrefs.createFolderAt(sidebarTree, pluginKey, text));
+        dockLine("已新建文件夹「" + text + "」。", "prefs.folder");
+      }
+    });
+  }
+
+  function wireSidebarMenu() {
+    if (!pluginListEl || !window.JzoMenu) return;
+    pluginListEl.addEventListener("contextmenu", function (event) {
+      var key = sidebarRowKey(event.target);
+      if (!key) return;
+      var anchor = event.target.closest(".ws-plugin-row");
+      event.preventDefault();
+      var items = [];
+      if (window.JzoPrefs.isFolderKey(key)) {
+        var folderKey = key;
+        items.push({
+          label: "重命名",
+          run: function () {
+            window.JzoDialogs.text({
+              title: "重命名文件夹",
+              fieldLabel: "文件夹名",
+              value: window.JzoPrefs.folderName(sidebarTree, folderKey),
+              maxLength: 24,
+              anchor: anchor,
+              onAccept: function (text) {
+                commitTree(window.JzoPrefs.renameFolder(sidebarTree, folderKey, text));
+              }
+            });
+          }
+        });
+        items.push({
+          label: "解散文件夹",
+          hint: "不删插件",
+          run: function () {
+            commitTree(window.JzoPrefs.dissolveFolder(sidebarTree, folderKey));
+            dockLine("文件夹已解散，组里的插件都回到了原位。", "prefs.folder");
+          }
+        });
+      } else {
+        var pluginId = keyPluginId(key);
+        var plugin = findInstalled(pluginId);
+        if (!plugin) return;
+        items.push({ label: "新建文件夹", run: function () { newFolderFor(key, anchor); } });
+        items.push({ label: "停用插件", run: function () { disablePlugin(plugin, anchor); } });
+        items.push({ label: "重命名", run: function () { renamePlugin(plugin, anchor); } });
+        var home = window.JzoPrefs ? window.JzoPrefs.folderKeyOf(sidebarTree, key) : "";
+        if (home) {
+          items.push({
+            label: "移出文件夹",
+            hint: window.JzoPrefs.folderName(sidebarTree, home),
+            run: function () {
+              commitTree(window.JzoPrefs.ungroupPlugin(sidebarTree, key));
+            }
+          });
+        }
+      }
+      window.JzoMenu.open({
+        x: event.clientX, y: event.clientY, anchor: anchor,
+        label: "左栏条目操作", items: items
+      });
+    });
+  }
+
+  function wireDockMenu() {
+    if (!dockLog || !window.JzoMenu) return;
+    dockLog.addEventListener("contextmenu", function (event) {
+      var item = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
+      var lines = dockEntries.filter(entryVisible).map(function (row) { return row.line; });
+      var items = [];
+      if (item) {
+        items.push({
+          label: "复制本条",
+          run: function () { copyPlainText(item.getAttribute("data-copy") || ""); }
+        });
+      }
+      items.push({
+        label: item ? "复制全部（当前视图）" : "复制全部（当前视图）",
+        hint: lines.length + " 条",
+        disabled: !lines.length,
+        run: function () { copyPlainText(lines.join("\n")); }
+      });
+      event.preventDefault();
+      // 军令逐字要求：这里绝不出现【清空】。清空只归头部那颗按钮。
+      window.JzoMenu.open({
+        x: event.clientX, y: event.clientY, anchor: item || dockLog,
+        label: "输出日志区操作", items: items
+      });
+    });
+  }
+
 
   var pluginSignature = null;
   var knownPluginIds = {};
@@ -1136,6 +1469,9 @@
         });
 
         installedPlugins = plugins;
+        // 左栏树与键位表都来自这一份清单：先接上事实来源，再渲染、再裁决撞车。
+        if (window.JzoPrefs) sidebarTree = window.JzoPrefs.readTree(data);
+        applyPrefsLayer(data, plugins);
         if (activePlugin) {
           var still = null;
           for (var i = 0; i < plugins.length; i += 1) {
@@ -1214,7 +1550,18 @@
         return r.json().catch(function () { return null; }).then(function (body) {
           if (r.status === 409 && !replace) {
             var question = readErrorDetail(r, body) + " 覆盖升级会先删除旧目录，继续吗？";
-            if (window.confirm(question)) return installPluginZip(file, true);
+            // 定调令：工作台不许有浏览器原生弹窗。确认走宿主自绘对话框，
+            // 确认后仍是一次全新的安装请求（replace=true）。
+            if (!window.JzoDialogs) {
+              addBubble("sys", question, { tone: "warn" });
+              return null;
+            }
+            window.JzoDialogs.confirm({
+              title: "覆盖安装",
+              message: question,
+              confirmText: "覆盖安装",
+              onAccept: function () { installPluginZip(file, true); }
+            });
             return null;
           }
           if (!r.ok) throw new Error(readErrorDetail(r, body));
@@ -1300,7 +1647,10 @@
   // ============ 初始化 ============
   // 中栏默认停在原生引导页，右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
   wireDock();
+  wireDockMenu();
   wirePluginDrag();
+  wireSidebarMenu();
+  wireShortcuts();
   wireStageSovereignty();
   setStage("工作台");
   markActiveEntry(null);

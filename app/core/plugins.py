@@ -573,6 +573,9 @@ def discover_plugins() -> dict[str, Any]:
         "plugins": plugins,
         "rejected": rejected,
         "sidebar": tree,
+        # 后端树为空 = 用户从没在设置面板拖过组。前端据此决定要不要一次性搬走
+        # 早期存在浏览器里的左栏顺序（搬完即弃，不做双向同步）。
+        "sidebar_customized": bool(sidebar),
         "shortcuts": prefs["shortcuts"],
         "signature": signature,
     }

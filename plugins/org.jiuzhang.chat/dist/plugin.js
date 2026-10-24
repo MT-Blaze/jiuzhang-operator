@@ -1007,6 +1007,12 @@
         });
         return;
       }
+      // 底座把我申报的全局键交回给我执行（军令 #16 模块一）：
+      // 焦点在宿主时由宿主派发，键位归属仍由底座裁决——我只认清单里那个动作名。
+      if (message.event === "shortcut.invoke") {
+        if (payload && payload.action === "chat.focus") focusComposer();
+        return;
+      }
       return;
     }
 
@@ -1057,23 +1063,64 @@
   }
 
   // 沙箱 iframe 没开 allow-forms，浏览器会在提交前直接掐掉表单原生提交（连 submit 事件都不发）。
-  // 所以发送只有「点按钮」和「按回车」两条显式路径，共用同一个出口，不依赖任何表单原生行为。
+  // 所以发送只有「点按钮」和「Ctrl+Enter」两条显式路径，共用同一个出口，不依赖任何表单原生行为。
   function submitFromComposer() {
     var prompt = promptInput ? promptInput.value.trim() : "";
     if (!prompt) return;
     sendPrompt(prompt, { origin: "human" });
   }
 
+  function focusComposer() {
+    if (!promptInput) return;
+    promptInput.focus();
+  }
+
   if (sendBtn) sendBtn.addEventListener("click", submitFromComposer);
   if (promptInput) {
     promptInput.addEventListener("input", autoGrow);
+    // 输入铁律（军令 #16 模块一第 1 条）：Enter 归换行，Ctrl+Enter 才发送。
+    // 老师写「第一题：\n第二题：」这类多行指令是常事，裸 Enter 换行比发送更贴近打字习惯，
+    // 所以这里只拦 Ctrl/Cmd+Enter，裸 Enter 一律不拦、交回浏览器原生换行。
     promptInput.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" && !event.shiftKey) {
+      if (event.key !== "Enter") return;
+      if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         submitFromComposer();
       }
     });
   }
+
+  // 焦点在沙箱里时按键到不了宿主文档（opaque-origin iframe 不冒泡），
+  // 所以我把自己申报的键位主动交给宿主裁决（军令 #16：冲突时底座最高权限优先）。
+  // 宿主说这一键归我，我才动手；归别人就原样让开，绝不抢别人的键。
+  var MY_KEYS = { "Ctrl+Shift+K": "chat.focus" };
+
+  function comboOfEvent(event) {
+    var mods = [];
+    if (event.ctrlKey) mods.push("Ctrl");
+    if (event.altKey) mods.push("Alt");
+    if (event.shiftKey) mods.push("Shift");
+    if (event.metaKey) mods.push("Meta");
+    if (!mods.length) return "";
+    var raw = String(event.key || "");
+    if (!raw || raw === "Unidentified") return "";
+    return mods.join("+") + "+" + (raw.length === 1 ? raw.toUpperCase() : raw);
+  }
+
+  document.addEventListener("keydown", function (event) {
+    var combo = comboOfEvent(event);
+    var action = MY_KEYS[combo];
+    if (!action) return;
+    event.preventDefault();
+    hostCall("shortcut.press", { combo: combo }, 4000).then(function (verdict) {
+      if (verdict && verdict.owner === "plugin" && verdict.action === action) focusComposer();
+    }, function () {
+      // 问不到宿主（超时或未就绪）时按我自己清单里的语义就地执行：
+      // 裁决缺席不该让这个键彻底失灵，但也不会替底座执行任何动作。
+      focusComposer();
+    });
+  });
+
   if (copilotAsk) copilotAsk.addEventListener("click", askRefine);
   if (copilotApply) copilotApply.addEventListener("click", applyRefinePatch);
 })();
