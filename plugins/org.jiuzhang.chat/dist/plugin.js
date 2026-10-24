@@ -1063,10 +1063,14 @@
   }
 
   // 沙箱 iframe 没开 allow-forms，浏览器会在提交前直接掐掉表单原生提交（连 submit 事件都不发）。
-  // 所以发送只有「点按钮」和「Ctrl+Enter」两条显式路径，共用同一个出口，不依赖任何表单原生行为。
+  // 所以发送只有「点按钮」和「输入框 Enter」两条显式路径，共用同一个出口，不依赖任何表单原生行为。
   function submitFromComposer() {
     var prompt = promptInput ? promptInput.value.trim() : "";
-    if (!prompt) return;
+    if (!prompt) {
+      // 空内容按 Enter：不发、不提示，只把焦点留在输入框。
+      if (promptInput) promptInput.focus();
+      return;
+    }
     sendPrompt(prompt, { origin: "human" });
   }
 
@@ -1078,15 +1082,22 @@
   if (sendBtn) sendBtn.addEventListener("click", submitFromComposer);
   if (promptInput) {
     promptInput.addEventListener("input", autoGrow);
-    // 输入铁律（军令 #16 模块一第 1 条）：Enter 归换行，Ctrl+Enter 才发送。
-    // 老师写「第一题：\n第二题：」这类多行指令是常事，裸 Enter 换行比发送更贴近打字习惯，
-    // 所以这里只拦 Ctrl/Cmd+Enter，裸 Enter 一律不拦、交回浏览器原生换行。
+    // 输入铁律（军令 #16-R 第一步）：Enter 发送、Shift+Enter 换行。
+    // 中文输入法组合态里的 Enter 只负责上屏选词，绝不能顺手把半截句子发出去；
+    // 空内容按 Enter 也不发、不提示，焦点留在输入框。
+    var composing = false;
+    promptInput.addEventListener("compositionstart", function () {
+      composing = true;
+    });
+    promptInput.addEventListener("compositionend", function () {
+      composing = false;
+    });
     promptInput.addEventListener("keydown", function (event) {
       if (event.key !== "Enter") return;
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        submitFromComposer();
-      }
+      if (event.isComposing || composing || event.keyCode === 229) return;
+      if (event.shiftKey) return;
+      event.preventDefault();
+      submitFromComposer();
     });
   }
 

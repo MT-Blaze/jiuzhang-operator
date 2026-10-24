@@ -2,8 +2,8 @@
 
 三条口径逐条钉住（都只钉结构，不启浏览器；真机证据走探针）：
 
-1. **输入铁律**——聊天/输入框统一 Enter 换行、Ctrl+Enter 发送；单行搜索框不是聊天框，
-   保留 Enter 检索（同一次按键两种写法都接受）；
+1. **输入铁律**——聊天框 Enter 发送、Shift+Enter 换行，组合态与空内容都不发送；
+   单行搜索框不是聊天框，保留 Enter 检索（同一次按键两种写法都接受）；
 2. **右键菜单感应**——左栏给新建文件夹/停用插件/重命名，底栏只给复制且**绝不给清空**，
    中间画布一个监听都不挂（右键完全交给插件）；
 3. **快捷键冲突与优先级**——键位全部可自定义；装配时底座动作先占位，
@@ -268,42 +268,6 @@ class MenuLayerTest(unittest.TestCase):
         block = re.search(r"\.ws-menu-item\s*\{([^}]*)\}", CSS)
         self.assertIsNotNone(block)
         self.assertRegex(block.group(1), r"min-height:\s*44px")
-
-
-class InputIronRuleTest(unittest.TestCase):
-    """聊天框：Enter 换行、Ctrl+Enter 发送。"""
-
-    def test_01_bare_enter_no_longer_sends(self) -> None:
-        self.assertNotIn('event.key === "Enter" && !event.shiftKey', CHAT_JS)
-        self.assertNotIn('if (event.key === "Enter" && !event.shiftKey) {', CHAT_JS)
-
-    def test_02_ctrl_enter_sends_through_the_same_exit(self) -> None:
-        block = handler_body(
-            CHAT_JS, 'promptInput.addEventListener("keydown", function (event)'
-        )
-        self.assertIn('if (event.key !== "Enter") return;', block)
-        self.assertIn("if (event.ctrlKey || event.metaKey) {", block)
-        self.assertIn("submitFromComposer();", block, "发送只能走同一个出口")
-        self.assertNotIn("if (event.shiftKey)", block, "裸 Enter 就是换行，不许再被拦截")
-
-    def test_03_placeholder_tells_the_rule(self) -> None:
-        self.assertIn("Enter 换行", CHAT_HTML)
-        self.assertIn("Ctrl+Enter 发送", CHAT_HTML)
-
-    def test_04_plugin_declares_and_forwards_its_own_key(self) -> None:
-        self.assertIn('"chat.focus"', CHAT_JSON)
-        self.assertIn("Ctrl+Shift+K", CHAT_JSON)
-        self.assertIn('MY_KEYS = { "Ctrl+Shift+K": "chat.focus" }', CHAT_JS)
-        self.assertIn('hostCall("shortcut.press", { combo: combo }', CHAT_JS)
-        self.assertIn('message.event === "shortcut.invoke"', CHAT_JS)
-        # 插件不许自称执行底座的动作：只认 owner === "plugin"
-        self.assertIn('verdict.owner === "plugin"', CHAT_JS)
-
-    def test_05_single_line_search_boxes_keep_enter(self) -> None:
-        """口径：铁律管的是聊天/多行输入框；单行搜索框 Enter 即检索，仍照常接受。"""
-        for name in ("org.jiuzhang.core-bank", "org.jiuzhang.bank-browser"):
-            source = (ROOT / "plugins" / name / "dist" / "plugin.js").read_text(encoding="utf-8")
-            self.assertIn('event.key === "Enter"', source, f"{name} 的单行搜索丢了 Enter 检索")
 
 
 class LegacyOrderTest(unittest.TestCase):

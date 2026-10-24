@@ -26,9 +26,6 @@
     ],
     "publish": ["region.dock"]
   },
-  "shortcuts": [
-    { "action": "chat.focus", "combo": "Ctrl+Shift+K", "label": "唤起助手输入框" }
-  ],
   "ui": {
     "title": "AI 助手快捷操作",
     "hint": "点按钮等于把这句话发给助手；参数下拉仍归各业务插件自己的面板。",
