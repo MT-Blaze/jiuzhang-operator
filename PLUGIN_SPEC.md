@@ -583,6 +583,9 @@ com.example.card/
 - 写令牌由宿主代取（`/api/settings`，一次性），只放进宿主发出的请求头，**插件永远看不到令牌**；
 - 每次调用限流 80 次 / 10 秒 / 页签，单次转发 20 秒超时；超限回 `RATE_LIMITED`，不会把本机 SQLite 打满；
 - 方法白名单之外一律回 `UNSUPPORTED_METHOD`，插件无法借宿主访问任意 URL；
+- **智能体专属的那一排**（`agent.chat` / `agent.refine` / `plugin.install_url` / `ui.params.set` /
+  `editor.apply_patch` / `stage.open_bank` / `stage.open_editor`）除白名单外还要查页签插件清单里的
+  `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
 当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（SQLite 存储端，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题、经 `asset.upload` 落地框选配图。后续组卷、讲义插件复用同一通道，不新增协议。
@@ -683,10 +686,13 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 进隔离目录跑黄金路径 **19/19**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线同 §placeholder_plugin.zip）。
 
-### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13）
+### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 
-右栏默认是底座自带的「AI 副驾」。插件声明 `"slots": ["sidebar.right"]` 后，底座会把右栏交给它，
-**没有插件认领时整块插槽隐藏、AI 副驾原样回来**——插槽是加法，不替换既有兜底。
+右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)。
+它不再是「底座自带副驾 + 插件来抢」的关系：AI 助手自己就是一只普通插件（§2.10），和画布上的插件众生平等，
+右栏只是它当前的落脚点。业务插件声明 `"slots": ["sidebar.right"]` 后，**只有当它自己是当前画布页签时**
+才暂时接管右栏；切走该页签，右栏立刻归还助手插件——**没有插件认领时插槽不隐藏**，兜底是一块可读说明，
+绝不把右栏留成白屏，也绝不复活底座私有的对话 DOM。
 
 ```json
 {
@@ -700,19 +706,60 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 契约：
 
-- **同一时刻只挂一个**：多个插件都声明 `sidebar.right` 时，按与画布同一套排序（`stage.priority`
-  高者优先，同优先级按名称）取第一个；停用（`enabled=false`）的插件不参与。
+- **接管者只认当前画布页签**：`claimant(plugins, activePluginId)` 只在「当前激活的画布页签所属插件」里找
+  认领者；其他插件即使声明了 `sidebar.right` 也不参与。页签切换（`stage.tab.activated` / `stage.tab.closed`）
+  触发 `JzoContextPanel.sync()` 重挂，右栏主权跟着画布走。
+- **助手是默认住户**：右栏插槽的 `plugin_id` 为 `org.jiuzhang.chat` 时由 `reclaim()` 收回；
+  助手被停用或卸载后没有认领者，插槽显示 `.ws-context-slot-note` 兜底文案，不隐藏、不白屏。
 - **隔离与协议不变**：面板同样是 `sandbox="allow-scripts allow-modals"` 的沙箱 iframe（不透明源），
   走 `jzo-plugin/1`；挂载后宿主发 `plugin.activate`，payload 为 `{"slot": "sidebar.right"}`，
   插件照常回 `{ready: true}`。
 - **Host API 与画布页签完全一致**：`bank.*` / `basket.*` / `draft.*` 都可用，写操作仍由宿主代持
   一次性令牌，插件看不到令牌；`bus.publish` 白名单同 §2.5（`region.right` 专供向本栏投递文本）。
-- **激活失败要能退回**：`plugin.activate` 超时或报错时，宿主记录 `context.panel.error`
-  并切回 AI 副驾，绝不把右栏留成白屏。
+- **激活失败要能退回**：`plugin.activate` 超时或报错时，宿主记录 `context.panel.error` 并卸载该认领者、
+  收回给助手插件，绝不把右栏留成白屏。
 - **尺寸自适应**：右栏可拖拽、可折叠（宽度 0），面板必须按容器宽度自适应；
   宿主给面板的默认可视高度是 `52vh`（不小于 300px），面板内部自行滚动，禁止撑破右栏。
 - **刷新时机**：插件装卸、停用、覆盖升级都会让 `/api/plugins` 清单签名变化，右栏随之重挂；
   运行中的面板 iframe 不热替换代码（§4），与画布页签同规则。
+
+### 2.10 AI 助手插件的权限边界（2026-10-24 军令 #15，长期铁律）
+
+「右侧对话框」不是底座的一部分，它是 [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)
+这只普通插件：不透明源沙箱 iframe、`jzo-plugin/1` 协议、没有 DOM 特权、没有库连接、没有令牌。
+本节钉死四条，任何实现与本文冲突时以本文为准。
+
+**1）助手能看见的世界只有一份快照。** 宿主把 `stateSnapshot()`（当前任务、阶段、provider、活跃插件、
+面板控件与取值）作为 `workspace.state` 的响应交给它；助手**不许**读 `window.parent` 的 DOM、
+`document.cookie`、`localStorage` 或任何宿主全局变量。对话记忆走 `draft.save` / `draft.load`，
+由宿主代持本机存储——助手自己一次 `fetch` 都不发。
+
+**2）助手的每一次「动手」都是标准 API 请求。** 模型侧的 function calling 与助手插件的请求，最终都由底座
+`relayAgent()` 转发到 `/api/*`；除下表之外一律回 `UNSUPPORTED_METHOD`。
+
+| 方法 | 用途 | 边界 |
+| --- | --- | --- |
+| `agent.chat` | 把自然语言交给模型，取回内容 / `tool_calls` / `actions` | 需 `ai:invoke` 权限；写令牌由宿主代持，不进插件上下文 |
+| `agent.refine` | 选中题干后请求 AI 改写 | 同上，只回文本，不碰 DOM |
+| `editor.apply_patch` | 把改写结果交回录题插件 | 需 `ai:invoke`；由总线投递，助手拿不到目标插件实例 |
+| `plugin.install_url` | 安装卡「确认安装」这一条 URL | 只在老师当场点击后发起；不解压清单外的地址（§1.4） |
+| `ui.params.set` | 请求底座把面板控件设成某个值 | **只能设值**，不得请求点击按钮（见第 3 条） |
+| `stage.open_bank` / `stage.open_editor` | 智能跳转：开题库/录题页签并带检索词 | 宿主打开页签后发 `system.bank_query` 通知目标插件，检索词长度钳制、超时不重试 |
+| `plugins.list` | 读已安装插件清单 | 只读；助手据此判断「种子题库在不在场」，不在场就不许谎报有例题 |
+| `workspace.state` / `draft.save` / `draft.load` | 快照与对话记忆托管 | 见第 1 条 |
+
+**3）AI 没有手。** 严禁模拟鼠标、键盘或系统事件：助手插件不得构造 `MouseEvent` / `KeyboardEvent` /
+`PointerEvent`，底座也不得提供「触发面板按钮」的通道（`trigger_button` 已从契约、后端与前端三侧绝迹）。
+面板按钮的语义是**人机共驾里的「人」那一侧**：老师点按钮，宿主广播总线事件 `panel.button.click`，
+助手插件收到后以 `origin: "panel_button"` 自己发这一轮对话。反过来，AI 想改参数只能请求 `ui.params.set`，
+并在老师手动改过同一控件时被「你刚手动改过」提示压制。
+
+**4）智能跳转是「说去哪」而不是「替你去」。** 后端把统计/检索类工具的结果装配成 `data.actions`
+（白名单只有 `open_bank` / `open_editor`，去重后最多 3 条），助手渲染成气泡下方的动作按钮；
+老师点击后才发起 `stage.open_bank`，底座打开对应插件页签并把检索词作为 `system.bank_query` 通知送达，
+题库插件自己改筛选态重查。整条链路里 AI 只产出意图，落地动作全部由用户的当场点击与底座代码完成——
+与出网铁律同源（AGENTS §2）。
+
 
 ## 3. 多工作区（Workspace）隔离
 

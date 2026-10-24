@@ -47,6 +47,20 @@
 
 ## 二、当前核心进度（v0.9.0）
 
+> **军令 #15（2026-10-24）AI 助手插件化与权限边界重构**：右侧对话框从宿主壳里整体搬出，
+> 落为普通插件 [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`、
+> `capabilities: ["assistant.chat"]`、`permissions: ["ai:invoke"]`）；四项任务全部落地，决策记录见 ADR-009
+> （声明取代 ADR-002 第 4 条）。要点：① AI 的每一次动手都是 Host API 请求（`AI_ONLY_METHODS` 七条 +
+> 清单授权守卫），插件侧 `fetch`/`parent.document`/`localStorage` 命中为 0；② `trigger_button` 通道从
+> 提示词、白名单、前端三侧绝迹，面板按钮只属于人（宿主广播 `panel.button.click`，助手以
+> `origin:"panel_button"` 发这一轮）；③ 智能跳转闭环——后端把统计结果装配成 `data.actions`
+> （白名单 `open_bank`/`open_editor`、去重 ≤3），老师点【前往题库并搜索】后底座开页签并以
+> `system.bank_query` 把检索词送进 core-bank 与 bank-browser 两只插件；④ 右栏主权只认**当前画布页签**，
+> 默认住户是助手、无认领者给可读兜底（不再隐藏、不再复活宿主私有副驾）。左栏硬编码「自由对话」入口与
+> 宿主对话 DOM 一并清除，中栏兜底改为原生不可关「引导」页签。契约修订：`PLUGIN_SPEC.md` §2.9 重写、
+> 新增 §2.10。验证：43 模块 846 测全绿（新增 `tests/test_ai_plugin_boundary.py` 34 测，重锚 7 个既有模块），
+> 死样式经审计脚本取证后删除（宿主未引用 token 48 → 3）。底座版本仍为 0.9.0（本军令不发版）。
+>
 > **军令 #14（2026-10-24 彻夜）六阶段全部交付并封版**：底座版本 **0.8.2 → 0.9.0**，
 > 发行包 `dist/jiuzhang-operator-beta-v0.9.0.zip` 已出（包内种子库仍是冻结空壳，0 题）。
 > 六个阶段严格按序，每阶段一个 commit：
@@ -229,6 +243,9 @@
 4. **右侧 AI 副驾**：右栏常驻区升级为 AI 对话面板——订阅 `stage.selection` 感知录题端当前题，
    老师一句话让模型改写题干/解析，点【回填到表单】由宿主 `broadcast("editor.apply_patch", …)` 推回录题端。
    **改题主动权始终在老师手里**：副驾只产出候选文本、只回填到表单，不落库；点保存才经写路径入库。
+   > **已被 ADR-009 取代（军令 #15，2026-10-24）**：副驾不再住在底座托管的右栏里，而是降格为普通插件
+   > `org.jiuzhang.chat`；`stage.selection` 感知与 `editor.apply_patch` 回填两条能力保留，但只能经
+   > Host API 与总线发起，「回填到表单」由老师点击触发，AI 不再有代点击能力。
 
 **为什么**：三端分离解决了「一致」，但一个老师真正每天的录改动作里，最怕的是**改一半丢内容**、
 **想做同考点变式却只能整题重录**、**保存后还要手动切回列表**、**润色题干要来回复制**。
@@ -515,6 +532,42 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 已整段改为 unittest 口径：单模块 `.venv\Scripts\python.exe -m unittest tests.<模块>`、
 全量用 cmd 的 `for /f` 逐模块循环，并点名 `unittest discover` 因 `tests/` 无 `__init__.py` 会直接报错、
 必须用 `.venv` 解释器（系统 Python 缺依赖会把所有模块打成假报错）。
+
+### ADR-009：AI 助手降格为普通插件——权限只有 API 一条路（主公 2026-10-24 军令 #15 定调）
+
+**决策**：右侧对话框不再是底座的一部分，它是一只普通 UI 插件
+[`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`，
+`capabilities: ["assistant.chat"]`，`permissions: ["ai:invoke"]`），与画布上的插件**众生平等**。
+本决策**声明取代 ADR-002 第 4 条**：AI 副驾不住在底座托管的右栏里，它自己就是右栏的住户。
+
+1. **AI 没有任何底层特权**：读题数、开插件、装插件、改面板参数，一律只能发标准 Host API 请求，
+   由底座 `relayAgent()` 代为执行；助手插件里 `fetch` / `XMLHttpRequest` / `parent.document` /
+   `window.localStorage` 命中数必须为 0（契约测试 `tests/test_ai_plugin_boundary.py` 钉死）。
+2. **AI 没有手**：不得模拟鼠标、键盘或系统事件，`trigger_button` 通道从后端提示词、Host API 白名单、
+   插件三侧同时绝迹。面板按钮只属于人：人点按钮 → 宿主广播 `panel.button.click` → 助手以
+   `origin:"panel_button"` 自己发这一轮；AI 反向只能请求 `ui.params.set` 设值。
+3. **智能跳转代替越权操作**：统计/检索类结果由后端装配成 `data.actions`（白名单 `open_bank`/`open_editor`，
+   去重后 ≤3 条），助手渲染成气泡下方按钮；老师点击后底座开页签并把检索词以 `system.bank_query`
+   通知送达，题库插件自己回填搜索态重查。
+4. **右栏主权跟着画布走**：右栏默认不折叠、默认住户是助手；只有**当前画布页签**所属插件声明了
+   `sidebar.right` 才暂时接管，切走即 `reclaim()` 归还；无认领者时显示可读兜底，不隐藏、不白屏。
+5. **左栏不再有硬编码「自由对话」入口**：找插件、找题目全部通过右栏助手下达；中栏兜底是底座自己的
+   原生「引导」页签（不可关闭），示例提示语也交给助手现场查清单后再说——**插件被删了底座不许替它说谎**。
+
+**为什么**：AI 住在宿主壳里时，它天然能碰宿主 DOM、天然能读全局变量，铁律二（插件不得直接访问数据库、
+文件系统、模型密钥）对它形同虚设；「AI 说一句话就能改面板、开页签、装插件」一旦实现成宿主代点击，
+等于给模型装上手，权限边界全靠自觉。把它降格成插件后，**特权问题变成白名单问题**：它要的每一条能力
+都必须出现在 `AI_ONLY_METHODS` 里、都必须带 `ai:invoke` 授权、都可被 grep 与测试机械取证。
+顺带把「AI 占着中栏最好的位置」这一体验债清掉——中栏还给插件与老师的作品，右栏才是助手的落脚点。
+
+**协议落点**：`static/js/stage.js` 的 `AI_ONLY_METHODS` 扩至
+`agent.chat` / `agent.refine` / `plugin.install_url` / `ui.params.set` / `editor.apply_patch` /
+`stage.open_bank` / `stage.open_editor`；`app/core/plugins.py` 白名单加 `assistant.chat` 能力、
+`ai:invoke` 权限与 `stage.selection` / `panel.button.click` 总线订阅；`PLUGIN_SPEC.md` §2.9 重写主权交替、
+新增 §2.10 助手插件边界。
+
+**已知边界**：宿主壳 `static/workspace.html` 仍挂着 KaTeX 的 `<link>`/`<script>`（宿主 JS 已零引用，
+摘除牵动 PWA 预缓存清单，本轮不动）；助手插件尚未进官方 `plugins.json` 索引，误删后只能靠发版包带回。
 
 
 ## 四、强制待办清单
