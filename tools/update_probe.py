@@ -535,10 +535,14 @@ def main() -> int:
                                      + "\n".join(log_path.read_text(
                                          encoding="utf-8", errors="replace").splitlines()[-25:])) from error
             broadcast_card.locator("button").click()
-            expect(console_page.locator("#ctxHistory")).to_contain_text(
-                "插件热更新：" + PLUGIN_BROADCAST, timeout=20000)
+            console_page.wait_for_function(
+                "(id) => {"
+                " const el = document.querySelector('.ws-plugin-item[data-plugin-id=\"' + id + '\"]');"
+                " return !!el && (el.title || '').indexOf('v0.2.0') >= 0;"
+                "}",
+                arg=PLUGIN_BROADCAST, timeout=20000)
             results.append((wait_disk_version(plugins_dir / PLUGIN_BROADCAST, "0.2.0"),
-                            "工作台控制台热更：父页面输出日志收到「插件热更新」广播"))
+                            "工作台控制台热更：父页面插件条目已刷新到 v0.2.0"))
             console_page.screenshot(path=str(shots / "50-workspace-hotupdate.png"), full_page=True)
 
             mobile = browser.new_context(viewport={"width": 375, "height": 780}).new_page()

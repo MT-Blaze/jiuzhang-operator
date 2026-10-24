@@ -27,7 +27,7 @@ JS_STATE = """
   const toggle = document.getElementById('wsToggleSidebar');
   const center = document.querySelector('.ws-center');
   const ctx = document.getElementById('wsContext');
-  const ctxTask = document.getElementById('ctxTask');
+  const ctxModel = document.getElementById('ctxModel');
   const rect = el => {
     if (!el) return null;
     const b = el.getBoundingClientRect();
@@ -77,7 +77,7 @@ JS_STATE = """
     centerRect: rect(center),
     ctxRect: rect(ctx),
     ctxDisplay: getComputedStyle(ctx).display,
-    ctxTaskRect: rect(ctxTask),
+    ctxModelRect: rect(ctxModel),
     toggleText: toggle ? toggle.textContent.trim() : null,
     sidebarRightmost: rightmost,
     overflowIntoCenter: (rightmost !== null && center && rect(center).w > 0)
@@ -186,7 +186,7 @@ if __name__ == "__main__":
             f"ovf={st['overflowIntoCenter']}"
         )
         print(f"           sb={fmt(st['sidebarRect'])} center={fmt(st['centerRect'])} "
-              f"ctx[{st['ctxDisplay']}]={fmt(st['ctxRect'])} ctxTask={fmt(st['ctxTaskRect'])} "
+              f"ctx[{st['ctxDisplay']}]={fmt(st['ctxRect'])} ctxModel={fmt(st['ctxModelRect'])} "
               f"toggle='{st['toggleText']}'")
     if rep["errors"]:
         print("PAGE ERRORS:", json.dumps(rep["errors"], ensure_ascii=False))

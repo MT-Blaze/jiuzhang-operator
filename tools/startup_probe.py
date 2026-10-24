@@ -50,13 +50,11 @@ JS_STATE = """
         .map(n => n.textContent.replace(/\\s+/g, ' ').trim())
     : [];
   const dock = document.getElementById('wsDockLog');
-  const history = document.getElementById('ctxHistory');
   return {
     tabs: tabs,
     stageTitle: title ? title.textContent.replace(/\\s+/g, ' ').trim() : '',
     activePluginId: active ? active.getAttribute('data-plugin-id') : null,
     warns: warns,
-    historyText: history ? history.textContent.replace(/\\s+/g, ' ') : '',
     dockText: dock ? dock.textContent.replace(/\\s+/g, ' ') : ''
   };
 }
@@ -197,8 +195,8 @@ def run(tag: str) -> dict:
                   f"tabs={state['tabs']} title={state['stageTitle']}")
             check("回退原因在对话区如实播报（warn 气泡）",
                   any("已停用" in w for w in state["warns"]), json.dumps(state["warns"], ensure_ascii=False)[:200])
-            check("回退记进右栏操作历史（不静默）", "启动行为回退" in state["historyText"],
-                  state["historyText"][-260:])
+            check("回退落到底栏输出日志区（不静默）", "启动行为回退" in state["dockText"],
+                  state["dockText"][-260:])
             snap("20-fallback-disabled")
 
             call("POST", f"/api/plugins/{PLUGIN_ID}/enabled", {"enabled": True}, token=True)

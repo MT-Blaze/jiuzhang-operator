@@ -240,8 +240,7 @@ class WorkspaceBootWiringTest(unittest.TestCase):
     def test_02_fallback_reason_is_reported_not_swallowed(self) -> None:
         fn = WORKSPACE_JS.split("function applyStartupBehavior", 1)[1].split("\n  }\n", 1)[0]
         self.assertIn("fallback_reason", fn)
-        self.assertIn("addBubble", fn, "回退要在对话区如实说明")
-        self.assertIn("logHistory", fn, "回退要记进底栏输出日志区")
+        self.assertIn("addBubble", fn, "回退要在底栏输出日志区如实说明")
         self.assertIn("tone: \"warn\"", fn)
 
     def test_03_respects_effective_and_enabled_flag(self) -> None:

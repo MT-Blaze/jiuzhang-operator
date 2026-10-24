@@ -4,7 +4,7 @@
 1. 删除写死的「拆分试卷 / 校对解析 / 组卷导出」；军令 #15 再删最后一条内置入口
    「自由对话」——找插件、找题目一律对右栏助手说；
 2. 插件区按 ``/api/plugins`` 的发现结果渲染，空态显示「暂无插件」；
-3. 点插件只注入工作模式上下文并更新右栏「当前任务」，不得跳转页面；
+3. 点插件只注入工作模式上下文并更新舞台标题，不得跳转页面；
 4. 左栏只剩折叠、插件列表与栏底控制台入口；安装/索引/About 全进 ``/settings``。
 
 本测试只钉结构，不启浏览器；真机与像素证据由 ``.system_generated`` 下的探针产出。
@@ -89,6 +89,21 @@ class SidebarStructureTest(unittest.TestCase):
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
         self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须死锁在左栏最底部")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标已按定调令移除")
+
+    def test_08_right_context_keeps_only_model_and_assistant(self) -> None:
+        """军令 #18 第一步：右栏只留模型状态 + AI 助手，三个占位区与历史链删干净。"""
+        for token in ("ctxHistory", "ctxTask", "logHistory"):
+            self.assertNotIn(token, HTML)
+            self.assertNotIn(token, JS)
+        for label in ("最近操作", "教材大纲"):
+            self.assertNotIn(label, HTML)
+        self.assertNotIn(">当前任务<", HTML)
+        self.assertNotIn(".ws-history", CSS)
+        self.assertNotIn(".ws-placeholder", CSS)
+        self.assertLess(
+            HTML.index('id="ctxModel"'), HTML.index('id="wsContextSlot"'),
+            "模型状态必须在右栏顶部，AI 助手在其下",
+        )
 
 
 class SidebarBehaviourTest(unittest.TestCase):

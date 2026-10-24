@@ -30,9 +30,7 @@
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
   var stageTitle = document.getElementById("wsStageTitle");
-  var ctxTask = document.getElementById("ctxTask");
   var ctxModel = document.getElementById("ctxModel");
-  var ctxHistory = document.getElementById("ctxHistory");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
   var pluginPanel = document.getElementById("wsPluginPanel");
@@ -62,27 +60,10 @@
     return null;
   }
 
-  function logHistory(text) {
-    if (!ctxHistory) return;
-    var placeholder = ctxHistory.querySelector(".ws-placeholder");
-    if (placeholder) placeholder.remove();
-    var li = document.createElement("li");
-    var time = new Date();
-    var hh = String(time.getHours()).padStart(2, "0");
-    var mm = String(time.getMinutes()).padStart(2, "0");
-    li.textContent = hh + ":" + mm + " · " + text;
-    ctxHistory.insertBefore(li, ctxHistory.firstChild);
-    // 只留最近 8 条，避免无限增长
-    while (ctxHistory.children.length > 8) {
-      ctxHistory.removeChild(ctxHistory.lastChild);
-    }
-  }
-
   // ============ 当前任务舞台 ============
   function setStage(taskName) {
     currentTask = taskName || "";
     if (stageTitle) stageTitle.textContent = currentTask || "新会话";
-    if (ctxTask) ctxTask.textContent = currentTask || "未选择";
   }
 
   // ============ 入口切换：插件工作模式 ============
@@ -114,7 +95,6 @@
     } else if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
       window.JzoStage.openPlugin(plugin);
     }
-    logHistory("进入插件「" + name + "」");
   }
 
 
@@ -131,7 +111,6 @@
         if (!body) return;
         if (body.fallback_reason) {
           addBubble("sys", String(body.fallback_reason), { tone: "warn" });
-          logHistory("启动行为回退：" + body.fallback_reason);
         }
         var effective = String(body.effective || "chat");
         if (effective.indexOf("plugin:") !== 0) return;
@@ -140,10 +119,7 @@
         (plugins || []).forEach(function (plugin) {
           if (!target && plugin.id === wantedId && plugin.enabled !== false) target = plugin;
         });
-        if (!target) {
-          logHistory("启动插件不在场，停在引导页：" + wantedId);
-          return;
-        }
+        if (!target) return;
         var item = null;
         var buttons = pluginListEl ? pluginListEl.querySelectorAll(".ws-plugin-item") : [];
         for (var i = 0; i < buttons.length; i += 1) {
@@ -239,7 +215,6 @@
           uiState.values[control.key] = select.value;
           uiState.revisions[control.key] = (uiState.revisions[control.key] || 0) + 1;
           updateUiStateSummary();
-          logHistory("面板调整：" + (control.label || control.key) + " = " + select.value);
           publishUiParams("human", control.key);
         });
         field.appendChild(label);
@@ -330,7 +305,6 @@
         label: clampText(label, 40)
       });
     }
-    logHistory("面板按钮：" + (label || text));
   }
 
   function findUiControl(id, type) {
@@ -398,11 +372,6 @@
     var outcome = applyUiParams(params, snapshot);
     dockLine("AI 助手经宿主设定面板参数：应用 " + outcome.applied.length
       + " 项、跳过 " + outcome.skipped.length + " 项。", "agent.params");
-    if (outcome.applied.length) {
-      logHistory("AI 设定参数：" + outcome.applied.map(function (item) {
-        return item.label + "=" + item.value;
-      }).join("、"));
-    }
     return outcome;
   }
 
@@ -949,7 +918,6 @@
           if (window.JzoStage && typeof window.JzoStage.rehydratePlugin === "function") {
             window.JzoStage.rehydratePlugin(id);
           }
-          logHistory("插件热更新：" + id + " " + (row.from || "?") + " → " + (row.to || "?"));
         });
       }).catch(function () {});
     });
@@ -1553,7 +1521,6 @@
           } else {
             addBubble("sys", "插件清单已更新（覆盖安装或卸载）。左栏与页签已刷新。");
           }
-          logHistory("插件热刷新：" + (added.length ? added.map(function (p) { return p.id; }).join(",") : signature));
         }
 
         pluginSignature = signature;
@@ -1617,7 +1584,6 @@
           if (!r.ok) throw new Error(readErrorDetail(r, body));
           var plugin = body && body.plugin ? body.plugin : {};
           addBubble("sys", "插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
-          logHistory("安装插件 " + (plugin.name || plugin.id));
           // 装完立即刷新插件区；刷新失败不回滚安装结果，也不谎报安装失败。
           return loadPlugins().catch(function () { return null; });
         });
