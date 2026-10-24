@@ -246,7 +246,8 @@
 > 改成只验入口在场）。
 > **验证**：56 模块 1039 测全绿 ×2（改动前后各一轮）；`audit_code.py` ERROR 0 / WARN 34（与阶段六持平）；
 > 探针 dashboard 20/20、bank 13/13、bank_io 12/12、dedupe 40/40、handout 27/27、paper 41/41、editor 19/19、
-> editor_crop 16/16、chat_keys 15/15、stage 46/46（合计 203/203）。
+> editor_crop 16/16、chat_keys 15/15、stage 46/46（**合计 249/249**；阶段八逐日志自报行重数时发现此处原先写的
+> 「203」漏加了 stage 的 46 项，逐项数字本身没错——`\.system_generated/stage8/probe_recount.json` 留了复核表）。
 > **两条自曝**：① 阶段七自己的 Edit 把 core-bank 一行注释和 `function fetchTopics` 挤成了同一行——**语法直接坏**，
 > 全靠 `node:vm` 逐文件语法自检抓到（仓库没有 node CLI，走 node-repl MCP）；② 三个探针并行跑时
 > `paper_probe` 的「切紧凑同步重排 < 300ms」失败（311.6ms），单独重跑 240.5ms 通过——**CPU 争用造出的假阴性**，
@@ -280,9 +281,13 @@
 > 发版包与四个对外插件包**逐字节复核**（证据 `.system_generated/stage8/audit_zip.json`、
 > `verify_plugin_zips.json`：四个 zip 顶层目录 == id、带 LICENSE、`.db` 为 0、包内每个文件与工作树
 > **byte-equal**，错配 0）。未 push、未建远端、未发 Release。
-> **本轮一条执行坑（抽包验货前先读）**：比对包内文件与工作树，必须用 `zipfile.read()` 拿到**bytes**
+> **本轮两条执行坑（抽包验货前先读）**：① 比对包内文件与工作树，必须用 `zipfile.read()` 拿到**bytes**
 > 再和本地 `read_bytes()` 比；用 `open(..., encoding='utf-8')` 文本模式读会把 CRLF 折成 LF，
 > 于是「包比源码多 1096 个字符」这种**假陈旧告警**凭空出现（真实差异 0，工作树是 CRLF、提交对象是 LF）。
+> ② 探针计数只能取**日志自报行**（`PASS · N 项检查` / `passed N/N` / `{"total":N,"passed":N}` / 编号 PASS 的最大号）；
+> 数 `✓`/`PASS` 标记行会把自报行本身也算进去、凭空多 1。本次复核据此把阶段七总数 **203 更正为 249**
+> （逐项数字一律不变，只是原先漏加了 stage_probe 的 46 项），复核表见
+> `.system_generated/stage8/probe_recount.json`。
 > **版本裁决悬着**：底座仍 `__version__ = "0.10.0"`、六个插件 `version` 未升，这轮修复对外不可见
 > （既有安装看不到更新）；升哪个号由主公定，定了再走 `build_release.bat` 重出。
 
