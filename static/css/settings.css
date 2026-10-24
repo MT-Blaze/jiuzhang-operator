@@ -178,11 +178,33 @@
 .mg-card-state[data-state="on"] { background: rgba(47, 107, 79, 0.14); color: #2f6b4f; }
 .mg-card-state[data-state="off"] { background: rgba(155, 59, 45, 0.14); color: #9b3b2d; }
 .mg-card-desc { margin: 8px 0 4px; font-size: 13px; color: var(--ink, #1f1c18); }
+/* 小字那一行才是官方原名与版本：昵称再大也盖不住装的是哪一个包 */
+.mg-card-official { margin: 4px 0 0; font-size: 12px; color: var(--muted, #6f675c); }
 .mg-card-sub { margin: 0 0 8px; font-size: 11px; color: var(--muted, #6f675c); word-break: break-all; }
 .mg-card-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mg-card-tools .q-button { min-height: 44px; }
 .mg-tag { font-size: 12px; color: var(--muted, #6f675c); padding: 4px 8px; border-radius: 6px; background: rgba(31,28,24,0.06); }
+/* 卡片尾部小标签：它在左栏的哪一个组里（未分组也明说，不留猜谜空间） */
+.mg-tag-folder { margin-left: auto; border: 1px solid var(--line, #d8ccb8); background: transparent; }
 .mg-empty { color: var(--muted, #6f675c); font-size: 13px; }
+
+/* ===== 全局快捷键自定义（军令 #16 模块一） ===== */
+.key-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.key-label { flex: 1 1 200px; font-size: 13px; }
+.key-input {
+  flex: 0 0 150px;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  border: 1px solid var(--line, #d8ccb8);
+  border-radius: 8px;
+  background: var(--card, #fff);
+}
+.key-input:focus-visible { outline: 2px solid var(--accent, #2f6b4f); outline-offset: 1px; }
+.key-row .q-button { min-height: 44px; }
+.key-note { font-size: 12px; color: var(--muted, #6f675c); }
 .q-button-danger { color: #9b3b2d; border-color: rgba(155, 59, 45, 0.5); }
 .q-button-danger:hover { background: #f7e6e2; }
 

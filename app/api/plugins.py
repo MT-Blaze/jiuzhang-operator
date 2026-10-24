@@ -244,7 +244,7 @@ def set_plugin_sidebar(payload: dict[str, Any] = Body(...)) -> dict:
 
 @router.post(
     "/api/plugins/shortcuts",
-    summary="改绑底座全局快捷键（不合法或空串一律解绑）",
+    summary="改绑底座全局快捷键（不合法或空串一律抹掉改绑、回落默认键位）",
     dependencies=[Depends(require_write_token)],
 )
 def set_plugin_shortcut(payload: dict[str, Any] = Body(...)) -> dict:

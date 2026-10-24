@@ -134,8 +134,11 @@
                 <div class="st-block st-manage" id="manage" aria-labelledby="mg-title">
                   <h2 id="mg-title">插件管理与控制</h2>
                   <p class="st-note">
-                    已安装插件在这里集中管理：<strong>启用/停用</strong>（停用即从工作台左栏消失、释放内存，代码与数据原地保留）、
-                    <strong>卸载</strong>（可选是否保留本地题库数据）、以及安装（「在线索引 / 手动安装」两个分区）。
+                    已安装插件在这里<strong>平铺</strong>管理，一屏看全不折叠：卡片<strong>大字</strong>是你起的昵称，
+                    <strong>小字</strong>是官方原名与版本，尾部小标签是它在工作台左栏所属的分组。
+                    <strong>「已启用」的顺序与左栏导航逐条对齐</strong>（两边读同一份本机分组表），
+                    <strong>「已停用」按停用时间先后</strong>排；时间只在点开这一瞬算一次，绝不在后台跑。
+                    启用/停用只把它从导航摘掉并释放内存，代码与数据原地保留；卸载才动盘上的包，且可选保留题库数据。
                     底座不自动装卸任何插件，一切改动都由你当场点。
                   </p>
                   <p class="pl-status" id="mgStatus" role="status" aria-live="polite" hidden></p>
@@ -306,6 +309,20 @@
               <button type="button" class="q-button" id="startupReloadBtn">重新读取</button>
             </div>
             <p class="pl-status" id="startupStatus" role="status" aria-live="polite" hidden></p>
+
+            <h3 class="st-sub">全局快捷键</h3>
+            <p class="st-note">
+              底座这五条键位随你改：写 <code>Ctrl+Shift+K</code> 这种「修饰键 + 主键」的规范形，
+              点【回到默认】就把你这条改绑抹掉、恢复底座默认键位。键位只记在本机
+              <code>data/plugin_state.json</code>，不联网、不进插件包。
+              插件自报的快捷键撞上车时，<strong>底座动作永远优先</strong>：被挤掉的那条自动失效，
+              并在工作台【报错诊断】记一条红字（双击即复制）。
+            </p>
+            <ul class="key-list" id="keyList"></ul>
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="keyReloadBtn">重新读取键位</button>
+            </div>
+            <p class="pl-status" id="keyStatus" role="status" aria-live="polite" hidden></p>
           </section>
         </div>
       </div>
@@ -357,6 +374,8 @@
     </footer>
   </div>
 
+  <script src="/static/js/prefs.js"></script>
+  <script src="/static/js/shortcuts.js"></script>
   <script src="/static/js/plugins.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/pwa.js"></script>

@@ -329,7 +329,7 @@ def set_sidebar(tree: Any) -> list[dict[str, Any]]:
 
 
 def set_shortcut(action: str, combo: Any) -> str:
-    """改绑底座快捷键；combo 为空或不合法一律解绑（返回空串）。
+    """改绑底座快捷键；combo 为空或不合法一律抹掉这条改绑（读侧回落到默认键位，返回空串）。
 
     非法 action 直接不吃：连键名都不合规矩的写入，落盘也只是下一轮读归一时被丢掉的垃圾。
     """

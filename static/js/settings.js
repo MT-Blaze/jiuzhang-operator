@@ -198,6 +198,8 @@
   var modalConfirm = document.getElementById("uninstallConfirm");
   var modalCancel = document.getElementById("uninstallCancel");
   var uninstallTarget = null;
+  var installedBody = { plugins: [], sidebar: [], shortcuts: {} };
+  var prefsReloadBusy = false;
   var uninstallPrevFocus = null;
 
   function mgSet(box, text, tone) {
@@ -232,39 +234,102 @@
     });
   }
 
-  function renderInstalled(plugins) {
-    if (!mgList) return;
-    mgList.textContent = "";
-    var list = (plugins || []).slice().sort(function (a, b) {
-      return String(a.name || a.id).localeCompare(String(b.name || b.id), "zh-CN");
+  /**
+   * 「已启用」的顺序与左栏导航 100% 对齐——两边读的是同一棵后端树（/api/plugins 的 sidebar），
+   * 这里只把它摊平，不再自己排一遍第二顺序，否则「对齐」只能靠运气。
+   */
+  function flattenTree(tree) {
+    var keys = [];
+    (tree || []).forEach(function (item) {
+      if (item.kind === "folder") {
+        item.children.forEach(function (child) { keys.push(child); });
+      } else keys.push(item.id);
     });
-    if (!list.length) {
+    return keys;
+  }
+
+  function enabledFirst(plugins, tree) {
+    var byKey = {};
+    var rest = [];
+    (plugins || []).forEach(function (plugin) {
+      if (plugin.enabled === false) return;
+      byKey["plugin:" + plugin.id] = plugin;
+      rest.push(plugin);
+    });
+    var ordered = [];
+    flattenTree(tree).forEach(function (key) {
+      if (byKey[key]) { ordered.push(byKey[key]); delete byKey[key]; }
+    });
+    // 树上还没有的（刚装完还没拖过）接在末尾，保持清单原序，绝不插队到已排好的段里
+    rest.forEach(function (plugin) {
+      if (ordered.indexOf(plugin) < 0) ordered.push(plugin);
+    });
+    return ordered;
+  }
+
+  /** 「已停用」按停用时间先后排；本机没记下时间的排最后，文案如实写「未知」。 */
+  function disabledByTime(plugins) {
+    var rows = (plugins || []).filter(function (plugin) { return plugin.enabled === false; });
+    rows.sort(function (a, b) {
+      var ta = Date.parse(a.disabled_at || "") || Number.MAX_SAFE_INTEGER;
+      var tb = Date.parse(b.disabled_at || "") || Number.MAX_SAFE_INTEGER;
+      return ta - tb;
+    });
+    return rows;
+  }
+
+  function renderInstalled(plugins, body) {
+    if (!mgList) return;
+    // 相对时间只在渲染这一瞬算一次：不挂定时器、不后台刷新（军令逐字要求）。
+    var now = new Date();
+    var tree = window.JzoPrefs ? window.JzoPrefs.readTree(body) : [];
+    var ordered = enabledFirst(plugins, tree).concat(disabledByTime(plugins));
+    mgList.textContent = "";
+    if (!ordered.length) {
       mgList.appendChild(el("li", "mg-empty", "尚未安装任何插件"));
       return;
     }
-    list.forEach(function (plugin) {
+    ordered.forEach(function (plugin) {
+      var off = plugin.enabled === false;
       var li = el("li", "mg-card");
       li.setAttribute("data-id", plugin.id);
-      if (plugin.enabled === false) li.setAttribute("data-state", "disabled");
+      if (off) li.setAttribute("data-state", "disabled");
 
       var head = el("div", "mg-card-head");
-      head.appendChild(el("span", "mg-card-name", plugin.name || plugin.id));
-      head.appendChild(el("span", "mg-card-version", "v" + (plugin.version || "?")));
-      var status = el("span", "mg-card-state", plugin.enabled === false ? "已停用" : "已启用");
-      status.setAttribute("data-state", plugin.enabled === false ? "off" : "on");
+      // 大字只属于老师给它的叫法；没起昵称时 displayName 回落官方原名
+      head.appendChild(el("span", "mg-card-name",
+        window.JzoPrefs ? window.JzoPrefs.displayName(plugin) : (plugin.name || plugin.id)));
+      var status = el("span", "mg-card-state", off ? "已停用" : "已启用");
+      status.setAttribute("data-state", off ? "off" : "on");
       head.appendChild(status);
       li.appendChild(head);
+
+      // 小字才是官方原名与版本——昵称再花哨也不掩盖它装的是哪一个包
+      li.appendChild(el("p", "mg-card-official",
+        "官方原名：" + (plugin.name || plugin.id) + " · v" + (plugin.version || "?")));
       li.appendChild(el("p", "mg-card-desc", plugin.description || ""));
-      li.appendChild(el("p", "mg-card-sub", "id：" + plugin.id + " · 类型：" + (plugin.kind || "?")));
+      var sub = "id：" + plugin.id + " · 类型：" + (plugin.kind || "?");
+      if (off) {
+        sub += " · 停用时间：" + (window.JzoPrefs
+          ? (window.JzoPrefs.relTime(plugin.disabled_at, now) || "本机未记录（早于本版本停用）")
+          : (plugin.disabled_at || "本机未记录"));
+      }
+      li.appendChild(el("p", "mg-card-sub", sub));
 
       var tools = el("div", "mg-card-tools");
       var toggle = el("button", "q-button mg-toggle");
       toggle.type = "button";
-      toggle.textContent = plugin.enabled === false ? "启用" : "停用";
+      toggle.textContent = off ? "启用" : "停用";
       toggle.addEventListener("click", function () {
-        setEnabled(plugin, plugin.enabled === false);
+        setEnabled(plugin, off);
       });
       tools.appendChild(toggle);
+
+      var nickname = el("button", "q-button mg-rename");
+      nickname.type = "button";
+      nickname.textContent = "改昵称";
+      nickname.addEventListener("click", function () { renameFromCard(plugin); });
+      tools.appendChild(nickname);
 
       if (plugin.show_in_sidebar === false) {
         tools.appendChild(el("span", "mg-tag", "不占左栏"));
@@ -275,11 +340,130 @@
       remove.textContent = "卸载";
       remove.addEventListener("click", function () { openUninstall(plugin); });
       tools.appendChild(remove);
+
+      // 卡片尾部小标签：它在哪一组。这里只给改昵称，不设任何回退官方名的按钮。
+      var homeKey = window.JzoPrefs
+        ? window.JzoPrefs.folderKeyOf(tree, "plugin:" + plugin.id) : "";
+      tools.appendChild(el("span", "mg-tag mg-tag-folder",
+        homeKey ? "组：" + window.JzoPrefs.folderName(tree, homeKey) : "未分组"));
       li.appendChild(tools);
 
       mgList.appendChild(li);
     });
   }
+
+  function renameFromCard(plugin) {
+    var current = String(plugin.nickname || "");
+    var next = window.prompt(
+      "给「" + (plugin.name || plugin.id) + "」起个只在你这台机器上生效的昵称（留空则回到官方原名）：",
+      current);
+    if (next == null) return;
+    setNickname(plugin, next.trim());
+  }
+
+  function setNickname(plugin, nickname) {
+    mgSet(mgStatus, "正在改昵称…", "info");
+    apiCall("/api/plugins/" + encodeURIComponent(plugin.id) + "/nickname", "POST", { nickname: nickname })
+      .then(function () {
+        mgSet(mgStatus, nickname ? "已改叫「" + nickname + "」。" : "已回到官方原名。", "ok");
+        tellWorkspacePrefs();
+        return loadInstalled();
+      })
+      .catch(function (error) { mgSet(mgStatus, "改昵称失败：" + error.message, "down"); });
+  }
+
+  /** 控制台改完偏好，工作台左栏要当场跟上，不等下一次轮询。 */
+  function tellWorkspacePrefs() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ jzo: "prefs.changed" }, window.location.origin);
+    }
+  }
+
+  // 反方向同理：在工作台左栏拖了组、改了昵称或停用了插件，
+  // 内嵌在画布页签里的这份卡片必须跟着重读，不能各说各话。
+  window.addEventListener("message", function (event) {
+    if (event.origin !== window.location.origin) return;
+    var data = event.data;
+    if (data && data.jzo === "prefs.changed" && !prefsReloadBusy) {
+      prefsReloadBusy = true;
+      loadInstalled().then(function () { prefsReloadBusy = false; },
+        function () { prefsReloadBusy = false; });
+    }
+  });
+
+  // ============ 全局快捷键自定义（军令 #16 模块一「全部开放自定义」） ============
+  var keyList = document.getElementById("keyList");
+  var keyStatus = document.getElementById("keyStatus");
+  var keyReload = document.getElementById("keyReloadBtn");
+
+  function renderShortcuts(body) {
+    if (!keyList) return;
+    keyList.textContent = "";
+    var overrides = (body && body.shortcuts) || {};
+    // 键位表只有 shortcuts.js 那一份：控制台复用同一个 catalogue，绝不另抄一份默认值
+    var rows = window.JzoKeys ? window.JzoKeys.catalogue() : [];
+    rows.forEach(function (row) {
+      var effective = Object.prototype.hasOwnProperty.call(overrides, row.action)
+        ? overrides[row.action] : row.combo;
+      var li = el("li", "key-row");
+      li.appendChild(el("span", "key-label", row.label));
+      var input = el("input", "key-input");
+      input.type = "text";
+      input.value = effective || "";
+      input.placeholder = row.combo;
+      input.setAttribute("aria-label", row.label + " 的键位");
+      input.maxLength = 40;
+      li.appendChild(input);
+      var save = el("button", "q-button key-save");
+      save.type = "button";
+      save.textContent = "改绑";
+      save.addEventListener("click", function () {
+        saveShortcut(row.action, input.value.trim(), save);
+      });
+      li.appendChild(save);
+      // 本机偏好只记「你亲手改过的那一条」：清掉这条记录就等于回到底座默认键位，
+      // 底座不存「永久无键」这种状态，所以按钮说的是「回到默认」而不是「解绑」。
+      var reset = el("button", "q-button key-reset");
+      reset.type = "button";
+      reset.textContent = "回到默认";
+      reset.disabled = effective === row.combo;
+      reset.addEventListener("click", function () {
+        saveShortcut(row.action, "", reset);
+      });
+      li.appendChild(reset);
+      if (effective !== row.combo) {
+        li.appendChild(el("span", "mg-tag", "默认 " + row.combo));
+      }
+      keyList.appendChild(li);
+    });
+    var taken = {};
+    ((body && body.plugins) || []).forEach(function (plugin) {
+      if (plugin.enabled === false) return;
+      (plugin.shortcuts || []).forEach(function (sc) { taken[sc.combo] = plugin.id; });
+    });
+    Object.keys(taken).forEach(function (combo) {
+      keyList.appendChild(el("li", "key-note",
+        combo + " 已由插件 " + taken[combo] + " 自报；撞车时底座动作优先。"));
+    });
+  }
+
+  function saveShortcut(action, combo, button) {
+    if (button) { button.disabled = true; button.setAttribute("aria-busy", "true"); }
+    apiCall("/api/plugins/shortcuts", "POST", { action: action, combo: combo })
+      .then(function (result) {
+        mgSet(keyStatus, combo
+          ? "已改绑 " + action + " → " + (result.combo || combo) + "。回工作台立即生效。"
+          : "已把 " + action + " 还原为底座默认键位。", "ok");
+        tellWorkspacePrefs();
+        return loadInstalled();
+      })
+      .catch(function (error) { mgSet(keyStatus, "改绑失败：" + error.message, "down"); })
+      .then(function () {
+        if (button) { button.disabled = false; button.removeAttribute("aria-busy"); }
+      });
+  }
+
+  if (keyReload) keyReload.addEventListener("click", function () { loadInstalled(); });
 
   function loadInstalled() {
     return fetch("/api/plugins", { cache: "no-store" })
@@ -287,7 +471,11 @@
         if (!response.ok) throw new Error("HTTP " + response.status);
         return response.json();
       })
-      .then(function (data) { renderInstalled((data && data.plugins) || []); })
+      .then(function (data) {
+        installedBody = data || {};
+        renderInstalled(installedBody.plugins || [], installedBody);
+        renderShortcuts(installedBody);
+      })
       .catch(function (error) { mgSet(mgStatus, "读取插件列表失败：" + error.message, "down"); });
   }
 
@@ -295,8 +483,10 @@
     mgSet(mgStatus, "正在" + (enabled ? "启用" : "停用") + " " + (plugin.name || plugin.id) + "…", "info");
     apiCall("/api/plugins/" + encodeURIComponent(plugin.id) + "/enabled", "POST", { enabled: enabled })
       .then(function () {
-        mgSet(mgStatus, (enabled ? "已启用：" : "已停用：") + (plugin.name || plugin.id) +
+        mgSet(mgStatus, (enabled ? "已启用：" : "已停用：") +
+          (window.JzoPrefs ? window.JzoPrefs.displayName(plugin) : (plugin.name || plugin.id)) +
           (enabled ? "，工作台左栏刷新后可见。" : "，代码与数据原地保留，随时可再启用。"), "ok");
+        tellWorkspacePrefs();
         loadInstalled();
       })
       .catch(function (error) { mgSet(mgStatus, "操作失败：" + error.message, "down"); });

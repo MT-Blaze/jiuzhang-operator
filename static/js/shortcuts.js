@@ -56,7 +56,7 @@
 
   /**
    * 装配本轮生效的键位表。
-   * @param {Object} overrides 用户改绑（action -> combo，空串表示解绑）；缺省回落默认值
+   * @param {Object} overrides 用户改绑（action -> combo）；缺省回落默认值，空串表示这条不占键
    */
   function assemble(overrides) {
     bindings = {};

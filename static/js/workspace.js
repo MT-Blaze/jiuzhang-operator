@@ -907,6 +907,8 @@
         return;
       }
       if (data && data.jzo === "providers.changed") loadProviders().catch(function () {});
+      // 控制台里改了昵称/启停/键位/分组 → 左栏当场跟上，不等 5 秒轮询。
+      if (data && data.jzo === "prefs.changed") loadPlugins({ announce: false }).catch(function () {});
     });
     // 控制台里热更了插件（PLUGIN_SPEC §1.7）→ 左栏、页签与画布立刻接上新代码，
     // 全程不刷新浏览器、不重启底座。宿主自己在总线上广播 plugin.updated。
@@ -1053,6 +1055,17 @@
   }
 
   /** 改树：先照新树渲染（点一下就见结果），再落盘；写不回去就回滚并记一笔红字。 */
+  /** 左栏这边改了偏好（分组/昵称/启停），控制台页签里那份卡片要当场跟上。 */
+  function notifyConsolePrefs() {
+    var frame = document.getElementById("wsConsoleFrame");
+    if (!frame || !frame.contentWindow) return;
+    try {
+      frame.contentWindow.postMessage({ jzo: "prefs.changed" }, window.location.origin);
+    } catch (error) {
+      /* 控制台还没起来：它下次自己 loadInstalled 时读到的就是新状态 */
+    }
+  }
+
   function commitTree(next) {
     var before = sidebarTree;
     sidebarTree = next;
@@ -1062,6 +1075,7 @@
         if (data && Array.isArray(data.sidebar)) {
           sidebarTree = window.JzoPrefs ? window.JzoPrefs.readTree(data) : sidebarTree;
           renderPlugins(installedPlugins);
+          notifyConsolePrefs();
         }
       })
       .catch(function (error) {
@@ -1304,6 +1318,7 @@
           .then(function () {
             dockLine((text ? "插件「" + (plugin.name || plugin.id) + "」已改叫「" + text + "」。"
               : "插件「" + plugin.id + "」已回到官方原名。"), "prefs.nickname");
+            notifyConsolePrefs();
             return loadPlugins({ announce: false });
           })
           .catch(function (error) {
@@ -1324,6 +1339,7 @@
         postJson("/api/plugins/" + encodeURIComponent(plugin.id) + "/enabled", { enabled: false })
           .then(function () {
             dockLine("插件「" + rowTitle(plugin) + "」已停用，可在【设置与控制台】里再启用。", "prefs.disable");
+            notifyConsolePrefs();
             return loadPlugins({ announce: false });
           })
           .catch(function (error) {

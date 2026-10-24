@@ -253,7 +253,7 @@ def run(tag: str) -> dict:
         page.reload()
         page.wait_for_timeout(2400)
         owner3 = page.evaluate("() => window.JzoKeys.ownerOf('Ctrl+Shift+K')")
-        check("19 解绑后插件键位自动回来（不留静音表）",
+        check("19 键位还原后插件自动拿回（不留静音表）",
               owner3 and owner3.get("owner") == "plugin", owner3)
 
         # --- 11. 输入铁律：Enter 换行 / Ctrl+Enter 发送 ------------------------
