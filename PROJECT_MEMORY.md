@@ -7,6 +7,20 @@
 
 ---
 
+## 项目基础信息
+
+| 项 | 值 |
+| --- | --- |
+| 项目 | 九章算子（Jiuzhang Operator）——为独立教师打造的模块化数学题库底座 |
+| 仓库 | `https://github.com/MT-Blaze/jiuzhang-operator` |
+| 许可 | Apache License 2.0（见 `LICENSE`；铁律，不得修改或删改） |
+| 技术栈 | Python 3.10+ / FastAPI / Uvicorn；原生 HTML+CSS+JS（无打包器）；SQLite（WAL，标准库 `sqlite3`） |
+| 底座版本唯一事实来源 | `app/__init__.py` 的 `__version__`；页面徽章由 `/healthz` 经 `static/js/version.js` 写入 `[data-app-version]` |
+| 官方插件仓库 | `jiuzhang-plugins`（`plugins.json`；界面默认预填 gh-proxy 国内镜像直链） |
+| **官方交流群** | **QQ 群 `1105273716`**；扫码加群 <https://qm.qq.com/q/WMqM5l8YQc>；二维码图片 `static/assets/qq-group.png`（README 文末【官方交流群】引用同一张图） |
+
+---
+
 ## 一、项目铁律（不可协商，与 `AGENTS.md` 同源）
 
 1. **纯本地、无云端**：底座与所有插件可完全离线运行；资源本地化，无 Node 运行时、无打包器。
