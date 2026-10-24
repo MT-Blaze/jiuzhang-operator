@@ -185,6 +185,43 @@
 > 引擎的 `bank_fts.remove` 路径本轮未被这条探针覆盖（`tests/test_bank_fts.py` 覆盖）。
 > **下一步**：阶段六审计精简底座宿主代码（`app/core/`、`app/api/` 找 Bug/未捕获异常/死代码/冗余，
 > `static/js/` 清无用变量、失效监听器、废弃全局函数），功能不变、全量单测全绿前提下尽量精简行数。
+> ⑨ **#18-终 阶段六（2026-10-25）**——审计精简底座宿主代码（提交 `16d8027`），改动面：
+> `app/core/db.py`（DDL 常量改**语句元组** `_QUESTIONS_INDEXES`/`_DDL`，新增 `run_statements()` 逐句
+> `execute`，`init_db` 与 `_migrate_v1_to_v2` 全部换用）、`app/core/bank.py`（`_new_table_ddl` 返回
+> `list[str]`、裸 `ValueError` 换 `BankError`/`BankNotFound`、升级路径逐句执行；删 `_build_where` 的
+> `ids` 死参数）、`app/api/bank.py`（`except BankNotFound` 挪到 `except BankError` 之前）、
+> `app/api/workspaces.py`（`_load_workspaces` 只认「有非空字符串 `id` 的 dict」；`resolved_name` 取不到
+> 退回 id；死常量与冗余 import 清理）、`app/core/basket.py`（读侧过滤缺 `question_id`/`plugin_id` 的条目）、
+> `app/core/ai_client.py`（urllib 包进 `asyncio.to_thread`；空 `choices` 防护；`JZO_AI_TIMEOUT_SECONDS`
+> 写坏不再炸导入期）、`app/core/models.py`（新增 `_OmitAbsent` 基类，缺字段按契约整个省略而非伪造 null）、
+> `app/core/{webdav,plugin_tools,ui_cards}.py` 与 `static/js/{prefs,splitpane,stage,workspace}.js`（零引用
+> 函数、失效监听器、废弃常量/导出键；`dblclick` 改发 `region.dock`，`tools/split_probe.py` 跟着改驱动方式）、
+> `tools/audit_code.py`（**新增 AST `except-shadow` ERROR 规则**，tuple 捕获不误报）、两个新测试模块
+> `tests/test_db_transaction_atomicity.py`（7 测）与 `tests/test_audit_gate.py`（3 测），
+> `tests/{test_bank_api,test_bank_provider,test_provider_config,test_questions_api,test_workspace_restart,
+> test_splitpane_layout,test_stage_tab_group}.py` 补判据。
+> **本轮钉死的六类隐患**：① `executescript` **隐式提交挂起的事务**——本机 Python 3.14.6 实测
+> `BEGIN IMMEDIATE` 之后 `in_transaction` 立刻变 `False`、尾部 `rollback` 抛
+> `cannot rollback - no transaction is active`，半套库回滚不掉；所以 DDL 一律走 `run_statements`。
+> ② except 顺序：`/api/bank/textbooks` 把父类 `BankError` 写在子类 `BankNotFound` 前面，404 永远不可达、
+> 缺库被压成 400（当时单测全绿，所以判据既进单测也进 `audit_code` 门禁）。③ 人可直接改的 JSON
+> （`basket.json`/`workspaces.json`）读侧不再假设字段齐全，否则 `read_basket(expand=true)` 与切库回包
+> 直接 `KeyError` 打 500。④ 阻塞 IO 按住事件循环。⑤ 契约出参 null vs 省略。⑥ 死代码。
+> **验证**：全量回归 **56 模块 1039 测全绿**（逐模块跑，证据 `.system_generated/stage6/full_run2.txt`）；
+> `tools/audit_code.py` **ERROR 0** / WARN 34 / INFO 3；三个静态扫描器（`unused_scan.py`/`const_scan.py`/
+> `js_dead.py`）对 `app/` + `static/` 归零。负向对照坐实两处：慢模型期间心跳计数 `during=0`（同步调用）
+> vs `>=15`（`to_thread`）；`executescript` 前 `in_transaction=True`、后 `False` 且前置工作被真提交。
+> 生产代码净减约 90 行（工具与测试增量另计，diff 总体 33 files / +651 / −232）。
+> **未清欠账（如实报，阶段六刻意不动）**：① core-bank 读路径 `_assemble` 只回传首个挂载
+> （`(topics_by_qid.get(...) or [None])[0]`）、`_taxonomy_from_link` 只出 `link["id"]`，而
+> `_remount_topics` 先 `DELETE FROM question_topics WHERE question_id = ?` 再按入参重插——插件
+> **读改写会静默丢掉副考向**（库内最多存 8 个）；② 冻结的 `schema.sql` questions 表没有
+> `revision`/`status` 列，`document["meta"]` 只能硬编码 `revision=1, status=published`，
+> 宿主宽表（真 +1）与 core-bank 两条读路径对同一字段**两套真相**。两条都要主公裁决修法
+> （改读路径回填全挂载 / 改 schema 补列），不是审计范畴。
+> **下一步**：阶段七审计精简官方插件代码（`plugins/*/dist/`，并重跑各插件探针）。
+> 注意：发版目录下 `plugins/org.jiuzhang.{bank-browser,classic-card,exam-paper,lecture}`
+> 已由主公**人工删除**（工作树仍是 ` D`，不恢复、不暂存、不入库），阶段七的审计对象只剩现存插件。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
