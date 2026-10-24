@@ -1147,6 +1147,14 @@
   var wsTextbookSelect = document.getElementById("stWsTextbook");
   var wsCreateBtn = document.getElementById("stWsCreateBtn");
   var wsTextbookRefresh = document.getElementById("stWsTextbookRefresh");
+  var wsDeleteModal = document.getElementById("wsDeleteModal");
+  var wsDeleteModalText = document.getElementById("wsDeleteModalText");
+  var wsDeleteInput = document.getElementById("wsDeleteConfirmInput");
+  var wsDeleteCancel = document.getElementById("wsDeleteCancel");
+  var wsDeleteConfirm = document.getElementById("wsDeleteConfirm");
+  var wsDeleteTarget = null;
+  var wsDeletePrevFocus = null;
+  var wsDeleteBusy = false;
   var textbookById = {};
   var textbookItems = [];
   var activeTextbookId = "";
@@ -1217,6 +1225,16 @@
         go.addEventListener("click", function () { switchWorkspace(ws); });
         actions.appendChild(go);
       }
+      if (!ws.is_active && ws.id !== "default") {
+        var remove = el("button", "q-button q-button-danger", "删除");
+        remove.type = "button";
+        remove.setAttribute("aria-label", "删除工作区：" + (ws.name || ws.id));
+        remove.addEventListener("click", function (event) {
+          event.preventDefault();
+          openWsDelete(ws);
+        });
+        actions.appendChild(remove);
+      }
       li.appendChild(actions);
       wsListEl.appendChild(li);
     });
@@ -1276,6 +1294,68 @@
         }
         mgSet(wsStatus, "教材版本保存失败：" + error.message, "down");
       });
+  }
+
+  function openWsDelete(ws) {
+    if (!wsDeleteModal || wsDeleteBusy) return;
+    wsDeleteTarget = ws;
+    if (wsDeleteModalText) {
+      wsDeleteModalText.textContent =
+        "即将删除「" + (ws.name || ws.id) + "」：该工作区的库、边车、上传图片与配置将整体移入系统回收站。" +
+        "这不是永久删除，但工作区会立即从列表消失；需要时可从回收站还原。";
+    }
+    if (wsDeleteInput) wsDeleteInput.value = "";
+    if (wsDeleteConfirm) wsDeleteConfirm.disabled = true;
+    wsDeletePrevFocus = document.activeElement;
+    wsDeleteModal.hidden = false;
+    wsDeleteModal.setAttribute("aria-hidden", "false");
+    if (wsDeleteInput) wsDeleteInput.focus();
+  }
+
+  function closeWsDelete(focusBack) {
+    if (wsDeleteModal) {
+      wsDeleteModal.hidden = true;
+      wsDeleteModal.setAttribute("aria-hidden", "true");
+    }
+    if (focusBack && wsDeletePrevFocus && wsDeletePrevFocus.focus) wsDeletePrevFocus.focus();
+    wsDeletePrevFocus = null;
+    wsDeleteTarget = null;
+  }
+
+  function confirmWsDelete() {
+    if (wsDeleteBusy || !wsDeleteTarget) return;
+    if (!wsDeleteInput || wsDeleteInput.value !== "确认删除") return;
+    var ws = wsDeleteTarget;
+    wsDeleteBusy = true;
+    if (wsDeleteConfirm) wsDeleteConfirm.disabled = true;
+    closeWsDelete(false);
+    mgSet(wsStatus, "正在把「" + (ws.name || ws.id) + "」移入系统回收站…", "info");
+    apiCall("/api/workspaces/" + encodeURIComponent(ws.id), "DELETE", { confirm: "确认删除" })
+      .then(function (result) {
+        mgSet(wsStatus, "已移入系统回收站：" + (ws.name || ws.id) +
+          "（审计已写入 " + ((result && result.audit) || "data/deletion_audit.json") + "）", "ok");
+        return loadWorkspaces();
+      })
+      .catch(function (error) { mgSet(wsStatus, "删除失败，未移入回收站：" + error.message, "down"); })
+      .finally(function () { wsDeleteBusy = false; });
+  }
+
+  function trapWsDeleteFocus(event) {
+    if (!wsDeleteModal || event.key !== "Tab") return;
+    var nodes = Array.prototype.filter.call(
+      wsDeleteModal.querySelectorAll("button, input, select, textarea, a[href]"),
+      function (node) { return !node.disabled && node.offsetParent !== null; }
+    );
+    if (!nodes.length) return;
+    var first = nodes[0];
+    var last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   function loadTextbooks() {
@@ -1353,6 +1433,23 @@
   if (wsCreateBtn) wsCreateBtn.addEventListener("click", createWorkspace);
   if (wsTextbookRefresh) wsTextbookRefresh.addEventListener("click", function () {
     loadTextbooks().then(loadWorkspaces);
+  });
+  if (wsDeleteInput) wsDeleteInput.addEventListener("input", function () {
+    if (wsDeleteConfirm) wsDeleteConfirm.disabled = wsDeleteInput.value !== "确认删除";
+  });
+  if (wsDeleteConfirm) wsDeleteConfirm.addEventListener("click", confirmWsDelete);
+  if (wsDeleteCancel) wsDeleteCancel.addEventListener("click", function () {
+    closeWsDelete(true);
+    mgSet(wsStatus, "已取消删除，工作区未变动。", "info");
+  });
+  if (wsDeleteModal) wsDeleteModal.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWsDelete(true);
+      mgSet(wsStatus, "已取消删除，工作区未变动。", "info");
+      return;
+    }
+    trapWsDeleteFocus(event);
   });
   loadTextbooks().then(loadWorkspaces);
 

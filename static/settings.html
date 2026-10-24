@@ -466,6 +466,29 @@
         </div>
       </div>
 
+      <div class="mg-modal-overlay" id="wsDeleteModal" role="dialog" aria-modal="true"
+        aria-labelledby="wsDeleteModalTitle" aria-hidden="true" hidden>
+        <div class="mg-modal">
+          <h3 id="wsDeleteModalTitle">删除工作区？</h3>
+          <p class="mg-danger" id="wsDeleteModalText">
+            该工作区的库、边车、上传图片与配置将整体移入<strong>系统回收站</strong>。
+            这不是永久删除，但工作区会立即从列表消失；需要时可从回收站还原。
+          </p>
+          <label class="q-field" for="wsDeleteConfirmInput">
+            <span>请输入「确认删除」四个字</span>
+            <input id="wsDeleteConfirmInput" type="text" autocomplete="off" spellcheck="false">
+          </label>
+          <p class="st-note">
+            删除范围仅 <code>data/workspaces/&lt;工作区 id&gt;/</code> 内的数据，不碰其他工作区，
+            也不碰 <code>plugins/</code>。每次删除会写入 <code>data/deletion_audit.json</code>。
+          </p>
+          <div class="mg-modal-actions">
+            <button type="button" class="q-button" id="wsDeleteCancel">取消</button>
+            <button type="button" class="q-button q-button-danger" id="wsDeleteConfirm" disabled>移入回收站</button>
+          </div>
+        </div>
+      </div>
+
       <section class="st-block st-about" aria-labelledby="st-about-title">
         <h2 id="st-about-title">关于底座</h2>
         <p class="st-note">

@@ -45,6 +45,7 @@ GLOBAL_FILES = {
     "startup.json",
     "bank_provider.json",
     "backup_settings.json",
+    "deletion_audit.json",
 }
 # 凭据文件可以备份到本机以外？不。它只属于本机配置，绝不进包。
 SECRET_FILES = {"backup.json"}

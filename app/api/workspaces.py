@@ -14,13 +14,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core import bank as core_bank
-from app.core import bank_provider
+from app.core import bank_provider, workspace_removal
 from app.core.config import default_database_path, root_data_dir, settings, switch_workspace
 from app.core.db import init_db
+from app.core.security import require_write_token
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"
@@ -105,6 +106,11 @@ class WorkspaceTextbookRequest(BaseModel):
 class WorkspaceSwitchRequest(BaseModel):
     """切换工作区请求体。"""
     workspace_id: str = Field(..., min_length=1, description="目标工作区ID")
+
+
+class WorkspaceDeleteRequest(BaseModel):
+    """删除工作区请求体：必须逐字输入确认语，服务端再校验一次。"""
+    confirm: str = Field("", description="必须为「确认删除」")
 
 
 class WorkspaceImportRequest(BaseModel):
@@ -381,25 +387,38 @@ async def set_workspace_textbook(payload: WorkspaceTextbookRequest) -> dict[str,
     return {"workspace_id": payload.workspace_id, "textbook_id": textbook_id}
 
 
-@router.delete("/{workspace_id}", summary="删除工作区")
-async def delete_workspace(workspace_id: str) -> dict[str, Any]:
-    """删除指定工作区及其所有数据。"""
+@router.delete(
+    "/{workspace_id}",
+    summary="删除工作区（整目录进系统回收站，并写审计）",
+    dependencies=[Depends(require_write_token)],
+)
+async def delete_workspace(
+    workspace_id: str,
+    payload: WorkspaceDeleteRequest = Body(...),
+) -> dict[str, Any]:
+    """删除指定工作区及其所有数据。
+
+    删除是最后一道兜底：用户必须在弹窗里逐字输入「确认删除」，服务端再验一次；
+    工作区目录整体进系统回收站，绝不 ``unlink`` / ``rmtree``。
+    """
+    if payload.confirm != workspace_removal.CONFIRM_TEXT:
+        raise HTTPException(status_code=400, detail="请输入「确认删除」后再执行")
     if workspace_id == "default":
         raise HTTPException(status_code=400, detail="不能删除默认工作区")
-    
-    # Check if trying to delete current workspace
     if settings.workspace_id == workspace_id:
         raise HTTPException(status_code=400, detail="不能删除当前活跃工作区，请先切换到其他工作区")
-    
-    # Remove from registry
+
+    try:
+        result = workspace_removal.recycle_workspace(workspace_id)
+    except workspace_removal.WorkspaceNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except workspace_removal.WorkspaceRemovalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     workspaces = _load_workspaces()
-    workspaces = [w for w in workspaces if w["id"] != workspace_id]
-    _save_workspaces(workspaces)
-    
-    # Delete workspace directory
-    workspace_dir = Path(settings.data_dir) / "workspaces" / workspace_id
-    if workspace_dir.exists():
-        import shutil
-        shutil.rmtree(workspace_dir)
-    
-    return {"deleted": workspace_id}
+    remaining = [w for w in workspaces if w["id"] != workspace_id]
+    if len(remaining) != len(workspaces):
+        _save_workspaces(remaining)
+
+    return {"deleted": workspace_id, **result}
+

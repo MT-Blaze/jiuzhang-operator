@@ -296,7 +296,8 @@
   width: min(92vw, 460px);
   padding: 20px 22px;
   border-radius: 12px;
-  background: var(--card, #fffdf8);
+  /* 弹窗用不透明纸色：覆盖确认必须读得清，不能让底下列表文字透上来 */
+  background: var(--paper, #fffdf8);
   box-shadow: 0 18px 48px rgba(31, 28, 24, 0.28);
 }
 .mg-modal h3 { margin: 0 0 8px; font-size: 17px; }
