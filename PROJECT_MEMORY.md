@@ -47,6 +47,30 @@
 
 ## 二、当前核心进度（v0.10.0）
 
+> **军令 #18 第二~四步与 #18-终 阶段一（2026-10-24，八阶段进行中）**：主公把「终极重构与代码审计」拆成 8 个阶段，
+> 纪律是**一阶段一 commit、记忆归档后才进下一阶段**。已交付：
+> ① 第二步 `df11767`——全局快捷键仲裁层整层拆除；② 第三步 `cf63345`——插件代码与主机状态按工作区物理隔离
+> （`data/workspaces/<id>/` 收 `plugins/`、`plugin_state.json`、`startup.json`、`bank_provider.json`、`update_state.json`、`.env`）；
+> ③ 第四步 `f0b9a11`——切库走宿主进程原地重启（`app/core/host_restart.py` + 一次性 `.bat`），彻底卸载不再跨工作区连坐；
+> ④ **#18-终 阶段一（本次）**——草稿保护从「弹窗嘴上说丢弃」改成**真的按工作区分箱**：槽位升级为
+> `jzo.draft.<工作区 id>.<插件 id>.<键>`，区 id 由宿主开机问 `/api/settings`（该端点新增 `workspace_id` 字段）拿到，
+> **问不到就 fail-closed 拒绝开箱子**；老命名空间槽位开机自动搬进本区箱（已有新槽以新槽为准）；每箱 60 槽、
+> 两周过期，随写随清。卸载边界与 `textbook_id` 契约同步钉死（返回体 `uploads_kept: true` + 三层契约测试）。
+> **真机探针才挖出来的坑**：`migrateLegacyDrafts` 原用「`jzo.draft.` 之后有没有点」判旧槽，可分箱命名空间里
+> 插件 id 天然带点——B 区开机把 `jzo.draft.default.org.jiuzhang.editor.__new__` 当旧槽搬成
+> `jzo.draft.ws_box_b.default.org.jiuzhang.editor.__new__`，切回 A 区草稿就没了。判据改为**工作区段形状**
+> （`default` 或底座生成的 `ws_` 前缀），已分箱的别区槽位一律不碰，另立静态契约
+> `test_other_workspaces_boxed_slots_are_never_touched` 钉住。
+> **验证**：全量 **53 模块 976 测全绿**（`.venv/Scripts/python.exe -m unittest tests.<模块>` 逐模块跑）；
+> 真机探针 `.system_generated/order18_final_stage1/probe.py` **15/15**——真人敲题干 → default 区落带 `saved_at`
+> 的信封 → 切 B 区看不见也写不进 → 切回 A 区录题页题干自动接上，pageerror 0，截图 `01-draft-restored.png`。
+> **未验证/边界**：探针为避开拉起时延用 `JZO_RESTART_DISABLED=1` 走 `restarting=false` 的真实重载分支，
+> **真重启路径下的草稿隔离**未在同一轮取证；彻底卸载 provider 插件（core-bank）会连带销毁老师在该区的真题库文件，
+> 现状如此、是否加门禁待主公裁决。工作树里 `bank-browser`/`classic-card`/`exam-paper`/`lecture` 四目录的删除是主公
+> 人工操作，不恢复、不纳入提交。
+> **下一步**：阶段二备份范围扩容——manifest 纳入当前工作区 `plugins/` 代码目录清单与 `plugin_state.json`，
+> `backup.py` 打包 `plugins/`（跳 `.git`、`__pycache__`），恢复时校验并覆盖当前区 `plugins/`，补插件哈希/体积/恢复单测。
+
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
 > ① 快照走 SQLite backup API（不复制 `.db` 主文件、不另装 `-wal`/`-shm` 边车），manifest 含逐题哈希、

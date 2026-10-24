@@ -205,13 +205,14 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn('action: "delete"', block, "删库成功要广播回流刷新")
 
     def test_02_draft_is_hosted_locally_never_fetched(self) -> None:
-        # 草稿走宿主本地 localStorage，插件侧不碰；宿主必须先于 HTTP 分支就地答复
+        # 草稿走宿主本地 localStorage，插件侧不碰；宿主先分好区再答复，仍不发题库请求
         self.assertIn('"draft.save", "draft.load"', STAGE)
         block = STAGE[STAGE.index('if (method === "draft.save"'):STAGE.index('var base = "/api/bank/plugins/')]
         self.assertIn("saveDraft(pluginId", block)
         self.assertIn("return;", block, "草稿答复必须短路，不发后端请求")
         self.assertIn("window.localStorage", STAGE, "草稿由同源宿主代持")
-        self.assertIn("DRAFT_NS + pluginId", STAGE, "草稿按插件命名空间隔离，防串库")
+        self.assertIn("draftPrefix(draftWorkspace) + pluginId", STAGE,
+                      "草稿按「工作区 + 插件」两级命名空间隔离，防串库")
 
     def test_03_editor_close_closes_tab_and_returns(self) -> None:
         self.assertIn('"system.editor_close"', STAGE, "system.editor_close 未进发布白名单")

@@ -28,7 +28,7 @@ from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
 from app.core import plugin_update, workspace_bootstrap
-from app.core.config import settings
+from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
 from app.core.security import local_write_token
 
@@ -192,8 +192,12 @@ def create_app() -> FastAPI:
 
     @app.get("/api/settings", summary="获取系统设置与令牌")
     async def get_settings() -> dict[str, str]:
-        """返回当前有效的写操作令牌（一次性，用后即焚）。"""
-        return {"local_token": local_write_token()}
+        """返回当前有效的写操作令牌（一次性，用后即焚）与当前工作区 id。
+
+        ``workspace_id`` 给宿主壳的草稿箱分箱用：草稿按区分槽位，
+        切库重启后 A 区没录完的题不会串进 B 区（插件拿不到令牌，也拿不到这个 id 的写权）。
+        """
+        return {"local_token": local_write_token(), "workspace_id": current_workspace_id()}
 
     @app.get("/plugins", include_in_schema=False)
     async def read_plugins_page() -> FileResponse:

@@ -344,7 +344,7 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | --- | --- |
 | `GET /api/workspaces` | 列工作区（带 `question_count` / `is_active`） |
 | ✍ `POST /api/workspaces/switch`、`POST /api/workspaces`、`POST /api/workspaces/import`、`POST /api/workspaces/textbook`、`DELETE /api/workspaces/{id}` | 切换 / 新建 / 导入 .db / 选教材版本 / 删除。**切换、新建、导入都要重启底座**（每个工作区的插件目录、启停状态、`.env` 各自独立，不重启就是拿旧区的插件读新区的库）：回包带 `restarting` 与本次进程 `boot_id`，前端据此轮询 `/healthz`，看到**新** `boot_id` 才重载页面。`POST /api/workspaces` 可带 `textbook_id`（`tb_` + 8 位 hex）随新建一次登记，省掉重启后再补一刀的竞态。单测/受控环境设 `JZO_RESTART_DISABLED=1` 只切指针、不重启 |
-| `GET /api/settings` | 系统设置与一次性写令牌 `local_token` |
+| `GET /api/settings` | 系统设置：一次性写令牌 `local_token` 与当前工作区 `workspace_id`（宿主壳据此给草稿箱分箱） |
 | `GET /api/startup` | 启动行为：`{target, effective, kind, plugin_id, plugin_name, fallback_reason, candidates[]}`。`candidates` 就是设置页下拉的数据源（**只列已启用插件**）。所配插件被卸载/停用时 `effective` 回落 `chat`、`fallback_reason` 说明原因、`target` 原地保留（军令 #11 阶段三） |
 | ✍ `POST /api/startup` | 保存启动行为：`{"target": "chat" \| "plugin:<id>"}`。写入严格——形状非法、插件未安装或已停用一律 400，不落盘 |
 | `GET /healthz` | 健康检查：`{status, service, version, boot_id, time}`。`boot_id` 每次进程启动随机换一个，是「新进程真的起来了」的唯一凭据（军令 #18-续4） |

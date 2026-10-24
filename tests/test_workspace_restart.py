@@ -10,7 +10,9 @@
    新建与导入同样走重启（它们也在切库），教材版本随新建一次登记，
    避免重启开始后再补一刀 ``/textbook`` 撞在进程退出上；
 5. 前端确认弹窗的红字警告逐字固定，点确认后进入全屏遮罩并按 ``boot_id`` 变化才重载；
-   超时如实报错并交出「手动刷新」——严禁假死装像。
+   超时如实报错并交出「手动刷新」——严禁假死装像；
+6. 草稿按工作区分箱（军令 #18-终 阶段一）：红字承诺的是「留在原区、切回恢复」，
+   不是「丢弃」；宿主不知道自己在哪个区时宁可不开草稿箱，也绝不跨区存取。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_workspace_restart``
 """
@@ -35,7 +37,8 @@ from app.core import host_restart
 from app.core.config import settings, switch_workspace
 
 ROOT = Path(__file__).resolve().parents[1]
-WARNING_TEXT = "切换工作区需要重启底座以加载该区的插件与配置，且将丢弃未保存的草稿，是否继续？"
+WARNING_TEXT = ("切换工作区需要重启底座以加载该区的插件与配置，"
+                "未保存的草稿会留在原工作区、切回时自动恢复，是否继续？")
 
 
 def _request(port: int | None = 8123) -> SimpleNamespace:
@@ -78,6 +81,12 @@ class _IsolatedData(unittest.TestCase):
             {"id": "default", "name": "默认工作区"},
             {"id": workspace_id, "name": name},
         ])
+
+    def _known_textbooks(self) -> set[str]:
+        try:
+            return {str(item["id"]) for item in core_bank.textbooks(workspaces_api._provider_id())}
+        except Exception:  # noqa: BLE001 - 与端点同口径：读不到登记表就当没有
+            return set()
 
 
 class BootIdTest(unittest.TestCase):
@@ -225,12 +234,6 @@ class SwitchEndpointTest(_IsolatedData):
 
 
 class CreateAndImportRestartTest(_IsolatedData):
-    def _known_textbooks(self) -> set[str]:
-        try:
-            return {str(item["id"]) for item in core_bank.textbooks(workspaces_api._provider_id())}
-        except Exception:  # noqa: BLE001 - 与端点同口径：读不到登记表就当没有
-            return set()
-
     def test_create_carries_textbook_and_schedules_restart(self) -> None:
         os.environ.pop("JZO_RESTART_DISABLED", None)
         workspaces_api._save_workspaces([])
@@ -289,6 +292,50 @@ class CreateAndImportRestartTest(_IsolatedData):
             result = _run(workspaces_api.import_workspace(payload, _request(8799)))
         launch.assert_called_once_with(sentinel)
         self.assertTrue(result["restarting"])
+
+
+class TextbookIdContractTest(_IsolatedData):
+    """军令 #18-终 阶段一 3：新建工作区随请求登记教材版本——契约三层（模型/端点/前端）都要钉住。"""
+
+    def test_model_defaults_to_empty_and_caps_length(self) -> None:
+        import pydantic
+
+        self.assertEqual(workspaces_api.WorkspaceCreateRequest(name="区").textbook_id, "",
+                         "不填即「跟随默认版本」，不能是 None")
+        with self.assertRaises(pydantic.ValidationError):
+            workspaces_api.WorkspaceCreateRequest(name="区", textbook_id="t" * 33)
+
+    def test_blank_textbook_registers_no_key(self) -> None:
+        os.environ["JZO_RESTART_DISABLED"] = "1"
+        workspaces_api._save_workspaces([])
+        result = _run(workspaces_api.create_workspace(
+            workspaces_api.WorkspaceCreateRequest(name="无版本区", textbook_id="   "), _request()))
+        entry = next(item for item in workspaces_api._load_workspaces() if item["id"] == result["id"])
+        self.assertNotIn("textbook_id", entry, "空版本不该往档案里塞一个空键")
+
+    def test_textbook_id_is_stripped_before_validation(self) -> None:
+        os.environ["JZO_RESTART_DISABLED"] = "1"
+        workspaces_api._save_workspaces([])
+        known = self._known_textbooks()
+        if not known:
+            self.skipTest("当前环境没有并集登记表，无法验证前后空格这一路")
+        padded = f"  {sorted(known)[0]}  "
+        result = _run(workspaces_api.create_workspace(
+            workspaces_api.WorkspaceCreateRequest(name="带空格区", textbook_id=padded), _request()))
+        entry = next(item for item in workspaces_api._load_workspaces() if item["id"] == result["id"])
+        self.assertEqual(entry["textbook_id"], padded.strip(), "登记的是去掉空白的净值")
+
+    def test_front_end_registers_version_in_the_single_create_post(self) -> None:
+        js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        block = js[js.index("function createWorkspace()"):
+                   js.index("if (wsCreateBtn) wsCreateBtn.addEventListener")]
+        self.assertIn('apiCall("/api/workspaces", "POST", { name: name, textbook_id: textbookId })', block)
+        self.assertNotIn('apiCall("/api/workspaces/textbook"', block,
+                         "新建路径不得再补一刀 /textbook——重启已经开始，那一刀会丢在进程退出当口")
+
+    def test_api_reference_documents_the_field(self) -> None:
+        doc = (ROOT / "API_REFERENCE.md").read_text(encoding="utf-8")
+        self.assertIn("textbook_id", doc)
 
 
 class UiRestartContractTest(unittest.TestCase):
@@ -352,16 +399,82 @@ class UiRestartContractTest(unittest.TestCase):
 
 
 class DraftGuardContractTest(unittest.TestCase):
-    """草稿保护的口径：切换前必须把「丢弃未保存草稿」写在红字里，由用户当场裁决。"""
+    """草稿保护的口径：红字必须如实说出草稿的去向，由用户当场裁决是否切换。"""
 
-    def test_warning_names_both_restart_and_draft_loss(self) -> None:
+    def test_warning_names_both_restart_and_draft_parking(self) -> None:
         self.assertIn("重启底座", WARNING_TEXT)
         self.assertIn("未保存的草稿", WARNING_TEXT)
+        self.assertIn("留在原工作区", WARNING_TEXT)
+        self.assertIn("切回时自动恢复", WARNING_TEXT)
         self.assertTrue(WARNING_TEXT.endswith("是否继续？"))
+
+    def test_modal_copy_does_not_promise_discard(self) -> None:
+        """草稿已按区分箱留存，红字再写「丢弃」就是骗老师。"""
+        html = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
+        block = html[html.index('id="wsSwitchModalText"'):html.index("</p>", html.index('id="wsSwitchModalText"'))]
+        self.assertNotIn("丢弃", block)
+        self.assertIn("留在原工作区", block)
 
     def test_host_shell_does_not_silent_switch(self) -> None:
         workspace_js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("/api/workspaces/switch", workspace_js)
+
+
+class DraftWorkspaceBoxContractTest(unittest.TestCase):
+    """军令 #18-终 阶段一：草稿箱按工作区分箱——切库不丢、也不串到别的区。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.js = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+
+    def test_slot_key_carries_workspace_then_plugin(self) -> None:
+        self.assertIn("return draftPrefix(draftWorkspace) + pluginId + \".\" + key;", self.js,
+                      "草稿槽位必须先是工作区、再是插件，缺一段就会串库")
+
+    def test_workspace_id_comes_from_host_bootstrap(self) -> None:
+        self.assertIn('fetch("/api/settings"', self.js)
+        self.assertIn("data.workspace_id", self.js)
+
+    def test_box_stays_closed_until_workspace_is_known(self) -> None:
+        """问不到区就不许开箱：宁可存不下，也不能把 A 区草稿挂到 B 区。"""
+        self.assertIn("if (!draftWorkspace) return draftBoxUnknown();", self.js)
+        self.assertIn("草稿箱未开放", self.js)
+        save = self.js[self.js.index("function saveDraft(pluginId, key, value)"):
+                       self.js.index("function loadDraft(pluginId, key)")]
+        self.assertIn("draftBoxUnknown", save)
+
+    def test_relay_waits_for_boxing_before_answering_draft(self) -> None:
+        block = self.js[self.js.index('if (method === "draft.save" || method === "draft.load")'):
+                        self.js.index('var base = "/api/bank/plugins/')]
+        self.assertIn("resolveDraftBox().then", block, "分箱没落地就答复，等于拿空区名存取")
+        self.assertIn("return;", block, "草稿答复仍须短路，不发题库请求")
+
+    def test_stale_and_overflowing_slots_are_swept(self) -> None:
+        self.assertIn("DRAFT_TTL_MS", self.js)
+        self.assertIn("DRAFT_BOX_MAX", self.js)
+        self.assertIn("function sweepDraftBox()", self.js)
+
+    def test_legacy_untagged_slots_are_migrated_not_dropped(self) -> None:
+        block = self.js[self.js.index("function migrateLegacyDrafts(workspaceId)"):
+                        self.js.index("function resolveDraftBox()")]
+        self.assertIn("window.localStorage.setItem(next, text)", block, "旧草稿要搬家，不能一删了事")
+        self.assertIn("if (text && !window.localStorage.getItem(next))", block,
+                      "新箱已有同槽时以新箱为准，不许覆盖回来的草稿")
+
+    def test_other_workspaces_boxed_slots_are_never_touched(self) -> None:
+        """真机踩过的坑：B 区开机把 A 区已分箱的草稿当旧槽搬走，切回 A 区草稿就没了。
+        判据必须是「工作区段形状」而不是「有没有点」——插件 id 是反向域名，天然带点。"""
+        block = self.js[self.js.index("function migrateLegacyDrafts(workspaceId)"):
+                        self.js.index("function resolveDraftBox()")]
+        self.assertIn("DRAFT_BOXED_HEAD_RE", block, "已分箱的槽位要先让位，否则会在别区开机时被当旧草稿搬走")
+        head = self.js[self.js.index("var DRAFT_BOXED_HEAD_RE"):
+                       self.js.index("var draftWorkspace =")]
+        self.assertIn("default", head)
+        self.assertIn("ws_", head, "工作区段只认 default 与底座生成的 ws_ 前缀，插件 id 的首段永不长这样")
+
+    def test_settings_api_exposes_workspace_id(self) -> None:
+        main_py = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+        self.assertIn('"workspace_id": current_workspace_id()', main_py)
 
 
 if __name__ == "__main__":

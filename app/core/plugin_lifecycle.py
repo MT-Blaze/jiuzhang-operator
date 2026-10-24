@@ -8,7 +8,14 @@
 
 **绝不跨工作区**（军令 #18-续4）：其他工作区的 ``.db`` 是老师各自的财产，卸载当前区
 的插件不能连坐。``uploads/`` 是工作区级扁平命名空间，文件不带插件标记，无法可靠归属，
-因此这里一律不删（宁可多留，不可误毁老师的图）。
+因此这里一律不删（宁可多留，不可误毁老师的图）——军令 #18-终 阶段一 把这条口径钉成契约：
+底座没有资产表也没有引用计数，「图片彻底无引用」判不出来，孤儿清理一律不做
+（与 PROJECT_MEMORY 的历史决策一致）。
+
+插件私有数据的物理位置只有当前工作区的 ``banks/<plugin_id>.db`` 一处，删它即彻底清理；
+题目行里的 ``extensions.<反向域名>`` 属于老师的题库本体，卸载**不得**顺手改写（PLUGIN_SPEC §3）。
+该区 ``plugin_state.json`` / ``startup.json`` / ``bank_provider.json`` 里的残留键由读取侧
+按「未安装即忽略」兜底（见 plugins.prune_sidebar 与各 state 模块的校验），卸载不写这些文件。
 
 安全：插件 id 必须先过格式校验；只在本底座 plugins_dir 与当前工作区 data_dir 之内操作，
 绝不接受外部路径；被删路径必须落在对应根目录内（防穿越）。
@@ -98,4 +105,6 @@ def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
         "keep_data": keep_data,
         "removed_code": removed_code,
         "removed_data": removed_data,
+        # 共享配图目录：无论是否彻底卸载都不碰（归属判不出，误删即毁老师的图）
+        "uploads_kept": True,
     }

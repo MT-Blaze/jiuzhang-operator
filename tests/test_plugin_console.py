@@ -221,6 +221,44 @@ class UninstallLifecycleTest(unittest.TestCase):
         self.assertTrue(ws_b_db.is_file(), "A 区卸载不得删 B 区的库")
         self.assertEqual(ws_b_wal.read_bytes(), b"b-wal")
 
+    def test_purge_spares_shared_uploads_in_every_workspace(self) -> None:
+        """军令 #18-终 阶段一：彻底卸载只销毁该插件自己的私有库，共享 uploads/ 一概不碰。
+
+        底座没有资产表、没有引用计数，「图片彻底无引用」判不出来；
+        uploads/ 又是工作区级扁平命名空间（文件名不带插件标记），删错就是毁老师的图。
+        """
+        ws_uploads = self.data_dir / "workspaces" / "ws_a" / "uploads"
+        default_uploads = self.data_dir / "uploads"
+        ws_uploads.mkdir(parents=True)
+        default_uploads.mkdir(parents=True)
+        mine = ws_uploads / "img_aaa111.png"
+        others = default_uploads / "img_bbb222.png"
+        mine.write_bytes(b"png-a")
+        others.write_bytes(b"png-b")
+        _make_bank_db(ws_uploads.parent / "banks" / f"{self.pid}.db", 2)
+        settings.workspace_id = "ws_a"
+
+        result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
+
+        self.assertTrue(result["uploads_kept"], "卸载回包必须如实声明没碰配图")
+        self.assertFalse((ws_uploads.parent / "banks" / f"{self.pid}.db").exists(),
+                         "该插件在本区的私有题库仍要销毁")
+        self.assertEqual(mine.read_bytes(), b"png-a")
+        self.assertEqual(others.read_bytes(), b"png-b")
+
+    def test_purge_only_touches_that_plugin_own_bank_file(self) -> None:
+        """同区其他插件的库（含活跃 provider 的真题库）不得连坐。"""
+        banks = self.data_dir / "banks"
+        _make_bank_db(banks / f"{self.pid}.db", 1)
+        provider_db = banks / "org.jiuzhang.core-bank.db"
+        _make_bank_db(provider_db, 456)
+
+        result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
+
+        removed = [item.replace("\\", "/") for item in result["removed_data"]]
+        self.assertEqual(removed, [f"banks/{self.pid}.db"])
+        self.assertTrue(provider_db.is_file(), "卸载浏览插件不得毁掉老师的公共真题库")
+
     def test_missing_plugin_and_bad_id_rejected(self) -> None:
         with self.assertRaises(plugin_lifecycle.PluginUninstallError):
             plugin_lifecycle.uninstall_plugin("org.jiuzhang.not-there", keep_data=True)
