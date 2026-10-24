@@ -82,13 +82,19 @@ def _request(
             status = int(getattr(response, "status", 200))
             body = response.read()
     except urllib.error.HTTPError as exc:
+        body = b""
         detail = ""
         try:
-            detail = exc.read().decode("utf-8", "replace")[:200]
+            body = exc.read()
+            detail = body.decode("utf-8", "replace")[:200]
         except Exception:  # noqa: BLE001 - 错误体读不到就算了
-            detail = ""
+            body, detail = b"", ""
         finally:
             exc.close()
+        # 405/409/404 这类「已在预期内」的状态必须当成正常返回，
+        # 否则 ensure_remote_dir 的「目录已存在」容忍逻辑永远走不到。
+        if exc.code in expected:
+            return exc.code, body
         raise WebdavError(f"{method} {url} 返回 HTTP {exc.code}{('：' + detail) if detail else ''}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise WebdavError(f"{method} {url} 失败：{exc}") from exc

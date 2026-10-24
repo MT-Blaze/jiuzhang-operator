@@ -57,6 +57,12 @@ class _FakeDavHandler(BaseHTTPRequestHandler):
             self._send(401)
             return
         self.server.methods.append("MKCOL")
+        path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).rstrip("/")
+        if path in self.server.dirs:
+            # 真实 WebDAV（Apache/Nginx/坚果云）对已存在的集合回 405。
+            self._send(405)
+            return
+        self.server.dirs.add(path)
         self._send(201)
 
     def do_PUT(self) -> None:  # noqa: N802
@@ -126,6 +132,7 @@ class _FakeDav:
         self.httpd.puts: list[str] = []
         self.httpd.deletes: list[str] = []
         self.httpd.auth_headers: list[str] = []
+        self.httpd.dirs: set[str] = set()
         self.httpd.fail_name = ""
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
@@ -299,6 +306,25 @@ class RemoteCleanupTest(_Base):
                 self.out / f"backup_{NEW_STAMP}.zst",
                 self.out / f"manifest_{NEW_STAMP}.json",
             )
+
+    def test_05_existing_remote_dir_405_is_tolerated(self) -> None:
+        """第二次上传时目录已存在（405）不得中断上传——真实网盘的常态。"""
+        fake = _FakeDav()
+        self.addCleanup(fake.close)
+        fake.httpd.dirs.add("/dav/jz")
+        package, manifest_path = self._pair(NEW_STAMP)
+        config = {
+            "url": fake.url,
+            "username": "teacher",
+            "password": "s3cret",
+            "remote_dir": "jz",
+        }
+
+        result = webdav.upload_backup(config, package, manifest_path)
+
+        self.assertTrue(result["ok"])
+        self.assertIn(package.name, fake.files)
+        self.assertIn("MKCOL", fake.httpd.methods)
 
 
 class WebdavValidationTest(unittest.TestCase):
