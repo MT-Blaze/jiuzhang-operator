@@ -262,6 +262,29 @@
 > `org.jiuzhang.demo-bank`，但 `tests/test_routes_and_demo_zip.py:80` 钉着那句文案、且分支由数据驱动（库真在
 > 才说），故未动。
 > **下一步**：阶段八 重打包——`tools/sync_plugin_index.py` 重算索引，两份 `plugins.json` 逐字全等，出包。
+> ⑪ **#18-终 阶段八（2026-10-25）**——重打包与索引同步（提交 `249f805`），**八阶段到此跑完**。
+> `tools/sync_plugin_index.py` 按 `plugin.json` 真值回写：core-bank 索引条目 `0.6.0 → 0.7.0`
+> （阶段五加了【查重清洗】却没同步索引，【检查更新】会一直以为没更新），`updated_at` 跟当天，
+> 同一份文本落两处后**主仓库 `plugins.json` 与 `E:/jiuzhang-plugins/plugins.json` 逐字节全等**；
+> 插件仓库那份索引里已退役的 `org.jiuzhang.placeholder` 条目随之从索引消失（**它的 zip 仍在盘上、
+> 插件仓库工作树未提交，等主公处置**——`git status` 显示 4 个 zip + plugins.json 已改）。
+> 四个对外插件用 `tools/build_plugin.py` 重出：顶层目录名 == `plugin.json` 的 id、带 Apache-2.0 LICENSE、
+> 零 `.db` 零 `bank/assets/`；抽包验货确认阶段七的修复真进了发布件。底座包
+> `dist/jiuzhang-operator-beta-v0.10.0.zip` **2,146,161 B / 274 条目 / 单顶层目录**，无 `.env`、
+> 无 `data/`、无 `.venv`、无 `.system_generated`，唯一 `.db` 是 0 题空基线（`user_version=2`），
+> 包内 chat/dashboard 也带上本轮修复，包内 `plugins.json` 与仓库索引一致。
+> `examples/plugins-index.example.json` 仍写 `org.jiuzhang.classic-card`——那是**自述「地址全部不可用、
+> 只示范结构」的文档夹具**，且 `tests/test_plugin_index.py:210` 钉着首条 id，本轮判为低危、不改。
+> **验证**：`56 模块 1039 测全绿`（索引同步后再跑一轮，逐模块计数与统计行互相核对；证据
+> `.system_generated/stage8/full_run_after_index.txt`）；`tools/audit_code.py` **ERROR 0 / WARN 34 / INFO 3**；
+> 发版包与四个对外插件包**逐字节复核**（证据 `.system_generated/stage8/audit_zip.json`、
+> `verify_plugin_zips.json`：四个 zip 顶层目录 == id、带 LICENSE、`.db` 为 0、包内每个文件与工作树
+> **byte-equal**，错配 0）。未 push、未建远端、未发 Release。
+> **本轮一条执行坑（抽包验货前先读）**：比对包内文件与工作树，必须用 `zipfile.read()` 拿到**bytes**
+> 再和本地 `read_bytes()` 比；用 `open(..., encoding='utf-8')` 文本模式读会把 CRLF 折成 LF，
+> 于是「包比源码多 1096 个字符」这种**假陈旧告警**凭空出现（真实差异 0，工作树是 CRLF、提交对象是 LF）。
+> **版本裁决悬着**：底座仍 `__version__ = "0.10.0"`、六个插件 `version` 未升，这轮修复对外不可见
+> （既有安装看不到更新）；升哪个号由主公定，定了再走 `build_release.bat` 重出。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
