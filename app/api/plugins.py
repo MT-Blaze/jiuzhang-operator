@@ -54,6 +54,10 @@ class InstalledPlugin(BaseModel):
     stage: dict[str, Any] | None = None
     bus: dict[str, Any] | None = None
     min_host_version: str = ""
+    # 渲染/工具类插件可显式声明不占左栏；缺省一律显示。
+    show_in_sidebar: bool = True
+    # 插件自报的全局快捷键（军令 #16）：安装回执里带上，前端当场就能发现撞车。
+    shortcuts: list[dict[str, Any]] = []
 
 
 class PluginInstallResponse(BaseModel):
@@ -201,6 +205,62 @@ def set_plugin_enabled(plugin_id: str, payload: dict[str, Any] = Body(...)) -> d
     enabled = payload["enabled"]
     plugin_state.set_enabled(plugin_id, enabled)
     return {"id": plugin_id, "enabled": enabled}
+
+
+@router.post(
+    "/api/plugins/{plugin_id}/nickname",
+    summary="给插件起自定义昵称（空串即清掉，回落官方原名；只写本机状态文件）",
+    dependencies=[Depends(require_write_token)],
+)
+def set_plugin_nickname(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict:
+    """昵称是老师给插件起的名字，不是清单字段——发布件不许被本机改动污染。
+
+    写范围只有 ``data/plugin_state.json``（ADR-007）：插件代码目录与题库原地不动。
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("nickname"), str):
+        raise HTTPException(status_code=400, detail="nickname 必须是字符串")
+    if not (Path(plugin_id).name == plugin_id and plugin_id):
+        raise HTTPException(status_code=400, detail="插件 ID 非法")
+    if not (Path(settings.plugins_dir) / plugin_id / "plugin.json").is_file():
+        raise HTTPException(status_code=404, detail=f"插件不存在：{plugin_id}")
+    nickname = plugin_state.set_nickname(plugin_id, payload["nickname"])
+    return {"id": plugin_id, "nickname": nickname}
+
+
+@router.post(
+    "/api/plugins/sidebar",
+    summary="整棵左栏树落盘（拖拽排序与右键建文件夹的唯一写口）",
+    dependencies=[Depends(require_write_token)],
+)
+def set_plugin_sidebar(payload: dict[str, Any] = Body(...)) -> dict:
+    """左栏顺序是「已启用列表顺序」的唯一事实来源：两边读同一棵树。
+
+    非法条目由 :func:`normalize_sidebar` 宽容剔除，不会因为一处手滑把树清零。
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("sidebar"), list):
+        raise HTTPException(status_code=400, detail="sidebar 必须是数组")
+    return {"sidebar": plugin_state.set_sidebar(payload["sidebar"])}
+
+
+@router.post(
+    "/api/plugins/shortcuts",
+    summary="改绑底座全局快捷键（不合法或空串一律解绑）",
+    dependencies=[Depends(require_write_token)],
+)
+def set_plugin_shortcut(payload: dict[str, Any] = Body(...)) -> dict:
+    """键位归底座与用户所有：这里只存用户的改绑，插件自报的键位不参与持久化。
+
+    撞车由前端在装配注册表时当场裁决——底座永远赢，插件的键位被静默禁用并记红字。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    action = payload.get("action")
+    if not plugin_state.is_action_key(action):
+        raise HTTPException(status_code=400, detail="action 非法")
+    combo = payload.get("combo", "")
+    if not isinstance(combo, str):
+        raise HTTPException(status_code=400, detail="combo 必须是字符串")
+    return {"action": action, "combo": plugin_state.set_shortcut(action, combo)}
 
 
 @router.delete(

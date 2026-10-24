@@ -60,6 +60,15 @@ _PERMISSIONS = {
 # 舞台接管（v0.6.0）：embed 内嵌一角 / takeover 占满中栏 / fullscreen 收掉左右栏
 _STAGE_MODES = {"embed", "takeover", "fullscreen"}
 _STAGE_MAX_TITLE = 24
+# 页签权重（军令 #16 模块三）：light 后台只收定时器（浅休眠），heavy 计入 LRU 存活上限。
+# 缺省一律按 heavy——底座绝不猜「这个插件很轻」，是插件自己声明才给它免死金牌。
+_STAGE_WEIGHTS = {"light", "heavy"}
+
+# 全局快捷键声明（军令 #16 模块一）：插件只能自报「组合键 + 动作名 + 文案」，
+# 撞不撞车、谁赢由底座在运行时裁决；清单里写下的键位不构成任何优先权。
+_SHORTCUT_MAX = 8
+_SHORTCUT_ACTION = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
+_SHORTCUT_MAX_LABEL = 40
 
 # 事件总线主题白名单。发布只许投给底座托管的三区与舞台选区——
 # 不许插件发 ui.params.* / layout.*，那是人和底座的地盘（防插件反向操控面板）。
@@ -287,6 +296,9 @@ def _normalize_stage(raw: Any) -> dict[str, Any] | None:
     mode = raw.get("mode")
     if mode not in _STAGE_MODES:
         mode = "embed"
+    weight = raw.get("weight")
+    if weight not in _STAGE_WEIGHTS:
+        weight = "heavy"
     title = _ui_text(raw.get("title"), _STAGE_MAX_TITLE)
     priority = raw.get("priority")
     if not isinstance(priority, int) or isinstance(priority, bool):
@@ -294,10 +306,39 @@ def _normalize_stage(raw: Any) -> dict[str, Any] | None:
     return {
         "region": "center",
         "mode": mode,
+        "weight": weight,
         "title": title,
         "priority": max(-100, min(100, priority)),
         "singleton": bool(raw.get("singleton", True)),
     }
+
+
+def _normalize_shortcuts(raw: Any) -> list[dict[str, str]]:
+    """归一插件自报的全局快捷键（军令 #16 模块一）。
+
+    键位统一成交接给底座的规范形（``Ctrl+Shift+K``），非法条目直接丢弃；
+    ``action`` 是插件自己的动作名，底座不解释、不执行，只负责比对有没有撞车。
+    """
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        combo = plugin_state.canonical_combo(item.get("combo"))
+        action = _ui_text(item.get("action"), 64)
+        if not combo or not _SHORTCUT_ACTION.fullmatch(action) or combo in seen:
+            continue
+        seen.add(combo)
+        out.append({
+            "combo": combo,
+            "action": action,
+            "label": _ui_text(item.get("label"), _SHORTCUT_MAX_LABEL) or action,
+        })
+        if len(out) >= _SHORTCUT_MAX:
+            break
+    return out
 
 
 def _normalize_bus(raw: Any) -> dict[str, Any]:
@@ -452,7 +493,27 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         ),
         # 渲染/工具类插件可显式声明 show_in_sidebar:false，不在左栏占位；缺省一律显示。
         "show_in_sidebar": manifest.get("show_in_sidebar") is not False,
+        # 插件自报的全局快捷键（军令 #16）：底座只拿它撞车比对，撞了归底座赢。
+        "shortcuts": _normalize_shortcuts(manifest.get("shortcuts")),
     }
+
+
+def _sidebar_with_unlisted(tree: list[dict[str, Any]], plugin_ids: list[str]) -> list[dict[str, Any]]:
+    """左栏树 = 用户排的序 + 树上还没有的新插件（按发现顺序追加）。
+
+    这样「设置面板的已启用顺序」和「左栏顺序」读的是同一棵树，天然对齐；
+    新装插件不会因为没人排过就消失。
+    """
+    listed = {item["id"] for item in tree if item.get("kind") == "plugin"}
+    for folder in tree:
+        if folder.get("kind") == "folder":
+            listed.update(folder.get("children") or [])
+    built = [dict(item) for item in tree]
+    for plugin_id in plugin_ids:
+        key = "plugin:" + plugin_id
+        if key not in listed:
+            built.append({"kind": "plugin", "id": key})
+    return built
 
 
 def discover_plugins() -> dict[str, Any]:
@@ -460,7 +521,9 @@ def discover_plugins() -> dict[str, Any]:
     rejected: list[dict[str, str]] = []
     root = Path(settings.plugins_dir)
     fingerprint: list[str] = []
-    disabled = plugin_state.disabled_ids()
+    # 一次性读满整份主机状态：停用过谁、谁被改过名、左栏怎么分组、快捷键怎么绑。
+    prefs = plugin_state.state()
+    disabled = prefs["disabled"]
 
     if root.is_dir():
         for plugin_dir in sorted(root.iterdir(), key=lambda item: item.name):
@@ -480,12 +543,28 @@ def discover_plugins() -> dict[str, Any]:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 info = validate_plugin(plugin_dir, manifest)
                 info["enabled"] = info["id"] not in disabled
+                # 视图层偏好就地附着：昵称空串表示「没起过名，用官方原名」，
+                # disabled_at 空串表示「历史停用、本机没记下时间」。
+                info["nickname"] = prefs["nicknames"].get(info["id"], "")
+                info["disabled_at"] = prefs["disabled_at"].get(info["id"], "")
                 plugins.append(info)
             except (PluginRejected, OSError, json.JSONDecodeError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 
+    installed = [info["id"] for info in plugins]
+    sidebar = plugin_state.prune_sidebar(prefs["sidebar"], set(installed))
+    tree = _sidebar_with_unlisted(sidebar, installed)
+    parents = plugin_state.folder_of(tree)
+    for info in plugins:
+        info["folder_id"] = parents.get("plugin:" + info["id"], "")
+
     # 启停状态也进签名：停用一个插件后左栏要能立刻知道清单变了。
     fingerprint.append("disabled:" + ",".join(sorted(disabled)))
+    # 改昵称、挪分组、重绑快捷键都算清单变化——左栏与设置面板必须当场重排，
+    # 而不是等下一次重启或手动刷新。
+    fingerprint.append("nick:" + json.dumps(prefs["nicknames"], sort_keys=True, ensure_ascii=False))
+    fingerprint.append("side:" + json.dumps(tree, sort_keys=True, ensure_ascii=False))
+    fingerprint.append("keys:" + json.dumps(prefs["shortcuts"], sort_keys=True, ensure_ascii=False))
     # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
     # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
     signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]
@@ -493,6 +572,8 @@ def discover_plugins() -> dict[str, Any]:
         "protocol": PROTOCOL,
         "plugins": plugins,
         "rejected": rejected,
+        "sidebar": tree,
+        "shortcuts": prefs["shortcuts"],
         "signature": signature,
     }
 
