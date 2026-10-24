@@ -310,6 +310,8 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 | `GET /api/bank/plugins/{plugin_id}/topics/{topic_id}/notes` | 考向教研笔记 |
 | `GET /api/bank/plugins/{plugin_id}/review?flag=&page=&page_size=` | 待审队列 |
 | `GET /api/bank/plugins/{plugin_id}/random?...筛选同 list` | 随机一题（无匹配 404） |
+| `GET /api/bank/plugins/{plugin_id}/duplicates` | 查重扫描（**只读、不鉴权**）：全库标准化 → 指纹 → 返回 ≥2 题的重复组。出参 `{plugin_id, scanned, group_count, redundant, truncated, groups[]}`；`groups[]` = `{fingerprint, count, type, ids[], differing_fields[], documents[]}`，`documents` 逐题符合 §2.1（与题库浏览器同源，双栏审查面板不必再逐题取详情）。指纹只吃到排版级归一：定界符、全半角、中文句读、多余空格、选项顺序、配图 URI 参与归一，**答案/解析/难度/年级/考向挂载/来源不参与**，其差异全列进 `differing_fields` 给老师看；ASCII `!`（阶乘）、`:`（比）、`()`（分组）一个都不吞——宁可漏报也不误报，误报的下一站是删数据 |
+| ✍ `POST /api/bank/plugins/{plugin_id}/duplicates/merge` | 收敛合并：`{"primary_id": "q_x", "copy_ids": ["q_y", ...]}`，需写令牌。保留项的题干/选项/答案/难度/题型一字不动，只把副本的考向挂载（主挂载不顶替）、来源关系（同卷同题号并一行）、单题备注 `extensions`（副本独有的键搬走；同名键**保留项赢**且只报冲突不合成，AGENTS §3）与不同解析（按「解法二/三…」追加）并过来；副本行随事务真删除（存储层无软删列）。搬完先核对（行数、副本无残留、解析/备注落库、挂载与来源集合、`foreign_key_check`、`integrity_check`）**才提交**，任一不过即整事务回滚。出参 `{primary_id, merged[], same_fingerprint, fingerprint_mismatch[], moved{topics,sources,extensions,conflict_extensions}, solution_appended_from[], questions_before, questions_after, primary}`。一次最多 20 条副本；合并成功后这些 id 自动退出题篮 |
 | `GET /api/bank/export` | 导出当前工作区题库为标准交换包 `.json`（`Content-Disposition: attachment`；`{format, format_version, schema_version, exported_at, plugin_id, count, questions}`） |
 | ✍ `POST /api/bank/import` | 批量导入题目包：`{"filename", "content_base64", "mode": "upsert"\|"skip"}`；`.json`（单题/数组/`questions` 交换包）或 `.zip`（内含 `.json`）。宿主逐题校验 `schemas/question.json`，一题不过整批回滚并逐题报错（422） |
 

@@ -111,6 +111,40 @@
 > 四目录的删除是主公人工操作，不恢复、不纳入提交。
 > **下一步**：阶段四 core-bank 查重引擎底层 API（只读扫描 → SHA-256 指纹重复组 → 合并执行接口 →
 > 收敛合并事务 + 单测）。
+> ⑦ **#18-终 阶段四（2026-10-25）**——core-bank 查重引擎底层 API，新增 `app/core/bank_dedupe.py`
+> （指纹 + 只读扫描 + 收敛合并），`app/core/bank.py` 补公开 `assemble_ids()`（读路径批量装配，
+> 按 `ASSEMBLE_CHUNK=100` 分片避开 SQLite 变量数上限），`app/api/bank.py` 开两个口子。口径：
+> **指纹 = SHA-256(题型 ‖ 归一题干 ‖ 归一选项 ‖ 归一配图)**，归一链是 `normalize_latex`（与录题入口同一套）
+> → 删中文句读引号 → NFKC → 删所有空白；**中文句读必须在 NFKC 之前删**，否则「，」落成 ASCII 逗号，
+> 而 `$\{a,b\}$` 里的逗号是有含义的。选项按正文排序入指纹（A/B 打乱算重复、正文改一个符号不算），
+> 配图 URI 入指纹（题干一字不差图不同就是两道题）；答案/解析/难度/年级/考向挂载/来源**不进指纹**，
+> 只逐组列进 `differing_fields` 给老师看。ASCII `!`（阶乘）、`:`（比）、`()`（分组）一个都不吞——
+> 查重宁可漏报不可误报，**误报的下一站是删数据**。
+> 合并口径：老师选定保留项即事实来源，题干/选项/答案/难度/题型一字不动，只搬副本的考向挂载
+> （`uq_question_topics_primary` 只许一个主挂载，副本的主挂载搬来一律降级 0，排到原序之后）、
+> 来源关系（`uq_question_sources_slot` 同卷同题号并一行）、单题备注 `extensions`（副本独有的键搬走；
+> **同名键取值不同不做合成**，只报 `conflict_extensions`——AGENTS §3 底座不解释插件私有数据；
+> 唯一例外是 `core-bank.images`，它已进指纹，按 URI 去重并全，不让老师的图随副本消失）、
+> 不同解析按「解法二/三…」追加（比对用归一文本，排版差异不堆重复解析；保留项本就没解析时副本那段
+> 直接当解法一，不顶「解法二」的标题）。存储层**没有软删列** → 副本是真 `DELETE`，靠 FK 级联清关联 +
+> 提交前 `_verify` 六项核对（行数、副本三表无残留、解析/备注落库、挂载与来源集合、`foreign_key_check`、
+> `integrity_check`），任一不过整事务回滚；`BEGIN IMMEDIATE` 中途真写失败（触发器 `RAISE(ABORT)` 模拟中断）
+> 同样全滚且滚完能直接重跑。`copy_ids` 必须是数组：裸字符串也硬拒，不做「给个字符串就当一条」的宽容。
+> HTTP 分档：`GET /duplicates` 只读不鉴权（与题目列表同口径），`POST /duplicates/merge` 走
+> `require_write_token`，400/404/409/422 分得清，成功后把被并掉的 id 从题篮摘掉（与删题同一口径）。
+> **验证**：新增 `tests/test_bank_dedupe.py` **26/26**（含真 uvicorn 5 测），全量 **54 模块 1020 测全绿**。
+> 首跑 8 ERROR + 2 FAIL，三条真因：① 夹具 `STAMP` 用了 `2026-10-25T09:00`，比真机时钟（当时 01:40）晚，
+> 合并写入的 `updated_at` 撞上 `ck_questions_updated (updated_at >= created_at)` —— 夹具建库时间一律取过去；
+> ② HTTP 夹具在**父进程**建库（`init_bank` 要按 `JZO_PLUGINS_DIR` 找 `schema.sql`），只给子进程设了环境变量，
+> 于是去 `data/workspaces/default/plugins/` 找 schema 报 `BankNotFound`；③ 引擎里 `isinstance(copy_ids, str)`
+> 的宽容分支绕过了入参校验。①② 是夹具坑，③ 是实现该收紧。
+> **未做/边界（如实报）**：`bank.dedupe_scan` / `bank.dedupe_merge` 两个 relay 方法**留给阶段五**
+> （前端双栏面板才需要，本轮不开插件口子，`static/js/stage.js` 的 `RELAY_METHODS` 未动）；扫描是全库一次性
+> 内存分组 + 每组走读路径装配，456 题量级无压力，万题级需分页或增量指纹缓存（未做）；`differing_fields`
+> 的 `extensions` 维度只比键集合、不比取值（键同值异时靠 `documents` 逐题看）。
+> **下一步**：阶段五 core-bank 查重前端 UI——顶部【查重清洗】页签 + 【一键扫描】，审查模式接管画布与右栏
+> 1:1 双栏（2 题左 1 右 1、3 题左 2 右 1、4 题左 2 右 2），题卡单选保留项 + 【确认合并】，审一组存一组不阻塞；
+> 同时把 `bank.dedupe_scan` / `bank.dedupe_merge` 加进 `RELAY_METHODS`，并在浏览器里真人路径取证。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：

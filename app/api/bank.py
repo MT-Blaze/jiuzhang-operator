@@ -18,6 +18,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 
 from app.core import bank, basket, questions
+from app.core import bank_dedupe as dedupe
 from app.core import bank_provider as provider
 from app.core import bank_transfer as transfer
 from app.core.security import require_write_token
@@ -379,6 +380,59 @@ def bank_import(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"plugin_id": plugin_id, **report}
+
+
+@router.get("/api/bank/plugins/{plugin_id}/duplicates",
+            summary="查重扫描（只读）：全库题面指纹分组，返回 ≥2 题的重复组与全文")
+def bank_duplicates(plugin_id: str) -> dict[str, Any]:
+    """题面归一 → SHA-256 指纹 → 分组，口径见 ``app/core/bank_dedupe.py`` 模块头。
+
+    扫描不动任何数据，也不鉴权（与题目列表同口径）。``differing_fields`` 只报
+    「答案/解析/难度/年级/考向/来源/备注里哪几项不一样」，老师据此决定保留哪一条。
+    """
+    try:
+        return dedupe.duplicate_groups(plugin_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/bank/plugins/{plugin_id}/duplicates/merge",
+    summary="查重收敛合并：把副本的大纲/来源/备注并进保留项，追加解法二，删副本",
+    dependencies=[Depends(require_write_token)],
+)
+def bank_duplicates_merge(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """请求体形如 ``{"primary_id": "q_keep", "copy_ids": ["q_dup1", "q_dup2"]}``。
+
+    单事务、先核对后提交：行数、残留引用、外键、完整性任一项对不上就整体回滚，
+    库里一条不动（409）。合并成功后把被删的副本从题篮一并摘掉，与删题同一口径。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    copy_ids = payload.get("copy_ids")
+    if not isinstance(copy_ids, list) or not copy_ids:
+        raise HTTPException(status_code=400, detail="copy_ids 必须是非空数组")
+    if "primary_id" not in payload:
+        raise HTTPException(status_code=400, detail="缺少 primary_id（保留项）")
+    try:
+        result = dedupe.merge_questions(plugin_id, payload.get("primary_id"), copy_ids)
+    except questions.QuestionValidationError as exc:
+        raise HTTPException(status_code=422, detail={"errors": exc.errors}) from exc
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    for question_id in result["merged"]:
+        try:
+            basket.remove(question_id)
+        except basket.BasketError:
+            # 题篮是易失的展示态集合，摘不掉不影响合并结果
+            pass
+    return result
 
 
 @router.get("/api/bank/plugins/{plugin_id}/random", summary="按筛选条件随机取一题")

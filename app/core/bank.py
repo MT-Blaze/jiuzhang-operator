@@ -57,6 +57,8 @@ MAX_SEARCH = 100
 MAX_BASKET = 200
 MAX_SEARCH_NODES = 100
 MAX_TOPIC_IDS = 8
+# 批量装配的分片大小：一次 IN 查询最多带这么多 ID，避开 SQLite 单条语句的变量数上限。
+ASSEMBLE_CHUNK = 100
 
 # 保存时阻断的体检问题。这些坏法会让公式、图片引用在任何渲染/导出端只剩半截，
 # 与其入库后再靠人眼发现，不如在保存当场报错；选项标号一类交给 Schema 判。
@@ -1014,6 +1016,30 @@ def get_many(plugin_id: str, ids: Iterable[str]) -> list[dict[str, Any]]:
         con.close()
     by_id = {document["id"]: document for document in documents}
     return [by_id[item] for item in wanted if item in by_id]
+
+
+def assemble_ids(plugin_id: str, ids: Iterable[str]) -> list[dict[str, Any]]:
+    """按 ID 批量装配标准结构全文，条数不受题篮上限约束（查重引擎一次要拿一整组）。
+
+    与 ``get_many`` 的差别只在容量与顺序：那条按题篮顺序回、卡 MAX_BASKET；
+    这条按分片拼 ``IN``，避开 SQLite 单条语句的变量数上限，返回顺序不保证、
+    调用方自己按 id 索引。
+    """
+    wanted = [item for item in ids if isinstance(item, str) and item.startswith("q_")]
+    if not wanted:
+        return []
+    documents: list[dict[str, Any]] = []
+    con = connect(plugin_id)
+    try:
+        for start in range(0, len(wanted), ASSEMBLE_CHUNK):
+            batch = wanted[start:start + ASSEMBLE_CHUNK]
+            rows = con.execute(
+                f"SELECT * FROM questions WHERE id IN ({_placeholders(len(batch))})", batch
+            ).fetchall()
+            documents.extend(_assemble(con, rows))
+    finally:
+        con.close()
+    return documents
 
 
 def random_question(
