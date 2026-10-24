@@ -81,6 +81,14 @@ _BUS_SUBSCRIBE = {
     "panel.button.click",
     # 录题插件的当前题：随对话一起搬进右栏的助手插件要能感知选区（AI 副驾）
     "stage.selection",
+    # #18-结 任务二：底座真在广播、插件也真在订的五个主题。以前白名单缺这几条，
+    # 插件照着 PLUGIN_SPEC 声明照样被 _normalize_bus 静默丢弃——「声明了不算数」
+    # 比不声明更坏：作者以为是权限问题，其实是清单压根没授权通道。
+    "system.question_updated",
+    "system.bank_query",
+    "plugin.updated",
+    "editor.apply_patch",
+    "system.open_editor",
 }
 _BUS_MAX_TOPICS = 8
 

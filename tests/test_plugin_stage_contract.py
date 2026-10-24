@@ -134,6 +134,29 @@ class BusGrantTest(unittest.TestCase):
         info = self.validate("everything")
         self.assertEqual(info["bus"]["publish"], ["region.dock"])
 
+    def test_06_order18_close_topics_are_granted(self) -> None:
+        """#18-结 任务二：这五个主题必须声明即生效，不再被白名单静默丢弃。"""
+        granted = ["system.question_updated", "system.bank_query", "plugin.updated",
+                   "editor.apply_patch", "system.open_editor"]
+        info = self.validate({"subscribe": granted})
+        self.assertEqual(sorted(info["bus"]["subscribe"]), sorted(granted))
+
+    def test_07_official_manifests_keep_every_declared_subscription(self) -> None:
+        """六个官方插件订的每个主题都得活过校验：漏一个就是「插件订了但底座没授权」。"""
+        root = Path(__file__).resolve().parents[1]
+        for manifest_path in sorted((root / "plugins").glob("org.jiuzhang.*/plugin.json")):
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            declared = (manifest.get("bus") or {}).get("subscribe") or []
+            self.assertTrue(declared, manifest["id"])
+            with tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / manifest["id"]
+                shutil.copytree(manifest_path.parent, target)
+                info = validate_plugin(target, manifest)
+            self.assertEqual(
+                sorted(info["bus"]["subscribe"]), sorted(declared),
+                "%s 的订阅被白名单截掉了：%s → %s" % (
+                    manifest["id"], declared, info["bus"]["subscribe"]))
+
 
 class DiscoverySurfaceTest(unittest.TestCase):
     def test_01_api_model_carries_stage_and_bus(self) -> None:

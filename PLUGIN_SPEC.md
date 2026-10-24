@@ -540,7 +540,7 @@ com.example.card/
 
 | 字段 | 规则 |
 | --- | --- |
-| `bus.subscribe` | 只接受宿主已定义的入站事件（`ui.params.changed` / `layout.changed` / `stage.tab.*` / `theme.changed` / `question.updated`），未定义项逐条丢弃；缺省 `["ui.params.changed"]` |
+| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#18-结 任务二定稿）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` |
 | `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
 | 条目总数 | ≤8，超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
 
