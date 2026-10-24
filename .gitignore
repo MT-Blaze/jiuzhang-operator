@@ -10,6 +10,7 @@ venv/
 # Runtime data
 .env
 data/
+data/backups/
 static/uploads/
 .system_generated/
 *.log

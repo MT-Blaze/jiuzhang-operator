@@ -1030,7 +1030,7 @@
   loadPending();
 
   // ============ 左菜单 + 右面板：分区导航 ============
-  var PANEL_KEYS = ["workspace", "plugin", "provider", "system"];
+  var PANEL_KEYS = ["workspace", "plugin", "provider", "backup", "system"];
   var navItems = {};
   var panelEls = {};
   PANEL_KEYS.forEach(function (key) {
@@ -1054,6 +1054,7 @@
       }
       if (panel) panel.hidden = !on;
     });
+    if (key === "backup") loadBackup();
   }
 
   PANEL_KEYS.forEach(function (name) {
@@ -1584,6 +1585,150 @@
     mgSet(startupStatus, "正在重新读取…", "info");
     loadStartup().then(function () { mgSet(startupStatus, "已按磁盘上的配置刷新。", "ok"); });
   });
+
+  // ============ 备份与恢复：宿主自有面板（军令 #17） ============
+  var bkLocal = document.getElementById("stBackupLocal");
+  var bkWebdav = document.getElementById("stBackupWebdav");
+  var bkLocalDir = document.getElementById("stBackupLocalDir");
+  var bkUrl = document.getElementById("stBackupUrl");
+  var bkUser = document.getElementById("stBackupUser");
+  var bkPass = document.getElementById("stBackupPass");
+  var bkRemote = document.getElementById("stBackupRemote");
+  var bkSaveBtn = document.getElementById("stBackupSaveBtn");
+  var bkRunBtn = document.getElementById("stBackupRunBtn");
+  var bkRefreshBtn = document.getElementById("stBackupRefreshBtn");
+  var bkStatus = document.getElementById("stBackupStatus");
+  var bkLast = document.getElementById("stBackupLast");
+  var bkList = document.getElementById("stBackupList");
+  var bkBusy = false;
+
+  function bkSet(text, tone) {
+    mgSet(bkStatus, text, tone);
+  }
+
+  function bkSyncToggles() {
+    if (!bkLocal || !bkWebdav) return;
+    if (bkWebdav.checked) {
+      // 网盘依赖本地：开网盘就把本地一并勾上并锁住，避免「无本地文件可传」。
+      bkLocal.checked = true;
+      bkLocal.disabled = true;
+    } else {
+      bkLocal.disabled = false;
+    }
+  }
+
+  function bkRenderList(items) {
+    if (!bkList) return;
+    bkList.textContent = "";
+    var rows = items || [];
+    if (!rows.length) {
+      bkList.appendChild(el("li", "st-ws-empty", "还没有本地备份"));
+      return;
+    }
+    rows.forEach(function (row) {
+      var li = el("li", "st-ws-item");
+      li.appendChild(el("span", "st-ws-name", row.package || row.stem));
+      var meta = row.ok
+        ? (row.generated_at || "") + " · " + Number(row.question_count || 0) + " 题 · " +
+          Math.max(1, Math.round(Number(row.package_size || 0) / 1024)) + " KB"
+        : "manifest 读取失败：" + (row.error || "未知原因");
+      li.appendChild(el("span", "st-ws-meta", meta));
+      bkList.appendChild(li);
+    });
+  }
+
+  function bkRender(body) {
+    if (!body) return;
+    if (bkLocal) bkLocal.checked = Boolean(body.local_enabled);
+    if (bkWebdav) bkWebdav.checked = Boolean(body.webdav_enabled);
+    if (bkLocalDir) bkLocalDir.value = body.local_dir || body.default_local_dir || "";
+    if (bkUrl) bkUrl.value = body.url || "";
+    if (bkUser) bkUser.value = body.username || "";
+    if (bkRemote) bkRemote.value = body.remote_dir || "";
+    if (bkPass) {
+      bkPass.value = "";
+      bkPass.placeholder = body.password_set
+        ? "已设置（留空不改）" : "只落本机，不回显";
+    }
+    var last = body.last_upload || {};
+    if (bkLast) {
+      if (last.at) {
+        bkLast.textContent = "上次网盘备份：" + last.at + " —— " +
+          (last.ok ? "成功（" + (last.remote_name || "") + "）" : "失败：" + (last.error || "未知原因"));
+        bkLast.hidden = false;
+      } else {
+        bkLast.hidden = true;
+      }
+    }
+    bkSyncToggles();
+    bkRenderList(body.local_backups || []);
+  }
+
+  function loadBackup() {
+    if (!bkList) return Promise.resolve();
+    return apiCall("/api/settings/backup", "GET")
+      .then(bkRender)
+      .catch(function (error) { bkSet("读取备份设置失败：" + error.message, "down"); });
+  }
+
+  function bkCollect() {
+    var payload = {
+      local_enabled: Boolean(bkLocal && bkLocal.checked),
+      webdav_enabled: Boolean(bkWebdav && bkWebdav.checked),
+      local_dir: bkLocalDir ? bkLocalDir.value.trim() : "",
+      url: bkUrl ? bkUrl.value.trim() : "",
+      username: bkUser ? bkUser.value.trim() : "",
+      remote_dir: bkRemote ? bkRemote.value.trim() : "",
+    };
+    if (bkPass && bkPass.value) payload.password = bkPass.value;
+    return payload;
+  }
+
+  function saveBackupConfig() {
+    if (bkBusy) return;
+    bkBusy = true;
+    if (bkSaveBtn) { bkSaveBtn.disabled = true; bkSaveBtn.setAttribute("aria-busy", "true"); }
+    bkSet("正在保存备份设置…", "info");
+    apiCall("/api/settings/backup/config", "POST", bkCollect())
+      .then(function (body) {
+        bkRender(body);
+        bkSet("备份设置已保存。", "ok");
+      })
+      .catch(function (error) { bkSet("保存失败：" + error.message, "down"); })
+      .finally(function () {
+        bkBusy = false;
+        if (bkSaveBtn) { bkSaveBtn.disabled = false; bkSaveBtn.removeAttribute("aria-busy"); }
+      });
+  }
+
+  function runBackup() {
+    if (bkBusy) return;
+    bkBusy = true;
+    if (bkRunBtn) { bkRunBtn.disabled = true; bkRunBtn.setAttribute("aria-busy", "true"); }
+    bkSet("正在生成一致性快照并压缩…", "info");
+    apiCall("/api/settings/backup/run", "POST", {})
+      .then(function (body) {
+        var local = body.local || {};
+        bkRender(body.backup || {});
+        bkSet("本地备份完成：" + (local.package_name || "已生成") +
+          "（" + Number(local.question_count || 0) + " 题，保留最近 3 份）。", "ok");
+      })
+      .catch(function (error) { bkSet("备份失败：" + error.message, "down"); })
+      .finally(function () {
+        bkBusy = false;
+        if (bkRunBtn) { bkRunBtn.disabled = false; bkRunBtn.removeAttribute("aria-busy"); }
+      });
+  }
+
+  if (bkLocal) bkLocal.addEventListener("change", bkSyncToggles);
+  if (bkWebdav) bkWebdav.addEventListener("change", bkSyncToggles);
+  if (bkSaveBtn) bkSaveBtn.addEventListener("click", saveBackupConfig);
+  if (bkRunBtn) bkRunBtn.addEventListener("click", runBackup);
+  if (bkRefreshBtn) bkRefreshBtn.addEventListener("click", function () {
+    bkSet("正在重新读取…", "info");
+    loadBackup().then(function () { bkSet("已刷新。", "ok"); });
+  });
+  bkSyncToggles();
 
   loadStartup();
 })();

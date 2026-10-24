@@ -50,7 +50,7 @@ rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
 rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
   /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch-recon-063 .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.placeholder" "%~dp0plugins\org.jiuzhang.core-bank\bank\assets" ^
-  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal *.bak "%~dp0examples\placeholder_plugin.zip" "%~dp0examples\template-plugin.zip" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063_migrated.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\bank.db"
+  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal *.bak backup_*.zst manifest_*.json "%~dp0examples\placeholder_plugin.zip" "%~dp0examples\template-plugin.zip" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063_migrated.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\v063.db" "%~dp0plugins\org.jiuzhang.core-bank\bank\bank.db"
 if errorlevel 8 (
     echo.
     echo [ERROR] File copy failed. Nothing was packaged.

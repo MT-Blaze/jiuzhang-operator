@@ -52,6 +52,8 @@
             aria-selected="false" aria-controls="stPanelPlugin" data-panel="plugin" tabindex="-1">插件</button>
           <button class="st-nav-item" id="stNavProvider" type="button" role="tab"
             aria-selected="false" aria-controls="stPanelProvider" data-panel="provider" tabindex="-1">模型配置</button>
+          <button class="st-nav-item" id="stNavBackup" type="button" role="tab"
+            aria-selected="false" aria-controls="stPanelBackup" data-panel="backup" tabindex="-1">备份与恢复</button>
           <button class="st-nav-item" id="stNavSystem" type="button" role="tab"
             aria-selected="false" aria-controls="stPanelSystem" data-panel="system" tabindex="-1">系统设置</button>
         </nav>
@@ -284,6 +286,67 @@
               未配置密钥时底座走 Mock 回显，不会伪造模型输出。
             </p>
             <p class="pl-status" id="pvResult" role="status" aria-live="polite" hidden></p>
+          </section>
+
+          <!-- ================= 备份与恢复 ================= -->
+          <section class="st-panel" id="stPanelBackup" role="tabpanel" aria-labelledby="stNavBackup" tabindex="0" hidden>
+            <h2 id="bk-title">备份与恢复</h2>
+            <p class="st-note">
+              只备份<strong>当前工作区</strong>：库、边车、题目配图与工作区数据文件。
+              插件代码全局共用，<strong>备份与恢复都不碰 <code>plugins/</code></strong>。
+              底座不做自动备份、不静默上传；每一次备份与恢复都由你当场点击发起。
+            </p>
+
+            <h3 class="st-sub">备份开关</h3>
+            <label class="st-check" for="stBackupLocal">
+              <input type="checkbox" id="stBackupLocal">
+              <span>本地备份（保留最近 3 份，自动删最旧）</span>
+            </label>
+            <label class="q-field" for="stBackupLocalDir">
+              <span>本地备份地址（绝对路径；留空用默认）</span>
+              <input id="stBackupLocalDir" type="text" autocomplete="off" spellcheck="false"
+                placeholder="data/backups/&lt;工作区&gt;">
+            </label>
+            <label class="st-check" for="stBackupWebdav">
+              <input type="checkbox" id="stBackupWebdav">
+              <span>网盘备份（WebDAV，远端保留最近 1 份）</span>
+            </label>
+            <p class="st-note">
+              网盘备份依赖本地备份：开启网盘时会自动勾选并锁定本地备份；
+              关闭本地备份时网盘备份自动关闭。上传的就是本地备份文件本身，<strong>无临时文件</strong>。
+            </p>
+
+            <h3 class="st-sub">WebDAV 配置</h3>
+            <label class="q-field" for="stBackupUrl">
+              <span>WebDAV 地址</span>
+              <input id="stBackupUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                placeholder="https://dav.example.com/remote.php/dav/files/teacher">
+            </label>
+            <label class="q-field" for="stBackupUser">
+              <span>账号</span>
+              <input id="stBackupUser" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="q-field" for="stBackupPass">
+              <span>密码（留空则不改；只落本机，不回显）</span>
+              <input id="stBackupPass" type="password" autocomplete="new-password" spellcheck="false"
+                placeholder="已设置则显示圆点占位">
+            </label>
+            <label class="q-field" for="stBackupRemote">
+              <span>远端目录</span>
+              <input id="stBackupRemote" type="text" autocomplete="off" spellcheck="false"
+                placeholder="jiuzhang-backups">
+            </label>
+
+            <div class="st-install-actions">
+              <button type="button" class="q-button" id="stBackupSaveBtn">保存备份设置</button>
+              <button type="button" class="q-button q-button-primary" id="stBackupRunBtn">立即备份</button>
+              <button type="button" class="q-button" id="stBackupRefreshBtn">刷新列表</button>
+            </div>
+            <p class="pl-status" id="stBackupStatus" role="status" aria-live="polite" hidden></p>
+            <p class="st-note" id="stBackupLast" hidden></p>
+
+            <h3 class="st-sub">本地备份</h3>
+            <ul class="st-ws-list" id="stBackupList"></ul>
           </section>
 
           <!-- ================= 系统设置 ================= -->
