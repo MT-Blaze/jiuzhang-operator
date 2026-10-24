@@ -551,10 +551,17 @@
    右栏与输出日志区照旧在场——老师要的是「卷面独占」，不是「只剩卷面」。
    与全屏同一套做法：绝不改 data-side，退出沉浸后偏好原样还在。
    0 宽轨道拦不住内容的 min-content，所以左栏是真的摘走；
-   沉浸中按 Ctrl+B 才把 data-immersive-rail 举起来，以覆盖层浮在画布上。 */
+   沉浸中点画布左上【入口】按钮把 data-immersive-rail 举起来，左栏以覆盖层浮在画布上。
+   （原先这一唤是 Ctrl+B——全局快捷键仲裁层随军令 #18 第二步整层拆除后，
+   左栏在沉浸态就没有任何唤出通道了，所以把画布上的【入口】按钮在这一态一并露出。） */
 .ws-page[data-immersive="on"] {
   --sidebar-width: 0px;
   --gutter-side: 0px;
+}
+
+.ws-page[data-immersive="on"] .ws-drawer-btn {
+  display: inline-flex;
+  align-items: center;
 }
 
 .ws-page[data-immersive="on"] .ws-resizer-v[data-resize="side"] {
