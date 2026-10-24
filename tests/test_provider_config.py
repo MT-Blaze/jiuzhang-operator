@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
@@ -18,6 +19,9 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
+
+from app.core import ai_client
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "provider-config-test-token"
@@ -241,6 +245,108 @@ class ProviderConfigApiTest(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertFalse(body["ok"], body)
         self.assertIn("尚未填齐", body["detail"], body)
+
+
+class _ChatHandler(BaseHTTPRequestHandler):
+    """假 chat/completions 网关：按 ``_reply`` 出包，``_delay`` 用来测事件循环会不会被按住。"""
+
+    _reply: dict = {}
+    _delay: float = 0.0
+    _status: int = 200
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server 命名约定
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        if self._delay:
+            time.sleep(self._delay)
+        body = b'{"error": "boom"}' if self._status != 200 else json.dumps(self._reply).encode("utf-8")
+        self.send_response(self._status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args) -> None:  # 静音
+        pass
+
+
+class ChatCompletionClientTest(unittest.TestCase):
+    """``ai_client.chat_completion`` 打的是本机假网关：不出这台机器，也不碰真密钥。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.gateway = ThreadingHTTPServer(("127.0.0.1", 0), _ChatHandler)
+        threading.Thread(target=cls.gateway.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.gateway.server_address[1]}/v1"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.gateway.shutdown()
+
+    def _client(self) -> "ai_client.OpenAICompatibleProvider":
+        return ai_client.OpenAICompatibleProvider(
+            api_key="fixture-key-chat", base_url=self.base, default_model="fixture-model"
+        )
+
+    def test_01_empty_choices_return_empty_content_instead_of_crashing(self) -> None:
+        """内容被服务端拦下时 OpenAI 兼容口回 ``"choices": []``，裸下标会抛 IndexError。"""
+        _ChatHandler._reply = {"choices": [], "model": "fixture-model"}
+        result = asyncio.run(
+            self._client().chat_completion("系统", "用户")
+        )
+        self.assertEqual(result["content"], "")
+        self.assertEqual(result["tool_calls"], [])
+        self.assertFalse(result["mock"])
+
+    def test_02_http_error_is_a_readable_runtime_error(self) -> None:
+        _ChatHandler._status = 503
+        try:
+            with self.assertRaises(RuntimeError) as raised:
+                asyncio.run(self._client().chat_completion("系统", "用户"))
+        finally:
+            _ChatHandler._status = 200
+        self.assertIn("AI API error 503", str(raised.exception))
+
+    def test_03_slow_model_does_not_block_the_event_loop(self) -> None:
+        """urllib 是阻塞 IO：网关睡 0.4 秒期间，事件循环照常跑别的协程。
+
+        以前直接在 ``async def`` 里调 urlopen，一次 AI 调用能把整个底座（含正在录题的
+        插件页面）按住到模型返回为止；这条判据就是钉住「必须放线程池」。
+        """
+        _ChatHandler._reply = {"choices": [{"message": {"content": "好"}}], "model": "fixture-model"}
+        _ChatHandler._delay = 0.4
+        ticks = {"n": 0}
+
+        async def _tick() -> None:
+            while True:
+                await asyncio.sleep(0.01)
+                ticks["n"] += 1
+
+        async def _both() -> int:
+            request = asyncio.ensure_future(self._client().chat_completion("系统", "用户"))
+            ticker = asyncio.ensure_future(_tick())
+            result = await request
+            during = ticks["n"]          # 只看「等模型的那段时间」跑了几拍
+            ticker.cancel()
+            try:
+                await ticker
+            except asyncio.CancelledError:
+                pass
+            assert result["content"] == "好"
+            return during
+
+        try:
+            during = asyncio.run(_both())
+        finally:
+            _ChatHandler._delay = 0.0
+        # 睡 0.4 秒 ≈ 40 拍；事件循环若被 urlopen 按住，这里会是 0
+        self.assertGreaterEqual(during, 15, f"等模型期间只跑了 {during} 拍，事件循环被按住了")
+
+    def test_04_bad_timeout_env_falls_back_instead_of_killing_startup(self) -> None:
+        """``JZO_AI_TIMEOUT_SECONDS`` 是用户写进 .env 的，写坏了不能让应用在导入期就起不来。"""
+        for raw, expected in (("abc", 30), ("0", 30), ("-5", 30), ("45", 45), ("99999", 30)):
+            with mock.patch.dict(os.environ, {"JZO_AI_TIMEOUT_SECONDS": raw}):
+                self.assertEqual(ai_client._timeout_from_env(), expected, raw)
 
 
 if __name__ == "__main__":

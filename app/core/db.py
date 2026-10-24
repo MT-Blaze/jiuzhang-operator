@@ -10,7 +10,6 @@ v1 → v2：difficulty 的 CHECK 由 basic/medium/hard/novel 改为 L1/L2/L3/L4
 
 from __future__ import annotations
 
-import shutil
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -50,22 +49,21 @@ CREATE TABLE {target} (
 );
 """
 
-_QUESTIONS_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_questions_created_at ON questions (created_at DESC, id DESC);
-CREATE INDEX IF NOT EXISTS idx_questions_type ON questions (type);
-CREATE INDEX IF NOT EXISTS idx_questions_difficulty ON questions (difficulty);
-CREATE INDEX IF NOT EXISTS idx_questions_status ON questions (status);
-"""
+_QUESTIONS_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_questions_created_at ON questions (created_at DESC, id DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_questions_type ON questions (type);",
+    "CREATE INDEX IF NOT EXISTS idx_questions_difficulty ON questions (difficulty);",
+    "CREATE INDEX IF NOT EXISTS idx_questions_status ON questions (status);",
+)
 
 _DDL = (
-    _QUESTIONS_TABLE_V2.format(target="questions")
-    + _QUESTIONS_INDEXES
-    + """
-CREATE TABLE IF NOT EXISTS question_tombstones (
+    _QUESTIONS_TABLE_V2.format(target="questions"),
+    *_QUESTIONS_INDEXES,
+    """CREATE TABLE IF NOT EXISTS question_tombstones (
     id         TEXT PRIMARY KEY,
     deleted_at TEXT NOT NULL
 );
-"""
+""",
 )
 
 # 旧表搬到新表时难度按契约 2.0 的映射改值；映射外的脏值原样搬，
@@ -89,6 +87,18 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA busy_timeout = 5000")
     return con
+
+
+def run_statements(con: sqlite3.Connection, statements) -> None:
+    """逐句 ``execute``，不用 ``executescript``。
+
+    ``executescript`` 会先把挂起的事务隐式提交——本机制品（Python 3.14.6）实测：
+    ``BEGIN IMMEDIATE`` 之后调它，``in_transaction`` 立刻变 False，尾部的 ``rollback``
+    空转。于是建库/表结构升级失败时，会留下「结构已改、``user_version`` 还是旧值」的半套库，
+    下一次启动再按旧版本跑一遍迁移就直接打不开。逐句执行不提交，整段仍在同一个事务里。
+    """
+    for statement in statements:
+        con.execute(statement)
 
 
 @contextmanager
@@ -141,7 +151,7 @@ def _migrate_v1_to_v2(con: sqlite3.Connection, path: Path) -> None:
         raise RuntimeError(f"难度口径迁移行数不符：搬 {moved} 行，原表 {before} 行，已回滚。")
     con.execute("DROP TABLE questions")
     con.execute("ALTER TABLE questions__v2 RENAME TO questions")
-    con.executescript(_QUESTIONS_INDEXES)
+    run_statements(con, _QUESTIONS_INDEXES)
 
 
 def init_db() -> None:
@@ -161,7 +171,7 @@ def init_db() -> None:
                 f"数据库结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级程序或恢复备份。"
             )
         if version < 1:
-            con.executescript(_DDL)
+            run_statements(con, _DDL)
         elif version == 1:
             _migrate_v1_to_v2(con, database_path())
         if version != SCHEMA_VERSION:

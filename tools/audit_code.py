@@ -6,6 +6,8 @@
 - 禁止 eval / new Function / 文档写入；
 - 定时器必须有清理或被注释说明为常驻（启发式，报告不阻断）；
 - Python 禁止在工作目录拼绝对路径、禁止 f-string 拼 SQL；
+- Python 的 try/except 不许「父类在前、子类在后」（军令 #18-终 阶段六实测修掉一处：
+  这样写不报错，但子类分支永不可达，404 会被打成 400，前端按状态码分档的兜底全失真）；
 - 禁止测试令牌 / 测试临时目录泄漏进 app/ 与 static/。
 
 用法：``.venv/Scripts/python.exe tools/audit_code.py``
@@ -14,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from dataclasses import dataclass
@@ -73,8 +76,90 @@ def kind_of(path: Path) -> str:
     return "css"
 
 
+def exception_bases(tree: ast.Module) -> dict[str, str]:
+    """类名 → 唯一基类名（只取第一个基类，够覆盖本仓的异常家族；跨模块同名视为同一族）。"""
+    out: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or not node.bases:
+            continue
+        base = node.bases[0]
+        name = base.id if isinstance(base, ast.Name) else (
+            base.attr if isinstance(base, ast.Attribute) else "")
+        if name:
+            out[node.name] = name
+    return out
+
+
+def handler_names(handler: ast.ExceptHandler) -> list[str]:
+    if handler.type is None:
+        return ["Exception"]
+    names: list[str] = []
+    stack: list[ast.expr] = [handler.type]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Tuple):
+            stack.extend(node.elts)
+        elif isinstance(node, ast.Name):
+            names.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.append(node.attr)
+    return names
+
+
+def is_subclass(inherit: dict[str, str], maybe_sub: str, maybe_base: str) -> bool:
+    seen: set[str] = set()
+    current = inherit.get(maybe_sub, "")
+    while current and current not in seen:
+        if current == maybe_base:
+            return True
+        seen.add(current)
+        current = inherit.get(current, "")
+    return False
+
+
+def scan_except_order(root: Path, entries, inherit: dict[str, str]) -> list[Finding]:
+    """父类分支写在子类之前 → 子类不可达。这类 Bug 单测全绿也照样存在，只能静态钉。"""
+    findings: list[Finding] = []
+    for path, tree in entries:
+        relative = path.relative_to(root)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Try):
+                continue
+            seen: list[str] = []
+            for handler in node.handlers:
+                names = handler_names(handler)
+                # 同一个 handler 里的元组是「并列捕获」，不构成顺序；只与前面分支比
+                for name in names:
+                    for earlier in seen:
+                        if is_subclass(inherit, name, earlier):
+                            findings.append(Finding(
+                                "ERROR", "except-shadow", str(relative), handler.lineno,
+                                f"先 except {earlier}（父）后到 {name}（子）：子类分支不可达"))
+                seen.extend(names)
+    return findings
+
+
+def python_trees(root: Path):
+    """全仓 .py 走一遍：既用来收集异常继承表，也用来做 AST 级检查。"""
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in relative.parts):
+            continue
+        if relative.parts and relative.parts[0] in SKIP_ROOT_DIRS:
+            continue
+        try:
+            yield path, ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+
+
 def scan(root: Path) -> list[Finding]:
     findings: list[Finding] = []
+    entries = list(python_trees(root))
+    inherit: dict[str, str] = {}
+    for _, tree in entries:
+        inherit.update(exception_bases(tree))
+    findings.extend(scan_except_order(root, entries, inherit))
     for path in iter_files(root):
         suffix = kind_of(path)
         try:

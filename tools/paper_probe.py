@@ -36,7 +36,6 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 BANK_ID = "org.jiuzhang.core-bank"
 PAPER_ID = "org.jiuzhang.paper-gen"
-PAGE_BODY_H = 925
 
 
 def free_port() -> int:

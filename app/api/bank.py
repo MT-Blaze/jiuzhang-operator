@@ -35,10 +35,10 @@ def bank_textbooks() -> dict[str, Any]:
         items = bank.textbooks(plugin_id)
         active = workspace_api.active_textbook_id(plugin_id)
         return {"plugin_id": plugin_id, "items": items, "active_textbook_id": active}
-    except bank.BankError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/bank/provider", summary="当前活跃的题库 provider（宿主与控制台都读它）")

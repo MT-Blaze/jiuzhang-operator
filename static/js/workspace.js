@@ -475,10 +475,6 @@
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
   }
 
-  function ctxOpen() {
-    return !!wsPage && wsPage.getAttribute("data-ctx") === "open";
-  }
-
   function dockOpen() {
     return !!wsPage && wsPage.getAttribute("data-dock") === "open";
   }
@@ -1244,13 +1240,6 @@
   function sidebarRowKey(target) {
     var row = target && target.closest ? target.closest(".ws-plugin-row") : null;
     return row ? (row.getAttribute("data-key") || "") : "";
-  }
-
-  /** 右键条目上的可聚焦锚点：菜单关掉后焦点要还给老师右键点的那一行。 */
-  function sidebarRowAnchor(target) {
-    var row = target && target.closest ? target.closest(".ws-plugin-row") : null;
-    if (!row) return null;
-    return row.querySelector(".ws-plugin-item, .ws-plugin-folder-head") || row;
   }
 
   function renamePlugin(plugin, anchor) {

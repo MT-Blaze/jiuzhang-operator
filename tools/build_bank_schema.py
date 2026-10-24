@@ -41,7 +41,6 @@ EXPECTED_TABLES = (
     "textbooks",
     "node_topic_map",
 )
-BUSINESS_TABLES = tuple(t for t in EXPECTED_TABLES if t != "bank_meta")
 BANNED_TABLE_TOKENS = ("fingerprint", "similar", "same_type", "dedup")
 CHECK_PATH = ROOT / "data" / "bank_v063_empty_check.md"
 

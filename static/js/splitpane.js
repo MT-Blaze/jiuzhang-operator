@@ -158,19 +158,6 @@
     return true;
   }
 
-  function reset(options) {
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch (error) {
-      // 同上：删不掉也不影响回默认
-    }
-    Object.keys(PANES).forEach(function (key) {
-      writeSize(key, PANES[key].fallback, {});
-    });
-    emit("layout.changed", { by: (options && options.by) || "reset", sizes: currentSizes() });
-    emit("region.dock", { text: "已恢复默认布局（左 240 / 右 300 / 下 190）" });
-  }
-
   // ---------- 拖拽：mousedown → mousemove → mouseup ----------
   function beginDrag(paneKey, event) {
     var pane = PANES[paneKey];
@@ -270,22 +257,15 @@
         handle.addEventListener("keydown", function (event) {
           onHandleKey(paneKey, event);
         });
-        // 双击回默认：拖错了不用去左下角找按钮
+        // 双击分隔条把该区弹回默认：拖错了当场就能改回来，不必再去动偏好设置
         handle.addEventListener("dblclick", function () {
           writeSize(paneKey, PANES[paneKey].fallback, { persist: true });
           emit("layout.changed", { by: "dblclick", pane: paneKey, sizes: currentSizes() });
+          emit("region.dock", { text: PANES[paneKey].label + "已恢复默认。" });
         });
         syncAria(paneKey, readSize(PANES[paneKey]));
       })(handles[i]);
     }
-  }
-
-  function bindResetButton() {
-    var button = document.getElementById("wsResetLayout");
-    if (!button) return;
-    button.addEventListener("click", function () {
-      reset({ by: "button" });
-    });
   }
 
   // 视口变小后旧尺寸可能已经越界（例如把窗口拖窄后再拖宽）：重新夹一遍
@@ -298,18 +278,10 @@
   });
 
   bindHandles();
-  bindResetButton();
   restore();
 
   window.JzoSplitPane = {
     sizes: currentSizes,
-    set: function (paneKey, value) { return writeSize(paneKey, value, { persist: true }); },
-    reset: reset,
-    defaults: function () {
-      var out = {};
-      Object.keys(PANES).forEach(function (key) { out[key] = PANES[key].fallback; });
-      return out;
-    },
-    storageKey: STORAGE_KEY
+    set: function (paneKey, value) { return writeSize(paneKey, value, { persist: true }); }
   };
 })();

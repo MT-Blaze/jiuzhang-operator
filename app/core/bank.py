@@ -389,15 +389,33 @@ def textbook_id_of(name: str) -> str:
     return "tb_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
 
 
-def _new_table_ddl(plugin_id: str, name: str) -> str:
-    """取冻结 schema.sql 里某张新表的 CREATE TABLE 段，再拼上本文件登记的索引。"""
-    schema = _schema_path(plugin_id).read_text(encoding="utf-8")
-    start = schema.index(f"CREATE TABLE {name} (")
-    end = schema.index(");", start) + 2
+def _new_table_ddl(plugin_id: str, name: str) -> list[str]:
+    """取冻结 schema.sql 里某张新表的 CREATE TABLE 段，再拼上本文件登记的索引。
+
+    返回**语句列表**而不是一整段脚本：调用方在升级事务里逐句 ``execute``（与本文件
+    ``V082_TOPICS_INDEXES`` 同款写法）。``executescript`` 会隐式提交挂起的事务，
+    升级尾部的自检失败就回滚不回去，留下半套库——口径见 ``app/core/db.py::run_statements``。
+    """
     indexes = V082_NEW_TABLE_INDEXES.get(name)
     if indexes is None:
         raise BankError(f"没登记 {name} 的索引，拒绝建出一张缺索引的库")
-    return schema[start:end] + "\n" + "\n".join(item.rstrip(";") + ";" for item in indexes)
+    schema_path = _schema_path(plugin_id)
+    if not schema_path.is_file():
+        # 题库还在、插件包已被删时升级照样会走到这里：给 BankNotFound（404 与「缺定义」的人话），
+        # 不许把裸 FileNotFoundError 抛成 500。与 init_bank 同一句判词。
+        raise BankNotFound(f"缺少表结构定义：{schema_path}")
+    schema = schema_path.read_text(encoding="utf-8")
+    # 冻结的 schema.sql 排版被人动过时，str.index 会抛裸 ValueError 打成 500；
+    # 这里换成 BankError，让调用方（升级/建库路径）拿到「哪张表取不到 DDL」的人话。
+    marker = f"CREATE TABLE {name} ("
+    start = schema.find(marker)
+    if start < 0:
+        raise BankError(f"冻结的 schema.sql 里找不到表 {name} 的 CREATE TABLE 段")
+    end = schema.find(");", start)
+    if end < 0:
+        raise BankError(f"表 {name} 的 CREATE TABLE 段没有收尾的 );")
+    end += 2
+    return [schema[start:end], *(item.rstrip(";") + ";" for item in indexes)]
 
 
 def _v082_verify(con: sqlite3.Connection, expected_map: int, snapshot: dict[str, int]) -> None:
@@ -502,7 +520,8 @@ def upgrade_structure(plugin_id: str, path: Path | None = None) -> dict[str, Any
             )}
             for table in V082_NEW_TABLES:
                 if table not in names:
-                    con.executescript(_new_table_ddl(plugin_id, table))
+                    for statement in _new_table_ddl(plugin_id, table):
+                        con.execute(statement)
 
             tb_id = textbook_id_of(V082_TEXTBOOK_NAME)
             stamp = con.execute("SELECT COALESCE(MAX(updated_at), ?) FROM topics", (_now(),)).fetchone()[0]
@@ -854,7 +873,6 @@ def _build_where(
     textbook: str = "",
     search: str = "",
     flag: str = "",
-    ids: Iterable[str] | None = None,
     fts: bool = False,
 ) -> tuple[str, list[Any]]:
     where: list[str] = []
@@ -905,12 +923,6 @@ def _build_where(
         flag_sql, flag_params = _flag_clause(flag)
         where.append(flag_sql)
         params.extend(flag_params)
-    if ids is not None:
-        wanted = list(ids)
-        if not wanted:
-            return "WHERE 1 = 0", []
-        where.append(f"q.id IN ({_placeholders(len(wanted))})")
-        params.extend(wanted)
     clause = "WHERE " + " AND ".join(where) if where else ""
     return clause, params
 

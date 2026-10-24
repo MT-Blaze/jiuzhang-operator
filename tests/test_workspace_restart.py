@@ -224,6 +224,26 @@ class SwitchEndpointTest(_IsolatedData):
         prepare.assert_not_called()
         self.assertEqual(settings.workspace_id, before)
 
+    def test_registry_entry_without_name_or_id_does_not_break_the_switch(self) -> None:
+        """``workspaces.json`` 是人能改的文件：条目缺 name 只退回 id，非对象条目读时出局。
+
+        切库回包是在「指针已写入、重启已发起」之后才组装的，这里抛 KeyError 会变成
+        「库确实切了、前端只收到 500」的半截状态——比显示成 id 难查得多。
+        """
+        os.environ["JZO_RESTART_DISABLED"] = "1"
+        workspaces_api._save_workspaces([
+            {"id": "default", "name": "默认工作区"},
+            {"id": "ws_noname"},
+            "不是对象",
+            {"name": "没有 id 的条目"},
+        ])
+        result = _run(workspaces_api.switch_workspace_endpoint(
+            workspaces_api.WorkspaceSwitchRequest(workspace_id="ws_noname"), _request()))
+        self.assertEqual(result["workspace_id"], "ws_noname")
+        self.assertEqual(result["name"], "ws_noname")
+        listed = _run(workspaces_api.list_workspaces())
+        self.assertEqual([item["id"] for item in listed["workspaces"]], ["default", "ws_noname"])
+
     def test_switch_to_default_works_without_registry_entry(self) -> None:
         os.environ["JZO_RESTART_DISABLED"] = "1"
         switch_workspace("ws_somewhere")

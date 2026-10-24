@@ -154,11 +154,14 @@ class PersistenceTest(unittest.TestCase):
         self.assertIn("catch", restore_block)
         self.assertIn("return null", restore_block)
 
-    def test_04_reset_clears_storage_and_applies_defaults(self) -> None:
-        block = JS[JS.index("function reset(options)"): JS.index("// ---------- 拖拽")]
-        self.assertIn("removeItem(STORAGE_KEY)", block)
-        self.assertIn("PANES[key].fallback", block)
-        self.assertIn('bindResetButton', JS)
+    def test_04_double_click_restores_that_pane(self) -> None:
+        """悬浮复位图标早已退役（test_01 钉死页面里没有它），回默认只剩「双击分隔条」这一条活路。"""
+        start = JS.index('addEventListener("dblclick"')
+        block = JS[start:JS.index("syncAria(paneKey", start)]
+        self.assertIn("PANES[paneKey].fallback", block, "双击要把这一区弹回默认宽")
+        self.assertIn("persist: true", block, "双击的结果得写进记忆，刷新后不许弹回去")
+        self.assertIn('by: "dblclick"', block, "总线要认得出是双击，别和拖拽混成一类")
+        self.assertNotIn("wsResetLayout", JS, "退役的复位按钮不许再回宿主代码")
 
     def test_05_keyboard_and_double_click_adjust(self) -> None:
         self.assertIn("ArrowRight", JS)

@@ -11,7 +11,19 @@ from typing import Any
 from pydantic import BaseModel, Field, model_serializer
 
 
-class QuestionOption(BaseModel):
+class _OmitAbsent(BaseModel):
+    """出参里没值的字段整个省略：API_REFERENCE §2.1 规定 ``answer`` 为 null 时不发该键。
+
+    以前只有 ``QuestionOption`` 这么做，``GET /api/questions`` 却照样吐
+    ``"answer": null``、``"options": null``，与插件读路径（``bank._document_from``）口径不一致。
+    """
+
+    @model_serializer(mode="wrap")
+    def _drop_absent_fields(self, handler) -> dict[str, Any]:
+        return {key: value for key, value in handler(self).items() if value is not None}
+
+
+class QuestionOption(_OmitAbsent):
     """单个选项（schemas/question.json 的 $defs/option）。
 
     响应模型不加 key 的正则约束：写法校验归写入侧的 JSON Schema 负责，
@@ -22,13 +34,8 @@ class QuestionOption(BaseModel):
     content: str = Field("", description="选项内容（Markdown + LaTeX）")
     image_ids: list[str] | None = Field(None, description="图片选项使用的图 id")
 
-    @model_serializer(mode="wrap")
-    def _drop_absent_fields(self, handler) -> dict[str, Any]:
-        """没声明的字段不得出现在响应里：库内选项 JSON 没有 image_ids 时也不吐 null。"""
-        return {key: value for key, value in handler(self).items() if value is not None}
 
-
-class Question(BaseModel):
+class Question(_OmitAbsent):
     """单题完整结构（与 _row_to_document 输出一致）。"""
 
     id: str = Field(..., description="题目唯一 ID")

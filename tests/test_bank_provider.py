@@ -183,6 +183,29 @@ class ProviderChannelTest(unittest.TestCase):
         self.assertNotIn(require_write_token, guards(read), "只读当前 provider 不该要令牌")
         self.assertNotIn(require_write_token, guards(candidates), "只读候选清单不该要令牌")
 
+    def test_12_missing_bank_is_404_not_400(self) -> None:
+        """`BankNotFound` 是 `BankError` 的子类：except 写反序就永远回 400，前端按码分档的兜底全失真。
+
+        军令 #18-终 阶段六在 `/api/bank/textbooks` 抓到这一处（其余 17 处都是 404 在前），
+        单测当时全绿——所以这条判据必须留在这里，同时 `tools/audit_code.py` 新增 except-shadow 规则。
+        """
+        from unittest import mock
+
+        from fastapi import HTTPException
+
+        from app.api import bank as bank_api
+        from app.core import bank
+
+        with mock.patch.object(bank, "textbooks", side_effect=bank.BankNotFound("没有这座库")):
+            with self.assertRaises(HTTPException) as caught:
+                bank_api.bank_textbooks()
+        self.assertEqual(caught.exception.status_code, 404, "缺库要 404，不许被打成 400")
+
+        with mock.patch.object(bank, "textbooks", side_effect=bank.BankError("库是坏的")):
+            with self.assertRaises(HTTPException) as caught:
+                bank_api.bank_textbooks()
+        self.assertEqual(caught.exception.status_code, 400, "其余库错误仍按 400 回")
+
 
 if __name__ == "__main__":
     unittest.main()

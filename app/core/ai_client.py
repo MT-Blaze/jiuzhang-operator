@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -20,7 +21,17 @@ from app.core import providers
 from app.core.provider import AIProvider
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
-AI_TIMEOUT = int(os.environ.get("JZO_AI_TIMEOUT_SECONDS", "30"))
+DEFAULT_TIMEOUT_SECONDS = 30
+
+
+def _timeout_from_env() -> int:
+    """``JZO_AI_TIMEOUT_SECONDS`` 是用户自己写进 .env 的，写坏了不能让应用在导入期就起不来。"""
+    raw = str(os.environ.get("JZO_AI_TIMEOUT_SECONDS") or "").strip()
+    seconds = int(raw) if raw.isdigit() else 0
+    return seconds if 0 < seconds <= 600 else DEFAULT_TIMEOUT_SECONDS
+
+
+AI_TIMEOUT = _timeout_from_env()
 
 
 class OpenAICompatibleProvider(AIProvider):
@@ -112,17 +123,23 @@ class OpenAICompatibleProvider(AIProvider):
             payload["tool_choice"] = tool_choice or "auto"
 
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+        def _post() -> Any:
+            request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
 
         try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as response:
-                body = response.read().decode("utf-8")
-                result = json.loads(body)
+            # urllib 是阻塞 IO：模型响应动辄十几秒，直接调用会把事件循环按住，
+            # 底座其他页面（含正在录题的插件）一起卡死。PLUGIN_SPEC §下载约束同口径。
+            result = await asyncio.to_thread(_post)
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"AI API error {exc.code}: {error_body}") from exc
 
-        choice = result.get("choices", [{}])[0]
+        choices = result.get("choices")
+        # 内容被服务端拦下时 OpenAI 兼容口会回 "choices": []，裸下标是 IndexError。
+        choice = choices[0] if isinstance(choices, list) and choices else {}
         message = choice.get("message", {})
         usage = result.get("usage", {})
 

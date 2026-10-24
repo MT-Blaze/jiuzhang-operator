@@ -171,7 +171,7 @@ class GroupMergeTest(unittest.TestCase):
         self.assertIn("position: fixed", rule[0], "跟着页签栏一起裁剪就等于点开看不见")
 
     def test_04_picking_a_child_tab_collapses_the_menu(self) -> None:
-        dismiss = block(STAGE, "function dismissGroup(tab) {", "function barItems() {")
+        dismiss = block(STAGE, "function dismissGroup(tab) {", "function slideTabs(step) {")
         self.assertIn("ws-tab-group-list", dismiss)
         self.assertIn('collapse(parent.getAttribute("data-group")', dismiss)
         activate = block(STAGE, "function activate(key)", "function applyFullscreen(")

@@ -45,7 +45,15 @@ def _read() -> dict[str, Any]:
         return {"items": []}
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         return {"items": []}
-    items = [item for item in data["items"] if isinstance(item, dict) and item.get("question_id")]
+    # question_id 与 plugin_id 缺一不算一条合法的篮内条目：写盘的两条路径（add/replace）
+    # 都保证带齐，这里读到缺的只可能是手改过的 basket.json，下游按库分组取题会直接 KeyError。
+    items = [
+        item
+        for item in data["items"]
+        if isinstance(item, dict)
+        and isinstance(item.get("question_id"), str) and item["question_id"]
+        and isinstance(item.get("plugin_id"), str) and item["plugin_id"]
+    ]
     return {"items": items[:MAX_BASKET]}
 
 

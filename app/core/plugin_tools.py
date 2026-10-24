@@ -178,14 +178,6 @@ def build_tools() -> list[dict[str, Any]]:
     return tools
 
 
-def tool_names(tools: list[dict[str, Any]]) -> list[str]:
-    return [
-        item.get("function", {}).get("name", "")
-        for item in tools
-        if isinstance(item, dict)
-    ]
-
-
 # --- 宿主内置工具：按关键词检索当前工作区题库（军令 #15 任务 3）---
 # 边界：模型与插件都只交出关键词。读 SQLite、算命中数、取示例题全部由底座在
 # 本进程里代劳（bank / bank_provider 都是宿主模块），示例题只回前几条，

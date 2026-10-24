@@ -32,13 +32,10 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"
 DEFAULT_WORKSPACE_NAME = "默认工作区"
-# 工作区下拉里「当前题库」显示的就是**活跃 provider** 的题目数（PLUGIN_SPEC §2.6.1）。
-# 默认仍是官方 core-bank，但这里不再写死它的 id——第三方题库被选为 provider 后，
-# 计数、建库、挂载都跟着走同一个解析结果。
-CORE_BANK_PLUGIN_ID = bank_provider.DEFAULT_PROVIDER_ID
-
-
 def _provider_id() -> str:
+    # 工作区下拉里「当前题库」显示的是**活跃 provider** 的题目数（PLUGIN_SPEC §2.6.1）。
+    # 这里不写死官方 core-bank 的 id——第三方题库被选为 provider 后，
+    # 计数、建库、挂载都跟着走同一个解析结果。
     return bank_provider.resolve()["plugin_id"]
 
 
@@ -51,8 +48,6 @@ def _bank_db_for(workspace_id: str | None) -> Path:
 
 def _bank_question_count(workspace_id: str | None) -> int:
     """只读统计某工作区题库的题目数；库还不存在（没打开过）算 0，绝不为计数去建库。"""
-    import sqlite3
-
     path = _bank_db_for(workspace_id)
     if not path.is_file():
         return 0
@@ -156,15 +151,26 @@ def _workspace_config_path() -> Path:
 
 
 def _load_workspaces() -> list[dict[str, Any]]:
-    """Load workspace registry from disk."""
+    """Load workspace registry from disk.
+
+    ``workspaces.json`` 是人可以直接改的文件。``id`` 是工作区的身份：没有它，条目既切不过去、
+    删不掉，也会在左栏下拉里挂成一行选不动的假工作区（计数还会错算成默认区的），
+    所以读的时候按「是不是一个工作区」判掉；``name`` 之类展示字段缺失由调用方 ``.get()`` 兜。
+    """
     path = _workspace_config_path()
     if not path.exists():
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
     except (json.JSONDecodeError, OSError):
         return []
+    if not isinstance(data, list):
+        return []
+    return [
+        item
+        for item in data
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
+    ]
 
 
 def _save_workspaces(workspaces: list[dict[str, Any]]) -> None:
@@ -180,7 +186,7 @@ async def list_workspaces() -> dict[str, Any]:
     workspaces = _load_workspaces()
     
     # Ensure default workspace exists
-    has_default = any(w["id"] == DEFAULT_WORKSPACE_ID for w in workspaces)
+    has_default = any(w.get("id") == DEFAULT_WORKSPACE_ID for w in workspaces)
     if not has_default:
         workspaces.insert(0, {
             "id": DEFAULT_WORKSPACE_ID,
@@ -227,7 +233,7 @@ async def switch_workspace_endpoint(
         target = None
     else:
         # Verify workspace exists
-        workspace_ids = [w["id"] for w in workspaces]
+        workspace_ids = [w.get("id") for w in workspaces]
         if workspace_id not in workspace_ids:
             raise HTTPException(status_code=404, detail=f"工作区 {workspace_id} 不存在")
         target = workspace_id
@@ -243,8 +249,9 @@ async def switch_workspace_endpoint(
         host_restart.launch_restart(prepared)
 
     resolved_id = workspace_id or "default"
+    # 名字读不到就退回 id：此时库已经切完、重启已经发起，不能再用 KeyError 把回包炸掉。
     resolved_name = next(
-        (w["name"] for w in workspaces if w["id"] == resolved_id),
+        (w.get("name") or resolved_id for w in workspaces if w.get("id") == resolved_id),
         DEFAULT_WORKSPACE_NAME if resolved_id == DEFAULT_WORKSPACE_ID else resolved_id,
     )
 
@@ -476,7 +483,7 @@ async def delete_workspace(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     workspaces = _load_workspaces()
-    remaining = [w for w in workspaces if w["id"] != workspace_id]
+    remaining = [w for w in workspaces if w.get("id") != workspace_id]
     if len(remaining) != len(workspaces):
         _save_workspaces(remaining)
 

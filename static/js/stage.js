@@ -25,7 +25,6 @@
   var SANDBOX = "allow-scripts allow-modals";
   var MAX_LIVE_FRAMES = 3;
   var REQUEST_TIMEOUT_MS = 30000;   // PLUGIN_SPEC §5.1：宿主对插件请求 30 秒超时
-  var DOCK_LOG_MAX = 120;
   var TAB_OVERFLOW = 10;            // 军令 #16 模块三：超过 10 个页签固定 120px + 横滚 + 分组合并
   var TAB_GROUP_MIN = 2;            // 组内凑满两页才收成下拉，单页收成下拉只是添堵
   var UNGROUPED_KEY = "ungrouped";  // 没进任何文件夹的插件，共用这一个集合分组
@@ -1795,11 +1794,6 @@
     collapse(parent.getAttribute("data-group") || "");
   }
 
-  function barItems() {
-    if (!tabsEl) return 0;
-    return tabsEl.querySelectorAll(":scope > .ws-tab, :scope > .ws-tab-group").length;
-  }
-
   function slideTabs(step) {
     if (!tabsEl) return;
     var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -2156,8 +2150,6 @@
       });
       return reached;
     },
-    broadcast: broadcast,
-    maxLiveFrames: MAX_LIVE_FRAMES,
-    dockLogMax: DOCK_LOG_MAX
+    broadcast: broadcast
   };
 })();

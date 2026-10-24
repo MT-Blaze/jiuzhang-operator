@@ -500,6 +500,36 @@ class BankApiContractTest(unittest.TestCase):
         status, data = self._request("/api/basket")
         self.assertEqual(data["total"], 0)
 
+    def test_basket_survives_a_tampered_file(self) -> None:
+        """`basket.json` 是人能改的文件：缺 plugin_id 的条目只得出局，不许把读接口打成 500。
+
+        展开读题时宿主按 plugin_id 分组取题，旧过滤器只验 question_id，
+        一条缺库的条目会让 ``item["plugin_id"]`` 抛 KeyError 整篮判死。
+        """
+        self._request("/api/basket", "DELETE", token=True)
+        (self.data_dir / "basket.json").write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {"question_id": "q_test_000001"},
+                        {"question_id": "q_test_000002", "plugin_id": PLUGIN_ID},
+                        "不是对象",
+                        {"question_id": "", "plugin_id": PLUGIN_ID},
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        status, data = self._request("/api/basket")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["total"], 1)
+        self.assertEqual(data["items"][0]["question_id"], "q_test_000002")
+        status, expand = self._request("/api/basket?expand=true")
+        self.assertEqual(status, 200)
+        self.assertEqual(expand["total"] + expand["missing"], 1)
+        self._request("/api/basket", "DELETE", token=True)
+
     # ---------- 录题写入（v0.6.2） ----------
     def _editor_question(self, **overrides) -> dict:
         document = {

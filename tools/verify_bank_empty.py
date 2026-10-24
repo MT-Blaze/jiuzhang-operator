@@ -2,13 +2,12 @@
 """空库交付证据：对 v063.db 跑逐表 COUNT(*)，输出核对文件与终端文本。"""
 import io
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(r"E:\jiuzhang-operator")
 DB = ROOT / "plugins/org.jiuzhang.core-bank/bank/v063.db"
 OUT_MD = ROOT / "data/bank_v063_empty_check.md"
-TZ = timezone(timedelta(hours=8))
 
 ORDER = ["schools", "topics", "topic_notes", "sources", "questions",
          "question_topics", "question_sources", "bank_meta"]

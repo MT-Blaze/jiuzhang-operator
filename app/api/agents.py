@@ -11,7 +11,7 @@ import re
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core import ai_client, plugin_search, plugin_tools, ui_cards

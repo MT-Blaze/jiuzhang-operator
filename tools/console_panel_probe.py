@@ -24,18 +24,6 @@ BASE = "http://127.0.0.1:8765/static/workspace.html"
 ORIGIN = "http://127.0.0.1:8765"
 TOKEN = "dev-token-2026"
 
-JS_CARDS = """
-() => Array.from(document.querySelectorAll('#mgList .mg-card')).map(li => ({
-  id: li.getAttribute('data-id'),
-  state: li.getAttribute('data-state') || 'on',
-  big: (li.querySelector('.mg-card-name') || {}).textContent || '',
-  small: (li.querySelector('.mg-card-official') || {}).textContent || '',
-  sub: (li.querySelector('.mg-card-sub') || {}).textContent || '',
-  folder: (li.querySelector('.mg-tag-folder') || {}).textContent || '',
-  buttons: Array.from(li.querySelectorAll('button')).map(b => b.textContent.trim()),
-}))
-"""
-
 JS_RAIL = """
 () => Array.from(document.querySelectorAll('#wsPluginList .ws-plugin-row'))
   .map(r => r.getAttribute('data-key'))

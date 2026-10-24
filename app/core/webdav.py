@@ -49,12 +49,6 @@ def _quote(segment: str) -> str:
     return urllib.parse.quote(segment, safe="")
 
 
-def _url_for(config: dict[str, Any], *segments: str) -> str:
-    base = _base_url(config)
-    quoted = [_quote(str(segment)) for segment in segments if str(segment)]
-    return base + ("/" + "/".join(quoted) if quoted else "")
-
-
 def _auth_header(config: dict[str, Any]) -> dict[str, str]:
     username = str(config.get("username") or "")
     password = str(config.get("password") or "")

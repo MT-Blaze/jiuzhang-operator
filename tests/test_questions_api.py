@@ -262,6 +262,22 @@ class QuestionsApiContractTest(unittest.TestCase):
         self.assertIsInstance(page["items"][0]["options"], list)
         self.assertEqual([item["key"] for item in page["items"][0]["options"]], ["A", "B", "C", "D"])
 
+    def test_06c_absent_fields_are_omitted_not_nulled(self) -> None:
+        """契约（API_REFERENCE §2.1）：``answer`` 为 null 时出参**整个省略**该字段。
+
+        宿主读模型以前只在 ``QuestionOption`` 上剥 null，``Question`` 本体照发
+        ``"answer": null``、``"options": null``，与插件读路径（``bank._document_from``
+        压根不发空字段）两套口径；老师在同一份题上拿到两种形状，插件只能两套判空。
+        """
+        marker = "省略空字段_" + str(int(time.time() * 1000))
+        document = self.create(marker + "：计算 $1+1$ 。")
+        status, detail, _ = self.call("GET", "/api/questions/" + document["id"])
+        self.assertEqual(status, 200, detail)
+        for field in ("answer", "options", "solution"):
+            self.assertNotIn(field, detail, f"{field} 没有值时不得以 null 出现在出参里")
+        self.assertEqual(detail["stem"], document["stem"])
+        self.assertIn("meta", detail)
+
     def test_07_plugin_discovery_and_scoped_assets(self) -> None:
         status, discovery, _ = self.call("GET", "/api/plugins")
         self.assertEqual(status, 200)

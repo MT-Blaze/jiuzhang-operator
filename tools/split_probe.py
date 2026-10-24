@@ -262,21 +262,20 @@ def run(tag: str) -> dict:
               page.evaluate("() => document.querySelectorAll('#wsDockLog li').length") <= 2,
               str(page.evaluate("() => document.querySelectorAll('#wsDockLog li').length")))
 
-        # ---------- 一键恢复默认 ----------
-        page.locator("#wsResetLayout").click(timeout=2500)
-        page.wait_for_timeout(400)
+        # ---------- 双击分隔条回默认（悬浮复位图标已随二级菜单一起退役） ----------
+        for pane in ("side", "context", "dock"):
+            page.locator('.ws-resizer[data-resize="%s"]' % pane).dblclick()
+            page.wait_for_timeout(150)
         reset = snap("21-after-reset")
-        check("复位按钮回默认 240/300/190",
+        check("双击三区回默认 240/300/190",
               all(reset["vars"][k] == DEFAULTS[k] for k in ("side", "context", "dock")),
               json.dumps(reset["vars"]))
-        check("复位后 localStorage 记忆被清掉", not reset["storage"], str(reset["storage"]))
-        check("复位按钮命中区 ≥44×44",
-              reset["handles"] and page.evaluate("""
-              () => { const b = document.getElementById('wsResetLayout').getBoundingClientRect();
-                      return b.width >= 44 && b.height >= 44; }
-              """), "")
+        stored = json.loads(reset["storage"] or "{}")
+        check("双击回默认写进记忆（刷新不弹回）",
+              all(stored.get(k) == DEFAULTS[k] for k in ("side", "context", "dock")),
+              str(reset["storage"]))
         dock_text = page.evaluate("() => document.getElementById('wsDockLog').textContent")
-        check("复位在底栏留痕", "恢复默认布局" in dock_text, dock_text.strip()[:80])
+        check("双击回选择在底栏留痕", "已恢复默认" in dock_text, dock_text.strip()[:80])
 
         # ---------- 键盘可达 ----------
         page.locator('.ws-resizer[data-resize="side"]').focus()
@@ -304,7 +303,7 @@ def run(tag: str) -> dict:
         page.evaluate("() => window.JzoSplitPane.set('side', 1)")
         clamped_low = page.evaluate("() => window.JzoSplitPane.sizes().side")
         check("低于下限被夹紧到 180", clamped_low == 180, str(clamped_low))
-        page.locator("#wsResetLayout").click()
+        page.locator('.ws-resizer[data-resize="side"]').dblclick()
         page.wait_for_timeout(200)
 
         # ---------- 脏数据不炸 ----------

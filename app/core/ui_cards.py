@@ -99,28 +99,6 @@ def install_block(entry: dict[str, Any], reason: str = "") -> dict[str, Any]:
     }
 
 
-def confirm_block(
-    title: str, description: str, actions: list[dict[str, str]]
-) -> dict[str, Any] | None:
-    cleaned: list[dict[str, str]] = []
-    for action in actions[:4]:
-        if not isinstance(action, dict):
-            continue
-        label = _text(action.get("label"), 20)
-        command = _text(action.get("command"), 200)
-        if label and command:
-            cleaned.append({"label": label, "command": command})
-    if not cleaned:
-        return None
-    return {
-        "version": CARD_VERSION,
-        "type": "confirm_card",
-        "title": _text(title, 60) or "操作确认",
-        "description": _text(description, 400),
-        "actions": cleaned,
-    }
-
-
 def _renderable(block: dict[str, Any]) -> bool:
     """空壳卡片不下发：前端认不出内容时只会留下一个空框。"""
     kind = block.get("type")

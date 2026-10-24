@@ -47,10 +47,6 @@
     return typeof key === "string" && key.indexOf("folder:") === 0;
   }
 
-  function pluginIdOf(key) {
-    return isPluginKey(key) ? key.slice(7) : "";
-  }
-
   function newFolderKey() {
     return "folder:" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   }
@@ -75,31 +71,6 @@
     return tree;
   }
 
-  function treeKeys(tree) {
-    var keys = [];
-    (tree || []).forEach(function (item) {
-      if (item.kind === "folder") {
-        keys.push(item.id);
-        item.children.forEach(function (child) { keys.push(child); });
-      } else keys.push(item.id);
-    });
-    return keys;
-  }
-
-  /** 树上有没有任何「人排过的痕迹」：有文件夹、或顺序与插件清单不同，都算排过。 */
-  function treeIsCustomized(tree, plugins) {
-    if (!(tree || []).length) return false;
-    if (tree.some(function (item) { return item.kind === "folder"; })) return true;
-    var listed = (plugins || []).map(function (plugin) { return "plugin:" + plugin.id; });
-    var flat = treeKeys(tree).filter(isPluginKey);
-    if (flat.length !== listed.length) return false;
-    for (var i = 0; i < flat.length; i += 1) {
-      if (flat.indexOf(listed[i]) < 0) return false;   // 树上有不在盘的插件：算排过
-      if (flat[i] !== listed[i]) return true;          // 顺序不同：排过
-    }
-    return false;
-  }
-
   /** 把旧版存在浏览器里的拖拽顺序搬成一颗扁平树（只搬一次）。 */
   function legacyTree() {
     var keys;
@@ -120,18 +91,6 @@
     try {
       window.localStorage.setItem(MIGRATED_KEY, "1");
     } catch (error) { /* 记不住标记只意味着下次可能再问一次，不影响结果 */ }
-  }
-
-  function pluginRows(body) {
-    return body && Array.isArray(body.plugins) ? body.plugins : [];
-  }
-
-  function findPlugin(body, pluginId) {
-    var rows = pluginRows(body);
-    for (var i = 0; i < rows.length; i += 1) {
-      if (rows[i] && rows[i].id === pluginId) return rows[i];
-    }
-    return null;
   }
 
   /** 卡片/条目上的显示名：老师起的昵称优先，没起过就用官方原名（军令 #16 模块二）。 */
@@ -336,21 +295,13 @@
 
   window.JzoPrefs = {
     relTime: relTime,
-    asText: asText,
     displayName: displayName,
-    isPluginKey: isPluginKey,
     isFolderKey: isFolderKey,
-    pluginIdOf: pluginIdOf,
     readTree: readTree,
-    treeKeys: treeKeys,
-    treeIsCustomized: treeIsCustomized,
     legacyTree: legacyTree,
     markLegacyMigrated: markLegacyMigrated,
-    pluginRows: pluginRows,
-    findPlugin: findPlugin,
     folderName: folderName,
     folderKeyOf: folderKeyOf,
-    newFolderKey: newFolderKey,
     moveEntry: moveEntry,
     createFolderAt: createFolderAt,
     ungroupPlugin: ungroupPlugin,
