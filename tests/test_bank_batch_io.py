@@ -143,6 +143,8 @@ class BankBatchIoHttpTest(unittest.TestCase):
         cls.data_dir = cls.tmp_root / "data"
         cls.plugins_dir = cls.tmp_root / "plugins"
         cls.data_dir.mkdir(parents=True, exist_ok=True)
+        cls._saved_plugins_env = os.environ.get("JZO_PLUGINS_DIR")
+        os.environ["JZO_PLUGINS_DIR"] = str(cls.plugins_dir)
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql", seed_dir / "schema.sql")
@@ -195,6 +197,10 @@ class BankBatchIoHttpTest(unittest.TestCase):
             cls.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             cls.process.kill()
+        if cls._saved_plugins_env is None:
+            os.environ.pop("JZO_PLUGINS_DIR", None)
+        else:
+            os.environ["JZO_PLUGINS_DIR"] = cls._saved_plugins_env
         cls.tmp.cleanup()
 
     # ---------- HTTP 辅助 ----------

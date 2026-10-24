@@ -63,20 +63,20 @@ class EnsureBankWorkspaceTest(unittest.TestCase):
 
         self._saved = (
             __import__("os").environ.get("JZO_DATA_DIR"),
-            settings.plugins_dir,
+            __import__("os").environ.get("JZO_PLUGINS_DIR"),
             settings.workspace_id,
         )
         __import__("os").environ["JZO_DATA_DIR"] = str(self.data_dir)
-        settings.plugins_dir = self.plugins_dir
+        __import__("os").environ["JZO_PLUGINS_DIR"] = str(self.plugins_dir)
         settings.workspace_id = None
 
     def tearDown(self) -> None:
         data, plugins, ws = self._saved
-        if data is None:
-            __import__("os").environ.pop("JZO_DATA_DIR", None)
-        else:
-            __import__("os").environ["JZO_DATA_DIR"] = data
-        settings.plugins_dir = plugins
+        for key, value in (("JZO_DATA_DIR", data), ("JZO_PLUGINS_DIR", plugins)):
+            if value is None:
+                __import__("os").environ.pop(key, None)
+            else:
+                __import__("os").environ[key] = value
         settings.workspace_id = ws
         self.tmp.cleanup()
 

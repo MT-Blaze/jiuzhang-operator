@@ -42,7 +42,7 @@ from typing import Any, Iterable
 from app.core import bank_fts
 from app.core import question_parser
 from app.core import questions as question_contract
-from app.core.config import settings
+from app.core.config import DEFAULT_WORKSPACE_ID, current_workspace_id, plugins_dir, settings
 from app.core.contract import (
     CONTRACT_VERSION,
     normalize_contract_version,
@@ -168,12 +168,12 @@ def bank_db_path(plugin_id: str, *, create: bool = True) -> Path:
 
 
 def _seed_path(plugin_id: str) -> Path:
-    return Path(settings.plugins_dir) / plugin_id / "bank" / "bank.db"
+    return plugins_dir() / plugin_id / "bank" / "bank.db"
 
 
 def _schema_path(plugin_id: str) -> Path:
     """冻结表结构的唯一事实来源：插件包里的 bank/schema.sql。"""
-    return Path(settings.plugins_dir) / plugin_id / "bank" / "schema.sql"
+    return plugins_dir() / plugin_id / "bank" / "schema.sql"
 
 
 def _upgrade_if_older(plugin_id: str, path: Path) -> None:
@@ -224,7 +224,7 @@ def ensure_bank(plugin_id: str) -> Path:
     with _seed_lock:
         if path.is_file() and path.stat().st_size > 0:
             return path
-        seed = _seed_path(plugin_id) if settings.workspace_id is None else None
+        seed = _seed_path(plugin_id) if current_workspace_id() == DEFAULT_WORKSPACE_ID else None
         if seed is not None and seed.is_file():
             tmp = path.with_suffix(".db.part")
             try:
@@ -246,7 +246,7 @@ def _seed_assets(plugin_id: str) -> None:
     图片不是题目结构的一部分，但 schema 指向 ``/static/uploads/``；插件要能在
     另一台机器上“装上就有图”，随包的图必须由底座在首次建库时落位。
     """
-    source = Path(settings.plugins_dir) / plugin_id / "bank" / "assets"
+    source = plugins_dir() / plugin_id / "bank" / "assets"
     if not source.is_dir():
         return
     target_dir = Path(settings.uploads_dir)

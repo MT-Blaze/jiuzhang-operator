@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-from app.core.config import PROJECT_ROOT
+from app.core.config import env_file_path as _workspace_env_file
 from app.core.providers import ProviderProfile
 
 TEST_TIMEOUT_SECONDS = 10
@@ -26,10 +26,11 @@ class ProviderConfigError(Exception):
 
 
 def env_file_path() -> Path:
-    override = os.environ.get("JZO_ENV_FILE", "").strip()
-    if override:
-        return Path(override)
-    return PROJECT_ROOT / ".env"
+    """当前工作区的 ``.env``（``JZO_ENV_FILE`` 可整体覆盖）。
+
+    军令 #18：凭据按工作区物理隔离，切库后重启加载该区自己的 .env。
+    """
+    return _workspace_env_file()
 
 
 def validate_base_url(url: str) -> str:

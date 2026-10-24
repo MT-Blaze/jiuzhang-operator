@@ -38,18 +38,20 @@ class _Isolated(unittest.TestCase):
         base = Path(self.tmp.name)
         self.plugins_dir = base / "plugins"
         self.plugins_dir.mkdir()
-        self._saved = (settings.plugins_dir, os.environ.get("JZO_DATA_DIR"))
+        self._saved = (os.environ.get("JZO_PLUGINS_DIR"), os.environ.get("JZO_DATA_DIR"))
         for name in (BANK, PAPER):
             shutil.copytree(ROOT / "plugins" / name, self.plugins_dir / name)
-        settings.plugins_dir = self.plugins_dir
+        os.environ["JZO_PLUGINS_DIR"] = str(self.plugins_dir)
         os.environ["JZO_DATA_DIR"] = str(base / "data")
         self.addCleanup(self._restore)
 
     def _restore(self) -> None:
-        settings.plugins_dir, data = self._saved
-        os.environ.pop("JZO_DATA_DIR", None)
-        if data is not None:
-            os.environ["JZO_DATA_DIR"] = data
+        plugins, data = self._saved
+        for key, value in (("JZO_PLUGINS_DIR", plugins), ("JZO_DATA_DIR", data)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def _strip_capability(self, plugin_id: str) -> None:
         manifest = self.plugins_dir / plugin_id / "plugin.json"

@@ -38,7 +38,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app import __version__
-from app.core.config import root_data_dir, settings
+from app.core.config import current_workspace_id, plugins_dir, settings, workspace_storage_dir
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
     MAX_ENTRIES,
@@ -341,8 +341,8 @@ def apply_plugin_update(entry: dict[str, Any], *, local_version: str = "",
                 f"需先更新底座：新包要求 ≥ {required}，当前底座 {host_version()}",
                 code="incompatible")
 
-        plugins_dir = Path(settings.plugins_dir)
-        destination = plugins_dir / plugin_id
+        target_root = plugins_dir()
+        destination = target_root / plugin_id
         if destination.exists() and (destination.is_symlink() or not destination.is_dir()):
             raise UpdateRejected(f"plugins/{plugin_id} 不是目录，拒绝覆盖")
 
@@ -396,8 +396,8 @@ def apply_updates(rows: list[dict[str, Any]], *, allow_download: bool = True) ->
 # ----------------------------------------------------------------- 续更状态
 
 def pending_path() -> Path:
-    """``data/update_state.json``：更新唯一允许写进 ``data/`` 的痕迹。"""
-    return root_data_dir() / PENDING_FILENAME
+    """``data/workspaces/<id>/update_state.json``：续更清单只属于当前工作区。"""
+    return workspace_storage_dir(current_workspace_id()) / PENDING_FILENAME
 
 
 def _now() -> str:

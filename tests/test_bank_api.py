@@ -123,6 +123,8 @@ class BankApiContractTest(unittest.TestCase):
         cls.plugins_dir = cls.tmp_root / "plugins"
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         cls.plugins_dir.mkdir(parents=True, exist_ok=True)
+        cls._saved_plugins_env = os.environ.get("JZO_PLUGINS_DIR")
+        os.environ["JZO_PLUGINS_DIR"] = str(cls.plugins_dir)
 
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
@@ -194,6 +196,10 @@ class BankApiContractTest(unittest.TestCase):
             cls.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             cls.process.kill()
+        if cls._saved_plugins_env is None:
+            os.environ.pop("JZO_PLUGINS_DIR", None)
+        else:
+            os.environ["JZO_PLUGINS_DIR"] = cls._saved_plugins_env
         cls.tmp.cleanup()
 
     # ---------- HTTP 辅助 ----------
@@ -902,7 +908,9 @@ class MigratedBankIntegrityTest(unittest.TestCase):
         (data_dir / "banks").mkdir(parents=True)
         shutil.copyfile(cls.migrated, data_dir / "banks" / f"{PLUGIN_ID}.db")
         cls.previous = os.environ.get("JZO_DATA_DIR")
+        cls.previous_plugins = os.environ.get("JZO_PLUGINS_DIR")
         os.environ["JZO_DATA_DIR"] = str(data_dir)
+        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
         sys.path.insert(0, str(ROOT))
         from app.core import bank  # noqa: PLC0415
 
@@ -914,6 +922,10 @@ class MigratedBankIntegrityTest(unittest.TestCase):
             os.environ.pop("JZO_DATA_DIR", None)
         else:
             os.environ["JZO_DATA_DIR"] = cls.previous
+        if cls.previous_plugins is None:
+            os.environ.pop("JZO_PLUGINS_DIR", None)
+        else:
+            os.environ["JZO_PLUGINS_DIR"] = cls.previous_plugins
         cls.tmp.cleanup()
 
     def _documents(self) -> list[dict]:
@@ -1029,8 +1041,8 @@ class MigratedBankIntegrityTest(unittest.TestCase):
 class LegacyWideTableSeedTest(unittest.TestCase):
     """v0.6.2 的 bank_questions 宽表库必须被拒读并给出可操作提示，不许静默读空。
 
-    注意注入点：``JZO_DATA_DIR`` 每次调用都重读，``settings.plugins_dir`` 却是导入期
-    一次性求值的类属性——所以这里直接铺工作区库文件，不靠环境变量换插件目录。
+    注意注入点：``JZO_DATA_DIR`` 与 ``JZO_PLUGINS_DIR`` 都是每次调用重读，
+    但这条只验证工作区库文件的拒绝逻辑，直接铺库文件即可。
     """
 
     def test_wide_table_database_is_rejected_with_actionable_message(self) -> None:

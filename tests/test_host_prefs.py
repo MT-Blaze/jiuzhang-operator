@@ -1,7 +1,7 @@
 """主机状态偏好层（军令 #16；#18 第二步裁剪）：昵称、左栏文件夹树、停用时间。
 
 钉死三件事：
-1. **写范围只有一个文件**——所有偏好都落 ``data/plugin_state.json``，
+1. **写范围只有一个文件**——所有偏好都落当前工作区的 ``plugin_state.json``，
    不新建侧文件、不碰插件代码目录、不碰各工作区题库（ADR-007 的口径扩展到整个状态层）；
 2. **发现层把偏好投影进清单**——左栏树是「已启用顺序」的唯一事实来源，
    新装插件不会因为没人排过序就消失，卸载插件不会在树上留幽灵；
@@ -70,7 +70,9 @@ class PluginStatePrefsTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        patch = mock.patch.object(plugin_state, "root_data_dir", lambda: self.data_dir)
+        patch = mock.patch.object(
+            plugin_state, "_state_path", lambda: self.data_dir / self.mod.STATE_FILENAME
+        )
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -220,8 +222,10 @@ class DiscoveryPrefsTest(unittest.TestCase):
         _plugin_dir(self.plugins_dir, _manifest(ALPHA, name="甲插件"))
         _plugin_dir(self.plugins_dir, _manifest(BETA, name="乙插件"))
         self._patches = [
-            mock.patch.object(plugins_core.settings, "plugins_dir", self.plugins_dir),
-            mock.patch.object(plugin_state, "root_data_dir", lambda: self.data_dir),
+            mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(self.plugins_dir)}),
+            mock.patch.object(
+                plugin_state, "_state_path", lambda: self.data_dir / self.state.STATE_FILENAME
+            ),
         ]
         for patch in self._patches:
             patch.start()
@@ -407,7 +411,9 @@ class PrefsHttpTest(unittest.TestCase):
         listing = self._call("GET", "/api/plugins")[1]
         self.assertEqual("我的 甲台",
                          next(item for item in listing["plugins"] if item["id"] == ALPHA)["nickname"])
-        persisted = json.loads((self.data_dir / "plugin_state.json").read_text(encoding="utf-8"))
+        persisted = json.loads(
+            (self.data_dir / "workspaces" / "default" / "plugin_state.json").read_text(encoding="utf-8")
+        )
         self.assertEqual({ALPHA: "我的 甲台"}, persisted["nicknames"])
 
         status, body = self._call("POST", f"/api/plugins/{ALPHA}/nickname",

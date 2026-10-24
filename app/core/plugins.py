@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.core import plugin_state
-from app.core.config import settings
+from app.core.config import plugins_dir
 
 PROTOCOL = "jzo-plugin/1"
 SUPPORTED_API_MAJOR = 1
@@ -483,7 +483,7 @@ def _sidebar_with_unlisted(tree: list[dict[str, Any]], plugin_ids: list[str]) ->
 def discover_plugins() -> dict[str, Any]:
     plugins: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
-    root = Path(settings.plugins_dir)
+    root = plugins_dir()
     fingerprint: list[str] = []
     # 一次性读满整份主机状态：停用过谁、谁被改过名、左栏怎么分组、快捷键怎么绑。
     prefs = plugin_state.state()
@@ -547,7 +547,7 @@ def resolve_plugin_asset(plugin_id: str, asset_path: str) -> Path:
     if not plugin_id or _PLUGIN_ID.fullmatch(plugin_id) is None:
         raise PluginAssetError("插件 ID 非法")
 
-    package_root = (Path(settings.plugins_dir) / plugin_id).resolve()
+    package_root = (plugins_dir() / plugin_id).resolve()
     if not (package_root / "dist").is_dir():
         raise PluginAssetError("插件不存在")
 

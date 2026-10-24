@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from app.core.config import root_data_dir, settings
+from app.core.config import plugins_dir, root_data_dir, settings
 
 MANIFEST_VERSION = 1
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -46,11 +46,13 @@ GLOBAL_FILES = {
     "bank_provider.json",
     "backup_settings.json",
     "deletion_audit.json",
+    "update_state.json",
 }
 # 凭据文件可以备份到本机以外？不。它只属于本机配置，绝不进包。
-SECRET_FILES = {"backup.json"}
-# default 工作区的 data 根目录里还住着别的工作区与备份产物，必须整目录跳过。
-DEFAULT_ROOT_SKIP_DIRS = {"workspaces", "backups", "audit"}
+SECRET_FILES = {"backup.json", ".env"}
+# 工作区目录里不属于「业务数据」的代码/宿主目录：插件代码由军令 #18 第五步
+# 单独按 manifest 收录，这里先整目录跳过，避免把插件包当普通文件扫进快照。
+WORKSPACE_SKIP_DIRS = {"workspaces", "backups", "audit", "plugins"}
 SIDECAR_SUFFIXES = (".db-wal", ".db-shm", ".db-journal")
 
 
@@ -132,7 +134,7 @@ def iter_workspace_files(workspace_id: str | None = None) -> list[Path]:
     root = workspace_dir(workspace_id)
     if not root.is_dir():
         return []
-    skip_dirs = set(DEFAULT_ROOT_SKIP_DIRS) if root == root_data_dir().resolve() else set()
+    skip_dirs = set(WORKSPACE_SKIP_DIRS)
     found: list[Path] = []
     for base, dirs, files in os.walk(root):
         dirs[:] = sorted(
@@ -406,7 +408,7 @@ def validate_local_dir(value: str | os.PathLike[str] | None, workspace_id: str |
         resolved = target.resolve()
     except OSError as exc:
         raise BackupError(f"本地备份地址无法解析：{exc}") from exc
-    plugins_root = Path(settings.plugins_dir).resolve()
+    plugins_root = plugins_dir().resolve()
     if resolved == plugins_root or plugins_root in resolved.parents:
         raise BackupError("本地备份地址不得落在 plugins/ 目录内")
     try:

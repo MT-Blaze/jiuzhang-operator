@@ -17,7 +17,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.core.config import root_data_dir, settings
+from app.core.config import plugins_dir, root_data_dir
 
 _PLUGIN_ID = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,80}$")
 _DB_SIDECAR_SUFFIXES = (".db-shm", ".db-wal", ".db-journal")
@@ -66,7 +66,7 @@ def _data_db_targets(plugin_id: str) -> list[Path]:
 
 def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
     _validate_id(plugin_id)
-    plugins_root = Path(settings.plugins_dir).resolve()
+    plugins_root = plugins_dir().resolve()
     plugin_dir = (plugins_root / plugin_id).resolve()
     if not _is_within(plugin_dir, plugins_root) or plugin_dir == plugins_root:
         raise PluginUninstallError("插件路径越界")

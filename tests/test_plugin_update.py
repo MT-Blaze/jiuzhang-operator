@@ -128,14 +128,14 @@ class IsolatedDirsMixin(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.plugins_dir = self.root / "plugins"
         self.data_dir = self.root / "data"
+        self.state_dir = self.data_dir / "workspaces" / "default"
         self.plugins_dir.mkdir()
         self.data_dir.mkdir()
-        self._env = mock.patch.dict(os.environ, {"JZO_DATA_DIR": self.data_dir.as_posix()})
+        self.state_dir.mkdir(parents=True)
+        self._env = mock.patch.dict(os.environ, {"JZO_DATA_DIR": self.data_dir.as_posix(),
+                                                 "JZO_PLUGINS_DIR": self.plugins_dir.as_posix()})
         self._env.start()
         self.addCleanup(self._env.stop)
-        self._plugins = mock.patch.object(Settings, "plugins_dir", self.plugins_dir)
-        self._plugins.start()
-        self.addCleanup(self._plugins.stop)
         self._root = mock.patch.object(Settings, "project_root", self.root)
         self._root.start()
         self.addCleanup(self._root.stop)
@@ -541,20 +541,20 @@ class PendingStateTest(IsolatedDirsMixin):
 
     def test_03_state_file_lives_in_data_dir_and_holds_no_question_data(self):
         write_pending("9.9.9", [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0", "zip_path": "x"}])
-        path = self.data_dir / "update_state.json"
-        self.assertTrue(path.is_file(), "续更状态只能落在 data/update_state.json")
+        path = self.state_dir / "update_state.json"
+        self.assertTrue(path.is_file(), "续更状态只能落在当前工作区的 update_state.json")
         text = path.read_text(encoding="utf-8")
         self.assertNotIn("stem", text)
         self.assertNotIn("questions", text)
 
     def test_04_corrupt_state_never_blocks_boot(self):
-        (self.data_dir / "update_state.json").write_text("{ 这不是 JSON", encoding="utf-8")
+        (self.state_dir / "update_state.json").write_text("{ 这不是 JSON", encoding="utf-8")
         self.assertEqual(read_pending(), {"host_version": "", "pending": [], "written_at": ""})
 
-        (self.data_dir / "update_state.json").write_text('["数组不是对象"]', encoding="utf-8")
+        (self.state_dir / "update_state.json").write_text('["数组不是对象"]', encoding="utf-8")
         self.assertEqual(read_pending()["pending"], [])
 
-        (self.data_dir / "update_state.json").write_text(
+        (self.state_dir / "update_state.json").write_text(
             json.dumps({"host_version": "9.9.9", "pending": [{"no_id": 1}, "坏", {"id": "org.x"}]}),
             encoding="utf-8")
         self.assertEqual(read_pending()["pending"], [{"id": "org.x"}])
@@ -562,7 +562,7 @@ class PendingStateTest(IsolatedDirsMixin):
     def test_05_clear_is_idempotent(self):
         write_pending("9.9.9", [{"id": PLUGIN_ID}])
         self.assertEqual(clear_pending()["pending"], [])
-        self.assertFalse((self.data_dir / "update_state.json").exists())
+        self.assertFalse((self.state_dir / "update_state.json").exists())
         self.assertEqual(clear_pending()["pending"], [], "文件不存在也算成功")
 
     def test_06_resume_applies_local_zip_without_any_network(self):
@@ -928,7 +928,7 @@ class NoSilentNetworkTest(unittest.TestCase):
     def test_04_update_write_scope_never_targets_the_data_dir(self):
         """插件更新的写范围只有 plugins/<id>/；data/ 只允许 update_state.json 一处痕迹。"""
         body = self.source.split("def apply_plugin_update(", 1)[1].split("\ndef ", 1)[0]
-        self.assertIn("settings.plugins_dir", body)
+        self.assertIn("plugins_dir()", body)
         self.assertNotIn("data_dir", body)
         self.assertNotIn("root_data_dir", body)
 
@@ -1013,8 +1013,10 @@ class UpdateHttpTest(unittest.TestCase):
         cls.root = Path(cls.tmp.name)
         cls.plugins_dir = cls.root / "plugins"
         cls.data_dir = cls.root / "data"
+        cls.state_dir = cls.data_dir / "workspaces" / "default"
         cls.plugins_dir.mkdir()
         cls.data_dir.mkdir()
+        cls.state_dir.mkdir(parents=True)
 
         cls.plugin_zip = build_zip("2.0.0")
         cls.host_zip = build_host_zip(cls.HOST_VERSION)
@@ -1253,7 +1255,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.assertEqual(body["pending"], [])
         self.assertIn("last_resume", body)
 
-        (self.data_dir / "update_state.json").write_text(json.dumps(
+        (self.state_dir / "update_state.json").write_text(json.dumps(
             {"host_version": "99.0.0", "written_at": "2026-10-23T00:00:00+08:00",
              "pending": [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0", "zip_path": "x"}]}),
             encoding="utf-8")
@@ -1263,7 +1265,7 @@ class UpdateHttpTest(unittest.TestCase):
         status, body = self.call("POST", "/api/plugins/update/pending-clear", {})
         self.assertEqual(status, 200)
         self.assertTrue(body["cleared"])
-        self.assertFalse((self.data_dir / "update_state.json").exists())
+        self.assertFalse((self.state_dir / "update_state.json").exists())
 
     def test_09_host_apply_prepares_but_refuses_to_launch_on_a_dev_worktree(self):
         status, body = self.call("POST", "/api/plugins/update/host-apply", {})
@@ -1289,7 +1291,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.seed_local("1.0.0")
         staged = self.root / "staged-pkg.zip"
         staged.write_bytes(build_zip("2.0.0"))
-        (self.data_dir / "update_state.json").write_text(json.dumps(
+        (self.state_dir / "update_state.json").write_text(json.dumps(
             {"host_version": "", "written_at": "2026-10-23T00:00:00+08:00",
              "pending": [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0",
                           "zip_path": staged.as_posix()}]}), encoding="utf-8")

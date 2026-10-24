@@ -1,6 +1,8 @@
 """全局配置。所有路径以仓库根目录为锚点，不依赖当前工作目录。
 
-支持多工作区（Workspace）隔离：每个工作区拥有独立的数据库、上传资源和配置。
+支持多工作区（Workspace）隔离：每个工作区拥有独立的数据库、上传资源、配置、
+插件代码与插件状态（军令 #18）。插件路径不再有导入期死值——每次调用
+:func:`plugins_dir` 都按当前工作区重新求值。
 """
 
 from __future__ import annotations
@@ -8,25 +10,45 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from app.core.workspace_paths import (
+    CURRENT_WORKSPACE_FILENAME,
+    DATABASE_FILENAME,
+    DEFAULT_WORKSPACE_ID,
+    PROJECT_ROOT,
+    WORKSPACE_ID_RE,
+    current_workspace_pointer_path,
+    env_file_path_for,
+    read_current_workspace_pointer,
+    root_data_dir,
+    valid_workspace_id,
+    workspace_data_dir,
+    workspace_storage_dir,
+    write_current_workspace_pointer,
+)
 
-# 题库数据库文件名的唯一事实来源（AGENTS §4：路径唯一入口在 config.py）。
-# 曾经 config 写 "questions.db" 而 db.py 写 "jiuzhang.db"，导致工作区登记表里
-# 记的是一条永不落地的虚构路径；实际数据一直写在 jiuzhang.db。此处收敛为一处。
-DATABASE_FILENAME = "jiuzhang.db"
-
-
-def root_data_dir() -> Path:
-    """根 data 目录，与当前活跃工作区无关。
-
-    工作区登记表、default 工作区路径都要用它，绝不能读 ``settings.data_dir``
-    （那会随当前工作区漂移，把 default 的库指到别的库上）。
-    """
-    return Path(os.environ.get("JZO_DATA_DIR", str(PROJECT_ROOT / "data")))
+__all__ = [
+    "CURRENT_WORKSPACE_FILENAME",
+    "DATABASE_FILENAME",
+    "DEFAULT_WORKSPACE_ID",
+    "PROJECT_ROOT",
+    "WORKSPACE_ID_RE",
+    "Settings",
+    "current_workspace_id",
+    "current_workspace_pointer_path",
+    "default_database_path",
+    "env_file_path",
+    "load_current_workspace",
+    "plugins_dir",
+    "root_data_dir",
+    "settings",
+    "switch_workspace",
+    "workspace_data_dir",
+    "workspace_storage_dir",
+]
 
 
 def default_database_path() -> Path:
-    """default 工作区（根 data 目录）的数据库路径。"""
+    """default 工作区的数据库路径（历史布局：根 data 目录）。"""
     return root_data_dir() / DATABASE_FILENAME
 
 
@@ -34,35 +56,28 @@ class Settings:
     project_root: Path = PROJECT_ROOT
     static_dir: Path = PROJECT_ROOT / "static"
     schemas_dir: Path = PROJECT_ROOT / "schemas"
-    # 插件目录允许环境变量覆盖：测试与便携部署专用，业务代码禁止另拼路径
-    plugins_dir: Path = Path(os.environ.get("JZO_PLUGINS_DIR", str(PROJECT_ROOT / "plugins")))
-    
-    # Workspace support
-    workspace_id: str | None = None  # Current workspace ID, None means default
-    
+
+    # 当前工作区 id；None 表示 default。它是指针文件在本进程里的镜像：
+    # 启动时由 load_current_workspace() 装载，切库时由 switch_workspace() 同步写回。
+    workspace_id: str | None = None
+
     @property
     def data_dir(self) -> Path:
-        """Return data directory for current workspace."""
-        base = root_data_dir()
-        if self.workspace_id:
-            return base / "workspaces" / self.workspace_id
-        return base
-    
+        """当前工作区的业务数据根（default 是根 data，其余是工作区目录）。"""
+        return workspace_data_dir(self.workspace_id or DEFAULT_WORKSPACE_ID)
+
     @property
     def database_path(self) -> Path:
-        """Return database path for current workspace."""
         return self.data_dir / DATABASE_FILENAME
-    
+
     @property
     def uploads_dir(self) -> Path:
-        """Return uploads directory for current workspace."""
         return self.data_dir / "uploads"
-    
+
     @property
     def config_path(self) -> Path:
-        """Return workspace config path."""
         return self.data_dir / "config.json"
-    
+
     host: str = os.environ.get("JZO_HOST", "127.0.0.1")
     port: int = int(os.environ.get("JZO_PORT", "8000"))
 
@@ -70,6 +85,45 @@ class Settings:
 settings = Settings()
 
 
+def current_workspace_id() -> str:
+    """当前工作区 id（永不为空）；None 即 default。"""
+    return settings.workspace_id or DEFAULT_WORKSPACE_ID
+
+
+def plugins_dir() -> Path:
+    """当前工作区的插件目录，每次调用重新求值。
+
+    ``JZO_PLUGINS_DIR`` 是测试与便携部署的显式覆盖口子（探针整套依赖它），
+    没设置时才按当前工作区解析到 ``data/workspaces/<id>/plugins``。
+    """
+    override = os.environ.get("JZO_PLUGINS_DIR", "").strip()
+    if override:
+        return Path(override)
+    return workspace_storage_dir(current_workspace_id()) / "plugins"
+
+
+def env_file_path() -> Path:
+    """当前工作区的凭据文件；``JZO_ENV_FILE`` 可整体覆盖（测试/启动器专用）。"""
+    override = os.environ.get("JZO_ENV_FILE", "").strip()
+    if override:
+        return Path(override)
+    return env_file_path_for(current_workspace_id())
+
+
+def load_current_workspace() -> str:
+    """从指针装载当前工作区；指针缺失/损坏回落 default。返回解析后的 id。"""
+    workspace_id = read_current_workspace_pointer() or DEFAULT_WORKSPACE_ID
+    settings.workspace_id = None if workspace_id == DEFAULT_WORKSPACE_ID else workspace_id
+    return workspace_id
+
+
 def switch_workspace(workspace_id: str | None) -> None:
-    """Switch to a different workspace (thread-safe)."""
-    settings.workspace_id = workspace_id
+    """切到指定工作区：先原子写指针，再更新进程内镜像。
+
+    指针写失败时内存不变——绝不出现「界面已切、重启后却回旧区」的分裂。
+    """
+    resolved = workspace_id or DEFAULT_WORKSPACE_ID
+    if not valid_workspace_id(resolved):
+        raise ValueError("工作区 ID 非法")
+    write_current_workspace_pointer(resolved)
+    settings.workspace_id = None if resolved == DEFAULT_WORKSPACE_ID else resolved

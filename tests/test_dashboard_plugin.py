@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -39,7 +40,7 @@ class DashboardManifestTest(unittest.TestCase):
             plugins_root = Path(tmp) / "plugins"
             plugins_root.mkdir()
             shutil.copytree(PLUGIN_DIR, plugins_root / PLUGIN_ID)
-            with mock.patch.object(plugins_core.settings, "plugins_dir", str(plugins_root)):
+            with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(plugins_root)}):
                 result = plugins_core.discover_plugins()
         ids = [item["id"] for item in result["plugins"]]
         rejected = [item for item in result["rejected"] if item.get("id") == PLUGIN_ID]

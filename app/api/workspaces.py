@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-import os
 import secrets
 import sqlite3
 from pathlib import Path
@@ -19,9 +18,16 @@ from pydantic import BaseModel, Field
 
 from app.core import bank as core_bank
 from app.core import bank_provider, workspace_removal
-from app.core.config import default_database_path, root_data_dir, settings, switch_workspace
+from app.core.config import (
+    default_database_path,
+    root_data_dir,
+    settings,
+    switch_workspace,
+    workspace_storage_dir,
+)
 from app.core.db import init_db
 from app.core.security import require_write_token
+from app.core.workspace_bootstrap import ensure_workspace_layout
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"
@@ -132,11 +138,8 @@ _REQUIRED_TABLES = {
 
 
 def _workspace_config_path() -> Path:
-    """Return path to workspace registry file (always in root data dir)."""
-    # Use PROJECT_ROOT/data as the base, not affected by workspace switching
-    from app.core.config import PROJECT_ROOT
-    base = Path(os.environ.get("JZO_DATA_DIR", str(PROJECT_ROOT / "data")))
-    return base / "workspaces.json"
+    """工作区登记表永远住在根 data 目录，不随当前工作区漂移。"""
+    return root_data_dir() / "workspaces.json"
 
 
 def _load_workspaces() -> list[dict[str, Any]]:
@@ -238,9 +241,9 @@ async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
     # Generate unique ID
     workspace_id = f"ws_{secrets.token_hex(8)}"
     
-    # Create workspace directory structure
-    workspace_dir = Path(settings.data_dir) / "workspaces" / workspace_id
-    workspace_dir.mkdir(parents=True, exist_ok=True)
+    # Create workspace directory structure. 必须按根 data 解析，
+    # 不能拼在当前工作区目录下（否则会生成 workspaces/<旧区>/workspaces/<新区>）。
+    ensure_workspace_layout(workspace_id)
     
     # Initialize database for new workspace
     old_workspace = settings.workspace_id
@@ -294,7 +297,7 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="所选文件不是有效的 SQLite 数据库")
 
     workspace_id = f"ws_{secrets.token_hex(8)}"
-    workspace_dir = Path(settings.data_dir) / "workspaces" / workspace_id / "banks"
+    workspace_dir = workspace_storage_dir(workspace_id) / "banks"
     workspace_dir.mkdir(parents=True, exist_ok=True)
     # 落成的文件名跟活跃 provider 一致：工作区「当前题库」读的就是这个路径。
     # 导入接口本身按 core-bank 七表校验，所以只有官方库当 provider 时它才有意义
@@ -341,6 +344,8 @@ async def import_workspace(payload: WorkspaceImportRequest) -> dict[str, Any]:
         except sqlite3.Error:
             pass
 
+    # 库校验全部通过后才生成该区的插件目录与空状态，失败路径不留半成品。
+    ensure_workspace_layout(workspace_id)
     switch_workspace(workspace_id)
     init_db()
     workspaces = _load_workspaces()

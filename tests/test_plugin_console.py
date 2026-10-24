@@ -75,16 +75,19 @@ class ShowInSidebarContractTest(unittest.TestCase):
 class PluginStateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
-        self._saved = settings.workspace_id, __import__("os").environ.get("JZO_DATA_DIR")
-        __import__("os").environ["JZO_DATA_DIR"] = self.tmp.name
+        self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"),
+                       os.environ.get("JZO_PLUGINS_DIR"))
+        os.environ["JZO_DATA_DIR"] = self.tmp.name
+        os.environ["JZO_PLUGINS_DIR"] = str(Path(self.tmp.name) / "plugins")
         settings.workspace_id = None
 
     def tearDown(self) -> None:
-        ws, data = self._saved
-        if data is None:
-            __import__("os").environ.pop("JZO_DATA_DIR", None)
-        else:
-            __import__("os").environ["JZO_DATA_DIR"] = data
+        ws, data, plugins = self._saved
+        for key, value in (("JZO_DATA_DIR", data), ("JZO_PLUGINS_DIR", plugins)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         settings.workspace_id = ws
         self.tmp.cleanup()
 
@@ -93,7 +96,10 @@ class PluginStateTest(unittest.TestCase):
         plugin_state.set_enabled("org.jiuzhang.any", False)
         self.assertFalse(plugin_state.is_enabled("org.jiuzhang.any"))
         # 状态真的落盘（不是只存内存）
-        persisted = json.loads((Path(self.tmp.name) / "plugin_state.json").read_text(encoding="utf-8"))
+        persisted = json.loads(
+            (Path(self.tmp.name) / "workspaces" / "default" / "plugin_state.json")
+            .read_text(encoding="utf-8")
+        )
         self.assertIn("org.jiuzhang.any", persisted["disabled"])
         plugin_state.set_enabled("org.jiuzhang.any", True)
         self.assertTrue(plugin_state.is_enabled("org.jiuzhang.any"))
@@ -108,39 +114,34 @@ class PluginStateTest(unittest.TestCase):
         root = Path(self.tmp.name)
         data_root = root_data_dir()
         plugins_root = root / "plugins"
-        saved_plugins = settings.plugins_dir
-        settings.plugins_dir = plugins_root
-        try:
-            (plugins_root / pid / "dist").mkdir(parents=True)
-            (plugins_root / pid / "dist" / "index.html").write_text("<main></main>", encoding="utf-8")
-            _make_bank_db(data_root / "banks" / f"{pid}.db", 2)
-            _make_bank_db(data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db", 3)
-            uploads = data_root / "uploads"
-            uploads.mkdir(parents=True, exist_ok=True)
-            (uploads / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (plugins_root / pid / "dist").mkdir(parents=True)
+        (plugins_root / pid / "dist" / "index.html").write_text("<main></main>", encoding="utf-8")
+        _make_bank_db(data_root / "banks" / f"{pid}.db", 2)
+        _make_bank_db(data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db", 3)
+        uploads = data_root / "uploads"
+        uploads.mkdir(parents=True, exist_ok=True)
+        (uploads / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
-            def snapshot(base: Path) -> dict[str, tuple[int, int]]:
-                return {
-                    str(item.relative_to(base)).replace("\\", "/"): (item.stat().st_size, item.stat().st_mtime_ns)
-                    for item in sorted(base.rglob("*"))
-                    if item.is_file() and item.name != "plugin_state.json"
-                }
+        def snapshot(base: Path) -> dict[str, tuple[int, int]]:
+            return {
+                str(item.relative_to(base)).replace("\\", "/"): (item.stat().st_size, item.stat().st_mtime_ns)
+                for item in sorted(base.rglob("*"))
+                if item.is_file() and item.name != "plugin_state.json"
+            }
 
-            before_data = snapshot(data_root)
-            before_code = snapshot(plugins_root)
-            self.assertTrue(before_data, "探针没能造出 data/ 文件，这条断言会变成假阴性")
+        before_data = snapshot(data_root)
+        before_code = snapshot(plugins_root)
+        self.assertTrue(before_data, "探针没能造出 data/ 文件，这条断言会变成假阴性")
 
-            plugin_state.set_enabled(pid, False)
-            self.assertFalse(plugin_state.is_enabled(pid))
-            plugin_state.set_enabled(pid, True)
+        plugin_state.set_enabled(pid, False)
+        self.assertFalse(plugin_state.is_enabled(pid))
+        plugin_state.set_enabled(pid, True)
 
-            self.assertEqual(before_data, snapshot(data_root), "停用/启用改动碰了 data/（ADR-007 禁止）")
-            self.assertEqual(before_code, snapshot(plugins_root), "停用/启用改动碰了 plugins/ 代码（ADR-007 禁止）")
-            self.assertTrue((data_root / "banks" / f"{pid}.db").is_file())
-            self.assertTrue((data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db").is_file())
-            self.assertTrue((uploads / "fig.png").is_file())
-        finally:
-            settings.plugins_dir = saved_plugins
+        self.assertEqual(before_data, snapshot(data_root), "停用/启用改动碰了 data/（ADR-007 禁止）")
+        self.assertEqual(before_code, snapshot(plugins_root), "停用/启用改动碰了 plugins/ 代码（ADR-007 禁止）")
+        self.assertTrue((data_root / "banks" / f"{pid}.db").is_file())
+        self.assertTrue((data_root / "workspaces" / "ws_probe" / "banks" / f"{pid}.db").is_file())
+        self.assertTrue((uploads / "fig.png").is_file())
 
 
 class UninstallLifecycleTest(unittest.TestCase):
@@ -150,19 +151,19 @@ class UninstallLifecycleTest(unittest.TestCase):
         self.plugins_dir = root / "plugins"
         self.data_dir = root / "data"
         self.plugins_dir.mkdir(parents=True)
-        self._saved = (settings.plugins_dir, __import__("os").environ.get("JZO_DATA_DIR"))
-        settings.plugins_dir = self.plugins_dir
-        __import__("os").environ["JZO_DATA_DIR"] = str(self.data_dir)
+        self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"))
+        os.environ["JZO_DATA_DIR"] = str(self.data_dir)
+        os.environ["JZO_PLUGINS_DIR"] = str(self.plugins_dir)
         self.pid = "org.jiuzhang.zzz-demo"
         (self.plugins_dir / self.pid).mkdir(parents=True)
 
     def tearDown(self) -> None:
-        plugins, data = self._saved
-        settings.plugins_dir = plugins
-        if data is None:
-            __import__("os").environ.pop("JZO_DATA_DIR", None)
-        else:
-            __import__("os").environ["JZO_DATA_DIR"] = data
+        data, plugins = self._saved
+        for key, value in (("JZO_DATA_DIR", data), ("JZO_PLUGINS_DIR", plugins)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         self.tmp.cleanup()
 
     def _seed_dbs(self) -> None:

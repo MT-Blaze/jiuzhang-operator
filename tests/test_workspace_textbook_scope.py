@@ -20,6 +20,7 @@ from app.api import workspaces
 from app.core import bank
 from app.core.config import settings
 
+ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.core-bank"
 TB_A = "tb_aaaaaaaa"
 TB_B = "tb_bbbbbbbb"
@@ -29,8 +30,10 @@ class ActiveTextbookTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"))
+        self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"),
+                       os.environ.get("JZO_PLUGINS_DIR"))
         os.environ["JZO_DATA_DIR"] = self.tmp.name
+        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
         settings.workspace_id = "ws_probe"
         self.addCleanup(self._restore)
 
@@ -51,12 +54,13 @@ class ActiveTextbookTest(unittest.TestCase):
         self._write_registry("")
 
     def _restore(self) -> None:
-        workspace_id, data_dir = self._saved
+        workspace_id, data_dir, plugins = self._saved
         settings.workspace_id = workspace_id
-        if data_dir is None:
-            os.environ.pop("JZO_DATA_DIR", None)
-        else:
-            os.environ["JZO_DATA_DIR"] = data_dir
+        for key, value in (("JZO_DATA_DIR", data_dir), ("JZO_PLUGINS_DIR", plugins)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def _write_registry(self, textbook_id: str) -> None:
         self.registry.write_text(json.dumps([

@@ -83,7 +83,7 @@ class PluginPanelContractTest(unittest.TestCase):
         cls.plugins_dir.mkdir()
         with zipfile.ZipFile(ROOT / "examples" / "demo_plugin.zip") as zf:
             zf.extractall(cls.plugins_dir)
-        cls.patcher = mock.patch.object(settings, "plugins_dir", cls.plugins_dir)
+        cls.patcher = mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(cls.plugins_dir)})
         cls.patcher.start()
 
     @classmethod

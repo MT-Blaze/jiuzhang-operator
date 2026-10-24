@@ -23,7 +23,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import plugins_dir
 from app.core.plugins import _PLUGIN_ID, PluginRejected, validate_plugin
 
 # 上传的 zip 本体上限（50 MB）：个人插件是文本 + 少量图片，用不到更多。
@@ -179,11 +179,11 @@ def install_plugin_from_zip(data: bytes, replace: bool = False) -> dict[str, Any
     Raises:
         PluginInstallError: 任何一步不合格；``status`` 为建议的 HTTP 状态码。
     """
-    plugins_dir = Path(settings.plugins_dir)
-    plugins_dir.mkdir(parents=True, exist_ok=True)
+    target_root = plugins_dir()
+    target_root.mkdir(parents=True, exist_ok=True)
 
     with staged_plugin_from_zip(data) as (named_root, info):
-        destination = plugins_dir / info["id"]
+        destination = target_root / info["id"]
         if destination.exists():
             if not replace:
                 raise PluginInstallError(

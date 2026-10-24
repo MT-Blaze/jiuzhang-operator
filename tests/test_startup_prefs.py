@@ -44,7 +44,8 @@ class StartupPrefsTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data_dir = Path(self.tmp.name)
         self._patches = [
-            mock.patch.object(startup_prefs, "root_data_dir", lambda: self.data_dir),
+            mock.patch.object(startup_prefs, "state_path",
+                              lambda: self.data_dir / startup_prefs.STATE_FILENAME),
             mock.patch.object(startup_prefs, "installed_plugins",
                               lambda: [_plugin(DASHBOARD_ID), _plugin(EDITOR_ID, enabled=False)]),
         ]
@@ -181,8 +182,7 @@ class StartupCandidatesIntegrationTest(unittest.TestCase):
     def test_01_candidates_come_from_discovery(self) -> None:
         from app.core import startup_prefs
 
-        with mock.patch.object(startup_prefs, "root_data_dir",
-                               lambda: Path(tempfile.gettempdir()) / "jzo-startup-unused"):
+        with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(ROOT / "plugins")}):
             ids = [item["id"] for item in startup_prefs.candidates()]
         self.assertIn(DASHBOARD_ID, ids, "数据看板必须出现在启动行为下拉里")
         self.assertTrue(all("plugin:" + item["id"] == item["target"]
@@ -367,7 +367,8 @@ class StartupHttpTest(unittest.TestCase):
         self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"])
         self.assertEqual("数据看板", body["plugin_name"])
         self.assertEqual({"target": "plugin:" + DASHBOARD_ID},
-                         json.loads((self.data_dir / "startup.json").read_text(encoding="utf-8")))
+                         json.loads((self.data_dir / "workspaces" / "default" / "startup.json")
+                                     .read_text(encoding="utf-8")))
 
         status, body = self._call("GET")
         self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"])

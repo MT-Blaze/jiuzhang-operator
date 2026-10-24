@@ -24,7 +24,7 @@ from typing import Any
 from app.core import bank as bank_store
 from app.core import bank_provider
 from app.core import questions as question_store
-from app.core.config import settings
+from app.core.config import plugins_dir
 from app.core.contract import DIFFICULTY_LABELS as CONTRACT_DIFFICULTY_LABELS
 from app.core.contract import normalize_difficulty
 from app.core.plugins import discover_plugins
@@ -370,7 +370,7 @@ def _find_plugin(tool_name: str) -> dict[str, Any]:
 
 
 def _seed_path(plugin_id: str) -> Path | None:
-    root = (Path(settings.plugins_dir) / plugin_id).resolve()
+    root = (plugins_dir() / plugin_id).resolve()
     path = (root / "seed" / "questions.json").resolve()
     try:
         path.relative_to(root)

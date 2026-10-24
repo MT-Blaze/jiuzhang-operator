@@ -32,6 +32,22 @@ SEED_DB = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
 SCHEMA_SQL = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
 
 # v0.6.3 的三张被升级器读写的表：topics 没有 textbook_id 列、没有并集不变量 CHECK
+_SAVED_PLUGINS_ENV: str | None = None
+
+
+def setUpModule() -> None:
+    global _SAVED_PLUGINS_ENV
+    _SAVED_PLUGINS_ENV = os.environ.get("JZO_PLUGINS_DIR")
+    os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+
+
+def tearDownModule() -> None:
+    if _SAVED_PLUGINS_ENV is None:
+        os.environ.pop("JZO_PLUGINS_DIR", None)
+    else:
+        os.environ["JZO_PLUGINS_DIR"] = _SAVED_PLUGINS_ENV
+
+
 V063_DDL = """
 CREATE TABLE questions (
     id TEXT NOT NULL PRIMARY KEY,

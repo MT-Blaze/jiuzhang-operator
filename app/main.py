@@ -27,7 +27,7 @@ from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
-from app.core import plugin_update
+from app.core import plugin_update, workspace_bootstrap
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.security import local_write_token
@@ -60,6 +60,9 @@ def _resume_plugin_updates() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # 军令 #18：先装载工作区指针、迁移旧全局数据并生成 plugins/ 结构，
+    # 之后所有插件路径才按当前工作区求值。
+    workspace_bootstrap.bootstrap()
     init_db()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；

@@ -42,6 +42,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         cls.port = _free_port()
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = cls.tmp.name
+        env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
         env["JZO_LOCAL_TOKEN"] = TOKEN
         cls.process = subprocess.Popen(
             [

@@ -1,6 +1,7 @@
 """插件主机状态：启停、停用时间、自定义昵称与左栏文件夹树。
 
-状态是**本机配置**，落在根 data 目录（与工作区无关）的一个 JSON 里。
+状态是**当前工作区自己的配置**，落在 ``data/workspaces/<id>/plugin_state.json``
+（军令 #18：全局状态随插件一起按工作区物理隔离）。
 写范围有且仅有这一个文件——ADR-007 的禁令不只约束「停用」，而是约束整个状态层：
 题目数据、插件代码、工作区文件一律不许被这里顺手碰掉。
 
@@ -20,7 +21,7 @@ import threading
 from datetime import datetime
 from typing import Any
 
-from app.core.config import root_data_dir
+from app.core.config import current_workspace_id, workspace_storage_dir
 
 STATE_FILENAME = "plugin_state.json"
 _lock = threading.Lock()
@@ -45,7 +46,7 @@ def _clean_text(raw: Any, limit: int) -> str:
 
 
 def _state_path():
-    return root_data_dir() / STATE_FILENAME
+    return workspace_storage_dir(current_workspace_id()) / STATE_FILENAME
 
 
 def _load_raw() -> dict[str, Any]:

@@ -89,7 +89,7 @@ class DiscoverySignatureTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def test_01_signature_changes_after_hot_install(self) -> None:
-        with mock.patch.object(plugins_core.settings, "plugins_dir", self.plugins_dir):
+        with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(self.plugins_dir)}):
             empty = plugins_core.discover_plugins()
             self.assertEqual(empty["plugins"], [])
             make_plugin(self.plugins_dir, MANIFEST)

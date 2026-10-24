@@ -4,7 +4,8 @@
 能力、并按 ``schemas/question.json`` 出参的插件，就可以被选为活跃题库
 （PLUGIN_SPEC §2.6.1）。本模块只管三件事：
 
-1. **读配置**：``data/bank_provider.json``（用户亲手在控制台里选的，没配就用默认）；
+1. **读配置**：``data/workspaces/<id>/bank_provider.json``（用户亲手在控制台里选的，
+   没配就用默认）；
 2. **验配置**：被选中的 id 必须已安装**且**声明 ``bank.provider``，否则不算数；
 3. **兜底**：配置失效时回退默认 provider 并如实带 ``fallback_reason``——
    「插件坏了，底座还能用」（AGENTS §2），绝不静默换成别的插件。
@@ -20,12 +21,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.core.config import root_data_dir
+from app.core.config import current_workspace_id, workspace_storage_dir
 from app.core.plugins import discover_plugins
 
 # 默认 provider 的**唯一**出处：全仓其它地方一律读本常量，不许再写字面量。
 DEFAULT_PROVIDER_ID = "org.jiuzhang.core-bank"
 PROVIDER_CAPABILITY = "bank.provider"
+STATE_FILENAME = "bank_provider.json"
 # 跨页签共享的通道：非题库插件（如录题端）也要能读公共真题库、写新题。
 SHARED_METHODS = (
     "bank.get", "bank.topics", "bank.topic_notes", "bank.review",
@@ -44,7 +46,7 @@ class ProviderRejected(Exception):
 
 
 def state_path() -> Path:
-    return root_data_dir() / "bank_provider.json"
+    return workspace_storage_dir(current_workspace_id()) / STATE_FILENAME
 
 
 def _installed() -> dict[str, dict[str, Any]]:

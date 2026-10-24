@@ -33,11 +33,11 @@ class PackageTest(unittest.TestCase):
         (self.ws_dir / "banks").mkdir(parents=True)
         self._saved = (
             os.environ.get("JZO_DATA_DIR"),
-            settings.plugins_dir,
+            os.environ.get("JZO_PLUGINS_DIR"),
             settings.workspace_id,
         )
         os.environ["JZO_DATA_DIR"] = str(self.data)
-        settings.plugins_dir = self.plugins
+        os.environ["JZO_PLUGINS_DIR"] = str(self.plugins)
         settings.workspace_id = WS_ID
         con = sqlite3.connect(self.ws_dir / "banks" / f"{PROVIDER}.db")
         con.execute("CREATE TABLE questions (id TEXT PRIMARY KEY, stem TEXT)")
@@ -50,11 +50,11 @@ class PackageTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         data, plugins, ws = self._saved
-        if data is None:
-            os.environ.pop("JZO_DATA_DIR", None)
-        else:
-            os.environ["JZO_DATA_DIR"] = data
-        settings.plugins_dir = plugins
+        for key, value in (("JZO_DATA_DIR", data), ("JZO_PLUGINS_DIR", plugins)):
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         settings.workspace_id = ws
         self.tmp.cleanup()
 
