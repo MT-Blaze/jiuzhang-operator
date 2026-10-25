@@ -4,7 +4,7 @@
 > ① 插件 ↔ 宿主的消息协议（postMessage）；② 宿主代转的数据通道（`bank.*` / `basket.*` / `draft.*`）；
 > ③ 事件总线（EventBus / JzoBus）与后端 HTTP 端点。
 > 契约的唯一事实来源是 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；本文与它冲突时以 PLUGIN_SPEC 为准。
-> 对应底座版本：v0.11.0（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道）。
+> 对应底座版本：v0.11.1（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道）。
 
 ---
 

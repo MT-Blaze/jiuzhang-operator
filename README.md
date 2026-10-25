@@ -191,7 +191,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 {
   "status": "ok",
   "service": "jiuzhang-operator",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "time": "2026-10-21T12:00:00+00:00"
 }
 ```
@@ -285,7 +285,7 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
 
 生成后自检三件事再安装：① 把插件目录放进 `plugins/`，打开 `/api/plugins`，`rejected[]` 里没有中文拒收原因；② 全文搜索 `fetch(`、`parent.document`、`localStorage`——出现任何一处都说明 AI 违反了铁律，退回重造；③ 全文搜索 `kind: "request"` 附近那行，看请求 id 是不是带点号的写法（如 `插件id_1`）——带点号宿主直接拒发并回 `BAD_REQUEST_ID`（底栏「输出日志区」会记这笔），改成 `p1_xxxxx` 这类形状。
 
-> 当前 `v0.11.0` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
+> 当前 `v0.11.1` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
 
 ## 目录结构
 

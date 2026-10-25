@@ -6,7 +6,7 @@
     {
       "id": "org.jiuzhang.core-bank",
       "name": "真题题库",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "kind": "tool",
       "api_version": "1.0",
       "description": "底座公共真题库（本地 SQLite·工作区隔离）：按年级、难度、题型与关键词筛选，支持预览与加入题篮。发行版为空壳，首启自动建空库，由老师在工作区里录题自建；本机开发可挂含真题的种子库。",
@@ -21,7 +21,7 @@
     {
       "id": "org.jiuzhang.paper-gen",
       "name": "组卷排版",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
@@ -36,7 +36,7 @@
     {
       "id": "org.jiuzhang.handout",
       "name": "讲义排版",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
