@@ -143,5 +143,25 @@ class LauncherSelfHealTest(unittest.TestCase):
         self.assertEqual(gotos - labels, set(), "存在跳不到的标签")
 
 
+class ProbeVersionContractTest(unittest.TestCase):
+    """探针不许写死插件版本号：插件一升号，判据就变假红（军令 #21 全量回归实测）。
+
+    2026-10-25 那轮 command_contract_probe 的 06 号判据把五个插件的版本抄成字面量，
+    bank-ui 0.2.1、editor 0.6.1 落地后当场红掉——红的是探针自己，不是底座。
+    """
+
+    LITERAL_MAP_RE = re.compile(r'"org\.jiuzhang\.[a-z0-9-]+"\s*:\s*"\d+\.\d+\.\d+"')
+
+    def test_01_no_probe_hardcodes_plugin_versions(self) -> None:
+        for probe in sorted((ROOT / "tools").glob("*_probe.py")):
+            hits = self.LITERAL_MAP_RE.findall(_read(probe))
+            self.assertEqual(hits, [], f"{probe.name} 里写死了插件版本字面量：{hits}")
+
+    def test_02_command_contract_reads_manifest_versions(self) -> None:
+        text = _read(ROOT / "tools" / "command_contract_probe.py")
+        self.assertIn("def manifest_versions()", text)
+        self.assertIn('== manifest_versions()', text)
+
+
 if __name__ == "__main__":
     unittest.main()

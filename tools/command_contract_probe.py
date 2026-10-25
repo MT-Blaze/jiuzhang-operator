@@ -73,6 +73,13 @@ HOST_VERSION = re.search(
     r'__version__\s*=\s*"([^"]+)"',
     (ROOT / "app" / "__init__.py").read_text(encoding="utf-8")).group(1)
 
+
+def manifest_versions() -> dict[str, str]:
+    """仓内清单的版本号——探针不许写死版本，否则插件一升号就把判据打成假红。"""
+    return {plugin_id: json.loads(
+        (ROOT / "plugins" / plugin_id / "plugin.json").read_text(encoding="utf-8"))["version"]
+        for plugin_id in OFFICIAL}
+
 CALLER_JS = """
 (function () {
   "use strict";
@@ -339,15 +346,9 @@ def run(tag: str) -> dict:
         check("05 引擎是无界面插件且照常出现在字典里（headless + show_in_sidebar:false）",
               engine.get("headless") is True and engine.get("show_in_sidebar") is False
               and len(engine.get("commands") or []) == 3, engine.get("version"))
-        check("06 五个官方插件版本与说明书一致",
+        check("06 五个官方插件版本与仓内清单一致",
               {item.get("id"): item.get("version") for item in listing.get("plugins") or []
-               if item.get("id") in OFFICIAL} == {
-                  "org.jiuzhang.bank-engine": "0.2.0",
-                  "org.jiuzhang.bank-ui": "0.2.0",
-                  "org.jiuzhang.paper-gen": "0.4.0",
-                  "org.jiuzhang.handout": "0.2.0",
-                  "org.jiuzhang.editor": "0.5.0",
-              },
+               if item.get("id") in OFFICIAL} == manifest_versions(),
               {item.get("id"): item.get("version") for item in listing.get("plugins") or []})
 
         status, installed = call(
