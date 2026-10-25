@@ -33,6 +33,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from probe_paths import resolve_plugin_state_file  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "http://127.0.0.1:8765/static/workspace.html"
 ORIGIN = "http://127.0.0.1:8765"
@@ -46,9 +49,9 @@ FILLER_PREFIX = "org.example.tabfill"
 # 把取证夹具改几个 id 再装上，只为把页签数推过那条线并留出分组余量，不承载任何业务。
 MIN_PLUGIN_TABS = 14
 # ADR-012 之后偏好状态住在当前工作区容器里（``<data>/workspaces/<区>/plugin_state.json``），
-# 根 data/ 那份是历史遗留、宿主根本不读。跑隔离底座时用 JZO_STATE_FILE 指到真路径，
-# 否则「还原」判据验的是一份没人看的文件——等于没验。
-STATE_FILE = Path(os.environ.get("JZO_STATE_FILE") or (ROOT / "data" / "plugin_state.json"))
+# 根 data/ 那份是历史遗留、宿主根本不读。这里按 JZO_STATE_FILE → JZO_DATA_DIR +
+# current_workspace 指针解析，绝不回落根目录那份幽灵文件。
+STATE_FILE = resolve_plugin_state_file(ROOT / "data")
 NOISE = ("ERR_FAILED", "Failed to load resource")
 
 JS_BAR = """
@@ -480,6 +483,7 @@ def run(tag: str) -> dict:
             removed = False
             leftover_errors.append((plugin_id, repr(exc)))
             print("夹具卸载失败：%s -> %s" % (plugin_id, exc))
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     if state_backup is not None:
         STATE_FILE.write_bytes(state_backup)
     else:
@@ -500,7 +504,9 @@ def run(tag: str) -> dict:
                   json.dumps(leftover, ensure_ascii=False)[:200])
     except Exception as exc:  # noqa: BLE001
         restored, detail = False, repr(exc)
-    check("22 夹具已卸载且本机偏好还原", removed and restored, detail or leftover_errors[:2])
+    check("22 夹具已卸载且隔离工作区偏好还原", removed and restored,
+          {"state_file": str(STATE_FILE), "detail": detail,
+           "leftover_errors": leftover_errors[:2]})
 
     report = {
         "tag": tag,

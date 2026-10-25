@@ -20,6 +20,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from probe_paths import resolve_plugin_state_file  # noqa: E402
+
 BASE = "http://127.0.0.1:8765/static/workspace.html"
 ORIGIN = "http://127.0.0.1:8765"
 TOKEN = "dev-token-2026"
@@ -225,10 +228,26 @@ def run(tag: str) -> dict:
         page.get_by_role("menuitem", name="解散文件夹").click()
         page.wait_for_timeout(1200)
         restored = api_get("/api/plugins")
-        check("16 探针自造的偏好全部还原",
+        # 偏好还原要看当前工作区那份状态文件本身：根 data/plugin_state.json 是历史遗留，
+        # 宿主根本不读，拿它比对等于验了个寂寞。隔离跑时由 JZO_DATA_DIR / JZO_STATE_FILE 指路。
+        state_file = resolve_plugin_state_file(Path(__file__).resolve().parents[1] / "data")
+        try:
+            raw_state = json.loads(state_file.read_text(encoding="utf-8") or "{}")
+        except (OSError, ValueError):
+            raw_state = None
+        state_clean = (
+            isinstance(raw_state, dict)
+            and not raw_state.get("nicknames")
+            and not [n for n in raw_state.get("sidebar", [])
+                     if str(n.get("id", "")).startswith("folder:")]
+        )
+        check("16 探针自造的偏好全部还原（含隔离工作区状态文件）",
               not [p for p in restored["plugins"] if p.get("nickname")]
-              and not [n for n in restored["sidebar"] if str(n.get("id", "")).startswith("folder:")],
-              [p.get("nickname") for p in restored["plugins"] if p.get("nickname")])
+              and not [n for n in restored["sidebar"] if str(n.get("id", "")).startswith("folder:")]
+              and state_clean,
+              {"api_nicknames": [p.get("nickname") for p in restored["plugins"] if p.get("nickname")],
+               "state_file": str(state_file),
+               "state": raw_state})
 
         browser.close()
 
