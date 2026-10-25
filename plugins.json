@@ -79,6 +79,22 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.editor"
+    },
+    {
+      "id": "org.jiuzhang.chat",
+      "name": "AI 助手",
+      "version": "1.0.2",
+      "kind": "tool",
+      "api_version": "1.0",
+      "description": "右栏对话助手：听懂教师的自然语言，经宿主 Host API 代为查题库、拆题、渲染题卡、搜插件与改写题目；回复下方附「前往题库并搜索」等跳转动作，由底座执行跳转。不直连数据库、不碰宿主 DOM、不模拟鼠标键盘点击。需底座 v0.9.0 及以上。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.chat.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.chat",
+      "min_host_version": "0.9.0"
     }
   ]
 }
