@@ -100,12 +100,19 @@ def run(tag: str) -> dict:
         # --- 2. 大字昵称 / 小字官方原名 / 无「恢复默认名」 ----------------------
         before = api_get("/api/plugins")
         rail_before = page.evaluate(JS_RAIL)
-        first_id = cards.first.get_attribute("data-id")
-        check("02 控制台首卡与左栏首行同插件",
-              first_id == rail_before[0].replace("plugin:", ""), (first_id, rail_before[:2]))
         rows = frame.locator("#mgList .mg-card")
-        big0 = rows.nth(0).locator(".mg-card-name").inner_text()
-        small0 = rows.nth(0).locator(".mg-card-official").inner_text()
+        # 无界面插件（题库引擎）进控制台但不占左栏，首卡不一定等于左栏首行；
+        # 取「控制台里第一个真正上栏的卡片」再和左栏比，后面改昵称也落在同一张卡上。
+        card_ids = [rows.nth(i).get_attribute("data-id") for i in range(rows.count())]
+        rail_ids = [k.replace("plugin:", "", 1) for k in rail_before]
+        card_index = next((i for i, cid in enumerate(card_ids) if cid in rail_ids), None)
+        check("02 控制台首卡与左栏首行同插件",
+              card_index is not None and card_ids[card_index] == rail_ids[0],
+              (card_ids[:3], rail_ids[:2]))
+        card_index = card_index or 0
+        first_id = card_ids[card_index]
+        big0 = rows.nth(card_index).locator(".mg-card-name").inner_text()
+        small0 = rows.nth(card_index).locator(".mg-card-official").inner_text()
         check("03 小字写着官方原名与版本", "官方原名：" in small0 and "v" in small0, small0)
         check("04 未起昵称时大字回落官方原名", big0 and big0 in small0, (big0, small0))
         labels = []
@@ -120,10 +127,10 @@ def run(tag: str) -> dict:
 
         # --- 3. 改昵称：大字跟着换，小字不动 -----------------------------------
         prompt_answer["text"] = "探针别名"
-        rows.nth(0).locator(".mg-rename").click()
+        rows.nth(card_index).locator(".mg-rename").click()
         page.wait_for_timeout(1500)
-        big_after = frame.locator("#mgList .mg-card").nth(0).locator(".mg-card-name").inner_text()
-        small_after = frame.locator("#mgList .mg-card").nth(0).locator(".mg-card-official").inner_text()
+        big_after = frame.locator("#mgList .mg-card").nth(card_index).locator(".mg-card-name").inner_text()
+        small_after = frame.locator("#mgList .mg-card").nth(card_index).locator(".mg-card-official").inner_text()
         check("07 改完昵称大字立即变、小字仍是官方原名",
               big_after == "探针别名" and "官方原名：" in small_after, (big_after, small_after))
         rail_title = page.locator("#wsPluginList .ws-plugin-item-name").first.inner_text()
@@ -142,13 +149,13 @@ def run(tag: str) -> dict:
         page.wait_for_timeout(1500)
         tree = api_get("/api/plugins")["sidebar"]
         folders = [n for n in tree if str(n.get("id", "")).startswith("folder:")]
-        tag_text = frame.locator("#mgList .mg-card").nth(0).locator(".mg-tag-folder").inner_text()
+        tag_text = frame.locator("#mgList .mg-card").nth(card_index).locator(".mg-tag-folder").inner_text()
         check("09 卡片尾部小标签显示所属文件夹",
               len(folders) == 1 and "探针组" in tag_text, (folders, tag_text))
         untagged = [
             frame.locator("#mgList .mg-card").nth(i).locator(".mg-tag-folder").inner_text()
-            for i in range(1, min(3, rows.count()))
-        ]
+            for i in range(rows.count()) if i != card_index
+        ][:2]
         check("10 没分组的明写「未分组」", any("未分组" in t for t in untagged), untagged)
         snap("03-folder-tag")
 
@@ -172,7 +179,19 @@ def run(tag: str) -> dict:
               rail_keys == expect_rail, list(zip(rail_keys, expect_rail))[:5])
 
         # --- 6. 停用 → 落到末尾并显示相对时间；再启用 → 回到原位 -----------------
-        victim = rows.nth(1)
+        # 不能拿无界面插件当停用样本：引擎受保护，控制台不给停；挑一张普通卡。
+        # 建过文件夹后卡片可能重排，必须在当下逐张读 data-id，不能用早先的位置快照。
+        headless_ids = {p["id"] for p in before["plugins"] if p.get("headless")}
+        victim = None
+        for i in range(rows.count()):
+            cid = rows.nth(i).get_attribute("data-id")
+            if cid != first_id and cid not in headless_ids:
+                victim, victim_id = rows.nth(i), cid
+                break
+        if victim is None:
+            check("13 停用卡沉到「已停用」段", False, "找不到可停用的普通插件卡")
+            browser.close()
+            return
         victim_id = victim.get_attribute("data-id")
         victim.locator(".mg-toggle").click()
         page.wait_for_timeout(1800)
@@ -199,7 +218,7 @@ def run(tag: str) -> dict:
         frame.locator("#stNavPlugin").click()
         page.wait_for_timeout(600)
         prompt_answer["text"] = ""
-        frame.locator("#mgList .mg-card").nth(0).locator(".mg-rename").click()
+        frame.locator('#mgList .mg-card[data-id="%s"] .mg-rename' % first_id).click()
         page.wait_for_timeout(1500)
         page.locator("#wsPluginList .ws-plugin-folder-head").first.click(button="right")
         page.wait_for_timeout(250)

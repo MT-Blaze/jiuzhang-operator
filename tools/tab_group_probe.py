@@ -372,8 +372,13 @@ def run(tag: str) -> dict:
         snap("05-overflow")
 
         # --- 8. 文件夹分组：树一改，组名页签跟着换成文件夹名 --------------------------
-        tree = api_get("/api/plugins")["sidebar"]
-        plugin_keys = [n["id"] for n in tree if n.get("kind") != "folder"]
+        discovery = api_get("/api/plugins")
+        tree = discovery["sidebar"]
+        # 无界面插件（如题库引擎）开不了页签，不能占分组的名额：否则它所在的
+        # 箱子只剩 1 个页签、永远收不成组名页签，后面的判据会连环空指针。
+        headless = {"plugin:" + p["id"] for p in discovery.get("plugins", []) if p.get("headless")}
+        plugin_keys = [n["id"] for n in tree
+                       if n.get("kind") != "folder" and n["id"] not in headless]
         # 六箱，每箱至少 2 个已开页签才收成组名页签；剩下的留给【未分组】
         buckets = [plugin_keys[i:i + 2] for i in range(0, len(plugin_keys) - 2, 2)]
         folder_tree = [{"kind": "folder", "id": "folder:probe-%d" % i,
@@ -417,7 +422,7 @@ def run(tag: str) -> dict:
         page.evaluate("() => { document.getElementById('wsTabs').scrollLeft = 0; }")
         page.wait_for_timeout(300)
         groups = read_groups()
-        target = [g for g in groups if g["label"] == "探针组1"][0] if groups else None
+        target = next((g for g in groups if g["label"] == "探针组1"), None)
         check("19a 每个文件夹各自收成一个组名页签（计数对上）",
               target and int(target["count"]) == len(target["kids"]) >= 2,
               [(g["label"], g["count"]) for g in groups])
