@@ -2072,7 +2072,7 @@
     [
       ["bank", "题库数据（必选）"],
       ["uploads", "图片资产（必选）"],
-      ["plugins", "插件代码（可选，覆盖后需重启底座）"],
+      ["plugins", "插件代码（可选，覆盖后重开页签或重启生效）"],
       ["other", "其他数据文件（可选，默认勾选）"],
     ].forEach(function (group) {
       var paths = (preview.groups || {})[group[0]] || [];
@@ -2170,7 +2170,7 @@
         return String(rel).indexOf("ws/plugins/") === 0;
       }).length;
       restoreModalDetail.textContent = "将恢复 " + count + " 个文件" +
-        (pluginPicked ? "（其中 " + pluginPicked + " 个是插件代码，覆盖后必须重启底座）" : "") +
+        (pluginPicked ? "（其中 " + pluginPicked + " 个是插件代码，覆盖后重开页签或重启生效）" : "") +
         "；工作区 " + (preview.workspace_id || "") + " · " + Number(preview.question_count || 0) +
         " 题 · 备份时间 " + (preview.generated_at || "") + "。";
     }
@@ -2208,7 +2208,7 @@
           restoreDoneText.textContent = "恢复完成：共 " + (result.restored || []).length +
             " 个文件；覆盖前副本 " + (result.pre_restore || []).length +
             " 份（.pre-restore.bak）。" +
-            (pluginFiles ? "本次覆盖 " + pluginFiles + " 个插件代码文件，必须重启底座才会生效。" : "") +
+            (pluginFiles ? "本次覆盖 " + pluginFiles + " 个插件代码文件；关掉对应页签再重新打开即载入新代码，不必重启底座。" : "") +
             "请重启底座以重载库连接；也可先点【刷新页面】查看。";
         }
         rSet("恢复完成。", "ok");

@@ -8,6 +8,7 @@
   "description": "左表单、中栏左源码右 A4 实时渲染、右栏原图框选切图：拖拽矩形后由 Canvas 截取并经宿主上传，插入 \\includegraphics{路径}；录题干与公式、动态增删选项（含选项配图回填）、填答案与解析；边写边存草稿不丢、一键派生变式、删题二次确认，保存后自动回流。一键清洗 LaTeX 后经宿主写入本地真题题库。",
   "author": "九章算子",
   "license": "Apache-2.0",
+  "min_host_version": "0.11.1",
   "entry": {
     "frontend": "dist/index.html"
   },

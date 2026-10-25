@@ -8,6 +8,7 @@
   "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
   "author": "九章算子",
   "license": "Apache-2.0",
+  "min_host_version": "0.11.1",
   "entry": {
     "frontend": "dist/index.html"
   },

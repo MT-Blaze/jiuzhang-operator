@@ -8,6 +8,7 @@
   "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
   "author": "九章算子",
   "license": "Apache-2.0",
+  "min_host_version": "0.11.1",
   "entry": {
     "frontend": "dist/index.html"
   },

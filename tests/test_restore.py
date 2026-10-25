@@ -405,9 +405,13 @@ class RestoreUiContractTest(unittest.TestCase):
         for group in preview["groups"]:
             self.assertIn('["%s",' % group, self.js, f"前端少了 {group} 这一组的标题")
 
-    def test_plugin_restore_tells_the_teacher_to_restart(self) -> None:
+    def test_plugin_restore_tells_the_teacher_how_new_code_loads(self) -> None:
+        # 插件代码是磁盘上的文件，宿主每个页签只在挂载时读一次：
+        # 重开页签就够，重启底座是可选路径。文案不许再把它说成唯一出路。
         self.assertIn("result.plugins_restored", self.js)
-        self.assertIn("必须重启底座才会生效", self.js)
+        self.assertIn("关掉对应页签再重新打开即载入新代码，不必重启底座", self.js)
+        self.assertNotIn("必须重启底座才会生效", self.js)
+        self.assertIn("插件代码（可选，覆盖后重开页签或重启生效）", self.js)
 
 
 if __name__ == "__main__":
