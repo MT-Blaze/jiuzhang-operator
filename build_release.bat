@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions
-title Jiuzhang Operator - build beta package
+title Jiuzhang Operator - build release package
 
 rem ============================================================
-rem  Jiuzhang Operator - beta package builder (Windows)
+rem  Jiuzhang Operator - release package builder (Windows)
 rem  Double-click to produce a clean, redistributable zip in dist\.
 rem
 rem  Strips secrets and heavy/generated content:
@@ -30,7 +30,7 @@ cd /d "%~dp0"
 rem ---------- Step 0: read version from app\__init__.py ----------
 set "VER=beta"
 for /f "usebackq tokens=3 delims= " %%v in (`findstr /b /c:"__version__" "%~dp0app\__init__.py"`) do set "VER=%%~v"
-set "RELNAME=jiuzhang-operator-beta-v%VER%"
+set "RELNAME=jiuzhang-operator-v%VER%"
 set "STAGE=%TEMP%\%RELNAME%"
 set "OUTDIR=%~dp0dist"
 set "ZIP=%OUTDIR%\%RELNAME%.zip"
