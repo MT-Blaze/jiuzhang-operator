@@ -45,7 +45,7 @@
 
 ---
 
-## 二、当前核心进度（v0.11.0）
+## 二、当前核心进度（v0.11.1）
 
 > **军令 #18 第二~四步与 #18-终 阶段一~三（2026-10-25，八阶段进行中）**：主公把「终极重构与代码审计」拆成 8 个阶段，
 > 纪律是**一阶段一 commit、记忆归档后才进下一阶段**。已交付：
@@ -333,6 +333,46 @@
 > **仍未清**：四个对外插件（core-bank/paper-gen/handout/editor）的 `plugin.json` 没有 `min_host_version`
 > 字段（对外包不声明底座下限）；`examples/` 里示例插件的 `min_host_version` 保留为**最低要求**口径，未跟升到 0.11.0。
 > 全程未 push、未建远端、未发 Release。
+> ⑬ **#18-结 第七条遗留收口（2026-10-25，主公当场授权推两仓）**——三件事：
+> **一、总线声明与代码监听逐处对齐**。欠账原写作「6 处漂移」，实测是 **5 支插件共 10 处**
+> （chat 2、core-bank 2、dashboard 1、paper-gen 2、handout 1、editor 0）：清单里多写的按「假授权」删掉，
+> 代码里真在收的补进清单。顺着投递链读宿主代码才发现更硬的一条：`stage.tab.activated` / `stage.tab.closed`
+> 过去只 `emit` 给宿主自己的总线（`workspace.js` 消费），**从未 `broadcast` 给插件 iframe**——
+> chat 里「关闭录题页签后清掉右栏快照」那截代码是**真断了**，不是清单写错。
+> 于是在 `static/js/stage.js:2050-2051` 补两条中继，并新增 `tests/test_plugin_bus_parity.py`（5 测）把三段判据钉死：
+> 清单==代码、声明必过 `_normalize_bus` 白名单、代码监听的每条主题在 `static/js` 里查得到一次投递。
+> **负向对照真跑过**：抽掉这两行，`test_05` 对 chat 立刻红（`['stage.tab.activated', 'stage.tab.closed'] != []`），
+> 还原后 `stage.js` 与工作树逐字节相同（`.system_generated/order18_after_bus/negative_control_relay.py`）。
+> 顺带清掉两处**跟着旧漂移写死的契约测试**（`test_handout_contract.test_04`、`test_paper_gen_contract.test_05`），
+> 不然是拿假账当基线。
+> **二、恢复覆盖插件代码后的实际加载效果取证**：新增 `tools/restore_reload_probe.py`（26 判据，自带 8784 隔离底座）。
+> 夹具 v1/v2 的标记由 `dist/plugin.js` **执行时**写进 DOM 并经底栏带回，不是 HTML 文本，所以「旧脚本还在跑」骗不了人。
+> 实况结论一条：**恢复只把盘与清单换回旧版，现役 iframe 不换**——check/confirm 全程同 PID 同 `boot_id`（真没重启）、
+> 盘上逐字节回 v1、`/api/plugins` 当场回 v1、5 秒轮询把页签标题也换回 v1 名，但画布里执行的仍是 v2 代码；
+> 让旧脚本退场的是宿主自己的 `JzoStage.rehydratePlugin`（热更新通道）或关掉重开，**恢复通道两者都不调**。
+> 由此得一条**只建议不改**的口径修正：设置页「插件代码（可选，覆盖后需重启底座）」说重了，重开页签即够。
+> **三、升版重打包**（主公拍第 1 个口径：升补丁号）——底座 `0.11.0 → 0.11.1`，
+> core-bank 0.7.2 / paper-gen 0.3.2 / handout 0.1.3 / chat 1.0.2 / dashboard 0.1.2（editor 0.4.1 未动故不升）。
+> `dist/jiuzhang-operator-beta-v0.11.1.zip` **2,175,017 B / 277 条目 / 单顶层目录 / 0 违禁**，
+> 唯一 `.db` 仍是 0 题空基线，包内 `__version__="0.11.1"`、索引四条 0.7.2/0.3.2/0.1.3/0.4.1；
+> `plugins.json` 三处（主仓、`E:/jiuzhang-plugins`、包内）sha256 前缀 **`1369e570e8976279` 逐字节全等**；
+> 四个对外插件包与 `dist/plugins/` byte-equal、顶层目录==id、带 LICENSE、零 `.db`、CRC 自检通过。
+> **取证（全绿、零 pageerror）**：插件侧十支 **254/254** ＋ 宿主界面侧十支 **242/242** ＋ 本轮新增
+> `restore_reload` **26/26** ＝ **522 项判据**，另 `fold_probe` 28 步截图 0 pageerror 0 死锁；
+> 全量单测 **57 模块 1050 测、失败模块 0**（`.system_generated/order18_after_bus/full_run3.txt`）；
+> `tools/audit_code.py` **ERROR 0 / WARN 34 / INFO 3**；六插件 dist 三查 `fetch(`/`parent.document`/`localStorage` 全 0。
+> **本轮三条执行坑**：① 探针把本地令牌**写死**成 `dev-token-2026`（不读 `JZO_LOCAL_TOKEN`），
+> 共享底座换了令牌后 POST 安装夹具一律 401，`tab_group` 从判据 9 起整段炸断——**令牌口径必须跟探针一致**，
+> 且 `HTTPError` 只在收尾冒头时，前半截 PASS 全是假绿相；② 隔离工作区开局没有偏好文件时
+> `state_backup is None`，探针自己造的 `folder:`/补位夹具名永久留在清单里 → 判据 22 变假红，收尾必须自带清扫分支；
+> ③ 我这次的 runner 用 `JZO_STATE_FILE` 给**每支探针**一个隔离偏好文件并逐字节比对根 `data/plugin_state.json`，
+> 结果 `root_data_plugin_state_unchanged=true`——上一轮那条自曝（探针写过根偏好文件）本轮没有重演。
+> **仍未清**：对外四插件 `plugin.json` 依旧没有 `min_host_version`；`examples/plugins-index.example.json`
+> 仍写已退役的 `org.jiuzhang.classic-card`（文档夹具，`test_plugin_index.py:210` 钉着首条 id）；
+> 插件声明的 `publish` 侧（如 `system.open_editor`）不在 `_BUS_PUBLISH` 白名单里、被 `_normalize_bus` 静默裁掉——
+> 本轮判为**文档级失真**（真实跳转走宿主中继方法，插件实际只 post `region.dock`）未动；
+> `dist/plugins/` 里还躺着 10-23 的 `classic-card.zip`/`demo-bank.zip` 两个陈旧产物（`dist/` 不入库，未删）。
+> **本次交付按主公当场授权 push 两仓**（主仓 + `E:/jiuzhang-plugins`；仍不发 Release、不改写历史、不建远端）。
 
 > **军令 #17（2026-10-24）备份恢复与回收站——v0.10.0 封版**：设置页新增宿主自有【备份与恢复】面板，
 > 六步全部交付（辅：无意义的占位插件退场，提交 `773b83f`）；决策记录见 **ADR-011**。要点：
