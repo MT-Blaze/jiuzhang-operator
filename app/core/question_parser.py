@@ -18,6 +18,7 @@ from typing import Any
 
 __all__ = [
     "normalize_latex",
+    "clean_dirty_latex",
     "split_options",
     "extract_answer",
     "count_blanks",
@@ -145,6 +146,98 @@ def normalize_latex(text: str) -> str:
     text = "\n".join(lines)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+_DELIMITER_HEADS = frozenset("([")
+_CHOICES_BLOCK = re.compile(r"\\begin\{choices\}([\s\S]*?)\\end\{choices\}")
+_LIST_ENV = re.compile(r"[ \t]*\\(?:begin|end)\{(?:enumerate|itemize)\}[ \t]*\n?")
+_CHOICES_ITEM = re.compile(r"\\item(?![A-Za-z])\s*")
+_LIST_ITEM = re.compile(r"\\item(?![A-Za-z])\s*")
+_FILLIN = re.compile(r"\\fillin(?![A-Za-z])")
+_DISPLAYSTYLE = re.compile(r"\\displaystyle\s*")
+_TEXT_MACROS = re.compile(r"\\(textbf|textit|emph)\{([^{}]*)\}")
+_MACRO_MARK = {"textbf": "**", "textit": "*", "emph": "*"}
+_WHITESPACE_DIRT = re.compile(r"[ \t]+\n|\n{3,}|\r|\u200b|\ufeff")
+MAX_CLEAN_OPTIONS = 8
+
+
+def _math_delimiters(text: str) -> bool:
+    """有没有真正的 ``\\(`` / ``\\[`` 定界符；``\\\\[1ex]`` 里的反斜杠不算。"""
+    index = 0
+    while index < len(text) - 1:
+        if text[index] == "\\":
+            if text[index + 1] in _DELIMITER_HEADS:
+                return True
+            index += 2
+            continue
+        index += 1
+    return False
+
+
+def _clean_fragment(text: str, rules: list[str]) -> str:
+    if _math_delimiters(text):
+        rules.append("delimiters")
+    if _SYMBOLS.search(text):
+        rules.append("symbols")
+    if _DISPLAYSTYLE.search(text):
+        text = _DISPLAYSTYLE.sub("", text)
+        rules.append("displaystyle")
+    if _FILLIN.search(text):
+        text = _FILLIN.sub("＿＿＿＿", text)
+        rules.append("fillin")
+
+    def macro(match: re.Match[str]) -> str:
+        rules.append(match.group(1))
+        mark = _MACRO_MARK[match.group(1)]
+        return mark + match.group(2) + mark
+
+    text = _TEXT_MACROS.sub(macro, text)
+    if _LIST_ENV.search(text):
+        text = _LIST_ENV.sub("", text)
+        rules.append("list")
+    if _LIST_ITEM.search(text):
+        text = _LIST_ITEM.sub("· ", text)
+        rules.append("list")
+    if _WHITESPACE_DIRT.search(text):
+        rules.append("whitespace")
+    return normalize_latex(text)
+
+
+def clean_dirty_latex(text: Any) -> dict[str, Any]:
+    """把一段脏文本收敛成契约口径的 Markdown + LaTeX，并交代改了哪几类。
+
+    清洗范围是 paper-gen 渲染链已经认得的写法：``\\(...\\)`` / ``\\[...\\]``
+    定界符、等价记号、``\\displaystyle``、``\\fillin``、``\\textbf``/``\\textit``/
+    ``\\emph`` 文本宏、列表环境，以及 ``\\begin{choices}`` 里的选项块。表格环境
+    属于排版层，留给渲染端处理，清洗不猜列结构。
+    """
+    if not isinstance(text, str):
+        return {"text": "", "changed": False, "rules": [], "options": []}
+
+    rules: list[str] = []
+    body = text
+    raw_options: list[str] = []
+    block = _CHOICES_BLOCK.search(body)
+    if block:
+        pieces = [piece.strip() for piece in _CHOICES_ITEM.split(block.group(1))]
+        raw_options = [piece for piece in pieces if piece]
+        if len(raw_options) < 2:
+            raw_options = []
+        else:
+            body = body[: block.start()] + body[block.end():]
+            rules.append("choices")
+
+    cleaned = _clean_fragment(body, rules)
+    options = [
+        {"key": chr(ord("A") + index), "content": _clean_fragment(item, rules)}
+        for index, item in enumerate(raw_options[:MAX_CLEAN_OPTIONS])
+    ]
+    return {
+        "text": cleaned,
+        "changed": cleaned != text,
+        "rules": list(dict.fromkeys(rules)),
+        "options": options,
+    }
 
 
 def _label(raw: str) -> str:

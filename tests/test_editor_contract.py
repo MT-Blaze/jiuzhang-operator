@@ -332,9 +332,9 @@ class EditorTask3LegacyPathsTest(unittest.TestCase):
         # 主来源仍要能从 bank.get 的出参里回填（宿主没有 bank.sources 时兜底）
         self.assertIn("sources: document.source ? [{", js)
 
-    def test_05_manifest_bumps_to_0_6_0(self) -> None:
+    def test_05_manifest_bumps_to_0_6_1(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.6.0")
+        self.assertEqual(manifest["version"], "0.6.1")
 
 
 class EditorPackageTest(unittest.TestCase):

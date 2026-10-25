@@ -7,6 +7,7 @@
  *
  * 「一键清洗 LaTeX」是本地规则，不上传题干、不调模型：老师粘来的
  * \(...\)、\[...\]、\textbf{}、\fillin 与 choices 环境在这里归一。
+ * 「AI 清洗公式」则经宿主转发底座统一清洗函数，与导入链保持同一口径。
  */
 (function () {
   "use strict";
@@ -55,6 +56,7 @@
   var scaleEl = document.getElementById("edScale");
   var saveEl = document.getElementById("edSave");
   var cleanEl = document.getElementById("edClean");
+  var aiCleanEl = document.getElementById("edAiClean");
   var resetEl = document.getElementById("edReset");
   var toastEl = document.getElementById("edToast");
   var returnEl = document.getElementById("edReturn");
@@ -1108,6 +1110,84 @@
     return touched;
   }
 
+  /**
+   * 【AI 清洗公式】：每一段非空文本都交给宿主转发底座统一清洗函数。
+   * 规则只实现一处（question_parser.clean_dirty_latex），插件本地那份是离线兜底。
+   * 全部回包成功后才一次性回填：半路失败时表单保持原样，老师不会看到一半干净一半脏。
+   */
+  function cleanViaHost() {
+    if (!aiCleanEl) return;
+    var jobs = [];
+    function queue(label, value, apply) {
+      if (!String(value || "").trim()) return;
+      jobs.push(hostCall("text.clean_latex", { text: value }).then(function (result) {
+        return { label: label, result: result, apply: apply };
+      }));
+    }
+    queue("题干", stemEl.value, function (result) {
+      stemEl.value = result.text;
+    });
+    state.options.forEach(function (option, index) {
+      queue("选项 " + option.key, option.content, function (result) {
+        if (index >= state.options.length) return;   // 题干里的 choices 已整组替换过选项
+        state.options[index].content = result.text;
+        var input = optionsEl.querySelector('input[data-option-index="' + index + '"]');
+        if (input) input.value = result.text;
+      });
+    });
+    queue("答案", answerEl.value, function (result) {
+      answerEl.value = result.text;
+    });
+    queue("解析", solutionEl.value, function (result) {
+      solutionEl.value = result.text;
+    });
+
+    if (!jobs.length) {
+      toast("表单是空的，没有可清洗的文本");
+      return;
+    }
+
+    aiCleanEl.disabled = true;
+    aiCleanEl.setAttribute("aria-busy", "true");
+    Promise.all(jobs).then(function (items) {
+      var changed = 0;
+      var choices = null;
+      items.forEach(function (item) {
+        if (item.result.changed) changed += 1;
+        if (item.label === "题干" && item.result.options && item.result.options.length >= 2) {
+          choices = item.result.options;
+        }
+      });
+      if (choices) {
+        state.options = choices.slice(0, OPTION_KEYS.length).map(function (option, index) {
+          return { key: OPTION_KEYS[index], content: option.content };
+        });
+        while (state.options.length < 2) {
+          state.options.push({ key: OPTION_KEYS[state.options.length], content: "" });
+        }
+        if (!isChoice()) {
+          typeEl.value = "single_choice";
+          applyType();
+        }
+        renderOptions();
+      }
+      items.forEach(function (item) {
+        // choices 整组替换后，旧选项各自清洗的结果已经过时，不能再回填
+        if (choices && item.label.indexOf("选项 ") === 0) return;
+        item.apply(item.result);
+      });
+      renderPreview();
+      toast(changed ? "AI 清洗完成：" + changed + " 段有改动" : "文本已是标准写法");
+      dock(changed ? "底座清洗完成：" + changed + " 段有改动" : "底座清洗完成：无需改动");
+    }, function (error) {
+      toast("AI 清洗失败：" + error.message, "error");
+      dock("AI 清洗失败：" + error.message);
+    }).then(function () {
+      aiCleanEl.disabled = false;
+      aiCleanEl.removeAttribute("aria-busy");
+    });
+  }
+
   // ---------- 保存 ----------
   function buildQuestion(strict) {
     var type = currentType();
@@ -2024,6 +2104,7 @@
     });
     saveEl.addEventListener("click", save);
     cleanEl.addEventListener("click", cleanAll);
+    if (aiCleanEl) aiCleanEl.addEventListener("click", cleanViaHost);
     resetEl.addEventListener("click", resetForm);
     if (variantEl) variantEl.addEventListener("click", saveAsVariant);
     if (deleteEl) deleteEl.addEventListener("click", requestDelete);

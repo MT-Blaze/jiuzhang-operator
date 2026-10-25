@@ -443,7 +443,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": True,
         },
         "org.jiuzhang.bank-ui": {
-            "version": "0.2.0",
+            "version": "0.2.1",
             "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",
@@ -476,7 +476,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "0.5.0",
+            "version": "0.6.1",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",

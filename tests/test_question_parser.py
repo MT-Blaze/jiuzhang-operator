@@ -1,6 +1,6 @@
 """录题清洗与解析（app/core/question_parser.py）契约测试：军令 #13 任务 4。
 
-覆盖四块纯逻辑：LaTeX 定界符归一、选项剥离、填空答案提取、题干体检。
+覆盖四块纯逻辑：LaTeX 定界符归一与脏文本清洗、选项剥离、填空答案提取、题干体检。
 全部是字符串进/字符串出的纯函数，不碰数据库与网络。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_question_parser``
@@ -11,6 +11,7 @@ from __future__ import annotations
 import unittest
 
 from app.core.question_parser import (
+    clean_dirty_latex,
     clean_question,
     count_blanks,
     extract_answer,
@@ -246,6 +247,61 @@ class ParseQuestionTest(unittest.TestCase):
     def test_03_dirty_input_is_reported_not_repaired(self) -> None:
         result = parse_question("求 $x 的值")
         self.assertIn("unbalanced_math", [item["code"] for item in result["issues"]])
+
+
+class CleanDirtyLatexTest(unittest.TestCase):
+    """军令 #21 任务四：把 paper-gen 渲染链认得的脏写法收敛成契约口径。"""
+
+    def test_01_delimiters_and_symbols(self) -> None:
+        result = clean_dirty_latex(r"求 \(x\) 与 \[y=\dfrac{1}{2}\] 的值")
+        self.assertEqual(result["text"], r"求 $x$ 与 $$y=\frac{1}{2}$$ 的值")
+        self.assertTrue(result["changed"])
+        self.assertIn("delimiters", result["rules"])
+        self.assertIn("symbols", result["rules"])
+
+    def test_02_text_macros_become_markdown(self) -> None:
+        result = clean_dirty_latex(r"\textbf{注意}：\textit{只填一个} \emph{空}")
+        self.assertEqual(result["text"], "**注意**：*只填一个* *空*")
+        for rule in ("textbf", "textit", "emph"):
+            self.assertIn(rule, result["rules"])
+
+    def test_03_fillin_displaystyle_and_lists(self) -> None:
+        source = "解：\n\\begin{enumerate}\n\\item $\\displaystyle x=1$\n\\item 填空 \\fillin\n\\end{enumerate}"
+        result = clean_dirty_latex(source)
+        self.assertNotIn("\\fillin", result["text"])
+        self.assertNotIn("displaystyle", result["text"])
+        self.assertNotIn("\\begin{enumerate}", result["text"])
+        self.assertIn("· $x=1$", result["text"])
+        self.assertIn("· 填空 ＿＿＿＿", result["text"])
+        for rule in ("fillin", "displaystyle", "list"):
+            self.assertIn(rule, result["rules"])
+
+    def test_04_choices_block_becomes_option_list(self) -> None:
+        source = "下列哪个正确？\n\\begin{choices}\n\\item \\(1\\)\n\\item 2\n\\item \\(\\dfrac{3}{2}\\)\n\\end{choices}"
+        result = clean_dirty_latex(source)
+        self.assertEqual(result["text"], "下列哪个正确？")
+        self.assertEqual([item["key"] for item in result["options"]], ["A", "B", "C"])
+        self.assertEqual(result["options"][2]["content"], r"$\frac{3}{2}$")
+        self.assertIn("choices", result["rules"])
+
+    def test_05_line_break_spacing_is_not_a_delimiter(self) -> None:
+        source = r"$\begin{cases}a\\[1ex]b\end{cases}$"
+        result = clean_dirty_latex(source)
+        self.assertEqual(result["text"], source)
+        self.assertEqual(result["rules"], [])
+        self.assertFalse(result["changed"])
+
+    def test_06_idempotent_and_tolerant(self) -> None:
+        once = clean_dirty_latex(r"\textbf{甲} \(x\) \fillin")["text"]
+        twice = clean_dirty_latex(once)
+        self.assertEqual(twice["text"], once)
+        self.assertFalse(twice["changed"])
+        empty = clean_dirty_latex(None)  # type: ignore[arg-type]
+        self.assertEqual(empty, {"text": "", "changed": False, "rules": [], "options": []})
+
+    def test_07_tabular_is_left_to_the_renderer(self) -> None:
+        source = r"$\begin{tabular}{cc}甲&乙\end{tabular}$"
+        self.assertEqual(clean_dirty_latex(source)["text"], source)
 
 
 if __name__ == "__main__":

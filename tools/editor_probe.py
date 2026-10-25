@@ -8,6 +8,7 @@
 - 左栏出现「录题工作台」，挂载进沙箱并回 ready；
 - 动态增删选项、答案/解析/难度/标签表单齐全；
 - 输入后 140ms 防抖内重排，A4 单页无溢出、公式为真 KaTeX；
+- 「AI 清洗公式」经宿主 text.clean_latex 回填，与底座同一份规则；
 - 「一键清洗 LaTeX」把 \\(...\\)、\\[...\\]、\\fillin 归一；
 - 旧库三条录题路径回归：一题挂两卷（各带原卷题号）、教材/章/节、原生图片上传；
 - 保存后拿到 q_ 开头的 ID，直查 API 字段逐项一致（含 tags/来源/图片/选项 image_ids）；
@@ -81,6 +82,17 @@ def wait_preview(metrics, timeout: float = 10) -> float:
             return float(raw)
         time.sleep(0.05)
     raise AssertionError("预览未在预期时间内重排")
+
+
+def wait_value(locator, predicate, timeout: float = 8) -> str:
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = locator.input_value()
+        if predicate(last):
+            return last
+        time.sleep(0.05)
+    raise AssertionError("输入框未在预期时间内回填：" + last[:120])
 
 
 def main() -> int:
@@ -173,6 +185,24 @@ def main() -> int:
             solution.fill("由 $x^{2}-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。")
             tags.fill("一元二次方程, 因式分解")
             frame.locator("#edDifficulty").select_option("L2")
+
+            # ---------- AI 清洗公式：宿主转发底座统一清洗 → 回填表单 ----------
+            frame.locator("#edAiClean").click()
+            ai_cleaned = wait_value(
+                stem,
+                lambda value: "\\(" not in value and "\\[" not in value and "\\fillin" not in value,
+            )
+            result["metrics"]["ai_cleaned_stem"] = ai_cleaned
+            check("AI 清洗公式回填题干", ai_cleaned != dirty, {"stem": ai_cleaned[:100]})
+            check("AI 清洗把 \\(...\\) 归一为 $", "$x^{2}-5x+6=0$" in ai_cleaned, ai_cleaned)
+            check("AI 清洗把 \\[...\\] 归一为 $$", "$$" in ai_cleaned and "\\[" not in ai_cleaned)
+            check("AI 清洗把 \\fillin 变为横线", "＿＿＿＿" in ai_cleaned)
+            page.wait_for_timeout(250)
+            page.screenshot(path=str(shots / "editor-ai-clean.png"))
+
+            # 还原脏文本，让下面的本地一键清洗仍然测到脏输入
+            stem.fill(dirty)
+            page.wait_for_timeout(220)
 
             render_ms = wait_preview(metrics)
             page.wait_for_timeout(220)

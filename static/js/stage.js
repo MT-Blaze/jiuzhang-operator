@@ -371,6 +371,9 @@
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "asset.upload",
     "draft.save", "draft.load",
+    // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
+    // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。
+    "text.clean_latex",
     // 军令 #15：AI 助手降级成一个普通插件后，它能用的口子只有这一排。
     // 对话、改写、读清单、读工作区快照、装插件、设面板参数、开页签全部由宿主代办；
     // 数据库、写令牌与宿主 DOM 一道门都没开。
@@ -394,6 +397,7 @@
   var AGENT_READ_METHODS = ["plugins.list", "workspace.state"];
   var CHAT_HISTORY_MAX = 12;
   var AGENT_TIMEOUT_MS = 60000;      // 模型一轮回答可以慢，但不能无限等
+  var CLEAN_TEXT_MAX = 20000;        // 与 /api/agent/clean_latex 的入参上限一致
   var OPEN_BANK_QUERY_MAX = 40;
 
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
@@ -1357,6 +1361,44 @@
     // 智能体通道：AI 助手插件的申请一律在这里由宿主代执行（军令 #15）。
     if (AI_ONLY_METHODS.indexOf(method) >= 0 || AGENT_READ_METHODS.indexOf(method) >= 0) {
       relayAgent(method, payload, done, fail, failWith);
+      return;
+    }
+
+    if (method === "text.clean_latex") {
+      // 纯文本规则清洗：宿主只做长度与回包校验。超长直接拒，绝不先截断再回填——
+      // 半截文本回到老师表单，比清洗失败更糟。
+      var dirtyText = typeof payload.text === "string" ? payload.text : "";
+      if (!dirtyText.trim()) { failWith("BAD_REQUEST", "text 不能为空"); return; }
+      if (dirtyText.length > CLEAN_TEXT_MAX) {
+        failWith("BAD_REQUEST", "文本过长（上限 " + CLEAN_TEXT_MAX + " 字）");
+        return;
+      }
+      fetchJson("/api/agent/clean_latex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: dirtyText })
+      }).then(function (response) {
+        var data = plainObject(response && response.data);
+        if (typeof data.text !== "string") {
+          failWith("HOST_BAD_PAYLOAD", "清洗结果缺少 text 字段");
+          return;
+        }
+        done({
+          ok: true,
+          text: data.text,
+          changed: Boolean(data.changed),
+          rules: Array.isArray(data.rules) ? data.rules.slice(0, 12).map(function (rule) {
+            return String(rule).slice(0, 20);
+          }) : [],
+          options: (Array.isArray(data.options) ? data.options : []).slice(0, 8).map(function (item, index) {
+            var entry = plainObject(item);
+            return {
+              key: textValue(entry, "key", 2) || String.fromCharCode(65 + index),
+              content: textValue(entry, "content", 2000)
+            };
+          }).filter(function (item) { return item.content; })
+        });
+      }, fail);
       return;
     }
 

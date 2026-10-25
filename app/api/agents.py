@@ -1,7 +1,7 @@
-"""Agent 接口：对话、拆题、审题三类智能体。
+"""Agent 接口：对话、拆题、审题三类智能体，外加确定性 LaTeX 清洗。
 
 遵循 PROMPT_SPEC.md 契约，调用 app.core.ai_client 完成大模型交互。
-无 API Key 时自动降级 Mock，保证前端不挂。
+无 API Key 时自动降级 Mock，保证前端不挂；``/clean_latex`` 不经过模型。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.core import ai_client, command_tools, plugin_search, plugin_tools, ui_cards
+from app.core import ai_client, command_tools, plugin_search, plugin_tools, question_parser, ui_cards
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
 
@@ -45,6 +45,11 @@ class RefineRequest(BaseModel):
     question: dict[str, Any] = Field(..., description="当前正在编辑的题目（标准结构或其表单态子集）")
     instruction: str = Field(..., description="老师对 AI 副驾的一句话指令，如「把题干改得更简洁」")
     field: str = Field("stem", description="要改写并回填的字段：stem / solution")
+    task_id: str = Field("", description="任务唯一标识")
+
+
+class CleanLatexRequest(BaseModel):
+    text: str = Field(..., max_length=20000, description="待清洗的脏文本（题干/解析/选项任一）")
     task_id: str = Field("", description="任务唯一标识")
 
 
@@ -383,6 +388,21 @@ def parse_refine_reply(raw: str, field: str) -> dict[str, str]:
         raise ValueError("AI 副驾没有给出可用的改写内容")
     note = data.get("note")
     return {"value": value.strip(), "note": note.strip() if isinstance(note, str) else ""}
+
+
+@router.post("/clean_latex", summary="脏 LaTeX 规则清洗（不调模型）")
+async def agent_clean_latex(body: CleanLatexRequest = Body(...)) -> dict[str, Any]:
+    """把老师粘来的脏文本收敛成契约口径，供录题端一键回填。
+
+    与 ``/refine`` 不同，这里不碰模型也不碰题库：同一段输入永远得到同一段输出，
+    清洗规则只有 ``app/core/question_parser.clean_dirty_latex`` 一处实现。
+    """
+    return {
+        "type": "complete",
+        "data": question_parser.clean_dirty_latex(body.text),
+        "task_id": body.task_id or "unknown",
+        "mock": False,
+    }
 
 
 @router.post("/refine", summary="AI 副驾改写单字段（题干/解析）供回填")

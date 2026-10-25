@@ -464,6 +464,14 @@ payload = { command_id, context, from, trace }
 `POST /api/agent/chat`（对话）、`POST /api/agent/refine`（AI 副驾改写题干/解析，只回候选文本不落库）、
 `POST /api/agent/split`（拆题）、`POST /api/agent/review`（审题）。缺密钥时 Mock 原样回显、`mock: true`，绝不编造。
 
+`POST /api/agent/clean_latex`（军令 #21 任务四）是这条通道里唯一不进模型的接口：
+`{"text": "≤20000 字"}` → `{type:"complete", data:{text, changed, rules[], options[]}, task_id, mock:false}`。
+规则实现只有 [`app/core/question_parser.py`](app/core/question_parser.py) 的 `clean_dirty_latex` 一处
+（`\(...\)` / `\[...\]` 定界符、`\dfrac` 等记号、`\displaystyle`、`\fillin`→`＿＿＿＿`、
+`\textbf`/`\textit`/`\emph`→Markdown 强调、`itemize`/`enumerate` 列表、`\begin{choices}`→结构化选项），
+同一段输入永远得到同一段输出。插件经宿主 `text.clean_latex` 调用（见 PLUGIN_SPEC §2.17），
+宿主对超长输入直接拒，绝不截断后回填表单。
+
 对话 Agent 的工具链除插件能力工具与 `search_question_bank` 外，还接了两件宿主命令工具
 （军令 #20 第三部分，契约见 PLUGIN_SPEC §2.16）：
 
