@@ -556,26 +556,39 @@
       String(now.getSeconds()).padStart(2, "0");
   }
 
+  // 复制必须「静默」：不弹提示、不抢焦点。成功与否只回布尔，由调用方决定原位反馈。
   function copyPlainText(value) {
     var text = String(value == null ? "" : value);
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      return navigator.clipboard.writeText(text).catch(function () { fallbackCopy(text); });
+      return navigator.clipboard.writeText(text).then(function () {
+        return true;
+      }, function () {
+        return fallbackCopy(text);
+      });
     }
-    fallbackCopy(text);
-    return Promise.resolve();
+    return Promise.resolve(fallbackCopy(text));
   }
 
   // http 下 navigator.clipboard 不可用（非安全上下文），回落老办法。
+  // 隐藏 textarea 的 select() 会把焦点吸走，复制完必须原样还给用户原来所在的元素。
   function fallbackCopy(text) {
+    var active = document.activeElement;
     var area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");
     area.style.position = "fixed";
+    area.style.top = "0";
+    area.style.left = "0";
     area.style.opacity = "0";
     document.body.appendChild(area);
     area.select();
-    try { document.execCommand("copy"); } catch (error) { /* 浏览器连老办法也不给，保持静默 */ }
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (error) { ok = false; }
     document.body.removeChild(area);
+    if (active && active !== document.body && typeof active.focus === "function") {
+      try { active.focus({ preventScroll: true }); } catch (error) { try { active.focus(); } catch (e) { /* 老内核不支持 options，尽力而为 */ } }
+    }
+    return ok;
   }
 
   function entryVisible(entry) {
@@ -642,7 +655,19 @@
   }
 
   // 报错诊断的双击复制：原位闪绿底 + 变字，不弹 Toast、不选中文本、不抢焦点。
+  // 第一下 mousedown 就掐掉默认行为：行本身不可聚焦，放任默认只会先把焦点丢给 body、
+  // 再把整行文字刷蓝，等 dblclick 到手时已经晚了（隐藏 textarea 也就无从归还焦点）。
   if (dockLog) {
+    dockLog.addEventListener("mousedown", function (event) {
+      if (dockView !== "error") return;
+      var target = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
+      if (target) event.preventDefault();
+    });
+    dockLog.addEventListener("selectstart", function (event) {
+      if (dockView !== "error") return;
+      var target = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
+      if (target) event.preventDefault();
+    });
     dockLog.addEventListener("dblclick", function (event) {
       if (dockView !== "error") return;
       var item = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
@@ -651,13 +676,18 @@
       var selection = window.getSelection ? window.getSelection() : null;
       if (selection) selection.removeAllRanges();
       var hint = item.querySelector(".ws-dock-copy");
-      copyPlainText(item.getAttribute("data-copy") || "").then(function () {
+      var flash = function (label) {
         item.classList.add("is-copied");
-        if (hint) hint.textContent = "已复制";
+        if (hint) hint.textContent = label;
         window.setTimeout(function () {
           item.classList.remove("is-copied");
           if (hint) hint.textContent = "双击复制";
         }, 1200);
+      };
+      copyPlainText(item.getAttribute("data-copy") || "").then(function (ok) {
+        flash(ok ? "已复制" : "复制失败");
+      }, function () {
+        flash("复制失败");
       });
     });
   }

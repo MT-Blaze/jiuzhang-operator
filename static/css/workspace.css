@@ -1311,6 +1311,8 @@ html.ws-dragging * {
   border: 1px solid var(--line);
   border-radius: 7px;
   cursor: copy;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .ws-dock-log[data-view="error"] .ws-dock-item[data-level="error"] .ws-dock-topic {

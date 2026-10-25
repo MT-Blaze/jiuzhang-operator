@@ -10,7 +10,8 @@
   1. 左右栏头部等高（48px）且顶线对齐；
   2. 左栏没有题库下拉、自由对话在插件列表内、管理入口死锁栏底；
   3. 画布没有舞台头 / 模型胶囊 / 上下文按钮，也没有「沙箱运行中」提示；
-  4. 底栏三视图可切换，报错诊断悬停提示 + 双击原位变字、不弹 Toast；
+  4. 底栏三视图可切换，报错诊断悬停提示 + 双击原位变字、剪贴板内容=整行、
+     不弹 Toast、不选中文字、不抢焦点（含 http 老回路的焦点归还）；
   5. 插件行可原生拖拽排序，顺序写回后端偏好树（data/plugin_state.json），刷新后保持；
   6. 宿主页零未捕获 JS 错误。
 """
@@ -185,6 +186,62 @@ def run(tag: str) -> dict:
             check("双击后原位变字为「已复制」", copied["hint"] == "已复制" and copied["copied"],
                   json.dumps(copied, ensure_ascii=False))
             check("复制反馈不弹 Toast", copied["toast"] == 0, str(copied["toast"]))
+
+            # 剪贴板必须拿到整行（时间 + 主题 + 正文），不是行内某个 span
+            clipboard_probe = page.evaluate("""() => {
+              const row = document.querySelector('#wsDockLog .ws-dock-item');
+              const hint = row.querySelector('.ws-dock-copy');
+              const rr = row.getBoundingClientRect();
+              const hr = hint.getBoundingClientRect();
+              return {
+                row: row.getAttribute('data-copy'),
+                selection: window.getSelection().toString(),
+                userSelect: getComputedStyle(row).userSelect,
+                sameRow: Math.abs((hr.top + hr.bottom) / 2 - (rr.top + rr.bottom) / 2) < 10,
+                inside: hr.left >= rr.left && hr.right <= rr.right + 0.5,
+                rightAligned: Math.abs(hr.right - rr.right) < 20
+              };
+            }""")
+            clipboard_probe["clipboard"] = page.evaluate(
+                "() => navigator.clipboard.readText()")
+            report["notes"]["clipboard"] = clipboard_probe
+            check("剪贴板内容与整行 data-copy 完全一致",
+                  clipboard_probe["clipboard"] == clipboard_probe["row"],
+                  json.dumps(clipboard_probe, ensure_ascii=False)[:300])
+            check("双击不留下文字选区", clipboard_probe["selection"] == "",
+                  repr(clipboard_probe["selection"]))
+            check("报错行禁用文本选择（CSS user-select）",
+                  clipboard_probe["userSelect"] == "none", clipboard_probe["userSelect"])
+            check("「已复制」落在被双击行内且右对齐（不串行、不飘出）",
+                  clipboard_probe["sameRow"] and clipboard_probe["inside"]
+                  and clipboard_probe["rightAligned"],
+                  json.dumps(clipboard_probe, ensure_ascii=False)[:300])
+
+            # http 老回路：隐藏 textarea 会抢焦点，复制后必须还给原元素
+            page.wait_for_timeout(1400)   # 等上一轮「已复制」闪完，避免误判成本轮结果
+            page.focus('#wsDockTabError')
+            fallback = page.evaluate("""() => {
+              Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+              return document.activeElement.id;
+            }""")
+            page.dblclick('#wsDockLog .ws-dock-item')
+            page.wait_for_timeout(250)
+            after_fallback = page.evaluate("""() => ({
+              active: document.activeElement.id,
+              selection: window.getSelection().toString(),
+              hint: (document.querySelector('#wsDockLog .ws-dock-item .ws-dock-copy') || {}).textContent,
+              toast: document.querySelectorAll('.ws-toast, .toast').length
+            })""")
+            report["notes"]["fallback"] = {"before": fallback, "after": after_fallback}
+            snap("22-error-copied-fallback")
+            check("老回路复制后焦点归还（不抢焦点）",
+                  after_fallback["active"] == "wsDockTabError" and fallback == "wsDockTabError",
+                  json.dumps(report["notes"]["fallback"], ensure_ascii=False))
+            check("老回路复制不选中文字", after_fallback["selection"] == "",
+                  repr(after_fallback["selection"]))
+            check("老回路复制仍是原位文字反馈、无 Toast",
+                  after_fallback["hint"] in ("已复制", "复制失败") and after_fallback["toast"] == 0,
+                  json.dumps(after_fallback, ensure_ascii=False))
             page.click('#wsDockTabTerminal')
             page.wait_for_timeout(150)
             terminal_rows = page.evaluate(
