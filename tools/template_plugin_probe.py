@@ -84,6 +84,9 @@ def run(tag: str) -> dict:
         zf.extractall(plugins_dir)
     check("模板 zip 解出 plugin.json", (plugins_dir / PLUGIN_ID / "plugin.json").is_file(),
           str(plugins_dir / PLUGIN_ID))
+    # 期望值取自包内清单本身：底座下限会随发版抬升，写死版本号只会变成假阴性。
+    with open(plugins_dir / PLUGIN_ID / "plugin.json", encoding="utf-8") as fh:
+        fixture = json.load(fh)
 
     # PROBE_CORE_BANK=1 时把本机官方题库插件复制进隔离目录，验「取到 N 题」的黄金路径；
     # 只读复制，不碰开发者本机 data/ 与 plugins/。
@@ -121,7 +124,8 @@ def run(tag: str) -> dict:
               f"count={len(plugins)} rejected={json.dumps(discovery.get('rejected'), ensure_ascii=False)}")
         check("清单里的 bus/stage/min_host_version 原样回传",
               bool(entry and entry.get("bus", {}).get("publish") == ["region.dock"]
-                   and entry.get("stage") and entry.get("min_host_version") == "0.8.2"),
+                   and entry.get("stage")
+                   and entry.get("min_host_version") == fixture.get("min_host_version")),
               json.dumps({k: (entry or {}).get(k) for k in ("bus", "stage", "min_host_version")},
                          ensure_ascii=False))
 
