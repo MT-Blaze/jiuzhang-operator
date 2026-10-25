@@ -121,7 +121,7 @@ class OfficialIndexFileTest(unittest.TestCase):
             manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
             info = validate_plugin(plugin_dir, manifest)
         self.assertEqual(info["id"], TEMPLATE_ID)
-        self.assertEqual(info["min_host_version"], "0.11.2")
+        self.assertEqual(info["min_host_version"], "1.0.0")
         self.assertTrue(info["stage"], "模板应演示 stage.center 画布接管")
         self.assertIn("region.dock", info["bus"]["publish"])
         self.assertEqual([item["id"] for item in info["commands"]],

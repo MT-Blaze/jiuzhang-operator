@@ -97,11 +97,11 @@ class EditorAiCleanerTest(unittest.TestCase):
 
     def test_03_manifest_and_index_agree_on_0_6_1(self) -> None:
         manifest = json.loads((EDITOR_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.6.1")
+        self.assertEqual(manifest["version"], "1.0.0")
         index = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
         entries = [item for item in index["entries"] if item["id"] == "org.jiuzhang.editor"]
         self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["version"], "0.6.1")
+        self.assertEqual(entries[0]["version"], "1.0.0")
         self.assertEqual(entries[0]["description"], manifest["description"])
 
 

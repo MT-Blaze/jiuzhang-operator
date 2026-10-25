@@ -334,7 +334,7 @@ class EditorTask3LegacyPathsTest(unittest.TestCase):
 
     def test_05_manifest_bumps_to_0_6_1(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "0.6.1")
+        self.assertEqual(manifest["version"], "1.0.0")
 
 
 class EditorPackageTest(unittest.TestCase):

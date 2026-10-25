@@ -92,7 +92,8 @@ class DocsVersionTest(unittest.TestCase):
 
     def test_01_showcase_mentions_current_version(self) -> None:
         text = _read(ROOT / "index.html")
-        self.assertIn(f"v{__version__} 内测", text)
+        # 只钉版本号，不钉「内测/正式版」这类渠道措辞——升版时措辞要跟着改，钉死会把判据打成假红。
+        self.assertIn(f"v{__version__}", text)
         self.assertIn(f"Jiuzhang Operator v{__version__}", text)
         self.assertIn(f"九章算子 v{__version__} 技术栈与约束", text)
 

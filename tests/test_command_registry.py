@@ -433,7 +433,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
 
     EXPECTED = {
         "org.jiuzhang.bank-engine": {
-            "version": "0.2.0",
+            "version": "1.0.0",
             "commands": [
                 "org.jiuzhang.action.data.bank_stats",
                 "org.jiuzhang.action.data.bank_search",
@@ -443,7 +443,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": True,
         },
         "org.jiuzhang.bank-ui": {
-            "version": "0.2.1",
+            "version": "1.0.0",
             "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",
@@ -454,7 +454,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.paper-gen": {
-            "version": "0.4.0",
+            "version": "1.0.0",
             "commands": [
                 "org.jiuzhang.action.process.generate_paper",
                 "org.jiuzhang.action.output.export_paper",
@@ -463,7 +463,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.handout": {
-            "version": "0.2.0",
+            "version": "1.0.0",
             "commands": [
                 "org.jiuzhang.action.process.render_handout",
                 "org.jiuzhang.action.input.set_handout_markdown",
@@ -476,7 +476,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "0.6.1",
+            "version": "1.0.0",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",
@@ -513,7 +513,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             with self.subTest(plugin=plugin_id):
                 self.assertEqual(self.manifests[plugin_id]["version"], expected["version"])
                 self.assertEqual(bool(self.manifests[plugin_id].get("headless")), expected["headless"])
-                self.assertGreaterEqual(self.manifests[plugin_id]["min_host_version"], "0.11.2")
+                self.assertEqual(self.manifests[plugin_id]["min_host_version"], "1.0.0")
 
     def test_30_command_ids_and_risk_flags_match_the_manual(self) -> None:
         for plugin_id, expected in self.EXPECTED.items():

@@ -2,13 +2,13 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.bank-ui",
   "name": "真题题库",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查。题目数据一律经 Host API 向当前活跃题库引擎申请，插件不碰数据库。",
   "author": "九章算子",
   "license": "Apache-2.0",
-  "min_host_version": "0.11.2",
+  "min_host_version": "1.0.0",
   "entry": {
     "frontend": "dist/index.html"
   },

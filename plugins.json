@@ -6,7 +6,7 @@
     {
       "id": "org.jiuzhang.bank-engine",
       "name": "题库引擎",
-      "version": "0.2.0",
+      "version": "1.0.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "无界面的题库数据引擎（军令 #20 从 core-bank 拆出）：负责七表结构、题目读写、大纲与考向、查重扫描与收敛合并事务。只经 Host API 调用，数据落在当前工作区；引擎受保护，控制台不可卸载。",
@@ -17,12 +17,12 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-engine",
-      "min_host_version": "0.11.2"
+      "min_host_version": "1.0.0"
     },
     {
       "id": "org.jiuzhang.bank-ui",
       "name": "真题题库",
-      "version": "0.2.1",
+      "version": "1.0.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查；数据一律向当前活跃题库引擎申请，自己不碰数据库。",
@@ -33,12 +33,12 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-ui",
-      "min_host_version": "0.11.2"
+      "min_host_version": "1.0.0"
     },
     {
       "id": "org.jiuzhang.paper-gen",
       "name": "组卷排版",
-      "version": "0.4.0",
+      "version": "1.0.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
@@ -48,12 +48,13 @@
         "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.paper-gen.zip",
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip"
       ],
-      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.paper-gen"
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.paper-gen",
+      "min_host_version": "1.0.0"
     },
     {
       "id": "org.jiuzhang.handout",
       "name": "讲义排版",
-      "version": "0.2.0",
+      "version": "1.0.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
@@ -63,12 +64,13 @@
         "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.handout.zip",
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip"
       ],
-      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.handout"
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.handout",
+      "min_host_version": "1.0.0"
     },
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "0.6.1",
+      "version": "1.0.0",
       "kind": "tool",
       "api_version": "1.0",
       "description": "左表单、中栏源码对照 A4 实时渲染、右栏原图框选切图；录题干公式、动态选项（含选项配图）、答案解析，支持一题挂多张来源卷（各记原卷题号）、教材/章/节、本地图片上传并关联 images 与选项 image_ids；草稿托管、派生变式、删题二次确认，保存经宿主写库。本地一键清洗 + 底座统一 AI 清洗公式。",
@@ -78,15 +80,16 @@
         "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.editor.zip",
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip"
       ],
-      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.editor"
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.editor",
+      "min_host_version": "1.0.0"
     },
     {
       "id": "org.jiuzhang.chat",
       "name": "AI 助手",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "右栏对话助手：听懂教师的自然语言，经宿主 Host API 代为查题库、拆题、渲染题卡、搜插件与改写题目；回复下方附「前往题库并搜索」等跳转动作，由底座执行跳转。不直连数据库、不碰宿主 DOM、不模拟鼠标键盘点击。需底座 v0.9.0 及以上。",
+      "description": "右栏对话助手：听懂教师的自然语言，经宿主 Host API 代为查题库、拆题、渲染题卡、搜插件与改写题目；回复下方附「前往题库并搜索」等跳转动作，由底座执行跳转。不直连数据库、不碰宿主 DOM、不模拟鼠标键盘点击。需底座 v1.0.0 及以上。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip",
@@ -94,7 +97,7 @@
         "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.chat.zip"
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.chat",
-      "min_host_version": "0.9.0"
+      "min_host_version": "1.0.0"
     }
   ]
 }

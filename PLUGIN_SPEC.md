@@ -681,7 +681,7 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 官方插件与模板统一用 `"p" + 自增序号 + "_" + Date.now().toString(36)`。
 插件侧仍必须为每个请求设超时并给出可读提示，不得静默吞掉。
 
-**`engine.host_version`（模板新增的可选声明块）**：模板清单带 `"engine": {"host_version": "0.11.2"}`，
+**`engine.host_version`（模板新增的可选声明块）**：模板清单带 `"engine": {"host_version": "1.0.0"}`，
 表示「本模板按哪一版底座的契约生成」，供 AI 与人工对照用；**底座更新检查消费的仍是顶层
 `min_host_version` 字段**（§1.7 裁决 2 的兼容校验，§2.3.2 字段表）。两者值可以相同，但语义不同：
 `engine.host_version` 是参照说明，`min_host_version` 是硬约束声明。底座对 `engine` 块不解释、不校验、

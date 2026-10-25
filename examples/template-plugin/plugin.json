@@ -33,8 +33,8 @@
       }
     ]
   },
-  "min_host_version": "0.11.2",
+  "min_host_version": "1.0.0",
   "engine": {
-    "host_version": "0.11.2"
+    "host_version": "1.0.0"
   }
 }
