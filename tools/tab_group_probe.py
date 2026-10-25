@@ -477,6 +477,12 @@ def run(tag: str) -> dict:
             print("夹具卸载失败：%s -> %s" % (plugin_id, exc))
     if state_backup is not None:
         STATE_FILE.write_bytes(state_backup)
+    else:
+        # 开局没有偏好文件（全新隔离工作区）：没东西可还原，就只能自己扫干净——
+        # 否则探针造的 folder: 与补位夹具名永久留在清单里，判据 22 变成假红。
+        STATE_FILE.write_text(json.dumps({"disabled": [], "disabled_at": {},
+                                          "nicknames": {}, "sidebar": []},
+                                         ensure_ascii=False, indent=2), encoding="utf-8")
     try:
         remaining = [p["id"] for p in api_get("/api/plugins")["plugins"]]
         leftover = json.loads(STATE_FILE.read_text(encoding="utf-8") or "{}")
