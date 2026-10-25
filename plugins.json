@@ -22,7 +22,7 @@
     {
       "id": "org.jiuzhang.bank-ui",
       "name": "真题题库",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查；数据一律向当前活跃题库引擎申请，自己不碰数据库。",

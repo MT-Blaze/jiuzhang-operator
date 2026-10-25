@@ -1306,7 +1306,9 @@ def topic_notes(plugin_id: str, topic_id: str) -> dict[str, Any]:
                 {
                     "id": int(row["id"]),
                     "note_type": row["note_type"],
-                    "content": row["content"],
+                    # 存量 150 条笔记里 141 条是旧导入器写的 \(...\)，而契约只认 $...$。
+                    # 读出时过一遍底座唯一的清洗函数：各插件不必自造公式方言，老师库里的原文也不动。
+                    "content": question_parser.normalize_latex(row["content"]),
                     "sort_order": int(row["sort_order"]),
                 }
                 for row in rows

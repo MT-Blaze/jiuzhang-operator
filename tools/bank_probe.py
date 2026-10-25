@@ -122,6 +122,69 @@ def main() -> int:
             )
             check("KaTeX 字体已加载", bool(fonts.get("check")), fonts)
 
+            # --- 考向笔记（军令 #21 任务二）：接口找一条带笔记的考向，再在树上真的点开 ---------
+            engine_base = f"/api/bank/plugins/{ENGINE_ID}"
+
+            def api(path: str) -> dict:
+                with urllib.request.urlopen(base + path, timeout=15) as response:
+                    return json.loads(response.read().decode("utf-8"))
+
+            def walk(parent_id: str = "", ancestors: tuple = (), depth: int = 0):
+                if depth > 5:
+                    return None
+                suffix = "?parent_id=" + parent_id if parent_id else ""
+                for node in api(engine_base + "/topics" + suffix)["items"]:
+                    chain = ancestors + (node,)
+                    if node["note_count"]:
+                        return chain
+                    found = walk(node["id"], chain, depth + 1)
+                    if found:
+                        return found
+                return None
+
+            chain = walk()
+            check("接口找到带笔记的考向节点", bool(chain), [node["name"] for node in chain] if chain else None)
+            if chain:
+                leaf = chain[-1]
+                for ancestor in chain[:-1]:
+                    row = frame.locator(".cb-tree-name", has_text=ancestor["name"]).first
+                    expect(row).to_be_visible(timeout=15000)
+                    row.locator("xpath=ancestor::li[1]").locator(".cb-caret").first.click()
+                leaf_button = frame.locator(".cb-tree-name", has_text=leaf["name"]).first
+                expect(leaf_button).to_be_visible(timeout=15000)
+                leaf_button.click()
+
+                panel = frame.locator(f".cb-notes[data-topic-id='{leaf['id']}']")
+                expect(panel).to_be_visible(timeout=15000)
+                expect(panel.locator(".cb-note")).to_have_count(leaf["note_count"], timeout=15000)
+                note_text = panel.inner_text()
+                note_katex = panel.locator(".katex").count()
+                check("点考向节点 → 右栏渲染出该考向笔记",
+                      panel.locator(".cb-note").count() == leaf["note_count"],
+                      {"topic": leaf["name"], "notes": leaf["note_count"]})
+                check("笔记带「方法 / 易错点」类型标签",
+                      "方法" in note_text and "易错点" in note_text, note_text[:120])
+                check("笔记公式渲染为 KaTeX 且不留 \\( 原文",
+                      note_katex > 0 and "\\(" not in note_text, {"katex": note_katex})
+                badge = leaf_button.locator("xpath=ancestor::li[1]").locator(".cb-tree-notes")
+                check("树上笔记徽标与面板条数一致",
+                      badge.count() == 1 and badge.inner_text().strip() == "笔记 " + str(leaf["note_count"]),
+                      badge.first.inner_text().strip() if badge.count() else None)
+
+                notes_api = api(engine_base + "/topics/" + leaf["id"] + "/notes")
+                types = {note["note_type"] for note in notes_api["notes"]}
+                check("bank.topic_notes 按 topic id 回传方法与易错点",
+                      types >= {"method", "pitfall"}, sorted(types))
+                check("接口读出的存量笔记已归一为 $ 定界符",
+                      all("\\(" not in note["content"] for note in notes_api["notes"]))
+                page.wait_for_timeout(400)
+                page.screenshot(path=str(shots / "topic-notes.png"), full_page=False)
+
+                frame.locator(".cb-tree-all").click()
+                expect(frame.locator(".cb-notes")).to_have_count(0, timeout=15000)
+                expect(frame.locator(".cb-pager")).to_contain_text("共 456 题", timeout=15000)
+                check("点「全部题目」→ 笔记栏收起且列表回到全库", True)
+
             # 右栏改年级 → 题库按高三过滤
             grade = page.locator('#wsPluginControls select[data-ui-key="grade"]')
             expect(grade).to_be_visible(timeout=10000)

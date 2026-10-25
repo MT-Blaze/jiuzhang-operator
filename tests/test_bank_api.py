@@ -110,10 +110,14 @@ def _seed_outline(db_path: Path) -> dict:
                 " VALUES (?, ?, ?, ?, ?)", ("q_test_000001", topic, is_primary, index, now)
             )
         for order, note_type in enumerate(("method", "pitfall")):
+            content = f"第 {order + 1} 条教研笔记"
+            if note_type == "method":
+                # 旧导入器写的是 \(...\)；读路径必须归一成契约的 $...$（军令 #21 任务二）
+                content += "：先定 \\(x\\) 的范围，再看 $y$ 的取值"
             con.execute(
                 "INSERT INTO topic_notes (topic_id, note_type, content, sort_order,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (kx, note_type, f"第 {order + 1} 条教研笔记", order, now, now),
+                (kx, note_type, content, order, now, now),
             )
         con.commit()
     finally:
@@ -275,6 +279,10 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(data["topic"]["name"], "集合中元素的个数")
         self.assertEqual([item["note_type"] for item in data["notes"]], ["method", "pitfall"])
+        # 存量笔记里的 \(...\) 必须由读路径归一成 $...$：前端只认一种定界符，不改老师库里的原文
+        self.assertEqual(data["notes"][0]["content"],
+                         "第 1 条教研笔记：先定 $x$ 的范围，再看 $y$ 的取值")
+        self.assertNotIn("\\(", data["notes"][0]["content"])
         status, _data = self._request(f"/api/bank/plugins/{PLUGIN_ID}/topics/tp_zz00000000/notes")
         self.assertEqual(status, 400)
 
@@ -1106,6 +1114,12 @@ class MigratedBankIntegrityTest(unittest.TestCase):
             topic_id = con.execute(
                 "SELECT topic_id FROM topic_notes GROUP BY topic_id ORDER BY COUNT(*) DESC LIMIT 1"
             ).fetchone()[0]
+            topics_with_notes = [row[0] for row in con.execute(
+                "SELECT DISTINCT topic_id FROM topic_notes ORDER BY topic_id"
+            )]
+            legacy_notes = con.execute(
+                "SELECT COUNT(*) FROM topic_notes WHERE content LIKE '%' || char(92) || '(%'"
+            ).fetchone()[0]
         finally:
             con.close()
         payload = self.bank.topic_notes(PLUGIN_ID, topic_id)
@@ -1113,6 +1127,15 @@ class MigratedBankIntegrityTest(unittest.TestCase):
         self.assertIn(payload["notes"][0]["note_type"], ("method", "pitfall", "knowledge", "insight"))
         with self.assertRaises(self.bank.BankError):
             self.bank.topic_notes(PLUGIN_ID, "tp_zzzzzzzzzz")
+
+        # 军令 #21 任务二：存量笔记里确有旧定界符，读出来必须已是契约的 $...$（原文不动）
+        self.assertGreater(legacy_notes, 0, r"迁移后的库应仍保留 \(...\) 原文")
+        remained = 0
+        for node in topics_with_notes:
+            for note in self.bank.topic_notes(PLUGIN_ID, node)["notes"]:
+                if "\\(" in note["content"] or "\\[" in note["content"]:
+                    remained += 1
+        self.assertEqual(remained, 0, "读路径漏归一的旧定界符条数")
 
 
 class LegacyWideTableSeedTest(unittest.TestCase):

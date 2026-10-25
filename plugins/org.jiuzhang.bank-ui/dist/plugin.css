@@ -416,6 +416,68 @@ img.cb-img {
 .cb-tree-loading { padding: 6px 10px; color: var(--ink-soft); font-size: 12px; }
 .cb-tree-error { padding: 6px 4px; color: var(--cinnabar); font-size: 12px; }
 
+/* ---------- 考向教研笔记（点大纲节点后出现在右栏顶部） ---------- */
+.cb-notes {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+}
+
+.cb-notes-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cb-notes-title {
+  margin: 0;
+  font-size: 14px;
+  color: var(--cinnabar);
+  letter-spacing: 0.04em;
+}
+
+.cb-notes-topic { font-size: 12px; color: var(--ink-soft); }
+
+.cb-notes-count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(31, 28, 24, 0.06);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cb-notes-hint { margin: 0; font-size: 12px; color: var(--ink-soft); }
+.cb-notes-error { margin: 0 0 8px; font-size: 12px; color: var(--cinnabar); }
+
+.cb-note {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.cb-note[data-note-type="method"] { border-left-color: var(--ok); }
+.cb-note[data-note-type="pitfall"] { border-left-color: var(--warn); }
+
+.cb-note-type {
+  display: inline-block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+}
+
+.cb-note-body p { margin: 0 0 6px; }
+.cb-note-body p:last-child { margin-bottom: 0; }
+
+.cb-empty-slim { padding: 16px 8px 24px; }
+
 /* ---------- 待审任务（人工审核页） ---------- */
 .cb-views { display: flex; gap: 6px; }
 

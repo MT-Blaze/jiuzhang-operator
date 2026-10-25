@@ -67,6 +67,10 @@
   // 大纲树：册/章/节/考向按需懒加载，expanded 记开合，children 记已取回的一层
   var tree = { roots: null, children: {}, expanded: {}, loading: false, error: "" };
 
+  // 考向笔记（军令 #21 任务二）：点大纲节点就把该考向的方法/易错点取到右栏。
+  // 只留当前节点的结果；老师连点两个节点时用 seq 丢掉先发后到的旧响应。
+  var notes = { topicId: "", loading: false, items: [], error: "", seq: 0 };
+
   // ---------- 宿主通信 ----------
   function hostCall(method, payload) {
     return new Promise(function (resolve, reject) {
@@ -403,6 +407,7 @@
     state.showSolution = false;
     if (node.has_children && !tree.children[node.id]) toggleNode(node);
     loadQuestions();
+    loadTopicNotes(node.id);
     dock("按大纲取题：" + node.name);
     return undefined;
   }
@@ -411,7 +416,33 @@
     state.topic = "";
     state.topicName = "";
     state.page = 1;
+    notes.seq += 1;
+    notes.topicId = "";
+    notes.items = [];
+    notes.error = "";
+    notes.loading = false;
     loadQuestions();
+  }
+
+  function loadTopicNotes(topicId) {
+    var token = ++notes.seq;
+    notes.topicId = topicId;
+    notes.loading = true;
+    notes.items = [];
+    notes.error = "";
+    renderAll();
+    hostCall("bank.topic_notes", { topic_id: topicId }).then(function (result) {
+      if (token !== notes.seq) return;
+      notes.loading = false;
+      notes.items = (result && result.notes) || [];
+      renderAll();
+    }).catch(function (error) {
+      if (token !== notes.seq) return;
+      // 取不到就如实报错并留重试，不拿「还没有笔记」冒充
+      notes.loading = false;
+      notes.error = error.message;
+      renderAll();
+    });
   }
 
   function renderTopicNode(node) {
@@ -507,11 +538,55 @@
   }
 
   // ---------- 详情 ----------
+  var NOTE_LABELS = { method: "方法", pitfall: "易错点", knowledge: "知识点", insight: "洞察" };
+
+  function renderTopicNotes(host) {
+    if (!state.topic) return;
+    var section = el("section", "cb-notes");
+    section.setAttribute("data-topic-id", state.topic);
+    section.setAttribute("aria-label", "考向教研笔记：" + state.topicName);
+
+    var head = el("div", "cb-notes-head");
+    head.appendChild(el("h2", "cb-notes-title", "教研笔记"));
+    head.appendChild(el("span", "cb-notes-topic", state.topicName));
+    if (!notes.loading && !notes.error) {
+      head.appendChild(el("span", "cb-notes-count", notes.items.length + " 条"));
+    }
+    section.appendChild(head);
+
+    if (notes.loading) {
+      section.appendChild(el("p", "cb-notes-hint", "正在读取笔记…"));
+    } else if (notes.error) {
+      section.appendChild(el("p", "cb-notes-error", "笔记没取到：" + notes.error));
+      var retry = el("button", "cb-btn", "重试");
+      retry.type = "button";
+      retry.addEventListener("click", function () { loadTopicNotes(state.topic); });
+      section.appendChild(retry);
+    } else if (!notes.items.length) {
+      section.appendChild(el("p", "cb-notes-hint", "这个考向还没有教研笔记。"));
+    } else {
+      notes.items.forEach(function (note) {
+        var item = el("article", "cb-note");
+        item.setAttribute("data-note-type", note.note_type || "");
+        item.appendChild(el("span", "cb-note-type",
+          NOTE_LABELS[note.note_type] || note.note_type || "笔记"));
+        var body = el("div", "cb-note-body");
+        appendRich(body, note.content);
+        item.appendChild(body);
+        section.appendChild(item);
+      });
+    }
+    host.appendChild(section);
+  }
+
   function renderDetail(host) {
     var side = el("div", "cb-side");
+    renderTopicNotes(side);
     var question = state.selected;
     if (!question) {
-      side.appendChild(el("p", "cb-empty", "从左侧选一道题，这里显示题干、选项与解析。"));
+      side.appendChild(el("p", "cb-empty" + (state.topic ? " cb-empty-slim" : ""),
+        state.topic ? "这个考向下还没有选题；从中间列表点一道看题干与解析。"
+          : "从左侧选一道题，这里显示题干、选项与解析。"));
       host.appendChild(side);
       return;
     }
