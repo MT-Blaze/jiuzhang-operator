@@ -4,7 +4,8 @@
 > ① 插件 ↔ 宿主的消息协议（postMessage）；② 宿主代转的数据通道（`bank.*` / `basket.*` / `draft.*`）；
 > ③ 事件总线（EventBus / JzoBus）与后端 HTTP 端点。
 > 契约的唯一事实来源是 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；本文与它冲突时以 PLUGIN_SPEC 为准。
-> 对应底座版本：v0.11.1（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道）。
+> 对应底座版本：v0.11.2（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道；
+> 军令 #19 新增能力路由字典 `command.list` / `command.execute`，见 §2.18）。
 
 ---
 
@@ -94,6 +95,7 @@
 | `RATE_LIMITED` | 每页签 10 秒最多 80 次转发，稍后再试 |
 | `HOST_4xx` / `HOST_5xx` | 后端接口拒绝；`retryable` 为真可重试 |
 | `INVALID_PAYLOAD` | 插件自己回的载荷错误（插件 → 宿主方向） |
+| `COMMAND_NOT_FOUND` / `COMMAND_TARGET_MISSING` / `COMMAND_NOT_READY` / `COMMAND_LOOP` / `COMMAND_FAILED` | 能力路由字典的调度失败，逐条含义见 §2.18 |
 
 限流与超时：单页签 80 次 / 10 秒；单次转发 20 秒超时；宿主对插件请求 30 秒超时。
 
@@ -302,6 +304,40 @@ HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicate
 合并成功后宿主广播一次 `system.question_updated`（`action:"merge"`，`id` 为保留项），
 题篮/组卷/讲义等下游视图据此重取；副本 id 同时自动退出题篮。
 
+### 2.18 `command.list` / `command.execute` — 能力路由字典（军令 #19 新增）
+
+插件之间**不直连**：要在清单里公开自己的能力，就用 `contributes.commands` 登记一个命令 id；
+想用别人的能力，先查表再请宿主转发。完整规则（命名空间、五大分类、错误码、自动开页语义）见
+PLUGIN_SPEC §2.14，这里只给调用形状。
+
+清单声明（顶层，最多 32 条；id 为小写反向域名、至少三段、段内可用 `_`，≤96 字符）：
+
+```json
+"contributes": {"commands": [{"id": "com.zhang.bank.tidy_tags", "title": "整理标签"}]}
+```
+
+`org.jiuzhang.*` 只能由插件 id 同以 `org.jiuzhang.` 开头的官方插件声明；官方命令还须落在
+`org.jiuzhang.action.{input,process,output,data,view}.` 之下并通过 `command.list` 自查。
+第三方越权声明逐条进 `GET /api/plugins` 的 `commands_rejected`，不拒装、也不生效。
+
+| 方法 | payload | result |
+| --- | --- | --- |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name}]}`（按 id 升序，停用插件不在表里） |
+| `command.execute` | `{"command_id": "com.zhang.bank.tidy_tags", "context": {...}}`；`context` 序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`；`result` 是目标插件自己的回包 |
+
+目标插件收到的宿主请求：
+
+```js
+payload = { command_id, context, from, trace }
+// from  = 调用方插件 id（宿主按页签判定，不信自报）
+// trace = 宿主盖章的转发链；自己塞的链路会被截断，满 4 跳回 COMMAND_LOOP
+```
+
+目标没有页签时宿主**自动开一页**并等 `plugin.activate` 就绪（上限 10 秒，超时回
+`COMMAND_NOT_READY`）；休眠页签先唤醒。目标插件只处理清单声明过的 id，其余回
+`UNKNOWN_COMMAND`。**`context` 是线索不是授权**：别的插件可以编造任意内容，
+要动数据仍走对应 Host API 的权限校验。
+
 ---
 
 ## 3. 后端 HTTP 端点参考（同源页面 / 调试用；沙箱插件**不能**直接访问）
@@ -346,7 +382,7 @@ HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicate
 
 | 方法与路径 | 说明 |
 | --- | --- |
-| `GET /api/plugins` | 发现已安装插件：`{plugins: [...], rejected: [{id?, reason}]}`；每个 plugin 带 `protocol` / `entry_url` / `assets` / `min_host_version` / `capabilities` 等宿主回填字段（`capabilities` 是设置页识别题库引擎、置灰「不保留数据」的唯一判据） |
+| `GET /api/plugins` | 发现已安装插件：`{plugins: [...], rejected: [{id?, reason}], commands: [...], commands_rejected: [...]}`；每个 plugin 带 `protocol` / `entry_url` / `assets` / `min_host_version` / `capabilities` / `commands`（自己在 `contributes.commands` 里声明的命令）等宿主回填字段；顶层 `commands` 是启用插件的全局字典（同 id 先到先得），`commands_rejected` 记越权命名空间与 id 冲突（`capabilities` 是设置页识别题库引擎、置灰「不保留数据」的唯一判据） |
 | ✍ `POST /api/plugins/install?replace=false` | 本地 zip 安装（请求体即 zip 二进制，≤50 MB；暂存区校验 + 原子落地；同名默认 409，`replace=true` 才覆盖） |
 | ✍ `POST /api/plugins/install-url` | 在线安装单个 zip：`{"url", "mirrors": [...], "replace": false}`（地址守卫同索引拉取） |
 | ✍ `POST /api/plugins/index` | 拉取插件索引：`{"url", "allow_mirrors": true}`；只读 GET，不解压不执行；官方地址失败按 gh-proxy → ghfast → jsDelivr → fastly.jsDelivr → Raw 换源 |

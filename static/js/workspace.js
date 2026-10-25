@@ -1452,6 +1452,10 @@
         if (window.JzoStage && typeof window.JzoStage.updatePlugin === "function") {
           plugins.forEach(function (plugin) { window.JzoStage.updatePlugin(plugin); });
         }
+        // 能力路由字典与这份清单同源：每轮整表替换，停用/卸载的插件连命令一起退场。
+        if (window.JzoStage && typeof window.JzoStage.setPluginCatalog === "function") {
+          window.JzoStage.setPluginCatalog(plugins);
+        }
 
         if (opts.announce !== false && changed) {
           if (added.length) {

@@ -25,8 +25,16 @@
     "subscribe": ["ui.params.changed", "question.updated"],
     "publish": ["region.dock"]
   },
-  "min_host_version": "0.8.2",
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.example.template.echo",
+        "title": "示例命令：回显上下文"
+      }
+    ]
+  },
+  "min_host_version": "0.11.2",
   "engine": {
-    "host_version": "0.8.2"
+    "host_version": "0.11.2"
   }
 }

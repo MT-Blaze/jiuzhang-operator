@@ -54,6 +54,9 @@ class InstalledPlugin(BaseModel):
     stage: dict[str, Any] | None = None
     bus: dict[str, Any] | None = None
     min_host_version: str = ""
+    # 能力路由字典（PLUGIN_SPEC §2.14）：这条插件声明并被宿主登记的命令。
+    # 越权命名空间与坏条目已在清单校验时丢弃（见 GET /api/plugins 的 commands_rejected）。
+    commands: list[dict[str, str]] = []
     # 渲染/工具类插件可显式声明不占左栏；缺省一律显示。
     show_in_sidebar: bool = True
 

@@ -11,6 +11,12 @@
  *   4. UI 隔离在沙箱 iframe：本文件运行在 sandbox="allow-scripts" 的独立源里，
  *      碰不到父窗口 DOM/Cookie/localStorage；与宿主唯一的通道就是 window.parent.postMessage。
  *   5. 只用原生 JS/CSS：不引入 React/Vue/jQuery 等重型框架，也不联网加载任何资源（CSP 会拦截）。
+ *
+ * 【能力路由字典】想把自己的能力开放给别的插件，在 plugin.json 里声明
+ *   "contributes": {"commands": [{"id": "com.你的域名.动作", "title": "给老师看的名字"}]}，
+ * 并像下面 command.execute 那样处理宿主转发来的执行请求。查别人有什么能力用
+ * callHost("command.list")，调度用 callHost("command.execute", {command_id, context})——
+ * 全程由宿主中转，插件之间不直连（PLUGIN_SPEC §2.14）。
  */
 (function () {
   "use strict";
@@ -144,6 +150,23 @@
       reply(event.source, message.id, {
         html: '<article class="my-card">' + escapeHtml(question.stem) + "</article>",
         height: 96
+      });
+      return;
+    }
+    if (method === "command.execute") {
+      // 能力路由字典（PLUGIN_SPEC §2.14）：别的插件经宿主转发来的命令在这里执行。
+      // 只执行清单 contributes.commands 里声明过的 id；context 是调用方带来的上下文
+      // （如题目 id 列表），from 是调用方插件 id——你不需要、也拿不到对方的 iframe。
+      var commandPayload = message.payload || {};
+      if (commandPayload.command_id !== "org.example.template.echo") {
+        fail(event.source, message.id, "UNKNOWN_COMMAND",
+          "本插件没有声明命令：" + String(commandPayload.command_id || ""));
+        return;
+      }
+      reply(event.source, message.id, {
+        command_id: commandPayload.command_id,
+        from: typeof commandPayload.from === "string" ? commandPayload.from : "",
+        echo: commandPayload.context || {}
       });
       return;
     }

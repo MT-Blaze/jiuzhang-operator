@@ -375,7 +375,10 @@
     // 数据库、写令牌与宿主 DOM 一道门都没开。
     "agent.chat", "agent.refine", "plugins.list", "workspace.state",
     "plugin.install_url", "ui.params.set", "editor.apply_patch",
-    "stage.open_bank", "stage.open_editor"
+    "stage.open_bank", "stage.open_editor",
+    // 军令 #19：能力路由字典。任何插件都能查表与调度；目标未安装/未声明
+    // 一律回明确错误，绝不悄悄落到别的插件上。
+    "command.list", "command.execute"
   ];
   // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
   // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
@@ -420,6 +423,164 @@
   var ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
   // 大纲节点 ID：tp_ + 层别码（bo/ch/se/kx）+ 8 位十六进制，定长 13（bank/schema.sql）
   var TOPIC_ID_RE = /^tp_(bo|ch|se|kx)[0-9a-f]{8}$/;
+  // 能力路由字典（PLUGIN_SPEC §2.14）：命令 id 与 context 的大小上限、
+  // 现开/现唤醒目标页签的等待，以及转发链上限（挡 A→B→A 的循环）。
+  var COMMAND_ID_RE = /^[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){2,7}$/;
+  var COMMAND_CONTEXT_MAX = 16384;
+  var COMMAND_READY_TIMEOUT_MS = 10000;
+  var COMMAND_MAX_HOPS = 4;
+  var commandIndex = Object.create(null);    // 命令 id → 登记条目
+  var pluginCatalog = Object.create(null);   // 插件 id → 清单条目（找目标 iframe 用）
+
+  /**
+   * 用 /api/plugins 的整份清单重建字典：停用、卸载的插件连同它的命令一起退场。
+   * 后端已按「同 id 先到先得」去过重，这里再挡一次是为了清单被别处改写时不串台。
+   */
+  function setPluginCatalog(plugins) {
+    var nextIndex = Object.create(null);
+    var nextPlugins = Object.create(null);
+    (Array.isArray(plugins) ? plugins : []).forEach(function (plugin) {
+      if (!plugin || typeof plugin.id !== "string" || !plugin.id) return;
+      nextPlugins[plugin.id] = plugin;
+      if (plugin.enabled === false) return;
+      (Array.isArray(plugin.commands) ? plugin.commands : []).forEach(function (command) {
+        if (!command || typeof command.id !== "string" || nextIndex[command.id]) return;
+        nextIndex[command.id] = {
+          id: command.id,
+          title: typeof command.title === "string" ? command.title : command.id,
+          plugin_id: plugin.id,
+          plugin_name: plugin.name || plugin.id
+        };
+      });
+    });
+    commandIndex = nextIndex;
+    pluginCatalog = nextPlugins;
+  }
+
+  function listCommands() {
+    return Object.keys(commandIndex).sort().map(function (id) {
+      var item = commandIndex[id];
+      return {
+        id: item.id,
+        title: item.title,
+        plugin_id: item.plugin_id,
+        plugin_name: item.plugin_name
+      };
+    });
+  }
+
+  /** 目标插件可用的 iframe：活着的画布页签或右栏面板；休眠页签会交给调用方唤醒。 */
+  function commandTarget(pluginId) {
+    var tab = findPluginTab(pluginId);
+    if (tab && tab.state === "live" && tab.frame && tab.ready) return tab;
+    for (var i = 0; i < panels.length; i += 1) {
+      if (panels[i].plugin && panels[i].plugin.id === pluginId && panels[i].frame) {
+        return panels[i];
+      }
+    }
+    return tab;
+  }
+
+  /** 等目标页签挂载并就绪；未就绪绝不硬发请求（postMessage 给空窗口会石沉大海）。 */
+  function waitCommandReady(tab, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var started = Date.now();
+      function notReady(message) {
+        var error = new Error(message);
+        error.code = "NOT_READY";
+        reject(error);
+      }
+      (function tick() {
+        if (tab.state === "live" && tab.ready && tab.frame) { resolve(tab); return; }
+        if (tab.state === "error") { notReady("目标插件加载失败"); return; }
+        if (Date.now() - started > timeoutMs) {
+          notReady("目标插件在 " + Math.round(timeoutMs / 1000) + " 秒内没有就绪");
+          return;
+        }
+        window.setTimeout(tick, 200);
+      })();
+    });
+  }
+
+  /**
+   * command.execute：查宿主内存字典 → 找到目标插件 → 经宿主 iframe 转发。
+   * 插件之间没有直连通道：调用方只交命令 id 与 context，目标 id、实例与
+   * 生命周期全部由宿主决定（与 system.open_editor 同一条规矩）。
+   */
+  function executeCommand(caller, payload, done, failWith) {
+    var commandId = textValue(payload, "command_id", 120);
+    if (!COMMAND_ID_RE.test(commandId)) {
+      failWith("BAD_REQUEST", "command_id 缺失或形状不对（小写反向域名、至少三段）");
+      return;
+    }
+    var context = plainObject(payload.context);
+    var encoded = "";
+    try { encoded = JSON.stringify(context); } catch (error) { encoded = "!"; }
+    if (encoded.length > COMMAND_CONTEXT_MAX) {
+      failWith("BAD_REQUEST", "context 超过 " + COMMAND_CONTEXT_MAX + " 字符上限");
+      return;
+    }
+    var entry = commandIndex[commandId];
+    if (!entry) {
+      failWith("COMMAND_NOT_FOUND",
+        "能力字典里没有命令「" + commandId + "」：目标插件未安装、已停用或没有声明它");
+      return;
+    }
+    var plugin = pluginCatalog[entry.plugin_id];
+    if (!plugin) {
+      failWith("COMMAND_TARGET_MISSING",
+        "命令「" + commandId + "」登记的插件 " + entry.plugin_id + " 不在当前清单里");
+      return;
+    }
+    // trace 只截取形状、不信任内容：调用方自报的链路可以伪造，真正的环路阈值
+    // 由宿主每一跳追加一层来收紧；限流（80 次/10 秒）是最后一道闸。
+    var trace = Array.isArray(payload.trace) ? payload.trace.filter(function (item) {
+      return typeof item === "string" && item.length > 0 && item.length <= 80;
+    }).slice(0, COMMAND_MAX_HOPS) : [];
+    if (trace.length >= COMMAND_MAX_HOPS) {
+      failWith("COMMAND_LOOP",
+        "命令转发已超过 " + COMMAND_MAX_HOPS + " 层，疑似循环调用，已中断");
+      return;
+    }
+
+    var handle = commandTarget(plugin.id);
+    var ready;
+    if (!handle) {
+      handle = openPlugin(plugin);
+      if (!handle) {
+        failWith("COMMAND_TARGET_MISSING", "命令「" + commandId + "」的目标插件没有可加载的入口页");
+        return;
+      }
+      dock("命令「" + entry.title + "」需要「" + entry.plugin_name + "」，已为它开一个画布页。",
+        "stage.command.open");
+      ready = waitCommandReady(handle, COMMAND_READY_TIMEOUT_MS);
+    } else if (handle.kind === "panel") {
+      ready = Promise.resolve(handle);
+    } else if (handle.state === "live" && handle.ready) {
+      ready = Promise.resolve(handle);
+    } else {
+      activate(handle.key);   // 休眠页签：唤醒后再发，避免请求打在空窗口上
+      ready = waitCommandReady(handle, COMMAND_READY_TIMEOUT_MS);
+    }
+
+    ready.then(function (target) {
+      return request(target, "command.execute", {
+        command_id: commandId,
+        context: context,
+        from: (caller.plugin && caller.plugin.id) || "",
+        trace: trace.concat([entry.plugin_id])
+      });
+    }).then(function (result) {
+      done({ command_id: commandId, plugin_id: entry.plugin_id, result: result });
+    }, function (error) {
+      var notReady = Boolean(error && error.code === "NOT_READY");
+      failWith(
+        notReady ? "COMMAND_NOT_READY" : "COMMAND_FAILED",
+        "命令「" + commandId + "」执行失败：" + ((error && error.message) || "未知原因"),
+        false
+      );
+    });
+  }
 
   function replyHost(tab, message, ok, value) {
     if (!tab.frame || !tab.frame.contentWindow) return;
@@ -910,6 +1071,20 @@
     }
     var payload = message.payload;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) payload = {};
+
+    // 能力字典是宿主内存里的表：查询与调度都不出网、不碰库，先于任何 HTTP 分支答复。
+    if (method === "command.list") {
+      replyHost(tab, message, true, { commands: listCommands() });
+      return;
+    }
+    if (method === "command.execute") {
+      executeCommand(tab, payload, function (result) {
+        replyHost(tab, message, true, result);
+      }, function (code, text, retryable) {
+        replyHost(tab, message, false, { code: code, message: text, retryable: Boolean(retryable) });
+      });
+      return;
+    }
 
     // 草稿走本地托管，不出网、不进库：先于任何 HTTP 分支答复，但必须等分箱完成——
     // 不知道自己在哪个工作区就存取，草稿会串到别的老师的库上。
@@ -2111,6 +2286,8 @@
     updatePlugin: updatePlugin,
     rehydratePlugin: rehydratePlugin,
     setSidebarTree: setSidebarTree,
+    setPluginCatalog: setPluginCatalog,
+    commands: listCommands,
     activate: activate,
     close: closeTab,
     attachPanel: attachPanel,

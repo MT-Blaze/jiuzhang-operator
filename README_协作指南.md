@@ -23,8 +23,10 @@
 FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe（sandbox="allow-scripts"，
 不透明源）里。请严格遵守以下【AI 开发铁律】，违反任何一条的代码一律视为错误：
 
-1. 严禁点对点耦合：插件之间不直接调用、不共享全局状态；所有插件间通信必须且只能经过
-   底座中转（事件总线）。
+1. 严禁点对点耦合：插件之间不直接调用、不共享全局状态、不互相找 iframe；所有插件间通信必须
+   且只能经过底座中转（事件总线，或能力路由字典 command.list / command.execute）。要把自己的
+   能力开放给别的插件，在 plugin.json 的 contributes.commands 登记命令 id；想调别人的能力，
+   先查表再请宿主转发（PLUGIN_SPEC §2.14）。
 2. 数据读写：严禁插件直接访问底座数据库、文件系统、环境变量或密钥；题库数据必须调用
    标准宿主 API——向宿主 postMessage 一条 kind:"request" 消息，方法名只能取自白名单
    （bank.get / bank.review / bank.topics / bank.create / bank.update / bank.delete /
@@ -48,7 +50,8 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
                         # api_version:"1.0"、kind(renderer/importer/exporter/tool)、
                         # description、license:"Apache-2.0"、entry.frontend:"dist/index.html"、
                         # slots、capabilities、permissions；可选 stage / bus / ui /
-                        # show_in_sidebar / min_host_version / engine.host_version。
+                        # contributes(commands) / show_in_sidebar / min_host_version /
+                        # engine.host_version。
                         # 禁止出现 backend 字段。根目录必须有 LICENSE（Apache-2.0 全文）。
   <id>/dist/index.html  # 入口页
   <id>/dist/plugin.js   # 逻辑脚本
@@ -61,6 +64,16 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
 并给每个请求设超时兜底，宿主不回包时给出可读提示。
 必须处理宿主的 plugin.activate（30 秒内回 ready:true）与 plugin.deactivate；
 通知一律幂等（宿主会重发）；未实现的方法回 UNSUPPORTED_METHOD，不许静默吞掉。
+
+能力路由（可选）：要向别的插件公开能力，清单写
+  "contributes": {"commands": [{"id": "com.你的域名.分类.动作", "title": "≤32字"}]}
+id 是小写反向域名、至少三段（段内可用下划线）、≤96 字符，最多 32 条；org.jiuzhang.* 只能由
+官方插件声明，第三方一律用自己的反向域名（如 com.zhang.bank.tidy_tags）。
+处理宿主转发来的 method:"command.execute" 时，payload 为 {command_id, context, from, trace}：
+只处理自己声明过的 id，其余回 ok:false + code:"UNKNOWN_COMMAND"；context 是线索不是授权，
+动数据仍走对应宿主 API 的权限校验。调用别人的能力用 command.list 查表，再用 command.execute
+发 {command_id, context}（context 序列化后 ≤16384 字符），回包是 {command_id, plugin_id, result}。
+目标没开页签时宿主会自动开页并等就绪，你不需要也不许自己去找对方的 iframe。
 插件不得要求注册/登录/卡密/联网回连/远程禁用（白嫖条款），能力不可用时显式降级并给
 可读提示。
 

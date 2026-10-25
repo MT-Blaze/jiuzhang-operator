@@ -121,9 +121,12 @@ class OfficialIndexFileTest(unittest.TestCase):
             manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
             info = validate_plugin(plugin_dir, manifest)
         self.assertEqual(info["id"], TEMPLATE_ID)
-        self.assertEqual(info["min_host_version"], "0.8.2")
+        self.assertEqual(info["min_host_version"], "0.11.2")
         self.assertTrue(info["stage"], "模板应演示 stage.center 画布接管")
         self.assertIn("region.dock", info["bus"]["publish"])
+        self.assertEqual([item["id"] for item in info["commands"]],
+                         ["org.example.template.echo"],
+                         "模板要示范能力路由字典，否则第三方不知道 contributes.commands 怎么写")
 
     def test_03d_template_request_id_passes_host_message_guard(self) -> None:
         """宿主入口用 ^[A-Za-z0-9_-]{1,80}$ 校验请求 id，不带点号才不会被静默丢弃。"""

@@ -12,6 +12,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from app.core import commands as command_registry
 from app.core import plugin_state
 from app.core.config import plugins_dir
 
@@ -348,8 +349,14 @@ def _require(condition: bool, message: str) -> None:
         raise PluginRejected(message)
 
 
-def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
-    """按 PLUGIN_SPEC 校验一份清单，返回发现接口下发的插件信息。"""
+def validate_plugin(
+    plugin_dir: Path, manifest: Any, command_issues: list[dict[str, str]] | None = None
+) -> dict[str, Any]:
+    """按 PLUGIN_SPEC 校验一份清单，返回发现接口下发的插件信息。
+
+    ``command_issues`` 是可选出参：发现流程把被丢弃的命令声明收进去记账，
+    安装/打包流程不传，保持旧调用点不变。
+    """
     _require(isinstance(manifest, dict), "plugin.json 必须是 JSON 对象")
     _require(manifest.get("schema_version") == "1.0", "schema_version 必须为 1.0")
 
@@ -414,6 +421,11 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
     else:
         stage = None
     bus_grants = _normalize_bus(manifest.get("bus"))
+    plugin_commands, rejected_commands = command_registry.normalize_commands(
+        manifest.get("contributes"), plugin_id
+    )
+    if command_issues is not None:
+        command_issues.extend(rejected_commands)
 
     entry = manifest.get("entry")
     _require(isinstance(entry, dict), "entry 缺失")
@@ -458,6 +470,9 @@ def validate_plugin(plugin_dir: Path, manifest: Any) -> dict[str, Any]:
         "ui": ui,
         "stage": stage,
         "bus": bus_grants,
+        # 能力路由字典（PLUGIN_SPEC §2.14）：只登记清单里声明的命令，
+        # 越权命名空间与坏条目在 normalize_commands 里逐条丢弃并记账。
+        "commands": plugin_commands,
         # 只用于「检查更新」时判断底座是否够新；缺省不设限，底座绝不据此拒绝加载已装插件。
         "min_host_version": (
             manifest["min_host_version"]
@@ -491,6 +506,9 @@ def _sidebar_with_unlisted(tree: list[dict[str, Any]], plugin_ids: list[str]) ->
 def discover_plugins() -> dict[str, Any]:
     plugins: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
+    # 声明了却被丢弃的命令：不拦插件装不装得上，但必须让作者看得见
+    # （自查口径：装完后 command.list 里有没有你那条）。
+    command_issues: list[dict[str, str]] = []
     root = plugins_dir()
     fingerprint: list[str] = []
     # 一次性读满整份主机状态：停用过谁、谁被改过名、左栏怎么分组、快捷键怎么绑。
@@ -513,7 +531,7 @@ def discover_plugins() -> dict[str, Any]:
                 fingerprint.append(f"{plugin_dir.name}:unreadable")
             try:
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                info = validate_plugin(plugin_dir, manifest)
+                info = validate_plugin(plugin_dir, manifest, command_issues)
                 info["enabled"] = info["id"] not in disabled
                 # 视图层偏好就地附着：昵称空串表示「没起过名，用官方原名」，
                 # disabled_at 空串表示「历史停用、本机没记下时间」。
@@ -539,11 +557,16 @@ def discover_plugins() -> dict[str, Any]:
     # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
     # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
     signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]
+    registry = command_registry.build_registry(plugins)
     return {
         "protocol": PROTOCOL,
         "plugins": plugins,
         "rejected": rejected,
         "sidebar": tree,
+        # 能力路由字典：启用的插件声明了什么，这里就有什么（同 id 先到先得）。
+        # 插件之间不直连，command.execute 查的就是这张表。
+        "commands": registry["commands"],
+        "commands_rejected": command_issues + registry["issues"],
         # 后端树为空 = 用户从没在设置面板拖过组。前端据此决定要不要一次性搬走
         # 早期存在浏览器里的左栏顺序（搬完即弃，不做双向同步）。
         "sidebar_customized": bool(sidebar),

@@ -315,6 +315,7 @@ com.example.card/
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
 | `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
+| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明 |
 | `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `min_host_version` | 否 | 语义化版本字符串（v0.8.3）。声明本插件能跑的**最低底座版本**；【检查更新】时底座拿它与自身 `__version__` 比对，不够则该插件的更新被标为「需先更新底座」并保持原样不覆盖。**缺省视为不设限**。此字段只用于更新提示，底座**绝不**据此拒绝加载已装插件或远程禁用（§1.1） |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
@@ -661,7 +662,7 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 
 | # | 铁律 | 契约依据 |
 | --- | --- | --- |
-| 1 | **严禁点对点耦合**：插件之间不直接调用、不共享全局状态，所有跨插件通信必须且只能经底座事件总线中转 | §2.5、AGENTS 铁律二 |
+| 1 | **严禁点对点耦合**：插件之间不直接调用、不共享全局状态、不互相找 iframe，所有跨插件通信必须且只能经底座中转——状态广播走事件总线，点名做事走能力路由字典（`command.list` / `command.execute`，§2.14）；第三方不得占用 `org.jiuzhang.*` 命令命名空间 | §2.5、§2.14、AGENTS 铁律二 |
 | 2 | **数据读写走宿主 API**：严禁插件直连底座数据库/文件系统/环境变量/密钥，题库数据只能经 `bank.*` / `basket.*` 请求-响应通道换取；注意**公共真题库**（`bank.get` / `bank.review` / `bank.topics` / `bank.create`）与**插件自带库**（`bank.list` / `bank.stats` / `bank.random`，需随包放 `bank/schema.sql`）是两类通道 | §2.6、§2.3.4 |
 | 3 | **状态同步走事件总线**：改状态必须经 `kind:"notification"` 广播，事件名必须在清单 `bus.publish` 白名单内；严禁调用其他插件函数、严禁伪造 `ui.params.*` / `layout.*` | §2.5 |
 | 4 | **UI 隔离在沙箱 iframe**：视图封闭在专属沙箱内，严禁越权操作父窗口 DOM/Cookie/localStorage；与宿主唯一通道是 `window.parent.postMessage` | §2.3.4 |
@@ -675,7 +676,7 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 官方插件与模板统一用 `"p" + 自增序号 + "_" + Date.now().toString(36)`。
 插件侧仍必须为每个请求设超时并给出可读提示，不得静默吞掉。
 
-**`engine.host_version`（模板新增的可选声明块）**：模板清单带 `"engine": {"host_version": "0.8.2"}`，
+**`engine.host_version`（模板新增的可选声明块）**：模板清单带 `"engine": {"host_version": "0.11.2"}`，
 表示「本模板按哪一版底座的契约生成」，供 AI 与人工对照用；**底座更新检查消费的仍是顶层
 `min_host_version` 字段**（§1.7 裁决 2 的兼容校验，§2.3.2 字段表）。两者值可以相同，但语义不同：
 `engine.host_version` 是参照说明，`min_host_version` 是硬约束声明。底座对 `engine` 块不解释、不校验、
@@ -913,6 +914,116 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 **5）不许扩到插件侧的事。** 沉浸、分组、横滚都是宿主壳的 DOM 手势，插件不得反向请求「把本页签设为全屏」
 「把我归进某组」——目前没有这类 Host API，也不许新增（AGENTS §2：底座只做鉴权、导航、总线、生命周期）。
+
+
+### 2.14 能力路由字典（Command Registry，v0.11.2 军令 #19）
+
+插件之间不许直连（铁律二），但「点了导出 Word，到底谁来干」需要一个可查、可路由、可解释的名字表。
+能力路由字典就是这张表：**清单声明 → 宿主内存字典 → 调用方查表 → 宿主转发给目标插件**。
+调用方永远拿不到目标插件的 iframe，也永远不需要知道它是谁。
+
+**1）清单写法。** 插件在 `plugin.json` 顶层写 `contributes.commands`：
+
+```json
+"contributes": {
+  "commands": [
+    {"id": "com.zhang.bank.tidy_tags", "title": "整理标签"}
+  ]
+}
+```
+
+- 最多 32 条；`id` ≤96 字符、`title` ≤32 字符（超出截断，中文按字算）；
+- `id` 必须是**小写反向域名、至少三段**，段内允许 `_`（蛇形命名），段间用 `.` 或 `-`：
+  正则 `^[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){2,7}$`，最多 8 段；
+- `title` 是给老师看的短名，不是内部键；
+- 坏条目**逐条丢弃**并记账（`commands_rejected`），不整包拒装——与 `stage` / `bus` 的宽容归一同一口径。
+  插件照样能装、能用，只是那一条命令进不了字典。装完打开 `GET /api/plugins` 就能看到账。
+
+**2）官方五大分类与命名空间。**
+
+| 分类 | 用途 | 示例 |
+| --- | --- | --- |
+| `input` | 把外部内容带进底座（PDF/图片导入、OCR 入口） | `org.jiuzhang.action.input.import_pdf` |
+| `process` | 对已有内容加工（AI 精修、公式规范化） | `org.jiuzhang.action.process.ai_refine` |
+| `output` | 把内容带出底座（导出、打印） | `org.jiuzhang.action.output.export_word` |
+| `data` | 数据层动作（通常由底层 Host API 承担，命令只做入口） | `org.jiuzhang.action.data.bank_stats` |
+| `view` | 面板与 UI 挂载（打开某块界面、切到某个视图） | `org.jiuzhang.action.view.open_dashboard` |
+
+- `org.jiuzhang.*` 是官方命名空间，**只有插件 id 同样以 `org.jiuzhang.` 开头的清单才能声明**；
+- 官方命令还必须以 `org.jiuzhang.action.` 开头、第三段落在上面五类之一、且有叶子名
+  （`org.jiuzhang.action.output.export_word`）。写成 `org.jiuzhang.render.card` 或
+  `org.jiuzhang.action.output` 都会被逐条丢弃；
+- 第三方用**自己的反向域名**（如 `com.zhang.bank.tidy_tags`），鼓励按五大分类的语义词取叶子名，
+  但不得占用 `org.jiuzhang.*`。底座不做签名/摘要校验（白嫖条款 §1.1），所以这条只是
+  「声明与命名空间自洽」，**不是身份认证**——装了谁的插件是老师自己的选择。
+
+**3）字典的生命周期。** 字典是宿主内存里的一张表，不落盘：
+
+- 每次 `GET /api/plugins` 都由宿主前端整表重建：停用、卸载的插件连同它的命令一起退场；
+- 同一个命令 id 被多个插件声明时，按**插件 id 字典序先到先得**，后来者丢弃并记账
+  （`commands_rejected` 里写明被谁占用）；
+- 字典条目不包含「当前是否可执行」——目标页签没开时宿主会为它开一页（见第 5 条），
+  所以「查得到」就等于「能调到」，除非目标插件自己加载失败。
+
+**4）两个 Host API。**
+
+| 方法 | 载荷 | 返回 |
+| --- | --- | --- |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name}]}`，按 `id` 升序；不含越权与停用项 |
+| `command.execute` | `{command_id, context}`；`context` 是可 JSON 化的对象，序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`——`result` 是目标插件自己的回包 |
+
+目标插件收到的宿主请求是：
+
+```js
+{ kind: "request", method: "command.execute",
+  payload: { command_id, context, from, trace } }
+```
+
+- `from` 是调用方插件 id（由宿主按页签判定，**不信 payload 自报**），
+  目标插件可以据此决定「这活儿接不接」；
+- `trace` 是宿主盖章的转发链（目标插件 id 数组），调用方自己伪造的部分会被截断；
+  链路 ≥4 跳直接回 `COMMAND_LOOP`；
+- 目标插件的回包原样放进 `result`；目标回 `ok:false` 时调用方拿到 `COMMAND_FAILED`。
+
+**5）自动开页签与就绪等待（宿主侧语义，插件不用配合）。**
+
+- 目标插件当前没有页签 → 宿主为它开一个画布页，底栏明说「已为它开一个画布页」；
+- 目标页签在休眠 → 宿主先唤醒再发请求；
+- 新开/唤醒后最多等 10 秒拿到 `plugin.activate` 的 `ready`，超时回 `COMMAND_NOT_READY`——
+  绝不把请求 postMessage 给空窗口（那会石沉大海）；
+- 右栏面板形态的插件直接投递，不强行搬到画布。
+
+**6）错误码。**
+
+| code | 含义 |
+| --- | --- |
+| `BAD_REQUEST` | `command_id` 形状不对，或 `context` 超过 16384 字符 |
+| `COMMAND_NOT_FOUND` | 字典里没有这条命令：目标未安装、已停用、没声明，或越权声明被丢弃 |
+| `COMMAND_TARGET_MISSING` | 字典登记了，但清单里找不到目标插件 / 它没有可加载的入口页 |
+| `COMMAND_NOT_READY` | 目标页签 10 秒内没就绪（加载失败或卡住） |
+| `COMMAND_LOOP` | 转发链达到 4 跳，疑似循环调用 |
+| `COMMAND_FAILED` | 目标插件执行时回了 `ok:false` 或超时（20 秒） |
+| `RATE_LIMITED` | 与其它 Host API 共用配额：每页签 10 秒最多 80 次 |
+
+**7）插件侧义务。**
+
+- 只处理自己清单里声明过的 `command_id`，其余一律回 `UNKNOWN_COMMAND`（模板里有样板）；
+- `context` 是**调用方带来的线索，不是授权凭据**：别的插件可以编造任意 context。
+  要动题、动文件，仍走对应 Host API 的权限校验，别拿「context 说这题已选中」当许可；
+- 命令语义要写清楚、执行要收敛：一次调用只做声明里的那件事，不要顺带清库、改全局偏好；
+- 不许在 `command.execute` 里无限回调别的命令；确需链式协作时把 `trace` 原样带上，让宿主计数。
+
+**8）自查清单（装完必看）。**
+
+1. `GET /api/plugins` → 自己的插件条目里有 `commands`，`commands_rejected` 里没有自己的 id；
+2. 插件里 `callHost("command.list")` → 能看到自己的命令和 `plugin_id`；
+3. 故意把 id 写成 `org.jiuzhang.xxx`（第三方）→ 应当出现在 `commands_rejected` 且查不到，
+   说明命名空间闸门生效；
+4. 在另一个插件里 `callHost("command.execute", {command_id, context})` → 目标页签被开出、
+   收到原样的 context，回包里有 `plugin_id` 与 `result`。
+
+完整可跑样板见 [`examples/template-plugin/`](examples/template-plugin/)（声明 `org.example.template.echo`
+并实现 `command.execute` 分支）。
 
 
 ## 3. 多工作区（Workspace）隔离
