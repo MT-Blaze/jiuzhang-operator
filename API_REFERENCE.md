@@ -444,6 +444,20 @@ payload = { command_id, context, from, trace }
 `POST /api/agent/chat`（对话）、`POST /api/agent/refine`（AI 副驾改写题干/解析，只回候选文本不落库）、
 `POST /api/agent/split`（拆题）、`POST /api/agent/review`（审题）。缺密钥时 Mock 原样回显、`mock: true`，绝不编造。
 
+对话 Agent 的工具链除插件能力工具与 `search_question_bank` 外，还接了两件宿主命令工具
+（军令 #20 第三部分，契约见 PLUGIN_SPEC §2.16）：
+
+| 工具 | 参数 | 返回 |
+| --- | --- | --- |
+| `command_list` | `plugin_id?`、`requires_user?`、`category?` | `{ok, data:{total, commands:[{id,title,plugin_id,plugin_name,headless,requires_user,description,params_schema,returns,risk}]}}` |
+| `command_execute` | `command_id`、`context?` | 无界面引擎：`executed:true` + `data`；有界面插件：`pending:true` + `command_request`；`requires_user`：`pending:true` + `ui_cards:[confirm_card]` + 一次性 `confirmation.token`，**不执行** |
+
+`context` 在底座侧按命令的 `params_schema` 复验：封口（多键即拒）、拒绝 SQL/表名/行号/路径/令牌、
+`q_`/`tp_`/`tb_` 公开 id 白名单、类型/枚举/长度/项数与 16 KB 体积上限。失败回
+`CONTEXT_INVALID`，且一定 `executed:false`。确认码走
+`确认执行命令（确认码 <token>）` / `取消执行命令（确认码 <token>）`，5 分钟过期、一次性核销；
+有界面插件转发后宿主 §2.14 的 `requires_user` 当场确认仍然生效。
+
 ### 3.6 题目配图
 
 | 方法与路径 | 说明 |

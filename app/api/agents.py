@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.core import ai_client, plugin_search, plugin_tools, ui_cards
+from app.core import ai_client, command_tools, plugin_search, plugin_tools, ui_cards
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
 
@@ -55,8 +55,11 @@ CHAT_SYSTEM_PROMPT = """你是九章算子工作台的对话助手。你的任�
 1. 当用户的意图匹配「已安装插件工具」时，必须直接发起 tool_calls 调用该工具，不要反问、不要只复述计划、也不要声称「即将执行」。
 2. 用户说「拆分第 X 题」「看看第 X 题」「导入题目」「题库里有什么」时，优先调用带 import_questions 动作的插件工具。
 3. 用户问「题库里有多少道 X 题」「查一下含某关键词的题目」「题库一共多少题」时，调用 search_question_bank；数量与示例题只能照底座返回的结果说，不得自己估。
-4. 工具执行结果由底座交给用户，你不得编造工具没有返回的题目、答案或解析。
-5. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
+4. 用户问「有哪些命令」「某个插件能做什么」时调用 command_list；用户明确要求执行某条插件命令时调用 command_execute。
+5. command_execute 的 context 必须严格符合该命令的 params_schema；题目/考向/教材只传 q_/tp_/tb_ 公开 id，严禁 SQL、表名、数据库行号、文件路径或令牌。
+6. 高副作用命令会返回确认卡且不会当场执行；你不得声称它已经执行完，只能请用户核对卡片并点「确认执行」。用户拒绝或取消时如实说未执行。
+7. 工具执行结果由底座交给用户，你不得编造工具没有返回的题目、答案、解析、命令或执行结果。
+8. 只有没有任何插件工具能覆盖意图时，才使用下面的 action JSON 协议。
 
 通用约束：
 1. 未调用工具且不需要展示卡片时，输出必须是 JSON 对象，包含 action 字段。
@@ -260,6 +263,10 @@ def _run_tool(name: str, arguments: Any) -> dict[str, Any]:
         return plugin_search.execute_tool(name, arguments)
     if name == plugin_tools.HOST_BANK_TOOL:
         return plugin_tools.execute_bank_tool(arguments)
+    if name == command_tools.COMMAND_LIST_TOOL:
+        return command_tools.list_commands(arguments)
+    if name == command_tools.COMMAND_EXECUTE_TOOL:
+        return command_tools.execute_command(arguments)
     return plugin_tools.execute_tool(name, arguments)
 
 
@@ -290,6 +297,9 @@ def _execute_calls(
                 "routed_by": routed_by,
                 "host_tool": bool(outcome.get("host_tool")),
                 "jump": outcome.get("jump") if isinstance(outcome.get("jump"), dict) else None,
+                "command_request": outcome.get("command_request")
+                if isinstance(outcome.get("command_request"), dict)
+                else None,
                 "cards": cards,
             }
         )
@@ -436,18 +446,39 @@ async def agent_chat(body: ChatRequest = Body(...)) -> dict[str, Any]:
     task_id = body.task_id
     installed_tools = plugin_tools.build_tools()
     bank_tool = plugin_tools.build_bank_tool()
-    tools = installed_tools + [bank_tool] + plugin_search.build_tools()
+    tools = installed_tools + [bank_tool] + command_tools.build_tools() + plugin_search.build_tools()
     system_prompt = build_chat_system_prompt(body.context, tools)
     user_message = build_user_message_with_history(body.history, user_input)
 
     def host_intent() -> dict[str, Any] | None:
-        # 宿主兜底只在模型没发 tool_calls（或模型不可用）时生效：先认「题库里有多少道 X 题」，
-        # 再认插件工具的「拆分第 X 题」句式，最后才是插件搜索。
+        # 宿主兜底只在模型没发 tool_calls（或模型不可用）时生效：先认确认码/命令字典，
+        # 再认「题库里有多少道 X 题」，最后才是插件工具与插件搜索句式。
         return (
-            plugin_tools.match_bank_intent(user_input)
+            command_tools.match_intent(user_input)
+            or plugin_tools.match_bank_intent(user_input)
             or plugin_tools.match_intent(user_input, installed_tools)
             or plugin_search.match_intent(user_input)
         )
+
+    # 确认码与命令清单是确定性控制指令：不先问模型，直接由底座核销/查表。
+    # 模型若把「确认执行」误当聊天内容，高副作用命令就永远落不了地。
+    direct_intent = command_tools.match_intent(user_input)
+    if direct_intent:
+        plugin_calls = _execute_calls([_make_host_call(direct_intent)], "host")
+        if plugin_calls:
+            return {
+                "type": "complete",
+                "data": {
+                    "content": _plugin_bubble(plugin_calls),
+                    "plugin_calls": plugin_calls,
+                    "actions": [],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                    "model": "host-router",
+                },
+                "task_id": task_id or "unknown",
+                "mock": False,
+                "route": "host",
+            }
 
     try:
         result = await ai_client.chat_completion(

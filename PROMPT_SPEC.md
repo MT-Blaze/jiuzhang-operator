@@ -78,6 +78,11 @@
 > v0.5.5 起实际提示词还包含「插件优先」「右侧插件面板」等小节，以 `app/api/agents.py` 的
 > `CHAT_SYSTEM_PROMPT` 与 `build_chat_system_prompt` 为唯一事实来源；上文是最小骨架。
 > `update_params` / `trigger_button` 只能使用「右侧插件面板」小节列出的 key 与按钮 id。
+>
+> 军令 #20 第三部分起，对话工具链还包含 `command_list` / `command_execute`
+> （契约见 PLUGIN_SPEC §2.16）：命令只能按字典调用，`context` 只能用命令声明的字段与
+> `q_`/`tp_`/`tb_` 公开 id；`requires_user` 命令只返回确认卡且不执行，模型不得声称
+> 已执行，也不得自行拼接确认码或跳过确认。
 
 ### 2.3 示例请求
 ```json

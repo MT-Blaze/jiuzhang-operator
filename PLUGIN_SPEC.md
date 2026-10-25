@@ -1232,6 +1232,93 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 6. 故意多传一个键、把 `grade` 写成不存在的值、把 `question_id` 写成数据库行号——
    都应得到明确的参数错误，且不产生任何副作用。
 
+### 2.16 AI 命令面：`command_list` / `command_execute`（v0.11.2 军令 #20 第三部分）
+
+对话 Agent 与第三方插件都能「查表 + 调度」，但 AI 不是操作员：它只能读字典、
+交上下文，执行与否、怎么执行由底座决定。工具实现在 `app/core/command_tools.py`，
+接进 `app/api/agents.py` 的 `tools` 列表；宿主侧 `command.list` / `command.execute`
+仍是同一条 iframe 转发通道（§2.14），两者共用同一份清单字典。
+
+**1）两件工具。**
+
+| 工具名 | 参数 | 用途 |
+| --- | --- | --- |
+| `command_list` | `plugin_id?`（≤96）、`requires_user?`（bool）、`category?`（input/process/output/data/view） | 读当前启用插件的命令字典：id、标题、提供方、说明、`params_schema`、`returns`、风险等级、是否 headless |
+| `command_execute` | `command_id`（必填）、`context?`（对象） | 按字典执行一条命令；`context` 必须严格符合该命令的 `params_schema` |
+
+`command_list` 的结果与设置页「命令能力字典」、`GET /api/plugins` 的 `commands`
+逐字同源；AI 只能照返回内容回答，不得编造命令或参数。
+
+**2）上下文反绑架（发车前五道校验）。**
+
+1. **封口**：`params_schema` 顶层一律 `additionalProperties: false`；多一个键就拒；
+2. **底层保留键直接拒**：`sql` / `table` / `column` / `rowid` / `db_path` / `path` /
+   `file` / `token` / `secret` / `password` / `workspace_id` 等一律不进 `context`；
+3. **公开 id 白名单**：键名形如 `id` / `*_id` / `*_ids` 的值只能是
+   `q_`（题目）/ `tp_`（考向）/ `tb_`（教材）开头的公开 id；数据库行号、纯数字主键
+   一律按 `CONTEXT_INVALID` 拒绝——**严禁把底层数据库 id 透传过去**；
+4. **类型与边界**：整数不认布尔、数字必须有限、字符串计长（含 `maxLength`）、
+   数组计项（含 `maxItems`）、枚举精确匹配；不符合返回 `CONTEXT_INVALID`；
+5. **体积**：`context` 序列化后 ≤ 16384 字符（与宿主 `COMMAND_CONTEXT_MAX` 同口径）。
+
+**3）风险等级（只从清单推导，不靠模型自报）。**
+
+| 等级 | 判定 | 例子 |
+| --- | --- | --- |
+| 高 | `requires_user: true`；或官方 `output.*` | `dedupe_merge`、`save_question`、`export_paper` |
+| 中 | 官方 `input.*` / `process.*`（未标 `requires_user`） | `open_question`、`generate_paper`、`render_handout` |
+| 低 | 官方 `data.*` / `view.*` 只读 | `bank_stats`、`bank_search`、`filter_questions` |
+
+第三方命令未标 `requires_user` 时按「中」保守处理。
+
+**4）高副作用：确认卡 + 一次性令牌。**
+
+`requires_user` 的命令**绝不直接执行**。`command_execute` 返回：
+
+```json
+{
+  "ok": true, "pending": true, "executed": false,
+  "risk": {"level": "high", "label": "高", "reason": "会改动数据或外部状态"},
+  "confirmation": {"token": "<16 hex>", "expires_in": 300, "data_volume": "…"},
+  "ui_cards": [{
+    "type": "confirm_card",
+    "title": "确认执行「…」",
+    "description": "调用插件：…（…）\n功能：…\n涉及数据：…\n风险等级：高（…）",
+    "actions": [
+      {"label": "确认执行", "command": "确认执行命令（确认码 <token>）", "silent": true},
+      {"label": "取消", "command": "取消执行命令（确认码 <token>）", "silent": true}
+    ]
+  }]
+}
+```
+
+- 卡片必须写明**调用插件、功能、涉及数据量、风险等级**四项；对话插件以 `silent`
+  方式发回确认码，不把内部令牌印进对话；
+- 令牌**一次性**、5 分钟过期、取消即作废；确认后先重查字典与 schema（插件可能已
+  卸载/改写声明），再执行；
+- 用户不点确认、点取消、令牌过期、命令退场——一律 `executed: false`，不产生副作用；
+- 宿主侧 §2.14 的 `requires_user` 当场确认**仍然保留**：卡片是 AI 侧的拦截与知情，
+  宿主确认是最终安全闸，两道门都过才会真正落到目标插件。
+
+**5）执行分流与返回。**
+
+- **无界面引擎**（`headless: true`，如 `org.jiuzhang.bank-engine`）：底座在本进程直接
+  执行 `bank_stats` / `bank_search` / `bank_topics`，结果按 §2.15 的出参裁剪后返回
+  `executed: true` + `data`；不经过 iframe，也不给 AI 任何 SQL 入口；
+- **有界面插件**：底座返回 `pending: true` + `command_request`（命令 id、已校验的
+  `context`、标题、插件、风险），由对话插件经宿主 `command.execute` 转发——目标页签
+  自动打开、按目标串行、64 KB 结果上限、pending 通知全部沿用 §2.14；
+- 失败一定 `executed: false`，错误码：`BAD_ARGUMENTS` / `COMMAND_NOT_FOUND` /
+  `CONTEXT_INVALID` / `COMMAND_CONFIRM_EXPIRED` / `COMMAND_UNSUPPORTED` /
+  `COMMAND_FAILED` / `COMMAND_DENIED`（宿主拒绝确认）。
+
+**6）AI 的硬约束。**
+
+1. 不得声称「已执行」高副作用命令——结果里 `executed: false` 就必须如实说「等你确认」；
+2. 不得自行拼接确认码、伪造用户点击、跳过确认卡；
+3. 不得把 `command_list` 没返回的命令名、参数或返回值编出来；
+4. 不得把命令当数据库游标：批量取数仍走 Host API 分页，不靠命令回全量。
+
 
 ## 3. 多工作区（Workspace）隔离
 

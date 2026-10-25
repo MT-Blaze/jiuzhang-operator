@@ -525,7 +525,8 @@
         article.setAttribute("data-state", "sent");
         foot.querySelectorAll("button").forEach(function (item) { item.disabled = true; });
         // 卡片按钮是「人点的」：把指令作为新一轮人类指令交回对话，而不是 AI 自作主张。
-        sendPrompt(command, { origin: "confirm_card" });
+        // 命令确认卡带 silent：确认码是控制信令，不该在对话里留一条技术气泡。
+        sendPrompt(command, { origin: "confirm_card", silent: action.silent === true });
       });
       foot.appendChild(button);
     });
@@ -696,9 +697,18 @@
     var content = data.content;
     var pluginCalls = Array.isArray(data.plugin_calls) ? data.plugin_calls : [];
     var actions = Array.isArray(data.actions) ? data.actions : [];
+    var commandRequests = [];
+    pluginCalls.forEach(function (call) {
+      if (call && call.command_request && call.command_request.command_id) {
+        commandRequests.push(call.command_request);
+      }
+    });
     var source = describeSource(envelope, pluginCalls);
     if (!content) {
-      return { text: "模型没有返回内容，请检查 Provider 配置。", tone: "warn", source: source, cards: [], actions: [] };
+      return {
+        text: "模型没有返回内容，请检查 Provider 配置。", tone: "warn", source: source,
+        cards: [], actions: [], commandRequests: commandRequests
+      };
     }
     var split = splitUiBlocks(content);
     var body = stripFences(split.text);
@@ -707,7 +717,8 @@
     if (pluginCalls.length) {
       return {
         text: body, source: source, cards: cards,
-        pluginCalls: pluginCalls, route: envelope && envelope.route, actions: actions
+        pluginCalls: pluginCalls, route: envelope && envelope.route, actions: actions,
+        commandRequests: commandRequests
       };
     }
     if (!body && cards.length) return { text: "", source: source, cards: cards, actions: actions };
@@ -834,14 +845,45 @@
     });
   }
 
+  /**
+   * 底座把「有界面插件的命令」回成 command_request，由宿主转发给目标插件。
+   * 目标页签自动打开、串行与 requires_user 确认仍由宿主 stage.js 负责；
+   * 本插件只交命令 id 与已经底座校验过的 context，不自己拼路由。
+   */
+  function runCommandRequest(request) {
+    var title = clampText(request.title, 40) || clampText(request.command_id, 60);
+    return hostCall("command.execute", {
+      command_id: request.command_id,
+      context: request.context && typeof request.context === "object" ? request.context : {}
+    }, 30000).then(function (result) {
+      addBubble("sys", "命令「" + title + "」已由「"
+        + (clampText(request.plugin_name, 24) || "目标插件") + "」执行。");
+      return result;
+    }, function (error) {
+      var message = error && error.code === "COMMAND_DENIED"
+        ? "你在宿主确认框里拒绝了这条命令，未执行。"
+        : "命令未执行：" + ((error && error.message) || "未知原因");
+      addBubble("sys", "「" + title + "」" + message, { tone: "warn" });
+    });
+  }
+
+  function runCommandRequests(requests) {
+    return requests.reduce(function (chain, request) {
+      return chain.then(function () { return runCommandRequest(request); });
+    }, Promise.resolve());
+  }
+
   function sendPrompt(prompt, options) {
     options = options || {};
     var text = String(prompt == null ? "" : prompt).trim();
     if (!text) return Promise.resolve();
-    addBubble("user", text, originNote(options) ? { source: originNote(options) } : undefined);
+    // 确认码是卡片的控制信令：只发请求不留气泡，避免把内部令牌印进对话。
+    if (!options.silent) {
+      addBubble("user", text, originNote(options) ? { source: originNote(options) } : undefined);
+    }
     // 历史在推进去之前取：只带「本轮之前」的轮次，本轮指令由后端当 user 消息。
     var history = transcript.slice(-TRANSCRIPT_SEND);
-    pushTurn("user", text);
+    if (!options.silent) pushTurn("user", text);
     if (promptInput) {
       promptInput.value = "";
       autoGrow();
@@ -869,8 +911,16 @@
       if (res.pluginCalls && res.pluginCalls.length) {
         dock("AI 助手经宿主调用：" + callNames(res.pluginCalls));
       }
-      if (res.control && res.control.action === "update_params") return applyParamsByHost(res.control.params);
-      return null;
+      var follow = null;
+      if (res.commandRequests && res.commandRequests.length) {
+        follow = runCommandRequests(res.commandRequests);
+      }
+      if (res.control && res.control.action === "update_params") {
+        follow = follow
+          ? follow.then(function () { return applyParamsByHost(res.control.params); })
+          : applyParamsByHost(res.control.params);
+      }
+      return follow;
     }, function (error) {
       if (typing) typing.remove();
       addBubble("bot", "指令执行失败：" + error.message, { tone: "warn", source: "底座未响应或 Provider 不可用" });

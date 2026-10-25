@@ -64,8 +64,17 @@ class RequiresUserNormalizeTest(unittest.TestCase):
     def test_01_true_flag_is_registered_as_boolean(self) -> None:
         rows = self.validate([{"id": "com.example.hard.destructive", "title": "批量删改",
                                "requires_user": True}])
-        self.assertEqual(rows, [{"id": "com.example.hard.destructive",
-                                 "title": "批量删改", "requires_user": True}])
+        self.assertEqual(1, len(rows))
+        self.assertEqual("com.example.hard.destructive", rows[0]["id"])
+        self.assertEqual("批量删改", rows[0]["title"])
+        self.assertIs(True, rows[0]["requires_user"])
+        # 军令 #20 第二部分起，命令条目固定带三件说明字段（缺省为空/封口空 schema）。
+        self.assertEqual("", rows[0]["description"])
+        self.assertEqual("", rows[0]["returns"])
+        self.assertEqual(
+            {"type": "object", "properties": {}, "additionalProperties": False},
+            rows[0]["params_schema"],
+        )
 
     def test_02_non_boolean_values_are_false(self) -> None:
         rows = self.validate([
