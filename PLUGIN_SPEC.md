@@ -1002,7 +1002,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `COMMAND_TARGET_MISSING` | 字典登记了，但清单里找不到目标插件 / 它没有可加载的入口页 |
 | `COMMAND_NOT_READY` | 目标页签 10 秒内没就绪（加载失败或卡住） |
 | `COMMAND_LOOP` | 转发链达到 4 跳，疑似循环调用 |
-| `COMMAND_FAILED` | 目标插件执行时回了 `ok:false` 或超时（20 秒） |
+| `COMMAND_FAILED` | 目标插件执行时回了 `ok:false`，或 30 秒内没回包（宿主对插件请求的统一超时） |
 | `RATE_LIMITED` | 与其它 Host API 共用配额：每页签 10 秒最多 80 次 |
 
 **7）插件侧义务。**
