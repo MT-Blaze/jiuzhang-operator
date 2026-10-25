@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.paper-gen",
   "name": "组卷排版",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "api_version": "1.0",
   "kind": "tool",
   "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
@@ -48,7 +48,7 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "basket.changed", "stage.tab.activated", "system.question_updated"],
+    "subscribe": ["ui.params.changed", "basket.changed", "system.question_updated", "question.updated"],
     "publish": ["region.dock", "system.open_editor"]
   }
 }

@@ -59,8 +59,11 @@ class HandoutManifestTest(unittest.TestCase):
 
     def test_04_bus_is_minimal(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        # 讲义是输出端：只多订阅「题目已更新」用来标脏，不申请任何写通道
-        self.assertEqual(manifest["bus"]["subscribe"], ["ui.params.changed", "system.question_updated"])
+        # 讲义是输出端：只订阅「题目已更新」（新名 + 老插件别名两条）用来标脏，不申请任何写通道。
+        # 这条清单必须与 plugin.js 里真的按 event 分支处理的主题逐字全等——由
+        # tests.test_plugin_bus_parity 统一守，这里只钉住「没有多要写通道」。
+        self.assertEqual(manifest["bus"]["subscribe"],
+                         ["ui.params.changed", "system.question_updated", "question.updated"])
         self.assertEqual(manifest["bus"]["publish"], ["region.dock"])
 
 

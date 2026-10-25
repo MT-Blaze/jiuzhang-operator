@@ -65,9 +65,11 @@ class PaperGenManifestTest(unittest.TestCase):
 
     def test_05_bus_only_takes_what_it_needs(self) -> None:
         manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        # 组卷是输出端：订阅回流刷新，发布只多一个「去编辑」跳转
+        # 组卷是输出端：订阅题篮变化与回流刷新（新名 + 老插件别名），发布只多一个「去编辑」跳转。
+        # `stage.tab.activated` 已删：代码里压根没有这条分支，留着就是假授权
+        # （清单与代码逐字全等由 tests.test_plugin_bus_parity 统一守）。
         self.assertEqual(sorted(manifest["bus"]["subscribe"]),
-                         ["basket.changed", "stage.tab.activated", "system.question_updated",
+                         ["basket.changed", "question.updated", "system.question_updated",
                           "ui.params.changed"])
         self.assertEqual(sorted(manifest["bus"]["publish"]), ["region.dock", "system.open_editor"])
 

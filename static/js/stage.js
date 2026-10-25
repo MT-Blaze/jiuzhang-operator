@@ -2045,6 +2045,10 @@
     if (bus && typeof bus.on === "function") {
       // 右栏改参数 → 直达中栏所有活着的插件（军令任务 3.3）
       bus.on("ui.params.changed", function (event) { broadcast("ui.params.changed", event.payload); });
+      // PLUGIN_SPEC §2.5 把这两条列为合法入站主题，但它们过去只 emit 给宿主自己的总线，
+      // 插件 iframe 一条也没收到过——右栏助手清不掉已关闭的录题页快照。这里补上投递。
+      bus.on("stage.tab.activated", function (event) { broadcast("stage.tab.activated", event.payload); });
+      bus.on("stage.tab.closed", function (event) { broadcast("stage.tab.closed", event.payload); });
       // 录题插件的当前题只喂给右栏面板（AI 助手插件的副驾），不广播给中栏——
       // 中栏插件自己就是选区的来源，回灌只会形成回声。
       bus.on("stage.selection", function (event) {
