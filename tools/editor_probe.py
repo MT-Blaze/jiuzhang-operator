@@ -9,13 +9,15 @@
 - 动态增删选项、答案/解析/难度/标签表单齐全；
 - 输入后 140ms 防抖内重排，A4 单页无溢出、公式为真 KaTeX；
 - 「一键清洗 LaTeX」把 \\(...\\)、\\[...\\]、\\fillin 归一；
-- 保存后拿到 q_ 开头的 ID，直查 API 字段逐项一致；
+- 旧库三条录题路径回归：一题挂两卷（各带原卷题号）、教材/章/节、原生图片上传；
+- 保存后拿到 q_ 开头的 ID，直查 API 字段逐项一致（含 tags/来源/图片/选项 image_ids）；
 - 题库总数 456→457，core-bank 画布搜索能查到新题；
 - 宿主 1440px 无横向溢出，控制台零错误。
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -96,6 +98,10 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
+    png_path = work / "probe-upload.png"
+    png_path.write_bytes(base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    ))
     for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
@@ -189,6 +195,42 @@ def main() -> int:
             check("清洗掉 \\[...\\] 为 $$", "$$" in cleaned and "\\[" not in cleaned)
             check("清洗 \\fillin 为横线", "\\fillin" not in cleaned and "＿" in cleaned)
 
+            # ---------- 旧路径一：一题多卷来源 ----------
+            frame.locator("#edAddSource").click()
+            frame.locator("#edAddSource").click()
+            expect(frame.locator(".ed-source-row")).to_have_count(2, timeout=3000)
+            first_source = frame.locator(".ed-source-row").nth(0)
+            first_source.locator(".ed-source-title").fill("2024 届高三一模·数学（探针）")
+            first_source.locator(".ed-source-year").fill("2024")
+            first_source.locator(".ed-source-no").fill("7")
+            first_source.locator(".ed-source-exam").fill("一模")
+            second_source = frame.locator(".ed-source-row").nth(1)
+            second_source.locator(".ed-source-title").fill("校本练习卷（探针）")
+            second_source.locator(".ed-source-no").fill("12")
+            second_source.locator(".ed-source-school").fill("九章中学")
+            page.wait_for_timeout(160)
+            check("来源卷可挂两张", frame.locator(".ed-source-row").count() == 2)
+
+            # ---------- 旧路径二：教材/章/节 ----------
+            frame.locator("#edTextbook").fill("人教A版·必修第一册")
+            frame.locator("#edChapter").fill("2. 一元二次函数")
+            frame.locator("#edSection").fill("2.1 方程与不等式")
+
+            # ---------- 旧路径三：原生图片上传（选项 A + 题干） ----------
+            with page.expect_file_chooser() as chooser:
+                frame.locator(".ed-option-upload").first.click()
+            chooser.value.set_files(str(png_path))
+            expect(frame.locator(".ed-image-item")).to_have_count(1, timeout=10000)
+            with page.expect_file_chooser() as chooser:
+                frame.locator("#edImagePick").click()
+            chooser.value.set_files(str(png_path))
+            expect(frame.locator(".ed-image-item")).to_have_count(2, timeout=10000)
+            expect(frame.locator(".ed-option-thumb")).to_have_count(1, timeout=3000)
+            result["metrics"]["uploaded_images"] = frame.locator(".ed-image-item").count()
+            check("原生上传进配图清单", frame.locator(".ed-image-item").count() == 2)
+            check("选项 A 显示配图缩略图", frame.locator(".ed-option-thumb").count() == 1)
+            page.screenshot(path=str(shots / "editor-assets.png"))
+
             # ---------- 保存入库 ----------
             frame.locator("#edSave").click()
             saved = frame.locator("#edSaved")
@@ -209,12 +251,39 @@ def main() -> int:
             check("答案为 C", document.get("answer", {}).get("choice_keys") == ["C"],
                   document.get("answer"))
             check("解析已落库", "(x-2)" in document.get("solution", ""), document.get("solution"))
-            # 契约 2.0：难度落库归一成 L1–L4；tags 是录入期元数据，题库存储层不落列，
-            # 因此这里只核对难度与年级，不再断言标签入库。
+            # 契约 2.0：难度落库归一成 L1–L4；tags 与教材位置按旧库口径落在
+            # core-bank 自己的 extensions 键上，读路径再还原成契约根字段。
             check("难度/年级一致",
                   document.get("difficulty") == "L2"
                   and document.get("grade") == "高一",
                   {"difficulty": document.get("difficulty"), "grade": document.get("grade")})
+            check("标签已落库", document.get("tags") == ["一元二次方程", "因式分解"],
+                  document.get("tags"))
+            check("教材位置已落库",
+                  (document.get("taxonomy") or {}).get("chapter") == "2. 一元二次函数",
+                  document.get("taxonomy"))
+            check("主来源已落库",
+                  (document.get("source") or {}).get("question_no") == "7",
+                  document.get("source"))
+
+            status, sources_doc = http_json(
+                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}/sources"
+            )
+            titles = [item["paper_title"] for item in sources_doc.get("items", [])]
+            result["metrics"]["sources"] = sources_doc
+            check("一题两卷均在来源关系表",
+                  status == 200
+                  and titles == ["2024 届高三一模·数学（探针）", "校本练习卷（探针）"],
+                  {"status": status, "titles": titles})
+
+            image_roles = [item.get("role") for item in document.get("images", [])]
+            check("图片数组含题干与选项两类", set(image_roles) == {"stem", "option"},
+                  image_roles)
+            option_a = next(
+                (item for item in document.get("options", []) if item.get("key") == "A"), {}
+            )
+            check("选项 A 关联 image_ids", bool(option_a.get("image_ids")),
+                  option_a.get("image_ids"))
 
             status, stats = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
             check("题库总数 456 → 457", status == 200 and stats.get("total") == 457,

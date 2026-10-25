@@ -572,8 +572,10 @@ com.example.card/
 | `bank.active_list` | 分页取题（**当前活跃题库**） | 参数与 `bank.list` 完全相同；与 `bank.get` / `bank.topics` 同源，供浏览型插件跨库查看，不按页签 id 拼路由 |
 | `bank.active_stats` | 活跃题库的年级/难度/题型/章节计数 | 与 `bank.stats` 同口径，数据源为当前活跃 provider |
 | `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
+| `bank.sources` | 一题挂的全部原卷（一题多卷，军令 #21） | `payload.id` 同上；按挂载先后返回 `{question_id, items[]}`，第一项即主来源；`bank.get` 只给主来源，编辑态靠这里回填整组 |
 | `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
-| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入当前活跃题库 provider**（默认 `org.jiuzhang.bank-engine`），插件自报目标无效；ID / 时间戳由底座生成 |
+| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入当前活跃题库 provider**（默认 `org.jiuzhang.bank-engine`），插件自报目标无效；ID / 时间戳由底座生成。`payload.sources` 可选：额外原卷（≤8 条，字段只收 `paper_title` / `year` / `exam_type` / `school` / `question_no`），走关系表，不进题目文档 |
+| `bank.update` | 修改一道题 | 需 `questions:write`；`payload.sources` 给了就整组重挂（空数组只留主来源），`question.source: null` 清空主来源；其余口径见 `API_REFERENCE.md` §2.7 |
 | `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
 | `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
 | `basket.active_add` | 加题到题篮（记在**当前活跃题库**名下） | 参数与 `basket.add` 相同；供浏览型插件使用，避免题目被记到一个空库名下导致读题篮时取不到全文 |
@@ -590,9 +592,9 @@ com.example.card/
 - **智能体专属的那一排**（`agent.chat` / `agent.refine` / `plugin.install_url` / `ui.params.set` /
   `editor.apply_patch` / `stage.open_bank` / `stage.open_editor`）除白名单外还要查页签插件清单里的
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
-- 写入类方法（`bank.create` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
+- 写入类方法（`bank.create` / `bank.update` / `bank.delete` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题、经 `asset.upload` 落地框选配图。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 

@@ -962,6 +962,187 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual([tuple(row) for row in rows], [(both[0], 1), (both[1], 0)],
                          "主挂载仍是 primary，副挂载不得被顶掉或复制")
 
+    # ---------- 军令 #21 任务三：旧题库三条录题路径 + 一题多卷 + 原生上传 ----------
+    def test_z15_tags_and_taxonomy_names_round_trip(self) -> None:
+        """旧库的 tags_json / taxonomy_json 入口：写入要落得住，读回要原样。
+
+        七表结构没有 tags 列：底座沿用 grade/taxonomy/images 的既有做法把它存进
+        core-bank 自己的 extensions 键，读路径再还原成契约根字段。
+        """
+        question = self._editor_question(
+            stem="旧分类入口：教材名、章节名与自由标签都要读得回来。",
+            tags=["一元二次方程", "因式分解"],
+            taxonomy={"textbook": "人教A版", "chapter": "2. 一元二次函数", "section": "2.1 方程"},
+        )
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": question}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["tags"], ["一元二次方程", "因式分解"])
+        self.assertEqual(created["taxonomy"]["textbook"], "人教A版")
+        self.assertEqual(created["taxonomy"]["chapter"], "2. 一元二次函数")
+        self.assertEqual(created["taxonomy"]["section"], "2.1 方程")
+
+        status, saved = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}", "PATCH",
+            {"question": {"tags": ["判别式"]}}, token=True,
+        )
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(saved["tags"], ["判别式"], "改标签后旧标签不得残留")
+        self.assertEqual(saved["taxonomy"]["chapter"], "2. 一元二次函数")
+
+        con = sqlite3.connect(self.data_dir / "banks" / f"{PLUGIN_ID}.db")
+        try:
+            raw = con.execute(
+                "SELECT extensions FROM questions WHERE id = ?", (created["id"],)
+            ).fetchone()[0]
+        finally:
+            con.close()
+        entries = {item["key"]: item["value"] for item in json.loads(raw)}
+        self.assertEqual(entries.get("org.jiuzhang.core-bank.tags"), {"tags": ["判别式"]})
+        self.assertEqual(entries.get("org.jiuzhang.core-bank.taxonomy", {}).get("chapter"),
+                         "2. 一元二次函数")
+
+        # 清空也要落得住：旧标签与旧教材名不能因为 extensions 里还留着就复活
+        status, cleared = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}", "PATCH",
+            {"question": {"tags": [], "taxonomy": {}}}, token=True,
+        )
+        self.assertEqual(status, 200, cleared)
+        self.assertNotIn("tags", cleared)
+        self.assertNotIn("taxonomy", cleared)
+        con = sqlite3.connect(self.data_dir / "banks" / f"{PLUGIN_ID}.db")
+        try:
+            raw = con.execute(
+                "SELECT extensions FROM questions WHERE id = ?", (created["id"],)
+            ).fetchone()[0]
+        finally:
+            con.close()
+        entries = {item["key"]: item["value"] for item in json.loads(raw)}
+        self.assertNotIn("org.jiuzhang.core-bank.tags", entries)
+        self.assertNotIn("org.jiuzhang.core-bank.taxonomy", entries)
+
+    def test_z16_multi_paper_sources_round_trip(self) -> None:
+        """来源路径：主卷走契约 ``source``，额外原卷走关系表，各自带原卷题号。"""
+        question = self._editor_question(
+            stem="来源路径：一题挂三张原卷，题号各不相同。",
+            source={"paper_title": "2024 届高三一模·数学", "year": 2024,
+                    "exam_type": "一模", "question_no": "7"},
+        )
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": question, "sources": [
+                {"paper_title": "2023 届高二期末·数学", "year": 2023, "question_no": "12"},
+                {"paper_title": "校本练习卷（无年份）", "question_no": "3", "school": "九章中学"},
+            ]}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(created["source"]["paper_title"], "2024 届高三一模·数学")
+        self.assertEqual(created["source"]["question_no"], "7")
+
+        status, sources = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}/sources"
+        )
+        self.assertEqual(status, 200, sources)
+        self.assertEqual([item["paper_title"] for item in sources["items"]],
+                         ["2024 届高三一模·数学", "2023 届高二期末·数学", "校本练习卷（无年份）"])
+        self.assertEqual([item["question_no"] for item in sources["items"]], ["7", "12", "3"])
+        self.assertEqual(sources["items"][2]["school"], "九章中学")
+
+        # 改来源同样是整组替换：新列表里没有的卷子必须退场，不能被悄悄留着
+        status, saved = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}", "PATCH",
+            {"question": {"stem": "来源路径：改过一次来源。"},
+             "sources": [{"paper_title": "2025 届高三二模·数学", "year": 2025,
+                          "question_no": "9"}]},
+            token=True,
+        )
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(saved["stem"], "来源路径：改过一次来源。")
+        status, replaced = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}/sources"
+        )
+        self.assertEqual([item["paper_title"] for item in replaced["items"]],
+                         ["2024 届高三一模·数学", "2025 届高三二模·数学"])
+
+        # 显式空数组 = 只留主卷；省略 sources = 不动原挂载
+        status, _ = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}", "PATCH",
+            {"question": {}, "sources": []}, token=True,
+        )
+        self.assertEqual(status, 200)
+        status, only_primary = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}/sources"
+        )
+        self.assertEqual([item["question_no"] for item in only_primary["items"]], ["7"])
+
+        # 主卷也要能清：source 显式置空 + sources 空数组 → 关系表整组退场
+        status, cleared = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}", "PATCH",
+            {"question": {"source": None}, "sources": []}, token=True,
+        )
+        self.assertEqual(status, 200, cleared)
+        self.assertNotIn("source", cleared)
+        status, none_left = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}/sources"
+        )
+        self.assertEqual(none_left["items"], [])
+
+        status, rejected = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": self._editor_question(stem="来源路径：字段拼错必须拒。"),
+             "sources": [{"paper_title": "拼错的卷子", "question_noo": "1"}]},
+            token=True,
+        )
+        self.assertEqual(status, 422, rejected)
+        self.assertIn("question_noo", " ".join(rejected["detail"]["errors"]))
+
+    def test_z17_native_upload_feeds_images_and_option_ids(self) -> None:
+        """原生上传链路：/api/assets 落盘 → images 数组 → 选项 image_ids 往返。"""
+        png = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        status, asset = self._request(
+            "/api/assets", "POST", {"data_url": "data:image/png;base64," + png}, token=True
+        )
+        self.assertEqual(status, 201, asset)
+        self.assertRegex(asset["id"], r"^img_[A-Za-z0-9_-]{1,63}$")
+        self.assertTrue(asset["uri"].startswith("/static/uploads/"))
+        self.assertTrue((self.data_dir / "uploads" / Path(asset["uri"]).name).is_file(),
+                        "上传后文件要真落在 uploads 里")
+
+        question = self._editor_question(
+            type="single_choice",
+            stem="原生上传：题干一张、选项 A 一张。",
+            options=[
+                {"key": "A", "content": "", "image_ids": [asset["id"]]},
+                {"key": "B", "content": "$2$"},
+                {"key": "C", "content": "$3$"},
+                {"key": "D", "content": "$4$"},
+            ],
+            answer={"kind": "choice", "choice_keys": ["A"], "final": "A"},
+            images=[
+                {"id": asset["id"], "role": "option", "option_key": "A", "uri": asset["uri"]},
+                {"id": "img_stem000001", "role": "stem", "uri": "/static/uploads/probe.png"},
+            ],
+        )
+        status, created = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
+            {"question": question}, token=True,
+        )
+        self.assertEqual(status, 201, created)
+        self.assertEqual([item["id"] for item in created["images"]],
+                         [asset["id"], "img_stem000001"])
+        self.assertEqual(created["options"][0]["image_ids"], [asset["id"]])
+
+        status, fetched = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{created['id']}"
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(fetched["options"][0]["image_ids"], [asset["id"]],
+                         "选项图片关联读回后不能丢")
+
     # ---------- 配图边界 ----------
     def test_upload_serving_and_traversal(self) -> None:
         with urllib.request.urlopen(self.base + "/static/uploads/probe.png", timeout=5) as response:
@@ -1187,12 +1368,16 @@ class StageRelayContractTest(unittest.TestCase):
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         for method in ("bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
                        "bank.topics", "bank.topic_notes", "bank.review", "bank.update",
+                       "bank.sources",
                        "basket.list", "basket.add", "basket.remove", "basket.clear"):
             self.assertIn(f'"{method}"', source)
         self.assertNotIn('payload.plugin_id', source)
         self.assertIn("/api/bank/plugins/\" + encodeURIComponent(pluginId)", source)
         self.assertIn('"X-JZO-Token": token', source)
         self.assertIn("RELAY_MAX_PER_WINDOW", source)
+        # 一题多卷的 sources 只放行关系字段，宿主要把契约外的键挡在库外
+        self.assertIn("function sourceList(", source)
+        self.assertIn('clean[field] = value.trim().slice(0, SOURCE_FIELD_LIMITS[field])', source)
 
     def test_bank_create_is_scoped_and_permission_checked(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")

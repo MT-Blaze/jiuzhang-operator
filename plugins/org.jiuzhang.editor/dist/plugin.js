@@ -29,6 +29,10 @@
     basic: "基础", medium: "中档", hard: "难", novel: "压轴"
   };
   var OPTION_KEYS = "ABCDEFGH".split("");
+  var SOURCE_LIMIT = 8;
+  var ROLE_LABEL = { stem: "题干", option: "选项", solution: "解析" };
+  var IMAGE_ROLES = ["image/png", "image/jpeg", "image/webp"];
+  var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
   var root = document.getElementById("root");
   var typeEl = document.getElementById("edType");
@@ -78,6 +82,15 @@
   var cropAllEl = document.getElementById("edCropAll");
   var pickImageEl = document.getElementById("edPickImage");
   var imageFileEl = document.getElementById("edImageFile");
+  var sourcesEl = document.getElementById("edSources");
+  var addSourceEl = document.getElementById("edAddSource");
+  var textbookEl = document.getElementById("edTextbook");
+  var chapterEl = document.getElementById("edChapter");
+  var sectionEl = document.getElementById("edSection");
+  var uploadTargetEl = document.getElementById("edImageTarget");
+  var uploadPickEl = document.getElementById("edImagePick");
+  var uploadFileEl = document.getElementById("edUploadFile");
+  var uploadListEl = document.getElementById("edImageList");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -108,6 +121,9 @@
     topicIds: [],
     topicNames: {},
     images: [],
+    // 一题多卷：第一份是主来源（契约 source），其余经宿主挂到 question_sources。
+    sources: [],
+    imageTarget: "stem",
     tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" },
     // 原图框选只服务本次录入：位图与选区都是易失态，不进草稿也不进题目结构。
     source: { bitmap: null, width: 0, height: 0, name: "", crop: null },
@@ -313,11 +329,32 @@
         schedulePreview();
       });
       row.appendChild(input);
+      var upload = el("button", "ed-option-upload", "＋图");
+      upload.type = "button";
+      upload.setAttribute("aria-label", "给选项 " + option.key + " 上传配图");
+      upload.addEventListener("click", function () {
+        pickUpload("option:" + state.options[index].key);
+      });
+      row.appendChild(upload);
       var imageCount = (option.imageIds || []).length;
       if (imageCount) {
         var badge = el("span", "ed-option-image", "配图 " + imageCount);
         badge.title = "该选项带 " + imageCount + " 张配图资产（保存时随题保留）";
         row.appendChild(badge);
+        (option.imageIds || []).forEach(function (imageId) {
+          var image = findImage(imageId);
+          if (!image) {
+            row.appendChild(el("span", "ed-opt-img", "（缺 " + imageId + "）"));
+            return;
+          }
+          var uri = safeAssetUri(image.uri);
+          if (uri.indexOf("/static/uploads/") !== 0) return;
+          var thumb = document.createElement("img");
+          thumb.className = "ed-option-thumb";
+          thumb.setAttribute("alt", image.alt || "选项配图");
+          thumb.src = uri;
+          row.appendChild(thumb);
+        });
       }
       var remove = el("button", "ed-option-remove", "×");
       remove.type = "button";
@@ -356,6 +393,269 @@
     var inputs = optionsEl.querySelectorAll("input");
     if (inputs.length) inputs[inputs.length - 1].focus();
     schedulePreview();
+  }
+
+  // ---------- 来源卷（一题多卷，旧库 source_json 的录题入口） ----------
+  function emptySourceRow() {
+    return { paper_title: "", year: "", exam_type: "", school: "", question_no: "" };
+  }
+
+  function renderSources() {
+    if (!sourcesEl) return;
+    sourcesEl.textContent = "";
+    if (!state.sources.length) {
+      sourcesEl.appendChild(
+        el("p", "ed-sources-empty", "还没有来源卷；可不填，也可按原卷逐条添加。")
+      );
+      return;
+    }
+    state.sources.forEach(function (source, index) {
+      var row = el("div", "ed-source-row");
+      row.setAttribute("data-index", String(index));
+      row.appendChild(el("span", "ed-source-tag", index === 0 ? "主来源" : "第 " + (index + 1) + " 卷"));
+      var fields = [
+        { key: "paper_title", placeholder: "原卷标题，如 2024 届高三一模·数学", maxLength: 120, className: "ed-source-title" },
+        { key: "year", placeholder: "年份", maxLength: 4, className: "ed-source-year" },
+        { key: "question_no", placeholder: "原卷题号", maxLength: 20, className: "ed-source-no" },
+        { key: "exam_type", placeholder: "考试类型", maxLength: 64, className: "ed-source-exam" },
+        { key: "school", placeholder: "学校", maxLength: 64, className: "ed-source-school" }
+      ];
+      fields.forEach(function (field) {
+        var input = el("input", field.className);
+        input.type = "text";
+        input.spellcheck = false;
+        input.placeholder = field.placeholder;
+        input.maxLength = field.maxLength;
+        input.value = source[field.key] == null ? "" : String(source[field.key]);
+        input.setAttribute("aria-label", "第 " + (index + 1) + " 份来源卷：" + field.placeholder);
+        input.addEventListener("input", function () {
+          state.sources[index][field.key] = input.value;
+          dirtySinceSave = true;
+        });
+        row.appendChild(input);
+      });
+      var remove = el("button", "ed-source-remove", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "删除第 " + (index + 1) + " 份来源卷");
+      remove.addEventListener("click", function () {
+        state.sources.splice(index, 1);
+        renderSources();
+        dirtySinceSave = true;
+      });
+      row.appendChild(remove);
+      sourcesEl.appendChild(row);
+    });
+  }
+
+  function addSourceRow() {
+    if (state.sources.length >= SOURCE_LIMIT) {
+      toast("一道题最多挂 " + SOURCE_LIMIT + " 份来源卷", "error");
+      return;
+    }
+    state.sources.push(emptySourceRow());
+    renderSources();
+    dirtySinceSave = true;
+    var inputs = sourcesEl.querySelectorAll(".ed-source-title");
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }
+
+  /** 收集来源卷：只留填了标题的；strict 时把「有年份/题号却没标题」的残缺行如实拦下。 */
+  function collectSources(strict) {
+    var items = [];
+    state.sources.forEach(function (source, index) {
+      var title = String(source.paper_title || "").trim();
+      if (!title) {
+        var orphan = String(source.year || "").trim() || String(source.question_no || "").trim();
+        if (strict && orphan) {
+          throw new Error("第 " + (index + 1) + " 份来源卷缺原卷标题，请补齐或删掉该行");
+        }
+        return;
+      }
+      var item = { paper_title: title.slice(0, 120) };
+      var year = String(source.year == null ? "" : source.year).trim();
+      if (year) {
+        if (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 2100) {
+          if (strict) throw new Error("第 " + (index + 1) + " 份来源卷的年份要填 1900–2100 的四位数字");
+        } else {
+          item.year = Number(year);
+        }
+      }
+      ["question_no", "exam_type", "school"].forEach(function (key) {
+        var value = String(source[key] || "").trim();
+        if (value) item[key] = value.slice(0, key === "question_no" ? 20 : 64);
+      });
+      items.push(item);
+    });
+    return items;
+  }
+
+  // ---------- 配图资产（原生上传 → images + option.image_ids） ----------
+  function findImage(id) {
+    for (var index = 0; index < state.images.length; index += 1) {
+      if (state.images[index] && state.images[index].id === id) return state.images[index];
+    }
+    return null;
+  }
+
+  function optionByKey(key) {
+    for (var index = 0; index < state.options.length; index += 1) {
+      if (state.options[index].key === key) return state.options[index];
+    }
+    return null;
+  }
+
+  function renderImages() {
+    if (!uploadListEl) return;
+    uploadListEl.textContent = "";
+    if (!state.images.length) {
+      uploadListEl.appendChild(
+        el("li", "ed-image-empty", "还没有配图。可直接选本地图片，也可在右栏框选切图。")
+      );
+      return;
+    }
+    state.images.forEach(function (image) {
+      var row = el("li", "ed-image-item");
+      row.setAttribute("data-image-id", image.id || "");
+      var uri = safeAssetUri(image.uri);
+      if (uri.indexOf("/static/uploads/") === 0) {
+        var thumb = document.createElement("img");
+        thumb.className = "ed-image-thumb";
+        thumb.setAttribute("alt", image.alt || "配图");
+        thumb.src = uri;
+        row.appendChild(thumb);
+      }
+      var meta = el("span", "ed-image-meta");
+      var role = ROLE_LABEL[image.role] || "配图";
+      if (image.role === "option" && image.option_key) role += " " + image.option_key;
+      meta.appendChild(el("strong", null, role));
+      meta.appendChild(el("code", null, image.id || ""));
+      row.appendChild(meta);
+      var remove = el("button", "ed-image-remove", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "移除配图 " + (image.id || ""));
+      remove.addEventListener("click", function () { removeImage(image.id); });
+      row.appendChild(remove);
+      uploadListEl.appendChild(row);
+    });
+  }
+
+  function stripImageRefs(text, uri) {
+    var next = String(text == null ? "" : text)
+      .split("\\includegraphics{" + uri + "}").join("");
+    var escaped = uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var markdown = new RegExp("!\\[[^\\]]*\\]\\(" + escaped + "\\)", "g");
+    return next.replace(markdown, "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function removeImage(id) {
+    var entry = findImage(id);
+    if (!entry) return;
+    state.images = state.images.filter(function (image) { return image.id !== id; });
+    state.options.forEach(function (option) {
+      option.imageIds = (option.imageIds || []).filter(function (imageId) { return imageId !== id; });
+    });
+    // 契约钉着「正文里的图片引用必须能在 images 数组里找到 id」：资产退了，正文引用一起退。
+    var uri = String(entry.uri || "");
+    if (uri) {
+      stemEl.value = stripImageRefs(stemEl.value, uri);
+      solutionEl.value = stripImageRefs(solutionEl.value, uri);
+    }
+    renderOptions();
+    renderImages();
+    renderPreview();
+    toast("已移除配图 " + id);
+  }
+
+  function uploadTargetLabel(target) {
+    if (target.indexOf("option:") === 0) return "选项 " + target.slice(7);
+    return target === "solution" ? "解析" : "题干";
+  }
+
+  function pickUpload(target) {
+    if (!uploadFileEl) return;
+    state.imageTarget = target || "stem";
+    if (uploadTargetEl && (state.imageTarget === "stem" || state.imageTarget === "solution")) {
+      uploadTargetEl.value = state.imageTarget;
+    }
+    uploadFileEl.value = "";
+    uploadFileEl.click();
+  }
+
+  function appendTextRef(field, uri) {
+    var value = field.value;
+    var prefix = value && !/\n$/.test(value) ? "\n\n" : "";
+    field.value = value + prefix + "\\includegraphics{" + uri + "}";
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    schedulePreview();
+  }
+
+  function handleUploadFile() {
+    var file = uploadFileEl && uploadFileEl.files && uploadFileEl.files[0];
+    if (!file) return;
+    var target = state.imageTarget || "stem";
+    // 选完文件就把默认归属交还给下拉框：下一张图按老师当下选的归属走。
+    state.imageTarget = uploadTargetEl ? uploadTargetEl.value : "stem";
+    uploadFileEl.value = "";
+    if (IMAGE_ROLES.indexOf(file.type) < 0) {
+      toast("只支持 PNG / JPEG / WebP 图片", "error");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast("图片超过 8 MiB，请先压缩", "error");
+      return;
+    }
+    if (typeof window.createImageBitmap !== "function") {
+      toast("当前浏览器不支持本地图片解码，请换新版浏览器", "error");
+      return;
+    }
+    // 与框选切图同一条解码路：直接进 Canvas 再交给宿主，不借 data:/blob: 图片地址。
+    window.createImageBitmap(file).then(function (bitmap) {
+      var canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      if (typeof bitmap.close === "function") bitmap.close();
+      return hostCall("asset.upload", { data_url: canvas.toDataURL("image/png") });
+    }).then(function (result) {
+        var id = String((result && result.id) || "");
+        var uri = String((result && result.uri) || "");
+        if (!/^img_[A-Za-z0-9_-]{1,63}$/.test(id) || !/^\/static\/uploads\/[^\s]+$/.test(uri)) {
+          throw new Error("宿主返回的资产地址不合法");
+        }
+        var role = target.indexOf("option:") === 0 ? "option"
+          : (target === "solution" ? "solution" : "stem");
+        var entry = {
+          id: id,
+          role: role,
+          uri: uri,
+          alt: String(file.name || "题目配图").slice(0, 200)
+        };
+        // 资产先进 images，再按归属回写：选项缩略图要靠 findImage 才画得出来。
+        state.images = state.images.filter(function (image) { return image.id !== id; });
+        state.images.push(entry);
+        if (role === "option") {
+          entry.option_key = target.slice(7);
+          var option = optionByKey(entry.option_key);
+          if (option) {
+            option.imageIds = option.imageIds || [];
+            if (option.imageIds.indexOf(id) < 0) option.imageIds.push(id);
+          }
+          renderOptions();
+        } else if (role === "solution") {
+          appendTextRef(solutionEl, uri);
+        } else {
+          insertAtCursor("\\includegraphics{" + uri + "}");
+        }
+        renderImages();
+        renderPreview();
+        toast("配图已上传到" + uploadTargetLabel(target) + "：" + id);
+        dock("配图上传成功（" + uploadTargetLabel(target) + "，" + id + "）");
+    }, function (error) {
+        toast("配图上传失败：" + error.message, "error");
+        dock("配图上传失败：" + error.message);
+    });
   }
 
   function applyType() {
@@ -434,9 +734,14 @@
         var content = el("span");
         appendRich(content, option.content || "（未填）");
         item.appendChild(content);
-        if ((option.imageIds || []).length) {
-          item.appendChild(el("span", "ed-opt-img", "（配图 " + option.imageIds.length + "）"));
-        }
+        (option.imageIds || []).forEach(function (imageId) {
+          var image = findImage(imageId);
+          if (!image) {
+            item.appendChild(el("span", "ed-opt-img", "（配图 " + imageId + " 缺失）"));
+            return;
+          }
+          appendImageRef(item, image.uri, image.alt || "选项配图", "");
+        });
         list.appendChild(item);
       });
       body.appendChild(list);
@@ -817,7 +1122,18 @@
       extensions: { "org.jiuzhang.editor": { grade: gradeEl.value || "" } },
       meta: { status: "published", author: "九章算子·录题工作台" }
     };
-    if (state.topicIds.length) question.taxonomy = { topic_ids: state.topicIds.slice(0, 8) };
+    // 旧库的「教材/章/节」入口：没有挂考向时靠这三个名字留住归属，挂了考向则
+    // 由底座按大纲祖先名回填，二者同用一个 taxonomy 字段。
+    var taxonomy = {};
+    [["textbook", textbookEl], ["chapter", chapterEl], ["section", sectionEl]].forEach(function (pair) {
+      var value = pair[1] ? pair[1].value.trim().slice(0, 64) : "";
+      if (value) taxonomy[pair[0]] = value;
+    });
+    if (state.topicIds.length) taxonomy.topic_ids = state.topicIds.slice(0, 8);
+    if (Object.keys(taxonomy).length) question.taxonomy = taxonomy;
+    // 旧库的「来源卷」入口：第一份是契约里的主来源，其余走 question_sources 关系表。
+    var sources = collectSources(Boolean(strict));
+    if (sources.length) question.source = sources[0];
     var solution = solutionEl.value.trim();
     if (solution) question.solution = solution;
     if (state.images.length) question.images = state.images.slice();
@@ -933,6 +1249,19 @@
       solution: solutionEl.value,
       answerText: answerEl.value,
       tagsText: tagsEl.value,
+      textbook: textbookEl ? textbookEl.value : "",
+      chapter: chapterEl ? chapterEl.value : "",
+      section: sectionEl ? sectionEl.value : "",
+      sources: state.sources.map(function (source) {
+        return {
+          paper_title: source.paper_title || "",
+          year: source.year == null ? "" : String(source.year),
+          exam_type: source.exam_type || "",
+          school: source.school || "",
+          question_no: source.question_no || ""
+        };
+      }),
+      imageTarget: state.imageTarget,
       options: state.options.map(function (option) {
         return { key: option.key, content: option.content, imageIds: (option.imageIds || []).slice() };
       }),
@@ -955,6 +1284,26 @@
     solutionEl.value = String(source.solution || "");
     answerEl.value = String(source.answerText || "");
     tagsEl.value = String(source.tagsText || "");
+    if (textbookEl) textbookEl.value = String(source.textbook || "");
+    if (chapterEl) chapterEl.value = String(source.chapter || "");
+    if (sectionEl) sectionEl.value = String(source.section || "");
+    state.sources = Array.isArray(source.sources)
+      ? source.sources.map(function (item) {
+        return {
+          paper_title: String(item.paper_title || ""),
+          year: item.year == null ? "" : String(item.year),
+          exam_type: String(item.exam_type || ""),
+          school: String(item.school || ""),
+          question_no: String(item.question_no || "")
+        };
+      }).slice(0, SOURCE_LIMIT)
+      : [];
+    if (uploadTargetEl) {
+      if (source.imageTarget === "solution" || source.imageTarget === "stem") {
+        uploadTargetEl.value = source.imageTarget;
+      }
+      state.imageTarget = uploadTargetEl.value;
+    }
     var options = Array.isArray(source.options) && source.options.length >= 2
       ? source.options
       : [
@@ -968,6 +1317,8 @@
     state.topicNames = Object.assign({}, source.topicNames || {});
     state.images = (source.images || []).slice();
     renderOptions();
+    renderSources();
+    renderImages();
     applyType();
     renderTopicChips();
     renderPreview();
@@ -989,6 +1340,19 @@
         ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
         : "",
       tagsText: (document.tags || []).join(", "),
+      textbook: (document.taxonomy || {}).textbook || "",
+      chapter: (document.taxonomy || {}).chapter || "",
+      section: (document.taxonomy || {}).section || "",
+      // 主来源先占一行；loadForEdit 再拉 bank.sources 把其余原卷补齐（宿主不支持时
+      // 至少保住契约里的这一份）。
+      sources: document.source ? [{
+        paper_title: document.source.paper_title || "",
+        year: document.source.year == null ? "" : String(document.source.year),
+        exam_type: document.source.exam_type || "",
+        school: document.source.school || "",
+        question_no: document.source.question_no || ""
+      }] : [],
+      imageTarget: "stem",
       options: (document.options || []).map(function (option) {
         return { key: option.key, content: option.content || "", imageIds: (option.image_ids || []).slice() };
       }),
@@ -1058,14 +1422,30 @@
       fillForm(document);
       savedEl.hidden = true;
       dirtySinceSave = false;
-      // 载入原题后再查一次草稿箱：老师上次没保存就关了页，这里把内容找回来。
-      maybeRestoreDraft(id);
-      var hint = state.editingFlags.length
-        ? "这道题带着 " + state.editingFlags.length + " 个待审标记：" + state.editingFlags.join("、")
-        : "已载入原题，改完点「保存并返回」";
-      toast(hint);
-      dock("录题工作台已载入 " + id + "（" + (state.editingFlags.length ? "待审 " + state.editingFlags.join("、") : "无标记") + "）");
-      return true;
+      // 一题多卷的完整列表只在关系表里：bank.get 只给主来源，剩下的走 bank.sources。
+      return hostCall("bank.sources", { id: id }).then(function (result) {
+        var items = (result && result.items) || [];
+        if (!items.length) return;
+        state.sources = items.map(function (item) {
+          return {
+            paper_title: item.paper_title || "",
+            year: item.year == null ? "" : String(item.year),
+            exam_type: item.exam_type || "",
+            school: item.school || "",
+            question_no: item.question_no || ""
+          };
+        }).slice(0, SOURCE_LIMIT);
+        renderSources();
+      }, function () { /* 宿主没有这条通道时，主来源那一行照旧可编辑 */ }).then(function () {
+        // 载入原题后再查一次草稿箱：老师上次没保存就关了页，这里把内容找回来。
+        maybeRestoreDraft(id);
+        var hint = state.editingFlags.length
+          ? "这道题带着 " + state.editingFlags.length + " 个待审标记：" + state.editingFlags.join("、")
+          : "已载入原题，改完点「保存并返回」";
+        toast(hint);
+        dock("录题工作台已载入 " + id + "（" + (state.editingFlags.length ? "待审 " + state.editingFlags.join("、") : "无标记") + "）");
+        return true;
+      });
     }, function (error) {
       toast("读题失败：" + error.message, "error");
       dock("载入待编辑题目失败：" + error.message);
@@ -1139,7 +1519,12 @@
     }
     var updating = Boolean(state.editingId);
     var payload = { question: question };
+    // 一题多卷：第一份在 question.source，其余整组随 sources 重挂；改题时必须显式
+    // 传（哪怕空数组），否则删掉的来源卷会在关系表里阴魂不散。
+    var extraSources = collectSources(false).slice(1);
+    if (extraSources.length || updating) payload.sources = extraSources;
     if (updating) {
+      if (!question.source) question.source = null;
       payload.question.clear_flags = resolvedFlags(question);
       if (!payload.question.clear_flags.length) delete payload.question.clear_flags;
     }
@@ -1171,7 +1556,10 @@
     delete question.id;
     delete question.clear_flags;
     setSaving(true);
-    return hostCall("bank.create", { question: question }).then(function (result) {
+    return hostCall("bank.create", {
+      question: question,
+      sources: collectSources(false).slice(1)
+    }).then(function (result) {
       setSaving(false);
       var id = result && result.id;
       var parent = state.editingId || "";
@@ -1412,6 +1800,12 @@
     state.topicIds = [];
     state.topicNames = {};
     state.images = [];
+    state.sources = [];
+    state.imageTarget = "stem";
+    if (uploadTargetEl) uploadTargetEl.value = "stem";
+    if (textbookEl) textbookEl.value = "";
+    if (chapterEl) chapterEl.value = "";
+    if (sectionEl) sectionEl.value = "";
     stemEl.value = "";
     answerEl.value = "";
     solutionEl.value = "";
@@ -1426,6 +1820,8 @@
       { key: "D", content: "", imageIds: [] }
     ];
     renderOptions();
+    renderSources();
+    renderImages();
     applyType();
     renderTopicChips();
     renderPreview();
@@ -1615,6 +2011,17 @@
     diffEl.addEventListener("change", schedulePreview);
     gradeEl.addEventListener("change", schedulePreview);
     addOptionEl.addEventListener("click", addOption);
+    if (addSourceEl) addSourceEl.addEventListener("click", addSourceRow);
+    if (uploadPickEl) uploadPickEl.addEventListener("click", function () {
+      pickUpload(uploadTargetEl ? uploadTargetEl.value : "stem");
+    });
+    if (uploadFileEl) uploadFileEl.addEventListener("change", handleUploadFile);
+    if (uploadTargetEl) uploadTargetEl.addEventListener("change", function () {
+      state.imageTarget = uploadTargetEl.value;
+    });
+    [textbookEl, chapterEl, sectionEl].forEach(function (node) {
+      if (node) node.addEventListener("input", schedulePreview);
+    });
     saveEl.addEventListener("click", save);
     cleanEl.addEventListener("click", cleanAll);
     resetEl.addEventListener("click", resetForm);
@@ -1708,6 +2115,8 @@
       else toast("这次是直接从录题进来的，没有来源页可返回");
     });
     renderTopicChips();
+    renderSources();
+    renderImages();
     setSourceBusy(false);
     if (typeof ResizeObserver === "function") {
       var layoutObserver = new ResizeObserver(function () {

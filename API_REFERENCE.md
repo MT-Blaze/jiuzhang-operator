@@ -109,7 +109,7 @@
 两类题库要分清：
 
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
-- **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签**或声明 `bank.view` 的视图插件页签**，见 §2.17）。
+- **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.sources` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签**或声明 `bank.view` 的视图插件页签**，见 §2.17）。
 
 ### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.0）
 
@@ -174,14 +174,20 @@ payload：同 `bank.list` 的筛选字段（无分页）。无匹配回 `HOST_40
 
 ### 2.6 `bank.create` — 新增题目（活跃公共题库，需 `questions:write`）
 
-payload：`{"question": {题目标准结构}}`。`id` / `meta` 由底座生成，请求里带的会被覆盖。
+payload：`{"question": {题目标准结构}, "sources": [{来源卷}]}`。`id` / `meta` 由底座生成，请求里带的会被覆盖。
+`sources` 可选，是不属于题目文档的**额外原卷**（一题多卷，每条只收
+`paper_title`（必填，≤120）/ `year`（1900–2100 整数）/ `exam_type` / `school` / `question_no`（≤20），最多 8 条）；
+主来源仍写进 `question.source`，额外原卷落到 `question_sources` 关系表。
 result：落库后的完整题目。宿主随后广播 `system.question_updated`（`action:"create"`）。
 校验失败回 `HOST_422`（`message` 里带逐字段错误）。
 
 ### 2.7 `bank.update` — 修改题目（活跃公共题库，需 `questions:write`）
 
-payload：`{"id": "q_...", "question": {补丁字段, "clear_flags": ["answer_absent"]}}`。
-只接受题目内容补丁与清除审核标记；大纲挂载与来源关系不在此通道改。
+payload：`{"id": "q_...", "question": {补丁字段, "clear_flags": ["answer_absent"]}, "sources": [...]}`。
+只接受题目内容补丁与清除审核标记。来源卷与标签这轮起可改：`question.source` 是主来源，
+显式传 `null` 表示清空主来源；`sources`（可选）是额外原卷，**给了就整组重挂**（空数组 = 只留主来源），
+不给则保持原挂载。`question.taxonomy` 同样整组重挂：`topic_ids` 之外可带
+`textbook` / `chapter` / `section` 名称，没挂考向时这三个名字会随题保留。
 result：更新后的完整题目；宿主广播 `system.question_updated`（`action:"update"`）。
 
 ### 2.8 `bank.delete` — 删除题目（活跃公共题库，需 `questions:write`）
@@ -212,6 +218,19 @@ payload：`{"topic_id": "tp_kx..."}`。result：
   "notes": [{ "id": 1, "note_type": "method | pitfall | knowledge | insight",
               "content": "...", "sort_order": 0 }] }
 ```
+
+### 2.10.1 `bank.sources` — 一题挂的全部原卷（活跃公共题库）
+
+payload：`{"id": "q_..."}`。一题多卷的完整列表只在 `question_sources` 关系表里，
+`bank.get` 只给主来源；编辑态要回填整组来源卷时读这里。
+
+```json
+{ "question_id": "q_...",
+  "items": [{ "source_id": 7, "paper_title": "2024 届高三一模·数学", "question_no": "7",
+              "grade": "高三", "year": 2024, "exam_type": "一模", "school": "九章中学" }] }
+```
+
+按挂载先后返回，第一项即主来源（与 `bank.get` 的 `source` 同一条）。题目不存在回 `HOST_404`。
 
 ### 2.11 `bank.review` — 待审队列（活跃公共题库）
 
@@ -391,8 +410,9 @@ payload = { command_id, context, from, trace }
 | `GET /api/bank/plugins/{plugin_id}/stats` | 题库统计 |
 | `GET /api/bank/plugins/{plugin_id}/questions?grade=&difficulty=&type=&chapter=&textbook=&topic=&q=&page=&page_size=` | 分页取题 |
 | `GET /api/bank/plugins/{plugin_id}/questions/{question_id}` | 单题详情 |
-| ✍ `POST /api/bank/plugins/{plugin_id}/questions` | 新增：`{"question": {...}}` → 201 |
-| ✍ `PATCH /api/bank/plugins/{plugin_id}/questions/{question_id}` | 审核回写：`{"question": {..., "clear_flags": [...]}}` |
+| `GET /api/bank/plugins/{plugin_id}/questions/{question_id}/sources` | 一题挂的全部原卷（一题多卷；同 §2.10.1） |
+| ✍ `POST /api/bank/plugins/{plugin_id}/questions` | 新增：`{"question": {...}, "sources": [...]}` → 201 |
+| ✍ `PATCH /api/bank/plugins/{plugin_id}/questions/{question_id}` | 审核回写：`{"question": {..., "clear_flags": [...], "source": {...}\|null}, "sources": [...]}` |
 | ✍ `DELETE /api/bank/plugins/{plugin_id}/questions/{question_id}` | 删题（级联摘关联、保留共享节点） |
 | `GET /api/bank/plugins/{plugin_id}/topics?parent_id=&q=&textbook_id=` | 大纲树懒展开；根层与搜索按教材版本过滤，考向并集照常出现 |
 | `GET /api/bank/plugins/{plugin_id}/topics/{topic_id}/notes` | 考向教研笔记 |

@@ -365,6 +365,7 @@
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
     "bank.active_list", "bank.active_stats",
     "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
+    "bank.sources",
     "bank.dedupe_scan", "bank.dedupe_merge",
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
@@ -961,6 +962,51 @@
     return value.trim().slice(0, max);
   }
 
+  // 一题多卷的原卷列表只承载关系字段，绝不把契约外的键带进题库：
+  // paper_title 必填，year 走 1900–2100，其余按存储列宽截断。
+  var SOURCE_FIELD_LIMITS = { paper_title: 120, school: 64, exam_type: 64, question_no: 20 };
+  function sourceList(payload) {
+    if (!Object.prototype.hasOwnProperty.call(payload, "sources")) {
+      return { ok: true, items: undefined };
+    }
+    var raw = payload.sources;
+    if (!Array.isArray(raw) || raw.length > 8) {
+      return { ok: false, message: "sources 必须是不超过 8 条的来源数组" };
+    }
+    var items = [];
+    for (var index = 0; index < raw.length; index += 1) {
+      var entry = raw[index];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return { ok: false, message: "sources[" + index + "] 必须是对象" };
+      }
+      var keys = Object.keys(entry);
+      for (var k = 0; k < keys.length; k += 1) {
+        if (keys[k] !== "year" && !SOURCE_FIELD_LIMITS.hasOwnProperty(keys[k])) {
+          return { ok: false, message: "sources[" + index + "] 不支持字段 " + keys[k] };
+        }
+      }
+      var paper = typeof entry.paper_title === "string" ? entry.paper_title.trim() : "";
+      if (!paper) return { ok: false, message: "sources[" + index + "] 缺少原卷标题" };
+      var clean = { paper_title: paper.slice(0, SOURCE_FIELD_LIMITS.paper_title) };
+      if (entry.year !== undefined && entry.year !== null && entry.year !== "") {
+        var year = Number(entry.year);
+        if (!Number.isInteger(year) || year < 1900 || year > 2100) {
+          return { ok: false, message: "sources[" + index + "] 年份必须是 1900–2100 的整数" };
+        }
+        clean.year = year;
+      }
+      for (var field in SOURCE_FIELD_LIMITS) {
+        if (field === "paper_title") continue;
+        var value = entry[field];
+        if (typeof value === "string" && value.trim()) {
+          clean[field] = value.trim().slice(0, SOURCE_FIELD_LIMITS[field]);
+        }
+      }
+      items.push(clean);
+    }
+    return { ok: true, items: items };
+  }
+
   /** 「全部 / all」是面板的展示值，到了查询层必须变成「不过滤」。 */
   function filterValue(payload, key, max) {
     var value = textValue(payload, key, max);
@@ -1355,12 +1401,19 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待写入的 question 对象" });
         return;
       }
+      var createSources = sourceList(payload);
+      if (!createSources.ok) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: createSources.message });
+        return;
+      }
+      var createBody = { question: question };
+      if (createSources.items !== undefined) createBody.sources = createSources.items;
       withWriteToken(
         bankProviderBase() + "/questions",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: question })
+          body: JSON.stringify(createBody)
         }
       ).then(function (result) {
         emit("system.question_updated", {
@@ -1393,13 +1446,20 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待写入的 question 对象" });
         return;
       }
+      var updateSources = sourceList(payload);
+      if (!updateSources.ok) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: updateSources.message });
+        return;
+      }
+      var updateBody = { question: patch };
+      if (updateSources.items !== undefined) updateBody.sources = updateSources.items;
       withWriteToken(
         bankProviderBase() + "/questions/"
           + encodeURIComponent(targetId),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: patch })
+          body: JSON.stringify(updateBody)
         }
       ).then(function (result) {
         emit("system.question_updated", {
@@ -1585,6 +1645,17 @@
         return;
       }
       fetchJson(sharedBase + "/topics/" + encodeURIComponent(noteTopic) + "/notes").then(done, fail);
+      return;
+    }
+
+    if (method === "bank.sources") {
+      var sourceQuestionId = textValue(payload, "id", 80);
+      if (!ID_RE.test(sourceQuestionId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "题目 id 不合法" });
+        return;
+      }
+      fetchJson(sharedBase + "/questions/" + encodeURIComponent(sourceQuestionId) + "/sources")
+        .then(done, fail);
       return;
     }
 

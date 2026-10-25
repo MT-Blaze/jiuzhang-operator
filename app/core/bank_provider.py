@@ -34,7 +34,7 @@ PROVIDER_CAPABILITY = "bank.provider"
 STATE_FILENAME = "bank_provider.json"
 # 跨页签共享的通道：非题库插件（如录题端）也要能读公共真题库、写新题。
 SHARED_METHODS = (
-    "bank.get", "bank.topics", "bank.topic_notes", "bank.review",
+    "bank.get", "bank.topics", "bank.topic_notes", "bank.review", "bank.sources",
     "bank.create", "bank.update", "bank.delete",
     # 浏览型插件没有自己的题库，读题/入篮都要落在活跃 provider 上
     "bank.active_list", "bank.active_stats", "basket.active_add",

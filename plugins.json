@@ -68,10 +68,10 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "中间表单、右侧 A4 实时预览：录题干与公式、动态增删选项（含选项配图回填）、填答案与解析；边写边存草稿不丢、一键派生变式、删题二次确认、保存后自动回流刷新；右侧 AI 副驾可改写题干并回填。一键清洗 LaTeX 后经宿主写入本地真题题库。需底座 v0.7.1 及以上。",
+      "description": "左表单、中栏源码对照 A4 实时渲染、右栏原图框选切图；录题干公式、动态选项（含选项配图）、答案解析，支持一题挂多张来源卷（各记原卷题号）、教材/章/节、本地图片上传并关联 images 与选项 image_ids；草稿托管、派生变式、删题二次确认，保存经宿主写库。一键清洗 LaTeX。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",

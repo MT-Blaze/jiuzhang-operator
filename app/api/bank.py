@@ -214,8 +214,9 @@ def bank_update_question(
 ) -> dict[str, Any]:
     """请求体形如 ``{"question": {...可审字段..., "clear_flags": ["answer_absent"]}}``。
 
-    只接受题目内容与 ``clear_flags``；大纲挂载、来源关系与题目身份都不在此通道里改，
-    避免人工审核页变成能悄悄挪动题目归属的旁路（那属于录题插件的改题范围）。
+    只接受题目内容与 ``clear_flags``；题目身份（``id`` / ``meta.created_at``）不在此
+    通道里改。录题插件改题时可在同一请求里带 ``sources``（主来源之外的额外原卷），
+    给了就整组重挂来源关系——那是录题范围，不是审核页的减项。
     """
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
@@ -223,7 +224,9 @@ def bank_update_question(
     if not isinstance(patch, dict):
         raise HTTPException(status_code=400, detail="缺少 question 对象")
     try:
-        return bank.update_question(plugin_id, question_id, patch)
+        return bank.update_question(
+            plugin_id, question_id, patch, sources=payload.get("sources")
+        )
     except questions.QuestionValidationError as exc:
         raise HTTPException(
             status_code=422,
@@ -241,6 +244,19 @@ def bank_update_question(
 def bank_question(plugin_id: str, question_id: str) -> dict[str, Any]:
     try:
         return bank.get_question(plugin_id, question_id)
+    except bank.BankNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except bank.BankError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/bank/plugins/{plugin_id}/questions/{question_id}/sources",
+    summary="一题挂的全部原卷（一题多卷，各自带原卷题号）",
+)
+def bank_question_sources(plugin_id: str, question_id: str) -> dict[str, Any]:
+    try:
+        return bank.question_sources(plugin_id, question_id)
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankError as exc:
@@ -278,10 +294,11 @@ def bank_delete_question(plugin_id: str, question_id: str) -> dict[str, Any]:
     dependencies=[Depends(require_write_token)],
 )
 def bank_create_question(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """写入插件题库。请求体形如 ``{"question": {...标准结构...}}``。
+    """写入插件题库。请求体形如 ``{"question": {...标准结构...}, "sources": [...]}``。
 
     权限边界：插件声明 ``questions:write`` 才能经宿主转发到这里；ID 与时间戳
-    由底座生成，请求里带来的 ``id`` / ``meta`` 会被底座覆盖。
+    由底座生成，请求里带来的 ``id`` / ``meta`` 会被底座覆盖。``sources`` 是主来源
+    之外的额外原卷（一题多卷），可省略。
     """
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
@@ -289,7 +306,7 @@ def bank_create_question(plugin_id: str, payload: dict[str, Any] = Body(...)) ->
     if not isinstance(question, dict):
         raise HTTPException(status_code=400, detail="缺少 question 对象")
     try:
-        return bank.create_question(plugin_id, question)
+        return bank.create_question(plugin_id, question, sources=payload.get("sources"))
     except questions.QuestionValidationError as exc:
         raise HTTPException(
             status_code=422,

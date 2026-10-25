@@ -105,7 +105,10 @@ REQUIRED_TABLES = (
 EXT_GRADE_KEY = "org.jiuzhang.core-bank.grade"
 EXT_TAXONOMY_KEY = "org.jiuzhang.core-bank.taxonomy"
 EXT_IMAGES_KEY = "org.jiuzhang.core-bank.images"
+EXT_TAGS_KEY = "org.jiuzhang.core-bank.tags"
 EXT_MIGRATION_KEY = "org.jiuzhang.core-bank.migration"
+# 一题可挂多份原卷（各自带原卷题号）；主来源仍走契约的 source，其余挂这里。
+MAX_QUESTION_SOURCES = 8
 # 灌库时打下的审核标记；老师修完一条就清一条，全清完则整个迁移条目移出库
 REVIEW_FLAGS = (
     "answer_absent",        # 选择题没有任何字母依据
@@ -121,6 +124,7 @@ EXTENSION_LABELS = {
     EXT_GRADE_KEY: "年级",
     EXT_TAXONOMY_KEY: "教材章节",
     EXT_IMAGES_KEY: "配图",
+    EXT_TAGS_KEY: "知识点标签",
     "org.jiuzhang.core-bank.option_columns": "选项列数",
     "org.jiuzhang.core-bank.tikz": "TikZ 原码",
     "org.jiuzhang.core-bank.migration": "迁移标记",
@@ -818,6 +822,9 @@ def _document_from(row: sqlite3.Row, links: list[dict[str, Any]],
     images = _extension_value(extensions, EXT_IMAGES_KEY)
     if images and images.get("images"):
         document["images"] = images["images"]
+    stored_tags = _extension_value(extensions, EXT_TAGS_KEY)
+    if stored_tags and stored_tags.get("tags"):
+        document["tags"] = stored_tags["tags"]
 
     grade = ""
     if source:
@@ -1076,6 +1083,44 @@ def get_question(plugin_id: str, question_id: str) -> dict[str, Any]:
         return _assemble(con, [row])[0]
     finally:
         con.close()
+
+
+def question_sources(plugin_id: str, question_id: str) -> dict[str, Any]:
+    """一题挂的全部原卷（一题多卷，各自带原卷题号），按挂载先后返回。"""
+    if not isinstance(question_id, str) or not question_id.startswith("q_"):
+        raise BankNotFound("题目 ID 非法")
+    con = connect(plugin_id)
+    try:
+        if con.execute("SELECT 1 FROM questions WHERE id = ?", (question_id,)).fetchone() is None:
+            raise BankNotFound(f"题库中没有题目 {question_id}")
+        rows = con.execute(
+            "SELECT s.id AS source_id, s.paper_name, s.year, s.exam_type, s.grade,"
+            " qs.question_no, sc.full_name, sc.short_name, sc.city, sc.province"
+            " FROM question_sources qs"
+            " JOIN sources s ON s.id = qs.source_id"
+            " LEFT JOIN schools sc ON sc.id = s.school_id"
+            " WHERE qs.question_id = ? ORDER BY qs.id",
+            (question_id,),
+        ).fetchall()
+    finally:
+        con.close()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item: dict[str, Any] = {
+            "source_id": row["source_id"],
+            "paper_title": row["paper_name"],
+            "question_no": row["question_no"],
+            "grade": row["grade"],
+        }
+        if row["year"] is not None:
+            item["year"] = int(row["year"])
+        for field, column in (("exam_type", "exam_type"), ("school", "short_name"),
+                              ("region", "city")):
+            value = row[column]
+            if value:
+                item[field] = value
+        items.append(item)
+    return {"question_id": question_id, "items": items}
 
 
 def get_many(plugin_id: str, ids: Iterable[str]) -> list[dict[str, Any]]:
@@ -1373,6 +1418,16 @@ def _question_row(document: dict[str, Any], now: str) -> list[Any]:
         extensions[EXT_GRADE_KEY] = {"grade": grade}
     if document.get("images"):
         extensions[EXT_IMAGES_KEY] = {"images": document["images"]}
+    else:
+        # 老师把配图删光后，旧 extensions 里的图片组不能阴魂不散。
+        extensions.pop(EXT_IMAGES_KEY, None)
+    tags = [item for item in (document.get("tags") or []) if isinstance(item, str) and item][:32]
+    if tags:
+        # 七表结构里没有 tags 列；沿用 grade/taxonomy/images 的既有做法，
+        # 落在 core-bank 自己的 extensions 键上，读路径再还原成契约的根字段。
+        extensions[EXT_TAGS_KEY] = {"tags": tags}
+    else:
+        extensions.pop(EXT_TAGS_KEY, None)
     taxonomy = document.get("taxonomy") or {}
     if not taxonomy.get("topic_ids"):
         names = {
@@ -1382,6 +1437,8 @@ def _question_row(document: dict[str, Any], now: str) -> list[Any]:
         }
         if names:
             extensions[EXT_TAXONOMY_KEY] = names
+        else:
+            extensions.pop(EXT_TAXONOMY_KEY, None)
 
     question_type = document["type"]
     # 存储层强制「无选项题型 options 必须是空数组」，因此非选择题不带选项
@@ -1472,17 +1529,96 @@ def _link_topics(con: sqlite3.Connection, question_id: str, document: dict[str, 
         )
 
 
-def _link_source(con: sqlite3.Connection, document: dict[str, Any], now: str) -> None:
+SOURCE_FIELDS = ("paper_title", "school", "year", "exam_type", "question_no")
+
+
+def _clean_source_entry(entry: Any, index: int) -> dict[str, Any]:
+    """一条「额外来源卷」的入参归一；不认识的字段直接拒，避免老师以为写进去了。"""
+    if not isinstance(entry, dict):
+        raise question_contract.QuestionValidationError(
+            [f"sources[{index}]: 每条来源必须是 JSON 对象"]
+        )
+    unknown = sorted(set(entry) - set(SOURCE_FIELDS))
+    if unknown:
+        raise question_contract.QuestionValidationError([
+            f"sources[{index}]: 不认识的字段 {', '.join(unknown)}"
+            f"（只收 {', '.join(SOURCE_FIELDS)}）"
+        ])
+    paper = str(entry.get("paper_title") or "").strip()
+    if not paper:
+        raise question_contract.QuestionValidationError(
+            [f"sources[{index}].paper_title: 原卷标题不能为空"]
+        )
+    if len(paper) > 120:
+        raise question_contract.QuestionValidationError(
+            [f"sources[{index}].paper_title: 原卷标题最长 120 字符"]
+        )
+    cleaned: dict[str, Any] = {"paper_title": paper}
+    year = entry.get("year")
+    if year not in (None, ""):
+        try:
+            year = int(year)
+        except (TypeError, ValueError) as exc:
+            raise question_contract.QuestionValidationError(
+                [f"sources[{index}].year: 年份必须是整数"]
+            ) from exc
+        if not STORAGE_YEAR_MIN <= year <= STORAGE_YEAR_MAX:
+            raise question_contract.QuestionValidationError([
+                f"sources[{index}].year: 存储层只收 {STORAGE_YEAR_MIN}–{STORAGE_YEAR_MAX}，收到 {year}。"
+            ])
+        cleaned["year"] = year
+    for field, limit in (("school", 64), ("exam_type", 64), ("question_no", 20)):
+        value = str(entry.get(field) or "").strip()
+        if len(value) > limit:
+            raise question_contract.QuestionValidationError(
+                [f"sources[{index}].{field}: 最长 {limit} 字符"]
+            )
+        if value:
+            cleaned[field] = value
+    return cleaned
+
+
+def _normalize_sources(sources: Any) -> list[dict[str, Any]] | None:
+    """``None`` = 调用方没提供来源列表（保持原挂载）；数组 = 整组替换。"""
+    if sources is None:
+        return None
+    if not isinstance(sources, list):
+        raise question_contract.QuestionValidationError(["sources: 必须是来源对象数组"])
+    if len(sources) > MAX_QUESTION_SOURCES:
+        raise question_contract.QuestionValidationError(
+            [f"sources: 一道题最多再挂 {MAX_QUESTION_SOURCES} 份原卷"]
+        )
+    return [_clean_source_entry(item, index) for index, item in enumerate(sources)]
+
+
+def _link_sources(con: sqlite3.Connection, document: dict[str, Any], now: str,
+                  extra_sources: list[dict[str, Any]] | None = None) -> None:
+    """挂主来源（契约 ``source``）与额外原卷；同一份卷同一题号只记一次。
+
+    一题多卷是关系数据，不进题目文档：契约根对象的 ``source`` 仍是单值，
+    完整列表由 ``question_sources()`` 单独读出。
+    """
     grade = _grade_of(document)
-    source_id = _ensure_source(con, document, grade, now)
-    if not source_id:
-        return
-    source = document.get("source") or {}
-    con.execute(
-        "INSERT OR IGNORE INTO question_sources (question_id, source_id, question_no, created_at)"
-        " VALUES (?, ?, ?, ?)",
-        (document["id"], source_id, str(source.get("question_no") or "")[:20], now),
-    )
+    primary = document.get("source")
+    entries: list[dict[str, Any]] = []
+    if isinstance(primary, dict) and str(primary.get("paper_title") or "").strip():
+        entries.append(primary)
+    entries.extend(extra_sources or [])
+    seen: set[tuple[str, str]] = set()
+    for entry in entries:
+        source_id = _ensure_source(con, {"source": entry}, grade, now)
+        if not source_id:
+            continue
+        question_no = str(entry.get("question_no") or "")[:20]
+        slot = (source_id, question_no)
+        if slot in seen:
+            continue
+        seen.add(slot)
+        con.execute(
+            "INSERT OR IGNORE INTO question_sources"
+            " (question_id, source_id, question_no, created_at) VALUES (?, ?, ?, ?)",
+            (document["id"], source_id, question_no, now),
+        )
 
 
 def _intake_document(
@@ -1513,7 +1649,8 @@ def _intake_document(
 
 
 def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str,
-                    *, upsert: bool = False) -> None:
+                    *, upsert: bool = False,
+                    sources: list[dict[str, Any]] | None = None) -> None:
     row = _question_row(document, now)
     columns = ("type", "stem", "options", "answer", "solution", "extensions", "difficulty", "updated_at")
     if upsert:
@@ -1532,7 +1669,7 @@ def _write_document(con: sqlite3.Connection, document: dict[str, Any], now: str,
     if upsert:
         # 重复导入必须幂等：整组重挂，否则 ON CONFLICT 之后挂载关系会越滚越多
         con.execute("DELETE FROM question_sources WHERE question_id = ?", (row[0],))
-    _link_source(con, document, now)
+    _link_sources(con, document, now, sources)
     if upsert:
         _remount_topics(con, row[0], document.get("taxonomy") or {}, now)
     else:
@@ -1694,16 +1831,20 @@ def import_questions(
     }
 
 
-def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:
+def create_question(plugin_id: str, payload: Any, *, sources: Any = None) -> dict[str, Any]:
     """往指定插件题库新增一道题，返回按读路径装配后的标准结构。
 
     录题插件不碰数据库：它把表单整理成 ``schemas/question.json`` 结构，经宿主
     带一次性令牌转到这里。校验与底座 ``questions`` 表共用同一份 Schema，
     避免两份存储对同一道题各说各话。ID 由底座生成，插件不得指定历史 ID。
+
+    ``sources`` 是主来源之外的额外原卷（一题多卷，各自带原卷题号）。它不属于
+    题目文档本身，单独走 ``question_sources`` 关系表；``None`` 表示没有额外原卷。
     """
     if isinstance(payload, dict) and "id" in payload:
         # 旧 ID 可能是历史题目或他人题目：一律作废，由底座重新签发
         payload = {key: value for key, value in payload.items() if key != "id"}
+    extra_sources = _normalize_sources(sources)
     payload = _intake_document(payload)
     document = question_contract.prepare_new_question(payload)
     question_contract.validate_question(document)
@@ -1713,7 +1854,7 @@ def create_question(plugin_id: str, payload: Any) -> dict[str, Any]:
     try:
         con.execute("BEGIN IMMEDIATE")
         try:
-            _write_document(con, document, _now())
+            _write_document(con, document, _now(), sources=extra_sources)
         except sqlite3.IntegrityError as exc:
             raise BankConflict(f"题目 ID {document['id']} 已存在，请重试。") from exc
         con.commit()
@@ -1842,20 +1983,29 @@ def _strip_flags(extensions: dict[str, Any], flags: Iterable[str]) -> dict[str, 
     return result
 
 
-def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, Any]:
+def update_question(plugin_id: str, question_id: str, patch: Any, *,
+                    sources: Any = None) -> dict[str, Any]:
     """按题回写可审字段并清除审核标记，合并后仍过同一份契约。
 
-    只接受题目内容与 ``clear_flags``；``id`` / ``meta.created_at`` / 大纲与来源挂载
-    不在此通道里改——那些属于录题插件的改题删题范围（P1），混进来会让审核页
-    变成能悄悄挪动题目身份的旁路。
+    只接受题目内容与 ``clear_flags``；``id`` / ``meta.created_at`` 不在此通道里改。
+    录题插件改题会带上 ``source`` 与 ``sources``：``source`` 是主来源（契约字段），
+    ``sources`` 是其余原卷（关系表）；给了 ``sources`` 就整组重挂，没给则保持原样。
     """
     if not isinstance(patch, dict):
         raise question_contract.QuestionValidationError(["(root): 请求体必须是 JSON 对象"])
+    extra_sources = _normalize_sources(sources)
     current = get_question(plugin_id, question_id)
     document = dict(current)
-    for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade", "taxonomy"):
-        if key in patch:
-            document[key] = patch[key]
+    for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade",
+                "taxonomy", "tags", "source"):
+        if key not in patch:
+            continue
+        if key == "source" and patch[key] is None:
+            # 老师把主来源清空：显式传 null 才算数（契约里 source 不接受 null 值，
+            # 这里只把它当「删除」指令，合并后的文档不会再带这个键）。
+            document.pop(key, None)
+            continue
+        document[key] = patch[key]
     # 改题型时答案形态必须跟着走：选择题的字母改判成非选择题后，那串字母就是答案正文。
     # 留着 choice 形态会被契约的 kind 约束整条拒掉，老师反而改不动——这里保事实，不编内容。
     answer = document.get("answer")
@@ -1888,6 +2038,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
 
     row = _question_row(document, _now())
     remount = "taxonomy" in patch
+    remount_sources = sources is not None or "source" in patch
     con = connect(plugin_id)
     try:
         con.execute("BEGIN IMMEDIATE")
@@ -1901,6 +2052,9 @@ def update_question(plugin_id: str, question_id: str, patch: Any) -> dict[str, A
         _fts_upsert(con, question_id, document["stem"])
         if remount:
             _remount_topics(con, question_id, document.get("taxonomy") or {}, _now())
+        if remount_sources:
+            con.execute("DELETE FROM question_sources WHERE question_id = ?", (question_id,))
+            _link_sources(con, document, _now(), extra_sources)
         con.commit()
     except BaseException:
         con.rollback()

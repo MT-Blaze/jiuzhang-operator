@@ -280,6 +280,63 @@ class EditorCompareAndCropTest(unittest.TestCase):
         self.assertIn("state.images.slice()", form_state)
 
 
+class EditorTask3LegacyPathsTest(unittest.TestCase):
+    """军令 #21 任务三：旧题库三条录题路径重新接回录题工作台。"""
+
+    def test_01_source_taxonomy_and_upload_ui_present(self) -> None:
+        html = read("index.html")
+        js = read("plugin.js")
+        for node_id in (
+            "edSourceBlock", "edSources", "edAddSource",
+            "edTextbook", "edChapter", "edSection",
+            "edImageTarget", "edImagePick", "edUploadFile", "edImageList",
+        ):
+            self.assertIn(f'id="{node_id}"', html, f"缺少节点 {node_id}")
+        self.assertIn("function renderSources", js)
+        self.assertIn("function collectSources", js)
+        self.assertIn("SOURCE_LIMIT = 8", js)
+        self.assertIn("ed-source-row", read("plugin.css"))
+
+    def test_02_multi_source_goes_to_contract_and_relation(self) -> None:
+        js = read("plugin.js")
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        # 主来源进契约 source，其余经宿主 sources 参数落到 question_sources
+        self.assertIn("question.source = sources[0]", js)
+        self.assertIn("payload.sources = extraSources", js)
+        self.assertIn('hostCall("bank.sources"', js, "编辑态必须读回整组来源卷")
+        self.assertIn('"bank.sources"', stage, "宿主必须转发 bank.sources")
+        self.assertIn("function sourceList(payload)", stage)
+        # 改题时即使清空也要显式回传，否则旧挂载去不掉
+        self.assertIn("extraSources.length || updating", js)
+        self.assertIn("question.source = null", js)
+
+    def test_03_native_upload_writes_images_and_option_ids(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("function handleUploadFile", js)
+        self.assertIn("createImageBitmap(file)", js, "上传同样走 Canvas 解码")
+        self.assertNotIn("FileReader", js, "沙箱里不借 FileReader / data: 图片地址")
+        self.assertIn("entry.option_key = target.slice(7)", js)
+        self.assertIn("option.imageIds.push(id)", js)
+        self.assertIn("state.images.push(entry)", js)
+        self.assertIn("function pickUpload", js)
+        self.assertIn("ed-option-upload", read("plugin.css"))
+
+    def test_04_taxonomy_names_and_drafts_round_trip(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('["textbook", textbookEl]', js)
+        self.assertIn('["chapter", chapterEl]', js)
+        self.assertIn('["section", sectionEl]', js)
+        form_state = js.split("function getFormState")[1].split("var TYPE_VALUES")[0]
+        for field in ("textbook", "chapter", "section", "sources", "imageTarget"):
+            self.assertIn(field + ":", form_state, f"草稿态缺少 {field}")
+        # 主来源仍要能从 bank.get 的出参里回填（宿主没有 bank.sources 时兜底）
+        self.assertIn("sources: document.source ? [{", js)
+
+    def test_05_manifest_bumps_to_0_6_0(self) -> None:
+        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], "0.6.0")
+
+
 class EditorPackageTest(unittest.TestCase):
     def test_01_zip_top_level_is_plugin_id_and_clean(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -99,6 +99,46 @@
           <div id="edTopicTree" class="ed-topic-tree" hidden></div>
         </div>
 
+        <div class="ed-field ed-field-block" id="edSourceBlock">
+          <span>来源卷 <em>一题可挂多张原卷，各记原卷题号；第一份为主来源</em></span>
+          <div id="edSources" class="ed-sources"></div>
+          <button type="button" id="edAddSource" class="ed-mini">+ 添加来源卷</button>
+        </div>
+
+        <div class="ed-field ed-field-block" id="edTaxBlock">
+          <span>教材位置 <em>旧题库的教材/章/节；不挂考向时也留得住归属</em></span>
+          <div class="ed-tax-row">
+            <label class="ed-field ed-field-inline">
+              <span>教材</span>
+              <input id="edTextbook" type="text" maxlength="64" spellcheck="false"
+                placeholder="如 人教A版·必修第一册">
+            </label>
+            <label class="ed-field ed-field-inline">
+              <span>章</span>
+              <input id="edChapter" type="text" maxlength="64" spellcheck="false"
+                placeholder="如 1. 集合与常用逻辑用语">
+            </label>
+            <label class="ed-field ed-field-inline">
+              <span>节</span>
+              <input id="edSection" type="text" maxlength="64" spellcheck="false"
+                placeholder="如 1.1 集合的概念">
+            </label>
+          </div>
+        </div>
+
+        <div class="ed-field ed-field-block" id="edImagesBlock">
+          <span>配图资产 <em>选本地图片上传，自动写入 images 并关联 image_ids</em></span>
+          <div class="ed-image-tools">
+            <select id="edImageTarget" aria-label="配图归属">
+              <option value="stem">归到题干</option>
+              <option value="solution">归到解析</option>
+            </select>
+            <button type="button" id="edImagePick" class="ed-mini">选择本地图片</button>
+            <input id="edUploadFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <ul id="edImageList" class="ed-image-list"></ul>
+        </div>
+
         <p id="edEditing" class="ed-editing" hidden>
           正在编辑 <code id="edEditingId"></code> · 保存后题库/组卷/讲义会自动回流刷新
         </p>

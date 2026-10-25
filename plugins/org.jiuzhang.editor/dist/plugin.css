@@ -425,7 +425,7 @@ body {
 
 .ed-option {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-columns: 44px minmax(0, 1fr) auto 44px;
   gap: 8px;
   align-items: center;
 }
@@ -794,6 +794,145 @@ body {
   white-space: nowrap;
 }
 .ed-opt-img { color: #2f6b4f; font-size: 12px; margin-left: 4px; }
+
+/* 军令 #21 任务三：一题多卷、教材位置、原生图片上传 */
+.ed-option-upload {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ed-option-upload:hover { background: var(--accent-soft); }
+.ed-option-upload:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.ed-option-thumb {
+  grid-column: 2 / 4;
+  max-width: 96px;
+  max-height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.ed-sources { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 8px; }
+.ed-sources-empty { margin: 0; font-size: 12px; color: var(--ink-soft); }
+.ed-source-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
+  grid-template-areas:
+    "tag tag remove"
+    "title title title"
+    "year no exam"
+    "school school school";
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #fbf7ef;
+}
+.ed-source-row input {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.ed-source-row input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ed-source-tag {
+  grid-area: tag;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a5a16;
+}
+.ed-source-title { grid-area: title; }
+.ed-source-year { grid-area: year; }
+.ed-source-no { grid-area: no; }
+.ed-source-exam { grid-area: exam; }
+.ed-source-school { grid-area: school; }
+.ed-source-remove {
+  grid-area: remove;
+  width: 44px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--danger);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.ed-source-remove:hover { background: #f7e6e2; }
+.ed-source-remove:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.ed-tax-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.ed-field-inline { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ed-field-inline > span { font-size: 11px; color: var(--ink-soft); }
+
+.ed-image-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.ed-image-tools select {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.ed-image-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ed-image-empty { font-size: 12px; color: var(--ink-soft); }
+.ed-image-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.ed-image-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper-deep);
+}
+.ed-image-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12px; }
+.ed-image-meta strong { font-weight: 600; }
+.ed-image-meta code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-image-remove {
+  margin-left: auto;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--danger);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.ed-image-remove:hover { background: #f7e6e2; }
+.ed-image-remove:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .ed-modal-overlay {
   position: fixed;
