@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.bank-ui",
   "name": "真题题库",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查。题目数据一律经 Host API 向当前活跃题库引擎申请，插件不碰数据库。",
@@ -12,9 +12,17 @@
   "entry": {
     "frontend": "dist/index.html"
   },
-  "slots": ["question.card", "stage.center"],
-  "capabilities": ["question.render", "bank.view"],
-  "permissions": ["questions:read"],
+  "slots": [
+    "question.card",
+    "stage.center"
+  ],
+  "capabilities": [
+    "question.render",
+    "bank.view"
+  ],
+  "permissions": [
+    "questions:read"
+  ],
   "ui": {
     "title": "真题题库筛选",
     "hint": "下拉选择会实时同步给题库画布（经事件总线），人类手改优先于 AI。",
@@ -24,10 +32,22 @@
         "key": "grade",
         "label": "年级",
         "options": [
-          {"value": "全部", "label": "全部"},
-          {"value": "高一", "label": "高一"},
-          {"value": "高二", "label": "高二"},
-          {"value": "高三", "label": "高三"}
+          {
+            "value": "全部",
+            "label": "全部"
+          },
+          {
+            "value": "高一",
+            "label": "高一"
+          },
+          {
+            "value": "高二",
+            "label": "高二"
+          },
+          {
+            "value": "高三",
+            "label": "高三"
+          }
         ],
         "default": "全部"
       },
@@ -36,11 +56,26 @@
         "key": "difficulty",
         "label": "难度",
         "options": [
-          {"value": "全部", "label": "全部"},
-          {"value": "L1", "label": "L1 基础"},
-          {"value": "L2", "label": "L2 中档"},
-          {"value": "L3", "label": "L3 难"},
-          {"value": "L4", "label": "L4 压轴"}
+          {
+            "value": "全部",
+            "label": "全部"
+          },
+          {
+            "value": "L1",
+            "label": "L1 基础"
+          },
+          {
+            "value": "L2",
+            "label": "L2 中档"
+          },
+          {
+            "value": "L3",
+            "label": "L3 难"
+          },
+          {
+            "value": "L4",
+            "label": "L4 压轴"
+          }
         ],
         "default": "全部"
       },
@@ -49,11 +84,26 @@
         "key": "type",
         "label": "题型",
         "options": [
-          {"value": "全部", "label": "全部"},
-          {"value": "single_choice", "label": "单选"},
-          {"value": "multiple_choice", "label": "多选"},
-          {"value": "fill_blank", "label": "填空"},
-          {"value": "solution", "label": "解答"}
+          {
+            "value": "全部",
+            "label": "全部"
+          },
+          {
+            "value": "single_choice",
+            "label": "单选"
+          },
+          {
+            "value": "multiple_choice",
+            "label": "多选"
+          },
+          {
+            "value": "fill_blank",
+            "label": "填空"
+          },
+          {
+            "value": "solution",
+            "label": "解答"
+          }
         ],
         "default": "全部"
       }
@@ -67,7 +117,128 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "system.question_updated", "question.updated", "system.bank_query"],
-    "publish": ["region.dock", "system.open_editor"]
+    "subscribe": [
+      "ui.params.changed",
+      "system.question_updated",
+      "question.updated",
+      "system.bank_query"
+    ],
+    "publish": [
+      "region.dock",
+      "system.open_editor"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.jiuzhang.action.view.filter_questions",
+        "title": "筛选题库",
+        "description": "把年级、难度、题型或关键词写进题库视图并立即重查；只改视图筛选态，不改题目数据。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "grade": {
+              "type": "string",
+              "enum": [
+                "全部",
+                "高一",
+                "高二",
+                "高三"
+              ],
+              "description": "年级筛选，全部表示不限"
+            },
+            "difficulty": {
+              "type": "string",
+              "enum": [
+                "全部",
+                "L1",
+                "L2",
+                "L3",
+                "L4"
+              ],
+              "description": "难度筛选，全部表示不限"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "全部",
+                "single_choice",
+                "multiple_choice",
+                "fill_blank",
+                "solution"
+              ],
+              "description": "题型筛选，全部表示不限"
+            },
+            "search": {
+              "type": "string",
+              "description": "题干关键词",
+              "maxLength": 100
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{total, filters:{grade,difficulty,type,search}}"
+      },
+      {
+        "id": "org.jiuzhang.action.view.review_queue",
+        "title": "打开待审队列",
+        "description": "切到待审视图，可按灌库标记筛选并翻到第一页；只读，不修改题目。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "flag": {
+              "type": "string",
+              "description": "待审标记名（如 answer_absent）；留空表示全部",
+              "maxLength": 40
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{total, pages, flags:[{name,count}]}"
+      },
+      {
+        "id": "org.jiuzhang.action.data.dedupe_scan",
+        "title": "扫描重复题",
+        "description": "在当前题库上跑一次查重扫描，结果留在查重面板本地，供合并前人工比对；只读。",
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{scanned, queued, redundant, truncated, groups:[{ids:[question_id]}]}"
+      },
+      {
+        "id": "org.jiuzhang.action.data.dedupe_merge",
+        "title": "合并重复题",
+        "description": "把一组重复题合并到主记录并删除副本（一次最多 20 条副本）；写库且不可撤销，必须在执行前由老师确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "primary_id": {
+              "type": "string",
+              "description": "保留的主记录题目 id（q_ 开头）",
+              "maxLength": 80
+            },
+            "copy_ids": {
+              "type": "array",
+              "description": "要并入主记录并删除的副本 id 列表，一次最多 20 条",
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "minItems": 1,
+              "maxItems": 20
+            }
+          },
+          "required": [
+            "primary_id",
+            "copy_ids"
+          ],
+          "additionalProperties": false
+        },
+        "returns": "{primary_id, merged:[question_id], questions_after, moved:{topics,sources,extensions}}"
+      }
+    ]
   }
 }

@@ -2,19 +2,26 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.paper-gen",
   "name": "组卷排版",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
   "author": "九章算子",
   "license": "Apache-2.0",
-  "min_host_version": "0.11.1",
+  "min_host_version": "0.11.2",
   "entry": {
     "frontend": "dist/index.html"
   },
-  "slots": ["question.card", "stage.center"],
-  "capabilities": ["paper.generate"],
-  "permissions": ["questions:read"],
+  "slots": [
+    "question.card",
+    "stage.center"
+  ],
+  "capabilities": [
+    "paper.generate"
+  ],
+  "permissions": [
+    "questions:read"
+  ],
   "ui": {
     "title": "组卷设置",
     "hint": "切换答案或排版密度，右侧 A4 预览会立刻重排；题篮加减题也会自动跟随。",
@@ -24,8 +31,14 @@
         "key": "answers",
         "label": "答案",
         "options": [
-          {"value": "隐藏", "label": "隐藏"},
-          {"value": "显示", "label": "显示"}
+          {
+            "value": "隐藏",
+            "label": "隐藏"
+          },
+          {
+            "value": "显示",
+            "label": "显示"
+          }
         ],
         "default": "隐藏"
       },
@@ -34,8 +47,14 @@
         "key": "density",
         "label": "排版",
         "options": [
-          {"value": "标准", "label": "标准"},
-          {"value": "紧凑", "label": "紧凑"}
+          {
+            "value": "标准",
+            "label": "标准"
+          },
+          {
+            "value": "紧凑",
+            "label": "紧凑"
+          }
         ],
         "default": "标准"
       }
@@ -49,7 +68,64 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "basket.changed", "system.question_updated", "question.updated"],
-    "publish": ["region.dock", "system.open_editor"]
+    "subscribe": [
+      "ui.params.changed",
+      "basket.changed",
+      "system.question_updated",
+      "question.updated"
+    ],
+    "publish": [
+      "region.dock",
+      "system.open_editor"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.jiuzhang.action.process.generate_paper",
+        "title": "重排练习卷",
+        "description": "按当前题篮重排 A4 卷面，可临时切换答案显示与排版密度；只改本插件的排版状态。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "answers": {
+              "type": "string",
+              "enum": [
+                "显示",
+                "隐藏"
+              ],
+              "description": "是否在卷面带答案"
+            },
+            "density": {
+              "type": "string",
+              "enum": [
+                "标准",
+                "紧凑"
+              ],
+              "description": "排版密度"
+            },
+            "title": {
+              "type": "string",
+              "description": "卷面标题，最多 48 字",
+              "maxLength": 48
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{questions, pages, answers, density, title}"
+      },
+      {
+        "id": "org.jiuzhang.action.output.export_paper",
+        "title": "打印或导出 PDF",
+        "description": "把当前题篮补齐成完整卷面后调起打印（可另存为 PDF）；会产生打印任务，必须在执行前由老师确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{questions, pages, printed}"
+      }
+    ]
   }
 }

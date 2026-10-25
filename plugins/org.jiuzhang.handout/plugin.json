@@ -2,18 +2,22 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.handout",
   "name": "讲义排版",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
   "author": "九章算子",
   "license": "Apache-2.0",
-  "min_host_version": "0.11.1",
+  "min_host_version": "0.11.2",
   "entry": {
     "frontend": "dist/index.html"
   },
-  "slots": ["stage.center"],
-  "capabilities": ["handout.render"],
+  "slots": [
+    "stage.center"
+  ],
+  "capabilities": [
+    "handout.render"
+  ],
   "permissions": [],
   "ui": {
     "title": "讲义设置",
@@ -24,8 +28,14 @@
         "key": "size",
         "label": "字号",
         "options": [
-          {"value": "标准", "label": "标准"},
-          {"value": "大字", "label": "大字"}
+          {
+            "value": "标准",
+            "label": "标准"
+          },
+          {
+            "value": "大字",
+            "label": "大字"
+          }
         ],
         "default": "标准"
       }
@@ -39,7 +49,70 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "system.question_updated", "question.updated"],
-    "publish": ["region.dock"]
+    "subscribe": [
+      "ui.params.changed",
+      "system.question_updated",
+      "question.updated"
+    ],
+    "publish": [
+      "region.dock"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.jiuzhang.action.process.render_handout",
+        "title": "重排讲义",
+        "description": "按当前 Markdown 原稿整篇重排，可临时切换标准字或大字；只改本插件的排版状态。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "string",
+              "enum": [
+                "标准",
+                "大字"
+              ],
+              "description": "正文字号"
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{chars, pages, size}"
+      },
+      {
+        "id": "org.jiuzhang.action.input.set_handout_markdown",
+        "title": "替换讲义原稿",
+        "description": "用传入的 Markdown 覆盖左侧原稿并重排；会替换老师正在编辑的内容，必须在执行前确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "markdown": {
+              "type": "string",
+              "description": "讲义 Markdown 全文，行内公式用 $…$，独立公式用 $$…$$",
+              "maxLength": 20000
+            }
+          },
+          "required": [
+            "markdown"
+          ],
+          "additionalProperties": false
+        },
+        "returns": "{chars, pages}"
+      },
+      {
+        "id": "org.jiuzhang.action.output.export_handout",
+        "title": "打印或导出讲义",
+        "description": "等全部配图与分页落定后调起打印（可另存为 PDF）；会产生打印任务，必须在执行前确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{chars, pages, printed}"
+      }
+    ]
   }
 }

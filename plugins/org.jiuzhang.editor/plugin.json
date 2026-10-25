@@ -2,19 +2,27 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "左表单、中栏左源码右 A4 实时渲染、右栏原图框选切图：拖拽矩形后由 Canvas 截取并经宿主上传，插入 \\includegraphics{路径}；录题干与公式、动态增删选项（含选项配图回填）、填答案与解析；边写边存草稿不丢、一键派生变式、删题二次确认，保存后自动回流。一键清洗 LaTeX 后经宿主写入本地真题题库。",
   "author": "九章算子",
   "license": "Apache-2.0",
-  "min_host_version": "0.11.1",
+  "min_host_version": "0.11.2",
   "entry": {
     "frontend": "dist/index.html"
   },
-  "slots": ["stage.center"],
-  "capabilities": ["question.edit"],
-  "permissions": ["assets:write", "questions:read", "questions:write"],
+  "slots": [
+    "stage.center"
+  ],
+  "capabilities": [
+    "question.edit"
+  ],
+  "permissions": [
+    "assets:write",
+    "questions:read",
+    "questions:write"
+  ],
   "stage": {
     "region": "center",
     "mode": "takeover",
@@ -23,7 +31,76 @@
     "singleton": true
   },
   "bus": {
-    "subscribe": ["ui.params.changed", "system.open_editor", "editor.apply_patch"],
-    "publish": ["region.dock", "stage.selection", "system.return_from_editor", "system.editor_close"]
+    "subscribe": [
+      "ui.params.changed",
+      "system.open_editor",
+      "editor.apply_patch"
+    ],
+    "publish": [
+      "region.dock",
+      "stage.selection",
+      "system.return_from_editor",
+      "system.editor_close"
+    ]
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.jiuzhang.action.input.open_question",
+        "title": "打开题目编辑",
+        "description": "把题库里的一道题载入录题工作台；只读载入，未保存前不改动原题。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "question_id": {
+              "type": "string",
+              "description": "题目 id（q_ 开头）",
+              "maxLength": 80
+            }
+          },
+          "required": [
+            "question_id"
+          ],
+          "additionalProperties": false
+        },
+        "returns": "{question_id, editing}"
+      },
+      {
+        "id": "org.jiuzhang.action.process.clean_latex",
+        "title": "清洗当前表单",
+        "description": "对当前表单的题干、选项、答案与解析做 LaTeX 规范化；会改写未保存内容，必须在执行前确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{touched}"
+      },
+      {
+        "id": "org.jiuzhang.action.input.save_question",
+        "title": "保存当前题目",
+        "description": "把当前表单写入题库（新题新建，编辑态则更新原题）；写库且会回流刷新各端，必须在执行前确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{question_id, created}"
+      },
+      {
+        "id": "org.jiuzhang.action.process.create_variant",
+        "title": "派生变式题",
+        "description": "用当前表单另存一道新题（底座重新签发 id），绝不覆盖原题；写库，必须在执行前确认。",
+        "requires_user": true,
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{question_id, parent_id}"
+      }
+    ]
   }
 }

@@ -681,6 +681,91 @@
     }
   }
 
+  // ---------- 能力路由字典（军令 #20） ----------
+  function commandReject(source, message, code, text) {
+    respond(source, message.id, false, null, code, text);
+  }
+
+  function handoutSnapshot() {
+    return {
+      chars: state.markdown.length,
+      pages: pages.length,
+      size: state.size === "large" ? "大字" : "标准"
+    };
+  }
+
+  function handleCommandExecute(source, message) {
+    var payload = message.payload || {};
+    var commandId = typeof payload.command_id === "string" ? payload.command_id : "";
+    var context = payload.context && typeof payload.context === "object" ? payload.context : {};
+
+    if (commandId === "org.jiuzhang.action.process.render_handout") {
+      var unknown = Object.keys(context).filter(function (key) { return key !== "size"; });
+      if (unknown.length) {
+        return commandReject(source, message, "BAD_PARAMS", "不认识的参数：" + unknown.join("、"));
+      }
+      if (context.size !== undefined && ["标准", "大字"].indexOf(context.size) < 0) {
+        return commandReject(source, message, "BAD_PARAMS", "size 只接受 标准/大字");
+      }
+      if (context.size !== undefined) {
+        state.size = context.size === "大字" ? "large" : "normal";
+      }
+      reflow().then(function () {
+        respond(source, message.id, true, handoutSnapshot());
+      }, function (error) {
+        commandReject(source, message, "COMMAND_FAILED", "讲义重排失败：" + (error && error.message));
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.input.set_handout_markdown") {
+      if (typeof context.markdown !== "string" || !context.markdown.trim()) {
+        return commandReject(source, message, "BAD_PARAMS", "markdown 必须是非空字符串");
+      }
+      if (context.markdown.length > 20000) {
+        return commandReject(source, message, "BAD_PARAMS", "markdown 超过 20000 字上限");
+      }
+      loadMarkdown(context.markdown);
+      reflow().then(function () {
+        var snapshot = handoutSnapshot();
+        respond(source, message.id, true, {
+          chars: snapshot.chars,
+          pages: snapshot.pages
+        });
+      }, function (error) {
+        commandReject(source, message, "COMMAND_FAILED", "讲义重排失败：" + (error && error.message));
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.output.export_handout") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "打印命令不接受参数");
+      }
+      reflow().then(function () {
+        var snapshot = handoutSnapshot();
+        respond(source, message.id, true, {
+          chars: snapshot.chars,
+          pages: snapshot.pages,
+          printed: true
+        });
+        window.setTimeout(function () { window.print(); }, 0);
+      }, function () {
+        // 排版没走完也允许打印当前版面，与工具栏按钮同一口径
+        var snapshot = handoutSnapshot();
+        respond(source, message.id, true, {
+          chars: snapshot.chars,
+          pages: snapshot.pages,
+          printed: true
+        });
+        window.setTimeout(function () { window.print(); }, 0);
+      });
+      return;
+    }
+
+    commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+  }
+
   // ---------- 协议 ----------
   window.addEventListener("message", function (event) {
     var message = event.data;
@@ -709,6 +794,9 @@
     if (message.method === "plugin.deactivate") {
       root.hidden = true;
       return respond(event.source, message.id, true, { ready: false });
+    }
+    if (message.method === "command.execute") {
+      return handleCommandExecute(event.source, message);
     }
     respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
   });

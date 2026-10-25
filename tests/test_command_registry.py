@@ -316,5 +316,243 @@ class TemplatePluginTest(unittest.TestCase):
         self.assertIn('if (method === "command.execute")', script)
 
 
+class ParamsSchemaTest(unittest.TestCase):
+    """``params_schema`` 是封口的保守子集：军令 #20 第二部分。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def validate(self, schema) -> tuple[dict, list]:
+        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        command = {"id": "org.jiuzhang.action.data.probe", "title": "参数探针"}
+        if schema is not ...:
+            command["params_schema"] = schema
+        manifest["contributes"] = {"commands": [command]}
+        issues: list = []
+        info = validate_plugin(build_plugin_dir(self.root, manifest), manifest, issues)
+        return info, issues
+
+    def test_20_absent_schema_means_no_params_and_is_sealed(self) -> None:
+        info, issues = self.validate(...)
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            info["commands"][0]["params_schema"],
+            {"type": "object", "properties": {}, "additionalProperties": False},
+        )
+
+    def test_21_valid_schema_is_kept_and_sealed(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "关键词", "maxLength": 100},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "mode": {"type": "string", "enum": ["a", "b"]},
+            },
+            "required": ["query"],
+        }
+        info, issues = self.validate(schema)
+        self.assertEqual(issues, [])
+        kept = info["commands"][0]["params_schema"]
+        self.assertIs(kept["additionalProperties"], False)
+        self.assertEqual(kept["required"], ["query"])
+        self.assertEqual(kept["properties"]["mode"]["enum"], ["a", "b"])
+
+    def test_22_top_level_must_be_object(self) -> None:
+        info, issues = self.validate({"type": "string"})
+        self.assertEqual(info["commands"], [])
+        self.assertIn("顶层必须是 object", issues[0]["reason"])
+
+    def test_23_unknown_keyword_drops_the_whole_command(self) -> None:
+        info, issues = self.validate(
+            {"type": "object", "properties": {"q": {"type": "string", "pattern": "^q_"}}}
+        )
+        self.assertEqual(info["commands"], [])
+        self.assertIn("不支持的关键字", issues[0]["reason"])
+        self.assertIn("pattern", issues[0]["reason"])
+
+    def test_24_additional_properties_must_be_false(self) -> None:
+        info, issues = self.validate(
+            {"type": "object", "properties": {}, "additionalProperties": True}
+        )
+        self.assertEqual(info["commands"], [])
+        self.assertIn("additionalProperties", issues[0]["reason"])
+
+    def test_25_depth_properties_and_enum_are_capped(self) -> None:
+        deep = {"type": "string"}
+        for _ in range(commands.MAX_SCHEMA_DEPTH + 2):
+            deep = {"type": "object", "properties": {"next": deep}}
+        info, issues = self.validate(deep)
+        self.assertEqual(info["commands"], [])
+        self.assertIn("嵌套超过", issues[0]["reason"])
+
+        too_many = {
+            "type": "object",
+            "properties": {"p%02d" % i: {"type": "string"} for i in range(commands.MAX_SCHEMA_PROPERTIES + 1)},
+        }
+        info, issues = self.validate(too_many)
+        self.assertEqual(info["commands"], [])
+        self.assertIn("参数最多", issues[0]["reason"])
+
+        too_many_enum = {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["v%02d" % i for i in range(commands.MAX_SCHEMA_ENUM + 1)]}
+            },
+        }
+        info, issues = self.validate(too_many_enum)
+        self.assertEqual(info["commands"], [])
+        self.assertIn("enum", issues[0]["reason"])
+
+    def test_26_oversized_schema_is_dropped(self) -> None:
+        blob = "参" * commands.MAX_SCHEMA_TEXT
+        schema = {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [blob + str(i) for i in range(commands.MAX_SCHEMA_ENUM)],
+                }
+            },
+        }
+        info, issues = self.validate(schema)
+        self.assertEqual(info["commands"], [])
+        self.assertIn("4096 字节", issues[0]["reason"])
+
+    def test_27_required_must_point_at_declared_properties(self) -> None:
+        info, issues = self.validate(
+            {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["nope"]}
+        )
+        self.assertEqual(info["commands"], [])
+        self.assertIn("required", issues[0]["reason"])
+
+
+class OfficialPluginCommandsTest(unittest.TestCase):
+    """官方五个插件的能力声明必须与说明书 §2.15 一致。"""
+
+    EXPECTED = {
+        "org.jiuzhang.bank-engine": {
+            "version": "0.2.0",
+            "commands": [
+                "org.jiuzhang.action.data.bank_stats",
+                "org.jiuzhang.action.data.bank_search",
+                "org.jiuzhang.action.data.bank_topics",
+            ],
+            "requires_user": [],
+            "headless": True,
+        },
+        "org.jiuzhang.bank-ui": {
+            "version": "0.2.0",
+            "commands": [
+                "org.jiuzhang.action.view.filter_questions",
+                "org.jiuzhang.action.view.review_queue",
+                "org.jiuzhang.action.data.dedupe_scan",
+                "org.jiuzhang.action.data.dedupe_merge",
+            ],
+            "requires_user": ["org.jiuzhang.action.data.dedupe_merge"],
+            "headless": False,
+        },
+        "org.jiuzhang.paper-gen": {
+            "version": "0.4.0",
+            "commands": [
+                "org.jiuzhang.action.process.generate_paper",
+                "org.jiuzhang.action.output.export_paper",
+            ],
+            "requires_user": ["org.jiuzhang.action.output.export_paper"],
+            "headless": False,
+        },
+        "org.jiuzhang.handout": {
+            "version": "0.2.0",
+            "commands": [
+                "org.jiuzhang.action.process.render_handout",
+                "org.jiuzhang.action.input.set_handout_markdown",
+                "org.jiuzhang.action.output.export_handout",
+            ],
+            "requires_user": [
+                "org.jiuzhang.action.input.set_handout_markdown",
+                "org.jiuzhang.action.output.export_handout",
+            ],
+            "headless": False,
+        },
+        "org.jiuzhang.editor": {
+            "version": "0.5.0",
+            "commands": [
+                "org.jiuzhang.action.input.open_question",
+                "org.jiuzhang.action.process.clean_latex",
+                "org.jiuzhang.action.input.save_question",
+                "org.jiuzhang.action.process.create_variant",
+            ],
+            "requires_user": [
+                "org.jiuzhang.action.process.clean_latex",
+                "org.jiuzhang.action.input.save_question",
+                "org.jiuzhang.action.process.create_variant",
+            ],
+            "headless": False,
+        },
+    }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.manifests = {}
+        cls.info = {}
+        cls.missing_issues = []
+        for plugin_id in cls.EXPECTED:
+            path = ROOT / "plugins" / plugin_id / "plugin.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            cls.manifests[plugin_id] = manifest
+            issues: list = []
+            cls.info[plugin_id] = validate_plugin(path.parent, manifest, issues)
+            cls.missing_issues.extend(issues)
+
+    def test_28_manifests_are_valid_without_rejected_commands(self) -> None:
+        self.assertEqual(self.missing_issues, [])
+
+    def test_29_versions_and_headless_flags_match_the_manual(self) -> None:
+        for plugin_id, expected in self.EXPECTED.items():
+            with self.subTest(plugin=plugin_id):
+                self.assertEqual(self.manifests[plugin_id]["version"], expected["version"])
+                self.assertEqual(bool(self.manifests[plugin_id].get("headless")), expected["headless"])
+                self.assertGreaterEqual(self.manifests[plugin_id]["min_host_version"], "0.11.2")
+
+    def test_30_command_ids_and_risk_flags_match_the_manual(self) -> None:
+        for plugin_id, expected in self.EXPECTED.items():
+            with self.subTest(plugin=plugin_id):
+                commands_by_id = {item["id"]: item for item in self.info[plugin_id]["commands"]}
+                self.assertEqual(sorted(commands_by_id), sorted(expected["commands"]))
+                flagged = sorted(
+                    cid for cid, item in commands_by_id.items() if item["requires_user"]
+                )
+                self.assertEqual(flagged, sorted(expected["requires_user"]))
+
+    def test_31_every_command_documents_params_and_returns(self) -> None:
+        for plugin_id, expected in self.EXPECTED.items():
+            for command in self.info[plugin_id]["commands"]:
+                with self.subTest(plugin=plugin_id, command=command["id"]):
+                    self.assertTrue(command["description"], "description 不能为空")
+                    self.assertLessEqual(len(command["description"]), commands.MAX_COMMAND_DESCRIPTION)
+                    self.assertTrue(command["returns"], "returns 不能为空")
+                    self.assertLessEqual(len(command["returns"]), commands.MAX_COMMAND_RETURNS)
+                    schema = command["params_schema"]
+                    self.assertEqual(schema["type"], "object")
+                    self.assertIs(schema["additionalProperties"], False)
+
+    def test_32_iframe_plugins_implement_every_declared_command(self) -> None:
+        for plugin_id, expected in self.EXPECTED.items():
+            if expected["headless"]:
+                continue
+            script = (ROOT / "plugins" / plugin_id / "dist" / "plugin.js").read_text(encoding="utf-8")
+            for command_id in expected["commands"]:
+                with self.subTest(plugin=plugin_id, command=command_id):
+                    self.assertIn('commandId === "' + command_id + '"', script)
+
+    def test_33_headless_engine_is_executed_by_the_backend_not_relayed(self) -> None:
+        self.assertTrue(self.info["org.jiuzhang.bank-engine"]["headless"])
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        guard = stage.index('failWith("COMMAND_HEADLESS"')
+        lookup = stage.index("var entry = commandIndex[commandId]")
+        self.assertLess(lookup, guard, "先查字典再判 headless，未知命令仍回 COMMAND_NOT_FOUND")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -800,6 +800,7 @@
     renderPreview();
     toast(touched ? "已清洗 " + touched + " 处 LaTeX 写法" : "未发现需要清洗的写法");
     dock(touched ? "LaTeX 清洗完成：" + touched + " 处" : "LaTeX 无需清洗");
+    return touched;
   }
 
   // ---------- 保存 ----------
@@ -1049,9 +1050,9 @@
     if (!id) {
       setEditMode(null, "");
       state.editingFlags = [];
-      return;
+      return Promise.resolve(false);
     }
-    hostCall("bank.get", { id: id }).then(function (document) {
+    return hostCall("bank.get", { id: id }).then(function (document) {
       setEditMode(id, from);
       state.editingFlags = ((document.extensions || {})["org.jiuzhang.core-bank.migration"] || {}).flags || [];
       fillForm(document);
@@ -1064,9 +1065,11 @@
         : "已载入原题，改完点「保存并返回」";
       toast(hint);
       dock("录题工作台已载入 " + id + "（" + (state.editingFlags.length ? "待审 " + state.editingFlags.join("、") : "无标记") + "）");
+      return true;
     }, function (error) {
       toast("读题失败：" + error.message, "error");
       dock("载入待编辑题目失败：" + error.message);
+      return false;
     });
   }
 
@@ -1132,7 +1135,7 @@
     } catch (error) {
       toast(error.message, "error");
       dock("录题保存被拦下：" + error.message);
-      return;
+      return null;
     }
     var updating = Boolean(state.editingId);
     var payload = { question: question };
@@ -1141,14 +1144,16 @@
       if (!payload.question.clear_flags.length) delete payload.question.clear_flags;
     }
     setSaving(true);
-    hostCall(updating ? "bank.update" : "bank.create",
+    return hostCall(updating ? "bank.update" : "bank.create",
       updating ? Object.assign({ id: state.editingId }, payload) : payload
     ).then(function (result) {
       afterSaved(result, updating);
+      return result;
     }, function (error) {
       setSaving(false);
       toast("保存失败：" + error.message, "error");
       dock("录题保存失败：" + error.message);
+      return null;
     });
   }
 
@@ -1160,13 +1165,13 @@
     } catch (error) {
       toast(error.message, "error");
       dock("派生变式被拦下：" + error.message);
-      return;
+      return null;
     }
     // 派生变式一定是「新题」：去掉可能残留的 id 与审核清标，交底座重新签发。
     delete question.id;
     delete question.clear_flags;
     setSaving(true);
-    hostCall("bank.create", { question: question }).then(function (result) {
+    return hostCall("bank.create", { question: question }).then(function (result) {
       setSaving(false);
       var id = result && result.id;
       var parent = state.editingId || "";
@@ -1181,10 +1186,12 @@
       metricsEl.setAttribute("data-saved-id", id || "");
       toast(parent ? "已生成派生变式：" + id + "（原题 " + parent + " 未改动）" : "已生成新题：" + id);
       dock("派生变式已入库（" + id + "）" + (parent ? "，源自 " + parent + " 且原题保持不变" : ""));
+      return { question_id: id, parent_id: parent };
     }, function (error) {
       setSaving(false);
       toast("派生失败：" + error.message, "error");
       dock("另存为派生变式失败：" + error.message);
+      return null;
     });
   }
 
@@ -1434,6 +1441,97 @@
     toast("表单已清空");
   }
 
+  // ---------- 能力路由字典（军令 #20） ----------
+  var COMMAND_QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
+
+  function commandReject(source, message, code, text) {
+    respond(source, message.id, false, null, code, text);
+  }
+
+  function handleCommandExecute(source, message) {
+    var payload = message.payload || {};
+    var commandId = typeof payload.command_id === "string" ? payload.command_id : "";
+    var context = payload.context && typeof payload.context === "object" ? payload.context : {};
+
+    if (commandId === "org.jiuzhang.action.input.open_question") {
+      var unknown = Object.keys(context).filter(function (key) { return key !== "question_id"; });
+      if (unknown.length) {
+        return commandReject(source, message, "BAD_PARAMS", "不认识的参数：" + unknown.join("、"));
+      }
+      if (typeof context.question_id !== "string" || !COMMAND_QUESTION_ID_RE.test(context.question_id)) {
+        return commandReject(source, message, "BAD_PARAMS", "question_id 必须是合法的题目 id（q_ 开头）");
+      }
+      loadForEdit(context.question_id, "command").then(function (loaded) {
+        if (!loaded) {
+          commandReject(source, message, "COMMAND_FAILED", "没能载入题目 " + context.question_id);
+          return;
+        }
+        respond(source, message.id, true, {
+          question_id: context.question_id,
+          editing: true
+        });
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.process.clean_latex") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "清洗命令不接受参数");
+      }
+      var touched = cleanAll();
+      if (touched > 0) {
+        dirtySinceSave = true;
+        queueDraftSave();
+      }
+      return respond(source, message.id, true, { touched: touched });
+    }
+
+    if (commandId === "org.jiuzhang.action.input.save_question") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "保存命令不接受参数");
+      }
+      var updating = Boolean(state.editingId);
+      var saving = save();
+      if (!saving || typeof saving.then !== "function") {
+        return commandReject(source, message, "COMMAND_FAILED", "表单校验未通过，未写入题库");
+      }
+      saving.then(function (result) {
+        if (!result) {
+          commandReject(source, message, "COMMAND_FAILED", "保存未完成，请查看工作台提示");
+          return;
+        }
+        respond(source, message.id, true, {
+          question_id: result.id || state.editingId || "",
+          created: !updating
+        });
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.process.create_variant") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "派生命令不接受参数");
+      }
+      var variant = saveAsVariant();
+      if (!variant || typeof variant.then !== "function") {
+        return commandReject(source, message, "COMMAND_FAILED", "表单校验未通过，未派生新题");
+      }
+      variant.then(function (result) {
+        if (!result) {
+          commandReject(source, message, "COMMAND_FAILED", "派生未完成，请查看工作台提示");
+          return;
+        }
+        respond(source, message.id, true, {
+          question_id: result.question_id || "",
+          parent_id: result.parent_id || ""
+        });
+      });
+      return;
+    }
+
+    commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+  }
+
   // ---------- 协议 ----------
   window.addEventListener("message", function (event) {
     var message = event.data;
@@ -1501,6 +1599,9 @@
       flushDraft();
       root.hidden = true;
       return respond(event.source, message.id, true, { ready: false });
+    }
+    if (message.method === "command.execute") {
+      return handleCommandExecute(event.source, message);
     }
     respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
   });

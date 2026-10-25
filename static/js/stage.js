@@ -487,7 +487,11 @@
           title: typeof command.title === "string" ? command.title : command.id,
           plugin_id: plugin.id,
           plugin_name: plugin.name || plugin.id,
-          requires_user: command.requires_user === true
+          requires_user: command.requires_user === true,
+          // 军令 #20：参数与返回值说明是命令契约的一部分，查表的人要能直接看到。
+          description: typeof command.description === "string" ? command.description : "",
+          params_schema: plainObject(command.params_schema),
+          returns: typeof command.returns === "string" ? command.returns : ""
         };
       });
     });
@@ -503,7 +507,10 @@
         title: item.title,
         plugin_id: item.plugin_id,
         plugin_name: item.plugin_name,
-        requires_user: item.requires_user === true
+        requires_user: item.requires_user === true,
+        description: item.description,
+        params_schema: item.params_schema,
+        returns: item.returns
       };
     });
   }
@@ -672,6 +679,12 @@
 
   /** 真正的转发：开页/唤醒 → 按目标排队 → 发请求；pending 与结果体积都在这层。 */
   function dispatchCommand(caller, entry, plugin, commandId, context, trace, done, failWith) {
+    if (plugin.headless === true) {
+      // 无界面插件没有 iframe 可投递；它的数据命令由底座在 Host 侧执行（军令 #20）。
+      failWith("COMMAND_HEADLESS",
+        "「" + entry.plugin_name + "」是无界面插件，数据命令由底座直接执行，不经 iframe 转发");
+      return;
+    }
     var handle = commandTarget(plugin.id);
     var ready;
     if (!handle) {

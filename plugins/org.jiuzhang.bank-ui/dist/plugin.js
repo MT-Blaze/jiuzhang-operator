@@ -645,7 +645,7 @@
     // 与 loadQuestions 同款令牌：连点翻页或回流刷新并发时，慢响应不许覆盖新结果
     var token = ++reviewToken;
     renderAll();
-    hostCall("bank.review", {
+    return hostCall("bank.review", {
       flag: state.reviewFlag,
       page: state.reviewPage,
       page_size: REVIEW_PAGE_SIZE
@@ -771,11 +771,11 @@
 
   function loadDedupe() {
     state.view = "dedupe";
-    if (state.dupeLoading || state.dupeBusy) return;
+    if (state.dupeLoading || state.dupeBusy) return null;
     state.dupeLoading = true;
     state.dupeError = "";
     renderAll();
-    hostCall("bank.dedupe_scan", {}).then(function (result) {
+    return hostCall("bank.dedupe_scan", {}).then(function (result) {
       state.dupeQueue = (result && result.groups) || [];
       state.dupeScanned = (result && result.scanned) || 0;
       state.dupeRedundant = (result && result.redundant) || 0;
@@ -1119,7 +1119,7 @@
       page_size: state.pageSize
     };
     // 视图插件自己没有题库：永远读「当前活跃 provider」的库，不拿页签 id 猜库。
-    hostCall("bank.active_list", params)
+    return hostCall("bank.active_list", params)
       .then(function (result) {
         if (token !== loadToken) return;
         state.items = (result && result.items) || [];
@@ -1197,6 +1197,178 @@
     }, 2200);
   }
 
+  // ---------- 能力路由字典（军令 #20） ----------
+  var FILTER_SETS = {
+    grade: ["全部", "高一", "高二", "高三"],
+    difficulty: ["全部", "L1", "L2", "L3", "L4"],
+    type: ["全部", "single_choice", "multiple_choice", "fill_blank", "solution"]
+  };
+  var QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
+
+  function commandReject(source, message, code, text) {
+    respond(source, message.id, false, null, code, text);
+  }
+
+  function rejectUnknown(context, allowed) {
+    var unknown = Object.keys(context).filter(function (key) {
+      return allowed.indexOf(key) < 0;
+    });
+    return unknown.length ? "不认识的参数：" + unknown.join("、") : "";
+  }
+
+  function filterFromContext(context) {
+    var result = { ok: true, values: {} };
+    var unknown = rejectUnknown(context, ["grade", "difficulty", "type", "search"]);
+    if (unknown) {
+      result.ok = false;
+      result.message = unknown;
+      return result;
+    }
+    Object.keys(FILTER_SETS).forEach(function (key) {
+      if (context[key] === undefined) return;
+      if (typeof context[key] !== "string" || FILTER_SETS[key].indexOf(context[key]) < 0) {
+        result.ok = false;
+        result.message = key + " 只接受 " + FILTER_SETS[key].join("/");
+        return;
+      }
+      result.values[key] = context[key];
+    });
+    if (context.search !== undefined
+        && (typeof context.search !== "string" || context.search.length > 100)) {
+      result.ok = false;
+      result.message = "search 必须是不超过 100 字的字符串";
+    }
+    return result;
+  }
+
+  function handleCommandExecute(source, message) {
+    var payload = message.payload || {};
+    var commandId = typeof payload.command_id === "string" ? payload.command_id : "";
+    var context = payload.context && typeof payload.context === "object" ? payload.context : {};
+
+    if (commandId === "org.jiuzhang.action.view.filter_questions") {
+      var parsed = filterFromContext(context);
+      if (!parsed.ok) return commandReject(source, message, "BAD_PARAMS", parsed.message);
+      Object.keys(parsed.values).forEach(function (key) { state[key] = parsed.values[key]; });
+      if (typeof context.search === "string") state.search = context.search.trim().slice(0, 100);
+      state.view = "list";
+      state.page = 1;
+      state.showSolution = false;
+      var reload = loadQuestions();
+      if (!reload || typeof reload.then !== "function") {
+        return commandReject(source, message, "COMMAND_BUSY", "题库正在加载，请稍后再试");
+      }
+      reload.then(function () {
+        respond(source, message.id, true, {
+          total: state.total,
+          filters: {
+            grade: state.grade,
+            difficulty: state.difficulty,
+            type: state.type,
+            search: state.search
+          }
+        });
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.view.review_queue") {
+      var reviewUnknown = rejectUnknown(context, ["flag"]);
+      if (reviewUnknown) {
+        return commandReject(source, message, "BAD_PARAMS", reviewUnknown);
+      }
+      if (context.flag !== undefined && (typeof context.flag !== "string" || context.flag.length > 40)) {
+        return commandReject(source, message, "BAD_PARAMS", "flag 必须是不超过 40 字的字符串");
+      }
+      state.reviewFlag = typeof context.flag === "string" ? context.flag.trim() : "";
+      var reviewCall = loadReview(1);
+      if (!reviewCall || typeof reviewCall.then !== "function") {
+        return commandReject(source, message, "COMMAND_BUSY", "待审队列正在加载，请稍后再试");
+      }
+      reviewCall.then(function () {
+        respond(source, message.id, true, {
+          total: state.reviewTotal,
+          pages: state.reviewPages,
+          flag: state.reviewFlag,
+          flags: state.reviewSummary.flags || []
+        });
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.data.dedupe_scan") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "查重扫描不接受参数");
+      }
+      var scanCall = loadDedupe();
+      if (!scanCall || typeof scanCall.then !== "function") {
+        return commandReject(source, message, "COMMAND_BUSY", "查重正在运行，请稍后再试");
+      }
+      scanCall.then(function () {
+        respond(source, message.id, true, {
+          scanned: state.dupeScanned,
+          queued: state.dupeQueue.length,
+          redundant: state.dupeRedundant,
+          truncated: state.dupeTruncated,
+          groups: state.dupeQueue.slice(0, 5).map(function (group) {
+            return { ids: (group.ids || []).slice(0, 10) };
+          })
+        });
+      });
+      return;
+    }
+
+    if (commandId === "org.jiuzhang.action.data.dedupe_merge") {
+      var mergeUnknown = rejectUnknown(context, ["primary_id", "copy_ids"]);
+      if (mergeUnknown) {
+        return commandReject(source, message, "BAD_PARAMS", mergeUnknown);
+      }
+      var primary = typeof context.primary_id === "string" ? context.primary_id : "";
+      var copies = Array.isArray(context.copy_ids) ? context.copy_ids : [];
+      var validCopies = copies.filter(function (item) {
+        return typeof item === "string" && QUESTION_ID_RE.test(item);
+      });
+      if (!QUESTION_ID_RE.test(primary) || !validCopies.length || validCopies.length !== copies.length) {
+        return commandReject(source, message, "BAD_PARAMS",
+          "primary_id 与 copy_ids 必须是合法的题目 id（q_ 开头）");
+      }
+      if (validCopies.length > 20) {
+        return commandReject(source, message, "BAD_PARAMS", "一次最多合并 20 条副本");
+      }
+      if (validCopies.indexOf(primary) >= 0) {
+        return commandReject(source, message, "BAD_PARAMS", "主记录不能同时出现在副本里");
+      }
+      if (state.dupeBusy) {
+        return commandReject(source, message, "COMMAND_BUSY", "上一次合并没有完成，请稍后再试");
+      }
+      state.dupeBusy = true;
+      hostCall("bank.dedupe_merge", { primary_id: primary, copy_ids: validCopies })
+        .then(function (result) {
+          state.dupeBusy = false;
+          state.dupeQueue = state.dupeQueue.filter(function (group) {
+            return (group.ids || []).indexOf(primary) < 0;
+          });
+          state.dupePrimary = "";
+          state.dupeMerged += validCopies.length;
+          state.dupeScanned = Math.max(0, state.dupeScanned - validCopies.length);
+          state.dupeRedundant = Math.max(0, state.dupeRedundant - validCopies.length);
+          renderAll();
+          respond(source, message.id, true, result || {
+            primary_id: primary,
+            merged: validCopies,
+            removed: validCopies
+          });
+        }, function (error) {
+          state.dupeBusy = false;
+          renderAll();
+          commandReject(source, message, "COMMAND_FAILED", "合并失败：" + error.message);
+        });
+      return;
+    }
+
+    commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+  }
+
   // ---------- 协议 ----------
   window.addEventListener("message", function (event) {
     var message = event.data;
@@ -1247,6 +1419,9 @@
         html: '<article class="cb-question">' + escapeHtml(question.stem || "") + "</article>",
         height: 120
       });
+    }
+    if (message.method === "command.execute") {
+      return handleCommandExecute(event.source, message);
     }
     respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
   });

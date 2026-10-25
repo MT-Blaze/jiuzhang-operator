@@ -1278,6 +1278,72 @@
 
   window.addEventListener("beforeprint", completeForPrint);
 
+  // ---------- 能力路由字典（军令 #20） ----------
+  function commandReject(source, message, code, text) {
+    respond(source, message.id, false, null, code, text);
+  }
+
+  function paperSnapshot() {
+    return {
+      questions: state.items.length,
+      pages: doc.pages.length,
+      answers: state.showAnswers ? "显示" : "隐藏",
+      density: state.density === "compact" ? "紧凑" : "标准",
+      title: state.title
+    };
+  }
+
+  function handleCommandExecute(source, message) {
+    var payload = message.payload || {};
+    var commandId = typeof payload.command_id === "string" ? payload.command_id : "";
+    var context = payload.context && typeof payload.context === "object" ? payload.context : {};
+
+    if (commandId === "org.jiuzhang.action.process.generate_paper") {
+      var unknown = Object.keys(context).filter(function (key) {
+        return ["answers", "density", "title"].indexOf(key) < 0;
+      });
+      if (unknown.length) {
+        return commandReject(source, message, "BAD_PARAMS", "不认识的参数：" + unknown.join("、"));
+      }
+      if (context.answers !== undefined && ["显示", "隐藏"].indexOf(context.answers) < 0) {
+        return commandReject(source, message, "BAD_PARAMS", "answers 只接受 显示/隐藏");
+      }
+      if (context.density !== undefined && ["标准", "紧凑"].indexOf(context.density) < 0) {
+        return commandReject(source, message, "BAD_PARAMS", "density 只接受 标准/紧凑");
+      }
+      if (context.title !== undefined && (typeof context.title !== "string" || context.title.length > 48)) {
+        return commandReject(source, message, "BAD_PARAMS", "title 必须是不超过 48 字的字符串");
+      }
+      applyParams({ answers: context.answers, density: context.density }, "command");
+      if (typeof context.title === "string") {
+        state.title = context.title.trim().slice(0, 48) || "数学练习卷";
+        if (titleInput) titleInput.value = state.title;
+        doc.pages.forEach(function (record) { record.title.textContent = state.title; });
+      }
+      reflow();
+      completeForPrint();
+      return respond(source, message.id, true, paperSnapshot());
+    }
+
+    if (commandId === "org.jiuzhang.action.output.export_paper") {
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "打印命令不接受参数");
+      }
+      completeForPrint();
+      var snapshot = paperSnapshot();
+      respond(source, message.id, true, {
+        questions: snapshot.questions,
+        pages: snapshot.pages,
+        printed: true
+      });
+      // 先回执再调起系统打印框：打印对话框会阻塞，不能把宿主回包吊在里面。
+      window.setTimeout(function () { window.print(); }, 0);
+      return;
+    }
+
+    commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+  }
+
   // ---------- 协议 ----------
   window.addEventListener("message", function (event) {
     var message = event.data;
@@ -1321,6 +1387,9 @@
         html: '<article class="pg-question">' + escapeHtml(question.stem || "") + "</article>",
         height: 120
       });
+    }
+    if (message.method === "command.execute") {
+      return handleCommandExecute(event.source, message);
     }
     respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
   });

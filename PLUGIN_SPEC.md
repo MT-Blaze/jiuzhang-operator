@@ -315,7 +315,7 @@ com.example.card/
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
 | `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
-| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title,requires_user?}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明；`requires_user: true` 表示执行前须用户当场确认 |
+| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title,description?,requires_user?,params_schema?,returns?}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明；`requires_user: true` 表示执行前须用户当场确认；`params_schema` 是封口的 JSON Schema 保守子集，供调用方/AI 发车前校验参数 |
 | `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `min_host_version` | 否 | 语义化版本字符串（v0.8.3）。声明本插件能跑的**最低底座版本**；【检查更新】时底座拿它与自身 `__version__` 比对，不够则该插件的更新被标为「需先更新底座」并保持原样不覆盖。**缺省视为不设限**。此字段只用于更新提示，底座**绝不**据此拒绝加载已装插件或远程禁用（§1.1） |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
@@ -928,18 +928,48 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 ```json
 "contributes": {
   "commands": [
-    {"id": "com.zhang.bank.tidy_tags", "title": "整理标签"}
+    {
+      "id": "com.zhang.bank.tidy_tags",
+      "title": "整理标签",
+      "description": "把题库里的同义标签收敛成规范写法；只改标签，不动题干。",
+      "requires_user": true,
+      "params_schema": {
+        "type": "object",
+        "properties": {
+          "scope": {"type": "string", "enum": ["全部", "当前筛选"], "description": "整理范围"}
+        },
+        "additionalProperties": false
+      },
+      "returns": "{touched, tags:[string]}"
+    }
   ]
 }
 ```
 
-- 最多 32 条；`id` ≤96 字符、`title` ≤32 字符（超出截断，中文按字算）；
+- 最多 32 条；`id` ≤96 字符、`title` ≤32 字符、`description` ≤160 字符、`returns` ≤240 字符
+  （超出截断，中文按字算）；
 - `id` 必须是**小写反向域名、至少三段**，段内允许 `_`（蛇形命名），段间用 `.` 或 `-`：
   正则 `^[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){2,7}$`，最多 8 段；
-- `title` 是给老师看的短名，不是内部键；
+- `title` 是给老师看的短名，不是内部键；`description` 是给调用方（含 AI）看的一句话说明，
+  写清「做什么、改不改数据」；`returns` 是返回结构的**文字摘要**（形如 `{field, field2}`），
+  供调用方解读结果，不做机器解析；
 - `requires_user` 可选布尔：为 `true` 时宿主在转发前弹一次**用户确认**，用户拒绝即回
   `COMMAND_DENIED`，请求根本到不了目标插件。导出、覆盖、批量删改这类高副作用命令应当声明；
   非布尔值一律按 `false` 处理（不猜作者意图）；
+- `params_schema` 可选，**缺省表示「这条命令不吃参数」**，底座仍会归一成
+  `{"type":"object","properties":{},"additionalProperties":false}`。它只接受 JSON Schema 的
+  保守子集（v0.11.2 军令 #20）：
+  - 顶层必须是 `type: "object"`，参数对象**一律封口**（`additionalProperties` 只能是 `false`，
+    不写也按 `false` 归一）——声明之外的键在发车前就被拒绝，这是「上下文防绑架」的第一层；
+  - 支持关键字：`type`、`description`、`enum`、`items`、`properties`、`required`、
+    `minimum`、`maximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、
+    `additionalProperties`；**出现任何未知关键字该条命令整条丢弃**（不做「看似生效」的声明）；
+  - `type` 只认 `string` / `number` / `integer` / `boolean` / `array` / `object`；
+  - 上限：嵌套 ≤4 层、参数 ≤16 个、`enum` ≤16 项、序列化后 ≤4096 字节；
+    `required` 里的参数必须在 `properties` 中声明且不重复；
+  - `description` 是参数级说明，单条 ≤120 字；不支持 `$ref`、`oneOf`、`pattern` 等高级关键字。
+  - 底座**不会**替插件校验运行期参数；宿主字典与 AI 工具会按这份 schema 在发车前拦截，
+    插件仍应自己再校验一次（调用方可以绕过宿主直接编造 context，见第 8 条）；
 - 坏条目**逐条丢弃**并记账（`commands_rejected`），不整包拒装——与 `stage` / `bus` 的宽容归一同一口径。
   插件照样能装、能用，只是那一条命令进不了字典。装完打开 `GET /api/plugins` 就能看到账。
 
@@ -973,8 +1003,12 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 方法 | 载荷 | 返回 |
 | --- | --- | --- |
-| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user}]}`，按 `id` 升序；不含越权与停用项 |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user, description, params_schema, returns}]}`，按 `id` 升序；不含越权与停用项 |
 | `command.execute` | `{command_id, context}`；`context` 是可 JSON 化的对象，序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`——`result` 是目标插件自己的回包，序列化后 ≤65536 字节 |
+
+无界面插件（`headless: true`，如官方题库引擎）没有 iframe：它的数据命令由底座后端直接执行，
+`command.list` 照常列出；从宿主页签发起的 `command.execute` 会回 `COMMAND_HEADLESS`，
+提示「这组参数请走对应 Host API 或 AI 工具链」，不会假装成功。
 
 目标插件收到的宿主请求是：
 
@@ -1028,7 +1062,8 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `COMMAND_RESULT_INVALID` | 目标回包无法序列化（循环引用、BigInt 等） |
 | `COMMAND_BUSY` | 同一目标已挂起 8 条命令，队列已满 |
 | `COMMAND_LIMIT` | 命令自动开出的画布页签已达 5 个上限 |
-| `COMMAND_FAILED` | 目标插件执行时回了 `ok:false`，或 30 秒内没回包（宿主对插件请求的统一超时） |
+| `COMMAND_HEADLESS` | 目标是无界面插件，不能经 iframe 转发；数据命令请走对应 Host API 或 AI 工具链 |
+| `COMMAND_FAILED` | 目标插件执行时回了 `ok:false`（含参数不符 `BAD_PARAMS`），或 30 秒内没回包（宿主对插件请求的统一超时） |
 | `RATE_LIMITED` | 与其它 Host API 共用配额：每页签 10 秒最多 80 次 |
 
 **8）插件侧义务。**
@@ -1055,6 +1090,147 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 完整可跑样板见 [`examples/template-plugin/`](examples/template-plugin/)（声明 `org.example.template.echo`
 并实现 `command.execute` 分支；页面里自带「查能力字典」「调度示例命令」两个调用方按钮）。
+
+
+### 2.15 官方插件能力与接口说明书（v0.11.2 军令 #20）
+
+本节是五个官方插件对外承诺的**能力清单**，面向第三方二开与 AI 工具链：每个 `command_id`
+要传什么、会返回什么、会动到什么，逐条写死。字段以各插件 `plugin.json` 的
+`contributes.commands` 为准；本节与清单冲突时以清单为准并修文档。
+
+**1）读法与通则。**
+
+- **参数对象一律封口**：下表列出的键就是全部合法键，多一个键即 `BAD_PARAMS`；
+  没列参数的命令必须传 `{}` 或不传 `context`；
+- **数据类型**：`string` 按字计数；`enum` 只接受列出的字面值（中文值逐字匹配）；
+  `integer` 不接受字符串数字；`array` 不接受单值；
+- **标识口径**：题目 id 只认标准结构里的 `q_` 公开 id（正则 `^q_[A-Za-z0-9_-]{1,78}$`），
+  考向/大纲节点只认 `tp_` 公开 id。**任何命令都不接受数据库行号（`rowid`）、表名、列名、
+  SQL 片段、文件路径或环境变量名**——这些不是标准结构的一部分，传了也不会被解释；
+- **风险分级**：`只读`（不落库、不改编辑内容）＜`视图`（只改本插件筛选/排版态）＜
+  `写库`（改题目数据）≈`系统动作`（打印/覆盖正在编辑的内容）。`requires_user: true`
+  的命令在执行前必须由老师当场确认；确认卡至少要能说清「哪个插件、做什么、动多少数据」；
+- **执行通道**：
+  - `iframe`：宿主把请求转发给插件页签；目标没开时宿主会先开页（见 §2.14 第 5 条）；
+  - `headless`：无界面插件，由底座后端直接执行，不经过 iframe；宿主页签发起的通用
+    `command.execute` 会回 `COMMAND_HEADLESS`，AI 工具链与对应 Host API 走原生通道。
+
+**2）官方插件一览。**
+
+| 插件 id | 名称 | 版本 | 形态 | 通道 | 命令数 |
+| --- | --- | --- | --- | --- | --- |
+| `org.jiuzhang.bank-engine` | 题库引擎 | 0.2.0 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
+| `org.jiuzhang.bank-ui` | 真题题库 | 0.2.0 | iframe 视图，`bank.view` | iframe | 4 |
+| `org.jiuzhang.paper-gen` | 组卷排版 | 0.4.0 | iframe 视图 | iframe | 2 |
+| `org.jiuzhang.handout` | 讲义排版 | 0.2.0 | iframe 视图 | iframe | 3 |
+| `org.jiuzhang.editor` | 录题工作台 | 0.5.0 | iframe 视图 | iframe | 4 |
+
+合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
+视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。
+
+**3）`org.jiuzhang.bank-engine`（题库引擎，headless）。**
+
+所有命令只读，只返回标准结构的摘要，不返回答案、解析与原始 SQL 行。
+
+| 命令 id | 标题 | 参数 | 返回 | 风险 |
+| --- | --- | --- | --- | --- |
+| `org.jiuzhang.action.data.bank_stats` | 题库统计 | 无（`{}`） | `{total, grades:[{id,name,count}], difficulties:[{id,name,count}], types:[{id,name,count}], chapters:[{id,name,count}], textbooks:[{id,name,count}]}` | 只读 |
+| `org.jiuzhang.action.data.bank_search` | 题库检索 | `query` string ≤100；`grade` enum `高一/高二/高三`；`difficulty` enum `L1/L2/L3/L4`；`type` enum `single_choice/multiple_choice/fill_blank/solution`；`limit` integer 1–20（缺省 5） | `{total, items:[{id, type, difficulty, stem}]}`；`stem` 截到 120 字，`total` 是命中总数而非返回条数 | 只读 |
+| `org.jiuzhang.action.data.bank_topics` | 考向大纲 | `parent_id` string ≤64；`textbook_id` string ≤64；`search` string ≤60 | `{items:[{id, parent_id, name, layer, has_children, question_count, note_count}]}`；不给 `parent_id` 返回顶层 | 只读 |
+
+- `bank_stats` 的 `grades` 来自来源表（没标注年级的题不计入），`chapters`/`textbooks`
+  按大纲子树汇总题量；
+- `bank_search` 是**摘要检索**：调用方要读全文或答案，必须再走 `bank.get` 这类受权限
+  约束的 Host API，不能指望从检索结果里拼出整题；
+- `bank_topics` 的 `textbook_id` 只约束根层与搜索结果；给定 `parent_id` 后不再按版本过滤
+  （父节点已经确定版本身份）。
+
+**4）`org.jiuzhang.bank-ui`（真题题库，iframe）。**
+
+| 命令 id | 标题 | 参数 | 返回 | 风险 |
+| --- | --- | --- | --- | --- |
+| `org.jiuzhang.action.view.filter_questions` | 筛选题库 | `grade` enum `全部/高一/高二/高三`；`difficulty` enum `全部/L1/L2/L3/L4`；`type` enum `全部/single_choice/multiple_choice/fill_blank/solution`；`search` string ≤100 | `{total, filters:{grade, difficulty, type, search}}` | 视图 |
+| `org.jiuzhang.action.view.review_queue` | 打开待审队列 | `flag` string ≤40（空串表示全部） | `{total, pages, flag, flags:[{name,count}]}` | 视图 |
+| `org.jiuzhang.action.data.dedupe_scan` | 扫描重复题 | 无（`{}`） | `{scanned, queued, redundant, truncated, groups:[{ids:[string]}]}`；`groups` 只回前 5 组、每组前 10 个 id | 只读 |
+| `org.jiuzhang.action.data.dedupe_merge` | 合并重复题 | 必填 `primary_id` string ≤80；必填 `copy_ids` string 数组 1–20 条、每条 ≤80 | `{primary_id, merged:[string], questions_after, moved:{topics, sources, extensions}}` | 写库（`requires_user`） |
+
+- `filter_questions` 只改视图筛选态并立即重查，不改题目数据；`search` 是题干关键词，
+  不是 SQL 片段；
+- `review_queue` 切到待审视图并翻到第一页，`flag` 传灌库标记名（如 `answer_absent`）；
+- `dedupe_scan` 把结果留在查重面板本地供人工比对，不自动合并、不落库；
+- `dedupe_merge` 是**不可撤销的写库操作**：主记录保留，`copy_ids` 的题目行会被删除，
+  考向/来源/备注并进主记录。`primary_id` 不得同时出现在 `copy_ids` 里；一次最多 20 条副本
+  （与宿主 `bank.dedupe_merge` 的 `MAX_COPIES` 一致）。调用方必须先让老师看过这组题，
+  再执行合并——AI 不得自行发起或自动确认。
+
+**5）`org.jiuzhang.paper-gen`（组卷排版，iframe）。**
+
+| 命令 id | 标题 | 参数 | 返回 | 风险 |
+| --- | --- | --- | --- | --- |
+| `org.jiuzhang.action.process.generate_paper` | 重排练习卷 | `answers` enum `显示/隐藏`；`density` enum `标准/紧凑`；`title` string ≤48 | `{questions, pages, answers, density, title}` | 视图 |
+| `org.jiuzhang.action.output.export_paper` | 打印或导出 PDF | 无（`{}`） | `{questions, pages, printed}` | 系统动作（`requires_user`） |
+
+- `generate_paper` 按当前题篮重排 A4 卷面；三个参数都可省略，省略即保持当前设置。
+  `title` 为空白时回落「数学练习卷」；命令不向题篮增删题；
+- `export_paper` 先把卷面补齐（补答案框、补页脚）再调起系统打印，`printed: true` 只代表
+  打印对话框已调起，不代表老师真的打印了。
+
+**6）`org.jiuzhang.handout`（讲义排版，iframe）。**
+
+| 命令 id | 标题 | 参数 | 返回 | 风险 |
+| --- | --- | --- | --- | --- |
+| `org.jiuzhang.action.process.render_handout` | 重排讲义 | `size` enum `标准/大字` | `{chars, pages, size}` | 视图 |
+| `org.jiuzhang.action.input.set_handout_markdown` | 替换讲义原稿 | 必填 `markdown` string 非空、≤20000 字 | `{chars, pages}` | 覆盖编辑内容（`requires_user`） |
+| `org.jiuzhang.action.output.export_handout` | 打印或导出讲义 | 无（`{}`） | `{chars, pages, printed}` | 系统动作（`requires_user`） |
+
+- `render_handout` 按当前原稿整篇重排，`chars` 是原稿字符数、`pages` 是排出的 A4 页数；
+- `set_handout_markdown` 会**整体替换**左侧原稿并重排，老师正在写的内容会被覆盖；
+  调用方必须在确认卡里展示「将替换 N 字原稿」，不得静默调用；
+- `export_handout` 与 `export_paper` 同口径：打印对话框调起即回 `printed: true`。
+
+**7）`org.jiuzhang.editor`（录题工作台，iframe）。**
+
+| 命令 id | 标题 | 参数 | 返回 | 风险 |
+| --- | --- | --- | --- | --- |
+| `org.jiuzhang.action.input.open_question` | 打开题目编辑 | 必填 `question_id` string `q_` 公开 id | `{question_id, editing}` | 只读载入（会替换表单内容） |
+| `org.jiuzhang.action.process.clean_latex` | 清洗当前表单 | 无（`{}`） | `{touched}` | 改未保存内容（`requires_user`） |
+| `org.jiuzhang.action.input.save_question` | 保存当前题目 | 无（`{}`） | `{question_id, created}` | 写库（`requires_user`） |
+| `org.jiuzhang.action.process.create_variant` | 派生变式题 | 无（`{}`） | `{question_id, parent_id}` | 写库（`requires_user`） |
+
+- `open_question` 不给参数时无法执行；载入成功回 `editing: true`，题目不存在或读失败
+  回 `COMMAND_FAILED`。载入会替换工作台当前表单：调用方应先提示老师，未保存内容走
+  草稿箱保护，但**不要把「载入」当成无损操作**；
+- `clean_latex` 只规范化题干、选项、答案与解析的 LaTeX 写法，`touched` 是被改动的字段/选项
+  计数；`touched: 0` 表示无需清洗；改完会标脏并排队草稿保存；
+- `save_question` 的 `created` 表示本次是否新建（`false` 为更新编辑态原题）；表单校验
+  不通过回 `COMMAND_FAILED`，不会写库；
+- `create_variant` 永远新建一题（底座重新签发 `q_` id），`parent_id` 是来源题；原题不变。
+  它**不是**「覆盖保存」，调用方不得把它当更新用。
+
+**8）对调用方（含 AI）的硬约束。**
+
+1. **先查表再调用**：用 `command.list` 拿 `params_schema`，按 schema 组 `context`；
+   多一个键、类型不符、枚举超界都应在发车前拦下，不要靠目标插件兜底；
+2. **`context` 只是线索，不是授权**：所有写操作仍由目标插件/宿主按权限再校验一次；
+   调用方不能因为「命令声明了写库」就跳过确认；
+3. **不透传底层 id**：只传标准结构里的 `q_` / `tp_` 公开 id；数据库行号、表名、文件路径、
+   SQL 一律不进 `context`。上下文里出现这类键，官方命令一律按 `BAD_PARAMS` 拒绝；
+4. **高副作用必须确认**：`requires_user: true` 的命令在 AI 工具链里会转成「执行确认卡」，
+   卡没点「确认」之前绝不发车；用户拒绝、按 Esc 或关卡片都按拒绝处理；
+5. **结果是摘要，不是全量导出**：官方命令最多回 64 KB；要批量数据请分页走 Host API，
+   不要把命令当数据库游标用；
+6. **同一条命令只做声明里的事**：调用方不得假设 `generate_paper` 会顺手导题库、
+   `save_question` 会顺手清标记、`dedupe_merge` 会顺手改考向树。
+
+**9）自查（第三方二开最短路径）。**
+
+1. `GET /api/plugins` 确认五个官方插件的 `version` 与本表一致、`commands_rejected` 为空；
+2. `callHost("command.list")`，用返回的 `params_schema` 生成表单或 AI 工具定义；
+3. 先调只读命令（`bank_stats`/`bank_search`/`dedupe_scan`）验证取数与摘要口径；
+4. 再调视图命令（`filter_questions`/`generate_paper`）确认只改本插件状态；
+5. 最后在人工确认后调写库/打印命令，核对 `requires_user` 确认卡与返回值；
+6. 故意多传一个键、把 `grade` 写成不存在的值、把 `question_id` 写成数据库行号——
+   都应得到明确的参数错误，且不产生任何副作用。
 
 
 ## 3. 多工作区（Workspace）隔离

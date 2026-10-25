@@ -379,6 +379,7 @@
       row.appendChild(el("td", "mg-cmd-id", command.id || ""));
       row.appendChild(el("td", "", command.title || command.id || ""));
       row.appendChild(el("td", "", command.plugin_name || command.plugin_id || ""));
+      row.appendChild(el("td", "mg-cmd-desc", command.description || command.returns || ""));
       row.appendChild(el("td", "mg-cmd-flag",
         command.requires_user ? "需确认" : "直接执行"));
       cmdRegistryBody.appendChild(row);

@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.bank-engine",
   "name": "题库引擎",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "题库数据引擎（无界面）：负责题库表结构、题目读写、大纲与考向、查重扫描与收敛合并事务。只由底座经 Host API 调用，数据落在当前工作区；引擎受保护，不可卸载。",
@@ -13,10 +13,109 @@
   "uninstallable": false,
   "show_in_sidebar": false,
   "slots": [],
-  "capabilities": ["bank.provider"],
-  "permissions": ["questions:read", "questions:write"],
+  "capabilities": [
+    "bank.provider"
+  ],
+  "permissions": [
+    "questions:read",
+    "questions:write"
+  ],
   "bus": {
     "subscribe": [],
     "publish": []
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "org.jiuzhang.action.data.bank_stats",
+        "title": "题库统计",
+        "description": "统计当前活跃题库的总题数、题型、难度、年级与考向分布；只读，不返回题目全文。",
+        "params_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "returns": "{total, grades:[{id,name,count}], difficulties:[…], types:[…], chapters:[…], textbooks:[…]}"
+      },
+      {
+        "id": "org.jiuzhang.action.data.bank_search",
+        "title": "题库检索",
+        "description": "按关键词、年级、难度、题型分页检索题目摘要；只返回前 20 条与题目 id，不返回答案与解析。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "题干关键词，留空表示不按关键词过滤",
+              "maxLength": 100
+            },
+            "grade": {
+              "type": "string",
+              "enum": [
+                "高一",
+                "高二",
+                "高三"
+              ],
+              "description": "年级过滤"
+            },
+            "difficulty": {
+              "type": "string",
+              "enum": [
+                "L1",
+                "L2",
+                "L3",
+                "L4"
+              ],
+              "description": "难度过滤：L1 基础、L2 中档、L3 难、L4 压轴"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "single_choice",
+                "multiple_choice",
+                "fill_blank",
+                "solution"
+              ],
+              "description": "题型过滤"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "返回条数，默认 5"
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{total, items:[{id, type, difficulty, stem(≤120字)}]}"
+      },
+      {
+        "id": "org.jiuzhang.action.data.bank_topics",
+        "title": "考向大纲",
+        "description": "按教材版本懒展开考向大纲：不给 parent_id 返回顶层，给了就返回该节点的下一层。",
+        "params_schema": {
+          "type": "object",
+          "properties": {
+            "parent_id": {
+              "type": "string",
+              "description": "要展开的大纲节点 id；留空取顶层",
+              "maxLength": 64
+            },
+            "textbook_id": {
+              "type": "string",
+              "description": "教材版本 id；留空取当前默认版本",
+              "maxLength": 64
+            },
+            "search": {
+              "type": "string",
+              "description": "按节点名搜索",
+              "maxLength": 60
+            }
+          },
+          "additionalProperties": false
+        },
+        "returns": "{items:[{id, parent_id, name, layer, has_children, question_count, note_count}]}"
+      }
+    ]
   }
 }

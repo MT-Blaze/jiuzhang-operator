@@ -316,11 +316,25 @@ PLUGIN_SPEC §2.14，这里只给调用形状。
 ```json
 "contributes": {
   "commands": [
-    {"id": "com.zhang.bank.tidy_tags", "title": "整理标签"},
+    {
+      "id": "com.zhang.bank.tidy_tags",
+      "title": "整理标签",
+      "description": "把题库里的同义标签收敛成规范写法；只改标签，不动题干。",
+      "params_schema": {
+        "type": "object",
+        "properties": {"scope": {"type": "string", "enum": ["全部", "当前筛选"]}},
+        "additionalProperties": false
+      },
+      "returns": "{touched, tags:[string]}"
+    },
     {"id": "com.zhang.bank.export_word", "title": "导出为 Word", "requires_user": true}
   ]
 }
 ```
+
+`description` ≤160 字、`returns` ≤240 字；`params_schema` 是封口的 JSON Schema 保守子集
+（顶层 object、未知关键字整条丢弃、嵌套 ≤4 层、参数 ≤16 个、`enum` ≤16 项、≤4096 字节），
+缺省等价于「不吃参数」。官方五个插件的逐条参数与返回见 PLUGIN_SPEC §2.15。
 
 `org.jiuzhang.*` 只能由插件 id 同以 `org.jiuzhang.` 开头的官方插件声明；官方命令还须落在
 `org.jiuzhang.action.{input,process,output,data,view}.` 之下并通过 `command.list` 自查。
@@ -329,8 +343,11 @@ PLUGIN_SPEC §2.14，这里只给调用形状。
 
 | 方法 | payload | result |
 | --- | --- | --- |
-| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user}]}`（按 id 升序，停用插件不在表里） |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user, description, params_schema, returns}]}`（按 id 升序，停用插件不在表里） |
 | `command.execute` | `{"command_id": "com.zhang.bank.tidy_tags", "context": {...}}`；`context` 序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`；`result` 是目标插件自己的回包，序列化后 ≤65536 字节 |
+
+无界面插件（`headless: true`）的命令照常出现在 `command.list`，但宿主页签发起的
+`command.execute` 会回 `COMMAND_HEADLESS`：它没有 iframe，数据命令由底座后端直接执行。
 
 目标插件收到的宿主请求：
 
