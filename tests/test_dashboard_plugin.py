@@ -73,15 +73,17 @@ class HostWiringTest(unittest.TestCase):
         self.assertIn('fetchJson("/api/bank/dashboard/stats")', STAGE)
         self.assertIn('fetchJson("/api/bank/dashboard/heatmap")', STAGE)
 
-    def test_02_open_bank_is_publish_allowed_and_provider_routed(self) -> None:
+    def test_02_open_bank_is_publish_allowed_and_view_routed(self) -> None:
         self.assertIn('"system.open_bank"', STAGE)
         self.assertIn('bus.on("system.open_bank"', STAGE)
         self.assertIn("function openBank", STAGE)
-        # 跳转目标必须是活跃 provider 变量，不许写死某个题库字面量
+        # 军令 #20：跳转目标是声明 bank.view 的视图插件，不再把 provider 当页签打开
         open_bank_body = STAGE[STAGE.index("function openBank"):]
         open_bank_body = open_bank_body[:open_bank_body.index("// ---------- 页签生命周期")]
-        self.assertIn("bankProviderId", open_bank_body)
-        self.assertNotIn("org.jiuzhang.core-bank", open_bank_body)
+        self.assertIn("loadBankView()", open_bank_body)
+        self.assertIn("findBankViewTab()", open_bank_body)
+        self.assertNotIn("org.jiuzhang.bank-engine", open_bank_body)
+        self.assertNotIn("org.jiuzhang.bank-ui", open_bank_body, "视图插件也要按能力找，不写死 id")
 
 
 class NativeDomHygieneTest(unittest.TestCase):

@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
-"""军令 #18-结 任务三真机取证：题库引擎卸载免死金牌在**浏览器里**真的生效。
+"""军令 #20 真机取证：题库引擎的免死金牌升级为「整包不可卸载」。
 
 用法：``.venv/Scripts/python.exe tools/provider_uninstall_probe.py <out_dir_tag>``
 产出：截图 png + probe.json（结构化判据与 pageerror）
 
-为什么单测不够：这条军令要的是「弹窗把『不保留数据』置灰并强行提示」。
-置灰是 DOM 状态、提示是可见文案、发出去的请求带哪个 keep_data 是运行时行为——
-三者都得在真人路径上看，光测 `uninstall_plugin()` 只能证明后端，证不了前端门禁。
+军令 #18-结 时代的口径是「弹窗把『不保留数据』置灰、点确认仍保数据」；
+军令 #20 拆出无界面的 bank-engine 后，引擎连代码目录都不许删：设置页不再给
+【卸载】按钮，后端 DELETE 一律 409。本探针在真人路径上同时验证前后端。
 
 全程在临时目录里跑：`JZO_PLUGINS_DIR` / `JZO_DATA_DIR` 指向 temp 副本，
 卸载的是副本，**绝不碰仓库里的 plugins/ 与用户 data/**。
 
 判据：
-  1. 引擎（声明 bank.provider）弹窗：复选框 disabled + 仍勾选 + label aria-disabled + 红色免死提示可见；
-  2. 焦点落在「取消」而不是置灰的复选框；
-  3. 点【确认卸载】时浏览器实际发出的请求带 `keep_data=true`，后端回包 `provider_guarded=true`；
-  4. 引擎代码目录被删、temp 里的 `banks/<id>.db` 逐字节原样保留；
-  5. 对照：非 provider 插件复选框可用、免死提示隐藏，取消勾选后请求真是 `keep_data=false` 且库真被删。
+  1. 引擎卡片没有【卸载】按钮，改成「受保护·不可卸载」标签；
+  2. /api/plugins 回包带 capabilities 与 uninstallable=false（前端不靠硬编码 id）；
+  3. 绕过 UI 直接 DELETE（带合法写令牌）→ 409，引擎代码目录与物理题库都在；
+  4. 题库内容指纹（题数 + 题文散列）逐项不变；
+  5. 对照：普通插件仍有卸载按钮，取消保留后库真被删。
 """
 from __future__ import annotations
 
@@ -30,13 +30,15 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "schema.sql"
-ENGINE = "org.jiuzhang.core-bank"
+SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+ENGINE = "org.jiuzhang.bank-engine"
 PLAIN = "org.jiuzhang.dashboard"
 TOKEN = "provider-probe-token"
 
@@ -80,14 +82,6 @@ def bank_signature(path: Path) -> tuple:
         con.close()
 
 
-def bank_user_version(path: Path) -> int:
-    con = sqlite3.connect(path)
-    try:
-        return con.execute("PRAGMA user_version").fetchone()[0]
-    finally:
-        con.close()
-
-
 def start_server(plugins_dir: Path, data_dir: Path, port: int) -> subprocess.Popen:
     env = os.environ.copy()
     env.update({
@@ -102,8 +96,6 @@ def start_server(plugins_dir: Path, data_dir: Path, port: int) -> subprocess.Pop
          "--port", str(port), "--log-level", "warning"],
         cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
-    import urllib.error
-    import urllib.request
     deadline = time.time() + 25
     while time.time() < deadline:
         if proc.poll() is not None:
@@ -138,16 +130,31 @@ def run(tag: str) -> dict:
     make_bank(engine_db, 456)
     make_bank(plain_db, 3)
     engine_before = bank_signature(engine_db)
-    before_version = bank_user_version(engine_db)
 
     proc = start_server(plugins_dir, data_dir, (port := free_port()))
     origin = f"http://127.0.0.1:{port}"
     captured: list[dict] = []
 
     def api_get(path: str) -> dict:
-        import urllib.request
         with urllib.request.urlopen(origin + path, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
+
+    def api_delete(plugin_id: str) -> tuple[int, dict]:
+        request = urllib.request.Request(
+            origin + f"/api/plugins/{plugin_id}?keep_data=false",
+            method="DELETE",
+            headers={"X-JZO-Token": TOKEN},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as error:
+            body = error.read().decode("utf-8", "replace")
+            try:
+                payload = json.loads(body or "{}")
+            except ValueError:
+                payload = {"detail": body}
+            return error.code, payload
 
     try:
         with sync_playwright() as pw:
@@ -161,81 +168,65 @@ def run(tag: str) -> dict:
             page.locator("#stNavPlugin").click()
             page.wait_for_timeout(900)
 
-            # Playwright 里「属性存在但值为空」返回的是 ""，不是 None；
-            # 用 truthiness 判 hidden 会把「关着的弹窗」也读成开着，必须逐字判 None。
-            def shown(loc) -> bool:
-                return loc.get_attribute("hidden") is None
-
             def card(pid: str):
                 return page.locator('#mgList .mg-card[data-id="%s"]' % pid)
 
             check("01 设置页与控制台面板起来（无 pageerror）",
                   not errors and page.locator("#mgList .mg-card").count() >= 2,
                   (errors, page.locator("#mgList .mg-card").count()))
-            check("02 引擎卡片有【卸载】入口", card(ENGINE).locator(".mg-uninstall").count() == 1)
-            listing = api_get("/api/plugins")
-            caps = {p["id"]: p.get("capabilities") for p in listing["plugins"]}
-            check("03 列表回包带 capabilities（前端置灰只认这个，不认硬编码 id）",
-                  isinstance(caps.get(ENGINE), list) and "bank.provider" in caps[ENGINE]
-                  and "bank.provider" not in (caps.get(PLAIN) or []), caps)
 
-            # ---- 引擎：打开弹窗
-            card(ENGINE).locator(".mg-uninstall").click()
+            engine_card = card(ENGINE)
+            check("02 引擎卡片没有【卸载】按钮", engine_card.locator(".mg-uninstall").count() == 0)
+            tags = engine_card.locator(".mg-tag").all_inner_texts()
+            check("03 引擎卡片标出『受保护·不可卸载』", "受保护·不可卸载" in tags, tags)
+            check("04 引擎卡片标出『不占左栏』（无界面数据端）", "不占左栏" in tags, tags)
+            page.screenshot(path=str(out / "engine_card.png"))
+
+            listing = api_get("/api/plugins")
+            entries = {p["id"]: p for p in listing["plugins"]}
+            check("05 回包带 capabilities 与 uninstallable=false",
+                  "bank.provider" in (entries.get(ENGINE, {}).get("capabilities") or [])
+                  and entries.get(ENGINE, {}).get("uninstallable") is False
+                  and entries.get(PLAIN, {}).get("uninstallable") is True,
+                  {pid: {"caps": entries.get(pid, {}).get("capabilities"),
+                         "uninstallable": entries.get(pid, {}).get("uninstallable")}
+                   for pid in (ENGINE, PLAIN)})
+
+            # ---- 绕过 UI 直接发 DELETE：后端必须 409，代码与数据都原地不动
+            status, payload = api_delete(ENGINE)
+            check("06 直接 DELETE 引擎返回 409", status == 409, {"status": status, "body": payload})
+            check("07 拒绝理由说人话", "受保护不可卸载" in str(payload.get("detail", "")),
+                  payload.get("detail"))
+            check("08 引擎代码目录仍在", (plugins_dir / ENGINE / "plugin.json").is_file())
+            check("09 引擎物理题库内容原样保留（456 题与题文散列全等）",
+                  engine_db.is_file() and bank_signature(engine_db) == engine_before,
+                  (engine_before, bank_signature(engine_db) if engine_db.is_file() else "MISSING"))
+
+            # ---- 对照：普通插件照常可卸载（取消勾选保留 → 物理删除）
+            plain_card = card(PLAIN)
+            check("10 对照：普通插件仍有【卸载】按钮",
+                  plain_card.locator(".mg-uninstall").count() == 1)
+            plain_card.locator(".mg-uninstall").click()
             page.wait_for_timeout(400)
             keep = page.locator("#uninstallKeep")
-            label = page.locator("label.mg-keep")
-            check("04 弹窗打开且写着引擎名", shown(page.locator("#uninstallModal")),
-                  page.locator("#uninstallText").inner_text())
-            check("05 引擎的『保留本地数据』复选框被置灰（disabled）", keep.is_disabled(),
-                  keep.get_attribute("disabled"))
-            check("06 置灰的同时仍是勾选态（不是靠取消勾选伪装保护）", keep.is_checked())
-            check("07 外层 label 带 aria-disabled（读屏器也知不可选）",
-                  label.get_attribute("aria-disabled") == "true")
-            body = page.locator("#uninstallProvider").inner_text()
-            check("08 红色免死提示可见且逐字含『题库引擎已被保护，数据将原地保留』",
-                  shown(page.locator("#uninstallProvider"))
-                  and "题库引擎已被保护，数据将原地保留" in body, body[:80])
-            check("09 「永久删除」警告此时不该出现（销毁路径已被堵死）",
-                  not shown(page.locator("#uninstallDanger")))
-            focus = page.evaluate("() => document.activeElement && document.activeElement.id")
-            check("10 焦点落在【取消】而非置灰的复选框", focus == "uninstallCancel", focus)
-            page.screenshot(path=str(out / "engine_modal.png"))
-
-            # ---- 引擎：确认卸载，看真实请求与后端回包
-            before = len(captured)
-            page.locator("#uninstallConfirm").click()
-            page.wait_for_timeout(1800)
-            req = next((r for r in captured[before:] if ENGINE in r["url"]), {"url": "", "method": ""})
-            check("11 浏览器实际发出的请求带 keep_data=true", "keep_data=true" in req["url"], req["url"])
-            check("12 引擎代码目录被删（免死金牌只保数据）", not (plugins_dir / ENGINE).exists())
-            check("13 引擎物理题库内容原样保留（456 题与题文散列全等）",
-                  engine_db.is_file() and bank_signature(engine_db) == engine_before,
-                  (engine_before, bank_signature(engine_db) if engine_db.is_file() else "MISSING",
-                   "user_version %s→%s（底座启动跑迁移，题目未动）" % (before_version, bank_user_version(engine_db))))
-            status = page.locator("#mgStatus").inner_text()
-            check("14 结果文案如实回显保护", "题库引擎已被保护" in status, status)
-
-            # ---- 对照：非 provider 插件
-            card(PLAIN).locator(".mg-uninstall").click()
-            page.wait_for_timeout(400)
-            check("15 对照：普通插件复选框未置灰", keep.is_enabled())
-            check("16 对照：普通插件不显示免死提示",
-                  not shown(page.locator("#uninstallProvider")))
+            check("11 对照：普通插件复选框可用", keep.is_enabled())
+            check("12 对照：普通插件不显示免死提示",
+                  page.locator("#uninstallProvider").get_attribute("hidden") is not None)
             keep.click()  # 取消勾选 → 要求彻底删除
             page.wait_for_timeout(200)
-            danger = page.locator("#uninstallDanger").inner_text()
-            check("17 对照：取消勾选后红色销毁警告亮起",
-                  shown(page.locator("#uninstallDanger")), danger[:60])
+            check("13 对照：取消勾选后红色销毁警告亮起",
+                  page.locator("#uninstallDanger").get_attribute("hidden") is None,
+                  page.locator("#uninstallDanger").inner_text()[:60])
             before2 = len(captured)
             page.locator("#uninstallConfirm").click()
             page.wait_for_timeout(1800)
             req2 = next((r for r in captured[before2:] if PLAIN in r["url"]), {"url": ""})
-            check("18 对照：普通插件请求真是 keep_data=false", "keep_data=false" in req2["url"], req2["url"])
-            check("19 对照：普通插件的库真被物理删除", not plain_db.exists())
+            check("14 对照：普通插件请求真是 keep_data=false", "keep_data=false" in req2["url"], req2["url"])
+            check("15 对照：普通插件的库真被物理删除", not plain_db.exists())
             page.screenshot(path=str(out / "final_state.png"))
             browser.close()
 
-        check("20 全程零 pageerror", not errors, errors)
+        check("16 全程零 pageerror", not errors, errors)
     finally:
         proc.terminate()
         try:

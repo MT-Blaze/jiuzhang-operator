@@ -220,7 +220,7 @@ class SettingsUiWiringTest(unittest.TestCase):
 
     def test_06_no_hardcoded_plugin_id_in_settings_js(self) -> None:
         block = SETTINGS_JS.split("系统设置：启动行为", 1)[1]
-        self.assertNotIn("core-bank", block, "启动目标不许写死某个插件 id")
+        self.assertNotIn("bank-engine", block, "启动目标不许写死某个插件 id")
 
     def test_07_save_button_guards_busy_state(self) -> None:
         block = SETTINGS_JS.split("系统设置：启动行为", 1)[1]

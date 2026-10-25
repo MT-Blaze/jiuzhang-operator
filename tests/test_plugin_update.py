@@ -954,15 +954,15 @@ class ModuleSurfaceTest(unittest.TestCase):
             self.assertIsInstance(getattr(plugin_update, name), tuple, f"{name} 必须是元组常量")
 
     def test_03_every_real_core_bank_file_survives_an_update(self):
-        """拿本机 core-bank 目录里的真实文件名跑一遍合并：一个都不许丢。
+        """拿本机 bank-engine 目录里的真实文件名跑一遍合并：一个都不许丢。
 
         官方发行包只含代码（``plugin.json`` / ``LICENSE`` / ``dist/*``），
         题库、备份、灌库报告与几十张题目配图都不在包里，靠合并语义保住；
         万一包里带了同名 ``bank.db``（空壳种子库），则必须以旧的为准。
         """
-        bank_dir = Path(__file__).resolve().parents[1] / "plugins" / "org.jiuzhang.core-bank" / "bank"
+        bank_dir = Path(__file__).resolve().parents[1] / "plugins" / "org.jiuzhang.bank-engine" / "bank"
         if not bank_dir.is_dir():
-            self.skipTest("本机没有 core-bank 的 bank/ 目录")
+            self.skipTest("本机没有 bank-engine 的 bank/ 目录")
         real_names = sorted(item.relative_to(bank_dir).as_posix()
                             for item in bank_dir.rglob("*") if item.is_file())
         self.assertIn("bank.db", real_names)

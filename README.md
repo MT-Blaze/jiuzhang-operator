@@ -367,7 +367,8 @@ jiuzhang-operator/
 ├── plugins/
 │   ├── README.md            # 插件目录约定
 │   ├── org.jiuzhang.classic-card/  # 首个题目卡片渲染插件
-│   ├── org.jiuzhang.core-bank/     # 真题题库（456 道真题 + SQLite 随包分发，v0.6.1）
+│   ├── org.jiuzhang.bank-engine/   # ★军令 #20 题库引擎（headless provider：表结构/读写/查重合并，不占左栏、不可卸载）
+│   ├── org.jiuzhang.bank-ui/       # ★军令 #20 真题题库视图（大纲/题单/查重审查，纯前端，经 Host API 取数）
 │   ├── org.jiuzhang.paper-gen/     # 组卷排版（题篮 → A4 分页，v0.6.1）
 │   ├── org.jiuzhang.handout/       # 讲义排版（Markdown → A4 实时预览，v0.6.1）
 │   └── org.jiuzhang.editor/        # ★v0.6.2 录题工作台（表单 + A4 实时预览 → bank.create 入库）

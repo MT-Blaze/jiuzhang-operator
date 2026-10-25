@@ -39,7 +39,7 @@ def _make_bank_db(path: Path, questions: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     try:
-        con.executescript((ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "schema.sql").read_text(encoding="utf-8"))
+        con.executescript((ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql").read_text(encoding="utf-8"))
         now = "2026-10-24T00:00:00+08:00"
         for index in range(questions):
             con.execute(
@@ -65,7 +65,8 @@ class ShowInSidebarContractTest(unittest.TestCase):
             manifest["show_in_sidebar"] = False
             manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
             self.assertIs(self._manifest(sample)["show_in_sidebar"], False)
-        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.core-bank")["show_in_sidebar"], True)
+        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")["show_in_sidebar"], False,
+                      "题库引擎是无界面的数据端，不该在左栏占位")
 
     def test_discover_tags_enabled_flag(self) -> None:
         data = discover_plugins()
@@ -252,7 +253,7 @@ class UninstallLifecycleTest(unittest.TestCase):
         """同区其他插件的库（含活跃 provider 的真题库）不得连坐。"""
         banks = self.data_dir / "banks"
         _make_bank_db(banks / f"{self.pid}.db", 1)
-        provider_db = banks / "org.jiuzhang.core-bank.db"
+        provider_db = banks / "org.jiuzhang.bank-engine.db"
         _make_bank_db(provider_db, 456)
 
         result = plugin_lifecycle.uninstall_plugin(self.pid, keep_data=False)
@@ -456,13 +457,13 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         status, _ = self._call("DELETE", f"/api/plugins/{self.CARD}?keep_data=true")
         self.assertEqual(status, 404)
 
-    def test_07_uninstall_provider_via_api_forces_keep(self) -> None:
-        """HTTP 端到端：keep_data=false 打到题库引擎上，后端照样保数据（免死金牌不看参数）。
+    def test_07_uninstall_provider_via_api_is_refused(self) -> None:
+        """HTTP 端到端：题库引擎的免死金牌——整包拒绝卸载，数据与代码都原地保留。
 
-        同时锁前端置灰的判据来源：/api/plugins 的回包必须带 capabilities，
-        设置页才认得出谁是引擎；缺了这个字段，置灰只能靠硬编码插件 id。
+        同时锁前端置灰的判据来源：/api/plugins 的回包必须带 capabilities 与
+        uninstallable，设置页才认得出谁是引擎；缺字段只能靠硬编码插件 id。
         """
-        engine = "org.jiuzhang.core-bank"
+        engine = "org.jiuzhang.bank-engine"
         shutil.copytree(ROOT / "plugins" / engine, Path(self.tmp.name) / "plugins" / engine)
         db = Path(self.tmp.name) / "data" / "banks" / f"{engine}.db"
         _make_bank_db(db, 7)
@@ -470,13 +471,12 @@ class ConsoleAndImportApiTest(unittest.TestCase):
 
         entry = self._plugins()[engine]
         self.assertIn("bank.provider", entry["capabilities"], "引擎认不出来，前端就没法置灰")
+        self.assertIs(entry["uninstallable"], False, "免死金牌必须随清单下发，前端不猜")
 
         status, data = self._call("DELETE", f"/api/plugins/{engine}?keep_data=false")
-        self.assertEqual(status, 200, data)
-        self.assertIs(data["provider_guarded"], True)
-        self.assertIs(data["keep_data"], True, "接口不得顺着前端参数毁老师的真题库")
-        self.assertEqual(data["removed_data"], [])
-        self.assertNotIn(engine, self._plugins(), "代码目录仍要删掉")
+        self.assertEqual(status, 409, data)
+        self.assertIn("受保护不可卸载", str(data.get("detail")))
+        self.assertIn(engine, self._plugins(), "拒绝卸载时连代码目录都不许动")
         self.assertEqual(db.read_bytes(), payload)
 
 

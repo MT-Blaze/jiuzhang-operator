@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(r"E:\jiuzhang-operator")
-DB = ROOT / "plugins/org.jiuzhang.core-bank/bank/v063.db"
+DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063.db"
 OUT_MD = ROOT / "data/bank_v063_empty_check.md"
 
 ORDER = ["schools", "topics", "topic_notes", "sources", "questions",
@@ -29,7 +29,7 @@ con.close()
 
 total = sum(counts.values())
 import hashlib
-schema_sha = hashlib.sha256((ROOT / "plugins/org.jiuzhang.core-bank/bank/schema.sql").read_bytes()).hexdigest()
+schema_sha = hashlib.sha256((ROOT / "plugins/org.jiuzhang.bank-engine/bank/schema.sql").read_bytes()).hexdigest()
 stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
 lines = [
     "core-bank v0.6.3 结构冻结 · 空库核对",
@@ -54,7 +54,7 @@ buf = io.StringIO()
 buf.write("# core-bank v0.6.3 空库核对（交付证据）\n\n")
 buf.write("- 库：`%s`（%s B）\n" % (DB.relative_to(ROOT).as_posix(), f"{DB.stat().st_size:,}"))
 buf.write("- 核对时间：%s（本机本地钟，与军令表头的北京时间差 +9h，机器钟未校）\n" % stamp)
-buf.write("- 建库脚本：`plugins/org.jiuzhang.core-bank/bank/schema.sql`"
+buf.write("- 建库脚本：`plugins/org.jiuzhang.bank-engine/bank/schema.sql`"
           "（SHA-256 `%s`）\n" % schema_sha)
 buf.write("- user_version：%d · integrity_check：%s · 表 %d / 索引 %d / 触发器 %d / 视图 %d\n\n"
           % (version, integrity, len(objects), indexes, triggers, views))

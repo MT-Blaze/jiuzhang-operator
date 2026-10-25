@@ -1,8 +1,9 @@
 /**
- * 真题题库插件运行时（org.jiuzhang.core-bank）。
+ * 真题题库视图插件运行时（org.jiuzhang.bank-ui）。
  *
- * 数据不落在 iframe 里：插件经 jzo-plugin/1 协议向宿主申请 bank.* 数据，
- * 宿主再查本地 SQLite（见 app/core/bank.py）。插件拿不到数据库与文件系统。
+ * 本插件只有界面，没有题库：列表/大纲/待审/查重一律经 jzo-plugin/1 协议向宿主
+ * 申请「活跃题库」的数据，宿主再交给题库引擎（app/core/bank.py）查询。
+ * 插件拿不到数据库、文件系统与令牌。
  *
  * 右栏面板（ui.params.changed）是筛选的权威来源；本页顶部只保留搜索与刷新，
  * 避免同一条件出现两个写入者。
@@ -11,7 +12,7 @@
   "use strict";
 
   var PROTOCOL = "jzo-plugin/1";
-  var PLUGIN_ID = "org.jiuzhang.core-bank";
+  var PLUGIN_ID = "org.jiuzhang.bank-ui";
   var PAGE_SIZE = 12;
   var REVIEW_PAGE_SIZE = 6;
   var REQUEST_TIMEOUT_MS = 15000;
@@ -1117,7 +1118,8 @@
       page: state.page,
       page_size: state.pageSize
     };
-    hostCall("bank.list", params)
+    // 视图插件自己没有题库：永远读「当前活跃 provider」的库，不拿页签 id 猜库。
+    hostCall("bank.active_list", params)
       .then(function (result) {
         if (token !== loadToken) return;
         state.items = (result && result.items) || [];
@@ -1167,7 +1169,7 @@
   }
 
   function addToBasket(ids) {
-    return hostCall("basket.add", { ids: ids })
+    return hostCall("basket.active_add", { ids: ids })
       .then(function (result) {
         ids.forEach(function (id) { basketIds[id] = true; });
         var total = result && typeof result.total === "number" ? result.total : Object.keys(basketIds).length;

@@ -342,8 +342,8 @@ def main() -> int:
     write_installed(plugins_dir, PLUGIN_BROADCAST)
     # 工作台要有活跃题库才不会让 /api/bank/* 回 400（控制台零报错判据需要）。
     # 复制的是当前仓库里的官方插件，只进隔离目录，不动源目录。
-    shutil.copytree(ROOT / "plugins" / "org.jiuzhang.core-bank",
-                    plugins_dir / "org.jiuzhang.core-bank")
+    shutil.copytree(ROOT / "plugins" / "org.jiuzhang.bank-engine",
+                    plugins_dir / "org.jiuzhang.bank-engine")
 
     basic_ids = [PLUGIN_HOT, PLUGIN_BULK, PLUGIN_MANIFEST, PLUGIN_BLOCKED]
     full_ids = basic_ids + [PLUGIN_BROADCAST]

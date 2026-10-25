@@ -23,7 +23,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+# 军令 #20：界面与数据引擎分家——探针要同时装两个，点的是视图插件。
+PLUGIN_ID = "org.jiuzhang.bank-ui"
+ENGINE_ID = "org.jiuzhang.bank-engine"
 
 
 def free_port() -> int:
@@ -64,6 +66,7 @@ def main() -> int:
     shots.mkdir(parents=True)
 
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
+    shutil.copytree(ROOT / "plugins" / ENGINE_ID, plugins_dir / ENGINE_ID)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"

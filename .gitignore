@@ -39,6 +39,9 @@ Thumbs.db
 
 # ADR-003 纯净发版：内置真题库（456 题）只留本机开发，绝不进 git / 发行包。
 # v063.db 是冻结的空基线（0 题，随包对外发布），不在剔除之列。
+plugins/org.jiuzhang.bank-engine/bank/bank.db
+plugins/org.jiuzhang.bank-engine/bank/v063_migrated.db
+# 军令 #20 退役的旧插件目录：代码已删，本机还留着旧语料库与备份供回退，绝不入库。
 plugins/org.jiuzhang.core-bank/bank/bank.db
 plugins/org.jiuzhang.core-bank/bank/v063_migrated.db
 

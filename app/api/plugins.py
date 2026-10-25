@@ -48,7 +48,9 @@ class InstalledPlugin(BaseModel):
     slots: list[str]
     capabilities: list[str]
     permissions: list[str]
-    entry_url: str
+    # headless 插件没有 iframe 入口，entry_url 为空串（军令 #20 题库引擎）。
+    entry_url: str = ""
+    headless: bool = False
     css_url: str | None = None
     ui: dict[str, Any] | None = None
     stage: dict[str, Any] | None = None
@@ -59,6 +61,8 @@ class InstalledPlugin(BaseModel):
     commands: list[dict[str, Any]] = []
     # 渲染/工具类插件可显式声明不占左栏；缺省一律显示。
     show_in_sidebar: bool = True
+    # false = 后端拒绝卸载（题库引擎的免死金牌）。
+    uninstallable: bool = True
 
 
 class PluginInstallResponse(BaseModel):
@@ -246,7 +250,8 @@ def set_plugin_sidebar(payload: dict[str, Any] = Body(...)) -> dict:
 @router.delete(
     "/api/plugins/{plugin_id}",
     summary="卸载插件；keep_data=false 时销毁**当前工作区**内该插件的物理题库"
-            "（声明 bank.provider 的题库引擎例外：无视该参数，一律原地保数据）",
+            "（声明 bank.provider 的题库引擎例外：无视该参数，一律原地保数据；"
+            "清单声明 uninstallable=false 的引擎整包拒绝卸载）",
     dependencies=[Depends(require_write_token)],
 )
 def uninstall(plugin_id: str, keep_data: bool = True) -> dict:

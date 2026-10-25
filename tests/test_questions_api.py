@@ -282,22 +282,28 @@ class QuestionsApiContractTest(unittest.TestCase):
         status, discovery, _ = self.call("GET", "/api/plugins")
         self.assertEqual(status, 200)
         plugin_ids = [plugin["id"] for plugin in discovery["plugins"]]
-        self.assertIn("org.jiuzhang.core-bank", plugin_ids)
+        self.assertIn("org.jiuzhang.bank-engine", plugin_ids)
+        self.assertIn("org.jiuzhang.bank-ui", plugin_ids)
         self.assertEqual(discovery["protocol"], "jzo-plugin/1")
 
-        plugin = next(item for item in discovery["plugins"] if item["id"] == "org.jiuzhang.core-bank")
+        engine = next(item for item in discovery["plugins"]
+                      if item["id"] == "org.jiuzhang.bank-engine")
+        self.assertTrue(engine["headless"], "引擎没有界面，entry_url 必须为空")
+        self.assertEqual(engine["entry_url"], "")
+
+        plugin = next(item for item in discovery["plugins"] if item["id"] == "org.jiuzhang.bank-ui")
         status, _, headers = self.call("GET", plugin["entry_url"])
         self.assertEqual(status, 200)
         self.assertIn("text/html", _header(headers, "content-type"))
         self.assertIn("default-src 'none'", _header(headers, "content-security-policy"))
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.core-bank/%2e%2e/plugin.json"
+            "GET", "/plugin-assets/org.jiuzhang.bank-ui/%2e%2e/plugin.json"
         )
         self.assertEqual(status, 404)
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.core-bank/dist/plugin.js"
+            "GET", "/plugin-assets/org.jiuzhang.bank-ui/dist/plugin.js"
         )
         self.assertEqual(status, 200)
 

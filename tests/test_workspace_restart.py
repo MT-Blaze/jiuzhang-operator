@@ -296,7 +296,7 @@ class CreateAndImportRestartTest(_IsolatedData):
     def test_import_also_schedules_restart(self) -> None:
         os.environ.pop("JZO_RESTART_DISABLED", None)
         workspaces_api._save_workspaces([])
-        bank = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "schema.sql"
+        bank = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "seed.db"
             con = sqlite3.connect(db)

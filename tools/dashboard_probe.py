@@ -32,7 +32,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 PLUGIN_ID = "org.jiuzhang.dashboard"
-BANK_ID = "org.jiuzhang.core-bank"
+# 军令 #20：跳转目标是视图插件，数据来自无界面的引擎——两个都要装进隔离目录。
+BANK_ID = "org.jiuzhang.bank-ui"
+ENGINE_ID = "org.jiuzhang.bank-engine"
 
 
 def wait_port(deadline_seconds: float) -> bool:
@@ -66,13 +68,17 @@ def run(tag: str) -> dict:
         report["checks"].append({"name": name, "ok": bool(ok), "detail": str(detail)[:400]})
         return bool(ok)
 
-    # 只读复制两个插件进隔离目录：看板本体 + 官方题库（跳转目标与真实数据源）
+    # 只读复制三个插件进隔离目录：看板本体 + 题库视图 + 数据引擎
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    source_bank = ROOT / "plugins" / BANK_ID
-    if source_bank.is_dir():
-        shutil.copytree(source_bank, plugins_dir / BANK_ID)
-        report["notes"]["core_bank_copied"] = True
-    check("看板与题库插件复制进隔离目录", (plugins_dir / PLUGIN_ID / "plugin.json").is_file())
+    for plugin_id in (BANK_ID, ENGINE_ID):
+        source = ROOT / "plugins" / plugin_id
+        if source.is_dir():
+            shutil.copytree(source, plugins_dir / plugin_id)
+            report["notes"][plugin_id + "_copied"] = True
+    check("看板、题库视图与引擎复制进隔离目录",
+          (plugins_dir / PLUGIN_ID / "plugin.json").is_file()
+          and (plugins_dir / BANK_ID / "plugin.json").is_file()
+          and (plugins_dir / ENGINE_ID / "plugin.json").is_file())
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)

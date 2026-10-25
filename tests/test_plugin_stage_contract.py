@@ -142,12 +142,16 @@ class BusGrantTest(unittest.TestCase):
         self.assertEqual(sorted(info["bus"]["subscribe"]), sorted(granted))
 
     def test_07_official_manifests_keep_every_declared_subscription(self) -> None:
-        """六个官方插件订的每个主题都得活过校验：漏一个就是「插件订了但底座没授权」。"""
+        """官方插件订的每个主题都得活过校验：漏一个就是「插件订了但底座没授权」。
+
+        headless 数据引擎（军令 #20）没有界面，可以一条都不订——其余插件必须有订阅。
+        """
         root = Path(__file__).resolve().parents[1]
         for manifest_path in sorted((root / "plugins").glob("org.jiuzhang.*/plugin.json")):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             declared = (manifest.get("bus") or {}).get("subscribe") or []
-            self.assertTrue(declared, manifest["id"])
+            if manifest.get("headless") is not True:
+                self.assertTrue(declared, manifest["id"])
             with tempfile.TemporaryDirectory() as tmp:
                 target = Path(tmp) / manifest["id"]
                 shutil.copytree(manifest_path.parent, target)

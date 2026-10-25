@@ -346,11 +346,16 @@
         tools.appendChild(el("span", "mg-tag", "不占左栏"));
       }
 
-      var remove = el("button", "q-button q-button-danger mg-uninstall");
-      remove.type = "button";
-      remove.textContent = "卸载";
-      remove.addEventListener("click", function () { openUninstall(plugin); });
-      tools.appendChild(remove);
+      if (plugin.uninstallable === false) {
+        // 免死金牌：清单写死不可卸载，面板不给按钮；后端 DELETE 同样按 409 拒绝。
+        tools.appendChild(el("span", "mg-tag", "受保护·不可卸载"));
+      } else {
+        var remove = el("button", "q-button q-button-danger mg-uninstall");
+        remove.type = "button";
+        remove.textContent = "卸载";
+        remove.addEventListener("click", function () { openUninstall(plugin); });
+        tools.appendChild(remove);
+      }
 
       // 卡片尾部小标签：它在哪一组。这里只给改昵称，不设任何回退官方名的按钮。
       var homeKey = window.JzoPrefs
@@ -460,6 +465,11 @@
   }
 
   function openUninstall(plugin) {
+    if (plugin && plugin.uninstallable === false) {
+      mgSet(mgStatus, "「" + (plugin.name || plugin.id)
+        + "」是题库引擎，受保护不可卸载；如需停用请用「停用」按钮。", "info");
+      return;
+    }
     uninstallTarget = plugin;
     uninstallPrevFocus = document.activeElement;
     var guarded = isProviderPlugin(plugin);

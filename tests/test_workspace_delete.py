@@ -39,7 +39,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
 
         self.ws_dir = self.root / "workspaces" / WS_ID
         (self.ws_dir / "banks").mkdir(parents=True)
-        (self.ws_dir / "banks" / "org.jiuzhang.core-bank.db").write_bytes(b"SQLite format 3\0")
+        (self.ws_dir / "banks" / "org.jiuzhang.bank-engine.db").write_bytes(b"SQLite format 3\0")
         (self.ws_dir / "uploads").mkdir()
         (self.ws_dir / "uploads" / "pic.png").write_bytes(b"PNG")
         (self.ws_dir / "config.json").write_text('{"ok":true}', encoding="utf-8")

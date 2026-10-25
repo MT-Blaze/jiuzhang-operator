@@ -32,7 +32,8 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
-BANK_ID = "org.jiuzhang.core-bank"
+BANK_ID = "org.jiuzhang.bank-engine"
+BANK_UI_ID = "org.jiuzhang.bank-ui"
 UNIQUE = "探针录题"
 
 
@@ -95,7 +96,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
-    for plugin_id in (EDITOR_ID, BANK_ID):
+    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()
@@ -208,7 +209,7 @@ def main() -> int:
             check("答案为 C", document.get("answer", {}).get("choice_keys") == ["C"],
                   document.get("answer"))
             check("解析已落库", "(x-2)" in document.get("solution", ""), document.get("solution"))
-            # 契约 2.0：难度落库归一成 L1–L4；tags 是录入期元数据，core-bank 存储层不落列，
+            # 契约 2.0：难度落库归一成 L1–L4；tags 是录入期元数据，题库存储层不落列，
             # 因此这里只核对难度与年级，不再断言标签入库。
             check("难度/年级一致",
                   document.get("difficulty") == "L2"
@@ -223,7 +224,7 @@ def main() -> int:
             # ---------- 题库画布查得到 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first
             bank_item.click()
-            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_core-bank")
+            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_bank-ui")
             bank_frame = bank_panel.frame_locator(".ws-plugin-frame")
             search = bank_frame.locator(".cb-search")
             expect(search).to_be_visible(timeout=15000)
@@ -234,7 +235,7 @@ def main() -> int:
             result["metrics"]["bank_rows"] = rows
             check("题库画布搜到新题", rows >= 1, {"rows": rows})
             page.wait_for_timeout(250)
-            page.screenshot(path=str(shots / "core-bank-found.png"))
+            page.screenshot(path=str(shots / "bank-ui-found.png"))
 
             size_host = page.locator("body").evaluate(
                 "() => ({scrollWidth: document.body.scrollWidth, clientWidth: document.documentElement.clientWidth})"

@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "bank-contract-token"
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 GRADES = ("高一", "高二", "高三")
 LEVELS = ("L1", "L2", "L3")
 
@@ -1174,7 +1174,7 @@ class StageRelayContractTest(unittest.TestCase):
     def test_bank_create_is_scoped_and_permission_checked(self) -> None:
         source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         # 写入目标不再写死官方库：默认值只出现在 provider 解析器一处，宿主只读它
-        self.assertIn('BANK_PROVIDER_DEFAULT = "org.jiuzhang.core-bank"', source)
+        self.assertIn('BANK_PROVIDER_DEFAULT = "org.jiuzhang.bank-engine"', source)
         self.assertIn("bankProviderBase()", source)
         self.assertNotIn("CANONICAL_BANK_ID", source, "宿主里不该再有写死的公共题库常量")
         self.assertIn('permissions.indexOf("questions:write")', source)
@@ -1192,10 +1192,10 @@ class StageRelayContractTest(unittest.TestCase):
             self.assertIn(channel, source)
         # 题库端不再持有写权限，也不再有行内改题；改题按钮只发跳转
         bank_manifest = json.loads(
-            (ROOT / "plugins" / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))
+            (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(bank_manifest["permissions"], ["questions:read"])
         self.assertIn("system.open_editor", bank_manifest["bus"]["publish"])
-        bank_js = (ROOT / "plugins" / PLUGIN_ID / "dist" / "plugin.js").read_text(encoding="utf-8")
+        bank_js = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(encoding="utf-8")
         self.assertIn('publish("system.open_editor"', bank_js)
         self.assertNotIn('hostCall("bank.update"', bank_js)
         for plugin in ("org.jiuzhang.paper-gen", "org.jiuzhang.handout"):

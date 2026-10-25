@@ -950,7 +950,7 @@
   // 左栏插件的直白功能副标题：优先用 curated 文案，
   // 其次回落插件 description，最后才是类型标签——老师一眼看懂这插件干什么，而不是版本加点类型。
   var PLUGIN_TAGLINES = {
-    "org.jiuzhang.core-bank": "内置大纲与题库引擎",
+    "org.jiuzhang.bank-ui": "大纲、题目与查重审查",
     "org.jiuzhang.editor": "录题、改题、删题工作台",
     "org.jiuzhang.paper-gen": "题篮排成 A4 练习卷",
     "org.jiuzhang.handout": "Markdown 讲义实时排 A4"

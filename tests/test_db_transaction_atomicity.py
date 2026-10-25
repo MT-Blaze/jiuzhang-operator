@@ -86,7 +86,7 @@ class NewTableDdlShapeTest(unittest.TestCase):
 
     def test_01_each_entry_is_one_complete_statement(self) -> None:
         for table in bank.V082_NEW_TABLES:
-            statements = bank._new_table_ddl("org.jiuzhang.core-bank", table)
+            statements = bank._new_table_ddl("org.jiuzhang.bank-engine", table)
             self.assertGreater(len(statements), 1, f"{table} 只剩建表段，索引没跟上")
             self.assertTrue(statements[0].startswith(f"CREATE TABLE {table} "), table)
             for statement in statements:
@@ -95,14 +95,14 @@ class NewTableDdlShapeTest(unittest.TestCase):
 
     def test_02_unregistered_index_is_a_readable_bank_error(self) -> None:
         with self.assertRaises(bank.BankError) as raised:
-            bank._new_table_ddl("org.jiuzhang.core-bank", "no_such_table")
+            bank._new_table_ddl("org.jiuzhang.bank-engine", "no_such_table")
         self.assertIn("没登记", str(raised.exception))
 
     def test_03_missing_schema_file_is_not_a_bare_crash(self) -> None:
         """插件包被删、库还在时，升级路径读不到 schema.sql 要说人话（404 档），不许裸 FileNotFoundError。"""
         with mock.patch.object(bank, "_schema_path", lambda plugin_id: Path("E:/不存在/schema.sql")):
             with self.assertRaises(bank.BankNotFound):
-                bank._new_table_ddl("org.jiuzhang.core-bank", "textbooks")
+                bank._new_table_ddl("org.jiuzhang.bank-engine", "textbooks")
 
 
     def test_04_retyped_schema_section_is_readable_error(self) -> None:
@@ -112,7 +112,7 @@ class NewTableDdlShapeTest(unittest.TestCase):
             fake.write_text("CREATE TABLE other (id INTEGER);\n", encoding="utf-8")
             with mock.patch.object(bank, "_schema_path", lambda plugin_id: fake):
                 with self.assertRaises(bank.BankError) as raised:
-                    bank._new_table_ddl("org.jiuzhang.core-bank", "textbooks")
+                    bank._new_table_ddl("org.jiuzhang.bank-engine", "textbooks")
         self.assertIn("找不到表 textbooks", str(raised.exception))
 
 

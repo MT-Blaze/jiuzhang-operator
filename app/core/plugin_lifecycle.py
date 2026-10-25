@@ -6,10 +6,14 @@
 - 彻底删除：代码目录 + **当前工作区**里该插件的物理库（含 WAL/SHM/journal 边车）
   一并销毁，不可恢复——所以前端务必二次确认并给红色警告。
 
-**题库引擎免死金牌**（军令 #18-结 任务三）：清单里声明了 ``capabilities: ["bank.provider"]``
-的插件（现网即 core-bank），后端**无视** ``keep_data`` 一律保数据。理由：换渲染引擎可以，
-把老师历年攒下的真题库连锅端不行；而 provider 的 ``banks/<id>.db`` 恰恰就是真题本体。
-回包里的 ``provider_guarded`` 供前端如实回显，前端弹窗同时把「不保留数据」置灰。
+**题库引擎免死金牌**（军令 #18-结 任务三、#20 加固两级）：
+- 第一级：清单声明 ``uninstallable: false``（官方引擎）——后端在任何删除动作之前
+  直接回 409，连代码目录都不动；
+- 第二级：声明了 ``capabilities: ["bank.provider"]`` 的第三方题库，后端**无视**
+  ``keep_data`` 一律保数据，回包带 ``provider_guarded`` 供前端如实回显。
+理由：换渲染引擎可以，把老师历年攒下的真题库连锅端不行；provider 的
+``banks/<id>.db`` 恰恰就是真题本体。前端对第一级把卸载按钮换成「受保护」标签，
+对第二级把「不保留数据」置灰。
 
 **绝不跨工作区**（军令 #18-续4）：其他工作区的 ``.db`` 是老师各自的财产，卸载当前区
 的插件不能连坐。``uploads/`` 是工作区级扁平命名空间，文件不带插件标记，无法可靠归属，
@@ -75,19 +79,22 @@ def _current_workspace_bank(plugin_id: str) -> Path:
     return Path(settings.data_dir) / "banks" / f"{plugin_id}.db"
 
 
-def _declares_provider(plugin_dir: Path) -> bool:
-    """删代码之前读一眼清单：声明了 ``bank.provider`` 的插件，本区物理库就是老师的真题本体。
+def _read_manifest(plugin_dir: Path) -> dict[str, Any]:
+    """删代码之前读一眼清单；读坏一律当空清单，后面的判词按保守方向走。"""
+    try:
+        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def _declares_provider(manifest: dict[str, Any]) -> bool:
+    """声明了 ``bank.provider`` 的插件，本区物理库就是老师的真题本体。
 
     清单读坏或缺字段一律按「不是 provider」处理——保守方向是照常允许彻底卸载，
     因为误判成 provider 只是多留一份库，误判成非 provider 才会毁数据，所以这里
     只在**明文看到**能力标记时才授权销毁。
     """
-    try:
-        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    if not isinstance(manifest, dict):
-        return False
     capabilities = manifest.get("capabilities")
     return isinstance(capabilities, list) and PROVIDER_CAPABILITY in capabilities
 
@@ -99,9 +106,17 @@ def uninstall_plugin(plugin_id: str, *, keep_data: bool) -> dict[str, Any]:
     if not _is_within(plugin_dir, plugins_root) or plugin_dir == plugins_root:
         raise PluginUninstallError("插件路径越界")
 
-    # 军令 #18-结 任务三：题库引擎的免死金牌。前端传什么 keep_data 都不算，
-    # provider 插件的物理库一律原地保留——换引擎可以，毁真题不行。
-    provider_guarded = _declares_provider(plugin_dir)
+    manifest = _read_manifest(plugin_dir)
+    # 军令 #20：题库引擎整包受保护——它不是可换的皮，卸载连代码目录都不删；
+    # 前端据实把按钮置灰，后端仍要挡一次（前端隐藏按钮不是安全边界）。
+    if manifest.get("uninstallable") is False:
+        raise PluginUninstallError(
+            f"「{plugin_dir.name}」是题库引擎，受保护不可卸载；如需停用请在插件控制台停用。",
+            status=409,
+        )
+    # 第二级免死金牌（第三方 provider 没有 uninstallable 时的兜底）：前端传什么
+    # keep_data 都不算，provider 插件的物理库一律原地保留——换引擎可以，毁真题不行。
+    provider_guarded = _declares_provider(manifest)
     keep_data = keep_data or provider_guarded
 
     removed_code = False

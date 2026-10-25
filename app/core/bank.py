@@ -42,6 +42,7 @@ from typing import Any, Iterable
 from app.core import bank_fts
 from app.core import question_parser
 from app.core import questions as question_contract
+from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 from app.core.config import DEFAULT_WORKSPACE_ID, current_workspace_id, plugins_dir, settings
 from app.core.contract import (
     CONTRACT_VERSION,
@@ -205,10 +206,56 @@ def _upgrade_if_older(plugin_id: str, path: Path) -> None:
     upgrade_structure(plugin_id, path)
 
 
+def _legacy_bank_path(plugin_id: str) -> Path | None:
+    """拆分前的 core-bank 物理库：只读来源，绝不清空、绝不改名。
+
+    仅当新引擎自己被要求建库时启用；其它插件（含第三方 provider）一概不碰。
+    """
+    if plugin_id != DEFAULT_PROVIDER_ID:
+        return None
+    for legacy_id in LEGACY_PROVIDER_IDS:
+        candidate = Path(settings.data_dir) / "banks" / f"{legacy_id}.db"
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate
+    return None
+
+
+def _copy_legacy_bank(plugin_id: str, path: Path) -> bool:
+    """把旧库连同 WAL 一起复制成新引擎的库；返回是否复制成功。
+
+    顺序：先把主库写成临时文件，再把 ``-wal`` / ``-journal`` 复制到最终名，
+    最后原子替换主库。中途崩溃时主库还没出现，下次启动会重试；
+    旧库本体只读打开，字节不动（军令 #20 数据兼容口径）。
+    """
+    source = _legacy_bank_path(plugin_id)
+    if source is None:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".part")
+    if tmp.exists():
+        tmp.unlink()
+    try:
+        shutil.copyfile(source, tmp)
+        for suffix in ("-wal", "-journal"):
+            sidecar = Path(str(source) + suffix)
+            target_sidecar = Path(str(path) + suffix)
+            if sidecar.is_file():
+                shutil.copyfile(sidecar, target_sidecar)
+            elif target_sidecar.exists():
+                target_sidecar.unlink()   # 上一轮失败留下的孤儿边车不带走
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return path.is_file() and path.stat().st_size > 0
+
+
 def ensure_bank(plugin_id: str) -> Path:
     """确保当前工作区的题库存在。
 
     纯净发版口径（ADR-003）：底座**不再随包携带真题库**。
+    - 升级过渡（军令 #20）：新引擎首次建库时，把旧 ``core-bank`` 物理库原样复制
+      一份过来（旧文件保留），老师装完新版立刻能看到原来的题。
     - default 工作区（本机开发）：从插件包自带的 ``bank/bank.db`` 种子原子复制——
       本机那颗 456 题的种子只活在本地磁盘（已从 git 与发行包剔除），一启动就能看到题。
       种子也不在时（纯净克隆 / 首次发布环境）退回用 ``schema.sql`` 建**空库**，不报错。
@@ -226,6 +273,9 @@ def ensure_bank(plugin_id: str) -> Path:
     with _seed_lock:
         if path.is_file() and path.stat().st_size > 0:
             return path
+        if _copy_legacy_bank(plugin_id, path):
+            _seed_assets(plugin_id)
+            return path
         seed = _seed_path(plugin_id) if current_workspace_id() == DEFAULT_WORKSPACE_ID else None
         if seed is not None and seed.is_file():
             tmp = path.with_suffix(".db.part")
@@ -242,28 +292,37 @@ def ensure_bank(plugin_id: str) -> Path:
     return path
 
 
+def _asset_dirs(plugin_id: str) -> list[Path]:
+    """配图来源：新插件自己的 ``bank/assets``，以及升级过渡期的旧 core-bank 目录。"""
+    dirs = [plugins_dir() / plugin_id / "bank" / "assets"]
+    if plugin_id == DEFAULT_PROVIDER_ID:
+        dirs.extend(plugins_dir() / legacy / "bank" / "assets" for legacy in LEGACY_PROVIDER_IDS)
+    return dirs
+
+
 def _seed_assets(plugin_id: str) -> None:
     """把插件包 ``bank/assets`` 里的配图补进当前工作区 uploads/（只补缺失文件）。
 
     图片不是题目结构的一部分，但 schema 指向 ``/static/uploads/``；插件要能在
     另一台机器上“装上就有图”，随包的图必须由底座在首次建库时落位。
+    升级过渡期旧插件的 assets 目录仍在就一并补上（同名文件以新插件为准）。
     """
-    source = plugins_dir() / plugin_id / "bank" / "assets"
-    if not source.is_dir():
-        return
     target_dir = Path(settings.uploads_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    for item in source.iterdir():
-        if not item.is_file() or item.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+    for source in _asset_dirs(plugin_id):
+        if not source.is_dir():
             continue
-        target = target_dir / item.name
-        if target.is_file():
-            continue
-        try:
-            shutil.copyfile(item, target)
-        except OSError:
-            # 单张图坏了不阻断题库读取；题目里会显示缺图占位
-            continue
+        for item in source.iterdir():
+            if not item.is_file() or item.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+                continue
+            target = target_dir / item.name
+            if target.is_file():
+                continue
+            try:
+                shutil.copyfile(item, target)
+            except OSError:
+                # 单张图坏了不阻断题库读取；题目里会显示缺图占位
+                continue
 
 
 def _check_structure(con: sqlite3.Connection, plugin_id: str, path: Path) -> None:

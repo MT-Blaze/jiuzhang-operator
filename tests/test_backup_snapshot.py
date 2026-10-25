@@ -26,7 +26,7 @@ from unittest import mock
 from app.core import backup, restore
 from app.core.config import settings
 
-PROVIDER = "org.jiuzhang.core-bank"
+PROVIDER = "org.jiuzhang.bank-engine"
 WS_ID = "ws_0123456789abcdef"
 
 

@@ -28,7 +28,7 @@ CHAT_JS = (CHAT_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
 CHAT_HTML = (CHAT_DIR / "dist" / "index.html").read_text(encoding="utf-8")
 STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
 WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
-CORE_BANK_JS = (ROOT / "plugins" / "org.jiuzhang.core-bank" / "dist" / "plugin.js").read_text(
+CORE_BANK_JS = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(
     encoding="utf-8"
 )
 
@@ -250,7 +250,7 @@ class BankQueryDeliveryTest(unittest.TestCase):
         self.assertGreater(mount_at, 0, "挂载成功后要补发一次检索意图")
 
     def test_03_core_bank_handles_the_notification(self) -> None:
-        self.assertIn('message.event === "system.bank_query"', CORE_BANK_JS, "core-bank 没接住跳转")
+        self.assertIn('message.event === "system.bank_query"', CORE_BANK_JS, "bank-ui 没接住跳转")
         self.assertIn("state.search = query", CORE_BANK_JS)
 
     def test_04_query_is_clamped_host_side(self) -> None:
@@ -270,7 +270,7 @@ class BankToolContractTest(unittest.TestCase):
         self.assertNotIn("required", function["parameters"], "留空即统计全库，不该强制关键词")
 
     def test_02_jump_declares_intent_only(self) -> None:
-        jump = plugin_tools._bank_jump("导数", {"plugin_id": "org.jiuzhang.core-bank"})
+        jump = plugin_tools._bank_jump("导数", {"plugin_id": "org.jiuzhang.bank-engine"})
         self.assertEqual(jump["type"], "open_bank")
         self.assertEqual(jump["label"], "前往题库并搜索")
         self.assertEqual(jump["query"], "导数")
@@ -286,7 +286,7 @@ class BankToolContractTest(unittest.TestCase):
     def test_04_count_comes_from_the_store(self) -> None:
         item = {"id": "q_1", "type": "single_choice", "stem": "求函数 $f(x)=x^2$ 的导数", "difficulty": "L2"}
         with mock.patch.object(plugin_tools.bank_provider, "resolve", return_value={
-            "plugin_id": "org.jiuzhang.core-bank", "name": "真题题库"
+            "plugin_id": "org.jiuzhang.bank-engine", "name": "真题题库"
         }), mock.patch.object(plugin_tools.bank_store, "list_questions", return_value=([item], 48)), \
                 mock.patch.object(plugin_tools.bank_store, "stats", return_value={"total": 456}):
             result = plugin_tools.execute_bank_tool({"query": "导数"})
@@ -296,11 +296,11 @@ class BankToolContractTest(unittest.TestCase):
         self.assertIn("456", result["summary"])
         self.assertIn("48", result["summary"])
         self.assertEqual(result["jump"]["query"], "导数")
-        self.assertEqual(result["jump"]["plugin_id"], "org.jiuzhang.core-bank")
+        self.assertEqual(result["jump"]["plugin_id"], "org.jiuzhang.bank-engine")
 
     def test_05_empty_query_counts_the_whole_bank(self) -> None:
         with mock.patch.object(plugin_tools.bank_provider, "resolve", return_value={
-            "plugin_id": "org.jiuzhang.core-bank", "name": "真题题库"
+            "plugin_id": "org.jiuzhang.bank-engine", "name": "真题题库"
         }), mock.patch.object(plugin_tools.bank_store, "list_questions", return_value=([], 0)), \
                 mock.patch.object(plugin_tools.bank_store, "stats", return_value={"total": 0}):
             result = plugin_tools.execute_bank_tool({"query": ""})
@@ -317,7 +317,7 @@ class BankToolContractTest(unittest.TestCase):
 
     def test_07_store_failure_is_reported_not_raised(self) -> None:
         with mock.patch.object(plugin_tools.bank_provider, "resolve", return_value={
-            "plugin_id": "org.jiuzhang.core-bank", "name": "真题题库"
+            "plugin_id": "org.jiuzhang.bank-engine", "name": "真题题库"
         }), mock.patch.object(
             plugin_tools.bank_store, "list_questions", side_effect=plugin_tools.bank_store.BankError("库锁死")
         ):
@@ -372,7 +372,7 @@ class ChatEndpointTest(unittest.TestCase):
         with mock.patch.object(agents.ai_client, "chat_completion", fake_completion), \
                 mock.patch.object(plugin_tools, "build_tools", return_value=[]), \
                 mock.patch.object(plugin_tools.bank_provider, "resolve", return_value={
-                    "plugin_id": "org.jiuzhang.core-bank", "name": "真题题库"
+                    "plugin_id": "org.jiuzhang.bank-engine", "name": "真题题库"
                 }), \
                 mock.patch.object(plugin_tools.bank_store, "list_questions", return_value=([item], 48)), \
                 mock.patch.object(plugin_tools.bank_store, "stats", return_value={"total": 456}):

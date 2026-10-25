@@ -40,13 +40,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SCHEMA_PATH = ROOT / "plugins/org.jiuzhang.core-bank/bank/schema.sql"
-DOC_DB = ROOT / "plugins/org.jiuzhang.core-bank/bank/bank.db"
+SCHEMA_PATH = ROOT / "plugins/org.jiuzhang.bank-engine/bank/schema.sql"
+DOC_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank.db"
 LEGACY_DB = ROOT / ".scratch-recon-063/legacy.db"
 SCHOOLS_JSON = Path("E:/math-question-bank-main/mathbank/resources/schools.json")
 OUTLINE_JSON = Path("E:/math-question-bank-main/mathbank/resources/curriculums/A.json")
-MIGRATED_DB = ROOT / "plugins/org.jiuzhang.core-bank/bank/v063_migrated.db"
-SEED_NEW_DB = ROOT / "plugins/org.jiuzhang.core-bank/bank/bank_v063.db"
+MIGRATED_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063_migrated.db"
+SEED_NEW_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank_v063.db"
 REPORT_JSON = ROOT / "data/bank_v063_migration_report.json"
 REPORT_MD = ROOT / "docs/v0.6.3-灌库校验.md"
 

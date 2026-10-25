@@ -1,8 +1,9 @@
 """题库 provider 路由：底座认「当前活跃的题库插件」，不认死某个 ID。
 
-官方 core-bank 只是**默认** provider。第三方只要装一个声明 ``bank.provider``
-能力、并按 ``schemas/question.json`` 出参的插件，就可以被选为活跃题库
-（PLUGIN_SPEC §2.6.1）。本模块只管三件事：
+官方 ``org.jiuzhang.bank-engine`` 是**默认** provider（军令 #20 把数据引擎与
+视图插件拆开后，provider 只认无界面的引擎）。第三方只要装一个声明
+``bank.provider`` 能力、并按 ``schemas/question.json`` 出参的插件，就可以被选为
+活跃题库（PLUGIN_SPEC §2.6.1）。本模块只管三件事：
 
 1. **读配置**：``data/workspaces/<id>/bank_provider.json``（用户亲手在控制台里选的，
    没配就用默认）；
@@ -25,7 +26,10 @@ from app.core.config import current_workspace_id, workspace_storage_dir
 from app.core.plugins import discover_plugins
 
 # 默认 provider 的**唯一**出处：全仓其它地方一律读本常量，不许再写字面量。
-DEFAULT_PROVIDER_ID = "org.jiuzhang.core-bank"
+DEFAULT_PROVIDER_ID = "org.jiuzhang.bank-engine"
+# 军令 #20 拆分前的官方题库插件 id。它只用于两件事：把旧配置与原库映射到
+# 新引擎；引擎装上后不再让它参与发现（同一份数据不能有两个主人）。
+LEGACY_PROVIDER_IDS = ("org.jiuzhang.core-bank",)
 PROVIDER_CAPABILITY = "bank.provider"
 STATE_FILENAME = "bank_provider.json"
 # 跨页签共享的通道：非题库插件（如录题端）也要能读公共真题库、写新题。
@@ -77,6 +81,12 @@ def resolve() -> dict[str, Any]:
     """当前生效的 provider，附回退原因与方法口径，供宿主与控制台展示。"""
     installed = _installed()
     wanted = configured_id() or DEFAULT_PROVIDER_ID
+    migrated_from = ""
+    # 旧 core-bank 的配置属于升级过渡：引擎装上后同一份数据只由引擎接管，
+    # 不把用户手选的旧 id 判成「未安装 → 回退」，免得界面报一条吓人的回退原因。
+    if wanted in LEGACY_PROVIDER_IDS and DEFAULT_PROVIDER_ID in installed:
+        migrated_from = wanted
+        wanted = DEFAULT_PROVIDER_ID
     plugin = installed.get(wanted)
     reason = ""
     active = wanted
@@ -98,6 +108,8 @@ def resolve() -> dict[str, Any]:
         "shared_methods": list(SHARED_METHODS),
         "per_tab_methods": list(PER_TAB_METHODS),
         "fallback_reason": reason,
+        # 非空表示本次解析把旧的 core-bank 配置映射到了新引擎（数据兼容过渡）。
+        "migrated_from": migrated_from,
     }
     return result
 
@@ -106,7 +118,7 @@ def candidates() -> list[dict[str, Any]]:
     """可被选为 provider 的已装插件（含默认库自己），供控制台下拉。"""
     out = []
     for plugin in _installed().values():
-        if not eligible(plugin):
+        if not eligible(plugin) or plugin["id"] in LEGACY_PROVIDER_IDS:
             continue
         out.append({"id": plugin["id"], "name": plugin["name"], "version": plugin["version"],
                     "writable": "questions:write" in (plugin.get("permissions") or [])})

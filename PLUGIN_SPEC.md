@@ -573,7 +573,7 @@ com.example.card/
 | `bank.active_stats` | 活跃题库的年级/难度/题型/章节计数 | 与 `bank.stats` 同口径，数据源为当前活跃 provider |
 | `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
 | `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
-| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入底座公共题库**（`org.jiuzhang.core-bank`），插件自报目标无效；ID / 时间戳由底座生成 |
+| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入当前活跃题库 provider**（默认 `org.jiuzhang.bank-engine`），插件自报目标无效；ID / 时间戳由底座生成 |
 | `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
 | `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
 | `basket.active_add` | 加题到题篮（记在**当前活跃题库**名下） | 参数与 `basket.add` 相同；供浏览型插件使用，避免题目被记到一个空库名下导致读题篮时取不到全文 |
@@ -592,11 +592,12 @@ com.example.card/
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：[`org.jiuzhang.core-bank`](plugins/org.jiuzhang.core-bank/plugin.json)（SQLite 存储端，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题、经 `asset.upload` 落地框选配图。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` 写入新题、经 `asset.upload` 落地框选配图。后续组卷、讲义插件复用同一通道，不新增协议。
 
-#### 2.6.1 题库 provider 可替换（v0.8.2）——底座不写死 `core-bank`
+#### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 
-官方 `core-bank` 只是**默认的**题库 provider，不是唯一的。任何第三方插件只要满足三条，就能被底座当作活跃题库使用：
+官方引擎 `bank-engine` 只是**默认的**题库 provider，不是唯一的；界面由独立的 `bank.view` 插件提供，
+provider 不再兼任视图。任何第三方插件只要满足三条，就能被底座当作活跃题库使用：
 
 1. **清单声明能力** `capabilities: ["bank.provider"]`，并在 `permissions` 里声明 `questions:read`（要接受写入再加 `questions:write`）；
 2. **实现标准读方法**：`bank.list` / `bank.stats` / `bank.get` / `bank.random`（可选 `bank.topics` / `bank.topic_notes` / `bank.review`），出参结构必须逐字符合 `schemas/question.json`（含 `id` 全局身份、Markdown + LaTeX 文本、`extensions` 反向域名键）；
@@ -605,13 +606,13 @@ com.example.card/
 路由口径（缺一即违规）：
 
 - **谁在用**：宿主（`static/js/stage.js`）启动时向 `GET /api/bank/provider` 取「当前活跃 provider」，把 `bank.get` / `bank.topics` / `bank.create` 等**跨页签共享**的通道指向它；`bank.list` / `bank.stats` / `bank.random` 与题篮仍按**页签自己的 plugin.id** 走 `/api/bank/plugins/{plugin_id}/…`，天然多库并存。
-- **浏览型插件怎么取题**：像题库浏览视图这种**自己没有题库**的插件，禁止用 `bank.list` / `bank.stats`（那会按它自己的页签 id 去查一个空库），必须用 `bank.active_list` / `bank.active_stats`——这两条与 `bank.get` / `bank.topics` 同源，永远指向当前活跃 provider。
-- **谁在选**：活跃 provider 落在本机 `data/bank_provider.json`，由用户在【设置与控制台 → 工作区管理】里选；写入接口需带一次性写令牌。
+- **浏览型插件怎么取题**：像题库浏览视图这种**自己没有题库**的插件（军令 #20 的 `bank-ui` 即此形态，声明 `bank.view`），禁止用 `bank.list` / `bank.stats`（那会按它自己的页签 id 去查一个空库），必须用 `bank.active_list` / `bank.active_stats`——这两条与 `bank.get` / `bank.topics` 同源，永远指向当前活跃 provider。
+- **谁在选**：活跃 provider 落在本机 `data/workspaces/<id>/bank_provider.json`（按工作区隔离），由用户在【设置与控制台 → 工作区管理】里选；写入接口需带一次性写令牌。旧版 `org.jiuzhang.core-bank` 的配置在引擎已安装时自动映射为 `bank-engine`，读取结果带 `migrated_from` 如实回报。
 - **怎么选得上**：被设置的 id 必须**已安装**且**声明了 `bank.provider` 能力**，否则底座拒绝写入并回 400；读取时若配置的 provider 已卸载或不合规，**回退默认 provider 并如实回报 `fallback_reason`**——「插件坏了，底座还能用」（AGENTS §2）。
-- **不许写死**：底座与插件代码里不得出现 `org.jiuzhang.core-bank` 字面量作为路由目标（打包/索引/测试夹具除外）。默认值只允许出现在 `app/core/bank_provider.py` 的 `DEFAULT_PROVIDER_ID` 一处。
+- **不许写死**：底座与插件代码里不得出现官方题库插件 id 作为路由目标（打包/索引/测试夹具除外）。默认值只允许出现在 `app/core/bank_provider.py` 的 `DEFAULT_PROVIDER_ID` 与 `LEGACY_PROVIDER_IDS` 两处；`bank.view` 的默认插件 id 只允许出现在宿主 `static/js/stage.js` 的 `BANK_VIEW_DEFAULT` 一处（取不到清单时兜底）。
 - **契约不变**：换 provider 不换协议。`question.json` 是唯一标准结构（§2.5 与 AGENTS §3），provider 私有数据只能写进 `extensions`，底座不解释。
 
-> **当前边界（如实说明，别当已交付）**：官方 provider 的存储层仍是 core-bank 的 7 张关系表 + 两张版本表，`app/core/bank.py` 的结构守卫按 `bank/schema.sql` 校验。第三方若要用 JSON / MySQL / 自研结构**服务同一套 `bank.*`**，还缺一个 provider 反向 RPC 运行时（§2.2 数据源插件的预留位，与 §6.1「后端插件运行时」同源）；在那之前，可替换的是**路由与身份**，不是**存储引擎本身**。
+> **当前边界（如实说明，别当已交付）**：官方 provider 的存储层仍是 v0.6.3 冻结的 7 张关系表 + 两张版本表，`app/core/bank.py` 的结构守卫按 `bank/schema.sql` 校验。第三方若要用 JSON / MySQL / 自研结构**服务同一套 `bank.*`**，还缺一个 provider 反向 RPC 运行时（§2.2 数据源插件的预留位，与 §6.1「后端插件运行时」同源）；在那之前，可替换的是**路由与身份**，不是**存储引擎本身**。
 
 ### 2.7 多版本教材与考向并集（v0.8.2 地基）
 
@@ -686,8 +687,8 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract` 钉死），
 请求 id 过守卫由 `test_03d_template_request_id_passes_host_message_guard` 钉死，
 真机链路（左栏入口→沙箱页签→activate 回执→宿主 API 往返→`region.dock` 落底栏→坏 id 当场回执与底栏记账）由
-`tools/template_plugin_probe.py` 取证：2026-10-23 裸装模板 **18/18**，复制官方 `core-bank`
-进隔离目录跑黄金路径 **19/19**，沙箱内实测「取到 10 题（共 209 题）」并渲染 10 张卡；
+`tools/template_plugin_probe.py` 取证：2026-10-25（军令 #20 拆分后复跑）模板在
+`bank-engine` + `bank-ui` 隔离目录里跑黄金路径 **18/18**，沙箱内实测取题与渲染全通；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线）。
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）

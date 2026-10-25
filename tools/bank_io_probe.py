@@ -30,7 +30,7 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 TOKEN = "bank-io-probe-token"
 
 

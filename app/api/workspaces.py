@@ -40,15 +40,27 @@ def _provider_id() -> str:
 
 
 def _bank_db_for(workspace_id: str | None) -> Path:
-    """按工作区推导 core-bank 物理库路径，不改全局 settings，供只读计数。"""
+    """按工作区推导活跃题库的物理库路径，不改全局 settings，供只读计数。"""
     base = root_data_dir()
     data_dir = base / "workspaces" / workspace_id if workspace_id else base
     return data_dir / "banks" / f"{_provider_id()}.db"
 
 
 def _bank_question_count(workspace_id: str | None) -> int:
-    """只读统计某工作区题库的题目数；库还不存在（没打开过）算 0，绝不为计数去建库。"""
+    """只读统计某工作区题库的题目数；库还不存在（没打开过）算 0，绝不为计数去建库。
+
+    升级过渡（军令 #20）：引擎库还没生成、但该区只有旧 core-bank 库时，
+    按旧库计数——否则工作区下拉会把老师攒的题显示成 0（库里其实一题没少）。
+    """
     path = _bank_db_for(workspace_id)
+    if not path.is_file():
+        base = root_data_dir()
+        data_dir = base / "workspaces" / workspace_id if workspace_id else base
+        for legacy_id in bank_provider.LEGACY_PROVIDER_IDS:
+            candidate = data_dir / "banks" / f"{legacy_id}.db"
+            if candidate.is_file():
+                path = candidate
+                break
     if not path.is_file():
         return 0
     try:
@@ -89,10 +101,11 @@ def _request_port(request: Request) -> int:
 
 
 def _provision_core_bank() -> int:
-    """切/建工作区后立即落地该区的 core-bank 物理库，并回其题目数。
+    """切/建工作区后立即落地该区的题库物理库，并回其题目数。
 
     新工作区（非 default）走 ensure_bank 的 schema 兜底 → 空库；default 若有本机种子则复制、
-    否则同样建空。任何建库异常都不该让切换/新建整条失败——题目读不到时前端会再触发。
+    否则同样建空；从旧 core-bank 升级过来的工作区由 ensure_bank 一次性复制旧库。
+    任何建库异常都不该让切换/新建整条失败——题目读不到时前端会再触发。
     """
     try:
         core_bank.ensure_bank(_provider_id())
@@ -337,7 +350,7 @@ async def import_workspace(payload: WorkspaceImportRequest, request: Request) ->
     """把老师选择的一个本地 .db 挂载成独立工作区，并切换过去。
 
     校验顺序：base64 解码 → 体积上限 → SQLite 魔数 → 七表齐全。任一不过即 400 且不留半成品文件。
-    落位到 ``data/workspaces/<wsid>/banks/org.jiuzhang.core-bank.db``，与 v0.7.2 的工作区物理隔离口径一致。
+    落位到 ``data/workspaces/<wsid>/banks/<活跃 provider>.db``，与 v0.7.2 的工作区物理隔离口径一致。
     """
     name = payload.name.strip()
     if not name:

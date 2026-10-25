@@ -396,11 +396,42 @@
   var OPEN_BANK_QUERY_MAX = 40;
 
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
-  // 由底座按 data/bank_provider.json 解析（PLUGIN_SPEC §2.6.1）。官方 core-bank
-  // 只是默认值——取不到 provider 时仍用它，不能让「读不到配置」打死整条数据通道。
-  var BANK_PROVIDER_DEFAULT = "org.jiuzhang.core-bank";
+  // 由底座按 data/bank_provider.json 解析（PLUGIN_SPEC §2.6.1）。军令 #20 之后
+  // provider 只认无界面的题库引擎；取不到 provider 时仍用它，不能让「读不到配置」
+  // 打死整条数据通道。
+  var BANK_PROVIDER_DEFAULT = "org.jiuzhang.bank-engine";
   var bankProviderId = BANK_PROVIDER_DEFAULT;
   var bankProviderCall = null;
+  // 界面与引擎分家：跳转题库要打开「声明 bank.view 的视图插件」，不再打开 provider。
+  var BANK_VIEW_DEFAULT = "org.jiuzhang.bank-ui";
+  var bankViewCall = null;
+
+  /** 清单里声明了某项能力才算数（与权限判定同口径，插件自报一律不认）。 */
+  function hasCapability(tab, capability) {
+    var list = tab.plugin && tab.plugin.capabilities;
+    return Array.isArray(list) && list.indexOf(capability) >= 0;
+  }
+
+  function loadBankView() {
+    if (bankViewCall) return bankViewCall;
+    bankViewCall = fetchJson("/api/plugins").then(function (data) {
+      var views = ((data && data.plugins) || []).filter(function (plugin) {
+        return plugin && plugin.enabled !== false && plugin.show_in_sidebar !== false
+          && plugin.entry_url
+          && Array.isArray(plugin.capabilities)
+          && plugin.capabilities.indexOf("bank.view") >= 0;
+      });
+      var preferred = views.filter(function (plugin) {
+        return plugin.id === BANK_VIEW_DEFAULT;
+      })[0] || views[0];
+      if (!preferred) bankViewCall = null;   // 没装上：下次跳转时重新查清单
+      return preferred || null;
+    }, function () {
+      bankViewCall = null;
+      return null;
+    });
+    return bankViewCall;
+  }
 
   function bankProviderBase() {
     return "/api/bank/plugins/" + encodeURIComponent(bankProviderId);
@@ -1409,17 +1440,19 @@
     }
 
     if (method === "bank.dedupe_scan" || method === "bank.dedupe_merge") {
-      // 查重清洗只对「活跃题库 provider 自己的页签」开放：扫描要读全库、合并要真删副本行，
-      // 别的插件哪怕猜对方法名也碰不到老师的库。core-bank 依旧没声明 questions:write——
-      // 三端分离不破：改题目内容仍然只有录题工作台能干，这里只做「同题收敛」的库内清洗。
-      if (pluginId !== bankProviderId) {
+      // 查重清洗只对「活跃题库 provider 自己的页签」或「声明 bank.view 的视图插件」开放：
+      // 扫描要读全库、合并要真删副本行，别的插件哪怕猜对方法名也碰不到老师的库。
+      // 视图插件依旧没声明 questions:write——三端分离不破：改题目内容仍然只有录题
+      // 工作台能干，这里只做「同题收敛」的库内清洗。
+      if (pluginId !== bankProviderId && !hasCapability(tab, "bank.view")) {
         replyHost(tab, message, false, {
-          code: "FORBIDDEN", message: "查重只开放给当前题库 provider 自己的页签"
+          code: "FORBIDDEN", message: "查重只开放给题库引擎或声明 bank.view 的视图插件"
         });
         return;
       }
       if (method === "bank.dedupe_scan") {
-        fetchJson(base + "/duplicates").then(done, fail);
+        // 视图插件自己没有库：扫描与合并都落在当前活跃 provider 上。
+        fetchJson(sharedBase + "/duplicates").then(done, fail);
         return;
       }
       var dedupePrimary = textValue(payload, "primary_id", 80);
@@ -1432,7 +1465,7 @@
         });
         return;
       }
-      withWriteToken(base + "/duplicates/merge", {
+      withWriteToken(sharedBase + "/duplicates/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ primary_id: dedupePrimary, copy_ids: dedupeCopies })
@@ -1757,9 +1790,16 @@
     return Array.isArray(list) && list.indexOf(AI_INVOKE_PERMISSION) >= 0;
   }
 
-  // ---------- 看板跳转：打开活跃题库页签（system.open_bank） ----------
-  // 与 openEditor 同构：插件只发意图，跳转由宿主完成，目标不写死——
-  // 永远打开「当前活跃 provider」的页签（bankProviderId 启动时已从 /api/bank/provider 解析）。
+  // ---------- 看板跳转：打开题库视图页签（system.open_bank） ----------
+  // 与 openEditor 同构：插件只发意图，跳转由宿主完成。军令 #20 后「数据引擎」
+  // 与「界面」分家：跳转目标是声明 bank.view 的视图插件，provider 不再开页签。
+  function findBankViewTab() {
+    for (var i = 0; i < tabs.length; i += 1) {
+      if (tabs[i].kind === "plugin" && hasCapability(tabs[i], "bank.view")) return tabs[i];
+    }
+    return null;
+  }
+
   function openBank(payload) {
     var raw = (payload && payload.raw) || {};
     var questionId = typeof raw.question_id === "string" ? raw.question_id.slice(0, 80) : "";
@@ -1773,7 +1813,7 @@
     if (query || questionId) {
       pendingBankQuery = { query: query, question_id: questionId };
     }
-    var tab = findPluginTab(bankProviderId);
+    var tab = findBankViewTab();
     if (tab) {
       activate(tab.key);
       if (tab.ready) deliverBankQuery(tab);   // 刚唤醒的交给 mountFrame 补发
@@ -1782,13 +1822,10 @@
         + (questionId ? "（题目 " + questionId + "）" : "") + "。", "stage.bank.opened");
       return;
     }
-    fetchJson("/api/plugins").then(function (data) {
-      var plugin = ((data && data.plugins) || []).filter(function (item) {
-        return item.id === bankProviderId;
-      })[0];
+    loadBankView().then(function (plugin) {
       if (!plugin) {
         pendingBankQuery = null;
-        dock("没找到当前题库插件 " + bankProviderId + "，跳转未完成。", "stage.bank.missing");
+        dock("没找到题库视图插件（bank.view），跳转未完成。", "stage.bank.missing");
         return;
       }
       openPlugin(plugin);

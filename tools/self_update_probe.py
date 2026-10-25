@@ -70,7 +70,10 @@ RUNTIME_PREFIXES = ("banks/", "uploads/")
 
 
 def is_runtime_file(relative: str) -> bool:
-    return relative in RUNTIME_FILES or relative.startswith(RUNTIME_PREFIXES)
+    # 军令 #18 起续更清单按工作区落位（data/workspaces/<id>/update_state.json），
+    # 只比全路径的旧口径会把这份底座自己写的文件误判成「被动过的老师资产」。
+    name = relative.rsplit("/", 1)[-1]
+    return name in RUNTIME_FILES or relative.startswith(RUNTIME_PREFIXES)
 
 # 夹带载荷：这些目录名都在 robocopy 的排除清单里，一个都不许落地
 SMUGGLED = {
@@ -269,13 +272,15 @@ def install_minimal_core_bank(install: Path) -> None:
     发行版就是这样发的：题库是空壳，老师在工作区里自己录。沙箱里少了它，
     工作区的「教材版本」接口会 400，探针的控制台错误判据就会被这条噪声污染。
     """
-    source = ROOT / "plugins" / "org.jiuzhang.core-bank"
-    target = install / "plugins" / "org.jiuzhang.core-bank"
+    source = ROOT / "plugins" / "org.jiuzhang.bank-engine"
+    target = install / "plugins" / "org.jiuzhang.bank-engine"
     (target / "bank").mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "plugin.json", target / "plugin.json")
     shutil.copy2(source / "LICENSE", target / "LICENSE")
     shutil.copy2(source / "bank" / "schema.sql", target / "bank" / "schema.sql")
-    shutil.copytree(source / "dist", target / "dist", ignore=IGNORE)
+    # 军令 #20：引擎是无界面插件，没有 dist/；有才复制，避免拿旧布局去猜。
+    if (source / "dist").is_dir():
+        shutil.copytree(source / "dist", target / "dist", ignore=IGNORE)
 
 
 def build_host_package(install: Path, version: str) -> bytes:
@@ -531,15 +536,18 @@ def main() -> int:
                all(step in log_text for step in steps),
                "日志：%s" % log_source.name)
 
-        state_path = install / "data" / "update_state.json"
+        # 续更清单从军令 #18 起属于当前工作区；根 data/ 下再出现同名文件就是落错了地方。
+        state_path = install / "data" / "workspaces" / "default" / "update_state.json"
         state = {}
         if state_path.is_file():
             try:
                 state = json.loads(state_path.read_text(encoding="utf-8"))
             except ValueError:
                 state = {}
-        record("data/ 里只留下允许的更新痕迹", str(state.get("host_version") or "") == HOST_VERSION,
-               "host_version=%s" % (state.get("host_version") or ""))
+        record("续更清单按工作区落位且版本号正确",
+               not (install / "data" / "update_state.json").exists()
+               and str(state.get("host_version") or "") == HOST_VERSION,
+               "host_version=%s，路径=%s" % (state.get("host_version") or "", state_path.relative_to(install)))
 
         log_text = (work / "app.log").read_text(encoding="utf-8", errors="replace")
         (work / "app.log").write_text(log_text, encoding="utf-8")

@@ -34,7 +34,8 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-BANK_ID = "org.jiuzhang.core-bank"
+BANK_ID = "org.jiuzhang.bank-engine"
+BANK_UI_ID = "org.jiuzhang.bank-ui"
 PAPER_ID = "org.jiuzhang.paper-gen"
 
 
@@ -306,7 +307,7 @@ def main() -> int:
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
 
-    for plugin_id in (BANK_ID, PAPER_ID):
+    for plugin_id in (BANK_ID, BANK_UI_ID, PAPER_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()
@@ -530,7 +531,7 @@ def main() -> int:
 
             # ---------- EventBus：题库再入篮一题 → 组卷自动 +1 ----------
             page.locator(".ws-plugin-item", has_text="真题题库").first.click()
-            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_core-bank")
+            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_bank-ui")
             bank_frame = bank_panel.frame_locator(".ws-plugin-frame")
             expect(bank_frame.locator(".cb-row").first).to_be_visible(timeout=20000)
             seeded_set = set(seeded)

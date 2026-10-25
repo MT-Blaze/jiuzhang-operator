@@ -39,7 +39,8 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
+UI_ID = "org.jiuzhang.bank-ui"
 TOKEN = "dedupe-probe-token"
 # 建库时间必须落在过去：schema 上有 ck_questions_updated，合并写入的 updated_at 是真机当前时间。
 STAMP = "2026-01-15T09:00:00+08:00"
@@ -289,7 +290,8 @@ def main() -> int:
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
 
-    shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
+    for plugin_id in (PLUGIN_ID, UI_ID):
+        shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
     # 夹具自给自足：本机 456 题种子与历史备份不进探针现场，免得扫描结果受真实数据干扰
     for junk in (plugins_dir / PLUGIN_ID / "bank").glob("*.db*"):
         junk.unlink()
@@ -597,8 +599,8 @@ def main() -> int:
 
             browser.close()
 
-        js_source = (plugins_dir / PLUGIN_ID / "dist" / "plugin.js").read_text(encoding="utf-8")
-        css_source = (plugins_dir / PLUGIN_ID / "dist" / "plugin.css").read_text(encoding="utf-8")
+        js_source = (plugins_dir / UI_ID / "dist" / "plugin.js").read_text(encoding="utf-8")
+        css_source = (plugins_dir / UI_ID / "dist" / "plugin.css").read_text(encoding="utf-8")
         hits = {
             "fetch(": js_source.count("fetch("),
             "parent.document": js_source.count("parent.document"),

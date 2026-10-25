@@ -109,7 +109,7 @@
 两类题库要分清：
 
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
-- **活跃公共题库**（provider，默认 `org.jiuzhang.core-bank`）：`bank.get` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签，见 §2.17）。
+- **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签**或声明 `bank.view` 的视图插件页签**，见 §2.17）。
 
 ### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.0）
 
@@ -225,7 +225,7 @@ result：`{items, total, page, page_size, total_pages, summary: {total, flags: [
 payload：无。result：
 
 ```json
-{ "plugin_id": "org.jiuzhang.core-bank",
+{ "plugin_id": "org.jiuzhang.bank-engine",
   "date": "2026-10-23",
   "total_questions": 456,
   "today_added": 5,
@@ -288,10 +288,11 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 
 ### 2.17 `bank.dedupe_scan` / `bank.dedupe_merge` — 查重清洗（军令 #18-终 阶段五新增）
 
-**只开放给当前活跃题库 provider 自己的页签**（默认 `org.jiuzhang.core-bank`）。
-扫描要读全库、合并要真删副本行，所以别的插件哪怕猜对方法名也只拿到
-`FORBIDDEN`；core-bank 依旧没声明 `questions:write`——三端分离不破，
-改题目内容仍然只有录题工作台能干，这条通道只做「同题收敛」的库内清洗。
+**只开放给当前活跃题库 provider 自己的页签，或声明 `bank.view` 的视图插件页签**
+（军令 #20 起题库视图是独立插件 `org.jiuzhang.bank-ui`，默认 provider 是
+`org.jiuzhang.bank-engine`）。扫描要读全库、合并要真删副本行，所以别的插件
+哪怕猜对方法名也只拿到 `FORBIDDEN`；两个题库插件都不声明 `questions:write`——
+三端分离不破，改题目内容仍然只有录题工作台能干，这条通道只做「同题收敛」的库内清洗。
 HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicates/merge` 两行，逐字一致。
 
 | 方法 | payload | result |

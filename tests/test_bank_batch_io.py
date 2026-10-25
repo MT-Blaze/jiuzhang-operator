@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "batch-io-token"
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 
 
 def _question(index: int, *, stem: str | None = None) -> dict:

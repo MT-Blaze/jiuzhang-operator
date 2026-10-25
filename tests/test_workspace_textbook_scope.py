@@ -21,7 +21,7 @@ from app.core import bank
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 TB_A = "tb_aaaaaaaa"
 TB_B = "tb_bbbbbbbb"
 

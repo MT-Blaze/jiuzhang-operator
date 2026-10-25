@@ -72,8 +72,9 @@ class BusParityContract(unittest.TestCase):
         expect = {
             "org.jiuzhang.chat": {"stage.tab.activated", "stage.tab.closed", "stage.selection",
                                   "question.updated", "plugin.updated", "panel.button.click"},
-            "org.jiuzhang.core-bank": {"ui.params.changed", "system.question_updated",
-                                       "question.updated", "system.bank_query"},
+            "org.jiuzhang.bank-engine": set(),
+            "org.jiuzhang.bank-ui": {"ui.params.changed", "system.question_updated",
+                                     "question.updated", "system.bank_query"},
             "org.jiuzhang.dashboard": {"question.updated", "system.question_updated"},
             "org.jiuzhang.editor": {"system.open_editor", "ui.params.changed", "editor.apply_patch"},
             "org.jiuzhang.handout": {"ui.params.changed", "system.question_updated", "question.updated"},

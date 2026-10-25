@@ -29,7 +29,7 @@ from app.api import settings as settings_api
 from app.core import backup, restore
 from app.core.config import settings
 
-PROVIDER = "org.jiuzhang.core-bank"
+PROVIDER = "org.jiuzhang.bank-engine"
 WS_ID = "ws_restore0123456789"
 
 

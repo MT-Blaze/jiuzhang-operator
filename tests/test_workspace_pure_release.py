@@ -26,7 +26,7 @@ from app.core.config import settings
 from tools.build_plugin import build_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 SCHEMA = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
 
 
@@ -112,7 +112,7 @@ class EnsureBankWorkspaceTest(unittest.TestCase):
 
 
 class PluginPackagePurityTest(unittest.TestCase):
-    def test_core_bank_zip_carries_no_database_or_assets(self) -> None:
+    def test_engine_zip_carries_no_database_or_assets(self) -> None:
         with tempfile.TemporaryDirectory() as out:
             target = build_plugin(ROOT / "plugins" / PLUGIN_ID, Path(out))
             with zipfile.ZipFile(target) as bundle:
@@ -122,8 +122,8 @@ class PluginPackagePurityTest(unittest.TestCase):
         self.assertFalse(any(name.endswith(".db") for name in names),
                          [n for n in names if n.endswith(".db")])
         self.assertFalse(any("/assets/" in name for name in names), "题库配图资产不随包发布")
-        self.assertIn("org.jiuzhang.core-bank/bank/schema.sql", joined, "空壳仍须带 schema 供建库")
-        self.assertIn("org.jiuzhang.core-bank/plugin.json", joined)
+        self.assertIn("org.jiuzhang.bank-engine/bank/schema.sql", joined, "空壳仍须带 schema 供建库")
+        self.assertIn("org.jiuzhang.bank-engine/plugin.json", joined)
 
     def test_release_script_excludes_structural_backups(self) -> None:
         """结构升级备份是 456 题库的整份副本，漏进发行包等于把真题再发一遍。

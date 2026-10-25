@@ -33,7 +33,7 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 TOKEN = "dedupe-token"
 # 建库时间必须落在过去：schema 上有 ck_questions_updated（updated_at >= created_at），
 # 合并时写入的 updated_at 是真机当前时间，未来的夹具时间会让所有合并用例假失败。

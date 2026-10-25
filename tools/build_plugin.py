@@ -1,7 +1,7 @@
 """一键打包插件：校验清单 → 过安全白名单 → 生成标准 zip（顶层目录 = 插件 id）。
 
 用法：
-    .venv/Scripts/python.exe tools/build_plugin.py plugins/org.jiuzhang.core-bank
+    .venv/Scripts/python.exe tools/build_plugin.py plugins/org.jiuzhang.bank-engine
     .venv/Scripts/python.exe tools/build_plugin.py --all
     .venv/Scripts/python.exe tools/build_plugin.py <dir> --out dist/plugins
 

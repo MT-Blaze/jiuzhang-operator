@@ -1,20 +1,19 @@
 {
   "schema_version": "1.0",
-  "id": "org.jiuzhang.core-bank",
+  "id": "org.jiuzhang.bank-ui",
   "name": "真题题库",
-  "version": "0.7.2",
+  "version": "0.1.0",
   "api_version": "1.0",
   "kind": "tool",
-  "description": "底座公共真题库（本地 SQLite·工作区隔离）：按年级、难度、题型与关键词筛选，支持预览与加入题篮；内置【查重清洗】——按题面指纹找重复，双栏并排单选保留项后收敛合并（考向/来源/备注并进来、不同解析追加解法二），审一组存一组。发行版为空壳，首启自动建空库，由老师在工作区里录题自建；本机开发可挂含真题的种子库。",
+  "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查。题目数据一律经 Host API 向当前活跃题库引擎申请，插件不碰数据库。",
   "author": "九章算子",
   "license": "Apache-2.0",
-  "min_host_version": "0.11.1",
+  "min_host_version": "0.11.2",
   "entry": {
     "frontend": "dist/index.html"
   },
   "slots": ["question.card", "stage.center"],
-  "capabilities": ["question.render",
-    "bank.provider"],
+  "capabilities": ["question.render", "bank.view"],
   "permissions": ["questions:read"],
   "ui": {
     "title": "真题题库筛选",

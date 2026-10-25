@@ -27,7 +27,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 SEED = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
 LEGACY = Path("E:/math-question-bank-main/math_question_bank.db")
 TOKEN = "stress-token-local"

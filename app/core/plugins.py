@@ -43,8 +43,11 @@ _CAPABILITIES = {
     # 组卷与讲义是「消费题篮、产出 A4」的能力，不等同于单题渲染/导出
     "paper.generate",
     "handout.render",
-    # v0.8.2：声明自己可当作「活跃题库」的插件（默认仍是官方 core-bank）
+    # v0.8.2：声明自己可当作「活跃题库」的插件（默认是官方 bank-engine）
     "bank.provider",
+    # 军令 #20：纯视图插件——只读活跃题库、可走查重扫描与合并的宿主通道，
+    # 自己不持有题库。与 bank.provider 分离，界面换皮不必动数据引擎。
+    "bank.view",
     # 军令 #15：AI 助手不再是底座特权模块，而是一个走 Host API 的普通插件
     "assistant.chat",
 }
@@ -392,9 +395,19 @@ def validate_plugin(
     _require((plugin_dir / "LICENSE").is_file(), "缺少插件 LICENSE 文件")
     _require("backend" not in manifest, "当前底座不支持后端插件")
 
+    # 军令 #20：数据引擎这类「只提供能力、没有界面」的插件可声明 headless。
+    # 它不出现在左栏、不挂舞台、没有 iframe，能力全部经 Host API 暴露；
+    # 反过来，headless 插件不许声明 ui/stage/slots，避免清单与运行时对不上。
+    headless = manifest.get("headless") is True
+    if headless:
+        _require("stage" not in manifest and "ui" not in manifest,
+                 "headless 插件不得声明 ui 或 stage")
+        _require("entry" not in manifest, "headless 插件不得声明 entry")
     slots = manifest.get("slots")
     _require(
-        isinstance(slots, list) and bool(slots) and all(item in _SLOTS for item in slots),
+        isinstance(slots, list)
+        and all(item in _SLOTS for item in slots)
+        and (headless or bool(slots)),
         "slots 缺失或包含未定义插槽",
     )
     capabilities = manifest.get("capabilities")
@@ -427,30 +440,33 @@ def validate_plugin(
     if command_issues is not None:
         command_issues.extend(rejected_commands)
 
-    entry = manifest.get("entry")
-    _require(isinstance(entry, dict), "entry 缺失")
-    frontend = entry.get("frontend")
-    _require(isinstance(frontend, str) and bool(frontend), "entry.frontend 缺失")
-    relative = PurePosixPath(frontend)
-    _require(
-        not relative.is_absolute() and ".." not in relative.parts,
-        "entry.frontend 必须是包内相对路径",
-    )
-    _require(
-        len(relative.parts) > 1 and relative.parts[0] == "dist",
-        "entry.frontend 必须位于 dist/",
-    )
-    frontend_path = plugin_dir.joinpath(*relative.parts)
-    _require(frontend_path.is_file(), "entry.frontend 指向的文件不存在")
-
-    css_relative = relative.parent / "plugin.css"
-    css_path = plugin_dir.joinpath(*css_relative.parts)
+    entry_url = ""
     css_url = None
-    if css_path.is_file():
-        css_url = f"/plugin-assets/{plugin_id}/{css_relative.as_posix()}"
+    if not headless:
+        entry = manifest.get("entry")
+        _require(isinstance(entry, dict), "entry 缺失")
+        frontend = entry.get("frontend")
+        _require(isinstance(frontend, str) and bool(frontend), "entry.frontend 缺失")
+        relative = PurePosixPath(frontend)
+        _require(
+            not relative.is_absolute() and ".." not in relative.parts,
+            "entry.frontend 必须是包内相对路径",
+        )
+        _require(
+            len(relative.parts) > 1 and relative.parts[0] == "dist",
+            "entry.frontend 必须位于 dist/",
+        )
+        frontend_path = plugin_dir.joinpath(*relative.parts)
+        _require(frontend_path.is_file(), "entry.frontend 指向的文件不存在")
+        entry_url = f"/plugin-assets/{plugin_id}/{relative.as_posix()}"
 
-    ui = _normalize_ui(manifest.get("ui"), plugin_id, name)
-    if ui is None:
+        css_relative = relative.parent / "plugin.css"
+        css_path = plugin_dir.joinpath(*css_relative.parts)
+        if css_path.is_file():
+            css_url = f"/plugin-assets/{plugin_id}/{css_relative.as_posix()}"
+
+    ui = None if headless else _normalize_ui(manifest.get("ui"), plugin_id, name)
+    if ui is None and not headless:
         ui = _default_ui(plugin_id, name, manifest["kind"], capabilities)
 
     return {
@@ -465,7 +481,8 @@ def validate_plugin(
         "slots": slots,
         "capabilities": capabilities,
         "permissions": permissions,
-        "entry_url": f"/plugin-assets/{plugin_id}/{relative.as_posix()}",
+        "headless": headless,
+        "entry_url": entry_url,
         "css_url": css_url,
         "ui": ui,
         "stage": stage,
@@ -482,6 +499,9 @@ def validate_plugin(
         ),
         # 渲染/工具类插件可显式声明 show_in_sidebar:false，不在左栏占位；缺省一律显示。
         "show_in_sidebar": manifest.get("show_in_sidebar") is not False,
+        # 军令 #20：题库引擎的免死金牌。false 表示后端拒绝卸载（连代码目录也不删），
+        # 前端据实把卸载按钮换成「受保护」标签。
+        "uninstallable": manifest.get("uninstallable") is not False,
     }
 
 
@@ -503,6 +523,20 @@ def _sidebar_with_unlisted(tree: list[dict[str, Any]], plugin_ids: list[str]) ->
     return built
 
 
+def _retired_plugin_ids(root: Path) -> set[str]:
+    """拆分升级映射：引擎已装时，旧 core-bank 目录不再参与发现。
+
+    旧 core-bank 的代码目录可能还留在此前的工作区里（插件目录属于工作区）。
+    同一份题库不能有两个主人：引擎接管数据后把它从发现结果里摘掉，
+    界面只留新视图插件；目录与旧物理库都原地保留，需要时可以整体回退。
+    """
+    from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
+
+    if not (root / DEFAULT_PROVIDER_ID / "plugin.json").is_file():
+        return set()
+    return set(LEGACY_PROVIDER_IDS)
+
+
 def discover_plugins() -> dict[str, Any]:
     plugins: list[dict[str, Any]] = []
     rejected: list[dict[str, str]] = []
@@ -515,9 +549,12 @@ def discover_plugins() -> dict[str, Any]:
     prefs = plugin_state.state()
     disabled = prefs["disabled"]
 
+    retired = _retired_plugin_ids(root)
     if root.is_dir():
         for plugin_dir in sorted(root.iterdir(), key=lambda item: item.name):
             if not plugin_dir.is_dir() or plugin_dir.name.startswith("."):
+                continue
+            if plugin_dir.name in retired:
                 continue
             manifest_path = plugin_dir / "plugin.json"
             if not manifest_path.is_file():

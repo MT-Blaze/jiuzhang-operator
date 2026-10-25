@@ -1,4 +1,4 @@
-"""core-bank v0.8.2 多版本地基契约测试：考向并集 + 版本映射 + 无损升级。
+"""题库引擎 v0.8.2 多版本地基契约测试：考向并集 + 版本映射 + 无损升级。
 
 守的是四条不读代码就想不到的底线：
 
@@ -27,7 +27,7 @@ from app.core import bank
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 SEED_DB = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
 SCHEMA_SQL = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
 

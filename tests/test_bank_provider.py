@@ -25,7 +25,8 @@ from app.core import bank_provider
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
-BANK = "org.jiuzhang.core-bank"
+BANK = "org.jiuzhang.bank-engine"
+LEGACY = "org.jiuzhang.core-bank"
 PAPER = "org.jiuzhang.paper-gen"
 
 
@@ -61,7 +62,7 @@ class _Isolated(unittest.TestCase):
 
 
 class ProviderResolutionTest(_Isolated):
-    def test_01_default_is_core_bank_and_says_so(self) -> None:
+    def test_01_default_is_bank_engine_and_says_so(self) -> None:
         info = bank_provider.resolve()
         self.assertEqual(BANK, info["plugin_id"])
         self.assertTrue(info["is_default"])
@@ -75,7 +76,7 @@ class ProviderResolutionTest(_Isolated):
         宿主取不到配置时的兜底默认值都是合法的，只有把 id 拼进
         ``/api/bank/plugins/…`` 才算写死路由目标。
         """
-        literal = "org.jiuzhang.core-bank"
+        literal = "org.jiuzhang.bank-engine"
         offenders = []
         targets = list((ROOT / "app").rglob("*.py")) + list((ROOT / "static" / "js").rglob("*.js"))
         for path in targets:
@@ -91,7 +92,8 @@ class ProviderResolutionTest(_Isolated):
 
     def test_03_declared_capability_is_required_to_be_eligible(self) -> None:
         ids = [item["id"] for item in bank_provider.candidates()]
-        self.assertIn(BANK, ids, "官方 core-bank 必须自己声明 bank.provider，否则默认库都选不上")
+        self.assertIn(BANK, ids, "官方题库引擎必须自己声明 bank.provider，否则默认库都选不上")
+        self.assertNotIn(LEGACY, ids, "拆分前的 core-bank 不再作为可切换 provider 出现")
         self.assertNotIn(PAPER, ids, "组卷是消费端，不该出现在候选里")
 
     def test_04_set_and_read_back(self) -> None:
@@ -139,6 +141,28 @@ class ProviderResolutionTest(_Isolated):
         self.assertEqual(BANK, info["plugin_id"])
         self.assertEqual("", info["fallback_reason"])
 
+    def test_08b_legacy_core_bank_config_maps_to_engine(self) -> None:
+        """升级过渡（军令 #20）：旧配置里的 core-bank 映射到引擎，且如实报 migrated_from。"""
+        bank_provider.state_path().parent.mkdir(parents=True, exist_ok=True)
+        bank_provider.state_path().write_text(
+            json.dumps({"plugin_id": LEGACY}), encoding="utf-8")
+        info = bank_provider.resolve()
+        self.assertEqual(BANK, info["plugin_id"])
+        self.assertEqual(LEGACY, info["migrated_from"])
+        self.assertEqual("", info["fallback_reason"], "这是一次映射，不是回退")
+
+    def test_08c_legacy_config_without_engine_still_reports_installed(self) -> None:
+        """引擎没装时旧配置不能被静默改写，回退原因要说得出口。"""
+        bank_provider.state_path().parent.mkdir(parents=True, exist_ok=True)
+        bank_provider.state_path().write_text(
+            json.dumps({"plugin_id": LEGACY}), encoding="utf-8")
+        shutil.rmtree(self.plugins_dir / BANK)
+        info = bank_provider.resolve()
+        self.assertEqual(BANK, info["plugin_id"])
+        self.assertFalse(info["installed"])
+        self.assertEqual("", info["migrated_from"])
+        self.assertIn("未安装", info["fallback_reason"])
+
 
 class ProviderChannelTest(unittest.TestCase):
     def test_09_shared_and_per_tab_channels_are_split(self) -> None:
@@ -156,7 +180,7 @@ class ProviderChannelTest(unittest.TestCase):
         self.assertIn("function bankProviderBase()", source)
         self.assertIn("var sharedBase = bankProviderBase();", source)
         # 取不到配置也要能用：默认值留在宿主侧兜底
-        self.assertIn('var BANK_PROVIDER_DEFAULT = "org.jiuzhang.core-bank"', source)
+        self.assertIn('var BANK_PROVIDER_DEFAULT = "org.jiuzhang.bank-engine"', source)
 
     def test_11_switching_provider_requires_a_write_token(self) -> None:
         from app.api import bank as bank_api

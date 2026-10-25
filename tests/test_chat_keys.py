@@ -100,10 +100,10 @@ class ChatComposerKeyTest(unittest.TestCase):
 
     def test_07_single_line_search_boxes_keep_enter(self) -> None:
         """铁律只管聊天/多行输入框；单行搜索框 Enter 即检索。"""
-        source = (ROOT / "plugins" / "org.jiuzhang.core-bank" / "dist" / "plugin.js").read_text(
+        source = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn('event.key === "Enter"', source, "core-bank 的单行搜索丢了 Enter 检索")
+        self.assertIn('event.key === "Enter"', source, "bank-ui 的单行搜索丢了 Enter 检索")
 
 
 if __name__ == "__main__":

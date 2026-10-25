@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SCHEMA_PATH = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "schema.sql"
-DB_PATH = ROOT / "plugins" / "org.jiuzhang.core-bank" / "bank" / "v063.db"
+SCHEMA_PATH = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+DB_PATH = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "v063.db"
 REPORT_PATH = ROOT / "data" / "bank_schema_freeze_report.md"
 
 SCHEMA_VERSION = 2

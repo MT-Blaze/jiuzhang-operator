@@ -8,8 +8,8 @@
     .venv/Scripts/python.exe tools/migrate_legacy_bank.py --source <path> --no-images
 
 产物：
-- ``plugins/org.jiuzhang.core-bank/bank/bank.db``：随插件包分发的题库种子
-- ``plugins/org.jiuzhang.core-bank/bank/assets/``：题目配图（随包）
+- ``plugins/org.jiuzhang.bank-engine/bank/bank.db``：随插件包分发的题库种子
+- ``plugins/org.jiuzhang.bank-engine/bank/assets/``：题目配图（随包）
 - ``data/banks/org.jiuzhang.core-bank.db``：当前工作区可直接查询的副本
 - ``data/bank_migration_report.json``：迁移审计报告（含 LaTeX 完整性核对）
 """
@@ -35,7 +35,7 @@ from app.core import bank  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.questions import validate_question  # noqa: E402
 
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 DEFAULT_SOURCE = Path("E:/math-question-bank-main/math_question_bank.db")
 DEFAULT_ASSET_DIR = Path("E:/math-question-bank-main/data_backup/snapshots")
 LOCAL_TZ = timezone(timedelta(hours=8))

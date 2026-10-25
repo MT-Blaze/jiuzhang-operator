@@ -88,10 +88,10 @@ def run(tag: str) -> dict:
     # PROBE_CORE_BANK=1 时把本机官方题库插件复制进隔离目录，验「取到 N 题」的黄金路径；
     # 只读复制，不碰开发者本机 data/ 与 plugins/。
     if os.environ.get("PROBE_CORE_BANK") == "1":
-        source_bank = ROOT / "plugins" / "org.jiuzhang.core-bank"
+        source_bank = ROOT / "plugins" / "org.jiuzhang.bank-engine"
         if source_bank.is_dir():
-            shutil.copytree(source_bank, plugins_dir / "org.jiuzhang.core-bank")
-            report["notes"]["core_bank_copied"] = True
+            shutil.copytree(source_bank, plugins_dir / "org.jiuzhang.bank-engine")
+            report["notes"]["engine_copied"] = True
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)

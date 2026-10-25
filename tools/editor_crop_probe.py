@@ -38,7 +38,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from editor_probe import free_port, http_json, wait_health  # noqa: E402
 
 EDITOR_ID = "org.jiuzhang.editor"
-BANK_ID = "org.jiuzhang.core-bank"
+BANK_ID = "org.jiuzhang.bank-engine"
 IMAGE_W = 640
 IMAGE_H = 960
 

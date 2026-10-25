@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.core import bank  # noqa: E402  结构与升级的唯一实现
 
-PLUGIN_ID = "org.jiuzhang.core-bank"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
 BASE_TABLES = ("schools", "topics", "questions", "topic_notes", "sources",
                "question_topics", "question_sources", "bank_meta")
 
@@ -79,7 +79,7 @@ def inspect(path: Path) -> dict:
 def default_targets() -> list[Path]:
     targets = [
         ROOT / "data/banks/org.jiuzhang.core-bank.db",
-        ROOT / "plugins/org.jiuzhang.core-bank/bank/bank.db",
+        ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank.db",
     ]
     return [path for path in targets if path.is_file()]
 

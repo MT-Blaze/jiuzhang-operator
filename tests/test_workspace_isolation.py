@@ -32,7 +32,7 @@ from app.core import workspace_bootstrap, workspace_paths, workspace_removal
 from app.core.config import current_workspace_id, env_file_path, plugins_dir, settings
 
 ROOT = Path(__file__).resolve().parents[1]
-PROVIDER = "org.jiuzhang.core-bank"
+PROVIDER = "org.jiuzhang.bank-engine"
 
 
 def _http_request(port: int | None = None):
