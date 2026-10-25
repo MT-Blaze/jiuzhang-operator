@@ -226,7 +226,7 @@ curl -X POST http://127.0.0.1:8000/api/questions \
 
 想让自己的界面出现在中央画布（而不是只在对话里出卡片），在清单里加两块：`slots` 带上 `"stage.center"`，再声明 `stage`（`mode` / `title` / `priority` / `singleton`）与 `bus`（`subscribe` / `publish` 白名单），字段表见 [PLUGIN_SPEC.md §2.4](PLUGIN_SPEC.md)；可运行样板见 [`examples/demo_plugin/`](examples/demo_plugin/)。
 
-想让别的插件也能调用你的能力（或在插件里调用别人的能力），用能力路由字典：清单写 `contributes.commands`，运行时 `command.list` 查表、`command.execute` 请宿主转发，规则见 [PLUGIN_SPEC.md §2.14](PLUGIN_SPEC.md)。官方五大分类是 `org.jiuzhang.action.{input,process,output,data,view}.*`，第三方用自己的反向域名。
+想让别的插件也能调用你的能力（或在插件里调用别人的能力），用能力路由字典：清单写 `contributes.commands`，运行时 `command.list` 查表、`command.execute` 请宿主转发，规则见 [PLUGIN_SPEC.md §2.14](PLUGIN_SPEC.md)。官方五大分类是 `org.jiuzhang.action.{input,process,output,data,view}.*`，第三方用自己的反向域名。高副作用命令标 `requires_user: true`，执行前会由宿主弹用户确认；结果上限 64 KB、同目标串行、慢命令先发 `command.pending`、自动开页最多 5 个。
 
 ## 如何用 AI 开发九章算子插件？
 
@@ -284,22 +284,29 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
 通知一律幂等（宿主会重发）；未实现的方法回 UNSUPPORTED_METHOD，不许静默吞掉。
 
 能力路由（可选）：要向别的插件公开能力，清单写
-  "contributes": {"commands": [{"id": "com.你的域名.分类.动作", "title": "≤32字"}]}
+  "contributes": {"commands": [{"id": "com.你的域名.分类.动作", "title": "≤32字",
+                                "requires_user": true}]}
 id 是小写反向域名、至少三段（段内可用下划线）、≤96 字符，最多 32 条；org.jiuzhang.* 只能由
 官方插件声明，第三方一律用自己的反向域名（如 com.zhang.bank.tidy_tags）。
+requires_user 只给高副作用命令（导出、覆盖、批量删改）用：宿主在转发前弹一次用户确认，
+拒绝即回 COMMAND_DENIED，你的 iframe 根本收不到请求；command.list 的每条都带这个标记。
 处理宿主转发来的 method:"command.execute" 时，payload 为 {command_id, context, from, trace}：
 只处理自己声明过的 id，其余回 ok:false + code:"UNKNOWN_COMMAND"；context 是线索不是授权，
 动数据仍走对应宿主 API 的权限校验。调用别人的能力用 command.list 查表（回
-{commands:[{id,title,plugin_id,plugin_name}]}），再用 command.execute 发 {command_id, context}
-（context 序列化后 ≤16384 字符），回包是 {command_id, plugin_id, result}。目标没开页签时宿主
-会自动开页并等就绪，你不需要也不许自己去找对方的 iframe。
+{commands:[{id,title,plugin_id,plugin_name,requires_user}]}），再用 command.execute 发
+{command_id, context}（context 序列化后 ≤16384 字符），回包是 {command_id, plugin_id, result}。
+result 序列化后必须 ≤65536 字节（超了回 COMMAND_RESULT_TOO_LARGE），批量数据请让调用方分页取；
+同一目标的命令由宿主串行排队，排队或执行超过 1 秒会先收到 command.pending 通知（不是失败，
+继续等原请求的 response），同一目标挂起超过 8 条回 COMMAND_BUSY。
+目标没开页签时宿主自动开页并等就绪（累计最多 5 个，超过回 COMMAND_LIMIT），你不需要也不许
+自己去找对方的 iframe。
 插件不得要求注册/登录/卡密/联网回连/远程禁用（白嫖条款），能力不可用时显式降级并给
 可读提示。
 
 现在请以这份结构为基线，实现以下需求：<在这里写你的插件功能>
 ```
 
-生成后自检三件事再安装：① 把插件目录放进 `plugins/`，打开 `/api/plugins`，`rejected[]` 里没有中文拒收原因；② 全文搜索 `fetch(`、`parent.document`、`localStorage`——出现任何一处都说明 AI 违反了铁律，退回重造；③ 全文搜索 `kind: "request"` 附近那行，看请求 id 是不是带点号的写法（如 `插件id_1`）——带点号宿主直接拒发并回 `BAD_REQUEST_ID`（底栏「输出日志区」会记这笔），改成 `p1_xxxxx` 这类形状。④ 若声明了 `contributes.commands`，`/api/plugins` 里自己的条目应有 `commands`、`commands_rejected` 里不该有自己的 id；插件内 `command.list` 也能看到自己，越权写 `org.jiuzhang.*` 的应当查不到。
+生成后自检三件事再安装：① 把插件目录放进 `plugins/`，打开 `/api/plugins`，`rejected[]` 里没有中文拒收原因；② 全文搜索 `fetch(`、`parent.document`、`localStorage`——出现任何一处都说明 AI 违反了铁律，退回重造；③ 全文搜索 `kind: "request"` 附近那行，看请求 id 是不是带点号的写法（如 `插件id_1`）——带点号宿主直接拒发并回 `BAD_REQUEST_ID`（底栏「输出日志区」会记这笔），改成 `p1_xxxxx` 这类形状。④ 若声明了 `contributes.commands`，`/api/plugins` 里自己的条目应有 `commands`、`commands_rejected` 里不该有自己的 id；插件内 `command.list` 也能看到自己，越权写 `org.jiuzhang.*` 的应当查不到。⑤ 给一条命令标 `requires_user: true` 再调一次：宿主应弹确认框，点「拒绝」拿到 `COMMAND_DENIED` 且目标插件没有任何执行痕迹；设置页「插件 → 管理与控制」底部的只读字典表也应列出这条命令与「需确认」标记。
 
 > 当前 `v0.11.2` 的页面是四区工作台：插件会被发现并列在左栏，`question.import` 会被对话工具真实调用；工具返回的题目以 `ui_json` 富卡片在对话区渲染。声明了 `stage` 的插件被点击后，会在画布区开一个沙箱 iframe 标签页接管中央舞台（见 PLUGIN_SPEC §2.4）；宿主逐题下发的 `question.card` 卡片位仍未接回（见 PLUGIN_SPEC §2.3.5）。录题工作台（`org.jiuzhang.editor`）经 `bank.create` 把新题写进真题库，写令牌始终留在宿主侧（见 PLUGIN_SPEC §2.6）。**v0.6.3 的真题库读写已全部落在 7 张关系表上**（题目契约 2.0，难度 `L1–L4`），题库画布左侧新增**大纲树**：按 `parent_id` + `sort_order` 懒展开册/章/节/考向，点任一节点即按子树取题。
 

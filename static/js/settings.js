@@ -187,6 +187,10 @@
   var mgList = document.getElementById("mgList");
   var mgStatus = document.getElementById("mgStatus");
   var mgRefresh = document.getElementById("mgRefresh");
+  var cmdRegistryBody = document.getElementById("cmdRegistryBody");
+  var cmdRegistryEmpty = document.getElementById("cmdRegistryEmpty");
+  var cmdRegistryIssues = document.getElementById("cmdRegistryIssues");
+  var cmdRejectedTitle = document.getElementById("cmdRejectedTitle");
   var importFile = document.getElementById("dbImportFile");
   var importBtn = document.getElementById("dbImportBtn");
   var importName = document.getElementById("importWsName");
@@ -359,6 +363,35 @@
     });
   }
 
+  /** 命令能力字典：只读对照表，数据来自 /api/plugins 的 commands（与 command.list 同源）。 */
+  function renderCommandRegistry(body) {
+    if (!cmdRegistryBody) return;
+    var commands = body && Array.isArray(body.commands) ? body.commands : [];
+    var rejected = body && Array.isArray(body.commands_rejected) ? body.commands_rejected : [];
+    cmdRegistryBody.textContent = "";
+    commands.forEach(function (command) {
+      var row = el("tr", "");
+      row.appendChild(el("td", "mg-cmd-id", command.id || ""));
+      row.appendChild(el("td", "", command.title || command.id || ""));
+      row.appendChild(el("td", "", command.plugin_name || command.plugin_id || ""));
+      row.appendChild(el("td", "mg-cmd-flag",
+        command.requires_user ? "需确认" : "直接执行"));
+      cmdRegistryBody.appendChild(row);
+    });
+    if (cmdRegistryEmpty) cmdRegistryEmpty.hidden = commands.length > 0;
+    if (cmdRegistryIssues) {
+      cmdRegistryIssues.textContent = "";
+      rejected.forEach(function (issue) {
+        var id = issue && issue.id ? "「" + issue.id + "」" : "";
+        cmdRegistryIssues.appendChild(el("li", "",
+          "插件 " + ((issue && issue.plugin_id) || "?") + " 声明的 " + id + " 已丢弃："
+          + ((issue && issue.reason) || "未说明原因")));
+      });
+      cmdRegistryIssues.hidden = rejected.length === 0;
+    }
+    if (cmdRejectedTitle) cmdRejectedTitle.hidden = rejected.length === 0;
+  }
+
   function renameFromCard(plugin) {
     var current = String(plugin.nickname || "");
     var next = window.prompt(
@@ -408,6 +441,7 @@
       .then(function (data) {
         installedBody = data || {};
         renderInstalled(installedBody.plugins || [], installedBody);
+        renderCommandRegistry(installedBody);
       })
       .catch(function (error) { mgSet(mgStatus, "读取插件列表失败：" + error.message, "down"); });
   }

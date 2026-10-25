@@ -424,13 +424,19 @@
   // 大纲节点 ID：tp_ + 层别码（bo/ch/se/kx）+ 8 位十六进制，定长 13（bank/schema.sql）
   var TOPIC_ID_RE = /^tp_(bo|ch|se|kx)[0-9a-f]{8}$/;
   // 能力路由字典（PLUGIN_SPEC §2.14）：命令 id 与 context 的大小上限、
-  // 现开/现唤醒目标页签的等待，以及转发链上限（挡 A→B→A 的循环）。
+  // 现开/现唤醒目标页签的等待、转发链上限（挡 A→B→A 的循环），
+  // 以及调用安全加固的四道闸：结果体积、排队串行、pending 提示、自动开页上限。
   var COMMAND_ID_RE = /^[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){2,7}$/;
   var COMMAND_CONTEXT_MAX = 16384;
   var COMMAND_READY_TIMEOUT_MS = 10000;
   var COMMAND_MAX_HOPS = 4;
+  var COMMAND_RESULT_MAX = 65536;        // result 序列化后字节上限（64 KB）
+  var COMMAND_PENDING_MS = 1000;         // 超过 1 秒未回，先给调用方一条 pending 通知
+  var COMMAND_QUEUE_MAX = 8;             // 同一目标同时挂起的命令上限
+  var COMMAND_AUTO_TAB_MAX = 5;          // 命令自动打开的画布页签上限
   var commandIndex = Object.create(null);    // 命令 id → 登记条目
   var pluginCatalog = Object.create(null);   // 插件 id → 清单条目（找目标 iframe 用）
+  var commandQueues = Object.create(null);   // 目标 key → { tail, depth }（串行队列）
 
   /**
    * 用 /api/plugins 的整份清单重建字典：停用、卸载的插件连同它的命令一起退场。
@@ -449,7 +455,8 @@
           id: command.id,
           title: typeof command.title === "string" ? command.title : command.id,
           plugin_id: plugin.id,
-          plugin_name: plugin.name || plugin.id
+          plugin_name: plugin.name || plugin.id,
+          requires_user: command.requires_user === true
         };
       });
     });
@@ -464,7 +471,8 @@
         id: item.id,
         title: item.title,
         plugin_id: item.plugin_id,
-        plugin_name: item.plugin_name
+        plugin_name: item.plugin_name,
+        requires_user: item.requires_user === true
       };
     });
   }
@@ -499,6 +507,81 @@
         }
         window.setTimeout(tick, 200);
       })();
+    });
+  }
+
+  function commandError(code, message) {
+    var error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  /** result 序列化后的字节数；-1 表示根本序列化不了（循环引用、BigInt 等）。 */
+  function commandResultBytes(value) {
+    var text;
+    try {
+      text = JSON.stringify(value === undefined ? {} : value);
+    } catch (error) {
+      return -1;
+    }
+    if (typeof text !== "string") return 0;
+    if (typeof TextEncoder === "function") {
+      try { return new TextEncoder().encode(text).length; } catch (error) { return text.length; }
+    }
+    return text.length;
+  }
+
+  /**
+   * 同一目标串行执行：插件命令常写成「读—改—写」，并发插队会丢更新。
+   * 队列按目标分箱，两个不同插件的命令互不排队。
+   */
+  function queueCommand(target, task) {
+    var key = (target.kind || "tab") + ":"
+      + (target.key || (target.plugin && target.plugin.id) || "unknown");
+    var queue = commandQueues[key];
+    if (!queue) {
+      queue = { tail: Promise.resolve(), depth: 0 };
+      commandQueues[key] = queue;
+    }
+    if (queue.depth >= COMMAND_QUEUE_MAX) {
+      return Promise.reject(commandError("COMMAND_BUSY",
+        "目标插件已有 " + COMMAND_QUEUE_MAX + " 条命令在排队，请稍后再试"));
+    }
+    queue.depth += 1;
+    function release() {
+      queue.depth -= 1;
+      if (queue.depth <= 0 && commandQueues[key] === queue) delete commandQueues[key];
+    }
+    var result = queue.tail.then(function () { return task(); });
+    queue.tail = result.then(release, release);   // 失败也要放行下一条
+    return result;
+  }
+
+  /** 只数命令自动开出来的页签；老师自己点开的页签不占名额。 */
+  function commandOpenedTabs() {
+    return tabs.filter(function (tab) { return tab.openedByCommand === true; }).length;
+  }
+
+  /**
+   * 高副作用命令（清单 requires_user）的当场确认。弹框脚本缺失时一律不放行：
+   * 安全闸不能因为宿主少装一个脚本就静默失效。
+   */
+  function confirmCommand(caller, entry, decide) {
+    if (!window.JzoDialogs || typeof window.JzoDialogs.confirm !== "function") {
+      decide(false);
+      return;
+    }
+    var callerName = (caller.plugin && (caller.plugin.name || caller.plugin.id)) || "调用方插件";
+    window.JzoDialogs.confirm({
+      title: "允许执行这条命令？",
+      message: "「" + callerName + "」请求执行「" + entry.title + "」（" + entry.id + "），由「"
+        + entry.plugin_name + "」处理。这条命令会改动数据或外部状态，请确认这是你要做的事。",
+      confirmText: "允许执行",
+      cancelText: "拒绝",
+      anchor: document.activeElement && typeof document.activeElement.focus === "function"
+        ? document.activeElement : null,
+      onAccept: function () { decide(true); },
+      onCancel: function () { decide(false); }
     });
   }
 
@@ -543,14 +626,35 @@
       return;
     }
 
+    if (entry.requires_user) {
+      confirmCommand(caller, entry, function (allowed) {
+        if (!allowed) {
+          failWith("COMMAND_DENIED", "命令「" + commandId + "」需要用户当场确认，已取消执行");
+          return;
+        }
+        dispatchCommand(caller, entry, plugin, commandId, context, trace, done, failWith);
+      });
+      return;
+    }
+    dispatchCommand(caller, entry, plugin, commandId, context, trace, done, failWith);
+  }
+
+  /** 真正的转发：开页/唤醒 → 按目标排队 → 发请求；pending 与结果体积都在这层。 */
+  function dispatchCommand(caller, entry, plugin, commandId, context, trace, done, failWith) {
     var handle = commandTarget(plugin.id);
     var ready;
     if (!handle) {
+      if (commandOpenedTabs() >= COMMAND_AUTO_TAB_MAX) {
+        failWith("COMMAND_LIMIT", "命令自动打开的页签已达 " + COMMAND_AUTO_TAB_MAX
+          + " 个上限，请先关掉一些页签再试");
+        return;
+      }
       handle = openPlugin(plugin);
       if (!handle) {
         failWith("COMMAND_TARGET_MISSING", "命令「" + commandId + "」的目标插件没有可加载的入口页");
         return;
       }
+      handle.openedByCommand = true;
       dock("命令「" + entry.title + "」需要「" + entry.plugin_name + "」，已为它开一个画布页。",
         "stage.command.open");
       ready = waitCommandReady(handle, COMMAND_READY_TIMEOUT_MS);
@@ -563,22 +667,58 @@
       ready = waitCommandReady(handle, COMMAND_READY_TIMEOUT_MS);
     }
 
-    ready.then(function (target) {
-      return request(target, "command.execute", {
+    // 排队与执行都可能慢：超过 1 秒就给调用方一条 pending 通知，请求本身继续等，
+    // 最终仍以真实结果或错误收尾（通知不是失败回执）。
+    var settled = false;
+    var pendingTimer = window.setTimeout(function () {
+      if (settled) return;
+      notify(caller, "command.pending", {
         command_id: commandId,
-        context: context,
-        from: (caller.plugin && caller.plugin.id) || "",
-        trace: trace.concat([entry.plugin_id])
+        code: "COMMAND_PENDING",
+        target_plugin_id: entry.plugin_id,
+        message: "命令「" + entry.title + "」仍在「" + entry.plugin_name + "」排队或执行中"
+      });
+      dock("命令「" + entry.title + "」超过 1 秒未回，已向调用方发出排队提示。",
+        "stage.command.pending");
+    }, COMMAND_PENDING_MS);
+    function settle() {
+      if (settled) return false;
+      settled = true;
+      window.clearTimeout(pendingTimer);
+      return true;
+    }
+
+    ready.then(function (target) {
+      return queueCommand(target, function () {
+        return request(target, "command.execute", {
+          command_id: commandId,
+          context: context,
+          from: (caller.plugin && caller.plugin.id) || "",
+          trace: trace.concat([entry.plugin_id])
+        });
       });
     }).then(function (result) {
+      if (!settle()) return;
+      var bytes = commandResultBytes(result);
+      if (bytes < 0) {
+        failWith("COMMAND_RESULT_INVALID",
+          "命令「" + commandId + "」的返回值无法序列化（可能含循环引用）", false);
+        return;
+      }
+      if (bytes > COMMAND_RESULT_MAX) {
+        failWith("COMMAND_RESULT_TOO_LARGE", "命令「" + commandId + "」的结果序列化后 "
+          + bytes + " 字节，超过 " + COMMAND_RESULT_MAX + " 字节上限；请分页或改由宿主 API 拉取",
+          false);
+        return;
+      }
       done({ command_id: commandId, plugin_id: entry.plugin_id, result: result });
     }, function (error) {
-      var notReady = Boolean(error && error.code === "NOT_READY");
-      failWith(
-        notReady ? "COMMAND_NOT_READY" : "COMMAND_FAILED",
-        "命令「" + commandId + "」执行失败：" + ((error && error.message) || "未知原因"),
-        false
-      );
+      if (!settle()) return;
+      var code = error && error.code;
+      var mapped = code === "NOT_READY" ? "COMMAND_NOT_READY"
+        : (code === "COMMAND_BUSY" ? "COMMAND_BUSY" : "COMMAND_FAILED");
+      failWith(mapped,
+        "命令「" + commandId + "」执行失败：" + ((error && error.message) || "未知原因"), false);
     });
   }
 

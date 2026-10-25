@@ -13,6 +13,9 @@
 
 底座不做签名/摘要校验（白嫖条款 §1.1），所以第 2 条只保证「声明与命名空间
 自洽」，不是身份认证：装了谁的插件是老师自己的选择。
+
+第 4 条安全闸在宿主侧：清单给某条命令标 ``requires_user: true``，宿主在转发前
+弹一次当场确认，用户拒绝就回 ``COMMAND_DENIED``，请求绝不落到目标插件。
 """
 
 from __future__ import annotations
@@ -70,8 +73,13 @@ def _id_problem(command_id: str, plugin_id: str) -> str:
 
 def normalize_commands(
     contributes: Any, plugin_id: str
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    """把清单里的 ``contributes.commands`` 归一成登记条目；坏条目逐条丢弃并记账。"""
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """把清单里的 ``contributes.commands`` 归一成登记条目；坏条目逐条丢弃并记账。
+
+    ``requires_user`` 只认清单里的布尔真值：高副作用命令（导出、覆盖、批量删改）
+    由作者自己声明，宿主据此在转发前弹一次确认；非布尔值一律按 false 处理，
+    不猜作者意图。
+    """
     if contributes is None:
         return [], []
     if not isinstance(contributes, dict):
@@ -82,7 +90,7 @@ def normalize_commands(
     if not isinstance(raw, list):
         return [], [_issue(plugin_id, "", "contributes.commands 必须是数组")]
 
-    commands: list[dict[str, str]] = []
+    commands: list[dict[str, Any]] = []
     issues: list[dict[str, str]] = []
     seen: set[str] = set()
     for position, item in enumerate(raw):
@@ -108,7 +116,11 @@ def normalize_commands(
             issues.append(_issue(plugin_id, command_id, "缺少 title"))
             continue
         seen.add(command_id)
-        commands.append({"id": command_id, "title": title})
+        commands.append({
+            "id": command_id,
+            "title": title,
+            "requires_user": item.get("requires_user") is True,
+        })
     return commands, issues
 
 
@@ -117,7 +129,7 @@ def build_registry(plugins: list[dict[str, Any]]) -> dict[str, Any]:
 
     停用的插件不进字典：它的 iframe 已被释放，路由过去只会得到超时。
     """
-    registry: dict[str, dict[str, str]] = {}
+    registry: dict[str, dict[str, Any]] = {}
     issues: list[dict[str, str]] = []
     for plugin in sorted(plugins, key=lambda item: str(item.get("id") or "")):
         if plugin.get("enabled") is False:
@@ -142,6 +154,7 @@ def build_registry(plugins: list[dict[str, Any]]) -> dict[str, Any]:
                 "title": str(command.get("title") or command_id),
                 "plugin_id": plugin_id,
                 "plugin_name": plugin_name,
+                "requires_user": command.get("requires_user") is True,
             }
     return {
         "commands": [registry[key] for key in sorted(registry)],

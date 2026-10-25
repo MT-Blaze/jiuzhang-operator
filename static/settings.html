@@ -149,6 +149,34 @@
                   <div class="st-install-actions">
                     <button type="button" class="q-button" id="mgRefresh">刷新列表</button>
                   </div>
+
+                  <div class="mg-cmddict" id="cmdDict">
+                    <h3 class="st-sub" id="cmdDictTitle">命令能力字典（只读）</h3>
+                    <p class="st-note">
+                      这张表就是 <code>command.list</code> 的宿主侧原样：只列<strong>已启用</strong>插件在
+                      <code>contributes.commands</code> 里声明的路由，同一条命令只归一个提供方。
+                      标「需确认」的命令会在执行前弹一次用户确认，点拒绝即回
+                      <code>COMMAND_DENIED</code>，请求不会落到目标插件。
+                      本页只读，不提供增删命令的入口。
+                    </p>
+                    <div class="mg-cmdtable-wrap">
+                      <table class="mg-cmdtable" id="cmdRegistry">
+                        <caption class="mg-cmdcaption">命令能力字典（与 command.list 同源）</caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">命令 id</th>
+                            <th scope="col">标题</th>
+                            <th scope="col">提供方</th>
+                            <th scope="col">执行前</th>
+                          </tr>
+                        </thead>
+                        <tbody id="cmdRegistryBody"></tbody>
+                      </table>
+                    </div>
+                    <p class="mg-cmdempty" id="cmdRegistryEmpty" hidden>当前没有插件声明命令。</p>
+                    <h4 class="st-sub" id="cmdRejectedTitle" hidden>被拒绝的命令声明</h4>
+                    <ul class="pl-rejected" id="cmdRegistryIssues" hidden></ul>
+                  </div>
                 </div>
               </section>
 

@@ -66,14 +66,22 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
 通知一律幂等（宿主会重发）；未实现的方法回 UNSUPPORTED_METHOD，不许静默吞掉。
 
 能力路由（可选）：要向别的插件公开能力，清单写
-  "contributes": {"commands": [{"id": "com.你的域名.分类.动作", "title": "≤32字"}]}
+  "contributes": {"commands": [{"id": "com.你的域名.分类.动作", "title": "≤32字",
+                                "requires_user": true}]}
 id 是小写反向域名、至少三段（段内可用下划线）、≤96 字符，最多 32 条；org.jiuzhang.* 只能由
 官方插件声明，第三方一律用自己的反向域名（如 com.zhang.bank.tidy_tags）。
+requires_user 只给高副作用命令（导出、覆盖、批量删改）用：宿主在转发前弹一次用户确认，
+拒绝即回 COMMAND_DENIED，你的 iframe 根本收不到请求；command.list 的每条都带这个标记。
 处理宿主转发来的 method:"command.execute" 时，payload 为 {command_id, context, from, trace}：
 只处理自己声明过的 id，其余回 ok:false + code:"UNKNOWN_COMMAND"；context 是线索不是授权，
-动数据仍走对应宿主 API 的权限校验。调用别人的能力用 command.list 查表，再用 command.execute
-发 {command_id, context}（context 序列化后 ≤16384 字符），回包是 {command_id, plugin_id, result}。
-目标没开页签时宿主会自动开页并等就绪，你不需要也不许自己去找对方的 iframe。
+动数据仍走对应宿主 API 的权限校验。调用别人的能力用 command.list 查表（回
+{commands:[{id,title,plugin_id,plugin_name,requires_user}]}），再用 command.execute 发
+{command_id, context}（context 序列化后 ≤16384 字符），回包是 {command_id, plugin_id, result}。
+result 序列化后必须 ≤65536 字节（超了回 COMMAND_RESULT_TOO_LARGE），批量数据请让调用方分页取；
+同一目标的命令由宿主串行排队，排队或执行超过 1 秒会先收到 command.pending 通知（不是失败，
+继续等原请求的 response），同一目标挂起超过 8 条回 COMMAND_BUSY。
+目标没开页签时宿主自动开页并等就绪（累计最多 5 个，超过回 COMMAND_LIMIT），你不需要也不许
+自己去找对方的 iframe。
 插件不得要求注册/登录/卡密/联网回连/远程禁用（白嫖条款），能力不可用时显式降级并给
 可读提示。
 

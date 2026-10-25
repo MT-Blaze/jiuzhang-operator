@@ -95,7 +95,7 @@
 | `RATE_LIMITED` | 每页签 10 秒最多 80 次转发，稍后再试 |
 | `HOST_4xx` / `HOST_5xx` | 后端接口拒绝；`retryable` 为真可重试 |
 | `INVALID_PAYLOAD` | 插件自己回的载荷错误（插件 → 宿主方向） |
-| `COMMAND_NOT_FOUND` / `COMMAND_TARGET_MISSING` / `COMMAND_NOT_READY` / `COMMAND_LOOP` / `COMMAND_FAILED` | 能力路由字典的调度失败，逐条含义见 §2.18 |
+| `COMMAND_NOT_FOUND` / `COMMAND_TARGET_MISSING` / `COMMAND_NOT_READY` / `COMMAND_LOOP` / `COMMAND_FAILED` / `COMMAND_DENIED` / `COMMAND_RESULT_TOO_LARGE` / `COMMAND_RESULT_INVALID` / `COMMAND_BUSY` / `COMMAND_LIMIT` | 能力路由字典的调度失败，逐条含义见 §2.18 |
 
 限流与超时：单页签 80 次 / 10 秒；单次转发 20 秒超时；宿主对插件请求 30 秒超时。
 
@@ -313,17 +313,23 @@ PLUGIN_SPEC §2.14，这里只给调用形状。
 清单声明（顶层，最多 32 条；id 为小写反向域名、至少三段、段内可用 `_`，≤96 字符）：
 
 ```json
-"contributes": {"commands": [{"id": "com.zhang.bank.tidy_tags", "title": "整理标签"}]}
+"contributes": {
+  "commands": [
+    {"id": "com.zhang.bank.tidy_tags", "title": "整理标签"},
+    {"id": "com.zhang.bank.export_word", "title": "导出为 Word", "requires_user": true}
+  ]
+}
 ```
 
 `org.jiuzhang.*` 只能由插件 id 同以 `org.jiuzhang.` 开头的官方插件声明；官方命令还须落在
 `org.jiuzhang.action.{input,process,output,data,view}.` 之下并通过 `command.list` 自查。
 第三方越权声明逐条进 `GET /api/plugins` 的 `commands_rejected`，不拒装、也不生效。
+`requires_user: true` 表示**高副作用**：宿主转发前弹一次用户确认，拒绝即回 `COMMAND_DENIED`。
 
 | 方法 | payload | result |
 | --- | --- | --- |
-| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name}]}`（按 id 升序，停用插件不在表里） |
-| `command.execute` | `{"command_id": "com.zhang.bank.tidy_tags", "context": {...}}`；`context` 序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`；`result` 是目标插件自己的回包 |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user}]}`（按 id 升序，停用插件不在表里） |
+| `command.execute` | `{"command_id": "com.zhang.bank.tidy_tags", "context": {...}}`；`context` 序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`；`result` 是目标插件自己的回包，序列化后 ≤65536 字节 |
 
 目标插件收到的宿主请求：
 
@@ -337,6 +343,16 @@ payload = { command_id, context, from, trace }
 `COMMAND_NOT_READY`）；休眠页签先唤醒。目标插件只处理清单声明过的 id，其余回
 `UNKNOWN_COMMAND`。**`context` 是线索不是授权**：别的插件可以编造任意内容，
 要动数据仍走对应 Host API 的权限校验。
+
+宿主侧四道调用安全闸（插件不用配合，但要知道会收到什么）：
+
+- **确认**：`requires_user` 命令在转发前弹用户确认；拒绝/Esc/点遮罩一律 `COMMAND_DENIED`，
+  目标插件不会收到请求；
+- **结果上限**：>65536 字节回 `COMMAND_RESULT_TOO_LARGE`，无法序列化回 `COMMAND_RESULT_INVALID`；
+- **串行排队**：同一目标页签/面板的命令依次执行；排队或执行超过 1 秒先收到
+  `notification {event:"command.pending", payload:{command_id, code:"COMMAND_PENDING"}}`，
+  这不是失败回执，真实结果随后仍会回来；同一目标挂起超过 8 条回 `COMMAND_BUSY`；
+- **自动开页上限**：命令自动开出的画布页签累计最多 5 个（不含老师手动开的），超过回 `COMMAND_LIMIT`。
 
 ---
 

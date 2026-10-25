@@ -157,7 +157,7 @@
         }
       });
     },
-    /** 二选一确认；done(true) 只在点【确定】时调用。 */
+    /** 二选一确认；done(true) 只在点【确定】时调用，onCancel 在取消/Esc/遮罩时调用。 */
     confirm: function (spec) {
       var options = spec || {};
       var onAccept = options.onAccept;
@@ -166,7 +166,12 @@
         confirmText: options.confirmText, cancelText: options.cancelText,
         anchor: options.anchor,
         done: function (result) {
-          if (result === true && typeof onAccept === "function") onAccept();
+          if (result === true) {
+            if (typeof onAccept === "function") onAccept();
+            return;
+          }
+          // 宿主侧的安全闸必须知道「用户没答应」：不回调就等于把调用方吊死。
+          if (typeof options.onCancel === "function") options.onCancel();
         }
       });
     }

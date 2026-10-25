@@ -73,9 +73,14 @@ def build_plugin(plugin_dir: Path, out_dir: Path) -> Path:
         raise BuildError(f"{plugin_dir} 下没有 plugin.json")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        info = validate_plugin(plugin_dir, manifest)
+        # 声明了却被丢弃的命令要当场回给作者：打包成功不等于命令生效
+        command_issues: list[dict[str, str]] = []
+        info = validate_plugin(plugin_dir, manifest, command_issues)
     except (OSError, json.JSONDecodeError, PluginRejected) as exc:
         raise BuildError(f"清单校验失败：{exc}") from exc
+    for issue in command_issues:
+        label = f"「{issue['id']}」" if issue.get("id") else ""
+        print(f"[WARN] {info['id']} 的命令 {label} 未登记：{issue.get('reason', '')}")
 
     payload = list(_iter_payload(plugin_dir))
     if not payload:

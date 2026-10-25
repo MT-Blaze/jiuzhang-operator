@@ -10,6 +10,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -1299,9 +1300,17 @@ class UpdateHttpTest(unittest.TestCase):
         self.stop_server()
         self.boot_server()
 
-        status, body = self.call("GET", "/api/plugins/update/pending")
-        self.assertEqual(status, 200)
-        last = body["last_resume"]
+        # 续更跑在 app/main.py 的守护线程里：/healthz 一响就 GET 是抢跑，会偶发读到
+        # 还没落账的 last_resume。这里轮询等它给出结论，最多 15 秒。
+        deadline = time.time() + 15
+        while True:
+            status, body = self.call("GET", "/api/plugins/update/pending")
+            self.assertEqual(status, 200)
+            last = body["last_resume"]
+            if last["ran"] or time.time() >= deadline:
+                break
+            time.sleep(0.2)
+
         self.assertTrue(last["ran"])
         self.assertTrue(last["had_pending"])
         self.assertEqual([row["id"] for row in last["resumed"]], [PLUGIN_ID])

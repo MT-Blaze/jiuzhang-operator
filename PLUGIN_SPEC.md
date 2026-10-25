@@ -315,7 +315,7 @@ com.example.card/
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
 | `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
-| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明 |
+| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title,requires_user?}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明；`requires_user: true` 表示执行前须用户当场确认 |
 | `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `min_host_version` | 否 | 语义化版本字符串（v0.8.3）。声明本插件能跑的**最低底座版本**；【检查更新】时底座拿它与自身 `__version__` 比对，不够则该插件的更新被标为「需先更新底座」并保持原样不覆盖。**缺省视为不设限**。此字段只用于更新提示，底座**绝不**据此拒绝加载已装插件或远程禁用（§1.1） |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
@@ -936,6 +936,9 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 - `id` 必须是**小写反向域名、至少三段**，段内允许 `_`（蛇形命名），段间用 `.` 或 `-`：
   正则 `^[a-z0-9][a-z0-9_]*(?:[.-][a-z0-9_]+){2,7}$`，最多 8 段；
 - `title` 是给老师看的短名，不是内部键；
+- `requires_user` 可选布尔：为 `true` 时宿主在转发前弹一次**用户确认**，用户拒绝即回
+  `COMMAND_DENIED`，请求根本到不了目标插件。导出、覆盖、批量删改这类高副作用命令应当声明；
+  非布尔值一律按 `false` 处理（不猜作者意图）；
 - 坏条目**逐条丢弃**并记账（`commands_rejected`），不整包拒装——与 `stage` / `bus` 的宽容归一同一口径。
   插件照样能装、能用，只是那一条命令进不了字典。装完打开 `GET /api/plugins` 就能看到账。
 
@@ -969,8 +972,8 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 方法 | 载荷 | 返回 |
 | --- | --- | --- |
-| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name}]}`，按 `id` 升序；不含越权与停用项 |
-| `command.execute` | `{command_id, context}`；`context` 是可 JSON 化的对象，序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`——`result` 是目标插件自己的回包 |
+| `command.list` | 无 | `{commands: [{id, title, plugin_id, plugin_name, requires_user}]}`，按 `id` 升序；不含越权与停用项 |
+| `command.execute` | `{command_id, context}`；`context` 是可 JSON 化的对象，序列化后 ≤16384 字符 | `{command_id, plugin_id, result}`——`result` 是目标插件自己的回包，序列化后 ≤65536 字节 |
 
 目标插件收到的宿主请求是：
 
@@ -993,7 +996,24 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
   绝不把请求 postMessage 给空窗口（那会石沉大海）；
 - 右栏面板形态的插件直接投递，不强行搬到画布。
 
-**6）错误码。**
+**6）调用安全加固（宿主侧，插件不用配合）。**
+
+- **高副作用需确认**：清单标 `requires_user: true` 的命令，宿主在转发前用宿主自绘对话框问一次，
+  文案写明「谁请谁做什么」；用户点拒绝、按 Esc、点遮罩，调用方都拿到 `COMMAND_DENIED`，
+  目标插件完全不知情（请求没有发出）。`command.list` 与 `GET /api/plugins` 都带这个标记；
+- **结果设上限**：目标回包序列化后超过 65536 字节 → `COMMAND_RESULT_TOO_LARGE`；序列化不了
+  （循环引用等）→ `COMMAND_RESULT_INVALID`。批量数据请分页或改走宿主 API，不要一次塞满 iframe；
+- **按目标串行**：同一目标页签/面板上的 `command.execute` 排队执行（插件命令常是「读—改—写」，
+  并发插队会丢更新）；不同目标互不排队。同一目标同时挂起超过 8 条 → `COMMAND_BUSY`；
+- **慢命令有回音**：排队或执行超过 1 秒仍未回，宿主先向调用方发一条 `notification`：
+  `{event: "command.pending", payload: {command_id, code: "COMMAND_PENDING", target_plugin_id}}`，
+  底栏同时记一笔；请求本身继续等，最终仍以真实结果或错误收尾——**通知不是失败回执**；
+- **自动开页有上限**：命令为「当前没有页签」的目标自动开页，最多累积 5 个（只数命令开出来的页签，
+  老师自己点开的不占名额）；超过即回 `COMMAND_LIMIT`，绝不无限刷屏；
+- **可视化自查**：设置与控制 → 插件 → 管理与控制 底部的「命令能力字典（只读）」表列出当前生效的
+  每一条命令、提供方与「执行前需确认」标记，与 `command.list` 同源；被丢弃的声明显式列在下方。
+
+**7）错误码。**
 
 | code | 含义 |
 | --- | --- |
@@ -1002,28 +1022,38 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `COMMAND_TARGET_MISSING` | 字典登记了，但清单里找不到目标插件 / 它没有可加载的入口页 |
 | `COMMAND_NOT_READY` | 目标页签 10 秒内没就绪（加载失败或卡住） |
 | `COMMAND_LOOP` | 转发链达到 4 跳，疑似循环调用 |
+| `COMMAND_DENIED` | 该命令标了 `requires_user: true`，用户当场拒绝了这次执行 |
+| `COMMAND_RESULT_TOO_LARGE` | 目标回包序列化后超过 65536 字节 |
+| `COMMAND_RESULT_INVALID` | 目标回包无法序列化（循环引用、BigInt 等） |
+| `COMMAND_BUSY` | 同一目标已挂起 8 条命令，队列已满 |
+| `COMMAND_LIMIT` | 命令自动开出的画布页签已达 5 个上限 |
 | `COMMAND_FAILED` | 目标插件执行时回了 `ok:false`，或 30 秒内没回包（宿主对插件请求的统一超时） |
 | `RATE_LIMITED` | 与其它 Host API 共用配额：每页签 10 秒最多 80 次 |
 
-**7）插件侧义务。**
+**8）插件侧义务。**
 
 - 只处理自己清单里声明过的 `command_id`，其余一律回 `UNKNOWN_COMMAND`（模板里有样板）；
 - `context` 是**调用方带来的线索，不是授权凭据**：别的插件可以编造任意 context。
   要动题、动文件，仍走对应 Host API 的权限校验，别拿「context 说这题已选中」当许可；
 - 命令语义要写清楚、执行要收敛：一次调用只做声明里的那件事，不要顺带清库、改全局偏好；
+- 高副作用命令老实标 `requires_user: true`：这不是不信任调用方，是让老师知道「现在有人要动东西了」；
+- 结果保持小而准：一次回包别超过 64 KB，批量数据让调用方分页取；
 - 不许在 `command.execute` 里无限回调别的命令；确需链式协作时把 `trace` 原样带上，让宿主计数。
 
-**8）自查清单（装完必看）。**
+**9）自查清单（装完必看）。**
 
 1. `GET /api/plugins` → 自己的插件条目里有 `commands`，`commands_rejected` 里没有自己的 id；
-2. 插件里 `callHost("command.list")` → 能看到自己的命令和 `plugin_id`；
+2. 插件里 `callHost("command.list")` → 能看到自己的命令和 `plugin_id`，高副作用命令带 `requires_user: true`；
 3. 故意把 id 写成 `org.jiuzhang.xxx`（第三方）→ 应当出现在 `commands_rejected` 且查不到，
    说明命名空间闸门生效；
 4. 在另一个插件里 `callHost("command.execute", {command_id, context})` → 目标页签被开出、
-   收到原样的 context，回包里有 `plugin_id` 与 `result`。
+   收到原样的 context，回包里有 `plugin_id` 与 `result`；
+5. 给命令标 `requires_user: true` 再调一次 → 宿主弹确认框，点「拒绝」应拿到 `COMMAND_DENIED`
+   且目标插件没有执行痕迹；点「允许」才正常执行；
+6. 打开「设置与控制 → 插件 → 管理与控制」，底部字典表里能看到自己的命令与「需确认」标记。
 
 完整可跑样板见 [`examples/template-plugin/`](examples/template-plugin/)（声明 `org.example.template.echo`
-并实现 `command.execute` 分支）。
+并实现 `command.execute` 分支；页面里自带「查能力字典」「调度示例命令」两个调用方按钮）。
 
 
 ## 3. 多工作区（Workspace）隔离

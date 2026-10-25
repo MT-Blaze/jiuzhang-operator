@@ -188,6 +188,29 @@
 .mg-tag-folder { margin-left: auto; border: 1px solid var(--line, #d8ccb8); background: transparent; }
 .mg-empty { color: var(--muted, #6f675c); font-size: 13px; }
 
+/* 命令能力字典（只读）：与 command.list 同源的对照表，绝不在这里提供写入口 */
+.mg-cmddict {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line, #d8ccb8);
+}
+.mg-cmdtable-wrap { overflow-x: auto; margin-top: 10px; }
+.mg-cmdtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mg-cmdcaption { text-align: left; font-size: 12px; color: var(--muted, #6f675c); padding-bottom: 6px; }
+.mg-cmdtable th,
+.mg-cmdtable td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line, #d8ccb8);
+  vertical-align: top;
+  word-break: break-all;
+}
+.mg-cmdtable th { font-weight: 600; font-size: 12px; color: var(--muted, #6f675c); white-space: nowrap; }
+.mg-cmdtable tbody tr:last-child td { border-bottom: none; }
+.mg-cmd-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.mg-cmd-flag { white-space: nowrap; }
+.mg-cmdempty { margin: 10px 0 0; font-size: 13px; color: var(--muted, #6f675c); }
+
 .q-button-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .q-button-primary:hover { filter: brightness(1.05); }
 .q-button-danger { color: #9b3b2d; border-color: rgba(155, 59, 45, 0.5); }

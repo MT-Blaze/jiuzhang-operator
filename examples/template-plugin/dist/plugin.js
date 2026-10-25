@@ -17,12 +17,16 @@
  * 并像下面 command.execute 那样处理宿主转发来的执行请求。查别人有什么能力用
  * callHost("command.list")，调度用 callHost("command.execute", {command_id, context})——
  * 全程由宿主中转，插件之间不直连（PLUGIN_SPEC §2.14）。
+ * 高副作用命令（导出、覆盖、批量删改）加 "requires_user": true：宿主会在转发前弹一次
+ * 用户确认，用户点拒绝回 COMMAND_DENIED，请求根本到不了你的 iframe。
+ * 命令执行超过 1 秒未回，宿主会先发一条 command.pending 通知（不是失败，继续等结果）。
  */
 (function () {
   "use strict";
 
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.example.template";
+  var ECHO_COMMAND = "org.example.template.echo";
 
   var params = {};          // 右栏面板当前值，由 ui.params.changed 通知维护
   var seq = 0;              // 请求编号，保证 id 唯一
@@ -121,6 +125,9 @@
         setStatus("面板参数已更新：" + JSON.stringify(params));
       } else if (message.event === "question.updated") {
         setStatus("有题目被修改，可重新点按钮拉取。");
+      } else if (message.event === "command.pending") {
+        // 宿主在命令超过 1 秒未回时先发的排队提示；请求仍然有效，继续等 response。
+        setStatus("命令仍在排队：" + String((message.payload && message.payload.command_id) || ""));
       }
       return;
     }
@@ -158,7 +165,7 @@
       // 只执行清单 contributes.commands 里声明过的 id；context 是调用方带来的上下文
       // （如题目 id 列表），from 是调用方插件 id——你不需要、也拿不到对方的 iframe。
       var commandPayload = message.payload || {};
-      if (commandPayload.command_id !== "org.example.template.echo") {
+      if (commandPayload.command_id !== ECHO_COMMAND) {
         fail(event.source, message.id, "UNKNOWN_COMMAND",
           "本插件没有声明命令：" + String(commandPayload.command_id || ""));
         return;
@@ -193,5 +200,41 @@
   $("dock-btn").addEventListener("click", function () {
     notifyHost("region.dock", { text: "模板插件向底栏问了一声好。", pluginId: PLUGIN_ID });
     setStatus("已广播 region.dock 通知。");
+  });
+
+  // 调用方按钮：像别的插件那样查宿主内存里的能力字典（不涉及任何直连）
+  $("list-cmd-btn").addEventListener("click", function () {
+    setStatus("正在向宿主请求 command.list …");
+    callHost("command.list").then(function (result) {
+      var commands = (result && result.commands) || [];
+      var list = $("list");
+      list.textContent = "";
+      commands.forEach(function (item) {
+        var card = document.createElement("div");
+        card.className = "item";
+        card.textContent = item.id + " ｜ " + (item.title || "")
+          + " ｜ 提供方：" + (item.plugin_name || item.plugin_id || "?")
+          + (item.requires_user ? " ｜ 执行前需用户确认" : "");
+        list.appendChild(card);
+      });
+      setStatus("能力字典共 " + commands.length + " 条。");
+    }).catch(function (err) {
+      setStatus("读取能力字典失败：" + err.message);
+    });
+  });
+
+  // 调用方按钮：经宿主调度本插件自己的命令，演示「请求 → 宿主转发 → 目标回包」整圈
+  $("echo-cmd-btn").addEventListener("click", function () {
+    setStatus("正在经宿主调度 " + ECHO_COMMAND + " …");
+    callHost("command.execute", {
+      command_id: ECHO_COMMAND,
+      context: { from_template: true, note: "调用方按钮演示" }
+    }).then(function (result) {
+      var inner = (result && result.result) || {};
+      setStatus("命令执行成功，目标插件 " + ((result && result.plugin_id) || "?")
+        + " 回显：" + JSON.stringify(inner.echo || {}));
+    }).catch(function (err) {
+      setStatus("命令执行失败：" + err.message);
+    });
   });
 })();
