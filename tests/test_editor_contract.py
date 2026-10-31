@@ -181,7 +181,8 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
     def test_05_grid_uses_three_columns_with_draggable_widths(self) -> None:
         css = read("plugin.css")
         self.assertIn(
-            "var(--w-image) var(--split-w) var(--w-source) var(--split-w) minmax(0, 1fr)", css)
+            "var(--w-image) var(--split-w) minmax(0, 1fr)", css,
+            "中右两栏合并成一只整体容器后，网格只该有三条轨道")
         self.assertIn("--split-w: 6px", css)
         self.assertIn("--pane-min: 28px", css, "拖到极窄缝也不能归零")
         self.assertIn("--void: #fafafa", css, "短栏留白的极淡底色")
@@ -231,6 +232,97 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
             self.assertIn(f'"{attr}"', js, f"探针判据缺少度量属性 {attr}")
         self.assertIn('var progressText = "第 " + (state.active + 1) + " / " '
                       '+ state.items.length + " 题"', js)
+
+
+class EditorTopBarAndAlignmentTest(unittest.TestCase):
+    """紧急 UI 回炉（2026-10-31）：顶栏去冗余、三栏顶线齐、中右底边平、左右可互换。"""
+
+    def test_01_no_internal_title_or_status_strip(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        self.assertNotIn("<h1", canvas, "外层页签已报题名，画布内不许再写一遍大标题")
+        self.assertNotIn("ed-bar-brand", canvas)
+        self.assertNotIn("ed-status", canvas)
+        self.assertNotIn("ed-legend", canvas)
+
+    def test_02_toolbar_keeps_only_progress_format_and_swap(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        bar = canvas[canvas.index('class="ed-bar"'):canvas.index("</header>")]
+        for node_id in ("edProgress", "edFmtLatex", "edFmtBoxed", "edSwapMode"):
+            self.assertIn(f'id="{node_id}"', bar, f"顶栏缺少 {node_id}")
+        self.assertEqual(bar.count("<button"), 3, "顶栏只留格式两枚 + 互换一枚")
+        # 状态位仍在，但只给探针与读屏看，视觉上不占像素
+        for node_id in ("edFormat", "edDirty", "edSaved", "edMetrics"):
+            at = canvas.index(f'id="{node_id}"')
+            self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
+
+    def test_03_three_heads_share_one_pixel_line(self) -> None:
+        css = read("plugin.css")
+        head = rule_body(css, ".ed-pane-head")
+        self.assertIn("height: 32px", head, "三栏头部必须是同一固定高度")
+        self.assertIn("flex: 0 0 32px", head)
+        self.assertIn("align-items: center", head)
+        for selector in (".ed-col-image {", ".ed-workbench {"):
+            self.assertIn("border-top: 1px solid var(--line-strong)",
+                          rule_body(css, selector), f"{selector.strip()} 缺顶框线")
+        self.assertTrue(all("border-top" not in body for body in
+                            re.findall(r"\.ed-workbench-panes > \.ed-col\w*\s*\{([^}]*)\}", css)),
+                        "中右两栏自己再画顶线就会与整体容器的线错开 1px")
+
+    def test_04_source_and_render_share_one_bottom_border(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        self.assertIn('id="edWorkbench"', canvas)
+        self.assertLess(canvas.index('id="edWorkbench"'), canvas.index('id="edPaneSource"'))
+        self.assertLess(canvas.index('id="edPaneSource"'), canvas.index('id="edPaneRender"'))
+        css = read("plugin.css")
+        bench = rule_body(css, ".ed-workbench {")
+        self.assertIn("border-bottom: 1px solid var(--line-strong)", bench,
+                      "中右两栏的底框线只能由整体容器画一条")
+        self.assertIn("flex: 1 1 0", rule_body(css, ".ed-workbench-panes > .ed-col {"))
+        for selector in (".ed-col-source", ".ed-col-render"):
+            rules = re.findall(re.escape(selector) + r"\s*\{([^}]*)\}", css)
+            self.assertTrue(rules, f"缺少 {selector} 规则")
+            self.assertTrue(all("border-bottom" not in body for body in rules),
+                            f"{selector} 自己又画底边，两条线迟早错位")
+
+    def test_05_swap_is_visual_only(self) -> None:
+        css = read("plugin.css")
+        js = read("plugin.js")
+        for marker in ('.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-render',
+                       '.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-source'):
+            self.assertIn(marker, css, "互换必须靠 flex order，不许搬 DOM")
+        self.assertIn("function applySwap(next, persist)", js)
+        self.assertIn("function toggleSwap()", js)
+        self.assertIn('colsEl.setAttribute("data-swap"', js)
+        self.assertIn("state.swap = Boolean(next);", js)
+        # 互换不许重建源码或渲染，值和滚动进度必须留在原节点
+        swap = fn_body(js, "toggleSwap")
+        self.assertNotIn("renderAll();", swap)
+        self.assertNotIn("innerHTML", swap)
+        self.assertIn("node.scrollTop = scrolls[position];", swap)
+        self.assertIn("focus.setSelectionRange(caret[0], caret[1]);", swap)
+
+    def test_06_swap_state_is_persisted_with_the_layout(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("swap: state.swap", fn_body(js, "saveLayout"))
+        activate = js[js.index('if (message.method === "plugin.activate")'):
+                      js.index('if (message.method === "plugin.deactivate")')]
+        self.assertIn("applySwap(value.swap, false);", activate)
+
+    def test_07_swap_button_is_44px_hit_target(self) -> None:
+        css = read("plugin.css")
+        for selector in (".ed-seg-btn {", ".ed-swap-btn {"):
+            self.assertIn("min-height: 44px", rule_body(css, selector), f"{selector} 不足 44px")
+        inline = rule_body(css, ".ed-swap-inline {")
+        self.assertIn("width: 22px", inline)
+        self.assertIn("height: 22px", inline)
+        self.assertIn("inset: -11px", rule_body(css, ".ed-swap-inline::after"),
+                      "小互换钮要用伪元素把热区补到 44px")
+
+    def test_08_swap_button_never_starts_a_drag(self) -> None:
+        js = read("plugin.js")
+        bind = fn_body(js, "bindSplit")
+        self.assertIn('closest(".ed-swap-inline")', bind)
+        self.assertIn("if (event.target !== node) return;", bind, "按钮上的方向键不许变成拖栏")
 
 
 class EditorSourceContractTest(unittest.TestCase):
@@ -383,12 +475,11 @@ class EditorHostCallTest(unittest.TestCase):
 
 
 class EditorPanelTest(unittest.TestCase):
-    """军令 #23 阶段 2–3 的验收面：辅助栏只有元数据表单 + AI 帮改 + 审核动作 + 格式切换。"""
+    """军令 #23 阶段 2–3 的验收面：辅助栏只有元数据表单 + AI 帮改 + 审核动作。"""
 
     def test_01_panel_carries_status_formats_metadata_and_actions(self) -> None:
         panel = panel_only(read("index.html"))
         for node_id in ("epProgress", "epStatus", "epConfidence",
-                        "epFormatLatex", "epFormatBoxed",
                         "epType", "epDifficulty", "epGrade",
                         "epPaper", "epQuestionNo", "epYear", "epExamType", "epTags",
                         "epMounted", "epTopicTree",
@@ -397,6 +488,8 @@ class EditorPanelTest(unittest.TestCase):
                         "epSave", "epVariant", "epPass", "epReject", "epSkip",
                         "epMessage", "epMetrics"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
+        # 格式开关已并入画布顶栏，右栏不再重复一只
+        self.assertNotIn("epFormat", panel, "源码格式开关只该出现在画布顶栏")
 
     def test_02_panel_never_carries_source_or_preview(self) -> None:
         """铁律：源码只在中栏、渲染只在中栏右邻。辅助栏唯一的 textarea 是给 AI 写指令的。"""
@@ -437,19 +530,25 @@ class EditorPanelTest(unittest.TestCase):
         self.assertIn('panel.selection.dirty = true;', js[js.index("function onFormChange("):
                                                               js.index("  function renderTypeNote(")])
 
-    def test_06_format_switch_uses_the_params_channel(self) -> None:
-        """面板帧改不到画布 DOM，只能经 ui.params.set 让宿主广播 ui.params.changed。"""
+    def test_06_format_switch_lives_in_the_canvas_and_syncs_the_params_channel(self) -> None:
+        """画布才是格式视图的主人：先本地落地，再尽力经 ui.params.set 通知宿主与右栏。"""
         js = read("plugin.js")
-        switch = js[js.index("  function switchFormat("):js.index("  function explainHostError(")]
-        self.assertIn('hostCall("ui.params.set"', switch)
-        self.assertIn("params: { format: next }", switch)
-        self.assertIn("snapshot: snapshot", switch, "不带修订快照就等于绕过「人的手优先」")
-        self.assertIn("skipped", switch, "被宿主跳过的字段必须如实告诉老师")
+        choose = js[js.index("  function chooseFormat("):
+                    js.index("  // ---------- 源码 / 渲染左右互换")]
+        self.assertIn("setFormat(next);", choose)
+        self.assertIn('hostCall("ui.params.set"', choose)
+        self.assertIn("params: { format: next }", choose)
+        self.assertIn("plugin_id: PLUGIN_ID", choose)
+        self.assertIn(".catch(function () { /* 参数同步失败，画布视图照旧 */ });", choose)
+        # 旧的面板帧切换通道已退场，不许留两套事实来源
+        self.assertNotIn("function switchFormat(", js)
+        self.assertIn('node.addEventListener("click", function () { chooseFormat(node.getAttribute("data-format")); });',
+                      js)
 
     def test_07_touch_targets_meet_the_a11y_floor(self) -> None:
         """AGENTS §6：触控目标不小于 44px；树行与小圆钮（热区补齐）都得达标。"""
         css = read("plugin.css")
-        for selector in (".ep-fmt", ".ep-input", ".ep-select", ".ep-topic-expander"):
+        for selector in (".ep-input", ".ep-select", ".ep-topic-expander"):
             self.assertIn("min-height: 44px", rule_body(css, selector),
                           f"{selector} 没有 44px 触控高度")
         chip_x = rule_body(css, ".ep-chip-x")

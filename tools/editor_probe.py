@@ -282,6 +282,33 @@ def main() -> int:
                   canvas.locator(".ed-page, [data-page-h]").count() == 0)
             page.screenshot(path=str(shots / "v2-canvas.png"))
 
+            # ---------- 紧急 UI 回炉：顶栏去冗余 + 三栏顶线齐 + 中右底边平 ----------
+            check("画布内不再重复插件大标题与状态行",
+                  canvas.locator("#edRoot h1, .ed-bar-brand, .ed-status, .ed-legend").count() == 0)
+            check("顶栏只留题号 + 格式切换 + 左右互换",
+                  canvas.locator("#edProgress").count() == 1
+                  and canvas.locator("#edFmtLatex").count() == 1
+                  and canvas.locator("#edFmtBoxed").count() == 1
+                  and canvas.locator("#edSwapMode").count() == 1)
+            frame_tops = [round(canvas.locator(sel).bounding_box()["y"], 2) for sel in
+                          ("#edPaneImage", "#edWorkbench")]
+            head_tops = [round(canvas.locator(sel + " .ed-pane-head").bounding_box()["y"], 2)
+                         for sel in ("#edPaneImage", "#edPaneSource", "#edPaneRender")]
+            check("三栏顶部框线落在同一像素水平线",
+                  max(frame_tops) - min(frame_tops) <= 0.5
+                  and max(head_tops) - min(head_tops) <= 0.5,
+                  {"frame_tops": frame_tops, "head_tops": head_tops})
+            src_box = canvas.locator("#edPaneSource").bounding_box()
+            rnd_box = canvas.locator("#edPaneRender").bounding_box()
+            src_bottom = round(src_box["y"] + src_box["height"], 2)
+            rnd_bottom = round(rnd_box["y"] + rnd_box["height"], 2)
+            check("中右两栏底边落在同一像素水平线",
+                  abs(src_bottom - rnd_bottom) <= 0.5,
+                  {"source_bottom": src_bottom, "render_bottom": rnd_bottom})
+            result["metrics"]["align"] = {
+                "frame_tops": frame_tops, "head_tops": head_tops,
+                "source_bottom": src_bottom, "render_bottom": rnd_bottom}
+
             # ---------- 右栏：同一插件的第二个沙箱帧 ----------
             panel = page.frame_locator(PANEL)
             expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
@@ -311,6 +338,52 @@ def main() -> int:
                   and panel.locator("#epSkip").is_disabled())
             page.screenshot(path=str(shots / "v2-panel.png"))
 
+            # ---------- 左右互换：只是视觉换位，编辑值、选区与滚动都得留住 ----------
+            # 辅助栏已挂载再测：互换若误改当前题，面板会立刻跟着漂，判据才收得住。
+            swap_area = canvas.locator(".ed-src-area").first
+            swap_area.click(position={"x": 40, "y": 12})
+            swap_area.evaluate("node => node.setSelectionRange(4, 10)")
+            # 只滚一小段：仍停在第一题的行内，别让「跟题」把当前题换走
+            canvas.locator("#edSourceBody").evaluate("node => { node.scrollTop = 30; }")
+            page.wait_for_timeout(300)
+            source_x_before = round(canvas.locator("#edPaneSource").bounding_box()["x"], 2)
+            render_x_before = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
+            scroll_before = canvas.locator("#edSourceBody").evaluate("n => n.scrollTop")
+            value_before = swap_area.input_value()
+            canvas.locator("#edSwapInline").click()
+            page.wait_for_timeout(400)
+            source_x_after = round(canvas.locator("#edPaneSource").bounding_box()["x"], 2)
+            render_x_after = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
+            check("点两栏之间的小钮：源码与渲染左右换位",
+                  source_x_before < render_x_before and source_x_after > render_x_after
+                  and canvas.locator("#edCols").get_attribute("data-swap") == "true",
+                  {"before": [source_x_before, render_x_before],
+                   "after": [source_x_after, render_x_after]})
+            check("互换后源码一个字都没丢", swap_area.input_value() == value_before)
+            scroll_after = canvas.locator("#edSourceBody").evaluate("n => n.scrollTop")
+            check("互换后中栏滚动进度原地保留",
+                  abs(scroll_after - scroll_before) <= 1,
+                  {"before": scroll_before, "after": scroll_after})
+            caret_after = swap_area.evaluate(
+                "node => [document.activeElement === node, node.selectionStart, node.selectionEnd]")
+            check("互换后焦点与选区送回源码框",
+                  bool(caret_after[0]) and caret_after[1] == 4 and caret_after[2] == 10,
+                  {"active_and_caret": caret_after})
+            check("互换没把当前题带跑",
+                  canvas.locator("#edProgress").get_attribute("data-active") == "1",
+                  {"progress": canvas.locator("#edProgress").inner_text()})
+            page.screenshot(path=str(shots / "v2-swapped.png"))
+            canvas.locator("#edSwapMode").click()
+            page.wait_for_timeout(300)
+            check("顶栏互换钮也能换回原位",
+                  canvas.locator("#edCols").get_attribute("data-swap") == "false"
+                  and canvas.locator("#edPaneSource").bounding_box()["x"]
+                  < canvas.locator("#edPaneRender").bounding_box()["x"])
+            page.screenshot(path=str(shots / "v2-swap.png"))
+            # 互换段把滚动线压到 30px：跳回第一题顶部，后续拖栏与格式切换从干净状态起步
+            canvas.locator('.ed-img-jump[data-index="0"]').click()
+            page.wait_for_timeout(400)
+
             # ---------- 拖手：键盘路径，拖到底只留极窄缝 ----------
             image_pane = canvas.locator("#edPaneImage")
             width_before = image_pane.evaluate("node => node.getBoundingClientRect().width")
@@ -327,7 +400,7 @@ def main() -> int:
             check("拖到底不归零（只留极窄缝）", 28 <= floor < width_before, {"width": floor})
 
             # ---------- 格式二：拆框编辑，改完自动重组格式一 ----------
-            panel.locator("#epFormatBoxed").click()
+            canvas.locator("#edFmtBoxed").click()
             expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "boxed",
                                                                  timeout=12000)
             boxes_now = canvas.locator(".ed-box").count()
@@ -342,7 +415,7 @@ def main() -> int:
             expect(option_box).to_be_visible(timeout=8000)
             option_box.fill("$1$（" + MARK + "）")
             page.wait_for_timeout(500)
-            panel.locator("#epFormatLatex").click()
+            canvas.locator("#edFmtLatex").click()
             expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "latex",
                                                                  timeout=12000)
             rebuilt = canvas.locator(".ed-src-area").first.input_value()

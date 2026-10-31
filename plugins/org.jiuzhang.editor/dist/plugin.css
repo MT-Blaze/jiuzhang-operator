@@ -51,76 +51,100 @@ body {
   min-height: 0;
 }
 
+/* 顶栏只留必须的东西：当前题号 + 源码格式 + 左右互换。
+   插件自己的大标题与状态行已撤——外层页签已经写着「录题工作台」。 */
 .ed-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 4px 10px;
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
   flex: none;
 }
 
-.ed-bar h1 {
-  margin: 0;
-  font-size: 16px;
-  letter-spacing: 0.02em;
+.ed-progress {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.ed-bar-sub {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-.ed-bar-state {
+.ed-bar-actions {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.ed-progress,
-.ed-format,
-.ed-dirty {
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+.ed-seg {
+  display: inline-flex;
   border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  overflow: hidden;
   background: var(--card);
+}
+
+.ed-seg-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
   color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ed-seg-btn + .ed-seg-btn { border-left: 1px solid var(--line-strong); }
+
+.ed-seg-btn.is-on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ed-swap-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  cursor: pointer;
   white-space: nowrap;
 }
 
-.ed-dirty[data-dirty="true"] {
-  color: var(--danger);
-  border-color: var(--danger);
+.ed-swap-btn:hover { border-color: var(--accent); }
+
+.ed-swap-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
 }
 
-.ed-status {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 4px 16px;
-  font-size: 12px;
-  color: var(--ink-soft);
-  background: var(--paper-deep);
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-
-.ed-status span:first-child {
-  font-variant-numeric: tabular-nums;
-}
-
-.ed-saved {
-  color: var(--accent);
-}
-
-.ed-legend {
-  margin-left: auto;
+/* 状态位只给探针与读屏看，视觉上不占像素 */
+.ed-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- 三栏 ---------- */
@@ -132,15 +156,80 @@ body {
   /* 不锁行高的话，这一条隐式行会被最高的那栏撑到几千像素，三栏全都变成"内容多高就多高"，
      pane-body 的 overflow-y:auto 永远不触发，滚动跟题与拖栏定位也就全成了死代码。 */
   grid-template-rows: minmax(0, 1fr);
-  grid-template-columns:
-    var(--w-image) var(--split-w) var(--w-source) var(--split-w) minmax(0, 1fr);
+  /* 中、右两栏合并成一只整体容器（.ed-workbench），网格里只剩三条轨道。 */
+  grid-template-columns: var(--w-image) var(--split-w) minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .ed-col {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--void);
+}
+
+.ed-col-image {
+  grid-column: 1;
+  grid-row: 1;
+  /* 顶框线只画一次：中右两栏的顶线由 .ed-workbench 画，画在这里会多出一条 1px 内线 */
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ed-cols > #edSplitImage {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* 中、右两栏的整体高度容器：下边框只画这一条，两栏底边永远平齐；
+   左栏原图不参与，它自己独立滚动。 */
+.ed-workbench {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  overflow: hidden;
+}
+
+.ed-workbench-panes {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.ed-workbench-panes > .ed-col { flex: 1 1 0; }
+
+.ed-workbench-panes > .ed-col-source {
+  order: 1;
+  flex: 0 0 var(--w-source);
+}
+
+.ed-workbench-panes > #edSplitSource {
+  order: 2;
+  flex: 0 0 var(--split-w);
+}
+
+.ed-workbench-panes > .ed-col-render {
+  order: 3;
+  flex: 1 1 0;
+}
+
+/* 互换只改视觉顺序：DOM 一个节点都不挪，焦点、选区与滚动进度全留在原节点上。
+   左槽恒为 var(--w-source) 宽，换到左边的那栏接管这只槽，拖手手感不变。 */
+.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-render {
+  order: 1;
+  flex: 0 0 var(--w-source);
+}
+
+.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-source {
+  order: 3;
+  flex: 1 1 0;
 }
 
 .ed-col-source { background: var(--card); }
@@ -148,16 +237,17 @@ body {
 
 .ed-pane-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 12px;
+  height: 32px;
+  padding: 0 12px;
   font-size: 12px;
   font-weight: 700;
   color: var(--ink);
   background: var(--paper);
   border-bottom: 1px solid var(--line);
-  flex: none;
+  flex: 0 0 32px;
   /* 头部必须是三栏统一的单行：右栏最窄时标题会被挤成竖排两行，
      头高从 32px 变成 50px，正文起点跟着下移、与另两栏的虚线错位。
      标题不许收缩折行，提示文字自己走省略号。 */
@@ -190,6 +280,7 @@ body {
 }
 
 .ed-split {
+  position: relative;
   background: var(--line);
   cursor: col-resize;
   touch-action: none;
@@ -198,6 +289,40 @@ body {
 .ed-split:hover,
 .ed-split[data-drag="true"] {
   background: var(--accent);
+}
+
+/* 两栏之间的小互换钮：看见的只有 22px，热区用伪元素补到 44px（AGENTS §6）。 */
+.ed-swap-inline {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 6;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+.ed-swap-inline::after {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.ed-swap-inline:hover { border-color: var(--accent); }
+
+.ed-swap-inline[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 /* ---------- 原图栏 ---------- */
@@ -560,13 +685,6 @@ body {
   color: var(--ink-soft);
 }
 
-.ep-format {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.ep-fmt,
 .ep-btn {
   min-height: 44px;
   padding: 8px 12px;
@@ -581,15 +699,7 @@ body {
   min-width: 0;
 }
 
-.ep-fmt.is-on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 700;
-}
-
-.ep-btn:hover,
-.ep-fmt:hover {
+.ep-btn:hover {
   border-color: var(--accent);
 }
 

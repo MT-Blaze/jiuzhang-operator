@@ -143,7 +143,13 @@ class PaneTrackPinningTest(unittest.TestCase):
         ):
             body = rule_body(selector)
             self.assertNotIn("grid-template-columns", body, f"{selector} 又重述了轨道表达式")
-            self.assertRegex(body, re.escape(variable) + r":\s*0px")
+            # 必须 !important：浏览器可能仍跑旧版 splitpane.js，它以内联声明写同一枚变量；
+            # 内联优先级高于样式表，不加固就压不回 0，折叠后画布左侧会留一条死白。
+            self.assertRegex(
+                body,
+                re.escape(variable) + r":\s*0px\s*!important",
+                f"{selector} 压 {variable} 没带 !important，旧内联声明会赢",
+            )
             # 折叠只压生效尺寸：偏好尺寸要是被压成 0，展开后就再也回不到用户拖出来的宽度了
             preference = {
                 "--sidebar-width": "--sidebar-size",
@@ -152,6 +158,16 @@ class PaneTrackPinningTest(unittest.TestCase):
             }[variable]
             self.assertNotIn(preference, body, f"{selector} 压了偏好尺寸 {preference}")
         self.assertIn("minmax(0, 1fr)", rule_body(".ws-page"), "中栏轨道必须恒为 minmax(0, 1fr)")
+
+    def test_04b_immersive_and_fullscreen_also_win_over_inline(self) -> None:
+        """全屏与沉浸同样会收起侧栏，必须与折叠态一样压得过旧版内联尺寸。"""
+        fullscreen = rule_body('.ws-page[data-fullscreen="on"]')
+        for variable in ("--sidebar-width", "--context-width", "--dock-height",
+                         "--gutter-side", "--gutter-ctx", "--gutter-dock"):
+            self.assertRegex(fullscreen, re.escape(variable) + r":\s*0px\s*!important")
+        immersive = rule_body('.ws-page[data-immersive="on"]')
+        for variable in ("--sidebar-width", "--gutter-side"):
+            self.assertRegex(immersive, re.escape(variable) + r":\s*0px\s*!important")
 
     def test_05_collapsed_pane_removes_its_handle(self) -> None:
         """收起的那条边界不许再拖：0 宽轨道里的手柄既拖不动也点不着。

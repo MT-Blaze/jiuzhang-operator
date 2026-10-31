@@ -512,10 +512,15 @@
 /* 折叠态：由 .ws-page 的 data 属性驱动，且只改尺寸变量。
    桌面把对应轨道变量收为 0（gutter 一并收，避免留下 5px 空缝），
    四区靠上面的 grid-column 钉轨各就各位，display:none 摘走一区也不会让剩下的顺位前移；
-   移动把抽屉滑出画布外。中栏轨道恒为 minmax(0, 1fr)，折叠让出的空间一定吃得进去。 */
-.ws-page[data-side="hidden"] { --sidebar-width: 0px; --gutter-side: 0px; }
-.ws-page[data-ctx="hidden"] { --context-width: 0px; --gutter-ctx: 0px; }
-.ws-page[data-dock="hidden"] { --dock-height: 0px; --gutter-dock: 0px; }
+   移动把抽屉滑出画布外。中栏轨道恒为 minmax(0, 1fr)，折叠让出的空间一定吃得进去。
+
+   生效尺寸一律带 !important：浏览器可能还跑着旧版 splitpane.js，
+   那版把偏好直接以内联声明写进 --sidebar-width / --context-width / --dock-height。
+   内联声明优先级高于任意样式表规则，不用 !important 就压不住——
+   折叠后轨道仍停在旧宽度、画布左侧留一条死白，正是「修复到不了真机」的根因。 */
+.ws-page[data-side="hidden"] { --sidebar-width: 0px !important; --gutter-side: 0px !important; }
+.ws-page[data-ctx="hidden"] { --context-width: 0px !important; --gutter-ctx: 0px !important; }
+.ws-page[data-dock="hidden"] { --dock-height: 0px !important; --gutter-dock: 0px !important; }
 
 /* 收起的那条边界不许再拖：手柄留在 0 宽轨道里既拖不动也点不着 */
 .ws-page[data-side="hidden"] .ws-resizer-v[data-resize="side"],
@@ -539,12 +544,12 @@
    只压尺寸变量，不动 data-side / data-ctx —— 用户的折叠偏好是另一本账，
    退出全屏后必须原样还在。手柄一并摘走：独占视口时没有可调的边界。 */
 .ws-page[data-fullscreen="on"] {
-  --sidebar-width: 0px;
-  --context-width: 0px;
-  --dock-height: 0px;
-  --gutter-side: 0px;
-  --gutter-ctx: 0px;
-  --gutter-dock: 0px;
+  --sidebar-width: 0px !important;
+  --context-width: 0px !important;
+  --dock-height: 0px !important;
+  --gutter-side: 0px !important;
+  --gutter-ctx: 0px !important;
+  --gutter-dock: 0px !important;
 }
 
 .ws-page[data-fullscreen="on"] .ws-sidebar,
@@ -562,8 +567,8 @@
    （原先这一唤是 Ctrl+B——全局快捷键仲裁层随军令 #18 第二步整层拆除后，
    左栏在沉浸态就没有任何唤出通道了，所以把画布上的【入口】按钮在这一态一并露出。） */
 .ws-page[data-immersive="on"] {
-  --sidebar-width: 0px;
-  --gutter-side: 0px;
+  --sidebar-width: 0px !important;
+  --gutter-side: 0px !important;
 }
 
 .ws-page[data-immersive="on"] .ws-drawer-btn {

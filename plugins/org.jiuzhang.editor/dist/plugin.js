@@ -69,6 +69,10 @@
   var dirtyEl = document.getElementById("edDirty");
   var toastEl = document.getElementById("edToast");
   var savedEl = document.getElementById("edSaved");
+  var fmtLatexEl = document.getElementById("edFmtLatex");
+  var fmtBoxedEl = document.getElementById("edFmtBoxed");
+  var swapModeEl = document.getElementById("edSwapMode");
+  var swapInlineEl = document.getElementById("edSwapInline");
   var poolEl = document.getElementById("edPool");
   var batchNoteEl = document.getElementById("edBatchNote");
   var saveAllEl = document.getElementById("edSaveAll");
@@ -78,8 +82,6 @@
   var panelProgressEl = document.getElementById("epProgress");
   var panelStatusEl = document.getElementById("epStatus");
   var panelConfidenceEl = document.getElementById("epConfidence");
-  var panelFormatLatexEl = document.getElementById("epFormatLatex");
-  var panelFormatBoxedEl = document.getElementById("epFormatBoxed");
   var panelTypeEl = document.getElementById("epType");
   var panelTypeNoteEl = document.getElementById("epTypeNote");
   var panelDifficultyEl = document.getElementById("epDifficulty");
@@ -119,12 +121,15 @@
   var scrollLock = false;
   var scrollRestore = false;
   var lastErrorTotal = 0;
+  // 互换钮被点击时会先把焦点从源码框夺走：记住最后一只有 data-field 的编辑框，换完把光标送回去
+  var lastFieldNode = null;
 
   var state = {
     slot: "stage.center",
     items: [],
     active: 0,
     format: "latex",
+    swap: false,
     widths: { image: 260, source: 360 },
     dirty: false,
     layoutReady: false,
@@ -1226,7 +1231,11 @@
       progressEl.setAttribute("data-active", String(state.active + 1));
       progressEl.setAttribute("data-total", String(state.items.length));
     }
-    if (formatEl) formatEl.setAttribute("data-format", state.format);
+    if (formatEl) {
+      formatEl.setAttribute("data-format", state.format);
+      formatEl.textContent = state.format === "boxed" ? "格式二" : "格式一";
+    }
+    setFormatButtons(state.format);
     var errorTotal = 0;
     state.items.forEach(function (item) { errorTotal += Number(item.errorCount || 0); });
     if (metricsEl) {
@@ -1514,7 +1523,19 @@
     }).catch(function () { /* 读不到草稿就从假数据重来 */ });
   }
 
-  // ---------- 格式一 / 格式二（切换请求来自辅助栏，经宿主 ui.params 落地） ----------
+  // ---------- 格式一 / 格式二（开关在画布顶栏；宿主 ui.params 只做跨帧对账） ----------
+  function setFormatButtons(format) {
+    var value = FORMATS[format] ? format : "latex";
+    panel.format = value;
+    [fmtLatexEl, fmtBoxedEl].forEach(function (node) {
+      if (!node) return;
+      var on = node.getAttribute("data-format") === value;
+      node.classList.toggle("is-on", on);
+      node.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (panelMetricsEl) panelMetricsEl.setAttribute("data-format", value);
+  }
+
   function setFormat(next) {
     var value = FORMATS[next] ? next : "latex";
     if (value === state.format) return;
@@ -1524,17 +1545,81 @@
         ? "格式二 · 框里只有内容，环境骨架改不动"
         : "格式一 · 整段源码直接编辑";
     }
+    setFormatButtons(value);
     renderAll();
     publishSelection();
+  }
+
+  /** 顶栏点选：画布先落地，再尽力把参数同步给宿主与右栏；宿主不接也不影响画布自己的视图。 */
+  function chooseFormat(next) {
+    if (!FORMATS[next] || next === state.format) return;
+    setFormat(next);
+    hostCall("ui.params.set", {
+      params: { format: next },
+      snapshot: {},
+      plugin_id: PLUGIN_ID
+    }).catch(function () { /* 参数同步失败，画布视图照旧 */ });
+  }
+
+  // ---------- 源码 / 渲染左右互换（只改视觉顺序，DOM 不挪） ----------
+  function applySwap(next, persist) {
+    state.swap = Boolean(next);
+    if (colsEl) colsEl.setAttribute("data-swap", state.swap ? "true" : "false");
+    var label = state.swap ? "⇄ 换回" : "⇄ 互换";
+    if (swapModeEl) {
+      swapModeEl.setAttribute("aria-pressed", state.swap ? "true" : "false");
+      swapModeEl.setAttribute("aria-label", label + "（源码与渲染）");
+      swapModeEl.textContent = label;
+    }
+    if (swapInlineEl) {
+      swapInlineEl.setAttribute("aria-pressed", state.swap ? "true" : "false");
+      swapInlineEl.setAttribute("aria-label", label + "（源码与渲染）");
+      swapInlineEl.setAttribute("title", label + "（源码与渲染）");
+    }
+    if (persist) queueLayoutSave();
+  }
+
+  /**
+   * 互换的只有视觉位置：源码框与渲染块还是原来那两个 DOM 节点，
+   * 值、选区、撤销栈与滚动进度都不会离开元素，所以只需在换序后补一次行高对齐。
+   */
+  function toggleSwap() {
+    var focus = lastFieldNode && document.contains(lastFieldNode) ? lastFieldNode : null;
+    var caret = null;
+    if (focus) {
+      try { caret = [focus.selectionStart, focus.selectionEnd]; } catch (error) { caret = null; }
+    }
+    var scrolls = [sourceBodyEl, renderBodyEl].map(function (node) {
+      return node ? node.scrollTop : 0;
+    });
+    applySwap(!state.swap, true);
+    alignRows();
+    [sourceBodyEl, renderBodyEl].forEach(function (node, position) {
+      if (node) node.scrollTop = scrolls[position];
+    });
+    // 点按钮会把焦点从源码框拿走：换完把光标送回原处，老师接着打字
+    if (focus && document.activeElement !== focus) {
+      try { focus.focus({ preventScroll: true }); } catch (error) { focus.focus(); }
+      if (caret) {
+        try { focus.setSelectionRange(caret[0], caret[1]); } catch (error) { /* input 不一定支持 */ }
+      }
+    }
+    window.requestAnimationFrame(function () {
+      alignRows();
+      [sourceBodyEl, renderBodyEl].forEach(function (node, position) {
+        if (node) node.scrollTop = scrolls[position];
+      });
+    });
   }
 
   // ---------- 三栏拖宽（不能归零，只留极窄缝） ----------
   function applyWidths() {
     var total = colsEl ? colsEl.clientWidth : 0;
     if (total <= 0) return;
-    var image = clampValue(state.widths.image, PANE_MIN, Math.max(PANE_MIN, total - PANE_MIN * 2 - SPLIT_W * 2));
+    var image = clampValue(state.widths.image, PANE_MIN,
+      Math.max(PANE_MIN, total - PANE_MIN * 2 - SPLIT_W));
     var source = clampValue(state.widths.source, PANE_MIN,
-      Math.max(PANE_MIN, total - image - PANE_MIN - SPLIT_W * 2));
+      Math.max(PANE_MIN, total - image - PANE_MIN - SPLIT_W));
     state.widths.image = image;
     state.widths.source = source;
     colsEl.style.setProperty("--w-image", image + "px");
@@ -1543,8 +1628,10 @@
   }
 
   function saveLayout() {
-    hostCall("draft.save", { key: DRAFT_LAYOUT_KEY, value: { widths: state.widths } })
-      .catch(function () { /* 布局偏好存不下就算了，不打扰老师 */ });
+    hostCall("draft.save", {
+      key: DRAFT_LAYOUT_KEY,
+      value: { widths: state.widths, swap: state.swap }
+    }).catch(function () { /* 布局偏好存不下就算了，不打扰老师 */ });
   }
 
   function queueLayoutSave() {
@@ -1556,6 +1643,7 @@
     if (!node) return;
     var drag = null;
     node.addEventListener("pointerdown", function (event) {
+      if (event.target && event.target.closest && event.target.closest(".ed-swap-inline")) return;
       drag = { x: event.clientX, image: state.widths.image, source: state.widths.source };
       node.setAttribute("data-drag", "true");
       if (node.setPointerCapture) node.setPointerCapture(event.pointerId);
@@ -1581,6 +1669,8 @@
     node.addEventListener("pointerup", stop);
     node.addEventListener("pointercancel", stop);
     node.addEventListener("keydown", function (event) {
+      // 焦点在里面的互换钮上时，方向键归按钮（不许把回车/方向键顺手变成拖栏）
+      if (event.target !== node) return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       var step = event.shiftKey ? 8 : 24;
       var delta = event.key === "ArrowLeft" ? -step : step;
@@ -2306,42 +2396,6 @@
       + " · 标签 " + splitTags(entry.tags).length;
   }
 
-  function setFormatButtons(format) {
-    panel.format = FORMATS[format] ? format : "latex";
-    [panelFormatLatexEl, panelFormatBoxedEl].forEach(function (node) {
-      if (!node) return;
-      var on = node.getAttribute("data-format") === panel.format;
-      node.classList.toggle("is-on", on);
-      node.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-    if (panelMetricsEl) panelMetricsEl.setAttribute("data-format", panel.format);
-  }
-
-  /**
-   * 格式切换走 ui.params.set：宿主只认清单里声明过的 select 键，
-   * 并且「人在本轮手改过」的字段一律跳过——AI/面板永远赢不过人的手。
-   */
-  function switchFormat(next) {
-    if (!FORMATS[next] || next === panel.format) return;
-    var snapshot = panel.uiRevisions ? JSON.parse(JSON.stringify(panel.uiRevisions)) : {};
-    hostCall("ui.params.set", {
-      params: { format: next },
-      snapshot: snapshot,
-      plugin_id: PLUGIN_ID
-    }).then(function (outcome) {
-      var skipped = outcome && Array.isArray(outcome.skipped) ? outcome.skipped : [];
-      if (skipped.length) {
-        panelSay("格式切换被跳过：" + skipped.map(function (item) {
-          return (item.label || "参数") + "（" + item.reason + "）";
-        }).join("；") + "。", "warn", "skipped");
-        return;
-      }
-      setFormatButtons(next);
-    }).catch(function (error) {
-      panelSay("格式切换没送到画布：" + explainHostError(error), "error", "failed");
-    });
-  }
-
   function explainHostError(error) {
     var code = String((error && error.code) || "");
     var text = (error && error.message) || "未知失败";
@@ -2782,12 +2836,6 @@
       L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴"
     });
     bindFormChanges();
-    if (panelFormatLatexEl) {
-      panelFormatLatexEl.addEventListener("click", function () { switchFormat("latex"); });
-    }
-    if (panelFormatBoxedEl) {
-      panelFormatBoxedEl.addEventListener("click", function () { switchFormat("boxed"); });
-    }
     if (panelSaveEl) panelSaveEl.addEventListener("click", function () { onPanelSave("save"); });
     if (panelVariantEl) panelVariantEl.addEventListener("click", function () { onPanelSave("variant"); });
     if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);
@@ -2882,8 +2930,9 @@
         if (value && value.widths) {
           state.widths.image = Number(value.widths.image) || state.widths.image;
           state.widths.source = Number(value.widths.source) || state.widths.source;
-          applyWidths();
         }
+        if (value && typeof value.swap === "boolean") applySwap(value.swap, false);
+        applyWidths();
         state.layoutReady = true;
       }).catch(function () { state.layoutReady = true; });
       return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID, slot: state.slot });
@@ -2910,6 +2959,19 @@
   function bind() {
     bindSplit(document.getElementById("edSplitImage"), "image");
     bindSplit(document.getElementById("edSplitSource"), "source");
+    [fmtLatexEl, fmtBoxedEl].forEach(function (node) {
+      if (!node) return;
+      node.addEventListener("click", function () { chooseFormat(node.getAttribute("data-format")); });
+    });
+    [swapModeEl, swapInlineEl].forEach(function (node) {
+      if (node) node.addEventListener("click", toggleSwap);
+    });
+    document.addEventListener("focusin", function (event) {
+      var node = event.target;
+      if (node && node.getAttribute && node.getAttribute("data-field") != null) lastFieldNode = node;
+    });
+    applySwap(state.swap, false);
+    setFormatButtons(state.format);
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
       if (node) node.addEventListener("scroll", function () { syncScroll(node); });
     });
@@ -2941,7 +3003,7 @@
 
   // 真机探针用的调试面：只把解析/重组结果交给 Playwright 复核，不参与业务分支。
   window.__jzoEditorV2 = {
-    version: "2.0.0-stage4",
+    version: "2.1.0-stage5",
     parseExamSource: parseExamSource,
     buildExamSource: buildExamSource,
     cleanExamSource: cleanExamSource,
@@ -2954,6 +3016,8 @@
     renderAll: renderAll,
     refreshRow: refreshRow,
     setFormat: setFormat,
+    applySwap: applySwap,
+    toggleSwap: toggleSwap,
     saveItem: saveItem,
     applySelection: applySelection,
     selectionPayload: selectionPayload,

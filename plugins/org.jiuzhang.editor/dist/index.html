@@ -9,28 +9,30 @@
 </head>
 <body>
   <!-- 画布实例（stage.center）：三栏全部在画布内——左原图 | 中 LaTeX 源码 | 右渲染。
-       源码与渲染共用一条滚动（行高取两栏较高者），左栏原图与两栏逐题对齐。 -->
+       源码与渲染共用一条滚动（行高取两栏较高者），左栏原图与两栏逐题对齐。
+       顶栏只留当前题号 + 源码格式 + 左右互换；标题与状态行已撤（外层页签已报题名）。 -->
   <div id="edRoot" class="ed-root" hidden>
-    <header class="ed-bar">
-      <div class="ed-bar-brand">
-        <h1>录题工作台</h1>
-        <p class="ed-bar-sub">左原图 · 中 exam-zh 源码 · 右渲染（按内容实际高度，不固定 A4）</p>
+    <header class="ed-bar" aria-label="录题工具条">
+      <span id="edProgress" class="ed-progress" data-active="0" data-total="0">第 — / — 题</span>
+      <div class="ed-bar-actions">
+        <div class="ed-seg" role="group" aria-label="源码格式">
+          <button type="button" class="ed-seg-btn is-on" id="edFmtLatex" data-format="latex"
+                  aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
+          <button type="button" class="ed-seg-btn" id="edFmtBoxed" data-format="boxed"
+                  aria-pressed="false" title="格式二 · 框框视图">格式二</button>
+        </div>
+        <button type="button" class="ed-swap-btn" id="edSwapMode" aria-pressed="false"
+                title="源码与渲染左右互换">⇄ 互换</button>
       </div>
-      <div class="ed-bar-state">
-        <span id="edProgress" class="ed-progress" data-active="0" data-total="0">第 — / — 题</span>
-        <span id="edFormat" class="ed-format" data-format="latex">格式一</span>
-        <span id="edDirty" class="ed-dirty" data-dirty="false">未改动</span>
-      </div>
+      <!-- 探针与验收用的状态位：视觉上不占位，语义仍在 -->
+      <span class="ed-sr" id="edFormat" data-format="latex">格式一</span>
+      <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
+      <span class="ed-sr" id="edSaved" hidden></span>
+      <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
+            data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
     </header>
 
-    <div class="ed-status" role="status" aria-live="polite">
-      <span id="edMetrics" data-render-ms="" data-katex="" data-blocks="" data-errors=""
-            data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
-      <span id="edSaved" class="ed-saved" hidden></span>
-      <span class="ed-legend">exam-zh 标准环境 · 公式本地 KaTeX · 写入本机 SQLite 题库</span>
-    </div>
-
-    <main class="ed-cols" id="edCols">
+    <main class="ed-cols" id="edCols" data-swap="false">
       <section class="ed-col ed-col-image" id="edPaneImage" aria-label="原图">
         <div class="ed-pane-head">
           <span>原图</span>
@@ -43,24 +45,33 @@
       <div class="ed-split" id="edSplitImage" role="separator" aria-orientation="vertical"
            tabindex="0" aria-label="拖动调整原图与源码栏宽度"></div>
 
-      <section class="ed-col ed-col-source" id="edPaneSource" aria-label="LaTeX 源码">
-        <div class="ed-pane-head">
-          <span>LaTeX 源码</span>
-          <em id="edSourceHint">格式一 · 整段源码直接编辑</em>
-        </div>
-        <div class="ed-pane-body" id="edSourceBody"></div>
-      </section>
+      <!-- 中、右两栏同住一只整体高度容器：下边框只由 .ed-workbench 画一条，
+           两栏底边永远落在同一像素线上；左栏原图独立滚动，不参与这条底边。 -->
+      <div class="ed-workbench" id="edWorkbench">
+        <div class="ed-workbench-panes">
+          <section class="ed-col ed-col-source" id="edPaneSource" aria-label="LaTeX 源码">
+            <div class="ed-pane-head">
+              <span>LaTeX 源码</span>
+              <em id="edSourceHint">格式一 · 整段源码直接编辑</em>
+            </div>
+            <div class="ed-pane-body" id="edSourceBody"></div>
+          </section>
 
-      <div class="ed-split" id="edSplitSource" role="separator" aria-orientation="vertical"
-           tabindex="0" aria-label="拖动调整源码栏与渲染栏宽度"></div>
+          <div class="ed-split" id="edSplitSource" role="separator" aria-orientation="vertical"
+               tabindex="0" aria-label="拖动调整源码栏与渲染栏宽度">
+            <button type="button" class="ed-swap-inline" id="edSwapInline" aria-pressed="false"
+                    aria-label="源码与渲染左右互换" title="源码与渲染左右互换">⇄</button>
+          </div>
 
-      <section class="ed-col ed-col-render" id="edPaneRender" aria-label="渲染结果">
-        <div class="ed-pane-head">
-          <span>渲染</span>
-          <em>按内容实际高度</em>
+          <section class="ed-col ed-col-render" id="edPaneRender" aria-label="渲染结果">
+            <div class="ed-pane-head">
+              <span>渲染</span>
+              <em>按内容实际高度</em>
+            </div>
+            <div class="ed-pane-body" id="edRenderBody"></div>
+          </section>
         </div>
-        <div class="ed-pane-body" id="edRenderBody"></div>
-      </section>
+      </div>
     </main>
 
     <!-- 批量条：单题与批量共用这一张界面，底部只提交脏题。
@@ -80,31 +91,19 @@
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
-  <!-- 辅助栏实例（sidebar.right）：元数据表单 + 审核动作 + 源码格式切换。
-       按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。 -->
+  <!-- 辅助栏实例（sidebar.right）：元数据表单 + 审核动作。
+       按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
+       源码格式切换已并入画布顶栏，右栏不再重复一只开关。 -->
   <div id="epRoot" class="ep-root" hidden>
     <header class="ep-head">
       <h2>录题辅助栏</h2>
-      <p class="ep-sub">元数据 · 审核动作 · 格式切换</p>
+      <p class="ep-sub">元数据 · AI 帮改 · 审核动作</p>
     </header>
 
     <section class="ep-sec ep-status-row" aria-label="进度与状态">
       <span id="epProgress" class="ep-progress" data-active="0" data-total="0">第 — / — 题</span>
       <span id="epStatus" class="ep-badge" data-status="pending" data-dirty="false">● 待审核</span>
       <span id="epConfidence" class="ep-confidence" data-confidence="">置信度 —（假数据占位）</span>
-    </section>
-
-    <section class="ep-sec">
-      <h3 class="ep-sec-title">源码格式</h3>
-      <div class="ep-format" role="group" aria-label="源码格式切换">
-        <button type="button" class="ep-fmt is-on" id="epFormatLatex" data-format="latex" aria-pressed="true">
-          格式一 · 标准 LaTeX
-        </button>
-        <button type="button" class="ep-fmt" id="epFormatBoxed" data-format="boxed" aria-pressed="false">
-          格式二 · 框框视图
-        </button>
-      </div>
-      <p class="ep-hint">切换只改中栏的编辑视图，题目内容不动。</p>
     </section>
 
     <section class="ep-sec">

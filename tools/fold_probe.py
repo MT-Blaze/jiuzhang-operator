@@ -82,7 +82,8 @@ JS_STATE = """
     sidebarRightmost: rightmost,
     overflowIntoCenter: (rightmost !== null && center && rect(center).w > 0)
       ? rightmost > Math.round(rect(center).x + 1)
-      : false
+      : false,
+    editorFrameRect: rect(document.querySelector('.ws-plugin-frame[title^="录题工作台"]'))
   };
 }
 """
@@ -156,6 +157,55 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(320)
             snap("92-forced-open")
 
+            if label == "desktop":
+                # 编辑器打开后收左栏：插件画布必须顶到 x=0 铺满释放出来的空间。
+                try:
+                    page.locator(
+                        '.ws-plugin-item[data-plugin-id="org.jiuzhang.editor"]'
+                    ).click(timeout=4000)
+                    page.wait_for_selector(
+                        '.ws-plugin-frame[title^="录题工作台"]', timeout=15000)
+                    page.wait_for_timeout(1400)
+                    page.locator("#wsToggleSidebar").click(timeout=3000)
+                    page.wait_for_timeout(420)
+                    ed = snap("96-editor-folded")
+                    frame_rect = ed.get("editorFrameRect") or {}
+                    ed["editorFoldFilled"] = (
+                        frame_rect.get("x") == 0
+                        and frame_rect.get("w", 0) >= ed.get("vw", 0) - 400
+                    )
+                    page.locator("#wsOpenSidebar").click(timeout=3000)
+                    page.wait_for_timeout(320)
+                except Exception as exc:  # noqa: BLE001
+                    report["errors"].append({"vw": width, "text": "editor-fold: " + str(exc)[:300]})
+
+            if label == "desktop":
+                # 真机回归（2026-10-31）：浏览器可能还缓存着旧版 splitpane.js，
+                # 那版把尺寸以内联声明写进 --sidebar-width。内联优先级高于样式表，
+                # 折叠规则若没带 !important 就压不住，画布左侧会留一条死白。
+                # 这里原样复刻那个缓存状态，确认折叠后仍然铺满。
+                page.evaluate(
+                    "() => { const p = document.querySelector('.ws-page');"
+                    " p.style.setProperty('--sidebar-size', '360px');"
+                    " p.style.setProperty('--sidebar-width', '360px');"
+                    " p.setAttribute('data-side', 'open'); }")
+                page.wait_for_timeout(320)
+                snap("94-inline-legacy-open")
+                page.evaluate(
+                    "() => document.querySelector('.ws-page').setAttribute('data-side', 'hidden')")
+                page.wait_for_timeout(320)
+                legacy = snap("95-inline-legacy-hidden")
+                center = legacy.get("centerRect") or {}
+                legacy["legacyFoldFilled"] = (
+                    center.get("x") == 0
+                    and legacy.get("grid", "").startswith("0px 0px ")
+                    and center.get("w", 0) >= legacy.get("vw", 0) - 400
+                )
+                page.evaluate(
+                    "() => { const p = document.querySelector('.ws-page');"
+                    " p.style.removeProperty('--sidebar-width');"
+                    " p.setAttribute('data-side', 'open'); }")
+
             # 跨断点：窄屏收起的抽屉拖宽 / 桌面展开态拖窄，必须由状态机重算
             target = (500, 740) if label == "desktop" else (1000, 800)
             page.set_viewport_size({"width": target[0], "height": target[1]})
@@ -190,6 +240,9 @@ if __name__ == "__main__":
               f"toggle='{st['toggleText']}'")
     if rep["errors"]:
         print("PAGE ERRORS:", json.dumps(rep["errors"], ensure_ascii=False))
+    legacy = [st for st in rep["states"] if st.get("step") == "95-inline-legacy-hidden"]
+    if legacy:
+        print("legacy-inline fold filled:", bool(legacy[0].get("legacyFoldFilled")))
     if rep["deadlock"]:
         print("DEADLOCK:")
         for d in rep["deadlock"]:
