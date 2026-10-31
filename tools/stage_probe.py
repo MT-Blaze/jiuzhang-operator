@@ -16,6 +16,8 @@
   4. 右栏面板参数一改，画布里的插件通过 notification 收到，并能往底栏回一条 region.dock；
   5. ``stage.mode = fullscreen`` 只翻全屏标志，不改用户的折叠偏好；
   6. 插件页签可关闭；关掉后画布回到引导页签，底座照常可用。
+  7. 原生页签（引导 / 设置与控制台）同样可关闭，控制台能从左栏入口重建；
+     页签栏左端「入口」按钮与页签同高、同字号、同底色、同圆角（2026-10-31 军令）。
 """
 import json
 import os
@@ -408,11 +410,62 @@ def run(tag: str) -> dict:
             closed = snap("19-close-tab")
             check("插件页签可关闭", len(closed["tabs"]) == tab_count_before - 1,
                   f"{tab_count_before} → {len(closed['tabs'])}")
-            check("引导页签不可关闭（无 × 按钮）",
+            check("引导页签可关闭（有 × 按钮）",
                   page.evaluate("""() => {
                     const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"home\"]');
-                    return t ? !t.querySelector('.ws-tab-close') : false;
+                    return t ? Boolean(t.querySelector('.ws-tab-close')) : false;
                   }"""), "")
+            check("设置与控制台页签可关闭（有 × 按钮）",
+                  page.evaluate("""() => {
+                    const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"console\"]');
+                    return t ? Boolean(t.querySelector('.ws-tab-close')) : false;
+                  }"""), "")
+
+            # ---------- 原生页签关闭与重建 ----------
+            n_before_console = len(closed["tabs"])
+            page.locator('#wsTabs .ws-tab[data-tab="console"] .ws-tab-close').click()
+            page.wait_for_timeout(500)
+            console_closed = snap("20-close-console")
+            check("关闭设置与控制台后页签释放空间",
+                  len(console_closed["tabs"]) == n_before_console - 1,
+                  f"{n_before_console} → {len(console_closed['tabs'])}")
+            page.locator("#wsConsoleBtn").click()
+            page.wait_for_timeout(800)
+            console_back = snap("21-reopen-console")
+            console_tab = next((t for t in console_back["tabs"] if t["key"] == "console"), None)
+            check("左栏底部入口能把控制台页签叫回来",
+                  console_tab is not None and console_tab["selected"] == "true"
+                  and len(console_back["tabs"]) == n_before_console,
+                  json.dumps(console_back["tabs"], ensure_ascii=False))
+
+            # ---------- 入口按钮与页签同形（2026-10-31 军令） ----------
+            page.locator("#wsToggleSidebar").click()
+            page.wait_for_timeout(400)
+            snap("22-entry-shape")
+            shape = page.evaluate("""() => {
+              const btn = document.getElementById('wsOpenSidebar');
+              const tab = document.querySelector('#wsTabs .ws-tab');
+              const cs = node => getComputedStyle(node);
+              const pick = node => ({
+                h: Math.round(node.getBoundingClientRect().height),
+                radius: cs(node).borderTopLeftRadius,
+                font: cs(node).fontSize,
+                bg: cs(node).backgroundColor,
+                padTop: cs(node).paddingTop,
+                padLeft: cs(node).paddingLeft,
+                borderBottom: cs(node).borderBottomWidth,
+                visible: node.getBoundingClientRect().width > 0
+              });
+              return {button: pick(btn), tab: pick(tab)};
+            }""")
+            btn_shape, tab_shape = shape["button"], shape["tab"]
+            check("收起左栏后入口按钮可见", btn_shape["visible"], json.dumps(shape, ensure_ascii=False))
+            check("入口按钮与页签同高、同字号、同底色、同圆角、同内边距",
+                  all(btn_shape[k] == tab_shape[k]
+                      for k in ("h", "font", "bg", "radius", "padTop", "padLeft", "borderBottom")),
+                  json.dumps(shape, ensure_ascii=False))
+            page.locator("#wsOpenSidebar").click()
+            page.wait_for_timeout(400)
 
             page.close()
             browser.close()

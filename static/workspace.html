@@ -69,7 +69,9 @@
           <div class="ws-tabs ws-ghost-scroll" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
         </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
-          <!-- 引导页：插件全崩也还有地方落脚的永久兜底页（不可关闭）。
+          <!-- 引导页：插件全崩也还有地方落脚的兜底页。页签本身可关闭，
+               关到画布一枚页签不剩时由 stage.js 自动叫回来；面板节点留在文档里，
+               重开页签不用重新渲染。
                对话流已从这一栏搬走——它过去住在中栏，等于让 AI 占着底座最好的位置、
                还天然能碰宿主 DOM；军令 #15 把它交还给右栏的沙箱插件。 -->
           <section class="ws-tab-panel" id="wsPanelHome" role="tabpanel" aria-label="引导" data-tab="home">

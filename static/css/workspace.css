@@ -309,7 +309,9 @@
 
 /* 抽屉/重开入口：侧栏可见时用它自带的折叠钮；一旦隐藏（桌面收轨道或移动滑出），
    页签栏这枚「入口」钮出现，保证任何状态下都能把左栏叫回来。
-   它常驻页签栏，不参与挤压、不被裁剪、层级高于两侧栏。 */
+   它常驻页签栏，不参与挤压、不被裁剪、层级高于两侧栏；
+   外观与页签逐一相同（背景/圆角/内边距/字号/36px 高度），但没有关闭叉——
+   它本质是按钮，不是页签。 */
 .ws-drawer-btn {
   display: none;
   flex: none;
@@ -336,6 +338,42 @@
 .ws-page[data-ctx="hidden"] .ws-ctx-btn {
   display: inline-flex;
   align-items: center;
+}
+
+/* 页签栏里的按钮一律长成页签的样子：同一行、同底边、同形。
+   只覆盖外观，不接管页签的 aria/选中态——按钮不参与 tablist 的选中切换。 */
+.ws-tabs-wrap .ws-drawer-btn,
+.ws-tabs-wrap .ws-ctx-btn {
+  align-self: flex-end;
+  justify-content: center;
+  min-height: 36px;
+  margin: 6px 4px 0 12px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--paper-deep);
+  color: var(--faint);
+  font-family: inherit;
+  font-size: 0.8rem;
+  box-shadow: none;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.ws-tabs-wrap .ws-drawer-btn:hover,
+.ws-tabs-wrap .ws-drawer-btn:focus-visible,
+.ws-tabs-wrap .ws-ctx-btn:hover,
+.ws-tabs-wrap .ws-ctx-btn:focus-visible {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--ink);
+  outline: none;
+}
+
+.ws-tabs-wrap .ws-drawer-btn:focus-visible,
+.ws-tabs-wrap .ws-ctx-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ============ 中栏：原生引导页 ============ */
@@ -1050,12 +1088,6 @@ html.ws-dragging * {
   background: var(--card);
 }
 
-.ws-tabs-wrap .ws-drawer-btn,
-.ws-tabs-wrap .ws-ctx-btn {
-  align-self: center;
-  margin: 0 4px 0 10px;
-}
-
 .ws-tabs {
   display: flex;
   align-items: flex-end;
@@ -1544,6 +1576,14 @@ html.ws-dragging * {
   .ws-btn,
   .ws-btn-sm {
     min-height: 44px;
+  }
+
+  /* 页签栏按钮在手机上继续保 44px 热区，只靠底对齐贴合页签：
+     上边比页签多出的几像素属于触控面积，不参与视觉基线。 */
+  .ws-tabs-wrap .ws-drawer-btn,
+  .ws-tabs-wrap .ws-ctx-btn {
+    min-height: 44px;
+    margin-top: 0;
   }
 
   .ws-ui-select {

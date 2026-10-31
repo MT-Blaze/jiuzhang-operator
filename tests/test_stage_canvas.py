@@ -2,7 +2,7 @@
 
 钉死六件事：
 1. 中栏只是舞台：Tabs 容器由底座渲染，业务画面在插件自己的 iframe 文档里；
-2. 对话页是原生页签且不可关闭 —— 插件全崩也还有地方说话（AGENTS §2 兜底）；
+2. 原生页签（引导 / 设置与控制台）可关闭；关到画布空时引导页自动回来（AGENTS §2 兜底）；
 3. iframe 沙箱不给 allow-same-origin，插件碰不到宿主 DOM 与令牌（PLUGIN_SPEC §2.3.4）；
 4. 同时存活的插件页有上限，最久未用的发 plugin.deactivate 后摘掉文档（LRU 休眠）；
 5. 宿主对插件请求 30 秒超时（PLUGIN_SPEC §5.1），发信人必须核验；
@@ -62,6 +62,33 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('id="wsDock"', HTML)
         self.assertIn('id="wsDockLog"', HTML)
         self.assertIn('id="wsToggleDock"', HTML)
+
+    def test_05_bar_buttons_share_the_tab_shape(self) -> None:
+        """页签栏里的「入口 / 辅助栏」是按钮：与页签同背景、同圆角、同内边距、同字号同高，但没有叉。"""
+        drawer = re.search(r'<button class="[^"]*ws-drawer-btn"[^>]*>(.*?)</button>', HTML, re.S)
+        self.assertIsNotNone(drawer, "页签栏左端的「入口」钮不见了")
+        self.assertIn("入口", drawer.group(1))
+        self.assertNotIn("ws-tab-close", drawer.group(1), "按钮不是页签，不许长关闭叉")
+        rule = re.search(
+            r"\.ws-tabs-wrap \.ws-drawer-btn,\s*\n\.ws-tabs-wrap \.ws-ctx-btn \{([^}]*)\}", CSS
+        )
+        self.assertIsNotNone(rule, "页签栏按钮要有与页签同形的样式块")
+        body = rule.group(1)
+        for token in (
+            "min-height: 36px",
+            "margin: 6px 4px 0 12px",
+            "padding: 6px 10px 6px 12px",
+            "border-radius: 8px 8px 0 0",
+            "background: var(--paper-deep)",
+            "font-size: 0.8rem",
+        ):
+            self.assertIn(token, body, f"与页签同形缺了 {token}")
+
+    def test_06_native_tabs_carry_close_buttons(self) -> None:
+        """引导与设置与控制台都渲染关闭叉；原生页签的面板关掉后留在文档里供重建。"""
+        self.assertIn("if (tab.closable) {", STAGE)
+        self.assertIn("close.setAttribute(\"aria-label\", \"关闭\" + tab.title)", STAGE)
+        self.assertIn("if (tab.kind === \"native\") tab.panel.hidden = true;", STAGE)
 
 
 class SandboxTest(unittest.TestCase):
@@ -175,7 +202,11 @@ class WorkspaceWiringTest(unittest.TestCase):
         self.assertIn("window.JzoContextPanel.reclaim()", block)
         self.assertIn('registerNative({ key: "home"', STAGE, "中栏兜底得是个原生页签")
         self.assertIn('activate("home")', STAGE)
-        self.assertIn("引导页是兜底，不许关", STAGE)
+        # 2026-10-31 军令：原生页签也要有叉；关到画布空时引导页自动回补
+        self.assertIn("closable: options.closable !== false", STAGE)
+        self.assertIn("function ensureNative(", STAGE, "关掉的原生页签要能按登记表重建")
+        self.assertIn('Boolean(ensureNative("home"))', STAGE)
+        self.assertNotIn("引导页是兜底，不许关", STAGE)
 
     def test_03_param_changes_are_published_on_the_bus(self) -> None:
         self.assertIn("function publishUiParams(source, changedKey)", WORKSPACE)

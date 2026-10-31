@@ -6,8 +6,9 @@
  * 插件只能经 HostBus 向指定区域投递数据，拿不到那三区的 DOM。
  *
  * 两类页签：
- *   - 原生页签：引导页与「设置与控制台」。引导页是舞台的永久兜底页，不可关闭
- *     （插件全崩也还有地方落脚）。对话不再住在中栏——军令 #15 把 AI 助手交还成
+ *   - 原生页签：引导页与「设置与控制台」，都带关闭叉。关掉的控制台可从左栏底部
+ *     入口重新叫回；引导页是画布兜底，关到画布一枚页签都不剩时自动恢复，
+ *     不让画布空白。对话不再住在中栏——军令 #15 把 AI 助手交还成
  *     右栏里的一个普通插件，底座不再为它保留任何特权入口。
  *   - 重型页签：沙箱 iframe 插件。带 LRU 休眠——同时存活的 iframe 最多 MAX_LIVE_FRAMES 个，
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
@@ -55,6 +56,7 @@
   var expandedKey = "";      // 同一时刻只许一个分组下拉摊开
   var scrollBtns = null;     // 页签栏溢出时的左右小箭头
   var immersiveKey = "";     // 沉浸全屏中的页签 key，空串表示没沉浸
+  var nativeDefs = {};       // 原生页签登记表：关掉后能按原样重建（控制台可从左栏再打开）
 
   function priorityOf(tab) {
     var stage = tab.plugin && tab.plugin.stage;
@@ -1976,7 +1978,7 @@
   }
 
   function activate(key) {
-    var tab = findTab(key);
+    var tab = findTab(key) || ensureNative(key);
     if (!tab) return;
     tabs.forEach(function (item) {
       var on = item.key === key;
@@ -2025,14 +2027,21 @@
     }
     if (index < 0) return;
     var tab = tabs[index];
-    if (!tab.closable) return;   // 引导页是兜底，不许关
+    if (!tab.closable) return;
     if (immersiveKey === key) setImmersive(false, "");   // 沉浸的那页被关，全屏也一起退
     if (tab.kind === "plugin" && tab.state === "live") hibernate(tab, "close");
     if (tab.button.parentNode) tab.button.parentNode.removeChild(tab.button);
-    if (tab.panel.parentNode) tab.panel.parentNode.removeChild(tab.panel);
+    // 原生页签只关页签、面板留在 DOM 里（hidden）：重建时复用同一块面板，
+    // 控制台 iframe 不必重新加载；插件页签则整块摘走，后台不留文档。
+    if (tab.kind === "native") tab.panel.hidden = true;
+    else if (tab.panel.parentNode) tab.panel.parentNode.removeChild(tab.panel);
     tabs.splice(index, 1);
+    // 画布不许关成空白：关掉最后一枚页签时把引导页原样叫回来
+    var restoredHome = !tabs.length && Boolean(ensureNative("home"));
     orderPluginTabs();   // 组里少了一页，下拉与计数必须当场跟上
-    dock("已关闭插件页「" + (tab.title || key) + "」。", "stage.tab.closed");
+    dock(restoredHome
+      ? "引导页是画布兜底，已自动保留。"
+      : "已关闭页签「" + (tab.title || key) + "」。", "stage.tab.closed");
     emit("stage.tab.closed", { key: key });
     if (activeKey === key) {
       var next = tabs[index] || tabs[index - 1] || tabs[0];
@@ -2043,17 +2052,26 @@
   function registerNative(options) {
     var panel = document.getElementById(options.panelId);
     if (!panel) return null;
+    nativeDefs[options.key] = options;
     var tab = {
       key: options.key,
       kind: "native",
       title: options.title,
-      closable: false,
+      closable: options.closable !== false,
       panel: panel,
       state: "live",
       lastUsed: Date.now()
     };
     addTab(tab);
     return tab;
+  }
+
+  /** 原生页签被关掉后按登记表重建；控制台的左栏入口因此关掉也能再打开。 */
+  function ensureNative(key) {
+    var existing = findTab(key);
+    if (existing) return existing;
+    var def = nativeDefs[key];
+    return def ? registerNative(def) : null;
   }
 
   /** 打开（或唤醒）一个插件页签；singleton=false 时允许同一插件开多个页签。 */
