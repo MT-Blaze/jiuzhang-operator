@@ -173,9 +173,62 @@
   `wait_value()` / `wait_text()`；「辅助栏不放源码框」判据从 `textarea` 计数改为按 `.ed-src-area/.ed-box-area`
   类名判定（`#epAiAsk` 本身就是 textarea，旧判据会把合规的面板打成红字）。
 
+## 本阶段已改动文件（阶段 4）
+- `plugins/org.jiuzhang.editor/dev/fixtures.json`：2 题 → **4 题**，四类题型一次配齐（单选 / 多选 / 填空 / 解答），
+  逐题过 `schemas/question.json` 2.0；多选补（多选）（  ）与两个 `choice_keys`，填空用裸 `\fillin`（方括号提示不带答案），
+  解答按格式宪法用 `\begin{problem}`；内嵌块由 `tools/sync_editor_fixtures.py` 同步进 `plugin.js`。
+- `plugins/org.jiuzhang.editor/dist/plugin.js`：`version` 升 `2.0.0-stage4`；滚动跟题一整块
+  （`editingRowIndex()` 人手优先、`activeFromScroll()` 取「视口内露出面积最大」而不是顶边越线、
+  `markActiveRow()` 三栏高亮 + `aria-current`、`jumpTo()` 三栏一起滚、`followActive()`、`syncScroll()` 接跟题）、
+  `renderAll()` 重建前抄三条 `scrollTop` 重建后还原（`scrollRestore` 期间不许跟题，否则阅读位置会被抹掉）、
+  `applySelection()` 新增「AI 刚发出去」让位分支（回显话术不得盖掉「保存才入库」）、
+  批量条一整块（`dirtyList()` `poolCounts()` `batchNote()` `renderPool()` `saveAllDirty()`）、
+  `updateStatusbar()` 末尾刷台账与高亮、`bind()` 接 `#edSaveAll`。
+- `plugins/org.jiuzhang.editor/dist/index.html`：`</main>` 后新增 `<footer class="ed-foot">`
+  （`#edPool` 台账 / `#edBatchNote` `role=status` 话术 / `#edPoolStash` 出厂锁死 / `#edSaveAll`）。
+- `plugins/org.jiuzhang.editor/dist/plugin.css`：
+  **`.ed-cols` 补 `grid-template-rows: minmax(0, 1fr)`**——隐式网格行原本被最高的那栏撑到 ~4307px，
+  三栏全都「内容多高就多高」，`overflow-y:auto` 永不触发，阶段 1–3 的滚动同步与跟题实为死代码；
+  **`.ed-pane-body` 补 `position: relative`**——不站住定位父时 `cell.offsetTop` 是整篇文档坐标，
+  跳转会把工具条高度当滚动距离多滚、跟题会认错行；
+  新增 `.ed-img-jump`（44px 热区 + `[aria-current=true]`）、`.ed-*.is-active`（inset box-shadow，状态不只靠颜色）、
+  `.ed-foot` `.ed-pool` `.ed-batch[data-batch=…]` `.ed-btn`（44px / `[disabled]` / `-primary`）。
+- `plugins/org.jiuzhang.editor/plugin.json`：1.3.0 → **1.4.0**，描述改批量同界面口径（194 字，仍在 1–200 内）。
+- `plugins.json` **与** `E:/jiuzhang-plugins/plugins.json`：手改描述后由 `tools/sync_plugin_index.py` 同步，两份逐字全等。
+- `tests/test_editor_contract.py`：64 → 80 条（`test_02` 放宽为 question|problem 且不得同时；
+  新增 `test_06_batch_fixtures_cover_the_four_types` 与 `EditorBatchTest` 15 条：批量条只在画布、
+  只提交脏题、串行且每棒回传台账、写库方法唯一、滚动跟题与人手优先、高亮不只靠颜色、不造假度量、
+  键盘可达 44px、池只做界面、textContent、每次渲染刷台账、重建保位置、回显不盖 AI 话术、三栏是真滚动容器）。
+- `tests/test_command_registry.py`：EXPECTED 里 editor 版本 1.4.0（这张表按设计写死版本）。
+- `tools/editor_probe.py`：65 → 88 项；新增阶段 4 批量段（还原左栏宽度 → 四行源码/四个跳转按钮/批量条可见性 →
+  点跳转验三栏 `jump_geo` 与辅助栏跟题 → 渲染栏滚到底验跟题 → 光标停留时滚动不抢题 → Enter 键盘跳题 →
+  台账脏数 → 点【保存全部】验话术/锁死/归零/题库差值/未提交题搜不到）；题数仍一律 before/after 差值。
+
+## 阶段 4 验收证据（2026-10-31 实测）
+- 契约测试：`tests.test_editor_contract` **80/80 OK**；连带 `test_clean_latex` 10/10、`test_command_registry` 33/33、
+  `test_plugin_bus_parity` 5/5（解释器一律 `.venv/Scripts/python.exe -m unittest tests.<模块>`，未跑全量回归）。
+- 真机探针：`tools/editor_probe.py stage4d` → `.system_generated/editor_probe/stage4d/probe.json`
+  **88/88 passed，ok=true**，`console_errors` 0、`page_errors` 0；截图 8 张（`v2-batch.png` 是本轮新增）。
+- 关键几何：`jump_geo = [[2021, 4287, 479], [2021, 4287, 479], [2021, 4288, 461]]`
+  （三栏 `scrollTop` 一致且都小于 `scrollHeight`，证明内滚真的成立，溢出量 3808/3808/3827px）；
+  人手优先：`{"before": "1", "active": "1"}`（真点进第 1 题的框后，把渲染栏滚到底也不抢当前题）。
+- 批量落库（隔离库差值口径，起点 458 题非空）：话术「提交 3 道脏题：入库 3、失败 0；未改动的 1 道一题也没写」，
+  题库 458 → **460**（只 +2：编辑态走 update、两道新建分别是 `multiple_choice` 与 `solution`），
+  台账收尾「待入库 1 · 已入库 3 · 脏 0 · 未认全 0」，未提交那题的短语命中数 19 → 19（一个字没进库）。
+
 ## 本阶段未决 / 待主公复核
+0. **阶段 4 新账（先看这四条）**：
+   - **待入库池本期只做界面**：`#edPoolStash` 出厂 `disabled` + `aria-disabled`，title 写明「存储层随下一军令接入」；
+     `renderPool()` 里把它永久锁死，没有任何写库/写草稿路径。**未验证**：真正的 pending 存储层（本期不交付）。
+   - **批量提交中途失败不追回**：`saveAllDirty()` 串行提交，某一题失败只把原因写进话术（`partial`），
+     前面已入库的不回滚也不重试——探针本轮是 3/3 成功，失败分支只有契约测试（test_02/test_15）覆盖，**真机未验证**。
+   - **`\fillin` 只认裸写法**：契约测试禁止假数据用 `\fillin[提示]`；解析端对带方括号的写法没有专门降级，
+     老师真空里敲 `\fillin[x]` 会当成普通文本进题干。是否把「带提示的填空」列成警告，请主公裁决。
+   - **三栏内滚是本轮才真正生效的**：`.ed-cols` 锁行高之前，iframe 被内容撑到 ~4307px、`scrollTop` 恒为 0，
+     阶段 1–3 的滚动同步与「滚到哪题跟哪题」全是死代码（当时判据靠别的路径侥幸通过）。
+     现已由 `jump_geo=[2021,4287,479]` 证明三栏各自带滚动条，旧判据（拖手压窄、渲染块按内容生长）复测仍绿。
 1. **探针：`editor_probe.py` 已跟上，`editor_crop_probe.py` 仍待裁**：前者阶段 2 重写为 v2 判据、阶段 3 加
-   AI 判据后跑到 65/65；后者驱动的「原图框选切图」军令 #23 已明确本期不做，建议直接退役删除（要留可从 git 历史找回）——
+   AI 判据后跑到 65/65、阶段 4 补批量段；后者驱动的「原图框选切图」军令 #23 已明确本期不做，建议直接退役删除（要留可从 git 历史找回）——
    等主公点头再删，本次没动它。
 2. **A4 判据消失**：旧 `tests` 里 794×1123 那组红线随「渲染不固定 A4」撤除，`paper-gen` / `handout`
    仍各自守 A4 几何，不受影响；如主公认为录题也该留一份分页证据，请裁决。
@@ -198,8 +251,8 @@
    属底座改动——请主公裁决是否留到下一军令。
 9. **回显只能近似判定**：宿主摊平 `/api/agent/refine` 时把 `mock` 字段丢了（`stage.js:1157`），
    插件只能靠「新值与原文逐字相同」推断是回显，所以话术用「多半」。真要精确，得让宿主透传 `mock`。
-10. **插件仓库 zip 尚未重打**：两份 `plugins.json` 已写 1.3.0，但 `E:/jiuzhang-plugins/plugins/org.jiuzhang.editor.zip`
-    还是旧包；发版前要 `tools/build_plugin.py` 重打并核对两份索引全等（`dev/` 由 DENY_DIRS 排除，不进包）。
+10. **插件仓库 zip 尚未重打**：两份 `plugins.json` 已写 **1.4.0**，但 `E:/jiuzhang-plugins/plugins/org.jiuzhang.editor.zip`
+    还是 1.3.0 的旧包；发版前要 `tools/build_plugin.py` 重打并核对两份索引全等（`dev/` 由 DENY_DIRS 排除，不进包）。
 11. **清洗是「两段一起」**：`cleanViaHost()` 一次并发洗题干段与解析段，任一失败整题不动。
     若老师希望「只洗其中一段」，需要分段按钮——本期界面没做，等下一军令。
 

@@ -70,10 +70,10 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段直接编辑 / 格式二按环境拆框，改完自动重组） | 右按内容实际高度渲染；右栏辅助面板放题型、难度、来源、考向、标签、AI 帮改（档 1：只改题干段与解析段，预览后点采用才回填画布）与审核动作，单题保存经宿主写库（新建走 bank.create、编辑走 bank.update），插件不碰令牌。",
+      "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段编辑 / 格式二拆框后自动重组） | 右按内容实际高度渲染；单题与批量同一界面，滚动跟题、左栏逐题跳转，底部【保存全部】只提交脏题；右栏辅助面板放题型、难度、来源、考向、标签、AI 帮改（只改题干段与解析段，点采用才回填画布）与审核动作；写库一律经宿主（新建 bank.create、编辑 bank.update），插件不碰令牌。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",

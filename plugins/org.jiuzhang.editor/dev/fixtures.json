@@ -46,5 +46,137 @@
       "revision": 1,
       "status": "draft"
     }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000002",
+    "type": "multiple_choice",
+    "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）",
+    "difficulty": "L1",
+    "options": [
+      { "key": "A", "content": "$1$", "image_ids": [] },
+      { "key": "B", "content": "$2$", "image_ids": [] },
+      { "key": "C", "content": "$3$", "image_ids": [] },
+      { "key": "D", "content": "$4$", "image_ids": [] }
+    ],
+    "answer": { "kind": "choice", "choice_keys": ["A", "B"], "final": "AB" },
+    "solution": "解析：由 $x^2-3x+2=(x-1)(x-2)=0$ 得 $x=1$ 或 $x=2$，故 $A=\\{1,2\\}$。",
+    "grade": "高一",
+    "tags": ["集合", "一元二次方程"],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "1. 集合与常用逻辑用语",
+      "section": "1.1 集合的概念",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "2",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）\n\\begin{choices}\n  \\item $1$\n  \\item $2$\n  \\item $3$\n  \\item $4$\n\\end{choices}\n\\end{question}\n\n\\begin{solution}\n答案：AB\n解析：由 $x^2-3x+2=(x-1)(x-2)=0$ 得 $x=1$ 或 $x=2$，故 $A=\\{1,2\\}$。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [1],
+        "confidence": 0.88,
+        "cross_page": false,
+        "long_solution": false
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000003",
+    "type": "fill_blank",
+    "stem": "已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin",
+    "difficulty": "L2",
+    "answer": { "kind": "expression", "content": "$2$", "final": "$2$" },
+    "solution": "解析：由均值不等式 $a+\\dfrac{1}{a}\\ge 2\\sqrt{a\\cdot\\dfrac{1}{a}}=2$，当且仅当 $a=1$ 时取等。",
+    "grade": "高一",
+    "tags": ["均值不等式", "最值"],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "2. 一元二次函数",
+      "section": "2.2 基本不等式",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "7",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin\n\\end{question}\n\n\\begin{solution}\n答案：$2$\n解析：由均值不等式 $a+\\dfrac{1}{a}\\ge 2\\sqrt{a\\cdot\\dfrac{1}{a}}=2$，当且仅当 $a=1$ 时取等。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [1],
+        "confidence": 0.76,
+        "cross_page": false,
+        "long_solution": false
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000004",
+    "type": "solution",
+    "stem": "已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。",
+    "difficulty": "L3",
+    "answer": { "kind": "expression", "content": "$S_5=25$", "final": "$S_5=25$" },
+    "solution": "解析：由 $a_4=a_1+3d=7$ 得 $d=2$。\n\n于是 $S_5=5a_1+\\dfrac{5\\times 4}{2}d=5+20=25$。\n\n$$S_5=\\dfrac{5(a_1+a_5)}{2}=25$$",
+    "grade": "高二",
+    "tags": ["等差数列", "前n项和"],
+    "taxonomy": {
+      "textbook": "人教A版·选择性必修第二册",
+      "chapter": "4. 数列",
+      "section": "4.2 等差数列",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "17",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{problem}\n已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。\n\\end{problem}\n\n\\begin{solution}\n答案：$S_5=25$\n解析：由 $a_4=a_1+3d=7$ 得 $d=2$。\n\n于是 $S_5=5a_1+\\dfrac{5\\times 4}{2}d=5+20=25$。\n\n$$S_5=\\dfrac{5(a_1+a_5)}{2}=25$$\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-512.png",
+        "image_pages": [3],
+        "confidence": 0.61,
+        "cross_page": true,
+        "long_solution": true
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
   }
 ]

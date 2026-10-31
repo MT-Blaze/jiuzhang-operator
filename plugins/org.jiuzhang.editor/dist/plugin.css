@@ -129,6 +129,9 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
+  /* 不锁行高的话，这一条隐式行会被最高的那栏撑到几千像素，三栏全都变成"内容多高就多高"，
+     pane-body 的 overflow-y:auto 永远不触发，滚动跟题与拖栏定位也就全成了死代码。 */
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns:
     var(--w-image) var(--split-w) var(--w-source) var(--split-w) minmax(0, 1fr);
 }
@@ -167,6 +170,9 @@ body {
 }
 
 .ed-pane-body {
+  /* 定位父：跳转与跟题都拿 cell.offsetTop 当滚动线，父级不站住的话读到的是整篇文档的坐标，
+     头部工具条的高度会被当成滚动距离，跳题会多滚、跟题会认错行。 */
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -853,6 +859,120 @@ body {
   flex-direction: column;
   gap: 2px;
   width: 100%;
+}
+
+/* ---------- 阶段 4：批量条、当前题高亮与左栏跳转 ---------- */
+
+.ed-img-jump {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ed-img-jump[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+/* 当前题不许只靠颜色说话（AGENTS §6）：色块之外还有一道左侧实线，顶部进度条同步报第几题 */
+.ed-img-cell.is-active,
+.ed-src-cell.is-active,
+.ed-q-block.is-active {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: rgba(47, 107, 79, 0.05);
+}
+
+.ed-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-strong);
+  background: var(--paper);
+}
+
+.ed-pool {
+  flex: none;
+  max-width: 100%;
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.ed-pool[data-dirty]:not([data-dirty="0"]) {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ed-batch {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.ed-batch[data-batch="running"],
+.ed-batch[data-batch="done"] { color: var(--accent); }
+
+.ed-batch[data-batch="partial"],
+.ed-batch[data-batch="failed"] { color: var(--danger); }
+
+.ed-foot-actions {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ed-btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ed-btn:hover { border-color: var(--accent); }
+
+.ed-btn[disabled] {
+  cursor: default;
+  color: var(--line-strong);
+  background: var(--paper-deep);
+}
+
+.ed-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ed-btn-primary[disabled] {
+  background: var(--paper-deep);
+  border-color: var(--line-strong);
+  color: var(--line-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {

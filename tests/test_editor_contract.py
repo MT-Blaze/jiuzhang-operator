@@ -650,6 +650,155 @@ class EditorBoxedFormatTest(unittest.TestCase):
         self.assertNotIn("item.source =", set_format, "切换格式不许动源码内容")
 
 
+class EditorBatchTest(unittest.TestCase):
+    """阶段 4：单题与批量共用一张画布——滚动跟题、左栏跳转、底部只提交脏题。"""
+
+    def test_01_bottom_bar_lives_in_the_canvas_not_the_panel(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        for node_id in ("edPool", "edBatchNote", "edSaveAll", "edPoolStash"):
+            self.assertIn(f'id="{node_id}"', canvas, f"批量条缺少 {node_id}")
+        # 批量条是画布的动作面，不许把表单控件带进画布（<button> 不算表单输入控件）
+        self.assertNotIn("<select", canvas)
+        self.assertNotIn("<input", canvas)
+        self.assertNotIn('id="edSave"', canvas, "旧单题保存按钮已并入底部批量条 / 辅助栏")
+
+    def test_02_save_all_submits_only_dirty_items(self) -> None:
+        js = read("plugin.js")
+        body = fn_body(js, "saveAllDirty")
+        self.assertIn("var targets = dirtyList();", body)
+        dirty = fn_body(js, "dirtyList")
+        self.assertIn("if (item.dirty) out.push({ item: item, index: index });", dirty)
+        self.assertIn('if (!targets.length) {', body, "零脏题必须直接收摊，一发请求都不许发")
+        self.assertIn("只提交改动过的题", body)
+        self.assertIn('saveItem(target.item, metaFor(target.item, {}), "save")', body,
+                      "批量必须复用单题那一份 saveItem，不许另写一套写库口径")
+        self.assertIn("未改动的", body, "回执话术要如实报出没被提交的那几题")
+
+    def test_03_batch_saves_run_serially_not_in_parallel(self) -> None:
+        """宿主对写库有频率闸门：一次全发只会换来一排 RATE_LIMITED 的假失败。"""
+        body = fn_body(read("plugin.js"), "saveAllDirty")
+        self.assertIn("return targets.reduce(function (chain, target) {", body)
+        self.assertIn("return chain.then(function (acc) {", body)
+        self.assertNotIn("Promise.all(", body)
+        self.assertIn("if (state.batchSaving) return Promise.resolve(null);", body, "重复点击不许并发二轮")
+
+    def test_04_batch_reuses_the_same_two_write_methods(self) -> None:
+        js = read("plugin.js")
+        self.assertEqual(js.count('var method = updating ? "bank.update" : "bank.create";'), 1,
+                         "批量另开写库通道就是第二套事实来源")
+        for forbidden in ("bank.delete", "bank.review", "asset.upload"):
+            self.assertNotIn(forbidden, js)
+
+    def test_05_scroll_follows_the_row_at_the_top(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("function activeFromScroll(top)", js)
+        self.assertIn("function followActive(from)", js)
+        follow = fn_body(js, "followActive")
+        self.assertIn("if (!state.items.length || editingRowIndex() >= 0) return;", follow,
+                      "老师的手还停在某题的框里，滚动就不许把当前题抢走")
+        self.assertIn("if (next === state.active) return;", follow)
+        self.assertIn("publishSelectionSoon();", follow, "跟题必须把选区一起推给辅助栏")
+        self.assertIn("followActive(from);", fn_body(js, "syncScroll"))
+
+    def test_06_active_row_is_shown_by_more_than_color(self) -> None:
+        js = read("plugin.js")
+        css = read("plugin.css")
+        self.assertIn('cell.classList.toggle("is-active", index === state.active);',
+                      fn_body(js, "markActiveRow"))
+        self.assertIn('node.setAttribute("aria-current", on ? "true" : "false");',
+                      fn_body(js, "markActiveRow"))
+        self.assertIn("box-shadow: inset 3px 0 0 var(--accent)",
+                      css_rule(css, ".ed-q-block.is-active"))
+
+    def test_07_sync_active_bits_does_not_fake_render_metrics(self) -> None:
+        """滚动换题时不许把上一次的 render-ms 冒充成新渲染，也不许写 0。"""
+        bits = fn_body(read("plugin.js"), "syncActiveBits")
+        self.assertIn('var elapsed = Number(metricsEl && metricsEl.getAttribute("data-render-ms"));', bits)
+        self.assertIn("updateStatusbar(isNaN(elapsed) ? 0 : elapsed, isNaN(rowH) ? 0 : rowH);", bits)
+
+    def test_08_left_column_jumps_are_keyboard_reachable(self) -> None:
+        js = read("plugin.js")
+        cell = fn_body(js, "renderImageCell")
+        self.assertIn('var jump = el("button", "ed-img-jump"', cell)
+        self.assertIn('jump.type = "button";', cell)
+        self.assertIn('jump.addEventListener("click", function () { jumpTo(index); });', cell)
+        self.assertIn('jump.setAttribute("aria-label", "跳到第 "', cell)
+        self.assertIn("min-height: 44px", css_rule(read("plugin.css"), ".ed-img-jump"))
+        jump = fn_body(js, "jumpTo")
+        self.assertIn("body.scrollTop = Math.max(cell.offsetTop - 12, 0);", jump, "跳转要把三栏一起滚过去")
+        self.assertIn("clampValue(Number(index) || 0, 0, Math.max(state.items.length - 1, 0))", jump)
+
+    def test_09_pending_pool_is_a_ledger_only_this_stage(self) -> None:
+        """池的存储层留给下一军令：按钮出厂锁死，话术写明，不许偷偷落库。"""
+        js = read("plugin.js")
+        html = read("index.html")
+        self.assertIn('id="edPoolStash" disabled aria-disabled="true"', html)
+        self.assertIn("待入库池的存储层随下一军令接入", html)
+        render = fn_body(js, "renderPool")
+        self.assertIn("poolStashEl.disabled = true;", render)
+        self.assertNotIn("bank.create", render, "暂存不许碰写库通道")
+        for attr in ("data-new", "data-stored", "data-dirty", "data-errored"):
+            self.assertIn(f'poolEl.setAttribute("{attr}"', render)
+
+    def test_10_batch_button_keeps_the_a11y_floor(self) -> None:
+        js = fn_body(read("plugin.js"), "renderPool")
+        self.assertIn("saveAllEl.disabled = blocked;", js)
+        self.assertIn('saveAllEl.setAttribute("aria-busy", "true");', js)
+        self.assertIn('saveAllEl.removeAttribute("aria-busy");', js)
+        self.assertIn('saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");', js)
+        css = read("plugin.css")
+        self.assertIn("min-height: 44px", css_rule(css, ".ed-btn"))
+        self.assertIn('.ed-batch[data-batch="partial"]', css)
+        self.assertIn(".ed-btn[disabled]", css)
+        note = fn_body(read("plugin.js"), "batchNote")
+        self.assertIn("batchNoteEl.textContent = text;", note, "话术只走 textContent，不许拼 DOM")
+
+    def test_11_pool_refreshes_with_every_render(self) -> None:
+        js = read("plugin.js")
+        status = fn_body(js, "updateStatusbar")
+        self.assertIn("markActiveRow();", status)
+        self.assertIn("renderPool();", status)
+        self.assertIn("if (saveAllEl) saveAllEl.addEventListener(\"click\", function () { saveAllDirty(); });", js)
+
+
+    def test_12_rebuild_keeps_the_reading_position(self) -> None:
+        """批量界面靠滚动定位：整屏重建不许把老师的阅读位置抹回顶部。"""
+        js = read("plugin.js")
+        render = fn_body(js, "renderAll")
+        self.assertIn("var scrolls = [imageBodyEl, sourceBodyEl, renderBodyEl].map", render)
+        self.assertLess(render.index("var scrolls ="), render.index("imageBodyEl.textContent = \"\";"),
+                        "清空之前必须先把三条滚动线抄下来")
+        self.assertIn("node.scrollTop = scrolls[position] || 0;", render)
+        self.assertIn("if (scrollRestore) return;", fn_body(js, "syncScroll"),
+                      "回填滚动时不许再触发一次跟题")
+
+    def test_13_selection_echo_does_not_clobber_the_ai_note(self) -> None:
+        """采用后的「保存才入库」不能被选区回显盖掉，否则老师会以为已经入库了。"""
+        js = read("plugin.js")
+        apply = fn_body(js, "applySelection")
+        self.assertIn('} else if (panel.ai.state === "ready" && panel.ai.key === sel.key) {', apply)
+        self.assertLess(apply.index('panel.ai.state === "ready" && panel.ai.key === sel.key'),
+                        apply.index('panelSay("当前第 "'),
+                        "回显话术必须排在 AI 让位分支之后")
+
+    def test_14_three_panes_are_real_scrollers(self) -> None:
+        """三栏得自己带滚动条：iframe 被内容撑高的话，跳转与跟题全是死代码（探针 jump_geo 全 0 那次）。"""
+        css = read("plugin.css")
+        cols = css_rule(css, ".ed-cols")
+        self.assertIn("grid-template-rows: minmax(0, 1fr)", cols,
+                      "网格行不锁高度的话会被最高的那栏撑到几千像素")
+        body = css_rule(css, ".ed-pane-body")
+        self.assertIn("position: relative", body, "不站住定位父，cell.offsetTop 就是整篇文档的坐标")
+        self.assertIn("min-height: 0", body)
+        self.assertIn("overflow-y: auto", body)
+
+    def test_15_batch_chain_hands_the_ledger_to_the_next_leg(self) -> None:
+        """串行链每一棒都要把台账交回去，不然第二题起 acc 是 undefined，整批提交假死。"""
+        body = fn_body(read("plugin.js"), "saveAllDirty")
+        self.assertIn("return acc;", body, "reduce 的每个分支必须回传累加器")
+        self.assertNotIn("Promise.all(", body)
+
+
 class EditorFixtureContractTest(unittest.TestCase):
     """假数据：每道题都是一份合法的 question.json 2.0，dev/ 只在本机存在。"""
 
@@ -672,7 +821,11 @@ class EditorFixtureContractTest(unittest.TestCase):
         for item in self.items:
             block = item["extensions"]["org.jiuzhang.editor.dev"]
             source = block["source_latex"]
-            self.assertIn("\\begin{question}", source)
+            # 阶段 4 的假数据横跨四类题型：解答题按《格式宪法》用 problem 环境
+            self.assertTrue("\\begin{question}" in source or "\\begin{problem}" in source,
+                            f"{item['id']} 题干环境只能是 question 或 problem")
+            self.assertFalse("\\begin{question}" in source and "\\begin{problem}" in source,
+                             f"{item['id']} 两个题干环境不能同时出现")
             self.assertIn("\\begin{solution}", source)
             self.assertIn("答案：", source)
             self.assertIsInstance(block["confidence"], (int, float))
@@ -702,6 +855,25 @@ class EditorFixtureContractTest(unittest.TestCase):
         tool = (ROOT / "tools" / "sync_editor_fixtures.py").read_text(encoding="utf-8")
         self.assertIn(BEGIN.strip(), tool)
         self.assertIn("var DEV_FIXTURES = ", tool)
+
+    def test_06_batch_fixtures_cover_the_four_types(self) -> None:
+        """阶段 4 的批量界面要有四类题各一道，且全部按《格式宪法》落环境。"""
+        by_type = {item["type"] for item in self.items}
+        self.assertEqual(by_type, {"single_choice", "multiple_choice", "fill_blank", "solution"})
+        for item in self.items:
+            source = item["extensions"]["org.jiuzhang.editor.dev"]["source_latex"]
+            stem_env = "\\begin{problem}" if item["type"] == "solution" else "\\begin{question}"
+            self.assertTrue(source.startswith(stem_env), f"{item['id']} 题干了环境用错")
+            if item["type"] == "multiple_choice":
+                self.assertIn("（多选）", item["stem"])
+                self.assertGreaterEqual(len(item["answer"]["choice_keys"]), 2)
+            if item["type"] == "fill_blank":
+                self.assertIn("\\fillin", source)
+                # 方括号只当提示、不带答案：假数据一律用裸 \fillin
+                self.assertNotIn("\\fillin[", source)
+                self.assertEqual(item["answer"]["kind"], "expression")
+        ids = [item["id"] for item in self.items]
+        self.assertEqual(len(ids), len(set(ids)), "假数据题号不许重复")
 
 
 class EditorPackageTest(unittest.TestCase):

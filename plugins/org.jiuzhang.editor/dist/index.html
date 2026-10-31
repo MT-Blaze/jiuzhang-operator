@@ -63,6 +63,20 @@
       </section>
     </main>
 
+    <!-- 批量条：单题与批量共用这一张界面，底部只提交脏题。
+         待入库池本期只有界面——池的存储层随下一军令接入，所以【暂存】出厂就锁死。 -->
+    <footer class="ed-foot" aria-label="批量保存">
+      <span id="edPool" class="ed-pool" data-new="0" data-stored="0" data-dirty="0"
+            data-errored="0">待入库 0 · 已入库 0 · 脏 0</span>
+      <span id="edBatchNote" class="ed-batch" role="status" aria-live="polite"
+            data-batch="idle">滚动到哪一题，辅助栏就跟着那张表单。</span>
+      <span class="ed-foot-actions">
+        <button type="button" class="ed-btn" id="edPoolStash" disabled aria-disabled="true"
+                title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
+        <button type="button" class="ed-btn ed-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
+      </span>
+    </footer>
+
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 

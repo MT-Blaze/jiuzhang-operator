@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""录题工作台 v2 真机探针（军令 #23 阶段 2 + 阶段 3）：三栏画布、辅助栏表单与 AI 帮改。
+"""录题工作台 v2 真机探针（军令 #23 阶段 2–4）：三栏画布、辅助栏表单、AI 帮改与批量条。
 
 用法：``.venv/Scripts/python.exe tools/editor_probe.py <tag>``
 
@@ -18,6 +18,9 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 - AI 帮改（档 1）：光标定字段 → 预览 → **点采用才替换**、点放弃不动源码，
   环境骨架与「答案：」行全程不受改写影响；
 - AI 清洗走宿主 text.clean_latex：题干段与解析段全成功才回填；
+- 阶段 4 批量：单题与批量共用一张画布，点左栏跳转 / 键盘 Enter 都换当前题，
+  滚到哪题当前题就跟到哪题（光标还停在框里时人不许被滚动抢走），
+  底部【保存全部】只提交脏题——编辑态走更新、新建走 create、没提交的那题搜得到也进不去；
 - 渲染块按内容实际高度生长，画布里不再有 A4 固定页节点；
 - 宿主 1440px 无横向溢出，控制台与页面零错误。
 """
@@ -34,6 +37,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -606,6 +610,151 @@ def main() -> int:
                   {"note": note.inner_text()[:80]})
             page.screenshot(path=str(shots / "v2-ai-clean.png"))
             check("AI 三段动作后页面仍无脚本错误", not result["page_errors"],
+                  {"page_errors": result["page_errors"][:3]})
+
+            # ---------- 阶段 4：批量同界面——滚动跟题、左栏跳转、底部只提交脏题 ----------
+            # 拖手把左栏压成了极窄缝，先把宽度还给原图栏，跳转按钮才在真实宽度下取证
+            for _ in range(20):
+                canvas.locator("#edSplitImage").press("ArrowRight")
+            page.wait_for_timeout(500)
+
+            batch_rows = canvas.locator(".ed-src-area").count()
+            check("单题与批量共用一张画布（四行源码）", batch_rows == 4, {"rows": batch_rows})
+            check("左栏逐题带跳转按钮", canvas.locator(".ed-img-jump").count() == 4,
+                  {"jumps": canvas.locator(".ed-img-jump").count()})
+            check("批量条只出现在画布（辅助栏那份整块隐藏）",
+                  canvas.locator("#edSaveAll").first.is_visible()
+                  and not panel.locator("#edSaveAll").first.is_visible(),
+                  {"canvas": canvas.locator("#edSaveAll").count(),
+                   "panel": panel.locator("#edSaveAll").count()})
+            check("待入库池本期只做界面（暂存出厂锁死）",
+                  canvas.locator("#edPoolStash").is_disabled()
+                  and "下一军令" in (canvas.locator("#edPoolStash").get_attribute("title") or ""))
+
+            # 1) 点左栏跳转：三栏一起滚过去，当前题与辅助栏表单都跟到那一题
+            canvas.locator('.ed-img-jump[data-index="2"]').click()
+            progress = canvas.locator("#edProgress")
+            jumped = wait_attribute(progress, "data-active", lambda value: value == "3", 12)
+            check("点左栏跳转把当前题切到第 3 题", jumped == "3",
+                  {"progress": progress.inner_text()})
+            tops = [canvas.locator(node).evaluate("n => [n.scrollTop, n.scrollHeight, n.clientHeight]")
+                    for node in ("#edImageBody", "#edSourceBody", "#edRenderBody")]
+            result["metrics"]["jump_geo"] = tops
+            check("跳转把三栏一起滚过去（不再各滚各的）",
+                  all(value[0] > 0 for value in tops),
+                  {"tops": [value[0] for value in tops],
+                   "overflow": [value[1] - value[2] for value in tops]})
+            check("跳转后辅助栏表单跟到第 3 题",
+                  wait_attribute(panel.locator("#epProgress"), "data-active",
+                                 lambda value: value == "3", 14) == "3",
+                  {"progress": panel.locator("#epProgress").inner_text()})
+            expect(panel.locator("#epType")).to_have_value("fill_blank", timeout=14000)
+            check("第 3 题的题型随选区换成填空（不是上一题的残留）", True)
+            check("当前题高亮落在跳转到的那一行",
+                  (canvas.locator(".ed-q-block.is-active").first.get_attribute("data-index") or "") == "2",
+                  {"aria_current": canvas.locator('.ed-img-jump[data-index="2"]')
+                      .get_attribute("aria-current")})
+
+            # 2) 滚到哪题跟哪题：把渲染栏滚到底，当前题自己走到第 4 题
+            canvas.locator("#edMetrics").evaluate(
+                "() => { if (document.activeElement) document.activeElement.blur(); }")
+            page.wait_for_timeout(300)
+            canvas.locator("#edRenderBody").evaluate("node => { node.scrollTop = node.scrollHeight; }")
+            scrolled = wait_attribute(progress, "data-active", lambda value: value == "4", 12)
+            check("滚到最后一题，当前题自己跟过去", scrolled == "4",
+                  {"progress": progress.inner_text()})
+            check("滚动同步把三栏都带到底",
+                  all(canvas.locator(node).evaluate("n => n.scrollTop") > 0
+                      for node in ("#edImageBody", "#edSourceBody", "#edRenderBody")))
+            check("高亮跟到滚到的那一行",
+                  (canvas.locator(".ed-q-block.is-active").first.get_attribute("data-index") or "") == "3")
+
+            # 3) 人手优先：光标还停在第 1 题的框里时，滚动不许把当前题抢走
+            #    必须真点一下：只调 node.focus() 不会触发插件的上桥事件，
+            #    当前题还停在上一轮的第 4 题，判据会把"人手优先"错测成"滚动没抢"。
+            held_area = canvas.locator('.ed-src-area[data-index="0"]')
+            held_area.scroll_into_view_if_needed()
+            held_area.click(position={"x": 40, "y": 12})
+            page.wait_for_timeout(500)
+            held_before = progress.get_attribute("data-active")
+            canvas.locator("#edRenderBody").evaluate("node => { node.scrollTop = node.scrollHeight; }")
+            page.wait_for_timeout(600)
+            held_active = progress.get_attribute("data-active")
+            check("光标停在第 1 题时滚动不许抢走当前题",
+                  held_before == "1" and held_active == "1",
+                  {"before": held_before, "active": held_active})
+
+            # 4) 键盘路径：聚焦跳转按钮按 Enter
+            canvas.locator('.ed-img-jump[data-index="1"]').press("Enter")
+            keyed = wait_attribute(progress, "data-active", lambda value: value == "2", 12)
+            check("键盘 Enter 也能跳题", keyed == "2", {"active": keyed})
+
+            # 5) 底部【保存全部】：只提交脏题，未改动的一题也不写
+            pool = canvas.locator("#edPool")
+            dirty_new = pool.get_attribute("data-new")
+            dirty_start = wait_attribute(pool, "data-dirty", lambda value: value == "1", 10)
+            check("批量前的脏数只认 AI 改过的那题（其余三题没动过就不算脏）",
+                  dirty_start == "1" and dirty_new == "3",
+                  {"pool": pool.inner_text(), "dirty": dirty_start, "new": dirty_new})
+            area2 = canvas.locator('.ed-src-area[data-index="1"]')
+            area2.evaluate("node => { node.focus(); }")
+            area2.fill(area2.input_value().replace("已知集合", "已知集合（" + MARK + "批量）", 1))
+            area4 = canvas.locator('.ed-src-area[data-index="3"]')
+            area4.evaluate("node => { node.focus(); }")
+            area4.fill(area4.input_value().replace("已知等差数列", "已知等差数列（" + MARK + "批量）", 1))
+            page.wait_for_timeout(800)
+            dirty_three = wait_attribute(pool, "data-dirty", lambda value: value == "3", 12)
+            check("两行新改动叠上去，台账仍只数脏题（未改的第 3 题不计）",
+                  dirty_three == "3", {"pool": pool.inner_text()})
+            _, stats_before_batch = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+            total_before_batch = int(stats_before_batch.get("total") or 0)
+            # 「没提交的那题」用差值判，不用绝对数：隔离库里可能本就沉着同短语的真题
+            _, row2_before = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
+                                       f"?q={urllib.parse.quote('的最小值为')}")
+            row2_hits_before = int(row2_before.get("total") or 0)
+            save_all = canvas.locator("#edSaveAll")
+            expect(save_all).to_be_enabled(timeout=8000)
+            save_all.click()
+            busy_seen = save_all.get_attribute("aria-busy")
+            result["metrics"]["batch_busy"] = busy_seen
+            batch_note = canvas.locator("#edBatchNote")
+            batch_phase = wait_attribute(batch_note, "data-batch",
+                                         lambda value: value in ("done", "partial", "failed"), 40)
+            batch_text = batch_note.inner_text()
+            result["metrics"]["batch_note"] = batch_text
+            check("【保存全部】只提交脏题：3 道提交、1 道未改动的一题也没写",
+                  batch_phase == "done" and "提交 3 道脏题" in batch_text
+                  and "未改动的 1 道" in batch_text, {"note": batch_text[:140]})
+            check("提交完按钮重新锁死（没脏题就按不动）",
+                  wait_attribute(save_all, "aria-disabled", lambda value: value == "true", 12) == "true"
+                  and save_all.is_disabled())
+            check("台账归零：脏 0，待入库只剩没提交的那题",
+                  pool.get_attribute("data-dirty") == "0"
+                  and pool.get_attribute("data-new") == "1"
+                  and pool.get_attribute("data-stored") == "3",
+                  {"pool": pool.inner_text()})
+            _, stats_after_batch = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+            total_after_batch = int(stats_after_batch.get("total") or 0)
+            check("批量只长了该长的两道（编辑态走更新不新增）",
+                  total_after_batch == total_before_batch + 2,
+                  {"before": total_before_batch, "after": total_after_batch})
+            _, row2_after = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
+                                      f"?q={urllib.parse.quote('的最小值为')}")
+            row2_hits_after = int(row2_after.get("total") or 0)
+            check("没提交的那题一个字都没进库（搜到的题数前后没变）",
+                  row2_hits_after == row2_hits_before,
+                  {"before": row2_hits_before, "after": row2_hits_after})
+            _, batch_rows_api = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
+                                          f"?q={urllib.parse.quote(MARK + '批量')}")
+            batch_items = batch_rows_api.get("items") or batch_rows_api.get("rows") or []
+            result["metrics"]["batch_created"] = [
+                (row.get("id"), row.get("type")) for row in batch_items][:4]
+            check("两道批量新建的题各自成型（多选与解答都按源码判型）",
+                  len(batch_items) == 2
+                  and {row.get("type") for row in batch_items} == {"multiple_choice", "solution"},
+                  {"count": len(batch_items)})
+            page.screenshot(path=str(shots / "v2-batch.png"))
+            check("批量段跑完页面仍无脚本错误", not result["page_errors"],
                   {"page_errors": result["page_errors"][:3]})
 
             # ---------- 回流：题库画布搜得到本次保存 ----------

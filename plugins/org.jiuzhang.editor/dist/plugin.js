@@ -69,6 +69,10 @@
   var dirtyEl = document.getElementById("edDirty");
   var toastEl = document.getElementById("edToast");
   var savedEl = document.getElementById("edSaved");
+  var poolEl = document.getElementById("edPool");
+  var batchNoteEl = document.getElementById("edBatchNote");
+  var saveAllEl = document.getElementById("edSaveAll");
+  var poolStashEl = document.getElementById("edPoolStash");
 
   var panelRoot = document.getElementById("epRoot");
   var panelProgressEl = document.getElementById("epProgress");
@@ -113,6 +117,7 @@
   var mathCache = new Map();
   var katexCount = 0;
   var scrollLock = false;
+  var scrollRestore = false;
   var lastErrorTotal = 0;
 
   var state = {
@@ -123,7 +128,8 @@
     widths: { image: 260, source: 360 },
     dirty: false,
     layoutReady: false,
-    worklistReady: false
+    worklistReady: false,
+    batchSaving: false
   };
 
   var panel = {
@@ -667,6 +673,184 @@
       "revision": 1,
       "status": "draft"
     }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000002",
+    "type": "multiple_choice",
+    "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）",
+    "difficulty": "L1",
+    "options": [
+      {
+        "key": "A",
+        "content": "$1$",
+        "image_ids": []
+      },
+      {
+        "key": "B",
+        "content": "$2$",
+        "image_ids": []
+      },
+      {
+        "key": "C",
+        "content": "$3$",
+        "image_ids": []
+      },
+      {
+        "key": "D",
+        "content": "$4$",
+        "image_ids": []
+      }
+    ],
+    "answer": {
+      "kind": "choice",
+      "choice_keys": [
+        "A",
+        "B"
+      ],
+      "final": "AB"
+    },
+    "solution": "解析：由 $x^2-3x+2=(x-1)(x-2)=0$ 得 $x=1$ 或 $x=2$，故 $A=\\{1,2\\}$。",
+    "grade": "高一",
+    "tags": [
+      "集合",
+      "一元二次方程"
+    ],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "1. 集合与常用逻辑用语",
+      "section": "1.1 集合的概念",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "2",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）\n\\begin{choices}\n  \\item $1$\n  \\item $2$\n  \\item $3$\n  \\item $4$\n\\end{choices}\n\\end{question}\n\n\\begin{solution}\n答案：AB\n解析：由 $x^2-3x+2=(x-1)(x-2)=0$ 得 $x=1$ 或 $x=2$，故 $A=\\{1,2\\}$。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [
+          1
+        ],
+        "confidence": 0.88,
+        "cross_page": false,
+        "long_solution": false
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000003",
+    "type": "fill_blank",
+    "stem": "已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin",
+    "difficulty": "L2",
+    "answer": {
+      "kind": "expression",
+      "content": "$2$",
+      "final": "$2$"
+    },
+    "solution": "解析：由均值不等式 $a+\\dfrac{1}{a}\\ge 2\\sqrt{a\\cdot\\dfrac{1}{a}}=2$，当且仅当 $a=1$ 时取等。",
+    "grade": "高一",
+    "tags": [
+      "均值不等式",
+      "最值"
+    ],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "2. 一元二次函数",
+      "section": "2.2 基本不等式",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "7",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin\n\\end{question}\n\n\\begin{solution}\n答案：$2$\n解析：由均值不等式 $a+\\dfrac{1}{a}\\ge 2\\sqrt{a\\cdot\\dfrac{1}{a}}=2$，当且仅当 $a=1$ 时取等。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [
+          1
+        ],
+        "confidence": 0.76,
+        "cross_page": false,
+        "long_solution": false
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
+  },
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000004",
+    "type": "solution",
+    "stem": "已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。",
+    "difficulty": "L3",
+    "answer": {
+      "kind": "expression",
+      "content": "$S_5=25$",
+      "final": "$S_5=25$"
+    },
+    "solution": "解析：由 $a_4=a_1+3d=7$ 得 $d=2$。\n\n于是 $S_5=5a_1+\\dfrac{5\\times 4}{2}d=5+20=25$。\n\n$$S_5=\\dfrac{5(a_1+a_5)}{2}=25$$",
+    "grade": "高二",
+    "tags": [
+      "等差数列",
+      "前n项和"
+    ],
+    "taxonomy": {
+      "textbook": "人教A版·选择性必修第二册",
+      "chapter": "4. 数列",
+      "section": "4.2 等差数列",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "17",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{problem}\n已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。\n\\end{problem}\n\n\\begin{solution}\n答案：$S_5=25$\n解析：由 $a_4=a_1+3d=7$ 得 $d=2$。\n\n于是 $S_5=5a_1+\\dfrac{5\\times 4}{2}d=5+20=25$。\n\n$$S_5=\\dfrac{5(a_1+a_5)}{2}=25$$\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-512.png",
+        "image_pages": [
+          3
+        ],
+        "confidence": 0.61,
+        "cross_page": true,
+        "long_solution": true
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
   }
 ];
   //# FIXTURES-END
@@ -732,6 +916,7 @@
   function renderImageCell(item, index) {
     var cell = el("div", "ed-img-cell");
     cell.setAttribute("role", "listitem");
+    cell.setAttribute("data-index", String(index));
     var uri = safeAssetUri(item.dev && item.dev.image_uri);
     if (uri) {
       var frame = el("div", "ed-img-frame");
@@ -752,6 +937,12 @@
       cell.appendChild(el("p", "ed-img-missing", "本题没有原图（假数据只留占位）。"));
     }
     var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
+    var jump = el("button", "ed-img-jump", "跳到第 " + (index + 1) + " 题");
+    jump.type = "button";
+    jump.setAttribute("data-index", String(index));
+    jump.setAttribute("aria-label", "跳到第 " + (index + 1) + " 题 · " + paper);
+    jump.addEventListener("click", function () { jumpTo(index); });
+    cell.appendChild(jump);
     cell.appendChild(el("p", "ed-img-caption", "第 " + (index + 1) + " 题 · " + paper));
     return cell;
   }
@@ -1050,11 +1241,26 @@
     }
     if (imageNameEl) imageNameEl.textContent = (first && first.dev && first.dev.image_uri) || "未载入";
     markDirty();
+    markActiveRow();
+    renderPool();
+  }
+
+  /**
+   * 换了当前题但没重新渲染：只回灌进度与状态位。
+   * render-ms 读回上一次实测值——滚一下不许冒充刚渲染过，也不许写成 0。
+   */
+  function syncActiveBits() {
+    var elapsed = Number(metricsEl && metricsEl.getAttribute("data-render-ms"));
+    var rowH = Number(metricsEl && metricsEl.getAttribute("data-row-h"));
+    updateStatusbar(isNaN(elapsed) ? 0 : elapsed, isNaN(rowH) ? 0 : rowH);
   }
 
   function renderAll() {
     if (!root || root.hidden || !state.items.length) return;
     var focus = captureFocus();
+    var scrolls = [imageBodyEl, sourceBodyEl, renderBodyEl].map(function (node) {
+      return node ? node.scrollTop : 0;
+    });
     var started = Date.now();
     katexCount = 0;
     imageBodyEl.textContent = "";
@@ -1067,6 +1273,12 @@
     });
     var rowH = alignRows();
     restoreFocus(focus);
+    // 清空重建会把滚动线抹回顶部：批量界面里老师的阅读位置必须原地保住
+    scrollRestore = true;
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node, position) {
+      if (node) node.scrollTop = scrolls[position] || 0;
+    });
+    window.requestAnimationFrame(function () { scrollRestore = false; });
     updateStatusbar(Date.now() - started, rowH);
   }
 
@@ -1381,12 +1593,83 @@
     });
   }
 
+  // ---------- 批量滚动：滚到哪一题，当前题就跟到哪一题 ----------
+  /** 只认正在编辑的框：焦点落在第几题的源码/框里，那一题就是当前题，滚动不许来抢。 */
+  function editingRowIndex() {
+    var node = document.activeElement;
+    if (!node || !node.getAttribute) return -1;
+    if (node.tagName !== "TEXTAREA" && node.tagName !== "INPUT") return -1;
+    var raw = node.getAttribute("data-index");
+    if (raw == null) return -1;
+    var index = Number(raw);
+    return isNaN(index) || index < 0 ? -1 : index;
+  }
+
+  /** 当前题 = 视口里露出最多的那一行：只按「顶边越过滚动线」会在滚到底时漏掉最后一题。 */
+  function activeFromScroll(top) {
+    var body = renderBodyEl || sourceBodyEl || imageBodyEl;
+    if (!body) return state.active;
+    var bottom = top + Math.max(body.clientHeight || 0, 1);
+    var best = state.active;
+    var bestArea = -1;
+    for (var position = 0; position < body.children.length; position += 1) {
+      var cell = body.children[position];
+      var visible = Math.min(cell.offsetTop + cell.offsetHeight, bottom) - Math.max(cell.offsetTop, top);
+      if (visible > bestArea) {
+        bestArea = visible;
+        best = position;
+      }
+    }
+    return clampValue(best, 0, Math.max(state.items.length - 1, 0));
+  }
+
+  /** 三栏同时高亮当前题：状态不只靠颜色（AGENTS §6），顶部进度条与左栏按钮文案一起说明。 */
+  function markActiveRow() {
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (body) {
+      if (!body) return;
+      Array.prototype.forEach.call(body.children, function (cell, index) {
+        if (!cell.classList) return;
+        cell.classList.toggle("is-active", index === state.active);
+      });
+    });
+    Array.prototype.forEach.call(imageBodyEl ? imageBodyEl.querySelectorAll(".ed-img-jump") : [],
+      function (node) {
+        var index = Number(node.getAttribute("data-index"));
+        var on = index === state.active;
+        node.setAttribute("aria-current", on ? "true" : "false");
+      });
+  }
+
+  function jumpTo(index) {
+    var target = clampValue(Number(index) || 0, 0, Math.max(state.items.length - 1, 0));
+    state.active = target;
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (body) {
+      var cell = body && body.children[target];
+      if (body && cell) body.scrollTop = Math.max(cell.offsetTop - 12, 0);
+    });
+    syncActiveBits();
+    publishSelectionSoon();
+    queueWorklistSave();
+  }
+
+  function followActive(from) {
+    if (!state.items.length || editingRowIndex() >= 0) return;
+    var next = activeFromScroll(from ? from.scrollTop : 0);
+    if (next === state.active) return;
+    state.active = next;
+    syncActiveBits();
+    publishSelectionSoon();
+    queueWorklistSave();
+  }
+
   function syncScroll(from) {
+    if (scrollRestore) return;
     if (scrollLock) return;
     scrollLock = true;
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
       if (node && node !== from) node.scrollTop = from.scrollTop;
     });
+    followActive(from);
     window.requestAnimationFrame(function () { scrollLock = false; });
   }
 
@@ -1588,6 +1871,108 @@
     if (!item) return Promise.reject(new Error("画布里没有当前题目"));
     return loadMetaDraft().then(function () {
       return saveItem(item, metaFor(item, {}), mode);
+    });
+  }
+
+  // ---------- 批量条：脏题计数、待入库池界面与【保存全部】 ----------
+  function dirtyList() {
+    var out = [];
+    state.items.forEach(function (item, index) {
+      if (item.dirty) out.push({ item: item, index: index });
+    });
+    return out;
+  }
+
+  function poolCounts() {
+    var fresh = 0, stored = 0, dirty = 0, errored = 0;
+    state.items.forEach(function (item) {
+      if (item.status === "stored") stored += 1;
+      else fresh += 1;
+      if (item.dirty) dirty += 1;
+      if (Number(item.errorCount || 0) > 0) errored += 1;
+    });
+    return { fresh: fresh, stored: stored, dirty: dirty, errored: errored };
+  }
+
+  function batchNote(text, phase) {
+    if (!batchNoteEl) return;
+    batchNoteEl.textContent = text;
+    batchNoteEl.setAttribute("data-batch", phase || "idle");
+  }
+
+  /** 待入库池现在只是台账：池的存储层随下一军令接入，所以按钮出厂锁死、话术写明白。 */
+  function renderPool() {
+    var counts = poolCounts();
+    if (poolEl) {
+      poolEl.textContent = "待入库 " + counts.fresh + " · 已入库 " + counts.stored
+        + " · 脏 " + counts.dirty + " · 未认全 " + counts.errored;
+      poolEl.setAttribute("data-new", String(counts.fresh));
+      poolEl.setAttribute("data-stored", String(counts.stored));
+      poolEl.setAttribute("data-dirty", String(counts.dirty));
+      poolEl.setAttribute("data-errored", String(counts.errored));
+    }
+    if (saveAllEl) {
+      var blocked = state.batchSaving || counts.dirty === 0;
+      saveAllEl.disabled = blocked;
+      if (state.batchSaving) saveAllEl.setAttribute("aria-busy", "true");
+      else saveAllEl.removeAttribute("aria-busy");
+      saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");
+      saveAllEl.title = counts.dirty === 0
+        ? "没有脏题：底部只提交改动过的题"
+        : "逐题串行提交 " + counts.dirty + " 道脏题（已入库走更新，未入库走新建）";
+    }
+    if (poolStashEl) {
+      poolStashEl.disabled = true;
+      poolStashEl.setAttribute("aria-disabled", "true");
+    }
+  }
+
+  /**
+   * 【保存全部】只提交脏题：没改过的一题也不写库。
+   * 逐题串行而不是并发——宿主对写库有频率闸门，一次全发只会换来一排 RATE_LIMITED 的假失败。
+   */
+  function saveAllDirty() {
+    if (state.batchSaving) return Promise.resolve(null);
+    var targets = dirtyList();
+    if (!targets.length) {
+      batchNote("没有脏题可提交——底部只提交改动过的题，未改动的不动。", "empty");
+      return Promise.resolve(null);
+    }
+    state.batchSaving = true;
+    renderPool();
+    batchNote("正在提交 " + targets.length + " 道脏题…", "running");
+    return loadMetaDraft().then(function () {
+      return targets.reduce(function (chain, target) {
+        return chain.then(function (acc) {
+          return saveItem(target.item, metaFor(target.item, {}), "save").then(function (result) {
+            acc.saved.push(result.question_id || "");
+          }, function (error) {
+            acc.failed.push("第 " + (target.index + 1) + " 题：" + explainHostError(error));
+          }).then(function () {
+            // 每一棒都得把台账交回下一棒，否则第二题开始 acc 就是 undefined，整串批量会假死。
+            return acc;
+          });
+        });
+      }, Promise.resolve({ saved: [], failed: [] }));
+    }).then(function (acc) {
+      state.batchSaving = false;
+      var untouched = state.items.length - acc.saved.length - acc.failed.length;
+      var text = "提交 " + (acc.saved.length + acc.failed.length) + " 道脏题：入库 "
+        + acc.saved.length + "、失败 " + acc.failed.length + "；未改动的 " + untouched
+        + " 道一题也没写。";
+      if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
+      batchNote(text, acc.failed.length ? "partial" : "done");
+      dock("录题工作台批量提交：" + acc.saved.length + " 题入库、" + acc.failed.length + " 题失败。");
+      syncActiveBits();
+      publishSelectionSoon();
+      queueWorklistSave();
+      return acc;
+    }, function (error) {
+      state.batchSaving = false;
+      batchNote("批量提交没走通：" + ((error && error.message) || "未知失败") + "，已提交的部分不追回。",
+        "failed");
+      renderPool();
+      return null;
     });
   }
 
@@ -1892,6 +2277,8 @@
     renderAi();
     if (panelSelectionError()) {
       panelSay(panelSelectionError(), "error", "invalid");
+    } else if (panel.ai.state === "ready" && panel.ai.key === sel.key) {
+      // 刚把改写发给画布，那句「保存才入库」不能被选区回显盖掉——否则老师会以为已经入库了
     } else if (panelSaveEl && panelSaveEl.getAttribute("aria-busy") !== "true") {
       panelSay("当前第 " + (Number(sel.index || 0) + 1) + " 题" + (sel.dirty ? "有未保存改动" : "未改动") + "。",
         "info", sel.dirty ? "dirty" : "idle");
@@ -2526,6 +2913,7 @@
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
       if (node) node.addEventListener("scroll", function () { syncScroll(node); });
     });
+    if (saveAllEl) saveAllEl.addEventListener("click", function () { saveAllDirty(); });
     if (window.ResizeObserver && colsEl) {
       var observer = new window.ResizeObserver(function () {
         applyWidths();
@@ -2553,7 +2941,7 @@
 
   // 真机探针用的调试面：只把解析/重组结果交给 Playwright 复核，不参与业务分支。
   window.__jzoEditorV2 = {
-    version: "2.0.0-stage2",
+    version: "2.0.0-stage4",
     parseExamSource: parseExamSource,
     buildExamSource: buildExamSource,
     cleanExamSource: cleanExamSource,
@@ -2568,6 +2956,9 @@
     setFormat: setFormat,
     saveItem: saveItem,
     applySelection: applySelection,
-    selectionPayload: selectionPayload
+    selectionPayload: selectionPayload,
+    jumpTo: jumpTo,
+    poolCounts: poolCounts,
+    saveAllDirty: saveAllDirty
   };
 })();
