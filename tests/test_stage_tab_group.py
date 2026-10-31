@@ -27,7 +27,7 @@ STATIC = ROOT / "static"
 STAGE = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
 WORKSPACE = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
-SPEC = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+SPEC = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
 FIXTURE = ROOT / "examples" / "stage_weight_probe_plugin"
 
 

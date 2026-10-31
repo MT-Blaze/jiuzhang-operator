@@ -100,7 +100,7 @@ class BackendEvaporatedTest(unittest.TestCase):
 
 class SpecPromiseTest(unittest.TestCase):
     def test_01_spec_declares_the_permanent_promise(self) -> None:
-        spec = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+        spec = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
         self.assertIn("底座永不提供快捷键注册 API", spec)
         for token in ("`shortcuts`", "`shortcut.invoke`", "`shortcut.press`",
                       "`/api/plugins/shortcuts`"):

@@ -1871,7 +1871,7 @@ def create_question(plugin_id: str, payload: Any, *, sources: Any = None) -> dic
 def dashboard_stats(plugin_id: str) -> dict[str, Any]:
     """看板四数 + 最近录入 5 题（只读，军令 #11 阶段一）。
 
-    口径（写进 API_REFERENCE.md，别处不得另说一套）：
+    口径（写进 docs/API_REFERENCE.md，别处不得另说一套）：
     - ``total_questions``：questions 表总行数；
     - ``today_added``：按 ``created_at`` 前 10 位（东八区本地日）等于今天的入库数；
     - ``pending_review``：仍带未清灌库审核标记的题数（与待审队列 ``flag=any`` 同判据）；

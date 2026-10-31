@@ -354,7 +354,7 @@ class TextbookIdContractTest(_IsolatedData):
                          "新建路径不得再补一刀 /textbook——重启已经开始，那一刀会丢在进程退出当口")
 
     def test_api_reference_documents_the_field(self) -> None:
-        doc = (ROOT / "API_REFERENCE.md").read_text(encoding="utf-8")
+        doc = (ROOT / "docs" / "API_REFERENCE.md").read_text(encoding="utf-8")
         self.assertIn("textbook_id", doc)
 
 

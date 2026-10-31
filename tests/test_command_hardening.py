@@ -225,8 +225,8 @@ class DeveloperExperienceTest(unittest.TestCase):
                 archive.read("org.example.template/dist/index.html").decode("utf-8"), html)
 
     def test_15_docs_list_every_new_code(self) -> None:
-        spec = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
-        api = (ROOT / "API_REFERENCE.md").read_text(encoding="utf-8")
+        spec = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+        api = (ROOT / "docs" / "API_REFERENCE.md").read_text(encoding="utf-8")
         for code in ("COMMAND_DENIED", "COMMAND_RESULT_TOO_LARGE", "COMMAND_RESULT_INVALID",
                      "COMMAND_BUSY", "COMMAND_LIMIT", "COMMAND_PENDING"):
             self.assertIn(code, spec)

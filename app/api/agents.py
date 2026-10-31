@@ -1,6 +1,6 @@
 """Agent 接口：对话、拆题、审题三类智能体，外加确定性 LaTeX 清洗。
 
-遵循 API_REFERENCE.md §6「Agent Prompt 契约」，调用 app.core.ai_client 完成大模型交互。
+遵循 docs/API_REFERENCE.md §6「Agent Prompt 契约」，调用 app.core.ai_client 完成大模型交互。
 无 API Key 时自动降级 Mock，保证前端不挂；``/clean_latex`` 不经过模型。
 """
 

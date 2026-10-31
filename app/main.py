@@ -1,7 +1,7 @@
 """九章算子底座入口。
 
 底座只负责装配：健康检查、静态资源、只读契约入口。
-业务能力一律由插件提供，见 PLUGIN_SPEC.md。
+业务能力一律由插件提供，见 docs/PLUGIN_SPEC.md。
 """
 
 from __future__ import annotations
@@ -239,7 +239,7 @@ def create_app() -> FastAPI:
     @app.get("/spec/plugin", include_in_schema=False)
     async def read_plugin_spec() -> FileResponse:
         return FileResponse(
-            settings.project_root / "PLUGIN_SPEC.md",
+            settings.docs_dir / "PLUGIN_SPEC.md",
             media_type="text/markdown; charset=utf-8",
         )
 

@@ -11,7 +11,7 @@
   题库是本机 `data/` 里的明文 SQLite，随时整目录拷走，卸载不销毁、不加密、不留水印。
 - **运行**：Python 3.10+ / FastAPI；前端是原生 HTML、CSS、JavaScript，无构建链、无 Node 依赖、资源全本地。
 - **AI**：只连你自己填在 `.env` 里的模型网关；不填密钥就显式降级为 Mock，其余功能照常。
-  **绝不后台静默出网**——任何一次联网都必须由界面上的当场点击发起（[PLUGIN_SPEC.md](PLUGIN_SPEC.md) §1.1–§1.5）。
+  **绝不后台静默出网**——任何一次联网都必须由界面上的当场点击发起（[PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §1.1–§1.5）。
 
 ## 快速开始
 
@@ -33,7 +33,7 @@
 4. 浏览器落在智能工作台 `http://127.0.0.1:8000`；设置与控制页在 `/settings`（左栏底部齿轮）。
 
 工作台顶部的模型徽标会写明当前用的是谁：绿色「真实模型 · <模型名> · <接口主机>」即已接通，
-红色「Mock 降级」表示没有密钥。多厂商切换与密钥边界见 [PLUGIN_SPEC.md](PLUGIN_SPEC.md) §2.1、[STACK.md](STACK.md) §1.6。
+红色「Mock 降级」表示没有密钥。多厂商切换与密钥边界见 [PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §2.1、[STACK.md](docs/STACK.md) §1.6。
 
 **方式二：命令行启动**
 
@@ -77,18 +77,18 @@ curl -X GET http://127.0.0.1:8000/healthz
 1. 复制 [`examples/template-plugin/`](examples/template-plugin/)（成品包
    [`template-plugin.zip`](examples/template-plugin.zip)），改三处——清单里的 `id`/`name`（**目录名与 `id` 一字不差**）、
    `dist/plugin.js` 顶部的 `PLUGIN_ID`、入口页界面；
-2. 照最小清单填 `plugin.json`（字段表见 [PLUGIN_SPEC.md §2.3.2](PLUGIN_SPEC.md)）：`entry.frontend` 必须在 `dist/` 下，
+2. 照最小清单填 `plugin.json`（字段表见 [PLUGIN_SPEC.md §2.3.2](docs/PLUGIN_SPEC.md)）：`entry.frontend` 必须在 `dist/` 下，
    根目录带 Apache-2.0 的 `LICENSE`，禁止 `backend` 字段；要接管中央画布就加 `"slots": ["stage.center"]` 与 `stage` / `bus` 声明（§2.4）；
 3. 把 zip 拖进工作台任意位置，或在「设置与控制 → 插件」里装，然后打开 `/api/plugins` 看自己的 id 有没有出现。
 
 消息封包、`bank.*` 白名单、事件总线、能力路由 `command.list` / `command.execute` 与安全边界，
-契约唯一事实来源是 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；接口速查见 [API_REFERENCE.md](API_REFERENCE.md)。
-**让 AI 代写插件**的整段提示词、模板用法与装后三查，见 [PLUGIN_SPEC.md §8「如何用 AI 写插件」](PLUGIN_SPEC.md)。
+契约唯一事实来源是 [PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md)；接口速查见 [API_REFERENCE.md](docs/API_REFERENCE.md)。
+**让 AI 代写插件**的整段提示词、模板用法与装后三查，见 [PLUGIN_SPEC.md §8「如何用 AI 写插件」](docs/PLUGIN_SPEC.md)。
 
 ## 开发这个仓库
 
-- 铁律与验证口径：[AGENTS.md](AGENTS.md)（干净房间、插件化、安全、可访问性、提交与回传单）；
-  技术语法规约：[STACK.md](STACK.md)。
+- 铁律与验证口径：[AGENTS.md](docs/AGENTS.md)（干净房间、插件化、安全、可访问性、提交与回传单）；
+  技术语法规约：[STACK.md](docs/STACK.md)。
 - 测试**不引入 pytest**，必须用 `.venv` 里的解释器逐模块跑：
   `.venv\Scripts\python.exe -m unittest tests.test_editor_contract`。
 - 目录骨架：`app/`（底座路由与核心）、`static/`（宿主壳）、`schemas/`（跨边界契约）、
@@ -102,6 +102,19 @@ curl -X GET http://127.0.0.1:8000/healthz
 欢迎提需求、报 bug、换题库、做插件：QQ 群 `1105273716`，扫码 <https://qm.qq.com/q/WMqM5l8YQc>。
 
 ![九章算子官方交流群](static/assets/qq-group.png)
+
+## 文档导航
+
+根目录只留项目门面，核心文档统一收在 [`docs/`](docs/)：
+
+| 文件 | 作用 |
+| --- | --- |
+| [docs/AGENTS.md](docs/AGENTS.md) | 开发与 AI 代理铁律：干净房间、插件化架构、数据契约、安全、验证与提交 |
+| [docs/PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) | 插件契约唯一事实来源（含 §8「如何用 AI 写插件」） |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | 插件接口速查与宿主 Agent Prompt 契约 |
+| [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md) | 架构决策记录（ADR）与欠账账本 |
+| [docs/STACK.md](docs/STACK.md) | 技术栈、语法规约与红线条款 |
+| [docs/内测安装与使用指南.md](docs/内测安装与使用指南.md) | 面向零技术基础老师的完整安装与使用步骤 |
 
 ---
 

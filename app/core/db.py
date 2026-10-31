@@ -1,7 +1,7 @@
 """SQLite 连接与结构自举。
 
 结构版本写入 ``PRAGMA user_version``。任何后续迁移都必须在这里按版本递增，
-并在改动结构前生成可验证备份（见 AGENTS.md 第 4 节）。
+并在改动结构前生成可验证备份（见 docs/AGENTS.md 第 4 节）。
 
 v1 → v2：difficulty 的 CHECK 由 basic/medium/hard/novel 改为 L1/L2/L3/L4
 （schemas/question.json 2.0 的连带项）。SQLite 不能就地改 CHECK，因此走

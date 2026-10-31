@@ -26,7 +26,7 @@ CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
 STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
 PANEL_JS = (ROOT / "static" / "js" / "context_panel.js").read_text(encoding="utf-8")
 WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
-SPEC = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+SPEC = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
 
 PLUGIN_ID = "com.example.side-probe"
 

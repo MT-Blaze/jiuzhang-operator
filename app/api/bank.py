@@ -64,7 +64,7 @@ def bank_provider_set(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 @router.get("/api/bank/dashboard/stats", summary="数据看板：四个数与最近录入（活跃题库，只读）")
 def bank_dashboard_stats() -> dict[str, Any]:
-    """总题数 / 今日入库 / 待审核 / 已落库 + 最近 5 题摘要；口径见 API_REFERENCE.md。"""
+    """总题数 / 今日入库 / 待审核 / 已落库 + 最近 5 题摘要；口径见 docs/API_REFERENCE.md。"""
     plugin_id = provider.resolve()["plugin_id"]
     try:
         data = bank.dashboard_stats(plugin_id)

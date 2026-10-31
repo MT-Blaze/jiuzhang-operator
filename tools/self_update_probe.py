@@ -56,8 +56,8 @@ TOKEN = "jzo-self-update-probe-token"
 
 # 复制进沙箱发行版的程序文件（够跑起来即可，不搬测试与工具目录）
 COPY_ITEMS = ("app", "static", "schemas", "examples", "docs", "index.html", "LICENSE",
-              "PLUGIN_SPEC.md", "AGENTS.md", "README.md", "plugins.json",
-              "requirements.txt", "start.bat", "build_release.bat")
+              "README.md", "plugins.json", "requirements.txt", "start.bat",
+              "build_release.bat")
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
 
 # 运行期自己会变的文件：不算「老师资产」，逐字节对比时排除。
