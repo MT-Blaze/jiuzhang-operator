@@ -3,6 +3,7 @@
 > 本文是**插件开发者与 AI 代写插件**的接口速查手册，覆盖三层通道：
 > ① 插件 ↔ 宿主的消息协议（postMessage）；② 宿主代转的数据通道（`bank.*` / `basket.*` / `draft.*`）；
 > ③ 事件总线（EventBus / JzoBus）与后端 HTTP 端点。
+> 另附 §6「Agent Prompt 契约」（对话 / 拆题 / 审题三个宿主 Agent，并入自原 `PROMPT_SPEC.md`，插件不经该通道）。
 > 契约的唯一事实来源是 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；本文与它冲突时以 PLUGIN_SPEC 为准。
 > 对应底座版本：v1.0.0（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道；
 > 军令 #19 新增能力路由字典 `command.list` / `command.execute`，见 §2.18）。
@@ -559,3 +560,94 @@ payload = { command_id, context, from, trace }
 配套清单要点（完整字段表见 PLUGIN_SPEC §2.3.2）：目录名 = `id`；`entry.frontend` 必须在 `dist/` 下；
 根目录必须有 Apache-2.0 的 `LICENSE`；接管画布要 `"slots": [..., "stage.center"]` + `"stage": {...}`；
 zip 顶层目录名即插件 id，纯 zip 解压即用。
+
+---
+
+## 6. Agent Prompt 契约（对话 / 拆题 / 审题）
+
+本章并入自原 `PROMPT_SPEC.md`（该文件已退役）。它描述的是**宿主自己的三个 Agent** 怎么拼 Prompt，
+端点见 §3.5；沙箱插件不经此通道，插件要用 AI 只能走 `ai:invoke` 与 `text.clean_latex`（PLUGIN_SPEC §2.17）。
+
+### 6.1 三条总则
+
+- 系统提示词**固定前置**，可变内容只追加尾部（STACK §1.4 缓存友好原则），字节级稳定。
+- 模型档由配置注入，Prompt 里**不得硬编码模型名或版本号**。
+- 用户输入一律视为不可信，服务端净化后才进 Prompt；Agent 不碰数据库、文件系统与环境变量，
+  令牌校验由 FastAPI 依赖注入层完成，Agent 端点不重复校验。
+
+### 6.2 消息信封
+
+```json
+// 请求
+{ "agent_type": "chat" | "split" | "review", "system_prefix": "<固定系统提示词>",
+  "context": { "task_id": "…", "user_input": "…", "metadata": {} },
+  "stream": true, "timeout_seconds": 30 }
+// 流式响应
+{ "type": "chunk" | "complete" | "error",
+  "data": { "content": "…", "usage": { "prompt_tokens": 0, "completion_tokens": 0 } },
+  "task_id": "<同请求>" }
+// 错误
+{ "type": "error", "task_id": "…",
+  "error": { "code": "TIMEOUT" | "MODEL_ERROR" | "INVALID_INPUT", "message": "…", "retryable": true } }
+```
+
+- 分片按顺序拼接，最后一个 `type` 为 `"complete"` 并带完整 usage；中途出错发 `"error"` 并终止流。
+- 心跳：10 秒内没有 chunk 时前端显示「生成中…」而不是超时；服务端在长推理期发空 chunk 保活。
+- 重试口径：`TIMEOUT` 可加大 `timeout_seconds` 后重试，`MODEL_ERROR` 可换档或稍后重试，
+  `INVALID_INPUT` 不可重试（必须修正请求）。
+- 降级：AI 服务不可用时前端提供手动录入入口，绝不阻塞工作流；Mock 档返回预设假数据、
+  接口签名保持一致，并如实带 `mock: true`。
+
+### 6.3 对话 Agent（`chat`）
+
+固定前缀要求「输出必须是含 `action` 字段的 JSON；指令模糊时回 `clarification` 而不是猜；
+不得生成题目内容本身，只返回操作元数据」。可用 action：
+
+| action | 载荷 |
+| --- | --- |
+| `split_paper` | `{page_range:[3,5]}` |
+| `tag_question` | `{question_id, tags:[]}` |
+| `export_paper` | `{format:"pdf"|"tex"|"docx"}` |
+| `clarify` | `{question:"<澄清问题>"}` |
+| `update_params` | `{params:{面板参数 key:值}, message:"给用户的一句话"}` |
+| `trigger_button` | `{button:"面板按钮 id", message:"…"}` |
+
+**唯一事实来源是 `app/api/agents.py` 的 `CHAT_SYSTEM_PROMPT` / `build_chat_system_prompt`**，
+上表只是最小骨架；实际提示词另含「插件优先」「右侧插件面板」等小节，
+`update_params` / `trigger_button` 只能用「右侧插件面板」小节列出的 key 与按钮 id。
+军令 #20 第三部分起还接了 `command_list` / `command_execute` 两件宿主命令工具（§3.5、PLUGIN_SPEC §2.16）：
+命令只能按字典调用，`context` 只能用命令声明的字段与 `q_`/`tp_`/`tb_` 公开 id；
+`requires_user` 命令只返回确认卡且**不执行**，模型不得声称已执行，也不得自行拼接确认码或跳过确认。
+
+### 6.4 工作台上下文与双向操控
+
+- **插件工作模式**（v0.5.3 起）：`context` 至少含 `current_task`、`stage`、`model`、`mock`；
+  点左栏插件后追加 `working_mode` 与 `plugin`（`id`/`name`/`version`/`kind`/`description`/`capabilities`），
+  后端把整份 `context` 序列化进 System 尾部，并要求优先调用该插件的已安装工具。
+  点插件只切模式与上下文，**不得跳页面**；点「自由对话」清空插件字段回默认入口。
+- **面板 → 模型**（v0.5.5 起）：`context` 追加 `ui`（`plugin_id`、`values`、`controls`），
+  后端 `_ui_panel_prompt` 把它翻译成「可设置参数 / 可触发按钮」目录注入 System，模型不得虚构控件。
+- **模型 → 面板**：前端在发请求时对人工修改计数拍快照，收到 `update_params` 只覆盖
+  「值合法且飞行期间用户没动过」的字段，让位字段以系统气泡如实说明——**人类手动操作永远覆盖 AI 设定**。
+  `trigger_button` 只允许由人类或确认卡片发起的轮次执行一次，AI 触发的轮次再收到按钮指令会被忽略（防循环）。
+- **富卡片**：`content` 里的 ```ui_json 围栏由前端拦截渲染，绝不当纯文本展示；
+  `question_card` 经本地 KaTeX 渲染 LaTeX，全部字段以 `textContent` 落 DOM，形如
+  `{"version":"1.0","type":"question_card","questions":[…]}` 且**恰好一个**围栏，题目必须来自工具结果或上下文；
+  `install_card` 只能由底座在 `search_available_plugins` / `suggest_install` 执行后生成，
+  用户点【确认安装】才带写令牌调 `POST /api/plugins/install-url`，渲染阶段零网络请求。
+  缺密钥降级 Mock 时 `update_params` 链路照样走得通。
+
+### 6.5 拆题 Agent（`split`）
+
+输入是整卷 OCR 后的 Markdown（`context.user_input`，含页标注释 `<!-- MATHBANK_PDF_PAGE:N -->`）。
+约束：按题号切分，每题一个 JSON 对象含 `id`/`type`/`stem`/`options`(如有)/`difficulty`；
+题型枚举 `single_choice, multiple_choice, fill_blank, solution, proof`；
+难度枚举 `basic, medium, hard, novel`；LaTeX 原样保留不得转义或简化；
+信息不全的题标 `status:"incomplete"` 并说明缺失字段；输出为 JSON 数组。
+
+### 6.6 审题 Agent（`review`）
+
+输入是单题完整 JSON（与 `schemas/question.json` 一致）。检查四项：答案一致性（选项字母是否存在、
+填空答案与题干是否匹配）、解析完整性（有无解析块且覆盖关键步骤）、配图合理性（题干提图而无图则标
+`missing_image`）、难度合理性。输出 JSON 对象含 `checks` 数组（每项 `{field,status,detail}`）、
+`overall_score`（1–5）与 `suggestions`。

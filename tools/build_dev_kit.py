@@ -2,8 +2,8 @@
 """构建 dist/jiuzhang-dev-kit.zip：发给协助开发老师的协作大礼包。
 
 内容（顶层单目录 jiuzhang-dev-kit/，解压即用）：
-  README_协作指南.md      —— 给 AI 的提示词正文 + 模板用法 + 协作须知
-  PLUGIN_SPEC.md          —— 插件契约唯一事实来源
+  PLUGIN_SPEC.md          —— 插件契约唯一事实来源（§8 即「如何用 AI 写插件」整段提示词）
+  API_REFERENCE.md        —— 接口速查与宿主 Agent Prompt 契约
   PROJECT_MEMORY.md       —— 架构决策与欠账账本
   template-plugin/        —— 第三方插件开发极简模板源码
   template-plugin.zip     —— 同一模板的打包产物（可直接拖进底座安装）
@@ -27,8 +27,8 @@ OUT = ROOT / "dist" / "jiuzhang-dev-kit.zip"
 TOP = "jiuzhang-dev-kit"
 
 SOURCES = (
-    ("README_协作指南.md", "README_协作指南.md"),
     ("PLUGIN_SPEC.md", "PLUGIN_SPEC.md"),
+    ("API_REFERENCE.md", "API_REFERENCE.md"),
     ("PROJECT_MEMORY.md", "PROJECT_MEMORY.md"),
     ("examples/template-plugin/plugin.json", "template-plugin/plugin.json"),
     ("examples/template-plugin/LICENSE", "template-plugin/LICENSE"),

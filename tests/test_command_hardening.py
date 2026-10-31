@@ -227,13 +227,15 @@ class DeveloperExperienceTest(unittest.TestCase):
     def test_15_docs_list_every_new_code(self) -> None:
         spec = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
         api = (ROOT / "API_REFERENCE.md").read_text(encoding="utf-8")
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for code in ("COMMAND_DENIED", "COMMAND_RESULT_TOO_LARGE", "COMMAND_RESULT_INVALID",
                      "COMMAND_BUSY", "COMMAND_LIMIT", "COMMAND_PENDING"):
             self.assertIn(code, spec)
             self.assertIn(code, api)
+        # 极简 README 只留指引，这四个口径跟着「给 AI 的提示词」一起搬进了 PLUGIN_SPEC §8；
+        # README 已改为指向该章，所以判据落在 spec 上，不再要求速览页复述细节。
         for hint in ("requires_user", "65536", "command.pending", "COMMAND_LIMIT"):
-            self.assertIn(hint, readme)
+            self.assertIn(hint, spec)
+        self.assertIn("如何用 AI 写插件", (ROOT / "README.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
