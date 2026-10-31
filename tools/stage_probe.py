@@ -8,22 +8,25 @@
 
 产出：截图 png + probe.json（结构化断言、页签状态轨迹、console 错误）。
 
-判据来自 2026-10-26 军令任务 3：
-  1. 画布顶部 Tabs 常驻一枚**原生**引导页签（不进 iframe）；
+判据来自 2026-10-26 军令任务 3（2026-10-31 军令修订）：
+  1. 启动不预开任何兜底页：原生页签只剩「设置与控制台」且未选中，画布留白；
   2. 声明 ``stage`` 的插件被点击后开一枚沙箱 iframe 页签，``plugin.activate`` 真回 ready；
   3. 同时存活 iframe ≤3，第 4 个进来时最久未用的那个休眠（摘 iframe、页签标「休眠」），
      点回页签能唤醒重挂；
   4. 右栏面板参数一改，画布里的插件通过 notification 收到，并能往底栏回一条 region.dock；
   5. ``stage.mode = fullscreen`` 只翻全屏标志，不改用户的折叠偏好；
-  6. 插件页签可关闭；关掉后画布回到引导页签，底座照常可用。
-  7. 原生页签（引导 / 设置与控制台）同样可关闭，控制台能从左栏入口重建；
+  6. 插件页签可关闭；普通刷新（F5）×3 后每个页签仍稳定带 ×；
+  7. 原生页签（设置与控制台）可关闭，控制台能从左栏入口重建；
+     关完所有页签后画布彻底留白，不出现任何兜底页或占位文案；
      页签栏左端「入口」按钮与页签同高、同字号、同底色、同圆角（2026-10-31 军令）。
 """
+import collections
 import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -161,7 +164,8 @@ JS_TABS = """
     key: t.getAttribute('data-tab'),
     label: (t.querySelector('.ws-tab-label') || {}).textContent || t.textContent.trim(),
     selected: t.getAttribute('aria-selected'),
-    state: (t.querySelector('.ws-tab-state') || {}).textContent || ''
+    state: (t.querySelector('.ws-tab-state') || {}).textContent || '',
+    hasClose: Boolean(t.querySelector('.ws-tab-close'))
   }));
   const frames = Array.from(document.querySelectorAll('.ws-plugin-frame')).map(f => ({
     tab: (f.closest('.ws-tab-panel') || {}).getAttribute ? f.closest('.ws-tab-panel').getAttribute('data-tab') : null,
@@ -191,6 +195,8 @@ JS_TABS = """
     sidebarVisible: document.getElementById('wsSidebar').getBoundingClientRect().width > 1,
     ctxVisible: document.getElementById('wsContext').getBoundingClientRect().width > 1,
     dockVisible: document.getElementById('wsDock').getBoundingClientRect().height > 1,
+    visiblePanels: Array.from(document.querySelectorAll('.ws-tab-panel')).filter(p => !p.hidden).length,
+    canvasText: (document.getElementById('wsCanvasBody').textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 300),
     dockText: document.getElementById('wsDockLog').textContent.replace(/\\s+/g, ' ').slice(0, 400)
   };
 }
@@ -227,6 +233,18 @@ def run(tag: str) -> dict:
          "--host", "127.0.0.1", "--port", str(PORT)],
         cwd=str(ROOT), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    # uvicorn 的 INFO 日志必须及时排空：管道塞满后服务端会阻塞在写 stdout 上，
+    # 页面刷新就会卡死（探针假红，与产品无关）。
+    server_log = collections.deque(maxlen=400)
+
+    def _drain_server_log() -> None:
+        try:
+            for line in server.stdout:
+                server_log.append(line)
+        except Exception:  # noqa: BLE001 - 服务端退出时管道关闭属正常
+            pass
+
+    threading.Thread(target=_drain_server_log, name="probe-server-log", daemon=True).start()
 
     try:
         deadline = time.time() + 40
@@ -241,12 +259,7 @@ def run(tag: str) -> dict:
                     break
             time.sleep(0.5)
         if not ready:
-            out_text = ""
-            try:
-                out_text = server.stdout.read() or ""
-            except Exception:  # noqa: BLE001
-                pass
-            check("隔离服务起在 8778", False, out_text[-800:])
+            check("隔离服务起在 8778", False, "".join(server_log)[-800:])
             return finish(report, out, None)
         check("隔离服务起在 8778", True, f"data={data_dir} plugins={plugins_dir}")
         time.sleep(1.5)   # 留给种子插件静默安装
@@ -280,13 +293,41 @@ def run(tag: str) -> dict:
                 """, label_part)
 
             initial = snap("00-initial")
-            # 宿主自己占两枚页签：引导（原生）与设置与控制台（宿主同源 iframe）。
-            check("画布初始是引导与控制台两枚宿主页签",
-                  len(initial["tabs"]) == 2
-                  and initial["tabs"][0]["key"] == "home"
-                  and any(t["key"] == "console" for t in initial["tabs"]),
+            # 2026-10-31 军令：启动不预开任何兜底页，原生页签只剩未选中的「设置与控制台」。
+            check("启动时画布留白，只有未选中的控制台页签",
+                  len(initial["tabs"]) == 1
+                  and initial["tabs"][0]["key"] == "console"
+                  and initial["tabs"][0]["selected"] == "false"
+                  and initial["frameCount"] == 0
+                  and initial["visiblePanels"] == 0,
                   json.dumps(initial["tabs"], ensure_ascii=False))
-            check("引导页签不含 iframe（原生）", initial["frameCount"] == 0, str(initial["frameCount"]))
+            check("页签栏里没有任何「引导」页签",
+                  all("引导" not in t["label"] for t in initial["tabs"]),
+                  json.dumps([t["label"] for t in initial["tabs"]], ensure_ascii=False))
+
+            # 等 SW 完成首次接管再刷新：activate/claim 与导航的竞态会让 Playwright 的
+            # load 等待悬空（真机 F5 不受影响，探针却会假红）。
+            try:
+                page.wait_for_function(
+                    "() => !('serviceWorker' in navigator) || Boolean(navigator.serviceWorker.controller)",
+                    timeout=8000)
+            except Exception:  # noqa: BLE001 - 没注册上 SW 也照样测 F5
+                pass
+
+            # ---------- 普通刷新（F5）×3：关闭叉必须每次都稳定出现 ----------
+            for round_no in range(1, 4):
+                # F5 的判据是「页面能渲染出带叉的页签」，不等 load 事件：
+                # SW 接管后 Playwright 偶发收不到 load（真机无此现象），
+                # 直接等关闭叉出现，既不受竞态影响，也正好命中用户报的 bug。
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_selector(
+                    '#wsTabs .ws-tab[data-tab="console"] .ws-tab-close', timeout=10000)
+                page.wait_for_timeout(300)
+                st = snap(f"0{round_no}-f5-reload")
+                console_tab = next((t for t in st["tabs"] if t["key"] == "console"), None)
+                check(f"第 {round_no} 次 F5 后控制台页签仍有 ×",
+                      bool(console_tab and console_tab["hasClose"]),
+                      json.dumps(console_tab, ensure_ascii=False) if console_tab else "无控制台页签")
             check("左栏列出探针插件",
                   page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length") >= 5,
                   str(page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length")))
@@ -394,11 +435,11 @@ def run(tag: str) -> dict:
             check("全屏不改用户的折叠偏好（data-side/data-ctx 原样）",
                   full["dataSide"] in (None, "open") and full["dataCtx"] in (None, "open"),
                   json.dumps({"side": full["dataSide"], "ctx": full["dataCtx"]}))
-            # 切回引导页签应退出全屏
-            page.locator('#wsTabs .ws-tab[data-tab="home"]').click()
-            page.wait_for_timeout(600)
-            back = snap("18-back-to-home")
-            check("切回引导页签即退出全屏", back["fullscreen"] in (None, "off"), str(back["fullscreen"]))
+            # 切到控制台页签应退出全屏
+            page.locator('#wsTabs .ws-tab[data-tab="console"]').click()
+            page.wait_for_timeout(800)
+            back = snap("18-back-to-console")
+            check("切到控制台页签即退出全屏", back["fullscreen"] in (None, "off"), str(back["fullscreen"]))
             check("退出全屏后左右栏与底栏回来",
                   back["sidebarVisible"] and back["ctxVisible"],
                   json.dumps({k: back[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
@@ -410,11 +451,9 @@ def run(tag: str) -> dict:
             closed = snap("19-close-tab")
             check("插件页签可关闭", len(closed["tabs"]) == tab_count_before - 1,
                   f"{tab_count_before} → {len(closed['tabs'])}")
-            check("引导页签可关闭（有 × 按钮）",
-                  page.evaluate("""() => {
-                    const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"home\"]');
-                    return t ? Boolean(t.querySelector('.ws-tab-close')) : false;
-                  }"""), "")
+            check("所有存活页签都稳定带 ×",
+                  all(t["hasClose"] for t in closed["tabs"]),
+                  json.dumps([t for t in closed["tabs"] if not t["hasClose"]], ensure_ascii=False))
             check("设置与控制台页签可关闭（有 × 按钮）",
                   page.evaluate("""() => {
                     const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"console\"]');
@@ -466,6 +505,25 @@ def run(tag: str) -> dict:
                   json.dumps(shape, ensure_ascii=False))
             page.locator("#wsOpenSidebar").click()
             page.wait_for_timeout(400)
+
+            # ---------- 关完所有页签：画布彻底留白（2026-10-31 军令） ----------
+            page.evaluate("""() => {
+              const api = window.JzoStage;
+              api.tabs().slice().forEach(t => api.close(t.key));
+            }""")
+            page.wait_for_timeout(600)
+            empty = snap("23-all-closed")
+            check("关完所有页签后页签栏清空", len(empty["tabs"]) == 0,
+                  json.dumps(empty["tabs"], ensure_ascii=False))
+            check("关完所有页签后画布无可见面板（留白）", empty["visiblePanels"] == 0,
+                  str(empty["visiblePanels"]))
+            check("关完所有页签后不出现兜底页或占位文案",
+                  "引导" not in empty["canvasText"] and "暂无打开页签" not in empty["canvasText"],
+                  empty["canvasText"][:200])
+            # 全屏页签被关掉时三区必须回归，不能留下空画布压着左右栏
+            check("关完所有页签后左右栏与底栏回归",
+                  empty["sidebarVisible"] and empty["ctxVisible"],
+                  json.dumps({k: empty[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
 
             page.close()
             browser.close()

@@ -54,7 +54,7 @@
     <div class="ws-resizer ws-resizer-v" id="wsResizerSide" data-resize="side" role="separator"
       aria-orientation="vertical" tabindex="0" aria-label="拖动调整左栏宽度"></div>
 
-    <!-- 中栏：通用画布。Tabs 承载原生引导页与 iframe 插件，底座只负责渲染舞台 -->
+    <!-- 中栏：通用画布。Tabs 承载原生控制台与 iframe 插件，底座只负责渲染舞台 -->
     <main class="ws-center" role="main" aria-label="画布与当前任务舞台">
       <!-- 画布不再有独立舞台头：页签栏紧贴顶边，当前任务名只留给读屏（aria-live）。 -->
       <h1 class="sr-only" id="wsStageTitle" aria-live="polite">工作台</h1>
@@ -69,22 +69,8 @@
           <div class="ws-tabs ws-ghost-scroll" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
         </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
-          <!-- 引导页：插件全崩也还有地方落脚的兜底页。页签本身可关闭，
-               关到画布一枚页签不剩时由 stage.js 自动叫回来；面板节点留在文档里，
-               重开页签不用重新渲染。
-               对话流已从这一栏搬走——它过去住在中栏，等于让 AI 占着底座最好的位置、
-               还天然能碰宿主 DOM；军令 #15 把它交还给右栏的沙箱插件。 -->
-          <section class="ws-tab-panel" id="wsPanelHome" role="tabpanel" aria-label="引导" data-tab="home">
-            <div class="ws-home ws-ghost-scroll">
-              <h2 class="ws-home-title">九章算子 · 工作台</h2>
-              <p class="ws-home-lede">中栏是通用舞台：左栏点一下插件就开一页，右侧「AI 助手」听你说人话、替你把题库与录题串起来。</p>
-              <ul class="ws-home-list">
-                <li>找题、出题、组卷：直接在右栏对 AI 说，例如「题库里有多少道导数题」。</li>
-                <li>装新能力：左下【设置与控制台】→ 插件索引，或把标准 .zip 拖进本页面。</li>
-                <li>页面不对劲：底栏【输出日志区】有运行日志与报错诊断；单个插件坏了不牵连底座。</li>
-              </ul>
-            </div>
-          </section>
+          <!-- 画布不设兜底页：所有页签关掉后中栏干干净净留白，不塞任何占位文案。
+               控制台面板留在文档里，关掉页签后重开不必重新渲染 iframe。 -->
           <section class="ws-tab-panel" id="wsPanelConsole" role="tabpanel" aria-label="设置与控制台" data-tab="console" hidden>
             <!-- 宿主自有页签：同源装载设置面板，不挂 sandbox。
                  挂了 sandbox 又同时给 allow-scripts + allow-same-origin，浏览器会直接警告

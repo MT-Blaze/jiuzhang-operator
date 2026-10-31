@@ -2,7 +2,7 @@
 
 钉死六件事：
 1. 中栏只是舞台：Tabs 容器由底座渲染，业务画面在插件自己的 iframe 文档里；
-2. 原生页签（引导 / 设置与控制台）可关闭；关到画布空时引导页自动回来（AGENTS §2 兜底）；
+2. 「设置与控制台」是唯一的原生页签且可关闭；关到画布空时不回补任何兜底页，中栏留白；
 3. iframe 沙箱不给 allow-same-origin，插件碰不到宿主 DOM 与令牌（PLUGIN_SPEC §2.3.4）；
 4. 同时存活的插件页有上限，最久未用的发 plugin.deactivate 后摘掉文档（LRU 休眠）；
 5. 宿主对插件请求 30 秒超时（PLUGIN_SPEC §5.1），发信人必须核验；
@@ -31,14 +31,13 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('role="tablist"', HTML)
         self.assertIn('id="wsCanvasBody"', HTML)
 
-    def test_02_native_home_panel_is_the_fallback_and_chat_is_a_plugin(self) -> None:
-        """军令 #15：中栏兜底换成原生「引导」页签，对话流整体交给右栏助手插件。"""
-        panel = re.search(
-            r'<section class="ws-tab-panel" id="wsPanelHome".*?</section>', HTML, re.S
-        )
-        self.assertIsNotNone(panel, "引导页签的面板不见了")
-        self.assertIn('role="tabpanel"', panel.group(0))
-        self.assertIn("题库里有多少道导数题", panel.group(0), "兜底页要教老师怎么用助手")
+    def test_02_no_fallback_panel_and_chat_is_a_plugin(self) -> None:
+        """2026-10-31 军令：画布不设兜底页，关完所有页签就留白；对话流只在右栏插件里。"""
+        self.assertNotIn("wsPanelHome", HTML, "引导页签的面板必须彻底删除")
+        self.assertNotIn("引导", HTML, "宿主壳里不许再出现「引导」二字")
+        self.assertNotIn("暂无打开页签", HTML, "画布不塞占位文案")
+        self.assertNotIn(".ws-home", CSS, "引导页的样式必须彻底删除")
+        self.assertNotIn("ws-home", HTML)
         # 宿主壳里不许再留一份对话流：那等于给 AI 开一条绕过 Host API 的后门
         self.assertNotIn('id="wsThread"', HTML)
         self.assertNotIn('id="wsChatForm"', HTML)
@@ -85,7 +84,7 @@ class CanvasMarkupTest(unittest.TestCase):
             self.assertIn(token, body, f"与页签同形缺了 {token}")
 
     def test_06_native_tabs_carry_close_buttons(self) -> None:
-        """引导与设置与控制台都渲染关闭叉；原生页签的面板关掉后留在文档里供重建。"""
+        """设置与控制台渲染关闭叉；原生页签的面板关掉后留在文档里供重建。"""
         self.assertIn("if (tab.closable) {", STAGE)
         self.assertIn("close.setAttribute(\"aria-label\", \"关闭\" + tab.title)", STAGE)
         self.assertIn("if (tab.kind === \"native\") tab.panel.hidden = true;", STAGE)
@@ -200,13 +199,17 @@ class WorkspaceWiringTest(unittest.TestCase):
         self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', WORKSPACE)
         self.assertIn("plugin.id === ASSISTANT_PLUGIN_ID", block)
         self.assertIn("window.JzoContextPanel.reclaim()", block)
-        self.assertIn('registerNative({ key: "home"', STAGE, "中栏兜底得是个原生页签")
-        self.assertIn('activate("home")', STAGE)
-        # 2026-10-31 军令：原生页签也要有叉；关到画布空时引导页自动回补
+        # 2026-10-31 军令：引导页彻底删除；原生页签只剩设置与控制台，且必须有叉
+        self.assertNotIn('registerNative({ key: "home"', STAGE, "引导页签必须彻底移除")
+        self.assertNotIn('activate("home")', STAGE)
+        self.assertNotIn("引导", STAGE, "stage.js 里不许再出现「引导」")
+        self.assertIn('registerNative({ key: "console"', STAGE)
         self.assertIn("closable: options.closable !== false", STAGE)
-        self.assertIn("function ensureNative(", STAGE, "关掉的原生页签要能按登记表重建")
-        self.assertIn('Boolean(ensureNative("home"))', STAGE)
-        self.assertNotIn("引导页是兜底，不许关", STAGE)
+        self.assertIn("function ensureNative(", STAGE, "关掉的控制台要能按登记表重建")
+        # 关完所有页签：不回补兜底页、不写占位字，画布留白
+        self.assertNotIn('ensureNative("home")', STAGE)
+        self.assertIn("activeKey = null", STAGE)
+        self.assertNotIn("暂无打开页签", STAGE)
 
     def test_03_param_changes_are_published_on_the_bus(self) -> None:
         self.assertIn("function publishUiParams(source, changedKey)", WORKSPACE)

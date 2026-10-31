@@ -6,10 +6,10 @@
  * 插件只能经 HostBus 向指定区域投递数据，拿不到那三区的 DOM。
  *
  * 两类页签：
- *   - 原生页签：引导页与「设置与控制台」，都带关闭叉。关掉的控制台可从左栏底部
- *     入口重新叫回；引导页是画布兜底，关到画布一枚页签都不剩时自动恢复，
- *     不让画布空白。对话不再住在中栏——军令 #15 把 AI 助手交还成
- *     右栏里的一个普通插件，底座不再为它保留任何特权入口。
+ *   - 原生页签：「设置与控制台」，带关闭叉。关掉后可从左栏底部入口重新叫回。
+ *     画布不设兜底页：所有页签关掉后中栏留白，不塞任何占位文案。
+ *     对话不住在中栏——军令 #15 把 AI 助手交还成右栏里的一个普通插件，
+ *     底座不再为它保留任何特权入口。
  *   - 重型页签：沙箱 iframe 插件。带 LRU 休眠——同时存活的 iframe 最多 MAX_LIVE_FRAMES 个，
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
  *
@@ -66,7 +66,7 @@
 
   /**
    * 舞台优先级（stage.priority）的真实消费点：同排插件页签按优先级从高到低排，
-   * 同优先级按打开先后。原生页签（引导）永远排第一，不参与抢位。
+   * 同优先级按打开先后。原生页签永远排第一，不参与抢位。
    * 排完交给 renderTabBar：页签挤爆时才把同组收成下拉、并上横滚（军令 #16 模块三）。
    */
   function orderPluginTabs() {
@@ -239,7 +239,7 @@
     var box = document.createElement("div");
     box.className = "ws-frame-error";
     box.setAttribute("role", "alert");
-    box.textContent = message + "（底座仍可继续使用引导页）";
+    box.textContent = message + "（其余页签不受影响，可关闭本页重试）";
     tab.panel.appendChild(box);
     paintTabState(tab);
   }
@@ -2015,7 +2015,8 @@
   function applyFullscreen(tab) {
     var page = document.querySelector(".ws-page");
     if (!page) return;
-    var want = Boolean(tab.plugin && tab.plugin.stage && tab.plugin.stage.mode === "fullscreen");
+    // tab 可能是 null（例如最后一枚全屏页签被关掉）：必须退出全屏，否则空画布还压着三区
+    var want = Boolean(tab && tab.plugin && tab.plugin.stage && tab.plugin.stage.mode === "fullscreen");
     if (want) page.setAttribute("data-fullscreen", "on");
     else page.removeAttribute("data-fullscreen");
   }
@@ -2036,16 +2037,18 @@
     if (tab.kind === "native") tab.panel.hidden = true;
     else if (tab.panel.parentNode) tab.panel.parentNode.removeChild(tab.panel);
     tabs.splice(index, 1);
-    // 画布不许关成空白：关掉最后一枚页签时把引导页原样叫回来
-    var restoredHome = !tabs.length && Boolean(ensureNative("home"));
+    // 画布允许彻底空着：不补任何兜底页、也不写占位字，中栏保持纯净留白
     orderPluginTabs();   // 组里少了一页，下拉与计数必须当场跟上
-    dock(restoredHome
-      ? "引导页是画布兜底，已自动保留。"
-      : "已关闭页签「" + (tab.title || key) + "」。", "stage.tab.closed");
+    dock("已关闭页签「" + (tab.title || key) + "」。", "stage.tab.closed");
     emit("stage.tab.closed", { key: key });
     if (activeKey === key) {
       var next = tabs[index] || tabs[index - 1] || tabs[0];
-      if (next) activate(next.key);
+      if (next) {
+        activate(next.key);
+      } else {
+        activeKey = null;
+        applyFullscreen(null);
+      }
     }
   }
 
@@ -2534,9 +2537,8 @@
 
   function init() {
     if (!tabsEl || !bodyEl) return;
-    registerNative({ key: "home", title: "引导", panelId: "wsPanelHome" });
+    // 启动不预开任何页签（含兜底页）：中栏留白，等用户从左右栏开页
     registerNative({ key: "console", title: "设置与控制台", panelId: "wsPanelConsole" });
-    activate("home");
 
     if (bus && typeof bus.on === "function") {
       // 右栏改参数 → 直达中栏所有活着的插件（军令任务 3.3）

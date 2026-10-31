@@ -155,7 +155,7 @@ class SidebarBehaviourTest(unittest.TestCase):
         self.assertIn("capabilities", snap.group(1))
 
     def test_05_initial_mode_is_the_neutral_workbench(self) -> None:
-        """军令 #15：默认不再叫「自由对话」——中栏停在引导页，右栏住助手。"""
+        """军令 #15：默认不再叫「自由对话」——中栏留白，右栏住助手。"""
         self.assertIn('setStage("工作台")', JS)
         self.assertIn("markActiveEntry(null)", JS)
         self.assertNotIn("markActiveEntry(chatEntry)", JS)

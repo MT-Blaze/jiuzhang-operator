@@ -376,44 +376,6 @@
   outline-offset: -2px;
 }
 
-/* ============ 中栏：原生引导页 ============ */
-/* 对话流搬去右栏助手插件后，中栏的兜底页签是底座自己的落脚点：
-   插件全崩、一个都没装时，老师进来仍能看到「去哪儿、怎么开口」。 */
-.ws-home {
-  height: 100%;
-  overflow-y: auto;
-  padding: 30px 34px 42px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ws-home-title {
-  margin: 0;
-  font-size: 1.3rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-}
-
-.ws-home-lede {
-  margin: 0;
-  max-width: 62ch;
-  font-size: 0.92rem;
-  line-height: 1.75;
-  color: var(--muted);
-}
-
-.ws-home-list {
-  margin: 0;
-  padding-left: 1.15rem;
-  max-width: 66ch;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  font-size: 0.88rem;
-  line-height: 1.7;
-}
-
 /* ============ 右栏：上下文面板 ============ */
 .ws-context {
   display: flex;

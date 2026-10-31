@@ -1707,7 +1707,7 @@
   }
 
   // ============ 初始化 ============
-  // 中栏默认停在原生引导页，右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
+  // 中栏启动时留白（不预开兜底页），右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
   wireDock();
   wireDockMenu();
   wireGhostScroll();

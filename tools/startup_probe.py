@@ -11,7 +11,7 @@
 判据：
   1. 未配置时默认落在欢迎页；POST 无令牌 401、指向不存在插件 400（写入严格）；
   2. 配好「数据看板」后打开工作台，**自动**进入看板页签、左栏对应项高亮；
-  3. 插件被停用 → 后端回退 chat 并给原因；刷新页面停在底座原生引导页（画布页签里
+  3. 插件被停用 → 后端回退 chat 并给原因；刷新页面停在空画布（画布页签里
      没有它），底栏输出日志区以 host.warn 记一笔（军令 #15 之后对话区 warn 气泡整条
      通道已退役，播报只落实到底栏——不许静默）；
   4. 插件被卸载（目录移走）→ 同款优雅回退，配置原地保留，装回即自动恢复；
@@ -47,6 +47,7 @@ JS_STATE = """
   const dock = document.getElementById('wsDockLog');
   return {
     tabs: tabs,
+    visiblePanels: Array.from(document.querySelectorAll('.ws-tab-panel')).filter(p => !p.hidden).length,
     stageTitle: title ? title.textContent.replace(/\\s+/g, ' ').trim() : '',
     activePluginId: active ? active.getAttribute('data-plugin-id') : null,
     dockText: dock ? dock.textContent.replace(/\\s+/g, ' ') : ''
@@ -187,9 +188,12 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(2000)
             state = page.evaluate(JS_STATE)
             report["notes"]["fallback_disabled"] = state
-            check("停用后启动停在原生引导页（不开失效插件）",
-                  f"plugin:{PLUGIN_ID}" not in state["tabs"] and state["stageTitle"] == "工作台",
-                  f"tabs={state['tabs']} title={state['stageTitle']}")
+            check("停用后启动停在空画布（不开失效插件、不补兜底页）",
+                  f"plugin:{PLUGIN_ID}" not in state["tabs"]
+                  and state["stageTitle"] == "工作台"
+                  and state["tabs"] == ["console"]
+                  and state["visiblePanels"] == 0,
+                  f"tabs={state['tabs']} panels={state['visiblePanels']} title={state['stageTitle']}")
             check("回退原因在底栏如实播报（host.warn）",
                   "host.warn" in state["dockText"] and "已停用" in state["dockText"],
                   state["dockText"][-260:])
@@ -217,10 +221,12 @@ def run(tag: str) -> dict:
                 page.wait_for_timeout(2000)
                 state = page.evaluate(JS_STATE)
                 report["notes"]["fallback_uninstalled"] = state
-                check("卸载后启动不炸、停在原生引导页",
+                check("卸载后启动不炸、停在空画布",
                       state["stageTitle"] == "工作台" and f"plugin:{PLUGIN_ID}" not in state["tabs"]
+                      and state["tabs"] == ["console"] and state["visiblePanels"] == 0
                       and len(report["errors"]) == 0,
-                      f"title={state['stageTitle']} tabs={state['tabs']} errors={report['errors'][:2]}")
+                      f"title={state['stageTitle']} tabs={state['tabs']} "
+                      f"panels={state['visiblePanels']} errors={report['errors'][:2]}")
                 check("卸载回退同样在底栏如实播报",
                       "host.warn" in state["dockText"] and "已卸载" in state["dockText"],
                       state["dockText"][-260:])

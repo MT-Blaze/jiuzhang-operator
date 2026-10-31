@@ -33,19 +33,30 @@ from app.core.db import init_db
 from app.core.security import local_write_token
 
 
-class RevalidatingStaticFiles(StaticFiles):
-    """静态资源每次都回源校验（ETag 命中时只回 304）。
+# 宿主壳（HTML/JS/CSS）一律禁止落缓存。只写 no-cache 不够：Chrome 的软刷新
+# （F5）会把 no-cache 的响应从内存缓存里直接复用，旧 stage.js 就会让页签关闭叉
+# 消失，只有 Ctrl+F5 才恢复；no-store + must-revalidate 才能保证每次刷新都取最新代码。
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
-    为什么要改默认行为：Starlette 的 StaticFiles 不带 Cache-Control，
-    浏览器按 Last-Modified 猜一个启发式保鲜期，于是旧版 splitpane.js 可能在
-    缓存里活很久——它把折叠尺寸以内联变量写死，界面的折叠修复就永远到不了老师眼前。
-    本站是 127.0.0.1 本地服务，304 校验的成本可以忽略，换来「刷新即最新」。
+
+class RevalidatingStaticFiles(StaticFiles):
+    """静态资源一律禁止浏览器缓存（no-store + must-revalidate）。
+
+    Starlette 的 StaticFiles 默认不带 Cache-Control，浏览器按 Last-Modified
+    猜一个启发式保鲜期，旧版脚本会在缓存里活很久；加 no-cache 后普通刷新仍可能
+    命中内存缓存。本站是 127.0.0.1 本地服务，每次都回源的成本可以忽略，
+    换来「刷新即最新」，也杜绝「F5 丢功能、Ctrl+F5 才正常」这类假 bug。
     """
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        if response.status_code == 200:
-            response.headers["Cache-Control"] = "no-cache"
+        if response.status_code in (200, 304):
+            for name, value in NO_CACHE_HEADERS.items():
+                response.headers[name] = value
         return response
 
 # 走 uvicorn 自己的 logger：应用自建 logger 在没有 handler 时，INFO 记录会被
@@ -187,8 +198,8 @@ def create_app() -> FastAPI:
             settings.static_dir / "sw.js",
             media_type="application/javascript; charset=utf-8",
             headers={
+                **NO_CACHE_HEADERS,
                 "Service-Worker-Allowed": "/",
-                "Cache-Control": "no-cache",
             },
         )
 
@@ -197,17 +208,17 @@ def create_app() -> FastAPI:
         """根路径直达工作台（10.24 军令任务 1）：用户打开浏览器就该看到能干活的地方，
         底座介绍页移挂 /about，不丢失。"""
         return FileResponse(settings.static_dir / "workspace.html",
-                            headers={"Cache-Control": "no-cache"})
+                            headers=NO_CACHE_HEADERS)
 
     @app.get("/workspace", include_in_schema=False)
     async def read_workspace_page() -> FileResponse:
         return FileResponse(settings.static_dir / "workspace.html",
-                            headers={"Cache-Control": "no-cache"})
+                            headers=NO_CACHE_HEADERS)
 
     @app.get("/about", include_in_schema=False)
     async def read_about_page() -> FileResponse:
         return FileResponse(settings.static_dir / "index.html",
-                            headers={"Cache-Control": "no-cache"})
+                            headers=NO_CACHE_HEADERS)
 
     @app.get("/api/settings", summary="获取系统设置与令牌")
     async def get_settings() -> dict[str, str]:
@@ -221,7 +232,7 @@ def create_app() -> FastAPI:
     @app.get("/plugins", include_in_schema=False)
     async def read_plugins_page() -> FileResponse:
         return FileResponse(settings.static_dir / "plugins.html",
-                            headers={"Cache-Control": "no-cache"})
+                            headers=NO_CACHE_HEADERS)
 
     @app.get("/settings", include_in_schema=False)
     async def read_settings_page() -> FileResponse:
@@ -230,7 +241,7 @@ def create_app() -> FastAPI:
         工作台左栏只留入口与已装插件，齿轮入口直达这里（v0.5.4）。
         """
         return FileResponse(settings.static_dir / "settings.html",
-                            headers={"Cache-Control": "no-cache"})
+                            headers=NO_CACHE_HEADERS)
 
     @app.get("/plugins/index-example", include_in_schema=False)
     async def read_example_index() -> FileResponse:
