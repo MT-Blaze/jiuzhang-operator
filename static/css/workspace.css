@@ -5,10 +5,17 @@
 .ws-page {
   /* 变量是尺寸的唯一事实来源。折叠态只改这几个变量，绝不重述
      grid-template-columns —— 「属性说收起、轨道说展开」的两本账
-     正是 v0.4.2 折叠死锁的温床。 */
-  --sidebar-width: 240px;
-  --context-width: 300px;
-  --dock-height: 190px;
+     正是 v0.4.2 折叠死锁的温床。
+     尺寸分两层：*-size 是「用户偏好」，只有拖拽/恢复会写；
+     *-width / *-height 是「生效尺寸」，供栅格消费。折叠与沉浸只压第二层。
+     这样分层是因为 splitpane.js 用 style.setProperty 写的是元素内联声明，
+     内联优先级高于任何样式表，折叠规则压在同一个变量上必输（v0.11.x 回归根因）。 */
+  --sidebar-size: 240px;
+  --context-size: 300px;
+  --dock-size: 190px;
+  --sidebar-width: var(--sidebar-size);
+  --context-width: var(--context-size);
+  --dock-height: var(--dock-size);
   --gutter: 5px;
   --gutter-side: var(--gutter);
   --gutter-ctx: var(--gutter);

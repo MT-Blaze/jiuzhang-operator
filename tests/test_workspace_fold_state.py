@@ -84,9 +84,20 @@ class PaneTrackPinningTest(unittest.TestCase):
             body,
             r"grid-template-rows:\s*minmax\(0,\s*1fr\)\s+var\(--gutter-dock\)\s+var\(--dock-height\)",
         )
-        # 默认尺寸写死在唯一的基础规则里，拖拽脚本只改这三枚变量
-        for declaration in ("--sidebar-width: 240px", "--context-width: 300px", "--dock-height: 190px"):
+        # 默认尺寸写死在唯一的基础规则里，拖拽脚本只改三枚偏好变量；
+        # 生效尺寸由偏好尺寸映射而来，折叠压的是后者（见 test_04）。
+        for declaration in ("--sidebar-size: 240px", "--context-size: 300px", "--dock-size: 190px"):
             self.assertIn(declaration, body, f"缺少默认尺寸声明：{declaration}")
+        for effective, preference in (
+            ("--sidebar-width", "--sidebar-size"),
+            ("--context-width", "--context-size"),
+            ("--dock-height", "--dock-size"),
+        ):
+            self.assertRegex(
+                body,
+                re.escape(effective) + r":\s*var\(" + re.escape(preference) + r"\)",
+                f"{effective} 必须映射自 {preference}",
+            )
 
     def test_02_each_pane_pins_its_track(self) -> None:
         for selector, column in ((".ws-sidebar", 1), (".ws-center", 3), (".ws-context", 5)):
@@ -133,6 +144,13 @@ class PaneTrackPinningTest(unittest.TestCase):
             body = rule_body(selector)
             self.assertNotIn("grid-template-columns", body, f"{selector} 又重述了轨道表达式")
             self.assertRegex(body, re.escape(variable) + r":\s*0px")
+            # 折叠只压生效尺寸：偏好尺寸要是被压成 0，展开后就再也回不到用户拖出来的宽度了
+            preference = {
+                "--sidebar-width": "--sidebar-size",
+                "--context-width": "--context-size",
+                "--dock-height": "--dock-size",
+            }[variable]
+            self.assertNotIn(preference, body, f"{selector} 压了偏好尺寸 {preference}")
         self.assertIn("minmax(0, 1fr)", rule_body(".ws-page"), "中栏轨道必须恒为 minmax(0, 1fr)")
 
     def test_05_collapsed_pane_removes_its_handle(self) -> None:

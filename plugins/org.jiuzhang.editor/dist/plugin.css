@@ -158,6 +158,15 @@ body {
   background: var(--paper);
   border-bottom: 1px solid var(--line);
   flex: none;
+  /* 头部必须是三栏统一的单行：右栏最窄时标题会被挤成竖排两行，
+     头高从 32px 变成 50px，正文起点跟着下移、与另两栏的虚线错位。
+     标题不许收缩折行，提示文字自己走省略号。 */
+  overflow: hidden;
+}
+
+.ed-pane-head > span {
+  flex: none;
+  white-space: nowrap;
 }
 
 .ed-pane-head em {

@@ -27,7 +27,14 @@ JS = (STATIC / "js" / "splitpane.js").read_text(encoding="utf-8")
 BUS = (STATIC / "js" / "bus.js").read_text(encoding="utf-8")
 
 PANES = ("side", "context", "dock")
+# splitpane 只写「偏好尺寸」；生效尺寸（--sidebar-width 等）由 workspace.css 映射，
+# 折叠与沉浸压的是映射后的那层。两层分开，内联声明就压不过折叠规则。
 VARIABLES = {
+    "side": "--sidebar-size",
+    "context": "--context-size",
+    "dock": "--dock-size",
+}
+EFFECTIVE = {
     "side": "--sidebar-width",
     "context": "--context-width",
     "dock": "--dock-height",
@@ -116,12 +123,29 @@ class DragSafetyTest(unittest.TestCase):
 class VariableOnlyTest(unittest.TestCase):
     def test_01_only_css_variables_are_written(self) -> None:
         for pane, variable in VARIABLES.items():
-            self.assertIn(f'"{variable}"', JS, f"{pane} 没有对应的 CSS 变量")
+            self.assertIn(f'"{variable}"', JS, f"{pane} 没有对应的偏好尺寸变量")
         self.assertIn("style.setProperty", JS)
         # 直接写宽高就是第二本账：属性说 240、内联说 300，折叠与拖拽互相打脸
         self.assertNotRegex(JS, r"style\.(width|height|flexBasis)\s*=")
 
-    def test_02_sizes_are_clamped(self) -> None:
+    def test_02_splitpane_never_writes_effective_sizes(self) -> None:
+        """写生效尺寸会与折叠规则抢同一个变量，内联必胜，折叠后必留空轨。"""
+        for pane, variable in EFFECTIVE.items():
+            self.assertNotIn(
+                f'"{variable}"',
+                JS,
+                f"{pane} 直接写了生效尺寸 {variable}：折叠时会被内联声明压回去",
+            )
+
+    def test_03_effective_sizes_map_to_preferences(self) -> None:
+        for pane, variable in VARIABLES.items():
+            self.assertRegex(
+                CSS,
+                re.escape(EFFECTIVE[pane]) + r":\s*var\(" + re.escape(variable) + r"\)",
+                f"缺少 {EFFECTIVE[pane]} → {variable} 的映射",
+            )
+
+    def test_04_sizes_are_clamped(self) -> None:
         self.assertIn("function clamp(pane, value)", JS)
         for pane in PANES:
             block = re.search(
@@ -132,7 +156,7 @@ class VariableOnlyTest(unittest.TestCase):
             self.assertRegex(block.group(1), r"max:\s*\d+")
             self.assertRegex(block.group(1), r"fallback:\s*\d+")
 
-    def test_03_dock_cannot_eat_the_canvas(self) -> None:
+    def test_05_dock_cannot_eat_the_canvas(self) -> None:
         self.assertIn("page.clientHeight", JS, "底栏上限必须按视口实时算")
 
 

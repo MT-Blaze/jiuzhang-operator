@@ -1,9 +1,12 @@
 /**
  * SplitPane：四区边界的原生拖拽调尺寸（零第三方库）。
  *
- * 事实来源只有一个：`.ws-page` 上的三枚 CSS 变量
- *   --sidebar-width / --context-width / --dock-height
- * 拖拽只改变量，栅格轨道自己跟着走；折叠态也只改变量（见 workspace.css）。
+ * 事实来源只有一个：`.ws-page` 上的三枚偏好尺寸变量
+ *   --sidebar-size / --context-size / --dock-size
+ * 拖拽只写这三枚；栅格消费的是 --sidebar-width / --context-width / --dock-height，
+ * 由 workspace.css 映射自偏好尺寸。折叠与沉浸会把映射压成 0，偏好原样保留。
+ * 不能直接写生效变量：这里用的是元素内联声明，内联优先级高过任何样式表，
+ * 折叠规则压在同一个变量上必输——左栏折叠后仍留一条 320px 空轨就是这么来的。
  * 绝不在拖拽里往元素上补 width/height 内联样式——两本账是当年折叠死锁的温床。
  *
  * 暗坑（军令任务 1.4）：拖拽中必须让 iframe 交出指针事件。
@@ -22,7 +25,7 @@
 
   var PANES = {
     side: {
-      variable: "--sidebar-width",
+      variable: "--sidebar-size",
       resizer: "side",
       axis: "x",
       // 左栏在栅格最左侧：鼠标右移 = 变宽
@@ -34,7 +37,7 @@
       label: "左栏宽度"
     },
     context: {
-      variable: "--context-width",
+      variable: "--context-size",
       resizer: "context",
       axis: "x",
       // 右栏贴在右边界：鼠标左移 = 变宽
@@ -46,7 +49,7 @@
       label: "右栏宽度"
     },
     dock: {
-      variable: "--dock-height",
+      variable: "--dock-size",
       resizer: "dock",
       axis: "y",
       // 底栏贴在下边界：鼠标上移 = 变高
