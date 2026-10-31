@@ -98,6 +98,22 @@
       ],
       "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.chat",
       "min_host_version": "1.0.0"
+    },
+    {
+      "id": "org.jiuzhang.dashboard",
+      "name": "数据看板",
+      "version": "1.0.0",
+      "kind": "renderer",
+      "api_version": "1.0",
+      "description": "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达题库）。全部数据来自活跃题库的只读看板通道。需底座 v1.0.0 及以上。",
+      "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip",
+      "mirrors": [
+        "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip",
+        "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.dashboard.zip",
+        "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip"
+      ],
+      "homepage": "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.dashboard",
+      "min_host_version": "1.0.0"
     }
   ]
 }
