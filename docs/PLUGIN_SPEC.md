@@ -67,7 +67,7 @@ org.example.card.zip
 - **地址守卫**（`app/core/plugin_index.validate_index_url`）：只接受 `http` / `https`；必须有主机名；**拒绝携带用户名口令**；拒绝 `file:`、`data:` 与相对路径——即不发任何请求前先拒。单次拉取上限 512 KB、条目上限 200。
 - **容错口径**：单条写错只让那一条出局并给出可读原因（`rejected[]`），**不得**把整份清单判死；所有镜像都失败、非 JSON、版本不符一律返回 400 + 人话（附每一路的失败原因），不得 500。
 
-结构（JSON Schema 见 [`schemas/plugins-index.json`](schemas/plugins-index.json)，可运行样例见 [`examples/plugins-index.example.json`](examples/plugins-index.example.json)）：
+结构（JSON Schema 见 [`schemas/plugins-index.json`](../schemas/plugins-index.json)，可运行样例见 [`examples/plugins-index.example.json`](../examples/plugins-index.example.json)）：
 
 ```json
 {
@@ -234,7 +234,7 @@ interface DataSource {
 
 ### 2.3 UI 渲染插件（Renderer）：从零写一个能装上的插件
 
-本节写给第一次写插件的人：照着做，半小时能装上一个自己的插件。可运行的模板在 [`examples/template-plugin/`](examples/template-plugin/)，整目录照抄再改名最省事。
+本节写给第一次写插件的人：照着做，半小时能装上一个自己的插件。可运行的模板在 [`examples/template-plugin/`](../examples/template-plugin/)，整目录照抄再改名最省事。
 
 #### 2.3.1 五步装上一个自己的插件
 
@@ -322,7 +322,7 @@ com.example.card/
 
 > **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
 >
-> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.json`，一个题目数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
+> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.json`，一个题目数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](../schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
 
 **`ui` 字段（v0.5.5 右侧面板）**：形如 `{"title": "…", "hint": "…", "controls": [...]}`，控件总数 ≤8。
 - `select`：`{"type":"select","key":"grade","label":"年级","options":[{"value":"高一","label":"高一"}],"default":"高一"}`；`key` 匹配 `^[a-z][a-z0-9_]{0,15}$`，选项 ≤12，值与标签纯文本。当前值随对话 `context.ui.values` 注入模型，模型可用 `update_params` 代人切换——但人类手动改过的字段以人类为准。
@@ -482,7 +482,7 @@ com.example.card/
 - 声明了 `stage` 的插件默认占**一个页签**（按插件 id 去重，重复点击只是切回）；若清单写 `"singleton": false`，重复点击会开出 `插件名 #2`、`#3`，各页签拥有独立 iframe 与独立 `plugin.activate`；
 - 页签可关闭；关闭即停用并摘除 iframe。
 
-清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.json`](examples/demo_plugin/plugin.json)）：
+清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.json`](../examples/demo_plugin/plugin.json)）：
 
 ```json
 {
@@ -596,7 +596,7 @@ com.example.card/
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `bank.update` / `bank.delete` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【AI 清洗公式】按钮）。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【AI 清洗公式】按钮）。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 
@@ -661,9 +661,9 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 ### 2.8 AI 开发铁律与第三方插件模板（2026-10-23 军令 #06）
 
 第三方老师将普遍用 AI 代写插件。为让 AI 一次生成**不破坏底座架构**的代码，本节把插件契约压成
-五条可逐字转述给大模型的**铁律**，并提供极简模板 [`examples/template-plugin/`](examples/template-plugin/)
+五条可逐字转述给大模型的**铁律**，并提供极简模板 [`examples/template-plugin/`](../examples/template-plugin/)
 （打包产物 `examples/template-plugin.zip`，重打包脚本 `examples/build_template_plugin.py`）。
-可直接复制给任何大模型的完整提示词见 [README.md「如何用 AI 开发九章算子插件？」](README.md)。
+可直接复制给任何大模型的完整提示词见 [README.md「如何用 AI 开发九章算子插件？」](../README.md)。
 
 | # | 铁律 | 契约依据 |
 | --- | --- | --- |
@@ -697,7 +697,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 
-右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)。
+右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)。
 它不再是「底座自带副驾 + 插件来抢」的关系：AI 助手自己就是一只普通插件（§2.10），和画布上的插件众生平等，
 右栏只是它当前的落脚点。业务插件声明 `"slots": ["sidebar.right"]` 后，**只有当它自己是当前画布页签时**
 才暂时接管右栏；切走该页签，右栏立刻归还助手插件——**没有插件认领时插槽不隐藏**，兜底是一块可读说明，
@@ -734,7 +734,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 ### 2.10 AI 助手插件的权限边界（2026-10-24 军令 #15，长期铁律）
 
-「右侧对话框」不是底座的一部分，它是 [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)
+「右侧对话框」不是底座的一部分，它是 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)
 这只普通插件：不透明源沙箱 iframe、`jzo-plugin/1` 协议、没有 DOM 特权、没有库连接、没有令牌。
 本节钉死四条，任何实现与本文冲突时以本文为准。
 
@@ -915,7 +915,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 - **深休眠名额只数 heavy**：轻量页签再多也不挤占重型页签的存活名额，反之亦然；
 - 权重由插件自己声明，底座不替插件判断；声明 `light` 就要负责在收到 `plugin.suspend` 时真的把定时器、
   轮询、`requestAnimationFrame` 循环收掉，否则浅休眠形同虚设。收/唤醒的往返样板见取证夹具
-  [`examples/stage_weight_probe_plugin/`](examples/stage_weight_probe_plugin/)（它把收到的原话经 `region.dock` 带回底栏）。
+  [`examples/stage_weight_probe_plugin/`](../examples/stage_weight_probe_plugin/)（它把收到的原话经 `region.dock` 带回底栏）。
 
 **5）不许扩到插件侧的事。** 沉浸、分组、横滚都是宿主壳的 DOM 手势，插件不得反向请求「把本页签设为全屏」
 「把我归进某组」——目前没有这类 Host API，也不许新增（AGENTS §2：底座只做鉴权、导航、总线、生命周期）。
@@ -1092,7 +1092,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
    且目标插件没有执行痕迹；点「允许」才正常执行；
 6. 打开「设置与控制 → 插件 → 管理与控制」，底部字典表里能看到自己的命令与「需确认」标记。
 
-完整可跑样板见 [`examples/template-plugin/`](examples/template-plugin/)（声明 `org.example.template.echo`
+完整可跑样板见 [`examples/template-plugin/`](../examples/template-plugin/)（声明 `org.example.template.echo`
 并实现 `command.execute` 分支；页面里自带「查能力字典」「调度示例命令」两个调用方按钮）。
 
 
@@ -1521,8 +1521,8 @@ result 序列化后必须 ≤65536 字节（超了回 COMMAND_RESULT_TOO_LARGE�
 
 ### 8.2 模板改三处就能变成自己的插件
 
-模板源码在 [`examples/template-plugin/`](examples/template-plugin/)，同一内容的成品包是
-[`examples/template-plugin.zip`](examples/template-plugin.zip)（重打：`.venv/Scripts/python.exe examples/build_template_plugin.py`）。
+模板源码在 [`examples/template-plugin/`](../examples/template-plugin/)，同一内容的成品包是
+[`examples/template-plugin.zip`](../examples/template-plugin.zip)（重打：`.venv/Scripts/python.exe examples/build_template_plugin.py`）。
 
 1. `plugin.json` 的 `id` / `name` / `version`——**解压出来的目录名必须与 `id` 一字不差**，否则拒装。
 2. `dist/plugin.js` 顶部的 `var PLUGIN_ID = "org.example.template";` 改成自己的 `id`。

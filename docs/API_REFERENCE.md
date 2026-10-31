@@ -467,7 +467,7 @@ payload = { command_id, context, from, trace }
 
 `POST /api/agent/clean_latex`（军令 #21 任务四）是这条通道里唯一不进模型的接口：
 `{"text": "≤20000 字"}` → `{type:"complete", data:{text, changed, rules[], options[]}, task_id, mock:false}`。
-规则实现只有 [`app/core/question_parser.py`](app/core/question_parser.py) 的 `clean_dirty_latex` 一处
+规则实现只有 [`app/core/question_parser.py`](../app/core/question_parser.py) 的 `clean_dirty_latex` 一处
 （`\(...\)` / `\[...\]` 定界符、`\dfrac` 等记号、`\displaystyle`、`\fillin`→`＿＿＿＿`、
 `\textbf`/`\textit`/`\emph`→Markdown 强调、`itemize`/`enumerate` 列表、`\begin{choices}`→结构化选项），
 同一段输入永远得到同一段输出。插件经宿主 `text.clean_latex` 调用（见 PLUGIN_SPEC §2.17），

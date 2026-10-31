@@ -430,7 +430,7 @@
 > `sidebar_slot_probe` 崩在等 `#wsContextSlotBody` 里的 iframe。下一棒先重锚这三只探针，别当底座回归查。
 
 > **军令 #15（2026-10-24）AI 助手插件化与权限边界重构**：右侧对话框从宿主壳里整体搬出，
-> 落为普通插件 [`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`、
+> 落为普通插件 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`、
 > `capabilities: ["assistant.chat"]`、`permissions: ["ai:invoke"]`）；四项任务全部落地，决策记录见 ADR-009
 > （声明取代 ADR-002 第 4 条）。要点：① AI 的每一次动手都是 Host API 请求（`AI_ONLY_METHODS` 七条 +
 > 清单授权守卫），插件侧 `fetch`/`parent.document`/`localStorage` 命中为 0；② `trigger_button` 通道从
@@ -934,7 +934,7 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 ### ADR-009：AI 助手降格为普通插件——权限只有 API 一条路（主公 2026-10-24 军令 #15 定调）
 
 **决策**：右侧对话框不再是底座的一部分，它是一只普通 UI 插件
-[`org.jiuzhang.chat`](plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`，
+[`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`，
 `capabilities: ["assistant.chat"]`，`permissions: ["ai:invoke"]`），与画布上的插件**众生平等**。
 本决策**声明取代 ADR-002 第 4 条**：AI 副驾不住在底座托管的右栏里，它自己就是右栏的住户。
 
