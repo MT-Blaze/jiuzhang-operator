@@ -141,6 +141,35 @@
       </div>
     </section>
 
+    <section class="ep-sec" aria-label="AI 帮改">
+      <h3 class="ep-sec-title">AI 帮改（先预览，点采用才替换）</h3>
+      <p id="epAiField" class="ep-hint" data-ai-field="">把光标放进题干段或解析段，AI 才知道要改哪一段。</p>
+      <label class="ep-field">
+        <span class="ep-label">指令</span>
+        <textarea id="epAiAsk" class="ep-input ep-ask" rows="3" maxlength="400"
+                  placeholder="例：把「求其最小值」改成「求最小值，并写出取等条件」"></textarea>
+      </label>
+      <div class="ep-actions">
+        <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
+                aria-disabled="true">发送改写请求</button>
+        <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
+                title="题干段与解析段都清洗成功才回填，任一失败就不动">AI 清洗公式</button>
+      </div>
+      <div class="ep-ai">
+        <div class="ep-ai-head">
+          <span id="epAiState" class="ep-badge" data-ai-state="idle">未发起</span>
+          <span id="epAiNote" class="ep-hint" data-ai-mock=""></span>
+        </div>
+        <p id="epAiPreview" class="ep-ai-body" role="status" aria-live="polite"
+           data-ai-field="">改写结果会出现在这里，点【采用】才会替换画布源码。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn ep-btn-primary" id="epAiApply" disabled
+                  aria-disabled="true">采用并回填画布</button>
+          <button type="button" class="ep-btn" id="epAiDiscard" disabled aria-disabled="true">放弃</button>
+        </div>
+      </div>
+    </section>
+
     <section class="ep-sec">
       <h3 class="ep-sec-title">审核动作</h3>
       <div class="ep-actions">

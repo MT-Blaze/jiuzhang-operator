@@ -19,6 +19,8 @@
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.jiuzhang.editor";
   var REQUEST_TIMEOUT_MS = 20000;
+  // 宿主给模型的额度是 60s（stage.js 的 AGENT_TIMEOUT_MS），插件按 20s 等会把慢回答误报成失败
+  var AI_REQUEST_TIMEOUT_MS = 65000;
   var RENDER_DEBOUNCE_MS = 120;
   var LAYOUT_DRAFT_MS = 400;
   var WORKLIST_DRAFT_MS = 600;
@@ -43,10 +45,16 @@
   };
   var DIFFICULTY_VALUES = ["L1", "L2", "L3", "L4"];
   var FORMATS = { latex: true, boxed: true };
+  var AI_STATE_LABELS = {
+    idle: "未发起", sending: "等模型回话", cleaning: "清洗中",
+    ready: "待老师裁决", error: "改写失败"
+  };
   var STEM_MAX = 50000;
   var FIELD_MAX = 20000;
   var TOPIC_LIMIT = 8;
   var TAG_LIMIT = 32;
+  // 宿主 stage.js 对 instruction 的截断额度就是 400，面板先按同一个数拦，别让老师的长指令被悄悄切尾
+  var AI_ASK_MAX = 400;
 
   var root = document.getElementById("edRoot");
   var colsEl = document.getElementById("edCols");
@@ -84,6 +92,15 @@
   var panelVariantEl = document.getElementById("epVariant");
   var panelMessageEl = document.getElementById("epMessage");
   var panelMetricsEl = document.getElementById("epMetrics");
+  var panelAiFieldEl = document.getElementById("epAiField");
+  var panelAiAskEl = document.getElementById("epAiAsk");
+  var panelAiSendEl = document.getElementById("epAiSend");
+  var panelAiCleanEl = document.getElementById("epAiClean");
+  var panelAiStateEl = document.getElementById("epAiState");
+  var panelAiNoteEl = document.getElementById("epAiNote");
+  var panelAiPreviewEl = document.getElementById("epAiPreview");
+  var panelAiApplyEl = document.getElementById("epAiApply");
+  var panelAiDiscardEl = document.getElementById("epAiDiscard");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -118,18 +135,20 @@
     receipts: [],
     format: "latex",
     topics: { roots: null, children: {}, open: {}, loading: {} },
-    saving: false
+    saving: false,
+    ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false }
   };
 
   // ---------- 宿主通信 ----------
-  function hostCall(method, payload) {
+  function hostCall(method, payload, timeoutMs) {
     return new Promise(function (resolve, reject) {
       requestSeq += 1;
       var id = "edv2" + requestSeq + "-" + Date.now().toString(36);
+      var limit = Number(timeoutMs) > 0 ? Number(timeoutMs) : REQUEST_TIMEOUT_MS;
       var timer = window.setTimeout(function () {
         pending.delete(id);
-        reject(new Error("宿主响应超时（" + Math.round(REQUEST_TIMEOUT_MS / 1000) + "s）"));
-      }, REQUEST_TIMEOUT_MS);
+        reject(new Error("宿主响应超时（" + Math.round(limit / 1000) + "s）"));
+      }, limit);
       pending.set(id, {
         resolve: function (result) { window.clearTimeout(timer); resolve(result); },
         reject: function (error) { window.clearTimeout(timer); reject(error); }
@@ -495,6 +514,82 @@
     return { text: next, touched: touched };
   }
 
+  // ---------- AI 帮改（档 1）：只动题干段/解析段的正文，环境骨架一律不碰 ----------
+  /** matchEnv 的偏移版：回填要知道「段落在整段源码的第几个字」，光有正文不够。 */
+  function envSpan(text, name, from) {
+    var begin = "\\begin{" + name + "}";
+    var endTag = "\\end{" + name + "}";
+    var start = text.indexOf(begin, Number(from) || 0);
+    if (start < 0) return null;
+    var bodyAt = start + begin.length;
+    var stop = text.indexOf(endTag, bodyAt);
+    if (stop < 0) return null;
+    return { beginAt: start, bodyAt: bodyAt, bodyEnd: stop, endAt: stop + endTag.length };
+  }
+
+  /**
+   * 题干段 = 题干环境正文里、choices 之前的那一段；
+   * 解析段 = solution 正文里、「答案：」首行之后的那一段。
+   * 这两段就是 AI 与清洗的全部活动范围—— choices 与答案行由格式宪法锁死。
+   */
+  function fieldRanges(src) {
+    var text = String(src == null ? "" : src).replace(/\r\n/g, "\n");
+    var stem = envSpan(text, "question") || envSpan(text, "problem");
+    var solution = envSpan(text, "solution");
+    var out = { stem: null, solution: null };
+    if (stem) {
+      var choices = envSpan(text, "choices", stem.bodyAt);
+      var stemEnd = choices && choices.beginAt < stem.bodyEnd ? choices.beginAt : stem.bodyEnd;
+      out.stem = { start: stem.bodyAt, end: stemEnd };
+    }
+    if (solution) {
+      var body = text.slice(solution.bodyAt, solution.bodyEnd);
+      var answerLine = /^[ \t]*答案\s*[:：][^\n]*\n?/.exec(body);
+      out.solution = {
+        start: solution.bodyAt + (answerLine ? answerLine[0].length : 0),
+        end: solution.bodyEnd
+      };
+    }
+    return out;
+  }
+
+  function fieldLabel(field) { return field === "solution" ? "解析" : "题干"; }
+
+  /** 光标/选区落在哪一段：choices、答案行与环境名之外一律不算可改字段，如实回 null。 */
+  function fieldAtOffset(src, offset) {
+    var ranges = fieldRanges(src);
+    var position = Math.max(0, Number(offset) || 0);
+    if (ranges.solution && position >= ranges.solution.start && position <= ranges.solution.end) {
+      return "solution";
+    }
+    if (ranges.stem && position >= ranges.stem.start && position <= ranges.stem.end) {
+      return "stem";
+    }
+    return "";
+  }
+
+  function replaceField(src, field, value) {
+    var text = String(src == null ? "" : src);
+    var range = fieldRanges(text)[field === "solution" ? "solution" : "stem"];
+    if (!range) {
+      return { ok: false, message: "源码里找不到" + fieldLabel(field) + "段：先在格式一补上对应环境" };
+    }
+    if (String(value == null ? "" : value).length > FIELD_MAX) {
+      return { ok: false, message: fieldLabel(field) + "改写超出 " + FIELD_MAX + " 字上限，未回填" };
+    }
+    var body = String(value == null ? "" : value).trim();
+    return { ok: true, text: text.slice(0, range.start) + "\n" + body + "\n" + text.slice(range.end) };
+  }
+
+  /** 目标题的键要编进回填请求 id 里：宿主的 editor.apply_patch 只带 {id, field, value}。 */
+  function patchIdFor(key) {
+    return ("ai1-" + String(key == null ? "" : key).replace(/[^A-Za-z0-9_-]/g, "-")).slice(0, 80);
+  }
+
+  function keyFromPatchId(id) {
+    return String(id == null ? "" : id).indexOf("ai1-") === 0 ? String(id).slice(4) : "";
+  }
+
   // ---------- 假数据（与 dev/fixtures.json 同一份；沙箱 CSP connect-src none，只能内嵌） ----------
   //# FIXTURES-BEGIN
   var DEV_FIXTURES = [
@@ -677,6 +772,10 @@
     area.addEventListener("input", function () {
       onSourceInput(index, area.value);
     });
+    // 选区也要上桥：AI 帮改靠光标落在哪一段来认字段，只发源码不够
+    ["click", "keyup", "select"].forEach(function (type) {
+      area.addEventListener(type, publishSelectionSoon);
+    });
     cell.appendChild(area);
     return cell;
   }
@@ -708,6 +807,11 @@
     node.addEventListener("input", function () {
       onBoxInput(index, field, pos, node.value);
     });
+    if (field === "stem" || field === "solution") {
+      ["click", "keyup", "select"].forEach(function (type) {
+        node.addEventListener(type, publishSelectionSoon);
+      });
+    }
     wrap.appendChild(node);
     cell.appendChild(wrap);
     return node;
@@ -993,6 +1097,59 @@
     renderTimer = window.setTimeout(renderAll, RENDER_DEBOUNCE_MS);
   }
 
+  /** 把回填后的源码写回中栏：格式一改 textarea 的值并把光标停在段末，格式二整格重建（框本就从源码拆出来）。 */
+  function writeBackSourceText(item, index, field) {
+    var area = state.format === "boxed" ? null
+      : sourceBodyEl.querySelector('.ed-src-area[data-index="' + index + '"]');
+    if (!area) {
+      renderAll();
+      return;
+    }
+    area.value = item.source;
+    growTextarea(area);
+    var range = fieldRanges(item.source)[field === "solution" ? "solution" : "stem"];
+    if (range && document.activeElement === area) {
+      // 光标停在改写段末尾：老师接着看结果，不必自己找位置
+      area.setSelectionRange(range.end, range.end);
+    }
+  }
+
+  /**
+   * 辅助栏点了【采用】才有这条通知。只替换题干段/解析段的正文，
+   * 目标题认不出来、段找不到、内容超长都如实拒绝——绝不用半截改写覆盖老师的源码。
+   */
+  function applyAiPatch(payload) {
+    var raw = payload && payload.raw ? payload.raw : payload;
+    var field = raw && (raw.field === "solution" || raw.field === "stem") ? raw.field : "";
+    var value = String((raw && raw.value) || "");
+    if (!field || !value.trim()) {
+      toast("AI 回填缺字段或内容为空，源码没动", "error");
+      return false;
+    }
+    var item = state.items[state.active];
+    if (!item) {
+      toast("画布当前没有题目可回填", "error");
+      return false;
+    }
+    var wanted = keyFromPatchId(raw.id);
+    if (wanted && wanted !== String(item.key).replace(/[^A-Za-z0-9_-]/g, "-")) {
+      toast("AI 回填的目标不是当前题，源码没动", "error");
+      return false;
+    }
+    var outcome = replaceField(item.source, field, value);
+    if (!outcome.ok) {
+      toast(outcome.message, "error");
+      return false;
+    }
+    item.source = outcome.text;
+    item.dirty = true;
+    markDirty();
+    writeBackSourceText(item, state.active, field);
+    refreshRow(state.active);
+    toast("已采用 AI 改写的" + fieldLabel(field) + "，还没保存", "ok");
+    return true;
+  }
+
   // ---------- 当前题上桥（画布 → 辅助栏：唯一的合法通道是 stage.selection） ----------
   /** 元数据默认值：从真题结构里摘出辅助栏表单要预填的那一小组字段。 */
   function defaultsOf(item) {
@@ -1014,6 +1171,31 @@
     };
   }
 
+  /**
+   * 老师当前题里的光标位置 → AI 能改哪个字段。
+   * 格式一按源码偏移判定（choices 与「答案：」行都判不出字段，档 1 只吃题干/解析）；
+   * 格式二直接看框的语义字段，框头环境名本来就锁死，不必再算偏移。
+   */
+  function caretOfActive() {
+    var item = state.items[state.active];
+    if (!item) return null;
+    var node = document.activeElement;
+    if (!node || !node.getAttribute || !("selectionStart" in node)) return null;
+    if (node.getAttribute("data-index") !== String(state.active)) return null;
+    var boxField = node.getAttribute("data-field");
+    var start = Number(node.selectionStart) || 0;
+    var end = Number(node.selectionEnd) || 0;
+    var picked = String(node.value || "").slice(Math.min(start, end), Math.max(start, end));
+    var field = "";
+    if (boxField === "source") field = fieldAtOffset(item.source, end || start);
+    else if (boxField === "stem" || boxField === "solution") field = boxField;
+    return {
+      field: field,
+      has_selection: end > start,
+      text: trunc(picked, 160)
+    };
+  }
+
   function selectionPayload() {
     var item = state.items[state.active];
     if (!item) return null;
@@ -1029,6 +1211,7 @@
       dirty: Boolean(item.dirty),
       format: state.format,
       source: trunc(item.source, FIELD_MAX),
+      caret: caretOfActive(),
       errors: parsed.errors.slice(0, 8),
       ai_type: parsed.type,
       confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
@@ -1666,6 +1849,10 @@
       // 换题前把老师正在填的这一半按旧题的键存回草稿，别让表单跟着题号一起漂
       panel.meta[previous.key] = Object.assign(panel.meta[previous.key] || defaultEntry(previous), readForm());
       queueMetaSave();
+      // 预览中的改写属于上一道题：换题即失效，不许糊到新题上
+      if (panel.ai.key && panel.ai.key !== sel.key && panel.ai.state !== "sending" && panel.ai.state !== "cleaning") {
+        aiClear("换题了：上一题的改写已作废。");
+      }
     }
     panel.selection = sel;
     panel.source = String(sel.source || "");
@@ -1702,6 +1889,7 @@
     renderTypeNote();
     renderMounted();
     renderPanelMetrics();
+    renderAi();
     if (panelSelectionError()) {
       panelSay(panelSelectionError(), "error", "invalid");
     } else if (panelSaveEl && panelSaveEl.getAttribute("aria-busy") !== "true") {
@@ -1817,6 +2005,251 @@
         panelSaveEl.disabled = false;
         panelSaveEl.removeAttribute("aria-busy");
       }
+    });
+  }
+
+  // ---------- 辅助栏 AI 帮改（档 1）：预览归面板，替换归老师那一下点击 ----------
+  function setEpEnabled(node, enabled) {
+    if (!node) return;
+    if (enabled) {
+      node.disabled = false;
+      node.removeAttribute("aria-disabled");
+    } else {
+      node.disabled = true;
+      node.setAttribute("aria-disabled", "true");
+    }
+  }
+
+  function aiClear(note) {
+    panel.ai = { state: "idle", field: "", key: "", value: "", note: note || "", mock: false, busy: false };
+    renderAi();
+  }
+
+  /**
+   * 面板 AI 区唯一的出口：可用性与话术全部从 panel.ai + 当前选区算出来。
+   * 预览正文只走 textContent——模型回什么都不许被当成 DOM 结构解析（AGENTS §5）。
+   */
+  function renderAi() {
+    var caret = (panel.selection && panel.selection.caret) || null;
+    var field = caret && caret.field ? caret.field : "";
+    if (panelAiFieldEl) {
+      var hint;
+      if (!panel.selection) hint = "辅助栏还没收到当前题的源码。";
+      else if (!field) hint = "把光标放进题干段或解析段，AI 才知道要改哪一段——选项与「答案：」行由格式宪法锁死，改不到。";
+      else hint = "改写字段：" + fieldLabel(field)
+        + (caret.has_selection ? "（已选中 " + String(caret.text || "").length + " 字，改写整段）" : "（改写整段）");
+      panelAiFieldEl.textContent = hint;
+      panelAiFieldEl.setAttribute("data-ai-field", field);
+    }
+    if (panelAiStateEl) {
+      panelAiStateEl.textContent = AI_STATE_LABELS[panel.ai.state] || panel.ai.state;
+      panelAiStateEl.setAttribute("data-ai-state", panel.ai.state);
+    }
+    if (panelAiNoteEl) {
+      panelAiNoteEl.textContent = panel.ai.note;
+      panelAiNoteEl.setAttribute("data-ai-mock", panel.ai.mock ? "true" : "");
+    }
+    if (panelAiPreviewEl) {
+      panelAiPreviewEl.textContent = panel.ai.value
+        || "改写结果会出现在这里，点【采用】才会替换画布源码。";
+      panelAiPreviewEl.setAttribute("data-ai-field", panel.ai.field);
+      panelAiPreviewEl.setAttribute("data-ai-value", panel.ai.value ? "ready" : "empty");
+    }
+    var ask = panelAiAskEl ? String(panelAiAskEl.value || "").trim() : "";
+    var idle = !panel.ai.busy;
+    setEpEnabled(panelAiSendEl, Boolean(field && ask) && panel.ai.state !== "cleaning" && idle);
+    setEpEnabled(panelAiCleanEl, Boolean(panel.selection) && panel.ai.state !== "sending" && idle);
+    // 【采用】只在「待老师裁决」时亮：模型一回答完就自动覆盖老师源码，是档 1 的红线
+    setEpEnabled(panelAiApplyEl, panel.ai.state === "ready" && Boolean(panel.ai.field && panel.ai.value) && idle);
+    setEpEnabled(panelAiDiscardEl, panel.ai.state !== "idle" && panel.ai.state !== "sending" && idle);
+    [panelAiSendEl, panelAiCleanEl, panelAiApplyEl].forEach(function (node) {
+      if (!node) return;
+      if (panel.ai.busy) node.setAttribute("aria-busy", "true");
+      else node.removeAttribute("aria-busy");
+    });
+  }
+
+  /**
+   * 交给模型的上下文只取契约里看得见的正文与难度，绝不带 extensions、题号以外的身份、更不带令牌——
+   * 底座 build_refine_user_message 也只做同样的取舍，两头都别把私有数据喂出去。
+   */
+  function refineContext(source, field, original) {
+    var parsed = parseExamSource(String(source || ""));
+    var entry = panel.currentEntry || {};
+    var question = {
+      type: entry.type || parsed.type || "",
+      difficulty: entry.difficulty || "L1",
+      stem: parsed.stem || "",
+      answer: parsed.answer || "",
+      solution: parsed.analysis || "",
+      options: parsed.choices.map(function (content, position) {
+        return { key: OPTION_KEYS[position] || "A", content: String(content == null ? "" : content) };
+      })
+    };
+    question[field] = original;
+    return question;
+  }
+
+  function segmentOf(source, field) {
+    var range = fieldRanges(source)[field === "solution" ? "solution" : "stem"];
+    if (!range) return "";
+    return String(source || "").slice(range.start, range.end).trim();
+  }
+
+  function onAiSend() {
+    var item = panelItem();
+    var caret = (panel.selection && panel.selection.caret) || null;
+    if (!item || !caret || !caret.field) {
+      panelSay("先把光标放进题干段或解析段，AI 才知道改哪一段。", "warn", "idle");
+      return;
+    }
+    if (panel.ai.busy) return;
+    var ask = panelAiAskEl ? String(panelAiAskEl.value || "").trim() : "";
+    if (!ask) {
+      panelSay("指令是空的：说一句要怎么改，再点发送。", "warn", "idle");
+      return;
+    }
+    var original = segmentOf(item.source, caret.field);
+    if (!original) {
+      panelSay("源码里找不到" + fieldLabel(caret.field) + "段的正文：切到格式一补上环境骨架再试。", "error", "invalid");
+      return;
+    }
+    panel.ai = {
+      state: "sending", field: caret.field, key: item.key, value: "", note: "", mock: false, busy: true
+    };
+    renderAi();
+    panelSay("改写请求已发出，最长等 " + Math.round(AI_REQUEST_TIMEOUT_MS / 1000) + " 秒…", "info", "sending");
+    hostCall("agent.refine", {
+      instruction: ask.slice(0, AI_ASK_MAX),
+      question: refineContext(item.source, caret.field, original),
+      field: caret.field,
+      task_id: patchIdFor(item.key).slice(0, 60)
+    }, AI_REQUEST_TIMEOUT_MS).then(function (result) {
+      panel.ai.busy = false;
+      var value = String((result && result.value) || "").trim();
+      if (!result || result.ok === false || !value) {
+        panel.ai.state = "error";
+        panel.ai.note = "模型没给回可采用的正文"
+          + ((result && result.note) ? "：" + trunc(result.note, 120) : "；没配 Provider 时底座只会原样回显。");
+        renderAi();
+        panelSay("改写失败，画布源码没动。", "error", "failed");
+        return;
+      }
+      panel.ai.state = "ready";
+      panel.ai.field = result.field === "solution" ? "solution" : caret.field;
+      panel.ai.value = trunc(value, FIELD_MAX);
+      // 宿主摊平时把 mock 标记丢了：原文与新文逐字相同，就是回显而不是改写，别装作模型改过
+      panel.ai.mock = panel.ai.value === original;
+      panel.ai.note = panel.ai.mock
+        ? "内容与原文逐字相同，多半是回显（本机还没配 Provider）。"
+        : trunc(result.note || "", 120);
+      renderAi();
+      panelSay("改写结果已就绪，看过预览再点【采用】。", "ok", "ready");
+    }, function (error) {
+      panel.ai.busy = false;
+      panel.ai.state = "error";
+      panel.ai.note = explainHostError(error);
+      renderAi();
+      panelSay("改写请求没走通：" + explainHostError(error), "error", "failed");
+    });
+  }
+
+  /** 采用：面板只发请求，替换由画布执行；两步之间不许把「已发出」说成「已改好」。 */
+  function onAiApply() {
+    if (panel.ai.state !== "ready" || !panel.ai.field || !panel.ai.value) return;
+    var item = panelItem();
+    if (!item) {
+      panelSay("辅助栏没收到当前题了，回画布点一下那道题再采用。", "warn", "idle");
+      return;
+    }
+    if (item.key !== panel.ai.key) {
+      panelSay("当前题已经换成「" + item.key + "」，这份改写属于「" + panel.ai.key + "」，没有回填。", "error", "failed");
+      return;
+    }
+    panel.ai.busy = true;
+    renderAi();
+    hostCall("editor.apply_patch", {
+      id: patchIdFor(panel.ai.key), field: panel.ai.field, value: panel.ai.value
+    }).then(function () {
+      panel.ai.busy = false;
+      panelSay("改写已发给画布的" + fieldLabel(panel.ai.field) + "段——替换结果看中栏提示，保存才入库。", "info", "sent");
+    }, function (error) {
+      panel.ai.busy = false;
+      renderAi();
+      panelSay("回填请求没送到画布：" + explainHostError(error), "error", "failed");
+    });
+  }
+
+  function onAiDiscard() {
+    var ask = panelAiAskEl ? panelAiAskEl.value : "";
+    panel.ai = { state: "idle", field: "", key: "", value: "", note: "已放弃这次改写。", mock: false, busy: false };
+    renderAi();
+    if (panelAiAskEl) panelAiAskEl.value = ask;
+    panelSay("已放弃这次改写，画布源码没动。", "info", "idle");
+  }
+
+  /** 题干段与解析段并发清洗，Promise.all 全成功才逐段回填；任一失败就一个字都不动。 */
+  function cleanViaHost() {
+    var item = panelItem();
+    if (!item) {
+      panelSay("辅助栏还没收到当前题的源码，等画布发一次选区。", "warn", "idle");
+      return;
+    }
+    if (panel.ai.busy) return;
+    var jobs = ["stem", "solution"].reduce(function (acc, field) {
+      var body = segmentOf(item.source, field);
+      if (body) acc.push({ field: field, text: body });
+      return acc;
+    }, []);
+    if (!jobs.length) {
+      panelSay("源码里没有可清洗的题干段或解析段。", "warn", "idle");
+      return;
+    }
+    panel.ai = { state: "cleaning", field: "", key: item.key, value: "", note: "", mock: false, busy: true };
+    renderAi();
+    Promise.all(jobs.map(function (job) {
+      return hostCall("text.clean_latex", { text: job.text });
+    })).then(function (results) {
+      var patches = jobs.map(function (job, index) {
+        var result = results[index] || {};
+        return {
+          field: job.field,
+          text: String(result.text || "").trim(),
+          changed: Boolean(result.changed),
+          ok: result.ok !== false && String(result.text || "").trim().length > 0
+        };
+      });
+      var unusable = patches.filter(function (patch) { return !patch.ok; });
+      if (unusable.length) {
+        panel.ai.busy = false;
+        panel.ai.state = "error";
+        panel.ai.note = "有段落没清洗出正文（" + unusable.map(function (p) { return fieldLabel(p.field); }).join("、") + "），源码保持原样。";
+        renderAi();
+        panelSay("清洗中止，画布源码没动。", "error", "failed");
+        return;
+      }
+      var changedCount = patches.filter(function (patch) { return patch.changed; }).length;
+      var chain = Promise.resolve();
+      patches.forEach(function (patch) {
+        chain = chain.then(function () {
+          return hostCall("editor.apply_patch", {
+            id: patchIdFor(item.key), field: patch.field, value: patch.text
+          });
+        });
+      });
+      return chain.then(function () { return changedCount; });
+    }).then(function (changedCount) {
+      panel.ai.busy = false;
+      panel.ai.state = "idle";
+      panel.ai.note = changedCount ? "已清洗 " + changedCount + " 段，画布源码待保存。" : "两段都符合规范，没有改动。";
+      renderAi();
+      panelSay(panel.ai.note, "ok", "cleaned");
+    }, function (error) {
+      panel.ai.busy = false;
+      panel.ai.state = "error";
+      panel.ai.note = "清洗失败：" + explainHostError(error) + "，源码保持原样。";
+      renderAi();
+      panelSay("清洗失败，画布源码没动。", "error", "failed");
     });
   }
 
@@ -1970,6 +2403,12 @@
     }
     if (panelSaveEl) panelSaveEl.addEventListener("click", function () { onPanelSave("save"); });
     if (panelVariantEl) panelVariantEl.addEventListener("click", function () { onPanelSave("variant"); });
+    if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);
+    if (panelAiSendEl) panelAiSendEl.addEventListener("click", onAiSend);
+    if (panelAiCleanEl) panelAiCleanEl.addEventListener("click", cleanViaHost);
+    if (panelAiApplyEl) panelAiApplyEl.addEventListener("click", onAiApply);
+    if (panelAiDiscardEl) panelAiDiscardEl.addEventListener("click", onAiDiscard);
+    renderAi();
     setFormatButtons("latex");
     loadMetaDraft().then(function () {
       return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY });
@@ -2011,7 +2450,8 @@
         return;
       }
       if (message.event === "editor.apply_patch") {
-        toast("AI 回填将在军令 #23 阶段 3（档 1 帮改）接入，本次未改动源码", "info");
+        // 面板自己发的回填会广播回所有帧：只有画布动手改源码，面板一律静默
+        if (state.slot === "stage.center") applyAiPatch(message.payload);
         return;
       }
       if (message.event === "ui.params.changed") {

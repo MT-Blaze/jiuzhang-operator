@@ -79,32 +79,43 @@ class CleanLatexRelayContractTest(unittest.TestCase):
 
 
 class EditorAiCleanerTest(unittest.TestCase):
-    """军令 #23 阶段 1 重写录题界面：画布只留三栏，AI 清洗按钮随表单一起退场。
+    """军令 #23 阶段 3：【AI 清洗公式】搬到辅助栏，走宿主 text.clean_latex 回填画布。
 
-    这两条判据钉的是「画布上有 AI 清洗公式按钮 + cleanViaHost 回填」这套旧实现，
-    v2 里 AI 帮改（档 1）改到辅助栏、随阶段 3 重新取证，届时按新契约重写判据。
-    宿主侧的 text.clean_latex 转发契约（上面的 CleanLatexRelayContractTest）不受影响。
+    钉四件事：按钮在辅助栏（不在画布）、真的调宿主通道而不是再抄一份规则、
+    题干段与解析段全成功才回填、请求中按钮标 aria-busy（AGENTS §6）。
     """
 
-    @unittest.skip("军令 #23 阶段 1：画布 AI 清洗按钮已随旧表单撤除，待阶段 3 在辅助栏重写")
-    def test_01_button_and_host_channel_are_wired(self) -> None:
-        self.assertIn('id="edAiClean"', EDITOR_HTML)
-        self.assertIn("AI 清洗公式", EDITOR_HTML)
-        self.assertIn('getElementById("edAiClean")', EDITOR_JS)
+    @staticmethod
+    def cleaner_block() -> str:
+        return EDITOR_JS.split("function cleanViaHost() {", 1)[1].split("\n  }\n", 1)[0]
+
+    def test_01_button_lives_in_the_panel_and_uses_the_host_channel(self) -> None:
+        panel_html = EDITOR_HTML.split('id="epRoot"', 1)[1]
+        self.assertIn('id="epAiClean"', panel_html, "清洗按钮必须在辅助栏")
+        self.assertNotIn('id="edAiClean"', EDITOR_HTML, "画布不再放 AI 清洗按钮")
+        self.assertIn('getElementById("epAiClean")', EDITOR_JS)
         self.assertIn('hostCall("text.clean_latex"', EDITOR_JS)
         self.assertIn("function cleanViaHost", EDITOR_JS)
-        self.assertIn('aiCleanEl.addEventListener("click", cleanViaHost)', EDITOR_JS)
+        self.assertIn('panelAiCleanEl.addEventListener("click", cleanViaHost)', EDITOR_JS)
 
-    @unittest.skip("军令 #23 阶段 1：cleanViaHost 随旧表单撤除，待阶段 3 在辅助栏重写")
     def test_02_apply_happens_only_after_every_call_succeeds(self) -> None:
-        block = EDITOR_JS.split("function cleanViaHost() {", 1)[1].split("\n  }\n", 1)[0]
-        self.assertIn("Promise.all(jobs)", block, "必须全部成功后再回填")
-        self.assertIn("items.forEach", block)
-        self.assertIn("aria-busy", block, "请求中按钮要标忙（AGENTS §6）")
+        block = self.cleaner_block()
+        self.assertIn("Promise.all(", block, "必须全部成功后再回填")
+        self.assertIn('"stem", "solution"', block, "两段一起清洗，不逐段边洗边写")
+        self.assertIn("panel.ai.busy = false", block)
+        self.assertIn("editor.apply_patch", block, "回填一律经宿主通知画布")
+        self.assertIn("源码保持原样", block, "任一失败要如实说不许动")
         self.assertNotIn("fetch(", block)
         self.assertNotIn("/api/", block)
 
-    def test_03_manifest_and_index_agree(self) -> None:
+    def test_03_busy_state_marks_the_buttons(self) -> None:
+        """清洗/改写进行中：三个动作按钮必须同步 aria-busy，不许只靠变灰的颜色传达。"""
+        block = EDITOR_JS.split("function renderAi() {", 1)[1].split("\n  }\n", 1)[0]
+        self.assertIn('node.setAttribute("aria-busy", "true")', block)
+        self.assertIn('node.removeAttribute("aria-busy")', block)
+        self.assertIn("panelAiSendEl, panelAiCleanEl, panelAiApplyEl", block)
+
+    def test_04_manifest_and_index_agree(self) -> None:
         """清单与官方索引的版本号、描述必须逐字相同——不写死数字，插件一升号就假红。"""
         manifest = json.loads((EDITOR_DIR / "plugin.json").read_text(encoding="utf-8"))
         index = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))

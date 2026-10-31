@@ -685,6 +685,72 @@ body {
 
 .ep-msg[data-tone="warn"] { color: #8a6a1f; border-color: #d9c48a; }
 
+/* AI 帮改（档 1）：预览区是纯文本，长公式不许把右栏撑破 */
+.ep-ask {
+  min-height: 66px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ep-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--void);
+  min-width: 0;
+}
+
+.ep-ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ep-ai-body {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 190px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-soft);
+}
+
+.ep-ai-body[data-ai-value="ready"] {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.ep-badge[data-ai-state="sending"],
+.ep-badge[data-ai-state="cleaning"] {
+  color: #8a6a1f;
+  border-color: #d9c48a;
+  background: #fbf6e8;
+}
+
+.ep-badge[data-ai-state="ready"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-badge[data-ai-state="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: #fbeeec;
+}
+
+.ep-hint[data-ai-mock="true"] { color: #8a6a1f; }
+
 .ep-foot {
   margin: 0;
   font-size: 11px;

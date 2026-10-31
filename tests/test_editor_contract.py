@@ -286,7 +286,7 @@ class EditorSourceContractTest(unittest.TestCase):
 
     def test_06_local_cleaner_touches_delimiters_only(self) -> None:
         js = read("plugin.js")
-        cleaner = js[js.index("function cleanExamSource("):js.index("// ---------- 假数据")]
+        cleaner = fn_body(js, "cleanExamSource")
         self.assertIn(r"/\\\[([\s\S]*?)\\\]/g", cleaner)
         self.assertIn(r"/\\\(([\s\S]*?)\\\)/g", cleaner)
         self.assertIn('return "$$" + inner.trim() + "$$";', cleaner)
@@ -383,7 +383,7 @@ class EditorHostCallTest(unittest.TestCase):
 
 
 class EditorPanelTest(unittest.TestCase):
-    """军令 #23 阶段 2 的验收面：辅助栏只有元数据表单 + 审核动作 + 格式切换。"""
+    """军令 #23 阶段 2–3 的验收面：辅助栏只有元数据表单 + AI 帮改 + 审核动作 + 格式切换。"""
 
     def test_01_panel_carries_status_formats_metadata_and_actions(self) -> None:
         panel = panel_only(read("index.html"))
@@ -392,14 +392,21 @@ class EditorPanelTest(unittest.TestCase):
                         "epType", "epDifficulty", "epGrade",
                         "epPaper", "epQuestionNo", "epYear", "epExamType", "epTags",
                         "epMounted", "epTopicTree",
+                        "epAiField", "epAiAsk", "epAiSend", "epAiClean",
+                        "epAiState", "epAiNote", "epAiPreview", "epAiApply", "epAiDiscard",
                         "epSave", "epVariant", "epPass", "epReject", "epSkip",
                         "epMessage", "epMetrics"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
 
     def test_02_panel_never_carries_source_or_preview(self) -> None:
-        """铁律：源码只在中栏、渲染只在中栏右邻，辅助栏一样都不许放。"""
+        """铁律：源码只在中栏、渲染只在中栏右邻。辅助栏唯一的 textarea 是给 AI 写指令的。"""
         panel = panel_only(read("index.html"))
-        for forbidden in ("<textarea", "edSourceBody", "edRenderBody", "edQBlock", "katex"):
+        self.assertEqual(panel.count("<textarea"), 1, "辅助栏只许出现指令框这一个 textarea")
+        at = panel.index("<textarea")
+        tag = panel[at:panel.index(">", at)]
+        self.assertIn('id="epAiAsk"', tag, "唯一的 textarea 必须是 AI 指令框")
+        for forbidden in ("edSourceBody", "edRenderBody", "edQBlock", "katex",
+                          "ed-src-area", "ed-box-area"):
             self.assertNotIn(forbidden, panel, f"辅助栏越界放了 {forbidden}")
 
     def test_03_review_actions_are_honest_placeholders(self) -> None:
@@ -514,6 +521,97 @@ class EditorPanelTest(unittest.TestCase):
         self.assertIn("setTimeout(function () { consumeReceipts(payload, tries + 1); }", cell)
         self.assertIn("var RECEIPT_RETRY_MS = 350;", js)
         self.assertIn("var RECEIPT_RETRY_MAX = 4;", js)
+
+
+class EditorAiAssistTest(unittest.TestCase):
+    """军令 #23 阶段 3（AI 帮改档 1）：预览归面板，替换归老师那一下点击。
+
+    钉五条：可改字段只有题干段/解析段、采用门只认 ready、目标题靠 id 里的键回认、
+    空值/失败一律不许动源码、上下文不外泄私有数据与令牌。
+    """
+
+    def test_01_apply_ships_disabled_and_gated_on_ready(self) -> None:
+        panel = panel_only(read("index.html"))
+        at = panel.index('id="epAiApply"')
+        tag = panel[at - 200:at + 200]
+        self.assertIn("disabled", tag, "【采用】出厂必须按不动")
+        self.assertIn('aria-disabled="true"', tag)
+        js = read("plugin.js")
+        self.assertIn('setEpEnabled(panelAiApplyEl, panel.ai.state === "ready"',
+                      fn_body(js, "renderAi"),
+                      "只有「待老师裁决」才允许采用")
+
+    def test_02_only_stem_and_solution_are_editable(self) -> None:
+        """选项与「答案：」行由格式宪法锁死：光标落在这两处，AI 就不许有目标字段。"""
+        js = read("plugin.js")
+        ranges = fn_body(js, "fieldRanges")
+        self.assertIn('envSpan(text, "choices", stem.bodyAt)', ranges, "题干段止于 choices")
+        self.assertIn("/^[ \\t]*答案\\s*[:：][^\\n]*\\n?/", ranges, "解析段跳过「答案：」首行")
+        caret = fn_body(js, "fieldAtOffset")
+        self.assertIn('return "";', caret, "段外一律判不出字段，不许fallback 到整题")
+        send = fn_body(js, "onAiSend")
+        self.assertIn("!caret.field", send, "没定位到可改字段就不许发请求")
+
+    def test_03_the_target_question_travels_inside_the_patch_id(self) -> None:
+        """宿主只把 {id, field, value} 广播给各帧，目标题只能编进 id 里回认。"""
+        js = read("plugin.js")
+        self.assertIn('("ai1-" + String(key == null ? "" : key).replace(/[^A-Za-z0-9_-]/g, "-")).slice(0, 80)',
+                      fn_body(js, "patchIdFor"), "id 必须宿主安全（不含点号）且不超 80")
+        canvas = fn_body(js, "applyAiPatch")
+        self.assertIn("AI 回填的目标不是当前题，源码没动", canvas)
+        panel_send = fn_body(js, "onAiApply")
+        self.assertIn("item.key !== panel.ai.key", panel_send,
+                      "面板换题后不许把上一题的改写发出去")
+
+    def test_04_empty_or_failed_replies_never_touch_the_source(self) -> None:
+        js = read("plugin.js")
+        send = fn_body(js, "onAiSend")
+        self.assertIn("!value", send, "模型回空串要判失败")
+        self.assertIn("画布源码没动", send)
+        self.assertIn("多半是回显", send, "宿主摊平时丢了 mock 标记：逐字相同要照实说是回显")
+        canvas = fn_body(js, "applyAiPatch")
+        self.assertIn("AI 回填缺字段或内容为空，源码没动", canvas)
+        self.assertIn("return false", canvas)
+
+    def test_05_the_model_gets_the_visible_fields_only(self) -> None:
+        """上桥的只有 type/difficulty/stem/options/answer/solution——与底座 build_refine_user_message 同口径。"""
+        js = read("plugin.js")
+        ctx = fn_body(js, "refineContext")
+        for key in ('type:', 'difficulty:', 'stem:', 'answer:', 'solution:', 'options:'):
+            self.assertIn(key, ctx, f"上下文缺 {key}")
+        for forbidden in ("extensions", "saved_id", "question_id", "token", "paper_title"):
+            self.assertNotIn(forbidden, ctx, f"{forbidden} 不许进模型上下文")
+        self.assertNotIn("innerHTML", fn_body(js, "renderAi"), "预览只走 textContent")
+
+    def test_06_slow_models_get_the_hosts_budget_not_twenty_seconds(self) -> None:
+        """宿主给模型 60s（stage.js 的 AGENT_TIMEOUT_MS）；插件按 20s 等会把慢回答误报成失败。"""
+        js = read("plugin.js")
+        self.assertIn("var AI_REQUEST_TIMEOUT_MS = 65000;", js)
+        self.assertIn("}, AI_REQUEST_TIMEOUT_MS).then(function (result) {", fn_body(js, "onAiSend"))
+        relay = js[js.index("function cleanViaHost"):]
+        self.assertNotIn("AI_REQUEST_TIMEOUT_MS", relay.split("\n  }\n")[0],
+                         "规则清洗不经过模型，按普通额度等就够")
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn("var AGENT_TIMEOUT_MS = 60000;", stage)
+
+    def test_07_the_panel_never_renders_the_patch_itself(self) -> None:
+        """回填只有画布执行：面板收到自己发出的广播必须静默，否则一次采用改两遍。"""
+        js = read("plugin.js")
+        at = js.index('if (message.event === "editor.apply_patch") {')
+        block = js[at:js.index("return;", at) + len("return;")]
+        self.assertIn('state.slot === "stage.center"', block)
+
+    def test_08_ai_buttons_are_bound_and_the_caret_publishes(self) -> None:
+        js = read("plugin.js")
+        activation = fn_body(js, "activatePanel")
+        for bound in ('panelAiSendEl.addEventListener("click", onAiSend)',
+                      'panelAiCleanEl.addEventListener("click", cleanViaHost)',
+                      'panelAiApplyEl.addEventListener("click", onAiApply)',
+                      'panelAiAskEl.addEventListener("input", renderAi)'):
+            self.assertIn(bound, activation, f"辅助栏没绑上 {bound}")
+        cells = js[js.index("  function renderSourceCell("):js.index("  function renderBoxedCell(")]
+        self.assertEqual(cells.count('publishSelectionSoon'), 2,
+                         "格式一的源码框与格式二的题干/解析框都要把光标上桥，面板才知道改哪段")
 
 
 class EditorBoxedFormatTest(unittest.TestCase):

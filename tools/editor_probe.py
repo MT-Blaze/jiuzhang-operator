@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
-"""录题工作台 v2 真机探针（军令 #23 阶段 2）：画布三栏 + 右栏辅助栏 + 单题保存。
+"""录题工作台 v2 真机探针（军令 #23 阶段 2 + 阶段 3）：三栏画布、辅助栏表单与 AI 帮改。
 
 用法：``.venv/Scripts/python.exe tools/editor_probe.py <tag>``
 
 隔离：把 editor 与题库两端复制进独立插件目录，另起端口与独立数据目录，
 不写本机 data/banks/。题数一律用「保存前后差值」判据，绝不写死绝对数。
+AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
+探针全程不出网，也不依赖本机 .env 里老师的真密钥。
 
 检查项：
 - 画布挂载出三栏（左原图 | 中源码 | 右渲染）与两条拖手，拖到底不归零；
 - 右栏是同一插件的**第二个沙箱帧**，按画布送来的选区预填元数据；
-- 辅助栏里既没有源码框也没有渲染预览（军令铁律）；
+- 辅助栏里既没有源码框也没有渲染预览（军令铁律，指令框除外）；
 - 格式一整段可编辑；格式二按环境拆框，改框自动重组格式一；
 - 单题保存经宿主写库：新建走 bank.create、再存走 bank.update、变式另发新 ID；
 - 保存后直查 API 字段逐项一致（题干/答案/选项/解析/难度/年级/标签/来源/修订号）；
+- AI 帮改（档 1）：光标定字段 → 预览 → **点采用才替换**、点放弃不动源码，
+  环境骨架与「答案：」行全程不受改写影响；
+- AI 清洗走宿主 text.clean_latex：题干段与解析段全成功才回填；
 - 渲染块按内容实际高度生长，画布里不再有 A4 固定页节点；
 - 宿主 1440px 无横向溢出，控制台与页面零错误。
 """
@@ -26,9 +31,11 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -102,6 +109,93 @@ def wait_height(locator, predicate, timeout: float = 12) -> float:
     return height
 
 
+def wait_value(locator, predicate, timeout: float = 12) -> str:
+    """输入框的值轮询：回填经宿主广播回来，不是点击当场就变。"""
+    deadline = time.time() + timeout
+    value = ""
+    while time.time() < deadline:
+        value = locator.input_value()
+        if predicate(value):
+            return value
+        time.sleep(0.15)
+    return value
+
+
+def wait_text(locator, predicate, timeout: float = 12) -> str:
+    deadline = time.time() + timeout
+    text = ""
+    while time.time() < deadline:
+        text = locator.inner_text()
+        if predicate(text):
+            return text
+        time.sleep(0.15)
+    return text
+
+
+class StubProvider:
+    """本机 OpenAI 兼容桩：把 /api/agent/refine 变成确定性回包，探针一律不出网。
+
+    底座把「待改字段 + 该字段当前内容 + 老师指令」拼进 user 消息，桩就照这个形状
+    回一份 {"<field>": 标记 + 原文, "note": …}，让判据能验到「改写≠回显」。
+    """
+
+    MARKER = "探针AI改写"
+
+    def __init__(self) -> None:
+        self.hits = 0
+        self.fields: list[str] = []
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args) -> None:
+                pass
+
+            def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 的固定入口
+                length = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+                try:
+                    body = json.loads(raw or "{}")
+                except json.JSONDecodeError:
+                    body = {}
+                user = ""
+                for message in body.get("messages") or []:
+                    if message.get("role") == "user":
+                        user = str(message.get("content") or "")
+                field_match = re.search(r"## 需要改写的字段\n(\w+)", user)
+                field = field_match.group(1) if field_match else "stem"
+                content_match = re.search(r"## 该字段当前内容\n([\s\S]*?)\n\n## 老师指令", user)
+                original = content_match.group(1).strip() if content_match else ""
+                owner.hits += 1
+                owner.fields.append(field)
+                payload = json.dumps({field: self.server.marker_text(original),
+                                      "note": "探针桩按指令改写"}, ensure_ascii=False)
+                reply = json.dumps({
+                    "choices": [{"message": {"content": payload}}],
+                    "model": "probe-stub",
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                }, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(reply)))
+                self.end_headers()
+                self.wfile.write(reply)
+
+        self.port = free_port()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
+        # 桩的标记文本从服务端拼，避免 handler 里再抄一份常量
+        self.httpd.marker_text = lambda original: f"{StubProvider.MARKER}·{original}"
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}/v1"
+
+    def stop(self) -> None:
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -121,11 +215,17 @@ def main() -> int:
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
+    stub = StubProvider()
     env = os.environ.copy()
     env["JZO_DATA_DIR"] = str(data_dir)
     env["JZO_PLUGINS_DIR"] = str(plugins_dir)
     env["JZO_LOCAL_TOKEN"] = "editor-probe-token"
     env["JZO_RESTART_DISABLED"] = "1"
+    # 活跃档指向本机桩：环境变量优先于仓库 .env（app/__init__._load_local_env 用 setdefault）
+    env["JZO_AI_PROVIDER"] = "openai-compatible"
+    env["JZO_AI_BASE_URL"] = stub.base_url
+    env["JZO_AI_API_KEY"] = "probe-stub-key"
+    env["JZO_AI_MODEL"] = "probe-stub"
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
          "--port", str(port), "--log-level", "warning", "--no-server-header"],
@@ -182,7 +282,9 @@ def main() -> int:
             panel = page.frame_locator(PANEL)
             expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
             check("右栏由录题辅助面板接管", True)
-            check("辅助栏不放源码框", panel.locator("textarea").count() == 0)
+            check("辅助栏不放源码框", panel.locator(".ed-src-area, .ed-box-area").count() == 0,
+                  {"src": panel.locator(".ed-src-area").count(),
+                   "boxes": panel.locator(".ed-box-area").count()})
             check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
             panel_progress = panel.locator("#epProgress")
             wait_attribute(panel_progress, "data-total", lambda value: value not in ("", "0"), 14)
@@ -384,6 +486,128 @@ def main() -> int:
             check("变式让总数再 +1", int(stats_final.get("total") or 0) == total_after + 1,
                   {"total": stats_final.get("total")})
 
+            # ---------- 阶段 3：AI 帮改（档 1）——光标定字段 → 预览 → 点采用才替换 ----------
+            src = canvas.locator('.ed-src-area[data-index="0"]').first
+            expect(src).to_be_visible(timeout=10000)
+            before_ai = src.input_value()
+            src.evaluate("""node => {
+              var at = node.value.indexOf('求其最小值');
+              node.focus();
+              node.setSelectionRange(at + 2, at + 5);
+              node.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+            }""")
+            ai_field = panel.locator("#epAiField")
+            picked = wait_attribute(ai_field, "data-ai-field", lambda value: value == "stem", 12)
+            check("光标落在题干段里，面板认出改写字段是题干", picked == "stem",
+                  {"field": picked, "hint": ai_field.inner_text()[:70]})
+            send = panel.locator("#epAiSend")
+            check("没写指令时【发送】按不动", send.is_disabled())
+            panel.locator("#epAiAsk").fill("把「求其最小值」改成「求最小值并写出取等条件」")
+            expect(send).to_be_enabled(timeout=8000)
+            check("字段 + 指令齐了才允许发送", not send.is_disabled())
+
+            send.click()
+            state_node = panel.locator("#epAiState")
+            settled = wait_attribute(state_node, "data-ai-state",
+                                     lambda value: value in {"ready", "error"}, 25)
+            note = panel.locator("#epAiNote")
+            preview = panel.locator("#epAiPreview")
+            preview_text = preview.inner_text()
+            result["metrics"]["ai"] = {"state": settled, "note": note.inner_text()[:80],
+                                       "hits": stub.hits, "fields": stub.fields}
+            check("改写请求真的走到 Provider 桩（本机回环，未出网）",
+                  settled == "ready" and stub.hits >= 1 and "stem" in stub.fields,
+                  {"state": settled, "hits": stub.hits, "fields": stub.fields})
+            check("预览给出改写结果并停在「待老师裁决」",
+                  StubProvider.MARKER in preview_text
+                  and preview.get_attribute("data-ai-value") == "ready",
+                  {"preview": preview_text[:90]})
+            check("改写≠原文，所以不标回显", (note.get_attribute("data-ai-mock") or "") == "",
+                  {"note": note.inner_text()[:80]})
+            check("没点采用前画布源码一个字都没动",
+                  StubProvider.MARKER not in src.input_value()
+                  and src.input_value() == before_ai)
+            apply_state = panel.locator("#epAiApply")
+            expect(apply_state).to_be_enabled(timeout=8000)
+            apply_state.click()
+            applied = wait_value(src, lambda value: StubProvider.MARKER in value, 12)
+            check("点采用才替换，且只换题干段正文",
+                  StubProvider.MARKER in applied
+                  and "\\begin{choices}" in applied and "\\end{choices}" in applied
+                  and applied.count(StubProvider.MARKER) == 1,
+                  {"head": applied[:120]})
+            check("环境骨架与「答案：」行不受改写影响",
+                  "\\begin{question}" in applied and "\\begin{solution}" in applied
+                  and "答案：" in applied)
+            toast_text = wait_text(canvas.locator("#edToast"),
+                                   lambda value: "已采用" in value, 6)
+            check("画布自己回显「已采用」并提醒还没保存",
+                  "已采用" in toast_text and "还没保存" in toast_text,
+                  {"toast": toast_text[:60]})
+            check("面板把话说清：发出去了不等于入库",
+                  "保存才入库" in panel.locator("#epMessage").inner_text(),
+                  {"message": panel.locator("#epMessage").inner_text()[:80]})
+            page.screenshot(path=str(shots / "v2-ai-apply.png"))
+
+            # ---------- 放弃分支：改写作废，源码退回采用前 ----------
+            src.evaluate("""node => {
+              var at = node.value.indexOf('解析：配方得');
+              node.focus();
+              node.setSelectionRange(at + 3, at + 6);
+              node.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+            }""")
+            picked2 = wait_attribute(ai_field, "data-ai-field", lambda value: value == "solution", 12)
+            check("光标移到解析段，字段判定跟着换", picked2 == "solution", {"field": picked2})
+            hits_before = stub.hits
+            send.click()
+            flipping = wait_attribute(preview, "data-ai-field", lambda value: value == "solution", 12)
+            deadline = time.time() + 25
+            while stub.hits <= hits_before and time.time() < deadline:
+                page.wait_for_timeout(100)
+            settled2 = wait_attribute(state_node, "data-ai-state",
+                                      lambda value: value in {"ready", "error"}, 25)
+            check("解析段的改写同样先落在预览里",
+                  flipping == "solution" and settled2 == "ready"
+                  and StubProvider.MARKER in preview.inner_text() and stub.hits > hits_before,
+                  {"field": flipping, "state": settled2, "hits": stub.hits})
+            panel.locator("#epAiDiscard").click()
+            check("点放弃：预览清空、【采用】重新按不动",
+                  apply_state.is_disabled()
+                  and StubProvider.MARKER not in preview.inner_text(),
+                  {"preview": preview.inner_text()[:60]})
+            check("放弃不改画布源码", src.input_value() == applied,
+                  {"len": len(src.input_value())})
+
+            # ---------- AI 清洗：走宿主规则通道，两段全成功才回填 ----------
+            dirty = ("\\begin{question}\n已知 \\(g(x)=x^2\\)，则 \\[g(x)\\] 的最小值是（  ）\n"
+                     "\\begin{choices}\n  \\item $0$\n  \\item $1$\n\\end{choices}\n\\end{question}\n\n"
+                     "\\begin{solution}\n答案：B\n因为 \\(g(x)\\) 开口向上。\n\\end{solution}\n")
+            src.fill(dirty)
+            # 面板洗的是它收到的那一份选区源码：160ms 防抖 + 一帧回投，等它到手再点清洗
+            wait_attribute(metrics, "data-dirty", lambda value: value == "true", 10)
+            page.wait_for_timeout(600)
+            filled = src.input_value()
+            check("脏定界符已进中栏（清洗前的样子）", "\\(" in filled and "\\[" in filled,
+                  {"head": filled[:60]})
+            clean = panel.locator("#epAiClean")
+            expect(clean).to_be_enabled(timeout=8000)
+            clean.click()
+            cleaned = wait_value(src, lambda value: "\\(" not in value and "\\[" not in value, 15)
+            check("清洗走宿主规则通道：定界符归一为 $ 与 $$",
+                  "\\(" not in cleaned and "\\[" not in cleaned
+                  and "$g(x)$" in cleaned and "$$g(x)$$" in cleaned,
+                  {"head": cleaned[:90]})
+            check("清洗只动公式定界符，环境与答案行原样",
+                  "\\begin{choices}" in cleaned and "答案：B" in cleaned
+                  and "\\end{solution}" in cleaned,
+                  {"tail": cleaned[-90:]})
+            check("清洗话术报出改动段数",
+                  "已清洗" in note.inner_text() or "没有改动" in note.inner_text(),
+                  {"note": note.inner_text()[:80]})
+            page.screenshot(path=str(shots / "v2-ai-clean.png"))
+            check("AI 三段动作后页面仍无脚本错误", not result["page_errors"],
+                  {"page_errors": result["page_errors"][:3]})
+
             # ---------- 回流：题库画布搜得到本次保存 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first
             bank_item.click()
@@ -411,6 +635,7 @@ def main() -> int:
         except Exception:
             pass
     finally:
+        stub.stop()
         process.terminate()
         try:
             process.wait(timeout=8)

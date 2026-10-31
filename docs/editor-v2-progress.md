@@ -6,8 +6,8 @@
 ## 当前阶段
 - 阶段 1：已验收并提交（三栏骨架 + 单题静态渲染）
 - 阶段 2：已验收并提交（辅助栏表单 + 源码双格式 + 单题保存/更新/变式）
-- 阶段 3：未开始（下一步：AI 帮改档 1）
-- 阶段 4：未开始
+- 阶段 3：已验收并提交（辅助栏 AI 帮改档 1 + 宿主规则清洗回填）
+- 阶段 4：未开始（下一步：批量无缝滚动 + 左栏联动 + 底部【保存全部】）
 
 ### 阶段 1 收口摘要（2026-10-31）
 - 画布实例只有三栏：`#edImageBody` | `#edSourceBody` | `#edRenderBody`，中间两条 `#edSplitImage` /
@@ -55,9 +55,41 @@
   `test_plugin_bus_parity` 5、`test_stage_canvas` 27 全绿；真机探针 `tools/editor_probe.py` 重写为 v2 判据，
   **45/45 通过**（`.system_generated/editor_probe/s2-4/probe.json`，控制台与页面错误 0），
   新建题 `q_0d871fe002139195875325f9`、更新走同 ID、派生变式 `q_b784b69c7ba6ad22d15f4c0c`、题库画布搜得到。
-- 交给阶段 3：`tests/test_clean_latex.py::EditorAiCleanerTest` 仍有 2 条 skip（旧画布 AI 清洗按钮已随表单退场），
-  辅助栏「AI 帮改」重写后要在档 1 路径上恢复判据；`editor.apply_patch` 通道与命令面已就位，画布收到
-  `field=stem|solution` 只回「军令 #23 阶段 3 接入」的 toast。
+- 交给阶段 3 的两件都已清：`test_clean_latex.py::EditorAiCleanerTest` 两条 skip 按辅助栏新契约重写（现 4 条），
+  画布对 `editor.apply_patch` 的「阶段 3 接入」占位 toast 换成真的分段回填。
+
+### 阶段 3 收口摘要（2026-10-31）
+- 辅助栏新增「AI 帮改（档 1）」一节：字段提示 `#epAiField` → 指令框 `#epAiAsk` →【发送改写请求】
+  【AI 清洗公式】→ 状态徽标 `#epAiState`（未发起 / 等模型回话 / 清洗中 / 待老师裁决 / 改写失败）
+  + 纯文本预览 `#epAiPreview` →【采用并回填画布】【放弃】。预览一律 `textContent`，模型回什么都不进 DOM 结构。
+- **可改范围由源码结构算出，不靠人选**：`envSpan()` + `fieldRanges()` 把「题干段」定为题干环境正文里
+  choices 之前那一段、「解析段」定为 solution 正文剥掉「答案：」首行之后那一段；
+  `fieldAtOffset()` 判不出字段一律回 `""`（选项、答案行、环境名外都不许 AI 伸手）。
+  画布 textarea 与格式二的题干/解析框都补 `click/keyup/select` → `publishSelectionSoon`，选区载荷多一个 `caret`。
+- **采用门**：`renderAi()` 只在 `panel.ai.state === "ready"` 才放开【采用】；发送前必须「有字段 + 有指令」，
+  请求中三个动作按钮同步 `disabled` + `aria-disabled` + `aria-busy`。
+- **目标题回认**：宿主只把 `{id, field, value}` 广播给各帧，所以当前题的键经 `patchIdFor()`
+  规范化（非 `[A-Za-z0-9_-]` 换 `-`、前缀 `ai1-`、截 80）编进 `id`；画布 `applyAiPatch()` 认不出键就
+  拒收并 toast「AI 回填的目标不是当前题，源码没动」，面板 `onAiApply()` 换题后也不许把上一题的改写发出去。
+  面板收到自己发出的 `editor.apply_patch` 广播保持静默（只有 `state.slot === "stage.center"` 动手），一次采用不会改两遍。
+- **话术诚实**：宿主摊平 `/api/agent/refine` 时把 `mock` 标记丢了（`stage.js:1157`），插件只能用
+  「新值与原文逐字相同」近似判定回显，话术写「多半是回显（本机还没配 Provider）」；
+  面板说「已发给画布…保存才入库」，绝不把「请求成功」说成「已入库」。
+- **超时对齐**：宿主给模型的额度是 60s（`stage.js:399 AGENT_TIMEOUT_MS`），插件默认 20s 会把慢回答误报成失败，
+  故 `hostCall()` 支持逐请求超时、AI 改写走 `AI_REQUEST_TIMEOUT_MS = 65000`；规则清洗不经模型，仍按 20s。
+- **清洗回填**：【AI 清洗公式】对题干段与解析段并发 `text.clean_latex`，`Promise.all` 全成功且每段非空
+  才逐段 `editor.apply_patch`；任一失败或洗成空就一个字都不动，话术报出中止原因（`test_clean_latex` 钉住）。
+- 模型上下文只交 `type/difficulty/stem/options/answer/solution`（`refineContext()`），与底座
+  `build_refine_user_message` 同口径；extensions、题号、令牌一律不上桥。
+- 无障碍与样式：`.ep-ai` 预览区 `white-space: pre-wrap` + `overflow-wrap: anywhere`（长公式不撑破右栏）、
+  状态徽标按 `data-ai-state` 换色但文字同时变（不只靠颜色）、按钮沿用 `.ep-btn` 44px。
+- 证据：`test_editor_contract.py` 56 → 64 条、`test_clean_latex.py` 9（含 2 skip）→ 10 条（0 skip）全绿；
+  `test_command_registry` 33、`test_plugin_bus_parity` 5 同步绿；
+  真机探针 `tools/editor_probe.py` 加 20 项阶段 3 判据，**65/65 通过**
+  （`.system_generated/editor_probe/s3-1/probe.json`，页面/控制台错误 0）。
+  探针自带本机 OpenAI 兼容桩（`StubProvider`，`JZO_AI_BASE_URL` 指向 `127.0.0.1`，环境变量优先于仓库 `.env`），
+  两次改写请求真走到桩（`metrics.ai.fields == ["stem","solution"]`），全程零出网、不碰老师密钥。
+- 交给阶段 4：批量无缝滚动 + 左栏联动 + 底部【保存全部】只提交脏题 + pending 池界面。
 
 ## 已定设计决策（不可改，改需主公批准）
 - 三栏布局：左原图 | 中 LaTeX 源码 | 右渲染，全在画布内
@@ -117,9 +149,33 @@
 - `tools/editor_probe.py`：整体重写为 v2 三栏 + 辅助栏判据（45 项），隔离数据目录、`JZO_RESTART_DISABLED=1`、
   题数一律用 before/after 差值，不写死 456。
 
+## 本阶段已改动文件（阶段 3）
+- `plugins/org.jiuzhang.editor/plugin.json`：1.2.0 → **1.3.0**，描述补「AI 帮改（档 1）：只改题干段与解析段，
+  预览后点采用才回填画布」；slots / 权限 / 命令面不动（`ai:invoke` 阶段 2 已申请）。
+- `plugins/org.jiuzhang.editor/dist/plugin.js`：常量 `AI_REQUEST_TIMEOUT_MS` / `AI_ASK_MAX`；
+  分段工具 `envSpan()` `fieldRanges()` `fieldAtOffset()` `replaceField()` `patchIdFor()` `keyFromPatchId()`；
+  画布侧 `applyAiPatch()` `writeBackSourceText()` `caretOfActive()` 与 `selectionPayload().caret`、
+  源码框/框框视图的 `click|keyup|select` 上桥、通知分支只让画布执行回填；
+  面板侧 `setEpEnabled()` `renderAi()` `aiClear()` `refineContext()` `segmentOf()` `onAiSend()`
+  `onAiApply()` `onAiDiscard()` `cleanViaHost()` 与 9 个新 DOM 引用、`panel.ai` 状态位、换题作废。
+- `plugins/org.jiuzhang.editor/dist/index.html`：`#epRoot` 内新增「AI 帮改」一节（9 个 `epAi*` 节点，
+  【采用】【放弃】【发送】【清洗】出厂全 disabled + `aria-disabled`）。
+- `plugins/org.jiuzhang.editor/dist/plugin.css`：`.ep-ask` `.ep-ai` `.ep-ai-head` `.ep-ai-body`
+  与 `[data-ai-state=…]` 四态配色、`[data-ai-mock="true"]` 回显话术色。
+- `plugins.json` **与** `E:/jiuzhang-plugins/plugins.json`：由 `tools/sync_plugin_index.py` 同步为 1.3.0，两份逐字全等。
+- `tests/test_editor_contract.py`：56 → 64 条（新增 `EditorAiAssistTest` 8 条；`EditorPanelTest.test_01`
+  补 9 个 `epAi*` 节点、`test_02` 的 `<textarea` 禁令改为「只允许指令框一个，且禁 `ed-src-area`/`ed-box-area`」）。
+- `tests/test_clean_latex.py`：`EditorAiCleanerTest` 两条 skip 清零并按辅助栏新契约重写（按钮位置、宿主通道、
+  全成功才回填、`aria-busy`），另加清洗话术与 `renderAi` 忙态判据；`test_06` 的本地清洗取段改用 `fn_body()`
+  （新增分段工具落在 `cleanExamSource` 之后，旧切片会把它一起扫进来打成假红）。
+- `tests/test_command_registry.py`：EXPECTED 里 editor 版本 1.3.0（这张表按设计写死版本）。
+- `tools/editor_probe.py`：45 → 65 项；新增 `StubProvider`（本机 OpenAI 兼容桩 + 4 个 `JZO_AI_*` 环境变量）、
+  `wait_value()` / `wait_text()`；「辅助栏不放源码框」判据从 `textarea` 计数改为按 `.ed-src-area/.ed-box-area`
+  类名判定（`#epAiAsk` 本身就是 textarea，旧判据会把合规的面板打成红字）。
+
 ## 本阶段未决 / 待主公复核
-1. **探针：`editor_probe.py` 已跟上，`editor_crop_probe.py` 仍待裁**：前者阶段 2 整体重写为 v2 判据并跑到
-   45/45；后者驱动的「原图框选切图」军令 #23 已明确本期不做，建议直接退役删除（要留可从 git 历史找回）——
+1. **探针：`editor_probe.py` 已跟上，`editor_crop_probe.py` 仍待裁**：前者阶段 2 重写为 v2 判据、阶段 3 加
+   AI 判据后跑到 65/65；后者驱动的「原图框选切图」军令 #23 已明确本期不做，建议直接退役删除（要留可从 git 历史找回）——
    等主公点头再删，本次没动它。
 2. **A4 判据消失**：旧 `tests` 里 794×1123 那组红线随「渲染不固定 A4」撤除，`paper-gen` / `handout`
    仍各自守 A4 几何，不受影响；如主公认为录题也该留一份分页证据，请裁决。
@@ -137,6 +193,15 @@
    `data/workspaces/default/plugins/`，那是用户数据区，军令红线禁碰，所以本次没有覆盖它。
    主公回来看新界面的两条路：插件控制台里重装 / 更新，或用 `JZO_PLUGINS_DIR=E:\jiuzhang-operator\plugins`
    起一个开发实例（探针走的就是后者，不写用户目录）。
+8. **档 1 只按「整段」改写**：老师哪怕只选中题干里几个字，回填换掉的仍是整段题干正文
+   （预览话术已写明「改写整段」）。要改成「只替换选中片段」得让宿主载荷多带一个选区偏移，
+   属底座改动——请主公裁决是否留到下一军令。
+9. **回显只能近似判定**：宿主摊平 `/api/agent/refine` 时把 `mock` 字段丢了（`stage.js:1157`），
+   插件只能靠「新值与原文逐字相同」推断是回显，所以话术用「多半」。真要精确，得让宿主透传 `mock`。
+10. **插件仓库 zip 尚未重打**：两份 `plugins.json` 已写 1.3.0，但 `E:/jiuzhang-plugins/plugins/org.jiuzhang.editor.zip`
+    还是旧包；发版前要 `tools/build_plugin.py` 重打并核对两份索引全等（`dev/` 由 DENY_DIRS 排除，不进包）。
+11. **清洗是「两段一起」**：`cleanViaHost()` 一次并发洗题干段与解析段，任一失败整题不动。
+    若老师希望「只洗其中一段」，需要分段按钮——本期界面没做，等下一军令。
 
 ## 下次开工先读
 1. 本文件
