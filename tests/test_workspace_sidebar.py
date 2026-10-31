@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -126,6 +127,31 @@ class SidebarStructureTest(unittest.TestCase):
                       "插槽下方那 20px 分节留白是死空间，插件面板会悬在半空")
         body_rule = rule_body(CSS, ".ws-context-body {")
         self.assertIn("overflow: hidden", body_rule, "辅助栏本体不滚，滚的是面板内部")
+
+    def test_09_host_skips_its_duplicate_panel_for_slot_owners(self) -> None:
+        """宿主那层「人机共设」快捷区：插件自带整块右栏面板时不再画一遍。
+
+        判据只认插槽本身（插件声明了 sidebar.right），不认清单里的 ui.panel 开关——
+        panel=false 字面上像「关掉辅助栏」，早年被误读成它能决定插件住不住。
+        AI 助手是右栏的默认住户，它没有画布，那几个按钮只能靠宿主这层发起，不算自带面板。
+        """
+        self.assertIn("function ownsOwnRightPanel(plugin)", JS)
+        helper = JS[JS.index("function ownsOwnRightPanel(plugin)"):]
+        helper = helper[:helper.index("\n  }")]
+        self.assertIn('plugin.slots.indexOf("sidebar.right")', helper)
+        self.assertIn("JzoContextPanel.assistantId", helper,
+                      "默认住户 AI 助手不算自带面板，它得靠宿主这层按钮发起对话")
+        self.assertIn("ui.panel === false || ownsOwnRightPanel(plugin)", JS,
+                      "宿主必须同时认结构性判据与显式开关")
+        editor = json.loads(
+            (ROOT / "plugins" / "org.jiuzhang.editor" / "plugin.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertNotIn("panel", editor.get("ui", {}),
+                         "录题清单里不许再留 ui.panel=false")
+        self.assertIn("sidebar.right", editor["slots"],
+                      "录题声明了 sidebar.right，宿主据此判定它自带整块面板")
 
 
 class SidebarBehaviourTest(unittest.TestCase):

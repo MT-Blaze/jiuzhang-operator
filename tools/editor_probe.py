@@ -48,6 +48,9 @@ ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
 BANK_UI_ID = "org.jiuzhang.bank-ui"
+# 右栏的默认住户 AI 助手：探针必须把它一起装上。
+# 少了它，右栏没人争，录题的接管自然成功——那种环境验不出「谁才是右栏的主人」。
+CHAT_ID = "org.jiuzhang.chat"
 MARK = "探针v2"
 
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
@@ -214,7 +217,7 @@ def main() -> int:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
-    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
+    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID, CHAT_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()
@@ -440,6 +443,73 @@ def main() -> int:
                   panel.locator("#epPass").is_disabled()
                   and panel.locator("#epReject").is_disabled()
                   and panel.locator("#epSkip").is_disabled())
+
+            # ---------- 右栏主人：录题辅助栏，不许被 AI 助手顶掉 ----------
+            # 这几条是主公当面骂出来的：辅助栏一度只剩个没用的 AI 助手，
+            # 元数据、切换钮、暂存池、保存全都不见了。根因是探针环境里根本没装
+            # AI 助手，右栏没人争，录题的接管自然成功——那种环境压根验不出主人是谁。
+            slot_title = page.locator("#wsContextSlotTitle").inner_text().strip()
+            slot_badge = page.locator("#wsContextSlotBadge").inner_text().strip()
+            slot_src = page.locator("#wsContextSlotBody .ws-context-frame").get_attribute("src") or ""
+            check("右栏主人是录题工作台（不是 AI 助手）",
+                  slot_title == "录题工作台" and slot_badge == "插件接管"
+                  and "org.jiuzhang.editor" in slot_src,
+                  {"title": slot_title, "badge": slot_badge, "src": slot_src})
+            check("AI 助手确实装在工作区里（右栏本来是有竞争者的）",
+                  page.locator(".ws-plugin-item", has_text="AI 助手").count() >= 1)
+            for label, selector in (("题型", "#epType"), ("难度", "#epDifficulty"),
+                                    ("年级", "#epGrade")):
+                check(f"辅助栏里元数据表单还在（{label}）",
+                      panel.locator(selector).count() == 1
+                      and panel.locator(selector).is_visible(),
+                      {"selector": selector})
+            for label, selector in (("格式一", "#epFmtLatex"), ("格式二", "#epFmtBoxed"),
+                                    ("互换", "#epSwap")):
+                check(f"辅助栏里切换按钮还在（{label}）",
+                      panel.locator(selector).count() == 1
+                      and panel.locator(selector).is_visible(),
+                      {"selector": selector})
+            for label, selector in (("暂存待入库池", "#edPoolStash"), ("保存全部", "#edSaveAll")):
+                check(f"辅助栏里入库按钮还在（{label}）",
+                      panel.locator(selector).count() == 1
+                      and panel.locator(selector).is_visible(),
+                      {"selector": selector})
+            check("宿主那层「人机共设」重复卡不出现",
+                  page.locator("#wsPluginPanel").is_hidden()
+                  and page.locator("#wsPluginControls select").count() == 0,
+                  {"panel_hidden": page.locator("#wsPluginPanel").is_hidden(),
+                   "selects": page.locator("#wsPluginControls select").count()})
+
+            # 辅助栏内容超高时，滚动条要淡入（幽灵滚动条），停手再淡出
+            ep_overflow = panel.locator("#epRoot").evaluate(
+                "n => ({over: n.scrollHeight - n.clientHeight, cls: n.classList.contains('is-scrolling')})")
+            check("辅助栏内容确实溢出（滚动条有活干）", ep_overflow["over"] > 20, ep_overflow)
+            panel.locator("#epRoot").evaluate("n => { n.scrollTop = 60; }")
+            page.wait_for_timeout(150)
+            ep_scrolling = panel.locator("#epRoot").evaluate(
+                "n => n.classList.contains('is-scrolling')")
+            check("辅助栏滚动条淡入", ep_scrolling is True, {"is_scrolling": ep_scrolling})
+            page.wait_for_timeout(1200)
+            ep_settled = panel.locator("#epRoot").evaluate(
+                "n => n.classList.contains('is-scrolling')")
+            check("辅助栏滚动条停手后淡出", ep_settled is False, {"is_scrolling": ep_settled})
+            panel.locator("#epRoot").evaluate("n => { n.scrollTop = 0; }")
+
+            # 切走再切回来：右栏主权必须跟着画布页签来回交还，不能停在 AI 助手手里
+            console_tab = page.locator("#wsTabs [role='tab']", has_text="设置与控制台").first
+            editor_tab = page.locator("#wsTabs [role='tab']", has_text="录题工作台").first
+            console_tab.click()
+            page.wait_for_timeout(1200)
+            away_title = page.locator("#wsContextSlotTitle").inner_text().strip()
+            check("切到别的页签，右栏归还 AI 助手（这是设计，不是被吞）",
+                  away_title == "AI 助手", {"title": away_title})
+            editor_tab.click()
+            page.wait_for_timeout(1200)
+            back_title = page.locator("#wsContextSlotTitle").inner_text().strip()
+            back_editor_panel = page.frame_locator(PANEL).locator("#epRoot").count() == 1
+            check("切回录题页签，右栏重新归录题（辅助面板还在）",
+                  back_title == "录题工作台" and back_editor_panel,
+                  {"title": back_title, "editor_panel": back_editor_panel})
 
             # ---------- 2026-10-31 整改：底栏搬进辅助栏 + 辅助栏铺满 + 页签栏焊死 ----------
             check("批量条整条搬进辅助栏（画布那份隐藏）",

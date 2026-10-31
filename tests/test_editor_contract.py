@@ -129,11 +129,13 @@ class EditorManifestTest(unittest.TestCase):
                           "org.jiuzhang.action.process.clean_latex",
                           "org.jiuzhang.action.process.create_variant"])
 
-    def test_06_view_selects_and_panel_flag_are_declared(self) -> None:
+    def test_06_view_selects_are_declared(self) -> None:
         """宿主 applyUiParams 只认清单 ui.controls 里的 select 键，没声明的键直接丢弃。"""
         ui = manifest()["ui"]
-        self.assertIs(ui.get("panel"), False,
-                      "录题辅助栏自己承载整套控件，宿主不许再画一遍「人机共设」快捷面板")
+        self.assertNotIn("panel", ui,
+                         "录题辅助栏不再用 ui.panel=false 表达「别画一遍快捷区」："
+                         "那个开关字面上像「关掉辅助栏」，被误读过。宿主改按插件自己"
+                         "声明了 sidebar.right 来判断。")
         controls = ui["controls"]
         fmt = [item for item in controls if item.get("key") == "format"]
         self.assertEqual(len(fmt), 1, controls)

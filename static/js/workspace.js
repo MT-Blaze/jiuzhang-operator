@@ -139,6 +139,24 @@
     return ui && Array.isArray(ui.controls) ? ui.controls : [];
   }
 
+  /**
+   * 插件自带整块右栏面板吗？
+   *
+   * 声明了 sidebar.right 的插件，它的面板就住在这栏里（比如录题辅助栏）。
+   * 右栏的默认住户是 AI 助手——它没有画布，那几个「问知识库/问能力」按钮只能靠
+   * 宿主这层快捷区发起，所以它不算。其余插件住进右栏时，宿主再画一遍同名按钮
+   * 就成了两套，老师会以为有一个是坏的。
+   *
+   * 判据只认插槽本身，不用清单里的 ui.panel 开关：那个开关只管「画不画」，
+   * 管不了「插件住不住」，字面上却像后者，早年被误读成「关掉辅助栏」。
+   */
+  function ownsOwnRightPanel(plugin) {
+    if (!plugin || !Array.isArray(plugin.slots)) return false;
+    if (plugin.slots.indexOf("sidebar.right") < 0) return false;
+    var assistantId = window.JzoContextPanel ? window.JzoContextPanel.assistantId : "";
+    return plugin.id !== assistantId;
+  }
+
   function initUiState(plugin) {
     var controls = panelControls(plugin);
     var values = {};
@@ -186,8 +204,8 @@
     }
     var ui = plugin.ui || {};
     // 插件自带的整块面板（如录题辅助栏）已经住进右栏插槽时，
-    // 宿主这层「人机共设」快捷操作只会重复一遍，命令 ui.panel=false 直接不画。
-    if (ui.panel === false) {
+    // 宿主这层「人机共设」快捷操作只会重复一遍，不画。
+    if (ui.panel === false || ownsOwnRightPanel(plugin)) {
       pluginControlsEl.textContent = "";
       if (pluginPanel) pluginPanel.hidden = true;
       updateUiStateSummary();

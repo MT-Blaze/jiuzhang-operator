@@ -203,8 +203,10 @@ def _normalize_ui(raw: Any, plugin_id: str, name: str) -> dict[str, Any] | None:
         "hint": _ui_text(raw.get("hint"), 120)
         or "点按钮等于在对话区发送对应指令；下拉选择会同步给 AI 上下文。",
         "controls": controls,
-        # panel=false：插件把整套控件画进自己的右栏面板，宿主不再重复一层快捷操作。
+        # panel=false：插件把这套控件画进自己的面板，宿主不再重复一层快捷操作。
         # 控件本身照常登记，宿主仍可据此仲裁插件经 ui.params.set 发来的参数。
+        # 录题辅助栏现在靠「自己声明了 sidebar.right」这条结构性判据由宿主自动判断，
+        # 不再靠这个开关——字面上的 panel=false 容易被读成「关掉辅助栏」。
         "panel": raw.get("panel") is not False,
     }
 
