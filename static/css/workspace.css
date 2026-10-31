@@ -323,6 +323,21 @@
   align-items: center;
 }
 
+/* 辅助栏的回头路与左栏同款，但只由 data-ctx 触发：
+   两栏折叠互不影响，不能让左边收起时冒出一枚「辅助栏」钮。 */
+.ws-ctx-btn {
+  display: none;
+  flex: none;
+  white-space: nowrap;
+  position: relative;
+  z-index: 4;
+}
+
+.ws-page[data-ctx="hidden"] .ws-ctx-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
 /* ============ 中栏：原生引导页 ============ */
 /* 对话流搬去右栏助手插件后，中栏的兜底页签是底座自己的落脚点：
    插件全崩、一个都没装时，老师进来仍能看到「去哪儿、怎么开口」。 */
@@ -388,9 +403,11 @@
 }
 
 .ws-context-body {
+  flex: 1 1 auto;
   padding: 16px;
   overflow-y: auto;
   min-height: 0;
+  scrollbar-gutter: stable;
 }
 
 /* 右栏插槽（sidebar.right）：有插件认领时占住主要高度，没插件时整块 hidden，
@@ -520,7 +537,9 @@
    折叠后轨道仍停在旧宽度、画布左侧留一条死白，正是「修复到不了真机」的根因。 */
 .ws-page[data-side="hidden"] { --sidebar-width: 0px !important; --gutter-side: 0px !important; }
 .ws-page[data-ctx="hidden"] { --context-width: 0px !important; --gutter-ctx: 0px !important; }
-.ws-page[data-dock="hidden"] { --dock-height: 0px !important; --gutter-dock: 0px !important; }
+/* 底栏折叠不是「消失」：留 44px 把手条，折叠钮翻成「展开」，点一下就能回来。
+   旧规则把它整区 display:none，把手跟着一起埋掉，才出现「折了打不开」的死锁。 */
+.ws-page[data-dock="hidden"] { --dock-height: 44px !important; --gutter-dock: 0px !important; }
 
 /* 收起的那条边界不许再拖：手柄留在 0 宽轨道里既拖不动也点不着 */
 .ws-page[data-side="hidden"] .ws-resizer-v[data-resize="side"],
@@ -534,10 +553,28 @@
   .ws-page[data-ctx="hidden"] .ws-context {
     display: none;
   }
+}
 
-  .ws-page[data-dock="hidden"] .ws-dock {
-    display: none;
-  }
+/* 折叠后的底栏只留一条 44px 的把手：头部照常显示（折叠钮翻成「展开」），
+   正文与「清空」一并收起，把手条绝不随内容高度浮动。 */
+.ws-page[data-dock="hidden"] .ws-dock {
+  height: 44px;
+}
+
+.ws-page[data-dock="hidden"] .ws-dock-head {
+  height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  border-bottom: 0;
+}
+
+.ws-page[data-dock="hidden"] .ws-dock-body {
+  display: none;
+}
+
+.ws-page[data-dock="hidden"] #wsDockClear {
+  display: none;
 }
 
 /* 全屏舞台（plugin.json 的 stage.mode = "fullscreen"）：
@@ -1013,7 +1050,8 @@ html.ws-dragging * {
   background: var(--card);
 }
 
-.ws-tabs-wrap .ws-drawer-btn {
+.ws-tabs-wrap .ws-drawer-btn,
+.ws-tabs-wrap .ws-ctx-btn {
   align-self: center;
   margin: 0 4px 0 10px;
 }
@@ -1276,6 +1314,44 @@ html.ws-dragging * {
   min-height: 0;
   overflow-y: auto;
   padding: 8px 14px 12px;
+  scrollbar-gutter: stable;
+}
+
+/* ============ 悬浮幽灵滚动条（宿主托管的滚动区） ============
+   平时轨道与滑块全透明，只在鼠标悬停或正在滚动（.is-scrolling，由 workspace.js 短暂挂上）
+   时浮出一条淡淡的半透明虚影。滚动槽恒留（scrollbar-gutter: stable），
+   滚动条出现/消失都不改内容尺寸，右栏与中栏的底边框不会被它推着跳。 */
+.ws-ghost-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ws-ghost-scroll:hover,
+.ws-ghost-scroll.is-scrolling {
+  scrollbar-color: rgba(60, 52, 40, 0.28) transparent;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 180ms ease;
+}
+
+.ws-ghost-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.22);
+}
+
+.ws-ghost-scroll.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.34);
 }
 
 .ws-dock-log {
@@ -1397,7 +1473,7 @@ html.ws-dragging * {
     display: none;
   }
 
-  /* 底栏在窄屏退化成贴底固定高度的输出条，仍可用「折叠」收掉 */
+  /* 底栏在窄屏退化成贴底固定高度的输出条，折叠后仍留 44px 把手 */
   .ws-dock {
     grid-column: 1;
     grid-row: 2;
@@ -1405,7 +1481,7 @@ html.ws-dragging * {
   }
 
   .ws-page[data-dock="hidden"] .ws-dock {
-    display: none;
+    height: 44px;
   }
 
   /* 抽屉脱离网格流，桌面那套钉轨声明在此必须回退，避免凭空多出隐式轨道 */
@@ -1458,7 +1534,8 @@ html.ws-dragging * {
   }
 
   /* 抽屉浮起时，舞台头那枚入口钮让位给抽屉自带的「折叠」，避免两枚按钮抢焦点 */
-  .ws-page[data-side="open"] .ws-drawer-btn {
+  .ws-page[data-side="open"] .ws-drawer-btn,
+  .ws-page[data-ctx="open"] .ws-ctx-btn {
     visibility: hidden;
   }
 

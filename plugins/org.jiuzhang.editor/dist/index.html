@@ -8,29 +8,17 @@
   <link rel="stylesheet" href="plugin.css">
 </head>
 <body>
-  <!-- 画布实例（stage.center）：三栏全部在画布内——左原图 | 中 LaTeX 源码 | 右渲染。
-       源码与渲染共用一条滚动（行高取两栏较高者），左栏原图与两栏逐题对齐。
-       顶栏只留当前题号 + 源码格式 + 左右互换；标题与状态行已撤（外层页签已报题名）。 -->
+  <!-- 画布实例（stage.center）：从上到下只有题目内容——三栏（左原图 | 中 LaTeX 源码 | 右渲染）
+       与底部的批量条。画布内不再有任何顶栏、状态条与格式/互换按钮；
+       视图切换搬进右栏辅助栏（#epRoot），经宿主的 ui.params.set 与画布对账。
+       进度、格式、脏标记与度量只留给读屏和探针，视觉上不占像素。 -->
   <div id="edRoot" class="ed-root" hidden>
-    <header class="ed-bar" aria-label="录题工具条">
-      <span id="edProgress" class="ed-progress" data-active="0" data-total="0">第 — / — 题</span>
-      <div class="ed-bar-actions">
-        <div class="ed-seg" role="group" aria-label="源码格式">
-          <button type="button" class="ed-seg-btn is-on" id="edFmtLatex" data-format="latex"
-                  aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
-          <button type="button" class="ed-seg-btn" id="edFmtBoxed" data-format="boxed"
-                  aria-pressed="false" title="格式二 · 框框视图">格式二</button>
-        </div>
-        <button type="button" class="ed-swap-btn" id="edSwapMode" aria-pressed="false"
-                title="源码与渲染左右互换">⇄ 互换</button>
-      </div>
-      <!-- 探针与验收用的状态位：视觉上不占位，语义仍在 -->
-      <span class="ed-sr" id="edFormat" data-format="latex">格式一</span>
-      <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
-      <span class="ed-sr" id="edSaved" hidden></span>
-      <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
-            data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
-    </header>
+    <span class="ed-sr" id="edProgress" data-active="0" data-total="0">第 — / — 题</span>
+    <span class="ed-sr" id="edFormat" data-format="latex">格式一</span>
+    <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
+    <span class="ed-sr" id="edSaved" hidden></span>
+    <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
+          data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
 
     <main class="ed-cols" id="edCols" data-swap="false">
       <section class="ed-col ed-col-image" id="edPaneImage" aria-label="原图">
@@ -58,10 +46,7 @@
           </section>
 
           <div class="ed-split" id="edSplitSource" role="separator" aria-orientation="vertical"
-               tabindex="0" aria-label="拖动调整源码栏与渲染栏宽度">
-            <button type="button" class="ed-swap-inline" id="edSwapInline" aria-pressed="false"
-                    aria-label="源码与渲染左右互换" title="源码与渲染左右互换">⇄</button>
-          </div>
+               tabindex="0" aria-label="拖动调整源码栏与渲染栏宽度"></div>
 
           <section class="ed-col ed-col-render" id="edPaneRender" aria-label="渲染结果">
             <div class="ed-pane-head">
@@ -91,14 +76,30 @@
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
-  <!-- 辅助栏实例（sidebar.right）：元数据表单 + 审核动作。
+  <!-- 辅助栏实例（sidebar.right）：编辑视图 + 元数据表单 + AI 帮改 + 审核动作。
        按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
-       源码格式切换已并入画布顶栏，右栏不再重复一只开关。 -->
+       画布顶栏撤除后，格式一/格式二与 ⇄ 互换搬到这里；
+       本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。 -->
   <div id="epRoot" class="ep-root" hidden>
     <header class="ep-head">
       <h2>录题辅助栏</h2>
-      <p class="ep-sub">元数据 · AI 帮改 · 审核动作</p>
+      <p class="ep-sub">视图 · 元数据 · AI 帮改 · 审核动作</p>
     </header>
+
+    <section class="ep-sec" aria-label="编辑视图">
+      <h3 class="ep-sec-title">编辑视图</h3>
+      <div class="ep-seg" role="group" aria-label="源码格式">
+        <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
+                aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
+        <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
+                aria-pressed="false" title="格式二 · 框框视图">格式二</button>
+      </div>
+      <div class="ep-actions">
+        <button type="button" class="ep-btn ep-swap-btn" id="epSwap" aria-pressed="false"
+                title="源码与渲染左右互换">⇄ 互换</button>
+      </div>
+      <p id="epViewNote" class="ep-hint">格式只改画布中栏的编辑视图，题目内容不动。</p>
+    </section>
 
     <section class="ep-sec ep-status-row" aria-label="进度与状态">
       <span id="epProgress" class="ep-progress" data-active="0" data-total="0">第 — / — 题</span>

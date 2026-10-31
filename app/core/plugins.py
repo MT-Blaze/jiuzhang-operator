@@ -203,6 +203,9 @@ def _normalize_ui(raw: Any, plugin_id: str, name: str) -> dict[str, Any] | None:
         "hint": _ui_text(raw.get("hint"), 120)
         or "点按钮等于在对话区发送对应指令；下拉选择会同步给 AI 上下文。",
         "controls": controls,
+        # panel=false：插件把整套控件画进自己的右栏面板，宿主不再重复一层快捷操作。
+        # 控件本身照常登记，宿主仍可据此仲裁插件经 ui.params.set 发来的参数。
+        "panel": raw.get("panel") is not False,
     }
 
 
@@ -288,6 +291,7 @@ def _default_ui(plugin_id: str, name: str, kind: str, capabilities: list[str]) -
         "title": name + "快捷操作",
         "hint": "点按钮等于在对话区发送对应指令；下拉选择会同步给 AI 上下文。",
         "controls": controls,
+        "panel": True,
     }
 
 

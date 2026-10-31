@@ -282,14 +282,20 @@ def main() -> int:
                   canvas.locator(".ed-page, [data-page-h]").count() == 0)
             page.screenshot(path=str(shots / "v2-canvas.png"))
 
-            # ---------- 紧急 UI 回炉：顶栏去冗余 + 三栏顶线齐 + 中右底边平 ----------
+            # ---------- 紧急 UI 回炉 v2：画布彻底无顶栏 + 三栏顶线齐 + 中右底边平 ----------
             check("画布内不再重复插件大标题与状态行",
                   canvas.locator("#edRoot h1, .ed-bar-brand, .ed-status, .ed-legend").count() == 0)
-            check("顶栏只留题号 + 格式切换 + 左右互换",
-                  canvas.locator("#edProgress").count() == 1
-                  and canvas.locator("#edFmtLatex").count() == 1
-                  and canvas.locator("#edFmtBoxed").count() == 1
-                  and canvas.locator("#edSwapMode").count() == 1)
+            check("画布内没有任何顶栏或工具条",
+                  canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
+                  .count() == 0)
+            check("画布内只剩底部批量条的两枚按钮",
+                  canvas.locator("#edRoot .ed-foot button").count() == 2
+                  and canvas.locator("#edRoot .ed-pane-head button, .ed-bar").count() == 0,
+                  {"foot": canvas.locator("#edRoot .ed-foot button").count(),
+                   "bar": canvas.locator(".ed-bar").count()})
+            check("题号状态位仍在，但只给读屏看",
+                  canvas.locator("#edProgress.ed-sr").count() == 1
+                  and canvas.locator("#edProgress").bounding_box()["height"] <= 2)
             frame_tops = [round(canvas.locator(sel).bounding_box()["y"], 2) for sel in
                           ("#edPaneImage", "#edWorkbench")]
             head_tops = [round(canvas.locator(sel + " .ed-pane-head").bounding_box()["y"], 2)
@@ -308,6 +314,40 @@ def main() -> int:
             result["metrics"]["align"] = {
                 "frame_tops": frame_tops, "head_tops": head_tops,
                 "source_bottom": src_bottom, "render_bottom": rnd_bottom}
+
+            # ---------- 死磕对齐：换话术、出滚动条、切视图都不许推走中右底边 ----------
+            def bench_bottom():
+                b = canvas.locator("#edWorkbench").bounding_box()
+                return round(b["y"] + b["height"], 2)
+
+            bottom_base = bench_bottom()
+            canvas.locator("#edBatchNote").evaluate(
+                "n => { n.textContent = '批量话术临时拉长'.repeat(24); }")
+            page.wait_for_timeout(250)
+            bottom_after_note = bench_bottom()
+            check("批量条话术再长也不许换行推走底边",
+                  abs(bottom_after_note - bottom_base) <= 0.5,
+                  {"before": bottom_base, "after": bottom_after_note})
+            canvas.locator("#edSourceBody").evaluate("n => { n.scrollTop = n.scrollHeight; }")
+            page.wait_for_timeout(250)
+            bottom_after_scroll = bench_bottom()
+            check("中栏滚出滚动条时底边纹丝不动",
+                  abs(bottom_after_scroll - bottom_base) <= 0.5,
+                  {"before": bottom_base, "after": bottom_after_scroll})
+            ghost = canvas.locator("#edSourceBody").evaluate(
+                "n => ({ gutter: getComputedStyle(n).scrollbarGutter,"
+                " color: getComputedStyle(n).scrollbarColor,"
+                " scrolling: n.classList.contains('is-scrolling') })")
+            check("滚动条是预留槽位的幽灵滚动条",
+                  ghost["gutter"] == "stable" and ghost["scrolling"],
+                  ghost)
+            page.wait_for_timeout(1200)
+            ghost_off = canvas.locator("#edSourceBody").evaluate(
+                "n => n.classList.contains('is-scrolling')")
+            check("停手后幽灵滚动条收回", ghost_off is False, {"is_scrolling": ghost_off})
+            canvas.locator("#edSourceBody").evaluate("n => { n.scrollTop = 0; }")
+            canvas.locator('.ed-img-jump[data-index="0"]').click()
+            page.wait_for_timeout(300)
 
             # ---------- 右栏：同一插件的第二个沙箱帧 ----------
             panel = page.frame_locator(PANEL)
@@ -338,7 +378,7 @@ def main() -> int:
                   and panel.locator("#epSkip").is_disabled())
             page.screenshot(path=str(shots / "v2-panel.png"))
 
-            # ---------- 左右互换：只是视觉换位，编辑值、选区与滚动都得留住 ----------
+            # ---------- 左右互换（辅助栏按钮）：只是视觉换位，编辑值、选区与滚动都得留住 ----------
             # 辅助栏已挂载再测：互换若误改当前题，面板会立刻跟着漂，判据才收得住。
             swap_area = canvas.locator(".ed-src-area").first
             swap_area.click(position={"x": 40, "y": 12})
@@ -350,11 +390,11 @@ def main() -> int:
             render_x_before = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
             scroll_before = canvas.locator("#edSourceBody").evaluate("n => n.scrollTop")
             value_before = swap_area.input_value()
-            canvas.locator("#edSwapInline").click()
-            page.wait_for_timeout(400)
+            panel.locator("#epSwap").click()
+            page.wait_for_timeout(500)
             source_x_after = round(canvas.locator("#edPaneSource").bounding_box()["x"], 2)
             render_x_after = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
-            check("点两栏之间的小钮：源码与渲染左右换位",
+            check("辅助栏点【⇄ 互换】：源码与渲染左右换位",
                   source_x_before < render_x_before and source_x_after > render_x_after
                   and canvas.locator("#edCols").get_attribute("data-swap") == "true",
                   {"before": [source_x_before, render_x_before],
@@ -364,18 +404,15 @@ def main() -> int:
             check("互换后中栏滚动进度原地保留",
                   abs(scroll_after - scroll_before) <= 1,
                   {"before": scroll_before, "after": scroll_after})
-            caret_after = swap_area.evaluate(
-                "node => [document.activeElement === node, node.selectionStart, node.selectionEnd]")
-            check("互换后焦点与选区送回源码框",
-                  bool(caret_after[0]) and caret_after[1] == 4 and caret_after[2] == 10,
-                  {"active_and_caret": caret_after})
             check("互换没把当前题带跑",
                   canvas.locator("#edProgress").get_attribute("data-active") == "1",
                   {"progress": canvas.locator("#edProgress").inner_text()})
+            check("辅助栏互换钮同步亮起",
+                  panel.locator("#epSwap").get_attribute("aria-pressed") == "true")
             page.screenshot(path=str(shots / "v2-swapped.png"))
-            canvas.locator("#edSwapMode").click()
-            page.wait_for_timeout(300)
-            check("顶栏互换钮也能换回原位",
+            panel.locator("#epSwap").click()
+            page.wait_for_timeout(400)
+            check("辅助栏互换钮也能换回原位",
                   canvas.locator("#edCols").get_attribute("data-swap") == "false"
                   and canvas.locator("#edPaneSource").bounding_box()["x"]
                   < canvas.locator("#edPaneRender").bounding_box()["x"])
@@ -399,10 +436,13 @@ def main() -> int:
             floor = image_pane.evaluate("node => node.getBoundingClientRect().width")
             check("拖到底不归零（只留极窄缝）", 28 <= floor < width_before, {"width": floor})
 
-            # ---------- 格式二：拆框编辑，改完自动重组格式一 ----------
-            canvas.locator("#edFmtBoxed").click()
+            # ---------- 格式二（辅助栏按钮）：拆框编辑，改完自动重组格式一 ----------
+            panel.locator("#epFmtBoxed").click()
             expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "boxed",
                                                                  timeout=12000)
+            check("辅助栏格式二按钮同步高亮",
+                  panel.locator("#epFmtBoxed").get_attribute("aria-pressed") == "true"
+                  and panel.locator("#epFmtLatex").get_attribute("aria-pressed") == "false")
             boxes_now = canvas.locator(".ed-box").count()
             check("格式二按环境拆出框", boxes_now >= 4, {"boxes": boxes_now})
             env_labels = [text.strip() for text in canvas.locator(".ed-box-env").all_inner_texts()]
@@ -415,7 +455,7 @@ def main() -> int:
             expect(option_box).to_be_visible(timeout=8000)
             option_box.fill("$1$（" + MARK + "）")
             page.wait_for_timeout(500)
-            canvas.locator("#edFmtLatex").click()
+            panel.locator("#epFmtLatex").click()
             expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "latex",
                                                                  timeout=12000)
             rebuilt = canvas.locator(".ed-src-area").first.input_value()
@@ -829,6 +869,55 @@ def main() -> int:
             page.screenshot(path=str(shots / "v2-batch.png"))
             check("批量段跑完页面仍无脚本错误", not result["page_errors"],
                   {"page_errors": result["page_errors"][:3]})
+
+            # ---------- 底座外壳：辅助栏折叠/重开 + 底栏折叠不死锁 ----------
+            check("右栏已经改名为辅助栏",
+                  page.locator("#wsContext").get_attribute("aria-label") == "辅助栏"
+                  and page.locator("#wsContext .ws-context-head h2").inner_text().strip() == "辅助栏")
+            check("录题插件不再重复宿主「人机共设」小面板",
+                  page.locator("#wsPluginPanel").is_hidden())
+            ctx_open_btn = page.locator("#wsOpenCtx")
+            check("辅助栏展开时不给多余入口", not ctx_open_btn.is_visible())
+            page.locator("#wsToggleCtx").click()
+            page.wait_for_timeout(400)
+            check("辅助栏可折叠",
+                  page.locator(".ws-page").get_attribute("data-ctx") == "hidden")
+            check("折叠后页签栏出现【辅助栏】回头钮",
+                  ctx_open_btn.is_visible()
+                  and ctx_open_btn.get_attribute("aria-expanded") == "false")
+            page.screenshot(path=str(shots / "v2-ctx-collapsed.png"))
+            ctx_open_btn.click()
+            page.wait_for_timeout(500)
+            check("辅助栏可重新展开",
+                  page.locator(".ws-page").get_attribute("data-ctx") == "open")
+            expect(panel.locator("#epRoot")).to_be_visible(timeout=12000)
+            check("重开后辅助栏面板仍在", True)
+
+            dock = page.locator("#wsDock")
+            dock_toggle = page.locator("#wsToggleDock")
+            dock_toggle.click()
+            page.wait_for_timeout(400)
+            dock_box = dock.bounding_box()
+            check("底栏折叠后仍留 44px 把手条",
+                  page.locator(".ws-page").get_attribute("data-dock") == "hidden"
+                  and dock_box is not None and abs(dock_box["height"] - 44) <= 1,
+                  {"dock": dock_box})
+            check("把手条上的折叠钮翻成「展开」且仍可点",
+                  dock_toggle.is_visible() and dock_toggle.inner_text().strip() == "展开")
+            check("底栏正文收起，不在折叠条里露头",
+                  page.locator("#wsDockBody").is_hidden())
+            page.screenshot(path=str(shots / "v2-dock-collapsed.png"))
+            dock_toggle.click()
+            page.wait_for_timeout(400)
+            check("点把手条能重新展开底栏",
+                  page.locator(".ws-page").get_attribute("data-dock") == "open"
+                  and page.locator("#wsDockBody").is_visible()
+                  and dock_toggle.inner_text().strip() == "折叠")
+            ghost_host = page.locator("#wsContextBody").evaluate(
+                "n => ({gutter: getComputedStyle(n).scrollbarGutter,"
+                " cls: n.classList.contains('ws-ghost-scroll')})")
+            check("宿主的辅助栏滚动区也是幽灵滚动条",
+                  ghost_host["gutter"] == "stable" and ghost_host["cls"], ghost_host)
 
             # ---------- 回流：题库画布搜得到本次保存 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first

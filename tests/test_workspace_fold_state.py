@@ -135,11 +135,12 @@ class PaneTrackPinningTest(unittest.TestCase):
 
         两本账（属性说收起、轨道说展开）正是 v0.4.2 死锁的温床；
         四区改造后轨道表达式只存在于基础规则一处，结构上无法再跑偏。
+        底栏例外：折叠后保留 44px 把手条，不是 0——折叠钮必须还点得着。
         """
-        for selector, variable in (
-            ('.ws-page[data-side="hidden"]', "--sidebar-width"),
-            ('.ws-page[data-ctx="hidden"]', "--context-width"),
-            ('.ws-page[data-dock="hidden"]', "--dock-height"),
+        for selector, variable, size in (
+            ('.ws-page[data-side="hidden"]', "--sidebar-width", "0px"),
+            ('.ws-page[data-ctx="hidden"]', "--context-width", "0px"),
+            ('.ws-page[data-dock="hidden"]', "--dock-height", "44px"),
         ):
             body = rule_body(selector)
             self.assertNotIn("grid-template-columns", body, f"{selector} 又重述了轨道表达式")
@@ -147,7 +148,7 @@ class PaneTrackPinningTest(unittest.TestCase):
             # 内联优先级高于样式表，不加固就压不回 0，折叠后画布左侧会留一条死白。
             self.assertRegex(
                 body,
-                re.escape(variable) + r":\s*0px\s*!important",
+                re.escape(variable) + r":\s*" + re.escape(size) + r"\s*!important",
                 f"{selector} 压 {variable} 没带 !important，旧内联声明会赢",
             )
             # 折叠只压生效尺寸：偏好尺寸要是被压成 0，展开后就再也回不到用户拖出来的宽度了
@@ -219,6 +220,80 @@ class ReopenEntryTest(unittest.TestCase):
         self.assertIn('setAttribute("data-side"', body)
         self.assertIn('open ? "折叠" : "展开"', body)
         self.assertIn('aria-expanded', body)
+
+    def test_05_context_has_its_own_collapse_and_reopen(self) -> None:
+        """辅助栏（原右栏上下文）：栏内有折叠钮，栏藏起来后页签栏出现【辅助栏】钮。"""
+        self.assertIn('id="wsToggleCtx"', HTML, "辅助栏头部缺少折叠钮")
+        self.assertIn('aria-label="辅助栏"', HTML, "右栏名字必须是「辅助栏」")
+        self.assertNotIn("aria-label=\"上下文\"", HTML)
+        self.assertNotIn("<h2>上下文</h2>", HTML)
+        wrap = re.search(r'class="ws-tabs-wrap">(.*?)</div>', HTML, re.S)
+        self.assertIsNotNone(wrap)
+        self.assertIn("wsOpenCtx", wrap.group(1), "辅助栏的回头路必须留在页签栏里")
+        self.assertEqual(rule_body(".ws-ctx-btn").count("display: none"), 1)
+        self.assertRegex(
+            rule_body('.ws-page[data-ctx="hidden"] .ws-ctx-btn'),
+            r"display:\s*inline-flex",
+        )
+        # 两栏折叠互不牵连：data-side 的那条规则不许把【辅助栏】钮也带出来
+        self.assertNotIn(".ws-ctx-btn", rule_body('.ws-page[data-side="hidden"] .ws-drawer-btn'))
+        body = re.search(r"function setCtx\(open\).*?\n  \}", JS, re.S).group(0)
+        self.assertIn('setAttribute("data-ctx"', body)
+        self.assertIn('open ? "折叠" : "展开"', body)
+        self.assertIn("openCtxBtn", body)
+
+    def test_06_dock_collapse_keeps_a_clickable_handle(self) -> None:
+        """底栏折叠不许整区 display:none：留 44px 头条，折叠钮翻成「展开」。"""
+        dock = rule_body('.ws-page[data-dock="hidden"] .ws-dock')
+        self.assertIn("height: 44px", dock)
+        head = rule_body('.ws-page[data-dock="hidden"] .ws-dock-head')
+        self.assertIn("height: 44px", head)
+        self.assertNotIn("display: none", head)
+        # 收起的只是正文与清空钮，折叠钮本身永远在场
+        self.assertRegex(rule_body('.ws-page[data-dock="hidden"] .ws-dock-body'),
+                         r"display:\s*none")
+        self.assertRegex(rule_body('.ws-page[data-dock="hidden"] #wsDockClear'),
+                         r"display:\s*none")
+        # 桌面段不许再把整个 .ws-dock 摘走（旧 bug 的根因）
+        self.assertNotIn('.ws-page[data-dock="hidden"] .ws-dock {', media_body(769),
+                         "桌面折叠态又把底栏整区藏了，按钮会跟着一起埋掉")
+        body = re.search(r"function setDock\(open\).*?\n  \}", JS, re.S).group(0)
+        self.assertIn('open ? "折叠" : "展开"', body)
+        # 窄屏同样保留把手条，而不是消失
+        self.assertIn('.ws-page[data-dock="hidden"] .ws-dock', media_body_max(768))
+        mobile = re.search(r'\.ws-page\[data-dock="hidden"\] \.ws-dock\s*\{([^}]*)\}',
+                           media_body_max(768))
+        self.assertIsNotNone(mobile)
+        self.assertIn("height: 44px", mobile.group(1))
+        self.assertNotIn("display: none", mobile.group(1))
+
+
+class GhostScrollbarTest(unittest.TestCase):
+    """滚动条一律「幽灵化」：平时透明，悬停或滚动时才浮现淡影，不许像系统原生的深色条。"""
+
+    def test_01_host_scroll_areas_are_marked(self) -> None:
+        for node_id in ("wsContextBody", "wsDockBody"):
+            at = HTML.index(f'id="{node_id}"')
+            tag_start = HTML.rindex("<", 0, at)
+            tag = HTML[tag_start:HTML.index(">", at)]
+            self.assertIn("ws-ghost-scroll", tag, f"{node_id} 没挂幽灵滚动条样式")
+
+    def test_02_ghost_rules_are_transparent_until_needed(self) -> None:
+        base = rule_body(".ws-ghost-scroll")
+        self.assertIn("scrollbar-color: transparent transparent", base)
+        self.assertIn(".ws-ghost-scroll::-webkit-scrollbar-thumb", CSS)
+        self.assertIn("transition: background-color", CSS)
+        self.assertIn(".ws-ghost-scroll.is-scrolling::-webkit-scrollbar-thumb", CSS)
+        self.assertRegex(rule_body(".ws-ghost-scroll::-webkit-scrollbar-thumb"),
+                         r"background-color:\s*transparent")
+
+    def test_03_runtime_marks_scrolling_with_capture(self) -> None:
+        self.assertIn("function wireGhostScroll()", JS)
+        block = re.search(r"function wireGhostScroll\(\).*?\n  \}", JS, re.S).group(0)
+        self.assertIn('classList.add("is-scrolling")', block)
+        self.assertIn('classList.remove("is-scrolling")', block)
+        self.assertIn("}, true);", block, "scroll 不冒泡，必须走捕获阶段")
+        self.assertIn("wireGhostScroll();", JS)
 
 
 class ClippingTest(unittest.TestCase):

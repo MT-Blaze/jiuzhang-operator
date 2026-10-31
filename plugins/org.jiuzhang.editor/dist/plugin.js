@@ -25,6 +25,7 @@
   var LAYOUT_DRAFT_MS = 400;
   var WORKLIST_DRAFT_MS = 600;
   var SELECTION_MS = 160;
+  var GHOST_SCROLL_MS = 900;
   var PANEL_DRAFT_RETRY_MS = 900;
   var RECEIPT_RETRY_MS = 350;
   var RECEIPT_RETRY_MAX = 4;
@@ -69,10 +70,6 @@
   var dirtyEl = document.getElementById("edDirty");
   var toastEl = document.getElementById("edToast");
   var savedEl = document.getElementById("edSaved");
-  var fmtLatexEl = document.getElementById("edFmtLatex");
-  var fmtBoxedEl = document.getElementById("edFmtBoxed");
-  var swapModeEl = document.getElementById("edSwapMode");
-  var swapInlineEl = document.getElementById("edSwapInline");
   var poolEl = document.getElementById("edPool");
   var batchNoteEl = document.getElementById("edBatchNote");
   var saveAllEl = document.getElementById("edSaveAll");
@@ -107,6 +104,10 @@
   var panelAiPreviewEl = document.getElementById("epAiPreview");
   var panelAiApplyEl = document.getElementById("epAiApply");
   var panelAiDiscardEl = document.getElementById("epAiDiscard");
+  var panelFmtLatexEl = document.getElementById("epFmtLatex");
+  var panelFmtBoxedEl = document.getElementById("epFmtBoxed");
+  var panelSwapEl = document.getElementById("epSwap");
+  var panelViewNoteEl = document.getElementById("epViewNote");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -145,6 +146,7 @@
     uiRevisions: null,
     receipts: [],
     format: "latex",
+    swap: false,
     topics: { roots: null, children: {}, open: {}, loading: {} },
     saving: false,
     ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false }
@@ -1431,6 +1433,7 @@
       status: item.status,
       dirty: Boolean(item.dirty),
       format: state.format,
+      swap: Boolean(state.swap),
       source: trunc(item.source, FIELD_MAX),
       caret: caretOfActive(),
       errors: parsed.errors.slice(0, 8),
@@ -1523,16 +1526,21 @@
     }).catch(function () { /* 读不到草稿就从假数据重来 */ });
   }
 
-  // ---------- 格式一 / 格式二（开关在画布顶栏；宿主 ui.params 只做跨帧对账） ----------
+  // ---------- 格式一 / 格式二（开关住辅助栏；画布是视图主人，宿主 ui.params 做跨帧对账） ----------
   function setFormatButtons(format) {
     var value = FORMATS[format] ? format : "latex";
     panel.format = value;
-    [fmtLatexEl, fmtBoxedEl].forEach(function (node) {
+    [panelFmtLatexEl, panelFmtBoxedEl].forEach(function (node) {
       if (!node) return;
       var on = node.getAttribute("data-format") === value;
       node.classList.toggle("is-on", on);
       node.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    if (panelViewNoteEl) {
+      panelViewNoteEl.textContent = value === "boxed"
+        ? "格式二：框里只有内容，环境骨架改不动。"
+        : "格式一：整段源码直接编辑。两者只是同一份源码的两种编辑面。";
+    }
     if (panelMetricsEl) panelMetricsEl.setAttribute("data-format", value);
   }
 
@@ -1550,33 +1558,51 @@
     publishSelection();
   }
 
-  /** 顶栏点选：画布先落地，再尽力把参数同步给宿主与右栏；宿主不接也不影响画布自己的视图。 */
-  function chooseFormat(next) {
-    if (!FORMATS[next] || next === state.format) return;
-    setFormat(next);
+  /**
+   * 辅助栏点格式：按钮先亮，再请宿主把参数广播给画布帧。
+   * 面板拿不到画布的 DOM，真正切视图只发生在画布收到 ui.params.changed 之后。
+   */
+  function chooseFormatFromPanel(next) {
+    if (!FORMATS[next]) return;
+    setFormatButtons(next);
     hostCall("ui.params.set", {
       params: { format: next },
-      snapshot: {},
+      snapshot: panel.uiRevisions || {},
       plugin_id: PLUGIN_ID
-    }).catch(function () { /* 参数同步失败，画布视图照旧 */ });
+    }).catch(function () {
+      if (panel.selection) setFormatButtons(panel.selection.format || "latex");
+    });
   }
 
   // ---------- 源码 / 渲染左右互换（只改视觉顺序，DOM 不挪） ----------
+  function setSwapButton(on) {
+    panel.swap = Boolean(on);
+    if (!panelSwapEl) return;
+    var label = panel.swap ? "⇄ 换回" : "⇄ 互换";
+    panelSwapEl.setAttribute("aria-pressed", panel.swap ? "true" : "false");
+    panelSwapEl.setAttribute("aria-label", label + "（源码与渲染左右位置）");
+    panelSwapEl.setAttribute("title", label + "（源码与渲染左右位置）");
+    panelSwapEl.textContent = label;
+  }
+
   function applySwap(next, persist) {
     state.swap = Boolean(next);
     if (colsEl) colsEl.setAttribute("data-swap", state.swap ? "true" : "false");
-    var label = state.swap ? "⇄ 换回" : "⇄ 互换";
-    if (swapModeEl) {
-      swapModeEl.setAttribute("aria-pressed", state.swap ? "true" : "false");
-      swapModeEl.setAttribute("aria-label", label + "（源码与渲染）");
-      swapModeEl.textContent = label;
-    }
-    if (swapInlineEl) {
-      swapInlineEl.setAttribute("aria-pressed", state.swap ? "true" : "false");
-      swapInlineEl.setAttribute("aria-label", label + "（源码与渲染）");
-      swapInlineEl.setAttribute("title", label + "（源码与渲染）");
-    }
+    setSwapButton(state.swap);
     if (persist) queueLayoutSave();
+  }
+
+  /** 辅助栏点互换：同样只把意图交给宿主，画布收到广播后才换位并回投选区。 */
+  function toggleSwapFromPanel() {
+    var next = !panel.swap;
+    setSwapButton(next);
+    hostCall("ui.params.set", {
+      params: { swap: next ? "true" : "false" },
+      snapshot: panel.uiRevisions || {},
+      plugin_id: PLUGIN_ID
+    }).catch(function () {
+      if (panel.selection) setSwapButton(Boolean(panel.selection.swap));
+    });
   }
 
   /**
@@ -1643,7 +1669,6 @@
     if (!node) return;
     var drag = null;
     node.addEventListener("pointerdown", function (event) {
-      if (event.target && event.target.closest && event.target.closest(".ed-swap-inline")) return;
       drag = { x: event.clientX, image: state.widths.image, source: state.widths.source };
       node.setAttribute("data-drag", "true");
       if (node.setPointerCapture) node.setPointerCapture(event.pointerId);
@@ -2138,7 +2163,7 @@
     commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
   }
 
-  // ---------- 两帧对账：格式参数（面板→画布）与入库回执（面板→画布） ----------
+  // ---------- 两帧对账：辅助栏设的视图参数（面板→画布）与入库回执（面板→画布） ----------
   function onUiParams(payload) {
     var values = payload && payload.values;
     if (!payload || payload.pluginId !== PLUGIN_ID || !values) return;
@@ -2147,9 +2172,18 @@
     }
     if (state.slot === "stage.center") {
       if (values.format && values.format !== state.format) setFormat(values.format);
+      if (values.swap != null) {
+        var wantSwap = values.swap === true || values.swap === "true";
+        if (wantSwap !== state.swap) {
+          applySwap(wantSwap, true);
+          alignRows();
+          publishSelection();
+        }
+      }
       return;
     }
     if (values.format) setFormatButtons(values.format);
+    if (values.swap != null) setSwapButton(values.swap === true || values.swap === "true");
   }
 
   /**
@@ -2206,7 +2240,7 @@
       saveWorklist();
       publishSelection();
       // 画布与辅助栏是两个 iframe，面板那句「已入库」画布看不见；
-      // 认领回执时由画布自己把题号回显到顶栏，老师不用来回翻帧。
+      // 认领回执时由画布把题号回显到读屏状态位，老师不用来回翻帧。
       showSaved(id, matched.action === "update");
     }).catch(function () { /* 读不到回执就不动，等老师再点一次保存 */ });
   }
@@ -2361,6 +2395,7 @@
     if (panelYearEl) panelYearEl.value = merged.year || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
     setFormatButtons(sel.format || panel.format);
+    setSwapButton(Boolean(sel.swap));
     renderTypeNote();
     renderMounted();
     renderPanelMetrics();
@@ -2822,7 +2857,8 @@
       index: active, total: items.length, key: saved.key,
       question_id: saved.id || saved.saved_id || "", saved_id: saved.saved_id || "",
       status: saved.status, dirty: Boolean(saved.dirty), format: panel.format,
-      source: source, errors: saved.errors || [], ai_type: parseExamSource(source).type,
+      swap: panel.swap, source: source, errors: saved.errors || [],
+      ai_type: parseExamSource(source).type,
       confidence: typeof saved.confidence === "number" ? saved.confidence : null,
       defaults: saved.defaults || {}, images: [], extensions: {}
     });
@@ -2836,6 +2872,13 @@
       L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴"
     });
     bindFormChanges();
+    [panelFmtLatexEl, panelFmtBoxedEl].forEach(function (node) {
+      if (!node) return;
+      node.addEventListener("click", function () {
+        chooseFormatFromPanel(node.getAttribute("data-format"));
+      });
+    });
+    if (panelSwapEl) panelSwapEl.addEventListener("click", toggleSwapFromPanel);
     if (panelSaveEl) panelSaveEl.addEventListener("click", function () { onPanelSave("save"); });
     if (panelVariantEl) panelVariantEl.addEventListener("click", function () { onPanelSave("variant"); });
     if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);
@@ -2845,6 +2888,9 @@
     if (panelAiDiscardEl) panelAiDiscardEl.addEventListener("click", onAiDiscard);
     renderAi();
     setFormatButtons("latex");
+    setSwapButton(false);
+    wireGhost(panelRoot);
+    wireGhost(document.getElementById("epTree"));
     loadMetaDraft().then(function () {
       return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY });
     }).then(function (result) {
@@ -2956,16 +3002,20 @@
   });
 
   // ---------- 启动 ----------
+  /** 幽灵滚动条：只在真滚动时让滚动条浮出来，停手就淡回去（纯样式行为，不参与业务）。 */
+  function wireGhost(node) {
+    if (!node) return;
+    var timer = 0;
+    node.addEventListener("scroll", function () {
+      node.classList.add("is-scrolling");
+      window.clearTimeout(timer);
+      timer = window.setTimeout(function () { node.classList.remove("is-scrolling"); }, GHOST_SCROLL_MS);
+    }, { passive: true });
+  }
+
   function bind() {
     bindSplit(document.getElementById("edSplitImage"), "image");
     bindSplit(document.getElementById("edSplitSource"), "source");
-    [fmtLatexEl, fmtBoxedEl].forEach(function (node) {
-      if (!node) return;
-      node.addEventListener("click", function () { chooseFormat(node.getAttribute("data-format")); });
-    });
-    [swapModeEl, swapInlineEl].forEach(function (node) {
-      if (node) node.addEventListener("click", toggleSwap);
-    });
     document.addEventListener("focusin", function (event) {
       var node = event.target;
       if (node && node.getAttribute && node.getAttribute("data-field") != null) lastFieldNode = node;
@@ -2973,7 +3023,9 @@
     applySwap(state.swap, false);
     setFormatButtons(state.format);
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
-      if (node) node.addEventListener("scroll", function () { syncScroll(node); });
+      if (!node) return;
+      wireGhost(node);
+      node.addEventListener("scroll", function () { syncScroll(node); });
     });
     if (saveAllEl) saveAllEl.addEventListener("click", function () { saveAllDirty(); });
     if (window.ResizeObserver && colsEl) {

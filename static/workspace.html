@@ -63,14 +63,17 @@
         <div class="ws-tabs-wrap">
           <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button"
             aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
-          <div class="ws-tabs" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
+          <!-- 辅助栏折叠后的回头路：右栏自己藏起来时，这枚钮留在页签栏，永远点得着 -->
+          <button class="ws-btn ws-btn-sm ws-ctx-btn" id="wsOpenCtx" type="button"
+            aria-controls="wsContext" aria-expanded="false">辅助栏</button>
+          <div class="ws-tabs ws-ghost-scroll" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
         </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
           <!-- 引导页：插件全崩也还有地方落脚的永久兜底页（不可关闭）。
                对话流已从这一栏搬走——它过去住在中栏，等于让 AI 占着底座最好的位置、
                还天然能碰宿主 DOM；军令 #15 把它交还给右栏的沙箱插件。 -->
           <section class="ws-tab-panel" id="wsPanelHome" role="tabpanel" aria-label="引导" data-tab="home">
-            <div class="ws-home">
+            <div class="ws-home ws-ghost-scroll">
               <h2 class="ws-home-title">九章算子 · 工作台</h2>
               <p class="ws-home-lede">中栏是通用舞台：左栏点一下插件就开一页，右侧「AI 助手」听你说人话、替你把题库与录题串起来。</p>
               <ul class="ws-home-list">
@@ -96,12 +99,15 @@
     <div class="ws-resizer ws-resizer-v" id="wsResizerCtx" data-resize="context" role="separator"
       aria-orientation="vertical" tabindex="0" aria-label="拖动调整右栏宽度"></div>
 
-    <!-- 右栏：上下文面板 -->
-    <aside class="ws-context" id="wsContext" role="complementary" aria-label="上下文">
+    <!-- 右栏：辅助栏。视图/元数据/AI 帮改/审核动作由入住插件自己决定；
+         栏本身归底座，顶部的折叠钮把整栏收走，页签栏的【辅助栏】钮再叫回来。 -->
+    <aside class="ws-context" id="wsContext" role="complementary" aria-label="辅助栏">
       <header class="ws-context-head">
-        <h2>上下文</h2>
+        <h2>辅助栏</h2>
+        <button class="ws-btn ws-btn-sm" id="wsToggleCtx" type="button"
+          aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
-      <div class="ws-context-body" id="wsContextBody">
+      <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
         <section class="ws-section">
           <h3>模型</h3>
           <p class="ws-context-value" id="ctxModel">未就绪</p>
@@ -140,7 +146,7 @@
     <section class="ws-dock" id="wsDock" aria-label="输出日志区">
       <header class="ws-dock-head">
         <h2 class="sr-only" id="wsDockTitle">输出日志区</h2>
-        <div class="ws-dock-tabs" id="wsDockTabs" role="tablist" aria-label="输出日志视图">
+        <div class="ws-dock-tabs ws-ghost-scroll" id="wsDockTabs" role="tablist" aria-label="输出日志视图">
           <button class="ws-dock-tab" id="wsDockTabLog" type="button" role="tab"
             aria-selected="true" data-view="log">运行日志</button>
           <button class="ws-dock-tab" id="wsDockTabError" type="button" role="tab"
@@ -153,7 +159,7 @@
           <button class="ws-btn ws-btn-sm" id="wsToggleDock" type="button" aria-expanded="true" aria-controls="wsDockBody">折叠</button>
         </div>
       </header>
-      <div class="ws-dock-body" id="wsDockBody">
+      <div class="ws-dock-body ws-ghost-scroll" id="wsDockBody">
         <ul class="ws-dock-log" id="wsDockLog" data-view="log" aria-live="polite">
           <li class="ws-dock-empty">暂无输出。插件与面板事件会出现在这里。</li>
         </ul>

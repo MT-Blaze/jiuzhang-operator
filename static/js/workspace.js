@@ -39,6 +39,7 @@
   var pluginControlsEl = document.getElementById("wsPluginControls");
   var pluginPanelHint = document.getElementById("wsPluginPanelHint");
   var uiStateSummary = document.getElementById("wsUiStateSummary");
+  var ctxToggle = document.getElementById("wsToggleCtx");
   var dockToggle = document.getElementById("wsToggleDock");
   var dockClearBtn = document.getElementById("wsDockClear");
   var dockLog = document.getElementById("wsDockLog");
@@ -185,6 +186,14 @@
       return;
     }
     var ui = plugin.ui || {};
+    // 插件自带的整块面板（如录题辅助栏）已经住进右栏插槽时，
+    // 宿主这层「人机共设」快捷操作只会重复一遍，命令 ui.panel=false 直接不画。
+    if (ui.panel === false) {
+      pluginControlsEl.textContent = "";
+      if (pluginPanel) pluginPanel.hidden = true;
+      updateUiStateSummary();
+      return;
+    }
     if (pluginPanelTitle) pluginPanelTitle.textContent = ui.title || ((plugin.name || "插件") + "快捷操作");
     if (pluginPanelDesc) {
       pluginPanelDesc.textContent = plugin.description || "该插件未提供说明。";
@@ -370,7 +379,7 @@
       return { error: { code: "PANEL_MOVED", message: "面板已切到「" + uiState.pluginId + "」，本次设定作废" } };
     }
     var outcome = applyUiParams(params, snapshot);
-    dockLine("AI 助手经宿主设定面板参数：应用 " + outcome.applied.length
+    dockLine("插件经宿主设定面板参数：应用 " + outcome.applied.length
       + " 项、跳过 " + outcome.skipped.length + " 项。", "agent.params");
     return outcome;
   }
@@ -417,6 +426,29 @@
     if (window.JzoContextPanel && typeof window.JzoContextPanel.sync === "function") {
       window.JzoContextPanel.sync(installedPlugins, activeCanvasPluginId);
     }
+    syncRightSlotUiState();
+  }
+
+  /**
+   * 面板参数账本跟着右栏主人走：入住插件若带 select 控件（录题辅助栏的格式/互换），
+   * 它就是当前 uiState 的主人，插件的 ui.params.set 才不会被宿主判成 PANEL_MOVED。
+   * 没有 select 控件的插件（如 AI 助手只有按钮）不抢账本，只保留在左栏点击时的那份。
+   */
+  function syncRightSlotUiState() {
+    var id = window.JzoContextPanel && typeof window.JzoContextPanel.activeId === "function"
+      ? window.JzoContextPanel.activeId() : "";
+    if (!id || id === uiState.pluginId) return;
+    var claimant = null;
+    for (var i = 0; i < installedPlugins.length; i += 1) {
+      if (installedPlugins[i].id === id) { claimant = installedPlugins[i]; break; }
+    }
+    if (!claimant) return;
+    var hasSelect = panelControls(claimant).some(function (control) {
+      return control.type === "select";
+    });
+    if (!hasSelect) return;
+    syncUiState(claimant);
+    renderPluginPanel(claimant);
   }
 
   // 助手插件向底座要服务的唯一门面：白名单在 stage.js，能力在这里。
@@ -435,6 +467,7 @@
   var wsPage = document.querySelector(".ws-page");
   var mqMobile = window.matchMedia("(max-width: 768px)");
   var openSidebarBtn = document.getElementById("wsOpenSidebar");
+  var openCtxBtn = document.getElementById("wsOpenCtx");
 
   function sideOpen() {
     return !!wsPage && wsPage.getAttribute("data-side") === "open";
@@ -448,6 +481,10 @@
       sidebarToggle.textContent = open ? "折叠" : "展开";
     }
     if (openSidebarBtn) openSidebarBtn.setAttribute("aria-expanded", String(open));
+  }
+
+  function ctxOpen() {
+    return !!wsPage && wsPage.getAttribute("data-ctx") === "open";
   }
 
   function immersiveOn() {
@@ -473,6 +510,11 @@
   function setCtx(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
+    if (ctxToggle) {
+      ctxToggle.setAttribute("aria-expanded", String(open));
+      ctxToggle.textContent = open ? "折叠" : "展开";
+    }
+    if (openCtxBtn) openCtxBtn.setAttribute("aria-expanded", String(open));
   }
 
   function dockOpen() {
@@ -497,6 +539,18 @@
   if (openSidebarBtn) {
     openSidebarBtn.addEventListener("click", function () {
       toggleRail();
+    });
+  }
+
+  if (ctxToggle) {
+    ctxToggle.addEventListener("click", function () {
+      setCtx(!ctxOpen());
+    });
+  }
+
+  if (openCtxBtn) {
+    openCtxBtn.addEventListener("click", function () {
+      setCtx(true);
     });
   }
 
@@ -1634,10 +1688,29 @@
     });
   }
 
+  // ============ 幽灵滚动条：真滚动时浮出来，停手 900ms 后淡回去 ============
+  // scroll 事件不冒泡，但捕获阶段能拿到；只认标了 .ws-ghost-scroll 的宿主滚动区，
+  // iframe 插件内部的滚动条由插件自己的样式负责。
+  function wireGhostScroll() {
+    var timers = typeof WeakMap === "function" ? new WeakMap() : null;
+    document.addEventListener("scroll", function (event) {
+      var node = event.target;
+      if (!node || !node.classList || !node.classList.contains("ws-ghost-scroll")) return;
+      node.classList.add("is-scrolling");
+      if (!timers) return;
+      var previous = timers.get(node);
+      if (previous) window.clearTimeout(previous);
+      timers.set(node, window.setTimeout(function () {
+        node.classList.remove("is-scrolling");
+      }, 900));
+    }, true);
+  }
+
   // ============ 初始化 ============
   // 中栏默认停在原生引导页，右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
   wireDock();
   wireDockMenu();
+  wireGhostScroll();
   wirePluginDrag();
   wireSidebarMenu();
   wireStageSovereignty();

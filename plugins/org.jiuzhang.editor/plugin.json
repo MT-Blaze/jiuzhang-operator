@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "api_version": "1.0",
   "kind": "tool",
-  "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段编辑 / 格式二拆框后自动重组） | 右按内容实际高度渲染；单题与批量同一界面，滚动跟题、左栏逐题跳转，底部【保存全部】只提交脏题；右栏辅助面板放题型、难度、来源、考向、标签、AI 帮改（只改题干段与解析段，点采用才回填画布）与审核动作；写库一律经宿主（新建 bank.create、编辑 bank.update），插件不碰令牌。",
+  "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段编辑 / 格式二拆框后自动重组） | 右按内容实际高度渲染，画布内不再有任何顶栏与状态条；视图切换、题型、难度、来源、考向、标签、AI 帮改（只改题干段与解析段，点采用才回填画布）与审核动作全部收进右栏辅助栏；写库一律经宿主（新建 bank.create、编辑 bank.update），插件不碰令牌。",
   "author": "九章算子",
   "license": "Apache-2.0",
   "min_host_version": "1.0.0",
@@ -26,17 +26,26 @@
     "ai:invoke"
   ],
   "ui": {
-    "title": "录题面板",
-    "hint": "源码格式切换只改画布中栏的编辑视图，题目内容不动。",
+    "panel": false,
     "controls": [
       {
         "type": "select",
-        "id": "format",
+        "key": "format",
         "label": "源码格式",
         "default": "latex",
         "options": [
           { "value": "latex", "label": "格式一 · 标准 LaTeX" },
           { "value": "boxed", "label": "格式二 · 框框视图" }
+        ]
+      },
+      {
+        "type": "select",
+        "key": "swap",
+        "label": "中右栏互换",
+        "default": "false",
+        "options": [
+          { "value": "false", "label": "源码在左" },
+          { "value": "true", "label": "渲染在左" }
         ]
       }
     ]

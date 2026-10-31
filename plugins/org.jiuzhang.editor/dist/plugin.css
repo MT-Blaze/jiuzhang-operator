@@ -51,89 +51,8 @@ body {
   min-height: 0;
 }
 
-/* 顶栏只留必须的东西：当前题号 + 源码格式 + 左右互换。
-   插件自己的大标题与状态行已撤——外层页签已经写着「录题工作台」。 */
-.ed-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 4px 10px;
-  background: var(--paper);
-  border-bottom: 1px solid var(--line-strong);
-  flex: none;
-}
-
-.ed-progress {
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 700;
-  border: 1px solid var(--line-strong);
-  background: var(--card);
-  color: var(--ink);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.ed-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.ed-seg {
-  display: inline-flex;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  overflow: hidden;
-  background: var(--card);
-}
-
-.ed-seg-btn {
-  min-height: 44px;
-  padding: 0 14px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-
-.ed-seg-btn + .ed-seg-btn { border-left: 1px solid var(--line-strong); }
-
-.ed-seg-btn.is-on {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
-}
-
-.ed-swap-btn {
-  min-height: 44px;
-  padding: 0 14px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--ink);
-  background: var(--card);
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.ed-swap-btn:hover { border-color: var(--accent); }
-
-.ed-swap-btn[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 700;
-}
-
-/* 状态位只给探针与读屏看，视觉上不占像素 */
+/* 画布内没有任何顶栏/状态条：进度、格式、脏标记与度量位只给读屏和探针看，
+   视觉上不占像素——老师的视线从上到下只碰题目内容。 */
 .ed-sr {
   position: absolute;
   width: 1px;
@@ -166,6 +85,8 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 栏内只许 pane-body 自己滚：子内容再多也不许把栏撑高、把底边推走 */
+  overflow: hidden;
   background: var(--void);
 }
 
@@ -189,6 +110,9 @@ body {
   grid-row: 1;
   min-width: 0;
   min-height: 0;
+  /* 高度锁死在网格行里：底边框的像素位置只由 .ed-cols 的可用高度决定，
+     滚动条出现、批量条换话术都改不动它。 */
+  height: 100%;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--line-strong);
@@ -200,7 +124,10 @@ body {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   display: flex;
+  /* 两栏里的内容再长也只能在各自 pane-body 里滚动，不许溢出改写整体高度 */
+  overflow: hidden;
 }
 
 .ed-workbench-panes > .ed-col { flex: 1 1 0; }
@@ -276,7 +203,9 @@ body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 槽位永远预留：滚动条出现/消失只改内容宽度，不改容器高度，中右底边不会跟着跳 */
   scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .ed-split {
@@ -289,40 +218,6 @@ body {
 .ed-split:hover,
 .ed-split[data-drag="true"] {
   background: var(--accent);
-}
-
-/* 两栏之间的小互换钮：看见的只有 22px，热区用伪元素补到 44px（AGENTS §6）。 */
-.ed-swap-inline {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  z-index: 6;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--accent);
-  background: var(--card);
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  cursor: pointer;
-  transform: translate(-50%, -50%);
-}
-
-.ed-swap-inline::after {
-  content: "";
-  position: absolute;
-  inset: -11px;
-}
-
-.ed-swap-inline:hover { border-color: var(--accent); }
-
-.ed-swap-inline[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
 }
 
 /* ---------- 原图栏 ---------- */
@@ -612,9 +507,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  height: 100%;
+  min-height: 0;
   padding: 10px 12px 14px;
   font-size: 13px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .ep-head h2 {
@@ -654,6 +552,42 @@ body {
   align-items: center;
   gap: 6px;
   background: var(--paper);
+}
+
+/* 视图开关（格式一/二 + ⇄ 互换）住在辅助栏：触控高度照 AGENTS §6 保 44px */
+.ep-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.ep-seg-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ep-seg-btn + .ep-seg-btn { border-left: 1px solid var(--line-strong); }
+
+.ep-seg-btn.is-on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ep-swap-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
 }
 
 .ep-progress {
@@ -1012,25 +946,33 @@ body {
   background: rgba(47, 107, 79, 0.05);
 }
 
+/* 批量条高度写死：它一换行就连带把 .ed-cols 的行高压矮、
+   中右两栏的底边框跟着上下跳——老师看到的「一会对齐一会不对齐」正是这一行。
+   话术再长也只走省略号，绝不许换行。 */
 .ed-foot {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
+  flex: none;
+  flex-wrap: nowrap;
+  height: 56px;
+  padding: 0 12px;
   border-top: 1px solid var(--line-strong);
   background: var(--paper);
+  overflow: hidden;
 }
 
 .ed-pool {
   flex: none;
-  max-width: 100%;
+  max-width: 45%;
   padding: 4px 10px;
   font-size: 12px;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--card);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ed-pool[data-dirty]:not([data-dirty="0"]) {
@@ -1040,11 +982,13 @@ body {
 }
 
 .ed-batch {
-  flex: 1 1 220px;
+  flex: 1 1 0;
   min-width: 0;
   font-size: 12px;
   color: var(--ink-soft);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ed-batch[data-batch="running"],
@@ -1056,9 +1000,23 @@ body {
 .ed-foot-actions {
   display: flex;
   gap: 8px;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex: none;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+}
+
+/* 极窄的画布才允许批量条换行：那时竖屏里没有「中右两栏」可比对齐，
+   优先保住两颗动作按钮不被裁掉。 */
+@media (max-width: 560px) {
+  .ed-foot {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+  }
+  .ed-pool { max-width: 100%; }
+  .ed-batch { flex: 1 1 100%; }
+  .ed-foot-actions { flex: 1 1 100%; }
 }
 
 .ed-btn {
@@ -1092,6 +1050,59 @@ body {
   background: var(--paper-deep);
   border-color: var(--line-strong);
   color: var(--line-strong);
+}
+
+/* ---------- 悬浮幽灵滚动条 ----------
+   平时轨道与滑块全透明，只在鼠标悬停该栏（:hover）或滚轮正在滚动（.is-scrolling）时
+   浮出一条淡淡的半透明虚影；不用系统原生深色条。滚动槽由 scrollbar-gutter 恒留，
+   出现与消失都不重排内容，「一会对齐一会不对齐」的横向抖动一并消失。 */
+.ed-pane-body,
+.ep-root,
+.ep-tree {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ed-pane-body:hover,
+.ep-root:hover,
+.ep-tree:hover,
+.ed-pane-body.is-scrolling,
+.ep-root.is-scrolling,
+.ep-tree.is-scrolling {
+  scrollbar-color: rgba(60, 52, 40, 0.28) transparent;
+}
+
+.ed-pane-body::-webkit-scrollbar,
+.ep-root::-webkit-scrollbar,
+.ep-tree::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ed-pane-body::-webkit-scrollbar-track,
+.ep-root::-webkit-scrollbar-track,
+.ep-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ed-pane-body::-webkit-scrollbar-thumb,
+.ep-root::-webkit-scrollbar-thumb,
+.ep-tree::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 180ms ease;
+}
+
+.ed-pane-body:hover::-webkit-scrollbar-thumb,
+.ep-root:hover::-webkit-scrollbar-thumb,
+.ep-tree:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.22);
+}
+
+.ed-pane-body.is-scrolling::-webkit-scrollbar-thumb,
+.ep-root.is-scrolling::-webkit-scrollbar-thumb,
+.ep-tree.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.34);
 }
 
 @media (prefers-reduced-motion: reduce) {
