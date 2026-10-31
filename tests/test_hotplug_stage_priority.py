@@ -99,7 +99,12 @@ class DiscoverySignatureTest(unittest.TestCase):
 
             hot_manifest = dict(MANIFEST, version="1.0.1")
             make_plugin(self.plugins_dir, hot_manifest)
-            os.utime(self.plugins_dir / MANIFEST["id"] / "plugin.json", None)
+            # 签名只认 mtime/size；同版本号覆盖时 size 不变，必须让 mtime 确定性地前进。
+            # Windows 的文件时间戳会被系统时钟粒度量化（本机实测连续两次写入 92% 同戳），
+            # 直接 utime(now) 约三分之一概率仍等于旧值——这不是产品缺陷，是测试自身的抖。
+            manifest_path = self.plugins_dir / MANIFEST["id"] / "plugin.json"
+            bumped = manifest_path.stat().st_mtime + 1
+            os.utime(manifest_path, (bumped, bumped))
             second = plugins_core.discover_plugins()
             self.assertNotEqual(second["signature"], first["signature"], "覆盖同 id 也要被发现")
 
