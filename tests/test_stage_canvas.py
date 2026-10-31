@@ -75,11 +75,14 @@ class CanvasMarkupTest(unittest.TestCase):
         body = rule.group(1)
         for token in (
             "min-height: 36px",
-            "margin: 6px 4px 0 12px",
+            # 零外边距：入口钮紧贴第一枚页签，辅助栏钮紧贴最后一枚页签（2026-10-31 焊死）
+            "margin: 6px 0 0 0",
             "padding: 6px 10px 6px 12px",
             "border-radius: 8px 8px 0 0",
             "background: var(--paper-deep)",
             "font-size: 0.8rem",
+            # 底端对齐：三枚按钮与页签必须贴在同一根底线上
+            "align-self: flex-end",
         ):
             self.assertIn(token, body, f"与页签同形缺了 {token}")
 

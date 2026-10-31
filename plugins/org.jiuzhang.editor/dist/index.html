@@ -8,8 +8,9 @@
   <link rel="stylesheet" href="plugin.css">
 </head>
 <body>
-  <!-- 画布实例（stage.center）：从上到下只有题目内容——三栏（左原图 | 中 LaTeX 源码 | 右渲染）
-       与底部的批量条。画布内不再有任何顶栏、状态条与格式/互换按钮；
+  <!-- 画布实例（stage.center）：从上到下只有题目内容——三栏（左原图 | 中 LaTeX 源码 | 右渲染）。
+       画布内不再有任何顶栏、状态条、格式/互换按钮，也不再有底部横条：
+       批量条已于 2026-10-31 整体搬进右侧辅助栏，画布只剩内容本身。
        视图切换搬进右栏辅助栏（#epRoot），经宿主的 ui.params.set 与画布对账。
        进度、格式、脏标记与度量只留给读屏和探针，视觉上不占像素。 -->
   <div id="edRoot" class="ed-root" hidden>
@@ -59,19 +60,9 @@
       </div>
     </main>
 
-    <!-- 批量条：单题与批量共用这一张界面，底部只提交脏题。
-         待入库池本期只有界面——池的存储层随下一军令接入，所以【暂存】出厂就锁死。 -->
-    <footer class="ed-foot" aria-label="批量保存">
-      <span id="edPool" class="ed-pool" data-new="0" data-stored="0" data-dirty="0"
-            data-errored="0">待入库 0 · 已入库 0 · 脏 0</span>
-      <span id="edBatchNote" class="ed-batch" role="status" aria-live="polite"
-            data-batch="idle">滚动到哪一题，辅助栏就跟着那张表单。</span>
-      <span class="ed-foot-actions">
-        <button type="button" class="ed-btn" id="edPoolStash" disabled aria-disabled="true"
-                title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
-        <button type="button" class="ed-btn ed-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
-      </span>
-    </footer>
+    <!-- 批量条原是画布底下一条横条（.ed-foot）：它把中栏与右栏的底边挤歪，
+         又占着老师最宝贵的屏幕下沿。2026-10-31 整条删除，
+         【暂存待入库池】与【保存全部】搬进右侧辅助栏的批量保存区。 -->
 
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
@@ -152,6 +143,23 @@
         <div id="epMounted" class="ep-mounted" role="list" aria-label="本题已挂考向"></div>
         <div id="epTopicTree" class="ep-tree" role="tree" aria-label="大纲树"></div>
         <p id="epTopicError" class="ep-hint" hidden></p>
+      </div>
+
+      <!-- 批量保存区：原画布底部的横条（.ed-foot）整条搬进辅助栏的元数据操作区（2026-10-31）。
+           画布底下那条横条一换行就把中右两栏的底边框挤歪，还占着老师最宝贵的屏幕下沿。
+           台账数字由画布经 stage.selection 送来；两颗按钮在这里直接发起逐题串行提交，
+           只提交改动过的题，未改动的一题也不写库。 -->
+      <div class="ep-group">
+        <div class="ep-group-title">批量保存</div>
+        <span id="edPool" class="ep-pool" data-new="0" data-stored="0" data-dirty="0"
+              data-errored="0">待入库 0 · 已入库 0 · 脏 0</span>
+        <p id="edBatchNote" class="ep-batch" role="status" aria-live="polite"
+           data-batch="idle">滚动到哪一题，辅助栏就跟着那张表单。</p>
+        <div class="ep-batch-actions">
+          <button type="button" class="ep-btn" id="edPoolStash" disabled aria-disabled="true"
+                  title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
+          <button type="button" class="ep-btn ep-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
+        </div>
       </div>
     </section>
 

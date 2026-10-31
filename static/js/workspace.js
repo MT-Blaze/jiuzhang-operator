@@ -30,7 +30,6 @@
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
   var stageTitle = document.getElementById("wsStageTitle");
-  var ctxModel = document.getElementById("ctxModel");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
   var pluginPanel = document.getElementById("wsPluginPanel");
@@ -845,27 +844,14 @@
     return "HTTP " + response.status;
   }
 
-  // ============ 模型 Provider：加载 / 切换 / 配置 ============
+  // 模型 Provider：加载 / 切换 / 配置。
+  // 右栏顶部那块「模型：…」展示已于 2026-10-31 撤掉——它占着辅助栏的顶，
+  // 又不提供任何操作；模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
   function findActiveProvider() {
     for (var i = 0; i < providerList.length; i += 1) {
       if (providerList[i].active) return providerList[i];
     }
     return null;
-  }
-
-  // 顶栏模型胶囊已随舞台头一起退役：模型状态只在右栏「模型」一节如实显示。
-  function renderModelChip() {
-    var active = findActiveProvider();
-    if (!ctxModel) return;
-    if (!active) {
-      ctxModel.textContent = "未就绪";
-      return;
-    }
-    if (!active.configured || active.mock) {
-      ctxModel.textContent = active.label + " · Mock 降级（未配置密钥）";
-      return;
-    }
-    ctxModel.textContent = active.label + " · " + (active.model || "已配置");
   }
 
   function loadProviders() {
@@ -876,7 +862,6 @@
       })
       .then(function (data) {
         providerList = data.providers || [];
-        renderModelChip();
         return data;
       });
   }
@@ -1730,7 +1715,8 @@
     })
     .catch(function () { /* 探测失败保留「暂无插件」空态，不打扰用户 */ });
 
-  loadProviders().catch(function () {
-    renderModelChip();
-  });
+  // Provider 清单只喂给工作区快照（右栏助手据此知道当前模型是谁）。
+  // 右栏顶部那块「模型：OpenAI 兼容…」的展示已于 2026-10-31 撤掉——它占着辅助栏的上沿，
+  // 又不提供任何操作；模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
+  loadProviders().catch(function () { /* 读不到就当没有 provider，不打扰用户 */ });
 })();

@@ -28,6 +28,13 @@ CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_t
 )
 
 
+def rule_body(css: str, selector: str) -> str:
+    """取 selector 所在规则的正文。"""
+    at = css.index(selector)
+    start = css.index("{", at) + 1
+    return css[start:css.index("}", start)]
+
+
 class SidebarStructureTest(unittest.TestCase):
     def test_01_business_tasks_are_gone(self) -> None:
         for label in ("拆分试卷", "校对解析", "组卷导出"):
@@ -90,8 +97,12 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须死锁在左栏最底部")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标已按定调令移除")
 
-    def test_08_right_context_keeps_only_model_and_assistant(self) -> None:
-        """军令 #18 第一步：右栏只留模型状态 + AI 助手，三个占位区与历史链删干净。"""
+    def test_08_right_context_keeps_only_the_assistant_and_fills_the_column(self) -> None:
+        """军令 #18 第一步：右栏只留 AI 助手，三个占位区与历史链删干净。
+
+        2026-10-31 整改：右栏顶部那块「模型：OpenAI 兼容…」也删了——
+        它既不提供任何操作，又占着辅助栏最宝贵的上沿；高度整块让给插件。
+        """
         for token in ("ctxHistory", "ctxTask", "logHistory"):
             self.assertNotIn(token, HTML)
             self.assertNotIn(token, JS)
@@ -100,10 +111,21 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertNotIn(">当前任务<", HTML)
         self.assertNotIn(".ws-history", CSS)
         self.assertNotIn(".ws-placeholder", CSS)
-        self.assertLess(
-            HTML.index('id="ctxModel"'), HTML.index('id="wsContextSlot"'),
-            "模型状态必须在右栏顶部，AI 助手在其下",
-        )
+        # 模型展示块：宿主壳里一处都不许剩
+        self.assertNotIn('id="ctxModel"', HTML, "右栏顶部的模型展示块已删")
+        self.assertNotIn("renderModelChip", JS, "渲染它的脚本也要一起删干净")
+        self.assertNotIn(".ws-context-value", CSS, "只服务于那块模型展示的样式一并退场")
+        # 辅助栏要 100% 铺满画布：插槽自己吃掉剩余高度，内部滚动
+        slot = rule_body(CSS, ".ws-context-slot-body {")
+        for required in ("flex: 1 1 auto", "min-height: 0", "overflow: hidden"):
+            self.assertIn(required, slot, f"右栏插槽缺 {required}，插件面板撑不满辅助栏")
+        self.assertNotIn("height: 52vh", CSS, "插槽不许再写死视口高度")
+        # 插槽下面不许再留分节的空白：插件面板该贴到栏底
+        slot_rule = rule_body(CSS, ".ws-section.ws-context-slot {")
+        self.assertIn("margin-bottom: 0", slot_rule,
+                      "插槽下方那 20px 分节留白是死空间，插件面板会悬在半空")
+        body_rule = rule_body(CSS, ".ws-context-body {")
+        self.assertIn("overflow: hidden", body_rule, "辅助栏本体不滚，滚的是面板内部")
 
 
 class SidebarBehaviourTest(unittest.TestCase):

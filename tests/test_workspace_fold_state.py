@@ -227,9 +227,12 @@ class ReopenEntryTest(unittest.TestCase):
         self.assertIn('aria-label="辅助栏"', HTML, "右栏名字必须是「辅助栏」")
         self.assertNotIn("aria-label=\"上下文\"", HTML)
         self.assertNotIn("<h2>上下文</h2>", HTML)
-        wrap = re.search(r'class="ws-tabs-wrap">(.*?)</div>', HTML, re.S)
+        # 页签栏整块都要看：【辅助栏】钮钉在所有页签的最右侧（2026-10-31 焊死），
+        # 它排在 #wsTabs 之后，所以不能只截到第一个 </div>。
+        wrap = re.search(r'class="ws-tabs-wrap">(.*?)<div class="ws-canvas-body"', HTML, re.S)
         self.assertIsNotNone(wrap)
         self.assertIn("wsOpenCtx", wrap.group(1), "辅助栏的回头路必须留在页签栏里")
+        self.assertIn("wsOpenSidebar", wrap.group(1), "入口钮必须留在页签栏里")
         self.assertEqual(rule_body(".ws-ctx-btn").count("display: none"), 1)
         self.assertRegex(
             rule_body('.ws-page[data-ctx="hidden"] .ws-ctx-btn'),

@@ -262,6 +262,66 @@ def main() -> int:
             expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
             check("画布挂载出 v2 三栏", True)
 
+            # ---------- 量几何的两把尺子 ----------
+            def row_lines():
+                """三栏每一行虚线的位置：行内三栏的 cell 底边该落在同一条线上。
+
+                虚线画在 cell 的下边框上，所以 cell 底边就是那条线的位置。
+                """
+                return canvas.locator("#edImageBody").evaluate(
+                    """node => {
+                        var bodies = {
+                            image: node,
+                            source: document.querySelector('#edSourceBody'),
+                            render: document.querySelector('#edRenderBody')
+                        };
+                        var counts = ['image', 'source', 'render'].map(function (key) {
+                            return bodies[key] ? bodies[key].children.length : 0;
+                        });
+                        var count = Math.min.apply(null, counts);
+                        var rows = [];
+                        for (var i = 0; i < count; i += 1) {
+                            var line = { row: i + 1 };
+                            var values = [];
+                            ['image', 'source', 'render'].forEach(function (key) {
+                                var body = bodies[key];
+                                var cell = body ? body.children[i] : null;
+                                var box = cell ? cell.getBoundingClientRect() : null;
+                                var value = box
+                                    ? Math.round((box.top + box.height) * 100) / 100 : null;
+                                line[key] = value;
+                                if (value !== null) values.push(value);
+                            });
+                            line.spread = values.length
+                                ? Math.round((Math.max.apply(null, values)
+                                    - Math.min.apply(null, values)) * 100) / 100
+                                : null;
+                            rows.push(line);
+                        }
+                        return rows;
+                    }""")
+
+            def dashed_ok(rows) -> bool:
+                return bool(rows) and all(
+                    row["spread"] is not None and row["spread"] <= 1.0 for row in rows)
+
+            def pane_geo():
+                """三栏当前宽度：画布总宽 + 左中右各栏自己的宽。"""
+                return canvas.locator("#edCols").evaluate(
+                    """node => {
+                        function box(sel) {
+                            var el = node.querySelector(sel);
+                            if (!el) return 0;
+                            return Math.round(el.getBoundingClientRect().width * 100) / 100;
+                        }
+                        return {
+                            total: Math.round(node.getBoundingClientRect().width * 100) / 100,
+                            image: box('#edPaneImage'),
+                            source: box('#edPaneSource'),
+                            render: box('#edPaneRender')
+                        };
+                    }""")
+
             # ---------- 三栏骨架 ----------
             check("画布恰好三栏", canvas.locator(".ed-col").count() == 3,
                   {"panes": canvas.locator(".ed-col").count()})
@@ -288,11 +348,15 @@ def main() -> int:
             check("画布内没有任何顶栏或工具条",
                   canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
                   .count() == 0)
-            check("画布内只剩底部批量条的两枚按钮",
-                  canvas.locator("#edRoot .ed-foot button").count() == 2
-                  and canvas.locator("#edRoot .ed-pane-head button, .ed-bar").count() == 0,
-                  {"foot": canvas.locator("#edRoot .ed-foot button").count(),
-                   "bar": canvas.locator(".ed-bar").count()})
+            check("画布底栏整条撤除：只剩左栏的跳题钮，底部一条横条都不剩",
+                  canvas.locator(".ed-foot").count() == 0
+                  and canvas.locator("#edRoot button").count()
+                  == canvas.locator(".ed-img-jump").count()
+                  and canvas.locator(".ed-img-cell button").count()
+                  == canvas.locator(".ed-img-jump").count(),
+                  {"buttons": canvas.locator("#edRoot button").count(),
+                   "jumps": canvas.locator(".ed-img-jump").count(),
+                   "foot": canvas.locator(".ed-foot").count()})
             check("题号状态位仍在，但只给读屏看",
                   canvas.locator("#edProgress.ed-sr").count() == 1
                   and canvas.locator("#edProgress").bounding_box()["height"] <= 2)
@@ -315,19 +379,19 @@ def main() -> int:
                 "frame_tops": frame_tops, "head_tops": head_tops,
                 "source_bottom": src_bottom, "render_bottom": rnd_bottom}
 
+            # ---------- 死磕对齐：三栏虚线逐行对位（格式一切换也不许串位） ----------
+            lines_latex = row_lines()
+            result["metrics"]["dashed"] = {"latex": lines_latex}
+            check("格式一：三栏虚线逐行落在同一条线上",
+                  dashed_ok(lines_latex),
+                  {"rows": lines_latex[:4]})
+
             # ---------- 死磕对齐：换话术、出滚动条、切视图都不许推走中右底边 ----------
             def bench_bottom():
                 b = canvas.locator("#edWorkbench").bounding_box()
                 return round(b["y"] + b["height"], 2)
 
             bottom_base = bench_bottom()
-            canvas.locator("#edBatchNote").evaluate(
-                "n => { n.textContent = '批量话术临时拉长'.repeat(24); }")
-            page.wait_for_timeout(250)
-            bottom_after_note = bench_bottom()
-            check("批量条话术再长也不许换行推走底边",
-                  abs(bottom_after_note - bottom_base) <= 0.5,
-                  {"before": bottom_base, "after": bottom_after_note})
             canvas.locator("#edSourceBody").evaluate("n => { n.scrollTop = n.scrollHeight; }")
             page.wait_for_timeout(250)
             bottom_after_scroll = bench_bottom()
@@ -376,7 +440,110 @@ def main() -> int:
                   panel.locator("#epPass").is_disabled()
                   and panel.locator("#epReject").is_disabled()
                   and panel.locator("#epSkip").is_disabled())
+
+            # ---------- 2026-10-31 整改：底栏搬进辅助栏 + 辅助栏铺满 + 页签栏焊死 ----------
+            check("批量条整条搬进辅助栏（画布那份隐藏）",
+                  panel.locator("#edSaveAll").first.is_visible()
+                  and not canvas.locator("#edSaveAll").first.is_visible()
+                  and canvas.locator(".ed-foot").count() == 0,
+                  {"panel": panel.locator("#edSaveAll").count(),
+                   "canvas": canvas.locator("#edSaveAll").count()})
+            check("待入库池本期只做界面（暂存出厂锁死）",
+                  panel.locator("#edPoolStash").is_disabled()
+                  and "下一军令" in (panel.locator("#edPoolStash").get_attribute("title") or ""))
+            check("辅助栏不再展示无用的模型信息",
+                  page.locator("#ctxModel").count() == 0
+                  and page.locator("#wsContextSlot").is_visible())
+            # 辅助栏 100% 铺满画布：插槽自己吃掉剩余高度，面板内部滚动
+            ctx_box = page.locator("#wsContext").bounding_box()
+            slot_box = page.locator("#wsContextSlotBody").bounding_box()
+            frame_box = page.locator("#wsContextSlotBody .ws-context-frame").bounding_box()
+            ctx_bottom = round(ctx_box["y"] + ctx_box["height"], 2)
+            frame_bottom = round(frame_box["y"] + frame_box["height"], 2)
+            check("辅助栏面板撑到栏底（底下不留半截空白）",
+                  ctx_box is not None and slot_box is not None and frame_box is not None
+                  and 0 <= ctx_bottom - frame_bottom <= 16
+                  and frame_box["height"] >= 0.85 * ctx_box["height"],
+                  {"ctx": ctx_box, "slot": slot_box, "frame": frame_box,
+                   "slack": round(ctx_bottom - frame_bottom, 2)})
+            # 页签栏：入口钮、页签、辅助栏钮三者紧挨着，底边同一条线。
+            # 桌面端两枚钮平时收着（只在本栏折叠时露头），所以先把左栏收起来逼出入口钮。
+            def tabbar_geometry():
+                entry = page.locator("#wsOpenSidebar")
+                tabs = page.locator("#wsTabs")
+                ctx_btn = page.locator("#wsOpenCtx")
+                entry_box = entry.bounding_box() if entry.is_visible() else None
+                tabs_box = tabs.bounding_box()
+                ctx_box = ctx_btn.bounding_box() if ctx_btn.is_visible() else None
+                return {
+                    "entry": entry_box, "tabs": tabs_box, "ctx": ctx_box,
+                    "gap_entry_tabs": (round(tabs_box["x"] - (entry_box["x"] + entry_box["width"]), 2)
+                                       if entry_box and tabs_box else None),
+                    "gap_tabs_ctx": (round(ctx_box["x"] - (tabs_box["x"] + tabs_box["width"]), 2)
+                                     if ctx_box and tabs_box else None),
+                    "bottoms": [round(box["y"] + box["height"], 2)
+                                for box in (entry_box, tabs_box, ctx_box) if box],
+                }
+
+            page.locator("#wsToggleSidebar").click()
+            page.wait_for_timeout(700)
+            geo_entry = tabbar_geometry()
+            check("入口钮与页签紧挨着（不留死白空隙）",
+                  geo_entry["gap_entry_tabs"] is not None
+                  and 0 <= geo_entry["gap_entry_tabs"] <= 2,
+                  {"gap": geo_entry["gap_entry_tabs"]})
+            check("入口钮与页签底边同一条水平线",
+                  len(geo_entry["bottoms"]) == 2
+                  and abs(geo_entry["bottoms"][0] - geo_entry["bottoms"][1]) <= 1,
+                  {"bottoms": geo_entry["bottoms"]})
+            page.screenshot(path=str(shots / "v2-tabbar.png"))
+            # 左栏收起后，栏里的折叠钮也跟着没了：回头路就是页签栏上这枚「入口」
+            page.locator("#wsOpenSidebar").click()
+            page.wait_for_timeout(700)
+            check("入口钮能把左栏叫回来",
+                  page.locator(".ws-page").get_attribute("data-side") == "open")
+            result["metrics"]["tabbar"] = geo_entry
             page.screenshot(path=str(shots / "v2-panel.png"))
+
+            # ---------- 拖窄画布：三栏等比缩放，损失不许独独压在渲染栏上 ----------
+            geo_before = pane_geo()
+            resizer = page.locator("#wsResizerCtx")
+            for _ in range(8):
+                resizer.press("Shift+ArrowLeft")
+            page.wait_for_timeout(900)
+            geo_after = pane_geo()
+            result["metrics"]["scaling"] = {"before": geo_before, "after": geo_after}
+            total_shrink = geo_before["total"] - geo_after["total"]
+            image_shrink = geo_before["image"] - geo_after["image"]
+            source_shrink = geo_before["source"] - geo_after["source"]
+            render_shrink = geo_before["render"] - geo_after["render"]
+            check("画布拖窄时三栏等比缩放：缩水的份额三家分摊，不是渲染栏独吞",
+                  total_shrink > 40
+                  and image_shrink >= 0.15 * total_shrink
+                  and source_shrink >= 0.15 * total_shrink
+                  and render_shrink <= 0.8 * total_shrink,
+                  {"total_shrink": total_shrink, "image_shrink": image_shrink,
+                   "source_shrink": source_shrink, "render_shrink": render_shrink,
+                   "before": geo_before, "after": geo_after})
+            check("原图栏占画布的比例不随画布宽度漂移",
+                  abs(geo_before["image"] / geo_before["total"]
+                      - geo_after["image"] / geo_after["total"]) <= 0.02,
+                  {"before_ratio": round(geo_before["image"] / geo_before["total"], 4),
+                   "after_ratio": round(geo_after["image"] / geo_after["total"], 4)})
+            check("渲染栏有下限：画布再窄也不被挤成一条缝",
+                  geo_after["render"] >= 160,
+                  {"render": geo_after["render"], "min": 160})
+            lines_scaled = row_lines()
+            check("拖窄画布后三栏虚线仍逐行对位",
+                  dashed_ok(lines_scaled),
+                  {"rows": lines_scaled[:4]})
+            page.screenshot(path=str(shots / "v2-scaled.png"))
+            resizer.press("Home")
+            page.wait_for_timeout(800)
+            geo_restored = pane_geo()
+            check("分隔条按 Home 回到默认宽度，画布复原",
+                  abs(geo_restored["total"] - geo_before["total"]) <= 2,
+                  {"before": geo_before["total"], "restored": geo_restored["total"]})
 
             # ---------- 左右互换（辅助栏按钮）：只是视觉换位，编辑值、选区与滚动都得留住 ----------
             # 辅助栏已挂载再测：互换若误改当前题，面板会立刻跟着漂，判据才收得住。
@@ -445,6 +612,16 @@ def main() -> int:
                   and panel.locator("#epFmtLatex").get_attribute("aria-pressed") == "false")
             boxes_now = canvas.locator(".ed-box").count()
             check("格式二按环境拆出框", boxes_now >= 4, {"boxes": boxes_now})
+            page.wait_for_timeout(400)
+            lines_boxed = row_lines()
+            result["metrics"]["dashed"]["boxed"] = lines_boxed
+            check("点格式二：三栏虚线仍逐行对位（底边不因换视图错位）",
+                  dashed_ok(lines_boxed),
+                  {"rows": lines_boxed[:4]})
+            boxed_bottom = bench_bottom()
+            check("点格式二：中右两栏底边纹丝不动",
+                  abs(boxed_bottom - bottom_base) <= 0.5,
+                  {"before": bottom_base, "after": boxed_bottom})
             env_labels = [text.strip() for text in canvas.locator(".ed-box-env").all_inner_texts()]
             check("框头环境名是锁定文本",
                   bool(env_labels) and all(
@@ -463,6 +640,12 @@ def main() -> int:
             check("切格式没有改坏环境骨架",
                   "\\begin{choices}" in rebuilt and "\\end{solution}" in rebuilt,
                   {"head": rebuilt[:80]})
+            page.wait_for_timeout(400)
+            lines_back = row_lines()
+            result["metrics"]["dashed"]["back_latex"] = lines_back
+            check("切回格式一：虚线依旧逐行对位",
+                  dashed_ok(lines_back),
+                  {"rows": lines_back[:4]})
             page.screenshot(path=str(shots / "v2-boxed.png"))
 
             # ---------- 元数据表单 ----------
@@ -735,14 +918,11 @@ def main() -> int:
             check("单题与批量共用一张画布（四行源码）", batch_rows == 4, {"rows": batch_rows})
             check("左栏逐题带跳转按钮", canvas.locator(".ed-img-jump").count() == 4,
                   {"jumps": canvas.locator(".ed-img-jump").count()})
-            check("批量条只出现在画布（辅助栏那份整块隐藏）",
-                  canvas.locator("#edSaveAll").first.is_visible()
-                  and not panel.locator("#edSaveAll").first.is_visible(),
+            check("批量条住在辅助栏（画布那份整块隐藏）",
+                  panel.locator("#edSaveAll").first.is_visible()
+                  and not canvas.locator("#edSaveAll").first.is_visible(),
                   {"canvas": canvas.locator("#edSaveAll").count(),
                    "panel": panel.locator("#edSaveAll").count()})
-            check("待入库池本期只做界面（暂存出厂锁死）",
-                  canvas.locator("#edPoolStash").is_disabled()
-                  and "下一军令" in (canvas.locator("#edPoolStash").get_attribute("title") or ""))
 
             # 1) 点左栏跳转：三栏一起滚过去，当前题与辅助栏表单都跟到那一题
             canvas.locator('.ed-img-jump[data-index="2"]').click()
@@ -802,8 +982,8 @@ def main() -> int:
             keyed = wait_attribute(progress, "data-active", lambda value: value == "2", 12)
             check("键盘 Enter 也能跳题", keyed == "2", {"active": keyed})
 
-            # 5) 底部【保存全部】：只提交脏题，未改动的一题也不写
-            pool = canvas.locator("#edPool")
+            # 5) 辅助栏【保存全部】：只提交脏题，未改动的一题也不写
+            pool = panel.locator("#edPool")
             dirty_new = pool.get_attribute("data-new")
             dirty_start = wait_attribute(pool, "data-dirty", lambda value: value == "1", 10)
             check("批量前的脏数只认 AI 改过的那题（其余三题没动过就不算脏）",
@@ -825,12 +1005,12 @@ def main() -> int:
             _, row2_before = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
                                        f"?q={urllib.parse.quote('的最小值为')}")
             row2_hits_before = int(row2_before.get("total") or 0)
-            save_all = canvas.locator("#edSaveAll")
+            save_all = panel.locator("#edSaveAll")
             expect(save_all).to_be_enabled(timeout=8000)
             save_all.click()
             busy_seen = save_all.get_attribute("aria-busy")
             result["metrics"]["batch_busy"] = busy_seen
-            batch_note = canvas.locator("#edBatchNote")
+            batch_note = panel.locator("#edBatchNote")
             batch_phase = wait_attribute(batch_note, "data-batch",
                                          lambda value: value in ("done", "partial", "failed"), 40)
             batch_text = batch_note.inner_text()
@@ -885,6 +1065,15 @@ def main() -> int:
             check("折叠后页签栏出现【辅助栏】回头钮",
                   ctx_open_btn.is_visible()
                   and ctx_open_btn.get_attribute("aria-expanded") == "false")
+            geo_ctx = tabbar_geometry()
+            check("辅助栏钮钉在所有页签最右侧（不留死白空隙）",
+                  geo_ctx["gap_tabs_ctx"] is not None
+                  and 0 <= geo_ctx["gap_tabs_ctx"] <= 2,
+                  {"gap": geo_ctx["gap_tabs_ctx"]})
+            check("辅助栏钮与页签底边同一条水平线",
+                  len(geo_ctx["bottoms"]) == 2
+                  and abs(geo_ctx["bottoms"][0] - geo_ctx["bottoms"][1]) <= 1,
+                  {"bottoms": geo_ctx["bottoms"]})
             page.screenshot(path=str(shots / "v2-ctx-collapsed.png"))
             ctx_open_btn.click()
             page.wait_for_timeout(500)
@@ -918,6 +1107,48 @@ def main() -> int:
                 " cls: n.classList.contains('ws-ghost-scroll')})")
             check("宿主的辅助栏滚动区也是幽灵滚动条",
                   ghost_host["gutter"] == "stable" and ghost_host["cls"], ghost_host)
+
+            # ---------- F5 连刷 3 次：这四条几何不许刷新一次就漂一次 ----------
+            # 刷新后画布不预开任何页签（留白是既定行为），所以每次都要重新点开插件。
+            # 刷新前先量一遍：三栏宽度是记进布局草稿的，刷新后必须原样回来，不是换个比例。
+            geo_before_reload = pane_geo()
+            for round_index in range(1, 4):
+                page.reload(wait_until="networkidle")
+                page.wait_for_timeout(1200)
+                reopen = page.locator(".ws-plugin-item", has_text="录题工作台").first
+                expect(reopen).to_be_visible(timeout=15000)
+                reopen.click()
+                expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
+                expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
+                page.wait_for_timeout(900)
+                round_lines = row_lines()
+                round_geo = pane_geo()
+                round_ctx = page.locator("#wsContext").bounding_box()
+                round_frame = page.locator(
+                    "#wsContextSlotBody .ws-context-frame").bounding_box()
+                slack = round((round_ctx["y"] + round_ctx["height"])
+                              - (round_frame["y"] + round_frame["height"]), 2)
+                check(f"第 {round_index} 次刷新：画布底栏依旧不在",
+                      canvas.locator(".ed-foot").count() == 0
+                      and canvas.locator("#edRoot button").count()
+                      == canvas.locator(".ed-img-jump").count(),
+                      {"foot": canvas.locator(".ed-foot").count()})
+                check(f"第 {round_index} 次刷新：辅助栏面板依旧撑到栏底",
+                      0 <= slack <= 16,
+                      {"slack": slack, "frame": round_frame})
+                check(f"第 {round_index} 次刷新：三栏虚线依旧逐行对位",
+                      dashed_ok(round_lines),
+                      {"rows": round_lines[:2]})
+                check(f"第 {round_index} 次刷新：三栏宽度原样恢复（比例不漂）",
+                      abs(round_geo["image"] - geo_before_reload["image"]) <= 2
+                      and abs(round_geo["source"] - geo_before_reload["source"]) <= 2
+                      and abs(round_geo["render"] - geo_before_reload["render"]) <= 2
+                      and round_geo["render"] >= 160,
+                      {"before": geo_before_reload, "after": round_geo})
+                page.screenshot(path=str(shots / f"reload-{round_index}.png"))
+            result["metrics"]["reload_rounds"] = 3
+            check("F5 连刷三轮后页面仍无脚本错误", not result["page_errors"],
+                  {"page_errors": result["page_errors"][:3]})
 
             # ---------- 回流：题库画布搜得到本次保存 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first

@@ -63,10 +63,11 @@
         <div class="ws-tabs-wrap">
           <button class="ws-btn ws-btn-sm ws-drawer-btn" id="wsOpenSidebar" type="button"
             aria-controls="wsSidebarBody" aria-expanded="false">入口</button>
-          <!-- 辅助栏折叠后的回头路：右栏自己藏起来时，这枚钮留在页签栏，永远点得着 -->
+          <div class="ws-tabs ws-ghost-scroll" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
+          <!-- 辅助栏折叠后的回头路：右栏自己藏起来时，这枚钮紧贴在最后一枚页签右侧，
+               与页签、入口钮同底同形，三者连成一条线，不留死白空隙。 -->
           <button class="ws-btn ws-btn-sm ws-ctx-btn" id="wsOpenCtx" type="button"
             aria-controls="wsContext" aria-expanded="false">辅助栏</button>
-          <div class="ws-tabs ws-ghost-scroll" id="wsTabs" role="tablist" aria-label="画布标签页"></div>
         </div>
         <div class="ws-canvas-body" id="wsCanvasBody">
           <!-- 画布不设兜底页：所有页签关掉后中栏干干净净留白，不塞任何占位文案。
@@ -96,11 +97,6 @@
           aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
       <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
-        <section class="ws-section">
-          <h3>模型</h3>
-          <p class="ws-context-value" id="ctxModel">未就绪</p>
-        </section>
-
         <!-- 右栏插槽（sidebar.right，军令 #13 + #15）：主权交替。
              默认由 AI 助手插件（org.jiuzhang.chat）入住；当前画布插件若自己也声明了
              sidebar.right，就暂时由它接管，切走该页签自动归还助手。 -->

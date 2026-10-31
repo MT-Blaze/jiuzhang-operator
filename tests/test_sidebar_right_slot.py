@@ -147,8 +147,18 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn("panels.push(handle)", STAGE_JS)
 
     def test_10_panel_css_lets_the_slot_scroll(self) -> None:
+        """插槽面板吃掉右栏全部剩余高度，滚的是面板内部（2026-10-31 整改）。
+
+        旧版写死 height: 52vh + min-height: 300px，插件面板永远悬在半空、
+        底下留一大块空白；现在改成 flex: 1 1 auto + min-height: 0 + overflow: hidden，
+        高度整块让给插件。
+        """
         self.assertIn(".ws-context-slot-body", CSS)
-        self.assertRegex(CSS, r"\.ws-context-slot-body\s*\{[^}]*min-height:\s*300px")
+        body = re.search(r"\.ws-context-slot-body\s*\{([^}]*)\}", CSS).group(1)
+        self.assertIn("flex: 1 1 auto", body, "插槽面板不吃满右栏，底下会留半截空白")
+        self.assertIn("min-height: 0", body, "不许再拿最小高度把面板撑在视口比例上")
+        self.assertIn("overflow: hidden", body, "外框不滚，滚的是插件自己的面板")
+        self.assertNotIn("height: 52vh", CSS, "面板不许再写死视口高度")
         self.assertRegex(CSS, r"\.ws-context-frame\s*\{[^}]*height:\s*100%")
 
     def test_11_spec_documents_the_slot(self) -> None:

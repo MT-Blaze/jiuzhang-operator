@@ -15,9 +15,11 @@
   --danger: #9b3b2d;
   --focus: #2f6b4f;
   --split-w: 6px;
-  --w-image: 260px;
-  --w-source: 360px;
+  /* 三栏宽度按比例记账：画布宽度一变，三栏等比缩放，弹性那栏不再被单独挤没 */
+  --w-image: 20%;
+  --w-source: 34%;
   --pane-min: 28px;
+  --pane-render-min: 160px;
 }
 
 * { box-sizing: border-box; }
@@ -48,7 +50,10 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-height: 100%;
   min-height: 0;
+  /* 画布高度锁死：底栏删掉后，三栏自己占满整幅画布，谁也不许把外框撑破 */
+  overflow: hidden;
 }
 
 /* 画布内没有任何顶栏/状态条：进度、格式、脏标记与度量位只给读屏和探针看，
@@ -71,12 +76,16 @@ body {
 .ed-cols {
   flex: 1 1 auto;
   min-height: 0;
+  /* 高度锁死：格式一/二会重排中栏的 DOM，外框高度不许跟着内容塌陷或被撑破 */
+  height: 100%;
+  max-height: 100%;
   display: grid;
   /* 不锁行高的话，这一条隐式行会被最高的那栏撑到几千像素，三栏全都变成"内容多高就多高"，
      pane-body 的 overflow-y:auto 永远不触发，滚动跟题与拖栏定位也就全成了死代码。 */
   grid-template-rows: minmax(0, 1fr);
-  /* 中、右两栏合并成一只整体容器（.ed-workbench），网格里只剩三条轨道。 */
-  grid-template-columns: var(--w-image) var(--split-w) minmax(0, 1fr);
+  /* 中、右两栏合并成一只整体容器（.ed-workbench），网格里只剩三条轨道。
+     原图栏按比例取宽，但不许窄过一条极窄缝。 */
+  grid-template-columns: max(var(--pane-min), var(--w-image)) var(--split-w) minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -111,8 +120,9 @@ body {
   min-width: 0;
   min-height: 0;
   /* 高度锁死在网格行里：底边框的像素位置只由 .ed-cols 的可用高度决定，
-     滚动条出现、批量条换话术都改不动它。 */
+     滚动条出现、格式切换重排都改不动它。 */
   height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--line-strong);
@@ -125,6 +135,7 @@ body {
   min-width: 0;
   min-height: 0;
   height: 100%;
+  max-height: 100%;
   display: flex;
   /* 两栏里的内容再长也只能在各自 pane-body 里滚动，不许溢出改写整体高度 */
   overflow: hidden;
@@ -132,9 +143,11 @@ body {
 
 .ed-workbench-panes > .ed-col { flex: 1 1 0; }
 
+/* 源码栏按比例取宽（拖出来的比例），窄过一条极窄缝就按极窄缝算 */
 .ed-workbench-panes > .ed-col-source {
   order: 1;
-  flex: 0 0 var(--w-source);
+  flex: 0 0 max(var(--pane-min), var(--w-source));
+  min-width: 0;
 }
 
 .ed-workbench-panes > #edSplitSource {
@@ -142,21 +155,25 @@ body {
   flex: 0 0 var(--split-w);
 }
 
+/* 渲染栏：吃剩下的那份，但有下限——画布再窄也不许把它挤成一条缝 */
 .ed-workbench-panes > .ed-col-render {
   order: 3;
   flex: 1 1 0;
+  min-width: var(--pane-render-min);
 }
 
 /* 互换只改视觉顺序：DOM 一个节点都不挪，焦点、选区与滚动进度全留在原节点上。
-   左槽恒为 var(--w-source) 宽，换到左边的那栏接管这只槽，拖手手感不变。 */
+   左槽恒为源码栏的比例宽，换到左边的那栏接管这只槽，拖手手感不变。 */
 .ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-render {
   order: 1;
-  flex: 0 0 var(--w-source);
+  flex: 0 0 max(var(--pane-min), var(--w-source));
+  min-width: 0;
 }
 
 .ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-source {
   order: 3;
   flex: 1 1 0;
+  min-width: var(--pane-render-min);
 }
 
 .ed-col-source { background: var(--card); }
@@ -659,6 +676,52 @@ body {
   gap: 6px;
 }
 
+/* 批量保存区（原画布底栏搬过来的）：待入库池计数 + 状态话术 + 两颗动作钮。
+   话术再长也只走省略号，绝不许换行——辅助栏窄，换行会把下面的区挤走。 */
+.ep-pool {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ep-pool[data-dirty]:not([data-dirty="0"]) {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.ep-batch {
+  margin: 0;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ep-batch[data-batch="running"],
+.ep-batch[data-batch="done"] { color: var(--accent); }
+
+.ep-batch[data-batch="partial"],
+.ep-batch[data-batch="failed"] { color: var(--danger); }
+
+.ep-batch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.ep-batch-actions .ep-btn { flex: 1 1 auto; }
+
 .ep-field {
   display: flex;
   flex-direction: column;
@@ -946,78 +1009,9 @@ body {
   background: rgba(47, 107, 79, 0.05);
 }
 
-/* 批量条高度写死：它一换行就连带把 .ed-cols 的行高压矮、
-   中右两栏的底边框跟着上下跳——老师看到的「一会对齐一会不对齐」正是这一行。
-   话术再长也只走省略号，绝不许换行。 */
-.ed-foot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-  flex-wrap: nowrap;
-  height: 56px;
-  padding: 0 12px;
-  border-top: 1px solid var(--line-strong);
-  background: var(--paper);
-  overflow: hidden;
-}
-
-.ed-pool {
-  flex: none;
-  max-width: 45%;
-  padding: 4px 10px;
-  font-size: 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--card);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ed-pool[data-dirty]:not([data-dirty="0"]) {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.ed-batch {
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ed-batch[data-batch="running"],
-.ed-batch[data-batch="done"] { color: var(--accent); }
-
-.ed-batch[data-batch="partial"],
-.ed-batch[data-batch="failed"] { color: var(--danger); }
-
-.ed-foot-actions {
-  display: flex;
-  gap: 8px;
-  flex: none;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-}
-
-/* 极窄的画布才允许批量条换行：那时竖屏里没有「中右两栏」可比对齐，
-   优先保住两颗动作按钮不被裁掉。 */
-@media (max-width: 560px) {
-  .ed-foot {
-    height: auto;
-    min-height: 56px;
-    flex-wrap: wrap;
-    padding: 6px 10px;
-  }
-  .ed-pool { max-width: 100%; }
-  .ed-batch { flex: 1 1 100%; }
-  .ed-foot-actions { flex: 1 1 100%; }
-}
+/* 画布底栏（.ed-foot 等）已于 2026-10-31 整条删除：它一换行就把 .ed-cols 的
+   行高压矮，中右两栏的底边框跟着上下跳——老师看到的「一会对齐一会不对齐」正是这一行。
+   批量保存改住辅助栏，样式改用 .ep-* 系列。 */
 
 .ed-btn {
   min-height: 44px;

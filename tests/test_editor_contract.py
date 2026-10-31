@@ -188,19 +188,42 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
     def test_05_grid_uses_three_columns_with_draggable_widths(self) -> None:
         css = read("plugin.css")
         self.assertIn(
-            "var(--w-image) var(--split-w) minmax(0, 1fr)", css,
+            "max(var(--pane-min), var(--w-image)) var(--split-w) minmax(0, 1fr)", css,
             "中右两栏合并成一只整体容器后，网格只该有三条轨道")
         self.assertIn("--split-w: 6px", css)
         self.assertIn("--pane-min: 28px", css, "拖到极窄缝也不能归零")
         self.assertIn("--void: #fafafa", css, "短栏留白的极淡底色")
         self.assertIn("cursor: col-resize", css)
 
+    def test_05b_widths_are_ratios_so_three_columns_scale_together(self) -> None:
+        """画布一窄，三栏必须等比例缩放：像素记账只会把弹性那一栏（渲染）挤没。"""
+        css = read("plugin.css")
+        self.assertIn("--w-image: 20%", css, "原图栏按比例占画布")
+        self.assertIn("--w-source: 34%", css, "源码栏按比例占中右两栏")
+        self.assertIn("--pane-render-min: 160px", css, "渲染栏要有防挤压下限")
+        self.assertIn("flex: 0 0 max(var(--pane-min), var(--w-source));", css)
+        self.assertIn("flex: 1 1 0;", css, "弹性栏必须按 0 基准增长，不许按内容撑")
+        self.assertIn("min-width: var(--pane-render-min);", css)
+        js = read("plugin.js")
+        self.assertIn("var DEFAULT_IMAGE_RATIO = 0.2;", js)
+        self.assertIn("var DEFAULT_SOURCE_RATIO = 0.34;", js)
+        self.assertIn("function clampRatio(value, fallback)", js)
+        apply = fn_body(js, "applyWidths")
+        self.assertIn('colsEl.style.setProperty("--w-image", (state.widths.image * 100).toFixed(3) + "%");',
+                      apply, "比例要写成百分比，网格才会跟着画布宽度一起缩放")
+        self.assertIn('colsEl.style.setProperty("--w-source", (state.widths.source * 100).toFixed(3) + "%");',
+                      apply)
+        drag = fn_body(js, "bindSplit")
+        self.assertIn("delta / metrics.total", drag, "像素位移必须当场换算成比例位移")
+        self.assertIn("delta / metrics.workbench", drag)
+
     def test_06_drag_is_clamped_and_keyboard_usable(self) -> None:
         js = read("plugin.js")
         self.assertIn("var PANE_MIN = 28", js)
         self.assertIn("var SPLIT_W = 6", js)
         self.assertIn("function clampValue(value, min, max)", js)
-        self.assertIn("image = clampValue(state.widths.image, PANE_MIN", js)
+        self.assertIn("state.widths.image = clampRatio(state.widths.image, DEFAULT_IMAGE_RATIO);", js)
+        self.assertIn("state.widths.source = clampRatio(state.widths.source, DEFAULT_SOURCE_RATIO);", js)
         self.assertIn('event.key !== "ArrowLeft" && event.key !== "ArrowRight"', js)
         canvas = canvas_only(read("index.html"))
         self.assertIn('role="separator"', canvas)
@@ -213,6 +236,11 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
         self.assertIn('cell.style.minHeight = rowH + "px"', js)
         self.assertIn('node.addEventListener("scroll", function () { syncScroll(node); })', js)
         self.assertIn("if (scrollLock) return;", js, "三栏互相同步，不能再滚出回路")
+        # 行高必须量小数：offsetHeight 会把 300.4 截成 300，框框视图里内容高常带小数，
+        # 截整之后每一行的源码格都高出一丝，虚线一行一行往下飘（点格式二就歪的真相）。
+        self.assertIn("cell.getBoundingClientRect().height", js,
+                      "行高要按小数高度量，截整会让三栏虚线逐行错位")
+        self.assertNotIn("cell.offsetHeight > rowH", js, "不许再拿截整的 offsetHeight 量行高")
 
     def test_08_middle_pane_grows_instead_of_scrolling(self) -> None:
         css = read("plugin.css")
@@ -252,7 +280,7 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         self.assertNotIn("ed-legend", canvas)
 
     def test_02_canvas_has_no_toolbar_or_status_strip_at_all(self) -> None:
-        """顶栏整体撤除：画布从上到下只有题目内容与底部批量条，不再有任何工具条。"""
+        """顶栏与底栏整体撤除：画布从上到下只有题目内容，不再有任何工具条。"""
         canvas = canvas_only(read("index.html"))
         self.assertNotIn('class="ed-bar"', canvas, "画布内不许再有顶栏")
         self.assertNotIn("<header", canvas, "画布内不许再有头部容器")
@@ -262,8 +290,8 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         for node_id in ("edProgress", "edFormat", "edDirty", "edSaved", "edMetrics"):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
-        # 画布剩下的按钮只有底部批量条的两枚
-        self.assertEqual(canvas.count("<button"), 2, "画布内只许底部批量条的两枚按钮")
+        # 底栏撤除后，画布内一枚按钮都不许剩：批量保存已经搬进辅助栏
+        self.assertEqual(canvas.count("<button"), 0, "画布内不许再有任何按钮")
 
     def test_03_three_heads_share_one_pixel_line(self) -> None:
         css = read("plugin.css")
@@ -335,7 +363,12 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         self.assertIn("if (event.target !== node) return;", bind, "按钮上的方向键不许变成拖栏")
 
     def test_09_panes_lock_height_and_footer_never_wraps(self) -> None:
-        """「一会对齐一会不对齐」的根因：批量条换行 + 滚动条出现改变了栅格行高。"""
+        """「一会对齐一会不对齐」的根因：批量条换行 + 滚动条出现改变了栅格行高。
+
+        2026-10-31 起批量条整条搬进辅助栏，画布底栏不再存在：
+        中右两栏的高度改由父容器钉死（height / max-height / overflow: hidden），
+        话术再长也只许在辅助栏里省略，绝不再回来推走中栏的底边。
+        """
         css = read("plugin.css")
         col = rule_body(css, ".ed-col {")
         self.assertIn("overflow: hidden", col, "栏本身不许被内容撑高")
@@ -348,12 +381,17 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         body = rule_body(css, ".ed-pane-body {")
         for required in ("scrollbar-gutter: stable", "overflow-y: auto", "min-height: 0"):
             self.assertIn(required, body, f".ed-pane-body 缺 {required}")
-        foot = rule_body(css, ".ed-foot {")
-        for required in ("height: 56px", "flex-wrap: nowrap", "overflow: hidden"):
-            self.assertIn(required, foot, f"批量条缺 {required}，换话术就会推走底边")
-        batch = rule_body(css, ".ed-batch {")
+        # 画布底栏已整条删除：样式与规则都不许留半截
+        for gone in (".ed-foot {", ".ed-batch {", ".ed-pool {", ".ed-foot-actions {"):
+            self.assertNotIn(gone, css, f"{gone} 已随画布底栏退场")
+        batch = rule_body(css, ".ep-batch {")
         for required in ("white-space: nowrap", "text-overflow: ellipsis", "overflow: hidden"):
             self.assertIn(required, batch, "批量话术只许省略，不许换行")
+        # 锁死高度是这次整改的正题：三层的父容器都得写死
+        for selector in (".ed-root {", ".ed-cols {", ".ed-workbench {", ".ed-workbench-panes {"):
+            block = rule_body(css, selector)
+            self.assertIn("height: 100%", block, f"{selector} 没锁死高度，中右两栏会被内容撑歪")
+            self.assertIn("overflow: hidden", block, f"{selector} 没有独立滚动区")
 
     def test_10_ghost_scrollbars_stay_transparent_until_needed(self) -> None:
         css = read("plugin.css")
@@ -809,16 +847,24 @@ class EditorBoxedFormatTest(unittest.TestCase):
 
 
 class EditorBatchTest(unittest.TestCase):
-    """阶段 4：单题与批量共用一张画布——滚动跟题、左栏跳转、底部只提交脏题。"""
+    """阶段 4：单题与批量共用一张画布——滚动跟题、左栏跳转、批量只提交脏题。
 
-    def test_01_bottom_bar_lives_in_the_canvas_not_the_panel(self) -> None:
+    2026-10-31 整改：批量条整条从画布底部搬进右侧辅助栏的元数据操作区。
+    画布底栏（.ed-foot）一换行就把中右两栏的底边挤歪，还占着老师最宝贵的屏幕下沿。
+    """
+
+    def test_01_batch_bar_lives_in_the_panel_not_the_canvas(self) -> None:
         canvas = canvas_only(read("index.html"))
+        panel = panel_only(read("index.html"))
         for node_id in ("edPool", "edBatchNote", "edSaveAll", "edPoolStash"):
-            self.assertIn(f'id="{node_id}"', canvas, f"批量条缺少 {node_id}")
-        # 批量条是画布的动作面，不许把表单控件带进画布（<button> 不算表单输入控件）
+            self.assertIn(f'id="{node_id}"', panel, f"批量条缺少 {node_id}")
+            self.assertNotIn(f'id="{node_id}"', canvas, f"{node_id} 属于辅助栏，不许留在画布底栏")
+        # 画布底栏连同它的容器一起删干净（注释里可以留说明，不许留元素）
+        self.assertNotIn('class="ed-foot"', canvas, "画布底栏已整条删除")
+        # 批量条不许把表单控件带进画布（<button> 不算表单输入控件）
         self.assertNotIn("<select", canvas)
         self.assertNotIn("<input", canvas)
-        self.assertNotIn('id="edSave"', canvas, "旧单题保存按钮已并入底部批量条 / 辅助栏")
+        self.assertNotIn('id="edSave"', canvas, "旧单题保存按钮已并入批量条 / 辅助栏")
 
     def test_02_save_all_submits_only_dirty_items(self) -> None:
         js = read("plugin.js")
@@ -832,13 +878,41 @@ class EditorBatchTest(unittest.TestCase):
                       "批量必须复用单题那一份 saveItem，不许另写一套写库口径")
         self.assertIn("未改动的", body, "回执话术要如实报出没被提交的那几题")
 
+    def test_02b_panel_batch_reuses_the_same_write_path(self) -> None:
+        """按钮住在辅助栏，干活的也必须是辅助栏那份：口径与画布侧一字不差。"""
+        js = read("plugin.js")
+        body = fn_body(js, "panelSaveAllDirty")
+        self.assertIn('saveItem(target.item, metaFor(target.item, {}), "save")', body,
+                      "辅助栏的批量必须复用同一份 saveItem")
+        self.assertIn("只提交改动过的题", body)
+        self.assertIn("未改动的", body)
+        self.assertIn('if (state.batchSaving) return Promise.resolve(null);', body)
+        items = fn_body(js, "panelWorklistItems")
+        self.assertIn('hostCall("draft.load", { key: DRAFT_WORKLIST_KEY })', items,
+                      "面板帧摸不到画布的题目，只能读宿主代持的工作清单草稿")
+
+    def test_02c_panel_batch_rebuilds_the_full_question(self) -> None:
+        """面板侧重建题目时，图片、扩展与原卷字段一件都不许丢——更新一题就抹掉一样等于毁题。"""
+        js = read("plugin.js")
+        items = fn_body(js, "panelWorklistItems")
+        for field in ("images", "extensions", "origin"):
+            self.assertIn(field, items, f"工作清单草稿必须带 {field}")
+        worklist = fn_body(js, "worklistValue")
+        for field in ("images", "extensions", "origin"):
+            self.assertIn(field, worklist, f"画布写草稿时必须带 {field}")
+        self.assertIn("var SOURCE_MAX = 60000;", js,
+                      "源码不许在两帧之间被砍到 20000 字，长解析的尾巴会丢")
+
     def test_03_batch_saves_run_serially_not_in_parallel(self) -> None:
         """宿主对写库有频率闸门：一次全发只会换来一排 RATE_LIMITED 的假失败。"""
-        body = fn_body(read("plugin.js"), "saveAllDirty")
-        self.assertIn("return targets.reduce(function (chain, target) {", body)
-        self.assertIn("return chain.then(function (acc) {", body)
-        self.assertNotIn("Promise.all(", body)
-        self.assertIn("if (state.batchSaving) return Promise.resolve(null);", body, "重复点击不许并发二轮")
+        js = read("plugin.js")
+        for name in ("saveAllDirty", "panelSaveAllDirty"):
+            body = fn_body(js, name)
+            self.assertIn("return targets.reduce(function (chain, target) {", body)
+            self.assertIn("return chain.then(function (acc) {", body)
+            self.assertNotIn("Promise.all(", body, f"{name} 不许并发写库")
+            self.assertIn("if (state.batchSaving) return Promise.resolve(null);", body,
+                          "重复点击不许并发二轮")
 
     def test_04_batch_reuses_the_same_two_write_methods(self) -> None:
         js = read("plugin.js")
@@ -905,9 +979,9 @@ class EditorBatchTest(unittest.TestCase):
         self.assertIn('saveAllEl.removeAttribute("aria-busy");', js)
         self.assertIn('saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");', js)
         css = read("plugin.css")
-        self.assertIn("min-height: 44px", css_rule(css, ".ed-btn"))
-        self.assertIn('.ed-batch[data-batch="partial"]', css)
-        self.assertIn(".ed-btn[disabled]", css)
+        self.assertIn("min-height: 44px", css_rule(css, ".ep-btn"))
+        self.assertIn('.ep-batch[data-batch="partial"]', css)
+        self.assertIn(".ep-btn[disabled]", css)
         note = fn_body(read("plugin.js"), "batchNote")
         self.assertIn("batchNoteEl.textContent = text;", note, "话术只走 textContent，不许拼 DOM")
 
@@ -916,7 +990,10 @@ class EditorBatchTest(unittest.TestCase):
         status = fn_body(js, "updateStatusbar")
         self.assertIn("markActiveRow();", status)
         self.assertIn("renderPool();", status)
-        self.assertIn("if (saveAllEl) saveAllEl.addEventListener(\"click\", function () { saveAllDirty(); });", js)
+        self.assertIn("if (saveAllEl) saveAllEl.addEventListener(\"click\", function () {", js)
+        self.assertIn("if (state.slot === \"stage.center\") saveAllDirty();", js,
+                      "那颗钮住在辅助栏，点它必须走辅助栏那份批量")
+        self.assertIn("else panelSaveAllDirty();", js)
 
 
     def test_12_rebuild_keeps_the_reading_position(self) -> None:

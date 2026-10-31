@@ -31,6 +31,10 @@
   var RECEIPT_RETRY_MAX = 4;
   var SPLIT_W = 6;
   var PANE_MIN = 28;
+  // 三栏宽度按「比例」记账，不按像素：画布宽度一变（折叠辅助栏、拖窗口），
+  // 三栏必须按同一比例缩放，而不是把弹性那一栏（渲染）单独挤没。
+  var DEFAULT_IMAGE_RATIO = 0.2;
+  var DEFAULT_SOURCE_RATIO = 0.34;
   var DEV_NS = "org.jiuzhang.editor.dev";
   var DRAFT_LAYOUT_KEY = "editor:v2:layout";
   var DRAFT_WORKLIST_KEY = "editor:v2:worklist";
@@ -52,6 +56,9 @@
   };
   var STEM_MAX = 50000;
   var FIELD_MAX = 20000;
+  // 源码在两帧之间要整段搬运（辅助栏的批量保存靠它重建题目对象）：
+  // 砍到 20000 字会把长解析的尾巴悄悄切掉，题库里就少一截。
+  var SOURCE_MAX = 60000;
   var TOPIC_LIMIT = 8;
   var TAG_LIMIT = 32;
   // 宿主 stage.js 对 instruction 的截断额度就是 400，面板先按同一个数拦，别让老师的长指令被悄悄切尾
@@ -131,7 +138,7 @@
     active: 0,
     format: "latex",
     swap: false,
-    widths: { image: 260, source: 360 },
+    widths: { image: DEFAULT_IMAGE_RATIO, source: DEFAULT_SOURCE_RATIO },
     dirty: false,
     layoutReady: false,
     worklistReady: false,
@@ -1174,22 +1181,38 @@
     node.style.height = Math.max(node.scrollHeight, 60) + "px";
   }
 
-  /** 行高取三栏较高者：三栏共用一条滚动，短栏余下的高度正是那层极淡底色。 */
+  /**
+   * 行高取三栏较高者：三栏共用一条滚动，短栏余下的高度正是那层极淡底色。
+   *
+   * 顺序是这件事的全部：文本框必须先长到内容高度，再量行高。
+   * 反过来（先量后长）的话，源码栏会在量完之后继续长高一截，
+   * 三栏之间的虚线当场错位——老师点一下「格式一/二」就看见。
+   * 所以这里长—量两轮：第一轮让框就位，第二轮按最终高度重新对齐。
+   *
+   * 量高必须用 getBoundingClientRect 的小数高度：offsetHeight 会把 300.4px 截成 300，
+   * 而框框视图里的内容高往往带小数，于是每一行的源码格都比另两栏高出一丝，
+   * 虚线一行一行往下飘——这正是「点一下格式二就歪」的真相。
+   */
   function alignRows() {
     var max = 0;
-    for (var index = 0; index < state.items.length; index += 1) {
-      var cells = [imageBodyEl.children[index], sourceBodyEl.children[index], renderBodyEl.children[index]];
-      var rowH = 0;
-      cells.forEach(function (cell) {
-        if (cell && cell.offsetHeight > rowH) rowH = cell.offsetHeight;
-      });
-      cells.forEach(function (cell) {
-        if (cell) cell.style.minHeight = rowH + "px";
-      });
-      if (index === 0) max = rowH;
+    for (var pass = 0; pass < 2; pass += 1) {
+      Array.prototype.forEach.call(
+        sourceBodyEl.querySelectorAll(".ed-src-area, .ed-box-textarea"), growTextarea);
+      max = 0;
+      for (var index = 0; index < state.items.length; index += 1) {
+        var cells = [imageBodyEl.children[index], sourceBodyEl.children[index], renderBodyEl.children[index]];
+        var rowH = 0;
+        cells.forEach(function (cell) {
+          if (!cell) return;
+          var height = cell.getBoundingClientRect().height;
+          if (height > rowH) rowH = height;
+        });
+        cells.forEach(function (cell) {
+          if (cell) cell.style.minHeight = rowH + "px";
+        });
+        if (index === 0) max = rowH;
+      }
     }
-    Array.prototype.forEach.call(
-      sourceBodyEl.querySelectorAll(".ed-src-area, .ed-box-textarea"), growTextarea);
     return max;
   }
 
@@ -1434,14 +1457,20 @@
       dirty: Boolean(item.dirty),
       format: state.format,
       swap: Boolean(state.swap),
-      source: trunc(item.source, FIELD_MAX),
+      source: trunc(item.source, SOURCE_MAX),
       caret: caretOfActive(),
       errors: parsed.errors.slice(0, 8),
       ai_type: parsed.type,
       confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
       defaults: defaultsOf(item),
+      // 待入库池的台账随选区一起走：批量保存按钮搬进辅助栏后，
+      // 面板要自己知道「一共几题、几题脏」才敢让那颗钮亮起来。
+      pool: poolCounts(),
       images: (question.images || []).slice(0, 32),
-      extensions: keepExtensions(question.extensions)
+      extensions: keepExtensions(question.extensions),
+      origin: question.source && typeof question.source === "object"
+        ? { region: question.source.region || "", school: question.source.school || "" }
+        : null
     };
   }
 
@@ -1458,6 +1487,10 @@
   function publishSelection() {
     var payload = selectionPayload();
     if (!payload) return;
+    // 选区一发布，工作清单草稿就得跟着落盘：批量保存那颗钮住在辅助栏，
+    // 面板侧只能读这份草稿重建题目。草稿若还停在 600ms 前的旧版，
+    // 老师刚改的那一题就会漏交，还不自知。
+    saveWorklist();
     publish("stage.selection", payload);
   }
 
@@ -1470,18 +1503,26 @@
     return {
       active: state.active,
       items: state.items.map(function (item) {
+        var question = item.question || {};
         return {
           key: item.key,
-          id: item.question && item.question.id ? item.question.id : "",
+          id: question.id ? question.id : "",
           saved_id: item.savedId || "",
           status: item.status,
           dirty: Boolean(item.dirty),
-          source: trunc(item.source, FIELD_MAX),
+          source: trunc(item.source, SOURCE_MAX),
           // 辅助栏可能在画布发布选区之前就已挂载：把默认值一并存进宿主代持的草稿，
           // 面板读草稿就能自己补出这张表单，不必等一条永远不会重放的通知。
           defaults: defaultsOf(item),
           confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
-          errors: parsedOf(item).errors.slice(0, 8)
+          errors: parsedOf(item).errors.slice(0, 8),
+          // 批量保存搬进辅助栏后，面板侧要靠这份台账把题目原样重建出来：
+          // 少了图片、扩展与原卷字段，更新一题就会把这些悄悄抹掉。
+          images: (question.images || []).slice(0, 32),
+          extensions: keepExtensions(question.extensions),
+          origin: question.source && typeof question.source === "object"
+            ? { region: question.source.region || "", school: question.source.school || "" }
+            : null
         };
       })
     };
@@ -1638,19 +1679,54 @@
     });
   }
 
-  // ---------- 三栏拖宽（不能归零，只留极窄缝） ----------
-  function applyWidths() {
+  // ---------- 三栏拖宽（比例记账，像素只在下鼠标那一刻出现） ----------
+  /** 夹比例：留一份极窄缝，其余全给弹性栏。 */
+  function clampRatio(value, fallback) {
+    var number = Number(value);
+    if (!isFinite(number) || number <= 0) return fallback;
+    return Math.min(0.9, Math.max(0.02, number));
+  }
+
+  /** 当前画布的可用宽度：总宽与「中右两栏合起来」的那一段。 */
+  function paneMetrics() {
     var total = colsEl ? colsEl.clientWidth : 0;
-    if (total <= 0) return;
-    var image = clampValue(state.widths.image, PANE_MIN,
-      Math.max(PANE_MIN, total - PANE_MIN * 2 - SPLIT_W));
-    var source = clampValue(state.widths.source, PANE_MIN,
-      Math.max(PANE_MIN, total - image - PANE_MIN - SPLIT_W));
-    state.widths.image = image;
-    state.widths.source = source;
-    colsEl.style.setProperty("--w-image", image + "px");
-    colsEl.style.setProperty("--w-source", source + "px");
-    if (metricsEl) metricsEl.setAttribute("data-pane-w", String(total));
+    var image = state.widths.image * total;
+    var workbench = total - image - SPLIT_W;
+    if (workbench < PANE_MIN * 2) workbench = PANE_MIN * 2;
+    return { total: total, workbench: workbench };
+  }
+
+  /**
+   * 把比例写进 CSS 变量：原图栏按总宽算比例，源码栏按中右两栏合起来的宽度算比例。
+   * 画布变窄时两个比例都不动，三栏一起等比缩放。
+   */
+  function applyWidths() {
+    var metrics = paneMetrics();
+    if (metrics.total <= 0) return;
+    state.widths.image = clampRatio(state.widths.image, DEFAULT_IMAGE_RATIO);
+    state.widths.source = clampRatio(state.widths.source, DEFAULT_SOURCE_RATIO);
+    colsEl.style.setProperty("--w-image", (state.widths.image * 100).toFixed(3) + "%");
+    colsEl.style.setProperty("--w-source", (state.widths.source * 100).toFixed(3) + "%");
+    if (metricsEl) metricsEl.setAttribute("data-pane-w", String(metrics.total));
+  }
+
+  /**
+   * 老草稿记的是像素（260/360 那一版）：读回来时按当时的画布宽换算成比例，
+   * 免得老布局一恢复就把原图栏撑成整幅画布。
+   */
+  function normalizeWidths(value) {
+    var metrics = paneMetrics();
+    var raw = (value && typeof value === "object") ? value : {};
+    var image = Number(raw.image);
+    var source = Number(raw.source);
+    if (isFinite(image) && image > 1) {
+      image = metrics.total > 0 ? image / metrics.total : DEFAULT_IMAGE_RATIO;
+    }
+    if (isFinite(source) && source > 1) {
+      source = metrics.workbench > 0 ? source / metrics.workbench : DEFAULT_SOURCE_RATIO;
+    }
+    state.widths.image = clampRatio(image, DEFAULT_IMAGE_RATIO);
+    state.widths.source = clampRatio(source, DEFAULT_SOURCE_RATIO);
   }
 
   function saveLayout() {
@@ -1677,8 +1753,13 @@
     node.addEventListener("pointermove", function (event) {
       if (!drag) return;
       var delta = event.clientX - drag.x;
-      if (which === "image") state.widths.image = drag.image + delta;
-      else state.widths.source = drag.source + delta;
+      var metrics = paneMetrics();
+      // 像素位移立刻换算成比例位移：拖到哪儿都是「占画布的几分之几」
+      if (which === "image") {
+        state.widths.image = drag.image + (metrics.total > 0 ? delta / metrics.total : 0);
+      } else {
+        state.widths.source = drag.source + (metrics.workbench > 0 ? delta / metrics.workbench : 0);
+      }
       applyWidths();
     });
     function stop(event) {
@@ -1699,8 +1780,12 @@
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       var step = event.shiftKey ? 8 : 24;
       var delta = event.key === "ArrowLeft" ? -step : step;
-      if (which === "image") state.widths.image += delta;
-      else state.widths.source += delta;
+      var metrics = paneMetrics();
+      if (which === "image") {
+        state.widths.image += metrics.total > 0 ? delta / metrics.total : 0;
+      } else {
+        state.widths.source += metrics.workbench > 0 ? delta / metrics.workbench : 0;
+      }
       applyWidths();
       queueLayoutSave();
       scheduleRender();
@@ -1989,7 +2074,7 @@
     });
   }
 
-  // ---------- 批量条：脏题计数、待入库池界面与【保存全部】 ----------
+  // ---------- 批量保存（住在辅助栏）：脏题计数、待入库池台账与【保存全部】 ----------
   function dirtyList() {
     var out = [];
     state.items.forEach(function (item, index) {
@@ -1998,6 +2083,7 @@
     return out;
   }
 
+  /** 画布侧的真身：整份工作清单都在这儿，池的账只能从这里算。 */
   function poolCounts() {
     var fresh = 0, stored = 0, dirty = 0, errored = 0;
     state.items.forEach(function (item) {
@@ -2009,6 +2095,16 @@
     return { fresh: fresh, stored: stored, dirty: dirty, errored: errored };
   }
 
+  /** 面板侧的账：随选区一起从画布过来，画布没开口子之前一律报零。 */
+  function panelPoolCounts() {
+    var pool = panel.selection && panel.selection.pool;
+    if (!pool || typeof pool !== "object") return { fresh: 0, stored: 0, dirty: 0, errored: 0 };
+    return {
+      fresh: Number(pool.fresh) || 0, stored: Number(pool.stored) || 0,
+      dirty: Number(pool.dirty) || 0, errored: Number(pool.errored) || 0
+    };
+  }
+
   function batchNote(text, phase) {
     if (!batchNoteEl) return;
     batchNoteEl.textContent = text;
@@ -2017,7 +2113,7 @@
 
   /** 待入库池现在只是台账：池的存储层随下一军令接入，所以按钮出厂锁死、话术写明白。 */
   function renderPool() {
-    var counts = poolCounts();
+    var counts = state.slot === "stage.center" ? poolCounts() : panelPoolCounts();
     if (poolEl) {
       poolEl.textContent = "待入库 " + counts.fresh + " · 已入库 " + counts.stored
         + " · 脏 " + counts.dirty + " · 未认全 " + counts.errored;
@@ -2033,7 +2129,7 @@
       else saveAllEl.removeAttribute("aria-busy");
       saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");
       saveAllEl.title = counts.dirty === 0
-        ? "没有脏题：底部只提交改动过的题"
+        ? "没有脏题：这里只提交改动过的题"
         : "逐题串行提交 " + counts.dirty + " 道脏题（已入库走更新，未入库走新建）";
     }
     if (poolStashEl) {
@@ -2050,7 +2146,7 @@
     if (state.batchSaving) return Promise.resolve(null);
     var targets = dirtyList();
     if (!targets.length) {
-      batchNote("没有脏题可提交——底部只提交改动过的题，未改动的不动。", "empty");
+      batchNote("没有脏题可提交——这里只提交改动过的题，未改动的不动。", "empty");
       return Promise.resolve(null);
     }
     state.batchSaving = true;
@@ -2089,6 +2185,111 @@
       renderPool();
       return null;
     });
+  }
+
+  // ---------- 辅助栏侧的批量提交（按钮住在辅助栏，干活的也得是辅助栏这份） ----------
+  /**
+   * 面板侧的工作清单：批量保存搬进辅助栏后，面板要自己把题目重建出来。
+   * 台账只有一份——宿主代持的草稿；图片、扩展与原卷字段都在里面，更新一题不会丢料。
+   */
+  function panelWorklistItems() {
+    return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY }).then(function (result) {
+      var value = result && result.value;
+      var items = value && Array.isArray(value.items) ? value.items : [];
+      return items.map(function (saved) {
+        return {
+          key: String(saved.key || ""),
+          savedId: saved.saved_id || "",
+          status: saved.status === "stored" ? "stored" : "pending",
+          dirty: Boolean(saved.dirty),
+          source: String(saved.source || ""),
+          question: {
+            id: saved.id || "",
+            images: Array.isArray(saved.images) ? saved.images : [],
+            extensions: saved.extensions && typeof saved.extensions === "object" ? saved.extensions : {},
+            source: saved.origin && typeof saved.origin === "object" ? saved.origin : null
+          }
+        };
+      });
+    });
+  }
+
+  /**
+   * 辅助栏里的【保存全部】：与画布侧同一条口径——只提交脏题，逐题串行。
+   * 面板帧摸不到画布的 state.items，只能靠宿主代持的工作清单草稿把题目重建出来。
+   */
+  function panelSaveAllDirty() {
+    if (state.batchSaving) return Promise.resolve(null);
+    state.batchSaving = true;
+    renderPool();
+    batchNote("正在读取工作清单…", "running");
+    return panelWorklistItems().then(function (items) {
+      return loadMetaDraft().then(function () {
+        var targets = [];
+        items.forEach(function (item, index) {
+          if (item.dirty) targets.push({ item: item, index: index });
+        });
+        if (!targets.length) {
+          state.batchSaving = false;
+          batchNote("没有脏题可提交——这里只提交改动过的题，未改动的不动。", "empty");
+          renderPool();
+          return null;
+        }
+        batchNote("正在提交 " + targets.length + " 道脏题…", "running");
+        return targets.reduce(function (chain, target) {
+          return chain.then(function (acc) {
+            return saveItem(target.item, metaFor(target.item, {}), "save").then(function (result) {
+              acc.saved.push(result.question_id || "");
+              if (result.created) acc.created += 1;
+              else acc.updated += 1;
+            }, function (error) {
+              acc.failed.push("第 " + (target.index + 1) + " 题：" + explainHostError(error));
+            }).then(function () {
+              // 每一棒都得把台账交回下一棒，否则第二题开始 acc 就是 undefined，整串批量会假死。
+              return acc;
+            });
+          });
+        }, Promise.resolve({ saved: [], failed: [], created: 0, updated: 0 })).then(function (acc) {
+          return { acc: acc, total: items.length };
+        });
+      });
+    }).then(function (outcome) {
+      if (!outcome) return null;
+      var acc = outcome.acc;
+      state.batchSaving = false;
+      var untouched = outcome.total - acc.saved.length - acc.failed.length;
+      var text = "提交 " + (acc.saved.length + acc.failed.length) + " 道脏题：入库 "
+        + acc.saved.length + "、失败 " + acc.failed.length + "；未改动的 " + untouched
+        + " 道一题也没写。";
+      if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
+      batchNote(text, acc.failed.length ? "partial" : "done");
+      panelSay("批量提交完成：入库 " + acc.saved.length + " 题、失败 " + acc.failed.length + " 题。",
+        acc.failed.length ? "warn" : "ok", acc.failed.length ? "failed" : "saved");
+      dock("录题工作台批量提交：" + acc.saved.length + " 题入库、" + acc.failed.length + " 题失败。");
+      patchPanelPool(acc.created, acc.updated, acc.failed.length);
+      renderPool();
+      return acc;
+    }, function (error) {
+      state.batchSaving = false;
+      batchNote("批量提交没走通：" + ((error && error.message) || "未知失败") + "，已提交的部分不追回。",
+        "failed");
+      renderPool();
+      return null;
+    });
+  }
+
+  /** 批量提交后先自己把台账改到位：画布的回执要绕一圈才回来，这期间按钮不能一直亮着。
+   *  只有「新建」才把待入库挪进已入库；改已入库的题本来就住在已入库里。
+   *  脏题三样（新建/更新/失败）都算处理过——失败的那道不再是脏题，只是记在失败数里。 */
+  function patchPanelPool(created, updated, failed) {
+    var pool = panel.selection && panel.selection.pool;
+    if (!pool || typeof pool !== "object") return;
+    panel.selection.pool = {
+      fresh: Math.max(0, Number(pool.fresh || 0) - created),
+      stored: Number(pool.stored || 0) + created,
+      dirty: Math.max(0, Number(pool.dirty || 0) - created - updated - failed),
+      errored: Number(pool.errored || 0)
+    };
   }
 
   // ---------- 能力路由字典（军令 #20 的四条命令，v2 继续沿用同一批 id） ----------
@@ -2190,15 +2391,23 @@
    * 辅助栏落库后留一张回执，画布收到 system.question_updated 时按回执认领：
    * 「新建」和「派生变式」在事件里长得一模一样，只有回执能分清是哪一题变成了哪道题。
    */
+  /**
+   * 回执箱是两只帧共用的一只：面板投票，画布认领。
+   * 认领方不许改写箱子——它一写，就会把对面刚投进来的新票抹掉，
+   * 批量提交时那一票就永远等不到，题目在画布上会一直挂着「未入库」。
+   * 所以只写方（pushReceipt）先读后写，认领方只读。
+   */
   function pushReceipt(receipt) {
-    var list = Array.isArray(panel.receipts) ? panel.receipts : [];
-    list.push({
-      key: receipt.key, id: receipt.id, action: receipt.action,
-      mode: receipt.mode, at: nowIso()
-    });
-    panel.receipts = list.slice(-20);
-    hostCall("draft.save", { key: DRAFT_RECEIPT_KEY, value: { items: panel.receipts } })
-      .catch(function () { /* 回执丢了，画布顶多少刷一次状态 */ });
+    hostCall("draft.load", { key: DRAFT_RECEIPT_KEY }).then(function (result) {
+      var value = result && result.value;
+      var list = value && Array.isArray(value.items) ? value.items.slice() : [];
+      list.push({
+        key: receipt.key, id: receipt.id, action: receipt.action,
+        mode: receipt.mode, at: nowIso()
+      });
+      panel.receipts = list.slice(-20);
+      return hostCall("draft.save", { key: DRAFT_RECEIPT_KEY, value: { items: panel.receipts } });
+    }).catch(function () { /* 回执丢了，画布顶多少刷一次状态 */ });
   }
 
   function consumeReceipts(payload, attempt) {
@@ -2209,10 +2418,8 @@
       var value = result && result.value;
       var list = value && Array.isArray(value.items) ? value.items : [];
       var matched = null;
-      var rest = [];
       list.forEach(function (item) {
         if (!matched && item && String(item.id) === id) matched = item;
-        else rest.push(item);
       });
       if (!matched) {
         // 宿主是先广播事件、后把应答送回辅助栏，回执落草稿比事件晚一跳；读不到就重试
@@ -2221,8 +2428,7 @@
         }
         return;
       }
-      panel.receipts = rest;
-      hostCall("draft.save", { key: DRAFT_RECEIPT_KEY, value: { items: rest } }).catch(function () {});
+      panel.receipts = list.slice(-20);
       var target = null;
       state.items.forEach(function (item) {
         if (item.key === matched.key) target = item;
@@ -2268,7 +2474,8 @@
       question: {
         id: sel.question_id || "",
         images: Array.isArray(sel.images) ? sel.images : [],
-        extensions: sel.extensions && typeof sel.extensions === "object" ? sel.extensions : {}
+        extensions: sel.extensions && typeof sel.extensions === "object" ? sel.extensions : {},
+        source: sel.origin && typeof sel.origin === "object" ? sel.origin : null
       }
     };
   }
@@ -2400,6 +2607,7 @@
     renderMounted();
     renderPanelMetrics();
     renderAi();
+    renderPool();
     if (panelSelectionError()) {
       panelSay(panelSelectionError(), "error", "invalid");
     } else if (panel.ai.state === "ready" && panel.ai.key === sel.key) {
@@ -2852,6 +3060,13 @@
     var saved = items[active] || items[0] || null;
     if (!saved) return;
     var source = String(saved.source || "");
+    var pool = { fresh: 0, stored: 0, dirty: 0, errored: 0 };
+    items.forEach(function (each) {
+      if (each.status === "stored") pool.stored += 1;
+      else pool.fresh += 1;
+      if (each.dirty) pool.dirty += 1;
+      if (each.errors && each.errors.length) pool.errored += 1;
+    });
     panel.source = source;
     applySelection({
       index: active, total: items.length, key: saved.key,
@@ -2860,7 +3075,10 @@
       swap: panel.swap, source: source, errors: saved.errors || [],
       ai_type: parseExamSource(source).type,
       confidence: typeof saved.confidence === "number" ? saved.confidence : null,
-      defaults: saved.defaults || {}, images: [], extensions: {}
+      defaults: saved.defaults || {}, pool: pool,
+      images: Array.isArray(saved.images) ? saved.images : [],
+      extensions: saved.extensions && typeof saved.extensions === "object" ? saved.extensions : {},
+      origin: saved.origin && typeof saved.origin === "object" ? saved.origin : null
     });
   }
 
@@ -2973,10 +3191,7 @@
       });
       hostCall("draft.load", { key: DRAFT_LAYOUT_KEY }).then(function (result) {
         var value = result && result.value;
-        if (value && value.widths) {
-          state.widths.image = Number(value.widths.image) || state.widths.image;
-          state.widths.source = Number(value.widths.source) || state.widths.source;
-        }
+        if (value && value.widths) normalizeWidths(value.widths);
         if (value && typeof value.swap === "boolean") applySwap(value.swap, false);
         applyWidths();
         state.layoutReady = true;
@@ -3027,7 +3242,12 @@
       wireGhost(node);
       node.addEventListener("scroll", function () { syncScroll(node); });
     });
-    if (saveAllEl) saveAllEl.addEventListener("click", function () { saveAllDirty(); });
+    if (saveAllEl) saveAllEl.addEventListener("click", function () {
+      // 同一份文档被宿主装两次：画布帧与辅助栏帧各有一份这枚钮（只有辅助栏那份看得见）。
+      // 按钮住在辅助栏，工作就得在辅助栏的帧里做：它摸不到画布的题目，只能靠共用的草稿台账。
+      if (state.slot === "stage.center") saveAllDirty();
+      else panelSaveAllDirty();
+    });
     if (window.ResizeObserver && colsEl) {
       var observer = new window.ResizeObserver(function () {
         applyWidths();

@@ -347,7 +347,8 @@
   align-self: flex-end;
   justify-content: center;
   min-height: 36px;
-  margin: 6px 4px 0 12px;
+  /* 零外边距：入口钮紧贴第一枚页签，辅助栏钮紧贴最后一枚页签，中间不留缝 */
+  margin: 6px 0 0 0;
   padding: 6px 10px 6px 12px;
   border: 1px solid var(--line);
   border-bottom: none;
@@ -404,20 +405,35 @@
 
 .ws-context-body {
   flex: 1 1 auto;
-  padding: 16px;
-  overflow-y: auto;
+  padding: 12px 16px;
   min-height: 0;
+  /* 栏本身不滚：右栏插槽要吃掉全部剩余高度，插件面板因此一直铺到栏底；
+     面板内部自己滚，栏里不再留半截空白。 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   scrollbar-gutter: stable;
 }
 
 /* 右栏插槽（sidebar.right）：有插件认领时占住主要高度，没插件时整块 hidden，
-   原生 AI 副驾原样顶上来——插槽是加法，不是替换既有兜底。 */
+   原生 AI 副驾原样顶上来——插槽是加法，不是替换既有兜底。
+   选择器写成 .ws-section.ws-context-slot：分节默认留的 20px 下边距对插槽纯属浪费，
+   插件面板该贴到栏底，不该在底下再空一段。 */
+.ws-section.ws-context-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
 .ws-context-slot-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
+  flex: none;
 }
 .ws-context-slot-head h3 {
   margin: 0;
@@ -437,8 +453,9 @@
   white-space: nowrap;
 }
 .ws-context-slot-body {
-  height: 52vh;
-  min-height: 300px;
+  /* 铺满右栏剩余高度：死写的 52vh 会让插件面板悬在半空，底下留一大块空白 */
+  flex: 1 1 auto;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
@@ -474,13 +491,6 @@
   text-transform: uppercase;
   color: var(--faint);
   font-weight: 600;
-}
-
-.ws-context-value {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--ink);
-  word-break: break-word;
 }
 
 /* ============ 按钮 ============ */
@@ -877,6 +887,11 @@
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--card);
+  /* 快捷操作区不许把右栏插槽挤扁：它自己最多占一半高度，超出部分自己滚 */
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50%;
+  overflow-y: auto;
 }
 
 .ws-plugin-panel-head {
@@ -1041,11 +1056,14 @@ html.ws-dragging * {
   min-width: 0;
 }
 
-/* 页签栏贴顶：抽屉入口与页签同一行，删掉原先压在页签上方的舞台头。 */
+/* 页签栏贴顶：抽屉入口、页签与辅助栏回头路挤在同一条底线上，
+   谁也不许旁边留死白空隙——三者必须像连体婴儿一样挨着。 */
 .ws-tabs-wrap {
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
+  gap: 0;
   flex: none;
+  padding-left: 12px;
   border-bottom: 1px solid var(--line);
   background: var(--card);
 }
@@ -1054,9 +1072,10 @@ html.ws-dragging * {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  flex: 1 1 auto;
+  /* 页签条只占内容宽：辅助栏回头路要贴着最后一枚页签，不许被推到窗口最右端 */
+  flex: 0 1 auto;
   min-width: 0;
-  padding: 6px 12px 0;
+  padding: 6px 0 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
