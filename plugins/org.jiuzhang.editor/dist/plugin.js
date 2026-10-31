@@ -1,142 +1,66 @@
 /**
- * 录题工作台（org.jiuzhang.editor）。
+ * 录题工作台 v2（军令 #23）。
  *
- * 左表单、右 A4：每次输入停顿 140ms 做一次整页重绘，公式交给本地 KaTeX。
- * 保存不碰数据库，而是经宿主 bank.create 转发——宿主代取一次性令牌并
- * 固定写入底座公共题库（org.jiuzhang.core-bank），插件自报目标一律无效。
+ * 画布实例（stage.center）只有三栏：左原图 | 中全量 exam-zh 源码 | 右渲染。
+ * 源码是唯一的录入面——一整段 \begin{question}…\end{solution}；
+ * 题型、难度、来源这些元数据一律归辅助栏（sidebar.right，阶段 2），画布不放表单。
  *
- * 「一键清洗 LaTeX」是本地规则，不上传题干、不调模型：老师粘来的
- * \(...\)、\[...\]、\textbf{}、\fillin 与 choices 环境在这里归一。
- * 「AI 清洗公式」则经宿主转发底座统一清洗函数，与导入链保持同一口径。
+ * 插件住在不透明源沙箱里：不联网、不碰浏览器本地存储、不碰宿主 DOM。
+ * 读题只经宿主转发（bank.get），令牌由宿主代持；写库通道随阶段 2 的保存一起接入。
+ * 布局偏好交宿主 draft.save / draft.load 代持。
  */
 (function () {
   "use strict";
 
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.jiuzhang.editor";
-  var PAGE_W = 794;
-  var PAGE_H = 1123;
-  var PREVIEW_DEBOUNCE_MS = 140;
   var REQUEST_TIMEOUT_MS = 20000;
-  var TYPE_LABEL = {
-    single_choice: "单选",
-    multiple_choice: "多选",
-    fill_blank: "填空",
-    solution: "解答"
-  };
-  var DIFF_LABEL = {
-    L1: "基础", L2: "中档", L3: "难", L4: "压轴",
-    // 契约 1.0 的旧值只做兜底
-    basic: "基础", medium: "中档", hard: "难", novel: "压轴"
-  };
+  var RENDER_DEBOUNCE_MS = 120;
+  var LAYOUT_DRAFT_MS = 400;
+  var SPLIT_W = 6;
+  var PANE_MIN = 28;
+  var DEV_NS = "org.jiuzhang.editor.dev";
+  var DRAFT_LAYOUT_KEY = "editor:v2:layout";
   var OPTION_KEYS = "ABCDEFGH".split("");
-  var SOURCE_LIMIT = 8;
-  var ROLE_LABEL = { stem: "题干", option: "选项", solution: "解析" };
-  var IMAGE_ROLES = ["image/png", "image/jpeg", "image/webp"];
-  var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+  var COMMAND_QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
 
-  var root = document.getElementById("root");
-  var typeEl = document.getElementById("edType");
-  var diffEl = document.getElementById("edDifficulty");
-  var gradeEl = document.getElementById("edGrade");
-  var stemEl = document.getElementById("edStem");
-  var optionsBlock = document.getElementById("edOptionsBlock");
-  var optionsEl = document.getElementById("edOptions");
-  var addOptionEl = document.getElementById("edAddOption");
-  var answerEl = document.getElementById("edAnswer");
-  var answerHintEl = document.getElementById("edAnswerHint");
-  var solutionEl = document.getElementById("edSolution");
-  var tagsEl = document.getElementById("edTags");
-  var previewEl = document.getElementById("edPreview");
-  var pageFrameEl = document.getElementById("edPageFrame");
-  var pageEl = document.getElementById("edPage");
-  var pageBodyEl = document.getElementById("edPageBody");
+  var root = document.getElementById("edRoot");
+  var colsEl = document.getElementById("edCols");
+  var imageBodyEl = document.getElementById("edImageBody");
+  var sourceBodyEl = document.getElementById("edSourceBody");
+  var renderBodyEl = document.getElementById("edRenderBody");
+  var imageNameEl = document.getElementById("edImageName");
+  var sourceHintEl = document.getElementById("edSourceHint");
   var metricsEl = document.getElementById("edMetrics");
-  var savedEl = document.getElementById("edSaved");
-  var scaleEl = document.getElementById("edScale");
-  var saveEl = document.getElementById("edSave");
-  var cleanEl = document.getElementById("edClean");
-  var aiCleanEl = document.getElementById("edAiClean");
-  var resetEl = document.getElementById("edReset");
+  var progressEl = document.getElementById("edProgress");
+  var formatEl = document.getElementById("edFormat");
+  var dirtyEl = document.getElementById("edDirty");
   var toastEl = document.getElementById("edToast");
-  var returnEl = document.getElementById("edReturn");
-  var topicPickEl = document.getElementById("edTopicPick");
-  var topicTreeEl = document.getElementById("edTopicTree");
-  var topicChipsEl = document.getElementById("edTopicChips");
-  var editingBarEl = document.getElementById("edEditing");
-  var editingIdEl = document.getElementById("edEditingId");
-  var deleteEl = document.getElementById("edDelete");
-  var variantEl = document.getElementById("edVariant");
-  var modalEl = document.getElementById("edModal");
-  var modalOkEl = document.getElementById("edModalOk");
-  var modalCancelEl = document.getElementById("edModalCancel");
-  var modalTextEl = document.getElementById("edModalText");
-  var sourceNameEl = document.getElementById("edSourceName");
-  var sourceEmptyEl = document.getElementById("edSourceEmpty");
-  var sourceViewEl = document.getElementById("edSourceView");
-  var sourceStageEl = document.getElementById("edSourceStage");
-  var sourceCanvasEl = document.getElementById("edSourceCanvas");
-  var sourceStatusEl = document.getElementById("edSourceStatus");
-  var cropBoxEl = document.getElementById("edCropBox");
-  var cropHintEl = document.getElementById("edCropHint");
-  var cropInsertEl = document.getElementById("edCropInsert");
-  var cropClearEl = document.getElementById("edCropClear");
-  var cropAllEl = document.getElementById("edCropAll");
-  var pickImageEl = document.getElementById("edPickImage");
-  var imageFileEl = document.getElementById("edImageFile");
-  var sourcesEl = document.getElementById("edSources");
-  var addSourceEl = document.getElementById("edAddSource");
-  var textbookEl = document.getElementById("edTextbook");
-  var chapterEl = document.getElementById("edChapter");
-  var sectionEl = document.getElementById("edSection");
-  var uploadTargetEl = document.getElementById("edImageTarget");
-  var uploadPickEl = document.getElementById("edImagePick");
-  var uploadFileEl = document.getElementById("edUploadFile");
-  var uploadListEl = document.getElementById("edImageList");
 
   var pending = new Map();
   var requestSeq = 0;
-  var previewTimer = 0;
+  var renderTimer = 0;
   var toastTimer = 0;
-  var draftTimer = 0;
-  var closeTimer = 0;
-  var modalPrevFocus = null;
+  var layoutTimer = 0;
   var mathCache = new Map();
-  var scale = 1;
-  var dirtySinceSave = false;
-
-  var DRAFT_THROTTLE_MS = 1200;
-  var AUTO_CLOSE_MS = 1000;
-  var NEW_DRAFT_KEY = "__new__";
+  var katexCount = 0;
+  var scrollLock = false;
 
   var state = {
-    options: [
-      { key: "A", content: "", imageIds: [] },
-      { key: "B", content: "", imageIds: [] },
-      { key: "C", content: "", imageIds: [] },
-      { key: "D", content: "", imageIds: [] }
-    ],
-    // 编辑态（三端分离：录题是唯一输入端，题库/组卷/讲义点「去编辑」跳进来）
-    editingId: null,
-    editingFrom: "",
-    editingFlags: [],
-    topicIds: [],
-    topicNames: {},
-    images: [],
-    // 一题多卷：第一份是主来源（契约 source），其余经宿主挂到 question_sources。
-    sources: [],
-    imageTarget: "stem",
-    tree: { roots: null, children: {}, expanded: {}, loading: false, error: "" },
-    // 原图框选只服务本次录入：位图与选区都是易失态，不进草稿也不进题目结构。
-    source: { bitmap: null, width: 0, height: 0, name: "", crop: null },
-    sourceBusy: false
+    slot: "stage.center",
+    items: [],
+    active: 0,
+    format: "latex",
+    widths: { image: 260, source: 360 },
+    dirty: false,
+    layoutReady: false
   };
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload) {
     return new Promise(function (resolve, reject) {
       requestSeq += 1;
-      var id = "p" + requestSeq + "_" + Date.now().toString(36);
+      var id = "edv2" + requestSeq + "-" + Date.now().toString(36);
       var timer = window.setTimeout(function () {
         pending.delete(id);
         reject(new Error("宿主响应超时（" + Math.round(REQUEST_TIMEOUT_MS / 1000) + "s）"));
@@ -157,13 +81,23 @@
     });
   }
 
-  function dock(text) {
+  function publish(event, payload) {
     try {
       window.parent.postMessage({
-        protocol: PROTOCOL, kind: "notification", event: "region.dock",
-        payload: { text: String(text).slice(0, 200) }
+        protocol: PROTOCOL, kind: "notification", event: event, payload: payload || {}
       }, "*");
     } catch (error) { /* 通知丢一帧不致命 */ }
+  }
+
+  function dock(text) {
+    publish("region.dock", { text: String(text).slice(0, 200) });
+  }
+
+  function respond(target, id, ok, result, code, message) {
+    var packet = { protocol: PROTOCOL, id: id, kind: "response", ok: ok };
+    if (ok) packet.result = result || {};
+    else packet.error = { code: code || "ERROR", message: message || "失败", retryable: false };
+    try { target.postMessage(packet, "*"); } catch (error) { /* 宿主已走 */ }
   }
 
   function toast(text, tone) {
@@ -177,19 +111,19 @@
     }, 2600);
   }
 
-  function respond(target, id, ok, result, code, message) {
-    var packet = { protocol: PROTOCOL, id: id, kind: "response", ok: ok };
-    if (ok) packet.result = result || {};
-    else packet.error = { code: code || "ERROR", message: message || "失败", retryable: false };
-    try { target.postMessage(packet, "*"); } catch (error) { /* 宿主已走 */ }
-  }
-
-  // ---------- 富文本 ----------
+  // ---------- 富文本（文字 + LaTeX + 底座托管配图） ----------
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
+  }
+
+  function clampValue(value, min, max) {
+    if (max < min) return min;
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
   }
 
   function mathNode(tex, display) {
@@ -209,17 +143,23 @@
       }
       mathCache.set(key, html);
     }
-    if (html) span.innerHTML = html;
-    else span.textContent = (display ? "$$" : "$") + tex + (display ? "$$" : "$");
+    if (html) {
+      katexCount += 1;
+      span.innerHTML = html;
+    } else {
+      span.textContent = (display ? "$$" : "$") + tex + (display ? "$$" : "$");
+    }
     return span;
   }
 
-  var INLINE_RE = /(\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|!\[[^\]]*\]\([^)]*\)|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
+  var INLINE_RE = /(\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|\\fillin(?:\[[^\]]*\])?|!\[[^\]]*\]\([^)]*\)|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
 
   /** 只认底座托管路径与 asset:// 逻辑地址；远程 URL / data: / file: 一律当普通文本。 */
   function safeAssetUri(value) {
     var uri = String(value == null ? "" : value).trim();
     if (uri.indexOf("/static/uploads/") === 0) return uri;
+    if (uri.indexOf("/static/icons/") === 0) return uri;
+    if (uri.indexOf("/static/assets/") === 0) return uri;
     if (uri.indexOf("asset://") === 0 && uri.length > 8) return uri;
     return "";
   }
@@ -231,7 +171,6 @@
       return;
     }
     if (path.indexOf("asset://") === 0) {
-      // asset:// 是逻辑地址，沙箱 iframe 不能直接渲染；如实标出配图归属。
       parent.appendChild(el("span", "ed-opt-img", "（配图 " + path.slice(8) + "）"));
       return;
     }
@@ -245,6 +184,12 @@
     parent.appendChild(img);
   }
 
+  /** 「\fillin 不带答案」是格式宪法：方括号里的内容只当老师留下的提示，绝不当答案渲染。 */
+  function appendFillin(parent, token) {
+    var hint = /\[([^\]]*)\]$/.exec(token);
+    parent.appendChild(el("span", "ed-fillin", hint ? hint[1] : ""));
+  }
+
   function appendRich(parent, text) {
     var source = String(text == null ? "" : text);
     var last = 0;
@@ -256,6 +201,8 @@
       if (token.slice(0, 16) === "\\includegraphics") {
         var graphic = /\{([^}]*)\}$/.exec(token);
         appendImageRef(parent, graphic ? graphic[1] : "", "", token);
+      } else if (token.slice(0, 7) === "\\fillin") {
+        appendFillin(parent, token);
       } else if (token.slice(0, 2) === "![") {
         var markdown = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(token);
         appendImageRef(parent, markdown ? markdown[2] : "", markdown ? markdown[1] : "", token);
@@ -288,8 +235,7 @@
     segments.forEach(function (segment, index) {
       if (!segment) return;
       if (index % 2 === 1) {
-        var display = segment.slice(2, -2);
-        parent.appendChild(mathNode(display, true));
+        parent.appendChild(mathNode(segment.slice(2, -2), true));
         return;
       }
       segment.split(/\n{2,}/).forEach(function (paragraph) {
@@ -302,1624 +248,519 @@
     });
   }
 
-  // ---------- 表单 ----------
-  function currentType() {
-    return typeEl ? typeEl.value : "single_choice";
+  // ---------- exam-zh 源码：解析（渲染与格式二共用）+ 重组（阶段 2 直接复用这一份） ----------
+  function matchEnv(text, name) {
+    var begin = "\\begin{" + name + "}";
+    var end = "\\end{" + name + "}";
+    var start = text.indexOf(begin);
+    if (start < 0) return null;
+    var bodyAt = start + begin.length;
+    var stop = text.indexOf(end, bodyAt);
+    if (stop < 0) return null;
+    return { start: start, end: stop + end.length, body: text.slice(bodyAt, stop) };
   }
 
-  function isChoice() {
-    var type = currentType();
-    return type === "single_choice" || type === "multiple_choice";
-  }
-
-  function renderOptions() {
-    if (!optionsEl) return;
-    optionsEl.textContent = "";
-    state.options.forEach(function (option, index) {
-      var row = el("div", "ed-option");
-      row.setAttribute("data-index", String(index));
-      row.appendChild(el("span", "ed-option-key", option.key));
-      var input = el("input");
-      input.type = "text";
-      input.spellcheck = false;
-      input.value = option.content;
-      input.setAttribute("aria-label", "选项 " + option.key + " 的内容");
-      input.setAttribute("data-option-index", String(index));
-      input.addEventListener("input", function () {
-        state.options[index].content = input.value;
-        dirtySinceSave = true;
-        schedulePreview();
-      });
-      row.appendChild(input);
-      var upload = el("button", "ed-option-upload", "＋图");
-      upload.type = "button";
-      upload.setAttribute("aria-label", "给选项 " + option.key + " 上传配图");
-      upload.addEventListener("click", function () {
-        pickUpload("option:" + state.options[index].key);
-      });
-      row.appendChild(upload);
-      var imageCount = (option.imageIds || []).length;
-      if (imageCount) {
-        var badge = el("span", "ed-option-image", "配图 " + imageCount);
-        badge.title = "该选项带 " + imageCount + " 张配图资产（保存时随题保留）";
-        row.appendChild(badge);
-        (option.imageIds || []).forEach(function (imageId) {
-          var image = findImage(imageId);
-          if (!image) {
-            row.appendChild(el("span", "ed-opt-img", "（缺 " + imageId + "）"));
-            return;
-          }
-          var uri = safeAssetUri(image.uri);
-          if (uri.indexOf("/static/uploads/") !== 0) return;
-          var thumb = document.createElement("img");
-          thumb.className = "ed-option-thumb";
-          thumb.setAttribute("alt", image.alt || "选项配图");
-          thumb.src = uri;
-          row.appendChild(thumb);
-        });
-      }
-      var remove = el("button", "ed-option-remove", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "删除选项 " + option.key);
-      remove.disabled = state.options.length <= 2;
-      remove.addEventListener("click", function () {
-        if (state.options.length <= 2) return;
-        state.options.splice(index, 1);
-        relabelOptions();
-        renderOptions();
-        schedulePreview();
-      });
-      row.appendChild(remove);
-      optionsEl.appendChild(row);
-    });
-  }
-
-  function relabelOptions() {
-    state.options.forEach(function (option, index) {
-      option.key = OPTION_KEYS[index] || String(index + 1);
-    });
-    var allowed = state.options.map(function (option) { return option.key; });
-    var letters = parseAnswerLetters(answerEl.value).filter(function (key) {
-      return allowed.indexOf(key) >= 0;
-    });
-    answerEl.value = letters.join("");
-  }
-
-  function addOption() {
-    if (state.options.length >= OPTION_KEYS.length) {
-      toast("最多 8 个选项", "error");
-      return;
-    }
-    state.options.push({ key: OPTION_KEYS[state.options.length], content: "" });
-    renderOptions();
-    var inputs = optionsEl.querySelectorAll("input");
-    if (inputs.length) inputs[inputs.length - 1].focus();
-    schedulePreview();
-  }
-
-  // ---------- 来源卷（一题多卷，旧库 source_json 的录题入口） ----------
-  function emptySourceRow() {
-    return { paper_title: "", year: "", exam_type: "", school: "", question_no: "" };
-  }
-
-  function renderSources() {
-    if (!sourcesEl) return;
-    sourcesEl.textContent = "";
-    if (!state.sources.length) {
-      sourcesEl.appendChild(
-        el("p", "ed-sources-empty", "还没有来源卷；可不填，也可按原卷逐条添加。")
-      );
-      return;
-    }
-    state.sources.forEach(function (source, index) {
-      var row = el("div", "ed-source-row");
-      row.setAttribute("data-index", String(index));
-      row.appendChild(el("span", "ed-source-tag", index === 0 ? "主来源" : "第 " + (index + 1) + " 卷"));
-      var fields = [
-        { key: "paper_title", placeholder: "原卷标题，如 2024 届高三一模·数学", maxLength: 120, className: "ed-source-title" },
-        { key: "year", placeholder: "年份", maxLength: 4, className: "ed-source-year" },
-        { key: "question_no", placeholder: "原卷题号", maxLength: 20, className: "ed-source-no" },
-        { key: "exam_type", placeholder: "考试类型", maxLength: 64, className: "ed-source-exam" },
-        { key: "school", placeholder: "学校", maxLength: 64, className: "ed-source-school" }
-      ];
-      fields.forEach(function (field) {
-        var input = el("input", field.className);
-        input.type = "text";
-        input.spellcheck = false;
-        input.placeholder = field.placeholder;
-        input.maxLength = field.maxLength;
-        input.value = source[field.key] == null ? "" : String(source[field.key]);
-        input.setAttribute("aria-label", "第 " + (index + 1) + " 份来源卷：" + field.placeholder);
-        input.addEventListener("input", function () {
-          state.sources[index][field.key] = input.value;
-          dirtySinceSave = true;
-        });
-        row.appendChild(input);
-      });
-      var remove = el("button", "ed-source-remove", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "删除第 " + (index + 1) + " 份来源卷");
-      remove.addEventListener("click", function () {
-        state.sources.splice(index, 1);
-        renderSources();
-        dirtySinceSave = true;
-      });
-      row.appendChild(remove);
-      sourcesEl.appendChild(row);
-    });
-  }
-
-  function addSourceRow() {
-    if (state.sources.length >= SOURCE_LIMIT) {
-      toast("一道题最多挂 " + SOURCE_LIMIT + " 份来源卷", "error");
-      return;
-    }
-    state.sources.push(emptySourceRow());
-    renderSources();
-    dirtySinceSave = true;
-    var inputs = sourcesEl.querySelectorAll(".ed-source-title");
-    if (inputs.length) inputs[inputs.length - 1].focus();
-  }
-
-  /** 收集来源卷：只留填了标题的；strict 时把「有年份/题号却没标题」的残缺行如实拦下。 */
-  function collectSources(strict) {
+  function splitChoices(body) {
+    var found = matchEnv(body, "choices");
+    if (!found) return { rest: body, items: [], found: false };
+    var parts = found.body.split(/\\item\b/);
+    var lead = parts.shift() || "";
     var items = [];
-    state.sources.forEach(function (source, index) {
-      var title = String(source.paper_title || "").trim();
-      if (!title) {
-        var orphan = String(source.year || "").trim() || String(source.question_no || "").trim();
-        if (strict && orphan) {
-          throw new Error("第 " + (index + 1) + " 份来源卷缺原卷标题，请补齐或删掉该行");
-        }
-        return;
-      }
-      var item = { paper_title: title.slice(0, 120) };
-      var year = String(source.year == null ? "" : source.year).trim();
-      if (year) {
-        if (!/^\d{4}$/.test(year) || Number(year) < 1900 || Number(year) > 2100) {
-          if (strict) throw new Error("第 " + (index + 1) + " 份来源卷的年份要填 1900–2100 的四位数字");
-        } else {
-          item.year = Number(year);
-        }
-      }
-      ["question_no", "exam_type", "school"].forEach(function (key) {
-        var value = String(source[key] || "").trim();
-        if (value) item[key] = value.slice(0, key === "question_no" ? 20 : 64);
-      });
-      items.push(item);
-    });
-    return items;
+    if (lead.trim()) items.push(lead.trim());
+    parts.forEach(function (part) { items.push(part.trim()); });
+    return {
+      rest: body.slice(0, found.start) + body.slice(found.end),
+      items: items,
+      found: true
+    };
   }
 
-  // ---------- 配图资产（原生上传 → images + option.image_ids） ----------
-  function findImage(id) {
-    for (var index = 0; index < state.images.length; index += 1) {
-      if (state.images[index] && state.images[index].id === id) return state.images[index];
+  function detectType(parsed) {
+    if (parsed.hasChoices) return parsed.multi ? "multiple_choice" : "single_choice";
+    if (parsed.hasFillin) return "fill_blank";
+    return "solution";
+  }
+
+  /** 一整段 exam-zh 源码 → 结构化（题干/选项/答案/解析）；认不出的逐项进 errors，绝不静默。 */
+  function parseExamSource(text) {
+    var src = String(text == null ? "" : text).replace(/\r\n/g, "\n");
+    var result = {
+      env: "", stem: "", choices: [], answer: "", analysis: "", stray: "",
+      hasChoices: false, hasFillin: false, multi: false, type: "", errors: []
+    };
+    var question = matchEnv(src, "question");
+    var problem = matchEnv(src, "problem");
+    var solution = matchEnv(src, "solution");
+    if (question && problem) result.errors.push("question 与 problem 环境只能二选一");
+    result.env = question ? "question" : (problem ? "problem" : "");
+    var stemHost = question || problem;
+    if (!stemHost) result.errors.push("缺少 \\begin{question} 或 \\begin{problem}");
+
+    var rest = stemHost ? stemHost.body : "";
+    var innerSolution = matchEnv(rest, "solution");
+    if (innerSolution) {
+      // 有人把 solution 套进了题干环境里：环境不套环境，剥出来照常解析并留话。
+      result.errors.push("solution 不应嵌在题干环境内");
+      solution = innerSolution;
+      rest = rest.slice(0, innerSolution.start) + rest.slice(innerSolution.end);
     }
-    return null;
-  }
+    var choices = splitChoices(rest);
+    result.hasChoices = choices.found;
+    result.choices = choices.items;
+    result.stem = (choices.rest || "").trim();
+    result.hasFillin = /\\fillin\b/.test(result.stem);
+    if (!result.stem) result.errors.push("题干为空");
+    if (choices.found && choices.items.length < 2) result.errors.push("选项不足两项");
+    result.multi = result.stem.indexOf("（多选）") >= 0 || result.stem.indexOf("(多选)") >= 0;
 
-  function optionByKey(key) {
-    for (var index = 0; index < state.options.length; index += 1) {
-      if (state.options[index].key === key) return state.options[index];
-    }
-    return null;
-  }
-
-  function renderImages() {
-    if (!uploadListEl) return;
-    uploadListEl.textContent = "";
-    if (!state.images.length) {
-      uploadListEl.appendChild(
-        el("li", "ed-image-empty", "还没有配图。可直接选本地图片，也可在右栏框选切图。")
-      );
-      return;
-    }
-    state.images.forEach(function (image) {
-      var row = el("li", "ed-image-item");
-      row.setAttribute("data-image-id", image.id || "");
-      var uri = safeAssetUri(image.uri);
-      if (uri.indexOf("/static/uploads/") === 0) {
-        var thumb = document.createElement("img");
-        thumb.className = "ed-image-thumb";
-        thumb.setAttribute("alt", image.alt || "配图");
-        thumb.src = uri;
-        row.appendChild(thumb);
-      }
-      var meta = el("span", "ed-image-meta");
-      var role = ROLE_LABEL[image.role] || "配图";
-      if (image.role === "option" && image.option_key) role += " " + image.option_key;
-      meta.appendChild(el("strong", null, role));
-      meta.appendChild(el("code", null, image.id || ""));
-      row.appendChild(meta);
-      var remove = el("button", "ed-image-remove", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "移除配图 " + (image.id || ""));
-      remove.addEventListener("click", function () { removeImage(image.id); });
-      row.appendChild(remove);
-      uploadListEl.appendChild(row);
-    });
-  }
-
-  function stripImageRefs(text, uri) {
-    var next = String(text == null ? "" : text)
-      .split("\\includegraphics{" + uri + "}").join("");
-    var escaped = uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    var markdown = new RegExp("!\\[[^\\]]*\\]\\(" + escaped + "\\)", "g");
-    return next.replace(markdown, "").replace(/\n{3,}/g, "\n\n").trim();
-  }
-
-  function removeImage(id) {
-    var entry = findImage(id);
-    if (!entry) return;
-    state.images = state.images.filter(function (image) { return image.id !== id; });
-    state.options.forEach(function (option) {
-      option.imageIds = (option.imageIds || []).filter(function (imageId) { return imageId !== id; });
-    });
-    // 契约钉着「正文里的图片引用必须能在 images 数组里找到 id」：资产退了，正文引用一起退。
-    var uri = String(entry.uri || "");
-    if (uri) {
-      stemEl.value = stripImageRefs(stemEl.value, uri);
-      solutionEl.value = stripImageRefs(solutionEl.value, uri);
-    }
-    renderOptions();
-    renderImages();
-    renderPreview();
-    toast("已移除配图 " + id);
-  }
-
-  function uploadTargetLabel(target) {
-    if (target.indexOf("option:") === 0) return "选项 " + target.slice(7);
-    return target === "solution" ? "解析" : "题干";
-  }
-
-  function pickUpload(target) {
-    if (!uploadFileEl) return;
-    state.imageTarget = target || "stem";
-    if (uploadTargetEl && (state.imageTarget === "stem" || state.imageTarget === "solution")) {
-      uploadTargetEl.value = state.imageTarget;
-    }
-    uploadFileEl.value = "";
-    uploadFileEl.click();
-  }
-
-  function appendTextRef(field, uri) {
-    var value = field.value;
-    var prefix = value && !/\n$/.test(value) ? "\n\n" : "";
-    field.value = value + prefix + "\\includegraphics{" + uri + "}";
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    schedulePreview();
-  }
-
-  function handleUploadFile() {
-    var file = uploadFileEl && uploadFileEl.files && uploadFileEl.files[0];
-    if (!file) return;
-    var target = state.imageTarget || "stem";
-    // 选完文件就把默认归属交还给下拉框：下一张图按老师当下选的归属走。
-    state.imageTarget = uploadTargetEl ? uploadTargetEl.value : "stem";
-    uploadFileEl.value = "";
-    if (IMAGE_ROLES.indexOf(file.type) < 0) {
-      toast("只支持 PNG / JPEG / WebP 图片", "error");
-      return;
-    }
-    if (file.size > MAX_IMAGE_BYTES) {
-      toast("图片超过 8 MiB，请先压缩", "error");
-      return;
-    }
-    if (typeof window.createImageBitmap !== "function") {
-      toast("当前浏览器不支持本地图片解码，请换新版浏览器", "error");
-      return;
-    }
-    // 与框选切图同一条解码路：直接进 Canvas 再交给宿主，不借 data:/blob: 图片地址。
-    window.createImageBitmap(file).then(function (bitmap) {
-      var canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext("2d").drawImage(bitmap, 0, 0);
-      if (typeof bitmap.close === "function") bitmap.close();
-      return hostCall("asset.upload", { data_url: canvas.toDataURL("image/png") });
-    }).then(function (result) {
-        var id = String((result && result.id) || "");
-        var uri = String((result && result.uri) || "");
-        if (!/^img_[A-Za-z0-9_-]{1,63}$/.test(id) || !/^\/static\/uploads\/[^\s]+$/.test(uri)) {
-          throw new Error("宿主返回的资产地址不合法");
-        }
-        var role = target.indexOf("option:") === 0 ? "option"
-          : (target === "solution" ? "solution" : "stem");
-        var entry = {
-          id: id,
-          role: role,
-          uri: uri,
-          alt: String(file.name || "题目配图").slice(0, 200)
-        };
-        // 资产先进 images，再按归属回写：选项缩略图要靠 findImage 才画得出来。
-        state.images = state.images.filter(function (image) { return image.id !== id; });
-        state.images.push(entry);
-        if (role === "option") {
-          entry.option_key = target.slice(7);
-          var option = optionByKey(entry.option_key);
-          if (option) {
-            option.imageIds = option.imageIds || [];
-            if (option.imageIds.indexOf(id) < 0) option.imageIds.push(id);
-          }
-          renderOptions();
-        } else if (role === "solution") {
-          appendTextRef(solutionEl, uri);
-        } else {
-          insertAtCursor("\\includegraphics{" + uri + "}");
-        }
-        renderImages();
-        renderPreview();
-        toast("配图已上传到" + uploadTargetLabel(target) + "：" + id);
-        dock("配图上传成功（" + uploadTargetLabel(target) + "，" + id + "）");
-    }, function (error) {
-        toast("配图上传失败：" + error.message, "error");
-        dock("配图上传失败：" + error.message);
-    });
-  }
-
-  function applyType() {
-    var choice = isChoice();
-    optionsBlock.hidden = !choice;
-    answerHintEl.textContent = choice
-      ? (currentType() === "multiple_choice" ? "多选填多个字母，如 AC" : "单选填一个字母，如 C")
-      : "可填数值或 LaTeX 表达式";
-    answerEl.placeholder = choice ? "C" : "$x=2$ 或 $x=3$";
-    schedulePreview();
-  }
-
-  function parseAnswerLetters(value) {
-    var text = String(value || "").toUpperCase().replace(/[，,、\s]/g, "");
-    var letters = [];
-    for (var i = 0; i < text.length; i += 1) {
-      var key = text.charAt(i);
-      if (OPTION_KEYS.indexOf(key) >= 0 && letters.indexOf(key) < 0) letters.push(key);
-    }
-    return letters.sort();
-  }
-
-  function splitTags(value) {
-    var parts = String(value || "").split(/[,，;；]/);
-    var seen = [];
-    parts.forEach(function (part) {
-      var tag = part.trim();
-      if (!tag || tag.length > 32) return;
-      if (seen.indexOf(tag) < 0) seen.push(tag);
-    });
-    return seen.slice(0, 32);
-  }
-
-  // ---------- 预览 ----------
-  function renderEmpty() {
-    pageBodyEl.textContent = "";
-    var empty = el("div", "ed-empty");
-    empty.appendChild(el("strong", null, "中间右侧是本页 A4 预览"));
-    empty.appendChild(el("span", null, "在中间左侧写下题干与公式，排版会实时跟上"));
-    pageBodyEl.appendChild(empty);
-    pageBodyEl.setAttribute("data-overflow", "false");
-    metricsEl.textContent = "等待录入…";
-  }
-
-  function renderPreview() {
-    var started = (window.performance && performance.now) ? performance.now() : Date.now();
-    var stem = stemEl.value;
-    var type = currentType();
-    var solution = solutionEl.value.trim();
-    var answer = answerEl.value.trim();
-
-    if (!stem.trim() && !answer && !solution) {
-      renderEmpty();
-      pageEl.setAttribute("data-render-ms", "0");
-      emitDraft(null);
-      return;
-    }
-
-    pageBodyEl.textContent = "";
-    var head = el("div", "ed-q-head");
-    head.appendChild(el("span", "ed-chip", TYPE_LABEL[type] || "题目"));
-    head.appendChild(el("span", "ed-chip", DIFF_LABEL[diffEl.value] || "中档"));
-    head.appendChild(el("span", "ed-chip", gradeEl.value || "高中"));
-    pageBodyEl.appendChild(head);
-
-    var body = el("div", "ed-q-body");
-    pageBodyEl.appendChild(body);
-
-    if (stem.trim()) appendBody(body, stem);
-
-    if (isChoice() && state.options.length) {
-      var list = el("ol", "ed-q-options");
-      state.options.forEach(function (option) {
-        var item = el("li");
-        item.appendChild(el("span", "ed-opt-key", option.key + "．"));
-        var content = el("span");
-        appendRich(content, option.content || "（未填）");
-        item.appendChild(content);
-        (option.imageIds || []).forEach(function (imageId) {
-          var image = findImage(imageId);
-          if (!image) {
-            item.appendChild(el("span", "ed-opt-img", "（配图 " + imageId + " 缺失）"));
-            return;
-          }
-          appendImageRef(item, image.uri, image.alt || "选项配图", "");
-        });
-        list.appendChild(item);
-      });
-      body.appendChild(list);
-    }
-
-    if (answer) {
-      var answerBox = el("div", "ed-q-answer");
-      answerBox.appendChild(el("span", "ed-label", "【答案】"));
-      var answerText = el("span");
-      if (isChoice()) answerText.textContent = " " + parseAnswerLetters(answer).join("");
-      else appendRich(answerText, answer);
-      answerBox.appendChild(answerText);
-      body.appendChild(answerBox);
-    }
+    result.stray = src.replace(/\\begin\{(question|problem|solution)\}[\s\S]*?\\end\{\1\}/g, "").trim();
 
     if (solution) {
-      var solutionBox = el("div", "ed-q-solution");
-      solutionBox.appendChild(el("span", "ed-label", "【解析】"));
-      var solutionText = el("div");
-      appendBody(solutionText, solution);
-      solutionBox.appendChild(solutionText);
-      body.appendChild(solutionBox);
-    }
-
-    var tags = splitTags(tagsEl.value);
-    if (tags.length) {
-      var tagLine = el("div", "ed-q-tags", "知识点：" + tags.join(" · "));
-      pageBodyEl.appendChild(tagLine);
-    }
-
-    var elapsed = ((window.performance && performance.now) ? performance.now() : Date.now()) - started;
-    var overflow = pageBodyEl.scrollHeight > pageBodyEl.clientHeight + 1;
-    pageBodyEl.setAttribute("data-overflow", String(overflow));
-    pageEl.setAttribute("data-render-ms", elapsed.toFixed(1));
-    metricsEl.setAttribute("data-render-ms", elapsed.toFixed(1));
-    metricsEl.setAttribute("data-katex", String(pageBodyEl.querySelectorAll(".katex").length));
-    metricsEl.setAttribute("data-overflow", overflow ? "1" : "0");
-    metricsEl.setAttribute("data-chars", String(stem.length + solution.length + answer.length));
-    metricsEl.textContent = (overflow ? "超出一页安全区 · " : "单页可容 · ")
-      + "重排 " + elapsed.toFixed(1) + " ms";
-    emitDraft(buildQuestion(false));
-  }
-
-  function emitDraft(question) {
-    var base = {
-      pluginId: PLUGIN_ID,
-      editingId: state.editingId || "",
-      from: state.editingFrom || ""
-    };
-    try {
-      window.parent.postMessage({
-        protocol: PROTOCOL, kind: "notification", event: "stage.selection",
-        payload: Object.assign({ question: question || null }, base)
-      }, "*");
-    } catch (error) { /* 忽略 */ }
-  }
-
-  function schedulePreview() {
-    dirtySinceSave = true;
-    if (savedEl) savedEl.hidden = true;
-    window.clearTimeout(previewTimer);
-    previewTimer = window.setTimeout(renderPreview, PREVIEW_DEBOUNCE_MS);
-    queueDraftSave();
-  }
-
-  function fitPreview() {
-    if (!previewEl || !pageEl) return;
-    var width = Math.max(120, previewEl.clientWidth - 32);
-    var height = Math.max(120, previewEl.clientHeight - 32);
-    scale = Math.min(1, width / PAGE_W, height / PAGE_H);
-    if (!Number.isFinite(scale) || scale <= 0) scale = 0.5;
-    pageEl.style.transform = "scale(" + scale.toFixed(3) + ")";
-    pageFrameEl.style.width = Math.round(PAGE_W * scale) + "px";
-    pageFrameEl.style.height = Math.round(PAGE_H * scale) + "px";
-    if (scaleEl) scaleEl.textContent = Math.round(scale * 100) + "%";
-  }
-
-  // ---------- 原图框选切图（Canvas 截取 → 宿主 asset.upload） ----------
-  // 沙箱页面的 img-src 只放行底座源，data:/blob: 都会被 CSP 拦；原图用
-  // createImageBitmap 直接解码到 <canvas>，既不触网也不依赖图片 URL 白名单。
-  var cropDrag = null;
-
-  function clampValue(value, min, max) {
-    if (!Number.isFinite(value)) return min;
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function fitSource() {
-    if (!state.source.bitmap || !sourceCanvasEl || !sourceViewEl) return;
-    var availableWidth = Math.max(80, sourceViewEl.clientWidth - 24);
-    var availableHeight = Math.max(80, sourceViewEl.clientHeight - 24);
-    var ratio = Math.min(1, availableWidth / state.source.width, availableHeight / state.source.height);
-    if (!Number.isFinite(ratio) || ratio <= 0) ratio = 0.25;
-    sourceCanvasEl.style.width = Math.max(1, Math.round(state.source.width * ratio)) + "px";
-    sourceCanvasEl.style.height = Math.max(1, Math.round(state.source.height * ratio)) + "px";
-    renderCropBox();
-  }
-
-  function placeCropBox(rect, active) {
-    if (!cropBoxEl) return;
-    cropBoxEl.hidden = false;
-    cropBoxEl.setAttribute("data-active", active ? "true" : "false");
-    cropBoxEl.style.left = rect.x + "px";
-    cropBoxEl.style.top = rect.y + "px";
-    cropBoxEl.style.width = rect.w + "px";
-    cropBoxEl.style.height = rect.h + "px";
-  }
-
-  function renderCropBox() {
-    if (!state.source.crop || !sourceStageEl || !cropBoxEl) return;
-    var stage = sourceStageEl.getBoundingClientRect();
-    placeCropBox({
-      x: state.source.crop.x * stage.width,
-      y: state.source.crop.y * stage.height,
-      w: state.source.crop.w * stage.width,
-      h: state.source.crop.h * stage.height
-    }, false);
-  }
-
-  function clearCrop(message) {
-    state.source.crop = null;
-    if (cropBoxEl) cropBoxEl.hidden = true;
-    if (cropInsertEl) cropInsertEl.disabled = true;
-    if (cropClearEl) cropClearEl.disabled = true;
-    if (cropHintEl) cropHintEl.textContent = message || "尚未选择区域。";
-  }
-
-  function setSourceBusy(active) {
-    state.sourceBusy = active;
-    if (pickImageEl) pickImageEl.disabled = active;
-    if (cropAllEl) cropAllEl.disabled = active || !state.source.bitmap;
-    if (cropInsertEl) {
-      cropInsertEl.disabled = active || !state.source.crop;
-      cropInsertEl.setAttribute("aria-busy", String(active));
-      cropInsertEl.textContent = active ? "正在上传…" : "插入选区";
-    }
-    if (cropClearEl) cropClearEl.disabled = active || !state.source.crop;
-    if (sourceStageEl) sourceStageEl.setAttribute("aria-busy", String(active));
-  }
-
-  function stagePoint(event) {
-    var rect = sourceStageEl.getBoundingClientRect();
-    return {
-      x: clampValue(event.clientX - rect.left, 0, rect.width),
-      y: clampValue(event.clientY - rect.top, 0, rect.height)
-    };
-  }
-
-  function dragRect(point) {
-    var start = cropDrag.start;
-    return {
-      x: Math.min(start.x, point.x),
-      y: Math.min(start.y, point.y),
-      w: Math.abs(point.x - start.x),
-      h: Math.abs(point.y - start.y)
-    };
-  }
-
-  function loadSourceFile(file) {
-    if (!file) return;
-    if (["image/png", "image/jpeg", "image/webp"].indexOf(file.type) < 0) {
-      toast("只支持 PNG / JPEG / WebP 原图", "error");
-      return;
-    }
-    if (typeof window.createImageBitmap !== "function") {
-      toast("当前浏览器不支持本地图片解码，请换新版浏览器", "error");
-      return;
-    }
-    window.createImageBitmap(file).then(function (bitmap) {
-      if (state.source.bitmap && typeof state.source.bitmap.close === "function") state.source.bitmap.close();
-      state.source = {
-        bitmap: bitmap,
-        width: bitmap.width,
-        height: bitmap.height,
-        name: file.name || "原图",
-        crop: null
-      };
-      sourceCanvasEl.width = bitmap.width;
-      sourceCanvasEl.height = bitmap.height;
-      sourceCanvasEl.getContext("2d").drawImage(bitmap, 0, 0);
-      if (sourceEmptyEl) sourceEmptyEl.hidden = true;
-      if (sourceStageEl) sourceStageEl.hidden = false;
-      if (sourceNameEl) {
-        sourceNameEl.textContent = state.source.name + " · " + bitmap.width + "×" + bitmap.height;
-        sourceNameEl.title = sourceNameEl.textContent;
+      var body = String(solution.body || "").trim();
+      var answerMatch = /^答案\s*[:：]\s*([^\n]*)([\s\S]*)$/.exec(body);
+      if (answerMatch) {
+        result.answer = (answerMatch[1] || "").trim();
+        result.analysis = (answerMatch[2] || "").trim();
+      } else if (body) {
+        result.analysis = body;
+        result.errors.push("solution 开头缺「答案：」");
       }
-      if (sourceStatusEl) {
-        sourceStatusEl.textContent = "";
-        sourceStatusEl.removeAttribute("data-asset-id");
-        sourceStatusEl.removeAttribute("data-asset-uri");
+      if (/\\fillin\s*\[[^\]]*\]/.test(result.stem)) {
+        result.errors.push("填空的 \\fillin 方括号内容按提示处理，答案仍取 solution");
       }
-      if (metricsEl) metricsEl.removeAttribute("data-asset-id");
-      clearCrop("拖拽框选要截取的区域；也可直接点【整图插入】。");
-      fitSource();
-      setSourceBusy(false);
-      toast("原图已载入，拖拽框选后点【插入选区】");
-      dock("原图已载入：" + state.source.name + "（" + bitmap.width + "×" + bitmap.height + "）");
-    }, function (error) {
-      toast("原图载入失败：" + ((error && error.message) || "格式不支持"), "error");
-    });
-  }
-
-  /** 从原图 Canvas 取一块像素：选区按归一化坐标存，缩放窗口后仍然准确。 */
-  function captureCrop(whole) {
-    var sourceWidth = state.source.width;
-    var sourceHeight = state.source.height;
-    var crop = (whole || !state.source.crop)
-      ? { x: 0, y: 0, w: 1, h: 1 }
-      : state.source.crop;
-    var sx = clampValue(Math.round(crop.x * sourceWidth), 0, sourceWidth - 1);
-    var sy = clampValue(Math.round(crop.y * sourceHeight), 0, sourceHeight - 1);
-    var sw = Math.max(1, Math.min(Math.round(crop.w * sourceWidth), sourceWidth - sx));
-    var sh = Math.max(1, Math.min(Math.round(crop.h * sourceHeight), sourceHeight - sy));
-    var canvas = document.createElement("canvas");
-    canvas.width = sw;
-    canvas.height = sh;
-    canvas.getContext("2d").drawImage(sourceCanvasEl, sx, sy, sw, sh, 0, 0, sw, sh);
-    return { dataUrl: canvas.toDataURL("image/png"), width: sw, height: sh };
-  }
-
-  function insertAtCursor(snippet) {
-    var value = stemEl.value;
-    var focused = document.activeElement === stemEl;
-    if (!focused) {
-      var prefix = value && !/\n$/.test(value) ? "\n\n" : "";
-      var next = value + prefix + snippet;
-      stemEl.value = next;
-      stemEl.focus();
-      stemEl.setSelectionRange(next.length, next.length);
     } else {
-      var start = typeof stemEl.selectionStart === "number" ? stemEl.selectionStart : value.length;
-      var end = typeof stemEl.selectionEnd === "number" ? stemEl.selectionEnd : start;
-      var before = value.slice(0, start);
-      var after = value.slice(end);
-      var lead = before && !/\n$/.test(before) ? "\n\n" : "";
-      var trail = after && !/^\n/.test(after) ? "\n" : "";
-      var insert = lead + snippet + trail;
-      stemEl.value = before + insert + after;
-      var caret = before.length + insert.length;
-      stemEl.setSelectionRange(caret, caret);
+      result.errors.push("缺少 \\begin{solution}");
     }
-    stemEl.dispatchEvent(new Event("input", { bubbles: true }));
-    schedulePreview();
+
+    result.type = stemHost ? detectType(result) : "";
+    return result;
   }
 
-  function insertCrop(whole) {
-    if (!state.source.bitmap) {
-      toast("先选择一张原图", "error");
-      return;
-    }
-    if (!whole && !state.source.crop) {
-      toast("先在原图上框选一个区域", "error");
-      return;
-    }
-    if (state.sourceBusy) return;
-    var shot;
-    try {
-      shot = captureCrop(whole);
-    } catch (error) {
-      toast("截取选区失败：" + error.message, "error");
-      return;
-    }
-    setSourceBusy(true);
-    hostCall("asset.upload", { data_url: shot.dataUrl }).then(function (result) {
-      var id = String((result && result.id) || "");
-      var uri = String((result && result.uri) || "");
-      if (!/^img_[A-Za-z0-9_-]{1,63}$/.test(id) || !/^\/static\/uploads\/[^\s]+$/.test(uri)) {
-        throw new Error("宿主返回的资产地址不合法");
-      }
-      state.images = state.images.filter(function (image) { return image.id !== id; });
-      state.images.push({ id: id, role: "stem", uri: uri });
-      insertAtCursor("\\includegraphics{" + uri + "}");
-      if (sourceStatusEl) {
-        sourceStatusEl.textContent = "已插入 " + id + " · " + shot.width + "×" + shot.height + " px";
-        sourceStatusEl.setAttribute("data-asset-id", id);
-        sourceStatusEl.setAttribute("data-asset-uri", uri);
-      }
-      metricsEl.setAttribute("data-asset-id", id);
-      toast("配图已插入题干：" + id);
-      dock("框选配图已上传并插入题干（" + id + "）");
-    }, function (error) {
-      toast("配图上传失败：" + error.message, "error");
-      dock("框选配图上传失败：" + error.message);
-    }).then(function () {
-      setSourceBusy(false);
-    }, function () {
-      setSourceBusy(false);
-    });
+  function ensureChoiceBracket(stem, multi) {
+    var text = String(stem == null ? "" : stem).replace(/\s+$/, "");
+    if (multi && text.indexOf("（多选）") < 0) text += "（多选）";
+    var tail = text.slice(-6);
+    if (tail.indexOf("（  ）") < 0 && tail.indexOf("(  )") < 0) text += "（  ）";
+    return text;
   }
 
-
-  function cleanText(raw) {
-    var text = String(raw == null ? "" : raw);
-    text = text.replace(/\\\[([\s\S]*?)\\\]/g, function (_, body) { return "$$" + body + "$$"; });
-    text = text.replace(/\\\(([\s\S]*?)\\\)/g, function (_, body) { return "$" + body + "$"; });
-    text = text.replace(/\\displaystyle\s*/g, "");
-    text = text.replace(/\\fillin(?![A-Za-z])/g, "＿＿＿＿");
-    text = text.replace(/\\textbf\{([^{}]*)\}/g, "$1");
-    text = text.replace(/\\textit\{([^{}]*)\}/g, "$1");
-    text = text.replace(/\\emph\{([^{}]*)\}/g, "$1");
-    text = text.replace(/\\begin\{(?:enumerate|itemize)\}/g, "");
-    text = text.replace(/\\end\{(?:enumerate|itemize)\}/g, "");
-    text = text.replace(/\\item\s*/g, "· ");
-    text = text.replace(/[ \t]+\n/g, "\n");
-    text = text.replace(/\n{3,}/g, "\n\n");
-    return text.trim();
+  function answerLetters(question) {
+    var answer = (question && question.answer) || {};
+    if (Array.isArray(answer.choice_keys) && answer.choice_keys.length) return answer.choice_keys.join("");
+    if (typeof answer.final === "string" && answer.final) return answer.final;
+    if (typeof answer.content === "string") return answer.content;
+    return "";
   }
 
-  function extractChoices(raw) {
-    var text = String(raw == null ? "" : raw);
-    var pattern = /\\begin\{choices\}([\s\S]*?)\\end\{choices\}/;
-    var found = pattern.exec(text);
-    if (!found) return null;
-    var items = found[1].split(/\\item\s*/).slice(1);
-    var options = [];
-    items.forEach(function (item) {
-      var content = cleanText(item);
-      if (content) options.push(content);
-    });
-    if (options.length < 2) return null;
-    return { options: options, stem: text.replace(pattern, "").trim() };
+  function solutionBlock(question) {
+    var head = "答案：" + answerLetters(question);
+    var body = String((question && question.solution) == null ? "" : question.solution).trim();
+    return body ? head + "\n" + body : head;
   }
 
-  function cleanAll() {
+  /** 结构化题目 → 格式一（军令 #23 的格式宪法；阶段 2 的自动重组复用这一个函数）。 */
+  function buildExamSource(question) {
+    var item = question || {};
+    var type = String(item.type || "solution");
+    var stem = String(item.stem == null ? "" : item.stem).trim();
+    var out = "";
+    if (type === "single_choice" || type === "multiple_choice") {
+      var lines = (item.options || []).map(function (option) {
+        return "  \\item " + String(option.content == null ? "" : option.content).trim();
+      });
+      out += "\\begin{question}\n" + ensureChoiceBracket(stem, type === "multiple_choice") + "\n"
+        + "\\begin{choices}\n" + lines.join("\n") + "\n\\end{choices}\n\\end{question}\n\n";
+    } else if (type === "fill_blank") {
+      out += "\\begin{question}\n" + stem + "\n\\end{question}\n\n";
+    } else {
+      out += "\\begin{problem}\n" + stem + "\n\\end{problem}\n\n";
+    }
+    return out + "\\begin{solution}\n" + solutionBlock(item) + "\n\\end{solution}\n";
+  }
+
+  /** 本地规则清洗：只归一公式定界符，绝不动 exam-zh 环境骨架。 */
+  function cleanExamSource(text) {
+    var src = String(text == null ? "" : text);
     var touched = 0;
-    var choices = extractChoices(stemEl.value);
-    if (choices) {
-      stemEl.value = cleanText(choices.stem);
-      state.options = choices.options.slice(0, OPTION_KEYS.length).map(function (content, index) {
-        return { key: OPTION_KEYS[index], content: content };
-      });
-      while (state.options.length < 2) {
-        state.options.push({ key: OPTION_KEYS[state.options.length], content: "" });
-      }
-      if (currentType() === "fill_blank" || currentType() === "solution") {
-        typeEl.value = "single_choice";
-        applyType();
-      }
-      renderOptions();
-      touched += 2;
-    } else {
-      var nextStem = cleanText(stemEl.value);
-      if (nextStem !== stemEl.value) { stemEl.value = nextStem; touched += 1; }
-    }
-
-    state.options.forEach(function (option, index) {
-      var next = cleanText(option.content);
-      if (next !== option.content) {
-        option.content = next;
-        touched += 1;
-      }
-      var input = optionsEl.querySelector('input[data-option-index="' + index + '"]');
-      if (input) input.value = option.content;
+    var next = src.replace(/\\\[([\s\S]*?)\\\]/g, function (all, inner) {
+      touched += 1;
+      return "$$" + inner.trim() + "$$";
+    }).replace(/\\\(([\s\S]*?)\\\)/g, function (all, inner) {
+      touched += 1;
+      return "$" + inner.trim() + "$";
     });
-
-    var nextAnswer = cleanText(answerEl.value);
-    if (nextAnswer !== answerEl.value) { answerEl.value = nextAnswer; touched += 1; }
-    var nextSolution = cleanText(solutionEl.value);
-    if (nextSolution !== solutionEl.value) { solutionEl.value = nextSolution; touched += 1; }
-
-    renderPreview();
-    toast(touched ? "已清洗 " + touched + " 处 LaTeX 写法" : "未发现需要清洗的写法");
-    dock(touched ? "LaTeX 清洗完成：" + touched + " 处" : "LaTeX 无需清洗");
-    return touched;
+    if (next.indexOf("\r\n") >= 0) {
+      touched += 1;
+      next = next.replace(/\r\n/g, "\n");
+    }
+    return { text: next, touched: touched };
   }
 
-  /**
-   * 【AI 清洗公式】：每一段非空文本都交给宿主转发底座统一清洗函数。
-   * 规则只实现一处（question_parser.clean_dirty_latex），插件本地那份是离线兜底。
-   * 全部回包成功后才一次性回填：半路失败时表单保持原样，老师不会看到一半干净一半脏。
-   */
-  function cleanViaHost() {
-    if (!aiCleanEl) return;
-    var jobs = [];
-    function queue(label, value, apply) {
-      if (!String(value || "").trim()) return;
-      jobs.push(hostCall("text.clean_latex", { text: value }).then(function (result) {
-        return { label: label, result: result, apply: apply };
-      }));
-    }
-    queue("题干", stemEl.value, function (result) {
-      stemEl.value = result.text;
-    });
-    state.options.forEach(function (option, index) {
-      queue("选项 " + option.key, option.content, function (result) {
-        if (index >= state.options.length) return;   // 题干里的 choices 已整组替换过选项
-        state.options[index].content = result.text;
-        var input = optionsEl.querySelector('input[data-option-index="' + index + '"]');
-        if (input) input.value = result.text;
-      });
-    });
-    queue("答案", answerEl.value, function (result) {
-      answerEl.value = result.text;
-    });
-    queue("解析", solutionEl.value, function (result) {
-      solutionEl.value = result.text;
-    });
-
-    if (!jobs.length) {
-      toast("表单是空的，没有可清洗的文本");
-      return;
-    }
-
-    aiCleanEl.disabled = true;
-    aiCleanEl.setAttribute("aria-busy", "true");
-    Promise.all(jobs).then(function (items) {
-      var changed = 0;
-      var choices = null;
-      items.forEach(function (item) {
-        if (item.result.changed) changed += 1;
-        if (item.label === "题干" && item.result.options && item.result.options.length >= 2) {
-          choices = item.result.options;
-        }
-      });
-      if (choices) {
-        state.options = choices.slice(0, OPTION_KEYS.length).map(function (option, index) {
-          return { key: OPTION_KEYS[index], content: option.content };
-        });
-        while (state.options.length < 2) {
-          state.options.push({ key: OPTION_KEYS[state.options.length], content: "" });
-        }
-        if (!isChoice()) {
-          typeEl.value = "single_choice";
-          applyType();
-        }
-        renderOptions();
+  // ---------- 假数据（与 dev/fixtures.json 同一份；沙箱 CSP connect-src none，只能内嵌） ----------
+  //# FIXTURES-BEGIN
+  var DEV_FIXTURES = [
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000001",
+    "type": "single_choice",
+    "stem": "已知函数 $f(x)=x^2+1$，求其最小值（  ）",
+    "difficulty": "L1",
+    "options": [
+      {
+        "key": "A",
+        "content": "$0$",
+        "image_ids": []
+      },
+      {
+        "key": "B",
+        "content": "$1$",
+        "image_ids": []
+      },
+      {
+        "key": "C",
+        "content": "$2$",
+        "image_ids": []
+      },
+      {
+        "key": "D",
+        "content": "$3$",
+        "image_ids": []
       }
-      items.forEach(function (item) {
-        // choices 整组替换后，旧选项各自清洗的结果已经过时，不能再回填
-        if (choices && item.label.indexOf("选项 ") === 0) return;
-        item.apply(item.result);
-      });
-      renderPreview();
-      toast(changed ? "AI 清洗完成：" + changed + " 段有改动" : "文本已是标准写法");
-      dock(changed ? "底座清洗完成：" + changed + " 段有改动" : "底座清洗完成：无需改动");
-    }, function (error) {
-      toast("AI 清洗失败：" + error.message, "error");
-      dock("AI 清洗失败：" + error.message);
-    }).then(function () {
-      aiCleanEl.disabled = false;
-      aiCleanEl.removeAttribute("aria-busy");
-    });
-  }
-
-  // ---------- 保存 ----------
-  function buildQuestion(strict) {
-    var type = currentType();
-    var stem = stemEl.value.trim();
-    var answerRaw = answerEl.value.trim();
-    var question = {
-      schema_version: "1.0",
-      type: type,
-      stem: stem,
-      difficulty: diffEl.value,
-      tags: splitTags(tagsEl.value),
-      extensions: { "org.jiuzhang.editor": { grade: gradeEl.value || "" } },
-      meta: { status: "published", author: "九章算子·录题工作台" }
-    };
-    // 旧库的「教材/章/节」入口：没有挂考向时靠这三个名字留住归属，挂了考向则
-    // 由底座按大纲祖先名回填，二者同用一个 taxonomy 字段。
-    var taxonomy = {};
-    [["textbook", textbookEl], ["chapter", chapterEl], ["section", sectionEl]].forEach(function (pair) {
-      var value = pair[1] ? pair[1].value.trim().slice(0, 64) : "";
-      if (value) taxonomy[pair[0]] = value;
-    });
-    if (state.topicIds.length) taxonomy.topic_ids = state.topicIds.slice(0, 8);
-    if (Object.keys(taxonomy).length) question.taxonomy = taxonomy;
-    // 旧库的「来源卷」入口：第一份是契约里的主来源，其余走 question_sources 关系表。
-    var sources = collectSources(Boolean(strict));
-    if (sources.length) question.source = sources[0];
-    var solution = solutionEl.value.trim();
-    if (solution) question.solution = solution;
-    if (state.images.length) question.images = state.images.slice();
-
-    if (isChoice()) {
-      var keys = state.options.map(function (option) { return option.key; });
-      var options = state.options.map(function (option, index) {
-        var entry = { key: keys[index], content: option.content.trim() };
-        // 选项配图必须随表单一起回写：老师只改文字，绝不能把选项上已挂的图片资产洗掉。
-        if (option.imageIds && option.imageIds.length) entry.image_ids = option.imageIds.slice();
-        return entry;
-      });
-      if (strict) {
-        if (options.length < 2) throw new Error("选择题至少要有两个选项");
-        var blank = options.filter(function (option) { return !option.content; });
-        if (blank.length) throw new Error("选项 " + blank.map(function (option) { return option.key; }).join("、") + " 还没有内容");
-      } else {
-        options = options.filter(function (option) { return option.content; });
+    ],
+    "answer": {
+      "kind": "choice",
+      "choice_keys": [
+        "B"
+      ],
+      "final": "B"
+    },
+    "solution": "解析：配方得 $f(x)=(x-1)^2+1$，故最小值为 $1$。",
+    "grade": "高一",
+    "tags": [
+      "二次函数",
+      "配方法"
+    ],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "2. 一元二次函数",
+      "section": "2.1 方程与不等式",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "1",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知函数 $f(x)=x^2+1$，求其最小值（  ）\n\\begin{choices}\n  \\item $0$\n  \\item $1$\n  \\item $2$\n  \\item $3$\n\\end{choices}\n\\end{question}\n\n\\begin{solution}\n答案：B\n解析：配方得 $f(x)=(x-1)^2+1$，故最小值为 $1$。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [
+          1
+        ],
+        "confidence": 0.93,
+        "cross_page": false,
+        "long_solution": false
       }
-      if (options.length) question.options = options;
-
-      var letters = parseAnswerLetters(answerRaw);
-      if (strict) {
-        if (!letters.length) throw new Error("请填写答案选项，例如 C");
-        if (type === "single_choice" && letters.length !== 1) throw new Error("单选题答案只能有一个字母");
-        if (type === "multiple_choice" && letters.length < 2) throw new Error("多选题答案至少两个字母");
-        var allowed = options.map(function (option) { return option.key; });
-        var bad = letters.filter(function (key) { return allowed.indexOf(key) < 0; });
-        if (bad.length) throw new Error("答案 " + bad.join("、") + " 不在现有选项中");
-      }
-      if (letters.length) {
-        question.answer = {
-          kind: "choice",
-          choice_keys: letters,
-          final: letters.join("")
-        };
-      }
-    } else if (answerRaw) {
-      question.answer = {
-        kind: type === "fill_blank" ? "expression" : "text",
-        content: answerRaw,
-        final: answerRaw.replace(/\$/g, "").slice(0, 200)
-      };
-    }
-
-    if (strict) {
-      if (!question.stem) throw new Error("题干不能为空");
-      if (!question.answer) throw new Error("请填写答案");
-    }
-    return question;
-  }
-
-  function setSaving(active) {
-    saveEl.disabled = active;
-    saveEl.setAttribute("aria-busy", String(active));
-    saveEl.textContent = active ? "正在写入…" : (state.editingId ? "保存并返回" : "保存入库");
-  }
-
-  function publish(event, payload) {
-    try {
-      window.parent.postMessage({
-        protocol: PROTOCOL, kind: "notification", event: event, payload: payload || {}
-      }, "*");
-    } catch (error) {
-      /* 通知丢了不致命 */
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
     }
   }
+];
+  //# FIXTURES-END
 
-  function setEditMode(id, from) {
-    state.editingId = id || null;
-    state.editingFrom = from || "";
-    returnEl.hidden = !id;
-    editingBarEl.hidden = !id;
-    if (deleteEl) deleteEl.hidden = !id;
-    if (id) editingIdEl.textContent = id;
-    setSaving(false);
+  function devBlock(question) {
+    var ext = question && question.extensions ? question.extensions[DEV_NS] : null;
+    return ext && typeof ext === "object" ? ext : {};
   }
 
-  /** 这次保存真正解决了哪些审核标记——只清被内容证实清掉的，不做「保存即清白」。 */
-  function resolvedFlags(question) {
-    var flags = state.editingFlags || [];
-    if (!flags.length) return [];
-    var resolved = [];
-    var hasAnswer = Boolean(question.answer);
-    if (hasAnswer) {
-      ["answer_absent", "answer_region_empty", "type_manual_review",
-       "needs_conclusion", "solution_absent"].forEach(function (flag) {
-        if (flags.indexOf(flag) >= 0) resolved.push(flag);
-      });
-    }
-    if (flags.indexOf("structure_conflict") >= 0
-        && (question.options || []).length >= 2) resolved.push("structure_conflict");
-    var mounted = question.taxonomy && (question.taxonomy.topic_ids || [])
-      .filter(function (id) { return id.indexOf("tp_kx") === 0; }).length > 0;
-    if (flags.indexOf("topic_unmapped") >= 0 && mounted) resolved.push("topic_unmapped");
-    return resolved;
-  }
-
-  function draftTargetKey() {
-    return state.editingId || NEW_DRAFT_KEY;
-  }
-
-  /** 表单态：草稿托管与派生变式都基于它，字段与 DOM 一一对应，可整体存取。 */
-  function getFormState() {
+  function makeItem(question, source) {
     return {
-      targetKey: draftTargetKey(),
-      editingId: state.editingId || "",
-      from: state.editingFrom || "",
-      type: currentType(),
-      difficulty: diffEl.value,
-      grade: gradeEl.value,
-      stem: stemEl.value,
-      solution: solutionEl.value,
-      answerText: answerEl.value,
-      tagsText: tagsEl.value,
-      textbook: textbookEl ? textbookEl.value : "",
-      chapter: chapterEl ? chapterEl.value : "",
-      section: sectionEl ? sectionEl.value : "",
-      sources: state.sources.map(function (source) {
-        return {
-          paper_title: source.paper_title || "",
-          year: source.year == null ? "" : String(source.year),
-          exam_type: source.exam_type || "",
-          school: source.school || "",
-          question_no: source.question_no || ""
-        };
-      }),
-      imageTarget: state.imageTarget,
-      options: state.options.map(function (option) {
-        return { key: option.key, content: option.content, imageIds: (option.imageIds || []).slice() };
-      }),
-      topicIds: state.topicIds.slice(),
-      topicNames: Object.assign({}, state.topicNames),
-      images: state.images.slice()
-    };
-  }
-
-  var TYPE_VALUES = ["single_choice", "multiple_choice", "fill_blank", "solution"];
-
-  /** keepTarget=true：只灌内容，不动编辑目标（用于载入原题 / 回填 / 草稿覆盖同一题）。 */
-  function applyFormState(source, keepTarget) {
-    if (!source || typeof source !== "object") return false;
-    if (!keepTarget) setEditMode(source.editingId || null, source.from || "");
-    if (TYPE_VALUES.indexOf(source.type) >= 0) typeEl.value = source.type;
-    if (DIFF_LABEL[source.difficulty]) diffEl.value = source.difficulty;
-    if (["高一", "高二", "高三"].indexOf(source.grade) >= 0) gradeEl.value = source.grade;
-    stemEl.value = String(source.stem || "");
-    solutionEl.value = String(source.solution || "");
-    answerEl.value = String(source.answerText || "");
-    tagsEl.value = String(source.tagsText || "");
-    if (textbookEl) textbookEl.value = String(source.textbook || "");
-    if (chapterEl) chapterEl.value = String(source.chapter || "");
-    if (sectionEl) sectionEl.value = String(source.section || "");
-    state.sources = Array.isArray(source.sources)
-      ? source.sources.map(function (item) {
-        return {
-          paper_title: String(item.paper_title || ""),
-          year: item.year == null ? "" : String(item.year),
-          exam_type: String(item.exam_type || ""),
-          school: String(item.school || ""),
-          question_no: String(item.question_no || "")
-        };
-      }).slice(0, SOURCE_LIMIT)
-      : [];
-    if (uploadTargetEl) {
-      if (source.imageTarget === "solution" || source.imageTarget === "stem") {
-        uploadTargetEl.value = source.imageTarget;
-      }
-      state.imageTarget = uploadTargetEl.value;
-    }
-    var options = Array.isArray(source.options) && source.options.length >= 2
-      ? source.options
-      : [
-        { key: "A", content: "" }, { key: "B", content: "" },
-        { key: "C", content: "" }, { key: "D", content: "" }
-      ];
-    state.options = options.map(function (option) {
-      return { key: option.key, content: option.content || "", imageIds: (option.imageIds || []).slice() };
-    });
-    state.topicIds = (source.topicIds || []).slice(0, 8);
-    state.topicNames = Object.assign({}, source.topicNames || {});
-    state.images = (source.images || []).slice();
-    renderOptions();
-    renderSources();
-    renderImages();
-    applyType();
-    renderTopicChips();
-    renderPreview();
-    return true;
-  }
-
-  /** 题库出参 → 表单态：与 getFormState 口径一致，回填与草稿走同一套字段。 */
-  function documentToFormSource(document, editingId, from) {
-    var answer = document.answer || null;
-    return {
-      editingId: editingId || "",
-      from: from || "",
-      type: document.type,
-      difficulty: document.difficulty,
-      grade: document.grade || "高一",
-      stem: document.stem || "",
-      solution: document.solution || "",
-      answerText: answer
-        ? (answer.kind === "choice" ? (answer.choice_keys || []).join(",") : (answer.content || ""))
-        : "",
-      tagsText: (document.tags || []).join(", "),
-      textbook: (document.taxonomy || {}).textbook || "",
-      chapter: (document.taxonomy || {}).chapter || "",
-      section: (document.taxonomy || {}).section || "",
-      // 主来源先占一行；loadForEdit 再拉 bank.sources 把其余原卷补齐（宿主不支持时
-      // 至少保住契约里的这一份）。
-      sources: document.source ? [{
-        paper_title: document.source.paper_title || "",
-        year: document.source.year == null ? "" : String(document.source.year),
-        exam_type: document.source.exam_type || "",
-        school: document.source.school || "",
-        question_no: document.source.question_no || ""
-      }] : [],
-      imageTarget: "stem",
-      options: (document.options || []).map(function (option) {
-        return { key: option.key, content: option.content || "", imageIds: (option.image_ids || []).slice() };
-      }),
-      topicIds: ((document.taxonomy || {}).topic_ids || []).slice(),
-      topicNames: {},
-      images: (document.images || []).slice()
-    };
-  }
-
-  function fillForm(document) {
-    var source = documentToFormSource(document, state.editingId, state.editingFrom);
-    // 出参的 taxonomy 带着主挂载节点的中文名，chip 先按它回显；
-    // 其余挂载点没有可靠名称可取，宁可先显示 id，也不给老师贴错名字。
-    if (source.topicIds.length) {
-      var primaryName = document.taxonomy.topic || document.taxonomy.section
-        || document.taxonomy.chapter || document.taxonomy.textbook || "";
-      if (primaryName) source.topicNames[source.topicIds[0]] = primaryName;
-    }
-    applyFormState(source, true);
-  }
-
-  // ---------- 草稿托管（经宿主代持，插件不碰本地存储） ----------
-  function persistDraft() {
-    if (!dirtySinceSave) return;   // 干净态（刚保存 / 刚载入原题）不留草稿
-    var key = draftTargetKey();
-    hostCall("draft.save", { key: key, value: getFormState() }).then(function () {
-      // 存成功不需要回执；插件不许碰本地存储，草稿唯一真相在宿主侧
-    }, function () { /* 存不下不拦老师录题，静默 */ });
-  }
-
-  function queueDraftSave() {
-    window.clearTimeout(draftTimer);
-    draftTimer = window.setTimeout(persistDraft, DRAFT_THROTTLE_MS);
-  }
-
-  function flushDraft() {
-    window.clearTimeout(draftTimer);
-    persistDraft();
-  }
-
-  function clearDraft(key) {
-    hostCall("draft.save", { key: key || draftTargetKey(), value: null }).then(function () {
-    }, function () {});
-  }
-
-  function maybeRestoreDraft(id) {
-    hostCall("draft.load", { key: id || NEW_DRAFT_KEY }).then(function (res) {
-      var draft = res && res.value;
-      if (!draft) return;
-      if (!applyFormState(draft, true)) return;
-      dirtySinceSave = true;
-      if (savedEl) savedEl.hidden = true;
-      toast("已恢复未保存的草稿（关页前自动留存）");
-      dock("已从宿主草稿箱恢复未保存内容");
-    }, function () { /* 读草稿失败按无草稿处理 */ });
-  }
-
-  function loadForEdit(id, from) {
-    if (!id) {
-      setEditMode(null, "");
-      state.editingFlags = [];
-      return Promise.resolve(false);
-    }
-    return hostCall("bank.get", { id: id }).then(function (document) {
-      setEditMode(id, from);
-      state.editingFlags = ((document.extensions || {})["org.jiuzhang.core-bank.migration"] || {}).flags || [];
-      fillForm(document);
-      savedEl.hidden = true;
-      dirtySinceSave = false;
-      // 一题多卷的完整列表只在关系表里：bank.get 只给主来源，剩下的走 bank.sources。
-      return hostCall("bank.sources", { id: id }).then(function (result) {
-        var items = (result && result.items) || [];
-        if (!items.length) return;
-        state.sources = items.map(function (item) {
-          return {
-            paper_title: item.paper_title || "",
-            year: item.year == null ? "" : String(item.year),
-            exam_type: item.exam_type || "",
-            school: item.school || "",
-            question_no: item.question_no || ""
-          };
-        }).slice(0, SOURCE_LIMIT);
-        renderSources();
-      }, function () { /* 宿主没有这条通道时，主来源那一行照旧可编辑 */ }).then(function () {
-        // 载入原题后再查一次草稿箱：老师上次没保存就关了页，这里把内容找回来。
-        maybeRestoreDraft(id);
-        var hint = state.editingFlags.length
-          ? "这道题带着 " + state.editingFlags.length + " 个待审标记：" + state.editingFlags.join("、")
-          : "已载入原题，改完点「保存并返回」";
-        toast(hint);
-        dock("录题工作台已载入 " + id + "（" + (state.editingFlags.length ? "待审 " + state.editingFlags.join("、") : "无标记") + "）");
-        return true;
-      });
-    }, function (error) {
-      toast("读题失败：" + error.message, "error");
-      dock("载入待编辑题目失败：" + error.message);
-      return false;
-    });
-  }
-
-  /** 保存后把宿主归一过的文本回灌表单：老师看到的就是真正入库的写法。 */
-  function syncCleanText(result) {
-    if (!result || typeof result !== "object") return;
-    if (typeof result.stem === "string") stemEl.value = result.stem;
-    if (typeof result.solution === "string") solutionEl.value = result.solution;
-    var answer = result.answer || null;
-    if (answer) {
-      answerEl.value = answer.kind === "choice"
-        ? (answer.choice_keys || []).join(",")
-        : String(answer.content || "");
-    }
-    if (Array.isArray(result.options)) {
-      result.options.forEach(function (option, index) {
-        if (state.options[index] && typeof option.content === "string") {
-          state.options[index].content = option.content;
-        }
-      });
-      renderOptions();
-    }
-    renderPreview();
-  }
-
-  function afterSaved(result, updating) {
-    setSaving(false);
-    var id = result && result.id;
-    savedEl.hidden = false;
-    savedEl.textContent = (updating ? "已保存 · " : "已入库 · ") + id;
-    savedEl.setAttribute("data-id", id || "");
-    dirtySinceSave = false;
-    syncCleanText(result);
-    // 保存成功即作废该目标的草稿：老师拿到的是已落库的内容，不该再恢复旧草稿。
-    clearDraft(updating ? (id || state.editingId) : NEW_DRAFT_KEY);
-    window.clearTimeout(draftTimer);
-    state.editingFlags = ((result && result.extensions) || {})["org.jiuzhang.core-bank.migration"]
-      ? (result.extensions["org.jiuzhang.core-bank.migration"].flags || [])
-      : [];
-    toast(updating ? "已保存：" + id : "保存成功：" + id);
-    dock((updating ? "题目已更新（" : "新题已写入真题题库（") + id + "），各端自动回流刷新");
-    metricsEl.setAttribute("data-saved-id", id || "");
-    if (updating) {
-      editingBarEl.textContent = "已保存 " + id + " · 各端已回流刷新";
-    }
-    // 极致好用：保存后 Toast 停留，1 秒后自动收起编辑页、切回来源列表；
-    // 列表的后台静默刷新由宿主对 system.question_updated 的广播负责，无白屏。
-    if (state.editingFrom) scheduleAutoClose(state.editingFrom);
-  }
-
-  /** 保存成功后 1 秒自动收页：交回宿主关页签并切回发起端。 */
-  function scheduleAutoClose(origin) {
-    window.clearTimeout(closeTimer);
-    closeTimer = window.setTimeout(function () {
-      publish("system.editor_close", { plugin_id: origin, id: state.editingId || "" });
-    }, AUTO_CLOSE_MS);
-  }
-
-  function save() {
-    var question;
-    try {
-      question = buildQuestion(true);
-    } catch (error) {
-      toast(error.message, "error");
-      dock("录题保存被拦下：" + error.message);
-      return null;
-    }
-    var updating = Boolean(state.editingId);
-    var payload = { question: question };
-    // 一题多卷：第一份在 question.source，其余整组随 sources 重挂；改题时必须显式
-    // 传（哪怕空数组），否则删掉的来源卷会在关系表里阴魂不散。
-    var extraSources = collectSources(false).slice(1);
-    if (extraSources.length || updating) payload.sources = extraSources;
-    if (updating) {
-      if (!question.source) question.source = null;
-      payload.question.clear_flags = resolvedFlags(question);
-      if (!payload.question.clear_flags.length) delete payload.question.clear_flags;
-    }
-    setSaving(true);
-    return hostCall(updating ? "bank.update" : "bank.create",
-      updating ? Object.assign({ id: state.editingId }, payload) : payload
-    ).then(function (result) {
-      afterSaved(result, updating);
-      return result;
-    }, function (error) {
-      setSaving(false);
-      toast("保存失败：" + error.message, "error");
-      dock("录题保存失败：" + error.message);
-      return null;
-    });
-  }
-
-  /** 另存为派生变式：拿当前表单内容新建一题（底座重新签发 id），绝不覆盖原题。 */
-  function saveAsVariant() {
-    var question;
-    try {
-      question = buildQuestion(true);
-    } catch (error) {
-      toast(error.message, "error");
-      dock("派生变式被拦下：" + error.message);
-      return null;
-    }
-    // 派生变式一定是「新题」：去掉可能残留的 id 与审核清标，交底座重新签发。
-    delete question.id;
-    delete question.clear_flags;
-    setSaving(true);
-    return hostCall("bank.create", {
       question: question,
-      sources: collectSources(false).slice(1)
-    }).then(function (result) {
-      setSaving(false);
-      var id = result && result.id;
-      var parent = state.editingId || "";
-      // 切到新变式的编辑态：后续保存改的是这道新题，不再回写原题。
-      state.images = (result && result.images) || state.images;
-      setEditMode(id, state.editingFrom);
-      clearDraft(NEW_DRAFT_KEY);
-      dirtySinceSave = false;
-      savedEl.hidden = false;
-      savedEl.textContent = "已派生 · " + id;
-      savedEl.setAttribute("data-id", id || "");
-      metricsEl.setAttribute("data-saved-id", id || "");
-      toast(parent ? "已生成派生变式：" + id + "（原题 " + parent + " 未改动）" : "已生成新题：" + id);
-      dock("派生变式已入库（" + id + "）" + (parent ? "，源自 " + parent + " 且原题保持不变" : ""));
-      return { question_id: id, parent_id: parent };
-    }, function (error) {
-      setSaving(false);
-      toast("派生失败：" + error.message, "error");
-      dock("另存为派生变式失败：" + error.message);
+      source: source,
+      dev: devBlock(question),
+      savedId: null,
+      dirty: false,
+      status: "pending"
+    };
+  }
+
+  function loadFixtures() {
+    state.items = DEV_FIXTURES.map(function (question) {
+      var block = devBlock(question);
+      var source = (typeof block.source_latex === "string" && block.source_latex)
+        ? block.source_latex : buildExamSource(question);
+      return makeItem(question, source);
+    });
+    state.active = 0;
+  }
+
+  // ---------- 载入真题（三端分离入口：题库点「去编辑」/ AI 命令） ----------
+  function loadForEdit(questionId, from) {
+    var id = String(questionId || "");
+    if (!COMMAND_QUESTION_ID_RE.test(id)) return Promise.resolve(null);
+    return hostCall("bank.get", { id: id }).then(function (document) {
+      if (!document || !document.stem) return null;
+      var item = makeItem(document, buildExamSource(document));
+      item.savedId = document.id || id;
+      item.status = "stored";
+      state.items = [item];
+      state.active = 0;
+      state.dirty = false;
+      scheduleRender();
+      dock("录题工作台已把题目 " + id + " 序列化成 exam-zh 源码"
+        + (from ? "（来自 " + from + "）" : "") + "。");
+      return item;
+    }).catch(function (error) {
+      toast("载入题目失败：" + error.message, "error");
+      dock("载入题目 " + id + " 失败：" + error.message);
       return null;
     });
   }
 
-  // ---------- 删除本题（二次确认） ----------
-  function openConfirm(text, onOk) {
-    if (!modalEl) { onOk(); return; }
-    modalPrevFocus = document.activeElement;
-    if (modalTextEl) modalTextEl.textContent = text;
-    modalEl.hidden = false;
-    // aria-hidden 必须挂在带 role="dialog" 的那层：挂到里层等于告诉读屏器「这弹窗不存在」
-    modalEl.setAttribute("aria-hidden", "false");
-    var ok = function () {
-      closeConfirm();
-      onOk();
-    };
-    if (modalOkEl) {
-      var newOk = modalOkEl.cloneNode(true);
-      modalOkEl.parentNode.replaceChild(newOk, modalOkEl);
-      modalOkEl = newOk;
-      modalOkEl.addEventListener("click", ok);
-    }
-    if (modalCancelEl) {
-      modalCancelEl.onclick = closeConfirm;
-    }
-    if (modalOkEl) modalOkEl.focus();
-  }
-
-  /** 焦点陷阱：Tab 只在弹窗内的可用控件之间绕，绕回头尾时回弹。 */
-  function trapModalFocus(keyEvent) {
-    var nodes = Array.prototype.filter.call(
-      modalEl.querySelectorAll("button, [href], input, select, textarea, [tabindex]"),
-      function (node) {
-        return !node.disabled && node.tabIndex !== -1 && node.offsetParent !== null;
-      }
-    );
-    if (!nodes.length) return;
-    var first = nodes[0];
-    var last = nodes[nodes.length - 1];
-    if (!modalEl.contains(document.activeElement)) {
-      keyEvent.preventDefault();
-      first.focus();
-    } else if (keyEvent.shiftKey && document.activeElement === first) {
-      keyEvent.preventDefault();
-      last.focus();
-    } else if (!keyEvent.shiftKey && document.activeElement === last) {
-      keyEvent.preventDefault();
-      first.focus();
-    }
-  }
-
-  function closeConfirm() {
-    if (!modalEl) return;
-    modalEl.hidden = true;
-    modalEl.setAttribute("aria-hidden", "true");
-    if (modalPrevFocus && typeof modalPrevFocus.focus === "function") modalPrevFocus.focus();
-    modalPrevFocus = null;
-  }
-
-  function requestDelete() {
-    if (!state.editingId) {
-      toast("当前没有正在编辑的题目，无需删除", "error");
-      return;
-    }
-    var id = state.editingId;
-    openConfirm("确定删除题目 " + id + " 吗？此操作会把它从本地真题库移除，且不可撤销。", function () {
-      setSaving(true);
-      hostCall("bank.delete", { id: id }).then(function () {
-        setSaving(false);
-        dirtySinceSave = false;
-        clearDraft(id);
-        window.clearTimeout(closeTimer);
-        toast("已删除：" + id);
-        dock("题目已删除（" + id + "），各端自动回流刷新");
-        var origin = state.editingFrom;
-        setEditMode(null, "");
-        if (origin) publish("system.editor_close", { plugin_id: origin, id: id });
-      }, function (error) {
-        setSaving(false);
-        toast("删除失败：" + error.message, "error");
-        dock("删除题目失败：" + error.message);
-      });
-    });
-  }
-
-  // ---------- 考向大纲树选择器 ----------
-  function fetchTopics(parentId) {
-    return hostCall("bank.topics", parentId ? { parent_id: parentId } : {})
-      .then(function (result) { return (result && result.items) || []; });
-  }
-
-  function toggleTopic(id) {
-    var index = state.topicIds.indexOf(id);
-    if (index >= 0) {
-      state.topicIds.splice(index, 1);
-    } else {
-      if (state.topicIds.length >= 8) {
-        toast("一题最多挂 8 个考向", "error");
-        return;
-      }
-      state.topicIds.push(id);
-    }
-    renderTopicChips();
-    renderTree();
-  }
-
-  function renderTopicChips() {
-    if (!topicChipsEl) return;
-    topicChipsEl.textContent = "";
-    if (!state.topicIds.length) {
-      topicChipsEl.textContent = "尚未挂载考向";
-      return;
-    }
-    state.topicIds.forEach(function (id) {
-      var chip = el("button", "ed-topic-chip", (state.topicNames[id] || id) + " ×");
-      chip.type = "button";
-      chip.setAttribute("aria-label", "取消挂载 " + (state.topicNames[id] || id));
-      chip.addEventListener("click", function () { toggleTopic(id); });
-      topicChipsEl.appendChild(chip);
-    });
-  }
-
-  function renderTreeNode(node) {
-    var item = document.createElement("li");
-    var row = document.createElement("div");
-    row.className = "ed-topic-rowline";
-    if (node.has_children) {
-      var caret = el("button", "ed-topic-caret", state.tree.expanded[node.id] ? "▾" : "▸");
-      caret.type = "button";
-      caret.setAttribute("aria-expanded", String(Boolean(state.tree.expanded[node.id])));
-      caret.setAttribute("aria-label", (state.tree.expanded[node.id] ? "收起 " : "展开 ") + node.name);
-      caret.addEventListener("click", function () {
-        if (state.tree.expanded[node.id]) {
-          state.tree.expanded[node.id] = false;
-          renderTree();
-          return;
+  // ---------- 三栏渲染 ----------
+  function renderImageCell(item, index) {
+    var cell = el("div", "ed-img-cell");
+    cell.setAttribute("role", "listitem");
+    var uri = safeAssetUri(item.dev && item.dev.image_uri);
+    if (uri) {
+      var frame = el("div", "ed-img-frame");
+      var img = document.createElement("img");
+      img.src = uri;
+      img.alt = "第 " + (index + 1) + " 题原图";
+      img.addEventListener("error", function () {
+        if (img.parentNode) {
+          img.parentNode.replaceChild(el("p", "ed-img-missing", "原图读取失败"), img);
         }
-        state.tree.expanded[node.id] = true;
-        if (state.tree.children[node.id]) { renderTree(); return; }
-        fetchTopics(node.id).then(function (items) {
-          state.tree.children[node.id] = items;
-          renderTree();
-        }, function (error) {
-          // 失败不写成空层：空层会被当成「这考向没子节点」，老师就再也找不到入口
-          delete state.tree.children[node.id];
-          state.tree.expanded[node.id] = false;
-          renderTree();
-          toast("这一层考向没取到：" + error.message, "error");
-        });
       });
-      row.appendChild(caret);
+      frame.appendChild(img);
+      var box = el("div", "ed-img-box");
+      box.setAttribute("data-box", "stem");
+      frame.appendChild(box);
+      cell.appendChild(frame);
     } else {
-      row.appendChild(el("span", "ed-topic-caret ed-topic-leaf", "·"));
+      cell.appendChild(el("p", "ed-img-missing", "本题没有原图（假数据只留占位）。"));
     }
-    var picked = state.topicIds.indexOf(node.id) >= 0;
-    if (picked) state.topicNames[node.id] = node.name;
-    var name = el("button", "ed-topic-name" + (picked ? " ed-topic-on" : ""), node.name);
-    name.type = "button";
-    name.setAttribute("aria-pressed", String(picked));
-    name.addEventListener("click", function () { toggleTopic(node.id); });
-    row.appendChild(name);
-    row.appendChild(el("span", "ed-topic-count", String(node.question_count || 0)));
-    if (node.status === "draft") row.appendChild(el("span", "ed-topic-draft", "待补录"));
-    item.appendChild(row);
-    if (node.has_children && state.tree.expanded[node.id]) {
-      var branch = document.createElement("ul");
-      branch.className = "ed-topic-branch";
-      var kids = state.tree.children[node.id];
-      if (!kids) {
-        branch.appendChild(el("li", "ed-topic-loading", "正在读取…"));
-      } else if (!kids.length) {
-        branch.appendChild(el("li", "ed-topic-loading", "这一层还没有子节点"));
-      } else {
-        kids.forEach(function (child) { branch.appendChild(renderTreeNode(child)); });
+    var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
+    cell.appendChild(el("p", "ed-img-caption", "第 " + (index + 1) + " 题 · " + paper));
+    return cell;
+  }
+
+  function renderSourceCell(item, index) {
+    var cell = el("div", "ed-src-cell");
+    cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · exam-zh 全量源码"));
+    var area = document.createElement("textarea");
+    area.className = "ed-src-area";
+    area.setAttribute("aria-label", "第 " + (index + 1) + " 题 LaTeX 源码");
+    area.setAttribute("spellcheck", "false");
+    area.readOnly = true;            // 阶段 1 只读；阶段 2 打开编辑并接双格式
+    area.value = item.source;
+    area.setAttribute("data-index", String(index));
+    cell.appendChild(area);
+    return cell;
+  }
+
+  function renderQuestionBlock(item, index) {
+    var parsed = parseExamSource(item.source);
+    var block = el("div", "ed-q-block");
+    block.setAttribute("data-index", String(index));
+    block.setAttribute("data-type", parsed.type);
+    block.setAttribute("data-errors", String(parsed.errors.length));
+
+    if (parsed.errors.length) {
+      block.appendChild(el("p", "ed-opt-img", "源码尚未认全：" + parsed.errors.join("；")));
+    }
+    var stem = el("p", "ed-q-stem");
+    stem.appendChild(el("span", "ed-num", (index + 1) + "."));
+    appendRich(stem, parsed.stem || item.source);
+    block.appendChild(stem);
+
+    if (parsed.hasChoices) {
+      var list = el("ul", "ed-choices");
+      parsed.choices.forEach(function (content, position) {
+        var key = OPTION_KEYS[position] || String(position + 1);
+        var li = el("li");
+        var badge = el("span", "ed-choice-key", key + ".");
+        if (parsed.answer && parsed.answer.toUpperCase().indexOf(key) >= 0) {
+          badge.className += " is-answer";
+        }
+        li.appendChild(badge);
+        var text = el("span", "ed-choice-text");
+        appendRich(text, content);
+        li.appendChild(text);
+        list.appendChild(li);
+      });
+      block.appendChild(list);
+    }
+    if (parsed.answer) block.appendChild(el("p", "ed-q-answer", "答案：" + parsed.answer));
+    if (parsed.analysis) {
+      var analysis = el("div", "ed-q-analysis");
+      appendBody(analysis, parsed.analysis);
+      block.appendChild(analysis);
+    }
+    if (parsed.stray) block.appendChild(el("pre", "ed-raw", parsed.stray));
+    return block;
+  }
+
+  function growTextarea(node) {
+    node.style.height = "auto";
+    node.style.height = Math.max(node.scrollHeight, 60) + "px";
+  }
+
+  /** 行高取三栏较高者：三栏共用一条滚动，短栏余下的高度正是那层极淡底色。 */
+  function alignRows() {
+    var max = 0;
+    for (var index = 0; index < state.items.length; index += 1) {
+      var cells = [imageBodyEl.children[index], sourceBodyEl.children[index], renderBodyEl.children[index]];
+      var rowH = 0;
+      cells.forEach(function (cell) {
+        if (cell && cell.offsetHeight > rowH) rowH = cell.offsetHeight;
+      });
+      cells.forEach(function (cell) {
+        if (cell) cell.style.minHeight = rowH + "px";
+      });
+      if (index === 0) max = rowH;
+    }
+    Array.prototype.forEach.call(sourceBodyEl.querySelectorAll(".ed-src-area"), growTextarea);
+    return max;
+  }
+
+  function markDirty() {
+    state.dirty = state.items.some(function (each) { return each.dirty; });
+    if (dirtyEl) {
+      dirtyEl.setAttribute("data-dirty", state.dirty ? "true" : "false");
+      dirtyEl.textContent = state.dirty ? "有未保存改动" : "未改动";
+    }
+  }
+
+  function renderAll() {
+    if (!root || root.hidden || !state.items.length) return;
+    var started = Date.now();
+    katexCount = 0;
+    imageBodyEl.textContent = "";
+    sourceBodyEl.textContent = "";
+    renderBodyEl.textContent = "";
+    var errorTotal = 0;
+    state.items.forEach(function (item, index) {
+      imageBodyEl.appendChild(renderImageCell(item, index));
+      sourceBodyEl.appendChild(renderSourceCell(item, index));
+      var block = renderQuestionBlock(item, index);
+      errorTotal += Number(block.getAttribute("data-errors") || 0);
+      renderBodyEl.appendChild(block);
+    });
+    var rowH = alignRows();
+    var elapsed = Date.now() - started;
+
+    var first = state.items[state.active] || state.items[0];
+    var progressText = "第 " + (state.active + 1) + " / " + state.items.length + " 题";
+    if (progressEl) {
+      progressEl.textContent = progressText;
+      progressEl.setAttribute("data-active", String(state.active + 1));
+      progressEl.setAttribute("data-total", String(state.items.length));
+    }
+    if (formatEl) formatEl.setAttribute("data-format", state.format);
+    if (metricsEl) {
+      metricsEl.textContent = progressText + " · 渲染 " + elapsed + "ms";
+      metricsEl.setAttribute("data-render-ms", String(elapsed));
+      metricsEl.setAttribute("data-katex", String(katexCount));
+      metricsEl.setAttribute("data-blocks", String(state.items.length));
+      metricsEl.setAttribute("data-errors", String(errorTotal));
+      metricsEl.setAttribute("data-question-id", (first && (first.savedId || first.question.id)) || "");
+      metricsEl.setAttribute("data-row-h", String(rowH));
+      metricsEl.setAttribute("data-pane-w", String(colsEl ? colsEl.clientWidth : 0));
+    }
+    if (imageNameEl) imageNameEl.textContent = (first && first.dev && first.dev.image_uri) || "未载入";
+    markDirty();
+  }
+
+  function scheduleRender() {
+    window.clearTimeout(renderTimer);
+    renderTimer = window.setTimeout(renderAll, RENDER_DEBOUNCE_MS);
+  }
+
+  // ---------- 三栏拖宽（不能归零，只留极窄缝） ----------
+  function applyWidths() {
+    var total = colsEl ? colsEl.clientWidth : 0;
+    if (total <= 0) return;
+    var image = clampValue(state.widths.image, PANE_MIN, Math.max(PANE_MIN, total - PANE_MIN * 2 - SPLIT_W * 2));
+    var source = clampValue(state.widths.source, PANE_MIN,
+      Math.max(PANE_MIN, total - image - PANE_MIN - SPLIT_W * 2));
+    state.widths.image = image;
+    state.widths.source = source;
+    colsEl.style.setProperty("--w-image", image + "px");
+    colsEl.style.setProperty("--w-source", source + "px");
+    if (metricsEl) metricsEl.setAttribute("data-pane-w", String(total));
+  }
+
+  function saveLayout() {
+    hostCall("draft.save", { key: DRAFT_LAYOUT_KEY, value: { widths: state.widths } })
+      .catch(function () { /* 布局偏好存不下就算了，不打扰老师 */ });
+  }
+
+  function queueLayoutSave() {
+    window.clearTimeout(layoutTimer);
+    layoutTimer = window.setTimeout(saveLayout, LAYOUT_DRAFT_MS);
+  }
+
+  function bindSplit(node, which) {
+    if (!node) return;
+    var drag = null;
+    node.addEventListener("pointerdown", function (event) {
+      drag = { x: event.clientX, image: state.widths.image, source: state.widths.source };
+      node.setAttribute("data-drag", "true");
+      if (node.setPointerCapture) node.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    node.addEventListener("pointermove", function (event) {
+      if (!drag) return;
+      var delta = event.clientX - drag.x;
+      if (which === "image") state.widths.image = drag.image + delta;
+      else state.widths.source = drag.source + delta;
+      applyWidths();
+    });
+    function stop(event) {
+      if (!drag) return;
+      drag = null;
+      node.removeAttribute("data-drag");
+      if (node.releasePointerCapture && event && event.pointerId != null) {
+        try { node.releasePointerCapture(event.pointerId); } catch (error) { /* 已经松开了 */ }
       }
-      item.appendChild(branch);
+      queueLayoutSave();
+      scheduleRender();
     }
-    return item;
-  }
-
-  function renderTree() {
-    if (!topicTreeEl) return;
-    topicTreeEl.textContent = "";
-    if (state.tree.loading && !state.tree.roots) {
-      topicTreeEl.appendChild(el("p", "ed-topic-loading", "正在读取大纲…"));
-      return;
-    }
-    if (state.tree.error) {
-      topicTreeEl.appendChild(el("p", "ed-topic-error", "大纲读取失败：" + state.tree.error));
-      return;
-    }
-    var trunk = document.createElement("ul");
-    trunk.className = "ed-topic-branch";
-    (state.tree.roots || []).forEach(function (node) { trunk.appendChild(renderTreeNode(node)); });
-    topicTreeEl.appendChild(trunk);
-  }
-
-  function openTopicTree() {
-    if (!topicTreeEl) return;
-    topicTreeEl.hidden = !topicTreeEl.hidden;
-    if (topicTreeEl.hidden || state.tree.roots) return;
-    state.tree.loading = true;
-    renderTree();
-    fetchTopics("").then(function (items) {
-      state.tree.roots = items;
-      state.tree.loading = false;
-      renderTree();
-    }, function (error) {
-      state.tree.loading = false;
-      state.tree.error = error.message;
-      renderTree();
+    node.addEventListener("pointerup", stop);
+    node.addEventListener("pointercancel", stop);
+    node.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      var step = event.shiftKey ? 8 : 24;
+      var delta = event.key === "ArrowLeft" ? -step : step;
+      if (which === "image") state.widths.image += delta;
+      else state.widths.source += delta;
+      applyWidths();
+      queueLayoutSave();
+      scheduleRender();
+      event.preventDefault();
     });
   }
 
-  function resetForm() {
-    var abandoned = draftTargetKey();
-    setEditMode(null, "");
-    state.editingFlags = [];
-    state.topicIds = [];
-    state.topicNames = {};
-    state.images = [];
-    state.sources = [];
-    state.imageTarget = "stem";
-    if (uploadTargetEl) uploadTargetEl.value = "stem";
-    if (textbookEl) textbookEl.value = "";
-    if (chapterEl) chapterEl.value = "";
-    if (sectionEl) sectionEl.value = "";
-    stemEl.value = "";
-    answerEl.value = "";
-    solutionEl.value = "";
-    tagsEl.value = "";
-    typeEl.value = "single_choice";
-    diffEl.value = "L2";
-    gradeEl.value = "高一";
-    state.options = [
-      { key: "A", content: "", imageIds: [] },
-      { key: "B", content: "", imageIds: [] },
-      { key: "C", content: "", imageIds: [] },
-      { key: "D", content: "", imageIds: [] }
-    ];
-    renderOptions();
-    renderSources();
-    renderImages();
-    applyType();
-    renderTopicChips();
-    renderPreview();
-    dirtySinceSave = false;
-    window.clearTimeout(draftTimer);
-    clearDraft(abandoned);
-    if (savedEl) {
-      savedEl.hidden = true;
-      savedEl.textContent = "";
-      savedEl.setAttribute("data-id", "");
-    }
-    metricsEl.setAttribute("data-saved-id", "");
-    toast("表单已清空");
+  function syncScroll(from) {
+    if (scrollLock) return;
+    scrollLock = true;
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
+      if (node && node !== from) node.scrollTop = from.scrollTop;
+    });
+    window.requestAnimationFrame(function () { scrollLock = false; });
   }
 
-  // ---------- 能力路由字典（军令 #20） ----------
-  var COMMAND_QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
-
+  // ---------- 能力路由字典（军令 #20 的四条命令，v2 继续沿用同一批 id） ----------
   function commandReject(source, message, code, text) {
     respond(source, message.id, false, null, code, text);
   }
@@ -1942,10 +783,7 @@
           commandReject(source, message, "COMMAND_FAILED", "没能载入题目 " + context.question_id);
           return;
         }
-        respond(source, message.id, true, {
-          question_id: context.question_id,
-          editing: true
-        });
+        respond(source, message.id, true, { question_id: context.question_id, editing: true });
       });
       return;
     }
@@ -1954,57 +792,27 @@
       if (Object.keys(context).length) {
         return commandReject(source, message, "BAD_PARAMS", "清洗命令不接受参数");
       }
-      var touched = cleanAll();
-      if (touched > 0) {
-        dirtySinceSave = true;
-        queueDraftSave();
-      }
+      var touched = 0;
+      state.items.forEach(function (item) {
+        var cleaned = cleanExamSource(item.source);
+        if (cleaned.touched) {
+          item.source = cleaned.text;
+          item.dirty = true;
+          touched += cleaned.touched;
+        }
+      });
+      scheduleRender();
       return respond(source, message.id, true, { touched: touched });
     }
 
     if (commandId === "org.jiuzhang.action.input.save_question") {
-      if (Object.keys(context).length) {
-        return commandReject(source, message, "BAD_PARAMS", "保存命令不接受参数");
-      }
-      var updating = Boolean(state.editingId);
-      var saving = save();
-      if (!saving || typeof saving.then !== "function") {
-        return commandReject(source, message, "COMMAND_FAILED", "表单校验未通过，未写入题库");
-      }
-      saving.then(function (result) {
-        if (!result) {
-          commandReject(source, message, "COMMAND_FAILED", "保存未完成，请查看工作台提示");
-          return;
-        }
-        respond(source, message.id, true, {
-          question_id: result.id || state.editingId || "",
-          created: !updating
-        });
-      });
-      return;
+      return commandReject(source, message, "COMMAND_FAILED",
+        "军令 #23 阶段 1 只做三栏骨架，保存入库在阶段 2 接入");
     }
-
     if (commandId === "org.jiuzhang.action.process.create_variant") {
-      if (Object.keys(context).length) {
-        return commandReject(source, message, "BAD_PARAMS", "派生命令不接受参数");
-      }
-      var variant = saveAsVariant();
-      if (!variant || typeof variant.then !== "function") {
-        return commandReject(source, message, "COMMAND_FAILED", "表单校验未通过，未派生新题");
-      }
-      variant.then(function (result) {
-        if (!result) {
-          commandReject(source, message, "COMMAND_FAILED", "派生未完成，请查看工作台提示");
-          return;
-        }
-        respond(source, message.id, true, {
-          question_id: result.question_id || "",
-          parent_id: result.parent_id || ""
-        });
-      });
-      return;
+      return commandReject(source, message, "COMMAND_FAILED",
+        "军令 #23 阶段 1 只做三栏骨架，派生变式随阶段 2 的保存一起接入");
     }
-
     commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
   }
 
@@ -2023,219 +831,88 @@
 
     if (message.kind === "notification") {
       if (message.event === "system.open_editor") {
-        // 三端分离的唯一入口：题库/组卷/讲义点「去编辑」，宿主把题号注到这里
         var wanted = (message.payload && message.payload.question_id) || "";
         var origin = (message.payload && message.payload.from) || "";
         if (wanted) loadForEdit(wanted, origin);
         return;
       }
-      if (message.event === "ui.params.changed") {
-        var values = (message.payload && message.payload.values) || {};
-        if (typeof values.grade === "string" && values.grade) gradeEl.value = values.grade;
-        if (DIFF_LABEL[values.difficulty]) diffEl.value = values.difficulty;
-        schedulePreview();
+      if (message.event === "editor.apply_patch") {
+        toast("AI 回填将在军令 #23 阶段 3（档 1 帮改）接入，本次未改动源码", "info");
         return;
       }
-      if (message.event === "editor.apply_patch") {
-        // 右侧 AI 副驾改写题干/解析后，老师点「回填」由宿主把候选文本推回来。
-        var patch = message.payload || {};
-        var patchId = typeof patch.id === "string" ? patch.id : "";
-        var field = patch.field === "solution" ? "solution" : "stem";
-        var text = typeof patch.value === "string" ? patch.value : "";
-        if (patchId && patchId !== (state.editingId || "") ) {
-          // 目标题号对不上：老师可能已经换了题，绝不回填到错的题上。
-          toast("AI 改写结果与当前编辑的题目不一致，已忽略回填", "error");
-          return;
-        }
-        if (!text) { toast("AI 没有给出可用内容", "error"); return; }
-        if (field === "solution") solutionEl.value = text;
-        else stemEl.value = text;
-        dirtySinceSave = true;
-        renderPreview();
-        queueDraftSave();
-        toast("AI 已回填" + (field === "solution" ? "解析" : "题干") + "，请核对后保存");
-        dock("AI 副驾已回填" + (field === "solution" ? "解析" : "题干"));
-        return;
+      if (message.event === "ui.params.changed") {
+        return;   // 辅助栏参数由阶段 2 接管，画布此阶段不响应
       }
       return;
     }
 
     if (message.kind !== "request") return;
+
     if (message.method === "plugin.activate") {
+      state.slot = (message.payload && message.payload.slot) || "stage.center";
+      if (state.slot !== "stage.center") {
+        // 右栏那一个帧是辅助栏实例，阶段 2 才铺表单；先认领插槽，不留白屏。
+        return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID });
+      }
       root.hidden = false;
-      fitPreview();
-      fitSource();
-      renderPreview();
-      // 全新打开（非跳题进入）时，先看草稿箱里有没有上次没保存的新题草稿。
-      if (!state.editingId) maybeRestoreDraft(NEW_DRAFT_KEY);
+      loadFixtures();
+      applyWidths();
+      renderAll();
+      if (sourceHintEl) sourceHintEl.textContent = "只读 · 阶段 1";
+      hostCall("draft.load", { key: DRAFT_LAYOUT_KEY }).then(function (result) {
+        var value = result && result.value;
+        if (value && value.widths) {
+          state.widths.image = Number(value.widths.image) || state.widths.image;
+          state.widths.source = Number(value.widths.source) || state.widths.source;
+          applyWidths();
+        }
+        state.layoutReady = true;
+      }).catch(function () { state.layoutReady = true; });
       return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID });
     }
     if (message.method === "plugin.deactivate") {
-      // 宿主即将摘掉本帧（休眠/关页）：趁 postMessage 还发得出去，把未保存内容交回宿主草稿箱。
-      flushDraft();
       root.hidden = true;
       return respond(event.source, message.id, true, { ready: false });
     }
     if (message.method === "command.execute") {
       return handleCommandExecute(event.source, message);
     }
-    respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
+    respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD",
+      "未实现的方法：" + String(message.method));
   });
 
   // ---------- 启动 ----------
   function bind() {
-    [stemEl, solutionEl, answerEl, tagsEl].forEach(function (node) {
-      node.addEventListener("input", schedulePreview);
+    bindSplit(document.getElementById("edSplitImage"), "image");
+    bindSplit(document.getElementById("edSplitSource"), "source");
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
+      if (node) node.addEventListener("scroll", function () { syncScroll(node); });
     });
-    typeEl.addEventListener("change", applyType);
-    diffEl.addEventListener("change", schedulePreview);
-    gradeEl.addEventListener("change", schedulePreview);
-    addOptionEl.addEventListener("click", addOption);
-    if (addSourceEl) addSourceEl.addEventListener("click", addSourceRow);
-    if (uploadPickEl) uploadPickEl.addEventListener("click", function () {
-      pickUpload(uploadTargetEl ? uploadTargetEl.value : "stem");
-    });
-    if (uploadFileEl) uploadFileEl.addEventListener("change", handleUploadFile);
-    if (uploadTargetEl) uploadTargetEl.addEventListener("change", function () {
-      state.imageTarget = uploadTargetEl.value;
-    });
-    [textbookEl, chapterEl, sectionEl].forEach(function (node) {
-      if (node) node.addEventListener("input", schedulePreview);
-    });
-    saveEl.addEventListener("click", save);
-    cleanEl.addEventListener("click", cleanAll);
-    if (aiCleanEl) aiCleanEl.addEventListener("click", cleanViaHost);
-    resetEl.addEventListener("click", resetForm);
-    if (variantEl) variantEl.addEventListener("click", saveAsVariant);
-    if (deleteEl) deleteEl.addEventListener("click", requestDelete);
-    if (pickImageEl && imageFileEl) {
-      pickImageEl.addEventListener("click", function () { imageFileEl.click(); });
-      imageFileEl.addEventListener("change", function () {
-        var file = imageFileEl.files && imageFileEl.files[0];
-        if (file) loadSourceFile(file);
-        imageFileEl.value = "";
+    if (window.ResizeObserver && colsEl) {
+      var observer = new window.ResizeObserver(function () {
+        applyWidths();
+        scheduleRender();
       });
+      observer.observe(colsEl);
     }
-    if (cropAllEl) cropAllEl.addEventListener("click", function () { insertCrop(true); });
-    if (cropInsertEl) cropInsertEl.addEventListener("click", function () { insertCrop(false); });
-    if (cropClearEl) cropClearEl.addEventListener("click", function () { clearCrop(); });
-    if (sourceStageEl) {
-      sourceStageEl.addEventListener("pointerdown", function (event) {
-        if (!state.source.bitmap || state.sourceBusy) return;
-        if (event.pointerType === "mouse" && event.button !== 0) return;
-        event.preventDefault();
-        sourceStageEl.focus();
-        cropDrag = { start: stagePoint(event), pointerId: event.pointerId };
-        state.source.crop = null;
-        cropInsertEl.disabled = true;
-        cropClearEl.disabled = true;
-        placeCropBox({ x: cropDrag.start.x, y: cropDrag.start.y, w: 0, h: 0 }, true);
-        cropHintEl.textContent = "拖拽出矩形…";
-        try { sourceStageEl.setPointerCapture(event.pointerId); } catch (error) { /* 指针已释放 */ }
-      });
-      sourceStageEl.addEventListener("pointermove", function (event) {
-        if (!cropDrag) return;
-        event.preventDefault();
-        var rect = dragRect(stagePoint(event));
-        placeCropBox(rect, true);
-        cropHintEl.textContent = Math.round(rect.w) + " × " + Math.round(rect.h) + " px";
-      });
-      sourceStageEl.addEventListener("pointerup", function (event) {
-        if (!cropDrag) return;
-        event.preventDefault();
-        var rect = dragRect(stagePoint(event));
-        try { sourceStageEl.releasePointerCapture(cropDrag.pointerId); } catch (error) { /* 已释放 */ }
-        cropDrag = null;
-        var stage = sourceStageEl.getBoundingClientRect();
-        if (rect.w < 12 || rect.h < 12 || !stage.width || !stage.height) {
-          clearCrop("框选太小，已忽略；请重新拖拽一个更大的区域。");
-          return;
-        }
-        state.source.crop = {
-          x: rect.x / stage.width,
-          y: rect.y / stage.height,
-          w: rect.w / stage.width,
-          h: rect.h / stage.height
-        };
-        cropInsertEl.disabled = false;
-        cropClearEl.disabled = false;
-        placeCropBox(rect, false);
-        var naturalWidth = Math.max(1, Math.round(state.source.width * state.source.crop.w));
-        var naturalHeight = Math.max(1, Math.round(state.source.height * state.source.crop.h));
-        cropHintEl.textContent = "选区 " + naturalWidth + " × " + naturalHeight + " px，点【插入选区】。";
-        if (sourceStatusEl) sourceStatusEl.textContent = "";
-      });
-      sourceStageEl.addEventListener("pointercancel", function () {
-        cropDrag = null;
-        clearCrop("框选已取消。");
-      });
-      sourceStageEl.addEventListener("keydown", function (keyEvent) {
-        if (keyEvent.key === "Escape" && (state.source.crop || cropDrag)) {
-          keyEvent.preventDefault();
-          cropDrag = null;
-          clearCrop("框选已取消。");
-        }
-      });
-    }
-    if (modalEl) {
-      // Esc 挂 window：焦点一旦跳出弹窗（比如老师点了正文），挂在 modalEl 上的 Esc 就哑了
-      window.addEventListener("keydown", function (keyEvent) {
-        if (keyEvent.key === "Escape" && !modalEl.hidden) {
-          keyEvent.preventDefault();
-          closeConfirm();
-        }
-      });
-      modalEl.addEventListener("keydown", function (keyEvent) {
-        if (keyEvent.key === "Tab") trapModalFocus(keyEvent);
-      });
-    }
-    window.addEventListener("beforeunload", flushDraft);
-    if (topicPickEl) topicPickEl.addEventListener("click", openTopicTree);
-    if (returnEl) returnEl.addEventListener("click", function () {
-      if (state.editingFrom) publish("system.return_from_editor", { plugin_id: state.editingFrom });
-      else toast("这次是直接从录题进来的，没有来源页可返回");
+    window.addEventListener("beforeunload", function () {
+      if (layoutTimer) {
+        window.clearTimeout(layoutTimer);
+        saveLayout();
+      }
     });
-    renderTopicChips();
-    renderSources();
-    renderImages();
-    setSourceBusy(false);
-    if (typeof ResizeObserver === "function") {
-      var layoutObserver = new ResizeObserver(function () {
-        fitPreview();
-        fitSource();
-      });
-      layoutObserver.observe(previewEl);
-      if (sourceViewEl) layoutObserver.observe(sourceViewEl);
-    } else {
-      window.addEventListener("resize", function () {
-        fitPreview();
-        fitSource();
-      });
-    }
   }
 
-  function standaloneDemo() {
-    root.hidden = false;
-    stemEl.value = "已知函数 $f(x)=x^{2}-5x+6$，则方程 $f(x)=0$ 的解为（　　）";
-    state.options = [
-      { key: "A", content: "$x=1$" },
-      { key: "B", content: "$x=2$" },
-      { key: "C", content: "$x=2$ 或 $x=3$" },
-      { key: "D", content: "$x=1$ 或 $x=6$" }
-    ];
-    answerEl.value = "C";
-    solutionEl.value = "由 $x^{2}-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。";
-    tagsEl.value = "一元二次方程, 因式分解";
-    renderOptions();
-    applyType();
-    fitPreview();
-    renderPreview();
-  }
-
-  renderOptions();
-  applyType();
   bind();
-  renderEmpty();
 
-  if (window.parent === window) standaloneDemo();
+  // 真机探针用的调试面：只把解析/重组结果交给 Playwright 复核，不参与业务分支。
+  window.__jzoEditorV2 = {
+    version: "2.0.0-stage1",
+    parseExamSource: parseExamSource,
+    buildExamSource: buildExamSource,
+    cleanExamSource: cleanExamSource,
+    fixtures: DEV_FIXTURES,
+    state: state,
+    renderAll: renderAll
+  };
 })();

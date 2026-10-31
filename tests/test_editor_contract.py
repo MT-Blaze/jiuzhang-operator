@@ -1,13 +1,17 @@
-"""录题工作台（org.jiuzhang.editor）契约测试：v0.6.2。
+"""录题工作台 v2（org.jiuzhang.editor，军令 #23 阶段 1）契约测试。
 
-真机录题由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
+真机三栏与 KaTeX 渲染由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
 
-- 清单只申请中栏舞台与题库读写权限，不越权；
-- 表单覆盖题干/动态选项/答案/解析/难度/知识点标签；
-- 输入防抖后经宿主 ``bank.create`` 写入，插件自身不碰令牌与数据库；
-- 一键清洗只走本地规则，覆盖 \\(...\\)、\\[...\\]、\\textbf、\\fillin 与 choices；
-- A4 几何与组卷/讲义同口径，预览可缩放且不横溢；
-- 离线、无凭据、无后行断言、zip 顶层为插件 id 且无临时文件。
+- 清单只申请画布舞台与题库读写，阶段 1 不抢右栏插槽、不要 AI 权限；
+- 画布内只有三栏（左原图 | 中全量 exam-zh 源码 | 右渲染），**没有任何表单控件**；
+- 源码只用 exam-zh 标准环境（question/choices/problem/solution），填空用 ``\\fillin``；
+- 解析器 / 重组器 / 本地清洗三件套的口径（阶段 2 复用同一份实现，不许另写）；
+- 假数据 ``dev/fixtures.json`` 是单一事实来源：过 Schema 2.0、按《格式宪法》写源码、
+  与 plugin.js 内嵌块逐字一致，且**绝不进发行包**；
+- 沙箱红线：无 fetch / parent.document / 浏览器本地存储 / 远程资源 / 后行断言。
+
+已知偏离（详见 docs/editor-v2-progress.md）：v1 的 A4 固定页几何（794×1123）随「渲染不固定
+A4、按内容实际高度」这条已定决策一并撤除，因此不再保留 A4 尺寸判据。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_editor_contract``
 """
@@ -27,16 +31,35 @@ from tools.build_plugin import build_plugin
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
 DIST = PLUGIN_DIR / "dist"
+FIXTURES = PLUGIN_DIR / "dev" / "fixtures.json"
+BEGIN = "  //# FIXTURES-BEGIN"
+END = "  //# FIXTURES-END"
+
+# 军令 #23：只许 exam-zh 标准环境，禁止自定义任何 LaTeX 环境。
+ALLOWED_ENVS = {"question", "choices", "problem", "solution"}
 
 
 def read(name: str) -> str:
     return (DIST / name).read_text(encoding="utf-8")
 
 
+def manifest() -> dict:
+    return json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+
+
+def css_rule(css: str, selector: str) -> str:
+    at = css.index(selector + " {")
+    return css[at:css.index("}", at)]
+
+
+def canvas_only(html: str) -> str:
+    """画布实例那段 DOM——右栏辅助栏根节点之后的内容不属于画布。"""
+    return html[html.index('id="edRoot"'):html.index('id="epRoot"')]
+
+
 class EditorManifestTest(unittest.TestCase):
     def test_01_manifest_passes_host_validation(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        info = validate_plugin(PLUGIN_DIR, manifest)
+        info = validate_plugin(PLUGIN_DIR, manifest())
         self.assertEqual(info["id"], "org.jiuzhang.editor")
         self.assertIn("stage.center", info["slots"])
         self.assertIn("question.edit", info["capabilities"])
@@ -44,317 +67,341 @@ class EditorManifestTest(unittest.TestCase):
                          ["assets:write", "questions:read", "questions:write"])
 
     def test_02_stage_is_singleton_with_priority(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        stage = manifest["stage"]
+        stage = manifest()["stage"]
         self.assertEqual(stage["region"], "center")
         self.assertEqual(stage["mode"], "takeover")
         self.assertEqual(stage["priority"], 65)
         self.assertIs(stage["singleton"], True)
         self.assertLessEqual(len(stage["title"]), 24)
 
-    def test_03_bus_is_minimal(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        # 三端分离：录题是唯一输入端。v0.7.1 再要两件事——
-        # 订阅一条「AI 副驾回填」下行通知，发布一条「保存后自动收页」信号。
-        self.assertEqual(sorted(manifest["bus"]["subscribe"]),
+    def test_03_sidebar_slot_is_not_claimed_yet(self) -> None:
+        """阶段 1 只搭画布骨架：右栏辅助面板连同 ai:invoke 一起留到阶段 2/3。"""
+        self.assertEqual(manifest()["slots"], ["stage.center"])
+        self.assertNotIn("ai:invoke", manifest()["permissions"])
+
+    def test_04_bus_subscriptions_match_delivery(self) -> None:
+        bus = manifest()["bus"]
+        self.assertEqual(sorted(bus["subscribe"]),
                          ["editor.apply_patch", "system.open_editor", "ui.params.changed"])
-        self.assertEqual(sorted(manifest["bus"]["publish"]),
+        self.assertEqual(sorted(bus["publish"]),
                          ["region.dock", "stage.selection", "system.editor_close",
                           "system.return_from_editor"])
 
+    def test_05_commands_keep_the_ai_surface(self) -> None:
+        """军令 #20 定下的四条命令 id 与 requires_user 不许被界面改造带偏。"""
+        commands = manifest()["contributes"]["commands"]
+        self.assertEqual([item["id"] for item in commands], [
+            "org.jiuzhang.action.input.open_question",
+            "org.jiuzhang.action.process.clean_latex",
+            "org.jiuzhang.action.input.save_question",
+            "org.jiuzhang.action.process.create_variant",
+        ])
+        self.assertEqual(sorted(item["id"] for item in commands if item.get("requires_user")),
+                         ["org.jiuzhang.action.input.save_question",
+                          "org.jiuzhang.action.process.clean_latex",
+                          "org.jiuzhang.action.process.create_variant"])
 
-class EditorFormContractTest(unittest.TestCase):
-    def test_01_required_fields_exist(self) -> None:
+
+class EditorThreePaneLayoutTest(unittest.TestCase):
+    """军令 #23 阶段 1 的验收面：画布里只有三栏，一道假数据能渲染。"""
+
+    def test_01_canvas_has_exactly_three_panes_and_two_splits(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        self.assertEqual(canvas.count('class="ed-col '), 3, canvas)
+        self.assertEqual(canvas.count('class="ed-split"'), 2, canvas)
+        for node_id in ("edCols", "edImageBody", "edSourceBody", "edRenderBody",
+                        "edSplitImage", "edSplitSource"):
+            self.assertIn(f'id="{node_id}"', canvas, f"缺少三栏节点 {node_id}")
+
+    def test_02_pane_order_is_image_source_render(self) -> None:
+        canvas = canvas_only(read("index.html"))
+        self.assertLess(canvas.index('id="edPaneImage"'), canvas.index('id="edPaneSource"'),
+                        "左栏必须是原图")
+        self.assertLess(canvas.index('id="edPaneSource"'), canvas.index('id="edPaneRender"'),
+                        "中栏必须是源码、右栏才是渲染")
+
+    def test_03_canvas_carries_no_form_controls(self) -> None:
+        """题型 / 难度 / 年级是辅助栏的活；画布内出现下拉框或输入框即判不合格。"""
+        canvas = canvas_only(read("index.html"))
+        self.assertNotIn("<select", canvas, "画布内禁止出现下拉框")
+        self.assertNotIn("<input", canvas, "画布内禁止出现输入框")
+        for legacy in ("edType", "edDifficulty", "edGrade", "edAnswer", "edTags", "edSolution",
+                       "edOptions", "edStem", "edSave", "edPreview", "edPage", "edSourceCanvas",
+                       "edCropBox", "edAiClean", "edClean"):
+            self.assertNotIn(f'id="{legacy}"', read("index.html"),
+                             f"旧表单 / 旧 A4 节点 {legacy} 已随 v2 撤除")
+
+    def test_04_middle_pane_is_full_source_not_a_slice(self) -> None:
+        """中栏是一整个 question…solution 环境块，不是「单栏题干源码」那种局部框。"""
         html = read("index.html")
-        for node_id in (
-            "edType", "edDifficulty", "edGrade", "edStem", "edOptions",
-            "edAddOption", "edAnswer", "edSolution", "edTags", "edSave", "edClean",
-        ):
-            self.assertIn(f'id="{node_id}"', html, f"缺少表单节点 {node_id}")
-        self.assertIn('placeholder="例：已知函数', html)
-
-    def test_02_options_are_dynamic_with_bounded_keys(self) -> None:
         js = read("plugin.js")
-        self.assertIn("function addOption", js)
-        self.assertIn("function renderOptions", js)
-        self.assertIn("OPTION_KEYS", js)
-        self.assertIn("state.options.length >= OPTION_KEYS.length", js)
-        self.assertIn("state.options.length <= 2", js, "选择题至少保留两项")
-        self.assertIn('remove.setAttribute("aria-label"', js)
+        self.assertIn('aria-label="LaTeX 源码"', html)
+        self.assertNotIn("题干源码", html, "旧版只给题干一栏，v2 中栏必须是全量源码")
+        self.assertIn("exam-zh 全量源码", js)
+        self.assertIn("area.value = item.source;", js)
+        self.assertIn("var parsed = parseExamSource(item.source);", js)
 
-    def test_03_answer_and_solution_are_required_for_save(self) -> None:
-        js = read("plugin.js")
-        self.assertIn("题干不能为空", js)
-        self.assertIn("请填写答案", js)
-        self.assertIn("单选题答案只能有一个字母", js)
-        self.assertIn("多选题答案至少两个字母", js)
-
-    def test_04_preview_is_debounced_and_local(self) -> None:
-        js = read("plugin.js")
-        self.assertIn("PREVIEW_DEBOUNCE_MS = 140", js)
-        self.assertIn("schedulePreview", js)
-        self.assertIn('addEventListener("input"', js)
-        self.assertIn("katex.renderToString", js)
-        self.assertIn('event: "stage.selection"', js, "草稿需经事件总线上桥")
-
-    def test_05_a4_geometry_matches_other_printers(self) -> None:
+    def test_05_grid_uses_three_columns_with_draggable_widths(self) -> None:
         css = read("plugin.css")
+        self.assertIn(
+            "var(--w-image) var(--split-w) var(--w-source) var(--split-w) minmax(0, 1fr)", css)
+        self.assertIn("--split-w: 6px", css)
+        self.assertIn("--pane-min: 28px", css, "拖到极窄缝也不能归零")
+        self.assertIn("--void: #fafafa", css, "短栏留白的极淡底色")
+        self.assertIn("cursor: col-resize", css)
+
+    def test_06_drag_is_clamped_and_keyboard_usable(self) -> None:
         js = read("plugin.js")
-        self.assertIn("width: 794px", css)
-        self.assertIn("height: 1123px", css)
-        self.assertIn("var PAGE_W = 794", js)
-        self.assertIn("var PAGE_H = 1123", js)
-        self.assertIn("function fitPreview", js)
-        self.assertIn("ResizeObserver", js)
+        self.assertIn("var PANE_MIN = 28", js)
+        self.assertIn("var SPLIT_W = 6", js)
+        self.assertIn("function clampValue(value, min, max)", js)
+        self.assertIn("image = clampValue(state.widths.image, PANE_MIN", js)
+        self.assertIn('event.key !== "ArrowLeft" && event.key !== "ArrowRight"', js)
+        canvas = canvas_only(read("index.html"))
+        self.assertIn('role="separator"', canvas)
+        self.assertIn('aria-orientation="vertical"', canvas)
+
+    def test_07_shared_scroll_and_row_alignment(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("function syncScroll(from)", js)
+        self.assertIn("function alignRows()", js)
+        self.assertIn('cell.style.minHeight = rowH + "px"', js)
+        self.assertIn('node.addEventListener("scroll", function () { syncScroll(node); })', js)
+        self.assertIn("if (scrollLock) return;", js, "三栏互相同步，不能再滚出回路")
+
+    def test_08_middle_pane_grows_instead_of_scrolling(self) -> None:
+        css = read("plugin.css")
+        area = css_rule(css, ".ed-src-area")
+        self.assertIn("resize: none", area)
+        self.assertIn("overflow: hidden", area, "源码区不许出现内部滚动条")
+        js = read("plugin.js")
+        self.assertIn("function growTextarea(node)", js)
+        self.assertIn('node.style.height = Math.max(node.scrollHeight, 60) + "px"', js)
+
+    def test_09_render_pane_follows_content_height(self) -> None:
+        """已定决策：渲染不固定 A4。旧几何必须消失，高度只由内容撑出来。"""
+        self.assertNotIn("794", read("plugin.css"), "A4 固定页宽已随 v2 撤除")
+        self.assertNotIn("1123", read("plugin.css"), "A4 固定页高已随 v2 撤除")
+        js = read("plugin.js")
+        self.assertNotIn("PAGE_W", js)
+        self.assertNotIn("PAGE_H", js)
+        self.assertIn("<em>按内容实际高度</em>", read("index.html"))
+
+    def test_10_progress_and_metrics_are_probe_visible(self) -> None:
+        js = read("plugin.js")
+        for attr in ("data-render-ms", "data-katex", "data-blocks", "data-errors",
+                     "data-question-id", "data-row-h", "data-pane-w"):
+            self.assertIn(f'"{attr}"', js, f"探针判据缺少度量属性 {attr}")
+        self.assertIn('var progressText = "第 " + (state.active + 1) + " / " '
+                      '+ state.items.length + " 题"', js)
 
 
-class EditorWriteContractTest(unittest.TestCase):
-    def test_01_save_goes_through_host_bank_create(self) -> None:
-        js = read("plugin.js")
-        # 新增走 bank.create，改题走 bank.update——两条都只能经宿主，插件不碰令牌与接口
-        self.assertIn('"bank.create"', js)
-        self.assertIn('"bank.update"', js)
-        self.assertIn("hostCall(updating ? ", js)
-        self.assertIn('schema_version: "1.0"', js)
-        self.assertIn('meta: { status: "published"', js)
-        self.assertIn('"org.jiuzhang.editor": { grade:', js)
+class EditorSourceContractTest(unittest.TestCase):
+    """《格式宪法》与解析 / 重组口径（阶段 2 复用同一份实现）。"""
 
-    def test_02_plugin_never_touches_token_or_database(self) -> None:
+    def test_01_only_standard_exam_zh_environments(self) -> None:
         js = read("plugin.js")
-        for needle in ("X-JZO-Token", "local_token", "/api/", "fetch(", "localStorage", "api_key", "sk-"):
+        literals = set(re.findall(r"begin\{([a-z]+)\}", js))
+        lookup = set(re.findall(r'matchEnv\([A-Za-z]+, "([a-z]+)"\)', js))
+        used = literals | lookup
+        self.assertTrue(used, "解析器一个环境都不认，判据就空了")
+        self.assertTrue(used.issubset(ALLOWED_ENVS),
+                        f"出现白名单外的自定义环境：{sorted(used - ALLOWED_ENVS)}")
+
+    def test_02_choice_question_serialization(self) -> None:
+        js = read("plugin.js")
+        self.assertIn(r'out += "\\begin{question}', js)
+        self.assertIn(r'"\\begin{choices}', js)
+        self.assertIn(r'"  \\item "', js, "选项行必须是两空格缩进的 \\item")
+        self.assertIn(r'\n\\end{choices}\n\\end{question}\n\n"', js,
+                      "题干环境与 solution 之间空一行")
+        self.assertIn(r'return out + "\\begin{solution}', js)
+        self.assertIn(r'"\n\\end{solution}\n"', js)
+        self.assertIn('text += "（  ）"', js, "选择题题干末尾要补括号")
+        self.assertIn('var head = "答案：" + answerLetters(question)', js)
+
+    def test_03_multi_choice_hint_and_fillin(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('if (multi && text.indexOf("（多选）") < 0) text += "（多选）"', js)
+        self.assertIn('} else if (type === "fill_blank") {', js)
+        self.assertIn(r'if (/\\fillin\s*\[[^\]]*\]/.test(result.stem)) {', js)
+        self.assertIn('parent.appendChild(el("span", "ed-fillin", hint ? hint[1] : ""))', js)
+
+    def test_04_type_detection_rules(self) -> None:
+        js = read("plugin.js")
+        detect = js[js.index("function detectType("):js.index("function parseExamSource(")]
+        self.assertIn('if (parsed.hasChoices) return parsed.multi ? "multiple_choice" : "single_choice"',
+                      detect)
+        self.assertIn('if (parsed.hasFillin) return "fill_blank"', detect)
+        self.assertIn('return "solution"', detect)
+        self.assertIn('result.env = question ? "question" : (problem ? "problem" : "")', js)
+        self.assertIn(r'out += "\\begin{problem}', js, "解答题用 problem 环境")
+
+    def test_05_errors_are_reported_not_swallowed(self) -> None:
+        js = read("plugin.js")
+        for message in ("question 与 problem 环境只能二选一",
+                        r'缺少 \\begin{question} 或 \\begin{problem}',
+                        "题干为空", "选项不足两项",
+                        "solution 开头缺「答案：」", r'缺少 \\begin{solution}',
+                        "solution 不应嵌在题干环境内"):
+            self.assertIn(message, js, f"解析器缺少可读报错：{message}")
+        self.assertIn('block.setAttribute("data-errors", String(parsed.errors.length))', js)
+
+    def test_06_local_cleaner_touches_delimiters_only(self) -> None:
+        js = read("plugin.js")
+        cleaner = js[js.index("function cleanExamSource("):js.index("// ---------- 假数据")]
+        self.assertIn(r"/\\\[([\s\S]*?)\\\]/g", cleaner)
+        self.assertIn(r"/\\\(([\s\S]*?)\\\)/g", cleaner)
+        self.assertIn('return "$$" + inner.trim() + "$$";', cleaner)
+        self.assertIn('return "$" + inner.trim() + "$";', cleaner)
+        self.assertIn(r'next.replace(/\r\n/g, "\n")', cleaner)
+        # 只动定界符：环境骨架、\fillin 一律不碰，也不联网、不调模型
+        for forbidden in ("begin", "fillin", "text.clean_latex", "agent.refine", "hostCall"):
+            self.assertNotIn(forbidden, cleaner, f"本地清洗越界动了：{forbidden}")
+
+    def test_07_no_lookbehind_regex(self) -> None:
+        """AGENTS §6：后行断言会让旧浏览器整份脚本报语法错。"""
+        self.assertNotIn("(?<", read("plugin.js"))
+
+
+class EditorHostCallTest(unittest.TestCase):
+    def test_01_reads_and_layout_drafts_go_through_host(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('hostCall("bank.get"', js)
+        self.assertIn('hostCall("draft.save"', js)
+        self.assertIn('hostCall("draft.load"', js)
+        self.assertIn('var DRAFT_LAYOUT_KEY = "editor:v2:layout"', js)
+
+    def test_02_stage_one_never_writes_to_the_bank(self) -> None:
+        """阶段 1 只做骨架：写库通道整体缺席，保存命令要显式回绝而不是偷偷落库。"""
+        js = read("plugin.js")
+        for forbidden in ("bank.create", "bank.update", "bank.delete", "asset.upload"):
+            self.assertNotIn(forbidden, js, f"阶段 1 不得接入 {forbidden}")
+        self.assertIn("保存入库在阶段 2 接入", js)
+
+    def test_03_request_ids_are_host_safe(self) -> None:
+        """宿主 BAD_REQUEST_ID 只认 ^[A-Za-z0-9_-]{1,80}$，带点号必被拒发。"""
+        js = read("plugin.js")
+        lines = [each.strip() for each in js.splitlines() if 'var id = "edv2"' in each]
+        self.assertEqual(len(lines), 1, lines)
+        self.assertEqual(lines[0], 'var id = "edv2" + requestSeq + "-" + Date.now().toString(36);')
+        # Date.now().toString(36) 只产出 [0-9a-z]，拼出来的 id 不含点号
+        self.assertRegex("edv21-" + format(1730000000000, "x"), r"^[A-Za-z0-9_-]{1,80}$")
+
+    def test_04_plugin_never_touches_token_or_database(self) -> None:
+        js = read("plugin.js")
+        for needle in ("X-JZO-Token", "local_token", "/api/", "fetch(", "localStorage",
+                       "api_key", "sk-", "sessionStorage", "indexedDB", "parent.document"):
             self.assertNotIn(needle, js, f"录题插件不得直接接触：{needle}")
 
-    def test_03_cleaner_is_local_and_covers_dirty_latex(self) -> None:
+    def test_05_activation_branches_on_slot(self) -> None:
+        """同一份 plugin.js 会被画布帧与右栏帧各加载一次，必须按插槽分支。"""
         js = read("plugin.js")
-        self.assertIn("\\\\\\[([\\s\\S]*?)\\\\\\]", js, "必须归一 \\[...\\]")
-        self.assertIn("\\\\\\(([\\s\\S]*?)\\\\\\)", js, "必须归一 \\(...\\)")
-        self.assertIn("\\\\textbf", js)
-        self.assertIn("\\\\fillin", js)
-        self.assertIn("\\\\begin\\{choices\\}", js)
-        self.assertIn("function cleanText", js)
-        self.assertIn("function cleanAll", js)
-        # 本地规则清洗：不出现网络调用或模型端点
-        self.assertNotIn("http", js.lower().replace("http-equiv", ""))
+        self.assertIn('state.slot = (message.payload && message.payload.slot) || "stage.center"', js)
+        self.assertIn('if (state.slot !== "stage.center")', js)
+        self.assertIn("root.hidden = false;", js)
+        self.assertIn('id="epRoot"', read("index.html"), "右栏实例需要自己的根节点")
 
-    def test_04_no_remote_assets_or_credentials(self) -> None:
+    def test_06_offline_and_no_remote_assets(self) -> None:
         for name in ("index.html", "plugin.css", "plugin.js"):
             source = read(name)
             self.assertNotIn("http://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("https://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("@import", source, f"{name} 不得远程导入样式")
-        self.assertNotIn("(?<", read("plugin.js"), "旧浏览器会直接语法失败")
+        self.assertIn("/static/vendor/katex/katex.min.js", read("index.html"), "公式只走本地 KaTeX")
 
-    def test_05_saved_state_is_visible_to_probe(self) -> None:
-        js = read("plugin.js")
-        self.assertIn('savedEl.setAttribute("data-id", id || "")', js)
-        self.assertIn('metricsEl.setAttribute("data-saved-id", id || "")', js)
-        self.assertIn("data-render-ms", js)
-        self.assertIn("data-katex", js)
-        self.assertIn("data-overflow", js)
-
-
-class EditorV071FeatureTest(unittest.TestCase):
-    """v0.7.1 极致好用与进阶：删题、派生变式、草稿托管、选项配图、AI 回填。"""
-
-    def test_01_delete_question_with_confirm(self) -> None:
-        html = read("index.html")
-        js = read("plugin.js")
-        self.assertIn('id="edDelete"', html, "缺【删除本题】按钮")
-        self.assertIn('id="edModal"', html, "缺二次确认弹窗容器")
-        self.assertIn('"bank.delete"', js, "删题必须经宿主转发")
-        self.assertIn("function requestDelete", js)
-        self.assertIn("function openConfirm", js)
-        self.assertIn("不可撤销", js, "删除必须二次确认并说清不可逆")
-        self.assertIn('keyEvent.key === "Escape"', js, "弹窗要能用 Esc 关闭（AGENTS §6）")
-
-    def test_02_save_as_derived_variant(self) -> None:
-        html = read("index.html")
-        js = read("plugin.js")
-        self.assertIn('id="edVariant"', html, "缺【另存为新题（派生变式）】按钮")
-        self.assertIn("function saveAsVariant", js)
-        self.assertIn("派生变式", js)
-        # 派生变式一定是新题：去掉 id 走 create，绝不回写原题
-        self.assertIn("delete question.id", js)
-        self.assertIn('hostCall("bank.create"', js)
-
-    def test_03_option_image_ids_round_trip(self) -> None:
-        js = read("plugin.js")
-        # 回填：从出参读入 image_ids；保存：写回 option.image_ids；配图资产随题保留
-        self.assertIn("option.image_ids", js, "载入时必须读回选项配图")
-        self.assertIn("entry.image_ids = option.imageIds", js, "保存时必须带上选项配图")
-        self.assertIn("state.images", js, "配图资产数组需整体保留")
-        self.assertIn("imageIds", js)
-
-    def test_04_draft_is_hosted_never_localstorage(self) -> None:
-        js = read("plugin.js")
-        self.assertIn('"draft.save"', js, "草稿必须经宿主 RPC 托管")
-        self.assertIn('"draft.load"', js)
-        self.assertIn("function getFormState", js)
-        self.assertIn("function applyFormState", js)
-        self.assertIn("function maybeRestoreDraft", js)
-        self.assertIn("addEventListener(\"beforeunload\", flushDraft)", js)
-        # 关键红线：沙箱不透明源里 localStorage 会抛异常，插件绝不能用它
-        self.assertNotIn("localStorage", js)
-
-    def test_05_auto_close_and_ai_backfill(self) -> None:
-        js = read("plugin.js")
-        self.assertIn("AUTO_CLOSE_MS = 1000", js, "保存后 1 秒自动收页")
-        self.assertIn('"system.editor_close"', js)
-        self.assertIn('message.event === "editor.apply_patch"', js, "必须接收 AI 副驾回填通知")
-        # 回填只进表单，不自动落库：保存权仍在老师手里
-        self.assertIn("请核对后保存", js)
-
-    def test_06_a4_geometry_still_single_truth(self) -> None:
-        # 上一版守住的红线不许被本轮改动带偏
-        css = read("plugin.css")
-        self.assertIn("width: 794px", css)
-        self.assertIn("height: 1123px", css)
-
-
-class EditorCompareAndCropTest(unittest.TestCase):
-    """军令 #13：三栏对比 + 原生矩形框选 → Canvas 截取 → 宿主上传 → 插入。"""
-
-    def test_01_three_column_layout_keeps_a4_preview(self) -> None:
-        html = read("index.html")
-        css = read("plugin.css")
-        for node_id in (
-            "edStem", "edPreview", "edSourceStage", "edSourceCanvas", "edSourceEmpty",
-            "edImageFile", "edPickImage", "edCropBox", "edCropInsert", "edCropClear",
-            "edCropAll", "edCropHint", "edSourceStatus", "edSourceName",
-        ):
-            self.assertIn(f'id="{node_id}"', html, f"缺少三栏/框选节点 {node_id}")
-        self.assertIn('class="ed-compare"', html, "中栏需同时承载源码与渲染")
-        self.assertIn('class="ed-source"', html, "右栏需是原图框选区")
-        # 题干源码在中栏，不再占左表单
-        stem_at = html.index('id="edStem"')
-        self.assertGreater(stem_at, html.index('class="ed-compare"'))
-        self.assertLess(stem_at, html.index('class="ed-preview"'))
-        self.assertIn('grid-template-areas: "form compare source"', css)
-        self.assertIn("width: 794px", css)
-        self.assertIn("height: 1123px", css)
-
-    def test_02_selection_crops_with_canvas_not_remote_image(self) -> None:
-        js = read("plugin.js")
-        for needle in (
-            "createImageBitmap", "drawImage", 'toDataURL("image/png")',
-            "pointerdown", "pointermove", "pointerup", "setPointerCapture",
-            "function captureCrop", "function insertCrop",
-        ):
-            self.assertIn(needle, js, f"框选切图缺少关键实现：{needle}")
-        # 沙箱 CSP 只放行底座源：原图必须直接解码进 Canvas，不能借 data:/blob: 图片地址
-        self.assertNotIn("createObjectURL", js)
-        self.assertNotIn("FileReader", js)
-
-    def test_03_upload_goes_through_host_assets_write(self) -> None:
-        js = read("plugin.js")
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-        spec = (ROOT / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
-        self.assertIn('"asset.upload"', js)
-        self.assertIn('hostCall("asset.upload"', js)
-        self.assertIn("assets:write", manifest["permissions"])
-        self.assertIn('"asset.upload"', stage, "宿主必须开放 asset.upload")
-        self.assertIn('indexOf("assets:write")', stage, "宿主必须按清单校验 assets:write")
-        self.assertIn("asset.upload", spec, "契约文档必须登记新通道")
-        # 上传成功后同时进正文与 images[]，角色固定为 stem
-        self.assertIn('"\\\\includegraphics{" + uri + "}"', js)
-        self.assertIn('{ id: id, role: "stem", uri: uri }', js)
-
-    def test_04_preview_only_renders_local_asset_uris(self) -> None:
+    def test_07_image_refs_stay_on_host_paths(self) -> None:
         js = read("plugin.js")
         self.assertIn("function safeAssetUri", js)
-        self.assertIn('uri.indexOf("/static/uploads/") === 0', js)
-        self.assertIn('uri.indexOf("asset://") === 0', js)
-        self.assertIn("function appendImageRef", js)
-        self.assertIn("ed-inline-img", js)
-        # 远程与 data: 引用只当文本，不变成 <img src>
-        self.assertNotIn("data:image", js.split("function safeAssetUri")[0])
+        for allowed in ('uri.indexOf("/static/uploads/") === 0', 'uri.indexOf("asset://") === 0'):
+            self.assertIn(allowed, js)
+        self.assertNotIn("data:image", js[:js.index("function safeAssetUri")])
+        # 认不出的地址只当普通文本，绝不变成 <img src>
+        self.assertIn("if (!path) {", js)
+        self.assertIn("document.createTextNode(raw", js)
 
-    def test_05_crop_state_is_ephemeral_not_in_question(self) -> None:
+
+class EditorFixtureContractTest(unittest.TestCase):
+    """假数据：每道题都是一份合法的 question.json 2.0，dev/ 只在本机存在。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.items = json.loads(FIXTURES.read_text(encoding="utf-8"))
+
+    def test_01_fixtures_are_valid_questions(self) -> None:
+        from jsonschema import Draft202012Validator
+
+        schema = json.loads((ROOT / "schemas" / "question.json").read_text(encoding="utf-8"))
+        validator = Draft202012Validator(schema)
+        self.assertTrue(self.items, "假数据不能是空数组")
+        for item in self.items:
+            errors = list(validator.iter_errors(item))
+            self.assertEqual(errors, [], f"假数据 {item.get('id')} 不合规：{errors}")
+            self.assertEqual(item["schema_version"], "2.0")
+
+    def test_02_dev_block_carries_source_and_stage_hints(self) -> None:
+        for item in self.items:
+            block = item["extensions"]["org.jiuzhang.editor.dev"]
+            source = block["source_latex"]
+            self.assertIn("\\begin{question}", source)
+            self.assertIn("\\begin{solution}", source)
+            self.assertIn("答案：", source)
+            self.assertIsInstance(block["confidence"], (int, float))
+            self.assertIsInstance(block["cross_page"], bool)
+            self.assertTrue(block["image_uri"].startswith("/static/"), "原图只能是底座托管路径")
+
+    def test_03_choice_fixture_follows_the_format_constitution(self) -> None:
+        choice = [item for item in self.items if item["type"].endswith("_choice")]
+        self.assertTrue(choice, "阶段 1 建议题必须是选择题")
+        for item in choice:
+            source = item["extensions"]["org.jiuzhang.editor.dev"]["source_latex"]
+            self.assertIn("（  ）", item["stem"], "选择题题干末尾要留括号")
+            self.assertEqual(source.count("\\item "), len(item["options"]))
+            self.assertIn("\\end{choices}\n\\end{question}\n\n\\begin{solution}", source)
+            self.assertIn("答案：" + "".join(item["answer"]["choice_keys"]), source)
+            self.assertTrue(item["solution"].startswith("解析"),
+                            "宪法要求「答案：X」在 solution 首行，解析另起一行")
+
+    def test_04_inline_block_equals_the_file(self) -> None:
         js = read("plugin.js")
-        self.assertIn("source: { bitmap: null", js)
-        form_state = js.split("function getFormState")[1].split("var TYPE_VALUES")[0]
-        self.assertNotIn("crop", form_state, "选区属于本次操作态，不写进草稿/题目")
-        self.assertNotIn("bitmap", form_state)
-        # 图片资产本身仍要随题保存
-        self.assertIn("state.images.slice()", form_state)
+        block = js[js.index(BEGIN) + len(BEGIN):js.index(END)]
+        inline = json.loads(block.strip()[len("var DEV_FIXTURES = "):].rstrip(";"))
+        self.assertEqual(inline, self.items,
+                         "内嵌假数据与 dev/fixtures.json 漂移，先跑 tools/sync_editor_fixtures.py")
 
-
-class EditorTask3LegacyPathsTest(unittest.TestCase):
-    """军令 #21 任务三：旧题库三条录题路径重新接回录题工作台。"""
-
-    def test_01_source_taxonomy_and_upload_ui_present(self) -> None:
-        html = read("index.html")
-        js = read("plugin.js")
-        for node_id in (
-            "edSourceBlock", "edSources", "edAddSource",
-            "edTextbook", "edChapter", "edSection",
-            "edImageTarget", "edImagePick", "edUploadFile", "edImageList",
-        ):
-            self.assertIn(f'id="{node_id}"', html, f"缺少节点 {node_id}")
-        self.assertIn("function renderSources", js)
-        self.assertIn("function collectSources", js)
-        self.assertIn("SOURCE_LIMIT = 8", js)
-        self.assertIn("ed-source-row", read("plugin.css"))
-
-    def test_02_multi_source_goes_to_contract_and_relation(self) -> None:
-        js = read("plugin.js")
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-        # 主来源进契约 source，其余经宿主 sources 参数落到 question_sources
-        self.assertIn("question.source = sources[0]", js)
-        self.assertIn("payload.sources = extraSources", js)
-        self.assertIn('hostCall("bank.sources"', js, "编辑态必须读回整组来源卷")
-        self.assertIn('"bank.sources"', stage, "宿主必须转发 bank.sources")
-        self.assertIn("function sourceList(payload)", stage)
-        # 改题时即使清空也要显式回传，否则旧挂载去不掉
-        self.assertIn("extraSources.length || updating", js)
-        self.assertIn("question.source = null", js)
-
-    def test_03_native_upload_writes_images_and_option_ids(self) -> None:
-        js = read("plugin.js")
-        self.assertIn("function handleUploadFile", js)
-        self.assertIn("createImageBitmap(file)", js, "上传同样走 Canvas 解码")
-        self.assertNotIn("FileReader", js, "沙箱里不借 FileReader / data: 图片地址")
-        self.assertIn("entry.option_key = target.slice(7)", js)
-        self.assertIn("option.imageIds.push(id)", js)
-        self.assertIn("state.images.push(entry)", js)
-        self.assertIn("function pickUpload", js)
-        self.assertIn("ed-option-upload", read("plugin.css"))
-
-    def test_04_taxonomy_names_and_drafts_round_trip(self) -> None:
-        js = read("plugin.js")
-        self.assertIn('["textbook", textbookEl]', js)
-        self.assertIn('["chapter", chapterEl]', js)
-        self.assertIn('["section", sectionEl]', js)
-        form_state = js.split("function getFormState")[1].split("var TYPE_VALUES")[0]
-        for field in ("textbook", "chapter", "section", "sources", "imageTarget"):
-            self.assertIn(field + ":", form_state, f"草稿态缺少 {field}")
-        # 主来源仍要能从 bank.get 的出参里回填（宿主没有 bank.sources 时兜底）
-        self.assertIn("sources: document.source ? [{", js)
-
-    def test_05_manifest_bumps_to_0_6_1(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.0.0")
+    def test_05_sync_tool_owns_the_marker_block(self) -> None:
+        tool = (ROOT / "tools" / "sync_editor_fixtures.py").read_text(encoding="utf-8")
+        self.assertIn(BEGIN.strip(), tool)
+        self.assertIn("var DEV_FIXTURES = ", tool)
 
 
 class EditorPackageTest(unittest.TestCase):
-    def test_01_zip_top_level_is_plugin_id_and_clean(self) -> None:
+    def _names(self) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
             target = build_plugin(PLUGIN_DIR, Path(tmp))
             self.assertTrue(target.is_file())
             with zipfile.ZipFile(target) as bundle:
-                names = bundle.namelist()
+                return bundle.namelist()
+
+    def test_01_zip_top_level_is_plugin_id_and_clean(self) -> None:
+        names = self._names()
         self.assertTrue(names)
         for name in names:
-            parts = name.split("/")
-            self.assertEqual(parts[0], "org.jiuzhang.editor", name)
-            self.assertNotIn(".env", parts)
-            self.assertNotIn("__pycache__", parts)
+            self.assertEqual(name.split("/")[0], "org.jiuzhang.editor", name)
+            self.assertNotIn(".env", name.split("/"))
+            self.assertNotIn("__pycache__", name.split("/"))
         joined = "\n".join(names)
         self.assertIn("org.jiuzhang.editor/plugin.json", joined)
         self.assertIn("org.jiuzhang.editor/dist/index.html", joined)
         self.assertIn("org.jiuzhang.editor/LICENSE", joined)
         self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))
+
+    def test_02_dev_fixtures_never_ship(self) -> None:
+        """军令 #23：假数据不进发行包——对外只有真实题库，运行期靠 plugin.js 内嵌块。"""
+        names = self._names()
+        offenders = [each for each in names if "/dev/" in each or each.endswith("fixtures.json")]
+        self.assertEqual(offenders, [], f"发行包混进开发期文件：{offenders}")
+        self.assertIn("org.jiuzhang.editor/dist/plugin.js", names)
 
 
 if __name__ == "__main__":

@@ -8,213 +8,67 @@
   <link rel="stylesheet" href="plugin.css">
 </head>
 <body>
-  <div id="root" class="ed-root" hidden>
-    <header class="ed-top">
-      <div class="ed-brand">
+  <!-- 画布实例（stage.center）：三栏全部在画布内——左原图 | 中 LaTeX 源码 | 右渲染。
+       源码与渲染共用一条滚动（行高取两栏较高者），左栏原图与两栏逐题对齐。 -->
+  <div id="edRoot" class="ed-root" hidden>
+    <header class="ed-bar">
+      <div class="ed-bar-brand">
         <h1>录题工作台</h1>
-        <p class="ed-sub">左表单 · 中栏左源码右 A4 实时渲染 · 右栏原图框选切图 · 边写边存草稿不丢 · 清洗后直入本地真题库</p>
+        <p class="ed-bar-sub">左原图 · 中 exam-zh 源码 · 右渲染（按内容实际高度，不固定 A4）</p>
       </div>
-      <div class="ed-actions">
-        <button type="button" id="edClean" class="ed-btn ed-btn-soft" title="本地规则清洗，不联网">
-          一键清洗 LaTeX
-        </button>
-        <button type="button" id="edAiClean" class="ed-btn ed-btn-soft"
-          title="经宿主调用底座统一清洗函数（规则归一，不调用模型）">
-          AI 清洗公式
-        </button>
-        <button type="button" id="edVariant" class="ed-btn ed-btn-soft"
-          title="复制当前内容新建一题（底座重新签发题号），绝不覆盖原题">
-          另存为新题（派生变式）
-        </button>
-        <button type="button" id="edReset" class="ed-btn ed-btn-ghost">清空表单</button>
-        <button type="button" id="edReturn" class="ed-btn ed-btn-ghost" hidden>返回来源页</button>
-        <button type="button" id="edDelete" class="ed-btn ed-btn-danger" hidden>删除本题</button>
-        <button type="button" id="edSave" class="ed-btn ed-btn-primary">保存入库</button>
+      <div class="ed-bar-state">
+        <span id="edProgress" class="ed-progress" data-active="0" data-total="0">第 — / — 题</span>
+        <span id="edFormat" class="ed-format" data-format="latex">格式一</span>
+        <span id="edDirty" class="ed-dirty" data-dirty="false">未改动</span>
       </div>
     </header>
 
     <div class="ed-status" role="status" aria-live="polite">
-      <span id="edMetrics" data-render-ms="" data-katex="" data-overflow="" data-chars="">等待录入…</span>
+      <span id="edMetrics" data-render-ms="" data-katex="" data-blocks="" data-errors=""
+            data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
       <span id="edSaved" class="ed-saved" hidden></span>
-      <span class="ed-legend">A4 210×297mm · 公式本地 KaTeX · 写入本机 SQLite 题库</span>
+      <span class="ed-legend">exam-zh 标准环境 · 公式本地 KaTeX · 写入本机 SQLite 题库</span>
     </div>
 
-    <main class="ed-shell">
-      <section class="ed-form" aria-label="题目表单">
-        <div class="ed-row ed-row-3">
-          <label class="ed-field">
-            <span>题型</span>
-            <select id="edType">
-              <option value="single_choice">单选</option>
-              <option value="multiple_choice">多选</option>
-              <option value="fill_blank">填空</option>
-              <option value="solution">解答</option>
-            </select>
-          </label>
-          <label class="ed-field">
-            <span>难度</span>
-            <select id="edDifficulty">
-              <option value="L1">L1 基础</option>
-              <option value="L2" selected>L2 中档</option>
-              <option value="L3">L3 难</option>
-              <option value="L4">L4 压轴</option>
-            </select>
-          </label>
-          <label class="ed-field">
-            <span>年级</span>
-            <select id="edGrade">
-              <option value="高一">高一</option>
-              <option value="高二">高二</option>
-              <option value="高三">高三</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="ed-options-block" id="edOptionsBlock">
-          <div class="ed-options-head">
-            <span>选项 <em>至少两项，可增删</em></span>
-            <button type="button" id="edAddOption" class="ed-mini">+ 添加选项</button>
-          </div>
-          <div id="edOptions" class="ed-options"></div>
-        </div>
-
-        <label class="ed-field ed-field-block">
-          <span>答案 <em id="edAnswerHint">单选填一个字母，如 C</em></span>
-          <input id="edAnswer" type="text" spellcheck="false" placeholder="C">
-        </label>
-
-        <label class="ed-field ed-field-block">
-          <span>解析 <em>可选，支持 LaTeX</em></span>
-          <textarea id="edSolution" rows="4" spellcheck="false"
-            placeholder="例：由 $x^2-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。"></textarea>
-        </label>
-
-        <label class="ed-field ed-field-block">
-          <span>知识点标签 <em>逗号分隔，最多 32 个</em></span>
-          <input id="edTags" type="text" spellcheck="false" placeholder="一元二次方程, 因式分解">
-        </label>
-
-        <div class="ed-field ed-field-block" id="edTopicBlock">
-          <span>考向挂载 <em>在大纲树里点节点，一题最多 8 个</em></span>
-          <div class="ed-topic-row">
-            <button type="button" id="edTopicPick" class="ed-mini">选择考向</button>
-            <span id="edTopicChips" class="ed-topic-chips"></span>
-          </div>
-          <div id="edTopicTree" class="ed-topic-tree" hidden></div>
-        </div>
-
-        <div class="ed-field ed-field-block" id="edSourceBlock">
-          <span>来源卷 <em>一题可挂多张原卷，各记原卷题号；第一份为主来源</em></span>
-          <div id="edSources" class="ed-sources"></div>
-          <button type="button" id="edAddSource" class="ed-mini">+ 添加来源卷</button>
-        </div>
-
-        <div class="ed-field ed-field-block" id="edTaxBlock">
-          <span>教材位置 <em>旧题库的教材/章/节；不挂考向时也留得住归属</em></span>
-          <div class="ed-tax-row">
-            <label class="ed-field ed-field-inline">
-              <span>教材</span>
-              <input id="edTextbook" type="text" maxlength="64" spellcheck="false"
-                placeholder="如 人教A版·必修第一册">
-            </label>
-            <label class="ed-field ed-field-inline">
-              <span>章</span>
-              <input id="edChapter" type="text" maxlength="64" spellcheck="false"
-                placeholder="如 1. 集合与常用逻辑用语">
-            </label>
-            <label class="ed-field ed-field-inline">
-              <span>节</span>
-              <input id="edSection" type="text" maxlength="64" spellcheck="false"
-                placeholder="如 1.1 集合的概念">
-            </label>
-          </div>
-        </div>
-
-        <div class="ed-field ed-field-block" id="edImagesBlock">
-          <span>配图资产 <em>选本地图片上传，自动写入 images 并关联 image_ids</em></span>
-          <div class="ed-image-tools">
-            <select id="edImageTarget" aria-label="配图归属">
-              <option value="stem">归到题干</option>
-              <option value="solution">归到解析</option>
-            </select>
-            <button type="button" id="edImagePick" class="ed-mini">选择本地图片</button>
-            <input id="edUploadFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-          </div>
-          <ul id="edImageList" class="ed-image-list"></ul>
-        </div>
-
-        <p id="edEditing" class="ed-editing" hidden>
-          正在编辑 <code id="edEditingId"></code> · 保存后题库/组卷/讲义会自动回流刷新
-        </p>
-      </section>
-
-      <section class="ed-compare" aria-label="源码与 A4 渲染对照">
-        <section class="ed-code" aria-label="题干源码">
-          <div class="ed-pane-head">
-            <span>题干源码</span>
-            <em>支持 $...$ 与 $$...$$ · 切图插入 \includegraphics{...}</em>
-          </div>
-          <textarea id="edStem" class="ed-stem-code" spellcheck="false" aria-label="题干源码"
-            placeholder="例：已知函数 $f(x)=x^2-5x+6$，则方程 $f(x)=0$ 的解为（　　）"></textarea>
-        </section>
-
-        <section class="ed-preview" aria-label="A4 实时预览">
-          <div class="ed-preview-head">
-            <span>实时渲染</span>
-            <span class="ed-scale" id="edScale">100%</span>
-          </div>
-          <div class="ed-preview-viewport" id="edPreview">
-            <div class="ed-page-frame" id="edPageFrame">
-              <div class="ed-page" id="edPage">
-                <div class="ed-page-body" id="edPageBody"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <section class="ed-source" aria-label="原图框选切图">
+    <main class="ed-cols" id="edCols">
+      <section class="ed-col ed-col-image" id="edPaneImage" aria-label="原图">
         <div class="ed-pane-head">
-          <span>原图框选</span>
-          <span class="ed-source-name" id="edSourceName">未载入</span>
+          <span>原图</span>
+          <em id="edImageName">未载入</em>
         </div>
-        <div class="ed-source-tools">
-          <button type="button" id="edPickImage" class="ed-mini">选择原图</button>
-          <input id="edImageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-          <button type="button" id="edCropAll" class="ed-mini" disabled>整图插入</button>
+        <div class="ed-pane-body" id="edImageBody" tabindex="0" role="list"
+             aria-label="逐题原图与静态框"></div>
+      </section>
+
+      <div class="ed-split" id="edSplitImage" role="separator" aria-orientation="vertical"
+           tabindex="0" aria-label="拖动调整原图与源码栏宽度"></div>
+
+      <section class="ed-col ed-col-source" id="edPaneSource" aria-label="LaTeX 源码">
+        <div class="ed-pane-head">
+          <span>LaTeX 源码</span>
+          <em id="edSourceHint">只读 · 拖宽可调</em>
         </div>
-        <div class="ed-source-view" id="edSourceView">
-          <p id="edSourceEmpty" class="ed-source-empty">
-            选择一张原题截图（PNG / JPEG / WebP），在图上拖拽出矩形，再点【插入选区】。
-          </p>
-          <div id="edSourceStage" class="ed-source-stage" tabindex="0" role="group"
-            aria-label="原图框选区域：用鼠标或手指拖拽出矩形" hidden>
-            <canvas id="edSourceCanvas"></canvas>
-            <div id="edCropBox" class="ed-crop-box" hidden></div>
-          </div>
+        <div class="ed-pane-body" id="edSourceBody"></div>
+      </section>
+
+      <div class="ed-split" id="edSplitSource" role="separator" aria-orientation="vertical"
+           tabindex="0" aria-label="拖动调整源码栏与渲染栏宽度"></div>
+
+      <section class="ed-col ed-col-render" id="edPaneRender" aria-label="渲染结果">
+        <div class="ed-pane-head">
+          <span>渲染</span>
+          <em>按内容实际高度</em>
         </div>
-        <p id="edCropHint" class="ed-crop-hint">尚未选择区域。</p>
-        <div class="ed-source-actions">
-          <button type="button" id="edCropInsert" class="ed-btn ed-btn-primary" disabled>插入选区</button>
-          <button type="button" id="edCropClear" class="ed-btn ed-btn-ghost" disabled>清除选区</button>
-        </div>
-        <p id="edSourceStatus" class="ed-source-note" role="status" aria-live="polite"></p>
+        <div class="ed-pane-body" id="edRenderBody"></div>
       </section>
     </main>
 
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
+  </div>
 
-    <div id="edModal" class="ed-modal-overlay" role="dialog" aria-modal="true"
-      aria-labelledby="edModalTitle" aria-hidden="true" hidden>
-      <div class="ed-modal">
-        <h3 id="edModalTitle">确认删除</h3>
-        <p id="edModalText">确定删除这道题吗？</p>
-        <div class="ed-modal-actions">
-          <button type="button" id="edModalCancel" class="ed-btn ed-btn-ghost">取消</button>
-          <button type="button" id="edModalOk" class="ed-btn ed-btn-danger">确认删除</button>
-        </div>
-      </div>
-    </div>
+  <!-- 辅助栏实例（sidebar.right）：元数据表单 + AI 帮改 + 审核动作，不放源码、不放预览。 -->
+  <div id="epRoot" class="ep-root" hidden>
+    <p id="epPlaceholder" class="ep-note">辅助栏将在阶段 2 接入。</p>
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>

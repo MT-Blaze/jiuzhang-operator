@@ -34,7 +34,10 @@ DENY_NAMES = {
     "plugin.zip",
 }
 DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal", ".db-journal", ".db"}
-DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache"}
+DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache", "dev"}
+# 军令 #23：``dev/`` 是开发期假数据（fixtures）的落点，只服务本机探针与浏览器验证，
+# 一律不进发行包——沙箱 CSP 是 connect-src 'none'，假数据的唯一运行期事实来源是
+# plugin.js 里 //# FIXTURES-BEGIN/END 之间的内嵌块，由 tools/sync_editor_fixtures.py 同步。
 # 纯净发版（ADR-003）：插件包一律不带任何物理数据库，也不带随真题库分发的题库配图资产。
 # core-bank 的 ``bank/schema.sql`` 仍在包里，首启由底座 ensure_bank 建空库；
 # 真题库与它的配图只在本地开发机存在，绝不进任何对外发布的 zip。

@@ -1,0 +1,50 @@
+[
+  {
+    "schema_version": "2.0",
+    "id": "q_fx000001",
+    "type": "single_choice",
+    "stem": "已知函数 $f(x)=x^2+1$，求其最小值（  ）",
+    "difficulty": "L1",
+    "options": [
+      { "key": "A", "content": "$0$", "image_ids": [] },
+      { "key": "B", "content": "$1$", "image_ids": [] },
+      { "key": "C", "content": "$2$", "image_ids": [] },
+      { "key": "D", "content": "$3$", "image_ids": [] }
+    ],
+    "answer": { "kind": "choice", "choice_keys": ["B"], "final": "B" },
+    "solution": "解析：配方得 $f(x)=(x-1)^2+1$，故最小值为 $1$。",
+    "grade": "高一",
+    "tags": ["二次函数", "配方法"],
+    "taxonomy": {
+      "textbook": "人教A版·必修第一册",
+      "chapter": "2. 一元二次函数",
+      "section": "2.1 方程与不等式",
+      "topic_ids": []
+    },
+    "source": {
+      "paper_title": "军令 #23 假数据卷",
+      "question_no": "1",
+      "year": 2024,
+      "exam_type": "一模",
+      "school": "九章中学",
+      "region": "本地"
+    },
+    "images": [],
+    "extensions": {
+      "org.jiuzhang.editor.dev": {
+        "source_latex": "\\begin{question}\n已知函数 $f(x)=x^2+1$，求其最小值（  ）\n\\begin{choices}\n  \\item $0$\n  \\item $1$\n  \\item $2$\n  \\item $3$\n\\end{choices}\n\\end{question}\n\n\\begin{solution}\n答案：B\n解析：配方得 $f(x)=(x-1)^2+1$，故最小值为 $1$。\n\\end{solution}\n",
+        "image_uri": "/static/icons/icon-192.png",
+        "image_pages": [1],
+        "confidence": 0.93,
+        "cross_page": false,
+        "long_solution": false
+      }
+    },
+    "meta": {
+      "created_at": "2026-10-31T08:00:00+08:00",
+      "updated_at": "2026-10-31T08:00:00+08:00",
+      "revision": 1,
+      "status": "draft"
+    }
+  }
+]

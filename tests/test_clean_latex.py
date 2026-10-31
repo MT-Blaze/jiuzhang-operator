@@ -79,6 +79,14 @@ class CleanLatexRelayContractTest(unittest.TestCase):
 
 
 class EditorAiCleanerTest(unittest.TestCase):
+    """军令 #23 阶段 1 重写录题界面：画布只留三栏，AI 清洗按钮随表单一起退场。
+
+    这两条判据钉的是「画布上有 AI 清洗公式按钮 + cleanViaHost 回填」这套旧实现，
+    v2 里 AI 帮改（档 1）改到辅助栏、随阶段 3 重新取证，届时按新契约重写判据。
+    宿主侧的 text.clean_latex 转发契约（上面的 CleanLatexRelayContractTest）不受影响。
+    """
+
+    @unittest.skip("军令 #23 阶段 1：画布 AI 清洗按钮已随旧表单撤除，待阶段 3 在辅助栏重写")
     def test_01_button_and_host_channel_are_wired(self) -> None:
         self.assertIn('id="edAiClean"', EDITOR_HTML)
         self.assertIn("AI 清洗公式", EDITOR_HTML)
@@ -87,6 +95,7 @@ class EditorAiCleanerTest(unittest.TestCase):
         self.assertIn("function cleanViaHost", EDITOR_JS)
         self.assertIn('aiCleanEl.addEventListener("click", cleanViaHost)', EDITOR_JS)
 
+    @unittest.skip("军令 #23 阶段 1：cleanViaHost 随旧表单撤除，待阶段 3 在辅助栏重写")
     def test_02_apply_happens_only_after_every_call_succeeds(self) -> None:
         block = EDITOR_JS.split("function cleanViaHost() {", 1)[1].split("\n  }\n", 1)[0]
         self.assertIn("Promise.all(jobs)", block, "必须全部成功后再回填")
@@ -95,13 +104,13 @@ class EditorAiCleanerTest(unittest.TestCase):
         self.assertNotIn("fetch(", block)
         self.assertNotIn("/api/", block)
 
-    def test_03_manifest_and_index_agree_on_0_6_1(self) -> None:
+    def test_03_manifest_and_index_agree(self) -> None:
+        """清单与官方索引的版本号、描述必须逐字相同——不写死数字，插件一升号就假红。"""
         manifest = json.loads((EDITOR_DIR / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.0.0")
         index = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
         entries = [item for item in index["entries"] if item["id"] == "org.jiuzhang.editor"]
         self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["version"], "1.0.0")
+        self.assertEqual(entries[0]["version"], manifest["version"])
         self.assertEqual(entries[0]["description"], manifest["description"])
 
 
