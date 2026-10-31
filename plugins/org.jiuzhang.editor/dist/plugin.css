@@ -261,10 +261,80 @@ body {
   tab-size: 2;
 }
 
-.ed-src-area[readonly] {
-  background: var(--paper-deep);
+/* ---------- 格式二：框框视图（框里只有内容，环境名是写死的标签） ---------- */
+
+.ed-boxed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.ed-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ed-box-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ed-box-env {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.ed-box-field {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.ed-box-area {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
   color: var(--ink);
-  cursor: default;
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+
+.ed-box-textarea {
+  resize: none;
+  overflow: hidden;
+  min-height: 48px;
+  white-space: pre-wrap;
+}
+
+.ed-box-input { min-height: 44px; }
+
+.ed-boxed-blocked {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--danger);
+  background: #fbeeec;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
 }
 
 /* ---------- 渲染栏 ---------- */
@@ -396,16 +466,327 @@ body {
 .ed-toast[data-tone="error"] { background: var(--danger); }
 .ed-toast[data-tone="ok"] { background: var(--accent); }
 
-/* ---------- 辅助栏实例 ---------- */
+/* ---------- 辅助栏实例（sidebar.right）：元数据 + 审核动作 + 格式切换 ---------- */
 
 .ep-root {
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 14px;
   font-size: 13px;
+  overflow-y: auto;
 }
 
-.ep-note {
+.ep-head h2 {
   margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.ep-sub {
+  margin: 2px 0 0;
+  font-size: 11.5px;
   color: var(--ink-soft);
+}
+
+.ep-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ep-sec-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+.ep-status-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  background: var(--paper);
+}
+
+.ep-progress {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ep-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+
+.ep-badge[data-status="stored"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-badge[data-dirty="true"]::after {
+  content: " · 有改动";
+  font-size: 11px;
+}
+
+.ep-confidence {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.ep-format {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ep-fmt,
+.ep-btn {
+  min-height: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ep-fmt.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ep-btn:hover,
+.ep-fmt:hover {
+  border-color: var(--accent);
+}
+
+.ep-btn[disabled] {
+  cursor: not-allowed;
+  color: var(--ink-soft);
+  background: var(--void);
+  border-style: dashed;
+}
+
+.ep-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ep-btn[aria-busy="true"] { opacity: 0.7; }
+
+.ep-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ep-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ep-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ep-field-narrow { flex: 1 1 84px; }
+
+.ep-label {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.ep-input,
+.ep-select {
+  min-height: 44px;
+  padding: 8px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ep-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  background: var(--void);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.ep-group-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.ep-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.ep-hint[data-from="manual"] { color: var(--danger); }
+
+.ep-msg {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  background: var(--void);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.ep-msg[data-tone="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: #fbeeec;
+}
+
+.ep-msg[data-tone="ok"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-msg[data-tone="warn"] { color: #8a6a1f; border-color: #d9c48a; }
+
+.ep-foot {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ep-mounted {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  font-size: 11.5px;
+  max-width: 100%;
+}
+
+.ep-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ep-chip-x {
+  position: relative;
+  min-height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent);
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* 摘除考向的小圆钮视觉上要矮，但军令 AGENTS §6 要求触控目标 ≥44px：
+   用伪元素把热区向外补一圈，视觉不破、命中区达标。 */
+.ep-chip-x::after {
+  content: "";
+  position: absolute;
+  inset: -6px -8px;
+}
+
+.ep-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.ep-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ep-topic-expander,
+.ep-topic-name {
+  min-height: 44px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.ep-topic-expander { flex: none; width: 44px; padding: 4px 0; }
+.ep-topic-expander[disabled] { cursor: default; color: var(--line-strong); }
+
+.ep-topic-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-topic-name:hover,
+.ep-topic-expander:hover {
+  background: var(--paper-deep);
+  border-color: var(--line);
+}
+
+.ep-topic-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

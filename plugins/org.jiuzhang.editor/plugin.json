@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "api_version": "1.0",
   "kind": "tool",
-  "description": "画布三栏：左原图 | 中全量 exam-zh 源码（question/choices/problem/solution 一整个环境块） | 右按内容实际高度渲染题干、选项、答案、解析；题型、难度、来源、考向与审核动作归右栏辅助面板，源码双格式与 AI 帮改分阶段接入；保存经宿主写库，插件不碰令牌。",
+  "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段直接编辑 / 格式二按环境拆框，改完自动重组） | 右按内容实际高度渲染；右栏辅助面板放题型、难度、来源、考向、标签与审核动作，单题保存经宿主写库（新建走 bank.create、编辑走 bank.update），插件不碰令牌。",
   "author": "九章算子",
   "license": "Apache-2.0",
   "min_host_version": "1.0.0",
@@ -13,7 +13,8 @@
     "frontend": "dist/index.html"
   },
   "slots": [
-    "stage.center"
+    "stage.center",
+    "sidebar.right"
   ],
   "capabilities": [
     "question.edit"
@@ -21,8 +22,25 @@
   "permissions": [
     "assets:write",
     "questions:read",
-    "questions:write"
+    "questions:write",
+    "ai:invoke"
   ],
+  "ui": {
+    "title": "录题面板",
+    "hint": "源码格式切换只改画布中栏的编辑视图，题目内容不动。",
+    "controls": [
+      {
+        "type": "select",
+        "id": "format",
+        "label": "源码格式",
+        "default": "latex",
+        "options": [
+          { "value": "latex", "label": "格式一 · 标准 LaTeX" },
+          { "value": "boxed", "label": "格式二 · 框框视图" }
+        ]
+      }
+    ]
+  },
   "stage": {
     "region": "center",
     "mode": "takeover",
@@ -34,7 +52,9 @@
     "subscribe": [
       "ui.params.changed",
       "system.open_editor",
-      "editor.apply_patch"
+      "editor.apply_patch",
+      "stage.selection",
+      "system.question_updated"
     ],
     "publish": [
       "region.dock",
@@ -48,7 +68,7 @@
       {
         "id": "org.jiuzhang.action.input.open_question",
         "title": "打开题目编辑",
-        "description": "把题库里的一道题载入录题工作台；只读载入，未保存前不改动原题。",
+        "description": "把题库里的一道题源码与元数据载入画布三栏；载入本身不写库，点保存才落库。",
         "params_schema": {
           "type": "object",
           "properties": {
@@ -68,7 +88,7 @@
       {
         "id": "org.jiuzhang.action.process.clean_latex",
         "title": "清洗当前表单",
-        "description": "对当前表单的题干、选项、答案与解析做 LaTeX 规范化；会改写未保存内容，必须在执行前确认。",
+        "description": "对画布中栏的 exam-zh 源码做定界符规范化（\\( \\)、\\[ \\] 归一为 $ 与 $$）；会改写未保存内容，必须在执行前确认。",
         "requires_user": true,
         "params_schema": {
           "type": "object",
@@ -80,7 +100,7 @@
       {
         "id": "org.jiuzhang.action.input.save_question",
         "title": "保存当前题目",
-        "description": "把当前表单写入题库（新题新建，编辑态则更新原题）；写库且会回流刷新各端，必须在执行前确认。",
+        "description": "把当前题的源码与辅助栏元数据组装成 2.0 结构写入题库（新题走 bank.create，编辑态走 bank.update 且保住既有多来源）；写库且会回流刷新各端，必须在执行前确认。",
         "requires_user": true,
         "params_schema": {
           "type": "object",

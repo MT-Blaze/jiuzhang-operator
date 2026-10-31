@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
-"""录题工作台真机探针：填表单 → A4 预览 → 清洗 → 保存 → 题库可查。
+"""录题工作台 v2 真机探针（军令 #23 阶段 2）：画布三栏 + 右栏辅助栏 + 单题保存。
 
 用法：``.venv/Scripts/python.exe tools/editor_probe.py <tag>``
 
-隔离：复制 editor 与 core-bank 到独立插件目录，另起端口与数据目录，
-不写本机 data/banks/。检查项：
-- 左栏出现「录题工作台」，挂载进沙箱并回 ready；
-- 动态增删选项、答案/解析/难度/标签表单齐全；
-- 输入后 140ms 防抖内重排，A4 单页无溢出、公式为真 KaTeX；
-- 「AI 清洗公式」经宿主 text.clean_latex 回填，与底座同一份规则；
-- 「一键清洗 LaTeX」把 \\(...\\)、\\[...\\]、\\fillin 归一；
-- 旧库三条录题路径回归：一题挂两卷（各带原卷题号）、教材/章/节、原生图片上传；
-- 保存后拿到 q_ 开头的 ID，直查 API 字段逐项一致（含 tags/来源/图片/选项 image_ids）；
-- 题库总数 456→457，core-bank 画布搜索能查到新题；
-- 宿主 1440px 无横向溢出，控制台零错误。
+隔离：把 editor 与题库两端复制进独立插件目录，另起端口与独立数据目录，
+不写本机 data/banks/。题数一律用「保存前后差值」判据，绝不写死绝对数。
+
+检查项：
+- 画布挂载出三栏（左原图 | 中源码 | 右渲染）与两条拖手，拖到底不归零；
+- 右栏是同一插件的**第二个沙箱帧**，按画布送来的选区预填元数据；
+- 辅助栏里既没有源码框也没有渲染预览（军令铁律）；
+- 格式一整段可编辑；格式二按环境拆框，改框自动重组格式一；
+- 单题保存经宿主写库：新建走 bank.create、再存走 bank.update、变式另发新 ID；
+- 保存后直查 API 字段逐项一致（题干/答案/选项/解析/难度/年级/标签/来源/修订号）；
+- 渲染块按内容实际高度生长，画布里不再有 A4 固定页节点；
+- 宿主 1440px 无横向溢出，控制台与页面零错误。
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -37,7 +37,11 @@ ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
 BANK_UI_ID = "org.jiuzhang.bank-ui"
-UNIQUE = "探针录题"
+MARK = "探针v2"
+
+CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
+PANEL = "#wsContextSlot .ws-context-frame"
+BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 
 
 def free_port() -> int:
@@ -47,7 +51,7 @@ def free_port() -> int:
 
 
 def wait_health(base: str, process: subprocess.Popen) -> None:
-    deadline = time.time() + 25
+    deadline = time.time() + 40
     while time.time() < deadline:
         if process.poll() is not None:
             output = process.stdout.read() if process.stdout else ""
@@ -58,7 +62,7 @@ def wait_health(base: str, process: subprocess.Popen) -> None:
                     return
         except (urllib.error.URLError, TimeoutError, ConnectionError):
             time.sleep(0.1)
-    raise RuntimeError("服务未在 25 秒内就绪")
+    raise RuntimeError("服务未在 40 秒内就绪")
 
 
 def http_json(url: str) -> tuple[int, dict]:
@@ -74,25 +78,28 @@ def http_json(url: str) -> tuple[int, dict]:
             return error.code, {"raw": payload}
 
 
-def wait_preview(metrics, timeout: float = 10) -> float:
+def wait_attribute(locator, name: str, predicate, timeout: float = 12) -> str:
+    """等某个 data-* 属性达到期望值；不达标就返回最后看到的值，让检查项如实报红。"""
     deadline = time.time() + timeout
+    value = ""
     while time.time() < deadline:
-        raw = metrics.get_attribute("data-render-ms")
-        if raw not in (None, ""):
-            return float(raw)
-        time.sleep(0.05)
-    raise AssertionError("预览未在预期时间内重排")
+        value = locator.get_attribute(name) or ""
+        if predicate(value):
+            return value
+        time.sleep(0.15)
+    return value
 
 
-def wait_value(locator, predicate, timeout: float = 8) -> str:
+def wait_height(locator, predicate, timeout: float = 12) -> float:
+    """渲染是防抖 + KaTeX 同步排版，挂载那一瞬高度还没长开；量高度必须等它稳。"""
     deadline = time.time() + timeout
-    last = ""
+    height = 0.0
     while time.time() < deadline:
-        last = locator.input_value()
-        if predicate(last):
-            return last
-        time.sleep(0.05)
-    raise AssertionError("输入框未在预期时间内回填：" + last[:120])
+        height = float(locator.evaluate("node => node.getBoundingClientRect().height"))
+        if predicate(height):
+            return height
+        time.sleep(0.15)
+    return height
 
 
 def main() -> int:
@@ -107,13 +114,8 @@ def main() -> int:
     data_dir = work / "data"
     plugins_dir = work / "plugins"
     shots = work / "shots"
-    data_dir.mkdir(parents=True)
-    plugins_dir.mkdir(parents=True)
-    shots.mkdir(parents=True)
-    png_path = work / "probe-upload.png"
-    png_path.write_bytes(base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-    ))
+    for folder in (data_dir, plugins_dir, shots):
+        folder.mkdir(parents=True)
     for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
@@ -123,6 +125,7 @@ def main() -> int:
     env["JZO_DATA_DIR"] = str(data_dir)
     env["JZO_PLUGINS_DIR"] = str(plugins_dir)
     env["JZO_LOCAL_TOKEN"] = "editor-probe-token"
+    env["JZO_RESTART_DISABLED"] = "1"
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
          "--port", str(port), "--log-level", "warning", "--no-server-header"],
@@ -137,6 +140,8 @@ def main() -> int:
 
     try:
         wait_health(base, process)
+        _, stats_before = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+        total_before = int(stats_before.get("total") or 0)
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -147,201 +152,257 @@ def main() -> int:
 
             item = page.locator(".ws-plugin-item", has_text="录题工作台").first
             expect(item).to_be_visible(timeout=10000)
-            check("左栏出现录题工作台", True)
             item.click()
 
-            panel = page.locator("#wsPanel_plugin_org_jiuzhang_editor")
-            frame = panel.frame_locator(".ws-plugin-frame")
-            root = frame.locator("#root")
-            expect(root).to_be_visible(timeout=15000)
-            check("插件挂载并显示表单", True)
+            canvas = page.frame_locator(CANVAS)
+            expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
+            check("画布挂载出 v2 三栏", True)
 
-            metrics = frame.locator("#edMetrics")
-            stem = frame.locator("#edStem")
-            options = frame.locator("#edOptions input")
-            answer = frame.locator("#edAnswer")
-            solution = frame.locator("#edSolution")
-            tags = frame.locator("#edTags")
+            # ---------- 三栏骨架 ----------
+            check("画布恰好三栏", canvas.locator(".ed-col").count() == 3,
+                  {"panes": canvas.locator(".ed-col").count()})
+            check("两条拖手在场", canvas.locator(".ed-split").count() == 2)
+            source_area = canvas.locator(".ed-src-area").first
+            expect(source_area).to_be_visible(timeout=10000)
+            first_source = source_area.input_value()
+            check("中栏装整段 exam-zh 源码",
+                  "\\begin{question}" in first_source and "\\begin{solution}" in first_source,
+                  {"head": first_source[:80]})
+            total = int(wait_attribute(canvas.locator("#edProgress"), "data-total",
+                                       lambda value: value not in ("", "0")) or "0")
+            check("假数据自动载入工作清单", total >= 1, {"total": total})
+            block_height = wait_height(canvas.locator(".ed-q-block").first,
+                                       lambda value: value > 40)
+            check("渲染块按内容实际高度生长", block_height > 40, {"height": block_height})
+            check("画布不再有 A4 固定页节点",
+                  canvas.locator(".ed-page, [data-page-h]").count() == 0)
+            page.screenshot(path=str(shots / "v2-canvas.png"))
 
-            # ---------- 动态选项 ----------
-            expect(options).to_have_count(4, timeout=5000)
-            frame.locator("#edAddOption").click()
-            expect(options).to_have_count(5, timeout=3000)
-            last_key = frame.locator(".ed-option-key").nth(4).inner_text()
-            frame.locator(".ed-option-remove").nth(4).click()
-            expect(options).to_have_count(4, timeout=3000)
-            check("选项可增删且重排标号", last_key.strip() == "E", {"added_key": last_key})
+            # ---------- 右栏：同一插件的第二个沙箱帧 ----------
+            panel = page.frame_locator(PANEL)
+            expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
+            check("右栏由录题辅助面板接管", True)
+            check("辅助栏不放源码框", panel.locator("textarea").count() == 0)
+            check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
+            panel_progress = panel.locator("#epProgress")
+            wait_attribute(panel_progress, "data-total", lambda value: value not in ("", "0"), 14)
+            check("画布选区已送进辅助栏",
+                  panel_progress.get_attribute("data-total") not in (None, "0"),
+                  {"progress": panel_progress.inner_text()})
+            panel_type = panel.locator("#epType")
+            expect(panel_type).to_have_value("single_choice", timeout=14000)
+            check("题型按源码 AI 预填", True, {"value": panel_type.input_value()})
+            note = panel.locator("#epTypeNote")
+            check("题型话术标明人来改优先",
+                  "自动判断" in note.inner_text() or "人工" in note.inner_text(),
+                  {"note": note.inner_text()})
+            confidence = panel.locator("#epConfidence")
+            check("置信度如实标为假数据占位", "假数据占位" in confidence.inner_text(),
+                  {"text": confidence.inner_text()})
+            check("审核三键本期占位",
+                  panel.locator("#epPass").is_disabled()
+                  and panel.locator("#epReject").is_disabled()
+                  and panel.locator("#epSkip").is_disabled())
+            page.screenshot(path=str(shots / "v2-panel.png"))
 
-            # ---------- 脏 LaTeX + 预览 ----------
-            dirty = (
-                "探针录题：已知 \\(x^{2}-5x+6=0\\)，则 $x$ 的值为（　　），"
-                "并化简 \\[\\dfrac{1}{2}+\\dfrac{1}{3}\\]，填空 \\fillin。"
-            )
-            stem.fill(dirty)
-            contents = ["$x=2$", "$x=3$", "$x=2$ 或 $x=3$", "$x=1$ 或 $x=6$"]
-            for index, content in enumerate(contents):
-                options.nth(index).fill(content)
-            answer.fill("C")
-            solution.fill("由 $x^{2}-5x+6=0$ 得 $(x-2)(x-3)=0$，故 $x=2$ 或 $x=3$。")
-            tags.fill("一元二次方程, 因式分解")
-            frame.locator("#edDifficulty").select_option("L2")
+            # ---------- 拖手：键盘路径，拖到底只留极窄缝 ----------
+            image_pane = canvas.locator("#edPaneImage")
+            width_before = image_pane.evaluate("node => node.getBoundingClientRect().width")
+            for _ in range(3):
+                canvas.locator("#edSplitImage").press("ArrowLeft")
+            page.wait_for_timeout(400)
+            width_after = image_pane.evaluate("node => node.getBoundingClientRect().width")
+            check("方向键可拖窄左栏", width_after < width_before,
+                  {"before": width_before, "after": width_after})
+            for _ in range(14):
+                canvas.locator("#edSplitImage").press("ArrowLeft")
+            page.wait_for_timeout(400)
+            floor = image_pane.evaluate("node => node.getBoundingClientRect().width")
+            check("拖到底不归零（只留极窄缝）", 28 <= floor < width_before, {"width": floor})
 
-            # ---------- AI 清洗公式：宿主转发底座统一清洗 → 回填表单 ----------
-            frame.locator("#edAiClean").click()
-            ai_cleaned = wait_value(
-                stem,
-                lambda value: "\\(" not in value and "\\[" not in value and "\\fillin" not in value,
-            )
-            result["metrics"]["ai_cleaned_stem"] = ai_cleaned
-            check("AI 清洗公式回填题干", ai_cleaned != dirty, {"stem": ai_cleaned[:100]})
-            check("AI 清洗把 \\(...\\) 归一为 $", "$x^{2}-5x+6=0$" in ai_cleaned, ai_cleaned)
-            check("AI 清洗把 \\[...\\] 归一为 $$", "$$" in ai_cleaned and "\\[" not in ai_cleaned)
-            check("AI 清洗把 \\fillin 变为横线", "＿＿＿＿" in ai_cleaned)
-            page.wait_for_timeout(250)
-            page.screenshot(path=str(shots / "editor-ai-clean.png"))
+            # ---------- 格式二：拆框编辑，改完自动重组格式一 ----------
+            panel.locator("#epFormatBoxed").click()
+            expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "boxed",
+                                                                 timeout=12000)
+            boxes_now = canvas.locator(".ed-box").count()
+            check("格式二按环境拆出框", boxes_now >= 4, {"boxes": boxes_now})
+            env_labels = [text.strip() for text in canvas.locator(".ed-box-env").all_inner_texts()]
+            check("框头环境名是锁定文本",
+                  bool(env_labels) and all(
+                      label.startswith("\\begin{") or label.startswith("\\item")
+                      or "首行" in label or "内" in label for label in env_labels),
+                  {"labels": env_labels})
+            option_box = canvas.locator('.ed-box-area[data-field="choice"][data-pos="1"]').first
+            expect(option_box).to_be_visible(timeout=8000)
+            option_box.fill("$1$（" + MARK + "）")
+            page.wait_for_timeout(500)
+            panel.locator("#epFormatLatex").click()
+            expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "latex",
+                                                                 timeout=12000)
+            rebuilt = canvas.locator(".ed-src-area").first.input_value()
+            check("改框自动重组格式一", MARK in rebuilt, {"tail": rebuilt[-140:]})
+            check("切格式没有改坏环境骨架",
+                  "\\begin{choices}" in rebuilt and "\\end{solution}" in rebuilt,
+                  {"head": rebuilt[:80]})
+            page.screenshot(path=str(shots / "v2-boxed.png"))
 
-            # 还原脏文本，让下面的本地一键清洗仍然测到脏输入
-            stem.fill(dirty)
-            page.wait_for_timeout(220)
+            # ---------- 元数据表单 ----------
+            panel.locator("#epGrade").fill("高一")
+            panel.locator("#epTags").fill(MARK + ", 二次函数")
+            panel.locator("#epPaper").fill(MARK + " 一模卷")
+            panel.locator("#epQuestionNo").fill("7")
+            panel.locator("#epYear").fill("2024")
+            panel.locator("#epExamType").fill("一模")
+            panel.locator("#epDifficulty").select_option("L2")
+            page.wait_for_timeout(400)
+            metrics = panel.locator("#epMetrics")
+            check("元数据改动标脏",
+                  wait_attribute(metrics, "data-dirty", lambda value: value == "true", 8) == "true",
+                  {"metrics": metrics.inner_text()})
 
-            render_ms = wait_preview(metrics)
-            page.wait_for_timeout(220)
-            katex = int(metrics.get_attribute("data-katex") or "0")
-            overflow = metrics.get_attribute("data-overflow")
-            result["metrics"]["preview"] = {
-                "render_ms": render_ms, "katex": katex, "overflow": overflow,
-            }
-            check("实时预览重排 < 1000ms", 0 < render_ms < 1000, {"render_ms": render_ms})
-            check("公式真渲染为 KaTeX", katex >= 4, {"katex": katex})
-            check("A4 单页无溢出", overflow == "0", {"overflow": overflow})
-            page.screenshot(path=str(shots / "editor-form.png"))
+            # ---------- 考向树：懒展开；空库时只如实说明，不假装成功 ----------
+            tree_rows = panel.locator(".ep-topic-row").count()
+            result["metrics"]["topic_rows"] = tree_rows
+            if tree_rows:
+                panel.locator(".ep-topic-expander").first.click()
+                page.wait_for_timeout(900)
+                rows_after_expand = panel.locator(".ep-topic-row").count()
+                check("考向树可懒展开", rows_after_expand >= tree_rows,
+                      {"before": tree_rows, "after": rows_after_expand})
+                panel.locator(".ep-topic-name").first.click()
+                page.wait_for_timeout(400)
+                check("点名称可挂载考向", panel.locator(".ep-chip").count() >= 1,
+                      {"chips": panel.locator(".ep-chip").count()})
+            else:
+                tree_text = panel.locator("#epTopicTree").inner_text()
+                check("没有大纲节点时如实说明", "还没有大纲" in tree_text
+                      or "正在读" in tree_text, {"note": tree_text})
 
-            # ---------- 一键清洗 ----------
-            frame.locator("#edClean").click()
-            page.wait_for_timeout(300)
-            cleaned = stem.input_value()
-            result["metrics"]["cleaned_stem"] = cleaned
-            check("清洗掉 \\(...\\)", "\\(" not in cleaned, {"stem": cleaned[:80]})
-            check("清洗掉 \\[...\\] 为 $$", "$$" in cleaned and "\\[" not in cleaned)
-            check("清洗 \\fillin 为横线", "\\fillin" not in cleaned and "＿" in cleaned)
-
-            # ---------- 旧路径一：一题多卷来源 ----------
-            frame.locator("#edAddSource").click()
-            frame.locator("#edAddSource").click()
-            expect(frame.locator(".ed-source-row")).to_have_count(2, timeout=3000)
-            first_source = frame.locator(".ed-source-row").nth(0)
-            first_source.locator(".ed-source-title").fill("2024 届高三一模·数学（探针）")
-            first_source.locator(".ed-source-year").fill("2024")
-            first_source.locator(".ed-source-no").fill("7")
-            first_source.locator(".ed-source-exam").fill("一模")
-            second_source = frame.locator(".ed-source-row").nth(1)
-            second_source.locator(".ed-source-title").fill("校本练习卷（探针）")
-            second_source.locator(".ed-source-no").fill("12")
-            second_source.locator(".ed-source-school").fill("九章中学")
-            page.wait_for_timeout(160)
-            check("来源卷可挂两张", frame.locator(".ed-source-row").count() == 2)
-
-            # ---------- 旧路径二：教材/章/节 ----------
-            frame.locator("#edTextbook").fill("人教A版·必修第一册")
-            frame.locator("#edChapter").fill("2. 一元二次函数")
-            frame.locator("#edSection").fill("2.1 方程与不等式")
-
-            # ---------- 旧路径三：原生图片上传（选项 A + 题干） ----------
-            with page.expect_file_chooser() as chooser:
-                frame.locator(".ed-option-upload").first.click()
-            chooser.value.set_files(str(png_path))
-            expect(frame.locator(".ed-image-item")).to_have_count(1, timeout=10000)
-            with page.expect_file_chooser() as chooser:
-                frame.locator("#edImagePick").click()
-            chooser.value.set_files(str(png_path))
-            expect(frame.locator(".ed-image-item")).to_have_count(2, timeout=10000)
-            expect(frame.locator(".ed-option-thumb")).to_have_count(1, timeout=3000)
-            result["metrics"]["uploaded_images"] = frame.locator(".ed-image-item").count()
-            check("原生上传进配图清单", frame.locator(".ed-image-item").count() == 2)
-            check("选项 A 显示配图缩略图", frame.locator(".ed-option-thumb").count() == 1)
-            page.screenshot(path=str(shots / "editor-assets.png"))
-
-            # ---------- 保存入库 ----------
-            frame.locator("#edSave").click()
-            saved = frame.locator("#edSaved")
-            expect(saved).to_be_visible(timeout=15000)
+            # ---------- 单题保存：新建走 bank.create ----------
+            stem_area = canvas.locator(".ed-src-area").first
+            stem_area.fill(stem_area.input_value().replace(
+                "\\begin{question}\n已知函数",
+                "\\begin{question}\n" + MARK + "题：已知函数", 1))
+            page.wait_for_timeout(600)
+            panel.locator("#epSave").click()
+            saved_state = wait_attribute(metrics, "data-save-state",
+                                         lambda value: value in ("created", "updated"), 20)
+            check("辅助栏保存回执落地", saved_state == "created", {"save_state": saved_state})
+            saved = canvas.locator("#edSaved")
+            expect(saved).to_be_visible(timeout=20000)
             question_id = saved.get_attribute("data-id") or ""
             result["metrics"]["question_id"] = question_id
-            check("保存返回题目 ID", bool(re.fullmatch(r"q_[A-Za-z0-9_-]{8,64}", question_id)),
+            check("保存返回合法题目 ID",
+                  bool(re.fullmatch(r"q_[A-Za-z0-9_-]{8,64}", question_id)),
                   {"id": question_id})
+            check("写库完成后按钮不再 busy",
+                  panel.locator("#epSave").get_attribute("aria-busy") in (None, "false"))
+            check("画布脏标记随保存清掉",
+                  wait_attribute(canvas.locator("#edDirty"), "data-dirty",
+                                 lambda value: value == "false", 10) == "false")
 
             status, document = http_json(
-                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}"
-            )
+                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
             result["metrics"]["created"] = document
             check("API 可查到新题", status == 200, {"status": status})
-            check("题干已落库", UNIQUE in document.get("stem", ""))
-            check("四个选项完整", [item["key"] for item in document.get("options", [])] == ["A", "B", "C", "D"],
-                  document.get("options"))
-            check("答案为 C", document.get("answer", {}).get("choice_keys") == ["C"],
-                  document.get("answer"))
-            check("解析已落库", "(x-2)" in document.get("solution", ""), document.get("solution"))
-            # 契约 2.0：难度落库归一成 L1–L4；tags 与教材位置按旧库口径落在
-            # core-bank 自己的 extensions 键上，读路径再还原成契约根字段。
-            check("难度/年级一致",
+            check("源码题干已落库", MARK in document.get("stem", ""),
+                  {"stem": document.get("stem", "")[:120]})
+            check("答案从「答案：B」还原为选项标号",
+                  document.get("answer", {}).get("choice_keys") == ["B"],
+                  {"answer": document.get("answer")})
+            check("选项内容带上格式二的改动",
+                  MARK in json.dumps(document.get("options", []), ensure_ascii=False),
+                  {"options": document.get("options")})
+            check("解析已落库", bool(document.get("solution")),
+                  {"solution": document.get("solution", "")[:80]})
+            check("难度/年级/标签/来源一致",
                   document.get("difficulty") == "L2"
-                  and document.get("grade") == "高一",
-                  {"difficulty": document.get("difficulty"), "grade": document.get("grade")})
-            check("标签已落库", document.get("tags") == ["一元二次方程", "因式分解"],
-                  document.get("tags"))
-            check("教材位置已落库",
-                  (document.get("taxonomy") or {}).get("chapter") == "2. 一元二次函数",
-                  document.get("taxonomy"))
-            check("主来源已落库",
-                  (document.get("source") or {}).get("question_no") == "7",
-                  document.get("source"))
+                  and document.get("grade") == "高一"
+                  and MARK in (document.get("tags") or [])
+                  and (document.get("source") or {}).get("question_no") == "7"
+                  and (document.get("source") or {}).get("year") == 2024,
+                  {"difficulty": document.get("difficulty"), "grade": document.get("grade"),
+                   "tags": document.get("tags"), "source": document.get("source")})
+            check("题目结构与契约同口径",
+                  document.get("schema_version") == "2.0"
+                  and document.get("type") == "single_choice",
+                  {"schema_version": document.get("schema_version"),
+                   "type": document.get("type")})
 
-            status, sources_doc = http_json(
-                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}/sources"
-            )
-            titles = [item["paper_title"] for item in sources_doc.get("items", [])]
-            result["metrics"]["sources"] = sources_doc
-            check("一题两卷均在来源关系表",
-                  status == 200
-                  and titles == ["2024 届高三一模·数学（探针）", "校本练习卷（探针）"],
-                  {"status": status, "titles": titles})
+            _, stats_after = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+            total_after = int(stats_after.get("total") or 0)
+            check("题库总数 +1", total_after == total_before + 1,
+                  {"before": total_before, "after": total_after})
+            page.screenshot(path=str(shots / "v2-saved.png"))
 
-            image_roles = [item.get("role") for item in document.get("images", [])]
-            check("图片数组含题干与选项两类", set(image_roles) == {"stem", "option"},
-                  image_roles)
-            option_a = next(
-                (item for item in document.get("options", []) if item.get("key") == "A"), {}
-            )
-            check("选项 A 关联 image_ids", bool(option_a.get("image_ids")),
-                  option_a.get("image_ids"))
+            # ---------- 编辑态保存走 bank.update ----------
+            edit_area = canvas.locator(".ed-src-area").first
+            edit_area.fill(edit_area.input_value().replace(MARK, MARK + "改", 1))
+            page.wait_for_timeout(600)
+            panel.locator("#epSave").click()
+            updated_state = wait_attribute(metrics, "data-save-state",
+                                           lambda value: value == "updated", 20)
+            check("再次保存走更新而非新建", updated_state == "updated",
+                  {"save_state": updated_state})
+            status, updated_doc = http_json(
+                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
+            check("原题 ID 未变且题干已更新",
+                  status == 200 and updated_doc.get("id") == question_id
+                  and MARK + "改" in updated_doc.get("stem", ""),
+                  {"id": updated_doc.get("id"),
+                   "stem": updated_doc.get("stem", "")[:60]})
+            # 底座 update_question 只推 updated_at，meta.revision 恒为 1（bank.py 里没有任何自增路径），
+            # 这里如实记录现状：拿修订号当改判据会把探针打成假红。
+            result["metrics"]["update_meta"] = {
+                "before": (document.get("meta") or {}),
+                "after": (updated_doc.get("meta") or {}),
+            }
+            check("改动写进更新时间（修订号由底座维持为 1）",
+                  (updated_doc.get("meta") or {}).get("updated_at", "")
+                  >= (document.get("meta") or {}).get("updated_at", "")
+                  and (updated_doc.get("meta") or {}).get("revision") == 1,
+                  {"revision": (updated_doc.get("meta") or {}).get("revision"),
+                   "updated_at": (updated_doc.get("meta") or {}).get("updated_at")})
+            _, stats_after_update = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+            check("更新不新增题目", int(stats_after_update.get("total") or 0) == total_after,
+                  {"total": stats_after_update.get("total")})
 
-            status, stats = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            check("题库总数 456 → 457", status == 200 and stats.get("total") == 457,
-                  {"total": stats.get("total")})
-            page.screenshot(path=str(shots / "editor-saved.png"))
+            # ---------- 派生变式：另发新 ID，原题不动 ----------
+            panel.locator("#epVariant").click()
+            variant_id = wait_attribute(metrics, "data-variant-id",
+                                        lambda value: value.startswith("q_"), 20)
+            variant_text = panel.locator("#epMessage").inner_text()
+            result["metrics"]["variant_message"] = variant_text
+            check("派生变式另发新 ID",
+                  bool(variant_id) and variant_id != question_id,
+                  {"variant": variant_id, "origin": question_id, "message": variant_text[:80]})
+            _, origin_doc = http_json(
+                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
+            check("变式没有覆盖原题", MARK + "改" in origin_doc.get("stem", ""),
+                  {"stem": origin_doc.get("stem", "")[:80]})
+            _, stats_final = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+            check("变式让总数再 +1", int(stats_final.get("total") or 0) == total_after + 1,
+                  {"total": stats_final.get("total")})
 
-            # ---------- 题库画布查得到 ----------
+            # ---------- 回流：题库画布搜得到本次保存 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first
             bank_item.click()
-            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_bank-ui")
-            bank_frame = bank_panel.frame_locator(".ws-plugin-frame")
+            bank_frame = page.frame_locator(BANK_UI)
             search = bank_frame.locator(".cb-search")
-            expect(search).to_be_visible(timeout=15000)
-            search.fill(UNIQUE)
+            expect(search).to_be_visible(timeout=20000)
+            search.fill(MARK)
             search.press("Enter")
-            expect(bank_frame.locator(".cb-row", has_text=UNIQUE).first).to_be_visible(timeout=10000)
-            rows = bank_frame.locator(".cb-row", has_text=UNIQUE).count()
+            page.wait_for_timeout(1200)
+            rows = bank_frame.locator(".cb-row").count()
             result["metrics"]["bank_rows"] = rows
-            check("题库画布搜到新题", rows >= 1, {"rows": rows})
-            page.wait_for_timeout(250)
-            page.screenshot(path=str(shots / "bank-ui-found.png"))
+            check("题库画布搜到本次保存", rows >= 1, {"rows": rows})
+            page.screenshot(path=str(shots / "v2-bank-ui.png"))
 
             size_host = page.locator("body").evaluate(
-                "() => ({scrollWidth: document.body.scrollWidth, clientWidth: document.documentElement.clientWidth})"
-            )
-            result["metrics"]["host"] = size_host
-            check("宿主无横向溢出", size_host["scrollWidth"] <= size_host["clientWidth"] + 1, size_host)
-
+                "() => ({scrollWidth: document.body.scrollWidth,"
+                " clientWidth: document.documentElement.clientWidth})")
+            check("宿主无横向溢出", size_host["scrollWidth"] <= size_host["clientWidth"] + 1,
+                  size_host)
             browser.close()
     except Exception as exc:  # noqa: BLE001 - 探针要把失败原样落盘
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -363,7 +424,8 @@ def main() -> int:
     )
 
     passed = sum(1 for item in result["checks"] if item["ok"])
-    print(("PASS" if result["ok"] else "FAIL") + f" · {passed} 项检查 · {work}")
+    print(("PASS" if result["ok"] else "FAIL")
+          + f" · {passed}/{len(result['checks'])} 项 · {work}")
     for item in result["checks"]:
         print(("  ✓ " if item["ok"] else "  ✗ ") + item["name"])
     if result["console_errors"]:

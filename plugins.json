@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-10-25",
+  "updated_at": "2026-10-31",
   "entries": [
     {
       "id": "org.jiuzhang.bank-engine",
@@ -70,10 +70,10 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "画布三栏：左原图 | 中全量 exam-zh 源码（question/choices/problem/solution 一整个环境块） | 右按内容实际高度渲染题干、选项、答案、解析；题型、难度、来源、考向与审核动作归右栏辅助面板，源码双格式与 AI 帮改分阶段接入；保存经宿主写库，插件不碰令牌。",
+      "description": "画布三栏：左原图 | 中 exam-zh 源码（格式一整段直接编辑 / 格式二按环境拆框，改完自动重组） | 右按内容实际高度渲染；右栏辅助面板放题型、难度、来源、考向、标签与审核动作，单题保存经宿主写库（新建走 bank.create、编辑走 bank.update），插件不碰令牌。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",

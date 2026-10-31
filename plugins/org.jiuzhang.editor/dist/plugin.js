@@ -3,11 +3,15 @@
  *
  * 画布实例（stage.center）只有三栏：左原图 | 中全量 exam-zh 源码 | 右渲染。
  * 源码是唯一的录入面——一整段 \begin{question}…\end{solution}；
- * 题型、难度、来源这些元数据一律归辅助栏（sidebar.right，阶段 2），画布不放表单。
+ * 题型、难度、来源、考向与审核动作一律在辅助栏（sidebar.right）。
  *
- * 插件住在不透明源沙箱里：不联网、不碰浏览器本地存储、不碰宿主 DOM。
- * 读题只经宿主转发（bank.get），令牌由宿主代持；写库通道随阶段 2 的保存一起接入。
- * 布局偏好交宿主 draft.save / draft.load 代持。
+ * 同一个插件的两个沙箱帧拿不到彼此的 DOM，只走底座开好的四条合法通道：
+ *   画布 → 辅助栏：发布 stage.selection（当前题的源码、进度与元数据默认值）；
+ *   辅助栏 → 画布：ui.params.set（格式一 / 格式二），由宿主广播 ui.params.changed；
+ *   两帧共享：draft.save / draft.load 交宿主代持的工作清单与元数据草稿；
+ *   写库：辅助栏经宿主 bank.create / bank.update 落库，成功回音 system.question_updated。
+ *
+ * 插件住在不透明源沙箱里：不联网、不碰浏览器本地存储、不碰宿主 DOM，令牌永远在宿主手里。
  */
 (function () {
   "use strict";
@@ -17,12 +21,32 @@
   var REQUEST_TIMEOUT_MS = 20000;
   var RENDER_DEBOUNCE_MS = 120;
   var LAYOUT_DRAFT_MS = 400;
+  var WORKLIST_DRAFT_MS = 600;
+  var SELECTION_MS = 160;
+  var PANEL_DRAFT_RETRY_MS = 900;
+  var RECEIPT_RETRY_MS = 350;
+  var RECEIPT_RETRY_MAX = 4;
   var SPLIT_W = 6;
   var PANE_MIN = 28;
   var DEV_NS = "org.jiuzhang.editor.dev";
   var DRAFT_LAYOUT_KEY = "editor:v2:layout";
+  var DRAFT_WORKLIST_KEY = "editor:v2:worklist";
+  var DRAFT_META_KEY = "editor:v2:meta";
+  var DRAFT_RECEIPT_KEY = "editor:v2:receipts";
   var OPTION_KEYS = "ABCDEFGH".split("");
   var COMMAND_QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
+  var TOPIC_ID_RE = /^tp_(bo|ch|se|kx)[0-9a-f]{8}$/;
+  var TYPE_VALUES = ["single_choice", "multiple_choice", "fill_blank", "solution"];
+  var TYPE_LABELS = {
+    single_choice: "单选题", multiple_choice: "多选题",
+    fill_blank: "填空题", solution: "解答题"
+  };
+  var DIFFICULTY_VALUES = ["L1", "L2", "L3", "L4"];
+  var FORMATS = { latex: true, boxed: true };
+  var STEM_MAX = 50000;
+  var FIELD_MAX = 20000;
+  var TOPIC_LIMIT = 8;
+  var TAG_LIMIT = 32;
 
   var root = document.getElementById("edRoot");
   var colsEl = document.getElementById("edCols");
@@ -36,15 +60,43 @@
   var formatEl = document.getElementById("edFormat");
   var dirtyEl = document.getElementById("edDirty");
   var toastEl = document.getElementById("edToast");
+  var savedEl = document.getElementById("edSaved");
+
+  var panelRoot = document.getElementById("epRoot");
+  var panelProgressEl = document.getElementById("epProgress");
+  var panelStatusEl = document.getElementById("epStatus");
+  var panelConfidenceEl = document.getElementById("epConfidence");
+  var panelFormatLatexEl = document.getElementById("epFormatLatex");
+  var panelFormatBoxedEl = document.getElementById("epFormatBoxed");
+  var panelTypeEl = document.getElementById("epType");
+  var panelTypeNoteEl = document.getElementById("epTypeNote");
+  var panelDifficultyEl = document.getElementById("epDifficulty");
+  var panelGradeEl = document.getElementById("epGrade");
+  var panelPaperEl = document.getElementById("epPaper");
+  var panelQuestionNoEl = document.getElementById("epQuestionNo");
+  var panelExamTypeEl = document.getElementById("epExamType");
+  var panelYearEl = document.getElementById("epYear");
+  var panelTagsEl = document.getElementById("epTags");
+  var panelMountedEl = document.getElementById("epMounted");
+  var panelTreeEl = document.getElementById("epTopicTree");
+  var panelTopicErrorEl = document.getElementById("epTopicError");
+  var panelSaveEl = document.getElementById("epSave");
+  var panelVariantEl = document.getElementById("epVariant");
+  var panelMessageEl = document.getElementById("epMessage");
+  var panelMetricsEl = document.getElementById("epMetrics");
 
   var pending = new Map();
   var requestSeq = 0;
   var renderTimer = 0;
   var toastTimer = 0;
   var layoutTimer = 0;
+  var worklistTimer = 0;
+  var selectionTimer = 0;
+  var metaTimer = 0;
   var mathCache = new Map();
   var katexCount = 0;
   var scrollLock = false;
+  var lastErrorTotal = 0;
 
   var state = {
     slot: "stage.center",
@@ -53,7 +105,20 @@
     format: "latex",
     widths: { image: 260, source: 360 },
     dirty: false,
-    layoutReady: false
+    layoutReady: false,
+    worklistReady: false
+  };
+
+  var panel = {
+    ready: false,
+    selection: null,
+    source: "",
+    meta: {},
+    uiRevisions: null,
+    receipts: [],
+    format: "latex",
+    topics: { roots: null, children: {}, open: {}, loading: {} },
+    saving: false
   };
 
   // ---------- 宿主通信 ----------
@@ -79,6 +144,14 @@
         reject(error);
       }
     });
+  }
+
+  /** 宿主错误码必须原样带出来：409 撞号、422 不符合 Schema 与「没权限」是三种话。 */
+  function hostError(raw) {
+    var error = new Error((raw && raw.message) || "宿主返回失败");
+    error.code = String((raw && raw.code) || "HOST_ERROR");
+    error.retryable = Boolean(raw && raw.retryable);
+    return error;
   }
 
   function publish(event, payload) {
@@ -109,6 +182,31 @@
     toastTimer = window.setTimeout(function () {
       toastEl.setAttribute("data-show", "false");
     }, 2600);
+  }
+
+  /** 辅助栏的落地话术：状态区常驻，不用老师盯着画布的一闪而过的提示。 */
+  function panelSay(text, tone, state) {
+    if (!panelMessageEl) return;
+    panelMessageEl.textContent = text;
+    panelMessageEl.setAttribute("data-tone", tone || "info");
+    panelMessageEl.setAttribute("data-save-state", state || "idle");
+  }
+
+  function trunc(value, limit) {
+    var text = String(value == null ? "" : value);
+    return text.length > limit ? text.slice(0, limit) : text;
+  }
+
+  function nowIso() {
+    var date = new Date();
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    var offset = -date.getTimezoneOffset();
+    var sign = offset >= 0 ? "+" : "-";
+    var hours = pad(Math.floor(Math.abs(offset) / 60));
+    var minutes = pad(Math.abs(offset) % 60);
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+      + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds())
+      + sign + hours + ":" + minutes;
   }
 
   // ---------- 富文本（文字 + LaTeX + 底座托管配图） ----------
@@ -286,7 +384,7 @@
     var src = String(text == null ? "" : text).replace(/\r\n/g, "\n");
     var result = {
       env: "", stem: "", choices: [], answer: "", analysis: "", stray: "",
-      hasChoices: false, hasFillin: false, multi: false, type: "", errors: []
+      hasChoices: false, hasFillin: false, hasSolution: false, multi: false, type: "", errors: []
     };
     var question = matchEnv(src, "question");
     var problem = matchEnv(src, "problem");
@@ -315,6 +413,7 @@
 
     result.stray = src.replace(/\\begin\{(question|problem|solution)\}[\s\S]*?\\end\{\1\}/g, "").trim();
 
+    result.hasSolution = Boolean(solution);
     if (solution) {
       var body = String(solution.body || "").trim();
       var answerMatch = /^答案\s*[:：]\s*([^\n]*)([\s\S]*)$/.exec(body);
@@ -482,23 +581,30 @@
     return ext && typeof ext === "object" ? ext : {};
   }
 
-  function makeItem(question, source) {
+  function itemKey(question, index) {
+    var id = question && question.id ? String(question.id) : "";
+    return id || "idx:" + index;
+  }
+
+  function makeItem(question, source, index) {
     return {
       question: question,
       source: source,
       dev: devBlock(question),
+      key: itemKey(question, index || 0),
       savedId: null,
       dirty: false,
-      status: "pending"
+      status: "pending",
+      parsed: null
     };
   }
 
   function loadFixtures() {
-    state.items = DEV_FIXTURES.map(function (question) {
+    state.items = DEV_FIXTURES.map(function (question, index) {
       var block = devBlock(question);
       var source = (typeof block.source_latex === "string" && block.source_latex)
         ? block.source_latex : buildExamSource(question);
-      return makeItem(question, source);
+      return makeItem(question, source, index);
     });
     state.active = 0;
   }
@@ -509,13 +615,14 @@
     if (!COMMAND_QUESTION_ID_RE.test(id)) return Promise.resolve(null);
     return hostCall("bank.get", { id: id }).then(function (document) {
       if (!document || !document.stem) return null;
-      var item = makeItem(document, buildExamSource(document));
+      var item = makeItem(document, buildExamSource(document), 0);
       item.savedId = document.id || id;
       item.status = "stored";
       state.items = [item];
       state.active = 0;
       state.dirty = false;
       scheduleRender();
+      publishSelectionSoon();
       dock("录题工作台已把题目 " + id + " 序列化成 exam-zh 源码"
         + (from ? "（来自 " + from + "）" : "") + "。");
       return item;
@@ -554,26 +661,176 @@
     return cell;
   }
 
+  /** 格式一：一整段 exam-zh 源码，可编辑——它是唯一的录入面。 */
   function renderSourceCell(item, index) {
+    if (state.format === "boxed") return renderBoxedCell(item, index);
     var cell = el("div", "ed-src-cell");
+    cell.setAttribute("data-index", String(index));
     cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · exam-zh 全量源码"));
     var area = document.createElement("textarea");
     area.className = "ed-src-area";
     area.setAttribute("aria-label", "第 " + (index + 1) + " 题 LaTeX 源码");
     area.setAttribute("spellcheck", "false");
-    area.readOnly = true;            // 阶段 1 只读；阶段 2 打开编辑并接双格式
-    area.value = item.source;
     area.setAttribute("data-index", String(index));
+    area.setAttribute("data-field", "source");
+    area.value = item.source;
+    area.addEventListener("input", function () {
+      onSourceInput(index, area.value);
+    });
     cell.appendChild(area);
     return cell;
   }
 
+  /** 格式二的底线：环境骨架不完整或有游离文本时，绝不自动重组——先如实说明。 */
+  function boxedBlockReason(parsed) {
+    if (parsed.stray) return "源码里有环境外的内容，请先在格式一清掉再拆框";
+    if (!parsed.env) return "缺 \\begin{question} 或 \\begin{problem}，拆不出框";
+    if (!parsed.hasSolution) return "缺 \\begin{solution}，答案与解析没有归属";
+    if (parsed.hasChoices && parsed.choices.length < 2) return "选项不足两项";
+    return "";
+  }
+
+  function boxFieldCell(cell, index, label, envName, value, field, pos, multiline) {
+    var wrap = el("div", "ed-box");
+    var head = el("div", "ed-box-head");
+    head.appendChild(el("span", "ed-box-env", envName));
+    head.appendChild(el("span", "ed-box-field", label));
+    wrap.appendChild(head);
+    var node = document.createElement(multiline ? "textarea" : "input");
+    node.className = multiline ? "ed-box-area ed-box-textarea" : "ed-box-area ed-box-input";
+    node.setAttribute("data-index", String(index));
+    node.setAttribute("data-field", field);
+    if (pos != null) node.setAttribute("data-pos", String(pos));
+    node.setAttribute("aria-label", label + "（" + envName + " 内容，只能改内容）");
+    node.setAttribute("spellcheck", "false");
+    if (!multiline) node.setAttribute("type", "text");
+    node.value = value;
+    node.addEventListener("input", function () {
+      onBoxInput(index, field, pos, node.value);
+    });
+    wrap.appendChild(node);
+    cell.appendChild(wrap);
+    return node;
+  }
+
+  /** 格式二：框里只有内容，\begin{…} 骨架是写死的标签，摸不到也改不了。 */
+  function renderBoxedCell(item, index) {
+    var cell = el("div", "ed-boxed");
+    cell.setAttribute("data-index", String(index));
+    var parsed = parsedOf(item);
+    cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · 格式二（改完自动重组格式一）"));
+    var reason = boxedBlockReason(parsed);
+    if (reason) {
+      cell.appendChild(el("p", "ed-boxed-blocked", "格式二暂不可用：" + reason));
+      var area = document.createElement("textarea");
+      area.className = "ed-src-area";
+      area.setAttribute("aria-label", "第 " + (index + 1) + " 题 LaTeX 源码");
+      area.setAttribute("spellcheck", "false");
+      area.setAttribute("data-index", String(index));
+      area.setAttribute("data-field", "source");
+      area.value = item.source;
+      area.addEventListener("input", function () {
+        onSourceInput(index, area.value);
+      });
+      cell.appendChild(area);
+      return cell;
+    }
+    boxFieldCell(cell, index, "题干", "\\begin{" + parsed.env + "}", parsed.stem, "stem", null, true);
+    if (parsed.hasChoices) {
+      parsed.choices.forEach(function (content, position) {
+        boxFieldCell(cell, index, "选项 " + (OPTION_KEYS[position] || position + 1),
+          "\\item", content, "choice", position, true);
+      });
+    }
+    boxFieldCell(cell, index, "答案", "\\begin{solution} 首行", parsed.answer, "answer", null, false);
+    boxFieldCell(cell, index, "解析", "\\begin{solution} 内", parsed.analysis, "analysis", null, true);
+    return cell;
+  }
+
+  /** 框里的内容 → 结构化题目；环境骨架由 buildExamSource 重新给出，不接受外部改写。 */
+  function boxesToQuestion(parsed, stem, choices, answer, analysis) {
+    var type = parsed.type;
+    var question = {
+      type: type,
+      stem: typeof stem === "string" ? stem : parsed.stem,
+      options: [],
+      solution: typeof analysis === "string" ? analysis : parsed.analysis
+    };
+    var list = Array.isArray(choices) ? choices : parsed.choices;
+    var text = typeof answer === "string" ? answer : parsed.answer;
+    if (type === "single_choice" || type === "multiple_choice") {
+      question.options = list.map(function (content, position) {
+        return { key: OPTION_KEYS[position] || "A", content: String(content == null ? "" : content) };
+      });
+      var letters = String(text || "").toUpperCase().replace(/[^A-H]/g, "");
+      var unique = [];
+      for (var i = 0; i < letters.length; i += 1) {
+        if (unique.indexOf(letters.charAt(i)) < 0) unique.push(letters.charAt(i));
+      }
+      if (type === "single_choice") unique = unique.slice(0, 1);
+      question.answer = { kind: "choice", choice_keys: unique, final: unique.join("") };
+    } else {
+      var value = String(text || "");
+      question.answer = {
+        kind: type === "fill_blank" ? "expression" : "text",
+        content: value,
+        final: value
+      };
+    }
+    return question;
+  }
+
+  function onSourceInput(index, value) {
+    var item = state.items[index];
+    if (!item || item.source === value) return;
+    item.source = value;
+    item.parsed = null;
+    item.dirty = true;
+    refreshRow(index);
+  }
+
+  function onBoxInput(index, field, pos, value) {
+    var item = state.items[index];
+    if (!item) return;
+    var parsed = item.parsed || parseExamSource(item.source);
+    item.parsed = parsed;
+    var patch = parsed.patch || {
+      stem: parsed.stem, choices: parsed.choices.slice(), answer: parsed.answer, analysis: parsed.analysis
+    };
+    if (field === "choice") {
+      var list = patch.choices.slice();
+      list[pos] = value;
+      patch.choices = list;
+    } else if (field === "stem") {
+      patch.stem = value;
+    } else if (field === "answer") {
+      patch.answer = value;
+    } else if (field === "analysis") {
+      patch.analysis = value;
+    } else {
+      return;
+    }
+    parsed.patch = patch;
+    var next = buildExamSource(boxesToQuestion(parsed, patch.stem, patch.choices, patch.answer, patch.analysis));
+    if (next === item.source) return;
+    item.source = next;
+    item.parsed = null;
+    item.dirty = true;
+    refreshRow(index);
+  }
+
+  function parsedOf(item) {
+    if (!item.parsed) item.parsed = parseExamSource(item.source);
+    return item.parsed;
+  }
+
   function renderQuestionBlock(item, index) {
-    var parsed = parseExamSource(item.source);
+    var parsed = parsedOf(item);
     var block = el("div", "ed-q-block");
     block.setAttribute("data-index", String(index));
     block.setAttribute("data-type", parsed.type);
     block.setAttribute("data-errors", String(parsed.errors.length));
+    item.errorCount = parsed.errors.length;
 
     if (parsed.errors.length) {
       block.appendChild(el("p", "ed-opt-img", "源码尚未认全：" + parsed.errors.join("；")));
@@ -629,7 +886,8 @@
       });
       if (index === 0) max = rowH;
     }
-    Array.prototype.forEach.call(sourceBodyEl.querySelectorAll(".ed-src-area"), growTextarea);
+    Array.prototype.forEach.call(
+      sourceBodyEl.querySelectorAll(".ed-src-area, .ed-box-textarea"), growTextarea);
     return max;
   }
 
@@ -641,24 +899,31 @@
     }
   }
 
-  function renderAll() {
-    if (!root || root.hidden || !state.items.length) return;
-    var started = Date.now();
-    katexCount = 0;
-    imageBodyEl.textContent = "";
-    sourceBodyEl.textContent = "";
-    renderBodyEl.textContent = "";
-    var errorTotal = 0;
-    state.items.forEach(function (item, index) {
-      imageBodyEl.appendChild(renderImageCell(item, index));
-      sourceBodyEl.appendChild(renderSourceCell(item, index));
-      var block = renderQuestionBlock(item, index);
-      errorTotal += Number(block.getAttribute("data-errors") || 0);
-      renderBodyEl.appendChild(block);
-    });
-    var rowH = alignRows();
-    var elapsed = Date.now() - started;
+  function captureFocus() {
+    var node = document.activeElement;
+    if (!node || !node.getAttribute || node.getAttribute("data-field") == null) return null;
+    return {
+      index: node.getAttribute("data-index"),
+      field: node.getAttribute("data-field"),
+      pos: node.getAttribute("data-pos"),
+      start: node.selectionStart,
+      end: node.selectionEnd
+    };
+  }
 
+  function restoreFocus(info) {
+    if (!info || !sourceBodyEl) return;
+    var selector = '[data-field="' + info.field + '"][data-index="' + info.index + '"]';
+    if (info.pos != null) selector += '[data-pos="' + info.pos + '"]';
+    var node = sourceBodyEl.querySelector(selector);
+    if (!node) return;
+    node.focus();
+    if (info.start != null) {
+      try { node.setSelectionRange(info.start, info.end); } catch (error) { /* input 不一定支持 */ }
+    }
+  }
+
+  function updateStatusbar(elapsed, rowH) {
     var first = state.items[state.active] || state.items[0];
     var progressText = "第 " + (state.active + 1) + " / " + state.items.length + " 题";
     if (progressEl) {
@@ -667,6 +932,8 @@
       progressEl.setAttribute("data-total", String(state.items.length));
     }
     if (formatEl) formatEl.setAttribute("data-format", state.format);
+    var errorTotal = 0;
+    state.items.forEach(function (item) { errorTotal += Number(item.errorCount || 0); });
     if (metricsEl) {
       metricsEl.textContent = progressText + " · 渲染 " + elapsed + "ms";
       metricsEl.setAttribute("data-render-ms", String(elapsed));
@@ -674,16 +941,196 @@
       metricsEl.setAttribute("data-blocks", String(state.items.length));
       metricsEl.setAttribute("data-errors", String(errorTotal));
       metricsEl.setAttribute("data-question-id", (first && (first.savedId || first.question.id)) || "");
-      metricsEl.setAttribute("data-row-h", String(rowH));
+      metricsEl.setAttribute("data-row-h", String(rowH || 0));
       metricsEl.setAttribute("data-pane-w", String(colsEl ? colsEl.clientWidth : 0));
     }
     if (imageNameEl) imageNameEl.textContent = (first && first.dev && first.dev.image_uri) || "未载入";
     markDirty();
   }
 
+  function renderAll() {
+    if (!root || root.hidden || !state.items.length) return;
+    var focus = captureFocus();
+    var started = Date.now();
+    katexCount = 0;
+    imageBodyEl.textContent = "";
+    sourceBodyEl.textContent = "";
+    renderBodyEl.textContent = "";
+    state.items.forEach(function (item, index) {
+      imageBodyEl.appendChild(renderImageCell(item, index));
+      sourceBodyEl.appendChild(renderSourceCell(item, index));
+      renderBodyEl.appendChild(renderQuestionBlock(item, index));
+    });
+    var rowH = alignRows();
+    restoreFocus(focus);
+    updateStatusbar(Date.now() - started, rowH);
+  }
+
+  /**
+   * 只重建改动那一题的渲染行：源码框继续持有焦点与光标，老师边打字边看到排版结果。
+   * 整屏重排留给挂载、格式切换与拖宽——那时焦点本来就不在框里。
+   */
+  function refreshRow(index) {
+    if (!root || root.hidden) return;
+    var item = state.items[index];
+    if (!item) return;
+    var holder = renderBodyEl.children[index];
+    if (!holder) {
+      scheduleRender();
+    } else {
+      var started = Date.now();
+      var block = renderQuestionBlock(item, index);
+      renderBodyEl.replaceChild(block, holder);
+      var rowH = alignRows();
+      updateStatusbar(Date.now() - started, rowH);
+    }
+    publishSelectionSoon();
+    queueWorklistSave();
+  }
+
   function scheduleRender() {
     window.clearTimeout(renderTimer);
     renderTimer = window.setTimeout(renderAll, RENDER_DEBOUNCE_MS);
+  }
+
+  // ---------- 当前题上桥（画布 → 辅助栏：唯一的合法通道是 stage.selection） ----------
+  /** 元数据默认值：从真题结构里摘出辅助栏表单要预填的那一小组字段。 */
+  function defaultsOf(item) {
+    var question = item.question || {};
+    var source = question.source || {};
+    var taxonomy = question.taxonomy || {};
+    return {
+      type: TYPE_VALUES.indexOf(question.type) >= 0 ? question.type : "",
+      difficulty: DIFFICULTY_VALUES.indexOf(question.difficulty) >= 0 ? question.difficulty : "L1",
+      grade: trunc(question.grade, 20),
+      tags: (question.tags || []).slice(0, TAG_LIMIT).join(","),
+      paper_title: trunc(source.paper_title, 120),
+      question_no: trunc(source.question_no, 20),
+      exam_type: trunc(source.exam_type, 64),
+      year: source.year == null ? "" : String(source.year),
+      textbook: trunc(taxonomy.textbook, 64),
+      chapter: trunc(taxonomy.chapter, 64),
+      section: trunc(taxonomy.section, 64)
+    };
+  }
+
+  function selectionPayload() {
+    var item = state.items[state.active];
+    if (!item) return null;
+    var parsed = parsedOf(item);
+    var question = item.question || {};
+    return {
+      index: state.active,
+      total: state.items.length,
+      key: item.key,
+      question_id: item.savedId || question.id || "",
+      saved_id: item.savedId || "",
+      status: item.status,
+      dirty: Boolean(item.dirty),
+      format: state.format,
+      source: trunc(item.source, FIELD_MAX),
+      errors: parsed.errors.slice(0, 8),
+      ai_type: parsed.type,
+      confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
+      defaults: defaultsOf(item),
+      images: (question.images || []).slice(0, 32),
+      extensions: keepExtensions(question.extensions)
+    };
+  }
+
+  /** 假数据提示只活在开发帧里，绝不该跟到真题库的 extensions 里。 */
+  function keepExtensions(raw) {
+    var out = {};
+    Object.keys(raw && typeof raw === "object" ? raw : {}).forEach(function (key) {
+      if (key === DEV_NS) return;
+      out[key] = raw[key];
+    });
+    return out;
+  }
+
+  function publishSelection() {
+    var payload = selectionPayload();
+    if (!payload) return;
+    publish("stage.selection", payload);
+  }
+
+  function publishSelectionSoon() {
+    window.clearTimeout(selectionTimer);
+    selectionTimer = window.setTimeout(publishSelection, SELECTION_MS);
+  }
+
+  function worklistValue() {
+    return {
+      active: state.active,
+      items: state.items.map(function (item) {
+        return {
+          key: item.key,
+          id: item.question && item.question.id ? item.question.id : "",
+          saved_id: item.savedId || "",
+          status: item.status,
+          dirty: Boolean(item.dirty),
+          source: trunc(item.source, FIELD_MAX),
+          // 辅助栏可能在画布发布选区之前就已挂载：把默认值一并存进宿主代持的草稿，
+          // 面板读草稿就能自己补出这张表单，不必等一条永远不会重放的通知。
+          defaults: defaultsOf(item),
+          confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
+          errors: parsedOf(item).errors.slice(0, 8)
+        };
+      })
+    };
+  }
+
+  function saveWorklist() {
+    if (!state.items.length) return;
+    hostCall("draft.save", { key: DRAFT_WORKLIST_KEY, value: worklistValue() })
+      .catch(function () { /* 草稿存不下就算了，不打扰老师 */ });
+  }
+
+  function queueWorklistSave() {
+    window.clearTimeout(worklistTimer);
+    worklistTimer = window.setTimeout(saveWorklist, WORKLIST_DRAFT_MS);
+  }
+
+  /** 辅助栏挂载时补的是同一份宿主代持草稿；画布重开页签也靠它对回未保存的源码。 */
+  function restoreWorklist() {
+    return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY }).then(function (result) {
+      var value = result && result.value;
+      if (!value || !Array.isArray(value.items)) return;
+      var touched = false;
+      value.items.forEach(function (saved) {
+        if (!saved || typeof saved !== "object") return;
+        for (var index = 0; index < state.items.length; index += 1) {
+          var item = state.items[index];
+          if (item.key !== saved.key) continue;
+          if (typeof saved.source === "string" && saved.source && saved.source !== item.source) {
+            item.source = saved.source;
+            item.parsed = null;
+            touched = true;
+          }
+          item.dirty = Boolean(saved.dirty);
+          item.status = saved.status === "stored" ? "stored" : "pending";
+          item.savedId = typeof saved.saved_id === "string" ? saved.saved_id : null;
+          break;
+        }
+      });
+      var wanted = Number(value.active);
+      if (wanted >= 0 && wanted < state.items.length) state.active = wanted;
+      if (touched) scheduleRender();
+    }).catch(function () { /* 读不到草稿就从假数据重来 */ });
+  }
+
+  // ---------- 格式一 / 格式二（切换请求来自辅助栏，经宿主 ui.params 落地） ----------
+  function setFormat(next) {
+    var value = FORMATS[next] ? next : "latex";
+    if (value === state.format) return;
+    state.format = value;
+    if (sourceHintEl) {
+      sourceHintEl.textContent = value === "boxed"
+        ? "格式二 · 框里只有内容，环境骨架改不动"
+        : "格式一 · 整段源码直接编辑";
+    }
+    renderAll();
+    publishSelection();
   }
 
   // ---------- 三栏拖宽（不能归零，只留极窄缝） ----------
@@ -760,6 +1207,207 @@
     window.requestAnimationFrame(function () { scrollLock = false; });
   }
 
+  // ---------- 落库（辅助栏发起；命令面走同一份实现，绝不让两处各写一套） ----------
+  function splitTags(text) {
+    var seen = [];
+    String(text == null ? "" : text).split(/[，,、;；\n]/).forEach(function (raw) {
+      var tag = raw.trim().slice(0, 32);
+      if (tag && seen.indexOf(tag) < 0) seen.push(tag);
+    });
+    return seen.slice(0, TAG_LIMIT);
+  }
+
+  function lettersFrom(text, type) {
+    var letters = String(text == null ? "" : text).toUpperCase().replace(/[^A-H]/g, "");
+    var unique = [];
+    for (var index = 0; index < letters.length; index += 1) {
+      if (unique.indexOf(letters.charAt(index)) < 0) unique.push(letters.charAt(index));
+    }
+    return type === "single_choice" ? unique.slice(0, 1) : unique.slice(0, 8);
+  }
+
+  /** 元数据只认宿主代持的草稿；两帧谁先写都无所谓，读的时候都是同一份。 */
+  function metaFor(item, override) {
+    var stored = panel.meta[item.key] || {};
+    var meta = {};
+    Object.keys(stored).forEach(function (key) { meta[key] = stored[key]; });
+    if (override) Object.keys(override).forEach(function (key) { meta[key] = override[key]; });
+    return meta;
+  }
+
+  function questionFromParsed(item, parsed, meta) {
+    var question = item.question || {};
+    var type = TYPE_VALUES.indexOf(meta.type) >= 0 ? meta.type : parsed.type;
+    var doc = {
+      schema_version: "2.0",
+      type: type,
+      stem: parsed.stem
+    };
+    var isChoice = type === "single_choice" || type === "multiple_choice";
+    if (isChoice) {
+      doc.options = parsed.choices.map(function (content, position) {
+        return { key: OPTION_KEYS[position] || "A", content: String(content == null ? "" : content) };
+      });
+    }
+    var letters = lettersFrom(parsed.answer, type);
+    if (isChoice) {
+      doc.answer = { kind: "choice", choice_keys: letters, final: letters.join("") };
+    } else {
+      var value = String(parsed.answer == null ? "" : parsed.answer);
+      doc.answer = { kind: type === "fill_blank" ? "expression" : "text", content: value, final: value };
+    }
+    if (parsed.analysis) doc.solution = parsed.analysis;
+    doc.difficulty = DIFFICULTY_VALUES.indexOf(meta.difficulty) >= 0 ? meta.difficulty : "L1";
+    if (meta.grade) doc.grade = String(meta.grade).trim().slice(0, 20);
+    var tags = splitTags(meta.tags);
+    if (tags.length) doc.tags = tags;
+    var taxonomy = {};
+    ["textbook", "chapter", "section"].forEach(function (field) {
+      var text = String(meta[field] == null ? "" : meta[field]).trim();
+      if (text) taxonomy[field] = text.slice(0, 64);
+    });
+    var topicIds = (meta.topic_ids || []).filter(function (id) { return TOPIC_ID_RE.test(String(id)); }).slice(0, TOPIC_LIMIT);
+    if (topicIds.length) taxonomy.topic_ids = topicIds;
+    if (Object.keys(taxonomy).length) doc.taxonomy = taxonomy;
+    var source = {};
+    if (meta.paper_title) source.paper_title = String(meta.paper_title).trim().slice(0, 120);
+    if (meta.question_no) source.question_no = String(meta.question_no).trim().slice(0, 20);
+    if (meta.exam_type) source.exam_type = String(meta.exam_type).trim().slice(0, 64);
+    var year = Number(meta.year);
+    if (year >= 1900 && year <= 2100) source.year = Math.floor(year);
+    if (question.source && question.source.region) source.region = String(question.source.region).slice(0, 64);
+    if (question.source && question.source.school) source.school = String(question.source.school).slice(0, 64);
+    if (Object.keys(source).length) doc.source = source;
+    if (Array.isArray(question.images) && question.images.length) doc.images = question.images.slice(0, 32);
+    var extras = keepExtensions(question.extensions);
+    // 底座新增题目的写路径只从 extensions 认年级（core-bank.grade → org.jiuzhang.editor → legacy），
+    // 契约根字段 grade 在 create 通道里没人读——沿用 v1 录题插件的键双写一次，否则年级落库即丢。
+    if (doc.grade) {
+      var editorExt = extras["org.jiuzhang.editor"] || {};
+      editorExt.grade = doc.grade;
+      extras["org.jiuzhang.editor"] = editorExt;
+    }
+    if (Object.keys(extras).length) doc.extensions = extras;
+    return doc;
+  }
+
+  /** 保存前的最小校验：先把源码认全，再逐条对照契约的硬边界，问题一律用老师看得懂的话说。 */
+  function validateForSave(doc, parsed, meta) {
+    var problems = [];
+    parsed.errors.forEach(function (text) { problems.push("源码：" + text); });
+    if (!doc.stem) problems.push("题干不能为空");
+    if (doc.stem.length > STEM_MAX) problems.push("题干过长（上限 " + STEM_MAX + " 字）");
+    if (TYPE_VALUES.indexOf(doc.type) < 0) {
+      problems.push("题库只收单选、多选、填空、解答四类题型，当前判为「" + (doc.type || "未知") + "」");
+    }
+    var isChoice = doc.type === "single_choice" || doc.type === "multiple_choice";
+    if (isChoice) {
+      if (!doc.options || doc.options.length < 2) problems.push("选择题至少要两个选项");
+      var keys = (doc.options || []).map(function (option) { return option.key; });
+      var letters = (doc.answer && doc.answer.choice_keys) || [];
+      if (!letters.length) problems.push("请填写答案字母（例：B 或 AC）");
+      letters.forEach(function (letter) {
+        if (keys.indexOf(letter) < 0) problems.push("答案 " + letter + " 没有对应选项");
+      });
+      if (doc.type === "single_choice" && letters.length !== 1) problems.push("单选题答案只能有一个字母");
+      if (doc.type === "multiple_choice" && letters.length < 2) problems.push("多选题答案至少两个字母");
+    } else if (!(doc.answer && doc.answer.content)) {
+      problems.push("请填写答案");
+    }
+    var rawYear = String(meta.year == null ? "" : meta.year).trim();
+    if (rawYear && !doc.source) problems.push("年份要写 1900–2100 的四位数");
+    if (doc.taxonomy && doc.taxonomy.topic_ids && doc.taxonomy.topic_ids.length > TOPIC_LIMIT) {
+      problems.push("考向最多挂 " + TOPIC_LIMIT + " 个");
+    }
+    return problems;
+  }
+
+  function saveItem(item, meta, mode) {
+    var parsed = parseExamSource(item.source);
+    var doc = questionFromParsed(item, parsed, meta || {});
+    var problems = validateForSave(doc, parsed, meta || {});
+    if (problems.length) {
+      return Promise.reject({ code: "LOCAL_INVALID", message: problems.join("；"), retryable: false });
+    }
+    var updating = mode !== "variant" && item.savedId && item.status === "stored";
+    var payload = { question: doc };
+    if (updating) payload.id = item.savedId;
+    // 不带 sources：契约的「没给就保持原样」保住一题多卷的其余原卷，
+    // 阶段 2 的辅助栏只有一张原卷输入，不能拿它去覆盖老师挂好的整组来源。
+    var method = updating ? "bank.update" : "bank.create";
+    return hostCall(method, payload).then(function (result) {
+      var id = (result && result.id) || (updating ? item.savedId : "");
+      if (mode !== "variant") {
+        item.savedId = id;
+        item.status = "stored";
+        item.dirty = false;
+        if (state.slot === "stage.center") {
+          markDirty();
+          queueWorklistSave();
+        }
+        pushReceipt({ key: item.key, id: id, action: updating ? "update" : "create", mode: mode });
+        showSaved(id, updating);
+      } else {
+        pushReceipt({ key: item.key, id: id, action: "create", mode: "variant" });
+        dock("录题工作台另存了派生变式：" + id + "（原题未动）");
+        // 变式号必须留在状态位上：话术区随后会被画布回投的选区盖掉，只靠文本没法复查
+        if (panelMetricsEl) panelMetricsEl.setAttribute("data-variant-id", id || "");
+        panelSay("已另存为新题 " + id + "，原题仍是 " + (item.savedId || "未入库的那一题") + "。", "ok", "saved");
+      }
+      return { question_id: id, created: !updating, parent_id: item.savedId || "" };
+    });
+  }
+
+  /** 入库后的回显：画布只报题号，辅助栏把状态徽章、按钮与详情话术一起改到位。 */
+  function showSaved(id, updating) {
+    if (state.slot === "stage.center") {
+      if (savedEl) {
+        savedEl.hidden = false;
+        savedEl.textContent = "已入库 " + id;
+        savedEl.setAttribute("data-id", id || "");
+      }
+      if (metricsEl) metricsEl.setAttribute("data-saved-id", id || "");
+      dock("录题工作台把" + (updating ? "修改后的" : "新的") + "题目写进了题库：" + id);
+      return;
+    }
+    if (panelStatusEl) {
+      panelStatusEl.textContent = "● 已入库";
+      panelStatusEl.setAttribute("data-status", "stored");
+    }
+    if (panelMetricsEl) {
+      panelMetricsEl.setAttribute("data-saved-id", id || "");
+      panelMetricsEl.setAttribute("data-save-state", updating ? "updated" : "created");
+    }
+    panelSay((updating ? "已更新题目 " : "已入库新题 ") + id + "。", "ok", updating ? "updated" : "created");
+  }
+
+  function loadMetaDraft() {
+    return hostCall("draft.load", { key: DRAFT_META_KEY }).then(function (result) {
+      var value = result && result.value;
+      if (value && typeof value === "object") panel.meta = value;
+      return panel.meta;
+    }).catch(function () { return {}; });
+  }
+
+  function saveMetaDraft() {
+    hostCall("draft.save", { key: DRAFT_META_KEY, value: panel.meta })
+      .catch(function () { /* 存不下就算了 */ });
+  }
+
+  function queueMetaSave() {
+    window.clearTimeout(metaTimer);
+    metaTimer = window.setTimeout(saveMetaDraft, 250);
+  }
+
+  /** 画布侧的命令面保存：元数据从宿主代持的草稿里读，与辅助栏用的是同一份。 */
+  function saveViaCommand(mode) {
+    var item = state.items[state.active];
+    if (!item) return Promise.reject(new Error("画布里没有当前题目"));
+    return loadMetaDraft().then(function () {
+      return saveItem(item, metaFor(item, {}), mode);
+    });
+  }
+
   // ---------- 能力路由字典（军令 #20 的四条命令，v2 继续沿用同一批 id） ----------
   function commandReject(source, message, code, text) {
     respond(source, message.id, false, null, code, text);
@@ -806,14 +1454,539 @@
     }
 
     if (commandId === "org.jiuzhang.action.input.save_question") {
-      return commandReject(source, message, "COMMAND_FAILED",
-        "军令 #23 阶段 1 只做三栏骨架，保存入库在阶段 2 接入");
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "保存命令不接受参数");
+      }
+      saveViaCommand("save").then(function (result) {
+        respond(source, message.id, true, result);
+      }, function (error) {
+        commandReject(source, message, error && error.code === "LOCAL_INVALID" ? "BAD_REQUEST" : "COMMAND_FAILED",
+          (error && error.message) || "保存失败");
+      });
+      return;
     }
     if (commandId === "org.jiuzhang.action.process.create_variant") {
-      return commandReject(source, message, "COMMAND_FAILED",
-        "军令 #23 阶段 1 只做三栏骨架，派生变式随阶段 2 的保存一起接入");
+      if (Object.keys(context).length) {
+        return commandReject(source, message, "BAD_PARAMS", "派生变式命令不接受参数");
+      }
+      saveViaCommand("variant").then(function (result) {
+        respond(source, message.id, true, result);
+      }, function (error) {
+        commandReject(source, message, error && error.code === "LOCAL_INVALID" ? "BAD_REQUEST" : "COMMAND_FAILED",
+          (error && error.message) || "另存失败");
+      });
+      return;
     }
     commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+  }
+
+  // ---------- 两帧对账：格式参数（面板→画布）与入库回执（面板→画布） ----------
+  function onUiParams(payload) {
+    var values = payload && payload.values;
+    if (!payload || payload.pluginId !== PLUGIN_ID || !values) return;
+    if (payload.revisions && typeof payload.revisions === "object") {
+      panel.uiRevisions = JSON.parse(JSON.stringify(payload.revisions));
+    }
+    if (state.slot === "stage.center") {
+      if (values.format && values.format !== state.format) setFormat(values.format);
+      return;
+    }
+    if (values.format) setFormatButtons(values.format);
+  }
+
+  /**
+   * 辅助栏落库后留一张回执，画布收到 system.question_updated 时按回执认领：
+   * 「新建」和「派生变式」在事件里长得一模一样，只有回执能分清是哪一题变成了哪道题。
+   */
+  function pushReceipt(receipt) {
+    var list = Array.isArray(panel.receipts) ? panel.receipts : [];
+    list.push({
+      key: receipt.key, id: receipt.id, action: receipt.action,
+      mode: receipt.mode, at: nowIso()
+    });
+    panel.receipts = list.slice(-20);
+    hostCall("draft.save", { key: DRAFT_RECEIPT_KEY, value: { items: panel.receipts } })
+      .catch(function () { /* 回执丢了，画布顶多少刷一次状态 */ });
+  }
+
+  function consumeReceipts(payload, attempt) {
+    var id = payload && payload.id ? String(payload.id) : "";
+    if (!id) return;
+    var tries = Number(attempt) || 0;
+    hostCall("draft.load", { key: DRAFT_RECEIPT_KEY }).then(function (result) {
+      var value = result && result.value;
+      var list = value && Array.isArray(value.items) ? value.items : [];
+      var matched = null;
+      var rest = [];
+      list.forEach(function (item) {
+        if (!matched && item && String(item.id) === id) matched = item;
+        else rest.push(item);
+      });
+      if (!matched) {
+        // 宿主是先广播事件、后把应答送回辅助栏，回执落草稿比事件晚一跳；读不到就重试
+        if (tries < RECEIPT_RETRY_MAX) {
+          setTimeout(function () { consumeReceipts(payload, tries + 1); }, RECEIPT_RETRY_MS);
+        }
+        return;
+      }
+      panel.receipts = rest;
+      hostCall("draft.save", { key: DRAFT_RECEIPT_KEY, value: { items: rest } }).catch(function () {});
+      var target = null;
+      state.items.forEach(function (item) {
+        if (item.key === matched.key) target = item;
+      });
+      if (!target) target = state.items[state.active];
+      if (!target || matched.mode === "variant") {
+        dock("派生变式已入库：" + id + "（当前题没动）");
+        return;
+      }
+      target.savedId = id;
+      target.status = "stored";
+      target.dirty = false;
+      if (target.question) target.question.id = id;
+      renderAll();
+      saveWorklist();
+      publishSelection();
+      // 画布与辅助栏是两个 iframe，面板那句「已入库」画布看不见；
+      // 认领回执时由画布自己把题号回显到顶栏，老师不用来回翻帧。
+      showSaved(id, matched.action === "update");
+    }).catch(function () { /* 读不到回执就不动，等老师再点一次保存 */ });
+  }
+
+  // ---------- 辅助栏实例（sidebar.right）：元数据 + 审核动作 + 格式切换 ----------
+  function fillSelect(node, values, labels) {
+    if (!node) return;
+    node.textContent = "";
+    values.forEach(function (value) {
+      var option = document.createElement("option");
+      option.value = value;
+      option.textContent = labels[value] || value;
+      node.appendChild(option);
+    });
+  }
+
+  function panelItem() {
+    var sel = panel.selection;
+    if (!sel) return null;
+    return {
+      key: String(sel.key || "idx:" + Number(sel.index || 0)),
+      savedId: sel.saved_id || "",
+      status: sel.status === "stored" ? "stored" : "pending",
+      source: String(sel.source || panel.source || ""),
+      question: {
+        id: sel.question_id || "",
+        images: Array.isArray(sel.images) ? sel.images : [],
+        extensions: sel.extensions && typeof sel.extensions === "object" ? sel.extensions : {}
+      }
+    };
+  }
+
+  function defaultEntry(sel) {
+    var d = (sel && sel.defaults) || {};
+    return {
+      type: d.type || "",
+      difficulty: d.difficulty || "L1",
+      grade: d.grade || "",
+      textbook: d.textbook || "",
+      chapter: d.chapter || "",
+      section: d.section || "",
+      paper_title: d.paper_title || "",
+      question_no: d.question_no || "",
+      exam_type: d.exam_type || "",
+      year: d.year || "",
+      tags: d.tags || "",
+      topic_ids: [],
+      topic_names: {}
+    };
+  }
+
+  function entryFor(sel) {
+    var key = String(sel.key || "idx:" + Number(sel.index || 0));
+    if (!panel.meta[key]) panel.meta[key] = defaultEntry(sel);
+    return panel.meta[key];
+  }
+
+  function readForm() {
+    var entry = {};
+    Object.keys(panel.currentEntry || {}).forEach(function (key) { entry[key] = panel.currentEntry[key]; });
+    if (panelTypeEl) entry.type = panelTypeEl.value;
+    if (panelDifficultyEl) entry.difficulty = panelDifficultyEl.value;
+    if (panelGradeEl) entry.grade = panelGradeEl.value;
+    if (panelPaperEl) entry.paper_title = panelPaperEl.value;
+    if (panelQuestionNoEl) entry.question_no = panelQuestionNoEl.value;
+    if (panelExamTypeEl) entry.exam_type = panelExamTypeEl.value;
+    if (panelYearEl) entry.year = panelYearEl.value;
+    if (panelTagsEl) entry.tags = panelTagsEl.value;
+    return entry;
+  }
+
+  function bindFormChanges() {
+    [panelTypeEl, panelDifficultyEl, panelGradeEl, panelPaperEl, panelQuestionNoEl,
+      panelExamTypeEl, panelYearEl, panelTagsEl].forEach(function (node) {
+      if (!node) return;
+      node.addEventListener("input", onFormChange);
+      node.addEventListener("change", onFormChange);
+    });
+  }
+
+  /** 表单是元数据的编辑面：每次改动都立刻并回草稿，别让保存读到半旧的版本。 */
+  function onFormChange() {
+    if (!panel.selection) return;
+    panel.currentEntry = readForm();
+    panel.meta[panel.selection.key] = panel.currentEntry;
+    panel.selection.dirty = true;
+    queueMetaSave();
+    renderTypeNote();
+    renderPanelMetrics();
+  }
+
+  function renderTypeNote() {
+    if (!panelTypeNoteEl || !panel.selection) return;
+    var aiType = panel.selection.ai_type;
+    var chosen = panelTypeEl ? panelTypeEl.value : "";
+    if (!aiType) {
+      panelTypeNoteEl.textContent = "源码还没认全，题型先按人工选择。";
+      panelTypeNoteEl.setAttribute("data-from", "manual");
+      return;
+    }
+    if (chosen && chosen !== aiType) {
+      panelTypeNoteEl.textContent = "源码判为「" + (TYPE_LABELS[aiType] || aiType) + "」，你改成了「"
+        + (TYPE_LABELS[chosen] || chosen) + "」——保存以你的选择为准。";
+      panelTypeNoteEl.setAttribute("data-from", "manual");
+      return;
+    }
+    panelTypeNoteEl.textContent = "题型由源码自动判断（" + (TYPE_LABELS[aiType] || aiType) + "），可人工改。";
+    panelTypeNoteEl.setAttribute("data-from", "ai");
+  }
+
+  function applySelection(sel) {
+    if (!sel || typeof sel !== "object") return;
+    var previous = panel.selection;
+    if (previous && previous.key && previous.key !== sel.key) {
+      // 换题前把老师正在填的这一半按旧题的键存回草稿，别让表单跟着题号一起漂
+      panel.meta[previous.key] = Object.assign(panel.meta[previous.key] || defaultEntry(previous), readForm());
+      queueMetaSave();
+    }
+    panel.selection = sel;
+    panel.source = String(sel.source || "");
+    var entry = entryFor(sel);
+    if (panel.currentEntry !== entry) {
+      panel.currentEntry = entry;
+    }
+    var merged = entry;
+    if (panelProgressEl) {
+      panelProgressEl.textContent = "第 " + (Number(sel.index || 0) + 1) + " / " + (sel.total || 1) + " 题";
+      panelProgressEl.setAttribute("data-active", String(Number(sel.index || 0) + 1));
+      panelProgressEl.setAttribute("data-total", String(sel.total || 1));
+    }
+    if (panelStatusEl) {
+      var stored = sel.status === "stored";
+      panelStatusEl.textContent = stored ? "● 已入库" : "● 待审核";
+      panelStatusEl.setAttribute("data-status", stored ? "stored" : "pending");
+      panelStatusEl.setAttribute("data-dirty", sel.dirty ? "true" : "false");
+    }
+    if (panelConfidenceEl) {
+      var confidence = typeof sel.confidence === "number" ? Math.round(sel.confidence * 100) : null;
+      panelConfidenceEl.textContent = confidence == null ? "置信度 —（假数据占位）" : "置信度 " + confidence + "%（假数据占位）";
+      panelConfidenceEl.setAttribute("data-confidence", confidence == null ? "" : String(confidence));
+    }
+    if (panelTypeEl) panelTypeEl.value = merged.type || sel.ai_type || "single_choice";
+    if (panelDifficultyEl) panelDifficultyEl.value = merged.difficulty || "L1";
+    if (panelGradeEl) panelGradeEl.value = merged.grade || "";
+    if (panelPaperEl) panelPaperEl.value = merged.paper_title || "";
+    if (panelQuestionNoEl) panelQuestionNoEl.value = merged.question_no || "";
+    if (panelExamTypeEl) panelExamTypeEl.value = merged.exam_type || "";
+    if (panelYearEl) panelYearEl.value = merged.year || "";
+    if (panelTagsEl) panelTagsEl.value = merged.tags || "";
+    setFormatButtons(sel.format || panel.format);
+    renderTypeNote();
+    renderMounted();
+    renderPanelMetrics();
+    if (panelSelectionError()) {
+      panelSay(panelSelectionError(), "error", "invalid");
+    } else if (panelSaveEl && panelSaveEl.getAttribute("aria-busy") !== "true") {
+      panelSay("当前第 " + (Number(sel.index || 0) + 1) + " 题" + (sel.dirty ? "有未保存改动" : "未改动") + "。",
+        "info", sel.dirty ? "dirty" : "idle");
+    }
+  }
+
+  function panelSelectionError() {
+    var sel = panel.selection;
+    if (!sel || !sel.errors || !sel.errors.length) return "";
+    return "源码还没认全：" + sel.errors.slice(0, 4).join("；");
+  }
+
+  function renderPanelMetrics() {
+    if (!panelMetricsEl || !panel.selection) return;
+    var sel = panel.selection;
+    panelMetricsEl.setAttribute("data-question-id", sel.question_id || "");
+    panelMetricsEl.setAttribute("data-saved-id", sel.saved_id || "");
+    panelMetricsEl.setAttribute("data-type", panelTypeEl ? panelTypeEl.value : "");
+    panelMetricsEl.setAttribute("data-difficulty", panelDifficultyEl ? panelDifficultyEl.value : "");
+    panelMetricsEl.setAttribute("data-format", panel.format);
+    panelMetricsEl.setAttribute("data-dirty", sel.dirty ? "true" : "false");
+    var entry = panel.currentEntry || {};
+    panelMetricsEl.setAttribute("data-topics", String((entry.topic_ids || []).length));
+    panelMetricsEl.textContent = "键 " + (sel.key || "") + " · 已挂考向 " + (entry.topic_ids || []).length
+      + " · 标签 " + splitTags(entry.tags).length;
+  }
+
+  function setFormatButtons(format) {
+    panel.format = FORMATS[format] ? format : "latex";
+    [panelFormatLatexEl, panelFormatBoxedEl].forEach(function (node) {
+      if (!node) return;
+      var on = node.getAttribute("data-format") === panel.format;
+      node.classList.toggle("is-on", on);
+      node.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    if (panelMetricsEl) panelMetricsEl.setAttribute("data-format", panel.format);
+  }
+
+  /**
+   * 格式切换走 ui.params.set：宿主只认清单里声明过的 select 键，
+   * 并且「人在本轮手改过」的字段一律跳过——AI/面板永远赢不过人的手。
+   */
+  function switchFormat(next) {
+    if (!FORMATS[next] || next === panel.format) return;
+    var snapshot = panel.uiRevisions ? JSON.parse(JSON.stringify(panel.uiRevisions)) : {};
+    hostCall("ui.params.set", {
+      params: { format: next },
+      snapshot: snapshot,
+      plugin_id: PLUGIN_ID
+    }).then(function (outcome) {
+      var skipped = outcome && Array.isArray(outcome.skipped) ? outcome.skipped : [];
+      if (skipped.length) {
+        panelSay("格式切换被跳过：" + skipped.map(function (item) {
+          return (item.label || "参数") + "（" + item.reason + "）";
+        }).join("；") + "。", "warn", "skipped");
+        return;
+      }
+      setFormatButtons(next);
+    }).catch(function (error) {
+      panelSay("格式切换没送到画布：" + explainHostError(error), "error", "failed");
+    });
+  }
+
+  function explainHostError(error) {
+    var code = String((error && error.code) || "");
+    var text = (error && error.message) || "未知失败";
+    if (code === "FORBIDDEN") return "清单没申请这道权限（FORBIDDEN），本次未写入题库";
+    if (code === "PERMISSION_DENIED") return "宿主不认这份清单的权限（PERMISSION_DENIED）：" + text;
+    if (code === "RATE_LIMITED") return "请求太密（每 10 秒有上限），稍等再点一次";
+    if (code === "NOT_READY") return "宿主还没就绪（NOT_READY）：" + text;
+    if (code === "HOST_409") return "题库里已经有同一道题（409 撞号）：请改点【另存为新题】，或先处理旧题";
+    if (code === "HOST_422") return "题目不符合题库 Schema（422）：" + text;
+    if (code === "HOST_404") return "要改的那道题在题库里找不到了（404）";
+    if (code.indexOf("HOST_") === 0) return "底座写库失败（" + code + "）：" + text;
+    if (code === "LOCAL_INVALID") return text;
+    return text;
+  }
+
+  function onPanelSave(mode) {
+    var item = panelItem();
+    if (!item) {
+      panelSay("辅助栏还没收到当前题的源码，等画布发一次选区。", "warn", "idle");
+      return;
+    }
+    if (panel.saving) return;
+    var entry = readForm();
+    panel.currentEntry = entry;
+    panel.meta[item.key] = entry;
+    panelSay("正在写入题库…", "info", "saving");
+    if (panelSaveEl) {
+      panelSaveEl.disabled = true;
+      panelSaveEl.setAttribute("aria-busy", "true");
+    }
+    panel.saving = true;
+    saveItem(item, entry, mode).then(function (result) {
+      panel.selection.status = mode === "variant" ? panel.selection.status : "stored";
+      panel.selection.saved_id = mode === "variant" ? panel.selection.saved_id : result.question_id;
+      panel.selection.dirty = mode === "variant" ? panel.selection.dirty : false;
+      queueMetaSave();
+      renderPanelMetrics();
+      renderTypeNote();
+      if (mode === "variant") {
+        panelSay("已另存为新题 " + result.question_id + "，原题没动。", "ok", "created");
+      }
+    }, function (error) {
+      panelSay(explainHostError(error), "error", error && error.code === "LOCAL_INVALID" ? "invalid" : "failed");
+      dock("录题辅助栏保存失败：" + ((error && error.message) || "未知原因"));
+    }).then(function () {
+      panel.saving = false;
+      if (panelSaveEl) {
+        panelSaveEl.disabled = false;
+        panelSaveEl.removeAttribute("aria-busy");
+      }
+    });
+  }
+
+  // ---------- 考向（bank.topics 懒展开，可挂多个、可摘） ----------
+  function topicNode(node, depth) {
+    var row = el("div", "ep-topic-row");
+    row.style.paddingLeft = (depth * 12) + "px";
+    var expander = el("button", "ep-topic-expander", node.has_children ? "▸" : "·");
+    expander.type = "button";
+    expander.setAttribute("aria-label", (node.has_children ? "展开 " : "没有下级：") + node.name);
+    if (!node.has_children) expander.disabled = true;
+    var label = el("button", "ep-topic-name", node.name);
+    label.type = "button";
+    label.title = "题量 " + node.question_count + "；点一下挂到本题";
+    row.appendChild(expander);
+    row.appendChild(label);
+    var kids = el("div", "ep-topic-kids");
+    kids.hidden = true;
+    row.appendChild(kids);
+    expander.addEventListener("click", function () {
+      var open = !kids.hidden;
+      kids.hidden = open;
+      expander.textContent = open ? "▸" : "▾";
+      row.setAttribute("data-open", open ? "false" : "true");
+      if (!open && !kids.childNodes.length) loadChildren(node, kids, depth + 1);
+    });
+    label.addEventListener("click", function () { toggleTopic(node); });
+    return row;
+  }
+
+  function loadChildren(node, holder, depth) {
+    hostCall("bank.topics", { parent_id: node.id }).then(function (result) {
+      var items = (result && result.items) || [];
+      if (!items.length) {
+        holder.appendChild(el("p", "ep-note", "这一层没有下级节点。"));
+        return;
+      }
+      items.forEach(function (child) { holder.appendChild(topicNode(child, depth)); });
+    }, function (error) {
+      holder.appendChild(el("p", "ep-note", "读考向失败：" + explainHostError(error)));
+    });
+  }
+
+  function loadTopicRoots() {
+    if (!panelTreeEl || panel.topics.roots) return;
+    panelTreeEl.textContent = "";
+    panelTreeEl.appendChild(el("p", "ep-note", "正在读大纲…"));
+    hostCall("bank.topics", {}).then(function (result) {
+      var items = (result && result.items) || [];
+      panel.topics.roots = items;
+      panelTreeEl.textContent = "";
+      if (!items.length) {
+        panelTreeEl.appendChild(el("p", "ep-note", "当前题库还没有大纲节点。"));
+        return;
+      }
+      items.forEach(function (node) { panelTreeEl.appendChild(topicNode(node, 0)); });
+      if (panelTopicErrorEl) panelTopicErrorEl.hidden = true;
+    }, function (error) {
+      panelTreeEl.textContent = "";
+      if (panelTopicErrorEl) {
+        panelTopicErrorEl.hidden = false;
+        panelTopicErrorEl.textContent = "考向读不出来：" + explainHostError(error) + "（不影响保存）";
+      }
+    });
+  }
+
+  function toggleTopic(node) {
+    var entry = panel.currentEntry || (panel.currentEntry = {});
+    var ids = (entry.topic_ids || []).slice();
+    var names = entry.topic_names || {};
+    var position = ids.indexOf(node.id);
+    if (position >= 0) {
+      ids.splice(position, 1);
+      delete names[node.id];
+    } else if (ids.length >= TOPIC_LIMIT) {
+      panelSay("考向最多挂 " + TOPIC_LIMIT + " 个，先摘掉一个。", "warn", "idle");
+      return;
+    } else {
+      ids.push(node.id);
+      names[node.id] = node.name;
+    }
+    entry.topic_ids = ids;
+    entry.topic_names = names;
+    panel.currentEntry = entry;
+    if (panel.selection) {
+      panel.meta[panel.selection.key] = entry;
+      panel.selection.dirty = true;
+    }
+    queueMetaSave();
+    renderMounted();
+    renderPanelMetrics();
+  }
+
+  function renderMounted() {
+    if (!panelMountedEl) return;
+    var entry = panel.currentEntry || {};
+    var ids = entry.topic_ids || [];
+    var names = entry.topic_names || {};
+    panelMountedEl.textContent = "";
+    if (!ids.length) {
+      panelMountedEl.appendChild(el("span", "ep-note", "还没挂考向"));
+      return;
+    }
+    ids.forEach(function (id) {
+      var chip = el("span", "ep-chip");
+      chip.setAttribute("data-topic", id);
+      chip.appendChild(el("span", "ep-chip-name", names[id] || id));
+      var removeBtn = el("button", "ep-chip-x", "摘");
+      removeBtn.type = "button";
+      removeBtn.setAttribute("aria-label", "摘除考向 " + (names[id] || id));
+      removeBtn.addEventListener("click", function () {
+        toggleTopic({ id: id, name: names[id] || id });
+      });
+      chip.appendChild(removeBtn);
+      panelMountedEl.appendChild(chip);
+    });
+  }
+
+  /** 从宿主代持的工作清单草稿里重建辅助栏选区——两个帧同时挂载，通知不一定赶得上。 */
+  function applyDraftSelection(value) {
+    if (panel.selection) return;
+    var items = value && Array.isArray(value.items) ? value.items : [];
+    var active = value ? Number(value.active) || 0 : 0;
+    var saved = items[active] || items[0] || null;
+    if (!saved) return;
+    var source = String(saved.source || "");
+    panel.source = source;
+    applySelection({
+      index: active, total: items.length, key: saved.key,
+      question_id: saved.id || saved.saved_id || "", saved_id: saved.saved_id || "",
+      status: saved.status, dirty: Boolean(saved.dirty), format: panel.format,
+      source: source, errors: saved.errors || [], ai_type: parseExamSource(source).type,
+      confidence: typeof saved.confidence === "number" ? saved.confidence : null,
+      defaults: saved.defaults || {}, images: [], extensions: {}
+    });
+  }
+
+  function activatePanel() {
+    if (!panelRoot) return;
+    panelRoot.hidden = false;
+    fillSelect(panelTypeEl, TYPE_VALUES, TYPE_LABELS);
+    fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, {
+      L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴"
+    });
+    bindFormChanges();
+    if (panelFormatLatexEl) {
+      panelFormatLatexEl.addEventListener("click", function () { switchFormat("latex"); });
+    }
+    if (panelFormatBoxedEl) {
+      panelFormatBoxedEl.addEventListener("click", function () { switchFormat("boxed"); });
+    }
+    if (panelSaveEl) panelSaveEl.addEventListener("click", function () { onPanelSave("save"); });
+    if (panelVariantEl) panelVariantEl.addEventListener("click", function () { onPanelSave("variant"); });
+    setFormatButtons("latex");
+    loadMetaDraft().then(function () {
+      return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY });
+    }).then(function (result) {
+      applyDraftSelection(result && result.value);
+      loadTopicRoots();
+      if (!panel.selection) {
+        // 画布可能比面板慢一步才把草稿写回来：补读一次，别让右栏晾成空壳
+        window.setTimeout(function () {
+          if (panel.selection) return;
+          hostCall("draft.load", { key: DRAFT_WORKLIST_KEY }).then(function (retry) {
+            applyDraftSelection(retry && retry.value);
+          }, function () { /* 还是读不到就等画布下一次发布 */ });
+        }, PANEL_DRAFT_RETRY_MS);
+      }
+    }).catch(function () { loadTopicRoots(); });
+    panel.ready = true;
   }
 
   // ---------- 协议 ----------
@@ -825,12 +1998,13 @@
       var waiter = pending.get(message.id);
       pending.delete(message.id);
       if (message.ok) waiter.resolve(message.result || {});
-      else waiter.reject(new Error((message.error && message.error.message) || "宿主返回失败"));
+      else waiter.reject(hostError(message.error));
       return;
     }
 
     if (message.kind === "notification") {
       if (message.event === "system.open_editor") {
+        if (state.slot !== "stage.center") return;
         var wanted = (message.payload && message.payload.question_id) || "";
         var origin = (message.payload && message.payload.from) || "";
         if (wanted) loadForEdit(wanted, origin);
@@ -841,7 +2015,19 @@
         return;
       }
       if (message.event === "ui.params.changed") {
-        return;   // 辅助栏参数由阶段 2 接管，画布此阶段不响应
+        onUiParams(message.payload);
+        return;
+      }
+      if (message.event === "stage.selection") {
+        // 宿主只把选区投给面板帧（画布自己就是来源，回灌只会形成回声）
+        if (state.slot !== "stage.center") {
+          applySelection((message.payload && message.payload.raw) || {});
+        }
+        return;
+      }
+      if (message.event === "system.question_updated") {
+        if (state.slot === "stage.center") consumeReceipts(message.payload);
+        return;
       }
       return;
     }
@@ -851,14 +2037,19 @@
     if (message.method === "plugin.activate") {
       state.slot = (message.payload && message.payload.slot) || "stage.center";
       if (state.slot !== "stage.center") {
-        // 右栏那一个帧是辅助栏实例，阶段 2 才铺表单；先认领插槽，不留白屏。
-        return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID });
+        activatePanel();
+        return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID, slot: state.slot });
       }
       root.hidden = false;
       loadFixtures();
       applyWidths();
       renderAll();
-      if (sourceHintEl) sourceHintEl.textContent = "只读 · 阶段 1";
+      if (sourceHintEl) sourceHintEl.textContent = "格式一 · 整段源码直接编辑";
+      restoreWorklist().then(function () {
+        renderAll();
+        saveWorklist();
+        publishSelection();
+      });
       hostCall("draft.load", { key: DRAFT_LAYOUT_KEY }).then(function (result) {
         var value = result && result.value;
         if (value && value.widths) {
@@ -868,10 +2059,17 @@
         }
         state.layoutReady = true;
       }).catch(function () { state.layoutReady = true; });
-      return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID });
+      return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID, slot: state.slot });
     }
     if (message.method === "plugin.deactivate") {
-      root.hidden = true;
+      if (state.slot === "stage.center") {
+        root.hidden = true;
+        if (worklistTimer) { window.clearTimeout(worklistTimer); saveWorklist(); }
+        if (selectionTimer) window.clearTimeout(selectionTimer);
+      } else {
+        panelRoot.hidden = true;
+        if (metaTimer) { window.clearTimeout(metaTimer); saveMetaDraft(); }
+      }
       return respond(event.source, message.id, true, { ready: false });
     }
     if (message.method === "command.execute") {
@@ -900,6 +2098,14 @@
         window.clearTimeout(layoutTimer);
         saveLayout();
       }
+      if (worklistTimer) {
+        window.clearTimeout(worklistTimer);
+        saveWorklist();
+      }
+      if (metaTimer) {
+        window.clearTimeout(metaTimer);
+        saveMetaDraft();
+      }
     });
   }
 
@@ -907,12 +2113,21 @@
 
   // 真机探针用的调试面：只把解析/重组结果交给 Playwright 复核，不参与业务分支。
   window.__jzoEditorV2 = {
-    version: "2.0.0-stage1",
+    version: "2.0.0-stage2",
     parseExamSource: parseExamSource,
     buildExamSource: buildExamSource,
     cleanExamSource: cleanExamSource,
+    boxesToQuestion: boxesToQuestion,
+    questionFromParsed: questionFromParsed,
+    validateForSave: validateForSave,
     fixtures: DEV_FIXTURES,
     state: state,
-    renderAll: renderAll
+    panel: panel,
+    renderAll: renderAll,
+    refreshRow: refreshRow,
+    setFormat: setFormat,
+    saveItem: saveItem,
+    applySelection: applySelection,
+    selectionPayload: selectionPayload
   };
 })();

@@ -1,9 +1,10 @@
-"""录题工作台 v2（org.jiuzhang.editor，军令 #23 阶段 1）契约测试。
+"""录题工作台 v2（org.jiuzhang.editor，军令 #23 阶段 1–2）契约测试。
 
 真机三栏与 KaTeX 渲染由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
 
-- 清单只申请画布舞台与题库读写，阶段 1 不抢右栏插槽、不要 AI 权限；
-- 画布内只有三栏（左原图 | 中全量 exam-zh 源码 | 右渲染），**没有任何表单控件**；
+- 清单只申请画布舞台 + 右栏辅助栏插槽，写库经宿主、令牌永不进插件；
+- 画布内只有三栏（左原图 | 中 exam-zh 源码 | 右渲染），**没有任何表单控件**；
+- 辅助栏（``#epRoot``）只有元数据表单 + 审核动作 + 格式切换，**不放源码、不放预览**；
 - 源码只用 exam-zh 标准环境（question/choices/problem/solution），填空用 ``\\fillin``；
 - 解析器 / 重组器 / 本地清洗三件套的口径（阶段 2 复用同一份实现，不许另写）；
 - 假数据 ``dev/fixtures.json`` 是单一事实来源：过 Schema 2.0、按《格式宪法》写源码、
@@ -57,14 +58,37 @@ def canvas_only(html: str) -> str:
     return html[html.index('id="edRoot"'):html.index('id="epRoot"')]
 
 
+def panel_only(html: str) -> str:
+    """辅助栏实例那段 DOM——截到页面脚本之前，KaTeX 是宿主给画布渲染公式用的。"""
+    start = html.index('id="epRoot"')
+    return html[start:html.index("<script", start)]
+
+
+def rule_body(css: str, selector: str) -> str:
+    """取 selector 所在规则的正文（分组选择器 .a, .b {} 也能命中）。"""
+    at = css.index(selector)
+    start = css.index("{", at) + 1
+    return css[start:css.index("}", start)]
+
+
+def fn_body(js: str, name: str) -> str:
+    """取 ``  function name(`` 到下一个同级函数声明之间的源码。"""
+    start = js.index("  function " + name + "(")
+    nxt = js.find("\n  function ", start + 10)
+    section = js.find("\n  // ----------", start + 10)
+    ends = [pos for pos in (nxt, section) if pos != -1]
+    return js[start:min(ends) if ends else len(js)]
+
+
 class EditorManifestTest(unittest.TestCase):
     def test_01_manifest_passes_host_validation(self) -> None:
         info = validate_plugin(PLUGIN_DIR, manifest())
         self.assertEqual(info["id"], "org.jiuzhang.editor")
         self.assertIn("stage.center", info["slots"])
+        self.assertIn("sidebar.right", info["slots"])
         self.assertIn("question.edit", info["capabilities"])
         self.assertEqual(sorted(info["permissions"]),
-                         ["assets:write", "questions:read", "questions:write"])
+                         ["ai:invoke", "assets:write", "questions:read", "questions:write"])
 
     def test_02_stage_is_singleton_with_priority(self) -> None:
         stage = manifest()["stage"]
@@ -74,15 +98,19 @@ class EditorManifestTest(unittest.TestCase):
         self.assertIs(stage["singleton"], True)
         self.assertLessEqual(len(stage["title"]), 24)
 
-    def test_03_sidebar_slot_is_not_claimed_yet(self) -> None:
-        """阶段 1 只搭画布骨架：右栏辅助面板连同 ai:invoke 一起留到阶段 2/3。"""
-        self.assertEqual(manifest()["slots"], ["stage.center"])
-        self.assertNotIn("ai:invoke", manifest()["permissions"])
+    def test_03_ai_invoke_is_claimed_for_the_params_channel(self) -> None:
+        """阶段 2：辅助栏→画布的唯一合法通道是 ui.params.set，而它是 AI_ONLY 方法。
+
+        清单没写 ai:invoke，宿主只会回 PERMISSION_DENIED——面板的格式切换按钮当场失效。
+        """
+        self.assertEqual(manifest()["slots"], ["stage.center", "sidebar.right"])
+        self.assertIn("ai:invoke", manifest()["permissions"])
 
     def test_04_bus_subscriptions_match_delivery(self) -> None:
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
-                         ["editor.apply_patch", "system.open_editor", "ui.params.changed"])
+                         ["editor.apply_patch", "stage.selection", "system.open_editor",
+                          "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
                          ["region.dock", "stage.selection", "system.editor_close",
                           "system.return_from_editor"])
@@ -100,6 +128,15 @@ class EditorManifestTest(unittest.TestCase):
                          ["org.jiuzhang.action.input.save_question",
                           "org.jiuzhang.action.process.clean_latex",
                           "org.jiuzhang.action.process.create_variant"])
+
+    def test_06_format_select_is_declared(self) -> None:
+        """宿主 applyUiParams 只认清单 ui.controls 里的 select 键，没声明的键直接丢弃。"""
+        controls = manifest()["ui"]["controls"]
+        fmt = [item for item in controls if item.get("id") == "format"]
+        self.assertEqual(len(fmt), 1, controls)
+        self.assertEqual(fmt[0]["type"], "select")
+        self.assertEqual([option["value"] for option in fmt[0]["options"]], ["latex", "boxed"])
+        self.assertEqual(fmt[0]["default"], "latex")
 
 
 class EditorThreePaneLayoutTest(unittest.TestCase):
@@ -272,12 +309,27 @@ class EditorHostCallTest(unittest.TestCase):
         self.assertIn('hostCall("draft.load"', js)
         self.assertIn('var DRAFT_LAYOUT_KEY = "editor:v2:layout"', js)
 
-    def test_02_stage_one_never_writes_to_the_bank(self) -> None:
-        """阶段 1 只做骨架：写库通道整体缺席，保存命令要显式回绝而不是偷偷落库。"""
+    def test_02_writes_go_through_the_host_and_only_two_methods(self) -> None:
+        """阶段 2 接写库：只许 bank.create / bank.update，删题与上传仍缺席。
+
+        写令牌永远在宿主侧；插件连 bank.delete 都不声明，误删真题就没有通道。
+        """
         js = read("plugin.js")
-        for forbidden in ("bank.create", "bank.update", "bank.delete", "asset.upload"):
-            self.assertNotIn(forbidden, js, f"阶段 1 不得接入 {forbidden}")
-        self.assertIn("保存入库在阶段 2 接入", js)
+        self.assertIn('var method = updating ? "bank.update" : "bank.create";', js)
+        for forbidden in ("bank.delete", "asset.upload", "bank.review"):
+            self.assertNotIn(forbidden, js, f"本期不得接入 {forbidden}")
+        self.assertNotIn("保存入库在阶段 2 接入", js, "阶段 1 的占位拒绝必须退场")
+
+    def test_02b_save_payload_never_carries_id_or_meta_override(self) -> None:
+        """id / meta 由底座签发：插件只交正文与元数据，撞到 409 也要如实报给老师。"""
+        js = read("plugin.js")
+        save = js[js.index("function saveItem("):js.index("  /** 入库后的回显")]
+        self.assertIn("payload = { question: doc }", save)
+        self.assertIn("if (updating) payload.id = item.savedId;", save)
+        self.assertNotIn("payload.sources", save, "带 sources 会把一题多卷的原卷清单整组覆盖掉")
+        self.assertIn("LOCAL_INVALID", save, "保存前必须先过最小校验，脏题不许写库")
+        self.assertIn('panelMetricsEl.setAttribute("data-variant-id", id || "");', save,
+                      "派生变式的新题号要留在状态位上，话术区会被画布回投的选区盖掉")
 
     def test_03_request_ids_are_host_safe(self) -> None:
         """宿主 BAD_REQUEST_ID 只认 ^[A-Za-z0-9_-]{1,80}$，带点号必被拒发。"""
@@ -287,6 +339,15 @@ class EditorHostCallTest(unittest.TestCase):
         self.assertEqual(lines[0], 'var id = "edv2" + requestSeq + "-" + Date.now().toString(36);')
         # Date.now().toString(36) 只产出 [0-9a-z]，拼出来的 id 不含点号
         self.assertRegex("edv21-" + format(1730000000000, "x"), r"^[A-Za-z0-9_-]{1,80}$")
+
+    def test_03b_grade_is_written_twice_because_create_reads_extensions(self) -> None:
+        """契约根字段 grade 在底座 create 通道里没人读（bank.py 的 _grade_of 只看 extensions），
+        只交根字段会让老师填的年级静默丢失；沿用 v1 的 org.jiuzhang.editor 键双写。"""
+        js = read("plugin.js")
+        cell = fn_body(js, "questionFromParsed")
+        self.assertIn('if (meta.grade) doc.grade = String(meta.grade).trim().slice(0, 20);', cell)
+        self.assertIn('extras["org.jiuzhang.editor"] = editorExt;', cell)
+        self.assertIn("editorExt.grade = doc.grade;", cell)
 
     def test_04_plugin_never_touches_token_or_database(self) -> None:
         js = read("plugin.js")
@@ -319,6 +380,176 @@ class EditorHostCallTest(unittest.TestCase):
         # 认不出的地址只当普通文本，绝不变成 <img src>
         self.assertIn("if (!path) {", js)
         self.assertIn("document.createTextNode(raw", js)
+
+
+class EditorPanelTest(unittest.TestCase):
+    """军令 #23 阶段 2 的验收面：辅助栏只有元数据表单 + 审核动作 + 格式切换。"""
+
+    def test_01_panel_carries_status_formats_metadata_and_actions(self) -> None:
+        panel = panel_only(read("index.html"))
+        for node_id in ("epProgress", "epStatus", "epConfidence",
+                        "epFormatLatex", "epFormatBoxed",
+                        "epType", "epDifficulty", "epGrade",
+                        "epPaper", "epQuestionNo", "epYear", "epExamType", "epTags",
+                        "epMounted", "epTopicTree",
+                        "epSave", "epVariant", "epPass", "epReject", "epSkip",
+                        "epMessage", "epMetrics"):
+            self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
+
+    def test_02_panel_never_carries_source_or_preview(self) -> None:
+        """铁律：源码只在中栏、渲染只在中栏右邻，辅助栏一样都不许放。"""
+        panel = panel_only(read("index.html"))
+        for forbidden in ("<textarea", "edSourceBody", "edRenderBody", "edQBlock", "katex"):
+            self.assertNotIn(forbidden, panel, f"辅助栏越界放了 {forbidden}")
+
+    def test_03_review_actions_are_honest_placeholders(self) -> None:
+        """审核流随下一军令接入：本期按钮必须 disabled + aria-disabled，不许装作能用。"""
+        panel = panel_only(read("index.html"))
+        for legacy in ("epPass", "epReject", "epSkip"):
+            at = panel.index(f'id="{legacy}"')
+            tag = panel[at:panel.index(">", at)]
+            self.assertIn("disabled", tag, f"{legacy} 必须 disabled")
+            self.assertIn('aria-disabled="true"', tag, f"{legacy} 必须同步 aria-disabled")
+            self.assertIn("下一军令", tag, f"{legacy} 要如实说明为什么按不动")
+        js = read("plugin.js")
+        for bound in ('panelSaveEl.addEventListener("click"', 'panelVariantEl.addEventListener("click"'):
+            self.assertIn(bound, js, "保存与派生变式必须真的绑上点击")
+
+    def test_04_confidence_is_marked_as_placeholder(self) -> None:
+        """置信度来自识别引擎，本期只有假数据：文案必须自己承认是占位。"""
+        panel = panel_only(read("index.html"))
+        self.assertIn("置信度 —（假数据占位）", panel)
+        self.assertIn('data-confidence=""', panel)
+
+    def test_05_metadata_is_ai_prefilled_but_the_human_wins(self) -> None:
+        js = read("plugin.js")
+        note = js[js.index("function renderTypeNote("):js.index("  function applySelection(")]
+        self.assertIn('panelTypeNoteEl.setAttribute("data-from", "ai")', note)
+        self.assertIn('panelTypeNoteEl.setAttribute("data-from", "manual")', note)
+        self.assertIn("保存以你的选择为准", note, "AI 预填的题型必须让人工改动压过它")
+        self.assertIn('panel.selection.dirty = true;', js[js.index("function onFormChange("):
+                                                              js.index("  function renderTypeNote(")])
+
+    def test_06_format_switch_uses_the_params_channel(self) -> None:
+        """面板帧改不到画布 DOM，只能经 ui.params.set 让宿主广播 ui.params.changed。"""
+        js = read("plugin.js")
+        switch = js[js.index("  function switchFormat("):js.index("  function explainHostError(")]
+        self.assertIn('hostCall("ui.params.set"', switch)
+        self.assertIn("params: { format: next }", switch)
+        self.assertIn("snapshot: snapshot", switch, "不带修订快照就等于绕过「人的手优先」")
+        self.assertIn("skipped", switch, "被宿主跳过的字段必须如实告诉老师")
+
+    def test_07_touch_targets_meet_the_a11y_floor(self) -> None:
+        """AGENTS §6：触控目标不小于 44px；树行与小圆钮（热区补齐）都得达标。"""
+        css = read("plugin.css")
+        for selector in (".ep-fmt", ".ep-input", ".ep-select", ".ep-topic-expander"):
+            self.assertIn("min-height: 44px", rule_body(css, selector),
+                          f"{selector} 没有 44px 触控高度")
+        chip_x = rule_body(css, ".ep-chip-x")
+        self.assertIn("position: relative", chip_x)
+        self.assertIn(".ep-chip-x::after", css, "小圆钮要用伪元素把热区补到 44px")
+        self.assertIn("inset: -6px -8px", rule_body(css, ".ep-chip-x::after"))
+
+    def test_08_save_is_locally_validated_before_the_bank_sees_it(self) -> None:
+        """保存前的最小校验要在插件里做完：脏源码不配去敲宿主的写库通道。"""
+        js = read("plugin.js")
+        check = js[js.index("function validateForSave("):js.index("  function saveItem(")]
+        for required in ("parsed.errors", "doc.stem", "choice_keys", "STEM_MAX",
+                         "meta.year", "TOPIC_LIMIT"):
+            self.assertIn(required, check, f"保存前校验缺少 {required}")
+        self.assertIn("单选题答案只能有一个字母", check)
+        self.assertIn("多选题答案至少两个字母", check)
+        self.assertIn("return problems", check)
+
+    def test_09_topics_are_loaded_lazily_and_mount_is_capped(self) -> None:
+        js = read("plugin.js")
+        self.assertIn('hostCall("bank.topics", { parent_id: node.id })', js)
+        self.assertIn('hostCall("bank.topics", {})', js)
+        self.assertIn("var TOPIC_LIMIT = 8", js)
+        node = js[js.index("  function topicNode("):js.index("  function loadChildren(")]
+        self.assertIn("if (!open && !kids.childNodes.length) loadChildren(node, kids, depth + 1);",
+                      node, "展开节点才取下一层，别一上来把整棵大纲拖进右栏")
+        self.assertIn("if (!node.has_children) expander.disabled = true;", node,
+                      "没有下级的节点不该给假展开箭头")
+
+    def test_10_meta_and_receipts_are_host_held_drafts(self) -> None:
+        """插件侧绝不出现浏览器存储：元数据草稿与入库回执都交宿主代持。"""
+        js = read("plugin.js")
+        self.assertIn('var DRAFT_META_KEY = "editor:v2:meta"', js)
+        self.assertIn('var DRAFT_RECEIPT_KEY = "editor:v2:receipts"', js)
+        self.assertIn('hostCall("draft.save", { key: DRAFT_META_KEY, value: panel.meta })', js)
+        self.assertIn('hostCall("draft.load", { key: DRAFT_RECEIPT_KEY })', js)
+        self.assertNotIn("localStorage", js)
+
+
+    def test_11_panel_rebuilds_the_form_from_the_shared_draft(self) -> None:
+        """画布帧与面板帧同时挂载时，stage.selection 可能早于面板就绪——不能把右栏晾成空壳。"""
+        js = read("plugin.js")
+        self.assertIn("  function applyDraftSelection(value) {", js)
+        self.assertIn("if (panel.selection) return;", fn_body(js, "applyDraftSelection"),
+                      "已经收到活选区后，不许用旧草稿把它盖回去")
+        worklist = fn_body(js, "worklistValue")
+        self.assertIn("defaults: defaultsOf(item)", worklist, "草稿要带上元数据默认值")
+        self.assertIn("confidence:", worklist)
+        self.assertIn("var PANEL_DRAFT_RETRY_MS = 900;", js)
+        activate = js[js.index('if (message.method === "plugin.activate")'):
+                      js.index('if (message.method === "plugin.deactivate")')]
+        self.assertIn("saveWorklist();\n        publishSelection();", activate,
+                      "画布挂载后立刻回写草稿，面板才可能读到")
+
+    def test_12_draft_keys_are_literal_and_host_held(self) -> None:
+        """草稿键必须是写死的字符串：宿主按 plugin.id + key 分箱，拼错了就是另一只箱子。"""
+        js = read("plugin.js")
+        for key in ("editor:v2:layout", "editor:v2:worklist", "editor:v2:meta",
+                    "editor:v2:receipts"):
+            self.assertIn(f'"{key}"', js, f"缺少宿主代持草稿键 {key}")
+
+    def test_13_canvas_echoes_the_id_from_the_claimed_receipt(self) -> None:
+        """画布与面板是两只帧：面板那句「已入库」画布收不到，认领回执后必须由画布自己回显；
+        而宿主先广播事件、后把应答送回面板，回执晚一跳，读不到就得重试。"""
+        js = read("plugin.js")
+        cell = fn_body(js, "consumeReceipts")
+        self.assertIn("showSaved(id, matched.action === \"update\");", cell,
+                      "画布顶栏的已入库标记只能来自回执认领，不然老师看不到题号")
+        self.assertIn("setTimeout(function () { consumeReceipts(payload, tries + 1); }", cell)
+        self.assertIn("var RECEIPT_RETRY_MS = 350;", js)
+        self.assertIn("var RECEIPT_RETRY_MAX = 4;", js)
+
+
+class EditorBoxedFormatTest(unittest.TestCase):
+    """格式二（框框视图）：只能改内容改不到环境，改完必须自动重组格式一。"""
+
+    def test_01_environment_names_are_locked_text(self) -> None:
+        js = read("plugin.js")
+        cell = js[js.index("  function boxFieldCell("):js.index("  function renderBoxedCell(")]
+        self.assertIn('head.appendChild(el("span", "ed-box-env", envName));', cell,
+                      "环境名必须是纯文本标签，一旦做成输入框就等于允许自定义环境")
+        self.assertIn("只能改内容", cell)
+        self.assertNotIn('data-field="env"', js, "格式二不得暴露可编辑的环境字段")
+
+    def test_02_box_edit_rebuilds_format_one(self) -> None:
+        box = fn_body(read("plugin.js"), "onBoxInput")
+        for field in ("stem", "choice", "answer", "analysis"):
+            self.assertIn(f'field === "{field}"', box, f"框框视图缺少 {field} 的写回分支")
+        self.assertIn("buildExamSource(boxesToQuestion(", box,
+                      "改完框必须重组整段格式一源码，两栏不能各写各的")
+
+    def test_03_unboxable_source_is_refused_with_reasons(self) -> None:
+        js = read("plugin.js")
+        reason = js[js.index("  function boxedBlockReason("):js.index("  function boxFieldCell(")]
+        for text in ("环境外的内容", "拆不出框", "答案与解析没有归属", "选项不足两项"):
+            self.assertIn(text, reason, f"拆框拒绝话术缺少 {text}")
+        self.assertIn('return "";', reason)
+
+    def test_04_both_formats_share_one_source_of_truth(self) -> None:
+        """两种视图只是同一份 item.source 的两种编辑面，切格式不许改内容。"""
+        js = read("plugin.js")
+        self.assertIn('node.setAttribute("data-field", field);', js)
+        self.assertIn("item.source = next;", fn_body(js, "onBoxInput"),
+                      "框框视图的产物必须回写同一份整段源码")
+        set_format = fn_body(js, "setFormat")
+        self.assertIn("renderAll();", set_format)
+        self.assertNotIn("item.source =", set_format, "切换格式不许动源码内容")
 
 
 class EditorFixtureContractTest(unittest.TestCase):
