@@ -55,12 +55,21 @@ class StartupPrefsTest(unittest.TestCase):
         self.addCleanup(lambda: [p.stop() for p in self._patches])
 
     # ---------- 默认态 ----------
-    def test_01_defaults_to_welcome_page_when_unconfigured(self) -> None:
+    def test_01_defaults_to_dashboard_when_unconfigured(self) -> None:
+        """军令 #27：没配过时开机就落数据看板。
+
+        旧契约是「回落默认欢迎页」——那等于中栏留白、页签栏只剩一枚
+        【设置与控制台】，老师看着像软件默认开的是设置页。默认启动页改成
+        数据看板之后，这条断言钉的是新的默认。
+        """
         resolved = self.mod.resolve()
-        self.assertEqual("chat", resolved["target"])
-        self.assertEqual("chat", resolved["effective"])
-        self.assertEqual("chat", resolved["kind"])
+        self.assertEqual("plugin:" + DASHBOARD_ID, resolved["target"])
+        self.assertEqual("plugin:" + DASHBOARD_ID, resolved["effective"])
+        self.assertEqual("plugin", resolved["kind"])
+        self.assertEqual(DASHBOARD_ID, resolved["plugin_id"])
         self.assertEqual("", resolved["fallback_reason"])
+        self.assertFalse(resolved["configured"], "没配过就是没配过，别装作选过")
+        self.assertEqual("plugin:" + DASHBOARD_ID, resolved["default_target"])
         self.assertFalse(self.mod.state_path().is_file(), "没配过就不该落文件")
 
     def test_02_candidates_only_list_enabled_plugins(self) -> None:
@@ -138,14 +147,54 @@ class StartupPrefsTest(unittest.TestCase):
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.resolve()["effective"],
                          "插件装回来后原配置要自动恢复生效")
 
+    # ---------- 回退链：首选失效 → 默认启动页 → 自由对话 ----------
+    def _write_target(self, target: str) -> None:
+        """直接写盘模拟「老师早先选过、后来那个插件没了」的历史配置。
+
+        写入是严格的（插件必须已装且已启用），所以这种「配置存在但插件已失效」
+        的现场只能靠改盘复现——那正是老师会遇到的情形。
+        """
+        (self.data_dir / self.mod.STATE_FILENAME).write_text(
+            json.dumps({"target": target}, ensure_ascii=False), encoding="utf-8")
+
+    def test_24_unavailable_chosen_plugin_falls_back_to_default_page(self) -> None:
+        """老师选的插件没了，不许把老师丢在空画布上：改用默认启动页并说明原因。"""
+        self._write_target("plugin:" + EDITOR_ID)
+        with mock.patch.object(self.mod, "installed_plugins",
+                               lambda: [_plugin(DASHBOARD_ID), _plugin(EDITOR_ID, enabled=False)]):
+            with self.assertLogs("jzo.startup", level="WARNING"):
+                resolved = self.mod.resolve()
+        self.assertEqual("plugin:" + DASHBOARD_ID, resolved["effective"])
+        self.assertEqual("plugin:" + EDITOR_ID, resolved["target"], "配置必须原地保留")
+        self.assertIn("已停用", resolved["fallback_reason"])
+        self.assertIn("默认启动页", resolved["fallback_reason"])
+
+    def test_25_default_page_unavailable_falls_back_to_chat(self) -> None:
+        """默认启动页自己也不可用时，才退到自由对话——那时画布留白是唯一诚实的选择。"""
+        self._write_target("plugin:" + EDITOR_ID)
+        with mock.patch.object(self.mod, "installed_plugins", lambda: []):
+            with self.assertLogs("jzo.startup", level="WARNING"):
+                resolved = self.mod.resolve()
+        self.assertEqual("chat", resolved["effective"])
+        self.assertIn("已卸载", resolved["fallback_reason"])
+
+    def test_26_explicit_chat_choice_is_honored(self) -> None:
+        """老师明选了自由对话，就照办——默认页不许反过来覆盖他的选择。"""
+        self.mod.set_target("chat")
+        resolved = self.mod.resolve()
+        self.assertEqual("chat", resolved["effective"])
+        self.assertTrue(resolved["configured"])
+        self.assertEqual("", resolved["fallback_reason"])
+
     def test_23_corrupt_state_file_is_treated_as_unconfigured(self) -> None:
         path = self.data_dir / self.mod.STATE_FILENAME
         path.write_text("{ not json", encoding="utf-8")
-        self.assertEqual("chat", self.mod.read_target())
+        self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target())
         path.write_text(json.dumps({"target": "plugin:../evil"}), encoding="utf-8")
-        self.assertEqual("chat", self.mod.read_target(), "形状非法的历史配置一律当作没配过")
+        self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target(),
+                         "形状非法的历史配置一律当作没配过")
         path.write_text(json.dumps(["chat"]), encoding="utf-8")
-        self.assertEqual("chat", self.mod.read_target())
+        self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target())
 
 
 class StartupRouteTest(unittest.TestCase):
@@ -343,10 +392,12 @@ class StartupHttpTest(unittest.TestCase):
             except json.JSONDecodeError:
                 return error.code, {"raw": payload}
 
-    def test_01_get_is_open_and_defaults_to_chat(self) -> None:
+    def test_01_get_is_open_and_defaults_to_dashboard(self) -> None:
         status, body = self._call("GET")
         self.assertEqual(200, status)
-        self.assertEqual("chat", body["effective"])
+        self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"], "没配过时开机落数据看板")
+        self.assertFalse(body["configured"])
+        self.assertEqual("plugin:" + DASHBOARD_ID, body["default_target"])
         self.assertIn(DASHBOARD_ID, [item["id"] for item in body["candidates"]])
         self.assertNotIn("local_token", json.dumps(body), "启动接口不许回任何令牌信息")
 

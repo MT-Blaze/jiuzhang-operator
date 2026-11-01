@@ -23,7 +23,8 @@
     <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
           data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
 
-    <!-- 首屏：批次列表。整个画布就是它，点任意一行进入审核三栏。 -->
+    <!-- 首屏：批次列表。整个画布就是它，点任意一行进入审核三栏。
+         严格左右 50/50：左栏是历史批次列表，右栏是文件收集筐。 -->
     <section class="ed-batches" id="edBatches" aria-label="待审核批次">
       <div class="ed-batches-head">
         <h2 class="ed-batches-title">待审核批次</h2>
@@ -34,11 +35,26 @@
           <div class="ed-batch-list" id="edBatchList" role="list" aria-label="批次列表"></div>
           <p class="ed-batches-empty" id="edBatchesEmpty" hidden>中转站里还没有批次。</p>
         </div>
-        <!-- 接收虚影框：拖进来的卷子直接落成新批次（.zip 静默忽略）。 -->
-        <div class="ed-batch-drop" id="edBatchDrop" aria-label="把卷子拖到这里">
-          <p class="ed-drop-title">把卷子拖到这里</p>
-          <p class="ed-drop-hint">PDF / Word / TeX / MD / 图片都行，松手就自动解析并建批次。</p>
-          <p class="ed-drop-hint">也可以直接 Ctrl+V 粘贴截图。</p>
+        <!-- 文件收集筐（军令 #27）：右栏整块是一只巨大的圆角虚线筐，文字居中。
+             点框选文件；拖到画布任何位置都算落进这个筐（.zip 静默忽略）；
+             图片贴进来直接出大缩略图，老师一眼看得出贴的是哪道题；
+             每项带一个 × 移除；底部的【开始解析】才是唯一的建批次入口。 -->
+        <div class="ed-basket-col">
+          <div class="ed-basket" id="edBasket" data-count="0" tabindex="0" role="button"
+               aria-label="文件收集筐：点此选择文件，或把文件拖到这里">
+            <input type="file" id="edBasketFile" class="ed-basket-file" multiple
+                   tabindex="-1" aria-hidden="true" />
+            <div class="ed-basket-empty" id="edBasketEmpty">
+              <p class="ed-drop-title">把卷子拖到这里</p>
+              <p class="ed-drop-hint">PDF / Word / TeX / MD / 图片都行</p>
+              <p class="ed-drop-hint">也可以直接 Ctrl+V 粘贴截图</p>
+              <p class="ed-basket-pick">点这里也能选文件</p>
+            </div>
+            <ul class="ed-basket-list" id="edBasketList" role="list" aria-label="待解析文件"></ul>
+            <div class="ed-basket-foot" id="edBasketFoot" hidden>
+              <button type="button" class="ed-basket-go" id="edBasketGo">🚀 开始解析 (0 个文件)</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>

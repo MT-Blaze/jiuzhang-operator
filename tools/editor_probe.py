@@ -1049,12 +1049,49 @@ def main() -> int:
                   {"before": card_before["total"], "after": card_after["total"]})
             page.screenshot(path=str(shots / "v3-delete.png"))
 
-            # ---------- 接收区：拖拽遮罩、粘贴截图 ----------
+            # ---------- 军令 #27：文件收集筐（拖入 / 大图粘贴 / 开始解析） ----------
             to_list()
-            check("画布首屏有接收虚影框",
-                  canvas.locator("#edBatchDrop").is_visible()
-                  and "拖到这里" in canvas.locator("#edBatchDrop").inner_text(),
-                  {"drop": canvas.locator("#edBatchDrop").inner_text()[:40]})
+
+            # 首屏严格左右 50/50：左栏批次列表，右栏一只巨大的圆角虚线筐。
+            split = canvas.locator("#edRoot").evaluate("""() => {
+              function rect(node) {
+                if (!node) return null;
+                var r = node.getBoundingClientRect();
+                return {x: r.x, y: r.y, w: r.width, h: r.height};
+              }
+              var body = document.querySelector('.ed-batches-body');
+              var left = document.querySelector('.ed-batch-col');
+              var right = document.querySelector('.ed-basket-col');
+              var box = document.getElementById('edBasket');
+              var cs = box ? getComputedStyle(box) : null;
+              return {
+                body: rect(body), left: rect(left), right: rect(right), basket: rect(box),
+                borderStyle: cs ? cs.borderTopStyle : '',
+                borderRadius: parseFloat(cs ? cs.borderTopLeftRadius : '0') || 0,
+                textAlign: cs ? cs.textAlign : ''
+              };
+            }""")
+            result["metrics"]["split"] = split
+            gap = (split["right"]["x"] - split["left"]["x"] - split["left"]["w"]
+                   if split["left"] and split["right"] else 0)
+            half = (split["body"]["w"] - gap) / 2 if split["body"] else 0
+            check("首屏严格左右 50/50",
+                  bool(split["left"] and split["right"] and split["body"])
+                  and abs(split["left"]["w"] - split["right"]["w"]) <= 1.0
+                  and abs(split["left"]["w"] - half) <= 1.0
+                  and abs(split["right"]["w"] - half) <= 1.0,
+                  {"gap": gap, "half": half, "left": split["left"]["w"],
+                   "right": split["right"]["w"], "body": split["body"]["w"]})
+            check("右栏是一只圆角虚线筐，文字居中",
+                  split["borderStyle"] == "dashed"
+                  and split["borderRadius"] >= 12
+                  and split["textAlign"] == "center",
+                  {"border": split["borderStyle"], "radius": split["borderRadius"],
+                   "align": split["textAlign"]})
+            check("虚线筐占满右栏（不是一小块）",
+                  bool(split["basket"] and split["right"]
+                       and split["basket"]["w"] >= split["right"]["w"] * 0.9),
+                  {"basket": split["basket"], "right": split["right"]})
             check("辅助栏有接收区（拖入/粘贴进卷子）",
                   panel.locator("#epIntake").is_visible(),
                   {"intake": panel.locator("#epIntake").inner_text()[:40]})
@@ -1071,11 +1108,13 @@ def main() -> int:
             zip_overlay = page.locator("#wsDropOverlay")
             host_drag("卷子.pdf", "application/pdf", "dragenter")
             page.wait_for_timeout(250)
-            check("拖卷子时弹「松开鼠标，自动解析并建立批次」",
+            overlay_text = intake_overlay.inner_text() if intake_overlay.count() else ""
+            check("拖卷子时弹「松开鼠标」遮罩，且落点是收集筐",
                   intake_overlay.is_visible()
-                  and "松开鼠标" in intake_overlay.inner_text()
+                  and "松开鼠标" in overlay_text
+                  and "收集筐" in overlay_text
                   and zip_overlay.is_hidden(),
-                  {"intake": intake_overlay.inner_text()[:40] if intake_overlay.count() else ""})
+                  {"intake": overlay_text[:60]})
             host_drag("插件包.zip", "application/zip", "dragenter")
             page.wait_for_timeout(250)
             check("拖插件包时弹的是「松手即安装插件」那一层",
@@ -1086,7 +1125,83 @@ def main() -> int:
             check("拖走之后两块遮罩都收起来",
                   intake_overlay.is_hidden() and zip_overlay.is_hidden(), {})
 
-            # Ctrl+V 粘贴截图 → 自动建批次
+            # 拖一个普通文件进筐：筐里出现带文件名的条目 + 一个 × 移除钮，
+            # 但批次还不许多出来——建批次只能由【开始解析】发起。
+            cards_before_drag = len(pending_cards(base))
+
+            def basket_drop(name: str, mime: str) -> None:
+                # 参数必须内联进脚本：Locator.evaluate 收到字符串函数时不会把数组
+                # 原样送进浏览器（页面级 evaluate 才送），解构参数会当场炸。
+                script = (
+                    "function () {"
+                    "  var dt = new DataTransfer();"
+                    "  dt.items.add(new File([new Uint8Array([1, 2, 3])], %s, {type: %s}));"
+                    "  var node = document.getElementById('edBasket');"
+                    "  ['dragenter', 'dragover', 'drop'].forEach(function (kind) {"
+                    "    node.dispatchEvent(new DragEvent(kind, {dataTransfer: dt, bubbles: true}));"
+                    "  });"
+                    "  return true;"
+                    "}()" % (json.dumps(name), json.dumps(mime))
+                )
+                canvas.locator("#edBasket").evaluate(script)
+
+            basket_drop("三省联考.pdf", "application/pdf")
+            page.wait_for_timeout(400)
+            items = canvas.locator("#edBasketList .ed-basket-item")
+            check("拖进来的普通文件在筐里排成一条，带文件名",
+                  items.count() == 1
+                  and items.first.get_attribute("data-name") == "三省联考.pdf",
+                  {"count": items.count(),
+                   "name": items.first.get_attribute("data-name") if items.count() else ""})
+            check("每个条目都带一个 × 移除钮",
+                  canvas.locator("#edBasketList .ed-basket-x").count() == items.count(),
+                  {"x": canvas.locator("#edBasketList .ed-basket-x").count(),
+                   "items": items.count()})
+            check("拖进筐里还没建批次（要老师点【开始解析】）",
+                  len(pending_cards(base)) == cards_before_drag,
+                  {"before": cards_before_drag, "after": len(pending_cards(base))})
+            check("筐里有东西时底部才出现【开始解析】",
+                  canvas.locator("#edBasketFoot").is_visible()
+                  and "开始解析" in canvas.locator("#edBasketGo").inner_text(),
+                  {"foot": canvas.locator("#edBasketFoot").is_visible(),
+                   "go": canvas.locator("#edBasketGo").inner_text()})
+
+            # × 移除：点一下条目就没了
+            canvas.locator("#edBasketList .ed-basket-x").first.click()
+            page.wait_for_timeout(300)
+            check("点 × 把那一条从筐里移除",
+                  canvas.locator("#edBasketList .ed-basket-item").count() == 0
+                  and canvas.locator("#edBasketFoot").is_hidden(),
+                  {"count": canvas.locator("#edBasketList .ed-basket-item").count()})
+
+            # 辅助栏那侧收到的文件：面板实例与画布实例是两张 iframe，不能直连，
+            # 只能经宿主中转——从辅助栏投一次，看画布的筐有没有接到。
+            panel_drop_script = (
+                "function () {"
+                "  var dt = new DataTransfer();"
+                "  dt.items.add(new File([new Uint8Array([1, 2, 3])], %s, {type: 'application/pdf'}));"
+                "  var node = document.getElementById('epIntake');"
+                "  ['dragenter', 'dragover', 'drop'].forEach(function (kind) {"
+                "    node.dispatchEvent(new DragEvent(kind, {dataTransfer: dt, bubbles: true}));"
+                "  });"
+                "  return true;"
+                "}()" % json.dumps("辅助栏来的.pdf")
+            )
+            panel.locator("#epIntake").evaluate(panel_drop_script)
+            page.wait_for_timeout(800)
+            relayed = canvas.locator("#edBasketList .ed-basket-item[data-name='辅助栏来的.pdf']")
+            check("辅助栏那边接到的文件，经宿主转进画布的收集筐",
+                  relayed.count() == 1,
+                  {"relayed": relayed.count(),
+                   "items": canvas.locator("#edBasketList .ed-basket-item").count()})
+            if relayed.count():
+                relayed.first.locator(".ed-basket-x").click()
+                page.wait_for_timeout(300)
+            check("辅助栏转进来的那一条也能移除",
+                  canvas.locator("#edBasketList .ed-basket-item").count() == 0,
+                  {"count": canvas.locator("#edBasketList .ed-basket-item").count()})
+
+            # Ctrl+V 粘贴截图 → 进筐，不直接建批次
             # 字节必须内联进脚本：Playwright 把数组参数送进 iframe 时会变成空对象，
             # Uint8Array 拿到空数组 → 粘进去的是一张 0 字节的图。
             paste_script = (
@@ -1100,12 +1215,55 @@ def main() -> int:
             )
             cards_before_paste = len(pending_cards(base))
             canvas.locator("#edRoot").evaluate(paste_script)
+            page.wait_for_timeout(500)
+            thumb = canvas.locator("#edBasketList .ed-basket-thumb")
+            check("Ctrl+V 粘贴的截图在筐里出大缩略图",
+                  thumb.count() == 1,
+                  {"thumbs": thumb.count(),
+                   "items": canvas.locator("#edBasketList .ed-basket-item").count()})
+            thumb_box = thumb.first.bounding_box() if thumb.count() else None
+            check("缩略图是 200×200 的大图（老师一眼看得出贴的是哪道题）",
+                  bool(thumb_box)
+                  and round(thumb_box["width"]) == 200
+                  and round(thumb_box["height"]) == 200,
+                  {"box": thumb_box})
+            # 光看盒子不够：插件沙箱的 CSP 会把 blob:/data: 的 <img> 挡成空框，
+            # 这里直接数画布上的像素，证明题面真画出来了。
+            thumb_state = canvas.locator("#edRoot").evaluate("""() => {
+              var node = document.querySelector('#edBasketList .ed-basket-thumb');
+              if (!node) return null;
+              var ctx = node.getContext('2d');
+              var data = ctx.getImageData(0, 0, node.width, node.height).data;
+              var painted = 0;
+              for (var i = 3; i < data.length; i += 4) { if (data[i] > 0) painted += 1; }
+              return {width: node.width, height: node.height, painted: painted};
+            }""")
+            check("缩略图里真画出了像素（不是被 CSP 挡掉的空框）",
+                  bool(thumb_state)
+                  and thumb_state["width"] == 200
+                  and thumb_state["height"] == 200
+                  and thumb_state["painted"] > 0,
+                  {"state": thumb_state})
+            check("缩略图没被内容安全策略拦下",
+                  not [line for line in result["console_errors"]
+                       if "Content Security Policy" in line],
+                  {"console": [line for line in result["console_errors"]
+                               if "Content Security Policy" in line][:2]})
+            check("粘贴的截图也带 × 移除钮",
+                  canvas.locator("#edBasketList .ed-basket-x").count() == 1,
+                  {"x": canvas.locator("#edBasketList .ed-basket-x").count()})
+            check("粘贴也不建批次",
+                  len(pending_cards(base)) == cards_before_paste,
+                  {"before": cards_before_paste, "after": len(pending_cards(base))})
+
+            # 点【开始解析】才正式建批次并推入后台流水线
+            canvas.locator("#edBasketGo").click()
             deadline = time.time() + 60
             pasted_cards = pending_cards(base)
             while time.time() < deadline and len(pasted_cards) <= cards_before_paste:
                 page.wait_for_timeout(400)
                 pasted_cards = pending_cards(base)
-            check("Ctrl+V 粘贴截图自动建批次",
+            check("点【开始解析】才建批次",
                   len(pasted_cards) > cards_before_paste,
                   {"before": cards_before_paste, "after": len(pasted_cards),
                    "dock": [entry.get("text", "") for entry in dock_entries()[-3:]],
@@ -1117,6 +1275,11 @@ def main() -> int:
             check("粘贴进来的截图原文件名留在批次卡片上",
                   pasted_card is not None,
                   {"names": [entry.get("source_name") for entry in pasted_cards]})
+            check("解析完筐里清空，【开始解析】退场",
+                  canvas.locator("#edBasketList .ed-basket-item").count() == 0
+                  and canvas.locator("#edBasketFoot").is_hidden(),
+                  {"items": canvas.locator("#edBasketList .ed-basket-item").count()})
+            page.screenshot(path=str(shots / "v3-basket.png"))
 
             # ---------- 军令 #26：截屏下线，放大镜搬进左栏「重新框选」 ----------
             check("辅助栏里没有截屏钮了",

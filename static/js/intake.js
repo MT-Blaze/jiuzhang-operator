@@ -217,17 +217,35 @@
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable === true;
   }
 
+  /**
+   * 文件送进录题工作台的收集筐（军令 #27）。
+   *
+   * 录题画布开着的时候，拖入/粘贴的文件先落它的收集筐，
+   * 老师点【开始解析】才建批次——不绕过那道确认。
+   * 画布没开或已休眠就返回 false，调用方退回「直接入库」的老路，文件不许丢。
+   */
+  function collectIntoEditor(files) {
+    var editorId = "org.jiuzhang.editor";
+    var active = window.JzoWorkspace && typeof window.JzoWorkspace.activeCanvasPlugin === "function"
+      ? window.JzoWorkspace.activeCanvasPlugin() : "";
+    if (active !== editorId) return false;
+    if (!window.JzoStage || typeof window.JzoStage.notifyCanvas !== "function") return false;
+    return window.JzoStage.notifyCanvas(editorId, "editor.collect_files", { files: files });
+  }
+
   window.addEventListener("paste", function (event) {
     if (isTypingTarget(event.target)) return;
     var files = clipboardImageFiles(event);
     if (!files.length) return;
     event.preventDefault();
+    if (collectIntoEditor(files)) return;
     ingestFiles(files, { source: "paste" });
   });
 
   window.JzoIntake = {
     ingestFiles: ingestFiles,
     ingestEntries: ingestEntries,
+    collectIntoEditor: collectIntoEditor,
     // 写队列是全局唯一的：stage.js 的写操作也走这一条，两边才不会互相烧掉对方的令牌。
     serialize: serialize
   };

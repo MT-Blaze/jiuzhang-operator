@@ -533,6 +533,7 @@ com.example.card/
 | `region.left` / `region.right` / `stage.selection` | 插件 → 宿主区域 | 预留：宿主接受但不解释内容，逐条记录到底栏 |
 | `stage.tab.sleep` | 画布 → 内部 | `{ key, pluginId }`，休眠留痕 |
 | `basket.changed` | 画布 → 内部 | `{ action, total, pluginId }`；题篮被插件增删后广播，组卷/讲义插件可据此刷新（v0.6.1）。`action` 为 `add` / `remove` / `clear`。 |
+| `editor.collect_files` | 插件 → 宿主 → 画布插件 | `{ pluginId, raw: { files } }`；插件把收到的文件转交宿主，宿主只投递给**画布页签**那个实例（军令 #27）。用途：同一插件的辅助栏实例与画布实例是两张 iframe，文件要落到画布的收集筐只能走宿主中转。 |
 
 插件侧的发布白名单在清单 `bus` 字段里声明：
 
@@ -542,8 +543,8 @@ com.example.card/
 
 | 字段 | 规则 |
 | --- | --- |
-| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#18-结 任务二定稿）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` |
-| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
+| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#27 补齐）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` / `system.pending_updated` / `editor.collect_files` |
+| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection` / `editor.collect_files`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
 | 条目总数 | ≤8，超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
 
 插件发事件的实际写法就是一条通知（见 §2.3.3）：`{ kind: "notification", event: "region.dock", payload: { text: "..." } }`。宿主收到后先查白名单，不在名单里的**丢弃并在底栏写明「想发未授权事件 xxx，已丢弃」**——不静默、不抛错、不断链。

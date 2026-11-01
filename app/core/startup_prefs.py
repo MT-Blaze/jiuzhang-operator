@@ -1,7 +1,7 @@
 """启动行为：老师选「打开软件先落在哪个界面」，选择落盘在当前工作区目录。
 
 与 :mod:`app.core.plugin_state` 同款定位——只属于当前工作区的易失配置，
-文件缺失或损坏一律当作「没配过」，回落默认欢迎页（自由对话），绝不抛错
+文件缺失或损坏一律当作「没配过」，回落**默认启动页**（数据看板），绝不抛错
 挡住启动：底座的第一原则是「插件坏了，底座还能用」（AGENTS §2），启动
 路径上更不允许因为一个失效的偏好把老师关在门外。
 
@@ -9,6 +9,10 @@
 插件的工作模式）。指向的插件被卸载或停用后，配置**原地保留**（用户可能
 只是临时停用），但 :func:`resolve` 会如实回退并带上 ``fallback_reason``，
 同时打一条 WARNING 日志，不静默换目标。
+
+**默认启动页是数据看板**（军令 #27）：老师没配过、配置损坏、或首选插件
+失效时，工作台开机就落在数据看板；数据看板自己也不可用，才退到自由对话。
+「打开工作台只看到一枚【设置与控制台】页签、画布空着」不算开机落地的界面。
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ logger = logging.getLogger("jzo.startup")
 STATE_FILENAME = "startup.json"
 CHAT_TARGET = "chat"
 PLUGIN_PREFIX = "plugin:"
+# 默认启动页：数据看板。没配过、配置损坏、首选插件失效，都往这里回落。
+DEFAULT_PLUGIN_ID = "org.jiuzhang.dashboard"
+DEFAULT_TARGET = PLUGIN_PREFIX + DEFAULT_PLUGIN_ID
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
 _lock = threading.Lock()
 
@@ -66,8 +73,18 @@ def normalize(target: Any) -> str | None:
 
 
 def read_target() -> str:
-    """已落盘的启动目标；缺失、损坏或形状非法一律当作默认欢迎页。"""
-    return normalize(_load_raw().get("target")) or CHAT_TARGET
+    """已落盘的启动目标；缺失、损坏或形状非法一律回落到默认启动页。"""
+    return normalize(_load_raw().get("target")) or DEFAULT_TARGET
+
+
+def _probe_plugin(plugin_id: str) -> tuple[bool, str, str]:
+    """某个插件目标此刻能不能用：返回 (可用, 插件名, 不可用原因)。"""
+    plugin = next((p for p in installed_plugins() if p.get("id") == plugin_id), None)
+    if plugin is None:
+        return False, "", f"启动插件 {plugin_id} 已卸载"
+    if plugin.get("enabled") is False:
+        return False, "", f"启动插件 {plugin_id} 已停用"
+    return True, str(plugin.get("name") or plugin_id), ""
 
 
 def installed_plugins() -> list[dict[str, Any]]:
@@ -126,24 +143,31 @@ def set_target(target: Any) -> str:
 
 def resolve() -> dict[str, Any]:
     """当前生效的启动行为，附回退原因与候选清单，供设置页与工作台启动共用。"""
-    target = read_target()
+    configured = normalize(_load_raw().get("target"))
+    target = configured or DEFAULT_TARGET
     effective = target
     reason = ""
     plugin_name = ""
     if target.startswith(PLUGIN_PREFIX):
         plugin_id = target[len(PLUGIN_PREFIX):]
-        plugin = next((p for p in installed_plugins() if p.get("id") == plugin_id), None)
-        if plugin is None:
-            reason = f"启动插件 {plugin_id} 已卸载，回落默认欢迎页"
-        elif plugin.get("enabled") is False:
-            reason = f"启动插件 {plugin_id} 已停用，回落默认欢迎页"
+        usable, name, why = _probe_plugin(plugin_id)
+        if usable:
+            plugin_name = name
         else:
-            plugin_name = str(plugin.get("name") or plugin_id)
-        if reason:
-            effective = CHAT_TARGET
+            # 首选落空：改用默认启动页；默认页自己也不可用，才退到自由对话。
+            fallback_usable, fallback_name, _ = _probe_plugin(DEFAULT_PLUGIN_ID)
+            if plugin_id != DEFAULT_PLUGIN_ID and fallback_usable:
+                effective = DEFAULT_TARGET
+                plugin_name = fallback_name
+                reason = f"{why}，改用默认启动页「{fallback_name}」"
+            else:
+                effective = CHAT_TARGET
+                reason = f"{why}，回落默认欢迎页"
             logger.warning("%s（配置 %s 原地保留）", reason, target)
     return {
         "target": target,
+        "configured": configured is not None,
+        "default_target": DEFAULT_TARGET,
         "effective": effective,
         "kind": "plugin" if effective.startswith(PLUGIN_PREFIX) else "chat",
         "plugin_id": effective[len(PLUGIN_PREFIX):] if effective.startswith(PLUGIN_PREFIX) else "",

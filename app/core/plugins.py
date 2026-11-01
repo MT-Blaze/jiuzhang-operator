@@ -70,7 +70,10 @@ _STAGE_WEIGHTS = {"light", "heavy"}
 
 # 事件总线主题白名单。发布只许投给底座托管的三区与舞台选区——
 # 不许插件发 ui.params.* / layout.*，那是人和底座的地盘（防插件反向操控面板）。
-_BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection"}
+_BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
+                # 军令 #27：录题插件在辅助栏那张 iframe 里收到的文件，转交给宿主，
+                # 由宿主送进画布的收集筐（插件两帧之间不直连）。
+                "editor.collect_files"}
 _BUS_SUBSCRIBE = {
     "ui.params.changed",
     "layout.changed",
@@ -95,6 +98,8 @@ _BUS_SUBSCRIBE = {
     "system.open_editor",
     # 军令 #24：中转站动了（暂存 / 入库 / 彻底删除）→ 录题插件据此撤掉已走的题
     "system.pending_updated",
+    # 军令 #27：宿主把收集到的文件转给画布的收集筐
+    "editor.collect_files",
 }
 _BUS_MAX_TOPICS = 8
 

@@ -37,7 +37,10 @@
   var PUBLISH_ALLOW = [
     "region.dock", "region.left", "region.right", "stage.selection",
     "system.open_editor", "system.return_from_editor", "system.editor_close",
-    "system.open_bank"
+    "system.open_bank",
+    // 军令 #27：录题插件在辅助栏那张 iframe 里收到的文件，转交给宿主，
+    // 由宿主送进画布的收集筐（插件两帧之间不直连）。
+    "editor.collect_files"
   ];
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
@@ -2873,6 +2876,23 @@
       });
       // 插件被热更新（PLUGIN_SPEC §1.7）：转给订阅了它的插件，画布水合由宿主自己处理
       bus.on("plugin.updated", function (event) { broadcast("plugin.updated", event.payload); });
+      // 军令 #27：辅助栏那边接到的文件，宿主送进画布的收集筐。
+      // 只有录题插件自己发的才算数——别的插件想往筐里塞东西，门都不给。
+      bus.on("editor.collect_files", function (event) {
+        var payload = (event && event.payload) || {};
+        if (payload.pluginId !== EDITOR_PLUGIN_ID) return;
+        var files = (payload.raw && payload.raw.files) || [];
+        if (!Array.isArray(files) || !files.length) return;
+        var editorTab = findPluginTab(EDITOR_PLUGIN_ID);
+        if (editorTab && editorTab.frame && editorTab.state === "live") {
+          notify(editorTab, "editor.collect_files", { files: files });
+          return;
+        }
+        // 画布页签没开或已休眠：文件不许凭空消失，退回宿主自己入库（旧口径）。
+        if (window.JzoIntake && typeof window.JzoIntake.ingestFiles === "function") {
+          window.JzoIntake.ingestFiles(files, { source: "panel" });
+        }
+      });
       // 存储端/输出端的「去编辑」→ 宿主开录题页签并注入题号
       bus.on("system.open_editor", function (event) { openEditor(event.payload); });
       // 看板等只读端的「去题库」→ 宿主开活跃题库页签
@@ -2962,6 +2982,16 @@
         }
       });
       return reached;
+    },
+    /**
+     * 只投递给画布页签（军令 #27）：文件收集筐只住在画布里，
+     * 辅助栏那张 iframe 收到同样的通知只会多收一份。
+     */
+    notifyCanvas: function (pluginId, event, payload) {
+      var tab = findPluginTab(pluginId);
+      if (!tab || !tab.frame || tab.state !== "live") return false;
+      notify(tab, event, payload);
+      return true;
     },
     broadcast: broadcast
   };

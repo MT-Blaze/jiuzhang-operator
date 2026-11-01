@@ -96,7 +96,13 @@
   var batchNoEl = document.getElementById("edBatchNo");
   var batchStatEl = document.getElementById("edBatchStat");
   var backListEl = document.getElementById("edBackList");
-  var batchDropEl = document.getElementById("edBatchDrop");
+  // 文件收集筐（军令 #27）：拖入、粘贴、点选都先落这里，【开始解析】才建批次。
+  var basketEl = document.getElementById("edBasket");
+  var basketFileEl = document.getElementById("edBasketFile");
+  var basketEmptyEl = document.getElementById("edBasketEmpty");
+  var basketListEl = document.getElementById("edBasketList");
+  var basketFootEl = document.getElementById("edBasketFoot");
+  var basketGoEl = document.getElementById("edBasketGo");
 
   var panelRoot = document.getElementById("epRoot");
   var panelScrollEl = document.getElementById("epScroll");
@@ -190,7 +196,9 @@
     widths: { image: DEFAULT_IMAGE_RATIO, source: DEFAULT_SOURCE_RATIO },
     dirty: false,
     layoutReady: false,
-    worklistReady: false
+    worklistReady: false,
+    // 收集筐里还没解析的文件（军令 #27）：拖入、粘贴、点选都先进这里。
+    basket: []
   };
 
   var panel = {
@@ -1519,9 +1527,9 @@
   // OCR 可能跑很久：宿主那条 HTTP 默认 20 秒就超时，这里给足时间。
   var INGEST_TIMEOUT_MS = 180000;
 
-  function fileEntry(file) {
+  function fileEntry(file, fallbackName) {
     return new Promise(function (resolve) {
-      var name = String((file && file.name) || "");
+      var name = String((file && file.name) || "") || String(fallbackName || "");
       if (!name) { resolve(null); return; }
       var reader = new FileReader();
       reader.onerror = function () { resolve(null); };
@@ -1553,19 +1561,6 @@
       panelSay("文件没收进来：" + text, "error", "failed");
       dockWarn("文件没收进来：" + text);
       return null;
-    });
-  }
-
-  /** ``.zip`` 静默忽略：不提示、不建批次（插件包是宿主壳的另一条路）。 */
-  function ingestFiles(fileList) {
-    var files = Array.prototype.slice.call(fileList || []);
-    var docs = files.filter(function (file) {
-      var name = String((file && file.name) || "").toLowerCase();
-      return Boolean(name) && name.slice(-4) !== ".zip";
-    });
-    if (!docs.length) return Promise.resolve(null);
-    return Promise.all(docs.map(fileEntry)).then(function (entries) {
-      return ingestEntries(entries.filter(Boolean));
     });
   }
 
@@ -1623,8 +1618,196 @@
   }
 
   function markDrop(on) {
-    if (batchDropEl) batchDropEl.classList.toggle("is-over", Boolean(on));
+    if (basketEl) basketEl.classList.toggle("is-over", Boolean(on));
     if (panelIntakeEl) panelIntakeEl.classList.toggle("is-over", Boolean(on));
+  }
+
+  // ---------- 文件收集筐（军令 #27）----------
+  // 收集筐是这一屏唯一的收件处：拖入、粘贴、点选都先落筐，
+  // 底部的【开始解析】才是唯一的建批次入口——老师点它之前，底座不会多出一个批次。
+
+  var basketSeq = 0;
+  var basketBusy = false;
+  // 缩略图边长：200px，老师一眼看得出贴的是哪道题。
+  var THUMB_SIDE = 200;
+
+  /** 剪贴板里的图没有文件名时补一个：分拣只看后缀，名字不能空。 */
+  function basketName(file) {
+    var name = String((file && file.name) || "");
+    if (name) return name;
+    var type = String((file && file.type) || "").toLowerCase();
+    if (type.indexOf("image/") === 0) {
+      if (type.indexOf("jpeg") >= 0 || type.indexOf("jpg") >= 0) return "截图.jpg";
+      if (type.indexOf("webp") >= 0) return "截图.webp";
+      return "截图.png";
+    }
+    return "粘贴的文件";
+  }
+
+  /** 收一批文件进筐；``.zip`` 是插件包，走安装那条道，静默忽略。 */
+  function basketAdd(fileList) {
+    var files = Array.prototype.slice.call(fileList || []);
+    var added = 0;
+    files.forEach(function (file) {
+      if (!file) return;
+      var name = basketName(file);
+      if (name.toLowerCase().slice(-4) === ".zip") return;
+      var entry = {
+        id: "b" + (basketSeq += 1),
+        name: name,
+        type: String(file.type || ""),
+        size: Number(file.size || 0),
+        file: file,
+        bitmap: null,
+        thumb: null
+      };
+      state.basket.push(entry);
+      if (entry.type.indexOf("image/") === 0) decodeThumb(entry);
+      added += 1;
+    });
+    if (added) {
+      renderBasket();
+      dock("收集筐里已有 " + state.basket.length + " 份文件，点【开始解析】才建批次。");
+    }
+    return added;
+  }
+
+  /**
+   * 缩略图画在 canvas 上，不走 ``<img src=blob:...>``。
+   *
+   * 插件沙箱的 CSP 是 ``img-src 'self' <底座源>``：blob: 与 data: 的图片全被拦掉，
+   * 屏幕上只会剩一只 200×200 的空框——看着像有缩略图，其实什么都没显示。
+   * ``createImageBitmap`` 是插件自己把字节解成位图，不发请求、不受 CSP 管，
+   * 画布上的像素是货真价实的题面。
+   */
+  function decodeThumb(entry) {
+    if (!entry.file || typeof window.createImageBitmap !== "function") return;
+    window.createImageBitmap(entry.file).then(function (bitmap) {
+      entry.bitmap = bitmap;
+      paintThumb(entry);
+    }, function () {
+      // 解不开（格式不支持）就只留文件名，不装作有预览
+    });
+  }
+
+  function paintThumb(entry) {
+    var node = entry.thumb;
+    if (!node || !entry.bitmap) return;
+    var width = entry.bitmap.width || 0;
+    var height = entry.bitmap.height || 0;
+    if (!width || !height) return;
+    var ctx = node.getContext("2d");
+    if (!ctx) return;
+    var scale = Math.min(THUMB_SIDE / width, THUMB_SIDE / height);
+    var drawW = Math.max(1, Math.round(width * scale));
+    var drawH = Math.max(1, Math.round(height * scale));
+    ctx.clearRect(0, 0, THUMB_SIDE, THUMB_SIDE);
+    ctx.drawImage(entry.bitmap, (THUMB_SIDE - drawW) / 2, (THUMB_SIDE - drawH) / 2, drawW, drawH);
+  }
+
+  function renderBasket() {
+    if (!basketListEl) return;
+    basketListEl.textContent = "";
+    state.basket.forEach(function (entry) {
+      var isImage = entry.type.indexOf("image/") === 0;
+      var item = el("li", "ed-basket-item");
+      item.setAttribute("data-kind", isImage ? "image" : "file");
+      item.setAttribute("data-name", entry.name);
+      if (isImage) {
+        // 粘贴的截图直接出大缩略图：一眼看得出贴的是哪道题
+        var thumb = document.createElement("canvas");
+        thumb.className = "ed-basket-thumb";
+        thumb.width = THUMB_SIDE;
+        thumb.height = THUMB_SIDE;
+        thumb.setAttribute("data-thumb", "1");
+        thumb.setAttribute("aria-label", "待解析图片预览：" + entry.name);
+        item.appendChild(thumb);
+        entry.thumb = thumb;
+        paintThumb(entry);
+      }
+      item.appendChild(el("span", "ed-basket-name", entry.name));
+      var remove = el("button", "ed-basket-x", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "移除 " + entry.name);
+      remove.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        basketRemove(entry.id);
+      });
+      item.appendChild(remove);
+      basketListEl.appendChild(item);
+    });
+    if (basketEmptyEl) basketEmptyEl.hidden = state.basket.length > 0;
+    if (basketFootEl) basketFootEl.hidden = state.basket.length === 0;
+    if (basketGoEl && !basketBusy) {
+      basketGoEl.textContent = "🚀 开始解析 (" + state.basket.length + " 个文件)";
+    }
+    if (basketEl) basketEl.setAttribute("data-count", String(state.basket.length));
+  }
+
+  function basketRemove(id) {
+    var index = -1;
+    for (var i = 0; i < state.basket.length; i += 1) {
+      if (state.basket[i].id === id) { index = i; break; }
+    }
+    if (index < 0) return;
+    var entry = state.basket.splice(index, 1)[0];
+    if (entry.bitmap && typeof entry.bitmap.close === "function") entry.bitmap.close();
+    renderBasket();
+  }
+
+  function basketClear() {
+    state.basket.forEach(function (entry) {
+      if (entry.bitmap && typeof entry.bitmap.close === "function") entry.bitmap.close();
+    });
+    state.basket = [];
+    renderBasket();
+  }
+
+  function setBasketBusy(on) {
+    if (!basketGoEl) return;
+    basketGoEl.disabled = Boolean(on);
+    if (on) {
+      basketGoEl.setAttribute("aria-busy", "true");
+      basketGoEl.textContent = "🚀 正在解析…";
+    } else {
+      basketGoEl.removeAttribute("aria-busy");
+    }
+  }
+
+  /** 【开始解析】：筐里有多少交多少，宿主那边立批次、后台跑识别。 */
+  function basketGo() {
+    if (!state.basket.length || basketBusy) return Promise.resolve(null);
+    basketBusy = true;
+    setBasketBusy(true);
+    return Promise.all(state.basket.map(function (entry) {
+      // 剪贴板里的图未必带文件名，补上筐里显示的那个，解析才认得出它。
+      return fileEntry(entry.file, entry.name);
+    })).then(function (payloads) {
+      return ingestEntries(payloads.filter(Boolean));
+    }).then(function (result) {
+      if (result) {
+        basketClear();
+        refreshBatches();
+      }
+      basketBusy = false;
+      setBasketBusy(false);
+      renderBasket();
+      return result;
+    }, function (error) {
+      basketBusy = false;
+      setBasketBusy(false);
+      renderBasket();
+      dockWarn("开始解析失败：" + ((error && error.message) || "未知原因"));
+      return null;
+    });
+  }
+
+  /** 面板实例（在右栏那张 iframe 里）把文件交给宿主，由宿主转进画布的筐。 */
+  function collectToCanvas(files) {
+    var list = Array.prototype.slice.call(files || []);
+    if (!list.length) return;
+    publish("editor.collect_files", { files: list });
   }
 
   var intakeWired = false;
@@ -1634,14 +1817,18 @@
    *
    * 拖放与粘贴事件**不跨 iframe 边界**——宿主壳收不到插件框里发生的拖放，
    * 所以插件这一侧必须自己接住，再把字节转给宿主。
+   *
+   * 画布实例与辅助栏实例是两张 iframe：筐只住在画布里，
+   * 面板那侧收到的文件一律转交宿主，由宿主送进画布的筐（插件两帧不直连）。
    */
   function wireIntake() {
     if (intakeWired) return;
     intakeWired = true;
-    [panelIntakeEl, batchDropEl].forEach(function (node) {
-      if (!node) return;
+    var inCanvas = state.slot === "stage.center";
+
+    if (inCanvas && basketEl) {
       ["dragenter", "dragover"].forEach(function (type) {
-        node.addEventListener(type, function (event) {
+        basketEl.addEventListener(type, function (event) {
           if (!hasFiles(event)) return;
           event.preventDefault();
           event.stopPropagation();
@@ -1649,43 +1836,94 @@
           markDrop(true);
         });
       });
-      node.addEventListener("dragleave", function (event) {
+      basketEl.addEventListener("dragleave", function (event) {
         event.preventDefault();
         markDrop(false);
       });
-      node.addEventListener("drop", function (event) {
+      basketEl.addEventListener("drop", function (event) {
         event.preventDefault();
         event.stopPropagation();
         markDrop(false);
         var files = event.dataTransfer && event.dataTransfer.files;
-        if (!files || !files.length) return;
-        ingestFiles(files);
+        if (files && files.length) basketAdd(files);
       });
-    });
-    // 画布整屏都收：拖到虚影框旁边的空白处也算数
-    if (root) {
+      // 点框选文件：筐里的移除钮与【开始解析】不触发它
+      basketEl.addEventListener("click", function (event) {
+        var hit = event.target && event.target.closest
+          ? event.target.closest(".ed-basket-x, .ed-basket-go") : null;
+        if (hit) return;
+        if (basketFileEl) basketFileEl.click();
+      });
+      basketEl.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        if (basketFileEl) basketFileEl.click();
+      });
+    }
+    if (inCanvas && basketFileEl) {
+      basketFileEl.addEventListener("change", function () {
+        var files = basketFileEl.files;
+        if (files && files.length) basketAdd(files);
+        basketFileEl.value = "";
+      });
+    }
+    if (inCanvas && basketGoEl) {
+      basketGoEl.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        basketGo();
+      });
+    }
+    // 画布整屏都收：拖到筐旁边的空白处也算落进筐里
+    if (inCanvas && root) {
       root.addEventListener("dragover", function (event) {
         if (!hasFiles(event)) return;
         event.preventDefault();
       });
       root.addEventListener("drop", function (event) {
         if (!hasFiles(event)) return;
-        if (batchDropEl && batchDropEl.contains(event.target)) return;
+        if (basketEl && basketEl.contains(event.target)) return;
         if (crop) return;   // 切图台正在等图，别把它当成新卷子
         event.preventDefault();
         var files = event.dataTransfer && event.dataTransfer.files;
-        if (files && files.length) ingestFiles(files);
+        if (files && files.length) basketAdd(files);
       });
     }
-    // Ctrl+V 粘贴截图 → 自动建批次
+    // Ctrl+V 粘贴截图 → 进筐，不直接建批次
     window.addEventListener("paste", function (event) {
       if (crop) return;   // 切图台正在等图，别把它当成新卷子
       if (isTypingTarget(event.target)) return;
       var files = clipboardImageFiles(event);
       if (!files.length) return;
       event.preventDefault();
-      ingestFiles(files);
+      if (inCanvas) basketAdd(files);
+      else collectToCanvas(files);
     });
+    // 辅助栏的接收区（在右栏那张 iframe 里）：文件转交宿主，再送进画布的筐。
+    // 只在面板实例里接：画布实例那边的 #epIntake 是收着的，绑了也是死代码。
+    if (!inCanvas && panelIntakeEl) {
+      ["dragenter", "dragover"].forEach(function (type) {
+        panelIntakeEl.addEventListener(type, function (event) {
+          if (!hasFiles(event)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+          markDrop(true);
+        });
+      });
+      panelIntakeEl.addEventListener("dragleave", function (event) {
+        event.preventDefault();
+        markDrop(false);
+      });
+      panelIntakeEl.addEventListener("drop", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        markDrop(false);
+        var files = event.dataTransfer && event.dataTransfer.files;
+        if (files && files.length) collectToCanvas(files);
+      });
+    }
+    if (inCanvas) renderBasket();
   }
 
   // ---------- 三栏渲染 ----------
@@ -4699,6 +4937,14 @@
         else onPanelPendingUpdated(message.payload);
         return;
       }
+      if (message.event === "editor.collect_files") {
+        // 宿主壳或辅助栏那边接到的文件，转进画布的收集筐：
+        // 只有画布收，面板再收一遍就成了两份。
+        if (state.slot !== "stage.center") return;
+        var incoming = (message.payload && message.payload.files) || [];
+        if (Array.isArray(incoming) && incoming.length) basketAdd(incoming);
+        return;
+      }
       return;
     }
 
@@ -4859,7 +5105,15 @@
     addSchool: addSchool,
     onMetaFieldChange: onMetaFieldChange,
     ingestEntries: ingestEntries,
-    ingestFiles: ingestFiles,
+    // 收集筐（军令 #27）：探针要能看筐里有什么、能把文件塞进去。
+    basket: function () {
+      return state.basket.map(function (entry) {
+        return { id: entry.id, name: entry.name, type: entry.type, size: entry.size, url: entry.url };
+      });
+    },
+    basketAdd: basketAdd,
+    basketRemove: basketRemove,
+    basketGo: basketGo,
     // 探针要把假时钟拨快，三分钟那道闸门才认得出「没人操作」
     idleThreshold: function () { return IDLE_MS; },
     tickIdle: function () {

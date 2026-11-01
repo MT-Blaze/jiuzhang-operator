@@ -26,6 +26,8 @@
   // 它若声明了 sidebar.right 就暂时接管右栏，否则右栏归还 AI 助手插件。
   var activeCanvasPluginId = "";
   var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat";
+  // 录题工作台：它的收集筐是文件唯一的暂存处（军令 #27）。
+  var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
   // --- DOM refs ---
   var sidebarToggle = document.getElementById("wsToggleSidebar");
@@ -100,9 +102,11 @@
 
   /**
    * 启动行为（军令 #11 阶段三）：老师选了「打开软件默认进入某插件」，这里执行它。
-   * 失效判定不在前端重做一遍——后端 /api/startup 已经把卸载/停用的目标回落成
-   * chat 并给了 fallback_reason，前端只负责照办与如实播报（底栏 + 对话区都记一笔）。
-   * 读不到配置就停在默认欢迎页，任何异常都不许挡住启动。
+   *
+   * 失效判定不在前端重做一遍——后端 /api/startup 已经把卸载/停用的目标
+   * 回落到默认启动页（数据看板），再不行才落到 chat，并给了 fallback_reason，
+   * 前端只负责照办与如实播报（底栏 + 对话区都记一笔）。
+   * 读不到配置就按后端给的默认走，任何异常都不许挡住启动。
    */
   function applyStartupBehavior(plugins) {
     return fetch("/api/startup", { cache: "no-store" })
@@ -1583,6 +1587,8 @@
   // 是卷子，走录入通道解析成批次。.zip 在录入通道里静默忽略——它不是题。
   var dropOverlay = document.getElementById("wsDropOverlay");
   var intakeOverlay = document.getElementById("wsIntakeOverlay");
+  var intakeTitleEl = document.getElementById("wsIntakeTitle");
+  var intakeHintEl = document.getElementById("wsIntakeHint");
   var dragDepth = 0;
 
   function installPluginZip(file, replace) {
@@ -1666,6 +1672,19 @@
   function showDropOverlay(show, zipMode) {
     if (dropOverlay) dropOverlay.hidden = !show || !zipMode;
     if (intakeOverlay) intakeOverlay.hidden = !show || zipMode;
+    if (!show || zipMode) return;
+    // 落点不一样，话术就不能一样：录题工作台开着时，文件先进它的收集筐。
+    var intoBasket = activeCanvasPluginId === EDITOR_PLUGIN_ID;
+    if (intakeTitleEl) {
+      intakeTitleEl.textContent = intoBasket
+        ? "松开鼠标，收进录题工作台的收集筐"
+        : "松开鼠标，自动解析并建立批次";
+    }
+    if (intakeHintEl) {
+      intakeHintEl.textContent = intoBasket
+        ? "收 PDF / Word / TeX / MD / 图片；到画布里点【开始解析】才建批次"
+        : "收 PDF / Word / TeX / MD / 图片；解析完直接进批次列表";
+    }
   }
 
   window.addEventListener("dragenter", function (event) {
@@ -1699,8 +1718,13 @@
       if (!/\.zip$/i.test(files[i].name || "")) docs.push(files[i]);
     }
     if (file) installPluginZip(file, false);
-    if (docs.length && window.JzoIntake) {
-      window.JzoIntake.ingestFiles(docs, { source: "chrome" });
+    if (docs.length) {
+      // 录题工作台开着时，文件先进它的收集筐：老师点【开始解析】才建批次。
+      var collected = window.JzoIntake && typeof window.JzoIntake.collectIntoEditor === "function"
+        ? window.JzoIntake.collectIntoEditor(docs) : false;
+      if (!collected && window.JzoIntake) {
+        window.JzoIntake.ingestFiles(docs, { source: "chrome" });
+      }
     } else if (!file && !docs.length) {
       addBubble("sys", "没看到可解析的文件（PDF / Word / TeX / MD / 图片都行）。", { tone: "warn" });
     }

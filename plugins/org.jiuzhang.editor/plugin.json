@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "api_version": "1.0",
   "kind": "tool",
-  "description": "批次审核台：首屏铺满待审核批次列表，点行切入三栏改题；二屏三钮（存入主库/存为待办/删除），超 3 分钟静默存回待审池。辅助栏顶部是批次公共元数据（年份-地区-主体-类型-学科，标准名自动拼出且只读），改一次这批题的来源即同步，明细学校拆成隐藏标签。画布与辅助栏可拖入卷子、Ctrl+V 粘贴截图自动建批次，.zip 静默忽略。左栏「重新框选」带圆形放大镜与十字准星，像素级切图。写库走宿主。",
+  "description": "批次审核台：首屏左右 50/50，左栏历史批次，右栏一只巨大圆角虚线文件收集筐——点框选文件、拖到画布任何位置都落筐、Ctrl+V 粘贴的截图直接出 200×200 缩略图；筐里有文件才亮出【🚀 开始解析 (N 个文件)】，点它才建批次。点批次行切入三栏改题；二屏三钮（存入主库/存为待办/删除），超 3 分钟静默存回待审池。辅助栏有批次公共元数据。左栏「重新框选」带放大镜，像素切图。写库走宿主。",
   "author": "九章算子",
   "license": "Apache-2.0",
   "min_host_version": "1.0.0",
@@ -64,13 +64,15 @@
       "editor.apply_patch",
       "stage.selection",
       "system.question_updated",
-      "system.pending_updated"
+      "system.pending_updated",
+      "editor.collect_files"
     ],
     "publish": [
       "region.dock",
       "stage.selection",
       "system.return_from_editor",
-      "system.editor_close"
+      "system.editor_close",
+      "editor.collect_files"
     ]
   },
   "contributes": {

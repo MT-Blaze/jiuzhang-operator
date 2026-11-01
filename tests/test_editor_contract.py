@@ -110,12 +110,12 @@ class EditorManifestTest(unittest.TestCase):
     def test_04_bus_subscriptions_match_delivery(self) -> None:
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
-                         ["editor.apply_patch", "stage.selection", "system.open_editor",
-                          "system.pending_updated", "system.question_updated",
-                          "ui.params.changed"])
+                         ["editor.apply_patch", "editor.collect_files", "stage.selection",
+                          "system.open_editor", "system.pending_updated",
+                          "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
-                         ["region.dock", "stage.selection", "system.editor_close",
-                          "system.return_from_editor"])
+                         ["editor.collect_files", "region.dock", "stage.selection",
+                          "system.editor_close", "system.return_from_editor"])
 
     def test_05_commands_keep_the_ai_surface(self) -> None:
         """军令 #20 定下的四条命令 id 与 requires_user 不许被界面改造带偏。"""
@@ -169,10 +169,19 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
                         "中栏必须是源码、右栏才是渲染")
 
     def test_03_canvas_carries_no_form_controls(self) -> None:
-        """题型 / 难度 / 年级是辅助栏的活；画布内出现下拉框或输入框即判不合格。"""
+        """题型 / 难度 / 年级是辅助栏的活；画布内出现下拉框或输入框即判不合格。
+
+        军令 #27 例外：画布右栏那只收集筐要能点开系统选文件框，
+        所以画布里只许有**一只隐藏的** ``<input type="file">``，不许有第二个。
+        """
         canvas = canvas_only(read("index.html"))
         self.assertNotIn("<select", canvas, "画布内禁止出现下拉框")
-        self.assertNotIn("<input", canvas, "画布内禁止出现输入框")
+        self.assertEqual(canvas.count("<input"), 1, "画布内只许剩收集筐那一只隐藏的选文件 input")
+        at = canvas.index("<input")
+        tag = canvas[at:canvas.index(">", at)]
+        self.assertIn('type="file"', tag, "画布内唯一的 input 必须是选文件用的")
+        self.assertIn('id="edBasketFile"', tag)
+        self.assertIn("aria-hidden=\"true\"", tag, "选文件 input 必须藏起来，不占版面")
         for legacy in ("edType", "edDifficulty", "edGrade", "edAnswer", "edTags", "edSolution",
                        "edOptions", "edStem", "edSave", "edPreview", "edPage", "edSourceCanvas",
                        "edCropBox", "edAiClean", "edClean"):
@@ -294,11 +303,11 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         for node_id in ("edProgress", "edFormat", "edDirty", "edSaved", "edMetrics"):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
-        # 底栏撤除后，画布内只许剩【← 批次列表】这一枚：它是二屏回首屏的唯一出口，
-        # 其余动作全在辅助栏，画布内不许再有第二枚按钮。
-        self.assertEqual(canvas.count("<button"), 1, "画布内只许剩【← 批次列表】一枚按钮")
-        at = canvas.index("<button")
-        self.assertIn('id="edBackList"', canvas[at:at + 160])
+        # 底栏撤除后，画布内只许剩【← 批次列表】与【🚀 开始解析】两枚：
+        # 前者是二屏回首屏的唯一出口，后者是收集筐唯一的建批次出口。
+        self.assertEqual(canvas.count("<button"), 2, "画布内只许剩【← 批次列表】与【开始解析】")
+        self.assertIn('id="edBackList"', canvas)
+        self.assertIn('id="edBasketGo"', canvas)
 
     def test_03_three_heads_share_one_pixel_line(self) -> None:
         css = read("plugin.css")
@@ -881,9 +890,10 @@ class EditorBatchTest(unittest.TestCase):
             self.assertNotIn(f'id="{node_id}"', canvas, f"{node_id} 属于辅助栏，不许留在画布")
         # 画布底栏连同它的容器一起删干净（注释里可以留说明，不许留元素）
         self.assertNotIn('class="ed-foot"', canvas, "画布底栏已整条删除")
-        # 批量条不许把表单控件带进画布（<button> 不算表单输入控件）
+        # 批量条不许把表单控件带进画布（<button> 不算表单输入控件；
+        # 收集筐那只隐藏的选文件 input 是军令 #27 唯一例外）
         self.assertNotIn("<select", canvas)
-        self.assertNotIn("<input", canvas)
+        self.assertEqual(canvas.count("<input"), 1)
         # 批量提交整体退场：三颗审核钮才是唯一出口
         for gone in ("edSaveAll", "edPoolStash"):
             self.assertNotIn(f'id="{gone}"', read("index.html"),
@@ -1183,6 +1193,123 @@ class EditorReviewDeskTest(unittest.TestCase):
         stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         self.assertIn('"note", "error", "info", "system", "warn"', stage,
                       "插件自报的 warn 级别必须在宿主白名单里")
+
+
+class EditorFileBasketTest(unittest.TestCase):
+    """军令 #27：右栏文件收集筐——首屏 50/50、圆角虚线筐、大图缩略图、【开始解析】才建批次。
+
+    真机流程由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分。
+    """
+
+    def test_01_the_first_screen_splits_in_two_halves(self) -> None:
+        """左栏历史批次列表、右栏收集筐，严格 50% / 50%。"""
+        css = read("plugin.css")
+        body = css_rule(css, ".ed-batches-body")
+        self.assertIn("display: grid", body)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", body,
+                      "首屏必须是两等分栅格，不许一边大一边小")
+        html = read("index.html")
+        self.assertIn('class="ed-batch-col"', html, "左栏是批次列表")
+        self.assertIn('class="ed-basket-col"', html, "右栏是收集筐")
+        self.assertLess(html.index('class="ed-batch-col"'), html.index('class="ed-basket-col"'),
+                        "批次列表在左，收集筐在右")
+
+    def test_02_the_basket_is_one_big_rounded_dashed_box(self) -> None:
+        """右栏整块是一只巨大的圆角虚线框，文字居中。"""
+        css = read("plugin.css")
+        basket = css_rule(css, ".ed-basket")
+        self.assertIn("border: 2px dashed", basket, "虚线框是收集筐的招牌")
+        self.assertIn("border-radius: 20px", basket, "圆角要够大，才像一只筐")
+        self.assertIn("text-align: center", basket)
+        self.assertIn("align-items: center", basket)
+        self.assertIn("justify-content: center", basket)
+        col = css_rule(css, ".ed-basket-col")
+        self.assertIn("align-items: center", col, "筐整体绝对居中")
+        self.assertIn("justify-content: center", col)
+
+    def test_03_pasted_images_get_a_big_thumbnail(self) -> None:
+        """粘贴的图不许只写个文件名：筐里直接出 200×200 的大缩略图。
+
+        缩略图画在 canvas 上：插件沙箱的 CSP 是 ``img-src 'self' <底座源>``，
+        blob: 与 data: 的 ``<img>`` 全被拦掉——屏幕上只会剩一只空框。
+        """
+        css = read("plugin.css")
+        thumb = css_rule(css, ".ed-basket-thumb")
+        self.assertIn("width: 200px", thumb)
+        self.assertIn("height: 200px", thumb)
+        js = read("plugin.js")
+        render = fn_body(js, "renderBasket")
+        self.assertIn('thumb.className = "ed-basket-thumb";', render)
+        self.assertIn('document.createElement("canvas")', render)
+        self.assertIn("var THUMB_SIDE = 200;", js)
+        self.assertIn("window.createImageBitmap(entry.file)", js,
+                      "缩略图得用插件自己解出的位图，沙箱的 CSP 拦不住它")
+        self.assertNotIn("URL.createObjectURL", js, "blob: 的 <img> 会被 CSP 挡成空框")
+        self.assertNotIn("URL.revokeObjectURL", js)
+        self.assertIn("entry.bitmap.close()", fn_body(js, "basketRemove"),
+                      "移除条目要把位图还回去")
+
+    def test_04_every_item_has_a_remove_button(self) -> None:
+        css = read("plugin.css")
+        cross = css_rule(css, ".ed-basket-x")
+        self.assertIn("width: 44px", cross, "移除钮的触控面按 AGENTS §6 不得小于 44px")
+        self.assertIn("height: 44px", cross)
+        js = read("plugin.js")
+        render = fn_body(js, "renderBasket")
+        self.assertIn('el("button", "ed-basket-x", "×")', render)
+        self.assertIn("basketRemove(entry.id);", render)
+
+    def test_05_only_the_go_button_creates_a_batch(self) -> None:
+        """建批次只能由【开始解析】发起：拖入与粘贴都只往筐里放。"""
+        js = read("plugin.js")
+        go = fn_body(js, "basketGo")
+        self.assertIn("ingestEntries(", go, "【开始解析】才把筐里的东西交给宿主")
+        self.assertIn('hostCall("ingest.files"', js)
+        add = fn_body(js, "basketAdd")
+        self.assertNotIn("ingest", add.lower(), "拖入/粘贴不许顺手建批次")
+        drop = js[js.index('root.addEventListener("drop"'):]
+        drop = drop[:drop.index("});")]
+        self.assertIn("basketAdd(files);", drop, "拖到画布任何位置都算落进筐里")
+        self.assertNotIn("ingest", drop.lower())
+        self.assertNotIn("function ingestFiles(", js,
+                         "旧口径「拖进来就自动建批次」必须退场")
+
+    def test_06_the_go_button_is_visible_only_when_there_are_files(self) -> None:
+        js = read("plugin.js")
+        render = fn_body(js, "renderBasket")
+        self.assertIn("if (basketFootEl) basketFootEl.hidden = state.basket.length === 0;", render)
+        self.assertIn('basketGoEl.textContent = "🚀 开始解析 (" + state.basket.length + " 个文件)";',
+                      render)
+        html = read("index.html")
+        self.assertIn('id="edBasketGo"', html)
+        self.assertIn('id="edBasketFoot" hidden', html)
+
+    def test_07_the_panel_instance_never_creates_a_batch_by_itself(self) -> None:
+        """辅助栏那张 iframe 收到文件只转交宿主；建批次的事归画布的筐。"""
+        js = read("plugin.js")
+        collect = fn_body(js, "collectToCanvas")
+        self.assertIn('publish("editor.collect_files", { files: list });', collect)
+        self.assertNotIn("ingest", collect.lower())
+        # 画布只收画布那份：辅助栏再收一遍就成了两份
+        handler = js[js.index('if (message.event === "editor.collect_files") {'):]
+        handler = handler[:handler.index("return;\n      }")]
+        self.assertIn('if (state.slot !== "stage.center") return;', handler)
+        self.assertIn("basketAdd(incoming);", handler)
+
+    def test_08_the_host_owns_the_relay_and_never_loses_the_files(self) -> None:
+        """宿主是中间人：白名单放行、只转给录题画布，画布不在就退回直接入库。"""
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('"editor.collect_files"', stage, "宿主白名单必须放行这个事件")
+        relay = stage[stage.index('bus.on("editor.collect_files"'):]
+        relay = relay[:relay.index("\n      });")]
+        self.assertIn("payload.pluginId !== EDITOR_PLUGIN_ID", relay,
+                      "别的插件想往筐里塞东西，门都不给")
+        self.assertIn('notify(editorTab, "editor.collect_files", { files: files });', relay)
+        self.assertIn("window.JzoIntake.ingestFiles(files, { source: \"panel\" });", relay,
+                      "画布没开时文件不许凭空消失")
+        intake = (ROOT / "static" / "js" / "intake.js").read_text(encoding="utf-8")
+        self.assertIn("function collectIntoEditor(files)", intake)
+        self.assertIn("window.JzoStage.notifyCanvas(editorId, \"editor.collect_files\"", intake)
 
 
 class EditorCropMagnifierTest(unittest.TestCase):

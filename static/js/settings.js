@@ -1797,11 +1797,13 @@
   function renderStartup(body) {
     if (!startupSelect) return;
     var target = String((body && body.target) || "chat");
+    var defaultTarget = String((body && body.default_target) || "");
     startupSelect.textContent = "";
     startupSelect.appendChild(startupOption("chat", "默认欢迎页（自由对话）"));
     var candidates = (body && body.candidates) || [];
     candidates.forEach(function (item) {
       var label = (item.name || item.id) + "（v" + (item.version || "?") + "）";
+      if (defaultTarget && "plugin:" + item.id === defaultTarget) label += " · 默认启动页";
       if (item.show_in_sidebar === false) label += " · 不占左栏";
       startupSelect.appendChild(startupOption("plugin:" + item.id, label));
     });
@@ -1820,6 +1822,10 @@
         startupNow.hidden = false;
       } else if (target === "chat") {
         startupNow.textContent = "当前生效：默认欢迎页（自由对话）。";
+        startupNow.hidden = false;
+      } else if (body && body.configured === false) {
+        startupNow.textContent = "当前生效：" + ((body && body.plugin_name) || "默认欢迎页（自由对话）")
+          + "（默认启动页，你还没选过）。";
         startupNow.hidden = false;
       } else {
         startupNow.textContent = "当前生效：" + ((body && body.plugin_name) || target) + "。下次打开软件直接落在这里。";
