@@ -788,6 +788,10 @@
         message: (value && value.message) || "宿主拒绝了请求",
         retryable: Boolean(value && value.retryable)
       };
+      // 查重命中（409）要把主库那道题的 id 原样带回去：插件靠它弹「返回修改 / 强行覆盖」，
+      // 少了这个字段，插件只能笼统地说「重复了」，老师没法裁决。
+      if (value && value.existing_id) packet.error.existing_id = String(value.existing_id);
+      if (value && value.duplicate === true) packet.error.duplicate = true;
     }
     try {
       tab.frame.contentWindow.postMessage(packet, "*");
@@ -1349,11 +1353,19 @@
     }
 
     function fail(error) {
-      replyHost(tab, message, false, {
+      var detail = error && error.detail;
+      var payload = {
         code: "HOST_" + (error.status || 0),
         message: String((error && error.message) || "宿主请求失败").slice(0, 200),
         retryable: Boolean(error && error.status >= 500)
-      });
+      };
+      // 409 查重：detail 里带着主库那道题的 id 与 duplicate 标记，原样带给插件，
+      // 插件才弹得出「返回修改 / 强行覆盖」两颗钮。
+      if (detail && typeof detail === "object") {
+        if (detail.existing_id) payload.existing_id = String(detail.existing_id);
+        if (detail.duplicate === true) payload.duplicate = true;
+      }
+      replyHost(tab, message, false, payload);
     }
 
     function failWith(code, text, retryable) {
@@ -1361,6 +1373,18 @@
         code: code,
         message: String(text || "宿主请求失败").slice(0, 200),
         retryable: Boolean(retryable)
+      });
+    }
+
+    // 中转站改动后由宿主广播：插件据此撤掉已入库/已删除的题，不必整批重载，
+    // 免得老师正在改的另一道题被顺手刷掉。
+    function emitPendingUpdated(action, pendingIds, result) {
+      var batch = (result && result.batch) || null;
+      emit("system.pending_updated", {
+        action: action,
+        pending_ids: (pendingIds || []).map(function (id) { return String(id); }),
+        batch_id: String((batch && batch.batch_id) || (result && result.batch_id) || ""),
+        pluginId: pluginId
       });
     }
 
@@ -1492,7 +1516,10 @@
           method: "POST",
           headers: jsonHeaders,
           body: JSON.stringify(draftBody)
-        }).then(done, fail);
+        }).then(function (result) {
+          emitPendingUpdated("save_draft", (result && result.saved_ids) || [], result);
+          done(result);
+        }, fail);
         return;
       }
       var pendingId = textValue(payload, "pending_id", 80);
@@ -1505,7 +1532,10 @@
           method: "POST",
           headers: jsonHeaders,
           body: JSON.stringify({})
-        }).then(done, fail);
+        }).then(function (result) {
+          emitPendingUpdated("delete", [pendingId], result);
+          done(result);
+        }, fail);
         return;
       }
       // 存入主库：查重命中时后端回 409，插件拿 detail.existing_id 去问老师要不要强行覆盖。
@@ -1514,6 +1544,7 @@
         headers: jsonHeaders,
         body: JSON.stringify({ force: payload.force === true })
       }).then(function (result) {
+        emitPendingUpdated("approve", [pendingId], result);
         emit("system.question_updated", {
           action: "create",
           id: result && result.question_id,
@@ -1943,9 +1974,15 @@
         ? message.payload.text.slice(0, 200)
         : JSON.stringify(message.payload || {}).slice(0, 200);
       // 日志级别由插件自报，但只在白名单里认：底座不许被插件改成「一切正常」的样子。
+      // warn 是「出了岔子但没挡住老师」——后台切题识别有出入就走这一档，不许弹红窗。
       var level = String(message.payload && message.payload.level || "");
-      if (["note", "error", "info", "system"].indexOf(level) < 0) level = "";
-      emit(topic, { text: text, pluginId: tab.plugin.id, level: level, raw: message.payload || null });
+      if (["note", "error", "info", "system", "warn"].indexOf(level) < 0) level = "";
+      // 插件自报的主题名只作归类用：长度卡死，防止插件拿它夹带长文本。
+      var dockTopic = String(message.payload && message.payload.topic || "").slice(0, 60);
+      emit(topic, {
+        text: text, pluginId: tab.plugin.id, level: level,
+        topic: dockTopic, raw: message.payload || null
+      });
     }
   });
 
@@ -2658,6 +2695,10 @@
         broadcast("question.updated", event.payload);
       });
       bus.on("question.updated", function (event) { broadcast("question.updated", event.payload); });
+      // 中转站改动（暂存/删除/入库）→ 录题插件据此撤掉已走的题，不整批重载。
+      bus.on("system.pending_updated", function (event) {
+        broadcast("system.pending_updated", event.payload);
+      });
       // 插件被热更新（PLUGIN_SPEC §1.7）：转给订阅了它的插件，画布水合由宿主自己处理
       bus.on("plugin.updated", function (event) { broadcast("plugin.updated", event.payload); });
       // 存储端/输出端的「去编辑」→ 宿主开录题页签并注入题号

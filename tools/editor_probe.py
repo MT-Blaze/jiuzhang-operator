@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""录题工作台 v2 真机探针（军令 #23 阶段 2–4）：三栏画布、辅助栏表单、AI 帮改与批量条。
+"""录题工作台 v3 真机探针（军令 #24）：批次列表首屏 → 点入审核 → 存草稿 → 审完入库 → 批次清零变灰。
 
 用法：``.venv/Scripts/python.exe tools/editor_probe.py <tag>``
 
@@ -8,21 +8,16 @@
 AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 探针全程不出网，也不依赖本机 .env 里老师的真密钥。
 
-检查项：
-- 画布挂载出三栏（左原图 | 中源码 | 右渲染）与两条拖手，拖到底不归零；
-- 右栏是同一插件的**第二个沙箱帧**，按画布送来的选区预填元数据；
-- 辅助栏里既没有源码框也没有渲染预览（军令铁律，指令框除外）；
-- 格式一整段可编辑；格式二按环境拆框，改框自动重组格式一；
-- 单题保存经宿主写库：新建走 bank.create、再存走 bank.update、变式另发新 ID；
-- 保存后直查 API 字段逐项一致（题干/答案/选项/解析/难度/年级/标签/来源/修订号）；
-- AI 帮改（档 1）：光标定字段 → 预览 → **点采用才替换**、点放弃不动源码，
-  环境骨架与「答案：」行全程不受改写影响；
-- AI 清洗走宿主 text.clean_latex：题干段与解析段全成功才回填；
-- 阶段 4 批量：单题与批量共用一张画布，点左栏跳转 / 键盘 Enter 都换当前题，
-  滚到哪题当前题就跟到哪题（光标还停在框里时人不许被滚动抢走），
-  底部【保存全部】只提交脏题——编辑态走更新、新建走 create、没提交的那题搜得到也进不去；
-- 渲染块按内容实际高度生长，画布里不再有 A4 固定页节点；
-- 宿主 1440px 无横向溢出，控制台与页面零错误。
+检查项（按军令 #24 的六条铁律逐条落地）：
+- **首屏是批次列表**：整幅画布铺满卡片行，左边「时间-星期-时刻-批次编号 #B-xxx」，
+  右边「未审：n / N」（数字绿色、贴紧右边缘、垂直居中），整行悬停有反馈；
+- **点行任意位置**（连左内边距那种空白处）直接切入三栏审核，抬头写着当前批次号；
+- **二屏只有三颗钮**：存入主库 / 存为待办 / 彻底删除；旧的保存、变式与批量条全撤；
+- **防呆**：停留超 3 分钟静默存回待审核池，只在底部日志留一行灰字，不弹窗；
+- **查重**：主库已有同题时弹窗给「返回修改 / 强行覆盖」，强行覆盖不新增题目；
+- **识别有出入照切不误**：画布上不弹红窗，只有底部日志一行警告；
+- 审完的批次卡片变灰、沉到列表最底下、点不动（未审 0 / N ✅）；
+- 全流程闭环：后台入池 → 批次列表展现 → 点入审核 → 存草稿 → 审完入库 → 批次清零变灰。
 """
 
 from __future__ import annotations
@@ -51,11 +46,16 @@ BANK_UI_ID = "org.jiuzhang.bank-ui"
 # 右栏的默认住户 AI 助手：探针必须把它一起装上。
 # 少了它，右栏没人争，录题的接管自然成功——那种环境验不出「谁才是右栏的主人」。
 CHAT_ID = "org.jiuzhang.chat"
-MARK = "探针v2"
+TOKEN = "editor-probe-token"
+MARK = "探针v3草稿"
 
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 PANEL = "#wsContextSlot .ws-context-frame"
 BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
+
+BATCH_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-星期[日一二三四五六]-\d{2}:\d{2}-批次编号 #B-\d{3,}$")
+UNREVIEWED_RE = re.compile(r"未审：\s*(\d+)\s*/\s*(\d+)")
+IDLE_NOTE_RE = re.compile(r"^\[\d{2}:\d{2}\] 检测到长时间无操作，已自动存入待审核池。$")
 
 
 def free_port() -> int:
@@ -81,7 +81,7 @@ def wait_health(base: str, process: subprocess.Popen) -> None:
 
 def http_json(url: str) -> tuple[int, dict]:
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with urllib.request.urlopen(url, timeout=20) as response:
             return response.status, json.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
@@ -90,6 +90,51 @@ def http_json(url: str) -> tuple[int, dict]:
             return error.code, json.loads(payload or "{}")
         except json.JSONDecodeError:
             return error.code, {"raw": payload}
+
+
+def http_post(url: str, payload: dict) -> tuple[int, dict]:
+    """带写令牌直接打 Host API：探针要自己往中转站塞批次（模拟后台识别入池）。"""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as error:
+        payload = error.read().decode("utf-8")
+        error.close()
+        try:
+            return error.code, json.loads(payload or "{}")
+        except json.JSONDecodeError:
+            return error.code, {"raw": payload}
+
+
+def pending_cards(base: str) -> list[dict]:
+    _, data = http_json(base + "/api/pending/batches")
+    cards = data.get("batches")
+    return cards if isinstance(cards, list) else []
+
+
+def pending_items(base: str, batch_id: str) -> list[dict]:
+    _, data = http_json(base + f"/api/pending/batches/{batch_id}/questions")
+    items = data.get("items")
+    return items if isinstance(items, list) else []
+
+
+def bank_total(base: str) -> int:
+    _, data = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
+    return int(data.get("total") or 0)
+
+
+def inject_mark(source: str) -> str:
+    """把标记塞进题干段的第一行：不管这一题是单选还是解答，都落在正文里。"""
+    for env in ("question", "problem"):
+        token = "\\begin{" + env + "}\n"
+        if token in source:
+            return source.replace(token, token + MARK + "：", 1)
+    return MARK + source
 
 
 def wait_attribute(locator, name: str, predicate, timeout: float = 12) -> str:
@@ -116,35 +161,8 @@ def wait_height(locator, predicate, timeout: float = 12) -> float:
     return height
 
 
-def wait_value(locator, predicate, timeout: float = 12) -> str:
-    """输入框的值轮询：回填经宿主广播回来，不是点击当场就变。"""
-    deadline = time.time() + timeout
-    value = ""
-    while time.time() < deadline:
-        value = locator.input_value()
-        if predicate(value):
-            return value
-        time.sleep(0.15)
-    return value
-
-
-def wait_text(locator, predicate, timeout: float = 12) -> str:
-    deadline = time.time() + timeout
-    text = ""
-    while time.time() < deadline:
-        text = locator.inner_text()
-        if predicate(text):
-            return text
-        time.sleep(0.15)
-    return text
-
-
 class StubProvider:
-    """本机 OpenAI 兼容桩：把 /api/agent/refine 变成确定性回包，探针一律不出网。
-
-    底座把「待改字段 + 该字段当前内容 + 老师指令」拼进 user 消息，桩就照这个形状
-    回一份 {"<field>": 标记 + 原文, "note": …}，让判据能验到「改写≠回显」。
-    """
+    """本机 OpenAI 兼容桩：把 /api/agent/refine 变成确定性回包，探针一律不出网。"""
 
     MARKER = "探针AI改写"
 
@@ -189,7 +207,6 @@ class StubProvider:
 
         self.port = free_port()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
-        # 桩的标记文本从服务端拼，避免 handler 里再抄一份常量
         self.httpd.marker_text = lambda original: f"{StubProvider.MARKER}·{original}"
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
@@ -201,6 +218,43 @@ class StubProvider:
     def stop(self) -> None:
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+# 两份「后台识别入池」的假卷：一份识别得有出入（题干里嵌了 solution 环境），
+# 一份干净但独一无二（留着给彻底删除与自动存草稿验）。
+BROKEN_DOC = {
+    "schema_version": "2.0",
+    "type": "single_choice",
+    "stem": "已知函数 $f(x)=x^2+1$，求其最小值（  ）\n\\begin{solution}\n答案：B\n\\end{solution}",
+    "options": [
+        {"key": "A", "content": "$0$"},
+        {"key": "B", "content": "$1$"},
+        {"key": "C", "content": "$2$"},
+        {"key": "D", "content": "$3$"},
+    ],
+    "answer": {"kind": "choice", "choice_keys": ["B"], "final": "B"},
+    "solution": "解析：配方得 $f(x)=(x-1)^2+1$，故最小值为 $1$。",
+    "difficulty": "L1",
+    "grade": "高一",
+    "tags": ["二次函数"],
+    "source": {"paper_title": "探针识别卷", "question_no": "1", "year": 2024, "exam_type": "一模"},
+}
+
+UNIQUE_DOC = {
+    "schema_version": "2.0",
+    "type": "single_choice",
+    "stem": "探针专用待删题：直线 $g(x)=2x+1$ 的最小值是（  ）",
+    "options": [
+        {"key": "A", "content": "$-1$"},
+        {"key": "B", "content": "$1$"},
+    ],
+    "answer": {"kind": "choice", "choice_keys": ["A"], "final": "A"},
+    "solution": "解析：$g(x)=2x+1$ 单调递增，最小值为 $-1$。",
+    "difficulty": "L1",
+    "grade": "高一",
+    "tags": ["一次函数"],
+    "source": {"paper_title": "探针待删卷", "question_no": "1", "year": 2024, "exam_type": "一模"},
+}
 
 
 def main() -> int:
@@ -226,7 +280,7 @@ def main() -> int:
     env = os.environ.copy()
     env["JZO_DATA_DIR"] = str(data_dir)
     env["JZO_PLUGINS_DIR"] = str(plugins_dir)
-    env["JZO_LOCAL_TOKEN"] = "editor-probe-token"
+    env["JZO_LOCAL_TOKEN"] = TOKEN
     env["JZO_RESTART_DISABLED"] = "1"
     # 活跃档指向本机桩：环境变量优先于仓库 .env（app/__init__._load_local_env 用 setdefault）
     env["JZO_AI_PROVIDER"] = "openai-compatible"
@@ -247,8 +301,7 @@ def main() -> int:
 
     try:
         wait_health(base, process)
-        _, stats_before = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-        total_before = int(stats_before.get("total") or 0)
+        total_before = bank_total(base)
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -263,14 +316,253 @@ def main() -> int:
 
             canvas = page.frame_locator(CANVAS)
             expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
-            check("画布挂载出 v2 三栏", True)
+            panel = page.frame_locator(PANEL)
+            expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
 
-            # ---------- 量几何的两把尺子 ----------
+            # ---------- 记录器：一帧里所有「话术」与「弹窗」的瞬时变化都留档 ----------
+            # 面板回执与画布浮窗都是一改就换的短命状态，轮询会漏；用 MutationObserver 兜住。
+            recorder = """() => {
+              window.__probeMessages = [];
+              window.__probeToasts = [];
+              function watch(node, list) {
+                if (!node) return;
+                var mo = new MutationObserver(function () {
+                  list.push({
+                    text: (node.textContent || '').trim(),
+                    state: node.getAttribute('data-save-state') || '',
+                    tone: node.getAttribute('data-tone') || '',
+                    show: node.getAttribute('data-show') || ''
+                  });
+                });
+                mo.observe(node, {
+                  childList: true, characterData: true, subtree: true,
+                  attributes: true,
+                  attributeFilter: ['data-save-state', 'data-tone', 'data-show']
+                });
+                list.push({
+                  text: (node.textContent || '').trim(),
+                  state: node.getAttribute('data-save-state') || '',
+                  tone: node.getAttribute('data-tone') || '',
+                  show: node.getAttribute('data-show') || ''
+                });
+              }
+              watch(document.getElementById('epMessage'), window.__probeMessages);
+              watch(document.getElementById('edToast'), window.__probeToasts);
+              return true;
+            }"""
+            panel.locator("#epRoot").evaluate(recorder)
+            canvas.locator("#edRoot").evaluate(recorder)
+
+            def probe_messages() -> list[dict]:
+                return panel.locator("#epRoot").evaluate("() => window.__probeMessages || []")
+
+            def probe_toasts() -> list[dict]:
+                return canvas.locator("#edRoot").evaluate("() => window.__probeToasts || []")
+
+            def dock_entries() -> list[dict]:
+                """底部日志全量条目：底栏收起时正文不可见，但条目还在 DOM 里。"""
+                return page.locator("#wsDockLog .ws-dock-item").evaluate_all(
+                    """nodes => nodes.map(node => ({
+                        level: node.getAttribute('data-level') || '',
+                        copy: node.getAttribute('data-copy') || '',
+                        text: (node.querySelector('.ws-dock-text') || {}).textContent || ''
+                    }))""")
+
+            def wait_dock(predicate, timeout: float = 30, since: int = 0):
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    entries = dock_entries()
+                    for entry in entries[since:]:
+                        if predicate(entry):
+                            return entry
+                    page.wait_for_timeout(200)
+                return None
+
+            def wait_message(fragment: str, timeout: float = 25) -> bool:
+                """面板回执是短命状态：轮询 + 记录器双保险。"""
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    if any(fragment in item.get("text", "") for item in probe_messages()):
+                        return True
+                    page.wait_for_timeout(40)
+                return False
+
+            def panel_pending_id() -> str:
+                return panel.locator("#epRoot").evaluate(
+                    "() => { var p = window.__jzoEditorV2.panel;"
+                    " return p && p.selection ? String(p.selection.pending_id || '') : ''; }")
+
+            def canvas_pending_id() -> str:
+                return canvas.locator("#edRoot").evaluate(
+                    """() => { var s = window.__jzoEditorV2.state;
+                       var it = s.items ? s.items[s.active] : null;
+                       return it ? String(it.pendingId || '') : ''; }""")
+
+            def sync_panel(timeout: float = 20) -> str:
+                """等辅助栏的选区追上涨布的当前题：审核动作全靠 pending_id 对得上。"""
+                deadline = time.time() + timeout
+                current = ""
+                while time.time() < deadline:
+                    current = canvas_pending_id()
+                    if current and current == panel_pending_id():
+                        return current
+                    page.wait_for_timeout(120)
+                return ""
+
+            def to_list() -> None:
+                """回到首屏批次列表：审核界面里那批卡片是收着的，点不到。"""
+                if canvas.locator("#edRoot").get_attribute("data-mode") == "list":
+                    return
+                canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.backToList()")
+                expect(canvas.locator("#edBatches")).to_be_visible(timeout=20000)
+
+            def open_batch(batch_id: str) -> None:
+                to_list()
+                row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
+                expect(row).to_be_visible(timeout=20000)
+                row.click()
+                expect(canvas.locator("#edCols")).to_be_visible(timeout=20000)
+
+            def wait_pool_shrink(base_url: str, batch: str, before: int, timeout: float = 30) -> int:
+                deadline = time.time() + timeout
+                count = before
+                while time.time() < deadline:
+                    count = len(pending_items(base_url, batch))
+                    if count < before:
+                        return count
+                    page.wait_for_timeout(200)
+                return count
+
+            # ---------- 首屏：批次列表 ----------
+            check("首屏铺满批次列表（三栏还收着）",
+                  canvas.locator("#edBatches").is_visible()
+                  and canvas.locator("#edCols").is_hidden()
+                  and canvas.locator("#edBatchBar").is_hidden()
+                  and canvas.locator("#edRoot").get_attribute("data-mode") == "list",
+                  {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
+            seed_row = canvas.locator(".ed-batch-row").first
+            expect(seed_row).to_be_visible(timeout=20000)
+            cards = pending_cards(base)
+            check("识别结果已入池，首屏就有批次可点",
+                  len(cards) >= 1 and canvas.locator(".ed-batch-row").count() == len(cards),
+                  {"cards": len(cards), "rows": canvas.locator(".ed-batch-row").count()})
+            batch_id = cards[0]["batch_id"]
+            result["metrics"]["seed_batch"] = batch_id
+            # 这一批是插件自己入池的识别结果：题型/答案长什么样，底座说了算，
+            # 探针不自己编一份预期，全按 API 回的正文来对。
+            seed_items = pending_items(base, batch_id)
+            seed_doc = dict((seed_items[0].get("question") or {})) if seed_items else {}
+            result["metrics"]["seed_type"] = seed_doc.get("type")
+
+            left_text = seed_row.locator(".ed-batch-left").inner_text()
+            check("卡片左侧是「日期-星期-时刻-批次编号 #B-xxx」",
+                  bool(BATCH_STAMP_RE.match(left_text.strip())),
+                  {"left": left_text})
+            right_text = seed_row.locator(".ed-batch-right").inner_text()
+            hit = UNREVIEWED_RE.search(right_text)
+            check("卡片右侧是「未审：n / N」，数字与底座对得上",
+                  bool(hit)
+                  and int(hit.group(1)) == int(cards[0]["pending_count"])
+                  and int(hit.group(2)) == int(cards[0]["total"]),
+                  {"right": right_text, "card": cards[0]})
+            num_color = seed_row.locator(".ed-batch-num").first.evaluate(
+                "n => getComputedStyle(n).color")
+            check("未审数字是绿色的", num_color == "rgb(47, 107, 79)",
+                  {"color": num_color})
+            justify = seed_row.evaluate("n => getComputedStyle(n).justifyContent")
+            check("卡片两端对齐（space-between）", justify == "space-between",
+                  {"justify": justify})
+            row_box = seed_row.bounding_box()
+            right_box = seed_row.locator(".ed-batch-right").bounding_box()
+            flush = round((row_box["x"] + row_box["width"])
+                          - (right_box["x"] + right_box["width"]), 2)
+            vertical = round(abs((row_box["y"] + row_box["height"] / 2)
+                                 - (right_box["y"] + right_box["height"] / 2)), 2)
+            check("未审数贴紧右边缘、垂直居中",
+                  0 <= flush <= 24 and vertical <= 4,
+                  {"flush": flush, "vertical": vertical})
+            bg_before = seed_row.evaluate("n => getComputedStyle(n).backgroundColor")
+            seed_row.hover()
+            page.wait_for_timeout(300)
+            bg_after = seed_row.evaluate("n => getComputedStyle(n).backgroundColor")
+            check("整行悬停有反馈", bg_before != bg_after,
+                  {"before": bg_before, "after": bg_after})
+            page.screenshot(path=str(shots / "v3-batch-list.png"))
+
+            # ---------- 后台识别入池：再塞两批（一份识别有出入，一份干净待删） ----------
+            status_broken, broken_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": BROKEN_DOC}], "origin": "probe.recognize"})
+            status_unique, unique_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": UNIQUE_DOC}], "origin": "probe.recognize"})
+            check("后台可把识别结果整批入池",
+                  status_broken == 201 and status_unique == 201,
+                  {"broken": status_broken, "unique": status_unique})
+            broken_batch = str(broken_body.get("batch_id") or "")
+            unique_batch = str(unique_body.get("batch_id") or "")
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(700)
+            check("批次列表跟着底座走（新批次立刻显形）",
+                  canvas.locator(".ed-batch-row").count() == len(pending_cards(base)),
+                  {"rows": canvas.locator(".ed-batch-row").count(),
+                   "cards": len(pending_cards(base))})
+
+            # ---------- 点行任意位置：连左内边距的空白处也进得去 ----------
+            target_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
+            expect(target_row).to_be_visible(timeout=10000)
+            box = target_row.bounding_box()
+            page.mouse.click(box["x"] + 4, box["y"] + box["height"] / 2)
+            expect(canvas.locator("#edCols")).to_be_visible(timeout=20000)
+            check("点行任意位置直接切入三栏审核",
+                  canvas.locator("#edBatches").is_hidden()
+                  and canvas.locator("#edBatchBar").is_visible(),
+                  {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
+            batch_no = canvas.locator("#edBatchNo").inner_text().strip()
+            check("二屏抬头写着当前批次号", batch_no == "批次 #" + batch_id,
+                  {"batch_no": batch_no})
+            batch_stat = canvas.locator("#edBatchStat").inner_text().strip()
+            card = next(c for c in pending_cards(base) if c["batch_id"] == batch_id)
+            check("二屏抬头报着这一批还剩几道",
+                  batch_stat == "未审 %d / %d" % (int(card["pending_count"]), int(card["total"])),
+                  {"stat": batch_stat, "card": card})
+
+            # ---------- 三栏骨架 ----------
+            pending_count = int(card["pending_count"])
+            check("画布恰好三栏", canvas.locator(".ed-col").count() == 3,
+                  {"panes": canvas.locator(".ed-col").count()})
+            check("两条拖手在场", canvas.locator(".ed-split").count() == 2)
+            first_source = canvas.locator(".ed-src-area").first.input_value()
+            seed_stem = str(seed_doc.get("stem") or "")
+            check("中栏装整段 exam-zh 源码",
+                  bool(seed_stem) and seed_stem in first_source
+                  and "\\begin{" in first_source and "\\end{" in first_source
+                  and "\\begin{solution}" in first_source,
+                  {"head": first_source[:80], "stem": seed_stem[:80]})
+            check("三栏铺的是这一批的待审题",
+                  canvas.locator(".ed-src-area").count() == pending_count,
+                  {"rows": canvas.locator(".ed-src-area").count(),
+                   "pending": pending_count})
+            block_height = wait_height(canvas.locator(".ed-q-block").first,
+                                       lambda value: value > 40)
+            check("渲染块按内容实际高度生长", block_height > 40, {"height": block_height})
+            check("画布不再有 A4 固定页节点",
+                  canvas.locator(".ed-page, [data-page-h]").count() == 0)
+            check("画布内没有任何顶栏或工具条",
+                  canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
+                  .count() == 0)
+            check("画布没有底部横条，钮只有逐题跳转与回列表",
+                  canvas.locator(".ed-foot").count() == 0
+                  and canvas.locator("#edCols button").count()
+                  == canvas.locator(".ed-img-jump").count()
+                  and canvas.locator("#edBatchBar button").count() == 1,
+                  {"col_buttons": canvas.locator("#edCols button").count(),
+                   "jumps": canvas.locator(".ed-img-jump").count(),
+                   "bar_buttons": canvas.locator("#edBatchBar button").count(),
+                   "foot": canvas.locator(".ed-foot").count()})
+
             def row_lines():
-                """三栏每一行虚线的位置：行内三栏的 cell 底边该落在同一条线上。
-
-                虚线画在 cell 的下边框上，所以 cell 底边就是那条线的位置。
-                """
+                """三栏每一行虚线的位置：行内三栏的 cell 底边该落在同一条线上。"""
                 return canvas.locator("#edImageBody").evaluate(
                     """node => {
                         var bodies = {
@@ -308,61 +600,6 @@ def main() -> int:
                 return bool(rows) and all(
                     row["spread"] is not None and row["spread"] <= 1.0 for row in rows)
 
-            def pane_geo():
-                """三栏当前宽度：画布总宽 + 左中右各栏自己的宽。"""
-                return canvas.locator("#edCols").evaluate(
-                    """node => {
-                        function box(sel) {
-                            var el = node.querySelector(sel);
-                            if (!el) return 0;
-                            return Math.round(el.getBoundingClientRect().width * 100) / 100;
-                        }
-                        return {
-                            total: Math.round(node.getBoundingClientRect().width * 100) / 100,
-                            image: box('#edPaneImage'),
-                            source: box('#edPaneSource'),
-                            render: box('#edPaneRender')
-                        };
-                    }""")
-
-            # ---------- 三栏骨架 ----------
-            check("画布恰好三栏", canvas.locator(".ed-col").count() == 3,
-                  {"panes": canvas.locator(".ed-col").count()})
-            check("两条拖手在场", canvas.locator(".ed-split").count() == 2)
-            source_area = canvas.locator(".ed-src-area").first
-            expect(source_area).to_be_visible(timeout=10000)
-            first_source = source_area.input_value()
-            check("中栏装整段 exam-zh 源码",
-                  "\\begin{question}" in first_source and "\\begin{solution}" in first_source,
-                  {"head": first_source[:80]})
-            total = int(wait_attribute(canvas.locator("#edProgress"), "data-total",
-                                       lambda value: value not in ("", "0")) or "0")
-            check("假数据自动载入工作清单", total >= 1, {"total": total})
-            block_height = wait_height(canvas.locator(".ed-q-block").first,
-                                       lambda value: value > 40)
-            check("渲染块按内容实际高度生长", block_height > 40, {"height": block_height})
-            check("画布不再有 A4 固定页节点",
-                  canvas.locator(".ed-page, [data-page-h]").count() == 0)
-            page.screenshot(path=str(shots / "v2-canvas.png"))
-
-            # ---------- 紧急 UI 回炉 v2：画布彻底无顶栏 + 三栏顶线齐 + 中右底边平 ----------
-            check("画布内不再重复插件大标题与状态行",
-                  canvas.locator("#edRoot h1, .ed-bar-brand, .ed-status, .ed-legend").count() == 0)
-            check("画布内没有任何顶栏或工具条",
-                  canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
-                  .count() == 0)
-            check("画布底栏整条撤除：只剩左栏的跳题钮，底部一条横条都不剩",
-                  canvas.locator(".ed-foot").count() == 0
-                  and canvas.locator("#edRoot button").count()
-                  == canvas.locator(".ed-img-jump").count()
-                  and canvas.locator(".ed-img-cell button").count()
-                  == canvas.locator(".ed-img-jump").count(),
-                  {"buttons": canvas.locator("#edRoot button").count(),
-                   "jumps": canvas.locator(".ed-img-jump").count(),
-                   "foot": canvas.locator(".ed-foot").count()})
-            check("题号状态位仍在，但只给读屏看",
-                  canvas.locator("#edProgress.ed-sr").count() == 1
-                  and canvas.locator("#edProgress").bounding_box()["height"] <= 2)
             frame_tops = [round(canvas.locator(sel).bounding_box()["y"], 2) for sel in
                           ("#edPaneImage", "#edWorkbench")]
             head_tops = [round(canvas.locator(sel + " .ed-pane-head").bounding_box()["y"], 2)
@@ -373,81 +610,32 @@ def main() -> int:
                   {"frame_tops": frame_tops, "head_tops": head_tops})
             src_box = canvas.locator("#edPaneSource").bounding_box()
             rnd_box = canvas.locator("#edPaneRender").bounding_box()
-            src_bottom = round(src_box["y"] + src_box["height"], 2)
-            rnd_bottom = round(rnd_box["y"] + rnd_box["height"], 2)
             check("中右两栏底边落在同一像素水平线",
-                  abs(src_bottom - rnd_bottom) <= 0.5,
-                  {"source_bottom": src_bottom, "render_bottom": rnd_bottom})
-            result["metrics"]["align"] = {
-                "frame_tops": frame_tops, "head_tops": head_tops,
-                "source_bottom": src_bottom, "render_bottom": rnd_bottom}
+                  abs(round(src_box["y"] + src_box["height"], 2)
+                      - round(rnd_box["y"] + rnd_box["height"], 2)) <= 0.5,
+                  {"source_bottom": round(src_box["y"] + src_box["height"], 2),
+                   "render_bottom": round(rnd_box["y"] + rnd_box["height"], 2)})
+            lines = row_lines()
+            check("三栏虚线逐行落在同一条线上", dashed_ok(lines), {"rows": lines[:3]})
+            page.screenshot(path=str(shots / "v3-review.png"))
 
-            # ---------- 死磕对齐：三栏虚线逐行对位（格式一切换也不许串位） ----------
-            lines_latex = row_lines()
-            result["metrics"]["dashed"] = {"latex": lines_latex}
-            check("格式一：三栏虚线逐行落在同一条线上",
-                  dashed_ok(lines_latex),
-                  {"rows": lines_latex[:4]})
-
-            # ---------- 死磕对齐：换话术、出滚动条、切视图都不许推走中右底边 ----------
-            def bench_bottom():
-                b = canvas.locator("#edWorkbench").bounding_box()
-                return round(b["y"] + b["height"], 2)
-
-            bottom_base = bench_bottom()
-            canvas.locator("#edSourceBody").evaluate("n => { n.scrollTop = n.scrollHeight; }")
-            page.wait_for_timeout(250)
-            bottom_after_scroll = bench_bottom()
-            check("中栏滚出滚动条时底边纹丝不动",
-                  abs(bottom_after_scroll - bottom_base) <= 0.5,
-                  {"before": bottom_base, "after": bottom_after_scroll})
-            ghost = canvas.locator("#edSourceBody").evaluate(
-                "n => ({ gutter: getComputedStyle(n).scrollbarGutter,"
-                " color: getComputedStyle(n).scrollbarColor,"
-                " scrolling: n.classList.contains('is-scrolling') })")
-            check("滚动条是预留槽位的幽灵滚动条",
-                  ghost["gutter"] == "stable" and ghost["scrolling"],
-                  ghost)
-            page.wait_for_timeout(1200)
-            ghost_off = canvas.locator("#edSourceBody").evaluate(
-                "n => n.classList.contains('is-scrolling')")
-            check("停手后幽灵滚动条收回", ghost_off is False, {"is_scrolling": ghost_off})
-            canvas.locator("#edSourceBody").evaluate("n => { n.scrollTop = 0; }")
-            canvas.locator('.ed-img-jump[data-index="0"]').click()
-            page.wait_for_timeout(300)
-
-            # ---------- 右栏：同一插件的第二个沙箱帧 ----------
-            panel = page.frame_locator(PANEL)
-            expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
-            check("右栏由录题辅助面板接管", True)
+            # ---------- 右栏辅助面板 ----------
             check("辅助栏不放源码框", panel.locator(".ed-src-area, .ed-box-area").count() == 0,
                   {"src": panel.locator(".ed-src-area").count(),
                    "boxes": panel.locator(".ed-box-area").count()})
             check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
-            panel_progress = panel.locator("#epProgress")
-            wait_attribute(panel_progress, "data-total", lambda value: value not in ("", "0"), 14)
-            check("画布选区已送进辅助栏",
-                  panel_progress.get_attribute("data-total") not in (None, "0"),
-                  {"progress": panel_progress.inner_text()})
-            panel_type = panel.locator("#epType")
-            expect(panel_type).to_have_value("single_choice", timeout=14000)
-            check("题型按源码 AI 预填", True, {"value": panel_type.input_value()})
-            note = panel.locator("#epTypeNote")
-            check("题型话术标明人来改优先",
-                  "自动判断" in note.inner_text() or "人工" in note.inner_text(),
-                  {"note": note.inner_text()})
-            confidence = panel.locator("#epConfidence")
-            check("置信度如实标为假数据占位", "假数据占位" in confidence.inner_text(),
-                  {"text": confidence.inner_text()})
-            check("审核三键本期占位",
-                  panel.locator("#epPass").is_disabled()
-                  and panel.locator("#epReject").is_disabled()
-                  and panel.locator("#epSkip").is_disabled())
-
-            # ---------- 右栏主人：录题辅助栏，不许被 AI 助手顶掉 ----------
-            # 这几条是主公当面骂出来的：辅助栏一度只剩个没用的 AI 助手，
-            # 元数据、切换钮、暂存池、保存全都不见了。根因是探针环境里根本没装
-            # AI 助手，右栏没人争，录题的接管自然成功——那种环境压根验不出主人是谁。
+            audit_texts = [text.strip() for text in
+                           panel.locator('section[aria-label="审核动作"] button').all_inner_texts()]
+            check("审核动作只有三颗钮：存入主库 / 存为待办 / 彻底删除",
+                  audit_texts == ["存入主库", "存为待办", "彻底删除"],
+                  {"buttons": audit_texts})
+            check("旧的保存、变式与批量条全撤了",
+                  panel.locator("#epSave, #epVariant, #edSaveAll, #edPoolStash").count() == 0
+                  and canvas.locator("#edSaveAll, .ed-foot").count() == 0,
+                  {"panel_legacy": panel.locator("#epSave, #epVariant, #edSaveAll, #edPoolStash").count(),
+                   "canvas_legacy": canvas.locator("#edSaveAll, .ed-foot").count()})
+            check("台账只报数，不带任何按钮", panel.locator("#edPool button").count() == 0,
+                  {"buttons": panel.locator("#edPool button").count()})
             slot_title = page.locator("#wsContextSlotTitle").inner_text().strip()
             slot_badge = page.locator("#wsContextSlotBadge").inner_text().strip()
             slot_src = page.locator("#wsContextSlotBody .ws-context-frame").get_attribute("src") or ""
@@ -455,806 +643,287 @@ def main() -> int:
                   slot_title == "录题工作台" and slot_badge == "插件接管"
                   and "org.jiuzhang.editor" in slot_src,
                   {"title": slot_title, "badge": slot_badge, "src": slot_src})
-            check("AI 助手确实装在工作区里（右栏本来是有竞争者的）",
-                  page.locator(".ws-plugin-item", has_text="AI 助手").count() >= 1)
             for label, selector in (("题型", "#epType"), ("难度", "#epDifficulty"),
                                     ("年级", "#epGrade")):
                 check(f"辅助栏里元数据表单还在（{label}）",
                       panel.locator(selector).count() == 1
                       and panel.locator(selector).is_visible(),
                       {"selector": selector})
-            for label, selector in (("格式一", "#epFmtLatex"), ("格式二", "#epFmtBoxed"),
-                                    ("互换", "#epSwap")):
-                check(f"辅助栏里切换按钮还在（{label}）",
-                      panel.locator(selector).count() == 1
-                      and panel.locator(selector).is_visible(),
-                      {"selector": selector})
-            for label, selector in (("暂存待入库池", "#edPoolStash"), ("保存全部", "#edSaveAll")):
-                check(f"辅助栏里入库按钮还在（{label}）",
-                      panel.locator(selector).count() == 1
-                      and panel.locator(selector).is_visible(),
-                      {"selector": selector})
-            check("宿主那层「人机共设」重复卡不出现",
-                  page.locator("#wsPluginPanel").is_hidden()
-                  and page.locator("#wsPluginControls select").count() == 0,
-                  {"panel_hidden": page.locator("#wsPluginPanel").is_hidden(),
-                   "selects": page.locator("#wsPluginControls select").count()})
-
-            # 辅助栏内容超高时，滚动条要淡入（幽灵滚动条），停手再淡出。
-            # 2026-11-01 起滚动区是 .ep-scroll（外壳 .ep-root 只做弹性盒，底部 .ep-dock 钉死不滚）。
-            ep_overflow = panel.locator("#epScroll").evaluate(
-                "n => ({over: n.scrollHeight - n.clientHeight, cls: n.classList.contains('is-scrolling')})")
-            check("辅助栏内容确实溢出（滚动条有活干）", ep_overflow["over"] > 20, ep_overflow)
-            panel.locator("#epScroll").evaluate("n => { n.scrollTop = 60; }")
-            page.wait_for_timeout(150)
-            ep_scrolling = panel.locator("#epScroll").evaluate(
-                "n => n.classList.contains('is-scrolling')")
-            check("辅助栏滚动条淡入", ep_scrolling is True, {"is_scrolling": ep_scrolling})
-            page.wait_for_timeout(1200)
-            ep_settled = panel.locator("#epScroll").evaluate(
-                "n => n.classList.contains('is-scrolling')")
-            check("辅助栏滚动条停手后淡出", ep_settled is False, {"is_scrolling": ep_settled})
-
-            # ---------- 2026-11-01 紧凑化：栏头一行 / 视图钮单行 / 标签胶囊 / 批量保存钉底 ----------
-            head_box = page.locator("#wsContext .ws-context-head").bounding_box()
-            title_box = page.locator("#wsContextSlotTitle").bounding_box()
-            badge_box = page.locator("#wsContextSlotBadge").bounding_box()
-            fold_box = page.locator("#wsToggleCtx").bounding_box()
-            same_line = all(
-                box is not None for box in (head_box, title_box, badge_box, fold_box)
-            ) and max(box["y"] for box in (title_box, badge_box, fold_box)) - min(
-                box["y"] for box in (title_box, badge_box, fold_box)) < head_box["height"]
-            check("辅助栏抬头合并成一行（插件名、徽标与折叠钮同在栏头行）",
-                  same_line and page.locator(".ws-context-slot-head").count() == 0,
-                  {"head": head_box, "title": title_box, "badge": badge_box, "fold": fold_box})
-            check("插件自己的抬头退场（不再白占一行）",
-                  panel.locator(".ep-head").count() == 0)
-
             fmt_boxes = [panel.locator(sel).bounding_box() for sel in
                          ("#epFmtLatex", "#epFmtBoxed", "#epSwap")]
             one_row = all(box is not None for box in fmt_boxes) and (
                 max(box["y"] for box in fmt_boxes) - min(box["y"] for box in fmt_boxes) < 8)
-            check("格式一/格式二/互换同一行（空间够就不许折行）", one_row, {"boxes": fmt_boxes})
-
+            check("格式一/格式二/互换同一行", one_row, {"boxes": fmt_boxes})
             dock_box = panel.locator("#epDock").bounding_box()
             root_box = panel.locator("#epRoot").bounding_box()
-            docked = (dock_box is not None and root_box is not None
-                      and 0 <= root_box["y"] + root_box["height"]
-                      - (dock_box["y"] + dock_box["height"]) <= 4)
-            check("批量保存钉在辅助栏最底边", docked,
-                  {"root": root_box, "dock": dock_box})
-            # 滚到底之后它还钉在原地（内容滚走了，按钮不许跟着走）
-            panel.locator("#epScroll").evaluate("n => { n.scrollTop = n.scrollHeight; }")
-            page.wait_for_timeout(200)
-            dock_box2 = panel.locator("#epDock").bounding_box()
-            check("滚到底后批量保存仍钉在底边",
-                  dock_box2 is not None and root_box is not None
+            check("台账钉在辅助栏最底边",
+                  dock_box is not None and root_box is not None
                   and 0 <= root_box["y"] + root_box["height"]
-                  - (dock_box2["y"] + dock_box2["height"]) <= 4,
-                  {"dock": dock_box2})
-            panel.locator("#epScroll").evaluate("n => { n.scrollTop = 0; }")
-            page.screenshot(path=str(shots / "v2-compact-panel.png"))
+                  - (dock_box["y"] + dock_box["height"]) <= 4,
+                  {"root": root_box, "dock": dock_box})
+            page.screenshot(path=str(shots / "v3-panel.png"))
 
-            # 切走再切回来：右栏主权必须跟着画布页签来回交还，不能停在 AI 助手手里
-            console_tab = page.locator("#wsTabs [role='tab']", has_text="设置与控制台").first
-            editor_tab = page.locator("#wsTabs [role='tab']", has_text="录题工作台").first
-            console_tab.click()
-            page.wait_for_timeout(1200)
-            away_title = page.locator("#wsContextSlotTitle").inner_text().strip()
-            check("切到别的页签，右栏归还 AI 助手（这是设计，不是被吞）",
-                  away_title == "AI 助手", {"title": away_title})
-            editor_tab.click()
-            page.wait_for_timeout(1200)
-            back_title = page.locator("#wsContextSlotTitle").inner_text().strip()
-            back_editor_panel = page.frame_locator(PANEL).locator("#epRoot").count() == 1
-            check("切回录题页签，右栏重新归录题（辅助面板还在）",
-                  back_title == "录题工作台" and back_editor_panel,
-                  {"title": back_title, "editor_panel": back_editor_panel})
+            # ---------- 存为待办：改过的题原地写回中转池 ----------
+            area = canvas.locator('.ed-src-area[data-index="0"]').first
+            expect(area).to_be_visible(timeout=10000)
+            area.click()
+            area.fill(inject_mark(area.input_value()))
+            edited_source = area.input_value()
+            deadline = time.time() + 15
+            panel_got = False
+            while time.time() < deadline:
+                current = panel.locator("#epRoot").evaluate(
+                    "() => String((window.__jzoEditorV2.panel || {}).source || '')")
+                if MARK in current:
+                    panel_got = True
+                    break
+                page.wait_for_timeout(100)
+            check("改动经选区送进辅助栏", panel_got,
+                  {"panel_source": current[:80] if current else ""})
+            pool_before = pending_items(base, batch_id)
+            panel.locator("#epStash").click()
+            check("【存为待办】给出回执", wait_message("已存为待办"),
+                  {"messages": [m.get("text", "") for m in probe_messages()][-4:]})
+            pool_after = pending_items(base, batch_id)
+            check("存为待办是原地更新：池子里不多出一道重影",
+                  len(pool_after) == len(pool_before),
+                  {"before": len(pool_before), "after": len(pool_after)})
+            check("改过的内容真的落进中转池",
+                  any(MARK in str(item.get("question", {}).get("stem", ""))
+                      for item in pool_after),
+                  {"stems": [str(item.get("question", {}).get("stem", ""))[:40]
+                             for item in pool_after][:3]})
+            page.screenshot(path=str(shots / "v3-stash.png"))
 
-            # ---------- 2026-10-31 整改：底栏搬进辅助栏 + 辅助栏铺满 + 页签栏焊死 ----------
-            check("批量条整条搬进辅助栏（画布那份隐藏）",
-                  panel.locator("#edSaveAll").first.is_visible()
-                  and not canvas.locator("#edSaveAll").first.is_visible()
-                  and canvas.locator(".ed-foot").count() == 0,
-                  {"panel": panel.locator("#edSaveAll").count(),
-                   "canvas": canvas.locator("#edSaveAll").count()})
-            check("待入库池本期只做界面（暂存出厂锁死）",
-                  panel.locator("#edPoolStash").is_disabled()
-                  and "下一军令" in (panel.locator("#edPoolStash").get_attribute("title") or ""))
-            check("辅助栏不再展示无用的模型信息",
-                  page.locator("#ctxModel").count() == 0
-                  and page.locator("#wsContextSlot").is_visible())
-            # 辅助栏 100% 铺满画布：插槽自己吃掉剩余高度，面板内部滚动
-            ctx_box = page.locator("#wsContext").bounding_box()
-            slot_box = page.locator("#wsContextSlotBody").bounding_box()
-            frame_box = page.locator("#wsContextSlotBody .ws-context-frame").bounding_box()
-            ctx_bottom = round(ctx_box["y"] + ctx_box["height"], 2)
-            frame_bottom = round(frame_box["y"] + frame_box["height"], 2)
-            check("辅助栏面板撑到栏底（底下不留半截空白）",
-                  ctx_box is not None and slot_box is not None and frame_box is not None
-                  and 0 <= ctx_bottom - frame_bottom <= 16
-                  and frame_box["height"] >= 0.85 * ctx_box["height"],
-                  {"ctx": ctx_box, "slot": slot_box, "frame": frame_box,
-                   "slack": round(ctx_bottom - frame_bottom, 2)})
-            # 页签栏：入口钮、页签、辅助栏钮三者紧挨着，底边同一条线。
-            # 桌面端两枚钮平时收着（只在本栏折叠时露头），所以先把左栏收起来逼出入口钮。
-            def tabbar_geometry():
-                entry = page.locator("#wsOpenSidebar")
-                tabs = page.locator("#wsTabs")
-                ctx_btn = page.locator("#wsOpenCtx")
-                entry_box = entry.bounding_box() if entry.is_visible() else None
-                tabs_box = tabs.bounding_box()
-                ctx_box = ctx_btn.bounding_box() if ctx_btn.is_visible() else None
-                return {
-                    "entry": entry_box, "tabs": tabs_box, "ctx": ctx_box,
-                    "gap_entry_tabs": (round(tabs_box["x"] - (entry_box["x"] + entry_box["width"]), 2)
-                                       if entry_box and tabs_box else None),
-                    "gap_tabs_ctx": (round(ctx_box["x"] - (tabs_box["x"] + tabs_box["width"]), 2)
-                                     if ctx_box and tabs_box else None),
-                    "bottoms": [round(box["y"] + box["height"], 2)
-                                for box in (entry_box, tabs_box, ctx_box) if box],
-                }
-
-            page.locator("#wsToggleSidebar").click()
-            page.wait_for_timeout(700)
-            geo_entry = tabbar_geometry()
-            check("入口钮与页签紧挨着（不留死白空隙）",
-                  geo_entry["gap_entry_tabs"] is not None
-                  and 0 <= geo_entry["gap_entry_tabs"] <= 2,
-                  {"gap": geo_entry["gap_entry_tabs"]})
-            check("入口钮与页签底边同一条水平线",
-                  len(geo_entry["bottoms"]) == 2
-                  and abs(geo_entry["bottoms"][0] - geo_entry["bottoms"][1]) <= 1,
-                  {"bottoms": geo_entry["bottoms"]})
-            page.screenshot(path=str(shots / "v2-tabbar.png"))
-            # 左栏收起后，栏里的折叠钮也跟着没了：回头路就是页签栏上这枚「入口」
-            page.locator("#wsOpenSidebar").click()
-            page.wait_for_timeout(700)
-            check("入口钮能把左栏叫回来",
-                  page.locator(".ws-page").get_attribute("data-side") == "open")
-            result["metrics"]["tabbar"] = geo_entry
-            page.screenshot(path=str(shots / "v2-panel.png"))
-
-            # ---------- 拖窄画布：三栏等比缩放，损失不许独独压在渲染栏上 ----------
-            geo_before = pane_geo()
-            resizer = page.locator("#wsResizerCtx")
-            for _ in range(8):
-                resizer.press("Shift+ArrowLeft")
-            page.wait_for_timeout(900)
-            geo_after = pane_geo()
-            result["metrics"]["scaling"] = {"before": geo_before, "after": geo_after}
-            total_shrink = geo_before["total"] - geo_after["total"]
-            image_shrink = geo_before["image"] - geo_after["image"]
-            source_shrink = geo_before["source"] - geo_after["source"]
-            render_shrink = geo_before["render"] - geo_after["render"]
-            check("画布拖窄时三栏等比缩放：缩水的份额三家分摊，不是渲染栏独吞",
-                  total_shrink > 40
-                  and image_shrink >= 0.15 * total_shrink
-                  and source_shrink >= 0.15 * total_shrink
-                  and render_shrink <= 0.8 * total_shrink,
-                  {"total_shrink": total_shrink, "image_shrink": image_shrink,
-                   "source_shrink": source_shrink, "render_shrink": render_shrink,
-                   "before": geo_before, "after": geo_after})
-            check("原图栏占画布的比例不随画布宽度漂移",
-                  abs(geo_before["image"] / geo_before["total"]
-                      - geo_after["image"] / geo_after["total"]) <= 0.02,
-                  {"before_ratio": round(geo_before["image"] / geo_before["total"], 4),
-                   "after_ratio": round(geo_after["image"] / geo_after["total"], 4)})
-            check("渲染栏有下限：画布再窄也不被挤成一条缝",
-                  geo_after["render"] >= 160,
-                  {"render": geo_after["render"], "min": 160})
-            lines_scaled = row_lines()
-            check("拖窄画布后三栏虚线仍逐行对位",
-                  dashed_ok(lines_scaled),
-                  {"rows": lines_scaled[:4]})
-            page.screenshot(path=str(shots / "v2-scaled.png"))
-            resizer.press("Home")
-            page.wait_for_timeout(800)
-            geo_restored = pane_geo()
-            check("分隔条按 Home 回到默认宽度，画布复原",
-                  abs(geo_restored["total"] - geo_before["total"]) <= 2,
-                  {"before": geo_before["total"], "restored": geo_restored["total"]})
-
-            # ---------- 左右互换（辅助栏按钮）：只是视觉换位，编辑值、选区与滚动都得留住 ----------
-            # 辅助栏已挂载再测：互换若误改当前题，面板会立刻跟着漂，判据才收得住。
-            swap_area = canvas.locator(".ed-src-area").first
-            swap_area.click(position={"x": 40, "y": 12})
-            swap_area.evaluate("node => node.setSelectionRange(4, 10)")
-            # 只滚一小段：仍停在第一题的行内，别让「跟题」把当前题换走
-            canvas.locator("#edSourceBody").evaluate("node => { node.scrollTop = 30; }")
-            page.wait_for_timeout(300)
-            source_x_before = round(canvas.locator("#edPaneSource").bounding_box()["x"], 2)
-            render_x_before = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
-            scroll_before = canvas.locator("#edSourceBody").evaluate("n => n.scrollTop")
-            value_before = swap_area.input_value()
-            panel.locator("#epSwap").click()
-            page.wait_for_timeout(500)
-            source_x_after = round(canvas.locator("#edPaneSource").bounding_box()["x"], 2)
-            render_x_after = round(canvas.locator("#edPaneRender").bounding_box()["x"], 2)
-            check("辅助栏点【⇄ 互换】：源码与渲染左右换位",
-                  source_x_before < render_x_before and source_x_after > render_x_after
-                  and canvas.locator("#edCols").get_attribute("data-swap") == "true",
-                  {"before": [source_x_before, render_x_before],
-                   "after": [source_x_after, render_x_after]})
-            check("互换后源码一个字都没丢", swap_area.input_value() == value_before)
-            scroll_after = canvas.locator("#edSourceBody").evaluate("n => n.scrollTop")
-            check("互换后中栏滚动进度原地保留",
-                  abs(scroll_after - scroll_before) <= 1,
-                  {"before": scroll_before, "after": scroll_after})
-            check("互换没把当前题带跑",
-                  canvas.locator("#edProgress").get_attribute("data-active") == "1",
-                  {"progress": canvas.locator("#edProgress").inner_text()})
-            check("辅助栏互换钮同步亮起",
-                  panel.locator("#epSwap").get_attribute("aria-pressed") == "true")
-            page.screenshot(path=str(shots / "v2-swapped.png"))
-            panel.locator("#epSwap").click()
-            page.wait_for_timeout(400)
-            check("辅助栏互换钮也能换回原位",
-                  canvas.locator("#edCols").get_attribute("data-swap") == "false"
-                  and canvas.locator("#edPaneSource").bounding_box()["x"]
-                  < canvas.locator("#edPaneRender").bounding_box()["x"])
-            page.screenshot(path=str(shots / "v2-swap.png"))
-            # 互换段把滚动线压到 30px：跳回第一题顶部，后续拖栏与格式切换从干净状态起步
-            canvas.locator('.ed-img-jump[data-index="0"]').click()
-            page.wait_for_timeout(400)
-
-            # ---------- 拖手：键盘路径，拖到底只留极窄缝 ----------
-            image_pane = canvas.locator("#edPaneImage")
-            width_before = image_pane.evaluate("node => node.getBoundingClientRect().width")
-            for _ in range(3):
-                canvas.locator("#edSplitImage").press("ArrowLeft")
-            page.wait_for_timeout(400)
-            width_after = image_pane.evaluate("node => node.getBoundingClientRect().width")
-            check("方向键可拖窄左栏", width_after < width_before,
-                  {"before": width_before, "after": width_after})
-            for _ in range(14):
-                canvas.locator("#edSplitImage").press("ArrowLeft")
-            page.wait_for_timeout(400)
-            floor = image_pane.evaluate("node => node.getBoundingClientRect().width")
-            check("拖到底不归零（只留极窄缝）", 28 <= floor < width_before, {"width": floor})
-
-            # ---------- 格式二（辅助栏按钮）：拆框编辑，改完自动重组格式一 ----------
-            panel.locator("#epFmtBoxed").click()
-            expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "boxed",
-                                                                 timeout=12000)
-            check("辅助栏格式二按钮同步高亮",
-                  panel.locator("#epFmtBoxed").get_attribute("aria-pressed") == "true"
-                  and panel.locator("#epFmtLatex").get_attribute("aria-pressed") == "false")
-            boxes_now = canvas.locator(".ed-box").count()
-            check("格式二按环境拆出框", boxes_now >= 4, {"boxes": boxes_now})
-            page.wait_for_timeout(400)
-            lines_boxed = row_lines()
-            result["metrics"]["dashed"]["boxed"] = lines_boxed
-            check("点格式二：三栏虚线仍逐行对位（底边不因换视图错位）",
-                  dashed_ok(lines_boxed),
-                  {"rows": lines_boxed[:4]})
-            boxed_bottom = bench_bottom()
-            check("点格式二：中右两栏底边纹丝不动",
-                  abs(boxed_bottom - bottom_base) <= 0.5,
-                  {"before": bottom_base, "after": boxed_bottom})
-            env_labels = [text.strip() for text in canvas.locator(".ed-box-env").all_inner_texts()]
-            check("框头环境名是锁定文本",
-                  bool(env_labels) and all(
-                      label.startswith("\\begin{") or label.startswith("\\item")
-                      or "首行" in label or "内" in label for label in env_labels),
-                  {"labels": env_labels})
-            option_box = canvas.locator('.ed-box-area[data-field="choice"][data-pos="1"]').first
-            expect(option_box).to_be_visible(timeout=8000)
-            option_box.fill("$1$（" + MARK + "）")
-            page.wait_for_timeout(500)
-            panel.locator("#epFmtLatex").click()
-            expect(canvas.locator("#edFormat")).to_have_attribute("data-format", "latex",
-                                                                 timeout=12000)
-            rebuilt = canvas.locator(".ed-src-area").first.input_value()
-            check("改框自动重组格式一", MARK in rebuilt, {"tail": rebuilt[-140:]})
-            check("切格式没有改坏环境骨架",
-                  "\\begin{choices}" in rebuilt and "\\end{solution}" in rebuilt,
-                  {"head": rebuilt[:80]})
-            page.wait_for_timeout(400)
-            lines_back = row_lines()
-            result["metrics"]["dashed"]["back_latex"] = lines_back
-            check("切回格式一：虚线依旧逐行对位",
-                  dashed_ok(lines_back),
-                  {"rows": lines_back[:4]})
-            page.screenshot(path=str(shots / "v2-boxed.png"))
-
-            # ---------- 元数据表单 ----------
-            panel.locator("#epGrade").fill("高一")
-            # 标签改小胶囊（2026-11-01）：不再是整行输入框，点「+ 标签」才长出输入框，回车落一颗。
-            def add_tag(text: str) -> None:
-                panel.locator(".ep-tag-add").click()
-                panel.locator(".ep-tag-input").fill(text)
-                panel.locator(".ep-tag-input").press("Enter")
-                page.wait_for_timeout(150)
-
-            add_tag(MARK)
-            add_tag("二次函数")
-            page.wait_for_timeout(300)
-            tag_count = panel.locator(".ep-tag").count()
-            tag_boxes = [panel.locator(".ep-tag").nth(index).bounding_box()
-                         for index in range(tag_count)]
-            tag_row = panel.locator("#epTagList").bounding_box()
-            check("标签是小胶囊（宽度随文字，不占满整行）",
-                  tag_count >= 2 and tag_row is not None
-                  and all(box is not None and box["width"] < tag_row["width"]
-                          for box in tag_boxes),
-                  {"count": tag_count, "boxes": tag_boxes, "row": tag_row})
-            tag_names = [panel.locator(".ep-tag-name").nth(index).inner_text().strip()
-                         for index in range(tag_count)]
-            check("标签胶囊内容就是填进去的那两个",
-                  MARK in tag_names and "二次函数" in tag_names,
-                  {"names": tag_names})
-            check("标签输入框收起了（只留一颗「+ 标签」口子）",
-                  panel.locator(".ep-tag-input").count() == 0
-                  and panel.locator(".ep-tag-add").count() == 1,
-                  {"inputs": panel.locator(".ep-tag-input").count(),
-                   "adds": panel.locator(".ep-tag-add").count()})
-            # 标签那块的实拍：胶囊、行高与底栏话术都要看得见
-            panel.locator("#epTagList").evaluate(
-                "n => n.scrollIntoView({block: 'center'})")
-            page.wait_for_timeout(250)
-            page.screenshot(path=str(shots / "v2-tag-chips.png"))
-            panel.locator("#epPaper").fill(MARK + " 一模卷")
-            panel.locator("#epQuestionNo").fill("7")
-            panel.locator("#epYear").fill("2024")
-            panel.locator("#epExamType").fill("一模")
-            panel.locator("#epDifficulty").select_option("L2")
-            page.wait_for_timeout(400)
-            metrics = panel.locator("#epMetrics")
-            check("元数据改动标脏",
-                  wait_attribute(metrics, "data-dirty", lambda value: value == "true", 8) == "true",
-                  {"metrics": metrics.inner_text()})
-
-            # ---------- 考向树：懒展开；空库时只如实说明，不假装成功 ----------
-            tree_rows = panel.locator(".ep-topic-row").count()
-            result["metrics"]["topic_rows"] = tree_rows
-            if tree_rows:
-                panel.locator(".ep-topic-expander").first.click()
-                page.wait_for_timeout(900)
-                rows_after_expand = panel.locator(".ep-topic-row").count()
-                check("考向树可懒展开", rows_after_expand >= tree_rows,
-                      {"before": tree_rows, "after": rows_after_expand})
-                panel.locator(".ep-topic-name").first.click()
-                page.wait_for_timeout(400)
-                check("点名称可挂载考向", panel.locator(".ep-chip").count() >= 1,
-                      {"chips": panel.locator(".ep-chip").count()})
-            else:
-                tree_text = panel.locator("#epTopicTree").inner_text()
-                check("没有大纲节点时如实说明", "还没有大纲" in tree_text
-                      or "正在读" in tree_text, {"note": tree_text})
-
-            # ---------- 单题保存：新建走 bank.create ----------
-            stem_area = canvas.locator(".ed-src-area").first
-            stem_area.fill(stem_area.input_value().replace(
-                "\\begin{question}\n已知函数",
-                "\\begin{question}\n" + MARK + "题：已知函数", 1))
-            page.wait_for_timeout(600)
-            panel.locator("#epSave").click()
-            saved_state = wait_attribute(metrics, "data-save-state",
-                                         lambda value: value in ("created", "updated"), 20)
-            check("辅助栏保存回执落地", saved_state == "created", {"save_state": saved_state})
-            saved = canvas.locator("#edSaved")
-            expect(saved).to_be_visible(timeout=20000)
-            question_id = saved.get_attribute("data-id") or ""
+            # ---------- 存入主库：p_ 号段换成 q_ 号段 ----------
+            dock_mark = len(dock_entries())
+            total_pre_approve = bank_total(base)
+            panel.locator("#epApprove").click()
+            approve_line = wait_dock(lambda e: "已存入主库" in e.get("text", ""), 30, dock_mark)
+            check("【存入主库】给出回执", wait_message("已存入主库"),
+                  {"messages": [m.get("text", "") for m in probe_messages()][-4:]})
+            check("底部日志记下入库回执", approve_line is not None, {"line": approve_line})
+            question_id = ""
+            if approve_line:
+                hit = re.search(r"(q_[A-Za-z0-9_-]{8,64})", approve_line.get("text", ""))
+                question_id = hit.group(1) if hit else ""
             result["metrics"]["question_id"] = question_id
-            check("保存返回合法题目 ID",
+            check("入库回执带着合法的题目 ID",
                   bool(re.fullmatch(r"q_[A-Za-z0-9_-]{8,64}", question_id)),
                   {"id": question_id})
-            check("写库完成后按钮不再 busy",
-                  panel.locator("#epSave").get_attribute("aria-busy") in (None, "false"))
-            check("画布脏标记随保存清掉",
-                  wait_attribute(canvas.locator("#edDirty"), "data-dirty",
-                                 lambda value: value == "false", 10) == "false")
-
+            total_post_approve = bank_total(base)
+            check("主库总数 +1", total_post_approve == total_before + 1,
+                  {"before": total_before, "after": total_post_approve})
             status, document = http_json(
                 base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
-            result["metrics"]["created"] = document
-            check("API 可查到新题", status == 200, {"status": status})
-            check("源码题干已落库", MARK in document.get("stem", ""),
-                  {"stem": document.get("stem", "")[:120]})
-            check("答案从「答案：B」还原为选项标号",
-                  document.get("answer", {}).get("choice_keys") == ["B"],
-                  {"answer": document.get("answer")})
-            check("选项内容带上格式二的改动",
-                  MARK in json.dumps(document.get("options", []), ensure_ascii=False),
-                  {"options": document.get("options")})
-            check("解析已落库", bool(document.get("solution")),
-                  {"solution": document.get("solution", "")[:80]})
-            check("难度/年级/标签/来源一致",
-                  document.get("difficulty") == "L2"
-                  and document.get("grade") == "高一"
-                  and MARK in (document.get("tags") or [])
-                  and (document.get("source") or {}).get("question_no") == "7"
-                  and (document.get("source") or {}).get("year") == 2024,
-                  {"difficulty": document.get("difficulty"), "grade": document.get("grade"),
-                   "tags": document.get("tags"), "source": document.get("source")})
-            check("题目结构与契约同口径",
-                  document.get("schema_version") == "2.0"
-                  and document.get("type") == "single_choice",
-                  {"schema_version": document.get("schema_version"),
-                   "type": document.get("type")})
+            check("主库里查得到这道题", status == 200, {"status": status})
+            check("入库的是改过的那一版题干",
+                  MARK in str(document.get("stem", "")),
+                  {"stem": str(document.get("stem", ""))[:80]})
+            doc_answer = document.get("answer") or {}
+            seed_answer = seed_doc.get("answer") or {}
+            choice_types = ("single_choice", "multiple_choice")
+            if str(seed_doc.get("type") or "") in choice_types:
+                answer_ok = list(doc_answer.get("choice_keys") or []) == list(
+                    seed_answer.get("choice_keys") or [])
+            else:
+                answer_ok = str(doc_answer.get("final") or "").strip() == str(
+                    seed_answer.get("final") or "").strip()
+            check("题型/答案按源码还原",
+                  str(document.get("type") or "") == str(seed_doc.get("type") or "")
+                  and answer_ok
+                  and str(doc_answer.get("final") or "") in edited_source,
+                  {"type": document.get("type"), "answer": doc_answer,
+                   "seed_type": seed_doc.get("type"), "seed_answer": seed_answer})
+            pool_now = pending_items(base, batch_id)
+            check("入库后这一题从中转池消失",
+                  len(pool_now) == len(pool_after) - 1,
+                  {"before": len(pool_after), "after": len(pool_now)})
+            check("画布上那一道也撤了下来",
+                  canvas.locator(".ed-src-area").count() == pending_count - 1,
+                  {"rows": canvas.locator(".ed-src-area").count()})
 
-            _, stats_after = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            total_after = int(stats_after.get("total") or 0)
-            check("题库总数 +1", total_after == total_before + 1,
-                  {"before": total_before, "after": total_after})
-            page.screenshot(path=str(shots / "v2-saved.png"))
+            # ---------- 审完这一批：剩下的逐道入库 ----------
+            for _ in range(pending_count - 1):
+                if not sync_panel():
+                    break
+                before = len(pending_items(base, batch_id))
+                panel.locator("#epApprove").click()
+                wait_pool_shrink(base, batch_id, before, 30)
+            check("这一批审完了：池子里一条不剩", not pending_items(base, batch_id),
+                  {"items": len(pending_items(base, batch_id))})
+            expect(canvas.locator("#edBatches")).to_be_visible(timeout=20000)
+            check("审完自动回到批次列表",
+                  canvas.locator("#edRoot").get_attribute("data-mode") == "list",
+                  {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
 
-            # ---------- 编辑态保存走 bank.update ----------
-            edit_area = canvas.locator(".ed-src-area").first
-            edit_area.fill(edit_area.input_value().replace(MARK, MARK + "改", 1))
-            page.wait_for_timeout(600)
-            panel.locator("#epSave").click()
-            updated_state = wait_attribute(metrics, "data-save-state",
-                                           lambda value: value == "updated", 20)
-            check("再次保存走更新而非新建", updated_state == "updated",
-                  {"save_state": updated_state})
-            status, updated_doc = http_json(
+            # ---------- 审完的卡片：变灰、沉底、点不动 ----------
+            done_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
+            expect(done_row).to_be_visible(timeout=10000)
+            done_text = done_row.inner_text()
+            check("审完的卡片写着「未审：0 / N ✅」",
+                  bool(re.search(r"未审：\s*0\s*/\s*\d+\s*✅", done_text)),
+                  {"text": done_text})
+            check("审完的卡片点不动",
+                  done_row.is_disabled()
+                  and done_row.get_attribute("aria-disabled") == "true"
+                  and done_row.get_attribute("data-done") == "true",
+                  {"disabled": done_row.is_disabled(),
+                   "aria": done_row.get_attribute("aria-disabled"),
+                   "done": done_row.get_attribute("data-done")})
+            done_opacity = done_row.evaluate("n => getComputedStyle(n).opacity")
+            check("审完的卡片整行变灰", float(done_opacity) < 1,
+                  {"opacity": done_opacity})
+            done_num_color = done_row.locator(".ed-batch-num").first.evaluate(
+                "n => getComputedStyle(n).color")
+            check("审完的卡片数字也褪成灰的", done_num_color == "rgb(109, 99, 85)",
+                  {"color": done_num_color})
+            order = canvas.locator(".ed-batch-row").evaluate_all(
+                "nodes => nodes.map(n => [n.getAttribute('data-batch'),"
+                " n.getAttribute('data-done')])")
+            flags = [flag for _batch, flag in order]
+            first_done = flags.index("true") if "true" in flags else len(flags)
+            check("审完的批次沉到列表最底下",
+                  flags[first_done:] == ["true"] * len(flags[first_done:])
+                  and order[first_done][0] == batch_id,
+                  {"order": order})
+            page.screenshot(path=str(shots / "v3-done.png"))
+            done_box = done_row.bounding_box()
+            page.mouse.click(done_box["x"] + 4, done_box["y"] + done_box["height"] / 2)
+            page.wait_for_timeout(500)
+            check("点不动的批次进不去审核",
+                  canvas.locator("#edRoot").get_attribute("data-mode") == "list"
+                  and canvas.locator("#edCols").is_hidden(),
+                  {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
+
+            # ---------- 查重：主库已有同题 → 返回修改 / 强行覆盖 ----------
+            status, dup_doc = http_json(
                 base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
-            check("原题 ID 未变且题干已更新",
-                  status == 200 and updated_doc.get("id") == question_id
-                  and MARK + "改" in updated_doc.get("stem", ""),
-                  {"id": updated_doc.get("id"),
-                   "stem": updated_doc.get("stem", "")[:60]})
-            # 底座 update_question 只推 updated_at，meta.revision 恒为 1（bank.py 里没有任何自增路径），
-            # 这里如实记录现状：拿修订号当改判据会把探针打成假红。
-            result["metrics"]["update_meta"] = {
-                "before": (document.get("meta") or {}),
-                "after": (updated_doc.get("meta") or {}),
-            }
-            check("改动写进更新时间（修订号由底座维持为 1）",
-                  (updated_doc.get("meta") or {}).get("updated_at", "")
-                  >= (document.get("meta") or {}).get("updated_at", "")
-                  and (updated_doc.get("meta") or {}).get("revision") == 1,
-                  {"revision": (updated_doc.get("meta") or {}).get("revision"),
-                   "updated_at": (updated_doc.get("meta") or {}).get("updated_at")})
-            _, stats_after_update = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            check("更新不新增题目", int(stats_after_update.get("total") or 0) == total_after,
-                  {"total": stats_after_update.get("total")})
+            status_dup, dup_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": dup_doc}], "origin": "probe.recognize"})
+            check("另一份卷认出同一道题，已入池",
+                  status_dup == 201 and int(dup_body.get("batch", {}).get("total") or 0) >= 1,
+                  {"status": status_dup, "batch": dup_body.get("batch")})
+            dup_batch = str(dup_body.get("batch_id") or "")
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(500)
+            check("批次列表多出一行",
+                  canvas.locator(".ed-batch-row").count() == len(pending_cards(base)),
+                  {"rows": canvas.locator(".ed-batch-row").count()})
+            open_batch(dup_batch)
+            sync_panel()
+            panel.locator("#epApprove").click()
+            expect(panel.locator("#epDupModal")).to_be_visible(timeout=25000)
+            check("查重命中弹出「返回修改 / 强行覆盖」",
+                  panel.locator("#epDupBack").inner_text().strip() == "返回修改"
+                  and panel.locator("#epDupForce").inner_text().strip() == "强行覆盖",
+                  {"back": panel.locator("#epDupBack").inner_text(),
+                   "force": panel.locator("#epDupForce").inner_text()})
+            check("弹窗里带着主库那道题的编号",
+                  bool(re.search(r"q_[A-Za-z0-9_-]{8,64}", panel.locator("#epDupText").inner_text())),
+                  {"text": panel.locator("#epDupText").inner_text()})
+            page.screenshot(path=str(shots / "v3-dup.png"))
+            panel.locator("#epDupBack").click()
+            expect(panel.locator("#epDupModal")).to_be_hidden(timeout=10000)
+            check("点【返回修改】：题还留在中转池里",
+                  len(pending_items(base, dup_batch)) == 1,
+                  {"items": len(pending_items(base, dup_batch))})
+            total_before_force = bank_total(base)
+            panel.locator("#epApprove").click()
+            expect(panel.locator("#epDupModal")).to_be_visible(timeout=25000)
+            panel.locator("#epDupForce").click()
+            deadline = time.time() + 30
+            while time.time() < deadline and pending_items(base, dup_batch):
+                page.wait_for_timeout(200)
+            check("【强行覆盖】把主库那道题盖掉，题数不增",
+                  bank_total(base) == total_before_force
+                  and not pending_items(base, dup_batch),
+                  {"before": total_before_force, "after": bank_total(base),
+                   "items": len(pending_items(base, dup_batch))})
 
-            # ---------- 派生变式：另发新 ID，原题不动 ----------
-            panel.locator("#epVariant").click()
-            variant_id = wait_attribute(metrics, "data-variant-id",
-                                        lambda value: value.startswith("q_"), 20)
-            variant_text = panel.locator("#epMessage").inner_text()
-            result["metrics"]["variant_message"] = variant_text
-            check("派生变式另发新 ID",
-                  bool(variant_id) and variant_id != question_id,
-                  {"variant": variant_id, "origin": question_id, "message": variant_text[:80]})
-            _, origin_doc = http_json(
-                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
-            check("变式没有覆盖原题", MARK + "改" in origin_doc.get("stem", ""),
-                  {"stem": origin_doc.get("stem", "")[:80]})
-            _, stats_final = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            check("变式让总数再 +1", int(stats_final.get("total") or 0) == total_after + 1,
-                  {"total": stats_final.get("total")})
+            # ---------- 识别有出入：照切不误，只在底部日志留一行警告 ----------
+            toasts_before = len(probe_toasts())
+            open_batch(broken_batch)
+            warn_line = wait_dock(lambda e: "识别有出入" in e.get("text", ""), 30)
+            check("识别有出入只在底部日志留一行警告",
+                  warn_line is not None and warn_line.get("level") == "warn",
+                  {"line": warn_line})
+            check("画布上没有弹红窗",
+                  not any(item.get("tone") == "error" for item in probe_toasts()[toasts_before:]),
+                  {"toasts": probe_toasts()[toasts_before:]})
+            check("识别有出入的题照样切进三栏",
+                  canvas.locator(".ed-src-area").count() >= 1,
+                  {"rows": canvas.locator(".ed-src-area").count()})
+            page.screenshot(path=str(shots / "v3-broken.png"))
 
-            # ---------- 阶段 3：AI 帮改（档 1）——光标定字段 → 预览 → 点采用才替换 ----------
-            src = canvas.locator('.ed-src-area[data-index="0"]').first
-            expect(src).to_be_visible(timeout=10000)
-            before_ai = src.input_value()
-            src.evaluate("""node => {
-              var at = node.value.indexOf('求其最小值');
-              node.focus();
-              node.setSelectionRange(at + 2, at + 5);
-              node.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
-            }""")
-            ai_field = panel.locator("#epAiField")
-            picked = wait_attribute(ai_field, "data-ai-field", lambda value: value == "stem", 12)
-            check("光标落在题干段里，面板认出改写字段是题干", picked == "stem",
-                  {"field": picked, "hint": ai_field.inner_text()[:70]})
-            send = panel.locator("#epAiSend")
-            check("没写指令时【发送】按不动", send.is_disabled())
-            panel.locator("#epAiAsk").fill("把「求其最小值」改成「求最小值并写出取等条件」")
-            expect(send).to_be_enabled(timeout=8000)
-            check("字段 + 指令齐了才允许发送", not send.is_disabled())
+            # ---------- 三分钟无操作：静默存回中转池，只留一行灰字 ----------
+            open_batch(unique_batch)
+            sync_panel()
+            items_before_idle = pending_items(base, unique_batch)
+            doc_before = dict(items_before_idle[0].get("question", {})) if items_before_idle else {}
+            stamp_before = items_before_idle[0].get("updated_at", "") if items_before_idle else ""
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.tickIdle()")
+            idle_line = wait_dock(lambda e: IDLE_NOTE_RE.match(e.get("copy", "") or "") is not None, 40)
+            check("长时间无操作只留一行灰字",
+                  idle_line is not None and idle_line.get("level") == "note",
+                  {"line": idle_line})
+            items_after_idle = pending_items(base, unique_batch)
+            check("自动存草稿是原地更新：池子里条数不变",
+                  len(items_after_idle) == len(items_before_idle),
+                  {"before": len(items_before_idle), "after": len(items_after_idle)})
+            check("自动存草稿真的写回中转池",
+                  bool(items_after_idle)
+                  and str(items_after_idle[0].get("updated_at", "")) != stamp_before,
+                  {"before": stamp_before,
+                   "after": items_after_idle[0].get("updated_at") if items_after_idle else ""})
+            doc_after = dict(items_after_idle[0].get("question", {})) if items_after_idle else {}
+            check("自动存草稿不抹掉年级、标签与来源",
+                  doc_after.get("grade") == doc_before.get("grade")
+                  and doc_after.get("tags") == doc_before.get("tags")
+                  and doc_after.get("source") == doc_before.get("source"),
+                  {"before": {"grade": doc_before.get("grade"), "tags": doc_before.get("tags"),
+                              "source": doc_before.get("source")},
+                   "after": {"grade": doc_after.get("grade"), "tags": doc_after.get("tags"),
+                             "source": doc_after.get("source")}})
+            check("自动存草稿不弹窗",
+                  not any(item.get("tone") == "error" for item in probe_toasts()[toasts_before:]),
+                  {"toasts": probe_toasts()[toasts_before:]})
 
-            send.click()
-            state_node = panel.locator("#epAiState")
-            settled = wait_attribute(state_node, "data-ai-state",
-                                     lambda value: value in {"ready", "error"}, 25)
-            note = panel.locator("#epAiNote")
-            preview = panel.locator("#epAiPreview")
-            preview_text = preview.inner_text()
-            result["metrics"]["ai"] = {"state": settled, "note": note.inner_text()[:80],
-                                       "hits": stub.hits, "fields": stub.fields}
-            check("改写请求真的走到 Provider 桩（本机回环，未出网）",
-                  settled == "ready" and stub.hits >= 1 and "stem" in stub.fields,
-                  {"state": settled, "hits": stub.hits, "fields": stub.fields})
-            check("预览给出改写结果并停在「待老师裁决」",
-                  StubProvider.MARKER in preview_text
-                  and preview.get_attribute("data-ai-value") == "ready",
-                  {"preview": preview_text[:90]})
-            check("改写≠原文，所以不标回显", (note.get_attribute("data-ai-mock") or "") == "",
-                  {"note": note.inner_text()[:80]})
-            check("没点采用前画布源码一个字都没动",
-                  StubProvider.MARKER not in src.input_value()
-                  and src.input_value() == before_ai)
-            apply_state = panel.locator("#epAiApply")
-            expect(apply_state).to_be_enabled(timeout=8000)
-            apply_state.click()
-            applied = wait_value(src, lambda value: StubProvider.MARKER in value, 12)
-            check("点采用才替换，且只换题干段正文",
-                  StubProvider.MARKER in applied
-                  and "\\begin{choices}" in applied and "\\end{choices}" in applied
-                  and applied.count(StubProvider.MARKER) == 1,
-                  {"head": applied[:120]})
-            check("环境骨架与「答案：」行不受改写影响",
-                  "\\begin{question}" in applied and "\\begin{solution}" in applied
-                  and "答案：" in applied)
-            toast_text = wait_text(canvas.locator("#edToast"),
-                                   lambda value: "已采用" in value, 6)
-            check("画布自己回显「已采用」并提醒还没保存",
-                  "已采用" in toast_text and "还没保存" in toast_text,
-                  {"toast": toast_text[:60]})
-            check("面板把话说清：发出去了不等于入库",
-                  "保存才入库" in panel.locator("#epMessage").inner_text(),
-                  {"message": panel.locator("#epMessage").inner_text()[:80]})
-            page.screenshot(path=str(shots / "v2-ai-apply.png"))
-
-            # ---------- 放弃分支：改写作废，源码退回采用前 ----------
-            src.evaluate("""node => {
-              var at = node.value.indexOf('解析：配方得');
-              node.focus();
-              node.setSelectionRange(at + 3, at + 6);
-              node.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
-            }""")
-            picked2 = wait_attribute(ai_field, "data-ai-field", lambda value: value == "solution", 12)
-            check("光标移到解析段，字段判定跟着换", picked2 == "solution", {"field": picked2})
-            hits_before = stub.hits
-            send.click()
-            flipping = wait_attribute(preview, "data-ai-field", lambda value: value == "solution", 12)
+            # ---------- 彻底删除：先问一句再删 ----------
+            total_before_delete = bank_total(base)
+            card_before = next(c for c in pending_cards(base)
+                               if c["batch_id"] == unique_batch)
+            panel.locator("#epDelete").click()
+            expect(panel.locator("#epDelModal")).to_be_visible(timeout=10000)
+            check("彻底删除先弹确认框",
+                  panel.locator("#epDelOk").inner_text().strip() == "彻底删除",
+                  {"ok": panel.locator("#epDelOk").inner_text()})
+            panel.locator("#epDelCancel").click()
+            expect(panel.locator("#epDelModal")).to_be_hidden(timeout=10000)
+            page.wait_for_timeout(400)
+            check("点【取消】什么也没删",
+                  len(pending_items(base, unique_batch)) == 1,
+                  {"items": len(pending_items(base, unique_batch))})
+            panel.locator("#epDelete").click()
+            expect(panel.locator("#epDelModal")).to_be_visible(timeout=10000)
+            panel.locator("#epDelOk").click()
             deadline = time.time() + 25
-            while stub.hits <= hits_before and time.time() < deadline:
-                page.wait_for_timeout(100)
-            settled2 = wait_attribute(state_node, "data-ai-state",
-                                      lambda value: value in {"ready", "error"}, 25)
-            check("解析段的改写同样先落在预览里",
-                  flipping == "solution" and settled2 == "ready"
-                  and StubProvider.MARKER in preview.inner_text() and stub.hits > hits_before,
-                  {"field": flipping, "state": settled2, "hits": stub.hits})
-            panel.locator("#epAiDiscard").click()
-            check("点放弃：预览清空、【采用】重新按不动",
-                  apply_state.is_disabled()
-                  and StubProvider.MARKER not in preview.inner_text(),
-                  {"preview": preview.inner_text()[:60]})
-            check("放弃不改画布源码", src.input_value() == applied,
-                  {"len": len(src.input_value())})
+            while time.time() < deadline and pending_items(base, unique_batch):
+                page.wait_for_timeout(200)
+            check("【彻底删除】把这一题从中转池抹掉",
+                  not pending_items(base, unique_batch),
+                  {"items": len(pending_items(base, unique_batch))})
+            check("彻底删除不碰主库", bank_total(base) == total_before_delete,
+                  {"before": total_before_delete, "after": bank_total(base)})
+            card_after = next(c for c in pending_cards(base)
+                              if c["batch_id"] == unique_batch)
+            check("删掉一题，这一批的总题数也减一",
+                  int(card_after["total"]) == int(card_before["total"]) - 1,
+                  {"before": card_before["total"], "after": card_after["total"]})
+            page.screenshot(path=str(shots / "v3-delete.png"))
 
-            # ---------- AI 清洗：走宿主规则通道，两段全成功才回填 ----------
-            dirty = ("\\begin{question}\n已知 \\(g(x)=x^2\\)，则 \\[g(x)\\] 的最小值是（  ）\n"
-                     "\\begin{choices}\n  \\item $0$\n  \\item $1$\n\\end{choices}\n\\end{question}\n\n"
-                     "\\begin{solution}\n答案：B\n因为 \\(g(x)\\) 开口向上。\n\\end{solution}\n")
-            src.fill(dirty)
-            # 面板洗的是它收到的那一份选区源码：160ms 防抖 + 一帧回投，等它到手再点清洗
-            wait_attribute(metrics, "data-dirty", lambda value: value == "true", 10)
-            page.wait_for_timeout(600)
-            filled = src.input_value()
-            check("脏定界符已进中栏（清洗前的样子）", "\\(" in filled and "\\[" in filled,
-                  {"head": filled[:60]})
-            clean = panel.locator("#epAiClean")
-            expect(clean).to_be_enabled(timeout=8000)
-            clean.click()
-            cleaned = wait_value(src, lambda value: "\\(" not in value and "\\[" not in value, 15)
-            check("清洗走宿主规则通道：定界符归一为 $ 与 $$",
-                  "\\(" not in cleaned and "\\[" not in cleaned
-                  and "$g(x)$" in cleaned and "$$g(x)$$" in cleaned,
-                  {"head": cleaned[:90]})
-            check("清洗只动公式定界符，环境与答案行原样",
-                  "\\begin{choices}" in cleaned and "答案：B" in cleaned
-                  and "\\end{solution}" in cleaned,
-                  {"tail": cleaned[-90:]})
-            check("清洗话术报出改动段数",
-                  "已清洗" in note.inner_text() or "没有改动" in note.inner_text(),
-                  {"note": note.inner_text()[:80]})
-            page.screenshot(path=str(shots / "v2-ai-clean.png"))
-            check("AI 三段动作后页面仍无脚本错误", not result["page_errors"],
-                  {"page_errors": result["page_errors"][:3]})
-
-            # ---------- 阶段 4：批量同界面——滚动跟题、左栏跳转、底部只提交脏题 ----------
-            # 拖手把左栏压成了极窄缝，先把宽度还给原图栏，跳转按钮才在真实宽度下取证
-            for _ in range(20):
-                canvas.locator("#edSplitImage").press("ArrowRight")
-            page.wait_for_timeout(500)
-
-            batch_rows = canvas.locator(".ed-src-area").count()
-            check("单题与批量共用一张画布（四行源码）", batch_rows == 4, {"rows": batch_rows})
-            check("左栏逐题带跳转按钮", canvas.locator(".ed-img-jump").count() == 4,
-                  {"jumps": canvas.locator(".ed-img-jump").count()})
-            check("批量条住在辅助栏（画布那份整块隐藏）",
-                  panel.locator("#edSaveAll").first.is_visible()
-                  and not canvas.locator("#edSaveAll").first.is_visible(),
-                  {"canvas": canvas.locator("#edSaveAll").count(),
-                   "panel": panel.locator("#edSaveAll").count()})
-
-            # 1) 点左栏跳转：三栏一起滚过去，当前题与辅助栏表单都跟到那一题
-            canvas.locator('.ed-img-jump[data-index="2"]').click()
-            progress = canvas.locator("#edProgress")
-            jumped = wait_attribute(progress, "data-active", lambda value: value == "3", 12)
-            check("点左栏跳转把当前题切到第 3 题", jumped == "3",
-                  {"progress": progress.inner_text()})
-            tops = [canvas.locator(node).evaluate("n => [n.scrollTop, n.scrollHeight, n.clientHeight]")
-                    for node in ("#edImageBody", "#edSourceBody", "#edRenderBody")]
-            result["metrics"]["jump_geo"] = tops
-            check("跳转把三栏一起滚过去（不再各滚各的）",
-                  all(value[0] > 0 for value in tops),
-                  {"tops": [value[0] for value in tops],
-                   "overflow": [value[1] - value[2] for value in tops]})
-            check("跳转后辅助栏表单跟到第 3 题",
-                  wait_attribute(panel.locator("#epProgress"), "data-active",
-                                 lambda value: value == "3", 14) == "3",
-                  {"progress": panel.locator("#epProgress").inner_text()})
-            expect(panel.locator("#epType")).to_have_value("fill_blank", timeout=14000)
-            check("第 3 题的题型随选区换成填空（不是上一题的残留）", True)
-            check("当前题高亮落在跳转到的那一行",
-                  (canvas.locator(".ed-q-block.is-active").first.get_attribute("data-index") or "") == "2",
-                  {"aria_current": canvas.locator('.ed-img-jump[data-index="2"]')
-                      .get_attribute("aria-current")})
-
-            # 2) 滚到哪题跟哪题：把渲染栏滚到底，当前题自己走到第 4 题
-            canvas.locator("#edMetrics").evaluate(
-                "() => { if (document.activeElement) document.activeElement.blur(); }")
-            page.wait_for_timeout(300)
-            canvas.locator("#edRenderBody").evaluate("node => { node.scrollTop = node.scrollHeight; }")
-            scrolled = wait_attribute(progress, "data-active", lambda value: value == "4", 12)
-            check("滚到最后一题，当前题自己跟过去", scrolled == "4",
-                  {"progress": progress.inner_text()})
-            check("滚动同步把三栏都带到底",
-                  all(canvas.locator(node).evaluate("n => n.scrollTop") > 0
-                      for node in ("#edImageBody", "#edSourceBody", "#edRenderBody")))
-            check("高亮跟到滚到的那一行",
-                  (canvas.locator(".ed-q-block.is-active").first.get_attribute("data-index") or "") == "3")
-
-            # 3) 人手优先：光标还停在第 1 题的框里时，滚动不许把当前题抢走
-            #    必须真点一下：只调 node.focus() 不会触发插件的上桥事件，
-            #    当前题还停在上一轮的第 4 题，判据会把"人手优先"错测成"滚动没抢"。
-            held_area = canvas.locator('.ed-src-area[data-index="0"]')
-            held_area.scroll_into_view_if_needed()
-            held_area.click(position={"x": 40, "y": 12})
-            page.wait_for_timeout(500)
-            held_before = progress.get_attribute("data-active")
-            canvas.locator("#edRenderBody").evaluate("node => { node.scrollTop = node.scrollHeight; }")
-            page.wait_for_timeout(600)
-            held_active = progress.get_attribute("data-active")
-            check("光标停在第 1 题时滚动不许抢走当前题",
-                  held_before == "1" and held_active == "1",
-                  {"before": held_before, "active": held_active})
-
-            # 4) 键盘路径：聚焦跳转按钮按 Enter
-            canvas.locator('.ed-img-jump[data-index="1"]').press("Enter")
-            keyed = wait_attribute(progress, "data-active", lambda value: value == "2", 12)
-            check("键盘 Enter 也能跳题", keyed == "2", {"active": keyed})
-
-            # 5) 辅助栏【保存全部】：只提交脏题，未改动的一题也不写
-            pool = panel.locator("#edPool")
-            dirty_new = pool.get_attribute("data-new")
-            dirty_start = wait_attribute(pool, "data-dirty", lambda value: value == "1", 10)
-            check("批量前的脏数只认 AI 改过的那题（其余三题没动过就不算脏）",
-                  dirty_start == "1" and dirty_new == "3",
-                  {"pool": pool.inner_text(), "dirty": dirty_start, "new": dirty_new})
-            area2 = canvas.locator('.ed-src-area[data-index="1"]')
-            area2.evaluate("node => { node.focus(); }")
-            area2.fill(area2.input_value().replace("已知集合", "已知集合（" + MARK + "批量）", 1))
-            area4 = canvas.locator('.ed-src-area[data-index="3"]')
-            area4.evaluate("node => { node.focus(); }")
-            area4.fill(area4.input_value().replace("已知等差数列", "已知等差数列（" + MARK + "批量）", 1))
-            page.wait_for_timeout(800)
-            dirty_three = wait_attribute(pool, "data-dirty", lambda value: value == "3", 12)
-            check("两行新改动叠上去，台账仍只数脏题（未改的第 3 题不计）",
-                  dirty_three == "3", {"pool": pool.inner_text()})
-            _, stats_before_batch = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            total_before_batch = int(stats_before_batch.get("total") or 0)
-            # 「没提交的那题」用差值判，不用绝对数：隔离库里可能本就沉着同短语的真题
-            _, row2_before = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
-                                       f"?q={urllib.parse.quote('的最小值为')}")
-            row2_hits_before = int(row2_before.get("total") or 0)
-            save_all = panel.locator("#edSaveAll")
-            expect(save_all).to_be_enabled(timeout=8000)
-            save_all.click()
-            busy_seen = save_all.get_attribute("aria-busy")
-            result["metrics"]["batch_busy"] = busy_seen
-            batch_note = panel.locator("#edBatchNote")
-            batch_phase = wait_attribute(batch_note, "data-batch",
-                                         lambda value: value in ("done", "partial", "failed"), 40)
-            batch_text = batch_note.inner_text()
-            result["metrics"]["batch_note"] = batch_text
-            check("【保存全部】只提交脏题：3 道提交、1 道未改动的一题也没写",
-                  batch_phase == "done" and "提交 3 道脏题" in batch_text
-                  and "未改动的 1 道" in batch_text, {"note": batch_text[:140]})
-            check("提交完按钮重新锁死（没脏题就按不动）",
-                  wait_attribute(save_all, "aria-disabled", lambda value: value == "true", 12) == "true"
-                  and save_all.is_disabled())
-            check("台账归零：脏 0，待入库只剩没提交的那题",
-                  pool.get_attribute("data-dirty") == "0"
-                  and pool.get_attribute("data-new") == "1"
-                  and pool.get_attribute("data-stored") == "3",
-                  {"pool": pool.inner_text()})
-            _, stats_after_batch = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
-            total_after_batch = int(stats_after_batch.get("total") or 0)
-            check("批量只长了该长的两道（编辑态走更新不新增）",
-                  total_after_batch == total_before_batch + 2,
-                  {"before": total_before_batch, "after": total_after_batch})
-            _, row2_after = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
-                                      f"?q={urllib.parse.quote('的最小值为')}")
-            row2_hits_after = int(row2_after.get("total") or 0)
-            check("没提交的那题一个字都没进库（搜到的题数前后没变）",
-                  row2_hits_after == row2_hits_before,
-                  {"before": row2_hits_before, "after": row2_hits_after})
-            _, batch_rows_api = http_json(base + f"/api/bank/plugins/{BANK_ID}/questions"
-                                          f"?q={urllib.parse.quote(MARK + '批量')}")
-            batch_items = batch_rows_api.get("items") or batch_rows_api.get("rows") or []
-            result["metrics"]["batch_created"] = [
-                (row.get("id"), row.get("type")) for row in batch_items][:4]
-            check("两道批量新建的题各自成型（多选与解答都按源码判型）",
-                  len(batch_items) == 2
-                  and {row.get("type") for row in batch_items} == {"multiple_choice", "solution"},
-                  {"count": len(batch_items)})
-            page.screenshot(path=str(shots / "v2-batch.png"))
-            check("批量段跑完页面仍无脚本错误", not result["page_errors"],
-                  {"page_errors": result["page_errors"][:3]})
-
-            # ---------- 底座外壳：辅助栏折叠/重开 + 底栏折叠不死锁 ----------
-            check("右栏已经改名为辅助栏",
-                  page.locator("#wsContext").get_attribute("aria-label") == "辅助栏"
-                  and page.locator("#wsContext .ws-context-head h2").inner_text().strip() == "辅助栏")
-            check("录题插件不再重复宿主「人机共设」小面板",
-                  page.locator("#wsPluginPanel").is_hidden())
-            ctx_open_btn = page.locator("#wsOpenCtx")
-            check("辅助栏展开时不给多余入口", not ctx_open_btn.is_visible())
-            page.locator("#wsToggleCtx").click()
-            page.wait_for_timeout(400)
-            check("辅助栏可折叠",
-                  page.locator(".ws-page").get_attribute("data-ctx") == "hidden")
-            check("折叠后页签栏出现【辅助栏】回头钮",
-                  ctx_open_btn.is_visible()
-                  and ctx_open_btn.get_attribute("aria-expanded") == "false")
-            geo_ctx = tabbar_geometry()
-            check("辅助栏钮钉在所有页签最右侧（不留死白空隙）",
-                  geo_ctx["gap_tabs_ctx"] is not None
-                  and 0 <= geo_ctx["gap_tabs_ctx"] <= 2,
-                  {"gap": geo_ctx["gap_tabs_ctx"]})
-            check("辅助栏钮与页签底边同一条水平线",
-                  len(geo_ctx["bottoms"]) == 2
-                  and abs(geo_ctx["bottoms"][0] - geo_ctx["bottoms"][1]) <= 1,
-                  {"bottoms": geo_ctx["bottoms"]})
-            page.screenshot(path=str(shots / "v2-ctx-collapsed.png"))
-            ctx_open_btn.click()
-            page.wait_for_timeout(500)
-            check("辅助栏可重新展开",
-                  page.locator(".ws-page").get_attribute("data-ctx") == "open")
-            expect(panel.locator("#epRoot")).to_be_visible(timeout=12000)
-            check("重开后辅助栏面板仍在", True)
-
-            dock = page.locator("#wsDock")
-            dock_toggle = page.locator("#wsToggleDock")
-            dock_toggle.click()
-            page.wait_for_timeout(400)
-            dock_box = dock.bounding_box()
-            check("底栏折叠后仍留 44px 把手条",
-                  page.locator(".ws-page").get_attribute("data-dock") == "hidden"
-                  and dock_box is not None and abs(dock_box["height"] - 44) <= 1,
-                  {"dock": dock_box})
-            check("把手条上的折叠钮翻成「展开」且仍可点",
-                  dock_toggle.is_visible() and dock_toggle.inner_text().strip() == "展开")
-            check("底栏正文收起，不在折叠条里露头",
-                  page.locator("#wsDockBody").is_hidden())
-            page.screenshot(path=str(shots / "v2-dock-collapsed.png"))
-            dock_toggle.click()
-            page.wait_for_timeout(400)
-            check("点把手条能重新展开底栏",
-                  page.locator(".ws-page").get_attribute("data-dock") == "open"
-                  and page.locator("#wsDockBody").is_visible()
-                  and dock_toggle.inner_text().strip() == "折叠")
-            ghost_host = page.locator("#wsContextBody").evaluate(
-                "n => ({gutter: getComputedStyle(n).scrollbarGutter,"
-                " cls: n.classList.contains('ws-ghost-scroll')})")
-            check("宿主的辅助栏滚动区也是幽灵滚动条",
-                  ghost_host["gutter"] == "stable" and ghost_host["cls"], ghost_host)
-
-            # ---------- F5 连刷 3 次：这四条几何不许刷新一次就漂一次 ----------
-            # 刷新后画布不预开任何页签（留白是既定行为），所以每次都要重新点开插件。
-            # 刷新前先量一遍：三栏宽度是记进布局草稿的，刷新后必须原样回来，不是换个比例。
-            geo_before_reload = pane_geo()
+            # ---------- F5 连刷三轮：首屏永远是批次列表 ----------
             for round_index in range(1, 4):
                 page.reload(wait_until="networkidle")
                 page.wait_for_timeout(1200)
@@ -1262,38 +931,19 @@ def main() -> int:
                 expect(reopen).to_be_visible(timeout=15000)
                 reopen.click()
                 expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
-                expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
                 page.wait_for_timeout(900)
-                round_lines = row_lines()
-                round_geo = pane_geo()
-                round_ctx = page.locator("#wsContext").bounding_box()
-                round_frame = page.locator(
-                    "#wsContextSlotBody .ws-context-frame").bounding_box()
-                slack = round((round_ctx["y"] + round_ctx["height"])
-                              - (round_frame["y"] + round_frame["height"]), 2)
-                check(f"第 {round_index} 次刷新：画布底栏依旧不在",
-                      canvas.locator(".ed-foot").count() == 0
-                      and canvas.locator("#edRoot button").count()
-                      == canvas.locator(".ed-img-jump").count(),
-                      {"foot": canvas.locator(".ed-foot").count()})
-                check(f"第 {round_index} 次刷新：辅助栏面板依旧撑到栏底",
-                      0 <= slack <= 16,
-                      {"slack": slack, "frame": round_frame})
-                check(f"第 {round_index} 次刷新：三栏虚线依旧逐行对位",
-                      dashed_ok(round_lines),
-                      {"rows": round_lines[:2]})
-                check(f"第 {round_index} 次刷新：三栏宽度原样恢复（比例不漂）",
-                      abs(round_geo["image"] - geo_before_reload["image"]) <= 2
-                      and abs(round_geo["source"] - geo_before_reload["source"]) <= 2
-                      and abs(round_geo["render"] - geo_before_reload["render"]) <= 2
-                      and round_geo["render"] >= 160,
-                      {"before": geo_before_reload, "after": round_geo})
-                page.screenshot(path=str(shots / f"reload-{round_index}.png"))
-            result["metrics"]["reload_rounds"] = 3
-            check("F5 连刷三轮后页面仍无脚本错误", not result["page_errors"],
-                  {"page_errors": result["page_errors"][:3]})
+                check(f"第 {round_index} 次刷新：首屏仍是批次列表",
+                      canvas.locator("#edBatches").is_visible()
+                      and canvas.locator("#edCols").is_hidden()
+                      and canvas.locator("#edRoot").get_attribute("data-mode") == "list",
+                      {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
+                check(f"第 {round_index} 次刷新：批次一条没少",
+                      canvas.locator(".ed-batch-row").count() == len(pending_cards(base)),
+                      {"rows": canvas.locator(".ed-batch-row").count(),
+                       "cards": len(pending_cards(base))})
+                page.screenshot(path=str(shots / f"v3-reload-{round_index}.png"))
 
-            # ---------- 回流：题库画布搜得到本次保存 ----------
+            # ---------- 回流：题库画布搜得到本次入库的题 ----------
             bank_item = page.locator(".ws-plugin-item", has_text="真题题库").first
             bank_item.click()
             bank_frame = page.frame_locator(BANK_UI)
@@ -1301,17 +951,18 @@ def main() -> int:
             expect(search).to_be_visible(timeout=20000)
             search.fill(MARK)
             search.press("Enter")
-            page.wait_for_timeout(1200)
+            page.wait_for_timeout(1500)
             rows = bank_frame.locator(".cb-row").count()
-            result["metrics"]["bank_rows"] = rows
-            check("题库画布搜到本次保存", rows >= 1, {"rows": rows})
-            page.screenshot(path=str(shots / "v2-bank-ui.png"))
+            check("题库画布搜到本次入库的题", rows >= 1, {"rows": rows})
+            page.screenshot(path=str(shots / "v3-bank-ui.png"))
 
             size_host = page.locator("body").evaluate(
                 "() => ({scrollWidth: document.body.scrollWidth,"
                 " clientWidth: document.documentElement.clientWidth})")
             check("宿主无横向溢出", size_host["scrollWidth"] <= size_host["clientWidth"] + 1,
                   size_host)
+            check("全流程跑完页面仍无脚本错误", not result["page_errors"],
+                  {"page_errors": result["page_errors"][:3]})
             browser.close()
     except Exception as exc:  # noqa: BLE001 - 探针要把失败原样落盘
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -1337,7 +988,9 @@ def main() -> int:
     print(("PASS" if result["ok"] else "FAIL")
           + f" · {passed}/{len(result['checks'])} 项 · {work}")
     for item in result["checks"]:
-        print(("  ✓ " if item["ok"] else "  ✗ ") + item["name"])
+        print(("  OK  " if item["ok"] else "  FAIL") + item["name"])
+        if not item["ok"]:
+            print("      " + json.dumps(item.get("detail"), ensure_ascii=False)[:400])
     if result["console_errors"]:
         print("console:", result["console_errors"][:8])
     if result["page_errors"]:

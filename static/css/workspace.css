@@ -1414,6 +1414,12 @@ html.ws-dragging * {
   color: var(--faint);
 }
 
+/* 「出了岔子但没挡住老师」：一句话提醒，颜色比正文重一点，比报错轻。
+   后台切题识别有出入就走这一档——只留一行日志，绝不弹红窗。 */
+.ws-dock-item[data-level="warn"] .ws-dock-text {
+  color: var(--down);
+}
+
 .ws-dock-empty {
   color: var(--faint);
 }

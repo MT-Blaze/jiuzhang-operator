@@ -93,6 +93,8 @@ _BUS_SUBSCRIBE = {
     "plugin.updated",
     "editor.apply_patch",
     "system.open_editor",
+    # 军令 #24：中转站动了（暂存 / 入库 / 彻底删除）→ 录题插件据此撤掉已走的题
+    "system.pending_updated",
 }
 _BUS_MAX_TOPICS = 8
 

@@ -604,16 +604,21 @@ def _row_to_item(row: sqlite3.Row) -> dict[str, Any]:
 # ---------------------------------------------------------------- 写入
 
 
-def _item_parts(item: Any) -> tuple[dict[str, Any], Any]:
-    """把一条待暂存内容拆成「题目文档 + 配图清单」。
+def _item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
+    """把一条待暂存内容拆成「题目文档 + 配图清单 + 要更新的中转站号」。
 
     两种形状都收：``{"question": {...}, "assets": [...]}``（信封）与裸题目文档。
+    信封里还可以带 ``pending_id``：带了就表示**就地更新**池子里那一条，而不是
+    再塞一条新的进去——老师改完点【存为待办】，池子里不该多出一道重影。
     """
     if not isinstance(item, dict):
         raise PendingError("每一条待暂存内容都必须是对象")
+    pending_id = str(item.get("pending_id") or "").strip()
+    if pending_id and not PENDING_ID_RE.match(pending_id):
+        raise PendingError("中转站编号不合法")
     if isinstance(item.get("question"), dict):
-        return item["question"], item.get("assets")
-    return item, None
+        return item["question"], item.get("assets"), pending_id
+    return item, None, pending_id
 
 
 def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
@@ -636,11 +641,11 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     backup_text = str(source_backup or "").strip()
     backup = _backup_path(backup_text)
 
-    prepared: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    prepared: list[tuple[dict[str, Any], list[dict[str, Any]], str]] = []
     for item in items:
-        payload, assets = _item_parts(item)
-        document, stored = _prepare_document(payload, assets)
-        prepared.append((document, stored))
+        payload, assets, pending_id = _item_parts(item)
+        document, stored = _prepare_document(payload, assets, pending_id or None)
+        prepared.append((document, stored, pending_id))
 
     now = questions.now_iso()
     con = _connect()
@@ -668,7 +673,13 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                 (backup_text, target_batch),
             )
         names: list[str] = []
-        for document, stored in prepared:
+        inserted = 0
+        for document, stored, pending_id in prepared:
+            if pending_id:
+                # 就地更新：号、批次与未审数都不动，只换内容。
+                names.extend(str(item.get("name") or "") for item in _replace_pending(
+                    con, pending_id, document, stored))
+                continue
             con.execute(
                 "INSERT INTO pending_questions"
                 " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at)"
@@ -680,6 +691,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                     str(origin or "")[:64], now, now,
                 ),
             )
+            inserted += 1
             names.extend(str(item.get("name") or "") for item in stored)
         row = _batch_row(con, target_batch)
         merged = list(json.loads(row["assets_json"] or "[]"))
@@ -687,7 +699,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         con.execute(
             "UPDATE batches SET total = total + ?, assets_json = ?, updated_at = ?"
             " WHERE batch_id = ?",
-            (len(prepared), json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
+            (inserted, json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
              now, target_batch),
         )
         _refresh_batch(con, target_batch)
@@ -698,7 +710,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         con.commit()
     except BaseException:
         con.rollback()
-        for _document, stored in prepared:
+        for _document, stored, _pending_id in prepared:
             _drop_assets(stored)
         raise
     finally:
@@ -706,17 +718,47 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     return {
         "batch_id": target_batch,
         "batch": card,
-        "saved_ids": [document["id"] for document, _ in prepared],
+        "saved_ids": [document["id"] for document, _stored, _pending_id in prepared],
     }
 
 
-def _prepare_document(payload: Any, assets: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _replace_pending(con: sqlite3.Connection, pending_id: str, document: dict[str, Any],
+                     stored_assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """就地更新池子里那一条：号、批次与未审数都不动，只换内容。
+
+    旧配图一律留着：题面里的 uri 还指着它，删了就成死链。等这一批审完，
+    ``_settle_batch`` 会把本批残留切图一次性清干净。
+    """
+    row = con.execute(
+        "SELECT id, assets_json FROM pending_questions WHERE id = ?", (pending_id,)
+    ).fetchone()
+    if row is None:
+        raise PendingNotFound("中转站里没有这一条")
+    merged = list(json.loads(row["assets_json"] or "[]"))
+    known = {str(item.get("name") or "") for item in merged}
+    for item in stored_assets:
+        name = str(item.get("name") or "")
+        if name and name not in known:
+            known.add(name)
+            merged.append(item)
+    document["id"] = pending_id
+    con.execute(
+        "UPDATE pending_questions SET doc_json = ?, assets_json = ?, updated_at = ?"
+        " WHERE id = ?",
+        (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
+         json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
+         questions.now_iso(), pending_id),
+    )
+    return merged
+
+
+def _prepare_document(payload: Any, assets: Any,
+                      pending_id: str | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """把一条内容备成「带 ``p_`` 号的暂存文档 + 落盘的配图清单」。"""
     if not isinstance(payload, dict):
         raise PendingError("缺少待暂存的 question 对象")
-    pending_id = _new_pending_id()
-    body = {key: value for key, value in payload.items() if key not in ("id", "meta")}
-    body["id"] = pending_id
+    body = {key: value for key, value in payload.items() if key not in ("id", "meta", "pending_id")}
+    body["id"] = pending_id or _new_pending_id()
     document = questions.prepare_new_question(body)
 
     stored_assets: list[dict[str, Any]] = []

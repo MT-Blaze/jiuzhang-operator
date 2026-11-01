@@ -8,18 +8,37 @@
   <link rel="stylesheet" href="plugin.css">
 </head>
 <body>
-  <!-- 画布实例（stage.center）：从上到下只有题目内容——三栏（左原图 | 中 LaTeX 源码 | 右渲染）。
+  <!-- 画布实例（stage.center）：两屏。
+       首屏是批次列表（#edBatches）——铺满画布，一行一个批次；
+       二屏才是三栏（左原图 | 中源码 | 右渲染），抬头一条（#edBatchBar）写着当前批次号。
        画布内不再有任何顶栏、状态条、格式/互换按钮，也不再有底部横条：
        批量条已于 2026-10-31 整体搬进右侧辅助栏，画布只剩内容本身。
        视图切换搬进右栏辅助栏（#epRoot），经宿主的 ui.params.set 与画布对账。
        进度、格式、脏标记与度量只留给读屏和探针，视觉上不占像素。 -->
-  <div id="edRoot" class="ed-root" hidden>
+  <div id="edRoot" class="ed-root" data-mode="list" hidden>
     <span class="ed-sr" id="edProgress" data-active="0" data-total="0">第 — / — 题</span>
     <span class="ed-sr" id="edFormat" data-format="latex">格式一</span>
     <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
     <span class="ed-sr" id="edSaved" hidden></span>
     <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
           data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
+
+    <!-- 首屏：批次列表。整个画布就是它，点任意一行进入审核三栏。 -->
+    <section class="ed-batches" id="edBatches" aria-label="待审核批次">
+      <div class="ed-batches-head">
+        <h2 class="ed-batches-title">待审核批次</h2>
+        <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
+      </div>
+      <div class="ed-batch-list" id="edBatchList" role="list" aria-label="批次列表"></div>
+      <p class="ed-batches-empty" id="edBatchesEmpty" hidden>中转站里还没有批次。</p>
+    </section>
+
+    <!-- 二屏抬头：当前批次号 + 回列表的路。 -->
+    <div class="ed-batch-bar" id="edBatchBar" hidden>
+      <button type="button" class="ed-back-btn" id="edBackList">← 批次列表</button>
+      <span class="ed-batch-no" id="edBatchNo">批次 #B-000</span>
+      <span class="ed-batch-stat" id="edBatchStat">未审 0 / 0</span>
+    </div>
 
     <main class="ed-cols" id="edCols" data-swap="false">
       <section class="ed-col ed-col-image" id="edPaneImage" aria-label="原图">
@@ -62,7 +81,8 @@
 
     <!-- 批量条原是画布底下一条横条（.ed-foot）：它把中栏与右栏的底边挤歪，
          又占着老师最宝贵的屏幕下沿。2026-10-31 整条删除，
-         【暂存待入库池】与【保存全部】搬进右侧辅助栏的批量保存区。 -->
+         台账搬进右侧辅助栏的底部；2026-11-01 审核台接管后，审核动作只剩三颗钮，
+         台账这一行只报数，不再带任何按钮。 -->
 
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
@@ -77,7 +97,13 @@
            宿主栏头那一行（辅助栏 · 录题工作台 · 插件接管 · 折叠）已经够用；
          · 格式一/格式二/⇄ 互换挤在同一行，窄到装不下才折行；
          · 标签改小胶囊，宽度随文字，不再占满一整行；
-         · 批量保存钉在面板最底边，不随内容滚走。 -->
+         · 台账钉在面板最底边，不随内容滚走。
+
+       审核台接管（2026-11-01 · 军令 #24）：
+         · 审核动作只剩三颗钮——存入主库 / 存为待办 / 彻底删除；
+         · 旧的【保存本题】【另存为新题】与批量条整条撤掉：
+           题目先进中转站，审完再由【存入主库】落到主库；
+         · 查重与彻底删除各有一次确认弹窗，焦点圈在弹窗里。 -->
   <div id="epRoot" class="ep-root" hidden>
     <div class="ep-scroll" id="epScroll">
       <section class="ep-sec" aria-label="编辑视图">
@@ -185,19 +211,14 @@
         </div>
       </section>
 
-      <section class="ep-sec">
+      <section class="ep-sec" aria-label="审核动作">
         <h3 class="ep-sec-title">审核动作</h3>
         <div class="ep-actions">
-          <button type="button" class="ep-btn ep-btn-primary" id="epSave">保存本题</button>
-          <button type="button" class="ep-btn" id="epVariant">另存为新题（派生变式）</button>
+          <button type="button" class="ep-btn ep-btn-primary" id="epApprove">存入主库</button>
         </div>
         <div class="ep-actions">
-          <button type="button" class="ep-btn" id="epPass" disabled aria-disabled="true"
-                  title="审核流随下一军令接入，本期只占位">通过入库</button>
-          <button type="button" class="ep-btn" id="epReject" disabled aria-disabled="true"
-                  title="审核流随下一军令接入，本期只占位">打回修改</button>
-          <button type="button" class="ep-btn" id="epSkip" disabled aria-disabled="true"
-                  title="审核流随下一军令接入，本期只占位">跳过</button>
+          <button type="button" class="ep-btn" id="epStash">存为待办</button>
+          <button type="button" class="ep-btn" id="epDelete">彻底删除</button>
         </div>
         <p id="epMessage" class="ep-msg" role="status" aria-live="polite"
            data-tone="info" data-save-state="idle">等待画布送来的当前题。</p>
@@ -207,10 +228,9 @@
          data-difficulty="" data-format="latex" data-dirty="false" data-topics="0">尚未载入。</p>
     </div>
 
-    <!-- 批量保存：原画布底部的横条（.ed-foot）整条搬进辅助栏（2026-10-31），
-         2026-11-01 再钉到面板最底边——内容滚多滚少，这两颗钮都在原地。
-         台账数字由画布经 stage.selection 送来；两颗按钮在这里直接发起逐题串行提交，
-         只提交改动过的题，未改动的一题也不写库。 -->
+    <!-- 台账：原画布底部的横条（.ed-foot）整条搬进辅助栏（2026-10-31），
+         2026-11-01 再钉到面板最底边。审核台接管后这里只报数，
+         审核动作是上面那三颗钮，不再从这里发令。 -->
     <div class="ep-dock" id="epDock">
       <div class="ep-dock-row">
         <span id="edPool" class="ep-pool" data-new="0" data-stored="0" data-dirty="0"
@@ -218,10 +238,32 @@
         <p id="edBatchNote" class="ep-batch" role="status" aria-live="polite"
            data-batch="idle">辅助栏跟随当前题</p>
       </div>
-      <div class="ep-batch-actions">
-        <button type="button" class="ep-btn" id="edPoolStash" disabled aria-disabled="true"
-                title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
-        <button type="button" class="ep-btn ep-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
+    </div>
+
+    <!-- 查重弹窗：主库已有同一道题时弹出来，给老师两颗钮——返回修改 / 强行覆盖。
+         焦点圈在弹窗里，Esc 可关，关掉后焦点回到触发它的那颗钮。 -->
+    <div class="ep-modal" id="epDupModal" role="dialog" aria-modal="true"
+         aria-labelledby="epDupTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epDupTitle">主库已有该题</h3>
+        <p class="ep-modal-text" id="epDupText">主库里已经有同一道题。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epDupBack">返回修改</button>
+          <button type="button" class="ep-btn ep-btn-primary" id="epDupForce">强行覆盖</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 彻底删除是回不去的操作：先问一句再删。 -->
+    <div class="ep-modal" id="epDelModal" role="dialog" aria-modal="true"
+         aria-labelledby="epDelTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epDelTitle">彻底删除这一题？</h3>
+        <p class="ep-modal-text" id="epDelText">删掉后这一题连同它的配图从中转站消失，主库一个字节都不碰。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epDelCancel">取消</button>
+          <button type="button" class="ep-btn ep-btn-danger" id="epDelOk">彻底删除</button>
+        </div>
       </div>
     </div>
   </div>

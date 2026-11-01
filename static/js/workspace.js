@@ -787,12 +787,17 @@
     var body = String(text == null ? "" : text).slice(0, 400);
     var name = String(topic || "");
     var at = stamp();
+    var kind = level || dockLevel(name, body);
+    // 「记一笔」只留一行灰字：`[15:30] 正文`——不带主题名，不带秒，像随口说的。
+    var line = kind === "note"
+      ? "[" + at.slice(0, 5) + "] " + body
+      : at + (name ? " [" + name + "] " : " ") + body;
     dockEntries.push({
       time: at,
       topic: name,
       text: body,
-      level: level || dockLevel(name, body),
-      line: at + (name ? " [" + name + "] " : " ") + body,
+      level: kind,
+      line: line,
     });
     while (dockEntries.length > DOCK_MAX) dockEntries.shift();
     renderDock();

@@ -106,7 +106,11 @@ class InPlaceFeedbackTest(unittest.TestCase):
         self.assertIn('item.setAttribute("data-copy", entry.line);', JS)
         self.assertIn('copyPlainText(item.getAttribute("data-copy") || "")', COPY_BLOCK)
         # 行文本由时间 + 主题 + 正文拼成，复制内容必须整行可 grep
-        self.assertIn('line: at + (name ? " [" + name + "] " : " ") + body,', JS)
+        self.assertIn('at + (name ? " [" + name + "] " : " ") + body', JS,
+                      "普通行的复制内容必须整行可 grep")
+        # 「记一笔」只留一行灰字：`[15:30] 正文`——不带主题名，不带秒
+        self.assertIn('kind === "note"', JS)
+        self.assertIn('"[" + at.slice(0, 5) + "] " + body', JS)
 
     def test_04_hint_is_decorative(self) -> None:
         """提示只是视觉反馈，读屏不应把它当成正文念两遍。"""

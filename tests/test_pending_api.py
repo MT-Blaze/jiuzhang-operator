@@ -332,6 +332,73 @@ class PendingApiContractTest(unittest.TestCase):
         status, _ = self._request("/api/pending/items/not-an-id/approve", "POST", {})
         self.assertEqual(status, 404)
 
+    def test_13_stash_with_pending_id_updates_in_place(self) -> None:
+        """存为待办带 pending_id：池子里不许多出一道重影，题号与总数都不许变。"""
+        status, body = self._save([{"question": _question(191)}])
+        self.assertEqual(status, 201, body)
+        pending_id = body["saved_ids"][0]
+        batch_id = body["batch_id"]
+        card = self._card(batch_id)
+        self.assertEqual(card["total"], 1)
+
+        changed = _question(191, stem="改过之后的题干：已知 $x^2+191=0$，求 $x$（$x>0$）。")
+        status, updated = self._save([{"pending_id": pending_id, "question": changed}],
+                                     batch_id=batch_id)
+        self.assertEqual(status, 201, updated)
+        self.assertEqual(updated["saved_ids"], [pending_id], "原地更新，题号不许另发")
+        self.assertEqual(updated["batch_id"], batch_id)
+
+        card = self._card(batch_id)
+        self.assertEqual(card["total"], 1, "就地更新不许把总数撑大")
+        self.assertEqual(card["pending_count"], 1)
+
+        status, listing = self._request(f"/api/pending/batches/{batch_id}/questions")
+        self.assertEqual(status, 200, listing)
+        ids = [item["id"] for item in listing["items"]]
+        self.assertEqual(ids.count(pending_id), 1, "池子里只该有一条")
+        self.assertEqual(len(ids), 1)
+        self.assertIn("改过之后的题干", listing["items"][0]["question"]["stem"])
+
+    def test_14_stash_with_pending_id_keeps_its_own_id_prefix(self) -> None:
+        """带 pending_id 存回去的题，号段必须还是 p_——不许混进主库的 q_ 号段。"""
+        status, body = self._save([{"question": _question(195)}])
+        self.assertEqual(status, 201, body)
+        pending_id = body["saved_ids"][0]
+        self.assertRegex(pending_id, r"^p_[A-Za-z0-9_-]{8,64}$")
+        status, updated = self._save(
+            [{"pending_id": pending_id, "question": _question(196)}], batch_id=body["batch_id"])
+        self.assertEqual(status, 201, updated)
+        self.assertRegex(updated["saved_ids"][0], r"^p_")
+        self.assertEqual(updated["saved_ids"][0], pending_id)
+
+    def test_15_batch_totals_only_grow_on_new_rows(self) -> None:
+        """新题进池总数 +1；就地更新总数不变；入库只减未审数，删题连总数一起减。
+
+    分母是「这一批还剩几道有效题」：入库只是把它挪进主库，题还在这一批的名下，
+    所以总数不变（审完是「未审：0 / 50 ✅」）；彻底删除是把它从这一批里剔掉，
+    总数跟着减一。
+    """
+        status, body = self._save([{"question": _question(197)}, {"question": _question(198)}])
+        self.assertEqual(status, 201, body)
+        batch_id = body["batch_id"]
+        first_id = body["saved_ids"][0]
+        self.assertEqual(self._card(batch_id)["total"], 2)
+
+        status, _ = self._save([{"pending_id": first_id, "question": _question(199)}],
+                               batch_id=batch_id)
+        self.assertEqual(status, 201)
+        self.assertEqual(self._card(batch_id)["total"], 2, "就地更新不涨总数")
+
+        status, _ = self._request(f"/api/pending/items/{first_id}/approve", "POST", {})
+        self.assertEqual(status, 200)
+        card = self._card(batch_id)
+        self.assertEqual(card["pending_count"], 1, "入库只减未审数")
+        self.assertEqual(card["total"], 2, "入库不缩分母：这一批还是那两道题")
+
+        status, _ = self._save([{"question": _question(200)}], batch_id=batch_id)
+        self.assertEqual(status, 201)
+        self.assertEqual(self._card(batch_id)["total"], 3, "新题进池总数 +1")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -110,7 +110,8 @@ class EditorManifestTest(unittest.TestCase):
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
                          ["editor.apply_patch", "stage.selection", "system.open_editor",
-                          "system.question_updated", "ui.params.changed"])
+                          "system.pending_updated", "system.question_updated",
+                          "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
                          ["region.dock", "stage.selection", "system.editor_close",
                           "system.return_from_editor"])
@@ -292,8 +293,11 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         for node_id in ("edProgress", "edFormat", "edDirty", "edSaved", "edMetrics"):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
-        # 底栏撤除后，画布内一枚按钮都不许剩：批量保存已经搬进辅助栏
-        self.assertEqual(canvas.count("<button"), 0, "画布内不许再有任何按钮")
+        # 底栏撤除后，画布内只许剩【← 批次列表】这一枚：它是二屏回首屏的唯一出口，
+        # 其余动作全在辅助栏，画布内不许再有第二枚按钮。
+        self.assertEqual(canvas.count("<button"), 1, "画布内只许剩【← 批次列表】一枚按钮")
+        at = canvas.index("<button")
+        self.assertIn('id="edBackList"', canvas[at:at + 160])
 
     def test_03_three_heads_share_one_pixel_line(self) -> None:
         css = read("plugin.css")
@@ -574,7 +578,9 @@ class EditorPanelTest(unittest.TestCase):
                         "epMounted", "epTopicTree",
                         "epAiField", "epAiAsk", "epAiSend", "epAiClean",
                         "epAiState", "epAiNote", "epAiPreview", "epAiApply", "epAiDiscard",
-                        "epSave", "epVariant", "epPass", "epReject", "epSkip",
+                        "epApprove", "epStash", "epDelete",
+                        "epDupModal", "epDupBack", "epDupForce",
+                        "epDelModal", "epDelCancel", "epDelOk",
                         "epMessage", "epMetrics"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
         canvas = canvas_only(read("index.html"))
@@ -591,18 +597,20 @@ class EditorPanelTest(unittest.TestCase):
                           "ed-src-area", "ed-box-area"):
             self.assertNotIn(forbidden, panel, f"辅助栏越界放了 {forbidden}")
 
-    def test_03_review_actions_are_honest_placeholders(self) -> None:
-        """审核流随下一军令接入：本期按钮必须 disabled + aria-disabled，不许装作能用。"""
+    def test_03_review_actions_are_the_three_real_buttons(self) -> None:
+        """军令 #24：审核动作真接上中转站了——就三颗钮，且都必须真的绑上点击。"""
         panel = panel_only(read("index.html"))
-        for legacy in ("epPass", "epReject", "epSkip"):
-            at = panel.index(f'id="{legacy}"')
-            tag = panel[at:panel.index(">", at)]
-            self.assertIn("disabled", tag, f"{legacy} 必须 disabled")
-            self.assertIn('aria-disabled="true"', tag, f"{legacy} 必须同步 aria-disabled")
-            self.assertIn("下一军令", tag, f"{legacy} 要如实说明为什么按不动")
+        for node_id in ("epApprove", "epStash", "epDelete"):
+            self.assertIn(f'id="{node_id}"', panel, f"缺少审核动作 {node_id}")
+        for legacy in ("epSave", "epVariant", "epPass", "epReject", "epSkip"):
+            self.assertNotIn(f'id="{legacy}"', panel,
+                             f"{legacy} 已随审核台接管退场")
         js = read("plugin.js")
-        for bound in ('panelSaveEl.addEventListener("click"', 'panelVariantEl.addEventListener("click"'):
-            self.assertIn(bound, js, "保存与派生变式必须真的绑上点击")
+        activation = fn_body(js, "activatePanel")
+        for bound in ('panelApproveEl.addEventListener("click"',
+                      'panelStashEl.addEventListener("click", onStash)',
+                      'panelDeleteEl.addEventListener("click", onDelete)'):
+            self.assertIn(bound, activation, f"辅助栏没绑上 {bound}")
 
     def test_04_confidence_is_marked_as_placeholder(self) -> None:
         """置信度来自识别引擎，本期只有假数据：文案必须自己承认是占位。"""
@@ -849,77 +857,79 @@ class EditorBoxedFormatTest(unittest.TestCase):
 
 
 class EditorBatchTest(unittest.TestCase):
-    """阶段 4：单题与批量共用一张画布——滚动跟题、左栏跳转、批量只提交脏题。
+    """军令 #24 审核台：首屏批次列表 + 二屏三栏审核。
 
     2026-10-31 整改：批量条整条从画布底部搬进右侧辅助栏的元数据操作区。
     画布底栏（.ed-foot）一换行就把中右两栏的底边挤歪，还占着老师最宝贵的屏幕下沿。
+
+    2026-11-01 再整改：待入库池换成「中转站待审核池」，批量提交整体退场——
+    审核动作改成【存入主库】【存为待办】【彻底删除】三颗钮，住在辅助栏；
+    画布首屏改成批次列表，二屏抬头才写当前批次号。
     """
 
-    def test_01_batch_bar_lives_in_the_panel_not_the_canvas(self) -> None:
+    def test_01_batch_bar_lives_in_the_canvas_and_the_ledger_in_the_panel(self) -> None:
         canvas = canvas_only(read("index.html"))
         panel = panel_only(read("index.html"))
-        for node_id in ("edPool", "edBatchNote", "edSaveAll", "edPoolStash"):
-            self.assertIn(f'id="{node_id}"', panel, f"批量条缺少 {node_id}")
-            self.assertNotIn(f'id="{node_id}"', canvas, f"{node_id} 属于辅助栏，不许留在画布底栏")
+        for node_id in ("edBatches", "edBatchList", "edBatchBar", "edBatchNo",
+                        "edBatchStat", "edBackList"):
+            self.assertIn(f'id="{node_id}"', canvas, f"画布首屏缺少 {node_id}")
+        for node_id in ("edPool", "edBatchNote"):
+            self.assertIn(f'id="{node_id}"', panel, f"辅助栏台账缺少 {node_id}")
+            self.assertNotIn(f'id="{node_id}"', canvas, f"{node_id} 属于辅助栏，不许留在画布")
         # 画布底栏连同它的容器一起删干净（注释里可以留说明，不许留元素）
         self.assertNotIn('class="ed-foot"', canvas, "画布底栏已整条删除")
         # 批量条不许把表单控件带进画布（<button> 不算表单输入控件）
         self.assertNotIn("<select", canvas)
         self.assertNotIn("<input", canvas)
-        self.assertNotIn('id="edSave"', canvas, "旧单题保存按钮已并入批量条 / 辅助栏")
+        # 批量提交整体退场：三颗审核钮才是唯一出口
+        for gone in ("edSaveAll", "edPoolStash"):
+            self.assertNotIn(f'id="{gone}"', read("index.html"),
+                             f"{gone} 已随批量提交退场")
 
-    def test_02_save_all_submits_only_dirty_items(self) -> None:
+    def test_02_the_three_review_buttons_are_the_only_write_paths(self) -> None:
+        """审核台只有三条出路：存主库、存待办、彻底删除。批量提交的口径整体撤除。"""
         js = read("plugin.js")
-        body = fn_body(js, "saveAllDirty")
-        self.assertIn("var targets = dirtyList();", body)
-        dirty = fn_body(js, "dirtyList")
-        self.assertIn("if (item.dirty) out.push({ item: item, index: index });", dirty)
-        self.assertIn('if (!targets.length) {', body, "零脏题必须直接收摊，一发请求都不许发")
-        self.assertIn("只提交改动过的题", body)
-        self.assertIn('saveItem(target.item, metaFor(target.item, {}), "save")', body,
-                      "批量必须复用单题那一份 saveItem，不许另写一套写库口径")
-        self.assertIn("未改动的", body, "回执话术要如实报出没被提交的那几题")
+        for gone in ("saveAllDirty", "panelSaveAllDirty", "panelWorklistItems",
+                     "patchPanelPool", "dirtyList"):
+            self.assertNotIn("function " + gone + "(", js, f"{gone} 已随批量提交退场")
+        self.assertIn('hostCall("pending.approve"', js)
+        self.assertIn('hostCall("pending.save_draft"', js)
+        self.assertIn('hostCall("pending.delete"', js)
 
-    def test_02b_panel_batch_reuses_the_same_write_path(self) -> None:
-        """按钮住在辅助栏，干活的也必须是辅助栏那份：口径与画布侧一字不差。"""
+    def test_02b_stash_updates_the_same_pending_row_in_place(self) -> None:
+        """存为待办带 pending_id：池子里不许多出一道重影，题号也不会飘。"""
         js = read("plugin.js")
-        body = fn_body(js, "panelSaveAllDirty")
-        self.assertIn('saveItem(target.item, metaFor(target.item, {}), "save")', body,
-                      "辅助栏的批量必须复用同一份 saveItem")
-        self.assertIn("只提交改动过的题", body)
-        self.assertIn("未改动的", body)
-        self.assertIn('if (state.batchSaving) return Promise.resolve(null);', body)
-        items = fn_body(js, "panelWorklistItems")
-        self.assertIn('hostCall("draft.load", { key: DRAFT_WORKLIST_KEY })', items,
-                      "面板帧摸不到画布的题目，只能读宿主代持的工作清单草稿")
+        stash = fn_body(js, "stashOne")
+        self.assertIn("pending_id: item.pendingId || \"\"", stash)
+        self.assertIn('hostCall("pending.save_draft", payload)', stash)
+        self.assertIn("if (!item.pendingId && result", stash,
+                      "只有新题才认回池子编号")
 
-    def test_02c_panel_batch_rebuilds_the_full_question(self) -> None:
+    def test_02c_stash_keeps_images_extensions_and_origin(self) -> None:
         """面板侧重建题目时，图片、扩展与原卷字段一件都不许丢——更新一题就抹掉一样等于毁题。"""
         js = read("plugin.js")
-        items = fn_body(js, "panelWorklistItems")
-        for field in ("images", "extensions", "origin"):
-            self.assertIn(field, items, f"工作清单草稿必须带 {field}")
         worklist = fn_body(js, "worklistValue")
         for field in ("images", "extensions", "origin"):
             self.assertIn(field, worklist, f"画布写草稿时必须带 {field}")
         self.assertIn("var SOURCE_MAX = 60000;", js,
                       "源码不许在两帧之间被砍到 20000 字，长解析的尾巴会丢")
+        selection = fn_body(js, "selectionPayload")
+        for field in ("images", "extensions", "origin"):
+            self.assertIn(field, selection, f"选区必须带 {field}")
 
-    def test_03_batch_saves_run_serially_not_in_parallel(self) -> None:
-        """宿主对写库有频率闸门：一次全发只会换来一排 RATE_LIMITED 的假失败。"""
+    def test_03_review_writes_are_issued_one_at_a_time(self) -> None:
+        """宿主对写库有频率闸门：审核动作必须串行，不许并发。"""
         js = read("plugin.js")
-        for name in ("saveAllDirty", "panelSaveAllDirty"):
+        for name in ("onApprove", "onStash", "onDeleteConfirm"):
             body = fn_body(js, name)
-            self.assertIn("return targets.reduce(function (chain, target) {", body)
-            self.assertIn("return chain.then(function (acc) {", body)
             self.assertNotIn("Promise.all(", body, f"{name} 不许并发写库")
-            self.assertIn("if (state.batchSaving) return Promise.resolve(null);", body,
-                          "重复点击不许并发二轮")
+        self.assertIn("if (panel.saving) return;", fn_body(js, "onApprove"),
+                      "重复点击不许并发二轮")
 
-    def test_04_batch_reuses_the_same_two_write_methods(self) -> None:
+    def test_04_review_reuses_the_same_bank_write_methods(self) -> None:
         js = read("plugin.js")
         self.assertEqual(js.count('var method = updating ? "bank.update" : "bank.create";'), 1,
-                         "批量另开写库通道就是第二套事实来源")
+                         "另开写库通道就是第二套事实来源")
         for forbidden in ("bank.delete", "bank.review", "asset.upload"):
             self.assertNotIn(forbidden, js)
 
@@ -962,24 +972,22 @@ class EditorBatchTest(unittest.TestCase):
         self.assertIn("body.scrollTop = Math.max(cell.offsetTop - 12, 0);", jump, "跳转要把三栏一起滚过去")
         self.assertIn("clampValue(Number(index) || 0, 0, Math.max(state.items.length - 1, 0))", jump)
 
-    def test_09_pending_pool_is_a_ledger_only_this_stage(self) -> None:
-        """池的存储层留给下一军令：按钮出厂锁死，话术写明，不许偷偷落库。"""
+    def test_09_the_pool_ledger_is_read_only_now(self) -> None:
+        """池子那一行只报数：审核动作在上面那三颗钮里，台账不许自己发令。"""
         js = read("plugin.js")
         html = read("index.html")
-        self.assertIn('id="edPoolStash" disabled aria-disabled="true"', html)
-        self.assertIn("待入库池的存储层随下一军令接入", html)
         render = fn_body(js, "renderPool")
-        self.assertIn("poolStashEl.disabled = true;", render)
-        self.assertNotIn("bank.create", render, "暂存不许碰写库通道")
         for attr in ("data-new", "data-stored", "data-dirty", "data-errored"):
             self.assertIn(f'poolEl.setAttribute("{attr}"', render)
+        self.assertNotIn("bank.create", render, "台账不许碰写库通道")
+        self.assertNotIn("pending.", render, "台账不许碰中转站通道")
+        self.assertIn('id="edPool"', html)
 
-    def test_10_batch_button_keeps_the_a11y_floor(self) -> None:
-        js = fn_body(read("plugin.js"), "renderPool")
-        self.assertIn("saveAllEl.disabled = blocked;", js)
-        self.assertIn('saveAllEl.setAttribute("aria-busy", "true");', js)
-        self.assertIn('saveAllEl.removeAttribute("aria-busy");', js)
-        self.assertIn('saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");', js)
+    def test_10_review_buttons_keep_the_a11y_floor(self) -> None:
+        js = fn_body(read("plugin.js"), "approveBusy")
+        self.assertIn("panelApproveEl.disabled = busy;", js)
+        self.assertIn('panelApproveEl.setAttribute("aria-busy", busy ? "true" : "false");', js)
+        self.assertIn('panelApproveEl.setAttribute("aria-disabled", busy ? "true" : "false");', js)
         css = read("plugin.css")
         self.assertIn("min-height: 44px", css_rule(css, ".ep-btn"))
         self.assertIn('.ep-batch[data-batch="partial"]', css)
@@ -992,11 +1000,6 @@ class EditorBatchTest(unittest.TestCase):
         status = fn_body(js, "updateStatusbar")
         self.assertIn("markActiveRow();", status)
         self.assertIn("renderPool();", status)
-        self.assertIn("if (saveAllEl) saveAllEl.addEventListener(\"click\", function () {", js)
-        self.assertIn("if (state.slot === \"stage.center\") saveAllDirty();", js,
-                      "那颗钮住在辅助栏，点它必须走辅助栏那份批量")
-        self.assertIn("else panelSaveAllDirty();", js)
-
 
     def test_12_rebuild_keeps_the_reading_position(self) -> None:
         """批量界面靠滚动定位：整屏重建不许把老师的阅读位置抹回顶部。"""
@@ -1031,9 +1034,152 @@ class EditorBatchTest(unittest.TestCase):
 
     def test_15_batch_chain_hands_the_ledger_to_the_next_leg(self) -> None:
         """串行链每一棒都要把台账交回去，不然第二题起 acc 是 undefined，整批提交假死。"""
-        body = fn_body(read("plugin.js"), "saveAllDirty")
-        self.assertIn("return acc;", body, "reduce 的每个分支必须回传累加器")
-        self.assertNotIn("Promise.all(", body)
+        js = read("plugin.js")
+        leave = fn_body(js, "stashBeforeLeave")
+        self.assertIn("return targets.reduce(function (chain, target) {", leave)
+        self.assertNotIn("Promise.all(", leave)
+
+
+class EditorReviewDeskTest(unittest.TestCase):
+    """军令 #24 审核台：首屏批次列表、二屏三栏审核、防呆自动存回与查重弹窗。
+
+    真机流程由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分。
+    """
+
+    def test_01_first_screen_is_the_batch_list(self) -> None:
+        """首屏铺满画布就是批次列表：三栏在列表模式下必须收起。"""
+        js = read("plugin.js")
+        self.assertIn('mode: "list",', js)
+        set_mode = fn_body(js, "setMode")
+        self.assertIn('if (batchesEl) batchesEl.hidden = state.mode !== "list";', set_mode)
+        self.assertIn('if (batchBarEl) batchBarEl.hidden = state.mode !== "review";', set_mode)
+        self.assertIn('if (colsEl) colsEl.hidden = state.mode !== "review";', set_mode)
+        activate = js[js.index('if (message.method === "plugin.activate")'):
+                      js.index('if (message.method === "plugin.deactivate")')]
+        self.assertIn('setMode("list");', activate, "画布挂载后先落在批次列表上")
+
+    def test_02_batch_row_format_matches_the_order(self) -> None:
+        """左「2024-10-31-星期四-15:30-批次编号 #B-001」，右「未审：n / N」数字绿色。"""
+        js = read("plugin.js")
+        stamp = fn_body(js, "batchStamp")
+        self.assertIn('var WEEKDAYS = "日一二三四五六";', js)
+        self.assertIn('"-星期" + WEEKDAYS.charAt(day.getDay())', stamp)
+        rows = fn_body(js, "renderBatchList")
+        self.assertIn('batchStamp(card.created_at) + "-批次编号 #" + card.batch_id', rows)
+        self.assertIn('el("span", "ed-batch-label", "未审：")', rows)
+        self.assertIn('el("span", "ed-batch-num", String(pending))', rows)
+        self.assertIn('el("span", "ed-batch-num", String(total))', rows)
+        css = read("plugin.css")
+        self.assertIn("color: var(--accent)", rule_body(css, ".ed-batch-num"),
+                      "未审数字必须是绿色")
+        self.assertIn("justify-content: space-between", rule_body(css, ".ed-batch-row"),
+                      "两端对齐：左边时间、右边计数")
+        self.assertIn("text-align: left", rule_body(css, ".ed-batch-row"))
+
+    def test_03_a_finished_batch_is_grey_sunk_and_unclickable(self) -> None:
+        """未审归零的批次：变灰、沉到最底、不可点——只能看。"""
+        js = read("plugin.js")
+        rows = fn_body(js, "renderBatchList")
+        self.assertIn("var leftDone = Number(left.pending_count) === 0 ? 1 : 0;", rows)
+        self.assertIn("if (leftDone !== rightDone) return leftDone - rightDone;", rows,
+                      "审完的批次必须沉到列表最底")
+        self.assertIn("row.disabled = true;", rows)
+        self.assertIn('row.setAttribute("aria-disabled", "true");', rows)
+        self.assertIn('row.setAttribute("data-done", done ? "true" : "false");', rows)
+        # 未审为 0 的行不许挂点击
+        self.assertIn('row.addEventListener("click", function () { openBatch(card.batch_id); });', rows)
+        css = read("plugin.css")
+        done = rule_body(css, '.ed-batch-row[data-done="true"]')
+        self.assertIn("opacity:", done)
+        self.assertIn("cursor: default", done)
+
+    def test_04_the_batch_bar_names_the_current_batch(self) -> None:
+        js = read("plugin.js")
+        bar = fn_body(js, "renderBatchBar")
+        self.assertIn('batchNoEl.textContent = "批次 #" + (state.batchId || "—");', bar)
+        self.assertIn("未审 ", bar)
+        html = read("index.html")
+        self.assertIn('id="edBatchNo"', html)
+
+    def test_05_clicking_a_row_opens_the_three_pane_review(self) -> None:
+        js = read("plugin.js")
+        open_batch = fn_body(js, "openBatch")
+        self.assertIn('hostCall("pending.list", { batch_id: id })', open_batch)
+        self.assertIn('item.pendingId = String((row && row.id) || "");', open_batch)
+        self.assertIn('setMode("review");', open_batch)
+        self.assertIn("publishSelection();", open_batch)
+
+    def test_06_idle_three_minutes_stashes_silently_into_the_pool(self) -> None:
+        """三分钟没人碰 → 静默存回待审核池，只在底部日志留一行灰字，绝不弹窗。"""
+        js = read("plugin.js")
+        self.assertIn("var IDLE_MS = 3 * 60 * 1000;", js)
+        watch = fn_body(js, "startIdleWatch")
+        self.assertIn("window.setInterval(function () {", watch,
+                      "用轮询盯表：假时钟拨不动 setTimeout 链")
+        self.assertIn("if (Date.now() - lastActivityAt < IDLE_MS) return;", watch)
+        auto = fn_body(js, "autoSaveIdle")
+        self.assertIn('dock("检测到长时间无操作，已自动存入待审核池。", "note");', auto)
+        self.assertNotIn("toast(", auto, "自动存回不许弹窗抢老师")
+        self.assertNotIn("panelSay(", auto)
+
+    def test_07_unload_also_stashes(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("stashOnUnload();", fn_body(js, "bind"))
+        unload = fn_body(js, "stashOnUnload")
+        self.assertIn('hostCall("pending.save_draft", payload)', unload)
+
+    def test_08_background_ocr_errors_never_pop_a_red_window(self) -> None:
+        """后台切题：识别错得再离谱也照切不误，只留一行警告。"""
+        js = read("plugin.js")
+        open_batch = fn_body(js, "openBatch")
+        self.assertIn("dockWarn(", open_batch)
+        self.assertNotIn("toast(", open_batch)
+        warn = fn_body(js, "dockWarn")
+        self.assertIn('dock("⚠ "', warn)
+        self.assertIn('"warn"', warn)
+
+    def test_09_duplicate_hit_offers_two_choices(self) -> None:
+        """查重命中弹窗给【返回修改】与【强行覆盖】两颗钮，Esc 可关，焦点圈住。"""
+        html = read("index.html")
+        for node_id in ("epDupModal", "epDupBack", "epDupForce"):
+            self.assertIn(f'id="{node_id}"', html)
+        js = read("plugin.js")
+        approve = fn_body(js, "onApprove")
+        self.assertIn("if (error && error.duplicate) {", approve)
+        self.assertIn("openDupModal(item, error);", approve)
+        self.assertIn('hostCall("pending.approve", { pending_id: item.pendingId, force: force === true })',
+                      approve)
+        modal = fn_body(js, "openDupModal")
+        self.assertIn("existingId", modal)
+        keys = js[js.index('document.addEventListener("keydown"'):]
+        self.assertIn('if (event.key === "Escape")', keys)
+        self.assertIn('if (event.key !== "Tab") return;', keys, "Tab 必须被圈在弹窗里")
+
+    def test_10_only_approve_and_delete_pull_questions_off_the_canvas(self) -> None:
+        """暂存只是改内容，不许把题从画布上撤下来。"""
+        js = read("plugin.js")
+        handler = fn_body(js, "onPendingUpdated")
+        self.assertIn('action === "approve" || action === "delete"', handler)
+        self.assertIn("refreshBatches();", handler)
+        self.assertIn('if (message.event === "system.pending_updated")', js)
+
+    def test_11_deleting_a_question_asks_first(self) -> None:
+        js = read("plugin.js")
+        delete = fn_body(js, "onDelete")
+        self.assertIn("openModal(delModalEl);", delete)
+        confirm = fn_body(js, "onDeleteConfirm")
+        self.assertIn('hostCall("pending.delete", { pending_id: item.pendingId })', confirm)
+
+    def test_12_the_host_dock_renders_a_note_as_a_grey_line(self) -> None:
+        """「记一笔」级别在底栏只留一行灰字：`[15:30] 正文`。"""
+        workspace = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        dock_line = workspace[workspace.index("function dockLine("):]
+        dock_line = dock_line[:dock_line.index("\n  }")]
+        self.assertIn('kind === "note"', dock_line)
+        self.assertIn('at.slice(0, 5)', dock_line)
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('"note", "error", "info", "system", "warn"', stage,
+                      "插件自报的 warn 级别必须在宿主白名单里")
 
 
 class EditorFixtureContractTest(unittest.TestCase):

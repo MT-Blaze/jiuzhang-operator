@@ -1,14 +1,19 @@
 /**
- * 录题工作台 v2（军令 #23）。
+ * 录题工作台 v3（军令 #24：批次系统与待审核池）。
  *
- * 画布实例（stage.center）只有三栏：左原图 | 中全量 exam-zh 源码 | 右渲染。
- * 源码是唯一的录入面——一整段 \begin{question}…\end{solution}；
- * 题型、难度、来源、考向与审核动作一律在辅助栏（sidebar.right）。
+ * 画布实例（stage.center）有两屏：
+ *   首屏是批次列表——一行一个批次，点任意一行进入审核；
+ *   二屏是三栏审核界面——左原图 | 中全量 exam-zh 源码 | 右渲染，抬头写着当前批次号。
+ * 辅助栏实例（sidebar.right）是审核台：元数据表单 + AI 帮改 + 审核动作。
  *
- * 同一个插件的两个沙箱帧拿不到彼此的 DOM，只走底座开好的四条合法通道：
+ * 题目先落在中转站（待审核池），老师审完才由【存入主库】落进主库。
+ * 中转站与主库物理隔离，插件不碰数据库、不碰令牌，写库一律经宿主。
+ *
+ * 同一个插件的两个沙箱帧拿不到彼此的 DOM，只走底座开好的合法通道：
  *   画布 → 辅助栏：发布 stage.selection（当前题的源码、进度与元数据默认值）；
  *   辅助栏 → 画布：ui.params.set（格式一 / 格式二），由宿主广播 ui.params.changed；
  *   两帧共享：draft.save / draft.load 交宿主代持的工作清单与元数据草稿；
+ *   中转站：pending.batch_list / list / save_draft / approve / delete 五条 Host API；
  *   写库：辅助栏经宿主 bank.create / bank.update 落库，成功回音 system.question_updated。
  *
  * 插件住在不透明源沙箱里：不联网、不碰浏览器本地存储、不碰宿主 DOM，令牌永远在宿主手里。
@@ -63,6 +68,11 @@
   var TAG_LIMIT = 32;
   // 宿主 stage.js 对 instruction 的截断额度就是 400，面板先按同一个数拦，别让老师的长指令被悄悄切尾
   var AI_ASK_MAX = 400;
+  // 防呆：界面三分钟没人碰，就静默把当前题存回中转池。
+  // 用 setInterval 巡时间差，而不是一条 setTimeout 链——后者在页面冻结时会被浏览器压后，
+  // 假时钟也推不动它；巡时间差这条，真实时钟一走满就一定触发。
+  var IDLE_MS = 3 * 60 * 1000;
+  var IDLE_TICK_MS = 5000;
 
   var root = document.getElementById("edRoot");
   var colsEl = document.getElementById("edCols");
@@ -79,8 +89,13 @@
   var savedEl = document.getElementById("edSaved");
   var poolEl = document.getElementById("edPool");
   var batchNoteEl = document.getElementById("edBatchNote");
-  var saveAllEl = document.getElementById("edSaveAll");
-  var poolStashEl = document.getElementById("edPoolStash");
+  var batchesEl = document.getElementById("edBatches");
+  var batchListEl = document.getElementById("edBatchList");
+  var batchesEmptyEl = document.getElementById("edBatchesEmpty");
+  var batchBarEl = document.getElementById("edBatchBar");
+  var batchNoEl = document.getElementById("edBatchNo");
+  var batchStatEl = document.getElementById("edBatchStat");
+  var backListEl = document.getElementById("edBackList");
 
   var panelRoot = document.getElementById("epRoot");
   var panelScrollEl = document.getElementById("epScroll");
@@ -102,8 +117,9 @@
   var panelMountedEl = document.getElementById("epMounted");
   var panelTreeEl = document.getElementById("epTopicTree");
   var panelTopicErrorEl = document.getElementById("epTopicError");
-  var panelSaveEl = document.getElementById("epSave");
-  var panelVariantEl = document.getElementById("epVariant");
+  var panelApproveEl = document.getElementById("epApprove");
+  var panelStashEl = document.getElementById("epStash");
+  var panelDeleteEl = document.getElementById("epDelete");
   var panelMessageEl = document.getElementById("epMessage");
   var panelMetricsEl = document.getElementById("epMetrics");
   var panelAiFieldEl = document.getElementById("epAiField");
@@ -119,6 +135,13 @@
   var panelFmtBoxedEl = document.getElementById("epFmtBoxed");
   var panelSwapEl = document.getElementById("epSwap");
   var panelViewNoteEl = document.getElementById("epViewNote");
+  var dupModalEl = document.getElementById("epDupModal");
+  var dupTextEl = document.getElementById("epDupText");
+  var dupBackEl = document.getElementById("epDupBack");
+  var dupForceEl = document.getElementById("epDupForce");
+  var delModalEl = document.getElementById("epDelModal");
+  var delCancelEl = document.getElementById("epDelCancel");
+  var delOkEl = document.getElementById("epDelOk");
 
   var pending = new Map();
   var requestSeq = 0;
@@ -138,15 +161,18 @@
 
   var state = {
     slot: "stage.center",
+    // 两屏：list 是批次列表（首屏），review 是三栏审核（二屏）。
+    mode: "list",
     items: [],
     active: 0,
+    batches: [],
+    batchId: "",
     format: "latex",
     swap: false,
     widths: { image: DEFAULT_IMAGE_RATIO, source: DEFAULT_SOURCE_RATIO },
     dirty: false,
     layoutReady: false,
-    worklistReady: false,
-    batchSaving: false
+    worklistReady: false
   };
 
   var panel = {
@@ -160,6 +186,8 @@
     swap: false,
     topics: { roots: null, children: {}, open: {}, loading: {} },
     saving: false,
+    // 弹窗正在处置的那道题（查重 / 彻底删除共用）
+    pending: null,
     ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false }
   };
 
@@ -194,6 +222,9 @@
     var error = new Error((raw && raw.message) || "宿主返回失败");
     error.code = String((raw && raw.code) || "HOST_ERROR");
     error.retryable = Boolean(raw && raw.retryable);
+    // 查重：底座把主库那道题的 id 与 duplicate 标记一并带回来，弹窗才画得出「返回修改 / 强行覆盖」。
+    error.existingId = String((raw && raw.existing_id) || "");
+    error.duplicate = Boolean(raw && raw.duplicate);
     return error;
   }
 
@@ -205,8 +236,21 @@
     } catch (error) { /* 通知丢一帧不致命 */ }
   }
 
-  function dock(text) {
-    publish("region.dock", { text: String(text).slice(0, 200) });
+  /** 往底部日志写一行。level 由宿主白名单把关：note（灰字流水）、warn（警告）、info。 */
+  function dock(text, level, topic) {
+    publish("region.dock", {
+      text: String(text == null ? "" : text).slice(0, 200),
+      level: level || "info",
+      topic: topic || ""
+    });
+  }
+
+  /**
+   * 警告只进底部日志，绝不在画布上弹红窗——
+   * 后台切题时识别错得再离谱也照切不误，老师看到的只是一行提示，不是一块拦路的窗。
+   */
+  function dockWarn(text) {
+    dock("⚠ " + String(text == null ? "" : text).slice(0, 180), "warn", "editor.warn");
   }
 
   function respond(target, id, ok, result, code, message) {
@@ -890,20 +934,14 @@
       dev: devBlock(question),
       key: itemKey(question, index || 0),
       savedId: null,
+      // 中转站编号（p_ 开头）与所属批次：审核动作全靠这两个号说话。
+      pendingId: "",
+      batchId: "",
+      assets: [],
       dirty: false,
       status: "pending",
       parsed: null
     };
-  }
-
-  function loadFixtures() {
-    state.items = DEV_FIXTURES.map(function (question, index) {
-      var block = devBlock(question);
-      var source = (typeof block.source_latex === "string" && block.source_latex)
-        ? block.source_latex : buildExamSource(question);
-      return makeItem(question, source, index);
-    });
-    state.active = 0;
   }
 
   // ---------- 载入真题（三端分离入口：题库点「去编辑」/ AI 命令） ----------
@@ -918,7 +956,10 @@
       state.items = [item];
       state.active = 0;
       state.dirty = false;
-      scheduleRender();
+      state.batchId = "";
+      // 题库点「去编辑」是从批次列表外直接跳进二屏：先把三栏露出来。
+      setMode("review");
+      renderAll();
       publishSelectionSoon();
       dock("录题工作台已把题目 " + id + " 序列化成 exam-zh 源码"
         + (from ? "（来自 " + from + "）" : "") + "。");
@@ -928,6 +969,292 @@
       dock("载入题目 " + id + " 失败：" + error.message);
       return null;
     });
+  }
+
+  // ---------- 审核台（军令 #24）：首屏批次列表，二屏三栏审核 ----------
+  var WEEKDAYS = "日一二三四五六";
+
+  /** 批次录入时间 → 「2024-10-31-星期四-15:30」。写的是原卷的本地时间，不做时区换算。 */
+  function batchStamp(createdAt) {
+    var text = String(createdAt == null ? "" : createdAt);
+    var hit = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(text);
+    if (!hit) return text.slice(0, 16) || "时间未知";
+    var day = new Date(Number(hit[1]), Number(hit[2]) - 1, Number(hit[3]));
+    return hit[1] + "-" + hit[2] + "-" + hit[3] + "-星期" + WEEKDAYS.charAt(day.getDay())
+      + "-" + hit[4] + ":" + hit[5];
+  }
+
+  function currentBatch() {
+    var id = String(state.batchId || "");
+    var found = null;
+    state.batches.forEach(function (card) {
+      if (String(card.batch_id || "") === id) found = card;
+    });
+    return found;
+  }
+
+  /**
+   * 首屏：批次列表。一行一个批次，左边时间与编号，右边「未审：n / N」。
+   * 数字用绿色；未审数为 0 的批次整行变灰、沉到最底下，并且点不动——只能看。
+   */
+  function renderBatchList() {
+    if (!batchListEl) return;
+    batchListEl.textContent = "";
+    var cards = state.batches.slice();
+    cards.sort(function (left, right) {
+      var leftDone = Number(left.pending_count) === 0 ? 1 : 0;
+      var rightDone = Number(right.pending_count) === 0 ? 1 : 0;
+      if (leftDone !== rightDone) return leftDone - rightDone;
+      return String(right.created_at || "").localeCompare(String(left.created_at || ""));
+    });
+    cards.forEach(function (card) {
+      var pending = Number(card.pending_count) || 0;
+      var total = Number(card.total) || 0;
+      var done = pending === 0;
+      var row = el("button", "ed-batch-row");
+      row.type = "button";
+      row.setAttribute("data-batch", String(card.batch_id || ""));
+      row.setAttribute("data-done", done ? "true" : "false");
+      if (done) {
+        row.disabled = true;
+        row.setAttribute("aria-disabled", "true");
+        row.setAttribute("aria-label", "批次 " + card.batch_id + " 已审完，未审 0 / " + total + "，只看不能进");
+      } else {
+        row.setAttribute("aria-label", "批次 " + card.batch_id + "，未审 " + pending + " / " + total + "，点开审核");
+        row.addEventListener("click", function () { openBatch(card.batch_id); });
+      }
+      row.appendChild(el("span", "ed-batch-left",
+        batchStamp(card.created_at) + "-批次编号 #" + card.batch_id));
+      var right = el("span", "ed-batch-right");
+      right.appendChild(el("span", "ed-batch-label", "未审："));
+      right.appendChild(el("span", "ed-batch-num", String(pending)));
+      right.appendChild(el("span", "ed-batch-sep", " / "));
+      right.appendChild(el("span", "ed-batch-num", String(total)));
+      if (done) right.appendChild(el("span", "ed-batch-check", "✅"));
+      row.appendChild(right);
+      batchListEl.appendChild(row);
+    });
+    if (batchesEmptyEl) batchesEmptyEl.hidden = cards.length > 0;
+  }
+
+  /** 二屏抬头：当前批次号与这一批还剩几道没审。 */
+  function renderBatchBar() {
+    if (batchNoEl) batchNoEl.textContent = "批次 #" + (state.batchId || "—");
+    if (batchStatEl) {
+      var card = currentBatch();
+      var pending = state.items.length;
+      var total = card ? Number(card.total) || 0 : pending;
+      batchStatEl.textContent = "未审 " + pending + " / " + total;
+      batchStatEl.setAttribute("data-pending", String(pending));
+      batchStatEl.setAttribute("data-total", String(total));
+    }
+  }
+
+  function setMode(mode) {
+    state.mode = mode === "review" ? "review" : "list";
+    if (root) root.setAttribute("data-mode", state.mode);
+    if (batchesEl) batchesEl.hidden = state.mode !== "list";
+    if (batchBarEl) batchBarEl.hidden = state.mode !== "review";
+    if (colsEl) colsEl.hidden = state.mode !== "review";
+  }
+
+  /** 重新拉一遍批次卡片：未审数、总数与「审完变灰」都以底座那边的账为准。 */
+  function refreshBatches() {
+    return hostCall("pending.batch_list", {}).then(function (result) {
+      var cards = (result && Array.isArray(result.batches)) ? result.batches : [];
+      state.batches = cards;
+      renderBatchList();
+      renderBatchBar();
+      var card = currentBatch();
+      if (state.mode === "review" && card && Number(card.pending_count) === 0 && !state.items.length) {
+        backToList("这一批已审完，卡片变灰沉到列表最底下。");
+      }
+      return cards;
+    }).catch(function (error) {
+      dockWarn("批次列表没拉下来：" + ((error && error.message) || "未知原因"));
+      return [];
+    });
+  }
+
+  /** 头一次开审核台：中转站是空的，就把识别结果整批入池，批次列表才有东西可点。 */
+  function seedBatch() {
+    var questions = DEV_FIXTURES.map(function (doc) {
+      return { question: doc };
+    });
+    return hostCall("pending.save_draft", {
+      questions: questions,
+      origin: "editor.recognize"
+    }).then(function (result) {
+      dock("识别结果已入池：" + (result.batch_id || "") + "（" + questions.length + " 题）。");
+      return result;
+    }, function (error) {
+      dockWarn("识别结果入池失败：" + ((error && error.message) || "未知原因"));
+      return null;
+    });
+  }
+
+  /** 点开一个批次：中转站里那一批的待审题直接铺进三栏。 */
+  function openBatch(batchId) {
+    var id = String(batchId || "");
+    if (!id) return Promise.resolve(null);
+    return hostCall("pending.list", { batch_id: id }).then(function (result) {
+      var rows = (result && Array.isArray(result.items)) ? result.items : [];
+      state.batchId = id;
+      state.items = rows.map(function (row, index) {
+        var doc = (row && row.question) || {};
+        var item = makeItem(doc, buildExamSource(doc), index);
+        item.pendingId = String((row && row.id) || "");
+        item.batchId = String((row && row.batch_id) || id);
+        item.assets = Array.isArray(row.assets) ? row.assets : [];
+        item.status = "pending";
+        return item;
+      });
+      state.active = 0;
+      state.dirty = false;
+      setMode("review");
+      renderBatchBar();
+      renderAll();
+      publishSelection();
+      noteActivity();
+      // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。
+      var broken = state.items.filter(function (item) { return parsedOf(item).errors.length > 0; });
+      if (broken.length) {
+        dockWarn("批次 " + id + " 里有 " + broken.length + " 题识别有出入，已照原样切进来。");
+      }
+      return state.items;
+    }).catch(function (error) {
+      dockWarn("批次 " + id + " 切不进来：" + ((error && error.message) || "未知原因"));
+      return null;
+    });
+  }
+
+  /** 回批次列表。走之前把改过的题静默存回中转池，别让老师的改动随界面一起没了。 */
+  function backToList(note) {
+    var leaving = state.mode === "review";
+    setMode("list");
+    if (leaving) stashBeforeLeave();
+    refreshBatches();
+    if (note) dock(note);
+  }
+
+  /**
+   * 一道题存回中转池：带 pending_id 就是原地更新，池子里不会多出一道重影。
+   * silent=true 时不打扰老师（自动保存与离开前兜底走这条）。
+   */
+  function stashOne(item, meta, silent) {
+    var parsed = parseExamSource(item.source);
+    var doc = questionFromParsed(item, parsed, meta || {});
+    var problems = validateForSave(doc, parsed, meta || {});
+    if (problems.length) {
+      var reason = problems.slice(0, 3).join("；");
+      if (!silent) panelSay("这一题还存不进去：" + reason, "warn", "invalid");
+      return Promise.resolve({ ok: false, message: reason });
+    }
+    var payload = { questions: [{ pending_id: item.pendingId || "", question: doc }] };
+    if (item.batchId) payload.batch_id = item.batchId;
+    return hostCall("pending.save_draft", payload).then(function (result) {
+      item.dirty = false;
+      if (!item.pendingId && result && Array.isArray(result.saved_ids) && result.saved_ids[0]) {
+        item.pendingId = String(result.saved_ids[0]);
+        item.batchId = String(result.batch_id || item.batchId || "");
+      }
+      if (!silent) {
+        panelSay("已存为待办（池子编号 " + (item.pendingId || "—") + "）。", "ok", "stashed");
+        dock("一道题已存进中转站（待审核池）。");
+      }
+      return { ok: true, result: result };
+    }, function (error) {
+      var text = (error && error.message) || "未知原因";
+      if (!silent) {
+        panelSay("存为待办失败：" + text, "error", "failed");
+        dockWarn("存为待办失败：" + text);
+      }
+      return { ok: false, message: text };
+    });
+  }
+
+  /** 离开审核界面之前，把改过的题静默存回中转池。 */
+  function stashBeforeLeave() {
+    var targets = state.items.filter(function (item) { return item.pendingId && item.dirty; });
+    if (!targets.length) return Promise.resolve(null);
+    return loadMetaDraft().then(function () {
+      return targets.reduce(function (chain, target) {
+        return chain.then(function () {
+          return stashOne(target, metaFor(target, {}), true);
+        });
+      }, Promise.resolve(null));
+    }).catch(function () { return null; });
+  }
+
+  // ---------- 防呆：三分钟没人碰就静默存回中转池 ----------
+  var lastActivityAt = Date.now();
+  var idleTimer = 0;
+  var idleBusy = false;
+
+  function noteActivity() {
+    lastActivityAt = Date.now();
+  }
+
+  function startIdleWatch() {
+    if (idleTimer) return;
+    idleTimer = window.setInterval(function () {
+      if (state.slot !== "stage.center" || state.mode !== "review" || idleBusy) return;
+      if (!state.items.length) return;
+      if (Date.now() - lastActivityAt < IDLE_MS) return;
+      autoSaveIdle();
+    }, IDLE_TICK_MS);
+  }
+
+  /** 长时间无操作 → 静默存回中转池，只在底部日志留一行灰字，绝不弹窗抢老师。 */
+  function autoSaveIdle() {
+    var item = state.items[state.active];
+    if (!item || !item.pendingId) return;
+    idleBusy = true;
+    loadMetaDraft().then(function () {
+      return stashOne(item, metaFor(item, {}), true);
+    }).then(function (outcome) {
+      idleBusy = false;
+      lastActivityAt = Date.now();
+      if (outcome && outcome.ok) {
+        dock("检测到长时间无操作，已自动存入待审核池。", "note");
+      } else {
+        dockWarn("自动存入待审核池没成功：" + ((outcome && outcome.message) || "未知原因"));
+      }
+    }, function () {
+      idleBusy = false;
+    });
+  }
+
+  /** 关闭或刷新页面时的兜底：不等草稿往返，直接把当前题存回中转池。 */
+  function stashOnUnload() {
+    var item = state.items[state.active];
+    if (!item || !item.pendingId) return;
+    var meta = metaFor(item, {});
+    var parsed = parseExamSource(item.source);
+    var doc = questionFromParsed(item, parsed, meta);
+    if (validateForSave(doc, parsed, meta).length) return;
+    var payload = { questions: [{ pending_id: item.pendingId, question: doc }] };
+    if (item.batchId) payload.batch_id = item.batchId;
+    hostCall("pending.save_draft", payload).catch(function () { /* 页面已经在关了 */ });
+  }
+
+  /** 中转站动了：入库与删除会把题从池子里带走，画布得把那几道撤下来；暂存只是改内容，不撤。 */
+  function onPendingUpdated(payload) {
+    var action = String((payload && payload.action) || "");
+    var ids = (payload && Array.isArray(payload.pending_ids)) ? payload.pending_ids : [];
+    if ((action === "approve" || action === "delete") && ids.length) {
+      var before = state.items.length;
+      state.items = state.items.filter(function (item) {
+        return ids.indexOf(String(item.pendingId)) < 0;
+      });
+      if (state.items.length !== before) {
+        if (state.active >= state.items.length) state.active = Math.max(0, state.items.length - 1);
+        renderBatchBar();
+        renderAll();
+        publishSelection();
+      }
+    }
+    refreshBatches();
   }
 
   // ---------- 三栏渲染 ----------
@@ -1457,6 +1784,10 @@
       key: item.key,
       question_id: item.savedId || question.id || "",
       saved_id: item.savedId || "",
+      // 中转站的两把号：审核动作（存入主库 / 存为待办 / 彻底删除）全靠它们。
+      pending_id: item.pendingId || "",
+      batch_id: item.batchId || state.batchId || "",
+      mode: state.mode,
       status: item.status,
       dirty: Boolean(item.dirty),
       format: state.format,
@@ -1467,8 +1798,7 @@
       ai_type: parsed.type,
       confidence: typeof item.dev.confidence === "number" ? item.dev.confidence : null,
       defaults: defaultsOf(item),
-      // 待入库池的台账随选区一起走：批量保存按钮搬进辅助栏后，
-      // 面板要自己知道「一共几题、几题脏」才敢让那颗钮亮起来。
+      // 待入库池的台账随选区一起走：辅助栏要自己知道「一共几题、几题脏」才敢让那颗钮亮起来。
       pool: poolCounts(),
       images: (question.images || []).slice(0, 32),
       extensions: keepExtensions(question.extensions),
@@ -1512,6 +1842,8 @@
           key: item.key,
           id: question.id ? question.id : "",
           saved_id: item.savedId || "",
+          pending_id: item.pendingId || "",
+          batch_id: item.batchId || state.batchId || "",
           status: item.status,
           dirty: Boolean(item.dirty),
           source: trunc(item.source, SOURCE_MAX),
@@ -1900,6 +2232,13 @@
   function metaFor(item, override) {
     var stored = panel.meta[item.key] || {};
     var meta = {};
+    // 草稿里没有这一题时，用题目自己的默认值打底：自动存草稿是「静默」的动作，
+    // 绝不能顺手把年级、标签、来源抹掉——老师没碰过表单不等于他不要这些。
+    var fallback = defaultEntry({ defaults: defaultsOf(item) });
+    Object.keys(fallback).forEach(function (key) { meta[key] = fallback[key]; });
+    var taxonomy = (item.question || {}).taxonomy || {};
+    meta.topic_ids = Array.isArray(taxonomy.topic_ids)
+      ? taxonomy.topic_ids.slice(0, TOPIC_LIMIT) : [];
     Object.keys(stored).forEach(function (key) { meta[key] = stored[key]; });
     if (override) Object.keys(override).forEach(function (key) { meta[key] = override[key]; });
     return meta;
@@ -2078,15 +2417,7 @@
     });
   }
 
-  // ---------- 批量保存（住在辅助栏）：脏题计数、待入库池台账与【保存全部】 ----------
-  function dirtyList() {
-    var out = [];
-    state.items.forEach(function (item, index) {
-      if (item.dirty) out.push({ item: item, index: index });
-    });
-    return out;
-  }
-
+  // ---------- 台账：辅助栏底边那一行只报数，审核动作在上面那三颗钮里，这里不再带按钮。 ----------
   /** 画布侧的真身：整份工作清单都在这儿，池的账只能从这里算。 */
   function poolCounts() {
     var fresh = 0, stored = 0, dirty = 0, errored = 0;
@@ -2117,7 +2448,7 @@
     batchNoteEl.setAttribute("data-batch", phase || "idle");
   }
 
-  /** 待入库池现在只是台账：池的存储层随下一军令接入，所以按钮出厂锁死、话术写明白。 */
+  /** 台账：辅助栏底边那一行只报数，审核动作在上面那三颗钮里，这里不再带按钮。 */
   function renderPool() {
     var counts = state.slot === "stage.center" ? poolCounts() : panelPoolCounts();
     if (poolEl) {
@@ -2131,175 +2462,204 @@
       poolEl.setAttribute("data-dirty", String(counts.dirty));
       poolEl.setAttribute("data-errored", String(counts.errored));
     }
-    if (saveAllEl) {
-      var blocked = state.batchSaving || counts.dirty === 0;
-      saveAllEl.disabled = blocked;
-      if (state.batchSaving) saveAllEl.setAttribute("aria-busy", "true");
-      else saveAllEl.removeAttribute("aria-busy");
-      saveAllEl.setAttribute("aria-disabled", blocked ? "true" : "false");
-      saveAllEl.title = counts.dirty === 0
-        ? "没有脏题：这里只提交改动过的题"
-        : "逐题串行提交 " + counts.dirty + " 道脏题（已入库走更新，未入库走新建）";
-    }
-    if (poolStashEl) {
-      poolStashEl.disabled = true;
-      poolStashEl.setAttribute("aria-disabled", "true");
-    }
+  }
+
+  // ---------- 审核三钮：存入主库 / 存为待办 / 彻底删除 ----------
+  /** 当前题 → 契约里的题目文档（源码解析 + 表单元数据），顺带把该说的话说了。 */
+  function documentFor(item, meta) {
+    var parsed = parseExamSource(item.source);
+    var doc = questionFromParsed(item, parsed, meta || {});
+    return { doc: doc, parsed: parsed, problems: validateForSave(doc, parsed, meta || {}) };
+  }
+
+  function approveBusy(busy) {
+    if (!panelApproveEl) return;
+    panelApproveEl.disabled = busy;
+    panelApproveEl.setAttribute("aria-busy", busy ? "true" : "false");
+    panelApproveEl.setAttribute("aria-disabled", busy ? "true" : "false");
   }
 
   /**
-   * 【保存全部】只提交脏题：没改过的一题也不写库。
-   * 逐题串行而不是并发——宿主对写库有频率闸门，一次全发只会换来一排 RATE_LIMITED 的假失败。
+   * 【存入主库】：中转站里的题由底座落进主库，p_ 号段换成 q_ 号段，配图搬进 uploads。
+   * 主库已有同题时底座回 409，原样抛给弹窗——底座只如实报出「哪一道、差在哪儿」，
+   * 覆盖与否由老师拍板，插件不替老师做主。
    */
-  function saveAllDirty() {
-    if (state.batchSaving) return Promise.resolve(null);
-    var targets = dirtyList();
-    if (!targets.length) {
-      batchNote("没有脏题可提交——这里只提交改动过的题，未改动的不动。", "empty");
-      return Promise.resolve(null);
+  function onApprove(force) {
+    var item = panelItem();
+    if (!item) {
+      panelSay("辅助栏还没收到当前题的源码，等画布发一次选区。", "warn", "idle");
+      return;
     }
-    state.batchSaving = true;
-    renderPool();
-    batchNote("正在提交 " + targets.length + " 道脏题…", "running");
-    return loadMetaDraft().then(function () {
-      return targets.reduce(function (chain, target) {
-        return chain.then(function (acc) {
-          return saveItem(target.item, metaFor(target.item, {}), "save").then(function (result) {
-            acc.saved.push(result.question_id || "");
-          }, function (error) {
-            acc.failed.push("第 " + (target.index + 1) + " 题：" + explainHostError(error));
-          }).then(function () {
-            // 每一棒都得把台账交回下一棒，否则第二题开始 acc 就是 undefined，整串批量会假死。
-            return acc;
-          });
-        });
-      }, Promise.resolve({ saved: [], failed: [] }));
-    }).then(function (acc) {
-      state.batchSaving = false;
-      var untouched = state.items.length - acc.saved.length - acc.failed.length;
-      var text = "已入库 " + acc.saved.length + "、失败 " + acc.failed.length
-        + "；未改动的 " + untouched + " 道一题也没写（提交 " + (acc.saved.length + acc.failed.length)
-        + " 道脏题）。";
-      if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
-      batchNote(text, acc.failed.length ? "partial" : "done");
-      dock("录题工作台批量提交：" + acc.saved.length + " 题入库、" + acc.failed.length + " 题失败。");
-      syncActiveBits();
-      publishSelectionSoon();
-      queueWorklistSave();
-      return acc;
-    }, function (error) {
-      state.batchSaving = false;
-      batchNote("批量提交没走通：" + ((error && error.message) || "未知失败") + "，已提交的部分不追回。",
-        "failed");
-      renderPool();
-      return null;
-    });
-  }
-
-  // ---------- 辅助栏侧的批量提交（按钮住在辅助栏，干活的也得是辅助栏这份） ----------
-  /**
-   * 面板侧的工作清单：批量保存搬进辅助栏后，面板要自己把题目重建出来。
-   * 台账只有一份——宿主代持的草稿；图片、扩展与原卷字段都在里面，更新一题不会丢料。
-   */
-  function panelWorklistItems() {
-    return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY }).then(function (result) {
-      var value = result && result.value;
-      var items = value && Array.isArray(value.items) ? value.items : [];
-      return items.map(function (saved) {
-        return {
-          key: String(saved.key || ""),
-          savedId: saved.saved_id || "",
-          status: saved.status === "stored" ? "stored" : "pending",
-          dirty: Boolean(saved.dirty),
-          source: String(saved.source || ""),
-          question: {
-            id: saved.id || "",
-            images: Array.isArray(saved.images) ? saved.images : [],
-            extensions: saved.extensions && typeof saved.extensions === "object" ? saved.extensions : {},
-            source: saved.origin && typeof saved.origin === "object" ? saved.origin : null
-          }
-        };
+    if (panel.saving) return;
+    var entry = readForm();
+    panel.currentEntry = entry;
+    panel.meta[item.key] = entry;
+    if (!item.pendingId) {
+      // 题库里的题直接改：走 bank.update，不经过中转站。
+      panel.saving = true;
+      approveBusy(true);
+      panelSay("正在写入题库…", "info", "saving");
+      saveItem(item, entry, "save").then(function (result) {
+        panel.selection.status = "stored";
+        panel.selection.dirty = false;
+        panelSay("已更新题目 " + result.question_id + "。", "ok", "updated");
+      }, function (error) {
+        panelSay(explainHostError(error), "error", "failed");
+        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"));
+      }).then(function () {
+        panel.saving = false;
+        approveBusy(false);
       });
-    });
-  }
-
-  /**
-   * 辅助栏里的【保存全部】：与画布侧同一条口径——只提交脏题，逐题串行。
-   * 面板帧摸不到画布的 state.items，只能靠宿主代持的工作清单草稿把题目重建出来。
-   */
-  function panelSaveAllDirty() {
-    if (state.batchSaving) return Promise.resolve(null);
-    state.batchSaving = true;
-    renderPool();
-    batchNote("正在读取工作清单…", "running");
-    return panelWorklistItems().then(function (items) {
-      return loadMetaDraft().then(function () {
-        var targets = [];
-        items.forEach(function (item, index) {
-          if (item.dirty) targets.push({ item: item, index: index });
-        });
-        if (!targets.length) {
-          state.batchSaving = false;
-          batchNote("没有脏题可提交——这里只提交改动过的题，未改动的不动。", "empty");
-          renderPool();
-          return null;
+      return;
+    }
+    panel.saving = true;
+    approveBusy(true);
+    panelSay("正在存入主库…", "info", "saving");
+    batchNote("正在存入主库…", "running");
+    hostCall("pending.approve", { pending_id: item.pendingId, force: force === true })
+      .then(function (result) {
+        panel.saving = false;
+        approveBusy(false);
+        closeModal(dupModalEl);
+        panel.selection.status = "stored";
+        panel.selection.dirty = false;
+        panelSay("已存入主库：" + (result.question_id || "") + "。", "ok", "created");
+        batchNote("已存入主库（" + (result.question_id || "") + "）。", "done");
+        dock("中转站里的一道题已存入主库：" + (result.question_id || ""));
+      }, function (error) {
+        panel.saving = false;
+        approveBusy(false);
+        if (error && error.duplicate) {
+          batchNote("主库已有该题，等老师拍板。", "partial");
+          openDupModal(item, error);
+          return;
         }
-        batchNote("正在提交 " + targets.length + " 道脏题…", "running");
-        return targets.reduce(function (chain, target) {
-          return chain.then(function (acc) {
-            return saveItem(target.item, metaFor(target.item, {}), "save").then(function (result) {
-              acc.saved.push(result.question_id || "");
-              if (result.created) acc.created += 1;
-              else acc.updated += 1;
-            }, function (error) {
-              acc.failed.push("第 " + (target.index + 1) + " 题：" + explainHostError(error));
-            }).then(function () {
-              // 每一棒都得把台账交回下一棒，否则第二题开始 acc 就是 undefined，整串批量会假死。
-              return acc;
-            });
-          });
-        }, Promise.resolve({ saved: [], failed: [], created: 0, updated: 0 })).then(function (acc) {
-          return { acc: acc, total: items.length };
-        });
+        panelSay(explainHostError(error), "error", "failed");
+        batchNote("存入主库失败：" + ((error && error.message) || "未知原因"), "failed");
+        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"));
       });
-    }).then(function (outcome) {
-      if (!outcome) return null;
-      var acc = outcome.acc;
-      state.batchSaving = false;
-      var untouched = outcome.total - acc.saved.length - acc.failed.length;
-      var text = "已入库 " + acc.saved.length + "、失败 " + acc.failed.length
-        + "；未改动的 " + untouched + " 道一题也没写（提交 " + (acc.saved.length + acc.failed.length)
-        + " 道脏题）。";
-      if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
-      batchNote(text, acc.failed.length ? "partial" : "done");
-      panelSay("批量提交完成：入库 " + acc.saved.length + " 题、失败 " + acc.failed.length + " 题。",
-        acc.failed.length ? "warn" : "ok", acc.failed.length ? "failed" : "saved");
-      dock("录题工作台批量提交：" + acc.saved.length + " 题入库、" + acc.failed.length + " 题失败。");
-      patchPanelPool(acc.created, acc.updated, acc.failed.length);
-      renderPool();
-      return acc;
+  }
+
+  /** 【存为待办】：把这一题写回中转池。带 pending_id 就是原地更新，池子里不会多出一道重影。 */
+  function onStash() {
+    var item = panelItem();
+    if (!item) {
+      panelSay("辅助栏还没收到当前题的源码，等画布发一次选区。", "warn", "idle");
+      return;
+    }
+    if (panel.saving) return;
+    var entry = readForm();
+    panel.currentEntry = entry;
+    panel.meta[item.key] = entry;
+    var built = documentFor(item, entry);
+    if (built.problems.length) {
+      panelSay("这一题还存不进去：" + built.problems.slice(0, 3).join("；"), "warn", "invalid");
+      return;
+    }
+    var payload = { questions: [{ pending_id: item.pendingId || "", question: built.doc }] };
+    if (item.batchId) payload.batch_id = item.batchId;
+    panel.saving = true;
+    panelSay("正在存进中转站…", "info", "saving");
+    batchNote("正在存进中转站…", "running");
+    hostCall("pending.save_draft", payload).then(function (result) {
+      panel.saving = false;
+      var ids = (result && Array.isArray(result.saved_ids)) ? result.saved_ids : [];
+      panelSay("已存为待办（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "ok", "stashed");
+      batchNote("已存为待办（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "done");
+      dock("一道题已存进中转站（待审核池）。");
     }, function (error) {
-      state.batchSaving = false;
-      batchNote("批量提交没走通：" + ((error && error.message) || "未知失败") + "，已提交的部分不追回。",
-        "failed");
-      renderPool();
-      return null;
+      panel.saving = false;
+      panelSay("存为待办失败：" + ((error && error.message) || "未知原因"), "error", "failed");
+      batchNote("存为待办失败。", "failed");
+      dockWarn("存为待办失败：" + ((error && error.message) || "未知原因"));
     });
   }
 
-  /** 批量提交后先自己把台账改到位：画布的回执要绕一圈才回来，这期间按钮不能一直亮着。
-   *  只有「新建」才把待入库挪进已入库；改已入库的题本来就住在已入库里。
-   *  脏题三样（新建/更新/失败）都算处理过——失败的那道不再是脏题，只是记在失败数里。 */
-  function patchPanelPool(created, updated, failed) {
-    var pool = panel.selection && panel.selection.pool;
-    if (!pool || typeof pool !== "object") return;
-    panel.selection.pool = {
-      fresh: Math.max(0, Number(pool.fresh || 0) - created),
-      stored: Number(pool.stored || 0) + created,
-      dirty: Math.max(0, Number(pool.dirty || 0) - created - updated - failed),
-      errored: Number(pool.errored || 0)
-    };
+  /** 【彻底删除】：这一道题连同它的配图从中转站消失，主库一个字节都不碰。 */
+  function onDelete() {
+    var item = panelItem();
+    if (!item || !item.pendingId) {
+      panelSay("这一题不在待审核池里，池子删不了它——题库里的题请回题库删。", "warn", "idle");
+      return;
+    }
+    panel.pending = item;
+    openModal(delModalEl);
   }
+
+  function onDeleteConfirm() {
+    var item = panel.pending;
+    closeModal(delModalEl);
+    if (!item) return;
+    hostCall("pending.delete", { pending_id: item.pendingId }).then(function () {
+      panelSay("这一题已从中转站彻底删除。", "ok", "deleted");
+      batchNote("这一题已从中转站彻底删除。", "done");
+      dock("一道题已从中转站彻底删除。");
+    }, function (error) {
+      panelSay("删不掉：" + ((error && error.message) || "未知原因"), "error", "failed");
+      batchNote("彻底删除失败。", "failed");
+      dockWarn("彻底删除失败：" + ((error && error.message) || "未知原因"));
+    });
+  }
+
+  // ---------- 弹窗：查重与彻底删除共用一套开合规矩（焦点圈住、Esc 可关、关掉还焦） ----------
+  var modalRestoreFocus = null;
+
+  function openModalNode() {
+    if (dupModalEl && !dupModalEl.hidden) return dupModalEl;
+    if (delModalEl && !delModalEl.hidden) return delModalEl;
+    return null;
+  }
+
+  function openModal(node) {
+    if (!node) return;
+    modalRestoreFocus = document.activeElement;
+    node.hidden = false;
+    var first = node.querySelector("button");
+    if (first && typeof first.focus === "function") first.focus();
+  }
+
+  function closeModal(node) {
+    if (!node || node.hidden) return;
+    node.hidden = true;
+    if (modalRestoreFocus && typeof modalRestoreFocus.focus === "function") {
+      modalRestoreFocus.focus();
+    }
+    modalRestoreFocus = null;
+  }
+
+  /** 查重命中：弹窗给两颗钮——返回修改 / 强行覆盖。 */
+  function openDupModal(item, error) {
+    if (!dupModalEl) return;
+    panel.pending = item;
+    if (dupTextEl) {
+      dupTextEl.textContent = "主库里已经有同一道题（"
+        + ((error && error.existingId) || "已有记录")
+        + "）。可以返回修改，也可以强行覆盖主库那一条。";
+    }
+    openModal(dupModalEl);
+  }
+
+  document.addEventListener("keydown", function (event) {
+    var node = openModalNode();
+    if (!node) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeModal(node);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    var focusable = node.querySelectorAll("button");
+    if (!focusable.length) return;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
 
   // ---------- 能力路由字典（军令 #20 的四条命令，v2 继续沿用同一批 id） ----------
   function commandReject(source, message, code, text) {
@@ -2478,6 +2838,8 @@
     return {
       key: String(sel.key || "idx:" + Number(sel.index || 0)),
       savedId: sel.saved_id || "",
+      pendingId: sel.pending_id || "",
+      batchId: sel.batch_id || "",
       status: sel.status === "stored" ? "stored" : "pending",
       source: String(sel.source || panel.source || ""),
       question: {
@@ -2622,7 +2984,7 @@
       panelSay(panelSelectionError(), "error", "invalid");
     } else if (panel.ai.state === "ready" && panel.ai.key === sel.key) {
       // 刚把改写发给画布，那句「保存才入库」不能被选区回显盖掉——否则老师会以为已经入库了
-    } else if (panelSaveEl && panelSaveEl.getAttribute("aria-busy") !== "true") {
+    } else if (!panel.saving) {
       panelSay("当前第 " + (Number(sel.index || 0) + 1) + " 题" + (sel.dirty ? "有未保存改动" : "未改动") + "。",
         "info", sel.dirty ? "dirty" : "idle");
     }
@@ -2662,44 +3024,6 @@
     if (code.indexOf("HOST_") === 0) return "底座写库失败（" + code + "）：" + text;
     if (code === "LOCAL_INVALID") return text;
     return text;
-  }
-
-  function onPanelSave(mode) {
-    var item = panelItem();
-    if (!item) {
-      panelSay("辅助栏还没收到当前题的源码，等画布发一次选区。", "warn", "idle");
-      return;
-    }
-    if (panel.saving) return;
-    var entry = readForm();
-    panel.currentEntry = entry;
-    panel.meta[item.key] = entry;
-    panelSay("正在写入题库…", "info", "saving");
-    if (panelSaveEl) {
-      panelSaveEl.disabled = true;
-      panelSaveEl.setAttribute("aria-busy", "true");
-    }
-    panel.saving = true;
-    saveItem(item, entry, mode).then(function (result) {
-      panel.selection.status = mode === "variant" ? panel.selection.status : "stored";
-      panel.selection.saved_id = mode === "variant" ? panel.selection.saved_id : result.question_id;
-      panel.selection.dirty = mode === "variant" ? panel.selection.dirty : false;
-      queueMetaSave();
-      renderPanelMetrics();
-      renderTypeNote();
-      if (mode === "variant") {
-        panelSay("已另存为新题 " + result.question_id + "，原题没动。", "ok", "created");
-      }
-    }, function (error) {
-      panelSay(explainHostError(error), "error", error && error.code === "LOCAL_INVALID" ? "invalid" : "failed");
-      dock("录题辅助栏保存失败：" + ((error && error.message) || "未知原因"));
-    }).then(function () {
-      panel.saving = false;
-      if (panelSaveEl) {
-        panelSaveEl.disabled = false;
-        panelSaveEl.removeAttribute("aria-busy");
-      }
-    });
   }
 
   // ---------- 辅助栏 AI 帮改（档 1）：预览归面板，替换归老师那一下点击 ----------
@@ -3175,6 +3499,8 @@
     applySelection({
       index: active, total: items.length, key: saved.key,
       question_id: saved.id || saved.saved_id || "", saved_id: saved.saved_id || "",
+      pending_id: saved.pending_id || "", batch_id: saved.batch_id || "",
+      mode: "review",
       status: saved.status, dirty: Boolean(saved.dirty), format: panel.format,
       swap: panel.swap, source: source, errors: saved.errors || [],
       ai_type: parseExamSource(source).type,
@@ -3202,8 +3528,16 @@
       });
     });
     if (panelSwapEl) panelSwapEl.addEventListener("click", toggleSwapFromPanel);
-    if (panelSaveEl) panelSaveEl.addEventListener("click", function () { onPanelSave("save"); });
-    if (panelVariantEl) panelVariantEl.addEventListener("click", function () { onPanelSave("variant"); });
+    if (panelApproveEl) panelApproveEl.addEventListener("click", function () { onApprove(false); });
+    if (panelStashEl) panelStashEl.addEventListener("click", onStash);
+    if (panelDeleteEl) panelDeleteEl.addEventListener("click", onDelete);
+    if (dupBackEl) dupBackEl.addEventListener("click", function () { closeModal(dupModalEl); });
+    if (dupForceEl) dupForceEl.addEventListener("click", function () {
+      closeModal(dupModalEl);
+      onApprove(true);
+    });
+    if (delCancelEl) delCancelEl.addEventListener("click", function () { closeModal(delModalEl); });
+    if (delOkEl) delOkEl.addEventListener("click", onDeleteConfirm);
     if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);
     if (panelAiSendEl) panelAiSendEl.addEventListener("click", onAiSend);
     if (panelAiCleanEl) panelAiCleanEl.addEventListener("click", cleanViaHost);
@@ -3273,6 +3607,11 @@
         if (state.slot === "stage.center") consumeReceipts(message.payload);
         return;
       }
+      if (message.event === "system.pending_updated") {
+        // 中转站动了：入库与删除要把题从画布上撤下来，暂存只改内容不撤。
+        if (state.slot === "stage.center") onPendingUpdated(message.payload);
+        return;
+      }
       return;
     }
 
@@ -3285,10 +3624,16 @@
         return respond(event.source, message.id, true, { ready: true, plugin_id: PLUGIN_ID, slot: state.slot });
       }
       root.hidden = false;
-      loadFixtures();
+      setMode("list");
       applyWidths();
       renderAll();
       if (sourceHintEl) sourceHintEl.textContent = "格式一 · 整段源码直接编辑";
+      startIdleWatch();
+      // 首屏就是批次列表：中转站还空着就先把这批识别结果入池，好让老师有东西可点。
+      refreshBatches().then(function (cards) {
+        if (cards.length) return null;
+        return seedBatch().then(function () { return refreshBatches(); });
+      });
       restoreWorklist().then(function () {
         renderAll();
         saveWorklist();
@@ -3347,12 +3692,15 @@
       wireGhost(node);
       node.addEventListener("scroll", function () { syncScroll(node); });
     });
-    if (saveAllEl) saveAllEl.addEventListener("click", function () {
-      // 同一份文档被宿主装两次：画布帧与辅助栏帧各有一份这枚钮（只有辅助栏那份看得见）。
-      // 按钮住在辅助栏，工作就得在辅助栏的帧里做：它摸不到画布的题目，只能靠共用的草稿台账。
-      if (state.slot === "stage.center") saveAllDirty();
-      else panelSaveAllDirty();
+    // 三分钟没人碰就静默存回中转池：任何一次动手都算「有人在」，这里只做记账。
+    ["pointerdown", "keydown", "wheel", "input"].forEach(function (type) {
+      window.addEventListener(type, noteActivity, { passive: true, capture: true });
     });
+    if (backListEl) {
+      backListEl.addEventListener("click", function () {
+        backToList("已回到批次列表。");
+      });
+    }
     if (window.ResizeObserver && colsEl) {
       var observer = new window.ResizeObserver(function () {
         applyWidths();
@@ -3361,6 +3709,7 @@
       observer.observe(colsEl);
     }
     window.addEventListener("beforeunload", function () {
+      stashOnUnload();
       if (layoutTimer) {
         window.clearTimeout(layoutTimer);
         saveLayout();
@@ -3380,7 +3729,7 @@
 
   // 真机探针用的调试面：只把解析/重组结果交给 Playwright 复核，不参与业务分支。
   window.__jzoEditorV2 = {
-    version: "2.1.0-stage5",
+    version: "3.0.0-batch",
     parseExamSource: parseExamSource,
     buildExamSource: buildExamSource,
     cleanExamSource: cleanExamSource,
@@ -3400,6 +3749,22 @@
     selectionPayload: selectionPayload,
     jumpTo: jumpTo,
     poolCounts: poolCounts,
-    saveAllDirty: saveAllDirty
+    // 审核台：批次列表、点入审核、存草稿、存回中转池
+    refreshBatches: refreshBatches,
+    renderBatchList: renderBatchList,
+    openBatch: openBatch,
+    backToList: backToList,
+    setMode: setMode,
+    stashOne: stashOne,
+    onApprove: onApprove,
+    onStash: onStash,
+    onDelete: onDelete,
+    autoSaveIdle: autoSaveIdle,
+    noteActivity: noteActivity,
+    // 探针要把假时钟拨快，三分钟那道闸门才认得出「没人操作」
+    idleThreshold: function () { return IDLE_MS; },
+    tickIdle: function () {
+      lastActivityAt = Date.now() - IDLE_MS - 1000;
+    }
   };
 })();

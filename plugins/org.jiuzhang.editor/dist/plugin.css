@@ -71,6 +71,160 @@ body {
   border: 0;
 }
 
+/* ---------- 首屏：待审核批次列表（军令 #24） ---------- */
+
+.ed-batches {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.ed-batches-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+}
+
+.ed-batches-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ed-batches-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.ed-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 一行一个批次：左时间与编号，右「未审：n / N」贴紧右边缘垂直对齐。 */
+.ed-batch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ed-batch-row:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+}
+
+.ed-batch-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ed-batch-right {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.ed-batch-label,
+.ed-batch-sep {
+  color: var(--ink-soft);
+}
+
+.ed-batch-num {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-batch-check {
+  margin-left: 4px;
+}
+
+/* 审完的批次：整行变灰、沉到列表最底下，点不动——只能看。 */
+.ed-batch-row[data-done="true"] {
+  background: transparent;
+  border-style: dashed;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ed-batch-row[data-done="true"] .ed-batch-num {
+  color: var(--ink-soft);
+}
+
+.ed-batches-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 二屏抬头：当前批次号与返回列表 ---------- */
+
+.ed-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+
+.ed-back-btn {
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ed-back-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ed-batch-no {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ed-batch-stat {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- 三栏 ---------- */
 
 .ed-cols {
@@ -682,12 +836,62 @@ body {
   font-weight: 700;
 }
 
+.ep-btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+}
+
 .ep-btn[aria-busy="true"] { opacity: 0.7; }
 
 .ep-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* ---------- 弹窗：查重与彻底删除（焦点圈住、Esc 可关、关掉还焦） ---------- */
+
+.ep-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(42, 36, 29, 0.42);
+}
+
+.ep-modal-card {
+  width: min(360px, 100%);
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(42, 36, 29, 0.22);
+}
+
+.ep-modal-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ep-modal-text {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.ep-modal-card .ep-actions {
+  justify-content: flex-end;
+}
+
+.ep-modal-card .ep-btn {
+  flex: 0 0 auto;
 }
 
 /* 批量保存区（原画布底栏搬过来的）：待入库池计数 + 状态话术 + 两颗动作钮。
