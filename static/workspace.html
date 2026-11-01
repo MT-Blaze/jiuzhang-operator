@@ -177,6 +177,8 @@
   </noscript>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
+  <!-- 请求报错现场：必须最先加载，之后每一笔 fetch 的非 2xx 都有完整记录 -->
+  <script src="/static/js/http.js"></script>
   <script src="/static/js/bus.js"></script>
   <!-- 录入入口（宿主壳）：拖入的文件、粘贴的截图、屏幕截取。
        必须早于 stage.js：插件转发进来的字节由它代发，写令牌只在宿主侧。 -->

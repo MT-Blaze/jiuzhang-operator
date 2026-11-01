@@ -138,12 +138,33 @@
     setRejectedVisible(rejectedHost.firstChild !== null);
   }
 
+  /** 失败现场统一由 http.js 拼装：URL、状态、请求体、响应全文一个不少。 */
+  async function readBody(response, url, method, payload) {
+    var text = "";
+    try { text = await response.text(); } catch (error) { text = ""; }
+    var data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (error) { data = null; }
+    if (!response.ok) {
+      if (window.JzoHttp && typeof window.JzoHttp.fromResponse === "function") {
+        throw window.JzoHttp.fromResponse(response, text, data, {
+          method: method, url: url, payload: payload
+        });
+      }
+      var fallback = new Error("HTTP " + response.status + " " + url + "：" + String(text || "").slice(0, 300));
+      fallback.status = response.status;
+      fallback.body = String(text || "");
+      throw fallback;
+    }
+    return data || {};
+  }
+
   async function readToken() {
     var response = await fetch("/api/settings", { cache: "no-cache" });
-    if (!response.ok) throw new Error("读取本机令牌失败（HTTP " + response.status + "）");
-    var body = await response.json();
+    var body = await readBody(response, "/api/settings", "GET");
     var token = body && body.local_token ? String(body.local_token) : "";
-    if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
+    if (!token) {
+      throw new Error("本机未生成就绪令牌：GET /api/settings 返回里没有 local_token，请先启动服务后再试");
+    }
     return token;
   }
 
@@ -170,31 +191,17 @@
 
   async function requestInstall(entry, replace) {
     var token = await readToken();
+    var payload = {
+      url: entry.zip_url,
+      mirrors: Array.isArray(entry.mirrors) ? entry.mirrors : [],
+      replace: replace
+    };
     var response = await fetch("/api/plugins/install-url", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-      body: JSON.stringify({
-        url: entry.zip_url,
-        mirrors: Array.isArray(entry.mirrors) ? entry.mirrors : [],
-        replace: replace
-      })
+      body: JSON.stringify(payload)
     });
-    var data = await response.json().catch(function () {
-      return null;
-    });
-    if (!response.ok) {
-      var detail = data && data.detail;
-      var message =
-        detail && typeof detail === "object" && detail.message
-          ? detail.message
-          : typeof detail === "string"
-            ? detail
-            : "HTTP " + response.status;
-      var error = new Error(message);
-      error.status = response.status;
-      throw error;
-    }
-    return data;
+    return readBody(response, "/api/plugins/install-url", "POST", payload);
   }
 
   async function installEntry(entry, btn) {
@@ -276,18 +283,17 @@
     try {
       await refreshInstalledMap();
       var token = await readToken();
+      var payload = { url: url, allow_mirrors: isOfficial };
       var response = await fetch("/api/plugins/index", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-JZO-Token": token },
-        body: JSON.stringify({ url: url, allow_mirrors: isOfficial })
+        body: JSON.stringify(payload)
       });
-      var data = await response.json().catch(function () {
-        return null;
-      });
-      if (!response.ok) {
-        var detail = data && data.detail;
-        var message = typeof detail === "string" ? detail : "HTTP " + response.status;
-        setStatus("没有取到列表：" + message, "down");
+      var data;
+      try {
+        data = await readBody(response, "/api/plugins/index", "POST", payload);
+      } catch (error) {
+        setStatus("没有取到列表：" + (error && error.message ? error.message : error), "down");
         resultHost.appendChild(makePlaceholder("本次没有取到任何条目。"));
         return;
       }

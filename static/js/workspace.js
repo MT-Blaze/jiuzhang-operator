@@ -15,6 +15,12 @@
   var providerList = [];
   var installedPlugins = [];
   var writeToken = null;
+  // 老师亲手点过左栏没有？启动行为要等 /api/startup 回来才动手，
+  // 网络慢时它会晚于第一次点击落地——那时绝不许再把画布抢去默认页。
+  var userPickedPlugin = false;
+  // 左栏视图签名：清单、树、折叠态都没变就不动 DOM。整栏重建会把
+  // mousedown 与 mouseup 之间的按钮换掉，点击就被浏览器吞成一次空点。
+  var pluginViewSignature = null;
   var currentTask = "";
   var activePlugin = null;
   // 右侧面板状态：values 是当前参数，revisions 记录人类
@@ -116,6 +122,8 @@
         if (body.fallback_reason) {
           addBubble("sys", String(body.fallback_reason), { tone: "warn" });
         }
+        // 老师已经亲手点了左栏（或画布已有主）：启动页不再抢画布。
+        if (userPickedPlugin || activePlugin) return;
         var effective = String(body.effective || "chat");
         if (effective.indexOf("plugin:") !== 0) return;
         var wantedId = effective.slice("plugin:".length);
@@ -882,22 +890,21 @@
   function fetchWriteToken() {
     return fetch("/api/settings", { cache: "no-store" })
       .then(function (r) {
-        if (!r.ok) throw new Error("读取本机令牌失败（HTTP " + r.status + "）");
-        return r.json();
+        return window.JzoHttp.readText(r, function (text, data) {
+          if (!r.ok) {
+            throw window.JzoHttp.fromResponse(r, text, data, { method: "GET", url: "/api/settings" });
+          }
+          return data || {};
+        });
       })
       .then(function (data) {
         var token = data && data.local_token ? String(data.local_token) : "";
-        if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
+        if (!token) {
+          throw new Error("本机未生成就绪令牌：GET /api/settings 返回里没有 local_token，请先启动服务再试");
+        }
         writeToken = token;
         return token;
       });
-  }
-
-  function readErrorDetail(response, body) {
-    var detail = body && body.detail;
-    if (typeof detail === "string") return detail;
-    if (detail && typeof detail.message === "string") return detail.message;
-    return "HTTP " + response.status;
   }
 
   // 模型 Provider：加载 / 切换 / 配置。
@@ -913,8 +920,10 @@
   function loadProviders() {
     return fetch("/api/providers", { cache: "no-store" })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return window.JzoHttp.readText(r, function (text, data) {
+          if (!r.ok) throw window.JzoHttp.fromResponse(r, text, data, { url: "/api/providers" });
+          return data || {};
+        });
       })
       .then(function (data) {
         providerList = data.providers || [];
@@ -1106,8 +1115,12 @@
         });
       })
       .then(function (r) {
-        return r.json().catch(function () { return null; }).then(function (data) {
-          if (!r.ok) throw new Error(readErrorDetail(r, data));
+        return window.JzoHttp.readText(r, function (text, data) {
+          if (!r.ok) {
+            throw window.JzoHttp.fromResponse(r, text, data, {
+              method: "POST", url: url, payload: body
+            });
+          }
           return data;
         });
       })
@@ -1207,9 +1220,28 @@
     btn.title = rowTip(plugin);
     btn.appendChild(name);
     btn.appendChild(meta);
-    btn.addEventListener("click", function () { enterPluginMode(plugin, btn); });
     li.appendChild(btn);
     return li;
+  }
+
+  /**
+   * 左栏点击走容器级委托，而不是逐按钮绑 listener。
+   *
+   * 逐按钮绑的状态藏在被重建的 DOM 里：只要清单刷新（每 5 秒轮询、窗口聚焦、
+   * 控制台改昵称）把整栏重画一次，正在按下的那颗按钮就被换掉，浏览器把这次
+   * mousedown/mouseup 判成空点——表现就是「第一次点击没反应」。
+   * 委托挂在永不重建的容器上，按钮怎么换都接得住。
+   */
+  function wirePluginClicks() {
+    if (!pluginListEl) return;
+    pluginListEl.addEventListener("click", function (event) {
+      var btn = event.target && event.target.closest ? event.target.closest(".ws-plugin-item") : null;
+      if (!btn || !pluginListEl.contains(btn)) return;
+      var plugin = findInstalled(btn.getAttribute("data-plugin-id") || "");
+      if (!plugin) return;
+      userPickedPlugin = true;
+      enterPluginMode(plugin, btn);
+    });
   }
 
   function buildFolderRow(folder, kids) {
@@ -1305,8 +1337,29 @@
     });
   }
 
+  /** 左栏视图签名：只收「画出来会变样」的字段，签名没变就一次 DOM 都不动。 */
+  function viewSignatureOf(plugins) {
+    try {
+      return JSON.stringify({
+        plugins: (plugins || []).map(function (plugin) {
+          return [
+            plugin.id, plugin.version, plugin.name, plugin.nickname, plugin.kind,
+            plugin.description, plugin.enabled, plugin.show_in_sidebar,
+            plugin.stage ? plugin.stage.priority : null
+          ];
+        }),
+        tree: sidebarTree,
+        folded: collapsedFolders
+      });
+    } catch (error) {
+      return "";   // 序列化不了就照旧重建，绝不让左栏冻在旧视图上
+    }
+  }
+
   function renderPlugins(plugins) {
     if (!pluginListEl) return;
+    var signature = viewSignatureOf(plugins);
+    if (signature && signature === pluginViewSignature && pluginListEl.childElementCount) return;
     // 三态管理落到导航：停用的（enabled=false）与不占位的（show_in_sidebar=false）都不进左栏。
     var list = (plugins || []).filter(pluginVisible);
     var byId = {};
@@ -1356,6 +1409,7 @@
       pluginCountEl.hidden = false;
       pluginCountEl.textContent = String(list.length);
     }
+    pluginViewSignature = signature;
   }
 
   // ============ 右键菜单（军令 #16 模块一） ============
@@ -1538,8 +1592,10 @@
     var opts = options || {};
     return fetch("/api/plugins", { cache: "no-store" })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
+        return window.JzoHttp.readText(r, function (text, data) {
+          if (!r.ok) throw window.JzoHttp.fromResponse(r, text, data, { url: "/api/plugins" });
+          return data || {};
+        });
       })
       .then(function (data) {
         var plugins = (data && data.plugins) || [];
@@ -1638,9 +1694,13 @@
         });
       })
       .then(function (r) {
-        return r.json().catch(function () { return null; }).then(function (body) {
+        return window.JzoHttp.readText(r, function (text, body) {
+          var payloadLabel = "zip " + String(file.name || "未命名") + "（" + file.size + " 字节）";
           if (r.status === 409 && !replace) {
-            var question = readErrorDetail(r, body) + " 覆盖升级会先删除旧目录，继续吗？";
+            var conflict = window.JzoHttp.fromResponse(r, text, body, {
+              method: "POST", url: "/api/plugins/install", payload: payloadLabel
+            });
+            var question = conflict.message + " 覆盖升级会先删除旧目录，继续吗？";
             // 定调令：工作台不许有浏览器原生弹窗。确认走宿主自绘对话框，
             // 确认后仍是一次全新的安装请求（replace=true）。
             if (!window.JzoDialogs) {
@@ -1655,7 +1715,11 @@
             });
             return null;
           }
-          if (!r.ok) throw new Error(readErrorDetail(r, body));
+          if (!r.ok) {
+            throw window.JzoHttp.fromResponse(r, text, body, {
+              method: "POST", url: "/api/plugins/install", payload: payloadLabel
+            });
+          }
           var plugin = body && body.plugin ? body.plugin : {};
           addBubble("sys", "插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
           // 装完立即刷新插件区；刷新失败不回滚安装结果，也不谎报安装失败。
@@ -1795,6 +1859,7 @@
   wireDock();
   wireDockMenu();
   wireGhostScroll();
+  wirePluginClicks();
   wirePluginDrag();
   wireSidebarMenu();
   wireStageSovereignty();

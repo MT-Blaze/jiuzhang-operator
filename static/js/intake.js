@@ -58,12 +58,34 @@
 
   // ---------- 写通道：一次性令牌永远在宿主侧 ----------
 
+  function failureOf(response, text, data, url, method, payload) {
+    if (window.JzoHttp && typeof window.JzoHttp.fromResponse === "function") {
+      return window.JzoHttp.fromResponse(response, text, data, {
+        method: method, url: url, payload: payload
+      });
+    }
+    var error = new Error("HTTP " + response.status + " " + url + "：" + String(text || "").slice(0, 300));
+    error.url = url;
+    error.method = method;
+    error.status = response.status;
+    error.body = String(text || "");
+    return error;
+  }
+
   function postJson(url, body) {
     return fetch("/api/settings", { cache: "no-store" })
-      .then(function (response) { return response.json(); })
+      .then(function (response) {
+        return response.text().then(function (text) {
+          var data = null;
+          try { data = text ? JSON.parse(text) : null; } catch (error) { data = null; }
+          // 令牌口子自己也会挂：不判它就连「哪一步失败的」都说不清。
+          if (!response.ok) throw failureOf(response, text, data, "/api/settings", "GET", null);
+          return data || {};
+        });
+      })
       .then(function (data) {
         var token = data && data.local_token;
-        if (!token) throw new Error("拿不到本地写操作令牌");
+        if (!token) throw new Error("拿不到本地写操作令牌：GET /api/settings 返回里没有 local_token");
         return fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-JZO-Token": token },
@@ -74,20 +96,7 @@
         return response.text().then(function (text) {
           var data = null;
           try { data = text ? JSON.parse(text) : {}; } catch (error) { data = null; }
-          if (!response.ok) {
-            var detail = data && data.detail;
-            var message = typeof detail === "string" ? detail
-              : (detail && detail.message) || String(text || "").trim().slice(0, 300)
-              || ("宿主接口返回 HTTP " + response.status);
-            var failure = new Error(message);
-            failure.status = response.status;
-            failure.statusText = response.statusText || "";
-            failure.detail = detail;
-            failure.body = String(text || "");
-            failure.url = url;
-            failure.method = "POST";
-            throw failure;
-          }
+          if (!response.ok) throw failureOf(response, text, data, url, "POST", body);
           return data || {};
         });
       });
@@ -155,14 +164,19 @@
       // 入库失败必须进【报错诊断】：请求行、状态与 Response 全文一并交代，
       // 只剩一句「Not Found」等于让老师自己猜。
       if (opts.silent !== true) {
-        var lines = ["POST " + INGEST_URL];
-        if (error && error.status) {
-          lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+        var detail = window.JzoHttp && typeof window.JzoHttp.detail === "function"
+          ? window.JzoHttp.detail(error) : "";
+        if (!detail) {
+          detail = ["POST " + INGEST_URL];
+          if (error && error.status) {
+            detail.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+          }
+          if (error && error.message) detail.push(String(error.message));
+          if (error && error.body) detail.push("响应全文：" + String(error.body));
+          detail = detail.join("\n");
         }
-        if (error && error.message) lines.push(String(error.message));
-        if (error && error.body) lines.push("response: " + String(error.body));
         dock("文件入池失败：" + String((error && error.message) || "未知错误"),
-          "error", lines.join("\n"));
+          "error", detail);
       }
       throw error;
     });

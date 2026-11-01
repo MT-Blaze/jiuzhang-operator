@@ -25,7 +25,10 @@
         cache: "no-store",
         headers: { Accept: "application/json" }
       });
-      if (!response.ok) throw new Error("HTTP " + response.status);
+      if (!response.ok) {
+        var text = await response.text().catch(function () { return ""; });
+        throw window.JzoHttp.fromResponse(response, text, null, { url: "/healthz" });
+      }
 
       var data = await response.json();
       if (timeEl && data.time) timeEl.textContent = "底座时间 " + formatTime(data.time);

@@ -1072,30 +1072,19 @@
             data = null;
           }
           if (!response.ok) {
-            var detail = data && data.detail;
-            var message = "";
-            if (typeof detail === "string") {
-              message = detail;
-            } else if (detail && typeof detail === "object") {
-              // 校验失败是 {message, errors[]}：把首条具体错误带出去，插件才能告诉老师哪里错了
-              var head = typeof detail.message === "string" ? detail.message : "";
-              var first = Array.isArray(detail.errors) && typeof detail.errors[0] === "string" ? detail.errors[0] : "";
-              message = head && first ? head + "：" + first : head || first;
-              if (!message) message = JSON.stringify(detail).slice(0, 300);
-            }
-            if (!message) message = String(text || "").trim().slice(0, 300);
-            var failure = new Error(message || "宿主接口返回 HTTP " + response.status);
-            failure.status = response.status;
-            failure.statusText = response.statusText || "";
-            failure.detail = detail;
-            // 干瘪的「Not Found」不够用：原始响应全文与请求地址一并带走，
-            // 报错诊断才打得出完整现场（主公 2026-11-01 抢修第一条）。
-            failure.body = String(text || "");
-            failure.url = url;
-            failure.method = String(settings.method || "GET");
-            throw failure;
+            // 一行话也要能定位：状态 + 方法 + 完整地址 + 服务端原因；请求体摘要
+            // 与响应全文挂在 error 上，底栏【报错诊断】原样铺开（http.js）。
+            throw window.JzoHttp.failure({
+              status: response.status,
+              statusText: response.statusText || "",
+              method: settings.method || "GET",
+              url: url,
+              text: text,
+              data: data,
+              payload: settings.body
+            });
           }
-          if (data === null) throw new Error("宿主接口返回了非 JSON 内容");
+          if (data === null) throw new Error("宿主接口返回了非 JSON 内容：" + String(settings.method || "GET") + " " + url);
           return data;
         });
       })
@@ -1438,23 +1427,27 @@
       var target = String((error && error.url) || "");
       var payload = {
         code: "HOST_" + (error.status || 0),
-        message: String((error && error.message) || "宿主请求失败").slice(0, 200),
+        message: String((error && error.message) || "宿主请求失败").slice(0, 400),
         retryable: Boolean(error && error.status >= 500),
         status: Number(error && error.status) || 0,
         url: target,
         method: method
       };
-      // 报错诊断要的是完整现场：请求行、状态、detail 对象与 Response 全文一个不落。
-      var lines = [];
-      if (target) lines.push(method + " " + target);
-      if (error && error.status) {
-        lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+      // 报错诊断要的是完整现场：http.js 统一铺开请求行、状态、请求体摘要与响应全文；
+      // 只有拿不到 JzoHttp 时才退回旧的三行拼装。
+      var full = window.JzoHttp && typeof window.JzoHttp.detail === "function"
+        ? window.JzoHttp.detail(error) : "";
+      var lines = full ? [full] : [];
+      if (!full) {
+        if (target) lines.push(method + " " + target);
+        if (error && error.status) {
+          lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+        }
+        if (error && error.message) lines.push(String(error.message));
       }
-      if (error && error.message) lines.push(String(error.message));
-      if (detail !== undefined && detail !== null) {
-        lines.push("detail: " + (typeof detail === "string" ? detail : JSON.stringify(detail)));
+      if (detail && typeof detail === "object") {
+        lines.push("detail: " + JSON.stringify(detail));
       }
-      if (error && error.body) lines.push("response: " + String(error.body));
       payload.detail = lines.join("\n").slice(0, 20000);
       // 409 查重：detail 里带着主库那道题的 id 与 duplicate 标记，原样带给插件，
       // 插件才弹得出「返回修改 / 强行覆盖」两颗钮。

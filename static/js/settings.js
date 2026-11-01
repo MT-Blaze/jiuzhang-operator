@@ -29,24 +29,40 @@
     statusBox.hidden = !text;
   }
 
+  function httpFailure(response, text, data, url, method, payload) {
+    if (window.JzoHttp && typeof window.JzoHttp.fromResponse === "function") {
+      return window.JzoHttp.fromResponse(response, text, data, {
+        method: method, url: url, payload: payload
+      });
+    }
+    var error = new Error("HTTP " + response.status + " " + url + "：" + String(text || "").slice(0, 300));
+    error.status = response.status;
+    error.body = String(text || "");
+    return error;
+  }
+
+  /** 读 JSON：非 2xx 也必须把响应全文读完再抛，404 才有现场可查。 */
+  function readJson(response, url, method, payload) {
+    return response.text().then(function (text) {
+      var data = null;
+      try { data = text ? JSON.parse(text) : {}; } catch (error) { data = null; }
+      if (!response.ok) throw httpFailure(response, text, data, url, method, payload);
+      return data || {};
+    });
+  }
+
   function readToken() {
     return fetch("/api/settings", { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("读取本机令牌失败（HTTP " + response.status + "）");
-        return response.json();
+        return readJson(response, "/api/settings", "GET");
       })
       .then(function (body) {
         var token = body && body.local_token ? String(body.local_token) : "";
-        if (!token) throw new Error("本机未生成就绪令牌，请先启动服务后再试");
+        if (!token) {
+          throw new Error("本机未生成就绪令牌：GET /api/settings 返回里没有 local_token，请先启动服务后再试");
+        }
         return token;
       });
-  }
-
-  function readErrorDetail(response, body) {
-    var detail = body && body.detail;
-    if (typeof detail === "string") return detail;
-    if (detail && typeof detail.message === "string") return detail.message;
-    return "HTTP " + response.status;
   }
 
   function firstZip(fileList) {
@@ -92,14 +108,20 @@
         });
       })
       .then(function (response) {
-        return response.json().catch(function () { return null; }).then(function (body) {
+        return response.text().then(function (text) {
+          var body = null;
+          try { body = text ? JSON.parse(text) : null; } catch (error) { body = null; }
+          var payloadLabel = "zip " + String(file.name || "未命名") + "（" + file.size + " 字节）";
           if (response.status === 409 && !replace) {
-            var question = readErrorDetail(response, body) + " 覆盖升级会先删除旧目录，继续吗？";
+            var conflict = httpFailure(response, text, body, "/api/plugins/install", "POST", payloadLabel);
+            var question = conflict.message + " 覆盖升级会先删除旧目录，继续吗？";
             if (window.confirm(question)) return installZip(file, true);
             setStatus("已取消覆盖，本机原有插件保持不变。", "info");
             return null;
           }
-          if (!response.ok) throw new Error(readErrorDetail(response, body));
+          if (!response.ok) {
+            throw httpFailure(response, text, body, "/api/plugins/install", "POST", payloadLabel);
+          }
           var plugin = (body && body.plugin) || {};
           setStatus(
             "已安装 " + (plugin.name || plugin.id) + " v" + (plugin.version || "?") +
@@ -237,10 +259,7 @@
       if (body) headers["Content-Type"] = "application/json";
       return fetch(path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined })
         .then(function (response) {
-          return response.json().catch(function () { return null; }).then(function (parsed) {
-            if (!response.ok) throw new Error(readErrorDetail(response, parsed));
-            return parsed || {};
-          });
+          return readJson(response, path, method, body);
         });
     });
   }
@@ -441,8 +460,7 @@
   function loadInstalled() {
     return fetch("/api/plugins", { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
+        return readJson(response, "/api/plugins", "GET");
       })
       .then(function (data) {
         installedBody = data || {};
@@ -634,8 +652,10 @@
     fetch("/api/bank/export", { cache: "no-store" })
       .then(function (response) {
         if (!response.ok) {
-          return response.json().catch(function () { return null; }).then(function (parsed) {
-            throw new Error(readErrorDetail(response, parsed));
+          return response.text().then(function (text) {
+            var parsed = null;
+            try { parsed = text ? JSON.parse(text) : null; } catch (error) { parsed = null; }
+            throw httpFailure(response, text, parsed, "/api/bank/export", "GET");
           });
         }
         return response.blob();
@@ -1251,8 +1271,7 @@
   function loadWorkspaces() {
     return fetch("/api/workspaces", { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
+        return readJson(response, "/api/workspaces", "GET");
       })
       .then(renderWorkspaces)
       .catch(function (error) { mgSet(wsStatus, "读取工作区失败：" + error.message, "down"); });
@@ -1547,8 +1566,7 @@
     wsTextbookSelect.appendChild(fallback);
     return fetch("/api/bank/textbooks", { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
+        return readJson(response, "/api/bank/textbooks", "GET");
       })
       .then(function (data) {
         var items = (data && data.items) || [];
@@ -1681,8 +1699,7 @@
   function pvLoad() {
     return fetch("/api/providers", { cache: "no-store" })
       .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.json();
+        return readJson(response, "/api/providers", "GET");
       })
       .then(function (data) {
         pvProfiles = (data && data.providers) || [];
