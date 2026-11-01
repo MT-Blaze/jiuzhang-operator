@@ -37,10 +37,11 @@ from app.api.agents import (  # noqa: E402
 from app.core import plugin_search, plugin_tools, ui_cards  # noqa: E402
 from app.core import plugins as plugin_registry  # noqa: E402
 from app.core.config import settings  # noqa: E402
+from tests.core_sources import workspace_source  # noqa: E402
 
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
-JS = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
+JS = workspace_source()
 CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
 # 军令 #15：对话与卡片渲染整体搬进右栏助手插件，宿主壳只留面板与总线。
 CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(

@@ -21,10 +21,11 @@ from unittest import mock
 
 from app.core import plugins as plugins_core
 from tools.build_plugin import BuildError, build_plugin
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGE = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-WORKSPACE = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+STAGE = stage_source()
+WORKSPACE = workspace_source()
 
 MANIFEST = {
     "schema_version": "1.0",

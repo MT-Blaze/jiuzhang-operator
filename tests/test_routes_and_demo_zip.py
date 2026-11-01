@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path
 
 from app import __version__  # noqa: F401  确保包可导入
+from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -80,7 +81,7 @@ class DefaultRouteTest(unittest.TestCase):
         self.assertIn("系统已为您预置了 5 道示例数学题", text)
         self.assertIn("拆分第一题", text)
         self.assertIn(DEMO_PLUGIN_ID, text)
-        host_text = _read(STATIC / "js" / "workspace.js")
+        host_text = workspace_source()
         self.assertNotIn("系统已为您预置了", host_text, "宿主壳不得替插件说谎")
 
 

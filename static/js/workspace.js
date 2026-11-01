@@ -613,12 +613,16 @@
   var DOCK_MAX = 120;
   var dockEntries = [];
   var dockView = "log";
-  var DOCK_VIEWS = { log: true, error: true, terminal: true };
-  var DOCK_EMPTY = {
-    log: "暂无输出。插件与面板事件会出现在这里。",
-    error: "没有报错。插件与底座的事件流一切正常。",
-    terminal: "暂无系统事件。",
-  };
+  // 三级视图的过滤与渲染已拆到 core_log.js（底座微内核），这里只留账本与事件接线。
+  var DOCK_VIEWS = window.JzoCoreLog.DOCK_VIEWS;
+  var dockCore = window.JzoCoreLog.create({
+    el: dockLog,
+    entries: function () { return dockEntries; },
+    view: function () { return dockView; },
+    scrollEl: function () {
+      return dockOpen() ? document.getElementById("wsDockBody") : null;
+    }
+  });
 
   // 三级分类只按事件主题与关键词判，不做内容猜谜：
   // error 进【报错诊断】，宿主生命周期进【系统终端】，其余留在【运行日志】。
@@ -679,65 +683,11 @@
   }
 
   function entryVisible(entry) {
-    // 「出了岔子」与「报错」同住诊断页：warn 只是语气轻，但不许在诊断里缺席。
-    if (dockView === "error") return entry.level === "error" || entry.level === "warn";
-    if (dockView === "terminal") return entry.level === "system";
-    return true;
+    return dockCore.entryVisible(entry);
   }
 
   function renderDock() {
-    if (!dockLog) return;
-    dockLog.setAttribute("data-view", dockView);
-    dockLog.textContent = "";
-    var shown = dockEntries.filter(entryVisible);
-    if (!shown.length) {
-      var empty = document.createElement("li");
-      empty.className = "ws-dock-empty";
-      empty.textContent = DOCK_EMPTY[dockView] || DOCK_EMPTY.log;
-      dockLog.appendChild(empty);
-      return;
-    }
-    shown.forEach(function (entry) {
-      var item = document.createElement("li");
-      item.className = "ws-dock-item";
-      item.setAttribute("data-level", entry.level);
-      // 报错诊断复制的是完整现场；没有现场才退回那一行摘要。
-      item.setAttribute("data-copy", entry.detail || entry.line);
-      var time = document.createElement("span");
-      time.className = "ws-dock-time";
-      time.textContent = entry.time;
-      item.appendChild(time);
-      if (entry.topic) {
-        var tag = document.createElement("span");
-        tag.className = "ws-dock-topic";
-        tag.textContent = entry.topic;
-        item.appendChild(tag);
-      }
-      var body = document.createElement("span");
-      body.className = "ws-dock-text";
-      body.textContent = entry.text;
-      item.appendChild(body);
-      // 报错诊断要打完整现场：Response 全文、堆栈、请求行一律按原文铺开，
-      // 不许只剩干瘪的一句「Not Found」。
-      if (dockView === "error" && entry.detail && entry.detail !== entry.text) {
-        var detail = document.createElement("pre");
-        detail.className = "ws-dock-detail";
-        detail.textContent = entry.detail;
-        item.appendChild(detail);
-      }
-      if (dockView === "error") {
-        var hint = document.createElement("span");
-        hint.className = "ws-dock-copy";
-        hint.setAttribute("aria-hidden", "true");
-        hint.textContent = "双击复制";
-        item.appendChild(hint);
-      }
-      dockLog.appendChild(item);
-    });
-    if (dockOpen()) {
-      var dockBody = document.getElementById("wsDockBody");
-      if (dockBody) dockBody.scrollTop = dockBody.scrollHeight;
-    }
+    dockCore.renderDock();
   }
 
   function setDockView(view) {

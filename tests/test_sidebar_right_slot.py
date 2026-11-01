@@ -19,13 +19,14 @@ from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
 from app.core.plugins import PluginRejected, validate_plugin
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
-STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+STAGE_JS = stage_source()
 PANEL_JS = (ROOT / "static" / "js" / "context_panel.js").read_text(encoding="utf-8")
-WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+WORKSPACE_JS = workspace_source()
 SPEC = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
 
 PLUGIN_ID = "com.example.side-probe"

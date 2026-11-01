@@ -33,6 +33,7 @@ from app.core.plugin_download import (  # noqa: E402
 )
 from app.core.plugin_install import PluginInstallError  # noqa: E402
 from app.core.plugins import validate_plugin  # noqa: E402
+from tests.core_sources import stage_source  # noqa: E402
 
 TOKEN = "install-url-test-token"
 ONLINE_PROBE_ID = "org.jiuzhang.online-probe"
@@ -130,7 +131,7 @@ class OfficialIndexFileTest(unittest.TestCase):
 
     def test_03d_template_request_id_passes_host_message_guard(self) -> None:
         """宿主入口用 ^[A-Za-z0-9_-]{1,80}$ 校验请求 id，不带点号才不会被静默丢弃。"""
-        stage_js = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage_js = stage_source()
         self.assertIn("/^[A-Za-z0-9_-]{1,80}$/", stage_js, "宿主请求 id 守卫形状变了，请同步模板与契约")
         plugin_js = (ROOT / "examples" / "template-plugin" / "dist" / "plugin.js").read_text(encoding="utf-8")
         id_lines = [line for line in plugin_js.splitlines() if "var requestId" in line]

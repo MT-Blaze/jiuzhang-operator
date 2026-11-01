@@ -28,6 +28,7 @@ from pathlib import Path
 
 from app.core.plugins import validate_plugin
 from tools.build_plugin import build_plugin
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
@@ -41,7 +42,28 @@ ALLOWED_ENVS = {"question", "choices", "problem", "solution"}
 
 
 def read(name: str) -> str:
+    """读插件资源。``plugin.js`` / ``plugin.css`` 是**整包**：按 index.html 的加载次序拼起来。
+
+    军令 #30 把插件拆成 ui_reactive / ui_breath / ui_capsule / plugin 几个小文件，
+    契约判据仍然按「整包源码」看，不因文件拆分漏判。
+    """
+    if name == "plugin.js":
+        return _bundle("script", "src")
+    if name == "plugin.css":
+        return _bundle("link", "href")
     return (DIST / name).read_text(encoding="utf-8")
+
+
+def _bundle(tag: str, attr: str) -> str:
+    html = (DIST / "index.html").read_text(encoding="utf-8")
+    parts = []
+    for value in re.findall(r"<%s[^>]*%s=\"([^\"]+)\"" % (tag, attr), html):
+        if value.startswith("/static/"):
+            continue
+        path = DIST / value
+        if path.is_file():
+            parts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 def manifest() -> dict:
@@ -49,7 +71,8 @@ def manifest() -> dict:
 
 
 def css_rule(css: str, selector: str) -> str:
-    at = css.index(selector + " {")
+    """取行首起算的那条规则：``.ep-head-tools .ep-btn {`` 不能冒充 ``.ep-btn {``。"""
+    at = css.index("\n" + selector + " {") + 1
     return css[at:css.index("}", at)]
 
 
@@ -150,6 +173,12 @@ class EditorManifestTest(unittest.TestCase):
         self.assertEqual(len(swap), 1, controls)
         self.assertEqual([option["value"] for option in swap[0]["options"]], ["false", "true"])
         self.assertEqual(swap[0]["default"], "false")
+        view = [item for item in controls if item.get("key") == "view"]
+        self.assertEqual(len(view), 1, controls)
+        self.assertEqual(view[0]["type"], "select")
+        self.assertEqual([option["value"] for option in view[0]["options"]], ["review", "list"])
+        self.assertEqual(view[0]["default"], "review",
+                         "默认停在审核三栏；只有辅助栏点【返回列表】才发 list")
 
 
 class EditorThreePaneLayoutTest(unittest.TestCase):
@@ -306,10 +335,11 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         for node_id in ("edProgress", "edFormat", "edDirty", "edSaved", "edMetrics"):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
-        # 底栏撤除后，画布内只许剩【← 批次列表】与【🚀 开始解析】两枚：
-        # 前者是二屏回首屏的唯一出口，后者是收集筐唯一的建批次出口。
-        self.assertEqual(canvas.count("<button"), 2, "画布内只许剩【← 批次列表】与【开始解析】")
-        self.assertIn('id="edBackList"', canvas)
+        # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
+        # 画布内只许剩收集筐的【🚀 开始解析】——它是唯一的建批次出口。
+        self.assertEqual(canvas.count("<button"), 1, "画布内只许剩【开始解析】")
+        self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")
+        self.assertNotIn('id="edBatchBar"', canvas, "二屏抬头大横条已彻底删除")
         self.assertIn('id="edBasketGo"', canvas)
 
     def test_03_three_heads_share_one_pixel_line(self) -> None:
@@ -378,7 +408,7 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
 
         self.assertIn("min-height: 44px", body_of(".ep-btn"),
                       "⇄ 互换按钮必须与辅助栏其它按钮同高")
-        for selector in (".ep-mini-btn", ".ep-foot-bar .ep-seg-btn"):
+        for selector in (".ep-mini-btn", ".ep-head-tools .ep-seg-btn"):
             body = body_of(selector)
             self.assertIn("min-height: 24px", body, f"{selector} 的视觉高度必须极矮")
             self.assertIn("position: relative", body, f"{selector} 缺定位，热区补不上")
@@ -680,6 +710,16 @@ class EditorPanelTest(unittest.TestCase):
         activate = js[js.index("  function activatePanel("):js.index("  // ---------- 协议 ----------")]
         self.assertIn('chooseFormatFromPanel(node.getAttribute("data-format"))', activate)
         self.assertIn('panelSwapEl.addEventListener("click", toggleSwapFromPanel)', activate)
+        # 【← 返回列表】也只在辅助栏里，且同样经宿主参数通道广播回画布
+        back = fn_body(js, "backToListFromPanel")
+        self.assertIn('hostCall("ui.params.set"', back)
+        self.assertIn('params: { view: "list" }', back)
+        self.assertIn("plugin_id: PLUGIN_ID", back)
+        self.assertIn('panelBackListEl.addEventListener("click", backToListFromPanel)', activate)
+        self.assertIn('values.view === "list"', params,
+                      "画布收到广播才真回列表，且只认 review → list 这一跳")
+        self.assertIn('backToList("已回到批次列表。", true)', params,
+                      "画布不许把刚收到的 list 再回发一遍")
 
     def test_07_touch_targets_meet_the_a11y_floor(self) -> None:
         """AGENTS §6：触控目标不小于 44px；树行与小圆钮（热区补齐）都得达标。"""
@@ -826,7 +866,7 @@ class EditorAiAssistTest(unittest.TestCase):
         relay = js[js.index("function cleanViaHost"):]
         self.assertNotIn("AI_REQUEST_TIMEOUT_MS", relay.split("\n  }\n")[0],
                          "规则清洗不经过模型，按普通额度等就够")
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage = stage_source()
         self.assertIn("var AGENT_TIMEOUT_MS = 60000;", stage)
 
     def test_07_the_panel_never_renders_the_patch_itself(self) -> None:
@@ -896,12 +936,26 @@ class EditorBatchTest(unittest.TestCase):
     画布首屏改成批次列表，二屏抬头才写当前批次号。
     """
 
-    def test_01_batch_bar_lives_in_the_canvas_and_the_ledger_in_the_panel(self) -> None:
+    def test_01_back_to_list_lives_in_the_panel_head(self) -> None:
         canvas = canvas_only(read("index.html"))
         panel = panel_only(read("index.html"))
-        for node_id in ("edBatches", "edBatchList", "edBatchBar", "edBatchNo",
-                        "edBatchStat", "edBackList"):
+        for node_id in ("edBatches", "edBatchList", "edBatchNo", "edBatchStat"):
             self.assertIn(f'id="{node_id}"', canvas, f"画布首屏缺少 {node_id}")
+        # 批次号只留读屏与探针，视觉上不占像素
+        for node_id in ("edBatchNo", "edBatchStat"):
+            at = canvas.index(f'id="{node_id}"')
+            self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at],
+                          f"{node_id} 必须 sr-only")
+        # 画布抬头大横条与它那颗回列表的钮一起撤干净
+        for gone in ("edBatchBar", "edBackList"):
+            self.assertNotIn(f'id="{gone}"', canvas, f"{gone} 已随画布抬头撤除")
+        # 返回列表与源码/卡片/互换同住辅助栏顶部死锁区，挤在同一行
+        head = panel[panel.index('id="epHead"'):panel.index('id="epScroll"')]
+        for node_id in ("epHeadTools", "epBackList", "epFmtLatex", "epFmtBoxed", "epSwap"):
+            self.assertIn(f'id="{node_id}"', head, f"辅助栏死锁区缺少 {node_id}")
+        foot = panel[panel.index('id="epDock"'):]
+        self.assertNotIn('id="epFmtLatex"', foot, "视图切换已搬进头部，脚部不许留双份")
+        self.assertNotIn('id="epSwap"', foot)
         for node_id in ("edPool", "edBatchNote"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏台账缺少 {node_id}")
             self.assertNotIn(f'id="{node_id}"', canvas, f"{node_id} 属于辅助栏，不许留在画布")
@@ -1082,8 +1136,8 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn('mode: "list",', js)
         set_mode = fn_body(js, "setMode")
         self.assertIn('if (batchesEl) batchesEl.hidden = state.mode !== "list";', set_mode)
-        self.assertIn('if (batchBarEl) batchBarEl.hidden = state.mode !== "review";', set_mode)
         self.assertIn('if (colsEl) colsEl.hidden = state.mode !== "review";', set_mode)
+        self.assertNotIn("batchBarEl", set_mode, "画布抬头已撤，模式切换不再管横条")
         activate = js[js.index('if (message.method === "plugin.activate")'):
                       js.index('if (message.method === "plugin.deactivate")')]
         self.assertIn('setMode("list");', activate, "画布挂载后先落在批次列表上")
@@ -1202,12 +1256,12 @@ class EditorReviewDeskTest(unittest.TestCase):
 
     def test_12_the_host_dock_renders_a_note_as_a_grey_line(self) -> None:
         """「记一笔」级别在底栏只留一行灰字：`[15:30] 正文`。"""
-        workspace = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        workspace = workspace_source()
         dock_line = workspace[workspace.index("function dockLine("):]
         dock_line = dock_line[:dock_line.index("\n  }")]
         self.assertIn('kind === "note"', dock_line)
         self.assertIn('at.slice(0, 5)', dock_line)
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage = stage_source()
         self.assertIn('"note", "error", "info", "system", "warn"', stage,
                       "插件自报的 warn 级别必须在宿主白名单里")
 
@@ -1333,7 +1387,7 @@ class EditorFileBasketTest(unittest.TestCase):
 
     def test_08_the_host_owns_the_relay_and_never_loses_the_files(self) -> None:
         """宿主是中间人：白名单放行、只转给录题画布，画布不在就退回直接入库。"""
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage = stage_source()
         self.assertIn('"editor.collect_files"', stage, "宿主白名单必须放行这个事件")
         relay = stage[stage.index('bus.on("editor.collect_files"'):]
         relay = relay[:relay.index("\n      });")]
@@ -1373,7 +1427,7 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertNotIn("epCapture", read("index.html"))
 
     def test_02_the_host_opens_exactly_one_read_channel(self) -> None:
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage = stage_source()
         self.assertIn('"asset.read"', stage, "切图要读托管配图，宿主必须开这个口子")
         self.assertIn('assetReadPermissions.indexOf("assets:read") < 0', stage,
                       "读口子的权限必须按清单判定，不能谁都能调")
@@ -1546,6 +1600,24 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("flex-direction: column", rule_body(css, ".ep-root"))
         self.assertIn("overflow-y: auto", rule_body(css, ".ep-scroll"))
 
+    def test_01b_the_head_tools_share_one_row(self) -> None:
+        """军令 #30：返回列表 + 源码/卡片 + ⇄ 互换必须挤在段一同一行。"""
+        panel = panel_only(read("index.html"))
+        tools = panel[panel.index('id="epHeadTools"'):]
+        tools = tools[:tools.index("</div>", tools.index('id="epSwap"'))]
+        for node_id in ("epBackList", "epFmtLatex", "epFmtBoxed", "epSwap"):
+            self.assertIn(f'id="{node_id}"', tools, f"死锁区同一行缺少 {node_id}")
+        self.assertIn(">源码<", panel, "格式一必须改名叫【源码】")
+        self.assertIn(">卡片<", panel, "格式二必须改名叫【卡片】")
+        self.assertNotIn("格式一", read("index.html"))
+        self.assertNotIn("格式二", read("index.html"))
+        css = read("plugin.css")
+        row = rule_body(css, ".ep-head-tools")
+        self.assertIn("display: flex", row)
+        self.assertIn("gap: 4px", row)
+        self.assertIn("flex: 0 0 auto", rule_body(css, ".ep-head-tools .ep-btn"),
+                      "三只控件按文字宽度排，不许被 flex 拉满整行")
+
     def test_02_the_private_metadata_lives_in_the_head(self) -> None:
         """段一只放单题私有的六项：题号、题型、难度、分值、考向、标签。"""
         head = read("index.html")
@@ -1600,9 +1672,9 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("rec.timer = window.setTimeout(function () { activateGhost(kind); }, GHOST_DELAY_MS);",
                       js)
         self.assertIn("rec.input.focus();", js)
-        # 回车取第一条
-        self.assertIn("if (rec.items.length) {", js)
-        self.assertIn("pickGhostItem(kind, rec.active >= 0 ? rec.active : 0);", js)
+        # 回车取第一条（候选与高亮都在响应式状态里）
+        self.assertIn("if (ui[kind].items.length) {", js)
+        self.assertIn("pickGhostItem(kind, ui[kind].active >= 0 ? ui[kind].active : 0);", js)
         # 候选菜单带路径：条目要走 resolveTopicPath，路径用「 › 」拼。
         self.assertIn("hostCall(\"bank.topics\", { q: query })", js)
         self.assertIn("resolveTopicPath(item.value && item.value.path, item.name)", js)
@@ -1613,8 +1685,9 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("function fetchTopicChildren(parentId)", js)
         # 打字别一口一个请求：等手停下来再查。
         self.assertIn("var GHOST_SEARCH_DELAY_MS = 180;", js)
-        # 鼠标移出输入区，空幽灵胶囊消失
-        self.assertIn("rec.ghost.hidden = true;", js)
+        # 鼠标移出输入区，空幽灵胶囊消失（显隐由响应式状态画出来）
+        self.assertIn("ui[kind].hidden = true;", js)
+        self.assertIn("rec.ghost.hidden = Boolean(ui[kind].hidden);", js)
 
     def test_06_the_score_goes_into_the_plugin_extension(self) -> None:
         """契约里没有分值字段：只进 extensions["org.jiuzhang.editor"].score。"""
@@ -1637,7 +1710,7 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         """跨帧联动只能走宿主总线：清单声明、宿主白名单、宿主投递三处都要有。"""
         self.assertIn("editor.canvas_state", manifest()["bus"]["subscribe"])
         self.assertIn("editor.canvas_state", manifest()["bus"]["publish"])
-        host = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        host = stage_source()
         self.assertIn('"editor.canvas_state"', host, "宿主白名单里没有这条主题")
         self.assertIn('notify(panel, "editor.canvas_state"', host, "宿主没有把它投给右栏面板")
         whitelist = (ROOT / "app" / "core" / "plugins.py").read_text(encoding="utf-8")

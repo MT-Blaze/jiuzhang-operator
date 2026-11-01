@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.core import commands
 from app.core.plugins import validate_plugin
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "com.example.hardening"
@@ -111,7 +112,7 @@ class RequiresUserNormalizeTest(unittest.TestCase):
 class HostHardeningContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        cls.stage = stage_source()
         cls.dialogs = (ROOT / "static" / "js" / "dialogs.js").read_text(encoding="utf-8")
 
     def test_05_limits_are_pinned(self) -> None:

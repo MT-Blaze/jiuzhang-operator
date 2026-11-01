@@ -16,15 +16,33 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
-JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+JS = workspace_source()
 
 COPY_START = JS.index("  function copyPlainText(value)")
 COPY_END = JS.index("\n  if (dockTabs) {", COPY_START)
 COPY_BLOCK = JS[COPY_START:COPY_END]
-FALLBACK_BLOCK = JS[JS.index("  function fallbackCopy(text)"):JS.index("  function entryVisible(entry)")]
+
+
+def function_body(source: str, header: str) -> str:
+    """按花括号配平取一个函数体：拆模块后不能再靠「下一个函数」定位。"""
+    start = source.index(header)
+    depth = 0
+    for index in range(source.index("{", start), len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    raise AssertionError(f"未闭合的函数：{header}")
+
+
+FALLBACK_BLOCK = function_body(JS, "  function fallbackCopy(text)")
 
 
 def rule_body(selector: str) -> str:
@@ -125,8 +143,7 @@ class DockRoutingTest(unittest.TestCase):
     """军令 #28：普通流水进【运行日志】，warn/error 必须落到【报错诊断】并带完整现场。"""
 
     def test_01_error_view_takes_warn_and_error(self) -> None:
-        start = JS.index("  function entryVisible(entry)")
-        block = JS[start:JS.index("  function renderDock()", start)]
+        block = function_body(JS, "  function entryVisible(entry)")
         self.assertIn('if (dockView === "error") return entry.level === "error" || entry.level === "warn";',
                       block)
         self.assertIn('if (dockView === "terminal") return entry.level === "system";', block)
@@ -147,8 +164,7 @@ class DockRoutingTest(unittest.TestCase):
         self.assertIn("detail: detailText", block)
 
     def test_04_error_view_renders_the_raw_detail(self) -> None:
-        start = JS.index("  function renderDock()")
-        block = JS[start:JS.index("  function setDockView(view)", start)]
+        block = function_body(JS, "  function renderDock()")
         self.assertIn('detail.className = "ws-dock-detail";', block)
         self.assertIn('detail.textContent = entry.detail;', block)
         self.assertIn('dockView === "error"', block)

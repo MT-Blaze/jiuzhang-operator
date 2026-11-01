@@ -1130,7 +1130,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `org.jiuzhang.bank-ui` | 真题题库 | 0.2.0 | iframe 视图，`bank.view` | iframe | 4 |
 | `org.jiuzhang.paper-gen` | 组卷排版 | 0.4.0 | iframe 视图 | iframe | 2 |
 | `org.jiuzhang.handout` | 讲义排版 | 0.2.0 | iframe 视图 | iframe | 3 |
-| `org.jiuzhang.editor` | 录题工作台 | 2.5.0 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.editor` | 录题工作台 | 2.6.0 | iframe 视图 | iframe | 4 |
 
 合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
 视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。

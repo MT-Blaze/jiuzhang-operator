@@ -111,22 +111,30 @@
 
   function announce(result) {
     var batchId = String((result && result.batch_id) || "");
+    var batchIds = Array.isArray(result && result.batch_ids)
+      ? result.batch_ids.map(function (id) { return String(id); })
+      : (batchId ? [batchId] : []);
     var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
     var warnings = Array.isArray(result && result.warnings) ? result.warnings : [];
     // parsing=true：批次已经立起来了，识别在后台跑，此刻池子里躺的是占位题。
     var parsing = Boolean(result && result.parsing);
+    // 一个文件一个批次：拖 9 份就是 9 个批次，话术必须报全，别假装只有一个。
+    var label = batchIds.length > 1
+      ? batchIds.length + " 个批次（" + batchIds.join("、") + "）"
+      : "批次 " + (batchIds[0] || "");
     if (batchId) {
       window.JzoBus.emit("system.pending_updated", {
         action: "ingest",
         pending_ids: (result.saved_ids || []).map(function (id) { return String(id); }),
         batch_id: batchId,
+        batch_ids: batchIds,
         pluginId: ""
       });
     }
     if (saved) {
       dock(parsing
-        ? "已收下 " + saved + " 份（批次 " + batchId + "），正在后台解析。"
-        : "已入池 " + saved + " 道题（批次 " + batchId + "），去批次列表里审。");
+        ? "已收下 " + saved + " 份，分成 " + label + "，正在后台解析。"
+        : "已入池 " + saved + " 道题，" + label + "，去批次列表里审。");
     } else if (warnings.length) {
       dock("没有认出题目：" + warnings[0], "warn");
     } else {

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>录题工作台 · 免启动沙盒</title>
+<style>
+  :root { color-scheme: light; --ink: #1f2733; --muted: #68727f; --line: #d7dde5; --bg: #f4f6f9; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 15px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+         grid-template-rows: minmax(0, 1fr) 130px; gap: 10px; padding: 10px; height: calc(100vh - 58px); }
+  section { display: flex; flex-direction: column; min-height: 0; background: #fff;
+            border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  section h2 { margin: 0; padding: 6px 10px; font-size: 12px; font-weight: 600;
+               color: var(--muted); border-bottom: 1px solid var(--line); background: #fafbfc; }
+  iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+  #log { grid-column: 1 / -1; }
+  #log ol { margin: 0; padding: 6px 10px 10px 28px; overflow: auto; font-family: Consolas, monospace;
+            font-size: 11.5px; color: var(--muted); }
+  #log ol li { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>录题工作台 · 免启动沙盒</h1>
+  <p>两个沙箱帧 + 一个假宿主：不启动底座、不连数据库，纯前端预览画布与辅助栏的联动。
+     用静态服务器打开本页即可（例如 <code>python -m http.server</code>，目录指到插件根）。</p>
+</header>
+<main>
+  <section>
+    <h2>画布（stage.center）</h2>
+    <iframe id="canvasFrame" src="../dist/index.html" title="画布"></iframe>
+  </section>
+  <section>
+    <h2>辅助栏（sidebar.right）</h2>
+    <iframe id="panelFrame" src="../dist/index.html" title="辅助栏"></iframe>
+  </section>
+  <section id="log">
+    <h2>假宿主日志（插件发来的 region.dock 与 ui 参数通道）</h2>
+    <ol id="logList"></ol>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+  var PROTOCOL = "jzo-plugin/1";
+  var canvasFrame = document.getElementById("canvasFrame");
+  var panelFrame = document.getElementById("panelFrame");
+  var logList = document.getElementById("logList");
+  var waiters = Object.create(null);
+  var seq = 0;
+  var fixtures = [];
+  var loaded = { canvas: false, panel: false };
+
+  function log(text, tone) {
+    var li = document.createElement("li");
+    li.textContent = (tone ? "[" + tone + "] " : "") + text;
+    logList.appendChild(li);
+    logList.parentNode.scrollTop = logList.parentNode.scrollHeight;
+  }
+
+  function ask(frame, method, payload) {
+    return new Promise(function (resolve, reject) {
+      var id = "mock" + (seq += 1);
+      waiters[id] = { resolve: resolve, reject: reject };
+      frame.contentWindow.postMessage({
+        protocol: PROTOCOL, id: id, kind: "request", method: method, payload: payload || {}
+      }, "*");
+      window.setTimeout(function () {
+        if (!waiters[id]) return;
+        delete waiters[id];
+        reject(new Error("假宿主没等到回执：" + method));
+      }, 4000);
+    });
+  }
+
+  function broadcast(event, payload, skip) {
+    [canvasFrame, panelFrame].forEach(function (frame) {
+      if (skip && frame === skip) return;
+      frame.contentWindow.postMessage({ protocol: PROTOCOL, kind: "notification", event: event, payload: payload }, "*");
+    });
+  }
+
+  function card() {
+    return {
+      batch_id: "B-DEMO",
+      label: "2024 三省六校 联考（假宿主）",
+      created_at: "2026-11-01T10:00:00+08:00",
+      updated_at: "2026-11-01T10:00:00+08:00",
+      source_name: "2024三省六校.md",
+      total: fixtures.length,
+      pending_count: fixtures.length,
+      meta: { standard_name: "2024-黑吉辽-三省六校-高三联考-数学" }
+    };
+  }
+
+  function items() {
+    return fixtures.map(function (doc, index) {
+      return { id: "p_demo" + index, batch_id: "B-DEMO", question: doc, assets: [] };
+    });
+  }
+
+  function handle(frame, message) {
+    var method = message.method;
+    var payload = message.payload || {};
+    if (method === "pending.batch_list") return { batches: fixtures.length ? [card()] : [] };
+    if (method === "pending.list") return { items: items() };
+    if (method === "pending.save_draft") return { batch_id: "B-DEMO", saved_ids: ["p_demo0"] };
+    if (method === "pending.approve") return { question_id: "q_demo" };
+    if (method === "pending.delete" || method === "pending.set_meta") return { ok: true };
+    if (method === "pending.meta_history") return { history: {} };
+    if (method === "meta.tags") return { tags: [{ name: "函数", scene_weight: 1 }, { name: "导数", scene_weight: 0 }] };
+    if (method === "meta.schools" || method === "meta.scenes" || method === "meta.exam_types") return { items: [] };
+    if (method === "bank.topics") return { items: [] };
+    if (method === "draft.load") return { value: null };
+    if (method === "draft.save") return { ok: true };
+    if (method === "ui.params.set") {
+      log("ui.params.set → " + JSON.stringify(payload.params || {}), "params");
+      broadcast("ui.params.changed", { params: payload.params || {} }, frame);
+      return { ok: true };
+    }
+    return { stub: true };
+  }
+
+  window.addEventListener("message", function (event) {
+    var message = event.data;
+    if (!message || message.protocol !== PROTOCOL) return;
+    if (message.kind === "response") {
+      var waiter = waiters[message.id];
+      if (!waiter) return;
+      delete waiters[message.id];
+      if (message.ok) waiter.resolve(message.result || {});
+      else waiter.reject(new Error((message.error && message.error.message) || "假宿主返回失败"));
+      return;
+    }
+    if (message.kind === "notification") {
+      if (message.event === "region.dock") {
+        log(String((message.payload && message.payload.text) || ""), "dock");
+      } else if (message.event !== "stage.selection") {
+        log("通知 " + message.event, "event");
+      }
+      return;
+    }
+    if (message.kind !== "request") return;
+    var result = handle(event.source, message);
+    event.source.postMessage({ protocol: PROTOCOL, id: message.id, kind: "response", ok: true, result: result }, "*");
+  });
+
+  function activateWhenReady() {
+    if (!loaded.canvas || !loaded.panel) return;
+    ask(canvasFrame, "plugin.activate", { slot: "stage.center" })
+      .then(function () { log("画布已激活"); }, function (error) { log(error.message, "error"); });
+    ask(panelFrame, "plugin.activate", { slot: "sidebar.right" })
+      .then(function () { log("辅助栏已激活"); }, function (error) { log(error.message, "error"); });
+  }
+
+  canvasFrame.addEventListener("load", function () { loaded.canvas = true; activateWhenReady(); });
+  panelFrame.addEventListener("load", function () { loaded.panel = true; activateWhenReady(); });
+
+  fetch("fixtures.json").then(function (response) { return response.json(); }).then(function (rows) {
+    fixtures = Array.isArray(rows) ? rows : [];
+    log("已载入 dev/fixtures.json：" + fixtures.length + " 道假题");
+  }).catch(function () {
+    log("没读到 dev/fixtures.json（直接用 file:// 打开就是这样），批次列表会是空的", "warn");
+  });
+})();
+</script>
+</body>
+</html>

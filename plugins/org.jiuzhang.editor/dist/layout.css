@@ -1,0 +1,933 @@
+/* 画布骨架：变量、批次列表、三栏、原图/源码/卡片/渲染与提示。
+   与 panel.css / effects.css 按 index.html 的先后拼接，级联次序与拆分前一致。 */
+
+/* 录题工作台 v2（军令 #23）：画布内三栏——左原图 | 中 exam-zh 源码 | 右渲染。
+   只用宿主本地字体与底座随包 KaTeX，无任何远程资源。 */
+
+:root {
+  --ink: #2a241d;
+  --ink-soft: #6d6355;
+  --line: #d8ccb8;
+  --line-strong: #b9ae9c;
+  --paper: #f5f0e7;
+  --paper-deep: #ece4d6;
+  --card: #fffdf8;
+  --void: #fafafa;
+  --accent: #2f6b4f;
+  --accent-soft: #e4efe7;
+  --danger: #9b3b2d;
+  --focus: #2f6b4f;
+  /* 呼吸灯：莫兰迪冷蓝（青黛蓝），低饱和不刺眼，缩放投影里也不会扎眼 */
+  --lamp: #6b8ca6;
+  --split-w: 6px;
+  /* 三栏宽度按比例记账：画布宽度一变，三栏等比缩放，弹性那栏不再被单独挤没 */
+  --w-image: 20%;
+  --w-source: 34%;
+  --pane-min: 28px;
+  --pane-render-min: 160px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #e9e2d6;
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+[hidden] { display: none !important; }
+
+/* 只给读屏软件与机器看的文字（置信度占位、指标挂载点）：
+   视觉上不留一寸，也不许占段三的高度。 */
+.ep-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* ---------- 画布骨架 ---------- */
+
+.ed-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  /* 画布高度锁死：底栏删掉后，三栏自己占满整幅画布，谁也不许把外框撑破 */
+  overflow: hidden;
+}
+
+/* 画布内没有任何顶栏/状态条：进度、格式、脏标记与度量位只给读屏和探针看，
+   视觉上不占像素——老师的视线从上到下只碰题目内容。 */
+.ed-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- 首屏：待审核批次列表（军令 #24） ---------- */
+
+.ed-batches {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.ed-batches-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+}
+
+.ed-batches-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ed-batches-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.ed-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* 一行一个批次：左时间与编号，右「未审：n / N」贴紧右边缘垂直对齐。 */
+.ed-batch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ed-batch-row:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+}
+
+.ed-batch-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ed-batch-right {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.ed-batch-label,
+.ed-batch-sep {
+  color: var(--ink-soft);
+}
+
+.ed-batch-num {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ed-batch-check {
+  margin-left: 4px;
+}
+
+/* 审完的批次：整行变灰、沉到列表最底下，点不动——只能看。 */
+.ed-batch-row[data-done="true"] {
+  background: transparent;
+  border-style: dashed;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ed-batch-row[data-done="true"] .ed-batch-num {
+  color: var(--ink-soft);
+}
+
+.ed-batches-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* 首屏：左批次列表 | 右文件收集筐（军令 #27，严格 50/50）。
+   收集筐是这一屏唯一的收件处：拖入、粘贴、点选都先落筐，
+   底部的【开始解析】才是唯一的建批次入口。 */
+.ed-batches-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ed-batch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 右栏只有一只筐，筐整体绝对居中。 */
+.ed-basket-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 巨大圆角虚线框：文字居中，文件列表长在中间，【开始解析】钉在底边。 */
+.ed-basket {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  padding: 16px 14px;
+  border: 2px dashed var(--line-strong);
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--ink-soft);
+  text-align: left;
+  overflow: hidden;
+}
+
+.ed-basket:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ed-basket.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* 选文件用的隐藏 input：只由「点筐」触发，不占版面。 */
+.ed-basket-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 空筐：文案在虚线框正中，列表进来后就让位给单列文件行。 */
+.ed-basket-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.ed-basket-pick {
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* 垂直单列：一行一个文件，筐内独立滚动，底边留给【开始解析】。 */
+.ed-basket-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ed-basket-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 4px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg, #fff);
+}
+
+/* 图片给 44px 小缩略图：画在 canvas 上——插件沙箱的 CSP
+   放行不了 blob:/data: 的 <img>，画布不受它管。 */
+.ed-basket-thumb {
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  background: var(--void, #fafafa);
+}
+
+/* 文档图标：一页纸的轮廓 + 右上角后缀标，后缀直接写在图标里。 */
+.ed-basket-icon {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink-soft);
+  overflow: hidden;
+}
+
+.ed-basket-icon::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-width: 0 10px 10px 0;
+  border-style: solid;
+  border-color: transparent var(--bg, #fff) transparent transparent;
+}
+
+.ed-basket-icon-ext {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* 中间文件名：一行到底，超长自动省略，悬停看 title。 */
+.ed-basket-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 移除钮：触控面照 AGENTS §6 保 44px；视觉上只留一个红 ×。 */
+.ed-basket-x {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger, #d33);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ed-basket-x:hover {
+  background: var(--danger-soft, #fdecec);
+  color: var(--danger, #d33);
+}
+
+.ed-basket-foot {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.ed-basket-go {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ed-basket-go:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ed-drop-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ed-drop-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ---------- 三栏 ---------- */
+
+.ed-cols {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 高度锁死：源码/卡片会重排中栏的 DOM，外框高度不许跟着内容塌陷或被撑破 */
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  /* 不锁行高的话，这一条隐式行会被最高的那栏撑到几千像素，三栏全都变成"内容多高就多高"，
+     pane-body 的 overflow-y:auto 永远不触发，滚动跟题与拖栏定位也就全成了死代码。 */
+  grid-template-rows: minmax(0, 1fr);
+  /* 中、右两栏合并成一只整体容器（.ed-workbench），网格里只剩三条轨道。
+     原图栏按比例取宽，但不许窄过一条极窄缝。 */
+  grid-template-columns: max(var(--pane-min), var(--w-image)) var(--split-w) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.ed-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 栏内只许 pane-body 自己滚：子内容再多也不许把栏撑高、把底边推走 */
+  overflow: hidden;
+  background: var(--void);
+}
+
+.ed-col-image {
+  grid-column: 1;
+  grid-row: 1;
+  /* 顶框线只画一次：中右两栏的顶线由 .ed-workbench 画，画在这里会多出一条 1px 内线 */
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ed-cols > #edSplitImage {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* 中、右两栏的整体高度容器：下边框只画这一条，两栏底边永远平齐；
+   左栏原图不参与，它自己独立滚动。 */
+.ed-workbench {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  /* 高度锁死在网格行里：底边框的像素位置只由 .ed-cols 的可用高度决定，
+     滚动条出现、格式切换重排都改不动它。 */
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  overflow: hidden;
+}
+
+.ed-workbench-panes {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  /* 两栏里的内容再长也只能在各自 pane-body 里滚动，不许溢出改写整体高度 */
+  overflow: hidden;
+}
+
+.ed-workbench-panes > .ed-col { flex: 1 1 0; }
+
+/* 源码栏按比例取宽（拖出来的比例），窄过一条极窄缝就按极窄缝算 */
+.ed-workbench-panes > .ed-col-source {
+  order: 1;
+  flex: 0 0 max(var(--pane-min), var(--w-source));
+  min-width: 0;
+}
+
+.ed-workbench-panes > #edSplitSource {
+  order: 2;
+  flex: 0 0 var(--split-w);
+}
+
+/* 渲染栏：吃剩下的那份，但有下限——画布再窄也不许把它挤成一条缝 */
+.ed-workbench-panes > .ed-col-render {
+  order: 3;
+  flex: 1 1 0;
+  min-width: var(--pane-render-min);
+}
+
+/* 互换只改视觉顺序：DOM 一个节点都不挪，焦点、选区与滚动进度全留在原节点上。
+   左槽恒为源码栏的比例宽，换到左边的那栏接管这只槽，拖手手感不变。 */
+.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-render {
+  order: 1;
+  flex: 0 0 max(var(--pane-min), var(--w-source));
+  min-width: 0;
+}
+
+.ed-cols[data-swap="true"] .ed-workbench-panes > .ed-col-source {
+  order: 3;
+  flex: 1 1 0;
+  min-width: var(--pane-render-min);
+}
+
+.ed-col-source { background: var(--card); }
+.ed-col-render { background: var(--void); }
+
+.ed-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 32px;
+  /* 头部必须是三栏统一的单行：右栏最窄时标题会被挤成竖排两行，
+     头高从 32px 变成 50px，正文起点跟着下移、与另两栏的虚线错位。
+     标题不许收缩折行，提示文字自己走省略号。 */
+  overflow: hidden;
+}
+
+.ed-pane-head > span {
+  flex: none;
+  white-space: nowrap;
+}
+
+.ed-pane-head em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-pane-body {
+  /* 定位父：跳转与跟题都拿 cell.offsetTop 当滚动线，父级不站住的话读到的是整篇文档的坐标，
+     头部工具条的高度会被当成滚动距离，跳题会多滚、跟题会认错行。 */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 槽位永远预留：滚动条出现/消失只改内容宽度，不改容器高度，中右底边不会跟着跳 */
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.ed-split {
+  position: relative;
+  background: var(--line);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.ed-split:hover,
+.ed-split[data-drag="true"] {
+  background: var(--accent);
+}
+
+/* ---------- 原图栏 ---------- */
+
+.ed-img-cell {
+  position: relative;
+  padding: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.ed-img-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.ed-img-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+}
+
+.ed-img-missing {
+  padding: 18px 12px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--line-strong);
+  background: var(--card);
+  font-size: 12px;
+}
+
+.ed-img-box {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  background: rgba(47, 107, 79, 0.06);
+  pointer-events: none;
+}
+
+.ed-img-caption {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 左栏切图台：圆形放大镜 + 中心十字准星 ---------- */
+
+.ed-img-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ed-img-crop-btn {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.ed-img-crop-btn:hover {
+  background: #d5e8db;
+}
+
+.ed-crop-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ed-crop-canvas {
+  display: block;
+  /* 边框走 outline：border 会把画布的盒子撑大两像素，切图坐标就整体偏了。
+     outline 不占布局，量出来的框就是画布本身，一个像素都不差。 */
+  outline: 1px solid var(--line-strong);
+  outline-offset: -1px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* 放大镜层：整屏一块画布，鼠标穿过它不挡事。 */
+.ed-crop-lens {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+/* ---------- 源码栏 ---------- */
+
+.ed-src-cell {
+  position: relative;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.ed-src-tag {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.ed-src-area {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 8px 10px;
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* ---------- 卡片：框框视图（框里只有内容，环境名是写死的标签） ---------- */
+
+.ed-boxed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.ed-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ed-box-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ed-box-env {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.ed-box-field {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.ed-box-area {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+
+.ed-box-textarea {
+  resize: none;
+  overflow: hidden;
+  min-height: 48px;
+  white-space: pre-wrap;
+}
+
+.ed-box-input { min-height: 44px; }
+
+.ed-boxed-blocked {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--danger);
+  background: #fbeeec;
+  border: 1px solid var(--danger);
+  border-radius: 5px;
+}
+
+/* ---------- 渲染栏 ---------- */
+
+.ed-q-block {
+  position: relative;
+  padding: 14px 18px 18px;
+  border-bottom: 1px dashed var(--line);
+  background: var(--card);
+}
+
+.ed-q-stem {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.ed-q-stem .ed-num {
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.ed-choices {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.ed-choices li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  align-items: baseline;
+}
+
+.ed-choice-key {
+  flex: none;
+  font-weight: 700;
+  color: var(--ink-soft);
+  min-width: 1.6em;
+}
+
+.ed-choice-key.is-answer {
+  color: var(--accent);
+}
+
+.ed-q-answer {
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ed-q-analysis {
+  margin: 0;
+  color: var(--ink);
+}
+
+.ed-raw {
+  margin: 0;
+  padding: 8px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: var(--paper-deep);
+  border: 1px dashed var(--line-strong);
+}
+
+.ed-fillin {
+  display: inline-block;
+  min-width: 5em;
+  border-bottom: 1px solid var(--ink);
+  margin: 0 2px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.ed-math,
+.ed-math-block {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ed-math-block {
+  display: block;
+  margin: 6px 0;
+}
+
+.ed-line {
+  margin: 0 0 4px;
+}
+
+.ed-inline-img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+  border: 1px solid var(--line);
+}
+
+.ed-opt-img {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* ---------- 提示 ---------- */
+
+.ed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translate(-50%, 12px);
+  max-width: min(520px, 90vw);
+  padding: 9px 16px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 40;
+}
+
+.ed-toast[data-show="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.ed-toast[data-tone="error"] { background: var(--danger); }
+.ed-toast[data-tone="ok"] { background: var(--accent); }
+

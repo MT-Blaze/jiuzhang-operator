@@ -180,6 +180,11 @@
   <!-- 请求报错现场：必须最先加载，之后每一笔 fetch 的非 2xx 都有完整记录 -->
   <script src="/static/js/http.js"></script>
   <script src="/static/js/bus.js"></script>
+  <!-- 底座微内核（军令 #30）：总线白名单、页签账本、底栏输出区的账与渲染。
+       纯逻辑模块，必须先于使用它们的 stage.js / workspace.js 加载。 -->
+  <script src="/static/js/core_bus.js"></script>
+  <script src="/static/js/core_tabs.js"></script>
+  <script src="/static/js/core_log.js"></script>
   <!-- 录入入口（宿主壳）：拖入的文件、粘贴的截图、屏幕截取。
        必须早于 stage.js：插件转发进来的字节由它代发，写令牌只在宿主侧。 -->
   <script src="/static/js/intake.js"></script>

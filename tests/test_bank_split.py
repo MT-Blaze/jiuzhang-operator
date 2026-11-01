@@ -26,6 +26,7 @@ from pathlib import Path
 from app.core import bank
 from app.core.config import settings
 from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = "org.jiuzhang.bank-engine"
@@ -246,7 +247,7 @@ class HostGateTest(unittest.TestCase):
         self.assertIn('"bank.view"', source)
 
     def test_02_dedupe_is_gated_by_capability_not_by_plugin_id(self) -> None:
-        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         self.assertIn('method === "bank.dedupe_scan" || method === "bank.dedupe_merge"', source)
         self.assertIn('hasCapability(tab, "bank.view")', source)
         self.assertIn('code: "FORBIDDEN"', source)

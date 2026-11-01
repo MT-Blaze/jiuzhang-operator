@@ -22,12 +22,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 CHAT_DIR = ROOT / "plugins" / "org.jiuzhang.chat"
 CHAT_JS = (CHAT_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
 CHAT_HTML = (CHAT_DIR / "dist" / "index.html").read_text(encoding="utf-8")
-STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+STAGE_JS = stage_source()
+WORKSPACE_JS = workspace_source()
 CORE_BANK_JS = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(
     encoding="utf-8"
 )

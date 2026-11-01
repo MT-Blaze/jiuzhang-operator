@@ -30,25 +30,13 @@
   var TAB_GROUP_MIN = 2;            // 组内凑满两页才收成下拉，单页收成下拉只是添堵
   var UNGROUPED_KEY = "ungrouped";  // 没进任何文件夹的插件，共用这一个集合分组
 
-  // 插件能主动发的事件主题白名单：只许投给底座托管的三区与舞台选区，
-  // 不许发 layout.* / ui.params.*（那是底座与人的地盘，防插件反向操控面板）。
-  // system.open_editor 是三端分离架构的唯一跨端跳转口：存储端/输出端只读，
-  // 改题目一律交给录题插件，由宿主负责开页签与注入题号。
-  var PUBLISH_ALLOW = [
-    "region.dock", "region.left", "region.right", "stage.selection",
-    "system.open_editor", "system.return_from_editor", "system.editor_close",
-    "system.open_bank",
-    // 军令 #27：录题插件在辅助栏那张 iframe 里收到的文件，转交给宿主，
-    // 由宿主送进画布的收集筐（插件两帧之间不直连）。
-    "editor.collect_files",
-    // 军令 #29：画布的悬停与滚动信号，投给右栏辅助栏（呼吸灯 + 批次折叠）。
-    "editor.canvas_state"
-  ];
+  // 插件能主动发的事件主题白名单已经搬进 core_bus.js：舞台只消费这一份账本。
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
   var tabsEl = document.getElementById("wsTabs");
   var bodyEl = document.getElementById("wsCanvasBody");
   var bus = window.JzoBus;
+  var busCore = window.JzoCoreBus.create({ bus: bus });
   var tabs = [];
   // 右栏辅助面板（sidebar.right）不占画布页签，但同样要能走 Host API：
   // 单独一张登记表，消息入口按 frame.contentWindow 反查它的插件身份。
@@ -63,10 +51,11 @@
   var immersiveKey = "";     // 沉浸全屏中的页签 key，空串表示没沉浸
   var nativeDefs = {};       // 原生页签登记表：关掉后能按原样重建（控制台可从左栏再打开）
 
+  // 页签账本（优先级、排位、LRU）在 core_tabs.js：舞台只管画与摘。
+  var tabsCore = window.JzoCoreTabs;
+
   function priorityOf(tab) {
-    var stage = tab.plugin && tab.plugin.stage;
-    var value = stage && typeof stage.priority === "number" ? stage.priority : 0;
-    return Math.max(-100, Math.min(100, value));
+    return tabsCore.priorityOf(tab);
   }
 
   /**
@@ -77,10 +66,7 @@
   function orderPluginTabs() {
     if (!tabsEl) return;
     var pluginTabs = tabs.filter(function (tab) { return tab.kind === "plugin"; });
-    pluginTabs.sort(function (a, b) {
-      var delta = priorityOf(b) - priorityOf(a);
-      return delta !== 0 ? delta : a.order - b.order;
-    });
+    pluginTabs = tabsCore.sortPluginTabs(pluginTabs);
     // 判据只数插件页签，不数收成下拉后的条目：收完变少也不会反过来又摊开（来回抖动）
     var many = pluginTabs.length > TAB_OVERFLOW;
     renderTabBar(pluginTabs, many);
@@ -88,26 +74,23 @@
   }
 
   function emit(topic, payload) {
-    if (bus && typeof bus.emit === "function") bus.emit(topic, payload, { source: "stage" });
+    busCore.emit(topic, payload);
   }
 
   function dock(text, topic) {
-    emit("region.dock", { text: text, topic: topic || "" });
+    busCore.dock(text, topic);
   }
 
   function findTab(key) {
-    for (var i = 0; i < tabs.length; i += 1) {
-      if (tabs[i].key === key) return tabs[i];
-    }
-    return null;
+    return tabsCore.find(tabs, key);
   }
 
   function liveFrames() {
-    return tabs.filter(function (tab) { return tab.kind === "plugin" && tab.state === "live"; });
+    return tabsCore.liveFrames(tabs);
   }
 
   function touch(tab) {
-    tab.lastUsed = Date.now();
+    tabsCore.touch(tab);
   }
 
   // ---------- 页签按钮 ----------
@@ -272,11 +255,7 @@
   function enforceLru() {
     var live = heavyLiveFrames();
     while (live.length > MAX_LIVE_FRAMES) {
-      var oldest = null;
-      live.forEach(function (tab) {
-        if (tab.key === activeKey) return;
-        if (!oldest || tab.lastUsed < oldest.lastUsed) oldest = tab;
-      });
+      var oldest = tabsCore.lruVictim(live, activeKey);
       if (!oldest) break;   // 全是活动页：不硬摘，宁可多留一个也不打断用户
       hibernate(oldest, "LRU");
       live = heavyLiveFrames();
@@ -2278,7 +2257,7 @@
 
     if (message.kind === "notification") {
       var topic = String(message.event || "").toLowerCase();
-      if (PUBLISH_ALLOW.indexOf(topic) < 0) {
+      if (busCore.denies(topic)) {
         dock("插件「" + (tab.plugin.name || tab.plugin.id) + "」想发未授权事件 " + topic + "，已丢弃。", "bus.denied");
         return;
       }

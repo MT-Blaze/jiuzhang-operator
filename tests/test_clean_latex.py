@@ -19,9 +19,10 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+STAGE_JS = stage_source()
 EDITOR_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
 EDITOR_JS = (EDITOR_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
 EDITOR_HTML = (EDITOR_DIR / "dist" / "index.html").read_text(encoding="utf-8")

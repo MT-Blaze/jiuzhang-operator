@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -212,7 +213,7 @@ class EventBusContractTest(unittest.TestCase):
         self.assertIn("catch", block)
 
     def test_04_workspace_wires_the_dock(self) -> None:
-        workspace = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
+        workspace = workspace_source()
         self.assertIn("wireDock()", workspace)
         self.assertIn('window.JzoBus.on("region.dock"', workspace)
         self.assertIn("textContent", workspace[workspace.index("function dockLine("):])

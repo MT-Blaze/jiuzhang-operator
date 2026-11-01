@@ -23,11 +23,12 @@ from pathlib import Path
 from unittest import mock
 
 from app.core import plugins as plugins_core
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.dashboard"
 PLUGIN_DIR = ROOT / "plugins" / PLUGIN_ID
-STAGE = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+STAGE = stage_source()
 PLUGIN_JS = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
 PLUGIN_CSS = (PLUGIN_DIR / "dist" / "plugin.css").read_text(encoding="utf-8")
 PLUGIN_HTML = (PLUGIN_DIR / "dist" / "index.html").read_text(encoding="utf-8")

@@ -572,38 +572,49 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
 
 
 async def ingest_files(files: Any) -> dict[str, Any]:
-    """把拖进来的一批文件变成中转站里的一批待审题（**同步跑完**）。
+    """把拖进来的一批文件变成中转站里的待审题（**同步跑完**）。
 
     ``files`` 形如 ``[{"name": "卷子.pdf", "data_url": "data:application/pdf;base64,..."}]``。
-    返回 ``{"batch_id", "batch", "saved_ids", "warnings", "ignored", "kinds"}``。
+    **一个文件一个批次**，各批独立解析；返回聚合账：
+    ``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings", "ignored", "kinds"}``。
 
     线上走的是两段式（``stage_ingest`` + ``run_ingest_jobs``）：批次先立起来，
     识别放后台，老师不用盯着屏幕等 OCR。这里保留同步版给脚本与测试用。
     """
     staged = stage_ingest(files)
-    jobs = staged.pop("jobs", [])
-    if jobs:
-        await run_ingest_jobs(staged["batch_id"], jobs)
+    groups = staged.pop("jobs", [])
+    for group in groups:
+        await run_ingest_jobs(group["batch_id"], group["jobs"])
+    if groups:
         # 同步版跑完要按解析后的真账回报：题数与 id 都可能变了。
         from app.core import pending_bank
-        rows = pending_bank.list_batch_questions(staged["batch_id"])
-        staged["saved_ids"] = [row["id"] for row in rows["items"]]
-        for card in pending_bank.batch_list()["batches"]:
-            if card["batch_id"] == staged["batch_id"]:
-                staged["batch"] = card
-                break
+        refreshed: list[dict[str, Any]] = []
+        saved_ids: list[str] = []
+        for one in staged["batches"]:
+            rows = pending_bank.list_batch_questions(one["batch_id"])
+            ids = [row["id"] for row in rows["items"]]
+            saved_ids.extend(ids)
+            card = one.get("batch")
+            for entry in pending_bank.batch_list()["batches"]:
+                if entry["batch_id"] == one["batch_id"]:
+                    card = entry
+                    break
+            refreshed.append({**one, "saved_ids": ids, "batch": card})
+        staged["batches"] = refreshed
+        staged["saved_ids"] = saved_ids
     return staged
 
 
 def stage_ingest(files: Any) -> dict[str, Any]:
-    """第一段：分拣、解码，**立刻立批次**。
+    """第一段：分拣、解码，**按文件各立一个批次**。
 
-    老师粘贴一张截图进来，不该盯着屏幕等 OCR 跑完。所以这一段只做快活：
-    按后缀分拣、把原件存成只读副本、建一个批次，一个文件先留一条
-    「正在解析」的占位题。识别交给 ``run_ingest_jobs`` 在后台跑。
+    老师拖进来 9 份卷子，就是 9 个批次（B-002、B-003……），各认各的、
+    各解析各的——绝不再把 9 份混成一份 71 题的大杂烩。
+    每个批次先留一条「正在解析」的占位题，识别交给 ``run_ingest_jobs`` 在后台跑。
 
-    返回 ``{"batch_id", "batch", "saved_ids", "warnings", "ignored", "kinds", "jobs"}``，
-    其中 ``jobs`` 是后台要干的活：``[{"pending_id", "name", "data"}]``。
+    返回聚合账：``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings",
+    "ignored", "kinds", "jobs"}``。``batch_id`` 是第一份文件的批次号（单文件时与旧口径一致）；
+    ``jobs`` 按批次分组：``[{"batch_id", "jobs": [{"pending_id", "name", "data"}]}]``。
     """
     if not isinstance(files, list) or not files:
         raise IngestError("没有要处理的文件")
@@ -611,10 +622,9 @@ def stage_ingest(files: Any) -> dict[str, Any]:
         raise IngestError(f"一次最多处理 {MAX_FILES} 个文件")
 
     ignored: list[str] = []
-    warnings: list[str] = []
-    kinds: list[str] = []
     loaded: list[tuple[str, bytes]] = []
 
+    # 先把整包验一遍再落批次：后面的文件不合格时，前面的批次不该已经建出来。
     for entry in files:
         if not isinstance(entry, dict):
             raise IngestError("每个文件都要是对象")
@@ -629,36 +639,61 @@ def stage_ingest(files: Any) -> dict[str, Any]:
         if not data:
             raise IngestError(f"{name}：文件是空的")
         loaded.append((name, data))
-        kinds.append(classify(name))
 
     if not loaded:
-        return {"batch_id": "", "batch": None, "saved_ids": [], "warnings": [],
-                "ignored": ignored, "kinds": [], "jobs": []}
+        return {"batch_id": "", "batch_ids": [], "batches": [], "saved_ids": [],
+                "warnings": [], "ignored": ignored, "kinds": [], "jobs": []}
 
+    batches: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    kinds: list[str] = []
+    saved_ids: list[str] = []
+    job_groups: list[dict[str, Any]] = []
+    for name, data in loaded:
+        one = _stage_one_batch(name, data)
+        one_jobs = one.pop("jobs", [])
+        if one_jobs:
+            job_groups.append({"batch_id": one["batch_id"], "jobs": one_jobs})
+        batches.append(one)
+        warnings.extend(one.get("warnings") or [])
+        kinds.extend(one.get("kinds") or [])
+        saved_ids.extend(one.get("saved_ids") or [])
+
+    first = batches[0]
+    return {
+        "batch_id": first["batch_id"],
+        "batch": first.get("batch"),
+        "batch_ids": [one["batch_id"] for one in batches],
+        "batches": batches,
+        "saved_ids": saved_ids,
+        "warnings": warnings,
+        "ignored": ignored,
+        "kinds": kinds,
+        "jobs": job_groups,
+    }
+
+
+def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
+    """一份文件立一个批次，先放一条「正在解析」的占位题。"""
     from app.core import pending_bank
 
-    source_name = "、".join(name for name, _data in loaded)
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
-    backup_paths = [pending_bank.store_source_backup(name, data) for name, data in loaded]
-    backup = json.dumps(backup_paths, ensure_ascii=False, separators=(",", ":"))
-
-    placeholders = [
-        {"question": _placeholder(f"（正在解析：{name}）")} for name, _data in loaded
-    ]
+    backup = json.dumps([pending_bank.store_source_backup(name, data)],
+                        ensure_ascii=False, separators=(",", ":"))
     result = pending_bank.save_draft(
-        placeholders,
+        [{"question": _placeholder(f"（正在解析：{name}）")}],
         source_backup=backup,
-        source_name=source_name,
+        source_name=name,
         origin="ingest",
     )
-    jobs = [
-        {"pending_id": pending_id, "name": name, "data": data}
-        for (name, data), pending_id in zip(loaded, result["saved_ids"])
-    ]
-    result["warnings"] = warnings
-    result["ignored"] = ignored
-    result["kinds"] = kinds
-    result["jobs"] = jobs
+    result["warnings"] = []
+    result["ignored"] = []
+    result["kinds"] = [classify(name)]
+    result["jobs"] = [{
+        "pending_id": result["saved_ids"][0],
+        "name": name,
+        "data": data,
+    }]
     return result
 
 

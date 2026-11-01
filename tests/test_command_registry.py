@@ -22,6 +22,7 @@ from unittest import mock
 
 from app.core import commands
 from app.core.plugins import discover_plugins, validate_plugin
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_MANIFEST = {
@@ -240,8 +241,8 @@ class HostApiContractTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
-        cls.workspace = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        cls.stage = stage_source()
+        cls.workspace = workspace_source()
 
     def _array_block(self, name: str) -> str:
         start = self.stage.index("var " + name + " = [")
@@ -476,7 +477,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "2.5.0",
+            "version": "2.6.0",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",
@@ -548,7 +549,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
 
     def test_33_headless_engine_is_executed_by_the_backend_not_relayed(self) -> None:
         self.assertTrue(self.info["org.jiuzhang.bank-engine"]["headless"])
-        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        stage = stage_source()
         guard = stage.index('failWith("COMMAND_HEADLESS"')
         lookup = stage.index("var entry = commandIndex[commandId]")
         self.assertLess(lookup, guard, "先查字典再判 headless，未知命令仍回 COMMAND_NOT_FOUND")

@@ -34,6 +34,10 @@ async def ingest_files(background: BackgroundTasks,
     后端按**后缀**分拣：文本类走轻量解析，PDF 尽力抽文本层，图片走 OCR。
     ``.zip`` 静默忽略（插件安装包走另一条道）。
 
+    **一个文件一个批次**：拖 9 份卷子就立 9 个批次（B-002、B-003……），
+    各认各的、各解析各的；``batch_id`` 回第一份的批次号，``batch_ids`` / ``batches``
+    回完整清单，单文件时与旧口径完全一致。
+
     认不出的文件不会凭空生成题目：留一条明写「待识别」的占位题，
     图也挂在那儿，等老师自己补。返回体里的 ``warnings`` 是这些如实说明。
     """
@@ -44,10 +48,11 @@ async def ingest_files(background: BackgroundTasks,
         raise HTTPException(status_code=400, detail="缺少 files 数组")
     try:
         staged = ingest.stage_ingest(files)
-        jobs = staged.pop("jobs", [])
-        if jobs:
-            background.add_task(ingest.run_ingest_jobs, staged["batch_id"], jobs)
-        staged["parsing"] = bool(jobs)
+        job_groups = staged.pop("jobs", [])
+        # 一个文件一个批次：每批各排各的后台解析，互不拖累。
+        for group in job_groups:
+            background.add_task(ingest.run_ingest_jobs, group["batch_id"], group["jobs"])
+        staged["parsing"] = bool(job_groups)
         return staged
     except ingest.IngestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

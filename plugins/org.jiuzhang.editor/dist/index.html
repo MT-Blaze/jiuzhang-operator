@@ -5,23 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>录题工作台</title>
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="plugin.css">
+  <link rel="stylesheet" href="layout.css">
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="effects.css">
 </head>
 <body>
   <!-- 画布实例（stage.center）：两屏。
        首屏是批次列表（#edBatches）——铺满画布，一行一个批次；
-       二屏才是三栏（左原图 | 中源码 | 右渲染），抬头一条（#edBatchBar）写着当前批次号。
-       画布内不再有任何顶栏、状态条、格式/互换按钮，也不再有底部横条：
-       批量条已于 2026-10-31 整体搬进右侧辅助栏，画布只剩内容本身。
-       视图切换搬进右栏辅助栏（#epRoot），经宿主的 ui.params.set 与画布对账。
-       进度、格式、脏标记与度量只留给读屏和探针，视觉上不占像素。 -->
+       二屏才是三栏（左原图 | 中源码 | 右渲染）。
+       画布上方一根毛的按钮都不留：返回列表、源码/卡片与 ⇄ 互换全部住进
+       右侧辅助栏的顶部死锁区（#epHeadTools），经宿主 ui.params.set 跨帧对账。
+       当前批次号只留读屏与探针（#edBatchNo / #edBatchStat），视觉上不占像素。 -->
   <div id="edRoot" class="ed-root" data-mode="list" hidden>
     <span class="ed-sr" id="edProgress" data-active="0" data-total="0">第 — / — 题</span>
-    <span class="ed-sr" id="edFormat" data-format="latex">格式一</span>
+    <span class="ed-sr" id="edFormat" data-format="latex">源码</span>
     <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
     <span class="ed-sr" id="edSaved" hidden></span>
     <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
           data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
+    <span class="ed-sr" id="edBatchNo">批次 #B-000</span>
+    <span class="ed-sr" id="edBatchStat" data-pending="0" data-total="0">未审 0 / 0</span>
 
     <!-- 首屏：批次列表。整个画布就是它，点任意一行进入审核三栏。
          严格左右 50/50：左栏是历史批次列表，右栏是文件收集筐。 -->
@@ -59,12 +62,7 @@
       </div>
     </section>
 
-    <!-- 二屏抬头：当前批次号 + 回列表的路。 -->
-    <div class="ed-batch-bar" id="edBatchBar" hidden>
-      <button type="button" class="ed-back-btn" id="edBackList">← 批次列表</button>
-      <span class="ed-batch-no" id="edBatchNo">批次 #B-000</span>
-      <span class="ed-batch-stat" id="edBatchStat">未审 0 / 0</span>
-    </div>
+    <!-- 二屏不再有抬头条：返回列表搬进右侧辅助栏的顶部死锁区。 -->
 
     <main class="ed-cols" id="edCols" data-swap="false">
       <section class="ed-col ed-col-image" id="edPaneImage" aria-label="原图">
@@ -86,7 +84,7 @@
           <section class="ed-col ed-col-source" id="edPaneSource" aria-label="LaTeX 源码">
             <div class="ed-pane-head">
               <span>LaTeX 源码</span>
-              <em id="edSourceHint">格式一 · 整段源码直接编辑</em>
+              <em id="edSourceHint">源码 · 整段源码直接编辑</em>
             </div>
             <div class="ed-pane-body" id="edSourceBody"></div>
           </section>
@@ -114,11 +112,11 @@
   </div>
 
   <!-- 辅助栏实例（sidebar.right）：三段式（军令 #29）。
-       段一 顶部永远固定：当前题号 + 单题私有元数据（题号 / 题型 / 难度 / 分值 / 考向 / 标签）。
+       段一 顶部永远固定：返回列表 + 源码/卡片/⇄互换、当前题号 + 单题私有元数据。
        段二 中部自动折叠：批次公共元数据——画布一滚动就收成一行矮标题，鼠标悬停标题才展开，移开不收。
-       段三 底部永远固定：存入主库 / 存为待办 / 彻底删除 + 格式一/二/互换，最下一行灰字报账。
+       段三 底部永远固定：存入主库 / 存为待办 / 彻底删除，最下一行灰字报账。
        按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
-       画布顶栏撤除后，格式一/格式二与 ⇄ 互换搬到段三底部；
+       画布顶栏撤除后，返回列表与视图切换全部搬进段一死锁区；
        本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。 -->
   <div id="epRoot" class="ep-root" hidden>
     <!-- ============ 段一：顶部固定 · 当前题与单题私有元数据 ============ -->
@@ -127,6 +125,21 @@
         <span class="ep-head-no" id="epHeadNo">第 — 题</span>
         <span class="ep-badge" id="epStatus" data-status="pending" data-dirty="false">● 待审核</span>
         <span class="ep-head-count" id="epProgress" data-active="0" data-total="0">第 — / — 题</span>
+      </div>
+      <!-- 死锁区第二行（军令 #30）：返回列表 + 源码/卡片 + ⇄ 互换全部挤在同一行；
+           画布上方从此一根毛的按钮都不留。 -->
+      <div class="ep-head-tools" id="epHeadTools" role="group" aria-label="画布视图">
+        <button type="button" class="ep-btn ep-back-btn ep-mini-btn" id="epBackList"
+                title="回到批次列表">← 返回列表</button>
+        <div class="ep-seg" role="group" aria-label="源码格式">
+          <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
+                  aria-pressed="true" title="源码 · 标准 LaTeX">源码</button>
+          <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
+                  aria-pressed="false" title="卡片 · 框框视图">卡片</button>
+        </div>
+        <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
+                title="源码与渲染左右互换">⇄ 互换</button>
+        <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
       </div>
       <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"
          data-batch="idle">辅助栏跟随当前题</p>
@@ -338,23 +351,12 @@
       </section>
     </div>
 
-    <!-- ============ 段三：底部固定 · 审核动作 + 视图切换 + 台账 ============ -->
+    <!-- ============ 段三：底部固定 · 审核动作 + 台账 ============ -->
     <footer class="ep-foot-bar" id="epDock">
       <div class="ep-foot-row ep-foot-actions">
         <button type="button" class="ep-btn ep-btn-primary ep-mini-btn" id="epApprove">存入主库</button>
         <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待办</button>
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
-      </div>
-      <div class="ep-foot-row ep-foot-view">
-        <div class="ep-seg" role="group" aria-label="源码格式">
-          <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
-                  aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
-          <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
-                  aria-pressed="false" title="格式二 · 框框视图">格式二</button>
-        </div>
-        <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
-                title="源码与渲染左右互换">⇄ 互换</button>
-        <span class="ep-foot-note" id="epViewNote">格式只改画布中栏的编辑视图。</span>
       </div>
       <!-- 台账：最下一行灰字，只报数，不再带任何按钮。 -->
       <p class="ep-foot-line" id="edPool" data-new="0" data-stored="0" data-dirty="0"
@@ -392,6 +394,9 @@
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="ui_reactive.js"></script>
+  <script src="ui_breath.js"></script>
+  <script src="ui_capsule.js"></script>
   <script src="plugin.js"></script>
 </body>
 </html>

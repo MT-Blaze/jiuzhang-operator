@@ -24,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "bank-contract-token"
@@ -1365,7 +1366,7 @@ class StageRelayContractTest(unittest.TestCase):
     """插件数据通道必须白名单化，且插件自报的 plugin_id 不被采信。"""
 
     def test_stage_relay_whitelist_and_plugin_scoping(self) -> None:
-        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         for method in ("bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
                        "bank.topics", "bank.topic_notes", "bank.review", "bank.update",
                        "bank.sources",
@@ -1380,7 +1381,7 @@ class StageRelayContractTest(unittest.TestCase):
         self.assertIn('clean[field] = value.trim().slice(0, SOURCE_FIELD_LIMITS[field])', source)
 
     def test_bank_create_is_scoped_and_permission_checked(self) -> None:
-        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         # 写入目标不再写死官方库：默认值只出现在 provider 解析器一处，宿主只读它
         self.assertIn('BANK_PROVIDER_DEFAULT = "org.jiuzhang.bank-engine"', source)
         self.assertIn("bankProviderBase()", source)
@@ -1390,7 +1391,7 @@ class StageRelayContractTest(unittest.TestCase):
 
     def test_three_end_editing_protocol(self) -> None:
         """三端分离：存储端/输出端只读，改题一律经 system.open_editor 跳录题端。"""
-        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         self.assertIn('"system.open_editor"', source)
         self.assertIn('"system.return_from_editor"', source)
         self.assertIn("EDITOR_PLUGIN_ID = \"org.jiuzhang.editor\"", source)

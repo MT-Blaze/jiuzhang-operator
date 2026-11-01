@@ -18,13 +18,14 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "startup-contract-token"
 SETTINGS_HTML = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
 SETTINGS_JS = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
-WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
-STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+WORKSPACE_JS = workspace_source()
+STAGE_JS = stage_source()
 
 DASHBOARD_ID = "org.jiuzhang.dashboard"
 EDITOR_ID = "org.jiuzhang.editor"

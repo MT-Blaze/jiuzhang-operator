@@ -17,6 +17,7 @@ import asyncio
 import re
 import unittest
 from pathlib import Path
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -24,7 +25,7 @@ HTML = (STATIC / "settings.html").read_text(encoding="utf-8")
 JS = (STATIC / "js" / "settings.js").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "settings.css").read_text(encoding="utf-8")
 WORKSPACE_HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
-STAGE_JS = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
+STAGE_JS = stage_source()
 
 
 class SettingsRouteTest(unittest.TestCase):
@@ -159,12 +160,12 @@ class UpdateNoticeAndProgressTest(unittest.TestCase):
         self.assertIn("有 ", WORKSPACE_HTML + JS)
         self.assertIn("updates.available", JS)
         self.assertIn("jzo.updateNotice", JS)
-        self.assertIn("renderUpdateNotice", (STATIC / "js" / "workspace.js").read_text(encoding="utf-8"))
+        self.assertIn("renderUpdateNotice", workspace_source())
         workspace_css = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
         self.assertRegex(workspace_css, r"\.ws-console-badge\s*\{[^}]*background:")
 
     def test_03_notice_jumps_into_plugin_update_tab(self) -> None:
-        workspace_js = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
+        workspace_js = workspace_source()
         self.assertIn('openConsoleTab("plugin", "update")', workspace_js)
         self.assertIn("tab=", workspace_js)
         self.assertIn("&tab=", workspace_js)

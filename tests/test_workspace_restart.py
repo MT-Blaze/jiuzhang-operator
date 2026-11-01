@@ -35,6 +35,7 @@ from app.api import health, workspaces as workspaces_api
 from app.core import bank as core_bank
 from app.core import host_restart
 from app.core.config import settings, switch_workspace
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 WARNING_TEXT = ("切换工作区需要重启底座以加载该区的插件与配置，"
@@ -436,7 +437,7 @@ class DraftGuardContractTest(unittest.TestCase):
         self.assertIn("留在原工作区", block)
 
     def test_host_shell_does_not_silent_switch(self) -> None:
-        workspace_js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        workspace_js = workspace_source()
         self.assertNotIn("/api/workspaces/switch", workspace_js)
 
 
@@ -445,7 +446,7 @@ class DraftWorkspaceBoxContractTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.js = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        cls.js = stage_source()
 
     def test_slot_key_carries_workspace_then_plugin(self) -> None:
         self.assertIn("return draftPrefix(draftWorkspace) + pluginId + \".\" + key;", self.js,

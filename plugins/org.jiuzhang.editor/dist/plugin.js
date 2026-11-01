@@ -11,7 +11,7 @@
  *
  * 同一个插件的两个沙箱帧拿不到彼此的 DOM，只走底座开好的合法通道：
  *   画布 → 辅助栏：发布 stage.selection（当前题的源码、进度与元数据默认值）；
- *   辅助栏 → 画布：ui.params.set（格式一 / 格式二），由宿主广播 ui.params.changed；
+ *   辅助栏 → 画布：ui.params.set（format / swap / view），由宿主广播 ui.params.changed；
  *   两帧共享：draft.save / draft.load 交宿主代持的工作清单与元数据草稿；
  *   中转站：pending.batch_list / list / save_draft / approve / delete 五条 Host API；
  *   写库：辅助栏经宿主 bank.create / bank.update 落库，成功回音 system.question_updated。
@@ -96,10 +96,8 @@
   var batchesEl = document.getElementById("edBatches");
   var batchListEl = document.getElementById("edBatchList");
   var batchesEmptyEl = document.getElementById("edBatchesEmpty");
-  var batchBarEl = document.getElementById("edBatchBar");
   var batchNoEl = document.getElementById("edBatchNo");
   var batchStatEl = document.getElementById("edBatchStat");
-  var backListEl = document.getElementById("edBackList");
   // 文件收集筐（军令 #27）：拖入、粘贴、点选都先落这里，【开始解析】才建批次。
   var basketEl = document.getElementById("edBasket");
   var basketFileEl = document.getElementById("edBasketFile");
@@ -150,6 +148,7 @@
   var panelFmtLatexEl = document.getElementById("epFmtLatex");
   var panelFmtBoxedEl = document.getElementById("epFmtBoxed");
   var panelSwapEl = document.getElementById("epSwap");
+  var panelBackListEl = document.getElementById("epBackList");
   var panelViewNoteEl = document.getElementById("epViewNote");
   var dupModalEl = document.getElementById("epDupModal");
   var dupTextEl = document.getElementById("epDupText");
@@ -258,10 +257,6 @@
     metaSyncing: false,
     // 标准名双向联动：手改即 manual，元数据再动立刻回 auto。
     stdManual: false,
-    // 呼吸灯：画布送来的悬停题号（-1 表示没有悬停）。
-    lampHover: -1,
-    // 批次公共元数据是否展开（画布一滚动就收起，鼠标停在折叠头上才展开）。
-    foldOpen: true,
     // 考向节点 id → 名称：模糊搜索要给人看的路径，bank.topics 只给 id 链。
     topicNames: {},
     // 父节点 id → 它那一层的子节点名：查一次路径就把整层名字收下来，不重复问。
@@ -269,9 +264,6 @@
     // 同一层正在飞的路：并发的路径解析共用一个请求，别把宿主问炸。
     topicPending: {}
   };
-
-  // 幽灵胶囊（标签 / 考向各一颗）：空壳、输入框、候选、高亮项都在这儿。
-  var ghostState = { tag: null, topic: null };
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload, timeoutMs) {
@@ -533,7 +525,7 @@
     });
   }
 
-  // ---------- exam-zh 源码：解析（渲染与格式二共用）+ 重组（阶段 2 直接复用这一份） ----------
+  // ---------- exam-zh 源码：解析（渲染与卡片共用）+ 重组（阶段 2 直接复用这一份） ----------
   function matchEnv(text, name) {
     var begin = "\\begin{" + name + "}";
     var end = "\\end{" + name + "}";
@@ -644,7 +636,7 @@
     return body ? head + "\n" + body : head;
   }
 
-  /** 结构化题目 → 格式一（军令 #23 的格式宪法；阶段 2 的自动重组复用这一个函数）。 */
+  /** 结构化题目 → 源码（军令 #23 的格式宪法；阶段 2 的自动重组复用这一个函数）。 */
   function buildExamSource(question) {
     var item = question || {};
     var type = String(item.type || "solution");
@@ -740,7 +732,7 @@
     var text = String(src == null ? "" : src);
     var range = fieldRanges(text)[field === "solution" ? "solution" : "stem"];
     if (!range) {
-      return { ok: false, message: "源码里找不到" + fieldLabel(field) + "段：先在格式一补上对应环境" };
+      return { ok: false, message: "源码里找不到" + fieldLabel(field) + "段：先在源码补上对应环境" };
     }
     if (String(value == null ? "" : value).length > FIELD_MAX) {
       return { ok: false, message: fieldLabel(field) + "改写超出 " + FIELD_MAX + " 字上限，未回填" };
@@ -1154,7 +1146,6 @@
     state.mode = mode === "review" ? "review" : "list";
     if (root) root.setAttribute("data-mode", state.mode);
     if (batchesEl) batchesEl.hidden = state.mode !== "list";
-    if (batchBarEl) batchBarEl.hidden = state.mode !== "review";
     if (colsEl) colsEl.hidden = state.mode !== "review";
   }
 
@@ -1195,6 +1186,15 @@
     });
   }
 
+  /** 画布视图（review / list）也走宿主参数通道：辅助栏那颗【← 返回列表】才有路。 */
+  function publishView(view) {
+    hostCall("ui.params.set", {
+      params: { view: view === "list" ? "list" : "review" },
+      snapshot: panel.uiRevisions || {},
+      plugin_id: PLUGIN_ID
+    }).catch(function () { /* 参数通道没通，画布自己的落点不受影响 */ });
+  }
+
   /** 点开一个批次：中转站里那一批的待审题直接铺进三栏。 */
   function openBatch(batchId) {
     var id = String(batchId || "");
@@ -1214,6 +1214,7 @@
       state.active = 0;
       state.dirty = false;
       setMode("review");
+      publishView("review");
       renderBatchBar();
       renderAll();
       publishSelection();
@@ -1231,10 +1232,12 @@
   }
 
   /** 回批次列表。走之前把改过的题静默存回中转池，别让老师的改动随界面一起没了。 */
-  function backToList(note) {
+  function backToList(note, fromHost) {
     var leaving = state.mode === "review";
     setMode("list");
     if (leaving) stashBeforeLeave();
+    // 辅助栏点的那一下已经走过宿主广播，画布不必把同样的意思再发一遍。
+    if (!fromHost) publishView("list");
     refreshBatches();
     if (note) dock(note);
   }
@@ -2061,14 +2064,19 @@
     if (!files.length) return Promise.resolve(null);
     return hostCall("ingest.files", { files: files }, INGEST_TIMEOUT_MS).then(function (result) {
       var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
+      var ids = Array.isArray(result && result.batch_ids)
+        ? result.batch_ids
+        : (result && result.batch_id ? [result.batch_id] : []);
+      // 一个文件一个批次：拖 9 份就是 9 个批次，各认各的。
+      var label = ids.length > 1
+        ? ids.length + " 个批次（" + ids.join("、") + "）"
+        : "批次 " + (ids[0] || "");
       // parsing=true：批次已经立起来了，识别在后台跑。
       if (result && result.parsing) {
-        dock("已收下 " + files.length + " 份（批次 "
-          + String((result && result.batch_id) || "") + "），正在后台解析。");
+        dock("已收下 " + files.length + " 份，分成 " + label + "，正在后台解析。");
         return result;
       }
-      dock("已收下 " + files.length + " 个文件，认出 " + saved + " 道题，批次 "
-        + String((result && result.batch_id) || "") + "。");
+      dock("已收下 " + files.length + " 个文件，认出 " + saved + " 道题，" + label + "。");
       return result;
     }).catch(function (error) {
       var text = (error && error.message) || "未知原因";
@@ -3001,7 +3009,7 @@
     });
   }
 
-  /** 格式一：一整段 exam-zh 源码，可编辑——它是唯一的录入面。 */
+  /** 源码：一整段 exam-zh 源码，可编辑——它是唯一的录入面。 */
   function renderSourceCell(item, index) {
     if (state.format === "boxed") return renderBoxedCell(item, index);
     var cell = el("div", "ed-src-cell");
@@ -3025,9 +3033,9 @@
     return cell;
   }
 
-  /** 格式二的底线：环境骨架不完整或有游离文本时，绝不自动重组——先如实说明。 */
+  /** 卡片的底线：环境骨架不完整或有游离文本时，绝不自动重组——先如实说明。 */
   function boxedBlockReason(parsed) {
-    if (parsed.stray) return "源码里有环境外的内容，请先在格式一清掉再拆框";
+    if (parsed.stray) return "源码里有环境外的内容，请先在源码清掉再拆框";
     if (!parsed.env) return "缺 \\begin{question} 或 \\begin{problem}，拆不出框";
     if (!parsed.hasSolution) return "缺 \\begin{solution}，答案与解析没有归属";
     if (parsed.hasChoices && parsed.choices.length < 2) return "选项不足两项";
@@ -3062,15 +3070,15 @@
     return node;
   }
 
-  /** 格式二：框里只有内容，\begin{…} 骨架是写死的标签，摸不到也改不了。 */
+  /** 卡片：框里只有内容，\begin{…} 骨架是写死的标签，摸不到也改不了。 */
   function renderBoxedCell(item, index) {
     var cell = el("div", "ed-boxed");
     cell.setAttribute("data-index", String(index));
     var parsed = parsedOf(item);
-    cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · 格式二（改完自动重组格式一）"));
+    cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · 卡片（改完自动重组源码）"));
     var reason = boxedBlockReason(parsed);
     if (reason) {
-      cell.appendChild(el("p", "ed-boxed-blocked", "格式二暂不可用：" + reason));
+      cell.appendChild(el("p", "ed-boxed-blocked", "卡片暂不可用：" + reason));
       var area = document.createElement("textarea");
       area.className = "ed-src-area";
       area.setAttribute("aria-label", "第 " + (index + 1) + " 题 LaTeX 源码");
@@ -3226,12 +3234,12 @@
    *
    * 顺序是这件事的全部：文本框必须先长到内容高度，再量行高。
    * 反过来（先量后长）的话，源码栏会在量完之后继续长高一截，
-   * 三栏之间的虚线当场错位——老师点一下「格式一/二」就看见。
+   * 三栏之间的虚线当场错位——老师点一下「源码/卡片」就看见。
    * 所以这里长—量两轮：第一轮让框就位，第二轮按最终高度重新对齐。
    *
    * 量高必须用 getBoundingClientRect 的小数高度：offsetHeight 会把 300.4px 截成 300，
    * 而框框视图里的内容高往往带小数，于是每一行的源码格都比另两栏高出一丝，
-   * 虚线一行一行往下飘——这正是「点一下格式二就歪」的真相。
+   * 虚线一行一行往下飘——这正是「点一下卡片就歪」的真相。
    */
   function alignRows() {
     var max = 0;
@@ -3298,7 +3306,7 @@
     }
     if (formatEl) {
       formatEl.setAttribute("data-format", state.format);
-      formatEl.textContent = state.format === "boxed" ? "格式二" : "格式一";
+      formatEl.textContent = state.format === "boxed" ? "卡片" : "源码";
     }
     setFormatButtons(state.format);
     var errorTotal = 0;
@@ -3386,7 +3394,7 @@
     renderTimer = window.setTimeout(renderAll, RENDER_DEBOUNCE_MS);
   }
 
-  /** 把回填后的源码写回中栏：格式一改 textarea 的值并把光标停在段末，格式二整格重建（框本就从源码拆出来）。 */
+  /** 把回填后的源码写回中栏：源码改 textarea 的值并把光标停在段末，卡片整格重建（框本就从源码拆出来）。 */
   function writeBackSourceText(item, index, field) {
     var area = state.format === "boxed" ? null
       : sourceBodyEl.querySelector('.ed-src-area[data-index="' + index + '"]');
@@ -3467,8 +3475,8 @@
 
   /**
    * 老师当前题里的光标位置 → AI 能改哪个字段。
-   * 格式一按源码偏移判定（choices 与「答案：」行都判不出字段，档 1 只吃题干/解析）；
-   * 格式二直接看框的语义字段，框头环境名本来就锁死，不必再算偏移。
+   * 源码按源码偏移判定（choices 与「答案：」行都判不出字段，档 1 只吃题干/解析）；
+   * 卡片直接看框的语义字段，框头环境名本来就锁死，不必再算偏移。
    */
   function caretOfActive() {
     var item = state.items[state.active];
@@ -3661,7 +3669,7 @@
     }).catch(function () { /* 读不到草稿就从假数据重来 */ });
   }
 
-  // ---------- 格式一 / 格式二（开关住辅助栏；画布是视图主人，宿主 ui.params 做跨帧对账） ----------
+  // ---------- 源码 / 卡片（开关住辅助栏；画布是视图主人，宿主 ui.params 做跨帧对账） ----------
   function setFormatButtons(format) {
     var value = FORMATS[format] ? format : "latex";
     panel.format = value;
@@ -3673,8 +3681,8 @@
     });
     if (panelViewNoteEl) {
       panelViewNoteEl.textContent = value === "boxed"
-        ? "格式二：框里只有内容，环境骨架改不动。"
-        : "格式一：整段源码直接编辑。两者只是同一份源码的两种编辑面。";
+        ? "卡片：框里只有内容，环境骨架改不动。"
+        : "源码：整段源码直接编辑。两者只是同一份源码的两种编辑面。";
     }
     if (panelMetricsEl) panelMetricsEl.setAttribute("data-format", value);
   }
@@ -3685,8 +3693,8 @@
     state.format = value;
     if (sourceHintEl) {
       sourceHintEl.textContent = value === "boxed"
-        ? "格式二 · 框里只有内容，环境骨架改不动"
-        : "格式一 · 整段源码直接编辑";
+        ? "卡片 · 框里只有内容，环境骨架改不动"
+        : "源码 · 整段源码直接编辑";
     }
     setFormatButtons(value);
     renderAll();
@@ -3738,6 +3746,15 @@
     }).catch(function () {
       if (panel.selection) setSwapButton(Boolean(panel.selection.swap));
     });
+  }
+
+  /** 辅助栏点【← 返回列表】：意图交给宿主，画布收到广播后才回列表。 */
+  function backToListFromPanel() {
+    hostCall("ui.params.set", {
+      params: { view: "list" },
+      snapshot: panel.uiRevisions || {},
+      plugin_id: PLUGIN_ID
+    }).catch(function () { /* 参数通道没通就留在三栏，绝不擅自改本帧 DOM */ });
   }
 
   /**
@@ -4510,6 +4527,8 @@
           publishSelection();
         }
       }
+      // 辅助栏那颗【← 返回列表】：画布收到广播才真回列表，且不再回发一遍。
+      if (values.view === "list" && state.mode === "review") backToList("已回到批次列表。", true);
       return;
     }
     if (values.format) setFormatButtons(values.format);
@@ -4962,7 +4981,7 @@
     }
     var original = segmentOf(item.source, caret.field);
     if (!original) {
-      panelSay("源码里找不到" + fieldLabel(caret.field) + "段的正文：切到格式一补上环境骨架再试。", "error", "invalid");
+      panelSay("源码里找不到" + fieldLabel(caret.field) + "段的正文：切到源码补上环境骨架再试。", "error", "invalid");
       return;
     }
     panel.ai = {
@@ -5194,350 +5213,31 @@
     renderPanelMetrics();
   }
 
-  // ---------- 幽灵胶囊（军令 #29）：标签与考向共用一套 ----------
-  // 胶囊串的尾巴永远挂着一颗虚线空壳「+ 请添加…」；鼠标停在上面 150ms，
-  // 它自己活过来变成实心胶囊并接上光标；打字弹出候选（考向带路径），
-  // 回车取第一条上屏，随即长出下一颗空壳；鼠标移出输入区，空壳自己消失。
+  // ---------- 幽灵胶囊（军令 #29 / #30）：标签与考向共用一套 ----------
+  // 空壳、候选、高亮与已经挂上的胶囊都在 dist/ui_capsule.js 里；
+  // 这里只把元素、宿主通道与要回写的地方交进去。
+  var capsule = window.JzoEditorCapsule.create({
+    el: el,
+    hostCall: hostCall,
+    tagList: panelTagListEl,
+    mountedList: panelMountedEl,
+    tagMenu: panelGhostTagMenuEl,
+    topicMenu: panelGhostTopicMenuEl,
+    tagsValue: function () { return panelTagsEl ? panelTagsEl.value : ""; },
+    entry: function () { return panel.currentEntry || {}; },
+    topicStore: panel,
+    scene: function () { return panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : ""; },
+    commitTags: function (tags) { commitTags(tags); },
+    toggleTopic: function (topic) { toggleTopic(topic); },
+    splitTags: splitTags,
+    delay: GHOST_DELAY_MS
+  });
 
-  var GHOST_TEXT = "+ 请添加…";
-  // 宿主每 10 秒最多放 80 个请求：候选条数、搜索节奏、路径解析都得有节制。
-  var GHOST_TOPIC_LIMIT = 8;
-  var GHOST_SEARCH_DELAY_MS = 180;
+  function renderTags() { capsule.renderTags(); }
 
-  function ghostHost(kind) {
-    return kind === "topic" ? panelMountedEl : panelTagListEl;
-  }
+  function renderMounted() { capsule.renderMounted(); }
 
-  function ghostMenu(kind) {
-    return kind === "topic" ? panelGhostTopicMenuEl : panelGhostTagMenuEl;
-  }
-
-  function ensureGhost(kind) {
-    var host = ghostHost(kind);
-    if (!host) return null;
-    var rec = ghostState[kind];
-    if (rec && rec.ghost && rec.ghost.parentNode === host) return rec;
-    var ghost = el("span", "ep-ghost");
-    ghost.setAttribute("data-kind", kind);
-    ghost.setAttribute("data-state", "idle");
-    var input = document.createElement("input");
-    input.className = "ep-ghost-input";
-    input.type = "text";
-    input.maxLength = 24;
-    input.autocomplete = "off";
-    input.setAttribute("aria-label", kind === "topic" ? "搜索并挂载考向" : "搜索并添加标签");
-    input.setAttribute("placeholder", "打字搜索");
-    input.addEventListener("input", function () { onGhostInput(kind); });
-    input.addEventListener("keydown", function (event) { onGhostKey(kind, event); });
-    input.addEventListener("blur", function () {
-      window.setTimeout(function () { closeGhostMenu(kind); }, 150);
-    });
-    ghost.appendChild(el("span", "ep-ghost-text", GHOST_TEXT));
-    ghost.appendChild(input);
-    ghost.addEventListener("mouseenter", function () { armGhost(kind); });
-    ghost.addEventListener("mouseleave", function () { disarmGhost(kind); });
-    rec = { ghost: ghost, input: input, timer: 0, searchTimer: 0, items: [], active: -1 };
-    ghostState[kind] = rec;
-    host.appendChild(ghost);
-    return rec;
-  }
-
-  /** 清掉胶囊串里的旧胶囊，但留住尾巴上那颗幽灵空壳——重建它会把光标弄丢。 */
-  function chipRow(kind) {
-    var host = ghostHost(kind);
-    if (!host) return null;
-    var rec = ghostState[kind];
-    var ghost = rec ? rec.ghost : null;
-    Array.prototype.slice.call(host.children).forEach(function (node) {
-      if (node !== ghost) host.removeChild(node);
-    });
-    return ensureGhost(kind);
-  }
-
-  /** 胶囊插在幽灵空壳前面：空壳必须留在最后一位，而且不能被搬动——搬一下光标就没了。 */
-  function insertChip(host, chip, rec) {
-    var ghost = rec ? rec.ghost : null;
-    if (ghost && ghost.parentNode === host) host.insertBefore(chip, ghost);
-    else host.appendChild(chip);
-  }
-
-  function armGhost(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    if (rec.ghost.getAttribute("data-state") === "active") return;
-    window.clearTimeout(rec.timer);
-    rec.timer = window.setTimeout(function () { activateGhost(kind); }, GHOST_DELAY_MS);
-  }
-
-  function disarmGhost(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    window.clearTimeout(rec.timer);
-    rec.timer = 0;
-  }
-
-  function activateGhost(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    rec.ghost.setAttribute("data-state", "active");
-    rec.ghost.hidden = false;
-    if (!rec.input) return;
-    // 输入框在激活前是 display:none：先逼浏览器把样式算出来，focus 才落得进去。
-    void rec.input.offsetWidth;
-    try { window.focus(); } catch (error) { /* 抢不到焦点就算了，光标照样能闪 */ }
-    rec.input.focus();
-  }
-
-  /** 鼠标移出输入区：空壳消失；写了字的留着，别把老师打了一半的话弄丢。 */
-  function onGhostLeave(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    disarmGhost(kind);
-    window.clearTimeout(rec.searchTimer);
-    rec.searchTimer = 0;
-    var typed = rec.input ? String(rec.input.value || "").trim() : "";
-    if (typed) return;
-    rec.ghost.setAttribute("data-state", "idle");
-    rec.ghost.hidden = true;
-    closeGhostMenu(kind);
-  }
-
-  function wireGhostCell(kind) {
-    var host = ghostHost(kind);
-    if (!host) return;
-    var cell = host.parentNode;
-    if (!cell || !cell.classList || !cell.classList.contains("ep-cell")) return;
-    cell.addEventListener("mouseenter", function () {
-      var rec = ensureGhost(kind);
-      if (rec) rec.ghost.hidden = false;
-    });
-    cell.addEventListener("mouseleave", function () { onGhostLeave(kind); });
-  }
-
-  function onGhostInput(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    var query = rec.input ? String(rec.input.value || "").trim() : "";
-    if (!query) { closeGhostMenu(kind); return; }
-    // 每敲一个字就发一次请求，几十个字就能把宿主的限流闸门顶开：等手停下来再查。
-    window.clearTimeout(rec.searchTimer);
-    rec.searchTimer = window.setTimeout(function () {
-      if (kind === "topic") searchGhostTopics(query);
-      else searchGhostTags(query);
-    }, GHOST_SEARCH_DELAY_MS);
-  }
-
-  function onGhostKey(kind, event) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    var key = String(event.key || "");
-    if (key === "Enter") {
-      event.preventDefault();
-      if (rec.items.length) {
-        pickGhostItem(kind, rec.active >= 0 ? rec.active : 0);
-        return;
-      }
-      var typed = rec.input ? String(rec.input.value || "").trim() : "";
-      if (!typed) return;
-      // 考向只能从大纲树里取：凭空造一个节点等于在题库里造假考向。
-      if (kind === "topic") return;
-      closeGhostMenu(kind);
-      resetGhost(kind);
-      commitTags(splitTags(panelTagsEl.value).concat([typed]));
-      return;
-    }
-    if (key === "Escape") {
-      event.preventDefault();
-      if (rec.input) rec.input.value = "";
-      closeGhostMenu(kind);
-      rec.ghost.setAttribute("data-state", "idle");
-      return;
-    }
-    if (key === "ArrowDown" || key === "ArrowUp") {
-      if (!rec.items.length) return;
-      event.preventDefault();
-      var step = key === "ArrowDown" ? 1 : -1;
-      rec.active = (rec.active + step + rec.items.length) % rec.items.length;
-      renderGhostMenu(kind);
-      return;
-    }
-    if (key === "Backspace" && rec.input && !rec.input.value && kind === "tag") {
-      var list = splitTags(panelTagsEl.value);
-      if (!list.length) return;
-      list.pop();
-      commitTags(list);
-    }
-  }
-
-  /** 落定一颗，下一颗空壳立刻接上：老师可以连着挂好几个，中间不必再点一次。 */
-  function resetGhost(kind) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    if (rec.input) rec.input.value = "";
-    rec.ghost.setAttribute("data-state", "active");
-    rec.ghost.hidden = false;
-    if (rec.input) rec.input.focus();
-  }
-
-  function pickGhostItem(kind, index) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    var item = rec.items[index];
-    if (!item) return;
-    closeGhostMenu(kind);
-    resetGhost(kind);
-    if (kind === "topic") {
-      var node = item.value;
-      toggleTopic({ id: node.id, name: node.name });
-      return;
-    }
-    commitTags(splitTags(panelTagsEl.value).concat([item.name]));
-  }
-
-  function showGhostMenu(kind, items) {
-    var rec = ghostState[kind];
-    if (!rec) return;
-    rec.items = items || [];
-    rec.active = rec.items.length ? 0 : -1;
-    renderGhostMenu(kind);
-  }
-
-  function renderGhostMenu(kind) {
-    var rec = ghostState[kind];
-    var menu = ghostMenu(kind);
-    if (!rec || !menu) return;
-    menu.textContent = "";
-    rec.items.forEach(function (item, index) {
-      var node = el("button", "ep-menu-item");
-      node.type = "button";
-      node.setAttribute("role", "option");
-      node.setAttribute("data-index", String(index));
-      if (index === rec.active) node.setAttribute("data-active", "true");
-      node.appendChild(el("span", "ep-menu-text", item.name));
-      var tail = item.path || item.hint || "";
-      if (tail) node.appendChild(el("span", "ep-menu-path", tail));
-      node.addEventListener("mousedown", function (event) {
-        // mousedown 而不是 click：input 一失焦菜单就没了，click 永远等不到。
-        event.preventDefault();
-        pickGhostItem(kind, index);
-      });
-      menu.appendChild(node);
-    });
-    menu.hidden = !menu.children.length;
-  }
-
-  function closeGhostMenu(kind) {
-    var menu = ghostMenu(kind);
-    if (menu) menu.hidden = true;
-    var rec = ghostState[kind];
-    if (rec) { rec.items = []; rec.active = -1; }
-  }
-
-  function searchGhostTags(query) {
-    var rec = ghostState.tag;
-    var seq = rec ? (rec.seq || 0) + 1 : 1;
-    if (rec) rec.seq = seq;
-    var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : "";
-    hostCall("meta.tags", { scene: scene, q: query, limit: 8 }).then(function (result) {
-      if (!ghostState.tag || ghostState.tag.seq !== seq) return;
-      var rows = (result && Array.isArray(result.tags)) ? result.tags : [];
-      showGhostMenu("tag", rows.map(function (tag) {
-        return {
-          name: String(tag.name || ""),
-          hint: tag.scene_weight ? "本场景常用" : "",
-          value: String(tag.name || "")
-        };
-      }));
-    }, function () { closeGhostMenu("tag"); });
-  }
-
-  function searchGhostTopics(query) {
-    var rec = ghostState.topic;
-    var seq = rec ? (rec.seq || 0) + 1 : 1;
-    if (rec) rec.seq = seq;
-    hostCall("bank.topics", { q: query }).then(function (result) {
-      if (!ghostState.topic || ghostState.topic.seq !== seq) return;
-      var rows = (result && Array.isArray(result.items)) ? result.items : [];
-      // 候选条数要有上限：底下是全库大纲，一口气铺满会把菜单撑爆。
-      var items = rows.slice(0, GHOST_TOPIC_LIMIT).map(function (node) {
-        return { name: String(node.name || ""), path: "", hint: "", value: node };
-      });
-      showGhostMenu("topic", items);
-      // 路径里祖先的名字要现查：bank.topics 给的是一串 id，不给人看的名字。
-      items.forEach(function (item, index) {
-        resolveTopicPath(item.value && item.value.path, item.name).then(function (text) {
-          var rec = ghostState.topic;
-          if (!rec || !rec.items[index]) return;
-          rec.items[index].path = text;
-          renderGhostMenu("topic");
-        });
-      });
-    }, function () { closeGhostMenu("topic"); });
-  }
-
-  /** 问一层子节点，把这层所有 id → 名字收进缓存。
-   *  同一层只问一次，并发的解析共用同一个在途请求。 */
-  function fetchTopicChildren(parentId) {
-    var key = String(parentId || "");
-    if (panel.topicChildren[key]) return Promise.resolve(panel.topicChildren[key]);
-    if (panel.topicPending[key]) return panel.topicPending[key];
-    var request = hostCall("bank.topics", key ? { parent_id: key } : {}).then(function (result) {
-      var items = (result && Array.isArray(result.items)) ? result.items : [];
-      var names = {};
-      items.forEach(function (node) {
-        names[node.id] = node.name;
-        panel.topicNames[node.id] = node.name;
-      });
-      panel.topicChildren[key] = names;
-      delete panel.topicPending[key];
-      return names;
-    }, function () {
-      delete panel.topicPending[key];
-      return {};
-    });
-    panel.topicPending[key] = request;
-    return request;
-  }
-
-  /** bank.topics 的 path 是 id 链：逐级把祖先的名字问出来，拼成给人看的「册 › 章 › 考向」。
-   *  叶子自己的名字搜索时就知道了，不必再为它多问一趟。 */
-  function resolveTopicPath(path, leafName) {
-    var chain = String(path || "").split("/").filter(Boolean);
-    if (!chain.length) return Promise.resolve("");
-    var step = function (index) {
-      if (index >= chain.length - 1) return Promise.resolve();
-      if (panel.topicNames[chain[index]]) return step(index + 1);
-      var parentId = index === 0 ? "" : chain[index - 1];
-      return fetchTopicChildren(parentId).then(function () { return step(index + 1); });
-    };
-    return step(0).then(function () {
-      return chain.map(function (id, index) {
-        if (index === chain.length - 1 && leafName) return leafName;
-        return panel.topicNames[id] || "";
-      }).filter(Boolean).join(" › ");
-    });
-  }
-
-  /** 标签胶囊：#epTags 只当「逗号串」的存档位，界面上的真身是这一串小胶囊。 */
-  function renderTags() {
-    if (!panelTagListEl) return;
-    var fresh = chipRow("tag");
-    var tags = splitTags(panelTagsEl ? panelTagsEl.value : "");
-    tags.forEach(function (tag) {
-      var chip = el("span", "ep-chip");
-      chip.setAttribute("role", "listitem");
-      chip.setAttribute("data-tag", tag);
-      chip.appendChild(el("span", "ep-chip-name", tag));
-      var removeBtn = el("button", "ep-chip-x", "×");
-      removeBtn.type = "button";
-      removeBtn.setAttribute("aria-label", "摘除标签 " + tag);
-      removeBtn.addEventListener("click", function () {
-        commitTags(splitTags(panelTagsEl.value).filter(function (one) { return one !== tag; }));
-      });
-      chip.appendChild(removeBtn);
-      insertChip(panelTagListEl, chip, fresh);
-    });
-  }
+  function wireGhostCell(kind) { capsule.wireCell(kind); }
 
   function commitTags(tags) {
     if (!panelTagsEl) return;
@@ -5549,30 +5249,6 @@
     panelTagsEl.value = list.slice(0, TAG_LIMIT).join(",");
     renderTags();
     onFormChange();
-  }
-
-  function renderMounted() {
-    if (!panelMountedEl) return;
-    var entry = panel.currentEntry || {};
-    var ids = entry.topic_ids || [];
-    var names = entry.topic_names || {};
-    var fresh = chipRow("topic");
-    if (!ids.length) {
-      insertChip(panelMountedEl, el("span", "ep-note", "还没挂考向"), fresh);
-    }
-    ids.forEach(function (id) {
-      var chip = el("span", "ep-chip");
-      chip.setAttribute("data-topic", id);
-      chip.appendChild(el("span", "ep-chip-name", names[id] || id));
-      var removeBtn = el("button", "ep-chip-x", "摘");
-      removeBtn.type = "button";
-      removeBtn.setAttribute("aria-label", "摘除考向 " + (names[id] || id));
-      removeBtn.addEventListener("click", function () {
-        toggleTopic({ id: id, name: names[id] || id });
-      });
-      chip.appendChild(removeBtn);
-      insertChip(panelMountedEl, chip, fresh);
-    });
   }
 
   /** 从宿主代持的工作清单草稿里重建辅助栏选区——两个帧同时挂载，通知不一定赶得上。 */
@@ -5625,111 +5301,36 @@
     }
   }
 
-  // ---------- 双侧呼吸灯与批次折叠（军令 #29） ----------
+  // ---------- 双侧呼吸灯与批次折叠（军令 #29 / #30） ----------
   // 两个 iframe 之间不直连（AGENTS §2）：画布把「鼠标停在哪一题」「画布在滚动」
   // 经宿主总线报给辅助栏，辅助栏据此亮边缘、收批次公共元数据。
+  // 灯与折叠的状态和渲染都在 dist/ui_breath.js，这里只把元素、总线与延时交进去。
+  var breath = window.JzoBreath.create({
+    rows: [imageBodyEl, sourceBodyEl, renderBodyEl],
+    panelRoot: panelRoot,
+    panelMetaSecEl: panelMetaSecEl,
+    panelMetaFoldEl: panelMetaFoldEl,
+    panelMetaSummaryEl: panelMetaSummaryEl,
+    publish: publish,
+    delay: LAMP_DELAY_MS
+  });
 
-  var lampTimer = 0;
-  var lampPendingIndex = -1;
-  var lampIndex = -1;
-  var scrollSignalAt = 0;
+  function wireLamp() { breath.wireLamp(); }
 
-  function lampRowOf(node) {
-    if (!node || !node.closest) return null;
-    return node.closest(".ed-img-cell, .ed-src-cell, .ed-q-block");
-  }
+  function onCanvasState(payload) { breath.onCanvasState(payload); }
 
-  function paintLamp(index) {
-    var cells = document.querySelectorAll(
-      ".ed-img-cell[data-index], .ed-src-cell[data-index], .ed-q-block[data-index]");
-    Array.prototype.forEach.call(cells, function (cell) {
-      if (Number(cell.getAttribute("data-index")) === index) cell.setAttribute("data-lamp", "on");
-      else cell.removeAttribute("data-lamp");
-    });
-  }
+  function signalCanvasScroll() { breath.signalCanvasScroll(); }
 
-  function lightLamp(index) {
-    lampIndex = index;
-    paintLamp(index);
-    publish("editor.canvas_state", { hover: index });
-  }
+  function collapseMetaSection() { breath.collapseMetaSection(); }
 
-  function extinguishLamp() {
-    window.clearTimeout(lampTimer);
-    lampTimer = 0;
-    lampPendingIndex = -1;
-    if (lampIndex < 0) return;
-    lampIndex = -1;
-    paintLamp(-1);
-    publish("editor.canvas_state", { hover: -1 });
-  }
-
-  /** 画布一滚动就报一声：批次公共元数据该收成一行矮标题了。 */
-  function signalCanvasScroll() {
-    var now = Date.now();
-    if (scrollSignalAt && now - scrollSignalAt < 400) return;
-    scrollSignalAt = now;
-    publish("editor.canvas_state", { scroll: true });
-  }
-
-  function wireLamp() {
-    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
-      if (!node) return;
-      node.addEventListener("mouseover", function (event) {
-        var row = lampRowOf(event.target);
-        if (!row) { extinguishLamp(); return; }
-        var index = Number(row.getAttribute("data-index"));
-        if (!Number.isFinite(index)) return;
-        if (index === lampPendingIndex) return;
-        lampPendingIndex = index;
-        window.clearTimeout(lampTimer);
-        lampTimer = window.setTimeout(function () { lightLamp(index); }, LAMP_DELAY_MS);
-      });
-      node.addEventListener("mouseleave", function () { extinguishLamp(); });
-    });
-  }
-
-  /** 辅助栏收到画布的状态：亮边缘、收批次公共元数据。 */
-  function onCanvasState(payload) {
-    if (!panelRoot) return;
-    var raw = payload && payload.raw ? payload.raw : payload;
-    if (!raw || typeof raw !== "object") return;
-    if (raw.hover != null) {
-      var hover = Number(raw.hover);
-      panel.lampHover = Number.isFinite(hover) ? hover : -1;
-      if (panel.lampHover >= 0) {
-        panelRoot.setAttribute("data-lamp", "on");
-        panelRoot.setAttribute("data-hover", String(panel.lampHover));
-      } else {
-        panelRoot.removeAttribute("data-lamp");
-        panelRoot.removeAttribute("data-hover");
-      }
-    }
-    if (raw.scroll) collapseMetaSection();
-  }
-
-  /** 画布一滚动，批次公共元数据立刻收成一行矮标题。 */
-  function collapseMetaSection() {
-    if (!panelMetaSecEl) return;
-    panel.foldOpen = false;
-    panelMetaSecEl.setAttribute("data-fold", "closed");
-    if (panelMetaFoldEl) panelMetaFoldEl.setAttribute("aria-expanded", "false");
-  }
-
-  function expandMetaSection() {
-    if (!panelMetaSecEl) return;
-    panel.foldOpen = true;
-    panelMetaSecEl.setAttribute("data-fold", "open");
-    if (panelMetaFoldEl) panelMetaFoldEl.setAttribute("aria-expanded", "true");
-  }
+  function expandMetaSection() { breath.expandMetaSection(); }
 
   /** 收起来时那一行矮标题要报点什么：标准名最有用，没有就报场景。 */
   function renderFoldSummary() {
     if (!panelMetaSummaryEl) return;
     var std = panelStdNameEl ? String(panelStdNameEl.value || "").trim() : "";
     var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "";
-    panelMetaSummaryEl.textContent = std || scene || "—";
-    panelMetaSummaryEl.title = std || scene || "";
+    breath.renderFoldSummary(std || scene || "—");
   }
 
   function activatePanel() {
@@ -5761,6 +5362,7 @@
       });
     });
     if (panelSwapEl) panelSwapEl.addEventListener("click", toggleSwapFromPanel);
+    if (panelBackListEl) panelBackListEl.addEventListener("click", backToListFromPanel);
     if (panelApproveEl) panelApproveEl.addEventListener("click", function () { onApprove(false); });
     if (panelStashEl) panelStashEl.addEventListener("click", onStash);
     if (panelDeleteEl) panelDeleteEl.addEventListener("click", onDelete);
@@ -5936,7 +5538,7 @@
       applyWidths();
       renderAll();
       wireIntake();
-      if (sourceHintEl) sourceHintEl.textContent = "格式一 · 整段源码直接编辑";
+      if (sourceHintEl) sourceHintEl.textContent = "源码 · 整段源码直接编辑";
       startIdleWatch();
       // 首屏就是批次列表：中转站还空着就先把这批识别结果入池，好让老师有东西可点。
       refreshBatches().then(function (cards) {
@@ -6009,11 +5611,6 @@
     ["pointerdown", "keydown", "wheel", "input"].forEach(function (type) {
       window.addEventListener(type, noteActivity, { passive: true, capture: true });
     });
-    if (backListEl) {
-      backListEl.addEventListener("click", function () {
-        backToList("已回到批次列表。");
-      });
-    }
     if (window.ResizeObserver && colsEl) {
       var observer = new window.ResizeObserver(function () {
         applyWidths();
@@ -6067,6 +5664,8 @@
     renderBatchList: renderBatchList,
     openBatch: openBatch,
     backToList: backToList,
+    backToListFromPanel: backToListFromPanel,
+    publishView: publishView,
     setMode: setMode,
     stashOne: stashOne,
     onApprove: onApprove,

@@ -511,6 +511,55 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertTrue(any("待识别" in stem for stem in stems),
                         f"认不出就要写明「待识别」，实际是：{stems}")
 
+    def test_14b_multi_file_upload_makes_one_batch_per_file(self) -> None:
+        """拖进 N 个文件就立 N 个批次：各自独立、各自后台解析、题目不许串门。
+
+        早先九个文件混成一锅 71 道题的大杂烩，老师在审核台里分不清哪道题
+        出自哪张卷子。这里钉住：文件数组逐个建批次，批次卡片各记各的文件名。
+        """
+        texts = (
+            "# 卷一\n\n" + EXAM_ZH_MD,
+            "# 卷二\n\n\\begin{question}\n"
+            "已知 $g(x)=x^3+1$，求 $g(0)$ 的值。\n"
+            "\\begin{choices}\n\\item $1$\n\\item $0$\n\\end{choices}\n"
+            "\\end{question}\n\\begin{solution}\n答案：A\n\\end{solution}\n",
+        )
+        names = ("卷一.md", "卷二.md")
+        files = [
+            {"name": name,
+             "data_url": "data:text/markdown;base64,"
+                         + base64.b64encode(text.encode("utf-8")).decode("ascii")}
+            for name, text in zip(names, texts)
+        ]
+        status, body = self._request("/api/ingest/files", "POST", {"files": files})
+        self.assertEqual(status, 201, body)
+        self.assertEqual(len(body["batch_ids"]), 2, "两个文件要立两个批次")
+        self.assertEqual(len(set(body["batch_ids"])), 2, "批次号不许重合")
+        self.assertEqual(body["batch_id"], body["batch_ids"][0],
+                         "老口径的 batch_id 指向第一个批次，插件老代码不许断")
+        self.assertEqual(body["kinds"], ["text", "text"])
+        self.assertEqual(len(body["saved_ids"]), 2, "每个文件先各留一条占位题")
+        self.assertEqual(body["parsing"], True)
+
+        status, listing = self._request("/api/pending/batches")
+        self.assertEqual(status, 200)
+        source_names = {entry["batch_id"]: entry["source_name"]
+                        for entry in listing["batches"]}
+        for batch_id, name in zip(body["batch_ids"], names):
+            self.assertEqual(source_names.get(batch_id), name,
+                             "每个批次卡片都要记着自己的原文件名")
+
+        first_items = self._wait_parsed(body["batch_ids"][0], "f(x)")
+        second_items = self._wait_parsed(body["batch_ids"][1], "g(x)")
+        self.assertEqual(len(first_items), 1)
+        self.assertEqual(len(second_items), 1)
+        first_stem = str(first_items[0]["question"]["stem"])
+        second_stem = str(second_items[0]["question"]["stem"])
+        self.assertIn("f(x)", first_stem)
+        self.assertNotIn("g(x)", first_stem, "第二卷的题不许跑进第一批")
+        self.assertIn("g(x)", second_stem)
+        self.assertNotIn("f(x)", second_stem, "第一卷的题不许跑进第二批")
+
     # ---------- 全域数据字典（结构 v5） ----------
 
     def test_15_school_short_name_conflict_is_blocked_with_exact_message(self) -> None:

@@ -563,7 +563,7 @@ def main() -> int:
             check("首屏铺满批次列表（三栏还收着）",
                   canvas.locator("#edBatches").is_visible()
                   and canvas.locator("#edCols").is_hidden()
-                  and canvas.locator("#edBatchBar").is_hidden()
+                  and canvas.locator("#edBatchBar").count() == 0
                   and canvas.locator("#edRoot").get_attribute("data-mode") == "list",
                   {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
             seed_row = canvas.locator(".ed-batch-row").first
@@ -640,12 +640,14 @@ def main() -> int:
             box = target_row.bounding_box()
             page.mouse.click(box["x"] + 4, box["y"] + box["height"] / 2)
             expect(canvas.locator("#edCols")).to_be_visible(timeout=20000)
-            check("点行任意位置直接切入三栏审核",
+            check("点行任意位置直接切入三栏审核（画布抬头一根毛都不留）",
                   canvas.locator("#edBatches").is_hidden()
-                  and canvas.locator("#edBatchBar").is_visible(),
+                  and canvas.locator("#edBatchBar").count() == 0
+                  and canvas.locator("#edBackList").count() == 0
+                  and panel.locator("#epBackList").is_visible(),
                   {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
             batch_no = canvas.locator("#edBatchNo").inner_text().strip()
-            check("二屏抬头写着当前批次号", batch_no == "批次 #" + batch_id,
+            check("读屏状态位记着当前批次号", batch_no == "批次 #" + batch_id,
                   {"batch_no": batch_no})
             batch_stat = canvas.locator("#edBatchStat").inner_text().strip()
             card = next(c for c in pending_cards(base) if c["batch_id"] == batch_id)
@@ -929,16 +931,16 @@ def main() -> int:
             check("画布内没有任何顶栏或工具条",
                   canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
                   .count() == 0)
-            check("画布没有底部横条，钮只有逐题跳转、切图与回列表",
+            check("画布没有底部横条，钮只有逐题跳转与切图",
                   canvas.locator(".ed-foot").count() == 0
                   and canvas.locator("#edCols button").count()
                   == canvas.locator(".ed-img-jump").count()
                   + canvas.locator(".ed-img-crop-btn").count()
-                  and canvas.locator("#edBatchBar button").count() == 1,
+                  and canvas.locator("#edBatchBar, #edBackList").count() == 0,
                   {"col_buttons": canvas.locator("#edCols button").count(),
                    "jumps": canvas.locator(".ed-img-jump").count(),
                    "crops": canvas.locator(".ed-img-crop-btn").count(),
-                   "bar_buttons": canvas.locator("#edBatchBar button").count(),
+                   "bar": canvas.locator("#edBatchBar, #edBackList").count(),
                    "foot": canvas.locator(".ed-foot").count()})
 
             def row_lines():
@@ -1030,10 +1032,13 @@ def main() -> int:
                       and panel.locator(selector).is_visible(),
                       {"selector": selector})
             fmt_boxes = [panel.locator(sel).bounding_box() for sel in
-                         ("#epFmtLatex", "#epFmtBoxed", "#epSwap")]
+                         ("#epBackList", "#epFmtLatex", "#epFmtBoxed", "#epSwap")]
             one_row = all(box is not None for box in fmt_boxes) and (
                 max(box["y"] for box in fmt_boxes) - min(box["y"] for box in fmt_boxes) < 8)
-            check("格式一/格式二/互换同一行", one_row, {"boxes": fmt_boxes})
+            check("返回列表/源码/卡片/互换同一行", one_row
+                  and panel.locator("#epHead #epBackList").count() == 1
+                  and panel.locator("#epHead #epFmtLatex").count() == 1,
+                  {"boxes": fmt_boxes})
             dock_box = panel.locator("#epDock").bounding_box()
             root_box = panel.locator("#epRoot").bounding_box()
             check("台账钉在辅助栏最底边",
@@ -1068,13 +1073,18 @@ def main() -> int:
                   and panel.locator("#epScroll #epMetaYear").count() == 1,
                   {"private": panel.locator("#epHead").locator(
                       "#epQuestionNo, #epType, #epDifficulty, #epScore").count()})
-            check("段三装着审核动作与视图切换",
+            check("段一死锁区装着返回列表与视图切换",
+                  panel.locator("#epHead #epBackList").count() == 1
+                  and panel.locator("#epHead #epFmtLatex").count() == 1
+                  and panel.locator("#epHead #epFmtBoxed").count() == 1
+                  and panel.locator("#epHead #epSwap").count() == 1,
+                  {})
+            check("段三只装审核动作（视图切换已搬进段一）",
                   panel.locator("#epDock #epApprove").count() == 1
                   and panel.locator("#epDock #epStash").count() == 1
                   and panel.locator("#epDock #epDelete").count() == 1
-                  and panel.locator("#epDock #epFmtLatex").count() == 1
-                  and panel.locator("#epDock #epFmtBoxed").count() == 1
-                  and panel.locator("#epDock #epSwap").count() == 1,
+                  and panel.locator("#epDock #epFmtLatex").count() == 0
+                  and panel.locator("#epDock #epSwap").count() == 0,
                   {})
             wrap_mode = panel.locator("#epHead .ep-head-grid").evaluate(
                 "node => getComputedStyle(node).flexWrap")
@@ -1082,8 +1092,8 @@ def main() -> int:
                   {"flex_wrap": wrap_mode})
             foot_heights = [round(panel.locator(sel).bounding_box()["height"], 1)
                             for sel in ("#epApprove", "#epStash", "#epDelete",
-                                        "#epFmtLatex", "#epFmtBoxed", "#epSwap")]
-            check("段三全是极矮的一排", max(foot_heights) <= 40,
+                                        "#epBackList", "#epFmtLatex", "#epFmtBoxed", "#epSwap")]
+            check("段三与死锁区全是极矮的一排", max(foot_heights) <= 40,
                   {"heights": foot_heights})
             check("段三压到两行以内", foot_box["height"] <= 130,
                   {"foot_height": round(foot_box["height"], 1)})

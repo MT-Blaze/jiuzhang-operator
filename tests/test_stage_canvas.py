@@ -16,13 +16,14 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
-STAGE = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
-WORKSPACE = (STATIC / "js" / "workspace.js").read_text(encoding="utf-8")
+STAGE = stage_source()
+WORKSPACE = workspace_source()
 
 
 class CanvasMarkupTest(unittest.TestCase):
@@ -129,8 +130,11 @@ class LruHibernationTest(unittest.TestCase):
 
     def test_03_the_active_tab_is_never_hibernated(self) -> None:
         block = STAGE[STAGE.index("function enforceLru("): STAGE.index("function request(")]
-        self.assertIn("tab.key === activeKey", block)
+        # 牺牲者的「跳过当前页」口径住在 core_tabs.js，组合根只负责递给它。
+        self.assertIn("tabsCore.lruVictim(live, activeKey)", block)
         self.assertIn("if (!oldest) break", block, "全是活动页时不许硬摘")
+        self.assertIn("if (tab.key === activeKey) return;", STAGE,
+                      "core_tabs.lruVictim 必须跳过当前页")
 
     def test_04_waking_a_sleeping_tab_remounts_it(self) -> None:
         block = STAGE[STAGE.index("function activate(key)"): STAGE.index("function applyFullscreen(")]

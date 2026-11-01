@@ -23,6 +23,7 @@ from pathlib import Path
 
 from app.core import bank_provider
 from app.core.config import settings
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 BANK = "org.jiuzhang.bank-engine"
@@ -175,7 +176,7 @@ class ProviderChannelTest(unittest.TestCase):
                          "一个方法不能既走 provider 又走页签自身 id")
 
     def test_10_host_relay_uses_the_resolved_provider(self) -> None:
-        source = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         self.assertIn("fetchJson(\"/api/bank/provider\")", source, "宿主没向底座取 provider")
         self.assertIn("function bankProviderBase()", source)
         self.assertIn("var sharedBase = bankProviderBase();", source)

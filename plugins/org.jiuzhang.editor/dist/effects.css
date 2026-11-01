@@ -1,0 +1,175 @@
+/* 交互效果：跳转高亮、双侧呼吸灯与悬浮幽灵滚动条。 */
+
+/* ---------- 阶段 4：批量条、当前题高亮与左栏跳转 ---------- */
+
+.ed-img-jump {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ed-img-jump[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+/* 当前题不许只靠颜色说话（AGENTS §6）：色块之外还有一道左侧实线，顶部进度条同步报第几题 */
+.ed-img-cell.is-active,
+.ed-src-cell.is-active,
+.ed-q-block.is-active {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: rgba(47, 107, 79, 0.05);
+}
+
+/* 画布底栏（.ed-foot 等）已于 2026-10-31 整条删除：它一换行就把 .ed-cols 的
+   行高压矮，中右两栏的底边框跟着上下跳——老师看到的「一会对齐一会不对齐」正是这一行。
+   批量保存改住辅助栏，样式改用 .ep-* 系列。 */
+
+/* ---------- 双侧呼吸灯（军令 #29） ----------
+   鼠标在画布某道题上停了 200ms，那道题的边框与右侧辅助栏的边缘同时亮起
+   莫兰迪冷蓝（青黛蓝）的呼吸灯：透明度 10% → 40% → 10%，周期 2 秒。
+   鼠标一移开，灯立刻熄灭。灯只是「我在这儿」的提示，不改变任何数据。 */
+
+@keyframes ep-lamp-breathe {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.4; }
+}
+
+.ed-img-cell[data-lamp="on"]::after,
+.ed-src-cell[data-lamp="on"]::after,
+.ed-q-block[data-lamp="on"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--lamp), inset 0 0 22px rgba(107, 140, 166, 0.45);
+  animation: ep-lamp-breathe 2s ease-in-out infinite;
+}
+
+/* 辅助栏亮的是边缘：整条边一圈冷蓝，老师在余光里就知道画布上停着哪一题。 */
+.ep-root[data-lamp="on"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--lamp), inset 0 0 26px rgba(107, 140, 166, 0.5);
+  animation: ep-lamp-breathe 2s ease-in-out infinite;
+}
+
+.ed-btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ed-btn:hover { border-color: var(--accent); }
+
+.ed-btn[disabled] {
+  cursor: default;
+  color: var(--line-strong);
+  background: var(--paper-deep);
+}
+
+.ed-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ed-btn-primary[disabled] {
+  background: var(--paper-deep);
+  border-color: var(--line-strong);
+  color: var(--line-strong);
+}
+
+/* ---------- 悬浮幽灵滚动条 ----------
+   平时轨道与滑块全透明，只在鼠标悬停该栏（:hover）或滚轮正在滚动（.is-scrolling）时
+   浮出一条淡淡的半透明虚影；不用系统原生深色条。滚动槽由 scrollbar-gutter 恒留，
+   出现与消失都不重排内容，「一会对齐一会不对齐」的横向抖动一并消失。 */
+.ed-pane-body,
+.ep-root,
+.ep-scroll,
+.ep-tree {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ed-pane-body:hover,
+.ep-root:hover,
+.ep-scroll:hover,
+.ep-tree:hover,
+.ed-pane-body.is-scrolling,
+.ep-root.is-scrolling,
+.ep-scroll.is-scrolling,
+.ep-tree.is-scrolling {
+  scrollbar-color: rgba(60, 52, 40, 0.28) transparent;
+}
+
+.ed-pane-body::-webkit-scrollbar,
+.ep-root::-webkit-scrollbar,
+.ep-scroll::-webkit-scrollbar,
+.ep-tree::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ed-pane-body::-webkit-scrollbar-track,
+.ep-root::-webkit-scrollbar-track,
+.ep-scroll::-webkit-scrollbar-track,
+.ep-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ed-pane-body::-webkit-scrollbar-thumb,
+.ep-root::-webkit-scrollbar-thumb,
+.ep-scroll::-webkit-scrollbar-thumb,
+.ep-tree::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 180ms ease;
+}
+
+.ed-pane-body:hover::-webkit-scrollbar-thumb,
+.ep-root:hover::-webkit-scrollbar-thumb,
+.ep-scroll:hover::-webkit-scrollbar-thumb,
+.ep-tree:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.22);
+}
+
+.ed-pane-body.is-scrolling::-webkit-scrollbar-thumb,
+.ep-root.is-scrolling::-webkit-scrollbar-thumb,
+.ep-scroll.is-scrolling::-webkit-scrollbar-thumb,
+.ep-tree.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.34);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  /* 灯还亮着，只是不再一呼一吸：减少动效的用户看到的是一圈常亮的冷蓝。 */
+  .ed-img-cell[data-lamp="on"]::after,
+  .ed-src-cell[data-lamp="on"]::after,
+  .ed-q-block[data-lamp="on"]::after,
+  .ep-root[data-lamp="on"]::after {
+    animation: none !important;
+    opacity: 0.4;
+  }
+}

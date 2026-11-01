@@ -24,6 +24,7 @@ from pathlib import Path
 from app.core import bank as bank_core
 from app.core.config import settings
 from tools.build_plugin import build_plugin
+from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.bank-engine"
@@ -172,7 +173,7 @@ class WorkspaceFrontendTest(unittest.TestCase):
         js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
         self.assertIn('"/api/workspaces"', js)
         self.assertIn('"/api/workspaces/switch"', js)
-        workspace_js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+        workspace_js = workspace_source()
         self.assertNotIn("function wireBank", workspace_js, "工作台下拉逻辑应已摘除")
         self.assertNotRegex(workspace_js, r"\(\?<[=!]", "前端禁用后行断言")
 

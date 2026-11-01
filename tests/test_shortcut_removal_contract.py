@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -61,7 +62,7 @@ class FrontendEvaporatedTest(unittest.TestCase):
             self.assertNotIn(token, source)
 
     def test_03_stage_does_not_relay_shortcut_requests(self) -> None:
-        source = (STATIC / "js" / "stage.js").read_text(encoding="utf-8")
+        source = stage_source()
         self.assertNotIn("shortcut", source)
 
     def test_04_chat_plugin_no_longer_asks_the_host(self) -> None:

@@ -39,6 +39,8 @@ from app.core.plugin_update import (
     write_pending,
 )
 
+from tests.core_sources import stage_source, workspace_source  # noqa: E402
+
 PLUGIN_ID = "org.jiuzhang.update-test"
 LICENSE_TEXT = "Apache License 2.0 (fixture)"
 
@@ -1342,8 +1344,8 @@ class UpdateUiWiringTest(unittest.TestCase):
         cls.html = (static / "settings.html").read_text(encoding="utf-8")
         cls.js = (static / "js" / "settings.js").read_text(encoding="utf-8")
         cls.css = (static / "css" / "settings.css").read_text(encoding="utf-8")
-        cls.workspace_js = (static / "js" / "workspace.js").read_text(encoding="utf-8")
-        cls.stage_js = (static / "js" / "stage.js").read_text(encoding="utf-8")
+        cls.workspace_js = workspace_source()
+        cls.stage_js = stage_source()
 
     def test_01_panel_has_every_control_the_spec_names(self):
         for element_id in ("upCheckBtn", "upAllBtn", "upStatus", "upList", "upHost",
