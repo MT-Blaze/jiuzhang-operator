@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "api_version": "1.0",
   "kind": "tool",
-  "description": "批次审核台：首屏左右 50/50，左栏历史批次，右栏圆角虚线收集筐——拖文件、点框、Ctrl+V 截图都落筐；筐内垂直单列（图标/文件名/红×）、独立滚动、底部固定【开始解析】才建批次。批次元数据接数据字典：11 场景、交叉标签按场景加权模糊匹配、新标签回车即记；学校只存 school_id、简称冲突硬拦截、AI 补全确认建档；标准名实时拼接、改元数据闪「已更新」、手改暂停。写库走宿主。",
+  "description": "批次审核台：三段式辅助栏——顶部固定当前题与私有元数据（题号/题型/难度/分值/考向/标签），中部批次公共元数据随画布滚动自动收起，底部固定存入主库/存为待办/彻底删除与格式切换。标签与考向走幽灵胶囊：悬停 150ms 自动接光标，打字出带路径的模糊搜索，回车取第一条。画布悬停 200ms，画布与辅助栏边缘同时亮莫兰迪冷蓝呼吸灯。学校只存 school_id，标准名实时拼接。写库走宿主。",
   "author": "九章算子",
   "license": "Apache-2.0",
   "min_host_version": "1.0.0",
@@ -65,14 +65,16 @@
       "stage.selection",
       "system.question_updated",
       "system.pending_updated",
-      "editor.collect_files"
+      "editor.collect_files",
+      "editor.canvas_state"
     ],
     "publish": [
       "region.dock",
       "stage.selection",
       "system.return_from_editor",
       "system.editor_close",
-      "editor.collect_files"
+      "editor.collect_files",
+      "editor.canvas_state"
     ]
   },
   "contributes": {

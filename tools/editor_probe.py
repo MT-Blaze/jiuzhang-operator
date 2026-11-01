@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -168,6 +169,41 @@ def pending_items(base: str, batch_id: str) -> list[dict]:
 def bank_total(base: str) -> int:
     _, data = http_json(base + f"/api/bank/plugins/{BANK_ID}/stats")
     return int(data.get("total") or 0)
+
+
+def seed_topics(data_dir: Path, plugin_id: str) -> list[dict]:
+    """给隔离题库种一棵小小的考向树。
+
+    非 default 工作区按底座口径一律建空库（没有考向、也没有题），
+    幽灵胶囊的「带路径模糊搜索」就没有路径可拼——这里手工种一棵，
+    让探针能真验到「册 › 章 › 节 › 考向」这条路径，而不是只看个空壳。
+    """
+    db = data_dir / "banks" / f"{plugin_id}.db"
+    if not db.is_file():
+        return []
+    now = time.strftime("%Y-%m-%dT%H:%M:%S+08:00")
+    rows = [
+        ("tp_bo00000001", None, "必修一册", "tp_bo00000001"),
+        ("tp_ch00000002", "tp_bo00000001", "第一章 函数与导数",
+         "tp_bo00000001/tp_ch00000002"),
+        ("tp_se00000003", "tp_ch00000002", "1.1 函数的概念与性质",
+         "tp_bo00000001/tp_ch00000002/tp_se00000003"),
+        ("tp_kx00000004", "tp_se00000003", "函数单调性与最值",
+         "tp_bo00000001/tp_ch00000002/tp_se00000003/tp_kx00000004"),
+    ]
+    con = sqlite3.connect(db, timeout=10.0)
+    try:
+        for order, (topic_id, parent_id, name, path) in enumerate(rows):
+            con.execute(
+                "INSERT OR REPLACE INTO topics"
+                " (id, parent_id, textbook_id, name, path, sort_order, status,"
+                "  created_at, updated_at)"
+                " VALUES (?, ?, NULL, ?, ?, ?, 'active', ?, ?)",
+                (topic_id, parent_id, name, path, order, now, now))
+        con.commit()
+    finally:
+        con.close()
+    return [{"id": row[0], "name": row[2], "path": row[3]} for row in rows]
 
 
 def inject_mark(source: str) -> str:
@@ -371,7 +407,8 @@ def main() -> int:
     )
 
     result: dict = {"tag": tag, "base": base, "checks": [], "console_errors": [],
-                    "page_errors": [], "http_failures": [], "metrics": {}}
+                    "page_errors": [], "http_failures": [], "write_calls": [],
+                    "metrics": {}}
 
     def check(name: str, ok: bool, detail=None) -> None:
         result["checks"].append({"name": name, "ok": bool(ok), "detail": detail})
@@ -379,6 +416,8 @@ def main() -> int:
     try:
         wait_health(base, process, server_log)
         total_before = bank_total(base)
+        # 隔离工作区是空库：种一棵考向树，幽灵胶囊才有真路径可拼。
+        seeded_topics = seed_topics(data_dir, BANK_ID)
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -390,6 +429,11 @@ def main() -> int:
             page.on("response", lambda response: result["http_failures"].append(
                 "%s %s" % (response.status, response.url))
                 if response.status >= 400 else None)
+            # 写操作（建学校、记标签、入池）连请求体一起留档：
+            # 只看状态码分不清「没发出去」和「发出去被拦」。
+            page.on("request", lambda request: result["write_calls"].append(
+                "%s %s %s" % (request.method, request.url, request.post_data or ""))
+                if request.method == "POST" and "/api/meta/" in request.url else None)
             page.goto(base + "/workspace", wait_until="networkidle")
 
             item = page.locator(".ws-plugin-item", has_text="录题工作台").first
@@ -793,7 +837,7 @@ def main() -> int:
                 "n => getComputedStyle(n).borderTopColor")
             invalid_flag = panel.locator("#epSchoolInput").get_attribute("aria-invalid")
             check("简称冲突：按主公原话拦截",
-                  conflict_text == "❌ 简称冲突，已被【哈尔滨师范大学附属中学】占用",
+                  "简称冲突，已被【哈尔滨师范大学附属中学】占用" in conflict_text,
                   {"error": conflict_text})
             check("简称冲突：输入框当场爆红",
                   invalid_flag == "true"
@@ -812,11 +856,35 @@ def main() -> int:
             expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
             expect(panel.locator("#epSchoolFullName")).to_have_value(
                 "哈尔滨市第九中学校", timeout=15000)
+            before_ok = panel.locator("#epRoot").evaluate(
+                """() => {
+                    var panel = window.__jzoEditorV2.panel || {};
+                    var full = document.getElementById('epSchoolFullName');
+                    var input = document.getElementById('epSchoolInput');
+                    return {
+                        pending: JSON.stringify(panel.schoolPending || null),
+                        full_value: full ? full.value : '',
+                        input_value: input ? input.value : ''
+                    };
+                }""")
             panel.locator("#epSchoolConfirmOk").click()
-            expect(panel.locator("#epSchoolList .ep-school")).to_have_count(2, timeout=15000)
+            deadline = time.time() + 15
+            school_chips = 0
+            while time.time() < deadline:
+                school_chips = panel.locator("#epSchoolList .ep-school").count()
+                if school_chips >= 2:
+                    break
+                page.wait_for_timeout(200)
             check("换个没被占用的简称，确认后正常建档",
-                  "哈九中" in panel.locator("#epSchoolList").inner_text(),
-                  {"chips": panel.locator("#epSchoolList").inner_text()})
+                  school_chips == 2
+                  and "哈九中" in panel.locator("#epSchoolList").inner_text(),
+                  {"count": school_chips,
+                   "chips": panel.locator("#epSchoolList").inner_text(),
+                   "error": panel.locator("#epSchoolError").inner_text(),
+                   "before_ok": before_ok,
+                   "writes": result["write_calls"][:8],
+                   "panel_schools": panel.locator("#epRoot").evaluate(
+                       "() => JSON.stringify((window.__jzoEditorV2.panel || {}).schools || [])")})
             # 元数据同步是异步的：等回执落地再点，别在半路把胶囊列表换成旧快照。
             page.wait_for_timeout(1200)
             panel.locator('#epSchoolList .ep-school:has-text("哈九中") .ep-school-x').click()
@@ -937,7 +1005,7 @@ def main() -> int:
                    "boxes": panel.locator(".ed-box-area").count()})
             check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
             audit_texts = [text.strip() for text in
-                           panel.locator('section[aria-label="审核动作"] button').all_inner_texts()]
+                           panel.locator("#epApprove, #epStash, #epDelete").all_inner_texts()]
             check("审核动作只有三颗钮：存入主库 / 存为待办 / 彻底删除",
                   audit_texts == ["存入主库", "存为待办", "彻底删除"],
                   {"buttons": audit_texts})
@@ -974,6 +1042,218 @@ def main() -> int:
                   - (dock_box["y"] + dock_box["height"]) <= 4,
                   {"root": root_box, "dock": dock_box})
             page.screenshot(path=str(shots / "v3-panel.png"))
+
+            # ---------- 军令 #29：辅助栏三段式 + 双侧呼吸灯 + 幽灵胶囊 ----------
+            head_box = panel.locator("#epHead").bounding_box()
+            mid_box = panel.locator("#epScroll").bounding_box()
+            foot_box = panel.locator("#epDock").bounding_box()
+            root_box = panel.locator("#epRoot").bounding_box()
+            check("辅助栏排成三段：段一顶部 · 段二中部 · 段三底部",
+                  None not in (head_box, mid_box, foot_box)
+                  and head_box["y"] + head_box["height"] <= mid_box["y"] + 1
+                  and mid_box["y"] + mid_box["height"] <= foot_box["y"] + 1,
+                  {"head": head_box, "mid": mid_box, "foot": foot_box})
+            check("段一钉在顶边、段三钉在底边（只有中段会滚）",
+                  root_box is not None and head_box is not None and foot_box is not None
+                  and abs(head_box["y"] - root_box["y"]) <= 2
+                  and 0 <= root_box["y"] + root_box["height"]
+                  - (foot_box["y"] + foot_box["height"]) <= 4,
+                  {"root": root_box, "head": head_box, "foot": foot_box})
+            check("段一只装单题私有元数据：题号 · 题型 · 难度 · 分值 · 考向 · 标签",
+                  panel.locator("#epHead").locator(
+                      "#epQuestionNo, #epType, #epDifficulty, #epScore").count() == 4
+                  and panel.locator("#epHead #epMounted").count() == 1
+                  and panel.locator("#epHead #epTagList").count() == 1
+                  and panel.locator("#epScroll #epMetaSec").count() == 1
+                  and panel.locator("#epScroll #epMetaYear").count() == 1,
+                  {"private": panel.locator("#epHead").locator(
+                      "#epQuestionNo, #epType, #epDifficulty, #epScore").count()})
+            check("段三装着审核动作与视图切换",
+                  panel.locator("#epDock #epApprove").count() == 1
+                  and panel.locator("#epDock #epStash").count() == 1
+                  and panel.locator("#epDock #epDelete").count() == 1
+                  and panel.locator("#epDock #epFmtLatex").count() == 1
+                  and panel.locator("#epDock #epFmtBoxed").count() == 1
+                  and panel.locator("#epDock #epSwap").count() == 1,
+                  {})
+            wrap_mode = panel.locator("#epHead .ep-head-grid").evaluate(
+                "node => getComputedStyle(node).flexWrap")
+            check("辅助栏拉窄时私有字段自动折行", wrap_mode == "wrap",
+                  {"flex_wrap": wrap_mode})
+            foot_heights = [round(panel.locator(sel).bounding_box()["height"], 1)
+                            for sel in ("#epApprove", "#epStash", "#epDelete",
+                                        "#epFmtLatex", "#epFmtBoxed", "#epSwap")]
+            check("段三全是极矮的一排", max(foot_heights) <= 40,
+                  {"heights": foot_heights})
+            check("段三压到两行以内", foot_box["height"] <= 130,
+                  {"foot_height": round(foot_box["height"], 1)})
+            ledger = panel.locator("#edPool").inner_text().strip()
+            check("最下一行灰字报账：待入库 N · 已入库 M",
+                  re.match(r"^待入库：\d+ · 已入库：\d+", ledger) is not None,
+                  {"ledger": ledger})
+
+            # ---------- 段二自动折叠：画布一滚动就收成一行矮标题 ----------
+            check("批次公共元数据默认展开",
+                  panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
+                  {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+            scrolled = canvas.locator("#edRoot").evaluate(
+                """() => {
+                    var bodies = ['#edImageBody', '#edSourceBody', '#edRenderBody'];
+                    for (var i = 0; i < bodies.length; i += 1) {
+                        var node = document.querySelector(bodies[i]);
+                        if (!node) continue;
+                        if (node.scrollHeight > node.clientHeight + 4) {
+                            node.scrollTop = Math.min(60, node.scrollHeight);
+                            return bodies[i];
+                        }
+                    }
+                    return '';
+                }""")
+            fold_state = ""
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                fold_state = panel.locator("#epMetaSec").get_attribute("data-fold") or ""
+                if fold_state == "closed":
+                    break
+                page.wait_for_timeout(100)
+            check("画布一滚动，批次公共元数据立刻收成一行矮标题",
+                  fold_state == "closed", {"fold": fold_state, "scrolled": scrolled})
+            check("收起时接收区还在（折的是元数据，不是落点）",
+                  panel.locator("#epIntake").is_visible(),
+                  {"intake": panel.locator("#epIntake").inner_text()[:40]})
+            std_now = panel.locator("#epStdName").input_value()
+            fold_summary = panel.locator("#epMetaSummary").inner_text().strip()
+            check("收起后那行矮标题报着标准名",
+                  fold_summary == std_now and bool(std_now),
+                  {"summary": fold_summary, "std": std_now})
+            page.screenshot(path=str(shots / "v29-fold.png"))
+            panel.locator("#epMetaFold").hover()
+            page.wait_for_timeout(400)
+            check("鼠标悬停在矮标题上：批次公共元数据展开",
+                  panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
+                  {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+            panel.locator("#epMessage").hover()
+            page.wait_for_timeout(600)
+            check("鼠标移开也不收起（老师正在填的字段不许被抢走）",
+                  panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
+                  {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+
+            # ---------- 双侧呼吸灯：画布悬停 200ms，两边同时亮 ----------
+            row0 = canvas.locator('.ed-img-cell[data-index="0"]')
+            expect(row0).to_be_visible(timeout=10000)
+            row0.hover()
+            page.wait_for_timeout(700)
+            lamp_cells = canvas.locator('#edRoot [data-lamp="on"]').count()
+            check("画布悬停超过 200ms：该题在三栏里同时亮起呼吸灯",
+                  lamp_cells >= 3
+                  and canvas.locator('.ed-img-cell[data-index="0"]').get_attribute("data-lamp") == "on"
+                  and canvas.locator('.ed-src-cell[data-index="0"]').get_attribute("data-lamp") == "on"
+                  and canvas.locator('.ed-q-block[data-index="0"]').get_attribute("data-lamp") == "on",
+                  {"lit": lamp_cells})
+            lamp_anim = canvas.locator('.ed-img-cell[data-index="0"]').evaluate(
+                """node => {
+                    var style = getComputedStyle(node, '::after');
+                    return {name: style.animationName, duration: style.animationDuration};
+                }""")
+            check("呼吸灯是真在呼吸：2 秒一轮的透明度动画",
+                  lamp_anim["name"] == "ep-lamp-breathe"
+                  and lamp_anim["duration"] == "2s",
+                  lamp_anim)
+            check("辅助栏边缘跟着一起亮（同一道题）",
+                  panel.locator('#epRoot[data-lamp="on"]').count() == 1
+                  and panel.locator("#epRoot").get_attribute("data-hover") == "0",
+                  {"hover": panel.locator("#epRoot").get_attribute("data-hover")})
+            panel_lamp_anim = panel.locator("#epRoot").evaluate(
+                """node => {
+                    var style = getComputedStyle(node, '::after');
+                    return {name: style.animationName, duration: style.animationDuration};
+                }""")
+            check("辅助栏那圈灯也在呼吸",
+                  panel_lamp_anim["name"] == "ep-lamp-breathe"
+                  and panel_lamp_anim["duration"] == "2s",
+                  panel_lamp_anim)
+            page.screenshot(path=str(shots / "v29-lamp.png"))
+            panel.locator("#epMessage").hover()
+            page.wait_for_timeout(700)
+            check("鼠标移开：两边的灯同时熄灭",
+                  canvas.locator('#edRoot [data-lamp="on"]').count() == 0
+                  and panel.locator('#epRoot[data-lamp="on"]').count() == 0,
+                  {"canvas": canvas.locator('#edRoot [data-lamp="on"]').count(),
+                   "panel": panel.locator('#epRoot[data-lamp="on"]').count()})
+
+            # ---------- 幽灵胶囊：悬停 150ms 自动聚焦，打字出候选，回车取第一条 ----------
+            panel.locator("#epTagList").hover()
+            tag_ghost = panel.locator("#epTagList .ep-ghost")
+            expect(tag_ghost).to_be_visible(timeout=10000)
+            ghost_text = tag_ghost.text_content().strip()
+            check("标签串尾巴挂着一颗虚线空壳「+ 请添加…」",
+                  ghost_text.startswith("+ 请添加"), {"text": ghost_text})
+            tag_ghost.hover()
+            page.wait_for_timeout(500)
+            ghost_state = tag_ghost.get_attribute("data-state")
+            ghost_focus = panel.locator("#epTagList").evaluate(
+                """host => {
+                    var input = host.querySelector('.ep-ghost-input');
+                    return !!(input && document.activeElement === input);
+                }""")
+            check("悬停 150ms 空壳自己活过来并接上光标（不用点）",
+                  ghost_state == "active" and ghost_focus,
+                  {"state": ghost_state, "focused": ghost_focus})
+            chips_before = panel.locator("#epTagList .ep-chip").count()
+            panel.locator("#epTagList .ep-ghost-input").fill("百日")
+            page.wait_for_timeout(800)
+            menu_names = [text.strip() for text in
+                          panel.locator("#epGhostTagMenu .ep-menu-text").all_inner_texts()]
+            check("打字弹出候选菜单", len(menu_names) >= 1, {"menu": menu_names})
+            panel.locator("#epTagList .ep-ghost-input").press("Enter")
+            page.wait_for_timeout(600)
+            chips_after = panel.locator("#epTagList .ep-chip").count()
+            chip_names = [text.strip() for text in
+                          panel.locator("#epTagList .ep-chip-name").all_inner_texts()]
+            check("回车默认取第一条上屏",
+                  chips_after == chips_before + 1
+                  and bool(menu_names) and chip_names and chip_names[-1] == menu_names[0],
+                  {"before": chips_before, "after": chips_after,
+                   "chips": chip_names, "menu": menu_names})
+            next_ghost = panel.locator("#epTagList .ep-ghost")
+            check("取完一颗，下一颗空壳立刻接上",
+                  next_ghost.get_attribute("data-state") == "active"
+                  and panel.locator("#epTagList .ep-ghost-input").input_value() == "",
+                  {"state": next_ghost.get_attribute("data-state")})
+            page.screenshot(path=str(shots / "v29-ghost-tag.png"))
+
+            panel.locator("#epMounted").hover()
+            topic_ghost = panel.locator("#epMounted .ep-ghost")
+            expect(topic_ghost).to_be_visible(timeout=10000)
+            topic_ghost.hover()
+            page.wait_for_timeout(500)
+            topic_focus = panel.locator("#epMounted").evaluate(
+                """host => {
+                    var input = host.querySelector('.ep-ghost-input');
+                    return !!(input && document.activeElement === input);
+                }""")
+            check("考向串尾巴也有一颗幽灵空壳，悬停 150ms 同样接上光标",
+                  topic_ghost.get_attribute("data-state") == "active" and topic_focus,
+                  {"state": topic_ghost.get_attribute("data-state"),
+                   "focused": topic_focus})
+            panel.locator("#epMounted .ep-ghost-input").fill("函数")
+            page.wait_for_timeout(1200)
+            topic_names = [text.strip() for text in
+                           panel.locator("#epGhostTopicMenu .ep-menu-text").all_inner_texts()]
+            topic_paths = [text.strip() for text in
+                           panel.locator("#epGhostTopicMenu .ep-menu-path").all_inner_texts()]
+            check("考向候选带着路径（册 › 章 › 节 › 考向）",
+                  len(topic_names) >= 1 and any("›" in path for path in topic_paths),
+                  {"names": topic_names, "paths": topic_paths})
+            if topic_names:
+                panel.locator("#epMounted .ep-ghost-input").press("Enter")
+                page.wait_for_timeout(600)
+                mounted_names = [text.strip() for text in
+                                 panel.locator("#epMounted .ep-chip-name").all_inner_texts()]
+                check("回车把考向挂上这一题",
+                      topic_names[0] in mounted_names,
+                      {"mounted": mounted_names, "first": topic_names[0]})
+            page.screenshot(path=str(shots / "v29-ghost-topic.png"))
 
             # ---------- 存为待办：改过的题原地写回中转池 ----------
             area = canvas.locator('.ed-src-area[data-index="0"]').first

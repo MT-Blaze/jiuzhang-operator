@@ -73,7 +73,10 @@ _STAGE_WEIGHTS = {"light", "heavy"}
 _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
                 # 军令 #27：录题插件在辅助栏那张 iframe 里收到的文件，转交给宿主，
                 # 由宿主送进画布的收集筐（插件两帧之间不直连）。
-                "editor.collect_files"}
+                "editor.collect_files",
+                # 军令 #29：画布把「鼠标停在哪一题」「画布在滚动」报给辅助栏，
+                # 辅助栏据此亮边缘、收批次公共元数据。
+                "editor.canvas_state"}
 _BUS_SUBSCRIBE = {
     "ui.params.changed",
     "layout.changed",
@@ -100,6 +103,8 @@ _BUS_SUBSCRIBE = {
     "system.pending_updated",
     # 军令 #27：宿主把收集到的文件转给画布的收集筐
     "editor.collect_files",
+    # 军令 #29：画布的悬停与滚动信号（呼吸灯与批次折叠）
+    "editor.canvas_state",
 }
 _BUS_MAX_TOPICS = 8
 

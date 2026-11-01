@@ -110,11 +110,13 @@ class EditorManifestTest(unittest.TestCase):
     def test_04_bus_subscriptions_match_delivery(self) -> None:
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
-                         ["editor.apply_patch", "editor.collect_files", "stage.selection",
+                         ["editor.apply_patch", "editor.canvas_state", "editor.collect_files",
+                          "stage.selection",
                           "system.open_editor", "system.pending_updated",
                           "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
-                         ["editor.collect_files", "region.dock", "stage.selection",
+                         ["editor.canvas_state", "editor.collect_files", "region.dock",
+                          "stage.selection",
                           "system.editor_close", "system.return_from_editor"])
 
     def test_05_commands_keep_the_ai_surface(self) -> None:
@@ -247,7 +249,8 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
         self.assertIn("function syncScroll(from)", js)
         self.assertIn("function alignRows()", js)
         self.assertIn('cell.style.minHeight = rowH + "px"', js)
-        self.assertIn('node.addEventListener("scroll", function () { syncScroll(node); })', js)
+        self.assertIn('node.addEventListener("scroll", function () {', js)
+        self.assertIn("syncScroll(node);", js)
         self.assertIn("if (scrollLock) return;", js, "三栏互相同步，不能再滚出回路")
         # 行高必须量小数：offsetHeight 会把 300.4 截成 300，框框视图里内容高常带小数，
         # 截整之后每一行的源码格都高出一丝，虚线一行一行往下飘（点格式二就歪的真相）。
@@ -363,11 +366,25 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
         self.assertIn("applySwap(value.swap, false);", activate)
 
     def test_07_view_buttons_in_the_panel_are_44px_hit_targets(self) -> None:
+        """军令 #29：底段按钮视觉上要极矮，但 AGENTS §6 的 44px 触控面不许丢——
+        靠伪元素把热区往外补一圈：视觉不破、命中区达标。"""
         css = read("plugin.css")
-        self.assertIn("min-height: 44px", rule_body(css, ".ep-seg-btn {"),
-                      "格式一/二搬进辅助栏后仍是 44px 触控面")
-        self.assertIn("min-height: 44px", rule_body(css, ".ep-btn {"),
+
+        def body_of(selector: str) -> str:
+            # 从行首找起：`.ep-foot-actions .ep-mini-btn` 这种带前缀的规则不算数。
+            at = css.index("\n" + selector + " {")
+            start = css.index("{", at) + 1
+            return css[start:css.index("}", start)]
+
+        self.assertIn("min-height: 44px", body_of(".ep-btn"),
                       "⇄ 互换按钮必须与辅助栏其它按钮同高")
+        for selector in (".ep-mini-btn", ".ep-foot-bar .ep-seg-btn"):
+            body = body_of(selector)
+            self.assertIn("min-height: 24px", body, f"{selector} 的视觉高度必须极矮")
+            self.assertIn("position: relative", body, f"{selector} 缺定位，热区补不上")
+            after = body_of(selector + "::after")
+            self.assertIn("inset: -10px 0", after,
+                          f"{selector} 的 44px 热区没补上")
         # 画布旧顶栏的按钮样式必须彻底退场，别留死规则
         for gone in (".ed-seg-btn", ".ed-swap-btn", ".ed-swap-inline"):
             self.assertNotIn(gone, css, f"{gone} 已随顶栏撤除")
@@ -673,7 +690,7 @@ class EditorPanelTest(unittest.TestCase):
         chip_x = rule_body(css, ".ep-chip-x")
         self.assertIn("position: relative", chip_x)
         self.assertIn(".ep-chip-x::after", css, "小圆钮要用伪元素把热区补到 44px")
-        self.assertIn("inset: -6px -8px", rule_body(css, ".ep-chip-x::after"))
+        self.assertIn("inset: -14px -8px", rule_body(css, ".ep-chip-x::after"))
 
     def test_08_save_is_locally_validated_before_the_bank_sees_it(self) -> None:
         """保存前的最小校验要在插件里做完：脏源码不配去敲宿主的写库通道。"""
@@ -1511,6 +1528,177 @@ class EditorFixtureContractTest(unittest.TestCase):
                 self.assertEqual(item["answer"]["kind"], "expression")
         ids = [item["id"] for item in self.items]
         self.assertEqual(len(ids), len(set(ids)), "假数据题号不许重复")
+
+
+class EditorThreeSegmentPanelTest(unittest.TestCase):
+    """军令 #29：辅助栏三段式排版 + 双侧呼吸灯 + 幽灵胶囊。"""
+
+    def test_01_the_panel_is_three_fixed_segments(self) -> None:
+        """段一顶部固定（当前题与私有元数据）、段二自己滚、段三底部固定。"""
+        panel = panel_only(read("index.html"))
+        for node_id in ("epHead", "epHeadNo", "epScore", "epMetaSec", "epMetaFold",
+                        "epMetaSummary", "epDock", "epViewNote"):
+            self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
+        # 三段的先后顺序不能乱：头 → 滚动区 → 脚
+        self.assertLess(panel.index('id="epHead"'), panel.index('id="epScroll"'))
+        self.assertLess(panel.index('id="epScroll"'), panel.index('id="epDock"'))
+        css = read("plugin.css")
+        self.assertIn("flex-direction: column", rule_body(css, ".ep-root"))
+        self.assertIn("overflow-y: auto", rule_body(css, ".ep-scroll"))
+
+    def test_02_the_private_metadata_lives_in_the_head(self) -> None:
+        """段一只放单题私有的六项：题号、题型、难度、分值、考向、标签。"""
+        head = read("index.html")
+        head = head[head.index('id="epHead"'):head.index('id="epScroll"')]
+        for node_id in ("epQuestionNo", "epType", "epDifficulty", "epScore",
+                        "epTagList", "epMounted"):
+            self.assertIn(f'id="{node_id}"', head, f"段一缺少 {node_id}")
+        # 段二不许再放单题私有的分值
+        tail = read("index.html")
+        tail = tail[tail.index('id="epScroll"'):]
+        self.assertNotIn('id="epScore"', tail, "分值属于单题私有，不许落进批次段")
+
+    def test_03_the_batch_section_folds_on_canvas_scroll(self) -> None:
+        """画布一滚动就收成一行矮标题；鼠标停在标题上才展开，移开不收。"""
+        js = read("plugin.js")
+        self.assertIn('panelMetaSecEl.setAttribute("data-fold", "closed")', js)
+        self.assertIn('panelMetaSecEl.setAttribute("data-fold", "open")', js)
+        self.assertIn('panelMetaFoldEl.addEventListener("mouseenter", expandMetaSection)', js)
+        # 移开鼠标不许收起：mouseleave 上不许挂收起动作
+        self.assertNotIn('panelMetaFoldEl.addEventListener("mouseleave"', js,
+                         "移开鼠标不许把老师正在填的批次字段收走")
+        self.assertIn('if (raw.scroll) collapseMetaSection();', js)
+        css = read("plugin.css")
+        self.assertIn(".ep-meta[data-fold=\"closed\"]", css)
+
+    def test_04_the_lamp_breathes_on_both_sides(self) -> None:
+        """悬停 200ms：画布那道题与辅助栏边缘同时亮莫兰迪冷蓝的呼吸灯。"""
+        js = read("plugin.js")
+        self.assertIn("var LAMP_DELAY_MS = 200;", js)
+        self.assertIn("var lampTimer = 0;", js)
+        self.assertIn('publish("editor.canvas_state", { hover: index });', js)
+        self.assertIn('publish("editor.canvas_state", { hover: -1 });', js)
+        css = read("plugin.css")
+        self.assertIn("@keyframes ep-lamp-breathe", css)
+        self.assertIn("0%, 100% { opacity: 0.1; }", css)
+        self.assertIn("50% { opacity: 0.4; }", css)
+        self.assertIn("2s ease-in-out infinite", css)
+        for selector in ('.ed-img-cell[data-lamp="on"]::after',
+                         '.ed-src-cell[data-lamp="on"]::after',
+                         '.ed-q-block[data-lamp="on"]::after',
+                         '.ep-root[data-lamp="on"]::after'):
+            self.assertIn(selector, css, f"{selector} 缺呼吸灯")
+        # 减少动效时灯改成常亮，不许一呼一吸
+        self.assertIn("prefers-reduced-motion: reduce", css)
+        self.assertIn("animation: none !important;", css)
+
+    def test_05_the_ghost_capsule_takes_focus_without_a_click(self) -> None:
+        """幽灵胶囊：虚线空壳 → 悬停 150ms 自己活过来接光标 → 打字出候选 → 回车上屏。"""
+        js = read("plugin.js")
+        self.assertIn("var GHOST_DELAY_MS = 150;", js)
+        self.assertIn("var GHOST_TEXT = \"+ 请添加…\";", js)
+        self.assertIn("rec.timer = window.setTimeout(function () { activateGhost(kind); }, GHOST_DELAY_MS);",
+                      js)
+        self.assertIn("rec.input.focus();", js)
+        # 回车取第一条
+        self.assertIn("if (rec.items.length) {", js)
+        self.assertIn("pickGhostItem(kind, rec.active >= 0 ? rec.active : 0);", js)
+        # 候选菜单带路径：条目要走 resolveTopicPath，路径用「 › 」拼。
+        self.assertIn("hostCall(\"bank.topics\", { q: query })", js)
+        self.assertIn("resolveTopicPath(item.value && item.value.path, item.name)", js)
+        self.assertIn(".join(\" › \")", js)
+        # 宿主每 10 秒最多放 80 个请求：候选条数有上限，路径解析按层缓存。
+        self.assertIn("var GHOST_TOPIC_LIMIT = 8;", js)
+        self.assertIn("rows.slice(0, GHOST_TOPIC_LIMIT)", js)
+        self.assertIn("function fetchTopicChildren(parentId)", js)
+        # 打字别一口一个请求：等手停下来再查。
+        self.assertIn("var GHOST_SEARCH_DELAY_MS = 180;", js)
+        # 鼠标移出输入区，空幽灵胶囊消失
+        self.assertIn("rec.ghost.hidden = true;", js)
+
+    def test_06_the_score_goes_into_the_plugin_extension(self) -> None:
+        """契约里没有分值字段：只进 extensions["org.jiuzhang.editor"].score。"""
+        js = read("plugin.js")
+        cell = fn_body(js, "questionFromParsed")
+        self.assertIn("editorExt.score = scoreText;", cell)
+        self.assertNotIn("doc.score", cell, "分值没有契约字段，不许往题目根字段塞")
+        self.assertIn("if (panelScoreEl) entry.score = panelScoreEl.value;", js)
+        self.assertIn("score: trunc(editorExt.score, 8),", js)
+
+    def test_07_the_ledger_line_reports_two_numbers(self) -> None:
+        """底段最下一行灰字：待入库：N · 已入库：M。"""
+        js = read("plugin.js")
+        pool = fn_body(js, "renderPool")
+        self.assertIn('"待入库：" + counts.fresh', pool)
+        self.assertIn('"已入库：" + counts.stored', pool)
+        self.assertIn('poolEl.textContent = parts.join(" · ");', pool)
+
+    def test_08_the_ghost_channel_is_declared_and_delivered(self) -> None:
+        """跨帧联动只能走宿主总线：清单声明、宿主白名单、宿主投递三处都要有。"""
+        self.assertIn("editor.canvas_state", manifest()["bus"]["subscribe"])
+        self.assertIn("editor.canvas_state", manifest()["bus"]["publish"])
+        host = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('"editor.canvas_state"', host, "宿主白名单里没有这条主题")
+        self.assertIn('notify(panel, "editor.canvas_state"', host, "宿主没有把它投给右栏面板")
+        whitelist = (ROOT / "app" / "core" / "plugins.py").read_text(encoding="utf-8")
+        self.assertIn('"editor.canvas_state"', whitelist, "底座白名单里没有这条主题")
+
+    def test_09_no_duplicate_ids_in_the_panel(self) -> None:
+        """id 撞车会让 getElementById 取错节点：折叠层曾把「主体」输入框顶掉。
+
+        判据取全页：画布与辅助栏是同一份 index.html 的两段 DOM，撞车一样要命。
+        """
+        html = read("index.html")
+        found = re.findall(r'\bid="([^"]+)"', html)
+        duplicates = sorted({node for node in found if found.count(node) > 1})
+        self.assertEqual(duplicates, [], f"index.html 里有重号的 id：{duplicates}")
+        # 折叠层与「主体」输入框必须各有一个自己的 id
+        self.assertIn('id="epMetaFoldBody"', html)
+        self.assertIn('id="epMetaBody"', html)
+        self.assertNotIn('id="epMetaBody" class="ep-fold-body"', html)
+
+    def test_10_the_intake_stays_outside_the_collapsible_body(self) -> None:
+        """收起的只是元数据字段：接收区（拖卷子/粘截图）这个落点不许跟着消失。"""
+        html = read("index.html")
+        intake_at = html.index('id="epIntake"')
+        fold_at = html.index('id="epMetaFoldBody"')
+        self.assertLess(intake_at, fold_at,
+                        "接收区必须在折叠层之外（折叠层一收，落点就跟着没了）")
+        self.assertLess(intake_at, html.index('id="epMetaYear"'),
+                        "接收区要在批次公共元数据的字段之前")
+        css = read("plugin.css")
+        self.assertIn('.ep-meta[data-fold="closed"] .ep-fold-body { display: none; }', css)
+        self.assertIn('.ep-meta[data-fold="closed"] .ep-intake', css)
+
+    def test_11_a_late_receipt_never_erases_what_the_teacher_just_added(self) -> None:
+        """回执晚到不许抹掉老师刚建档的学校：本地新增与本地摘掉分开记账。"""
+        js = read("plugin.js")
+        self.assertIn("function mergeSchools(details)", js)
+        merge = fn_body(js, "mergeSchools")
+        self.assertIn("panel.schoolAdded[id]", merge, "本地新增的学校必须被回执合并回来")
+        self.assertIn("panel.schoolDropped[id]", merge, "老师摘掉的学校不许被旧回执请回来")
+        self.assertIn("panel.schoolAdded[id] = true;", js)
+        self.assertIn("panel.schoolDropped[String(record.id || \"\")] = true;", js)
+        # 两处回执都走同一套合并
+        self.assertIn("panel.schools = mergeSchools(details);", js)
+        self.assertIn("panel.schools = mergeSchools(meta.school_details);", js)
+
+    def test_12_a_stale_menu_reply_never_overwrites_a_fresh_one(self) -> None:
+        """晚到的旧回执不许盖掉刚画出来的候选菜单：每份回执带序号。"""
+        js = read("plugin.js")
+        self.assertIn("var tagMenuSeq = 0;", js)
+        tags = fn_body(js, "loadTags")
+        self.assertIn("if (seq !== tagMenuSeq) return [];", tags)
+        self.assertIn("ghostState.tag.seq !== seq", js)
+        self.assertIn("ghostState.topic.seq !== seq", js)
+
+    def test_13_the_machine_only_text_does_not_take_up_the_dock(self) -> None:
+        """置信度占位与指标挂载点只给机器看：不许占段三的高度。"""
+        css = read("plugin.css")
+        self.assertIn(".ep-sr {", css)
+        body = css[css.index(".ep-sr {"):css.index(".ep-sr {") + 320]
+        self.assertIn("position: absolute;", body)
+        self.assertIn("clip: rect(0, 0, 0, 0);", body)
 
 
 class EditorPackageTest(unittest.TestCase):

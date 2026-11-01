@@ -66,6 +66,10 @@
   var SOURCE_MAX = 60000;
   var TOPIC_LIMIT = 8;
   var TAG_LIMIT = 32;
+  // 呼吸灯：鼠标在画布某题上停够 200ms 才亮，免得一路扫过去满屏闪。
+  var LAMP_DELAY_MS = 200;
+  // 幽灵胶囊：停在上面 150ms 自己活过来并接上光标，老师不用点。
+  var GHOST_DELAY_MS = 150;
   // 宿主 stage.js 对 instruction 的截断额度就是 400，面板先按同一个数拦，别让老师的长指令被悄悄切尾
   var AI_ASK_MAX = 400;
   // 防呆：界面三分钟没人碰，就静默把当前题存回中转池。
@@ -117,11 +121,16 @@
   var panelQuestionNoEl = document.getElementById("epQuestionNo");
   var panelExamTypeEl = document.getElementById("epExamType");
   var panelYearEl = document.getElementById("epYear");
+  var panelScoreEl = document.getElementById("epScore");
+  var panelHeadNoEl = document.getElementById("epHeadNo");
   var panelTagsEl = document.getElementById("epTags");
   var panelTagListEl = document.getElementById("epTagList");
-  var panelTagInputEl = null;
-  var tagEditorOpen = false;
   var panelMountedEl = document.getElementById("epMounted");
+  var panelMetaSecEl = document.getElementById("epMetaSec");
+  var panelMetaFoldEl = document.getElementById("epMetaFold");
+  var panelMetaSummaryEl = document.getElementById("epMetaSummary");
+  var panelGhostTagMenuEl = document.getElementById("epGhostTagMenu");
+  var panelGhostTopicMenuEl = document.getElementById("epGhostTopicMenu");
   var panelTreeEl = document.getElementById("epTopicTree");
   var panelTopicErrorEl = document.getElementById("epTopicError");
   var panelApproveEl = document.getElementById("epApprove");
@@ -231,6 +240,12 @@
     batchMeta: {},
     // 明细学校只存字典记录（id + 全称 + 简称），题目里也只认 school_id。
     schools: [],
+    // 老师刚建档、还没进回执快照的学校：回执晚到时不能把它抹掉。
+    schoolAdded: {},
+    // 老师亲手摘掉的学校：旧回执也不能把它请回来。
+    schoolDropped: {},
+    // 这套本地记账跟着哪一批走，换批就作废。
+    schoolBatchId: "",
     schoolOptions: [],
     schoolQuery: "",
     schoolPending: null,
@@ -242,8 +257,21 @@
     lastBody: "",
     metaSyncing: false,
     // 标准名双向联动：手改即 manual，元数据再动立刻回 auto。
-    stdManual: false
+    stdManual: false,
+    // 呼吸灯：画布送来的悬停题号（-1 表示没有悬停）。
+    lampHover: -1,
+    // 批次公共元数据是否展开（画布一滚动就收起，鼠标停在折叠头上才展开）。
+    foldOpen: true,
+    // 考向节点 id → 名称：模糊搜索要给人看的路径，bank.topics 只给 id 链。
+    topicNames: {},
+    // 父节点 id → 它那一层的子节点名：查一次路径就把整层名字收下来，不重复问。
+    topicChildren: {},
+    // 同一层正在飞的路：并发的路径解析共用一个请求，别把宿主问炸。
+    topicPending: {}
   };
+
+  // 幽灵胶囊（标签 / 考向各一颗）：空壳、输入框、候选、高亮项都在这儿。
+  var ghostState = { tag: null, topic: null };
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload, timeoutMs) {
@@ -1448,6 +1476,9 @@
       panel.schools = panel.schools.filter(function (item) {
         return String(item.id || "") !== String(record.id || "");
       });
+      // 老师亲手摘掉的，旧回执不许把它请回来。
+      panel.schoolDropped[String(record.id || "")] = true;
+      delete panel.schoolAdded[String(record.id || "")];
       renderSchools();
       queueMetaSync();
     });
@@ -1549,6 +1580,9 @@
       full_name: String(record.full_name || ""),
       short_name: String(record.short_name || record.full_name || "")
     });
+    // 本地先记一笔：这所在还没进回执快照，晚到的旧回执不许把它抹掉。
+    panel.schoolAdded[id] = true;
+    delete panel.schoolDropped[id];
     setSchoolError("");
     renderSchools();
     queueMetaSync();
@@ -1667,14 +1701,21 @@
     }
   }
 
+  // 候选菜单的回执序号：晚到的旧回执不许盖掉刚画出来的新菜单。
+  var tagMenuSeq = 0;
+
   function loadTags(query) {
     var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : "";
+    var seq = tagMenuSeq + 1;
+    tagMenuSeq = seq;
     return hostCall("meta.tags", { scene: scene, q: String(query || ""), limit: 8 })
       .then(function (result) {
+        if (seq !== tagMenuSeq) return [];
         var rows = (result && Array.isArray(result.tags)) ? result.tags : [];
         renderTagMenu(rows);
         return rows;
       }).catch(function (error) {
+        if (seq !== tagMenuSeq) return [];
         hideTagMenu();
         dockWarn("交叉标签没拉下来：" + ((error && error.message) || "未知原因"),
           errorDetail(error));
@@ -1772,6 +1813,7 @@
       }
       panelStdNameEl.setAttribute("data-mode", panel.stdManual ? "manual" : "auto");
     }
+    renderFoldSummary();
     if (options && options.flash) flashStd();
   }
 
@@ -1787,8 +1829,44 @@
     if (flash) flashStd();
   }
 
+  /**
+   * 回执只当加法：老师刚建档的学校还没进快照，晚到的旧回执不许把它抹掉；
+   * 老师亲手摘掉的也不许被旧回执请回来。
+   */
+  function mergeSchools(details) {
+    var rows = [];
+    var known = {};
+    (details || []).forEach(function (item) {
+      var id = String((item && item.id) || "");
+      if (!id || panel.schoolDropped[id]) return;
+      known[id] = true;
+      rows.push({
+        id: id,
+        full_name: String((item && item.full_name) || ""),
+        short_name: String((item && (item.short_name || item.full_name)) || "")
+      });
+    });
+    panel.schools.forEach(function (item) {
+      var id = String(item.id || "");
+      if (!id || known[id] || !panel.schoolAdded[id]) return;
+      known[id] = true;
+      rows.push({
+        id: id,
+        full_name: String(item.full_name || ""),
+        short_name: String(item.short_name || item.full_name || "")
+      });
+    });
+    return rows;
+  }
+
   function renderBatchMeta() {
     var meta = panel.batchMeta || {};
+    // 换批就换一套本地记账：上一批的加与减跟这一批无关。
+    if (String(panel.batchId || "") !== String(panel.schoolBatchId || "")) {
+      panel.schoolBatchId = String(panel.batchId || "");
+      panel.schoolAdded = {};
+      panel.schoolDropped = {};
+    }
     if (panelMetaYearEl) panelMetaYearEl.value = meta.year == null ? "" : String(meta.year);
     if (panelMetaRegionEl) panelMetaRegionEl.value = String(meta.region || "");
     if (panelMetaBodyEl) panelMetaBodyEl.value = String(meta.body || "");
@@ -1797,13 +1875,7 @@
     renderSceneOptions();
     if (panelMetaSceneEl) panelMetaSceneEl.value = String(meta.scene_type || "");
     var details = Array.isArray(meta.school_details) ? meta.school_details : [];
-    panel.schools = details.map(function (item) {
-      return {
-        id: String((item && item.id) || ""),
-        full_name: String((item && item.full_name) || ""),
-        short_name: String((item && (item.short_name || item.full_name)) || "")
-      };
-    }).filter(function (item) { return item.id; });
+    panel.schools = mergeSchools(details);
     panel.lastBody = String(meta.body || "");
     setStdMode(String(meta.name_mode || "auto") === "manual");
     renderSchools();
@@ -1819,13 +1891,7 @@
   function renderMetaView() {
     var meta = panel.batchMeta || {};
     if (Array.isArray(meta.school_details)) {
-      panel.schools = meta.school_details.map(function (item) {
-        return {
-          id: String((item && item.id) || ""),
-          full_name: String((item && item.full_name) || ""),
-          short_name: String((item && (item.short_name || item.full_name)) || "")
-        };
-      }).filter(function (item) { return item.id; });
+      panel.schools = mergeSchools(meta.school_details);
     }
     if (panelMetaSceneEl && String(panelMetaSceneEl.value || "") !== String(meta.scene_type || "")) {
       panelMetaSceneEl.value = String(meta.scene_type || "");
@@ -3379,11 +3445,16 @@
     var question = item.question || {};
     var source = question.source || {};
     var taxonomy = question.taxonomy || {};
+    var extensions = question.extensions && typeof question.extensions === "object"
+      ? question.extensions : {};
+    var editorExt = extensions["org.jiuzhang.editor"] && typeof extensions["org.jiuzhang.editor"] === "object"
+      ? extensions["org.jiuzhang.editor"] : {};
     return {
       type: TYPE_VALUES.indexOf(question.type) >= 0 ? question.type : "",
       difficulty: DIFFICULTY_VALUES.indexOf(question.difficulty) >= 0 ? question.difficulty : "L1",
       grade: trunc(question.grade, 20),
       tags: (question.tags || []).slice(0, TAG_LIMIT).join(","),
+      score: trunc(editorExt.score, 8),
       paper_title: trunc(source.paper_title, 120),
       question_no: trunc(source.question_no, 20),
       exam_type: trunc(source.exam_type, 64),
@@ -3978,11 +4049,12 @@
     var extras = keepExtensions(question.extensions);
     // 底座新增题目的写路径只从 extensions 认年级（core-bank.grade → org.jiuzhang.editor → legacy），
     // 契约根字段 grade 在 create 通道里没人读——沿用 v1 录题插件的键双写一次，否则年级落库即丢。
-    if (doc.grade) {
-      var editorExt = extras["org.jiuzhang.editor"] || {};
-      editorExt.grade = doc.grade;
-      extras["org.jiuzhang.editor"] = editorExt;
-    }
+    var editorExt = extras["org.jiuzhang.editor"] || {};
+    if (doc.grade) editorExt.grade = doc.grade;
+    // 分值同样没有契约字段：只存进插件自己的扩展里，题目正文一个字都不多。
+    var scoreText = String(meta.score == null ? "" : meta.score).trim().slice(0, 8);
+    if (scoreText) editorExt.score = scoreText;
+    if (Object.keys(editorExt).length) extras["org.jiuzhang.editor"] = editorExt;
     if (Object.keys(extras).length) doc.extensions = extras;
     return doc;
   }
@@ -4139,10 +4211,11 @@
   function renderPool() {
     var counts = state.slot === "stage.center" ? poolCounts() : panelPoolCounts();
     if (poolEl) {
-      // 辅助栏只有 231px 可用：零值段一律不显示，把宽度让给右侧的实时话术。
-      var parts = ["待入库 " + counts.fresh, "脏 " + counts.dirty];
-      if (counts.stored) parts.push("已入库 " + counts.stored);
-      if (counts.errored) parts.push("缺件 " + counts.errored);
+      // 军令 #29：底段只留一行灰字「待入库：N · 已入库：M」；脏与缺件只在真发生时补上，
+      // 平时这一行始终是两段，窄栏里也不会被挤成三行。
+      var parts = ["待入库：" + counts.fresh, "已入库：" + counts.stored];
+      if (counts.dirty) parts.push("未保存：" + counts.dirty);
+      if (counts.errored) parts.push("缺件：" + counts.errored);
       poolEl.textContent = parts.join(" · ");
       poolEl.setAttribute("data-new", String(counts.fresh));
       poolEl.setAttribute("data-stored", String(counts.stored));
@@ -4552,6 +4625,7 @@
       exam_type: d.exam_type || "",
       year: d.year || "",
       tags: d.tags || "",
+      score: d.score || "",
       topic_ids: [],
       topic_names: {}
     };
@@ -4574,12 +4648,13 @@
     if (panelExamTypeEl) entry.exam_type = panelExamTypeEl.value;
     if (panelYearEl) entry.year = panelYearEl.value;
     if (panelTagsEl) entry.tags = panelTagsEl.value;
+    if (panelScoreEl) entry.score = panelScoreEl.value;
     return entry;
   }
 
   function bindFormChanges() {
     [panelTypeEl, panelDifficultyEl, panelGradeEl, panelPaperEl, panelQuestionNoEl,
-      panelExamTypeEl, panelYearEl].forEach(function (node) {
+      panelExamTypeEl, panelYearEl, panelScoreEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onFormChange);
       node.addEventListener("change", onFormChange);
@@ -4725,6 +4800,8 @@
     if (panelExamTypeEl) panelExamTypeEl.value = merged.exam_type || "";
     if (panelYearEl) panelYearEl.value = merged.year || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
+    if (panelScoreEl) panelScoreEl.value = merged.score || "";
+    if (panelHeadNoEl) panelHeadNoEl.textContent = "第 " + (Number(sel.index || 0) + 1) + " 题";
     syncSourceFields();
     // 换批次要把公共元数据面板切过去；面板回来后再把题级的只读镜像对齐一次。
     syncBatchContext(sel.batch_id).then(function () { syncSourceFields(); });
@@ -5117,33 +5194,349 @@
     renderPanelMetrics();
   }
 
-  /** 标签胶囊（2026-11-01）：#epTags 只当「逗号串」的存档位，界面上的真身是这一串小胶囊。 */
+  // ---------- 幽灵胶囊（军令 #29）：标签与考向共用一套 ----------
+  // 胶囊串的尾巴永远挂着一颗虚线空壳「+ 请添加…」；鼠标停在上面 150ms，
+  // 它自己活过来变成实心胶囊并接上光标；打字弹出候选（考向带路径），
+  // 回车取第一条上屏，随即长出下一颗空壳；鼠标移出输入区，空壳自己消失。
+
+  var GHOST_TEXT = "+ 请添加…";
+  // 宿主每 10 秒最多放 80 个请求：候选条数、搜索节奏、路径解析都得有节制。
+  var GHOST_TOPIC_LIMIT = 8;
+  var GHOST_SEARCH_DELAY_MS = 180;
+
+  function ghostHost(kind) {
+    return kind === "topic" ? panelMountedEl : panelTagListEl;
+  }
+
+  function ghostMenu(kind) {
+    return kind === "topic" ? panelGhostTopicMenuEl : panelGhostTagMenuEl;
+  }
+
+  function ensureGhost(kind) {
+    var host = ghostHost(kind);
+    if (!host) return null;
+    var rec = ghostState[kind];
+    if (rec && rec.ghost && rec.ghost.parentNode === host) return rec;
+    var ghost = el("span", "ep-ghost");
+    ghost.setAttribute("data-kind", kind);
+    ghost.setAttribute("data-state", "idle");
+    var input = document.createElement("input");
+    input.className = "ep-ghost-input";
+    input.type = "text";
+    input.maxLength = 24;
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", kind === "topic" ? "搜索并挂载考向" : "搜索并添加标签");
+    input.setAttribute("placeholder", "打字搜索");
+    input.addEventListener("input", function () { onGhostInput(kind); });
+    input.addEventListener("keydown", function (event) { onGhostKey(kind, event); });
+    input.addEventListener("blur", function () {
+      window.setTimeout(function () { closeGhostMenu(kind); }, 150);
+    });
+    ghost.appendChild(el("span", "ep-ghost-text", GHOST_TEXT));
+    ghost.appendChild(input);
+    ghost.addEventListener("mouseenter", function () { armGhost(kind); });
+    ghost.addEventListener("mouseleave", function () { disarmGhost(kind); });
+    rec = { ghost: ghost, input: input, timer: 0, searchTimer: 0, items: [], active: -1 };
+    ghostState[kind] = rec;
+    host.appendChild(ghost);
+    return rec;
+  }
+
+  /** 清掉胶囊串里的旧胶囊，但留住尾巴上那颗幽灵空壳——重建它会把光标弄丢。 */
+  function chipRow(kind) {
+    var host = ghostHost(kind);
+    if (!host) return null;
+    var rec = ghostState[kind];
+    var ghost = rec ? rec.ghost : null;
+    Array.prototype.slice.call(host.children).forEach(function (node) {
+      if (node !== ghost) host.removeChild(node);
+    });
+    return ensureGhost(kind);
+  }
+
+  /** 胶囊插在幽灵空壳前面：空壳必须留在最后一位，而且不能被搬动——搬一下光标就没了。 */
+  function insertChip(host, chip, rec) {
+    var ghost = rec ? rec.ghost : null;
+    if (ghost && ghost.parentNode === host) host.insertBefore(chip, ghost);
+    else host.appendChild(chip);
+  }
+
+  function armGhost(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    if (rec.ghost.getAttribute("data-state") === "active") return;
+    window.clearTimeout(rec.timer);
+    rec.timer = window.setTimeout(function () { activateGhost(kind); }, GHOST_DELAY_MS);
+  }
+
+  function disarmGhost(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    window.clearTimeout(rec.timer);
+    rec.timer = 0;
+  }
+
+  function activateGhost(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    rec.ghost.setAttribute("data-state", "active");
+    rec.ghost.hidden = false;
+    if (!rec.input) return;
+    // 输入框在激活前是 display:none：先逼浏览器把样式算出来，focus 才落得进去。
+    void rec.input.offsetWidth;
+    try { window.focus(); } catch (error) { /* 抢不到焦点就算了，光标照样能闪 */ }
+    rec.input.focus();
+  }
+
+  /** 鼠标移出输入区：空壳消失；写了字的留着，别把老师打了一半的话弄丢。 */
+  function onGhostLeave(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    disarmGhost(kind);
+    window.clearTimeout(rec.searchTimer);
+    rec.searchTimer = 0;
+    var typed = rec.input ? String(rec.input.value || "").trim() : "";
+    if (typed) return;
+    rec.ghost.setAttribute("data-state", "idle");
+    rec.ghost.hidden = true;
+    closeGhostMenu(kind);
+  }
+
+  function wireGhostCell(kind) {
+    var host = ghostHost(kind);
+    if (!host) return;
+    var cell = host.parentNode;
+    if (!cell || !cell.classList || !cell.classList.contains("ep-cell")) return;
+    cell.addEventListener("mouseenter", function () {
+      var rec = ensureGhost(kind);
+      if (rec) rec.ghost.hidden = false;
+    });
+    cell.addEventListener("mouseleave", function () { onGhostLeave(kind); });
+  }
+
+  function onGhostInput(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    var query = rec.input ? String(rec.input.value || "").trim() : "";
+    if (!query) { closeGhostMenu(kind); return; }
+    // 每敲一个字就发一次请求，几十个字就能把宿主的限流闸门顶开：等手停下来再查。
+    window.clearTimeout(rec.searchTimer);
+    rec.searchTimer = window.setTimeout(function () {
+      if (kind === "topic") searchGhostTopics(query);
+      else searchGhostTags(query);
+    }, GHOST_SEARCH_DELAY_MS);
+  }
+
+  function onGhostKey(kind, event) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    var key = String(event.key || "");
+    if (key === "Enter") {
+      event.preventDefault();
+      if (rec.items.length) {
+        pickGhostItem(kind, rec.active >= 0 ? rec.active : 0);
+        return;
+      }
+      var typed = rec.input ? String(rec.input.value || "").trim() : "";
+      if (!typed) return;
+      // 考向只能从大纲树里取：凭空造一个节点等于在题库里造假考向。
+      if (kind === "topic") return;
+      closeGhostMenu(kind);
+      resetGhost(kind);
+      commitTags(splitTags(panelTagsEl.value).concat([typed]));
+      return;
+    }
+    if (key === "Escape") {
+      event.preventDefault();
+      if (rec.input) rec.input.value = "";
+      closeGhostMenu(kind);
+      rec.ghost.setAttribute("data-state", "idle");
+      return;
+    }
+    if (key === "ArrowDown" || key === "ArrowUp") {
+      if (!rec.items.length) return;
+      event.preventDefault();
+      var step = key === "ArrowDown" ? 1 : -1;
+      rec.active = (rec.active + step + rec.items.length) % rec.items.length;
+      renderGhostMenu(kind);
+      return;
+    }
+    if (key === "Backspace" && rec.input && !rec.input.value && kind === "tag") {
+      var list = splitTags(panelTagsEl.value);
+      if (!list.length) return;
+      list.pop();
+      commitTags(list);
+    }
+  }
+
+  /** 落定一颗，下一颗空壳立刻接上：老师可以连着挂好几个，中间不必再点一次。 */
+  function resetGhost(kind) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    if (rec.input) rec.input.value = "";
+    rec.ghost.setAttribute("data-state", "active");
+    rec.ghost.hidden = false;
+    if (rec.input) rec.input.focus();
+  }
+
+  function pickGhostItem(kind, index) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    var item = rec.items[index];
+    if (!item) return;
+    closeGhostMenu(kind);
+    resetGhost(kind);
+    if (kind === "topic") {
+      var node = item.value;
+      toggleTopic({ id: node.id, name: node.name });
+      return;
+    }
+    commitTags(splitTags(panelTagsEl.value).concat([item.name]));
+  }
+
+  function showGhostMenu(kind, items) {
+    var rec = ghostState[kind];
+    if (!rec) return;
+    rec.items = items || [];
+    rec.active = rec.items.length ? 0 : -1;
+    renderGhostMenu(kind);
+  }
+
+  function renderGhostMenu(kind) {
+    var rec = ghostState[kind];
+    var menu = ghostMenu(kind);
+    if (!rec || !menu) return;
+    menu.textContent = "";
+    rec.items.forEach(function (item, index) {
+      var node = el("button", "ep-menu-item");
+      node.type = "button";
+      node.setAttribute("role", "option");
+      node.setAttribute("data-index", String(index));
+      if (index === rec.active) node.setAttribute("data-active", "true");
+      node.appendChild(el("span", "ep-menu-text", item.name));
+      var tail = item.path || item.hint || "";
+      if (tail) node.appendChild(el("span", "ep-menu-path", tail));
+      node.addEventListener("mousedown", function (event) {
+        // mousedown 而不是 click：input 一失焦菜单就没了，click 永远等不到。
+        event.preventDefault();
+        pickGhostItem(kind, index);
+      });
+      menu.appendChild(node);
+    });
+    menu.hidden = !menu.children.length;
+  }
+
+  function closeGhostMenu(kind) {
+    var menu = ghostMenu(kind);
+    if (menu) menu.hidden = true;
+    var rec = ghostState[kind];
+    if (rec) { rec.items = []; rec.active = -1; }
+  }
+
+  function searchGhostTags(query) {
+    var rec = ghostState.tag;
+    var seq = rec ? (rec.seq || 0) + 1 : 1;
+    if (rec) rec.seq = seq;
+    var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : "";
+    hostCall("meta.tags", { scene: scene, q: query, limit: 8 }).then(function (result) {
+      if (!ghostState.tag || ghostState.tag.seq !== seq) return;
+      var rows = (result && Array.isArray(result.tags)) ? result.tags : [];
+      showGhostMenu("tag", rows.map(function (tag) {
+        return {
+          name: String(tag.name || ""),
+          hint: tag.scene_weight ? "本场景常用" : "",
+          value: String(tag.name || "")
+        };
+      }));
+    }, function () { closeGhostMenu("tag"); });
+  }
+
+  function searchGhostTopics(query) {
+    var rec = ghostState.topic;
+    var seq = rec ? (rec.seq || 0) + 1 : 1;
+    if (rec) rec.seq = seq;
+    hostCall("bank.topics", { q: query }).then(function (result) {
+      if (!ghostState.topic || ghostState.topic.seq !== seq) return;
+      var rows = (result && Array.isArray(result.items)) ? result.items : [];
+      // 候选条数要有上限：底下是全库大纲，一口气铺满会把菜单撑爆。
+      var items = rows.slice(0, GHOST_TOPIC_LIMIT).map(function (node) {
+        return { name: String(node.name || ""), path: "", hint: "", value: node };
+      });
+      showGhostMenu("topic", items);
+      // 路径里祖先的名字要现查：bank.topics 给的是一串 id，不给人看的名字。
+      items.forEach(function (item, index) {
+        resolveTopicPath(item.value && item.value.path, item.name).then(function (text) {
+          var rec = ghostState.topic;
+          if (!rec || !rec.items[index]) return;
+          rec.items[index].path = text;
+          renderGhostMenu("topic");
+        });
+      });
+    }, function () { closeGhostMenu("topic"); });
+  }
+
+  /** 问一层子节点，把这层所有 id → 名字收进缓存。
+   *  同一层只问一次，并发的解析共用同一个在途请求。 */
+  function fetchTopicChildren(parentId) {
+    var key = String(parentId || "");
+    if (panel.topicChildren[key]) return Promise.resolve(panel.topicChildren[key]);
+    if (panel.topicPending[key]) return panel.topicPending[key];
+    var request = hostCall("bank.topics", key ? { parent_id: key } : {}).then(function (result) {
+      var items = (result && Array.isArray(result.items)) ? result.items : [];
+      var names = {};
+      items.forEach(function (node) {
+        names[node.id] = node.name;
+        panel.topicNames[node.id] = node.name;
+      });
+      panel.topicChildren[key] = names;
+      delete panel.topicPending[key];
+      return names;
+    }, function () {
+      delete panel.topicPending[key];
+      return {};
+    });
+    panel.topicPending[key] = request;
+    return request;
+  }
+
+  /** bank.topics 的 path 是 id 链：逐级把祖先的名字问出来，拼成给人看的「册 › 章 › 考向」。
+   *  叶子自己的名字搜索时就知道了，不必再为它多问一趟。 */
+  function resolveTopicPath(path, leafName) {
+    var chain = String(path || "").split("/").filter(Boolean);
+    if (!chain.length) return Promise.resolve("");
+    var step = function (index) {
+      if (index >= chain.length - 1) return Promise.resolve();
+      if (panel.topicNames[chain[index]]) return step(index + 1);
+      var parentId = index === 0 ? "" : chain[index - 1];
+      return fetchTopicChildren(parentId).then(function () { return step(index + 1); });
+    };
+    return step(0).then(function () {
+      return chain.map(function (id, index) {
+        if (index === chain.length - 1 && leafName) return leafName;
+        return panel.topicNames[id] || "";
+      }).filter(Boolean).join(" › ");
+    });
+  }
+
+  /** 标签胶囊：#epTags 只当「逗号串」的存档位，界面上的真身是这一串小胶囊。 */
   function renderTags() {
     if (!panelTagListEl) return;
+    var fresh = chipRow("tag");
     var tags = splitTags(panelTagsEl ? panelTagsEl.value : "");
-    panelTagListEl.textContent = "";
     tags.forEach(function (tag) {
-      var chip = el("span", "ep-tag");
+      var chip = el("span", "ep-chip");
       chip.setAttribute("role", "listitem");
-      chip.appendChild(el("span", "ep-tag-name", tag));
-      var removeBtn = el("button", "ep-tag-x", "×");
+      chip.setAttribute("data-tag", tag);
+      chip.appendChild(el("span", "ep-chip-name", tag));
+      var removeBtn = el("button", "ep-chip-x", "×");
       removeBtn.type = "button";
       removeBtn.setAttribute("aria-label", "摘除标签 " + tag);
       removeBtn.addEventListener("click", function () {
         commitTags(splitTags(panelTagsEl.value).filter(function (one) { return one !== tag; }));
       });
       chip.appendChild(removeBtn);
-      panelTagListEl.appendChild(chip);
+      insertChip(panelTagListEl, chip, fresh);
     });
-    if (tagEditorOpen) {
-      panelTagListEl.appendChild(ensureTagInput());
-    } else {
-      var addBtn = el("button", "ep-tag-add", "+ 标签");
-      addBtn.type = "button";
-      addBtn.setAttribute("aria-label", "添加标签");
-      addBtn.addEventListener("click", openTagInput);
-      panelTagListEl.appendChild(addBtn);
-    }
   }
 
   function commitTags(tags) {
@@ -5158,68 +5551,14 @@
     onFormChange();
   }
 
-  /** 加标签的输入框是临时件：点「+ 标签」才挂上来，回车落定即收。 */
-  function ensureTagInput() {
-    if (panelTagInputEl) return panelTagInputEl;
-    panelTagInputEl = document.createElement("input");
-    panelTagInputEl.className = "ep-tag-input";
-    panelTagInputEl.type = "text";
-    panelTagInputEl.maxLength = 24;
-    panelTagInputEl.setAttribute("aria-label", "添加标签");
-    panelTagInputEl.setAttribute("placeholder", "回车确认");
-    panelTagInputEl.addEventListener("keydown", onTagInputKey);
-    panelTagInputEl.addEventListener("blur", function () { closeTagInput(true); });
-    return panelTagInputEl;
-  }
-
-  function openTagInput() {
-    if (!panelTagListEl) return;
-    tagEditorOpen = true;
-    panelTagListEl.appendChild(ensureTagInput());
-    panelTagInputEl.focus();
-  }
-
-  function closeTagInput(commit) {
-    if (!tagEditorOpen) return;
-    var input = panelTagInputEl;
-    var text = input ? input.value : "";
-    tagEditorOpen = false;
-    panelTagInputEl = null;
-    if (input && input.parentNode) input.parentNode.removeChild(input);
-    var parts = splitTags(text);
-    if (commit && parts.length) commitTags(splitTags(panelTagsEl.value).concat(parts));
-    else renderTags();
-  }
-
-  /** 回车或逗号落一颗标签；输入框空着时按退格，摘掉最后一颗。 */
-  function onTagInputKey(event) {
-    if (event.key === "Enter" || event.key === "," || event.key === "，") {
-      event.preventDefault();
-      closeTagInput(true);
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeTagInput(false);
-      return;
-    }
-    if (event.key === "Backspace" && panelTagInputEl && !panelTagInputEl.value) {
-      var list = splitTags(panelTagsEl.value);
-      if (!list.length) return;
-      list.pop();
-      commitTags(list);
-    }
-  }
-
   function renderMounted() {
     if (!panelMountedEl) return;
     var entry = panel.currentEntry || {};
     var ids = entry.topic_ids || [];
     var names = entry.topic_names || {};
-    panelMountedEl.textContent = "";
+    var fresh = chipRow("topic");
     if (!ids.length) {
-      panelMountedEl.appendChild(el("span", "ep-note", "还没挂考向"));
-      return;
+      insertChip(panelMountedEl, el("span", "ep-note", "还没挂考向"), fresh);
     }
     ids.forEach(function (id) {
       var chip = el("span", "ep-chip");
@@ -5232,7 +5571,7 @@
         toggleTopic({ id: id, name: names[id] || id });
       });
       chip.appendChild(removeBtn);
-      panelMountedEl.appendChild(chip);
+      insertChip(panelMountedEl, chip, fresh);
     });
   }
 
@@ -5286,6 +5625,113 @@
     }
   }
 
+  // ---------- 双侧呼吸灯与批次折叠（军令 #29） ----------
+  // 两个 iframe 之间不直连（AGENTS §2）：画布把「鼠标停在哪一题」「画布在滚动」
+  // 经宿主总线报给辅助栏，辅助栏据此亮边缘、收批次公共元数据。
+
+  var lampTimer = 0;
+  var lampPendingIndex = -1;
+  var lampIndex = -1;
+  var scrollSignalAt = 0;
+
+  function lampRowOf(node) {
+    if (!node || !node.closest) return null;
+    return node.closest(".ed-img-cell, .ed-src-cell, .ed-q-block");
+  }
+
+  function paintLamp(index) {
+    var cells = document.querySelectorAll(
+      ".ed-img-cell[data-index], .ed-src-cell[data-index], .ed-q-block[data-index]");
+    Array.prototype.forEach.call(cells, function (cell) {
+      if (Number(cell.getAttribute("data-index")) === index) cell.setAttribute("data-lamp", "on");
+      else cell.removeAttribute("data-lamp");
+    });
+  }
+
+  function lightLamp(index) {
+    lampIndex = index;
+    paintLamp(index);
+    publish("editor.canvas_state", { hover: index });
+  }
+
+  function extinguishLamp() {
+    window.clearTimeout(lampTimer);
+    lampTimer = 0;
+    lampPendingIndex = -1;
+    if (lampIndex < 0) return;
+    lampIndex = -1;
+    paintLamp(-1);
+    publish("editor.canvas_state", { hover: -1 });
+  }
+
+  /** 画布一滚动就报一声：批次公共元数据该收成一行矮标题了。 */
+  function signalCanvasScroll() {
+    var now = Date.now();
+    if (scrollSignalAt && now - scrollSignalAt < 400) return;
+    scrollSignalAt = now;
+    publish("editor.canvas_state", { scroll: true });
+  }
+
+  function wireLamp() {
+    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
+      if (!node) return;
+      node.addEventListener("mouseover", function (event) {
+        var row = lampRowOf(event.target);
+        if (!row) { extinguishLamp(); return; }
+        var index = Number(row.getAttribute("data-index"));
+        if (!Number.isFinite(index)) return;
+        if (index === lampPendingIndex) return;
+        lampPendingIndex = index;
+        window.clearTimeout(lampTimer);
+        lampTimer = window.setTimeout(function () { lightLamp(index); }, LAMP_DELAY_MS);
+      });
+      node.addEventListener("mouseleave", function () { extinguishLamp(); });
+    });
+  }
+
+  /** 辅助栏收到画布的状态：亮边缘、收批次公共元数据。 */
+  function onCanvasState(payload) {
+    if (!panelRoot) return;
+    var raw = payload && payload.raw ? payload.raw : payload;
+    if (!raw || typeof raw !== "object") return;
+    if (raw.hover != null) {
+      var hover = Number(raw.hover);
+      panel.lampHover = Number.isFinite(hover) ? hover : -1;
+      if (panel.lampHover >= 0) {
+        panelRoot.setAttribute("data-lamp", "on");
+        panelRoot.setAttribute("data-hover", String(panel.lampHover));
+      } else {
+        panelRoot.removeAttribute("data-lamp");
+        panelRoot.removeAttribute("data-hover");
+      }
+    }
+    if (raw.scroll) collapseMetaSection();
+  }
+
+  /** 画布一滚动，批次公共元数据立刻收成一行矮标题。 */
+  function collapseMetaSection() {
+    if (!panelMetaSecEl) return;
+    panel.foldOpen = false;
+    panelMetaSecEl.setAttribute("data-fold", "closed");
+    if (panelMetaFoldEl) panelMetaFoldEl.setAttribute("aria-expanded", "false");
+  }
+
+  function expandMetaSection() {
+    if (!panelMetaSecEl) return;
+    panel.foldOpen = true;
+    panelMetaSecEl.setAttribute("data-fold", "open");
+    if (panelMetaFoldEl) panelMetaFoldEl.setAttribute("aria-expanded", "true");
+  }
+
+  /** 收起来时那一行矮标题要报点什么：标准名最有用，没有就报场景。 */
+  function renderFoldSummary() {
+    if (!panelMetaSummaryEl) return;
+    var std = panelStdNameEl ? String(panelStdNameEl.value || "").trim() : "";
+    var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "";
+    panelMetaSummaryEl.textContent = std || scene || "—";
+    panelMetaSummaryEl.title = std || scene || "";
+  }
+
   function activatePanel() {
     if (!panelRoot) return;
     panelRoot.hidden = false;
@@ -5295,6 +5741,19 @@
     });
     bindFormChanges();
     renderTags();
+    renderMounted();
+    wireGhostCell("tag");
+    wireGhostCell("topic");
+    // 批次公共元数据：画布一滚动就收成一行矮标题；鼠标停在标题上才展开，
+    // 移开鼠标不收起——老师正在填的字段不许被自动折叠抢走。
+    if (panelMetaFoldEl) {
+      panelMetaFoldEl.addEventListener("mouseenter", expandMetaSection);
+      panelMetaFoldEl.addEventListener("click", function () {
+        var open = panelMetaSecEl && panelMetaSecEl.getAttribute("data-fold") === "open";
+        if (open) collapseMetaSection();
+        else expandMetaSection();
+      });
+    }
     [panelFmtLatexEl, panelFmtBoxedEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("click", function () {
@@ -5437,6 +5896,12 @@
         }
         return;
       }
+      if (message.event === "editor.canvas_state") {
+        // 画布的悬停与滚动：宿主只把它投给面板帧，面板据此亮边缘、收批次元数据
+        if (state.slot === "stage.center") return;
+        onCanvasState(message.payload || {});
+        return;
+      }
       if (message.event === "system.question_updated") {
         if (state.slot === "stage.center") consumeReceipts(message.payload);
         return;
@@ -5534,8 +5999,12 @@
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
       if (!node) return;
       wireGhost(node);
-      node.addEventListener("scroll", function () { syncScroll(node); });
+      node.addEventListener("scroll", function () {
+        syncScroll(node);
+        if (state.slot === "stage.center") signalCanvasScroll();
+      });
     });
+    wireLamp();
     // 三分钟没人碰就静默存回中转池：任何一次动手都算「有人在」，这里只做记账。
     ["pointerdown", "keydown", "wheel", "input"].forEach(function (type) {
       window.addEventListener(type, noteActivity, { passive: true, capture: true });

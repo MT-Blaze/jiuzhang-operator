@@ -40,7 +40,9 @@
     "system.open_bank",
     // 军令 #27：录题插件在辅助栏那张 iframe 里收到的文件，转交给宿主，
     // 由宿主送进画布的收集筐（插件两帧之间不直连）。
-    "editor.collect_files"
+    "editor.collect_files",
+    // 军令 #29：画布的悬停与滚动信号，投给右栏辅助栏（呼吸灯 + 批次折叠）。
+    "editor.canvas_state"
   ];
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
@@ -3011,6 +3013,11 @@
       // 中栏插件自己就是选区的来源，回灌只会形成回声。
       bus.on("stage.selection", function (event) {
         panels.forEach(function (panel) { notify(panel, "stage.selection", event.payload); });
+      });
+      // 军令 #29：画布报「鼠标停在哪一题」「画布在滚动」，只投给右栏辅助栏——
+      // 呼吸灯与批次折叠是辅助栏的事，画布自己不需要这份回执。
+      bus.on("editor.canvas_state", function (event) {
+        panels.forEach(function (panel) { notify(panel, "editor.canvas_state", event.payload); });
       });
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
