@@ -225,9 +225,40 @@ class StubProvider:
                 except json.JSONDecodeError:
                     body = {}
                 user = ""
+                system = ""
                 for message in body.get("messages") or []:
-                    if message.get("role") == "user":
+                    role = message.get("role")
+                    if role == "user":
                         user = str(message.get("content") or "")
+                    elif role == "system":
+                        system = str(message.get("content") or "")
+                # 军令 #28：学校全称补全走同一个 OpenAI 兼容口，桩也得认出来，
+                # 否则 UI 只会拿到一段「改写结果」JSON，全称永远是空的。
+                if "名称补全助手" in system or user.startswith("简称："):
+                    matched = re.search(r"简称：(.+)", user)
+                    short = matched.group(1).strip().splitlines()[0].strip() if matched else ""
+                    known = {
+                        "哈三中": "哈尔滨市第三中学校",
+                        "师大附中": "哈尔滨师范大学附属中学",
+                        "哈师大附中": "哈尔滨师范大学附属中学",
+                        "哈九中": "哈尔滨市第九中学校",
+                    }
+                    full = known.get(short, f"{short}（探针补全）" if short else "")
+                    payload = json.dumps(
+                        {"full_name": full, "confidence": 0.9 if full else 0.0},
+                        ensure_ascii=False,
+                    )
+                    reply = json.dumps({
+                        "choices": [{"message": {"content": payload}}],
+                        "model": "probe-stub",
+                        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                    }, ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(reply)))
+                    self.end_headers()
+                    self.wfile.write(reply)
+                    return
                 field_match = re.search(r"## 需要改写的字段\n(\w+)", user)
                 field = field_match.group(1) if field_match else "stem"
                 content_match = re.search(r"## 该字段当前内容\n([\s\S]*?)\n\n## 老师指令", user)
@@ -584,66 +615,226 @@ def main() -> int:
                   and panel.locator("#epMetaYear").count() == 1
                   and panel.locator("#epMetaRegion").count() == 1
                   and panel.locator("#epMetaBody").count() == 1
+                  and panel.locator("#epMetaScene").count() == 1
                   and panel.locator("#epMetaExamType").count() == 1
                   and panel.locator("#epMetaSubject").count() == 1
-                  and panel.locator("#epStdName").count() == 1,
+                  and panel.locator("#epStdName").count() == 1
+                  and panel.locator("#epSchoolInput").count() == 1,
                   {"meta_sections": panel.locator(".ep-meta").count()})
-            check("标准名那格是只读的（手改不了）",
-                  panel.locator("#epStdName").get_attribute("readonly") is not None,
-                  {"readonly": panel.locator("#epStdName").get_attribute("readonly")})
+            check("标准名那一格可以手改（双向联动的入口）",
+                  panel.locator("#epStdName").get_attribute("readonly") is None
+                  and panel.locator("#epStdName").get_attribute("data-mode") == "auto"
+                  and panel.locator("#epStdHint").get_attribute("data-mode") == "auto",
+                  {"readonly": panel.locator("#epStdName").get_attribute("readonly"),
+                   "mode": panel.locator("#epStdName").get_attribute("data-mode")})
             check("辅助栏顶部第一行是原文件名、第二行是标准名",
                   panel.locator("#epSrcName").count() == 1
                   and panel.locator("#epStdName").count() == 1
                   and panel.locator(".ep-top .ep-src-name").count() == 1,
                   {})
+            # 11 个场景由底座字典下发：先等下拉真的装满，再往下考标准名。
+            expect(panel.locator("#epMetaScene option")).to_have_count(12, timeout=15000)
             panel.locator("#epMetaYear").fill("2024")
             panel.locator("#epMetaRegion").fill("黑吉辽")
             panel.locator("#epMetaBody").fill("三省六校")
+            panel.locator("#epMetaScene").select_option("校考题")
             panel.locator("#epMetaExamType").fill("高三联考")
             panel.locator("#epMetaSubject").fill("数学")
             expect(panel.locator("#epMetaSchools")).to_be_visible(timeout=8000)
+
+            # ---------- 军令 #28：学校字典（AI 补全 → 确认 → 建档） ----------
             panel.locator("#epSchoolInput").fill("哈三中")
             panel.locator("#epSchoolInput").press("Enter")
+            expect(panel.locator("#epSchoolConfirm")).to_be_visible(timeout=15000)
+            expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
+            suggest_full = panel.locator("#epSchoolFullName").input_value()
+            check("查不到学校时先让 AI 补全全称，不擅自建档",
+                  suggest_full == "哈尔滨市第三中学校",
+                  {"full_name": suggest_full})
+            status, dict_before = http_json(
+                base + "/api/meta/schools?q=" + urllib.parse.quote("哈三中"))
+            check("AI 建议只放在确认卡里：此刻字典还是空的",
+                  status == 200 and dict_before.get("schools") == [],
+                  {"schools": dict_before.get("schools")})
+            panel.locator("#epSchoolConfirmOk").click()
+            expect(panel.locator("#epSchoolList .ep-school")).to_have_count(1, timeout=15000)
+            chip = panel.locator("#epSchoolList .ep-school").first
+            chip_id = chip.get_attribute("data-school-id") or ""
+            chip_text = panel.locator("#epSchoolList").inner_text()
+            check("老师确认后学校进字典，胶囊带 school_id、显示简称",
+                  chip_id.startswith("sch_") and "哈三中" in chip_text,
+                  {"id": chip_id, "chips": chip_text})
+
+            # ---------- 军令 #28：交叉标签（按场景加权 + 模糊匹配 + 回车即记） ----------
+            panel.locator("#epMetaExamType").fill("")
+            panel.locator("#epMetaScene").select_option("外国题")
+            panel.locator("#epMetaExamType").focus()
+            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
+            foreign_menu = [text.strip() for text in
+                            panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
+            check("选【外国题】时 AMC / A-Level / IB 先冒头",
+                  [line.split("\n")[0].strip() for line in foreign_menu][:3]
+                  == ["AMC", "A-Level", "IB"],
+                  {"menu": foreign_menu})
+            panel.locator("#epMetaScene").select_option("校考题")
+            panel.locator("#epMetaExamType").fill("模")
+            expect(panel.locator("#epTagMenu .ep-menu-item")).to_have_count(8, timeout=10000)
+            mo_menu = [text.strip().split("\n")[0].strip() for text in
+                       panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
+            check("打一个「模」字，零到七模一次带出来",
+                  all(name in mo_menu for name in
+                      ("零模", "一模", "二模", "三模", "四模", "五模", "六模", "七模")),
+                  {"menu": mo_menu})
+            page.screenshot(path=str(shots / "v28-tag-menu.png"))
+            panel.locator("#epMetaExamType").fill("百日誓师考")
+            panel.locator("#epMetaExamType").press("Enter")
+            deadline = time.time() + 20
+            saved_tag = None
+            while time.time() < deadline:
+                status, tag_body = http_json(
+                    base + "/api/meta/tags?scene=" + urllib.parse.quote("校考题")
+                    + "&q=" + urllib.parse.quote("百日"))
+                saved_tag = next((tag for tag in tag_body.get("tags", [])
+                                  if tag.get("name") == "百日誓师考"), None)
+                # 种子里早有一条全局权重的「百日誓师考」；要等的是本场景那一笔。
+                if saved_tag and saved_tag.get("scene_weight", 0) >= 1:
+                    break
+                page.wait_for_timeout(200)
+            check("老师手打的新标签，回车即记进本地标签库",
+                  saved_tag is not None and saved_tag.get("scene_weight", 0) >= 1,
+                  {"tag": saved_tag})
+            panel.locator("#epMetaExamType").fill("百日")
+            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
+            next_menu = panel.locator("#epTagMenu").inner_text()
+            check("下次再打「百日」，新标签立刻弹出来",
+                  "百日誓师考" in next_menu, {"menu": next_menu[:120]})
+            panel.locator("#epMetaExamType").fill("高三联考")
+            panel.locator("#epMetaExamType").press("Enter")
             page.wait_for_timeout(300)
-            check("主体填了，明细学校冒成胶囊",
-                  panel.locator(".ep-school").count() == 1
-                  and "哈三中" in panel.locator("#epSchoolList").inner_text(),
-                  {"chips": panel.locator(".ep-school").count()})
+
             standard = panel.locator("#epStdName").input_value()
-            check("标准名按「年份-地区-主体-类型-学科」自动拼出来",
-                  standard == "2024-黑吉辽-三省六校-高三联考-数学",
+            check("标准名按「年份-地区-主体-场景-类型-学科」自动拼出来",
+                  standard == "2024-黑吉辽-三省六校-校考题-高三联考-数学",
                   {"standard": standard})
+
+            # ---------- 军令 #28：标准名双向联动（闪烁 / 手改暂停 / 再动恢复） ----------
+            panel.locator("#epMetaRegion").fill("黑龙江")
+            page.wait_for_timeout(150)
+            flash_live = panel.locator("#epStdFlash").evaluate(
+                "n => ({text: (n.textContent || '').trim(), show: n.getAttribute('data-show')})")
+            check("元数据一改，标准名实时重拼并闪一下「已更新」",
+                  flash_live["show"] == "true" and "已更新" in flash_live["text"],
+                  {"flash": flash_live, "name": panel.locator("#epStdName").input_value()})
+            page.screenshot(path=str(shots / "v28-std-flash.png"))
+            panel.locator("#epStdName").fill("我手改的卷名")
+            page.wait_for_timeout(200)
+            check("手改标准名：自动拼接当场暂停",
+                  panel.locator("#epStdName").get_attribute("data-mode") == "manual"
+                  and "暂停" in panel.locator("#epStdHint").inner_text(),
+                  {"mode": panel.locator("#epStdName").get_attribute("data-mode"),
+                   "hint": panel.locator("#epStdHint").inner_text()})
+            panel.locator("#epMetaRegion").fill("黑吉辽")
+            page.wait_for_timeout(400)
+            resumed = panel.locator("#epStdName").input_value()
+            resumed_mode = panel.locator("#epStdName").get_attribute("data-mode")
+            check("再动元数据：自动拼接恢复，手改名被重拼覆盖",
+                  resumed_mode == "auto"
+                  and resumed == "2024-黑吉辽-三省六校-校考题-高三联考-数学",
+                  {"mode": resumed_mode, "name": resumed})
+
+            expected_name = "2024-黑吉辽-三省六校-校考题-高三联考-数学"
             deadline = time.time() + 30
             synced_source: dict = {}
+            synced_tags: list = []
             while time.time() < deadline:
                 items = pending_items(base, batch_id)
                 synced_source = dict((items[0].get("question") or {}).get("source") or {}) if items else {}
-                if synced_source.get("school") == "三省六校":
+                synced_tags = list((items[0].get("question") or {}).get("tags") or []) if items else []
+                if synced_source.get("paper_title") == expected_name \
+                        and synced_source.get("scene_type") == "校考题":
                     break
                 page.wait_for_timeout(300)
             check("改公共字段，这一批的题立刻同步 sources",
-                  synced_source.get("school") == "三省六校"
+                  synced_source.get("body") == "三省六校"
                   and synced_source.get("region") == "黑吉辽"
+                  and synced_source.get("scene_type") == "校考题"
                   and synced_source.get("exam_type") == "高三联考"
                   and int(synced_source.get("year") or 0) == 2024
-                  and synced_source.get("paper_title") == "2024-黑吉辽-三省六校-高三联考-数学",
+                  and synced_source.get("paper_title") == expected_name,
                   {"source": synced_source})
-            synced_tags = []
-            items = pending_items(base, batch_id)
-            if items:
-                synced_tags = list((items[0].get("question") or {}).get("tags") or [])
-            check("明细学校落成隐藏标签（井号开头）",
-                  "#哈三中" in synced_tags, {"tags": synced_tags})
+            check("题目只落 school_id，校名一个字节都不进题目",
+                  synced_source.get("school_id") == chip_id
+                  and chip_id in list(synced_source.get("school_ids") or [])
+                  and not synced_source.get("school"),
+                  {"source": synced_source})
+            check("老口径的隐藏校名标签不再生成",
+                  not [tag for tag in synced_tags if str(tag).startswith("#")],
+                  {"tags": synced_tags})
+
+            # ---------- 军令 #28：简称撞车（原话 + 输入框爆红） ----------
+            status, seeded = http_post(
+                base + "/api/meta/schools",
+                {"full_name": "哈尔滨师范大学附属中学", "short_name": "师大附中"})
+            check("预置一所同名简称的学校", status == 201, {"status": status, "body": seeded})
+            panel.locator("#epSchoolInput").fill("师大附中")
+            expect(panel.locator(
+                '#epSchoolMenu [data-school-create="师大附中"]')).to_be_visible(timeout=15000)
+            # 老师明确点「＋ 新建学校」，哪怕这个简称已经有人用——底座必须拦。
+            panel.locator(
+                '#epSchoolMenu [data-school-create="师大附中"]').dispatch_event("mousedown")
+            expect(panel.locator("#epSchoolConfirm")).to_be_visible(timeout=15000)
+            expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
+            # 老师把 AI 给的全称改成另一所学校：全称是新的，简称却已被占用。
+            panel.locator("#epSchoolFullName").fill("哈尔滨市第九中学校")
+            panel.locator("#epSchoolConfirmOk").click()
+            expect(panel.locator("#epSchoolError")).to_be_visible(timeout=15000)
+            conflict_text = panel.locator("#epSchoolError").inner_text().strip()
+            border_color = panel.locator("#epSchoolInput").evaluate(
+                "n => getComputedStyle(n).borderTopColor")
+            invalid_flag = panel.locator("#epSchoolInput").get_attribute("aria-invalid")
+            check("简称冲突：按主公原话拦截",
+                  conflict_text == "❌ 简称冲突，已被【哈尔滨师范大学附属中学】占用",
+                  {"error": conflict_text})
+            check("简称冲突：输入框当场爆红",
+                  invalid_flag == "true"
+                  and "is-invalid" in (panel.locator("#epSchoolInput").get_attribute("class") or "")
+                  and border_color == "rgb(155, 59, 45)",
+                  {"aria_invalid": invalid_flag, "border": border_color})
+            check("简称冲突：学校里没有多出这一所",
+                  len(http_json(base + "/api/meta/schools?q="
+                                + urllib.parse.quote("哈尔滨市第九中学校"))[1].get("schools") or []) == 0,
+                  {})
+            page.screenshot(path=str(shots / "v28-school-conflict.png"))
+            # 改个没被占用的简称，同一个全称就能建档 —— 老师有路可走。
+            panel.locator("#epSchoolInput").fill("哈九中")
+            panel.locator("#epSchoolInput").press("Enter")
+            expect(panel.locator("#epSchoolConfirm")).to_be_visible(timeout=15000)
+            expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
+            expect(panel.locator("#epSchoolFullName")).to_have_value(
+                "哈尔滨市第九中学校", timeout=15000)
+            panel.locator("#epSchoolConfirmOk").click()
+            expect(panel.locator("#epSchoolList .ep-school")).to_have_count(2, timeout=15000)
+            check("换个没被占用的简称，确认后正常建档",
+                  "哈九中" in panel.locator("#epSchoolList").inner_text(),
+                  {"chips": panel.locator("#epSchoolList").inner_text()})
+            # 元数据同步是异步的：等回执落地再点，别在半路把胶囊列表换成旧快照。
+            page.wait_for_timeout(1200)
+            panel.locator('#epSchoolList .ep-school:has-text("哈九中") .ep-school-x').click()
+            page.wait_for_timeout(300)
+            check("胶囊上的 × 能把学校从这一批里去掉",
+                  panel.locator("#epSchoolList .ep-school").count() == 1,
+                  {"chips": panel.locator("#epSchoolList .ep-school").count()})
+
             deadline = time.time() + 15
             paper_value = ""
             while time.time() < deadline:
                 paper_value = panel.locator("#epPaper").input_value()
-                if paper_value == "2024-黑吉辽-三省六校-高三联考-数学":
+                if paper_value == expected_name:
                     break
                 page.wait_for_timeout(200)
             check("题级的原卷名被公共标准名接管（只读镜像）",
                   panel.locator("#epPaper").get_attribute("readonly") is not None
-                  and paper_value == "2024-黑吉辽-三省六校-高三联考-数学",
+                  and paper_value == expected_name,
                   {"paper": paper_value})
 
             # ---------- 三栏骨架 ----------
@@ -1068,7 +1259,8 @@ def main() -> int:
                 body: rect(body), left: rect(left), right: rect(right), basket: rect(box),
                 borderStyle: cs ? cs.borderTopStyle : '',
                 borderRadius: parseFloat(cs ? cs.borderTopLeftRadius : '0') || 0,
-                textAlign: cs ? cs.textAlign : ''
+                textAlign: cs ? cs.textAlign : '',
+                flexDirection: cs ? cs.flexDirection : ''
               };
             }""")
             result["metrics"]["split"] = split
@@ -1082,12 +1274,13 @@ def main() -> int:
                   and abs(split["right"]["w"] - half) <= 1.0,
                   {"gap": gap, "half": half, "left": split["left"]["w"],
                    "right": split["right"]["w"], "body": split["body"]["w"]})
-            check("右栏是一只圆角虚线筐，文字居中",
+            check("右栏是圆角虚线筐，里面改成垂直单列",
                   split["borderStyle"] == "dashed"
                   and split["borderRadius"] >= 12
-                  and split["textAlign"] == "center",
+                  and split["textAlign"] == "left"
+                  and split["flexDirection"] == "column",
                   {"border": split["borderStyle"], "radius": split["borderRadius"],
-                   "align": split["textAlign"]})
+                   "align": split["textAlign"], "flex": split["flexDirection"]})
             check("虚线筐占满右栏（不是一小块）",
                   bool(split["basket"] and split["right"]
                        and split["basket"]["w"] >= split["right"]["w"] * 0.9),
@@ -1146,13 +1339,51 @@ def main() -> int:
                 canvas.locator("#edBasket").evaluate(script)
 
             basket_drop("三省联考.pdf", "application/pdf")
+            page.wait_for_timeout(300)
+            long_name = "2024年黑龙江省哈尔滨市第三中学校高三第三次模拟考试数学试卷（理科）.pdf"
+            basket_drop(long_name, "application/pdf")
             page.wait_for_timeout(400)
             items = canvas.locator("#edBasketList .ed-basket-item")
+            names = [items.nth(index).get_attribute("data-name")
+                     for index in range(items.count())]
             check("拖进来的普通文件在筐里排成一条，带文件名",
-                  items.count() == 1
-                  and items.first.get_attribute("data-name") == "三省联考.pdf",
-                  {"count": items.count(),
-                   "name": items.first.get_attribute("data-name") if items.count() else ""})
+                  items.count() == 2 and names[0] == "三省联考.pdf" and names[1] == long_name,
+                  {"count": items.count(), "names": names})
+            check("文档行左边是带后缀的页图标",
+                  canvas.locator("#edBasketList .ed-basket-icon").count() == items.count()
+                  and canvas.locator("#edBasketList .ed-basket-icon-ext").first.inner_text().strip()
+                  == "PDF",
+                  {"icons": canvas.locator("#edBasketList .ed-basket-icon").count(),
+                   "ext": canvas.locator("#edBasketList .ed-basket-icon-ext").first.inner_text()})
+            row_boxes = [items.nth(index).bounding_box() for index in range(items.count())]
+            basket_box = canvas.locator("#edBasket").bounding_box()
+            list_box = canvas.locator("#edBasketList").bounding_box()
+            check("垂直单列：每行等宽铺满、从上往下叠",
+                  bool(row_boxes[0] and row_boxes[1] and list_box)
+                  and abs(row_boxes[0]["width"] - row_boxes[1]["width"]) <= 1
+                  and abs(row_boxes[0]["x"] - row_boxes[1]["x"]) <= 1
+                  and row_boxes[1]["y"] >= row_boxes[0]["y"] + row_boxes[0]["height"]
+                  and abs(row_boxes[0]["width"] - list_box["width"]) <= 8,
+                  {"rows": row_boxes, "list": list_box})
+            ellipsis = items.nth(1).locator(".ed-basket-name").evaluate(
+                "n => ({overflow: getComputedStyle(n).textOverflow,"
+                " nowrap: getComputedStyle(n).whiteSpace,"
+                " clipped: n.scrollWidth > n.clientWidth, title: n.title})")
+            check("文件名太长自动省略，悬停看全名",
+                  ellipsis["overflow"] == "ellipsis" and ellipsis["nowrap"] == "nowrap"
+                  and ellipsis["clipped"] and ellipsis["title"] == long_name,
+                  ellipsis)
+            overflow = canvas.locator("#edBasketList").evaluate(
+                "n => getComputedStyle(n).overflowY")
+            check("文件列表在虚线框内独立滚动", overflow == "auto", {"overflow": overflow})
+            foot_box = canvas.locator("#edBasketFoot").bounding_box()
+            check("【开始解析】钉在筐底，不跟列表一起滚",
+                  bool(foot_box and basket_box and list_box)
+                  and foot_box["y"] >= list_box["y"] + list_box["height"] - 1
+                  and abs((foot_box["y"] + foot_box["height"])
+                          - (basket_box["y"] + basket_box["height"])) <= 20,
+                  {"foot": foot_box, "basket": basket_box, "list": list_box})
+            page.screenshot(path=str(shots / "v28-basket-list.png"))
             check("每个条目都带一个 × 移除钮",
                   canvas.locator("#edBasketList .ed-basket-x").count() == items.count(),
                   {"x": canvas.locator("#edBasketList .ed-basket-x").count(),
@@ -1166,10 +1397,12 @@ def main() -> int:
                   {"foot": canvas.locator("#edBasketFoot").is_visible(),
                    "go": canvas.locator("#edBasketGo").inner_text()})
 
-            # × 移除：点一下条目就没了
-            canvas.locator("#edBasketList .ed-basket-x").first.click()
-            page.wait_for_timeout(300)
-            check("点 × 把那一条从筐里移除",
+            # × 移除：一行一行点干净
+            while canvas.locator("#edBasketList .ed-basket-x").count():
+                canvas.locator("#edBasketList .ed-basket-x").first.click()
+                page.wait_for_timeout(150)
+            page.wait_for_timeout(200)
+            check("点 × 把条目逐行移除",
                   canvas.locator("#edBasketList .ed-basket-item").count() == 0
                   and canvas.locator("#edBasketFoot").is_hidden(),
                   {"count": canvas.locator("#edBasketList .ed-basket-item").count()})
@@ -1217,15 +1450,15 @@ def main() -> int:
             canvas.locator("#edRoot").evaluate(paste_script)
             page.wait_for_timeout(500)
             thumb = canvas.locator("#edBasketList .ed-basket-thumb")
-            check("Ctrl+V 粘贴的截图在筐里出大缩略图",
+            check("Ctrl+V 粘贴的截图在筐里出小缩略图",
                   thumb.count() == 1,
                   {"thumbs": thumb.count(),
                    "items": canvas.locator("#edBasketList .ed-basket-item").count()})
             thumb_box = thumb.first.bounding_box() if thumb.count() else None
-            check("缩略图是 200×200 的大图（老师一眼看得出贴的是哪道题）",
+            check("缩略图是 44×44 的小方图（行首一眼认出是哪道题）",
                   bool(thumb_box)
-                  and round(thumb_box["width"]) == 200
-                  and round(thumb_box["height"]) == 200,
+                  and round(thumb_box["width"]) == 44
+                  and round(thumb_box["height"]) == 44,
                   {"box": thumb_box})
             # 光看盒子不够：插件沙箱的 CSP 会把 blob:/data: 的 <img> 挡成空框，
             # 这里直接数画布上的像素，证明题面真画出来了。
@@ -1240,8 +1473,8 @@ def main() -> int:
             }""")
             check("缩略图里真画出了像素（不是被 CSP 挡掉的空框）",
                   bool(thumb_state)
-                  and thumb_state["width"] == 200
-                  and thumb_state["height"] == 200
+                  and thumb_state["width"] == 44
+                  and thumb_state["height"] == 44
                   and thumb_state["painted"] > 0,
                   {"state": thumb_state})
             check("缩略图没被内容安全策略拦下",

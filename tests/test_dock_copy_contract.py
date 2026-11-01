@@ -103,7 +103,8 @@ class InPlaceFeedbackTest(unittest.TestCase):
         self.assertIn('item.classList.remove("is-copied")', COPY_BLOCK)
 
     def test_03_copy_source_is_the_full_line(self) -> None:
-        self.assertIn('item.setAttribute("data-copy", entry.line);', JS)
+        # 军令 #28：报错诊断复制的是完整现场，没有现场才退回那一行摘要。
+        self.assertIn('item.setAttribute("data-copy", entry.detail || entry.line);', JS)
         self.assertIn('copyPlainText(item.getAttribute("data-copy") || "")', COPY_BLOCK)
         # 行文本由时间 + 主题 + 正文拼成，复制内容必须整行可 grep
         self.assertIn('at + (name ? " [" + name + "] " : " ") + body', JS,
@@ -118,6 +119,49 @@ class InPlaceFeedbackTest(unittest.TestCase):
 
     def test_05_no_regex_lookbehind(self) -> None:
         self.assertIsNone(re.search(r"\(\?<[=!]", JS), "workspace.js 含后行断言（AGENTS §6）")
+
+
+class DockRoutingTest(unittest.TestCase):
+    """军令 #28：普通流水进【运行日志】，warn/error 必须落到【报错诊断】并带完整现场。"""
+
+    def test_01_error_view_takes_warn_and_error(self) -> None:
+        start = JS.index("  function entryVisible(entry)")
+        block = JS[start:JS.index("  function renderDock()", start)]
+        self.assertIn('if (dockView === "error") return entry.level === "error" || entry.level === "warn";',
+                      block)
+        self.assertIn('if (dockView === "terminal") return entry.level === "system";', block)
+
+    def test_02_bare_not_found_is_recognised_as_error(self) -> None:
+        start = JS.index("  function dockLevel(topic, text)")
+        block = JS[start:JS.index("  function stamp()", start)]
+        self.assertIn("not found", block, "英文 HTTP 原话（如 Not Found）必须判进报错诊断")
+        self.assertIn("失败|错误|异常|超时|冲突", block)
+
+    def test_03_detail_is_kept_whole_and_summarised_separately(self) -> None:
+        start = JS.index("  function dockLine(")
+        block = JS[start:JS.index("  function wireDock()", start)]
+        self.assertIn("detailText", block)
+        self.assertIn("slice(0, 20000)", block, "现场最多留 20KB，不许截成一句")
+        self.assertIn('if (!detailText && (kind === "error" || kind === "warn")) detailText = full.slice(0, 20000);',
+                      block, "没有额外现场时，至少把整句话原样留下")
+        self.assertIn("detail: detailText", block)
+
+    def test_04_error_view_renders_the_raw_detail(self) -> None:
+        start = JS.index("  function renderDock()")
+        block = JS[start:JS.index("  function setDockView(view)", start)]
+        self.assertIn('detail.className = "ws-dock-detail";', block)
+        self.assertIn('detail.textContent = entry.detail;', block)
+        self.assertIn('dockView === "error"', block)
+        body = rule_body(".ws-dock-detail")
+        self.assertIn("white-space: pre-wrap", body, "堆栈与 Response 原文必须按原样折行")
+        self.assertIn("overflow: auto", body)
+
+    def test_05_bus_accepts_tone_and_level(self) -> None:
+        start = JS.index("  function wireDock()")
+        block = JS[start:start + 3000]
+        self.assertIn('payload.level || payload.tone', block)
+        self.assertIn("payload.detail_text", block, "老口径 detail_text 也要收")
+        self.assertIn("dockLine(payload.text", block)
 
 
 if __name__ == "__main__":

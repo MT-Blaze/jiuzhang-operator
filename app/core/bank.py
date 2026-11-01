@@ -761,7 +761,7 @@ def _source_index(con: sqlite3.Connection, qids: list[str]) -> dict[str, dict[st
         return {}
     rows = con.execute(
         "SELECT qs.question_id, qs.question_no, s.paper_name, s.year, s.exam_type, s.grade,"
-        " sc.full_name, sc.short_name, sc.city, sc.province"
+        " s.school_id, sc.full_name, sc.short_name, sc.city, sc.province"
         " FROM question_sources qs"
         " JOIN sources s ON s.id = qs.source_id"
         " LEFT JOIN schools sc ON sc.id = s.school_id"
@@ -840,6 +840,8 @@ def _document_from(row: sqlite3.Row, links: list[dict[str, Any]],
             value = source.get(column)
             if value:
                 document["source"][field] = value
+        if source.get("school_id"):
+            document["source"]["school_id"] = str(source["school_id"])
     if not grade:
         grade = _grade_from(extensions)
     if grade:
@@ -1519,8 +1521,15 @@ def _ensure_source(con: sqlite3.Connection, document: dict[str, Any], grade: str
     paper = str(source.get("paper_title") or "").strip()[:200]
     if not paper:
         return None
-    school_id = _ensure_school(con, source.get("school"), now,
-                               str(source.get("region") or ""))
+    school_id = str(source.get("school_id") or "").strip()
+    if school_id and con.execute(
+        "SELECT 1 FROM schools WHERE id = ?", (school_id,)
+    ).fetchone() is None:
+        # 字典 ID 还没登记进这个题库：退回按校名查档，宁可新建也不把来源挂空。
+        school_id = ""
+    if not school_id:
+        school_id = _ensure_school(con, source.get("school"), now,
+                                   str(source.get("region") or "")) or ""
     year = source.get("year")
     if year is not None:
         try:
@@ -1540,9 +1549,59 @@ def _ensure_source(con: sqlite3.Connection, document: dict[str, Any], grade: str
         "INSERT OR IGNORE INTO sources"
         " (id, school_id, year, exam_type, grade, paper_name, created_at, updated_at)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (uid, school_id, year, exam_type, grade, paper, now, now),
+        (uid, school_id or None, year, exam_type, grade, paper, now, now),
     )
     return uid
+
+
+def upsert_school(plugin_id: str, school: dict[str, Any], region: str = "") -> dict[str, Any]:
+    """把工作区字典里的学校登记进题库（ID 原样沿用）。
+
+    题库自己的 ``schools`` 表是来源表的落点；字典与题库各存一份名字，
+    但 ID 相同——题目文档里只认 ID，改名时两边按 ID 对齐即可。
+    """
+    school_id = str(school.get("id") or "").strip()
+    full_name = str(school.get("full_name") or "").strip()
+    short_name = str(school.get("short_name") or "").strip() or full_name[:60]
+    if not school_id or not full_name:
+        raise BankError("学校记录缺少 id 或全称")
+    now = _now()
+    con = connect(plugin_id)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT id FROM schools WHERE id = ?", (school_id,)).fetchone()
+        if row is None:
+            # 老题库可能先按校名建过档（ID 是另一套摘要）。同名不同号时认老档，
+            # 不再硬插——插入会撞 uq_schools_full_name，把整道题的入库打断。
+            clash = con.execute(
+                "SELECT id FROM schools WHERE full_name = ?", (full_name[:120],)
+            ).fetchone()
+            if clash is not None:
+                con.execute(
+                    "UPDATE schools SET short_name = ?, updated_at = ? WHERE id = ?",
+                    (short_name[:60], now, clash["id"]),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO schools"
+                    " (id, full_name, short_name, province, city, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (school_id, full_name[:120], short_name[:60], "", str(region or "")[:64],
+                     now, now),
+                )
+        else:
+            con.execute(
+                "UPDATE schools SET full_name = ?, short_name = ?, updated_at = ?"
+                " WHERE id = ?",
+                (full_name[:120], short_name[:60], now, school_id),
+            )
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    return {"id": school_id, "full_name": full_name, "short_name": short_name}
 
 
 def _link_topics(con: sqlite3.Connection, question_id: str, document: dict[str, Any],

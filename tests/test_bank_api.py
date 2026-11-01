@@ -577,7 +577,7 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(status, 201, created)
         self.assertRegex(created["id"], r"^q_[A-Za-z0-9_-]{8,64}$")
         self.assertEqual(created["meta"]["status"], "published")
-        self.assertEqual(created["schema_version"], "2.0")
+        self.assertEqual(created["schema_version"], "2.1")
         self.assertEqual(created["difficulty"], "L1")   # 1.0 的 basic 由底座归一成 L1
 
         status, fetched = self._request(
@@ -1234,7 +1234,7 @@ class MigratedBankIntegrityTest(unittest.TestCase):
         self.assertEqual(len({item["id"] for item in documents}), 456)
         for document in documents:
             validate_question(document)
-            self.assertEqual(document["schema_version"], "2.0")
+            self.assertEqual(document["schema_version"], "2.1")
             self.assertIn(document["difficulty"], ("L1", "L2", "L3", "L4"))
             self.assertEqual(document["stem"].count("$") % 2, 0, document["id"])
             self.assertNotIn("\\includegraphics", document["stem"])

@@ -216,6 +216,23 @@
   题库 458 → **460**（只 +2：编辑态走 update、两道新建分别是 `multiple_choice` 与 `solution`），
   台账收尾「待入库 1 · 已入库 3 · 脏 0 · 未认全 0」，未提交那题的短语命中数 19 → 19（一个字没进库）。
 
+## 阶段 5 全域数据字典与收集筐列表（2026-11-01，editor 2.4.0）
+- **收集筐改成垂直单列**：筐内不再横排胶囊/缩略图，改为 `flex-direction: column` 的单列文件行——
+  左图标（图片画 44×44 canvas 缩略图，文档显示扩展名图标）、中文件名（`nowrap` + 省略号）、右红色 `×` 删除；
+  列表 `overflow-y: auto` 独立滚动，底部【🚀 开始解析 (N 个文件)】固定在筐底；筐本身仍是 2px 虚线 20px 圆角。
+- **批次公共元数据接入数据字典**：场景下拉吃 `/api/meta/scenes` 的 11 项；交叉标签吃 `/api/meta/tags`
+  （场景加权 + 模糊匹配，新标签回车即 `POST /api/meta/tags` 记忆）；明细学校只存 `school_id`，
+  简称冲突按 409 原话「❌ 简称冲突，已被【…】占用」爆红并拦下提交；缺全称走 `/api/meta/schools/suggest`
+  由 AI 补全，老师点【确认建档】才落字典。
+- **标准名双向联动**：`年份-地区-主体-场景-类型-学科` 实时拼接；改任一元数据自动重拼并淡色闪「已更新」1.4s；
+  老师手改输入框即暂停联动（`data-mode="manual"`），再动元数据恢复 `auto` 并重新闪。
+- **验收证据**：`tests.test_editor_contract` 122/122 OK（收集筐单列与行结构契约）；
+  `tools/editor_probe.py meta-04` **153/153 passed**、pageErrors 0（截图 `v28-school-conflict.png` /
+  `v28-std-flash.png` / `v28-tag-menu.png` / `v28-basket-list.png`，含冲突红框计算色 `rgb(155, 59, 45)` 与缩略图像素采样）；
+  `tools/startup_probe.py meta-02` **29/29 passed**（默认只开数据看板，控制台页签一个都不冒）。
+- **边界（如实报）**：主库七表来源模型当前只把第一所学校挂关系表，题目文档里保留全部 `school_ids`；
+  其余学校要等来源关系表扩容后才逐条可查。
+
 ## 本阶段未决 / 待主公复核
 0. **阶段 4 新账（先看这四条）**：
    - **待入库池本期只做界面**：`#edPoolStash` 出厂 `disabled` + `aria-disabled`，title 写明「存储层随下一军令接入」；

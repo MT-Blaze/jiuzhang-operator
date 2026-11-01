@@ -1196,7 +1196,7 @@ class EditorReviewDeskTest(unittest.TestCase):
 
 
 class EditorFileBasketTest(unittest.TestCase):
-    """军令 #27：右栏文件收集筐——首屏 50/50、圆角虚线筐、大图缩略图、【开始解析】才建批次。
+    """军令 #27：右栏文件收集筐——首屏 50/50、圆角虚线筐、垂直单列文件行、【开始解析】才建批次。
 
     真机流程由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分。
     """
@@ -1215,33 +1215,51 @@ class EditorFileBasketTest(unittest.TestCase):
                         "批次列表在左，收集筐在右")
 
     def test_02_the_basket_is_one_big_rounded_dashed_box(self) -> None:
-        """右栏整块是一只巨大的圆角虚线框，文字居中。"""
+        """右栏整块是一只巨大的圆角虚线框，但里面改成了垂直单列列表。"""
         css = read("plugin.css")
         basket = css_rule(css, ".ed-basket")
         self.assertIn("border: 2px dashed", basket, "虚线框是收集筐的招牌")
         self.assertIn("border-radius: 20px", basket, "圆角要够大，才像一只筐")
-        self.assertIn("text-align: center", basket)
-        self.assertIn("align-items: center", basket)
-        self.assertIn("justify-content: center", basket)
+        self.assertIn("flex-direction: column", basket, "文件列表竖着排，底部才留得住【开始解析】")
+        self.assertIn("align-items: stretch", basket)
+        self.assertIn("text-align: left", basket, "列表行左对齐，不再是居中文案")
         col = css_rule(css, ".ed-basket-col")
         self.assertIn("align-items: center", col, "筐整体绝对居中")
         self.assertIn("justify-content: center", col)
+        listing = css_rule(css, ".ed-basket-list")
+        self.assertIn("flex-direction: column", listing, "一行一个文件，垂直单列")
+        self.assertIn("overflow-y: auto", listing, "列表在虚线框内独立滚动")
 
-    def test_03_pasted_images_get_a_big_thumbnail(self) -> None:
-        """粘贴的图不许只写个文件名：筐里直接出 200×200 的大缩略图。
+    def test_03_each_row_has_an_icon_a_name_and_a_remove_button(self) -> None:
+        """每行一个文件：左图标（图片小缩略图 / 文档图标）、中间文件名省略、右侧红 ×。
 
         缩略图画在 canvas 上：插件沙箱的 CSP 是 ``img-src 'self' <底座源>``，
         blob: 与 data: 的 ``<img>`` 全被拦掉——屏幕上只会剩一只空框。
         """
         css = read("plugin.css")
+        row = css_rule(css, ".ed-basket-item")
+        self.assertIn("display: flex", row)
+        self.assertIn("align-items: center", row)
+        self.assertIn("min-height: 56px", row)
         thumb = css_rule(css, ".ed-basket-thumb")
-        self.assertIn("width: 200px", thumb)
-        self.assertIn("height: 200px", thumb)
+        self.assertIn("width: 44px", thumb, "图片缩略图收到 44px 小方图")
+        self.assertIn("height: 44px", thumb)
+        icon = css_rule(css, ".ed-basket-icon")
+        self.assertIn("width: 44px", icon, "文档图标和缩略图同宽，行首才对齐")
+        self.assertIn("height: 44px", icon)
+        name = css_rule(css, ".ed-basket-name")
+        self.assertIn("text-overflow: ellipsis", name, "文件名太长自动省略")
+        self.assertIn("white-space: nowrap", name)
+        self.assertIn("flex: 1 1 auto", name, "文件名吃掉中间的余量")
         js = read("plugin.js")
         render = fn_body(js, "renderBasket")
+        self.assertIn('var item = el("li", "ed-basket-item");', render)
         self.assertIn('thumb.className = "ed-basket-thumb";', render)
         self.assertIn('document.createElement("canvas")', render)
-        self.assertIn("var THUMB_SIDE = 200;", js)
+        self.assertIn('var icon = el("span", "ed-basket-icon");', render)
+        self.assertIn('var nameEl = el("span", "ed-basket-name", entry.name);', render)
+        self.assertIn("nameEl.title = entry.name;", render, "悬停看全名")
+        self.assertIn("var THUMB_SIDE = 44;", js)
         self.assertIn("window.createImageBitmap(entry.file)", js,
                       "缩略图得用插件自己解出的位图，沙箱的 CSP 拦不住它")
         self.assertNotIn("URL.createObjectURL", js, "blob: 的 <img> 会被 CSP 挡成空框")
@@ -1434,7 +1452,7 @@ class EditorFixtureContractTest(unittest.TestCase):
         for item in self.items:
             errors = list(validator.iter_errors(item))
             self.assertEqual(errors, [], f"假数据 {item.get('id')} 不合规：{errors}")
-            self.assertEqual(item["schema_version"], "2.0")
+            self.assertEqual(item["schema_version"], "2.1")
 
     def test_02_dev_block_carries_source_and_stage_hints(self) -> None:
         for item in self.items:

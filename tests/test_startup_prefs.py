@@ -24,6 +24,7 @@ TOKEN = "startup-contract-token"
 SETTINGS_HTML = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
 SETTINGS_JS = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
 WORKSPACE_JS = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
+STAGE_JS = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
 
 DASHBOARD_ID = "org.jiuzhang.dashboard"
 EDITOR_ID = "org.jiuzhang.editor"
@@ -305,6 +306,42 @@ class WorkspaceBootWiringTest(unittest.TestCase):
     def test_05_boot_never_blocks_on_config_failure(self) -> None:
         fn = WORKSPACE_JS.split("function applyStartupBehavior", 1)[1].split("\n  }\n", 1)[0]
         self.assertIn(".catch(function ()", fn, "读不到配置也要停在默认欢迎页")
+
+
+class StageConsoleLazyTest(unittest.TestCase):
+    """军令 #28 第二条：刷新工作台绝不许自动弹出「设置与控制台」。"""
+
+    def test_01_console_definition_is_lazy(self) -> None:
+        self.assertIn('key: "console", title: "设置与控制台", panelId: "wsPanelConsole", lazy: true',
+                      STAGE_JS)
+
+    def test_02_lazy_registration_only_records_the_definition(self) -> None:
+        block = STAGE_JS.split("  function registerNative(options, spawn)", 1)[1]
+        block = block.split("  /** 原生页签被关掉后", 1)[0]
+        self.assertIn("nativeDefs[options.key] = options;", block)
+        self.assertIn("if (options.lazy && spawn !== true) return null;", block)
+        self.assertLess(block.index("if (options.lazy && spawn !== true) return null;"),
+                        block.index("addTab(tab);"),
+                        "lazy 必须在建页签之前返回")
+
+    def test_03_activation_builds_the_tab_on_demand(self) -> None:
+        block = STAGE_JS.split("  function activate(key)", 1)[1].split("  function applyFullscreen", 1)[0]
+        self.assertIn("findTab(key) || ensureNative(key)", block)
+        self.assertIn("hydrateConsole(key);", block,
+                      "现场建出来的控制台页签要立刻装 /settings?embedded=1")
+
+    def test_04_boot_never_activates_the_console(self) -> None:
+        self.assertNotIn('activate("console")', STAGE_JS, "启动时绝不允许自动激活控制台")
+        self.assertEqual(STAGE_JS.count('title: "设置与控制台"'), 1,
+                         "控制台只许登记一次，且必须是 lazy")
+        boot = STAGE_JS.split("  function init() {", 1)[1].split("    if (bus &&", 1)[0]
+        self.assertIn("lazy: true", boot, "启动段登记控制台时必须带 lazy")
+
+    def test_05_closed_console_can_be_reopened(self) -> None:
+        block = STAGE_JS.split("  function ensureNative(key)", 1)[1].split("\n  }\n", 1)[0]
+        self.assertIn("var def = nativeDefs[key];", block)
+        self.assertIn("return def ? registerNative(def, true) : null;", block,
+                      "控制台被关掉后，左栏入口还得能把它重新打开")
 
 
 class StartupHttpTest(unittest.TestCase):

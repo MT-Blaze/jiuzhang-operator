@@ -384,6 +384,9 @@
     "pending.approve", "pending.delete",
     // 批次公共元数据：改一次，这一批所有题的 sources 立刻跟着改。
     "pending.set_meta", "pending.meta_history",
+    // 军令 #28：全域数据字典。读场景/学校/标签，写学校与标签（写走一次性令牌）。
+    "meta.scenes", "meta.schools", "meta.tags",
+    "meta.school_create", "meta.school_suggest", "meta.tag_remember",
     // 军令 #25：拖入/粘贴的文件进中转站。
     "ingest.files",
     "draft.save", "draft.load",
@@ -1078,10 +1081,18 @@
               var head = typeof detail.message === "string" ? detail.message : "";
               var first = Array.isArray(detail.errors) && typeof detail.errors[0] === "string" ? detail.errors[0] : "";
               message = head && first ? head + "：" + first : head || first;
+              if (!message) message = JSON.stringify(detail).slice(0, 300);
             }
+            if (!message) message = String(text || "").trim().slice(0, 300);
             var failure = new Error(message || "宿主接口返回 HTTP " + response.status);
             failure.status = response.status;
+            failure.statusText = response.statusText || "";
             failure.detail = detail;
+            // 干瘪的「Not Found」不够用：原始响应全文与请求地址一并带走，
+            // 报错诊断才打得出完整现场（主公 2026-11-01 抢修第一条）。
+            failure.body = String(text || "");
+            failure.url = url;
+            failure.method = String(settings.method || "GET");
             throw failure;
           }
           if (data === null) throw new Error("宿主接口返回了非 JSON 内容");
@@ -1094,7 +1105,17 @@
       }, function (error) {
         if (timer) window.clearTimeout(timer);
         if (error && error.name === "AbortError") {
-          throw new Error("宿主接口超时（" + Math.round(timeoutMs / 1000) + "s）");
+          var timeout = new Error("宿主接口超时（" + Math.round(timeoutMs / 1000) + "s）："
+            + String(settings.method || "GET") + " " + url);
+          timeout.url = url;
+          timeout.method = String(settings.method || "GET");
+          timeout.timeout = timeoutMs;
+          throw timeout;
+        }
+        if (error && !error.url) {
+          // 网络层直接抛错（断网、连接被拒）：同样把地址带上，避免只剩一句「Failed to fetch」。
+          error.url = url;
+          error.method = String(settings.method || "GET");
         }
         throw error;
       });
@@ -1413,16 +1434,35 @@
 
     function fail(error) {
       var detail = error && error.detail;
+      var method = String((error && error.method) || "GET");
+      var target = String((error && error.url) || "");
       var payload = {
         code: "HOST_" + (error.status || 0),
         message: String((error && error.message) || "宿主请求失败").slice(0, 200),
-        retryable: Boolean(error && error.status >= 500)
+        retryable: Boolean(error && error.status >= 500),
+        status: Number(error && error.status) || 0,
+        url: target,
+        method: method
       };
+      // 报错诊断要的是完整现场：请求行、状态、detail 对象与 Response 全文一个不落。
+      var lines = [];
+      if (target) lines.push(method + " " + target);
+      if (error && error.status) {
+        lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+      }
+      if (error && error.message) lines.push(String(error.message));
+      if (detail !== undefined && detail !== null) {
+        lines.push("detail: " + (typeof detail === "string" ? detail : JSON.stringify(detail)));
+      }
+      if (error && error.body) lines.push("response: " + String(error.body));
+      payload.detail = lines.join("\n").slice(0, 20000);
       // 409 查重：detail 里带着主库那道题的 id 与 duplicate 标记，原样带给插件，
       // 插件才弹得出「返回修改 / 强行覆盖」两颗钮。
       if (detail && typeof detail === "object") {
         if (detail.existing_id) payload.existing_id = String(detail.existing_id);
         if (detail.duplicate === true) payload.duplicate = true;
+        if (detail.code) payload.detail_code = String(detail.code);
+        if (detail.existing_full_name) payload.existing_full_name = String(detail.existing_full_name);
       }
       replyHost(tab, message, false, payload);
     }
@@ -1671,13 +1711,29 @@
           if (school && metaSchools.indexOf(school) < 0) metaSchools.push(school);
         });
       }
+      // 明细学校优先走字典 ID；老插件仍送校名时保留 schools 字段，底座负责建档换 ID。
+      var metaSchoolIds = [];
+      if (Array.isArray(payload.school_ids)) {
+        payload.school_ids.slice(0, 24).forEach(function (item) {
+          var schoolId = textValue({ v: item }, "v", 40);
+          if (/^sch_[A-Za-z0-9_-]{4,40}$/.test(schoolId)
+              && metaSchoolIds.indexOf(schoolId) < 0) {
+            metaSchoolIds.push(schoolId);
+          }
+        });
+      }
       var metaBody = {
         year: metaYear,
         region: textValue(payload, "region", 60),
         body: textValue(payload, "body", 60),
         exam_type: textValue(payload, "exam_type", 60),
         subject: textValue(payload, "subject", 40),
-        schools: metaSchools
+        scene_type: textValue(payload, "scene_type", 60),
+        schools: metaSchools,
+        school_ids: metaSchoolIds,
+        // 双向联动：手改标准名时 name_mode=manual；元数据一动，底座自动回 auto。
+        name_mode: payload.name_mode === "manual" ? "manual" : "auto",
+        standard_name: textValue(payload, "standard_name", 120)
       };
       withWriteToken("/api/pending/batches/" + encodeURIComponent(metaBatchId) + "/meta", {
         method: "PATCH",
@@ -1687,6 +1743,92 @@
         emitPendingUpdated("meta", [], result);
         done(result);
       }, fail);
+      return;
+    }
+
+    if (method === "meta.scenes" || method === "meta.schools" || method === "meta.tags") {
+      // 字典读：场景、学校、交叉标签。任何有 questions:read 的插件都能查。
+      var dictPerms = (tab.plugin && tab.plugin.permissions) || [];
+      if (dictPerms.indexOf("questions:read") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:read 权限，不能读数据字典"
+        });
+        return;
+      }
+      if (method === "meta.scenes") {
+        fetchJson("/api/meta/scenes").then(done, fail);
+        return;
+      }
+      var dictQuery = textValue(payload, "q", 60);
+      var dictLimit = intValue(payload, "limit", 30, 1, 50);
+      if (method === "meta.schools") {
+        fetchJson("/api/meta/schools?limit=" + dictLimit
+          + (dictQuery ? "&q=" + encodeURIComponent(dictQuery) : "")).then(done, fail);
+        return;
+      }
+      var dictScene = textValue(payload, "scene", 40);
+      fetchJson("/api/meta/tags?limit=" + dictLimit
+        + (dictScene ? "&scene=" + encodeURIComponent(dictScene) : "")
+        + (dictQuery ? "&q=" + encodeURIComponent(dictQuery) : "")).then(done, fail);
+      return;
+    }
+
+    if (method === "meta.school_create" || method === "meta.school_suggest"
+        || method === "meta.tag_remember") {
+      // 字典写：建档、AI 补全、记住手打标签。令牌照旧只在宿主手里。
+      var dictWrites = (tab.plugin && tab.plugin.permissions) || [];
+      if (dictWrites.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能改数据字典"
+        });
+        return;
+      }
+      var dictHeaders = { "Content-Type": "application/json" };
+      if (method === "meta.school_suggest") {
+        var suggestName = textValue(payload, "short_name", 60);
+        if (!suggestName) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "先填一个简称，才能让 AI 补全" });
+          return;
+        }
+        withWriteToken("/api/meta/schools/suggest", {
+          method: "POST",
+          headers: dictHeaders,
+          timeout: AGENT_TIMEOUT_MS,
+          body: JSON.stringify({
+            short_name: suggestName,
+            region: textValue(payload, "region", 60)
+          })
+        }).then(done, fail);
+        return;
+      }
+      if (method === "meta.tag_remember") {
+        var tagName = textValue(payload, "name", 32);
+        if (!tagName) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "标签不能为空" });
+          return;
+        }
+        withWriteToken("/api/meta/tags", {
+          method: "POST",
+          headers: dictHeaders,
+          body: JSON.stringify({ name: tagName, scene: textValue(payload, "scene", 40) })
+        }).then(done, fail);
+        return;
+      }
+      var schoolFull = textValue(payload, "full_name", 120);
+      if (!schoolFull) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "学校全称不能为空" });
+        return;
+      }
+      withWriteToken("/api/meta/schools", {
+        method: "POST",
+        headers: dictHeaders,
+        body: JSON.stringify({
+          full_name: schoolFull,
+          short_name: textValue(payload, "short_name", 60)
+        })
+      }).then(done, fail);
       return;
     }
 
@@ -2146,17 +2288,28 @@
         return;
       }
       var text = message.payload && typeof message.payload.text === "string"
-        ? message.payload.text.slice(0, 200)
-        : JSON.stringify(message.payload || {}).slice(0, 200);
+        ? message.payload.text.slice(0, 400)
+        : JSON.stringify(message.payload || {}).slice(0, 400);
       // 日志级别由插件自报，但只在白名单里认：底座不许被插件改成「一切正常」的样子。
       // warn 是「出了岔子但没挡住老师」——后台切题识别有出入就走这一档，不许弹红窗。
       var level = String(message.payload && message.payload.level || "");
+      if (!level && message.payload && message.payload.tone) {
+        // 兼容 tone 口径：warn/error 一律进【报错诊断】，不许只躺在运行日志里。
+        var tone = String(message.payload.tone).toLowerCase();
+        if (tone === "warn" || tone === "warning") level = "warn";
+        else if (tone === "error" || tone === "fatal") level = "error";
+        else if (tone === "note") level = "note";
+      }
       if (["note", "error", "info", "system", "warn"].indexOf(level) < 0) level = "";
       // 插件自报的主题名只作归类用：长度卡死，防止插件拿它夹带长文本。
       var dockTopic = String(message.payload && message.payload.topic || "").slice(0, 60);
+      // 错误现场（Response 全文 / 堆栈）单独放行：报错诊断要打完整，不许只剩一句干话。
+      var dockDetail = message.payload && typeof message.payload.detail === "string"
+        ? message.payload.detail.slice(0, 20000)
+        : "";
       emit(topic, {
         text: text, pluginId: tab.plugin.id, level: level,
-        topic: dockTopic, raw: message.payload || null
+        topic: dockTopic, detail: dockDetail, raw: message.payload || null
       });
     }
   });
@@ -2360,10 +2513,13 @@
     }
   }
 
-  function registerNative(options) {
+  function registerNative(options, spawn) {
     var panel = document.getElementById(options.panelId);
     if (!panel) return null;
     nativeDefs[options.key] = options;
+    // lazy：只登记定义、不建页签。启动时控制台绝不许自己冒出来（主公 2026-11-01），
+    // 老师点「设置与控制台」或 ensureNative 时才按同一份定义现场建。
+    if (options.lazy && spawn !== true) return null;
     var tab = {
       key: options.key,
       kind: "native",
@@ -2382,7 +2538,7 @@
     var existing = findTab(key);
     if (existing) return existing;
     var def = nativeDefs[key];
-    return def ? registerNative(def) : null;
+    return def ? registerNative(def, true) : null;
   }
 
   /** 打开（或唤醒）一个插件页签；singleton=false 时允许同一插件开多个页签。 */
@@ -2845,8 +3001,11 @@
 
   function init() {
     if (!tabsEl || !bodyEl) return;
-    // 启动不预开任何页签（含兜底页）：中栏留白，等用户从左右栏开页
-    registerNative({ key: "console", title: "设置与控制台", panelId: "wsPanelConsole" });
+    // 启动不预开任何页签（含兜底页与设置控制台）：中栏留白，等用户从左右栏开页。
+    // 控制台只登记定义、不建页签——它绝不许在启动时自己冒出来抢画布。
+    registerNative({
+      key: "console", title: "设置与控制台", panelId: "wsPanelConsole", lazy: true
+    });
 
     if (bus && typeof bus.on === "function") {
       // 右栏改参数 → 直达中栏所有活着的插件（军令任务 3.3）

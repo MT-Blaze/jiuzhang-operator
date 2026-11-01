@@ -103,6 +103,10 @@ class PendingMetaContractTest(unittest.TestCase):
         env["JZO_DATA_DIR"] = str(cls.data_dir)
         env["JZO_PLUGINS_DIR"] = str(cls.plugins_dir)
         env["JZO_LOCAL_TOKEN"] = TOKEN
+        # AI 一律走 Mock：这些测试不许真联网，也不许读老师本机的密钥。
+        for key in ("JZO_AI_API_KEY", "JZO_BAILIAN_API_KEY",
+                    "JZO_SILICONFLOW_API_KEY", "JZO_OLLAMA_API_KEY"):
+            env[key] = ""
         cls.process = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn", "app.main:app",
@@ -295,11 +299,12 @@ class PendingMetaContractTest(unittest.TestCase):
             source = item["question"]["source"]
             self.assertEqual(source["year"], 2024)
             self.assertEqual(source["region"], "黑吉辽")
-            self.assertEqual(source["school"], "三省六校")
+            self.assertEqual(source["body"], "三省六校")
             self.assertEqual(source["exam_type"], "高三联考")
             self.assertEqual(source["paper_title"], "2024-黑吉辽-三省六校-高三联考-数学")
 
-    def test_04_detail_schools_become_hidden_tags(self) -> None:
+    def test_04_detail_schools_are_stored_as_ids_not_names(self) -> None:
+        """明细学校只落字典 ID：题目文档里一个校名字节都不许出现。"""
         status, body = self._save([{"question": _question(231, tags=["联考"])}])
         self.assertEqual(status, 201, body)
         batch_id = body["batch_id"]
@@ -308,12 +313,20 @@ class PendingMetaContractTest(unittest.TestCase):
             "schools": ["哈三中", "哈师大附中"],
         })
         self.assertEqual(status, 200, result)
-        tags = self._batch_items(batch_id)[0]["question"]["tags"]
-        self.assertIn("#哈三中", tags)
-        self.assertIn("#哈师大附中", tags)
-        self.assertIn("联考", tags, "可见标签一个都不许被挤掉")
-        self.assertEqual([tag for tag in tags if tag.startswith("#")],
-                         ["#哈三中", "#哈师大附中"])
+        item = self._batch_items(batch_id)[0]
+        source = item["question"]["source"]
+        self.assertEqual(len(source["school_ids"]), 2)
+        self.assertEqual(source["school_id"], source["school_ids"][0])
+        for school_id in source["school_ids"]:
+            self.assertRegex(school_id, r"^sch_[A-Za-z0-9_-]{4,40}$")
+        self.assertIn("联考", item["question"]["tags"], "可见标签一个都不许被挤掉")
+        self.assertFalse([tag for tag in item["question"]["tags"] if tag.startswith("#")],
+                         "校名不再拆成隐藏标签")
+        document = json.dumps(item["question"], ensure_ascii=False)
+        self.assertNotIn("哈三中", document)
+        self.assertNotIn("哈师大附中", document)
+        self.assertEqual([s["short_name"] for s in result["meta"]["school_details"]],
+                         ["哈三中", "哈师大附中"])
 
     def test_05_history_remembers_body_and_school_group(self) -> None:
         status, body = self._save([{"question": _question(241)}])
@@ -438,9 +451,13 @@ class PendingMetaContractTest(unittest.TestCase):
         """老库升到新结构：次序原样保留，题一条不少。"""
         con = sqlite3.connect(self.data_dir / "pending.db")
         try:
-            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 4)
+            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 5)
             columns = {str(row[1]) for row in con.execute("PRAGMA table_info(pending_questions)")}
             self.assertIn("seq", columns, "结构 v4 必须有次序号这一列")
+            tables = {str(row[0]) for row in con.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'")}
+            for table in ("schools", "scene_types", "exam_types"):
+                self.assertIn(table, tables, f"结构 v5 必须有 {table} 字典表")
             rows = con.execute(
                 "SELECT id, seq FROM pending_questions WHERE batch_id = 'B-001'"
                 " ORDER BY seq ASC").fetchall()
@@ -493,6 +510,233 @@ class PendingMetaContractTest(unittest.TestCase):
         stems = [str(item["question"]["stem"]) for item in items]
         self.assertTrue(any("待识别" in stem for stem in stems),
                         f"认不出就要写明「待识别」，实际是：{stems}")
+
+    # ---------- 全域数据字典（结构 v5） ----------
+
+    def test_15_school_short_name_conflict_is_blocked_with_exact_message(self) -> None:
+        status, created = self._request("/api/meta/schools", "POST", {
+            "full_name": "哈尔滨师范大学附属中学", "short_name": "师大附中",
+        })
+        self.assertEqual(status, 201, created)
+        self.assertRegex(created["school"]["id"], r"^sch_[A-Za-z0-9_-]{4,40}$")
+
+        status, conflict = self._request("/api/meta/schools", "POST", {
+            "full_name": "另一所师范大学附属中学", "short_name": "师大附中",
+        })
+        self.assertEqual(status, 409, conflict)
+        detail = conflict["detail"]
+        self.assertEqual(detail["code"], "short_name_conflict")
+        self.assertEqual(detail["message"], "❌ 简称冲突，已被【哈尔滨师范大学附属中学】占用",
+                         "拦截文案按主公裁定的原话，一字不改")
+        self.assertEqual(detail["existing_full_name"], "哈尔滨师范大学附属中学")
+
+    def test_16_school_dictionary_ids_flow_into_meta_and_questions(self) -> None:
+        status, found = self._request(
+            "/api/meta/schools?q=" + urllib.parse.quote("哈三中"))
+        self.assertEqual(status, 200, found)
+        self.assertTrue(found["schools"], "字典里已经该有哈三中")
+        school_id = found["schools"][0]["id"]
+
+        status, body = self._save([{"question": _question(301)}])
+        self.assertEqual(status, 201, body)
+        batch_id = body["batch_id"]
+        status, result = self._set_meta(batch_id, {
+            "year": 2024, "region": "黑吉辽", "body": "三省六校",
+            "exam_type": "高三联考", "subject": "数学",
+            "school_ids": [school_id],
+        })
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["meta"]["school_ids"], [school_id])
+        self.assertEqual(result["meta"]["school_details"][0]["short_name"], "哈三中",
+                         "写只写 ID，读的时候把名字查回来给老师看")
+
+        source = self._batch_items(batch_id)[0]["question"]["source"]
+        self.assertEqual(source["school_ids"], [school_id])
+        self.assertEqual(source["school_id"], school_id)
+        self.assertNotIn("哈三中", json.dumps(source, ensure_ascii=False),
+                         "题目文档只存 school_id，校名一个字节都不许进去")
+
+    def test_17_scenes_are_the_eleven_ruled_ones(self) -> None:
+        status, body = self._request("/api/meta/scenes")
+        self.assertEqual(status, 200, body)
+        names = [scene["name"] for scene in body["scenes"]]
+        self.assertEqual(names, [
+            "高考题", "联考题", "区域统考题", "校考题", "机构题", "汇编题",
+            "自编题", "强基题", "竞赛题", "自主招生题", "外国题",
+        ])
+
+        status, saved = self._save([{"question": _question(311)}])
+        self.assertEqual(status, 201, saved)
+        batch_id = saved["batch_id"]
+        status, result = self._set_meta(batch_id, {
+            "year": 2025, "scene_type": "高考题", "subject": "数学",
+        })
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["meta"]["standard_name"], "2025-高考题-数学",
+                         "标准名里要有场景这一段")
+        source = self._batch_items(batch_id)[0]["question"]["source"]
+        self.assertEqual(source["scene_type"], "高考题")
+
+        status, _ = self._set_meta(batch_id, {"scene_type": "野题"})
+        self.assertEqual(status, 400, "场景只收 11 个主场景之一")
+
+    def test_18_tag_weights_follow_scene_and_fuzzy_match_remembers(self) -> None:
+        status, foreign = self._request(
+            "/api/meta/tags?scene=" + urllib.parse.quote("外国题"))
+        self.assertEqual(status, 200, foreign)
+        names = [tag["name"] for tag in foreign["tags"][:3]]
+        self.assertEqual(names, ["AMC", "A-Level", "IB"],
+                         "选【外国题】，下拉优先显示 AMC、A-Level、IB")
+
+        status, school = self._request(
+            "/api/meta/tags?scene=" + urllib.parse.quote("校考题"))
+        self.assertEqual(status, 200, school)
+        names = [tag["name"] for tag in school["tags"][:2]]
+        self.assertEqual(names, ["9月月考", "一模"],
+                         "选【校考题】，下拉优先显示 9月月考、一模")
+
+        status, fuzzy = self._request(
+            "/api/meta/tags?scene=" + urllib.parse.quote("校考题") + "&q="
+            + urllib.parse.quote("模"))
+        self.assertEqual(status, 200, fuzzy)
+        names = [tag["name"] for tag in fuzzy["tags"]]
+        for expected in ("零模", "一模", "二模", "三模", "四模", "五模", "六模", "七模"):
+            self.assertIn(expected, names, "打一个「模」字，零到七模一次带出来")
+        self.assertEqual(len(names), 8, f"模糊匹配只该出这 8 个，实际：{names}")
+
+        status, kept = self._request("/api/meta/tags", "POST", {
+            "name": "百日誓师考", "scene": "校考题",
+        })
+        self.assertEqual(status, 200, kept)
+        status, again = self._request(
+            "/api/meta/tags?scene=" + urllib.parse.quote("校考题") + "&q="
+            + urllib.parse.quote("百日"))
+        self.assertEqual(status, 200, again)
+        self.assertEqual([tag["name"] for tag in again["tags"]], ["百日誓师考"],
+                         "老师手打的新标签回车即入本地库，下次自动弹出")
+
+    def test_19_manual_standard_name_pauses_and_metadata_resumes_auto(self) -> None:
+        status, saved = self._save([{"question": _question(321)}])
+        self.assertEqual(status, 201, saved)
+        batch_id = saved["batch_id"]
+        base = {
+            "year": 2024, "region": "黑吉辽", "body": "三省六校",
+            "exam_type": "高三联考", "subject": "数学",
+        }
+        status, auto = self._set_meta(batch_id, base)
+        self.assertEqual(status, 200, auto)
+        self.assertEqual(auto["meta"]["name_mode"], "auto")
+        self.assertEqual(auto["meta"]["standard_name"], "2024-黑吉辽-三省六校-高三联考-数学")
+
+        status, manual = self._set_meta(batch_id, {
+            "name_mode": "manual", "standard_name": "老师自己起的卷名",
+        })
+        self.assertEqual(status, 200, manual)
+        self.assertEqual(manual["meta"]["name_mode"], "manual")
+        self.assertEqual(manual["meta"]["standard_name"], "老师自己起的卷名",
+                         "手动改名后自动拼接暂停，手改名要留得住")
+
+        # 老师接着改元数据（前端会把整份元数据连同 name_mode=manual 一起送来）：
+        # 自动拼接立刻恢复，手改名让位。
+        status, resumed = self._set_meta(batch_id, dict(
+            base, region="黑龙江", name_mode="manual",
+            standard_name="老师自己起的卷名",
+        ))
+        self.assertEqual(status, 200, resumed)
+        self.assertEqual(resumed["meta"]["name_mode"], "auto")
+        self.assertEqual(resumed["meta"]["standard_name"],
+                         "2024-黑龙江-三省六校-高三联考-数学",
+                         "元数据再改，标准名继续自动重拼")
+
+    def test_20_ai_school_suggestion_only_suggests(self) -> None:
+        status, before = self._request(
+            "/api/meta/schools?q=" + urllib.parse.quote("工大附中"))
+        self.assertEqual(status, 200, before)
+        status, body = self._request("/api/meta/schools/suggest", "POST", {
+            "short_name": "师大附中", "region": "黑龙江",
+        })
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["full_name"], "哈尔滨师范大学附属中学")
+        self.assertTrue(body["mock"], "测试环境走 Mock，不许真联网")
+        status, after = self._request(
+            "/api/meta/schools?q=" + urllib.parse.quote("工大附中"))
+        self.assertEqual(status, 200, after)
+        self.assertEqual(before["schools"], after["schools"],
+                         "AI 只给建议，老师确认前不许偷偷建档")
+
+    def test_21_bank_schools_keep_dictionary_ids_after_approval(self) -> None:
+        status, created = self._request("/api/meta/schools", "POST", {
+            "full_name": "哈尔滨市第三中学校", "short_name": "哈三中校本部",
+        })
+        self.assertIn(status, (200, 201), created)
+        school = created["school"]
+
+        status, saved = self._save([{"question": _question(331)}])
+        self.assertEqual(status, 201, saved)
+        batch_id = saved["batch_id"]
+        status, result = self._set_meta(batch_id, {
+            "year": 2024, "region": "黑龙江", "body": "哈三中",
+            "exam_type": "一模", "subject": "数学", "school_ids": [school["id"]],
+        })
+        self.assertEqual(status, 200, result)
+        pending_id = self._batch_items(batch_id)[0]["id"]
+        status, approved = self._request(
+            f"/api/pending/items/{pending_id}/approve", "POST", {})
+        self.assertEqual(status, 200, approved)
+
+        con = sqlite3.connect(self.data_dir / "banks" / f"{PLUGIN_ID}.db")
+        try:
+            row = con.execute(
+                "SELECT id, full_name, short_name FROM schools WHERE id = ?",
+                (school["id"],),
+            ).fetchone()
+            link = con.execute(
+                "SELECT school_id FROM sources WHERE paper_name = ?",
+                ("2024-黑龙江-哈三中-一模-数学",),
+            ).fetchone()
+        finally:
+            con.close()
+        self.assertIsNotNone(row, "入库时字典 ID 要原样登记进题库")
+        self.assertEqual(row[1], "哈尔滨市第三中学校")
+        self.assertEqual(row[2], "哈三中校本部")
+        self.assertIsNotNone(link)
+        self.assertEqual(link[0], school["id"], "来源表按字典 ID 关联学校")
+
+    def test_22_resaving_a_draft_keeps_batch_meta_in_its_source(self) -> None:
+        """老师改一道题的源码再存回池子：这一批的公共元数据不许被抹掉。
+
+        插件只报它看得见的题级字段（年份、题型……），场景、学校 ID 与标准名
+        全在批次上；暂存时必须按批次重写一遍，否则一道题存一次就丢一段出处。
+        """
+        status, created = self._request("/api/meta/schools", "POST", {
+            "full_name": "哈尔滨市第九中学校", "short_name": "哈九中",
+        })
+        self.assertIn(status, (200, 201), created)
+        school_id = created["school"]["id"]
+
+        status, saved = self._save([{"question": _question(341)}])
+        self.assertEqual(status, 201, saved)
+        batch_id = saved["batch_id"]
+        status, result = self._set_meta(batch_id, {
+            "year": 2024, "region": "黑龙江", "body": "哈九中",
+            "scene_type": "校考题", "exam_type": "一模", "subject": "数学",
+            "school_ids": [school_id],
+        })
+        self.assertEqual(status, 200, result)
+
+        item = self._batch_items(batch_id)[0]
+        doc = json.loads(json.dumps(item["question"], ensure_ascii=False))
+        doc["source"] = {"year": 2024, "question_no": "12"}
+        status, re_saved = self._save(
+            [{"pending_id": item["id"], "question": doc}], batch_id=batch_id)
+        self.assertEqual(status, 201, re_saved)
+
+        source = self._batch_items(batch_id)[0]["question"]["source"]
+        self.assertEqual(source["scene_type"], "校考题", source)
+        self.assertEqual(source["body"], "哈九中", source)
+        self.assertEqual(source["school_ids"], [school_id], source)
+        self.assertEqual(source["paper_title"], "2024-黑龙江-哈九中-校考题-一模-数学",
+                         "标准名要按批次重写回原卷名")
 
 
 if __name__ == "__main__":

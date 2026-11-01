@@ -1,6 +1,6 @@
 [
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000001",
     "type": "single_choice",
     "stem": "已知函数 $f(x)=x^2+1$，求其最小值（  ）",
@@ -48,7 +48,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000002",
     "type": "multiple_choice",
     "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）",
@@ -96,7 +96,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000003",
     "type": "fill_blank",
     "stem": "已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin",
@@ -138,7 +138,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000004",
     "type": "solution",
     "stem": "已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。",

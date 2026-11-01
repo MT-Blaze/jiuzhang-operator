@@ -218,18 +218,17 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
+  align-items: stretch;
+  gap: 10px;
   width: 100%;
   height: 100%;
   min-height: 240px;
-  padding: 24px 20px;
+  padding: 16px 14px;
   border: 2px dashed var(--line-strong);
   border-radius: 20px;
   background: var(--card);
   color: var(--ink-soft);
-  text-align: center;
+  text-align: left;
   overflow: hidden;
 }
 
@@ -253,10 +252,14 @@ body {
   pointer-events: none;
 }
 
+/* 空筐：文案在虚线框正中，列表进来后就让位给单列文件行。 */
 .ed-basket-empty {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  justify-content: center;
   gap: 6px;
+  text-align: center;
 }
 
 .ed-basket-pick {
@@ -265,66 +268,103 @@ body {
   color: var(--accent);
 }
 
+/* 垂直单列：一行一个文件，筐内独立滚动，底边留给【开始解析】。 */
 .ed-basket-list {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 14px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   width: 100%;
   min-height: 0;
   margin: 0;
-  padding: 0;
+  padding: 0 4px 0 0;
   overflow-y: auto;
   list-style: none;
 }
 
 .ed-basket-item {
-  position: relative;
   display: flex;
-  flex-direction: column;
+  flex: none;
   align-items: center;
-  gap: 6px;
-  max-width: 220px;
-  padding: 8px;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 4px 6px 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--bg, #fff);
 }
 
-/* 粘贴的截图要出大缩略图：老师一眼看得出贴的是哪道题。
-   画在 canvas 上：插件沙箱的 CSP 放行不了 blob:/data: 的 <img>，画布不受它管。 */
+/* 图片给 44px 小缩略图：画在 canvas 上——插件沙箱的 CSP
+   放行不了 blob:/data: 的 <img>，画布不受它管。 */
 .ed-basket-thumb {
   display: block;
-  width: 200px;
-  height: 200px;
-  border-radius: 10px;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
   background: var(--void, #fafafa);
 }
 
-.ed-basket-name {
-  max-width: 200px;
-  font-size: 12px;
-  color: var(--ink);
-  word-break: break-all;
-  text-align: center;
+/* 文档图标：一页纸的轮廓 + 右上角后缀标，后缀直接写在图标里。 */
+.ed-basket-icon {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink-soft);
+  overflow: hidden;
 }
 
-/* 移除钮：触控面照 AGENTS §6 保 44px。 */
-.ed-basket-x {
+.ed-basket-icon::before {
+  content: "";
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 0;
+  right: 0;
+  border-width: 0 10px 10px 0;
+  border-style: solid;
+  border-color: transparent var(--bg, #fff) transparent transparent;
+}
+
+.ed-basket-icon-ext {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* 中间文件名：一行到底，超长自动省略，悬停看 title。 */
+.ed-basket-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 移除钮：触控面照 AGENTS §6 保 44px；视觉上只留一个红 ×。 */
+.ed-basket-x {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--card);
-  color: var(--ink-soft);
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger, #d33);
   font: inherit;
   font-size: 18px;
   line-height: 1;
@@ -332,8 +372,8 @@ body {
 }
 
 .ed-basket-x:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--danger-soft, #fdecec);
+  color: var(--danger, #d33);
 }
 
 .ed-basket-foot {
@@ -972,8 +1012,18 @@ body {
   text-overflow: ellipsis;
 }
 
+.ep-std-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .ep-std-name {
+  flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
   padding: 2px 0;
   font: inherit;
   font-size: 13px;
@@ -986,6 +1036,35 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 手改过标准名：底线换成琥珀色，提示「自动拼接暂停了」。 */
+.ep-std-name[data-mode="manual"] {
+  border-bottom-color: #c8922a;
+}
+
+/* 「已更新」淡色闪烁：只亮一下就熄灭，不抢老师的视线。 */
+.ep-std-flash {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.ep-std-flash[data-show="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ep-std-hint[data-mode="manual"] {
+  color: #8a6a1f;
 }
 
 /* 接收区：卷子与截图从这里进批次 */
@@ -1063,6 +1142,121 @@ body {
 
 .ep-school-x:hover {
   color: var(--danger);
+}
+
+/* 组合框：输入框下面挂一列候选（学校字典 / 交叉标签共用）。 */
+.ep-combo {
+  position: relative;
+  min-width: 0;
+}
+
+.ep-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 190px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+}
+
+.ep-menu[hidden] {
+  display: none;
+}
+
+.ep-menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ep-menu-item:hover {
+  background: var(--accent-soft);
+}
+
+.ep-menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-menu-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 新学校确认：AI 补全的全称可见可改，确认后才建档。 */
+.ep-school-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #c8922a;
+  border-radius: 8px;
+  background: #fffbf2;
+}
+
+.ep-school-confirm[hidden] {
+  display: none;
+}
+
+.ep-school-confirm-text {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.ep-school-confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.ep-school-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ep-error {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #fdecec;
+  color: var(--danger, #d33);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.ep-error[hidden] {
+  display: none;
 }
 
 .ep-status-row {
@@ -1341,6 +1535,14 @@ body {
   border-radius: 5px;
   width: 100%;
   min-width: 0;
+}
+
+/* 简称冲突：输入框爆红 + 原话回显，提交按钮不许再点。 */
+.ep-input.is-invalid,
+.ep-input[aria-invalid="true"] {
+  border-color: var(--danger, #d33);
+  background: #fdf2f2;
+  color: var(--danger, #d33);
 }
 
 .ep-group {

@@ -171,8 +171,11 @@ def run(tag: str) -> dict:
                   f"plugin:{PLUGIN_ID}" in state["tabs"]
                   and state["stageTitle"] == "数据看板"
                   and state["activePluginId"] == PLUGIN_ID
-                  and state["tabs"] != ["console"],
+                  and state["tabs"] == ["plugin:" + PLUGIN_ID],
                   json.dumps(state, ensure_ascii=False))
+            check("默认启动时「设置与控制台」一个页签都不许自己冒出来",
+                  "console" not in state["tabs"],
+                  {"tabs": state["tabs"]})
             snap("05-boot-default-dashboard")
 
             status, body = call("POST", "/api/startup", {"target": "plugin:" + PLUGIN_ID}, token=True)
@@ -207,7 +210,7 @@ def run(tag: str) -> dict:
             check("停用后启动停在空画布（不开失效插件、不补兜底页）",
                   f"plugin:{PLUGIN_ID}" not in state["tabs"]
                   and state["stageTitle"] == "工作台"
-                  and state["tabs"] == ["console"]
+                  and state["tabs"] == []
                   and state["visiblePanels"] == 0,
                   f"tabs={state['tabs']} panels={state['visiblePanels']} title={state['stageTitle']}")
             check("回退原因在底栏如实播报（host.warn）",
@@ -239,7 +242,7 @@ def run(tag: str) -> dict:
                 report["notes"]["fallback_uninstalled"] = state
                 check("卸载后启动不炸、停在空画布",
                       state["stageTitle"] == "工作台" and f"plugin:{PLUGIN_ID}" not in state["tabs"]
-                      and state["tabs"] == ["console"] and state["visiblePanels"] == 0
+                      and state["tabs"] == [] and state["visiblePanels"] == 0
                       and len(report["errors"]) == 0,
                       f"title={state['stageTitle']} tabs={state['tabs']} "
                       f"panels={state['visiblePanels']} errors={report['errors'][:2]}")

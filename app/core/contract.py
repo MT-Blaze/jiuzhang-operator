@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-CONTRACT_VERSION = "2.0"
-LEGACY_SCHEMA_VERSIONS = ("1.0",)
+CONTRACT_VERSION = "2.1"
+LEGACY_SCHEMA_VERSIONS = ("1.0", "2.0")
 # 1.0 的难度口径已废弃；novel 并入 L4（主公 2026-10-23 裁决）。
 LEGACY_DIFFICULTY = {
     "basic": "L1",

@@ -300,7 +300,7 @@ class ScanTest(DedupeCase):
                    if group["count"] == 3)
         first = big["documents"][0]
         self.assertEqual(first["id"], "q_dup001")
-        self.assertEqual(first["schema_version"], "2.0")
+        self.assertEqual(first["schema_version"], "2.1")
         self.assertEqual(len(first["options"]), 4)
         self.assertEqual(first["answer"]["choice_keys"], ["A"])
         self.assertEqual(first["difficulty"], "L2")

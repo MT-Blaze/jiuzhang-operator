@@ -619,9 +619,11 @@
     // 「记一笔」级别：只是流水，不惊动人。显式声明的 note 优先于关键词判定。
     if (/^note[._-]/i.test(name)) return "note";
     if (/(^|[._-])(error|failed|failure|timeout)([._-]|$)/i.test(name) ||
-      /失败|错误|异常|超时/.test(text)) {
+      /失败|错误|异常|超时|冲突/.test(text) ||
+      /\b(not found|unauthorized|forbidden|internal server error|bad gateway|gateway timeout)\b/i.test(text)) {
       return "error";
     }
+    if (/(^|[._-])(warn|warning)([._-]|$)/i.test(name)) return "warn";
     if (/^(plugin|workspace|system|stage|layout|provider)\./.test(name)) return "system";
     return "info";
   }
@@ -669,7 +671,8 @@
   }
 
   function entryVisible(entry) {
-    if (dockView === "error") return entry.level === "error";
+    // 「出了岔子」与「报错」同住诊断页：warn 只是语气轻，但不许在诊断里缺席。
+    if (dockView === "error") return entry.level === "error" || entry.level === "warn";
     if (dockView === "terminal") return entry.level === "system";
     return true;
   }
@@ -690,7 +693,8 @@
       var item = document.createElement("li");
       item.className = "ws-dock-item";
       item.setAttribute("data-level", entry.level);
-      item.setAttribute("data-copy", entry.line);
+      // 报错诊断复制的是完整现场；没有现场才退回那一行摘要。
+      item.setAttribute("data-copy", entry.detail || entry.line);
       var time = document.createElement("span");
       time.className = "ws-dock-time";
       time.textContent = entry.time;
@@ -705,6 +709,14 @@
       body.className = "ws-dock-text";
       body.textContent = entry.text;
       item.appendChild(body);
+      // 报错诊断要打完整现场：Response 全文、堆栈、请求行一律按原文铺开，
+      // 不许只剩干瘪的一句「Not Found」。
+      if (dockView === "error" && entry.detail && entry.detail !== entry.text) {
+        var detail = document.createElement("pre");
+        detail.className = "ws-dock-detail";
+        detail.textContent = entry.detail;
+        item.appendChild(detail);
+      }
       if (dockView === "error") {
         var hint = document.createElement("span");
         hint.className = "ws-dock-copy";
@@ -737,16 +749,19 @@
   if (dockLog) {
     dockLog.addEventListener("mousedown", function (event) {
       if (dockView !== "error") return;
+      if (event.target && event.target.closest && event.target.closest(".ws-dock-detail")) return;
       var target = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
       if (target) event.preventDefault();
     });
     dockLog.addEventListener("selectstart", function (event) {
       if (dockView !== "error") return;
+      if (event.target && event.target.closest && event.target.closest(".ws-dock-detail")) return;
       var target = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
       if (target) event.preventDefault();
     });
     dockLog.addEventListener("dblclick", function (event) {
       if (dockView !== "error") return;
+      if (event.target && event.target.closest && event.target.closest(".ws-dock-detail")) return;
       var item = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
       if (!item) return;
       event.preventDefault();
@@ -787,11 +802,18 @@
     });
   }
 
-  function dockLine(text, topic, level) {
-    var body = String(text == null ? "" : text).slice(0, 400);
+  function dockLine(text, topic, level, detail) {
+    var full = String(text == null ? "" : text);
+    var body = full.slice(0, 400);
     var name = String(topic || "");
     var at = stamp();
-    var kind = level || dockLevel(name, body);
+    var kind = String(level || "");
+    if (kind === "warning") kind = "warn";
+    if (["note", "warn", "error", "system", "info"].indexOf(kind) < 0) kind = "";
+    if (!kind) kind = dockLevel(name, full);
+    // 完整现场独立存放：运行日志只显示摘要，诊断页才铺原文。
+    var detailText = String(detail == null ? "" : detail).slice(0, 20000);
+    if (!detailText && (kind === "error" || kind === "warn")) detailText = full.slice(0, 20000);
     // 「记一笔」只留一行灰字：`[15:30] 正文`——不带主题名，不带秒，像随口说的。
     var line = kind === "note"
       ? "[" + at.slice(0, 5) + "] " + body
@@ -800,6 +822,7 @@
       time: at,
       topic: name,
       text: body,
+      detail: detailText,
       level: kind,
       line: line,
     });
@@ -811,7 +834,11 @@
     if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
     window.JzoBus.on("region.dock", function (event) {
       var payload = event.payload || {};
-      dockLine(payload.text || "（空消息）", payload.topic || event.topic, payload.level);
+      // tone 是老口径、level 是新口径：两者都收，warn/error 一律进【报错诊断】。
+      var tone = String(payload.level || payload.tone || "");
+      var detail = typeof payload.detail === "string" ? payload.detail
+        : (typeof payload.detail_text === "string" ? payload.detail_text : "");
+      dockLine(payload.text || "（空消息）", payload.topic || event.topic, tone, detail);
     });
     window.JzoBus.on("layout.changed", function (event) {
       var payload = event.payload || {};

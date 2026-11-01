@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.jiuzhang.local/question-2.0.json",
+  "$id": "https://schemas.jiuzhang.local/question-2.1.json",
   "title": "九章算子题目交换格式",
   "description": "题目（Question）在底座、插件与导入导出之间流转的唯一标准结构。文本字段统一使用 Markdown + LaTeX：行内公式 $...$，独立公式 $$...$$。",
   "type": "object",
@@ -8,8 +8,8 @@
   "required": ["schema_version", "id", "type", "stem", "difficulty", "meta"],
   "properties": {
     "schema_version": {
-      "const": "2.0",
-      "description": "结构版本。破坏性变更必须升主版本，并提供迁移说明。2.0 的破坏性变更只有一处：difficulty 由 basic/medium/hard/novel 改为 L1/L2/L3/L4（novel 废弃，并入 L4）；底座写入端对 1.0 的旧值做强制归一，读出的文档一律是 2.0 口径。"
+      "const": "2.1",
+      "description": "结构版本。破坏性变更必须升主版本，并提供迁移说明。2.0 的破坏性变更只有一处：difficulty 由 basic/medium/hard/novel 改为 L1/L2/L3/L4（novel 废弃，并入 L4）；底座写入端对 1.0 的旧值做强制归一，读出的文档一律是 2.0 口径。2.1 只做加法：source 增补 body / scene_type / school_id / school_ids，学校名不再作为题目字段写入。"
     },
     "id": {
       "type": "string",
@@ -345,9 +345,35 @@
           "type": "string",
           "maxLength": 64
         },
+        "body": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "主体（例如「三省六校」「哈三中」）。它描述这份卷子的组织者，不是学校字典里的实体。"
+        },
         "school": {
           "type": "string",
-          "maxLength": 64
+          "maxLength": 64,
+          "description": "旧接口的学校展示简称，只读派生。2.1 起新写入一律只存 school_id / school_ids，学校名不再进题目字段。"
+        },
+        "school_id": {
+          "type": "string",
+          "pattern": "^sch_[A-Za-z0-9_-]{4,40}$",
+          "description": "主学校在字典里的稳定 ID。"
+        },
+        "school_ids": {
+          "type": "array",
+          "maxItems": 24,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^sch_[A-Za-z0-9_-]{4,40}$"
+          },
+          "description": "这一卷涉及的全部学校 ID；第一所就是主学校。题目里不存学校名。"
+        },
+        "scene_type": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "主场景（高考题 / 联考题 / 区域统考题 / 校考题 / 机构题 / 汇编题 / 自编题 / 强基题 / 竞赛题 / 自主招生题 / 外国题）。"
         },
         "exam_type": {
           "type": "string",
@@ -464,7 +490,7 @@
   },
   "examples": [
     {
-      "schema_version": "2.0",
+      "schema_version": "2.1",
       "id": "q_01J9Z3K4M5N6P7Q8R9S0T1V2W3",
       "type": "single_choice",
       "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则 $A$ 中元素的个数为（　　）",
@@ -492,8 +518,11 @@
       "source": {
         "year": 2026,
         "region": "示例",
-        "school": "九章算子",
+        "body": "九章算子",
+        "scene_type": "自编题",
         "exam_type": "示例题",
+        "school_id": "sch_9zDemo01",
+        "school_ids": ["sch_9zDemo01"],
         "paper_title": "九章算子 Schema 示例卷",
         "question_no": "1"
       },

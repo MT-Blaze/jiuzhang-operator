@@ -70,10 +70,10 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "2.3.0",
+      "version": "2.4.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "批次审核台：首屏左右 50/50，左栏历史批次，右栏一只巨大圆角虚线文件收集筐——点框选文件、拖到画布任何位置都落筐、Ctrl+V 粘贴的截图直接出 200×200 缩略图；筐里有文件才亮出【🚀 开始解析 (N 个文件)】，点它才建批次。点批次行切入三栏改题；二屏三钮（存入主库/存为待办/删除），超 3 分钟静默存回待审池。辅助栏有批次公共元数据。左栏「重新框选」带放大镜，像素切图。写库走宿主。",
+      "description": "批次审核台：首屏左右 50/50，左栏历史批次，右栏圆角虚线收集筐——拖文件、点框、Ctrl+V 截图都落筐；筐内垂直单列（图标/文件名/红×）、独立滚动、底部固定【开始解析】才建批次。批次元数据接数据字典：11 场景、交叉标签按场景加权模糊匹配、新标签回车即记；学校只存 school_id、简称冲突硬拦截、AI 补全确认建档；标准名实时拼接、改元数据闪「已更新」、手改暂停。写库走宿主。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",

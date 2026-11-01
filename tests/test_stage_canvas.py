@@ -206,7 +206,9 @@ class WorkspaceWiringTest(unittest.TestCase):
         self.assertNotIn('registerNative({ key: "home"', STAGE, "引导页签必须彻底移除")
         self.assertNotIn('activate("home")', STAGE)
         self.assertNotIn("引导", STAGE, "stage.js 里不许再出现「引导」")
-        self.assertIn('registerNative({ key: "console"', STAGE)
+        self.assertIn('key: "console", title: "设置与控制台"', STAGE)
+        self.assertIn('panelId: "wsPanelConsole", lazy: true', STAGE,
+                      "控制台只登记定义、懒加载，不许启动就建页签")
         self.assertIn("closable: options.closable !== false", STAGE)
         self.assertIn("function ensureNative(", STAGE, "关掉的控制台要能按登记表重建")
         # 关完所有页签：不回补兜底页、不写占位字，画布留白

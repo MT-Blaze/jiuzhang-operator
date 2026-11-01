@@ -132,12 +132,18 @@
          · 查重与彻底删除各有一次确认弹窗，焦点圈在弹窗里。 -->
   <div id="epRoot" class="ep-root" hidden>
     <div class="ep-scroll" id="epScroll">
-      <!-- 最上方两行（军令 #25）：第一行灰字是原文件名，第二行黑字只读是标准名。
-           标准名由年份-地区-主体-类型-学科拼出来，底座重算，谁都改不动。 -->
+      <!-- 最上方两行（军令 #25 / #28）：第一行灰字是原文件名，第二行是标准名。
+           标准名由年份-地区-主体-场景-类型-学科实时拼出来；老师手改即暂停联动，
+           再动任意元数据就恢复自动重拼，并用淡色「已更新」闪一下。 -->
       <div class="ep-top">
         <p class="ep-src-name" id="epSrcName" data-name="" title="原文件名">还没有批次</p>
-        <input id="epStdName" class="ep-std-name" type="text" readonly
-               aria-label="标准名（自动拼接，不可手改）" placeholder="标准名（自动拼接）" value="">
+        <div class="ep-std-row">
+          <input id="epStdName" class="ep-std-name" type="text" maxlength="120"
+                 data-mode="auto" aria-describedby="epStdHint"
+                 placeholder="标准名（自动拼接，也可手改）" value="">
+          <span class="ep-std-flash" id="epStdFlash" aria-live="polite"></span>
+        </div>
+        <p class="ep-hint ep-std-hint" id="epStdHint" data-mode="auto">自动拼接；手改后暂停联动，再改元数据即恢复。</p>
       </div>
 
       <!-- 批次公共元数据（军令 #25）：改一次，这一批所有题的 sources 立刻跟着改。 -->
@@ -166,17 +172,45 @@
           <input id="epMetaBody" class="ep-input" type="text" maxlength="64"
                  list="epMetaBodyList" placeholder="三省六校">
         </label>
-        <!-- 明细学校：主体填了才冒出来。名单记在底座，下次同主体自动带出。 -->
+        <!-- 明细学校（军令 #28）：题目里只存 school_id，校名一律回字典查。
+             输入时搜字典；搜不到就先让 AI 补全全称，老师确认后才建档。
+             简称撞车时输入框爆红并原话拦截，一个字都不许敷衍。 -->
         <div class="ep-schools" id="epMetaSchools" hidden>
           <div class="ep-school-list" id="epSchoolList" role="list" aria-label="明细学校"></div>
-          <input id="epSchoolInput" class="ep-input" type="text" maxlength="32"
-                 placeholder="加一所学校，回车" aria-label="加一所明细学校">
+          <div class="ep-combo">
+            <input id="epSchoolInput" class="ep-input" type="text" maxlength="64"
+                   autocomplete="off" role="combobox" aria-expanded="false"
+                   aria-controls="epSchoolMenu" aria-autocomplete="list"
+                   placeholder="搜简称或全称，回车加入" aria-label="加一所明细学校">
+            <div class="ep-menu" id="epSchoolMenu" role="listbox" aria-label="学校候选" hidden></div>
+          </div>
+          <div class="ep-school-confirm" id="epSchoolConfirm" hidden>
+            <p class="ep-school-confirm-text" id="epSchoolConfirmText"></p>
+            <label class="ep-school-confirm-field">
+              <span>全称</span>
+              <input id="epSchoolFullName" class="ep-input" type="text" maxlength="120"
+                     placeholder="学校规范全称">
+            </label>
+            <div class="ep-school-confirm-actions">
+              <button type="button" class="ep-btn ep-btn-primary" id="epSchoolConfirmOk">确认建档</button>
+              <button type="button" class="ep-btn" id="epSchoolConfirmCancel">取消</button>
+            </div>
+          </div>
+          <p class="ep-error" id="epSchoolError" role="alert" hidden></p>
         </div>
+        <label class="ep-field">
+          <span class="ep-label">场景</span>
+          <select id="epMetaScene" class="ep-select" aria-describedby="epSceneNote"></select>
+        </label>
         <div class="ep-row">
           <label class="ep-field ep-field-narrow">
             <span class="ep-label">考试类型</span>
-            <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
-                   list="epMetaExamTypeList" placeholder="高三联考">
+            <div class="ep-combo">
+              <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
+                     autocomplete="off" role="combobox" aria-expanded="false"
+                     aria-controls="epTagMenu" aria-autocomplete="list" placeholder="高三联考">
+              <div class="ep-menu" id="epTagMenu" role="listbox" aria-label="交叉标签候选" hidden></div>
+            </div>
           </label>
           <label class="ep-field ep-field-narrow">
             <span class="ep-label">学科</span>
@@ -186,9 +220,9 @@
         </div>
         <datalist id="epMetaRegionList"></datalist>
         <datalist id="epMetaBodyList"></datalist>
-        <datalist id="epMetaExamTypeList"></datalist>
         <datalist id="epMetaSubjectList"></datalist>
-        <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步（明细学校拆成隐藏标签，能被搜到）。</p>
+        <p class="ep-hint" id="epSceneNote">场景决定标签排序：外国题先出 AMC / A-Level / IB，校考题先出月考与模考。</p>
+        <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步；学校只存字典 ID，按简称能搜到。</p>
       </section>
 
       <section class="ep-sec" aria-label="编辑视图">

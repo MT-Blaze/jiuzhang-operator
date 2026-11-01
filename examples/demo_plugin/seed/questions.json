@@ -1,6 +1,6 @@
 [
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_demo_bank_0001",
     "type": "single_choice",
     "stem": "已知集合 $A=\\{x\\mid x^2-2x-3\\le 0\\}$，$B=\\{x\\mid x>1\\}$，则 $A\\cap B=$（　　）",
@@ -35,7 +35,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_demo_bank_0002",
     "type": "single_choice",
     "stem": "设复数 $z=\\dfrac{2+\\mathrm{i}}{1-\\mathrm{i}}$（其中 $\\mathrm{i}$ 为虚数单位），则 $|z|=$（　　）",
@@ -70,7 +70,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_demo_bank_0003",
     "type": "fill_blank",
     "stem": "曲线 $y=x\\ln x$ 在点 $(1,0)$ 处的切线方程为______。",
@@ -99,7 +99,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_demo_bank_0004",
     "type": "solution",
     "stem": "已知等差数列 $\\{a_n\\}$ 满足 $a_2=3$，$a_5=9$。\n\n（1）求 $\\{a_n\\}$ 的通项公式；\n\n（2）求前 $n$ 项和 $S_n$。",
@@ -132,7 +132,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_demo_bank_0005",
     "type": "solution",
     "stem": "在 $\\triangle ABC$ 中，内角 $A,B,C$ 所对的边分别为 $a,b,c$，已知 $b\\cos C+c\\cos B=2a\\cos A$。\n\n（1）求角 $A$ 的大小；\n\n（2）若 $a=2$，求 $\\triangle ABC$ 面积的最大值。",

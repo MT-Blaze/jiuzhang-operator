@@ -269,6 +269,29 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
     """Mock 实现：返回预设假数据，保持接口签名一致。"""
     lower_msg = user_message.lower()
 
+    # 学校字典补全（军令 #28）：缺密钥时也要能走通「建议 → 老师确认 → 建档」。
+    if "名称补全助手" in system_prompt:
+        matched = re.search(r"简称：(.+)", user_message)
+        short = matched.group(1).strip() if matched else ""
+        known = {
+            "师大附中": "哈尔滨师范大学附属中学",
+            "哈三中": "哈尔滨市第三中学校",
+            "哈师大附中": "哈尔滨师范大学附属中学",
+        }
+        full = known.get(short, f"{short}（Mock 补全，请老师确认）" if short else "")
+        content = json.dumps(
+            {"full_name": full, "confidence": 0.42 if short else 0.0},
+            ensure_ascii=False,
+        )
+        return {
+            "content": content,
+            "tool_calls": [],
+            "usage": {"prompt_tokens": len(system_prompt) // 4,
+                      "completion_tokens": len(content) // 4},
+            "model": "mock-agent-v1",
+            "mock": True,
+        }
+
     # Split agent: return question list directly。
     # 只认拆题 Agent 的专属前缀：对话提示词里含 "split_paper" 动作名，
     # 用 "split" 子串判断会把普通对话误当成拆题。

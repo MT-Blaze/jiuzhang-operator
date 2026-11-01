@@ -128,7 +128,7 @@ class BundleParsingTest(unittest.TestCase):
         bundle = self.transfer.build_bundle(PLUGIN_ID, [_question(1)], "2026-10-24T09:00:00+08:00")
         self.assertEqual(bundle["format"], "jiuzhang.question.bundle")
         self.assertEqual(bundle["count"], 1)
-        self.assertEqual(bundle["schema_version"], "2.0")
+        self.assertEqual(bundle["schema_version"], "2.1")
         raw = json.dumps(bundle, ensure_ascii=False).encode("utf-8")
         self.assertEqual(len(self.transfer.parse_bundle(raw, "bundle.json")), 1)
 

@@ -52,7 +52,7 @@ PENDING_ASSET_URI_PREFIX = "/static/pending/"
 UPLOAD_ASSET_URI_PREFIX = "/static/uploads/"
 UPLOAD_ASSET_PREFIX = "img_"
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MAX_PAGE_SIZE = 100
 MAX_BATCH_QUESTIONS = 500
 
@@ -65,22 +65,68 @@ EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
-# 公共元数据的字段名：五个可填字段 + 明细学校名单 + 自动拼出的标准名。
-META_FIELDS = ("year", "region", "body", "exam_type", "subject")
+# 公共元数据的字段名：可填字段 + 明细学校（一律存字典 ID）+ 自动拼出的标准名。
+META_FIELDS = ("year", "region", "body", "exam_type", "subject", "scene_type")
 META_SCHOOL_LIMIT = 24
 # 标准名最终落进 source.paper_title，契约上限 120 字；这里跟契约对齐，不自造口径。
 META_NAME_LIMIT = 120
-# 明细学校以隐藏标签的形式拆开存：「#哈三中」。井号开头的一律不进可见胶囊，
-# 但照样进题库、照样能被搜到（搜「哈三中」能找出「三省六校」那道题）。
-HIDDEN_TAG_PREFIX = "#"
 # 契约里 tags 的 maxItems 就是 32；超出的明细学校**不硬塞**，
 # 老师的可见标签一个都不许挤掉——塞不下的如实上报。
 MAX_TAGS = 32
+# 老版本的明细学校以隐藏标签形式存过校名；升到 2.1 后题目只存 school_id，
+# 这些遗留隐藏标签在一次元数据同步时清掉。
+HIDDEN_TAG_PREFIX = "#"
 # 「主体 → 明细名单」的对应关系在 meta_history 里用一行记。
 # 主体与名单之间用竖线分，学校名之间用单元分隔符分——校名里可能有逗号（"哈三中,分校"），
 # 拿逗号当分隔会把一所学校劈成两半。
 GROUP_SEP = "|"
 GROUP_ITEM_SEP = "\x1f"
+
+# 11 大主场景（主公 2026-11-01 裁定）。场景名就是题目里存的值，字典表只做登记与排序。
+SCENE_SEED = (
+    ("scene_gaokao", "高考题"),
+    ("scene_liankao", "联考题"),
+    ("scene_region", "区域统考题"),
+    ("scene_school", "校考题"),
+    ("scene_agency", "机构题"),
+    ("scene_compilation", "汇编题"),
+    ("scene_selfmade", "自编题"),
+    ("scene_qiangji", "强基题"),
+    ("scene_contest", "竞赛题"),
+    ("scene_selftest", "自主招生题"),
+    ("scene_foreign", "外国题"),
+)
+SCENE_NAMES = tuple(name for _id, name in SCENE_SEED)
+SCENE_BY_NAME = {name: scene_id for scene_id, name in SCENE_SEED}
+
+# 交叉标签的初始权重：场景专属权重排前面，全局权重垫底。
+# 「外国题」优先 AMC / A-Level / IB；「校考题」优先 9月月考 / 一模；
+# 输入「模」要能把零到七模一次带出来。
+EXAM_SEED = (
+    ("AMC", "外国题", 100),
+    ("A-Level", "外国题", 90),
+    ("IB", "外国题", 80),
+    ("9月月考", "校考题", 100),
+    ("一模", "校考题", 90),
+    ("零模", "校考题", 80),
+    ("二模", "校考题", 70),
+    ("三模", "校考题", 60),
+    ("四模", "校考题", 50),
+    ("五模", "校考题", 40),
+    ("六模", "校考题", 30),
+    ("七模", "校考题", 20),
+    ("AMC", "竞赛题", 100),
+    ("全国高中数学联赛", "竞赛题", 90),
+    ("零模", "", 10),
+    ("一模", "", 10),
+    ("二模", "", 10),
+    ("三模", "", 10),
+    ("四模", "", 10),
+    ("五模", "", 10),
+    ("六模", "", 10),
+    ("七模", "", 10),
+    ("百日誓师考", "", 5),
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS batches (
@@ -114,6 +160,29 @@ CREATE TABLE IF NOT EXISTS meta_history (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (kind, value)
 );
+CREATE TABLE IF NOT EXISTS schools (
+    id         TEXT PRIMARY KEY,
+    full_name  TEXT NOT NULL,
+    short_name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_short_name ON schools (short_name);
+CREATE INDEX IF NOT EXISTS idx_schools_full_name ON schools (full_name);
+CREATE TABLE IF NOT EXISTS scene_types (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS exam_types (
+    name       TEXT NOT NULL,
+    scene      TEXT NOT NULL DEFAULT '',
+    weight     INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (name, scene)
+);
+CREATE INDEX IF NOT EXISTS idx_exam_types_name ON exam_types (name);
 """
 
 
@@ -191,6 +260,10 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
         raise PendingError(
             f"中转站结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级程序或恢复备份。"
         )
+    if version == SCHEMA_VERSION:
+        # 结构已经是最新：连接只做读，绝不因为「每次连接都建表/播种」而在
+        # 别人持有写锁时再抢一把写锁（WAL 下照样会 BUSY）。
+        return
     if version == 1:
         # v1 只有一张没有批次的平表。先把旧表挪个名，新表建好后再把数据搬过去。
         if "pending_items" in _table_names(con):
@@ -205,6 +278,9 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
         _migrate_v2_columns(con)
     if version < 4:
         _migrate_v3_sequence(con)
+    if version < 5:
+        _migrate_v4_dictionary(con)
+    _seed_dictionary(con)
     # 次序号的索引必须等迁移把列补上再建：
     # 老库里还没有 seq 这一列，先建索引就是一句「no such column: seq」，
     # 整个服务起不来。
@@ -215,6 +291,82 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
     if version != SCHEMA_VERSION:
         con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     con.commit()
+
+
+def _seed_dictionary(con: sqlite3.Connection) -> None:
+    """字典基线：11 个主场景与带权重的交叉标签只补不删。
+
+    每次连接都``INSERT OR IGNORE``——老师删过的标签不会复活，老师新增的标签
+    也不会被冲掉；种子只在缺行时填上。
+    """
+    now = questions.now_iso()
+    for order, (scene_id, name) in enumerate(SCENE_SEED, start=1):
+        con.execute(
+            "INSERT OR IGNORE INTO scene_types (id, name, sort_order, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (scene_id, name, order, now),
+        )
+    for name, scene, weight in EXAM_SEED:
+        con.execute(
+            "INSERT OR IGNORE INTO exam_types (name, scene, weight, updated_at)"
+            " VALUES (?, ?, ?, ?)",
+            (name, scene, weight, now),
+        )
+
+
+def _school_id_for_name(name: str) -> str:
+    """迁移与旧客户端按名字建档时的稳定 ID：同一名字在哪台机器上都得到同一号。"""
+    return "sch_" + hashlib.sha256(("school:" + name).encode("utf-8")).hexdigest()[:11]
+
+
+def _migrate_v4_dictionary(con: sqlite3.Connection) -> None:
+    """v4 → v5：把旧批次里的学校名搬进字典，题目只留 ID。
+
+    旧 ``meta_json`` 的 ``schools`` 是校名数组。迁移时按名字建字典行（全称先按
+    简称占位，老师之后可补全），再把 meta 改写成 ``school_ids``。老批次的
+    标准名与可见标签都不动——升级不替老师改题。
+    """
+    now = questions.now_iso()
+    rows = con.execute("SELECT batch_id, meta_json FROM batches").fetchall()
+    for row in rows:
+        try:
+            meta = json.loads(row["meta_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(meta, dict):
+            continue
+        names = meta.pop("schools", None)
+        if not isinstance(names, list):
+            continue
+        ids: list[str] = []
+        for raw in names:
+            name = str(raw or "").strip()[:120]
+            if not name:
+                continue
+            existing = con.execute(
+                "SELECT id FROM schools WHERE full_name = ? OR short_name = ? LIMIT 1",
+                (name, name),
+            ).fetchone()
+            if existing is not None:
+                school_id = str(existing["id"])
+            else:
+                school_id = _school_id_for_name(name)
+                con.execute(
+                    "INSERT OR IGNORE INTO schools"
+                    " (id, full_name, short_name, created_at, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (school_id, name, name[:60], now, now),
+                )
+            if school_id not in ids:
+                ids.append(school_id)
+        meta["school_ids"] = ids
+        meta.setdefault("name_mode", "auto")
+        if not meta.get("standard_name"):
+            meta["standard_name"] = build_standard_name(meta)
+        con.execute(
+            "UPDATE batches SET meta_json = ? WHERE batch_id = ?",
+            (json.dumps(meta, ensure_ascii=False, separators=(",", ":")), row["batch_id"]),
+        )
 
 
 def _migrate_v3_sequence(con: sqlite3.Connection) -> None:
@@ -328,7 +480,7 @@ def _contract_probe(document: dict[str, Any]) -> dict[str, Any]:
     """
     probe = copy.deepcopy(document)
     probe["id"] = "q_" + secrets.token_hex(12)
-    probe["schema_version"] = "2.0"
+    probe["schema_version"] = "2.1"
     images = probe.get("images")
     if isinstance(images, list):
         for image in images:
@@ -669,6 +821,8 @@ def _remember_approved(con: sqlite3.Connection, batch_id: str, question_id: str)
 
 def _batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
     """批次卡片：时间、编号、未审数 / 总题数，外加原文件名与公共元数据。"""
+    from app.core import meta_dict
+
     return {
         "batch_id": str(row["batch_id"]),
         "label": str(row["label"]),
@@ -676,7 +830,7 @@ def _batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
         "updated_at": str(row["updated_at"]),
         "source_backup": str(row["source_backup"] or ""),
         "source_name": str(row["source_name"] or ""),
-        "meta": _read_meta(row),
+        "meta": meta_dict.decorate_meta(_read_meta(row)),
         "approved_count": len(_read_approved(row)),
         "total": int(row["total"] or 0),
         "pending_count": live,
@@ -847,6 +1001,14 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                 (target_batch, batch_label(_now()), now, now, backup_text, name_text, "[]"),
             )
         current = _batch_row(con, target_batch)
+        # 公共元数据是这一批的「共同出处」：每次暂存都按批次上的那一份重写，
+        # 插件只报自己看得见的字段也抹不掉场景、学校 ID 与标准名。
+        batch_meta = _read_meta(current) if current is not None else {}
+        if batch_meta:
+            for document, _stored, _pending_id in prepared:
+                ok, reason, _notes = _apply_meta_to_document(document, batch_meta)
+                if not ok:
+                    raise PendingError("这一批的公共元数据与题目对不上：" + reason)
         if backup_text and not str((current or {"source_backup": ""})["source_backup"] or ""):
             con.execute(
                 "UPDATE batches SET source_backup = ? WHERE batch_id = ?",
@@ -1014,34 +1176,92 @@ def _clean_text(value: Any, limit: int) -> str:
 
 
 def build_standard_name(meta: dict[str, Any]) -> str:
-    """标准名：``年份-地区-主体-类型-学科``。
+    """标准名：``年份-地区-主体-场景-类型-学科``。
 
-    空段不占位（少一段就少一个连字符），纯靠拼接算出来——界面上那格是只读的，
-    底座也绝不接受手改的标准名：老师改的是上面五个字段，标准名是它们的果。
+    空段不占位（少一段就少一个连字符），纯靠拼接算出来；只有老师手动改过
+    标准名且元数据没再动时，才保留手改值（见 ``normalize_batch_meta``）。
     """
     parts = [
         str(meta.get("year") or ""),
         str(meta.get("region") or ""),
         str(meta.get("body") or ""),
+        str(meta.get("scene_type") or ""),
         str(meta.get("exam_type") or ""),
         str(meta.get("subject") or ""),
     ]
     return "-".join(part for part in parts if part)[:META_NAME_LIMIT]
 
 
-def normalize_batch_meta(payload: Any) -> dict[str, Any]:
+def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
+    """明细学校一律落字典 ID；老客户端送校名时按名字找档（找不到就建档）。"""
+    from app.core import meta_dict
+
+    ids: list[str] = []
+    raw_ids = payload.get("school_ids")
+    if isinstance(raw_ids, list):
+        for item in raw_ids:
+            school_id = _clean_text(item, 40)
+            if school_id and school_id not in ids:
+                ids.append(school_id)
+    if not ids:
+        raw_names = payload.get("schools")
+        if isinstance(raw_names, list):
+            for item in raw_names:
+                name = _clean_text(item, 120)
+                if not name:
+                    continue
+                try:
+                    record = meta_dict.find_or_create_by_name(name)
+                except meta_dict.MetaDictError as exc:
+                    raise PendingError(str(exc)) from exc
+                if record["id"] not in ids:
+                    ids.append(record["id"])
+    if len(ids) > META_SCHOOL_LIMIT:
+        raise PendingError(f"明细学校最多 {META_SCHOOL_LIMIT} 所")
+    if ids:
+        try:
+            meta_dict.get_schools(ids)
+        except meta_dict.MetaDictError as exc:
+            raise PendingError(str(exc)) from exc
+    return ids
+
+
+def _meta_fingerprint(meta: dict[str, Any]) -> tuple[Any, ...]:
+    """判断「元数据有没有被改过」的比对键：标准名与手动模式不算元数据。"""
+    return (
+        meta.get("year"), meta.get("region"), meta.get("body"),
+        meta.get("exam_type"), meta.get("subject"), meta.get("scene_type"),
+        tuple(meta.get("school_ids") or []),
+    )
+
+
+def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
     """把老师填的公共字段规整成底座口径。
 
-    只收五个可填字段 + 明细学校名单；标准名一律由底座重算，请求里带的
-    ``standard_name`` 一律作废——那格是只读的，客户端说了不算。
+    - 明细学校只收字典 ID；老客户端送校名时先建档再换成 ID。
+    - 场景只收 11 个主场景之一。
+    - 标准名默认由底座重算；``name_mode=manual`` 且元数据没再变时保留手改值，
+      之后任何一项元数据再改，自动拼接立刻恢复（主公 2026-11-01 双向联动）。
     """
+    from app.core import meta_dict
+
     if payload is None:
         payload = {}
     if not isinstance(payload, dict):
         raise PendingError("公共元数据必须是对象")
 
+    # PATCH 语义：没带来的字段沿用上一版；带来的空串才是「真的清空」。
+    # 双向联动全靠这一步——老师只改标准名时，其余元数据原样不动，
+    # 指纹才不会误判成「元数据改了」，手改名也才留得住。
+    prior = previous if isinstance(previous, dict) else None
+    merged = dict(prior) if prior else {}
+    if "school_ids" in payload or "schools" in payload:
+        merged.pop("school_ids", None)
+        merged.pop("schools", None)
+    merged.update(payload)
+
     year: int | None = None
-    raw_year = str(payload.get("year") or "").strip()
+    raw_year = str(merged.get("year") or "").strip()
     if raw_year:
         if not raw_year.isdigit():
             raise PendingError("年份只能填数字")
@@ -1049,30 +1269,40 @@ def normalize_batch_meta(payload: Any) -> dict[str, Any]:
         if not 1900 <= year <= 2100:
             raise PendingError("年份要在 1900–2100 之间")
 
-    schools: list[str] = []
-    raw_schools = payload.get("schools")
-    if isinstance(raw_schools, list):
-        for item in raw_schools:
-            name = _clean_text(item, 32)
-            if name and name not in schools:
-                schools.append(name)
-    if len(schools) > META_SCHOOL_LIMIT:
-        raise PendingError(f"明细学校最多 {META_SCHOOL_LIMIT} 所")
+    try:
+        scene_type = meta_dict.normalize_scene(merged.get("scene_type"))
+    except meta_dict.MetaDictError as exc:
+        raise PendingError(str(exc)) from exc
 
     meta = {
         "year": year,
-        "region": _clean_text(payload.get("region"), 64),
-        "body": _clean_text(payload.get("body"), 64),
-        "exam_type": _clean_text(payload.get("exam_type"), 64),
-        "subject": _clean_text(payload.get("subject"), 64),
-        "schools": schools,
+        "region": _clean_text(merged.get("region"), 64),
+        "body": _clean_text(merged.get("body"), 64),
+        "exam_type": _clean_text(merged.get("exam_type"), 64),
+        "subject": _clean_text(merged.get("subject"), 64),
+        "scene_type": scene_type,
+        "school_ids": _school_ids_from_payload(merged),
     }
-    meta["standard_name"] = build_standard_name(meta)
+
+    changed = prior is not None and _meta_fingerprint(prior) != _meta_fingerprint(meta)
+    manual = str(payload.get("name_mode") or "").strip() == "manual"
+    if manual and not changed:
+        name = _clean_text(payload.get("standard_name"), META_NAME_LIMIT)
+        if not name and prior is not None:
+            name = str(prior.get("standard_name") or "")
+        meta["name_mode"] = "manual"
+        meta["standard_name"] = name or build_standard_name(meta)
+    else:
+        meta["name_mode"] = "auto"
+        meta["standard_name"] = build_standard_name(meta)
     return meta
 
 
 def _apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tuple[bool, str, list[str]]:
     """把公共元数据写进一道题的 ``source`` 与 ``tags``。
+
+    学校只写 ``school_id`` / ``school_ids``，校名一个字节都不进题目文档；
+    老版本留下的隐藏校名标签在这里一并清掉。
 
     返回 (是否写成功, 失败原因, 提示)。写不成的题**原样留着**并如实上报，
     绝不为了「同步成功」去改坏老师已经录好的题。
@@ -1080,29 +1310,36 @@ def _apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> t
     notes: list[str] = []
     source = document.get("source")
     updated = dict(source) if isinstance(source, dict) else {}
+    updated.pop("school", None)
     if meta.get("year"):
         updated["year"] = int(meta["year"])
     if meta.get("region"):
         updated["region"] = str(meta["region"])
-    if meta.get("body"):
-        updated["school"] = str(meta["body"])
-    if meta.get("exam_type"):
-        updated["exam_type"] = str(meta["exam_type"])
+    for field in ("body", "scene_type", "exam_type"):
+        value = str(meta.get(field) or "")
+        if value:
+            updated[field] = value
+        else:
+            updated.pop(field, None)
+    school_ids = [str(item) for item in (meta.get("school_ids") or []) if str(item)]
+    if school_ids:
+        updated["school_ids"] = school_ids
+        updated["school_id"] = school_ids[0]
+    else:
+        updated.pop("school_ids", None)
+        updated.pop("school_id", None)
     standard = str(meta.get("standard_name") or "")
     if standard:
         # 标准名就是这一批的原卷名：它落进 sources.paper_name，是这一批题在主库里的出处。
         updated["paper_title"] = standard
     document["source"] = updated
 
-    # 明细学校拆成隐藏标签：井号开头，不进可见胶囊，但照样进题库、照样能被搜到。
+    # 老版本的明细学校曾是「#哈三中」隐藏标签；2.1 起题目只存 school_id，
+    # 这些遗留标签在同步时清掉，老师的可见标签原样保留。
     raw_tags = [tag for tag in (document.get("tags") or []) if isinstance(tag, str) and tag]
-    visible = list(dict.fromkeys(tag for tag in raw_tags if not tag.startswith(HIDDEN_TAG_PREFIX)))
-    wanted = [HIDDEN_TAG_PREFIX + name for name in (meta.get("schools") or [])]
-    room = max(0, MAX_TAGS - len(visible))
-    added = wanted[:room]
-    if len(wanted) > room:
-        notes.append(f"标签位只剩 {room} 个，{len(wanted) - room} 所明细学校没塞下")
-    document["tags"] = visible + added
+    document["tags"] = list(dict.fromkeys(
+        tag for tag in raw_tags if not tag.startswith(HIDDEN_TAG_PREFIX)
+    ))
 
     try:
         questions.validate_question(_contract_probe(document))
@@ -1193,6 +1430,7 @@ def _sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, li
             if key in document
         }
         try:
+            _sync_dictionary_schools(plugin_id, document)
             bank.update_question(plugin_id, question_id, patch)
         except Exception as exc:  # noqa: BLE001 — 同上
             warnings.append(f"{question_id}：已入库的题没补写（{exc}）")
@@ -1203,17 +1441,37 @@ def _sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, li
 
 
 def _remember_meta(con: sqlite3.Connection, meta: dict[str, Any]) -> None:
-    """记住这次用过的公共字段与明细学校：下次开新批次时自动带出。"""
+    """记住这次用过的公共字段、明细学校与交叉标签：下次自动带出。"""
     now = questions.now_iso()
     pairs: list[tuple[str, str]] = [
         ("region", str(meta.get("region") or "")),
         ("body", str(meta.get("body") or "")),
         ("exam_type", str(meta.get("exam_type") or "")),
         ("subject", str(meta.get("subject") or "")),
+        ("scene_type", str(meta.get("scene_type") or "")),
     ]
-    pairs.extend(("school", str(name)) for name in (meta.get("schools") or []))
+    school_ids = [str(item) for item in (meta.get("school_ids") or []) if str(item)]
+    schools: list[str] = []
+    if school_ids:
+        placeholders = ",".join("?" for _ in school_ids)
+        rows = con.execute(
+            f"SELECT id, short_name FROM schools WHERE id IN ({placeholders})", school_ids
+        ).fetchall()
+        # 名单顺序照老师挑选的先后排：IN (...) 的返回次序由数据库自定，不能拿来当顺序。
+        by_id = {str(row["id"]): str(row["short_name"]) for row in rows}
+        schools = [by_id[school_id] for school_id in school_ids if school_id in by_id]
+    pairs.extend(("school", name) for name in schools)
+    # 交叉标签的权重记忆：老师每次选用/手打一个标签，就在这个场景里 +1。
+    scene = str(meta.get("scene_type") or "")
+    exam_type = str(meta.get("exam_type") or "").strip()[:32]
+    if exam_type:
+        con.execute(
+            "INSERT INTO exam_types (name, scene, weight, updated_at) VALUES (?, ?, 1, ?)"
+            " ON CONFLICT(name, scene) DO UPDATE SET"
+            " weight = weight + 1, updated_at = excluded.updated_at",
+            (exam_type, scene, now),
+        )
     body = str(meta.get("body") or "").strip()
-    schools = [str(name).strip() for name in (meta.get("schools") or []) if str(name).strip()]
     if body and schools:
         # 主体 → 明细名单的对应关系：下次填同一主体时自动把名单带出来。
         # 同一个主体只留**最新**那一份名单：名单改了就把旧的抹掉，
@@ -1244,13 +1502,25 @@ def _remember_meta(con: sqlite3.Connection, meta: dict[str, Any]) -> None:
 def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     """改一批的公共元数据，这一批的题**立刻**同步。
 
-    同步两处：池子里的待审题（``source`` 与隐藏标签），
+    同步两处：池子里的待审题（``source`` 与学校 ID），
     以及这一批已经进主库的题（补写主库的 ``sources``）。
     同步不上的题一条也不动，并如实报出原因。
     """
+    from app.core import meta_dict
+
     if not BATCH_ID_RE.match(str(batch_id or "")):
         raise PendingNotFound("批次编号不合法")
-    meta = normalize_batch_meta(payload)
+    # 先读旧 meta 再规整：老客户端送校名时要先建档，建档会另开连接写字典；
+    # 把这一步挪到事务外，避免与本地写锁互相顶住。
+    con = _connect()
+    try:
+        row = _batch_row(con, batch_id)
+        if row is None:
+            raise PendingNotFound("中转站里没有这个批次")
+        previous = _read_meta(row)
+    finally:
+        con.close()
+    meta = normalize_batch_meta(payload, previous)
 
     con = _connect()
     try:
@@ -1281,7 +1551,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     return {
         "batch_id": batch_id,
         "batch": card,
-        "meta": meta,
+        "meta": meta_dict.decorate_meta(meta),
         "synced": synced,
         "skipped": skipped,
         "patched": patched,
@@ -1362,6 +1632,28 @@ def _move_assets_to_uploads(assets: list[dict[str, Any]]) -> dict[str, str]:
     return mapping
 
 
+def _sync_dictionary_schools(provider_id: str, document: dict[str, Any]) -> None:
+    """入库前把题目用到的学校登记进题库，ID 原样沿用。
+
+    题目里只有 ``school_id``；题库的 ``sources.school_id`` 要指向一张真实存在的
+    ``schools`` 行，否则来源表挂空、按学校名搜也搜不到。字典是权威，题库是副本。
+    """
+    from app.core import meta_dict
+
+    source = document.get("source")
+    if not isinstance(source, dict):
+        return
+    ids = [str(item) for item in (source.get("school_ids") or []) if str(item)]
+    primary = str(source.get("school_id") or "")
+    if primary and primary not in ids:
+        ids.insert(0, primary)
+    if not ids:
+        return
+    schools = meta_dict.get_schools(ids, strict=False)
+    for school in schools:
+        bank.upsert_school(provider_id, school, str(source.get("region") or ""))
+
+
 def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[str, Any]:
     """审核通过（**存入主库**）：``p_`` 转 ``q_`` 落进主库，配图搬进 ``uploads/``。
 
@@ -1385,6 +1677,7 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[s
 
     mapping = _move_assets_to_uploads(assets)
     _rewrite_asset_uris(document, mapping)
+    _sync_dictionary_schools(provider_id, document)
     try:
         if existing:
             patch = {

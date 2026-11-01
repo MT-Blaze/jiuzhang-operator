@@ -529,7 +529,7 @@ com.example.card/
 | --- | --- | --- |
 | `ui.params.changed` | 右栏 → 画布/插件 | `{ pluginId, key, values, revisions, by }`；`by` 为 `human` / `ai`，人类手改过的字段永远压过 AI 设定 |
 | `layout.changed` | 分隔条 → 全局 | `{ by, pane, value, sizes }`；`by` 为 `drag` / `key` / `reset` / `restore`（刷新还原时发 `restore`，底栏据此不回写日志，免得刷屏） |
-| `region.dock` | 插件/宿主 → 底栏 | `{ text, topic?, pluginId? }`；`text` 截断 200 字，纯 `textContent` 落 DOM，不解析 HTML |
+| `region.dock` | 插件/宿主 → 底栏 | `{ text, topic?, pluginId?, level?, tone?, detail? }`；`text` 截断 200 字，纯 `textContent` 落 DOM，不解析 HTML。**分级归档**：`level`（`note` / `info` / `system` / `warn` / `error`，兼容旧 `tone` 的 note·warn·error）为 `warn` / `error` 时，整行连同 `detail`（完整堆栈 / Response 原文）自动追加进【报错诊断】，普通提示进【运行日志】——不许只留一句干巴巴的 `Not Found` |
 | `region.left` / `region.right` / `stage.selection` | 插件 → 宿主区域 | 预留：宿主接受但不解释内容，逐条记录到底栏 |
 | `stage.tab.sleep` | 画布 → 内部 | `{ key, pluginId }`，休眠留痕 |
 | `basket.changed` | 画布 → 内部 | `{ action, total, pluginId }`；题篮被插件增删后广播，组卷/讲义插件可据此刷新（v0.6.1）。`action` 为 `add` / `remove` / `clear`。 |
@@ -1129,7 +1129,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `org.jiuzhang.bank-ui` | 真题题库 | 0.2.0 | iframe 视图，`bank.view` | iframe | 4 |
 | `org.jiuzhang.paper-gen` | 组卷排版 | 0.4.0 | iframe 视图 | iframe | 2 |
 | `org.jiuzhang.handout` | 讲义排版 | 0.2.0 | iframe 视图 | iframe | 3 |
-| `org.jiuzhang.editor` | 录题工作台 | 0.5.0 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.editor` | 录题工作台 | 2.4.0 | iframe 视图 | iframe | 4 |
 
 合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
 视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。
@@ -1212,6 +1212,10 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
   不通过回 `COMMAND_FAILED`，不会写库；
 - `create_variant` 永远新建一题（底座重新签发 `q_` id），`parent_id` 是来源题；原题不变。
   它**不是**「覆盖保存」，调用方不得把它当更新用。
+- 批次公共元数据经宿主中继调用 `/api/meta/*`（场景 / 学校 / 交叉标签）：明细学校只存 `school_id`，
+  简称冲突按 409 `short_name_conflict` 原话拦下，缺全称走 AI 补全后由老师确认建档；
+  标准名 = `年份-地区-主体-场景-类型-学科` 实时拼接，改元数据淡色闪「已更新」，手改即暂停联动。
+  题目契约 2.1 的 `source` 增补 `body` / `scene_type` / `school_id` / `school_ids`，新写入不再存校名。
 
 **8）对调用方（含 AI）的硬约束。**
 
@@ -1230,7 +1234,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 **9）自查（第三方二开最短路径）。**
 
-1. `GET /api/plugins` 确认五个官方插件的 `version` 与本表一致、`commands_rejected` 为空；
+1. `GET /api/plugins` 确认七个官方插件的 `version` 与本表一致、`commands_rejected` 为空；
 2. `callHost("command.list")`，用返回的 `params_schema` 生成表单或 AI 工具定义；
 3. 先调只读命令（`bank_stats`/`bank_search`/`dedupe_scan`）验证取数与摘要口径；
 4. 再调视图命令（`filter_questions`/`generate_paper`）确认只改本插件状态；

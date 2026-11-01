@@ -24,11 +24,14 @@
 
   // ---------- 通用小工具 ----------
 
-  function dock(text, tone) {
+  function dock(text, tone, detail) {
     if (!window.JzoBus || typeof window.JzoBus.emit !== "function") return;
+    var level = tone === "error" ? "error" : (tone === "warn" ? "warn" : "info");
     window.JzoBus.emit("region.dock", {
-      text: String(text || "").slice(0, 300),
-      topic: tone === "warn" ? "host.warn" : "host.notice"
+      text: String(text || "").slice(0, 400),
+      topic: level === "error" ? "host.error" : (level === "warn" ? "host.warn" : "host.notice"),
+      level: level,
+      detail: String(detail || "")
     });
   }
 
@@ -74,8 +77,16 @@
           if (!response.ok) {
             var detail = data && data.detail;
             var message = typeof detail === "string" ? detail
-              : (detail && detail.message) || ("宿主接口返回 HTTP " + response.status);
-            throw new Error(message);
+              : (detail && detail.message) || String(text || "").trim().slice(0, 300)
+              || ("宿主接口返回 HTTP " + response.status);
+            var failure = new Error(message);
+            failure.status = response.status;
+            failure.statusText = response.statusText || "";
+            failure.detail = detail;
+            failure.body = String(text || "");
+            failure.url = url;
+            failure.method = "POST";
+            throw failure;
           }
           return data || {};
         });
@@ -140,6 +151,20 @@
     }).then(function (result) {
       if (opts.silent !== true) announce(result);
       return result;
+    }, function (error) {
+      // 入库失败必须进【报错诊断】：请求行、状态与 Response 全文一并交代，
+      // 只剩一句「Not Found」等于让老师自己猜。
+      if (opts.silent !== true) {
+        var lines = ["POST " + INGEST_URL];
+        if (error && error.status) {
+          lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+        }
+        if (error && error.message) lines.push(String(error.message));
+        if (error && error.body) lines.push("response: " + String(error.body));
+        dock("文件入池失败：" + String((error && error.message) || "未知错误"),
+          "error", lines.join("\n"));
+      }
+      throw error;
     });
   }
 

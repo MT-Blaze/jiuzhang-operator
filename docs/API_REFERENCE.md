@@ -75,7 +75,7 @@
 
 | event | 载荷 | 用途 |
 | --- | --- | --- |
-| `region.dock` | `{text}`（≤200 字，纯文本） | 往底部「输出日志区」写一行 |
+| `region.dock` | `{text, level?, tone?, detail?}`（`text` ≤200 字，纯文本） | 往底部「输出日志区」写一行；`level`/`tone` 为 `warn`/`error` 时连同 `detail` 自动归档进【报错诊断】 |
 | `region.left` / `region.right` | 任意 | 预留：宿主接受但不解释 |
 | `stage.selection` | `{question_id, ...}` | 告知宿主当前选中题（AI 副驾感知用） |
 | `system.open_editor` | `{question_id, from?}` | 请宿主开录题工作台并注入题号（三端分离的唯一改题入口） |
@@ -112,11 +112,11 @@
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
 - **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.sources` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签**或声明 `bank.view` 的视图插件页签**，见 §2.17）。
 
-### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.0）
+### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.1）
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "id": "q_1a2b3c...",
   "type": "single_choice | multiple_choice | fill_blank | solution",
   "stem": "题干（Markdown + LaTeX）",
@@ -126,7 +126,7 @@
   "solution": "解析（Markdown + LaTeX）",
   "grade": "高一",
   "taxonomy": { "textbook": "...", "chapter": "...", "section": "...", "topic": "...", "topic_ids": ["tp_kx..."] },
-  "source": { "paper_title": "...", "question_no": "12", "year": 2024, "exam_type": "...", "school": "...", "region": "..." },
+  "source": { "paper_title": "...", "question_no": "12", "year": 2024, "region": "黑吉辽", "body": "三省六校", "scene_type": "校考题", "exam_type": "高三联考", "school_id": "sch_xxx", "school_ids": ["sch_xxx"] },
   "images": ["/static/uploads/xxx.png"],
   "extensions": { "org.example.yourplugin": { "...": "私有数据只放这里，键用反向域名" } },
   "meta": { "created_at": "...", "updated_at": "...", "revision": 1, "status": "published" }
@@ -136,6 +136,10 @@
 难度口径（契约 2.0）：`L1` 基础 / `L2` 中档 / `L3` 难 / `L4` 压轴。旧值 basic/medium/hard/novel
 入参时由底座归一（basic→L1、medium→L2、hard→L3、novel→L4），出参只发 L 码。
 `answer` 为 `null` 时出参**整个省略**该字段；非选择题的 `answer.kind` 恒为 `text`。
+
+契约 2.1 只做加法：`source` 增补 `body` / `scene_type` / `school_id` / `school_ids`，
+**学校名不再作为题目字段写入**（旧 `source.school` 仅在读旧题时派生展示，新写入一律只存 `school_id`，
+校名回 `schools` 字典查）。`school_ids` 第一所即主学校。
 
 ### 2.2 `bank.list` — 分页取题（插件自带库）
 
@@ -460,7 +464,29 @@ payload = { command_id, context, from, trace }
 | ✍ `POST /api/startup` | 保存启动行为：`{"target": "chat" \| "plugin:<id>"}`。写入严格——形状非法、插件未安装或已停用一律 400，不落盘 |
 | `GET /healthz` | 健康检查：`{status, service, version, boot_id, time}`。`boot_id` 每次进程启动随机换一个，是「新进程真的起来了」的唯一凭据（军令 #18-续4） |
 
-### 3.5 AI Agent（宿主自用，插件不经此通道）
+### 3.5 数据字典与待审批次（本机 Host API，插件经宿主中继）
+
+字典是全工作区共享的只读+可增量写入的元数据事实源；写接口一律要 `X-JZO-Token`。
+学校的「简称」是唯一键：冲突时回 409，`detail = {code:"short_name_conflict", message:"❌ 简称冲突，已被【<已占用全称>】占用", short_name, existing_full_name}`，插件必须原话展示并拦下提交。
+
+| 方法与路径 | 说明 |
+| --- | --- |
+| `GET /api/meta/scenes` | 11 个场景按固定次序返回：高考题、联考题、区域统考题、校考题、机构题、汇编题、自编题、强基题、竞赛题、自主招生题、外国题 |
+| `GET /api/meta/schools?q=` | 按简称/全称模糊搜学校；出参 `{items: [{id:"sch_...", full_name, short_name}]}` |
+| ✍ `POST /api/meta/schools` | 建档：`{"full_name","short_name"}`；新建回 201，同名同称已存在回 200 并复用原 `id`；简称冲突回 409（见上） |
+| ✍ `POST /api/meta/schools/suggest` | AI 补全：`{"short_name"}` → `{full_name, confidence, mock}`；**只回建议不落库**，老师确认后再走上一行建档；简称空串直接 400 |
+| `GET /api/meta/tags?scene=&q=` | 交叉标签候选：先按场景加权（外国题优先 AMC / A-Level / IB，校考题优先 9 月月考 / 一模），再按 `q` 模糊匹配；出参带 `scene_weight` |
+| ✍ `POST /api/meta/tags` | 记一个新标签：`{"name","scene"?}`；同名同场景已存在则权重 +1，下次自动出现在候选里 |
+| `GET /api/pending/batches` | 待审批次卡片（左栏历史批次数据源；有未审的批次在前） |
+| `GET /api/pending/batches/{batch_id}/questions` | 某批次池内题目（每条带完整题目文档，可直接渲染） |
+| `GET /api/pending/meta/history` | 最近用过的地区 / 主体 / 考试类型 / 学科 / 明细学校，开新批次自动带出 |
+| ✍ `POST /api/ingest/files` | 【开始解析】才调用：`{"files":[{"name","data_url"}]}` → 201 立起批次（先占位、后台解析后原地替换），返回 `batch_id` / 占位题 / `parsing` |
+| ✍ `PATCH /api/pending/batches/{batch_id}/meta` | 改批次公共元数据并同步池内全部题：`{"year","region","body","exam_type","subject","schools":[...]}`；标准名不收（底座拼），同步不上的题一条不动并进 `warnings` |
+| ✍ `POST /api/pending/batches` | 存为待办：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交 |
+| ✍ `POST /api/pending/items/{pending_id}/approve` | 存入主库：`p_` → 底座新签发 `q_`，配图搬进 `uploads/`；主库已有同题回 409 带 `existing_id`，`{"force": true}` 才覆盖 |
+| ✍ `POST /api/pending/items/{pending_id}/delete` | 彻底删除这一条（连同池内配图），主库不碰 |
+
+### 3.6 AI Agent（宿主自用，插件不经此通道）
 
 `POST /api/agent/chat`（对话）、`POST /api/agent/refine`（AI 副驾改写题干/解析，只回候选文本不落库）、
 `POST /api/agent/split`（拆题）、`POST /api/agent/review`（审题）。缺密钥时 Mock 原样回显、`mock: true`，绝不编造。
@@ -487,7 +513,7 @@ payload = { command_id, context, from, trace }
 `确认执行命令（确认码 <token>）` / `取消执行命令（确认码 <token>）`，5 分钟过期、一次性核销；
 有界面插件转发后宿主 §2.14 的 `requires_user` 当场确认仍然生效。
 
-### 3.6 题目配图
+### 3.7 题目配图
 
 | 方法与路径 | 说明 |
 | --- | --- |
@@ -566,7 +592,7 @@ zip 顶层目录名即插件 id，纯 zip 解压即用。
 ## 6. Agent Prompt 契约（对话 / 拆题 / 审题）
 
 本章并入自原 `PROMPT_SPEC.md`（该文件已退役）。它描述的是**宿主自己的三个 Agent** 怎么拼 Prompt，
-端点见 §3.5；沙箱插件不经此通道，插件要用 AI 只能走 `ai:invoke` 与 `text.clean_latex`（PLUGIN_SPEC §2.17）。
+端点见 §3.6；沙箱插件不经此通道，插件要用 AI 只能走 `ai:invoke` 与 `text.clean_latex`（PLUGIN_SPEC §2.17）。
 
 ### 6.1 三条总则
 
@@ -615,7 +641,7 @@ zip 顶层目录名即插件 id，纯 zip 解压即用。
 **唯一事实来源是 `app/api/agents.py` 的 `CHAT_SYSTEM_PROMPT` / `build_chat_system_prompt`**，
 上表只是最小骨架；实际提示词另含「插件优先」「右侧插件面板」等小节，
 `update_params` / `trigger_button` 只能用「右侧插件面板」小节列出的 key 与按钮 id。
-军令 #20 第三部分起还接了 `command_list` / `command_execute` 两件宿主命令工具（§3.5、PLUGIN_SPEC §2.16）：
+军令 #20 第三部分起还接了 `command_list` / `command_execute` 两件宿主命令工具（§3.6、PLUGIN_SPEC §2.16）：
 命令只能按字典调用，`context` 只能用命令声明的字段与 `q_`/`tp_`/`tb_` 公开 id；
 `requires_user` 命令只返回确认卡且**不执行**，模型不得声称已执行，也不得自行拼接确认码或跳过确认。
 

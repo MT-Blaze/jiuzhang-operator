@@ -150,21 +150,31 @@
   var delCancelEl = document.getElementById("epDelCancel");
   var delOkEl = document.getElementById("epDelOk");
 
-  // 批次公共元数据（辅助栏顶部）：五个可填字段 + 明细学校名单 + 只读标准名。
+  // 批次公共元数据（辅助栏顶部）：六个可填字段 + 字典学校 + 可手改的标准名。
   var panelSrcNameEl = document.getElementById("epSrcName");
   var panelStdNameEl = document.getElementById("epStdName");
+  var panelStdFlashEl = document.getElementById("epStdFlash");
+  var panelStdHintEl = document.getElementById("epStdHint");
   var panelIntakeEl = document.getElementById("epIntake");
   var panelMetaYearEl = document.getElementById("epMetaYear");
   var panelMetaRegionEl = document.getElementById("epMetaRegion");
   var panelMetaBodyEl = document.getElementById("epMetaBody");
+  var panelMetaSceneEl = document.getElementById("epMetaScene");
   var panelMetaExamTypeEl = document.getElementById("epMetaExamType");
   var panelMetaSubjectEl = document.getElementById("epMetaSubject");
   var panelMetaSchoolsEl = document.getElementById("epMetaSchools");
   var panelSchoolListEl = document.getElementById("epSchoolList");
   var panelSchoolInputEl = document.getElementById("epSchoolInput");
+  var panelSchoolMenuEl = document.getElementById("epSchoolMenu");
+  var panelSchoolConfirmEl = document.getElementById("epSchoolConfirm");
+  var panelSchoolConfirmTextEl = document.getElementById("epSchoolConfirmText");
+  var panelSchoolFullNameEl = document.getElementById("epSchoolFullName");
+  var panelSchoolConfirmOkEl = document.getElementById("epSchoolConfirmOk");
+  var panelSchoolConfirmCancelEl = document.getElementById("epSchoolConfirmCancel");
+  var panelSchoolErrorEl = document.getElementById("epSchoolError");
+  var panelTagMenuEl = document.getElementById("epTagMenu");
   var panelRegionListEl = document.getElementById("epMetaRegionList");
   var panelBodyListEl = document.getElementById("epMetaBodyList");
-  var panelExamTypeListEl = document.getElementById("epMetaExamTypeList");
   var panelSubjectListEl = document.getElementById("epMetaSubjectList");
 
   var pending = new Map();
@@ -219,11 +229,20 @@
     batchId: "",
     batchCard: null,
     batchMeta: {},
+    // 明细学校只存字典记录（id + 全称 + 简称），题目里也只认 school_id。
     schools: [],
+    schoolOptions: [],
+    schoolQuery: "",
+    schoolPending: null,
+    // 11 个主场景由底座给，插件不写死一份名单。
+    scenes: [],
+    tagOptions: [],
     groups: {},
     history: {},
     lastBody: "",
-    metaSyncing: false
+    metaSyncing: false,
+    // 标准名双向联动：手改即 manual，元数据再动立刻回 auto。
+    stdManual: false
   };
 
   // ---------- 宿主通信 ----------
@@ -260,6 +279,11 @@
     // 查重：底座把主库那道题的 id 与 duplicate 标记一并带回来，弹窗才画得出「返回修改 / 强行覆盖」。
     error.existingId = String((raw && raw.existing_id) || "");
     error.duplicate = Boolean(raw && raw.duplicate);
+    // 报错诊断与字典拦截都靠这几个字段：完整现场 + 结构化的冲突信息。
+    error.detail = String((raw && raw.detail) || "");
+    error.status = Number(raw && raw.status) || 0;
+    error.detailCode = String((raw && raw.detail_code) || "");
+    error.existingFullName = String((raw && raw.existing_full_name) || "");
     return error;
   }
 
@@ -272,20 +296,31 @@
   }
 
   /** 往底部日志写一行。level 由宿主白名单把关：note（灰字流水）、warn（警告）、info。 */
-  function dock(text, level, topic) {
+  function dock(text, level, topic, detail) {
     publish("region.dock", {
-      text: String(text == null ? "" : text).slice(0, 200),
+      text: String(text == null ? "" : text).slice(0, 400),
       level: level || "info",
-      topic: topic || ""
+      topic: topic || "",
+      // 报错诊断要完整现场：宿主中继失败时把请求行、状态、Response 全文一并交出去。
+      detail: String(detail == null ? "" : detail).slice(0, 20000)
     });
+  }
+
+  function errorDetail(error) {
+    if (!error) return "";
+    if (typeof error.detail === "string" && error.detail) return error.detail;
+    var lines = [];
+    if (error.status) lines.push("HTTP " + error.status + (error.statusText ? " " + error.statusText : ""));
+    if (error.message) lines.push(String(error.message));
+    return lines.join("\n");
   }
 
   /**
    * 警告只进底部日志，绝不在画布上弹红窗——
    * 后台切题时识别错得再离谱也照切不误，老师看到的只是一行提示，不是一块拦路的窗。
    */
-  function dockWarn(text) {
-    dock("⚠ " + String(text == null ? "" : text).slice(0, 180), "warn", "editor.warn");
+  function dockWarn(text, detail) {
+    dock("⚠ " + String(text == null ? "" : text).slice(0, 360), "warn", "editor.warn", detail);
   }
 
   function respond(target, id, ok, result, code, message) {
@@ -699,7 +734,7 @@
   //# FIXTURES-BEGIN
   var DEV_FIXTURES = [
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000001",
     "type": "single_choice",
     "stem": "已知函数 $f(x)=x^2+1$，求其最小值（  ）",
@@ -774,7 +809,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000002",
     "type": "multiple_choice",
     "stem": "已知集合 $A=\\{x\\mid x^2-3x+2=0\\}$，则下列元素属于 $A$ 的是（多选）（  ）",
@@ -850,7 +885,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000003",
     "type": "fill_blank",
     "stem": "已知 $a>0$，则 $a+\\dfrac{1}{a}$ 的最小值为\\fillin",
@@ -901,7 +936,7 @@
     }
   },
   {
-    "schema_version": "2.0",
+    "schema_version": "2.1",
     "id": "q_fx000004",
     "type": "solution",
     "stem": "已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_1=1$，$a_4=7$，求 $S_5$。",
@@ -1110,7 +1145,7 @@
       if (state.mode === "list") publishSelection();
       return cards;
     }).catch(function (error) {
-      dockWarn("批次列表没拉下来：" + ((error && error.message) || "未知原因"));
+      dockWarn("批次列表没拉下来：" + ((error && error.message) || "未知原因"), errorDetail(error));
       return [];
     });
   }
@@ -1127,7 +1162,7 @@
       dock("识别结果已入池：" + (result.batch_id || "") + "（" + questions.length + " 题）。");
       return result;
     }, function (error) {
-      dockWarn("识别结果入池失败：" + ((error && error.message) || "未知原因"));
+      dockWarn("识别结果入池失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
       return null;
     });
   }
@@ -1162,7 +1197,7 @@
       }
       return state.items;
     }).catch(function (error) {
-      dockWarn("批次 " + id + " 切不进来：" + ((error && error.message) || "未知原因"));
+      dockWarn("批次 " + id + " 切不进来：" + ((error && error.message) || "未知原因"), errorDetail(error));
       return null;
     });
   }
@@ -1213,9 +1248,9 @@
       var text = (error && error.message) || "未知原因";
       if (!silent) {
         panelSay("存为待办失败：" + text, "error", "failed");
-        dockWarn("存为待办失败：" + text);
+        dockWarn("存为待办失败：" + text, errorDetail(error));
       }
-      return { ok: false, message: text };
+      return { ok: false, message: text, detail: errorDetail(error) };
     });
   }
 
@@ -1264,7 +1299,8 @@
       if (outcome && outcome.ok) {
         dock("检测到长时间无操作，已自动存入待审核池。", "note");
       } else {
-        dockWarn("自动存入待审核池没成功：" + ((outcome && outcome.message) || "未知原因"));
+        dockWarn("自动存入待审核池没成功：" + ((outcome && outcome.message) || "未知原因"),
+          (outcome && outcome.detail) || "");
       }
     }, function () {
       idleBusy = false;
@@ -1305,13 +1341,14 @@
 
   // ---------- 批次公共元数据（辅助栏顶部） ----------
 
-  /** 标准名：年份-地区-主体-类型-学科。空段不占位；底座也用同一口径重算，客户端说了不算。 */
+  /** 标准名：年份-地区-主体-场景-类型-学科。空段不占位；底座也用同一口径重算，客户端说了不算。 */
   function standardNameOf(meta) {
     var m = meta || {};
     var parts = [
       m.year == null || m.year === "" ? "" : String(m.year),
       String(m.region || ""),
       String(m.body || ""),
+      String(m.scene_type || ""),
       String(m.exam_type || ""),
       String(m.subject || "")
     ];
@@ -1330,19 +1367,92 @@
     });
   }
 
-  /** 历史值：地区 / 主体 / 类型 / 学科各一份联想，另有主体 → 明细名单的对应。 */
+  /** 历史值：地区 / 主体 / 学科各一份联想，另有主体 → 明细学校的对应。 */
   function loadMetaHistory() {
     return hostCall("pending.meta_history", {}).then(function (result) {
       panel.history = (result && result.history) || {};
       panel.groups = (result && result.groups) || {};
       fillDataList(panelRegionListEl, panel.history.region);
       fillDataList(panelBodyListEl, panel.history.body);
-      fillDataList(panelExamTypeListEl, panel.history.exam_type);
       fillDataList(panelSubjectListEl, panel.history.subject);
       return panel.history;
     }).catch(function () {
       return null;
     });
+  }
+
+  // ---------- 场景表：11 个主场景，底座说了算 ----------
+
+  function renderSceneOptions() {
+    if (!panelMetaSceneEl) return;
+    var current = String(panelMetaSceneEl.value || (panel.batchMeta || {}).scene_type || "");
+    panelMetaSceneEl.textContent = "";
+    var blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "未分类";
+    panelMetaSceneEl.appendChild(blank);
+    panel.scenes.forEach(function (name) {
+      var option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      panelMetaSceneEl.appendChild(option);
+    });
+    if (current && panel.scenes.indexOf(current) < 0) {
+      var extra = document.createElement("option");
+      extra.value = current;
+      extra.textContent = current;
+      panelMetaSceneEl.appendChild(extra);
+    }
+    panelMetaSceneEl.value = current;
+  }
+
+  function loadScenes() {
+    if (panel.scenes.length) return Promise.resolve(panel.scenes);
+    return hostCall("meta.scenes", {}).then(function (result) {
+      var rows = (result && Array.isArray(result.scenes)) ? result.scenes : [];
+      panel.scenes = rows.map(function (row) { return String((row && row.name) || ""); })
+        .filter(Boolean);
+      renderSceneOptions();
+      return panel.scenes;
+    }).catch(function (error) {
+      dockWarn("场景表没拉下来：" + ((error && error.message) || "未知原因"), errorDetail(error));
+      return [];
+    });
+  }
+
+  // ---------- 学校字典：题目只存 school_id，校名一律回字典查 ----------
+
+  function setSchoolError(text) {
+    if (panelSchoolErrorEl) {
+      var message = String(text || "");
+      panelSchoolErrorEl.textContent = message;
+      panelSchoolErrorEl.hidden = !message;
+    }
+    if (panelSchoolInputEl) {
+      // 简称撞车时输入框当场爆红：CSS 只认 aria-invalid 与 .is-invalid 两种记号。
+      panelSchoolInputEl.setAttribute("aria-invalid", text ? "true" : "false");
+      panelSchoolInputEl.classList.toggle("is-invalid", Boolean(text));
+    }
+  }
+
+  function schoolChip(record) {
+    var shortName = String(record.short_name || record.full_name || "");
+    var chip = el("span", "ep-school");
+    chip.setAttribute("data-school-id", String(record.id || ""));
+    chip.setAttribute("title", String(record.full_name || shortName));
+    chip.appendChild(el("span", "ep-school-name", shortName));
+    var remove = el("button", "ep-school-x", "×");
+    remove.type = "button";
+    remove.setAttribute("aria-label", "去掉 " + shortName);
+    remove.addEventListener("click", function () {
+      panel.schools = panel.schools.filter(function (item) {
+        return String(item.id || "") !== String(record.id || "");
+      });
+      renderSchools();
+      queueMetaSync();
+    });
+    chip.appendChild(remove);
+    return chip;
   }
 
   /** 明细学校胶囊：主体填了才冒出来；点 × 去掉一所。 */
@@ -1351,25 +1461,299 @@
     var body = panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "";
     panelMetaSchoolsEl.hidden = !body;
     panelSchoolListEl.textContent = "";
-    panel.schools.forEach(function (name) {
-      var chip = el("span", "ep-school");
-      chip.setAttribute("data-school", name);
-      chip.appendChild(el("span", "ep-school-name", name));
-      var remove = el("button", "ep-school-x", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "去掉 " + name);
-      remove.addEventListener("click", function () {
-        panel.schools = panel.schools.filter(function (item) { return item !== name; });
-        renderSchools();
-        queueMetaSync();
-      });
-      chip.appendChild(remove);
-      panelSchoolListEl.appendChild(chip);
+    panel.schools.forEach(function (record) {
+      panelSchoolListEl.appendChild(schoolChip(record || {}));
     });
   }
 
-  /** 顶部两行：灰字是原文件名，黑字是只读的标准名。 */
-  function renderTopLines() {
+  function hideSchoolMenu() {
+    if (panelSchoolMenuEl) panelSchoolMenuEl.hidden = true;
+    if (panelSchoolInputEl) panelSchoolInputEl.setAttribute("aria-expanded", "false");
+  }
+
+  function menuItem(text, hint) {
+    var item = el("button", "ep-menu-item");
+    item.type = "button";
+    item.setAttribute("role", "option");
+    item.appendChild(el("span", "ep-menu-text", text));
+    if (hint) item.appendChild(el("span", "ep-menu-hint", hint));
+    return item;
+  }
+
+  function renderSchoolMenu(matches, query) {
+    if (!panelSchoolMenuEl) return;
+    panelSchoolMenuEl.textContent = "";
+    var added = {};
+    panel.schools.forEach(function (item) { added[String(item.id || "")] = true; });
+    var visible = (matches || []).filter(function (record) {
+      return record && record.id && !added[String(record.id)];
+    });
+    visible.forEach(function (record) {
+      var shortName = String(record.short_name || record.full_name || "");
+      var item = menuItem(shortName, String(record.full_name || ""));
+      item.setAttribute("data-school-id", String(record.id));
+      item.addEventListener("mousedown", function (event) {
+        // mousedown 而不是 click：input 失焦会先把菜单收掉，click 就永远等不到。
+        event.preventDefault();
+        addSchoolRecord(record);
+        if (panelSchoolInputEl) panelSchoolInputEl.value = "";
+        hideSchoolMenu();
+        setSchoolError("");
+      });
+      panelSchoolMenuEl.appendChild(item);
+    });
+    if (query) {
+      var create = menuItem("＋ 新建学校「" + query + "」", "AI 补全全称后确认");
+      create.setAttribute("data-school-create", query);
+      create.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        hideSchoolMenu();
+        requestSchoolSuggest(query);
+      });
+      panelSchoolMenuEl.appendChild(create);
+    }
+    panelSchoolMenuEl.hidden = !panelSchoolMenuEl.children.length;
+    if (panelSchoolInputEl) {
+      panelSchoolInputEl.setAttribute("aria-expanded", panelSchoolMenuEl.hidden ? "false" : "true");
+    }
+  }
+
+  function searchSchools(query) {
+    return hostCall("meta.schools", { q: String(query || ""), limit: 8 }).then(function (result) {
+      var rows = (result && Array.isArray(result.schools)) ? result.schools : [];
+      panel.schoolOptions = rows;
+      renderSchoolMenu(rows, String(query || "").trim());
+      return rows;
+    }).catch(function (error) {
+      hideSchoolMenu();
+      dockWarn("学校字典没查成：" + ((error && error.message) || "未知原因"), errorDetail(error));
+      return [];
+    });
+  }
+
+  function addSchoolRecord(record) {
+    if (!record || !record.id) return;
+    var id = String(record.id);
+    var exists = panel.schools.some(function (item) { return String(item.id || "") === id; });
+    if (exists) {
+      panelSay("「" + String(record.short_name || record.full_name) + "」已经在明细里了。",
+        "warn", "invalid");
+      return;
+    }
+    if (panel.schools.length >= 24) {
+      panelSay("明细学校最多 24 所。", "warn", "invalid");
+      return;
+    }
+    panel.schools.push({
+      id: id,
+      full_name: String(record.full_name || ""),
+      short_name: String(record.short_name || record.full_name || "")
+    });
+    setSchoolError("");
+    renderSchools();
+    queueMetaSync();
+  }
+
+  function requestSchoolSuggest(shortName) {
+    var text = String(shortName || "").trim();
+    if (!text) return;
+    panel.schoolPending = { short_name: text };
+    if (panelSchoolConfirmEl) panelSchoolConfirmEl.hidden = false;
+    if (panelSchoolConfirmTextEl) {
+      panelSchoolConfirmTextEl.textContent = "字典里没有「" + text + "」，正在让 AI 补全全称…";
+    }
+    if (panelSchoolFullNameEl) panelSchoolFullNameEl.value = "";
+    if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = true;
+    var region = panelMetaRegionEl ? String(panelMetaRegionEl.value || "").trim() : "";
+    hostCall("meta.school_suggest", { short_name: text, region: region }).then(function (result) {
+      var full = String((result && result.full_name) || "");
+      if (panelSchoolFullNameEl) panelSchoolFullNameEl.value = full;
+      if (panelSchoolConfirmTextEl) {
+        panelSchoolConfirmTextEl.textContent = full
+          ? "AI 建议全称「" + full + "」，确认无误就建档；不对就手改。"
+          : "AI 没补出全称，请手填后确认。";
+      }
+      if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = false;
+    }, function (error) {
+      if (panelSchoolConfirmTextEl) {
+        panelSchoolConfirmTextEl.textContent = "AI 补全没成功（"
+          + ((error && error.message) || "未知原因") + "），请手填全称后确认。";
+      }
+      if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = false;
+      dockWarn("学校全称补全没成功：" + ((error && error.message) || "未知原因"),
+        errorDetail(error));
+    });
+  }
+
+  function cancelSchoolConfirm() {
+    panel.schoolPending = null;
+    if (panelSchoolConfirmEl) panelSchoolConfirmEl.hidden = true;
+    if (panelSchoolFullNameEl) panelSchoolFullNameEl.value = "";
+    setSchoolError("");
+  }
+
+  function confirmSchoolCreate() {
+    var pendingSchool = panel.schoolPending;
+    if (!pendingSchool) return;
+    var fullName = panelSchoolFullNameEl ? String(panelSchoolFullNameEl.value || "").trim() : "";
+    if (!fullName) {
+      setSchoolError("请先填学校全称，确认后才建档。");
+      if (panelSchoolFullNameEl) panelSchoolFullNameEl.focus();
+      return;
+    }
+    if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = true;
+    hostCall("meta.school_create", {
+      full_name: fullName,
+      short_name: String(pendingSchool.short_name || "")
+    }).then(function (result) {
+      var record = (result && result.school) || {};
+      if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = false;
+      if (!record.id) return;
+      cancelSchoolConfirm();
+      addSchoolRecord(record);
+      if (panelSchoolInputEl) panelSchoolInputEl.value = "";
+      hideSchoolMenu();
+      dock("学校已建档：" + String(record.full_name || "") + "（" + String(record.short_name || "") + "）。");
+    }, function (error) {
+      if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.disabled = false;
+      // 简称撞车按底座的原话回显：❌ 简称冲突，已被【哈尔滨师范大学附属中学】占用
+      setSchoolError((error && error.message) || "学校建档没成功");
+      dockWarn("学校建档没成功：" + ((error && error.message) || "未知原因"),
+        errorDetail(error));
+    });
+  }
+
+  function onSchoolEnter() {
+    var query = panelSchoolInputEl ? String(panelSchoolInputEl.value || "").trim() : "";
+    if (!query) return;
+    var exact = (panel.schoolOptions || []).filter(function (record) {
+      return String(record.short_name || "") === query || String(record.full_name || "") === query;
+    })[0];
+    if (exact) {
+      addSchoolRecord(exact);
+      panelSchoolInputEl.value = "";
+      hideSchoolMenu();
+      setSchoolError("");
+      return;
+    }
+    hideSchoolMenu();
+    requestSchoolSuggest(query);
+  }
+
+  // ---------- 交叉标签：按场景权重排序，模糊匹配，回车即记 ----------
+
+  function hideTagMenu() {
+    if (panelTagMenuEl) panelTagMenuEl.hidden = true;
+    if (panelMetaExamTypeEl) panelMetaExamTypeEl.setAttribute("aria-expanded", "false");
+  }
+
+  function renderTagMenu(items) {
+    if (!panelTagMenuEl) return;
+    panelTagMenuEl.textContent = "";
+    panel.tagOptions = (items || []).slice();
+    panel.tagOptions.forEach(function (tag) {
+      var item = menuItem(String(tag.name || ""),
+        tag.scene_weight ? "本场景常用" : "");
+      item.setAttribute("data-tag", String(tag.name || ""));
+      item.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        pickTag(String(tag.name || ""));
+      });
+      panelTagMenuEl.appendChild(item);
+    });
+    panelTagMenuEl.hidden = !panelTagMenuEl.children.length;
+    if (panelMetaExamTypeEl) {
+      panelMetaExamTypeEl.setAttribute("aria-expanded", panelTagMenuEl.hidden ? "false" : "true");
+    }
+  }
+
+  function loadTags(query) {
+    var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : "";
+    return hostCall("meta.tags", { scene: scene, q: String(query || ""), limit: 8 })
+      .then(function (result) {
+        var rows = (result && Array.isArray(result.tags)) ? result.tags : [];
+        renderTagMenu(rows);
+        return rows;
+      }).catch(function (error) {
+        hideTagMenu();
+        dockWarn("交叉标签没拉下来：" + ((error && error.message) || "未知原因"),
+          errorDetail(error));
+        return [];
+      });
+  }
+
+  function pickTag(name) {
+    var text = String(name || "").trim();
+    if (!text) return;
+    if (panelMetaExamTypeEl) panelMetaExamTypeEl.value = text;
+    hideTagMenu();
+    queueMetaSync();
+  }
+
+  function onTagEnter() {
+    var text = panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "";
+    if (!text) return;
+    var known = (panel.tagOptions || []).some(function (tag) {
+      return String(tag.name || "") === text;
+    });
+    if (known) {
+      hideTagMenu();
+      queueMetaSync();
+      return;
+    }
+    var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : "";
+    hostCall("meta.tag_remember", { name: text, scene: scene }).then(function () {
+      hideTagMenu();
+      dock("新标签「" + text + "」已记进本地标签库，下次打字就会弹出来。", "note");
+      queueMetaSync();
+    }, function (error) {
+      hideTagMenu();
+      dockWarn("标签没记进本地库：" + ((error && error.message) || "未知原因"),
+        errorDetail(error));
+      queueMetaSync();
+    });
+  }
+
+  // ---------- 标准名：自动拼接 + 手改暂停 + 元数据再动即恢复 ----------
+
+  var stdFlashTimer = 0;
+
+  function setStdMode(manual) {
+    panel.stdManual = Boolean(manual);
+    var mode = panel.stdManual ? "manual" : "auto";
+    if (panelStdNameEl) panelStdNameEl.setAttribute("data-mode", mode);
+    if (panelStdHintEl) {
+      panelStdHintEl.setAttribute("data-mode", mode);
+      panelStdHintEl.textContent = panel.stdManual
+        ? "已暂停自动拼接；再动任意元数据即恢复自动重拼。"
+        : "自动拼接；手改后暂停联动，再改元数据即恢复。";
+    }
+  }
+
+  function flashStd() {
+    if (!panelStdFlashEl) return;
+    panelStdFlashEl.textContent = "已更新";
+    panelStdFlashEl.setAttribute("data-show", "true");
+    window.clearTimeout(stdFlashTimer);
+    stdFlashTimer = window.setTimeout(function () {
+      panelStdFlashEl.setAttribute("data-show", "false");
+    }, 1400);
+  }
+
+  function stdLiveName() {
+    var meta = panel.batchMeta || {};
+    return standardNameOf({
+      year: panelMetaYearEl ? panelMetaYearEl.value : meta.year,
+      region: panelMetaRegionEl ? panelMetaRegionEl.value : meta.region,
+      body: panelMetaBodyEl ? panelMetaBodyEl.value : meta.body,
+      scene_type: panelMetaSceneEl ? panelMetaSceneEl.value : meta.scene_type,
+      exam_type: panelMetaExamTypeEl ? panelMetaExamTypeEl.value : meta.exam_type,
+      subject: panelMetaSubjectEl ? panelMetaSubjectEl.value : meta.subject
+    });
+  }
+
+  /** 顶部两行：灰字是原文件名，黑字的标准名跟着元数据实时重拼，手改后停下。 */
+  function renderTopLines(options) {
     var card = panel.batchCard || {};
     var meta = panel.batchMeta || {};
     if (panelSrcNameEl) {
@@ -1378,18 +1762,29 @@
       panelSrcNameEl.setAttribute("data-name", name);
     }
     if (panelStdNameEl) {
-      // 标准名跟着输入框实时走：老师一眼就看见这一批将被叫成什么。
-      var live = {
-        year: panelMetaYearEl ? panelMetaYearEl.value : meta.year,
-        region: panelMetaRegionEl ? panelMetaRegionEl.value : meta.region,
-        body: panelMetaBodyEl ? panelMetaBodyEl.value : meta.body,
-        exam_type: panelMetaExamTypeEl ? panelMetaExamTypeEl.value : meta.exam_type,
-        subject: panelMetaSubjectEl ? panelMetaSubjectEl.value : meta.subject
-      };
-      var standard = standardNameOf(live);
-      panelStdNameEl.value = standard;
-      panelStdNameEl.setAttribute("data-standard", standard);
+      if (!panel.stdManual) {
+        // 自动拼接模式：老师一眼就看见这一批将被叫成什么。
+        var standard = stdLiveName();
+        panelStdNameEl.value = standard;
+        panelStdNameEl.setAttribute("data-standard", standard);
+      } else if (!panelStdNameEl.value) {
+        panelStdNameEl.value = String(meta.standard_name || stdLiveName());
+      }
+      panelStdNameEl.setAttribute("data-mode", panel.stdManual ? "manual" : "auto");
     }
+    if (options && options.flash) flashStd();
+  }
+
+  /** 底座回执里的标准名与模式是最终事实：以它对齐一次，别让本地猜。 */
+  function applyStdFromMeta(flash) {
+    var meta = panel.batchMeta || {};
+    setStdMode(String(meta.name_mode || "auto") === "manual");
+    if (panelStdNameEl) {
+      var name = String(meta.standard_name || stdLiveName());
+      if (!panel.stdManual || !panelStdNameEl.value) panelStdNameEl.value = name;
+      panelStdNameEl.setAttribute("data-standard", name);
+    }
+    if (flash) flashStd();
   }
 
   function renderBatchMeta() {
@@ -1399,10 +1794,21 @@
     if (panelMetaBodyEl) panelMetaBodyEl.value = String(meta.body || "");
     if (panelMetaExamTypeEl) panelMetaExamTypeEl.value = String(meta.exam_type || "");
     if (panelMetaSubjectEl) panelMetaSubjectEl.value = String(meta.subject || "");
-    panel.schools = (Array.isArray(meta.schools) ? meta.schools : []).slice();
+    renderSceneOptions();
+    if (panelMetaSceneEl) panelMetaSceneEl.value = String(meta.scene_type || "");
+    var details = Array.isArray(meta.school_details) ? meta.school_details : [];
+    panel.schools = details.map(function (item) {
+      return {
+        id: String((item && item.id) || ""),
+        full_name: String((item && item.full_name) || ""),
+        short_name: String((item && (item.short_name || item.full_name)) || "")
+      };
+    }).filter(function (item) { return item.id; });
     panel.lastBody = String(meta.body || "");
+    setStdMode(String(meta.name_mode || "auto") === "manual");
     renderSchools();
     renderTopLines();
+    applyStdFromMeta(false);
     syncSourceFields();
   }
 
@@ -1412,9 +1818,21 @@
    */
   function renderMetaView() {
     var meta = panel.batchMeta || {};
-    if (Array.isArray(meta.schools)) panel.schools = meta.schools.slice();
+    if (Array.isArray(meta.school_details)) {
+      panel.schools = meta.school_details.map(function (item) {
+        return {
+          id: String((item && item.id) || ""),
+          full_name: String((item && item.full_name) || ""),
+          short_name: String((item && (item.short_name || item.full_name)) || "")
+        };
+      }).filter(function (item) { return item.id; });
+    }
+    if (panelMetaSceneEl && String(panelMetaSceneEl.value || "") !== String(meta.scene_type || "")) {
+      panelMetaSceneEl.value = String(meta.scene_type || "");
+    }
     renderSchools();
     renderTopLines();
+    applyStdFromMeta(true);
     syncSourceFields();
   }
 
@@ -1433,9 +1851,14 @@
       year: panelMetaYearEl ? String(panelMetaYearEl.value || "").trim() : "",
       region: panelMetaRegionEl ? String(panelMetaRegionEl.value || "").trim() : "",
       body: panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "",
+      scene_type: panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "",
       exam_type: panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "",
       subject: panelMetaSubjectEl ? String(panelMetaSubjectEl.value || "").trim() : "",
-      schools: panel.schools.slice()
+      // 题目只认字典 ID：名字一个字节都不往题目里写。
+      school_ids: panel.schools.map(function (item) { return String(item.id || ""); })
+        .filter(Boolean),
+      name_mode: panel.stdManual ? "manual" : "auto",
+      standard_name: panelStdNameEl ? String(panelStdNameEl.value || "").trim() : ""
     };
     panel.metaSyncing = true;
     return hostCall("pending.set_meta", payload).then(function (result) {
@@ -1457,35 +1880,60 @@
       panel.metaSyncing = false;
       var text = (error && error.message) || "未知原因";
       panelSay("公共元数据没同步上：" + text, "error", "failed");
-      dockWarn("公共元数据没同步上：" + text);
+      dockWarn("公共元数据没同步上：" + text, errorDetail(error));
       return null;
     });
   }
 
-  /** 主体换了一个：历史里记过同一主体的，明细名单自动带出来。 */
+  /** 主体换了一个：历史里记过同一主体的，按字典把学校 ID 自动带出来。 */
+  function hydrateGroupSchools(names) {
+    var wanted = (names || []).map(function (name) { return String(name || "").trim(); })
+      .filter(Boolean);
+    if (!wanted.length) return Promise.resolve(null);
+    return wanted.reduce(function (chain, name) {
+      return chain.then(function () {
+        return hostCall("meta.schools", { q: name, limit: 5 }).then(function (result) {
+          var rows = (result && Array.isArray(result.schools)) ? result.schools : [];
+          var hit = rows.filter(function (record) {
+            return String(record.short_name || "") === name || String(record.full_name || "") === name;
+          })[0];
+          if (hit) addSchoolRecord(hit);
+          return null;
+        }, function () { return null; });
+      });
+    }, Promise.resolve(null)).then(function () {
+      renderSchools();
+      return null;
+    });
+  }
+
   function onMetaFieldChange() {
     var body = panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "";
     if (body !== panel.lastBody) {
       panel.lastBody = body;
       var known = panel.groups ? panel.groups[body] : null;
-      if (known && known.length) panel.schools = known.slice();
+      if (known && known.length) hydrateGroupSchools(known);
     }
+    // 元数据一动，手改过的标准名立刻交回自动拼接（军令 #28 双向联动）。
+    if (panel.stdManual) setStdMode(false);
     renderSchools();
-    renderTopLines();
+    renderTopLines({ flash: true });
     queueMetaSync();
   }
 
-  function addSchool(name) {
-    var text = String(name || "").trim();
-    if (!text) return;
-    if (panel.schools.indexOf(text) >= 0) return;
-    if (panel.schools.length >= 24) {
-      panelSay("明细学校最多 24 所。", "warn", "invalid");
-      return;
-    }
-    panel.schools.push(text);
-    renderSchools();
+  function onSceneChange() {
+    if (panel.stdManual) setStdMode(false);
+    renderTopLines({ flash: true });
+    // 场景一换，交叉标签的排序与候选立刻跟着换。
+    loadTags(panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "");
     queueMetaSync();
+  }
+
+  /** 老师手改标准名：自动拼接当场暂停，改完这一段就以手改为准。 */
+  function onStdInput() {
+    setStdMode(true);
+    window.clearTimeout(metaSyncTimer);
+    metaSyncTimer = window.setTimeout(applyMetaSync, 600);
   }
 
   /** 取这一批的公共元数据：批次卡片里就带着 meta。 */
@@ -1559,7 +2007,7 @@
     }).catch(function (error) {
       var text = (error && error.message) || "未知原因";
       panelSay("文件没收进来：" + text, "error", "failed");
-      dockWarn("文件没收进来：" + text);
+      dockWarn("文件没收进来：" + text, errorDetail(error));
       return null;
     });
   }
@@ -1628,8 +2076,8 @@
 
   var basketSeq = 0;
   var basketBusy = false;
-  // 缩略图边长：200px，老师一眼看得出贴的是哪道题。
-  var THUMB_SIDE = 200;
+  // 单列列表里的小缩略图：44px 见方，左边一列图标、中间文件名、右边红 ×。
+  var THUMB_SIDE = 44;
 
   /** 剪贴板里的图没有文件名时补一个：分拣只看后缀，名字不能空。 */
   function basketName(file) {
@@ -1705,6 +2153,15 @@
     ctx.drawImage(entry.bitmap, (THUMB_SIDE - drawW) / 2, (THUMB_SIDE - drawH) / 2, drawW, drawH);
   }
 
+  /** 文件类型角标：图片走缩略图，文档按后缀给一个短标签（PDF / DOCX / TEX …）。 */
+  function fileBadge(name) {
+    var text = String(name || "");
+    var dot = text.lastIndexOf(".");
+    var ext = dot < 0 ? "" : text.slice(dot + 1).toUpperCase();
+    if (!ext) return "FILE";
+    return ext.length > 5 ? ext.slice(0, 5) : ext;
+  }
+
   function renderBasket() {
     if (!basketListEl) return;
     basketListEl.textContent = "";
@@ -1714,7 +2171,7 @@
       item.setAttribute("data-kind", isImage ? "image" : "file");
       item.setAttribute("data-name", entry.name);
       if (isImage) {
-        // 粘贴的截图直接出大缩略图：一眼看得出贴的是哪道题
+        // 图就走 44px 缩略图：左边一眼认出是哪道题。
         var thumb = document.createElement("canvas");
         thumb.className = "ed-basket-thumb";
         thumb.width = THUMB_SIDE;
@@ -1724,8 +2181,18 @@
         item.appendChild(thumb);
         entry.thumb = thumb;
         paintThumb(entry);
+      } else {
+        // 文档给一张带后缀的图标，不装缩略图，也不留空框。
+        var icon = el("span", "ed-basket-icon");
+        icon.setAttribute("data-ext", fileBadge(entry.name));
+        icon.setAttribute("aria-hidden", "true");
+        icon.appendChild(el("span", "ed-basket-icon-ext", fileBadge(entry.name)));
+        item.appendChild(icon);
       }
-      item.appendChild(el("span", "ed-basket-name", entry.name));
+      // 中间文件名：再长也只占一行，超出自动省略，悬停看全名。
+      var nameEl = el("span", "ed-basket-name", entry.name);
+      nameEl.title = entry.name;
+      item.appendChild(nameEl);
       var remove = el("button", "ed-basket-x", "×");
       remove.type = "button";
       remove.setAttribute("aria-label", "移除 " + entry.name);
@@ -1798,7 +2265,7 @@
       basketBusy = false;
       setBasketBusy(false);
       renderBasket();
-      dockWarn("开始解析失败：" + ((error && error.message) || "未知原因"));
+      dockWarn("开始解析失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
       return null;
     });
   }
@@ -2441,7 +2908,8 @@
       item.dirty = true;
       stashOne(item, metaFor(item, {}), false).then(function (outcome) {
         if (!outcome || !outcome.ok) {
-          dockWarn("切图没能存进中转站。");
+          dockWarn("切图没能存进中转站：" + ((outcome && outcome.message) || "未知原因"),
+            (outcome && outcome.detail) || "");
           return;
         }
         var saved = outcome.result && outcome.result.saved_assets && outcome.result.saved_assets[0];
@@ -2463,7 +2931,7 @@
       scheduleRender();
       dock("切图已存进题库（" + sw + "×" + sh + " 像素）。");
     }, function (error) {
-      dockWarn("切图没存住：" + ((error && error.message) || "未知原因"));
+      dockWarn("切图没存住：" + ((error && error.message) || "未知原因"), errorDetail(error));
     });
   }
 
@@ -3724,7 +4192,7 @@
         panelSay("已更新题目 " + result.question_id + "。", "ok", "updated");
       }, function (error) {
         panelSay(explainHostError(error), "error", "failed");
-        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"));
+        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
       }).then(function () {
         panel.saving = false;
         approveBusy(false);
@@ -3755,7 +4223,7 @@
         }
         panelSay(explainHostError(error), "error", "failed");
         batchNote("存入主库失败：" + ((error && error.message) || "未知原因"), "failed");
-        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"));
+        dockWarn("存入主库失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
       });
   }
 
@@ -3790,7 +4258,7 @@
       panel.saving = false;
       panelSay("存为待办失败：" + ((error && error.message) || "未知原因"), "error", "failed");
       batchNote("存为待办失败。", "failed");
-      dockWarn("存为待办失败：" + ((error && error.message) || "未知原因"));
+      dockWarn("存为待办失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
     });
   }
 
@@ -3816,7 +4284,7 @@
     }, function (error) {
       panelSay("删不掉：" + ((error && error.message) || "未知原因"), "error", "failed");
       batchNote("彻底删除失败。", "failed");
-      dockWarn("彻底删除失败：" + ((error && error.message) || "未知原因"));
+      dockWarn("彻底删除失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
     });
   }
 
@@ -4850,21 +5318,63 @@
     if (panelAiApplyEl) panelAiApplyEl.addEventListener("click", onAiApply);
     if (panelAiDiscardEl) panelAiDiscardEl.addEventListener("click", onAiDiscard);
     // 批次公共元数据：改一次，这一批所有题立刻跟着改
-    [panelMetaYearEl, panelMetaRegionEl, panelMetaBodyEl,
-      panelMetaExamTypeEl, panelMetaSubjectEl].forEach(function (node) {
+    [panelMetaYearEl, panelMetaRegionEl, panelMetaBodyEl, panelMetaSubjectEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onMetaFieldChange);
       node.addEventListener("change", onMetaFieldChange);
     });
+    if (panelMetaSceneEl) panelMetaSceneEl.addEventListener("change", onSceneChange);
+    // 学校输入框：搜字典 → 选中即加；查不到就走 AI 补全 → 老师确认 → 建档。
     if (panelSchoolInputEl) {
+      panelSchoolInputEl.addEventListener("input", function () {
+        setSchoolError("");
+        var query = String(panelSchoolInputEl.value || "").trim();
+        if (!query) { hideSchoolMenu(); return; }
+        searchSchools(query);
+      });
+      panelSchoolInputEl.addEventListener("focus", function () {
+        var query = String(panelSchoolInputEl.value || "").trim();
+        if (query) searchSchools(query);
+      });
       panelSchoolInputEl.addEventListener("keydown", function (event) {
         if (String(event.key || "") !== "Enter") return;
         event.preventDefault();
-        addSchool(panelSchoolInputEl.value);
-        panelSchoolInputEl.value = "";
+        onSchoolEnter();
+      });
+      panelSchoolInputEl.addEventListener("blur", function () {
+        window.setTimeout(hideSchoolMenu, 120);
       });
     }
+    if (panelSchoolConfirmOkEl) panelSchoolConfirmOkEl.addEventListener("click", confirmSchoolCreate);
+    if (panelSchoolConfirmCancelEl) {
+      panelSchoolConfirmCancelEl.addEventListener("click", cancelSchoolConfirm);
+    }
+    // 交叉标签：场景决定候选排序；打一个字就模糊查；回车把新标签记进本地库。
+    if (panelMetaExamTypeEl) {
+      panelMetaExamTypeEl.addEventListener("input", function () {
+        loadTags(String(panelMetaExamTypeEl.value || "").trim());
+        if (panel.stdManual) setStdMode(false);
+        renderTopLines({ flash: true });
+      });
+      panelMetaExamTypeEl.addEventListener("focus", function () {
+        loadTags(String(panelMetaExamTypeEl.value || "").trim());
+      });
+      panelMetaExamTypeEl.addEventListener("keydown", function (event) {
+        if (String(event.key || "") !== "Enter") return;
+        event.preventDefault();
+        onTagEnter();
+      });
+      panelMetaExamTypeEl.addEventListener("change", onMetaFieldChange);
+      panelMetaExamTypeEl.addEventListener("blur", function () {
+        window.setTimeout(hideTagMenu, 120);
+      });
+    }
+    if (panelStdNameEl) {
+      panelStdNameEl.addEventListener("input", onStdInput);
+      panelStdNameEl.addEventListener("change", onStdInput);
+    }
     wireIntake();
+    loadScenes();
     loadMetaHistory();
     renderBatchMeta();
     renderAi();
@@ -5102,8 +5612,20 @@
     loadMetaHistory: loadMetaHistory,
     applyMetaSync: applyMetaSync,
     queueMetaSync: queueMetaSync,
-    addSchool: addSchool,
     onMetaFieldChange: onMetaFieldChange,
+    // 数据字典（军令 #28）：学校检索/建档、场景与交叉标签。
+    addSchoolRecord: addSchoolRecord,
+    searchSchools: searchSchools,
+    confirmSchoolCreate: confirmSchoolCreate,
+    requestSchoolSuggest: requestSchoolSuggest,
+    loadTags: loadTags,
+    pickTag: pickTag,
+    onTagEnter: onTagEnter,
+    loadScenes: loadScenes,
+    // 标准名双向联动：自动/手动模式与「已更新」闪烁。
+    stdLiveName: stdLiveName,
+    setStdMode: setStdMode,
+    flashStd: flashStd,
     ingestEntries: ingestEntries,
     // 收集筐（军令 #27）：探针要能看筐里有什么、能把文件塞进去。
     basket: function () {
