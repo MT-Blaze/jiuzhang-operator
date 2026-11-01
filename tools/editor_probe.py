@@ -480,20 +480,60 @@ def main() -> int:
                   {"panel_hidden": page.locator("#wsPluginPanel").is_hidden(),
                    "selects": page.locator("#wsPluginControls select").count()})
 
-            # 辅助栏内容超高时，滚动条要淡入（幽灵滚动条），停手再淡出
-            ep_overflow = panel.locator("#epRoot").evaluate(
+            # 辅助栏内容超高时，滚动条要淡入（幽灵滚动条），停手再淡出。
+            # 2026-11-01 起滚动区是 .ep-scroll（外壳 .ep-root 只做弹性盒，底部 .ep-dock 钉死不滚）。
+            ep_overflow = panel.locator("#epScroll").evaluate(
                 "n => ({over: n.scrollHeight - n.clientHeight, cls: n.classList.contains('is-scrolling')})")
             check("辅助栏内容确实溢出（滚动条有活干）", ep_overflow["over"] > 20, ep_overflow)
-            panel.locator("#epRoot").evaluate("n => { n.scrollTop = 60; }")
+            panel.locator("#epScroll").evaluate("n => { n.scrollTop = 60; }")
             page.wait_for_timeout(150)
-            ep_scrolling = panel.locator("#epRoot").evaluate(
+            ep_scrolling = panel.locator("#epScroll").evaluate(
                 "n => n.classList.contains('is-scrolling')")
             check("辅助栏滚动条淡入", ep_scrolling is True, {"is_scrolling": ep_scrolling})
             page.wait_for_timeout(1200)
-            ep_settled = panel.locator("#epRoot").evaluate(
+            ep_settled = panel.locator("#epScroll").evaluate(
                 "n => n.classList.contains('is-scrolling')")
             check("辅助栏滚动条停手后淡出", ep_settled is False, {"is_scrolling": ep_settled})
-            panel.locator("#epRoot").evaluate("n => { n.scrollTop = 0; }")
+
+            # ---------- 2026-11-01 紧凑化：栏头一行 / 视图钮单行 / 标签胶囊 / 批量保存钉底 ----------
+            head_box = page.locator("#wsContext .ws-context-head").bounding_box()
+            title_box = page.locator("#wsContextSlotTitle").bounding_box()
+            badge_box = page.locator("#wsContextSlotBadge").bounding_box()
+            fold_box = page.locator("#wsToggleCtx").bounding_box()
+            same_line = all(
+                box is not None for box in (head_box, title_box, badge_box, fold_box)
+            ) and max(box["y"] for box in (title_box, badge_box, fold_box)) - min(
+                box["y"] for box in (title_box, badge_box, fold_box)) < head_box["height"]
+            check("辅助栏抬头合并成一行（插件名、徽标与折叠钮同在栏头行）",
+                  same_line and page.locator(".ws-context-slot-head").count() == 0,
+                  {"head": head_box, "title": title_box, "badge": badge_box, "fold": fold_box})
+            check("插件自己的抬头退场（不再白占一行）",
+                  panel.locator(".ep-head").count() == 0)
+
+            fmt_boxes = [panel.locator(sel).bounding_box() for sel in
+                         ("#epFmtLatex", "#epFmtBoxed", "#epSwap")]
+            one_row = all(box is not None for box in fmt_boxes) and (
+                max(box["y"] for box in fmt_boxes) - min(box["y"] for box in fmt_boxes) < 8)
+            check("格式一/格式二/互换同一行（空间够就不许折行）", one_row, {"boxes": fmt_boxes})
+
+            dock_box = panel.locator("#epDock").bounding_box()
+            root_box = panel.locator("#epRoot").bounding_box()
+            docked = (dock_box is not None and root_box is not None
+                      and 0 <= root_box["y"] + root_box["height"]
+                      - (dock_box["y"] + dock_box["height"]) <= 4)
+            check("批量保存钉在辅助栏最底边", docked,
+                  {"root": root_box, "dock": dock_box})
+            # 滚到底之后它还钉在原地（内容滚走了，按钮不许跟着走）
+            panel.locator("#epScroll").evaluate("n => { n.scrollTop = n.scrollHeight; }")
+            page.wait_for_timeout(200)
+            dock_box2 = panel.locator("#epDock").bounding_box()
+            check("滚到底后批量保存仍钉在底边",
+                  dock_box2 is not None and root_box is not None
+                  and 0 <= root_box["y"] + root_box["height"]
+                  - (dock_box2["y"] + dock_box2["height"]) <= 4,
+                  {"dock": dock_box2})
+            panel.locator("#epScroll").evaluate("n => { n.scrollTop = 0; }")
+            page.screenshot(path=str(shots / "v2-compact-panel.png"))
 
             # 切走再切回来：右栏主权必须跟着画布页签来回交还，不能停在 AI 助手手里
             console_tab = page.locator("#wsTabs [role='tab']", has_text="设置与控制台").first
@@ -720,7 +760,40 @@ def main() -> int:
 
             # ---------- 元数据表单 ----------
             panel.locator("#epGrade").fill("高一")
-            panel.locator("#epTags").fill(MARK + ", 二次函数")
+            # 标签改小胶囊（2026-11-01）：不再是整行输入框，点「+ 标签」才长出输入框，回车落一颗。
+            def add_tag(text: str) -> None:
+                panel.locator(".ep-tag-add").click()
+                panel.locator(".ep-tag-input").fill(text)
+                panel.locator(".ep-tag-input").press("Enter")
+                page.wait_for_timeout(150)
+
+            add_tag(MARK)
+            add_tag("二次函数")
+            page.wait_for_timeout(300)
+            tag_count = panel.locator(".ep-tag").count()
+            tag_boxes = [panel.locator(".ep-tag").nth(index).bounding_box()
+                         for index in range(tag_count)]
+            tag_row = panel.locator("#epTagList").bounding_box()
+            check("标签是小胶囊（宽度随文字，不占满整行）",
+                  tag_count >= 2 and tag_row is not None
+                  and all(box is not None and box["width"] < tag_row["width"]
+                          for box in tag_boxes),
+                  {"count": tag_count, "boxes": tag_boxes, "row": tag_row})
+            tag_names = [panel.locator(".ep-tag-name").nth(index).inner_text().strip()
+                         for index in range(tag_count)]
+            check("标签胶囊内容就是填进去的那两个",
+                  MARK in tag_names and "二次函数" in tag_names,
+                  {"names": tag_names})
+            check("标签输入框收起了（只留一颗「+ 标签」口子）",
+                  panel.locator(".ep-tag-input").count() == 0
+                  and panel.locator(".ep-tag-add").count() == 1,
+                  {"inputs": panel.locator(".ep-tag-input").count(),
+                   "adds": panel.locator(".ep-tag-add").count()})
+            # 标签那块的实拍：胶囊、行高与底栏话术都要看得见
+            panel.locator("#epTagList").evaluate(
+                "n => n.scrollIntoView({block: 'center'})")
+            page.wait_for_timeout(250)
+            page.screenshot(path=str(shots / "v2-tag-chips.png"))
             panel.locator("#epPaper").fill(MARK + " 一模卷")
             panel.locator("#epQuestionNo").fill("7")
             panel.locator("#epYear").fill("2024")

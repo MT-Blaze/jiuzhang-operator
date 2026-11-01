@@ -91,8 +91,17 @@
     <!-- 右栏：辅助栏。视图/元数据/AI 帮改/审核动作由入住插件自己决定；
          栏本身归底座，顶部的折叠钮把整栏收走，页签栏的【辅助栏】钮再叫回来。 -->
     <aside class="ws-context" id="wsContext" role="complementary" aria-label="辅助栏">
+      <!-- 抬头合并（2026-11-01）：「录题工作台 / 插件接管」原本另起一行，
+           白白占掉辅助栏最宝贵的纵向空间。标题与徽标搬上栏头这一行，
+           和「辅助栏」、【折叠】钮同处一条水平线；插件自己那行抬头
+           （录题辅助栏 / 视图·元数据…）随之退场——那四个字与栏名重复，
+           四个分区标题（编辑视图 / 元数据 / AI 帮改 / 审核动作）本就在面板里。 -->
       <header class="ws-context-head">
-        <h2>辅助栏</h2>
+        <div class="ws-context-head-main">
+          <h2>辅助栏</h2>
+          <h3 class="ws-context-slot-title" id="wsContextSlotTitle">AI 助手</h3>
+          <span class="ws-context-slot-badge" id="wsContextSlotBadge">右栏插件</span>
+        </div>
         <button class="ws-btn ws-btn-sm" id="wsToggleCtx" type="button"
           aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
@@ -101,10 +110,6 @@
              默认由 AI 助手插件（org.jiuzhang.chat）入住；当前画布插件若自己也声明了
              sidebar.right，就暂时由它接管，切走该页签自动归还助手。 -->
         <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏助手面板">
-          <div class="ws-context-slot-head">
-            <h3 id="wsContextSlotTitle">AI 助手</h3>
-            <span class="ws-context-slot-badge" id="wsContextSlotBadge">右栏插件</span>
-          </div>
           <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
         </section>
 

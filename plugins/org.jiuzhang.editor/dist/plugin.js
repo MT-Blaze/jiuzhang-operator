@@ -83,6 +83,7 @@
   var poolStashEl = document.getElementById("edPoolStash");
 
   var panelRoot = document.getElementById("epRoot");
+  var panelScrollEl = document.getElementById("epScroll");
   var panelProgressEl = document.getElementById("epProgress");
   var panelStatusEl = document.getElementById("epStatus");
   var panelConfidenceEl = document.getElementById("epConfidence");
@@ -95,6 +96,9 @@
   var panelExamTypeEl = document.getElementById("epExamType");
   var panelYearEl = document.getElementById("epYear");
   var panelTagsEl = document.getElementById("epTags");
+  var panelTagListEl = document.getElementById("epTagList");
+  var panelTagInputEl = null;
+  var tagEditorOpen = false;
   var panelMountedEl = document.getElementById("epMounted");
   var panelTreeEl = document.getElementById("epTopicTree");
   var panelTopicErrorEl = document.getElementById("epTopicError");
@@ -2108,6 +2112,8 @@
   function batchNote(text, phase) {
     if (!batchNoteEl) return;
     batchNoteEl.textContent = text;
+    // 辅助栏窄，话术只许单行省略（契约如此）；完整文案挂 title，悬停能看全。
+    batchNoteEl.title = text;
     batchNoteEl.setAttribute("data-batch", phase || "idle");
   }
 
@@ -2115,8 +2121,11 @@
   function renderPool() {
     var counts = state.slot === "stage.center" ? poolCounts() : panelPoolCounts();
     if (poolEl) {
-      poolEl.textContent = "待入库 " + counts.fresh + " · 已入库 " + counts.stored
-        + " · 脏 " + counts.dirty + " · 未认全 " + counts.errored;
+      // 辅助栏只有 231px 可用：零值段一律不显示，把宽度让给右侧的实时话术。
+      var parts = ["待入库 " + counts.fresh, "脏 " + counts.dirty];
+      if (counts.stored) parts.push("已入库 " + counts.stored);
+      if (counts.errored) parts.push("缺件 " + counts.errored);
+      poolEl.textContent = parts.join(" · ");
       poolEl.setAttribute("data-new", String(counts.fresh));
       poolEl.setAttribute("data-stored", String(counts.stored));
       poolEl.setAttribute("data-dirty", String(counts.dirty));
@@ -2168,9 +2177,9 @@
     }).then(function (acc) {
       state.batchSaving = false;
       var untouched = state.items.length - acc.saved.length - acc.failed.length;
-      var text = "提交 " + (acc.saved.length + acc.failed.length) + " 道脏题：入库 "
-        + acc.saved.length + "、失败 " + acc.failed.length + "；未改动的 " + untouched
-        + " 道一题也没写。";
+      var text = "已入库 " + acc.saved.length + "、失败 " + acc.failed.length
+        + "；未改动的 " + untouched + " 道一题也没写（提交 " + (acc.saved.length + acc.failed.length)
+        + " 道脏题）。";
       if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
       batchNote(text, acc.failed.length ? "partial" : "done");
       dock("录题工作台批量提交：" + acc.saved.length + " 题入库、" + acc.failed.length + " 题失败。");
@@ -2258,9 +2267,9 @@
       var acc = outcome.acc;
       state.batchSaving = false;
       var untouched = outcome.total - acc.saved.length - acc.failed.length;
-      var text = "提交 " + (acc.saved.length + acc.failed.length) + " 道脏题：入库 "
-        + acc.saved.length + "、失败 " + acc.failed.length + "；未改动的 " + untouched
-        + " 道一题也没写。";
+      var text = "已入库 " + acc.saved.length + "、失败 " + acc.failed.length
+        + "；未改动的 " + untouched + " 道一题也没写（提交 " + (acc.saved.length + acc.failed.length)
+        + " 道脏题）。";
       if (acc.failed.length) text += " 失败明细：" + acc.failed.join("；");
       batchNote(text, acc.failed.length ? "partial" : "done");
       panelSay("批量提交完成：入库 " + acc.saved.length + " 题、失败 " + acc.failed.length + " 题。",
@@ -2521,7 +2530,7 @@
 
   function bindFormChanges() {
     [panelTypeEl, panelDifficultyEl, panelGradeEl, panelPaperEl, panelQuestionNoEl,
-      panelExamTypeEl, panelYearEl, panelTagsEl].forEach(function (node) {
+      panelExamTypeEl, panelYearEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onFormChange);
       node.addEventListener("change", onFormChange);
@@ -2601,6 +2610,7 @@
     if (panelExamTypeEl) panelExamTypeEl.value = merged.exam_type || "";
     if (panelYearEl) panelYearEl.value = merged.year || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
+    renderTags();
     setFormatButtons(sel.format || panel.format);
     setSwapButton(Boolean(sel.swap));
     renderTypeNote();
@@ -3027,6 +3037,100 @@
     renderPanelMetrics();
   }
 
+  /** 标签胶囊（2026-11-01）：#epTags 只当「逗号串」的存档位，界面上的真身是这一串小胶囊。 */
+  function renderTags() {
+    if (!panelTagListEl) return;
+    var tags = splitTags(panelTagsEl ? panelTagsEl.value : "");
+    panelTagListEl.textContent = "";
+    tags.forEach(function (tag) {
+      var chip = el("span", "ep-tag");
+      chip.setAttribute("role", "listitem");
+      chip.appendChild(el("span", "ep-tag-name", tag));
+      var removeBtn = el("button", "ep-tag-x", "×");
+      removeBtn.type = "button";
+      removeBtn.setAttribute("aria-label", "摘除标签 " + tag);
+      removeBtn.addEventListener("click", function () {
+        commitTags(splitTags(panelTagsEl.value).filter(function (one) { return one !== tag; }));
+      });
+      chip.appendChild(removeBtn);
+      panelTagListEl.appendChild(chip);
+    });
+    if (tagEditorOpen) {
+      panelTagListEl.appendChild(ensureTagInput());
+    } else {
+      var addBtn = el("button", "ep-tag-add", "+ 标签");
+      addBtn.type = "button";
+      addBtn.setAttribute("aria-label", "添加标签");
+      addBtn.addEventListener("click", openTagInput);
+      panelTagListEl.appendChild(addBtn);
+    }
+  }
+
+  function commitTags(tags) {
+    if (!panelTagsEl) return;
+    var list = [];
+    (tags || []).forEach(function (tag) {
+      var one = String(tag == null ? "" : tag).trim().slice(0, 32);
+      if (one && list.indexOf(one) < 0) list.push(one);
+    });
+    panelTagsEl.value = list.slice(0, TAG_LIMIT).join(",");
+    renderTags();
+    onFormChange();
+  }
+
+  /** 加标签的输入框是临时件：点「+ 标签」才挂上来，回车落定即收。 */
+  function ensureTagInput() {
+    if (panelTagInputEl) return panelTagInputEl;
+    panelTagInputEl = document.createElement("input");
+    panelTagInputEl.className = "ep-tag-input";
+    panelTagInputEl.type = "text";
+    panelTagInputEl.maxLength = 24;
+    panelTagInputEl.setAttribute("aria-label", "添加标签");
+    panelTagInputEl.setAttribute("placeholder", "回车确认");
+    panelTagInputEl.addEventListener("keydown", onTagInputKey);
+    panelTagInputEl.addEventListener("blur", function () { closeTagInput(true); });
+    return panelTagInputEl;
+  }
+
+  function openTagInput() {
+    if (!panelTagListEl) return;
+    tagEditorOpen = true;
+    panelTagListEl.appendChild(ensureTagInput());
+    panelTagInputEl.focus();
+  }
+
+  function closeTagInput(commit) {
+    if (!tagEditorOpen) return;
+    var input = panelTagInputEl;
+    var text = input ? input.value : "";
+    tagEditorOpen = false;
+    panelTagInputEl = null;
+    if (input && input.parentNode) input.parentNode.removeChild(input);
+    var parts = splitTags(text);
+    if (commit && parts.length) commitTags(splitTags(panelTagsEl.value).concat(parts));
+    else renderTags();
+  }
+
+  /** 回车或逗号落一颗标签；输入框空着时按退格，摘掉最后一颗。 */
+  function onTagInputKey(event) {
+    if (event.key === "Enter" || event.key === "," || event.key === "，") {
+      event.preventDefault();
+      closeTagInput(true);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeTagInput(false);
+      return;
+    }
+    if (event.key === "Backspace" && panelTagInputEl && !panelTagInputEl.value) {
+      var list = splitTags(panelTagsEl.value);
+      if (!list.length) return;
+      list.pop();
+      commitTags(list);
+    }
+  }
+
   function renderMounted() {
     if (!panelMountedEl) return;
     var entry = panel.currentEntry || {};
@@ -3090,6 +3194,7 @@
       L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴"
     });
     bindFormChanges();
+    renderTags();
     [panelFmtLatexEl, panelFmtBoxedEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("click", function () {
@@ -3107,7 +3212,7 @@
     renderAi();
     setFormatButtons("latex");
     setSwapButton(false);
-    wireGhost(panelRoot);
+    wireGhost(panelScrollEl || panelRoot);
     wireGhost(document.getElementById("epTree"));
     loadMetaDraft().then(function () {
       return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY });

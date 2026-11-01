@@ -401,6 +401,29 @@
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 栏头合并（2026-11-01）：插件标题与徽标搬上这一行，和【折叠】钮同处一条水平线。
+   栏头高度仍由 48px 钉死，多出来的信息只在这一行里排，绝不另起一行占纵向空间。 */
+.ws-context-head-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ws-context-slot-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ws-context-body {
@@ -427,22 +450,8 @@
   margin-bottom: 0;
 }
 
-.ws-context-slot-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  flex: none;
-}
-.ws-context-slot-head h3 {
-  margin: 0;
-  font-size: 15px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* 插槽抬头（.ws-context-slot-head）已于 2026-11-01 整条退场：
+   标题与徽标搬进 .ws-context-head，不再单独占一行。 */
 .ws-context-slot-badge {
   flex: none;
   font-size: 11px;

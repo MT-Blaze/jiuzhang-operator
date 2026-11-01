@@ -70,148 +70,160 @@
   <!-- 辅助栏实例（sidebar.right）：编辑视图 + 元数据表单 + AI 帮改 + 审核动作。
        按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
        画布顶栏撤除后，格式一/格式二与 ⇄ 互换搬到这里；
-       本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。 -->
+       本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。
+
+       紧凑化（2026-11-01）：
+         · 本帧原来的抬头「录题辅助栏 / 视图·元数据·AI 帮改·审核动作」整条撤掉，
+           宿主栏头那一行（辅助栏 · 录题工作台 · 插件接管 · 折叠）已经够用；
+         · 格式一/格式二/⇄ 互换挤在同一行，窄到装不下才折行；
+         · 标签改小胶囊，宽度随文字，不再占满一整行；
+         · 批量保存钉在面板最底边，不随内容滚走。 -->
   <div id="epRoot" class="ep-root" hidden>
-    <header class="ep-head">
-      <h2>录题辅助栏</h2>
-      <p class="ep-sub">视图 · 元数据 · AI 帮改 · 审核动作</p>
-    </header>
+    <div class="ep-scroll" id="epScroll">
+      <section class="ep-sec" aria-label="编辑视图">
+        <h3 class="ep-sec-title">编辑视图</h3>
+        <div class="ep-viewbar">
+          <div class="ep-seg" role="group" aria-label="源码格式">
+            <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
+                    aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
+            <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
+                    aria-pressed="false" title="格式二 · 框框视图">格式二</button>
+          </div>
+          <button type="button" class="ep-btn ep-swap-btn" id="epSwap" aria-pressed="false"
+                  title="源码与渲染左右互换">⇄ 互换</button>
+        </div>
+        <p id="epViewNote" class="ep-hint">格式只改画布中栏的编辑视图，题目内容不动。</p>
+      </section>
 
-    <section class="ep-sec" aria-label="编辑视图">
-      <h3 class="ep-sec-title">编辑视图</h3>
-      <div class="ep-seg" role="group" aria-label="源码格式">
-        <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
-                aria-pressed="true" title="格式一 · 标准 LaTeX">格式一</button>
-        <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
-                aria-pressed="false" title="格式二 · 框框视图">格式二</button>
-      </div>
-      <div class="ep-actions">
-        <button type="button" class="ep-btn ep-swap-btn" id="epSwap" aria-pressed="false"
-                title="源码与渲染左右互换">⇄ 互换</button>
-      </div>
-      <p id="epViewNote" class="ep-hint">格式只改画布中栏的编辑视图，题目内容不动。</p>
-    </section>
+      <section class="ep-sec ep-status-row" aria-label="进度与状态">
+        <span id="epProgress" class="ep-progress" data-active="0" data-total="0">第 — / — 题</span>
+        <span id="epStatus" class="ep-badge" data-status="pending" data-dirty="false">● 待审核</span>
+        <span id="epConfidence" class="ep-confidence" data-confidence="">置信度 —（假数据占位）</span>
+      </section>
 
-    <section class="ep-sec ep-status-row" aria-label="进度与状态">
-      <span id="epProgress" class="ep-progress" data-active="0" data-total="0">第 — / — 题</span>
-      <span id="epStatus" class="ep-badge" data-status="pending" data-dirty="false">● 待审核</span>
-      <span id="epConfidence" class="ep-confidence" data-confidence="">置信度 —（假数据占位）</span>
-    </section>
-
-    <section class="ep-sec">
-      <h3 class="ep-sec-title">元数据</h3>
-      <label class="ep-field">
-        <span class="ep-label">题型</span>
-        <select id="epType" class="ep-select" aria-describedby="epTypeNote"></select>
-      </label>
-      <p id="epTypeNote" class="ep-hint" data-from="ai">题型由源码自动判断，可人工改。</p>
-      <label class="ep-field">
-        <span class="ep-label">难度</span>
-        <select id="epDifficulty" class="ep-select"></select>
-      </label>
-      <label class="ep-field">
-        <span class="ep-label">年级</span>
-        <input id="epGrade" class="ep-input" type="text" maxlength="20" placeholder="例：高一">
-      </label>
-      <div class="ep-group">
-        <div class="ep-group-title">来源（随手填）</div>
+      <section class="ep-sec">
+        <h3 class="ep-sec-title">元数据</h3>
         <label class="ep-field">
-          <span class="ep-label">原卷名</span>
-          <input id="epPaper" class="ep-input" type="text" maxlength="120" placeholder="例：2024 一模">
+          <span class="ep-label">题型</span>
+          <select id="epType" class="ep-select" aria-describedby="epTypeNote"></select>
         </label>
-        <div class="ep-row">
-          <label class="ep-field ep-field-narrow">
-            <span class="ep-label">题号</span>
-            <input id="epQuestionNo" class="ep-input" type="text" maxlength="20" placeholder="3">
+        <p id="epTypeNote" class="ep-hint" data-from="ai">题型由源码自动判断，可人工改。</p>
+        <label class="ep-field">
+          <span class="ep-label">难度</span>
+          <select id="epDifficulty" class="ep-select"></select>
+        </label>
+        <label class="ep-field">
+          <span class="ep-label">年级</span>
+          <input id="epGrade" class="ep-input" type="text" maxlength="20" placeholder="例：高一">
+        </label>
+        <div class="ep-group">
+          <div class="ep-group-title">来源（随手填）</div>
+          <label class="ep-field">
+            <span class="ep-label">原卷名</span>
+            <input id="epPaper" class="ep-input" type="text" maxlength="120" placeholder="例：2024 一模">
           </label>
-          <label class="ep-field ep-field-narrow">
-            <span class="ep-label">年份</span>
-            <input id="epYear" class="ep-input" type="text" inputmode="numeric" maxlength="4" placeholder="2024">
+          <div class="ep-row">
+            <label class="ep-field ep-field-narrow">
+              <span class="ep-label">题号</span>
+              <input id="epQuestionNo" class="ep-input" type="text" maxlength="20" placeholder="3">
+            </label>
+            <label class="ep-field ep-field-narrow">
+              <span class="ep-label">年份</span>
+              <input id="epYear" class="ep-input" type="text" inputmode="numeric" maxlength="4" placeholder="2024">
+            </label>
+          </div>
+          <label class="ep-field">
+            <span class="ep-label">类型</span>
+            <input id="epExamType" class="ep-input" type="text" maxlength="64" placeholder="例：一模 / 期末 / 联考">
           </label>
         </div>
-        <label class="ep-field">
-          <span class="ep-label">类型</span>
-          <input id="epExamType" class="ep-input" type="text" maxlength="64" placeholder="例：一模 / 期末 / 联考">
-        </label>
-      </div>
-      <label class="ep-field">
-        <span class="ep-label">标签</span>
-        <input id="epTags" class="ep-input" type="text" placeholder="逗号分隔，例：二次函数,配方法">
-      </label>
-      <div class="ep-group">
-        <div class="ep-group-title">考向（点 ▸ 逐层展开，点名称挂载）</div>
-        <div id="epMounted" class="ep-mounted" role="list" aria-label="本题已挂考向"></div>
-        <div id="epTopicTree" class="ep-tree" role="tree" aria-label="大纲树"></div>
-        <p id="epTopicError" class="ep-hint" hidden></p>
-      </div>
+        <!-- 标签：改小胶囊。胶囊宽度随文字走，多了向右排、装不下折行；
+             #epTags 藏起来只当「逗号串」的存档位，界面上的真身是胶囊。
+             加标签的口子是行尾那颗「+ 标签」小丸：点开才占一行输入框，
+             平时不占地方——辅助栏内宽只有两百来像素，一个整行输入框太奢侈。 -->
+        <div class="ep-field">
+          <span class="ep-label">标签</span>
+          <div class="ep-tags">
+            <div class="ep-tag-list" id="epTagList" role="list" aria-label="本题标签"></div>
+            <input id="epTags" type="hidden" value="">
+          </div>
+        </div>
+        <div class="ep-group">
+          <div class="ep-group-title">考向（点 ▸ 逐层展开，点名称挂载）</div>
+          <div id="epMounted" class="ep-mounted" role="list" aria-label="本题已挂考向"></div>
+          <div id="epTopicTree" class="ep-tree" role="tree" aria-label="大纲树"></div>
+          <p id="epTopicError" class="ep-hint" hidden></p>
+        </div>
+      </section>
 
-      <!-- 批量保存区：原画布底部的横条（.ed-foot）整条搬进辅助栏的元数据操作区（2026-10-31）。
-           画布底下那条横条一换行就把中右两栏的底边框挤歪，还占着老师最宝贵的屏幕下沿。
-           台账数字由画布经 stage.selection 送来；两颗按钮在这里直接发起逐题串行提交，
-           只提交改动过的题，未改动的一题也不写库。 -->
-      <div class="ep-group">
-        <div class="ep-group-title">批量保存</div>
+      <section class="ep-sec" aria-label="AI 帮改">
+        <h3 class="ep-sec-title">AI 帮改（先预览，点采用才替换）</h3>
+        <p id="epAiField" class="ep-hint" data-ai-field="">把光标放进题干段或解析段，AI 才知道要改哪一段。</p>
+        <label class="ep-field">
+          <span class="ep-label">指令</span>
+          <textarea id="epAiAsk" class="ep-input ep-ask" rows="3" maxlength="400"
+                    placeholder="例：把「求其最小值」改成「求最小值，并写出取等条件」"></textarea>
+        </label>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
+                  aria-disabled="true">发送改写请求</button>
+          <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
+                  title="题干段与解析段都清洗成功才回填，任一失败就不动">AI 清洗公式</button>
+        </div>
+        <div class="ep-ai">
+          <div class="ep-ai-head">
+            <span id="epAiState" class="ep-badge" data-ai-state="idle">未发起</span>
+            <span id="epAiNote" class="ep-hint" data-ai-mock=""></span>
+          </div>
+          <p id="epAiPreview" class="ep-ai-body" role="status" aria-live="polite"
+             data-ai-field="">改写结果会出现在这里，点【采用】才会替换画布源码。</p>
+          <div class="ep-actions">
+            <button type="button" class="ep-btn ep-btn-primary" id="epAiApply" disabled
+                    aria-disabled="true">采用并回填画布</button>
+            <button type="button" class="ep-btn" id="epAiDiscard" disabled aria-disabled="true">放弃</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="ep-sec">
+        <h3 class="ep-sec-title">审核动作</h3>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn ep-btn-primary" id="epSave">保存本题</button>
+          <button type="button" class="ep-btn" id="epVariant">另存为新题（派生变式）</button>
+        </div>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epPass" disabled aria-disabled="true"
+                  title="审核流随下一军令接入，本期只占位">通过入库</button>
+          <button type="button" class="ep-btn" id="epReject" disabled aria-disabled="true"
+                  title="审核流随下一军令接入，本期只占位">打回修改</button>
+          <button type="button" class="ep-btn" id="epSkip" disabled aria-disabled="true"
+                  title="审核流随下一军令接入，本期只占位">跳过</button>
+        </div>
+        <p id="epMessage" class="ep-msg" role="status" aria-live="polite"
+           data-tone="info" data-save-state="idle">等待画布送来的当前题。</p>
+      </section>
+
+      <p class="ep-foot" id="epMetrics" data-question-id="" data-saved-id="" data-type=""
+         data-difficulty="" data-format="latex" data-dirty="false" data-topics="0">尚未载入。</p>
+    </div>
+
+    <!-- 批量保存：原画布底部的横条（.ed-foot）整条搬进辅助栏（2026-10-31），
+         2026-11-01 再钉到面板最底边——内容滚多滚少，这两颗钮都在原地。
+         台账数字由画布经 stage.selection 送来；两颗按钮在这里直接发起逐题串行提交，
+         只提交改动过的题，未改动的一题也不写库。 -->
+    <div class="ep-dock" id="epDock">
+      <div class="ep-dock-row">
         <span id="edPool" class="ep-pool" data-new="0" data-stored="0" data-dirty="0"
               data-errored="0">待入库 0 · 已入库 0 · 脏 0</span>
         <p id="edBatchNote" class="ep-batch" role="status" aria-live="polite"
-           data-batch="idle">滚动到哪一题，辅助栏就跟着那张表单。</p>
-        <div class="ep-batch-actions">
-          <button type="button" class="ep-btn" id="edPoolStash" disabled aria-disabled="true"
-                  title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
-          <button type="button" class="ep-btn ep-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
-        </div>
+           data-batch="idle">辅助栏跟随当前题</p>
       </div>
-    </section>
-
-    <section class="ep-sec" aria-label="AI 帮改">
-      <h3 class="ep-sec-title">AI 帮改（先预览，点采用才替换）</h3>
-      <p id="epAiField" class="ep-hint" data-ai-field="">把光标放进题干段或解析段，AI 才知道要改哪一段。</p>
-      <label class="ep-field">
-        <span class="ep-label">指令</span>
-        <textarea id="epAiAsk" class="ep-input ep-ask" rows="3" maxlength="400"
-                  placeholder="例：把「求其最小值」改成「求最小值，并写出取等条件」"></textarea>
-      </label>
-      <div class="ep-actions">
-        <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
-                aria-disabled="true">发送改写请求</button>
-        <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
-                title="题干段与解析段都清洗成功才回填，任一失败就不动">AI 清洗公式</button>
+      <div class="ep-batch-actions">
+        <button type="button" class="ep-btn" id="edPoolStash" disabled aria-disabled="true"
+                title="待入库池的存储层随下一军令接入，本期只做界面">暂存待入库池</button>
+        <button type="button" class="ep-btn ep-btn-primary" id="edSaveAll">保存全部（只提交脏题）</button>
       </div>
-      <div class="ep-ai">
-        <div class="ep-ai-head">
-          <span id="epAiState" class="ep-badge" data-ai-state="idle">未发起</span>
-          <span id="epAiNote" class="ep-hint" data-ai-mock=""></span>
-        </div>
-        <p id="epAiPreview" class="ep-ai-body" role="status" aria-live="polite"
-           data-ai-field="">改写结果会出现在这里，点【采用】才会替换画布源码。</p>
-        <div class="ep-actions">
-          <button type="button" class="ep-btn ep-btn-primary" id="epAiApply" disabled
-                  aria-disabled="true">采用并回填画布</button>
-          <button type="button" class="ep-btn" id="epAiDiscard" disabled aria-disabled="true">放弃</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="ep-sec">
-      <h3 class="ep-sec-title">审核动作</h3>
-      <div class="ep-actions">
-        <button type="button" class="ep-btn ep-btn-primary" id="epSave">保存本题</button>
-        <button type="button" class="ep-btn" id="epVariant">另存为新题（派生变式）</button>
-      </div>
-      <div class="ep-actions">
-        <button type="button" class="ep-btn" id="epPass" disabled aria-disabled="true"
-                title="审核流随下一军令接入，本期只占位">通过入库</button>
-        <button type="button" class="ep-btn" id="epReject" disabled aria-disabled="true"
-                title="审核流随下一军令接入，本期只占位">打回修改</button>
-        <button type="button" class="ep-btn" id="epSkip" disabled aria-disabled="true"
-                title="审核流随下一军令接入，本期只占位">跳过</button>
-      </div>
-      <p id="epMessage" class="ep-msg" role="status" aria-live="polite"
-         data-tone="info" data-save-state="idle">等待画布送来的当前题。</p>
-    </section>
-
-    <p class="ep-foot" id="epMetrics" data-question-id="" data-saved-id="" data-type=""
-       data-difficulty="" data-format="latex" data-dirty="false" data-topics="0">尚未载入。</p>
+    </div>
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
