@@ -370,7 +370,7 @@ def create_pre_restore_backup(workspace_id: str, selected: list[str]) -> list[st
     plans: list[tuple[str, str, Path]] = []
     for rel, path in backup.backup_file_plan(workspace_id):
         if path.suffix.lower() == ".db":
-            plans.append((rel, "sqlite" if backup._is_sqlite(path) else "copy", path))
+            plans.append((rel, "sqlite" if backup.is_sqlite(path) else "copy", path))
         elif rel in selected_set:
             plans.append((rel, "copy", path))
 

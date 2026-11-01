@@ -20,7 +20,7 @@ import re
 import secrets
 from typing import Any
 
-from app.core import ai_client, pending_bank
+from app.core import ai_client, pending_db, pinyin, questions
 
 
 class MetaDictError(Exception):
@@ -46,6 +46,15 @@ def _clean(value: Any, limit: int) -> str:
     return text[:limit]
 
 
+def _like(term: str) -> str:
+    """把用户输入包成 LIKE 模式：``\\``、``%``、``_`` 先转义。
+
+    老师手打的通配符不该悄悄变成「什么都匹配」——声明了 ESCAPE 就得照规矩转义。
+    """
+    escaped = str(term).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 def _school(row: Any) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
@@ -61,10 +70,10 @@ def list_schools(query: str = "", limit: int = SCHOOL_LIMIT) -> dict[str, Any]:
     """按全称/简称模糊查学校；最近改过的排前面。"""
     text = _clean(query, 60)
     size = max(1, min(int(limit or SCHOOL_LIMIT), 100))
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         if text:
-            pattern = f"%{text}%"
+            pattern = _like(text)
             rows = con.execute(
                 "SELECT id, full_name, short_name FROM schools"
                 " WHERE full_name LIKE ? ESCAPE '\\' OR short_name LIKE ? ESCAPE '\\'"
@@ -92,7 +101,7 @@ def get_schools(school_ids: list[str], *, strict: bool = True) -> list[dict[str,
             raise MetaDictError(f"学校编号不合法：{school_id[:40]}")
     unique = list(dict.fromkeys(wanted))
     placeholders = ",".join("?" for _ in unique)
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         rows = con.execute(
             f"SELECT id, full_name, short_name FROM schools WHERE id IN ({placeholders})",
@@ -109,7 +118,7 @@ def get_schools(school_ids: list[str], *, strict: bool = True) -> list[dict[str,
 
 
 def _insert_school(con: Any, full_name: str, short_name: str) -> dict[str, Any]:
-    now = pending_bank.questions.now_iso()
+    now = questions.now_iso()
     for _ in range(5):
         school_id = "sch_" + secrets.token_hex(8)
         if con.execute("SELECT 1 FROM schools WHERE id = ?", (school_id,)).fetchone():
@@ -136,7 +145,7 @@ def create_school(full_name: Any, short_name: Any = "") -> dict[str, Any]:
         short = full[:60]
     if len(full) < 2 or len(short) < 1:
         raise MetaDictError("学校名称太短，请写全")
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         existing = con.execute(
@@ -169,7 +178,7 @@ def find_or_create_by_name(name: Any) -> dict[str, Any]:
     text = _clean(name, 120)
     if not text:
         raise MetaDictError("学校名不能为空")
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         row = con.execute(
             "SELECT id, full_name, short_name FROM schools"
@@ -238,7 +247,7 @@ def _parse_suggestion(content: str) -> tuple[str, float]:
 
 
 def list_scenes() -> dict[str, Any]:
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         rows = con.execute(
             "SELECT id, name, sort_order FROM scene_types ORDER BY sort_order ASC, name ASC"
@@ -258,9 +267,9 @@ def normalize_scene(value: Any) -> str:
     name = _clean(value, 64)
     if not name:
         return ""
-    if name not in pending_bank.SCENE_BY_NAME:
+    if name not in pending_db.SCENE_BY_NAME:
         raise MetaDictError(
-            "不认识的场景「" + name + "」，可选：" + "、".join(pending_bank.SCENE_NAMES)
+            "不认识的场景「" + name + "」，可选：" + "、".join(pending_db.SCENE_NAMES)
         )
     return name
 
@@ -273,28 +282,43 @@ def list_tags(scene: Any = "", query: Any = "", limit: int = TAG_LIMIT) -> dict[
 
     场景专属权重排第一：选【外国题】时 AMC / A-Level / IB 冒头，选【校考题】
     时 9月月考 / 一模冒头；打一个「模」字，零到七模一次带出来。
+
+    拼音首字母也算一条路：敲 ``J`` 能捞出「集合」「九模」，敲 ``js`` 能捞出
+    「竞赛」——命中的是标签自带的拼音列，不是在库里做全表扫描。
     """
     scene_name = _clean(scene, 64)
     text = _clean(query, 32)
     size = max(1, min(int(limit or TAG_LIMIT), 50))
-    con = pending_bank._connect()
+    con = pending_db.connect()
     try:
         if text:
+            # 原文一条路、拼音首字母一条路：敲「J」捞集合。
+            # 只有老师打的全是字母数字才开第二条路——打了汉字还顺拼音捞，
+            # 「模」会把 AMC 端上桌（amc 里也有个 m），那是噪声不是命中。
+            clause = "name LIKE ? ESCAPE '\\'"
+            args: list[Any] = [scene_name, _like(text)]
+            key = pinyin.initials(text) if text.isascii() else ""
+            if key:
+                clause += " OR pinyin LIKE ? ESCAPE '\\'"
+                args.append(_like(key))
+            args.append(size)
             rows = con.execute(
                 "SELECT name, SUM(weight) AS total,"
                 " MAX(CASE WHEN scene = ? THEN weight ELSE 0 END) AS scene_weight,"
-                " MAX(updated_at) AS updated_at"
-                " FROM exam_types WHERE name LIKE ? ESCAPE '\\'"
+                " MAX(updated_at) AS updated_at,"
+                " MAX(pinyin) AS pinyin"
+                f" FROM exam_types WHERE {clause}"
                 " GROUP BY name"
                 " ORDER BY scene_weight DESC, total DESC, updated_at DESC, name ASC"
                 " LIMIT ?",
-                (scene_name, f"%{text}%", size),
+                args,
             ).fetchall()
         else:
             rows = con.execute(
                 "SELECT name, SUM(weight) AS total,"
                 " MAX(CASE WHEN scene = ? THEN weight ELSE 0 END) AS scene_weight,"
-                " MAX(updated_at) AS updated_at"
+                " MAX(updated_at) AS updated_at,"
+                " MAX(pinyin) AS pinyin"
                 " FROM exam_types"
                 " GROUP BY name"
                 " ORDER BY scene_weight DESC, total DESC, updated_at DESC, name ASC"
@@ -310,6 +334,7 @@ def list_tags(scene: Any = "", query: Any = "", limit: int = TAG_LIMIT) -> dict[
                 "weight": int(row["total"] or 0),
                 "scene_weight": int(row["scene_weight"] or 0),
                 "scene": scene_name,
+                "pinyin": str(row["pinyin"] or ""),
             }
             for row in rows
         ],
@@ -319,20 +344,24 @@ def list_tags(scene: Any = "", query: Any = "", limit: int = TAG_LIMIT) -> dict[
 
 
 def remember_tag(name: Any, scene: Any = "") -> dict[str, Any]:
-    """老师手打/选用的标签记一笔：同一个标签在同场景里的权重 +1。"""
+    """老师手打/选用的标签记一笔：同一个标签在同场景里的权重 +1。
+
+    新标签同时记下自己的拼音首字母——下次老师敲首字母就能把它捞出来。
+    """
     text = _clean(name, 32)
     if not text:
         raise MetaDictError("标签不能为空")
     scene_name = normalize_scene(scene)
-    now = pending_bank.questions.now_iso()
-    con = pending_bank._connect()
+    now = questions.now_iso()
+    con = pending_db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute(
-            "INSERT INTO exam_types (name, scene, weight, updated_at) VALUES (?, ?, 1, ?)"
+            "INSERT INTO exam_types (name, scene, weight, pinyin, updated_at)"
+            " VALUES (?, ?, 1, ?, ?)"
             " ON CONFLICT(name, scene) DO UPDATE SET"
-            " weight = weight + 1, updated_at = excluded.updated_at",
-            (text, scene_name, now),
+            " weight = weight + 1, pinyin = excluded.pinyin, updated_at = excluded.updated_at",
+            (text, scene_name, pinyin.initials(text), now),
         )
         row = con.execute(
             "SELECT weight FROM exam_types WHERE name = ? AND scene = ?",

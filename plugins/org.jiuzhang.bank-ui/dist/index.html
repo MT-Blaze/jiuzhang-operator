@@ -10,6 +10,9 @@
 <body>
   <div id="root" hidden></div>
   <script src="/static/vendor/katex/katex.min.js"></script>
+  <!-- 加载次序 = 依赖次序：题面浏览 → 审核工作台 → 装配层（PLUGIN_SPEC §2.8.1） -->
+  <script src="./ui_browse.js"></script>
+  <script src="./ui_review.js"></script>
   <script src="./plugin.js"></script>
 </body>
 </html>

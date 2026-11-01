@@ -1,5 +1,9 @@
 /**
- * 微型响应式引擎（约 100 行原生 JS）：数据一变，渲染函数自己重跑。
+ * 公共响应式引擎（约 100 行原生 JS）——底座随发的公共资产，所有插件共用这一份。
+ *
+ * 插件用它做「数据驱动渲染」：状态只写数据，DOM 由 watch 登记的渲染函数自己重画。
+ * 引用方式（沙箱帧的 CSP 允许宿主自身的源）：
+ *   <script src="/static/common/ui_reactive.js"></script>
  *
  *   var ui = JzoReactive.reactive({ hover: -1 });
  *   JzoReactive.watch(function () { panelRoot.setAttribute("data-hover", String(ui.hover)); });

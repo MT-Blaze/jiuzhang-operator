@@ -453,6 +453,20 @@ class TopicVersionScopeTest(unittest.TestCase):
         with self.assertRaises(bank.BankError):
             bank.topics(PLUGIN_ID, textbook_id="tb_zzzzzzzz")
 
+    def test_04_search_follows_pinyin_initials_too(self) -> None:
+        """考向搜索认首字母：敲 ``gx`` 捞「共享考向」，敲 ``z`` 捞「A章」「B章」。
+
+        只认首字母，不认全拼——敲 ``zhang`` 什么都不该出，免得老师以为搜坏了。
+        打了汉字就只走原文那条路，拼音那条路当场关闭。
+        """
+        self.assertEqual([item["name"] for item in bank.topics(PLUGIN_ID, search="gx")],
+                         ["共享考向"], "敲首字母 gx 就该捞出「共享考向」")
+        self.assertEqual([item["name"] for item in bank.topics(PLUGIN_ID, search="z")],
+                         ["A章", "B章"], "章(zhāng)的首字母是 z")
+        self.assertEqual(bank.topics(PLUGIN_ID, search="zhang"), [], "全拼不是检索键")
+        self.assertEqual([item["name"] for item in bank.topics(PLUGIN_ID, search="共")],
+                         ["共享考向"], "打了汉字就别再顺拼音捞不相干的节点")
+
 
 if __name__ == "__main__":
     unittest.main()

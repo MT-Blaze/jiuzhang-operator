@@ -1,0 +1,338 @@
+/* ============ 悬浮幽灵滚动条（宿主托管的滚动区） ============
+   平时轨道与滑块全透明，只在鼠标悬停或正在滚动（.is-scrolling，由 workspace.js 短暂挂上）
+   时浮出一条淡淡的半透明虚影。滚动槽恒留（scrollbar-gutter: stable），
+   滚动条出现/消失都不改内容尺寸，右栏与中栏的底边框不会被它推着跳。 */
+.ws-ghost-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.ws-ghost-scroll:hover,
+.ws-ghost-scroll.is-scrolling {
+  scrollbar-color: rgba(60, 52, 40, 0.28) transparent;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ws-ghost-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 180ms ease;
+}
+
+.ws-ghost-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.22);
+}
+
+.ws-ghost-scroll.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(60, 52, 40, 0.34);
+}
+
+.ws-dock-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.ws-dock-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.ws-dock-time {
+  flex: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-dock-topic {
+  flex: none;
+  color: var(--accent);
+}
+
+.ws-dock-text {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* 「记一笔」：只是流水，不抢眼——灰字，不弹窗，不改配色语义。 */
+.ws-dock-item[data-level="note"] .ws-dock-text {
+  color: var(--faint);
+}
+
+/* 「出了岔子但没挡住老师」：一句话提醒，颜色比正文重一点，比报错轻。
+   后台切题识别有出入就走这一档——只留一行日志，绝不弹红窗。 */
+.ws-dock-item[data-level="warn"] .ws-dock-text {
+  color: var(--down);
+}
+
+/* 报错诊断里的完整现场：请求行、Response 全文、堆栈按原文铺开。
+   行内摘要仍是 400 字，现场单独一块可滚动，双击复制拿的就是这一整块。 */
+.ws-dock-detail {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 6px;
+  background: rgba(60, 52, 40, 0.06);
+  color: var(--ink);
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.ws-dock-log[data-view="error"] .ws-dock-item[data-level="warn"] {
+  border-color: rgba(178, 122, 48, 0.45);
+}
+
+.ws-dock-log[data-view="error"] .ws-dock-item[data-level="warn"] .ws-dock-topic {
+  color: var(--warn, var(--down));
+}
+
+.ws-dock-empty {
+  color: var(--faint);
+}
+
+/* 报错诊断：只在悬停/聚焦时浮现「双击复制」，双击后原位闪绿底并变字，
+   绝不弹 Toast、不选中文本、不抢焦点。 */
+.ws-dock-log[data-view="error"] .ws-dock-item {
+  position: relative;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: copy;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ws-dock-log[data-view="error"] .ws-dock-item[data-level="error"] .ws-dock-topic {
+  color: var(--down);
+}
+
+.ws-dock-copy {
+  margin-left: auto;
+  padding-left: 10px;
+  flex: none;
+  color: var(--faint);
+  font-size: 0.72rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.ws-dock-log[data-view="error"] .ws-dock-item:hover .ws-dock-copy,
+.ws-dock-log[data-view="error"] .ws-dock-item:focus-within .ws-dock-copy {
+  opacity: 1;
+}
+
+.ws-dock-item.is-copied {
+  background: #e3f3e6;
+  border-color: #7fb98a;
+}
+
+.ws-dock-item.is-copied .ws-dock-copy {
+  opacity: 1;
+  color: #2f6b3b;
+  font-weight: 600;
+}
+
+/* 系统终端：等宽、整行不截断，像看日志文件一样看宿主事件。 */
+.ws-dock-log[data-view="terminal"] {
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 0.74rem;
+}
+
+.ws-dock-log[data-view="terminal"] .ws-dock-item {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ws-dock-log[data-view="terminal"] .ws-dock-topic {
+  color: var(--muted);
+}
+
+/* 左栏栏底：管理入口死锁在底部，栏内插件列表再长也滚不走它。 */
+.ws-sidebar-foot {
+  padding: 8px 12px;
+  justify-content: stretch;
+}
+
+/* ============ 响应式：≤768px 侧栏转抽屉，375px 不横溢 ============ */
+@media (max-width: 768px) {
+  /* 单列栅格必须压住所有折叠态：窄屏没有可拖的边界，尺寸变量一律作废 */
+  .ws-page,
+  .ws-page[data-side="hidden"],
+  .ws-page[data-ctx="hidden"],
+  .ws-page[data-side="hidden"][data-ctx="hidden"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    --gutter-side: 0px;
+    --gutter-ctx: 0px;
+    --gutter-dock: 0px;
+  }
+
+  /* 手柄在窄屏整条摘走：抽屉靠按钮开合，不给「拖不动的把手」留误导 */
+  .ws-resizer {
+    display: none;
+  }
+
+  /* 底栏在窄屏退化成贴底固定高度的输出条，折叠后仍留 44px 把手 */
+  .ws-dock {
+    grid-column: 1;
+    grid-row: 2;
+    height: min(220px, 34vh);
+  }
+
+  .ws-page[data-dock="hidden"] .ws-dock {
+    height: 44px;
+  }
+
+  /* 抽屉脱离网格流，桌面那套钉轨声明在此必须回退，避免凭空多出隐式轨道 */
+  .ws-center {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .ws-sidebar,
+  .ws-context {
+    grid-column: auto;
+    grid-row: auto;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 100;
+    width: min(280px, 84vw);
+    box-shadow: var(--shadow);
+    /* 抽屉叠在中栏之上，必须不透明，否则中心内容透上来糊成一片 */
+    background: var(--paper);
+  }
+
+  .ws-sidebar {
+    left: 0;
+    z-index: 110;
+  }
+
+  .ws-context {
+    right: 0;
+  }
+
+  /* 收起 = 滑出画布 + 滑完再隐身：既留住 200ms 动画，又不让栏里的按钮
+     留在 tab 序列里被键盘「摸到一块看不见的东西」。 */
+  .ws-page[data-side="hidden"] .ws-sidebar,
+  .ws-page[data-ctx="hidden"] .ws-context {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 200ms ease, visibility 0s linear 200ms;
+  }
+
+  .ws-page[data-ctx="hidden"] .ws-context {
+    transform: translateX(100%);
+  }
+
+  .ws-page[data-side="open"] .ws-sidebar,
+  .ws-page[data-ctx="open"] .ws-context {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform 200ms ease, visibility 0s linear 0s;
+  }
+
+  /* 抽屉浮起时，舞台头那枚入口钮让位给抽屉自带的「折叠」，避免两枚按钮抢焦点 */
+  .ws-page[data-side="open"] .ws-drawer-btn,
+  .ws-page[data-ctx="open"] .ws-ctx-btn {
+    visibility: hidden;
+  }
+
+
+  /* STACK §2.2 触控热区不小于 44px */
+  .ws-btn,
+  .ws-btn-sm {
+    min-height: 44px;
+  }
+
+  /* 页签栏按钮在手机上继续保 44px 热区，只靠底对齐贴合页签：
+     上边比页签多出的几像素属于触控面积，不参与视觉基线。 */
+  .ws-tabs-wrap .ws-drawer-btn,
+  .ws-tabs-wrap .ws-ctx-btn {
+    min-height: 44px;
+    margin-top: 0;
+  }
+
+  .ws-ui-select {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-sidebar,
+  .ws-context {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* 控制台页签：同源 iframe 铺满画布，设置页自己负责内嵌时收起外壳 */
+/* 左栏底部的控制台入口：44×44 热区是 AGENTS §6 的硬线（触控目标不小于 44px），
+   定调令要求左下角不再有固定齿轮，所以这是「管理抽屉」图标 + 按钮，不是跳页链接。 */
+.ws-console-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: #6b645b;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.ws-console-entry:hover { color: #a5382f; border-color: #e3c9c3; background: #f4e7e3; }
+.ws-console-entry:focus-visible { outline: 2px solid #a5382f; outline-offset: 2px; }
+
+/* 更新待办徽标：文字 + 颜色双通道，不靠颜色单独传达状态。 */
+.ws-console-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #a5382f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ws-console-badge[hidden] { display: none; }
+
+.ws-console-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fffdf9;
+}

@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from app.api import workspaces
 from app.core import workspace_removal
 from app.core.config import settings
+from tests.core_sources import settings_source  # noqa: E402
 
 WS_ID = "ws_abcdef0123456789"
 
@@ -159,7 +160,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
     def test_06_settings_page_requires_typed_confirmation(self) -> None:
         root = Path(__file__).resolve().parents[1]
         html = (root / "static" / "settings.html").read_text(encoding="utf-8")
-        script = (root / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        script = settings_source()
         self.assertIn('id="wsDeleteModal"', html)
         self.assertIn("mg-danger", html)
         self.assertIn("确认删除", html)

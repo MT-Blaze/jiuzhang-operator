@@ -451,9 +451,11 @@ class PendingMetaContractTest(unittest.TestCase):
         """老库升到新结构：次序原样保留，题一条不少。"""
         con = sqlite3.connect(self.data_dir / "pending.db")
         try:
-            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 5)
+            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 6)
             columns = {str(row[1]) for row in con.execute("PRAGMA table_info(pending_questions)")}
             self.assertIn("seq", columns, "结构 v4 必须有次序号这一列")
+            tag_columns = {str(row[1]) for row in con.execute("PRAGMA table_info(exam_types)")}
+            self.assertIn("pinyin", tag_columns, "结构 v6 必须有标签拼音首字母这一列")
             tables = {str(row[0]) for row in con.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'")}
             for table in ("schools", "scene_types", "exam_types"):
@@ -663,6 +665,27 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(status, 200, again)
         self.assertEqual([tag["name"] for tag in again["tags"]], ["百日誓师考"],
                          "老师手打的新标签回车即入本地库，下次自动弹出")
+
+    def test_18b_pinyin_initials_open_a_second_road_to_tags(self) -> None:
+        """标签认拼音首字母：敲一个 ``j`` 就能捞出「集合」，敲 ``jh`` 也能。
+
+        手打的 ``%`` 是字符不是通配符——转义不到位，一个百分号就能把整库端上桌。
+        """
+        status, kept = self._request("/api/meta/tags", "POST", {
+            "name": "集合", "scene": "校考题",
+        })
+        self.assertEqual(status, 200, kept)
+        status, one = self._request("/api/meta/tags?q=" + urllib.parse.quote("j"))
+        self.assertEqual(status, 200, one)
+        self.assertEqual([tag["name"] for tag in one["tags"]], ["集合"],
+                         "敲首字母 j 就该捞出「集合」")
+        self.assertEqual(one["tags"][0]["pinyin"], "jh",
+                         "回执带上首字母，下拉里让老师看见凭什么是它")
+        status, both = self._request("/api/meta/tags?q=" + urllib.parse.quote("jh"))
+        self.assertEqual([tag["name"] for tag in both["tags"]], ["集合"])
+        status, wildcard = self._request("/api/meta/tags?q=" + urllib.parse.quote("%"))
+        self.assertEqual(status, 200, wildcard)
+        self.assertEqual(wildcard["tags"], [], "「%」得当字面量，不许当通配符")
 
     def test_19_manual_standard_name_pauses_and_metadata_resumes_auto(self) -> None:
         status, saved = self._save([{"question": _question(321)}])

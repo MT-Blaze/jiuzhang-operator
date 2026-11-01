@@ -16,12 +16,12 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
-CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 STAGE = stage_source()
 WORKSPACE = workspace_source()
 
@@ -131,7 +131,7 @@ class LruHibernationTest(unittest.TestCase):
     def test_03_the_active_tab_is_never_hibernated(self) -> None:
         block = STAGE[STAGE.index("function enforceLru("): STAGE.index("function request(")]
         # 牺牲者的「跳过当前页」口径住在 core_tabs.js，组合根只负责递给它。
-        self.assertIn("tabsCore.lruVictim(live, activeKey)", block)
+        self.assertIn("tabsCore.lruVictim(live, stageState.activeKey)", block)
         self.assertIn("if (!oldest) break", block, "全是活动页时不许硬摘")
         self.assertIn("if (tab.key === activeKey) return;", STAGE,
                       "core_tabs.lruVictim 必须跳过当前页")
@@ -287,7 +287,7 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn('"bank.dedupe_scan", "bank.dedupe_merge"', STAGE, "宿主未开放查重通道")
         block = STAGE[STAGE.index('if (method === "bank.dedupe_scan"'):STAGE.index(
             'if (method === "bank.stats"')]
-        self.assertIn("pluginId !== bankProviderId", block, "非 provider 页签必须被拒")
+        self.assertIn("pluginId !== stageState.bankProviderId", block, "非 provider 页签必须被拒")
         self.assertIn('code: "FORBIDDEN"', block)
         self.assertIn("/duplicates", block, "扫描要打到查重端点")
         self.assertIn("dedupeCopies.length > 20", block, "一次最多 20 条副本")

@@ -22,6 +22,7 @@ from unittest import mock
 
 from app.api import agents
 from app.core import bank, command_tools
+from tests.core_sources import bundle_local_assets  # noqa: E402
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -379,9 +380,9 @@ class CommandToolsTest(unittest.TestCase):
         self.assertIn("command_tools.match_intent(user_input)", text)
 
     def test_19_chat_plugin_executes_command_request(self) -> None:
-        text = (
-            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js"
-        ).read_text(encoding="utf-8")
+        # 卡片确认钮拆进了 ui_cards.js，判据按 index.html 的加载次序看「整包」。
+        text = bundle_local_assets(
+            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html", "script")
         self.assertIn("runCommandRequests", text)
         self.assertIn("command_request", text)
         self.assertIn('hostCall("command.execute"', text)

@@ -11,10 +11,11 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.core_sources import plugin_bundle  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
-CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
-    encoding="utf-8"
-)
+# 卡片渲染已拆到 ui_cards.js：判据读整包，别只盯着 plugin.js
+CHAT_JS = plugin_bundle("org.jiuzhang.chat")
 CHAT_HTML = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html").read_text(
     encoding="utf-8"
 )
@@ -100,9 +101,7 @@ class ChatComposerKeyTest(unittest.TestCase):
 
     def test_07_single_line_search_boxes_keep_enter(self) -> None:
         """铁律只管聊天/多行输入框；单行搜索框 Enter 即检索。"""
-        source = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(
-            encoding="utf-8"
-        )
+        source = plugin_bundle("org.jiuzhang.bank-ui")
         self.assertIn('event.key === "Enter"', source, "bank-ui 的单行搜索丢了 Enter 检索")
 
 

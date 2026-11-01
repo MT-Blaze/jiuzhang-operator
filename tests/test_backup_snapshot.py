@@ -23,7 +23,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import backup, restore
+from app.core import backup, backup_manifest, restore
 from app.core.config import settings
 
 PROVIDER = "org.jiuzhang.bank-engine"
@@ -80,10 +80,13 @@ class SnapshotTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def _snapshot(self):
+        # 库发现必须真的跑过：manifest 里的题目数与逐题哈希全靠它挑中题仓库。
         with mock.patch.object(
-            backup, "_select_bank_db", wraps=backup._select_bank_db
-        ):
-            return backup.snapshot_workspace(WS_ID)
+            backup_manifest, "select_bank_db", wraps=backup_manifest.select_bank_db
+        ) as spy:
+            stage, manifest = backup.snapshot_workspace(WS_ID)
+        spy.assert_called_once()
+        return stage, manifest
 
     def test_01_wal_snapshot_is_consistent_and_self_contained(self) -> None:
         wal = Path(str(self.ws_dir / "banks" / f"{PROVIDER}.db") + "-wal")

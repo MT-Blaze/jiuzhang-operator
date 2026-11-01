@@ -20,921 +20,80 @@
 查重口径与 core-bank 的指纹引擎同源（``bank_dedupe``），但配图这一维按**内容
 哈希**计：池子里的图叫 ``pimg_x.png``、主库里的图叫 ``img_x.png``，同一个文件
 两个名字，按文件名比永远比不上，按内容哈希比才是真的同一张图。
+
+四块实现在同目录（PLUGIN_SPEC §2.8 的单文件上限口径，Python 侧同理）：
+
+- ``pending_db.py``       —— 库文件、号段、结构版本迁移与字典基线；
+- ``pending_batches.py``  —— 批次与条目的读写（``batches`` / ``pending_questions``）；
+- ``pending_assets.py``   —— 暂存配图与原文件只读副本的落盘、入库时的搬迁；
+- ``pending_dedupe.py``   —— 与 core-bank 同源的查重口径（配图按内容哈希比）；
+- ``pending_meta.py``     —— 公共元数据规则与向题目文档的同步。
+
+本文件留「审核动作」这一层：暂存（save_draft）、改公共元数据（set_batch_meta）、
+存入主库（approve）、彻底删除（delete_pending），以及批次收口时的物理清理。
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
 import copy
 import hashlib
 import json
-import os
-import re
-import secrets
 import shutil
-import sqlite3
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-from app.core import bank, bank_dedupe, questions
+from app.core import bank, questions
 from app.core.config import settings
-
-PENDING_ID_PREFIX = "p_"
-PENDING_ID_RE = re.compile(r"^p_[A-Za-z0-9_-]{8,64}$")
-BATCH_ID_RE = re.compile(r"^B-\d{3,}$")
-PENDING_DB_FILENAME = "pending.db"
-PENDING_ASSETS_DIRNAME = "pending_assets"
-PENDING_ASSET_PREFIX = "pimg_"
-PENDING_ASSET_RE = re.compile(r"^pimg_[0-9a-f]{16}\.(?:png|jpg|webp)$")
-PENDING_ASSET_URI_PREFIX = "/static/pending/"
-UPLOAD_ASSET_URI_PREFIX = "/static/uploads/"
-UPLOAD_ASSET_PREFIX = "img_"
-
-SCHEMA_VERSION = 5
-MAX_PAGE_SIZE = 100
-MAX_BATCH_QUESTIONS = 500
-
-# 配图的口径与 uploads 那条通道保持一致：只认 PNG / JPEG / WebP 的魔数，
-# 解码后硬上限 8 MiB，文件名一律底座生成。
-MAX_ASSET_BYTES = 8 * 1024 * 1024
-MAX_DATA_URL_CHARS = 12 * 1024 * 1024
-DATA_URL_RE = re.compile(r"^data:(image/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$")
-EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
-
-_WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
-
-# 公共元数据的字段名：可填字段 + 明细学校（一律存字典 ID）+ 自动拼出的标准名。
-META_FIELDS = ("year", "region", "body", "exam_type", "subject", "scene_type")
-META_SCHOOL_LIMIT = 24
-# 标准名最终落进 source.paper_title，契约上限 120 字；这里跟契约对齐，不自造口径。
-META_NAME_LIMIT = 120
-# 契约里 tags 的 maxItems 就是 32；超出的明细学校**不硬塞**，
-# 老师的可见标签一个都不许挤掉——塞不下的如实上报。
-MAX_TAGS = 32
-# 老版本的明细学校以隐藏标签形式存过校名；升到 2.1 后题目只存 school_id，
-# 这些遗留隐藏标签在一次元数据同步时清掉。
-HIDDEN_TAG_PREFIX = "#"
-# 「主体 → 明细名单」的对应关系在 meta_history 里用一行记。
-# 主体与名单之间用竖线分，学校名之间用单元分隔符分——校名里可能有逗号（"哈三中,分校"），
-# 拿逗号当分隔会把一所学校劈成两半。
-GROUP_SEP = "|"
-GROUP_ITEM_SEP = "\x1f"
-
-# 11 大主场景（主公 2026-11-01 裁定）。场景名就是题目里存的值，字典表只做登记与排序。
-SCENE_SEED = (
-    ("scene_gaokao", "高考题"),
-    ("scene_liankao", "联考题"),
-    ("scene_region", "区域统考题"),
-    ("scene_school", "校考题"),
-    ("scene_agency", "机构题"),
-    ("scene_compilation", "汇编题"),
-    ("scene_selfmade", "自编题"),
-    ("scene_qiangji", "强基题"),
-    ("scene_contest", "竞赛题"),
-    ("scene_selftest", "自主招生题"),
-    ("scene_foreign", "外国题"),
+from app.core.pending_assets import (
+    asset_path,
+    backup_path,
+    backup_paths,
+    decode_data_url,
+    drop_assets,
+    move_assets_to_uploads,
+    rewrite_asset_uris,
+    store_source_backup,
+    write_pending_asset,
 )
-SCENE_NAMES = tuple(name for _id, name in SCENE_SEED)
-SCENE_BY_NAME = {name: scene_id for scene_id, name in SCENE_SEED}
-
-# 交叉标签的初始权重：场景专属权重排前面，全局权重垫底。
-# 「外国题」优先 AMC / A-Level / IB；「校考题」优先 9月月考 / 一模；
-# 输入「模」要能把零到七模一次带出来。
-EXAM_SEED = (
-    ("AMC", "外国题", 100),
-    ("A-Level", "外国题", 90),
-    ("IB", "外国题", 80),
-    ("9月月考", "校考题", 100),
-    ("一模", "校考题", 90),
-    ("零模", "校考题", 80),
-    ("二模", "校考题", 70),
-    ("三模", "校考题", 60),
-    ("四模", "校考题", 50),
-    ("五模", "校考题", 40),
-    ("六模", "校考题", 30),
-    ("七模", "校考题", 20),
-    ("AMC", "竞赛题", 100),
-    ("全国高中数学联赛", "竞赛题", 90),
-    ("零模", "", 10),
-    ("一模", "", 10),
-    ("二模", "", 10),
-    ("三模", "", 10),
-    ("四模", "", 10),
-    ("五模", "", 10),
-    ("六模", "", 10),
-    ("七模", "", 10),
-    ("百日誓师考", "", 5),
+from app.core.pending_batches import (
+    batch_card,
+    batch_list,
+    batch_row,
+    get_pending,
+    list_batch_questions,
+    next_seq,
+    read_meta,
+    refresh_batch,
+    remember_approved,
 )
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS batches (
-    batch_id      TEXT PRIMARY KEY,
-    label         TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL,
-    source_backup TEXT NOT NULL DEFAULT '',
-    source_name   TEXT NOT NULL DEFAULT '',
-    meta_json     TEXT NOT NULL DEFAULT '{}',
-    approved_json TEXT NOT NULL DEFAULT '[]',
-    total         INTEGER NOT NULL DEFAULT 0,
-    pending_count INTEGER NOT NULL DEFAULT 0,
-    assets_json   TEXT NOT NULL DEFAULT '[]'
-);
-CREATE TABLE IF NOT EXISTS pending_questions (
-    id          TEXT PRIMARY KEY,
-    batch_id    TEXT NOT NULL,
-    doc_json    TEXT NOT NULL,
-    assets_json TEXT NOT NULL,
-    origin      TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    seq         INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_pending_questions_batch
-    ON pending_questions (batch_id, created_at ASC, id ASC);
-CREATE TABLE IF NOT EXISTS meta_history (
-    kind       TEXT NOT NULL,
-    value      TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (kind, value)
-);
-CREATE TABLE IF NOT EXISTS schools (
-    id         TEXT PRIMARY KEY,
-    full_name  TEXT NOT NULL,
-    short_name TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_short_name ON schools (short_name);
-CREATE INDEX IF NOT EXISTS idx_schools_full_name ON schools (full_name);
-CREATE TABLE IF NOT EXISTS scene_types (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS exam_types (
-    name       TEXT NOT NULL,
-    scene      TEXT NOT NULL DEFAULT '',
-    weight     INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (name, scene)
-);
-CREATE INDEX IF NOT EXISTS idx_exam_types_name ON exam_types (name);
-"""
-
-
-class PendingError(Exception):
-    """中转站操作失败（数据不合规、库不可写等）。"""
-
-
-class PendingNotFound(PendingError):
-    """池子里没有这一条（或没有这个批次）。"""
-
-
-class PendingConflict(PendingError):
-    """同一条被并发处理掉了。"""
-
-
-class PendingDuplicate(PendingError):
-    """主库已有同题。``existing_id`` 指向主库里那道题。
-
-    这是**拦截**而不是拒绝：老师可以在界面上选「强行覆盖」再提交一次，
-    底座只负责把「哪一道、差在哪儿」如实报出来，绝不自己替老师做主。
-    """
-
-    def __init__(self, message: str, existing_id: str = "") -> None:
-        super().__init__(message)
-        self.existing_id = existing_id
-
-
-# ---------------------------------------------------------------- 路径与连接
-
-
-def pending_db_path() -> Path:
-    """中转站库文件：当前工作区下的独立 SQLite。"""
-    return Path(settings.data_dir) / PENDING_DB_FILENAME
-
-
-def pending_assets_dir() -> Path:
-    """中转站配图目录：入库前配图只落在这里。"""
-    return Path(settings.data_dir) / PENDING_ASSETS_DIRNAME
-
-
-def init_pending_db() -> None:
-    """幂等建库；结构版本写在 ``PRAGMA user_version``，与主库同一套规矩。"""
-    con = _connect()
-    try:
-        con.commit()
-    finally:
-        con.close()
-
-
-def _connect() -> sqlite3.Connection:
-    path = pending_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(path, timeout=10.0)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys = ON")
-    con.execute("PRAGMA busy_timeout = 5000")
-    try:
-        con.execute("PRAGMA journal_mode = WAL")
-    except sqlite3.Error:
-        # 只读或网络文件系统可能不支持 WAL，单机回退到默认日志模式。
-        pass
-    _ensure_schema(con)
-    return con
-
-
-def _table_names(con: sqlite3.Connection) -> set[str]:
-    return {row[0] for row in con.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    )}
-
-
-def _ensure_schema(con: sqlite3.Connection) -> None:
-    version = int(con.execute("PRAGMA user_version").fetchone()[0])
-    if version > SCHEMA_VERSION:
-        raise PendingError(
-            f"中转站结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级程序或恢复备份。"
-        )
-    if version == SCHEMA_VERSION:
-        # 结构已经是最新：连接只做读，绝不因为「每次连接都建表/播种」而在
-        # 别人持有写锁时再抢一把写锁（WAL 下照样会 BUSY）。
-        return
-    if version == 1:
-        # v1 只有一张没有批次的平表。先把旧表挪个名，新表建好后再把数据搬过去。
-        if "pending_items" in _table_names(con):
-            con.execute("ALTER TABLE pending_items RENAME TO pending_items_v1")
-    for statement in _SCHEMA.strip().split(";"):
-        text = statement.strip()
-        if text:
-            con.execute(text)
-    if version == 1:
-        _migrate_v1_rows(con)
-    if version < 3:
-        _migrate_v2_columns(con)
-    if version < 4:
-        _migrate_v3_sequence(con)
-    if version < 5:
-        _migrate_v4_dictionary(con)
-    _seed_dictionary(con)
-    # 次序号的索引必须等迁移把列补上再建：
-    # 老库里还没有 seq 这一列，先建索引就是一句「no such column: seq」，
-    # 整个服务起不来。
-    con.execute(
-        "CREATE INDEX IF NOT EXISTS idx_pending_questions_seq"
-        " ON pending_questions (batch_id, seq ASC)"
-    )
-    if version != SCHEMA_VERSION:
-        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-    con.commit()
-
-
-def _seed_dictionary(con: sqlite3.Connection) -> None:
-    """字典基线：11 个主场景与带权重的交叉标签只补不删。
-
-    每次连接都``INSERT OR IGNORE``——老师删过的标签不会复活，老师新增的标签
-    也不会被冲掉；种子只在缺行时填上。
-    """
-    now = questions.now_iso()
-    for order, (scene_id, name) in enumerate(SCENE_SEED, start=1):
-        con.execute(
-            "INSERT OR IGNORE INTO scene_types (id, name, sort_order, created_at)"
-            " VALUES (?, ?, ?, ?)",
-            (scene_id, name, order, now),
-        )
-    for name, scene, weight in EXAM_SEED:
-        con.execute(
-            "INSERT OR IGNORE INTO exam_types (name, scene, weight, updated_at)"
-            " VALUES (?, ?, ?, ?)",
-            (name, scene, weight, now),
-        )
-
-
-def _school_id_for_name(name: str) -> str:
-    """迁移与旧客户端按名字建档时的稳定 ID：同一名字在哪台机器上都得到同一号。"""
-    return "sch_" + hashlib.sha256(("school:" + name).encode("utf-8")).hexdigest()[:11]
-
-
-def _migrate_v4_dictionary(con: sqlite3.Connection) -> None:
-    """v4 → v5：把旧批次里的学校名搬进字典，题目只留 ID。
-
-    旧 ``meta_json`` 的 ``schools`` 是校名数组。迁移时按名字建字典行（全称先按
-    简称占位，老师之后可补全），再把 meta 改写成 ``school_ids``。老批次的
-    标准名与可见标签都不动——升级不替老师改题。
-    """
-    now = questions.now_iso()
-    rows = con.execute("SELECT batch_id, meta_json FROM batches").fetchall()
-    for row in rows:
-        try:
-            meta = json.loads(row["meta_json"] or "{}")
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(meta, dict):
-            continue
-        names = meta.pop("schools", None)
-        if not isinstance(names, list):
-            continue
-        ids: list[str] = []
-        for raw in names:
-            name = str(raw or "").strip()[:120]
-            if not name:
-                continue
-            existing = con.execute(
-                "SELECT id FROM schools WHERE full_name = ? OR short_name = ? LIMIT 1",
-                (name, name),
-            ).fetchone()
-            if existing is not None:
-                school_id = str(existing["id"])
-            else:
-                school_id = _school_id_for_name(name)
-                con.execute(
-                    "INSERT OR IGNORE INTO schools"
-                    " (id, full_name, short_name, created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?)",
-                    (school_id, name, name[:60], now, now),
-                )
-            if school_id not in ids:
-                ids.append(school_id)
-        meta["school_ids"] = ids
-        meta.setdefault("name_mode", "auto")
-        if not meta.get("standard_name"):
-            meta["standard_name"] = build_standard_name(meta)
-        con.execute(
-            "UPDATE batches SET meta_json = ? WHERE batch_id = ?",
-            (json.dumps(meta, ensure_ascii=False, separators=(",", ":")), row["batch_id"]),
-        )
-
-
-def _migrate_v3_sequence(con: sqlite3.Connection) -> None:
-    """v3 → v4：给每一批的题补上「录入次序」。
-
-    老库没有次序列，拉出来只能按 ``created_at`` 排——而同一批题是**一次**写进去的，
-    时间戳一模一样，于是只能退回按随机号排：老师看到的一批题是乱的。
-    补号时按老口径（时间 + 号）排一遍，把当时的相对次序原样固化成次序号，
-    老批次的顺序不会因为升级而变。
-    """
-    columns = {str(row["name"]) for row in con.execute("PRAGMA table_info(pending_questions)")}
-    if "seq" not in columns:
-        con.execute("ALTER TABLE pending_questions ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
-    rows = con.execute(
-        "SELECT id, batch_id FROM pending_questions"
-        " ORDER BY batch_id ASC, created_at ASC, id ASC"
-    ).fetchall()
-    counters: dict[str, int] = {}
-    for row in rows:
-        batch_id = str(row["batch_id"])
-        counters[batch_id] = counters.get(batch_id, 0) + 1
-        con.execute("UPDATE pending_questions SET seq = ? WHERE id = ?",
-                    (counters[batch_id], row["id"]))
-
-
-def _migrate_v2_columns(con: sqlite3.Connection) -> None:
-    """v2 → v3：批次补上「原文件名」「公共元数据」「已入库题号」三列，外加一张历史名单表。
-
-    老批次没有原文件名（它们本来就不是从一份文件里来的），补空串即可；
-    公共元数据补空对象，语义上就是「这一批还没预填过公共字段」；
-    已入库题号补空数组，语义上就是「这一批还没有题进过主库」。
-    """
-    columns = {str(row["name"]) for row in con.execute("PRAGMA table_info(batches)")}
-    if "source_name" not in columns:
-        con.execute("ALTER TABLE batches ADD COLUMN source_name TEXT NOT NULL DEFAULT ''")
-    if "meta_json" not in columns:
-        con.execute("ALTER TABLE batches ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
-    if "approved_json" not in columns:
-        con.execute("ALTER TABLE batches ADD COLUMN approved_json TEXT NOT NULL DEFAULT '[]'")
-
-
-def _migrate_v1_rows(con: sqlite3.Connection) -> None:
-    """v1 → v2：老池子里的题整体收进一个历史批次 ``B-001``，一条不丢。"""
-    if "pending_items_v1" not in _table_names(con):
-        return
-    rows = con.execute(
-        "SELECT id, doc_json, assets_json, origin, created_at, updated_at"
-        " FROM pending_items_v1 ORDER BY created_at ASC, id ASC"
-    ).fetchall()
-    created = rows[0]["created_at"] if rows else questions.now_iso()
-    con.execute(
-        "INSERT OR REPLACE INTO batches"
-        " (batch_id, label, created_at, updated_at, source_backup, total, pending_count, assets_json)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ("B-001", batch_label(created), created, questions.now_iso(), "",
-         len(rows), len(rows), "[]"),
-    )
-    for row in rows:
-        con.execute(
-            "INSERT OR REPLACE INTO pending_questions"
-            " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (row["id"], "B-001", row["doc_json"], row["assets_json"],
-             row["origin"], row["created_at"], row["updated_at"]),
-        )
-    con.execute("DROP TABLE pending_items_v1")
-
-
-# ---------------------------------------------------------------- 时间与编号
-
-
-def _now() -> datetime:
-    return datetime.now(bank.LOCAL_TZ)
-
-
-def batch_label(moment: Any) -> str:
-    """批次的时间标签：``2026-11-01-星期日-15:30``。"""
-    if isinstance(moment, str):
-        try:
-            moment = datetime.fromisoformat(moment)
-        except ValueError:
-            moment = _now()
-    return f"{moment:%Y-%m-%d}-{_WEEKDAYS[moment.weekday()]}-{moment:%H:%M}"
-
-
-def _new_pending_id() -> str:
-    """签发中转站号段：``p_`` + 十六进制，与主库的 ``q_`` 号段永不相交。"""
-    return PENDING_ID_PREFIX + secrets.token_hex(12)
-
-
-def _next_batch_id(con: sqlite3.Connection) -> str:
-    """批次号 ``B-001`` 起递增；删过批次也不回填——号段只增不复用。"""
-    numbers = []
-    for row in con.execute("SELECT batch_id FROM batches"):
-        matched = BATCH_ID_RE.match(str(row["batch_id"] or ""))
-        if matched:
-            numbers.append(int(matched.group(0)[2:]))
-    return "B-%03d" % ((max(numbers) + 1) if numbers else 1)
-
-
-# ---------------------------------------------------------------- id 与文档
-
-
-def _contract_probe(document: dict[str, Any]) -> dict[str, Any]:
-    """把暂存文档投影成「契约形状」的影子，用它跑真正的 Schema 校验。
-
-    暂存文档有两处刻意与契约不同：id 走 ``p_`` 号段，配图 uri 指向
-    ``pending_assets/``。影子只把这两处换回契约认可的形状，其余字段一字不改——
-    这样「暂存时不合规」与「入库时不合规」是同一把尺子量出来的，
-    不会出现「池子里躺着、审核时才发现是废题」。
-    """
-    probe = copy.deepcopy(document)
-    probe["id"] = "q_" + secrets.token_hex(12)
-    probe["schema_version"] = "2.1"
-    images = probe.get("images")
-    if isinstance(images, list):
-        for image in images:
-            if isinstance(image, dict):
-                image["uri"] = UPLOAD_ASSET_URI_PREFIX + "_probe.png"
-    return probe
-
-
-def _sniff_mime(data: bytes) -> str:
-    """按魔数认图；不认识就回空串（绝不信请求自报的 MIME）。"""
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
-        return "image/webp"
-    return ""
-
-
-def _decode_data_url(data_url: Any) -> tuple[str, bytes]:
-    """data URL → (MIME, 字节)。不合规就抛，绝不猜。"""
-    if not isinstance(data_url, str) or not data_url:
-        raise PendingError("配图缺少 data_url")
-    if len(data_url) > MAX_DATA_URL_CHARS:
-        raise PendingError("图片过大（解码后上限 8 MiB）")
-    matched = DATA_URL_RE.match(data_url)
-    if matched is None:
-        raise PendingError("只接受 PNG / JPEG / WebP 的 base64 data URL")
-    declared, payload = matched.group(1), matched.group(2)
-    try:
-        raw = base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise PendingError("图片 base64 内容不合法") from exc
-    if not raw:
-        raise PendingError("图片内容为空")
-    if len(raw) > MAX_ASSET_BYTES:
-        raise PendingError("图片过大（解码后上限 8 MiB）")
-    actual = _sniff_mime(raw)
-    if not actual:
-        raise PendingError("不是可识别的 PNG / JPEG / WebP 图片")
-    if actual != declared:
-        raise PendingError("图片魔数与声明的格式不一致")
-    return actual, raw
-
-
-def _write_pending_asset(raw: bytes, mime: str) -> str:
-    """配图落进 ``pending_assets/``：文件名底座生成，先写临时文件再原子改名。"""
-    root = pending_assets_dir()
-    root.mkdir(parents=True, exist_ok=True)
-    for _ in range(5):
-        name = PENDING_ASSET_PREFIX + secrets.token_hex(8) + EXTENSIONS[mime]
-        target = root / name
-        if target.exists():
-            continue
-        temp = root / (".pending-" + secrets.token_hex(8) + ".tmp")
-        try:
-            temp.write_bytes(raw)
-            os.replace(temp, target)
-        finally:
-            if temp.exists():
-                temp.unlink()
-        return name
-    raise PendingError("生成配图文件名失败，请重试")
-
-
-def _asset_path(name: str) -> Path:
-    """把池子里记的文件名解析成真实路径；名字不合规一律拒绝，绝不拼路径。"""
-    if not PENDING_ASSET_RE.match(str(name or "")):
-        raise PendingError("配图文件名不合法")
-    root = pending_assets_dir()
-    target = root / name
-    try:
-        target.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise PendingError("配图路径越界") from exc
-    return target
-
-
-def _rewrite_asset_uris(document: dict[str, Any], mapping: dict[str, str]) -> None:
-    """把文档里的配图 uri 换一批：``mapping`` 是「旧 uri → 新 uri」。"""
-    images = document.get("images")
-    if not isinstance(images, list):
-        return
-    for image in images:
-        if isinstance(image, dict):
-            new_uri = mapping.get(str(image.get("uri") or ""))
-            if new_uri:
-                image["uri"] = new_uri
-
-
-def _drop_assets(assets: Iterable[dict[str, Any]]) -> None:
-    """把配图从 ``pending_assets/`` 里删掉（否决与入库失败都要走这条）。"""
-    for item in assets or []:
-        name = str(item.get("name") or "")
-        if not PENDING_ASSET_RE.match(name):
-            continue
-        path = pending_assets_dir() / name
-        try:
-            if path.is_file():
-                path.unlink()
-        except OSError:
-            # 删不掉的残留文件不该让整次操作失败：它只是垃圾，不是数据。
-            pass
-
-
-def _backup_path(source_backup: str) -> Path | None:
-    """原文件副本的路径：只许工作区 ``data/`` 里的相对路径，越界一律拒绝。"""
-    text = str(source_backup or "").strip()
-    if not text:
-        return None
-    if text.startswith("/") or "\\" in text:
-        raise PendingError("原文件副本路径必须是工作区内的相对路径")
-    parts = [part for part in text.split("/") if part]
-    if not parts or any(part in (".", "..") for part in parts):
-        raise PendingError("原文件副本路径非法")
-    root = Path(settings.data_dir).resolve()
-    target = root.joinpath(*parts)
-    try:
-        target.resolve().relative_to(root)
-    except ValueError as exc:
-        raise PendingError("原文件副本路径越界") from exc
-    return target
-
-
-def _backup_paths(source_backup: str) -> list[Path]:
-    """一批可能有多份原文件副本（一次拖入好几个文件）。
-
-    存法有两种：单个副本是普通相对路径；多个副本是 JSON 数组。
-    两种都只许落在工作区 ``data/`` 里，越界一律拒绝。
-    """
-    text = str(source_backup or "").strip()
-    if not text:
-        return []
-    if text.startswith("["):
-        try:
-            items = json.loads(text)
-        except (TypeError, ValueError) as exc:
-            raise PendingError("原文件副本清单损坏") from exc
-        if not isinstance(items, list):
-            raise PendingError("原文件副本清单损坏")
-    else:
-        items = [text]
-    paths: list[Path] = []
-    for item in items:
-        path = _backup_path(str(item))
-        if path is not None:
-            paths.append(path)
-    return paths
-
-
-PENDING_SOURCES_DIRNAME = "pending_sources"
-
-
-def store_source_backup(filename: str, data: bytes) -> str:
-    """把拖进来的原文件在工作区 ``data/`` 下留一份**只读副本**，返回相对路径。
-
-    副本是给这一批兜底用的：批次未审数归零时底座会物理删掉它，磁盘不养废纸。
-    老师盘上的原件底座一个字节都不碰——这里只写副本。
-    """
-    raw = str(filename or "").strip()
-    safe = re.sub(r"[^\w.\-]+", "_", raw, flags=re.UNICODE).strip("._") or "source"
-    safe = safe[:80]
-    folder = Path(settings.data_dir) / PENDING_SOURCES_DIRNAME
-    folder.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(bank.LOCAL_TZ).strftime("%Y%m%d-%H%M%S")
-    target = folder / f"{stamp}_{secrets.token_hex(3)}_{safe}"
-    target.write_bytes(data)
-    return f"{PENDING_SOURCES_DIRNAME}/{target.name}"
-
-
-# ---------------------------------------------------------------- 查重口径
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _text_key(question_type: Any, stem: Any, options: Any) -> tuple[str, str, tuple[str, ...]]:
-    """题面文字键：题型 + 归一题干 + 归一选项（按内容排序）。
-
-    与 ``bank_dedupe`` 同一把尺子：LaTeX 归一、排版标点剔除、全角转半角、
-    去空白，但**绝不去括号与 ASCII 标点**——``!`` 是阶乘、``:`` 是比。
-    """
-    return (
-        str(question_type or ""),
-        bank_dedupe.normalize_text(stem),
-        tuple(bank_dedupe.normalized_options(options)),
-    )
-
-
-def _fingerprint(text_key: tuple[str, str, tuple[str, ...]], image_hashes: list[str]) -> str:
-    """题面指纹：文字键 + 配图内容哈希。配图按内容算，跨库同名不同名不影响判定。"""
-    parts = [
-        text_key[0],
-        text_key[1],
-        "\x1e".join(text_key[2]),
-        "\x1e".join(sorted(image_hashes)),
-    ]
-    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
-
-
-def _upload_asset_path(uri: str) -> Path | None:
-    """``/static/uploads/x.png`` → 真实文件；不合规一律回空（不拼路径）。"""
-    text = str(uri or "")
-    if not text.startswith(UPLOAD_ASSET_URI_PREFIX):
-        return None
-    name = text[len(UPLOAD_ASSET_URI_PREFIX):]
-    if not re.match(r"^[A-Za-z0-9_.-]{1,120}$", name) or ".." in name:
-        return None
-    root = Path(settings.uploads_dir).resolve()
-    target = root / name
-    try:
-        target.resolve().relative_to(root)
-    except ValueError:
-        return None
-    return target
-
-
-def _bank_image_hashes(extensions_raw: Any) -> list[str]:
-    """主库题的配图内容哈希。文件不在了就用「缺失」占位——它与任何一张图都不相等。"""
-    entry = bank.extensions_to_object(extensions_raw).get(bank.EXT_IMAGES_KEY)
-    images = entry.get("images") if isinstance(entry, dict) else None
-    if not isinstance(images, list):
-        return []
-    hashes: list[str] = []
-    for image in images:
-        uri = str(image.get("uri") or "") if isinstance(image, dict) else str(image or "")
-        path = _upload_asset_path(uri)
-        if path is None or not path.is_file():
-            hashes.append("missing:" + bank_dedupe.normalize_text(uri))
-            continue
-        try:
-            hashes.append(_sha256_file(path))
-        except OSError:
-            hashes.append("missing:" + bank_dedupe.normalize_text(uri))
-    return hashes
-
-
-def _pending_image_hashes(document: dict[str, Any], assets: list[dict[str, Any]]) -> list[str]:
-    """池中题的配图内容哈希：池子里的图用暂存时记下的 sha256，其余按磁盘上的算。"""
-    by_name = {str(item.get("name") or ""): str(item.get("sha256") or "") for item in assets}
-    images = document.get("images")
-    if not isinstance(images, list):
-        return []
-    hashes: list[str] = []
-    for image in images:
-        uri = str(image.get("uri") or "") if isinstance(image, dict) else str(image or "")
-        if uri.startswith(PENDING_ASSET_URI_PREFIX):
-            name = uri[len(PENDING_ASSET_URI_PREFIX):]
-            digest = by_name.get(name, "")
-            hashes.append(digest or "missing:" + bank_dedupe.normalize_text(uri))
-            continue
-        path = _upload_asset_path(uri)
-        if path is None or not path.is_file():
-            hashes.append("missing:" + bank_dedupe.normalize_text(uri))
-            continue
-        try:
-            hashes.append(_sha256_file(path))
-        except OSError:
-            hashes.append("missing:" + bank_dedupe.normalize_text(uri))
-    return hashes
-
-
-def find_duplicate(provider_id: str, document: dict[str, Any],
-                   assets: list[dict[str, Any]]) -> str:
-    """在主库里找同题，返回那道题的 id；没有就回空串。
-
-    两道题「同题」的判据与 core-bank 查重引擎同源：题型、归一题干、归一选项、
-    配图内容全一致。**先比文字键再比图**：文字键不同的题连图都不用算，
-    几百道题的库扫一遍也只是几次字符串归一。
-    """
-    text_key = _text_key(document.get("type"), document.get("stem"), document.get("options"))
-    target = _fingerprint(text_key, _pending_image_hashes(document, assets))
-    try:
-        con = bank.connect(provider_id)
-    except bank.BankError:
-        return ""
-    try:
-        rows = con.execute(
-            "SELECT id, type, stem, options, extensions FROM questions"
-        ).fetchall()
-    finally:
-        con.close()
-    for row in rows:
-        row_key = _text_key(row["type"], row["stem"], row["options"])
-        if row_key != text_key:
-            continue
-        if _fingerprint(row_key, _bank_image_hashes(row["extensions"])) == target:
-            return str(row["id"])
-    return ""
-
-
-# ---------------------------------------------------------------- 批次读写
-
-
-def _read_meta(row: sqlite3.Row) -> dict[str, Any]:
-    """批次上的公共元数据；读不出来就当空对象，不猜。"""
-    try:
-        data = json.loads(row["meta_json"] or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _read_approved(row: sqlite3.Row) -> list[dict[str, Any]]:
-    """这一批已经进主库的题号（公共元数据后改时还要补写它们）。"""
-    try:
-        data = json.loads(row["approved_json"] or "[]")
-    except (TypeError, ValueError):
-        return []
-    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
-
-
-def _remember_approved(con: sqlite3.Connection, batch_id: str, question_id: str) -> None:
-    """记一笔「这一批的哪道题进了主库」。
-
-    记下来是为了公共元数据后改时能补写：题已经不在池子里了，
-    但它仍属于这一批，标准名与明细学校照样得落到它的 ``sources`` 上。
-    """
-    if not batch_id or not question_id:
-        return
-    row = _batch_row(con, batch_id)
-    if row is None:
-        return
-    items = _read_approved(row)
-    if any(str(item.get("question_id") or "") == question_id for item in items):
-        return
-    items.append({"question_id": question_id, "approved_at": questions.now_iso()})
-    con.execute(
-        "UPDATE batches SET approved_json = ? WHERE batch_id = ?",
-        (json.dumps(items[-200:], ensure_ascii=False, separators=(",", ":")), batch_id),
-    )
-
-
-def _batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
-    """批次卡片：时间、编号、未审数 / 总题数，外加原文件名与公共元数据。"""
-    from app.core import meta_dict
-
-    return {
-        "batch_id": str(row["batch_id"]),
-        "label": str(row["label"]),
-        "created_at": str(row["created_at"]),
-        "updated_at": str(row["updated_at"]),
-        "source_backup": str(row["source_backup"] or ""),
-        "source_name": str(row["source_name"] or ""),
-        "meta": meta_dict.decorate_meta(_read_meta(row)),
-        "approved_count": len(_read_approved(row)),
-        "total": int(row["total"] or 0),
-        "pending_count": live,
-        "done": live == 0,
-    }
-
-
-def batch_list() -> dict[str, Any]:
-    """所有批次（卡片视图）。
-
-    排序口径：**有未审的批次在前**（新到旧），**已审完的批次沉在最后**（新到旧）。
-    未审数一律按池子里真实的行数算——存的计数只是缓存，不是事实来源。
-    """
-    con = _connect()
-    try:
-        rows = con.execute("SELECT * FROM batches").fetchall()
-        live = {str(row["batch_id"]): int(row["n"]) for row in con.execute(
-            "SELECT batch_id, COUNT(*) AS n FROM pending_questions GROUP BY batch_id"
-        )}
-    finally:
-        con.close()
-    cards = [_batch_card(row, live.get(str(row["batch_id"]), 0)) for row in rows]
-    cards.sort(key=lambda card: (card["pending_count"] == 0,
-                                 _sort_key(card["created_at"], card["batch_id"])))
-    return {"batches": cards}
-
-
-def _sort_key(created_at: str, batch_id: str) -> tuple[str, str]:
-    """倒序用的排序键：先看时间，时间相同再看批次号（号大的新）。"""
-    return (str(created_at or ""), str(batch_id or ""))
-
-
-def _batch_row(con: sqlite3.Connection, batch_id: str) -> sqlite3.Row | None:
-    return con.execute("SELECT * FROM batches WHERE batch_id = ?", (batch_id,)).fetchone()
-
-
-def _refresh_batch(con: sqlite3.Connection, batch_id: str) -> None:
-    """把批次的未审数刷成池子里的真实行数（总题数另有其账，见 save_draft）。"""
-    live = int(con.execute(
-        "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (batch_id,)
-    ).fetchone()[0])
-    row = _batch_row(con, batch_id)
-    if row is None:
-        return
-    con.execute(
-        "UPDATE batches SET pending_count = ?, updated_at = ? WHERE batch_id = ?",
-        (live, questions.now_iso(), batch_id),
-    )
-
-
-def _next_seq(con: sqlite3.Connection, batch_id: str) -> int:
-    """这一批的下一个次序号。
-
-    次序号是「录入次序」的正身：同一批题是一次写进去的，时间戳全一样，
-    光看时间分不出先后，只能靠这个号。
-    """
-    row = con.execute(
-        "SELECT COALESCE(MAX(seq), 0) AS top FROM pending_questions WHERE batch_id = ?",
-        (batch_id,),
-    ).fetchone()
-    return int(row["top"] or 0) + 1
-
-
-def list_batch_questions(batch_id: str) -> dict[str, Any]:
-    """按批次拉取待审题目（录入先后顺序）。"""
-    if not BATCH_ID_RE.match(str(batch_id or "")):
-        raise PendingNotFound("批次编号不合法")
-    con = _connect()
-    try:
-        batch = _batch_row(con, batch_id)
-        if batch is None:
-            raise PendingNotFound("中转站里没有这个批次")
-        rows = con.execute(
-            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at"
-            " FROM pending_questions WHERE batch_id = ? ORDER BY seq ASC, id ASC",
-            (batch_id,),
-        ).fetchall()
-    finally:
-        con.close()
-    return {
-        "batch_id": batch_id,
-        "items": [_row_to_item(row) for row in rows],
-        "pending_count": len(rows),
-        "total": int(batch["total"] or 0),
-    }
-
-
-def _row_to_item(row: sqlite3.Row) -> dict[str, Any]:
-    document = json.loads(row["doc_json"])
-    document["id"] = row["id"]
-    assets = json.loads(row["assets_json"]) if row["assets_json"] else []
-    return {
-        "id": row["id"],
-        "batch_id": row["batch_id"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-        "origin": row["origin"],
-        "question": document,
-        "assets": assets,
-    }
-
-
-# ---------------------------------------------------------------- 写入
-
+from app.core.pending_db import (
+    BATCH_ID_RE,
+    MAX_BATCH_QUESTIONS,
+    PENDING_ASSET_URI_PREFIX,
+    PENDING_ID_RE,
+    PendingConflict,
+    PendingDuplicate,
+    PendingError,
+    PendingNotFound,
+    UPLOAD_ASSET_URI_PREFIX,
+    batch_label,
+    connect,
+    local_now,
+    new_pending_id,
+    next_batch_id,
+)
+from app.core.pending_dedupe import find_duplicate
+from app.core.pending_meta import (
+    apply_meta_to_document,
+    clean_text,
+    contract_probe,
+    meta_history,
+    normalize_batch_meta,
+    remember_meta,
+    sync_approved_sources,
+    sync_batch_sources,
+    sync_dictionary_schools,
+)
 
 def _item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
     """把一条待暂存内容拆成「题目文档 + 配图清单 + 要更新的中转站号」。
@@ -972,8 +131,8 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     if len(items) > MAX_BATCH_QUESTIONS:
         raise PendingError(f"一次最多暂存 {MAX_BATCH_QUESTIONS} 道题")
     backup_text = str(source_backup or "").strip()
-    backup = _backup_path(backup_text)
-    name_text = _clean_text(source_name, 120)
+    backup = backup_path(backup_text)
+    name_text = clean_text(source_name, 120)
 
     prepared: list[tuple[dict[str, Any], list[dict[str, Any]], str]] = []
     for item in items:
@@ -982,31 +141,31 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         prepared.append((document, stored, pending_id))
 
     now = questions.now_iso()
-    con = _connect()
+    con = connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         target_batch = str(batch_id or "").strip()
         if target_batch:
             if not BATCH_ID_RE.match(target_batch):
                 raise PendingError("批次编号不合法")
-            if _batch_row(con, target_batch) is None:
+            if batch_row(con, target_batch) is None:
                 raise PendingNotFound("中转站里没有这个批次")
         else:
-            target_batch = _next_batch_id(con)
+            target_batch = next_batch_id(con)
             con.execute(
                 "INSERT INTO batches"
                 " (batch_id, label, created_at, updated_at, source_backup, source_name,"
                 "  total, pending_count, assets_json)"
                 " VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)",
-                (target_batch, batch_label(_now()), now, now, backup_text, name_text, "[]"),
+                (target_batch, batch_label(local_now()), now, now, backup_text, name_text, "[]"),
             )
-        current = _batch_row(con, target_batch)
+        current = batch_row(con, target_batch)
         # 公共元数据是这一批的「共同出处」：每次暂存都按批次上的那一份重写，
         # 插件只报自己看得见的字段也抹不掉场景、学校 ID 与标准名。
-        batch_meta = _read_meta(current) if current is not None else {}
+        batch_meta = read_meta(current) if current is not None else {}
         if batch_meta:
             for document, _stored, _pending_id in prepared:
-                ok, reason, _notes = _apply_meta_to_document(document, batch_meta)
+                ok, reason, _notes = apply_meta_to_document(document, batch_meta)
                 if not ok:
                     raise PendingError("这一批的公共元数据与题目对不上：" + reason)
         if backup_text and not str((current or {"source_backup": ""})["source_backup"] or ""):
@@ -1021,7 +180,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             )
         names: list[str] = []
         inserted = 0
-        seq = _next_seq(con, target_batch)
+        seq = next_seq(con, target_batch)
         for document, stored, pending_id in prepared:
             if pending_id:
                 # 就地更新：号、批次与未审数都不动，只换内容。次序号也不动——
@@ -1043,7 +202,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             seq += 1
             inserted += 1
             names.extend(str(item.get("name") or "") for item in stored)
-        row = _batch_row(con, target_batch)
+        row = batch_row(con, target_batch)
         merged = list(json.loads(row["assets_json"] or "[]"))
         merged.extend(name for name in names if name)
         con.execute(
@@ -1052,16 +211,16 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             (inserted, json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
              now, target_batch),
         )
-        _refresh_batch(con, target_batch)
+        refresh_batch(con, target_batch)
         live = int(con.execute(
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (target_batch,)
         ).fetchone()[0])
-        card = _batch_card(_batch_row(con, target_batch), live)
+        card = batch_card(batch_row(con, target_batch), live)
         con.commit()
     except BaseException:
         con.rollback()
         for _document, stored, _pending_id in prepared:
-            _drop_assets(stored)
+            drop_assets(stored)
         raise
     finally:
         con.close()
@@ -1126,7 +285,7 @@ def _prepare_document(payload: Any, assets: Any,
     if not isinstance(payload, dict):
         raise PendingError("缺少待暂存的 question 对象")
     body = {key: value for key, value in payload.items() if key not in ("id", "meta", "pending_id")}
-    body["id"] = pending_id or _new_pending_id()
+    body["id"] = pending_id or new_pending_id()
     document = questions.prepare_new_question(body)
 
     stored_assets: list[dict[str, Any]] = []
@@ -1139,8 +298,8 @@ def _prepare_document(payload: Any, assets: Any,
             image_id = str(entry.get("id") or "").strip()
             if not image_id:
                 raise PendingError("配图缺少 id")
-            mime, raw = _decode_data_url(entry.get("data_url"))
-            name = _write_pending_asset(raw, mime)
+            mime, raw = decode_data_url(entry.get("data_url"))
+            name = write_pending_asset(raw, mime)
             stored_assets.append({
                 "image_id": image_id,
                 "name": name,
@@ -1159,346 +318,11 @@ def _prepare_document(payload: Any, assets: Any,
                     image["uri"] = PENDING_ASSET_URI_PREFIX + name
 
     try:
-        questions.validate_question(_contract_probe(document))
+        questions.validate_question(contract_probe(document))
     except questions.QuestionValidationError:
-        _drop_assets(stored_assets)
+        drop_assets(stored_assets)
         raise
     return document, stored_assets
-
-
-# ---------------------------------------------------------------- 公共元数据
-
-
-def _clean_text(value: Any, limit: int) -> str:
-    """去首尾空白、压掉中间空白；超长截断。"""
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text[:limit]
-
-
-def build_standard_name(meta: dict[str, Any]) -> str:
-    """标准名：``年份-地区-主体-场景-类型-学科``。
-
-    空段不占位（少一段就少一个连字符），纯靠拼接算出来；只有老师手动改过
-    标准名且元数据没再动时，才保留手改值（见 ``normalize_batch_meta``）。
-    """
-    parts = [
-        str(meta.get("year") or ""),
-        str(meta.get("region") or ""),
-        str(meta.get("body") or ""),
-        str(meta.get("scene_type") or ""),
-        str(meta.get("exam_type") or ""),
-        str(meta.get("subject") or ""),
-    ]
-    return "-".join(part for part in parts if part)[:META_NAME_LIMIT]
-
-
-def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
-    """明细学校一律落字典 ID；老客户端送校名时按名字找档（找不到就建档）。"""
-    from app.core import meta_dict
-
-    ids: list[str] = []
-    raw_ids = payload.get("school_ids")
-    if isinstance(raw_ids, list):
-        for item in raw_ids:
-            school_id = _clean_text(item, 40)
-            if school_id and school_id not in ids:
-                ids.append(school_id)
-    if not ids:
-        raw_names = payload.get("schools")
-        if isinstance(raw_names, list):
-            for item in raw_names:
-                name = _clean_text(item, 120)
-                if not name:
-                    continue
-                try:
-                    record = meta_dict.find_or_create_by_name(name)
-                except meta_dict.MetaDictError as exc:
-                    raise PendingError(str(exc)) from exc
-                if record["id"] not in ids:
-                    ids.append(record["id"])
-    if len(ids) > META_SCHOOL_LIMIT:
-        raise PendingError(f"明细学校最多 {META_SCHOOL_LIMIT} 所")
-    if ids:
-        try:
-            meta_dict.get_schools(ids)
-        except meta_dict.MetaDictError as exc:
-            raise PendingError(str(exc)) from exc
-    return ids
-
-
-def _meta_fingerprint(meta: dict[str, Any]) -> tuple[Any, ...]:
-    """判断「元数据有没有被改过」的比对键：标准名与手动模式不算元数据。"""
-    return (
-        meta.get("year"), meta.get("region"), meta.get("body"),
-        meta.get("exam_type"), meta.get("subject"), meta.get("scene_type"),
-        tuple(meta.get("school_ids") or []),
-    )
-
-
-def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
-    """把老师填的公共字段规整成底座口径。
-
-    - 明细学校只收字典 ID；老客户端送校名时先建档再换成 ID。
-    - 场景只收 11 个主场景之一。
-    - 标准名默认由底座重算；``name_mode=manual`` 且元数据没再变时保留手改值，
-      之后任何一项元数据再改，自动拼接立刻恢复（主公 2026-11-01 双向联动）。
-    """
-    from app.core import meta_dict
-
-    if payload is None:
-        payload = {}
-    if not isinstance(payload, dict):
-        raise PendingError("公共元数据必须是对象")
-
-    # PATCH 语义：没带来的字段沿用上一版；带来的空串才是「真的清空」。
-    # 双向联动全靠这一步——老师只改标准名时，其余元数据原样不动，
-    # 指纹才不会误判成「元数据改了」，手改名也才留得住。
-    prior = previous if isinstance(previous, dict) else None
-    merged = dict(prior) if prior else {}
-    if "school_ids" in payload or "schools" in payload:
-        merged.pop("school_ids", None)
-        merged.pop("schools", None)
-    merged.update(payload)
-
-    year: int | None = None
-    raw_year = str(merged.get("year") or "").strip()
-    if raw_year:
-        if not raw_year.isdigit():
-            raise PendingError("年份只能填数字")
-        year = int(raw_year)
-        if not 1900 <= year <= 2100:
-            raise PendingError("年份要在 1900–2100 之间")
-
-    try:
-        scene_type = meta_dict.normalize_scene(merged.get("scene_type"))
-    except meta_dict.MetaDictError as exc:
-        raise PendingError(str(exc)) from exc
-
-    meta = {
-        "year": year,
-        "region": _clean_text(merged.get("region"), 64),
-        "body": _clean_text(merged.get("body"), 64),
-        "exam_type": _clean_text(merged.get("exam_type"), 64),
-        "subject": _clean_text(merged.get("subject"), 64),
-        "scene_type": scene_type,
-        "school_ids": _school_ids_from_payload(merged),
-    }
-
-    changed = prior is not None and _meta_fingerprint(prior) != _meta_fingerprint(meta)
-    manual = str(payload.get("name_mode") or "").strip() == "manual"
-    if manual and not changed:
-        name = _clean_text(payload.get("standard_name"), META_NAME_LIMIT)
-        if not name and prior is not None:
-            name = str(prior.get("standard_name") or "")
-        meta["name_mode"] = "manual"
-        meta["standard_name"] = name or build_standard_name(meta)
-    else:
-        meta["name_mode"] = "auto"
-        meta["standard_name"] = build_standard_name(meta)
-    return meta
-
-
-def _apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tuple[bool, str, list[str]]:
-    """把公共元数据写进一道题的 ``source`` 与 ``tags``。
-
-    学校只写 ``school_id`` / ``school_ids``，校名一个字节都不进题目文档；
-    老版本留下的隐藏校名标签在这里一并清掉。
-
-    返回 (是否写成功, 失败原因, 提示)。写不成的题**原样留着**并如实上报，
-    绝不为了「同步成功」去改坏老师已经录好的题。
-    """
-    notes: list[str] = []
-    source = document.get("source")
-    updated = dict(source) if isinstance(source, dict) else {}
-    updated.pop("school", None)
-    if meta.get("year"):
-        updated["year"] = int(meta["year"])
-    if meta.get("region"):
-        updated["region"] = str(meta["region"])
-    for field in ("body", "scene_type", "exam_type"):
-        value = str(meta.get(field) or "")
-        if value:
-            updated[field] = value
-        else:
-            updated.pop(field, None)
-    school_ids = [str(item) for item in (meta.get("school_ids") or []) if str(item)]
-    if school_ids:
-        updated["school_ids"] = school_ids
-        updated["school_id"] = school_ids[0]
-    else:
-        updated.pop("school_ids", None)
-        updated.pop("school_id", None)
-    standard = str(meta.get("standard_name") or "")
-    if standard:
-        # 标准名就是这一批的原卷名：它落进 sources.paper_name，是这一批题在主库里的出处。
-        updated["paper_title"] = standard
-    document["source"] = updated
-
-    # 老版本的明细学校曾是「#哈三中」隐藏标签；2.1 起题目只存 school_id，
-    # 这些遗留标签在同步时清掉，老师的可见标签原样保留。
-    raw_tags = [tag for tag in (document.get("tags") or []) if isinstance(tag, str) and tag]
-    document["tags"] = list(dict.fromkeys(
-        tag for tag in raw_tags if not tag.startswith(HIDDEN_TAG_PREFIX)
-    ))
-
-    try:
-        questions.validate_question(_contract_probe(document))
-    except questions.QuestionValidationError as exc:
-        return False, f"同步后不合契约：{exc.errors[0] if exc.errors else '未知'}", notes
-    return True, "", notes
-
-
-def _sync_batch_sources(con: sqlite3.Connection, batch_id: str,
-                        meta: dict[str, Any]) -> tuple[int, int, list[str]]:
-    """把公共元数据同步给这一批**池子里**的所有题。
-
-    返回 (同步成功数, 跳过数, 提示)。跳过的题一条也不动。
-    """
-    rows = con.execute(
-        "SELECT id, doc_json FROM pending_questions WHERE batch_id = ?"
-        " ORDER BY seq ASC, id ASC",
-        (batch_id,),
-    ).fetchall()
-    synced = 0
-    skipped = 0
-    warnings: list[str] = []
-    for row in rows:
-        try:
-            document = json.loads(row["doc_json"])
-        except (TypeError, ValueError):
-            skipped += 1
-            warnings.append(f"{row['id']}：文档损坏，未同步")
-            continue
-        ok, reason, notes = _apply_meta_to_document(document, meta)
-        if not ok:
-            skipped += 1
-            warnings.append(f"{row['id']}：{reason}")
-            continue
-        con.execute(
-            "UPDATE pending_questions SET doc_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
-             questions.now_iso(), row["id"]),
-        )
-        synced += 1
-        warnings.extend(f"{row['id']}：{note}" for note in notes)
-    return synced, skipped, warnings
-
-
-def _sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, list[str]]:
-    """公共元数据后改时，补写这一批**已经进主库**的那些题。
-
-    这一步是尽力而为：主库写不进去时如实报出来，绝不假装同步成功，
-    也绝不因为主库暂时不可用就把池子里的同步一起回滚。
-    """
-    from app.core import bank_provider
-
-    con = _connect()
-    try:
-        row = _batch_row(con, batch_id)
-        if row is None:
-            return 0, []
-        approved = _read_approved(row)
-    finally:
-        con.close()
-    if not approved:
-        return 0, []
-
-    warnings: list[str] = []
-    patched = 0
-    try:
-        plugin_id = bank_provider.resolve()["plugin_id"]
-    except Exception as exc:  # noqa: BLE001 — 题库不可用不该打断池子里的同步
-        return 0, [f"已入库的题没补写：题库不可用（{exc}）"]
-
-    for item in approved:
-        question_id = str(item.get("question_id") or "")
-        if not question_id:
-            continue
-        try:
-            current = bank.get_question(plugin_id, question_id)
-        except Exception as exc:  # noqa: BLE001 — 单题失败不牵连别的题
-            warnings.append(f"{question_id}：已入库的题没补写（{exc}）")
-            continue
-        document = dict(current)
-        ok, reason, notes = _apply_meta_to_document(document, meta)
-        if not ok:
-            warnings.append(f"{question_id}：{reason}")
-            continue
-        patch = {
-            key: document[key]
-            for key in ("source", "tags")
-            if key in document
-        }
-        try:
-            _sync_dictionary_schools(plugin_id, document)
-            bank.update_question(plugin_id, question_id, patch)
-        except Exception as exc:  # noqa: BLE001 — 同上
-            warnings.append(f"{question_id}：已入库的题没补写（{exc}）")
-            continue
-        patched += 1
-        warnings.extend(f"{question_id}：{note}" for note in notes)
-    return patched, warnings
-
-
-def _remember_meta(con: sqlite3.Connection, meta: dict[str, Any]) -> None:
-    """记住这次用过的公共字段、明细学校与交叉标签：下次自动带出。"""
-    now = questions.now_iso()
-    pairs: list[tuple[str, str]] = [
-        ("region", str(meta.get("region") or "")),
-        ("body", str(meta.get("body") or "")),
-        ("exam_type", str(meta.get("exam_type") or "")),
-        ("subject", str(meta.get("subject") or "")),
-        ("scene_type", str(meta.get("scene_type") or "")),
-    ]
-    school_ids = [str(item) for item in (meta.get("school_ids") or []) if str(item)]
-    schools: list[str] = []
-    if school_ids:
-        placeholders = ",".join("?" for _ in school_ids)
-        rows = con.execute(
-            f"SELECT id, short_name FROM schools WHERE id IN ({placeholders})", school_ids
-        ).fetchall()
-        # 名单顺序照老师挑选的先后排：IN (...) 的返回次序由数据库自定，不能拿来当顺序。
-        by_id = {str(row["id"]): str(row["short_name"]) for row in rows}
-        schools = [by_id[school_id] for school_id in school_ids if school_id in by_id]
-    pairs.extend(("school", name) for name in schools)
-    # 交叉标签的权重记忆：老师每次选用/手打一个标签，就在这个场景里 +1。
-    scene = str(meta.get("scene_type") or "")
-    exam_type = str(meta.get("exam_type") or "").strip()[:32]
-    if exam_type:
-        con.execute(
-            "INSERT INTO exam_types (name, scene, weight, updated_at) VALUES (?, ?, 1, ?)"
-            " ON CONFLICT(name, scene) DO UPDATE SET"
-            " weight = weight + 1, updated_at = excluded.updated_at",
-            (exam_type, scene, now),
-        )
-    body = str(meta.get("body") or "").strip()
-    if body and schools:
-        # 主体 → 明细名单的对应关系：下次填同一主体时自动把名单带出来。
-        # 同一个主体只留**最新**那一份名单：名单改了就把旧的抹掉，
-        # 否则历史里会躺着几套同主体不同名单的记录，带出来的是哪套说不准。
-        stale = [
-            str(row["value"])
-            for row in con.execute(
-                "SELECT value FROM meta_history WHERE kind = 'group'"
-            ).fetchall()
-            if str(row["value"]).partition(GROUP_SEP)[0] == body
-        ]
-        for value in stale:
-            con.execute(
-                "DELETE FROM meta_history WHERE kind = 'group' AND value = ?", (value,)
-            )
-        pairs.append(("group", body + GROUP_SEP + GROUP_ITEM_SEP.join(schools)))
-    for kind, value in pairs:
-        text = value.strip()
-        if not text:
-            continue
-        con.execute(
-            "INSERT INTO meta_history (kind, value, updated_at) VALUES (?, ?, ?)"
-            " ON CONFLICT(kind, value) DO UPDATE SET updated_at = excluded.updated_at",
-            (kind, text, now),
-        )
-
-
 def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     """改一批的公共元数据，这一批的题**立刻**同步。
 
@@ -1512,33 +336,33 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
         raise PendingNotFound("批次编号不合法")
     # 先读旧 meta 再规整：老客户端送校名时要先建档，建档会另开连接写字典；
     # 把这一步挪到事务外，避免与本地写锁互相顶住。
-    con = _connect()
+    con = connect()
     try:
-        row = _batch_row(con, batch_id)
+        row = batch_row(con, batch_id)
         if row is None:
             raise PendingNotFound("中转站里没有这个批次")
-        previous = _read_meta(row)
+        previous = read_meta(row)
     finally:
         con.close()
     meta = normalize_batch_meta(payload, previous)
 
-    con = _connect()
+    con = connect()
     try:
         con.execute("BEGIN IMMEDIATE")
-        if _batch_row(con, batch_id) is None:
+        if batch_row(con, batch_id) is None:
             raise PendingNotFound("中转站里没有这个批次")
         con.execute(
             "UPDATE batches SET meta_json = ?, updated_at = ? WHERE batch_id = ?",
             (json.dumps(meta, ensure_ascii=False, separators=(",", ":")),
              questions.now_iso(), batch_id),
         )
-        synced, skipped, warnings = _sync_batch_sources(con, batch_id, meta)
-        _remember_meta(con, meta)
-        _refresh_batch(con, batch_id)
+        synced, skipped, warnings = sync_batch_sources(con, batch_id, meta)
+        remember_meta(con, meta)
+        refresh_batch(con, batch_id)
         live = int(con.execute(
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (batch_id,)
         ).fetchone()[0])
-        card = _batch_card(_batch_row(con, batch_id), live)
+        card = batch_card(batch_row(con, batch_id), live)
         con.commit()
     except BaseException:
         con.rollback()
@@ -1546,7 +370,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     finally:
         con.close()
 
-    patched, bank_warnings = _sync_approved_sources(batch_id, meta)
+    patched, bank_warnings = sync_approved_sources(batch_id, meta)
     warnings.extend(bank_warnings)
     return {
         "batch_id": batch_id,
@@ -1557,103 +381,6 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
         "patched": patched,
         "warnings": warnings,
     }
-
-
-def meta_history(limit: int = 12) -> dict[str, Any]:
-    """公共字段的历史值：最近用过的排前面，供下次开批次时自动带出。"""
-    count = max(1, min(int(limit or 12), 50))
-    con = _connect()
-    try:
-        rows = con.execute(
-            "SELECT kind, value FROM meta_history ORDER BY updated_at DESC, value ASC"
-        ).fetchall()
-    finally:
-        con.close()
-    history: dict[str, list[str]] = {}
-    groups: dict[str, list[str]] = {}
-    for row in rows:
-        kind = str(row["kind"] or "")
-        value = str(row["value"] or "")
-        if not kind or not value:
-            continue
-        if kind == "group":
-            body, _, raw = value.partition(GROUP_SEP)
-            names = [name for name in raw.split(GROUP_ITEM_SEP) if name]
-            if body and names and body not in groups and len(groups) < count:
-                groups[body] = names
-            continue
-        items = history.setdefault(kind, [])
-        if value not in items and len(items) < count:
-            items.append(value)
-    return {"history": history, "groups": groups}
-
-
-# ---------------------------------------------------------------- 审核动作
-
-
-def get_pending(pending_id: str) -> dict[str, Any]:
-    """取池子里的一条；不在就是 404。"""
-    if not PENDING_ID_RE.match(str(pending_id or "")):
-        raise PendingNotFound("中转站编号不合法")
-    con = _connect()
-    try:
-        row = con.execute(
-            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at"
-            " FROM pending_questions WHERE id = ?",
-            (pending_id,),
-        ).fetchone()
-    finally:
-        con.close()
-    if row is None:
-        raise PendingNotFound("中转站里没有这一条")
-    return _row_to_item(row)
-
-
-def _move_assets_to_uploads(assets: list[dict[str, Any]]) -> dict[str, str]:
-    """把配图从 ``pending_assets/`` 搬进 ``uploads/``，返回「旧 uri → 新 uri」。
-
-    文件名也跟着换：池子里叫 ``pimg_x.png``，进主库后叫 ``img_x.png``——
-    两套目录的名字空间本来就该分开，不然主库里会出现一堆 ``pimg_`` 开头的文件。
-    """
-    mapping: dict[str, str] = {}
-    uploads_root = Path(settings.uploads_dir)
-    uploads_root.mkdir(parents=True, exist_ok=True)
-    for asset in assets:
-        name = str(asset.get("name") or "")
-        if not PENDING_ASSET_RE.match(name):
-            continue
-        source = _asset_path(name)
-        if not source.is_file():
-            continue
-        target_name = UPLOAD_ASSET_PREFIX + name[len(PENDING_ASSET_PREFIX):]
-        target = uploads_root / target_name
-        shutil.move(str(source), str(target))
-        mapping[PENDING_ASSET_URI_PREFIX + name] = UPLOAD_ASSET_URI_PREFIX + target_name
-    return mapping
-
-
-def _sync_dictionary_schools(provider_id: str, document: dict[str, Any]) -> None:
-    """入库前把题目用到的学校登记进题库，ID 原样沿用。
-
-    题目里只有 ``school_id``；题库的 ``sources.school_id`` 要指向一张真实存在的
-    ``schools`` 行，否则来源表挂空、按学校名搜也搜不到。字典是权威，题库是副本。
-    """
-    from app.core import meta_dict
-
-    source = document.get("source")
-    if not isinstance(source, dict):
-        return
-    ids = [str(item) for item in (source.get("school_ids") or []) if str(item)]
-    primary = str(source.get("school_id") or "")
-    if primary and primary not in ids:
-        ids.insert(0, primary)
-    if not ids:
-        return
-    schools = meta_dict.get_schools(ids, strict=False)
-    for school in schools:
-        bank.upsert_school(provider_id, school, str(source.get("region") or ""))
-
-
 def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[str, Any]:
     """审核通过（**存入主库**）：``p_`` 转 ``q_`` 落进主库，配图搬进 ``uploads/``。
 
@@ -1675,9 +402,9 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[s
             f"主库已有该题（{existing}），可返回修改或强行覆盖。", existing
         )
 
-    mapping = _move_assets_to_uploads(assets)
-    _rewrite_asset_uris(document, mapping)
-    _sync_dictionary_schools(provider_id, document)
+    mapping = move_assets_to_uploads(assets)
+    rewrite_asset_uris(document, mapping)
+    sync_dictionary_schools(provider_id, document)
     try:
         if existing:
             patch = {
@@ -1698,24 +425,24 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[s
             target_name = new_uri[len(UPLOAD_ASSET_URI_PREFIX):]
             try:
                 shutil.move(str(Path(settings.uploads_dir) / target_name),
-                            str(_asset_path(name)))
+                            str(asset_path(name)))
             except (OSError, PendingError):
                 pass
         raise
 
     batch_id = str(item.get("batch_id") or "")
-    con = _connect()
+    con = connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
-        _remember_approved(con, batch_id, str(question.get("id") or ""))
+        remember_approved(con, batch_id, str(question.get("id") or ""))
         con.commit()
     except BaseException:
         con.rollback()
         raise
     finally:
         con.close()
-    _drop_assets(assets)
+    drop_assets(assets)
     finished = _settle_batch(batch_id)
     return {
         "pending_id": pending_id,
@@ -1734,25 +461,25 @@ def delete_pending(pending_id: str) -> dict[str, Any]:
     """
     item = get_pending(pending_id)
     batch_id = str(item.get("batch_id") or "")
-    con = _connect()
+    con = connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
-        row = _batch_row(con, batch_id)
+        row = batch_row(con, batch_id)
         if row is not None:
             con.execute(
                 "UPDATE batches SET total = MAX(total - 1, 0), updated_at = ?"
                 " WHERE batch_id = ?",
                 (questions.now_iso(), batch_id),
             )
-        _refresh_batch(con, batch_id)
+        refresh_batch(con, batch_id)
         con.commit()
     except BaseException:
         con.rollback()
         raise
     finally:
         con.close()
-    _drop_assets(item.get("assets") or [])
+    drop_assets(item.get("assets") or [])
     finished = _settle_batch(batch_id)
     return {"pending_id": pending_id, "deleted": True, "batch": finished}
 
@@ -1764,24 +491,24 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
     """
     if not batch_id:
         return {}
-    con = _connect()
+    con = connect()
     try:
-        row = _batch_row(con, batch_id)
+        row = batch_row(con, batch_id)
         if row is None:
             return {}
         live = int(con.execute(
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (batch_id,)
         ).fetchone()[0])
         if live:
-            return _batch_card(row, live)
+            return batch_card(row, live)
         assets = json.loads(row["assets_json"] or "[]")
     finally:
         con.close()
-    _drop_assets([{"name": name} for name in assets])
-    for backup in _backup_paths(str(row["source_backup"] or "")):
+    drop_assets([{"name": name} for name in assets])
+    for backup in backup_paths(str(row["source_backup"] or "")):
         try:
             if backup.is_file():
                 backup.unlink()
         except OSError:
             pass
-    return _batch_card(row, 0)
+    return batch_card(row, 0)

@@ -1,4 +1,4 @@
-"""构建 examples/template-plugin.zip（第三方插件开发极简模板包）。
+"""构建 examples/template-plugin.zip（第三方插件开发模板包·模块化多文件骨架）。
 
 唯一顶层目录名 = 插件 id，满足 PLUGIN_SPEC §1.2 与安装器契约；
 老师解压后改 id/目录名即可开发自己的插件。本包不进 dist 发放包（走仓库直链下载）。
@@ -23,6 +23,10 @@ INCLUDED_FILES = (
     "plugin.json",
     "LICENSE",
     "dist/index.html",
+    "dist/layout.css",
+    "dist/ui.css",
+    "dist/core_host.js",
+    "dist/ui_render.js",
     "dist/plugin.js",
 )
 

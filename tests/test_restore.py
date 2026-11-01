@@ -28,6 +28,7 @@ from fastapi import HTTPException
 from app.api import settings as settings_api
 from app.core import backup, restore
 from app.core.config import settings
+from tests.core_sources import settings_source  # noqa: E402
 
 PROVIDER = "org.jiuzhang.bank-engine"
 WS_ID = "ws_restore0123456789"
@@ -367,9 +368,7 @@ class RestoreUiContractTest(unittest.TestCase):
     """恢复面板的分组必须与后端分组一一对应——漏了「插件代码」，老师就看不见刚备的插件。"""
 
     def setUp(self) -> None:
-        self.js = (Path(__file__).resolve().parents[1] / "static" / "js" / "settings.js").read_text(
-            encoding="utf-8"
-        )
+        self.js = settings_source()
 
     def _manifest(self) -> dict:
         return {

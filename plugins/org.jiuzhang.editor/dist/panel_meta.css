@@ -1,0 +1,425 @@
+/* 最上方两行：灰字原文件名 + 黑字只读标准名 */
+.ep-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 0;
+}
+
+.ep-src-name {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ep-std-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ep-std-name {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 手改过标准名：底线换成琥珀色，提示「自动拼接暂停了」。 */
+.ep-std-name[data-mode="manual"] {
+  border-bottom-color: #c8922a;
+}
+
+/* 公共元数据一改，标准名重拼完闪一下淡黄。
+   用 box-shadow 铺色而不是加内边距：改 padding 会让这行字重排，闪起来像在跳。 */
+.ep-std-name {
+  transition: box-shadow 0.25s ease;
+}
+
+.ep-std-name[data-flash="true"] {
+  background: #fdf3d6;
+  border-radius: 3px;
+  box-shadow: -4px 0 0 #fdf3d6, 4px 0 0 #fdf3d6;
+}
+
+/* 「已更新」淡色闪烁：只亮一下就熄灭，不抢老师的视线。 */
+.ep-std-flash {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.ep-std-flash[data-show="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ep-std-hint[data-mode="manual"] {
+  color: #8a6a1f;
+}
+
+/* 接收区：卷子与截图从这里进批次 */
+.ep-intake {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.ep-intake.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-intake-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+/* 收起时接收区压成一条窄带：折起来的是元数据字段，落点不许跟着消失。 */
+.ep-meta[data-fold="closed"] .ep-intake {
+  padding: 2px 6px;
+}
+
+.ep-meta[data-fold="closed"] .ep-intake-hint {
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 明细学校胶囊 */
+.ep-schools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ep-schools[hidden] {
+  display: none;
+}
+
+.ep-school-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ep-school {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.ep-school-name {
+  max-width: 92px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ep-school-x {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.ep-school-x:hover {
+  color: var(--danger);
+}
+
+/* 组合框：输入框下面挂一列候选（学校字典 / 交叉标签共用）。 */
+.ep-combo {
+  position: relative;
+  min-width: 0;
+}
+
+.ep-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 190px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+}
+
+.ep-menu[hidden] {
+  display: none;
+}
+
+.ep-menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ep-menu-item:hover {
+  background: var(--accent-soft);
+}
+
+/* 幽灵胶囊的候选：回车默认取第一条，所以第一条必须自己看得出来是被选中的。 */
+.ep-menu-item[data-active="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.ep-menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-menu-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 新学校确认：AI 补全的全称可见可改，确认后才建档。 */
+.ep-school-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #c8922a;
+  border-radius: 8px;
+  background: #fffbf2;
+}
+
+.ep-school-confirm[hidden] {
+  display: none;
+}
+
+.ep-school-confirm-text {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.ep-school-confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.ep-school-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ep-error {
+  margin: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #fdecec;
+  color: var(--danger, #d33);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.ep-error[hidden] {
+  display: none;
+}
+
+
+
+.ep-seg {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.ep-seg-btn {
+  min-height: 44px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.ep-seg-btn + .ep-seg-btn { border-left: 1px solid var(--line-strong); }
+
+.ep-seg-btn.is-on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+/* 互换钮与格式键同一行，但宽度按文字走，不跟着分栏拉伸 */
+.ep-viewbar .ep-swap-btn {
+  flex: 0 0 auto;
+  min-width: 64px;
+  padding: 8px 10px;
+}
+
+.ep-swap-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+
+.ep-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+}
+
+.ep-badge[data-status="stored"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-badge[data-dirty="true"]::after {
+  content: " · 有改动";
+  font-size: 11px;
+}
+
+.ep-confidence {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.ep-btn {
+  min-height: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ep-btn:hover {
+  border-color: var(--accent);
+}
+
+.ep-btn[disabled] {
+  cursor: not-allowed;
+  color: var(--ink-soft);
+  background: var(--void);
+  border-style: dashed;
+}
+
+.ep-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ep-btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 700;
+}
+
+.ep-btn[aria-busy="true"] { opacity: 0.7; }
+
+/* 极矮钮：排在 .ep-btn 之后才压得住它的 44px（同特异度，后写的作数）。 */
+.ep-mini-btn {
+  min-height: 24px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  position: relative;
+}
+
+.ep-mini-btn::after {
+  content: "";
+  position: absolute;
+  inset: -10px 0;
+}
+
+.ep-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""core-bank v0.8.2 结构迁移的命令行入口（实现只在 app/core/bank.py 一处）。
+"""core-bank v0.8.2 结构迁移的命令行入口（升级实现只在 ``app.core.bank_schema`` 一处）。
 
 user_version 1 → 2：考向改成各教材版本的**并集**（topics 里 tp_kx 不绑版本），
 版本身份另立 textbooks，跨版本归属走 node_topic_map「版本目录节点 → 考向」。

@@ -7,6 +7,11 @@
  *
  * 右栏面板（ui.params.changed）是筛选的权威来源；本页顶部只保留搜索与刷新，
  * 避免同一条件出现两个写入者。
+ *
+ * 三个文件按 PLUGIN_SPEC §2.8.1（单文件不得过 800 行）分工：
+ * - ui_browse.js：题面渲染——安全富文本、列表行、大纲树与详情；
+ * - ui_review.js：待审任务与查重清洗两块工作台；
+ * - plugin.js（本文件）：宿主协议、筛选参数、数据装载、视图装配与命令路由。
  */
 (function () {
   "use strict";
@@ -14,7 +19,6 @@
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.jiuzhang.bank-ui";
   var PAGE_SIZE = 12;
-  var REVIEW_PAGE_SIZE = 6;
   var REQUEST_TIMEOUT_MS = 15000;
 
   var root = document.getElementById("root");
@@ -22,7 +26,6 @@
   var requestSeq = 0;
   var pending = new Map();
   var loadToken = 0;
-  var reviewToken = 0;
   var toastTimer = null;
   var basketIds = Object.create(null);
 
@@ -64,13 +67,6 @@
     dupeSkipped: 0
   };
 
-  // 大纲树：册/章/节/考向按需懒加载，expanded 记开合，children 记已取回的一层
-  var tree = { roots: null, children: {}, expanded: {}, loading: false, error: "" };
-
-  // 考向笔记（军令 #21 任务二）：点大纲节点就把该考向的方法/易错点取到右栏。
-  // 只留当前节点的结果；老师连点两个节点时用 seq 丢掉先发后到的旧响应。
-  var notes = { topicId: "", loading: false, items: [], error: "", seq: 0 };
-
   // ---------- 宿主通信 ----------
   function hostCall(method, payload) {
     return new Promise(function (resolve, reject) {
@@ -111,6 +107,26 @@
     } catch (error) {
       /* 通知丢一帧不致命 */
     }
+  }
+
+  // 向宿主发一个授权事件（三端分离里唯一允许的跨端动作：请求打开录题工作台）
+  function publish(event, payload) {
+    try {
+      window.parent.postMessage({
+        protocol: PROTOCOL,
+        kind: "notification",
+        event: event,
+        payload: payload || {}
+      }, "*");
+    } catch (error) {
+      /* 跳转丢了不致命，底栏会没声音而已 */
+    }
+  }
+
+  function openEditor(questionId) {
+    if (!questionId) return;
+    publish("system.open_editor", { question_id: questionId });
+    dock("已请求打开录题工作台：" + questionId);
   }
 
   function applyParams(values, by) {
@@ -158,930 +174,56 @@
     dock("AI 跳转带来的关键词「" + query + "」已填入搜索框。");
   }
 
-  // ---------- 安全渲染 ----------
-  function renderMathToken(text) {
-    var span = document.createElement("span");
-    var display = text.slice(0, 2) === "$$";
-    var body = display ? text.slice(2, -2) : text.slice(1, -1);
-    if (window.katex && typeof window.katex.renderToString === "function") {
-      try {
-        span.innerHTML = window.katex.renderToString(body, {
-          displayMode: display,
-          throwOnError: false,
-          trust: false,
-          strict: "ignore"
-        });
-        span.className = display ? "cb-math-block" : "cb-math";
-        return span;
-      } catch (error) {
-        /* 落到纯文本 */
-      }
-    }
-    span.textContent = text;
-    return span;
-  }
-
-  function appendInline(target, text) {
-    var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\*\*[^*]+\*\*)/g;
-    var last = 0;
-    var match;
-    while ((match = pattern.exec(text)) !== null) {
-      if (match.index > last) target.appendChild(document.createTextNode(text.slice(last, match.index)));
-      var token = match[0];
-      if (token.slice(0, 1) === "$") {
-        target.appendChild(renderMathToken(token));
-      } else {
-        var strong = document.createElement("strong");
-        strong.textContent = token.slice(2, -2);
-        target.appendChild(strong);
-      }
-      last = pattern.lastIndex;
-    }
-    if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
-  }
-
-  function appendRich(target, source, imageMap) {
-    var text = String(source == null ? "" : source);
-    var blocks = text.split(/\n{2,}/);
-    blocks.forEach(function (block) {
-      var trimmed = block.trim();
-      if (!trimmed) return;
-      var image = trimmed.match(/^!\[([^\]]*)\]\((\/static\/uploads\/[^)\s]+)\)$/);
-      if (image) {
-        var img = document.createElement("img");
-        img.className = "cb-img";
-        img.src = image[2];
-        img.alt = image[1] || "配图";
-        img.loading = "lazy";
-        target.appendChild(img);
-        return;
-      }
-      var paragraph = document.createElement("p");
-      paragraph.style.margin = "0 0 8px";
-      appendInline(paragraph, trimmed);
-      target.appendChild(paragraph);
-      if (imageMap) {
-        // 段落中残留的图片语法（迁移后的正文一般已是独立段落，这里兜底）
-        Array.prototype.forEach.call(paragraph.querySelectorAll("img"), function (node) {
-          if (node.getAttribute("src").indexOf("/static/uploads/") !== 0) node.remove();
-        });
-      }
-    });
-  }
-
-  // ---------- 列表 ----------
-  function el(tag, className, text) {
-    var node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text != null) node.textContent = text;
-    return node;
-  }
-
-  // 契约 2.0 只发 L1–L4；旧键留着只为渲染历史缓存里的题卡
-  function difficultyLabel(value) {
-    return {
-      L1: "基础", L2: "中档", L3: "难", L4: "压轴",
-      basic: "基础", medium: "中档", hard: "难", novel: "压轴"
-    }[value] || value;
-  }
-
-  function typeLabel(value) {
-    return {
-      single_choice: "单选", multiple_choice: "多选", fill_blank: "填空",
-      solution: "解答", proof: "证明", unknown: "待定"
-    }[value] || value;
-  }
-
-  function sourceLine(question) {
-    var source = question.source || {};
-    return [source.paper_title, source.question_no ? "原卷 " + source.question_no + " 题" : ""]
-      .filter(Boolean).join(" · ");
-  }
-
-  function migrationFlags(question) {
-    var entry = (question.extensions || {})["org.jiuzhang.core-bank.migration"];
-    var flags = entry && entry.flags;
-    return Array.isArray(flags) ? flags : [];
-  }
-
-  function buildRow(question, index) {
-    var row = document.createElement("article");
-    row.className = "cb-row";
-    row.tabIndex = 0;
-    row.setAttribute("role", "button");
-    row.setAttribute("aria-current", String(Boolean(state.selected && state.selected.id === question.id)));
-    row.setAttribute("data-id", question.id);
-
-    row.appendChild(el("span", "cb-no", String((state.page - 1) * state.pageSize + index + 1)));
-    var main = el("div");
-    var stem = el("p", "cb-stem");
-    appendInline(stem, question.stem.slice(0, 260));
-    main.appendChild(stem);
-    var meta = el("div", "cb-meta");
-    var grade = el("span", "cb-chip", question.grade || "未标注");
-    meta.appendChild(grade);
-    var difficulty = el("span", "cb-chip", difficultyLabel(question.difficulty));
-    difficulty.setAttribute("data-kind", question.difficulty);
-    meta.appendChild(difficulty);
-    meta.appendChild(el("span", "cb-chip", typeLabel(question.type)));
-    var flags = migrationFlags(question);
-    if (flags.length) {
-      meta.appendChild(el("span", "cb-chip cb-chip-review", "待审 " + flags.length + " 项"));
-    }
-    if (question.taxonomy && question.taxonomy.chapter) {
-      meta.appendChild(el("span", "cb-chip", question.taxonomy.chapter));
-    }
-    if (question.source && question.source.paper_title) {
-      meta.appendChild(el("span", "cb-chip", sourceLine(question)));
-    }
-    main.appendChild(meta);
-    row.appendChild(main);
-
-    var pick = el("button", "cb-btn", basketIds[question.id] ? "已入篮" : "入篮");
-    pick.type = "button";
-    pick.setAttribute("aria-label", "把第 " + ((state.page - 1) * state.pageSize + index + 1) + " 题加入题篮");
-    pick.addEventListener("click", function (event) {
-      event.stopPropagation();
-      addToBasket([question.id]);
-    });
-    row.appendChild(pick);
-
-    function select() {
-      state.selected = question;
-      state.showSolution = false;
-      renderAll();
-    }
-    row.addEventListener("click", select);
-    row.addEventListener("keydown", function (event) {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        select();
-      }
-    });
-    return row;
-  }
-
-  // 列表视图与待审视图的分页器是同一个形状（上一页—页码—下一页），只差数据源与翻页动作。
-  function mountPager(page, pages, total, onGo) {
-    var pager = el("div", "cb-pager");
-    var prev = el("button", "cb-btn", "上一页");
-    prev.type = "button";
-    prev.disabled = page <= 1;
-    prev.addEventListener("click", function () { if (page > 1) onGo(page - 1); });
-    var next = el("button", "cb-btn", "下一页");
-    next.type = "button";
-    next.disabled = page >= pages;
-    next.addEventListener("click", function () { if (page < pages) onGo(page + 1); });
-    pager.appendChild(prev);
-    pager.appendChild(el("span", null, "第 " + page + " / " + pages + " 页 · 共 " + total + " 题"));
-    pager.appendChild(next);
-    return pager;
-  }
-
-  // 答案口径只有一处真相：选项题报选项键、其余报正文，两者都没有就是「待补」。
-  function answerText(question) {
-    var answer = question.answer;
-    if (answer && answer.kind === "choice") return (answer.choice_keys || []).join("、");
-    if (answer && answer.content) return String(answer.content);
-    return "";
-  }
-
-  // ---------- 大纲树（bank.topics 懒加载） ----------
-  function fetchTopics(parentId) {
-    var payload = parentId ? { parent_id: parentId } : {};
-    return hostCall("bank.topics", payload).then(function (result) {
-      return (result && result.items) || [];
-    });
-  }
-
-  function loadTree() {
-    if (tree.loading) return Promise.resolve();
-    tree.loading = true;
-    tree.error = "";
-    renderAll();
-    return fetchTopics("")
-      .then(function (items) {
-        tree.roots = items;
-        tree.loading = false;
-        renderAll();
-      })
-      .catch(function (error) {
-        // 树坏了不能拖垮题库：列表照常，只在树栏里报错并给出重试
-        tree.roots = null;
-        tree.children = {};
-        tree.loading = false;
-        tree.error = error.message;
-        renderAll();
-      });
-  }
-
-  function toggleNode(node) {
-    if (tree.expanded[node.id]) {
-      tree.expanded[node.id] = false;
-      renderAll();
-      return;
-    }
-    tree.expanded[node.id] = true;
-    if (tree.children[node.id]) {
-      renderAll();
-      return;
-    }
-    fetchTopics(node.id).then(function (items) {
-      tree.children[node.id] = items;
-      renderAll();
-    }).catch(function (error) {
-      // 取不到不许伪装成「这一层没有子节点」：那会让老师以为大纲是空的，还查不出为什么。
-      // 收回展开态并播报失败原因，节点保持可再点一次重试。
-      delete tree.children[node.id];
-      tree.expanded[node.id] = false;
-      renderAll();
-      toast("这一层子节点没取到：" + error.message);
-    });
-  }
-
-  function selectTopic(node) {
-    if (state.topic === node.id) return clearTopic();
-    state.topic = node.id;
-    state.topicName = node.name;
-    state.page = 1;
-    state.showSolution = false;
-    if (node.has_children && !tree.children[node.id]) toggleNode(node);
-    loadQuestions();
-    loadTopicNotes(node.id);
-    dock("按大纲取题：" + node.name);
-    return undefined;
-  }
-
-  function clearTopic() {
-    state.topic = "";
-    state.topicName = "";
-    state.page = 1;
-    notes.seq += 1;
-    notes.topicId = "";
-    notes.items = [];
-    notes.error = "";
-    notes.loading = false;
-    loadQuestions();
-  }
-
-  function loadTopicNotes(topicId) {
-    var token = ++notes.seq;
-    notes.topicId = topicId;
-    notes.loading = true;
-    notes.items = [];
-    notes.error = "";
-    renderAll();
-    hostCall("bank.topic_notes", { topic_id: topicId }).then(function (result) {
-      if (token !== notes.seq) return;
-      notes.loading = false;
-      notes.items = (result && result.notes) || [];
-      renderAll();
-    }).catch(function (error) {
-      if (token !== notes.seq) return;
-      // 取不到就如实报错并留重试，不拿「还没有笔记」冒充
-      notes.loading = false;
-      notes.error = error.message;
-      renderAll();
-    });
-  }
-
-  function renderTopicNode(node) {
-    var item = el("li", "cb-tree-item");
-    item.setAttribute("role", "treeitem");
-    item.setAttribute("aria-expanded", String(Boolean(tree.expanded[node.id])));
-    item.setAttribute("aria-selected", String(state.topic === node.id));
-
-    var row = el("div", "cb-tree-row");
-    if (node.has_children) {
-      var caret = el("button", "cb-caret", tree.expanded[node.id] ? "▾" : "▸");
-      caret.type = "button";
-      caret.setAttribute("aria-label", (tree.expanded[node.id] ? "收起 " : "展开 ") + node.name);
-      caret.addEventListener("click", function () { toggleNode(node); });
-      row.appendChild(caret);
-    } else {
-      row.appendChild(el("span", "cb-caret cb-caret-leaf", "·"));
-    }
-
-    var pick = el("button", "cb-tree-name" + (state.topic === node.id ? " cb-tree-active" : ""), node.name);
-    pick.type = "button";
-    pick.setAttribute("data-layer", node.layer || "");
-    if (state.topic === node.id) pick.setAttribute("aria-current", "true");
-    pick.addEventListener("click", function () { selectTopic(node); });
-    row.appendChild(pick);
-
-    row.appendChild(el("span", "cb-tree-count", String(node.question_count || 0)));
-    if (node.note_count) row.appendChild(el("span", "cb-tree-notes", "笔记 " + node.note_count));
-    if (node.status === "draft") row.appendChild(el("span", "cb-tree-draft", "待补录"));
-    item.appendChild(row);
-
-    if (node.has_children && tree.expanded[node.id]) {
-      var branch = el("ul", "cb-tree-branch");
-      branch.setAttribute("role", "group");
-      var kids = tree.children[node.id];
-      if (kids && !kids.length) {
-        branch.appendChild(el("li", "cb-tree-empty", "这一层还没有子节点"));
-      } else if (!kids) {
-        branch.appendChild(el("li", "cb-tree-loading", "正在读取…"));
-      } else {
-        kids.forEach(function (child) { branch.appendChild(renderTopicNode(child)); });
-      }
-      item.appendChild(branch);
-    }
-    return item;
-  }
-
-  function renderTree(host) {
-    var rail = el("aside", "cb-tree");
-    rail.setAttribute("aria-label", "考向大纲树");
-
-    var head = el("div", "cb-tree-head");
-    head.appendChild(el("h2", "cb-tree-title", "大纲树"));
-    var all = el("button", "cb-tree-all" + (state.topic ? "" : " cb-tree-active"), "全部题目");
-    all.type = "button";
-    all.addEventListener("click", clearTopic);
-    head.appendChild(all);
-    rail.appendChild(head);
-
-    if (tree.loading && !tree.roots) {
-      rail.appendChild(el("p", "cb-tree-loading", "正在读取大纲…"));
-    } else if (tree.error) {
-      rail.appendChild(el("p", "cb-tree-error", "大纲树读取失败：" + tree.error));
-      var retry = el("button", "cb-btn", "重试");
-      retry.type = "button";
-      retry.addEventListener("click", loadTree);
-      rail.appendChild(retry);
-    } else if (tree.roots && tree.roots.length) {
-      var trunk = el("ul", "cb-tree-branch cb-tree-root");
-      trunk.setAttribute("role", "tree");
-      tree.roots.forEach(function (node) { trunk.appendChild(renderTopicNode(node)); });
-      rail.appendChild(trunk);
-    } else {
-      rail.appendChild(el("p", "cb-tree-empty", "大纲还是空的：先灌库再回来。"));
-    }
-    host.appendChild(rail);
-  }
-
-  function renderList(host) {
-    var list = el("div", "cb-list");
-    if (state.loading && !state.items.length) {
-      list.appendChild(el("p", "cb-loading", "正在读取题库…"));
-    } else if (!state.items.length) {
-      list.appendChild(el("p", "cb-empty", "当前筛选下没有题目。试试在右侧面板把年级改成「全部」。"));
-    } else {
-      state.items.forEach(function (question, index) {
-        list.appendChild(buildRow(question, index));
-      });
-      list.appendChild(mountPager(state.page, Math.max(1, Math.ceil(state.total / state.pageSize)),
-        state.total, function (page) { state.page = page; loadQuestions(); }));
-    }
-    host.appendChild(list);
-  }
-
-  // ---------- 详情 ----------
-  var NOTE_LABELS = { method: "方法", pitfall: "易错点", knowledge: "知识点", insight: "洞察" };
-
-  function renderTopicNotes(host) {
-    if (!state.topic) return;
-    var section = el("section", "cb-notes");
-    section.setAttribute("data-topic-id", state.topic);
-    section.setAttribute("aria-label", "考向教研笔记：" + state.topicName);
-
-    var head = el("div", "cb-notes-head");
-    head.appendChild(el("h2", "cb-notes-title", "教研笔记"));
-    head.appendChild(el("span", "cb-notes-topic", state.topicName));
-    if (!notes.loading && !notes.error) {
-      head.appendChild(el("span", "cb-notes-count", notes.items.length + " 条"));
-    }
-    section.appendChild(head);
-
-    if (notes.loading) {
-      section.appendChild(el("p", "cb-notes-hint", "正在读取笔记…"));
-    } else if (notes.error) {
-      section.appendChild(el("p", "cb-notes-error", "笔记没取到：" + notes.error));
-      var retry = el("button", "cb-btn", "重试");
-      retry.type = "button";
-      retry.addEventListener("click", function () { loadTopicNotes(state.topic); });
-      section.appendChild(retry);
-    } else if (!notes.items.length) {
-      section.appendChild(el("p", "cb-notes-hint", "这个考向还没有教研笔记。"));
-    } else {
-      notes.items.forEach(function (note) {
-        var item = el("article", "cb-note");
-        item.setAttribute("data-note-type", note.note_type || "");
-        item.appendChild(el("span", "cb-note-type",
-          NOTE_LABELS[note.note_type] || note.note_type || "笔记"));
-        var body = el("div", "cb-note-body");
-        appendRich(body, note.content);
-        item.appendChild(body);
-        section.appendChild(item);
-      });
-    }
-    host.appendChild(section);
-  }
-
-  function renderDetail(host) {
-    var side = el("div", "cb-side");
-    renderTopicNotes(side);
-    var question = state.selected;
-    if (!question) {
-      side.appendChild(el("p", "cb-empty" + (state.topic ? " cb-empty-slim" : ""),
-        state.topic ? "这个考向下还没有选题；从中间列表点一道看题干与解析。"
-          : "从左侧选一道题，这里显示题干、选项与解析。"));
-      host.appendChild(side);
-      return;
-    }
-
-    var detail = el("div", "cb-detail");
-    detail.setAttribute("data-question-id", question.id);
-    detail.appendChild(el("h2", null, sourceLine(question) || "题目详情"));
-    var meta = el("div", "cb-detail-meta");
-    meta.textContent = [
-      question.grade || "未标注",
-      difficultyLabel(question.difficulty),
-      typeLabel(question.type),
-      question.taxonomy && question.taxonomy.chapter ? question.taxonomy.chapter : "",
-      question.id
-    ].filter(Boolean).join(" · ");
-    detail.appendChild(meta);
-
-    var card = el("div", "cb-question");
-    appendRich(card, question.stem);
-    if (question.options && question.options.length) {
-      var options = el("ol", "cb-options");
-      question.options.forEach(function (option) {
-        var item = el("li", "cb-option");
-        item.appendChild(el("span", "cb-key", option.key + "."));
-        var body = el("span");
-        appendRich(body, option.content);
-        (option.image_ids || []).forEach(function (imageId) {
-          var image = (question.images || []).filter(function (candidate) { return candidate.id === imageId; })[0];
-          if (image && image.uri) {
-            var img = document.createElement("img");
-            img.className = "cb-img";
-            img.src = image.uri;
-            img.alt = image.alt || "选项配图";
-            body.appendChild(img);
-          }
-        });
-        item.appendChild(body);
-        options.appendChild(item);
-      });
-      card.appendChild(options);
-    }
-
-    if (question.answer) {
-      var answer = el("div", "cb-answer");
-      answer.appendChild(el("span", "cb-answer-label", "答案："));
-      var shown = answerText(question);
-      if (shown) answer.appendChild(document.createTextNode(shown));
-      card.appendChild(answer);
-    } else {
-      // 新库里 answer 是 NULL（旧库拿硬编码 A 冒充过 31 道选择题）：如实说待补，不显示空白
-      var pending = el("div", "cb-answer cb-answer-pending");
-      pending.appendChild(el("span", "cb-answer-label", "答案："));
-      pending.appendChild(document.createTextNode("待补 — 这道题在原资料里没有可依据的答案，底座不拿字母冒充"));
-      card.appendChild(pending);
-      var detailFlags = migrationFlags(question);
-      if (detailFlags.length) {
-        card.appendChild(el("p", "cb-flags", "迁移标记：" + detailFlags.join(" · ")));
-      }
-    }
-
-    if (state.showSolution && question.solution) {
-      var solution = el("div", "cb-solution");
-      solution.appendChild(el("span", "cb-answer-label", "解析："));
-      appendRich(solution, question.solution);
-      card.appendChild(solution);
-    }
-
-    var actions = el("div", "cb-actions");
-    var toggle = el("button", "cb-btn", state.showSolution ? "收起解析" : "显示解析");
-    toggle.type = "button";
-    toggle.disabled = !question.solution;
-    toggle.addEventListener("click", function () {
-      state.showSolution = !state.showSolution;
-      renderAll();
-    });
-    actions.appendChild(toggle);
-
-    var add = el("button", "cb-btn cb-btn-primary", basketIds[question.id] ? "已在题篮" : "加入题篮");
-    add.type = "button";
-    add.addEventListener("click", function () { addToBasket([question.id]); });
-    actions.appendChild(add);
-
-    var edit = el("button", "cb-btn", "去编辑");
-    edit.type = "button";
-    edit.addEventListener("click", function () { openEditor(question.id); });
-    actions.appendChild(edit);
-    card.appendChild(actions);
-    detail.appendChild(card);
-    side.appendChild(detail);
-    host.appendChild(side);
-  }
-
-  // ---------- 人工审核（待审任务） ----------
-  var FLAG_LABELS = {
-    answer_absent: "没有答案依据",
-    answer_region_empty: "答案区是空白",
-    type_manual_review: "题型待人工判",
-    structure_conflict: "选项内嵌正文",
-    topic_unmapped: "只挂到节层",
-    needs_conclusion: "结论未单独成字段",
-    solution_absent: "连答案正文都没有"
-  };
-
-  function flagLabel(flag) { return FLAG_LABELS[flag] || flag; }
-
-  // 向宿主发一个授权事件（三端分离里唯一允许的跨端动作：请求打开录题工作台）
-  function publish(event, payload) {
-    try {
-      window.parent.postMessage({
-        protocol: PROTOCOL,
-        kind: "notification",
-        event: event,
-        payload: payload || {}
-      }, "*");
-    } catch (error) {
-      /* 跳转丢了不致命，底栏会没声音而已 */
-    }
-  }
-
-  function openEditor(questionId) {
-    if (!questionId) return;
-    publish("system.open_editor", { question_id: questionId });
-    dock("已请求打开录题工作台：" + questionId);
-  }
-
-  function loadReview(page) {
-    state.view = "review";
-    state.reviewLoading = true;
-    state.reviewError = "";
-    if (page) state.reviewPage = page;
-    // 与 loadQuestions 同款令牌：连点翻页或回流刷新并发时，慢响应不许覆盖新结果
-    var token = ++reviewToken;
-    renderAll();
-    return hostCall("bank.review", {
-      flag: state.reviewFlag,
-      page: state.reviewPage,
-      page_size: REVIEW_PAGE_SIZE
-    }).then(function (result) {
-      if (token !== reviewToken) return;
-      state.reviewItems = (result && result.items) || [];
-      state.reviewTotal = (result && result.total) || 0;
-      state.reviewPages = (result && result.total_pages) || 1;
-      state.reviewSummary = (result && result.summary) || { total: 0, flags: [] };
-      state.reviewLoading = false;
-      renderAll();
-    }).catch(function (error) {
-      if (token !== reviewToken) return;
-      state.reviewLoading = false;
-      state.reviewItems = [];
-      state.reviewError = error.message;
-      renderAll();
-    });
-  }
-
-  function buildReviewCard(question) {
-    var card = el("article", "cb-review-card");
-    card.setAttribute("data-review-id", question.id);
-
-    var head = el("div", "cb-review-head");
-    head.appendChild(el("p", "cb-review-stem", question.stem.slice(0, 160)));
-    var chips = el("div", "cb-review-chips");
-    chips.appendChild(el("span", "cb-chip", typeLabel(question.type)));
-    chips.appendChild(el("span", "cb-chip", difficultyLabel(question.difficulty)));
-    chips.appendChild(el("span", "cb-chip", question.grade || "未标注"));
-    migrationFlags(question).forEach(function (flag) {
-      chips.appendChild(el("span", "cb-chip cb-chip-review", flagLabel(flag)));
-    });
-    chips.appendChild(el("span", "cb-review-id", question.id));
-    head.appendChild(chips);
-    card.appendChild(head);
-
-    // 三端分离：题库是存储端，只读。改题目一律交给录题工作台（输入端）。
-    var body = el("div", "cb-review-body");
-    var edit = el("button", "cb-btn cb-btn-primary", "去编辑");
-    edit.type = "button";
-    edit.addEventListener("click", function () { openEditor(question.id); });
-    body.appendChild(edit);
-    var hints = {
-      answer_absent: "补答案：点「去编辑」在录题工作台里选选项字母或填答案正文。",
-      answer_region_empty: "补答案：原卷有【答案】标记但标记后是空白。",
-      type_manual_review: "判题型：通篇解析没有结论标记，需要老师定单选/多选/填空/解答。",
-      structure_conflict: "拆结构：选项内嵌在题干里，需要在录题工作台重排选项或改判解答题。",
-      topic_unmapped: "挂考向：在录题工作台的考向大纲树里选一个节点。",
-      needs_conclusion: "补结论：把最终答案单独填进答案栏。",
-      solution_absent: "补答案：旧库连答案正文都没有。"
-    };
-    var first = migrationFlags(question)[0];
-    body.appendChild(el("p", "cb-review-hint", hints[first] || "确认无误后可在录题工作台里清掉标记。"));
-    card.appendChild(body);
-    return card;
-  }
-
-  function renderReviewPanel(host) {
-    var panel = el("div", "cb-review");
-
-    var aside = el("div", "cb-review-filters");
-    aside.appendChild(el("h2", "cb-review-heading", "待审标记"));
-    var allButton = el("button", "cb-review-flag" + (state.reviewFlag ? "" : " cb-tree-active"),
-      "全部待审 " + (state.reviewSummary.total || 0));
-    allButton.type = "button";
-    allButton.addEventListener("click", function () {
-      state.reviewFlag = "";
-      loadReview(1);
-    });
-    aside.appendChild(allButton);
-    (state.reviewSummary.flags || []).forEach(function (item) {
-      var button = el("button",
-        "cb-review-flag" + (state.reviewFlag === item.name ? " cb-tree-active" : ""),
-        flagLabel(item.name) + " · " + item.count);
-      button.type = "button";
-      button.addEventListener("click", function () {
-        state.reviewFlag = item.name;
-        loadReview(1);
-      });
-      aside.appendChild(button);
-    });
-    aside.appendChild(el("p", "cb-review-note",
-      "标记来自灌库校验：答案取不到字母的一律留空，不拿 A 冒充。修一条清一条。"));
-    panel.appendChild(aside);
-
-    var list = el("div", "cb-review-list");
-    if (state.reviewLoading && !state.reviewItems.length) {
-      list.appendChild(el("p", "cb-loading", "正在读取待审队列…"));
-    } else if (state.reviewError) {
-      list.appendChild(el("p", "cb-tree-error", "待审队列读取失败：" + state.reviewError));
-      var retry = el("button", "cb-btn", "重试");
-      retry.type = "button";
-      retry.addEventListener("click", function () { loadReview(); });
-      list.appendChild(retry);
-    } else if (!state.reviewItems.length) {
-      list.appendChild(el("p", "cb-empty", "这一类没有待审题了——真题的人工审核已清账。"));
-    } else {
-      state.reviewItems.forEach(function (question) {
-        list.appendChild(buildReviewCard(question));
-      });
-      if (state.reviewPages > 1) {
-        list.appendChild(mountPager(state.reviewPage, state.reviewPages, state.reviewTotal, loadReview));
-      }
-    }
-    panel.appendChild(list);
-    host.appendChild(panel);
-  }
-
-  // ---------- 查重清洗（军令 #18-终 阶段五） ----------
-  // 双栏 1:1 落在画布内：左栏/右栏/底栏永远归宿主，插件不得反向操控宿主布局
-  // （PLUGIN_SPEC §2.4、§2.9），而且宿主右栏上限 520px、与画布成不了 1:1。
-  // 所以审查模式接管的是插件自己的三栏浏览布局（大纲 | 列表 | 详情 → 全宽双栏题卡）。
-  var DUPE_FIELD_LABELS = {
-    answer: "答案",
-    difficulty: "难度",
-    grade: "年级",
-    solution: "解析",
-    sources: "来源关系",
-    topics: "考向挂载",
-    extensions: "单题备注"
-  };
-
-  function loadDedupe() {
-    state.view = "dedupe";
-    if (state.dupeLoading || state.dupeBusy) return null;
-    state.dupeLoading = true;
-    state.dupeError = "";
-    renderAll();
-    return hostCall("bank.dedupe_scan", {}).then(function (result) {
-      state.dupeQueue = (result && result.groups) || [];
-      state.dupeScanned = (result && result.scanned) || 0;
-      state.dupeRedundant = (result && result.redundant) || 0;
-      state.dupeTruncated = (result && result.truncated) || 0;
-      state.dupePrimary = "";
-      state.dupeLoading = false;
-      renderAll();
-      dock("查重扫描完成：" + state.dupeScanned + " 题里有 " + state.dupeQueue.length + " 组重复");
-    }, function (error) {
-      state.dupeLoading = false;
-      state.dupeQueue = [];
-      state.dupeError = error.message;
-      renderAll();
-      toast("查重扫描失败：" + error.message);
-    });
-  }
-
-  function dupeChips(question) {
-    var chips = el("div", "cb-dupe-chips");
-    chips.appendChild(el("span", "cb-chip", typeLabel(question.type)));
-    var difficulty = el("span", "cb-chip", difficultyLabel(question.difficulty));
-    difficulty.setAttribute("data-kind", question.difficulty);
-    chips.appendChild(difficulty);
-    chips.appendChild(el("span", "cb-chip", question.grade || "未标注"));
-    var taxonomy = question.taxonomy || {};
-    var topics = taxonomy.topic_ids || [];
-    if (topics.length) {
-      chips.appendChild(el("span", "cb-chip", "考向 " + topics.length + " 个"
-        + (taxonomy.chapter ? "（" + taxonomy.chapter + "）" : "")));
-    }
-    if (question.source && question.source.paper_title) {
-      chips.appendChild(el("span", "cb-chip", sourceLine(question)));
-    }
-    migrationFlags(question).forEach(function (flag) {
-      chips.appendChild(el("span", "cb-chip cb-chip-review", flagLabel(flag)));
-    });
-    chips.appendChild(el("span", "cb-review-id", question.id));
-    return chips;
-  }
-
-  function markDupeKept(questionId) {
-    state.dupePrimary = questionId;
-    // 只改标记不整块重画：renderAll 会把焦点从老师刚按的单选钮上抢走
-    Array.prototype.forEach.call(root.querySelectorAll(".cb-dupe-card"), function (card) {
-      var kept = card.getAttribute("data-dupe-id") === questionId;
-      card.classList.toggle("cb-dupe-kept", kept);
-      var radio = card.querySelector("input[type=radio]");
-      if (radio) radio.checked = kept;
-    });
-    var button = root.querySelector(".cb-dupe-merge");
-    if (button) button.disabled = !questionId || state.dupeBusy;
-    var tip = root.querySelector(".cb-dupe-merge-tip");
-    if (tip) {
-      var group = state.dupeQueue[0];
-      tip.textContent = questionId && group
-        ? "将删除其余 " + (group.ids.length - 1) + " 题，考向/来源/备注并进保留项"
-        : "先点一张卡上的「保留这题」";
-    }
-  }
-
-  function buildDupeCard(question) {
-    var card = el("article", "cb-dupe-card");
-    card.setAttribute("data-dupe-id", question.id);
-
-    var pick = el("label", "cb-dupe-pick");
-    var radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "cb-dupe-primary";
-    radio.value = question.id;
-    radio.checked = state.dupePrimary === question.id;
-    radio.addEventListener("change", function () { markDupeKept(question.id); });
-    pick.appendChild(radio);
-    pick.appendChild(el("span", null, "保留这题"));
-    card.appendChild(pick);
-    if (state.dupePrimary === question.id) card.classList.add("cb-dupe-kept");
-
-    card.appendChild(dupeChips(question));
-
-    var body = el("div", "cb-dupe-body");
-    appendRich(body, question.stem);
-    if (question.options && question.options.length) {
-      var options = el("ol", "cb-options");
-      question.options.forEach(function (option) {
-        var item = el("li", "cb-option");
-        item.appendChild(el("span", "cb-key", option.key + "."));
-        var text = el("span");
-        appendRich(text, option.content);
-        item.appendChild(text);
-        options.appendChild(item);
-      });
-      body.appendChild(options);
-    }
-    var answer = el("p", "cb-dupe-answer");
-    answer.appendChild(el("span", "cb-answer-label", "答案："));
-    answer.appendChild(document.createTextNode(
-      answerText(question) || "待补 — 原资料里没有可依据的答案"));
-    body.appendChild(answer);
-    if (state.dupeShowSolution && question.solution) {
-      var solution = el("div", "cb-solution");
-      solution.appendChild(el("span", "cb-answer-label", "解析："));
-      appendRich(solution, question.solution);
-      body.appendChild(solution);
-    }
-    card.appendChild(body);
-    return card;
-  }
-
-  function mergeDupeGroup(group) {
-    var primary = state.dupePrimary;
-    var copies = group.ids.filter(function (id) { return id !== primary; });
-    if (!primary || !copies.length || state.dupeBusy) return;
-    state.dupeBusy = true;
-    renderAll();
-    hostCall("bank.dedupe_merge", { primary_id: primary, copy_ids: copies })
-      .then(function (result) {
-        state.dupeBusy = false;
-        state.dupeQueue = state.dupeQueue.slice(1);   // 审一组存一组：落库即出队，不用重扫
-        state.dupePrimary = "";
-        state.dupeMerged += copies.length;
-        state.dupeScanned = Math.max(0, state.dupeScanned - copies.length);
-        state.dupeRedundant = Math.max(0, state.dupeRedundant - copies.length);
-        renderAll();
-        var moved = (result && result.moved) || {};
-        toast("已收敛 " + copies.length + " 题：考向 +" + (moved.topics || []).length
-          + " · 来源 +" + (moved.sources || []).length
-          + " · 备注 +" + (moved.extensions || []).length);
-        dock("查重合并完成：保留 " + primary + "，删除 " + copies.join("、"));
-      }, function (error) {
-        state.dupeBusy = false;
-        renderAll();
-        toast("合并失败，题库一字未动：" + error.message);
-      });
-  }
-
-  function renderDedupeGroup(host, group) {
-    var head = el("div", "cb-dupe-head");
-    var difference = (group.differing_fields || []).map(function (key) {
-      return DUPE_FIELD_LABELS[key] || key;
-    });
-    head.appendChild(el("p", "cb-dupe-title",
-      group.ids.length + " 道题面完全相同（" + typeLabel(group.type) + "）· 还剩 "
-        + state.dupeQueue.length + " 组"));
-    head.appendChild(el("p", "cb-dupe-diff", difference.length
-      ? "组内不同的只有：" + difference.join("、") + "——都是「录了两遍」留下的，不冲突"
-      : "组内每一项都一样，留一条就够"));
-    host.appendChild(head);
-
-    var cards = el("div", "cb-dupe-cards");
-    cards.setAttribute("role", "radiogroup");
-    cards.setAttribute("aria-label", "重复题组，单选保留项");
-    group.documents.forEach(function (question) { cards.appendChild(buildDupeCard(question)); });
-    host.appendChild(cards);
-
-    var actions = el("div", "cb-dupe-actions");
-    var toggle = el("button", "cb-btn", state.dupeShowSolution ? "收起解析" : "展开解析");
-    toggle.type = "button";
-    toggle.addEventListener("click", function () {
-      state.dupeShowSolution = !state.dupeShowSolution;
-      renderAll();
-    });
-    actions.appendChild(toggle);
-
-    var skip = el("button", "cb-btn", "跳过这组");
-    skip.type = "button";
-    skip.addEventListener("click", function () {
-      state.dupeQueue = state.dupeQueue.slice(1).concat([group]);
-      state.dupeSkipped += 1;
-      state.dupePrimary = "";
-      renderAll();
-    });
-    actions.appendChild(skip);
-
-    var tip = el("span", "cb-dupe-merge-tip",
-      state.dupePrimary ? "将删除其余 " + (group.ids.length - 1) + " 题，考向/来源/备注并进保留项"
-        : "先点一张卡上的「保留这题」");
-    actions.appendChild(tip);
-
-    var merge = el("button", "cb-btn cb-btn-primary cb-dupe-merge", "确认合并");
-    merge.type = "button";
-    merge.disabled = !state.dupePrimary || state.dupeBusy;
-    merge.setAttribute("aria-busy", String(state.dupeBusy));
-    merge.addEventListener("click", function () { mergeDupeGroup(group); });
-    actions.appendChild(merge);
-    host.appendChild(actions);
-  }
-
-  function renderDedupePanel(host) {
-    var panel = el("div", "cb-dupe");
-    var bar = el("div", "cb-dupe-bar");
-    var scan = el("button", "cb-btn cb-btn-primary", "一键扫描");
-    scan.type = "button";
-    scan.disabled = state.dupeLoading || state.dupeBusy;
-    scan.setAttribute("aria-busy", String(state.dupeLoading));
-    scan.addEventListener("click", function () { loadDedupe(); });
-    bar.appendChild(scan);
-    var status = el("p", "cb-dupe-status",
-      state.dupeLoading ? "正在按指纹归一全库题面…"
-        : (state.dupeScanned
-          ? "已扫 " + state.dupeScanned + " 题 · 重复 " + state.dupeRedundant + " 题可清"
-            + (state.dupeMerged ? " · 本轮已收敛 " + state.dupeMerged + " 题" : "")
-            + (state.dupeSkipped ? " · 跳过 " + state.dupeSkipped + " 组" : "")
-          : "还没扫描。扫描只读，不动库里一个字。"));
-    status.setAttribute("aria-live", "polite");
-    bar.appendChild(status);
-    panel.appendChild(bar);
-    if (state.dupeTruncated) {
-      panel.appendChild(el("p", "cb-review-note",
-        "重复组太多，本次只回了前 " + state.dupeQueue.length + " 组（还有 "
-          + state.dupeTruncated + " 组被截在外），清完再扫一次。"));
-    }
-
-    if (state.dupeError) {
-      panel.appendChild(el("p", "cb-tree-error", "扫描失败：" + state.dupeError));
-    } else if (state.dupeLoading) {
-      panel.appendChild(el("p", "cb-loading", "正在读取重复组…"));
-    } else if (!state.dupeQueue.length) {
-      panel.appendChild(el("p", "cb-empty", state.dupeScanned
-        ? "没有需要清洗的重复组了——题面指纹全库唯一。"
-        : "点【一键扫描】找出题面完全相同的题（排版差异、选项顺序、配图都算在内）。"));
-    } else {
-      var group = state.dupeQueue[0];
-      if (group.ids.length <= 1) {
-        // 组里只剩一条就不叫重复了（多半是别处刚删过题），直接出队而不是空转一轮扫描
-        state.dupeQueue = state.dupeQueue.slice(1);
-        renderDedupePanel(host);
-        return;
-      }
-      renderDedupeGroup(panel, group);
-    }
-    host.appendChild(panel);
-  }
+  // ---------- 富文本、列表、大纲树与详情：已拆到 ui_browse.js（PLUGIN_SPEC §2.8.1） ----------
+  // 本文件只留「协议 + 数据 + 视图装配 + 命令路由」；题面怎么画交给浏览模块。
+  var browse = window.JzoBankBrowse.create({
+    state: state,
+    hostCall: hostCall,
+    dock: dock,
+    toast: toast,
+    renderAll: renderAll,
+    loadQuestions: loadQuestions,
+    openEditor: openEditor,
+    addToBasket: addToBasket,
+    inBasket: function (questionId) { return Boolean(basketIds[questionId]); }
+  });
+  var el = browse.el;
+  var appendRich = browse.appendRich;
+  var answerText = browse.answerText;
+  var difficultyLabel = browse.difficultyLabel;
+  var typeLabel = browse.typeLabel;
+  var sourceLine = browse.sourceLine;
+  var migrationFlags = browse.migrationFlags;
+  var mountPager = browse.mountPager;
+  var loadTree = browse.loadTree;
+  var renderTree = browse.renderTree;
+  var renderList = browse.renderList;
+  var renderDetail = browse.renderDetail;
+
+  // ---------- 待审与查重清洗工作台：已拆到 ui_review.js（PLUGIN_SPEC §2.8.1） ----------
+  // 面板怎么画交给工作台；本文件只管协议、数据与视图装配。
+  // 题块渲染的那几件套由 ui_browse.js 先装配，再转交工作台复用。
+  var review = window.JzoBankReview.create({
+    state: state,
+    root: root,
+    hostCall: hostCall,
+    dock: dock,
+    toast: toast,
+    renderAll: renderAll,
+    openEditor: openEditor,
+    el: el,
+    appendRich: appendRich,
+    answerText: answerText,
+    difficultyLabel: difficultyLabel,
+    typeLabel: typeLabel,
+    sourceLine: sourceLine,
+    migrationFlags: migrationFlags,
+    mountPager: mountPager
+  });
+  var loadReview = review.loadReview;
+  var renderReviewPanel = review.renderReviewPanel;
+  var loadDedupe = review.loadDedupe;
+  var renderDedupePanel = review.renderDedupePanel;
 
   function renderAll() {
     if (!stageMode || !root) return;

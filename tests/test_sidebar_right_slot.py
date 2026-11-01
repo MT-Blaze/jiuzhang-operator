@@ -19,11 +19,11 @@ from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
 from app.core.plugins import PluginRejected, validate_plugin
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
-CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 STAGE_JS = stage_source()
 PANEL_JS = (ROOT / "static" / "js" / "context_panel.js").read_text(encoding="utf-8")
 WORKSPACE_JS = workspace_source()
@@ -116,7 +116,8 @@ class HostSlotTest(unittest.TestCase):
 
     def test_04_plugin_list_refresh_reruns_the_slot(self) -> None:
         # 主权交替后 sync 多带一个「当前画布页签」参数，插槽才知道该归谁
-        self.assertIn("JzoContextPanel.sync(installedPlugins, activeCanvasPluginId)", WORKSPACE_JS)
+        self.assertIn("JzoContextPanel.sync(wsState.installedPlugins, wsState.activeCanvasPluginId)",
+                      WORKSPACE_JS)
         self.assertIn("stage.tab.activated", WORKSPACE_JS, "页签换主人必须驱动右栏对账")
         self.assertIn("stage.tab.closed", WORKSPACE_JS, "关掉页签后主权要归还助手")
 

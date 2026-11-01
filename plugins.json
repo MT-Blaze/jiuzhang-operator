@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-11-01",
+  "updated_at": "2026-11-02",
   "entries": [
     {
       "id": "org.jiuzhang.bank-engine",
@@ -22,7 +22,7 @@
     {
       "id": "org.jiuzhang.bank-ui",
       "name": "真题题库",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列与查重双栏审查；数据一律向当前活跃题库引擎申请，自己不碰数据库。",
@@ -38,7 +38,7 @@
     {
       "id": "org.jiuzhang.paper-gen",
       "name": "组卷排版",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。",
@@ -54,7 +54,7 @@
     {
       "id": "org.jiuzhang.handout",
       "name": "讲义排版",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。",
@@ -70,7 +70,7 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "2.6.0",
+      "version": "2.6.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "批次审核台：三段式辅助栏——顶部固定当前题与私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据随画布滚动收起，底部存库/待办/删除与格式切换。标签与考向走幽灵胶囊：悬停 150ms 接光标，打字出带路径搜索，回车取第一条。画布与辅助栏边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。",
@@ -86,7 +86,7 @@
     {
       "id": "org.jiuzhang.chat",
       "name": "AI 助手",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "kind": "tool",
       "api_version": "1.0",
       "description": "右栏对话助手：听懂教师的自然语言，经宿主 Host API 代为查题库、拆题、渲染题卡、搜插件与改写题目；回复下方附「前往题库并搜索」等跳转动作，由底座执行跳转。不直连数据库、不碰宿主 DOM、不模拟鼠标键盘点击。需底座 v1.0.0 及以上。",

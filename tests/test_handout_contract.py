@@ -22,6 +22,7 @@ from pathlib import Path
 
 from app.core.plugins import validate_plugin
 from tools.build_plugin import build_plugin
+from tests.core_sources import bundle_local_assets  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.handout"
@@ -29,6 +30,14 @@ DIST = PLUGIN_DIR / "dist"
 
 
 def read(name: str) -> str:
+    """``plugin.js`` / ``plugin.css`` 读「整包」：按 index.html 的加载次序把拆出去的模块拼回来。
+
+    军令（终极·任务四）把富文本渲染拆进 ui_rich.js，契约判据仍看完整语义，不因拆文件漏判。
+    """
+    if name == "plugin.js":
+        return bundle_local_assets(DIST / "index.html", "script")
+    if name == "plugin.css":
+        return bundle_local_assets(DIST / "index.html", "link")
     return (DIST / name).read_text(encoding="utf-8")
 
 

@@ -664,7 +664,7 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 ### 2.8 AI 开发铁律与第三方插件模板（2026-10-23 军令 #06）
 
 第三方老师将普遍用 AI 代写插件。为让 AI 一次生成**不破坏底座架构**的代码，本节把插件契约压成
-五条可逐字转述给大模型的**铁律**，并提供极简模板 [`examples/template-plugin/`](../examples/template-plugin/)
+六条可逐字转述给大模型的**铁律**，并提供模块化多文件模板 [`examples/template-plugin/`](../examples/template-plugin/)
 （打包产物 `examples/template-plugin.zip`，重打包脚本 `examples/build_template_plugin.py`）。
 可直接复制给任何大模型的完整提示词见 [README.md「如何用 AI 开发九章算子插件？」](../README.md)。
 
@@ -675,6 +675,7 @@ INSERT INTO node_topic_map (outline_node_id, topic_id, textbook_id, sort_order, 
 | 3 | **状态同步走事件总线**：改状态必须经 `kind:"notification"` 广播，事件名必须在清单 `bus.publish` 白名单内；严禁调用其他插件函数、严禁伪造 `ui.params.*` / `layout.*` | §2.5 |
 | 4 | **UI 隔离在沙箱 iframe**：视图封闭在专属沙箱内，严禁越权操作父窗口 DOM/Cookie/localStorage；与宿主唯一通道是 `window.parent.postMessage` | §2.3.4 |
 | 5 | **环境依赖只用原生 JS/CSS**：严禁引入重型前端框架与 CDN 资源（CSP `connect-src 'none'` 会拦死远程加载），公式一律 Markdown + LaTeX | §2.3.4、AGENTS §4 |
+| 6 | **单文件不得超过 800 行**：JS 按职能拆成 `ui_xxx.js` / `core_xxx.js`（见 §2.8.1），CSS 按域拆成多份（见 §2.8.2），渲染一律数据驱动（公共资产 `/static/common/ui_reactive.js`，见 §2.8.3） | §2.8.1、§2.8.2、§2.8.3 |
 
 **请求封包 `id` 的形状（2026-10-23 真机取证补上的硬约束）**：宿主在消息入口用
 `^[A-Za-z0-9_-]{1,80}$` 校验 `kind:"request"` 的 `id`，**不匹配的请求不转发到数据通道**，
@@ -697,6 +698,64 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 `tools/template_plugin_probe.py` 取证：2026-10-25（军令 #20 拆分后复跑）模板在
 `bank-engine` + `bank-ui` 隔离目录里跑黄金路径 **18/18**，沙箱内实测取题与渲染全通；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线）。
+
+#### 2.8.1 JS 按职能拆文件（2026-11-01 终极军令任务五，长期铁律）
+
+**任何插件目录下的单个 JS 文件不得超过 800 行**（`dist/` 与 `src/` 都算，注释与空行一并计入）。
+超了就按**职能**切成小文件，一条文件只讲一件事：
+
+| 前缀 | 装什么 | 例 |
+| --- | --- | --- |
+| `plugin.js` | 启动与装配：取 DOM 引用、建 ctx、接线事件、把各模块实例拼起来 | 官方录题器就叫这个名字 |
+| `core_xxx.js` | **不带 DOM** 的纯逻辑：协议封装、状态机、数据整形、缓存与节流 | `core_bus.js`、`core_tabs.js`（宿主侧同名规范） |
+| `ui_xxx.js` | 只管「数据 → DOM」：渲染函数、事件到状态的映射、样式类名切换 | `ui_capsule.js`、`ui_breath.js` |
+
+拆法固定为**工厂 + 上下文**，不许把内部变量挂到 `window` 上共享：
+
+```js
+// ui_xxx.js —— 只吃 ctx，只认数据，不认别人的私有状态
+(function (global) {
+  "use strict";
+  function create(ctx) {           // ctx 由 plugin.js 装配好传进来
+    var ui = global.JzoReactive.reactive({ open: false });
+    JzoReactive.watch(function () { ctx.root.setAttribute("data-open", String(ui.open)); });
+    return { ui: ui, toggle: function () { ui.open = !ui.open; } };
+  }
+  global.JzoXxx = { create: create };
+})(window);
+```
+
+`plugin.js` 按次序 `<script>` 引入（沙箱没有模块加载器，也不许自造），加载次序即依赖次序：
+公共资产 → `core_*` → `ui_*` → `plugin.js`。
+
+**为什么要钉死这条**：录题器曾经一份 `plugin.js` 写到 5800 行，AI 一次改不动、人眼一次看不完，
+改一处牵连八处，探针失败只能整文件回滚——文件体积就是回归成本的上界。
+
+#### 2.8.2 CSS 按域拆文件
+
+**单个 CSS 文件同样不得超过 800 行**，按**域**切开，域的名字要对得上界面区块，不许留一份
+「什么都往里塞」的 `plugin.css`：
+
+- 官方录题器的分法：`layout.css`（骨架与三区几何）/ `panel.css`（辅助栏控件）/ `effects.css`（灯、闪烁、过渡）。
+- 每个文件顶部一行注释写清「本文件管哪一块」；选择器不跨文件重复定义同一条属性，
+  后加载的文件只许补充，不许靠加载次序打架。
+- 变量一律集中在骨架文件的 `:root`，别处只引用不重定义。
+
+#### 2.8.3 公共资产：`/static/common/`
+
+底座随包发一份公共资产目录 [`static/common/`](../static/common/)，插件沙箱直接用宿主源引用
+（沙箱 CSP 的 `script-src` 已授权宿主自身的源，见 §2.3.4）：
+
+```html
+<script src="/static/common/ui_reactive.js"></script>
+```
+
+- `ui_reactive.js`：约 110 行的微型响应式引擎（`Proxy` + 微任务），**所有插件的数据驱动渲染都走它**，
+  插件里不许再各存一份副本，也不许自造第二套「改数据要手写 DOM」的土办法。
+- 用法：`var ui = JzoReactive.reactive({...})`，`JzoReactive.watch(render)` 登记渲染函数，
+  事件处理器**只改数据**，伸手改 DOM 的活儿全交给 watch。同一轮里的多次赋值只渲染一次。
+- 公共资产只有底座能改；插件**不得**向 `/static/common/` 写入，也不得假设它是同源可枚举目录。
+- 模板 `examples/template-plugin/` 已把它作为标配带进骨架，新插件从模板起步就自带数据驱动。
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 
@@ -1126,14 +1185,18 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 插件 id | 名称 | 版本 | 形态 | 通道 | 命令数 |
 | --- | --- | --- | --- | --- | --- |
-| `org.jiuzhang.bank-engine` | 题库引擎 | 0.2.0 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
-| `org.jiuzhang.bank-ui` | 真题题库 | 0.2.0 | iframe 视图，`bank.view` | iframe | 4 |
-| `org.jiuzhang.paper-gen` | 组卷排版 | 0.4.0 | iframe 视图 | iframe | 2 |
-| `org.jiuzhang.handout` | 讲义排版 | 0.2.0 | iframe 视图 | iframe | 3 |
-| `org.jiuzhang.editor` | 录题工作台 | 2.6.0 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.bank-engine` | 题库引擎 | 1.0.0 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
+| `org.jiuzhang.bank-ui` | 真题题库 | 1.0.1 | iframe 视图，`bank.view` | iframe | 4 |
+| `org.jiuzhang.paper-gen` | 组卷排版 | 1.0.1 | iframe 视图 | iframe | 2 |
+| `org.jiuzhang.handout` | 讲义排版 | 1.0.1 | iframe 视图 | iframe | 3 |
+| `org.jiuzhang.editor` | 录题工作台 | 2.6.1 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.chat` | AI 助手 | 1.1.1 | iframe 视图，`assistant.chat` | iframe | 0（只吃别人的命令） |
+| `org.jiuzhang.dashboard` | 数据看板 | 1.0.0 | iframe 视图 | iframe | 0（只读看板通道） |
 
 合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
 视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。
+`chat` 与 `dashboard` 不对外声明 `org.jiuzhang.action.*` 命令：前者是命令面的消费者，
+后者只读活跃题库的看板通道。
 
 **3）`org.jiuzhang.bank-engine`（题库引擎，headless）。**
 

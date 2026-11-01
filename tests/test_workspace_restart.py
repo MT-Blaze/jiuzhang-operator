@@ -35,7 +35,7 @@ from app.api import health, workspaces as workspaces_api
 from app.core import bank as core_bank
 from app.core import host_restart
 from app.core.config import settings, switch_workspace
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import settings_source, stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 WARNING_TEXT = ("切换工作区需要重启底座以加载该区的插件与配置，"
@@ -347,7 +347,7 @@ class TextbookIdContractTest(_IsolatedData):
         self.assertEqual(entry["textbook_id"], padded.strip(), "登记的是去掉空白的净值")
 
     def test_front_end_registers_version_in_the_single_create_post(self) -> None:
-        js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        js = settings_source()
         block = js[js.index("function createWorkspace()"):
                    js.index("if (wsCreateBtn) wsCreateBtn.addEventListener")]
         self.assertIn('apiCall("/api/workspaces", "POST", { name: name, textbook_id: textbookId })', block)
@@ -363,7 +363,7 @@ class UiRestartContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.html = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
-        cls.js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        cls.js = settings_source()
         cls.css = (ROOT / "static" / "css" / "settings.css").read_text(encoding="utf-8")
 
     def _block(self, start_marker: str, end_marker: str) -> str:

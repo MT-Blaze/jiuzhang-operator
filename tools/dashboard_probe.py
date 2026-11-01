@@ -16,12 +16,14 @@
   5. 最近录入 ≤5 条；点击第一条 → 宿主打开活跃题库（core-bank）页签（system.open_bank 走白名单）；
   6. 底栏出现「数据看板已就绪」；全程宿主页无未捕获 JS 错误。
 """
+import collections
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -92,6 +94,18 @@ def run(tag: str) -> dict:
          "--host", "127.0.0.1", "--port", str(PORT)],
         cwd=str(ROOT), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    # uvicorn 的 INFO 日志必须及时排空：管道塞满后服务端会阻塞在写 stdout 上，
+    # 页面永远到不了 networkidle（探针假红，与产品无关）。同款坑 stage_probe 已写明。
+    server_log = collections.deque(maxlen=400)
+
+    def _drain_server_log() -> None:
+        try:
+            for line in server.stdout:
+                server_log.append(line)
+        except Exception:  # noqa: BLE001 - 服务端退出时管道关闭属正常
+            pass
+
+    threading.Thread(target=_drain_server_log, name="probe-server-log", daemon=True).start()
 
     try:
         if not wait_port(40):

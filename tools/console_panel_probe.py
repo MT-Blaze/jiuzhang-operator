@@ -85,6 +85,16 @@ def run(tag: str) -> dict:
             page.screenshot(path=str(out / ("%s.png" % name)))
 
         # --- 1. 点工作台的【设置与控制台】入口（全局键已在 #18 第二步删除） --------
+        # 开跑先清场：本探针跑在共享的 8765 工作区上，上一轮要是中途炸在「还原偏好」之前，
+        # 左栏就留着文件夹、卡片上留着昵称；09/16 两条判据（文件夹恰好一个、收尾归零）
+        # 会全建在残骸上，看着像产品坏了，其实是探针自己埋的雷。
+        for _ in range(4):
+            if page.locator("#wsPluginList .ws-plugin-folder-head").count() == 0:
+                break
+            page.locator("#wsPluginList .ws-plugin-folder-head").first.click(button="right")
+            page.wait_for_timeout(300)
+            page.get_by_role("menuitem", name="解散文件夹").click()
+            page.wait_for_timeout(1200)
         page.locator("#wsConsoleBtn").click()
         page.wait_for_timeout(1800)
         console_tab = page.evaluate(
@@ -100,6 +110,13 @@ def run(tag: str) -> dict:
         cards.first.wait_for(timeout=8000, state="visible")
         snap("01-console-open")
 
+        # 残留昵称同样先清掉（走的就是本探针自己的改名路径）：04 那条判据要的是
+        # 「没起昵称时大字回落官方原名」，上一轮留的别名会让它假红。
+        for named in [p["id"] for p in api_get("/api/plugins")["plugins"] if p.get("nickname")]:
+            prompt_answer["text"] = ""
+            frame.locator('#mgList .mg-card[data-id="%s"] .mg-rename' % named).first.click()
+            page.wait_for_timeout(1500)
+
         # --- 2. 大字昵称 / 小字官方原名 / 无「恢复默认名」 ----------------------
         before = api_get("/api/plugins")
         rail_before = page.evaluate(JS_RAIL)
@@ -107,7 +124,10 @@ def run(tag: str) -> dict:
         # 无界面插件（题库引擎）进控制台但不占左栏，首卡不一定等于左栏首行；
         # 取「控制台里第一个真正上栏的卡片」再和左栏比，后面改昵称也落在同一张卡上。
         card_ids = [rows.nth(i).get_attribute("data-id") for i in range(rows.count())]
-        rail_ids = [k.replace("plugin:", "", 1) for k in rail_before]
+        # 左栏的文件夹行不是插件（data-key 形如 folder:probe-0）：上一轮要是崩在还原前，
+        # 残骸会顶到第一行，把这条「首卡对首行」判据带偏。只按插件行比。
+        rail_ids = [str(k).replace("plugin:", "", 1)
+                    for k in rail_before if not str(k).startswith("folder:")]
         card_index = next((i for i, cid in enumerate(card_ids) if cid in rail_ids), None)
         check("02 控制台首卡与左栏首行同插件",
               card_index is not None and card_ids[card_index] == rail_ids[0],

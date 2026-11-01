@@ -1,0 +1,426 @@
+/* ============ 按钮 ============ */
+.ws-btn {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.ws-btn:hover,
+.ws-btn:focus-visible {
+  background: var(--card-hover);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.ws-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ws-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.ws-btn-primary:hover:not(:disabled),
+.ws-btn-primary:focus-visible {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+
+.ws-btn-sm {
+  min-height: 36px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+}
+
+/* 折叠态：由 .ws-page 的 data 属性驱动，且只改尺寸变量。
+   桌面把对应轨道变量收为 0（gutter 一并收，避免留下 5px 空缝），
+   四区靠上面的 grid-column 钉轨各就各位，display:none 摘走一区也不会让剩下的顺位前移；
+   移动把抽屉滑出画布外。中栏轨道恒为 minmax(0, 1fr)，折叠让出的空间一定吃得进去。
+
+   生效尺寸一律带 !important：浏览器可能还跑着旧版 splitpane.js，
+   那版把偏好直接以内联声明写进 --sidebar-width / --context-width / --dock-height。
+   内联声明优先级高于任意样式表规则，不用 !important 就压不住——
+   折叠后轨道仍停在旧宽度、画布左侧留一条死白，正是「修复到不了真机」的根因。 */
+.ws-page[data-side="hidden"] { --sidebar-width: 0px !important; --gutter-side: 0px !important; }
+.ws-page[data-ctx="hidden"] { --context-width: 0px !important; --gutter-ctx: 0px !important; }
+/* 底栏折叠不是「消失」：留 44px 把手条，折叠钮翻成「展开」，点一下就能回来。
+   旧规则把它整区 display:none，把手跟着一起埋掉，才出现「折了打不开」的死锁。 */
+.ws-page[data-dock="hidden"] { --dock-height: 44px !important; --gutter-dock: 0px !important; }
+
+/* 收起的那条边界不许再拖：手柄留在 0 宽轨道里既拖不动也点不着 */
+.ws-page[data-side="hidden"] .ws-resizer-v[data-resize="side"],
+.ws-page[data-ctx="hidden"] .ws-resizer-v[data-resize="context"],
+.ws-page[data-dock="hidden"] .ws-resizer-h[data-resize="dock"] {
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .ws-page[data-side="hidden"] .ws-sidebar,
+  .ws-page[data-ctx="hidden"] .ws-context {
+    display: none;
+  }
+}
+
+/* 折叠后的底栏只留一条 44px 的把手：头部照常显示（折叠钮翻成「展开」），
+   正文与「清空」一并收起，把手条绝不随内容高度浮动。 */
+.ws-page[data-dock="hidden"] .ws-dock {
+  height: 44px;
+}
+
+.ws-page[data-dock="hidden"] .ws-dock-head {
+  height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  border-bottom: 0;
+}
+
+.ws-page[data-dock="hidden"] .ws-dock-body {
+  display: none;
+}
+
+.ws-page[data-dock="hidden"] #wsDockClear {
+  display: none;
+}
+
+/* 全屏舞台（plugin.json 的 stage.mode = "fullscreen"）：
+   只压尺寸变量，不动 data-side / data-ctx —— 用户的折叠偏好是另一本账，
+   退出全屏后必须原样还在。手柄一并摘走：独占视口时没有可调的边界。 */
+.ws-page[data-fullscreen="on"] {
+  --sidebar-width: 0px !important;
+  --context-width: 0px !important;
+  --dock-height: 0px !important;
+  --gutter-side: 0px !important;
+  --gutter-ctx: 0px !important;
+  --gutter-dock: 0px !important;
+}
+
+.ws-page[data-fullscreen="on"] .ws-sidebar,
+.ws-page[data-fullscreen="on"] .ws-context,
+.ws-page[data-fullscreen="on"] .ws-dock,
+.ws-page[data-fullscreen="on"] .ws-resizer {
+  display: none;
+}
+
+/* 沉浸态（军令 #16 模块三）：双击页签把画布推满整块屏幕，左栏自动让位，
+   右栏与输出日志区照旧在场——老师要的是「卷面独占」，不是「只剩卷面」。
+   与全屏同一套做法：绝不改 data-side，退出沉浸后偏好原样还在。
+   0 宽轨道拦不住内容的 min-content，所以左栏是真的摘走；
+   沉浸中点画布左上【入口】按钮把 data-immersive-rail 举起来，左栏以覆盖层浮在画布上。
+   （原先这一唤是 Ctrl+B——全局快捷键仲裁层随军令 #18 第二步整层拆除后，
+   左栏在沉浸态就没有任何唤出通道了，所以把画布上的【入口】按钮在这一态一并露出。） */
+.ws-page[data-immersive="on"] {
+  --sidebar-width: 0px !important;
+  --gutter-side: 0px !important;
+}
+
+.ws-page[data-immersive="on"] .ws-drawer-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ws-page[data-immersive="on"] .ws-resizer-v[data-resize="side"] {
+  display: none;
+}
+
+.ws-page[data-immersive="on"] .ws-sidebar {
+  display: none;
+}
+
+.ws-page[data-immersive="on"][data-immersive-rail="on"] .ws-sidebar {
+  display: block;
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(320px, 86vw);
+  box-shadow: var(--shadow);
+}
+
+/* 页签溢出（军令 #16 模块三第 2 条）：一排放得下就自适应，超过 10 个固定 120px 并横滚。 */
+.ws-page.ws-tabs-many .ws-tab {
+  flex: 0 0 120px;
+  width: 120px;
+}
+
+.ws-tab-scroll-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-tab-scroll-btn:hover { color: var(--accent); border-color: var(--line-strong); }
+.ws-tab-scroll-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-tab-scroll-btn[hidden] { display: none; }
+
+/* ============ 右键菜单（军令 #16 模块一） ============ */
+/* 菜单位于宿主文档顶层：不可信文本由 contextmenu.js 用 textContent 落 DOM，
+   这里只负责外观。触控目标 ≥44px（AGENTS §6）。 */
+.ws-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-menu-item:hover:not(:disabled),
+.ws-menu-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.ws-menu-item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.ws-menu-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.ws-menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line);
+}
+
+/* ============ 宿主自绘对话框（改名/建组用；原生 prompt 样式不可控且带不上上下文） ============ */
+.ws-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(31, 28, 24, 0.42);
+}
+
+.ws-dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.ws-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.ws-dialog-lede {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.ws-dialog-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.ws-dialog-field:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.ws-dialog-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ws-dialog-error {
+  margin: 10px 0 0;
+  color: var(--down);
+  font-size: 0.8rem;
+}
+
+.ws-dialog-error[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-menu, .ws-dialog, .ws-dialog-backdrop { animation: none !important; transition: none !important; }
+}
+
+/* 读屏专用 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ws-noscript {
+  padding: 20px;
+  color: var(--down);
+}
+
+/* 表单字段（工作台内联使用；弹窗样式随 Provider 弹窗一并退役） */
+
+.ws-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.ws-field span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ws-field input,
+.ws-workspace-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.88rem;
+}
+
+.ws-field input:focus,
+.ws-workspace-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* 拖拽安装遮罩 */
+.ws-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ws-drop-overlay[hidden] {
+  display: none;
+}
+
+.ws-drop-card {
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.ws-drop-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-drop-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* 拖入文件的录入遮罩：与插件安装遮罩分开，说的不是同一件事 */
+.ws-intake-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ws-intake-overlay[hidden] {
+  display: none;
+}
+
+.ws-intake-card {
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.ws-intake-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-intake-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+

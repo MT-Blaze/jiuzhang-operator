@@ -80,7 +80,8 @@ class HostWiringTest(unittest.TestCase):
         self.assertIn("function openBank", STAGE)
         # 军令 #20：跳转目标是声明 bank.view 的视图插件，不再把 provider 当页签打开
         open_bank_body = STAGE[STAGE.index("function openBank"):]
-        open_bank_body = open_bank_body[:open_bank_body.index("// ---------- 页签生命周期")]
+        # openBank 住在 stage_inbound.js，切片取到该模块的导出块为止（模块里最后一个函数就是它）
+        open_bank_body = open_bank_body[:open_bank_body.index("\n    return {\n")]
         self.assertIn("loadBankView()", open_bank_body)
         self.assertIn("findBankViewTab()", open_bank_body)
         self.assertNotIn("org.jiuzhang.bank-engine", open_bank_body)

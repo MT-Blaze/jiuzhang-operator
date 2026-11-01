@@ -2,7 +2,7 @@
 
 军令 #18-终 阶段六审计底座时实测（本机 Python 3.14.6）：``BEGIN IMMEDIATE`` 之后调
 ``executescript``，``in_transaction`` 立刻变 False——挂起的事务被隐式提交了。于是
-``app/core/db.py::init_db`` 与 ``app/core/bank.py`` 的 v0.8.2 升级路径里「自检失败就回滚」
+``app/core/db.py::init_db`` 与 ``app/core/bank_schema.py`` 的 v0.8.2 升级路径里「自检失败就回滚」
 只是半句真话：脚本之前的 DDL/DML 早已落盘，失败后留下的是「结构已改、``user_version``
 仍是旧值」的半套库，下一次启动按旧版本再跑一遍迁移就直接打不开。
 
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import bank, db  # noqa: E402 - 底座模块按路径导入，测试不装包
+from app.core import bank, bank_schema, db  # noqa: E402 - 底座模块按路径导入，测试不装包
 
 PROBE_DDL = ("CREATE TABLE one (id INTEGER PRIMARY KEY);", "CREATE TABLE two (id INTEGER);")
 
@@ -99,18 +99,22 @@ class NewTableDdlShapeTest(unittest.TestCase):
         self.assertIn("没登记", str(raised.exception))
 
     def test_03_missing_schema_file_is_not_a_bare_crash(self) -> None:
-        """插件包被删、库还在时，升级路径读不到 schema.sql 要说人话（404 档），不许裸 FileNotFoundError。"""
-        with mock.patch.object(bank, "_schema_path", lambda plugin_id: Path("E:/不存在/schema.sql")):
+        """插件包被删、库还在时，升级路径读不到 schema.sql 要说人话（404 档），不许裸 FileNotFoundError。
+
+        打补丁必须打在 ``bank_schema`` 上：``_new_table_ddl`` 查的是它自己模块里的名字，
+        ``app.core.bank`` 只是把六块汇总出去的镜子，镜子上的补丁照不进本体。
+        """
+        with mock.patch.object(bank_schema, "_schema_path",
+                               lambda plugin_id: Path("E:/不存在/schema.sql")):
             with self.assertRaises(bank.BankNotFound):
                 bank._new_table_ddl("org.jiuzhang.bank-engine", "textbooks")
-
 
     def test_04_retyped_schema_section_is_readable_error(self) -> None:
         """冻结的 schema.sql 被人改过排版时，取不到 CREATE TABLE 段要说人话，不许裸 ValueError。"""
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp) / "schema.sql"
             fake.write_text("CREATE TABLE other (id INTEGER);\n", encoding="utf-8")
-            with mock.patch.object(bank, "_schema_path", lambda plugin_id: fake):
+            with mock.patch.object(bank_schema, "_schema_path", lambda plugin_id: fake):
                 with self.assertRaises(bank.BankError) as raised:
                     bank._new_table_ddl("org.jiuzhang.bank-engine", "textbooks")
         self.assertIn("找不到表 textbooks", str(raised.exception))

@@ -21,13 +21,13 @@ import json
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 STAGE = stage_source()
 WORKSPACE = workspace_source()
-CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 SPEC = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
 FIXTURE = ROOT / "examples" / "stage_weight_probe_plugin"
 
@@ -72,7 +72,7 @@ class ImmersiveTest(unittest.TestCase):
 
     def test_04_exit_is_idempotent_and_esc_yields_to_dialogs(self) -> None:
         body = block(STAGE, "function exitImmersive(via) {", "function weightOf(tab) {")
-        self.assertIn('if (!immersiveKey) return;', body, "三条退出通道只许一条落地，否则底栏刷屏")
+        self.assertIn('if (!stageState.immersiveKey) return;', body, "三条退出通道只许一条落地，否则底栏刷屏")
         self.assertIn('document.addEventListener("fullscreenchange"', body)
         self.assertIn('document.addEventListener("keydown"', body)
         self.assertIn('event.key !== "Escape"', body)
@@ -142,7 +142,7 @@ class GroupMergeTest(unittest.TestCase):
         self.assertIn("groupTree = Array.isArray(tree) ? tree : []", body)
         self.assertIn("orderPluginTabs()", body, "树一改页签栏就得重涂")
         self.assertIn("setSidebarTree: setSidebarTree,", STAGE, "workspace 要能把这棵树交给画布")
-        self.assertIn("window.JzoStage.setSidebarTree(sidebarTree)", WORKSPACE)
+        self.assertIn("window.JzoStage.setSidebarTree(wsState.sidebarTree)", WORKSPACE)
 
     def test_02_merge_needs_overflow_and_at_least_two_members(self) -> None:
         self.assertRegex(STAGE, r"var TAB_GROUP_MIN = 2;")
@@ -185,7 +185,7 @@ class GroupMergeTest(unittest.TestCase):
     def test_05_outside_click_shuts_the_menu(self) -> None:
         body = block(STAGE, "// 摊开的下拉是「临时态」", "function dismissGroup(tab) {")
         self.assertIn("holder.chip.contains(event.target)", body)
-        self.assertIn("collapse(expandedKey)", body)
+        self.assertIn("collapse(stageState.expandedKey)", body)
 
 
 class SleepPolicyTest(unittest.TestCase):

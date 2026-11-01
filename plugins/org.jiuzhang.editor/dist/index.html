@@ -5,8 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>录题工作台</title>
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <!-- 样式按域分文件，加载次序 = 原单文件次序（同特异度的覆盖关系靠次序，不许重排）：
+       layout* = 画布骨架与三栏，panel* = 右栏辅助栏，effects = 动效。见 PLUGIN_SPEC §2.8.2。 -->
   <link rel="stylesheet" href="layout.css">
+  <link rel="stylesheet" href="layout_canvas.css">
   <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="panel_meta.css">
+  <link rel="stylesheet" href="panel_dialog.css">
+  <link rel="stylesheet" href="panel_capsule.css">
+  <link rel="stylesheet" href="panel_ai.css">
   <link rel="stylesheet" href="effects.css">
 </head>
 <body>
@@ -145,7 +152,8 @@
          data-batch="idle">辅助栏跟随当前题</p>
       <span class="ep-sr" id="epConfidence" data-confidence="">置信度 —（假数据占位）</span>
 
-      <!-- 私有字段：窄栏自动折行（flex-wrap），一行放不下就换到下一行，不许撑破面板。 -->
+      <!-- 私有字段第一行（终极军令任务三）：题号 | 题型 | 分值 | 难度。
+           窄栏自动折行（flex-wrap），一行放不下就换到下一行，不许撑破面板。 -->
       <div class="ep-head-grid">
         <label class="ep-mini">
           <span class="ep-mini-label">题号</span>
@@ -156,32 +164,32 @@
           <select id="epType" class="ep-mini-select" aria-describedby="epTypeNote"></select>
         </label>
         <label class="ep-mini">
-          <span class="ep-mini-label">难度</span>
-          <select id="epDifficulty" class="ep-mini-select"></select>
-        </label>
-        <label class="ep-mini">
           <span class="ep-mini-label">分值</span>
           <input id="epScore" class="ep-mini-input" type="text" inputmode="decimal"
                  maxlength="6" placeholder="5">
         </label>
+        <label class="ep-mini">
+          <span class="ep-mini-label">难度</span>
+          <select id="epDifficulty" class="ep-mini-select"></select>
+        </label>
       </div>
       <p class="ep-hint ep-head-hint" id="epTypeNote" data-from="ai">题型由源码自动判断，可人工改。</p>
 
-      <!-- 标签：胶囊 + 幽灵胶囊。#epTags 藏起来只当「逗号串」的存档位。 -->
+      <!-- 第二行 考向：已挂的胶囊 + 幽灵胶囊（打字出带提纲路径的拼音模糊搜索，回车取第一条）。 -->
+      <div class="ep-cell">
+        <span class="ep-mini-label">考向</span>
+        <div class="ep-chips" id="epMounted" role="list" aria-label="本题已挂考向"></div>
+        <div class="ep-menu ep-menu-ghost" id="epGhostTopicMenu" role="listbox"
+             aria-label="考向候选" hidden></div>
+      </div>
+
+      <!-- 第三行 标签：胶囊 + 幽灵胶囊（拼音模糊搜索）。#epTags 藏起来只当「逗号串」的存档位。 -->
       <div class="ep-cell">
         <span class="ep-mini-label">标签</span>
         <div class="ep-chips" id="epTagList" role="list" aria-label="本题标签"></div>
         <input id="epTags" type="hidden" value="">
         <div class="ep-menu ep-menu-ghost" id="epGhostTagMenu" role="listbox"
              aria-label="标签候选" hidden></div>
-      </div>
-
-      <!-- 考向：已挂的胶囊 + 幽灵胶囊（打字出带路径的模糊搜索，回车取第一条）。 -->
-      <div class="ep-cell">
-        <span class="ep-mini-label">考向</span>
-        <div class="ep-chips" id="epMounted" role="list" aria-label="本题已挂考向"></div>
-        <div class="ep-menu ep-menu-ghost" id="epGhostTopicMenu" role="listbox"
-             aria-label="考向候选" hidden></div>
       </div>
 
       <!-- 辅助栏的唯一常驻话术：审核动作的进度与回执都落在这里。 -->
@@ -321,31 +329,40 @@
         <p id="epTopicError" class="ep-hint" hidden></p>
       </section>
 
-      <section class="ep-sec" aria-label="AI 帮改">
-        <h3 class="ep-sec-title">AI 帮改（先预览，点采用才替换）</h3>
-        <p id="epAiField" class="ep-hint" data-ai-field="">把光标放进题干段或解析段，AI 才知道要改哪一段。</p>
-        <label class="ep-field">
-          <span class="ep-label">指令</span>
-          <textarea id="epAiAsk" class="ep-input ep-ask" rows="3" maxlength="400"
-                    placeholder="例：把「求其最小值」改成「求最小值，并写出取等条件」"></textarea>
-        </label>
-        <div class="ep-actions">
-          <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
-                  aria-disabled="true">发送改写请求</button>
-          <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
-                  title="题干段与解析段都清洗成功才回填，任一失败就不动">AI 清洗公式</button>
-        </div>
-        <div class="ep-ai">
-          <div class="ep-ai-head">
-            <span id="epAiState" class="ep-badge" data-ai-state="idle">未发起</span>
-            <span id="epAiNote" class="ep-hint" data-ai-mock=""></span>
-          </div>
-          <p id="epAiPreview" class="ep-ai-body" role="status" aria-live="polite"
-             data-ai-field="">改写结果会出现在这里，点【采用】才会替换画布源码。</p>
+      <!-- AI 帮改：平时收起，只留一行标题；展开才露指令框与预览。
+           黄金位是老师核题的地方，这块不许常驻占着一屏。 -->
+      <section class="ep-sec ep-fold" id="epAiSec" data-fold="closed" aria-label="AI 帮改">
+        <button type="button" class="ep-fold-head" id="epAiFold"
+                aria-expanded="false" aria-controls="epAiFoldBody">
+          <h3 class="ep-sec-title">AI 帮改</h3>
+          <span class="ep-fold-summary">先预览，点【采用】才替换</span>
+          <span class="ep-fold-arrow" aria-hidden="true">▾</span>
+        </button>
+        <div class="ep-fold-body" id="epAiFoldBody">
+          <p id="epAiField" class="ep-hint" data-ai-field="">把光标放进题干段或解析段，AI 才知道要改哪一段。</p>
+          <label class="ep-field">
+            <span class="ep-label">指令</span>
+            <textarea id="epAiAsk" class="ep-input ep-ask" rows="3" maxlength="400"
+                      placeholder="例：把「求其最小值」改成「求最小值，并写出取等条件」"></textarea>
+          </label>
           <div class="ep-actions">
-            <button type="button" class="ep-btn ep-btn-primary" id="epAiApply" disabled
-                    aria-disabled="true">采用并回填画布</button>
-            <button type="button" class="ep-btn" id="epAiDiscard" disabled aria-disabled="true">放弃</button>
+            <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
+                    aria-disabled="true">发送改写请求</button>
+            <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
+                    title="题干段与解析段都清洗成功才回填，任一失败就不动">AI 清洗公式</button>
+          </div>
+          <div class="ep-ai">
+            <div class="ep-ai-head">
+              <span id="epAiState" class="ep-badge" data-ai-state="idle">未发起</span>
+              <span id="epAiNote" class="ep-hint" data-ai-mock=""></span>
+            </div>
+            <p id="epAiPreview" class="ep-ai-body" role="status" aria-live="polite"
+               data-ai-field="">改写结果会出现在这里，点【采用】才会替换画布源码。</p>
+            <div class="ep-actions">
+              <button type="button" class="ep-btn ep-btn-primary" id="epAiApply" disabled
+                      aria-disabled="true">采用并回填画布</button>
+              <button type="button" class="ep-btn" id="epAiDiscard" disabled aria-disabled="true">放弃</button>
+            </div>
           </div>
         </div>
       </section>
@@ -394,9 +411,40 @@
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
-  <script src="ui_reactive.js"></script>
+  <!-- 响应式引擎是底座随发的公共资产（/static/common/），所有插件共用同一份。 -->
+  <script src="/static/common/ui_reactive.js"></script>
+  <script src="ui_dom.js"></script>
+  <script src="core_host.js"></script>
   <script src="ui_breath.js"></script>
   <script src="ui_capsule.js"></script>
+  <script src="core_state.js"></script>
+  <script src="dev_fixtures.js"></script>
+  <script src="core_rich.js"></script>
+  <script src="core_exam_source.js"></script>
+  <script src="core_ai_fields.js"></script>
+  <script src="ui_batches.js"></script>
+  <script src="ui_intake.js"></script>
+  <script src="ui_meta_hist.js"></script>
+  <script src="ui_school_dict.js"></script>
+  <script src="ui_std_name.js"></script>
+  <script src="ui_crop.js"></script>
+  <script src="ui_columns.js"></script>
+  <script src="ui_panel.js"></script>
+  <script src="ui_layout.js"></script>
+  <script src="core_selection.js"></script>
+  <script src="ui_format.js"></script>
+  <script src="core_save.js"></script>
+  <script src="ui_approve.js"></script>
+  <script src="ui_modal.js"></script>
+  <script src="core_commands.js"></script>
+  <script src="core_receipt.js"></script>
+  <script src="ui_ai.js"></script>
+  <script src="ui_topics.js"></script>
+  <script src="ui_panel_boot.js"></script>
+  <script src="ui_panel_glue.js"></script>
+  <script src="core_protocol.js"></script>
+  <script src="ui_boot.js"></script>
+  <script src="dev_probe_api.js"></script>
   <script src="plugin.js"></script>
 </body>
 </html>

@@ -24,7 +24,7 @@ from pathlib import Path
 from app.core import bank as bank_core
 from app.core.config import settings
 from tools.build_plugin import build_plugin
-from tests.core_sources import workspace_source  # noqa: E402
+from tests.core_sources import settings_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.bank-engine"
@@ -170,7 +170,7 @@ class WorkspaceFrontendTest(unittest.TestCase):
         self.assertIn("新建工作区", settings)
 
     def test_workspace_api_is_driven_by_settings_page(self) -> None:
-        js = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        js = settings_source()
         self.assertIn('"/api/workspaces"', js)
         self.assertIn('"/api/workspaces/switch"', js)
         workspace_js = workspace_source()

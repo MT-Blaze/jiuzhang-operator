@@ -20,7 +20,7 @@ from pathlib import Path
 
 from app.core import commands
 from app.core.plugins import validate_plugin
-from tests.core_sources import stage_source  # noqa: E402
+from tests.core_sources import settings_source, stage_source, template_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "com.example.hardening"
@@ -182,7 +182,7 @@ class HostHardeningContractTest(unittest.TestCase):
 class DeveloperExperienceTest(unittest.TestCase):
     def test_12_settings_has_readonly_dictionary(self) -> None:
         html = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
-        script = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+        script = settings_source()
         css = (ROOT / "static" / "css" / "settings.css").read_text(encoding="utf-8")
         self.assertIn('id="cmdRegistry"', html)
         self.assertIn('id="cmdRegistryBody"', html)
@@ -207,11 +207,13 @@ class DeveloperExperienceTest(unittest.TestCase):
         template = ROOT / "examples" / "template-plugin"
         html = (template / "dist" / "index.html").read_text(encoding="utf-8")
         script = (template / "dist" / "plugin.js").read_text(encoding="utf-8")
+        # 宿主通道的真实形状在 core_host.js 里，判据看整包（PLUGIN_SPEC §2.8.1 的文件分份）
+        bundle = template_source()
         manifest = json.loads((template / "plugin.json").read_text(encoding="utf-8"))
         self.assertIn('id="list-cmd-btn"', html)
         self.assertIn('id="echo-cmd-btn"', html)
-        self.assertIn('callHost("command.list")', script)
-        self.assertIn('callHost("command.execute"', script)
+        self.assertIn('callHost("command.list")', bundle)
+        self.assertIn('callHost("command.execute"', bundle)
         self.assertIn('message.event === "command.pending"', script)
         self.assertIn('"requires_user": true', script, "模板注释要教会作者高副作用标记")
         self.assertEqual([item["id"] for item in manifest["contributes"]["commands"]],

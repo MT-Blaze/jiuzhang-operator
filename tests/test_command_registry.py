@@ -22,7 +22,7 @@ from unittest import mock
 
 from app.core import commands
 from app.core.plugins import discover_plugins, validate_plugin
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import plugin_bundle, stage_source, template_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_MANIFEST = {
@@ -313,8 +313,10 @@ class TemplatePluginTest(unittest.TestCase):
             shutil.copytree(template, plugin_dir)
             info = validate_plugin(plugin_dir, manifest)
         self.assertEqual([item["id"] for item in info["commands"]], ["org.example.template.echo"])
-        script = (template / "dist" / "plugin.js").read_text(encoding="utf-8")
+        # 模板是多文件骨架（PLUGIN_SPEC §2.8.1），结构判据按 index.html 的加载次序看整包。
+        script = template_source()
         self.assertIn('if (method === "command.execute")', script)
+        self.assertIn("function executeCommand(message)", script)
 
 
 class ParamsSchemaTest(unittest.TestCase):
@@ -444,7 +446,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": True,
         },
         "org.jiuzhang.bank-ui": {
-            "version": "1.0.0",
+            "version": "1.0.1",
             "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",
@@ -455,7 +457,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.paper-gen": {
-            "version": "1.0.0",
+            "version": "1.0.1",
             "commands": [
                 "org.jiuzhang.action.process.generate_paper",
                 "org.jiuzhang.action.output.export_paper",
@@ -464,7 +466,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.handout": {
-            "version": "1.0.0",
+            "version": "1.0.1",
             "commands": [
                 "org.jiuzhang.action.process.render_handout",
                 "org.jiuzhang.action.input.set_handout_markdown",
@@ -477,7 +479,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "2.6.0",
+            "version": "2.6.1",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",
@@ -542,7 +544,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
         for plugin_id, expected in self.EXPECTED.items():
             if expected["headless"]:
                 continue
-            script = (ROOT / "plugins" / plugin_id / "dist" / "plugin.js").read_text(encoding="utf-8")
+            script = plugin_bundle(plugin_id)
             for command_id in expected["commands"]:
                 with self.subTest(plugin=plugin_id, command=command_id):
                     self.assertIn('commandId === "' + command_id + '"', script)

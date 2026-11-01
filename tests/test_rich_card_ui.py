@@ -37,22 +37,19 @@ from app.api.agents import (  # noqa: E402
 from app.core import plugin_search, plugin_tools, ui_cards  # noqa: E402
 from app.core import plugins as plugin_registry  # noqa: E402
 from app.core.config import settings  # noqa: E402
-from tests.core_sources import workspace_source  # noqa: E402
+from tests.core_sources import bundle_local_assets, workspace_css, workspace_source  # noqa: E402
 
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 JS = workspace_source()
-CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 # 军令 #15：对话与卡片渲染整体搬进右栏助手插件，宿主壳只留面板与总线。
-CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
-    encoding="utf-8"
-)
+# 终极军令任务四把卡片渲染拆到 ui_cards.js，判据看「整包」——按 index.html 的加载次序拼回来。
+CHAT_JS = bundle_local_assets(ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html", "script")
 CHAT_HTML = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html").read_text(
     encoding="utf-8"
 )
-CHAT_CSS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.css").read_text(
-    encoding="utf-8"
-)
+CHAT_CSS = bundle_local_assets(ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html", "link")
 AGENT_PY = (ROOT / "app" / "api" / "agents.py").read_text(encoding="utf-8")
 
 

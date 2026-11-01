@@ -29,6 +29,7 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -496,6 +497,9 @@ def run(tag: str) -> dict:
     out = ROOT / ".system_generated" / "command_registry_probe" / tag
     out.mkdir(parents=True, exist_ok=True)
     work = out / "isolated"
+    # 隔离目录每轮先清：上一轮末尾装进去的六支轻量夹具（cap-1..6）要是留着，
+    # 本轮 06/09/30 那三查的「字典恰好等于这几条」就永远对不上（2026-11-02 实测假红）。
+    shutil.rmtree(work, ignore_errors=True)
     data_dir, plugins_dir = work / "data", work / "plugins"
     for path in (data_dir, plugins_dir):
         path.mkdir(parents=True, exist_ok=True)

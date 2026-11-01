@@ -1,0 +1,154 @@
+/* AI 帮改（档 1）：预览区是纯文本，长公式不许把右栏撑破 */
+.ep-ask {
+  min-height: 66px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ep-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--void);
+  min-width: 0;
+}
+
+.ep-ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ep-ai-body {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 190px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink-soft);
+}
+
+.ep-ai-body[data-ai-value="ready"] {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.ep-badge[data-ai-state="sending"],
+.ep-badge[data-ai-state="cleaning"] {
+  color: #8a6a1f;
+  border-color: #d9c48a;
+  background: #fbf6e8;
+}
+
+.ep-badge[data-ai-state="ready"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-badge[data-ai-state="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: #fbeeec;
+}
+
+.ep-hint[data-ai-mock="true"] { color: #8a6a1f; }
+
+
+
+
+.ep-chip-x {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* 摘胶囊的小圆钮视觉上要矮，但 AGENTS §6 要求触控目标 ≥44px：
+   用伪元素把热区向外补一圈，视觉不破、命中区达标。 */
+.ep-chip-x::after {
+  content: "";
+  position: absolute;
+  inset: -14px -8px;
+}
+
+/* 考向树：宽度铺满辅助栏，不许在右侧留一条空白（2026-11-01） */
+.ep-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  align-self: stretch;
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.ep-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.ep-topic-expander,
+.ep-topic-name {
+  min-height: 44px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.ep-topic-expander { flex: none; width: 44px; padding: 4px 0; }
+.ep-topic-expander[disabled] { cursor: default; color: var(--line-strong); }
+
+.ep-topic-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-topic-name:hover,
+.ep-topic-expander:hover {
+  background: var(--paper-deep);
+  border-color: var(--line);
+}
+
+.ep-topic-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+

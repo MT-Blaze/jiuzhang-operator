@@ -182,6 +182,34 @@ def run(tag: str) -> dict:
     state_backup = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
     STATE_FILE.write_text(json.dumps({"disabled": []}, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def strip_probe_folders(tree):
+        """把上一轮崩在还原前留下的探针文件夹摊平，只认探针自造的那几种名号。
+
+        本探针跑在共享的 8765 工作区上：偏好揣在宿主内存里，只改磁盘那份它看不见，
+        所以走 /api/plugins/sidebar 这条真路径清场。文件夹行会连箱里的插件一起
+        从 plugin_keys 里消失，后面 17/19/21 那串分组算术就全歪（2026-11-02 tgfix-4 实测）。
+        老师自己建的箱子不在此列，一根手指都不碰。
+        """
+        flat, dirty = [], False
+        for node in tree or []:
+            key = str(node.get("id", ""))
+            if node.get("kind") == "folder" and (
+                    key.startswith("folder:probe-")
+                    or str(node.get("name", "")).startswith("探针组")):
+                dirty = True
+                flat.extend({"kind": "plugin", "id": kid} for kid in node.get("children", []))
+            else:
+                flat.append(node)
+        return flat, dirty
+
+    live_tree = api_get("/api/plugins").get("sidebar") or []
+    flat_tree, tree_dirty = strip_probe_folders(live_tree)
+    if tree_dirty:
+        api_send("/api/plugins/sidebar", {"sidebar": flat_tree})
+        print("开局清场：摊平了上一轮残留的探针文件夹 %d 个"
+              % len([n for n in live_tree if n.get("kind") == "folder"
+                     and str(n.get("id", "")).startswith("folder:probe-")]))
+
     def check(name, passed, detail=""):
         checks.append({"name": name, "passed": bool(passed), "detail": str(detail)[:500]})
 
@@ -235,15 +263,23 @@ def run(tag: str) -> dict:
             return key
 
         # --- 1. 平铺基线：没挤爆就一插件一页，不许出现分组页签 --------------------
-        ids = [p["id"] for p in api_get("/api/plugins")["plugins"] if p.get("enabled") is not False]
+        live_plugins = api_get("/api/plugins")["plugins"]
+        ids = [p["id"] for p in live_plugins if p.get("enabled") is not False]
         filler_present = [i for i in ids if i.startswith(FILLER_PREFIX)]
         heavy_ids = [i for i in ids if i != FIXTURE_ID and i not in filler_present]
-        for i in range(3):
-            open_plugin(heavy_ids[i])
+        # 无界面插件（题库引擎）本来就开不出画布页签，openPlugin 对它回 null 是对的。
+        # 所以第 1 节只挑「能开页签的」来铺基线；后面分组那套算术仍按整份 heavy_ids 走，
+        # 免得改了集合把 17/19 那些判据的组数一起带偏。
+        headless_ids = {p["id"] for p in live_plugins if p.get("headless")}
+        openable_ids = [i for i in heavy_ids if i not in headless_ids]
+        opened = [open_plugin(openable_ids[i]) for i in range(3)]
         state = bar()
+        # 平铺不变量：栏上全是独立页签、一个分组都没有、也没进「挤爆」态，且探针开的三页确实都落地了。
+        # 顶层数量只要求「>= 探针自己开的 3」：默认启动页和探针的 openPlugin 是抢跑关系
+        # （workspace.js：画布已有主就不再抢），谁先到场随时序而定，写死 >=4 会随轮次假红。
         check("01 未挤爆时页签逐个平铺（无分组页签）",
-              state["groupCount"] == 0 and state["topCount"] >= 4
-              and state["many"] is False, state)
+              state["groupCount"] == 0 and state["topCount"] >= 3
+              and state["many"] is False and all(opened), state)
         snap("01-flat")
 
         # --- 2. 双击页签 → 沉浸全屏 ----------------------------------------------
@@ -453,18 +489,46 @@ def run(tag: str) -> dict:
 
         # 点下拉里的子页签 → 切页 + 收摊
         kid = target["kids"][-1]
-        page.locator('#wsTabs .ws-tab-group-list .ws-tab[data-tab="%s"]' % kid).click()
-        page.wait_for_timeout(1200)
-        after = page.evaluate(
-            "() => { const g = document.querySelector('.ws-tab-group[data-group=\"%s\"]');"
-            "return {hidden: g.querySelector('.ws-tab-group-list').hidden,"
-            "selected: g.querySelector('.ws-tab-group-chip').classList.contains('is-active'),"
-            "aria: document.querySelector('#wsTabs .ws-tab[data-tab=\"%s\"]').getAttribute('aria-selected')};}"
-            % (target["key"], kid)
-        )
-        check("20 点子页签即切页并收摊，组名页签标明当前在这一组",
-              after["hidden"] is True and after["aria"] == "true" and after["selected"], after)
-        snap("09-after-kid-click")
+        # 点的是页签上的「名字」，不是页签正中：下拉里一行只有这么宽，正中常常落在 ×（关页）上，
+        # 一关掉组里就只剩一页，组名页签当场散架——判据 20 会红得莫名其妙（2026-11-02 实测）。
+        kid_sel = '#wsTabs .ws-tab-group-list .ws-tab[data-tab="%s"] .ws-tab-label' % kid
+        if page.locator(kid_sel).count() == 0:
+            check("20 点子页签即切页并收摊，组名页签标明当前在这一组", False,
+                  {"kid_gone": kid, "groups": [(g["key"], g["label"]) for g in read_groups()]})
+        else:
+            page.locator(kid_sel).click()
+            page.wait_for_timeout(1200)
+            # 清单 5 秒一跳，跳一次就可能给同一只箱子换 key：点后按「组名」重新认一次
+            # 组名页签，别死拿点击前那张旧 key。
+            fresh = next((g for g in read_groups() if g["label"] == target["label"]), target)
+            # 这一读必须空指针免疫：旧写法直接 g.querySelector，组当场不在就把整条探针炸断
+            # （2026-11-02 tgfix-5 实测），后面的判据一条都落不了盘——缺证据比假红更糟。
+            after = page.evaluate(
+                "() => { const g = document.querySelector('.ws-tab-group[data-group=\"%s\"]');"
+                "if (!g) return {missing: true, key: '%s',"
+                " top: Array.from(document.querySelectorAll('#wsTabs > .ws-tab'))"
+                ".map(t => t.getAttribute('data-tab')),"
+                " groups: Array.from(document.querySelectorAll('#wsTabs > .ws-tab-group'))"
+                ".map(x => x.getAttribute('data-group')),"
+                " stage: (window.JzoStage && window.JzoStage.tabs())"
+                ".map(t => [String(t.key).slice(-14), String(t.group || '')])};"
+                "const list = g.querySelector('.ws-tab-group-list');"
+                "const kidTab = document.querySelector('#wsTabs .ws-tab[data-tab=\"%s\"]');"
+                "return {missing: false, hidden: list ? list.hidden : null,"
+                "selected: g.querySelector('.ws-tab-group-chip').classList.contains('is-active'),"
+                "aria: kidTab ? kidTab.getAttribute('aria-selected') : null};}"
+                % (fresh["key"], fresh["key"], kid)
+            )
+            if after.get("missing") is True:
+                # 组真的当场没了：把后端那棵树一起记下来，看是树变了还是渲染断了链。
+                after["tree"] = [(str(n.get("id"))[-12:], len(n.get("children") or []))
+                                 for n in api_get("/api/plugins")["sidebar"]]
+                # probe.json 的 detail 只留 500 字，现场先原样打到 stdout，免得回头查不到。
+                print("判据 20 缺组现场：", json.dumps(after, ensure_ascii=False))
+            check("20 点子页签即切页并收摊，组名页签标明当前在这一组",
+                  after.get("missing") is not True and after.get("hidden") is True
+                  and after.get("aria") == "true" and after.get("selected"), after)
+            snap("09-after-kid-click")
 
         browser.close()
 

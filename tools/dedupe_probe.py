@@ -599,15 +599,22 @@ def main() -> int:
 
             browser.close()
 
-        js_source = (plugins_dir / UI_ID / "dist" / "plugin.js").read_text(encoding="utf-8")
-        css_source = (plugins_dir / UI_ID / "dist" / "plugin.css").read_text(encoding="utf-8")
+        # 插件已拆成多文件（PLUGIN_SPEC §2.8.1）：三查要扫遍 dist 里每个 JS，
+        # 只读 plugin.js 会让拆出去的那几文件逃在判据之外。
+        dist = plugins_dir / UI_ID / "dist"
+        js_source = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(dist.glob("*.js"))
+        )
+        css_source = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(dist.glob("*.css"))
+        )
         hits = {
             "fetch(": js_source.count("fetch("),
             "parent.document": js_source.count("parent.document"),
             "localStorage": js_source.count("localStorage"),
             "css @import": css_source.count("@import"),
         }
-        check("插件侧三查归零", all(value == 0 for value in hits.values()), hits)
+        check("插件侧三查归零", all(value == 0 for value in hits.values()) and len(js_source) > 0, hits)
     except BaseException:
         # 长探针崩在半路也得把已跑到的判据落盘，否则整轮白跑、连现场都找不回来
         result["crashed"] = traceback.format_exc()[-4000:]

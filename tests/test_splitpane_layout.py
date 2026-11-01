@@ -18,12 +18,12 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import workspace_source  # noqa: E402
+from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
-CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 JS = (STATIC / "js" / "splitpane.js").read_text(encoding="utf-8")
 BUS = (STATIC / "js" / "bus.js").read_text(encoding="utf-8")
 

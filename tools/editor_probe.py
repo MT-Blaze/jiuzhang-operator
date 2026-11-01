@@ -732,6 +732,15 @@ def main() -> int:
                       ("零模", "一模", "二模", "三模", "四模", "五模", "六模", "七模")),
                   {"menu": mo_menu})
             page.screenshot(path=str(shots / "v28-tag-menu.png"))
+            # 终极军令任务二：拼音首字母是第二条检索路，依据还得亮在候选右边。
+            panel.locator("#epMetaExamType").fill("ym")
+            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
+            pinyin_menu = [text.strip().split("\n")[0].strip() for text in
+                           panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
+            check("敲拼音首字母 ym 捞出「一模」", "一模" in pinyin_menu, {"menu": pinyin_menu})
+            tag_hints = panel.locator("#epTagMenu .ep-menu-hint").all_inner_texts()
+            check("候选右侧亮出首字母依据", any("YM" in str(h) for h in tag_hints),
+                  {"hints": tag_hints[:8]})
             panel.locator("#epMetaExamType").fill("百日誓师考")
             panel.locator("#epMetaExamType").press("Enter")
             deadline = time.time() + 20
@@ -754,6 +763,12 @@ def main() -> int:
             next_menu = panel.locator("#epTagMenu").inner_text()
             check("下次再打「百日」，新标签立刻弹出来",
                   "百日誓师考" in next_menu, {"menu": next_menu[:120]})
+            panel.locator("#epMetaExamType").fill("rsk")
+            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
+            remembered_menu = [text.strip().split("\n")[0].strip() for text in
+                               panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
+            check("手打的标签连拼音一起记住：敲 rsk 捞出「百日誓师考」",
+                  "百日誓师考" in remembered_menu, {"menu": remembered_menu})
             panel.locator("#epMetaExamType").fill("高三联考")
             panel.locator("#epMetaExamType").press("Enter")
             page.wait_for_timeout(300)
@@ -768,9 +783,18 @@ def main() -> int:
             page.wait_for_timeout(150)
             flash_live = panel.locator("#epStdFlash").evaluate(
                 "n => ({text: (n.textContent || '').trim(), show: n.getAttribute('data-show')})")
+            std_paint = panel.locator("#epStdName").evaluate(
+                """n => ({
+                    flash: n.getAttribute('data-flash'),
+                    background: getComputedStyle(n).backgroundColor
+                })""")
             check("元数据一改，标准名实时重拼并闪一下「已更新」",
                   flash_live["show"] == "true" and "已更新" in flash_live["text"],
                   {"flash": flash_live, "name": panel.locator("#epStdName").input_value()})
+            check("重拼的标准名当场闪淡黄（主公要的是那一闪，不是只有文字）",
+                  std_paint["flash"] == "true"
+                  and std_paint["background"] == "rgb(253, 243, 214)",
+                  {"paint": std_paint})
             page.screenshot(path=str(shots / "v28-std-flash.png"))
             panel.locator("#epStdName").fill("我手改的卷名")
             page.wait_for_timeout(200)
@@ -817,42 +841,70 @@ def main() -> int:
                   not [tag for tag in synced_tags if str(tag).startswith("#")],
                   {"tags": synced_tags})
 
-            # ---------- 军令 #28：简称撞车（原话 + 输入框爆红） ----------
+            # ---------- 终极军令任务一：简称一撞车就当场锁死 ----------
+            def lock_state():
+                return panel.locator("#epRoot").evaluate(
+                    """() => ({
+                        invalid: document.getElementById('epSchoolInput').getAttribute('aria-invalid'),
+                        error_hidden: document.getElementById('epSchoolError').hidden,
+                        error_text: document.getElementById('epSchoolError').textContent,
+                        create_rows: document.querySelectorAll('#epSchoolMenu [data-school-create]').length,
+                        confirm: document.getElementById('epSchoolConfirmOk').disabled,
+                        approve: document.getElementById('epApprove').disabled
+                    })""")
+
+            approve_open = panel.locator("#epApprove").evaluate("n => !n.disabled")
             status, seeded = http_post(
                 base + "/api/meta/schools",
                 {"full_name": "哈尔滨师范大学附属中学", "short_name": "师大附中"})
             check("预置一所同名简称的学校", status == 201, {"status": status, "body": seeded})
             panel.locator("#epSchoolInput").fill("师大附中")
-            expect(panel.locator(
-                '#epSchoolMenu [data-school-create="师大附中"]')).to_be_visible(timeout=15000)
-            # 老师明确点「＋ 新建学校」，哪怕这个简称已经有人用——底座必须拦。
-            panel.locator(
-                '#epSchoolMenu [data-school-create="师大附中"]').dispatch_event("mousedown")
-            expect(panel.locator("#epSchoolConfirm")).to_be_visible(timeout=15000)
-            expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
-            # 老师把 AI 给的全称改成另一所学校：全称是新的，简称却已被占用。
-            panel.locator("#epSchoolFullName").fill("哈尔滨市第九中学校")
-            panel.locator("#epSchoolConfirmOk").click()
-            expect(panel.locator("#epSchoolError")).to_be_visible(timeout=15000)
-            conflict_text = panel.locator("#epSchoolError").inner_text().strip()
+            deadline = time.time() + 20
+            during = {}
+            while time.time() < deadline:
+                during = lock_state()
+                if "简称冲突" in str(during.get("error_text") or ""):
+                    break
+                page.wait_for_timeout(200)
             border_color = panel.locator("#epSchoolInput").evaluate(
                 "n => getComputedStyle(n).borderTopColor")
-            invalid_flag = panel.locator("#epSchoolInput").get_attribute("aria-invalid")
-            check("简称冲突：按主公原话拦截",
-                  "简称冲突，已被【哈尔滨师范大学附属中学】占用" in conflict_text,
-                  {"error": conflict_text})
-            check("简称冲突：输入框当场爆红",
-                  invalid_flag == "true"
+            check("输入简称就撞车：不等点确认，输入框当场爆红",
+                  during.get("invalid") == "true"
+                  and during.get("error_hidden") is False
+                  and "简称冲突，已被【哈尔滨师范大学附属中学】占用" in str(during.get("error_text") or "")
                   and "is-invalid" in (panel.locator("#epSchoolInput").get_attribute("class") or "")
                   and border_color == "rgb(155, 59, 45)",
-                  {"aria_invalid": invalid_flag, "border": border_color})
-            check("简称冲突：学校里没有多出这一所",
-                  len(http_json(base + "/api/meta/schools?q="
-                                + urllib.parse.quote("哈尔滨市第九中学校"))[1].get("schools") or []) == 0,
+                  {"state": during, "border": border_color})
+            check("撞车期间不给第二所同名简称开门",
+                  int(during.get("create_rows") or 0) == 0,
+                  {"menu": panel.locator("#epSchoolMenu").inner_text(), "state": during})
+            check("撞车期间【确认建档】与【存入主库】双双锁死",
+                  # 「撞车前按钮是开的」这一条不能当判据：它取的是上一段入库之后的瞬时态，
+                  # 早一拍晚一拍都不一样（2026-11-02 同码两轮，一轮开一轮关）。锁的因果由
+                  # 下面「换成没被占用的简称：红与锁当场退掉」那一查负责——只改简称就把按钮放开了。
+                  during.get("confirm") is True and during.get("approve") is True,
+                  {"approve_open_before": approve_open, "state": during})
+            check("撞车期间硬走底座也建不成：409 原话回显",
+                  http_post(base + "/api/meta/schools", {
+                      "full_name": "哈尔滨市第九中学校", "short_name": "师大附中"})[0] == 409,
                   {})
             page.screenshot(path=str(shots / "v28-school-conflict.png"))
-            # 改个没被占用的简称，同一个全称就能建档 —— 老师有路可走。
+            # 改个没被占用的简称，红与锁当场退掉 —— 老师有路可走。
             panel.locator("#epSchoolInput").fill("哈九中")
+            deadline = time.time() + 20
+            released = {}
+            while time.time() < deadline:
+                released = lock_state()
+                if released.get("error_hidden") and released.get("approve") is False:
+                    break
+                page.wait_for_timeout(200)
+            check("换成没被占用的简称：红与锁当场退掉",
+                  released.get("invalid") == "false"
+                  and released.get("error_hidden") is True
+                  and released.get("approve") is False,
+                  {"state": released})
+            expect(panel.locator(
+                '#epSchoolMenu [data-school-create="哈九中"]')).to_be_visible(timeout=15000)
             panel.locator("#epSchoolInput").press("Enter")
             expect(panel.locator("#epSchoolConfirm")).to_be_visible(timeout=15000)
             expect(panel.locator("#epSchoolConfirmOk")).to_be_enabled(timeout=15000)
@@ -1064,15 +1116,51 @@ def main() -> int:
                   and 0 <= root_box["y"] + root_box["height"]
                   - (foot_box["y"] + foot_box["height"]) <= 4,
                   {"root": root_box, "head": head_box, "foot": foot_box})
-            check("段一只装单题私有元数据：题号 · 题型 · 难度 · 分值 · 考向 · 标签",
+            check("段一只装单题私有元数据：题号 · 题型 · 分值 · 难度 · 考向 · 标签",
                   panel.locator("#epHead").locator(
-                      "#epQuestionNo, #epType, #epDifficulty, #epScore").count() == 4
+                      "#epQuestionNo, #epType, #epScore, #epDifficulty").count() == 4
                   and panel.locator("#epHead #epMounted").count() == 1
                   and panel.locator("#epHead #epTagList").count() == 1
                   and panel.locator("#epScroll #epMetaSec").count() == 1
                   and panel.locator("#epScroll #epMetaYear").count() == 1,
                   {"private": panel.locator("#epHead").locator(
-                      "#epQuestionNo, #epType, #epDifficulty, #epScore").count()})
+                      "#epQuestionNo, #epType, #epScore, #epDifficulty").count()})
+            # 终极军令任务三：私有元数据就三行——1 行四控件，2 行考向，3 行标签。
+            head_boxes = [panel.locator(sel).bounding_box()
+                          for sel in ("#epQuestionNo", "#epType", "#epScore", "#epDifficulty")]
+            head_order = sorted(range(4), key=lambda i: (head_boxes[i]["y"], head_boxes[i]["x"]))
+            topic_box = panel.locator("#epMounted").bounding_box()
+            tag_box = panel.locator("#epTagList").bounding_box()
+            check("第 1 行的次序就是 题号 | 题型 | 分值 | 难度（窄栏折行也不许乱序）",
+                  head_order == [0, 1, 2, 3],
+                  {"order": head_order,
+                   "boxes": [{"y": round(b["y"]), "x": round(b["x"])} for b in head_boxes]})
+            check("第 2 行考向、第 3 行标签：都在四控件之下，考向先于标签",
+                  topic_box["y"] > max(b["y"] for b in head_boxes)
+                  and tag_box["y"] > topic_box["y"],
+                  {"topic_y": round(topic_box["y"]), "tag_y": round(tag_box["y"]),
+                   "grid_max_y": round(max(b["y"] for b in head_boxes))})
+            check("AI 帮改平时收起：标题一行，指令框与预览都不许占黄金位",
+                  panel.locator("#epAiSec").get_attribute("data-fold") == "closed"
+                  and panel.locator("#epAiFold").get_attribute("aria-expanded") == "false"
+                  and panel.locator("#epAiAsk").is_visible() is False
+                  and panel.locator("#epAiPreview").is_visible() is False,
+                  {"fold": panel.locator("#epAiSec").get_attribute("data-fold"),
+                   "expanded": panel.locator("#epAiFold").get_attribute("aria-expanded")})
+            panel.locator("#epAiFold").click()
+            page.wait_for_timeout(200)
+            check("点开 AI 帮改：输入框与预览当场现身，箭头跟着转",
+                  panel.locator("#epAiSec").get_attribute("data-fold") == "open"
+                  and panel.locator("#epAiFold").get_attribute("aria-expanded") == "true"
+                  and panel.locator("#epAiAsk").is_visible()
+                  and panel.locator("#epAiPreview").is_visible(),
+                  {"fold": panel.locator("#epAiSec").get_attribute("data-fold")})
+            panel.locator("#epAiFold").click()
+            page.wait_for_timeout(200)
+            check("再点一下收回：一屏不留 AI 的边角",
+                  panel.locator("#epAiSec").get_attribute("data-fold") == "closed"
+                  and panel.locator("#epAiAsk").is_visible() is False,
+                  {"fold": panel.locator("#epAiSec").get_attribute("data-fold")})
             check("段一死锁区装着返回列表与视图切换",
                   panel.locator("#epHead #epBackList").count() == 1
                   and panel.locator("#epHead #epFmtLatex").count() == 1
@@ -1255,6 +1343,17 @@ def main() -> int:
             check("考向候选带着路径（册 › 章 › 节 › 考向）",
                   len(topic_names) >= 1 and any("›" in path for path in topic_paths),
                   {"names": topic_names, "paths": topic_paths})
+            panel.locator("#epMounted .ep-ghost-input").fill("hs")
+            page.wait_for_timeout(1200)
+            initials_names = [text.strip() for text in
+                              panel.locator("#epGhostTopicMenu .ep-menu-text").all_inner_texts()]
+            check("考向也认拼音首字母：敲 hs 捞出带「函数」的考向",
+                  any("函数" in name for name in initials_names),
+                  {"names": initials_names[:8]})
+            panel.locator("#epMounted .ep-ghost-input").fill("函数")
+            page.wait_for_timeout(1000)
+            topic_names = [text.strip() for text in
+                           panel.locator("#epGhostTopicMenu .ep-menu-text").all_inner_texts()]
             if topic_names:
                 panel.locator("#epMounted .ep-ghost-input").press("Enter")
                 page.wait_for_timeout(600)

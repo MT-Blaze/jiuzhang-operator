@@ -21,6 +21,7 @@ import zipfile
 from pathlib import Path
 
 from app.core.plugins import validate_plugin
+from tests.core_sources import bundle_local_assets
 from tools.build_plugin import build_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,10 @@ DIST = PLUGIN_DIR / "dist"
 
 
 def read(name: str) -> str:
+    if name.endswith(".js"):
+        # 排版引擎已拆成 ui_rich.js / core_layout.js：JS 断言一律读「按 index.html
+        # 次序拼起来的整包源码」，拆文件不许把覆盖面一起拆小（PLUGIN_SPEC §2.8.1）。
+        return bundle_local_assets(DIST / "index.html", "script")
     return (DIST / name).read_text(encoding="utf-8")
 
 
@@ -178,8 +183,11 @@ class PaperGenLayoutContractTest(unittest.TestCase):
         self.assertIn('id="pgMetrics"', html)
 
     def test_05_no_remote_assets(self) -> None:
-        for name in ("index.html", "plugin.css", "plugin.js"):
-            source = read(name)
+        shipped = sorted(p.name for p in DIST.iterdir() if p.suffix in (".html", ".css", ".js"))
+        self.assertIn("core_layout.js", shipped, "拆出去的引擎文件必须仍在 dist 里")
+        self.assertIn("ui_rich.js", shipped, "拆出去的富文本文件必须仍在 dist 里")
+        for name in shipped:
+            source = (DIST / name).read_text(encoding="utf-8")
             self.assertNotIn("http://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("https://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("@import", source, f"{name} 不得远程导入样式")

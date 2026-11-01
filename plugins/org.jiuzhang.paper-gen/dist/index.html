@@ -50,6 +50,9 @@
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
+  <!-- 加载次序 = 依赖次序：富文本 → 排版引擎 → 装配层（PLUGIN_SPEC §2.8.1） -->
+  <script src="ui_rich.js"></script>
+  <script src="core_layout.js"></script>
   <script src="plugin.js"></script>
 </body>
 </html>

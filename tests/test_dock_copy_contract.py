@@ -16,10 +16,10 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import workspace_source  # noqa: E402
+from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 JS = workspace_source()
 
 COPY_START = JS.index("  function copyPlainText(value)")

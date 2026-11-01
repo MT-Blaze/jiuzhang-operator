@@ -18,12 +18,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import settings_source, stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "startup-contract-token"
 SETTINGS_HTML = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
-SETTINGS_JS = (ROOT / "static" / "js" / "settings.js").read_text(encoding="utf-8")
+SETTINGS_JS = settings_source()
 WORKSPACE_JS = workspace_source()
 STAGE_JS = stage_source()
 
@@ -340,7 +340,7 @@ class StageConsoleLazyTest(unittest.TestCase):
 
     def test_05_closed_console_can_be_reopened(self) -> None:
         block = STAGE_JS.split("  function ensureNative(key)", 1)[1].split("\n  }\n", 1)[0]
-        self.assertIn("var def = nativeDefs[key];", block)
+        self.assertIn("var def = stageState.nativeDefs[key];", block)
         self.assertIn("return def ? registerNative(def, true) : null;", block,
                       "控制台被关掉后，左栏入口还得能把它重新打开")
 

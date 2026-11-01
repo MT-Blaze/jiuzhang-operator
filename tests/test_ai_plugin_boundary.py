@@ -22,17 +22,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import plugin_bundle, stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CHAT_DIR = ROOT / "plugins" / "org.jiuzhang.chat"
-CHAT_JS = (CHAT_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
+# 插件已按 PLUGIN_SPEC §2.8.1 拆成多文件：边界判据一律读「整包源码」，
+# 否则拆出去的那几文件就逃在判据之外了。
+CHAT_JS = plugin_bundle("org.jiuzhang.chat")
 CHAT_HTML = (CHAT_DIR / "dist" / "index.html").read_text(encoding="utf-8")
 STAGE_JS = stage_source()
 WORKSPACE_JS = workspace_source()
-CORE_BANK_JS = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(
-    encoding="utf-8"
-)
+CORE_BANK_JS = plugin_bundle("org.jiuzhang.bank-ui")
 
 from app import __version__ as HOST_VERSION  # noqa: E402
 from app.api import agents  # noqa: E402
@@ -188,14 +188,15 @@ class HostGuardTest(unittest.TestCase):
 
     def test_04_write_token_stays_host_side(self) -> None:
         start = STAGE_JS.index("function relayAgent(")
-        block = STAGE_JS[start: STAGE_JS.index('if (method === "asset.upload")')]
+        # relayAgent 抽进 stage_relay_agent.js 后，切片取到该模块的导出块为止
+        block = STAGE_JS[start: STAGE_JS.index("\n    return {\n", start)]
         self.assertIn("withWriteToken(", block, "装机必须由宿主代持写令牌")
         self.assertNotIn("localStorage", block, "令牌与草稿都不落在智能体通道里")
         self.assertNotIn("window.localStorage", CHAT_JS)
 
     def test_05_broadcast_reaches_the_right_slot(self) -> None:
         self.assertIn(
-            "var targets = liveFrames().concat(panels.filter(function (panel) { return panel.frame; }));",
+            "var targets = liveFrames().concat(stageState.panels.filter(function (panel) { return panel.frame; }));",
             STAGE_JS,
             "面板按钮的指令要能广播到右栏助手",
         )
@@ -227,13 +228,15 @@ class HostGuardTest(unittest.TestCase):
         """relay 的末尾必须是「明确拒回」，不许留任何默认动作。"""
         relay_body = STAGE_JS[STAGE_JS.index("  function relay(tab, message)"):]
         relay_body = relay_body[: relay_body.index("\n  /** 题篮变动记一笔")]
-        self.assertIn('if (method === "basket.clear") {', relay_body,
-                      "清题篮必须是显式分支，不许当兜底")
+        self.assertIn("if (families[f](ctx)) return;", relay_body,
+                      "六条族函数挨个问过了才许拒，绝不许在族里偷偷兜底")
         self.assertIn('failWith("UNSUPPORTED_METHOD"', relay_body)
-        self.assertLess(
-            relay_body.index('if (method === "basket.clear")'),
-            relay_body.index('failWith("UNSUPPORTED_METHOD"'),
-            "未知方法只能在所有分支之后被拒掉")
+        basket = STAGE_JS[STAGE_JS.index("function relayBasket(ctx)"):]
+        self.assertIn('if (method === "basket.clear") {', basket,
+                      "清题篮必须是显式分支，不许当兜底")
+        self.assertLess(relay_body.index("if (families[f](ctx)) return;"),
+                        relay_body.index('failWith("UNSUPPORTED_METHOD"'),
+                        "未知方法只能在所有分支之后被拒掉")
 
 
 class BankQueryDeliveryTest(unittest.TestCase):

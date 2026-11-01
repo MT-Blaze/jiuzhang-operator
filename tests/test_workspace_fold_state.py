@@ -19,10 +19,10 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import workspace_source  # noqa: E402
+from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "static" / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 JS = workspace_source()
 HTML = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
 
@@ -416,7 +416,7 @@ class StateMachineTest(unittest.TestCase):
 
     def test_03_no_regex_lookbehind(self) -> None:
         """AGENTS §6：不许用后行断言，旧浏览器直接语法失败。"""
-        for src, name in ((JS, "workspace.js"), (CSS, "workspace.css")):
+        for src, name in ((JS, "workspace.js"), (CSS, "workspace 样式整包")):
             self.assertIsNone(re.search(r"\(\?<[=!]", src), f"{name} 含后行断言")
 
 

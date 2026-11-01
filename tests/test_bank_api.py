@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from tests.core_sources import stage_source  # noqa: E402
+from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "bank-contract-token"
@@ -1404,11 +1404,11 @@ class StageRelayContractTest(unittest.TestCase):
             (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(bank_manifest["permissions"], ["questions:read"])
         self.assertIn("system.open_editor", bank_manifest["bus"]["publish"])
-        bank_js = (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "dist" / "plugin.js").read_text(encoding="utf-8")
+        bank_js = plugin_bundle("org.jiuzhang.bank-ui")
         self.assertIn('publish("system.open_editor"', bank_js)
         self.assertNotIn('hostCall("bank.update"', bank_js)
         for plugin in ("org.jiuzhang.paper-gen", "org.jiuzhang.handout"):
-            js = (ROOT / "plugins" / plugin / "dist" / "plugin.js").read_text(encoding="utf-8")
+            js = plugin_bundle(plugin)
             self.assertIn("system.question_updated", js, plugin)
 
 

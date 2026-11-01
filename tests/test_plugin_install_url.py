@@ -33,7 +33,7 @@ from app.core.plugin_download import (  # noqa: E402
 )
 from app.core.plugin_install import PluginInstallError  # noqa: E402
 from app.core.plugins import validate_plugin  # noqa: E402
-from tests.core_sources import stage_source  # noqa: E402
+from tests.core_sources import stage_source, template_source  # noqa: E402
 
 TOKEN = "install-url-test-token"
 ONLINE_PROBE_ID = "org.jiuzhang.online-probe"
@@ -130,10 +130,14 @@ class OfficialIndexFileTest(unittest.TestCase):
                          "模板要示范能力路由字典，否则第三方不知道 contributes.commands 怎么写")
 
     def test_03d_template_request_id_passes_host_message_guard(self) -> None:
-        """宿主入口用 ^[A-Za-z0-9_-]{1,80}$ 校验请求 id，不带点号才不会被静默丢弃。"""
+        """宿主入口用 ^[A-Za-z0-9_-]{1,80}$ 校验请求 id，不带点号才不会被静默丢弃。
+
+        模板是模块化多文件骨架（PLUGIN_SPEC §2.8.1），id 的构造在 core_host.js 里，
+        因此判据按 index.html 的加载次序拼「整包源码」来看，不因拆文件漏判。
+        """
         stage_js = stage_source()
         self.assertIn("/^[A-Za-z0-9_-]{1,80}$/", stage_js, "宿主请求 id 守卫形状变了，请同步模板与契约")
-        plugin_js = (ROOT / "examples" / "template-plugin" / "dist" / "plugin.js").read_text(encoding="utf-8")
+        plugin_js = template_source()
         id_lines = [line for line in plugin_js.splitlines() if "var requestId" in line]
         self.assertEqual(len(id_lines), 1, f"模板请求 id 构造应唯一，实际 {id_lines}")
         self.assertNotIn("PLUGIN_ID +", id_lines[0], "请求 id 不能拿带点号的插件 id 当片段")

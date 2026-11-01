@@ -1,0 +1,43 @@
+/* 模板插件 · 控件与卡片（ui）：按钮、状态行、题卡列表。骨架与色板在 layout.css。
+   选择器只在本文件里定义一次，不靠加载次序打架（PLUGIN_SPEC §2.8.2）。 */
+button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  border-color: var(--focus);
+  color: var(--focus);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+#status {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+#list {
+  display: grid;
+  gap: 8px;
+}
+
+.item {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.my-card {
+  font-weight: 600;
+}

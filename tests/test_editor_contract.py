@@ -1068,10 +1068,14 @@ class EditorBatchTest(unittest.TestCase):
         self.assertIn('id="edPool"', html)
 
     def test_10_review_buttons_keep_the_a11y_floor(self) -> None:
-        js = fn_body(read("plugin.js"), "approveBusy")
-        self.assertIn("panelApproveEl.disabled = busy;", js)
+        bundle = read("plugin.js")
+        js = fn_body(bundle, "approveBusy")
         self.assertIn('panelApproveEl.setAttribute("aria-busy", busy ? "true" : "false");', js)
-        self.assertIn('panelApproveEl.setAttribute("aria-disabled", busy ? "true" : "false");', js)
+        self.assertIn("syncSchoolLock();", js,
+                      "忙态一律交回统一禁用逻辑，别处不许再手写一份 disabled")
+        lock = fn_body(bundle, "syncSchoolLock")
+        self.assertIn("panelApproveEl.disabled = !canApprove;", lock)
+        self.assertIn('panelApproveEl.setAttribute("aria-disabled", canApprove ? "false" : "true");', lock)
         css = read("plugin.css")
         self.assertIn("min-height: 44px", css_rule(css, ".ep-btn"))
         self.assertIn('.ep-batch[data-batch="partial"]', css)
@@ -1491,14 +1495,22 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn("data_url: String(item.cropAsset.data_url || \"\")", stash)
 
     def test_08_the_global_paste_stays_out_of_the_way_while_cropping(self) -> None:
-        """切图台开着的时候，全局粘贴不许把这张图当成新卷子吞进批次。"""
+        """切图台开着的时候，全局粘贴不许把这张图当成新卷子吞进批次。
+
+        接收区自己排在切图台之前建块，问「开着没」只能走 plugin.js 交进来的迟到取用
+        ``cropOpen``，不能按值抓 uiCrop 那个还没诞生的对象。
+        """
         js = read("plugin.js")
-        paste = js[js.index('window.addEventListener("paste"'):]
+        wiring = js[js.index("var uiIntake = window.JzoEditorIntake.create({"):]
+        wiring = wiring[:wiring.index("  });")]
+        self.assertIn("cropOpen: function () { return uiCrop.isOpen(); },", wiring,
+                      "plugin.js 没把切图台的开关迟到交给接收区")
+        paste = js[js.index('window.addEventListener("paste", function (event)'):]
         paste = paste[:paste.index("});")]
-        self.assertIn("if (crop) return;", paste)
+        self.assertIn("if (cropOpen()) return;", paste)
         drop = js[js.index('root.addEventListener("drop"'):]
         drop = drop[:drop.index("});")]
-        self.assertIn("if (crop) return;", drop)
+        self.assertIn("if (cropOpen()) return;", drop)
 
     def test_09_the_pending_bank_echoes_the_real_asset_address(self) -> None:
         """插件切完图要知道底座把字节写到哪去了：题面里的 uri 得跟着换。"""
@@ -1553,7 +1565,7 @@ class EditorFixtureContractTest(unittest.TestCase):
                             "宪法要求「答案：X」在 solution 首行，解析另起一行")
 
     def test_04_inline_block_equals_the_file(self) -> None:
-        js = read("plugin.js")
+        js = read("dev_fixtures.js")
         block = js[js.index(BEGIN) + len(BEGIN):js.index(END)]
         inline = json.loads(block.strip()[len("var DEV_FIXTURES = "):].rstrip(";"))
         self.assertEqual(inline, self.items,
@@ -1740,7 +1752,8 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertLess(intake_at, html.index('id="epMetaYear"'),
                         "接收区要在批次公共元数据的字段之前")
         css = read("plugin.css")
-        self.assertIn('.ep-meta[data-fold="closed"] .ep-fold-body { display: none; }', css)
+        self.assertIn('[data-fold="closed"] .ep-fold-body { display: none; }', css,
+                      "折叠规则已通用化：带 data-fold 的段（批次元数据 / AI 帮改）共用一条")
         self.assertIn('.ep-meta[data-fold="closed"] .ep-intake', css)
 
     def test_11_a_late_receipt_never_erases_what_the_teacher_just_added(self) -> None:
@@ -1796,11 +1809,12 @@ class EditorPackageTest(unittest.TestCase):
         self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))
 
     def test_02_dev_fixtures_never_ship(self) -> None:
-        """军令 #23：假数据不进发行包——对外只有真实题库，运行期靠 plugin.js 内嵌块。"""
+        """军令 #23：假数据不进发行包——对外只有真实题库，运行期靠 dist/dev_fixtures.js 的内嵌块。"""
         names = self._names()
         offenders = [each for each in names if "/dev/" in each or each.endswith("fixtures.json")]
         self.assertEqual(offenders, [], f"发行包混进开发期文件：{offenders}")
         self.assertIn("org.jiuzhang.editor/dist/plugin.js", names)
+        self.assertIn("org.jiuzhang.editor/dist/dev_fixtures.js", names)
 
 
 if __name__ == "__main__":

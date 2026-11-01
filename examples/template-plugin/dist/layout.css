@@ -1,0 +1,33 @@
+/* 模板插件 · 骨架与排版（layout）：页面几何、字体、色板。控件样式在 ui.css。
+   样式按域分文件的规矩见 PLUGIN_SPEC §2.8.2：单文件不超 800 行，变量只在本文件 :root 定义。 */
+:root {
+  color-scheme: light;
+  --ink: #1f2937;
+  --ink-soft: #64748b;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --card: #fff;
+  --page: #f8fafc;
+  --focus: #2563eb;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background: var(--page);
+}
+
+h1 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}

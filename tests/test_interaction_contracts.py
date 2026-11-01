@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
@@ -25,7 +25,7 @@ STAGE_JS = stage_source()
 PREFS_JS = (STATIC / "js" / "prefs.js").read_text(encoding="utf-8")
 MENU_JS = (STATIC / "js" / "contextmenu.js").read_text(encoding="utf-8")
 DIALOG_JS = (STATIC / "js" / "dialogs.js").read_text(encoding="utf-8")
-CSS = (STATIC / "css" / "workspace.css").read_text(encoding="utf-8")
+CSS = workspace_css()
 
 
 def body_of(source: str, signature: str) -> str:
@@ -161,8 +161,8 @@ class LegacyOrderTest(unittest.TestCase):
 
     def test_02_migration_runs_once_and_only_when_the_tree_is_empty(self) -> None:
         block = body_of(WORKSPACE_JS, "function migrateLegacySidebar(data)")
-        self.assertIn("if (legacyOrderMigrated || !window.JzoPrefs) return;", block)
-        self.assertIn("legacyOrderMigrated = true;", block)
+        self.assertIn("if (wsState.legacyOrderMigrated || !window.JzoPrefs) return;", block)
+        self.assertIn("wsState.legacyOrderMigrated = true;", block)
         self.assertIn("data.sidebar_customized", block)
         self.assertIn("JzoPrefs.legacyTree()", block)
         self.assertIn('"sidebar_customized": bool(sidebar)',

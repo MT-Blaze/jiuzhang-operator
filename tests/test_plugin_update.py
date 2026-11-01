@@ -39,7 +39,7 @@ from app.core.plugin_update import (
     write_pending,
 )
 
-from tests.core_sources import stage_source, workspace_source  # noqa: E402
+from tests.core_sources import settings_source, stage_source, workspace_source  # noqa: E402
 
 PLUGIN_ID = "org.jiuzhang.update-test"
 LICENSE_TEXT = "Apache License 2.0 (fixture)"
@@ -1342,7 +1342,7 @@ class UpdateUiWiringTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         static = Path(__file__).resolve().parents[1] / "static"
         cls.html = (static / "settings.html").read_text(encoding="utf-8")
-        cls.js = (static / "js" / "settings.js").read_text(encoding="utf-8")
+        cls.js = settings_source()
         cls.css = (static / "css" / "settings.css").read_text(encoding="utf-8")
         cls.workspace_js = workspace_source()
         cls.stage_js = stage_source()

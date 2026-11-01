@@ -10,7 +10,11 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/css/app.css" />
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css" />
+  <!-- workspace.css 按域拆四份，加载次序 = 原单文件次序（同特异度的覆盖靠次序，不许重排） -->
   <link rel="stylesheet" href="/static/css/workspace.css" />
+  <link rel="stylesheet" href="/static/css/workspace_controls.css" />
+  <link rel="stylesheet" href="/static/css/workspace_canvas.css" />
+  <link rel="stylesheet" href="/static/css/workspace_overlay.css" />
 </head>
 <body>
   <div class="ws-page">
@@ -193,8 +197,23 @@
   <script src="/static/js/dialogs.js"></script>
   <script src="/static/js/contextmenu.js"></script>
   <script src="/static/js/splitpane.js"></script>
+  <script src="/static/js/stage_frame.js"></script>
+  <script src="/static/js/stage_command.js"></script>
+  <script src="/static/js/stage_http.js"></script>
+  <script src="/static/js/stage_draft.js"></script>
+  <script src="/static/js/stage_relay_io.js"></script>
+  <script src="/static/js/stage_relay_bank.js"></script>
+  <script src="/static/js/stage_tabbar.js"></script>
+  <script src="/static/js/stage_inbound.js"></script>
+  <script src="/static/js/stage_relay_agent.js"></script>
   <script src="/static/js/stage.js"></script>
   <script src="/static/js/context_panel.js"></script>
+  <script src="/static/js/ws_panel.js"></script>
+  <script src="/static/js/ws_rail.js"></script>
+  <script src="/static/js/ws_dropzone.js"></script>
+  <script src="/static/js/ws_ctxmenu.js"></script>
+  <script src="/static/js/ws_dock.js"></script>
+  <script src="/static/js/ws_sidebar.js"></script>
   <script src="/static/js/workspace.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>

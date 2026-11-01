@@ -2,7 +2,7 @@
 """把 dev/fixtures.json 同步进录题插件源码的内嵌假数据块。
 
 为什么要这一步：插件跑在 CSP ``connect-src 'none'`` 的沙箱里，发不出任何请求，
-假数据只能内嵌进 ``dist/plugin.js``；但内嵌一旦成为第二份事实，就会和
+假数据只能内嵌进 ``dist/dev_fixtures.js``；但内嵌一旦成为第二份事实，就会和
 ``dev/fixtures.json`` 漂移。本工具把 dev/fixtures.json 当唯一来源，按标记整块重写，
 契约测试（tests/test_editor_contract.py）再逐字段比对两处，漂移当场红。
 
@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
 FIXTURES = PLUGIN_DIR / "dev" / "fixtures.json"
-SCRIPT = PLUGIN_DIR / "dist" / "plugin.js"
+SCRIPT = PLUGIN_DIR / "dist" / "dev_fixtures.js"
 
 BEGIN = "  //# FIXTURES-BEGIN"
 END = "  //# FIXTURES-END"

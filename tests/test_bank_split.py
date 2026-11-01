@@ -26,7 +26,7 @@ from pathlib import Path
 from app.core import bank
 from app.core.config import settings
 from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
-from tests.core_sources import stage_source  # noqa: E402
+from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = "org.jiuzhang.bank-engine"
@@ -254,7 +254,7 @@ class HostGateTest(unittest.TestCase):
 
     def test_03_bank_view_plugin_reads_the_active_bank_not_its_own(self) -> None:
         """视图插件只走 active_* / active_add：它的页签 id 不是题库 id。"""
-        source = (ROOT / "plugins" / UI / "dist" / "plugin.js").read_text(encoding="utf-8")
+        source = plugin_bundle(UI)
         self.assertIn("bank.active_list", source)
         self.assertIn("basket.active_add", source)
         self.assertNotIn("bank.list", source)

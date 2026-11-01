@@ -293,11 +293,10 @@ def run(tag: str) -> dict:
                 """, label_part)
 
             initial = snap("00-initial")
-            # 2026-10-31 军令：启动不预开任何兜底页，原生页签只剩未选中的「设置与控制台」。
-            check("启动时画布留白，只有未选中的控制台页签",
-                  len(initial["tabs"]) == 1
-                  and initial["tabs"][0]["key"] == "console"
-                  and initial["tabs"][0]["selected"] == "false"
+            # 2026-11-01 军令：启动不预开任何页签（兜底页与控制台都不许自己冒出来），
+            # 中栏留白；控制台只在老师点左栏入口时才按登记的定义现场建（registerNative 的 lazy 闸）。
+            check("启动时画布留白：一个页签都不预开",
+                  len(initial["tabs"]) == 0
                   and initial["frameCount"] == 0
                   and initial["visiblePanels"] == 0,
                   json.dumps(initial["tabs"], ensure_ascii=False))
@@ -314,18 +313,23 @@ def run(tag: str) -> dict:
             except Exception:  # noqa: BLE001 - 没注册上 SW 也照样测 F5
                 pass
 
-            # ---------- 普通刷新（F5）×3：关闭叉必须每次都稳定出现 ----------
+            # ---------- 普通刷新（F5）×3：刷新后点左栏入口，关闭叉必须每次都稳定出现 ----------
             for round_no in range(1, 4):
                 # F5 的判据是「页面能渲染出带叉的页签」，不等 load 事件：
                 # SW 接管后 Playwright 偶发收不到 load（真机无此现象），
                 # 直接等关闭叉出现，既不受竞态影响，也正好命中用户报的 bug。
                 page.reload(wait_until="domcontentloaded")
+                page.wait_for_timeout(400)
+                check(f"第 {round_no} 次 F5 后仍然不预开页签",
+                      page.evaluate("() => document.querySelectorAll('#wsTabs .ws-tab').length") == 0,
+                      str(page.evaluate("() => document.querySelectorAll('#wsTabs .ws-tab').length")))
+                page.locator("#wsConsoleBtn").click()
                 page.wait_for_selector(
                     '#wsTabs .ws-tab[data-tab="console"] .ws-tab-close', timeout=10000)
                 page.wait_for_timeout(300)
                 st = snap(f"0{round_no}-f5-reload")
                 console_tab = next((t for t in st["tabs"] if t["key"] == "console"), None)
-                check(f"第 {round_no} 次 F5 后控制台页签仍有 ×",
+                check(f"第 {round_no} 次 F5 后重开的控制台页签带 ×",
                       bool(console_tab and console_tab["hasClose"]),
                       json.dumps(console_tab, ensure_ascii=False) if console_tab else "无控制台页签")
             check("左栏列出探针插件",
@@ -524,6 +528,12 @@ def run(tag: str) -> dict:
             check("关完所有页签后左右栏与底栏回归",
                   empty["sidebarVisible"] and empty["ctxVisible"],
                   json.dumps({k: empty[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
+
+            # 拆分后的组合根必须真的跑完：任何一帧里的未捕获异常都是功能断链。
+            # 2026-11-02 正是靠这一条捞出 st_workspace 在 create 体内当场调用宿主用
+            # thunk 注入的 el —— 设置页从 stPlugins 往后整段没执行，字符串测试却全绿。
+            check("全程零页面异常（含画布里的设置 iframe）", not report["errors"],
+                  json.dumps(report["errors"], ensure_ascii=False)[:400])
 
             page.close()
             browser.close()
