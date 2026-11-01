@@ -399,6 +399,37 @@ class PendingApiContractTest(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(self._card(batch_id)["total"], 3, "新题进池总数 +1")
 
+    def test_16_save_draft_echoes_the_real_asset_address(self) -> None:
+        """军令 #26：插件在左栏切完图，得知道底座把字节写到哪个地址去了。
+
+        题面里挂的是 /static/uploads/ 的猜测地址，而字节实际落在 pending_assets/；
+        存草稿的回执必须把真实地址递回来，否则题里挂着一张取不到的图。
+        """
+        status, body = self._save([{
+            "question": _question(201, images=[{
+                "id": "img_crop_probe", "role": "stem",
+                "uri": "/static/uploads/img_crop_probe.png", "alt": "切出来的题图",
+            }]),
+            "assets": [{
+                "id": "img_crop_probe",
+                "data_url": "data:image/png;base64," + base64.b64encode(PNG).decode(),
+            }],
+        }])
+        self.assertEqual(status, 201, body)
+        self.assertIn("saved_assets", body, "存草稿必须回显配图清单")
+        saved = body["saved_assets"][0]
+        self.assertEqual(saved["pending_id"], body["saved_ids"][0])
+        asset = saved["assets"][0]
+        self.assertTrue(asset["uri"].startswith("/static/pending/"),
+                        f"池子里的配图地址必须是 /static/pending/，实际是 {asset['uri']}")
+        self.assertTrue(asset["name"].startswith("pimg_"), asset)
+        self.assertGreater(asset["bytes"], 0)
+
+        # 回执给的地址必须真的能取到那张图。
+        name = asset["uri"].rsplit("/", 1)[-1]
+        self.assertTrue((self.data_dir / "pending_assets" / name).is_file(),
+                        "回执指的地址背后必须有真文件")
+
 
 if __name__ == "__main__":
     unittest.main()

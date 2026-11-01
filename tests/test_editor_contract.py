@@ -88,7 +88,8 @@ class EditorManifestTest(unittest.TestCase):
         self.assertIn("sidebar.right", info["slots"])
         self.assertIn("question.edit", info["capabilities"])
         self.assertEqual(sorted(info["permissions"]),
-                         ["ai:invoke", "assets:write", "questions:read", "questions:write"])
+                         ["ai:invoke", "assets:read", "assets:write",
+                          "questions:read", "questions:write"])
 
     def test_02_stage_is_singleton_with_priority(self) -> None:
         stage = manifest()["stage"]
@@ -494,13 +495,15 @@ class EditorHostCallTest(unittest.TestCase):
         self.assertIn('var DRAFT_LAYOUT_KEY = "editor:v2:layout"', js)
 
     def test_02_writes_go_through_the_host_and_only_two_methods(self) -> None:
-        """阶段 2 接写库：只许 bank.create / bank.update，删题与上传仍缺席。
+        """阶段 2 接写库：题面只许 bank.create / bank.update，删题仍缺席。
 
         写令牌永远在宿主侧；插件连 bank.delete 都不声明，误删真题就没有通道。
+        （asset.upload 是另一条二进制通道：军令 #26 的切图用它落盘配图，
+        题面本身仍只走 bank.create / bank.update —— 见 EditorCropMagnifierTest。）
         """
         js = read("plugin.js")
         self.assertIn('var method = updating ? "bank.update" : "bank.create";', js)
-        for forbidden in ("bank.delete", "asset.upload", "bank.review"):
+        for forbidden in ("bank.delete", "bank.review"):
             self.assertNotIn(forbidden, js, f"本期不得接入 {forbidden}")
         self.assertNotIn("保存入库在阶段 2 接入", js, "阶段 1 的占位拒绝必须退场")
 
@@ -930,7 +933,7 @@ class EditorBatchTest(unittest.TestCase):
         js = read("plugin.js")
         self.assertEqual(js.count('var method = updating ? "bank.update" : "bank.create";'), 1,
                          "另开写库通道就是第二套事实来源")
-        for forbidden in ("bank.delete", "bank.review", "asset.upload"):
+        for forbidden in ("bank.delete", "bank.review"):
             self.assertNotIn(forbidden, js)
 
     def test_05_scroll_follows_the_row_at_the_top(self) -> None:
@@ -1180,6 +1183,112 @@ class EditorReviewDeskTest(unittest.TestCase):
         stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
         self.assertIn('"note", "error", "info", "system", "warn"', stage,
                       "插件自报的 warn 级别必须在宿主白名单里")
+
+
+class EditorCropMagnifierTest(unittest.TestCase):
+    """军令 #26 纠偏：砍掉截屏，放大镜搬进左栏「重新框选」。
+
+    钉住五件事：
+    - 宿主只多开一个读口子（asset.read），权限按 assets:read 判定；
+    - 插件侧画布必须干净（宿主读来的字节 → Blob → ImageBitmap），不许 fetch；
+    - 放大镜是原样搬过来的：半径 104、8 倍、关平滑、镜心一根红十字；
+    - 左键松开切完就走：镜子撤掉，字节落进中转站，主库一个字节都不碰；
+    - 切图台开着的时候，全局粘贴不许把这张图当成新卷子吞掉。
+    """
+
+    def test_01_the_capture_feature_is_gone_for_good(self) -> None:
+        """截屏那套东西必须连根拔掉：快捷键、按钮、宿主壳的遮罩与画布。"""
+        for name in ("static/js/stage.js", "static/js/intake.js", "static/workspace.html"):
+            path = ROOT / name
+            if not path.is_file():
+                continue
+            source = path.read_text(encoding="utf-8")
+            for gone in ("jzo-cap-layer", "jzo-cap-canvas", "jzo-cap-hint",
+                         "captureScreen", "Alt+S", "getDisplayMedia("):
+                self.assertNotIn(gone, source, f"{name} 仍残留截屏代码 {gone}")
+        js = read("plugin.js")
+        self.assertNotIn("Alt+S", js)
+        self.assertNotIn("epCapture", read("index.html"))
+
+    def test_02_the_host_opens_exactly_one_read_channel(self) -> None:
+        stage = (ROOT / "static" / "js" / "stage.js").read_text(encoding="utf-8")
+        self.assertIn('"asset.read"', stage, "切图要读托管配图，宿主必须开这个口子")
+        self.assertIn('assetReadPermissions.indexOf("assets:read") < 0', stage,
+                      "读口子的权限必须按清单判定，不能谁都能调")
+        self.assertIn('code: "FORBIDDEN"', stage)
+        # 只许读底座自己托管的地址
+        self.assertIn("/static\\/(pending|uploads|icons|assets)\\/", stage)
+
+    def test_03_the_plugin_reads_pixels_without_fetch(self) -> None:
+        """插件侧禁用 fetch（契约红线）：data URL → Blob 只能靠 atob 造字节。"""
+        js = read("plugin.js")
+        self.assertIn("function dataUrlToBlob(", js)
+        blob = fn_body(js, "dataUrlToBlob")
+        self.assertIn("window.atob(payload)", blob)
+        self.assertNotIn("fetch(", blob)
+        self.assertIn("new Blob([bytes], { type: mime || \"image/png\" })", blob)
+        self.assertIn('hostCall("asset.read", { uri: picture.uri })', js)
+        self.assertIn("window.createImageBitmap(blob)", js)
+
+    def test_04_the_magnifier_is_the_ported_one(self) -> None:
+        """几何与观感必须与被砍掉的那套一模一样，否则老师会觉得换了个人切图。"""
+        js = read("plugin.js")
+        self.assertIn("var CROP_RADIUS = 104;", js)
+        self.assertIn("var CROP_ZOOM = 8;", js)
+        lens = fn_body(js, "drawLens")
+        self.assertIn("ctx.imageSmoothingEnabled = false;", lens, "放大镜必须关平滑看像素")
+        self.assertIn('ctx.strokeStyle = "rgba(255, 96, 96, 0.95)";', lens,
+                      "镜心准星必须是那根红十字")
+        self.assertIn("ctx.arc(mx, my, radius, 0, Math.PI * 2);", lens)
+        self.assertIn("ctx.lineWidth = 2;", lens, "镜圈是 2px 白边")
+
+    def test_05_the_crop_surface_and_the_lens_are_styled(self) -> None:
+        css = read("plugin.css")
+        self.assertIn("cursor: crosshair", rule_body(css, ".ed-crop-canvas"),
+                      "切图台上鼠标必须是十字")
+        lens = rule_body(css, ".ed-crop-lens")
+        self.assertIn("position: fixed", lens, "放大镜层要盖住整屏")
+        self.assertIn("pointer-events: none", lens, "镜子不能挡住鼠标")
+        self.assertIn("inset: 0", lens)
+        self.assertIn(".ed-img-crop-btn", css)
+
+    def test_06_releasing_the_button_finishes_the_crop(self) -> None:
+        js = read("plugin.js")
+        up = fn_body(js, "onCropUp")
+        self.assertIn("if (!rect || rect.w < CROP_MIN_SIDE || rect.h < CROP_MIN_SIDE)", up)
+        self.assertIn("finishCrop(session);", up)
+        close = fn_body(js, "closeCrop")
+        self.assertIn("lensCanvas.parentNode.removeChild(lensCanvas);", close,
+                      "左键松开后放大镜必须消失")
+        self.assertIn('window.removeEventListener("mouseup", onCropUp, true);', close)
+
+    def test_07_the_cropped_bytes_land_in_the_pending_pool_first(self) -> None:
+        """中转站里的题：配图字节随草稿一起进 pending_assets/，主库一个字节都不碰。"""
+        js = read("plugin.js")
+        finish = fn_body(js, "finishCrop")
+        self.assertIn("item.cropAsset = { id: assetId, data_url: dataUrl };", finish)
+        self.assertIn("stashOne(item, metaFor(item, {}), false)", finish)
+        self.assertIn("item.cropAsset = null;", finish,
+                      "存过之后必须清掉，否则下一次保存又写一份重复配图")
+        stash = fn_body(js, "stashOne")
+        self.assertIn("payload.questions[0].assets = [", stash)
+        self.assertIn("data_url: String(item.cropAsset.data_url || \"\")", stash)
+
+    def test_08_the_global_paste_stays_out_of_the_way_while_cropping(self) -> None:
+        """切图台开着的时候，全局粘贴不许把这张图当成新卷子吞进批次。"""
+        js = read("plugin.js")
+        paste = js[js.index('window.addEventListener("paste"'):]
+        paste = paste[:paste.index("});")]
+        self.assertIn("if (crop) return;", paste)
+        drop = js[js.index('root.addEventListener("drop"'):]
+        drop = drop[:drop.index("});")]
+        self.assertIn("if (crop) return;", drop)
+
+    def test_09_the_pending_bank_echoes_the_real_asset_address(self) -> None:
+        """插件切完图要知道底座把字节写到哪去了：题面里的 uri 得跟着换。"""
+        bank = (ROOT / "app" / "core" / "pending_bank.py").read_text(encoding="utf-8")
+        self.assertIn('"saved_assets":', bank)
+        self.assertIn("PENDING_ASSET_URI_PREFIX", bank)
 
 
 class EditorFixtureContractTest(unittest.TestCase):

@@ -372,14 +372,17 @@
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "asset.upload",
+    // 切图要有真像素：插件在沙箱里，宿主原点的图片画进 Canvas 会污染画布，
+    // toDataURL 直接抛 SecurityError。宿主把托管配图读成 data URL 递过去。
+    "asset.read",
     // 军令 #24：中转站（待审核池）。批次列表、批次题目、存草稿、存入主库、
     // 彻底删除——录题端与主库之间那层物理隔离暂存，全走这五个口子。
     "pending.batch_list", "pending.list", "pending.save_draft",
     "pending.approve", "pending.delete",
     // 批次公共元数据：改一次，这一批所有题的 sources 立刻跟着改。
     "pending.set_meta", "pending.meta_history",
-    // 军令 #25：拖入/粘贴的文件进中转站；屏幕截取由宿主代劳（浏览器没有系统级 API）。
-    "ingest.files", "screen.capture",
+    // 军令 #25：拖入/粘贴的文件进中转站。
+    "ingest.files",
     "draft.save", "draft.load",
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。
@@ -1122,6 +1125,37 @@
     });
   }
 
+  /**
+   * 二进制读取：同源取一张托管图片，转成 data URL。
+   *
+   * 沙箱插件是不透明源，宿主原点的图片画进它的 Canvas 会污染画布，
+   * toDataURL 直接抛 SecurityError。宿主同源读出字节、编成 data URL 递过去，
+   * 插件拿它自己造 Blob 解码，画布就干净了。
+   */
+  function fetchBinary(url) {
+    return fetch(url, { cache: "no-store" }).then(function (response) {
+      if (!response.ok) {
+        var failure = new Error("宿主取图失败：" + response.status);
+        failure.status = response.status;
+        throw failure;
+      }
+      var mime = String(response.headers.get("Content-Type") || "").split(";")[0].trim();
+      return response.arrayBuffer().then(function (buffer) {
+        var bytes = new Uint8Array(buffer);
+        var parts = [];
+        var chunk = 0x8000;
+        for (var index = 0; index < bytes.length; index += chunk) {
+          parts.push(String.fromCharCode.apply(null, bytes.subarray(index, index + chunk)));
+        }
+        return {
+          dataUrl: "data:" + (mime || "image/png") + ";base64," + window.btoa(parts.join("")),
+          mime: mime || "image/png",
+          bytes: bytes.length
+        };
+      });
+    });
+  }
+
   function plainObject(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
@@ -1481,6 +1515,30 @@
       return;
     }
 
+    if (method === "asset.read") {
+      // 读托管配图：只认底座自己发出去的地址，别的路径一律不读。
+      var assetReadPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (assetReadPermissions.indexOf("assets:read") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 assets:read 权限，不能读取托管配图"
+        });
+        return;
+      }
+      var assetUri = textValue(payload, "uri", 200);
+      if (!/^\/static\/(pending|uploads|icons|assets)\/[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp)$/.test(assetUri)) {
+        replyHost(tab, message, false, {
+          code: "BAD_REQUEST",
+          message: "只许读底座托管的配图地址"
+        });
+        return;
+      }
+      fetchBinary(assetUri).then(function (binary) {
+        done({ data_url: binary.dataUrl, mime: binary.mime, bytes: binary.bytes });
+      }, fail);
+      return;
+    }
+
     if (method === "pending.batch_list" || method === "pending.list") {
       // 读中转站：批次卡片与批次里的待审题目。开放给任何声明了 questions:read 的插件。
       var readPermissions = (tab.plugin && tab.plugin.permissions) || [];
@@ -1666,21 +1724,6 @@
         emitPendingUpdated("ingest", (result && result.saved_ids) || [], result);
         done(result);
       }, fail);
-      return;
-    }
-
-    if (method === "screen.capture") {
-      // 屏幕截取：浏览器没有系统级 API，只能由宿主借 getDisplayMedia 取画面。
-      var capture = window.JzoIntake;
-      if (!capture || typeof capture.captureScreen !== "function") {
-        replyHost(tab, message, false, { code: "HOST_MISSING", message: "宿主没有截屏能力" });
-        return;
-      }
-      capture.captureScreen().then(function (result) {
-        done(result || { cancelled: true });
-      }, function (error) {
-        failWith("HOST_CAPTURE_FAILED", error && error.message ? error.message : "截屏失败");
-      });
       return;
     }
 

@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -35,6 +36,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -57,13 +59,41 @@ BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 BATCH_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-星期[日一二三四五六]-\d{2}:\d{2}-批次编号 #B-\d{3,}$")
 UNREVIEWED_RE = re.compile(r"未审：\s*(\d+)\s*/\s*(\d+)")
 IDLE_NOTE_RE = re.compile(r"^\[\d{2}:\d{2}\] 检测到长时间无操作，已自动存入待审核池。$")
-# 1×1 的 PNG：粘贴与截屏只验「字节进了批次」，不验图像内容。
+# 1×1 的 PNG：粘贴只验「字节进了批次」，不验图像内容。
 # 字节用**数字数组**递进页面，不走 base64 字符串——atob 在不同浏览器上对
 # 补位字符的宽容度不一样，字符串一旦少一位就是一条看不懂的 InvalidCharacterError。
 PNG_BYTES = list(base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
     "hQGAhKmMIQAAAABJRU5ErkJggg=="
 ))
+
+
+def make_png(width: int, height: int) -> bytes:
+    """纯 Python 造一张四色块的 PNG：切图切到哪一块，按像素就能判出来。
+
+    不依赖 PIL：探针环境里未必装了 Pillow，而这一张图只需要几行 zlib 与 CRC。
+    """
+    rows = []
+    for y in range(height):
+        row = bytearray([0])                      # filter type 0（None）
+        for x in range(width):
+            left = x < width // 2
+            top = y < height // 2
+            row += bytes((255, 0, 0) if left and top else
+                         (0, 255, 0) if not left and top else
+                         (0, 0, 255) if left else
+                         (255, 255, 0))
+        rows.append(bytes(row))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
+            + chunk(b"IEND", b""))
 
 
 def free_port() -> int:
@@ -640,13 +670,15 @@ def main() -> int:
             check("画布内没有任何顶栏或工具条",
                   canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
                   .count() == 0)
-            check("画布没有底部横条，钮只有逐题跳转与回列表",
+            check("画布没有底部横条，钮只有逐题跳转、切图与回列表",
                   canvas.locator(".ed-foot").count() == 0
                   and canvas.locator("#edCols button").count()
                   == canvas.locator(".ed-img-jump").count()
+                  + canvas.locator(".ed-img-crop-btn").count()
                   and canvas.locator("#edBatchBar button").count() == 1,
                   {"col_buttons": canvas.locator("#edCols button").count(),
                    "jumps": canvas.locator(".ed-img-jump").count(),
+                   "crops": canvas.locator(".ed-img-crop-btn").count(),
                    "bar_buttons": canvas.locator("#edBatchBar button").count(),
                    "foot": canvas.locator(".ed-foot").count()})
 
@@ -1017,16 +1049,15 @@ def main() -> int:
                   {"before": card_before["total"], "after": card_after["total"]})
             page.screenshot(path=str(shots / "v3-delete.png"))
 
-            # ---------- 接收区：拖拽遮罩、粘贴截图、截屏放大镜 ----------
+            # ---------- 接收区：拖拽遮罩、粘贴截图 ----------
             to_list()
             check("画布首屏有接收虚影框",
                   canvas.locator("#edBatchDrop").is_visible()
                   and "拖到这里" in canvas.locator("#edBatchDrop").inner_text(),
                   {"drop": canvas.locator("#edBatchDrop").inner_text()[:40]})
-            check("辅助栏有接收区与【截屏 (Alt+S)】钮",
-                  panel.locator("#epIntake").is_visible()
-                  and "Alt+S" in panel.locator("#epCapture").inner_text(),
-                  {"capture": panel.locator("#epCapture").inner_text()})
+            check("辅助栏有接收区（拖入/粘贴进卷子）",
+                  panel.locator("#epIntake").is_visible(),
+                  {"intake": panel.locator("#epIntake").inner_text()[:40]})
 
             def host_drag(name: str, mime: str, kind: str) -> None:
                 page.evaluate(
@@ -1087,56 +1118,134 @@ def main() -> int:
                   pasted_card is not None,
                   {"names": [entry.get("source_name") for entry in pasted_cards]})
 
-            # 截屏：宿主借 getDisplayMedia 取画面，鼠标旁跟一只放大镜
-            page.evaluate(
-                """() => {
-                    var canvas = document.createElement('canvas');
-                    canvas.width = 320;
-                    canvas.height = 240;
-                    var ctx = canvas.getContext('2d');
-                    ctx.fillStyle = '#204080';
-                    ctx.fillRect(0, 0, 320, 240);
-                    ctx.fillStyle = '#ffcc00';
-                    ctx.fillRect(40, 40, 90, 70);
-                    var stream = canvas.captureStream(12);
-                    var stub = function () { return Promise.resolve(stream); };
-                    try {
-                        Object.defineProperty(navigator, 'mediaDevices',
-                            {value: {getDisplayMedia: stub}, configurable: true});
-                    } catch (error) {
-                        navigator.mediaDevices.getDisplayMedia = stub;
+            # ---------- 军令 #26：截屏下线，放大镜搬进左栏「重新框选」 ----------
+            check("辅助栏里没有截屏钮了",
+                  panel.locator("#epCapture").count() == 0,
+                  {"count": panel.locator("#epCapture").count()})
+            check("宿主页面上没有截屏遮罩",
+                  page.locator(".jzo-cap-layer").count() == 0, {})
+
+            # 一道带托管配图的题进池：切图要有真像素，字节得先落在 pending_assets/。
+            crop_png = make_png(64, 48)
+            crop_doc = dict(UNIQUE_DOC)
+            crop_doc["stem"] = "军令#26 切图专用题：放大镜搬进左栏后，切出来的图落回中转站（  ）"
+            status, crop_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{
+                    "question": dict(crop_doc, images=[{
+                        "id": "img_probe_crop", "role": "stem",
+                        "uri": "/static/uploads/img_probe_crop.png", "alt": "待切图"}]),
+                    "assets": [{"id": "img_probe_crop",
+                                "data_url": "data:image/png;base64,"
+                                            + base64.b64encode(crop_png).decode()}],
+                }], "origin": "probe.crop"})
+            check("带配图的题能入池", status == 201, {"status": status, "body": crop_body})
+            crop_batch = str(crop_body.get("batch_id") or "")
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(600)
+            open_batch(crop_batch)
+            expect(canvas.locator(".ed-img-frame img")).to_be_visible(timeout=15000)
+            check("左栏画着这一题的原图",
+                  canvas.locator(".ed-img-frame img").count() >= 1,
+                  {"imgs": canvas.locator(".ed-img-frame img").count()})
+
+            crop_btn = canvas.locator(".ed-img-crop-btn").first
+            expect(crop_btn).to_be_visible(timeout=10000)
+            crop_label = crop_btn.inner_text()
+            check("左栏每一题都有【重新框选】入口",
+                  "框选" in crop_label, {"label": crop_label})
+            crop_btn.click()
+            page.wait_for_timeout(2500)
+            crop_hint = ""
+            if canvas.locator(".ed-crop-hint").count():
+                crop_hint = canvas.locator(".ed-crop-hint").first.inner_text()
+            check("切图台亮出来了", canvas.locator(".ed-crop-canvas").count() == 1,
+                  {"hint": crop_hint,
+                   "diag": canvas.locator("#edRoot").evaluate(
+                       """() => ({
+                            cells: document.querySelectorAll('.ed-img-cell').length,
+                            indexed: document.querySelectorAll('.ed-img-cell[data-index]').length,
+                            buttons: document.querySelectorAll('.ed-img-crop-btn').length,
+                            hints: document.querySelectorAll('.ed-crop-hint').length,
+                            canvases: document.querySelectorAll('canvas').length,
+                            first: (function () {
+                                var n = document.querySelector('.ed-img-cell');
+                                return n ? n.outerHTML.slice(0, 260) : '';
+                            })()
+                       })"""),
+                   "console": [text[:200] for text in result["console_errors"][-6:]],
+                   "page": [text[:200] for text in result["page_errors"][-6:]]})
+            expect(canvas.locator(".ed-crop-canvas")).to_be_visible(timeout=15000)
+            check("切图台给出手势提示（移动看像素、拖拽框选、左键松开）",
+                  "像素" in crop_hint and "拖拽" in crop_hint and "左键" in crop_hint,
+                  {"hint": crop_hint})
+            check("切图台上鼠标是十字",
+                  canvas.locator(".ed-crop-canvas").evaluate(
+                      "n => getComputedStyle(n).cursor") == "crosshair", {})
+
+            # 放大镜：跟着鼠标走，镜心一根红十字。
+            box = canvas.locator(".ed-crop-canvas").bounding_box()
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            page.wait_for_timeout(400)
+            check("放大镜层挂上来了", canvas.locator(".ed-crop-lens").count() == 1,
+                  {"count": canvas.locator(".ed-crop-lens").count()})
+            lens_pixels = canvas.locator(".ed-crop-lens").evaluate(
+                """c => {
+                    var ctx = c.getContext('2d');
+                    var d = ctx.getImageData(0, 0, c.width, c.height).data;
+                    var opaque = 0; var red = 0; var white = 0;
+                    for (var i = 0; i < d.length; i += 4) {
+                        if (d[i + 3] > 8) opaque += 1;
+                        if (d[i] > 220 && d[i + 1] < 140 && d[i + 2] < 140 && d[i + 3] > 120) red += 1;
+                        if (d[i] > 230 && d[i + 1] > 230 && d[i + 2] > 230 && d[i + 3] > 120) white += 1;
                     }
+                    return {opaque: opaque, red: red, white: white,
+                            smooth: ctx.imageSmoothingEnabled, w: c.width, h: c.height};
                 }""")
-            cards_before_shot = len(pending_cards(base))
-            panel.locator("#epCapture").click()
-            expect(page.locator(".jzo-cap-layer")).to_be_visible(timeout=15000)
-            page.mouse.move(760, 420)
-            # 等视频流把首帧吃进去：画面尺寸不到就裁不出东西
-            page.wait_for_timeout(1200)
-            smoothing = page.evaluate(
-                """() => { var c = document.querySelector('.jzo-cap-canvas');
-                   return c ? c.getContext('2d').imageSmoothingEnabled : null; }""")
-            check("放大镜关掉平滑看像素", smoothing is False, {"smoothing": smoothing})
-            cap_hint = page.locator(".jzo-cap-hint").inner_text()
-            check("截屏时给出手势提示（移动看像素、左键松开截取）",
-                  "左键" in cap_hint and "像素" in cap_hint, {"hint": cap_hint})
+            check("放大镜关掉平滑看像素", lens_pixels["smooth"] is False, lens_pixels)
+            check("放大镜真画出了东西（不是空画布）",
+                  lens_pixels["opaque"] > 2000, lens_pixels)
+            check("镜心那根红十字在（按像素数出来的）",
+                  lens_pixels["red"] > 20, lens_pixels)
+            check("镜圈是那圈白边",
+                  lens_pixels["white"] > 20, lens_pixels)
+            page.screenshot(path=str(shots / "v4-crop-lens.png"))
+
+            # 拖拽框选 → 左键松开 → 切完。
+            page.mouse.move(box["x"] + 4, box["y"] + 4)
             page.mouse.down()
+            page.mouse.move(box["x"] + box["width"] - 4, box["y"] + box["height"] - 4,
+                            steps=10)
             page.mouse.up()
-            deadline = time.time() + 60
-            shot_cards = pending_cards(base)
-            while time.time() < deadline and len(shot_cards) <= cards_before_shot:
+            # 松手当场就得收摊：镜子与切图台不许等到落库回执才撤。
+            deadline_lens = time.time() + 5
+            lens_left = 1
+            crop_left = 1
+            while time.time() < deadline_lens:
+                lens_left = canvas.locator(".ed-crop-lens").count()
+                crop_left = canvas.locator(".ed-crop-canvas").count()
+                if lens_left == 0 and crop_left == 0:
+                    break
+                page.wait_for_timeout(100)
+            check("切完放大镜消失", lens_left == 0, {"count": lens_left})
+            check("切图台也收起来了", crop_left == 0, {"count": crop_left})
+            deadline = time.time() + 40
+            crop_uri = ""
+            while time.time() < deadline:
+                items = pending_items(base, crop_batch)
+                images = ((items[0].get("question") or {}).get("images") or []) if items else []
+                if images:
+                    crop_uri = str(images[0].get("uri") or "")
+                    if crop_uri.startswith("/static/pending/"):
+                        break
                 page.wait_for_timeout(400)
-                shot_cards = pending_cards(base)
-            check("截屏后自动建批次",
-                  len(shot_cards) > cards_before_shot,
-                  {"before": cards_before_shot, "after": len(shot_cards)})
-            shot_card = None
-            for entry in shot_cards:
-                if str(entry.get("source_name") or "").startswith("截图-"):
-                    shot_card = entry
-            check("截图的名字按「截图-日期-时刻」落进批次卡片",
-                  shot_card is not None,
-                  {"names": [entry.get("source_name") for entry in shot_cards]})
+            check("左键松开就切图，切完的配图落回中转站",
+                  crop_uri.startswith("/static/pending/"), {"uri": crop_uri})
+            check("切完的图又出现在左栏里",
+                  canvas.locator(".ed-img-frame img").count() >= 1,
+                  {"imgs": canvas.locator(".ed-img-frame img").count()})
+            page.screenshot(path=str(shots / "v4-crop-done.png"))
+            to_list()
             page.screenshot(path=str(shots / "v4-intake.png"))
 
             # ---------- F5 连刷三轮：首屏永远是批次列表 ----------

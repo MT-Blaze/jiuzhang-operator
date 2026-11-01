@@ -907,6 +907,24 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         "batch_id": target_batch,
         "batch": card,
         "saved_ids": [document["id"] for document, _stored, _pending_id in prepared],
+        # 新落盘的配图清单：插件切完图要知道底座把字节写到哪个地址去了，
+        # 题面里的 uri 得跟着换成真实的那一个，不然题里挂着一张取不到的图。
+        "saved_assets": [
+            {
+                "pending_id": pending_id or document["id"],
+                "assets": [
+                    {
+                        "id": str(asset.get("image_id") or ""),
+                        "name": str(asset.get("name") or ""),
+                        "uri": PENDING_ASSET_URI_PREFIX + str(asset.get("name") or ""),
+                        "mime": str(asset.get("mime") or ""),
+                        "bytes": int(asset.get("bytes") or 0),
+                    }
+                    for asset in stored
+                ],
+            }
+            for document, stored, pending_id in prepared
+        ],
     }
 
 

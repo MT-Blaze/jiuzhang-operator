@@ -3,13 +3,17 @@
 写通道与中转站同权：必须带一次性写令牌（AGENTS §5）。
 插件走宿主转发（``ingest.files``），宿主自己拖进来的文件走这条 HTTP 口子，
 两条路最终落进同一个 ``pending_bank``，口径只有一处。
+
+**两段式**：响应先把批次立起来（一个文件一条「正在解析」的占位题），
+识别与 OCR 在响应之后的后台任务里跑完再就地替换占位题。
+老师粘贴一张截图不必盯着屏幕等模型转写。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from app.core import ingest, pending_bank, questions
 from app.core.security import require_write_token
@@ -23,7 +27,8 @@ router = APIRouter(tags=["ingest"])
     summary="拖入的文件 → 中转站新批次",
     dependencies=[Depends(require_write_token)],
 )
-async def ingest_files(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+async def ingest_files(background: BackgroundTasks,
+                       payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """请求体形如 ``{"files": [{"name": "卷子.pdf", "data_url": "data:...;base64,..."}]}``。
 
     后端按**后缀**分拣：文本类走轻量解析，PDF 尽力抽文本层，图片走 OCR。
@@ -38,7 +43,12 @@ async def ingest_files(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if not isinstance(files, list) or not files:
         raise HTTPException(status_code=400, detail="缺少 files 数组")
     try:
-        return await ingest.ingest_files(files)
+        staged = ingest.stage_ingest(files)
+        jobs = staged.pop("jobs", [])
+        if jobs:
+            background.add_task(ingest.run_ingest_jobs, staged["batch_id"], jobs)
+        staged["parsing"] = bool(jobs)
+        return staged
     except ingest.IngestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except questions.QuestionValidationError as exc:

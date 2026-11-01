@@ -2,7 +2,7 @@
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_meta``
 
-钉住十条口径：
+钉住十二条口径：
 - 标准名一律由底座按 ``年份-地区-主体-类型-学科`` 拼出来，客户端说了不算；
 - 改一次公共字段，这一批**池子里**的所有题立刻同步 ``sources``；
 - 明细学校拆成隐藏标签（井号开头），老师的可见标签一个都不许挤掉；
@@ -12,7 +12,9 @@
 - 文本类走轻量解析，解析不出题就如实说，不许编；
 - 年份不是数字、批次不存在，一律拒；
 - 同一批里的题按**录入先后**排，审核台看到的次序就是卷面次序；
-- 老库（结构 v3）升上来时次序原样保留，不在老师脚下重排。
+- 老库（结构 v3）升上来时次序原样保留，不在老师脚下重排；
+- 入库是**两段式**：响应先把批次立起来，识别在后台跑，占位题**就地**换成真题；
+- 认不出内容就如实留一条「待识别」，不许编题。
 """
 
 from __future__ import annotations
@@ -226,6 +228,24 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(status, 200, body)
         return body["items"]
 
+    def _wait_parsed(self, batch_id: str, needle: str, timeout: float = 30.0) -> list[dict]:
+        """等后台解析把占位题换成真题。
+
+        入库是两段式：响应先把批次立起来，识别在后台任务里跑完再就地替换占位题。
+        所以「解析完了没有」只能轮询，不许假设响应回来时就已经解析完。
+        """
+        deadline = time.time() + timeout
+        items: list[dict] = []
+        while time.time() < deadline:
+            items = self._batch_items(batch_id)
+            for item in items:
+                if needle in str(item["question"].get("stem") or ""):
+                    return items
+            time.sleep(0.2)
+        self.fail(f"等了 {timeout}s，批次 {batch_id} 里还是没解析出含「{needle}」的题："
+                  f"{[item['question'].get('stem') for item in items]}")
+        return items
+
     # ---------- 判据 ----------
 
     def test_01_standard_name_is_built_by_the_backend(self) -> None:
@@ -346,10 +366,9 @@ class PendingMetaContractTest(unittest.TestCase):
         })
         self.assertEqual(status, 201, body)
         self.assertTrue(body["batch_id"], "文本类走轻量解析，要建出批次")
-        self.assertTrue(body["saved_ids"], "解析出的题要进池子")
+        self.assertTrue(body["saved_ids"], "批次里先要有一条款")
         self.assertEqual(body["kinds"], ["text"])
-        items = self._batch_items(body["batch_id"])
-        self.assertTrue(items)
+        items = self._wait_parsed(body["batch_id"], "f(x)")
         self.assertIn("f(x)", items[0]["question"]["stem"])
         card = None
         status, listing = self._request("/api/pending/batches")
@@ -435,6 +454,45 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual([str(item["id"]) for item in items],
                          ["p_aaa222", "p_mmm333", "p_zzz111"],
                          "升级不许在老师脚下重排这一批题")
+
+    def test_13_batch_appears_first_and_parsing_runs_in_background(self) -> None:
+        """入库是两段式：批次先立起来，识别在后台跑，占位题就地换成真题。
+
+        早先是一条道走到底：先把文件解析完（图片要等 OCR）才建批次。
+        老师粘贴完只能对着空屏等模型转写。
+        """
+        payload = "data:text/markdown;base64," + base64.b64encode(
+            EXAM_ZH_MD.encode("utf-8")).decode("ascii")
+        status, body = self._request("/api/ingest/files", "POST", {
+            "files": [{"name": "两段式.md", "data_url": payload}],
+        })
+        self.assertEqual(status, 201, body)
+        self.assertTrue(body["batch_id"], "响应回来时批次就该立起来了")
+        self.assertEqual(body["parsing"], True, "响应里要说明识别还在后台跑")
+        self.assertEqual(len(body["saved_ids"]), 1, "一个文件先留一条占位题")
+        pending_id = str(body["saved_ids"][0])
+
+        items = self._wait_parsed(body["batch_id"], "f(x)")
+        self.assertEqual(len(items), 1, "占位题要被就地替换，不许多出一道重影")
+        self.assertEqual(str(items[0]["id"]), pending_id,
+                         "替换要占原来的号：号一变，老师手里那条就断了")
+        self.assertNotIn("正在解析", str(items[0]["question"]["stem"]))
+        self.assertIn("f(x)", str(items[0]["question"]["stem"]))
+
+    def test_14_unparsable_file_keeps_an_honest_placeholder(self) -> None:
+        """认不出内容就如实留一条「待识别」，不许编题，也不许把批次丢掉。"""
+        payload = "data:text/markdown;base64," + base64.b64encode(
+            "这只是一段没有题号的散文。".encode("utf-8")).decode("ascii")
+        status, body = self._request("/api/ingest/files", "POST", {
+            "files": [{"name": "散文.md", "data_url": payload}],
+        })
+        self.assertEqual(status, 201, body)
+        self.assertTrue(body["batch_id"], "认不出也要有批次")
+        items = self._batch_items(body["batch_id"])
+        self.assertTrue(items, "批次里至少留一条")
+        stems = [str(item["question"]["stem"]) for item in items]
+        self.assertTrue(any("待识别" in stem for stem in stems),
+                        f"认不出就要写明「待识别」，实际是：{stems}")
 
 
 if __name__ == "__main__":

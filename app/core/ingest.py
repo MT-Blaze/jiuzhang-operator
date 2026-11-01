@@ -35,6 +35,8 @@ __all__ = [
     "extract_pdf_text",
     "build_documents",
     "ingest_files",
+    "stage_ingest",
+    "run_ingest_jobs",
 ]
 
 # 单个文件的上限：老师拖的是试卷，不是硬盘。
@@ -79,6 +81,14 @@ _HEAD_NUM_RE = re.compile(
     r"^\s*(?:第\s*([0-9]{1,3})\s*题|[\(（]?\s*([0-9]{1,3})\s*[\)）\.．、:：])"
 )
 _FILLIN_RE = re.compile(r"\\fillin(?![A-Za-z])")
+
+# 无题号兜底段的发问词：求、证、算、判这类才像是在问一道题。
+_ASK_RE = re.compile(
+    r"(求|证明|试证|解答|解方程|解不等式|计算|化简|判断|辨析|作图|作出|"
+    r"填空|填写|写出|列举|讨论|估计|估算|回答|比较|试算|论述|探究)"
+)
+# 数学内容的痕迹：有公式、等号、上下标或数字。
+_MATH_HINT_RE = re.compile(r"(\$|=|＝|≠|≤|≥|×|÷|\^|\d)")
 
 
 class IngestError(Exception):
@@ -424,6 +434,24 @@ def _split_paragraphs(text: str) -> list[str]:
     return [part.strip() for part in parts if len(part.strip()) >= 8]
 
 
+def _looks_like_question(segment: str, parsed: dict[str, Any]) -> bool:
+    """无题号的兜底段要**像一道数学题**才收下。
+
+    早先的兜底是「有字就算题」，于是老师拖进来一段说明文字，审核台里就躺着一道
+    「题」——内容确实是老师的原话，但它不是题。这里只收有数学题特征的段：
+    有选项、有空、有答案标记，或者有求/证这类发问词且带数学内容。
+    """
+    if parsed.get("options"):
+        return True
+    if int(parsed.get("blanks") or 0) > 0:
+        return True
+    if str(parsed.get("answer") or "").strip():
+        return True
+    if not _ASK_RE.search(segment):
+        return False
+    return bool(_MATH_HINT_RE.search(segment))
+
+
 def build_documents(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     """整段文本 → 一批题目文档（契约口径）与警告。
 
@@ -445,6 +473,8 @@ def build_documents(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     for segment, number in _split_numbered(text):
         parsed = question_parser.parse_question(segment)
         if not str(parsed.get("stem") or "").strip():
+            continue
+        if not number and not _looks_like_question(segment, parsed):
             continue
         options = [
             {"key": str(option.get("label") or ""), "content": str(option.get("text") or "")}
@@ -542,10 +572,38 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
 
 
 async def ingest_files(files: Any) -> dict[str, Any]:
-    """把拖进来的一批文件变成中转站里的一批待审题。
+    """把拖进来的一批文件变成中转站里的一批待审题（**同步跑完**）。
 
     ``files`` 形如 ``[{"name": "卷子.pdf", "data_url": "data:application/pdf;base64,..."}]``。
     返回 ``{"batch_id", "batch", "saved_ids", "warnings", "ignored", "kinds"}``。
+
+    线上走的是两段式（``stage_ingest`` + ``run_ingest_jobs``）：批次先立起来，
+    识别放后台，老师不用盯着屏幕等 OCR。这里保留同步版给脚本与测试用。
+    """
+    staged = stage_ingest(files)
+    jobs = staged.pop("jobs", [])
+    if jobs:
+        await run_ingest_jobs(staged["batch_id"], jobs)
+        # 同步版跑完要按解析后的真账回报：题数与 id 都可能变了。
+        from app.core import pending_bank
+        rows = pending_bank.list_batch_questions(staged["batch_id"])
+        staged["saved_ids"] = [row["id"] for row in rows["items"]]
+        for card in pending_bank.batch_list()["batches"]:
+            if card["batch_id"] == staged["batch_id"]:
+                staged["batch"] = card
+                break
+    return staged
+
+
+def stage_ingest(files: Any) -> dict[str, Any]:
+    """第一段：分拣、解码，**立刻立批次**。
+
+    老师粘贴一张截图进来，不该盯着屏幕等 OCR 跑完。所以这一段只做快活：
+    按后缀分拣、把原件存成只读副本、建一个批次，一个文件先留一条
+    「正在解析」的占位题。识别交给 ``run_ingest_jobs`` 在后台跑。
+
+    返回 ``{"batch_id", "batch", "saved_ids", "warnings", "ignored", "kinds", "jobs"}``，
+    其中 ``jobs`` 是后台要干的活：``[{"pending_id", "name", "data"}]``。
     """
     if not isinstance(files, list) or not files:
         raise IngestError("没有要处理的文件")
@@ -553,7 +611,6 @@ async def ingest_files(files: Any) -> dict[str, Any]:
         raise IngestError(f"一次最多处理 {MAX_FILES} 个文件")
 
     ignored: list[str] = []
-    documents: list[dict[str, Any]] = []
     warnings: list[str] = []
     kinds: list[str] = []
     loaded: list[tuple[str, bytes]] = []
@@ -571,15 +628,12 @@ async def ingest_files(files: Any) -> dict[str, Any]:
             raise IngestError(f"{name}：文件太大（上限 32 MiB）")
         if not data:
             raise IngestError(f"{name}：文件是空的")
-        items, notes, kind = await _items_from_file(name, data)
-        documents.extend(items)
-        warnings.extend(notes)
-        kinds.append(kind)
         loaded.append((name, data))
+        kinds.append(classify(name))
 
     if not loaded:
         return {"batch_id": "", "batch": None, "saved_ids": [], "warnings": [],
-                "ignored": ignored, "kinds": []}
+                "ignored": ignored, "kinds": [], "jobs": []}
 
     from app.core import pending_bank
 
@@ -588,13 +642,55 @@ async def ingest_files(files: Any) -> dict[str, Any]:
     backup_paths = [pending_bank.store_source_backup(name, data) for name, data in loaded]
     backup = json.dumps(backup_paths, ensure_ascii=False, separators=(",", ":"))
 
+    placeholders = [
+        {"question": _placeholder(f"（正在解析：{name}）")} for name, _data in loaded
+    ]
     result = pending_bank.save_draft(
-        [{"question": document} for document in documents],
+        placeholders,
         source_backup=backup,
         source_name=source_name,
         origin="ingest",
     )
+    jobs = [
+        {"pending_id": pending_id, "name": name, "data": data}
+        for (name, data), pending_id in zip(loaded, result["saved_ids"])
+    ]
     result["warnings"] = warnings
     result["ignored"] = ignored
     result["kinds"] = kinds
+    result["jobs"] = jobs
     return result
+
+
+async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
+    """第二段：识别，识别出来的题**就地替换**那条「正在解析」的占位题。
+
+    替换而不是另起一条：批次里不该同时躺着「正在解析」和真题两份。
+    识别不出东西时，占位题就地改写成「待识别：……请老师补录」，如实说明。
+    """
+    from app.core import pending_bank
+
+    for job in jobs or []:
+        pending_id = str((job or {}).get("pending_id") or "")
+        name = str((job or {}).get("name") or "")
+        data = (job or {}).get("data") or b""
+        if not pending_id or not name or not batch_id:
+            continue
+        try:
+            documents, _notes, _kind = await _items_from_file(name, data)
+        except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
+            documents = []
+            _notes = [f"{name}：解析出错（{error}）"]
+        items: list[dict[str, Any]] = []
+        if documents:
+            items.append({"question": documents[0], "pending_id": pending_id})
+            items.extend({"question": document} for document in documents[1:])
+        else:
+            items.append({
+                "question": _placeholder(f"（待识别：{name}，识别没成功，请老师补录）"),
+                "pending_id": pending_id,
+            })
+        try:
+            pending_bank.save_draft(items, batch_id=batch_id, origin="ingest")
+        except Exception:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
+            continue

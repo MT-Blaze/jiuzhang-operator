@@ -148,7 +148,6 @@
   var panelSrcNameEl = document.getElementById("epSrcName");
   var panelStdNameEl = document.getElementById("epStdName");
   var panelIntakeEl = document.getElementById("epIntake");
-  var panelCaptureEl = document.getElementById("epCapture");
   var panelMetaYearEl = document.getElementById("epMetaYear");
   var panelMetaRegionEl = document.getElementById("epMetaRegion");
   var panelMetaBodyEl = document.getElementById("epMetaBody");
@@ -371,6 +370,8 @@
   function safeAssetUri(value) {
     var uri = String(value == null ? "" : value).trim();
     if (uri.indexOf("/static/uploads/") === 0) return uri;
+    // 中转站里的配图挂在 pending_assets/，审核台看的就是它。
+    if (uri.indexOf("/static/pending/") === 0) return uri;
     if (uri.indexOf("/static/icons/") === 0) return uri;
     if (uri.indexOf("/static/assets/") === 0) return uri;
     if (uri.indexOf("asset://") === 0 && uri.length > 8) return uri;
@@ -1181,6 +1182,13 @@
       return Promise.resolve({ ok: false, message: reason });
     }
     var payload = { questions: [{ pending_id: item.pendingId || "", question: doc }] };
+    // 刚切出来的图：字节随草稿一起进池子，落 pending_assets/，主库一个字节都不碰。
+    if (item.cropAsset && item.cropAsset.data_url) {
+      payload.questions[0].assets = [{
+        id: String(item.cropAsset.id || ""),
+        data_url: String(item.cropAsset.data_url || "")
+      }];
+    }
     if (item.batchId) payload.batch_id = item.batchId;
     return hostCall("pending.save_draft", payload).then(function (result) {
       item.dirty = false;
@@ -1524,12 +1532,6 @@
     });
   }
 
-  function shotName() {
-    var date = new Date();
-    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
-    return "截图-" + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate())
-      + "-" + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds()) + ".png";
-  }
 
   /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节。 */
   function ingestEntries(entries) {
@@ -1537,6 +1539,12 @@
     if (!files.length) return Promise.resolve(null);
     return hostCall("ingest.files", { files: files }, INGEST_TIMEOUT_MS).then(function (result) {
       var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
+      // parsing=true：批次已经立起来了，识别在后台跑。
+      if (result && result.parsing) {
+        dock("已收下 " + files.length + " 份（批次 "
+          + String((result && result.batch_id) || "") + "），正在后台解析。");
+        return result;
+      }
       dock("已收下 " + files.length + " 个文件，认出 " + saved + " 道题，批次 "
         + String((result && result.batch_id) || "") + "。");
       return result;
@@ -1561,22 +1569,6 @@
     });
   }
 
-  function captureShot() {
-    panelSay("截屏中：点一下要截的地方，Esc 取消。", "info", "idle");
-    return hostCall("screen.capture", {}, INGEST_TIMEOUT_MS).then(function (result) {
-      if (!result || result.cancelled) {
-        panelSay("截屏取消了。", "info", "idle");
-        return null;
-      }
-      return ingestEntries([{ name: result.name || shotName(), data_url: result.data_url }]);
-    }).catch(function (error) {
-      var text = (error && error.message) || "未知原因";
-      panelSay("截屏没成：" + text, "error", "failed");
-      dockWarn("截屏没成：" + text);
-      return null;
-    });
-  }
-
   function hasFiles(event) {
     var transfer = event && event.dataTransfer;
     if (!transfer) return false;
@@ -1594,6 +1586,40 @@
     var tag = String(target.tagName).toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return true;
     return Boolean(target.isContentEditable);
+  }
+
+  /**
+   * 剪贴板里的图片：``items`` 与 ``files`` 两路都取，同一张只留一份。
+   *
+   * 只认 ``items`` 不够：有些环境贴图时 ``items`` 是空的，只有 ``files`` 里有货；
+   * 两路都取，粘贴才不会时灵时不灵。
+   */
+  function clipboardImageFiles(event) {
+    var data = event && event.clipboardData;
+    if (!data) return [];
+    var files = [];
+    var seen = [];
+    function push(file) {
+      if (!file) return;
+      var type = String(file.type || "").toLowerCase();
+      if (type.indexOf("image/") !== 0) return;
+      var name = String(file.name || "");
+      var size = Number(file.size || 0);
+      for (var i = 0; i < seen.length; i += 1) {
+        if (seen[i].type === type && seen[i].name === name && seen[i].size === size) return;
+      }
+      seen.push({ type: type, name: name, size: size });
+      files.push(file);
+    }
+    var items = data.items || [];
+    for (var index = 0; index < items.length; index += 1) {
+      if (items[index].kind !== "file") continue;
+      var file = items[index].getAsFile();
+      if (file) push(file);
+    }
+    var listed = data.files || [];
+    for (var j = 0; j < listed.length; j += 1) push(listed[j]);
+    return files;
   }
 
   function markDrop(on) {
@@ -1645,6 +1671,7 @@
       root.addEventListener("drop", function (event) {
         if (!hasFiles(event)) return;
         if (batchDropEl && batchDropEl.contains(event.target)) return;
+        if (crop) return;   // 切图台正在等图，别把它当成新卷子
         event.preventDefault();
         var files = event.dataTransfer && event.dataTransfer.files;
         if (files && files.length) ingestFiles(files);
@@ -1652,41 +1679,37 @@
     }
     // Ctrl+V 粘贴截图 → 自动建批次
     window.addEventListener("paste", function (event) {
+      if (crop) return;   // 切图台正在等图，别把它当成新卷子
       if (isTypingTarget(event.target)) return;
-      var items = (event.clipboardData && event.clipboardData.items) || [];
-      var files = [];
-      for (var index = 0; index < items.length; index += 1) {
-        if (items[index].kind !== "file") continue;
-        var file = items[index].getAsFile();
-        if (file) files.push(file);
-      }
-      if (!files.length && event.clipboardData && event.clipboardData.files) {
-        files = Array.prototype.slice.call(event.clipboardData.files);
-      }
+      var files = clipboardImageFiles(event);
       if (!files.length) return;
       event.preventDefault();
       ingestFiles(files);
     });
-    // Alt+S 截屏
-    window.addEventListener("keydown", function (event) {
-      if (!event.altKey) return;
-      if (String(event.key || "").toLowerCase() !== "s") return;
-      if (isTypingTarget(event.target)) return;
-      event.preventDefault();
-      captureShot();
-    });
   }
 
   // ---------- 三栏渲染 ----------
+
+  /** 这一题自己的配图：真题看 images，假数据才退到 dev 里的占位图。 */
+  function itemImage(item) {
+    var images = (item.question && Array.isArray(item.question.images)) ? item.question.images : [];
+    for (var index = 0; index < images.length; index += 1) {
+      var uri = safeAssetUri(images[index] && images[index].uri);
+      if (uri) return { uri: uri, id: String((images[index] && images[index].id) || "") };
+    }
+    var demo = safeAssetUri(item.dev && item.dev.image_uri);
+    return demo ? { uri: demo, id: "" } : null;
+  }
+
   function renderImageCell(item, index) {
     var cell = el("div", "ed-img-cell");
     cell.setAttribute("role", "listitem");
     cell.setAttribute("data-index", String(index));
-    var uri = safeAssetUri(item.dev && item.dev.image_uri);
-    if (uri) {
-      var frame = el("div", "ed-img-frame");
+    var picture = itemImage(item);
+    var frame = el("div", "ed-img-frame");
+    if (picture) {
       var img = document.createElement("img");
-      img.src = uri;
+      img.src = picture.uri;
       img.alt = "第 " + (index + 1) + " 题原图";
       img.addEventListener("error", function () {
         if (img.parentNode) {
@@ -1697,10 +1720,20 @@
       var box = el("div", "ed-img-box");
       box.setAttribute("data-box", "stem");
       frame.appendChild(box);
-      cell.appendChild(frame);
     } else {
-      cell.appendChild(el("p", "ed-img-missing", "本题没有原图（假数据只留占位）。"));
+      frame.appendChild(el("p", "ed-img-missing", "本题没有配图。框选取图可以把卷子上的这一题裁下来。"));
     }
+    cell.appendChild(frame);
+    // 切图台入口：点开就是一只跟着鼠标的放大镜，拖拽框选，左键松开切完。
+    var tools = el("div", "ed-img-tools");
+    var cropBtn = el("button", "ed-img-crop-btn", picture ? "重新框选" : "框选取图");
+    cropBtn.type = "button";
+    cropBtn.setAttribute("data-index", String(index));
+    cropBtn.setAttribute("aria-label",
+      (picture ? "重新框选第 " : "框选取图第 ") + (index + 1) + " 题的配图");
+    cropBtn.addEventListener("click", function () { openCrop(item, index); });
+    tools.appendChild(cropBtn);
+    cell.appendChild(tools);
     var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
     var jump = el("button", "ed-img-jump", "跳到第 " + (index + 1) + " 题");
     jump.type = "button";
@@ -1710,6 +1743,490 @@
     cell.appendChild(jump);
     cell.appendChild(el("p", "ed-img-caption", "第 " + (index + 1) + " 题 · " + paper));
     return cell;
+  }
+
+  // ---------- 左栏切图：圆形放大镜 + 中心十字准星 ----------
+  //
+  // 放大镜是从宿主壳那套截屏交互里原样搬过来的：半径 104、8 倍、关平滑看像素，
+  // 镜心一根红十字。只是它不再跟着屏幕走，而是跟着老师在左栏那张图上的鼠标走；
+  // 左键松开，框选完成，镜子消失。
+  //
+  // 像素级精准的前提是画布干净：沙箱插件画不了宿主原点的图——画布会被污染，
+  // toDataURL 直接抛 SecurityError。所以已有的配图走宿主 asset.read 递 data URL，
+  // 老师现贴的图走 File：两条路拿到的都是不带污点的字节。
+  var CROP_RADIUS = 104;     // 放大镜半径（CSS 像素）
+  var CROP_ZOOM = 8;         // 放大倍数
+  var CROP_MIN_SIDE = 4;     // 最小选区边长（CSS 像素）
+  var crop = null;
+  var lensCanvas = null;
+
+  function cropAssetId() {
+    return "img_crop_" + Math.random().toString(36).slice(2, 10);
+  }
+
+  /** data URL → Blob。插件侧禁用 fetch（契约红线），只能用 atob 造字节。 */
+  function dataUrlToBlob(dataUrl, mime) {
+    var text = String(dataUrl || "");
+    var comma = text.indexOf(",");
+    var payload = comma >= 0 ? text.slice(comma + 1) : "";
+    var binary = window.atob(payload);
+    var bytes = new Uint8Array(binary.length);
+    for (var index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mime || "image/png" });
+  }
+
+  function cropFiles(event) {
+    var data = event && event.clipboardData;
+    if (!data) return [];
+    var files = [];
+    var items = data.items || [];
+    for (var index = 0; index < items.length; index += 1) {
+      if (items[index].kind !== "file") continue;
+      var file = items[index].getAsFile();
+      if (file && String(file.type || "").indexOf("image/") === 0) files.push(file);
+    }
+    var listed = data.files || [];
+    for (var j = 0; j < listed.length; j += 1) {
+      var each = listed[j];
+      if (each && String(each.type || "").indexOf("image/") === 0) files.push(each);
+    }
+    return files;
+  }
+
+  /** 切图台：左栏那一格变成一块画布，鼠标变十字，旁边跟一只放大镜。 */
+  function openCrop(item, index) {
+    closeCrop();
+    // closeCrop 会整屏重绘，格子节点换了新的：这里按序号重新找，别拿旧的。
+    var cell = document.querySelector('.ed-img-cell[data-index="' + index + '"]');
+    if (!cell) return;
+    var session = {
+      item: item,
+      index: index,
+      cell: cell,
+      bitmap: null,
+      width: 0,
+      height: 0,
+      scale: 1,
+      dpr: 1,
+      rect: null,
+      dragging: false,
+      start: null,
+      pointer: { x: 0, y: 0 },
+      canvas: null,
+      ctx: null,
+      lens: null,
+      lctx: null,
+      hint: null
+    };
+    crop = session;
+    var hint = el("p", "ed-crop-hint", "正在取图…");
+    session.hint = hint;
+    cell.appendChild(hint);
+    // 窗口级监听先绑上：图还没取回来的时候，粘贴与拖放也得能接住。
+    window.addEventListener("mousemove", onCropMove, true);
+    window.addEventListener("mouseup", onCropUp, true);
+    window.addEventListener("keydown", onCropKey, true);
+    window.addEventListener("paste", onCropPaste, true);
+    window.addEventListener("dragover", onCropDragOver, true);
+    window.addEventListener("drop", onCropDrop, true);
+    window.addEventListener("resize", onCropResize);
+    var picture = itemImage(item);
+    var managed = picture && picture.uri.indexOf("/static/") === 0;
+    if (!managed) {
+      // 没有现成的托管图：等老师把卷子上的这一页贴进来或拖进来。
+      mountCropSurface(session, null);
+      return;
+    }
+    hostCall("asset.read", { uri: picture.uri }).then(function (result) {
+      var blob = dataUrlToBlob(result && result.data_url, result && result.mime);
+      return window.createImageBitmap(blob);
+    }).then(function (bitmap) {
+      mountCropSurface(session, bitmap);
+    }, function (error) {
+      hint.textContent = "这张图取不出来（" + ((error && error.message) || "未知原因") + "）。";
+    });
+  }
+
+  /** 收摊：放大镜撤掉，画布撤掉，这一格回到普通态。 */
+  function closeCrop() {
+    if (!crop) return;
+    var session = crop;
+    crop = null;
+    window.removeEventListener("mousemove", onCropMove, true);
+    window.removeEventListener("mouseup", onCropUp, true);
+    window.removeEventListener("keydown", onCropKey, true);
+    window.removeEventListener("paste", onCropPaste, true);
+    window.removeEventListener("dragover", onCropDragOver, true);
+    window.removeEventListener("drop", onCropDrop, true);
+    window.removeEventListener("resize", onCropResize);
+    if (session.canvas && session.canvas.parentNode) {
+      session.canvas.parentNode.removeChild(session.canvas);
+    }
+    if (session.hint && session.hint.parentNode) {
+      session.hint.parentNode.removeChild(session.hint);
+    }
+    if (lensCanvas) {
+      if (lensCanvas.parentNode) lensCanvas.parentNode.removeChild(lensCanvas);
+      lensCanvas = null;
+    }
+    if (session.bitmap && typeof session.bitmap.close === "function") {
+      session.bitmap.close();
+    }
+    renderAll();
+  }
+
+  function mountCropSurface(session, bitmap) {
+    if (bitmap) {
+      if (session.bitmap && typeof session.bitmap.close === "function") session.bitmap.close();
+      session.bitmap = bitmap;
+      session.width = bitmap.width;
+      session.height = bitmap.height;
+    }
+    if (!session.canvas) {
+      var canvas = document.createElement("canvas");
+      canvas.className = "ed-crop-canvas";
+      canvas.setAttribute("aria-label", "切图台：拖拽框选，左键松开切图");
+      session.canvas = canvas;
+      session.ctx = canvas.getContext("2d");
+      canvas.addEventListener("mousedown", function (event) {
+        if (event.button !== 0 || !session.bitmap) return;
+        event.preventDefault();
+        session.dragging = true;
+        session.start = cropPoint(session, event.clientX, event.clientY);
+        session.rect = null;
+      });
+    }
+    anchorCrop(session);
+    ensureLens();
+    session.lctx = lensCanvas.getContext("2d");
+    resizeLens();
+    session.hint.textContent = bitmap
+      ? "移动鼠标看像素，拖拽框选，左键松开切图；Esc 取消。"
+      : "把卷子上的这一页 Ctrl+V 贴进来（或拖进来），再拖拽框选。";
+  }
+
+  /**
+   * 切图台要跟着格子走。
+   *
+   * 画布上有个 ResizeObserver：切图台一挂上去，格子高度变了，它就排一次整屏重绘，
+   * 重绘把格子换成了新的——切图台若还攥着旧格子，画布就掉进了一个没人看得见的
+   * 树里（症状：镜子在，格子上的画布不见了）。所以每次重绘后都要把画布与提示
+   * 搬回当前这一格。
+   *
+   * 搬的动作必须和重绘在同一个任务里做完：ResizeObserver 只在帧末比一次尺寸，
+   * 中间塌下去又撑回来的那一下它根本看不见——也就不会自己绕成死循环。
+   */
+  function anchorCrop(session) {
+    if (!session) return;
+    var cell = document.querySelector('.ed-img-cell[data-index="' + session.index + '"]');
+    if (!cell) return;
+    var frame = cell.querySelector(".ed-img-frame");
+    if (!frame) return;
+    var img = frame.querySelector("img");
+    if (img) img.hidden = true;
+    var box = frame.querySelector(".ed-img-box");
+    if (box) box.hidden = true;
+    if (session.canvas && session.canvas.parentNode !== frame) {
+      if (session.canvas.parentNode) session.canvas.parentNode.removeChild(session.canvas);
+      frame.insertBefore(session.canvas, frame.firstChild);
+    }
+    if (session.hint && session.hint.parentNode !== cell) {
+      if (session.hint.parentNode) session.hint.parentNode.removeChild(session.hint);
+      cell.appendChild(session.hint);
+    }
+    session.cell = cell;
+    layoutCrop(session);
+  }
+
+  function layoutCrop(session) {
+    var canvas = session.canvas;
+    if (!canvas) return;
+    var body = document.getElementById("edImageBody");
+    var maxWidth = Math.max(140, (body ? body.clientWidth : 320) - 24);
+    var scale = session.width ? Math.min(1, maxWidth / session.width) : 1;
+    session.scale = scale;
+    // 图还没贴进来时给一块看得见的空台子，不然画布只有 1×1 像素，像坏了。
+    var displayW = session.width ? Math.max(1, Math.round(session.width * scale))
+                                 : Math.min(maxWidth, 360);
+    var displayH = session.height ? Math.max(1, Math.round(session.height * scale))
+                                   : Math.round(displayW * 0.62);
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    session.dpr = dpr;
+    // 尺寸没变就别再动 canvas.width：改了会重置 2D 上下文，画布高度也会抖一下，
+    // 抖一下就撞上 ResizeObserver → 整屏重绘 → 再抖一下。
+    var pixelW = Math.round(displayW * dpr);
+    var pixelH = Math.round(displayH * dpr);
+    if (canvas.width !== pixelW || canvas.height !== pixelH) {
+      canvas.width = pixelW;
+      canvas.height = pixelH;
+    }
+    canvas.style.width = displayW + "px";
+    canvas.style.height = displayH + "px";
+    drawCropCanvas(session);
+  }
+
+  function drawCropCanvas(session) {
+    var ctx = session.ctx;
+    var canvas = session.canvas;
+    if (!ctx || !canvas) return;
+    var dpr = session.dpr || 1;
+    var displayW = canvas.width / dpr;
+    var displayH = canvas.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, displayW, displayH);
+    if (!session.bitmap) return;
+    ctx.drawImage(session.bitmap, 0, 0, displayW, displayH);
+    var rect = session.rect;
+    if (!rect) return;
+    ctx.fillStyle = "rgba(6, 8, 12, 0.42)";
+    ctx.fillRect(0, 0, displayW, displayH);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = "#2f6b4f";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+  }
+
+  /** 放大镜层：整屏一块画布，镜子跟着鼠标走，镜心一根红十字。 */
+  function ensureLens() {
+    if (lensCanvas) return lensCanvas;
+    lensCanvas = document.createElement("canvas");
+    lensCanvas.className = "ed-crop-lens";
+    lensCanvas.setAttribute("aria-hidden", "true");
+    document.body.appendChild(lensCanvas);
+    resizeLens();
+    return lensCanvas;
+  }
+
+  function resizeLens() {
+    if (!lensCanvas) return;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    lensCanvas.width = Math.max(1, Math.floor(window.innerWidth * dpr));
+    lensCanvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
+    lensCanvas.style.width = window.innerWidth + "px";
+    lensCanvas.style.height = window.innerHeight + "px";
+    var ctx = lensCanvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    if (crop) crop.lctx = ctx;
+  }
+
+  function drawLens(session) {
+    var ctx = session.lctx;
+    if (!ctx) return;
+    var viewW = window.innerWidth;
+    var viewH = window.innerHeight;
+    ctx.setTransform(session.dpr || 1, 0, 0, session.dpr || 1, 0, 0);
+    ctx.clearRect(0, 0, viewW, viewH);
+    if (!session.bitmap || !session.canvas) return;
+    var radius = CROP_RADIUS;
+    var px = session.pointer.x;
+    var py = session.pointer.y;
+    var box = session.canvas.getBoundingClientRect();
+    var sx = (px - box.left) / session.scale;
+    var sy = (py - box.top) / session.scale;
+    // 镜子默认在鼠标右下边，撞到边就翻到另一侧。
+    var mx = px + radius + 28;
+    var my = py + radius + 28;
+    if (mx + radius > viewW - 8) mx = px - radius - 28;
+    if (my + radius > viewH - 8) my = py - radius - 28;
+    var half = radius / CROP_ZOOM;
+    var ox = clampValue(sx - half, 0, Math.max(0, session.width - half * 2));
+    var oy = clampValue(sy - half, 0, Math.max(0, session.height - half * 2));
+    var sw = Math.max(1, Math.min(half * 2, session.width - ox));
+    var sh = Math.max(1, Math.min(half * 2, session.height - oy));
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(mx, my, radius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(session.bitmap, ox, oy, sw, sh, mx - radius, my - radius, radius * 2, radius * 2);
+    ctx.restore();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(mx, my, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    // 镜心准星：告诉老师放大的是哪一粒像素。
+    ctx.strokeStyle = "rgba(255, 96, 96, 0.95)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(mx - 12, my + 0.5);
+    ctx.lineTo(mx + 12, my + 0.5);
+    ctx.moveTo(mx + 0.5, my - 12);
+    ctx.lineTo(mx + 0.5, my + 12);
+    ctx.stroke();
+  }
+
+  function cropPoint(session, clientX, clientY) {
+    var box = session.canvas.getBoundingClientRect();
+    return {
+      x: clampValue(clientX - box.left, 0, box.width),
+      y: clampValue(clientY - box.top, 0, box.height)
+    };
+  }
+
+  function onCropResize() {
+    var session = crop;
+    if (!session) return;
+    layoutCrop(session);
+    resizeLens();
+    drawLens(session);
+  }
+
+  function onCropMove(event) {
+    var session = crop;
+    if (!session) return;
+    session.pointer.x = event.clientX;
+    session.pointer.y = event.clientY;
+    if (session.dragging && session.bitmap) {
+      var point = cropPoint(session, event.clientX, event.clientY);
+      session.rect = {
+        x: Math.min(session.start.x, point.x),
+        y: Math.min(session.start.y, point.y),
+        w: Math.abs(point.x - session.start.x),
+        h: Math.abs(point.y - session.start.y)
+      };
+      drawCropCanvas(session);
+    }
+    drawLens(session);
+  }
+
+  function onCropUp(event) {
+    var session = crop;
+    if (!session || !session.dragging) return;
+    if (event.button !== 0) return;
+    session.dragging = false;
+    var rect = session.rect;
+    if (!rect || rect.w < CROP_MIN_SIDE || rect.h < CROP_MIN_SIDE) {
+      session.rect = null;
+      drawCropCanvas(session);
+      session.hint.textContent = "框太小了，再拖一次。";
+      return;
+    }
+    finishCrop(session);
+  }
+
+  function onCropKey(event) {
+    if (!crop) return;
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeCrop();
+  }
+
+  function onCropPaste(event) {
+    var session = crop;
+    if (!session) return;
+    var files = cropFiles(event);
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    adoptCropFile(session, files[0]);
+  }
+
+  function onCropDragOver(event) {
+    if (!crop) return;
+    event.preventDefault();
+  }
+
+  function onCropDrop(event) {
+    var session = crop;
+    if (!session) return;
+    var files = (event.dataTransfer && event.dataTransfer.files) || [];
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    for (var index = 0; index < files.length; index += 1) {
+      if (String(files[index].type || "").indexOf("image/") === 0) {
+        adoptCropFile(session, files[index]);
+        return;
+      }
+    }
+  }
+
+  /** 贴/拖进来的图直接顶替当前那张——老师要「重新框选」时常常是换一张新的。 */
+  function adoptCropFile(session, file) {
+    session.hint.textContent = "正在解码这张图…";
+    window.createImageBitmap(file).then(function (bitmap) {
+      if (!crop || crop !== session) {
+        if (typeof bitmap.close === "function") bitmap.close();
+        return;
+      }
+      if (session.bitmap && typeof session.bitmap.close === "function") session.bitmap.close();
+      session.bitmap = bitmap;
+      session.width = bitmap.width;
+      session.height = bitmap.height;
+      layoutCrop(session);
+      session.hint.textContent = "移动鼠标看像素，拖拽框选，左键松开切图；Esc 取消。";
+    }, function (error) {
+      session.hint.textContent = "这张图解不开（" + ((error && error.message) || "格式不支持") + "）。";
+    });
+  }
+
+  /** 松手：按源像素切一块，交给底座落盘，再把题面里的配图换过去。 */
+  function finishCrop(session) {
+    var rect = session.rect;
+    var sx = Math.round(rect.x / session.scale);
+    var sy = Math.round(rect.y / session.scale);
+    var sw = Math.max(CROP_MIN_SIDE, Math.round(rect.w / session.scale));
+    var sh = Math.max(CROP_MIN_SIDE, Math.round(rect.h / session.scale));
+    sx = clampValue(sx, 0, Math.max(0, session.width - 1));
+    sy = clampValue(sy, 0, Math.max(0, session.height - 1));
+    sw = clampValue(sw, 1, session.width - sx);
+    sh = clampValue(sh, 1, session.height - sy);
+    var out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    var octx = out.getContext("2d");
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(session.bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+    var dataUrl;
+    try {
+      dataUrl = out.toDataURL("image/png");
+    } catch (error) {
+      closeCrop();
+      dockWarn("切图失败：画布被污染，取不到像素。");
+      return;
+    }
+    var item = session.item;
+    var assetId = cropAssetId();
+    // 松手即收摊：放大镜与切图台当场撤掉，落库挪到后台慢慢办。
+    // 军令原话是「直到左键松开，框选完成，放大镜消失」——镜子不能在等回执的
+    // 那两秒里还杵在屏幕上。
+    closeCrop();
+    if (item.pendingId) {
+      // 中转站里的题：字节随草稿一起进池子，配图落 pending_assets/，主库一个字节都不碰。
+      item.cropAsset = { id: assetId, data_url: dataUrl };
+      item.question.images = [{ id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" }];
+      item.dirty = true;
+      stashOne(item, metaFor(item, {}), false).then(function (outcome) {
+        if (!outcome || !outcome.ok) {
+          dockWarn("切图没能存进中转站。");
+          return;
+        }
+        var saved = outcome.result && outcome.result.saved_assets && outcome.result.saved_assets[0];
+        var asset = saved && saved.assets && saved.assets[0];
+        if (asset && asset.uri && item.question.images && item.question.images[0]) {
+          item.question.images[0].uri = asset.uri;
+        }
+        // 字节已经进池子了：清掉，免得下一次保存又写一份重复的配图。
+        item.cropAsset = null;
+        scheduleRender();
+        dock("切图已存进中转站（" + sw + "×" + sh + " 像素）。");
+      });
+      return;
+    }
+    // 题库里的题：先让底座把字节收进 uploads/，再把题面里的 uri 换过去。
+    hostCall("asset.upload", { data_url: dataUrl }).then(function (result) {
+      item.question.images = [{ id: result.id, role: "stem", uri: result.uri }];
+      item.dirty = true;
+      scheduleRender();
+      dock("切图已存进题库（" + sw + "×" + sh + " 像素）。");
+    }, function (error) {
+      dockWarn("切图没存住：" + ((error && error.message) || "未知原因"));
+    });
   }
 
   /** 格式一：一整段 exam-zh 源码，可编辑——它是唯一的录入面。 */
@@ -2056,6 +2573,9 @@
       sourceBodyEl.appendChild(renderSourceCell(item, index));
       renderBodyEl.appendChild(renderQuestionBlock(item, index));
     });
+    // 切图台先归位再量行高：量的时候它得在格子里，否则量出来的行高偏小，
+    // 归位后格子又长高一截，那一截会再勾一次 ResizeObserver，绕成死循环。
+    anchorCrop(crop);
     var rowH = alignRows();
     restoreFocus(focus);
     // 清空重建会把滚动线抹回顶部：批量界面里老师的阅读位置必须原地保住
@@ -4106,7 +4626,6 @@
         panelSchoolInputEl.value = "";
       });
     }
-    if (panelCaptureEl) panelCaptureEl.addEventListener("click", captureShot);
     wireIntake();
     loadMetaHistory();
     renderBatchMeta();
@@ -4341,7 +4860,6 @@
     onMetaFieldChange: onMetaFieldChange,
     ingestEntries: ingestEntries,
     ingestFiles: ingestFiles,
-    captureShot: captureShot,
     // 探针要把假时钟拨快，三分钟那道闸门才认得出「没人操作」
     idleThreshold: function () { return IDLE_MS; },
     tickIdle: function () {
