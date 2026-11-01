@@ -890,6 +890,73 @@
   color: var(--muted);
 }
 
+/* 拖入文件的录入遮罩：与插件安装遮罩分开，说的不是同一件事 */
+.ws-intake-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.ws-intake-overlay[hidden] {
+  display: none;
+}
+
+.ws-intake-card {
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.ws-intake-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ws-intake-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* 截屏层：全屏变暗 + 鼠标旁跟一个圆形放大镜 */
+.jzo-cap-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: none;
+  background: #06080c;
+}
+
+.jzo-cap-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.jzo-cap-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #f2f4f8;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
 /* ============ 右侧插件面板（双向操控） ============ */
 .ws-plugin-panel {
   padding: 12px;

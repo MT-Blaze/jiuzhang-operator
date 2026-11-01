@@ -70,6 +70,7 @@ class OpenAICompatibleProvider(AIProvider):
         stream: bool = False,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        images: list[str] | None = None,
     ) -> dict[str, Any]:
         """调用大模型完成对话。
 
@@ -82,6 +83,7 @@ class OpenAICompatibleProvider(AIProvider):
             stream: 是否流式响应（当前版本不支持，保留接口）。
             tools: OpenAI Function Calling 工具定义数组。
             tool_choice: ``"auto"`` / ``"none"`` 或指定函数。
+            images: 可选图片（data URL 或 http(s) URL）；给了就按视觉请求发。
 
         Returns:
             {
@@ -106,11 +108,20 @@ class OpenAICompatibleProvider(AIProvider):
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+        if images:
+            # 视觉请求：用户消息改成「文字 + 图片」的内容数组。
+            # 不给图片的老调用方不受影响——这条分支只在显式传了图时才走。
+            content: Any = [{"type": "text", "text": user_message}]
+            for image in images:
+                content.append({"type": "image_url", "image_url": {"url": str(image)}})
+            user_part: Any = {"role": "user", "content": content}
+        else:
+            user_part = {"role": "user", "content": user_message}
         payload: dict[str, Any] = {
             "model": target_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
+                user_part,
             ],
             "temperature": temperature,
         }
@@ -198,6 +209,7 @@ async def chat_completion(
     stream: bool = False,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
+    images: list[str] | None = None,
 ) -> dict[str, Any]:
     """向后兼容的模块级函数，委托给当前活跃 Provider。"""
     return await get_client().chat_completion(
@@ -209,6 +221,7 @@ async def chat_completion(
         stream,
         tools=tools,
         tool_choice=tool_choice,
+        images=images,
     )
 
 

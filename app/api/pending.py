@@ -48,6 +48,43 @@ def pending_batch_questions(batch_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get(
+    "/api/pending/meta/history",
+    summary="公共元数据的历史值",
+)
+def pending_meta_history() -> dict[str, Any]:
+    """最近用过的地区 / 主体 / 考试类型 / 学科 / 明细学校，开新批次时自动带出。"""
+    try:
+        return pending_bank.meta_history()
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/api/pending/batches/{batch_id}/meta",
+    summary="改批次公共元数据，并立刻同步这一批所有题",
+    dependencies=[Depends(require_write_token)],
+)
+def pending_set_meta(batch_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """请求体形如 ``{"year": 2024, "region": "黑吉辽", "body": "三省六校",
+    "exam_type": "高三联考", "subject": "数学", "schools": ["哈三中"]}``。
+
+    标准名不收：它是底座按 ``年份-地区-主体-类型-学科`` 拼出来的，客户端说了不算。
+
+    改完立刻同步两处：池子里的待审题（``source`` 与隐藏标签），
+    以及这一批已经进主库的题（补写主库 ``sources``）。同步不上的题一条也不动，
+    并在 ``warnings`` 里如实报出原因。
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    try:
+        return pending_bank.set_batch_meta(batch_id, payload)
+    except pending_bank.PendingNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post(
     "/api/pending/batches",
     status_code=201,
@@ -77,6 +114,7 @@ def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             items,
             batch_id=payload.get("batch_id"),
             source_backup=payload.get("source_backup"),
+            source_name=payload.get("source_name"),
             origin=str(payload.get("origin") or ""),
         )
     except questions.QuestionValidationError as exc:

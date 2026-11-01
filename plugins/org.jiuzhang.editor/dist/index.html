@@ -29,8 +29,18 @@
         <h2 class="ed-batches-title">待审核批次</h2>
         <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
       </div>
-      <div class="ed-batch-list" id="edBatchList" role="list" aria-label="批次列表"></div>
-      <p class="ed-batches-empty" id="edBatchesEmpty" hidden>中转站里还没有批次。</p>
+      <div class="ed-batches-body">
+        <div class="ed-batch-col">
+          <div class="ed-batch-list" id="edBatchList" role="list" aria-label="批次列表"></div>
+          <p class="ed-batches-empty" id="edBatchesEmpty" hidden>中转站里还没有批次。</p>
+        </div>
+        <!-- 接收虚影框：拖进来的卷子直接落成新批次（.zip 静默忽略）。 -->
+        <div class="ed-batch-drop" id="edBatchDrop" aria-label="把卷子拖到这里">
+          <p class="ed-drop-title">把卷子拖到这里</p>
+          <p class="ed-drop-hint">PDF / Word / TeX / MD / 图片都行，松手就自动解析并建批次。</p>
+          <p class="ed-drop-hint">也可以直接 Ctrl+V 粘贴截图。</p>
+        </div>
+      </div>
     </section>
 
     <!-- 二屏抬头：当前批次号 + 回列表的路。 -->
@@ -106,6 +116,66 @@
          · 查重与彻底删除各有一次确认弹窗，焦点圈在弹窗里。 -->
   <div id="epRoot" class="ep-root" hidden>
     <div class="ep-scroll" id="epScroll">
+      <!-- 最上方两行（军令 #25）：第一行灰字是原文件名，第二行黑字只读是标准名。
+           标准名由年份-地区-主体-类型-学科拼出来，底座重算，谁都改不动。 -->
+      <div class="ep-top">
+        <p class="ep-src-name" id="epSrcName" data-name="" title="原文件名">还没有批次</p>
+        <input id="epStdName" class="ep-std-name" type="text" readonly
+               aria-label="标准名（自动拼接，不可手改）" placeholder="标准名（自动拼接）" value="">
+      </div>
+
+      <!-- 批次公共元数据（军令 #25）：改一次，这一批所有题的 sources 立刻跟着改。 -->
+      <section class="ep-sec ep-meta" aria-label="批次公共元数据">
+        <h3 class="ep-sec-title">批次公共元数据</h3>
+
+        <!-- 接收区：卷子从这里进批次，截图也从这里进。 -->
+        <div class="ep-intake" id="epIntake" aria-label="接收区">
+          <p class="ep-intake-hint" id="epIntakeHint">把卷子拖到这里，或 Ctrl+V 粘贴截图</p>
+          <button type="button" class="ep-btn" id="epCapture" title="截屏（Alt+S）">截屏 (Alt+S)</button>
+        </div>
+
+        <div class="ep-row">
+          <label class="ep-field ep-field-narrow">
+            <span class="ep-label">年份</span>
+            <input id="epMetaYear" class="ep-input" type="text" inputmode="numeric" maxlength="4"
+                   placeholder="2024">
+          </label>
+          <label class="ep-field ep-field-narrow">
+            <span class="ep-label">地区</span>
+            <input id="epMetaRegion" class="ep-input" type="text" maxlength="64"
+                   list="epMetaRegionList" placeholder="黑吉辽">
+          </label>
+        </div>
+        <label class="ep-field">
+          <span class="ep-label">主体</span>
+          <input id="epMetaBody" class="ep-input" type="text" maxlength="64"
+                 list="epMetaBodyList" placeholder="三省六校">
+        </label>
+        <!-- 明细学校：主体填了才冒出来。名单记在底座，下次同主体自动带出。 -->
+        <div class="ep-schools" id="epMetaSchools" hidden>
+          <div class="ep-school-list" id="epSchoolList" role="list" aria-label="明细学校"></div>
+          <input id="epSchoolInput" class="ep-input" type="text" maxlength="32"
+                 placeholder="加一所学校，回车" aria-label="加一所明细学校">
+        </div>
+        <div class="ep-row">
+          <label class="ep-field ep-field-narrow">
+            <span class="ep-label">考试类型</span>
+            <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
+                   list="epMetaExamTypeList" placeholder="高三联考">
+          </label>
+          <label class="ep-field ep-field-narrow">
+            <span class="ep-label">学科</span>
+            <input id="epMetaSubject" class="ep-input" type="text" maxlength="40"
+                   list="epMetaSubjectList" placeholder="数学">
+          </label>
+        </div>
+        <datalist id="epMetaRegionList"></datalist>
+        <datalist id="epMetaBodyList"></datalist>
+        <datalist id="epMetaExamTypeList"></datalist>
+        <datalist id="epMetaSubjectList"></datalist>
+        <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步（明细学校拆成隐藏标签，能被搜到）。</p>
+      </section>
+
       <section class="ep-sec" aria-label="编辑视图">
         <h3 class="ep-sec-title">编辑视图</h3>
         <div class="ep-viewbar">

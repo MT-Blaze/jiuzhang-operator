@@ -96,6 +96,7 @@
   var batchNoEl = document.getElementById("edBatchNo");
   var batchStatEl = document.getElementById("edBatchStat");
   var backListEl = document.getElementById("edBackList");
+  var batchDropEl = document.getElementById("edBatchDrop");
 
   var panelRoot = document.getElementById("epRoot");
   var panelScrollEl = document.getElementById("epScroll");
@@ -143,6 +144,24 @@
   var delCancelEl = document.getElementById("epDelCancel");
   var delOkEl = document.getElementById("epDelOk");
 
+  // 批次公共元数据（辅助栏顶部）：五个可填字段 + 明细学校名单 + 只读标准名。
+  var panelSrcNameEl = document.getElementById("epSrcName");
+  var panelStdNameEl = document.getElementById("epStdName");
+  var panelIntakeEl = document.getElementById("epIntake");
+  var panelCaptureEl = document.getElementById("epCapture");
+  var panelMetaYearEl = document.getElementById("epMetaYear");
+  var panelMetaRegionEl = document.getElementById("epMetaRegion");
+  var panelMetaBodyEl = document.getElementById("epMetaBody");
+  var panelMetaExamTypeEl = document.getElementById("epMetaExamType");
+  var panelMetaSubjectEl = document.getElementById("epMetaSubject");
+  var panelMetaSchoolsEl = document.getElementById("epMetaSchools");
+  var panelSchoolListEl = document.getElementById("epSchoolList");
+  var panelSchoolInputEl = document.getElementById("epSchoolInput");
+  var panelRegionListEl = document.getElementById("epMetaRegionList");
+  var panelBodyListEl = document.getElementById("epMetaBodyList");
+  var panelExamTypeListEl = document.getElementById("epMetaExamTypeList");
+  var panelSubjectListEl = document.getElementById("epMetaSubjectList");
+
   var pending = new Map();
   var requestSeq = 0;
   var renderTimer = 0;
@@ -188,7 +207,16 @@
     saving: false,
     // 弹窗正在处置的那道题（查重 / 彻底删除共用）
     pending: null,
-    ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false }
+    ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false },
+    // 批次公共元数据：当前批次、这一批的公共字段、明细学校名单、历史值。
+    batchId: "",
+    batchCard: null,
+    batchMeta: {},
+    schools: [],
+    groups: {},
+    history: {},
+    lastBody: "",
+    metaSyncing: false
   };
 
   // ---------- 宿主通信 ----------
@@ -1069,6 +1097,8 @@
       if (state.mode === "review" && card && Number(card.pending_count) === 0 && !state.items.length) {
         backToList("这一批已审完，卡片变灰沉到列表最底下。");
       }
+      // 首屏要把最新的批次卡片推给辅助栏：它据此显示原文件名、标准名与公共元数据。
+      if (state.mode === "list") publishSelection();
       return cards;
     }).catch(function (error) {
       dockWarn("批次列表没拉下来：" + ((error && error.message) || "未知原因"));
@@ -1255,6 +1285,396 @@
       }
     }
     refreshBatches();
+  }
+
+  // ---------- 批次公共元数据（辅助栏顶部） ----------
+
+  /** 标准名：年份-地区-主体-类型-学科。空段不占位；底座也用同一口径重算，客户端说了不算。 */
+  function standardNameOf(meta) {
+    var m = meta || {};
+    var parts = [
+      m.year == null || m.year === "" ? "" : String(m.year),
+      String(m.region || ""),
+      String(m.body || ""),
+      String(m.exam_type || ""),
+      String(m.subject || "")
+    ];
+    return parts.filter(function (part) { return part; }).join("-").slice(0, 120);
+  }
+
+  function fillDataList(node, values) {
+    if (!node) return;
+    node.textContent = "";
+    (values || []).forEach(function (value) {
+      var text = String(value || "");
+      if (!text) return;
+      var option = document.createElement("option");
+      option.value = text;
+      node.appendChild(option);
+    });
+  }
+
+  /** 历史值：地区 / 主体 / 类型 / 学科各一份联想，另有主体 → 明细名单的对应。 */
+  function loadMetaHistory() {
+    return hostCall("pending.meta_history", {}).then(function (result) {
+      panel.history = (result && result.history) || {};
+      panel.groups = (result && result.groups) || {};
+      fillDataList(panelRegionListEl, panel.history.region);
+      fillDataList(panelBodyListEl, panel.history.body);
+      fillDataList(panelExamTypeListEl, panel.history.exam_type);
+      fillDataList(panelSubjectListEl, panel.history.subject);
+      return panel.history;
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  /** 明细学校胶囊：主体填了才冒出来；点 × 去掉一所。 */
+  function renderSchools() {
+    if (!panelMetaSchoolsEl || !panelSchoolListEl) return;
+    var body = panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "";
+    panelMetaSchoolsEl.hidden = !body;
+    panelSchoolListEl.textContent = "";
+    panel.schools.forEach(function (name) {
+      var chip = el("span", "ep-school");
+      chip.setAttribute("data-school", name);
+      chip.appendChild(el("span", "ep-school-name", name));
+      var remove = el("button", "ep-school-x", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "去掉 " + name);
+      remove.addEventListener("click", function () {
+        panel.schools = panel.schools.filter(function (item) { return item !== name; });
+        renderSchools();
+        queueMetaSync();
+      });
+      chip.appendChild(remove);
+      panelSchoolListEl.appendChild(chip);
+    });
+  }
+
+  /** 顶部两行：灰字是原文件名，黑字是只读的标准名。 */
+  function renderTopLines() {
+    var card = panel.batchCard || {};
+    var meta = panel.batchMeta || {};
+    if (panelSrcNameEl) {
+      var name = String(card.source_name || "");
+      panelSrcNameEl.textContent = name || "还没有批次";
+      panelSrcNameEl.setAttribute("data-name", name);
+    }
+    if (panelStdNameEl) {
+      // 标准名跟着输入框实时走：老师一眼就看见这一批将被叫成什么。
+      var live = {
+        year: panelMetaYearEl ? panelMetaYearEl.value : meta.year,
+        region: panelMetaRegionEl ? panelMetaRegionEl.value : meta.region,
+        body: panelMetaBodyEl ? panelMetaBodyEl.value : meta.body,
+        exam_type: panelMetaExamTypeEl ? panelMetaExamTypeEl.value : meta.exam_type,
+        subject: panelMetaSubjectEl ? panelMetaSubjectEl.value : meta.subject
+      };
+      var standard = standardNameOf(live);
+      panelStdNameEl.value = standard;
+      panelStdNameEl.setAttribute("data-standard", standard);
+    }
+  }
+
+  function renderBatchMeta() {
+    var meta = panel.batchMeta || {};
+    if (panelMetaYearEl) panelMetaYearEl.value = meta.year == null ? "" : String(meta.year);
+    if (panelMetaRegionEl) panelMetaRegionEl.value = String(meta.region || "");
+    if (panelMetaBodyEl) panelMetaBodyEl.value = String(meta.body || "");
+    if (panelMetaExamTypeEl) panelMetaExamTypeEl.value = String(meta.exam_type || "");
+    if (panelMetaSubjectEl) panelMetaSubjectEl.value = String(meta.subject || "");
+    panel.schools = (Array.isArray(meta.schools) ? meta.schools : []).slice();
+    panel.lastBody = String(meta.body || "");
+    renderSchools();
+    renderTopLines();
+    syncSourceFields();
+  }
+
+  /**
+   * 同步回来的只刷「看得见的部分」，**不碰老师正在打的字**——
+   * 上一笔同步的回执晚到时，照抄回执会把老师新打的字抹掉。
+   */
+  function renderMetaView() {
+    var meta = panel.batchMeta || {};
+    if (Array.isArray(meta.schools)) panel.schools = meta.schools.slice();
+    renderSchools();
+    renderTopLines();
+    syncSourceFields();
+  }
+
+  var metaSyncTimer = 0;
+
+  /** 改一个公共字段 → 整批同步。攒 400ms 再发，免得连打五个字段发五回。 */
+  function queueMetaSync() {
+    window.clearTimeout(metaSyncTimer);
+    metaSyncTimer = window.setTimeout(applyMetaSync, 400);
+  }
+
+  function applyMetaSync() {
+    if (!panel.batchId) return Promise.resolve(null);
+    var payload = {
+      batch_id: panel.batchId,
+      year: panelMetaYearEl ? String(panelMetaYearEl.value || "").trim() : "",
+      region: panelMetaRegionEl ? String(panelMetaRegionEl.value || "").trim() : "",
+      body: panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "",
+      exam_type: panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "",
+      subject: panelMetaSubjectEl ? String(panelMetaSubjectEl.value || "").trim() : "",
+      schools: panel.schools.slice()
+    };
+    panel.metaSyncing = true;
+    return hostCall("pending.set_meta", payload).then(function (result) {
+      panel.metaSyncing = false;
+      panel.batchMeta = (result && result.meta) || payload;
+      panel.batchCard = (result && result.batch) || panel.batchCard;
+      renderMetaView();
+      var synced = Number(result && result.synced) || 0;
+      var patched = Number(result && result.patched) || 0;
+      var skipped = Number(result && result.skipped) || 0;
+      var warnings = (result && Array.isArray(result.warnings)) ? result.warnings : [];
+      warnings.slice(0, 3).forEach(function (text) { dockWarn(text); });
+      panelSay("公共元数据已同步：" + synced + " 道题"
+        + (patched ? "，主库补写 " + patched + " 道" : "")
+        + (skipped ? "，" + skipped + " 道没同步上" : "") + "。",
+        skipped ? "warn" : "ok", "meta");
+      return result;
+    }).catch(function (error) {
+      panel.metaSyncing = false;
+      var text = (error && error.message) || "未知原因";
+      panelSay("公共元数据没同步上：" + text, "error", "failed");
+      dockWarn("公共元数据没同步上：" + text);
+      return null;
+    });
+  }
+
+  /** 主体换了一个：历史里记过同一主体的，明细名单自动带出来。 */
+  function onMetaFieldChange() {
+    var body = panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "";
+    if (body !== panel.lastBody) {
+      panel.lastBody = body;
+      var known = panel.groups ? panel.groups[body] : null;
+      if (known && known.length) panel.schools = known.slice();
+    }
+    renderSchools();
+    renderTopLines();
+    queueMetaSync();
+  }
+
+  function addSchool(name) {
+    var text = String(name || "").trim();
+    if (!text) return;
+    if (panel.schools.indexOf(text) >= 0) return;
+    if (panel.schools.length >= 24) {
+      panelSay("明细学校最多 24 所。", "warn", "invalid");
+      return;
+    }
+    panel.schools.push(text);
+    renderSchools();
+    queueMetaSync();
+  }
+
+  /** 取这一批的公共元数据：批次卡片里就带着 meta。 */
+  function loadBatchMeta(batchId) {
+    var id = String(batchId || "");
+    panel.batchId = id;
+    if (!id) {
+      panel.batchCard = null;
+      panel.batchMeta = {};
+      panel.schools = [];
+      renderBatchMeta();
+      return Promise.resolve(null);
+    }
+    return hostCall("pending.batch_list", {}).then(function (result) {
+      var cards = (result && Array.isArray(result.batches)) ? result.batches : [];
+      var card = null;
+      for (var index = 0; index < cards.length; index += 1) {
+        if (String(cards[index].batch_id || "") === id) { card = cards[index]; break; }
+      }
+      if (!card) return null;
+      panel.batchCard = card;
+      panel.batchMeta = (card.meta && typeof card.meta === "object") ? card.meta : {};
+      renderBatchMeta();
+      return card;
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  /** 换批次：把公共元数据面板切到这一批。 */
+  function syncBatchContext(batchId) {
+    var id = String(batchId || "");
+    if (id === panel.batchId && panel.batchCard) return Promise.resolve(null);
+    return loadBatchMeta(id);
+  }
+
+  // ---------- 接收区：拖入 / 粘贴 / 截屏 ----------
+
+  // OCR 可能跑很久：宿主那条 HTTP 默认 20 秒就超时，这里给足时间。
+  var INGEST_TIMEOUT_MS = 180000;
+
+  function fileEntry(file) {
+    return new Promise(function (resolve) {
+      var name = String((file && file.name) || "");
+      if (!name) { resolve(null); return; }
+      var reader = new FileReader();
+      reader.onerror = function () { resolve(null); };
+      reader.onload = function () {
+        resolve({ name: name, data_url: String(reader.result || "") });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function shotName() {
+    var date = new Date();
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    return "截图-" + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate())
+      + "-" + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds()) + ".png";
+  }
+
+  /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节。 */
+  function ingestEntries(entries) {
+    var files = (entries || []).filter(function (entry) { return entry && entry.data_url; });
+    if (!files.length) return Promise.resolve(null);
+    return hostCall("ingest.files", { files: files }, INGEST_TIMEOUT_MS).then(function (result) {
+      var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
+      dock("已收下 " + files.length + " 个文件，认出 " + saved + " 道题，批次 "
+        + String((result && result.batch_id) || "") + "。");
+      return result;
+    }).catch(function (error) {
+      var text = (error && error.message) || "未知原因";
+      panelSay("文件没收进来：" + text, "error", "failed");
+      dockWarn("文件没收进来：" + text);
+      return null;
+    });
+  }
+
+  /** ``.zip`` 静默忽略：不提示、不建批次（插件包是宿主壳的另一条路）。 */
+  function ingestFiles(fileList) {
+    var files = Array.prototype.slice.call(fileList || []);
+    var docs = files.filter(function (file) {
+      var name = String((file && file.name) || "").toLowerCase();
+      return Boolean(name) && name.slice(-4) !== ".zip";
+    });
+    if (!docs.length) return Promise.resolve(null);
+    return Promise.all(docs.map(fileEntry)).then(function (entries) {
+      return ingestEntries(entries.filter(Boolean));
+    });
+  }
+
+  function captureShot() {
+    panelSay("截屏中：点一下要截的地方，Esc 取消。", "info", "idle");
+    return hostCall("screen.capture", {}, INGEST_TIMEOUT_MS).then(function (result) {
+      if (!result || result.cancelled) {
+        panelSay("截屏取消了。", "info", "idle");
+        return null;
+      }
+      return ingestEntries([{ name: result.name || shotName(), data_url: result.data_url }]);
+    }).catch(function (error) {
+      var text = (error && error.message) || "未知原因";
+      panelSay("截屏没成：" + text, "error", "failed");
+      dockWarn("截屏没成：" + text);
+      return null;
+    });
+  }
+
+  function hasFiles(event) {
+    var transfer = event && event.dataTransfer;
+    if (!transfer) return false;
+    if (transfer.items && transfer.items.length) {
+      for (var index = 0; index < transfer.items.length; index += 1) {
+        if (transfer.items[index].kind === "file") return true;
+      }
+      return false;
+    }
+    return Boolean(transfer.files && transfer.files.length);
+  }
+
+  function isTypingTarget(target) {
+    if (!target || !target.tagName) return false;
+    var tag = String(target.tagName).toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    return Boolean(target.isContentEditable);
+  }
+
+  function markDrop(on) {
+    if (batchDropEl) batchDropEl.classList.toggle("is-over", Boolean(on));
+    if (panelIntakeEl) panelIntakeEl.classList.toggle("is-over", Boolean(on));
+  }
+
+  var intakeWired = false;
+
+  /**
+   * 接收区接线。
+   *
+   * 拖放与粘贴事件**不跨 iframe 边界**——宿主壳收不到插件框里发生的拖放，
+   * 所以插件这一侧必须自己接住，再把字节转给宿主。
+   */
+  function wireIntake() {
+    if (intakeWired) return;
+    intakeWired = true;
+    [panelIntakeEl, batchDropEl].forEach(function (node) {
+      if (!node) return;
+      ["dragenter", "dragover"].forEach(function (type) {
+        node.addEventListener(type, function (event) {
+          if (!hasFiles(event)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+          markDrop(true);
+        });
+      });
+      node.addEventListener("dragleave", function (event) {
+        event.preventDefault();
+        markDrop(false);
+      });
+      node.addEventListener("drop", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        markDrop(false);
+        var files = event.dataTransfer && event.dataTransfer.files;
+        if (!files || !files.length) return;
+        ingestFiles(files);
+      });
+    });
+    // 画布整屏都收：拖到虚影框旁边的空白处也算数
+    if (root) {
+      root.addEventListener("dragover", function (event) {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+      });
+      root.addEventListener("drop", function (event) {
+        if (!hasFiles(event)) return;
+        if (batchDropEl && batchDropEl.contains(event.target)) return;
+        event.preventDefault();
+        var files = event.dataTransfer && event.dataTransfer.files;
+        if (files && files.length) ingestFiles(files);
+      });
+    }
+    // Ctrl+V 粘贴截图 → 自动建批次
+    window.addEventListener("paste", function (event) {
+      if (isTypingTarget(event.target)) return;
+      var items = (event.clipboardData && event.clipboardData.items) || [];
+      var files = [];
+      for (var index = 0; index < items.length; index += 1) {
+        if (items[index].kind !== "file") continue;
+        var file = items[index].getAsFile();
+        if (file) files.push(file);
+      }
+      if (!files.length && event.clipboardData && event.clipboardData.files) {
+        files = Array.prototype.slice.call(event.clipboardData.files);
+      }
+      if (!files.length) return;
+      event.preventDefault();
+      ingestFiles(files);
+    });
+    // Alt+S 截屏
+    window.addEventListener("keydown", function (event) {
+      if (!event.altKey) return;
+      if (String(event.key || "").toLowerCase() !== "s") return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      captureShot();
+    });
   }
 
   // ---------- 三栏渲染 ----------
@@ -1775,6 +2195,9 @@
 
   function selectionPayload() {
     var item = state.items[state.active];
+    // 首屏是批次列表：没有题可发，但辅助栏仍要知道有哪些批次、当前是哪一个，
+    // 才能把公共元数据与标准名摆出来。
+    if (state.mode === "list") return listPayload();
     if (!item) return null;
     var parsed = parsedOf(item);
     var question = item.question || {};
@@ -1805,6 +2228,44 @@
       origin: question.source && typeof question.source === "object"
         ? { region: question.source.region || "", school: question.source.school || "" }
         : null
+    };
+  }
+
+  /** 批次列表语境：辅助栏据此显示原文件名、标准名与公共元数据面板。 */
+  function listPayload() {
+    return {
+      mode: "list",
+      index: 0,
+      total: state.items.length,
+      key: "",
+      question_id: "",
+      saved_id: "",
+      pending_id: "",
+      batch_id: state.batchId || "",
+      status: "pending",
+      dirty: false,
+      format: state.format,
+      swap: Boolean(state.swap),
+      source: "",
+      caret: null,
+      errors: [],
+      ai_type: "",
+      confidence: null,
+      defaults: {},
+      pool: poolCounts(),
+      images: [],
+      extensions: {},
+      origin: null,
+      batches: state.batches.map(function (card) {
+        return {
+          batch_id: String(card.batch_id || ""),
+          source_name: String(card.source_name || ""),
+          label: String(card.label || ""),
+          pending_count: Number(card.pending_count) || 0,
+          total: Number(card.total) || 0,
+          meta: card.meta && typeof card.meta === "object" ? card.meta : {}
+        };
+      })
     };
   }
 
@@ -2929,8 +3390,74 @@
     panelTypeNoteEl.setAttribute("data-from", "ai");
   }
 
+  /**
+   * 这一批有了标准名，题级的「原卷名 / 年份 / 类型」就变成只读镜像——
+   * 标准名是那五个公共字段拼出来的，手改它等于把整批的公共元数据改乱。
+   */
+  function syncSourceFields() {
+    var meta = panel.batchMeta || {};
+    var standard = String(meta.standard_name || standardNameOf(meta));
+    var locked = Boolean(standard);
+    if (panelPaperEl) {
+      if (locked) panelPaperEl.value = standard;
+      panelPaperEl.readOnly = locked;
+      panelPaperEl.setAttribute("data-locked", locked ? "true" : "false");
+    }
+    if (panelYearEl) {
+      if (locked && meta.year != null) panelYearEl.value = String(meta.year);
+      panelYearEl.readOnly = locked;
+      panelYearEl.setAttribute("data-locked", locked ? "true" : "false");
+    }
+    if (panelExamTypeEl) {
+      if (locked && meta.exam_type) panelExamTypeEl.value = String(meta.exam_type);
+      panelExamTypeEl.readOnly = locked;
+      panelExamTypeEl.setAttribute("data-locked", locked ? "true" : "false");
+    }
+  }
+
+  /** 首屏是批次列表：只切换批次语境，绝不碰那道题还没填完的表单。 */
+  function applyListSelection(sel) {
+    panel.selection = null;
+    panel.currentEntry = null;
+    var cards = Array.isArray(sel.batches) ? sel.batches : [];
+    var wanted = String(sel.batch_id || "");
+    var current = null;
+    for (var index = 0; index < cards.length; index += 1) {
+      if (String(cards[index].batch_id || "") === wanted) { current = cards[index]; break; }
+    }
+    if (!current && cards.length) current = cards[0];
+    panel.batchCard = current;
+    panel.batchMeta = current && current.meta && typeof current.meta === "object"
+      ? current.meta
+      : {};
+    panel.batchId = current ? String(current.batch_id || "") : "";
+    renderBatchMeta();
+    if (panelProgressEl) {
+      panelProgressEl.textContent = "批次列表";
+      panelProgressEl.setAttribute("data-active", "0");
+      panelProgressEl.setAttribute("data-total", String(cards.length));
+    }
+    if (panelStatusEl) {
+      panelStatusEl.textContent = "● 待审核";
+      panelStatusEl.setAttribute("data-status", "pending");
+      panelStatusEl.setAttribute("data-dirty", "false");
+    }
+    renderPool();
+    if (!panel.metaSyncing) {
+      panelSay(cards.length
+        ? "点批次列表里的任意一行进入审核。"
+        : "中转站里还没有批次：把卷子拖进来，或 Ctrl+V 粘贴截图。",
+        "info", "idle");
+    }
+  }
+
   function applySelection(sel) {
     if (!sel || typeof sel !== "object") return;
+    // 首屏是批次列表：这里只认批次，不动那道题还没填的表单。
+    if (sel.mode === "list") {
+      applyListSelection(sel);
+      return;
+    }
     var previous = panel.selection;
     if (previous && previous.key && previous.key !== sel.key) {
       // 换题前把老师正在填的这一半按旧题的键存回草稿，别让表单跟着题号一起漂
@@ -2972,6 +3499,9 @@
     if (panelExamTypeEl) panelExamTypeEl.value = merged.exam_type || "";
     if (panelYearEl) panelYearEl.value = merged.year || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
+    syncSourceFields();
+    // 换批次要把公共元数据面板切过去；面板回来后再把题级的只读镜像对齐一次。
+    syncBatchContext(sel.batch_id).then(function () { syncSourceFields(); });
     renderTags();
     setFormatButtons(sel.format || panel.format);
     setSwapButton(Boolean(sel.swap));
@@ -3512,6 +4042,24 @@
     });
   }
 
+  /** 中转站动了：辅助栏要知道——批次卡片与公共元数据都可能变了。 */
+  function onPanelPendingUpdated(payload) {
+    var action = String((payload && payload.action) || "");
+    if (action === "ingest") {
+      loadMetaHistory();
+      panelSay("新批次已建，去批次列表里审。", "info", "idle");
+      return;
+    }
+    if (action === "meta") {
+      // 底座刚把公共元数据同步过，重新读一遍这一批的账
+      loadBatchMeta(panel.batchId);
+      return;
+    }
+    if (action === "approve" || action === "delete" || action === "save_draft") {
+      loadBatchMeta(panel.batchId);
+    }
+  }
+
   function activatePanel() {
     if (!panelRoot) return;
     panelRoot.hidden = false;
@@ -3543,6 +4091,25 @@
     if (panelAiCleanEl) panelAiCleanEl.addEventListener("click", cleanViaHost);
     if (panelAiApplyEl) panelAiApplyEl.addEventListener("click", onAiApply);
     if (panelAiDiscardEl) panelAiDiscardEl.addEventListener("click", onAiDiscard);
+    // 批次公共元数据：改一次，这一批所有题立刻跟着改
+    [panelMetaYearEl, panelMetaRegionEl, panelMetaBodyEl,
+      panelMetaExamTypeEl, panelMetaSubjectEl].forEach(function (node) {
+      if (!node) return;
+      node.addEventListener("input", onMetaFieldChange);
+      node.addEventListener("change", onMetaFieldChange);
+    });
+    if (panelSchoolInputEl) {
+      panelSchoolInputEl.addEventListener("keydown", function (event) {
+        if (String(event.key || "") !== "Enter") return;
+        event.preventDefault();
+        addSchool(panelSchoolInputEl.value);
+        panelSchoolInputEl.value = "";
+      });
+    }
+    if (panelCaptureEl) panelCaptureEl.addEventListener("click", captureShot);
+    wireIntake();
+    loadMetaHistory();
+    renderBatchMeta();
     renderAi();
     setFormatButtons("latex");
     setSwapButton(false);
@@ -3610,6 +4177,7 @@
       if (message.event === "system.pending_updated") {
         // 中转站动了：入库与删除要把题从画布上撤下来，暂存只改内容不撤。
         if (state.slot === "stage.center") onPendingUpdated(message.payload);
+        else onPanelPendingUpdated(message.payload);
         return;
       }
       return;
@@ -3627,6 +4195,7 @@
       setMode("list");
       applyWidths();
       renderAll();
+      wireIntake();
       if (sourceHintEl) sourceHintEl.textContent = "格式一 · 整段源码直接编辑";
       startIdleWatch();
       // 首屏就是批次列表：中转站还空着就先把这批识别结果入池，好让老师有东西可点。
@@ -3761,6 +4330,18 @@
     onDelete: onDelete,
     autoSaveIdle: autoSaveIdle,
     noteActivity: noteActivity,
+    // 批次公共元数据与接收区
+    standardNameOf: standardNameOf,
+    renderBatchMeta: renderBatchMeta,
+    loadBatchMeta: loadBatchMeta,
+    loadMetaHistory: loadMetaHistory,
+    applyMetaSync: applyMetaSync,
+    queueMetaSync: queueMetaSync,
+    addSchool: addSchool,
+    onMetaFieldChange: onMetaFieldChange,
+    ingestEntries: ingestEntries,
+    ingestFiles: ingestFiles,
+    captureShot: captureShot,
     // 探针要把假时钟拨快，三分钟那道闸门才认得出「没人操作」
     idleThreshold: function () { return IDLE_MS; },
     tickIdle: function () {

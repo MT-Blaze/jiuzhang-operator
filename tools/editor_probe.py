@@ -22,6 +22,7 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -56,6 +57,13 @@ BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 BATCH_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-星期[日一二三四五六]-\d{2}:\d{2}-批次编号 #B-\d{3,}$")
 UNREVIEWED_RE = re.compile(r"未审：\s*(\d+)\s*/\s*(\d+)")
 IDLE_NOTE_RE = re.compile(r"^\[\d{2}:\d{2}\] 检测到长时间无操作，已自动存入待审核池。$")
+# 1×1 的 PNG：粘贴与截屏只验「字节进了批次」，不验图像内容。
+# 字节用**数字数组**递进页面，不走 base64 字符串——atob 在不同浏览器上对
+# 补位字符的宽容度不一样，字符串一旦少一位就是一条看不懂的 InvalidCharacterError。
+PNG_BYTES = list(base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
+    "hQGAhKmMIQAAAABJRU5ErkJggg=="
+))
 
 
 def free_port() -> int:
@@ -64,11 +72,15 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def wait_health(base: str, process: subprocess.Popen) -> None:
+def wait_health(base: str, process: subprocess.Popen, log_path: Path | None = None) -> None:
     deadline = time.time() + 40
     while time.time() < deadline:
         if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
+            output = ""
+            if log_path and log_path.exists():
+                output = log_path.read_text(encoding="utf-8", errors="replace")
+            elif process.stdout:
+                output = process.stdout.read()
             raise RuntimeError("服务提前退出：\n" + output[:3000])
         try:
             with urllib.request.urlopen(base + "/healthz", timeout=0.5) as response:
@@ -287,20 +299,24 @@ def main() -> int:
     env["JZO_AI_BASE_URL"] = stub.base_url
     env["JZO_AI_API_KEY"] = "probe-stub-key"
     env["JZO_AI_MODEL"] = "probe-stub"
+    server_log = work / "server.log"
+    # 服务端日志落盘：访问日志能回答「哪个口子的 400」，
+    # 控制台只说「有个资源 400」，定位不到人。
+    log_handle = server_log.open("w", encoding="utf-8", errors="replace")
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1",
-         "--port", str(port), "--log-level", "warning", "--no-server-header"],
-        cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+         "--port", str(port), "--log-level", "info", "--no-server-header"],
+        cwd=str(ROOT), env=env, stdout=log_handle, stderr=subprocess.STDOUT, text=True,
     )
 
     result: dict = {"tag": tag, "base": base, "checks": [], "console_errors": [],
-                    "page_errors": [], "metrics": {}}
+                    "page_errors": [], "http_failures": [], "metrics": {}}
 
     def check(name: str, ok: bool, detail=None) -> None:
         result["checks"].append({"name": name, "ok": bool(ok), "detail": detail})
 
     try:
-        wait_health(base, process)
+        wait_health(base, process, server_log)
         total_before = bank_total(base)
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
@@ -308,6 +324,11 @@ def main() -> int:
             page.on("console", lambda message: result["console_errors"].append(message.text)
                     if message.type in {"error", "warning"} else None)
             page.on("pageerror", lambda error: result["page_errors"].append(str(error)))
+            # 非 2xx 的响应单独记一笔：控制台只说「有个资源 400」，
+            # 不知道是哪个口子的锅——这行日志才是定位用的证据。
+            page.on("response", lambda response: result["http_failures"].append(
+                "%s %s" % (response.status, response.url))
+                if response.status >= 400 else None)
             page.goto(base + "/workspace", wait_until="networkidle")
 
             item = page.locator(".ws-plugin-item", has_text="录题工作台").first
@@ -527,6 +548,74 @@ def main() -> int:
                   batch_stat == "未审 %d / %d" % (int(card["pending_count"]), int(card["total"])),
                   {"stat": batch_stat, "card": card})
 
+            # ---------- 批次公共元数据：辅助栏顶部，改一次整批跟着改 ----------
+            check("辅助栏顶部有公共元数据面板",
+                  panel.locator(".ep-meta").count() == 1
+                  and panel.locator("#epMetaYear").count() == 1
+                  and panel.locator("#epMetaRegion").count() == 1
+                  and panel.locator("#epMetaBody").count() == 1
+                  and panel.locator("#epMetaExamType").count() == 1
+                  and panel.locator("#epMetaSubject").count() == 1
+                  and panel.locator("#epStdName").count() == 1,
+                  {"meta_sections": panel.locator(".ep-meta").count()})
+            check("标准名那格是只读的（手改不了）",
+                  panel.locator("#epStdName").get_attribute("readonly") is not None,
+                  {"readonly": panel.locator("#epStdName").get_attribute("readonly")})
+            check("辅助栏顶部第一行是原文件名、第二行是标准名",
+                  panel.locator("#epSrcName").count() == 1
+                  and panel.locator("#epStdName").count() == 1
+                  and panel.locator(".ep-top .ep-src-name").count() == 1,
+                  {})
+            panel.locator("#epMetaYear").fill("2024")
+            panel.locator("#epMetaRegion").fill("黑吉辽")
+            panel.locator("#epMetaBody").fill("三省六校")
+            panel.locator("#epMetaExamType").fill("高三联考")
+            panel.locator("#epMetaSubject").fill("数学")
+            expect(panel.locator("#epMetaSchools")).to_be_visible(timeout=8000)
+            panel.locator("#epSchoolInput").fill("哈三中")
+            panel.locator("#epSchoolInput").press("Enter")
+            page.wait_for_timeout(300)
+            check("主体填了，明细学校冒成胶囊",
+                  panel.locator(".ep-school").count() == 1
+                  and "哈三中" in panel.locator("#epSchoolList").inner_text(),
+                  {"chips": panel.locator(".ep-school").count()})
+            standard = panel.locator("#epStdName").input_value()
+            check("标准名按「年份-地区-主体-类型-学科」自动拼出来",
+                  standard == "2024-黑吉辽-三省六校-高三联考-数学",
+                  {"standard": standard})
+            deadline = time.time() + 30
+            synced_source: dict = {}
+            while time.time() < deadline:
+                items = pending_items(base, batch_id)
+                synced_source = dict((items[0].get("question") or {}).get("source") or {}) if items else {}
+                if synced_source.get("school") == "三省六校":
+                    break
+                page.wait_for_timeout(300)
+            check("改公共字段，这一批的题立刻同步 sources",
+                  synced_source.get("school") == "三省六校"
+                  and synced_source.get("region") == "黑吉辽"
+                  and synced_source.get("exam_type") == "高三联考"
+                  and int(synced_source.get("year") or 0) == 2024
+                  and synced_source.get("paper_title") == "2024-黑吉辽-三省六校-高三联考-数学",
+                  {"source": synced_source})
+            synced_tags = []
+            items = pending_items(base, batch_id)
+            if items:
+                synced_tags = list((items[0].get("question") or {}).get("tags") or [])
+            check("明细学校落成隐藏标签（井号开头）",
+                  "#哈三中" in synced_tags, {"tags": synced_tags})
+            deadline = time.time() + 15
+            paper_value = ""
+            while time.time() < deadline:
+                paper_value = panel.locator("#epPaper").input_value()
+                if paper_value == "2024-黑吉辽-三省六校-高三联考-数学":
+                    break
+                page.wait_for_timeout(200)
+            check("题级的原卷名被公共标准名接管（只读镜像）",
+                  panel.locator("#epPaper").get_attribute("readonly") is not None
+                  and paper_value == "2024-黑吉辽-三省六校-高三联考-数学",
+                  {"paper": paper_value})
+
             # ---------- 三栏骨架 ----------
             pending_count = int(card["pending_count"])
             check("画布恰好三栏", canvas.locator(".ed-col").count() == 3,
@@ -723,16 +812,21 @@ def main() -> int:
             doc_answer = document.get("answer") or {}
             seed_answer = seed_doc.get("answer") or {}
             choice_types = ("single_choice", "multiple_choice")
-            if str(seed_doc.get("type") or "") in choice_types:
-                answer_ok = list(doc_answer.get("choice_keys") or []) == list(
-                    seed_answer.get("choice_keys") or [])
+            is_choice = str(seed_doc.get("type") or "") in choice_types
+            if is_choice:
+                keys = list(doc_answer.get("choice_keys") or [])
+                answer_ok = keys == list(seed_answer.get("choice_keys") or [])
+                # 库内选择题答案存成「A,B」，源码里写的是「AB」——两种写法都认。
+                literal_ok = ("".join(keys) in edited_source
+                              or ",".join(keys) in edited_source)
             else:
                 answer_ok = str(doc_answer.get("final") or "").strip() == str(
                     seed_answer.get("final") or "").strip()
+                literal_ok = str(doc_answer.get("final") or "") in edited_source
             check("题型/答案按源码还原",
                   str(document.get("type") or "") == str(seed_doc.get("type") or "")
                   and answer_ok
-                  and str(doc_answer.get("final") or "") in edited_source,
+                  and literal_ok,
                   {"type": document.get("type"), "answer": doc_answer,
                    "seed_type": seed_doc.get("type"), "seed_answer": seed_answer})
             pool_now = pending_items(base, batch_id)
@@ -923,6 +1017,128 @@ def main() -> int:
                   {"before": card_before["total"], "after": card_after["total"]})
             page.screenshot(path=str(shots / "v3-delete.png"))
 
+            # ---------- 接收区：拖拽遮罩、粘贴截图、截屏放大镜 ----------
+            to_list()
+            check("画布首屏有接收虚影框",
+                  canvas.locator("#edBatchDrop").is_visible()
+                  and "拖到这里" in canvas.locator("#edBatchDrop").inner_text(),
+                  {"drop": canvas.locator("#edBatchDrop").inner_text()[:40]})
+            check("辅助栏有接收区与【截屏 (Alt+S)】钮",
+                  panel.locator("#epIntake").is_visible()
+                  and "Alt+S" in panel.locator("#epCapture").inner_text(),
+                  {"capture": panel.locator("#epCapture").inner_text()})
+
+            def host_drag(name: str, mime: str, kind: str) -> None:
+                page.evaluate(
+                    """([name, mime, kind]) => {
+                        var dt = new DataTransfer();
+                        dt.items.add(new File([new Uint8Array([1, 2, 3])], name, {type: mime}));
+                        window.dispatchEvent(new DragEvent(kind, {dataTransfer: dt, bubbles: true}));
+                    }""", [name, mime, kind])
+
+            intake_overlay = page.locator("#wsIntakeOverlay")
+            zip_overlay = page.locator("#wsDropOverlay")
+            host_drag("卷子.pdf", "application/pdf", "dragenter")
+            page.wait_for_timeout(250)
+            check("拖卷子时弹「松开鼠标，自动解析并建立批次」",
+                  intake_overlay.is_visible()
+                  and "松开鼠标" in intake_overlay.inner_text()
+                  and zip_overlay.is_hidden(),
+                  {"intake": intake_overlay.inner_text()[:40] if intake_overlay.count() else ""})
+            host_drag("插件包.zip", "application/zip", "dragenter")
+            page.wait_for_timeout(250)
+            check("拖插件包时弹的是「松手即安装插件」那一层",
+                  zip_overlay.is_visible() and intake_overlay.is_hidden(), {})
+            host_drag("卷子.pdf", "application/pdf", "dragleave")
+            host_drag("插件包.zip", "application/zip", "dragleave")
+            page.wait_for_timeout(250)
+            check("拖走之后两块遮罩都收起来",
+                  intake_overlay.is_hidden() and zip_overlay.is_hidden(), {})
+
+            # Ctrl+V 粘贴截图 → 自动建批次
+            # 字节必须内联进脚本：Playwright 把数组参数送进 iframe 时会变成空对象，
+            # Uint8Array 拿到空数组 → 粘进去的是一张 0 字节的图。
+            paste_script = (
+                "function () {"
+                "  var dt = new DataTransfer();"
+                "  dt.items.add(new File([new Uint8Array(%s)], %s, {type: 'image/png'}));"
+                "  window.dispatchEvent(new ClipboardEvent('paste',"
+                "    {clipboardData: dt, bubbles: true}));"
+                "  return true;"
+                "}()" % (json.dumps(PNG_BYTES), json.dumps("粘贴截图.png"))
+            )
+            cards_before_paste = len(pending_cards(base))
+            canvas.locator("#edRoot").evaluate(paste_script)
+            deadline = time.time() + 60
+            pasted_cards = pending_cards(base)
+            while time.time() < deadline and len(pasted_cards) <= cards_before_paste:
+                page.wait_for_timeout(400)
+                pasted_cards = pending_cards(base)
+            check("Ctrl+V 粘贴截图自动建批次",
+                  len(pasted_cards) > cards_before_paste,
+                  {"before": cards_before_paste, "after": len(pasted_cards),
+                   "dock": [entry.get("text", "") for entry in dock_entries()[-3:]],
+                   "http": result["http_failures"][-4:]})
+            pasted_card = None
+            for entry in pasted_cards:
+                if entry.get("source_name") == "粘贴截图.png":
+                    pasted_card = entry
+            check("粘贴进来的截图原文件名留在批次卡片上",
+                  pasted_card is not None,
+                  {"names": [entry.get("source_name") for entry in pasted_cards]})
+
+            # 截屏：宿主借 getDisplayMedia 取画面，鼠标旁跟一只放大镜
+            page.evaluate(
+                """() => {
+                    var canvas = document.createElement('canvas');
+                    canvas.width = 320;
+                    canvas.height = 240;
+                    var ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#204080';
+                    ctx.fillRect(0, 0, 320, 240);
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.fillRect(40, 40, 90, 70);
+                    var stream = canvas.captureStream(12);
+                    var stub = function () { return Promise.resolve(stream); };
+                    try {
+                        Object.defineProperty(navigator, 'mediaDevices',
+                            {value: {getDisplayMedia: stub}, configurable: true});
+                    } catch (error) {
+                        navigator.mediaDevices.getDisplayMedia = stub;
+                    }
+                }""")
+            cards_before_shot = len(pending_cards(base))
+            panel.locator("#epCapture").click()
+            expect(page.locator(".jzo-cap-layer")).to_be_visible(timeout=15000)
+            page.mouse.move(760, 420)
+            # 等视频流把首帧吃进去：画面尺寸不到就裁不出东西
+            page.wait_for_timeout(1200)
+            smoothing = page.evaluate(
+                """() => { var c = document.querySelector('.jzo-cap-canvas');
+                   return c ? c.getContext('2d').imageSmoothingEnabled : null; }""")
+            check("放大镜关掉平滑看像素", smoothing is False, {"smoothing": smoothing})
+            cap_hint = page.locator(".jzo-cap-hint").inner_text()
+            check("截屏时给出手势提示（移动看像素、左键松开截取）",
+                  "左键" in cap_hint and "像素" in cap_hint, {"hint": cap_hint})
+            page.mouse.down()
+            page.mouse.up()
+            deadline = time.time() + 60
+            shot_cards = pending_cards(base)
+            while time.time() < deadline and len(shot_cards) <= cards_before_shot:
+                page.wait_for_timeout(400)
+                shot_cards = pending_cards(base)
+            check("截屏后自动建批次",
+                  len(shot_cards) > cards_before_shot,
+                  {"before": cards_before_shot, "after": len(shot_cards)})
+            shot_card = None
+            for entry in shot_cards:
+                if str(entry.get("source_name") or "").startswith("截图-"):
+                    shot_card = entry
+            check("截图的名字按「截图-日期-时刻」落进批次卡片",
+                  shot_card is not None,
+                  {"names": [entry.get("source_name") for entry in shot_cards]})
+            page.screenshot(path=str(shots / "v4-intake.png"))
+
             # ---------- F5 连刷三轮：首屏永远是批次列表 ----------
             for round_index in range(1, 4):
                 page.reload(wait_until="networkidle")
@@ -993,6 +1209,8 @@ def main() -> int:
             print("      " + json.dumps(item.get("detail"), ensure_ascii=False)[:400])
     if result["console_errors"]:
         print("console:", result["console_errors"][:8])
+    if result["http_failures"]:
+        print("http:", result["http_failures"][:12])
     if result["page_errors"]:
         print("pageerrors:", result["page_errors"][:8])
     if "error" in result:

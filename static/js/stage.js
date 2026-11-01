@@ -376,6 +376,10 @@
     // 彻底删除——录题端与主库之间那层物理隔离暂存，全走这五个口子。
     "pending.batch_list", "pending.list", "pending.save_draft",
     "pending.approve", "pending.delete",
+    // 批次公共元数据：改一次，这一批所有题的 sources 立刻跟着改。
+    "pending.set_meta", "pending.meta_history",
+    // 军令 #25：拖入/粘贴的文件进中转站；屏幕截取由宿主代劳（浏览器没有系统级 API）。
+    "ingest.files", "screen.capture",
     "draft.save", "draft.load",
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。
@@ -1090,13 +1094,31 @@
       });
   }
 
-  /** 写操作：先取一次性令牌（用后即焚），再把令牌放进请求头，插件全程不可见。 */
+  /**
+   * 写操作：先取一次性令牌（用后即焚），再把令牌放进请求头，插件全程不可见。
+   *
+   * 令牌**用后即焚**：验证成功就轮换。两笔写操作绝不能并行——两边拿到同一个令牌，
+   * 先用的那个烧掉它，后到的那个就 401 了。队列是全局唯一的一条
+   * （intake.js 那边的录库写入也走它），两边各排各的队只会互相踩。
+   */
+  var writeQueue = Promise.resolve();
+
+  function serializeWrite(task) {
+    var intake = window.JzoIntake;
+    if (intake && typeof intake.serialize === "function") return intake.serialize(task);
+    var next = writeQueue.then(task, task);
+    writeQueue = next.then(function () {}, function () {});
+    return next;
+  }
+
   function withWriteToken(url, options) {
-    return fetchJson("/api/settings").then(function (data) {
-      var token = data && data.local_token;
-      if (!token) throw new Error("拿不到本地写操作令牌");
-      options.headers = Object.assign({}, options.headers || {}, { "X-JZO-Token": token });
-      return fetchJson(url, options);
+    return serializeWrite(function () {
+      return fetchJson("/api/settings").then(function (data) {
+        var token = data && data.local_token;
+        if (!token) throw new Error("拿不到本地写操作令牌");
+        options.headers = Object.assign({}, options.headers || {}, { "X-JZO-Token": token });
+        return fetchJson(url, options);
+      });
     });
   }
 
@@ -1552,6 +1574,113 @@
         });
         done(result);
       }, fail);
+      return;
+    }
+
+    if (method === "pending.set_meta" || method === "pending.meta_history") {
+      // 批次公共元数据：改一次，这一批所有题（含已入库的）立刻跟着改。
+      var metaPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      var metaNeed = method === "pending.set_meta" ? "questions:write" : "questions:read";
+      if (metaPermissions.indexOf(metaNeed) < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 " + metaNeed + " 权限，不能改批次公共元数据"
+        });
+        return;
+      }
+      if (method === "pending.meta_history") {
+        fetchJson("/api/pending/meta/history").then(done, fail);
+        return;
+      }
+      var metaBatchId = textValue(payload, "batch_id", 40);
+      if (!/^B-\d{3,}$/.test(metaBatchId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
+        return;
+      }
+      var rawYear = payload.year;
+      var metaYear = null;
+      if (rawYear !== undefined && rawYear !== null && rawYear !== "") {
+        var parsedYear = Number(rawYear);
+        if (Number.isFinite(parsedYear)) metaYear = Math.floor(parsedYear);
+      }
+      var metaSchools = [];
+      if (Array.isArray(payload.schools)) {
+        payload.schools.slice(0, 24).forEach(function (item) {
+          var school = textValue({ v: item }, "v", 60);
+          if (school && metaSchools.indexOf(school) < 0) metaSchools.push(school);
+        });
+      }
+      var metaBody = {
+        year: metaYear,
+        region: textValue(payload, "region", 60),
+        body: textValue(payload, "body", 60),
+        exam_type: textValue(payload, "exam_type", 60),
+        subject: textValue(payload, "subject", 40),
+        schools: metaSchools
+      };
+      withWriteToken("/api/pending/batches/" + encodeURIComponent(metaBatchId) + "/meta", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(metaBody)
+      }).then(function (result) {
+        emitPendingUpdated("meta", [], result);
+        done(result);
+      }, fail);
+      return;
+    }
+
+    if (method === "ingest.files") {
+      // 拖入/粘贴进来的文件：插件把字节交给宿主，宿主代发（写令牌不出宿主）。
+      var ingestPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (ingestPermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能往中转站塞文件"
+        });
+        return;
+      }
+      var incoming = payload.files;
+      if (!Array.isArray(incoming) || !incoming.length) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待解析的文件数组" });
+        return;
+      }
+      var prepared = [];
+      for (var i = 0; i < incoming.length && prepared.length < 20; i += 1) {
+        var entry = plainObject(incoming[i]);
+        var fileName = textValue(entry, "name", 120);
+        var fileUrl = typeof entry.data_url === "string" ? entry.data_url : "";
+        if (!fileName || !fileUrl) continue;
+        if (fileUrl.length > 48 * 1024 * 1024) continue;
+        prepared.push({ name: fileName, data_url: fileUrl });
+      }
+      if (!prepared.length) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "没有可解析的文件" });
+        return;
+      }
+      var intake = window.JzoIntake;
+      if (!intake || typeof intake.ingestEntries !== "function") {
+        replyHost(tab, message, false, { code: "HOST_MISSING", message: "宿主没有录入通道" });
+        return;
+      }
+      intake.ingestEntries(prepared, { silent: true }).then(function (result) {
+        emitPendingUpdated("ingest", (result && result.saved_ids) || [], result);
+        done(result);
+      }, fail);
+      return;
+    }
+
+    if (method === "screen.capture") {
+      // 屏幕截取：浏览器没有系统级 API，只能由宿主借 getDisplayMedia 取画面。
+      var capture = window.JzoIntake;
+      if (!capture || typeof capture.captureScreen !== "function") {
+        replyHost(tab, message, false, { code: "HOST_MISSING", message: "宿主没有截屏能力" });
+        return;
+      }
+      capture.captureScreen().then(function (result) {
+        done(result || { cancelled: true });
+      }, function (error) {
+        failWith("HOST_CAPTURE_FAILED", error && error.message ? error.message : "截屏失败");
+      });
       return;
     }
 

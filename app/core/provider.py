@@ -27,6 +27,7 @@ class AIProvider(ABC):
         stream: bool = False,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] | None = None,
+        images: list[str] | None = None,
     ) -> dict[str, Any]:
         """执行对话补全。
 
@@ -37,6 +38,7 @@ class AIProvider(ABC):
             temperature: 采样温度，0-2。
             max_tokens: 最大输出 token 数。
             stream: 是否流式响应。
+            images: 可选图片（data URL 或 http(s) URL）；给了就按视觉请求发。
 
         Returns:
             {

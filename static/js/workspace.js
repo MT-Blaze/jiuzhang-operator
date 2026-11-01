@@ -1578,8 +1578,11 @@
     if (!document.hidden) pollPlugins();
   });
 
-  // ============ 插件拖拽装：工作台全局兜底（选文件与索引入口在 /settings） ============
+  // ============ 插件拖拽装 + 拖入文件建批次：工作台全局兜底 ============
+  // 拖进来的东西分两路：.zip 是插件包，走安装；其余（PDF / Word / TeX / MD / 图片）
+  // 是卷子，走录入通道解析成批次。.zip 在录入通道里静默忽略——它不是题。
   var dropOverlay = document.getElementById("wsDropOverlay");
+  var intakeOverlay = document.getElementById("wsIntakeOverlay");
   var dragDepth = 0;
 
   function installPluginZip(file, replace) {
@@ -1646,16 +1649,30 @@
     return Array.prototype.indexOf.call(types, "Files") !== -1;
   }
 
-  function showDropOverlay(show) {
-    if (!dropOverlay) return;
-    dropOverlay.hidden = !show;
+  /** 拖的是不是插件包：全是 application/zip 才算（类型不明的先当卷子）。 */
+  function draggedIsZip(event) {
+    var items = (event.dataTransfer && event.dataTransfer.items) || [];
+    var seen = 0;
+    for (var i = 0; i < items.length; i += 1) {
+      if (items[i].kind !== "file") continue;
+      seen += 1;
+      var type = String(items[i].type || "").toLowerCase();
+      if (!type) return false;
+      if (type !== "application/zip" && type !== "application/x-zip-compressed") return false;
+    }
+    return seen > 0;
+  }
+
+  function showDropOverlay(show, zipMode) {
+    if (dropOverlay) dropOverlay.hidden = !show || !zipMode;
+    if (intakeOverlay) intakeOverlay.hidden = !show || zipMode;
   }
 
   window.addEventListener("dragenter", function (event) {
     if (!hasFiles(event)) return;
     event.preventDefault();
     dragDepth += 1;
-    showDropOverlay(true);
+    showDropOverlay(true, draggedIsZip(event));
   });
   window.addEventListener("dragover", function (event) {
     if (!hasFiles(event)) return;
@@ -1675,12 +1692,18 @@
     event.preventDefault();
     dragDepth = 0;
     showDropOverlay(false);
-    var file = pickFirstZip(event.dataTransfer && event.dataTransfer.files);
-    if (!file) {
-      addBubble("sys", "没看到 .zip 文件：插件包必须是标准 zip。", { tone: "warn" });
-      return;
+    var files = event.dataTransfer && event.dataTransfer.files;
+    var file = pickFirstZip(files);
+    var docs = [];
+    for (var i = 0; i < (files || []).length; i += 1) {
+      if (!/\.zip$/i.test(files[i].name || "")) docs.push(files[i]);
     }
-    installPluginZip(file, false);
+    if (file) installPluginZip(file, false);
+    if (docs.length && window.JzoIntake) {
+      window.JzoIntake.ingestFiles(docs, { source: "chrome" });
+    } else if (!file && !docs.length) {
+      addBubble("sys", "没看到可解析的文件（PDF / Word / TeX / MD / 图片都行）。", { tone: "warn" });
+    }
   });
 
   // ============ 右栏主权监听：画布页签换主人，插槽跟着换 ============

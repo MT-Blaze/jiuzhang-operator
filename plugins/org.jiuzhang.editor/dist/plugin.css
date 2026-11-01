@@ -184,6 +184,58 @@ body {
   color: var(--ink-soft);
 }
 
+/* 批次列表屏：左边一列批次，右边一只接收虚影框。 */
+.ed-batches-body {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ed-batch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.ed-batch-drop {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 18px;
+  border: 2px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink-soft);
+  text-align: center;
+  align-self: flex-start;
+}
+
+.ed-batch-drop.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.ed-drop-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ed-drop-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 /* ---------- 二屏抬头：当前批次号与返回列表 ---------- */
 
 .ed-batch-bar {
@@ -714,6 +766,116 @@ body {
   font-weight: 700;
   color: var(--ink-soft);
   letter-spacing: 0.04em;
+}
+
+/* 最上方两行：灰字原文件名 + 黑字只读标准名 */
+.ep-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 0;
+}
+
+.ep-src-name {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ep-std-name {
+  width: 100%;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 接收区：卷子与截图从这里进批次 */
+.ep-intake {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.ep-intake.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ep-intake-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+/* 明细学校胶囊 */
+.ep-schools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ep-schools[hidden] {
+  display: none;
+}
+
+.ep-school-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ep-school {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.ep-school-name {
+  max-width: 92px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ep-school-x {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.ep-school-x:hover {
+  color: var(--danger);
 }
 
 .ep-status-row {

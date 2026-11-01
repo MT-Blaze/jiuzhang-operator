@@ -935,6 +935,29 @@ def _fts_clear(con: sqlite3.Connection) -> None:
         pass
 
 
+def _search_extra_clause(term: str) -> tuple[str, list[Any]]:
+    """题干以外的命中口径：标签（含隐藏标签）与来源（卷名 / 考试类型 / 学校）。
+
+    「搜哈三中能搜出三省六校那道题」靠的就是这一段：明细学校拆成隐藏标签
+    存在标签里，题干里当然搜不到，但标签里在。
+    """
+    sql = (
+        "(EXISTS (SELECT 1 FROM json_each(q.extensions) e"
+        " WHERE json_extract(e.value, '$.key') = ?"
+        " AND json_extract(e.value, '$.value.tags') LIKE ? ESCAPE '\\')"
+        " OR EXISTS (SELECT 1 FROM question_sources qs"
+        " JOIN sources s ON s.id = qs.source_id"
+        " LEFT JOIN schools sc ON sc.id = s.school_id"
+        " WHERE qs.question_id = q.id"
+        " AND (s.paper_name LIKE ? ESCAPE '\\'"
+        " OR s.exam_type LIKE ? ESCAPE '\\'"
+        " OR sc.full_name LIKE ? ESCAPE '\\'"
+        " OR sc.short_name LIKE ? ESCAPE '\\')))"
+    )
+    params = [EXT_TAGS_KEY, _like(term), _like(term), _like(term), _like(term), _like(term)]
+    return sql, params
+
+
 def _build_where(
     *,
     grade: str = "",
@@ -981,15 +1004,17 @@ def _build_where(
             params.append(value[:64])
     term = str(search or "").strip()[:MAX_SEARCH]
     if term:
+        extra_sql, extra_params = _search_extra_clause(term)
         if fts:
             where.append(
                 f"(q.id IN (SELECT question_id FROM {bank_fts.TABLE}"
-                f" WHERE {bank_fts.TABLE} MATCH ?) OR q.id = ?)"
+                f" WHERE {bank_fts.TABLE} MATCH ?) OR q.id = ? OR {extra_sql})"
             )
             params.extend([bank_fts.query_expression(term), term])
         else:
-            where.append("(q.stem LIKE ? ESCAPE '\\' OR q.id = ?)")
+            where.append(f"(q.stem LIKE ? ESCAPE '\\' OR q.id = ? OR {extra_sql})")
             params.extend([_like(term), term])
+        params.extend(extra_params)
     if flag:
         flag_sql, flag_params = _flag_clause(flag)
         where.append(flag_sql)
@@ -1457,22 +1482,32 @@ def _question_row(document: dict[str, Any], now: str) -> list[Any]:
     ]
 
 
-def _ensure_school(con: sqlite3.Connection, name: Any, now: str) -> str | None:
-    """学校按全称/简称查档，查无则建；只登记办学实体本身，与哪张卷子无关。"""
+def _ensure_school(con: sqlite3.Connection, name: Any, now: str, region: str = "") -> str | None:
+    """学校按全称/简称查档，查无则建；只登记办学实体本身，与哪张卷子无关。
+
+    ``region``（地区，如「黑吉辽」）落在 ``schools.city`` 这一列上：读路径的
+    ``source.region`` 就是从这儿取的，不写就等于白填。
+    """
     text = str(name or "").strip()
     if not text:
         return None
     row = con.execute(
-        "SELECT id FROM schools WHERE full_name = ? OR short_name = ? LIMIT 1",
+        "SELECT id, city FROM schools WHERE full_name = ? OR short_name = ? LIMIT 1",
         (text[:120], text[:60]),
     ).fetchone()
     if row:
-        return row[0]    # 位置取值：批量导入的连接不一定带 row_factory
+        # 位置取值：批量导入的连接不一定带 row_factory
+        if region and not str(row[1] or ""):
+            con.execute(
+                "UPDATE schools SET city = ?, updated_at = ? WHERE id = ?",
+                (region[:64], now, row[0]),
+            )
+        return row[0]
     uid = "sch_" + hashlib.sha256(("school:" + text).encode("utf-8")).hexdigest()[:11]
     con.execute(
         "INSERT INTO schools (id, full_name, short_name, province, city, created_at, updated_at)"
         " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (uid, text[:120], text[:60], "", "", now, now),
+        (uid, text[:120], text[:60], "", region[:64], now, now),
     )
     return uid
 
@@ -1484,7 +1519,8 @@ def _ensure_source(con: sqlite3.Connection, document: dict[str, Any], grade: str
     paper = str(source.get("paper_title") or "").strip()[:200]
     if not paper:
         return None
-    school_id = _ensure_school(con, source.get("school"), now)
+    school_id = _ensure_school(con, source.get("school"), now,
+                               str(source.get("region") or ""))
     year = source.get("year")
     if year is not None:
         try:

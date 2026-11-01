@@ -162,6 +162,14 @@
         <p class="ws-drop-hint">只收标准 .zip 包；先过 plugin.json 契约校验，再落地 plugins/</p>
       </div>
     </div>
+
+    <!-- 拖入文件的录入遮罩：拖的是卷子，不是插件包，说的话自然不一样 -->
+    <div class="ws-intake-overlay" id="wsIntakeOverlay" hidden aria-hidden="true">
+      <div class="ws-intake-card">
+        <p class="ws-intake-title">松开鼠标，自动解析并建立批次</p>
+        <p class="ws-intake-hint">收 PDF / Word / TeX / MD / 图片；解析完直接进批次列表</p>
+      </div>
+    </div>
   </div>
 
   <noscript>
@@ -170,6 +178,9 @@
 
   <script src="/static/vendor/katex/katex.min.js"></script>
   <script src="/static/js/bus.js"></script>
+  <!-- 录入入口（宿主壳）：拖入的文件、粘贴的截图、屏幕截取。
+       必须早于 stage.js：插件转发进来的字节由它代发，写令牌只在宿主侧。 -->
+  <script src="/static/js/intake.js"></script>
   <!-- 主机偏好层（军令 #16）：左栏树的读端与右键菜单、对话框，必须先于拖拽与舞台加载 -->
   <script src="/static/js/prefs.js"></script>
   <script src="/static/js/dialogs.js"></script>

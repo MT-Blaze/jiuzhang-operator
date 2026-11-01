@@ -52,7 +52,7 @@ PENDING_ASSET_URI_PREFIX = "/static/pending/"
 UPLOAD_ASSET_URI_PREFIX = "/static/uploads/"
 UPLOAD_ASSET_PREFIX = "img_"
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 MAX_PAGE_SIZE = 100
 MAX_BATCH_QUESTIONS = 500
 
@@ -65,6 +65,23 @@ EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 
 _WEEKDAYS = ("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
+# 公共元数据的字段名：五个可填字段 + 明细学校名单 + 自动拼出的标准名。
+META_FIELDS = ("year", "region", "body", "exam_type", "subject")
+META_SCHOOL_LIMIT = 24
+# 标准名最终落进 source.paper_title，契约上限 120 字；这里跟契约对齐，不自造口径。
+META_NAME_LIMIT = 120
+# 明细学校以隐藏标签的形式拆开存：「#哈三中」。井号开头的一律不进可见胶囊，
+# 但照样进题库、照样能被搜到（搜「哈三中」能找出「三省六校」那道题）。
+HIDDEN_TAG_PREFIX = "#"
+# 契约里 tags 的 maxItems 就是 32；超出的明细学校**不硬塞**，
+# 老师的可见标签一个都不许挤掉——塞不下的如实上报。
+MAX_TAGS = 32
+# 「主体 → 明细名单」的对应关系在 meta_history 里用一行记。
+# 主体与名单之间用竖线分，学校名之间用单元分隔符分——校名里可能有逗号（"哈三中,分校"），
+# 拿逗号当分隔会把一所学校劈成两半。
+GROUP_SEP = "|"
+GROUP_ITEM_SEP = "\x1f"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS batches (
     batch_id      TEXT PRIMARY KEY,
@@ -72,6 +89,9 @@ CREATE TABLE IF NOT EXISTS batches (
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
     source_backup TEXT NOT NULL DEFAULT '',
+    source_name   TEXT NOT NULL DEFAULT '',
+    meta_json     TEXT NOT NULL DEFAULT '{}',
+    approved_json TEXT NOT NULL DEFAULT '[]',
     total         INTEGER NOT NULL DEFAULT 0,
     pending_count INTEGER NOT NULL DEFAULT 0,
     assets_json   TEXT NOT NULL DEFAULT '[]'
@@ -83,10 +103,17 @@ CREATE TABLE IF NOT EXISTS pending_questions (
     assets_json TEXT NOT NULL,
     origin      TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    seq         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_pending_questions_batch
     ON pending_questions (batch_id, created_at ASC, id ASC);
+CREATE TABLE IF NOT EXISTS meta_history (
+    kind       TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (kind, value)
+);
 """
 
 
@@ -174,9 +201,59 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
             con.execute(text)
     if version == 1:
         _migrate_v1_rows(con)
+    if version < 3:
+        _migrate_v2_columns(con)
+    if version < 4:
+        _migrate_v3_sequence(con)
+    # 次序号的索引必须等迁移把列补上再建：
+    # 老库里还没有 seq 这一列，先建索引就是一句「no such column: seq」，
+    # 整个服务起不来。
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pending_questions_seq"
+        " ON pending_questions (batch_id, seq ASC)"
+    )
     if version != SCHEMA_VERSION:
         con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     con.commit()
+
+
+def _migrate_v3_sequence(con: sqlite3.Connection) -> None:
+    """v3 → v4：给每一批的题补上「录入次序」。
+
+    老库没有次序列，拉出来只能按 ``created_at`` 排——而同一批题是**一次**写进去的，
+    时间戳一模一样，于是只能退回按随机号排：老师看到的一批题是乱的。
+    补号时按老口径（时间 + 号）排一遍，把当时的相对次序原样固化成次序号，
+    老批次的顺序不会因为升级而变。
+    """
+    columns = {str(row["name"]) for row in con.execute("PRAGMA table_info(pending_questions)")}
+    if "seq" not in columns:
+        con.execute("ALTER TABLE pending_questions ADD COLUMN seq INTEGER NOT NULL DEFAULT 0")
+    rows = con.execute(
+        "SELECT id, batch_id FROM pending_questions"
+        " ORDER BY batch_id ASC, created_at ASC, id ASC"
+    ).fetchall()
+    counters: dict[str, int] = {}
+    for row in rows:
+        batch_id = str(row["batch_id"])
+        counters[batch_id] = counters.get(batch_id, 0) + 1
+        con.execute("UPDATE pending_questions SET seq = ? WHERE id = ?",
+                    (counters[batch_id], row["id"]))
+
+
+def _migrate_v2_columns(con: sqlite3.Connection) -> None:
+    """v2 → v3：批次补上「原文件名」「公共元数据」「已入库题号」三列，外加一张历史名单表。
+
+    老批次没有原文件名（它们本来就不是从一份文件里来的），补空串即可；
+    公共元数据补空对象，语义上就是「这一批还没预填过公共字段」；
+    已入库题号补空数组，语义上就是「这一批还没有题进过主库」。
+    """
+    columns = {str(row["name"]) for row in con.execute("PRAGMA table_info(batches)")}
+    if "source_name" not in columns:
+        con.execute("ALTER TABLE batches ADD COLUMN source_name TEXT NOT NULL DEFAULT ''")
+    if "meta_json" not in columns:
+        con.execute("ALTER TABLE batches ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+    if "approved_json" not in columns:
+        con.execute("ALTER TABLE batches ADD COLUMN approved_json TEXT NOT NULL DEFAULT '[]'")
 
 
 def _migrate_v1_rows(con: sqlite3.Connection) -> None:
@@ -376,6 +453,52 @@ def _backup_path(source_backup: str) -> Path | None:
     return target
 
 
+def _backup_paths(source_backup: str) -> list[Path]:
+    """一批可能有多份原文件副本（一次拖入好几个文件）。
+
+    存法有两种：单个副本是普通相对路径；多个副本是 JSON 数组。
+    两种都只许落在工作区 ``data/`` 里，越界一律拒绝。
+    """
+    text = str(source_backup or "").strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            items = json.loads(text)
+        except (TypeError, ValueError) as exc:
+            raise PendingError("原文件副本清单损坏") from exc
+        if not isinstance(items, list):
+            raise PendingError("原文件副本清单损坏")
+    else:
+        items = [text]
+    paths: list[Path] = []
+    for item in items:
+        path = _backup_path(str(item))
+        if path is not None:
+            paths.append(path)
+    return paths
+
+
+PENDING_SOURCES_DIRNAME = "pending_sources"
+
+
+def store_source_backup(filename: str, data: bytes) -> str:
+    """把拖进来的原文件在工作区 ``data/`` 下留一份**只读副本**，返回相对路径。
+
+    副本是给这一批兜底用的：批次未审数归零时底座会物理删掉它，磁盘不养废纸。
+    老师盘上的原件底座一个字节都不碰——这里只写副本。
+    """
+    raw = str(filename or "").strip()
+    safe = re.sub(r"[^\w.\-]+", "_", raw, flags=re.UNICODE).strip("._") or "source"
+    safe = safe[:80]
+    folder = Path(settings.data_dir) / PENDING_SOURCES_DIRNAME
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(bank.LOCAL_TZ).strftime("%Y%m%d-%H%M%S")
+    target = folder / f"{stamp}_{secrets.token_hex(3)}_{safe}"
+    target.write_bytes(data)
+    return f"{PENDING_SOURCES_DIRNAME}/{target.name}"
+
+
 # ---------------------------------------------------------------- 查重口径
 
 
@@ -505,14 +628,56 @@ def find_duplicate(provider_id: str, document: dict[str, Any],
 # ---------------------------------------------------------------- 批次读写
 
 
+def _read_meta(row: sqlite3.Row) -> dict[str, Any]:
+    """批次上的公共元数据；读不出来就当空对象，不猜。"""
+    try:
+        data = json.loads(row["meta_json"] or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_approved(row: sqlite3.Row) -> list[dict[str, Any]]:
+    """这一批已经进主库的题号（公共元数据后改时还要补写它们）。"""
+    try:
+        data = json.loads(row["approved_json"] or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
+def _remember_approved(con: sqlite3.Connection, batch_id: str, question_id: str) -> None:
+    """记一笔「这一批的哪道题进了主库」。
+
+    记下来是为了公共元数据后改时能补写：题已经不在池子里了，
+    但它仍属于这一批，标准名与明细学校照样得落到它的 ``sources`` 上。
+    """
+    if not batch_id or not question_id:
+        return
+    row = _batch_row(con, batch_id)
+    if row is None:
+        return
+    items = _read_approved(row)
+    if any(str(item.get("question_id") or "") == question_id for item in items):
+        return
+    items.append({"question_id": question_id, "approved_at": questions.now_iso()})
+    con.execute(
+        "UPDATE batches SET approved_json = ? WHERE batch_id = ?",
+        (json.dumps(items[-200:], ensure_ascii=False, separators=(",", ":")), batch_id),
+    )
+
+
 def _batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
-    """批次卡片：时间、编号、未审数 / 总题数。"""
+    """批次卡片：时间、编号、未审数 / 总题数，外加原文件名与公共元数据。"""
     return {
         "batch_id": str(row["batch_id"]),
         "label": str(row["label"]),
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
         "source_backup": str(row["source_backup"] or ""),
+        "source_name": str(row["source_name"] or ""),
+        "meta": _read_meta(row),
+        "approved_count": len(_read_approved(row)),
         "total": int(row["total"] or 0),
         "pending_count": live,
         "done": live == 0,
@@ -562,6 +727,19 @@ def _refresh_batch(con: sqlite3.Connection, batch_id: str) -> None:
     )
 
 
+def _next_seq(con: sqlite3.Connection, batch_id: str) -> int:
+    """这一批的下一个次序号。
+
+    次序号是「录入次序」的正身：同一批题是一次写进去的，时间戳全一样，
+    光看时间分不出先后，只能靠这个号。
+    """
+    row = con.execute(
+        "SELECT COALESCE(MAX(seq), 0) AS top FROM pending_questions WHERE batch_id = ?",
+        (batch_id,),
+    ).fetchone()
+    return int(row["top"] or 0) + 1
+
+
 def list_batch_questions(batch_id: str) -> dict[str, Any]:
     """按批次拉取待审题目（录入先后顺序）。"""
     if not BATCH_ID_RE.match(str(batch_id or "")):
@@ -573,7 +751,7 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
             raise PendingNotFound("中转站里没有这个批次")
         rows = con.execute(
             "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at"
-            " FROM pending_questions WHERE batch_id = ? ORDER BY created_at ASC, id ASC",
+            " FROM pending_questions WHERE batch_id = ? ORDER BY seq ASC, id ASC",
             (batch_id,),
         ).fetchall()
     finally:
@@ -622,12 +800,13 @@ def _item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
 
 
 def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
-               origin: Any = "") -> dict[str, Any]:
+               source_name: Any = "", origin: Any = "") -> dict[str, Any]:
     """把一道题或一批题存进中转站（**存为待办**）。
 
     - ``batch_id`` 给了就并进那一批；没给就新开一批（``B-001`` 起）。
     - ``source_backup`` 是原文件只读副本在工作区 ``data/`` 里的相对路径；
       批次未审数归零时底座会**物理删掉**它，磁盘不留废纸。
+    - ``source_name`` 是原文件名（老师拖进来的那份），只作展示，不参与解析。
     - 返回批次卡片与新题 id，前端据此刷新列表。
 
     一条都不写是失败：宁可报错，也不让老师以为存进去了。
@@ -640,6 +819,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         raise PendingError(f"一次最多暂存 {MAX_BATCH_QUESTIONS} 道题")
     backup_text = str(source_backup or "").strip()
     backup = _backup_path(backup_text)
+    name_text = _clean_text(source_name, 120)
 
     prepared: list[tuple[dict[str, Any], list[dict[str, Any]], str]] = []
     for item in items:
@@ -661,36 +841,44 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             target_batch = _next_batch_id(con)
             con.execute(
                 "INSERT INTO batches"
-                " (batch_id, label, created_at, updated_at, source_backup, total, pending_count, assets_json)"
-                " VALUES (?, ?, ?, ?, ?, 0, 0, ?)",
-                (target_batch, batch_label(_now()), now, now, backup_text, "[]"),
+                " (batch_id, label, created_at, updated_at, source_backup, source_name,"
+                "  total, pending_count, assets_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)",
+                (target_batch, batch_label(_now()), now, now, backup_text, name_text, "[]"),
             )
-        if backup_text and not str(
-            (_batch_row(con, target_batch) or {"source_backup": ""})["source_backup"] or ""
-        ):
+        current = _batch_row(con, target_batch)
+        if backup_text and not str((current or {"source_backup": ""})["source_backup"] or ""):
             con.execute(
                 "UPDATE batches SET source_backup = ? WHERE batch_id = ?",
                 (backup_text, target_batch),
             )
+        if name_text and not str((current or {"source_name": ""})["source_name"] or ""):
+            con.execute(
+                "UPDATE batches SET source_name = ? WHERE batch_id = ?",
+                (name_text, target_batch),
+            )
         names: list[str] = []
         inserted = 0
+        seq = _next_seq(con, target_batch)
         for document, stored, pending_id in prepared:
             if pending_id:
-                # 就地更新：号、批次与未审数都不动，只换内容。
+                # 就地更新：号、批次与未审数都不动，只换内容。次序号也不动——
+                # 老师改的是这一道题，它在批次里的位置还是原来那个位置。
                 names.extend(str(item.get("name") or "") for item in _replace_pending(
                     con, pending_id, document, stored))
                 continue
             con.execute(
                 "INSERT INTO pending_questions"
-                " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at, seq)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     document["id"], target_batch,
                     json.dumps(document, ensure_ascii=False, separators=(",", ":")),
                     json.dumps(stored, ensure_ascii=False, separators=(",", ":")),
-                    str(origin or "")[:64], now, now,
+                    str(origin or "")[:64], now, now, seq,
                 ),
             )
+            seq += 1
             inserted += 1
             names.extend(str(item.get("name") or "") for item in stored)
         row = _batch_row(con, target_batch)
@@ -798,6 +986,320 @@ def _prepare_document(payload: Any, assets: Any,
     return document, stored_assets
 
 
+# ---------------------------------------------------------------- 公共元数据
+
+
+def _clean_text(value: Any, limit: int) -> str:
+    """去首尾空白、压掉中间空白；超长截断。"""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:limit]
+
+
+def build_standard_name(meta: dict[str, Any]) -> str:
+    """标准名：``年份-地区-主体-类型-学科``。
+
+    空段不占位（少一段就少一个连字符），纯靠拼接算出来——界面上那格是只读的，
+    底座也绝不接受手改的标准名：老师改的是上面五个字段，标准名是它们的果。
+    """
+    parts = [
+        str(meta.get("year") or ""),
+        str(meta.get("region") or ""),
+        str(meta.get("body") or ""),
+        str(meta.get("exam_type") or ""),
+        str(meta.get("subject") or ""),
+    ]
+    return "-".join(part for part in parts if part)[:META_NAME_LIMIT]
+
+
+def normalize_batch_meta(payload: Any) -> dict[str, Any]:
+    """把老师填的公共字段规整成底座口径。
+
+    只收五个可填字段 + 明细学校名单；标准名一律由底座重算，请求里带的
+    ``standard_name`` 一律作废——那格是只读的，客户端说了不算。
+    """
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise PendingError("公共元数据必须是对象")
+
+    year: int | None = None
+    raw_year = str(payload.get("year") or "").strip()
+    if raw_year:
+        if not raw_year.isdigit():
+            raise PendingError("年份只能填数字")
+        year = int(raw_year)
+        if not 1900 <= year <= 2100:
+            raise PendingError("年份要在 1900–2100 之间")
+
+    schools: list[str] = []
+    raw_schools = payload.get("schools")
+    if isinstance(raw_schools, list):
+        for item in raw_schools:
+            name = _clean_text(item, 32)
+            if name and name not in schools:
+                schools.append(name)
+    if len(schools) > META_SCHOOL_LIMIT:
+        raise PendingError(f"明细学校最多 {META_SCHOOL_LIMIT} 所")
+
+    meta = {
+        "year": year,
+        "region": _clean_text(payload.get("region"), 64),
+        "body": _clean_text(payload.get("body"), 64),
+        "exam_type": _clean_text(payload.get("exam_type"), 64),
+        "subject": _clean_text(payload.get("subject"), 64),
+        "schools": schools,
+    }
+    meta["standard_name"] = build_standard_name(meta)
+    return meta
+
+
+def _apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tuple[bool, str, list[str]]:
+    """把公共元数据写进一道题的 ``source`` 与 ``tags``。
+
+    返回 (是否写成功, 失败原因, 提示)。写不成的题**原样留着**并如实上报，
+    绝不为了「同步成功」去改坏老师已经录好的题。
+    """
+    notes: list[str] = []
+    source = document.get("source")
+    updated = dict(source) if isinstance(source, dict) else {}
+    if meta.get("year"):
+        updated["year"] = int(meta["year"])
+    if meta.get("region"):
+        updated["region"] = str(meta["region"])
+    if meta.get("body"):
+        updated["school"] = str(meta["body"])
+    if meta.get("exam_type"):
+        updated["exam_type"] = str(meta["exam_type"])
+    standard = str(meta.get("standard_name") or "")
+    if standard:
+        # 标准名就是这一批的原卷名：它落进 sources.paper_name，是这一批题在主库里的出处。
+        updated["paper_title"] = standard
+    document["source"] = updated
+
+    # 明细学校拆成隐藏标签：井号开头，不进可见胶囊，但照样进题库、照样能被搜到。
+    raw_tags = [tag for tag in (document.get("tags") or []) if isinstance(tag, str) and tag]
+    visible = list(dict.fromkeys(tag for tag in raw_tags if not tag.startswith(HIDDEN_TAG_PREFIX)))
+    wanted = [HIDDEN_TAG_PREFIX + name for name in (meta.get("schools") or [])]
+    room = max(0, MAX_TAGS - len(visible))
+    added = wanted[:room]
+    if len(wanted) > room:
+        notes.append(f"标签位只剩 {room} 个，{len(wanted) - room} 所明细学校没塞下")
+    document["tags"] = visible + added
+
+    try:
+        questions.validate_question(_contract_probe(document))
+    except questions.QuestionValidationError as exc:
+        return False, f"同步后不合契约：{exc.errors[0] if exc.errors else '未知'}", notes
+    return True, "", notes
+
+
+def _sync_batch_sources(con: sqlite3.Connection, batch_id: str,
+                        meta: dict[str, Any]) -> tuple[int, int, list[str]]:
+    """把公共元数据同步给这一批**池子里**的所有题。
+
+    返回 (同步成功数, 跳过数, 提示)。跳过的题一条也不动。
+    """
+    rows = con.execute(
+        "SELECT id, doc_json FROM pending_questions WHERE batch_id = ?"
+        " ORDER BY seq ASC, id ASC",
+        (batch_id,),
+    ).fetchall()
+    synced = 0
+    skipped = 0
+    warnings: list[str] = []
+    for row in rows:
+        try:
+            document = json.loads(row["doc_json"])
+        except (TypeError, ValueError):
+            skipped += 1
+            warnings.append(f"{row['id']}：文档损坏，未同步")
+            continue
+        ok, reason, notes = _apply_meta_to_document(document, meta)
+        if not ok:
+            skipped += 1
+            warnings.append(f"{row['id']}：{reason}")
+            continue
+        con.execute(
+            "UPDATE pending_questions SET doc_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
+             questions.now_iso(), row["id"]),
+        )
+        synced += 1
+        warnings.extend(f"{row['id']}：{note}" for note in notes)
+    return synced, skipped, warnings
+
+
+def _sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, list[str]]:
+    """公共元数据后改时，补写这一批**已经进主库**的那些题。
+
+    这一步是尽力而为：主库写不进去时如实报出来，绝不假装同步成功，
+    也绝不因为主库暂时不可用就把池子里的同步一起回滚。
+    """
+    from app.core import bank_provider
+
+    con = _connect()
+    try:
+        row = _batch_row(con, batch_id)
+        if row is None:
+            return 0, []
+        approved = _read_approved(row)
+    finally:
+        con.close()
+    if not approved:
+        return 0, []
+
+    warnings: list[str] = []
+    patched = 0
+    try:
+        plugin_id = bank_provider.resolve()["plugin_id"]
+    except Exception as exc:  # noqa: BLE001 — 题库不可用不该打断池子里的同步
+        return 0, [f"已入库的题没补写：题库不可用（{exc}）"]
+
+    for item in approved:
+        question_id = str(item.get("question_id") or "")
+        if not question_id:
+            continue
+        try:
+            current = bank.get_question(plugin_id, question_id)
+        except Exception as exc:  # noqa: BLE001 — 单题失败不牵连别的题
+            warnings.append(f"{question_id}：已入库的题没补写（{exc}）")
+            continue
+        document = dict(current)
+        ok, reason, notes = _apply_meta_to_document(document, meta)
+        if not ok:
+            warnings.append(f"{question_id}：{reason}")
+            continue
+        patch = {
+            key: document[key]
+            for key in ("source", "tags")
+            if key in document
+        }
+        try:
+            bank.update_question(plugin_id, question_id, patch)
+        except Exception as exc:  # noqa: BLE001 — 同上
+            warnings.append(f"{question_id}：已入库的题没补写（{exc}）")
+            continue
+        patched += 1
+        warnings.extend(f"{question_id}：{note}" for note in notes)
+    return patched, warnings
+
+
+def _remember_meta(con: sqlite3.Connection, meta: dict[str, Any]) -> None:
+    """记住这次用过的公共字段与明细学校：下次开新批次时自动带出。"""
+    now = questions.now_iso()
+    pairs: list[tuple[str, str]] = [
+        ("region", str(meta.get("region") or "")),
+        ("body", str(meta.get("body") or "")),
+        ("exam_type", str(meta.get("exam_type") or "")),
+        ("subject", str(meta.get("subject") or "")),
+    ]
+    pairs.extend(("school", str(name)) for name in (meta.get("schools") or []))
+    body = str(meta.get("body") or "").strip()
+    schools = [str(name).strip() for name in (meta.get("schools") or []) if str(name).strip()]
+    if body and schools:
+        # 主体 → 明细名单的对应关系：下次填同一主体时自动把名单带出来。
+        # 同一个主体只留**最新**那一份名单：名单改了就把旧的抹掉，
+        # 否则历史里会躺着几套同主体不同名单的记录，带出来的是哪套说不准。
+        stale = [
+            str(row["value"])
+            for row in con.execute(
+                "SELECT value FROM meta_history WHERE kind = 'group'"
+            ).fetchall()
+            if str(row["value"]).partition(GROUP_SEP)[0] == body
+        ]
+        for value in stale:
+            con.execute(
+                "DELETE FROM meta_history WHERE kind = 'group' AND value = ?", (value,)
+            )
+        pairs.append(("group", body + GROUP_SEP + GROUP_ITEM_SEP.join(schools)))
+    for kind, value in pairs:
+        text = value.strip()
+        if not text:
+            continue
+        con.execute(
+            "INSERT INTO meta_history (kind, value, updated_at) VALUES (?, ?, ?)"
+            " ON CONFLICT(kind, value) DO UPDATE SET updated_at = excluded.updated_at",
+            (kind, text, now),
+        )
+
+
+def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
+    """改一批的公共元数据，这一批的题**立刻**同步。
+
+    同步两处：池子里的待审题（``source`` 与隐藏标签），
+    以及这一批已经进主库的题（补写主库的 ``sources``）。
+    同步不上的题一条也不动，并如实报出原因。
+    """
+    if not BATCH_ID_RE.match(str(batch_id or "")):
+        raise PendingNotFound("批次编号不合法")
+    meta = normalize_batch_meta(payload)
+
+    con = _connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if _batch_row(con, batch_id) is None:
+            raise PendingNotFound("中转站里没有这个批次")
+        con.execute(
+            "UPDATE batches SET meta_json = ?, updated_at = ? WHERE batch_id = ?",
+            (json.dumps(meta, ensure_ascii=False, separators=(",", ":")),
+             questions.now_iso(), batch_id),
+        )
+        synced, skipped, warnings = _sync_batch_sources(con, batch_id, meta)
+        _remember_meta(con, meta)
+        _refresh_batch(con, batch_id)
+        live = int(con.execute(
+            "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (batch_id,)
+        ).fetchone()[0])
+        card = _batch_card(_batch_row(con, batch_id), live)
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+    patched, bank_warnings = _sync_approved_sources(batch_id, meta)
+    warnings.extend(bank_warnings)
+    return {
+        "batch_id": batch_id,
+        "batch": card,
+        "meta": meta,
+        "synced": synced,
+        "skipped": skipped,
+        "patched": patched,
+        "warnings": warnings,
+    }
+
+
+def meta_history(limit: int = 12) -> dict[str, Any]:
+    """公共字段的历史值：最近用过的排前面，供下次开批次时自动带出。"""
+    count = max(1, min(int(limit or 12), 50))
+    con = _connect()
+    try:
+        rows = con.execute(
+            "SELECT kind, value FROM meta_history ORDER BY updated_at DESC, value ASC"
+        ).fetchall()
+    finally:
+        con.close()
+    history: dict[str, list[str]] = {}
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        kind = str(row["kind"] or "")
+        value = str(row["value"] or "")
+        if not kind or not value:
+            continue
+        if kind == "group":
+            body, _, raw = value.partition(GROUP_SEP)
+            names = [name for name in raw.split(GROUP_ITEM_SEP) if name]
+            if body and names and body not in groups and len(groups) < count:
+                groups[body] = names
+            continue
+        items = history.setdefault(kind, [])
+        if value not in items and len(items) < count:
+            items.append(value)
+    return {"history": history, "groups": groups}
+
+
 # ---------------------------------------------------------------- 审核动作
 
 
@@ -895,6 +1397,7 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[s
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
+        _remember_approved(con, batch_id, str(question.get("id") or ""))
         con.commit()
     except BaseException:
         con.rollback()
@@ -964,8 +1467,7 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
     finally:
         con.close()
     _drop_assets([{"name": name} for name in assets])
-    backup = _backup_path(str(row["source_backup"] or ""))
-    if backup is not None:
+    for backup in _backup_paths(str(row["source_backup"] or "")):
         try:
             if backup.is_file():
                 backup.unlink()
