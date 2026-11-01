@@ -1997,7 +1997,7 @@ def update_question(plugin_id: str, question_id: str, patch: Any, *,
     current = get_question(plugin_id, question_id)
     document = dict(current)
     for key in ("stem", "options", "answer", "solution", "type", "difficulty", "grade",
-                "taxonomy", "tags", "source"):
+                "taxonomy", "tags", "source", "images"):
         if key not in patch:
             continue
         if key == "source" and patch[key] is None:

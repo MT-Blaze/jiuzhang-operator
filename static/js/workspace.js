@@ -612,6 +612,8 @@
   // error 进【报错诊断】，宿主生命周期进【系统终端】，其余留在【运行日志】。
   function dockLevel(topic, text) {
     var name = String(topic || "");
+    // 「记一笔」级别：只是流水，不惊动人。显式声明的 note 优先于关键词判定。
+    if (/^note[._-]/i.test(name)) return "note";
     if (/(^|[._-])(error|failed|failure|timeout)([._-]|$)/i.test(name) ||
       /失败|错误|异常|超时/.test(text)) {
       return "error";
@@ -800,7 +802,7 @@
     if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
     window.JzoBus.on("region.dock", function (event) {
       var payload = event.payload || {};
-      dockLine(payload.text || "（空消息）", payload.topic || event.topic);
+      dockLine(payload.text || "（空消息）", payload.topic || event.topic, payload.level);
     });
     window.JzoBus.on("layout.changed", function (event) {
       var payload = event.payload || {};

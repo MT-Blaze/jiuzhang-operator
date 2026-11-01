@@ -1409,6 +1409,11 @@ html.ws-dragging * {
   overflow-wrap: anywhere;
 }
 
+/* 「记一笔」：只是流水，不抢眼——灰字，不弹窗，不改配色语义。 */
+.ws-dock-item[data-level="note"] .ws-dock-text {
+  color: var(--faint);
+}
+
 .ws-dock-empty {
   color: var(--faint);
 }

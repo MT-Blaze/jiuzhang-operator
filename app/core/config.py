@@ -76,6 +76,16 @@ class Settings:
         return self.data_dir / "uploads"
 
     @property
+    def pending_db_path(self) -> Path:
+        """中转站（待审核池）的独立库文件：与主库不是一个文件。"""
+        return self.data_dir / "pending.db"
+
+    @property
+    def pending_assets_dir(self) -> Path:
+        """中转站的配图目录：入库前配图只落在这里，不进 uploads/。"""
+        return self.data_dir / "pending_assets"
+
+    @property
     def config_path(self) -> Path:
         return self.data_dir / "config.json"
 

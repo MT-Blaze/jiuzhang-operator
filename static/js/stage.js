@@ -372,6 +372,10 @@
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "asset.upload",
+    // 军令 #24：中转站（待审核池）。批次列表、批次题目、存草稿、存入主库、
+    // 彻底删除——录题端与主库之间那层物理隔离暂存，全走这五个口子。
+    "pending.batch_list", "pending.list", "pending.save_draft",
+    "pending.approve", "pending.delete",
     "draft.save", "draft.load",
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。
@@ -1431,6 +1435,95 @@
       return;
     }
 
+    if (method === "pending.batch_list" || method === "pending.list") {
+      // 读中转站：批次卡片与批次里的待审题目。开放给任何声明了 questions:read 的插件。
+      var readPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (readPermissions.indexOf("questions:read") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:read 权限，不能读取中转站"
+        });
+        return;
+      }
+      if (method === "pending.batch_list") {
+        fetchJson("/api/pending/batches").then(done, fail);
+        return;
+      }
+      var pendingBatchId = textValue(payload, "batch_id", 40);
+      if (!/^B-\d{3,}$/.test(pendingBatchId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
+        return;
+      }
+      fetchJson("/api/pending/batches/" + encodeURIComponent(pendingBatchId) + "/questions")
+        .then(done, fail);
+      return;
+    }
+
+    if (method === "pending.save_draft" || method === "pending.approve"
+        || method === "pending.delete") {
+      // 写中转站与写主库同权：必须先声明 questions:write，令牌仍留在宿主侧。
+      var pendingPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (pendingPermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能改动中转站"
+        });
+        return;
+      }
+      var jsonHeaders = { "Content-Type": "application/json" };
+      if (method === "pending.save_draft") {
+        var draftQuestions = payload.questions;
+        if (!Array.isArray(draftQuestions) || !draftQuestions.length) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待暂存的题目数组" });
+          return;
+        }
+        if (draftQuestions.length > 500) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "一次最多暂存 500 道题" });
+          return;
+        }
+        var draftBody = { questions: draftQuestions };
+        var draftBatch = textValue(payload, "batch_id", 40);
+        if (draftBatch) draftBody.batch_id = draftBatch;
+        var draftBackup = textValue(payload, "source_backup", 240);
+        if (draftBackup) draftBody.source_backup = draftBackup;
+        var draftOrigin = textValue(payload, "origin", 60);
+        if (draftOrigin) draftBody.origin = draftOrigin;
+        withWriteToken("/api/pending/batches", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify(draftBody)
+        }).then(done, fail);
+        return;
+      }
+      var pendingId = textValue(payload, "pending_id", 80);
+      if (!/^p_[A-Za-z0-9_-]{8,64}$/.test(pendingId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "中转站编号不合法" });
+        return;
+      }
+      if (method === "pending.delete") {
+        withWriteToken("/api/pending/items/" + encodeURIComponent(pendingId) + "/delete", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({})
+        }).then(done, fail);
+        return;
+      }
+      // 存入主库：查重命中时后端回 409，插件拿 detail.existing_id 去问老师要不要强行覆盖。
+      withWriteToken("/api/pending/items/" + encodeURIComponent(pendingId) + "/approve", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ force: payload.force === true })
+      }).then(function (result) {
+        emit("system.question_updated", {
+          action: "create",
+          id: result && result.question_id,
+          pluginId: tab.plugin.id
+        });
+        done(result);
+      }, fail);
+      return;
+    }
+
     if (method === "bank.create") {
       var permissions = (tab.plugin && tab.plugin.permissions) || [];
       if (permissions.indexOf("questions:write") < 0) {
@@ -1849,7 +1942,10 @@
       var text = message.payload && typeof message.payload.text === "string"
         ? message.payload.text.slice(0, 200)
         : JSON.stringify(message.payload || {}).slice(0, 200);
-      emit(topic, { text: text, pluginId: tab.plugin.id, raw: message.payload || null });
+      // 日志级别由插件自报，但只在白名单里认：底座不许被插件改成「一切正常」的样子。
+      var level = String(message.payload && message.payload.level || "");
+      if (["note", "error", "info", "system"].indexOf(level) < 0) level = "";
+      emit(topic, { text: text, pluginId: tab.plugin.id, level: level, raw: message.payload || null });
     }
   });
 

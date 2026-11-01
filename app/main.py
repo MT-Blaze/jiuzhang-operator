@@ -11,7 +11,7 @@ import re
 import threading
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -22,6 +22,7 @@ from app.api.agents import router as agents_router
 from app.api.assets import router as assets_router
 from app.api.bank import router as bank_router
 from app.api.health import router as health_router
+from app.api.pending import router as pending_router
 from app.api.plugins import router as plugins_router
 from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
@@ -31,6 +32,49 @@ from app.core import plugin_update, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
 from app.core.security import local_write_token
+
+
+def _serve_local_asset(root: Path, asset_path: str) -> FileResponse:
+    """按当前工作区的资源根读一张本地图片，越界一律 404。
+
+    uploads/（题目正式配图）与 pending_assets/（中转站暂存配图）共用这一套
+    边界：拒绝绝对路径、``..``、隐藏段与符号链接，扩展名只认图片。
+    """
+    resolved = root.resolve()
+    relative = PurePosixPath(asset_path.replace("\\", "/"))
+    if (
+        not relative.parts
+        or relative.is_absolute()
+        or ".." in relative.parts
+        or relative.parts[0].startswith(".")
+    ):
+        raise HTTPException(status_code=404, detail="资源路径非法")
+    target = resolved.joinpath(*relative.parts)
+    if target.is_symlink():
+        raise HTTPException(status_code=404, detail="不允许符号链接")
+    try:
+        target.resolve().relative_to(resolved)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="资源路径越界") from exc
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".gif": "image/gif",
+    }
+    media_type = media_types.get(target.suffix.lower())
+    if media_type is None or not target.is_file():
+        raise HTTPException(status_code=404, detail="资源不存在")
+    return FileResponse(
+        target,
+        media_type=media_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "public, max-age=86400",
+        },
+    )
 
 
 # 宿主壳（HTML/JS/CSS）一律禁止落缓存。只写 no-cache 不够：Chrome 的软刷新
@@ -117,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router)
     app.include_router(bank_router)
     app.include_router(assets_router)
+    app.include_router(pending_router)
     app.include_router(settings_router)
 
     @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)
@@ -126,41 +171,15 @@ def create_app() -> FastAPI:
         不能直接 mount 一个固定目录：工作区切换后上传根会变，路由必须按请求
         当时的 ``settings.uploads_dir`` 解析（见 PLUGIN_SPEC §3.1）。
         """
-        root = settings.uploads_dir.resolve()
-        relative = PurePosixPath(asset_path.replace("\\", "/"))
-        if (
-            not relative.parts
-            or relative.is_absolute()
-            or ".." in relative.parts
-            or relative.parts[0].startswith(".")
-        ):
-            raise HTTPException(status_code=404, detail="资源路径非法")
-        target = root.joinpath(*relative.parts)
-        if target.is_symlink():
-            raise HTTPException(status_code=404, detail="不允许符号链接")
-        try:
-            target.resolve().relative_to(root)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail="资源路径越界") from exc
-        media_types = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-            ".svg": "image/svg+xml",
-            ".gif": "image/gif",
-        }
-        media_type = media_types.get(target.suffix.lower())
-        if media_type is None or not target.is_file():
-            raise HTTPException(status_code=404, detail="资源不存在")
-        return FileResponse(
-            target,
-            media_type=media_type,
-            headers={
-                "X-Content-Type-Options": "nosniff",
-                "Cache-Control": "public, max-age=86400",
-            },
-        )
+        return _serve_local_asset(settings.uploads_dir, asset_path)
+
+    @app.get("/static/pending/{asset_path:path}", include_in_schema=False)
+    async def read_pending_asset(asset_path: str) -> FileResponse:
+        """中转站配图：只读当前工作区 pending_assets/，边界与 uploads 那条一模一样。
+
+        池子里的题配图不进 uploads/，这条路由就是它在审核界面的唯一出口。
+        """
+        return _serve_local_asset(settings.pending_assets_dir, asset_path)
 
     @app.get("/static/vendor/katex/fonts/{font_name}", include_in_schema=False)
     async def read_katex_font(font_name: str) -> FileResponse:
