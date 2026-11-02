@@ -75,7 +75,9 @@
 - 有测试后必须运行 `unittest`（**不许引入 pytest**，见 `STACK.md` §6）：单模块用
   `.venv\Scripts\python.exe -m unittest tests.test_plugin_install_url`；全量回归逐模块跑
   `for /f %f in ('dir /b tests\test_*.py') do .venv\Scripts\python.exe -m unittest tests.%~nf`。
-  `python -m unittest discover` 会因 `tests/` 无 `__init__.py` 直接报错，别用。
+  `python -m unittest discover` 会因 `tests/` 无 `__init__.py` 收集到零个用例——2026-11-02 实跑是
+  `Ran 0 tests in 0.000s / NO TESTS RAN`，**绿色假通过，比直接报错更危险**，别用（`STACK.md` §7 第 91 行的
+  discover 写法是旧口径，见到别照抄）。全量回归用 `.venv\Scripts\python.exe tools\run_all_tests.py`。
   必须用 `.venv` 里的解释器——系统 Python 缺依赖，会把全部模块打成假报错。
 - 新增契约必须带测试。
 - 修改前端后必须在浏览器中实际打开页面验证，不得只依赖静态检查。
@@ -112,6 +114,97 @@
 4. 如实报告验证结果；没有验证就明确说“未验证”，不得用推测代替证据。
 5. 发现规范与实现冲突时，先停下来说明，不得静默绕过。
 6. 变更影响契约、架构或验证方式时，同步更新文档。
+
+---
+
+## 9. 六工序多智能体工作流（2026-11-02 入驻，每会话默认生效）
+
+> 本节只放**入口、红线与索引**，细则一律按索引加载，禁止在此堆积细节。
+> 体系资产随仓库走：`.qoder/`（agents / rules / skills / records / skill-bank.json）+ `scripts/check-*`。
+> 流水线只管"允许 / 禁止 / 怎么做"；事实性背景知识查 RepoWiki 与 knowledge cards。
+
+### 9.1 触发分级（主公 2026-11-02 裁决）
+
+| 请求类型 | 工作流 | 必跑门禁 |
+|---|---|---|
+| 新功能、多阶段需求、跨底座与插件的改动 | 六工序全链（`/feature-dev`，工序 01→06 + 四道 Eval） | 快门禁每阶段 + 收尾门禁 |
+| 单点缺陷修复、小改文案与样式 | coder → reviewer → eval（跳过 01/03/04 的独立 Eval） | 快门禁 |
+| 纯查询、解释、读代码 | 不起子智能体，直接答 | 无 |
+| 发版、封版、出包 | 走 `domain/build-release` 动线 | 收尾门禁 |
+
+命中前两类时，主对话只做编排与透传，**不自行设计或写代码**；判定结果每轮告知主公，主公可随时说"升级成全链"或"停下"。
+
+### 9.2 六个角色（`.qoder/agents/`，做判分离）
+
+| 角色 | 工序 | 职责边界 | 调用名 |
+|---|---|---|---|
+| architect-agent | 01/03/04 | 调研与方案，只出 [PLAN]/[DESIGN]，禁写代码 | `architect-agent` |
+| coder-agent | 05 | 按方案串行实现，不改方案、不自评 | `coder-agent` |
+| test-agent | 06（做） | 生成并实跑测试/探针/像素证据，不自判质量 | `test-agent` |
+| eval-agent | 判 | L0 证据核验 + G0/L1/L2 三层判定，只判不做 | `eval-agent` |
+| reviewer-agent | 门禁 | L0/L1 符合性，输出 Critical/Suggestion，不动手 | `reviewer-agent` |
+| recorder-agent | 聚合 | 汇编 biz/sys 记录与报告，不补写他人产物 | `recorder-agent` |
+
+**生效条件**：子智能体清单在会话启动时快照，**新开会话才会认得这六个名字**（`.qoder/skills/` 则落盘即用）。角色不可调用时按序兜底：① `.venv\Scripts\python.exe tools\sync_agents.py` 把角色卡镜像到用户级后重开会话；② 当次会话用 `general-purpose` 起子代理，并在提示首行命令其先 `Read` 对应角色卡全文当作自己的指令。
+
+### 9.3 L0 红线（能脚本化的都挂在门禁里）
+
+1. 铁律一干净房间：diff 中不得有任何来自旧项目的逐字内容。
+2. 铁律二插件化：插件侧 `fetch(` / `parent.document` / `localStorage` 命中必须为 0；插件不得直连数据库、文件系统、环境变量；插件间不得直接调用。
+3. 出网铁律：任何出网必须由界面当场点击发起，禁止定时器轮询与启动时顺手拉。
+4. 两份 `plugins.json` 必须逐字节全等；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
+5. 版本单一事实源 `app/__init__.py`；`plugin.json` 顶层 `id` == 目录名、无 `backend`、必带 Apache-2.0 `LICENSE`。
+6. `data/` 是用户财产，底座可写范围仅 `data/update_state.json` 与 `data/workspaces/<id>/*.json`。
+7. 测试只能用 `.venv` 解释器逐模块跑；禁止 pytest、禁止 `unittest discover`（零用例假通过）。
+8. `.bat` 必须纯 ASCII + CRLF；禁止正则后行断言；写接口必须鉴权。
+9. `LICENSE` 与本文件铁律一、铁律二不得删改。
+
+### 9.4 门禁命令
+
+| 档 | 命令 | 时机 |
+|---|---|---|
+| 快门禁（秒级，只读） | `bash scripts/check-quick-gate.sh` | 每个阶段收尾；**不绿 = 未完成，不绿不 commit** |
+| 收尾门禁（分钟级） | `bash scripts/check-release-gate.sh` | 工序 06、发版前 |
+
+### 9.5 资产索引（新增资产必须在此登记 + 写 sys 记录 + 进 `skill-bank.json`，三件套缺一视为未完成）
+
+| 资产 | 路径 | 触发 |
+|---|---|---|
+| R00 命名规范 | `.qoder/rules/R00-naming.md` | 新建/重命名任何体系文件前 |
+| R01 模块与构建发布 | `.qoder/rules/R01-module-build.md` | 改结构、加依赖、动版本字段与 `.bat` |
+| R02 编码与错误处理 | `.qoder/rules/R02-coding-error.md` | 写路由/core、写宿主壳与插件 JS、加错误码 |
+| R03 分层·数据·配置 | `.qoder/rules/R03-layer-data-config.md` | 加表加库、写迁移、动 config/.env/令牌 |
+| R04 测试与流程 | `.qoder/rules/R04-test-workflow.md` | 写测试、跑回归、提交、更新项目记忆 |
+| R05 流水线与 Eval | `.qoder/rules/R05-pipeline-eval.md` | 执行流水线、质检判定、四态决策 |
+| skill-bank.json | `.qoder/skill-bank.json` | 三层 skill 清单 + 角色白名单 |
+| 六角色卡 | `.qoder/agents/` | 见 §9.2 |
+| process skills | `.qoder/skills/process/`（`feature-dev`、`init-pipeline`） | `/feature-dev` 编排 |
+| domain skills | `.qoder/skills/domain/`（`add-plugin`、`add-host-api`、`add-data-store`、`run-regression`、`build-release`、`prove-visual-change`） | 对应重复操作 |
+| base skills | `.qoder/skills/base/`（`sync-biz-record`、`sync-sys-record`、`archive-tech-report`） | 记录与归档 |
+| 操作记录 | `.qoder/records/{biz,sys,reports}/` | 按月分层，文件名含日期 |
+| 脚本门禁 | `scripts/check-*.{sh,py}`、`tools/audit_code.py`、`tools/run_all_tests.py` | §9.4 |
+| 角色卡镜像 | `tools/sync_agents.py` | 角色不可调用时 |
+
+### 9.6 常用命令与环境坑
+
+| 命令 | 用途 / 坑 |
+|---|---|
+| `start.bat` | 建 venv + 装依赖 + 起服务；默认端口 8000，被占自动顺延到 8009，全占则 rc=1 |
+| `.venv\Scripts\python.exe -m unittest tests.<模块>` | 单模块测试；**系统 Python 会把全部模块打成假报错** |
+| `.venv\Scripts\python.exe tools\run_all_tests.py` | 全模块回归，失败模块 → rc=1 |
+| `bash scripts/check-quick-gate.sh` / `check-release-gate.sh` | 两档门禁 |
+| `.venv\Scripts\python.exe tools\audit_code.py` | 静态红线（基线 ERROR 0 / WARN 36 / INFO 4） |
+| `.venv\Scripts\python.exe tools\<名>_probe.py` | 真机探针，产物 `.system_generated/<探针名>/<tag>/probe.json` + 截图 |
+| `.venv\Scripts\python.exe tools\build_plugin.py --all` | 打插件 zip（写 `dist/`） |
+| `build_release.bat` | 打底座包（写 `dist/`，包内 `bank.db` 是 0 题空基线） |
+| `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |
+| `.venv\Scripts\python.exe tools\sync_plugin_index.py` | 同步两份插件索引（需兄弟仓库 `E:/jiuzhang-plugins` 存在） |
+
+环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 写死 `E:\jiuzhang-operator` 盘符；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 第 92 行要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里 4 支 demo 插件的删除态与 handoff 未跟踪文件是他人在途工作，不得 stage/恢复。
+
+### 9.7 交付证据口径
+
+**唯一对外交付证据仍是 §7.1 机械证据回传单**（五项缺一不可）；`.qoder/records/biz/` 只作流水线工序内的过程稿，不做双写同步。Eval 与门禁的结构化结论（工序号/层/过否/原因）作为回传单第 4 项的证据来源抄录，数字必须来自当次实测输出。
 
 ---
 

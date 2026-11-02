@@ -47,3 +47,8 @@ plugins/org.jiuzhang.core-bank/bank/v063_migrated.db
 
 # 结构升级备份（user_version 1→2 自动落盘）：只留本机回滚用，绝不进 git 与发行包。
 *.pre-v082.bak
+
+# 六工序流水线资产（.qoder/agents|rules|skills|records + skill-bank.json、scripts/check-*）随仓库走，必须入库。
+# 只把本机生成的 RepoWiki 缓存挡在外面，wiki_plan.yaml 是配置、要留。
+.qoder/repowiki/*
+!.qoder/repowiki/wiki_plan.yaml
