@@ -42,6 +42,15 @@
 6. **干净房间（铁律一）**：所有代码与文档原创，严禁从 `E:\math-question-bank-main` 等历史目录复制源码、
    样式、脚本、测试、图片与目录结构。依赖白名单 Apache/MIT/BSD/ISC，**禁止 AGPL/GPL**。
 7. **AI 代理不得**执行 `git push`、建远端、改写历史或发布 Release，**除非用户明确要求**。
+8. **发版前必须大扫除（军令「本地仓库物理瘦身」2026-11-02 起长期铁律）**：每次改动底座版本号、
+   准备发版之前（如 1.1.0 → 1.2.0），**必须手动运行一次**
+   `.venv/Scripts/python.exe tools/clean_for_release.py`。它清 `__pycache__`、临时诊断脚本
+   `diag_*.py`、`dist/` 里的旧版 zip 与 `.system_generated/` 的探针产物（只保留**最近一次判据全绿**
+   的跑批目录，其余全删），并收尾自动 `git gc --prune=now` 给历史打包瘦身。
+   护栏写死在代码里：`data/`（老师题库的物理载体）、`.venv/`（唯一解释器）、`examples/`（入库契约资产）
+   与 git 已跟踪文件**一律不碰**，任何目标落在禁改区即中止。此脚本只认人当场敲的这条命令，
+   **严禁挂进启动流程、定时器或 CI**（与 §一 5 的出网铁律同理：静默自动清理会误删取证材料）。
+   本机性能急救另有 `tools/cleanup_workspace.py`（回收 GB 级产物，保留标准是「时间最新」）。
 
 ---
 
@@ -1486,3 +1495,16 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
   已是 CRLF 的脚本变成 `\r\r\n`。
   ⑤ cmd 的 `/c` 引号剥离：命令行以引号开头时 cmd 剥掉首个与末个引号，需要 `""script" > "log" 2>&1"` 的双引号写法；
   路径无空格时干脆不加引号最稳。cmd 读 `.bat` 用 ANSI，但**无控制台时 cmd 的输出是 UTF-8**（实测日志字节 `e7 ad 89` = 等待）。
+- **本地体积构成与两个清理脚本（2026-11-02 实测）**：瘦身前整仓 **2.6 GB**，其中
+  `.system_generated/` 独占 **2409 MB / 43,801 文件**（14,911 张 jpg + 14,659 张 png 的探针截图，
+  外加每轮跑批各带一份插件树拷贝与隔离库 `.db`）；`.venv/` 142 MB、`data/` 39 MB、`.git/` 31 MB、
+  `dist/` 15 MB。也就是说**体积问题九成是取证产物**，动 `data/` 与 `.venv/` 都是错误方向。
+  `.git` 侧干净：历史最大 blob 仅 1.6 MB（`core-bank/bank.db` 旧副本），3,520 个对象全 loose、
+  从没打过包——**不需要 rewrite history**，`git gc --prune=now` 就能收。
+  `tools/cleanup_workspace.py` 做本机急救（保留标准＝时间最新，逐层下钻只留一个叶子；
+  单纯「保留最新目录」等于留下 840 MB 的 `editor_probe`，它底下压着 94 轮历史跑批）；
+  `tools/clean_for_release.py` 做发版例行（保留标准＝`probe.json` 判据全绿，并跑 `git gc`）。
+  两者共用护栏与手法（后者 `import cleanup_workspace as cw`）。探针只往
+  `.system_generated/<探针名>/<tag>/` **写**，没有任何测试把它当输入读，所以清空不会连坐单测。
+  脚本自带 `--dry-run`，删前把逐条清单落进系统临时目录；Windows 控制台是 cp936，
+  脚本开头必须 `sys.stdout.reconfigure(encoding="utf-8")` 才不打码。
