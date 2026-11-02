@@ -1675,6 +1675,29 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("flex: 0 0 auto", rule_body(css, ".ep-head-tools .ep-btn"),
                       "三只控件按文字宽度排，不许被 flex 拉满整行")
 
+    def test_01c_the_clean_button_is_named_for_the_current_question(self) -> None:
+        """清洗按钮的改名护栏：只清当前题、只规范化 LaTeX，文案就得把这两件事说清。
+
+        旧名【AI 清洗公式】已经复发过一次——它既不是模型决定改什么，也不止管公式，
+        会让人以为点了就送去问 AI。所以护栏钉四层：辅助栏文案、整页无旧名、
+        清单命令标题、契约文档命令表标题列。
+        """
+        panel = panel_only(read("index.html"))
+        self.assertIn('id="epAiClean"', panel, "按钮 id 是既有回填通道的锚点，不许跟着文案改")
+        self.assertIn(">清洗当前题 LaTeX<", panel, "清洗按钮必须叫【清洗当前题 LaTeX】")
+        html = read("index.html")
+        self.assertNotIn("AI 清洗公式", html, "整页不许再留旧名【AI 清洗公式】")
+        commands = {item["id"]: item for item in manifest()["contributes"]["commands"]}
+        self.assertEqual(commands["org.jiuzhang.action.process.clean_latex"]["title"],
+                         "清洗当前题 LaTeX", "清单里这条命令的标题要与按钮文案一致")
+        spec = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
+        rows = [line for line in spec.splitlines()
+                if line.startswith("| `org.jiuzhang.action.process.clean_latex`")]
+        self.assertEqual(len(rows), 1, f"命令表里该命令应当只有一行：{rows}")
+        cells = [cell.strip() for cell in rows[0].strip().strip("|").split("|")]
+        self.assertEqual(cells[1], "清洗当前题 LaTeX", "契约文档命令表的标题列要同步改名")
+        self.assertNotIn("AI 清洗公式", spec, "契约文档全文不许再留旧名【AI 清洗公式】")
+
     def test_02_the_private_metadata_lives_in_the_head(self) -> None:
         """段一只放单题私有的六项：题号、题型、难度、分值、考向、标签。"""
         head = read("index.html")

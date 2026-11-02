@@ -600,7 +600,7 @@ com.example.card/
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `bank.update` / `bank.delete` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【AI 清洗公式】按钮）。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【清洗当前题 LaTeX】按钮，辅助栏 `#epAiClean`）。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 
@@ -1264,7 +1264,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | 命令 id | 标题 | 参数 | 返回 | 风险 |
 | --- | --- | --- | --- | --- |
 | `org.jiuzhang.action.input.open_question` | 打开题目编辑 | 必填 `question_id` string `q_` 公开 id | `{question_id, editing}` | 只读载入（会替换表单内容） |
-| `org.jiuzhang.action.process.clean_latex` | 清洗当前表单 | 无（`{}`） | `{touched}` | 改未保存内容（`requires_user`） |
+| `org.jiuzhang.action.process.clean_latex` | 清洗当前题 LaTeX | 无（`{}`） | `{touched}` | 改未保存内容（`requires_user`） |
 | `org.jiuzhang.action.input.save_question` | 保存当前题目 | 无（`{}`） | `{question_id, created}` | 写库（`requires_user`） |
 | `org.jiuzhang.action.process.create_variant` | 派生变式题 | 无（`{}`） | `{question_id, parent_id}` | 写库（`requires_user`） |
 

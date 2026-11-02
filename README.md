@@ -7,6 +7,8 @@
 
 - **协议**：Apache License 2.0，永久自由使用、修改与分发。
 - **出身**：干净房间（Clean Room）开发，全部代码从零手写，不复用任何历史项目代码。
+- **插件**：官方插件与索引都在独立的 [jiuzhang-plugins](https://github.com/MT-Blaze/jiuzhang-plugins) 仓库，
+  安装方式见下文「只读入口」与「自己写一个插件」。
 - **数据**：题目以 [JSON Schema](schemas/question.json) 为唯一交换格式，数学内容用 Markdown + LaTeX；
   题库是本机 `data/` 里的明文 SQLite，随时整目录拷走，卸载不销毁、不加密、不留水印。
 - **运行**：Python **3.10 及以上**（3.10/3.11/3.12/3.13/3.14 都在支持范围，开发机实测 3.14.6）/ FastAPI；
@@ -81,7 +83,8 @@ curl -X GET http://127.0.0.1:8000/healthz
 
 ## 自己写一个插件
 
-插件就是**一个标准 zip 包**：不需要注册、不需要编译、不用改底座，解压即用。最短路径三步：
+插件就是**一个标准 zip 包**：不需要注册、不需要编译、不用改底座，解压即用。
+官方插件与索引见 [jiuzhang-plugins](https://github.com/MT-Blaze/jiuzhang-plugins) 仓库。最短路径三步：
 
 1. 复制 [`examples/template-plugin/`](examples/template-plugin/)（成品包
    [`template-plugin.zip`](examples/template-plugin.zip)），改三处——清单里的 `id`/`name`（**目录名与 `id` 一字不差**）、

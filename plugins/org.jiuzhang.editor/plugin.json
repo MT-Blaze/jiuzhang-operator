@@ -113,7 +113,7 @@
       },
       {
         "id": "org.jiuzhang.action.process.clean_latex",
-        "title": "清洗当前表单",
+        "title": "清洗当前题 LaTeX",
         "description": "对画布中栏的 exam-zh 源码做定界符规范化（\\( \\)、\\[ \\] 归一为 $ 与 $$）；会改写未保存内容，必须在执行前确认。",
         "requires_user": true,
         "params_schema": {

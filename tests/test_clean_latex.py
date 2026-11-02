@@ -4,7 +4,7 @@
 1. ``/api/agent/clean_latex`` 是确定性规则：同一段输入永远得到同一段输出，不碰模型；
 2. 宿主 ``text.clean_latex`` 通道不截断长文本（半截文本回填比失败更糟），
    也不是 AI 专属方法——录题插件不需要声明 ai:invoke 就能用；
-3. 录题端的【AI 清洗公式】按钮必须真的走这条通道，而不是再抄一份规则。
+3. 录题端的【清洗当前题 LaTeX】按钮必须真的走这条通道，而不是再抄一份规则。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_clean_latex``
 """
@@ -80,7 +80,7 @@ class CleanLatexRelayContractTest(unittest.TestCase):
 
 
 class EditorAiCleanerTest(unittest.TestCase):
-    """军令 #23 阶段 3：【AI 清洗公式】搬到辅助栏，走宿主 text.clean_latex 回填画布。
+    """军令 #23 阶段 3：【清洗当前题 LaTeX】搬到辅助栏，走宿主 text.clean_latex 回填画布。
 
     钉四件事：按钮在辅助栏（不在画布）、真的调宿主通道而不是再抄一份规则、
     题干段与解析段全成功才回填、请求中按钮标 aria-busy（AGENTS §6）。
