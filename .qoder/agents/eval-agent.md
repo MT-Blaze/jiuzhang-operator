@@ -7,7 +7,7 @@ permissionMode: bypassPermissions
 model: inherit
 maxTurns: 40
 timeoutMins: 60
-color: magenta
+color: purple
 ---
 
 # eval-agent — 评估 · 独立质检判定
