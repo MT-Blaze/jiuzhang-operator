@@ -84,15 +84,16 @@
     });
   }
 
-  // ---------- 源码 / 渲染左右互换（只改视觉顺序，DOM 不挪） ----------
+  // ---------- 布局：源码 / 渲染左右互换（只改视觉顺序，DOM 不挪） ----------
   function setSwapButton(on) {
     panel.swap = Boolean(on);
     if (!panelSwapEl) return;
-    var label = panel.swap ? "⇄ 换回" : "⇄ 互换";
+    // 按钮只写「布局」两个字，不带图标；换没换靠 aria-pressed 与 title 说状态。
+    var tip = (panel.swap ? "已互换：渲染在左" : "当前：源码在左") + "，点此左右互换";
     panelSwapEl.setAttribute("aria-pressed", panel.swap ? "true" : "false");
-    panelSwapEl.setAttribute("aria-label", label + "（源码与渲染左右位置）");
-    panelSwapEl.setAttribute("title", label + "（源码与渲染左右位置）");
-    panelSwapEl.textContent = label;
+    panelSwapEl.setAttribute("aria-label", "布局（源码与渲染左右互换）");
+    panelSwapEl.setAttribute("title", tip);
+    panelSwapEl.textContent = "布局";
   }
 
   function applySwap(next, persist) {
@@ -115,7 +116,7 @@
     });
   }
 
-  /** 辅助栏点【← 返回列表】：意图交给宿主，画布收到广播后才回列表。 */
+  /** 辅助栏点【返回列表】：意图交给宿主，画布收到广播后才回列表。 */
   function backToListFromPanel() {
     hostCall("ui.params.set", {
       params: { view: "list" },

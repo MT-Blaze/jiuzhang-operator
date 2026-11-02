@@ -191,7 +191,7 @@
     });
   }
 
-  /** 画布视图（review / list）也走宿主参数通道：辅助栏那颗【← 返回列表】才有路。 */
+  /** 画布视图（review / list）也走宿主参数通道：辅助栏那颗【返回列表】才有路。 */
   function publishView(view) {
     hostCall("ui.params.set", {
       params: { view: view === "list" ? "list" : "review" },
@@ -276,15 +276,15 @@
         item.batchId = String(result.batch_id || item.batchId || "");
       }
       if (!silent) {
-        panelSay("已存为待办（池子编号 " + (item.pendingId || "—") + "）。", "ok", "stashed");
+        panelSay("已存为待审（池子编号 " + (item.pendingId || "—") + "）。", "ok", "stashed");
         dock("一道题已存进中转站（待审核池）。");
       }
       return { ok: true, result: result };
     }, function (error) {
       var text = (error && error.message) || "未知原因";
       if (!silent) {
-        panelSay("存为待办失败：" + text, "error", "failed");
-        dockWarn("存为待办失败：" + text, errorDetail(error));
+        panelSay("存为待审失败：" + text, "error", "failed");
+        dockWarn("存为待审失败：" + text, errorDetail(error));
       }
       return { ok: false, message: text, detail: errorDetail(error) };
     });

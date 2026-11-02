@@ -46,7 +46,7 @@
           publishSelection();
         }
       }
-      // 辅助栏那颗【← 返回列表】：画布收到广播才真回列表，且不再回发一遍。
+      // 辅助栏那颗【返回列表】：画布收到广播才真回列表，且不再回发一遍。
       if (values.view === "list" && state.mode === "review") backToList("已回到批次列表。", true);
       return;
     }

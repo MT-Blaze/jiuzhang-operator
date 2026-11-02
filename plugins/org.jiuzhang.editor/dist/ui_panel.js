@@ -22,15 +22,11 @@
     var setFormatButtons = deps.setFormatButtons;
     var setSwapButton = deps.setSwapButton;
     var splitTags = deps.splitTags;
-    var standardNameOf = deps.standardNameOf;
     var syncBatchContext = deps.syncBatchContext;
     var panelConfidenceEl = deps.dom.panelConfidenceEl;
     var panelDifficultyEl = deps.dom.panelDifficultyEl;
-    var panelExamTypeEl = deps.dom.panelExamTypeEl;
-    var panelGradeEl = deps.dom.panelGradeEl;
     var panelHeadNoEl = deps.dom.panelHeadNoEl;
     var panelMetricsEl = deps.dom.panelMetricsEl;
-    var panelPaperEl = deps.dom.panelPaperEl;
     var panelProgressEl = deps.dom.panelProgressEl;
     var panelQuestionNoEl = deps.dom.panelQuestionNoEl;
     var panelScoreEl = deps.dom.panelScoreEl;
@@ -38,7 +34,6 @@
     var panelTagsEl = deps.dom.panelTagsEl;
     var panelTypeEl = deps.dom.panelTypeEl;
     var panelTypeNoteEl = deps.dom.panelTypeNoteEl;
-    var panelYearEl = deps.dom.panelYearEl;
 
   // ---------- 辅助栏实例（sidebar.right）：元数据 + 审核动作 + 格式切换 ----------
   function fillSelect(node, values, labels) {
@@ -102,19 +97,14 @@
     Object.keys(panel.currentEntry || {}).forEach(function (key) { entry[key] = panel.currentEntry[key]; });
     if (panelTypeEl) entry.type = panelTypeEl.value;
     if (panelDifficultyEl) entry.difficulty = panelDifficultyEl.value;
-    if (panelGradeEl) entry.grade = panelGradeEl.value;
-    if (panelPaperEl) entry.paper_title = panelPaperEl.value;
     if (panelQuestionNoEl) entry.question_no = panelQuestionNoEl.value;
-    if (panelExamTypeEl) entry.exam_type = panelExamTypeEl.value;
-    if (panelYearEl) entry.year = panelYearEl.value;
     if (panelTagsEl) entry.tags = panelTagsEl.value;
     if (panelScoreEl) entry.score = panelScoreEl.value;
     return entry;
   }
 
   function bindFormChanges() {
-    [panelTypeEl, panelDifficultyEl, panelGradeEl, panelPaperEl, panelQuestionNoEl,
-      panelExamTypeEl, panelYearEl, panelScoreEl].forEach(function (node) {
+    [panelTypeEl, panelDifficultyEl, panelQuestionNoEl, panelScoreEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onFormChange);
       node.addEventListener("change", onFormChange);
@@ -151,31 +141,6 @@
     panelTypeNoteEl.setAttribute("data-from", "ai");
   }
 
-  /**
-   * 这一批有了标准名，题级的「原卷名 / 年份 / 类型」就变成只读镜像——
-   * 标准名是那五个公共字段拼出来的，手改它等于把整批的公共元数据改乱。
-   */
-  function syncSourceFields() {
-    var meta = panel.batchMeta || {};
-    var standard = String(meta.standard_name || standardNameOf(meta));
-    var locked = Boolean(standard);
-    if (panelPaperEl) {
-      if (locked) panelPaperEl.value = standard;
-      panelPaperEl.readOnly = locked;
-      panelPaperEl.setAttribute("data-locked", locked ? "true" : "false");
-    }
-    if (panelYearEl) {
-      if (locked && meta.year != null) panelYearEl.value = String(meta.year);
-      panelYearEl.readOnly = locked;
-      panelYearEl.setAttribute("data-locked", locked ? "true" : "false");
-    }
-    if (panelExamTypeEl) {
-      if (locked && meta.exam_type) panelExamTypeEl.value = String(meta.exam_type);
-      panelExamTypeEl.readOnly = locked;
-      panelExamTypeEl.setAttribute("data-locked", locked ? "true" : "false");
-    }
-  }
-
   /** 首屏是批次列表：只切换批次语境，绝不碰那道题还没填完的表单。 */
   function applyListSelection(sel) {
     panel.selection = null;
@@ -194,7 +159,10 @@
     panel.batchId = current ? String(current.batch_id || "") : "";
     renderBatchMeta();
     if (panelProgressEl) {
-      panelProgressEl.textContent = "批次列表";
+      // 首屏右上角不写「批次列表」四个字：列表就在画布上，标题是废话。
+      // 节点留着给读屏与探针数批次（data-total），只是视觉上彻底退场。
+      panelProgressEl.textContent = "";
+      panelProgressEl.hidden = true;
       panelProgressEl.setAttribute("data-active", "0");
       panelProgressEl.setAttribute("data-total", String(cards.length));
     }
@@ -206,7 +174,7 @@
     renderPool();
     if (!panel.metaSyncing) {
       panelSay(cards.length
-        ? "点批次列表里的任意一行进入审核。"
+        ? "在左边点任意一行进入审核。"
         : "中转站里还没有批次：把卷子拖进来，或 Ctrl+V 粘贴截图。",
         "info", "idle");
     }
@@ -237,6 +205,7 @@
     }
     var merged = entry;
     if (panelProgressEl) {
+      panelProgressEl.hidden = false;
       panelProgressEl.textContent = "第 " + (Number(sel.index || 0) + 1) + " / " + (sel.total || 1) + " 题";
       panelProgressEl.setAttribute("data-active", String(Number(sel.index || 0) + 1));
       panelProgressEl.setAttribute("data-total", String(sel.total || 1));
@@ -254,17 +223,12 @@
     }
     if (panelTypeEl) panelTypeEl.value = merged.type || sel.ai_type || "single_choice";
     if (panelDifficultyEl) panelDifficultyEl.value = merged.difficulty || "L1";
-    if (panelGradeEl) panelGradeEl.value = merged.grade || "";
-    if (panelPaperEl) panelPaperEl.value = merged.paper_title || "";
     if (panelQuestionNoEl) panelQuestionNoEl.value = merged.question_no || "";
-    if (panelExamTypeEl) panelExamTypeEl.value = merged.exam_type || "";
-    if (panelYearEl) panelYearEl.value = merged.year || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
     if (panelScoreEl) panelScoreEl.value = merged.score || "";
     if (panelHeadNoEl) panelHeadNoEl.textContent = "第 " + (Number(sel.index || 0) + 1) + " 题";
-    syncSourceFields();
-    // 换批次要把公共元数据面板切过去；面板回来后再把题级的只读镜像对齐一次。
-    syncBatchContext(sel.batch_id).then(function () { syncSourceFields(); });
+    // 换批次要把公共元数据面板切过去；题级的原卷名/年份/类型跟着批次走，不再单列字段。
+    syncBatchContext(sel.batch_id);
     renderTags();
     setFormatButtons(sel.format || panel.format);
     setSwapButton(Boolean(sel.swap));
@@ -333,7 +297,6 @@
       readForm: readForm,
       renderPanelMetrics: renderPanelMetrics,
       renderTypeNote: renderTypeNote,
-      syncSourceFields: syncSourceFields,
     };
   }
 

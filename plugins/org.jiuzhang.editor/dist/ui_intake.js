@@ -25,7 +25,6 @@
     var basketFootEl = deps.dom.basketFootEl;
     var basketGoEl = deps.dom.basketGoEl;
     var basketListEl = deps.dom.basketListEl;
-    var panelIntakeEl = deps.dom.panelIntakeEl;
     var root = deps.dom.root;
 
   // ---------- 接收区：拖入 / 粘贴 / 截屏 ----------
@@ -128,9 +127,9 @@
     return files;
   }
 
+  /** 只有画布那只筐会亮收货高亮：辅助栏的虚线接收框已随「UI 极致瘦身令」下线。 */
   function markDrop(on) {
     if (basketEl) basketEl.classList.toggle("is-over", Boolean(on));
-    if (panelIntakeEl) panelIntakeEl.classList.toggle("is-over", Boolean(on));
   }
 
   // ---------- 文件收集筐（军令 #27）----------
@@ -429,30 +428,6 @@
       if (inCanvas) basketAdd(files);
       else collectToCanvas(files);
     });
-    // 辅助栏的接收区（在右栏那张 iframe 里）：文件转交宿主，再送进画布的筐。
-    // 只在面板实例里接：画布实例那边的 #epIntake 是收着的，绑了也是死代码。
-    if (!inCanvas && panelIntakeEl) {
-      ["dragenter", "dragover"].forEach(function (type) {
-        panelIntakeEl.addEventListener(type, function (event) {
-          if (!hasFiles(event)) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-          markDrop(true);
-        });
-      });
-      panelIntakeEl.addEventListener("dragleave", function (event) {
-        event.preventDefault();
-        markDrop(false);
-      });
-      panelIntakeEl.addEventListener("drop", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        markDrop(false);
-        var files = event.dataTransfer && event.dataTransfer.files;
-        if (files && files.length) collectToCanvas(files);
-      });
-    }
     if (inCanvas) renderBasket();
   }
 

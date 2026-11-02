@@ -81,7 +81,7 @@
     }
   }
 
-  // ---------- 审核三钮：存入主库 / 存为待办 / 彻底删除 ----------
+  // ---------- 审核三钮：存入主库 / 存为待审 / 彻底删除 ----------
   /** 当前题 → 契约里的题目文档（源码解析 + 表单元数据），顺带把该说的话说了。 */
   function documentFor(item, meta) {
     var parsed = parseExamSource(item.source);
@@ -158,7 +158,7 @@
       });
   }
 
-  /** 【存为待办】：把这一题写回中转池。带 pending_id 就是原地更新，池子里不会多出一道重影。 */
+  /** 【存为待审】：把这一题写回中转池。带 pending_id 就是原地更新，池子里不会多出一道重影。 */
   function onStash() {
     var item = panelItem();
     if (!item) {
@@ -182,14 +182,14 @@
     hostCall("pending.save_draft", payload).then(function (result) {
       panel.saving = false;
       var ids = (result && Array.isArray(result.saved_ids)) ? result.saved_ids : [];
-      panelSay("已存为待办（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "ok", "stashed");
-      batchNote("已存为待办（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "done");
+      panelSay("已存为待审（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "ok", "stashed");
+      batchNote("已存为待审（池子编号 " + (item.pendingId || ids[0] || "—") + "）。", "done");
       dock("一道题已存进中转站（待审核池）。");
     }, function (error) {
       panel.saving = false;
-      panelSay("存为待办失败：" + ((error && error.message) || "未知原因"), "error", "failed");
-      batchNote("存为待办失败。", "failed");
-      dockWarn("存为待办失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
+      panelSay("存为待审失败：" + ((error && error.message) || "未知原因"), "error", "failed");
+      batchNote("存为待审失败。", "failed");
+      dockWarn("存为待审失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
     });
   }
 

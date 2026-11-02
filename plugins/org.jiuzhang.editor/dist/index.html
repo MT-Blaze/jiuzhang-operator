@@ -20,7 +20,7 @@
   <!-- 画布实例（stage.center）：两屏。
        首屏是批次列表（#edBatches）——铺满画布，一行一个批次；
        二屏才是三栏（左原图 | 中源码 | 右渲染）。
-       画布上方一根毛的按钮都不留：返回列表、源码/卡片与 ⇄ 互换全部住进
+       画布上方一根毛的按钮都不留：返回列表、源码/卡片与「布局」全部住进
        右侧辅助栏的顶部死锁区（#epHeadTools），经宿主 ui.params.set 跨帧对账。
        当前批次号只留读屏与探针（#edBatchNo / #edBatchStat），视觉上不占像素。 -->
   <div id="edRoot" class="ed-root" data-mode="list" hidden>
@@ -118,11 +118,12 @@
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
-  <!-- 辅助栏实例（sidebar.right）：三段式（军令 #29）。
-       段一 顶部永远固定：返回列表 + 源码/卡片/⇄互换、当前题号 + 单题私有元数据。
-       段二 中部自动折叠：批次公共元数据——画布一滚动就收成一行矮标题，鼠标悬停标题才展开，移开不收。
-       段三 底部永远固定：存入主库 / 存为待办 / 彻底删除，最下一行灰字报账。
+  <!-- 辅助栏实例（sidebar.right）：三段式（军令 #29，UI 极致瘦身令后再收一刀）。
+       段一 顶部永远固定：返回列表 + 源码/卡片/布局、当前题号 + 单题私有元数据。
+       段二 中部自动折叠：只剩批次公共元数据——画布一滚动就收成一行矮标题，鼠标悬停标题才展开，移开不收。
+       段三 底部永远固定：存入主库 / 存为待审 / 彻底删除，最下一行灰字报账。
        按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
+       同一功能绝不摆两遍：来源字段是公共元数据的镜像、考向只在段一挂，两块都已在 2026-11-02 下线。
        画布顶栏撤除后，返回列表与视图切换全部搬进段一死锁区；
        本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。 -->
   <div id="epRoot" class="ep-root" hidden>
@@ -133,11 +134,11 @@
         <span class="ep-badge" id="epStatus" data-status="pending" data-dirty="false">● 待审核</span>
         <span class="ep-head-count" id="epProgress" data-active="0" data-total="0">第 — / — 题</span>
       </div>
-      <!-- 死锁区第二行（军令 #30）：返回列表 + 源码/卡片 + ⇄ 互换全部挤在同一行；
-           画布上方从此一根毛的按钮都不留。 -->
+      <!-- 死锁区第二行（军令 #30）：返回列表 + 源码/卡片 + 布局全部挤在同一行；
+           画布上方从此一根毛的按钮都不留。按钮一律不挂图标，只留文字。 -->
       <div class="ep-head-tools" id="epHeadTools" role="group" aria-label="画布视图">
         <button type="button" class="ep-btn ep-back-btn ep-mini-btn" id="epBackList"
-                title="回到批次列表">← 返回列表</button>
+                title="回到批次列表">返回列表</button>
         <div class="ep-seg" role="group" aria-label="源码格式">
           <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
                   aria-pressed="true" title="源码 · 标准 LaTeX">源码</button>
@@ -145,7 +146,7 @@
                   aria-pressed="false" title="卡片 · 框框视图">卡片</button>
         </div>
         <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
-                title="源码与渲染左右互换">⇄ 互换</button>
+                title="源码与渲染左右互换">布局</button>
         <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
       </div>
       <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"
@@ -207,11 +208,9 @@
           <span class="ep-fold-arrow" aria-hidden="true">▾</span>
         </button>
 
-        <!-- 接收区：卷子从这里进批次，截图也从这里进。
-             它住在折叠层之外：收起的只是元数据字段，接收区这个落点不许消失。 -->
-        <div class="ep-intake" id="epIntake" aria-label="接收区">
-          <p class="ep-intake-hint" id="epIntakeHint">把卷子拖到这里，或 Ctrl+V 粘贴截图</p>
-        </div>
+        <!-- 接收区已下线（UI 极致瘦身令，2026-11-02）：辅助栏不再摆虚线拖拽框，
+             收件只有主画布右侧那只收集筐。Ctrl+V 粘贴截图仍走面板帧的全局 paste，
+             经宿主中转入筐，与这只框无关。 -->
 
         <div class="ep-fold-body" id="epMetaFoldBody">
           <!-- 最上方两行（军令 #25 / #28）：第一行灰字是原文件名，第二行是标准名。
@@ -299,35 +298,9 @@
         </div>
       </section>
 
-      <!-- 来源（随手填）：仍属单题私有，但折叠在段二里，段一只留最常用的六项。 -->
-      <section class="ep-sec" aria-label="来源">
-        <h3 class="ep-sec-title">来源（随手填）</h3>
-        <label class="ep-field">
-          <span class="ep-label">年级</span>
-          <input id="epGrade" class="ep-input" type="text" maxlength="20" placeholder="例：高一">
-        </label>
-        <label class="ep-field">
-          <span class="ep-label">原卷名</span>
-          <input id="epPaper" class="ep-input" type="text" maxlength="120" placeholder="例：2024 一模">
-        </label>
-        <div class="ep-row">
-          <label class="ep-field ep-field-narrow">
-            <span class="ep-label">年份</span>
-            <input id="epYear" class="ep-input" type="text" inputmode="numeric" maxlength="4" placeholder="2024">
-          </label>
-          <label class="ep-field ep-field-narrow">
-            <span class="ep-label">类型</span>
-            <input id="epExamType" class="ep-input" type="text" maxlength="64" placeholder="例：一模 / 期末 / 联考">
-          </label>
-        </div>
-      </section>
-
-      <!-- 大纲树：逐层展开的完整考向树（幽灵胶囊之外的传统入口）。 -->
-      <section class="ep-sec" aria-label="考向大纲">
-        <h3 class="ep-sec-title">考向大纲（点 ▸ 逐层展开，点名称挂载）</h3>
-        <div id="epTopicTree" class="ep-tree" role="tree" aria-label="大纲树"></div>
-        <p id="epTopicError" class="ep-hint" hidden></p>
-      </section>
+      <!-- 「来源（随手填）」与「考向大纲」树已整块下线（UI 极致瘦身令，2026-11-02）：
+           原卷名 / 年份 / 类型是批次公共元数据拼出的标准名的只读镜像，年级随识别结果入题，
+           考向挂载的唯一入口是段一的幽灵胶囊——同一功能绝不在辅助栏出现第二遍。 -->
 
       <!-- AI 帮改：平时收起，只留一行标题；展开才露指令框与预览。
            黄金位是老师核题的地方，这块不许常驻占着一屏。 -->
@@ -372,7 +345,7 @@
     <footer class="ep-foot-bar" id="epDock">
       <div class="ep-foot-row ep-foot-actions">
         <button type="button" class="ep-btn ep-btn-primary ep-mini-btn" id="epApprove">存入主库</button>
-        <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待办</button>
+        <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待审</button>
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
       </div>
       <!-- 台账：最下一行灰字，只报数，不再带任何按钮。 -->

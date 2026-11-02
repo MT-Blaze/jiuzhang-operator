@@ -44,11 +44,7 @@
       var panelTypeEl = document.getElementById("epType");
       var panelTypeNoteEl = document.getElementById("epTypeNote");
       var panelDifficultyEl = document.getElementById("epDifficulty");
-      var panelGradeEl = document.getElementById("epGrade");
-      var panelPaperEl = document.getElementById("epPaper");
       var panelQuestionNoEl = document.getElementById("epQuestionNo");
-      var panelExamTypeEl = document.getElementById("epExamType");
-      var panelYearEl = document.getElementById("epYear");
       var panelScoreEl = document.getElementById("epScore");
       var panelHeadNoEl = document.getElementById("epHeadNo");
       var panelTagsEl = document.getElementById("epTags");
@@ -59,8 +55,6 @@
       var panelMetaSummaryEl = document.getElementById("epMetaSummary");
       var panelGhostTagMenuEl = document.getElementById("epGhostTagMenu");
       var panelGhostTopicMenuEl = document.getElementById("epGhostTopicMenu");
-      var panelTreeEl = document.getElementById("epTopicTree");
-      var panelTopicErrorEl = document.getElementById("epTopicError");
       var panelApproveEl = document.getElementById("epApprove");
       var panelStashEl = document.getElementById("epStash");
       var panelDeleteEl = document.getElementById("epDelete");
@@ -95,7 +89,6 @@
       var panelStdNameEl = document.getElementById("epStdName");
       var panelStdFlashEl = document.getElementById("epStdFlash");
       var panelStdHintEl = document.getElementById("epStdHint");
-      var panelIntakeEl = document.getElementById("epIntake");
       var panelMetaYearEl = document.getElementById("epMetaYear");
       var panelMetaRegionEl = document.getElementById("epMetaRegion");
       var panelMetaBodyEl = document.getElementById("epMetaBody");
@@ -152,11 +145,7 @@
       panelTypeEl: panelTypeEl,
       panelTypeNoteEl: panelTypeNoteEl,
       panelDifficultyEl: panelDifficultyEl,
-      panelGradeEl: panelGradeEl,
-      panelPaperEl: panelPaperEl,
       panelQuestionNoEl: panelQuestionNoEl,
-      panelExamTypeEl: panelExamTypeEl,
-      panelYearEl: panelYearEl,
       panelScoreEl: panelScoreEl,
       panelHeadNoEl: panelHeadNoEl,
       panelTagsEl: panelTagsEl,
@@ -167,8 +156,6 @@
       panelMetaSummaryEl: panelMetaSummaryEl,
       panelGhostTagMenuEl: panelGhostTagMenuEl,
       panelGhostTopicMenuEl: panelGhostTopicMenuEl,
-      panelTreeEl: panelTreeEl,
-      panelTopicErrorEl: panelTopicErrorEl,
       panelApproveEl: panelApproveEl,
       panelStashEl: panelStashEl,
       panelDeleteEl: panelDeleteEl,
@@ -201,7 +188,6 @@
       panelStdNameEl: panelStdNameEl,
       panelStdFlashEl: panelStdFlashEl,
       panelStdHintEl: panelStdHintEl,
-      panelIntakeEl: panelIntakeEl,
       panelMetaYearEl: panelMetaYearEl,
       panelMetaRegionEl: panelMetaRegionEl,
       panelMetaBodyEl: panelMetaBodyEl,

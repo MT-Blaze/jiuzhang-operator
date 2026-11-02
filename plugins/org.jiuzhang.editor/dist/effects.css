@@ -107,8 +107,7 @@
    出现与消失都不重排内容，「一会对齐一会不对齐」的横向抖动一并消失。 */
 .ed-pane-body,
 .ep-root,
-.ep-scroll,
-.ep-tree {
+.ep-scroll {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
@@ -116,33 +115,28 @@
 .ed-pane-body:hover,
 .ep-root:hover,
 .ep-scroll:hover,
-.ep-tree:hover,
 .ed-pane-body.is-scrolling,
 .ep-root.is-scrolling,
-.ep-scroll.is-scrolling,
-.ep-tree.is-scrolling {
+.ep-scroll.is-scrolling {
   scrollbar-color: rgba(60, 52, 40, 0.28) transparent;
 }
 
 .ed-pane-body::-webkit-scrollbar,
 .ep-root::-webkit-scrollbar,
-.ep-scroll::-webkit-scrollbar,
-.ep-tree::-webkit-scrollbar {
+.ep-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .ed-pane-body::-webkit-scrollbar-track,
 .ep-root::-webkit-scrollbar-track,
-.ep-scroll::-webkit-scrollbar-track,
-.ep-tree::-webkit-scrollbar-track {
+.ep-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .ed-pane-body::-webkit-scrollbar-thumb,
 .ep-root::-webkit-scrollbar-thumb,
-.ep-scroll::-webkit-scrollbar-thumb,
-.ep-tree::-webkit-scrollbar-thumb {
+.ep-scroll::-webkit-scrollbar-thumb {
   background-color: transparent;
   border-radius: 999px;
   transition: background-color 180ms ease;
@@ -150,15 +144,13 @@
 
 .ed-pane-body:hover::-webkit-scrollbar-thumb,
 .ep-root:hover::-webkit-scrollbar-thumb,
-.ep-scroll:hover::-webkit-scrollbar-thumb,
-.ep-tree:hover::-webkit-scrollbar-thumb {
+.ep-scroll:hover::-webkit-scrollbar-thumb {
   background-color: rgba(60, 52, 40, 0.22);
 }
 
 .ed-pane-body.is-scrolling::-webkit-scrollbar-thumb,
 .ep-root.is-scrolling::-webkit-scrollbar-thumb,
-.ep-scroll.is-scrolling::-webkit-scrollbar-thumb,
-.ep-tree.is-scrolling::-webkit-scrollbar-thumb {
+.ep-scroll.is-scrolling::-webkit-scrollbar-thumb {
   background-color: rgba(60, 52, 40, 0.34);
 }
 

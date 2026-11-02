@@ -407,7 +407,7 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             return css[start:css.index("}", start)]
 
         self.assertIn("min-height: 44px", body_of(".ep-btn"),
-                      "⇄ 互换按钮必须与辅助栏其它按钮同高")
+                      "【布局】钮必须与辅助栏其它按钮同高")
         for selector in (".ep-mini-btn", ".ep-head-tools .ep-seg-btn"):
             body = body_of(selector)
             self.assertIn("min-height: 24px", body, f"{selector} 的视觉高度必须极矮")
@@ -459,7 +459,7 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
     def test_10_ghost_scrollbars_stay_transparent_until_needed(self) -> None:
         css = read("plugin.css")
         # 幽灵样式块追加在文件末尾，用最后一次出现定位，别误读前面同名的布局规则
-        for selector in (".ed-pane-body,", ".ep-root,", ".ep-tree {"):
+        for selector in (".ed-pane-body,", ".ep-root,", ".ep-scroll {"):
             at = css.rindex(selector)
             block = css[at:css.index("}", at)]
             self.assertIn("scrollbar-color: transparent transparent", block, selector)
@@ -632,9 +632,8 @@ class EditorPanelTest(unittest.TestCase):
         panel = panel_only(read("index.html"))
         for node_id in ("epFmtLatex", "epFmtBoxed", "epSwap", "epViewNote",
                         "epProgress", "epStatus", "epConfidence",
-                        "epType", "epDifficulty", "epGrade",
-                        "epPaper", "epQuestionNo", "epYear", "epExamType", "epTags",
-                        "epMounted", "epTopicTree",
+                        "epType", "epDifficulty",
+                        "epQuestionNo", "epTags", "epMounted",
                         "epAiField", "epAiAsk", "epAiSend", "epAiClean",
                         "epAiState", "epAiNote", "epAiPreview", "epAiApply", "epAiDiscard",
                         "epApprove", "epStash", "epDelete",
@@ -690,7 +689,7 @@ class EditorPanelTest(unittest.TestCase):
         """面板拿不到画布 DOM：格式与互换只经宿主 ui.params.set → ui.params.changed 对账。"""
         js = read("plugin.js")
         choose = js[js.index("  function chooseFormatFromPanel("):
-                    js.index("  // ---------- 源码 / 渲染左右互换")]
+                    js.index("  // ---------- 布局：源码 / 渲染左右互换")]
         self.assertIn("setFormatButtons(next);", choose)
         self.assertIn('hostCall("ui.params.set"', choose)
         self.assertIn("params: { format: next }", choose)
@@ -710,7 +709,7 @@ class EditorPanelTest(unittest.TestCase):
         activate = js[js.index("  function activatePanel("):js.index("  // ---------- 协议 ----------")]
         self.assertIn('chooseFormatFromPanel(node.getAttribute("data-format"))', activate)
         self.assertIn('panelSwapEl.addEventListener("click", toggleSwapFromPanel)', activate)
-        # 【← 返回列表】也只在辅助栏里，且同样经宿主参数通道广播回画布
+        # 【返回列表】也只在辅助栏里（瘦身令后不带箭头图标），且同样经宿主参数通道广播回画布
         back = fn_body(js, "backToListFromPanel")
         self.assertIn('hostCall("ui.params.set"', back)
         self.assertIn('params: { view: "list" }', back)
@@ -724,7 +723,7 @@ class EditorPanelTest(unittest.TestCase):
     def test_07_touch_targets_meet_the_a11y_floor(self) -> None:
         """AGENTS §6：触控目标不小于 44px；树行与小圆钮（热区补齐）都得达标。"""
         css = read("plugin.css")
-        for selector in (".ep-input", ".ep-select", ".ep-topic-expander"):
+        for selector in (".ep-input", ".ep-select"):
             self.assertIn("min-height: 44px", rule_body(css, selector),
                           f"{selector} 没有 44px 触控高度")
         chip_x = rule_body(css, ".ep-chip-x")
@@ -744,15 +743,21 @@ class EditorPanelTest(unittest.TestCase):
         self.assertIn("return problems", check)
 
     def test_09_topics_are_loaded_lazily_and_mount_is_capped(self) -> None:
+        """考向大纲树已下线（UI 极致瘦身令 2026-11-02）：懒加载只剩幽灵胶囊这一条路。"""
         js = read("plugin.js")
-        self.assertIn('hostCall("bank.topics", { parent_id: node.id })', js)
-        self.assertIn('hostCall("bank.topics", {})', js)
+        html = read("index.html")
+        for gone in ("function topicNode(", "function loadChildren(",
+                     "function loadTopicRoots(", 'id="epTopicTree"', ".ep-tree",
+                     ".ep-topic-expander"):
+            self.assertNotIn(gone, js + html, f"{gone} 已随考向大纲树退场")
+        self.assertIn('ctx.hostCall("bank.topics", key ? { parent_id: key } : {})', js,
+                      "路径解析按层懒取：只问祖先那一层，别一上来把整棵大纲拖进右栏")
+        self.assertIn('ctx.hostCall("bank.topics", { q: query })', js,
+                      "候选来自拼音模糊搜索，与大纲共用同一条只读通道")
         self.assertIn("var TOPIC_LIMIT = 8", js)
-        node = js[js.index("  function topicNode("):js.index("  function loadChildren(")]
-        self.assertIn("if (!open && !kids.childNodes.length) loadChildren(node, kids, depth + 1);",
-                      node, "展开节点才取下一层，别一上来把整棵大纲拖进右栏")
-        self.assertIn("if (!node.has_children) expander.disabled = true;", node,
-                      "没有下级的节点不该给假展开箭头")
+        toggle = fn_body(js, "toggleTopic")
+        self.assertIn("ids.length >= TOPIC_LIMIT", toggle, "挂载数量必须有上限")
+        self.assertIn("先摘掉一个。", toggle)
 
     def test_10_meta_and_receipts_are_host_held_drafts(self) -> None:
         """插件侧绝不出现浏览器存储：元数据草稿与入库回执都交宿主代持。"""
@@ -932,7 +937,7 @@ class EditorBatchTest(unittest.TestCase):
     画布底栏（.ed-foot）一换行就把中右两栏的底边挤歪，还占着老师最宝贵的屏幕下沿。
 
     2026-11-01 再整改：待入库池换成「中转站待审核池」，批量提交整体退场——
-    审核动作改成【存入主库】【存为待办】【彻底删除】三颗钮，住在辅助栏；
+    审核动作改成【存入主库】【存为待审】【彻底删除】三颗钮，住在辅助栏；
     画布首屏改成批次列表，二屏抬头才写当前批次号。
     """
 
@@ -971,7 +976,7 @@ class EditorBatchTest(unittest.TestCase):
                              f"{gone} 已随批量提交退场")
 
     def test_02_the_three_review_buttons_are_the_only_write_paths(self) -> None:
-        """审核台只有三条出路：存主库、存待办、彻底删除。批量提交的口径整体撤除。"""
+        """审核台只有三条出路：存主库、存待审、彻底删除。批量提交的口径整体撤除。"""
         js = read("plugin.js")
         for gone in ("saveAllDirty", "panelSaveAllDirty", "panelWorklistItems",
                      "patchPanelPool", "dirtyList"):
@@ -981,7 +986,7 @@ class EditorBatchTest(unittest.TestCase):
         self.assertIn('hostCall("pending.delete"', js)
 
     def test_02b_stash_updates_the_same_pending_row_in_place(self) -> None:
-        """存为待办带 pending_id：池子里不许多出一道重影，题号也不会飘。"""
+        """存为待审带 pending_id：池子里不许多出一道重影，题号也不会飘。"""
         js = read("plugin.js")
         stash = fn_body(js, "stashOne")
         self.assertIn("pending_id: item.pendingId || \"\"", stash)
@@ -1613,7 +1618,7 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("overflow-y: auto", rule_body(css, ".ep-scroll"))
 
     def test_01b_the_head_tools_share_one_row(self) -> None:
-        """军令 #30：返回列表 + 源码/卡片 + ⇄ 互换必须挤在段一同一行。"""
+        """军令 #30 + 瘦身令：返回列表 + 源码/卡片 + 布局必须挤在段一同一行，按钮不带图标。"""
         panel = panel_only(read("index.html"))
         tools = panel[panel.index('id="epHeadTools"'):]
         tools = tools[:tools.index("</div>", tools.index('id="epSwap"'))]
@@ -1653,7 +1658,7 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
                          "移开鼠标不许把老师正在填的批次字段收走")
         self.assertIn('if (raw.scroll) collapseMetaSection();', js)
         css = read("plugin.css")
-        self.assertIn(".ep-meta[data-fold=\"closed\"]", css)
+        self.assertIn('[data-fold="closed"] .ep-fold-body', css, "折叠只由通用规则管，段二不再专属")
 
     def test_04_the_lamp_breathes_on_both_sides(self) -> None:
         """悬停 200ms：画布那道题与辅助栏边缘同时亮莫兰迪冷蓝的呼吸灯。"""
@@ -1697,9 +1702,9 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn("function fetchTopicChildren(parentId)", js)
         # 打字别一口一个请求：等手停下来再查。
         self.assertIn("var GHOST_SEARCH_DELAY_MS = 180;", js)
-        # 鼠标移出输入区，空幽灵胶囊消失（显隐由响应式状态画出来）
-        self.assertIn("ui[kind].hidden = true;", js)
-        self.assertIn("rec.ghost.hidden = Boolean(ui[kind].hidden);", js)
+        # UI 极致瘦身令（2026-11-02）：空胶囊是唯一的「这里能点」提示，移出鼠标只许睡回去
+        self.assertNotIn("ui[kind].hidden", js, "显隐位已废：幽灵胶囊常驻，不再忽隐忽现")
+        self.assertIn('ui[kind].state = "idle";', js)
 
     def test_06_the_score_goes_into_the_plugin_extension(self) -> None:
         """契约里没有分值字段：只进 extensions["org.jiuzhang.editor"].score。"""
@@ -1742,19 +1747,21 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertIn('id="epMetaBody"', html)
         self.assertNotIn('id="epMetaBody" class="ep-fold-body"', html)
 
-    def test_10_the_intake_stays_outside_the_collapsible_body(self) -> None:
-        """收起的只是元数据字段：接收区（拖卷子/粘截图）这个落点不许跟着消失。"""
+    def test_10_the_intake_box_is_retired_and_only_the_basket_remains(self) -> None:
+        """UI 极致瘦身令（2026-11-02）：辅助栏那只虚线接收框彻底下线，收件只有画布的收集筐。
+
+        面板帧的全局 Ctrl+V 仍在——粘贴的截图经宿主中转入筐，与那只框无关；
+        框本身既不许留 DOM，也不许留样式或拖拽监听。
+        """
         html = read("index.html")
-        intake_at = html.index('id="epIntake"')
-        fold_at = html.index('id="epMetaFoldBody"')
-        self.assertLess(intake_at, fold_at,
-                        "接收区必须在折叠层之外（折叠层一收，落点就跟着没了）")
-        self.assertLess(intake_at, html.index('id="epMetaYear"'),
-                        "接收区要在批次公共元数据的字段之前")
+        js = read("plugin.js")
         css = read("plugin.css")
+        for gone in ('id="epIntake"', "ep-intake", "panelIntakeEl"):
+            self.assertNotIn(gone, html + js + css, f"{gone} 已随辅助栏接收区退场")
+        self.assertIn('id="edBasket"', html, "画布右侧的文件收集筐是唯一收件处")
+        self.assertIn("function collectToCanvas(", js, "面板帧的粘贴仍要经宿主转交进筐")
         self.assertIn('[data-fold="closed"] .ep-fold-body { display: none; }', css,
                       "折叠规则已通用化：带 data-fold 的段（批次元数据 / AI 帮改）共用一条")
-        self.assertIn('.ep-meta[data-fold="closed"] .ep-intake', css)
 
     def test_11_a_late_receipt_never_erases_what_the_teacher_just_added(self) -> None:
         """回执晚到不许抹掉老师刚建档的学校：本地新增与本地摘掉分开记账。"""

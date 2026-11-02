@@ -406,7 +406,6 @@
   var explainHostError = uiPanel.explainHostError;
   var fillSelect = uiPanel.fillSelect;
   var renderPanelMetrics = uiPanel.renderPanelMetrics;
-  var syncSourceFields = uiPanel.syncSourceFields;
 
   var uiStdName = window.JzoEditorStdName.create({
     dom: dom,
@@ -421,7 +420,6 @@
     renderSceneOptions: renderSceneOptions,
     renderSchools: renderSchools,
     standardNameOf: standardNameOf,
-    syncSourceFields: syncSourceFields,
     uiSchoolDict: uiSchoolDict,
     coreState: coreState,
   });
@@ -476,7 +474,6 @@
     renderPanelMetrics: renderPanelMetrics,
     coreState: coreState,
   });
-  var loadTopicRoots = uiTopics.loadTopicRoots;
   var uiBoot = window.JzoEditorBoot.create({
     dom: dom,
     applySwap: applySwap,
@@ -520,7 +517,6 @@
     loadMetaHistory: loadMetaHistory,
     loadScenes: loadScenes,
     loadTags: loadTags,
-    loadTopicRoots: loadTopicRoots,
     onAiApply: onAiApply,
     onAiDiscard: onAiDiscard,
     onAiSend: onAiSend,

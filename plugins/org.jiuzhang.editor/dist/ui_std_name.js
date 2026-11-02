@@ -32,7 +32,6 @@
     var renderSceneOptions = deps.renderSceneOptions;
     var renderSchools = deps.renderSchools;
     var standardNameOf = deps.standardNameOf;
-    var syncSourceFields = deps.syncSourceFields;
     var uiSchoolDict = deps.uiSchoolDict;
 
   // ---------- 标准名：自动拼接 + 手改暂停 + 元数据再动即恢复 ----------
@@ -168,7 +167,6 @@
     renderSchools();
     renderTopLines();
     applyStdFromMeta(false);
-    syncSourceFields();
   }
 
   /**
@@ -186,7 +184,6 @@
     renderSchools();
     renderTopLines();
     applyStdFromMeta(true);
-    syncSourceFields();
   }
 
   var metaSyncTimer = 0;

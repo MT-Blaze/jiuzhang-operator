@@ -3,7 +3,7 @@
  *
  * 胶囊串的尾巴永远挂着一颗虚线空壳「+ 请添加…」；鼠标停在上面 150ms，
  * 它自己活过来变成实心胶囊并接上光标；打字弹出候选（考向带路径），
- * 回车取第一条上屏，随即长出下一颗空壳；鼠标移出输入区，空壳自己消失。
+ * 回车取第一条上屏，随即长出下一颗空壳；鼠标移出，空壳只是睡回去，不消失。
  *
  * 空壳的「活没活过来」「候选是哪几条」「高亮在第几条」都记在 JzoReactive 的
  * 响应式状态里，DOM 只由渲染函数按状态画——事件处理器不再自己伸手改 DOM。
@@ -18,8 +18,8 @@
 
   function create(ctx) {
     var ui = global.JzoReactive.reactive({
-      tag: { state: "idle", hidden: false, items: [], active: -1 },
-      topic: { state: "idle", hidden: false, items: [], active: -1 }
+      tag: { state: "idle", items: [], active: -1 },
+      topic: { state: "idle", items: [], active: -1 }
     });
     var GHOST_DELAY_MS = ctx.delay || 150;
     // 幽灵胶囊的 DOM 与计时器（不是数据，不进响应式状态）。
@@ -60,7 +60,6 @@
       rec = { ghost: ghost, input: input, timer: 0, searchTimer: 0 };
       ghostState[kind] = rec;
       ui[kind].state = "idle";
-      ui[kind].hidden = false;
       host.appendChild(ghost);
       return rec;
     }
@@ -103,7 +102,6 @@
       var rec = ghostState[kind];
       if (!rec) return;
       ui[kind].state = "active";
-      ui[kind].hidden = false;
       if (!rec.input) return;
       // 状态先由响应式引擎落到 DOM，再逼一次布局接光标：此刻输入框可能还是 display:none，
       // 提前 focus 会静默失败。
@@ -116,7 +114,7 @@
       });
     }
 
-    /** 鼠标移出输入区：空壳消失；写了字的留着，别把老师打了一半的话弄丢。 */
+    /** 鼠标移出输入区：只把空壳放回「睡着」的虚线态；写了字的留着，别把老师打了一半的话弄丢。 */
     function onGhostLeave(kind) {
       var rec = ghostState[kind];
       if (!rec) return;
@@ -125,8 +123,8 @@
       rec.searchTimer = 0;
       var typed = rec.input ? String(rec.input.value || "").trim() : "";
       if (typed) return;
+      // 空胶囊是「这里点一下就能输入」的唯一提示，鼠标移开也不许消失。
       ui[kind].state = "idle";
-      ui[kind].hidden = true;
       closeGhostMenu(kind);
     }
 
@@ -136,8 +134,7 @@
       var cell = host.parentNode;
       if (!cell || !cell.classList || !cell.classList.contains("ep-cell")) return;
       cell.addEventListener("mouseenter", function () {
-        var rec = ensureGhost(kind);
-        if (rec) ui[kind].hidden = false;
+        ensureGhost(kind);
       });
       cell.addEventListener("mouseleave", function () { onGhostLeave(kind); });
     }
@@ -203,7 +200,6 @@
       if (!rec) return;
       if (rec.input) rec.input.value = "";
       ui[kind].state = "active";
-      ui[kind].hidden = false;
       if (rec.input) rec.input.focus();
     }
 
@@ -271,7 +267,6 @@
         var rec = ghostState[kind];
         if (!rec || !rec.ghost) return;
         rec.ghost.setAttribute("data-state", ui[kind].state);
-        rec.ghost.hidden = Boolean(ui[kind].hidden);
         renderGhostMenu(kind);
       });
     });
@@ -387,9 +382,7 @@
       var ids = entry.topic_ids || [];
       var names = entry.topic_names || {};
       var fresh = chipRow("topic");
-      if (!ids.length) {
-        insertChip(ctx.mountedList, ctx.el("span", "ep-note", "还没挂考向"), fresh);
-      }
+      // 一道没挂时不写提示话：尾巴上那颗虚线幽灵胶囊本身就是「点一下就能输入」。
       ids.forEach(function (id) {
         var chip = ctx.el("span", "ep-chip");
         chip.setAttribute("data-topic", id);

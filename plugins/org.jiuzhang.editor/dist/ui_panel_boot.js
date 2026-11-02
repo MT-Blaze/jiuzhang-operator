@@ -34,7 +34,6 @@
     var loadMetaHistory = deps.loadMetaHistory;
     var loadScenes = deps.loadScenes;
     var loadTags = deps.loadTags;
-    var loadTopicRoots = deps.loadTopicRoots;
     var onAiApply = deps.onAiApply;
     var onAiDiscard = deps.onAiDiscard;
     var onAiSend = deps.onAiSend;
@@ -219,7 +218,6 @@
       return hostCall("draft.load", { key: DRAFT_WORKLIST_KEY });
     }).then(function (result) {
       applyDraftSelection(result && result.value);
-      loadTopicRoots();
       if (!panel.selection) {
         // 画布可能比面板慢一步才把草稿写回来：补读一次，别让右栏晾成空壳
         window.setTimeout(function () {
@@ -229,7 +227,7 @@
           }, function () { /* 还是读不到就等画布下一次发布 */ });
         }, PANEL_DRAFT_RETRY_MS);
       }
-    }).catch(function () { loadTopicRoots(); });
+    }).catch(function () { /* 草稿通道没通：等画布下一次发布选区 */ });
     panel.ready = true;
   }
 

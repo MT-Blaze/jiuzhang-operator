@@ -82,42 +82,6 @@
   color: #8a6a1f;
 }
 
-/* 接收区：卷子与截图从这里进批次 */
-.ep-intake {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 6px;
-  background: var(--paper);
-}
-
-.ep-intake.is-over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.ep-intake-hint {
-  margin: 0;
-  font-size: 11px;
-  color: var(--ink-soft);
-  line-height: 1.4;
-}
-
-/* 收起时接收区压成一条窄带：折起来的是元数据字段，落点不许跟着消失。 */
-.ep-meta[data-fold="closed"] .ep-intake {
-  padding: 2px 6px;
-}
-
-.ep-meta[data-fold="closed"] .ep-intake-hint {
-  font-size: 10.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* 明细学校胶囊 */
 .ep-schools {
   display: flex;
@@ -320,13 +284,6 @@
   background: var(--accent);
   color: #fff;
   font-weight: 700;
-}
-
-/* 互换钮与格式键同一行，但宽度按文字走，不跟着分栏拉伸 */
-.ep-viewbar .ep-swap-btn {
-  flex: 0 0 auto;
-  min-width: 64px;
-  padding: 8px 10px;
 }
 
 .ep-swap-btn[aria-pressed="true"] {

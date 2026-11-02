@@ -94,7 +94,7 @@
       key: item.key,
       question_id: item.savedId || question.id || "",
       saved_id: item.savedId || "",
-      // 中转站的两把号：审核动作（存入主库 / 存为待办 / 彻底删除）全靠它们。
+      // 中转站的两把号：审核动作（存入主库 / 存为待审 / 彻底删除）全靠它们。
       pending_id: item.pendingId || "",
       batch_id: item.batchId || state.batchId || "",
       mode: state.mode,

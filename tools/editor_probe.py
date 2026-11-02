@@ -12,7 +12,7 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 - **首屏是批次列表**：整幅画布铺满卡片行，左边「时间-星期-时刻-批次编号 #B-xxx」，
   右边「未审：n / N」（数字绿色、贴紧右边缘、垂直居中），整行悬停有反馈；
 - **点行任意位置**（连左内边距那种空白处）直接切入三栏审核，抬头写着当前批次号；
-- **二屏只有三颗钮**：存入主库 / 存为待办 / 彻底删除；旧的保存、变式与批量条全撤；
+- **二屏只有三颗钮**：存入主库 / 存为待审 / 彻底删除；旧的保存、变式与批量条全撤；
 - **防呆**：停留超 3 分钟静默存回待审核池，只在底部日志留一行灰字，不弹窗；
 - **查重**：主库已有同题时弹窗给「返回修改 / 强行覆盖」，强行覆盖不新增题目；
 - **识别有出入照切不误**：画布上不弹红窗，只有底部日志一行警告；
@@ -948,16 +948,17 @@ def main() -> int:
                   {"chips": panel.locator("#epSchoolList .ep-school").count()})
 
             deadline = time.time() + 15
-            paper_value = ""
+            std_value = ""
             while time.time() < deadline:
-                paper_value = panel.locator("#epPaper").input_value()
-                if paper_value == expected_name:
+                std_value = panel.locator("#epStdName").input_value()
+                if std_value == expected_name:
                     break
                 page.wait_for_timeout(200)
-            check("题级的原卷名被公共标准名接管（只读镜像）",
-                  panel.locator("#epPaper").get_attribute("readonly") is not None
-                  and paper_value == expected_name,
-                  {"paper": paper_value})
+            check("公共标准名如实拼出（题级原卷名镜像已随瘦身令下线）",
+                  std_value == expected_name, {"std": std_value})
+            leftover = panel.locator("#epPaper, #epYear, #epExamType, #epGrade, #epTopicTree").count()
+            check("辅助栏不重抄来源：原卷名/年份/类型/年级与大纲树都已退场",
+                  leftover == 0, {"leftover": leftover})
 
             # ---------- 三栏骨架 ----------
             pending_count = int(card["pending_count"])
@@ -1060,8 +1061,8 @@ def main() -> int:
             check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
             audit_texts = [text.strip() for text in
                            panel.locator("#epApprove, #epStash, #epDelete").all_inner_texts()]
-            check("审核动作只有三颗钮：存入主库 / 存为待办 / 彻底删除",
-                  audit_texts == ["存入主库", "存为待办", "彻底删除"],
+            check("审核动作只有三颗钮：存入主库 / 存为待审 / 彻底删除",
+                  audit_texts == ["存入主库", "存为待审", "彻底删除"],
                   {"buttons": audit_texts})
             check("旧的保存、变式与批量条全撤了",
                   panel.locator("#epSave, #epVariant, #edSaveAll, #edPoolStash").count() == 0
@@ -1078,7 +1079,7 @@ def main() -> int:
                   and "org.jiuzhang.editor" in slot_src,
                   {"title": slot_title, "badge": slot_badge, "src": slot_src})
             for label, selector in (("题型", "#epType"), ("难度", "#epDifficulty"),
-                                    ("年级", "#epGrade")):
+                                    ("分值", "#epScore"), ("考向胶囊", "#epMounted")):
                 check(f"辅助栏里元数据表单还在（{label}）",
                       panel.locator(selector).count() == 1
                       and panel.locator(selector).is_visible(),
@@ -1087,7 +1088,7 @@ def main() -> int:
                          ("#epBackList", "#epFmtLatex", "#epFmtBoxed", "#epSwap")]
             one_row = all(box is not None for box in fmt_boxes) and (
                 max(box["y"] for box in fmt_boxes) - min(box["y"] for box in fmt_boxes) < 8)
-            check("返回列表/源码/卡片/互换同一行", one_row
+            check("返回列表/源码/卡片/布局同一行", one_row
                   and panel.locator("#epHead #epBackList").count() == 1
                   and panel.locator("#epHead #epFmtLatex").count() == 1,
                   {"boxes": fmt_boxes})
@@ -1216,9 +1217,9 @@ def main() -> int:
                 page.wait_for_timeout(100)
             check("画布一滚动，批次公共元数据立刻收成一行矮标题",
                   fold_state == "closed", {"fold": fold_state, "scrolled": scrolled})
-            check("收起时接收区还在（折的是元数据，不是落点）",
-                  panel.locator("#epIntake").is_visible(),
-                  {"intake": panel.locator("#epIntake").inner_text()[:40]})
+            check("辅助栏不留虚线接收框（收件只有画布的收集筐）",
+                  panel.locator("#epIntake").count() == 0,
+                  {"intake": panel.locator("#epIntake").count()})
             std_now = panel.locator("#epStdName").input_value()
             fold_summary = panel.locator("#epMetaSummary").inner_text().strip()
             check("收起后那行矮标题报着标准名",
@@ -1364,7 +1365,7 @@ def main() -> int:
                       {"mounted": mounted_names, "first": topic_names[0]})
             page.screenshot(path=str(shots / "v29-ghost-topic.png"))
 
-            # ---------- 存为待办：改过的题原地写回中转池 ----------
+            # ---------- 存为待审：改过的题原地写回中转池 ----------
             area = canvas.locator('.ed-src-area[data-index="0"]').first
             expect(area).to_be_visible(timeout=10000)
             area.click()
@@ -1383,10 +1384,10 @@ def main() -> int:
                   {"panel_source": current[:80] if current else ""})
             pool_before = pending_items(base, batch_id)
             panel.locator("#epStash").click()
-            check("【存为待办】给出回执", wait_message("已存为待办"),
+            check("【存为待审】给出回执", wait_message("已存为待审"),
                   {"messages": [m.get("text", "") for m in probe_messages()][-4:]})
             pool_after = pending_items(base, batch_id)
-            check("存为待办是原地更新：池子里不多出一道重影",
+            check("存为待审是原地更新：池子里不多出一道重影",
                   len(pool_after) == len(pool_before),
                   {"before": len(pool_before), "after": len(pool_after)})
             check("改过的内容真的落进中转池",
@@ -1674,9 +1675,9 @@ def main() -> int:
                   bool(split["basket"] and split["right"]
                        and split["basket"]["w"] >= split["right"]["w"] * 0.9),
                   {"basket": split["basket"], "right": split["right"]})
-            check("辅助栏有接收区（拖入/粘贴进卷子）",
-                  panel.locator("#epIntake").is_visible(),
-                  {"intake": panel.locator("#epIntake").inner_text()[:40]})
+            check("辅助栏已无接收区（瘦身令：收件只剩画布的筐）",
+                  panel.locator("#epIntake").count() == 0,
+                  {"intake": panel.locator("#epIntake").count()})
 
             def host_drag(name: str, mime: str, kind: str) -> None:
                 page.evaluate(
@@ -1796,23 +1797,22 @@ def main() -> int:
                   and canvas.locator("#edBasketFoot").is_hidden(),
                   {"count": canvas.locator("#edBasketList .ed-basket-item").count()})
 
-            # 辅助栏那侧收到的文件：面板实例与画布实例是两张 iframe，不能直连，
-            # 只能经宿主中转——从辅助栏投一次，看画布的筐有没有接到。
-            panel_drop_script = (
+            # 辅助栏那侧粘进来的图：面板实例与画布实例是两张 iframe，不能直连，
+            # 只能经宿主中转——从辅助栏粘一次，看画布的筐有没有接到。
+            # （虚线接收框已随瘦身令下线，面板侧只剩这一条全局粘贴通路。）
+            panel_paste_script = (
                 "function () {"
                 "  var dt = new DataTransfer();"
-                "  dt.items.add(new File([new Uint8Array([1, 2, 3])], %s, {type: 'application/pdf'}));"
-                "  var node = document.getElementById('epIntake');"
-                "  ['dragenter', 'dragover', 'drop'].forEach(function (kind) {"
-                "    node.dispatchEvent(new DragEvent(kind, {dataTransfer: dt, bubbles: true}));"
-                "  });"
+                "  dt.items.add(new File([new Uint8Array(3)], %s, {type: 'image/png'}));"
+                "  window.dispatchEvent(new ClipboardEvent('paste',"
+                "    {clipboardData: dt, bubbles: true}));"
                 "  return true;"
-                "}()" % json.dumps("辅助栏来的.pdf")
+                "}()" % json.dumps("辅助栏粘来的.png")
             )
-            panel.locator("#epIntake").evaluate(panel_drop_script)
+            panel.locator("#epRoot").evaluate(panel_paste_script)
             page.wait_for_timeout(800)
-            relayed = canvas.locator("#edBasketList .ed-basket-item[data-name='辅助栏来的.pdf']")
-            check("辅助栏那边接到的文件，经宿主转进画布的收集筐",
+            relayed = canvas.locator("#edBasketList .ed-basket-item[data-name='辅助栏粘来的.png']")
+            check("辅助栏粘进来的图，经宿主转进画布的收集筐",
                   relayed.count() == 1,
                   {"relayed": relayed.count(),
                    "items": canvas.locator("#edBasketList .ed-basket-item").count()})

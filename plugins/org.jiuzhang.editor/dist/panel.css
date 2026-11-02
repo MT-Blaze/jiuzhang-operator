@@ -62,7 +62,7 @@
   white-space: nowrap;
 }
 
-/* 死锁区第二行：返回列表 + 源码/卡片 + ⇄ 互换，一行排死。
+/* 死锁区第二行：返回列表 + 源码/卡片 + 布局，一行排死，按钮只留文字不带图标。
    三只控件都按极矮钮处理，视觉不破，热区仍用伪元素补到 44px。 */
 .ep-head-tools {
   display: flex;
@@ -73,10 +73,6 @@
 
 .ep-head-tools .ep-btn {
   flex: 0 0 auto;
-}
-
-.ep-head-tools .ep-swap-btn {
-  min-width: 64px;
 }
 
 .ep-head-tools .ep-seg-btn {
