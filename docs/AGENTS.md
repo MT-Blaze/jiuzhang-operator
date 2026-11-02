@@ -145,7 +145,7 @@
 | reviewer-agent | 门禁 | L0/L1 符合性，输出 Critical/Suggestion，不动手 | `reviewer-agent` |
 | recorder-agent | 聚合 | 汇编 biz/sys 记录与报告，不补写他人产物 | `recorder-agent` |
 
-**生效条件**：子智能体清单在会话启动时快照，**新开会话才会认得这六个名字**（`.qoder/skills/` 则落盘即用）。角色不可调用时按序兜底：① `.venv\Scripts\python.exe tools\sync_agents.py` 把角色卡镜像到用户级后重开会话；② 当次会话用 `general-purpose` 起子代理，并在提示首行命令其先 `Read` 对应角色卡全文当作自己的指令。
+**生效条件**（2026-11-02 对照实测）：角色卡要先被用户级注册表收编——`.venv\Scripts\python.exe tools\sync_agents.py` 镜像到 `~/.qoder\agents\jiuzhang-pipeline\`，本机验得 6 张卡随后都以 `enabled:true / ready:true` 出现在 `list_agents`；但 **Agent 工具的可用类型清单在会话启动时快照**，所以**新开会话才认得这六个名字**（`.qoder/skills/` 落盘即用，无此限制）。当次会话兜底：用 `general-purpose` 起子代理并命令其先 `Read` 对应角色卡全文当作自己的指令——此路**不继承** frontmatter 的 `tools/disallowedTools/permissionMode`，只读隔离靠指令自律，交付需经 reviewer 复核 diff。仓库 `.qoder/agents/` 是唯一事实源，主公若在 Agents 设置面改过角色，须回写仓库再重新镜像。
 
 ### 9.3 L0 红线（能脚本化的都挂在门禁里）
 
