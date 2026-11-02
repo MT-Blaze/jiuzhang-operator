@@ -9,7 +9,8 @@
 - **出身**：干净房间（Clean Room）开发，全部代码从零手写，不复用任何历史项目代码。
 - **数据**：题目以 [JSON Schema](schemas/question.json) 为唯一交换格式，数学内容用 Markdown + LaTeX；
   题库是本机 `data/` 里的明文 SQLite，随时整目录拷走，卸载不销毁、不加密、不留水印。
-- **运行**：Python 3.10+ / FastAPI；前端是原生 HTML、CSS、JavaScript，无构建链、无 Node 依赖、资源全本地。
+- **运行**：Python **3.10 及以上**（3.10/3.11/3.12/3.13/3.14 都在支持范围，开发机实测 3.14.6）/ FastAPI；
+  前端是原生 HTML、CSS、JavaScript，无构建链、无 Node 依赖、资源全本地。
 - **AI**：只连你自己填在 `.env` 里的模型网关；不填密钥就显式降级为 Mock，其余功能照常。
   **绝不后台静默出网**——任何一次联网都必须由界面上的当场点击发起（[PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §1.1–§1.5）。
 
@@ -44,6 +45,14 @@ python -m venv .venv
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
+
+**Python 版本与备份压缩**：备份打包优先用 zstd——**Python 3.14** 自带标准库 `compression.zstd`；
+**3.10~3.13** 想保持同一档压缩，`pip install zstandard` 即可。两者都没有时底座不会崩，
+自动降级到标准库 gzip 继续备份（读侧按文件头魔数分辨格式，所以老包照样能恢复，
+只是解 zstd 包需要那台机器有上面两种能力之一）。版本低于 3.10 一律不支持：全仓 197 个 `.py`（`app`/`tests`/`tools`/`examples`）已用
+`ast.parse(..., feature_version=(3, 10))` 机械复核过语法，零不兼容；`start.bat` 的提示也写 3.10+。
+（曾经的两个坑：`app/core/plugin_update.py` 的 f-string 里嵌套同类引号、备份层写死
+`from compression import zstd`——都只在 3.12/3.14 才成立，现已改到 3.10 可用。）
 
 写入类接口需要本地令牌（`JZO_LOCAL_TOKEN`，或首启生成的 `data/.local_token`，权限 0600）：
 

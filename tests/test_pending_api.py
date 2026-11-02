@@ -333,7 +333,7 @@ class PendingApiContractTest(unittest.TestCase):
         self.assertEqual(status, 404)
 
     def test_13_stash_with_pending_id_updates_in_place(self) -> None:
-        """存为待办带 pending_id：池子里不许多出一道重影，题号与总数都不许变。"""
+        """存为待审带 pending_id：池子里不许多出一道重影，题号与总数都不许变。"""
         status, body = self._save([{"question": _question(191)}])
         self.assertEqual(status, 201, body)
         pending_id = body["saved_ids"][0]

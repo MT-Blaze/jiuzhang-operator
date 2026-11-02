@@ -100,7 +100,7 @@ def _item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
 
     两种形状都收：``{"question": {...}, "assets": [...]}``（信封）与裸题目文档。
     信封里还可以带 ``pending_id``：带了就表示**就地更新**池子里那一条，而不是
-    再塞一条新的进去——老师改完点【存为待办】，池子里不该多出一道重影。
+    再塞一条新的进去——老师改完点【存为待审】，池子里不该多出一道重影。
     """
     if not isinstance(item, dict):
         raise PendingError("每一条待暂存内容都必须是对象")
@@ -114,7 +114,7 @@ def _item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
 
 def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                source_name: Any = "", origin: Any = "") -> dict[str, Any]:
-    """把一道题或一批题存进中转站（**存为待办**）。
+    """把一道题或一批题存进中转站（**存为待审**）。
 
     - ``batch_id`` 给了就并进那一批；没给就新开一批（``B-001`` 起）。
     - ``source_backup`` 是原文件只读副本在工作区 ``data/`` 里的相对路径；

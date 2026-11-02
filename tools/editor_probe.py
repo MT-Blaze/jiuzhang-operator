@@ -813,6 +813,17 @@ def main() -> int:
                   {"mode": resumed_mode, "name": resumed})
 
             expected_name = "2024-黑吉辽-三省六校-校考题-高三联考-数学"
+            # UI 极致瘦身令收尾：年级回到批次公共元数据，与年份、地区同一行。
+            grade_wiring = panel.locator("#epMetaGrade").evaluate(
+                """n => ({
+                    row: !!(n.closest('.ep-row')
+                            && n.closest('.ep-row').querySelector('#epMetaYear, #epMetaRegion')),
+                    maxlength: n.getAttribute('maxlength'),
+                    placeholder: n.getAttribute('placeholder')
+                })""")
+            check("批次公共元数据有年级输入框，就排在年份、地区旁边",
+                  panel.locator("#epMetaGrade").count() == 1 and grade_wiring["row"],
+                  {"grade": grade_wiring})
             deadline = time.time() + 30
             synced_source: dict = {}
             synced_tags: list = []
@@ -959,6 +970,36 @@ def main() -> int:
             leftover = panel.locator("#epPaper, #epYear, #epExamType, #epGrade, #epTopicTree").count()
             check("辅助栏不重抄来源：原卷名/年份/类型/年级与大纲树都已退场",
                   leftover == 0, {"leftover": leftover})
+
+            # ---------- UI 极致瘦身令收尾：年级回到批次公共元数据 ----------
+            # 用「高三」而不是题级 fixture 里的「高一」：撞值的同步会假绿，差值才是证据。
+            panel.locator("#epMetaGrade").fill("高三")
+            page.wait_for_timeout(700)
+            deadline = time.time() + 20
+            grade_items: list = []
+            card_grade = ""
+            while time.time() < deadline:
+                grade_items = pending_items(base, batch_id)
+                card_grade = str(next((
+                    dict(each.get("meta") or {}).get("grade") for each in pending_cards(base)
+                    if str(each.get("batch_id") or "") == batch_id
+                ), "") or "")
+                if card_grade == "高三" and grade_items and all(
+                        str((each.get("question") or {}).get("grade") or "") == "高三"
+                        for each in grade_items):
+                    break
+                page.wait_for_timeout(300)
+            check("批次一填年级，这一批的题全部按契约根字段 grade 跟上",
+                  card_grade == "高三" and bool(grade_items)
+                  and all(str((each.get("question") or {}).get("grade") or "") == "高三"
+                          for each in grade_items),
+                  {"card_grade": card_grade,
+                   "input": panel.locator("#epMetaGrade").input_value(),
+                   "items": [str((each.get("question") or {}).get("grade") or "")
+                             for each in grade_items]})
+            check("年级不进标准名口径：仍按年份-地区-主体-场景-类型-学科拼",
+                  panel.locator("#epStdName").input_value() == expected_name,
+                  {"std": panel.locator("#epStdName").input_value()})
 
             # ---------- 三栏骨架 ----------
             pending_count = int(card["pending_count"])

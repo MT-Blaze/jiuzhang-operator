@@ -1189,7 +1189,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | `org.jiuzhang.bank-ui` | 真题题库 | 1.0.1 | iframe 视图，`bank.view` | iframe | 4 |
 | `org.jiuzhang.paper-gen` | 组卷排版 | 1.0.1 | iframe 视图 | iframe | 2 |
 | `org.jiuzhang.handout` | 讲义排版 | 1.0.1 | iframe 视图 | iframe | 3 |
-| `org.jiuzhang.editor` | 录题工作台 | 2.7.0 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.editor` | 录题工作台 | 2.8.0 | iframe 视图 | iframe | 4 |
 | `org.jiuzhang.chat` | AI 助手 | 1.1.1 | iframe 视图，`assistant.chat` | iframe | 0（只吃别人的命令） |
 | `org.jiuzhang.dashboard` | 数据看板 | 1.0.1 | iframe 视图 | iframe | 0（只读看板通道） |
 

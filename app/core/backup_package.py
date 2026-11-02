@@ -1,4 +1,7 @@
-"""备份子系统的成品层：Zstd 打包、本地保留策略与清单读取。
+"""备份子系统的成品层：压缩打包、本地保留策略与清单读取。
+
+压缩走 backup_codec 的兼容层——本机有 zstd（3.14 标准库或 pip zstandard）就用 zstd，
+只有 zlib 系能力时自动降 gzip，读侧按文件头魔数分辨，所以包名照旧是 ``.zst``。
 
 打包只装 manifest 点名的文件——读一份 WAL 库会在同目录落下 ``-wal``/``-shm`` 边车，
 早先「整目录 rglob」的写法会把边车一起装进包，而 manifest 里没有它们，
@@ -18,7 +21,7 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-from compression import zstd
+from app.core.backup_codec import open_package
 
 from app.core.backup_files import (
     BACKUP_FILE_RE,
@@ -41,7 +44,7 @@ def package_snapshot(
     out_dir: Path,
     stamp: str | None = None,
 ) -> dict[str, Any]:
-    """把快照目录打成 ``backup_<stamp>.zst``（tar 流经 zstd 压缩）并写同名 manifest。
+    """把快照目录打成 ``backup_<stamp>.zst``（tar 流经压缩后端）并写同名 manifest。
 
     **只装 manifest 点名的文件**：边车不进包，清单外不许有文件，缺一多一都当场拒。
     """
@@ -66,7 +69,7 @@ def package_snapshot(
     manifest_path = out / f"manifest_{stamp}.json"
     temp_path = out / f".backup_{stamp}.part"
     try:
-        with zstd.ZstdFile(temp_path, "wb", level=10) as compressed:
+        with open_package(temp_path, "wb", level=10) as compressed:
             with tarfile.open(fileobj=compressed, mode="w") as archive:
                 for rel in sorted(listed):
                     archive.add(

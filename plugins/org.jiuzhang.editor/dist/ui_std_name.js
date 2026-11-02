@@ -18,6 +18,7 @@
     var panel = coreState.panel;
     var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
     var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
@@ -155,6 +156,7 @@
     }
     if (panelMetaYearEl) panelMetaYearEl.value = meta.year == null ? "" : String(meta.year);
     if (panelMetaRegionEl) panelMetaRegionEl.value = String(meta.region || "");
+    if (panelMetaGradeEl) panelMetaGradeEl.value = String(meta.grade || "");
     if (panelMetaBodyEl) panelMetaBodyEl.value = String(meta.body || "");
     if (panelMetaExamTypeEl) panelMetaExamTypeEl.value = String(meta.exam_type || "");
     if (panelMetaSubjectEl) panelMetaSubjectEl.value = String(meta.subject || "");
@@ -200,6 +202,7 @@
       batch_id: panel.batchId,
       year: panelMetaYearEl ? String(panelMetaYearEl.value || "").trim() : "",
       region: panelMetaRegionEl ? String(panelMetaRegionEl.value || "").trim() : "",
+      grade: panelMetaGradeEl ? String(panelMetaGradeEl.value || "").trim() : "",
       body: panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "",
       scene_type: panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "",
       exam_type: panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "",

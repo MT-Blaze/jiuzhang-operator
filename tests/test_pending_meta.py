@@ -14,6 +14,8 @@
 - 同一批里的题按**录入先后**排，审核台看到的次序就是卷面次序；
 - 老库（结构 v3）升上来时次序原样保留，不在老师脚下重排；
 - 入库是**两段式**：响应先把批次立起来，识别在后台跑，占位题**就地**换成真题；
+- 年级跟着批次走：一次填，整批的契约根字段 ``grade`` 与主库 ``sources.grade`` 都跟着改；
+  批次空着时不许抹平老师逐题手写的年级。
 - 认不出内容就如实留一条「待识别」，不许编题。
 """
 
@@ -809,6 +811,59 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(source["school_ids"], [school_id], source)
         self.assertEqual(source["paper_title"], "2024-黑龙江-哈九中-校考题-一模-数学",
                          "标准名要按批次重写回原卷名")
+
+    def test_23_batch_grade_writes_the_root_field_and_the_bank(self) -> None:
+        """年级回到批次公共元数据：一次填整批跟着走，入库也不丢。
+
+        契约里 ``grade`` 是**根字段**（不在 source 里），存储层再落 ``sources.grade``；
+        批次没填年级时，老师逐题手写的年级一个字都不许被抹平。
+        """
+        handwritten = _question(402)
+        handwritten["grade"] = "高二"
+        status, saved = self._save([{"question": _question(401)}, {"question": handwritten}])
+        self.assertEqual(status, 201, saved)
+        batch_id = saved["batch_id"]
+
+        status, result = self._set_meta(batch_id, {
+            "year": 2024, "region": "黑吉辽", "subject": "数学",
+        })
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["meta"]["grade"], "", "这一批没填年级，批次上就是空")
+        self.assertEqual(
+            [str(item["question"].get("grade") or "") for item in self._batch_items(batch_id)],
+            ["", "高二"], "批次没填年级时，老师手写的高二必须原样留着")
+
+        status, result = self._set_meta(batch_id, {"grade": "高一"})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["meta"]["grade"], "高一", "年级要留在批次上，不许静默丢弃")
+        self.assertEqual(result["meta"]["standard_name"], "2024-黑吉辽-数学",
+                         "标准名的拼接口径里没有年级这一段，加了也不许改口径")
+        self.assertEqual(
+            [str(item["question"].get("grade") or "") for item in self._batch_items(batch_id)],
+            ["高一", "高一"], "年级是契约根字段：改批次就得整批跟着改")
+
+        pending_id = self._batch_items(batch_id)[0]["id"]
+        status, approved = self._request(
+            f"/api/pending/items/{pending_id}/approve", "POST", {})
+        self.assertEqual(status, 200, approved)
+        question_id = approved["question_id"]
+        status, stored = self._request(
+            f"/api/bank/plugins/{PLUGIN_ID}/questions/{question_id}")
+        self.assertEqual(status, 200, stored)
+        self.assertEqual(stored["grade"], "高一", "读路径也要把年级交回契约根字段")
+
+        con = sqlite3.connect(self.data_dir / "banks" / f"{PLUGIN_ID}.db")
+        try:
+            row = con.execute(
+                "SELECT s.grade FROM sources s"
+                " JOIN question_sources qs ON qs.source_id = s.id"
+                " WHERE qs.question_id = ?",
+                (question_id,),
+            ).fetchone()
+        finally:
+            con.close()
+        self.assertIsNotNone(row, "入库的题要挂上来源行")
+        self.assertEqual(row[0], "高一", "年级落进 sources.grade，教师筛选才认得它")
 
 
 if __name__ == "__main__":

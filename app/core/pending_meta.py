@@ -115,7 +115,7 @@ def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
 def _meta_fingerprint(meta: dict[str, Any]) -> tuple[Any, ...]:
     """判断「元数据有没有被改过」的比对键：标准名与手动模式不算元数据。"""
     return (
-        meta.get("year"), meta.get("region"), meta.get("body"),
+        meta.get("year"), meta.get("region"), meta.get("grade"), meta.get("body"),
         meta.get("exam_type"), meta.get("subject"), meta.get("scene_type"),
         tuple(meta.get("school_ids") or []),
     )
@@ -163,6 +163,8 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
     meta = {
         "year": year,
         "region": clean_text(merged.get("region"), 64),
+        # 年级是契约的根字段（maxLength 20，落库在 sources.grade），跟着批次走。
+        "grade": clean_text(merged.get("grade"), 20),
         "body": clean_text(merged.get("body"), 64),
         "exam_type": clean_text(merged.get("exam_type"), 64),
         "subject": clean_text(merged.get("subject"), 64),
@@ -185,7 +187,7 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
 
 
 def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tuple[bool, str, list[str]]:
-    """把公共元数据写进一道题的 ``source`` 与 ``tags``。
+    """把公共元数据写进一道题的 ``source``、根字段 ``grade`` 与 ``tags``。
 
     学校只写 ``school_id`` / ``school_ids``，校名一个字节都不进题目文档；
     老版本留下的隐藏校名标签在这里一并清掉。
@@ -218,6 +220,11 @@ def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tu
     if standard:
         # 标准名就是这一批的原卷名：它落进 sources.paper_name，是这一批题在主库里的出处。
         updated["paper_title"] = standard
+    grade = str(meta.get("grade") or "")
+    if grade:
+        # 年级是契约的**根字段**（不在 source 里），存储层再落进 sources.grade。
+        # 批次没填年级时一个字都不动：不许把老师逐题手写过的年级抹平。
+        document["grade"] = grade
     document["source"] = updated
 
     # 老版本的明细学校曾是「#哈三中」隐藏标签；2.1 起题目只存 school_id，
@@ -312,7 +319,7 @@ def sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, lis
             continue
         patch = {
             key: document[key]
-            for key in ("source", "tags")
+            for key in ("source", "tags", "grade")
             if key in document
         }
         try:

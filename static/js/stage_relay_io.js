@@ -273,6 +273,7 @@
       var metaBody = {
         year: metaYear,
         region: textValue(payload, "region", 60),
+        grade: textValue(payload, "grade", 20),
         body: textValue(payload, "body", 60),
         exam_type: textValue(payload, "exam_type", 60),
         subject: textValue(payload, "subject", 40),

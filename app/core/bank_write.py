@@ -58,7 +58,13 @@ def _storage_ready(document: dict[str, Any]) -> dict[str, Any]:
 
 
 def _grade_of(document: dict[str, Any]) -> str:
-    return _grade_from(document.get("extensions") or {})
+    """年级的读序：契约根字段优先，再退到扩展字段。
+
+    根字段是契约里的一等事实（录题端与批次公共元数据都写它），旧库只把年级
+    塞在 extensions 里，所以扩展字段继续兜底——两条通道都不会静默丢年级。
+    """
+    root = str(document.get("grade") or "").strip()[:20]
+    return root or _grade_from(document.get("extensions") or {})
 
 
 def _question_row(document: dict[str, Any], now: str) -> list[Any]:

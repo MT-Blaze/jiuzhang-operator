@@ -483,7 +483,7 @@ payload = { command_id, context, from, trace }
 | `GET /api/pending/meta/history` | 最近用过的地区 / 主体 / 考试类型 / 学科 / 明细学校，开新批次自动带出 |
 | ✍ `POST /api/ingest/files` | 【开始解析】才调用：`{"files":[{"name","data_url"}]}` → 201 立起批次（先占位、后台解析后原地替换），返回 `batch_id` / 占位题 / `parsing` |
 | ✍ `PATCH /api/pending/batches/{batch_id}/meta` | 改批次公共元数据并同步池内全部题：`{"year","region","body","exam_type","subject","schools":[...]}`；标准名不收（底座拼），同步不上的题一条不动并进 `warnings` |
-| ✍ `POST /api/pending/batches` | 存为待办：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交 |
+| ✍ `POST /api/pending/batches` | 存为待审：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交 |
 | ✍ `POST /api/pending/items/{pending_id}/approve` | 存入主库：`p_` → 底座新签发 `q_`，配图搬进 `uploads/`；主库已有同题回 409 带 `existing_id`，`{"force": true}` 才覆盖 |
 | ✍ `POST /api/pending/items/{pending_id}/delete` | 彻底删除这一条（连同池内配图），主库不碰 |
 

@@ -88,7 +88,7 @@ def pending_set_meta(batch_id: str, payload: dict[str, Any] = Body(...)) -> dict
 @router.post(
     "/api/pending/batches",
     status_code=201,
-    summary="存为待办：单题或批量题进中转站",
+    summary="存为待审：单题或批量题进中转站",
     dependencies=[Depends(require_write_token)],
 )
 def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:

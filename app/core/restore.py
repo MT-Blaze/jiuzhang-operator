@@ -24,7 +24,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from compression import zstd
+from app.core.backup_codec import open_package
 
 from app.core import backup
 
@@ -192,7 +192,7 @@ def extract_package(package: str | Path, stage_dir: str | Path) -> None:
     stage = Path(stage_dir)
     stage.mkdir(parents=True, exist_ok=True)
     written: set[str] = set()
-    with zstd.ZstdFile(package, "rb") as compressed:
+    with open_package(package, "rb") as compressed:
         with tarfile.open(fileobj=compressed, mode="r") as archive:
             for member in archive.getmembers():
                 _require(member.isfile(), f"备份包含非普通文件：{member.name}")

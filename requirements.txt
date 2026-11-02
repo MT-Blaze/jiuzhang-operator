@@ -1,3 +1,7 @@
+# 九章算子底座依赖 —— 需要 Python 3.10 及以上（开发机实测 3.14.6）。
+# 备份压缩优先用 zstd：Python 3.14 自带标准库 compression.zstd；3.10~3.13 想保持同档，
+# 另装 `pip install zstandard`。不装也能跑，压缩会自动降级到标准库 gzip。
+# 详见 README「Python 版本与备份压缩」与 app/core/backup_codec.py。
 fastapi==0.141.1
 jsonschema==4.26.0
 uvicorn==0.52.1

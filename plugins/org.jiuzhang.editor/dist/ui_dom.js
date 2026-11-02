@@ -84,13 +84,14 @@
       var delCancelEl = document.getElementById("epDelCancel");
       var delOkEl = document.getElementById("epDelOk");
 
-      // 批次公共元数据（辅助栏顶部）：六个可填字段 + 字典学校 + 可手改的标准名。
+      // 批次公共元数据（辅助栏顶部）：七个可填字段 + 字典学校 + 可手改的标准名。
       var panelSrcNameEl = document.getElementById("epSrcName");
       var panelStdNameEl = document.getElementById("epStdName");
       var panelStdFlashEl = document.getElementById("epStdFlash");
       var panelStdHintEl = document.getElementById("epStdHint");
       var panelMetaYearEl = document.getElementById("epMetaYear");
       var panelMetaRegionEl = document.getElementById("epMetaRegion");
+      var panelMetaGradeEl = document.getElementById("epMetaGrade");
       var panelMetaBodyEl = document.getElementById("epMetaBody");
       var panelMetaSceneEl = document.getElementById("epMetaScene");
       var panelMetaExamTypeEl = document.getElementById("epMetaExamType");
@@ -190,6 +191,7 @@
       panelStdHintEl: panelStdHintEl,
       panelMetaYearEl: panelMetaYearEl,
       panelMetaRegionEl: panelMetaRegionEl,
+      panelMetaGradeEl: panelMetaGradeEl,
       panelMetaBodyEl: panelMetaBodyEl,
       panelMetaSceneEl: panelMetaSceneEl,
       panelMetaExamTypeEl: panelMetaExamTypeEl,

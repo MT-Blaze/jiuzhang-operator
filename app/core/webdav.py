@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.backup import BACKUP_FILE_RE, MANIFEST_FILE_RE
+from app.core.backup_codec import content_type as package_content_type
 
 DAV_NS = "DAV:"
 PROPFIND_BODY = (
@@ -190,7 +191,7 @@ def upload_backup(
     directory = ensure_remote_dir(config)
     uploaded: list[str] = []
     try:
-        uploaded.append(_put_file(config, directory, package, "application/zstd"))
+        uploaded.append(_put_file(config, directory, package, package_content_type()))
         uploaded.append(_put_file(config, directory, manifest, "application/json"))
     except WebdavError:
         # 上传失败：旧份原样保留，至少还有一份可用。

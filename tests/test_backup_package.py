@@ -1,4 +1,4 @@
-"""军令 #17 第二步 + #18-终 阶段二契约：Zstd 打包、本地保留 3 份、路径校验与开关联动。
+"""军令 #17 第二步 + #18-终 阶段二契约：压缩打包、本地保留 3 份、路径校验与开关联动。
 
 阶段二钉两条：插件代码与工作区配置进包且包体积如实；包内成员必须**恰好等于**清单——
 读 WAL 库顺手落下的 ``-wal``/``-shm`` 边车一旦混进包，恢复侧「清单外文件」门禁会把整包判废。
@@ -15,10 +15,10 @@ import sqlite3
 import tarfile
 import tempfile
 import unittest
-from compression import zstd
 from pathlib import Path
 
 from app.core import backup, restore
+from app.core.backup_codec import open_package
 from app.core.config import settings
 
 PROVIDER = "org.jiuzhang.bank-engine"
@@ -73,7 +73,7 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(backup.sha256_file(package), manifest["package"]["sha256"])
         self.assertEqual(package.stat().st_size, manifest["package"]["size"])
         self.assertEqual(result["package_sha256"], manifest["package"]["sha256"])
-        with zstd.ZstdFile(package, "rb") as compressed:
+        with open_package(package, "rb") as compressed:
             with tarfile.open(fileobj=compressed, mode="r") as archive:
                 names = set(archive.getnames())
         self.assertIn(f"banks/{PROVIDER}.db", names)
@@ -131,7 +131,7 @@ class PackageTest(unittest.TestCase):
         self.assertEqual(backup.sha256_file(package), manifest["package"]["sha256"])
         self.assertGreater(manifest["package"]["size"], first_size, "加了插件代码，包必须变大")
 
-        with zstd.ZstdFile(package, "rb") as compressed:
+        with open_package(package, "rb") as compressed:
             with tarfile.open(fileobj=compressed, mode="r") as archive:
                 names = set(archive.getnames())
         self.assertIn("ws/plugins/org.jiuzhang.demo/plugin.json", names)
@@ -183,7 +183,7 @@ class PackageTest(unittest.TestCase):
         result = backup.create_local_backup(WS_ID, local_dir=self.out, keep=3)
         package = Path(result["package"])
         manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
-        with zstd.ZstdFile(package, "rb") as compressed:
+        with open_package(package, "rb") as compressed:
             with tarfile.open(fileobj=compressed, mode="r") as archive:
                 names = sorted(archive.getnames())
         self.assertEqual(sorted(str(item["path"]) for item in manifest["files"]), names,

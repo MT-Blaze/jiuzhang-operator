@@ -41,7 +41,7 @@ if exist "%VENV_PY%" goto pipcheck
 
 echo.
 echo [ERROR] Could not create a virtual environment.
-echo         Please install Python 3.11 or newer from
+echo         Please install Python 3.10 or newer from
 echo         https://www.python.org/downloads/  ^(check "Add to PATH"^),
 echo         then double-click start.bat again.
 echo.
@@ -74,7 +74,7 @@ if not errorlevel 1 goto deps
 :pip_broken
 echo.
 echo [ERROR] Could not get a working pip inside .venv.
-echo         Reinstall Python 3.11 or newer from
+echo         Reinstall Python 3.10 or newer from
 echo         https://www.python.org/downloads/  ^(keep "Add to PATH"
 echo         and the bundled pip option checked^), delete the .venv
 echo         folder next to this file, then double-click start.bat again.

@@ -4,7 +4,7 @@
 
 - ``backup_files.py``    —— 路径、命名、白/黑名单与文件计划：什么该进包、什么绝不；
 - ``backup_manifest.py`` —— 一致性快照与 manifest：SQLite backup API、逐题哈希、目录摘要；
-- ``backup_package.py``  —— 成品层：Zstd 打包、本地保留策略、清单读取；
+- ``backup_package.py``  —— 成品层：压缩打包、本地保留策略、清单读取；
 - ``backup_settings.py`` —— 本机配置：开关、本地目录、WebDAV 凭据（凭据绝不进包）。
 
 本文件只做一件事：把这四块的对外名字汇总成「备份子系统」这一个入口，

@@ -213,8 +213,8 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
         verdict = compare_versions(remote_version, local_version)
         if verdict is None:
             row["state"] = "bad_entry"
-            row["reason"] = (f"版本号写坏，无法比较：本地 {local_version or "缺"} / 远端 "
-                             f"{remote_version or "缺"}")
+            row["reason"] = (f"版本号写坏，无法比较：本地 {local_version or '缺'} / 远端 "
+                             f"{remote_version or '缺'}")
         elif verdict <= 0:
             row["state"] = "up_to_date"
             row["reason"] = "已是最新" if verdict == 0 else "本地版本比索引更新，不降级"
@@ -242,7 +242,7 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
         host_row["available"] = available
         host_row["notes"] = str(host_block.get("notes") or "")
         if verdict is None:
-            host_row["reason"] = f"底座版本号写坏，无法比较：{available or "缺"}"
+            host_row["reason"] = f"底座版本号写坏，无法比较：{available or '缺'}"
         elif verdict > 0:
             host_row["update_available"] = True
             host_row["reason"] = f"{host_version()} → {available}"
@@ -657,7 +657,7 @@ def prepare_host_update(host_block: dict[str, Any], *, port: int | None = None,
     available = str(host_block.get("version") or "")
     verdict = compare_versions(available, host_version())
     if verdict is None:
-        raise UpdateRejected(f"底座版本号写坏，无法比较：{available or "缺"}")
+        raise UpdateRejected(f"底座版本号写坏，无法比较：{available or '缺'}")
     if verdict <= 0:
         raise UpdateRejected(f"当前底座 {host_version()} 不需要更新到 {available}")
 

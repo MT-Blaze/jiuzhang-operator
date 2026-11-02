@@ -584,8 +584,12 @@ class EditorHostCallTest(unittest.TestCase):
         self.assertRegex("edv21-" + format(1730000000000, "x"), r"^[A-Za-z0-9_-]{1,80}$")
 
     def test_03b_grade_is_written_twice_because_create_reads_extensions(self) -> None:
-        """契约根字段 grade 在底座 create 通道里没人读（bank.py 的 _grade_of 只看 extensions），
-        只交根字段会让老师填的年级静默丢失；沿用 v1 的 org.jiuzhang.editor 键双写。"""
+        """年级在插件侧双写：契约根字段 + 插件自己的扩展键。
+
+        2026-11-02 起底座写路径根字段优先（``_grade_of`` 先读 grade 再退扩展字段），
+        根字段单独交过去也不再丢；扩展键继续留着，是给只把年级塞在 extensions
+        里的旧库兜底，两条通道值一致时行为不变。
+        """
         js = read("plugin.js")
         cell = fn_body(js, "questionFromParsed")
         self.assertIn('if (meta.grade) doc.grade = String(meta.grade).trim().slice(0, 20);', cell)

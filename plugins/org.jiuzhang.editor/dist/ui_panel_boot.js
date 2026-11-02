@@ -84,6 +84,7 @@
     var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
     var panelMetaFoldEl = deps.dom.panelMetaFoldEl;
+    var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
     var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
     var panelMetaSecEl = deps.dom.panelMetaSecEl;
@@ -148,7 +149,8 @@
       panelAiFoldEl.addEventListener("click", function () { setAiFold(!aiFoldOpen()); });
     }
     // 批次公共元数据：改一次，这一批所有题立刻跟着改
-    [panelMetaYearEl, panelMetaRegionEl, panelMetaBodyEl, panelMetaSubjectEl].forEach(function (node) {
+    [panelMetaYearEl, panelMetaRegionEl, panelMetaGradeEl, panelMetaBodyEl,
+     panelMetaSubjectEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onMetaFieldChange);
       node.addEventListener("change", onMetaFieldChange);
