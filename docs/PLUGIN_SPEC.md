@@ -1185,13 +1185,13 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 插件 id | 名称 | 版本 | 形态 | 通道 | 命令数 |
 | --- | --- | --- | --- | --- | --- |
-| `org.jiuzhang.bank-engine` | 题库引擎 | 1.0.0 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
+| `org.jiuzhang.bank-engine` | 题库引擎 | 1.0.1 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
 | `org.jiuzhang.bank-ui` | 真题题库 | 1.0.1 | iframe 视图，`bank.view` | iframe | 4 |
 | `org.jiuzhang.paper-gen` | 组卷排版 | 1.0.1 | iframe 视图 | iframe | 2 |
 | `org.jiuzhang.handout` | 讲义排版 | 1.0.1 | iframe 视图 | iframe | 3 |
 | `org.jiuzhang.editor` | 录题工作台 | 2.6.1 | iframe 视图 | iframe | 4 |
 | `org.jiuzhang.chat` | AI 助手 | 1.1.1 | iframe 视图，`assistant.chat` | iframe | 0（只吃别人的命令） |
-| `org.jiuzhang.dashboard` | 数据看板 | 1.0.0 | iframe 视图 | iframe | 0（只读看板通道） |
+| `org.jiuzhang.dashboard` | 数据看板 | 1.0.1 | iframe 视图 | iframe | 0（只读看板通道） |
 
 合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
 视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。

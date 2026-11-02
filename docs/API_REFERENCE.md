@@ -5,8 +5,9 @@
 > ③ 事件总线（EventBus / JzoBus）与后端 HTTP 端点。
 > 另附 §6「Agent Prompt 契约」（对话 / 拆题 / 审题三个宿主 Agent，并入自原 `PROMPT_SPEC.md`，插件不经该通道）。
 > 契约的唯一事实来源是 [PLUGIN_SPEC.md](PLUGIN_SPEC.md)；本文与它冲突时以 PLUGIN_SPEC 为准。
-> 对应底座版本：v1.0.0（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道；
-> 军令 #19 新增能力路由字典 `command.list` / `command.execute`，见 §2.18）。
+> 对应底座版本：v1.1.0（军令 #11 起新增 `bank.dashboard_stats` / `bank.dashboard_heatmap` 两个数据看板通道；
+> 军令 #19 新增能力路由字典 `command.list` / `command.execute`，见 §2.18；
+> 终极军令把底座 `app/` 与 `static/js` 按功能拆到单文件 ≤800 行，接口与消息协议不变，仅升次版本号）。
 
 ---
 
