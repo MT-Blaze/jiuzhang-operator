@@ -535,6 +535,7 @@ com.example.card/
 | `basket.changed` | 画布 → 内部 | `{ action, total, pluginId }`；题篮被插件增删后广播，组卷/讲义插件可据此刷新（v0.6.1）。`action` 为 `add` / `remove` / `clear`。 |
 | `editor.collect_files` | 插件 → 宿主 → 画布插件 | `{ pluginId, raw: { files } }`；插件把收到的文件转交宿主，宿主只投递给**画布页签**那个实例（军令 #27）。用途：同一插件的辅助栏实例与画布实例是两张 iframe，文件要落到画布的收集筐只能走宿主中转。 |
 | `editor.canvas_state` | 画布插件 → 宿主 → 辅助栏面板 | `{ pluginId, raw: { hover?, scroll? } }`；宿主只投递给**右栏面板**那个实例（军令 #29）。`hover` 是悬停题号（-1 表示移开），`scroll` 表示画布正在滚。用途：录题工作台的画布与辅助栏是两张 iframe，呼吸灯与批次折叠这类跨帧联动只能走宿主中转。 |
+| `editor.dup_review` | 辅助栏面板 → 宿主 → 画布插件（及反向收窗） | `{ pluginId, from:"panel", phase:"open", report }` 或 `{ pluginId, phase:"closed" }`；宿主只投递给**同一插件的**另一帧（军令 #31）。`report` 就是 `GET /api/pending/items/{id}/duplicate` 的整份出参，带 `incoming` / `existing` 两份题目文档。用途：查重命中后的对比浮层必须画在**画布**那帧——辅助栏按军令 #23 绝不放渲染预览，而这一窗要比的是渲染结果。 |
 
 插件侧的发布白名单在清单 `bus` 字段里声明：
 
@@ -544,8 +545,8 @@ com.example.card/
 
 | 字段 | 规则 |
 | --- | --- |
-| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#29 补齐）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` / `system.pending_updated` / `editor.collect_files` / `editor.canvas_state` |
-| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection` / `editor.collect_files` / `editor.canvas_state`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
+| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#29 补齐，#31 增 `editor.dup_review`）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` / `system.pending_updated` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review` |
+| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
 | 条目总数 | ≤8，超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
 
 插件发事件的实际写法就是一条通知（见 §2.3.3）：`{ kind: "notification", event: "region.dock", payload: { text: "..." } }`。宿主收到后先查白名单，不在名单里的**丢弃并在底栏写明「想发未授权事件 xxx，已丢弃」**——不静默、不抛错、不断链。

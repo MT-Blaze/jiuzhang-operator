@@ -77,8 +77,16 @@
     coreState: coreState,
   });
   var closeModal = uiModal.closeModal;
-  var openDupModal = uiModal.openDupModal;
   var openModal = uiModal.openModal;
+
+  // 查重拦截的画布侧对比浮层（军令 #31）：只画两侧渲染，裁决动作全在辅助栏。
+  var uiDup = window.JzoEditorDup.create({
+    dom: dom,
+    appendBody: appendBody,
+    appendRich: appendRich,
+    el: el,
+    coreState: coreState,
+  });
 
   var uiApprove = window.JzoEditorApprove.create({
     dom: dom,
@@ -89,8 +97,8 @@
     // 循环引用：explainHostError 归更下面的 uiPanel，本块排得靠前，只能等它就位后再取。
     explainHostError: function () { return uiPanel.explainHostError.apply(uiPanel, arguments); },
     hostCall: hostCall,
-    openDupModal: openDupModal,
     openModal: openModal,
+    publish: publish,
     // 循环引用：panelItem 归更下面的 uiPanel，本块排得靠前，只能等它就位后再取。
     panelItem: function () { return uiPanel.panelItem.apply(uiPanel, arguments); },
     panelSay: panelSay,
@@ -112,6 +120,7 @@
   var onDeleteConfirm = uiApprove.onDeleteConfirm;
   var onStash = uiApprove.onStash;
   var poolCounts = uiApprove.poolCounts;
+  var precheckDup = uiApprove.precheck;
   var renderPool = uiApprove.renderPool;
 
   var coreSelection = window.JzoEditorSelection.create({
@@ -385,7 +394,9 @@
   var uiPanel = window.JzoEditorPanel.create({
     dom: dom,
     aiClear: aiClear,
+    clearDup: uiApprove.clearDupWarning,
     panelSay: panelSay,
+    precheckDup: precheckDup,
     queueMetaSave: queueMetaSave,
     renderAi: renderAi,
     // 循环引用：renderBatchMeta 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
@@ -513,6 +524,8 @@
     hideSchoolMenu: hideSchoolMenu,
     hideTagMenu: hideTagMenu,
     hostCall: hostCall,
+    doDupAction: uiApprove.doDupAction,
+    inspectDup: uiApprove.inspectDup,
     loadMetaDraft: loadMetaDraft,
     loadMetaHistory: loadMetaHistory,
     loadScenes: loadScenes,
@@ -569,6 +582,9 @@
     onPanelPendingUpdated: onPanelPendingUpdated,
     onPendingUpdated: onPendingUpdated,
     onUiParams: onUiParams,
+    showDupReview: uiDup.show,
+    noticeDupReview: uiDup.notice,
+    clearDupReview: uiDup.clear,
     publishSelection: publishSelection,
     refreshBatches: refreshBatches,
     renderAll: renderAll,

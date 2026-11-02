@@ -42,7 +42,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.core import bank, questions
+from app.core import bank, bank_dedupe, questions
 from app.core.config import settings
 from app.core.pending_assets import (
     asset_path,
@@ -73,6 +73,7 @@ from app.core.pending_db import (
     PENDING_ID_RE,
     PendingConflict,
     PendingDuplicate,
+    PendingDuplicateAnswer,
     PendingError,
     PendingNotFound,
     UPLOAD_ASSET_URI_PREFIX,
@@ -82,7 +83,12 @@ from app.core.pending_db import (
     new_pending_id,
     next_batch_id,
 )
-from app.core.pending_dedupe import find_duplicate
+from app.core.pending_dedupe import (
+    answer_key,
+    answer_mismatch,
+    find_duplicate,
+    similarity_report,
+)
 from app.core.pending_meta import (
     apply_meta_to_document,
     clean_text,
@@ -381,26 +387,158 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
         "patched": patched,
         "warnings": warnings,
     }
-def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[str, Any]:
+# 入库裁决：老师面对「主库已有高度相似题」时的两种**写库动作**。
+# 放弃是纯前端动作（什么都不写，题留在池子里等改），所以不在这里。
+ACTION_OVERWRITE = "overwrite"
+ACTION_MERGE_SOLUTION = "merge_solution"
+DERIVED_ACTIONS = (ACTION_OVERWRITE, ACTION_MERGE_SOLUTION)
+
+
+def duplicate_report(pending_id: str, provider_id: str) -> dict[str, Any]:
+    """入库前的后台查重：主库里的同题 / 高度相似题，连同**两侧完整文档**一起回。
+
+    ``incoming`` 是池子里这一条、``existing`` 是主库那一条，两份都给标准结构而不是
+    源码文本——插件拿去做左右**渲染**对比（对比渲染，不比源码）。``answer.same``
+    为 ``None`` 表示有一边没写答案，此时不作任何裁决。
+    """
+    item = get_pending(pending_id)
+    document = copy.deepcopy(item.get("question") or {})
+    report = similarity_report(provider_id, document, item.get("assets") or [])
+    report["pending_id"] = pending_id
+    report["batch_id"] = str(item.get("batch_id") or "")
+    report["incoming"] = document
+    report["existing"] = {}
+    existing_id = str(report.get("existing_id") or "")
+    if existing_id:
+        try:
+            report["existing"] = bank.get_question(provider_id, existing_id)
+        except bank.BankError:
+            # 主库那一条刚被别处删掉：报告照发，只是没有可对比的原文。
+            report["existing_missing"] = True
+    return report
+
+
+def _refuse_different_answer(provider_id: str, existing_id: str,
+                             document: dict[str, Any]) -> None:
+    """答案不同就拦：覆盖等于拿错答案盖掉对答案，合并等于把两套矛盾的解法并进一道题。"""
+    try:
+        current = bank.get_question(provider_id, existing_id)
+    except bank.BankError:
+        return
+    if answer_mismatch(current.get("answer"), document.get("answer")) is not True:
+        return
+    raise PendingDuplicateAnswer(
+        f"主库那道题（{existing_id}）的答案与这一条不同：覆盖会拿这边的答案盖掉那边的，"
+        "合并会把两套互相矛盾的解法并进同一道题。请先核对答案，或放弃存入回池子里改。",
+        existing_id,
+        existing=answer_key(current.get("answer")),
+        incoming=answer_key(document.get("answer")),
+    )
+
+
+def _merge_solution(pending_id: str, provider_id: str, existing_id: str,
+                    document: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+    """合并为解析二：主库那道题**一字不动**，只把池子里这条的解析并成下一段解法。
+
+    配图照旧先搬进 ``uploads/`` 再改 URI，因为解析正文里可能引用了池子里的图；
+    写库失败就把图搬回去，池子里那条原样留着。
+    """
+    body = str(document.get("solution") or "").strip()
+    if not body:
+        raise PendingError("这一条没有解析，没有能并成「解法二」的内容")
+    mapping = move_assets_to_uploads(item.get("assets") or [])
+    try:
+        rewrite_asset_uris(document, mapping)
+        current = bank.get_question(provider_id, existing_id)
+        base = str(current.get("solution") or "")
+        ordinal = str(base).count("**解法") + 1
+        merged = bank_dedupe.append_solution(base, str(document.get("solution") or ""), ordinal)
+        question = bank.update_question(provider_id, existing_id, {"solution": merged})
+    except BaseException:
+        _restore_assets(mapping)
+        raise
+    finished = _finish_pending(item, pending_id, existing_id)
+    return {
+        "pending_id": pending_id,
+        "question_id": existing_id,
+        "created": False,
+        "overwritten": False,
+        "merged_solution": True,
+        "solution_ordinal": ordinal,
+        "batch": finished,
+        "question": question,
+    }
+
+
+def _restore_assets(mapping: dict[str, str]) -> None:
+    """写库没过：把已经搬进主库资源目录的配图搬回池子。"""
+    for old_uri, new_uri in mapping.items():
+        name = old_uri[len(PENDING_ASSET_URI_PREFIX):]
+        target_name = new_uri[len(UPLOAD_ASSET_URI_PREFIX):]
+        try:
+            shutil.move(str(Path(settings.uploads_dir) / target_name),
+                        str(asset_path(name)))
+        except (OSError, PendingError):
+            pass
+
+
+def _finish_pending(item: dict[str, Any], pending_id: str,
+                    question_id: str) -> dict[str, Any]:
+    """入库/合并的收尾：池子里这条删掉、批次记一笔、未审数归零就物理清理。"""
+    batch_id = str(item.get("batch_id") or "")
+    con = connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
+        remember_approved(con, batch_id, str(question_id or ""))
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    drop_assets(item.get("assets") or [])
+    return _settle_batch(batch_id)
+
+
+def approve(pending_id: str, provider_id: str, *, force: bool = False,
+            action: str = "") -> dict[str, Any]:
     """审核通过（**存入主库**）：``p_`` 转 ``q_`` 落进主库，配图搬进 ``uploads/``。
 
     顺序是刻意的：先把配图搬进主库资源目录，再写题库——写库失败就把配图搬回去，
     池子里那一条原样留着，绝不出现「图进了主库、题没进」或反过来的半截状态。
 
     **查重**：主库里已有同题（题型、归一题干、归一选项、配图内容全一致）时，
-    默认拦下来并把那道题的 id 报回去，让老师决定是改还是强行覆盖；
-    ``force=True`` 时以池子里这条为准，覆盖主库那一条（题目 id 不变）。
+    默认拦下来并把那道题的 id 报回去，让老师决定怎么处置。三种处置里这个函数收两种：
+
+    - ``force=True`` 或 ``action="overwrite"``：以池子里这条为准覆盖主库那一条，
+      题目 id 不变；
+    - ``action="merge_solution"``：主库那题原样留着，把这条的解析并成「解法二」；
+    - 放弃不写库，题留在池子里，由前端本地收口，不必走到这里。
+
+    **答案不同一律拦**（:class:`PendingDuplicateAnswer`），覆盖与合并两条路都封死：
+    那多半是两道不同的题，或者其中一道抄错了答案。
     """
+    choice = str(action or "").strip().lower()
+    if choice and choice not in DERIVED_ACTIONS:
+        raise PendingError(f"不认识的入库动作：{action}（只收 overwrite / merge_solution）")
+    overwrite = bool(force) or choice == ACTION_OVERWRITE
+    merge = choice == ACTION_MERGE_SOLUTION
+
     item = get_pending(pending_id)
     assets = item.get("assets") or []
     document = copy.deepcopy(item["question"])
     document.pop("id", None)
 
     existing = find_duplicate(provider_id, document, assets)
-    if existing and not force:
+    if existing and not overwrite and not merge:
         raise PendingDuplicate(
             f"主库已有该题（{existing}），可返回修改或强行覆盖。", existing
         )
+    if existing:
+        _refuse_different_answer(provider_id, existing, document)
+    if existing and merge:
+        return _merge_solution(pending_id, provider_id, existing, document, item)
 
     mapping = move_assets_to_uploads(assets)
     rewrite_asset_uris(document, mapping)
@@ -420,35 +558,16 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False) -> dict[s
             created = True
     except BaseException:
         # 写库没过：配图搬回去，池子里那一条原样等老师再审一次。
-        for old_uri, new_uri in mapping.items():
-            name = old_uri[len(PENDING_ASSET_URI_PREFIX):]
-            target_name = new_uri[len(UPLOAD_ASSET_URI_PREFIX):]
-            try:
-                shutil.move(str(Path(settings.uploads_dir) / target_name),
-                            str(asset_path(name)))
-            except (OSError, PendingError):
-                pass
+        _restore_assets(mapping)
         raise
 
-    batch_id = str(item.get("batch_id") or "")
-    con = connect()
-    try:
-        con.execute("BEGIN IMMEDIATE")
-        con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
-        remember_approved(con, batch_id, str(question.get("id") or ""))
-        con.commit()
-    except BaseException:
-        con.rollback()
-        raise
-    finally:
-        con.close()
-    drop_assets(assets)
-    finished = _settle_batch(batch_id)
+    finished = _finish_pending(item, pending_id, str(question.get("id") or ""))
     return {
         "pending_id": pending_id,
         "question_id": question.get("id") or "",
         "created": created,
         "overwritten": bool(existing) and not created,
+        "merged_solution": False,
         "batch": finished,
         "question": question,
     }

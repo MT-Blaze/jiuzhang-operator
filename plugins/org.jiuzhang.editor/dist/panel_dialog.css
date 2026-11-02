@@ -41,6 +41,37 @@
   flex: 0 0 auto;
 }
 
+/* ---------- 查重拦截：辅助栏底部的红字与【查看主库原题】（军令 #31） ----------
+   命中时这一行常驻在审核按钮与台账之间，红字之外还有一颗钮能开对比窗。
+   辅助栏只负责「报」与「请画布出面」，两侧渲染对比在画布那帧。 */
+.ep-dup-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--danger, #d33);
+  border-radius: 6px;
+  background: #fdeceb;
+}
+
+.ep-dup-box[hidden] { display: none; }
+
+.ep-dup-warn {
+  flex: 1 1 132px;
+  min-width: 0;
+  margin: 0;
+  color: var(--danger, #d33);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ep-dup-box .ep-btn {
+  flex: 0 0 auto;
+}
+
 /* 批量保存区已并进段三（.ep-foot-bar）：审核动作、视图切换与台账挤在面板最下边。 */
 
 .ep-pool[data-dirty]:not([data-dirty="0"]) {

@@ -14,7 +14,9 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 - **点行任意位置**（连左内边距那种空白处）直接切入三栏审核，抬头写着当前批次号；
 - **二屏只有三颗钮**：存入主库 / 存为待审 / 彻底删除；旧的保存、变式与批量条全撤；
 - **防呆**：停留超 3 分钟静默存回待审核池，只在底部日志留一行灰字，不弹窗；
-- **查重**：主库已有同题时弹窗给「返回修改 / 强行覆盖」，强行覆盖不新增题目；
+- **查重拦截**（军令 #31）：命中先亮画布红呼吸灯与辅助栏红字，两侧**渲染**对比，
+  三个裁决「覆盖 / 放弃 / 合并为解析二」只住辅助栏（画布里一颗按钮都没有）；
+  两边答案不同时两颗写库钮锁死、只留放弃；覆盖不新增题目，合并只增「解法二」；
 - **识别有出入照切不误**：画布上不弹红窗，只有底部日志一行警告；
 - 审完的批次卡片变灰、沉到列表最底下、点不动（未审 0 / N ✅）；
 - 全流程闭环：后台入池 → 批次列表展现 → 点入审核 → 存草稿 → 审完入库 → 批次清零变灰。
@@ -1544,7 +1546,7 @@ def main() -> int:
                   and canvas.locator("#edCols").is_hidden(),
                   {"mode": canvas.locator("#edRoot").get_attribute("data-mode")})
 
-            # ---------- 查重：主库已有同题 → 返回修改 / 强行覆盖 ----------
+            # ---------- 查重拦截（军令 #31）：红呼吸灯 + 渲染对比 + 三个裁决 ----------
             status, dup_doc = http_json(
                 base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
             status_dup, dup_body = http_post(
@@ -1561,34 +1563,134 @@ def main() -> int:
                   {"rows": canvas.locator(".ed-batch-row").count()})
             open_batch(dup_batch)
             sync_panel()
+
+            # 入库前后台查重：命中就亮红字、点红灯、开左右渲染对比，**绝不直接写库**。
             panel.locator("#epApprove").click()
-            expect(panel.locator("#epDupModal")).to_be_visible(timeout=25000)
-            check("查重命中弹出「返回修改 / 强行覆盖」",
-                  panel.locator("#epDupBack").inner_text().strip() == "返回修改"
-                  and panel.locator("#epDupForce").inner_text().strip() == "强行覆盖",
-                  {"back": panel.locator("#epDupBack").inner_text(),
-                   "force": panel.locator("#epDupForce").inner_text()})
-            check("弹窗里带着主库那道题的编号",
-                  bool(re.search(r"q_[A-Za-z0-9_-]{8,64}", panel.locator("#epDupText").inner_text())),
-                  {"text": panel.locator("#epDupText").inner_text()})
+            expect(panel.locator("#epDupBox")).to_be_visible(timeout=25000)
+            check("命中后辅助栏红字逐字是「主库已存在高度相似题目」",
+                  panel.locator("#epDupWarn").inner_text().strip().startswith("主库已存在高度相似题目"),
+                  {"text": panel.locator("#epDupWarn").inner_text()})
+            # 浮层经宿主投递到画布那帧，是异步的：先等它出来，再断言灯与内容。
+            expect(canvas.locator("#edDupModal")).to_be_visible(timeout=25000)
+            expect(canvas.locator("#edRoot")).to_have_attribute("data-dup", "on", timeout=10000)
+            check("左侧画布亮起红呼吸灯（data-dup=on）",
+                  canvas.locator("#edRoot").get_attribute("data-dup") == "on",
+                  {"dup": canvas.locator("#edRoot").get_attribute("data-dup")})
+            check("对比浮层左右两侧都渲染出了选项（比渲染，不比源码）",
+                  canvas.locator("#edDupMineBody .ed-dup-option").count() >= 2
+                  and canvas.locator("#edDupTheirBody .ed-dup-option").count() >= 2,
+                  {"mine": canvas.locator("#edDupMineBody .ed-dup-option").count(),
+                   "theirs": canvas.locator("#edDupTheirBody .ed-dup-option").count()})
+            check("两侧都带答案行，且画布里一颗按钮都没有",
+                  canvas.locator("#edDupMineBody .ed-dup-answer").count() == 1
+                  and canvas.locator("#edDupTheirBody .ed-dup-answer").count() == 1
+                  and canvas.locator("#edDupModal button").count() == 0,
+                  {"buttons": canvas.locator("#edDupModal button").count()})
+            check("三个裁决动作都住在辅助栏",
+                  panel.locator("#epDupOverwrite").inner_text().strip() == "覆盖"
+                  and panel.locator("#epDupMerge").inner_text().strip() == "合并为解析二"
+                  and panel.locator("#epDupAbandon").inner_text().strip() == "放弃"
+                  and panel.locator("#epDupInspect").inner_text().strip() == "查看主库原题",
+                  {"overwrite": panel.locator("#epDupOverwrite").inner_text(),
+                   "merge": panel.locator("#epDupMerge").inner_text(),
+                   "abandon": panel.locator("#epDupAbandon").inner_text()})
             page.screenshot(path=str(shots / "v3-dup.png"))
-            panel.locator("#epDupBack").click()
-            expect(panel.locator("#epDupModal")).to_be_hidden(timeout=10000)
-            check("点【返回修改】：题还留在中转池里",
-                  len(pending_items(base, dup_batch)) == 1,
+
+            # 【查看主库原题】关了再开一次：浮层由辅助栏那帧投过来，不是画布自己找的。
+            panel.locator("#epDupInspect").click()
+            expect(canvas.locator("#edDupModal")).to_be_visible(timeout=10000)
+
+            # 【放弃】：主库一个字节都不碰，题留在池子里。
+            panel.locator("#epDupAbandon").click()
+            expect(panel.locator("#epDupBox")).to_be_hidden(timeout=10000)
+            expect(canvas.locator("#edDupModal")).to_be_hidden(timeout=10000)
+            check("点【放弃】：红字与红灯都熄了，题还留在中转池里",
+                  canvas.locator("#edRoot").get_attribute("data-dup") is None
+                  and len(pending_items(base, dup_batch)) == 1,
                   {"items": len(pending_items(base, dup_batch))})
+
+            # 【覆盖】：以池子里这条为准盖掉主库那一条，题目 id 不变、题数不增。
             total_before_force = bank_total(base)
             panel.locator("#epApprove").click()
-            expect(panel.locator("#epDupModal")).to_be_visible(timeout=25000)
-            panel.locator("#epDupForce").click()
+            expect(panel.locator("#epDupOverwrite")).to_be_visible(timeout=25000)
+            panel.locator("#epDupOverwrite").click()
             deadline = time.time() + 30
             while time.time() < deadline and pending_items(base, dup_batch):
                 page.wait_for_timeout(200)
-            check("【强行覆盖】把主库那道题盖掉，题数不增",
+            check("【覆盖】把主库那道题盖掉，题数不增、池子清空",
                   bank_total(base) == total_before_force
-                  and not pending_items(base, dup_batch),
+                  and not pending_items(base, dup_batch)
+                  and canvas.locator("#edRoot").get_attribute("data-dup") is None,
                   {"before": total_before_force, "after": bank_total(base),
                    "items": len(pending_items(base, dup_batch))})
+
+            # 【合并为解析二】：主库那题留着，只把池子里这条的解析并进去。
+            merge_doc = json.loads(json.dumps(dup_doc))
+            merge_doc["solution"] = "探针解法二：把 $x$ 直接代回原式即可。"
+            status_m, merge_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": merge_doc}], "origin": "probe.recognize"})
+            merge_batch = str(merge_body.get("batch_id") or "")
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(400)
+            open_batch(merge_batch)
+            sync_panel()
+            total_before_merge = bank_total(base)
+            panel.locator("#epApprove").click()
+            expect(panel.locator("#epDupMerge")).to_be_visible(timeout=25000)
+            panel.locator("#epDupMerge").click()
+            deadline = time.time() + 30
+            while time.time() < deadline and pending_items(base, merge_batch):
+                page.wait_for_timeout(200)
+            status_after, merged_doc = http_json(
+                base + f"/api/bank/plugins/{BANK_ID}/questions/{question_id}")
+            merged_solution = str((merged_doc or {}).get("solution") or "")
+            check("【合并为解析二】把池子里那段并成解法二，主库题数不增",
+                  bank_total(base) == total_before_merge
+                  and not pending_items(base, merge_batch)
+                  and "解法二" in merged_solution
+                  and "探针解法二" in merged_solution,
+                  {"before": total_before_merge, "after": bank_total(base),
+                   "solution": merged_solution[:120]})
+
+            # 答案不同 → 红字拦截：覆盖与合并两颗钮都锁死，只留放弃。
+            original_keys = list(((dup_doc or {}).get("answer") or {}).get("choice_keys") or ["A"])
+            other_key = next(k for k in ("A", "B", "C", "D") if k not in original_keys)
+            clash_doc = json.loads(json.dumps(dup_doc))
+            clash_doc["answer"] = {"kind": "choice", "choice_keys": [other_key], "final": other_key}
+            status_c, clash_body = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": clash_doc}], "origin": "probe.recognize"})
+            clash_batch = str(clash_body.get("batch_id") or "")
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(400)
+            open_batch(clash_batch)
+            sync_panel()
+            # 只切题、不点任何按钮：后台查重自己就该把红灯与红字亮起来（只点灯不开窗）。
+            expect(panel.locator("#epDupBox")).to_be_visible(timeout=25000)
+            expect(canvas.locator("#edRoot")).to_have_attribute("data-dup", "on", timeout=15000)
+            check("只切题不点按钮：后台查重就把红字与红灯亮起来，且不自动弹窗",
+                  panel.locator("#epDupWarn").inner_text().strip().startswith("主库已存在高度相似题目")
+                  and canvas.locator("#edDupModal").is_hidden(),
+                  {"warn": panel.locator("#epDupWarn").inner_text(),
+                   "modal_hidden": canvas.locator("#edDupModal").is_hidden()})
+            panel.locator("#epApprove").click()
+            expect(panel.locator("#epDupBox")).to_be_visible(timeout=25000)
+            check("答案不同：红字明说只能放弃，覆盖与合并两颗钮都锁死",
+                  "答案不同" in panel.locator("#epDupWarn").inner_text()
+                  and panel.locator("#epDupOverwrite").is_disabled()
+                  and panel.locator("#epDupMerge").is_disabled()
+                  and not panel.locator("#epDupAbandon").is_disabled(),
+                  {"warn": panel.locator("#epDupWarn").inner_text(),
+                   "overwrite_disabled": panel.locator("#epDupOverwrite").is_disabled(),
+                   "merge_disabled": panel.locator("#epDupMerge").is_disabled()})
+            expect(canvas.locator("#edDupBlock")).to_be_visible(timeout=10000)
+            check("画布浮层同步亮出红字拦截说明",
+                  "答案不同" in canvas.locator("#edDupBlock").inner_text(),
+                  {"block": canvas.locator("#edDupBlock").inner_text()})
+            page.screenshot(path=str(shots / "v3-dup-blocked.png"))
+            panel.locator("#epDupAbandon").click()
+            expect(panel.locator("#epDupBox")).to_be_hidden(timeout=10000)
 
             # ---------- 识别有出入：照切不误，只在底部日志留一行警告 ----------
             toasts_before = len(probe_toasts())

@@ -76,10 +76,18 @@
       var panelSwapEl = document.getElementById("epSwap");
       var panelBackListEl = document.getElementById("epBackList");
       var panelViewNoteEl = document.getElementById("epViewNote");
-      var dupModalEl = document.getElementById("epDupModal");
-      var dupTextEl = document.getElementById("epDupText");
-      var dupBackEl = document.getElementById("epDupBack");
-      var dupForceEl = document.getElementById("epDupForce");
+      // 查重拦截（军令 #31）：辅助栏只报「有」与「去看」，对比浮层在画布那帧。
+      var dupBoxEl = document.getElementById("epDupBox");
+      var dupWarnEl = document.getElementById("epDupWarn");
+      var dupInspectEl = document.getElementById("epDupInspect");
+      var dupOverwriteEl = document.getElementById("epDupOverwrite");
+      var dupMergeEl = document.getElementById("epDupMerge");
+      var dupAbandonEl = document.getElementById("epDupAbandon");
+      var dupReviewEl = document.getElementById("edDupModal");
+      var dupMineEl = document.getElementById("edDupMineBody");
+      var dupTheirEl = document.getElementById("edDupTheirBody");
+      var dupNoteEl = document.getElementById("edDupNote");
+      var dupBlockEl = document.getElementById("edDupBlock");
       var delModalEl = document.getElementById("epDelModal");
       var delCancelEl = document.getElementById("epDelCancel");
       var delOkEl = document.getElementById("epDelOk");
@@ -178,10 +186,17 @@
       panelSwapEl: panelSwapEl,
       panelBackListEl: panelBackListEl,
       panelViewNoteEl: panelViewNoteEl,
-      dupModalEl: dupModalEl,
-      dupTextEl: dupTextEl,
-      dupBackEl: dupBackEl,
-      dupForceEl: dupForceEl,
+      dupBoxEl: dupBoxEl,
+      dupWarnEl: dupWarnEl,
+      dupInspectEl: dupInspectEl,
+      dupReviewEl: dupReviewEl,
+      dupMineEl: dupMineEl,
+      dupTheirEl: dupTheirEl,
+      dupNoteEl: dupNoteEl,
+      dupBlockEl: dupBlockEl,
+      dupOverwriteEl: dupOverwriteEl,
+      dupMergeEl: dupMergeEl,
+      dupAbandonEl: dupAbandonEl,
       delModalEl: delModalEl,
       delCancelEl: delCancelEl,
       delOkEl: delOkEl,

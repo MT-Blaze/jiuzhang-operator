@@ -115,6 +115,30 @@
          台账搬进右侧辅助栏的底部；2026-11-01 审核台接管后，审核动作只剩三颗钮，
          台账这一行只报数，不再带任何按钮。 -->
 
+    <!-- 查重对比浮层（军令 #31）：左右**渲染**对比，不比源码。
+         左边是这一条待入库的，右边是主库那道原题；两边答案不同时红字拦截。
+         这里**一颗按钮都不放**（军令 #23：画布里只许有题目内容，不许有工具控件）——
+         三个裁决动作住在右侧辅助栏的段三，老师一边看对比一边在那边拍板。 -->
+    <div class="ed-modal" id="edDupModal" role="dialog" aria-modal="false"
+         aria-labelledby="edDupTitle" hidden>
+      <div class="ed-modal-card">
+        <h3 class="ed-modal-title" id="edDupTitle">主库已存在高度相似题目</h3>
+        <p class="ed-modal-note" id="edDupNote"></p>
+        <div class="ed-dup-grid">
+          <section class="ed-dup-side" aria-label="本次待入库">
+            <h4 class="ed-dup-head">本次待入库</h4>
+            <div class="ed-dup-body" id="edDupMineBody"></div>
+          </section>
+          <section class="ed-dup-side" aria-label="主库原题">
+            <h4 class="ed-dup-head">主库原题</h4>
+            <div class="ed-dup-body" id="edDupTheirBody"></div>
+          </section>
+        </div>
+        <p class="ed-dup-block" id="edDupBlock" role="alert" hidden></p>
+        <p class="ed-dup-hint" id="edDupHint">裁决在右侧辅助栏：覆盖 / 合并为解析二 / 放弃。Esc 关闭本窗。</p>
+      </div>
+    </div>
+
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
@@ -353,26 +377,24 @@
         <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待审</button>
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
       </div>
+      <!-- 查重拦截（军令 #31）：命中时这一行红字常驻在面板最下边，旁边那颗钮开对比窗。
+           辅助栏只报「有」与「去看」——渲染对比在画布那帧（那帧才带 KaTeX），
+           按军令 #23 的铁律，这里绝不放源码，也绝不放预览。 -->
+      <div class="ep-dup-box" id="epDupBox" hidden>
+        <p class="ep-dup-warn" id="epDupWarn" role="alert">主库已存在高度相似题目</p>
+        <div class="ep-dup-acts">
+          <button type="button" class="ep-btn ep-mini-btn" id="epDupInspect">查看主库原题</button>
+          <button type="button" class="ep-btn ep-mini-btn" id="epDupOverwrite">覆盖</button>
+          <button type="button" class="ep-btn ep-mini-btn" id="epDupMerge">合并为解析二</button>
+          <button type="button" class="ep-btn ep-mini-btn" id="epDupAbandon">放弃</button>
+        </div>
+      </div>
       <!-- 台账：最下一行灰字，只报数，不再带任何按钮。 -->
       <p class="ep-foot-line" id="edPool" data-new="0" data-stored="0" data-dirty="0"
          data-errored="0">待入库：0 · 已入库：0</p>
       <p class="ep-sr" id="epMetrics" data-question-id="" data-saved-id="" data-type=""
          data-difficulty="" data-format="latex" data-dirty="false" data-topics="0">尚未载入。</p>
     </footer>
-
-    <!-- 查重弹窗：主库已有同一道题时弹出来，给老师两颗钮——返回修改 / 强行覆盖。
-         焦点圈在弹窗里，Esc 可关，关掉后焦点回到触发它的那颗钮。 -->
-    <div class="ep-modal" id="epDupModal" role="dialog" aria-modal="true"
-         aria-labelledby="epDupTitle" hidden>
-      <div class="ep-modal-card">
-        <h3 class="ep-modal-title" id="epDupTitle">主库已有该题</h3>
-        <p class="ep-modal-text" id="epDupText">主库里已经有同一道题。</p>
-        <div class="ep-actions">
-          <button type="button" class="ep-btn" id="epDupBack">返回修改</button>
-          <button type="button" class="ep-btn ep-btn-primary" id="epDupForce">强行覆盖</button>
-        </div>
-      </div>
-    </div>
 
     <!-- 彻底删除是回不去的操作：先问一句再删。 -->
     <div class="ep-modal" id="epDelModal" role="dialog" aria-modal="true"
@@ -414,6 +436,7 @@
   <script src="core_save.js"></script>
   <script src="ui_approve.js"></script>
   <script src="ui_modal.js"></script>
+  <script src="ui_dup.js"></script>
   <script src="core_commands.js"></script>
   <script src="core_receipt.js"></script>
   <script src="ui_ai.js"></script>

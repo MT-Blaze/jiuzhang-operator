@@ -129,6 +129,29 @@ def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get(
+    "/api/pending/items/{pending_id}/duplicate",
+    summary="入库前的后台查重：主库里的同题 / 高度相似题",
+)
+def pending_duplicate(pending_id: str) -> dict[str, Any]:
+    """回一张可供老师裁决的报告，附带**两侧完整题目文档**（``incoming`` / ``existing``）。
+
+    插件拿这两份去做左右**渲染**对比（不对比源码）。``level`` 为 ``identical`` 表示
+    指纹全等，``high`` 表示高度相似，``none`` 表示主库里没有；``answer.same`` 为
+    ``null`` 表示有一边没写答案，此时不作任何裁决。命中且答案不同时
+    ``blocked`` 为真——界面必须红字拦截，只留「放弃」这一条路。
+    """
+    try:
+        plugin_id = provider.resolve()["plugin_id"]
+        report = pending_bank.duplicate_report(pending_id, plugin_id)
+    except pending_bank.PendingNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    report["blocked"] = bool(report.get("hit")) and report["answer"]["same"] is False
+    return report
+
+
 @router.post(
     "/api/pending/items/{pending_id}/approve",
     summary="存入主库：中转站的题转成正式题入库",
@@ -139,15 +162,29 @@ def pending_approve(pending_id: str, payload: dict[str, Any] | None = Body(defau
 
     入哪个题库由服务端按**活跃题库 provider** 决定，插件无权指定。
 
-    主库已有同题时回 **409**，并在 ``detail`` 里带上主库那道题的 id：老师可以在
-    界面上选「强行覆盖」再带 ``{"force": true}`` 提交一次。底座只负责如实报出
-    「哪一道、差在哪儿」，绝不自己替老师做主。
+    ``action`` 决定主库已有同题时怎么处置：``overwrite`` 以池子里这条为准覆盖，
+    ``merge_solution`` 把这条的解析并成主库那题的「解法二」。不传 ``action`` 且
+    ``force`` 不为真时保持老口径——回 **409** 并在 ``detail`` 里带上主库那道题的 id。
+
+    ``action`` 取 ``overwrite`` / ``merge_solution`` 时若两边**答案不同**，一律回
+    **409** 且 ``detail.answer_mismatch`` 为真：这一条只许放弃，覆盖与合并都封死
+    （见 ``pending_bank`` 里的说明）。
     """
     body = payload if isinstance(payload, dict) else {}
     force = body.get("force") is True
+    action = body.get("action")
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        return pending_bank.approve(pending_id, plugin_id, force=force)
+        return pending_bank.approve(pending_id, plugin_id, force=force,
+                                    action=str(action or ""))
+    except pending_bank.PendingDuplicateAnswer as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "existing_id": exc.existing_id, "duplicate": True,
+                    "answer_mismatch": True, "code": "duplicate_answer_mismatch",
+                    "existing_answer": exc.existing_answer,
+                    "incoming_answer": exc.incoming_answer},
+        ) from exc
     except pending_bank.PendingDuplicate as exc:
         raise HTTPException(
             status_code=409,

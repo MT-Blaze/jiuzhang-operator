@@ -514,6 +514,17 @@
       bus.on("editor.canvas_state", function (event) {
         stageState.panels.forEach(function (panel) { notify(panel, "editor.canvas_state", event.payload); });
       });
+      // 军令 #31：查重命中的对比浮层只能画在画布那帧（渲染能力在那里），
+      // 而发起点在辅助栏（它手上有待审号）。宿主这一跳把报告原样转过去。
+      // payload 已被宿主重包成 { text, pluginId, level, raw }，用户数据在 raw 里。
+      bus.on("editor.dup_review", function (event) {
+        var payload = (event && event.payload) || {};
+        if (payload.pluginId !== EDITOR_PLUGIN_ID) return;
+        var dupTab = findPluginTab(EDITOR_PLUGIN_ID);
+        if (dupTab && dupTab.frame && dupTab.state === "live") {
+          notify(dupTab, "editor.dup_review", payload);
+        }
+      });
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });
       // 录题插件写库成功 → 题库画布刷新列表（宿主统一生成事件，插件之间不直连）

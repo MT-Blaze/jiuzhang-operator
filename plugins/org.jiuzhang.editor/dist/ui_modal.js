@@ -11,14 +11,13 @@
     var coreState = deps.coreState;
     var panel = coreState.panel;
     var delModalEl = deps.dom.delModalEl;
-    var dupModalEl = deps.dom.dupModalEl;
-    var dupTextEl = deps.dom.dupTextEl;
 
-  // ---------- 弹窗：查重与彻底删除共用一套开合规矩（焦点圈住、Esc 可关、关掉还焦） ----------
+  // ---------- 弹窗：彻底删除（焦点圈住、Esc 可关、关掉还焦） ----------
+  // 查重对比浮层不在这套里：它按军令 #23 一颗按钮都不放（画布里只许有题目内容），
+  // 没有可圈住的焦点，开合由 ui_dup.js 自己管。
   var modalRestoreFocus = null;
 
   function openModalNode() {
-    if (dupModalEl && !dupModalEl.hidden) return dupModalEl;
     if (delModalEl && !delModalEl.hidden) return delModalEl;
     return null;
   }
@@ -38,18 +37,6 @@
       modalRestoreFocus.focus();
     }
     modalRestoreFocus = null;
-  }
-
-  /** 查重命中：弹窗给两颗钮——返回修改 / 强行覆盖。 */
-  function openDupModal(item, error) {
-    if (!dupModalEl) return;
-    panel.pending = item;
-    if (dupTextEl) {
-      dupTextEl.textContent = "主库里已经有同一道题（"
-        + ((error && error.existingId) || "已有记录")
-        + "）。可以返回修改，也可以强行覆盖主库那一条。";
-    }
-    openModal(dupModalEl);
   }
 
   document.addEventListener("keydown", function (event) {
@@ -77,7 +64,6 @@
     return {
       closeModal: closeModal,
       modalRestoreFocus: modalRestoreFocus,
-      openDupModal: openDupModal,
       openModal: openModal,
       openModalNode: openModalNode,
     };

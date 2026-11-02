@@ -189,6 +189,21 @@ class PendingDuplicate(PendingError):
         self.existing_id = existing_id
 
 
+class PendingDuplicateAnswer(PendingDuplicate):
+    """主库已有高度相似题，**且两边答案对不上**——这一档只许放弃，不许覆盖或合并。
+
+    答案不同意味着这多半是两道不同的题（或其中一道抄错了），此时覆盖等于拿错答案
+    盖掉对答案、合并等于把两套互相矛盾的解法并进一道题。两种都是在毁数据，
+    所以这里把 ``existing`` / ``incoming`` 两份答案原样报出去，让老师自己回池子里改。
+    """
+
+    def __init__(self, message: str, existing_id: str = "", *, existing: str = "",
+                 incoming: str = "") -> None:
+        super().__init__(message, existing_id)
+        self.existing_answer = existing
+        self.incoming_answer = incoming
+
+
 # ---------------------------------------------------------------- 路径与连接
 
 

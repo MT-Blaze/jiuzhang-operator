@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
+from app.core import plugins
 from app.core.plugins import PluginRejected, validate_plugin
 
 PLUGIN_ID = "com.example.stage-probe"
@@ -127,8 +128,12 @@ class BusGrantTest(unittest.TestCase):
         )
 
     def test_04_topic_lists_are_capped(self) -> None:
+        """主题清单必须封顶。上限值只认 `_BUS_MAX_TOPICS` 一处，别在判据里写死数字——
+        军令 #31 给录题插件加了第九条（查重开窗）时，写死的 8 会把真需求顶回去。"""
         info = self.validate({"subscribe": ["theme.changed"] * 40})
-        self.assertLessEqual(len(info["bus"]["subscribe"]), 8)
+        self.assertLessEqual(len(info["bus"]["subscribe"]), plugins._BUS_MAX_TOPICS)
+        # 反过来也要紧：上限被一路抬到几十条，等于没有上限。
+        self.assertLessEqual(plugins._BUS_MAX_TOPICS, 12, "总线主题上限不许无节制抬升")
 
     def test_05_garbage_bus_field_is_ignored(self) -> None:
         info = self.validate("everything")

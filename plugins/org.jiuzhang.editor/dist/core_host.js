@@ -50,9 +50,13 @@
     var error = new Error((raw && raw.message) || "宿主返回失败");
     error.code = String((raw && raw.code) || "HOST_ERROR");
     error.retryable = Boolean(raw && raw.retryable);
-    // 查重：底座把主库那道题的 id 与 duplicate 标记一并带回来，弹窗才画得出「返回修改 / 强行覆盖」。
+    // 查重：底座把主库那道题的 id 与 duplicate 标记一并带回来，裁决窗才画得出「哪一道」。
     error.existingId = String((raw && raw.existing_id) || "");
     error.duplicate = Boolean(raw && raw.duplicate);
+    // 军令 #31：答案不同是**红字拦截**，不是普通重复——界面据此锁死覆盖与合并两颗钮。
+    error.answer_mismatch = Boolean(raw && raw.answer_mismatch);
+    error.existingAnswer = String((raw && raw.existing_answer) || "");
+    error.incomingAnswer = String((raw && raw.incoming_answer) || "");
     // 报错诊断与字典拦截都靠这几个字段：完整现场 + 结构化的冲突信息。
     error.detail = String((raw && raw.detail) || "");
     error.status = Number(raw && raw.status) || 0;

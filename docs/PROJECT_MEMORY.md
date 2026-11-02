@@ -1158,6 +1158,21 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
 
 ### 一、当前冲刺（P0 级）
 
+- [x] **军令 #31 查重拦截机制（2026-11-02）**：把「命中就 409」升级成**可裁决的拦截**。
+      口径全在底座 `app/core/pending_dedupe.py`：指纹全等仍走 `find_duplicate`（入库闸门不动），
+      新增 `similarity_report` 给出 `identical` / `high` / `none` 三档与相似比，
+      答案可比形式由 `answer_key` 定义（选择题按标号集合、填空按归一正文，**没写答案一律回 None，不当成答案不同**）。
+      `pending_bank.approve` 收 `action`：`overwrite`（或旧 `force`）/ `merge_solution`，
+      答案不同时两条路都封死（`PendingDuplicateAnswer` → 409 `answer_mismatch`），只留「放弃」。
+      新端点 `GET /api/pending/items/{id}/duplicate` 回**两侧完整题目文档**，供画布做渲染对比。
+      **两帧分工**：对比浮层住画布（`ui_dup.js`，画布按军令 #23 一颗按钮都没有），
+      三个裁决动作住辅助栏段三（`epDupOverwrite` / `epDupMerge` / `epDupAbandon` + `epDupInspect`）；
+      跨帧只走宿主开的 `editor.dup_review` 一跳（`phase` 取 `notice` 只点灯 / `open` 开窗 / `closed` 收窗）。
+      后台查重挂在选区变化上（`ui_panel.applySelection` → `precheck`），切到主库已有的题时红灯与红字**不用点任何按钮**就亮。
+      真机探针 **205/205 绿**（改写并新增 11 条查重判据：红灯 `data-dup=on`、两侧渲染出选项、画布零按钮、
+      放弃留池、覆盖不增题、合并出「解法二」、答案不同两钮锁死、只切题不点按钮也亮灯）。
+      全量回归 **75 模块 1451 测全绿**；`plugins.json` 两份全等，editor 升 **2.9.0**。
+
 - [x] **军令 #17 备份恢复与回收站（2026-10-24，v0.10.0 封版）**：六步全部交付，决策见 ADR-011。
       全量 **50 模块 927 测全绿**；真机探针备份面板 11/11、恢复 16/16、回收站 14/14、保留策略 20/20。
       本地 3 份/远端 1 份、上传失败保旧份、哈希门禁、`.pre-restore.bak`、系统回收站与审计均为实测；

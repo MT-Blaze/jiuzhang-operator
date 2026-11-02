@@ -31,6 +31,9 @@
     var onPanelPendingUpdated = deps.onPanelPendingUpdated;
     var onPendingUpdated = deps.onPendingUpdated;
     var onUiParams = deps.onUiParams;
+    var showDupReview = deps.showDupReview;
+    var clearDupReview = deps.clearDupReview;
+    var noticeDupReview = deps.noticeDupReview;
     var pending = coreState.pending;
     var publishSelection = deps.publishSelection;
     var refreshBatches = deps.refreshBatches;
@@ -106,6 +109,17 @@
         if (state.slot !== "stage.center") return;
         var incoming = (message.payload && message.payload.files) || [];
         if (Array.isArray(incoming) && incoming.length) basketAdd(incoming);
+        return;
+      }
+      if (message.event === "editor.dup_review") {
+        // 军令 #31：查重对比浮层只在画布帧画（渲染能力只在这一帧）。
+        // 辅助栏是唯一发起点：开窗给它报告，收窗只说一声——裁决动作也全在那边。
+        if (state.slot !== "stage.center") return;
+        // 宿主会把插件通知重包成 { text, pluginId, level, raw }：真货在 raw 里。
+        var dupPayload = (message.payload && message.payload.raw) || message.payload || {};
+        if (dupPayload.phase === "open" && dupPayload.report) showDupReview(dupPayload);
+        else if (dupPayload.phase === "notice" && dupPayload.report) noticeDupReview(dupPayload);
+        else if (dupPayload.phase === "closed") clearDupReview();
         return;
       }
       return;

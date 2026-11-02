@@ -70,10 +70,10 @@
     {
       "id": "org.jiuzhang.editor",
       "name": "录题工作台",
-      "version": "2.8.0",
+      "version": "2.9.0",
       "kind": "tool",
       "api_version": "1.0",
-      "description": "录题工作台：三段式辅助栏。顶部固定当前题私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据（含年级）随画布滚动收起，底部存库/待审/删除。操作行只写返回列表与布局，右上角不占字。标签与考向走幽灵胶囊：空胶囊常驻，悬停 150ms 接光标，打字出带路径搜索，回车取第一条。收件只有画布收集筐，辅助栏不摆拖拽框。边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。",
+      "description": "录题工作台：三段式辅助栏。顶部固定当前题私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据（含年级）随画布滚动收起，底部存库/待审/删除。标签与考向走幽灵胶囊：空胶囊常驻，悬停接光标，打字出带路径搜索，回车取第一条。边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。查重命中亮红呼吸灯，可覆盖/放弃/合并解析二。",
       "zip_url": "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",
       "mirrors": [
         "https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip",

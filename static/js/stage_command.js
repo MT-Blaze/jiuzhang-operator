@@ -42,6 +42,9 @@
     // 彻底删除——录题端与主库之间那层物理隔离暂存，全走这五个口子。
     "pending.batch_list", "pending.list", "pending.save_draft",
     "pending.approve", "pending.delete",
+    // 军令 #31：入库前的后台查重。只读，回主库里同题 / 高度相似题的**两侧完整文档**，
+    // 插件拿去做左右渲染对比（对比渲染，不比源码）。
+    "pending.duplicate",
     // 批次公共元数据：改一次，这一批所有题的 sources 立刻跟着改。
     "pending.set_meta", "pending.meta_history",
     // 军令 #28：全域数据字典。读场景/学校/标签，写学校与标签（写走一次性令牌）。
@@ -452,6 +455,16 @@
       // 少了这个字段，插件只能笼统地说「重复了」，老师没法裁决。
       if (value && value.existing_id) packet.error.existing_id = String(value.existing_id);
       if (value && value.duplicate === true) packet.error.duplicate = true;
+      // 军令 #31：答案不同是**红字拦截**，不是普通重复。插件要靠这三个字段把
+      // 「覆盖」「合并为解析二」两颗钮锁死，并原样亮出两边的答案。
+      if (value && value.answer_mismatch === true) packet.error.answer_mismatch = true;
+      if (value && value.existing_answer) {
+        packet.error.existing_answer = String(value.existing_answer);
+      }
+      if (value && value.incoming_answer) {
+        packet.error.incoming_answer = String(value.incoming_answer);
+      }
+      if (value && value.code) packet.error.detail_code = String(value.code);
     }
     try {
       tab.frame.contentWindow.postMessage(packet, "*");

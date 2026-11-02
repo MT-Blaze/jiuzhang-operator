@@ -66,9 +66,12 @@
     var delCancelEl = deps.dom.delCancelEl;
     var delModalEl = deps.dom.delModalEl;
     var delOkEl = deps.dom.delOkEl;
-    var dupBackEl = deps.dom.dupBackEl;
-    var dupForceEl = deps.dom.dupForceEl;
-    var dupModalEl = deps.dom.dupModalEl;
+    var dupInspectEl = deps.dom.dupInspectEl;
+    var dupOverwriteEl = deps.dom.dupOverwriteEl;
+    var dupMergeEl = deps.dom.dupMergeEl;
+    var dupAbandonEl = deps.dom.dupAbandonEl;
+    var doDupAction = deps.doDupAction;
+    var inspectDup = deps.inspectDup;
     var panelAiApplyEl = deps.dom.panelAiApplyEl;
     var panelAiAskEl = deps.dom.panelAiAskEl;
     var panelAiCleanEl = deps.dom.panelAiCleanEl;
@@ -133,11 +136,18 @@
     if (panelApproveEl) panelApproveEl.addEventListener("click", function () { onApprove(false); });
     if (panelStashEl) panelStashEl.addEventListener("click", onStash);
     if (panelDeleteEl) panelDeleteEl.addEventListener("click", onDelete);
-    if (dupBackEl) dupBackEl.addEventListener("click", function () { closeModal(dupModalEl); });
-    if (dupForceEl) dupForceEl.addEventListener("click", function () {
-      closeModal(dupModalEl);
-      onApprove(true);
-    });
+    // 军令 #31：【查看主库原题】只把报告递去画布，对比浮层在那一帧画（这里不放预览）；
+    // 三个裁决动作反过来只在这一帧——画布里一颗按钮都不许有。
+    if (dupInspectEl) dupInspectEl.addEventListener("click", inspectDup);
+    if (dupOverwriteEl) {
+      dupOverwriteEl.addEventListener("click", function () { doDupAction("overwrite"); });
+    }
+    if (dupMergeEl) {
+      dupMergeEl.addEventListener("click", function () { doDupAction("merge_solution"); });
+    }
+    if (dupAbandonEl) {
+      dupAbandonEl.addEventListener("click", function () { doDupAction("abandon"); });
+    }
     if (delCancelEl) delCancelEl.addEventListener("click", function () { closeModal(delModalEl); });
     if (delOkEl) delOkEl.addEventListener("click", onDeleteConfirm);
     if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);

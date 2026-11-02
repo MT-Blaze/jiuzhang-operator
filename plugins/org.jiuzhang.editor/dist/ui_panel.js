@@ -198,6 +198,10 @@
       }
     }
     panel.selection = sel;
+    // 军令 #31：换题就是换一条待审记录，上一题的红字不许留在这一题头上；
+    // 换完顺手做一次后台查重，命中就把红字与【查看主库原题】亮起来。
+    if (deps.clearDup) deps.clearDup();
+    if (deps.precheckDup && sel.pending_id) deps.precheckDup({ pendingId: sel.pending_id });
     panel.source = String(sel.source || "");
     var entry = entryFor(sel);
     if (panel.currentEntry !== entry) {

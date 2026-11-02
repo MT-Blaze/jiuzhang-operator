@@ -484,7 +484,8 @@ payload = { command_id, context, from, trace }
 | ✍ `POST /api/ingest/files` | 【开始解析】才调用：`{"files":[{"name","data_url"}]}` → 201 立起批次（先占位、后台解析后原地替换），返回 `batch_id` / 占位题 / `parsing` |
 | ✍ `PATCH /api/pending/batches/{batch_id}/meta` | 改批次公共元数据并同步池内全部题：`{"year","region","body","exam_type","subject","schools":[...]}`；标准名不收（底座拼），同步不上的题一条不动并进 `warnings` |
 | ✍ `POST /api/pending/batches` | 存为待审：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交 |
-| ✍ `POST /api/pending/items/{pending_id}/approve` | 存入主库：`p_` → 底座新签发 `q_`，配图搬进 `uploads/`；主库已有同题回 409 带 `existing_id`，`{"force": true}` 才覆盖 |
+| `GET /api/pending/items/{pending_id}/duplicate` | **入库前后台查重**（军令 #31）：`{hit, level, similarity, existing_id, scanned, truncated, blocked, answer:{same,existing,incoming}, incoming:{题目文档}, existing:{题目文档}}`。`level` 取 `identical` / `high` / `none`；两份文档都是标准结构，插件拿去做**渲染**对比（不比源码）；`answer.same` 为 `null` 表示有一边没写答案，此时不作裁决 |
+| ✍ `POST /api/pending/items/{pending_id}/approve` | 存入主库：`p_` → 底座新签发 `q_`，配图搬进 `uploads/`。主库已有同题时：不带 `action` 回 409 带 `existing_id`；`{"action":"overwrite"}`（或旧的 `{"force":true}`）以池子里这条为准覆盖、题目 id 不变；`{"action":"merge_solution"}` 主库那题不动、把这条解析并成「解法二」。**两边答案不同时这两种动作一律 409 且 `detail.answer_mismatch` 为真**——只许放弃（放弃是前端本地动作，不写库也不发请求） |
 | ✍ `POST /api/pending/items/{pending_id}/delete` | 彻底删除这一条（连同池内配图），主库不碰 |
 
 ### 3.6 AI Agent（宿主自用，插件不经此通道）

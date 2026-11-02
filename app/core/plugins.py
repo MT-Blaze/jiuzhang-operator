@@ -76,7 +76,10 @@ _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
                 "editor.collect_files",
                 # 军令 #29：画布把「鼠标停在哪一题」「画布在滚动」报给辅助栏，
                 # 辅助栏据此亮边缘、收批次公共元数据。
-                "editor.canvas_state"}
+                "editor.canvas_state",
+                # 军令 #31：辅助栏把查重命中报告投给画布（渲染能力只在画布那帧），
+                # 办完再投一声「收窗」。两帧之间始终隔着宿主这一跳。
+                "editor.dup_review"}
 _BUS_SUBSCRIBE = {
     "ui.params.changed",
     "layout.changed",
@@ -105,8 +108,12 @@ _BUS_SUBSCRIBE = {
     "editor.collect_files",
     # 军令 #29：画布的悬停与滚动信号（呼吸灯与批次折叠）
     "editor.canvas_state",
+    # 军令 #31：查重命中的开窗 / 收窗指令（对比浮层住在画布帧）
+    "editor.dup_review",
 }
-_BUS_MAX_TOPICS = 8
+# 每个插件最多声明多少个主题。军令 #31 给录题插件加了第九条（查重开窗），
+# 上限跟着抬到 10——仍然是个紧箍咒，只是不许再拿旧上限当理由拒掉真需求。
+_BUS_MAX_TOPICS = 10
 
 # 右侧面板控件（v0.5.5）：插件只能声明「文本 + 指令模板」，不能塞 HTML。
 _UI_KEY = re.compile(r"^[a-z][a-z0-9_]{0,15}$")

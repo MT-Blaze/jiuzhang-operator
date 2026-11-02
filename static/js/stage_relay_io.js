@@ -130,7 +130,8 @@
 
     if (method.indexOf("pending.") !== 0) return false;
 
-    if (method === "pending.batch_list" || method === "pending.list") {
+    if (method === "pending.batch_list" || method === "pending.list"
+        || method === "pending.duplicate") {
       // 读中转站：批次卡片与批次里的待审题目。开放给任何声明了 questions:read 的插件。
       var readPermissions = (tab.plugin && tab.plugin.permissions) || [];
       if (readPermissions.indexOf("questions:read") < 0) {
@@ -142,6 +143,17 @@
       }
       if (method === "pending.batch_list") {
         fetchJson("/api/pending/batches").then(done, fail);
+        return true;
+      }
+      if (method === "pending.duplicate") {
+        // 入库前的后台查重：只读，回两侧完整文档，插件自己做左右渲染对比。
+        var dupPendingId = textValue(payload, "pending_id", 80);
+        if (!/^p_[A-Za-z0-9_-]{8,64}$/.test(dupPendingId)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "中转站编号不合法" });
+          return true;
+        }
+        fetchJson("/api/pending/items/" + encodeURIComponent(dupPendingId) + "/duplicate")
+          .then(done, fail);
         return true;
       }
       var pendingBatchId = textValue(payload, "batch_id", 40);
@@ -210,10 +222,17 @@
         return true;
       }
       // 存入主库：查重命中时后端回 409，插件拿 detail.existing_id 去问老师要不要强行覆盖。
+      // 军令 #31：老师面对「高度相似」时的三种裁决里，覆盖与合并写成 action 递下去；
+      // 「放弃」不写库，插件本地收口，根本不发这一趟。
+      var dupAction = textValue(payload, "action", 40);
+      if (dupAction && dupAction !== "overwrite" && dupAction !== "merge_solution") {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "不认识的入库动作" });
+        return true;
+      }
       withWriteToken("/api/pending/items/" + encodeURIComponent(pendingId) + "/approve", {
         method: "POST",
         headers: jsonHeaders,
-        body: JSON.stringify({ force: payload.force === true })
+        body: JSON.stringify({ force: payload.force === true, action: dupAction })
       }).then(function (result) {
         emitPendingUpdated("approve", [pendingId], result);
         emit("system.question_updated", {

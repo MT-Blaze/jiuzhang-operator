@@ -496,3 +496,141 @@
 .ed-toast[data-tone="error"] { background: var(--danger); }
 .ed-toast[data-tone="ok"] { background: var(--accent); }
 
+/* ---------- 查重裁决窗（军令 #31） ----------
+   左右两栏都是**渲染**结果，不是源码：同一句话两种 LaTeX 打法、选项字母顺序不同，
+   只有渲染出来才看得出是不是同一道题。窄屏自动落成一列，绝不横向溢出。 */
+.ed-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(30, 26, 20, 0.42);
+}
+
+.ed-modal[hidden] { display: none; }
+
+.ed-modal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(760px, 100%);
+  max-height: 100%;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(42, 36, 29, 0.22);
+}
+
+.ed-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--danger, #d33);
+}
+
+.ed-modal-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.ed-dup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ed-dup-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.ed-dup-head {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.ed-dup-body {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ed-dup-option { margin: 2px 0; }
+.ed-dup-key { font-weight: 700; }
+.ed-dup-empty { margin: 0; color: var(--ink-soft); }
+
+.ed-dup-answer {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.ed-dup-answer-key { font-weight: 700; }
+
+/* 答案不同是**拦截**不是提示：红底红字之外还有一整句人话（状态不只靠颜色）。 */
+.ed-dup-block {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--danger, #d33);
+  border-radius: 6px;
+  background: #fdeceb;
+  color: var(--danger, #d33);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.ed-dup-block[hidden] { display: none; }
+
+.ed-dup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .ed-dup-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 左侧画布的红呼吸灯：命中即亮，放弃或办完即熄。灯只报「这里有事」，不改变数据。 */
+@keyframes ed-dup-breathe {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.7; }
+}
+
+.ed-root[data-dup="on"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--danger, #d33), inset 0 0 34px rgba(211, 51, 51, 0.45);
+  animation: ed-dup-breathe 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-root[data-dup="on"]::after {
+    animation: none !important;
+    opacity: 0.55;
+  }
+}
+

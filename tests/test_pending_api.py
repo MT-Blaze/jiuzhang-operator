@@ -247,6 +247,104 @@ class PendingApiContractTest(unittest.TestCase):
         self.assertFalse(forced["created"])
         self.assertTrue(forced["overwritten"])
 
+    def test_06_precheck_reports_both_documents(self) -> None:
+        """入库前的后台查重：命中要把**两侧完整文档**一起回，插件才能做渲染对比。"""
+        stem = "查重预检题：已知 $g(x)=x^3-2x$，求它的导函数（　　）。"
+        status, first = self._save([{"question": _question(143, stem=stem)}])
+        self.assertEqual(status, 201, first)
+        status, stored = self._request(
+            f"/api/pending/items/{first['saved_ids'][0]}/approve", "POST", {})
+        self.assertEqual(status, 200, stored)
+        existing_id = stored["question_id"]
+
+        status, second = self._save([{"question": _question(144, stem=stem)}])
+        self.assertEqual(status, 201, second)
+        status, report = self._request(
+            f"/api/pending/items/{second['saved_ids'][0]}/duplicate")
+        self.assertEqual(status, 200, report)
+        self.assertTrue(report["hit"], report)
+        self.assertEqual(report["level"], "identical")
+        self.assertEqual(report["existing_id"], existing_id)
+        self.assertEqual(report["incoming"]["stem"], stem, "要回池子里这一条的文档")
+        self.assertEqual(report["existing"]["id"], existing_id, "要回主库那一条的文档")
+        self.assertIs(report["answer"]["same"], True, "两边答案一致")
+        self.assertFalse(report["blocked"])
+
+    def test_06_merge_solution_appends_the_second_solution(self) -> None:
+        """合并为解析二：主库那题一字不动，只把池子里这条的解析并成「解法二」。"""
+        stem = "合并解析二题：已知 $h(x)=2x+1$，求 $h(3)$（　　）。"
+        status, first = self._save([{"question": _question(145, stem=stem)}])
+        self.assertEqual(status, 201, first)
+        status, stored = self._request(
+            f"/api/pending/items/{first['saved_ids'][0]}/approve", "POST", {})
+        self.assertEqual(status, 200, stored)
+        existing_id = stored["question_id"]
+        base_solution = stored["question"]["solution"]
+
+        second_doc = _question(146, stem=stem)
+        second_doc["solution"] = r"直接把 $x=3$ 代入：$2\times3+1=7$。"
+        status, second = self._save([{"question": second_doc}])
+        self.assertEqual(status, 201, second)
+        pending_id = second["saved_ids"][0]
+        batch_id = second["batch_id"]
+        status, merged = self._request(
+            f"/api/pending/items/{pending_id}/approve", "POST", {"action": "merge_solution"})
+        self.assertEqual(status, 200, merged)
+        self.assertEqual(merged["question_id"], existing_id, "合并改的是主库那道题，id 不变")
+        self.assertTrue(merged["merged_solution"])
+        self.assertFalse(merged["overwritten"], "合并不是覆盖")
+        solution = merged["question"]["solution"]
+        self.assertIn("解法二", solution, "第二段解析必须顶着「解法二」")
+        self.assertIn("2\\times3+1=7", solution, "池子里那段解析要真并进去")
+        self.assertIn(base_solution.strip(), solution, "主库原来的解析一段都不许丢")
+        # 池子里这条已经消化掉，批次未审数跟着减
+        status, listing = self._request(f"/api/pending/batches/{batch_id}/questions")
+        self.assertEqual(status, 200, listing)
+        self.assertNotIn(pending_id, [item["id"] for item in listing["items"]])
+
+    def test_06_different_answer_blocks_overwrite_and_merge(self) -> None:
+        """答案不同则红字拦截：覆盖与合并两条路都封死，只留「放弃」。"""
+        stem = "答案不同题：已知 $k(x)=x+1$，求 $k(1)$（　　）。"
+        first_doc = _question(147, stem=stem)
+        first_doc["answer"] = {"kind": "choice", "choice_keys": ["A"], "final": "A"}
+        status, first = self._save([{"question": first_doc}])
+        self.assertEqual(status, 201, first)
+        status, stored = self._request(
+            f"/api/pending/items/{first['saved_ids'][0]}/approve", "POST", {})
+        self.assertEqual(status, 200, stored)
+
+        second_doc = _question(148, stem=stem)
+        second_doc["answer"] = {"kind": "choice", "choice_keys": ["C"], "final": "C"}
+        status, second = self._save([{"question": second_doc}])
+        self.assertEqual(status, 201, second)
+        pending_id = second["saved_ids"][0]
+        batch_id = second["batch_id"]
+
+        status, report = self._request(f"/api/pending/items/{pending_id}/duplicate")
+        self.assertEqual(status, 200, report)
+        self.assertIs(report["answer"]["same"], False)
+        self.assertTrue(report["blocked"], "答案不同必须报 blocked，界面据此锁死两颗钮")
+
+        for action in ("overwrite", "merge_solution"):
+            status, body = self._request(
+                f"/api/pending/items/{pending_id}/approve", "POST", {"action": action})
+            self.assertEqual(status, 409, body)
+            self.assertTrue(body["detail"]["answer_mismatch"], "答案不同就该拦，不分动作")
+            self.assertEqual(body["detail"]["existing_id"], stored["question_id"])
+        # 两条路都被拦下之后，池子里这一条**原样还在**，主库也没被改。
+        status, listing = self._request(f"/api/pending/batches/{batch_id}/questions")
+        self.assertEqual(status, 200, listing)
+        self.assertIn(pending_id, [item["id"] for item in listing["items"]])
+
+    def test_06_unknown_action_is_rejected(self) -> None:
+        """动作白名单只有两个写库动作：别的名字一律不许猜着执行。"""
+        status, body = self._save([{"question": _question(149)}])
+        self.assertEqual(status, 201, body)
+        status, refused = self._request(
+            f"/api/pending/items/{body['saved_ids'][0]}/approve", "POST",
+            {"action": "force_overwrite"})
+        self.assertEqual(status, 400, refused)
+
     def test_07_delete_removes_item_and_counts_down(self) -> None:
         status, body = self._save([{"question": _question(151)}])
         self.assertEqual(status, 201, body)

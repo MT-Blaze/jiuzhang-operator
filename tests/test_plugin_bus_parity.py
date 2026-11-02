@@ -79,7 +79,7 @@ class BusParityContract(unittest.TestCase):
             "org.jiuzhang.editor": {"system.open_editor", "ui.params.changed", "editor.apply_patch",
                                     "stage.selection", "system.question_updated",
                                     "system.pending_updated", "editor.collect_files",
-                                    "editor.canvas_state"},
+                                    "editor.canvas_state", "editor.dup_review"},
             "org.jiuzhang.handout": {"ui.params.changed", "system.question_updated", "question.updated"},
             "org.jiuzhang.paper-gen": {"ui.params.changed", "basket.changed",
                                        "system.question_updated", "question.updated"},

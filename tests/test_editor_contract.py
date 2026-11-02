@@ -134,11 +134,13 @@ class EditorManifestTest(unittest.TestCase):
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
                          ["editor.apply_patch", "editor.canvas_state", "editor.collect_files",
+                          "editor.dup_review",
                           "stage.selection",
                           "system.open_editor", "system.pending_updated",
                           "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
-                         ["editor.canvas_state", "editor.collect_files", "region.dock",
+                         ["editor.canvas_state", "editor.collect_files", "editor.dup_review",
+                          "region.dock",
                           "stage.selection",
                           "system.editor_close", "system.return_from_editor"])
 
@@ -641,7 +643,8 @@ class EditorPanelTest(unittest.TestCase):
                         "epAiField", "epAiAsk", "epAiSend", "epAiClean",
                         "epAiState", "epAiNote", "epAiPreview", "epAiApply", "epAiDiscard",
                         "epApprove", "epStash", "epDelete",
-                        "epDupModal", "epDupBack", "epDupForce",
+                        "epDupWarn", "epDupInspect", "epDupOverwrite",
+                        "epDupMerge", "epDupAbandon",
                         "epDelModal", "epDelCancel", "epDelOk",
                         "epMessage", "epMetrics"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
@@ -1235,22 +1238,55 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn('dock("⚠ "', warn)
         self.assertIn('"warn"', warn)
 
-    def test_09_duplicate_hit_offers_two_choices(self) -> None:
-        """查重命中弹窗给【返回修改】与【强行覆盖】两颗钮，Esc 可关，焦点圈住。"""
+    def test_09_duplicate_hit_offers_three_choices(self) -> None:
+        """查重命中（军令 #31）：画布出**渲染**对比浮层，辅助栏出红字与三个裁决动作。
+
+        画布里一颗按钮都不许有（军令 #23：画布里只许有题目内容），所以「覆盖 /
+        放弃 / 合并为解析二」住在辅助栏的段三；画布只负责把两侧渲染摆出来。
+        """
         html = read("index.html")
-        for node_id in ("epDupModal", "epDupBack", "epDupForce"):
-            self.assertIn(f'id="{node_id}"', html)
+        canvas = canvas_only(html)
+        for node_id in ("edDupModal", "edDupMineBody", "edDupTheirBody",
+                        "edDupNote", "edDupBlock"):
+            self.assertIn(f'id="{node_id}"', canvas, f"画布缺少对比浮层的 {node_id}")
+        self.assertEqual(canvas.count("<button"), 1,
+                         "对比浮层不许在画布里放按钮：裁决动作只住辅助栏")
+        panel = panel_only(html)
+        for node_id in ("epDupWarn", "epDupInspect", "epDupOverwrite",
+                        "epDupMerge", "epDupAbandon"):
+            self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少查重控件 {node_id}")
+        self.assertIn("主库已存在高度相似题目", panel, "红字必须与军令逐字一致")
+
         js = read("plugin.js")
         approve = fn_body(js, "onApprove")
-        self.assertIn("if (error && error.duplicate) {", approve)
-        self.assertIn("openDupModal(item, error);", approve)
-        self.assertIn('hostCall("pending.approve", { pending_id: item.pendingId, force: force === true })',
-                      approve)
-        modal = fn_body(js, "openDupModal")
-        self.assertIn("existingId", modal)
-        keys = js[js.index('document.addEventListener("keydown"'):]
-        self.assertIn('if (event.key === "Escape")', keys)
-        self.assertIn('if (event.key !== "Tab") return;', keys, "Tab 必须被圈在弹窗里")
+        self.assertIn("inspectDup();", approve)
+        self.assertIn("precheck(item).then(function (report) {", approve,
+                      "入库前必须先查重，命中就不许直接写库")
+        # 真写库那一步被后端 409 拦下时，补一次查重把完整报告取回来再让老师裁决。
+        write = fn_body(js, "approveNow")
+        self.assertIn("if (error && error.duplicate) {", write)
+        self.assertIn("precheck(item).then(function (report) {", write)
+
+        action = fn_body(js, "doDupAction")
+        self.assertIn('hostCall("pending.approve", { pending_id: item.pendingId, action: action })',
+                      action)
+        self.assertIn('action === "merge_solution"', action)
+        self.assertIn('action === "abandon"', action)
+
+        # 答案不同则红字拦截：【覆盖】【合并为解析二】两颗钮锁死，只留【放弃】。
+        sync = fn_body(js, "syncDupActions")
+        self.assertIn("node.disabled = blocked;", sync)
+        self.assertIn("dupAbandonEl.disabled = false", sync)
+
+        # 对比的是**渲染**，不是源码：两侧都走 appendBody / appendRich。
+        dup = read("ui_dup.js")
+        self.assertIn("appendBody(target, stem);", dup, "题干必须走渲染")
+        self.assertIn("appendRich(line,", dup, "选项必须走渲染")
+        self.assertNotIn("textContent = String(body.source", dup, "绝不许拿源码当对比")
+
+        # 浮层的开合由辅助栏经宿主投递，两帧不直连。
+        self.assertIn("showDupReview(dupPayload)", read("core_protocol.js"))
+        self.assertIn("clearDupReview()", read("core_protocol.js"))
 
     def test_10_only_approve_and_delete_pull_questions_off_the_canvas(self) -> None:
         """暂存只是改内容，不许把题从画布上撤下来。"""
