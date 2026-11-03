@@ -37,6 +37,8 @@
     var onAiApply = deps.onAiApply;
     var onAiDiscard = deps.onAiDiscard;
     var onAiSend = deps.onAiSend;
+    var onCleanApply = deps.onCleanApply;
+    var onCleanDrop = deps.onCleanDrop;
     var onApprove = deps.onApprove;
     var onDelete = deps.onDelete;
     var onDeleteConfirm = deps.onDeleteConfirm;
@@ -63,6 +65,9 @@
     var wireGhost = deps.wireGhost;
     var wireGhostCell = deps.wireGhostCell;
     var wireIntake = deps.wireIntake;
+    // 重题池辅助栏与【全部入库】那颗钮（军令 #32 · 判据 5.3/5.4/43）：都只在辅助栏这帧接活。
+    var wireAmber = deps.wireAmber;
+    var wirePoolPanel = deps.wirePoolPanel;
     var delCancelEl = deps.dom.delCancelEl;
     var delModalEl = deps.dom.delModalEl;
     var delOkEl = deps.dom.delOkEl;
@@ -78,6 +83,10 @@
     var panelAiDiscardEl = deps.dom.panelAiDiscardEl;
     var panelAiFoldEl = deps.dom.panelAiFoldEl;
     var panelAiSendEl = deps.dom.panelAiSendEl;
+    var panelCleanApplySolutionEl = deps.dom.panelCleanApplySolutionEl;
+    var panelCleanApplyStemEl = deps.dom.panelCleanApplyStemEl;
+    var panelCleanDropSolutionEl = deps.dom.panelCleanDropSolutionEl;
+    var panelCleanDropStemEl = deps.dom.panelCleanDropStemEl;
     var panelApproveEl = deps.dom.panelApproveEl;
     var panelBackListEl = deps.dom.panelBackListEl;
     var panelDeleteEl = deps.dom.panelDeleteEl;
@@ -153,6 +162,19 @@
     if (panelAiAskEl) panelAiAskEl.addEventListener("input", renderAi);
     if (panelAiSendEl) panelAiSendEl.addEventListener("click", onAiSend);
     if (panelAiCleanEl) panelAiCleanEl.addEventListener("click", cleanViaHost);
+    // 4.3：清洗只出预览；采用/放弃按段走，互不牵连。
+    if (panelCleanApplyStemEl) {
+      panelCleanApplyStemEl.addEventListener("click", function () { onCleanApply("stem"); });
+    }
+    if (panelCleanDropStemEl) {
+      panelCleanDropStemEl.addEventListener("click", function () { onCleanDrop("stem"); });
+    }
+    if (panelCleanApplySolutionEl) {
+      panelCleanApplySolutionEl.addEventListener("click", function () { onCleanApply("solution"); });
+    }
+    if (panelCleanDropSolutionEl) {
+      panelCleanDropSolutionEl.addEventListener("click", function () { onCleanDrop("solution"); });
+    }
     if (panelAiApplyEl) panelAiApplyEl.addEventListener("click", onAiApply);
     if (panelAiDiscardEl) panelAiDiscardEl.addEventListener("click", onAiDiscard);
     if (panelAiFoldEl) {
@@ -218,6 +240,8 @@
       panelStdNameEl.addEventListener("change", onStdInput);
     }
     wireIntake();
+    if (wirePoolPanel) wirePoolPanel();
+    if (wireAmber) wireAmber();
     loadScenes();
     loadMetaHistory();
     renderBatchMeta();

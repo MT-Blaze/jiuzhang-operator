@@ -10,7 +10,7 @@
   function create(deps) {
     var coreState = deps.coreState;
     var COMMAND_QUESTION_ID_RE = coreState.COMMAND_QUESTION_ID_RE;
-    var cleanExamSource = deps.cleanExamSource;
+    var hostCall = deps.hostCall;
     var loadForEdit = deps.loadForEdit;
     var respond = deps.respond;
     var saveViaCommand = deps.saveViaCommand;
@@ -49,17 +49,43 @@
       if (Object.keys(context).length) {
         return commandReject(source, message, "BAD_PARAMS", "清洗命令不接受参数");
       }
+      // 判据 1.6：清洗规则表只准有一处，就是底座的 app/core/latex_style_dict.py。
+      // 插件这侧一份正则都不留——整批源码逐题发给宿主的 text.clean_latex（mode=exam_source），
+      // 由底座 question_parser.clean_exam_source 洗：同一张字典，但不拆 exam-zh 环境骨架。
+      // 逐题串行，不并发；一轮洗完才回执，AI 拿到的数就是真的改了几题。
       var touched = 0;
+      var skipped = 0;
+      var failed = 0;
+      var firstError = "";
+      var chain = Promise.resolve();
       state.items.forEach(function (item) {
-        var cleaned = cleanExamSource(item.source);
-        if (cleaned.touched) {
-          item.source = cleaned.text;
-          item.dirty = true;
-          touched += cleaned.touched;
+        var text = String(item.source == null ? "" : item.source);
+        if (!text.trim()) {
+          skipped += 1;
+          return;
         }
+        chain = chain.then(function () {
+          return hostCall("text.clean_latex", { text: text, mode: "exam_source" }).then(function (result) {
+            var cleaned = String(result && result.text || "");
+            if (!result || !result.changed || !cleaned) {
+              skipped += 1;
+              return;
+            }
+            item.source = cleaned;
+            item.dirty = true;
+            touched += 1;
+          }, function (error) {
+            failed += 1;
+            if (!firstError) firstError = (error && error.message) || "未知原因";
+          });
+        });
       });
-      scheduleRender();
-      return respond(source, message.id, true, { touched: touched });
+      return chain.then(function () {
+        if (touched) scheduleRender();
+        respond(source, message.id, true, {
+          touched: touched, skipped: skipped, failed: failed, message: firstError
+        });
+      });
     }
 
     if (commandId === "org.jiuzhang.action.input.save_question") {

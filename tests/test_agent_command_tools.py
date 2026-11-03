@@ -1,7 +1,7 @@
 """AI 命令面（command_list / command_execute）契约：军令 #20 第三部分。
 
 覆盖五层：
-1. 字典查询：AI 看到的 16 条官方命令与清单、风险、参数声明同源；
+1. 字典查询：AI 看到的 14 条官方命令与清单、风险、参数声明同源；
 2. 上下文防绑架：封口、底层保留键、公开 id 白名单、长度与枚举；
 3. 高副作用拦截：requires_user 只发确认卡与一次性令牌，绝不执行；
 4. 确认与取消：确认只核销一次，取消后令牌立即作废、命令不落地；
@@ -32,7 +32,7 @@ SEARCH = "org.jiuzhang.action.data.bank_search"
 STATS = "org.jiuzhang.action.data.bank_stats"
 TOPICS = "org.jiuzhang.action.data.bank_topics"
 FILTER = "org.jiuzhang.action.view.filter_questions"
-MERGE = "org.jiuzhang.action.data.dedupe_merge"
+MARKDOWN = "org.jiuzhang.action.input.set_handout_markdown"
 EXPORT = "org.jiuzhang.action.output.export_paper"
 
 
@@ -100,14 +100,14 @@ class CommandToolsTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual("command.list", result["action"])
         commands = result["data"]["commands"]
-        self.assertEqual(16, len(commands))
+        self.assertEqual(14, len(commands))
         ids = {item["id"] for item in commands}
-        for command_id in (SEARCH, STATS, TOPICS, FILTER, MERGE, EXPORT):
+        for command_id in (SEARCH, STATS, TOPICS, FILTER, MARKDOWN, EXPORT):
             self.assertIn(command_id, ids)
-        merge = next(item for item in commands if item["id"] == MERGE)
-        self.assertTrue(merge["requires_user"])
-        self.assertEqual("high", merge["risk"]["level"])
-        self.assertFalse(merge["params_schema"]["additionalProperties"])
+        markdown = next(item for item in commands if item["id"] == MARKDOWN)
+        self.assertTrue(markdown["requires_user"])
+        self.assertEqual("high", markdown["risk"]["level"])
+        self.assertFalse(markdown["params_schema"]["additionalProperties"])
         search = next(item for item in commands if item["id"] == SEARCH)
         self.assertTrue(search["headless"])
         self.assertEqual("low", search["risk"]["level"])
@@ -117,7 +117,7 @@ class CommandToolsTest(unittest.TestCase):
         engine = command_tools.list_commands({"plugin_id": ENGINE})
         self.assertEqual(3, engine["data"]["total"])
         high = command_tools.list_commands({"requires_user": True})
-        self.assertEqual(7, high["data"]["total"])
+        self.assertEqual(6, high["data"]["total"])
         self.assertTrue(all(item["requires_user"] for item in high["data"]["commands"]))
         view = command_tools.list_commands({"category": "view"})
         self.assertEqual(2, view["data"]["total"])
@@ -143,26 +143,21 @@ class CommandToolsTest(unittest.TestCase):
         self.assertEqual("", problem)
         self.assertEqual({"query": "导数"}, cleaned)
 
-    def test_05_public_ids_only_never_rowids(self) -> None:
-        merge = command_tools.list_commands({"requires_user": True})["data"]["commands"]
-        schema = next(item for item in merge if item["id"] == MERGE)["params_schema"]
-        _, problem = command_tools.normalize_context(
-            schema, {"primary_id": "42", "copy_ids": ["q_ok"]}
-        )
-        self.assertIn("公开 id", problem)
-        _, problem = command_tools.normalize_context(
-            schema, {"primary_id": "q_ok", "copy_ids": [42]}
-        )
-        self.assertIn("公开 id", problem)
-        _, problem = command_tools.normalize_context(
-            schema, {"primary_id": "q_ok", "copy_ids": ["q_%d" % index for index in range(21)]}
-        )
-        self.assertIn("超过 20 项", problem)
-        cleaned, problem = command_tools.normalize_context(
-            schema, {"primary_id": "q_ok", "copy_ids": ["q_1", "q_2"]}
-        )
+    def test_05_retired_dedupe_commands_never_come_back(self) -> None:
+        """3.6 下架全库查重：字典里不许再有 scan / merge 两条命令。"""
+        commands = command_tools.list_commands({})["data"]["commands"]
+        ids = {item["id"] for item in commands}
+        self.assertNotIn("org.jiuzhang.action.data.dedupe_scan", ids)
+        self.assertNotIn("org.jiuzhang.action.data.dedupe_merge", ids)
+        # 悬空引用会自动降级成「未知参数」；这里用仍在册的 markdown 命令守住边界口径。
+        schema = next(item for item in commands if item["id"] == MARKDOWN)["params_schema"]
+        _, problem = command_tools.normalize_context(schema, {"markdown": 42})
+        self.assertIn("必须是字符串", problem)
+        _, problem = command_tools.normalize_context(schema, {"markdown": "x" * 20001})
+        self.assertIn("超过 20000", problem)
+        cleaned, problem = command_tools.normalize_context(schema, {"markdown": "# 讲义"})
         self.assertEqual("", problem)
-        self.assertEqual(2, len(cleaned["copy_ids"]))
+        self.assertEqual("# 讲义", cleaned["markdown"])
 
     def test_06_engine_schema_bounds_and_enum(self) -> None:
         search = next(
@@ -190,8 +185,8 @@ class CommandToolsTest(unittest.TestCase):
     def test_08_high_risk_returns_card_and_never_executes(self) -> None:
         with mock.patch.object(command_tools, "_dispatch") as dispatch:
             result = command_tools.execute_command({
-                "command_id": MERGE,
-                "context": {"primary_id": "q_ai_cmd_0001", "copy_ids": ["q_ai_cmd_0002"]},
+                "command_id": MARKDOWN,
+                "context": {"markdown": "# 讲义\n第一讲 $x^2$"},
             })
         dispatch.assert_not_called()
         self.assertTrue(result["ok"])
@@ -206,7 +201,7 @@ class CommandToolsTest(unittest.TestCase):
         self.assertIn("功能", card["description"])
         self.assertIn("涉及数据", card["description"])
         self.assertIn("风险等级：高", card["description"])
-        self.assertIn("copy_ids", card["description"])
+        self.assertIn("Markdown", card["description"])
         labels = [action["label"] for action in card["actions"]]
         self.assertEqual(["确认执行", "取消"], labels)
         for action in card["actions"]:
@@ -220,8 +215,8 @@ class CommandToolsTest(unittest.TestCase):
     def test_09_bad_context_is_rejected_before_any_card(self) -> None:
         with mock.patch.object(command_tools, "_dispatch") as dispatch:
             result = command_tools.execute_command({
-                "command_id": MERGE,
-                "context": {"primary_id": "42", "copy_ids": ["q_ai_cmd_0002"]},
+                "command_id": MARKDOWN,
+                "context": {"markdown": 42},
             })
         dispatch.assert_not_called()
         self.assertFalse(result["ok"])
@@ -241,8 +236,8 @@ class CommandToolsTest(unittest.TestCase):
     # --- 4. 确认与取消 -------------------------------------------------
     def test_11_confirm_consumes_token_once(self) -> None:
         issued = command_tools.execute_command({
-            "command_id": MERGE,
-            "context": {"primary_id": "q_ai_cmd_0001", "copy_ids": ["q_ai_cmd_0002"]},
+            "command_id": MARKDOWN,
+            "context": {"markdown": "# 讲义"},
         })
         token = issued["confirmation"]["token"]
         with mock.patch.object(
@@ -255,15 +250,15 @@ class CommandToolsTest(unittest.TestCase):
         self.assertTrue(confirmed["confirmed"])
         self.assertFalse(confirmed["executed"])
         self.assertTrue(confirmed["pending"])
-        self.assertEqual(MERGE, confirmed["command_request"]["command_id"])
-        self.assertEqual(["q_ai_cmd_0002"], confirmed["command_request"]["context"]["copy_ids"])
+        self.assertEqual(MARKDOWN, confirmed["command_request"]["command_id"])
+        self.assertEqual("# 讲义", confirmed["command_request"]["context"]["markdown"])
         self.assertFalse(repeated["ok"])
         self.assertEqual("COMMAND_CONFIRM_EXPIRED", repeated["error_code"])
 
     def test_12_cancel_does_not_execute_and_kills_token(self) -> None:
         issued = command_tools.execute_command({
-            "command_id": MERGE,
-            "context": {"primary_id": "q_ai_cmd_0001", "copy_ids": ["q_ai_cmd_0002"]},
+            "command_id": MARKDOWN,
+            "context": {"markdown": "# 讲义"},
         })
         token = issued["confirmation"]["token"]
         with mock.patch.object(command_tools, "_dispatch") as dispatch:
@@ -325,21 +320,21 @@ class CommandToolsTest(unittest.TestCase):
 
     def test_16_high_risk_confirm_then_host_request(self) -> None:
         issued = command_tools.execute_command({
-            "command_id": MERGE,
-            "context": {"primary_id": "q_ai_cmd_0001", "copy_ids": ["q_ai_cmd_0002"]},
+            "command_id": MARKDOWN,
+            "context": {"markdown": "# 讲义"},
         })
         confirmed = command_tools.execute_command({
             "confirm_token": issued["confirmation"]["token"],
         })
         self.assertTrue(confirmed["confirmed"])
         self.assertTrue(confirmed["pending"])
-        self.assertEqual(MERGE, confirmed["command_request"]["command_id"])
+        self.assertEqual(MARKDOWN, confirmed["command_request"]["command_id"])
 
     # --- 6. 宿主兜底与对话接线 -------------------------------------------
     def test_17_intent_matching(self) -> None:
         issued = command_tools.execute_command({
-            "command_id": MERGE,
-            "context": {"primary_id": "q_ai_cmd_0001", "copy_ids": ["q_ai_cmd_0002"]},
+            "command_id": MARKDOWN,
+            "context": {"markdown": "# 讲义"},
         })
         token = issued["confirmation"]["token"]
         self.assertEqual(
@@ -360,7 +355,7 @@ class CommandToolsTest(unittest.TestCase):
     def test_18_agent_wiring(self) -> None:
         listed = agents._run_tool("command_list", "{}")
         self.assertTrue(listed["ok"])
-        self.assertEqual(16, listed["data"]["total"])
+        self.assertEqual(14, listed["data"]["total"])
         calls = agents._execute_calls(
             [agents._make_host_call({
                 "tool": "command_execute",

@@ -59,7 +59,6 @@
   var coreExamSource = window.JzoEditorExamSource.create({
   });
   var buildExamSource = coreExamSource.buildExamSource;
-  var cleanExamSource = coreExamSource.cleanExamSource;
   var parseExamSource = coreExamSource.parseExamSource;
 
   var coreAiFields = window.JzoEditorAiFields.create({
@@ -85,6 +84,51 @@
     appendBody: appendBody,
     appendRich: appendRich,
     el: el,
+    publish: publish,
+    coreState: coreState,
+  });
+
+  // 琥珀灯（军令 #32 · 判据 5.2/43）：两帧共用的「还有未清项」判定与整批扫灯，只这一份。
+  // 它排在最前，是因为画布（uiColumns 的题卡描边）与辅助栏（边缘那一圈）都要用它；
+  // 反过来 readForm / parsedOf / metaFor 都还在更下面的块里，只能等就位后再取。
+  var uiAmber = window.JzoEditorAmber.create({
+    dom: dom,
+    hostCall: hostCall,
+    loadMetaDraft: function () { return coreSave.loadMetaDraft.apply(coreSave, arguments); },
+    jumpTo: function () { return uiColumns.jumpTo.apply(uiColumns, arguments); },
+    metaFor: function () { return coreSave.metaFor.apply(coreSave, arguments); },
+    panelPoolRefresh: function () { return uiPoolPanel.refresh.apply(uiPoolPanel, arguments); },
+    panelSay: panelSay,
+    parseExamSource: parseExamSource,
+    parsedOf: function () { return uiColumns.parsedOf.apply(uiColumns, arguments); },
+    publish: publish,
+    readForm: function () { return uiPanel.readForm.apply(uiPanel, arguments); },
+    refreshBatches: function () { return uiBatches.refreshBatches.apply(uiBatches, arguments); },
+    stashBeforeLeave: function () { return uiBatches.stashBeforeLeave.apply(uiBatches, arguments); },
+    coreState: coreState,
+  });
+
+  // 重题池画布那一屏（判据 5.1）：左主库原题、右池内这条，两边都只画渲染，一颗按钮都不放。
+  var uiPool = window.JzoEditorPool.create({
+    dom: dom,
+    publish: publish,
+    renderDoc: uiDup.renderDoc,
+    setMode: function () { return uiBatches.setMode.apply(uiBatches, arguments); },
+    coreState: coreState,
+  });
+
+  // 重题池辅助栏那一半（判据 5.3/5.4）：档位、条目、四个动作与删除二次确认。
+  var uiPoolPanel = window.JzoEditorPoolPanel.create({
+    closeModal: closeModal,
+    dock: dock,
+    dockWarn: dockWarn,
+    dom: dom,
+    el: el,
+    errorDetail: errorDetail,
+    hostCall: hostCall,
+    openModal: openModal,
+    panelSay: panelSay,
+    publish: publish,
     coreState: coreState,
   });
 
@@ -186,6 +230,8 @@
     parseExamSource: parseExamSource,
     pushReceipt: pushReceipt,
     queueWorklistSave: queueWorklistSave,
+    // 元数据一落草稿就重算琥珀灯（考向是「还没挂考向」这条的唯一来源）。
+    repaintPanel: uiAmber.repaintPanel,
     coreState: coreState,
   });
   var flushMetaDraft = coreSave.flushMetaDraft;
@@ -201,6 +247,7 @@
     dom: dom,
     DEV_FIXTURES: DEV_FIXTURES,
     buildExamSource: buildExamSource,
+    closeModal: closeModal,
     dock: dock,
     dockWarn: dockWarn,
     el: el,
@@ -209,6 +256,7 @@
     loadMetaDraft: loadMetaDraft,
     makeItem: makeItem,
     metaFor: metaFor,
+    openModal: openModal,
     panelSay: panelSay,
     parseExamSource: parseExamSource,
     // 循环引用：parsedOf 归更下面的 uiColumns，本块排得靠前，只能等它就位后再取。
@@ -274,6 +322,9 @@
     replaceField: replaceField,
     safeAssetUri: safeAssetUri,
     setFormatButtons: setFormatButtons,
+    // 琥珀灯：题卡上的 data-amber 由这一处画，判定口径全在 uiAmber。
+    amberReasons: uiAmber.amberReasons,
+    metaFor: metaFor,
     toast: toast,
     coreState: coreState,
   });
@@ -349,6 +400,7 @@
     panelSay: panelSay,
     parseExamSource: parseExamSource,
     patchIdFor: patchIdFor,
+    publish: publish,
     trunc: trunc,
     coreState: coreState,
   });
@@ -358,6 +410,9 @@
   var onAiApply = uiAi.onAiApply;
   var onAiDiscard = uiAi.onAiDiscard;
   var onAiSend = uiAi.onAiSend;
+  var onCleanApply = uiAi.onCleanApply;
+  var onCleanDrop = uiAi.onCleanDrop;
+  var onCleanState = uiAi.onCleanState;
   var renderAi = uiAi.renderAi;
   var setAiFold = uiAi.setAiFold;
   var uiPanelGlue = window.JzoEditorPanelGlue.create({
@@ -398,6 +453,8 @@
     panelSay: panelSay,
     precheckDup: precheckDup,
     queueMetaSave: queueMetaSave,
+    // 表单一有动静就重算辅助栏那圈琥珀灯（判据 5.2：左侧题卡与右侧辅助栏边缘同时亮）。
+    repaintPanel: uiAmber.repaintPanel,
     renderAi: renderAi,
     // 循环引用：renderBatchMeta 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
     renderBatchMeta: function () { return uiStdName.renderBatchMeta.apply(uiStdName, arguments); },
@@ -466,7 +523,7 @@
   var flushLayout = uiLayout.flushLayout;
   var normalizeWidths = uiLayout.normalizeWidths;
   var coreCommands = window.JzoEditorCommands.create({
-    cleanExamSource: cleanExamSource,
+    hostCall: hostCall,
     loadForEdit: loadForEdit,
     respond: respond,
     saveViaCommand: saveViaCommand,
@@ -533,6 +590,8 @@
     onAiApply: onAiApply,
     onAiDiscard: onAiDiscard,
     onAiSend: onAiSend,
+    onCleanApply: onCleanApply,
+    onCleanDrop: onCleanDrop,
     onApprove: onApprove,
     onDelete: onDelete,
     onDeleteConfirm: onDeleteConfirm,
@@ -558,6 +617,8 @@
     wireGhost: wireGhost,
     wireGhostCell: wireGhostCell,
     wireIntake: wireIntake,
+    wirePoolPanel: uiPoolPanel.wire,
+    wireAmber: uiAmber.wireApproveAll,
     coreState: coreState,
   });
   var activatePanel = uiPanelBoot.activatePanel;
@@ -585,6 +646,17 @@
     showDupReview: uiDup.show,
     noticeDupReview: uiDup.notice,
     clearDupReview: uiDup.clear,
+    showCleanReview: uiDup.showClean,
+    clearCleanReview: uiDup.clearClean,
+    onCleanState: onCleanState,
+    // 重题池画布与琥珀灯（判据 5.1/5.2/5.4/43）：两帧都收到 editor.pool_review / editor.batch_review，
+    // 各自只认自己那一半——画布负责渲染与执行，辅助栏负责发令与说话。
+    showPoolReview: uiPool.show,
+    clearPoolReview: uiPool.clear,
+    onPoolCanvasClosed: uiPoolPanel.onCanvasClosed,
+    paintAmberBlock: uiAmber.paintBlock,
+    runApproveAll: uiAmber.runApproveAll,
+    onCanvasApproveAll: uiAmber.onCanvasApproveAll,
     publishSelection: publishSelection,
     refreshBatches: refreshBatches,
     renderAll: renderAll,
@@ -610,6 +682,7 @@
     coreSave: coreSave,
     coreSelection: coreSelection,
     devFixtures: devFixtures,
+    uiAmber: uiAmber,
     uiApprove: uiApprove,
     uiBatches: uiBatches,
     uiColumns: uiColumns,
@@ -617,6 +690,8 @@
     uiIntake: uiIntake,
     uiMetaHist: uiMetaHist,
     uiPanel: uiPanel,
+    uiPool: uiPool,
+    uiPoolPanel: uiPoolPanel,
     uiSchoolDict: uiSchoolDict,
     uiStdName: uiStdName,
     coreState: coreState,

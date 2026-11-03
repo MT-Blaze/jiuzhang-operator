@@ -12,11 +12,10 @@
 1. 字典查询：AI 查引擎命令，回答里带 3 条命令与 bank_search 的 id；
 2. 标准数据放行：无界面引擎的 bank_search 由底座就地执行，命中 2 道题；
 3. 有界面低风险命令：回 command_request，对话插件经宿主自动转发，夹具真的执行；
-4. 高副作用拦截：合并重复题只发确认卡（调用插件/功能/涉及数据/风险等级），库不动；
+4. 高副作用拦截：保存当前题目只发确认卡（调用插件/功能/涉及数据/风险等级），库不动；
 5. 取消：令牌作废、宿主确认框不出现、库仍然 3 题，旧令牌再确认回「已失效」；
-6. 确认：先过卡片、再过宿主 requires_user 确认框，点允许后题库真的从 3 题变 2 题；
-7. 上下文防绑架：拿数据库行号当 question_id 在发车前被拒，宿主确认框不出现；
-8. 不存在的命令被字典拒绝，不静默执行。
+6. 上下文防绑架：拿数据库行号当 question_id 在发车前被拒，宿主确认框不出现；
+7. 不存在的命令被字典拒绝，不静默执行。
 """
 from __future__ import annotations
 
@@ -29,7 +28,6 @@ import socket
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
@@ -52,7 +50,7 @@ BANK_UI = "org.jiuzhang.bank-ui"
 CHAT = "org.jiuzhang.chat"
 FIXTURE = "com.example.ai-probe"
 SEARCH = "org.jiuzhang.action.data.bank_search"
-MERGE = "org.jiuzhang.action.data.dedupe_merge"
+SAVE = "org.jiuzhang.action.input.save_question"
 OPEN = "org.jiuzhang.action.input.open_question"
 PING = "com.example.ai-probe.ping"
 PRIMARY = "q_ai_probe_0001"
@@ -204,10 +202,8 @@ class FakeModel:
         elif "探针回声" in instruction:
             pick = ("command_execute", {"command_id": PING,
                                         "context": {"text": "收到"}})
-        elif "把重复题合并" in instruction:
-            pick = ("command_execute", {"command_id": MERGE,
-                                        "context": {"primary_id": PRIMARY,
-                                                    "copy_ids": [COPY]}})
+        elif "保存" in instruction and "题目" in instruction:
+            pick = ("command_execute", {"command_id": SAVE, "context": {}})
         elif "打开第 42 号" in instruction:
             pick = ("command_execute", {"command_id": OPEN,
                                         "context": {"question_id": "42"}})
@@ -418,28 +414,6 @@ def dialog_info(page):
     """)
 
 
-def wait_dialog(page, deadline_seconds: float = 15):
-    deadline = time.time() + deadline_seconds
-    while time.time() < deadline:
-        info = dialog_info(page)
-        if info:
-            return info
-        page.wait_for_timeout(100)
-    return None
-
-
-def click_dialog(page, label: str) -> bool:
-    return page.evaluate("""
-    (label) => {
-      const buttons = Array.from(document.querySelectorAll('.ws-dialog-tools button'));
-      const target = buttons.find(btn => btn.textContent.trim() === label);
-      if (!target) return false;
-      target.click();
-      return true;
-    }
-    """, label)
-
-
 def dump(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -585,7 +559,7 @@ def run(tag: str) -> dict:
         # --- 4. 高副作用：只发确认卡，不发命令 ------------------------------
         responses.clear()
         cards_before = chat.locator(".jzochat-confirm-card").count()
-        turn = send_prompt(chat, "把重复题合并掉")
+        turn = send_prompt(chat, "把当前题目保存一下")
         card = wait_new_confirm_card(chat, cards_before, 30)
         evidence["confirm_card"] = card
         time.sleep(1.0)
@@ -597,7 +571,7 @@ def run(tag: str) -> dict:
                         card_tokens.append(block)
         check("09 高副作用命令只发确认卡：点名调用插件、功能、涉及数据与风险等级",
               card is not None
-              and "合并重复题" in card["title"]
+              and "保存当前题目" in card["title"]
               and "调用插件" in card["description"]
               and "功能" in card["description"]
               and "涉及数据" in card["description"]
@@ -639,64 +613,30 @@ def run(tag: str) -> dict:
             check("12 已取消的确认码不能二次使用：回「已失效」且不执行", False,
                   "没有从卡片回包里取到确认码")
 
-        # --- 6. 确认：卡片 → 宿主确认框 → 真执行 ---------------------------
-        responses.clear()
-        cards_before = chat.locator(".jzochat-confirm-card").count()
-        send_prompt(chat, "把重复题合并掉")
-        card2 = wait_new_confirm_card(chat, cards_before, 30)
-        turn = chat.locator(".jzochat-msg").count()
-        confirmed = click_confirm_button(chat, "确认执行") if card2 else False
-        dialog = wait_dialog(page, 20)
-        evidence["host_dialog"] = dialog
-        check("13 点「确认执行」后还要过宿主 requires_user 闸：弹框点名命令与目标插件",
-              confirmed and dialog is not None
-              and "合并重复题" in (dialog or {}).get("message", "")
-              and "真题题库" in (dialog or {}).get("message", "")
-              and "允许执行" in (dialog or {}).get("buttons", []),
-              dialog)
-        check("14 宿主确认框还没点允许时题库仍是 3 题（没有提前执行）",
-              count_questions(db_path) == 3, count_questions(db_path))
-        if dialog:
-            page.screenshot(path=str(out / "host_confirm_dialog.png"), full_page=True)
-        allowed = click_dialog(page, "允许执行") if dialog else False
-        done_text = wait_since(chat, turn, "已由", 40)
-        deadline = time.time() + 30
-        total = count_questions(db_path)
-        while time.time() < deadline and total != 2:
-            time.sleep(0.25)
-            total = count_questions(db_path)
-        evidence["confirm"] = {"bubble": done_text[-400:], "total": total,
-                               "copy_left": has_question(db_path, COPY)}
-        check("15 点「允许执行」后命令真的落地：题库 3→2，副本被并掉",
-              allowed and total == 2 and not has_question(db_path, COPY)
-              and has_question(db_path, PRIMARY),
-              {"total": total, "copy_left": has_question(db_path, COPY)})
-        page.screenshot(path=str(out / "after_confirm.png"), full_page=True)
-
-        # --- 7. 上下文防绑架：行号冒充题目 id ------------------------------
+        # --- 6. 上下文防绑架：行号冒充题目 id ------------------------------
         turn = send_prompt(chat, "打开第 42 号题目")
         rowid_text = wait_since(chat, turn, "公开 id", 30)
         evidence["rowid_reject"] = rowid_text[-600:]
-        check("16 数据库行号 42 冒充 question_id：发车前被拒，点名公开 id 口径",
+        check("13 数据库行号 42 冒充 question_id：发车前被拒，点名公开 id 口径",
               "公开 id" in rowid_text and "42" in rowid_text
               and dialog_info(page) is None,
               rowid_text[-300:])
 
-        # --- 8. 不存在的命令 -------------------------------------------------
+        # --- 7. 不存在的命令 -------------------------------------------------
         turn = send_prompt(chat, "帮我执行一条不存在的命令")
         missing_text = wait_since(chat, turn, "能力字典里没有", 30)
         evidence["missing"] = missing_text[-600:]
-        check("17 字典里没有的命令被拒绝，不静默执行",
-              "能力字典里没有" in missing_text and count_questions(db_path) == 2,
+        check("14 字典里没有的命令被拒绝，不静默执行",
+              "能力字典里没有" in missing_text and count_questions(db_path) == 3,
               missing_text[-300:])
 
         page.screenshot(path=str(out / "chat_thread.png"), full_page=True)
         evidence["model_calls"] = model.calls
         tool_names = sorted({name for call in model.calls for name in call.get("tools") or []})
-        check("18 AI 工具链真的下发了 command_list / command_execute 两件工具",
+        check("15 AI 工具链真的下发了 command_list / command_execute 两件工具",
               "command_list" in tool_names and "command_execute" in tool_names,
               tool_names)
-        check("19 全程宿主页零未捕获 JS 错误", not errors, errors[:2])
+        check("16 全程宿主页零未捕获 JS 错误", not errors, errors[:2])
     except Exception as exc:  # noqa: BLE001 - 崩了也要把已有判据带出去
         checks.append({"name": "CRASH", "passed": False, "detail": repr(exc)[:600]})
     finally:

@@ -28,24 +28,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
-import unicodedata
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from app.core import bank
 from app.core import bank_fts
-from app.core.question_parser import normalize_latex
 
 MAX_GROUPS = 200      # 一次最多回多少组：再多就该分页看，不许把全库倒进 iframe
 MAX_GROUP_SIZE = 20   # 单组最多装配多少条全文；正常不会触及，触及说明库里有一大坨同款
 MAX_COPIES = 20       # 一次合并最多吸收多少条副本
 QUESTION_ID_MAX_LEN = 80   # 与 schema 的 ck_questions_id 长度上限一致
-
-# 只收「排版级」中文标点，且必须在 NFKC 之前删：NFKC 会把「，」变成「,」，
-# 而 ASCII 逗号在 $\{a,b\}$ 里是有含义的，删不得。
-_LAYOUT_PUNCT = "，。、；：！？“”‘’"
 
 # 「解法」的中文序号：第 1 次追加叫解法二（保留项自带的那段就是解法一）。
 _CN_NUMERALS = "二三四五六七八九十"
@@ -63,120 +56,62 @@ def _stamp() -> str:
     return datetime.now(bank.LOCAL_TZ).isoformat(timespec="seconds")
 
 
-# ------------------------------------------------------------------ 归一与指纹
-
-def normalize_text(value: Any) -> str:
-    """题面文本的排版级归一；非字符串一律归成空串，不猜内容。"""
-    if not isinstance(value, str) or not value:
-        return ""
-    text = normalize_latex(value)
-    for junk in _LAYOUT_PUNCT:
-        text = text.replace(junk, "")
-    text = unicodedata.normalize("NFKC", text)
-    return "".join(text.split())
 
 
-def _json_list(raw: Any) -> list[Any]:
-    """库内 JSON 列 → Python 数组。坏 JSON 按空数组处理：归一不许让扫描崩在一条脏行上。"""
-    if isinstance(raw, list):
-        return raw
-    if not isinstance(raw, str) or not raw.strip():
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def normalized_options(raw: Any) -> list[str]:
-    """选项内容归一后**排序**：字母顺序不同、正文相同 ⇒ 同一个指纹。"""
-    bodies: list[str] = []
-    for item in _json_list(raw):
-        bodies.append(normalize_text(item.get("content")) if isinstance(item, dict) else normalize_text(item))
-    return sorted(bodies)
-
-
-def image_uris(extensions_raw: Any) -> list[str]:
-    """配图 URI 列表。``core-bank.images`` 是底座自己的条目，可以读；入指纹前排序。"""
-    entry = bank.extensions_to_object(extensions_raw).get(bank.EXT_IMAGES_KEY)
-    images = entry.get("images") if isinstance(entry, dict) else None
-    if not isinstance(images, list):
-        return []
-    out: list[str] = []
-    for image in images:
-        if isinstance(image, dict):
-            out.append(normalize_text(image.get("uri")))
-        elif isinstance(image, str):
-            out.append(normalize_text(image))
-    return out
-
-
-def fingerprint(question_type: Any, stem: Any, options_raw: Any,
-                extensions_raw: Any = "[]") -> str:
-    """题面指纹。题型也入摘要：题干相同但一为选择一为填空是两种用法，不并。"""
-    parts = [
-        str(question_type or ""),
-        normalize_text(stem),
-        "\x1e".join(normalized_options(options_raw)),
-        "\x1e".join(sorted(image_uris(extensions_raw))),
-    ]
-    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
-
-
-def _mark_of(row: Any) -> str:
-    return fingerprint(row["type"], row["stem"], row["options"], row["extensions"])
-
-
-# ------------------------------------------------------------------ 组内差异
-
-def _topic_ids_from(con: Any, question_ids: Iterable[str]) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    ids = list(question_ids)
-    if not ids:
-        return result
-    for row in con.execute(
-        f"SELECT question_id, topic_id FROM question_topics"
-        f" WHERE question_id IN ({', '.join('?' for _ in ids)}) ORDER BY question_id, topic_id", ids
-    ):
-        result.setdefault(row["question_id"], []).append(str(row["topic_id"]))
-    return {key: sorted(value) for key, value in result.items()}
-
-
-def _source_keys_from(con: Any, question_ids: Iterable[str]) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    ids = list(question_ids)
-    if not ids:
-        return result
-    for row in con.execute(
-        f"SELECT qs.question_id AS qid, qs.source_id, qs.question_no FROM question_sources qs"
-        f" WHERE qs.question_id IN ({', '.join('?' for _ in ids)}) ORDER BY qs.id", ids
-    ):
-        result.setdefault(row["qid"], []).append(f"{row['source_id']}#{row['question_no']}")
-    return {key: sorted(value) for key, value in result.items()}
-
-
-def _grade_of(row: Any) -> str:
-    entry = bank.extensions_to_object(row["extensions"]).get(bank.EXT_GRADE_KEY)
-    return normalize_text(entry.get("grade")) if isinstance(entry, dict) else ""
-
-
-def _diff_fields(row: Any, fields: dict[str, str], mounts: dict[str, list[str]],
-                 links: dict[str, list[str]]) -> None:
-    """把一行的各维度取值塞进 ``fields``；同一维度出现两种取值，出参就点亮这个字段。"""
-    values = {
-        "answer": normalize_text(row["answer"]),
-        "solution": normalize_text(row["solution"]),
-        "difficulty": str(row["difficulty"] or ""),
-        "grade": _grade_of(row),
-        "topics": ",".join(mounts.get(row["id"], [])),
-        "sources": ",".join(links.get(row["id"], [])),
-        "extensions": ",".join(sorted(bank.extensions_to_object(row["extensions"]))),
-    }
-    for key, value in values.items():
-        seen = fields.setdefault(key, {value})
-        seen.add(value)
-
+# 军令 #32 · S5b：判据纯函数层已拆到 dedupe_signature（本文件原 914 行撞破 800 行上限）。
+# 这里原位 re-export，外部仍按 bank_dedupe.<名字> 取用；搬动零改语义，别在这儿再写第二份口径。
+from app.core.dedupe_signature import (  # noqa: F401
+    _compare_form,
+    normalize_text,
+    _json_list,
+    normalized_options,
+    image_uris,
+    fingerprint,
+    _mark_of,
+    SKELETON_PLACEHOLDER,
+    FRACTION_OPERATOR,
+    COMMAND_MARK,
+    SEGMENT_MARK,
+    GROUP_OPEN,
+    GROUP_CLOSE,
+    MAX_FRACTION_DEPTH,
+    SKELETON_LEVELS,
+    LEVEL_LABELS,
+    LEVEL_ORDER,
+    LEVEL_CEILING,
+    LEVEL_FLOOR,
+    TIER_LEVELS,
+    TIER_LABELS,
+    DEFAULT_TIER,
+    SIGNAL_WEIGHTS,
+    CALIBRATED_TOTAL,
+    SIGNAL_LABELS,
+    _SIGN_TRANSPARENT,
+    _SIGN_TEXT_COMMANDS,
+    _SIGN_DROP,
+    _SIGN_DROP_CONTROLS,
+    text_similarity,
+    surface_text,
+    skeleton,
+    _skeleton_prose,
+    _math_runs,
+    _scan_runs,
+    formula_signature,
+    number_sequence,
+    _scan_math,
+    _frac_groups,
+    confidence,
+    _signal,
+    number_sequence_equal,
+    level_rank,
+    accepts,
+    normalize_tier,
+    _topic_ids_from,
+    _source_keys_from,
+    _grade_of,
+    _diff_fields,
+    _LAYOUT_PUNCT,
+)
 
 # ------------------------------------------------------------------ 只读扫描
 
@@ -249,6 +184,11 @@ def _question_id(value: Any, label: str) -> str:
 
 def _solution_label(ordinal: int) -> str:
     return f"解法{_CN_NUMERALS[ordinal - 1]}" if 1 <= ordinal <= len(_CN_NUMERALS) else f"解法{ordinal + 1}"
+
+
+# 「解法几」的措辞只有一处出处：重题池的 ``add_solution`` 也念这个名字（判据 4.5），
+# 别让同一个标题在两个模块里各写一遍。
+solution_label = _solution_label
 
 
 def append_solution(primary: str, copy: str, ordinal: int) -> str:

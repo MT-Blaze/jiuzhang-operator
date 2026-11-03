@@ -19,6 +19,9 @@
   --focus: #2f6b4f;
   /* 呼吸灯：莫兰迪冷蓝（青黛蓝），低饱和不刺眼，缩放投影里也不会扎眼 */
   --lamp: #6b8ca6;
+  /* 琥珀灯（军令 #32 · 判据 5.2）：题卡还有未清项时常驻呼吸，不是悬停才亮。
+     与红色分工清楚：琥珀＝这道题还没弄完，红＝池内正在裁决的那一条真的重了。 */
+  --amber: #c08a2e;
   --split-w: 6px;
   /* 三栏宽度按比例记账：画布宽度一变，三栏等比缩放，弹性那栏不再被单独挤没 */
   --w-image: 20%;
@@ -128,29 +131,72 @@ body {
   min-width: 0;
 }
 
-/* 一行一个批次：左时间与编号，右「未审：n / N」贴紧右边缘垂直对齐。 */
+/* 一行一个批次：左时间与编号，右「未审：n / N」贴紧右边缘垂直对齐。
+   行是容器，主按钮负责进批次，次按钮负责一键剔除重复。 */
 .ed-batch-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
+  padding: 4px 8px 4px 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
   color: var(--ink);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ed-batch-row:hover:not([data-done="true"]) {
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+}
+
+.ed-batch-open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
   font: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
 }
 
-.ed-batch-row:hover:not(:disabled) {
-  background: var(--accent-soft);
-  border-color: var(--line-strong);
+.ed-batch-open:disabled {
+  cursor: default;
+}
+
+.ed-batch-open:focus-visible,
+.ed-batch-purge:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ed-batch-purge {
+  flex: none;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ed-batch-purge:hover {
+  border-color: var(--danger);
 }
 
 .ed-batch-left {
@@ -393,6 +439,25 @@ body {
 .ed-basket-x:hover {
   background: var(--danger-soft, #fdecec);
   color: var(--danger, #d33);
+}
+
+/* 3.1a 导入批次后台初查：批次卡片上的一行文字状态（带文字，不只靠颜色）。 */
+.ed-batch-dedupe {
+  flex: 0 1 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--danger, #d33);
+  border-radius: 8px;
+  background: var(--danger-soft, #fdecec);
+  color: var(--danger, #9b3b2d);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ed-batch-dedupe[data-dedupe-status="pending"] {
+  border-color: #b9b3a8;
+  background: transparent;
+  color: #6b6459;
 }
 
 .ed-basket-foot {

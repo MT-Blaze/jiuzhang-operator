@@ -34,6 +34,15 @@
     var showDupReview = deps.showDupReview;
     var clearDupReview = deps.clearDupReview;
     var noticeDupReview = deps.noticeDupReview;
+    var showCleanReview = deps.showCleanReview;
+    var clearCleanReview = deps.clearCleanReview;
+    var onCleanState = deps.onCleanState;
+    var showPoolReview = deps.showPoolReview;
+    var clearPoolReview = deps.clearPoolReview;
+    var onPoolCanvasClosed = deps.onPoolCanvasClosed;
+    var paintAmberBlock = deps.paintAmberBlock;
+    var runApproveAll = deps.runApproveAll;
+    var onCanvasApproveAll = deps.onCanvasApproveAll;
     var pending = coreState.pending;
     var publishSelection = deps.publishSelection;
     var refreshBatches = deps.refreshBatches;
@@ -120,6 +129,53 @@
         if (dupPayload.phase === "open" && dupPayload.report) showDupReview(dupPayload);
         else if (dupPayload.phase === "notice" && dupPayload.report) noticeDupReview(dupPayload);
         else if (dupPayload.phase === "closed") clearDupReview();
+        return;
+      }
+      if (message.event === "editor.clean_review") {
+        // 4.3：清洗预览的正文对照只画在画布帧；辅助栏只收段名/规则/字数。
+        if (state.slot !== "stage.center") return;
+        var cleanPayload = (message.payload && message.payload.raw) || message.payload || {};
+        if (cleanPayload.open) showCleanReview(cleanPayload);
+        else clearCleanReview("replaced");
+        return;
+      }
+      if (message.event === "editor.clean_review_state") {
+        // 画布回执（opened / closed / tab_not_live）只投辅助栏：它据此解降级、还焦点。
+        if (state.slot === "stage.center") return;
+        onCleanState((message.payload && message.payload.raw) || message.payload || {});
+        return;
+      }
+      if (message.event === "editor.pool_review") {
+        // 重题池（判据 5.1）：开窗与关窗都从辅助栏发起，画布这一屏只画渲染、一颗按钮都没有。
+        // 反过来画布按 Esc 自己退了，也要喊辅助栏放开选中——两条都走同一个主题，靠 from 分头。
+        var poolPayload = (message.payload && message.payload.raw) || message.payload || {};
+        var poolFrom = String(poolPayload.from || "");
+        if (state.slot === "stage.center") {
+          if (poolFrom !== "panel") return;
+          if (poolPayload.phase === "open" && poolPayload.entry) showPoolReview(poolPayload.entry);
+          else if (poolPayload.phase === "closed") clearPoolReview("panel_close", false);
+          return;
+        }
+        if (poolFrom === "canvas" && poolPayload.phase === "closed") onPoolCanvasClosed();
+        return;
+      }
+      if (message.event === "editor.batch_review") {
+        // 琥珀灯的实时描边（辅助栏算→画布那一格亮）与【全部入库】的整批扫灯，
+        // 都只许画布那帧动手；画布办完把结果回投辅助栏，话在那边说。
+        var reviewPayload = (message.payload && message.payload.raw) || message.payload || {};
+        var reviewFrom = String(reviewPayload.from || "");
+        if (state.slot === "stage.center") {
+          if (reviewFrom !== "panel") return;
+          if (reviewPayload.action === "amber") {
+            paintAmberBlock(Number(reviewPayload.index) || 0,
+              Array.isArray(reviewPayload.reasons) ? reviewPayload.reasons : []);
+          } else if (reviewPayload.action === "approve_all") runApproveAll();
+          else if (reviewPayload.action === "refresh_batches") refreshBatches();
+          return;
+        }
+        if (reviewFrom === "canvas" && reviewPayload.action === "approve_all") {
+          onCanvasApproveAll(reviewPayload);
+        }
         return;
       }
       return;

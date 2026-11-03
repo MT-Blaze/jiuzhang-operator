@@ -14,10 +14,18 @@
     var PLUGIN_ID = coreState.PLUGIN_ID;
     var batchListEl = deps.dom.batchListEl;
     var batchNoEl = deps.dom.batchNoEl;
+    var batchPurgeCancelEl = deps.dom.batchPurgeCancelEl;
+    var batchPurgeEmptyEl = deps.dom.batchPurgeEmptyEl;
+    var batchPurgeGroupsEl = deps.dom.batchPurgeGroupsEl;
+    var batchPurgeModalEl = deps.dom.batchPurgeModalEl;
+    var batchPurgeOkEl = deps.dom.batchPurgeOkEl;
+    var batchPurgeSummaryEl = deps.dom.batchPurgeSummaryEl;
     var batchStatEl = deps.dom.batchStatEl;
     var batchesEl = deps.dom.batchesEl;
     var batchesEmptyEl = deps.dom.batchesEmptyEl;
+    var poolCanvasEl = deps.dom.poolCanvasEl;
     var buildExamSource = deps.buildExamSource;
+    var closeModal = deps.closeModal;
     var colsEl = deps.dom.colsEl;
     var dock = deps.dock;
     var dockWarn = deps.dockWarn;
@@ -27,6 +35,7 @@
     var loadMetaDraft = deps.loadMetaDraft;
     var makeItem = deps.makeItem;
     var metaFor = deps.metaFor;
+    var openModal = deps.openModal;
     var panel = coreState.panel;
     var panelSay = deps.panelSay;
     var parseExamSource = deps.parseExamSource;
@@ -91,6 +100,75 @@
   }
 
   /**
+   * 批次账目对平（军令 #32 · 第五步）：抽走的题不再算未审数，老师得看见它们去了哪。
+   *
+   * 四个数都来自底座，插件一个都不自己数：
+   * - 未审 = 这一批在 ``pending_questions`` 里的真实行数；
+   * - 池内 = 已抽进重题池的条数（``dedupe.pooled``，底座任何状态都给，G2·C1）；
+   * - 已入库 = ``approved_json`` 的条数；
+   * - 总数 = 录入时累加、彻底删除时回退的那个数。
+   * 未审 ＋ 池内 ＋ 已入库 通常正好等于总数；池内【删除】只清池行、不动批次总数，
+   * 那一条会在等式上留个缺口。缺口如实写成「已裁删」，绝不抹平成看起来对得上的样子。
+   */
+  function batchLedger(card, pendingCount) {
+    var pending = Number(pendingCount) || 0;
+    var total = card ? Number(card.total) || 0 : pending;
+    var dedupe = (card && card.dedupe) || null;
+    // 底座现在任何状态都给 ``pooled``（G2·C1）；万一拿不到（老底座不带这个字段），
+    // 「已裁删」一律不报——把抽进池里的题折进已裁删就是在账上谎报老师删了题（判据 5.4）。
+    var pooledKnown = Boolean(dedupe) && dedupe.pooled !== undefined && dedupe.pooled !== null;
+    var pooled = Number(dedupe && dedupe.pooled) || 0;
+    var stored = Number(card && card.approved_count) || 0;
+    var gone = pooledKnown ? total - pending - pooled - stored : 0;
+    if (gone < 0) gone = 0;
+    return { total: total, pending: pending, pooled: pooled, stored: stored,
+             gone: gone, pooledKnown: pooledKnown };
+  }
+
+  /** 账目那一串的文案：四个口径共用，卡片与二屏抬头不许各写一套。 */
+  function ledgerText(ledger) {
+    var parts = ["未审 " + ledger.pending];
+    if (ledger.pooled) parts.push("池内 " + ledger.pooled);
+    if (ledger.stored) parts.push("已入库 " + ledger.stored);
+    if (ledger.gone) parts.push("已裁删 " + ledger.gone);
+    return parts.join(" ＋ ") + " ＝ 总数 " + ledger.total;
+  }
+
+  /**
+   * 3.1a 后台初查的显形：只在批次卡片上补一行**文字**，不加按钮、不弹窗、不加占位页。
+   *
+   * 三态文案（军令 #31 台账 ⑧.1/⑧.2）：
+   * - `done` 且扫出冗余 → 红字两栏，条数与【剔除重复】弹窗的默认勾选集同源同尺；
+   * - `pending` → 加载态（`aria-busy`），底座还没扫完；
+   * - `failed` → 主库读不通，如实报「未完成」并提醒存入前仍会强校验。
+   * **任何路径都不许写「没有重复」**：`done` 且冗余为 0 时这一行干脆不出，
+   * 终局裁决永远在老师点【存入主库】那次强校验，卡片不作免检承诺。
+   */
+  function renderBatchDedupe(card, row) {
+    var info = (card && card.dedupe && typeof card.dedupe === "object") ? card.dedupe : {};
+    var status = String(info.status || "pending");
+    var text = "";
+    var loading = false;
+    if (status === "done") {
+      var redundant = Number(info.redundant) || 0;
+      if (redundant <= 0) return;
+      text = "后台初查：疑似重复 " + redundant + " 道"
+        + "（批内重复 " + (Number(info.batch_redundant) || 0) + " 题"
+        + " / 主库已有 " + (Number(info.bank_redundant) || 0) + " 题）"
+        + "，已初查 " + (Number(info.scanned) || 0) + " 题，仍待你拍板";
+    } else if (status === "failed") {
+      text = "初查未完成（主库读不通），存入前仍会强校验";
+    } else {
+      text = "初查结果未出，存入前仍会强校验";
+      loading = true;
+    }
+    var note = el("span", "ed-batch-dedupe", text);
+    note.setAttribute("data-dedupe-status", status);
+    if (loading) note.setAttribute("aria-busy", "true");
+    row.appendChild(note);
+  }
+
+  /**
    * 首屏：批次列表。一行一个批次，左边时间与编号，右边「未审：n / N」。
    * 数字用绿色；未审数为 0 的批次整行变灰、沉到最底下，并且点不动——只能看。
    */
@@ -108,50 +186,288 @@
       var pending = Number(card.pending_count) || 0;
       var total = Number(card.total) || 0;
       var done = pending === 0;
-      var row = el("button", "ed-batch-row");
-      row.type = "button";
+      var row = el("div", "ed-batch-row");
       row.setAttribute("data-batch", String(card.batch_id || ""));
       row.setAttribute("data-done", done ? "true" : "false");
+      var open = el("button", "ed-batch-open");
+      open.type = "button";
+      var ledger = batchLedger(card, pending);
       if (done) {
-        row.disabled = true;
-        row.setAttribute("aria-disabled", "true");
-        row.setAttribute("aria-label", "批次 " + card.batch_id + " 已审完，未审 0 / " + total + "，只看不能进");
+        open.disabled = true;
+        open.setAttribute("aria-disabled", "true");
+        open.setAttribute("aria-label", "批次 " + card.batch_id + " 已审完，" + ledgerText(ledger) + "，只看不能进");
       } else {
-        row.setAttribute("aria-label", "批次 " + card.batch_id + "，未审 " + pending + " / " + total + "，点开审核");
-        row.addEventListener("click", function () { openBatch(card.batch_id); });
+        open.setAttribute("aria-label", "批次 " + card.batch_id + "，" + ledgerText(ledger) + "，点开审核");
+        open.addEventListener("click", function () { openBatch(card.batch_id); });
       }
-      row.appendChild(el("span", "ed-batch-left",
+      open.appendChild(el("span", "ed-batch-left",
         batchStamp(card.created_at) + "-批次编号 #" + card.batch_id));
       var right = el("span", "ed-batch-right");
       right.appendChild(el("span", "ed-batch-label", "未审："));
       right.appendChild(el("span", "ed-batch-num", String(pending)));
-      right.appendChild(el("span", "ed-batch-sep", " / "));
+      // 池内的账要跟着显示（军令 #32 · 第五步）：抽走的题不再算未审数，
+      // 「未审 ＋ 池内 ＝ 总数」必须在同一张卡片上对得平，老师才知道题没丢。
+      // 已入库与池内已裁删只在真发生时补，等式任何时刻都成立。
+      [[" ＋ 池内：", ledger.pooled], [" ＋ 已入库：", ledger.stored], [" ＋ 已裁删：", ledger.gone]]
+        .forEach(function (term) {
+          if (!term[1]) return;
+          right.appendChild(el("span", "ed-batch-sep", term[0]));
+          right.appendChild(el("span", "ed-batch-num", String(term[1])));
+        });
+      right.appendChild(el("span", "ed-batch-sep", " ＝ "));
       right.appendChild(el("span", "ed-batch-num", String(total)));
-      if (done) right.appendChild(el("span", "ed-batch-check", "✅"));
-      row.appendChild(right);
+      if (done && !ledger.pooled) right.appendChild(el("span", "ed-batch-check", "✅"));
+      open.appendChild(right);
+      row.appendChild(open);
+      if (!done && pending >= 1) {
+        renderBatchDedupe(card, row);
+        var purge = el("button", "ed-batch-purge", "剔除重复");
+        purge.type = "button";
+        purge.setAttribute("aria-label", "批次 " + card.batch_id + " 一键剔除重复题");
+        purge.addEventListener("click", function () { openPurge(card); });
+        row.appendChild(purge);
+      }
+      // 行改成了 div（多一颗按钮后按钮不能再套按钮），整行的内边距与缝隙就没人接了：
+      // hover 还亮着、点下去却不动，老师只当卡了。这里补一层行级点击，
+      // 两颗按钮已经各自绑好动作，只收它们没吃到的那部分。
+      row.addEventListener("click", function (event) {
+        if (done) return;
+        var hit = event.target && event.target.closest
+          ? event.target.closest(".ed-batch-open, .ed-batch-purge") : null;
+        if (hit) return;
+        openBatch(card.batch_id);
+      });
       batchListEl.appendChild(row);
     });
     if (batchesEmptyEl) batchesEmptyEl.hidden = cards.length > 0;
   }
 
-  /** 二屏抬头：当前批次号与这一批还剩几道没审。 */
+  // ---------- 一键剔除本批次重复题（军令 #31 · 3.5） ----------
+  // 清单由底座 dry-run 给出：batch 组默认勾、bank 组默认不勾，勾选粒度落在每条 drop 上。
+  var purgePlan = null;
+  var purgeSelected = {};
+  var purgeBatchId = "";
+  var purgeBusy = false;
+
+  function purgeCheckedIds() {
+    var ids = Object.keys(purgeSelected).filter(function (id) { return purgeSelected[id]; });
+    ids.sort();
+    return ids;
+  }
+
+  /** 底部按钮与归零红字都按「本批实读 - 当前勾选」现算，不信服务端上次的 will_empty。 */
+  function updatePurgeFooter() {
+    var selected = purgeCheckedIds();
+    var scanned = purgePlan ? Number(purgePlan.scanned) || 0 : 0;
+    if (batchPurgeOkEl) {
+      batchPurgeOkEl.disabled = purgeBusy || selected.length === 0;
+      batchPurgeOkEl.textContent = "执行剔除（当前勾选 " + selected.length + " 道）";
+      if (purgeBusy) {
+        batchPurgeOkEl.setAttribute("aria-busy", "true");
+      } else {
+        batchPurgeOkEl.removeAttribute("aria-busy");
+      }
+    }
+    if (batchPurgeEmptyEl) batchPurgeEmptyEl.hidden = !purgePlan || scanned - selected.length > 0;
+  }
+
+  function purgeReasonText(reason) {
+    return reason === "batch" ? "批内重复" : "与主库重复";
+  }
+
+  function purgeKeepText(group) {
+    if (group.reason === "batch") {
+      return "保留录入序 #" + (group.seq_keep == null ? "?" : group.seq_keep) + "：" + String(group.keep || "");
+    }
+    return "主库已有：" + String(group.existing_id || "");
+  }
+
+  /** 一组重复：标题栏给全选快捷勾，keep 行只报「保留」、不给任何可勾入口。 */
+  function renderPurgeGroup(group, block) {
+    var drops = (group && Array.isArray(group.drop)) ? group.drop : [];
+    var head = el("div", "ep-purge-head");
+    head.appendChild(el("span", "ep-purge-badge", purgeReasonText(group.reason)));
+    var fingerprint = String(group.fingerprint || "").slice(0, 8);
+    head.appendChild(el("span", "ep-purge-meta",
+      (fingerprint ? "指纹 " + fingerprint + " · " : "") + "将删 " + drops.length + " 道"));
+    var selectAll = el("button", "ep-btn ep-mini-btn ep-purge-all", "全选");
+    selectAll.type = "button";
+    head.appendChild(selectAll);
+    block.appendChild(head);
+    if (group.keep || group.existing_id) {
+      block.appendChild(el("p", "ep-purge-keep", purgeKeepText(group)));
+    }
+    var list = el("div", "ep-purge-list");
+    var boxes = [];
+    drops.forEach(function (rawId) {
+      var id = String(rawId || "");
+      var label = el("label", "ep-purge-item");
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.setAttribute("data-purge-id", id);
+      box.checked = Boolean(purgeSelected[id]);
+      box.addEventListener("change", function () {
+        if (box.checked) purgeSelected[id] = true;
+        else delete purgeSelected[id];
+        refreshSelectAll();
+        updatePurgeFooter();
+      });
+      boxes.push(box);
+      label.appendChild(box);
+      label.appendChild(el("span", "ep-purge-id", id));
+      list.appendChild(label);
+    });
+    block.appendChild(list);
+
+    function refreshSelectAll() {
+      var checked = boxes.filter(function (box) { return box.checked; }).length;
+      selectAll.textContent = checked === boxes.length ? "全不选" : "全选";
+    }
+    selectAll.addEventListener("click", function () {
+      var allChecked = boxes.length > 0 && boxes.every(function (box) { return box.checked; });
+      boxes.forEach(function (box) {
+        box.checked = !allChecked;
+        if (allChecked) delete purgeSelected[box.getAttribute("data-purge-id")];
+        else purgeSelected[box.getAttribute("data-purge-id")] = true;
+      });
+      refreshSelectAll();
+      updatePurgeFooter();
+    });
+    refreshSelectAll();
+  }
+
+  function renderPurgeBody() {
+    if (batchPurgeGroupsEl) batchPurgeGroupsEl.textContent = "";
+    updatePurgeFooter();
+    if (!batchPurgeGroupsEl || !purgePlan) return;
+    var groups = Array.isArray(purgePlan.groups) ? purgePlan.groups : [];
+    var scanned = Number(purgePlan.scanned) || 0;
+    var mainScanned = Number(purgePlan.main_scanned) || 0;
+    if (!groups.length) {
+      if (batchPurgeSummaryEl) {
+        batchPurgeSummaryEl.textContent = "本批没有重复题（本批实读 " + scanned + " 道，主库 " + mainScanned + " 道已扫描）。";
+      }
+      batchPurgeGroupsEl.appendChild(el("p", "ep-purge-empty", "没有可剔除的条目。"));
+      if (batchPurgeOkEl) batchPurgeOkEl.hidden = true;
+      if (batchPurgeCancelEl) batchPurgeCancelEl.textContent = "关闭";
+      return;
+    }
+    if (batchPurgeSummaryEl) {
+      batchPurgeSummaryEl.textContent = "本批实读 " + scanned + " 道，主库 " + mainScanned
+        + " 道已扫描；共 " + (Number(purgePlan.redundant) || 0) + " 道重复，已默认勾选 "
+        + purgeCheckedIds().length + " 道。";
+    }
+    groups.forEach(function (group) {
+      var block = el("div", "ep-purge-group");
+      renderPurgeGroup(group, block);
+      batchPurgeGroupsEl.appendChild(block);
+    });
+  }
+
+  function openPurge(card) {
+    var id = String((card && card.batch_id) || "");
+    if (!id || purgeBusy) return;
+    purgePlan = null;
+    purgeSelected = {};
+    purgeBatchId = id;
+    if (batchPurgeSummaryEl) batchPurgeSummaryEl.textContent = "正在扫描本批重复题…";
+    if (batchPurgeGroupsEl) batchPurgeGroupsEl.textContent = "";
+    if (batchPurgeEmptyEl) batchPurgeEmptyEl.hidden = true;
+    if (batchPurgeOkEl) {
+      batchPurgeOkEl.hidden = false;
+      batchPurgeOkEl.disabled = true;
+      batchPurgeOkEl.textContent = "执行剔除（当前勾选 0 道）";
+    }
+    if (batchPurgeCancelEl) batchPurgeCancelEl.textContent = "取消";
+    openModal(batchPurgeModalEl);
+    return hostCall("pending.batch_duplicates", { batch_id: id }).then(function (plan) {
+      if (purgeBatchId !== id) return plan;
+      purgePlan = plan || {};
+      var defaults = Array.isArray(purgePlan.drop_ids) ? purgePlan.drop_ids : [];
+      defaults.forEach(function (rawId) { purgeSelected[String(rawId)] = true; });
+      renderPurgeBody();
+      return plan;
+    }, function (error) {
+      closeModal(batchPurgeModalEl);
+      dockWarn("重复清单没拉下来：" + ((error && error.message) || "未知原因"), errorDetail(error));
+      return null;
+    });
+  }
+
+  /** 执行剔除：勾选集升序提交，expected_drop_ids 原样回显，勾空则显式要求剔空。 */
+  function submitPurge() {
+    if (purgeBusy || !purgePlan) return;
+    var ids = purgeCheckedIds();
+    if (!ids.length) return;
+    var remain = (Number(purgePlan.scanned) || 0) - ids.length;
+    purgeBusy = true;
+    updatePurgeFooter();
+    hostCall("pending.purge_duplicates", {
+      batch_id: purgeBatchId,
+      drop_ids: ids,
+      expected_drop_ids: ids.slice(),
+      allow_empty: remain <= 0
+    }).then(function (result) {
+      purgeBusy = false;
+      closeModal(batchPurgeModalEl);
+      var deleted = (result && Array.isArray(result.deleted)) ? result.deleted : ids;
+      dock("已从批次 #" + purgeBatchId + " 剔除 " + deleted.length + " 道重复题。");
+      var left = Number(result && result.new_redundant) || 0;
+      if (left > 0) {
+        dock("还有 " + left + " 道重复未剔除（主库组默认不勾），可重扫复核。");
+      }
+      refreshBatches();
+    }, function (error) {
+      purgeBusy = false;
+      var code = String((error && (error.detailCode || error.code)) || "");
+      updatePurgeFooter();
+      if (code === "batch_purge_selection_stale" || code === "batch_purge_keep_selected") {
+        closeModal(batchPurgeModalEl);
+        dock("重复清单已变，正在重新扫描。");
+        openPurge({ batch_id: purgeBatchId });
+        return;
+      }
+      if (code === "batch_purge_empty_not_confirmed") {
+        // 前后端对「是否剔空」判断不一致时，留弹窗把归零红字亮出来，绝不静默重试。
+        if (batchPurgeEmptyEl) batchPurgeEmptyEl.hidden = false;
+        dockWarn("服务端要求先确认把本批剔空。", errorDetail(error));
+        return;
+      }
+      dockWarn("剔除没成功：" + ((error && error.message) || "未知原因"), errorDetail(error));
+    });
+  }
+
+  if (batchPurgeCancelEl) {
+    batchPurgeCancelEl.addEventListener("click", function () {
+      if (!purgeBusy) closeModal(batchPurgeModalEl);
+    });
+  }
+  if (batchPurgeOkEl) {
+    batchPurgeOkEl.addEventListener("click", submitPurge);
+  }
+
+  /** 二屏抬头：当前批次号与这一批还剩几道没审（池内的另算，合起来等于总数）。 */
   function renderBatchBar() {
     if (batchNoEl) batchNoEl.textContent = "批次 #" + (state.batchId || "—");
     if (batchStatEl) {
-      var card = currentBatch();
-      var pending = state.items.length;
-      var total = card ? Number(card.total) || 0 : pending;
-      batchStatEl.textContent = "未审 " + pending + " / " + total;
-      batchStatEl.setAttribute("data-pending", String(pending));
-      batchStatEl.setAttribute("data-total", String(total));
+      // 与首屏卡片同一份算法：抬头这一行只是把同一本账换个地方念，不许两处各算各的。
+      var ledger = batchLedger(currentBatch(), state.items.length);
+      batchStatEl.textContent = ledgerText(ledger);
+      batchStatEl.setAttribute("data-pending", String(ledger.pending));
+      batchStatEl.setAttribute("data-pooled", String(ledger.pooled));
+      batchStatEl.setAttribute("data-stored", String(ledger.stored));
+      batchStatEl.setAttribute("data-total", String(ledger.total));
     }
   }
 
   function setMode(mode) {
-    state.mode = mode === "review" ? "review" : "list";
+    // 三屏（军令 #32 · 第五步）：list 是批次列表首屏，review 是三栏审核，
+    // pool 是重题池对比——与审核画布物理分开，来回不必再跳屏。
+    state.mode = mode === "review" ? "review" : (mode === "pool" ? "pool" : "list");
     if (root) root.setAttribute("data-mode", state.mode);
     if (batchesEl) batchesEl.hidden = state.mode !== "list";
     if (colsEl) colsEl.hidden = state.mode !== "review";
+    if (poolCanvasEl) poolCanvasEl.hidden = state.mode !== "pool";
   }
 
   /** 重新拉一遍批次卡片：未审数、总数与「审完变灰」都以底座那边的账为准。 */

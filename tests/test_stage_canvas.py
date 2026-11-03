@@ -282,18 +282,35 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn('broadcast("editor.apply_patch"', STAGE)
         self.assertIn("org.jiuzhang.editor", plugin_js, "副驾只认录题插件的选区")
 
-    def test_05_dedupe_is_provider_only_and_copys_are_bounded(self) -> None:
-        """军令 #18-终 阶段五：查重清洗只对 provider 自己的页签开放，副本数与 id 形状先过宿主这一关。"""
-        self.assertIn('"bank.dedupe_scan", "bank.dedupe_merge"', STAGE, "宿主未开放查重通道")
-        block = STAGE[STAGE.index('if (method === "bank.dedupe_scan"'):STAGE.index(
-            'if (method === "bank.stats"')]
-        self.assertIn("pluginId !== stageState.bankProviderId", block, "非 provider 页签必须被拒")
-        self.assertIn('code: "FORBIDDEN"', block)
-        self.assertIn("/duplicates", block, "扫描要打到查重端点")
-        self.assertIn("dedupeCopies.length > 20", block, "一次最多 20 条副本")
-        self.assertIn("ID_RE.test(String(id))", block, "副本 id 逐个过形状检查")
-        self.assertIn("withWriteToken(", block, "合并由宿主代取代填一次性令牌")
-        self.assertIn('action: "merge"', block, "合并成功要广播回流刷新")
+    def test_05_dedupe_channels_are_retired(self) -> None:
+        """3.6 下架全库查重清洗：relay 分支与命令声明都不许回来。"""
+        self.assertNotIn('"bank.dedupe_scan"', STAGE)
+        self.assertNotIn('"bank.dedupe_merge"', STAGE)
+        self.assertNotIn('method === "bank.dedupe_scan"', STAGE)
+        # 不得退化成 assertNotIn("/duplicates", STAGE)：3.5 的 pending.batch_duplicates 合法使用该路径。
+
+    def test_06_clean_review_falls_back_when_canvas_not_live(self) -> None:
+        """4.3 降级分支：正文对照只进 live 的画布帧，画布不在场就回投 tab_not_live。
+
+        Eval-06 补项 B——这条分支此前零覆盖。断言逐个钉住「条件 + 回投载荷」：
+        去掉 ``cleanTab.state === "live"``（改成休眠帧也收对照）要红；
+        删掉整段回投（辅助栏只能干等插件侧 2 秒超时）要红；
+        回投不带 ``return;``（对照已进画布还追加降级通知）也要红。
+        """
+        start = STAGE.index('bus.on("editor.clean_review"')
+        block = STAGE[start:STAGE.index('bus.on("editor.clean_review_state"')]
+        self.assertIn('cleanTab && cleanTab.frame && cleanTab.state === "live"', block,
+                      "对照只许投 state 为 live 且有文档的画布帧")
+        self.assertRegex(block,
+                         r'notify\(cleanTab, "editor\.clean_review", payload\);\s*return;',
+                         "投进画布后必须当场短路，不许再向辅助栏补发降级"
+                         "（钉的是 notify 之后紧接 return; 的先后关系，不钉缩进与换行：\n"
+                         "        删掉 return; 或在两者之间插任何语句都要红）")
+        self.assertIn('notify(panel, "editor.clean_review_state"', block,
+                      "画布不在场时必须向辅助栏回投，不能让插件干等超时")
+        self.assertIn('phase: "tab_not_live", reason: "canvas_not_live"', block)
+        self.assertIn('key: String(cleanRaw.key || "")', block,
+                      "回投必须带本次预览的 key，辅助栏按 key 对号、错号不许降级")
 
 
 if __name__ == "__main__":

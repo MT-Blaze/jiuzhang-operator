@@ -7,7 +7,7 @@
 2. **旧库只读复制**：升级后旧 ``core-bank`` 物理库字节不动，新引擎库把题目原样带过来，
    旧库连同 ``-wal`` 一起复制，失败留下的孤儿边车不带走；
 3. **升级映射**：引擎已装时旧插件目录退出发现，旧目录与旧物理库原地保留；
-4. **宿主门禁**：查重只对 provider 页签或 ``bank.view`` 视图插件开放。
+4. **退役护栏**：全库查重的 relay 分支与命令声明已下架，不许被加回来。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_split``
 """
@@ -246,11 +246,11 @@ class HostGateTest(unittest.TestCase):
         self.assertIn('"bank.provider"', source)
         self.assertIn('"bank.view"', source)
 
-    def test_02_dedupe_is_gated_by_capability_not_by_plugin_id(self) -> None:
+    def test_02_dedupe_relay_branches_are_retired(self) -> None:
+        """3.6 已下架全库查重：relay 分支与命令声明都不许回来。"""
         source = stage_source()
-        self.assertIn('method === "bank.dedupe_scan" || method === "bank.dedupe_merge"', source)
-        self.assertIn('hasCapability(tab, "bank.view")', source)
-        self.assertIn('code: "FORBIDDEN"', source)
+        self.assertNotIn('method === "bank.dedupe_scan"', source)
+        self.assertNotIn('method === "bank.dedupe_merge"', source)
 
     def test_03_bank_view_plugin_reads_the_active_bank_not_its_own(self) -> None:
         """视图插件只走 active_* / active_add：它的页签 id 不是题库 id。"""

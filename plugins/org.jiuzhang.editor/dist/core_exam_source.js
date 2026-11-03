@@ -139,28 +139,16 @@
     return out + "\\begin{solution}\n" + solutionBlock(item) + "\n\\end{solution}\n";
   }
 
-  /** 本地规则清洗：只归一公式定界符，绝不动 exam-zh 环境骨架。 */
-  function cleanExamSource(text) {
-    var src = String(text == null ? "" : text);
-    var touched = 0;
-    var next = src.replace(/\\\[([\s\S]*?)\\\]/g, function (all, inner) {
-      touched += 1;
-      return "$$" + inner.trim() + "$$";
-    }).replace(/\\\(([\s\S]*?)\\\)/g, function (all, inner) {
-      touched += 1;
-      return "$" + inner.trim() + "$";
-    });
-    if (next.indexOf("\r\n") >= 0) {
-      touched += 1;
-      next = next.replace(/\r\n/g, "\n");
-    }
-    return { text: next, touched: touched };
-  }
+  /**
+   * 这里曾经有一份本地清洗规则（定界符归一 + CRLF），判据 1.6 把它收走了：
+   * 规则表只准有一处，就是底座的 app/core/latex_style_dict.py。
+   * 要洗源码一律发 hostCall("text.clean_latex", {mode: "exam_source"})，
+   * 单题走 ui_ai.js 的 cleanViaHost（带预览），整批走 core_commands.js 的内部命令。
+   */
 
     return {
       answerLetters: answerLetters,
       buildExamSource: buildExamSource,
-      cleanExamSource: cleanExamSource,
       detectType: detectType,
       ensureChoiceBracket: ensureChoiceBracket,
       matchEnv: matchEnv,

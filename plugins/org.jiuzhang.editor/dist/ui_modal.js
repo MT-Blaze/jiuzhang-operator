@@ -11,6 +11,8 @@
     var coreState = deps.coreState;
     var panel = coreState.panel;
     var delModalEl = deps.dom.delModalEl;
+    var batchPurgeModalEl = deps.dom.batchPurgeModalEl;
+    var poolDelModalEl = deps.dom.poolDelModalEl;
 
   // ---------- 弹窗：彻底删除（焦点圈住、Esc 可关、关掉还焦） ----------
   // 查重对比浮层不在这套里：它按军令 #23 一颗按钮都不放（画布里只许有题目内容），
@@ -19,6 +21,10 @@
 
   function openModalNode() {
     if (delModalEl && !delModalEl.hidden) return delModalEl;
+    if (batchPurgeModalEl && !batchPurgeModalEl.hidden) return batchPurgeModalEl;
+    // 重题池的【删除】同样走二次确认（军令 #32 · 判据 5.4）：不加进这一串，
+    // 焦点圈不住、Esc 也关不掉，等于把红按钮的确认样式做成两套。
+    if (poolDelModalEl && !poolDelModalEl.hidden) return poolDelModalEl;
     return null;
   }
 

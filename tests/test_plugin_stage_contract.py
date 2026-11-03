@@ -133,7 +133,15 @@ class BusGrantTest(unittest.TestCase):
         info = self.validate({"subscribe": ["theme.changed"] * 40})
         self.assertLessEqual(len(info["bus"]["subscribe"]), plugins._BUS_MAX_TOPICS)
         # 反过来也要紧：上限被一路抬到几十条，等于没有上限。
-        self.assertLessEqual(plugins._BUS_MAX_TOPICS, 12, "总线主题上限不许无节制抬升")
+        # 军令 #32 第五步抬到 16：录题插件订 13 ∪ 发 11 = 16 个主题名（重题池两帧各加一条），
+        # 12 已经把第 13 条静默裁掉。再抬必须先重数官方插件的实际主题名。
+        self.assertLessEqual(plugins._BUS_MAX_TOPICS, 16, "总线主题上限不许无节制抬升")
+        # 抬上来的余量得真够用：任何官方插件的订阅清单都不许被截断。
+        for manifest_path in sorted((Path(__file__).resolve().parents[1] / "plugins")
+                                    .glob("org.jiuzhang.*/plugin.json")):
+            declared = json.loads(manifest_path.read_text(encoding="utf-8")).get("bus") or {}
+            self.assertLessEqual(len(declared.get("subscribe") or []), plugins._BUS_MAX_TOPICS,
+                                 f"{manifest_path.parent.name} 的订阅已超出总线上限")
 
     def test_05_garbage_bus_field_is_ignored(self) -> None:
         info = self.validate("everything")

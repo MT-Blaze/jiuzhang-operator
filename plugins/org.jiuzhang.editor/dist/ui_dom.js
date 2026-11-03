@@ -71,6 +71,12 @@
       var panelAiDiscardEl = document.getElementById("epAiDiscard");
       var panelAiSecEl = document.getElementById("epAiSec");
       var panelAiFoldEl = document.getElementById("epAiFold");
+      var panelCleanBoxEl = document.getElementById("epCleanBox");
+      var panelCleanSummaryEl = document.getElementById("epCleanSummary");
+      var panelCleanApplyStemEl = document.getElementById("epCleanApplyStem");
+      var panelCleanDropStemEl = document.getElementById("epCleanDropStem");
+      var panelCleanApplySolutionEl = document.getElementById("epCleanApplySolution");
+      var panelCleanDropSolutionEl = document.getElementById("epCleanDropSolution");
       var panelFmtLatexEl = document.getElementById("epFmtLatex");
       var panelFmtBoxedEl = document.getElementById("epFmtBoxed");
       var panelSwapEl = document.getElementById("epSwap");
@@ -88,9 +94,43 @@
       var dupTheirEl = document.getElementById("edDupTheirBody");
       var dupNoteEl = document.getElementById("edDupNote");
       var dupBlockEl = document.getElementById("edDupBlock");
+      var cleanReviewEl = document.getElementById("edCleanModal");
+      var cleanNoteEl = document.getElementById("edCleanNote");
+      var cleanSectionsEl = document.getElementById("edCleanSections");
       var delModalEl = document.getElementById("epDelModal");
       var delCancelEl = document.getElementById("epDelCancel");
       var delOkEl = document.getElementById("epDelOk");
+      // 重题池（军令 #32 · 第五步）：画布那一屏只画左右渲染，一颗按钮都不放；
+      // 档位、四个动作、锁死说明、删除二次确认全住辅助栏。
+      var poolCanvasEl = document.getElementById("edPoolCanvas");
+      var poolNoteEl = document.getElementById("edPoolNote");
+      var poolMainEl = document.getElementById("edPoolMainBody");
+      var poolIncomingEl = document.getElementById("edPoolIncomingBody");
+      var poolWarnEl = document.getElementById("edPoolWarn");
+      var panelPoolEntryEl = document.getElementById("epPoolEntry");
+      var panelPoolSecEl = document.getElementById("epPoolSec");
+      var panelPoolCountEl = document.getElementById("epPoolCount");
+      var panelPoolTiersEl = document.getElementById("epPoolTiers");
+      var panelPoolListEl = document.getElementById("epPoolList");
+      var panelPoolMsgEl = document.getElementById("epPoolMsg");
+      var panelPoolActsEl = document.getElementById("epPoolActs");
+      var panelPoolMergeEl = document.getElementById("epPoolMerge");
+      var panelPoolSolutionEl = document.getElementById("epPoolSolution");
+      var panelPoolSeparateEl = document.getElementById("epPoolSeparate");
+      var panelPoolDeleteEl = document.getElementById("epPoolDelete");
+      var panelPoolLockEl = document.getElementById("epPoolLock");
+      var panelPoolBackEl = document.getElementById("epPoolBack");
+      var panelApproveAllEl = document.getElementById("epApproveAll");
+      var poolDelModalEl = document.getElementById("epPoolDelModal");
+      var poolDelTextEl = document.getElementById("epPoolDelText");
+      var poolDelCancelEl = document.getElementById("epPoolDelCancel");
+      var poolDelOkEl = document.getElementById("epPoolDelOk");
+      var batchPurgeModalEl = document.getElementById("epBatchPurgeModal");
+      var batchPurgeSummaryEl = document.getElementById("epBatchPurgeSummary");
+      var batchPurgeGroupsEl = document.getElementById("epBatchPurgeGroups");
+      var batchPurgeEmptyEl = document.getElementById("epBatchPurgeEmpty");
+      var batchPurgeCancelEl = document.getElementById("epBatchPurgeCancel");
+      var batchPurgeOkEl = document.getElementById("epBatchPurgeOk");
 
       // 批次公共元数据（辅助栏顶部）：七个可填字段 + 字典学校 + 可手改的标准名。
       var panelSrcNameEl = document.getElementById("epSrcName");
@@ -181,6 +221,12 @@
       panelAiDiscardEl: panelAiDiscardEl,
       panelAiSecEl: panelAiSecEl,
       panelAiFoldEl: panelAiFoldEl,
+      panelCleanBoxEl: panelCleanBoxEl,
+      panelCleanSummaryEl: panelCleanSummaryEl,
+      panelCleanApplyStemEl: panelCleanApplyStemEl,
+      panelCleanDropStemEl: panelCleanDropStemEl,
+      panelCleanApplySolutionEl: panelCleanApplySolutionEl,
+      panelCleanDropSolutionEl: panelCleanDropSolutionEl,
       panelFmtLatexEl: panelFmtLatexEl,
       panelFmtBoxedEl: panelFmtBoxedEl,
       panelSwapEl: panelSwapEl,
@@ -194,12 +240,44 @@
       dupTheirEl: dupTheirEl,
       dupNoteEl: dupNoteEl,
       dupBlockEl: dupBlockEl,
+      cleanReviewEl: cleanReviewEl,
+      cleanNoteEl: cleanNoteEl,
+      cleanSectionsEl: cleanSectionsEl,
       dupOverwriteEl: dupOverwriteEl,
       dupMergeEl: dupMergeEl,
       dupAbandonEl: dupAbandonEl,
       delModalEl: delModalEl,
       delCancelEl: delCancelEl,
       delOkEl: delOkEl,
+      poolCanvasEl: poolCanvasEl,
+      poolNoteEl: poolNoteEl,
+      poolMainEl: poolMainEl,
+      poolIncomingEl: poolIncomingEl,
+      poolWarnEl: poolWarnEl,
+      panelPoolEntryEl: panelPoolEntryEl,
+      panelPoolSecEl: panelPoolSecEl,
+      panelPoolCountEl: panelPoolCountEl,
+      panelPoolTiersEl: panelPoolTiersEl,
+      panelPoolListEl: panelPoolListEl,
+      panelPoolMsgEl: panelPoolMsgEl,
+      panelPoolActsEl: panelPoolActsEl,
+      panelPoolMergeEl: panelPoolMergeEl,
+      panelPoolSolutionEl: panelPoolSolutionEl,
+      panelPoolSeparateEl: panelPoolSeparateEl,
+      panelPoolDeleteEl: panelPoolDeleteEl,
+      panelPoolLockEl: panelPoolLockEl,
+      panelPoolBackEl: panelPoolBackEl,
+      panelApproveAllEl: panelApproveAllEl,
+      poolDelModalEl: poolDelModalEl,
+      poolDelTextEl: poolDelTextEl,
+      poolDelCancelEl: poolDelCancelEl,
+      poolDelOkEl: poolDelOkEl,
+      batchPurgeModalEl: batchPurgeModalEl,
+      batchPurgeSummaryEl: batchPurgeSummaryEl,
+      batchPurgeGroupsEl: batchPurgeGroupsEl,
+      batchPurgeEmptyEl: batchPurgeEmptyEl,
+      batchPurgeCancelEl: batchPurgeCancelEl,
+      batchPurgeOkEl: batchPurgeOkEl,
       panelSrcNameEl: panelSrcNameEl,
       panelStdNameEl: panelStdNameEl,
       panelStdFlashEl: panelStdFlashEl,

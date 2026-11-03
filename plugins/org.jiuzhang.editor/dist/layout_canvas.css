@@ -607,30 +607,96 @@
   justify-content: flex-end;
 }
 
+/* 4.3 LaTeX 清洗预览：逐段两张源码卡，差异中段用 mark 标出来。 */
+.ed-clean-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ed-clean-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ed-clean-head {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ed-clean-body {
+  max-height: 240px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ed-clean-diff {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: #fff1a8;
+  color: var(--ink);
+}
+
 @media (max-width: 640px) {
   .ed-dup-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* 左侧画布的红呼吸灯：命中即亮，放弃或办完即熄。灯只报「这里有事」，不改变数据。 */
+/* 红呼吸灯（军令 #32 · 判据 5.2）：从今往后**只在重题池那一屏**亮。
+   审核画布不再出现红色——那半边用的是下面那条琥珀灯，红色只留给「这条确实和主库那道是同一道，
+   正在裁决」的池内对比屏。选择器带上 data-mode，审核模式从结构上就点不亮它。 */
 @keyframes ed-dup-breathe {
   0%, 100% { opacity: 0.18; }
   50% { opacity: 0.7; }
 }
 
-.ed-root[data-dup="on"]::after {
+.ed-root[data-mode="pool"][data-dup="on"]::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 50;
   pointer-events: none;
-  box-shadow: inset 0 0 0 3px var(--danger, #d33), inset 0 0 34px rgba(211, 51, 51, 0.45);
+  box-shadow: inset 0 0 0 3px var(--danger, #d33), inset 0 0 34px rgba(155, 59, 45, 0.45);
   animation: ed-dup-breathe 1.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ed-root[data-dup="on"]::after {
+  .ed-root[data-mode="pool"][data-dup="on"]::after {
     animation: none !important;
     opacity: 0.55;
   }
+}
+
+/* 重题池那一屏（判据 5.1）：与审核三栏物理分开，只有左右两栏渲染，没有源码栏。
+   抬头那一行说清「左边是主库原题、右边是池内这条」，四个动作一个都不在这一屏。
+   类名带 -canvas：`.ed-pool` 是画布底栏台账那行的旧名，已随底栏退场（test_editor_contract
+   · EditorTopBarAndAlignmentTest.test_09 钉着），复用会被读成「底栏又长回来了」。 */
+.ed-pool-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.ed-pool-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.ed-pool-grid {
+  flex: 1 1 auto;
+  align-items: flex-start;
 }
 

@@ -16,6 +16,8 @@ import re
 import unicodedata
 from typing import Any
 
+from app.core import latex_style_dict
+
 __all__ = [
     "normalize_latex",
     "clean_dirty_latex",
@@ -27,17 +29,8 @@ __all__ = [
     "clean_question",
 ]
 
-# 只在数学环境里做的记号归一：等价写法收敛到 KaTeX 都能稳定渲染的那一种。
-_SYMBOLS = re.compile(r"\\(dfrac|tfrac|leq|leqslant|geq|geqslant|neq)(?![A-Za-z])")
-_SYMBOL_MAP = {
-    "dfrac": "frac",
-    "tfrac": "frac",
-    "leq": "le",
-    "leqslant": "le",
-    "geq": "ge",
-    "geqslant": "ge",
-    "neq": "ne",
-}
+# 等价记号的写法字典住在 app/core/latex_style_dict.py——全仓唯一一份（军令 #32 · S1）。
+# 这里不再重复规则表：编辑器【清洗当前题 LaTeX】与查重比对共用同一张表。
 
 _OPTION_LINE = re.compile(
     r"^\s*(?:[（(]\s*([A-HＡ-Ｈ])\s*[)）]|([A-HＡ-Ｈ])\s*[.．、:：)）])\s*(.*)$"
@@ -82,43 +75,19 @@ def _line_math_state(text: str) -> list[bool]:
 
 
 def _math_spans(text: str) -> list[tuple[int, int, bool]]:
-    """返回 (起, 止, 是否为未闭合段)；未闭合段会一直延到文末。"""
-    spans: list[tuple[int, int, bool]] = []
-    i = 0
-    n = len(text)
-    while i < n:
-        if text[i] == "\\" and i + 1 < n:
-            i += 2
-            continue
-        if text.startswith("$$", i):
-            end = text.find("$$", i + 2)
-            if end < 0:
-                spans.append((i, n, True))
-                break
-            spans.append((i, end + 2, False))
-            i = end + 2
-            continue
-        if text[i] == "$":
-            end = i + 1
-            while end < n:
-                if text[end] == "\\":
-                    end += 2
-                    continue
-                if text[end] == "$":
-                    break
-                end += 1
-            if end >= n:
-                spans.append((i, n, True))
-                break
-            spans.append((i, end + 1, False))
-            i = end + 1
-            continue
-        i += 1
-    return spans
+    """返回 (起, 止, 是否为未闭合段)；未闭合段会一直延到文末。
+
+    切段口径由写法字典模块统一持有，清洗与比对两条链共用同一把尺子的边界。
+    """
+    return latex_style_dict.math_spans(text)
 
 
 def normalize_latex(text: str) -> str:
-    """定界符与等价记号归一；不动正文里的中文与人名，也不改写公式内容本身。"""
+    """定界符与等价记号归一；不动正文里的中文与人名，也不改写公式内容本身。
+
+    记号归一的规则表在 ``app/core/latex_style_dict.SYMBOL_ALIASES``，本函数的
+    输出口径保持不变——查重指纹（``app/core/bank_dedupe.py``）直接复用它。
+    """
     if not isinstance(text, str):
         return ""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -130,17 +99,7 @@ def normalize_latex(text: str) -> str:
     text = re.sub(r"(?<!\\)\\\[", "$$", text)
     text = re.sub(r"(?<!\\)\\\]", "$$", text)
 
-    def unify_math(segment: str) -> str:
-        return _SYMBOLS.sub(lambda m: "\\" + _SYMBOL_MAP[m.group(1)], segment)
-
-    pieces: list[str] = []
-    cursor = 0
-    for start, end, _unclosed in _math_spans(text):
-        pieces.append(text[cursor:start])
-        pieces.append(unify_math(text[start:end]))
-        cursor = end
-    pieces.append(text[cursor:])
-    text = "".join(pieces)
+    text = latex_style_dict.rewrite_alias_spans(text)
 
     lines = [line.rstrip() for line in text.split("\n")]
     text = "\n".join(lines)
@@ -177,7 +136,7 @@ def _math_delimiters(text: str) -> bool:
 def _clean_fragment(text: str, rules: list[str]) -> str:
     if _math_delimiters(text):
         rules.append("delimiters")
-    if _SYMBOLS.search(text):
+    if latex_style_dict.contains_alias(text):
         rules.append("symbols")
     if _DISPLAYSTYLE.search(text):
         text = _DISPLAYSTYLE.sub("", text)
@@ -200,7 +159,14 @@ def _clean_fragment(text: str, rules: list[str]) -> str:
         rules.append("list")
     if _WHITESPACE_DIRT.search(text):
         rules.append("whitespace")
-    return normalize_latex(text)
+    normalized = normalize_latex(text)
+    # 定界符换成 $ 之后才交给写法字典：上标补括号、\frac 显式参数、减号统一
+    # 都只在数学段内按命令切词改写（app/core/latex_style_dict，全仓唯一一份字典）。
+    written = latex_style_dict.clean_for_write(normalized)
+    if written["changed"]:
+        rules.extend(written["rules"])
+        return written["text"]
+    return normalized
 
 
 def clean_dirty_latex(text: Any) -> dict[str, Any]:
@@ -210,6 +176,12 @@ def clean_dirty_latex(text: Any) -> dict[str, Any]:
     定界符、等价记号、``\\displaystyle``、``\\fillin``、``\\textbf``/``\\textit``/
     ``\\emph`` 文本宏、列表环境，以及 ``\\begin{choices}`` 里的选项块。表格环境
     属于排版层，留给渲染端处理，清洗不猜列结构。
+
+    写法字典（等价记号、上标补括号、``\\frac`` 显式参数、减号统一）不在本文件，
+    统一取自 ``app/core/latex_style_dict.clean_for_write``——编辑器的
+    【清洗当前题 LaTeX】与查重比对因此共用同一张表（军令 #32 · S1，判据 1.6）。
+    返回体保持 ``{text, changed, rules, options}`` 四键不变；没认出的命令名清单
+    由写法字典自己的返回值携带，本函数不往外扩键。
     """
     if not isinstance(text, str):
         return {"text": "", "changed": False, "rules": [], "options": []}
@@ -237,6 +209,46 @@ def clean_dirty_latex(text: Any) -> dict[str, Any]:
         "changed": cleaned != text,
         "rules": list(dict.fromkeys(rules)),
         "options": options,
+    }
+
+
+def clean_exam_source(text: Any) -> dict[str, Any]:
+    """exam-zh 源码专用清洗（军令 #32 · 1.6）：只归一写法，**绝不碰环境骨架**。
+
+    录题画布中栏存的是 exam-zh 源码（``question`` / ``choices`` / ``problem`` /
+    ``solution`` 环境、``\\fillin``、``\\item``），那是《格式宪法》的载体，不是契约正文。
+    所以这一路**不复用** ``clean_dirty_latex``——那一条会把 ``\\begin{choices}`` 拆成
+    选项数组、把 ``\\fillin`` 换成下划线、把 ``\\textbf{}`` 折成 Markdown，
+    拿它洗源码等于把骨架拆了。
+
+    规则表仍然只有一处：定界符归一在 ``normalize_latex``，等价记号 / 上标补括号 /
+    ``\\frac`` 显式参数 / 减号统一全部取自 ``app/core/latex_style_dict.clean_for_write``
+    ——与查重比对（``bank_dedupe``）、与【清洗当前题 LaTeX】用的是同一张字典（判据 1.6）。
+    插件侧因此可以把自己那份正则规则表整份删掉。
+
+    返回 ``{text, changed, rules, unknown}``：``changed`` 是「洗前洗后逐字不等」，
+    ``rules`` 只作话术用途，``unknown`` 是写法字典没认出的命令名（原样保留）。
+    """
+    if not isinstance(text, str):
+        return {"text": "", "changed": False, "rules": [], "unknown": []}
+    rules: list[str] = []
+    if _math_delimiters(text):
+        rules.append("delimiters")
+    if latex_style_dict.contains_alias(text):
+        rules.append("symbols")
+    if _WHITESPACE_DIRT.search(text):
+        rules.append("whitespace")
+    normalized = normalize_latex(text)
+    written = latex_style_dict.clean_for_write(normalized)
+    for name in written["rules"]:
+        if name not in rules:
+            rules.append(name)
+    cleaned = written["text"] if written["changed"] else normalized
+    return {
+        "text": cleaned,
+        "changed": cleaned != text,
+        "rules": rules,
+        "unknown": written["unknown"],
     }
 
 

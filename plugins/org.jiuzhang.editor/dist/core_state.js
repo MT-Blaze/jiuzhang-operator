@@ -101,6 +101,8 @@
     // 弹窗正在处置的那道题（查重 / 彻底删除共用）
     pending: null,
     ai: { state: "idle", field: "", key: "", value: "", note: "", mock: false, busy: false },
+    // 清洗预览：只存内存，逐段等老师点【采用】才回填；画布不在时整块降级只报摘要。
+    clean: null,
     // 批次公共元数据：当前批次、这一批的公共字段、明细学校名单、历史值。
     batchId: "",
     batchCard: null,

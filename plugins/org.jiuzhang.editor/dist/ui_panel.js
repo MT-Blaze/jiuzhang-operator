@@ -19,6 +19,8 @@
     var renderMounted = deps.renderMounted;
     var renderPool = deps.renderPool;
     var renderTags = deps.renderTags;
+    // 琥珀灯：换题＝换一道未清项清单，边缘这一圈必须跟着重算（判定在 ui_amber 那一份里）。
+    var repaintPanel = deps.repaintPanel;
     var setFormatButtons = deps.setFormatButtons;
     var setSwapButton = deps.setSwapButton;
     var splitTags = deps.splitTags;
@@ -249,6 +251,8 @@
       panelSay("当前第 " + (Number(sel.index || 0) + 1) + " 题" + (sel.dirty ? "有未保存改动" : "未改动") + "。",
         "info", sel.dirty ? "dirty" : "idle");
     }
+    // 换完题再算一次灯：这一圈的结论必须是**新**这道题的，不许留着上一题的未清项。
+    if (repaintPanel) repaintPanel();
   }
 
   function panelSelectionError() {

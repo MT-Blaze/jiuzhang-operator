@@ -14,6 +14,7 @@
     var coreSelection = deps.coreSelection;
     var coreState = deps.coreState;
     var devFixtures = deps.devFixtures;
+    var uiAmber = deps.uiAmber;
     var uiApprove = deps.uiApprove;
     var uiBatches = deps.uiBatches;
     var uiColumns = deps.uiColumns;
@@ -21,6 +22,8 @@
     var uiIntake = deps.uiIntake;
     var uiMetaHist = deps.uiMetaHist;
     var uiPanel = deps.uiPanel;
+    var uiPool = deps.uiPool;
+    var uiPoolPanel = deps.uiPoolPanel;
     var uiSchoolDict = deps.uiSchoolDict;
     var uiStdName = deps.uiStdName;
     var IDLE_MS = coreState.IDLE_MS;
@@ -31,7 +34,12 @@
   version: "3.0.0-batch",
   parseExamSource: coreExamSource.parseExamSource,
   buildExamSource: coreExamSource.buildExamSource,
-  cleanExamSource: coreExamSource.cleanExamSource,
+  // 判据 1.6 后插件不再有本地清洗规则，清洗一律经宿主 text.clean_latex（底座一张字典）。
+  amberReasons: uiAmber.amberReasons,
+  amberScan: uiAmber.scan,
+  poolTier: uiPoolPanel.tierNow,
+  poolEntryCount: uiPoolPanel.poolSize,
+  poolCanvasOpen: uiPool.isOpen,
   boxesToQuestion: uiColumns.boxesToQuestion,
   questionFromParsed: coreSave.questionFromParsed,
   validateForSave: coreSave.validateForSave,

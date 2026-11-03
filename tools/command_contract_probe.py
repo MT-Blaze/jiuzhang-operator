@@ -7,12 +7,12 @@
 取证对象是仓库里的五个官方插件，不装任何替身夹具（只额外装一个第三方调用方，
 用来走真实的 postMessage / command.execute 通道）：
 
-1. ``/api/plugins``：16 条命令、五类命名空间、requires_user 标记、说明与参数 schema 同源；
+1. ``/api/plugins``：14 条命令、五类命名空间、requires_user 标记、说明与参数 schema 同源；
 2. ``command.list`` 从调用方 iframe 查表：每条都带 description / params_schema / returns；
 3. 无界面引擎命令经宿主转发回 ``COMMAND_HEADLESS``，不假装执行；
 4. 视图命令真实执行：题库筛选回筛选态、题量为 0（隔离库为空）；
 5. 录题命令用数据库行号冒充题目 id：插件按 ``q_`` 公开 id 口径拒绝；
-6. 高副作用命令（合并重复题）先弹确认卡，点「拒绝」回 ``COMMAND_DENIED``；
+6. 高副作用命令（保存当前题目）先弹确认卡，点「拒绝」回 ``COMMAND_DENIED``；
 7. 设置页「命令能力字典」表头含「说明」，行数与字典一致且说明列非空。
 """
 from __future__ import annotations
@@ -25,7 +25,6 @@ import shutil
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -51,8 +50,6 @@ EXPECTED_IDS = [
     "org.jiuzhang.action.data.bank_search",
     "org.jiuzhang.action.data.bank_stats",
     "org.jiuzhang.action.data.bank_topics",
-    "org.jiuzhang.action.data.dedupe_merge",
-    "org.jiuzhang.action.data.dedupe_scan",
     "org.jiuzhang.action.input.open_question",
     "org.jiuzhang.action.input.save_question",
     "org.jiuzhang.action.input.set_handout_markdown",
@@ -67,7 +64,7 @@ EXPECTED_IDS = [
 ]
 HEADLESS_CMD = "org.jiuzhang.action.data.bank_stats"
 FILTER_CMD = "org.jiuzhang.action.view.filter_questions"
-MERGE_CMD = "org.jiuzhang.action.data.dedupe_merge"
+CONFIRM_CMD = "org.jiuzhang.action.input.save_question"
 OPEN_CMD = "org.jiuzhang.action.input.open_question"
 HOST_VERSION = re.search(
     r'__version__\s*=\s*"([^"]+)"',
@@ -315,7 +312,7 @@ def run(tag: str) -> dict:
         commands = {item.get("id"): item for item in listing.get("commands") or []}
         evidence["registry_ids"] = sorted(commands)
         evidence["commands_rejected"] = listing.get("commands_rejected")
-        check("02 /api/plugins 收齐五个官方插件的 16 条命令，零丢弃",
+        check("02 /api/plugins 收齐五个官方插件的 14 条命令，零丢弃",
               status == 200 and sorted(commands) == EXPECTED_IDS
               and (listing.get("commands_rejected") or []) == [],
               {"ids": sorted(commands), "rejected": listing.get("commands_rejected")})
@@ -331,9 +328,8 @@ def run(tag: str) -> dict:
                for cid, item in list(commands.items())[:3]})
         flagged = sorted(cid for cid, item in commands.items() if item.get("requires_user"))
         evidence["requires_user"] = flagged
-        check("04 高副作用命令的确认标记与说明书一致（7 条）",
+        check("04 高副作用命令的确认标记与说明书一致（6 条）",
               flagged == sorted([
-                  "org.jiuzhang.action.data.dedupe_merge",
                   "org.jiuzhang.action.input.save_question",
                   "org.jiuzhang.action.input.set_handout_markdown",
                   "org.jiuzhang.action.output.export_handout",
@@ -382,7 +378,7 @@ def run(tag: str) -> dict:
         official_listed = {item.get("id"): item for item in listed_commands
                            if item.get("id") in EXPECTED_IDS}
         check("09 command.list 对调用方公开官方命令的说明、schema 与返回值",
-              listed.get("ok") is True and len(official_listed) == 16
+              listed.get("ok") is True and len(official_listed) == len(EXPECTED_IDS)
               and all(item.get("description") and item.get("returns")
                       and item.get("params_schema", {}).get("additionalProperties") is False
                       for item in official_listed.values()),
@@ -425,19 +421,19 @@ def run(tag: str) -> dict:
               bad_id.get("error"))
 
         caller.evaluate("(args) => window.probeStart(args.tag, args.method, args.payload)",
-                        {"tag": "merge", "method": "command.execute",
-                         "payload": {"command_id": MERGE_CMD,
-                                     "context": {"primary_id": "q_keep", "copy_ids": ["q_dup"]}}})
-        merge_dialog = wait_dialog(page)
-        evidence["merge_dialog"] = merge_dialog
-        merge_text = (merge_dialog or {}).get("message") or ""
-        check("14 合并重复题先弹确认卡：点名调用方、命令与目标插件",
-              merge_dialog is not None and "命令契约调用方" in merge_text
-              and "合并重复题" in merge_text and "真题题库" in merge_text,
-              merge_dialog)
+                        {"tag": "confirm", "method": "command.execute",
+                         "payload": {"command_id": CONFIRM_CMD,
+                                     "context": {}}})
+        confirm_dialog = wait_dialog(page)
+        evidence["confirm_dialog"] = confirm_dialog
+        confirm_text = (confirm_dialog or {}).get("message") or ""
+        check("14 高副作用命令先弹确认卡：点名调用方、命令与目标插件",
+              confirm_dialog is not None and "命令契约调用方" in confirm_text
+              and "保存当前题目" in confirm_text and "录题工作台" in confirm_text,
+              confirm_dialog)
         clicked = click_dialog(page, 0)
-        denied = poll_result(caller, "merge")
-        evidence["merge_denied"] = denied
+        denied = poll_result(caller, "confirm")
+        evidence["confirm_denied"] = denied
         check("15 点「拒绝」回 COMMAND_DENIED，目标插件没有执行",
               clicked and denied is not None
               and (denied.get("error") or {}).get("code") == "COMMAND_DENIED",
@@ -459,15 +455,15 @@ def run(tag: str) -> dict:
         })
         """)
         evidence["settings_table"] = {"headers": table["headers"], "rows": table["rows"][:4]}
-        check("16 设置页字典表头含「说明」，17 条命令（16 官方 + 1 夹具）逐行渲染",
+        check("16 设置页字典表头含「说明」，15 条命令（14 官方 + 1 夹具）逐行渲染",
               table["headers"] == ["命令 id", "标题", "提供方", "说明", "执行前"]
-              and len(table["rows"]) == 17
+              and len(table["rows"]) == len(EXPECTED_IDS) + 1
               and all(row["id"] for row in table["rows"])
               and all(row["desc"] for row in table["rows"]
                       if row["id"] in EXPECTED_IDS),
               {"headers": table["headers"], "rows": len(table["rows"])})
         check("17 设置页把高副作用命令标成「需确认」，只读命令标「直接执行」",
-              next((row["flag"] for row in table["rows"] if row["id"] == MERGE_CMD), "") == "需确认"
+              next((row["flag"] for row in table["rows"] if row["id"] == CONFIRM_CMD), "") == "需确认"
               and next((row["flag"] for row in table["rows"] if row["id"] == FILTER_CMD), "") == "直接执行",
               {row["id"]: row["flag"] for row in table["rows"][:4]})
         settings.screenshot(path=str(out / "settings_commands.png"), full_page=True)

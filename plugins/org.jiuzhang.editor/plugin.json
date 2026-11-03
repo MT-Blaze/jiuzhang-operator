@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "id": "org.jiuzhang.editor",
   "name": "录题工作台",
-  "version": "2.9.0",
+  "version": "2.11.0",
   "api_version": "1.0",
   "kind": "tool",
   "description": "录题工作台：三段式辅助栏。顶部固定当前题私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据（含年级）随画布滚动收起，底部存库/待审/删除。标签与考向走幽灵胶囊：空胶囊常驻，悬停接光标，打字出带路径搜索，回车取第一条。边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。查重命中亮红呼吸灯，可覆盖/放弃/合并解析二。",
@@ -77,7 +77,11 @@
       "system.pending_updated",
       "editor.collect_files",
       "editor.canvas_state",
-      "editor.dup_review"
+      "editor.dup_review",
+      "editor.clean_review",
+      "editor.clean_review_state",
+      "editor.pool_review",
+      "editor.batch_review"
     ],
     "publish": [
       "region.dock",
@@ -86,7 +90,11 @@
       "system.editor_close",
       "editor.collect_files",
       "editor.canvas_state",
-      "editor.dup_review"
+      "editor.dup_review",
+      "editor.clean_review",
+      "editor.clean_review_state",
+      "editor.pool_review",
+      "editor.batch_review"
     ]
   },
   "contributes": {

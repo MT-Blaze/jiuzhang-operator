@@ -64,6 +64,37 @@
 
 .ep-hint[data-ai-mock="true"] { color: #8a6a1f; }
 
+/* 4.3 清洗预览摘要：只报段名/规则/字数，清洗前后正文不落这帧 DOM。 */
+.ep-clean {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--void);
+  min-width: 0;
+}
+
+.ep-clean[hidden] { display: none; }
+
+.ep-clean-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.ep-clean-actions .ep-btn {
+  flex: 1 1 44%;
+  min-height: 36px;
+  font-size: 12px;
+}
+
+.ep-clean-actions .ep-btn[hidden] { display: none; }
+
 
 
 

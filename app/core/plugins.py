@@ -79,7 +79,17 @@ _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
                 "editor.canvas_state",
                 # 军令 #31：辅助栏把查重命中报告投给画布（渲染能力只在画布那帧），
                 # 办完再投一声「收窗」。两帧之间始终隔着宿主这一跳。
-                "editor.dup_review"}
+                "editor.dup_review",
+                # 军令 #31 · 4.3：清洗后的「先看后换」——辅助栏把对照投给画布，
+                # 画布回一声 opened / closed / tab_not_live，面板据此放按钮或降级。
+                "editor.clean_review",
+                "editor.clean_review_state",
+                # 军令 #32 · 第五步：重题池的左右渲染对比住画布那帧（它才有 KaTeX），
+                # 四个动作住辅助栏——辅助栏把「开窗 / 关窗」投过来，跟 dup_review 同一形状。
+                "editor.pool_review",
+                # 同一步：辅助栏的【全部入库】要让画布先整批扫琥珀灯、有缺件就跳到最上面
+                # 那道；跳与不跳都是画布那帧的事（它才有滚动与题号）。
+                "editor.batch_review"}
 _BUS_SUBSCRIBE = {
     "ui.params.changed",
     "layout.changed",
@@ -110,10 +120,22 @@ _BUS_SUBSCRIBE = {
     "editor.canvas_state",
     # 军令 #31：查重命中的开窗 / 收窗指令（对比浮层住在画布帧）
     "editor.dup_review",
+    # 军令 #31 · 4.3：清洗预览的两条通道——画布订「对照」，辅助栏订「画布回执」。
+    # 少了这两条，清单写着、_normalize_bus 静默丢弃，面板永远等不到 opened/closed。
+    "editor.clean_review",
+    "editor.clean_review_state",
+    # 军令 #32 · 第五步：重题池画布（辅助栏→画布开窗）与整批扫灯 / 全部入库（辅助栏→画布）。
+    # 画布那帧有 KaTeX 与滚动，辅助栏那帧有按钮——两帧之间还是隔宿主这一跳。
+    "editor.pool_review",
+    "editor.batch_review",
 }
 # 每个插件最多声明多少个主题。军令 #31 给录题插件加了第九条（查重开窗），
-# 上限跟着抬到 10——仍然是个紧箍咒，只是不许再拿旧上限当理由拒掉真需求。
-_BUS_MAX_TOPICS = 10
+# 上限跟着抬到 10；4.3 再加两条（清洗对照 + 回执）后录题插件订到 11 条，
+# 上限抬到 12——仍然是个紧箍咒，只是不许再拿旧上限当理由拒掉真需求。
+# 军令 #32 · 第五步实数：录题插件订 13 条（新增池画布开窗 + 整批扫灯两条）、
+# 发 11 条，12 的上限已经贴边——再走一条真需求就会静默丢声明（丢的是清单里
+# 写得明明白白的主题，比拒得更早还坏）。抬到 16：留三条余量，不放宽白名单。
+_BUS_MAX_TOPICS = 16
 
 # 右侧面板控件（v0.5.5）：插件只能声明「文本 + 指令模板」，不能塞 HTML。
 _UI_KEY = re.compile(r"^[a-z][a-z0-9_]{0,15}$")

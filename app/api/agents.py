@@ -51,6 +51,12 @@ class RefineRequest(BaseModel):
 class CleanLatexRequest(BaseModel):
     text: str = Field(..., max_length=20000, description="待清洗的脏文本（题干/解析/选项任一）")
     task_id: str = Field("", description="任务唯一标识")
+    mode: str = Field(
+        "contract",
+        max_length=20,
+        description="清洗口径：contract=契约正文（默认，与 #21 逐字一致）；"
+                    "exam_source=录题画布的 exam-zh 源码（只归一写法，不碰环境骨架）",
+    )
 
 
 # --- Prompt templates (fixed prefixes for cache friendliness) ---
@@ -395,11 +401,18 @@ async def agent_clean_latex(body: CleanLatexRequest = Body(...)) -> dict[str, An
     """把老师粘来的脏文本收敛成契约口径，供录题端一键回填。
 
     与 ``/refine`` 不同，这里不碰模型也不碰题库：同一段输入永远得到同一段输出，
-    清洗规则只有 ``app/core/question_parser.clean_dirty_latex`` 一处实现。
+    清洗规则只有 ``app/core/question_parser`` 一处实现。
+
+    ``mode`` 选口径（军令 #32 · 1.6）：``contract`` 是默认、与 #21 逐字一致；
+    ``exam_source`` 给录题画布的 exam-zh 源码用——同一个写法字典，但不拆环境骨架。
+    插件侧由此不必再自带第二份规则表。
     """
+    data = (question_parser.clean_exam_source(body.text)
+            if body.mode == "exam_source"
+            else question_parser.clean_dirty_latex(body.text))
     return {
         "type": "complete",
-        "data": question_parser.clean_dirty_latex(body.text),
+        "data": data,
         "task_id": body.task_id or "unknown",
         "mock": False,
     }

@@ -446,14 +446,12 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": True,
         },
         "org.jiuzhang.bank-ui": {
-            "version": "1.0.1",
+            "version": "1.0.2",
             "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",
-                "org.jiuzhang.action.data.dedupe_scan",
-                "org.jiuzhang.action.data.dedupe_merge",
             ],
-            "requires_user": ["org.jiuzhang.action.data.dedupe_merge"],
+            "requires_user": [],
             "headless": False,
         },
         "org.jiuzhang.paper-gen": {
@@ -479,7 +477,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "2.9.0",
+            "version": "2.11.0",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",

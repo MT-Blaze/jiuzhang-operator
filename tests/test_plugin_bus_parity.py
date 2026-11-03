@@ -79,7 +79,10 @@ class BusParityContract(unittest.TestCase):
             "org.jiuzhang.editor": {"system.open_editor", "ui.params.changed", "editor.apply_patch",
                                     "stage.selection", "system.question_updated",
                                     "system.pending_updated", "editor.collect_files",
-                                    "editor.canvas_state", "editor.dup_review"},
+                                    "editor.canvas_state", "editor.dup_review",
+                                    "editor.clean_review", "editor.clean_review_state",
+                                    # 军令 #32 · 第五步：重题池那一屏（开/关窗）与整批扫灯·全部入库
+                                    "editor.pool_review", "editor.batch_review"},
             "org.jiuzhang.handout": {"ui.params.changed", "system.question_updated", "question.updated"},
             "org.jiuzhang.paper-gen": {"ui.params.changed", "basket.changed",
                                        "system.question_updated", "question.updated"},

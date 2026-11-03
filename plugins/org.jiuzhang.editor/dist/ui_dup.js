@@ -18,12 +18,17 @@
     var appendBody = deps.appendBody;
     var appendRich = deps.appendRich;
     var el = deps.el;
+    var publish = deps.publish;
     var root = deps.dom.root;
     var modalEl = deps.dom.dupReviewEl;
     var mineEl = deps.dom.dupMineEl;
     var theirsEl = deps.dom.dupTheirEl;
     var noteEl = deps.dom.dupNoteEl;
     var blockEl = deps.dom.dupBlockEl;
+    var cleanModalEl = deps.dom.cleanReviewEl;
+    var cleanNoteEl = deps.dom.cleanNoteEl;
+    var cleanSectionsEl = deps.dom.cleanSectionsEl;
+    var cleanKey = "";
 
     /** 画布边缘的红呼吸灯：命中即亮，裁决完或换题即熄。 */
     function paintLamp(on) {
@@ -139,20 +144,101 @@
       if (blocked) paintLamp(true);
     }
 
+    // ---------- LaTeX 清洗预览（4.3）：左「现在」右「清洗后」，只画不裁 ----------
+    /** 超长段只做整段对照；短段把首尾公共部分之外的差异中段标出来。 */
+    function paintClean(target, before, after, changed) {
+      if (!target) return;
+      var text = String(after == null ? "" : after);
+      if (!changed || Math.max(text.length, String(before || "").length) > 8000) {
+        target.textContent = text;
+        return;
+      }
+      var old = String(before == null ? "" : before);
+      var head = 0;
+      while (head < old.length && head < text.length && old.charAt(head) === text.charAt(head)) head += 1;
+      var tail = 0;
+      while (tail < old.length - head && tail < text.length - head
+             && old.charAt(old.length - 1 - tail) === text.charAt(text.length - 1 - tail)) tail += 1;
+      target.appendChild(document.createTextNode(text.slice(0, head)));
+      var middle = text.slice(head, text.length - tail);
+      if (middle) {
+        var mark = el("mark", "ed-clean-diff");
+        mark.textContent = middle;
+        target.appendChild(mark);
+      }
+      target.appendChild(document.createTextNode(text.slice(text.length - tail)));
+    }
+
+    function cleanCard(headText, bodyText, changed) {
+      var side = el("section", "ed-dup-side");
+      side.appendChild(el("h4", "ed-dup-head", headText));
+      var body = el("div", "ed-dup-body ed-clean-body");
+      paintClean(body, changed ? bodyText.before : "", bodyText.after, changed);
+      side.appendChild(body);
+      return side;
+    }
+
+    /** 辅助栏要求开清洗预览：逐段左右源码对照，有改动的段高亮差异中段。 */
+    function showClean(payload) {
+      if (!cleanModalEl || !cleanSectionsEl) return;
+      cleanKey = String((payload && payload.key) || "");
+      var sections = (payload && Array.isArray(payload.sections)) ? payload.sections : [];
+      cleanSectionsEl.textContent = "";
+      sections.forEach(function (section) {
+        var block = el("section", "ed-clean-section");
+        var label = String(section.label || section.field || "");
+        block.appendChild(el("h4", "ed-clean-head", label + (section.changed ? " · 有改动" : " · 未改动")));
+        var grid = el("div", "ed-dup-grid");
+        grid.appendChild(cleanCard("现在", { before: section.before, after: section.before }, false));
+        grid.appendChild(cleanCard("清洗后", { before: section.before, after: section.after }, Boolean(section.changed)));
+        block.appendChild(grid);
+        cleanSectionsEl.appendChild(block);
+      });
+      if (cleanNoteEl) {
+        var changedCount = sections.filter(function (section) { return section.changed; }).length;
+        cleanNoteEl.textContent = "共 " + sections.length + " 段，"
+          + changedCount + " 段有改动。采用哪一段由右侧辅助栏逐段决定，互不牵连。";
+      }
+      cleanModalEl.hidden = false;
+      if (publish) {
+        publish("editor.clean_review_state", { key: cleanKey, phase: "opened", reason: "" });
+      }
+    }
+
+    /** 收盘：关窗并给辅助栏回执（Esc / 辅助栏收窗 / 两段都已处置）。 */
+    function clearClean(reason) {
+      if (!cleanModalEl || cleanModalEl.hidden) return;
+      cleanModalEl.hidden = true;
+      if (cleanSectionsEl) cleanSectionsEl.textContent = "";
+      if (publish) {
+        publish("editor.clean_review_state", {
+          key: cleanKey, phase: "closed", reason: String(reason || "user_close")
+        });
+      }
+      cleanKey = "";
+    }
+
     /** Esc 关窗：浮层不设焦点陷阱（它没有可操作控件），但键盘总得能关掉它。 */
     document.addEventListener("keydown", function (event) {
-      if (!modalEl || modalEl.hidden) return;
       if (event.key !== "Escape") return;
+      if (cleanModalEl && !cleanModalEl.hidden) {
+        event.preventDefault();
+        clearClean("user_esc");
+        return;
+      }
+      if (!modalEl || modalEl.hidden) return;
       event.preventDefault();
       clear();
     });
 
     return {
       clear: clear,
+      clearClean: clearClean,
       markBlocked: markBlocked,
       notice: notice,
       renderDoc: renderDoc,
       show: show,
+      showClean: showClean,
     };
   }
 

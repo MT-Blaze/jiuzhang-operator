@@ -41,6 +41,115 @@
   flex: 0 0 auto;
 }
 
+/* ---------- 一键剔除重复题：清单弹窗（军令 #31 · 3.5） ---------- */
+.ep-modal-wide {
+  width: min(560px, 100%);
+}
+
+.ep-modal-warn {
+  margin: 0 0 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: #fdeceb;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ep-modal-warn[hidden] { display: none; }
+
+.ep-purge-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 48vh;
+  margin-bottom: 12px;
+  overflow-y: auto;
+}
+
+.ep-purge-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.ep-purge-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--void);
+}
+
+.ep-purge-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-purge-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.ep-purge-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-purge-all {
+  flex: 0 0 auto;
+}
+
+.ep-purge-keep {
+  margin: 0;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.ep-purge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ep-purge-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.ep-purge-item input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.ep-purge-id {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- 查重拦截：辅助栏底部的红字与【查看主库原题】（军令 #31） ----------
    命中时这一行常驻在审核按钮与台账之间，红字之外还有一颗钮能开对比窗。
    辅助栏只负责「报」与「请画布出面」，两侧渲染对比在画布那帧。 */

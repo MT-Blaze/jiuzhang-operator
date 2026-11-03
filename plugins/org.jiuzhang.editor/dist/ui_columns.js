@@ -29,6 +29,8 @@
     var replaceField = deps.replaceField;
     var safeAssetUri = deps.safeAssetUri;
     var setFormatButtons = deps.setFormatButtons;
+    var amberReasons = deps.amberReasons;
+    var metaFor = deps.metaFor;
     var state = coreState.state;
     var toast = deps.toast;
     var colsEl = deps.dom.colsEl;
@@ -284,6 +286,18 @@
     block.setAttribute("data-type", parsed.type);
     block.setAttribute("data-errors", String(parsed.errors.length));
     item.errorCount = parsed.errors.length;
+    // 琥珀灯（军令 #32 · 判据 5.2）：这一题还有未清项就在卡片边缘点灯。
+    // 判定口径只有一份，在 ui_amber.js（与底座入库前的点名同一口径），这里只照着画。
+    if (amberReasons && metaFor) {
+      var amber = amberReasons(parsed, metaFor(item, {}));
+      if (amber.length) {
+        block.setAttribute("data-amber", "on");
+        block.setAttribute("data-amber-reasons", amber.join("；"));
+      } else {
+        block.removeAttribute("data-amber");
+        block.removeAttribute("data-amber-reasons");
+      }
+    }
 
     if (parsed.errors.length) {
       block.appendChild(el("p", "ed-opt-img", "源码尚未认全：" + parsed.errors.join("；")));

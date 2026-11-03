@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="panel_meta.css">
   <link rel="stylesheet" href="panel_dialog.css">
+  <link rel="stylesheet" href="panel_pool.css">
   <link rel="stylesheet" href="panel_capsule.css">
   <link rel="stylesheet" href="panel_ai.css">
   <link rel="stylesheet" href="effects.css">
@@ -110,6 +111,25 @@
       </div>
     </main>
 
+    <!-- 重题池画布（军令 #32 · 第五步，判据 5.1）：池子**自己的**一屏，
+         左＝主库原题、右＝池内这条，两侧都是**渲染**结果——不比源码、不显示源码栏。
+         与审核三栏物理分开：老师在这一屏看对比，在右侧辅助栏拍板，来回不跳屏。
+         这一屏一颗按钮都不放（军令 #23 铁律）：档位与四个动作全住辅助栏。 -->
+    <section class="ed-pool-canvas" id="edPoolCanvas" aria-label="重题池对比" hidden>
+      <p class="ed-pool-note" id="edPoolNote" role="status" aria-live="polite"></p>
+      <div class="ed-dup-grid ed-pool-grid">
+        <section class="ed-dup-side" aria-label="主库原题">
+          <h4 class="ed-dup-head">主库原题</h4>
+          <div class="ed-dup-body" id="edPoolMainBody"></div>
+        </section>
+        <section class="ed-dup-side" aria-label="池内这一条">
+          <h4 class="ed-dup-head">池内这一条</h4>
+          <div class="ed-dup-body" id="edPoolIncomingBody"></div>
+        </section>
+      </div>
+      <p class="ed-dup-block" id="edPoolWarn" role="alert" hidden></p>
+    </section>
+
     <!-- 批量条原是画布底下一条横条（.ed-foot）：它把中栏与右栏的底边挤歪，
          又占着老师最宝贵的屏幕下沿。2026-10-31 整条删除，
          台账搬进右侧辅助栏的底部；2026-11-01 审核台接管后，审核动作只剩三颗钮，
@@ -136,6 +156,35 @@
         </div>
         <p class="ed-dup-block" id="edDupBlock" role="alert" hidden></p>
         <p class="ed-dup-hint" id="edDupHint">裁决在右侧辅助栏：覆盖 / 合并为解析二 / 放弃。Esc 关闭本窗。</p>
+      </div>
+    </div>
+
+    <!-- LaTeX 清洗预览（4.3）：左「现在」右「清洗后」，只画对照、不设按钮；
+         采用与放弃住在右侧辅助栏，Esc 关闭本窗并给辅助栏回执。 -->
+    <div class="ed-modal" id="edCleanModal" role="dialog" aria-modal="false"
+         aria-labelledby="edCleanTitle" hidden>
+      <div class="ed-modal-card">
+        <h3 class="ed-modal-title" id="edCleanTitle">LaTeX 清洗预览</h3>
+        <p class="ed-modal-note" id="edCleanNote"></p>
+        <div class="ed-clean-sections" id="edCleanSections"></div>
+        <p class="ed-dup-hint">采用与放弃在右侧辅助栏；Esc 关闭本窗。</p>
+      </div>
+    </div>
+
+    <!-- 一键剔除本批重复题：先出清单、老师勾选后才允许删。
+         按钮在画布批次列表里，弹窗必须也住在 #edRoot 下——画布帧里
+         #epRoot 是隐藏的，弹窗留在那半边会 hidden=false 却 0×0，老师看不见。 -->
+    <div class="ep-modal" id="epBatchPurgeModal" role="dialog" aria-modal="true"
+         aria-labelledby="epBatchPurgeTitle" hidden>
+      <div class="ep-modal-card ep-modal-wide">
+        <h3 class="ep-modal-title" id="epBatchPurgeTitle">剔除本批次重复题</h3>
+        <p class="ep-modal-text" id="epBatchPurgeSummary">正在扫描本批重复题…</p>
+        <div class="ep-purge-groups" id="epBatchPurgeGroups"></div>
+        <p class="ep-modal-warn" id="epBatchPurgeEmpty" hidden>本批将归零：原卷副本与残留切图会被一并删除，不可恢复。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epBatchPurgeCancel">取消</button>
+          <button type="button" class="ep-btn ep-btn-danger" id="epBatchPurgeOk" disabled>执行剔除</button>
+        </div>
       </div>
     </div>
 
@@ -333,9 +382,41 @@
 
       <!-- AI 帮改：平时收起，只留一行标题；展开才露指令框与预览。
            黄金位是老师核题的地方，这块不许常驻占着一屏。 -->
-      <section class="ep-sec ep-fold" id="epAiSec" data-fold="closed" aria-label="AI 帮改">
+      <!-- 重题池（军令 #32 · 第五步）：档位与四个动作全在这一栏，画布那一屏只画渲染。
+           空池整段留白——不写「暂无重题」这类占位文案（判据 5.3）。
+           档位只在本次会话内存里，不落盘、不写任何浏览器本地存储（插件禁碰本地存储）。 -->
+      <!-- 入口钮（军令 #32 · S8 · P0-1）：老师进「重题池那一屏」的唯一通路住辅助栏——
+           池里有条目时它挂着「重题池 N 条」，点它才展开下面这一段。画布那一屏一颗按钮都不许有。
+           池空着时这颗钮与整段一起留白（判据 5.3），不写「暂无重题」。 -->
+      <button type="button" class="ep-btn ep-mini-btn ep-pool-entry" id="epPoolEntry" hidden
+              aria-controls="epPoolSec">重题池</button>
+      <section class="ep-sec ep-pool" id="epPoolSec" hidden aria-label="重题池">
+        <div class="ep-pool-head">
+          <span class="ep-pool-title">重题池</span>
+          <span class="ep-pool-count" id="epPoolCount" data-total="0"></span>
+        </div>
+        <div class="ep-pool-tiers" id="epPoolTiers" role="group" aria-label="判重档位">
+          <button type="button" class="ep-seg-btn" data-tier="strict" aria-pressed="false">严</button>
+          <button type="button" class="ep-seg-btn" data-tier="standard" aria-pressed="false">标准</button>
+          <button type="button" class="ep-seg-btn is-on" data-tier="loose" aria-pressed="true">宽</button>
+        </div>
+        <div class="ep-pool-list" id="epPoolList" role="list" aria-label="重题池条目"></div>
+        <p class="ep-pool-msg" id="epPoolMsg" role="status" aria-live="polite" hidden></p>
+        <div class="ep-pool-acts" id="epPoolActs" hidden>
+          <button type="button" class="ep-btn ep-mini-btn" id="epPoolMerge">合并元数据</button>
+          <button type="button" class="ep-btn ep-mini-btn" id="epPoolSolution">新增解析</button>
+          <button type="button" class="ep-btn ep-mini-btn" id="epPoolSeparate">不重复</button>
+          <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epPoolDelete">删除</button>
+        </div>
+        <p class="ep-pool-lock" id="epPoolLock" role="status" hidden></p>
+        <button type="button" class="ep-btn ep-mini-btn ep-pool-back" id="epPoolBack" hidden>返回审核</button>
+      </section>
+
+      <!-- 军令 #32 · P0：主公拍板「默认不是收起的」——AI 帮改区启动即展开。
+           折叠钮仍走 setAiFold(!aiFoldOpen()) 读当前实际态，手动收起照旧可用。 -->
+      <section class="ep-sec ep-fold" id="epAiSec" data-fold="open" aria-label="AI 帮改">
         <button type="button" class="ep-fold-head" id="epAiFold"
-                aria-expanded="false" aria-controls="epAiFoldBody">
+                aria-expanded="true" aria-controls="epAiFoldBody">
           <h3 class="ep-sec-title">AI 帮改</h3>
           <span class="ep-fold-summary">先预览，点【采用】才替换</span>
           <span class="ep-fold-arrow" aria-hidden="true">▾</span>
@@ -351,7 +432,17 @@
             <button type="button" class="ep-btn ep-btn-primary" id="epAiSend" disabled
                     aria-disabled="true">发送改写请求</button>
             <button type="button" class="ep-btn" id="epAiClean" disabled aria-disabled="true"
-                    title="题干段与解析段都清洗成功才回填，任一失败就不动">清洗当前题 LaTeX</button>
+                    title="先出预览，逐段点【采用】才回填；画布没开就只报摘要">清洗当前题 LaTeX</button>
+          </div>
+          <!-- 清洗预览（4.3）：面板只报段名/规则/字数，正文对照在画布浮层；逐段采用、互不牵连。 -->
+          <div class="ep-clean" id="epCleanBox" hidden>
+            <p class="ep-clean-summary" id="epCleanSummary" role="status" aria-live="polite"></p>
+            <div class="ep-actions ep-clean-actions">
+              <button type="button" class="ep-btn" id="epCleanApplyStem" hidden>采用替换（题干）</button>
+              <button type="button" class="ep-btn" id="epCleanDropStem" hidden>放弃（题干）</button>
+              <button type="button" class="ep-btn" id="epCleanApplySolution" hidden>采用替换（解析）</button>
+              <button type="button" class="ep-btn" id="epCleanDropSolution" hidden>放弃（解析）</button>
+            </div>
           </div>
           <div class="ep-ai">
             <div class="ep-ai-head">
@@ -374,6 +465,10 @@
     <footer class="ep-foot-bar" id="epDock">
       <div class="ep-foot-row ep-foot-actions">
         <button type="button" class="ep-btn ep-btn-primary ep-mini-btn" id="epApprove">存入主库</button>
+        <!-- 全部入库（军令 #32 · 判据 43）：先整批扫琥珀灯，有未清项直接跳到最上面那道，
+             一个都不存；全清才逐题走「存入主库」同一条通道。池内题不参与——数据层已排除，
+             前端不再特判扣一遍数，报的数就是后端给的数。 -->
+        <button type="button" class="ep-btn ep-mini-btn" id="epApproveAll">全部入库</button>
         <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待审</button>
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
       </div>
@@ -408,6 +503,21 @@
         </div>
       </div>
     </div>
+
+    <!-- 池内【删除】（军令 #32 · 判据 5.4）：同样走二次确认，复用上面那颗红按钮的确认样式。
+         删的是池里这一条重复记录与它的成品图，主库原题一个字都不动。 -->
+    <div class="ep-modal" id="epPoolDelModal" role="dialog" aria-modal="true"
+         aria-labelledby="epPoolDelTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epPoolDelTitle">删除池内这一条？</h3>
+        <p class="ep-modal-text" id="epPoolDelText">删掉后这条重复记录从中转池消失，主库那道原题一个字节都不碰。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epPoolDelCancel">取消</button>
+          <button type="button" class="ep-btn ep-btn-danger" id="epPoolDelOk">删除</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script src="/static/vendor/katex/katex.min.js"></script>
@@ -437,6 +547,11 @@
   <script src="ui_approve.js"></script>
   <script src="ui_modal.js"></script>
   <script src="ui_dup.js"></script>
+  <!-- 军令 #32 · 第五步：琥珀灯判定（两帧共用）→ 重题池画布那一屏 → 重题池辅助栏那一半。
+       顺序按依赖排：面板半块要用画布半块的开合口径，协议块始终在最后。 -->
+  <script src="ui_amber.js"></script>
+  <script src="ui_pool.js"></script>
+  <script src="ui_pool_panel.js"></script>
   <script src="core_commands.js"></script>
   <script src="core_receipt.js"></script>
   <script src="ui_ai.js"></script>

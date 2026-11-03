@@ -86,6 +86,15 @@ class Settings:
         return self.data_dir / "pending_assets"
 
     @property
+    def pool_assets_dir(self) -> Path:
+        """重题池的成品图目录：抽走时从 pending_assets/ 复制过来，自成一户。
+
+        与 ``pending_assets/`` 分开是判据 4.2/4.7 的落点：批次审完物理清残留切图
+        清不到这里，池内条目删图也删不到批次那里。
+        """
+        return self.data_dir / "pool_assets"
+
+    @property
     def config_path(self) -> Path:
         return self.data_dir / "config.json"
 

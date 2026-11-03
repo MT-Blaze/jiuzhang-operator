@@ -131,15 +131,25 @@ class EditorManifestTest(unittest.TestCase):
         self.assertIn("ai:invoke", manifest()["permissions"])
 
     def test_04_bus_subscriptions_match_delivery(self) -> None:
+        """清单声明的总线主题必须与投递一致（军令 #32 · 第五步新增两条）。
+
+        `editor.pool_review`／`editor.batch_review` 各承担一类「辅助栏↔画布」双向指令：
+        前者开关重题池那一屏，后者画琥珀灯与跑【全部入库】。主题名靠 `from` 分头，
+        不再为「画布回执」另立第三条——新增总线主题的实数就是这两条。
+        """
         bus = manifest()["bus"]
         self.assertEqual(sorted(bus["subscribe"]),
-                         ["editor.apply_patch", "editor.canvas_state", "editor.collect_files",
-                          "editor.dup_review",
+                         ["editor.apply_patch", "editor.batch_review", "editor.canvas_state",
+                          "editor.clean_review",
+                          "editor.clean_review_state", "editor.collect_files",
+                          "editor.dup_review", "editor.pool_review",
                           "stage.selection",
                           "system.open_editor", "system.pending_updated",
                           "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
-                         ["editor.canvas_state", "editor.collect_files", "editor.dup_review",
+                         ["editor.batch_review", "editor.canvas_state", "editor.clean_review",
+                          "editor.clean_review_state", "editor.collect_files",
+                          "editor.dup_review", "editor.pool_review",
                           "region.dock",
                           "stage.selection",
                           "system.editor_close", "system.return_from_editor"])
@@ -339,7 +349,10 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
         # 画布内只许剩收集筐的【🚀 开始解析】——它是唯一的建批次出口。
-        self.assertEqual(canvas.count("<button"), 1, "画布内只许剩【开始解析】")
+        # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
+        plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
+                        + canvas[canvas.index('id="edToast"'):])
+        self.assertEqual(plain_canvas.count("<button"), 1, "画布内只许剩【开始解析】")
         self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")
         self.assertNotIn('id="edBatchBar"', canvas, "二屏抬头大横条已彻底删除")
         self.assertIn('id="edBasketGo"', canvas)
@@ -527,17 +540,22 @@ class EditorSourceContractTest(unittest.TestCase):
             self.assertIn(message, js, f"解析器缺少可读报错：{message}")
         self.assertIn('block.setAttribute("data-errors", String(parsed.errors.length))', js)
 
-    def test_06_local_cleaner_touches_delimiters_only(self) -> None:
+    def test_06_cleaning_rules_live_only_in_the_base(self) -> None:
+        """军令 #32 · 判据 1.6：清洗规则表只准有一处，就是底座的 latex_style_dict。
+
+        插件从前自带一份「定界符归一 + CRLF」的正则表，与底座那张并行——两套规则迟早分叉。
+        现在整批清洗逐题发 `hostCall("text.clean_latex", {mode: "exam_source"})`，
+        由 `question_parser.clean_exam_source` 洗；插件侧一张表都不留。
+        """
         js = read("plugin.js")
-        cleaner = fn_body(js, "cleanExamSource")
-        self.assertIn(r"/\\\[([\s\S]*?)\\\]/g", cleaner)
-        self.assertIn(r"/\\\(([\s\S]*?)\\\)/g", cleaner)
-        self.assertIn('return "$$" + inner.trim() + "$$";', cleaner)
-        self.assertIn('return "$" + inner.trim() + "$";', cleaner)
-        self.assertIn(r'next.replace(/\r\n/g, "\n")', cleaner)
-        # 只动定界符：环境骨架、\fillin 一律不碰，也不联网、不调模型
-        for forbidden in ("begin", "fillin", "text.clean_latex", "agent.refine", "hostCall"):
-            self.assertNotIn(forbidden, cleaner, f"本地清洗越界动了：{forbidden}")
+        self.assertNotIn("function cleanExamSource", js, "插件又长出第二份清洗规则了")
+        for forbidden in (r"/\\\[([\s\S]*?)\\\]/g", r"/\\\(([\s\S]*?)\\\)/g",
+                          r'next.replace(/\r\n/g, "\n")'):
+            self.assertNotIn(forbidden, js, f"本地清洗规则没拆干净：{forbidden}")
+        commands = fn_body(js, "handleCommandExecute")
+        self.assertIn('commandId === "org.jiuzhang.action.process.clean_latex"', commands)
+        self.assertIn('hostCall("text.clean_latex", { text: text, mode: "exam_source" })', commands)
+        self.assertNotIn("cleanExamSource(", commands, "内部命令不许再调本地规则表")
 
     def test_07_no_lookbehind_regex(self) -> None:
         """AGENTS §6：后行断言会让旧浏览器整份脚本报语法错。"""
@@ -1139,6 +1157,41 @@ class EditorBatchTest(unittest.TestCase):
         self.assertIn("return targets.reduce(function (chain, target) {", leave)
         self.assertNotIn("Promise.all(", leave)
 
+    def test_16_purge_modal_lives_in_the_canvas_root(self) -> None:
+        """「剔除重复」按钮在画布批次列表里，弹窗必须同住 #edRoot。
+
+        2026-11-02 真机探针抓到的坑：弹窗留在 #epRoot 下，可画布帧里那半棵树是
+        hidden 的——openModal 把 hidden 抹了，布局框仍是 0×0，老师什么都看不见。
+        """
+        html = read("index.html")
+        self.assertIn('id="epBatchPurgeModal"', canvas_only(html),
+                      "一键剔除弹窗必须挂在画布根下；留在辅助栏根下，画布帧里就是 0×0")
+        self.assertNotIn('id="epBatchPurgeModal"', panel_only(html))
+        js = read("ui_batches.js")
+        self.assertIn('el("button", "ed-batch-purge", "剔除重复")', js)
+        self.assertIn('hostCall("pending.batch_duplicates"', js)
+        self.assertIn('hostCall("pending.purge_duplicates"', js)
+
+    def test_17_g2_c1_ledger_never_folds_pooled_into_deleted(self) -> None:
+        """军令 #32 · G2 · C1（前端那一半）：批次台账里「池内」是一条**独立**的账。
+
+        底座现在任何状态都给 ``dedupe.pooled``（后端四条读拍由
+        ``tests/test_pending_dedupe_scan.py::test_12`` 与
+        ``tests/test_pending_pool.py::test_49`` 钉，HTTP 端到端由
+        ``tests/test_pending_api.py::PoolEvictionHttpTest`` 钉）。这里钉住画布侧的
+        换算口径：「已裁删」＝``total - pending - pooled - stored``，
+        ``pooled`` **必须在减数里**——漏掉它，抽进重题池的题就在账上变成老师删掉的题。
+        负向对照同条给出：旧的换算式（不含 ``pooled``）不许以任何写法回到现场。
+        """
+        js = read("ui_batches.js")
+        self.assertIn("var gone = pooledKnown ? total - pending - pooled - stored : 0;", js,
+                      "已裁删的算式必须把池内单独减掉；老底座不给 pooled 时整条不报")
+        self.assertIn("var pooledKnown = Boolean(dedupe) && dedupe.pooled !== undefined"
+                      " && dedupe.pooled !== null;", js)
+        self.assertIn("池内 = 已抽进重题池的条数", js, "台账注释得说清这一栏是什么")
+        self.assertNotIn("total - pending - stored", js,
+                         "旧算式（把池内折进已裁删）不许回来")
+
 
 class EditorReviewDeskTest(unittest.TestCase):
     """军令 #24 审核台：首屏批次列表、二屏三栏审核、防呆自动存回与查重弹窗。
@@ -1172,9 +1225,14 @@ class EditorReviewDeskTest(unittest.TestCase):
         css = read("plugin.css")
         self.assertIn("color: var(--accent)", rule_body(css, ".ed-batch-num"),
                       "未审数字必须是绿色")
-        self.assertIn("justify-content: space-between", rule_body(css, ".ed-batch-row"),
+        # 两端对齐住在主按钮里：行本身还要在右端挂【剔除重复】，不能自己 space-between
+        open_rule = rule_body(css, ".ed-batch-open")
+        self.assertIn("justify-content: space-between", open_rule,
                       "两端对齐：左边时间、右边计数")
-        self.assertIn("text-align: left", rule_body(css, ".ed-batch-row"))
+        self.assertIn("text-align: left", open_rule)
+        self.assertIn("flex: 1 1 auto", open_rule, "主按钮吃满整行，剔除钮才贴得住右端")
+        self.assertIn("flex: none", css_rule(css, ".ed-batch-purge"),
+                      "剔除钮不许被长批次号挤扁")
 
     def test_03_a_finished_batch_is_grey_sunk_and_unclickable(self) -> None:
         """未审归零的批次：变灰、沉到最底、不可点——只能看。"""
@@ -1183,11 +1241,15 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn("var leftDone = Number(left.pending_count) === 0 ? 1 : 0;", rows)
         self.assertIn("if (leftDone !== rightDone) return leftDone - rightDone;", rows,
                       "审完的批次必须沉到列表最底")
-        self.assertIn("row.disabled = true;", rows)
-        self.assertIn('row.setAttribute("aria-disabled", "true");', rows)
-        self.assertIn('row.setAttribute("data-done", done ? "true" : "false");', rows)
-        # 未审为 0 的行不许挂点击
-        self.assertIn('row.addEventListener("click", function () { openBatch(card.batch_id); });', rows)
+        self.assertIn("row.setAttribute(\"data-done\", done ? \"true\" : \"false\");", rows)
+        # 行本身是容器，不可点的是里面那颗主按钮
+        self.assertIn("open.disabled = true;", rows)
+        self.assertIn('open.setAttribute("aria-disabled", "true");', rows)
+        # 未审为 0 的行不许挂点击：绑定只住在 else 分支里
+        self.assertIn('open.addEventListener("click", function () { openBatch(card.batch_id); });', rows)
+        self.assertLess(rows.index("if (done) {"),
+                        rows.index('open.addEventListener("click"'),
+                        "点开的绑定必须在 else 分支：审完的批次只许看")
         css = read("plugin.css")
         done = rule_body(css, '.ed-batch-row[data-done="true"]')
         self.assertIn("opacity:", done)
@@ -1197,7 +1259,10 @@ class EditorReviewDeskTest(unittest.TestCase):
         js = read("plugin.js")
         bar = fn_body(js, "renderBatchBar")
         self.assertIn('batchNoEl.textContent = "批次 #" + (state.batchId || "—");', bar)
-        self.assertIn("未审 ", bar)
+        # 「未审 X ＋ 池内 Y ＝ 总数」这本账只有一处算法（军令 #32 · 判据 5.1 的账目对平）：
+        # 批次卡片与二屏抬头都走 ledgerText，不许两处各写一份文案。
+        self.assertIn("ledgerText(ledger)", bar)
+        self.assertIn("未审 ", fn_body(js, "ledgerText"))
         html = read("index.html")
         self.assertIn('id="edBatchNo"', html)
 
@@ -1249,7 +1314,10 @@ class EditorReviewDeskTest(unittest.TestCase):
         for node_id in ("edDupModal", "edDupMineBody", "edDupTheirBody",
                         "edDupNote", "edDupBlock"):
             self.assertIn(f'id="{node_id}"', canvas, f"画布缺少对比浮层的 {node_id}")
-        self.assertEqual(canvas.count("<button"), 1,
+        # 对比浮层这一段一颗按钮都不许有（裁决只住辅助栏）；
+        # 整幅画布的静态按钮另有收集筐与剔除弹窗，不能混进来算。
+        dup_block = canvas[canvas.index('id="edDupModal"'):canvas.index('id="edCleanModal"')]
+        self.assertEqual(dup_block.count("<button"), 0,
                          "对比浮层不许在画布里放按钮：裁决动作只住辅助栏")
         panel = panel_only(html)
         for node_id in ("epDupWarn", "epDupInspect", "epDupOverwrite",
@@ -1885,6 +1953,175 @@ class EditorPackageTest(unittest.TestCase):
         self.assertEqual(offenders, [], f"发行包混进开发期文件：{offenders}")
         self.assertIn("org.jiuzhang.editor/dist/plugin.js", names)
         self.assertIn("org.jiuzhang.editor/dist/dev_fixtures.js", names)
+
+
+class EditorDuplicatePoolScreenTest(unittest.TestCase):
+    """军令 #32 · 第五步（S5）：重题池画布与交互的界面契约。
+
+    契约测试读的是**整包源码**（index.html 按加载次序拼起来），钉的是「这一屏长什么样、
+    谁能动、话怎么说」；真浏览器点击与像素描边归测试工程师的探针。
+    """
+
+    def test_01_pool_canvas_has_zero_buttons_and_no_source_pane(self) -> None:
+        """判据 5.1：池子有自己的画布屏，左右都是渲染；这一屏一颗按钮都不许有（军令 #23 铁律）。"""
+        html = read("index.html")
+        pool = html[html.index('id="edPoolCanvas"'):html.index("批量条原是画布底下一条横条")]
+        self.assertIn('id="edPoolMainBody"', pool, "左栏必须是主库原题的渲染容器")
+        self.assertIn('id="edPoolIncomingBody"', pool, "右栏必须是池内这条的渲染容器")
+        self.assertNotIn("<button", pool, "重题池画布里一颗按钮都不许有")
+        self.assertNotIn("SourceBody", pool, "池画布不比源码：不许出现源码栏容器")
+        self.assertIn('aria-label="重题池对比"', pool)
+
+    def test_02_four_actions_live_in_the_panel_and_two_are_retired(self) -> None:
+        """判据 5.1/5.4：辅助栏四颗动作；【覆盖】【放弃】一律不做，界面不许留入口。"""
+        html = read("index.html")
+        panel = panel_only(html)
+        pool = html[html.index('id="epPoolSec"'):html.index('id="epPoolBack"')]
+        for label in ("合并元数据", "新增解析", "不重复", "删除"):
+            self.assertIn(">" + label + "<", pool, f"辅助栏缺池内动作【{label}】")
+        js = read("plugin.js")
+        self.assertNotIn('runAction("overwrite")', js, "【覆盖】已退役，不许复活")
+        self.assertNotIn('runAction("abandon")', js, "【放弃】已退役，不许复活")
+        self.assertIn('id="epPoolDelModal"', panel, "【删除】必须走二次确认")
+        self.assertIn('class="ep-btn ep-btn-danger" id="epPoolDelOk"', panel,
+                      "确认那颗复用 #46 红按钮的样式，不再长第二套确认")
+
+    def test_03_red_lamp_retired_from_review_and_amber_is_new(self) -> None:
+        """判据 5.2：红色呼吸灯退出审核画布（只在池画布）；琥珀灯是新造的，常驻呼吸且减动效退静态。"""
+        css = read("plugin.css")
+        self.assertIn('.ed-root[data-mode="pool"][data-dup="on"]::after', css,
+                      "红灯必须收口到池画布那一屏")
+        self.assertNotIn('\n.ed-root[data-dup="on"]', css,
+                         "不带 data-mode 的红灯选择器会让审核画布重新亮红")
+        self.assertIn("--amber: #c08a2e;", css, "琥珀色必须是新令牌 #c08a2e")
+        self.assertIn('.ed-q-block[data-amber="on"]::before', css, "题卡琥珀灯（与青黛 ::after 分轴共存）")
+        self.assertIn('.ep-root[data-amber="on"]::before', css, "辅助栏边缘琥珀灯：与题卡同时亮")
+        self.assertIn("prefers-reduced-motion", css)
+
+    def test_04_tiers_are_session_only_and_empty_pool_stays_blank(self) -> None:
+        """判据 5.3：三档默认宽、切档即时带 ?tier= 重取、档位只在内存；已裁决条目不复活；空池留白。"""
+        js = read("plugin.js")
+        self.assertIn('var tier = "loose";', js, "默认档位必须是宽")
+        self.assertIn('hostCall("pending.pool_list", { tier: tier })', js, "每次现传档位")
+        self.assertIn('hostCall("pending.pool_get", { pool_id: poolId, tier: tier })', js)
+        self.assertIn('if (["strict", "standard", "loose"].indexOf(value) < 0 || value === tier) return;',
+                      js, "只认三档名，同档不重取")
+        # P0 新义：**有货默认就展开、空池仍隐藏、入口钮只在已收起时出现**。
+        # 收起只剩一把锁（池里没货）；入口钮那段判断照留，作为「以后有收起路径」的备用通路。
+        self.assertIn("sectionEl.hidden = !selectedEntry && !(revealed && entries.length);", js,
+                      "空池整段收起：不许写占位文案（这条锁不许因为默认展开而拆掉）")
+        self.assertIn("entryEl.hidden = !(entries.length && !revealed && !selectedEntry);", js,
+                      "【重题池 N 条】只在已收起时挂着：默认展开后它不该出现在有货的池子上")
+        self.assertIn('entryEl.textContent = "重题池 " + entries.length + " 条";', js,
+                      "入口钮要带条数，老师才知道有多少待裁决")
+        self.assertIn('if (entryEl) entryEl.addEventListener("click", reveal);', js,
+                      "入口钮必须真绑了点击，不是画一颗死按钮")
+        # 默认态本身也得钉住：初值回退成 false 就是「要点一下才看得见」，P0 直接失守。
+        self.assertIn("var revealed = true;", js, "池子段默认展开：revealed 初值必须是 true")
+        self.assertNotIn("var revealed = false;", js,
+                         "回退警报：revealed 初值又变回 false，池子成了点了才展开")
+        # 契约：ui_dom.js 里取的每个 epPool* 节点都必须在 index.html 里真存在；
+        # 且「入口钮 → 条目 → 画布 show」这条链必须是真人可点的（静态可校）。
+        html = read("index.html")
+        dom_js = read("ui_dom.js")
+        claimed = set(re.findall(r'getElementById\("(epPool[A-Za-z]*)"\)', dom_js))
+        self.assertTrue(claimed, "ui_dom.js 一个 epPool* 节点都没取，扫描器无账可校")
+        missing = sorted(i for i in claimed if f'id="{i}"' not in html)
+        self.assertEqual(missing, [], f"这些 epPool* 节点在 index.html 里不存在：{missing}")
+        # 负向对照：检测本身不许是瞎子——凭空捏一个 id 必须被判成缺失。
+        self.assertEqual([i for i in ("epPoolNoSuchNode",) if f'id="{i}"' not in html],
+                         ["epPoolNoSuchNode"], "缺失检测失能：假 id 没被抓出来")
+        self.assertIn('id="epPoolEntry" hidden', html, "辅助栏那颗入口钮必须在 HTML 里")
+        self.assertIn('aria-controls="epPoolSec"', html, "入口钮要指到它展开的那一段")
+        self.assertIn('notifyCanvas("open", detail)', js, "点条目必须把详情递给画布")
+        self.assertIn("showPoolReview", js, "画布那一屏的渲染入口必须存在")
+        # 空池不许有占位文案：只看池子那一屏真会上屏的字（注释里提一句「不写暂无重题」不算违规；
+        # 「本批没有重复题」是 #31 批次清退的账目文案，不住在池子这一屏）。
+        pool_js = read("ui_pool_panel.js")
+        for text in re.findall(r'textContent\s*=\s*"([^"]*)"', pool_js):
+            for placeholder in ("暂无重题", "池子是空的", "没有重复"):
+                self.assertNotIn(placeholder, text, "空池只能留白，不许写占位文案")
+        self.assertNotIn('class="ep-pool-empty"', read("index.html"), "不许长出一块空态占位 DOM")
+        html = read("index.html")
+        self.assertIn('class="ep-seg-btn is-on" data-tier="loose"', html)
+
+    def test_05_approve_all_scans_the_lamp_first(self) -> None:
+        """判据 43：【全部入库】先整批扫琥珀灯，有未清项一题都不存并跳到最上面那道；池内题不再特判扣数。"""
+        js = read("plugin.js")
+        run = fn_body(js, "runApproveAll")
+        self.assertIn("var found = scan();", run)
+        self.assertLess(run.index("var found = scan();"), run.index("pending.approve"),
+                        "必须先扫灯再入库")
+        self.assertIn("if (jumpTo) jumpTo(found.top);", run, "有未清项要跳到最上面那道")
+        self.assertIn("blocked: true", run)
+        self.assertLess(run.index("blocked: true"), run.index("pending.approve"),
+                        "拦下来时一题都不许存")
+        self.assertNotIn("pooled", run, "池内题已由后端从待审清单摘走，前端不许再特判扣一遍数")
+        targets = fn_body(js, "approveTargets")
+        self.assertIn('item.pendingId && item.status !== "stored"', targets,
+                      "只处理未入库的题（§2 第 46 条）")
+
+    def test_06_the_panel_and_canvas_split_by_from(self) -> None:
+        """两帧只经宿主总线对话：同一主题靠 from 分头，新增主题实数就是两条。"""
+        bus = manifest()["bus"]
+        self.assertEqual(len(set(bus["subscribe"]) | set(bus["publish"])), 16,
+                         "订 13 ∪ 发 11 = 16 个主题名，其中池子/扫灯这一对是本轮新增")
+        for topic in ("editor.pool_review", "editor.batch_review"):
+            self.assertIn(topic, bus["subscribe"])
+            self.assertIn(topic, bus["publish"])
+        protocol = read("core_protocol.js")
+        self.assertIn('if (poolFrom === "canvas" && poolPayload.phase === "closed") onPoolCanvasClosed();',
+                      protocol, "画布按 Esc 自己退池，辅助栏的选中要跟着放开")
+        stage = stage_source()
+        self.assertIn('notify(tab, "editor.pool_review", pair.payload)', stage)
+        self.assertIn('notify(panel, "editor.batch_review", pair.payload)', stage)
+
+
+class EditorExportIntegrityTest(unittest.TestCase):
+    """军令 #32 · S5c：导出对象里不许挂「函数已删、名字还在」的悬挂标识符。
+
+    ``node --check`` 只看语法、开机链之外的分支只在调用时抛，所以这条判据按**声明现场**判：
+    ``create()`` 的 ``return { key: value }`` 里那个 ``value``，必须能在同一支文件里找到它的
+    函数声明 / 变量声明 / 形参位置。扫描器自带负向对照，防止「扫不到」被当成「没问题」。
+    """
+
+    ENTRY = re.compile(r"^\s{2,}([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)\s*,?\s*$", re.M)
+    LITERALS = {"function", "false", "true", "null", "undefined", "this",
+                "arguments", "global", "window"}
+
+    def _declared(self, src: str, name: str) -> bool:
+        patterns = [rf"function\s+{name}\s*\(",
+                    rf"\b(?:var|let|const)\b[^\n]*\b{name}\b\s*(?:=|,|\)|;)",
+                    rf"[(,]\s*{name}\s*(?:[,)]|\s*=>)",
+                    rf"\b{name}\s*=>",
+                    rf"\b{name}\s*=\s*deps\."]
+        return any(re.search(p, src) for p in patterns)
+
+    def _dangling(self, src: str) -> list[tuple[str, str]]:
+        return [(m.group(1), m.group(2)) for m in self.ENTRY.finditer(src)
+                if m.group(2) not in self.LITERALS and not self._declared(src, m.group(2))]
+
+    def test_01_scanner_is_not_vacuous(self) -> None:
+        """负向对照：导出名没有声明现场时，扫描器必须点名。"""
+        probe = ('(function (global) {\n  function create() {\n    function keep(a) { return a; }\n'
+                 '    return {\n      keep: keep,\n      gone: gone,\n    };\n  }\n})(window);\n')
+        self.assertEqual(self._dangling(probe), [("gone", "gone")])
+
+    def test_02_no_dangling_export_in_dist(self) -> None:
+        """dist 每一支 JS 的导出项都要有声明现场——录题工作台的开机链靠这个才跑得完。"""
+        offenders = []
+        files = sorted(DIST.glob("*.js"))
+        self.assertTrue(files, "dist/ 下必须扫到 JS")
+        for path in files:
+            for key, value in self._dangling(path.read_text(encoding="utf-8")):
+                offenders.append(f"{path.name}:{key}: {value}")
+        self.assertEqual(offenders, [], "这些导出名在所属文件里没有声明现场（函数删了、名字还挂着）")
+
+    def test_03_clean_exam_source_is_gone_for_good(self) -> None:
+        """判据 1.6 的收口形状：本地清洗器整体退场，名字一处都不留（含导出位）。"""
+        bundle = read("plugin.js")
+        self.assertNotIn("cleanExamSource", bundle,
+                         "清洗规则已归底座，插件里不许再留这个名字（尤其不许只留导出位）")
 
 
 if __name__ == "__main__":

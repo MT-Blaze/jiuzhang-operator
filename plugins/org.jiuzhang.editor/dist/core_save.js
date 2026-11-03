@@ -234,6 +234,9 @@
   function queueMetaSave() {
     window.clearTimeout(metaTimer);
     metaTimer = window.setTimeout(saveMetaDraft, 250);
+    // 元数据一落草稿，琥珀灯就得重算：考向是「还没挂考向」这条未清项的唯一来源。
+    // 判定与描边都在 ui_amber 那一份里，这里只喊一声。
+    if (deps.repaintPanel) deps.repaintPanel();
   }
 
   /** 退场/关页面前把压在延时里的公共元数据落地：延时的主人归本模块，别处不许摸。 */

@@ -105,6 +105,10 @@ class PendingMetaContractTest(unittest.TestCase):
         env["JZO_DATA_DIR"] = str(cls.data_dir)
         env["JZO_PLUGINS_DIR"] = str(cls.plugins_dir)
         env["JZO_LOCAL_TOKEN"] = TOKEN
+        # 本模块测的是批次公共元数据与学校字典这条链，用例前提之一是「导入的题仍留在
+        # 这一批里」。判据 3.5 的自动抽走会把判成重题的那几行搬进重题池，与它直接冲突，
+        # 故这台测试服务关掉自动抽走（抽走本身由 tests/test_pending_pool.py 覆盖）。
+        env["JZO_POOL_ADMIT_DISABLED"] = "1"
         # AI 一律走 Mock：这些测试不许真联网，也不许读老师本机的密钥。
         for key in ("JZO_AI_API_KEY", "JZO_BAILIAN_API_KEY",
                     "JZO_SILICONFLOW_API_KEY", "JZO_OLLAMA_API_KEY"):
@@ -119,25 +123,40 @@ class PendingMetaContractTest(unittest.TestCase):
         )
         cls.base = f"http://127.0.0.1:{cls.port}"
         deadline = time.time() + 20
-        while time.time() < deadline:
-            if cls.process.poll() is not None:
-                output = cls.process.stdout.read() if cls.process.stdout else ""
-                raise RuntimeError("服务提前退出：\n" + output)
-            try:
-                with urllib.request.urlopen(cls.base + "/healthz", timeout=0.5) as response:
-                    if response.status == 200:
-                        return
-            except (urllib.error.URLError, TimeoutError, ConnectionError):
-                time.sleep(0.1)
-        raise RuntimeError("服务未在 20 秒内就绪")
+        try:
+            while time.time() < deadline:
+                if cls.process.poll() is not None:
+                    output = cls.process.stdout.read() if cls.process.stdout else ""
+                    raise RuntimeError("服务提前退出：\n" + output)
+                try:
+                    with urllib.request.urlopen(cls.base + "/healthz", timeout=0.5) as response:
+                        if response.status == 200:
+                            return
+                except (urllib.error.URLError, TimeoutError, ConnectionError):
+                    time.sleep(0.1)
+            raise RuntimeError("服务未在 20 秒内就绪")
+        except BaseException:
+            # P1④：``setUpClass`` 抛异常时 unittest 不会跑 ``tearDownClass``，
+            # 这座服务会一直攥着临时目录的句柄。就绪段失败就地收干净再原样抛。
+            cls._stop_process()
+            cls.tmp.cleanup()
+            raise
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def _stop_process(cls) -> None:
         cls.process.terminate()
         try:
             cls.process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             cls.process.kill()
+            try:
+                cls.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._stop_process()
         cls.tmp.cleanup()
 
     # ---------- 老库（结构 v3）预置 ----------
@@ -453,7 +472,10 @@ class PendingMetaContractTest(unittest.TestCase):
         """老库升到新结构：次序原样保留，题一条不少。"""
         con = sqlite3.connect(self.data_dir / "pending.db")
         try:
-            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 6)
+            # 结构版本随「整批初查结论落库」（军令 #32 · S3）从 6 升到 7：
+            # 本例判的还是老那条——升上去之后题一条不少、次序不乱。版本号写死在这里，
+            # 是为了「升没升到位」一眼可见（原断言是 6，S3 之后不成立，非判据变更）。
+            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 8)
             columns = {str(row[1]) for row in con.execute("PRAGMA table_info(pending_questions)")}
             self.assertIn("seq", columns, "结构 v4 必须有次序号这一列")
             tag_columns = {str(row[1]) for row in con.execute("PRAGMA table_info(exam_types)")}

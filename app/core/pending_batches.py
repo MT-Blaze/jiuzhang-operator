@@ -17,6 +17,7 @@ from app.core import questions
 from app.core.pending_db import (
     BATCH_ID_RE,
     PENDING_ID_RE,
+    PendingError,
     PendingNotFound,
     connect,
 )
@@ -60,12 +61,19 @@ def remember_approved(con: sqlite3.Connection, batch_id: str, question_id: str) 
     )
 
 
-def batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
-    """批次卡片：时间、编号、未审数 / 总题数，外加原文件名与公共元数据。"""
-    from app.core import meta_dict
+def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
+               con: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """批次卡片：时间、编号、未审数 / 总题数，外加原文件名、公共元数据与初查状态。
 
+    ``pooled``／``con``（G5）是调用方**在同一条读事务里**给好的池内条数与那条连接：
+    给了就照用、结论也从这条连接回读；都不传才让 ``scan_state`` 按老样子自己开连接——
+    单点调用方（``pending_bank``、``pending_pool``）行为不变。
+    """
+    from app.core import meta_dict, pending_dedupe
+
+    batch_id = str(row["batch_id"])
     return {
-        "batch_id": str(row["batch_id"]),
+        "batch_id": batch_id,
         "label": str(row["label"]),
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
@@ -76,6 +84,8 @@ def batch_card(row: sqlite3.Row, live: int) -> dict[str, Any]:
         "total": int(row["total"] or 0),
         "pending_count": live,
         "done": live == 0,
+        # 后台初查的进程内注解（3.1a）：纯读、不发 IO，无缓存即 pending。
+        "dedupe": pending_dedupe.scan_state(batch_id, pooled=pooled, con=con),
     }
 
 
@@ -84,16 +94,33 @@ def batch_list() -> dict[str, Any]:
 
     排序口径：**有未审的批次在前**（新到旧），**已审完的批次沉在最后**（新到旧）。
     未审数一律按池子里真实的行数算——存的计数只是缓存，不是事实来源。
+
+    **一张卡片的所有读数出自同一快照**（G5）：``batches`` 行、待审行数、池内行数、
+    初查结论，全部在**同一条连接的同一条读事务**里取完（``duplicate_pool`` 与
+    ``dedupe_scans`` 各一次批量数，不再逐卡自开连接）。过去 ``batch_card`` 里的
+    ``scan_state`` 自己开第二条连接数 ``pooled``、第三条连接回读结论，而抽走事务
+    （写池行＋删待审＋落 done 一次提交）恰好落在这几次读之间，卡片就能读出
+    「待审 2 ＋ 池内 2，总数才 2」这种重复计数的帧，或反过来「``done`` 配 ``pooled=0``」
+    的空窗帧。卡片是在读事务内构造的，``BEGIN`` 之后到 ``rollback`` 之前不落任何人提交。
     """
+    from app.core import pending_dedupe
+
     con = connect()
     try:
-        rows = con.execute("SELECT * FROM batches").fetchall()
-        live = {str(row["batch_id"]): int(row["n"]) for row in con.execute(
-            "SELECT batch_id, COUNT(*) AS n FROM pending_questions GROUP BY batch_id"
-        )}
+        con.execute("BEGIN")  # 只读事务：把这一批卡片的读点钉在同一份快照上
+        try:
+            rows = con.execute("SELECT * FROM batches").fetchall()
+            live = {str(row["batch_id"]): int(row["n"]) for row in con.execute(
+                "SELECT batch_id, COUNT(*) AS n FROM pending_questions GROUP BY batch_id"
+            )}
+            pooled = pending_dedupe.pooled_counts(con)
+            cards = [batch_card(row, live.get(str(row["batch_id"]), 0),
+                                 pooled=pooled.get(str(row["batch_id"]), 0), con=con)
+                     for row in rows]
+        finally:
+            con.rollback()  # 只读事务就地收尾：本连接一行都没写
     finally:
         con.close()
-    cards = [batch_card(row, live.get(str(row["batch_id"]), 0)) for row in rows]
     cards.sort(key=lambda card: (card["pending_count"] == 0,
                                  _sort_key(card["created_at"], card["batch_id"])))
     return {"batches": cards}
@@ -188,3 +215,19 @@ def get_pending(pending_id: str) -> dict[str, Any]:
     if row is None:
         raise PendingNotFound("中转站里没有这一条")
     return row_to_item(row)
+
+def item_parts(item: Any) -> tuple[dict[str, Any], Any, str]:
+    """把一条待暂存内容拆成「题目文档 + 配图清单 + 要更新的中转站号」。
+
+    两种形状都收：``{"question": {...}, "assets": [...]}``（信封）与裸题目文档。
+    信封里还可以带 ``pending_id``：带了就表示**就地更新**池子里那一条，而不是
+    再塞一条新的进去——老师改完点【存为待审】，池子里不该多出一道重影。
+    """
+    if not isinstance(item, dict):
+        raise PendingError("每一条待暂存内容都必须是对象")
+    pending_id = str(item.get("pending_id") or "").strip()
+    if pending_id and not PENDING_ID_RE.match(pending_id):
+        raise PendingError("中转站编号不合法")
+    if isinstance(item.get("question"), dict):
+        return item["question"], item.get("assets"), pending_id
+    return item, None, pending_id

@@ -60,7 +60,32 @@ PANEL = "#wsContextSlot .ws-context-frame"
 BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 
 BATCH_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-星期[日一二三四五六]-\d{2}:\d{2}-批次编号 #B-\d{3,}$")
-UNREVIEWED_RE = re.compile(r"未审：\s*(\d+)\s*/\s*(\d+)")
+# 军令 #32 第五步的账：抽走的题另记「池内」，入库的记「已入库」，池内【删除】的记「已裁删」，
+# 四段合起来才等于总数（ui_batches.js:206-219 卡片、:129-134 ledgerText 抬头同一份算法）。
+# 旧的「未审：n / N」两段写法已经不成立，这里改成断满四段＋等式对平，不放宽成「含未审二字」。
+LEDGER_RE = re.compile(
+    r"未审：\s*(?P<pending>\d+)"
+    r"(?:\s*＋ 池内：\s*(?P<pooled>\d+))?"
+    r"(?:\s*＋ 已入库：\s*(?P<stored>\d+))?"
+    r"(?:\s*＋ 已裁删：\s*(?P<gone>\d+))?"
+    r"\s*＝\s*(?P<total>\d+)")
+STAT_LEDGER_RE = re.compile(
+    r"^未审 (?P<pending>\d+)"
+    r"(?: ＋ 池内 (?P<pooled>\d+))?"
+    r"(?: ＋ 已入库 (?P<stored>\d+))?"
+    r"(?: ＋ 已裁删 (?P<gone>\d+))?"
+    r" ＝ 总数 (?P<total>\d+)$")
+
+
+def ledger_terms(hit: "re.Match[str] | None") -> dict:
+    """把上面两条正则的命中拆成四个数＋一个对平布尔（缺段按 0）。"""
+    if hit is None:
+        return {}
+    terms = {name: int(hit.group(name) or 0)
+             for name in ("pending", "pooled", "stored", "gone", "total")}
+    terms["balanced"] = (terms["pending"] + terms["pooled"] + terms["stored"] + terms["gone"]
+                         == terms["total"])
+    return terms
 IDLE_NOTE_RE = re.compile(r"^\[\d{2}:\d{2}\] 检测到长时间无操作，已自动存入待审核池。$")
 # 1×1 的 PNG：粘贴只验「字节进了批次」，不验图像内容。
 # 字节用**数字数组**递进页面，不走 base64 字符串——atob 在不同浏览器上对
@@ -546,6 +571,10 @@ def main() -> int:
 
             def open_batch(batch_id: str) -> None:
                 to_list()
+                # 上一批留下的对比浮层还开着时，它会挡住卡片行：老师用 Esc 收窗，探针跟着走。
+                if canvas.locator("#edDupModal").is_visible():
+                    canvas.locator("#edDupModal").press("Escape")
+                    expect(canvas.locator("#edDupModal")).to_be_hidden(timeout=10000)
                 row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
                 expect(row).to_be_visible(timeout=20000)
                 row.click()
@@ -587,28 +616,39 @@ def main() -> int:
                   bool(BATCH_STAMP_RE.match(left_text.strip())),
                   {"left": left_text})
             right_text = seed_row.locator(".ed-batch-right").inner_text()
-            hit = UNREVIEWED_RE.search(right_text)
-            check("卡片右侧是「未审：n / N」，数字与底座对得上",
+            hit = LEDGER_RE.search(right_text)
+            terms = ledger_terms(hit)
+            check("卡片右侧是「未审 ＋ 池内 ＋ 已入库 ＝ 总数」分段账，数字与底座对得上",
                   bool(hit)
-                  and int(hit.group(1)) == int(cards[0]["pending_count"])
-                  and int(hit.group(2)) == int(cards[0]["total"]),
+                  and terms["pending"] == int(cards[0]["pending_count"])
+                  and terms["total"] == int(cards[0]["total"])
+                  and terms["balanced"],
                   {"right": right_text, "card": cards[0]})
             num_color = seed_row.locator(".ed-batch-num").first.evaluate(
                 "n => getComputedStyle(n).color")
             check("未审数字是绿色的", num_color == "rgb(47, 107, 79)",
                   {"color": num_color})
-            justify = seed_row.evaluate("n => getComputedStyle(n).justifyContent")
-            check("卡片两端对齐（space-between）", justify == "space-between",
+            justify = seed_row.locator(".ed-batch-open").evaluate(
+                "n => getComputedStyle(n).justifyContent")
+            check("卡片的题面与未审数两端对齐（space-between）", justify == "space-between",
                   {"justify": justify})
             row_box = seed_row.bounding_box()
             right_box = seed_row.locator(".ed-batch-right").bounding_box()
-            flush = round((row_box["x"] + row_box["width"])
+            open_box = seed_row.locator(".ed-batch-open").bounding_box()
+            flush = round((open_box["x"] + open_box["width"])
                           - (right_box["x"] + right_box["width"]), 2)
-            vertical = round(abs((row_box["y"] + row_box["height"] / 2)
+            vertical = round(abs((open_box["y"] + open_box["height"] / 2)
                                  - (right_box["y"] + right_box["height"] / 2)), 2)
-            check("未审数贴紧右边缘、垂直居中",
+            check("未审数贴紧题面按钮右缘、垂直居中",
                   0 <= flush <= 24 and vertical <= 4,
                   {"flush": flush, "vertical": vertical})
+            purge_box = seed_row.locator(".ed-batch-purge").bounding_box()
+            row_gap = round((row_box["x"] + row_box["width"])
+                             - (purge_box["x"] + purge_box["width"]), 2)
+            check("「剔除重复」贴紧整行右缘，不与未审数抢位置",
+                  0 <= row_gap <= 24 and purge_box["x"] > right_box["x"],
+                  {"row_gap": row_gap, "purge_x": purge_box["x"],
+                   "right_x": right_box["x"]})
             bg_before = seed_row.evaluate("n => getComputedStyle(n).backgroundColor")
             seed_row.hover()
             page.wait_for_timeout(300)
@@ -653,8 +693,12 @@ def main() -> int:
                   {"batch_no": batch_no})
             batch_stat = canvas.locator("#edBatchStat").inner_text().strip()
             card = next(c for c in pending_cards(base) if c["batch_id"] == batch_id)
-            check("二屏抬头报着这一批还剩几道",
-                  batch_stat == "未审 %d / %d" % (int(card["pending_count"]), int(card["total"])),
+            stat_terms = ledger_terms(STAT_LEDGER_RE.match(batch_stat))
+            check("二屏抬头报着这一批还剩几道（与卡片同一份分段账）",
+                  bool(stat_terms)
+                  and stat_terms["pending"] == int(card["pending_count"])
+                  and stat_terms["total"] == int(card["total"])
+                  and stat_terms["balanced"],
                   {"stat": batch_stat, "card": card})
 
             # ---------- 批次公共元数据：辅助栏顶部，改一次整批跟着改 ----------
@@ -1184,7 +1228,16 @@ def main() -> int:
                   and tag_box["y"] > topic_box["y"],
                   {"topic_y": round(topic_box["y"]), "tag_y": round(tag_box["y"]),
                    "grid_max_y": round(max(b["y"] for b in head_boxes))})
-            check("AI 帮改平时收起：标题一行，指令框与预览都不许占黄金位",
+            check("AI 帮改默认展开（军令#32·P0「默认不是收起的」）：启动即 open，指令框与预览都在场",
+                  panel.locator("#epAiSec").get_attribute("data-fold") == "open"
+                  and panel.locator("#epAiFold").get_attribute("aria-expanded") == "true"
+                  and panel.locator("#epAiAsk").is_visible()
+                  and panel.locator("#epAiPreview").is_visible(),
+                  {"fold": panel.locator("#epAiSec").get_attribute("data-fold"),
+                   "expanded": panel.locator("#epAiFold").get_attribute("aria-expanded")})
+            panel.locator("#epAiFold").click()
+            page.wait_for_timeout(200)
+            check("点一下手动收起：closed／aria-expanded=false，指令框与预览都不占位",
                   panel.locator("#epAiSec").get_attribute("data-fold") == "closed"
                   and panel.locator("#epAiFold").get_attribute("aria-expanded") == "false"
                   and panel.locator("#epAiAsk").is_visible() is False
@@ -1193,17 +1246,11 @@ def main() -> int:
                    "expanded": panel.locator("#epAiFold").get_attribute("aria-expanded")})
             panel.locator("#epAiFold").click()
             page.wait_for_timeout(200)
-            check("点开 AI 帮改：输入框与预览当场现身，箭头跟着转",
+            check("再点一下恢复展开：open／true，输入框与预览当场现身",
                   panel.locator("#epAiSec").get_attribute("data-fold") == "open"
                   and panel.locator("#epAiFold").get_attribute("aria-expanded") == "true"
                   and panel.locator("#epAiAsk").is_visible()
                   and panel.locator("#epAiPreview").is_visible(),
-                  {"fold": panel.locator("#epAiSec").get_attribute("data-fold")})
-            panel.locator("#epAiFold").click()
-            page.wait_for_timeout(200)
-            check("再点一下收回：一屏不留 AI 的边角",
-                  panel.locator("#epAiSec").get_attribute("data-fold") == "closed"
-                  and panel.locator("#epAiAsk").is_visible() is False,
                   {"fold": panel.locator("#epAiSec").get_attribute("data-fold")})
             check("段一死锁区装着返回列表与视图切换",
                   panel.locator("#epHead #epBackList").count() == 1
@@ -1511,15 +1558,22 @@ def main() -> int:
             done_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
             expect(done_row).to_be_visible(timeout=10000)
             done_text = done_row.inner_text()
-            check("审完的卡片写着「未审：0 / N ✅」",
-                  bool(re.search(r"未审：\s*0\s*/\s*\d+\s*✅", done_text)),
+            done_terms = ledger_terms(LEDGER_RE.search(done_text))
+            # ✅ 只在「一条没抽走」时挂（ui_batches.js:219 done && !pooled）：
+            # 池里还有条数时红着的是「剔除重复」那颗钮，不许再打勾冒充审干净了。
+            check("审完的卡片写着「未审：0 ＋ 池内/已入库 ＝ N」，✅ 只在没有池内条时出现",
+                  bool(done_terms) and done_terms["pending"] == 0 and done_terms["balanced"]
+                  and ("✅" in done_text) == (done_terms["pooled"] == 0),
                   {"text": done_text})
+            # 行是 div（一颗按钮旁边还要挂「剔除重复」），禁用态挂在题面按钮上，
+            # data-done 挂在行上——判据跟着分两处锚，别指望 div 会认 disabled。
+            done_open = done_row.locator(".ed-batch-open")
             check("审完的卡片点不动",
-                  done_row.is_disabled()
-                  and done_row.get_attribute("aria-disabled") == "true"
+                  done_open.is_disabled()
+                  and done_open.get_attribute("aria-disabled") == "true"
                   and done_row.get_attribute("data-done") == "true",
-                  {"disabled": done_row.is_disabled(),
-                   "aria": done_row.get_attribute("aria-disabled"),
+                  {"disabled": done_open.is_disabled(),
+                   "aria": done_open.get_attribute("aria-disabled"),
                    "done": done_row.get_attribute("data-done")})
             done_opacity = done_row.evaluate("n => getComputedStyle(n).opacity")
             check("审完的卡片整行变灰", float(done_opacity) < 1,
@@ -1634,10 +1688,19 @@ def main() -> int:
             canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
             page.wait_for_timeout(400)
             open_batch(merge_batch)
-            sync_panel()
+            synced_merge = sync_panel()
             total_before_merge = bank_total(base)
             panel.locator("#epApprove").click()
             expect(panel.locator("#epDupMerge")).to_be_visible(timeout=25000)
+            # 点下去之前先核对"辅助栏现在这道题，就是池子里那一条"：
+            # 合并这条动作全靠 pending_id 对上，选区慢半拍会把请求吞掉，
+            # 界面不报错、池子不动，判据只剩一条"解析没变"——看不出是哪儿没接上。
+            sel_merge = panel_pending_id()
+            pool_merge = [str(i.get("id") or "") for i in pending_items(base, merge_batch)]
+            check("【合并】点之前辅助栏选中的就是池子里那一条",
+                  bool(sel_merge) and sel_merge in pool_merge and bool(synced_merge),
+                  {"selection": sel_merge, "pool": pool_merge[:3],
+                   "synced": synced_merge})
             panel.locator("#epDupMerge").click()
             deadline = time.time() + 30
             while time.time() < deadline and pending_items(base, merge_batch):
@@ -1651,7 +1714,10 @@ def main() -> int:
                   and "解法二" in merged_solution
                   and "探针解法二" in merged_solution,
                   {"before": total_before_merge, "after": bank_total(base),
-                   "solution": merged_solution[:120]})
+                   "solution": merged_solution[:120],
+                   "selection": sel_merge, "pool": pool_merge[:3],
+                   "synced": synced_merge,
+                   "panel_said": [m.get("text") for m in probe_messages()][-4:]})
 
             # 答案不同 → 红字拦截：覆盖与合并两颗钮都锁死，只留放弃。
             original_keys = list(((dup_doc or {}).get("answer") or {}).get("choice_keys") or ["A"])
@@ -2209,6 +2275,293 @@ def main() -> int:
             check("题库画布搜到本次入库的题", rows >= 1, {"rows": rows})
             page.screenshot(path=str(shots / "v3-bank-ui.png"))
 
+            # ---------- 军令 #31 · 3.1a 导入批次后台自动初查的显形（判据 7/8/9/10） ----------
+            # 台账 ⑤（913-921 行）+ 勘误·二（936-980 行）为准：
+            # 「导入完成当场自动亮」**不是**判据，老师的【返回列表】才是显形点；
+            # pending 态取 DOM 属性 data-dedupe-status，不取文案；
+            # 「无红字」= 不含「疑似重复」字样（不按颜色判：failed 与 done 共用 danger 红）。
+            page.locator(".ws-plugin-item", has_text="录题工作台").first.click()
+            page.wait_for_timeout(800)
+            expect(canvas.locator("#edRoot")).to_be_visible(timeout=20000)
+            to_list()
+
+            def b31a_doc(mark: str, no: int) -> dict:
+                """本批独有的干净题：主库里没有，同 mark 同序号的才在批内互相撞车。"""
+                doc = json.loads(json.dumps(UNIQUE_DOC))
+                doc["stem"] = ("探针31a初查题 %s#%d：双曲线 $y=\\frac{1}{x+%d}$ 的定义域是（  ）"
+                               % (mark, no, no))
+                doc["source"] = dict(UNIQUE_DOC["source"], paper_title="探针31a卷",
+                                     question_no=str(no))
+                return doc
+
+            def b31a_api_dedupe(batch: str) -> dict:
+                card = next((c for c in pending_cards(base)
+                             if c.get("batch_id") == batch), None)
+                info = (card or {}).get("dedupe")
+                return info if isinstance(info, dict) else {}
+
+            def b31a_refresh_list() -> None:
+                canvas.locator("#edRoot").evaluate(
+                    "() => window.__jzoEditorV2.refreshBatches()")
+                page.wait_for_timeout(350)
+
+            def b31a_node(batch: str):
+                """N2 纪律：只按 stage_ingest 回来的 batch_id 定位那一张卡片，不取第一张。"""
+                return canvas.locator('.ed-batch-row[data-batch="%s"] .ed-batch-dedupe' % batch)
+
+            def b31a_card_view(batch: str) -> dict:
+                node = b31a_node(batch)
+                if node.count() == 0:
+                    return {"present": False, "status": None, "text": "",
+                            "aria_busy": None, "red": False,
+                            "row": canvas.locator(
+                                '.ed-batch-row[data-batch="%s"]' % batch).count()}
+                text = node.first.inner_text().strip()
+                return {"present": True,
+                        "status": node.first.get_attribute("data-dedupe-status"),
+                        "text": text,
+                        "aria_busy": node.first.get_attribute("aria-busy"),
+                        "red": "疑似重复" in text,
+                        "row": 1}
+
+            def b31a_wait_api(batch: str, status: str, timeout: float) -> tuple[dict, float]:
+                start = time.perf_counter()
+                info: dict = {}
+                deadline = time.perf_counter() + timeout
+                while time.perf_counter() < deadline:
+                    info = b31a_api_dedupe(batch)
+                    if info.get("status") == status:
+                        break
+                    page.wait_for_timeout(300)
+                return info, round(time.perf_counter() - start, 2)
+
+            # ---------- 判据 10：导入时长与初查解耦（与「未挂初查基线」做差值，不写死绝对秒数） ----------
+            payload50 = [{"question": b31a_doc("五十题", i)} for i in range(50)]
+
+            def b31a_import(origin: str) -> tuple[float, int, dict]:
+                start = time.perf_counter()
+                status, body = http_post(base + "/api/pending/batches",
+                                         {"questions": payload50, "origin": origin})
+                return time.perf_counter() - start, status, body
+
+            # 占位轮口径（app/core/pending_bank.py:219）：origin=="ingest" 且本次不传
+            # batch_id 就不挂初查任务——拿它当「未挂初查基线」，与挂了的做同payload差值。
+            base_rounds = [b31a_import("ingest") for _ in range(2)]
+            hook_rounds = [b31a_import("probe.recognize") for _ in range(2)]
+            base_secs = [round(r[0], 4) for r in base_rounds]
+            hook_secs = [round(r[0], 4) for r in hook_rounds]
+            base_min, hook_min = min(base_rounds[0][0], base_rounds[1][0]), \
+                min(hook_rounds[0][0], hook_rounds[1][0])
+            delta = round(hook_min - base_min, 4)
+            check("判据10 · 后台初查没把导入请求拖成长请求（差值口径：≤基线的 50%，地板 0.25s 只是计时噪声余量）",
+                  all(r[1] == 201 for r in base_rounds + hook_rounds)
+                  and base_rounds[0][2].get("dedupe_queued") is False
+                  and hook_rounds[0][2].get("dedupe_queued") is True
+                  and delta <= max(0.25, 0.5 * base_min),
+                  {"baseline_seconds": base_secs, "hooked_seconds": hook_secs,
+                   "delta_seconds": delta, "floor_note": "0.25s 是噪声余量，不是时限承诺",
+                   "dedupe_queued": [base_rounds[0][2].get("dedupe_queued"),
+                                     hook_rounds[0][2].get("dedupe_queued")]})
+            batch_placeholder = str(base_rounds[0][2].get("batch_id") or "")
+            batch50 = str(hook_rounds[0][2].get("batch_id") or "")
+
+            # ---------- pending 态（勘误·二 ①，第 949 行）：占位轮批次必然没缓存 → 稳定 pending ----------
+            b31a_refresh_list()
+            view_pending = b31a_card_view(batch_placeholder)
+            view_50 = b31a_card_view(batch50)  # 挂初查的那一批：能撞上 pending 就一起留档
+            check("pending 态口径：data-dedupe-status==pending、不含「疑似重复」字样、aria-busy=true、新文案逐字",
+                  view_pending["present"] and view_pending["status"] == "pending"
+                  and view_pending["red"] is False
+                  and view_pending["aria_busy"] == "true"
+                  and view_pending["text"] == "初查结果未出，存入前仍会强校验",
+                  {"placeholder": view_pending, "hooked50_at_first_refresh": view_50})
+            page.screenshot(path=str(shots / "v31a-pending.png"),
+                            full_page=False)
+
+            # ---------- 判据 7：导入含重复题的一批，不点任何查重按钮，走【返回列表】自动显形 ----------
+            dup_docs = ([b31a_doc("批内撞车", 1)] * 3) + \
+                [b31a_doc("独立甲", 2), b31a_doc("独立乙", 3)]
+            t31a_ingest = time.perf_counter()
+            status_dup31a, body_dup31a = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": d} for d in dup_docs], "origin": "probe.recognize"})
+            batch_dup31a = str(body_dup31a.get("batch_id") or "")
+            status_clean31a, body_clean31a = http_post(
+                base + "/api/pending/batches",
+                {"questions": [{"question": b31a_doc("干净甲", 7)},
+                               {"question": b31a_doc("干净乙", 8)}],
+                 "origin": "probe.recognize"})
+            batch_clean31a = str(body_clean31a.get("batch_id") or "")
+            check("3.1a 前置：含批内重复的一批与干净的一批都进了池子",
+                  status_dup31a == 201 and status_clean31a == 201
+                  and body_dup31a.get("dedupe_queued") is True
+                  and bool(batch_dup31a) and bool(batch_clean31a),
+                  {"dup": status_dup31a, "clean": status_clean31a,
+                   "dedupe_queued": body_dup31a.get("dedupe_queued"),
+                   "batch_dup": batch_dup31a, "batch_clean": batch_clean31a})
+            api_done, secs_api_done = b31a_wait_api(batch_dup31a, "done", 15)
+            # 卡片要先进插件的 state.batches 才点得动：底座数据回投靠刷新，不靠定时器。
+            b31a_refresh_list()
+            # 老师的路径：开进这一批看一眼 → 点辅助栏【返回列表】（不碰任何查重/剔除按钮）。
+            open_batch(batch_dup31a)
+            back_btn = panel.locator("#epBackList")
+            expect(back_btn).to_be_visible(timeout=20000)
+            back_btn.click()
+            expect(canvas.locator("#edBatches")).to_be_visible(timeout=20000)
+            view_done = b31a_card_view(batch_dup31a)
+            secs_visible = round(time.perf_counter() - t31a_ingest, 2)
+            red_match = re.search(
+                r"疑似重复 (\d+) 道（批内重复 (\d+) 题 / 主库已有 (\d+) 题）",
+                view_done["text"])
+            check("判据7 · 【返回列表】后卡片自动亮含「疑似重复」的红字，批内/主库两栏拆开，≤15 秒",
+                  bool(red_match) and secs_visible <= 15
+                  and [int(g) for g in red_match.groups()] ==
+                  [int(api_done.get("redundant", -1)),
+                   int(api_done.get("batch_redundant", -1)),
+                   int(api_done.get("bank_redundant", -1))],
+                  {"elapsed_seconds": secs_visible, "api_wait_seconds": secs_api_done,
+                   "card": view_done, "api_dedupe": api_done})
+            check("判据7 · 全程没点任何按钮，也没有自动弹窗（对比浮层与剔除清单都没自己开）",
+                  canvas.locator("#edDupModal").is_hidden()
+                  and canvas.locator("#epBatchPurgeModal").is_hidden()
+                  and canvas.locator("#edRoot").get_attribute("data-dup") is None,
+                  {"dup_modal": canvas.locator("#edDupModal").is_visible(),
+                   "purge_modal": canvas.locator("#epBatchPurgeModal").is_visible()})
+            page.screenshot(path=str(shots / "v31a-done-red.png"), full_page=False)
+
+            # ---------- DOM①：done 且 redundant==0 的卡片上 .ed-batch-dedupe 节点必须不存在 ----------
+            api_clean, secs_clean = b31a_wait_api(batch_clean31a, "done", 15)
+            b31a_refresh_list()
+            node_clean = b31a_node(batch_clean31a)
+            clean_view = b31a_card_view(batch_clean31a)
+            check("done 且 redundant<=0 的批次卡片不渲染 .ed-batch-dedupe 节点（任何路径不写「没有重复」）",
+                  api_clean.get("status") == "done"
+                  and int(api_clean.get("redundant", -1)) == 0
+                  and clean_view["row"] == 1 and node_clean.count() == 0,
+                  {"api_dedupe": api_clean, "wait_seconds": secs_clean, "card": clean_view})
+
+            # ---------- 判据 8：红字的「批内组」条数 == 【剔除重复】弹窗默认勾选集 ----------
+            pool_before = len(pending_items(base, batch_dup31a))
+            row_dup = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_dup31a)
+            expect(row_dup.locator(".ed-batch-purge")).to_be_visible(timeout=20000)
+            row_dup.locator(".ed-batch-purge").first.click()
+            expect(canvas.locator("#epBatchPurgeModal")).to_be_visible(timeout=25000)
+            deadline = time.time() + 25
+            summary = ""
+            while time.time() < deadline:
+                summary = canvas.locator("#epBatchPurgeSummary").inner_text().strip()
+                if "已默认勾选" in summary or "没有重复题" in summary:
+                    break
+                page.wait_for_timeout(300)
+            purge_groups = canvas.locator("#epBatchPurgeGroups .ep-purge-group").evaluate_all(
+                """nodes => nodes.map(n => {
+                    var boxes = Array.prototype.slice.call(
+                      n.querySelectorAll('.ep-purge-list input[type=checkbox]'));
+                    return {
+                      reason: (n.querySelector('.ep-purge-badge') || {}).textContent || '',
+                      boxes: boxes.length,
+                      checked: boxes.filter(function (b) { return b.checked; }).length
+                    };
+                })""")
+            pool_after = len(pending_items(base, batch_dup31a))
+            scanned_summary = re.search(r"本批实读 (\d+) 道", summary)
+            prereq_ok = (pool_before == pool_after
+                         and bool(scanned_summary)
+                         and int(scanned_summary.group(1)) == int(api_done.get("scanned", -1)))
+            batch_checked = sum(g["checked"] for g in purge_groups if "批内" in g["reason"])
+            bank_checked = sum(g["checked"] for g in purge_groups if "主库" in g["reason"])
+            total_checked = sum(g["checked"] for g in purge_groups)
+            if prereq_ok:
+                check("判据8 · 弹窗默认勾选集与卡片红字同源同尺（批内组勾选数==批内重复数，总勾选==redundant）",
+                      batch_checked == int(api_done.get("batch_redundant", -1))
+                      and bank_checked == int(api_done.get("bank_redundant", -1))
+                      and total_checked == int(api_done.get("redundant", -1)),
+                      {"card": {"redundant": api_done.get("redundant"),
+                                "batch_redundant": api_done.get("batch_redundant"),
+                                "bank_redundant": api_done.get("bank_redundant"),
+                                "scanned": api_done.get("scanned")},
+                       "modal": {"summary": summary, "groups": purge_groups,
+                                 "batch_checked": batch_checked,
+                                 "bank_checked": bank_checked,
+                                 "total_checked": total_checked},
+                       "pool_before": pool_before, "pool_after": pool_after})
+            else:
+                result.setdefault("na_notes", []).append({
+                    "name": "判据8 · 弹窗默认勾选集 vs 卡片红字批内组条数",
+                    "verdict": "判据不适用",
+                    "reason": "前置条件（b）两次读取之间池内容不变 被破坏："
+                              "pool_before=%s pool_after=%s summary=%r scanned=%s"
+                              % (pool_before, pool_after, summary[:80],
+                                 api_done.get("scanned")),
+                })
+            page.screenshot(path=str(shots / "v31a-purge-modal.png"), full_page=False)
+            canvas.locator("#epBatchPurgeModal").press("Escape")
+            expect(canvas.locator("#epBatchPurgeModal")).to_be_hidden(timeout=10000)
+            result["metrics"]["b31a"] = {
+                "batch_placeholder": batch_placeholder, "batch50": batch50,
+                "batch_dup": batch_dup31a, "batch_clean": batch_clean31a,
+                "api_done_seconds": secs_api_done, "visible_seconds": secs_visible,
+                "baseline_seconds": base_secs, "hooked_seconds": hook_secs,
+                "shots": ["v31a-pending.png", "v31a-done-red.png", "v31a-purge-modal.png",
+                          "v31a-failed.png"],
+            }
+
+            # ---------- 判据 9：主库读不通 → 卡片「初查未完成」，任何路径不出现「没有重复」 ----------
+            # 让主库真读不通：把活跃题库的 db 就地写坏（隔离工作区内的文件，探针自产）。
+            # failed/超时分支按 N1 纪律不承诺 ≤15 秒，只等它落状态；写坏失败就记「不适用」。
+            bank_db = next((p for p in sorted(data_dir.rglob("*.db"))
+                            if BANK_ID in p.name), None)
+            induced = ""
+            backup = b""
+            if bank_db is None:
+                induced = "找不到活跃题库的 db 文件（%s 下无 *%s*.db）" % (data_dir, BANK_ID)
+            else:
+                try:
+                    backup = bank_db.read_bytes()
+                    bank_db.write_bytes(b"31a-probe: not a sqlite file\n" * 8)
+                    induced = ""
+                except OSError as exc:
+                    induced = "db 文件被占用，写不进去：%r" % (exc,)
+            if induced:
+                result.setdefault("na_notes", []).append({
+                    "name": "判据9 · 主库不可用时卡片显示「初查未完成」",
+                    "verdict": "判据不适用（界面不可达）",
+                    "reason": induced + "；failed 态仅由单测覆盖（tests/test_pending_dedupe_scan.py）",
+                })
+            else:
+                fail_docs = [b31a_doc("主库不通甲", 91), b31a_doc("主库不通乙", 92)]
+                status_fail, body_fail = http_post(
+                    base + "/api/pending/batches",
+                    {"questions": [{"question": d} for d in fail_docs],
+                     "origin": "probe.recognize"})
+                batch_fail = str(body_fail.get("batch_id") or "")
+                api_failed, secs_failed = b31a_wait_api(batch_fail, "failed", 30) \
+                    if batch_fail else ({}, 30.0)
+                b31a_refresh_list()
+                view_failed = b31a_card_view(batch_fail)
+                all_texts = canvas.locator(".ed-batch-dedupe").evaluate_all(
+                    "nodes => nodes.map(n => (n.textContent || '').trim())")
+                no_absolution = not any(("没有重复" in t) or ("无重复" in t)
+                                         for t in all_texts)
+                check("判据9 · 主库读不通时卡片逐字是「初查未完成（主库读不通），存入前仍会强校验」，"
+                      "且所有卡片都不出现「没有重复」",
+                      status_fail == 201 and api_failed.get("status") == "failed"
+                      and view_failed["status"] == "failed"
+                      and view_failed["text"] == "初查未完成（主库读不通），存入前仍会强校验"
+                      and view_failed["red"] is False and no_absolution,
+                      {"batch": batch_fail, "wait_seconds": secs_failed,
+                       "api_dedupe": api_failed, "card": view_failed,
+                       "all_dedupe_texts": all_texts[:12]})
+                page.screenshot(path=str(shots / "v31a-failed.png"), full_page=False)
+                try:
+                    bank_db.write_bytes(backup)
+                except OSError as exc:
+                    result.setdefault("na_notes", []).append({
+                        "name": "判据9 · 主库 db 复位",
+                        "verdict": "环境收尾",
+                        "reason": "写回原字节失败：%r（隔离工作区，随 tag 目录整体丢弃）" % (exc,),
+                    })
+
             size_host = page.locator("body").evaluate(
                 "() => ({scrollWidth: document.body.scrollWidth,"
                 " clientWidth: document.documentElement.clientWidth})")
@@ -2250,6 +2603,8 @@ def main() -> int:
         print("http:", result["http_failures"][:12])
     if result["page_errors"]:
         print("pageerrors:", result["page_errors"][:8])
+    if result.get("na_notes"):
+        print("na:", json.dumps(result["na_notes"], ensure_ascii=False)[:1200])
     if "error" in result:
         print("error:", result["error"])
     return 0 if result["ok"] else 1

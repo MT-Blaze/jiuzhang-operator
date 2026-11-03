@@ -185,6 +185,15 @@ def create_app() -> FastAPI:
         """
         return _serve_local_asset(settings.pending_assets_dir, asset_path)
 
+    @app.get("/static/pool/{asset_path:path}", include_in_schema=False)
+    async def read_pool_asset(asset_path: str) -> FileResponse:
+        """重题池成品图：只读当前工作区 pool_assets/，边界与 pending 那条一模一样。
+
+        池里这条的图是抽走时复制出来的**独立一份**，批次消失、原文件副本被清掉
+        都跟它无关（军令 #32 · 判据 4.2/4.7）。
+        """
+        return _serve_local_asset(settings.pool_assets_dir, asset_path)
+
     @app.get("/static/vendor/katex/fonts/{font_name}", include_in_schema=False)
     async def read_katex_font(font_name: str) -> FileResponse:
         """KaTeX 字体：沙箱插件是不透明源，@font-face 属于 CORS 请求。

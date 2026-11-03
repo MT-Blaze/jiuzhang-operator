@@ -68,6 +68,45 @@
   animation: ep-lamp-breathe 2s ease-in-out infinite;
 }
 
+/* ---------- 琥珀灯（军令 #32 · 判据 5.2）----------
+   这一题还有未清项（源码没认全 / 公式占位没清 / 还没挂考向）时，
+   画布那道题卡与右侧辅助栏的边缘**同时**亮起琥珀色，常驻呼吸，
+   一直到问题清掉为止——不是悬停才亮，所以它跟上面那盏青黛灯各走各的：
+   青黛用 ::after，琥珀用 ::before，两盏灯叠在同一道题上也不会互相吃掉。 */
+
+@keyframes ed-amber-breathe {
+  0%, 100% { opacity: 0.22; }
+  50% { opacity: 0.62; }
+}
+
+.ed-q-block[data-amber="on"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--amber), inset 0 0 22px rgba(192, 138, 46, 0.4);
+  animation: ed-amber-breathe 2.4s ease-in-out infinite;
+}
+
+.ep-root[data-amber="on"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--amber), inset 0 0 26px rgba(192, 138, 46, 0.45);
+  animation: ed-amber-breathe 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-q-block[data-amber="on"]::before,
+  .ep-root[data-amber="on"]::before {
+    animation: none !important;
+    opacity: 0.5;
+  }
+}
+
 .ed-btn {
   min-height: 44px;
   padding: 8px 14px;

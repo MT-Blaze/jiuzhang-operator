@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import re
@@ -33,10 +34,14 @@ from app.core.pending_db import (
     PENDING_ASSET_PREFIX,
     PENDING_ASSET_RE,
     PENDING_ASSET_URI_PREFIX,
+    POOL_ASSET_PREFIX,
+    POOL_ASSET_RE,
+    POOL_ASSET_URI_PREFIX,
     PendingError,
     UPLOAD_ASSET_PREFIX,
     UPLOAD_ASSET_URI_PREFIX,
     pending_assets_dir,
+    pool_assets_dir,
 )
 
 def _sniff_mime(data: bytes) -> str:
@@ -106,6 +111,19 @@ def asset_path(name: str) -> Path:
         target.resolve().relative_to(root.resolve())
     except ValueError as exc:
         raise PendingError("配图路径越界") from exc
+    return target
+
+
+def pool_asset_path(name: str) -> Path:
+    """重题池成品图的真实路径：只认 ``cimg_`` 号段，越界一律拒绝。"""
+    if not POOL_ASSET_RE.match(str(name or "")):
+        raise PendingError("重题池配图文件名不合法")
+    root = pool_assets_dir()
+    target = root / name
+    try:
+        target.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise PendingError("重题池配图路径越界") from exc
     return target
 
 
@@ -220,3 +238,131 @@ def move_assets_to_uploads(assets: list[dict[str, Any]]) -> dict[str, str]:
         shutil.move(str(source), str(target))
         mapping[PENDING_ASSET_URI_PREFIX + name] = UPLOAD_ASSET_URI_PREFIX + target_name
     return mapping
+
+def copy_pool_assets_to_uploads(assets: Iterable[dict[str, Any]]) -> dict[str, str]:
+    """把**重题池**的成品图复制进 ``uploads/``，返回「旧 uri → 新 uri」。
+
+    重题池并解法、分开存的时候，主库那份要能长期读，所以必须落 ``uploads/``；
+    而 ``pool_assets/`` 那一份是这条池内条目自己的，裁决退场时由 :func:`drop_pool_assets`
+    收干净。号段照旧：``cimg_x.png`` 进主库改名 ``img_x.png``。
+    """
+    mapping: dict[str, str] = {}
+    uploads_root = Path(settings.uploads_dir)
+    uploads_root.mkdir(parents=True, exist_ok=True)
+    for asset in assets or []:
+        name = str((asset or {}).get("name") or "") if isinstance(asset, dict) else ""
+        if not POOL_ASSET_RE.match(name):
+            continue
+        source = pool_asset_path(name)
+        if not source.is_file():
+            continue
+        target_name = UPLOAD_ASSET_PREFIX + name[len(POOL_ASSET_PREFIX):]
+        target = uploads_root / target_name
+        if not target.is_file():
+            shutil.copyfile(str(source), str(target))
+        mapping[POOL_ASSET_URI_PREFIX + name] = UPLOAD_ASSET_URI_PREFIX + target_name
+    return mapping
+
+
+def copy_pending_asset_to_pool(asset: Any) -> dict[str, Any]:
+    """把待审池那一份成品图**复制**进 ``pool_assets/``，返回池内资产条目。
+
+    是复制不是搬：待审行在同一条事务里才被删掉，文件先搬走的话事务一旦回滚
+    就再也拼不回来——「池里有了、批次里还留着」可以是半态，「图没了、题也没了」
+    是真丢数据。批次 ``assets_json`` 仍记着 ``pimg_`` 那一份，未审数归零时由
+    ``pending_bank._settle_batch`` 统一清，与本目录互不相干。
+
+    源文件不在就是失败（原判据 3.6 的「图文件缺失」一路）：宁可整条不搬，
+    也不让池里躺着一条点开是死链的题。
+    """
+    name = str((asset or {}).get("name") or "") if isinstance(asset, dict) else ""
+    if not PENDING_ASSET_RE.match(name):
+        raise PendingError("配图文件名不合法")
+    source = asset_path(name)
+    if not source.is_file():
+        raise PendingError("配图文件已不在中转站目录里，无法搬进重题池")
+    raw = source.read_bytes()
+    target_name = POOL_ASSET_PREFIX + name[len(PENDING_ASSET_PREFIX):]
+    root = pool_assets_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / target_name
+    if not target.is_file():
+        temp = root / (".pool-" + secrets.token_hex(8) + ".tmp")
+        try:
+            temp.write_bytes(raw)
+            os.replace(temp, target)
+        finally:
+            if temp.exists():
+                temp.unlink()
+    entry = {key: value for key, value in (asset or {}).items() if key != "name"}
+    entry["name"] = target_name
+    entry["uri"] = POOL_ASSET_URI_PREFIX + target_name
+    entry["bytes"] = len(raw)
+    entry["sha256"] = hashlib.sha256(raw).hexdigest()
+    return entry
+
+
+def drop_pool_assets(assets: Iterable[dict[str, Any]]) -> int:
+    """只删 ``pool_assets/`` 里的那几份；``pending_assets/`` 与 ``uploads/`` 一个字节不碰。
+
+    目录分开之后，「池里 delete 删到批次还在用的图」这件事在物理上就不成立了，
+    不需要再回查别的表引用（S4 留的那条过渡规则到此收口）。
+    """
+    deleted = 0
+    for item in assets or []:
+        name = str((item or {}).get("name") or "") if isinstance(item, dict) else ""
+        if not POOL_ASSET_RE.match(name):
+            continue
+        path = pool_assets_dir() / name
+        try:
+            if path.is_file():
+                path.unlink()
+                deleted += 1
+        except OSError:
+            # 删不掉的残留文件只是垃圾，不该让已经成功的裁决动作报失败。
+            pass
+    return deleted
+
+
+def remove_uploaded_copies(mapping: dict[str, str]) -> None:
+    """写库没过：把刚复制进 ``uploads/`` 的那几份删掉。
+
+    只删本次复制的产物（:func:`copy_pool_assets_to_uploads` 的输出），绝不动
+    ``pending_assets/`` 与 ``pool_assets/`` 里的原件；删不掉就当垃圾留着，
+    不让收尾的清理把已经发生的业务失败盖住。
+    """
+    for _old_uri, new_uri in (mapping or {}).items():
+        name = str(new_uri or "")[len(UPLOAD_ASSET_URI_PREFIX):]
+        if not name.startswith(UPLOAD_ASSET_PREFIX):
+            continue
+        try:
+            path = Path(settings.uploads_dir) / name
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+
+
+def rewrite_uri_text(text: str, mapping: dict[str, str]) -> str:
+    """把正文（解析、题干）里出现的旧 uri 换成新 uri。
+
+    :func:`rewrite_asset_uris` 只改 ``images`` 数组；解析正文是 Markdown 文本，
+    图引用就写在里面，「新增解析」并进去的那段必须换一遍，不然主库解法里的图
+    指向的还是池子目录。
+    """
+    body = str(text or "")
+    for old_uri, new_uri in (mapping or {}).items():
+        body = body.replace(old_uri, new_uri)
+    return body
+
+
+def restore_assets(mapping: dict[str, str]) -> None:
+    """写库没过：把已经搬进主库资源目录的配图搬回池子。"""
+    for old_uri, new_uri in mapping.items():
+        name = old_uri[len(PENDING_ASSET_URI_PREFIX):]
+        target_name = new_uri[len(UPLOAD_ASSET_URI_PREFIX):]
+        try:
+            shutil.move(str(Path(settings.uploads_dir) / target_name),
+                        str(asset_path(name)))
+        except (OSError, PendingError):
+            pass

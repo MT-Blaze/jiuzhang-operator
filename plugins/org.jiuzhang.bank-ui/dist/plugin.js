@@ -1,7 +1,7 @@
 /**
  * 真题题库视图插件运行时（org.jiuzhang.bank-ui）。
  *
- * 本插件只有界面，没有题库：列表/大纲/待审/查重一律经 jzo-plugin/1 协议向宿主
+ * 本插件只有界面，没有题库：列表/大纲/待审一律经 jzo-plugin/1 协议向宿主
  * 申请「活跃题库」的数据，宿主再交给题库引擎（app/core/bank.py）查询。
  * 插件拿不到数据库、文件系统与令牌。
  *
@@ -10,7 +10,7 @@
  *
  * 三个文件按 PLUGIN_SPEC §2.8.1（单文件不得过 800 行）分工：
  * - ui_browse.js：题面渲染——安全富文本、列表行、大纲树与详情；
- * - ui_review.js：待审任务与查重清洗两块工作台；
+ * - ui_review.js：待审任务工作台；
  * - plugin.js（本文件）：宿主协议、筛选参数、数据装载、视图装配与命令路由。
  */
 (function () {
@@ -51,20 +51,7 @@
     reviewItems: [],
     reviewSummary: { total: 0, flags: [] },
     reviewLoading: false,
-    reviewError: "",
-    // 查重清洗（军令 #18-终 阶段五）：扫描结果留在本地，审一组存一组，
-    // 合并不重扫——「一键扫描」是显式动作，回流刷新不能把老师正在比的题抽走。
-    dupeQueue: [],
-    dupePrimary: "",
-    dupeShowSolution: false,
-    dupeLoading: false,
-    dupeBusy: false,
-    dupeError: "",
-    dupeScanned: 0,
-    dupeRedundant: 0,
-    dupeTruncated: 0,
-    dupeMerged: 0,
-    dupeSkipped: 0
+    reviewError: ""
   };
 
   // ---------- 宿主通信 ----------
@@ -164,7 +151,7 @@
       dock("宿主送来的题库检索是空的，本视图保持原样。");
       return;
     }
-    // 检索词只有列表视图会消费：待审/查重视图下必须先切回列表，
+    // 检索词只有列表视图会消费：待审视图下必须先切回列表，
     // 否则 loadQuestions() 白打一次接口、界面还停在原面板，AI 送来的词被静默吞掉。
     if (state.view !== "list") state.view = "list";
     state.search = query;
@@ -200,7 +187,7 @@
   var renderList = browse.renderList;
   var renderDetail = browse.renderDetail;
 
-  // ---------- 待审与查重清洗工作台：已拆到 ui_review.js（PLUGIN_SPEC §2.8.1） ----------
+  // ---------- 待审工作台：已拆到 ui_review.js（PLUGIN_SPEC §2.8.1） ----------
   // 面板怎么画交给工作台；本文件只管协议、数据与视图装配。
   // 题块渲染的那几件套由 ui_browse.js 先装配，再转交工作台复用。
   var review = window.JzoBankReview.create({
@@ -222,8 +209,6 @@
   });
   var loadReview = review.loadReview;
   var renderReviewPanel = review.renderReviewPanel;
-  var loadDedupe = review.loadDedupe;
-  var renderDedupePanel = review.renderDedupePanel;
 
   function renderAll() {
     if (!stageMode || !root) return;
@@ -256,12 +241,11 @@
     refresh.type = "button";
     refresh.disabled = state.loading;
     refresh.setAttribute("aria-busy", String(state.loading));
-    // 刷新要刷「正在看的那个视图」：待审与查重视图不消费 state.items，
-    // 无脑 loadQuestions() 会让这两个视图下的【刷新】点了像没反应。
+    // 刷新要刷「正在看的那个视图」：待审视图不消费 state.items，
+    // 无脑 loadQuestions() 会让这个视图下的【刷新】点了像没反应。
     refresh.addEventListener("click", function () {
       loadTree();
       if (state.view === "review") loadReview(state.reviewPage);
-      else if (state.view === "dedupe") loadDedupe();
       else loadQuestions();
     });
     toolbar.appendChild(refresh);
@@ -289,29 +273,18 @@
     reviewButton.addEventListener("click", function () { loadReview(1); });
     views.appendChild(listButton);
     views.appendChild(reviewButton);
-    var dupeCount = state.view === "dedupe" ? state.dupeQueue.length : state.dupeRedundant;
-    var dupeButton = el("button", "cb-btn" + (state.view === "dedupe" ? " cb-btn-primary" : ""),
-      "查重清洗" + (dupeCount ? " " + dupeCount : ""));
-    dupeButton.type = "button";
-    dupeButton.setAttribute("role", "tab");
-    dupeButton.setAttribute("aria-selected", String(state.view === "dedupe"));
-    dupeButton.setAttribute("data-dupe-tab", "true");
-    dupeButton.addEventListener("click", function () { loadDedupe(); });
-    views.appendChild(dupeButton);
     toolbar.appendChild(views);
 
-    var hintLabels = { review: "人工审核：修一条清一条", dedupe: "题面指纹相同才算重复：答案与解析各留各的，不强行合并" };
+    var hintLabels = { review: "人工审核：修一条清一条" };
     var hint = el("span", "cb-sub", hintLabels[state.view] || describeFilters());
     hint.setAttribute("data-filter-summary", "true");
     toolbar.appendChild(hint);
     root.appendChild(toolbar);
 
-    var wide = state.view === "review" || state.view === "dedupe";
+    var wide = state.view === "review";
     var body = el("div", wide ? "cb-body cb-body-review" : "cb-body");
     if (state.view === "review") {
       renderReviewPanel(body);
-    } else if (state.view === "dedupe") {
-      renderDedupePanel(body);
     } else {
       renderTree(body);
       renderList(body);
@@ -363,9 +336,7 @@
   var refreshTimer = null;
 
   function scheduleRefresh() {
-    // 宿主对新旧两个事件名各广播一次，这里去重成一次刷新，避免连打两遍接口
-    if (state.view === "dedupe") return;
-    // 查重队列是本地态：合并后宿主会广播本题更新，此刻重扫会把老师正在比的题抽走
+    // 宿主广播本题更新（新旧两个事件名各广播一次），这里去重成一次刷新，避免连打两遍接口
     if (refreshTimer) window.clearTimeout(refreshTimer);
     refreshTimer = window.setTimeout(function () {
       refreshTimer = null;
@@ -510,76 +481,6 @@
           flags: state.reviewSummary.flags || []
         });
       });
-      return;
-    }
-
-    if (commandId === "org.jiuzhang.action.data.dedupe_scan") {
-      if (Object.keys(context).length) {
-        return commandReject(source, message, "BAD_PARAMS", "查重扫描不接受参数");
-      }
-      var scanCall = loadDedupe();
-      if (!scanCall || typeof scanCall.then !== "function") {
-        return commandReject(source, message, "COMMAND_BUSY", "查重正在运行，请稍后再试");
-      }
-      scanCall.then(function () {
-        respond(source, message.id, true, {
-          scanned: state.dupeScanned,
-          queued: state.dupeQueue.length,
-          redundant: state.dupeRedundant,
-          truncated: state.dupeTruncated,
-          groups: state.dupeQueue.slice(0, 5).map(function (group) {
-            return { ids: (group.ids || []).slice(0, 10) };
-          })
-        });
-      });
-      return;
-    }
-
-    if (commandId === "org.jiuzhang.action.data.dedupe_merge") {
-      var mergeUnknown = rejectUnknown(context, ["primary_id", "copy_ids"]);
-      if (mergeUnknown) {
-        return commandReject(source, message, "BAD_PARAMS", mergeUnknown);
-      }
-      var primary = typeof context.primary_id === "string" ? context.primary_id : "";
-      var copies = Array.isArray(context.copy_ids) ? context.copy_ids : [];
-      var validCopies = copies.filter(function (item) {
-        return typeof item === "string" && QUESTION_ID_RE.test(item);
-      });
-      if (!QUESTION_ID_RE.test(primary) || !validCopies.length || validCopies.length !== copies.length) {
-        return commandReject(source, message, "BAD_PARAMS",
-          "primary_id 与 copy_ids 必须是合法的题目 id（q_ 开头）");
-      }
-      if (validCopies.length > 20) {
-        return commandReject(source, message, "BAD_PARAMS", "一次最多合并 20 条副本");
-      }
-      if (validCopies.indexOf(primary) >= 0) {
-        return commandReject(source, message, "BAD_PARAMS", "主记录不能同时出现在副本里");
-      }
-      if (state.dupeBusy) {
-        return commandReject(source, message, "COMMAND_BUSY", "上一次合并没有完成，请稍后再试");
-      }
-      state.dupeBusy = true;
-      hostCall("bank.dedupe_merge", { primary_id: primary, copy_ids: validCopies })
-        .then(function (result) {
-          state.dupeBusy = false;
-          state.dupeQueue = state.dupeQueue.filter(function (group) {
-            return (group.ids || []).indexOf(primary) < 0;
-          });
-          state.dupePrimary = "";
-          state.dupeMerged += validCopies.length;
-          state.dupeScanned = Math.max(0, state.dupeScanned - validCopies.length);
-          state.dupeRedundant = Math.max(0, state.dupeRedundant - validCopies.length);
-          renderAll();
-          respond(source, message.id, true, result || {
-            primary_id: primary,
-            merged: validCopies,
-            removed: validCopies
-          });
-        }, function (error) {
-          state.dupeBusy = false;
-          renderAll();
-          commandReject(source, message, "COMMAND_FAILED", "合并失败：" + error.message);
-        });
       return;
     }
 
