@@ -536,6 +536,8 @@ com.example.card/
 | `editor.collect_files` | 插件 → 宿主 → 画布插件 | `{ pluginId, raw: { files } }`；插件把收到的文件转交宿主，宿主只投递给**画布页签**那个实例（军令 #27）。用途：同一插件的辅助栏实例与画布实例是两张 iframe，文件要落到画布的收集筐只能走宿主中转。 |
 | `editor.canvas_state` | 画布插件 → 宿主 → 辅助栏面板 | `{ pluginId, raw: { hover?, scroll? } }`；宿主只投递给**右栏面板**那个实例（军令 #29）。`hover` 是悬停题号（-1 表示移开），`scroll` 表示画布正在滚。用途：录题工作台的画布与辅助栏是两张 iframe，呼吸灯与批次折叠这类跨帧联动只能走宿主中转。 |
 | `editor.dup_review` | 辅助栏面板 → 宿主 → 画布插件（及反向收窗） | `{ pluginId, from:"panel", phase:"open", report }` 或 `{ pluginId, phase:"closed" }`；宿主只投递给**同一插件的**另一帧（军令 #31）。`report` 就是 `GET /api/pending/items/{id}/duplicate` 的整份出参，带 `incoming` / `existing` 两份题目文档。用途：查重命中后的对比浮层必须画在**画布**那帧——辅助栏按军令 #23 绝不放渲染预览，而这一窗要比的是渲染结果。 |
+| `editor.clean_review` | 辅助栏面板 → 宿主 → 画布插件 | `{ pluginId, open, key, sections }`；`sections` 每段带 `field`（`stem` / `solution`）、`label`、清洗前后两段正文（`before` / `after`）、`changed` 与命中的 `rules`，`open:false` 表示收窗。宿主只投递给**录题插件的画布帧**；画布不在场时宿主直接回投 `editor.clean_review_state`（军令 #31 · 4.3）。用途：LaTeX 清洗不许「点一下就覆盖中栏源码」，先看对照、逐段点【采用替换】才回填。 |
+| `editor.clean_review_state` | 画布插件 → 宿主 → 辅助栏面板 | `{ pluginId, key, phase, reason }`；`phase` 取 `opened` / `closed` / `tab_not_live`。面板据此决定四颗采用/放弃钮是否可点：画布页签不在场或 2 秒没回执就降级为「只报摘要、按钮锁死」，**绝不静默直填**（军令 #31 · 4.3）。 |
 
 插件侧的发布白名单在清单 `bus` 字段里声明：
 
@@ -545,9 +547,9 @@ com.example.card/
 
 | 字段 | 规则 |
 | --- | --- |
-| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#29 补齐，#31 增 `editor.dup_review`）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` / `system.pending_updated` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review` |
-| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
-| 条目总数 | ≤8，超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
+| `bus.subscribe` | 只接受宿主已定义的入站事件，未定义项逐条丢弃；缺省 `["ui.params.changed"]`。当前全集（#29 补齐，#31 增 `editor.dup_review`，4.3 增 `editor.clean_review` / `editor.clean_review_state`）：`ui.params.changed` / `layout.changed` / `stage.tab.activated` / `stage.tab.opened` / `stage.tab.closed` / `stage.tab.sleep` / `stage.selection` / `theme.changed` / `question.updated` / `system.question_updated` / `system.bank_query` / `basket.changed` / `plugin.updated` / `panel.button.click` / `editor.apply_patch` / `system.open_editor` / `system.pending_updated` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review` / `editor.clean_review` / `editor.clean_review_state` |
+| `bus.publish` | 只接受 `region.dock` / `region.left` / `region.right` / `stage.selection` / `editor.collect_files` / `editor.canvas_state` / `editor.dup_review` / `editor.clean_review` / `editor.clean_review_state`；**`layout.*` 与 `ui.params.*` 永远发不出去**——插件不许反过来改宿主布局或伪造面板参数；缺省 `["region.dock"]` |
+| 条目总数 | ≤12（`_BUS_MAX_TOPICS` 单源，判据只认这个常量），超出的截断；整个 `bus` 写坏（不是对象）时按缺省值兜底，不拒装 |
 
 插件发事件的实际写法就是一条通知（见 §2.3.3）：`{ kind: "notification", event: "region.dock", payload: { text: "..." } }`。宿主收到后先查白名单，不在名单里的**丢弃并在底栏写明「想发未授权事件 xxx，已丢弃」**——不静默、不抛错、不断链。
 
@@ -1222,17 +1224,10 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 | --- | --- | --- | --- | --- |
 | `org.jiuzhang.action.view.filter_questions` | 筛选题库 | `grade` enum `全部/高一/高二/高三`；`difficulty` enum `全部/L1/L2/L3/L4`；`type` enum `全部/single_choice/multiple_choice/fill_blank/solution`；`search` string ≤100 | `{total, filters:{grade, difficulty, type, search}}` | 视图 |
 | `org.jiuzhang.action.view.review_queue` | 打开待审队列 | `flag` string ≤40（空串表示全部） | `{total, pages, flag, flags:[{name,count}]}` | 视图 |
-| `org.jiuzhang.action.data.dedupe_scan` | 扫描重复题 | 无（`{}`） | `{scanned, queued, redundant, truncated, groups:[{ids:[string]}]}`；`groups` 只回前 5 组、每组前 10 个 id | 只读 |
-| `org.jiuzhang.action.data.dedupe_merge` | 合并重复题 | 必填 `primary_id` string ≤80；必填 `copy_ids` string 数组 1–20 条、每条 ≤80 | `{primary_id, merged:[string], questions_after, moved:{topics, sources, extensions}}` | 写库（`requires_user`） |
 
 - `filter_questions` 只改视图筛选态并立即重查，不改题目数据；`search` 是题干关键词，
   不是 SQL 片段；
-- `review_queue` 切到待审视图并翻到第一页，`flag` 传灌库标记名（如 `answer_absent`）；
-- `dedupe_scan` 把结果留在查重面板本地供人工比对，不自动合并、不落库；
-- `dedupe_merge` 是**不可撤销的写库操作**：主记录保留，`copy_ids` 的题目行会被删除，
-  考向/来源/备注并进主记录。`primary_id` 不得同时出现在 `copy_ids` 里；一次最多 20 条副本
-  （与宿主 `bank.dedupe_merge` 的 `MAX_COPIES` 一致）。调用方必须先让老师看过这组题，
-  再执行合并——AI 不得自行发起或自动确认。
+- `review_queue` 切到待审视图并翻到第一页，`flag` 传灌库标记名（如 `answer_absent`）。
 
 **5）`org.jiuzhang.paper-gen`（组卷排版，iframe）。**
 
@@ -1295,13 +1290,13 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 5. **结果是摘要，不是全量导出**：官方命令最多回 64 KB；要批量数据请分页走 Host API，
    不要把命令当数据库游标用；
 6. **同一条命令只做声明里的事**：调用方不得假设 `generate_paper` 会顺手导题库、
-   `save_question` 会顺手清标记、`dedupe_merge` 会顺手改考向树。
+   `save_question` 会顺手清标记、`export_paper` 会顺手改考向树。
 
 **9）自查（第三方二开最短路径）。**
 
 1. `GET /api/plugins` 确认七个官方插件的 `version` 与本表一致、`commands_rejected` 为空；
 2. `callHost("command.list")`，用返回的 `params_schema` 生成表单或 AI 工具定义；
-3. 先调只读命令（`bank_stats`/`bank_search`/`dedupe_scan`）验证取数与摘要口径；
+3. 先调只读命令（`bank_stats`/`bank_search`/`bank_topics`）验证取数与摘要口径；
 4. 再调视图命令（`filter_questions`/`generate_paper`）确认只改本插件状态；
 5. 最后在人工确认后调写库/打印命令，核对 `requires_user` 确认卡与返回值；
 6. 故意多传一个键、把 `grade` 写成不存在的值、把 `question_id` 写成数据库行号——
@@ -1340,7 +1335,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 等级 | 判定 | 例子 |
 | --- | --- | --- |
-| 高 | `requires_user: true`；或官方 `output.*` | `dedupe_merge`、`save_question`、`export_paper` |
+| 高 | `requires_user: true`；或官方 `output.*` | `clean_latex`、`save_question`、`export_paper` |
 | 中 | 官方 `input.*` / `process.*`（未标 `requires_user`） | `open_question`、`generate_paper`、`render_handout` |
 | 低 | 官方 `data.*` / `view.*` 只读 | `bank_stats`、`bank_search`、`filter_questions` |
 

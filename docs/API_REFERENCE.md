@@ -111,7 +111,7 @@
 两类题库要分清：
 
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
-- **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.sources` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap` / `bank.dedupe_scan` / `bank.dedupe_merge`，跨页签共享（查重两件更严，只开放给 provider 自己的页签**或声明 `bank.view` 的视图插件页签**，见 §2.17）。
+- **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.sources` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap`，跨页签共享。
 
 ### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.1）
 
@@ -311,25 +311,6 @@ payload：无（HTTP 直连时可带 `?days=N`，1–3650，默认 365）。resu
 `uri` 可直接写进题干（`\includegraphics{/static/uploads/...}`）和 `images[].uri`；
 题目里的 `images[].id` 用返回的 `id`。未声明 `assets:write` 时宿主回 `FORBIDDEN`。
 
-### 2.17 `bank.dedupe_scan` / `bank.dedupe_merge` — 查重清洗（军令 #18-终 阶段五新增）
-
-**只开放给当前活跃题库 provider 自己的页签，或声明 `bank.view` 的视图插件页签**
-（军令 #20 起题库视图是独立插件 `org.jiuzhang.bank-ui`，默认 provider 是
-`org.jiuzhang.bank-engine`）。扫描要读全库、合并要真删副本行，所以别的插件
-哪怕猜对方法名也只拿到 `FORBIDDEN`；两个题库插件都不声明 `questions:write`——
-三端分离不破，改题目内容仍然只有录题工作台能干，这条通道只做「同题收敛」的库内清洗。
-HTTP 端点、指纹口径与合并语义见 §3.1 的 `duplicates` / `duplicates/merge` 两行，逐字一致。
-
-| 方法 | payload | result |
-| --- | --- | --- |
-| `bank.dedupe_scan` | 无 | `{plugin_id, scanned, group_count, redundant, truncated, groups[]}`（`groups[]` 形状同 §3.1） |
-| `bank.dedupe_merge` | `{"primary_id": "q_x", "copy_ids": ["q_y", ...]}`；`copy_ids` 1–20 条，两端 id 都须匹配 `^[A-Za-z0-9_-]{1,80}$` | 合并出参（`moved` / `solution_appended_from` / `questions_after` / `primary` 等，见 §3.1） |
-
-`bank.dedupe_merge` 的写令牌由宿主代取代填，插件看不到令牌；载荷不合法回 `BAD_REQUEST`，
-后端核对不过回 `HOST_4xx` 且**整事务回滚**（不会出现「题删了、挂载还挂着」）。
-合并成功后宿主广播一次 `system.question_updated`（`action:"merge"`，`id` 为保留项），
-题篮/组卷/讲义等下游视图据此重取；副本 id 同时自动退出题篮。
-
 ### 2.18 `command.list` / `command.execute` — 能力路由字典（军令 #19 新增）
 
 插件之间**不直连**：要在清单里公开自己的能力，就用 `contributes.commands` 登记一个命令 id；
@@ -424,8 +405,6 @@ payload = { command_id, context, from, trace }
 | `GET /api/bank/plugins/{plugin_id}/topics/{topic_id}/notes` | 考向教研笔记 |
 | `GET /api/bank/plugins/{plugin_id}/review?flag=&page=&page_size=` | 待审队列 |
 | `GET /api/bank/plugins/{plugin_id}/random?...筛选同 list` | 随机一题（无匹配 404） |
-| `GET /api/bank/plugins/{plugin_id}/duplicates` | 查重扫描（**只读、不鉴权**）：全库标准化 → 指纹 → 返回 ≥2 题的重复组。出参 `{plugin_id, scanned, group_count, redundant, truncated, groups[]}`；`groups[]` = `{fingerprint, count, type, ids[], differing_fields[], documents[]}`，`documents` 逐题符合 §2.1（与题库浏览器同源，双栏审查面板不必再逐题取详情）。指纹只吃到排版级归一：定界符、全半角、中文句读、多余空格、选项顺序、配图 URI 参与归一，**答案/解析/难度/年级/考向挂载/来源不参与**，其差异全列进 `differing_fields` 给老师看；ASCII `!`（阶乘）、`:`（比）、`()`（分组）一个都不吞——宁可漏报也不误报，误报的下一站是删数据 |
-| ✍ `POST /api/bank/plugins/{plugin_id}/duplicates/merge` | 收敛合并：`{"primary_id": "q_x", "copy_ids": ["q_y", ...]}`，需写令牌。保留项的题干/选项/答案/难度/题型一字不动，只把副本的考向挂载（主挂载不顶替）、来源关系（同卷同题号并一行）、单题备注 `extensions`（副本独有的键搬走；同名键**保留项赢**且只报冲突不合成，AGENTS §3）与不同解析（按「解法二/三…」追加）并过来；副本行随事务真删除（存储层无软删列）。搬完先核对（行数、副本无残留、解析/备注落库、挂载与来源集合、`foreign_key_check`、`integrity_check`）**才提交**，任一不过即整事务回滚。出参 `{primary_id, merged[], same_fingerprint, fingerprint_mismatch[], moved{topics,sources,extensions,conflict_extensions}, solution_appended_from[], questions_before, questions_after, primary}`。一次最多 20 条副本；合并成功后这些 id 自动退出题篮 |
 | `GET /api/bank/export` | 导出当前工作区题库为标准交换包 `.json`（`Content-Disposition: attachment`；`{format, format_version, schema_version, exported_at, plugin_id, count, questions}`） |
 | ✍ `POST /api/bank/import` | 批量导入题目包：`{"filename", "content_base64", "mode": "upsert"\|"skip"}`；`.json`（单题/数组/`questions` 交换包）或 `.zip`（内含 `.json`）。宿主逐题校验 `schemas/question.json`，一题不过整批回滚并逐题报错（422） |
 
@@ -478,15 +457,17 @@ payload = { command_id, context, from, trace }
 | ✍ `POST /api/meta/schools/suggest` | AI 补全：`{"short_name"}` → `{full_name, confidence, mock}`；**只回建议不落库**，老师确认后再走上一行建档；简称空串直接 400 |
 | `GET /api/meta/tags?scene=&q=` | 交叉标签候选：先按场景加权（外国题优先 AMC / A-Level / IB，校考题优先 9 月月考 / 一模），再按 `q` 模糊匹配；出参带 `scene_weight` |
 | ✍ `POST /api/meta/tags` | 记一个新标签：`{"name","scene"?}`；同名同场景已存在则权重 +1，下次自动出现在候选里 |
-| `GET /api/pending/batches` | 待审批次卡片（左栏历史批次数据源；有未审的批次在前） |
+| `GET /api/pending/batches` | 待审批次卡片（左栏历史批次数据源；有未审的批次在前）。每张卡片另带 `dedupe`（军令 #31 · 3.1a 导入批次后台自动初查，进程内缓存派生注解、**不落库**）：`{"status":"pending"}`＝还没扫过或底座刚重启（**不等于没有重复**）；`{"status":"done","scanned","redundant","batch_redundant","bank_redundant","main_scanned","at"}`＝只读引擎 `batch_duplicate_groups` 的实扫结果，`redundant` 是批内组与主库组的并集条数、`batch_redundant`/`bank_redundant` 是两栏拆开的条数（与 3.5 弹窗默认勾选集同一把尺子）；`{"status":"failed","code":"dedupe_scan_bank_unavailable","retryable":true,"at"}`＝主库读不通，界面必须如实报「初查未完成」，**绝不降级成「没有重复」**。同一 `batch_id` 重复入池即重扫、后写覆盖先写（初查全程只读，池与主库一个字节都不写） |
 | `GET /api/pending/batches/{batch_id}/questions` | 某批次池内题目（每条带完整题目文档，可直接渲染） |
 | `GET /api/pending/meta/history` | 最近用过的地区 / 主体 / 考试类型 / 学科 / 明细学校，开新批次自动带出 |
 | ✍ `POST /api/ingest/files` | 【开始解析】才调用：`{"files":[{"name","data_url"}]}` → 201 立起批次（先占位、后台解析后原地替换），返回 `batch_id` / 占位题 / `parsing` |
 | ✍ `PATCH /api/pending/batches/{batch_id}/meta` | 改批次公共元数据并同步池内全部题：`{"year","region","body","exam_type","subject","schools":[...]}`；标准名不收（底座拼），同步不上的题一条不动并进 `warnings` |
-| ✍ `POST /api/pending/batches` | 存为待审：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交 |
+| ✍ `POST /api/pending/batches` | 存为待审：`{"questions":[{"question","assets"}], "batch_id"?, "source_backup"?, "source_name"?, "origin"?}` → 201；不给 `batch_id` 就新开一批（`B-001` 起），`p_` 号段与主库 `q_` 永不相交。回执另带 `dedupe_queued`（bool）：为真表示底座已在**响应发出之后**起了后台初查线程（daemon 线程，导入时长与主库行数解耦，结论只走批次卡片的 `dedupe` 异步回投，响应体从不带回判定结果）；拖拽两段式的**占位轮**（`origin=="ingest"` 且本次未传 `batch_id`）不回队列、`dedupe_queued` 为 `false`，免得卡片闪一次「冗余 0」的假象；初查失败不影响本次暂存（主库不可用不拦导入） |
 | `GET /api/pending/items/{pending_id}/duplicate` | **入库前后台查重**（军令 #31）：`{hit, level, similarity, existing_id, scanned, truncated, blocked, answer:{same,existing,incoming}, incoming:{题目文档}, existing:{题目文档}}`。`level` 取 `identical` / `high` / `none`；两份文档都是标准结构，插件拿去做**渲染**对比（不比源码）；`answer.same` 为 `null` 表示有一边没写答案，此时不作裁决 |
 | ✍ `POST /api/pending/items/{pending_id}/approve` | 存入主库：`p_` → 底座新签发 `q_`，配图搬进 `uploads/`。主库已有同题时：不带 `action` 回 409 带 `existing_id`；`{"action":"overwrite"}`（或旧的 `{"force":true}`）以池子里这条为准覆盖、题目 id 不变；`{"action":"merge_solution"}` 主库那题不动、把这条解析并成「解法二」。**两边答案不同时这两种动作一律 409 且 `detail.answer_mismatch` 为真**——只许放弃（放弃是前端本地动作，不写库也不发请求） |
 | ✍ `POST /api/pending/items/{pending_id}/delete` | 彻底删除这一条（连同池内配图），主库不碰 |
+| `GET /api/pending/batches/{batch_id}/duplicates` | **一键剔除前的清单**（军令 #31 · 3.5，dry-run 只读）：批内互重 + 与主库重复两类口径一起报。回 `{batch_id, provider_id, scanned, redundant, live_after, will_empty, main_scanned, main_snapshot_at, groups[], drop_ids[]}`。`groups` 每组带 `reason`：`batch` 是批内重复（`keep` 留录入最早的一条、`drop` 其余），`bank` 是与主库命中（`keep` 为空、`drop` 只一条，另带主库那题的 `existing_id`）；`redundant` 是两组 `drop` 的并集条数；`drop_ids` 只是**默认勾选集**（`batch` 组 `drop` 的并集、升序），`live_after` / `will_empty` 都按默认勾选集算，老师改勾选后由前端按 `scanned - 勾选数` 实时重算，服务端不猜；`main_scanned` 是主库快照的实读行数，`main_snapshot_at` 是快照时刻。批次编号不合法与中转站里没有这一批同回 404 `batch_purge_batch_not_found`；主库读不通如实报 404 `batch_purge_bank_not_found` / 400 `batch_purge_bank_unavailable`（`retryable`），**不降级**成「本批没有与主库重复的题」——那样老师按清单执行会漏剔 |
+| ✍ `POST /api/pending/batches/{batch_id}/purge-duplicates` | **一键剔除本批重复题**（军令 #31 · 3.5）：请求体 `{"drop_ids":["p_..."], "expected_drop_ids":["p_..."], "allow_empty":false}`，`drop_ids` 是老师勾选集，`expected_drop_ids` 是宿主对同一集合的回显、只做载荷自洽校验（防截断 / 中间层改写）；真正的护栏是服务端按**本次请求的主库快照**逐条重算：勾的条目已不再重复回 409 `batch_purge_selection_stale`（可重试），勾到 `batch` 组的保留者回 409 `batch_purge_keep_selected`，两种都整批不动；本次会把整批剔空而 `allow_empty` 不为真回 400 `batch_purge_empty_not_confirmed`（绕过弹窗直投接口也拦得住）。成功回 `{batch_id, deleted[], skipped[], files_failed[], batch, settled, backup_removed, new_redundant}`：`batch` 是结算后的批次卡片，未审归零时原文件副本与残留切图一并物理删除（`backup_removed` 据此记真删了原件），`new_redundant` 是重算重复全集里本次没剔的条数（只报数、不阻断）。**删的只有中转池条目与 `pending_assets/` 里的切图，主库一个字节不碰**；入参类统一收口在 400 `batch_purge_*`：`batch_purge_bad_pending_id`（`drop_ids` 不是编号数组，或其中某条编号不合法）、`batch_purge_empty_drop_ids`（`drop_ids` 为空：没有要剔除的条目）、`batch_purge_expected_mismatch_client`（`expected_drop_ids` 缺失或与勾选清单逐项不等，请重新扫描后再提交）、`batch_purge_pending_not_in_batch`（勾的条目不属于本批） |
 
 ### 3.6 AI Agent（宿主自用，插件不经此通道）
 

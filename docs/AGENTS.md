@@ -122,7 +122,7 @@
 > 本节只放**入口、红线与索引**，细则一律按索引加载，禁止在此堆积细节。
 > 体系资产随仓库走：`.qoder/`（agents / rules / skills / records / skill-bank.json）+ `scripts/check-*`。
 > 流水线只管"允许 / 禁止 / 怎么做"；事实性背景知识查 RepoWiki 与 knowledge cards。
-> **换产品或换 Qoder 版本时**：把 `docs/pipeline-workflow.md` 整份喂给新 AI 会话即可复用——它是本节的可移植投影（含角色派发三路与降级纪律）；两者冲突以本节为准，该文件不得成为第二事实源。
+> **换产品或换 Qoder 版本时**：以本节为准（原可移植投影已于 2026-11-04 随 MD 清理删除，无替代文件）。
 
 ### 9.1 触发分级（主公 2026-11-02 裁决）
 
@@ -185,7 +185,6 @@
 | 操作记录 | `.qoder/records/{biz,sys,reports}/` | 按月分层，文件名含日期 |
 | 脚本门禁 | `scripts/check-*.{sh,py}`、`tools/audit_code.py`、`tools/run_all_tests.py` | §9.4 |
 | 角色卡镜像 | `tools/sync_agents.py` | 角色不可调用时 |
-| 跨产品执行手册 | `docs/pipeline-workflow.md` | 换 Qoder 版本/产品，或要把工作流整份喂给新 AI 会话时 |
 
 ### 9.6 常用命令与环境坑
 

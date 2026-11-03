@@ -171,6 +171,7 @@
 > 1:1 双栏（2 题左 1 右 1、3 题左 2 右 1、4 题左 2 右 2），题卡单选保留项 + 【确认合并】，审一组存一组不阻塞；
 > 同时把 `bank.dedupe_scan` / `bank.dedupe_merge` 加进 `RELAY_METHODS`，并在浏览器里真人路径取证。
 > ⑧ **#18-终 阶段五（2026-10-25）**——core-bank 查重前端双栏审查面板，改动面：
+> **已于 2026-11-05 下架，代码见 git 历史。**
 > `plugins/org.jiuzhang.core-bank/dist/plugin.js`（第三页签 `data-dupe-tab`、`loadDedupe`、`dupeChips`、
 > `markDupeKept`、`buildDupeCard`、`renderDedupeGroup`、`renderDedupePanel`、`mergeDupeGroup`，
 > `scheduleRefresh` 加 `state.view === "dedupe"` 守卫）、`dist/plugin.css`（`.cb-dupe*` 整块，含
