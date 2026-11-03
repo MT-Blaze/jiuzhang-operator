@@ -673,5 +673,12 @@
 - **判定不可删**：`app/core/bank.py` 约 60 名门面 re-export（外部按 `bank.<名>` 消费，R03 §2.4）；`bank_dedupe.py:63`／`pending_dedupe.py:30` 的 `# noqa: F401` 再导出（S5b 拆分契约，删即断测试打桩面）；插件 `dist/plugin.js` 里 `hostCall/dock/respond/escapeHtml/toast/commandReject/openEditor` 的多份逐字副本＝**结构性重复、不可合并**（包自包含＋`check_plugin_package` 红线）。
 - **查过确认活着**：HTML `id` 孤儿 0；dist JS 顶层命名函数未调用 0；`data-*` 84 键无「只写不读」。
 - **未查完**：① CSS 孤儿类名；② 「仅 `tools/*_probe.py` 引用」的细分；③ `app/` 公开函数零引用穷举（扫描器会把自己文件后续调用误判为 0，需 vulture/pylint；本机无、按令未装）。
-- 未 commit、未 push。
-- 未 commit、未 push。
+
+## §42 上传 GitHub（2026-11-04，主公授权）
+
+- **主仓**：新提 3 个 —— `8dabf24`（#32 重题池落库＋编辑器 2.11.0＋默认展开＋四支退役插件删除）、`c8e2a9b`（修悬空引用、删失效文档、补 handoff 与切题流水线文档、业务记录入库）、`85e87f3`（宿主总线/中继接池四动作与清洗预览）；连同此前 6 个未推提交，`origin/main` 已到 **85e87f3**。
+- **插件仓**：`a01fe0a` —— editor **2.11.0 / 186,774 B**、bank-ui **1.0.2 / 26,065 B** 由 `build_plugin` 从当前源码重打并覆盖旧包（原 2.8.0 / 1.0.1），`origin/main` 已同步；两份 `plugins.json` 逐字节全等。
+- **推前门禁**：`check-quick-gate PASS 6/6`、`check-plugin-package PASS（7 支）`、`check-plugin-index-parity PASS`；包内断言 `data-fold="open"`、`var revealed = true;` 均 True（确认不是旧包）。
+- **提交署名**：`MT-Blaze <tianxiulaoshi@163.com>`；插件仓本地无身份配置，用 `git -c` 强制，未改任何 git config。
+- **未上传（有意排除，留本机）**：`.dsh-acl-recovery/`（本机 ACL 备份，含 PowerShell 脚本）与 `.qoder/records/biz/2026-11/20261103_order32-s6-evidence/`（334 文件 / 11MB，多为原始截图与 `__pycache__`）。要不要入库，等主公一句话。
+- 工作树现在只剩这两个 untracked 目录。
