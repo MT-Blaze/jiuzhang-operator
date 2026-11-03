@@ -14,7 +14,6 @@
     var emit = deps.emit;
     var fetchJson = deps.fetchJson;
     var filterValue = deps.filterValue;
-    var hasCapability = deps.hasCapability;
     var intValue = deps.intValue;
     var loadBankProvider = deps.loadBankProvider;
     var noteBasketChange = deps.noteBasketChange;
@@ -208,49 +207,6 @@
       reviewParams.set("page", String(intValue(payload, "page", 1, 1, 10000)));
       reviewParams.set("page_size", String(intValue(payload, "page_size", 20, 1, 100)));
       fetchJson(sharedBase + "/review?" + reviewParams.toString()).then(done, fail);
-      return true;
-    }
-
-    if (method === "bank.dedupe_scan" || method === "bank.dedupe_merge") {
-      // 查重清洗只对「活跃题库 provider 自己的页签」或「声明 bank.view 的视图插件」开放：
-      // 扫描要读全库、合并要真删副本行，别的插件哪怕猜对方法名也碰不到老师的库。
-      // 视图插件依旧没声明 questions:write——三端分离不破：改题目内容仍然只有录题
-      // 工作台能干，这里只做「同题收敛」的库内清洗。
-      if (pluginId !== stageState.bankProviderId && !hasCapability(tab, "bank.view")) {
-        replyHost(tab, message, false, {
-          code: "FORBIDDEN", message: "查重只开放给题库引擎或声明 bank.view 的视图插件"
-        });
-        return true;
-      }
-      if (method === "bank.dedupe_scan") {
-        // 视图插件自己没有库：扫描与合并都落在当前活跃 provider 上。
-        fetchJson(sharedBase + "/duplicates").then(done, fail);
-        return true;
-      }
-      var dedupePrimary = textValue(payload, "primary_id", 80);
-      var dedupeCopies = Array.isArray(payload.copy_ids) ? payload.copy_ids : null;
-      if (!ID_RE.test(dedupePrimary) || !dedupeCopies || !dedupeCopies.length
-          || dedupeCopies.length > 20
-          || dedupeCopies.some(function (id) { return !ID_RE.test(String(id)); })) {
-        replyHost(tab, message, false, {
-          code: "BAD_REQUEST", message: "保留项与副本列表不合法（副本 1–20 条，ID 只许字母数字下划线短横线）"
-        });
-        return true;
-      }
-      withWriteToken(sharedBase + "/duplicates/merge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ primary_id: dedupePrimary, copy_ids: dedupeCopies })
-      }).then(function (result) {
-        // 副本行已经没了，题篮/组卷/讲义那些下游视图都得重取；宿主统一广播一次，插件不各扫各的
-        emit("system.question_updated", {
-          action: "merge",
-          id: dedupePrimary,
-          pluginId: pluginId,
-          merged: (result && result.merged) || []
-        });
-        done(result);
-      }, fail);
       return true;
     }
 

@@ -23,7 +23,15 @@
     // 军令 #31：查重命中后的裁决请求。辅助栏拿不到渲染能力（它那帧按军令 #23
     // 绝不放预览），只能把「两侧文档」递给画布，由画布弹对比窗、亮红灯。
     // 画布裁决完再把结果回投给辅助栏，两帧之间始终隔着宿主这一跳。
-    "editor.dup_review"
+    "editor.dup_review",
+    // 4.3 LaTeX 清洗：辅助栏把「开/收预览」递进画布，画布回执 opened/closed/tab_not_live。
+    // 正文对照只在画布与宿主中继之间走，不进 system.* 广播。
+    "editor.clean_review",
+    "editor.clean_review_state",
+    // 军令 #32 · 第五步：重题池的左右渲染对比住画布那帧，四个动作住辅助栏；
+    // 【全部入库】前的整批扫琥珀灯同样要指挥画布跳题。两条都是辅助栏→画布的单向指令。
+    "editor.pool_review",
+    "editor.batch_review"
   ];
 
   function create(ctx) {

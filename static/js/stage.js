@@ -489,6 +489,38 @@
 
 
 
+  /** 录题两帧之间的双向指令：谁发的就投给另一方，绝不投回发送者自己。
+   *  from === "panel" → 画布页签；from === "canvas" → 右栏辅助栏；
+   *  认不出的 from 一律不投（宁可让界面不动，也不制造回声）。 */
+  /**
+   * editor 那两帧之间的双向指令（军令 #32 · 第五步）。
+   *
+   * payload 已被 stage_inbound 重包成 `{ text, pluginId, level, raw }`，业务数据在 `raw` 里；
+   * 谁发的就投给另一方——`from: "panel"` 进画布，`from: "canvas"` 回辅助栏。
+   * 主题名一律写在 `notify` 的调用处（逐字面量）：总线是白名单制的，
+   * tests.test_plugin_bus_parity 要能在源码里扫到投递点，抽成变量传参就扫不出来
+   * （#18-结 的 `stage.tab.*` 正是这样断掉的）。
+   */
+  function editorPairPayload(event) {
+    var payload = (event && event.payload) || {};
+    if (payload.pluginId !== EDITOR_PLUGIN_ID) return null;
+    var raw = (payload.raw && typeof payload.raw === "object") ? payload.raw : payload;
+    return { payload: payload, from: String(raw.from || "") };
+  }
+
+  function eachEditorCanvas(node) {
+    var canvasTab = findPluginTab(EDITOR_PLUGIN_ID);
+    if (canvasTab && canvasTab.frame && canvasTab.state === "live") node(canvasTab);
+  }
+
+  function eachEditorPanel(node) {
+    stageState.panels.forEach(function (panel) {
+      if (panel.plugin && panel.plugin.id === EDITOR_PLUGIN_ID && panel.frame) node(panel);
+    });
+  }
+
+
+
   function init() {
     if (!tabsEl || !bodyEl) return;
     // 启动不预开任何页签（含兜底页与设置控制台）：中栏留白，等用户从左右栏开页。
@@ -524,6 +556,57 @@
         if (dupTab && dupTab.frame && dupTab.state === "live") {
           notify(dupTab, "editor.dup_review", payload);
         }
+      });
+      // 军令 #32 · 第五步：重题池的左右渲染对比与整批扫灯都只能由画布那帧执行
+      // （KaTeX 与滚动条都在那里），发起点仍在辅助栏（按钮与档位都在那里）。
+      // 与 dup_review 同一条路，但这两条是**双向**的：谁发的就投给另一方——
+      // 辅助栏发的开窗/换档/全部入库进画布，画布发的收窗（Esc）与扫灯结果回辅助栏。
+      bus.on("editor.pool_review", function (event) {
+        var pair = editorPairPayload(event);
+        if (!pair) return;
+        if (pair.from === "panel") {
+          eachEditorCanvas(function (tab) { notify(tab, "editor.pool_review", pair.payload); });
+        } else if (pair.from === "canvas") {
+          eachEditorPanel(function (panel) { notify(panel, "editor.pool_review", pair.payload); });
+        }
+      });
+      bus.on("editor.batch_review", function (event) {
+        var pair = editorPairPayload(event);
+        if (!pair) return;
+        if (pair.from === "panel") {
+          eachEditorCanvas(function (tab) { notify(tab, "editor.batch_review", pair.payload); });
+        } else if (pair.from === "canvas") {
+          eachEditorPanel(function (panel) { notify(panel, "editor.batch_review", pair.payload); });
+        }
+      });
+      // 4.3：LaTeX 清洗预览。正文对照只进画布帧；画布不在就回投 tab_not_live，
+      // 让辅助栏立刻降级为纯摘要——绝不让老师按到必然落空的【采用】。
+      bus.on("editor.clean_review", function (event) {
+        var payload = (event && event.payload) || {};
+        if (payload.pluginId !== EDITOR_PLUGIN_ID) return;
+        var cleanRaw = (payload.raw && typeof payload.raw === "object") ? payload.raw : {};
+        var cleanTab = findPluginTab(EDITOR_PLUGIN_ID);
+        if (cleanTab && cleanTab.frame && cleanTab.state === "live") {
+          notify(cleanTab, "editor.clean_review", payload);
+          return;
+        }
+        stageState.panels.forEach(function (panel) {
+          if (panel.plugin && panel.plugin.id === EDITOR_PLUGIN_ID && panel.frame) {
+            notify(panel, "editor.clean_review_state", {
+              key: String(cleanRaw.key || ""), phase: "tab_not_live", reason: "canvas_not_live"
+            });
+          }
+        });
+      });
+      // 画布的回执（opened / closed）只投辅助栏，画布自己不需要这份回声。
+      bus.on("editor.clean_review_state", function (event) {
+        var payload = (event && event.payload) || {};
+        if (payload.pluginId !== EDITOR_PLUGIN_ID) return;
+        stageState.panels.forEach(function (panel) {
+          if (panel.plugin && panel.plugin.id === EDITOR_PLUGIN_ID && panel.frame) {
+            notify(panel, "editor.clean_review_state", payload);
+          }
+        });
       });
       // 题篮变了，组卷/讲义画布要跟上；不广播的话它们只能等用户再点一次刷新
       bus.on("basket.changed", function (event) { broadcast("basket.changed", event.payload); });

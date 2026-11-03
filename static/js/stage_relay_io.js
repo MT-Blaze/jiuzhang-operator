@@ -19,6 +19,17 @@
     var textValue = deps.textValue;
     var withWriteToken = deps.withWriteToken;
 
+  // 重题池的四个动作（军令 #32 · 第五步）：与底座 pending_pool.ACTIONS 逐字同集合。
+  // 【覆盖】【放弃】已退役，这里不给它们留通道。
+  var POOL_ACTIONS = ["merge_metadata", "add_solution", "keep_separate", "delete"];
+  var POOL_TIERS = ["strict", "standard", "loose"];
+
+  /** 档位只作读侧过滤：认不得的值一律当「没传」，绝不猜一个档。 */
+  function poolTierValue(raw) {
+    var tier = String(raw == null ? "" : raw);
+    return POOL_TIERS.indexOf(tier) >= 0 ? "?tier=" + tier : "";
+  }
+
 
   /** relay() 的「Text」分支族：不属本族立刻返回 false，办完返回 true。 */
   function relayText(ctx) {
@@ -41,7 +52,12 @@
       fetchJson("/api/agent/clean_latex", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: dirtyText })
+        // mode 只有两个合法值：contract（默认，#21 口径）与 exam_source（录题源码，
+        // 不碰环境骨架）。规则表在底座（latex_style_dict），插件侧一律不自己再写一份。
+        body: JSON.stringify({
+          text: dirtyText,
+          mode: payload.mode === "exam_source" ? "exam_source" : "contract"
+        })
       }).then(function (response) {
         var data = plainObject(response && response.data);
         if (typeof data.text !== "string") {
@@ -121,6 +137,19 @@
     return false;
   }
 
+  /** 校验「要剔除的中转站编号数组」：不是数组、超上限或有一项不合规都回 null。 */
+  function pendingIdList(raw) {
+    if (!Array.isArray(raw) || raw.length > 500) return null;
+    var ids = [];
+    for (var index = 0; index < raw.length; index += 1) {
+      var value = typeof raw[index] === "string" ? raw[index] : "";
+      if (!/^p_[A-Za-z0-9_-]{8,64}$/.test(value)) return null;
+      ids.push(value);
+    }
+    return ids;
+  }
+
+
   /** relay() 的「Pending」分支族：不属本族立刻返回 false，办完返回 true。 */
   function relayPending(ctx) {
     var tab = ctx.tab, message = ctx.message, method = ctx.method, payload = ctx.payload;
@@ -131,7 +160,7 @@
     if (method.indexOf("pending.") !== 0) return false;
 
     if (method === "pending.batch_list" || method === "pending.list"
-        || method === "pending.duplicate") {
+        || method === "pending.duplicate" || method === "pending.batch_duplicates") {
       // 读中转站：批次卡片与批次里的待审题目。开放给任何声明了 questions:read 的插件。
       var readPermissions = (tab.plugin && tab.plugin.permissions) || [];
       if (readPermissions.indexOf("questions:read") < 0) {
@@ -161,13 +190,19 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
         return true;
       }
+      if (method === "pending.batch_duplicates") {
+        // 一键剔除前的清单：只读，回 batch / bank 两组重复与默认勾选集，插件据此弹窗。
+        fetchJson("/api/pending/batches/" + encodeURIComponent(pendingBatchId) + "/duplicates")
+          .then(done, fail);
+        return true;
+      }
       fetchJson("/api/pending/batches/" + encodeURIComponent(pendingBatchId) + "/questions")
         .then(done, fail);
       return true;
     }
 
     if (method === "pending.save_draft" || method === "pending.approve"
-        || method === "pending.delete") {
+        || method === "pending.delete" || method === "pending.purge_duplicates") {
       // 写中转站与写主库同权：必须先声明 questions:write，令牌仍留在宿主侧。
       var pendingPermissions = (tab.plugin && tab.plugin.permissions) || [];
       if (pendingPermissions.indexOf("questions:write") < 0) {
@@ -178,6 +213,39 @@
         return true;
       }
       var jsonHeaders = { "Content-Type": "application/json" };
+      if (method === "pending.purge_duplicates") {
+        // 一键剔除：勾选集升序提交，expected_drop_ids 是同一集合的回显，只做载荷自洽校验；
+        // 真正的护栏在服务端（按本次主库快照逐条判重 + 保留者保护 + 剔空硬闸）。
+        var purgeBatchId = textValue(payload, "batch_id", 40);
+        if (!/^B-\d{3,}$/.test(purgeBatchId)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
+          return true;
+        }
+        var purgeDrops = pendingIdList(payload.drop_ids);
+        var purgeExpected = pendingIdList(payload.expected_drop_ids);
+        if (purgeDrops === null || purgeExpected === null) {
+          replyHost(tab, message, false, {
+            code: "BAD_REQUEST",
+            message: "drop_ids / expected_drop_ids 必须是中转站编号数组（最多 500 项）"
+          });
+          return true;
+        }
+        withWriteToken("/api/pending/batches/" + encodeURIComponent(purgeBatchId)
+          + "/purge-duplicates", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            drop_ids: purgeDrops,
+            expected_drop_ids: purgeExpected,
+            allow_empty: payload.allow_empty === true
+          })
+        }).then(function (result) {
+          var gone = (result && Array.isArray(result.deleted)) ? result.deleted : purgeDrops;
+          emitPendingUpdated("delete", gone, result);
+          done(result);
+        }, fail);
+        return true;
+      }
       if (method === "pending.save_draft") {
         var draftQuestions = payload.questions;
         if (!Array.isArray(draftQuestions) || !draftQuestions.length) {
@@ -240,6 +308,69 @@
           id: result && result.question_id,
           pluginId: tab.plugin.id
         });
+        done(result);
+      }, fail);
+      return true;
+    }
+
+    if (method === "pending.pool_list" || method === "pending.pool_get") {
+      // 重题池只读（军令 #32 · 第五步）：列表与单条都是「渲染对比」的原料。
+      var poolReadPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (poolReadPermissions.indexOf("questions:read") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:read 权限，不能读取重题池"
+        });
+        return true;
+      }
+      var poolTier = poolTierValue(payload.tier);
+      if (method === "pending.pool_list") {
+        fetchJson("/api/pending/pool" + poolTier).then(done, fail);
+        return true;
+      }
+      var poolGetId = textValue(payload, "pool_id", 80);
+      if (!/^pool_[A-Za-z0-9_-]{8,64}$/.test(poolGetId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "重题池编号不合法" });
+        return true;
+      }
+      fetchJson("/api/pending/pool/" + encodeURIComponent(poolGetId) + poolTier).then(done, fail);
+      return true;
+    }
+
+    if (method === "pending.pool_act") {
+      // 池内四个动作（合并元数据 / 新增解析 / 不重复 / 删除）都写主库或写裁决记录：
+      // 与入库同权、同走一次性写令牌；动作名必须在白名单里，底座不做「猜一个最像的」。
+      var poolActPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (poolActPermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能裁决重题池"
+        });
+        return true;
+      }
+      var poolActId = textValue(payload, "pool_id", 80);
+      var poolAction = textValue(payload, "action", 40);
+      if (!/^pool_[A-Za-z0-9_-]{8,64}$/.test(poolActId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "重题池编号不合法" });
+        return true;
+      }
+      if (POOL_ACTIONS.indexOf(poolAction) < 0) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "不认识的池内动作" });
+        return true;
+      }
+      withWriteToken("/api/pending/pool/" + encodeURIComponent(poolActId) + "/act", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: poolAction })
+      }).then(function (result) {
+        // 并元数据 / 新增解析 / 不重复都会动主库，各端要跟着回流；删除只动池子。
+        if (result && result.written) {
+          emit("system.question_updated", {
+            action: poolAction === "keep_separate" ? "create" : "update",
+            id: (result && (result.created_id || result.main_id)) || "",
+            pluginId: tab.plugin.id
+          });
+        }
         done(result);
       }, fail);
       return true;
