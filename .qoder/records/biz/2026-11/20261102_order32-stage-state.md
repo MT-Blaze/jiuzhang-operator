@@ -682,3 +682,36 @@
 - **提交署名**：`MT-Blaze <tianxiulaoshi@163.com>`；插件仓本地无身份配置，用 `git -c` 强制，未改任何 git config。
 - **未上传（有意排除，留本机）**：`.dsh-acl-recovery/`（本机 ACL 备份，含 PowerShell 脚本）与 `.qoder/records/biz/2026-11/20261103_order32-s6-evidence/`（334 文件 / 11MB，多为原始截图与 `__pycache__`）。要不要入库，等主公一句话。
 - 工作树现在只剩这两个 untracked 目录。
+
+## §43 结项清单：已办完 / 未办完（2026-11-04，主公点名落文）
+
+### 已办完（有证据）
+
+| 事项 | 证据 |
+| --- | --- |
+| 默认不是收起的：AI 帮改区 `data-fold=open`、池段 `revealed=true`（空池仍隐藏） | 真浏览器 AI body 207×361、非背景像素 13.99%；池子 5 条 reload 未点入口即展开；手收→0、再开→360 |
+| 版本 2.11.0 三处同改 + 两包重打 | editor 186,774 B、bank-ui 1.0.2 26,065 B；包内断言 `data-fold="open"`／`var revealed = true;` 均 True |
+| 两份 `plugins.json` 逐字节全等 | `check-plugin-index-parity PASS` |
+| GitHub 上传 | 主仓 `04ea3c4`（含 `8dabf24`/`c8e2a9b`/`85e87f3`）、插件仓 `a01fe0a`，两仓 `origin/main` 已同步 |
+| 全量单测（提交后树） | **81 模块 / 1632 用例 / 0 失败** |
+| 快门禁 | **PASS 6/6**，ERROR 0 / WARN 38 / INFO 4 |
+| 插件包结构 | `check-plugin-package PASS`（官方 7 支） |
+| `AGENTS.md:14` 悬空引用 | 三处清零，`grep` 0 命中；`docs/AGENTS.md:188` 索引行删除 |
+| MD 清理 | 删 `docs/tauri-assessment.md`、`docs/pipeline-workflow.md`、`Morning_Report.md`；留 `dist/onboarding/…快照.md`（3 处活引用） |
+| 代码精简 | 删 `pending_dedupe.py` 死 import + 4 个 tools 死 import；判明门面再导出与插件跨包副本不可删 |
+| 探针 9 红分类 | 9→4，`#3/#6` 排除（还原链无罪），`#1/#2/#8` 判据已改并复跑 |
+
+### 未办完（都有明确卡点）
+
+| 事项 | 卡点 |
+| --- | --- |
+| 探针约 87 条从未执行 | `#epDupBox` 在 #32 抽走新流程下不可达，探针查重段需按新契约重写；**待主公裁「入库前弹框」是否保留** |
+| 剩 4 红 `#82/#86/#117/#124` | `#82` 窄容器折行（宽帧 34px 正常）；`#86` 探针前置失效；`#117` 隐藏 DOM 残留 1 行（低危）；`#124` 排序预期（按令不改） |
+| 右栏拖窄时三颗小按钮折两行 | 产品决策：`nowrap` 还是缩字号，未定 |
+| 探针档案新鲜度校验 | 需改 `scripts/check_probe_reports.py`，红线未授权 |
+| MD 收尾两件 | `dist/onboarding/…快照.md` 删前要先改 README 3 处引用；0 字节证据 `s6d-fixture-five-modules-x3.txt` 待处置 |
+| 精简未穷举 | CSS 孤儿类名、`app/` 公开函数零引用（需 vulture，本机未装） |
+| `pool_canvas` 3 败 | 出处不明（缺 probe.json） |
+| 慢门禁 | 本轮未跑；`check_probe_reports` 仍会因探针 4 红判不合格 |
+
+**结论**：产品主线与发版链路已收口并上传；探针可信度与两处 UI 口径未收口，不影响老师当前使用。
