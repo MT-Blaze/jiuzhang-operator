@@ -1,4 +1,7 @@
-# editor 录题界面改造 · 进度记忆清单
+# editor 录题界面改造 · 进度记忆清单（历史归档）
+
+> 2026-11-05 自 `docs/editor-v2-progress.md` 归档。文中的「阶段 4 未开始 / editor 2.4.0」是 2026-10-31 的现场状态；
+> 当前版本与进度以 `plugins/org.jiuzhang.editor/plugin.json`（已到 2.11.0）与 `git log -- plugins/org.jiuzhang.editor` 为准。
 
 军令 #23（2026-10-31 发令）· 改造对象 `plugins/org.jiuzhang.editor`，不新建插件。
 本文件是跨阶段唯一记忆清单：每阶段开工前先读它 + 军令对应条款，读完把「当前阶段」改成「进行中」再动手。

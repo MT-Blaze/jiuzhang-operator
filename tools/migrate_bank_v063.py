@@ -13,7 +13,7 @@
 - tags（含「疑似变式#N」查重噪声）：**丢弃**，不写入新库任何位置；
 - grade：落 ``sources.grade``（schema.sql 已含该列与 CHECK，与 year/exam_type 同级），不污染 exam_type 语义；
 - 章/节、images、option_columns、tikz：进 ``questions.extensions`` 有序数组；
-- 题型纠偏：按《v0.6.3-题型纠偏清单》以答案字母为准，答案区取不到时退到正文尾句「故选：XX」。
+- 题型纠偏：按 `docs/archive/v0.6.3-bank-audit.md` 的题型纠偏口径，以答案字母为准，答案区取不到时退到正文尾句「故选：XX」。
 
 用法：
     .venv/Scripts/python.exe tools/migrate_bank_v063.py                 # 只建迁移库并出报告
@@ -48,7 +48,7 @@ OUTLINE_JSON = Path("E:/math-question-bank-main/mathbank/resources/curriculums/A
 MIGRATED_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063_migrated.db"
 SEED_NEW_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank_v063.db"
 REPORT_JSON = ROOT / "data/bank_v063_migration_report.json"
-REPORT_MD = ROOT / "docs/v0.6.3-灌库校验.md"
+REPORT_MD = ROOT / "data/bank_v063_migration_report.md"
 
 LOCAL_TZ_NOW = datetime.now().astimezone().isoformat(timespec="seconds")
 LAYER_CODE = {"book": "bo", "chapter": "ch", "section": "se", "topic": "kx"}

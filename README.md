@@ -16,6 +16,17 @@
 - **AI**：只连你自己填在 `.env` 里的模型网关；不填密钥就显式降级为 Mock，其余功能照常。
   **绝不后台静默出网**——任何一次联网都必须由界面上的当场点击发起（[PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §1.1–§1.5）。
 
+## 为什么做这个
+
+教师必须永远是工具的主人——这是九章算子每一条架构选择的出发点：
+
+- **纯本地，防跑路**：题库是本机 `data/` 里的明文 SQLite，题目结构是公开的 JSON Schema；断网能用，整目录拷走就能带着全部家当换机器，哪天项目没了，题一道不少。
+- **万物皆插件**：底座只做鉴权、导航、数据总线与插件生命周期；录题、题库、组卷、讲义、AI 都是插件，不顺手就换掉那一支，不用改底座。
+- **出网由你点头**：没有后台轮询、没有内置市场；每一次联网下载都必须由你在界面上当场点击发起，不点，一个字节也不发。
+- **免费不可撤销**：免注册、免卡密、无回传、无远程禁用，是写进规范（PLUGIN_SPEC §1.1）与代码的硬约束，不是口号。
+
+给开发者的三件必读：[PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md)（契约唯一事实源）、其 §8「如何用 AI 写插件」、[`examples/template-plugin/`](examples/template-plugin/)（改三处即成自己的插件）。
+
 ## 快速开始
 
 **方式一：双击启动（推荐给不使用命令行的老师）**
@@ -41,7 +52,7 @@
 **方式二：命令行启动**
 
 ```bash
-cd E:\jiuzhang-operator
+cd E:\jiuzhang\jiuzhang-operator
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -127,6 +138,8 @@ curl -X GET http://127.0.0.1:8000/healthz
 | [docs/PROJECT_MEMORY.md](docs/PROJECT_MEMORY.md) | 架构决策记录（ADR）与欠账账本 |
 | [docs/STACK.md](docs/STACK.md) | 技术栈、语法规约与红线条款 |
 | [docs/内测安装与使用指南.md](docs/内测安装与使用指南.md) | 面向零技术基础老师的完整安装与使用步骤 |
+| [docs/handoff/README.md](docs/handoff/README.md) | 军令与机械证据回传单（脚本生成、可复算） |
+| [docs/archive/v0.6.3-bank-audit.md](docs/archive/v0.6.3-bank-audit.md) | v0.6.3 灌库校验与题型纠偏的历史基线 |
 
 ---
 

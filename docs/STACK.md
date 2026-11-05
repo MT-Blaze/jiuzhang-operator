@@ -88,7 +88,7 @@
 
 ## 7. 构建与运行 · Shell
 - 启动：`uvicorn app.main:app --reload`。
-- 测试：`python -m unittest discover tests`。
+- 测试：禁用 `python -m unittest discover`（`tests/` 无 `__init__.py`，会零用例假通过）；单模块用 `.venv\Scripts\python.exe -m unittest tests.<模块>`，全量用 `.venv\Scripts\python.exe tools/run_all_tests.py`。
 - 依赖声明于 `requirements.txt`，锁定版本，禁止隐式安装。
 
 ## 8. 禁止项（红线）

@@ -46,8 +46,8 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 3. **[L0] AI 代理不得 `git push`、建远端、改写历史、发 Release**，除非用户明确要求（`docs/AGENTS.md:83`）。多阶段任务按授权统一 push。
 4. **[L1] commit trailer**：本机 `.git/hooks/commit-msg` 会剥离 `Co-authored-by` 等 AI trailer（未入库，换机即失效）——别依赖它。作者一律 `MT-Blaze <tianxiulaoshi@163.com>`。
 5. **[L0] 交付证据口径（2026-11-02 主公裁决）**：**`docs/PROJECT_MEMORY.md` §5.6 机械证据回传单是唯一的对外交付证据**（五项：改动清单 / 包结构自检 / 三查结果 / 测试与探针 / 未决问题与偏离，模板逐字在 `:1417-1446`）。`.qoder/records/biz/` 只是流水线工序内的过程稿，**不做双写同步**。
-6. **[L1] 续做先查在途工作**：动手前 `git status` 分清「已完成未提交」与真欠账；当前工作树有 4 支 demo 插件处于未提交删除态（人为删除，不恢复不暂存）与 4 个未跟踪 handoff 文件（`docs/handoff/`、`tools/handoff.py`、`tests/test_handoff.py`）——**不属于本次变更，不要 stage**。
-7. **[L1] 文档分工**：根 `AGENTS.md`＝1 行路标；`docs/AGENTS.md`＝铁律 + §9 工作流入口；`docs/PLUGIN_SPEC.md`＝插件契约唯一事实源；`docs/STACK.md`＝语言红线；`docs/PROJECT_MEMORY.md`＝进度/ADR/待办/军令模板/环境备忘；`tools/handoff.py`＋`docs/handoff/README.md`＝四席位一轮流程（未入库，谨慎依赖）。
+6. **[L1] 续做先查在途工作**：动手前 `git status` 分清「已完成未提交」与真欠账；不要 stage/恢复他人的在途改动。`docs/handoff/`、`tools/handoff.py`、`tests/test_handoff.py` 均已入库（2026-11-05 核对），可直接依赖。
+7. **[L1] 文档分工**：根 `AGENTS.md`＝1 行路标；`docs/AGENTS.md`＝铁律 + §9 工作流入口；`docs/PLUGIN_SPEC.md`＝插件契约唯一事实源；`docs/STACK.md`＝语言红线；`docs/PROJECT_MEMORY.md`＝进度/ADR/待办/军令模板/环境备忘；`tools/handoff.py`＋`docs/handoff/README.md`＝四席位一轮流程（已入库，2026-11-05 核对）。
 8. **[L0] 禁改区**：`LICENSE`、`docs/AGENTS.md` 铁律一与铁律二、`schemas/` 破坏性变更（须升 `schema_version` + 同步示例 + 迁移说明 + 校验测试）、用户 `data/` 目录。
 
 ## 5. 门禁档位（L0）

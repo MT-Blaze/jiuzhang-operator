@@ -11,7 +11,7 @@
   与 plugin.js 内嵌块逐字一致，且**绝不进发行包**；
 - 沙箱红线：无 fetch / parent.document / 浏览器本地存储 / 远程资源 / 后行断言。
 
-已知偏离（详见 docs/editor-v2-progress.md）：v1 的 A4 固定页几何（794×1123）随「渲染不固定
+已知偏离（详见 .qoder/records/biz/2026-10/20261031_editor-v2-progress.md）：v1 的 A4 固定页几何（794×1123）随「渲染不固定
 A4、按内容实际高度」这条已定决策一并撤除，因此不再保留 A4 尺寸判据。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_editor_contract``
