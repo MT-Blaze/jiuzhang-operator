@@ -728,6 +728,33 @@ class PoolEvictionTest(PoolCase):
         self.addCleanup(setattr, self.pending_dedupe, "admit_into_pool", real)
         return records
 
+    def test_39_scan_batch_never_evicts_shells_on_dedupe_hit(self) -> None:
+        """原卷大图批次：查重命中只落结论，自动切出的空壳一条都不许离开待审池。
+
+        2026-11-05 主公令：左侧 19 个绿框必须始终对应 19 道待审题，查重只能把红牌
+        亮在辅助栏；不许再「静默吞题」。普通文件导入仍走「命中即抽进重题池」。
+        """
+        self._seed_bank(_doc())
+        created = self.pending_bank.create_batch(scan=True, source_name="模拟1.pdf")
+        batch_id = created["batch_id"]
+        saved = self.pending_bank.save_draft(
+            [{"question": _doc()}, {"question": _other_doc()}],
+            batch_id=batch_id, origin="ingest.auto_split")
+        self._settle_dedupe_threads()
+
+        state = self.pending_dedupe.scan_state(batch_id)
+        self.assertEqual(state["status"], "done", state)
+        self.assertEqual(state["bank_redundant"], 1, "初查仍要如实报出主库命中")
+        self.assertEqual(len(saved["saved_ids"]), 2, saved)
+        self.assertEqual(sorted(self._pending_ids(batch_id)), sorted(saved["saved_ids"]),
+                         "命中也不许吞题：两条空壳都留在待审池")
+        self.assertEqual(self.pending_pool.list_pool()["total"], 0,
+                         "扫描批次的自动初查只查不抽")
+        card = next(c for c in self.pending_batches.batch_list()["batches"]
+                    if c["batch_id"] == batch_id)
+        self.assertEqual((card["pending_count"], card["total"]), (2, 2), card)
+        self.assertEqual(card["dedupe"]["redundant"], 1, card["dedupe"])
+
     def test_40_automatic_eviction_happens_at_persist_time(self) -> None:
         """3.5 抽走在落库阶段完成：后台链跑完就是最终集合，前端一次都没参与。
 

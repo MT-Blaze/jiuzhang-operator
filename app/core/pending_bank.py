@@ -265,9 +265,14 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     # 只会让卡片闪一次 redundant==0 的假象。识别口径只有一条：origin=="ingest"
     # 且本次调用**未传** batch_id（`app/core/ingest.py:687` 不带、`:729` 带）。
     dedupe_queued = not (str(origin or "") == "ingest" and not str(batch_id or "").strip())
+    # 原卷大图批次（auto-split 拍出来的空壳）**只查不抽**：查重命中只把红牌亮在
+    # 辅助栏与批次卡片上，一条都不许从待审池搬走——19 个框必须始终对应 19 道待审题。
+    # 普通文件导入仍走既有的「命中即抽进重题池」。
+    auto_evict = not bool(card.get("scan_batch"))
     if dedupe_queued:
         threading.Thread(target=pending_dedupe.warm_dedupe_scan,
                          args=(target_batch,),
+                         kwargs={"admit": auto_evict},
                          name="jzo-dedupe-warm", daemon=True).start()
     return {
         "batch_id": target_batch,

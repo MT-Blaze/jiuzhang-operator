@@ -578,7 +578,7 @@ class EditorSourceContractTest(unittest.TestCase):
 
 
 class EditorMetaStripContractTest(unittest.TestCase):
-    """渲染栏每道题顶部的只读元数据条：题号 / 题型 / 分值 / 难度。"""
+    """渲染栏每道题顶部的只读信息条：待审进度 / 原卷题号 / 题型 / 分值 / 难度。"""
 
     def test_01_strip_is_read_only_and_carries_four_facts(self) -> None:
         html = read("index.html")
@@ -586,15 +586,23 @@ class EditorMetaStripContractTest(unittest.TestCase):
         js = read("plugin.js")
         self.assertIn("metaStrip: uiMetaStrip", js, "只读条没接进三栏渲染模块")
         block = fn_body(js, "renderQuestionBlock")
-        self.assertIn("block.appendChild(metaStrip.render(item, index, parsed, meta))", block,
-                      "元数据条必须排在每一题最上方")
+        self.assertIn(
+            "block.appendChild(\n      metaStrip.render(item, index, parsed, meta, state.items.length))",
+            block, "只读条必须排在每一题最上方，并带上本批总数")
         strip = read("ui_meta_strip.js")
         self.assertNotIn("addEventListener", strip, "只读卡片不许挂任何点击/键盘事件")
-        self.assertIn('"第" + (index + 1) + "题"', strip)
+        self.assertIn('(index + 1) + " / "', strip, "第一格要报池内进度")
+        self.assertIn('" (原卷第" + no + "题)"', strip, "原卷题号只从私有元数据读")
         self.assertIn("TYPE_LABELS[type]", strip)
         self.assertIn("scoreText(data.score)", strip)
         self.assertIn("DIFFICULTY_LABELS[difficulty]", strip)
         self.assertIn('strip.setAttribute("role", "note")', strip)
+
+    def test_04_render_has_no_self_invented_numbering(self) -> None:
+        """题号完全以原卷为准：渲染区不许再按数组下标补 ``1. 2. 3.``。"""
+        js = read("plugin.js")
+        self.assertNotIn('el("span", "ed-num"', js, "渲染区不许自增序号")
+        self.assertNotIn(".ed-q-stem .ed-num", read("plugin.css"), "自增序号的样式一并下架")
 
     def test_02_strip_stays_visually_subordinate(self) -> None:
         css = read("plugin.css")

@@ -426,7 +426,7 @@
   background: var(--card);
 }
 
-/* 每道题最上方的只读元数据条：浅灰底、小号字，只提供一眼可见的题号/题型/分值/难度。
+/* 每道题最上方的只读信息条：浅灰底、小号字，一眼可见待审进度、原卷题号、题型、分值与难度。
    整块可下架：删掉这段与本文件的 .ed-q-meta 规则即可回到原样。 */
 .ed-q-meta {
   display: flex;
@@ -470,11 +470,6 @@
   display: block;
   width: 100%;
   height: auto;
-}
-
-.ed-q-stem .ed-num {
-  font-weight: 700;
-  margin-right: 6px;
 }
 
 .ed-choices {

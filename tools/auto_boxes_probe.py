@@ -114,7 +114,9 @@ def main() -> int:
     env["JZO_PLUGINS_DIR"] = str(plugins_dir)
     env["JZO_LOCAL_TOKEN"] = TOKEN
     env["JZO_RESTART_DISABLED"] = "1"
-    env["JZO_POOL_ADMIT_DISABLED"] = "1"
+    # 生产口径：不再用 JZO_POOL_ADMIT_DISABLED 遮住自动抽走——原卷大图批次本来就
+    # 只查不抽，19 个框必须自己站住 19 道待审题。
+    env.pop("JZO_POOL_ADMIT_DISABLED", None)
     server_log = work / "server.log"
     log_handle = server_log.open("w", encoding="utf-8", errors="replace")
     process = subprocess.Popen(
@@ -197,6 +199,11 @@ def main() -> int:
 
             card = canvas.locator(".ed-batch-row").first
             expect(card).to_be_visible(timeout=20000)
+            batch_pending = card.locator(".ed-batch-num").first.inner_text()
+            batch_total = card.locator(".ed-batch-total").first.inner_text()
+            result["metrics"]["batch_card"] = [batch_pending, batch_total]
+            check("09a 批次卡待审数与总数都是 19", batch_pending == "19" and batch_total == "19",
+                  result["metrics"]["batch_card"])
             card.click()
 
             expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=25000)
@@ -246,6 +253,26 @@ def main() -> int:
             check("15 右栏渲染 19 道题且带题图",
                   render_blocks == 19 and first_block_image == 19,
                   [render_blocks, first_block_image])
+
+            # ---------- 只读信息条：待审进度 + 原卷题号 ----------
+            strips = canvas.locator("#edRenderBody .ed-q-meta").evaluate_all(
+                "nodes => nodes.map(node => node.textContent)")
+            first_parts = canvas.locator("#edRenderBody .ed-q-block").first.locator(
+                ".ed-q-meta-item").all_inner_texts()
+            fifth_parts = canvas.locator("#edRenderBody .ed-q-block").nth(4).locator(
+                ".ed-q-meta-item").all_inner_texts()
+            num_spans = canvas.locator("#edRenderBody .ed-num").count()
+            first_stem = canvas.locator("#edRenderBody .ed-q-stem").first.inner_text()
+            result["metrics"]["meta_strips"] = {"count": len(strips), "first": first_parts,
+                                                "fifth": fifth_parts,
+                                                "ed_num": num_spans}
+            check("15a 每道题都有只读信息条且首格是进度+原卷题号",
+                  len(strips) == 19 and first_parts[:1] == ["1 / 19 (原卷第1题)"]
+                  and fifth_parts[:1] == ["5 / 19 (原卷第5题)"],
+                  result["metrics"]["meta_strips"])
+            check("15b 渲染区没有自增序号",
+                  num_spans == 0 and not first_stem.startswith("1."),
+                  {"ed_num": num_spans, "stem": first_stem[:80]})
 
             # ---------- 文字与公式：源码是真题干，右栏真的渲染了 MathJax ----------
             source_areas = canvas.locator("#edSourceBody .ed-src-area")

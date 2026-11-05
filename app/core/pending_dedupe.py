@@ -570,6 +570,7 @@ def warm_batch_scan(batch_id: str, provider_id: str, *, admit: bool = False) -> 
     抽走完成后这里只补内存缓存（``persist=False``），不再重扫一遍改账：重扫会把
     ``scanned`` 从整批的 5 改成抽剩的 1，同一代账目翻两次，正是要消掉的东西。
     默认 ``False`` 给同步入口与测试用：它们只要结论，不代替后台链去动待审行。
+    原卷大图批次（``scan_batch``）同样走 ``False``——自动切出的空壳一条都不许被抽走。
     """
     key = str(batch_id or "")
     if not key:
@@ -711,7 +712,7 @@ def _scan_state_body(batch_id: str, con: Any = None) -> dict[str, Any]:
         return _scan_view(cached, strip_generation=True)
 
 
-def warm_dedupe_scan(batch_id: str) -> None:
+def warm_dedupe_scan(batch_id: str, *, admit: bool = True) -> None:
     """后台初查任务体：线程内自行取活跃 provider（core→core 同层，零出网零写库）。
 
     provider 拿不到不另造第二套状态：带着空 id 交给 ``warm_batch_scan``，主库连不通
@@ -719,6 +720,10 @@ def warm_dedupe_scan(batch_id: str) -> None:
 
     ``admit=True``：抽走由 ``warm_batch_scan`` 排在 ``done`` 发布**之前**，
     本线程体不再自己追一步（军令 #32 · S6 缺陷 2 的旧空窗就是这么来的）。
+
+    ``admit=False``：只落初查结论、不搬行。原卷大图批次（``scan_batch``）走这一条——
+    自动切出的空壳题即使命中主库也一条都不许从待审池消失，查重结果只作红色警告
+    （2026-11-05 主公令：19 个框必须始终是 19 道待审题）。
     """
     provider_id = ""
     try:
@@ -728,7 +733,7 @@ def warm_dedupe_scan(batch_id: str) -> None:
     except Exception as error:  # 只作降级：取不到题库就把空 id 交给下游的 failed 分支
         logging.getLogger("uvicorn.error").warning(
             "待审批次初查取题库失败 batch=%s err=%r", batch_id, error)
-    warm_batch_scan(batch_id, provider_id, admit=True)
+    warm_batch_scan(batch_id, provider_id, admit=admit)
 
 
 def admit_into_pool(batch_id: str, provider_id: str, *,

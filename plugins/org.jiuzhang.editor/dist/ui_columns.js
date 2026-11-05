@@ -319,8 +319,9 @@
     block.setAttribute("data-errors", String(parsed.errors.length));
     item.errorCount = parsed.errors.length;
     var meta = metaFor ? metaFor(item, {}) : {};
-    // 只读元数据条（题号 / 题型 / 分值 / 难度）：永远排在本行最上方。
-    if (metaStrip) block.appendChild(metaStrip.render(item, index, parsed, meta));
+    // 只读信息条（待审进度 + 原卷题号 / 题型 / 分值 / 难度）：永远排在本行最上方。
+    if (metaStrip) block.appendChild(
+      metaStrip.render(item, index, parsed, meta, state.items.length));
     // 琥珀灯（军令 #32 · 判据 5.2）：这一题还有未清项就在卡片边缘点灯。
     // 判定口径只有一份，在 ui_amber.js（与底座入库前的点名同一口径），这里只照着画。
     if (amberReasons) {
@@ -350,7 +351,7 @@
       block.appendChild(figure);
     });
     var stem = el("p", "ed-q-stem");
-    stem.appendChild(el("span", "ed-num", (index + 1) + "."));
+    // 题号完全以原卷为准（只读条里的「原卷第 X 题」）；渲染区不再按数组下标补 1.2.3.
     appendRich(stem, parsed.stem || item.source);
     block.appendChild(stem);
 
@@ -387,7 +388,9 @@
     var item = state.items[index];
     var holder = renderBodyEl && renderBodyEl.children[index];
     if (!item || !holder) return;
-    var next = metaStrip.render(item, index, parsedOf(item), meta || (metaFor ? metaFor(item, {}) : {}));
+    var next = metaStrip.render(item, index, parsedOf(item),
+                                meta || (metaFor ? metaFor(item, {}) : {}),
+                                state.items.length);
     var old = holder.querySelector(".ed-q-meta");
     if (old) holder.replaceChild(next, old);
     else holder.insertBefore(next, holder.firstChild);
