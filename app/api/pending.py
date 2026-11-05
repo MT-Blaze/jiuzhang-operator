@@ -333,7 +333,10 @@ def pending_pool_list(tier: str = "") -> dict[str, Any]:
     ``tier`` 是**读侧过滤**（``strict`` / ``standard`` / ``loose``），不落盘、不写配置：
     第五步的画布拖档时带着它重新取一次即可；不传就是全给。
     """
-    return pending_pool.list_pool(tier=tier or None)
+    try:
+        return pending_pool.list_pool(tier=tier or None)
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get(
@@ -352,6 +355,8 @@ def pending_pool_item(pool_id: str, tier: str = "") -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
