@@ -2,8 +2,14 @@
  * ui_page_boxes.js —— 原卷页上的自动切分框（绿虚线）与人工微调。
  *
  * 底座在页图条目上带 ``width / height / regions``：``regions`` 是文本层抽出的
- * 每道题像素坐标。这里只负责画框和让老师拖拽微调；真正裁图与建新题仍走
- * ui_crop 的 ``splitPageRegion`` → ``splitFromCrop``，与手动框选同一条通道。
+ * 每道题像素坐标。解析完成时后端已经把每个框裁好、连同空壳题排进待审池，
+ * ``region.pending_id`` 就是那道题在池子里的编号。
+ *
+ * 这里只负责两件事：
+ *   1. 把框画出来，题号常显——一页十几道题也不许认错行；
+ *   2. 老师拖框微调后，把新坐标回写批次页图，并重切这道题的题图。
+ * 新题入池仍走 ui_crop 的 ``splitPageRegion`` → ``splitFromCrop``，
+ * 与手动框选同一条通道。
  *
  * 框没有把整页盖死：层本身 pointer-events:none，只有每个绿框可交互，
  * 框外的点击仍会冒泡到页面的「手动框选切题」入口。
@@ -14,12 +20,15 @@
   function create(deps) {
     var el = deps.el;
     var dockWarn = deps.dockWarn;
+    var hostCall = deps.hostCall;
     var splitPageRegion = deps.splitPageRegion;
+    var updatePageRegion = deps.updatePageRegion;
     var coreState = deps.coreState;
 
     var MIN_SIDE = 24;          // 微调后的最小选区（页面图像素）
     var doneByBatch = {};       // 批次 → 「页:框」集合；重绘后仍是已切状态
     var currentBatch = "";
+    var commitTimers = {};      // 「页:框」→ 防抖计时器：拖完再裁，不每动一像素裁一次
 
     function clamp(value, low, high) {
       return Math.min(Math.max(value, low), high);
@@ -40,6 +49,17 @@
         doneByBatch = {};
       }
       return doneByBatch;
+    }
+
+    /** 这个框对应的待审题：已自动入池的框靠它找回归属，找不到就当普通框。 */
+    function pendingItemOf(region) {
+      var pendingId = String((region && region.pending_id) || "");
+      if (!pendingId) return null;
+      var items = (coreState && coreState.state && coreState.state.items) || [];
+      for (var index = 0; index < items.length; index += 1) {
+        if (String(items[index].pendingId || "") === pendingId) return items[index];
+      }
+      return null;
     }
 
     function syncBoxStyle(box, region, pageWidth, pageHeight) {
@@ -64,21 +84,31 @@
       var box = el("div", "ed-auto-box");
       var key = regionKey(pageIndex, regionIndex);
       var finished = Boolean(done[key]);
+      // 后端解析完就把框裁成题排进了待审池：这种框显示「已入池」，
+      // 但拖拽照样放行——老师发现切偏了，拖一下就能重切那一道题。
+      var pooled = Boolean(pendingItemOf(region));
+      var pageNo = Number(page && page.page) || pageIndex + 1;
       box.setAttribute("data-no", String(number));
       box.setAttribute("data-page-index", String(pageIndex));
       box.setAttribute("data-region-index", String(regionIndex));
       box.setAttribute("role", "group");
       box.setAttribute("tabindex", "0");
-      box.setAttribute("aria-label",
-        "第 " + number + " 题自动切分框：拖拽移动，拖角微调，回车确认切分");
+      box.setAttribute("aria-label", pooled
+        ? "第 " + number + " 题自动切分框：已入待审池，拖拽可微调并重切"
+        : "第 " + number + " 题自动切分框：拖拽移动，拖角微调，回车确认切分");
       if (region.label) box.title = region.label;
       if (finished) box.setAttribute("data-done", "on");
+      if (pooled) box.setAttribute("data-pending", "on");
       syncBoxStyle(box, region, pageWidth, pageHeight);
 
-      box.appendChild(el("span", "ed-auto-box-tag", "第 " + number + " 题"));
-      var button = el("button", "ed-auto-box-split", finished ? "已切" : "确认切分");
+      // 题号常显：一页十几道题、框只有二三十像素高时，标签藏起来就等于没有。
+      box.appendChild(el("span", "ed-auto-box-no", String(number)));
+      var button = el("button", "ed-auto-box-split",
+        pooled ? "已入池" : (finished ? "已切" : "确认切分"));
       button.type = "button";
-      button.disabled = finished;
+      if (pooled) button.classList.add("is-pooled");
+      button.disabled = pooled || finished;
+      if (pooled) button.title = "这道题已排进中间，拖框微调后会自动重切";
       box.appendChild(button);
 
       ["nw", "n", "ne", "e", "se", "s", "sw", "w"].forEach(function (handle) {
@@ -88,7 +118,11 @@
         box.appendChild(node);
       });
 
-      bindDrag(box, button, region, pageWidth, pageHeight, layer);
+      function afterAdjust() {
+        if (pooled) queueCommit(pageIndex, regionIndex, region, pageNo);
+      }
+
+      bindDrag(box, button, region, pageWidth, pageHeight, layer, afterAdjust);
       bindConfirm(box, button, page, pageIndex, region, regionIndex, item, done);
 
       box.addEventListener("click", function (event) {
@@ -119,12 +153,61 @@
           region.y += dy;
         }
         applyRegion(box, region, pageWidth, pageHeight);
+        afterAdjust();
       });
       return box;
     }
 
+    /** 拖完不立刻回写：停手 650ms 才落一次坐标与重切，拖动过程里一次请求都不发。 */
+    function queueCommit(pageIndex, regionIndex, region, pageNo) {
+      var key = regionKey(pageIndex, regionIndex);
+      if (commitTimers[key]) window.clearTimeout(commitTimers[key]);
+      commitTimers[key] = window.setTimeout(function () {
+        delete commitTimers[key];
+        commitRegion(pageIndex, regionIndex, region, pageNo);
+      }, 650);
+    }
+
+    function markBox(pageIndex, regionIndex, attribute, value) {
+      var box = document.querySelector('.ed-auto-box[data-page-index="' + pageIndex
+        + '"][data-region-index="' + regionIndex + '"]');
+      if (!box) return;
+      if (value) box.setAttribute(attribute, value);
+      else box.removeAttribute(attribute);
+    }
+
+    /**
+     * 框被挪过：坐标回写批次页图，同时把这道待审题重切一张题图。
+     * 坐标先落库——哪怕重切失败，老师下次打开看到的位置也是对的。
+     */
+    function commitRegion(pageIndex, regionIndex, region, pageNo) {
+      var state = coreState && coreState.state ? coreState.state : {};
+      var batchId = String(state.batchId || "");
+      var pending = pendingItemOf(region);
+      markBox(pageIndex, regionIndex, "data-saving", "on");
+      var saving = batchId && hostCall
+        ? hostCall("pending.set_pages", { batch_id: batchId, page_images: state.pageImages })
+        : Promise.resolve(null);
+      var recrop = pending && updatePageRegion
+        ? updatePageRegion(pending, region, { page: pageNo })
+        : Promise.resolve(null);
+      Promise.all([saving, recrop]).then(function () {
+        markBox(pageIndex, regionIndex, "data-saving", "");
+        markBox(pageIndex, regionIndex, "data-region-saved", "on");
+        if (dockWarn && !pending) {
+          // 没找到对应题目时只回了坐标：提示一句，别让老师以为题图也换了。
+          dockWarn("这一框已保存新位置；它没有对应的待审题，题图未重切。");
+        }
+      }, function (error) {
+        markBox(pageIndex, regionIndex, "data-saving", "");
+        if (dockWarn) {
+          dockWarn("微调没能存住：" + ((error && error.message) || "未知原因"));
+        }
+      });
+    }
+
     /** 拖动：框体=移动，手柄=改对应边；用页面图像素记坐标，缩放后也不漂。 */
-    function bindDrag(box, button, region, pageWidth, pageHeight, layer) {
+    function bindDrag(box, button, region, pageWidth, pageHeight, layer, afterAdjust) {
       var drag = null;
 
       function start(event, mode, handle) {
@@ -194,7 +277,10 @@
         if (!moved) {
           box.classList.add("is-selected");
           button.focus();
+          return;
         }
+        // 拖完才回写：已入池的框重切题图，没入池的框什么也不做。
+        if (afterAdjust) afterAdjust();
       }
 
       box.addEventListener("pointerdown", function (event) {
@@ -274,14 +360,10 @@
             width, height, done, layer));
         });
         frame.appendChild(layer);
-        // 每页十几道题时，单个框可能只有二十来像素高：标签压上去会遮住上一题。
-        // 量高必须等这一格挂进文档：renderPageSlide 此刻还没把格子交给左栏，
-        // 当场量到的全是 0，标签会被误判成全藏掉。
-        requestAnimationFrame(function () {
-          if (!layer.parentNode) return;
-          Array.prototype.forEach.call(layer.children, function (box) {
-            box.classList.toggle("is-tiny", box.getBoundingClientRect().height < 30);
-          });
+        // 缩略图上的题块常常只有几像素高：八向手柄的命中区会把框体盖死，
+        // 拖动就变成「改上边」。这种框只留框体拖动，改边交给键盘。
+        Array.prototype.forEach.call(layer.children, function (node) {
+          if (node.getBoundingClientRect().height < 36) node.classList.add("is-thin");
         });
         return regions.length;
       }

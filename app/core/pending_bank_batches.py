@@ -99,7 +99,7 @@ def _page_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]
         h = min(h, height - y)
         if w < 4 or h < 4:
             continue
-        regions.append({
+        region = {
             "no": number,
             "x": round(x, 1),
             "y": round(y, 1),
@@ -107,7 +107,13 @@ def _page_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]
             "h": round(h, 1),
             "label": str(item.get("label") or "")[:64],
             "text": str(item.get("text") or "")[:1200],
-        })
+        }
+        # 自动切图后题块要记住它对应的待审题：老师再开批次时，
+        # 前端据此把框标成「已入池」，拖框也能找到要重切的那一道。
+        pending_id = str(item.get("pending_id") or "")
+        if PENDING_ID_RE.match(pending_id):
+            region["pending_id"] = pending_id
+        regions.append(region)
     return regions
 
 

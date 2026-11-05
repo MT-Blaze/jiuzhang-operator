@@ -581,6 +581,48 @@ class PendingApiContractTest(unittest.TestCase):
         self.assertTrue((self.data_dir / "pending_assets" / name).is_file(),
                         "回执指的地址背后必须有真文件")
 
+    def test_17_set_pages_persists_regions_and_pending_links(self) -> None:
+        """老师拖绿框微调后回写坐标：页图尺寸、题块与「框→待审题」的绑定都保住。"""
+        status, body = self._save([{"question": _question(202)}])
+        self.assertEqual(status, 201, body)
+        batch_id = body["batch_id"]
+        pending_id = body["saved_ids"][0]
+        name = "pimg_" + "a" * 16 + ".png"
+        (self.data_dir / "pending_assets").mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "pending_assets" / name).write_bytes(PNG)
+        pages = [{
+            "name": name, "page": 1, "width": 1000, "height": 1400,
+            "regions": [
+                {"no": 1, "x": 10, "y": 20, "w": 300, "h": 400,
+                 "label": "1. 第一题", "text": "1. 第一题题干",
+                 "pending_id": pending_id},
+                {"no": 2, "x": 10, "y": 500, "w": 300, "h": 120,
+                 "pending_id": "p_bad"},
+            ],
+        }]
+        status, _ = self._request(f"/api/pending/batches/{batch_id}/pages", "POST",
+                                  {"page_images": pages}, token=None)
+        self.assertEqual(status, 401, "回写坐标必须带一次性写令牌")
+
+        status, saved = self._request(f"/api/pending/batches/{batch_id}/pages", "POST",
+                                      {"page_images": pages})
+        self.assertEqual(status, 200, saved)
+        self.assertEqual(saved["page_images"][0]["uri"], "/static/pending/" + name)
+        listed = self._request(f"/api/pending/batches/{batch_id}/questions")[1]
+        page = listed["page_images"][0]
+        self.assertEqual((page["width"], page["height"]), (1000, 1400))
+        self.assertEqual(page["regions"][0]["pending_id"], pending_id)
+        self.assertEqual(page["regions"][0]["y"], 20.0)
+        self.assertNotIn("pending_id", page["regions"][1],
+                         "号段不合法的绑定一律丢掉，不让前端画出假关联")
+
+        status, _ = self._request(f"/api/pending/batches/{batch_id}/pages", "POST",
+                                  {"page_images": []})
+        self.assertEqual(status, 400)
+        status, _ = self._request("/api/pending/batches/B-999/pages", "POST",
+                                  {"page_images": pages})
+        self.assertEqual(status, 404)
+
 
 class PoolEvictionHttpTest(unittest.TestCase):
     """军令 #32 · G2 欠账 6：``test_46``／``test_47`` 的形状搬到 **HTTP 真实路径**。

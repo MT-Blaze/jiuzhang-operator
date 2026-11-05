@@ -320,9 +320,12 @@
   var uiPageBoxes = window.JzoEditorPageBoxes.create({
     el: el,
     dockWarn: dockWarn,
+    hostCall: hostCall,
     coreState: coreState,
     // 循环引用：裁图通道归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
     splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },
+    // 拖框微调后重切题图：同样等 uiCrop 就位。
+    updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },
   });
 
   var uiColumns = window.JzoEditorColumns.create({

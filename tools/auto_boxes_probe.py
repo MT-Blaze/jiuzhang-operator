@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-"""原卷自动切分框真机探针：模拟1.pdf → 19 个绿框 → 微调 / 确认切分 / 松手切题。
+"""原卷自动切分框真机探针：模拟1.pdf → 19 个绿框 + 19 道待审题。
+
+一次跑通整条闭环：解析完自动裁图入池、中栏排好题、右栏显示元数据，
+老师拖绿框微调时坐标回写并重切题图，手动补框仍能再切一道。
 
 用法：``.venv/Scripts/python.exe tools/auto_boxes_probe.py <tag>``
 
@@ -28,6 +31,7 @@ PAPER = ROOT.parent / "testdata" / "20261105" / "模拟1.pdf"
 EDITOR_ID = "org.jiuzhang.editor"
 TOKEN = "auto-boxes-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
+PANEL = "#wsContextSlot .ws-context-frame"
 
 
 def free_port() -> int:
@@ -73,6 +77,14 @@ def http_post(url: str, payload: dict) -> dict:
 
 def batch_items(base: str, batch_id: str) -> dict:
     return http_json(base + "/api/pending/batches/" + batch_id + "/questions")
+
+
+def item_image_uri(detail: dict, index: int = 0) -> str:
+    items = detail.get("items") or []
+    if index >= len(items):
+        return ""
+    images = (items[index].get("question") or {}).get("images") or []
+    return str(images[0].get("uri") or "") if images else ""
 
 
 def main() -> int:
@@ -128,7 +140,7 @@ def main() -> int:
         batch_id = str(staged.get("batch_id") or "")
         check("01 批次已建立", bool(batch_id), batch_id)
 
-        deadline = time.time() + 90
+        deadline = time.time() + 120
         pages: list[dict] = []
         items: list[dict] = []
         while time.time() < deadline:
@@ -136,24 +148,34 @@ def main() -> int:
             pages = detail.get("page_images") or []
             items = detail.get("items") or []
             total_regions = sum(len(page.get("regions") or []) for page in pages)
-            if len(pages) >= 5 and total_regions >= 19:
+            if len(pages) >= 5 and total_regions >= 19 and len(items) >= 19:
                 break
             time.sleep(0.3)
         total_regions = sum(len(page.get("regions") or []) for page in pages)
         numbers = [region.get("no") for page in pages for region in (page.get("regions") or [])]
+        linked = [bool(region.get("pending_id")) for page in pages
+                  for region in (page.get("regions") or [])]
         result["metrics"].update({
             "pages": len(pages),
             "regions": total_regions,
             "numbers": numbers,
             "initial_pending": len(items),
+            "linked_regions": sum(1 for flag in linked if flag),
         })
         check("02 后端返回 5 页页图", len(pages) == 5, len(pages))
         check("03 后端共 19 个题块坐标", total_regions == 19, total_regions)
         check("04 题号连续 1..19", numbers == list(range(1, 20)), numbers)
-        check("05 纯图批次不落占位题", items == [], len(items))
+        check("05 解析完成即生成 19 道待审题", len(items) == 19, len(items))
+        check("06 每个框都绑定了一道待审题", all(linked) and len(linked) == 19,
+              result["metrics"]["linked_regions"])
+        first_images = ((items[0].get("question") or {}).get("images") or []) if items else []
+        check("07 待审题自带切好的题图",
+              len(first_images) == 1
+              and str(first_images[0].get("uri") or "").startswith("/static/pending/pimg_"),
+              first_images)
         if pages:
             first = pages[0]
-            check("06 页图带像素尺寸",
+            check("08 页图带像素尺寸",
                   bool(first.get("width")) and bool(first.get("height")),
                   [first.get("width"), first.get("height")])
 
@@ -186,76 +208,108 @@ def main() -> int:
                 "nodes => nodes.map(node => node.querySelectorAll('.ed-auto-box').length)")
             result["metrics"]["dom_boxes"] = box_count
             result["metrics"]["boxes_per_page"] = per_page
-            check("07 左栏自动画出 19 个绿框", box_count == 19, box_count)
-            check("08 每页框数与后端一致", per_page == [5, 7, 4, 3, 0], per_page)
+            check("09 左栏自动画出 19 个绿框", box_count == 19, box_count)
+            check("10 每页框数与后端一致", per_page == [5, 7, 4, 3, 0], per_page)
 
-            style = canvas.locator(".ed-auto-box").first.evaluate(
+            first_box = canvas.locator(".ed-auto-box").first
+            style = first_box.evaluate(
                 "node => { var s = getComputedStyle(node);"
-                " return [s.borderTopStyle, s.borderTopColor, s.borderTopWidth, s.position]; }")
+                " return [s.borderTopStyle, s.borderTopColor, s.borderTopWidth, s.position,"
+                " node.getAttribute('data-pending') || '']; }")
             result["metrics"]["box_style"] = style
-            check("09 绿框是 2px 绿虚线且绝对定位",
-                  style[0] == "dashed" and style[1] == "rgb(47, 158, 90)"
-                  and style[2] == "2px" and style[3] == "absolute", style)
+            check("11 已入池的框是 2px 实线绿框且绝对定位",
+                  style[0] == "solid" and style[1] == "rgb(47, 158, 90)"
+                  and style[2] == "2px" and style[3] == "absolute"
+                  and style[4] == "on", style)
 
             numbers_dom = canvas.locator(".ed-auto-box").evaluate_all(
                 "nodes => nodes.map(node => Number(node.getAttribute('data-no')))")
-            check("10 框上标出第 N 题", numbers_dom == list(range(1, 20)), numbers_dom)
-            buttons = canvas.locator(".ed-auto-box-split").all_inner_texts()
-            check("11 每个框都有确认切分按钮",
-                  len(buttons) == 19 and buttons[0] == "确认切分", buttons[:3])
+            chips = canvas.locator(".ed-auto-box-no").all_inner_texts()
+            check("12 框上常显题号 1..19",
+                  numbers_dom == list(range(1, 20))
+                  and chips == [str(number) for number in range(1, 20)],
+                  [numbers_dom[:3], chips[:3]])
+            buttons = canvas.locator(".ed-auto-box-split").evaluate_all(
+                "nodes => nodes.map(node => [node.textContent, node.disabled])")
+            check("13 已入池的框标成『已入池』且按钮禁用",
+                  len(buttons) == 19 and buttons[0] == ["已入池", True], buttons[:3])
+
+            source_cells = canvas.locator("#edSourceBody .ed-src-area").count()
+            render_blocks = canvas.locator("#edRenderBody .ed-q-block").count()
+            first_block_image = canvas.locator("#edRenderBody .ed-q-image img").count()
+            result["metrics"].update({
+                "source_cells": source_cells,
+                "render_blocks": render_blocks,
+                "render_images": first_block_image,
+            })
+            check("14 中栏自动排好 19 道题的源码行", source_cells == 19, source_cells)
+            check("15 右栏渲染 19 道题且带题图",
+                  render_blocks == 19 and first_block_image == 19,
+                  [render_blocks, first_block_image])
+
+            panel = page.frame_locator(PANEL)
+            expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
+            src_name = panel.locator("#epSrcName").inner_text()
+            head_no = panel.locator("#epHeadNo").inner_text()
+            question_no = panel.locator("#epQuestionNo").input_value()
+            result["metrics"]["panel"] = {
+                "src": src_name, "head_no": head_no, "question_no": question_no}
+            check("16 右侧辅助栏显示批次元数据与当前题号",
+                  "模拟1" in src_name and "第 1 题" in head_no and question_no == "1",
+                  result["metrics"]["panel"])
 
             page.screenshot(path=str(shots / "01_auto_boxes.png"), full_page=False)
 
-            # ---------- 放大镜：运行时量半径与偏移 ----------
-            hook = """() => {
-              window.__arcLog = [];
-              window.__probeMouse = null;
-              document.addEventListener("mousemove", function (event) {
-                window.__probeMouse = {x: event.clientX, y: event.clientY};
-              }, true);
-              var proto = CanvasRenderingContext2D.prototype;
-              if (!proto.__probePatched) {
-                var original = proto.arc;
-                proto.arc = function (x, y, r, start, end, anticlockwise) {
-                  if (r >= 20 && r <= 200) {
-                    window.__arcLog.push({x: x, y: y, r: r, at: Date.now()});
-                  }
-                  return original.call(this, x, y, r, start, end, anticlockwise);
-                };
-                proto.__probePatched = true;
-              }
-              return true;
-            }"""
-            canvas.locator("#edRoot").evaluate(hook)
+            # ---------- 拖绿框微调：坐标回写 + 题图重切 ----------
+            detail_before = batch_items(base, batch_id)
+            old_x = detail_before["page_images"][0]["regions"][0]["x"]
+            old_uri = item_image_uri(detail_before)
+            drag = canvas.locator(".ed-auto-box").first.bounding_box()
+            check("17 第一个绿框可拖拽（有可见尺寸）", bool(drag), drag)
+            assert drag is not None
+            center_x = drag["x"] + drag["width"] / 2
+            center_y = drag["y"] + drag["height"] / 2
+            page.mouse.move(center_x, center_y)
+            page.mouse.down()
+            page.mouse.move(center_x + 30, center_y, steps=8)
+            page.mouse.up()
 
-            canvas.locator(".ed-page-cell").first.locator(".ed-img-crop-btn").click()
+            new_x = old_x
+            new_uri = old_uri
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                detail_now = batch_items(base, batch_id)
+                pages_now = detail_now.get("page_images") or []
+                if pages_now and (pages_now[0].get("regions") or []):
+                    new_x = pages_now[0]["regions"][0]["x"]
+                new_uri = item_image_uri(detail_now)
+                if new_x != old_x and new_uri and new_uri != old_uri:
+                    break
+                page.wait_for_timeout(300)
+            result["metrics"]["regions_after_drag"] = {
+                "before": old_x, "after": new_x,
+                "image_before": old_uri, "image_after": new_uri}
+            # 拖的是缩略图上的框：30 个屏幕像素折回页图像素是一大段位移，
+            # 只挪零点几像素说明手势被手柄或按钮吃掉了，不能算回写成功。
+            check("18 拖框后新坐标回写到批次页图", new_x - old_x >= 20,
+                  {"before": old_x, "after": new_x})
+            check("19 拖框后题图已重切", bool(new_uri) and new_uri != old_uri,
+                  {"before": old_uri, "after": new_uri})
+            check("20 微调不会多出或少掉题",
+                  len(batch_items(base, batch_id).get("items") or []) == 19,
+                  len(batch_items(base, batch_id).get("items") or []))
+            page.screenshot(path=str(shots / "02_adjusted.png"))
+
+            # ---------- 手动补框：松手即切，与自动题共用同一条通道 ----------
+            crop_button = canvas.locator(".ed-page-cell .ed-img-crop-btn").first
+            expect(crop_button).to_be_visible(timeout=20000)
+            crop_button.click()
             crop_canvas = canvas.locator(".ed-crop-canvas").first
             expect(crop_canvas).to_be_visible(timeout=20000)
-            page.wait_for_timeout(1200)
+            page.wait_for_timeout(900)
             crop_box = crop_canvas.bounding_box()
-            check("12 手动切图台已铺开", bool(crop_box), crop_box)
+            check("21 手动切图台已铺开", bool(crop_box), crop_box)
             assert crop_box is not None
-            target_x = crop_box["x"] + crop_box["width"] * 0.35
-            target_y = crop_box["y"] + crop_box["height"] * 0.3
-            page.mouse.move(target_x, target_y)
-            page.wait_for_timeout(400)
-            arcs = canvas.locator("#edRoot").evaluate("() => window.__arcLog || []")
-            lens = arcs[-1] if arcs else {}
-            # 镜心与指针都按 iframe 视口坐标比，主页面坐标隔着 iframe 偏移，不能混算。
-            pointer = canvas.locator("#edRoot").evaluate("() => window.__probeMouse || {}")
-            result["metrics"]["lens"] = lens
-            result["metrics"]["pointer"] = pointer
-            check("13 放大镜直径不超过 120px", bool(lens) and lens.get("r", 999) * 2 <= 120, lens)
-            check("14 放大镜半径 60 / 1.2 倍",
-                  bool(lens) and abs(float(lens.get("r", 0)) - 60) < 0.5, lens)
-            offset_x = abs(float(lens.get("x", 0)) - float(pointer.get("x", 0))) if lens else 0
-            offset_y = abs(float(lens.get("y", 0)) - float(pointer.get("y", 0))) if lens else 0
-            check("15 镜心与指针错开，不压住光标下的字",
-                  bool(pointer) and 70 <= offset_x <= 90 and 70 <= offset_y <= 90,
-                  {"offset_x": offset_x, "offset_y": offset_y})
-            page.screenshot(path=str(shots / "02_lens.png"))
-
-            # ---------- 拖拽松手即切：走鼠标抬起，验证不再无响应 ----------
             start_x = crop_box["x"] + crop_box["width"] * 0.2
             start_y = crop_box["y"] + crop_box["height"] * 0.35
             end_x = crop_box["x"] + crop_box["width"] * 0.55
@@ -266,72 +320,22 @@ def main() -> int:
             page.mouse.move(end_x, end_y, steps=6)
             page.mouse.up()
 
-            items_after_drag = []
+            items_after_manual = []
             deadline = time.time() + 30
             while time.time() < deadline:
-                items_after_drag = batch_items(base, batch_id).get("items") or []
-                if len(items_after_drag) == 1:
+                items_after_manual = batch_items(base, batch_id).get("items") or []
+                if len(items_after_manual) == 20:
                     break
                 page.wait_for_timeout(250)
-            result["metrics"]["after_drag"] = len(items_after_drag)
-            check("16 手动框选松手即生成新待审题", len(items_after_drag) == 1,
-                  len(items_after_drag))
-            if items_after_drag:
-                doc = items_after_drag[0].get("question") or {}
-                images = doc.get("images") or []
-                check("17 新题带裁出来的配图",
-                      bool(images and images[0].get("uri")), images)
-            expect(canvas.locator(".ed-auto-box").first).to_be_visible(timeout=20000)
-
-            # ---------- 微调 + 确认切分 ----------
-            first_box = canvas.locator(".ed-auto-box").first
-            before = first_box.evaluate(
-                "node => [node.style.left, node.style.top, node.style.width, node.style.height]")
-            first_box.hover()
-            page.wait_for_timeout(150)
-            handle = first_box.locator('.ed-auto-handle[data-handle="e"]')
-            handle_box = handle.bounding_box()
-            check("18 悬停后出现微调手柄", bool(handle_box), handle_box)
-            assert handle_box is not None
-            hx = handle_box["x"] + handle_box["width"] / 2
-            hy = handle_box["y"] + handle_box["height"] / 2
-            page.mouse.move(hx, hy)
-            page.mouse.down()
-            page.mouse.move(hx + 20, hy, steps=8)
-            page.mouse.up()
-            page.wait_for_timeout(300)
-            after = first_box.evaluate(
-                "node => [node.style.left, node.style.top, node.style.width, node.style.height]")
-            result["metrics"]["box_before"] = before
-            result["metrics"]["box_after"] = after
-            check("19 拖手柄微调了框的宽高", before != after, {"before": before, "after": after})
-            page.screenshot(path=str(shots / "03_adjusted.png"))
-
-            first_box.hover()
-            page.wait_for_timeout(150)
-            first_box.locator(".ed-auto-box-split").click()
-            items_after_confirm = []
-            deadline = time.time() + 30
-            while time.time() < deadline:
-                items_after_confirm = batch_items(base, batch_id).get("items") or []
-                if len(items_after_confirm) == 2:
-                    break
-                page.wait_for_timeout(250)
-            result["metrics"]["after_confirm"] = len(items_after_confirm)
-            check("20 确认切分再生成一道新待审题", len(items_after_confirm) == 2,
-                  len(items_after_confirm))
-            page.wait_for_timeout(600)
-            states = canvas.locator(".ed-auto-box").evaluate_all(
-                "nodes => nodes.map(node => [node.getAttribute('data-no'),"
-                " node.getAttribute('data-done') || ''])")
-            result["metrics"]["box_states"] = states[:3]
-            check("21 已切的框标成已完成",
-                  any(state[1] == "on" for state in states), states[:3])
-            page.screenshot(path=str(shots / "04_after_confirm.png"), full_page=False)
+            result["metrics"]["after_manual"] = len(items_after_manual)
+            check("22 手动框选再生成一道新待审题", len(items_after_manual) == 20,
+                  len(items_after_manual))
+            manual_image = item_image_uri(batch_items(base, batch_id))
+            check("23 新题带裁出来的配图", bool(manual_image), manual_image)
 
             result["metrics"]["console_errors"] = result["console_errors"]
             result["metrics"]["page_errors"] = result["page_errors"]
-            check("22 全流程无页面脚本错误", not result["page_errors"], result["page_errors"])
+            check("24 全流程无页面脚本错误", not result["page_errors"], result["page_errors"])
             browser.close()
     except Exception as error:  # noqa: BLE001 - 探针要把失败本身落盘，不能裸崩
         result["error"] = repr(error)

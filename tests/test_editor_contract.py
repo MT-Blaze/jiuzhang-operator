@@ -1778,6 +1778,20 @@ class EditorPageBoxesContractTest(unittest.TestCase):
         self.assertIn("splitFromCrop(item, cropped.dataUrl,", split)
         self.assertIn("cropRegionToDataUrl(bitmap, region)", split)
 
+    def test_04_pooled_boxes_drag_and_write_back(self) -> None:
+        # 自动入池的框仍然要能拖：坐标回写页图，题图跟着重切。
+        module = read("ui_page_boxes.js")
+        self.assertIn("pendingItemOf(region)", module)
+        self.assertIn('hostCall("pending.set_pages"', module)
+        self.assertIn("updatePageRegion", module)
+        self.assertIn("is-thin", module,
+                      "缩略图上只有几像素高的框必须让出手柄，否则拖不动")
+        css = read("plugin.css")
+        disabled = rule_body(css, '.ed-auto-box[data-pending="on"] .ed-auto-box-split:disabled')
+        self.assertIn("pointer-events: none", disabled,
+                      "已入池的按钮不许挡住框体拖动")
+        self.assertIn("display: none", rule_body(css, ".ed-auto-box.is-thin .ed-auto-handle"))
+
 
 class EditorFixtureContractTest(unittest.TestCase):
     """假数据：每道题都是一份合法的 question.json 2.0，dev/ 只在本机存在。"""

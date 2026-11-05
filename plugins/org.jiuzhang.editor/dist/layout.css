@@ -399,28 +399,36 @@ body {
   cursor: default;
 }
 
-.ed-auto-box-tag {
+/* 已自动入池：实线深绿，和「待确认」的虚线一眼分开；拖拽照样有效。 */
+.ed-auto-box[data-pending="on"] {
+  border-style: solid;
+  background: rgba(47, 158, 90, 0.07);
+}
+
+.ed-auto-box-no {
   position: absolute;
   left: -2px;
-  top: -20px;
-  padding: 0 6px;
+  top: -18px;
+  min-width: 16px;
+  padding: 0 4px;
   font-size: 11px;
-  line-height: 18px;
+  line-height: 16px;
+  font-weight: 600;
+  text-align: center;
   color: #fff;
   background: #2f9e5a;
   border-radius: 3px 3px 0 0;
   white-space: nowrap;
-  /* 题块常常只有二三十像素高：标签压在上一个框上可以看，但不能抢鼠标。 */
+  /* 题块常常只有二三十像素高：题号常显，但不许抢鼠标。 */
   pointer-events: none;
 }
 
-.ed-auto-box[data-done="on"] .ed-auto-box-tag {
-  background: #9aa7a0;
+.ed-auto-box[data-pending="on"] .ed-auto-box-no {
+  background: #1f6b3e;
 }
 
-/* 题块矮到装不下一行标签时就不挂标签：压在上一题上只会挡住原文。 */
-.ed-auto-box.is-tiny .ed-auto-box-tag {
-  display: none;
+.ed-auto-box[data-done="on"] .ed-auto-box-no {
+  background: #9aa7a0;
 }
 
 /* 按钮与手柄只在悬停/选中/聚焦这一框时出现：页面上题块密到十几像素高，
@@ -449,9 +457,17 @@ body {
 .ed-auto-box.is-selected .ed-auto-box-split,
 .ed-auto-box:focus-within .ed-auto-box-split,
 .ed-auto-box.is-splitting .ed-auto-box-split,
-.ed-auto-box[data-done="on"] .ed-auto-box-split {
+.ed-auto-box[data-done="on"] .ed-auto-box-split,
+.ed-auto-box[data-pending="on"] .ed-auto-box-split,
+.ed-auto-box[data-saving="on"] .ed-auto-box-split {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* 拖完回写中的那一框：边框变亮，老师知道松手后底座正在重切。 */
+.ed-auto-box[data-saving="on"] {
+  border-color: #d08b2c;
+  box-shadow: 0 0 0 2px rgba(208, 139, 44, 0.3);
 }
 
 .ed-auto-box-split:hover,
@@ -464,6 +480,16 @@ body {
   border-color: #7f8b84;
   cursor: default;
   opacity: 0.8;
+}
+
+/* 已入池 / 已切分的按钮不再吃鼠标：它常压在细框正中，
+   挡住框体拖动，老师一拖就变成点按钮（什么也不发生）。 */
+.ed-auto-box:hover .ed-auto-box-split:disabled,
+.ed-auto-box.is-selected .ed-auto-box-split:disabled,
+.ed-auto-box:focus-within .ed-auto-box-split:disabled,
+.ed-auto-box[data-pending="on"] .ed-auto-box-split:disabled {
+  opacity: 1;
+  pointer-events: none;
 }
 
 .ed-auto-handle {
@@ -493,6 +519,16 @@ body {
 }
 
 .ed-auto-box[data-done="on"] .ed-auto-handle {
+  display: none;
+}
+
+/* 缩略图上题块只有几像素高，八个手柄的命中区会相互盖住、也盖住框体：
+   这种框只留框体拖动，改边用键盘（Shift + 方向键）；按钮也不占位。 */
+.ed-auto-box.is-thin .ed-auto-handle {
+  display: none;
+}
+
+.ed-auto-box.is-thin .ed-auto-box-split:disabled {
   display: none;
 }
 

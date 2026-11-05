@@ -201,6 +201,49 @@ class TextFacsimileTest(PageRenderTestCase):
             self.assertLessEqual(region["y"] + region["h"], 2339)
         self.assertIn("选项甲", regions[0]["text"])
 
+    def test_08a2_first_page_starts_after_section_heading(self) -> None:
+        """首页从第一个大节标题之后找题号：卷首那些编号行一律不当题目。"""
+        lines = [
+            {"text": "1. 2024 年普通高等学校招生考试", "left": 72, "bottom": 800,
+             "right": 523, "top": 810},
+            {"text": "2. 数学", "left": 72, "bottom": 780, "right": 523, "top": 790},
+            {"text": "一、选择题：本题共 8 小题", "left": 72, "bottom": 760,
+             "right": 523, "top": 770},
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "2. 第二题题干", "left": 72, "bottom": 600, "right": 523, "top": 610},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                first_page=True)
+        self.assertEqual([region["no"] for region in regions], [1, 2])
+        self.assertIn("第一题题干", regions[0]["text"])
+        self.assertNotIn("招生考试", regions[0]["text"])
+
+    def test_08a3_regions_leave_a_gap_so_boxes_do_not_overlap(self) -> None:
+        """相邻两题之间至少留出一道缝；上下题号行不重叠。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "2. 第二题题干", "left": 72, "bottom": 600, "right": 523, "top": 610},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual(len(regions), 2)
+        first, second = regions
+        self.assertLessEqual(first["y"] + first["h"], second["y"] - 8,
+                             "第一题的框必须停在第二题上方，且留出可见的空隙")
+
+    def test_08a4_ink_trim_only_shrinks_inward(self) -> None:
+        """墨迹裁边只许往框内收：外扩会把相邻两题的框重新叠在一起。"""
+        ink = bytearray(100)
+        ink[40:50] = b"\x01" * 10
+        top, height = page_render._trim_to_ink(30, 40, ink, 100)
+        self.assertEqual((top, height), (34, 22))
+        # 框的上边界已经压进墨迹里：裁边不许把它再往上推。
+        ink2 = bytearray(100)
+        ink2[42:48] = b"\x01" * 6
+        top2, height2 = page_render._trim_to_ink(42, 6, ink2, 100)
+        self.assertEqual(top2, 42)
+        self.assertEqual(height2, 6)
+
     def test_08b_real_paper_has_nineteen_regions(self) -> None:
         """模拟1.pdf 自带文本层：五页共 19 道题，每题一块，页脚不切。"""
         pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
@@ -214,6 +257,45 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertEqual(numbers, list(range(1, 20)))
         first = entries[0]
         self.assertEqual((first.get("width"), first.get("height")), (1654, 2339))
+
+    def test_08c_real_paper_regions_never_overlap(self) -> None:
+        """模拟1.pdf 的 19 个框按卷面从上到下排开，相邻两框之间留有缝隙。"""
+        pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
+        if not pdf.is_file():
+            self.skipTest("本机没有 testdata/20261105/模拟1.pdf")
+        entries, _warnings = page_render._pdf_pages_builtin(pdf.read_bytes())
+        for entry in entries:
+            height = float(entry.get("height") or 0)
+            regions = entry.get("regions") or []
+            for previous, current in zip(regions, regions[1:]):
+                self.assertLessEqual(
+                    previous["y"] + previous["h"], current["y"] - 8,
+                    "第 %s 题与第 %s 题的框叠在一起" % (previous["no"], current["no"]))
+                self.assertGreaterEqual(current["y"], 0)
+                self.assertLessEqual(current["y"] + current["h"], height)
+            for region in regions:
+                self.assertNotRegex(region["label"], r"绝密|启用前|注意事项")
+
+    def test_08d_crop_pdf_regions_returns_one_png_per_box(self) -> None:
+        """自动切图按框出图：一块一张真 PNG，尺寸与框的宽高比一致。"""
+        pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
+        if not pdf.is_file():
+            self.skipTest("本机没有 testdata/20261105/模拟1.pdf")
+        entries, _warnings = page_render._pdf_pages_builtin(pdf.read_bytes())
+        crops, warnings = page_render.crop_pdf_regions(pdf.read_bytes(), entries)
+        self.assertEqual(warnings, [])
+        total = sum(len(page.get("regions") or []) for page in entries)
+        made = sum(len(items) for items in crops.values())
+        self.assertEqual(made, total)
+        self.assertEqual(total, 19)
+        for page_no, items in crops.items():
+            regions = entries[page_no - 1].get("regions") or []
+            self.assertEqual([item["index"] for item in items], list(range(len(regions))))
+            for item in items:
+                self.assertTrue(item["png"].startswith(b"\x89PNG\r\n\x1a\n"))
+                region = item["region"]
+                ratio = (item["width"] / item["height"]) / (region["w"] / region["h"])
+                self.assertAlmostEqual(ratio, 1.0, delta=0.03)
 
     def test_08_builtin_renderer_outputs_a4_png(self) -> None:
         """内置渲染器自己出的页图必须是可读 PNG，尺寸按 200 dpi 的 A4 算。"""

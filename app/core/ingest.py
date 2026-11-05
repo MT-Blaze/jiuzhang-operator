@@ -6,16 +6,17 @@
   录题工作台的 exam-zh 源码（``\\begin{question}`` / ``\\begin{solution}``），
   以及普通文本（按题号切题，再拆选项、提答案）。
 - ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
-- ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层只用于抽取题号、文字
-  与坐标，由前端在左栏自动画出切分框。老师逐个确认或微调后【框选切题】，
-  底层不预先生成任何待审题。
+- ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层抽出题号、文字与坐标，
+  左栏自动画切分框。解析完成后底座直接按每块坐标从原 PDF 裁图，把识别出的
+  题全部生成待审空壳排进中间栏；老师只做微调与录入，不再逐框点确认。
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
-**PDF 一道占位题都不放**：只立空批次、挂原卷页图与自动切分坐标；
-老师进批次后在左侧核对绿框，确认或微调后即生成一道新题。
+**PDF 自动切图入池**：页图与题块坐标出来后，按坐标从原 PDF 直接裁图，
+每块生成一道带原题图的待审空壳（题号沿用卷面题号），中间栏按卷面顺序排好；
+老师进批次只做两件事——拖绿框微调切图、在中间栏录入题干与答案。
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import io
 import json
 import re
 import zipfile
+from pathlib import Path
 from typing import Any
 
 from app.core import page_render, question_parser
@@ -437,6 +439,13 @@ def _placeholder(label: str) -> dict[str, Any]:
     }
 
 
+def _page_of(doc_pages: list[int], index: int) -> int:
+    """第 index 道题落在原卷第几页；没有页号就退到第 1 页。"""
+    if 0 <= index < len(doc_pages):
+        return int(doc_pages[index]) or 1
+    return 1
+
+
 async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str, bool]:
     """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否原卷大图)。
 
@@ -454,11 +463,10 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
         documents, notes = build_documents(text)
         return documents, warnings + notes, kind, text, False
     if kind == "pdf":
-        # 定调：PDF 不预生成题目。页图与题块坐标都由 page_render 负责，
-        # 老师对着原卷逐个【框选切题】确认或微调。
+        # 这里只负责分拣：页图、题块坐标与自动切图都在后台解析完成后做。
         warnings.append(
-            f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
-            "左侧会自动框出每道题，老师逐个【框选切题】确认或微调。"
+            f"{name}：已按原卷大图导入。页面图渲染完成后，识别出的每道题会自动裁好"
+            "并排进待审池，左侧绿框可拖拽微调。"
         )
         return [], warnings, kind, "", True
     if kind == "image":
@@ -518,7 +526,7 @@ def stage_ingest(files: Any) -> dict[str, Any]:
 
     老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
     Word / 文本类先放一条「正在解析」占位题；PDF 一律当原卷大图，连占位题都不放，
-    只在后台渲染出页图后挂到批次上，老师进批次自己【框选切题】。
+    后台渲染出页图后挂到批次上，并按题块坐标自动裁图、生成待审空壳。
 
     返回聚合账：``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings",
     "ignored", "kinds", "jobs"}``；``jobs`` 按批次分组，``batch_id`` 是第一份的批次号。
@@ -600,8 +608,8 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     if scan_only:
         result = pending_bank.create_batch(source_backup=backup, source_name=name,
                                            scan=True)
-        warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
-                    "左侧会自动框出每道题，老师逐个【框选切题】确认或微调。"]
+        warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后，"
+                    "识别出的每道题会自动裁好并排进待审池，左侧绿框可拖拽微调。"]
     else:
         result = pending_bank.save_draft(
             [{"question": _placeholder(f"（正在解析：{name}）")}],
@@ -627,8 +635,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
     """第二段：识别。
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF：只把渲染出来的原卷页图（含题块坐标）挂到批次上，**一条题都不落池**——
-      老师进批次后在左侧原卷上确认或微调【框选切题】。
+    - PDF：先把原卷页图（含题块坐标）挂到批次上，再按坐标从原 PDF 直接裁图，
+      每块生成一道带原题图的待审空壳；裁不出来的块只少一道，页图与手动框选照旧。
     """
     from app.core import pending_bank
     from app.core.pending_assets import drop_assets
@@ -668,6 +676,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                 except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
                     drop_assets(page_images)
                     continue
+                # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
+                _auto_split_pages(name, data, batch_id, page_images)
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
@@ -696,5 +706,75 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             continue
 
 
-def _page_of(doc_pages: list[int], index: int) -> int:
-    return doc_pages[index] if 0 <= index < len(doc_pages) else 1
+def _auto_split_shell(page_no: int, number: Any, asset_id: str, title: str) -> dict[str, Any]:
+    """自动切图生成的那道待审空壳：题干只说明出处，原题图挂在题身上。
+
+    老师要做的只有两件事：对照题图录入题干与答案，拖绿框把切歪的地方调正。
+    """
+    label = str(number or "")
+    return {
+        "schema_version": "2.0",
+        "type": "solution",
+        "stem": "（自动切题：原卷第 %d 页第 %s 题，请对照题图录入题干与答案）"
+                % (page_no, label or "?"),
+        "difficulty": DEFAULT_DIFFICULTY,
+        "source": {"question_no": label, "paper_title": title},
+        "images": [{
+            "id": asset_id,
+            "role": "stem",
+            "uri": "/static/uploads/" + asset_id + ".png",
+        }],
+    }
+
+
+def _auto_split_pages(name: str, data: bytes, batch_id: str,
+                      page_images: list[dict[str, Any]]) -> list[str]:
+    """把页图上的题块全部裁成待审题；失败只记警告，绝不拖垮页图与手动框选。
+
+    题块坐标是页面图像素，``page_render.crop_pdf_regions`` 换回 PDF 点后
+    按 300 dpi 直接从原 PDF 裁图。19 块一次落池，顺序就是卷面顺序。
+    """
+    from app.core import pending_bank
+
+    crops, notes = page_render.crop_pdf_regions(data, page_images)
+    if not crops:
+        return notes
+    title = str(Path(name or "").stem or name or "")[:120]
+    items: list[dict[str, Any]] = []
+    regions: list[dict[str, Any]] = []
+    for entry in page_images:
+        try:
+            page_no = int(entry.get("page") or 0)
+        except (TypeError, ValueError):
+            continue
+        for crop in crops.get(page_no) or []:
+            region = crop["region"]
+            asset_id = "img_auto_%d_%d" % (page_no, int(crop["index"]))
+            items.append({
+                "question": _auto_split_shell(page_no, crop.get("no"), asset_id, title),
+                "assets": [{
+                    "id": asset_id,
+                    "data_url": "data:image/png;base64,"
+                                + base64.b64encode(crop["png"]).decode("ascii"),
+                }],
+                "page_no": page_no,
+            })
+            regions.append(region)
+    if not items:
+        return notes
+    try:
+        result = pending_bank.save_draft(items, batch_id=batch_id,
+                                         origin="ingest.auto_split")
+    except Exception as error:  # noqa: BLE001 - 自动落池失败仍保留页图与绿框
+        notes.append(f"自动切图落池失败（{error}），可在左侧逐框确认切分")
+        return notes
+    saved_ids = [str(value) for value in (result.get("saved_ids") or [])]
+    for region, pending_id in zip(regions, saved_ids):
+        if pending_id:
+            region["pending_id"] = pending_id
+    try:
+        # 题块与待审题绑定后再写回一次：老师重开批次时框上就知道「已入池」。
+        pending_bank.set_batch_pages(batch_id, page_images)
+    except Exception:  # noqa: BLE001 - 绑定写不进去只影响重开批次的状态标记
+        pass
+    return notes

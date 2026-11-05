@@ -65,6 +65,27 @@ def pending_delete_batch(batch_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post(
+    "/api/pending/batches/{batch_id}/pages",
+    summary="保存原卷页图与题块坐标（老师拖框微调后回写）",
+    dependencies=[Depends(require_write_token)],
+)
+def pending_set_pages(batch_id: str,
+                      payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """只换这一批的页图清单（题块坐标随页图一起存），题目本身一个字节不动。"""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    pages = payload.get("page_images")
+    if not isinstance(pages, list) or not pages:
+        raise HTTPException(status_code=400, detail="缺少 page_images 数组")
+    try:
+        return pending_bank.set_batch_pages(batch_id, pages)
+    except pending_bank.PendingNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get(
     "/api/pending/meta/history",
     summary="公共元数据的历史值",

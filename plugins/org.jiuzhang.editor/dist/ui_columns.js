@@ -321,6 +321,18 @@
     if (parsed.errors.length) {
       block.appendChild(el("p", "ed-opt-img", "源码尚未认全：" + parsed.errors.join("；")));
     }
+    // 自动切出来的题：右边直接看着题图录题干，不用来回对原卷。
+    var images = (item.question && Array.isArray(item.question.images)) ? item.question.images : [];
+    images.forEach(function (image) {
+      var uri = safeAssetUri(image && image.uri);
+      if (!uri) return;
+      var figure = el("figure", "ed-q-image");
+      var picture = document.createElement("img");
+      picture.src = uri;
+      picture.alt = "第 " + (index + 1) + " 题题图";
+      figure.appendChild(picture);
+      block.appendChild(figure);
+    });
     var stem = el("p", "ed-q-stem");
     stem.appendChild(el("span", "ed-num", (index + 1) + "."));
     appendRich(stem, parsed.stem || item.source);
@@ -411,7 +423,19 @@
     });
     tools.appendChild(cropBtn);
     cell.appendChild(tools);
-    cell.appendChild(el("p", "ed-img-caption", "原卷第 " + pageNo + " 页 · " + (boxCount ? "已自动框出 " + boxCount + " 道题，悬停绿框确认或微调" : "拖框即生成新题")));
+    var regions = (page && Array.isArray(page.regions)) ? page.regions : [];
+    var pooledCount = regions.filter(function (region) {
+      return Boolean(region && region.pending_id);
+    }).length;
+    var caption = "原卷第 " + pageNo + " 页 · 拖框即生成新题";
+    if (pooledCount) {
+      caption = "原卷第 " + pageNo + " 页 · 已自动切出 " + pooledCount
+        + " 道题排进中间，拖绿框可微调";
+    } else if (boxCount) {
+      caption = "原卷第 " + pageNo + " 页 · 已自动框出 " + boxCount
+        + " 道题，悬停绿框确认或微调";
+    }
+    cell.appendChild(el("p", "ed-img-caption", caption));
     return cell;
   }
   function emptyColumnNote(text) {

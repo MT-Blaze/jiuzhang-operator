@@ -658,6 +658,61 @@
   }
 
   /**
+   * 已入池的绿框被老师拖过：按新坐标重切题图，原地更新那道待审题。
+   * 读的必须是原卷页图（item.pageImage），不能走 itemImage——那会先拿到
+   * 上一次切的题图，越调越糊。旧配图留在 pending_assets/，整批审完统一清。
+   */
+  function updatePageRegion(item, region, info) {
+    if (!item || !item.pendingId) return Promise.reject(new Error("这一框没有对应的待审题"));
+    if (!stashOne) return Promise.reject(new Error("存题通道没有接上"));
+    var picture = item.pageImage;
+    if (!picture || !picture.uri) return Promise.reject(new Error("这一页的原卷图取不到"));
+    var pageNo = Number(info && info.page) || Number(picture.page) || 1;
+    return loadPageBitmap(picture.uri).then(function (bitmap) {
+      var cropped = cropRegionToDataUrl(bitmap, region);
+      if (!cropped) throw new Error("框选区域没有像素");
+      var assetId = cropAssetId();
+      item.cropAsset = { id: assetId, data_url: cropped.dataUrl };
+      item.question = item.question || {};
+      // 只换这张自动切图，老师后来补的选项图 / 解析图一张都不丢。
+      var previous = Array.isArray(item.question.images) ? item.question.images : null;
+      var images = previous ? previous.slice() : [];
+      var stemAt = -1;
+      for (var index = 0; index < images.length; index += 1) {
+        if (images[index] && images[index].role === "stem") { stemAt = index; break; }
+      }
+      if (stemAt < 0) { images.unshift(null); stemAt = 0; }
+      images[stemAt] = { id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" };
+      item.question.images = images;
+      item.dirty = true;
+      // 只换题图、不动正文：还没填题干也不该被拦下。
+      return stashOne(item, metaFor(item, {}), true, true).then(function (outcome) {
+        if (!outcome || !outcome.ok) {
+          item.cropAsset = null;
+          item.question.images = previous || [];
+          throw new Error((outcome && outcome.message) || "题目没能存回中转站");
+        }
+        var saved = outcome.result && outcome.result.saved_assets && outcome.result.saved_assets[0];
+        var asset = saved && saved.assets && saved.assets[0];
+        if (asset && asset.uri && item.question.images[stemAt]) {
+          item.question.images[stemAt].uri = asset.uri;
+        }
+        item.cropAsset = null;
+        if (scheduleRender) scheduleRender();
+        if (dock) {
+          dock("第 " + pageNo + " 页的框已微调，题图重切为 "
+            + cropped.width + "×" + cropped.height + " 像素。");
+        }
+        return {
+          uri: (asset && asset.uri) || "",
+          width: cropped.width,
+          height: cropped.height
+        };
+      });
+    });
+  }
+
+  /**
    * 老师选完动作才真正切：mode=assign 配给当前题，mode=split 另起一道待审题。
    * 截图像素按源图算，避免框选缩放后把题图裁小。
    */
@@ -762,6 +817,7 @@
       dataUrlToBlob: dataUrlToBlob,
       loadPageBitmap: loadPageBitmap,
       splitPageRegion: splitPageRegion,
+      updatePageRegion: updatePageRegion,
       drawCropCanvas: drawCropCanvas,
       drawLens: drawLens,
       ensureLens: ensureLens,

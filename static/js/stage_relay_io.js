@@ -203,7 +203,7 @@
 
     if (method === "pending.save_draft" || method === "pending.approve"
         || method === "pending.delete" || method === "pending.delete_batch"
-        || method === "pending.purge_duplicates") {
+        || method === "pending.purge_duplicates" || method === "pending.set_pages") {
       // 写中转站与写主库同权：必须先声明 questions:write，令牌仍留在宿主侧。
       var pendingPermissions = (tab.plugin && tab.plugin.permissions) || [];
       if (pendingPermissions.indexOf("questions:write") < 0) {
@@ -262,6 +262,28 @@
           emitPendingUpdated("delete_batch", [], result);
           done(result);
         }, fail);
+        return true;
+      }
+      if (method === "pending.set_pages") {
+        // 老师拖绿框微调后的坐标回写：只动页图清单，题目与审校状态一概不碰。
+        var pageBatchId = textValue(payload, "batch_id", 40);
+        if (!/^B-\d{3,}$/.test(pageBatchId)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
+          return true;
+        }
+        var pageList = payload.page_images;
+        if (!Array.isArray(pageList) || !pageList.length || pageList.length > 40) {
+          replyHost(tab, message, false, {
+            code: "BAD_REQUEST",
+            message: "page_images 必须是 1–40 项的数组"
+          });
+          return true;
+        }
+        withWriteToken("/api/pending/batches/" + encodeURIComponent(pageBatchId) + "/pages", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({ page_images: pageList })
+        }).then(done, fail);
         return true;
       }
       if (method === "pending.save_draft") {

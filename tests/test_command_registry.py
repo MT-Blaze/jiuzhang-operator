@@ -256,6 +256,14 @@ class HostApiContractTest(unittest.TestCase):
         ai_only = self._array_block("AI_ONLY_METHODS")
         self.assertNotIn("command.", ai_only, "查表与调度不要求 ai:invoke，普通插件也能用")
 
+    def test_15a_page_region_write_is_whitelisted_and_dispatched(self) -> None:
+        # 中继分支写了、白名单漏了：真机上拖绿框的坐标会静默不落库（曾如此）。
+        relay = self._array_block("RELAY_METHODS")
+        self.assertIn('"pending.set_pages"', relay)
+        dispatch_at = self.stage.index('if (method === "pending.set_pages")')
+        tail = self.stage.index('failWith("UNSUPPORTED_METHOD"')
+        self.assertLess(dispatch_at, tail)
+
     def test_15_dispatch_precedes_the_tail_refusal(self) -> None:
         # 白名单里的方法必须有分支：漏分发会掉到末尾的 UNSUPPORTED_METHOD（真机曾清空题篮）。
         tail = self.stage.index('failWith("UNSUPPORTED_METHOD", "宿主转发表未实现方法：')

@@ -580,8 +580,13 @@
       noteActivity();
       // PDF 原卷批次：左栏整卷页图就是老师的唯一入口，必须当场指路。
       if (state.scanBatch) {
-        dock("这一批按原卷大图导入：左侧已铺开 " + pages.length
-          + " 页原卷，直接【框选切题】——松开鼠标就生成一道新题。");
+        var autoCount = state.items.filter(function (item) {
+          return String(item.pendingId || "").indexOf("p_") === 0;
+        }).length;
+        dock("这一批按原卷大图导入：左侧已铺开 " + pages.length + " 页原卷，"
+          + (autoCount
+            ? "已自动切出 " + autoCount + " 道题排进中间；拖绿框可微调，缺题直接框选。"
+            : "直接【框选切题】——松开鼠标就生成一道新题。"));
       }
       // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。
       var broken = state.items.filter(function (item) { return parsedOf(item).errors.length > 0; });

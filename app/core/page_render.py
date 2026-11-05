@@ -50,6 +50,8 @@ MAX_PAGES = 40
 TEXT_WIDTH = PAGE_WIDTH - MARGIN_X * 2
 # 原卷页图按 200 dpi 出：A4 约 1654×2339，框选裁下来的公式足够清楚。
 PDF_RENDER_DPI = 200
+# 自动切图另按 300 dpi 从原 PDF 直接裁：成品题图不经过 200 dpi 页图的二次采样。
+PDF_CROP_DPI = 300
 
 # XML 里禁用标签的检查在 pending_assets；这里只负责生成干净内容。
 _FONT_FAMILY = ("'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',"
@@ -136,10 +138,14 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                 page = document[index]
                 bitmap = page.render(scale=PDF_RENDER_DPI / 72.0)
                 try:
-                    png = _png_from_bitmap(bitmap)
+                    raw = bytes(bitmap.buffer)
                     width = int(bitmap.width)
                     height = int(bitmap.height)
-                    regions = _pdf_page_regions(page, width, height)
+                    png = _png_from_bitmap(bitmap, raw)
+                    ink = _ink_rows(raw, width, height, int(bitmap.stride),
+                                    int(bitmap.n_channels))
+                    regions = _pdf_page_regions(page, width, height,
+                                                ink_rows=ink, first_page=index == 0)
                 finally:
                     bitmap.close()
                 entries.append(_entry(write_generated_asset(png, "image/png"), index + 1,
@@ -159,20 +165,34 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
 # 递增的一串才算一列题，页眉页脚的说明数字不参与；找不到任何题号就交空清单，
 # 前端仍可手动框选——绝不按猜出来的区域硬切。
 _PDF_HEAD = re.compile(r"^\s*(\d{1,2})\s*[.．、]\s*\S")
-_PDF_INSTRUCTION = re.compile(r"答题卡|答卷前|考试结束|考生|考场|座位号")
+# 卷首说明与页眉页脚：这些行也常带「1. 2. 3.」，但都不是题。
+_PDF_INSTRUCTION = re.compile(
+    r"答题卡|答卷前|考试结束|考生|考场|座位号|注意事项|绝密|启用前|"
+    r"姓名|班级|考号|准考证|密封线|本试卷共")
+_PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
 _PDF_FOOTER = re.compile(r"第\s*\d+\s*页\s*[（(]\s*共\s*\d+\s*页")
 _REGION_TEXT_LIMIT = 1200
 _REGION_LABEL_LIMIT = 48
+# 题块上下各留一点呼吸位；相邻题之间至少留 5pt（约 14 像素 @200dpi），
+# 绿框不再首尾相接，老师不会把下一题的选项误看成这一题的。
+_HEAD_PAD_PT = 1.5
+_REGION_GAP_PT = 5.0
+_INK_PAD_PX = 6
+# 页面图背景是白的；行内只要有明显偏暗的像素就算「有墨」，用于裁掉题块尾部空白。
+_INK_TABLE = bytes(0 if value >= 245 else 1 for value in range(256))
 
 
-def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int) -> list[dict[str, Any]]:
+def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
+                      ink_rows: bytearray | None = None,
+                      first_page: bool = False) -> list[dict[str, Any]]:
     """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。"""
     try:
         page_width, page_height = (float(value) for value in page.get_size())
         lines = _pdf_text_lines(page)
     except Exception:  # noqa: BLE001 - 文本层坏了只影响自动框，不影响页图
         return []
-    return _question_regions(lines, page_width, page_height, pixel_width, pixel_height)
+    return _question_regions(lines, page_width, page_height, pixel_width, pixel_height,
+                             ink_rows=ink_rows, first_page=first_page)
 
 
 def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
@@ -226,12 +246,15 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
 
 
 def _question_regions(lines: list[dict[str, Any]], page_width: float, page_height: float,
-                      pixel_width: int, pixel_height: int) -> list[dict[str, Any]]:
+                      pixel_width: int, pixel_height: int, *,
+                      ink_rows: bytearray | None = None,
+                      first_page: bool = False) -> list[dict[str, Any]]:
     """行清单 → 每道题的像素包围盒。
 
-    题号链只取「最长且连续递增」的一段：页首「1. 2. 3.」的作答说明即使与
-    正式题号重合，也会因为链更短而落选。横向框到整栏文字的外沿，纵向从本题
-    题号行起、到下一题题号行前一截为止，因此插图与选项不会被裁掉。
+    题号链只取「最长且连续递增」的一段：卷首作答说明也带「1. 2. 3.」，
+    先按说明关键词滤掉；首页再从第一个大节标题（如「一、选择题」）之后找题号，
+    双保险。纵向从本题题号行起、到下一题题号行前留一道缝；页尾题块最后按
+    页面图的真实墨迹裁掉尾部空白（有图的地方墨迹会把它留住）。
     """
     if not lines or page_width <= 0 or page_height <= 0:
         return []
@@ -240,8 +263,16 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
     footer_top = min((line["top"] for line in lines if _PDF_FOOTER.search(line["text"])),
                      default=None)
     content = [line for line in lines if not _PDF_FOOTER.search(line["text"])]
+    start_at = 0
+    if first_page:
+        section = next((index for index, line in enumerate(content)
+                        if _PDF_SECTION.match(line["text"])), None)
+        if section is not None:
+            start_at = section
     heads: list[tuple[int, int]] = []
     for position, line in enumerate(content):
+        if position < start_at:
+            continue
         matched = _PDF_HEAD.match(line["text"])
         if not matched or _PDF_INSTRUCTION.search(line["text"]):
             continue
@@ -258,34 +289,75 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
         return []
     box_x = left * scale_x
     box_w = max(1.0, (right - left) * scale_x)
-    content_bottom = (footer_top - 3.0 if footer_top is not None
-                      else min(line["bottom"] for line in content) - 3.0)
+    page_bottom = (footer_top + _REGION_GAP_PT if footer_top is not None
+                   else min(line["bottom"] for line in content) + _REGION_GAP_PT)
 
     regions: list[dict[str, Any]] = []
     for order, (position, number) in enumerate(run):
         line = content[position]
-        top_pt = line["top"] + 3.0
+        top_pt = line["top"] + _HEAD_PAD_PT
         if order + 1 < len(run):
-            bottom_pt = content[run[order + 1][0]]["top"] + 3.0
             stop = run[order + 1][0]
+            bottom_pt = content[stop]["top"] + _REGION_GAP_PT
         else:
-            bottom_pt = content_bottom
             stop = len(content)
+            bottom_pt = page_bottom
         top_y = max(0.0, (page_height - top_pt) * scale_y)
         bottom_y = min(float(pixel_height), (page_height - bottom_pt) * scale_y)
         if bottom_y - top_y < 8.0:
             bottom_y = min(float(pixel_height), top_y + 8.0)
+        y, h = _trim_to_ink(top_y, bottom_y - top_y, ink_rows, pixel_height)
         text = "\n".join(part["text"] for part in content[position:stop]).strip()
         regions.append({
             "no": number,
             "x": round(box_x, 1),
-            "y": round(top_y, 1),
+            "y": round(y, 1),
             "w": round(box_w, 1),
-            "h": round(bottom_y - top_y, 1),
+            "h": round(h, 1),
             "label": re.sub(r"\s+", " ", line["text"]).strip()[:_REGION_LABEL_LIMIT],
             "text": text[:_REGION_TEXT_LIMIT],
         })
     return regions
+
+
+def _ink_rows(raw: bytes, width: int, height: int, stride: int,
+              channels: int) -> bytearray:
+    """逐行判断页面上有没有墨迹：背景纯白，任何明显偏暗的像素都算有内容。"""
+    span = max(0, width * channels)
+    rows = bytearray(height)
+    if span <= 0:
+        return rows
+    for row in range(height):
+        start = row * stride
+        if 1 in raw[start:start + span].translate(_INK_TABLE):
+            rows[row] = 1
+    return rows
+
+
+def _trim_to_ink(top: float, height: float, ink_rows: bytearray | None,
+                 page_height: int) -> tuple[float, float]:
+    """把题块的上下空白裁掉，四周留 ``_INK_PAD_PX`` 像素；裁完至少留 8 像素。"""
+    if not ink_rows:
+        return top, height
+    start = max(0, int(round(top)))
+    stop = min(page_height, int(round(top + height)))
+    first = None
+    last = None
+    for row in range(start, stop):
+        if ink_rows[row]:
+            if first is None:
+                first = row
+            last = row
+    if first is None or last is None:
+        return top, height
+    # 只许往框内收，不许向外扩：相邻两题的墨迹 padding 一旦外溢，
+    # 绿框又会首尾叠在一起，正是这次要修掉的样子。
+    new_top = max(start, first - _INK_PAD_PX)
+    new_bottom = min(stop, last + 1 + _INK_PAD_PX)
+    if new_bottom - new_top < 8:
+        new_bottom = min(stop, new_top + 8)
+        new_top = max(start, new_bottom - 8)
+    return float(new_top), float(max(1, new_bottom - new_top))
 
 
 def _longest_number_run(heads: list[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -304,7 +376,93 @@ def _longest_number_run(heads: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return best
 
 
-def _png_from_bitmap(bitmap: Any) -> bytes:
+def crop_pdf_regions(data: bytes, page_images: list[dict[str, Any]],
+                     dpi: int = PDF_CROP_DPI) -> tuple[dict[int, list[dict[str, Any]]], list[str]]:
+    """页图上的自动题块 → 从原 PDF 直接裁下来的 PNG（默认 300 dpi）。
+
+    返回 ``{页码: [{index, no, region, png, width, height}]}`` 与警告。题块坐标
+    是页面图像素；这里按页图与 PDF 点数的比例换回点数，再交给 PDFium 的
+    ``crop=(left, bottom, right, top)``。任何一块裁不出来只跳过这一块，
+    绝不拿空白图冒充切图。
+    """
+    if _pdfium is None:
+        return {}, ["内置 PDF 渲染器（pypdfium2）没有装上，自动切图未执行"]
+    crops: dict[int, list[dict[str, Any]]] = {}
+    warnings: list[str] = []
+    try:
+        document = _pdfium.PdfDocument(data)
+    except Exception as error:  # noqa: BLE001 - 打不开就交白卷，页图还在
+        return {}, [f"自动切图打不开原 PDF（{error}）"]
+    try:
+        total = len(document)
+        for entry in page_images or []:
+            regions = entry.get("regions") if isinstance(entry, dict) else None
+            if not isinstance(regions, list) or not regions:
+                continue
+            try:
+                page_no = int(entry.get("page") or 0)
+            except (TypeError, ValueError):
+                continue
+            if page_no < 1 or page_no > total:
+                continue
+            try:
+                page = document[page_no - 1]
+                page_width, page_height = (float(value) for value in page.get_size())
+                pixel_width = float(entry.get("width") or 0) or page_width * PDF_RENDER_DPI / 72.0
+                pixel_height = float(entry.get("height") or 0) or page_height * PDF_RENDER_DPI / 72.0
+            except Exception:  # noqa: BLE001 - 单页尺寸读不出来只影响这一页
+                warnings.append(f"第 {page_no} 页读不出尺寸，自动切图跳过")
+                continue
+            if page_width <= 0 or page_height <= 0 or pixel_width <= 0 or pixel_height <= 0:
+                continue
+            scale_x = page_width / pixel_width
+            scale_y = page_height / pixel_height
+            made: list[dict[str, Any]] = []
+            for index, region in enumerate(regions):
+                try:
+                    x = float(region.get("x") or 0)
+                    y = float(region.get("y") or 0)
+                    w = float(region.get("w") or 0)
+                    h = float(region.get("h") or 0)
+                except (TypeError, ValueError):
+                    continue
+                left = max(0.0, x * scale_x)
+                right = max(0.0, (pixel_width - x - w) * scale_x)
+                top = max(0.0, y * scale_y)
+                bottom = max(0.0, (pixel_height - y - h) * scale_y)
+                if left + right >= page_width - 1 or top + bottom >= page_height - 1:
+                    continue
+                try:
+                    bitmap = page.render(scale=dpi / 72.0,
+                                         crop=(left, bottom, right, top))
+                    try:
+                        png = _png_from_bitmap(bitmap)
+                        width = int(bitmap.width)
+                        height = int(bitmap.height)
+                    finally:
+                        bitmap.close()
+                except Exception as error:  # noqa: BLE001 - 单块失败不拖垮整页
+                    warnings.append(
+                        f"第 {page_no} 页第 {region.get('no') or index + 1} 块裁图失败（{error}）")
+                    continue
+                made.append({
+                    "index": index,
+                    "no": region.get("no") or index + 1,
+                    "region": region,
+                    "png": png,
+                    "width": width,
+                    "height": height,
+                })
+            if made:
+                crops[page_no] = made
+    except Exception as error:  # noqa: BLE001 - 整份裁图失败仍保留页图与手动框选
+        warnings.append(f"自动切图中途失败（{error}）")
+    finally:
+        document.close()
+    return crops, warnings
+
+
+def _png_from_bitmap(bitmap: Any, raw: bytes | None = None) -> bytes:
     """PDFium 位图 → 纯标准库 PNG 字节（RGB，无依赖 Pillow）。
 
     200 dpi 的 A4 约 1654×2339：默认 3 通道 BGR；若遇到 4 通道就丢掉 alpha。
@@ -315,7 +473,8 @@ def _png_from_bitmap(bitmap: Any) -> bytes:
     channels = int(bitmap.n_channels)
     if channels not in (3, 4):
         raise ValueError("不认识的 PDF 位图通道数：" + str(channels))
-    raw = bytes(bitmap.buffer)
+    if raw is None:
+        raw = bytes(bitmap.buffer)
     pixel_bytes = channels
     rows: list[bytes] = []
     for y in range(height):

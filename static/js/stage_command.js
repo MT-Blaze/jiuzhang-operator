@@ -41,6 +41,8 @@
     // 彻底删除——录题端与主库之间那层物理隔离暂存，全走这五个口子。
     "pending.batch_list", "pending.list", "pending.save_draft",
     "pending.approve", "pending.delete", "pending.delete_batch",
+    // 老师拖绿框微调后的题块坐标回写：只改页图清单，题目一个字节不动。
+    "pending.set_pages",
     // 军令 #31：入库前的后台查重。只读，回主库里同题 / 高度相似题的**两侧完整文档**，
     // 插件拿去做左右渲染对比（对比渲染，不比源码）。
     "pending.duplicate",

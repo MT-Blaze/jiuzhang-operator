@@ -431,6 +431,20 @@
   font-size: 15px;
 }
 
+/* 自动切题的题图：右栏直接铺开，老师对着原卷图录题干。 */
+.ed-q-image {
+  margin: 0 0 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.ed-q-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .ed-q-stem .ed-num {
   font-weight: 700;
   margin-right: 6px;
