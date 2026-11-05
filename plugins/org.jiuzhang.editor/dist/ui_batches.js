@@ -90,6 +90,16 @@
       + "-" + hit[4] + ":" + hit[5];
   }
 
+  /** 卡片第二行的短时间：「10-31 星期四 15:30」。年份对老师没意义，省下来给文件名。 */
+  function shortBatchStamp(createdAt) {
+    var text = String(createdAt == null ? "" : createdAt);
+    var hit = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(text);
+    if (!hit) return text.slice(0, 16) || "时间未知";
+    var day = new Date(Number(hit[1]), Number(hit[2]) - 1, Number(hit[3]));
+    return hit[2] + "-" + hit[3] + " 星期" + WEEKDAYS.charAt(day.getDay())
+      + " " + hit[4] + ":" + hit[5];
+  }
+
   function currentBatch() {
     var id = String(state.batchId || "");
     var found = null;
@@ -169,8 +179,8 @@
   }
 
   /**
-   * 首屏：批次列表。一行一个批次，左边时间与编号，右边「未审：n / N」。
-   * 数字用绿色；未审数为 0 的批次整行变灰、沉到最底下，并且点不动——只能看。
+   * 首屏：批次列表。一张卡片先说「这是哪份卷子」（原始文件名），
+   * 再给时间和批次号，右边是待审题数。审完的整行变灰沉底、点不动。
    */
   function renderBatchList() {
     if (!batchListEl) return;
@@ -200,22 +210,24 @@
         open.setAttribute("aria-label", "批次 " + card.batch_id + "，" + ledgerText(ledger) + "，点开审核");
         open.addEventListener("click", function () { openBatch(card.batch_id); });
       }
-      open.appendChild(el("span", "ed-batch-left",
-        batchStamp(card.created_at) + "-批次编号 #" + card.batch_id));
+      // 第一行是卷子自己的名字；没有原文件名（老批次 / 手工录入）才退到批次标签。
+      var title = String(card.source_name || card.label || ("批次 #" + card.batch_id));
+      var main = el("span", "ed-batch-main");
+      main.appendChild(el("span", "ed-batch-name", title));
+      main.appendChild(el("span", "ed-batch-meta",
+        shortBatchStamp(card.created_at) + " | 批次 #" + card.batch_id));
+      // 抽进池、已入库、已裁删的账只在真发生时补一行；等式任何时刻都成立。
+      var extra = [];
+      if (ledger.pooled) extra.push("池内 " + ledger.pooled);
+      if (ledger.stored) extra.push("已入库 " + ledger.stored);
+      if (ledger.gone) extra.push("已裁删 " + ledger.gone);
+      if (extra.length) main.appendChild(el("span", "ed-batch-extra", extra.join(" · ")));
+      open.appendChild(main);
       var right = el("span", "ed-batch-right");
-      right.appendChild(el("span", "ed-batch-label", "未审："));
+      right.appendChild(el("span", "ed-batch-label", "待审 "));
       right.appendChild(el("span", "ed-batch-num", String(pending)));
-      // 池内的账要跟着显示（军令 #32 · 第五步）：抽走的题不再算未审数，
-      // 「未审 ＋ 池内 ＝ 总数」必须在同一张卡片上对得平，老师才知道题没丢。
-      // 已入库与池内已裁删只在真发生时补，等式任何时刻都成立。
-      [[" ＋ 池内：", ledger.pooled], [" ＋ 已入库：", ledger.stored], [" ＋ 已裁删：", ledger.gone]]
-        .forEach(function (term) {
-          if (!term[1]) return;
-          right.appendChild(el("span", "ed-batch-sep", term[0]));
-          right.appendChild(el("span", "ed-batch-num", String(term[1])));
-        });
-      right.appendChild(el("span", "ed-batch-sep", " ＝ "));
-      right.appendChild(el("span", "ed-batch-num", String(total)));
+      right.appendChild(el("span", "ed-batch-sep", " / "));
+      right.appendChild(el("span", "ed-batch-num ed-batch-total", String(total)));
       if (done && !ledger.pooled) right.appendChild(el("span", "ed-batch-check", "✅"));
       open.appendChild(right);
       row.appendChild(open);
@@ -522,6 +534,7 @@
     if (!id) return Promise.resolve(null);
     return hostCall("pending.list", { batch_id: id }).then(function (result) {
       var rows = (result && Array.isArray(result.items)) ? result.items : [];
+      var pages = (result && Array.isArray(result.page_images)) ? result.page_images : [];
       state.batchId = id;
       state.items = rows.map(function (row, index) {
         var doc = (row && row.question) || {};
@@ -529,6 +542,12 @@
         item.pendingId = String((row && row.id) || "");
         item.batchId = String((row && row.batch_id) || id);
         item.assets = Array.isArray(row.assets) ? row.assets : [];
+        // 原卷页属批次层：按条目的页号取那一页，没页号就退到第 1 页。
+        var pageNo = Number(row && row.page_no) || 1;
+        var page = pages[pageNo - 1] || pages[0] || null;
+        item.pageImage = page && page.uri
+          ? { uri: String(page.uri), page: Number(page.page) || pageNo }
+          : null;
         item.status = "pending";
         return item;
       });

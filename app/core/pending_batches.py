@@ -172,7 +172,7 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
         if batch is None:
             raise PendingNotFound("中转站里没有这个批次")
         rows = con.execute(
-            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at"
+            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at, page_no"
             " FROM pending_questions WHERE batch_id = ? ORDER BY seq ASC, id ASC",
             (batch_id,),
         ).fetchall()
@@ -181,9 +181,21 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
     return {
         "batch_id": batch_id,
         "items": [row_to_item(row) for row in rows],
+        "page_images": _page_images(batch),
         "pending_count": len(rows),
         "total": int(batch["total"] or 0),
     }
+
+
+def _page_images(row: sqlite3.Row) -> list[dict[str, Any]]:
+    """批次上的原卷页面图清单；读不出来就当没有，不猜。"""
+    try:
+        entries = json.loads(row["page_assets_json"] or "[]")
+    except (TypeError, ValueError, IndexError):
+        return []
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
 
 
 def row_to_item(row: sqlite3.Row) -> dict[str, Any]:
@@ -196,6 +208,7 @@ def row_to_item(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "origin": row["origin"],
+        "page_no": int(row["page_no"] or 1) if "page_no" in row.keys() else 1,
         "question": document,
         "assets": assets,
     }
@@ -206,7 +219,7 @@ def get_pending(pending_id: str) -> dict[str, Any]:
     con = connect()
     try:
         row = con.execute(
-            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at"
+            "SELECT id, batch_id, doc_json, assets_json, origin, created_at, updated_at, page_no"
             " FROM pending_questions WHERE id = ?",
             (pending_id,),
         ).fetchone()

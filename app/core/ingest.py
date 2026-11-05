@@ -26,7 +26,7 @@ import zipfile
 import zlib
 from typing import Any
 
-from app.core import question_parser
+from app.core import page_render, question_parser
 
 __all__ = [
     "classify",
@@ -532,43 +532,44 @@ def _placeholder(label: str) -> dict[str, Any]:
     }
 
 
-async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str]:
-    """一个文件 → (题目文档, 警告, 分拣类别)。"""
+async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str]:
+    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本)。"""
     kind = classify(name)
     warnings: list[str] = []
     if kind == "text":
         text = decode_text(data)
         documents, notes = build_documents(text)
-        return documents, warnings + notes, kind
+        return documents, warnings + notes, kind, text
     if kind == "docx":
         text = extract_docx_text(data)
         documents, notes = build_documents(text)
-        return documents, warnings + notes, kind
+        return documents, warnings + notes, kind, text
     if kind == "pdf":
         text, pages = extract_pdf_text(data)
         if _text_usable(text):
             documents, notes = build_documents(text)
-            return documents, warnings + notes, kind
+            return documents, warnings + notes, kind, text
         warnings.append(
-            f"{name}：PDF 文本层抽不出可读文字（本机没有 PDF 渲染器），"
+            f"{name}：PDF 文本层抽不出可读文字，"
             f"已按 {pages} 页各留一条待识别"
         )
+        # 文本层不可用就不拿乱码去还原页面图：页图由 PDF 渲染器另出。
         return [_placeholder(f"（待识别：{name} 第 1 页，文本层抽不出文字，请老师补录）")
-                for _ in range(min(pages, 20))], warnings, kind
+                for _ in range(min(pages, 20))], warnings, kind, ""
     if kind == "image":
         mime = IMAGE_MIME.get(suffix_of(name), "image/png")
         if len(data) > MAX_IMAGE_BYTES:
-            return [], warnings + [f"{name}：图片太大（上限 8 MiB），没认"], kind
+            return [], warnings + [f"{name}：图片太大（上限 8 MiB），没认"], kind, ""
         text, reason = await ocr_image(data, mime)
         if not text.strip():
             warnings.append(f"{name}：{reason or '认不出文字'}，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，图片认不出文字，请老师补录）")], warnings, kind
+            return [_placeholder(f"（待识别：{name}，图片认不出文字，请老师补录）")], warnings, kind, ""
         documents, notes = build_documents(text)
         if not documents:
             warnings.append(f"{name}：认出来了，但没拆出题目，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，认出了文字但没拆出题目）")], warnings, kind
-        return documents, warnings + notes, kind
-    return [], warnings, kind
+            return [_placeholder(f"（待识别：{name}，认出了文字但没拆出题目）")], warnings, kind, text
+        return documents, warnings + notes, kind, text
+    return [], warnings, kind, ""
 
 
 async def ingest_files(files: Any) -> dict[str, Any]:
@@ -711,21 +712,42 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
         data = (job or {}).get("data") or b""
         if not pending_id or not name or not batch_id:
             continue
+        page_images: list[dict[str, Any]] = []
+        doc_pages: list[int] = []
         try:
-            documents, _notes, _kind = await _items_from_file(name, data)
+            documents, _notes, kind, source_text = await _items_from_file(name, data)
         except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
             documents = []
+            kind = ""
+            source_text = ""
             _notes = [f"{name}：解析出错（{error}）"]
+        # 原卷页在识别之后立刻出：哪怕一道题都没拆出来，老师也得能对着原卷补录。
+        try:
+            page_images, doc_pages, _page_notes = page_render.build_pages(
+                name, kind, data, source_text, documents)
+        except Exception:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
+            page_images, doc_pages = [], []
         items: list[dict[str, Any]] = []
         if documents:
-            items.append({"question": documents[0], "pending_id": pending_id})
-            items.extend({"question": document} for document in documents[1:])
+            items.append({"question": documents[0], "pending_id": pending_id,
+                          "page_no": _page_of(doc_pages, 0)})
+            items.extend({"question": document, "page_no": _page_of(doc_pages, index)}
+                         for index, document in enumerate(documents[1:], start=1))
         else:
             items.append({
                 "question": _placeholder(f"（待识别：{name}，识别没成功，请老师补录）"),
                 "pending_id": pending_id,
+                "page_no": 1,
             })
         try:
-            pending_bank.save_draft(items, batch_id=batch_id, origin="ingest")
+            pending_bank.save_draft(items, batch_id=batch_id, origin="ingest",
+                                    page_images=page_images)
         except Exception:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
+            if page_images:
+                from app.core.pending_assets import drop_assets
+                drop_assets(page_images)
             continue
+
+
+def _page_of(doc_pages: list[int], index: int) -> int:
+    return doc_pages[index] if 0 <= index < len(doc_pages) else 1

@@ -68,6 +68,7 @@ from app.core.pending_batches import (
 from app.core.pending_db import (
     BATCH_ID_RE,
     MAX_BATCH_QUESTIONS,
+    PENDING_ASSET_RE,
     PENDING_ASSET_URI_PREFIX,
     PENDING_ID_RE,
     PendingConflict,
@@ -99,14 +100,50 @@ from app.core.pending_meta import (
     sync_dictionary_schools,
 )
 
+def _page_no(item: Any) -> int | None:
+    """一条暂存内容来自原卷第几页；没给或给坏了就回 ``None``（编辑回池时保留原页号）。"""
+    raw = item.get("page_no") if isinstance(item, dict) else None
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return max(1, value)
+
+
+def _page_entries(raw: Any) -> list[dict[str, Any]] | None:
+    """校验原卷页面图清单；``None`` 表示这次暂存不动现有的页图。"""
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        raise PendingError("页面图清单必须是数组")
+    entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw, start=1):
+        if not isinstance(entry, dict):
+            raise PendingError("页面图的每一项都必须是对象")
+        name = str(entry.get("name") or "")
+        if not PENDING_ASSET_RE.match(name):
+            raise PendingError("页面图文件名不合法")
+        try:
+            page = int(entry.get("page") or index)
+        except (TypeError, ValueError) as exc:
+            raise PendingError("页面图页码不合法") from exc
+        entries.append({"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page})
+    return entries
+
+
 def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
-               source_name: Any = "", origin: Any = "") -> dict[str, Any]:
+               source_name: Any = "", origin: Any = "",
+               page_images: Any = None) -> dict[str, Any]:
     """把一道题或一批题存进中转站（**存为待审**）。
 
     - ``batch_id`` 给了就并进那一批；没给就新开一批（``B-001`` 起）。
     - ``source_backup`` 是原文件只读副本在工作区 ``data/`` 里的相对路径；
       批次未审数归零时底座会**物理删掉**它，磁盘不留废纸。
     - ``source_name`` 是原文件名（老师拖进来的那份），只作展示，不参与解析。
+    - ``page_images`` 是这一批的原卷页面图（批次层，不挂题身）；``None`` 表示
+      这次暂存不动页面图，数组表示用这一份替换（重导 / 解析完成时给）。
     - 返回批次卡片与新题 id，前端据此刷新列表。
 
     一条都不写是失败：宁可报错，也不让老师以为存进去了。
@@ -120,12 +157,13 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     backup_text = str(source_backup or "").strip()
     backup = backup_path(backup_text)
     name_text = clean_text(source_name, 120)
+    pages = _page_entries(page_images)
 
-    prepared: list[tuple[dict[str, Any], list[dict[str, Any]], str]] = []
+    prepared: list[tuple[dict[str, Any], list[dict[str, Any]], str, int | None]] = []
     for item in items:
         payload, assets, pending_id = item_parts(item)
         document, stored = _prepare_document(payload, assets, pending_id or None)
-        prepared.append((document, stored, pending_id))
+        prepared.append((document, stored, pending_id, _page_no(item)))
 
     now = questions.now_iso()
     con = connect()
@@ -142,16 +180,23 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             con.execute(
                 "INSERT INTO batches"
                 " (batch_id, label, created_at, updated_at, source_backup, source_name,"
-                "  total, pending_count, assets_json)"
-                " VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)",
-                (target_batch, batch_label(local_now()), now, now, backup_text, name_text, "[]"),
+                "  total, pending_count, assets_json, page_assets_json)"
+                " VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
+                (target_batch, batch_label(local_now()), now, now, backup_text, name_text,
+                 "[]", json.dumps(pages or [], ensure_ascii=False, separators=(",", ":"))),
+            )
+        if pages is not None:
+            # 重导 / 解析完成：这一批的原卷页以本次为准，旧清单整体换掉。
+            con.execute(
+                "UPDATE batches SET page_assets_json = ? WHERE batch_id = ?",
+                (json.dumps(pages, ensure_ascii=False, separators=(",", ":")), target_batch),
             )
         current = batch_row(con, target_batch)
         # 公共元数据是这一批的「共同出处」：每次暂存都按批次上的那一份重写，
         # 插件只报自己看得见的字段也抹不掉场景、学校 ID 与标准名。
         batch_meta = read_meta(current) if current is not None else {}
         if batch_meta:
-            for document, _stored, _pending_id in prepared:
+            for document, _stored, _pending_id, _page in prepared:
                 ok, reason, _notes = apply_meta_to_document(document, batch_meta)
                 if not ok:
                     raise PendingError("这一批的公共元数据与题目对不上：" + reason)
@@ -168,22 +213,22 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         names: list[str] = []
         inserted = 0
         seq = next_seq(con, target_batch)
-        for document, stored, pending_id in prepared:
+        for document, stored, pending_id, page_no in prepared:
             if pending_id:
                 # 就地更新：号、批次与未审数都不动，只换内容。次序号也不动——
                 # 老师改的是这一道题，它在批次里的位置还是原来那个位置。
                 names.extend(str(item.get("name") or "") for item in _replace_pending(
-                    con, pending_id, document, stored))
+                    con, pending_id, document, stored, page_no))
                 continue
             con.execute(
                 "INSERT INTO pending_questions"
-                " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at, seq)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " (id, batch_id, doc_json, assets_json, origin, created_at, updated_at, seq, page_no)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     document["id"], target_batch,
                     json.dumps(document, ensure_ascii=False, separators=(",", ":")),
                     json.dumps(stored, ensure_ascii=False, separators=(",", ":")),
-                    str(origin or "")[:64], now, now, seq,
+                    str(origin or "")[:64], now, now, seq, page_no or 1,
                 ),
             )
             seq += 1
@@ -211,7 +256,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         con.commit()
     except BaseException:
         con.rollback()
-        for _document, stored, _pending_id in prepared:
+        for _document, stored, _pending_id, _page in prepared:
             drop_assets(stored)
         raise
     finally:
@@ -232,7 +277,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         # 初查已进后台队列的标记（只增键，既有键零改动）：结论走批次卡片的
         # ``dedupe`` 字段异步回投，响应体里从不带回判定结果。
         "dedupe_queued": dedupe_queued,
-        "saved_ids": [document["id"] for document, _stored, _pending_id in prepared],
+        "saved_ids": [document["id"] for document, _stored, _pending_id, _page in prepared],
         # 新落盘的配图清单：插件切完图要知道底座把字节写到哪个地址去了，
         # 题面里的 uri 得跟着换成真实的那一个，不然题里挂着一张取不到的图。
         "saved_assets": [
@@ -249,13 +294,14 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                     for asset in stored
                 ],
             }
-            for document, stored, pending_id in prepared
+            for document, stored, pending_id, _page in prepared
         ],
     }
 
 
 def _replace_pending(con: sqlite3.Connection, pending_id: str, document: dict[str, Any],
-                     stored_assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+                     stored_assets: list[dict[str, Any]],
+                     page_no: int | None = None) -> list[dict[str, Any]]:
     """就地更新池子里那一条：号、批次与未审数都不动，只换内容。
 
     旧配图一律留着：题面里的 uri 还指着它，删了就成死链。等这一批审完，
@@ -275,11 +321,11 @@ def _replace_pending(con: sqlite3.Connection, pending_id: str, document: dict[st
             merged.append(item)
     document["id"] = pending_id
     con.execute(
-        "UPDATE pending_questions SET doc_json = ?, assets_json = ?, updated_at = ?"
-        " WHERE id = ?",
+        "UPDATE pending_questions SET doc_json = ?, assets_json = ?, updated_at = ?,"
+        " page_no = COALESCE(?, page_no) WHERE id = ?",
         (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
          json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
-         questions.now_iso(), pending_id),
+         questions.now_iso(), page_no, pending_id),
     )
     return merged
 
@@ -780,6 +826,7 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
                               pooled=pending_dedupe.pooled_counts(con).get(str(batch_id), 0),
                               con=con)
             assets = json.loads(row["assets_json"] or "[]")
+            page_assets = json.loads(row["page_assets_json"] or "[]")
         finally:
             con.rollback()  # 只读事务就地收尾：本连接一行都没写
     finally:
@@ -787,6 +834,8 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
     if live:
         return card
     drop_assets([{"name": name} for name in assets])
+    drop_assets([{"name": str(entry.get("name") or "")}
+                 for entry in page_assets if isinstance(entry, dict)])
     for backup in backup_paths(str(row["source_backup"] or "")):
         try:
             if backup.is_file():

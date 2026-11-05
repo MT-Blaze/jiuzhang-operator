@@ -131,16 +131,16 @@ body {
   min-width: 0;
 }
 
-/* 一行一个批次：左时间与编号，右「未审：n / N」贴紧右边缘垂直对齐。
-   行是容器，主按钮负责进批次，次按钮负责一键剔除重复。 */
+/* 一行一个批次：左栏「卷子叫什么」（原文件名），第二行时间与编号，右「待审 n / N」。
+   行是容器，主按钮负责进批次，次按钮负责一键剔除重复（弱化成虚线灰字，不抢重心）。 */
 .ed-batch-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 4px 8px 4px 4px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--card);
   color: var(--ink);
   transition: background 120ms ease, border-color 120ms ease;
@@ -159,7 +159,7 @@ body {
   gap: 12px;
   min-width: 0;
   min-height: 44px;
-  padding: 8px;
+  padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -184,19 +184,60 @@ body {
   flex: none;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--line-strong);
+  border: 1px dashed var(--line-strong);
   border-radius: 6px;
   background: transparent;
-  color: var(--danger);
+  color: var(--ink-soft);
   font: inherit;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 400;
   white-space: nowrap;
   cursor: pointer;
+  opacity: 0.8;
 }
 
 .ed-batch-purge:hover {
   border-color: var(--danger);
+  color: var(--danger);
+  opacity: 1;
+}
+
+/* 左栏三段：卷名最大最黑，时间/编号退成小灰字，池内/已入库只在真发生时补一行。 */
+.ed-batch-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ed-batch-name {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ed-batch-meta {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ed-batch-extra {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  opacity: 0.85;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .ed-batch-left {
@@ -212,6 +253,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 2px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -224,6 +266,10 @@ body {
   color: var(--accent);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.ed-batch-total {
+  font-weight: 600;
 }
 
 .ed-batch-check {
@@ -249,12 +295,22 @@ body {
   color: var(--ink-soft);
 }
 
-/* 首屏：左批次列表 | 右文件收集筐（军令 #27，严格 50/50）。
+/* 原卷整页图（PDF/Word/文本渲染出来的那一页）：只限高，不改左栏原有间距。
+   一张 A4 页要是按原比例铺满，会把整行三栏一起撑高，切图台与源码都跟着下坠。 */
+.ed-img-frame.ed-img-page img {
+  width: 100%;
+  height: auto;
+  max-height: 42vh;
+  object-fit: contain;
+  object-position: top center;
+}
+
+/* 首屏：左批次列表 | 右文件收集筐（军令 #27，黄金分割 1.618 : 1——左宽右窄）。
    收集筐是这一屏唯一的收件处：拖入、粘贴、点选都先落筐，
    底部的【开始解析】才是唯一的建批次入口。 */
 .ed-batches-body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1.618fr 1fr;
   gap: 16px;
   flex: 1 1 auto;
   min-height: 0;

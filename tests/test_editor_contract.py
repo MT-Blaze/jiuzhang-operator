@@ -94,6 +94,14 @@ def rule_body(css: str, selector: str) -> str:
     return css[start:css.index("}", start)]
 
 
+def _px(rule: str, prop: str) -> float:
+    """把规则里某个 px 属性读成数字，用来比较两行字谁大谁小。"""
+    hit = re.search(r"(?:^|[;{\s])" + re.escape(prop) + r":\s*([0-9.]+)px", rule)
+    if hit is None:
+        raise AssertionError("%s 必须是 px 数值" % prop)
+    return float(hit.group(1))
+
+
 def fn_body(js: str, name: str) -> str:
     """取 ``  function name(`` 到下一个同级函数声明之间的源码。"""
     start = js.index("  function " + name + "(")
@@ -1212,27 +1220,39 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn('setMode("list");', activate, "画布挂载后先落在批次列表上")
 
     def test_02_batch_row_format_matches_the_order(self) -> None:
-        """左「2024-10-31-星期四-15:30-批次编号 #B-001」，右「未审：n / N」数字绿色。"""
+        """第一行是原文件名（加大加粗），第二行灰字「11-05 星期三 11:46 | 批次 #B-001」，右「待审 n / N」数字绿色。"""
         js = read("plugin.js")
-        stamp = fn_body(js, "batchStamp")
+        stamp = fn_body(js, "shortBatchStamp")
         self.assertIn('var WEEKDAYS = "日一二三四五六";', js)
-        self.assertIn('"-星期" + WEEKDAYS.charAt(day.getDay())', stamp)
+        self.assertIn('" 星期" + WEEKDAYS.charAt(day.getDay())', stamp)
         rows = fn_body(js, "renderBatchList")
-        self.assertIn('batchStamp(card.created_at) + "-批次编号 #" + card.batch_id', rows)
-        self.assertIn('el("span", "ed-batch-label", "未审：")', rows)
+        self.assertIn('var title = String(card.source_name || card.label || ("批次 #" + card.batch_id));',
+                      rows, "卡片第一行必须是原始文件名，老批次才退到批次标签")
+        self.assertIn('el("span", "ed-batch-name", title)', rows)
+        self.assertIn('shortBatchStamp(card.created_at) + " | 批次 #" + card.batch_id', rows)
+        self.assertIn('el("span", "ed-batch-label", "待审 ")', rows)
         self.assertIn('el("span", "ed-batch-num", String(pending))', rows)
-        self.assertIn('el("span", "ed-batch-num", String(total))', rows)
+        self.assertIn('el("span", "ed-batch-num ed-batch-total", String(total))', rows)
         css = read("plugin.css")
         self.assertIn("color: var(--accent)", rule_body(css, ".ed-batch-num"),
-                      "未审数字必须是绿色")
+                      "待审数字必须是绿色")
+        name = rule_body(css, ".ed-batch-name")
+        self.assertIn("font-weight: 700", name)
+        self.assertGreaterEqual(_px(name, "font-size"), 15, "卷名是全卡最大的一行")
+        self.assertIn("color: var(--ink-soft)", rule_body(css, ".ed-batch-meta"),
+                      "时间与编号退成灰字")
+        self.assertLess(_px(rule_body(css, ".ed-batch-meta"), "font-size"),
+                        _px(name, "font-size"))
         # 两端对齐住在主按钮里：行本身还要在右端挂【剔除重复】，不能自己 space-between
         open_rule = rule_body(css, ".ed-batch-open")
         self.assertIn("justify-content: space-between", open_rule,
-                      "两端对齐：左边时间、右边计数")
+                      "两端对齐：左边卷名、右边计数")
         self.assertIn("text-align: left", open_rule)
         self.assertIn("flex: 1 1 auto", open_rule, "主按钮吃满整行，剔除钮才贴得住右端")
-        self.assertIn("flex: none", css_rule(css, ".ed-batch-purge"),
-                      "剔除钮不许被长批次号挤扁")
+        purge = css_rule(css, ".ed-batch-purge")
+        self.assertIn("flex: none", purge, "剔除钮不许被长批次号挤扁")
+        self.assertIn("border: 1px dashed", purge, "剔除是次要动作，虚线弱化")
+        self.assertIn("color: var(--ink-soft)", purge, "剔除按钮不许抢视觉重心")
 
     def test_03_a_finished_batch_is_grey_sunk_and_unclickable(self) -> None:
         """未审归零的批次：变灰、沉到最底、不可点——只能看。"""
@@ -1384,18 +1404,18 @@ class EditorReviewDeskTest(unittest.TestCase):
 
 
 class EditorFileBasketTest(unittest.TestCase):
-    """军令 #27：右栏文件收集筐——首屏 50/50、圆角虚线筐、垂直单列文件行、【开始解析】才建批次。
+    """军令 #27：右栏文件收集筐——首屏黄金分割、圆角虚线筐、垂直单列文件行、【开始解析】才建批次。
 
     真机流程由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分。
     """
 
     def test_01_the_first_screen_splits_in_two_halves(self) -> None:
-        """左栏历史批次列表、右栏收集筐，严格 50% / 50%。"""
+        """左栏历史批次列表、右栏收集筐，黄金分割 1.618 : 1（左宽右窄）。"""
         css = read("plugin.css")
         body = css_rule(css, ".ed-batches-body")
         self.assertIn("display: grid", body)
-        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", body,
-                      "首屏必须是两等分栅格，不许一边大一边小")
+        self.assertIn("grid-template-columns: 1.618fr 1fr", body,
+                      "首屏必须是黄金分割栅格，左侧批次列表宽于右侧收集筐")
         html = read("index.html")
         self.assertIn('class="ed-batch-col"', html, "左栏是批次列表")
         self.assertIn('class="ed-basket-col"', html, "右栏是收集筐")

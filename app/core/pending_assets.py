@@ -101,6 +101,35 @@ def write_pending_asset(raw: bytes, mime: str) -> str:
     raise PendingError("生成配图文件名失败，请重试")
 
 
+_SVG_FORBIDDEN = ("<script", "<foreignobject", "javascript:", " onload=", " onerror=")
+
+
+def write_generated_asset(raw: bytes, mime: str) -> str:
+    """底座自己渲染出来的页面图落盘（原卷页）。
+
+    与 :func:`write_pending_asset` 的区别只在入口：这条只收底座生成的内容，
+    不接受任何请求载荷。SVG 是文本页面的还原图，落盘前要过一遍禁用标签检查，
+    保证它能当 ``<img>`` 读、当不了脚本容器。
+    """
+    if mime not in EXTENSIONS:
+        raise PendingError("页面图格式不支持")
+    if not raw:
+        raise PendingError("页面图内容为空")
+    if len(raw) > MAX_ASSET_BYTES:
+        raise PendingError("页面图过大（上限 8 MiB）")
+    if mime == "image/svg+xml":
+        text = raw.decode("utf-8", errors="replace").lower()
+        if "<svg" not in text:
+            raise PendingError("页面图不是 SVG")
+        if any(token in text for token in _SVG_FORBIDDEN):
+            raise PendingError("页面图含不允许的内容")
+    else:
+        actual = _sniff_mime(raw)
+        if actual != mime:
+            raise PendingError("页面图魔数与声明格式不一致")
+    return write_pending_asset(raw, mime)
+
+
 def asset_path(name: str) -> Path:
     """把池子里记的文件名解析成真实路径；名字不合规一律拒绝，绝不拼路径。"""
     if not PENDING_ASSET_RE.match(str(name or "")):

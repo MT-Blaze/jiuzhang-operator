@@ -10,7 +10,7 @@
 
 判据：
 1. 批次卡片右侧出现「剔除重复」，弹窗打开后清单是批内重复组，默认勾选 1 道；
-2. 执行后弹窗关闭、卡片「未审：3 / 3」、底栏报「剔除 1 道」；
+2. 执行后弹窗关闭、卡片「待审 3 / 3」、底栏报「剔除 1 道」；
 3. 接口侧池子只剩 3 道、被剔的 p_ id 消失，另一批 1 道原样保留；
 4. 主库题数前后不变（剔除只碰中转站）；
 5. 全程宿主页无未捕获 JS 错误，写口返回 200。
@@ -37,7 +37,7 @@ BANK_ID = "org.jiuzhang.bank-engine"
 BANK_UI_ID = "org.jiuzhang.bank-ui"
 TOKEN = "pending-purge-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
-CARD_RE = re.compile(r"未审：\s*(\d+)\s*/\s*(\d+)")
+CARD_RE = re.compile(r"待审\s*(\d+)\s*/\s*(\d+)")
 
 
 def _doc(stem: str, answer: str) -> dict:
@@ -254,7 +254,7 @@ def main() -> int:
 
             ok_button.click()
             expect(modal).to_be_hidden(timeout=20000)
-            expect(row.locator(".ed-batch-right")).to_contain_text("未审：3 / 3", timeout=20000)
+            expect(row.locator(".ed-batch-right")).to_contain_text("待审 3 / 3", timeout=20000)
             dock = page.locator("#wsDockLog")
             deadline = time.time() + 15
             logged = ""
@@ -264,8 +264,8 @@ def main() -> int:
                     break
                 page.wait_for_timeout(150)
             card_text = "".join(row.locator(".ed-batch-right").inner_text().split())
-            check("执行后卡片变「未审：3 / 3」且底栏留痕",
-                  card_text == "未审：3/3"
+            check("执行后卡片变「待审 3 / 3」且底栏留痕",
+                  card_text == "待审3/3"
                   and "已从批次 #%s 剔除 1 道重复题" % batch_id in logged,
                   {"card": card_text,
                    "dock": [line for line in logged.splitlines()

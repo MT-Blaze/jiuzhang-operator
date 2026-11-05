@@ -9,8 +9,8 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 探针全程不出网，也不依赖本机 .env 里老师的真密钥。
 
 检查项（按军令 #24 的六条铁律逐条落地）：
-- **首屏是批次列表**：整幅画布铺满卡片行，左边「时间-星期-时刻-批次编号 #B-xxx」，
-  右边「未审：n / N」（数字绿色、贴紧右边缘、垂直居中），整行悬停有反馈；
+- **首屏是批次列表**：整幅画布铺满卡片行，第一行是原文件名，第二行灰字
+  「月-日 星期 时刻 | 批次 #B-xxx」，右边「待审 n / N」（数字绿色），整行悬停有反馈；
 - **点行任意位置**（连左内边距那种空白处）直接切入三栏审核，抬头写着当前批次号；
 - **二屏只有三颗钮**：存入主库 / 存为待审 / 彻底删除；旧的保存、变式与批量条全撤；
 - **防呆**：停留超 3 分钟静默存回待审核池，只在底部日志留一行灰字，不弹窗；
@@ -18,7 +18,7 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
   三个裁决「覆盖 / 放弃 / 合并为解析二」只住辅助栏（画布里一颗按钮都没有）；
   两边答案不同时两颗写库钮锁死、只留放弃；覆盖不新增题目，合并只增「解法二」；
 - **识别有出入照切不误**：画布上不弹红窗，只有底部日志一行警告；
-- 审完的批次卡片变灰、沉到列表最底下、点不动（未审 0 / N ✅）；
+- 审完的批次卡片变灰、沉到列表最底下、点不动（待审 0 / N ✅）；
 - 全流程闭环：后台入池 → 批次列表展现 → 点入审核 → 存草稿 → 审完入库 → 批次清零变灰。
 """
 
@@ -59,15 +59,18 @@ CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 PANEL = "#wsContextSlot .ws-context-frame"
 BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 
-BATCH_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-星期[日一二三四五六]-\d{2}:\d{2}-批次编号 #B-\d{3,}$")
+BATCH_STAMP_RE = re.compile(r"^\d{2}-\d{2} 星期[日一二三四五六] \d{2}:\d{2} \| 批次 #B-\d{3,}$")
+# 卡片右侧是「待审 n / N」：n 是这一批在池里的真实行数，N 是录入时累加的总数。
+CARD_COUNT_RE = re.compile(r"待审\s*(?P<pending>\d+)\s*/\s*(?P<total>\d+)")
 # 军令 #32 第五步的账：抽走的题另记「池内」，入库的记「已入库」，池内【删除】的记「已裁删」，
 # 四段合起来才等于总数（ui_batches.js:206-219 卡片、:129-134 ledgerText 抬头同一份算法）。
-# 旧的「未审：n / N」两段写法已经不成立，这里改成断满四段＋等式对平，不放宽成「含未审二字」。
+# 首屏卡片正脸已精简成「待审 n / N」，四段账仍留在 aria-label 与隐藏的批次状态里，
+# 这里按 aria-label 断等式，不放宽成「含未审二字」。
 LEDGER_RE = re.compile(
-    r"未审：\s*(?P<pending>\d+)"
-    r"(?:\s*＋ 池内：\s*(?P<pooled>\d+))?"
-    r"(?:\s*＋ 已入库：\s*(?P<stored>\d+))?"
-    r"(?:\s*＋ 已裁删：\s*(?P<gone>\d+))?"
+    r"未审\s*(?P<pending>\d+)"
+    r"(?:\s*＋ 池内\s*(?P<pooled>\d+))?"
+    r"(?:\s*＋ 已入库\s*(?P<stored>\d+))?"
+    r"(?:\s*＋ 已裁删\s*(?P<gone>\d+))?"
     r"\s*＝\s*(?P<total>\d+)")
 STAT_LEDGER_RE = re.compile(
     r"^未审 (?P<pending>\d+)"
@@ -611,19 +614,25 @@ def main() -> int:
             seed_doc = dict((seed_items[0].get("question") or {})) if seed_items else {}
             result["metrics"]["seed_type"] = seed_doc.get("type")
 
-            left_text = seed_row.locator(".ed-batch-left").inner_text()
-            check("卡片左侧是「日期-星期-时刻-批次编号 #B-xxx」",
-                  bool(BATCH_STAMP_RE.match(left_text.strip())),
-                  {"left": left_text})
+            left_text = seed_row.locator(".ed-batch-name").inner_text()
+            meta_text = seed_row.locator(".ed-batch-meta").inner_text()
+            check("卡片第一行是原文件名",
+                  bool(left_text.strip()),
+                  {"name": left_text})
+            check("卡片第二行是「月-日 星期 时刻 | 批次 #B-xxx」",
+                  bool(BATCH_STAMP_RE.match(meta_text.strip())),
+                  {"meta": meta_text})
             right_text = seed_row.locator(".ed-batch-right").inner_text()
-            hit = LEDGER_RE.search(right_text)
+            count = CARD_COUNT_RE.search(right_text)
+            aria = seed_row.locator(".ed-batch-open").get_attribute("aria-label") or ""
+            hit = LEDGER_RE.search(aria)
             terms = ledger_terms(hit)
-            check("卡片右侧是「未审 ＋ 池内 ＋ 已入库 ＝ 总数」分段账，数字与底座对得上",
-                  bool(hit)
-                  and terms["pending"] == int(cards[0]["pending_count"])
-                  and terms["total"] == int(cards[0]["total"])
+            check("卡片右侧是「待审 n / N」，数字与底座对得上，账目等式仍成立",
+                  bool(count)
+                  and int(count.group("pending")) == int(cards[0]["pending_count"])
+                  and int(count.group("total")) == int(cards[0]["total"])
                   and terms["balanced"],
-                  {"right": right_text, "card": cards[0]})
+                  {"right": right_text, "aria": aria, "card": cards[0]})
             num_color = seed_row.locator(".ed-batch-num").first.evaluate(
                 "n => getComputedStyle(n).color")
             check("未审数字是绿色的", num_color == "rgb(47, 107, 79)",
@@ -1558,13 +1567,16 @@ def main() -> int:
             done_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id)
             expect(done_row).to_be_visible(timeout=10000)
             done_text = done_row.inner_text()
-            done_terms = ledger_terms(LEDGER_RE.search(done_text))
+            done_aria = done_row.locator(".ed-batch-open").get_attribute("aria-label") or ""
+            done_terms = ledger_terms(LEDGER_RE.search(done_aria))
+            done_count = CARD_COUNT_RE.search(done_row.locator(".ed-batch-right").inner_text())
             # ✅ 只在「一条没抽走」时挂（ui_batches.js:219 done && !pooled）：
             # 池里还有条数时红着的是「剔除重复」那颗钮，不许再打勾冒充审干净了。
-            check("审完的卡片写着「未审：0 ＋ 池内/已入库 ＝ N」，✅ 只在没有池内条时出现",
+            check("审完的卡片写着「待审 0 / N」，四段账在 aria-label 里对平，✅ 只在没有池内条时出现",
                   bool(done_terms) and done_terms["pending"] == 0 and done_terms["balanced"]
+                  and bool(done_count) and int(done_count.group("pending")) == 0
                   and ("✅" in done_text) == (done_terms["pooled"] == 0),
-                  {"text": done_text})
+                  {"text": done_text, "aria": done_aria})
             # 行是 div（一颗按钮旁边还要挂「剔除重复」），禁用态挂在题面按钮上，
             # data-done 挂在行上——判据跟着分两处锚，别指望 div 会认 disabled。
             done_open = done_row.locator(".ed-batch-open")
@@ -1842,7 +1854,7 @@ def main() -> int:
             # ---------- 军令 #27：文件收集筐（拖入 / 大图粘贴 / 开始解析） ----------
             to_list()
 
-            # 首屏严格左右 50/50：左栏批次列表，右栏一只巨大的圆角虚线筐。
+            # 首屏黄金分割 1.618 : 1：左栏批次列表宽，右栏一只巨大的圆角虚线筐。
             split = canvas.locator("#edRoot").evaluate("""() => {
               function rect(node) {
                 if (!node) return null;
@@ -1865,14 +1877,15 @@ def main() -> int:
             result["metrics"]["split"] = split
             gap = (split["right"]["x"] - split["left"]["x"] - split["left"]["w"]
                    if split["left"] and split["right"] else 0)
-            half = (split["body"]["w"] - gap) / 2 if split["body"] else 0
-            check("首屏严格左右 50/50",
+            ratio = (split["left"]["w"] / split["right"]["w"]
+                     if split["left"] and split["right"] and split["right"]["w"] else 0)
+            check("首屏是黄金分割 1.618 : 1（左宽右窄）",
                   bool(split["left"] and split["right"] and split["body"])
-                  and abs(split["left"]["w"] - split["right"]["w"]) <= 1.0
-                  and abs(split["left"]["w"] - half) <= 1.0
-                  and abs(split["right"]["w"] - half) <= 1.0,
-                  {"gap": gap, "half": half, "left": split["left"]["w"],
-                   "right": split["right"]["w"], "body": split["body"]["w"]})
+                  and abs(ratio - 1.618) <= 0.02
+                  and split["left"]["w"] > split["right"]["w"],
+                  {"gap": gap, "ratio": round(ratio, 4),
+                   "left": split["left"]["w"], "right": split["right"]["w"],
+                   "body": split["body"]["w"]})
             check("右栏是圆角虚线筐，里面改成垂直单列",
                   split["borderStyle"] == "dashed"
                   and split["borderRadius"] >= 12

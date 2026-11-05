@@ -51,13 +51,17 @@
 
   // ---------- 三栏渲染 ----------
 
-  /** 这一题自己的配图：真题看 images，假数据才退到 dev 里的占位图。 */
+  /** 这一题自己的配图：真题看 images；没有就退到本批次的原卷页；假数据才用 dev 占位图。 */
   function itemImage(item) {
     var images = (item.question && Array.isArray(item.question.images)) ? item.question.images : [];
     for (var index = 0; index < images.length; index += 1) {
       var uri = safeAssetUri(images[index] && images[index].uri);
       if (uri) return { uri: uri, id: String((images[index] && images[index].id) || "") };
     }
+    // 原卷页是批次层的东西：题自己没裁图时，左栏拿它给老师对照原卷。
+    var page = item && item.pageImage;
+    var pageUri = safeAssetUri(page && page.uri);
+    if (pageUri) return { uri: pageUri, id: "", page: Number(page.page) || 1 };
     var demo = safeAssetUri(item.dev && item.dev.image_uri);
     return demo ? { uri: demo, id: "" } : null;
   }
@@ -69,9 +73,13 @@
     var picture = itemImage(item);
     var frame = el("div", "ed-img-frame");
     if (picture) {
+      // 原卷页是整页，先按栏宽铺满、再用 CSS 限高；裁切过的题图尺寸随原样。
+      if (picture.page) frame.className += " ed-img-page";
       var img = document.createElement("img");
       img.src = picture.uri;
-      img.alt = "第 " + (index + 1) + " 题原图";
+      img.alt = picture.page
+        ? "第 " + (index + 1) + " 题 · 原卷第 " + picture.page + " 页"
+        : "第 " + (index + 1) + " 题原图";
       img.addEventListener("error", function () {
         if (img.parentNode) {
           img.parentNode.replaceChild(el("p", "ed-img-missing", "原图读取失败"), img);
@@ -86,23 +94,34 @@
     }
     cell.appendChild(frame);
     // 切图台入口：点开就是一只跟着鼠标的放大镜，拖拽框选，左键松开切完。
-    var tools = el("div", "ed-img-tools");
-    var cropBtn = el("button", "ed-img-crop-btn", picture ? "重新框选" : "框选取图");
-    cropBtn.type = "button";
-    cropBtn.setAttribute("data-index", String(index));
-    cropBtn.setAttribute("aria-label",
-      (picture ? "重新框选第 " : "框选取图第 ") + (index + 1) + " 题的配图");
-    cropBtn.addEventListener("click", function () { openCrop(item, index); });
-    tools.appendChild(cropBtn);
-    cell.appendChild(tools);
+    // 文本还原页是 SVG，沙箱 CSP 既不放 blob: 也不放 data:，canvas 解不动它，
+    // 干脆不给切图入口——老师要裁图可以贴一张图或直接改源码。
+    var croppable = !(picture && /\.svg(?:$|\?)/i.test(String(picture.uri)));
+    if (croppable) {
+      var tools = el("div", "ed-img-tools");
+      var pageOnly = picture && picture.page;
+      var cropBtn = el("button", "ed-img-crop-btn",
+        pageOnly ? "从原卷取图" : (picture ? "重新框选" : "框选取图"));
+      cropBtn.type = "button";
+      cropBtn.setAttribute("data-index", String(index));
+      cropBtn.setAttribute("aria-label",
+        (pageOnly ? "从原卷第 " + picture.page + " 页框选第 "
+          : (picture ? "重新框选第 " : "框选取图第 ")) + (index + 1) + " 题的配图");
+      cropBtn.addEventListener("click", function () { openCrop(item, index); });
+      tools.appendChild(cropBtn);
+      cell.appendChild(tools);
+    }
     var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
+    var caption = "第 " + (index + 1) + " 题 · " + paper;
+    if (picture && picture.page) caption += " · 原卷第 " + picture.page + " 页";
+    if (!croppable && picture) caption += " · 文本还原页";
     var jump = el("button", "ed-img-jump", "跳到第 " + (index + 1) + " 题");
     jump.type = "button";
     jump.setAttribute("data-index", String(index));
     jump.setAttribute("aria-label", "跳到第 " + (index + 1) + " 题 · " + paper);
     jump.addEventListener("click", function () { jumpTo(index); });
     cell.appendChild(jump);
-    cell.appendChild(el("p", "ed-img-caption", "第 " + (index + 1) + " 题 · " + paper));
+    cell.appendChild(el("p", "ed-img-caption", caption));
     return cell;
   }
 

@@ -52,6 +52,18 @@
     return new Blob([bytes], { type: mime || "image/png" });
   }
 
+  /**
+   * Blob → 能画上 canvas 的图。
+   * 只走 createImageBitmap：沙箱 CSP 不放 blob:/data:，`<img>` 那条路走不通；
+   * 需要解码的图一律是底座托管的 PNG/JPEG/WebP，没有 SVG。
+   */
+  function decodePicture(blob) {
+    if (typeof window.createImageBitmap !== "function") {
+      return Promise.reject(new Error("当前环境不支持图片解码"));
+    }
+    return window.createImageBitmap(blob);
+  }
+
   function cropFiles(event) {
     var data = event && event.clipboardData;
     if (!data) return [];
@@ -116,7 +128,7 @@
     }
     hostCall("asset.read", { uri: picture.uri }).then(function (result) {
       var blob = dataUrlToBlob(result && result.data_url, result && result.mime);
-      return window.createImageBitmap(blob);
+      return decodePicture(blob);
     }).then(function (bitmap) {
       mountCropSurface(session, bitmap);
     }, function (error) {

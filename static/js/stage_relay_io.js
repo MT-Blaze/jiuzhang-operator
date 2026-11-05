@@ -121,7 +121,7 @@
         return true;
       }
       var assetUri = textValue(payload, "uri", 200);
-      if (!/^\/static\/(pending|uploads|icons|assets)\/[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp)$/.test(assetUri)) {
+      if (!/^\/static\/(pending|uploads|icons|assets)\/[A-Za-z0-9._-]+\.(png|jpg|jpeg|webp|svg)$/.test(assetUri)) {
         replyHost(tab, message, false, {
           code: "BAD_REQUEST",
           message: "只许读底座托管的配图地址"
