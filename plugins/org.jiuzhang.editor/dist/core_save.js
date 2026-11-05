@@ -87,7 +87,11 @@
     }
     var letters = lettersFrom(parsed.answer, type);
     if (isChoice) {
-      doc.answer = { kind: "choice", choice_keys: letters, final: letters.join("") };
+      // 自动切题先出选项、答案留给老师补：空 choice_keys 过不了契约（至少一项），
+      // 这种时候干脆不带 answer——入库前的 validateForSave 仍会拦下没答案的题。
+      if (letters.length) {
+        doc.answer = { kind: "choice", choice_keys: letters, final: letters.join("") };
+      }
     } else {
       var value = String(parsed.answer == null ? "" : parsed.answer);
       doc.answer = { kind: type === "fill_blank" ? "expression" : "text", content: value, final: value };

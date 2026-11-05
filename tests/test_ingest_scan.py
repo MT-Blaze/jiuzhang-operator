@@ -3,7 +3,7 @@
 钉住五条：
 - 不管有没有文本层，PDF **一条占位题都不落池**——只渲染原卷页图；
 - 页面图与题块坐标挂到批次上，解析完成后每个识别框直接裁图、
-  生成一道带原题图的待审空壳排进中间栏；
+  连同题块文字生成一道带原题图的待审题排进中间栏；
 - 页数按**实际渲染出的页面图**算，不认文本解析猜的数；
 - 渲染器缺席时同样不造假题，批次空着等老师处理；Word 仍走自动切题；
 - 自动切图落池失败只记警告，页图与手动框选照旧可用。
@@ -88,7 +88,7 @@ class StagePdfBatchTest(unittest.TestCase):
 
 
 class AutoSplitPagesTest(unittest.TestCase):
-    """解析完成后不再等老师逐框确认：每个识别框直接裁图、生成待审空壳题。"""
+    """解析完成后不再等老师逐框确认：每个识别框直接裁图、连同题块文字生成待审题。"""
 
     def _pages(self) -> list[dict[str, Any]]:
         return [{
@@ -99,7 +99,7 @@ class AutoSplitPagesTest(unittest.TestCase):
             "height": 2339,
             "regions": [
                 {"no": 1, "x": 100.0, "y": 200.0, "w": 1400.0, "h": 300.0,
-                 "label": "1. 第一题", "text": "1. 第一题"},
+                 "label": "1. 第一题", "text": "1. 已知集合 A\nA. 甲\nB. 乙"},
                 {"no": 2, "x": 100.0, "y": 520.0, "w": 1400.0, "h": 260.0,
                  "label": "2. 第二题", "text": "2. 第二题"},
             ],
@@ -127,13 +127,26 @@ class AutoSplitPagesTest(unittest.TestCase):
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["page_no"], 1)
         shell = items[0]["question"]
-        self.assertIn("第 1 题", shell["stem"])
+        # 题块文字直接填成题干与选项，题号只留在 source 里。
+        self.assertEqual(shell["stem"], "已知集合 A")
+        self.assertEqual(shell["type"], "single_choice")
+        self.assertEqual([option["key"] for option in shell["options"]], ["A", "B"])
+        self.assertEqual(shell["source"]["question_no"], "1")
+        self.assertEqual(items[1]["question"]["stem"], "第二题")
         self.assertEqual(shell["images"][0]["id"], "img_auto_1_0")
         self.assertTrue(items[0]["assets"][0]["data_url"].startswith("data:image/png;base64,"))
         # 框与待审题绑定后写回批次页图：重开批次时框才知道自己「已入池」。
         self.assertEqual(pages[0]["regions"][0]["pending_id"], "p_auto0001")
         self.assertEqual(pages[0]["regions"][1]["pending_id"], "p_auto0002")
         set_pages.assert_called_once_with("B-001", pages)
+
+    def test_region_without_text_falls_back_to_placeholder(self) -> None:
+        """题块里一个字都读不到时才落占位提示，绝不编题干。"""
+        shell = ingest._auto_split_shell(3, 7, "img_auto_3_6", "模拟1",
+                                         {"no": 7, "text": ""})
+        self.assertIn("第 7 题", shell["stem"])
+        self.assertEqual(shell["type"], "solution")
+        self.assertEqual(shell["images"][0]["id"], "img_auto_3_6")
 
     def test_no_regions_means_no_pending_questions(self) -> None:
         with mock.patch.object(ingest.page_render, "crop_pdf_regions",

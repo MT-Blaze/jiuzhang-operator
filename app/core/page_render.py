@@ -17,8 +17,10 @@ SVG 页与 PNG 页在左栏是同一种东西：``<img>`` 读得出来、切图�
 
 from __future__ import annotations
 
+import glob
 import html
 import math
+import os
 import re
 import shutil
 import struct
@@ -133,6 +135,15 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
         return [], [f"内置 PDF 渲染器打不开这份文件（{error}）"]
     try:
         total_pages = len(document)
+        words_by_page: dict[int, list[dict[str, Any]]] | None = None
+
+        def page_words(page_no: int) -> list[dict[str, Any]]:
+            # 只在这一页真有读不出的字形时才动外部工具：多数 PDF 用不上。
+            nonlocal words_by_page
+            if words_by_page is None:
+                words_by_page = _pdftotext_words(data, min(total_pages, MAX_PAGES))
+            return words_by_page.get(page_no) or []
+
         for index in range(min(total_pages, MAX_PAGES)):
             try:
                 page = document[index]
@@ -144,8 +155,9 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                     png = _png_from_bitmap(bitmap, raw)
                     ink = _ink_rows(raw, width, height, int(bitmap.stride),
                                     int(bitmap.n_channels))
-                    regions = _pdf_page_regions(page, width, height,
-                                                ink_rows=ink, first_page=index == 0)
+                    regions = _pdf_page_regions(
+                        page, width, height, ink_rows=ink, first_page=index == 0,
+                        words=lambda page_no=index + 1: page_words(page_no))
                 finally:
                     bitmap.close()
                 entries.append(_entry(write_generated_asset(png, "image/png"), index + 1,
@@ -171,7 +183,7 @@ _PDF_INSTRUCTION = re.compile(
     r"姓名|班级|考号|准考证|密封线|本试卷共")
 _PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
 _PDF_FOOTER = re.compile(r"第\s*\d+\s*页\s*[（(]\s*共\s*\d+\s*页")
-_REGION_TEXT_LIMIT = 1200
+_REGION_TEXT_LIMIT = 2000
 _REGION_LABEL_LIMIT = 48
 # 题块上下各留一点呼吸位；相邻题之间至少留 5pt（约 14 像素 @200dpi），
 # 绿框不再首尾相接，老师不会把下一题的选项误看成这一题的。
@@ -180,32 +192,48 @@ _REGION_GAP_PT = 5.0
 _INK_PAD_PX = 6
 # 页面图背景是白的；行内只要有明显偏暗的像素就算「有墨」，用于裁掉题块尾部空白。
 _INK_TABLE = bytes(0 if value >= 245 else 1 for value in range(256))
+# 同一行的词之间留多大缝才算分开（点）。中文字与字之间不补空格。
+_WORD_GAP_PT = 0.8
+# 上下相邻两行的词，纵向中心差多少以内算同一行（点）；试卷行距远大于它。
+_WORD_LINE_TOL_PT = 7.5
+# 词的底边比正文基线高出多少就算上标；低于多少就算下标（点）。
+_SCRIPT_SHIFT_PT = 1.5
 
 
 def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
-                      first_page: bool = False) -> list[dict[str, Any]]:
-    """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。"""
+                      first_page: bool = False,
+                      words: Any = None) -> list[dict[str, Any]]:
+    """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。
+
+    ``words`` 可以是词清单，也可以是按需返回词清单的函数——只在某一行真有
+    读不出的字形时才会被调用。
+    """
     try:
         page_width, page_height = (float(value) for value in page.get_size())
         lines = _pdf_text_lines(page)
     except Exception:  # noqa: BLE001 - 文本层坏了只影响自动框，不影响页图
         return []
     return _question_regions(lines, page_width, page_height, pixel_width, pixel_height,
-                             ink_rows=ink_rows, first_page=first_page)
+                             ink_rows=ink_rows, first_page=first_page, words=words)
 
 
 def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
-    """按 PDFium 给出的换行符切行，并记下每行的点坐标包围盒。"""
+    """按 PDFium 给出的换行符切行，并记下每行的点坐标包围盒。
+
+    ``missing`` 记这一行有多少个读不出字的字形（常见于没有 ToUnicode 的
+    数学字体）：这些字形的包围盒照样算进行宽，否则带公式的行会被裁窄。
+    """
     textpage = page.get_textpage()
     try:
         total = int(textpage.count_chars())
         lines: list[dict[str, Any]] = []
         chars: list[str] = []
         bounds = [math.inf, math.inf, -math.inf, -math.inf]
+        missing = 0
 
         def flush() -> None:
-            nonlocal chars, bounds
+            nonlocal chars, bounds, missing
             text = "".join(chars).strip()
             if text and bounds[0] < bounds[2] and bounds[1] < bounds[3]:
                 lines.append({
@@ -214,9 +242,11 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
                     "bottom": bounds[1],
                     "right": bounds[2],
                     "top": bounds[3],
+                    "missing": missing,
                 })
             chars = []
             bounds = [math.inf, math.inf, -math.inf, -math.inf]
+            missing = 0
 
         for index in range(total):
             char = textpage.get_text_range(index, 1)
@@ -229,6 +259,16 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
             except Exception:  # noqa: BLE001 - 单个坏字形跳过，不拖垮整行
                 continue
             if not all(math.isfinite(value) for value in (left, bottom, right, top)):
+                continue
+            if not char:
+                # 有框无字的字形：字体里没有 Unicode 映射（数学字母多半如此）。
+                missing += 1
+                bounds[0] = min(bounds[0], left)
+                bounds[1] = min(bounds[1], bottom)
+                bounds[2] = max(bounds[2], right)
+                bounds[3] = max(bounds[3], top)
+                if chars and chars[-1] != " ":
+                    chars.append(" ")
                 continue
             if not char.strip():
                 if chars and chars[-1] != " ":
@@ -248,7 +288,8 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
 def _question_regions(lines: list[dict[str, Any]], page_width: float, page_height: float,
                       pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
-                      first_page: bool = False) -> list[dict[str, Any]]:
+                      first_page: bool = False,
+                      words: Any = None) -> list[dict[str, Any]]:
     """行清单 → 每道题的像素包围盒。
 
     题号链只取「最长且连续递增」的一段：卷首作答说明也带「1. 2. 3.」，
@@ -307,7 +348,15 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
         if bottom_y - top_y < 8.0:
             bottom_y = min(float(pixel_height), top_y + 8.0)
         y, h = _trim_to_ink(top_y, bottom_y - top_y, ink_rows, pixel_height)
-        text = "\n".join(part["text"] for part in content[position:stop]).strip()
+        body = content[position:stop]
+        text = "\n".join(part["text"] for part in body).strip()
+        if words is not None and any(part.get("missing") for part in body):
+            word_lines = words() if callable(words) else words
+            enriched = _words_region_text(word_lines, box_x, y, box_w, h,
+                                          scale_x, scale_y)
+            # 外部工具要是读少了，宁可保留原样，也不让题干凭空掉字。
+            if enriched and len(enriched) >= len(text) * 0.75:
+                text = enriched
         regions.append({
             "no": number,
             "x": round(box_x, 1),
@@ -318,6 +367,103 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
             "text": text[:_REGION_TEXT_LIMIT],
         })
     return regions
+
+
+def _has_cjk(text: str) -> bool:
+    return any(unicodedata.east_asian_width(char) in ("W", "F") for char in text)
+
+
+def _starts_cjk(text: str) -> bool:
+    return bool(text) and unicodedata.east_asian_width(text[0]) in ("W", "F")
+
+
+def _ends_cjk(text: str) -> bool:
+    return bool(text) and unicodedata.east_asian_width(text[-1]) in ("W", "F")
+
+
+def _line_words_text(words: list[dict[str, Any]]) -> str:
+    """一行词 → 文字；比正文基线高的词补 ``^{}``，低的补 ``_{}``。
+
+    中文与中文之间不补空格（``pdftotext`` 常把一个词拆成几截），中文与
+    公式之间补一个空格；上下标紧贴前一个词，不留缝。相邻的上下标并进同一
+    对花括号——``^{1}^{2}`` 是非法公式，KaTeX 会直接报错。
+    """
+    ordered = sorted(words, key=lambda word: word["left"])
+    if not ordered:
+        return ""
+    heights = [word["bottom"] - word["top"] for word in ordered]
+    tallest = max(heights)
+    base = sorted(word["bottom"] for word, height in zip(ordered, heights)
+                  if height >= tallest * 0.85)
+    if not base:
+        baseline = min(heights)
+    elif len(base) % 2:
+        baseline = base[len(base) // 2]
+    else:
+        middle = len(base) // 2
+        baseline = (base[middle - 1] + base[middle]) / 2
+    pieces: list[tuple[str, str]] = []
+    previous: dict[str, Any] | None = None
+    previous_kind = ""
+    for word in ordered:
+        text = word["text"]
+        shift = word["bottom"] - baseline
+        kind = ""
+        if not _has_cjk(text):
+            if shift < -_SCRIPT_SHIFT_PT:
+                kind = "sup"
+            elif shift > _SCRIPT_SHIFT_PT:
+                kind = "sub"
+        if kind and pieces and previous_kind == kind:
+            pieces[-1] = (pieces[-1][0] + " " + text, kind)
+            previous = word
+            continue
+        if previous is not None and not kind:
+            if word["left"] - previous["right"] > _WORD_GAP_PT and not (
+                    _ends_cjk(previous["text"]) and _starts_cjk(text)):
+                pieces.append((" ", ""))
+        pieces.append((text, kind))
+        previous = word
+        previous_kind = kind
+    rendered = []
+    for text, kind in pieces:
+        if kind == "sup":
+            rendered.append("^{" + text + "}")
+        elif kind == "sub":
+            rendered.append("_{" + text + "}")
+        else:
+            rendered.append(text)
+    return "".join(rendered)
+
+
+def _words_region_text(words: Any, x: float, y: float, width: float, height: float,
+                       scale_x: float, scale_y: float) -> str:
+    """把落在题块框里的词按「同一水平线」重新排队，再拼成文字。
+
+    Poppler 的 ``-bbox-layout`` 会把左右并排的选项拆进不同 block，阅读顺序
+    并不总是从左到右；这里只信词的坐标：先按纵坐标聚成行，行内再按横坐标
+    排，选项就回到 ``A. … B. …`` 的本来次序。
+    """
+    if not words:
+        return ""
+    left = x / scale_x
+    right = (x + width) / scale_x
+    top = y / scale_y
+    bottom = (y + height) / scale_y
+    picked = [word for word in words
+              if left <= (word["left"] + word["right"]) / 2 <= right
+              and top <= (word["top"] + word["bottom"]) / 2 <= bottom]
+    if not picked:
+        return ""
+    picked.sort(key=lambda word: ((word["top"] + word["bottom"]) / 2, word["left"]))
+    rows: list[dict[str, Any]] = []
+    for word in picked:
+        center = (word["top"] + word["bottom"]) / 2
+        if rows and abs(center - rows[-1]["center"]) <= _WORD_LINE_TOL_PT:
+            rows[-1]["words"].append(word)
+        else:
+            rows.append({"center": center, "words": [word]})
+    return "\n".join(_line_words_text(row["words"]) for row in rows).strip()
 
 
 def _ink_rows(raw: bytes, width: int, height: int, stride: int,
@@ -502,6 +648,108 @@ _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 def _png_chunk(tag: bytes, payload: bytes) -> bytes:
     checksum = zlib.crc32(tag + payload) & 0xFFFFFFFF
     return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", checksum)
+
+
+# ---------------------------------------------------------------- 词级文字兜底
+#
+# PDFium 遇到没有 ToUnicode 的数学字体只能交出空字形；Poppler 的
+# ``pdftotext -bbox-layout`` 能按词还原 Unicode，还带上下标的几何位置。
+# 它和 ``pdftoppm`` 一样只是开发机的兜底：找不到就退回 PDFium 的原样文字。
+
+_PDFTOTEXT_PAGE = re.compile(r"<page\b[^>]*>(.*?)</page>", re.S)
+_PDFTOTEXT_WORD = re.compile(r"<word\b([^>]*)>(.*?)</word>", re.S)
+_PDFTOTEXT_BOX = re.compile(r'(xMin|yMin|xMax|yMax)="([-0-9.]+)"')
+_pdftotext_paths: list[str] | None = None
+
+
+def _pdftotext_candidates() -> list[str]:
+    """本机上所有 ``pdftotext``：PATH 优先，再补 TeX Live / MiKTeX / Poppler 的常见位置。
+
+    同样是 ``pdftotext``，Poppler 版才认 ``-bbox-layout``；Xpdf 版会直接报用法错误，
+    所以调用处逐个试，谁能干这活就用谁。
+    """
+    found: list[str] = []
+
+    def add(path: Any) -> None:
+        text = str(path or "")
+        if text and os.path.isfile(text) and text not in found:
+            found.append(text)
+
+    add(shutil.which("pdftotext"))
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        if folder:
+            add(Path(folder) / ("pdftotext.exe" if os.name == "nt" else "pdftotext"))
+    patterns = (
+        "C:/texlive/*/bin/windows/pdftotext.exe",
+        "C:/texlive/*/bin/win32/pdftotext.exe",
+        "C:/Program Files/MiKTeX/miktex/bin/x64/pdftotext.exe",
+        "C:/Program Files/poppler*/bin/pdftotext.exe",
+        "C:/Program Files (x86)/poppler*/bin/pdftotext.exe",
+        "/usr/bin/pdftotext",
+        "/usr/local/bin/pdftotext",
+        "/opt/homebrew/bin/pdftotext",
+    )
+    for pattern in patterns:
+        for path in sorted(glob.glob(pattern)):
+            add(path)
+    return found
+
+
+def _parse_pdftotext(raw: bytes) -> dict[int, list[dict[str, Any]]]:
+    """``-bbox-layout`` 的 XHTML → ``{页码: [词]}``；词坐标是左上原点的点。
+
+    只留词的坐标与文字，不保留 Poppler 自己的 block/line 分组——阅读顺序
+    由调用方按坐标重排，左右并排的选项才不会被拼反。
+    """
+    text = raw.decode("utf-8", "replace")
+    pages: dict[int, list[dict[str, Any]]] = {}
+    for page_no, block in enumerate(_PDFTOTEXT_PAGE.findall(text), start=1):
+        words: list[dict[str, Any]] = []
+        for attrs, content in _PDFTOTEXT_WORD.findall(block):
+            box = dict(_PDFTOTEXT_BOX.findall(attrs))
+            try:
+                word = {
+                    "text": html.unescape(content).strip(),
+                    "left": float(box["xMin"]),
+                    "top": float(box["yMin"]),
+                    "right": float(box["xMax"]),
+                    "bottom": float(box["yMax"]),
+                }
+            except (KeyError, ValueError):
+                continue
+            if word["text"]:
+                words.append(word)
+        if words:
+            pages[page_no] = words
+    return pages
+
+
+def _pdftotext_words(data: bytes, max_pages: int) -> dict[int, list[dict[str, Any]]]:
+    """PDF → 按页的词清单；没有能用的 Poppler 就交空表（不报警、不阻挡流程）。"""
+    global _pdftotext_paths
+    if max_pages <= 0:
+        return {}
+    if _pdftotext_paths is None:
+        _pdftotext_paths = _pdftotext_candidates()
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    for index, exe in enumerate(list(_pdftotext_paths)):
+        command = [exe, "-bbox-layout", "-enc", "UTF-8", "-f", "1",
+                   "-l", str(max_pages), "-", "-"]
+        try:
+            result = subprocess.run(command, input=data, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, check=False,
+                                    timeout=90, creationflags=flags)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode != 0 or b"<word" not in result.stdout:
+            continue
+        pages = _parse_pdftotext(result.stdout)
+        if not pages:
+            continue
+        if index:
+            _pdftotext_paths.insert(0, _pdftotext_paths.pop(index))
+        return pages
+    return {}
 
 
 def _pdf_pages_pdftoppm(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:

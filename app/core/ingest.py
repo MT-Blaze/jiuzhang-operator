@@ -8,15 +8,16 @@
 - ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
 - ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层抽出题号、文字与坐标，
   左栏自动画切分框。解析完成后底座直接按每块坐标从原 PDF 裁图，把识别出的
-  题全部生成待审空壳排进中间栏；老师只做微调与录入，不再逐框点确认。
+  题全部生成待审题排进中间栏：题块里的文字能读到就填成题干／选项／答案，
+  读不出字的题块才落占位提示；老师只做微调与补录，不再逐框点确认。
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
 **PDF 自动切图入池**：页图与题块坐标出来后，按坐标从原 PDF 直接裁图，
-每块生成一道带原题图的待审空壳（题号沿用卷面题号），中间栏按卷面顺序排好；
-老师进批次只做两件事——拖绿框微调切图、在中间栏录入题干与答案。
+每块生成一道带原题图的待审题（题号沿用卷面题号、正文取自题块文字），中间栏
+按卷面顺序排好；老师进批次只做两件事——拖绿框微调切图、核对录入的文字。
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from app.core import page_render, question_parser
+from app.core import page_render, question_parser, scan_text
 
 __all__ = [
     "classify",
@@ -526,7 +527,7 @@ def stage_ingest(files: Any) -> dict[str, Any]:
 
     老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
     Word / 文本类先放一条「正在解析」占位题；PDF 一律当原卷大图，连占位题都不放，
-    后台渲染出页图后挂到批次上，并按题块坐标自动裁图、生成待审空壳。
+    后台渲染出页图后挂到批次上，并按题块坐标自动裁图、用题块文字填出待审题。
 
     返回聚合账：``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings",
     "ignored", "kinds", "jobs"}``；``jobs`` 按批次分组，``batch_id`` 是第一份的批次号。
@@ -636,7 +637,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
     - PDF：先把原卷页图（含题块坐标）挂到批次上，再按坐标从原 PDF 直接裁图，
-      每块生成一道带原题图的待审空壳；裁不出来的块只少一道，页图与手动框选照旧。
+      每块生成一道带原题图的待审题（正文取自题块文字）；裁不出来的块只少一道，
+      页图与手动框选照旧。
     """
     from app.core import pending_bank
     from app.core.pending_assets import drop_assets
@@ -706,24 +708,35 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             continue
 
 
-def _auto_split_shell(page_no: int, number: Any, asset_id: str, title: str) -> dict[str, Any]:
-    """自动切图生成的那道待审空壳：题干只说明出处，原题图挂在题身上。
+def _auto_split_shell(page_no: int, number: Any, asset_id: str, title: str,
+                      region: dict[str, Any] | None = None) -> dict[str, Any]:
+    """自动切图生成的一道待审题：文字层读得出就填正文，读不出才落占位提示。
 
-    老师要做的只有两件事：对照题图录入题干与答案，拖绿框把切歪的地方调正。
+    题干、选项、答案与解析都从题块坐标内的文字还原（Unicode 数学字符折成
+    LaTeX，公式包 ``$...$``）；原题图始终挂在题身上，切图与文字互为对照。
     """
     label = str(number or "")
+    parsed = scan_text.parse_scan_text((region or {}).get("text"), label)
+    source = {"question_no": label, "paper_title": title}
+    images = [{
+        "id": asset_id,
+        "role": "stem",
+        "uri": "/static/uploads/" + asset_id + ".png",
+    }]
+    if parsed["stem"]:
+        document = _document(parsed["stem"], parsed["options"], parsed["answer"],
+                             parsed["blanks"], parsed["solution"], label)
+        document["source"] = source
+        document["images"] = images
+        return document
     return {
         "schema_version": "2.0",
         "type": "solution",
         "stem": "（自动切题：原卷第 %d 页第 %s 题，请对照题图录入题干与答案）"
                 % (page_no, label or "?"),
         "difficulty": DEFAULT_DIFFICULTY,
-        "source": {"question_no": label, "paper_title": title},
-        "images": [{
-            "id": asset_id,
-            "role": "stem",
-            "uri": "/static/uploads/" + asset_id + ".png",
-        }],
+        "source": source,
+        "images": images,
     }
 
 
@@ -751,7 +764,8 @@ def _auto_split_pages(name: str, data: bytes, batch_id: str,
             region = crop["region"]
             asset_id = "img_auto_%d_%d" % (page_no, int(crop["index"]))
             items.append({
-                "question": _auto_split_shell(page_no, crop.get("no"), asset_id, title),
+                "question": _auto_split_shell(page_no, crop.get("no"), asset_id,
+                                              title, region),
                 "assets": [{
                     "id": asset_id,
                     "data_url": "data:image/png;base64,"

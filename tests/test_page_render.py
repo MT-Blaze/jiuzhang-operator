@@ -320,6 +320,79 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertAlmostEqual(height, 2339, delta=2)
 
 
+class WordEnrichmentTest(unittest.TestCase):
+    """数学字形读不出来时，用 Poppler 的按词坐标把文字补回来（可选兜底）。"""
+
+    def test_01_parse_pdftotext_keeps_words_and_boxes(self) -> None:
+        raw = (
+            '<doc><page width="595" height="842"><flow><block><line>'
+            '<word xMin="1.5" yMin="2.5" xMax="3.5" yMax="4.5">已知</word>'
+            '<word xMin="5" yMin="2" xMax="6" yMax="4">&lt;x&gt;</word>'
+            '</line></block></flow></page></doc>'
+        ).encode("utf-8")
+        pages = page_render._parse_pdftotext(raw)
+        self.assertEqual([word["text"] for word in pages[1]], ["已知", "<x>"])
+        self.assertEqual(pages[1][0]["left"], 1.5)
+        self.assertEqual(pages[1][0]["bottom"], 4.5)
+
+    def test_02_superscripts_are_grouped_and_never_double(self) -> None:
+        """相邻两个上标并进同一对花括号——``^{1}^{2}`` 是非法公式。"""
+        words = [
+            {"text": "x", "left": 0, "top": 100, "right": 5, "bottom": 110},
+            {"text": "1", "left": 5, "top": 96, "right": 8, "bottom": 102},
+            {"text": "2", "left": 8, "top": 96, "right": 11, "bottom": 102},
+        ]
+        self.assertEqual(page_render._line_words_text(words), "x^{1 2}")
+        lower = [
+            {"text": "m", "left": 0, "top": 100, "right": 5, "bottom": 110},
+            {"text": "1", "left": 5, "top": 108, "right": 8, "bottom": 116},
+        ]
+        self.assertEqual(page_render._line_words_text(lower), "m_{1}")
+
+    def test_03_chinese_words_are_not_spaced_apart(self) -> None:
+        words = [
+            {"text": "已知", "left": 0, "top": 0, "right": 20, "bottom": 10},
+            {"text": "集合", "left": 23, "top": 0, "right": 43, "bottom": 10},
+            {"text": "A", "left": 46, "top": 0, "right": 52, "bottom": 10},
+        ]
+        self.assertEqual(page_render._line_words_text(words), "已知集合 A")
+
+    def test_04_region_text_reorders_side_by_side_columns(self) -> None:
+        """左右并排的选项按横坐标重排，不按 Poppler 的 block 顺序。"""
+        words = [
+            {"text": "B.", "left": 300, "top": 50, "right": 308, "bottom": 60},
+            {"text": "(2,", "left": 310, "top": 50, "right": 320, "bottom": 60},
+            {"text": "A.", "left": 100, "top": 50, "right": 108, "bottom": 60},
+            {"text": "∅", "left": 110, "top": 50, "right": 117, "bottom": 60},
+            {"text": "1.", "left": 100, "top": 10, "right": 108, "bottom": 20},
+        ]
+        text = page_render._words_region_text(
+            words, 0, 0, 595, 842, 1.0, 1.0)
+        self.assertEqual(text, "1.\nA. ∅ B. (2,")
+
+    def test_05_words_outside_the_box_are_ignored(self) -> None:
+        words = [
+            {"text": "里", "left": 10, "top": 10, "right": 20, "bottom": 20},
+            {"text": "外", "left": 400, "top": 400, "right": 410, "bottom": 410},
+        ]
+        text = page_render._words_region_text(
+            words, 0, 0, 100, 100, 1.0, 1.0)
+        self.assertEqual(text, "里")
+
+    def test_06_real_paper_regains_math_letters_from_poppler(self) -> None:
+        """模拟1.pdf 的数学字体没有 ToUnicode：本机有 Poppler 时文字必须补齐。"""
+        pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
+        if not pdf.is_file():
+            self.skipTest("本机没有 testdata/20261105/模拟1.pdf")
+        data = pdf.read_bytes()
+        if not page_render._pdftotext_words(data, 1):
+            self.skipTest("本机没有支持 -bbox-layout 的 pdftotext")
+        entries, _warnings = page_render._pdf_pages_builtin(data)
+        first = entries[0]["regions"][0]["text"]
+        self.assertIn("𝜋", first)
+        self.assertIn("𝑥", first)
+
+
 class ImagePageTest(PageRenderTestCase):
     def test_01_an_image_is_copied_as_the_source_page(self) -> None:
         entries, doc_pages, warnings = page_render.build_pages(

@@ -247,6 +247,30 @@ def main() -> int:
                   render_blocks == 19 and first_block_image == 19,
                   [render_blocks, first_block_image])
 
+            # ---------- 文字与公式：源码是真题干，右栏真的渲染了 KaTeX ----------
+            source_areas = canvas.locator("#edSourceBody .ed-src-area")
+            first_source = source_areas.first.input_value()
+            sources = source_areas.evaluate_all(
+                "nodes => nodes.map(node => node.value)")
+            filled = sum(1 for text in sources if "自动切题" not in text and text.strip())
+            katex_count = canvas.locator("#edRenderBody .katex").count()
+            first_render = canvas.locator("#edRenderBody .ed-q-block").first.inner_text()
+            result["metrics"]["source"] = {
+                "filled": filled,
+                "first": first_source[:400],
+                "katex": katex_count,
+            }
+            check("16 中栏源码填的是真正题干，不是占位提示",
+                  "已知集合" in first_source and "\\pi" in first_source
+                  and "自动切题" not in first_source, first_source[:160])
+            check("17 选择题源码带 choices 选项",
+                  "\\begin{choices}" in first_source and "\\item" in first_source,
+                  first_source[:240])
+            check("18 19 道题的源码都填上了文字", filled == 19, filled)
+            check("19 右栏渲染出 KaTeX 公式", katex_count > 0, katex_count)
+            check("20 右栏第一题显示题干文字",
+                  "已知集合" in first_render, first_render[:160])
+
             panel = page.frame_locator(PANEL)
             expect(panel.locator("#epRoot")).to_be_visible(timeout=20000)
             src_name = panel.locator("#epSrcName").inner_text()
@@ -254,7 +278,7 @@ def main() -> int:
             question_no = panel.locator("#epQuestionNo").input_value()
             result["metrics"]["panel"] = {
                 "src": src_name, "head_no": head_no, "question_no": question_no}
-            check("16 右侧辅助栏显示批次元数据与当前题号",
+            check("21 右侧辅助栏显示批次元数据与当前题号",
                   "模拟1" in src_name and "第 1 题" in head_no and question_no == "1",
                   result["metrics"]["panel"])
 
@@ -265,7 +289,7 @@ def main() -> int:
             old_x = detail_before["page_images"][0]["regions"][0]["x"]
             old_uri = item_image_uri(detail_before)
             drag = canvas.locator(".ed-auto-box").first.bounding_box()
-            check("17 第一个绿框可拖拽（有可见尺寸）", bool(drag), drag)
+            check("22 第一个绿框可拖拽（有可见尺寸）", bool(drag), drag)
             assert drag is not None
             center_x = drag["x"] + drag["width"] / 2
             center_y = drag["y"] + drag["height"] / 2
@@ -291,11 +315,11 @@ def main() -> int:
                 "image_before": old_uri, "image_after": new_uri}
             # 拖的是缩略图上的框：30 个屏幕像素折回页图像素是一大段位移，
             # 只挪零点几像素说明手势被手柄或按钮吃掉了，不能算回写成功。
-            check("18 拖框后新坐标回写到批次页图", new_x - old_x >= 20,
+            check("23 拖框后新坐标回写到批次页图", new_x - old_x >= 20,
                   {"before": old_x, "after": new_x})
-            check("19 拖框后题图已重切", bool(new_uri) and new_uri != old_uri,
+            check("24 拖框后题图已重切", bool(new_uri) and new_uri != old_uri,
                   {"before": old_uri, "after": new_uri})
-            check("20 微调不会多出或少掉题",
+            check("25 微调不会多出或少掉题",
                   len(batch_items(base, batch_id).get("items") or []) == 19,
                   len(batch_items(base, batch_id).get("items") or []))
             page.screenshot(path=str(shots / "02_adjusted.png"))
@@ -308,7 +332,7 @@ def main() -> int:
             expect(crop_canvas).to_be_visible(timeout=20000)
             page.wait_for_timeout(900)
             crop_box = crop_canvas.bounding_box()
-            check("21 手动切图台已铺开", bool(crop_box), crop_box)
+            check("26 手动切图台已铺开", bool(crop_box), crop_box)
             assert crop_box is not None
             start_x = crop_box["x"] + crop_box["width"] * 0.2
             start_y = crop_box["y"] + crop_box["height"] * 0.35
@@ -328,14 +352,14 @@ def main() -> int:
                     break
                 page.wait_for_timeout(250)
             result["metrics"]["after_manual"] = len(items_after_manual)
-            check("22 手动框选再生成一道新待审题", len(items_after_manual) == 20,
+            check("27 手动框选再生成一道新待审题", len(items_after_manual) == 20,
                   len(items_after_manual))
             manual_image = item_image_uri(batch_items(base, batch_id))
-            check("23 新题带裁出来的配图", bool(manual_image), manual_image)
+            check("28 新题带裁出来的配图", bool(manual_image), manual_image)
 
             result["metrics"]["console_errors"] = result["console_errors"]
             result["metrics"]["page_errors"] = result["page_errors"]
-            check("24 全流程无页面脚本错误", not result["page_errors"], result["page_errors"])
+            check("29 全流程无页面脚本错误", not result["page_errors"], result["page_errors"])
             browser.close()
     except Exception as error:  # noqa: BLE001 - 探针要把失败本身落盘，不能裸崩
         result["error"] = repr(error)
