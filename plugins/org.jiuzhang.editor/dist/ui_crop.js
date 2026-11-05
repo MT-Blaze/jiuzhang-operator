@@ -83,15 +83,19 @@
     return files;
   }
 
-  /** 切图台：左栏那一格变成一块画布，鼠标变十字，旁边跟一只放大镜。 */
-  function openCrop(item, index) {
+  /**
+   * 切图台：左栏那一格变成一块画布，鼠标变十字，旁边跟一只放大镜。
+   * ``autoSplit`` 用于纯图片卷的整卷页图：松开鼠标直接生成一道新题，不再问动作。
+   */
+  function openCrop(item, index, cell, autoSplit) {
     closeCrop();
     // closeCrop 会整屏重绘，格子节点换了新的：这里按序号重新找，别拿旧的。
-    var cell = document.querySelector('.ed-img-cell[data-index="' + index + '"]');
+    cell = cell || document.querySelector('.ed-img-cell[data-index="' + index + '"]');
     if (!cell) return;
     var session = {
       item: item,
       index: index,
+      autoSplit: Boolean(autoSplit),
       cell: cell,
       bitmap: null,
       width: 0,
@@ -398,22 +402,17 @@
     return button;
   }
 
-  function isScanGuide(item) {
-    var stem = String((item && item.question && item.question.stem) || "");
-    return stem.indexOf("未识别出文本") >= 0;
-  }
-
-  /** 只有中转站里的题才谈得上「切分新题」：主库里的题没有批次可并入。 */
+  /** 中转站里、且还在一个批次里的格子才谈得上「切分新题」。 */
   function canSplitItem(item) {
-    return Boolean(item && item.pendingId && item.batchId && splitFromCrop);
+    return Boolean(item && item.batchId && splitFromCrop && (item.pendingId || item.galleryPage));
   }
 
   /** 松开鼠标后的提示按真会给的动作说，别指着一颗不存在的按钮。 */
   function cropHint(session) {
-    var guide = isScanGuide(session.item);
-    var split = canSplitItem(session.item);
-    if (guide && split) return "移动鼠标看像素，拖拽框选；松开后点【切分新题】逐题切出。Esc 取消。";
-    if (split) return "移动鼠标看像素，拖拽框选；松开后选【提取为本题配图】或【切分新题】。Esc 取消。";
+    if (session.autoSplit) return "拖拽框选，松开鼠标即生成一道新题。Esc 取消。";
+    if (canSplitItem(session.item)) {
+      return "移动鼠标看像素，拖拽框选；松开后选【提取为本题配图】或【切分新题】。Esc 取消。";
+    }
     return "移动鼠标看像素，拖拽框选；松开后点【提取为本题配图】。Esc 取消。";
   }
 
@@ -425,20 +424,15 @@
     var bar = el("div", "ed-crop-actions");
     bar.setAttribute("role", "group");
     bar.setAttribute("aria-label", "框选之后要做什么");
-    var assign = function () {
-      return actionButton("提取为本题配图", !isScanGuide(session.item), function () {
-        finishCrop(session, "assign");
-      });
-    };
-    var split = function () {
-      return actionButton("切分新题", isScanGuide(session.item), function () {
-        finishCrop(session, "split");
-      });
-    };
     var canSplit = canSplitItem(session.item);
-    // 原卷页入口只负责切题：给它配图会把整页换成一小块，剩下的题就框不着了。
-    var buttons = isScanGuide(session.item) && canSplit ? [split()] : [assign()];
-    if (canSplit && !isScanGuide(session.item)) buttons.push(split());
+    var buttons = [actionButton("提取为本题配图", !canSplit, function () {
+      finishCrop(session, "assign");
+    })];
+    if (canSplit) {
+      buttons.push(actionButton("切分新题", true, function () {
+        finishCrop(session, "split");
+      }));
+    }
     buttons.forEach(function (button) { bar.appendChild(button); });
     bar.appendChild(actionButton("取消", false, function () {
       session.rect = null;
@@ -489,6 +483,11 @@
       session.rect = null;
       drawCropCanvas(session);
       session.hint.textContent = "框太小了，再拖一次。";
+      return;
+    }
+    if (session.autoSplit) {
+      // 纯图片卷：松开即切，不再让老师点第二次。
+      finishCrop(session, "split");
       return;
     }
     showCropActions(session);

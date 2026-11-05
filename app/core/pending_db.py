@@ -46,7 +46,7 @@ POOL_ASSET_PREFIX = "cimg_"
 POOL_ASSET_RE = re.compile(r"^cimg_[0-9a-f]{16}\.(?:png|jpg|webp)$")
 POOL_ASSET_URI_PREFIX = "/static/pool/"
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 MAX_BATCH_QUESTIONS = 500
 
 # 配图的口径与 uploads 那条通道保持一致：只认 PNG / JPEG / WebP 的魔数，
@@ -133,7 +133,10 @@ CREATE TABLE IF NOT EXISTS batches (
     pending_count INTEGER NOT NULL DEFAULT 0,
     assets_json   TEXT NOT NULL DEFAULT '[]',
     -- 原卷页面图（批次层，不挂题身）：[{"name","uri","page"}]。
-    page_assets_json TEXT NOT NULL DEFAULT '[]'
+    page_assets_json TEXT NOT NULL DEFAULT '[]',
+    -- 纯图片卷：1 表示这一批没有文本层，左栏整卷铺页图、老师自己框选切题。
+    -- 判定要跨刷新与重启都留着，不能靠「当前有没有题」来猜。
+    scan_batch    INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS pending_questions (
     id          TEXT PRIMARY KEY,
@@ -348,7 +351,8 @@ _DEDUPE_COLUMN_PATCHES = {
 # v9 新增的两列：批次存原卷页面图清单，条目存它来自第几页。
 # 版本号已是 9、库却还是 v8 形状的半成品，也走同一个补列分支。
 _PAGE_COLUMN_PATCHES = {
-    "batches": (("page_assets_json", "TEXT NOT NULL DEFAULT '[]'"),),
+    "batches": (("page_assets_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("scan_batch", "INTEGER NOT NULL DEFAULT 0")),
     "pending_questions": (("page_no", "INTEGER NOT NULL DEFAULT 1"),),
 }
 
@@ -424,6 +428,8 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
         _migrate_v5_pinyin(con)
     if version < 9:
         _migrate_v8_page_images(con)
+    if version < 10:
+        _migrate_v9_scan_batch(con)
     _seed_dictionary(con)
     # 次序号的索引必须等迁移把列补上再建：
     # 老库里还没有 seq 这一列，先建索引就是一句「no such column: seq」，
@@ -566,6 +572,13 @@ def _migrate_v8_page_images(con: sqlite3.Connection) -> None:
         for column, ddl in patches:
             if column not in have:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _migrate_v9_scan_batch(con: sqlite3.Connection) -> None:
+    """v9 → v10：批次补「纯图片卷」标记，默认 0（老批次都按有文本处理）。"""
+    have = {str(row[1]) for row in con.execute("PRAGMA table_info(batches)")}
+    if "scan_batch" not in have:
+        con.execute("ALTER TABLE batches ADD COLUMN scan_batch INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrate_v2_columns(con: sqlite3.Connection) -> None:

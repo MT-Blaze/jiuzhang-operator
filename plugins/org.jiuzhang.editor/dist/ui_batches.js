@@ -45,6 +45,8 @@
     var publishSelectionSoon = deps.publishSelectionSoon;
     var questionFromParsed = deps.questionFromParsed;
     var renderAll = deps.renderAll;
+    // 可选的整批删除按钮：交进来就画，没交就当这颗按钮不存在（模块可整块下架）。
+    var renderDeleteBatchButton = deps.renderDeleteBatchButton || function () {};
     var root = deps.dom.root;
     var state = coreState.state;
     var toast = deps.toast;
@@ -63,6 +65,8 @@
       state.active = 0;
       state.dirty = false;
       state.batchId = "";
+      state.pageImages = [];
+      state.scanBatch = false;
       // 题库点「去编辑」是从批次列表外直接跳进二屏：先把三栏露出来。
       setMode("review");
       renderAll();
@@ -185,18 +189,20 @@
     batchListEl.textContent = "";
     var cards = state.batches.slice();
     cards.sort(function (left, right) {
-      var leftDone = Number(left.pending_count) === 0 ? 1 : 0;
-      var rightDone = Number(right.pending_count) === 0 ? 1 : 0;
+      var leftDone = Number(left.pending_count) === 0 && !left.page_only ? 1 : 0;
+      var rightDone = Number(right.pending_count) === 0 && !right.page_only ? 1 : 0;
       if (leftDone !== rightDone) return leftDone - rightDone;
       return String(right.created_at || "").localeCompare(String(left.created_at || ""));
     });
     cards.forEach(function (card) {
       var pending = Number(card.pending_count) || 0;
       var total = Number(card.total) || 0;
-      var done = pending === 0;
+      var pageOnly = Boolean(card.page_only);
+      var done = pending === 0 && !pageOnly;
       var row = el("div", "ed-batch-row");
       row.setAttribute("data-batch", String(card.batch_id || ""));
       row.setAttribute("data-done", done ? "true" : "false");
+      row.setAttribute("data-page-only", pageOnly ? "true" : "false");
       var open = el("button", "ed-batch-open");
       open.type = "button";
       var ledger = batchLedger(card, pending);
@@ -222,11 +228,19 @@
       if (extra.length) main.appendChild(el("span", "ed-batch-extra", extra.join(" · ")));
       open.appendChild(main);
       var right = el("span", "ed-batch-right");
-      right.appendChild(el("span", "ed-batch-label", "待审 "));
-      right.appendChild(el("span", "ed-batch-num", String(pending)));
-      right.appendChild(el("span", "ed-batch-sep", " / "));
-      right.appendChild(el("span", "ed-batch-num ed-batch-total", String(total)));
-      if (done && !ledger.pooled) right.appendChild(el("span", "ed-batch-check", "✅"));
+      if (pageOnly) {
+        // 纯图片卷：还没有题，右侧说的是「原卷几页、等你框选」，不是 0/0。
+        right.appendChild(el("span", "ed-batch-label", "原卷 "));
+        right.appendChild(el("span", "ed-batch-num", String(Number(card.page_count) || 0)));
+        right.appendChild(el("span", "ed-batch-sep", " 页 · "));
+        right.appendChild(el("span", "ed-batch-label", "待框选"));
+      } else {
+        right.appendChild(el("span", "ed-batch-label", "待审 "));
+        right.appendChild(el("span", "ed-batch-num", String(pending)));
+        right.appendChild(el("span", "ed-batch-sep", " / "));
+        right.appendChild(el("span", "ed-batch-num ed-batch-total", String(total)));
+        if (done && !ledger.pooled) right.appendChild(el("span", "ed-batch-check", "✅"));
+      }
       open.appendChild(right);
       row.appendChild(open);
       if (!done && pending >= 1) {
@@ -237,13 +251,15 @@
         purge.addEventListener("click", function () { openPurge(card); });
         row.appendChild(purge);
       }
+      // 删除整批：独立渲染，下架与否只动这一行。
+      renderDeleteBatchButton(card, row);
       // 行改成了 div（多一颗按钮后按钮不能再套按钮），整行的内边距与缝隙就没人接了：
       // hover 还亮着、点下去却不动，老师只当卡了。这里补一层行级点击，
       // 两颗按钮已经各自绑好动作，只收它们没吃到的那部分。
       row.addEventListener("click", function (event) {
         if (done) return;
         var hit = event.target && event.target.closest
-          ? event.target.closest(".ed-batch-open, .ed-batch-purge") : null;
+          ? event.target.closest(".ed-batch-open, .ed-batch-purge, .btn-delete-batch") : null;
         if (hit) return;
         openBatch(card.batch_id);
       });
@@ -488,7 +504,8 @@
       renderBatchList();
       renderBatchBar();
       var card = currentBatch();
-      if (state.mode === "review" && card && Number(card.pending_count) === 0 && !state.items.length) {
+      if (state.mode === "review" && card && !card.page_only
+          && Number(card.pending_count) === 0 && !state.items.length) {
         backToList("这一批已审完，卡片变灰沉到列表最底下。");
       }
       // 首屏要把最新的批次卡片推给辅助栏：它据此显示原文件名、标准名与公共元数据。
@@ -534,6 +551,10 @@
       var rows = (result && Array.isArray(result.items)) ? result.items : [];
       var pages = (result && Array.isArray(result.page_images)) ? result.page_images : [];
       state.batchId = id;
+      // 纯图片卷（文本层不可用）：左栏整卷铺页图，老师像翻 PDF 一样往下滚着框选。
+      state.pageImages = pages;
+      state.scanBatch = Boolean(result && (result.scan_batch || result.page_only))
+        || (!rows.length && pages.length > 0);
       state.items = rows.map(function (row, index) {
         var doc = (row && row.question) || {};
         var item = makeItem(doc, buildExamSource(doc), index);
@@ -557,14 +578,10 @@
       renderAll();
       publishSelection();
       noteActivity();
-      // 扫描版没有文本层：左栏的原卷页入口就是老师的唯一入口，必须当场指路。
-      var guides = state.items.filter(function (each) {
-        var stem = String((each.question && each.question.stem) || "");
-        return stem.indexOf("未识别出文本") >= 0;
-      });
-      if (guides.length) {
-        dockWarn("这一批未识别出文本（" + guides.length + " 个原卷页入口）："
-          + "请用左侧【从原卷取图】拖框框选，再点【切分新题】逐题切出入池。");
+      // 纯图片卷：左栏整卷页图就是老师的唯一入口，必须当场指路。
+      if (state.scanBatch) {
+        dock("这一批没有文本层：左侧已铺开 " + pages.length
+          + " 页原卷，直接【框选切题】——松开鼠标就生成一道新题。");
       }
       // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。
       var broken = state.items.filter(function (item) { return parsedOf(item).errors.length > 0; });

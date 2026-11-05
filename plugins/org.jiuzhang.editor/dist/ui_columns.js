@@ -66,17 +66,10 @@
     return demo ? { uri: demo, id: "" } : null;
   }
 
-  /** 扫描卷的「原卷页入口」：底座没认出字，只留了页图和指路话。 */
-  function isScanGuide(item) {
-    var stem = String((item.question && item.question.stem) || "");
-    return stem.indexOf("未识别出文本") >= 0;
-  }
-
   function renderImageCell(item, index) {
     var cell = el("div", "ed-img-cell");
     cell.setAttribute("role", "listitem");
     cell.setAttribute("data-index", String(index));
-    var guide = isScanGuide(item);
     var picture = itemImage(item);
     var frame = el("div", "ed-img-frame");
     if (picture) {
@@ -97,7 +90,7 @@
       box.setAttribute("data-box", "stem");
       frame.appendChild(box);
     } else {
-      frame.appendChild(el("p", "ed-img-missing", "本题没有配图。框选取图可以把卷子上的这一题裁下来。"));
+      frame.appendChild(el("p", "ed-img-missing", "本题没有配图。框选切题可以把卷子上的这一题裁下来。"));
     }
     cell.appendChild(frame);
     // 切图台入口：点开就是一只跟着鼠标的放大镜，拖拽框选，左键松开切完。
@@ -108,20 +101,15 @@
       var tools = el("div", "ed-img-tools");
       var pageOnly = picture && picture.page;
       var cropBtn = el("button", "ed-img-crop-btn",
-        guide ? "框选切题"
-          : (pageOnly ? "从原卷取图" : (picture ? "重新框选" : "框选取图")));
+        picture && !pageOnly ? "重新框选" : "框选切题");
       cropBtn.type = "button";
       cropBtn.setAttribute("data-index", String(index));
       cropBtn.setAttribute("aria-label",
-        (pageOnly ? "从原卷第 " + picture.page + " 页框选第 "
-          : (picture ? "重新框选第 " : "框选取图第 ")) + (index + 1) + " 题的配图");
+        (pageOnly ? "从原卷第 " + picture.page + " 页框选切题（第 "
+          : (picture ? "重新框选第 " : "框选切题（第 ")) + (index + 1) + " 题）");
       cropBtn.addEventListener("click", function () { openCrop(item, index); });
       tools.appendChild(cropBtn);
       cell.appendChild(tools);
-    }
-    if (guide) {
-      cell.appendChild(el("p", "ed-img-guide-hint",
-        "未识别出文本：框选一题后点【切分新题】。此条只是原卷页入口，切完可删。"));
     }
     var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
     var caption = "第 " + (index + 1) + " 题 · " + paper;
@@ -365,6 +353,79 @@
     return block;
   }
 
+  // ---------- 纯图片卷：左栏整卷页图（像 PDF 阅读器一样往下滚） ----------
+  /** 一页原卷 → 切图台认的那张「格子」：框选后直接切出新题，不配给任何已有题。 */
+  function pageCropItem(page, index) {
+    return {
+      pageImage: {
+        uri: safeAssetUri(page && page.uri) || "",
+        page: Number(page && page.page) || index + 1
+      },
+      batchId: String(state.batchId || ""),
+      galleryPage: true,
+      question: {}
+    };
+  }
+
+  function openPageCrop(page, index, cell) {
+    if (!safeAssetUri(page && page.uri)) {
+      toast("这一页的原卷图取不到，切不了题。", "error");
+      return;
+    }
+    // autoSplit：松开鼠标直接生成新题，老师不必再点一次。
+    openCrop(pageCropItem(page, index), index, cell, true);
+  }
+
+  function renderPageSlide(page, index) {
+    var pageNo = Number(page && page.page) || index + 1;
+    var cell = el("div", "ed-img-cell ed-page-cell");
+    cell.setAttribute("role", "listitem");
+    cell.setAttribute("data-index", String(index));
+    cell.setAttribute("data-page-index", String(index));
+    var frame = el("div", "ed-img-frame ed-img-page");
+    var img = document.createElement("img");
+    img.src = safeAssetUri(page && page.uri) || "";
+    img.alt = "原卷第 " + pageNo + " 页";
+    img.addEventListener("error", function () {
+      if (img.parentNode) {
+        img.parentNode.replaceChild(el("p", "ed-img-missing", "原卷页读取失败"), img);
+      }
+    });
+    frame.appendChild(img);
+    var box = el("div", "ed-img-box");
+    box.setAttribute("data-box", "stem");
+    frame.appendChild(box);
+    frame.addEventListener("click", function () { openPageCrop(page, index, cell); });
+    cell.appendChild(frame);
+    var tools = el("div", "ed-img-tools");
+    var cropBtn = el("button", "ed-img-crop-btn", "框选切题");
+    cropBtn.type = "button";
+    cropBtn.setAttribute("aria-label", "原卷第 " + pageNo + " 页框选切题");
+    cropBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      openPageCrop(page, index, cell);
+    });
+    tools.appendChild(cropBtn);
+    cell.appendChild(tools);
+    cell.appendChild(el("p", "ed-img-caption", "原卷第 " + pageNo + " 页 · 拖框即生成新题"));
+    return cell;
+  }
+
+  function emptyColumnNote(text) {
+    return el("p", "ed-column-empty", text);
+  }
+
+  function renderScanGallery() {
+    var pages = Array.isArray(state.pageImages) ? state.pageImages : [];
+    pages.forEach(function (page, index) {
+      imageBodyEl.appendChild(renderPageSlide(page, index));
+    });
+    if (!pages.length) {
+      imageBodyEl.appendChild(emptyColumnNote(
+        "这一批没有可用的原卷页图：请重新拖入文件，或删除这个批次。"));
+    }
+  }
+
   function growTextarea(node) {
     node.style.height = "auto";
     node.style.height = Math.max(node.scrollHeight, 60) + "px";
@@ -388,8 +449,12 @@
       Array.prototype.forEach.call(
         sourceBodyEl.querySelectorAll(".ed-src-area, .ed-box-textarea"), growTextarea);
       max = 0;
+      // 纯图片卷的左栏是整卷页图，与右边的题行不对应，只对齐源码与渲染两栏。
+      var bodies = state.scanBatch
+        ? [sourceBodyEl, renderBodyEl]
+        : [imageBodyEl, sourceBodyEl, renderBodyEl];
       for (var index = 0; index < state.items.length; index += 1) {
-        var cells = [imageBodyEl.children[index], sourceBodyEl.children[index], renderBodyEl.children[index]];
+        var cells = bodies.map(function (body) { return body.children[index]; });
         var rowH = 0;
         cells.forEach(function (cell) {
           if (!cell) return;
@@ -439,7 +504,12 @@
 
   function updateStatusbar(elapsed, rowH) {
     var first = state.items[state.active] || state.items[0];
-    var progressText = "第 " + (state.active + 1) + " / " + state.items.length + " 题";
+    var pageTotal = Array.isArray(state.pageImages) ? state.pageImages.length : 0;
+    var progressText = state.scanBatch
+      ? (state.items.length
+        ? "第 " + (state.active + 1) + " / " + state.items.length + " 题 · 原卷 " + pageTotal + " 页"
+        : "待框选 · 原卷 " + pageTotal + " 页")
+      : "第 " + (state.active + 1) + " / " + state.items.length + " 题";
     if (progressEl) {
       progressEl.textContent = progressText;
       progressEl.setAttribute("data-active", String(state.active + 1));
@@ -479,7 +549,8 @@
   }
 
   function renderAll() {
-    if (!root || root.hidden || !state.items.length) return;
+    if (!root || root.hidden) return;
+    if (!state.items.length && !state.scanBatch) return;
     var focus = captureFocus();
     var scrolls = [imageBodyEl, sourceBodyEl, renderBodyEl].map(function (node) {
       return node ? node.scrollTop : 0;
@@ -489,11 +560,19 @@
     imageBodyEl.textContent = "";
     sourceBodyEl.textContent = "";
     renderBodyEl.textContent = "";
+    imageBodyEl.classList.toggle("is-scan-gallery", Boolean(state.scanBatch));
+    if (state.scanBatch) renderScanGallery();
     state.items.forEach(function (item, index) {
-      imageBodyEl.appendChild(renderImageCell(item, index));
+      if (!state.scanBatch) imageBodyEl.appendChild(renderImageCell(item, index));
       sourceBodyEl.appendChild(renderSourceCell(item, index));
       renderBodyEl.appendChild(renderQuestionBlock(item, index));
     });
+    if (state.scanBatch && !state.items.length) {
+      sourceBodyEl.appendChild(emptyColumnNote(
+        "在左侧原卷上拖出一个框，松开鼠标就会生成一道待审新题；题干在这里录入。"));
+      renderBodyEl.appendChild(emptyColumnNote(
+        "框出的新题会按录入顺序排在最上面。"));
+    }
     // 切图台先归位再量行高：量的时候它得在格子里，否则量出来的行高偏小，
     // 归位后格子又长高一截，那一截会再勾一次 ResizeObserver，绕成死循环。
     reanchorCrop();
@@ -620,7 +699,11 @@
 
   /** 三栏同时高亮当前题：状态不只靠颜色（AGENTS §6），顶部进度条与左栏按钮文案一起说明。 */
   function markActiveRow() {
-    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (body) {
+    // 左栏在纯图片卷里是整卷页图，与题行不是一一对应：只标源码与渲染两栏。
+    var bodies = state.scanBatch
+      ? [sourceBodyEl, renderBodyEl]
+      : [imageBodyEl, sourceBodyEl, renderBodyEl];
+    bodies.forEach(function (body) {
       if (!body) return;
       Array.prototype.forEach.call(body.children, function (cell, index) {
         if (!cell.classList) return;
@@ -639,6 +722,8 @@
     var target = clampValue(Number(index) || 0, 0, Math.max(state.items.length - 1, 0));
     state.active = target;
     [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (body) {
+      // 纯图片卷的左栏不跟着跳题滚：老师正在浏览的那一页不能被抢走。
+      if (state.scanBatch && body === imageBodyEl) return;
       var cell = body && body.children[target];
       if (body && cell) body.scrollTop = Math.max(cell.offsetTop - 12, 0);
     });
@@ -660,8 +745,13 @@
   function syncScroll(from) {
     if (scrollRestore) return;
     if (scrollLock) return;
+    // 纯图片卷：左栏是独立的整卷阅读器，滚它不影响右边的源码/渲染。
+    if (state.scanBatch && from === imageBodyEl) return;
     scrollLock = true;
-    [imageBodyEl, sourceBodyEl, renderBodyEl].forEach(function (node) {
+    var bodies = state.scanBatch
+      ? [sourceBodyEl, renderBodyEl]
+      : [imageBodyEl, sourceBodyEl, renderBodyEl];
+    bodies.forEach(function (node) {
       if (node && node !== from) node.scrollTop = from.scrollTop;
     });
     followActive(from);

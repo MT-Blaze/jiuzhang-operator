@@ -135,6 +135,7 @@ body {
    行是容器，主按钮负责进批次，次按钮负责一键剔除重复（弱化成虚线灰字，不抢重心）。 */
 .ed-batch-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -175,9 +176,39 @@ body {
 }
 
 .ed-batch-open:focus-visible,
-.ed-batch-purge:focus-visible {
+.ed-batch-purge:focus-visible,
+.btn-delete-batch:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* 删除批次：独立的一颗按钮（.btn-delete-batch）。要整颗下架，给这条加
+   display:none 即可；核心渲染里的调用点也只是一行。 */
+.btn-delete-batch {
+  flex: none;
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.btn-delete-batch:hover {
+  border-color: var(--danger);
+  background: rgba(176, 54, 54, 0.08);
+  color: var(--danger);
+}
+
+.btn-delete-batch:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .ed-batch-purge {
@@ -303,6 +334,29 @@ body {
   max-height: 42vh;
   object-fit: contain;
   object-position: top center;
+}
+
+/* 纯图片卷的整卷阅读器：页与页之间留一道清楚的缝，页面本身给足高度。 */
+.ed-img-cell.ed-page-cell {
+  padding: 12px 10px 16px;
+  border-bottom: 6px solid var(--line);
+}
+
+.ed-img-cell.ed-page-cell .ed-img-frame {
+  cursor: crosshair;
+}
+
+#edImageBody.is-scan-gallery .ed-img-frame.ed-img-page img {
+  max-height: 72vh;
+}
+
+.ed-column-empty {
+  margin: 0;
+  padding: 28px 18px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+  text-align: center;
 }
 
 /* 首屏：左批次列表 | 右文件收集筐（军令 #27，黄金分割 1.618 : 1——左宽右窄）。

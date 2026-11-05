@@ -10,12 +10,10 @@
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
-**认不出就不编**：OCR 失败、PDF 文本层抽不出时，如实记一条「待识别」的待审题
-（图片挂在那儿，题干留个明写的占位），老师自己在审核台里补。
-底座宁可交白卷，也不生成一道看着像样、其实凭空捏造的题。
-**扫描版 PDF 不把整页当成一道题**：文本层不可用时按渲染出的页数各留一条
-「原卷页入口」，题干明写「未识别出文本，请用左侧框选 + 切分新题」；
-真正的一题一题由老师在左栏手动框选切出来。
+**认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
+老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
+**纯图片 PDF 一道占位题都不放**：文本层不可用就只拆页图、立一个空批次；
+老师进批次后在左侧【框选切题】，松开鼠标即生成一道新题。
 """
 
 from __future__ import annotations
@@ -56,12 +54,8 @@ PDF_SUFFIXES = (".pdf",)
 DOCX_SUFFIXES = (".docx",)
 ZIP_SUFFIXES = (".zip",)
 
-IMAGE_MIME = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-}
+IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg",
+              ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
 OCR_SYSTEM_PROMPT = (
     "你是试卷转写助手。把图片里的题目**逐字**转成 Markdown + LaTeX 文本："
@@ -535,38 +529,11 @@ def _placeholder(label: str) -> dict[str, Any]:
     }
 
 
-def _scan_guide_label(name: str, page: int, total: int, has_pages: bool = True) -> str:
-    """扫描版 PDF 的「原卷页入口」：明说没认出字，指路手动框选。"""
-    if not has_pages:
-        return (
-            f"（未识别出文本：{name}。本机没有 PDF 页面渲染器，左侧看不到原卷页；"
-            "请点【框选取图】后把这一页的截图粘贴进来，再框选切题。）"
-        )
-    where = f"第 {page}/{total} 页" if total > 1 else "第 1 页"
-    return (
-        f"（未识别出文本：{name} {where}。"
-        "请在左侧点【框选切题】拖框框住一道题，再点【切分新题】；"
-        "下一题重复即可。此条只是原卷页入口，切完可删。）"
-    )
-
-
-def _scan_guides(name: str, total_pages: int) -> list[dict[str, Any]]:
-    """一页一条「原卷页入口」，让老师能在左栏逐页手动切题。
-
-    这里**不是**「一页一道题」：题干明写未识别、指路手动切分，
-    绝不把整页冒充成一道题塞进待审池。
-    """
-    total = max(1, min(int(total_pages or 1), 40))
-    has_pages = bool(total_pages)
-    return [_placeholder(_scan_guide_label(name, page, total, has_pages))
-            for page in range(1, total + 1)]
-
-
 async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str, bool]:
-    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否扫描件入口)。
+    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否纯图片卷)。
 
-    最后一个 True 表示这批文档只是「原卷页入口」占位：页数要等页面图渲染完
-    才知道，``run_ingest_jobs`` 会按实际页数重铺，绝不当成题目。
+    最后一个 ``True`` 表示文本层不可用：这批**一道题都不落池**，
+    只把 PDF 拆成原卷页面图，老师进批次后在左侧自己【框选切题】。
     """
     kind = classify(name)
     warnings: list[str] = []
@@ -585,11 +552,10 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
             return documents, warnings + notes, kind, text, False
         warnings.append(
             f"{name}：未识别出文本（PDF 文本层不可用）。"
-            "已按原卷页留入口，请用左侧【从原卷取图】框选，再点【切分新题】逐题录入。"
+            "已拆成原卷页面图，请进批次后在左侧【框选切题】逐题框选录入。"
         )
-        # 文本层不可用就不拿乱码去还原页面图：页图由 PDF 渲染器另出。
-        # 先只给一条占位，run_ingest_jobs 拿到真实页数后再按页重铺。
-        return [_placeholder(_scan_guide_label(name, 1, 1))], warnings, kind, "", True
+        # 文本层不可用就只出页面图，一条占位题都不落池：老师直接对着原卷框选。
+        return [], warnings, kind, "", True
     if kind == "image":
         mime = IMAGE_MIME.get(suffix_of(name), "image/png")
         if len(data) > MAX_IMAGE_BYTES:
@@ -645,13 +611,12 @@ async def ingest_files(files: Any) -> dict[str, Any]:
 def stage_ingest(files: Any) -> dict[str, Any]:
     """第一段：分拣、解码，**按文件各立一个批次**。
 
-    老师拖进来 9 份卷子，就是 9 个批次（B-002、B-003……），各认各的、
-    各解析各的——绝不再把 9 份混成一份 71 题的大杂烩。
-    每个批次先留一条「正在解析」的占位题，识别交给 ``run_ingest_jobs`` 在后台跑。
+    老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
+    有文本层的先放一条「正在解析」占位题；纯图片 PDF 连占位题都不放，只在后台
+    渲染出页图后挂到批次上，老师进批次自己【框选切题】。
 
     返回聚合账：``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings",
-    "ignored", "kinds", "jobs"}``。``batch_id`` 是第一份文件的批次号（单文件时与旧口径一致）；
-    ``jobs`` 按批次分组：``[{"batch_id", "jobs": [{"pending_id", "name", "data"}]}]``。
+    "ignored", "kinds", "jobs"}``；``jobs`` 按批次分组，``batch_id`` 是第一份的批次号。
     """
     if not isinstance(files, list) or not files:
         raise IngestError("没有要处理的文件")
@@ -710,55 +675,86 @@ def stage_ingest(files: Any) -> dict[str, Any]:
     }
 
 
+def _page_only_pdf(name: str, data: bytes) -> bool:
+    """是不是「只有图、没有字」的 PDF：是就只拆页图，不落任何占位题。"""
+    if classify(name) != "pdf":
+        return False
+    try:
+        text, _pages = extract_pdf_text(data)
+    except Exception:  # noqa: BLE001 — 抽不出文本就按纯图片卷走
+        return True
+    return not _text_usable(text)
+
+
 def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
-    """一份文件立一个批次，先放一条「正在解析」的占位题。"""
+    """一份文件立一个批次。
+
+    能抽出文本层的卷子先放一条「正在解析」的占位题，识别完就地替换；
+    纯图片 PDF 连占位题都不放——只立批次，页面图由后台渲染后挂到批次上。
+    """
     from app.core import pending_bank
 
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
     backup = json.dumps([pending_bank.store_source_backup(name, data)],
                         ensure_ascii=False, separators=(",", ":"))
-    result = pending_bank.save_draft(
-        [{"question": _placeholder(f"（正在解析：{name}）")}],
-        source_backup=backup,
-        source_name=name,
-        origin="ingest",
-    )
-    result["warnings"] = []
+    scan_only = _page_only_pdf(name, data)
+    if scan_only:
+        result = pending_bank.create_batch(source_backup=backup, source_name=name,
+                                           scan=True)
+        warnings = [f"{name}：未识别出文本（PDF 文本层不可用）。已拆成原卷页面图，请进批次后在左侧【框选切题】逐题框选录入。"]
+    else:
+        result = pending_bank.save_draft(
+            [{"question": _placeholder(f"（正在解析：{name}）")}],
+            source_backup=backup,
+            source_name=name,
+            origin="ingest",
+        )
+        warnings = []
+    result["warnings"] = warnings
     result["ignored"] = []
     result["kinds"] = [classify(name)]
+    result["page_only"] = scan_only
     result["jobs"] = [{
-        "pending_id": result["saved_ids"][0],
+        "pending_id": result["saved_ids"][0] if result.get("saved_ids") else "",
         "name": name,
         "data": data,
+        "page_only": scan_only,
     }]
     return result
 
 
 async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
-    """第二段：识别，识别出来的题**就地替换**那条「正在解析」的占位题。
+    """第二段：识别。
 
-    替换而不是另起一条：批次里不该同时躺着「正在解析」和真题两份。
-    识别不出东西时，占位题就地改写成「待识别：……请老师补录」，如实说明。
+    - 有文本层：识别出来的题**就地替换**那条「正在解析」的占位题；
+    - 纯图片 PDF：只把渲染出来的页面图挂到批次上，**一条题都不落池**——
+      老师进批次后在左侧原卷上自己【框选切题】。
     """
     from app.core import pending_bank
+    from app.core.pending_assets import drop_assets
 
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
         data = (job or {}).get("data") or b""
-        if not pending_id or not name or not batch_id:
+        page_only = bool((job or {}).get("page_only"))
+        if not name or not batch_id:
+            continue
+        if not page_only and not pending_id:
             continue
         page_images: list[dict[str, Any]] = []
         doc_pages: list[int] = []
-        scan_mode = False
-        try:
-            documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
-        except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
-            documents = []
-            kind = ""
-            source_text = ""
-            scan_mode = False
-            _notes = [f"{name}：解析出错（{error}）"]
+        scan_mode = page_only
+        if page_only:
+            documents, kind, source_text = [], "pdf", ""
+        else:
+            try:
+                documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
+            except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
+                documents = []
+                kind = ""
+                source_text = ""
+                scan_mode = False
         # 原卷页在识别之后立刻出：哪怕一道题都没拆出来，老师也得能对着原卷补录。
         try:
             page_images, doc_pages, _page_notes = page_render.build_pages(
@@ -766,10 +762,19 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
         except Exception:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
             page_images, doc_pages = [], []
         if scan_mode:
-            # 扫描版没有文本层：按**实际渲染出的页数**重铺入口，不是一页一道题。
-            # 渲染器缺席时退成一条，并靠题干里的提示请老师贴入页面截图再框选。
-            documents = _scan_guides(name, len(page_images) if page_images else 1)
-            doc_pages = list(range(1, len(documents) + 1))
+            if page_images:
+                try:
+                    pending_bank.set_batch_pages(batch_id, page_images)
+                except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
+                    drop_assets(page_images)
+                    continue
+            if pending_id:
+                # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
+                try:
+                    pending_bank.delete_pending(pending_id)
+                except pending_bank.PendingError:
+                    pass
+            continue
         items: list[dict[str, Any]] = []
         if documents:
             items.append({"question": documents[0], "pending_id": pending_id,
@@ -787,7 +792,6 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                                     page_images=page_images)
         except Exception:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
             if page_images:
-                from app.core.pending_assets import drop_assets
                 drop_assets(page_images)
             continue
 

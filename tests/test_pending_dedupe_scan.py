@@ -45,15 +45,18 @@ if str(ROOT) not in sys.path:
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STAMP = "2026-01-15T09:00:00+08:00"
 FAIL_CODE = "dedupe_scan_bank_unavailable"
-# 卡片既有 11 键（app/core/pending_batches.py:67-79），第 12 键才是 dedupe
+# 卡片既有 11 键（app/core/pending_batches.py:67-79），v9 加原卷页图两键，
+# v10 再加扫描批标记，第 15 键才是 dedupe
 CARD_KEYS = {
     "batch_id", "label", "created_at", "updated_at", "source_backup", "source_name",
     "meta", "approved_count", "total", "pending_count", "done",
+    "page_only", "scan_batch", "page_count",
 }
 CARD_TYPES = {
     "batch_id": str, "label": str, "created_at": str, "updated_at": str,
     "source_backup": str, "source_name": str, "meta": dict,
     "approved_count": int, "total": int, "pending_count": int, "done": bool,
+    "page_only": bool, "scan_batch": bool, "page_count": int,
 }
 
 STEM_A = "初查口径题甲：已知 $f(x)=x^2-5x+6$，求它的零点个数（　　）。"

@@ -57,11 +57,13 @@ class PurgeCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import bank, pending_bank, pending_batches, pending_dedupe, pending_db
+        from app.core import (bank, pending_bank, pending_bank_batches,
+                              pending_batches, pending_dedupe, pending_db)
 
         self.settings = settings
         self.bank = bank
         self.pending_bank = pending_bank
+        self.pending_bank_batches = pending_bank_batches
         self.pending_batches = pending_batches
         self.pending_dedupe = pending_dedupe
         self.pending_db = pending_db
@@ -296,7 +298,7 @@ class PurgeCase(unittest.TestCase):
         batch_id, ids = self._draft(_doc(), _doc(), _doc())
         before = (self._pool_count(), self._card(batch_id)["total"],
                   self._card(batch_id)["pending_count"])
-        with mock.patch.object(self.pending_bank, "refresh_batch",
+        with mock.patch.object(self.pending_bank_batches, "refresh_batch",
                                side_effect=RuntimeError("账目写不进去")):
             with self.assertRaises(RuntimeError):
                 self._purge(batch_id, ids[1:])

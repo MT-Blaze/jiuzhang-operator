@@ -318,6 +318,12 @@
       if (result) {
         basketClear();
         refreshBatches();
+        if (result.parsing) {
+          // 页图在后台渲染：隔几拍再刷，纯图片批次的「原卷 N 页」会自己长出来。
+          [1500, 4000, 8000, 15000].forEach(function (delay) {
+            window.setTimeout(refreshBatches, delay);
+          });
+        }
       }
       basketBusy = false;
       setBasketBusy(false);

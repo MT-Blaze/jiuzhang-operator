@@ -50,6 +50,21 @@ def pending_batch_questions(batch_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.delete(
+    "/api/pending/batches/{batch_id}",
+    summary="彻底删除整批（待审题与原卷资产一并清理）",
+    dependencies=[Depends(require_write_token)],
+)
+def pending_delete_batch(batch_id: str) -> dict[str, Any]:
+    """只删中转站里这一批，主库一个字节都不碰。"""
+    try:
+        return pending_bank.delete_batch(batch_id)
+    except pending_bank.PendingNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get(
     "/api/pending/meta/history",
     summary="公共元数据的历史值",
@@ -118,6 +133,7 @@ def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             source_backup=payload.get("source_backup"),
             source_name=payload.get("source_name"),
             origin=str(payload.get("origin") or ""),
+            position=payload.get("position"),
         )
     except questions.QuestionValidationError as exc:
         raise HTTPException(

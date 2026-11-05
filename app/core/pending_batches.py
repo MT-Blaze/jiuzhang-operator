@@ -84,6 +84,12 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
         "total": int(row["total"] or 0),
         "pending_count": live,
         "done": live == 0,
+        # 纯原卷批次：文本层不可用的 PDF 只落页面图、不落占位题。
+        # 卡片据此仍可点开（老师进去自己框选切题），排序也仍排在有未审的批次一起。
+        "page_only": live == 0 and int(row["total"] or 0) == 0 and bool(_page_images(row)),
+        # 纯图片卷：批次级永久标记（v10 起落库），左栏据此铺整卷页图而非逐题原图。
+        "scan_batch": bool(row["scan_batch"]) if "scan_batch" in row.keys() else False,
+        "page_count": len(_page_images(row)),
         # 后台初查的进程内注解（3.1a）：纯读、不发 IO，无缓存即 pending。
         "dedupe": pending_dedupe.scan_state(batch_id, pooled=pooled, con=con),
     }
@@ -121,7 +127,7 @@ def batch_list() -> dict[str, Any]:
             con.rollback()  # 只读事务就地收尾：本连接一行都没写
     finally:
         con.close()
-    cards.sort(key=lambda card: (card["pending_count"] == 0,
+    cards.sort(key=lambda card: (card["pending_count"] == 0 and not card["page_only"],
                                  _sort_key(card["created_at"], card["batch_id"])))
     return {"batches": cards}
 
@@ -184,6 +190,7 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
         "page_images": _page_images(batch),
         "pending_count": len(rows),
         "total": int(batch["total"] or 0),
+        "scan_batch": bool(batch["scan_batch"]) if "scan_batch" in batch.keys() else False,
     }
 
 

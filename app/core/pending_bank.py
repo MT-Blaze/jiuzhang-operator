@@ -25,6 +25,7 @@
 
 - ``pending_db.py``       —— 库文件、号段、结构版本迁移与字典基线；
 - ``pending_batches.py``  —— 批次与条目的读写（``batches`` / ``pending_questions``）；
+- ``pending_bank_batches.py`` —— 批次生命周期（立批、挂页图、整批删、剔重收口）；
 - ``pending_assets.py``   —— 暂存配图与原文件只读副本的落盘、入库时的搬迁；
 - ``pending_dedupe.py``   —— 与 core-bank 同源的查重口径（配图按内容哈希比）；
 - ``pending_meta.py``     —— 公共元数据规则与向题目文档的同步。
@@ -44,7 +45,6 @@ from typing import Any
 from app.core import bank, bank_dedupe, pending_dedupe, questions
 from app.core.pending_assets import (
     backup_path,
-    backup_paths,
     decode_data_url,
     drop_assets,
     move_assets_to_uploads,
@@ -52,6 +52,15 @@ from app.core.pending_assets import (
     rewrite_asset_uris,
     store_source_backup,
     write_pending_asset,
+)
+from app.core.pending_bank_batches import (
+    BatchPurgeError,
+    _page_entries,
+    _settle_batch,
+    create_batch,
+    delete_batch,
+    purge_batch_duplicates,
+    set_batch_pages,
 )
 from app.core.pending_batches import (
     batch_card,
@@ -68,7 +77,6 @@ from app.core.pending_batches import (
 from app.core.pending_db import (
     BATCH_ID_RE,
     MAX_BATCH_QUESTIONS,
-    PENDING_ASSET_RE,
     PENDING_ASSET_URI_PREFIX,
     PENDING_ID_RE,
     PendingConflict,
@@ -100,6 +108,7 @@ from app.core.pending_meta import (
     sync_dictionary_schools,
 )
 
+
 def _page_no(item: Any) -> int | None:
     """一条暂存内容来自原卷第几页；没给或给坏了就回 ``None``（编辑回池时保留原页号）。"""
     raw = item.get("page_no") if isinstance(item, dict) else None
@@ -112,30 +121,9 @@ def _page_no(item: Any) -> int | None:
     return max(1, value)
 
 
-def _page_entries(raw: Any) -> list[dict[str, Any]] | None:
-    """校验原卷页面图清单；``None`` 表示这次暂存不动现有的页图。"""
-    if raw is None:
-        return None
-    if not isinstance(raw, list):
-        raise PendingError("页面图清单必须是数组")
-    entries: list[dict[str, Any]] = []
-    for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise PendingError("页面图的每一项都必须是对象")
-        name = str(entry.get("name") or "")
-        if not PENDING_ASSET_RE.match(name):
-            raise PendingError("页面图文件名不合法")
-        try:
-            page = int(entry.get("page") or index)
-        except (TypeError, ValueError) as exc:
-            raise PendingError("页面图页码不合法") from exc
-        entries.append({"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page})
-    return entries
-
-
 def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                source_name: Any = "", origin: Any = "",
-               page_images: Any = None) -> dict[str, Any]:
+               page_images: Any = None, position: Any = "") -> dict[str, Any]:
     """把一道题或一批题存进中转站（**存为待审**）。
 
     - ``batch_id`` 给了就并进那一批；没给就新开一批（``B-001`` 起）。
@@ -144,6 +132,8 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     - ``source_name`` 是原文件名（老师拖进来的那份），只作展示，不参与解析。
     - ``page_images`` 是这一批的原卷页面图（批次层，不挂题身）；``None`` 表示
       这次暂存不动页面图，数组表示用这一份替换（重导 / 解析完成时给）。
+    - ``position="top"`` 把新题排在批次最前（老师刚框选切出来的题要立刻看见）；
+      不传就按老规矩续在末尾。就地更新已有条目时位置不动。
     - 返回批次卡片与新题 id，前端据此刷新列表。
 
     一条都不写是失败：宁可报错，也不让老师以为存进去了。
@@ -213,6 +203,14 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         names: list[str] = []
         inserted = 0
         seq = next_seq(con, target_batch)
+        if str(position or "") == "top":
+            # 新题置顶：次序号取现有最小值再减一，刷新后仍排在最前且互不重号。
+            row_top = con.execute(
+                "SELECT MIN(seq) AS low FROM pending_questions WHERE batch_id = ?",
+                (target_batch,),
+            ).fetchone()
+            if row_top is not None and row_top["low"] is not None:
+                seq = int(row_top["low"]) - 1
         for document, stored, pending_id, page_no in prepared:
             if pending_id:
                 # 就地更新：号、批次与未审数都不动，只换内容。次序号也不动——
@@ -639,209 +637,3 @@ def delete_pending(pending_id: str) -> dict[str, Any]:
     return {"pending_id": pending_id, "deleted": True, "batch": finished}
 
 
-class BatchPurgeError(PendingError):
-    """一键剔除被拒：带域错误码、HTTP 状态与可否重试，路由层照这三个属性翻。
-
-    与 ``PendingNotFound`` / ``PendingConflict`` 的分工：那两个表达「哪一条不见了 /
-    被并发改掉了」，本类表达「剔除动作本身不成立」——载荷自相矛盾、勾的条目已不再
-    重复、勾到了保留者、要把整批剔空却没表态。码统一 ``batch_purge_`` 前缀。
-    """
-
-    def __init__(self, message: str, *, code: str, status: int = 400,
-                 retryable: bool = False) -> None:
-        super().__init__(message)
-        self.code = code
-        self.status = status
-        self.retryable = retryable
-
-
-def _id_text_list(raw: Any) -> list[str]:
-    """把「中转站编号数组」规整成字符串列表；不是数组回 ``None``（形状错，不猜）。"""
-    if not isinstance(raw, list):
-        return None
-    return [item.strip() if isinstance(item, str) else "" for item in raw]
-
-
-def _row_assets(row: Any) -> list[dict[str, Any]]:
-    """行上的配图清单；读不出来就当空数组（账要清，配图清不了也不能拦住删题）。"""
-    try:
-        data = json.loads(row["assets_json"] or "[]")
-    except (TypeError, ValueError):
-        return []
-    return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
-
-
-def purge_batch_duplicates(batch_id: str, provider_id: str, drop_ids: Any,
-                           expected_drop_ids: Any,
-                           allow_empty: bool = False) -> dict[str, Any]:
-    """一键剔除本批次重复题：只删 ``drop_ids`` 里那几条池内条目，主库一个字节都不碰。
-
-    四重闸按顺序收口：① 载荷自洽（编号合规、非空、``sorted(drop_ids)`` 与
-    ``expected_drop_ids`` 逐项相等，只防截断与中间层改写）；② 归属（勾的条目必须属于
-    这一批）；③ **逐条判重**（真正的护栏，进事务后按本次请求的主库快照重算：已不再
-    重复回 409 ``batch_purge_selection_stale``，勾到保留者回 409
-    ``batch_purge_keep_selected``，两种情况都整批不动）；④ 剔空硬闸（会把整批剔空而
-    ``allow_empty`` 不为真时回 400——持 ``questions:write`` 的插件绕过弹窗直投接口也拦得住）。
-
-    主库判定只发生在本次请求的快照上，快照到提交之间不再读主库（毫秒级残窗）。老师
-    真正可见的窗口是 ``[dry-run, 本次快照]``：期间主库删题由第 ③ 条闸以 409 拦下，
-    主库新增同题则本次清单不含它（少剔），响应里的 ``new_redundant`` 如实报数。
-    """
-    text_batch = str(batch_id or "").strip()
-    if not BATCH_ID_RE.match(text_batch):
-        raise BatchPurgeError("批次编号不合法", code="batch_purge_batch_not_found", status=404)
-
-    selected = _id_text_list(drop_ids)
-    if selected is None:
-        raise BatchPurgeError("drop_ids 必须是中转站编号数组",
-                              code="batch_purge_bad_pending_id")
-    if not selected:
-        raise BatchPurgeError("drop_ids 为空：没有要剔除的条目",
-                              code="batch_purge_empty_drop_ids")
-    for pending_id in selected:
-        if not PENDING_ID_RE.match(pending_id):
-            raise BatchPurgeError(f"中转站编号不合法：{pending_id or '(空)'}",
-                                  code="batch_purge_bad_pending_id")
-    expected = _id_text_list(expected_drop_ids)
-    # 回显只防截断与改写，不承担排序约定：两侧都按升序归一后逐项比。
-    if expected is None or sorted(selected) != sorted(expected):
-        raise BatchPurgeError("勾选清单与回显不一致（请重新扫描后再提交）",
-                              code="batch_purge_expected_mismatch_client")
-
-    # 主库快照必须在事务外：中转站库的写锁锁不住主库，进了事务再读只是把窗口拉长。
-    try:
-        main_rows = pending_dedupe.bank_rows_snapshot(provider_id)
-    except bank.BankNotFound as exc:
-        raise BatchPurgeError(str(exc) or "题库未安装或未启用",
-                              code="batch_purge_bank_not_found", status=404) from exc
-    except bank.BankError as exc:
-        raise BatchPurgeError(str(exc) or "主库暂时不可用，请稍后重试",
-                              code="batch_purge_bank_unavailable", retryable=True) from exc
-
-    con = connect()
-    try:
-        row = batch_row(con, text_batch)
-        if row is None:
-            raise BatchPurgeError("中转站里没有这个批次",
-                                  code="batch_purge_batch_not_found", status=404)
-        source_backup = str(row["source_backup"] or "")
-        con.execute("BEGIN IMMEDIATE")
-        rows = con.execute(
-            "SELECT id, doc_json, assets_json, seq FROM pending_questions"
-            " WHERE batch_id = ? ORDER BY seq ASC, id ASC",
-            (text_batch,),
-        ).fetchall()
-        known = {str(item["id"]) for item in rows}
-        outsiders = [pending_id for pending_id in selected if pending_id not in known]
-        if outsiders:
-            raise BatchPurgeError(
-                "这些条目不属于本批：" + "、".join(outsiders[:5]),
-                code="batch_purge_pending_not_in_batch")
-        # 事务内重算：主库用的仍是事务外那一份快照，进事务后不再碰主库连接。
-        planned = pending_dedupe.group_duplicates(rows, main_rows)
-        recompute = set(planned["recompute"])
-        keeps = set(planned["keep_ids"])
-        # 保留者保护先判：keep 本来就不在重复全集里，先判 stale 会让 keep_selected 永不可达。
-        kept_back = [pending_id for pending_id in selected if pending_id in keeps]
-        if kept_back:
-            raise BatchPurgeError(
-                "勾选里含本批要保留的那一条：" + "、".join(kept_back[:5]),
-                code="batch_purge_keep_selected", status=409)
-        stale = [pending_id for pending_id in selected if pending_id not in recompute]
-        if stale:
-            raise BatchPurgeError(
-                "这些条目已不再重复：" + "、".join(stale[:5]) + "，请重新扫描",
-                code="batch_purge_selection_stale", status=409, retryable=True)
-        if len(rows) - len(selected) == 0 and allow_empty is not True:
-            raise BatchPurgeError(
-                "本次会把这一批剔空（原卷副本与本批残留切图会一并删除），需要显式确认",
-                code="batch_purge_empty_not_confirmed")
-        assets_by_id = {str(item["id"]): _row_assets(item) for item in rows}
-        deleted: list[str] = []
-        skipped: list[dict[str, str]] = []
-        for pending_id in sorted(selected):
-            cursor = con.execute(
-                "DELETE FROM pending_questions WHERE id = ? AND batch_id = ?",
-                (pending_id, text_batch),
-            )
-            if cursor.rowcount == 1:
-                deleted.append(pending_id)
-            else:
-                skipped.append({"id": pending_id, "why": "row_gone"})
-        con.execute(
-            "UPDATE batches SET total = MAX(total - ?, 0), updated_at = ? WHERE batch_id = ?",
-            (len(deleted), questions.now_iso(), text_batch),
-        )
-        refresh_batch(con, text_batch)
-        con.commit()
-    except BaseException:
-        con.rollback()
-        raise
-    finally:
-        con.close()
-
-    # 文件层在提交之后：数据已经落定，删不掉的残留文件只是垃圾，记一笔不回滚。
-    files_failed: list[dict[str, str]] = []
-    for pending_id in deleted:
-        items = assets_by_id.get(pending_id) or []
-        try:
-            drop_assets(items)
-        except (OSError, PendingError) as exc:
-            why = str(exc) or "配图删除失败"
-            files_failed.extend({"name": str(item.get("name") or ""), "why": why}
-                                for item in items)
-    settled = _settle_batch(text_batch)
-    return {
-        "batch_id": text_batch,
-        "deleted": deleted,
-        "skipped": skipped,
-        "files_failed": files_failed,
-        "batch": settled,
-        "settled": bool(settled),
-        "backup_removed": bool(source_backup) and settled.get("done") is True,
-        "new_redundant": len(recompute - set(selected)),
-    }
-
-
-def _settle_batch(batch_id: str) -> dict[str, Any]:
-    """批次未审数归零时：物理删掉原文件副本与本批残留切图，然后回一张卡片。
-
-    批次**行留着**——老师还要看「未审：0 / 50 ✅」这一行，只是它已经沉底变灰。
-    """
-    if not batch_id:
-        return {}
-    con = connect()
-    try:
-        con.execute("BEGIN")  # G6：只读事务把这张卡片的四个读数钉在同一份快照上
-        try:
-            row = batch_row(con, batch_id)
-            if row is None:
-                return {}
-            live = int(con.execute(
-                "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (batch_id,)
-            ).fetchone()[0])
-            # 池内条数与初查结论都从这条连接读（给 con 就不碰进程内缓存），
-            # 于是卡片不再出现「待审 2 ＋ 池内 2 而总数才 2」那种跨提交混代帧。
-            card = batch_card(row, live,
-                              pooled=pending_dedupe.pooled_counts(con).get(str(batch_id), 0),
-                              con=con)
-            assets = json.loads(row["assets_json"] or "[]")
-            page_assets = json.loads(row["page_assets_json"] or "[]")
-        finally:
-            con.rollback()  # 只读事务就地收尾：本连接一行都没写
-    finally:
-        con.close()
-    if live:
-        return card
-    drop_assets([{"name": name} for name in assets])
-    drop_assets([{"name": str(entry.get("name") or "")}
-                 for entry in page_assets if isinstance(entry, dict)])
-    for backup in backup_paths(str(row["source_backup"] or "")):
-        try:
-            if backup.is_file():
-                backup.unlink()
-        except OSError:
-            pass
-    # 未审数归零时 ``live`` 本来就是 0，卡片与旧写法 ``batch_card(row, 0)`` 全等；
-    # 删的是磁盘上的原文件副本，不影响任何计数，所以卡片在读事务内就算好带回。
-    return card

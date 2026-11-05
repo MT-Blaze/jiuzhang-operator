@@ -655,12 +655,14 @@ class PoolPersistenceTest(PoolCase):
         self.assertEqual(caught.exception.existing_id, "q_pool0001")
 
     def test_33_schema_version_and_tables(self) -> None:
-        """结构底线：``SCHEMA_VERSION`` 到 9，旧库连上自动补池表与页面图列。"""
-        self.assertEqual(self.pending_db.SCHEMA_VERSION, 9)
+        """结构底线：``SCHEMA_VERSION`` 到 10，旧库连上自动补池表、页面图列与扫描批标记。"""
+        self.assertEqual(self.pending_db.SCHEMA_VERSION, 10)
         names = {row[0] for row in self._con().execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
         self.assertIn("duplicate_pool", names)
         self.assertIn("pool_actions", names)
+        batch_columns = {row[1] for row in self._con().execute("PRAGMA table_info(batches)")}
+        self.assertIn("scan_batch", batch_columns, "v10 必须有「这一批是扫描版」标记")
 
     def test_34_admit_twice_same_batch_adds_nothing(self) -> None:
         """一条进来题只占一条：同批重复进池不多占，也不折叠成一组。"""

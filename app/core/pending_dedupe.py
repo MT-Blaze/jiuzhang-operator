@@ -20,7 +20,7 @@ from typing import Any
 
 from app.core import bank, bank_dedupe, questions
 from app.core.pending_batches import batch_row
-from app.core.pending_db import connect
+from app.core.pending_db import PendingNotFound, connect
 
 
 

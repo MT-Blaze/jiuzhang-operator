@@ -1,9 +1,9 @@
 /**
- * ui_split.js —— 扫描卷的手动切题：左栏框出一块，就地生成一条待审占位题。
+ * ui_split.js —— 框选切题：左栏原卷上框出一块，立刻生成一道待审新题。
  *
- * 无文本层时底座只给「原卷页入口」，一页上有几道题只有老师看得见；
- * 这里不猜题数、不编题干，只把框选的像素挂成一道新待审题，
- * 题干留明写的占位，老师接着在中间栏录入。
+ * 无文本层时底座只给整卷页面图，一页上有几道题只有老师看得见；
+ * 这里不猜题数、不编题干，只把框选的像素挂成一道新待审题（``p_`` 开头），
+ * 排在右栏最上面，老师接着在中间栏录入。
  */
 (function (global) {
   "use strict";
@@ -24,14 +24,13 @@
       return "img_split_" + Math.random().toString(36).slice(2, 10);
     }
 
-    /** 新题占位：只说明从哪一页切出来的，题干一个字都不编。 */
+    /** 新题的开场白：只说明从哪一页框出来的，题干一个字都不编。 */
     function placeholderDoc(pageNo, assetId) {
       return {
         schema_version: "2.0",
         type: "solution",
-        stem: "（待录入题干：已从原卷第 " + pageNo + " 页框选，请在中间栏补录题干与答案）",
+        stem: "（框选切题：已从原卷第 " + pageNo + " 页框出，请在此录入题干与答案）",
         difficulty: "L2",
-        tags: ["待识别"],
         images: [{ id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" }]
       };
     }
@@ -52,6 +51,8 @@
       var payload = {
         batch_id: item.batchId,
         origin: "editor.split",
+        // 新题置顶：老师刚框出来的这一道要立刻出现在右栏第一条。
+        position: "top",
         questions: [{
           question: doc,
           assets: [{ id: assetId, data_url: dataUrl }],
@@ -64,30 +65,21 @@
         var asset = saved && saved.assets && saved.assets[0];
         if (asset && asset.uri) doc.images[0].uri = asset.uri;
         if (savedId) doc.id = savedId;
-        var sourceIndex = state.items.indexOf(item);
-        var at = sourceIndex < 0 ? state.items.length : sourceIndex + 1;
-        // 同一页切出来的题按切题先后排在一起：新题跟在同页最后一条之后，
-        // 否则连着切第二题时它会插到第一题前面，题序倒着长。
-        var sourcePage = item.pageImage ? Number(item.pageImage.page) || 1 : 0;
-        for (var index = at; index < state.items.length; index += 1) {
-          var each = state.items[index];
-          var eachPage = each.pageImage ? Number(each.pageImage.page) || 1 : 0;
-          if (eachPage !== sourcePage) break;
-          at = index + 1;
-        }
+        var at = 0;
         var created = makeItem(doc, buildExamSource(doc), at);
         created.pendingId = savedId;
         created.batchId = item.batchId;
         created.pageImage = item.pageImage
           ? { uri: item.pageImage.uri, page: pageNo }
           : null;
+        // 置顶：框出来一道就在最上面一道，老师不用往下翻着找刚切的那题。
         state.items.splice(at, 0, created);
         state.active = at;
         renderAll();
         jumpTo(at);
         refreshBatches();
         focusStem(at);
-        dock("已从原卷第 " + pageNo + " 页切出新待审题（池子编号 "
+        dock("已从原卷第 " + pageNo + " 页框出新待审题（池子编号 "
           + (savedId || "—") + "），请在中间栏录入题干与答案。");
         return created;
       }, function (error) {

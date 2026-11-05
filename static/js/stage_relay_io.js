@@ -202,7 +202,8 @@
     }
 
     if (method === "pending.save_draft" || method === "pending.approve"
-        || method === "pending.delete" || method === "pending.purge_duplicates") {
+        || method === "pending.delete" || method === "pending.delete_batch"
+        || method === "pending.purge_duplicates") {
       // 写中转站与写主库同权：必须先声明 questions:write，令牌仍留在宿主侧。
       var pendingPermissions = (tab.plugin && tab.plugin.permissions) || [];
       if (pendingPermissions.indexOf("questions:write") < 0) {
@@ -246,6 +247,23 @@
         }, fail);
         return true;
       }
+      if (method === "pending.delete_batch") {
+        // 整批删除：待审题、批次行与原卷资产一并清掉，主库不碰。
+        var deleteBatchId = textValue(payload, "batch_id", 40);
+        if (!/^B-\d{3,}$/.test(deleteBatchId)) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "批次编号不合法" });
+          return true;
+        }
+        withWriteToken("/api/pending/batches/" + encodeURIComponent(deleteBatchId), {
+          method: "DELETE",
+          headers: jsonHeaders,
+          body: JSON.stringify({})
+        }).then(function (result) {
+          emitPendingUpdated("delete_batch", [], result);
+          done(result);
+        }, fail);
+        return true;
+      }
       if (method === "pending.save_draft") {
         var draftQuestions = payload.questions;
         if (!Array.isArray(draftQuestions) || !draftQuestions.length) {
@@ -263,6 +281,7 @@
         if (draftBackup) draftBody.source_backup = draftBackup;
         var draftOrigin = textValue(payload, "origin", 60);
         if (draftOrigin) draftBody.origin = draftOrigin;
+        if (textValue(payload, "position", 20) === "top") draftBody.position = "top";
         withWriteToken("/api/pending/batches", {
           method: "POST",
           headers: jsonHeaders,

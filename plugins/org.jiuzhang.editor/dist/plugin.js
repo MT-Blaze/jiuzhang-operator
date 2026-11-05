@@ -243,6 +243,22 @@
   var splitTags = coreSave.splitTags;
   var validateForSave = coreSave.validateForSave;
 
+  // 批次卡片的【删除批次】独立成一块：要下架这颗按钮，删 index.html 里那一行
+  // 脚本、或给 .btn-delete-batch 加 display:none 即可，核心渲染一处不用改。
+  var uiBatchDelete = window.JzoEditorBatchDelete.create({
+    coreState: coreState,
+    dock: dock,
+    dockWarn: dockWarn,
+    el: el,
+    errorDetail: errorDetail,
+    hostCall: hostCall,
+    publishSelection: publishSelection,
+    // 循环引用：publishView / refreshBatches / setMode 归更下面的 uiBatches。
+    publishView: function () { return uiBatches.publishView.apply(uiBatches, arguments); },
+    refreshBatches: function () { return uiBatches.refreshBatches.apply(uiBatches, arguments); },
+    setMode: function () { return uiBatches.setMode.apply(uiBatches, arguments); },
+  });
+
   var uiBatches = window.JzoEditorBatches.create({
     dom: dom,
     DEV_FIXTURES: DEV_FIXTURES,
@@ -266,6 +282,8 @@
     questionFromParsed: questionFromParsed,
     // 循环引用：renderAll 归更下面的 uiColumns，本块排得靠前，只能等它就位后再取。
     renderAll: function () { return uiColumns.renderAll.apply(uiColumns, arguments); },
+    // 独立的整批删除按钮模块（可整块下架）。
+    renderDeleteBatchButton: uiBatchDelete.renderDeleteBatchButton,
     toast: toast,
     validateForSave: validateForSave,
     coreState: coreState,
