@@ -23,15 +23,15 @@
 
   // ---------- 左栏切图：圆形放大镜 + 中心十字准星 ----------
   //
-  // 放大镜是从宿主壳那套截屏交互里原样搬过来的：半径 104、8 倍、关平滑看像素，
-  // 镜心一根红十字。只是它不再跟着屏幕走，而是跟着老师在左栏那张图上的鼠标走；
+  // 镜内按源图像素 2 倍取样、镜窗放大到 280px：一屏能装下整行公式或一个词，
+  // 而不是 8 倍那种满屏马赛克。镜心一根红十字，告诉老师对准的是哪一处。
   // 左键松开，框选完成，镜子消失。
   //
   // 像素级精准的前提是画布干净：沙箱插件画不了宿主原点的图——画布会被污染，
   // toDataURL 直接抛 SecurityError。所以已有的配图走宿主 asset.read 递 data URL，
   // 老师现贴的图走 File：两条路拿到的都是不带污点的字节。
-  var CROP_RADIUS = 104;     // 放大镜半径（CSS 像素）
-  var CROP_ZOOM = 8;         // 放大倍数
+  var CROP_RADIUS = 140;     // 放大镜半径（CSS 像素）
+  var CROP_ZOOM = 1.5;       // 镜内源像素倍率（1.5~2 倍，看得清又不糊）
   var CROP_MIN_SIDE = 4;     // 最小选区边长（CSS 像素）
   var crop = null;
   var lensCanvas = null;
@@ -89,8 +89,8 @@
    */
   function openCrop(item, index, cell, autoSplit) {
     closeCrop();
-    // closeCrop 会整屏重绘，格子节点换了新的：这里按序号重新找，别拿旧的。
-    cell = cell || document.querySelector('.ed-img-cell[data-index="' + index + '"]');
+    // closeCrop 会整屏重绘，格子节点换了新的：必须按序号重新找，别信调用方递进来的旧节点。
+    cell = document.querySelector('.ed-img-cell[data-index="' + index + '"]') || cell;
     if (!cell) return;
     var session = {
       item: item,
@@ -196,6 +196,11 @@
         session.start = cropPoint(session, event.clientX, event.clientY);
         session.rect = null;
       });
+      // 松手后的 click 会冒泡到页图的「打开切图台」监听上：这里截断，
+      // 否则切完一题立刻又开一个空台子，看起来就像「拖了没反应」。
+      canvas.addEventListener("click", function (event) {
+        event.stopPropagation();
+      });
     }
     anchorCrop(session);
     ensureLens();
@@ -242,9 +247,16 @@
   function layoutCrop(session) {
     var canvas = session.canvas;
     if (!canvas) return;
+    // 画布宽度必须与 <img width:100%> 一模一样，差几像素框选就会左右错位。
+    // 量切图台所在的 .ed-img-frame，而不是量整栏再凭经验减 padding。
+    var frame = canvas.parentNode && canvas.parentNode.classList
+      && canvas.parentNode.classList.contains("ed-img-frame") ? canvas.parentNode : null;
     var body = document.getElementById("edImageBody");
-    var maxWidth = Math.max(140, (body ? body.clientWidth : 320) - 24);
-    var scale = session.width ? Math.min(1, maxWidth / session.width) : 1;
+    var frameWidth = frame && frame.clientWidth ? frame.clientWidth : 0;
+    var maxWidth = Math.max(140, frameWidth || ((body ? body.clientWidth : 320) - 24));
+    // 原图已经按 width:100% 铺满：小于栏宽的图同样放大到栏宽，画布跟着放，
+    // 保证「看到的」与「裁到的」是同一块像素。
+    var scale = session.width ? maxWidth / session.width : 1;
     session.scale = scale;
     // 图还没贴进来时给一块看得见的空台子，不然画布只有 1×1 像素，像坏了。
     var displayW = session.width ? Math.max(1, Math.round(session.width * scale))
@@ -280,13 +292,14 @@
     ctx.drawImage(session.bitmap, 0, 0, displayW, displayH);
     var rect = session.rect;
     if (!rect) return;
-    ctx.fillStyle = "rgba(6, 8, 12, 0.42)";
+    // 框外压暗、框内提亮，四周再描一圈 2px 绿线：半透明选框一眼可见。
+    ctx.fillStyle = "rgba(6, 8, 12, 0.38)";
     ctx.fillRect(0, 0, displayW, displayH);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     ctx.strokeStyle = "#2f6b4f";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w, rect.h);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rect.x + 1, rect.y + 1, Math.max(0, rect.w - 2), Math.max(0, rect.h - 2));
   }
 
   /** 放大镜层：整屏一块画布，镜子跟着鼠标走，镜心一根红十字。 */
@@ -309,7 +322,8 @@
     lensCanvas.style.height = window.innerHeight + "px";
     var ctx = lensCanvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false;
+    // 开平滑：2 倍取样下再关平滑就是马赛克。老师要看清公式，不是看像素格。
+    ctx.imageSmoothingEnabled = true;
     if (crop) crop.lctx = ctx;
   }
 
@@ -341,7 +355,7 @@
     ctx.beginPath();
     ctx.arc(mx, my, radius, 0, Math.PI * 2);
     ctx.clip();
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true;
     ctx.drawImage(session.bitmap, ox, oy, sw, sh, mx - radius, my - radius, radius * 2, radius * 2);
     ctx.restore();
     ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";

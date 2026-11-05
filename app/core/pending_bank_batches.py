@@ -62,9 +62,9 @@ def _row_assets(row: Any) -> list[dict[str, Any]]:
 
 def create_batch(*, source_backup: Any = "", source_name: Any = "",
                  scan: bool = False) -> dict[str, Any]:
-    """只立批次、不放题：扫描版 PDF 在页面图渲染出来之前先要一个批次号。
+    """只立批次、不放题：PDF 在页面图渲染出来之前先要一个批次号。
 
-    老师的原卷一个文件一个批次；文本层不可用时批次里**一道占位题都不放**，
+    老师的原卷一个文件一个批次；PDF 一律当原卷大图，批次里**一道占位题都不放**，
     老师进批次只见左侧原卷页，自己框选切题。题目等切出来才落池。
     """
     backup_text = str(source_backup or "").strip()

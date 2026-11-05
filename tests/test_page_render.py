@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import os
+import struct
 import sys
 import tempfile
 import unittest
@@ -117,12 +118,88 @@ class TextFacsimileTest(PageRenderTestCase):
                 b'<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>',
                 "image/svg+xml")
 
-    def test_03_empty_text_never_invents_a_page(self) -> None:
-        """抽不出文字的 PDF 不编页面：没有源文本就交白卷。"""
-        entries, doc_pages, _warnings = page_render.build_pages(
-            "扫描件.pdf", "pdf", b"%PDF-1.4", "", [_doc("1")])
+    def test_03_pdf_renders_pages_instead_of_using_text(self) -> None:
+        """PDF 只出原卷大图：就算带着完美文本层，也不拿文字凑页面。"""
+        pages = [{"name": "pimg_" + "c" * 16 + ".png",
+                  "uri": "/static/pending/pimg_" + "c" * 16 + ".png", "page": 1}]
+        with mock.patch.object(page_render, "_pdf_pages",
+                               return_value=(pages, [])) as render, \
+                mock.patch.object(page_render, "_facsimile") as facsimile:
+            entries, doc_pages, warnings = page_render.build_pages(
+                "模拟1.pdf", "pdf", b"%PDF-1.7", "1．完美文本层\n2．第二题\n", [_doc("1")])
+        render.assert_called_once()
+        facsimile.assert_not_called()
+        self.assertEqual(entries, pages)
+        self.assertEqual(doc_pages, [1])
+        self.assertEqual(warnings, [])
+
+    def test_04_pdf_without_renderer_reports_empty(self) -> None:
+        """渲染器缺席就交白卷，绝不拿文本层顶替原卷页。"""
+        with mock.patch.object(page_render, "_pdf_pages",
+                               return_value=([], ["本机没有 PDF 页面渲染器（pdftoppm）"])):
+            entries, doc_pages, warnings = page_render.build_pages(
+                "扫描件.pdf", "pdf", b"%PDF-1.4", "1．一段文本\n", [_doc("1")])
         self.assertEqual(entries, [])
         self.assertEqual(doc_pages, [])
+        self.assertTrue(warnings)
+
+    def test_05_builtin_renderer_wins_without_touching_pdftoppm(self) -> None:
+        """分发包优先用内置 pypdfium2；能用就不去碰开发机上的 pdftoppm。"""
+        pages = [{"name": "pimg_" + "d" * 16 + ".png",
+                  "uri": "/static/pending/pimg_" + "d" * 16 + ".png", "page": 1}]
+        with mock.patch.object(page_render, "_pdf_pages_builtin",
+                               return_value=(pages, [])) as builtin, \
+                mock.patch.object(page_render, "_pdf_pages_pdftoppm") as pdftoppm:
+            entries, warnings = page_render._pdf_pages(b"%PDF-1.7")
+        builtin.assert_called_once()
+        pdftoppm.assert_not_called()
+        self.assertEqual(entries, pages)
+        self.assertEqual(warnings, [])
+
+    def test_06_builtin_failure_falls_back_to_pdftoppm(self) -> None:
+        """内置引擎打不开（缺库/坏文件）时，才降级到本机 pdftoppm，并保留原因。"""
+        pages = [{"name": "pimg_" + "e" * 16 + ".png",
+                  "uri": "/static/pending/pimg_" + "e" * 16 + ".png", "page": 1}]
+        with mock.patch.object(page_render, "_pdf_pages_builtin",
+                               return_value=([], ["内置 PDF 渲染器打不开这份文件"])), \
+                mock.patch.object(page_render, "_pdf_pages_pdftoppm",
+                                  return_value=(pages, [])) as pdftoppm:
+            entries, warnings = page_render._pdf_pages(b"%PDF-1.7")
+        pdftoppm.assert_called_once()
+        self.assertEqual(entries, pages)
+        self.assertEqual(warnings, ["内置 PDF 渲染器打不开这份文件"])
+
+    def test_07_both_renderers_failing_reports_empty(self) -> None:
+        """两条路都不通：空清单 + 两条原因，绝不静默。"""
+        with mock.patch.object(page_render, "_pdf_pages_builtin",
+                               return_value=([], ["内置引擎不可用"])), \
+                mock.patch.object(page_render, "_pdf_pages_pdftoppm",
+                                  return_value=([], ["本机也没有 pdftoppm 兜底"])):
+            entries, warnings = page_render._pdf_pages(b"%PDF-1.7")
+        self.assertEqual(entries, [])
+        self.assertEqual(warnings, ["内置引擎不可用", "本机也没有 pdftoppm 兜底"])
+
+    def test_08_builtin_renderer_outputs_a4_png(self) -> None:
+        """内置渲染器自己出的页图必须是可读 PNG，尺寸按 200 dpi 的 A4 算。"""
+        pdfium = getattr(page_render, "_pdfium")
+        if pdfium is None:
+            self.skipTest("本机没装 pypdfium2")
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "blank.pdf"
+            document = pdfium.PdfDocument.new()
+            try:
+                document.new_page(595, 842)
+                document.save(str(source))
+            finally:
+                document.close()
+            entries, warnings = page_render._pdf_pages_builtin(source.read_bytes())
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(warnings, [])
+        raw = self._asset_file(entries[0]).read_bytes()
+        self.assertTrue(raw.startswith(b"\x89PNG\r\n\x1a\n"))
+        width, height = struct.unpack(">II", raw[16:24])
+        self.assertAlmostEqual(width, 1653, delta=2)
+        self.assertAlmostEqual(height, 2339, delta=2)
 
 
 class ImagePageTest(PageRenderTestCase):

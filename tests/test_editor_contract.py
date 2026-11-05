@@ -1624,13 +1624,14 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn('hostCall("asset.read", { uri: picture.uri })', js)
         self.assertIn("window.createImageBitmap(blob)", js)
 
-    def test_04_the_magnifier_is_the_ported_one(self) -> None:
-        """几何与观感必须与被砍掉的那套一模一样，否则老师会觉得换了个人切图。"""
+    def test_04_the_magnifier_is_readable_not_mosaic(self) -> None:
+        """镜窗放大到 280px、源像素 1.5 倍取样并开平滑：看得见整行公式，不是马赛克。"""
         js = read("plugin.js")
-        self.assertIn("var CROP_RADIUS = 104;", js)
-        self.assertIn("var CROP_ZOOM = 8;", js)
+        self.assertIn("var CROP_RADIUS = 140;", js)
+        self.assertIn("var CROP_ZOOM = 1.5;", js)
         lens = fn_body(js, "drawLens")
-        self.assertIn("ctx.imageSmoothingEnabled = false;", lens, "放大镜必须关平滑看像素")
+        self.assertIn("ctx.imageSmoothingEnabled = true;", lens,
+                      "镜内必须开平滑，1.5 倍再关平滑就是马赛克")
         self.assertIn('ctx.strokeStyle = "rgba(255, 96, 96, 0.95)";', lens,
                       "镜心准星必须是那根红十字")
         self.assertIn("ctx.arc(mx, my, radius, 0, Math.PI * 2);", lens)

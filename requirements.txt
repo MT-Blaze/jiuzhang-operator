@@ -4,4 +4,7 @@
 # 详见 README「Python 版本与备份压缩」与 app/core/backup_codec.py。
 fastapi==0.141.1
 jsonschema==4.26.0
+# 内置 PDF 渲染：wheel 自带 PDFium，用户不必装 TeX Live / Poppler。
+# 许可 Apache-2.0 / BSD-3-Clause，符合铁律一白名单（AGPL 的 PyMuPDF 严禁引入）。
+pypdfium2==5.9.0
 uvicorn==0.52.1

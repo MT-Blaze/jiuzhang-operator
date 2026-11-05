@@ -84,7 +84,7 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
         "total": int(row["total"] or 0),
         "pending_count": live,
         "done": live == 0,
-        # 纯原卷批次：文本层不可用的 PDF 只落页面图、不落占位题。
+        # 原卷批次：PDF 只落页面图、不落占位题。
         # 卡片据此仍可点开（老师进去自己框选切题），排序也仍排在有未审的批次一起。
         "page_only": live == 0 and int(row["total"] or 0) == 0 and bool(_page_images(row)),
         # 纯图片卷：批次级永久标记（v10 起落库），左栏据此铺整卷页图而非逐题原图。

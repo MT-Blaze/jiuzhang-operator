@@ -6,13 +6,14 @@
   录题工作台的 exam-zh 源码（``\\begin{question}`` / ``\\begin{solution}``），
   以及普通文本（按题号切题，再拆选项、提答案）。
 - ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
-- ``.pdf``：先尽力抽文本层（本机没有 PDF 渲染器，抽不出就是抽不出）。
+- ``.pdf``：**一律当原卷大图**，逐页渲染成页图。文本层再完美也不在底层自动切题——
+  老师进批次后在左侧【框选切题】，所见即所得，框哪儿切哪儿。
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
-**纯图片 PDF 一道占位题都不放**：文本层不可用就只拆页图、立一个空批次；
+**PDF 一道占位题都不放**：只立空批次、挂原卷页图；
 老师进批次后在左侧【框选切题】，松开鼠标即生成一道新题。
 """
 
@@ -24,7 +25,6 @@ import io
 import json
 import re
 import zipfile
-import zlib
 from typing import Any
 
 from app.core import page_render, question_parser
@@ -33,7 +33,6 @@ __all__ = [
     "classify",
     "decode_text",
     "extract_docx_text",
-    "extract_pdf_text",
     "build_documents",
     "ingest_files",
     "stage_ingest",
@@ -180,98 +179,6 @@ def extract_docx_text(data: bytes) -> str:
 def _unescape_xml(text: str) -> str:
     return (text.replace("&lt;", "<").replace("&gt;", ">")
             .replace("&quot;", '"').replace("&apos;", "'").replace("&amp;", "&"))
-
-
-def _pdf_streams(data: bytes) -> list[bytes]:
-    """把 PDF 里的 stream 段落取出来并尽力解压。"""
-    streams: list[bytes] = []
-    for match in re.finditer(rb"stream\r?\n", data):
-        start = match.end()
-        end = data.find(b"endstream", start)
-        if end < 0:
-            continue
-        chunk = data[start:end]
-        try:
-            streams.append(zlib.decompressobj().decompress(chunk))
-        except zlib.error:
-            streams.append(chunk)
-    return streams
-
-
-def _decode_pdf_string(token: bytes) -> str:
-    """PDF 里的字符串：字面串 ``(...)`` 与十六进制串 ``<...>``。"""
-    if token.startswith(b"<"):
-        raw = re.sub(rb"[^0-9A-Fa-f]", b"", token[1:-1])
-        if len(raw) % 2:
-            raw += b"0"
-        data = bytes.fromhex(raw.decode("ascii"))
-        for encoding in ("utf-16-be", "utf-8"):
-            try:
-                return data.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        return data.decode("latin-1", errors="replace")
-    body = token[1:-1]
-    out = bytearray()
-    index = 0
-    escapes = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12}
-    while index < len(body):
-        char = body[index]
-        if char != 0x5C:  # 反斜杠
-            out.append(char)
-            index += 1
-            continue
-        index += 1
-        if index >= len(body):
-            break
-        nxt = body[index]
-        if nxt in escapes:
-            out.append(escapes[nxt])
-            index += 1
-        elif 0x30 <= nxt <= 0x37:  # 八进制
-            digits = bytearray()
-            while index < len(body) and len(digits) < 3 and 0x30 <= body[index] <= 0x37:
-                digits.append(body[index])
-                index += 1
-            out.append(int(digits.decode("ascii"), 8) & 0xFF)
-        elif nxt == 0x0A:  # 续行
-            index += 1
-        else:
-            out.append(nxt)
-            index += 1
-    return bytes(out).decode("latin-1", errors="replace")
-
-
-def extract_pdf_text(data: bytes) -> tuple[str, int]:
-    """PDF → (文本, 页数)。
-
-    只取文本层里的字符串算子（``Tj`` / ``TJ``）；本机没有 PDF 渲染器，
-    扫不出字就是扫不出——调用方据此决定是走 OCR 还是记「待识别」。
-    """
-    pages = len(re.findall(rb"/Type\s*/Page[^s]", data)) or 1
-    pieces: list[str] = []
-    for stream in _pdf_streams(data):
-        if b"Tj" not in stream and b"TJ" not in stream:
-            continue
-        for match in re.finditer(rb"\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]+>", stream):
-            token = match.group(0)
-            if not token.startswith(b"(") and not token.startswith(b"<"):
-                continue
-            try:
-                pieces.append(_decode_pdf_string(token))
-            except (ValueError, UnicodeDecodeError):
-                continue
-    text = "\n".join(piece for piece in pieces if piece.strip())
-    return text, pages
-
-
-def _text_usable(text: str) -> bool:
-    """抽出来的字够不够看：太短或大量乱码就当没抽到。"""
-    stripped = text.strip()
-    if len(stripped) < 20:
-        return False
-    printable = sum(1 for char in stripped if char.isprintable() or char in "\n\t")
-    return printable / max(1, len(stripped)) > 0.9
 
 
 # ---------------------------------------------------------------- 切题与组卷
@@ -530,10 +437,10 @@ def _placeholder(label: str) -> dict[str, Any]:
 
 
 async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str, bool]:
-    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否纯图片卷)。
+    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否原卷大图)。
 
-    最后一个 ``True`` 表示文本层不可用：这批**一道题都不落池**，
-    只把 PDF 拆成原卷页面图，老师进批次后在左侧自己【框选切题】。
+    最后一个 ``True`` 表示这份 PDF 只当原卷大图：**一道题都不落池**，
+    只把每页渲染成页面图，老师进批次后在左侧自己【框选切题】。
     """
     kind = classify(name)
     warnings: list[str] = []
@@ -546,15 +453,12 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
         documents, notes = build_documents(text)
         return documents, warnings + notes, kind, text, False
     if kind == "pdf":
-        text, _pages = extract_pdf_text(data)
-        if _text_usable(text):
-            documents, notes = build_documents(text)
-            return documents, warnings + notes, kind, text, False
+        # 定调：PDF 一律当原卷大图。文本层有没有字都不读、不自动切题——
+        # 页图由 page_render 逐页渲染，老师对着原卷框哪儿切哪儿。
         warnings.append(
-            f"{name}：未识别出文本（PDF 文本层不可用）。"
-            "已拆成原卷页面图，请进批次后在左侧【框选切题】逐题框选录入。"
+            f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
+            "在左侧【框选切题】逐题框选录入。"
         )
-        # 文本层不可用就只出页面图，一条占位题都不落池：老师直接对着原卷框选。
         return [], warnings, kind, "", True
     if kind == "image":
         mime = IMAGE_MIME.get(suffix_of(name), "image/png")
@@ -612,8 +516,8 @@ def stage_ingest(files: Any) -> dict[str, Any]:
     """第一段：分拣、解码，**按文件各立一个批次**。
 
     老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
-    有文本层的先放一条「正在解析」占位题；纯图片 PDF 连占位题都不放，只在后台
-    渲染出页图后挂到批次上，老师进批次自己【框选切题】。
+    Word / 文本类先放一条「正在解析」占位题；PDF 一律当原卷大图，连占位题都不放，
+    只在后台渲染出页图后挂到批次上，老师进批次自己【框选切题】。
 
     返回聚合账：``{"batch_id", "batch_ids", "batches", "saved_ids", "warnings",
     "ignored", "kinds", "jobs"}``；``jobs`` 按批次分组，``batch_id`` 是第一份的批次号。
@@ -675,33 +579,28 @@ def stage_ingest(files: Any) -> dict[str, Any]:
     }
 
 
-def _page_only_pdf(name: str, data: bytes) -> bool:
-    """是不是「只有图、没有字」的 PDF：是就只拆页图，不落任何占位题。"""
-    if classify(name) != "pdf":
-        return False
-    try:
-        text, _pages = extract_pdf_text(data)
-    except Exception:  # noqa: BLE001 — 抽不出文本就按纯图片卷走
-        return True
-    return not _text_usable(text)
+def _is_scan_source(name: str) -> bool:
+    """这份文件是不是按「原卷大图」走：PDF 一律是，Word/文本仍走自动切题。"""
+    return classify(name) == "pdf"
 
 
 def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     """一份文件立一个批次。
 
-    能抽出文本层的卷子先放一条「正在解析」的占位题，识别完就地替换；
-    纯图片 PDF 连占位题都不放——只立批次，页面图由后台渲染后挂到批次上。
+    Word / 文本类先放一条「正在解析」的占位题，识别完就地替换；
+    PDF 一律当原卷大图，连占位题都不放——只立批次，页图由后台渲染后挂到批次上。
     """
     from app.core import pending_bank
 
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
     backup = json.dumps([pending_bank.store_source_backup(name, data)],
                         ensure_ascii=False, separators=(",", ":"))
-    scan_only = _page_only_pdf(name, data)
+    scan_only = _is_scan_source(name)
     if scan_only:
         result = pending_bank.create_batch(source_backup=backup, source_name=name,
                                            scan=True)
-        warnings = [f"{name}：未识别出文本（PDF 文本层不可用）。已拆成原卷页面图，请进批次后在左侧【框选切题】逐题框选录入。"]
+        warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
+                    "在左侧【框选切题】逐题框选录入。"]
     else:
         result = pending_bank.save_draft(
             [{"question": _placeholder(f"（正在解析：{name}）")}],
@@ -726,8 +625,8 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
 async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
     """第二段：识别。
 
-    - 有文本层：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - 纯图片 PDF：只把渲染出来的页面图挂到批次上，**一条题都不落池**——
+    - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
+    - PDF：只把渲染出来的原卷页图挂到批次上，**一条题都不落池**——
       老师进批次后在左侧原卷上自己【框选切题】。
     """
     from app.core import pending_bank

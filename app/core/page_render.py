@@ -4,7 +4,10 @@
 不参与查重指纹，也不随题目入库。三种来源三条路：
 
 - 图片：原件本身就是页面图，复制进 ``pending_assets/``，不重采样；
-- PDF：本机有 ``pdftoppm`` 就按 150 dpi 逐页出 PNG；没有就退到文本层还原；
+- PDF：**一律**按 200 dpi 逐页渲染成 PNG 原卷大图，不区分有没有文本层，
+  也不拿文本层凑页面。渲染优先用随包分发的 ``pypdfium2``（Apache-2.0 /
+  BSD-3-Clause，wheel 自带 PDFium，用户不用装 TeX Live 或 Poppler）；
+  内置引擎缺席或打不开时，才降级到开发机上的 ``pdftoppm``；
 - Word / 纯文本：没有 Word/LibreOffice 也能出一页页 SVG 文本还原图
   （纯标准库，不引第三方渲染器，不联网）。
 
@@ -16,14 +19,21 @@ from __future__ import annotations
 import html
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import unicodedata
+import zlib
 from pathlib import Path
 from typing import Any
 
 from app.core.pending_assets import write_generated_asset
 from app.core.pending_db import PENDING_ASSET_URI_PREFIX
+
+try:  # 内置渲染器缺席只该降级，不该让整个模块导入失败。
+    import pypdfium2 as _pdfium
+except Exception:  # noqa: BLE001 - 缺库、坏 wheel 都按「没装上」处理
+    _pdfium = None
 
 # A4 @150dpi：1240 × 1754 像素。页面图只做对照，不冒充 300dpi 的成品切图。
 PAGE_WIDTH = 1240
@@ -36,6 +46,8 @@ FOOTER_Y = PAGE_HEIGHT - 44
 MAX_LINES = (PAGE_HEIGHT - MARGIN_TOP - 80) // LINE_HEIGHT
 MAX_PAGES = 40
 TEXT_WIDTH = PAGE_WIDTH - MARGIN_X * 2
+# 原卷页图按 200 dpi 出：A4 约 1654×2339，框选裁下来的公式足够清楚。
+PDF_RENDER_DPI = 200
 
 # XML 里禁用标签的检查在 pending_assets；这里只负责生成干净内容。
 _FONT_FAMILY = ("'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',"
@@ -58,16 +70,10 @@ def build_pages(name: str, kind: str, data: bytes, text: str,
         name_on_disk = write_generated_asset(data, mime)
         return [_entry(name_on_disk, 1)], [1] * count, warnings
     if kind == "pdf":
+        # PDF 只出原卷大图：文本层不参与，渲染不出来就交白卷，绝不拿字凑页面。
         entries, pdf_warnings = _pdf_pages(data)
         warnings.extend(pdf_warnings)
-        if entries:
-            return entries, _spread_pages(len(entries), count), warnings
-        if not text.strip():
-            return [], [], warnings
-        # 没有 pdftoppm 时退到文本层还原：至少有页可看，且明说这是文本还原。
-        warnings.append(f"{name}：本机没有 PDF 页面渲染器，按文本层还原页面图")
-        facsimile, doc_pages = _facsimile(name, text, documents)
-        return facsimile, doc_pages, warnings
+        return entries, _spread_pages(len(entries), count), warnings
     if not text.strip():
         return [], [], warnings
     facsimile, doc_pages = _facsimile(name, text, documents)
@@ -92,18 +98,105 @@ def _image_mime(raw: bytes) -> str:
 
 
 def _pdf_pages(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
-    """PDF 逐页出 PNG；本机没有 ``pdftoppm`` 就如实返回空清单。"""
+    """PDF 逐页出 PNG：先走随包分发的 pypdfium2，出不了图再找本机 ``pdftoppm``。
+
+    ``pdftoppm`` 只是开发机（TeX Live / Poppler）的兜底，不是产品依赖；
+    两条路都不通就返回空清单并如实说明，绝不拿文本层凑页面。
+    """
+    entries, warnings = _pdf_pages_builtin(data)
+    if entries:
+        return entries, warnings
+    fallback, fallback_warnings = _pdf_pages_pdftoppm(data)
+    warnings.extend(fallback_warnings)
+    if fallback:
+        return fallback, warnings
+    return [], warnings
+
+
+def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
+    """pypdfium2（PDFium）逐页渲染；不落地临时 PDF，直接吃内存字节。"""
+    if _pdfium is None:
+        return [], ["内置 PDF 渲染器（pypdfium2）没有装上，原卷页图渲染不出来"]
+    entries: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    try:
+        document = _pdfium.PdfDocument(data)
+    except Exception as error:  # noqa: BLE001 - 坏文件、加密、异种格式都交兜底
+        return [], [f"内置 PDF 渲染器打不开这份文件（{error}）"]
+    try:
+        total_pages = len(document)
+        for index in range(min(total_pages, MAX_PAGES)):
+            try:
+                page = document[index]
+                bitmap = page.render(scale=PDF_RENDER_DPI / 72.0)
+                try:
+                    png = _png_from_bitmap(bitmap)
+                finally:
+                    bitmap.close()
+                entries.append(_entry(write_generated_asset(png, "image/png"), index + 1))
+            except Exception:  # noqa: BLE001 - 单页失败事小，不拖垮整份卷子
+                warnings.append(f"第 {index + 1} 页渲染失败，已跳过")
+        if total_pages > MAX_PAGES:
+            warnings.append(f"只渲染前 {MAX_PAGES} 页（原件共 {total_pages} 页）")
+    finally:
+        document.close()
+    return entries, warnings
+
+
+def _png_from_bitmap(bitmap: Any) -> bytes:
+    """PDFium 位图 → 纯标准库 PNG 字节（RGB，无依赖 Pillow）。
+
+    200 dpi 的 A4 约 1654×2339：默认 3 通道 BGR；若遇到 4 通道就丢掉 alpha。
+    """
+    width = int(bitmap.width)
+    height = int(bitmap.height)
+    stride = int(bitmap.stride)
+    channels = int(bitmap.n_channels)
+    if channels not in (3, 4):
+        raise ValueError("不认识的 PDF 位图通道数：" + str(channels))
+    raw = bytes(bitmap.buffer)
+    pixel_bytes = channels
+    rows: list[bytes] = []
+    for y in range(height):
+        start = y * stride
+        line = raw[start:start + width * pixel_bytes]
+        rgb = bytearray(width * 3)
+        if bitmap.rev_byteorder:
+            rgb[0::3] = line[0::3]
+            rgb[1::3] = line[1::3]
+            rgb[2::3] = line[2::3]
+        else:
+            rgb[0::3] = line[2::3]
+            rgb[1::3] = line[1::3]
+            rgb[2::3] = line[0::3]
+        rows.append(b"\x00" + bytes(rgb))
+    return (_PNG_SIGNATURE
+            + _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + _png_chunk(b"IDAT", zlib.compress(b"".join(rows), 6))
+            + _png_chunk(b"IEND", b""))
+
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _png_chunk(tag: bytes, payload: bytes) -> bytes:
+    checksum = zlib.crc32(tag + payload) & 0xFFFFFFFF
+    return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", checksum)
+
+
+def _pdf_pages_pdftoppm(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
+    """开发机兜底：本机有 ``pdftoppm`` 就逐页出 PNG，没有就交白卷说明。"""
     exe = shutil.which("pdftoppm")
     if not exe:
-        return [], []
+        return [], ["本机也没有 pdftoppm 兜底，原卷页图渲染不出来"]
     entries: list[dict[str, Any]] = []
     try:
         with tempfile.TemporaryDirectory(prefix="jz-pdf-") as folder:
             source = Path(folder) / "source.pdf"
             source.write_bytes(data)
             prefix = Path(folder) / "page"
-            command = [exe, "-png", "-r", "150", "-f", "1", "-l", str(MAX_PAGES),
-                       str(source), str(prefix)]
+            command = [exe, "-png", "-r", str(PDF_RENDER_DPI), "-f", "1",
+                       "-l", str(MAX_PAGES), str(source), str(prefix)]
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             subprocess.run(command, check=False, timeout=180, creationflags=flags,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

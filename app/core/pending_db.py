@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS batches (
     assets_json   TEXT NOT NULL DEFAULT '[]',
     -- 原卷页面图（批次层，不挂题身）：[{"name","uri","page"}]。
     page_assets_json TEXT NOT NULL DEFAULT '[]',
-    -- 纯图片卷：1 表示这一批没有文本层，左栏整卷铺页图、老师自己框选切题。
+    -- 原卷批次：1 表示这一批按原卷大图导入，左栏整卷铺页图、老师自己框选切题。
     -- 判定要跨刷新与重启都留着，不能靠「当前有没有题」来猜。
     scan_batch    INTEGER NOT NULL DEFAULT 0
 );

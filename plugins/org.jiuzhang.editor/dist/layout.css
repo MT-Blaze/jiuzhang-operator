@@ -333,17 +333,19 @@ body {
   color: var(--ink-soft);
 }
 
-/* 原卷整页图（PDF/Word/文本渲染出来的那一页）：只限高，不改左栏原有间距。
-   一张 A4 页要是按原比例铺满，会把整行三栏一起撑高，切图台与源码都跟着下坠。 */
+/* 原卷整页图：按栏宽铺满、高度自然展开。
+   不再限高、不再 object-fit: contain——限高会把整页缩成一条横带，
+   左右留出大片空白，老师根本看不清细节。 */
 .ed-img-frame.ed-img-page img {
   width: 100%;
   height: auto;
-  max-height: 42vh;
-  object-fit: contain;
-  object-position: top center;
+  display: block;
+  max-height: none;
+  object-fit: fill;
+  object-position: top left;
 }
 
-/* 纯图片卷的整卷阅读器：页与页之间留一道清楚的缝，页面本身给足高度。 */
+/* 纯图片卷的整卷阅读器：页与页之间留一道清楚的缝。 */
 .ed-img-cell.ed-page-cell {
   padding: 12px 10px 16px;
   border-bottom: 6px solid var(--line);
@@ -351,10 +353,6 @@ body {
 
 .ed-img-cell.ed-page-cell .ed-img-frame {
   cursor: crosshair;
-}
-
-#edImageBody.is-scan-gallery .ed-img-frame.ed-img-page img {
-  max-height: 72vh;
 }
 
 .ed-column-empty {

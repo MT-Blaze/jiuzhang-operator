@@ -174,14 +174,18 @@
 
 .ed-img-frame {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
   max-width: 100%;
 }
 
+/* 原图必须撑满左栏：width:100% + height:auto，绝不缩在中间留白。
+   裁切图与原卷页同一条规矩——老师看不清细节，框选就没有意义。 */
 .ed-img-frame img {
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: auto;
+  max-width: 100%;
   border: 1px solid var(--line-strong);
   background: #fff;
 }

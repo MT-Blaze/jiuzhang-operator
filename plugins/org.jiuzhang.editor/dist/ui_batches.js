@@ -551,7 +551,7 @@
       var rows = (result && Array.isArray(result.items)) ? result.items : [];
       var pages = (result && Array.isArray(result.page_images)) ? result.page_images : [];
       state.batchId = id;
-      // 纯图片卷（文本层不可用）：左栏整卷铺页图，老师像翻 PDF 一样往下滚着框选。
+      // PDF 原卷批次：左栏整卷铺页图，老师像翻 PDF 一样往下滚着框选。
       state.pageImages = pages;
       state.scanBatch = Boolean(result && (result.scan_batch || result.page_only))
         || (!rows.length && pages.length > 0);
@@ -578,9 +578,9 @@
       renderAll();
       publishSelection();
       noteActivity();
-      // 纯图片卷：左栏整卷页图就是老师的唯一入口，必须当场指路。
+      // PDF 原卷批次：左栏整卷页图就是老师的唯一入口，必须当场指路。
       if (state.scanBatch) {
-        dock("这一批没有文本层：左侧已铺开 " + pages.length
+        dock("这一批按原卷大图导入：左侧已铺开 " + pages.length
           + " 页原卷，直接【框选切题】——松开鼠标就生成一道新题。");
       }
       // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。

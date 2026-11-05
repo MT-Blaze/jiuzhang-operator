@@ -1,10 +1,10 @@
-"""扫描版 PDF（无可用文本层）的入库判据。
+"""PDF 一律当原卷大图的入库判据。
 
 钉住四条：
-- 文本层抽不出时，**一条占位题都不落池**——只把 PDF 拆成原卷页面图；
+- 不管有没有文本层，PDF **一条占位题都不落池**——只渲染原卷页图；
 - 页面图挂到批次上，老师进批次后在左侧自己【框选切题】；
 - 页数按**实际渲染出的页面图**算，不认文本解析猜的数；
-- 渲染器缺席时同样不造假题，批次空着等老师处理。
+- 渲染器缺席时同样不造假题，批次空着等老师处理；Word 仍走自动切题。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_ingest_scan``
 """
@@ -32,36 +32,35 @@ def _pages(count: int) -> list[dict[str, Any]]:
     ]
 
 
-class ScanModeDetectionTest(unittest.IsolatedAsyncioTestCase):
-    async def test_pdf_without_text_layer_returns_no_documents(self) -> None:
-        with mock.patch.object(ingest, "extract_pdf_text", return_value=("乱码", 1)), \
-                mock.patch.object(ingest, "_text_usable", return_value=False):
-            documents, warnings, kind, text, scan = await ingest._items_from_file(
-                "模拟1.pdf", b"%PDF-1.7")
+class PdfAlwaysPageSourceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_native_text_pdf_still_returns_pages_only(self) -> None:
+        """文本层再完美的 PDF 也不在底层自动切题：只交页图，由老师框选。"""
+        documents, warnings, kind, text, scan = await ingest._items_from_file(
+            "模拟1.pdf", b"%PDF-1.7")
         self.assertTrue(scan)
         self.assertEqual(kind, "pdf")
         self.assertEqual(text, "")
         self.assertEqual(documents, [])
         self.assertTrue(any("框选切题" in warning for warning in warnings))
 
-    async def test_usable_text_does_not_enter_scan_mode(self) -> None:
-        with mock.patch.object(ingest, "extract_pdf_text",
-                               return_value=("1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。", 1)):
-            documents, _warnings, _kind, _text, scan = await ingest._items_from_file(
-                "文本层.pdf", b"%PDF-1.7")
+    async def test_word_keeps_auto_split(self) -> None:
+        with mock.patch.object(ingest, "extract_docx_text",
+                               return_value="1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。"):
+            documents, _warnings, kind, _text, scan = await ingest._items_from_file(
+                "闭环样卷.docx", b"PK")
         self.assertFalse(scan)
-        self.assertGreaterEqual(len(documents), 1)
+        self.assertEqual(kind, "docx")
+        self.assertGreaterEqual(len(documents), 2)
 
 
-class StagePageOnlyTest(unittest.TestCase):
-    """纯图片 PDF 在立批次时就不该有占位题。"""
+class StagePdfBatchTest(unittest.TestCase):
+    """PDF 在立批次时就不该有占位题；Word 仍先放占位题。"""
 
-    def test_page_only_pdf_creates_batch_without_questions(self) -> None:
+    def test_text_pdf_creates_batch_without_questions(self) -> None:
         created = {"batch_id": "B-001", "batch": {"batch_id": "B-001"},
                    "saved_ids": [], "dedupe_queued": False}
-        with mock.patch.object(ingest, "_page_only_pdf", return_value=True), \
-                mock.patch.object(pending_bank, "store_source_backup",
-                                  return_value="pending_backup/x.pdf"), \
+        with mock.patch.object(pending_bank, "store_source_backup",
+                               return_value="pending_backup/x.pdf"), \
                 mock.patch.object(pending_bank, "create_batch", return_value=created) as create, \
                 mock.patch.object(pending_bank, "save_draft") as save:
             result = ingest._stage_one_batch("模拟1.pdf", b"%PDF")
@@ -74,21 +73,20 @@ class StagePageOnlyTest(unittest.TestCase):
         self.assertEqual(result["jobs"][0]["pending_id"], "")
         self.assertTrue(result["jobs"][0]["page_only"])
 
-    def test_text_pdf_still_uses_parsing_placeholder(self) -> None:
+    def test_word_still_uses_parsing_placeholder(self) -> None:
         saved = {"batch_id": "B-002", "batch": {"batch_id": "B-002"},
                  "saved_ids": ["p_placeholder01"], "dedupe_queued": False}
-        with mock.patch.object(ingest, "_page_only_pdf", return_value=False), \
-                mock.patch.object(pending_bank, "store_source_backup",
-                                  return_value="pending_backup/y.pdf"), \
+        with mock.patch.object(pending_bank, "store_source_backup",
+                               return_value="pending_backup/y.docx"), \
                 mock.patch.object(pending_bank, "save_draft", return_value=saved) as save:
-            result = ingest._stage_one_batch("文本层.pdf", b"%PDF")
+            result = ingest._stage_one_batch("闭环样卷.docx", b"PK")
         save.assert_called_once()
         self.assertEqual(result["jobs"][0]["pending_id"], "p_placeholder01")
         self.assertFalse(result["jobs"][0]["page_only"])
 
 
 class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
-    """页数只认渲染出来的页面图；扫描卷只挂页图，不落题。"""
+    """页数只认渲染出来的页面图；PDF 只挂页图，不落题。"""
 
     async def test_page_only_job_attaches_pages_and_saves_nothing(self) -> None:
         pages = _pages(2)

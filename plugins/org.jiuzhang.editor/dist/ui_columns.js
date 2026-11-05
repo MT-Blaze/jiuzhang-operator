@@ -45,7 +45,6 @@
     var sourceBodyEl = deps.dom.sourceBodyEl;
 
   var renderTimer = 0;
-
   var scrollLock = false;
   var scrollRestore = false;
 
@@ -395,7 +394,10 @@
     var box = el("div", "ed-img-box");
     box.setAttribute("data-box", "stem");
     frame.appendChild(box);
-    frame.addEventListener("click", function () { openPageCrop(page, index, cell); });
+    // 切图台自己的画布/动作条会冒泡到这里：放行，别一松鼠标就重开一次。
+    frame.addEventListener("click", function (event) {
+      if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint")) openPageCrop(page, index, cell);
+    });
     cell.appendChild(frame);
     var tools = el("div", "ed-img-tools");
     var cropBtn = el("button", "ed-img-crop-btn", "框选切题");
