@@ -426,6 +426,33 @@
   background: var(--card);
 }
 
+/* 每道题最上方的只读元数据条：浅灰底、小号字，只提供一眼可见的题号/题型/分值/难度。
+   整块可下架：删掉这段与本文件的 .ed-q-meta 规则即可回到原样。 */
+.ed-q-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 9px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: #f1f0ec;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.ed-q-meta-item {
+  white-space: nowrap;
+}
+
+.ed-q-meta-item + .ed-q-meta-item::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--line-strong);
+}
+
 .ed-q-stem {
   margin: 0 0 8px;
   font-size: 15px;

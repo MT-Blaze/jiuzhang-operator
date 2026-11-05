@@ -328,6 +328,13 @@
     updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },
   });
 
+  // 渲染栏顶部只读元数据条：独立一小块，整块删掉不影响渲染正文。
+  var uiMetaStrip = window.JzoEditorMetaStrip.create({
+    el: el,
+    typeLabels: coreState.TYPE_LABELS,
+    difficultyLabels: coreState.DIFFICULTY_LABELS,
+  });
+
   var uiColumns = window.JzoEditorColumns.create({
     dom: dom,
     // 循环引用：切图台归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
@@ -355,6 +362,7 @@
     // 琥珀灯：题卡上的 data-amber 由这一处画，判定口径全在 uiAmber。
     amberReasons: uiAmber.amberReasons,
     metaFor: metaFor,
+    metaStrip: uiMetaStrip,
     toast: toast,
     coreState: coreState,
   });
@@ -485,6 +493,8 @@
     queueMetaSave: queueMetaSave,
     // 表单一有动静就重算辅助栏那圈琥珀灯（判据 5.2：左侧题卡与右侧辅助栏边缘同时亮）。
     repaintPanel: uiAmber.repaintPanel,
+    // 分值/难度一改，渲染栏题卡顶部的只读条同步换字（不重排整行、不抢输入焦点）。
+    paintMetaStrip: uiColumns.refreshMetaStrip,
     renderAi: renderAi,
     // 循环引用：renderBatchMeta 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
     renderBatchMeta: function () { return uiStdName.renderBatchMeta.apply(uiStdName, arguments); },

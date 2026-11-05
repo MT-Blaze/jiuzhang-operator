@@ -276,6 +276,12 @@ def text_to_latex(text: Any) -> str:
 
 _LEADING_NUMBER = re.compile(r"^\s*\d{1,2}\s*[.．、]\s*")
 _SECTION_HEAD = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
+# 题干自带作答括号时别再补：全角/半角、括号中间有没有空格都算。
+_EMPTY_BRACKET = re.compile(r"[（(][ \t\u3000]*[）)]")
+# 旧路径可能已经写出连体空括号（「（ ）（  ）」）：并成一个，只留一处作答位。
+_DUP_EMPTY_BRACKET = re.compile(
+    r"([（(][ \t\u3000]*[）)])(?:[ \t]*[（(][ \t\u3000]*[）)])+"
+)
 _ANSWER = re.compile(r"(?:【\s*答\s*案\s*】|(?:^|\n)\s*答\s*案\s*[：:])\s*([^\n【]*)")
 _SOLUTION = re.compile(
     r"【\s*(?:解析|分析|详解|点睛|点评)\s*】|(?:^|\n)\s*(?:解析|分析|详解)\s*[：:]"
@@ -284,6 +290,13 @@ _SOLUTION = re.compile(
 
 def _strip_number(text: str) -> str:
     return _LEADING_NUMBER.sub("", text, count=1)
+
+
+def _dedupe_empty_brackets(text: str) -> str:
+    """原卷题干自带作答括号时，连体空括号只留一个，不再追加第二个。"""
+    if not _EMPTY_BRACKET.search(text):
+        return text
+    return _DUP_EMPTY_BRACKET.sub(r"\1", text)
 
 
 def _cut_section_tail(text: str) -> str:
@@ -345,7 +358,7 @@ def parse_scan_text(raw: Any, label: str = "") -> dict[str, Any]:
     else:
         stem_raw = text
         options_raw = []
-    stem = text_to_latex(stem_raw).strip()
+    stem = text_to_latex(_dedupe_empty_brackets(stem_raw)).strip()
     if not stem:
         return _empty()
     options = [

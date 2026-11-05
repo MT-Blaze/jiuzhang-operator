@@ -32,6 +32,7 @@
     var setFormatButtons = deps.setFormatButtons;
     var amberReasons = deps.amberReasons;
     var metaFor = deps.metaFor;
+    var metaStrip = deps.metaStrip;
     var state = coreState.state;
     var toast = deps.toast;
     var colsEl = deps.dom.colsEl;
@@ -305,10 +306,13 @@
     block.setAttribute("data-type", parsed.type);
     block.setAttribute("data-errors", String(parsed.errors.length));
     item.errorCount = parsed.errors.length;
+    var meta = metaFor ? metaFor(item, {}) : {};
+    // 只读元数据条（题号 / 题型 / 分值 / 难度）：永远排在本行最上方。
+    if (metaStrip) block.appendChild(metaStrip.render(item, index, parsed, meta));
     // 琥珀灯（军令 #32 · 判据 5.2）：这一题还有未清项就在卡片边缘点灯。
     // 判定口径只有一份，在 ui_amber.js（与底座入库前的点名同一口径），这里只照着画。
-    if (amberReasons && metaFor) {
-      var amber = amberReasons(parsed, metaFor(item, {}));
+    if (amberReasons) {
+      var amber = amberReasons(parsed, meta);
       if (amber.length) {
         block.setAttribute("data-amber", "on");
         block.setAttribute("data-amber-reasons", amber.join("；"));
@@ -363,6 +367,18 @@
     }
     if (parsed.stray) block.appendChild(el("pre", "ed-raw", parsed.stray));
     return block;
+  }
+
+  /** 辅助栏改了分值/难度：只换这一题顶部的元数据条，不重排整行、不抢表单焦点。 */
+  function refreshMetaStrip(index, meta) {
+    if (!metaStrip) return;
+    var item = state.items[index];
+    var holder = renderBodyEl && renderBodyEl.children[index];
+    if (!item || !holder) return;
+    var next = metaStrip.render(item, index, parsedOf(item), meta || (metaFor ? metaFor(item, {}) : {}));
+    var old = holder.querySelector(".ed-q-meta");
+    if (old) holder.replaceChild(next, old);
+    else holder.insertBefore(next, holder.firstChild);
   }
 
   // ---------- 纯图片卷：左栏整卷页图（像 PDF 阅读器一样往下滚） ----------
@@ -802,6 +818,7 @@
       onBoxInput: onBoxInput,
       onSourceInput: onSourceInput,
       parsedOf: parsedOf,
+      refreshMetaStrip: refreshMetaStrip,
       refreshRow: refreshRow,
       renderAll: renderAll,
       renderBoxedCell: renderBoxedCell,

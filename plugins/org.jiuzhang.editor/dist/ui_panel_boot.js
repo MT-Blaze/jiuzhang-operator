@@ -9,6 +9,7 @@
 
   function create(deps) {
     var coreState = deps.coreState;
+    var DIFFICULTY_LABELS = coreState.DIFFICULTY_LABELS;
     var DIFFICULTY_VALUES = coreState.DIFFICULTY_VALUES;
     var DRAFT_WORKLIST_KEY = coreState.DRAFT_WORKLIST_KEY;
     var PANEL_DRAFT_RETRY_MS = coreState.PANEL_DRAFT_RETRY_MS;
@@ -116,9 +117,7 @@
     if (!panelRoot) return;
     panelRoot.hidden = false;
     fillSelect(panelTypeEl, TYPE_VALUES, TYPE_LABELS);
-    fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, {
-      L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴"
-    });
+    fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, DIFFICULTY_LABELS);
     bindFormChanges();
     renderTags();
     renderMounted();

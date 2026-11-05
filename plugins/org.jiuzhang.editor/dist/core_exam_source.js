@@ -97,11 +97,17 @@
     return result;
   }
 
+  // 原卷题干常自带作答括号（全角/半角、中间有空格或没有都算）。
+  // 只要题干里已经有一个空括号，就绝不再追加——否则出现「（ ）（  ）」。
+  var EMPTY_BRACKET = /[（(][ \t\u3000]*[）)]/;
+  // 旧版追加逻辑留下的连体空括号：并成一个，多出的那截直接收掉。
+  var DUP_BRACKET = /([（(][ \t\u3000]*[）)])(?:[ \t]*[（(][ \t\u3000]*[）)])+/g;
+
   function ensureChoiceBracket(stem, multi) {
     var text = String(stem == null ? "" : stem).replace(/\s+$/, "");
+    text = text.replace(DUP_BRACKET, "$1");
     if (multi && text.indexOf("（多选）") < 0) text += "（多选）";
-    var tail = text.slice(-6);
-    if (tail.indexOf("（  ）") < 0 && tail.indexOf("(  )") < 0) text += "（  ）";
+    if (!EMPTY_BRACKET.test(text)) text += "（  ）";
     return text;
   }
 

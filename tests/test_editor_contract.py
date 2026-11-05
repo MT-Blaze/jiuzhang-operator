@@ -521,7 +521,11 @@ class EditorSourceContractTest(unittest.TestCase):
                       "题干环境与 solution 之间空一行")
         self.assertIn(r'return out + "\\begin{solution}', js)
         self.assertIn(r'"\n\\end{solution}\n"', js)
-        self.assertIn('text += "（  ）"', js, "选择题题干末尾要补括号")
+        # 原卷自带作答括号时不许再补：只看「题干里有没有空括号」，不猜缩进/全半角。
+        self.assertIn('if (!EMPTY_BRACKET.test(text)) text += "（  ）"', js,
+                      "选择题题干只有在没有空括号时才补括号")
+        self.assertIn("text = text.replace(DUP_BRACKET, \"$1\")", js,
+                      "旧路径留下的连体空括号要并成一个")
         self.assertIn('var head = "答案：" + answerLetters(question)', js)
 
     def test_03_multi_choice_hint_and_fillin(self) -> None:
@@ -571,6 +575,43 @@ class EditorSourceContractTest(unittest.TestCase):
     def test_07_no_lookbehind_regex(self) -> None:
         """AGENTS §6：后行断言会让旧浏览器整份脚本报语法错。"""
         self.assertNotIn("(?<", read("plugin.js"))
+
+
+class EditorMetaStripContractTest(unittest.TestCase):
+    """渲染栏每道题顶部的只读元数据条：题号 / 题型 / 分值 / 难度。"""
+
+    def test_01_strip_is_read_only_and_carries_four_facts(self) -> None:
+        html = read("index.html")
+        self.assertIn('<script src="ui_meta_strip.js"></script>', html)
+        js = read("plugin.js")
+        self.assertIn("metaStrip: uiMetaStrip", js, "只读条没接进三栏渲染模块")
+        block = fn_body(js, "renderQuestionBlock")
+        self.assertIn("block.appendChild(metaStrip.render(item, index, parsed, meta))", block,
+                      "元数据条必须排在每一题最上方")
+        strip = read("ui_meta_strip.js")
+        self.assertNotIn("addEventListener", strip, "只读卡片不许挂任何点击/键盘事件")
+        self.assertIn('"第" + (index + 1) + "题"', strip)
+        self.assertIn("TYPE_LABELS[type]", strip)
+        self.assertIn("scoreText(data.score)", strip)
+        self.assertIn("DIFFICULTY_LABELS[difficulty]", strip)
+        self.assertIn('strip.setAttribute("role", "note")', strip)
+
+    def test_02_strip_stays_visually_subordinate(self) -> None:
+        css = read("plugin.css")
+        strip = css_rule(css, ".ed-q-meta")
+        self.assertLessEqual(_px(strip, "font-size"), 12, "元数据条字号必须小于正文")
+        self.assertIn("var(--ink-soft)", strip, "元数据条要用弱化字色")
+        self.assertIn("background: #f1f0ec", strip, "元数据条要浅灰底")
+        self.assertLess(_px(strip, "font-size"), _px(css_rule(css, ".ed-q-stem"), "font-size"))
+        self.assertIn(".ed-q-meta-item + .ed-q-meta-item::before", css,
+                      "多项之间要有轻分隔")
+
+    def test_03_meta_edits_repaint_the_strip(self) -> None:
+        js = read("plugin.js")
+        self.assertIn("paintMetaStrip: uiColumns.refreshMetaStrip", js)
+        panel = read("ui_panel.js")
+        self.assertIn("paintMetaStrip(Number(panel.selection.index) || 0)", panel,
+                      "辅助栏改分值/难度后只读条要跟着换字")
 
 
 class EditorHostCallTest(unittest.TestCase):

@@ -43,6 +43,7 @@
     fill_blank: "填空题", solution: "解答题"
   };
   var DIFFICULTY_VALUES = ["L1", "L2", "L3", "L4"];
+  var DIFFICULTY_LABELS = { L1: "L1 基础", L2: "L2 中档", L3: "L3 难", L4: "L4 压轴" };
   var FORMATS = { latex: true, boxed: true };
   var AI_STATE_LABELS = {
     idle: "未发起", sending: "等模型回话", cleaning: "清洗中",
@@ -150,6 +151,7 @@
       DEFAULT_IMAGE_RATIO: DEFAULT_IMAGE_RATIO,
       DEFAULT_SOURCE_RATIO: DEFAULT_SOURCE_RATIO,
       DEV_NS: DEV_NS,
+      DIFFICULTY_LABELS: DIFFICULTY_LABELS,
       DIFFICULTY_VALUES: DIFFICULTY_VALUES,
       DRAFT_LAYOUT_KEY: DRAFT_LAYOUT_KEY,
       DRAFT_META_KEY: DRAFT_META_KEY,

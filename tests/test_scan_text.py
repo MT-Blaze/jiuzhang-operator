@@ -90,6 +90,20 @@ class ParseScanTextTest(unittest.TestCase):
         self.assertEqual(parsed["options"], [])
         self.assertEqual(parsed["answer"], "")
 
+    def test_05_existing_answer_bracket_stays_single(self) -> None:
+        """原卷题干自带作答括号（全角/半角）时，题干里只能留一个空括号。"""
+        for stem in ("下列各数中最大的是（ ）", "下列各数中最大的是()",
+                     "下列各数中最大的是（　）"):
+            parsed = scan_text.parse_scan_text(stem + "\nA. 1\nB. 2")
+            self.assertEqual(parsed["stem"].count("（") + parsed["stem"].count("("), 1,
+                             stem)
+
+    def test_06_duplicated_answer_brackets_are_collapsed(self) -> None:
+        """旧路径写出的「（ ）（  ）」并成一个，不再多留一截。"""
+        parsed = scan_text.parse_scan_text(
+            "求函数的最大值（ ）（  ）\nA. 1\nB. 2")
+        self.assertEqual(parsed["stem"], "求函数的最大值（ ）")
+
 
 if __name__ == "__main__":
     unittest.main()
