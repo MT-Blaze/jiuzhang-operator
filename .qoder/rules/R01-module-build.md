@@ -22,7 +22,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 1. **[L0] 底座版本唯一源**：`app/__init__.py:8` `__version__ = "1.1.0"`；消费点 `app/main.py:150`、`app/core/plugin_update.py:143-145`；`/healthz` 回同一个值（`app/api/health.py:15-21`，含 `boot_id`）。前端与文档只许盖章，不许写死（`tests/test_version_consistency.py:64-81`）。
 2. **[L0] 插件版本三处取更严**：`plugin.json` 顶层 `version`（第 5 行）+ `min_host_version`（第 11 行）+ `engine.host_version`（现仅 `plugins/org.jiuzhang.dashboard/plugin.json:30`），拦截逻辑 `app/core/plugin_update.py:158-161,319-322,341`。
 3. **[L1] 探针与测试禁止写死插件版本**（`tests/test_version_consistency.py` 会抓），插件升级不得让存量测试变红。
-4. **[L0] 两份 plugins.json 必须逐字节全等**：主仓 `plugins.json` 与兄弟仓库 `E:/jiuzhang-plugins/plugins.json`，写入方 `tools/sync_plugin_index.py:17-18,60-61`，rc=0 仅当全等（`:68`）。改索引必跑 sync，不许手改其中一份（口径出处 `docs/PROJECT_MEMORY.md:290,294`）。
+4. **[L0] 两份 plugins.json 必须逐字节全等**：主仓 `plugins.json` 与兄弟仓库 `E:/jiuzhang/jiuzhang-plugins/plugins.json`，写入方 `tools/sync_plugin_index.py:18-19,60-61`，rc=0 仅当全等（`:68`）。改索引必跑 sync，不许手改其中一份（口径出处 `docs/PROJECT_MEMORY.md:290,294`）。
 
 ## 3. 构建与发布命令（L1）
 
@@ -43,7 +43,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 2. **[L0] `python -m unittest discover` 是假通过不是报错**：实测 `Ran 0 tests in 0.000s / NO TESTS RAN`（因 `tests/` 无 `__init__.py`）。旧文档写"会直接报错"口径不准，已修正——**任何脚本或 CI 用 discover 都会得到绿色的零用例**。
 3. **[L1] `.bat` 必须纯 ASCII + 全 CRLF**：中文会被 cp936 误解崩掉（`docs/PROJECT_MEMORY.md:1506-1510`），换行由 `.gitattributes:1-2` 钉死（`* text=auto eol=lf` + `*.bat text eol=crlf`），`tests/test_version_consistency.py:109-110,136-139` 会抓。
 4. **[L1] Git Bash 下 `find.exe` 抢占 PATH 会让整篇批处理终止**（`docs/PROJECT_MEMORY.md:1501`）；无控制台时 `timeout`/`echo` 不可靠（`:1503-1505`）。
-5. **[L1] `tools/verify_bank_empty.py:8` 写死 `ROOT = Path(r"E:\jiuzhang-operator")`**，换机/换盘符即崩；`:10` 还会写 `data/bank_v063_empty_check.md`（属写盘，非只读）。
+5. **[L1] `tools/verify_bank_empty.py:8` 的 `ROOT` 已改为按 `__file__` 推导**（2026-11-05 仓库迁入 `E:\jiuzhang\` 时修掉旧盘符写死）；`:10` 仍会写 `data/bank_v063_empty_check.md`（属写盘，非只读）。
 6. **[L1] 5 支探针手依 8765/8777**（`tools/split_probe.py:4-6`、`fold_probe.py:19` 等），其余 21 支自起隔离 uvicorn；生产端口只来自 `JZO_PORT`（默认 8000，`app/core/config.py:93`）。
 7. **[L1] 禁止 `taskkill /F /IM python.exe`**（`docs/PROJECT_MEMORY.md:1483`）；`JZO_PLUGINS_DIR` 仅进程启动前生效（`:1487`）。
 8. **无 CI 先例**：`.github/` 不存在，仓内零 `*.yml`。门禁只在本机跑，别假设有流水线兜底。

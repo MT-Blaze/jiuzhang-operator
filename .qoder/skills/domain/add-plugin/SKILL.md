@@ -23,7 +23,7 @@ description: 在九章算子新增一支官方插件（沙箱 iframe UI 插件�
    - 命令面在 `contributes.commands` 声明，派发由宿主 `static/js/stage.js:366-372` → `stage_command.js:305`
 5. **接宿主白名单**（若需要新请求族）：改 `static/js/stage.js` 白名单 + 新建/扩展 `static/js/stage_relay_*.js`，错误码走宿主大写蛇形（见 R02 §2）。这属于底座改动，必须单独在 [PLAN] 里说明理由。
 6. **进官方清单**：把目录名加进 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS`（**漏这一步 = 索引永远不含它**，先例：数据看板作为第七支就踩过）。
-7. **同步索引**：`.venv/Scripts/python.exe tools/sync_plugin_index.py`（写主仓与 `E:/jiuzhang-plugins` 两份，rc=0 才代表全等）。
+7. **同步索引**：`.venv/Scripts/python.exe tools/sync_plugin_index.py`（写主仓与 `E:/jiuzhang/jiuzhang-plugins` 两份，rc=0 才代表全等）。
 8. **补测试**：`tests/test_<name>_plugin.py`，按 R04 只用 unittest、`.venv` 解释器；起服务的用例设 `JZO_RESTART_DISABLED=1`。
 9. **打包**：`.venv/Scripts/python.exe tools/build_plugin.py plugins/org.jiuzhang.<name>`（内部调 `validate_plugin`，不过校验就不产出）。
 

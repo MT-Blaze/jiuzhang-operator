@@ -22,7 +22,7 @@ description: 九章算子的发版动线：版本号单源、发版前大扫除 
 2. **插件包**：`.venv/Scripts/python.exe tools/build_plugin.py --all`（逐目录改 `plugins/<id>`；内部先 `validate_plugin`，不过校验就不产出；排除 `.db/.zip/.pyc/dev/`，拒符号链接，`build_plugin.py:36-44,67-68,81,101`）→ 产物 `dist/plugins/<id>.zip`，顶层目录名 == `plugin.json` 的 `id`。
 3. **底座包**：`build_release.bat`（robocopy 白/黑名单排除 `.venv/data/.git/dist/*.scratch*`/demo-bank/core-bank/v063*.db/bank.db，`:51-53`；把冻结空基线 `v063.db` 复制成空 `bank.db`，`:67`，缺则 rc=1）→ `dist/jiuzhang-operator-v<VER>.zip`。
    - **[L0] 包内绝不能有 `data/`、不能有真实题库**：包内 `bank.db` 是 0 题空基线；456 题只留本机（ADR-003 纯净发版）。
-4. **索引同步**：`.venv/Scripts/python.exe tools/sync_plugin_index.py`（需兄弟仓库 `E:/jiuzhang-plugins` 存在，`:19`）→ rc=0 才代表两份逐字节全等。
+4. **索引同步**：`.venv/Scripts/python.exe tools/sync_plugin_index.py`（需兄弟仓库 `E:/jiuzhang/jiuzhang-plugins` 存在，`:19`）→ rc=0 才代表两份逐字节全等。
 5. **开发套件**（按需）：`tools/build_dev_kit.py` 出 `dist/jiuzhang-dev-kit.zip`，自带禁名正则与密钥形态扫描，违令删包并 rc=1（`:67-72,100-103,111-112`）。
 6. **包结构自检**（回传单第 2 项）：顶层目录名 == id、无 `backend` 字段、有 Apache-2.0 `LICENSE` 全文、`min_host_version`/`engine.host_version` 与当前底座版本关系写明。
 7. **三查**（回传单第 3 项）：`bash scripts/check-plugin-boundary.sh` 三项 0 命中 + 请求 id 全部合规。

@@ -13,16 +13,13 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SYNC = ROOT / "tools" / "sync_plugin_index.py"
-PLUGIN_DIRS_RE = re.compile(r"PLUGIN_DIRS\s*=\s*\((.*?)\)", re.S)
-INDEX_REPO_RE = re.compile(r"INDEX_REPO\s*=\s*Path\(\s*[\"'](.+?)[\"']\s*\)")
-MIRROR_RE = re.compile(r"MIRROR_DESCRIPTION\s*=\s*\((.*?)\)")
 failures: list[str] = []
 
 
@@ -34,18 +31,10 @@ def parse_sync_constants() -> tuple[list[str], Path, list[str]]:
     if not SYNC.is_file():
         fail("缺 tools/sync_plugin_index.py，无法确定官方清单与索引路径")
         return [], ROOT / "plugins.json", []
-    text = SYNC.read_text(encoding="utf-8")
-    dirs_match = PLUGIN_DIRS_RE.search(text)
-    repo_match = INDEX_REPO_RE.search(text)
-    mirror_match = MIRROR_RE.search(text)
-    if not dirs_match:
-        fail("无法解析 PLUGIN_DIRS")
-    if not repo_match:
-        fail("无法解析 INDEX_REPO")
-    official = [x.strip().strip("\"'") for x in dirs_match.group(1).split(",")] if dirs_match else []
-    mirror = [x.strip().strip("\"'") for x in mirror_match.group(1).split(",")] if mirror_match else []
-    repo_path = Path(repo_match.group(1)) if repo_match else ROOT / "plugins.json"
-    return official, repo_path, mirror
+    spec = importlib.util.spec_from_file_location("sync_plugin_index", SYNC)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return list(module.PLUGIN_DIRS), module.INDEX_REPO, list(module.MIRROR_DESCRIPTION)
 
 
 def sha(path: Path) -> str:

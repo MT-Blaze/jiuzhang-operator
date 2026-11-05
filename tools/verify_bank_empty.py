@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(r"E:\jiuzhang-operator")
+ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063.db"
 OUT_MD = ROOT / "data/bank_v063_empty_check.md"
 

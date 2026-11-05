@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_MAIN = ROOT / "plugins.json"
-INDEX_REPO = Path("E:/jiuzhang-plugins/plugins.json")
+INDEX_REPO = ROOT.parent / "jiuzhang-plugins" / "plugins.json"
 PLUGIN_DIRS = ("org.jiuzhang.bank-engine", "org.jiuzhang.bank-ui", "org.jiuzhang.editor",
                "org.jiuzhang.paper-gen", "org.jiuzhang.handout", "org.jiuzhang.chat",
                "org.jiuzhang.dashboard")

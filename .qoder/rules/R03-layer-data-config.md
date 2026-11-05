@@ -64,7 +64,7 @@ WAL 只在建库/初始化时设且静默回退，`connect()` 不设（`db.py:16
 
 ## 3. 配置与开关（L0）
 
-1. **[L0] 路径唯一来源 `app/core/config.py`**（`:55-96` 提供路径常量/property + host/port），禁止依赖 cwd 拼路径（`docs/AGENTS.md:46`）。已知反面样本：`tools/verify_bank_empty.py:8` 写死 `E:\jiuzhang-operator`。
+1. **[L0] 路径唯一来源 `app/core/config.py`**（`:55-96` 提供路径常量/property + host/port），禁止依赖 cwd 拼路径（`docs/AGENTS.md:46`）。已知反面样本（已修复）：`tools/verify_bank_empty.py:8` 曾写死 `E:\jiuzhang-operator`，现按 `__file__` 推导。
 2. **[L1] 没有 feature flag 机制（无先例）**；唯一布尔闸是重启总闸 `app/core/host_restart.py:36-42`（`JZO_RESTART_DISABLED`）。需要开关就明说"要新造机制"，交 architect 评估，别偷偷加环境变量当 flag。
 3. **[L1] `.env` 装载用 `os.environ.setdefault`**（进程已有值优先，`app/__init__.py:31-52`，口径同 `docs/STACK.md:42`）；切库后重载 `app/core/workspace_bootstrap.py:143-163`。
 4. **密钥与令牌口径**：键名清单见 `.env.example:10-52`（AI 三件 `JZO_AI_{API_KEY,BASE_URL,MODEL}`、可选档 `JZO_{BAILIAN,SILICONFLOW}_*`、`JZO_AI_PROVIDER`、`JZO_LOCAL_TOKEN`、`JZO_DATA_DIR`、`JZO_HOST/PORT`、`JZO_AI_TIMEOUT_SECONDS`）。`JZO_LOCAL_TOKEN` 非空即整套轮换失效（`security.py:55-57,79-86`）；provider 面板写回只写 `{BASE_URL,API_KEY,MODEL}` 并同步 environ 热生效（`app/core/provider_config.py:90-118`、`app/core/providers/__init__.py:24-37,88-96`）。
