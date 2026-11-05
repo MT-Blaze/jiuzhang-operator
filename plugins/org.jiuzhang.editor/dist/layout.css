@@ -121,7 +121,9 @@ body {
   min-width: 0;
 }
 
-.ed-batches-ai {
+/* 必须带父级前缀：panel_meta.css 后加载的 .ep-btn 会写 flex:1 1 auto，
+   同特异度下把按钮拉成整条横幅。父级选择器压住它，按钮才回到标题行最右侧。 */
+.ed-batches-head .ed-batches-ai {
   flex: none;
 }
 
