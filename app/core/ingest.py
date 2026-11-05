@@ -6,15 +6,16 @@
   录题工作台的 exam-zh 源码（``\\begin{question}`` / ``\\begin{solution}``），
   以及普通文本（按题号切题，再拆选项、提答案）。
 - ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
-- ``.pdf``：**一律当原卷大图**，逐页渲染成页图。文本层再完美也不在底层自动切题——
-  老师进批次后在左侧【框选切题】，所见即所得，框哪儿切哪儿。
+- ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层只用于抽取题号、文字
+  与坐标，由前端在左栏自动画出切分框。老师逐个确认或微调后【框选切题】，
+  底层不预先生成任何待审题。
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
-**PDF 一道占位题都不放**：只立空批次、挂原卷页图；
-老师进批次后在左侧【框选切题】，松开鼠标即生成一道新题。
+**PDF 一道占位题都不放**：只立空批次、挂原卷页图与自动切分坐标；
+老师进批次后在左侧核对绿框，确认或微调后即生成一道新题。
 """
 
 from __future__ import annotations
@@ -440,7 +441,7 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
     """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否原卷大图)。
 
     最后一个 ``True`` 表示这份 PDF 只当原卷大图：**一道题都不落池**，
-    只把每页渲染成页面图，老师进批次后在左侧自己【框选切题】。
+    只把每页渲染成页面图并附带文本层抽出的题块坐标，老师在左栏确认切分。
     """
     kind = classify(name)
     warnings: list[str] = []
@@ -453,11 +454,11 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
         documents, notes = build_documents(text)
         return documents, warnings + notes, kind, text, False
     if kind == "pdf":
-        # 定调：PDF 一律当原卷大图。文本层有没有字都不读、不自动切题——
-        # 页图由 page_render 逐页渲染，老师对着原卷框哪儿切哪儿。
+        # 定调：PDF 不预生成题目。页图与题块坐标都由 page_render 负责，
+        # 老师对着原卷逐个【框选切题】确认或微调。
         warnings.append(
             f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
-            "在左侧【框选切题】逐题框选录入。"
+            "左侧会自动框出每道题，老师逐个【框选切题】确认或微调。"
         )
         return [], warnings, kind, "", True
     if kind == "image":
@@ -580,7 +581,7 @@ def stage_ingest(files: Any) -> dict[str, Any]:
 
 
 def _is_scan_source(name: str) -> bool:
-    """这份文件是不是按「原卷大图」走：PDF 一律是，Word/文本仍走自动切题。"""
+    """这份文件是不是按「原卷大图」走：PDF 一律是（坐标由 page_render 附上）。"""
     return classify(name) == "pdf"
 
 
@@ -600,7 +601,7 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
         result = pending_bank.create_batch(source_backup=backup, source_name=name,
                                            scan=True)
         warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后进批次，"
-                    "在左侧【框选切题】逐题框选录入。"]
+                    "左侧会自动框出每道题，老师逐个【框选切题】确认或微调。"]
     else:
         result = pending_bank.save_draft(
             [{"question": _placeholder(f"（正在解析：{name}）")}],
@@ -626,8 +627,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
     """第二段：识别。
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF：只把渲染出来的原卷页图挂到批次上，**一条题都不落池**——
-      老师进批次后在左侧原卷上自己【框选切题】。
+    - PDF：只把渲染出来的原卷页图（含题块坐标）挂到批次上，**一条题都不落池**——
+      老师进批次后在左侧原卷上确认或微调【框选切题】。
     """
     from app.core import pending_bank
     from app.core.pending_assets import drop_assets

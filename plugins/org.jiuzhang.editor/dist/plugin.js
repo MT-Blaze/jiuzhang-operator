@@ -317,6 +317,14 @@
   var setSwapButton = uiFormat.setSwapButton;
   var toggleSwapFromPanel = uiFormat.toggleSwapFromPanel;
 
+  var uiPageBoxes = window.JzoEditorPageBoxes.create({
+    el: el,
+    dockWarn: dockWarn,
+    coreState: coreState,
+    // 循环引用：裁图通道归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
+    splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },
+  });
+
   var uiColumns = window.JzoEditorColumns.create({
     dom: dom,
     // 循环引用：切图台归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
@@ -333,6 +341,7 @@
     keyFromPatchId: keyFromPatchId,
     // 循环引用：openCrop 归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
     openCrop: function () { return uiCrop.openCrop.apply(uiCrop, arguments); },
+    renderPageBoxes: uiPageBoxes.renderPageBoxes,
     parseExamSource: parseExamSource,
     publishSelectionSoon: publishSelectionSoon,
     queueWorklistSave: queueWorklistSave,

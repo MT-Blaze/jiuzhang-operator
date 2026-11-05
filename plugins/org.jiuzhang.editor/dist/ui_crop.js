@@ -21,20 +21,23 @@
     var splitFromCrop = deps.splitFromCrop;
     var stashOne = deps.stashOne;
 
-  // ---------- 左栏切图：圆形放大镜 + 中心十字准星 ----------
+  // ---------- 左栏切图：小口径放大镜 + 中心十字准星 ----------
   //
-  // 镜内按源图像素 2 倍取样、镜窗放大到 280px：一屏能装下整行公式或一个词，
-  // 而不是 8 倍那种满屏马赛克。镜心一根红十字，告诉老师对准的是哪一处。
+  // 镜窗直径只有 120px、镜内 1.2 倍：贴着光标偏移摆放，只够看清一两个公式符号，
+  // 绝不挡住正在框的那一行字。镜心一根细红十字，告诉老师对准的是哪一处。
   // 左键松开，框选完成，镜子消失。
   //
   // 像素级精准的前提是画布干净：沙箱插件画不了宿主原点的图——画布会被污染，
   // toDataURL 直接抛 SecurityError。所以已有的配图走宿主 asset.read 递 data URL，
   // 老师现贴的图走 File：两条路拿到的都是不带污点的字节。
-  var CROP_RADIUS = 140;     // 放大镜半径（CSS 像素）
-  var CROP_ZOOM = 1.5;       // 镜内源像素倍率（1.5~2 倍，看得清又不糊）
+  var CROP_RADIUS = 60;      // 放大镜半径（CSS 像素）：直径 120px
+  var CROP_ZOOM = 1.2;       // 镜内源像素倍率：小而清楚，不做满屏马赛克
   var CROP_MIN_SIDE = 4;     // 最小选区边长（CSS 像素）
   var crop = null;
   var lensCanvas = null;
+  // 原卷页解码一次就够：一页上要接连确认十九个框，不能每点一次都重解几 MB 的 PNG。
+  var pageBitmaps = {};
+  var PAGE_BITMAP_LIMIT = 4;
 
   function cropAssetId() {
     return "img_crop_" + Math.random().toString(36).slice(2, 10);
@@ -120,7 +123,10 @@
     cell.appendChild(hint);
     // 窗口级监听先绑上：图还没取回来的时候，粘贴与拖放也得能接住。
     window.addEventListener("mousemove", onCropMove, true);
+    window.addEventListener("pointermove", onCropMove, true);
     window.addEventListener("mouseup", onCropUp, true);
+    window.addEventListener("pointerup", onCropUp, true);
+    window.addEventListener("pointercancel", onCropCancel, true);
     window.addEventListener("keydown", onCropKey, true);
     window.addEventListener("paste", onCropPaste, true);
     window.addEventListener("dragover", onCropDragOver, true);
@@ -150,7 +156,10 @@
     var session = crop;
     crop = null;
     window.removeEventListener("mousemove", onCropMove, true);
+    window.removeEventListener("pointermove", onCropMove, true);
     window.removeEventListener("mouseup", onCropUp, true);
+    window.removeEventListener("pointerup", onCropUp, true);
+    window.removeEventListener("pointercancel", onCropCancel, true);
     window.removeEventListener("keydown", onCropKey, true);
     window.removeEventListener("paste", onCropPaste, true);
     window.removeEventListener("dragover", onCropDragOver, true);
@@ -188,14 +197,21 @@
       canvas.setAttribute("aria-label", "切图台：拖拽框选，左键松开切图");
       session.canvas = canvas;
       session.ctx = canvas.getContext("2d");
-      canvas.addEventListener("mousedown", function (event) {
-        if (event.button !== 0 || !session.bitmap) return;
+      // 指针与鼠标事件都接：指针事件负责触控与指针捕获，鼠标事件兜住老环境。
+      // 两边都进来时只看第一次——session.dragging 已是 true 就直接忽略。
+      var startDrag = function (event) {
+        if (event.button !== 0 || !session.bitmap || session.dragging) return;
         event.preventDefault();
         hideCropActions(session);
         session.dragging = true;
         session.start = cropPoint(session, event.clientX, event.clientY);
         session.rect = null;
-      });
+        if (canvas.setPointerCapture && event.pointerId != null) {
+          try { canvas.setPointerCapture(event.pointerId); } catch (error) { /* 捕获失败也照常拖 */ }
+        }
+      };
+      canvas.addEventListener("pointerdown", startDrag);
+      canvas.addEventListener("mousedown", startDrag);
       // 松手后的 click 会冒泡到页图的「打开切图台」监听上：这里截断，
       // 否则切完一题立刻又开一个空台子，看起来就像「拖了没反应」。
       canvas.addEventListener("click", function (event) {
@@ -232,6 +248,9 @@
     if (img) img.hidden = true;
     var box = frame.querySelector(".ed-img-box");
     if (box) box.hidden = true;
+    // 手动切图台铺上来时，自动绿框层必须让位：否则它会拦截拖拽。
+    var autoBoxes = frame.querySelector(".ed-page-boxes");
+    if (autoBoxes) autoBoxes.hidden = true;
     if (session.canvas && session.canvas.parentNode !== frame) {
       if (session.canvas.parentNode) session.canvas.parentNode.removeChild(session.canvas);
       frame.insertBefore(session.canvas, frame.firstChild);
@@ -339,13 +358,15 @@
     var px = session.pointer.x;
     var py = session.pointer.y;
     var box = session.canvas.getBoundingClientRect();
+    // 指针离开画布就把镜子收掉：它只服务框选，不该飘到别的栏上挡字。
+    if (px < box.left || px > box.right || py < box.top || py > box.bottom) return;
     var sx = (px - box.left) / session.scale;
     var sy = (py - box.top) / session.scale;
-    // 镜子默认在鼠标右下边，撞到边就翻到另一侧。
-    var mx = px + radius + 28;
-    var my = py + radius + 28;
-    if (mx + radius > viewW - 8) mx = px - radius - 28;
-    if (my + radius > viewH - 8) my = py - radius - 28;
+    // 镜子贴着指针右下偏移，撞到边就翻到另一侧；120px 的口径永远不压住光标下的字。
+    var mx = px + radius + 18;
+    var my = py + radius + 18;
+    if (mx + radius > viewW - 8) mx = px - radius - 18;
+    if (my + radius > viewH - 8) my = py - radius - 18;
     var half = radius / CROP_ZOOM;
     var ox = clampValue(sx - half, 0, Math.max(0, session.width - half * 2));
     var oy = clampValue(sy - half, 0, Math.max(0, session.height - half * 2));
@@ -358,8 +379,8 @@
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(session.bitmap, ox, oy, sw, sh, mx - radius, my - radius, radius * 2, radius * 2);
     ctx.restore();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(mx, my, radius, 0, Math.PI * 2);
     ctx.stroke();
@@ -367,10 +388,10 @@
     ctx.strokeStyle = "rgba(255, 96, 96, 0.95)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(mx - 12, my + 0.5);
-    ctx.lineTo(mx + 12, my + 0.5);
-    ctx.moveTo(mx + 0.5, my - 12);
-    ctx.lineTo(mx + 0.5, my + 12);
+    ctx.moveTo(mx - 8, my + 0.5);
+    ctx.lineTo(mx + 8, my + 0.5);
+    ctx.moveTo(mx + 0.5, my - 8);
+    ctx.lineTo(mx + 0.5, my + 8);
     ctx.stroke();
   }
 
@@ -491,6 +512,8 @@
     var session = crop;
     if (!session || !session.dragging) return;
     if (event.button !== 0) return;
+    // pointerup 与 mouseup 会先后各来一次：第一次就把 dragging 放下，第二次直接返回，
+    // 保证「松手只切一刀」，也保证任何一条事件链丢了都还有另一条兜底。
     session.dragging = false;
     var rect = session.rect;
     if (!rect || rect.w < CROP_MIN_SIDE || rect.h < CROP_MIN_SIDE) {
@@ -505,6 +528,15 @@
       return;
     }
     showCropActions(session);
+  }
+
+  function onCropCancel() {
+    var session = crop;
+    if (!session || !session.dragging) return;
+    session.dragging = false;
+    session.rect = null;
+    session.hint.textContent = "这次拖拽被打断了，再拖一次。";
+    drawCropCanvas(session);
   }
 
   function onCropKey(event) {
@@ -563,16 +595,89 @@
     });
   }
 
+  /** 原卷页位图按 uri 缓存：一页要接连确认十几道题，不能每次都重解几 MB 的 PNG。 */
+  function loadPageBitmap(uri) {
+    if (pageBitmaps[uri]) return pageBitmaps[uri];
+    var pending = hostCall("asset.read", { uri: uri }).then(function (result) {
+      if (!result || !result.data_url) throw new Error("这张原卷图读不出来");
+      return decodePicture(dataUrlToBlob(result.data_url, result.mime));
+    });
+    pageBitmaps[uri] = pending;
+    pending.then(null, function () { delete pageBitmaps[uri]; });
+    var keys = Object.keys(pageBitmaps);
+    if (keys.length > PAGE_BITMAP_LIMIT) {
+      keys.slice(0, keys.length - PAGE_BITMAP_LIMIT).forEach(function (stale) {
+        if (stale === uri) return;
+        pageBitmaps[stale].then(function (bitmap) {
+          if (bitmap && typeof bitmap.close === "function") bitmap.close();
+        }, function () { /* 没解成功的本来就没有位图要关 */ });
+        delete pageBitmaps[stale];
+      });
+    }
+    return pending;
+  }
+
+  /** 按页面图像素坐标裁一块 PNG：自动切分框的【确认切分】走这里。 */
+  function cropRegionToDataUrl(bitmap, region) {
+    var width = Number(bitmap.width) || 0;
+    var height = Number(bitmap.height) || 0;
+    var sx = Math.round(Number(region && region.x) || 0);
+    var sy = Math.round(Number(region && region.y) || 0);
+    var sw = Math.round(Number(region && region.w) || 0);
+    var sh = Math.round(Number(region && region.h) || 0);
+    if (!(width > 0 && height > 0) || !(sw > 0 && sh > 0)) return null;
+    sx = clampValue(sx, 0, Math.max(0, width - 1));
+    sy = clampValue(sy, 0, Math.max(0, height - 1));
+    sw = clampValue(sw, 1, width - sx);
+    sh = clampValue(sh, 1, height - sy);
+    var out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    var octx = out.getContext("2d");
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
+    return { dataUrl: out.toDataURL("image/png"), width: sw, height: sh };
+  }
+
+  /** 自动框确认切分：读页图 → 按坐标裁图 → 走与手动框选同一条切题通道。 */
+  function splitPageRegion(item, region, info) {
+    if (!splitFromCrop) return Promise.reject(new Error("切题通道没有接上"));
+    if (!item || !item.batchId) return Promise.reject(new Error("当前页不在中转站批次里"));
+    var picture = itemImage(item);
+    if (!picture || !picture.uri) return Promise.reject(new Error("这一页的原卷图取不到"));
+    return loadPageBitmap(picture.uri).then(function (bitmap) {
+      var cropped = cropRegionToDataUrl(bitmap, region);
+      if (!cropped) throw new Error("框选区域没有像素");
+      var pageNo = Number(info && info.page) || Number(picture.page) || 1;
+      return splitFromCrop(item, cropped.dataUrl, {
+        width: cropped.width,
+        height: cropped.height,
+        page: pageNo
+      });
+    });
+  }
+
   /**
    * 老师选完动作才真正切：mode=assign 配给当前题，mode=split 另起一道待审题。
    * 截图像素按源图算，避免框选缩放后把题图裁小。
    */
   function finishCrop(session, mode) {
-    var rect = session.rect;
-    var sx = Math.round(rect.x / session.scale);
-    var sy = Math.round(rect.y / session.scale);
-    var sw = Math.max(CROP_MIN_SIDE, Math.round(rect.w / session.scale));
-    var sh = Math.max(CROP_MIN_SIDE, Math.round(rect.h / session.scale));
+    var rect = session && session.rect;
+    var scale = Number(session && session.scale);
+    // 坐标换算一旦出 NaN，后端只会回一个看不懂的 400。这里当场拦下并说人话。
+    if (!rect || !session.bitmap || !(scale > 0)
+        || !isFinite(rect.x) || !isFinite(rect.y)
+        || !isFinite(rect.w) || !isFinite(rect.h)) {
+      if (session && session.hint) {
+        session.hint.textContent = "这次框选的坐标没算出来，请再拖一次。";
+      }
+      session.dragging = false;
+      return;
+    }
+    var sx = Math.round(rect.x / scale);
+    var sy = Math.round(rect.y / scale);
+    var sw = Math.max(CROP_MIN_SIDE, Math.round(rect.w / scale));
+    var sh = Math.max(CROP_MIN_SIDE, Math.round(rect.h / scale));
     sx = clampValue(sx, 0, Math.max(0, session.width - 1));
     sy = clampValue(sy, 0, Math.max(0, session.height - 1));
     sw = clampValue(sw, 1, session.width - sx);
@@ -653,7 +758,10 @@
       cropAssetId: cropAssetId,
       cropFiles: cropFiles,
       cropPoint: cropPoint,
+      cropRegionToDataUrl: cropRegionToDataUrl,
       dataUrlToBlob: dataUrlToBlob,
+      loadPageBitmap: loadPageBitmap,
+      splitPageRegion: splitPageRegion,
       drawCropCanvas: drawCropCanvas,
       drawLens: drawLens,
       ensureLens: ensureLens,
@@ -661,6 +769,7 @@
       layoutCrop: layoutCrop,
       lensCanvas: lensCanvas,
       mountCropSurface: mountCropSurface,
+      onCropCancel: onCropCancel,
       onCropDragOver: onCropDragOver,
       onCropDrop: onCropDrop,
       onCropKey: onCropKey,

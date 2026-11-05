@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from app.core import bank, pending_dedupe, questions
@@ -47,8 +48,67 @@ def _page_entries(raw: Any) -> list[dict[str, Any]] | None:
             page = int(entry.get("page") or index)
         except (TypeError, ValueError) as exc:
             raise PendingError("页面图页码不合法") from exc
-        entries.append({"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page})
+        clean = {"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page}
+        width = _page_size(entry.get("width"))
+        height = _page_size(entry.get("height"))
+        if width and height:
+            clean["width"] = width
+            clean["height"] = height
+            regions = _page_regions(entry.get("regions"), width, height)
+            if regions:
+                clean["regions"] = regions
+        entries.append(clean)
     return entries
+
+
+def _page_size(raw: Any) -> float:
+    """页面图边长：只收有限正数，别的当没给（前端会退回手动框选）。"""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if math.isfinite(value) and 0 < value <= 100000 else 0.0
+
+
+def _page_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]:
+    """自动切分框清单：坐标一律夹在页面图范围内，坏条目直接丢。"""
+    if not isinstance(raw, list):
+        return []
+    regions: list[dict[str, Any]] = []
+    for item in raw[:100]:
+        if not isinstance(item, dict):
+            continue
+        try:
+            number = int(item.get("no") or 0)
+        except (TypeError, ValueError):
+            number = 0
+        try:
+            x = float(item.get("x"))
+            y = float(item.get("y"))
+            w = float(item.get("w"))
+            h = float(item.get("h"))
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(value) for value in (x, y, w, h)):
+            continue
+        if w <= 0 or h <= 0 or x >= width or y >= height:
+            continue
+        x = max(0.0, x)
+        y = max(0.0, y)
+        w = min(w, width - x)
+        h = min(h, height - y)
+        if w < 4 or h < 4:
+            continue
+        regions.append({
+            "no": number,
+            "x": round(x, 1),
+            "y": round(y, 1),
+            "w": round(w, 1),
+            "h": round(h, 1),
+            "label": str(item.get("label") or "")[:64],
+            "text": str(item.get("text") or "")[:1200],
+        })
+    return regions
 
 
 def _row_assets(row: Any) -> list[dict[str, Any]]:

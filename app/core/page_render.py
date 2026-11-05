@@ -4,10 +4,11 @@
 不参与查重指纹，也不随题目入库。三种来源三条路：
 
 - 图片：原件本身就是页面图，复制进 ``pending_assets/``，不重采样；
-- PDF：**一律**按 200 dpi 逐页渲染成 PNG 原卷大图，不区分有没有文本层，
-  也不拿文本层凑页面。渲染优先用随包分发的 ``pypdfium2``（Apache-2.0 /
-  BSD-3-Clause，wheel 自带 PDFium，用户不用装 TeX Live 或 Poppler）；
-  内置引擎缺席或打不开时，才降级到开发机上的 ``pdftoppm``；
+- PDF：**一律**按 200 dpi 逐页渲染成 PNG 原卷大图，不区分有没有文本层。
+  文本层只用来提取**题号、文字与坐标**，给左栏画自动切分框；页面图本身
+  仍只认渲染结果，绝不拿文本层凑页面。渲染优先用随包分发的 ``pypdfium2``
+  （Apache-2.0 / BSD-3-Clause，wheel 自带 PDFium，用户不用装 TeX Live 或
+  Poppler）；内置引擎缺席或打不开时，才降级到开发机上的 ``pdftoppm``；
 - Word / 纯文本：没有 Word/LibreOffice 也能出一页页 SVG 文本还原图
   （纯标准库，不引第三方渲染器，不联网）。
 
@@ -17,6 +18,7 @@ SVG 页与 PNG 页在左栏是同一种东西：``<img>`` 读得出来、切图�
 from __future__ import annotations
 
 import html
+import math
 import re
 import shutil
 import struct
@@ -80,8 +82,12 @@ def build_pages(name: str, kind: str, data: bytes, text: str,
     return facsimile, doc_pages, warnings
 
 
-def _entry(name: str, page: int) -> dict[str, Any]:
-    return {"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page}
+def _entry(name: str, page: int, **extra: Any) -> dict[str, Any]:
+    entry = {"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": page}
+    for key, value in extra.items():
+        if value not in (None, [], ""):
+            entry[key] = value
+    return entry
 
 
 # ---------------------------------------------------------------- 图片与 PDF
@@ -131,9 +137,13 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                 bitmap = page.render(scale=PDF_RENDER_DPI / 72.0)
                 try:
                     png = _png_from_bitmap(bitmap)
+                    width = int(bitmap.width)
+                    height = int(bitmap.height)
+                    regions = _pdf_page_regions(page, width, height)
                 finally:
                     bitmap.close()
-                entries.append(_entry(write_generated_asset(png, "image/png"), index + 1))
+                entries.append(_entry(write_generated_asset(png, "image/png"), index + 1,
+                                      width=width, height=height, regions=regions))
             except Exception:  # noqa: BLE001 - 单页失败事小，不拖垮整份卷子
                 warnings.append(f"第 {index + 1} 页渲染失败，已跳过")
         if total_pages > MAX_PAGES:
@@ -141,6 +151,157 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
     finally:
         document.close()
     return entries, warnings
+
+
+# ---------- PDF 文本层 → 题块坐标（自动切分框的底账）----------
+#
+# 文本层只认「行」：每一行拿到 PDF 点坐标后换算成页面图像素坐标。题号连续
+# 递增的一串才算一列题，页眉页脚的说明数字不参与；找不到任何题号就交空清单，
+# 前端仍可手动框选——绝不按猜出来的区域硬切。
+_PDF_HEAD = re.compile(r"^\s*(\d{1,2})\s*[.．、]\s*\S")
+_PDF_INSTRUCTION = re.compile(r"答题卡|答卷前|考试结束|考生|考场|座位号")
+_PDF_FOOTER = re.compile(r"第\s*\d+\s*页\s*[（(]\s*共\s*\d+\s*页")
+_REGION_TEXT_LIMIT = 1200
+_REGION_LABEL_LIMIT = 48
+
+
+def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int) -> list[dict[str, Any]]:
+    """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。"""
+    try:
+        page_width, page_height = (float(value) for value in page.get_size())
+        lines = _pdf_text_lines(page)
+    except Exception:  # noqa: BLE001 - 文本层坏了只影响自动框，不影响页图
+        return []
+    return _question_regions(lines, page_width, page_height, pixel_width, pixel_height)
+
+
+def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
+    """按 PDFium 给出的换行符切行，并记下每行的点坐标包围盒。"""
+    textpage = page.get_textpage()
+    try:
+        total = int(textpage.count_chars())
+        lines: list[dict[str, Any]] = []
+        chars: list[str] = []
+        bounds = [math.inf, math.inf, -math.inf, -math.inf]
+
+        def flush() -> None:
+            nonlocal chars, bounds
+            text = "".join(chars).strip()
+            if text and bounds[0] < bounds[2] and bounds[1] < bounds[3]:
+                lines.append({
+                    "text": text,
+                    "left": bounds[0],
+                    "bottom": bounds[1],
+                    "right": bounds[2],
+                    "top": bounds[3],
+                })
+            chars = []
+            bounds = [math.inf, math.inf, -math.inf, -math.inf]
+
+        for index in range(total):
+            char = textpage.get_text_range(index, 1)
+            if char in ("\r", "\n"):
+                flush()
+                continue
+            try:
+                left, bottom, right, top = (float(value)
+                                            for value in textpage.get_charbox(index))
+            except Exception:  # noqa: BLE001 - 单个坏字形跳过，不拖垮整行
+                continue
+            if not all(math.isfinite(value) for value in (left, bottom, right, top)):
+                continue
+            if not char.strip():
+                if chars and chars[-1] != " ":
+                    chars.append(" ")
+                continue
+            chars.append(char)
+            bounds[0] = min(bounds[0], left)
+            bounds[1] = min(bounds[1], bottom)
+            bounds[2] = max(bounds[2], right)
+            bounds[3] = max(bounds[3], top)
+        flush()
+        return lines
+    finally:
+        textpage.close()
+
+
+def _question_regions(lines: list[dict[str, Any]], page_width: float, page_height: float,
+                      pixel_width: int, pixel_height: int) -> list[dict[str, Any]]:
+    """行清单 → 每道题的像素包围盒。
+
+    题号链只取「最长且连续递增」的一段：页首「1. 2. 3.」的作答说明即使与
+    正式题号重合，也会因为链更短而落选。横向框到整栏文字的外沿，纵向从本题
+    题号行起、到下一题题号行前一截为止，因此插图与选项不会被裁掉。
+    """
+    if not lines or page_width <= 0 or page_height <= 0:
+        return []
+    if pixel_width <= 0 or pixel_height <= 0:
+        return []
+    footer_top = min((line["top"] for line in lines if _PDF_FOOTER.search(line["text"])),
+                     default=None)
+    content = [line for line in lines if not _PDF_FOOTER.search(line["text"])]
+    heads: list[tuple[int, int]] = []
+    for position, line in enumerate(content):
+        matched = _PDF_HEAD.match(line["text"])
+        if not matched or _PDF_INSTRUCTION.search(line["text"]):
+            continue
+        heads.append((position, int(matched.group(1))))
+    run = _longest_number_run(heads)
+    if not run:
+        return []
+
+    scale_x = pixel_width / page_width
+    scale_y = pixel_height / page_height
+    left = max(0.0, min(line["left"] for line in content) - 4.0)
+    right = min(page_width, max(line["right"] for line in content) + 4.0)
+    if right <= left:
+        return []
+    box_x = left * scale_x
+    box_w = max(1.0, (right - left) * scale_x)
+    content_bottom = (footer_top - 3.0 if footer_top is not None
+                      else min(line["bottom"] for line in content) - 3.0)
+
+    regions: list[dict[str, Any]] = []
+    for order, (position, number) in enumerate(run):
+        line = content[position]
+        top_pt = line["top"] + 3.0
+        if order + 1 < len(run):
+            bottom_pt = content[run[order + 1][0]]["top"] + 3.0
+            stop = run[order + 1][0]
+        else:
+            bottom_pt = content_bottom
+            stop = len(content)
+        top_y = max(0.0, (page_height - top_pt) * scale_y)
+        bottom_y = min(float(pixel_height), (page_height - bottom_pt) * scale_y)
+        if bottom_y - top_y < 8.0:
+            bottom_y = min(float(pixel_height), top_y + 8.0)
+        text = "\n".join(part["text"] for part in content[position:stop]).strip()
+        regions.append({
+            "no": number,
+            "x": round(box_x, 1),
+            "y": round(top_y, 1),
+            "w": round(box_w, 1),
+            "h": round(bottom_y - top_y, 1),
+            "label": re.sub(r"\s+", " ", line["text"]).strip()[:_REGION_LABEL_LIMIT],
+            "text": text[:_REGION_TEXT_LIMIT],
+        })
+    return regions
+
+
+def _longest_number_run(heads: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """最长的一段「题号连续递增」链；孤立的数字不切题。"""
+    best: list[tuple[int, int]] = []
+    current: list[tuple[int, int]] = []
+    for head in heads:
+        if current and head[1] == current[-1][1] + 1 and head[0] > current[-1][0]:
+            current.append(head)
+        else:
+            if len(current) > len(best):
+                best = current
+            current = [head]
+    if len(current) > len(best):
+        best = current
+    return best
 
 
 def _png_from_bitmap(bitmap: Any) -> bytes:

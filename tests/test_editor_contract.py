@@ -1585,7 +1585,7 @@ class EditorCropMagnifierTest(unittest.TestCase):
     钉住五件事：
     - 宿主只多开一个读口子（asset.read），权限按 assets:read 判定；
     - 插件侧画布必须干净（宿主读来的字节 → Blob → ImageBitmap），不许 fetch；
-    - 放大镜是原样搬过来的：半径 104、8 倍、关平滑、镜心一根红十字；
+    - 放大镜小而清楚：直径 120px、1.2 倍、开平滑、镜心一根红十字；
     - 左键松开切完就走：镜子撤掉，字节落进中转站，主库一个字节都不碰；
     - 切图台开着的时候，全局粘贴不许把这张图当成新卷子吞掉。
     """
@@ -1624,18 +1624,21 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn('hostCall("asset.read", { uri: picture.uri })', js)
         self.assertIn("window.createImageBitmap(blob)", js)
 
-    def test_04_the_magnifier_is_readable_not_mosaic(self) -> None:
-        """镜窗放大到 280px、源像素 1.5 倍取样并开平滑：看得见整行公式，不是马赛克。"""
+    def test_04_the_magnifier_is_small_and_clear(self) -> None:
+        """镜窗直径 120px、源像素 1.2 倍、1px 细边：小而清楚，绝不挡住正在看的字。"""
         js = read("plugin.js")
-        self.assertIn("var CROP_RADIUS = 140;", js)
-        self.assertIn("var CROP_ZOOM = 1.5;", js)
+        self.assertIn("var CROP_RADIUS = 60;", js, "半径 60 = 直径 120px")
+        self.assertIn("var CROP_ZOOM = 1.2;", js)
         lens = fn_body(js, "drawLens")
         self.assertIn("ctx.imageSmoothingEnabled = true;", lens,
-                      "镜内必须开平滑，1.5 倍再关平滑就是马赛克")
+                      "镜内必须开平滑，小倍率也要看得清")
         self.assertIn('ctx.strokeStyle = "rgba(255, 96, 96, 0.95)";', lens,
                       "镜心准星必须是那根红十字")
         self.assertIn("ctx.arc(mx, my, radius, 0, Math.PI * 2);", lens)
-        self.assertIn("ctx.lineWidth = 2;", lens, "镜圈是 2px 白边")
+        self.assertIn("ctx.lineWidth = 1;", lens, "镜圈收成 1px 细边")
+        self.assertIn("px + radius + 18", lens, "镜子永远偏在指针一侧，不压住光标下的字")
+        self.assertIn("if (px < box.left || px > box.right || py < box.top || py > box.bottom) return;",
+                      lens, "指针离开画布就把镜子收掉")
 
     def test_05_the_crop_surface_and_the_lens_are_styled(self) -> None:
         css = read("plugin.css")
@@ -1735,6 +1738,45 @@ class EditorCropMagnifierTest(unittest.TestCase):
         bank = (ROOT / "app" / "core" / "pending_bank.py").read_text(encoding="utf-8")
         self.assertIn('"saved_assets":', bank)
         self.assertIn("PENDING_ASSET_URI_PREFIX", bank)
+
+
+class EditorPageBoxesContractTest(unittest.TestCase):
+    """自动切分框：底座给坐标，前端画绿框，确认后走同一条切题通道。"""
+
+    def test_01_the_auto_boxes_module_is_loaded_and_wired(self) -> None:
+        html = read("index.html")
+        self.assertIn('<script src="ui_page_boxes.js"></script>', html)
+        self.assertLess(html.index("ui_page_boxes.js"), html.index("ui_columns.js"),
+                        "绿框模块必须先于三栏加载")
+        js = read("plugin.js")
+        self.assertIn("var uiPageBoxes = window.JzoEditorPageBoxes.create({", js)
+        self.assertIn("renderPageBoxes: uiPageBoxes.renderPageBoxes,", js)
+        self.assertIn("uiCrop.splitPageRegion.apply(uiCrop, arguments)", js)
+        columns = read("ui_columns.js")
+        self.assertIn("renderPageBoxes(page, index, frame, pageCropItem(page, index))", columns)
+        self.assertIn(".ed-auto-box, .ed-page-boxes", columns,
+                      "点绿框不能冒泡成「再开一个手动切图台」")
+
+    def test_02_the_boxes_are_green_dashed_with_confirm_and_handles(self) -> None:
+        css = read("plugin.css")
+        box = rule_body(css, ".ed-auto-box")
+        self.assertIn("border: 2px dashed #2f9e5a", box)
+        self.assertIn("pointer-events: auto", box)
+        self.assertIn("touch-action: none", box)
+        layer = rule_body(css, ".ed-page-boxes")
+        self.assertIn("pointer-events: none", layer, "框外的页面仍然可以手动画框")
+        for key in ("nw", "n", "ne", "e", "se", "s", "sw", "w"):
+            rule_body(css, '.ed-auto-handle[data-handle="%s"]' % key)
+        module = read("ui_page_boxes.js")
+        for needle in ("确认切分", "splitPageRegion", "ArrowLeft", "setPointerCapture"):
+            self.assertIn(needle, module)
+
+    def test_03_the_confirm_path_reuses_pending_split(self) -> None:
+        crop = read("ui_crop.js")
+        split = fn_body(crop, "splitPageRegion")
+        self.assertIn('hostCall("asset.read"', crop)
+        self.assertIn("splitFromCrop(item, cropped.dataUrl,", split)
+        self.assertIn("cropRegionToDataUrl(bitmap, region)", split)
 
 
 class EditorFixtureContractTest(unittest.TestCase):

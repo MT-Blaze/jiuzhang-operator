@@ -179,6 +179,42 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertEqual(entries, [])
         self.assertEqual(warnings, ["内置引擎不可用", "本机也没有 pdftoppm 兜底"])
 
+    def test_08a_question_regions_skip_instructions(self) -> None:
+        """作答说明也带 1./2./3.，但只有更长的正式题号链才算题。"""
+        lines = [
+            {"text": "1. 答卷前，考生务必将姓名填在答题卡上", "left": 72, "bottom": 780,
+             "right": 523, "top": 790},
+            {"text": "2. 回答选择题时，选出每小题答案后", "left": 72, "bottom": 760,
+             "right": 523, "top": 770},
+            {"text": "3. 考试结束后，将本试卷交回", "left": 72, "bottom": 740,
+             "right": 523, "top": 750},
+            {"text": "1. 第一题题干", "left": 72, "bottom": 650, "right": 523, "top": 660},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 630, "right": 480, "top": 640},
+            {"text": "2. 第二题题干", "left": 72, "bottom": 560, "right": 523, "top": 570},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1, 2])
+        for region in regions:
+            self.assertGreaterEqual(region["x"], 0)
+            self.assertGreaterEqual(region["y"], 0)
+            self.assertLessEqual(region["x"] + region["w"], 1654)
+            self.assertLessEqual(region["y"] + region["h"], 2339)
+        self.assertIn("选项甲", regions[0]["text"])
+
+    def test_08b_real_paper_has_nineteen_regions(self) -> None:
+        """模拟1.pdf 自带文本层：五页共 19 道题，每题一块，页脚不切。"""
+        pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
+        if not pdf.is_file():
+            self.skipTest("本机没有 testdata/20261105/模拟1.pdf")
+        entries, warnings = page_render._pdf_pages_builtin(pdf.read_bytes())
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(entries), 5)
+        numbers = [region["no"]
+                   for entry in entries for region in (entry.get("regions") or [])]
+        self.assertEqual(numbers, list(range(1, 20)))
+        first = entries[0]
+        self.assertEqual((first.get("width"), first.get("height")), (1654, 2339))
+
     def test_08_builtin_renderer_outputs_a4_png(self) -> None:
         """内置渲染器自己出的页图必须是可读 PNG，尺寸按 200 dpi 的 A4 算。"""
         pdfium = getattr(page_render, "_pdfium")
@@ -255,6 +291,27 @@ class BatchPageImageTest(PageRenderTestCase):
         self.assertEqual(listed["items"][0]["page_no"], 2)
         self.assertEqual(listed["items"][0]["question"].get("images", []), [],
                          "原卷页只挂批次，不能污染题身的配图")
+
+    def test_01a_auto_regions_survive_batch_round_trip(self) -> None:
+        """自动切分框随页图存进批次；越界的坏框直接丢，不让前端画出鬼框。"""
+        name = "pimg_" + "f" * 16 + ".png"
+        pending_db.pending_assets_dir().mkdir(parents=True, exist_ok=True)
+        (pending_db.pending_assets_dir() / name).write_bytes(PNG_1X1)
+        entry = {
+            "name": name, "page": 1, "width": 1000, "height": 1400,
+            "regions": [
+                {"no": 1, "x": 10, "y": 20, "w": 300, "h": 400,
+                 "label": "1. 第一题", "text": "1. 第一题题干"},
+                {"no": 2, "x": 2000, "y": 20, "w": 300, "h": 400},
+            ],
+        }
+        result = self._draft(page_images=[entry])
+        listed = pending_batches.list_batch_questions(result["batch_id"])
+        page = listed["page_images"][0]
+        self.assertEqual((page["width"], page["height"]), (1000, 1400))
+        self.assertEqual(len(page["regions"]), 1)
+        self.assertEqual(page["regions"][0]["no"], 1)
+        self.assertEqual(page["regions"][0]["text"], "1. 第一题题干")
 
     def test_02_autosave_without_page_images_does_not_clear_them(self) -> None:
         name = "pimg_" + "b" * 16 + ".svg"

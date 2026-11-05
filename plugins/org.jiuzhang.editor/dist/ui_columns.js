@@ -22,6 +22,7 @@
     var fieldRanges = deps.fieldRanges;
     var keyFromPatchId = deps.keyFromPatchId;
     var openCrop = deps.openCrop;
+    var renderPageBoxes = deps.renderPageBoxes;
     var parseExamSource = deps.parseExamSource;
     var publishSelectionSoon = deps.publishSelectionSoon;
     var queueWorklistSave = deps.queueWorklistSave;
@@ -394,9 +395,10 @@
     var box = el("div", "ed-img-box");
     box.setAttribute("data-box", "stem");
     frame.appendChild(box);
+    var boxCount = renderPageBoxes ? renderPageBoxes(page, index, frame, pageCropItem(page, index)) : 0;
     // 切图台自己的画布/动作条会冒泡到这里：放行，别一松鼠标就重开一次。
     frame.addEventListener("click", function (event) {
-      if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint")) openPageCrop(page, index, cell);
+      if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint, .ed-auto-box, .ed-page-boxes")) openPageCrop(page, index, cell);
     });
     cell.appendChild(frame);
     var tools = el("div", "ed-img-tools");
@@ -409,10 +411,9 @@
     });
     tools.appendChild(cropBtn);
     cell.appendChild(tools);
-    cell.appendChild(el("p", "ed-img-caption", "原卷第 " + pageNo + " 页 · 拖框即生成新题"));
+    cell.appendChild(el("p", "ed-img-caption", "原卷第 " + pageNo + " 页 · " + (boxCount ? "已自动框出 " + boxCount + " 道题，悬停绿框确认或微调" : "拖框即生成新题")));
     return cell;
   }
-
   function emptyColumnNote(text) {
     return el("p", "ed-column-empty", text);
   }
@@ -427,7 +428,6 @@
         "这一批没有可用的原卷页图：请重新拖入文件，或删除这个批次。"));
     }
   }
-
   function growTextarea(node) {
     node.style.height = "auto";
     node.style.height = Math.max(node.scrollHeight, 60) + "px";
