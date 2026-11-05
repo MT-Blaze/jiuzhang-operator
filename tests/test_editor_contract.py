@@ -363,11 +363,13 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
-        # 画布内只许剩收集筐的【🚀 开始解析】——它是唯一的建批次出口。
+        # 画布内只许剩收集筐的【🚀 开始解析】与批次列表右上角的【API 配置】——
+        # 前者是唯一的建批次出口，后者是终极军令任务二的配置入口（2026-11-05）。
         # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
         plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
                         + canvas[canvas.index('id="edToast"'):])
-        self.assertEqual(plain_canvas.count("<button"), 1, "画布内只许剩【开始解析】")
+        self.assertEqual(plain_canvas.count("<button"), 2, "画布内只许剩【API 配置】与【开始解析】")
+        self.assertIn('id="epAiConfigList"', plain_canvas)
         self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")
         self.assertNotIn('id="edBatchBar"', canvas, "二屏抬头大横条已彻底删除")
         self.assertIn('id="edBasketGo"', canvas)

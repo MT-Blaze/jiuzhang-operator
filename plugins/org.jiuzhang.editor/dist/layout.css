@@ -107,8 +107,21 @@ body {
 
 .ed-batches-head {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+
+.ed-batches-headtext {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+
+.ed-batches-ai {
   flex: none;
 }
 

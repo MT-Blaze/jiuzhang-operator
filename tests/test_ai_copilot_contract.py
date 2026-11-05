@@ -97,6 +97,16 @@ class ConfigCenterMarkupTest(unittest.TestCase):
         self.assertIn('id="epAiBatchNote"', panel, "批量识别的进度只在辅助栏这一行报")
         self.assertIn('id="epHeadTools"', panel[:panel.index('id="epAiConfig"')])
 
+    def test_02b_batch_list_has_its_own_config_entry(self) -> None:
+        """任务二的入口在批次列表右上角：一进画布就能配，不必先开一道题。"""
+        canvas = canvas_only(HTML)
+        head = canvas[canvas.index('class="ed-batches-head"'):]
+        head = head[:head.index("</div>", head.index("</button>"))]
+        self.assertIn('id="epAiConfigList"', head)
+        self.assertIn("API 配置", head)
+        js = (PLUGIN_DIR / "dist" / "ui_ai_copilot.js").read_text(encoding="utf-8")
+        self.assertIn('getElementById("epAiConfigList")', js)
+
     def test_03_overwrite_modal_is_in_the_canvas_and_registered(self) -> None:
         self.assertIn('id="epAiOverwriteModal"', canvas_only(HTML))
         self.assertNotIn('id="epAiOverwriteModal"', panel_only(HTML))

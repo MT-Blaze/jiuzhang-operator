@@ -39,8 +39,14 @@
          黄金分割 1.618 : 1（左宽右窄）：左栏是历史批次列表，右栏是文件收集筐。 -->
     <section class="ed-batches" id="edBatches" aria-label="待审核批次">
       <div class="ed-batches-head">
-        <h2 class="ed-batches-title">待审核批次</h2>
-        <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
+        <div class="ed-batches-headtext">
+          <h2 class="ed-batches-title">待审核批次</h2>
+          <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
+        </div>
+        <!-- 终极军令 任务二：API 配置入口放在批次列表右上角——老师一进画布先配模型，
+             再开始录题；弹窗就在这一帧，点击直达，不跨帧发令。 -->
+        <button type="button" class="ep-btn ep-mini-btn ed-batches-ai" id="epAiConfigList"
+                title="密钥池与四任务指派">API 配置</button>
       </div>
       <div class="ed-batches-body">
         <div class="ed-batch-col">

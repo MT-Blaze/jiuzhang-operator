@@ -35,3 +35,24 @@
 
 - `python tools/run_all_tests.py`：模块 84 个，用例 1641 个，失败模块 0 个。
 - `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+
+## 阶段二：API 配置中心（2026-11-05）
+
+### 入口与布局
+
+- 批次列表右上角新增【API 配置】（`.ed-batches-head` 行布局，标题与说明归入 `.ed-batches-headtext`），
+  点击直接打开同帧的双栏弹窗；辅助栏顶部原入口保留，两处都能进。
+- 弹窗 `#epAiConfigModal` 住在画布帧：左栏密钥池（名称 / Base URL / API Key，Key 用 password 输入、
+  列表只显示后端掩码），右栏四任务指派（视觉识别 OCR、解题、元数据、TikZ）。
+
+### 数据与安全
+
+- 后端 `app/core/ai_center.py`：非密钥字段落当前工作区 `config.json`，Key 只写工作区 `.env`
+  与环境变量，读接口只回 `api_key_masked`。
+- 每个任务可选账号 + 模型：支持【拉取模型】写入 datalist，也允许直接手填模型名后【保存指派】。
+- 写接口与出网（拉模型）全部过 `X-JZO-Token`；插件只经宿主 `ai.*` 中继，不碰 localStorage、不直连网络。
+
+### 验证证据
+
+- `python tools/run_all_tests.py`：模块 84 个，用例 1642 个，失败模块 0 个。
+- `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。

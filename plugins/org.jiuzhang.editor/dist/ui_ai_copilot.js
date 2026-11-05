@@ -516,6 +516,8 @@
 
     function wireCanvas() {
       wireMetaAi();
+      var listConfig = document.getElementById("epAiConfigList");
+      if (listConfig) listConfig.addEventListener("click", openConfig);
       var modal = dom.aiConfigModalEl;
       if (!modal) return;
       var close = document.getElementById("epAiConfigClose");
