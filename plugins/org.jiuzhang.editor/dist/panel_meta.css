@@ -366,6 +366,7 @@
   font-size: 12px;
   line-height: 18px;
   position: relative;
+  white-space: nowrap;
 }
 
 .ep-mini-btn::after {

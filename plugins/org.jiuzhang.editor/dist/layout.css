@@ -187,6 +187,7 @@ body {
 .btn-delete-batch {
   flex: none;
   margin-left: auto;
+  /* 与【剔除重复】同排时由那一颗占住自动外边距，两颗才对得紧。 */
   min-height: 44px;
   padding: 0 12px;
   border: 1px solid var(--line-strong);
@@ -211,8 +212,14 @@ body {
   cursor: default;
 }
 
+/* 两颗同排时只留【剔除重复】的自动外边距，免得平分空隙把两颗拉开。 */
+.ed-batch-purge + .btn-delete-batch {
+  margin-left: 0;
+}
+
 .ed-batch-purge {
   flex: none;
+  margin-left: auto;
   min-height: 44px;
   padding: 0 12px;
   border: 1px dashed var(--line-strong);

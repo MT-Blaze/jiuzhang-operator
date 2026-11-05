@@ -330,8 +330,11 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
         for attr in ("data-render-ms", "data-katex", "data-blocks", "data-errors",
                      "data-question-id", "data-row-h", "data-pane-w"):
             self.assertIn(f'"{attr}"', js, f"探针判据缺少度量属性 {attr}")
-        self.assertIn('var progressText = "第 " + (state.active + 1) + " / " '
-                      '+ state.items.length + " 题"', js)
+        self.assertIn("var progressText = state.scanBatch", js,
+                      "扫描卷的进度条要同时报原卷页数")
+        self.assertIn('"第 " + (state.active + 1) + " / " + state.items.length + " 题"', js)
+        self.assertIn('" 题 · 原卷 " + pageTotal + " 页"', js)
+        self.assertIn('"待框选 · 原卷 " + pageTotal + " 页"', js)
 
 
 class EditorTopBarAndAlignmentTest(unittest.TestCase):
@@ -1293,9 +1296,12 @@ class EditorReviewDeskTest(unittest.TestCase):
         """未审归零的批次：变灰、沉到最底、不可点——只能看。"""
         js = read("plugin.js")
         rows = fn_body(js, "renderBatchList")
-        self.assertIn("var leftDone = Number(left.pending_count) === 0 ? 1 : 0;", rows)
+        self.assertIn("var leftDone = Number(left.pending_count) === 0 && !left.page_only ? 1 : 0;",
+                      rows)
+        self.assertIn("var rightDone = Number(right.pending_count) === 0 && !right.page_only ? 1 : 0;",
+                      rows)
         self.assertIn("if (leftDone !== rightDone) return leftDone - rightDone;", rows,
-                      "审完的批次必须沉到列表最底")
+                      "审完的批次必须沉到列表最底；纯图卷还没框选，不许沉")
         self.assertIn("row.setAttribute(\"data-done\", done ? \"true\" : \"false\");", rows)
         # 行本身是容器，不可点的是里面那颗主按钮
         self.assertIn("open.disabled = true;", rows)
@@ -1641,15 +1647,20 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn(".ed-img-crop-btn", css)
 
     def test_06_releasing_the_button_offers_the_crop_actions(self) -> None:
-        """松开鼠标只弹动作选项（配图 / 切分新题 / 取消），不能当场把框吞掉。
+        """纯图片卷松开即切；普通题松开仍弹动作选项（配图 / 切分新题 / 取消）。
 
-        无文本层试卷全靠这一步：老师一页一页框，框完自己决定这块是配图还是新题。
+        扫描卷每一页都是原卷，框完就是一道新题，不让老师再点第二次；
+        普通题框的可能是配图，必须先问这一块算哪一类。
         """
         js = read("plugin.js")
         up = fn_body(js, "onCropUp")
         self.assertIn("if (!rect || rect.w < CROP_MIN_SIDE || rect.h < CROP_MIN_SIDE)", up)
+        self.assertIn("if (session.autoSplit) {", up, "扫描卷松开鼠标即切")
+        self.assertIn('finishCrop(session, "split");', up)
+        self.assertLess(up.index("if (session.autoSplit) {"), up.index("showCropActions(session);"),
+                        "自动切题的判断必须排在弹动作条之前")
         self.assertIn("showCropActions(session);", up,
-                      "松开鼠标必须先给老师选动作，不能直接 finishCrop")
+                      "普通题松开鼠标仍要选动作，不能直接吞框")
         self.assertNotIn("finishCrop(session);", up)
         bar = fn_body(js, "showCropActions")
         self.assertIn('actionButton("提取为本题配图"', bar)
@@ -1657,7 +1668,8 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn('actionButton("取消"', bar)
         self.assertIn("canSplitItem(session.item)", bar,
                       "「切分新题」只许出现在中转站里的题上")
-        self.assertIn("item.pendingId && item.batchId", fn_body(js, "canSplitItem"))
+        self.assertIn("(item.pendingId || item.galleryPage)", fn_body(js, "canSplitItem"),
+                      "原卷页框出来的格子还没有 pendingId，也要能切题")
         close = fn_body(js, "closeCrop")
         self.assertIn("lensCanvas.parentNode.removeChild(lensCanvas);", close,
                       "左键松开后放大镜必须消失")
@@ -1686,9 +1698,10 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn("batch_id: item.batchId", call)
         self.assertIn("page_no: pageNo", call)
         self.assertIn('origin: "editor.split"', call)
+        self.assertIn('position: "top"', call, "新题必须置顶，老师马上能补录题干")
         placeholder = fn_body(split, "placeholderDoc")
+        self.assertIn("框选切题", placeholder)
         self.assertIn("已从原卷第 ", placeholder)
-        self.assertIn("tags: [\"待识别\"]", placeholder)
         # 插件分包后仍要挂进整包：index.html 先加载它，plugin.js 再接线。
         html = read("index.html")
         self.assertIn('<script src="ui_split.js"></script>', html)

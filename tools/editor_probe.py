@@ -59,7 +59,7 @@ CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 PANEL = "#wsContextSlot .ws-context-frame"
 BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-ui .ws-plugin-frame"
 
-BATCH_STAMP_RE = re.compile(r"^\d{2}-\d{2} 星期[日一二三四五六] \d{2}:\d{2} \| 批次 #B-\d{3,}$")
+BATCH_STAMP_RE = re.compile(r"^\d{2}-\d{2} \d{2}:\d{2} \| 批次 #B-\d{3,}$")
 # 卡片右侧是「待审 n / N」：n 是这一批在池里的真实行数，N 是录入时累加的总数。
 CARD_COUNT_RE = re.compile(r"待审\s*(?P<pending>\d+)\s*/\s*(?P<total>\d+)")
 # 军令 #32 第五步的账：抽走的题另记「池内」，入库的记「已入库」，池内【删除】的记「已裁删」，
@@ -71,13 +71,13 @@ LEDGER_RE = re.compile(
     r"(?:\s*＋ 池内\s*(?P<pooled>\d+))?"
     r"(?:\s*＋ 已入库\s*(?P<stored>\d+))?"
     r"(?:\s*＋ 已裁删\s*(?P<gone>\d+))?"
-    r"\s*＝\s*(?P<total>\d+)")
+    r"\s*＝\s*总数\s*(?P<total>\d+)")
 STAT_LEDGER_RE = re.compile(
-    r"^未审 (?P<pending>\d+)"
+    r"未审 (?P<pending>\d+)"
     r"(?: ＋ 池内 (?P<pooled>\d+))?"
     r"(?: ＋ 已入库 (?P<stored>\d+))?"
     r"(?: ＋ 已裁删 (?P<gone>\d+))?"
-    r" ＝ 总数 (?P<total>\d+)$")
+    r" ＝ 总数 (?P<total>\d+)")
 
 
 def ledger_terms(hit: "re.Match[str] | None") -> dict:
@@ -421,6 +421,9 @@ def main() -> int:
     env["JZO_PLUGINS_DIR"] = str(plugins_dir)
     env["JZO_LOCAL_TOKEN"] = TOKEN
     env["JZO_RESTART_DISABLED"] = "1"
+    # 种子卷的四道题本来就长得很像：不关查重准入，后台会当场抽走 3 道，
+    # 后面的题号/行数/沉底判据全都会对着一条残卷比，必假红。
+    env["JZO_POOL_ADMIT_DISABLED"] = "1"
     # 活跃档指向本机桩：环境变量优先于仓库 .env（app/__init__._load_local_env 用 setdefault）
     env["JZO_AI_PROVIDER"] = "openai-compatible"
     env["JZO_AI_BASE_URL"] = stub.base_url
@@ -619,7 +622,7 @@ def main() -> int:
             check("卡片第一行是原文件名",
                   bool(left_text.strip()),
                   {"name": left_text})
-            check("卡片第二行是「月-日 星期 时刻 | 批次 #B-xxx」",
+            check("卡片第二行是「月-日 时刻 | 批次 #B-xxx」",
                   bool(BATCH_STAMP_RE.match(meta_text.strip())),
                   {"meta": meta_text})
             right_text = seed_row.locator(".ed-batch-right").inner_text()
@@ -652,12 +655,15 @@ def main() -> int:
                   0 <= flush <= 24 and vertical <= 4,
                   {"flush": flush, "vertical": vertical})
             purge_box = seed_row.locator(".ed-batch-purge").bounding_box()
+            delete_box = seed_row.locator(".btn-delete-batch").bounding_box()
             row_gap = round((row_box["x"] + row_box["width"])
+                            - (delete_box["x"] + delete_box["width"]), 2)
+            pair_gap = round(delete_box["x"]
                              - (purge_box["x"] + purge_box["width"]), 2)
-            check("「剔除重复」贴紧整行右缘，不与未审数抢位置",
-                  0 <= row_gap <= 24 and purge_box["x"] > right_box["x"],
-                  {"row_gap": row_gap, "purge_x": purge_box["x"],
-                   "right_x": right_box["x"]})
+            check("「删除批次」贴紧整行右缘，「剔除重复」紧挨在它左边",
+                  0 <= row_gap <= 24 and 0 <= pair_gap <= 16,
+                  {"row_gap": row_gap, "pair_gap": pair_gap,
+                   "purge_x": purge_box["x"], "delete_x": delete_box["x"]})
             bg_before = seed_row.evaluate("n => getComputedStyle(n).backgroundColor")
             seed_row.hover()
             page.wait_for_timeout(300)
@@ -1294,6 +1300,10 @@ def main() -> int:
             check("批次公共元数据默认展开",
                   panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
                   {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+            # 1440×900 下这一卷的内容还没撑出滚动条：先把窗口压矮，让"滚动触发折叠"
+            # 这个判据真的有一根滚动条可拉；判完立刻恢复原窗口尺寸。
+            page.set_viewport_size({"width": 1440, "height": 520})
+            page.wait_for_timeout(400)
             scrolled = canvas.locator("#edRoot").evaluate(
                 """() => {
                     var bodies = ['#edImageBody', '#edSourceBody', '#edRenderBody'];
@@ -1316,6 +1326,8 @@ def main() -> int:
                 page.wait_for_timeout(100)
             check("画布一滚动，批次公共元数据立刻收成一行矮标题",
                   fold_state == "closed", {"fold": fold_state, "scrolled": scrolled})
+            page.set_viewport_size({"width": 1440, "height": 900})
+            page.wait_for_timeout(300)
             check("辅助栏不留虚线接收框（收件只有画布的收集筐）",
                   panel.locator("#epIntake").count() == 0,
                   {"intake": panel.locator("#epIntake").count()})
@@ -1600,8 +1612,8 @@ def main() -> int:
             flags = [flag for _batch, flag in order]
             first_done = flags.index("true") if "true" in flags else len(flags)
             check("审完的批次沉到列表最底下",
-                  flags[first_done:] == ["true"] * len(flags[first_done:])
-                  and order[first_done][0] == batch_id,
+                  bool(order) and order[-1][0] == batch_id
+                  and flags[first_done:] == ["true"] * len(flags[first_done:]),
                   {"order": order})
             page.screenshot(path=str(shots / "v3-done.png"))
             done_box = done_row.bounding_box()
@@ -1703,7 +1715,8 @@ def main() -> int:
             synced_merge = sync_panel()
             total_before_merge = bank_total(base)
             panel.locator("#epApprove").click()
-            expect(panel.locator("#epDupMerge")).to_be_visible(timeout=25000)
+            # 查重没出裁决前这颗钮是锁死的，先等它真的可点，免得点了没反应。
+            expect(panel.locator("#epDupMerge")).to_be_enabled(timeout=25000)
             # 点下去之前先核对"辅助栏现在这道题，就是池子里那一条"：
             # 合并这条动作全靠 pending_id 对上，选区慢半拍会把请求吞掉，
             # 界面不报错、池子不动，判据只剩一条"解析没变"——看不出是哪儿没接上。
@@ -2183,8 +2196,8 @@ def main() -> int:
                    "console": [text[:200] for text in result["console_errors"][-6:]],
                    "page": [text[:200] for text in result["page_errors"][-6:]]})
             expect(canvas.locator(".ed-crop-canvas")).to_be_visible(timeout=15000)
-            check("切图台给出手势提示（移动看像素、拖拽框选、左键松开）",
-                  "像素" in crop_hint and "拖拽" in crop_hint and "左键" in crop_hint,
+            check("切图台给出手势提示（移动看像素、拖拽框选、松开后选动作）",
+                  "像素" in crop_hint and "拖拽" in crop_hint and "松开" in crop_hint,
                   {"hint": crop_hint})
             check("切图台上鼠标是十字",
                   canvas.locator(".ed-crop-canvas").evaluate(
@@ -2224,7 +2237,11 @@ def main() -> int:
             page.mouse.move(box["x"] + box["width"] - 4, box["y"] + box["height"] - 4,
                             steps=10)
             page.mouse.up()
-            # 松手当场就得收摊：镜子与切图台不许等到落库回执才撤。
+            # 普通题的框可能是配图：松开鼠标先弹动作条，老师选完才收摊。
+            expect(canvas.locator(".ed-crop-actions")).to_be_visible(timeout=5000)
+            canvas.locator(".ed-crop-actions").get_by_role(
+                "button", name="提取为本题配图").click()
+            # 选完动作当场就得收摊：镜子与切图台不许等到落库回执才撤。
             deadline_lens = time.time() + 5
             lens_left = 1
             crop_left = 1
@@ -2246,7 +2263,7 @@ def main() -> int:
                     if crop_uri.startswith("/static/pending/"):
                         break
                 page.wait_for_timeout(400)
-            check("左键松开就切图，切完的配图落回中转站",
+            check("选【提取为本题配图】后切图落回中转站",
                   crop_uri.startswith("/static/pending/"), {"uri": crop_uri})
             check("切完的图又出现在左栏里",
                   canvas.locator(".ed-img-frame img").count() >= 1,

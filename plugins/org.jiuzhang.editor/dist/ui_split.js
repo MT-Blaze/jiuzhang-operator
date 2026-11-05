@@ -35,7 +35,7 @@
       };
     }
 
-    /** 切出来的图落进当前批次的中转站，新题紧跟在源题后面。 */
+    /** 切出来的图落进当前批次的中转站，新题置顶等老师补题干。 */
     function splitFromCrop(item, dataUrl, info) {
       if (!item || !item.batchId) {
         dockWarn("切分新题需要先在一个批次里：当前题不在中转站。");
