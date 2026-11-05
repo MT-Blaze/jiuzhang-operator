@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import ai_center
+from app.core import ai_center, latex_style_dict, question_parser
 from app.core.ai_client import OpenAICompatibleProvider
 from app.core.config import settings
 from app.core.exam_source import OPTION_KEYS, build_exam_source
@@ -45,6 +45,8 @@ SYSTEM_PROMPT = r"""你是数学试卷录题助手。看题图，只输出一个
 - "question_no": 原卷题号（图上看不清就留空串）
 - "difficulty": "L1" | "L2" | "L3" | "L4"（拿不准就 "L2"）
 铁律：只转录看得见的内容，看不清就留空串；绝不编造答案、选项或题号。
+公式：行内公式只用 $...$，独立公式只用 $$...$$，不要写 \( \) 或 \[ \]。
+标点：照抄原卷标点；原卷有顿号/逗号就保留，原卷没有并列标点就直接输出变量，不要自行添加。
 """
 
 SOLVE_SYSTEM_PROMPT = r"""你是数学解题助手。老师已经录好一道题，你只负责补答案与解析，不改题干、不改选项。
@@ -109,8 +111,16 @@ def _strip_fences(content: str) -> str:
     return text
 
 
+def _raw_text(value: Any, limit: int) -> str:
+    return unicodedata.normalize("NFC", str(value or "")).strip()[:limit]
+
+
 def _clean_text(value: Any, limit: int) -> str:
+    """模型给的正文先过写库清洗：``\\(`` / ``\\[`` 归一成 ``$`` / ``$$``，
+    再按写法字典补显式脚本与相邻变量的细空格。不合规的公式语法绝不落库。"""
     text = unicodedata.normalize("NFC", str(value or "")).strip()
+    text = question_parser.normalize_latex(text)
+    text = latex_style_dict.clean_for_write(text)["text"]
     return text[:limit]
 
 
@@ -149,7 +159,7 @@ def normalize_question(document: dict[str, Any], context: dict[str, Any]) -> dic
         for index, option in enumerate(raw_options[: len(OPTION_KEYS)]):
             if isinstance(option, dict):
                 content = _clean_text(option.get("content"), 2000)
-                key = _clean_text(option.get("key"), 4) or OPTION_KEYS[index]
+                key = _raw_text(option.get("key"), 4) or OPTION_KEYS[index]
             else:
                 content = _clean_text(option, 2000)
                 key = OPTION_KEYS[index]
@@ -170,10 +180,10 @@ def normalize_question(document: dict[str, Any], context: dict[str, Any]) -> dic
     if isinstance(solution, dict):
         solution = solution.get("content") or solution.get("final") or ""
 
-    question_no = _clean_text(document.get("question_no") or context.get("question_no"), 20)
-    difficulty = _clean_text(document.get("difficulty"), 4).upper()
+    question_no = _raw_text(document.get("question_no") or context.get("question_no"), 20)
+    difficulty = _raw_text(document.get("difficulty"), 4).upper()
     if difficulty not in DIFFICULTIES:
-        difficulty = _clean_text(context.get("difficulty"), 4).upper()
+        difficulty = _raw_text(context.get("difficulty"), 4).upper()
     if difficulty not in DIFFICULTIES:
         difficulty = "L2"
 
@@ -196,21 +206,21 @@ def _context_question(context: dict[str, Any]) -> dict[str, Any]:
     for index, option in enumerate((context or {}).get("options") or []):
         if not isinstance(option, dict):
             continue
-        content = _clean_text(option.get("content"), 2000)
+        content = _raw_text(option.get("content"), 2000)
         if not content:
             continue
-        key = _clean_text(option.get("key"), 4) or OPTION_KEYS[min(index, len(OPTION_KEYS) - 1)]
+        key = _raw_text(option.get("key"), 4) or OPTION_KEYS[min(index, len(OPTION_KEYS) - 1)]
         options.append({"key": key, "content": content})
     if kind not in ("single_choice", "multiple_choice"):
         options = []
-    difficulty = _clean_text((context or {}).get("difficulty"), 4).upper()
+    difficulty = _raw_text((context or {}).get("difficulty"), 4).upper()
     return {
         "type": kind,
-        "stem": _clean_text((context or {}).get("stem"), 8000),
+        "stem": _raw_text((context or {}).get("stem"), 8000),
         "options": options,
-        "answer": _clean_text((context or {}).get("answer"), 2000),
-        "solution": _clean_text((context or {}).get("solution"), 8000),
-        "question_no": _clean_text((context or {}).get("question_no"), 20),
+        "answer": _raw_text((context or {}).get("answer"), 2000),
+        "solution": _raw_text((context or {}).get("solution"), 8000),
+        "question_no": _raw_text((context or {}).get("question_no"), 20),
         "difficulty": difficulty if difficulty in DIFFICULTIES else "L2",
     }
 
@@ -275,7 +285,7 @@ async def solve(context: dict[str, Any] | None = None) -> dict[str, Any]:
         "ok": True,
         "question": question,
         "source": build_exam_source(question),
-        "note": _clean_text(document.get("note"), 200),
+        "note": _raw_text(document.get("note"), 200),
         "mock": bool(result.get("mock")),
         "model": binding.model,
     }

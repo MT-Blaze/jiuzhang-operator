@@ -11,10 +11,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.core.question_parser import normalize_latex
+
 OPTION_KEYS = "ABCDEFGH"
 _EMPTY_BRACKET = re.compile(r"[（(][ \t\u3000]*[）)]")
 _DUP_BRACKET = re.compile(r"([（(][ \t\u3000]*[）)])(?:[ \t]*[（(][ \t\u3000]*[）)])+")
 _CHOICES_ENV = re.compile(r"\\begin\{choices\}[\s\S]*?\\end\{choices\}")
+
+
+def _normal(value: Any) -> str:
+    """正文一律按契约归一：``\\(`` / ``\\[`` 必须落成 ``$`` / ``$$``。"""
+    return normalize_latex(str(value or "")).strip()
 
 
 def ensure_choice_bracket(stem: str, multi: bool) -> str:
@@ -41,20 +48,20 @@ def answer_text(question: dict[str, Any]) -> str:
 
 
 def solution_block(question: dict[str, Any]) -> str:
-    head = "答案：" + answer_text(question)
-    body = str(question.get("solution") or "").strip()
+    head = "答案：" + _normal(answer_text(question))
+    body = _normal(question.get("solution"))
     return head + ("\n" + body if body else "")
 
 
 def build_exam_source(question: dict[str, Any]) -> str:
     item = question or {}
     kind = str(item.get("type") or "solution")
-    stem = _CHOICES_ENV.sub("", str(item.get("stem") or "")).strip()
+    stem = _normal(_CHOICES_ENV.sub("", str(item.get("stem") or "")))
     out = ""
     if kind in ("single_choice", "multiple_choice"):
         options = [option for option in (item.get("options") or [])
                    if str(option.get("content") or "").strip()]
-        lines = ["  \\item " + str(option.get("content") or "").strip() for option in options]
+        lines = ["  \\item " + _normal(option.get("content")) for option in options]
         out += ("\\begin{question}\n" + ensure_choice_bracket(stem, kind == "multiple_choice")
                 + "\n\\begin{choices}\n" + "\n".join(lines) + "\n\\end{choices}\n"
                 + "\\end{question}\n\n")

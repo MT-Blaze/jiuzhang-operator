@@ -55,6 +55,20 @@ class ExamSourceTest(unittest.TestCase):
         self.assertTrue(source.startswith("\\begin{problem}"))
         self.assertIn("答案：略", source)
 
+    def test_delimiters_are_normalized_before_wrapping(self) -> None:
+        """模型给的 \\(...\\) / \\[...\\] 不许原样落进源码，必须归一成 $ / $$。"""
+        source = build_exam_source({
+            "type": "solution",
+            "stem": r"求 \[x=1\] 的值",
+            "answer": r"\(2\)",
+            "solution": r"代入 \(x=1\) 得 \(y=2\)。",
+        })
+        self.assertIn("$$x=1$$", source)
+        self.assertIn("答案：$2$", source)
+        self.assertIn("代入 $x=1$ 得 $y=2$。", source)
+        self.assertNotIn(r"\(", source)
+        self.assertNotIn(r"\[", source)
+
 
 class RecognizeTest(unittest.TestCase):
     def _run(self, content: str, images=None, context=None, task="ocr", binding=BINDING):
@@ -121,6 +135,24 @@ class RecognizeTest(unittest.TestCase):
         self.assertEqual(question["difficulty"], "L3")
         self.assertEqual(question["question_no"], "12")
 
+    def test_08_returned_text_is_write_cleaned(self) -> None:
+        """识别回来的正文必须过写库清洗：\\( \\) → $，相邻下标变量补 \\,。"""
+        document = {
+            "type": "solution",
+            "stem": r"若 \(m_1 m_2\) 是方程两根，求 \(m_1+m_2\)。",
+            "answer": r"\(5\)",
+            "solution": r"由韦达定理 \[m_1+m_2=5\] 得证。",
+        }
+        result = self._run(json.dumps(document, ensure_ascii=False))
+        self.assertTrue(result["ok"], result)
+        question = result["question"]
+        self.assertEqual(question["stem"], r"若 $m_{1}\,m_{2}$ 是方程两根，求 $m_{1}+m_{2}$。")
+        self.assertEqual(question["answer"], "$5$")
+        self.assertEqual(question["solution"], r"由韦达定理 $$m_{1}+m_{2}=5$$ 得证。")
+        self.assertIn(r"$m_{1}\,m_{2}$", result["source"])
+        self.assertNotIn(r"\(", result["source"])
+        self.assertNotIn(r"\[", result["source"])
+
 
 SOLVE_BINDING = ai_center.TaskBinding(
     task="solve", account_id="acc_0000000001", name="解题档",
@@ -175,6 +207,16 @@ class SolveTest(unittest.TestCase):
         result = self._run("我算不出来", {"stem": "题干"})
         self.assertFalse(result["ok"])
         self.assertIn("JSON", result["detail"])
+
+    def test_06_model_answer_and_solution_are_normalized_stem_kept(self) -> None:
+        context = {"type": "solution", "stem": r"若 \(m_1 m_2\) 是两根", "answer": "", "options": []}
+        result = self._run(json.dumps({
+            "answer": r"\(m_1=1\)", "solution": r"由 \[m_1 m_2=2\] 得证。",
+        }, ensure_ascii=False), context)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["question"]["answer"], "$m_{1}=1$")
+        self.assertEqual(result["question"]["solution"], r"由 $$m_{1}\,m_{2}=2$$ 得证。")
+        self.assertEqual(result["question"]["stem"], context["stem"], "题干必须原样保留")
 
 
 if __name__ == "__main__":

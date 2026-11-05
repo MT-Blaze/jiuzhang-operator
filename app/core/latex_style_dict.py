@@ -124,6 +124,9 @@ _ALIAS_PATTERN = re.compile(
     r"\\(" + "|".join(sorted(SYMBOL_ALIASES, key=len, reverse=True)) + r")(?![A-Za-z])"
 )
 
+# 「单字母 + 下标」变量：m_{1}、a_{ij}。只对这类相邻变量补视觉细空格。
+_SCRIPT_VAR = re.compile(r"([A-Za-z])_\{([^{}]*)\}")
+
 
 def math_spans(text: str) -> list[tuple[int, int, bool]]:
     """返回各数学段 (起, 止, 是否未闭合)；未闭合段延到文末。"""
@@ -213,6 +216,10 @@ def _rewrite(text: Any, *, compare: bool) -> dict[str, Any]:
         pieces.append(_collapse_prose_whitespace(text[cursor:start]) if compare
                       else text[cursor:start])
         segment, hits, missing = _rewrite_span(text[start:end], compare)
+        if not compare:
+            segment, spaced = _thin_space_scripts(segment)
+            if spaced:
+                _note(rules, "var_space")
         pieces.append(segment)
         for name in hits:
             _note(rules, name)
@@ -377,6 +384,60 @@ def match_group(text: str, start: int) -> int:
                 return i + 1
         i += 1
     return n
+
+
+def _protected_spans(text: str) -> list[tuple[int, int]]:
+    """文字/环境名命令连同花括号组的区间——组内一个字都不许改。"""
+    spans: list[tuple[int, int]] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] != "\\":
+            i += 1
+            continue
+        name, tail = read_command(text, i)
+        if name in _PROTECTED_GROUP_COMMANDS:
+            end = tail
+            if end < n and text[end] == "{":
+                end = match_group(text, end)
+            spans.append((i, end))
+            i = end
+            continue
+        i = tail
+    return spans
+
+
+def _overlaps(start: int, end: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start < span_end and end > span_start for span_start, span_end in spans)
+
+
+def _thin_space_scripts(segment: str) -> tuple[str, bool]:
+    """相邻两个「字母 + 下标」变量之间补 ``\\,``：``m_{1}m_{2}`` → ``m_{1}\\,m_{2}``。
+
+    只加排版细空格，不改乘除关系；逗号、运算符、幂次隔开的变量都不碰，
+    ``\\text{}`` / ``\\operatorname{}`` 等文字组内原样保留。已有 ``\\,`` 的
+    不再重复补，保证洗十遍与洗一遍逐字相同。
+    """
+    spans = _protected_spans(segment)
+    tokens = [match for match in _SCRIPT_VAR.finditer(segment)
+              if not _overlaps(match.start(), match.end(), spans)]
+    if len(tokens) < 2:
+        return segment, False
+    pieces: list[str] = []
+    cursor = 0
+    changed = False
+    for previous, current in zip(tokens, tokens[1:]):
+        gap = segment[previous.end():current.start()]
+        if gap.strip() or _overlaps(previous.end(), current.start(), spans):
+            continue
+        pieces.append(segment[cursor:previous.end()])
+        pieces.append("\\,")
+        cursor = current.start()
+        changed = True
+    if not changed:
+        return segment, False
+    pieces.append(segment[cursor:])
+    return "".join(pieces), True
 
 
 def _collapse_prose_whitespace(segment: str) -> str:

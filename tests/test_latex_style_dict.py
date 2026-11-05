@@ -80,6 +80,15 @@ class MergedFormsTest(unittest.TestCase):
         self.assertEqual(latex_style_dict.clean_for_write(r"$x^{2}$")["rules"], [])
         self.assertFalse(latex_style_dict.clean_for_write(r"$x^{2}$")["changed"])
 
+    def test_07_adjacent_scripted_vars_get_thin_space(self) -> None:
+        self.assertEqual(write(r"$m_1 m_2$"), r"$m_{1}\,m_{2}$")
+        self.assertEqual(write(r"$m_1m_2$"), r"$m_{1}\,m_{2}$")
+        self.assertEqual(write(r"$a_1 a_2 a_3$"), r"$a_{1}\,a_{2}\,a_{3}$")
+        self.assertEqual(write(r"$a_1\,a_2$"), r"$a_{1}\,a_{2}$", "已有细空格不重复补")
+        self.assertEqual(write(r"$m_1, m_2$"), r"$m_{1}, m_{2}$", "逗号隔开不动")
+        self.assertEqual(write(r"$m_1^{2}m_2$"), r"$m_{1}^{2}m_{2}$", "幂次隔开不动")
+        self.assertEqual(write(r"$\text{m_{1} m_{2}}$"), r"$\text{m_{1} m_{2}}$", "文字组不动")
+
 
 class NotMergedTest(unittest.TestCase):
     """判据 1.2：长得像但含义不同的写法绝不合并。"""
@@ -160,6 +169,7 @@ class IdempotentTest(unittest.TestCase):
         r"$\frac12$ 与 $a_1$ 和 $5-2$ 以及 $A\cdot B$",
         "已知 $x^2$，且 \\fillin 处填 $\\text{最小值}$",
         r"$\displaystyle \frac{2}3 \leqslant x$",
+        r"$a_1 a_2 a_3$ 与 $b_1, b_2$ 以及 $\text{m_{1} m_{2}}$",
     ]
 
     def assert_stable(self, clean, text: str) -> None:
