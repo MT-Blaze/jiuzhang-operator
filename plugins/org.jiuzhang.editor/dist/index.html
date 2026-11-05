@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="layout.css">
   <link rel="stylesheet" href="layout_boxes.css">
   <link rel="stylesheet" href="layout_canvas.css">
+  <link rel="stylesheet" href="illustration.css">
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="panel_meta.css">
   <link rel="stylesheet" href="panel_dialog.css">
@@ -100,6 +101,9 @@
             <div class="ed-pane-head">
               <span>LaTeX 源码</span>
               <em id="edSourceHint">源码 · 整段源码直接编辑</em>
+              <!-- 终极军令 任务四：框选原图插配图。移除本模块时连同 ui_illustration.js 一起删。 -->
+              <button type="button" class="ed-pane-insert-illustration" id="edAddIllustration"
+                      title="框选原图上的一块，插到光标所在的题干、解析或选项里">添加配图</button>
             </div>
             <div class="ed-pane-body" id="edSourceBody"></div>
           </section>
@@ -619,6 +623,7 @@
   <script src="ui_meta_strip.js"></script>
   <script src="ui_columns_scan.js"></script>
   <script src="ui_columns.js"></script>
+  <script src="ui_illustration.js"></script>
   <script src="ui_panel.js"></script>
   <script src="ui_layout.js"></script>
   <script src="core_selection.js"></script>

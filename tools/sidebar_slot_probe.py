@@ -14,7 +14,7 @@
   2. 面板 iframe 的 sandbox 为 ``allow-scripts allow-modals``（不得带 allow-same-origin）；
   3. ``plugin.activate`` 带 ``{"slot":"sidebar.right"}``，插件回 ready；
   4. 面板能走 Host API（``basket.list`` 往返成功）；
-  5. 插件停用后，隔离区里没有默认住户 org.jiuzhang.chat，插槽给出可读兜底文案、iframe 归零，
+  5. 插件停用后，右栏不再有默认住户，插槽给出可读兜底文案、iframe 归零，
      不再静默留白；
   6. 宿主页零未捕获 JS 错误。
 """
@@ -268,7 +268,7 @@ def run(tag: str) -> dict:
             report["notes"]["fallback"] = fallback
             snap("20-fallback-note")
             check("停用后右栏不静默留白：给出可读兜底且不再挂 iframe",
-                  fallback["frames"] == 0 and "org.jiuzhang.chat" in fallback["note"],
+                  fallback["frames"] == 0 and bool(str(fallback["note"]).strip()),
                   json.dumps(fallback, ensure_ascii=False))
             check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
             browser.close()

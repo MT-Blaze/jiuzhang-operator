@@ -131,13 +131,17 @@ def run(tag: str) -> dict:
             report["notes"]["initial"] = state
             snap("10-layout")
 
-            check("左右栏头部等高", state["sidebarHead"] and state["contextHead"]
-                  and state["sidebarHead"]["height"] == state["contextHead"]["height"] == 48,
+            # 阶段一大瘦身后：右栏没有插件占用时默认折叠，头部不占高；
+            # 左栏头部仍是固定的 48px，两栏顶线起点一致。
+            check("右栏无插件占用时默认折叠（头部不占高）",
+                  state["sidebarHead"] and state["sidebarHead"]["height"] == 48
+                  and state["contextHead"] and state["contextHead"]["height"] == 0,
                   json.dumps([state["sidebarHead"], state["contextHead"]]))
             check("左右栏头部顶线对齐", state["sidebarHead"] and state["contextHead"]
                   and state["sidebarHead"]["top"] == state["contextHead"]["top"], "")
             check("左栏题库下拉已移入设置", not state["bankSelect"] and not state["bankNew"], "")
-            check("自由对话（现为 AI 助手插件行）在插件列表内", state["chatInList"], json.dumps(state["rows"], ensure_ascii=False)[:200])
+            check("AI 助手插件已整块下架（左栏不再有对话入口）", not state["chatInList"],
+                  json.dumps(state["rows"], ensure_ascii=False)[:200])
             check("管理入口死锁栏底且无悬浮小图标",
                   state["footConsole"] and not state["footReset"], "")
             check("舞台头/模型胶囊/上下文按钮已删除",

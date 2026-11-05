@@ -38,7 +38,9 @@ BEGIN = "  //# FIXTURES-BEGIN"
 END = "  //# FIXTURES-END"
 
 # 军令 #23：只许 exam-zh 标准环境，禁止自定义任何 LaTeX 环境。
-ALLOWED_ENVS = {"question", "choices", "problem", "solution"}
+# center 不是自定义环境：任务四的配图按格式宪法必须落在 \begin{center} 里，
+# 它是 LaTeX 内核自带的标准居中环境，不参与题目结构。
+ALLOWED_ENVS = {"question", "choices", "problem", "solution", "center"}
 
 
 def read(name: str) -> str:
@@ -363,13 +365,15 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
-        # 画布内只许剩收集筐的【🚀 开始解析】与批次列表右上角的【API 配置】——
-        # 前者是唯一的建批次出口，后者是终极军令任务二的配置入口（2026-11-05）。
+        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的【API 配置】与
+        # 源码栏头部的【添加配图】——分别是建批次、任务二配置、任务四插配图的唯一入口。
         # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
         plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
                         + canvas[canvas.index('id="edToast"'):])
-        self.assertEqual(plain_canvas.count("<button"), 2, "画布内只许剩【API 配置】与【开始解析】")
+        self.assertEqual(plain_canvas.count("<button"), 3,
+                         "画布内只许剩【API 配置】【开始解析】【添加配图】")
         self.assertIn('id="epAiConfigList"', plain_canvas)
+        self.assertIn('id="edAddIllustration"', plain_canvas)
         self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")
         self.assertNotIn('id="edBatchBar"', canvas, "二屏抬头大横条已彻底删除")
         self.assertIn('id="edBasketGo"', canvas)

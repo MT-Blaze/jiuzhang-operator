@@ -593,6 +593,14 @@
     splitFromCrop: uiSplit.splitFromCrop,
     stashOne: stashOne,
   });
+  // 终极军令 任务四：源码栏【添加配图】。独立一整块，可整块下架。
+  var uiIllustration = window.JzoEditorIllustration.create({
+    clampValue: clampValue, coreState: coreState, cropApi: uiCrop, dock: dock,
+    dockWarn: dockWarn, dom: dom, el: el, errorDetail: errorDetail,
+    fieldRanges: fieldRanges, growTextarea: uiColumns.growTextarea, hostCall: hostCall,
+    itemImage: itemImage, onBoxInput: uiColumns.onBoxInput,
+    onSourceInput: uiColumns.onSourceInput,
+  });
   var uiLayout = window.JzoEditorLayout.create({
     dom: dom,
     hostCall: hostCall,

@@ -82,3 +82,35 @@
 
 - `python tools/run_all_tests.py`：模块 84 个，用例 1655 个，失败模块 0 个。
 - `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+
+## 阶段四：框选原图插配图（2026-11-05）
+
+### 入口与交互
+
+- 源码栏顶部新增【添加配图】（`#edAddIllustration`）：点击后当前题的原图变成画板，
+  十字光标拉框，松手保留选区，双击确认；Esc 或再点一次取消。
+- 画板复用切图台的几何与位图缓存（`ui_crop.loadPageBitmap/layoutCrop/cropPoint/cropRegionToDataUrl`），
+  普通批挂在 `.ed-img-frame` 上，扫描卷挂在 `.ed-page-cell` 上，不另造一套坐标。
+- 双击不会清掉刚拉好的框：落在已有选区内或 `event.detail > 1` 的按下事件一律不重开框。
+
+### 插入规则
+
+- 光标在题干/解析：插入居中环境
+  `\vspace{1ex}` + `\begin{center}` + `\includegraphics[width=0.6\textwidth]{...}` + `\end{center}`。
+- 光标在 `\item` 选项内：只插入 `\includegraphics[width=0.2\textwidth]{...}`，
+  不带 `\`、不带 `A.`、不包环境；坐标用光标前最近的 `\begin{choices}`/`\end{choices}` 判定。
+- 图片先走宿主 `asset.upload` 落中转站，再改写当前题的活动 textarea/input；写入后恢复光标，
+  并同步列状态（`onSourceInput` / `onBoxInput`），尚未保存的内容由既有草稿机制兜底。
+
+### 可下架
+
+- 新能力独立成 `ui_illustration.js` + `illustration.css` 一整块；移除时删按钮、
+  两处 `<script>/<link>` 与 `plugin.js` 里的 `uiIllustration` 装配即可，画布其余结构不动。
+
+### 验证证据
+
+- `tests.test_illustration`：14 例全过（入口、插入纯度、选区不被双击清掉、Esc 还原、光标记忆）。
+- `tools/illustration_probe.py`：12/12 通过（真浏览器拉框、双击、插题干与选项、Esc）。
+- `tools/editor_probe.py phase4`：224/224 通过（含单题/批量 AI 识别、按钮计数与三栏布局）。
+- `python tools/run_all_tests.py`：模块 85 个，用例 1669 个，失败模块 0 个。
+- `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。

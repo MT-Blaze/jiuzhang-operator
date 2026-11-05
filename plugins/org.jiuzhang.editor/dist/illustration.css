@@ -1,0 +1,35 @@
+/* 源码栏【添加配图】（终极军令 任务四）：独立一块，删掉本文件即恢复原头部。 */
+
+.ed-pane-insert-illustration {
+  flex: none;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ed-pane-insert-illustration:hover {
+  background: #d5e8db;
+}
+
+/* 原图上的配图画板：十字准心，拖框后原地保留，双击才落刀。 */
+.ed-illustration-canvas {
+  display: block;
+  outline: 1px solid var(--line-strong);
+  outline-offset: -1px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.ed-illustration-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}

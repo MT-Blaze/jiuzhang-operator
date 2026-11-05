@@ -43,7 +43,6 @@ PANELS = EVID / "s6b-panels"
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
 BANK_UI_ID = "org.jiuzhang.bank-ui"
-CHAT_ID = "org.jiuzhang.chat"
 TOKEN = "pool-canvas-probe-token"
 AMBER = (192, 138, 46)        # --amber #c08a2e
 DANGER = (155, 59, 45)         # --danger 实测 computed #9b3b2d（layout_canvas.css:661-665 亮灯帧 boxShadow 反读），旧值 #d33 作废
@@ -380,7 +379,7 @@ def main() -> int:
     data_dir, plugins_dir = work / "data", work / "plugins"
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
-    for pid in (EDITOR_ID, BANK_ID, BANK_UI_ID, CHAT_ID):
+    for pid in (EDITOR_ID, BANK_ID, BANK_UI_ID):
         shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
     port = free_port()
     base = f"http://127.0.0.1:{port}"

@@ -49,9 +49,6 @@ ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
 BANK_UI_ID = "org.jiuzhang.bank-ui"
-# 右栏的默认住户 AI 助手：探针必须把它一起装上。
-# 少了它，右栏没人争，录题的接管自然成功——那种环境验不出「谁才是右栏的主人」。
-CHAT_ID = "org.jiuzhang.chat"
 TOKEN = "editor-probe-token"
 MARK = "探针v3草稿"
 
@@ -298,6 +295,35 @@ class StubProvider:
                         user = str(message.get("content") or "")
                     elif role == "system":
                         system = str(message.get("content") or "")
+                # 单题/批量 AI 识别（任务三）也走同一个 OpenAI 兼容口：
+                # 桩必须按 SYSTEM_PROMPT 回结构化题，否则解析结果缺答案，
+                # 静默存池会被 validateForSave 拦下，批量账上全记失败。
+                if "数学试卷录题助手" in system or "数学解题助手" in system:
+                    solve_only = "数学解题助手" in system
+                    marker = f"{StubProvider.MARKER}·"
+                    document = (
+                        {"answer": "x=1",
+                         "solution": marker + "由 $x+1=2$ 得 $x=1$。",
+                         "note": "探针桩按系统提示回结构化题"}
+                        if solve_only else
+                        {"type": "solution",
+                         "stem": marker + "求 $x+1=2$ 的解。",
+                         "options": [], "answer": "x=1",
+                         "solution": marker + "由 $x+1=2$ 得 $x=1$。",
+                         "question_no": "", "difficulty": "L1"}
+                    )
+                    payload = json.dumps(document, ensure_ascii=False)
+                    reply = json.dumps({
+                        "choices": [{"message": {"content": payload}}],
+                        "model": "probe-stub",
+                        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                    }, ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(reply)))
+                    self.end_headers()
+                    self.wfile.write(reply)
+                    return
                 # 军令 #28：学校全称补全走同一个 OpenAI 兼容口，桩也得认出来，
                 # 否则 UI 只会拿到一段「改写结果」JSON，全称永远是空的。
                 if "名称补全助手" in system or user.startswith("简称："):
@@ -410,7 +436,7 @@ def main() -> int:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
-    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID, CHAT_ID):
+    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()
@@ -1088,18 +1114,21 @@ def main() -> int:
                   .count() == 0)
             # 每题只读条右侧多了一颗【✨ AI 识别本题】（终极军令任务三），
             # 它和跳转/切图一样是逐题控件，不是横条上的批量钮。
-            check("画布没有底部横条，钮只有逐题跳转、切图与每题 AI 识别",
+            check("画布没有底部横条，钮只有逐题跳转、切图、每题 AI 识别与添加配图",
                   canvas.locator(".ed-foot").count() == 0
                   and canvas.locator("#edCols button").count()
                   == canvas.locator(".ed-img-jump").count()
                   + canvas.locator(".ed-img-crop-btn").count()
                   + canvas.locator(".ed-q-meta-ai").count()
-                  and canvas.locator(".ed-q-meta-ai").count() == pending_count
+                  + canvas.locator("#edAddIllustration").count()
+                  # 任务三每题两颗（识别本题 + 解析本题）。
+                  and canvas.locator(".ed-q-meta-ai").count() == pending_count * 2
                   and canvas.locator("#edBatchBar, #edBackList").count() == 0,
                   {"col_buttons": canvas.locator("#edCols button").count(),
                    "jumps": canvas.locator(".ed-img-jump").count(),
                    "crops": canvas.locator(".ed-img-crop-btn").count(),
                    "ai": canvas.locator(".ed-q-meta-ai").count(),
+                   "illustration": canvas.locator("#edAddIllustration").count(),
                    "bar": canvas.locator("#edBatchBar, #edBackList").count(),
                    "foot": canvas.locator(".ed-foot").count()})
 

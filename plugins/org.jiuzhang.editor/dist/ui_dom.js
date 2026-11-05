@@ -15,6 +15,8 @@
       var renderBodyEl = document.getElementById("edRenderBody");
       var imageNameEl = document.getElementById("edImageName");
       var sourceHintEl = document.getElementById("edSourceHint");
+      // 终极军令 任务四：源码栏【添加配图】入口。
+      var addIllustrationEl = document.getElementById("edAddIllustration");
       var metricsEl = document.getElementById("edMetrics");
       var progressEl = document.getElementById("edProgress");
       var formatEl = document.getElementById("edFormat");
@@ -174,6 +176,7 @@
       renderBodyEl: renderBodyEl,
       imageNameEl: imageNameEl,
       sourceHintEl: sourceHintEl,
+      addIllustrationEl: addIllustrationEl,
       metricsEl: metricsEl,
       progressEl: progressEl,
       formatEl: formatEl,
