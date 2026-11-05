@@ -24,7 +24,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET_SUFFIXES = {".py", ".js", ".html", ".css"}
-SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache", ".system_generated"}
+# vendor/ 是第三方随包库（目前只有 MathJax）：源码原样入库、不得改写，
+# 它们自己的 eval / new Function 不是本仓库的红线问题，按许可证与来源单独核对。
+SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache",
+             ".system_generated", "vendor"}
 SKIP_ROOT_DIRS = {"dist", "data"}
 
 

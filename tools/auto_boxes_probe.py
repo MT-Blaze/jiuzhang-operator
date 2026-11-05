@@ -247,18 +247,18 @@ def main() -> int:
                   render_blocks == 19 and first_block_image == 19,
                   [render_blocks, first_block_image])
 
-            # ---------- 文字与公式：源码是真题干，右栏真的渲染了 KaTeX ----------
+            # ---------- 文字与公式：源码是真题干，右栏真的渲染了 MathJax ----------
             source_areas = canvas.locator("#edSourceBody .ed-src-area")
             first_source = source_areas.first.input_value()
             sources = source_areas.evaluate_all(
                 "nodes => nodes.map(node => node.value)")
             filled = sum(1 for text in sources if "自动切题" not in text and text.strip())
-            katex_count = canvas.locator("#edRenderBody .katex").count()
+            math_count = canvas.locator("#edRenderBody mjx-container").count()
             first_render = canvas.locator("#edRenderBody .ed-q-block").first.inner_text()
             result["metrics"]["source"] = {
                 "filled": filled,
                 "first": first_source[:400],
-                "katex": katex_count,
+                "math": math_count,
             }
             check("16 中栏源码填的是真正题干，不是占位提示",
                   "已知集合" in first_source and "\\pi" in first_source
@@ -267,7 +267,7 @@ def main() -> int:
                   "\\begin{choices}" in first_source and "\\item" in first_source,
                   first_source[:240])
             check("18 19 道题的源码都填上了文字", filled == 19, filled)
-            check("19 右栏渲染出 KaTeX 公式", katex_count > 0, katex_count)
+            check("19 右栏渲染出 MathJax 公式", math_count > 0, math_count)
             check("20 右栏第一题显示题干文字",
                   "已知集合" in first_render, first_render[:160])
 

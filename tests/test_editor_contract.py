@@ -1,6 +1,6 @@
 """录题工作台 v2（org.jiuzhang.editor，军令 #23 阶段 1–2）契约测试。
 
-真机三栏与 KaTeX 渲染由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
+真机三栏与 MathJax 渲染由 ``tools/editor_probe.py`` 取证；这里钉住可静态判定的部分：
 
 - 清单只申请画布舞台 + 右栏辅助栏插槽，写库经宿主、令牌永不进插件；
 - 画布内只有三栏（左原图 | 中 exam-zh 源码 | 右渲染），**没有任何表单控件**；
@@ -82,7 +82,7 @@ def canvas_only(html: str) -> str:
 
 
 def panel_only(html: str) -> str:
-    """辅助栏实例那段 DOM——截到页面脚本之前，KaTeX 是宿主给画布渲染公式用的。"""
+    """辅助栏实例那段 DOM——截到页面脚本之前，MathJax 是宿主给画布渲染公式用的。"""
     start = html.index('id="epRoot"')
     return html[start:html.index("<script", start)]
 
@@ -327,7 +327,7 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
 
     def test_10_progress_and_metrics_are_probe_visible(self) -> None:
         js = read("plugin.js")
-        for attr in ("data-render-ms", "data-katex", "data-blocks", "data-errors",
+        for attr in ("data-render-ms", "data-math", "data-blocks", "data-errors",
                      "data-question-id", "data-row-h", "data-pane-w"):
             self.assertIn(f'"{attr}"', js, f"探针判据缺少度量属性 {attr}")
         self.assertIn("var progressText = state.scanBatch", js,
@@ -688,7 +688,7 @@ class EditorHostCallTest(unittest.TestCase):
             self.assertNotIn("http://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("https://", source, f"{name} 不得引用远程资源")
             self.assertNotIn("@import", source, f"{name} 不得远程导入样式")
-        self.assertIn("/static/vendor/katex/katex.min.js", read("index.html"), "公式只走本地 KaTeX")
+        self.assertIn("/static/vendor/mathjax/tex-svg-full.js", read("index.html"), "公式只走本地 MathJax")
 
     def test_07_image_refs_stay_on_host_paths(self) -> None:
         js = read("plugin.js")
@@ -728,7 +728,7 @@ class EditorPanelTest(unittest.TestCase):
         at = panel.index("<textarea")
         tag = panel[at:panel.index(">", at)]
         self.assertIn('id="epAiAsk"', tag, "唯一的 textarea 必须是 AI 指令框")
-        for forbidden in ("edSourceBody", "edRenderBody", "edQBlock", "katex",
+        for forbidden in ("edSourceBody", "edRenderBody", "edQBlock", "mathjax",
                           "ed-src-area", "ed-box-area"):
             self.assertNotIn(forbidden, panel, f"辅助栏越界放了 {forbidden}")
 
@@ -1787,13 +1787,16 @@ class EditorPageBoxesContractTest(unittest.TestCase):
     def test_01_the_auto_boxes_module_is_loaded_and_wired(self) -> None:
         html = read("index.html")
         self.assertIn('<script src="ui_page_boxes.js"></script>', html)
-        self.assertLess(html.index("ui_page_boxes.js"), html.index("ui_columns.js"),
-                        "绿框模块必须先于三栏加载")
+        self.assertIn('<script src="ui_columns_scan.js"></script>', html)
+        self.assertLess(html.index("ui_page_boxes.js"), html.index("ui_columns_scan.js"),
+                        "绿框模块必须先于纯图片卷左栏加载")
+        self.assertLess(html.index("ui_columns_scan.js"), html.index("ui_columns.js"),
+                        "整卷页图模块必须先于三栏加载")
         js = read("plugin.js")
         self.assertIn("var uiPageBoxes = window.JzoEditorPageBoxes.create({", js)
         self.assertIn("renderPageBoxes: uiPageBoxes.renderPageBoxes,", js)
         self.assertIn("uiCrop.splitPageRegion.apply(uiCrop, arguments)", js)
-        columns = read("ui_columns.js")
+        columns = read("ui_columns_scan.js")
         self.assertIn("renderPageBoxes(page, index, frame, pageCropItem(page, index))", columns)
         self.assertIn(".ed-auto-box, .ed-page-boxes", columns,
                       "点绿框不能冒泡成「再开一个手动切图台」")

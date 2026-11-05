@@ -84,7 +84,7 @@ _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
                 # 画布回一声 opened / closed / tab_not_live，面板据此放按钮或降级。
                 "editor.clean_review",
                 "editor.clean_review_state",
-                # 军令 #32 · 第五步：重题池的左右渲染对比住画布那帧（它才有 KaTeX），
+                # 军令 #32 · 第五步：重题池的左右渲染对比住画布那帧（它才有 MathJax），
                 # 四个动作住辅助栏——辅助栏把「开窗 / 关窗」投过来，跟 dup_review 同一形状。
                 "editor.pool_review",
                 # 同一步：辅助栏的【全部入库】要让画布先整批扫琥珀灯、有缺件就跳到最上面
@@ -125,7 +125,7 @@ _BUS_SUBSCRIBE = {
     "editor.clean_review",
     "editor.clean_review_state",
     # 军令 #32 · 第五步：重题池画布（辅助栏→画布开窗）与整批扫灯 / 全部入库（辅助栏→画布）。
-    # 画布那帧有 KaTeX 与滚动，辅助栏那帧有按钮——两帧之间还是隔宿主这一跳。
+    # 画布那帧有 MathJax 与滚动，辅助栏那帧有按钮——两帧之间还是隔宿主这一跳。
     "editor.pool_review",
     "editor.batch_review",
 }

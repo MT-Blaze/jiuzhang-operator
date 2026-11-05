@@ -9,7 +9,6 @@
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/css/app.css" />
-  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css" />
   <!-- workspace.css 按域拆四份，加载次序 = 原单文件次序（同特异度的覆盖靠次序，不许重排） -->
   <link rel="stylesheet" href="/static/css/workspace.css" />
   <link rel="stylesheet" href="/static/css/workspace_controls.css" />
@@ -180,7 +179,9 @@
     <p class="ws-noscript">工作台需要 JavaScript 才能挂载插件与调用数据总线。</p>
   </noscript>
 
-  <script src="/static/vendor/katex/katex.min.js"></script>
+  <!-- 公式：本地 MathJax（SVG 输出，字体随包内嵌，离线可用） -->
+  <script src="/static/vendor/mathjax/jzo_mathjax.js"></script>
+  <script src="/static/vendor/mathjax/tex-svg-full.js"></script>
   <!-- 请求报错现场：必须最先加载，之后每一笔 fetch 的非 2xx 都有完整记录 -->
   <script src="/static/js/http.js"></script>
   <script src="/static/js/bus.js"></script>

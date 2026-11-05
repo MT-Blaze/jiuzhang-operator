@@ -7,7 +7,7 @@
 检查项：
 - 打开即载入示例讲义，自动分页 > 1 页，首屏排版 < 1000ms；
 - 逐页无纵向/横向溢出，公式块不越界，正文不越出纸张；
-- KaTeX 真渲染、字体已加载；
+- MathJax 真渲染；
 - 左侧改稿后 160ms 防抖内自动重排，页数与字数跟随；
 - 右栏切「大字」字号后整篇重排且不溢页；
 - 宿主 1440×900 无横向溢出。
@@ -206,19 +206,8 @@ def main() -> int:
             check("公式块不越界", layout["wideMath"] == [], layout["wideMath"])
             check("正文未越出纸张", layout["outOfPage"] == 0, {"out_of_page": layout["outOfPage"]})
 
-            math_count = frame_locator.locator(".katex").count()
-            check("公式真渲染为 KaTeX", math_count > 0, {"katex": math_count})
-            fonts = frame_locator.locator("body").evaluate(
-                """async () => {
-                    await document.fonts.ready;
-                    return {
-                        status: document.fonts.status,
-                        check: document.fonts.check('16px KaTeX_Main'),
-                        loaded: Array.from(document.fonts).filter(f => f.status === 'loaded').length
-                    };
-                }"""
-            )
-            check("KaTeX 字体已加载", bool(fonts.get("check")), fonts)
+            math_count = frame_locator.locator("mjx-container svg").count()
+            check("公式真渲染为 MathJax", math_count > 0, {"math": math_count})
 
             # 表格必须是真表格，不能把 Markdown 管道符原样印出来
             table_cells = frame_locator.locator(".hp-page-body table td, .hp-page-body table th").count()
@@ -265,7 +254,8 @@ def main() -> int:
             pdf_page.set_content(
                 "<!doctype html><html><head><meta charset='utf-8'>"
                 + f"<base href='{base}/'>"
-                + f"<link rel='stylesheet' href='{base}/static/vendor/katex/katex.min.css'>"
+                + f"<script src='{base}/static/vendor/mathjax/jzo_mathjax.js'></script>"
+                + f"<script src='{base}/static/vendor/mathjax/tex-svg-full.js'></script>"
                 + "<style>" + pages_css + "</style></head><body>"
                 + "<div class='hp-root'><div class='hp-main'><div class='hp-preview'>"
                 + pages_html + "</div></div></div></body></html>",

@@ -10,7 +10,7 @@
   function create(deps) {
   // ---------- 富文本（文字 + LaTeX + 底座托管配图） ----------
   var mathCache = new Map();
-  var katexCount = 0;
+  var mathCount = 0;
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
@@ -30,20 +30,11 @@
     var key = (display ? "D:" : "I:") + tex;
     var html = mathCache.get(key);
     if (html === undefined) {
-      html = "";
-      if (window.katex && typeof window.katex.renderToString === "function") {
-        try {
-          html = window.katex.renderToString(tex, {
-            displayMode: display, throwOnError: false, strict: "ignore"
-          });
-        } catch (error) {
-          html = "";
-        }
-      }
-      mathCache.set(key, html);
+      html = window.JzoMath ? window.JzoMath.render(tex, display) : "";
+      if (html) mathCache.set(key, html);
     }
     if (html) {
-      katexCount += 1;
+      mathCount += 1;
       span.innerHTML = html;
     } else {
       span.textContent = (display ? "$$" : "$") + tex + (display ? "$$" : "$");
@@ -51,7 +42,7 @@
     return span;
   }
 
-  var INLINE_RE = /(\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|\\fillin(?:\[[^\]]*\])?|!\[[^\]]*\]\([^)]*\)|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
+  var INLINE_RE = /(\\includegraphics(?:\[[^\]]*\])?\{[^}]*\}|\\fillin(?:\[[^\]]*\])?|\\paren\*?(?:\[[^\]]*\])?|!\[[^\]]*\]\([^)]*\)|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]*?\$|\\\([\s\S]*?\\\)|\*\*[^*]+\*\*)/g;
 
   /** 只认底座托管路径与 asset:// 逻辑地址；远程 URL / data: / file: 一律当普通文本。 */
   function safeAssetUri(value) {
@@ -104,6 +95,8 @@
         appendImageRef(parent, graphic ? graphic[1] : "", "", token);
       } else if (token.slice(0, 7) === "\\fillin") {
         appendFillin(parent, token);
+      } else if (token.slice(0, 6) === "\\paren") {
+        parent.appendChild(mathNode(token, false));
       } else if (token.slice(0, 2) === "![") {
         var markdown = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(token);
         appendImageRef(parent, markdown ? markdown[2] : "", markdown ? markdown[1] : "", token);
@@ -158,8 +151,8 @@
       clampValue: clampValue,
       el: el,
       // 计数是模块私有的可变标量：外面只能通过这两个口子看与清。
-      katexCount: function () { return katexCount; },
-      resetKatexCount: function () { katexCount = 0; },
+      mathCount: function () { return mathCount; },
+      resetMathCount: function () { mathCount = 0; },
       mathNode: mathNode,
       safeAssetUri: safeAssetUri,
     };

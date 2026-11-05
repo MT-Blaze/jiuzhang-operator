@@ -640,7 +640,7 @@ zip 顶层目录名即插件 id，纯 zip 解压即用。
   「值合法且飞行期间用户没动过」的字段，让位字段以系统气泡如实说明——**人类手动操作永远覆盖 AI 设定**。
   `trigger_button` 只允许由人类或确认卡片发起的轮次执行一次，AI 触发的轮次再收到按钮指令会被忽略（防循环）。
 - **富卡片**：`content` 里的 ```ui_json 围栏由前端拦截渲染，绝不当纯文本展示；
-  `question_card` 经本地 KaTeX 渲染 LaTeX，全部字段以 `textContent` 落 DOM，形如
+  `question_card` 经本地 MathJax（SVG 输出）渲染 LaTeX，全部字段以 `textContent` 落 DOM，形如
   `{"version":"1.0","type":"question_card","questions":[…]}` 且**恰好一个**围栏，题目必须来自工具结果或上下文；
   `install_card` 只能由底座在 `search_available_plugins` / `suggest_install` 执行后生成，
   用户点【确认安装】才带写令牌调 `POST /api/plugins/install-url`，渲染阶段零网络请求。

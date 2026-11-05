@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>录题工作台</title>
-  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
   <!-- 样式按域分文件，加载次序 = 原单文件次序（同特异度的覆盖关系靠次序，不许重排）：
        layout* = 画布骨架与三栏，panel* = 右栏辅助栏，effects = 动效。见 PLUGIN_SPEC §2.8.2。 -->
   <link rel="stylesheet" href="layout.css">
+  <link rel="stylesheet" href="layout_boxes.css">
   <link rel="stylesheet" href="layout_canvas.css">
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="panel_meta.css">
@@ -29,7 +29,7 @@
     <span class="ed-sr" id="edFormat" data-format="latex">源码</span>
     <span class="ed-sr" id="edDirty" data-dirty="false">未改动</span>
     <span class="ed-sr" id="edSaved" hidden></span>
-    <span class="ed-sr" id="edMetrics" data-render-ms="" data-katex="" data-blocks=""
+    <span class="ed-sr" id="edMetrics" data-render-ms="" data-math="" data-blocks=""
           data-errors="" data-question-id="" data-row-h="" data-pane-w="">等待载入…</span>
     <span class="ed-sr" id="edBatchNo">批次 #B-000</span>
     <span class="ed-sr" id="edBatchStat" data-pending="0" data-total="0">未审 0 / 0</span>
@@ -473,7 +473,7 @@
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
       </div>
       <!-- 查重拦截（军令 #31）：命中时这一行红字常驻在面板最下边，旁边那颗钮开对比窗。
-           辅助栏只报「有」与「去看」——渲染对比在画布那帧（那帧才带 KaTeX），
+           辅助栏只报「有」与「去看」——渲染对比在画布那帧（那帧才带 MathJax），
            按军令 #23 的铁律，这里绝不放源码，也绝不放预览。 -->
       <div class="ep-dup-box" id="epDupBox" hidden>
         <p class="ep-dup-warn" id="epDupWarn" role="alert">主库已存在高度相似题目</p>
@@ -520,7 +520,8 @@
 
   </div>
 
-  <script src="/static/vendor/katex/katex.min.js"></script>
+  <script src="/static/vendor/mathjax/jzo_mathjax.js"></script>
+  <script src="/static/vendor/mathjax/tex-svg-full.js"></script>
   <!-- 响应式引擎是底座随发的公共资产（/static/common/），所有插件共用同一份。 -->
   <script src="/static/common/ui_reactive.js"></script>
   <script src="ui_dom.js"></script>
@@ -538,10 +539,12 @@
   <script src="ui_meta_hist.js"></script>
   <script src="ui_school_dict.js"></script>
   <script src="ui_std_name.js"></script>
+  <script src="ui_crop_io.js"></script>
   <script src="ui_crop.js"></script>
   <script src="ui_split.js"></script>
   <script src="ui_page_boxes.js"></script>
   <script src="ui_meta_strip.js"></script>
+  <script src="ui_columns_scan.js"></script>
   <script src="ui_columns.js"></script>
   <script src="ui_panel.js"></script>
   <script src="ui_layout.js"></script>

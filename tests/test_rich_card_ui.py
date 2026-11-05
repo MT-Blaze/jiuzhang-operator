@@ -4,7 +4,7 @@
 1. 后端：插件面板归一化/默认面板、随机抽题参数、ui_json 卡片帧、右栏面板提示词。
 2. 搜索：只读用户拉取过的索引缓存，只出安装建议卡，绝不自动安装或联网。
 3. 前端：结构不变量（助手插件里的 ui_json 拦截、update_params 与面板按钮回灌、
-   本地 KaTeX）。军令 #15 之后 AI 不再有「触发面板按钮」的能力，只能请求底座设参。
+   本地 MathJax）。军令 #15 之后 AI 不再有「触发面板按钮」的能力，只能请求底座设参。
    真机行为由 ``.system_generated`` 下的 Playwright 探针产出，本文件不启浏览器。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_rich_card_ui``
@@ -318,19 +318,21 @@ class PromptPanelTest(unittest.TestCase):
 
 
 class FrontendStructureTest(unittest.TestCase):
-    def test_01_panel_and_katex_are_local(self) -> None:
+    def test_01_panel_and_mathjax_are_local(self) -> None:
         self.assertIn('id="wsPluginPanel"', HTML)
         self.assertIn('id="wsPluginControls"', HTML)
-        self.assertIn("/static/vendor/katex/katex.min.css", HTML)
-        self.assertIn("/static/vendor/katex/katex.min.js", HTML)
+        self.assertIn("/static/vendor/mathjax/jzo_mathjax.js", HTML)
+        self.assertIn("/static/vendor/mathjax/tex-svg-full.js", HTML)
         self.assertNotIn("cdn.jsdelivr.net", HTML)
         self.assertNotIn("unpkg.com", HTML)
+        self.assertNotIn("katex", HTML.lower())
 
-        vendor_css = (STATIC / "vendor" / "katex" / "katex.min.css").read_text(encoding="utf-8")
-        self.assertNotIn("http://", vendor_css)
-        self.assertNotIn("https://", vendor_css)
-        self.assertTrue((STATIC / "vendor" / "katex" / "LICENSE").is_file())
-        self.assertTrue((STATIC / "vendor" / "katex" / "katex.min.js").is_file())
+        self.assertTrue((STATIC / "vendor" / "mathjax" / "LICENSE").is_file())
+        self.assertTrue((STATIC / "vendor" / "mathjax" / "tex-svg-full.js").is_file())
+        bridge = (STATIC / "vendor" / "mathjax" / "jzo_mathjax.js").read_text(encoding="utf-8")
+        self.assertIn('paren: ["\\\\left(', bridge)
+        self.assertNotIn("http://", bridge)
+        self.assertNotIn("https://", bridge)
 
     def test_02_ui_json_cards_are_intercepted_before_text(self) -> None:
         # 军令 #15：对话流与卡片渲染随助手插件一起搬出宿主壳，底座只留面板与总线。
@@ -339,8 +341,8 @@ class FrontendStructureTest(unittest.TestCase):
         self.assertIn("question_card", CHAT_JS)
         self.assertIn("install_card", CHAT_JS)
         self.assertIn("查看解析", CHAT_JS)
-        self.assertIn("katex.renderToString", CHAT_JS)
-        # 模型/插件返回的卡片数据只以 textContent 落 DOM，公式交给 KaTeX
+        self.assertIn("JzoMath.render", CHAT_JS)
+        # 模型/插件返回的卡片数据只以 textContent 落 DOM，公式交给 MathJax
         self.assertNotIn("bubble.innerHTML", CHAT_JS)
         self.assertNotIn("splitUiBlocks", JS, "宿主壳不该再自己拆卡片")
 

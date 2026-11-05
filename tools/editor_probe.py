@@ -258,7 +258,7 @@ def wait_attribute(locator, name: str, predicate, timeout: float = 12) -> str:
 
 
 def wait_height(locator, predicate, timeout: float = 12) -> float:
-    """渲染是防抖 + KaTeX 同步排版，挂载那一瞬高度还没长开；量高度必须等它稳。"""
+    """渲染是防抖 + MathJax 同步排版，挂载那一瞬高度还没长开；量高度必须等它稳。"""
     deadline = time.time() + timeout
     height = 0.0
     while time.time() < deadline:

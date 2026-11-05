@@ -3,10 +3,10 @@
  *
  * 从 plugin.js 拆出（PLUGIN_SPEC §2.8.1「单文件不得过 800 行」）：把题干、选项与解析
  * 里的 Markdown+LaTeX 定界符变成安全的 DOM，再拼成一题落在纸面上的题块。
- * KaTeX 渲染结果与配图天然尺寸两个缓存归本模块私有——先把尺寸量好再排，
+ * MathJax 渲染结果与配图天然尺寸两个缓存归本模块私有——先把尺寸量好再排，
  * 图片解码后才不会把整页顶出纸边。
  *
- * 全程只用 createElement / textContent 与 KaTeX 自己产出的 HTML，配图只认
+ * 全程只用 createElement / textContent 与 MathJax 自己产出的 HTML，配图只认
  * /static/uploads/ 开头的地址：真题文本里带什么尖括号，都印不进纸面。
  */
 (function (global) {
@@ -23,20 +23,8 @@
     var key = (display ? "D:" : "I:") + tex;
     var html = mathCache.get(key);
     if (html === undefined) {
-      html = "";
-      if (window.katex && typeof window.katex.renderToString === "function") {
-        try {
-          html = window.katex.renderToString(tex, {
-            displayMode: display,
-            throwOnError: false,
-            trust: false,
-            strict: "ignore"
-          });
-        } catch (error) {
-          html = "";
-        }
-      }
-      mathCache.set(key, html);
+      html = window.JzoMath ? window.JzoMath.render(tex, display) : "";
+      if (html) mathCache.set(key, html);
     }
     if (html) span.innerHTML = html;
     else span.textContent = (display ? "$$" : "$") + tex + (display ? "$$" : "$");
@@ -103,7 +91,7 @@
    * 原样印到纸上（第三战役目检抓到的真实缺陷）。
    */
   function appendInline(target, text) {
-    var pattern = /(!\[[^\]]*\]\(\/static\/uploads\/[^)\s]+\)|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\*\*[^*]+\*\*|\\textbf\{[^{}]*\}|\\textit\{[^{}]*\}|\\fillin)/g;
+    var pattern = /(!\[[^\]]*\]\(\/static\/uploads\/[^)\s]+\)|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\*\*[^*]+\*\*|\\textbf\{[^{}]*\}|\\textit\{[^{}]*\}|\\paren\*?(?:\[[^\]]*\])?|\\fillin)/g;
     var last = 0;
     var match;
     while ((match = pattern.exec(text)) !== null) {
@@ -129,6 +117,8 @@
         var em = document.createElement("em");
         appendInline(em, token.slice(8, -1));
         target.appendChild(em);
+      } else if (token.slice(0, 6) === "\\paren") {
+        target.appendChild(mathNode(token, false));
       } else if (token === "\\fillin") {
         target.appendChild(blankNode());
       } else {

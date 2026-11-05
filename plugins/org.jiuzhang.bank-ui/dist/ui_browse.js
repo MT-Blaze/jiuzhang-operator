@@ -2,7 +2,7 @@
  * 题面浏览：富文本、列表、大纲树与详情（org.jiuzhang.bank-ui / ui_browse.js）。
  *
  * 从 plugin.js 拆出（PLUGIN_SPEC §2.8.1「单文件不得过 800 行」）：
- * - 安全渲染：KaTeX 定界符（$…$ / $$…$$ / \(…\)）与配图只走 textContent，
+ * - 安全渲染：MathJax 定界符（$…$ / $$…$$ / \(…\)）与配图只走 textContent，
  *   真题原文里的尖括号与反斜杠宏一律印不成 HTML；
  * - 列表：一行一题，标签翻译与迁移标记都在这里，翻页器 mountPager 复用给工作台；
  * - 大纲树：册/章/节/考向按 bank.topics 懒加载，开合与已取回的层记在 tree；
@@ -35,34 +35,27 @@
     // ---------- 安全渲染 ----------
     function renderMathToken(text) {
       var span = document.createElement("span");
-      var display = text.slice(0, 2) === "$$";
-      var body = display ? text.slice(2, -2) : text.slice(1, -1);
-      if (window.katex && typeof window.katex.renderToString === "function") {
-        try {
-          span.innerHTML = window.katex.renderToString(body, {
-            displayMode: display,
-            throwOnError: false,
-            trust: false,
-            strict: "ignore"
-          });
-          span.className = display ? "cb-math-block" : "cb-math";
-          return span;
-        } catch (error) {
-          /* 落到纯文本 */
-        }
+      var paren = text.slice(0, 6) === "\\paren";
+      var display = !paren && text.slice(0, 2) === "$$";
+      var body = paren ? text : (display ? text.slice(2, -2) : text.slice(1, -1));
+      var html = window.JzoMath ? window.JzoMath.render(body, display) : "";
+      if (html) {
+        span.innerHTML = html;
+        span.className = display ? "cb-math-block" : "cb-math";
+        return span;
       }
       span.textContent = text;
       return span;
     }
 
     function appendInline(target, text) {
-      var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\*\*[^*]+\*\*)/g;
+      var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\paren\*?(?:\[[^\]]*\])?|\*\*[^*]+\*\*)/g;
       var last = 0;
       var match;
       while ((match = pattern.exec(text)) !== null) {
         if (match.index > last) target.appendChild(document.createTextNode(text.slice(last, match.index)));
         var token = match[0];
-        if (token.slice(0, 1) === "$") {
+        if (token.slice(0, 1) === "$" || token.slice(0, 6) === "\\paren") {
           target.appendChild(renderMathToken(token));
         } else {
           var strong = document.createElement("strong");

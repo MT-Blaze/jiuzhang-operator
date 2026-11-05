@@ -221,7 +221,7 @@ body {
   35% { opacity: 1; transform: translateY(-2px); }
 }
 
-/* 公式：KaTeX 自带样式，这里只管溢出 */
+/* 公式：MathJax 自带样式，这里只管溢出 */
 .jzochat-math {
   display: inline-block;
   max-width: 100%;

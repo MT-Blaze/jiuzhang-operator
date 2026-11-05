@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -193,29 +192,6 @@ def create_app() -> FastAPI:
         都跟它无关（军令 #32 · 判据 4.2/4.7）。
         """
         return _serve_local_asset(settings.pool_assets_dir, asset_path)
-
-    @app.get("/static/vendor/katex/fonts/{font_name}", include_in_schema=False)
-    async def read_katex_font(font_name: str) -> FileResponse:
-        """KaTeX 字体：沙箱插件是不透明源，@font-face 属于 CORS 请求。
-
-        StaticFiles 不会替字体补 ``Access-Control-Allow-Origin``，缺了它公式
-        会退化成缺字方框；字体是公开静态资源，这里只放行白名单文件名。
-        """
-        if re.fullmatch(r"KaTeX_[A-Za-z0-9_-]+\.(?:woff2|woff|ttf)", font_name) is None:
-            raise HTTPException(status_code=404, detail="字体不存在")
-        path = settings.static_dir / "vendor" / "katex" / "fonts" / font_name
-        if not path.is_file():
-            raise HTTPException(status_code=404, detail="字体不存在")
-        return FileResponse(
-            path,
-            media_type="font/woff2" if font_name.endswith(".woff2") else "font/woff",
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cross-Origin-Resource-Policy": "cross-origin",
-                "X-Content-Type-Options": "nosniff",
-                "Cache-Control": "public, max-age=604800",
-            },
-        )
 
     app.mount("/static", RevalidatingStaticFiles(directory=settings.static_dir), name="static")
 

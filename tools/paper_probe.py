@@ -12,7 +12,7 @@
 - 全卷补齐（data-doc-ready=1）后逐页校验：滚动到每一页等它物化，
   再量 ``scrollHeight <= clientHeight``、无 ``[data-overflow]``、公式不越界；
 - 狂拉滚动条：随机跳页后当前视口页必须在 1s 内挂出真实内容，不许大面积白屏；
-- KaTeX 节点与字体真实加载；打印前补齐不缺页；
+- MathJax 节点真实渲染；打印前补齐不缺页；
 - 题库再入篮一题 → 组卷页经 basket.changed 自动 +1；
 - 组卷侧栏移除一题 → 题篮回到 50 且预览重排。
 """
@@ -419,19 +419,8 @@ def main() -> int:
             result["metrics"]["layout_normal"] = layout
             check("正文未越出纸张", layout["outOfPage"] == 0, {"out_of_page": layout["outOfPage"]})
 
-            math_count = frame_locator.locator(".katex").count()
-            check("公式真渲染为 KaTeX", math_count > 0, {"katex": math_count})
-            fonts = frame_locator.locator("body").evaluate(
-                """async () => {
-                    await document.fonts.ready;
-                    return {
-                        status: document.fonts.status,
-                        check: document.fonts.check('16px KaTeX_Main'),
-                        loaded: Array.from(document.fonts).filter(f => f.status === 'loaded').length
-                    };
-                }"""
-            )
-            check("KaTeX 字体已加载", bool(fonts.get("check")), fonts)
+            math_count = frame_locator.locator("mjx-container svg").count()
+            check("公式真渲染为 MathJax", math_count > 0, {"math": math_count})
 
             # 配图取证改到滚动清点上：虚拟渲染下只有进过视口的页才有图节点，
             # 逐页滚过全卷时一并核对 complete / naturalHeight（见 sweep_normal）。

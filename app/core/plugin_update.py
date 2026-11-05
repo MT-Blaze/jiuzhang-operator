@@ -49,7 +49,7 @@ from app.core.plugin_install import (
 
 LOCAL_TZ = timezone(timedelta(hours=8))
 
-# 底座包比插件包大得多（含 static/vendor 的 KaTeX），但仍要有上限
+# 底座包比插件包大得多（含 static/vendor 的 MathJax），但仍要有上限
 HOST_MAX_ZIP_BYTES = 200 * 1024 * 1024
 HOST_MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024
 

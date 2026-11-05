@@ -131,7 +131,7 @@ def workspace_css() -> str:
     """底座工作台的样式整包：workspace.css 已按域拆成几份（PLUGIN_SPEC §2.8.2 同款口径）。
 
     切片次序直接取自 workspace.html 的真实 <link> 次序——同特异度的覆盖关系靠次序活着，
-    测试与页面因此不可能各说各话。app.css / KaTeX 不属于工作台样式，不参与拼接。
+    测试与页面因此不可能各说各话。app.css / MathJax 不属于工作台样式，不参与拼接。
     """
     html = WORKSPACE_HTML.read_text(encoding="utf-8")
     parts: list[str] = []

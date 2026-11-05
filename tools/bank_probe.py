@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""core-bank 真机取证：插件挂载、右栏筛选联动、题篮与 KaTeX 字体。
+"""core-bank 真机取证：插件挂载、右栏筛选联动、题篮与 MathJax 渲染。
 
 用法：``.venv/Scripts/python.exe tools/bank_probe.py <tag>``
 
@@ -106,21 +106,10 @@ def main() -> int:
             expect(frame_locator.locator(".cb-pager")).to_contain_text("共 456 题", timeout=15000)
             check("插件挂载并载入 456 题", True)
 
-            # KaTeX 真渲染 + 字体已加载（沙箱 CORS 字体）
+            # MathJax 真渲染（SVG 输出，字形随包内嵌）
             frame = page.frame_locator(".ws-plugin-frame")
-            math_count = frame.locator(".katex").count()
-            check("公式渲染为 KaTeX", math_count > 0, {"katex_nodes": math_count})
-            fonts = frame.locator("body").evaluate(
-                """async () => {
-                    await document.fonts.ready;
-                    return {
-                        status: document.fonts.status,
-                        check: document.fonts.check('16px KaTeX_Main'),
-                        families: Array.from(document.fonts).map(f => f.family).slice(0, 6)
-                    };
-                }"""
-            )
-            check("KaTeX 字体已加载", bool(fonts.get("check")), fonts)
+            math_count = frame.locator("mjx-container svg").count()
+            check("公式渲染为 MathJax", math_count > 0, {"math_nodes": math_count})
 
             # --- 考向笔记（军令 #21 任务二）：接口找一条带笔记的考向，再在树上真的点开 ---------
             engine_base = f"/api/bank/plugins/{ENGINE_ID}"
@@ -158,14 +147,14 @@ def main() -> int:
                 expect(panel).to_be_visible(timeout=15000)
                 expect(panel.locator(".cb-note")).to_have_count(leaf["note_count"], timeout=15000)
                 note_text = panel.inner_text()
-                note_katex = panel.locator(".katex").count()
+                note_math = panel.locator("mjx-container").count()
                 check("点考向节点 → 右栏渲染出该考向笔记",
                       panel.locator(".cb-note").count() == leaf["note_count"],
                       {"topic": leaf["name"], "notes": leaf["note_count"]})
                 check("笔记带「方法 / 易错点」类型标签",
                       "方法" in note_text and "易错点" in note_text, note_text[:120])
-                check("笔记公式渲染为 KaTeX 且不留 \\( 原文",
-                      note_katex > 0 and "\\(" not in note_text, {"katex": note_katex})
+                check("笔记公式渲染为 MathJax 且不留 \\( 原文",
+                      note_math > 0 and "\\(" not in note_text, {"math": note_math})
                 badge = leaf_button.locator("xpath=ancestor::li[1]").locator(".cb-tree-notes")
                 check("树上笔记徽标与面板条数一致",
                       badge.count() == 1 and badge.inner_text().strip() == "笔记 " + str(leaf["note_count"]),
@@ -236,12 +225,12 @@ def main() -> int:
             if toggle.count():
                 toggle.first.click()
             check("详情与解析可见", frame.locator(".cb-detail").count() == 1)
-            detail_katex = frame.locator(".cb-detail .cb-question .katex").count()
+            detail_math = frame.locator(".cb-detail .cb-question mjx-container").count()
             detail_text = frame.locator(".cb-detail .cb-question").inner_text()
             check(
                 "详情公式渲染",
-                detail_katex > 0 and "$" not in detail_text.split("答案")[0],
-                {"katex": detail_katex, "head": detail_text[:160]},
+                detail_math > 0 and "$" not in detail_text.split("答案")[0],
+                {"math": detail_math, "head": detail_text[:160]},
             )
             page.wait_for_timeout(400)
             page.screenshot(path=str(shots / "detail.png"), full_page=False)

@@ -1,7 +1,7 @@
 """ui_json 富卡片契约：底座生成结构化卡片，前端负责渲染。
 
 对话气泡只承载自然语言与 ``ui_json`` 围栏；卡片里的所有字段都是**数据**，
-不是 HTML。前端用 textContent / 安全 DOM 组装，LaTeX 由本地 KaTeX 渲染，
+不是 HTML。前端用 textContent / 安全 DOM 组装，LaTeX 由本地 MathJax 渲染，
 不执行任何插件或模型返回的标记。
 
 三类卡片（2026-10-25 v0.5.5 军令）：

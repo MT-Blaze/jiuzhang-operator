@@ -46,7 +46,7 @@ def template_dist_entries() -> list[tuple[str, str]]:
     """模板 dist 的收录清单 = index.html 引用的每个本地资源，不手写名单（模板已拆成多文件）。
 
     `/static/common/*` 是底座发放的公共资产（PLUGIN_SPEC §2.8.3），礼包里带一份副本进
-    `shared-assets/`，方便老师读实现；其余以 `/` 或协议开头的（如 KaTeX）由底座自己给。
+    `shared-assets/`，方便老师读实现；其余以 `/` 或协议开头的（如 MathJax）由底座自己给。
     """
     html = (TEMPLATE_DIST / "index.html").read_text(encoding="utf-8")
     entries: dict[str, tuple[str, str]] = {}

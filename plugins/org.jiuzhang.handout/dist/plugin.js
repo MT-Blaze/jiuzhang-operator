@@ -3,7 +3,7 @@
  *
  * 左栏是 Markdown 原稿，右栏是 A4 纸面；输入停顿 160ms 后整篇重排。
  * 解析器只认讲义常用的那部分 Markdown（标题、列表、表格、引用、代码块），
- * 公式交给随宿主本地化的 KaTeX。全程不联网、不读题库、不碰宿主凭据。
+ * 公式交给随宿主本地化的 MathJax。全程不联网、不读题库、不碰宿主凭据。
  *
  * 排版仍是「先量后排」：所有块进测量列一次布局，按安全高度贪心落页，
  * 最后整卷读一次 scrollHeight，把被公式墨迹顶出纸边的尾块顺延。
@@ -133,7 +133,7 @@
   }
 
   // ---------- 富文本：Markdown 子集 → DOM，已拆到 ui_rich.js（PLUGIN_SPEC §2.8.1） ----------
-  // 本文件只取渲染要用的三件套；KaTeX 与配图尺寸缓存归 ui_rich.js 私有。
+  // 本文件只取渲染要用的三件套；MathJax 与配图尺寸缓存归 ui_rich.js 私有。
   var rich = window.JzoHandoutRich;
   var el = rich.el;
   var parseMarkdown = rich.parseMarkdown;

@@ -10,7 +10,7 @@
  * - 智能跳转只交意图：回复里的动作按钮点下去后发 stage.open_bank /
  *   stage.open_editor 请求，打开页签与注入搜索词都由宿主完成。
  *
- * 渲染安全：模型与插件返回的文本一律 textContent 落 DOM，只有本地 KaTeX
+ * 渲染安全：模型与插件返回的文本一律 textContent 落 DOM，只有本地 MathJax
  * 自己生成的 HTML 才进 innerHTML（trust:false）。
  */
 (function () {
@@ -103,12 +103,7 @@
   function renderMathInto(el, text) {
     var source = String(text == null ? "" : text);
     if (!source) return;
-    var katex = window.katex;
-    if (!katex || typeof katex.renderToString !== "function" || source.indexOf("$") === -1) {
-      el.textContent = source;
-      return;
-    }
-    var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)/g;
+    var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\paren\*?(?:\[[^\]]*\])?)/g;
     var last = 0;
     var match;
     while ((match = pattern.exec(source)) !== null) {
@@ -116,18 +111,16 @@
         el.appendChild(document.createTextNode(source.slice(last, match.index)));
       }
       var token = match[0];
-      var display = token.slice(0, 2) === "$$";
-      var node = document.createElement(display ? "div" : "span");
-      node.className = display ? "jzochat-math-block" : "jzochat-math";
-      try {
-        node.innerHTML = katex.renderToString(display ? token.slice(2, -2) : token.slice(1, -1), {
-          displayMode: display,
-          throwOnError: false,
-          trust: false,
-          strict: "ignore"
-        });
+      var paren = token.slice(0, 6) === "\\paren";
+      var display = !paren && token.slice(0, 2) === "$$";
+      var body = paren ? token : (display ? token.slice(2, -2) : token.slice(1, -1));
+      var html = window.JzoMath ? window.JzoMath.render(body, display) : "";
+      if (html) {
+        var node = document.createElement(display ? "div" : "span");
+        node.className = display ? "jzochat-math-block" : "jzochat-math";
+        node.innerHTML = html;
         el.appendChild(node);
-      } catch (error) {
+      } else {
         el.appendChild(document.createTextNode(token));
       }
       last = pattern.lastIndex;

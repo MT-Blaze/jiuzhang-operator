@@ -4,7 +4,7 @@
  * 本文件不认识宿主：进来的是一段段源码文本，出去的是元素与文本节点，
  * 全程只 createElement / appendChild，不拼 HTML 字符串（铁律 4：界面全在沙箱里，
  * 交给宿主的每一寸都要能被净化白名单管住）。
- * KaTeX 渲染缓存与配图自然尺寸缓存归本文件私有，插件别处不许再留第二份。
+ * MathJax 渲染缓存与配图自然尺寸缓存归本文件私有，插件别处不许再留第二份。
  */
 (function (global) {
   "use strict";
@@ -26,20 +26,8 @@
     var key = (display ? "D:" : "I:") + tex;
     var html = mathCache.get(key);
     if (html === undefined) {
-      html = "";
-      if (window.katex && typeof window.katex.renderToString === "function") {
-        try {
-          html = window.katex.renderToString(tex, {
-            displayMode: display,
-            throwOnError: false,
-            trust: false,
-            strict: "ignore"
-          });
-        } catch (error) {
-          html = "";
-        }
-      }
-      mathCache.set(key, html);
+      html = window.JzoMath ? window.JzoMath.render(tex, display) : "";
+      if (html) mathCache.set(key, html);
     }
     if (html) span.innerHTML = html;
     else span.textContent = display ? "$$" + tex + "$$" : "$" + tex + "$";
@@ -89,7 +77,7 @@
   }
 
   function appendInline(target, text) {
-    var pattern = /(!\[[^\]]*\]\(\/static\/uploads\/[^)\s]+\)|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`|\\textbf\{[^{}]*\})/g;
+    var pattern = /(!\[[^\]]*\]\(\/static\/uploads\/[^)\s]+\)|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\paren\*?(?:\[[^\]]*\])?|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`|\\textbf\{[^{}]*\})/g;
     var last = 0;
     var match;
     while ((match = pattern.exec(text)) !== null) {
@@ -110,6 +98,8 @@
           token.slice(0, 2) === "$$" ? token.slice(2, -2) : token.slice(1, -1),
           token.slice(0, 2) === "$$"
         ));
+      } else if (token.slice(0, 6) === "\\paren") {
+        target.appendChild(mathNode(token, false));
       } else if (token.slice(0, 2) === "**") {
         var strong = document.createElement("strong");
         appendInline(strong, token.slice(2, -2));
