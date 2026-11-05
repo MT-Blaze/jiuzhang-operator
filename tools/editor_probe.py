@@ -2213,22 +2213,25 @@ def main() -> int:
                 """c => {
                     var ctx = c.getContext('2d');
                     var d = ctx.getImageData(0, 0, c.width, c.height).data;
-                    var opaque = 0; var red = 0; var white = 0;
+                    var opaque = 0; var red = 0; var ring = 0;
                     for (var i = 0; i < d.length; i += 4) {
                         if (d[i + 3] > 8) opaque += 1;
                         if (d[i] > 220 && d[i + 1] < 140 && d[i + 2] < 140 && d[i + 3] > 120) red += 1;
-                        if (d[i] > 230 && d[i + 1] > 230 && d[i + 2] > 230 && d[i + 3] > 120) white += 1;
+                        // 镜圈是 rgba(255,255,255,0.9)：叠在四色块上合成后不会纯白
+                        // （如蓝底约 229,229,255），按“近白且三通道都亮”认，别卡 230。
+                        if (d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200 && d[i + 3] > 80) ring += 1;
                     }
-                    return {opaque: opaque, red: red, white: white,
+                    return {opaque: opaque, red: red, ring: ring,
                             smooth: ctx.imageSmoothingEnabled, w: c.width, h: c.height};
                 }""")
-            check("放大镜关掉平滑看像素", lens_pixels["smooth"] is False, lens_pixels)
+            # 平滑是有意设计：2 倍取样下关掉就是马赛克，老师要看公式不是看像素格。
+            check("放大镜开着平滑看公式", lens_pixels["smooth"] is True, lens_pixels)
             check("放大镜真画出了东西（不是空画布）",
                   lens_pixels["opaque"] > 2000, lens_pixels)
             check("镜心那根红十字在（按像素数出来的）",
                   lens_pixels["red"] > 20, lens_pixels)
             check("镜圈是那圈白边",
-                  lens_pixels["white"] > 20, lens_pixels)
+                  lens_pixels["ring"] > 20, lens_pixels)
             page.screenshot(path=str(shots / "v4-crop-lens.png"))
 
             # 拖拽框选 → 左键松开 → 切完。
