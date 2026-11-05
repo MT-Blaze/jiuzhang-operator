@@ -132,7 +132,7 @@
   border-top: 1px solid var(--line);
 }
 
-/* 自由对话已并入插件列表，条目统一用 .ws-plugin-item（44px 热区，键盘可达） */
+/* 插件条目统一用 .ws-plugin-item（44px 热区，键盘可达） */
 .ws-plugin-item {
   display: flex;
   flex-direction: column;

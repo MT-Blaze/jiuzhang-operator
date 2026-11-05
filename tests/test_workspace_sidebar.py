@@ -1,11 +1,10 @@
 """工作台左栏契约（v0.5.4 + 军令 #15）：底座零业务入口，插件区动态渲染。
 
 军令口径：
-1. 删除写死的「拆分试卷 / 校对解析 / 组卷导出」；军令 #15 再删最后一条内置入口
-   「自由对话」——找插件、找题目一律对右栏助手说；
+1. 删除写死的「拆分试卷 / 校对解析 / 组卷导出」与常驻对话入口（2026-11-05）；
 2. 插件区按 ``/api/plugins`` 的发现结果渲染，空态显示「暂无插件」；
 3. 点插件只注入工作模式上下文并更新舞台标题，不得跳转页面；
-4. 左栏只剩折叠、插件列表与栏底控制台入口；安装/索引/About 全进 ``/settings``。
+4. 左栏 = 切换用户卡片 + 插件列表 + 栏底控制台入口。
 
 本测试只钉结构，不启浏览器；真机与像素证据由 ``.system_generated`` 下的探针产出。
 
@@ -25,9 +24,6 @@ STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 JS = workspace_source()
 CSS = workspace_css()
-CHAT_JS = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
-    encoding="utf-8"
-)
 
 
 def rule_body(css: str, selector: str) -> str:
@@ -43,17 +39,16 @@ class SidebarStructureTest(unittest.TestCase):
             self.assertNotIn(label, HTML, f"左栏仍写死业务入口：{label}")
             self.assertNotIn(label, JS)
 
-    def test_02_left_column_has_no_hardcoded_entry(self) -> None:
-        """军令 #15 任务 2：撤掉最后一条内置入口，AI 助手只是清单里的一个普通插件行。
-
-        口径说明：军令原文点的是「搜索框」，它在 v0.5.4 已退役；同区里当时唯一残留的
-        硬编码入口是「自由对话」，本轮按同一意图清掉。
-        """
+    def test_02_left_column_starts_with_the_user_switch(self) -> None:
+        """2026-11-05：左栏首块是「切换用户」，底座不再有内置对话入口。"""
         self.assertNotIn('class="ws-entry-item"', HTML)
-        self.assertNotIn('id="wsChatEntry"', HTML, "左栏不许再留底座内置的对话入口")
+        self.assertNotIn('id="wsChatEntry"', HTML)
         self.assertNotIn('data-key="chat"', HTML)
         self.assertNotIn("chatEntry", JS)
-        self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', JS)
+        self.assertIn('id="wsUserSwitchBtn"', HTML)
+        self.assertIn("当前用户", HTML)
+        self.assertIn('id="wsUserModal"', HTML)
+        self.assertIn("ws_users.js", HTML)
 
     def test_03_plugin_area_has_empty_state(self) -> None:
         self.assertIn('id="wsPluginList"', HTML)
@@ -134,14 +129,13 @@ class SidebarStructureTest(unittest.TestCase):
 
         判据只认插槽本身（插件声明了 sidebar.right），不认清单里的 ui.panel 开关——
         panel=false 字面上像「关掉辅助栏」，早年被误读成它能决定插件住不住。
-        AI 助手是右栏的默认住户，它没有画布，那几个按钮只能靠宿主这层发起，不算自带面板。
+        常驻助手已下架，判据只剩「插件自己声明了 sidebar.right」这一条。
         """
         self.assertIn("function ownsOwnRightPanel(plugin)", JS)
         helper = JS[JS.index("function ownsOwnRightPanel(plugin)"):]
         helper = helper[:helper.index("\n  }")]
         self.assertIn('plugin.slots.indexOf("sidebar.right")', helper)
-        self.assertIn("JzoContextPanel.assistantId", helper,
-                      "默认住户 AI 助手不算自带面板，它得靠宿主这层按钮发起对话")
+        self.assertNotIn("assistantId", helper, "常驻助手已下架，判据不许再给它开后门")
         self.assertIn("ui.panel === false || ownsOwnRightPanel(plugin)", JS,
                       "宿主必须同时认结构性判据与显式开关")
         editor = json.loads(
@@ -165,16 +159,17 @@ class SidebarBehaviourTest(unittest.TestCase):
         self.assertIn("name.textContent = rowTitle(plugin)", JS)
         self.assertIn("window.JzoPrefs.displayName(plugin)", JS)
 
-    def test_02_assistant_row_only_reclaims_the_right_slot(self) -> None:
-        """军令 #15 任务 4：点助手那一行不开画布页，只把右栏主权收回来。"""
+    def test_02_plugin_row_has_no_assistant_special_case(self) -> None:
+        """AI 助手整块下架后，点插件那一行只剩「切模式 + 按需开画布」。"""
         self.assertNotIn("function enterChatMode()", JS, "底座不再有内置对话模式")
+        self.assertNotIn("ASSISTANT_PLUGIN_ID", JS, "宿主壳不许再认领某个助手插件")
         body = re.search(
             r"function enterPluginMode\(plugin, item\)\s*\{(.*?)\n  \}", JS, re.S
         )
         self.assertIsNotNone(body)
         block = body.group(1)
-        self.assertIn("plugin.id === ASSISTANT_PLUGIN_ID", block)
-        self.assertIn("window.JzoContextPanel.reclaim()", block)
+        self.assertNotIn("JzoContextPanel.reclaim()", block, "右栏主权不再由宿主点名归还")
+        self.assertIn("window.JzoStage.openPlugin(plugin)", block)
 
     def test_03_plugin_entry_switches_working_mode(self) -> None:
         body = re.search(r"function enterPluginMode\(plugin, item\)\s*\{(.*?)\n  \}", JS, re.S)
@@ -183,28 +178,22 @@ class SidebarBehaviourTest(unittest.TestCase):
         self.assertIn("activePlugin = plugin", block)
         self.assertIn("setStage(name)", block)
         self.assertIn("initUiState(plugin)", block)
-        # 「现在处于插件…」这类话只能由助手插件说：宿主壳已经没有对话流了
+        # 「现在处于插件…」这类话没有发送方了：宿主壳已经没有对话流。
         self.assertNotIn("现在处于插件", block)
-        self.assertIn("工作模式", CHAT_JS)
         self.assertNotIn("location", block)
         self.assertNotIn("window.open", block)
 
-    def test_04_context_carries_plugin_and_working_mode(self) -> None:
-        """上下文由助手插件组装，但它看得见的世界只有宿主给的快照。"""
-        body = re.search(r"function gatherContext\(\)\s*\{(.*?)\n  \}", CHAT_JS, re.S)
-        self.assertIsNotNone(body, "对话上下文应在助手插件里组装")
-        block = body.group(1)
-        self.assertIn("context.working_mode", block)
-        self.assertIn("context.plugin =", block)
-        self.assertIn("capabilities", block)
-        self.assertIn("hostCall(\"workspace.state\"", CHAT_JS, "只能向底座要快照")
+    def test_04_snapshot_still_exposes_right_slot_and_capabilities(self) -> None:
+        """对话没了，但插件看得见的世界仍然只有宿主快照这一扇窗。"""
         snap = re.search(r"function stateSnapshot\(\)\s*\{(.*?)\n  \}", JS, re.S)
         self.assertIsNotNone(snap)
-        self.assertIn("right_slot", snap.group(1))
-        self.assertIn("capabilities", snap.group(1))
+        block = snap.group(1)
+        self.assertIn("right_slot", block)
+        self.assertIn("capabilities", block)
+        self.assertIn("tabs:", block)
 
     def test_05_initial_mode_is_the_neutral_workbench(self) -> None:
-        """军令 #15：默认不再叫「自由对话」——中栏留白，右栏住助手。"""
+        """默认不叫「自由对话」——中栏留白，右栏默认收起。"""
         self.assertIn('setStage("工作台")', JS)
         self.assertIn("markActiveEntry(null)", JS)
         self.assertNotIn("markActiveEntry(chatEntry)", JS)

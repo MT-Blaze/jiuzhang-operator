@@ -61,10 +61,9 @@
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。
     "text.clean_latex",
-    // 军令 #15：AI 助手降级成一个普通插件后，它能用的口子只有这一排。
-    // 对话、改写、读清单、读工作区快照、装插件、设面板参数、开页签全部由宿主代办；
-    // 数据库、写令牌与宿主 DOM 一道门都没开。
-    "agent.chat", "agent.refine", "plugins.list", "workspace.state",
+    // 插件能用的口子只有这一排：改写、读清单、读工作区快照、装插件、设面板参数、开页签
+    // 全部由宿主代办；数据库、写令牌与宿主 DOM 一道门都没开。常驻对话助手已下架。
+    "agent.refine", "plugins.list", "workspace.state",
     "plugin.install_url", "ui.params.set", "editor.apply_patch",
     "stage.open_bank", "stage.open_editor",
     // 军令 #19：能力路由字典。任何插件都能查表与调度；目标未安装/未声明
@@ -78,7 +77,7 @@
   // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
   // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
   var AI_ONLY_METHODS = [
-    "agent.chat", "agent.refine", "plugin.install_url",
+    "agent.refine", "plugin.install_url",
     "ui.params.set", "editor.apply_patch", "stage.open_bank", "stage.open_editor",
     "ai.center", "ai.account_save", "ai.account_delete",
     "ai.assign", "ai.models", "ai.recognize"
@@ -87,7 +86,6 @@
   // 它们不在 AI_ONLY_METHODS 里（任何插件都可以读清单），所以得单独点名——
   // 漏点一次，请求就会一路掉到 relay 末尾的分支上（真机曾因此把题篮清空）。
   var AGENT_READ_METHODS = ["plugins.list", "workspace.state"];
-  var CHAT_HISTORY_MAX = 12;
   var AGENT_TIMEOUT_MS = 60000;      // 模型一轮回答可以慢，但不能无限等
   var CLEAN_TEXT_MAX = 20000;        // 与 /api/agent/clean_latex 的入参上限一致
 

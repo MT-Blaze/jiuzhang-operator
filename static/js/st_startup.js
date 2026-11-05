@@ -29,10 +29,9 @@
 
   function renderStartup(body) {
     if (!startupSelect) return;
-    var target = String((body && body.target) || "chat");
+    var target = String((body && body.target) || "");
     var defaultTarget = String((body && body.default_target) || "");
     startupSelect.textContent = "";
-    startupSelect.appendChild(startupOption("chat", "默认欢迎页（自由对话）"));
     var candidates = (body && body.candidates) || [];
     candidates.forEach(function (item) {
       var label = (item.name || item.id) + "（v" + (item.version || "?") + "）";
@@ -40,10 +39,10 @@
       if (item.show_in_sidebar === false) label += " · 不占左栏";
       startupSelect.appendChild(startupOption("plugin:" + item.id, label));
     });
-    var known = target === "chat" || candidates.some(function (item) {
+    var known = candidates.some(function (item) {
       return "plugin:" + item.id === target;
     });
-    if (!known) {
+    if (target && !known) {
       // 配置里那个插件已被卸载/停用：如实列出原值，不假装它还在
       startupSelect.appendChild(startupOption(target, target.slice("plugin:".length) + "（已卸载或已停用）"));
     }
@@ -52,18 +51,15 @@
     if (startupNow) {
       if (reason) {
         startupNow.textContent = "当前配置：" + target + " —— " + reason + "。配置已原地保留，插件装回或启用后自动恢复。";
-        startupNow.hidden = false;
-      } else if (target === "chat") {
-        startupNow.textContent = "当前生效：默认欢迎页（自由对话）。";
-        startupNow.hidden = false;
       } else if (body && body.configured === false) {
-        startupNow.textContent = "当前生效：" + ((body && body.plugin_name) || "默认欢迎页（自由对话）")
+        startupNow.textContent = "当前生效：" + ((body && body.plugin_name) || "留白")
           + "（默认启动页，你还没选过）。";
-        startupNow.hidden = false;
+      } else if (!target) {
+        startupNow.textContent = "当前生效：画布留白。";
       } else {
         startupNow.textContent = "当前生效：" + ((body && body.plugin_name) || target) + "。下次打开软件直接落在这里。";
-        startupNow.hidden = false;
       }
+      startupNow.hidden = false;
     }
   }
 
@@ -75,7 +71,7 @@
   }
 
   if (startupSaveBtn) startupSaveBtn.addEventListener("click", function () {
-    var value = startupSelect ? startupSelect.value : "chat";
+    var value = startupSelect ? startupSelect.value : "";
     startupSaveBtn.disabled = true;
     startupSaveBtn.setAttribute("aria-busy", "true");
     mgSet(startupStatus, "正在保存启动行为…", "info");
@@ -83,7 +79,7 @@
       .then(function (body) {
         renderStartup(body);
         mgSet(startupStatus, "已保存：下次打开软件将进入「" +
-          (body.effective === "chat" ? "默认欢迎页" : (body.plugin_name || body.effective)) + "」。", "ok");
+          (body.plugin_name || body.effective || "留白") + "」。", "ok");
       })
       .catch(function (error) { mgSet(startupStatus, "保存失败：" + error.message, "down"); })
       .finally(function () {

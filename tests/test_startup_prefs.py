@@ -95,10 +95,11 @@ class StartupPrefsTest(unittest.TestCase):
         self.assertEqual("plugin", self.mod.resolve()["kind"])
         self.assertEqual(DASHBOARD_ID, self.mod.resolve()["plugin_id"])
 
-    def test_11_set_chat_target_persists(self) -> None:
-        self.mod.set_target("plugin:" + DASHBOARD_ID)
-        self.mod.set_target("chat")
-        self.assertEqual("chat", self.mod.resolve()["effective"])
+    def test_11_chat_target_is_rejected(self) -> None:
+        # 2026-11-05：常驻对话下架，「自由对话」不再是可以落盘的启动目标。
+        with self.assertRaises(self.mod.StartupRejected):
+            self.mod.set_target("chat")
+        self.assertFalse((self.data_dir / self.mod.STATE_FILENAME).is_file())
 
     def test_12_rejects_malformed_targets(self) -> None:
         for bad in ("", "  ", "plugin:", "Plugin:org.x.y", "org.example",
@@ -117,7 +118,6 @@ class StartupPrefsTest(unittest.TestCase):
         self.assertIn("已停用", str(disabled.exception))
 
     def test_14_normalizes_surrounding_whitespace(self) -> None:
-        self.assertEqual("chat", self.mod.set_target("  chat  "))
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.set_target(" plugin:" + DASHBOARD_ID + " "))
 
     # ---------- 失效回退 ----------
@@ -127,7 +127,8 @@ class StartupPrefsTest(unittest.TestCase):
         with mock.patch.object(self.mod, "installed_plugins", lambda: []):
             with self.assertLogs("jzo.startup", level="WARNING") as logs:
                 resolved = self.mod.resolve()
-        self.assertEqual("chat", resolved["effective"])
+        self.assertEqual("", resolved["effective"], "没有可用的回退页时画布留白")
+        self.assertEqual("none", resolved["kind"])
         self.assertEqual("plugin:" + DASHBOARD_ID, resolved["target"], "配置必须原地保留")
         self.assertIn("已卸载", resolved["fallback_reason"])
         self.assertTrue(any("已卸载" in line for line in logs.output), "回退必须打日志")
@@ -138,14 +139,14 @@ class StartupPrefsTest(unittest.TestCase):
                                lambda: [_plugin(DASHBOARD_ID, enabled=False)]):
             with self.assertLogs("jzo.startup", level="WARNING") as logs:
                 resolved = self.mod.resolve()
-        self.assertEqual("chat", resolved["effective"])
+        self.assertEqual("", resolved["effective"])
         self.assertIn("已停用", resolved["fallback_reason"])
         self.assertTrue(any("已停用" in line for line in logs.output))
 
     def test_22_reenabled_plugin_restores_original_target(self) -> None:
         self.mod.set_target("plugin:" + DASHBOARD_ID)
         with mock.patch.object(self.mod, "installed_plugins", lambda: []):
-            self.assertEqual("chat", self.mod.resolve()["effective"])
+            self.assertEqual("", self.mod.resolve()["effective"])
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.resolve()["effective"],
                          "插件装回来后原配置要自动恢复生效")
 
@@ -171,21 +172,22 @@ class StartupPrefsTest(unittest.TestCase):
         self.assertIn("已停用", resolved["fallback_reason"])
         self.assertIn("默认启动页", resolved["fallback_reason"])
 
-    def test_25_default_page_unavailable_falls_back_to_chat(self) -> None:
-        """默认启动页自己也不可用时，才退到自由对话——那时画布留白是唯一诚实的选择。"""
+    def test_25_default_page_unavailable_keeps_the_canvas_blank(self) -> None:
+        """默认启动页也不可用时画布留白——没有对话兜底，留白是唯一诚实的选择。"""
         self._write_target("plugin:" + EDITOR_ID)
         with mock.patch.object(self.mod, "installed_plugins", lambda: []):
             with self.assertLogs("jzo.startup", level="WARNING"):
                 resolved = self.mod.resolve()
-        self.assertEqual("chat", resolved["effective"])
-        self.assertIn("已卸载", resolved["fallback_reason"])
+        self.assertEqual("", resolved["effective"])
+        self.assertEqual("none", resolved["kind"])
+        self.assertIn("画布留白", resolved["fallback_reason"])
 
-    def test_26_explicit_chat_choice_is_honored(self) -> None:
-        """老师明选了自由对话，就照办——默认页不许反过来覆盖他的选择。"""
-        self.mod.set_target("chat")
+    def test_26_legacy_chat_config_is_treated_as_unconfigured(self) -> None:
+        """历史配置里的 chat 目标随助手一起作废：按没配过处理，回落默认启动页。"""
+        self._write_target("chat")
         resolved = self.mod.resolve()
-        self.assertEqual("chat", resolved["effective"])
-        self.assertTrue(resolved["configured"])
+        self.assertEqual("plugin:" + DASHBOARD_ID, resolved["effective"])
+        self.assertFalse(resolved["configured"])
         self.assertEqual("", resolved["fallback_reason"])
 
     def test_23_corrupt_state_file_is_treated_as_unconfigured(self) -> None:
@@ -259,10 +261,11 @@ class SettingsUiWiringTest(unittest.TestCase):
         self.assertIn("启动行为", SETTINGS_HTML)
         self.assertIn('role="status"', SETTINGS_HTML.split('id="stPanelSystem"', 1)[1].split("</section>", 1)[0])
 
-    def test_04_select_default_option_is_welcome_page(self) -> None:
+    def test_04_select_has_no_free_chat_option(self) -> None:
         panel = SETTINGS_HTML.split('id="stPanelSystem"', 1)[1].split("</section>", 1)[0]
-        self.assertIn('<option value="chat">', panel)
-        self.assertIn("默认欢迎页", panel)
+        self.assertNotIn('<option value="chat">', panel)
+        self.assertNotIn("自由对话", panel, "助手下架后不许再留对话入口")
+        self.assertIn('<option value="">', panel)
 
     def test_05_js_reads_and_writes_startup_endpoint(self) -> None:
         self.assertIn('apiCall("/api/startup", "GET")', SETTINGS_JS)
@@ -469,8 +472,8 @@ class StartupHttpTest(unittest.TestCase):
         try:
             status, body = self._call("GET")
             self.assertEqual(200, status)
-            self.assertEqual("chat", body["effective"])
-            self.assertEqual("chat", body["kind"])
+            self.assertEqual("", body["effective"])
+            self.assertEqual("none", body["kind"])
             self.assertEqual("plugin:" + DASHBOARD_ID, body["target"], "配置原地保留")
             self.assertIn("已卸载", body["fallback_reason"])
         finally:
@@ -479,8 +482,6 @@ class StartupHttpTest(unittest.TestCase):
         status, body = self._call("GET")
         self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"], "插件回来即自动恢复")
         self.assertEqual("", body["fallback_reason"])
-
-        self._call("POST", {"target": "chat"}, token=True)
 
 
 if __name__ == "__main__":

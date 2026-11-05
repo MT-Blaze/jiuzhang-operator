@@ -5,14 +5,14 @@
 挡住启动：底座的第一原则是「插件坏了，底座还能用」（AGENTS §2），启动
 路径上更不允许因为一个失效的偏好把老师关在门外。
 
-目标只有两种形状：``chat``（默认欢迎页）与 ``plugin:<id>``（某个已启用
-插件的工作模式）。指向的插件被卸载或停用后，配置**原地保留**（用户可能
-只是临时停用），但 :func:`resolve` 会如实回退并带上 ``fallback_reason``，
-同时打一条 WARNING 日志，不静默换目标。
+目标只有一种形状：``plugin:<id>``（某个已启用插件的工作模式）。指向的插件
+被卸载或停用后，配置**原地保留**（用户可能只是临时停用），但 :func:`resolve`
+会如实回退并带上 ``fallback_reason``，同时打一条 WARNING 日志，不静默换目标。
 
 **默认启动页是数据看板**（军令 #27）：老师没配过、配置损坏、或首选插件
-失效时，工作台开机就落在数据看板；数据看板自己也不可用，才退到自由对话。
-「打开工作台只看到一枚【设置与控制台】页签、画布空着」不算开机落地的界面。
+失效时，工作台开机就落在数据看板。常驻 AI 助手已于 2026-11-05 下架，
+不再有「自由对话」这个回退目标；数据看板自己也不可用时，画布保持留白，
+这是唯一诚实的兜底。
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ from app.core.plugins import discover_plugins
 logger = logging.getLogger("jzo.startup")
 
 STATE_FILENAME = "startup.json"
-CHAT_TARGET = "chat"
 PLUGIN_PREFIX = "plugin:"
 # 默认启动页：数据看板。没配过、配置损坏、首选插件失效，都往这里回落。
 DEFAULT_PLUGIN_ID = "org.jiuzhang.dashboard"
@@ -59,12 +58,10 @@ def _load_raw() -> dict[str, Any]:
 
 
 def normalize(target: Any) -> str | None:
-    """把任意输入归一成合法目标；不合法返回 None（读侧一律回落 chat）。"""
+    """把任意输入归一成合法目标；不合法返回 None（读侧一律回落默认启动页）。"""
     if not isinstance(target, str):
         return None
     value = target.strip()
-    if value == CHAT_TARGET:
-        return CHAT_TARGET
     if value.startswith(PLUGIN_PREFIX):
         plugin_id = value[len(PLUGIN_PREFIX):]
         if _PLUGIN_ID_RE.match(plugin_id):
@@ -123,7 +120,7 @@ def set_target(target: Any) -> str:
     """
     value = normalize(target)
     if value is None:
-        raise StartupRejected("启动目标不合法：只接受 chat 或 plugin:<插件 id>")
+        raise StartupRejected("启动目标不合法：只接受 plugin:<插件 id>")
     if value.startswith(PLUGIN_PREFIX):
         plugin_id = value[len(PLUGIN_PREFIX):]
         plugin = next((p for p in installed_plugins() if p.get("id") == plugin_id), None)
@@ -154,22 +151,22 @@ def resolve() -> dict[str, Any]:
         if usable:
             plugin_name = name
         else:
-            # 首选落空：改用默认启动页；默认页自己也不可用，才退到自由对话。
+            # 首选落空：改用默认启动页；默认页自己也不可用，就留白（不再有对话兜底）。
             fallback_usable, fallback_name, _ = _probe_plugin(DEFAULT_PLUGIN_ID)
             if plugin_id != DEFAULT_PLUGIN_ID and fallback_usable:
                 effective = DEFAULT_TARGET
                 plugin_name = fallback_name
                 reason = f"{why}，改用默认启动页「{fallback_name}」"
             else:
-                effective = CHAT_TARGET
-                reason = f"{why}，回落默认欢迎页"
+                effective = ""
+                reason = f"{why}，本次开机画布留白"
             logger.warning("%s（配置 %s 原地保留）", reason, target)
     return {
         "target": target,
         "configured": configured is not None,
         "default_target": DEFAULT_TARGET,
         "effective": effective,
-        "kind": "plugin" if effective.startswith(PLUGIN_PREFIX) else "chat",
+        "kind": "plugin" if effective.startswith(PLUGIN_PREFIX) else "none",
         "plugin_id": effective[len(PLUGIN_PREFIX):] if effective.startswith(PLUGIN_PREFIX) else "",
         "plugin_name": plugin_name,
         "fallback_reason": reason,

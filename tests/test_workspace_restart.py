@@ -35,7 +35,7 @@ from app.api import health, workspaces as workspaces_api
 from app.core import bank as core_bank
 from app.core import host_restart
 from app.core.config import settings, switch_workspace
-from tests.core_sources import settings_source, stage_source, workspace_source  # noqa: E402
+from tests.core_sources import settings_source, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 WARNING_TEXT = ("切换工作区需要重启底座以加载该区的插件与配置，"
@@ -437,8 +437,11 @@ class DraftGuardContractTest(unittest.TestCase):
         self.assertIn("留在原工作区", block)
 
     def test_host_shell_does_not_silent_switch(self) -> None:
-        workspace_js = workspace_source()
+        """宿主壳本身绝不自动切库；切用户只能由老师点确认（ws_users.js 独立模块）。"""
+        workspace_js = (ROOT / "static" / "js" / "workspace.js").read_text(encoding="utf-8")
         self.assertNotIn("/api/workspaces/switch", workspace_js)
+        users_js = (ROOT / "static" / "js" / "ws_users.js").read_text(encoding="utf-8")
+        self.assertIn("/api/workspaces/switch", users_js, "切用户动线要在独立模块里显式发起")
 
 
 class DraftWorkspaceBoxContractTest(unittest.TestCase):

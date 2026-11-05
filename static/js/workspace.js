@@ -1,10 +1,9 @@
 /**
  * 工作台宿主壳：左栏入口、右侧插槽主权交替、面板参数仲裁、底栏输出区与插件生命周期。
  *
- * 军令 #15 的边界：对话流不再住在这里。中栏是通用舞台，右栏助手是
- * plugins/org.jiuzhang.chat 这个普通插件——它想看什么、想改什么、想去哪个页签，
- * 都得经 stage.js 的 Host API 白名单向底座申请，由本文件把状态快照与仲裁结果交出去
- * （window.JzoWorkspace）。底座自身不再直接调 /api/agent/*。
+ * 边界：宿主不带常驻助手。中栏是通用舞台，右栏只住「当前页签插件自己声明的
+ * sidebar.right」——插件想看什么、想改什么、想去哪个页签，都得经 stage.js 的
+ * Host API 白名单向底座申请，由本文件把状态快照与仲裁结果交出去（window.JzoWorkspace）。
  *
  * 安全：所有写接口由宿主代取一次性令牌；不可信文本一律走 textContent，不拼 innerHTML。
  */
@@ -30,8 +29,8 @@
     // 人类的主动点击永远覆盖 AI 的自动设定。
     uiState: { pluginId: null, values: {}, revisions: {} },
     uiPanelControls: [],
-    // 右栏主权（军令 #15 任务 4）：当前画布页签绑定的插件 id。
-    // 它若声明了 sidebar.right 就暂时接管右栏，否则右栏归还 AI 助手插件。
+    // 右栏主权：当前画布页签绑定的插件 id。
+    // 它若声明了 sidebar.right 就接管右栏，否则右栏留空（默认折叠）。
     activeCanvasPluginId: "",
     dockEntries: [],
     dockView: "log",
@@ -49,7 +48,6 @@
     dragDepth: 0,
   };
 
-  var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat";
   // 录题工作台：它的收集筐是文件唯一的暂存处（军令 #27）。
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
@@ -129,6 +127,8 @@
     clampText: clampText,
     dockLine: dockLine,
     findActiveProvider: findActiveProvider,
+    // 右栏折叠策略归 wsRail；它晚于本模块创建，用取值器推迟到调用时才拿。
+    getCtxRail: function () { return wsRail; },
     loadPlugins: loadPlugins,
     pluginControlsEl: pluginControlsEl,
     pluginPanel: pluginPanel,
@@ -173,10 +173,8 @@
 
   // ---------- 拆出去的模块：以上每块都只经 deps 拿依赖 ----------
 
-  // ============ 对话流已整体迁出（军令 #15） ============
-  // 气泡、题卡、安装卡、确认卡与 MathJax 渲染都搬进了右栏的 org.jiuzhang.chat 插件，
-  // 宿主不再自带任何对话界面，也不再直接调 /api/agent/*。
-  // 原先「往对话区说一句」的提示改落底栏输出日志区——同一段话，换个不越权的地方说。
+  // ============ 宿主提示统一落底栏 ============
+  // 宿主不带任何对话界面，也不再直接调 /api/agent/*；系统提示一律进底栏输出日志区。
   function clampText(value, limit) {
     return String(value == null ? "" : value).trim().slice(0, limit);
   }
@@ -195,8 +193,7 @@
   }
 
   // ============ 入口切换：插件工作模式 ============
-  // 左栏不再写死业务任务；条目完全由 /api/plugins 动态渲染（军令 #15 之后，
-  // 「自由对话」这条底座内置入口也撤了——AI 助手只是清单里的一个普通插件）。
+  // 左栏不再写死业务任务；条目完全由 /api/plugins 动态渲染，常驻对话入口已下架。
   // 点插件只切换工作模式与上下文，不做任何页面跳转（军令 2.3）。
   function markActiveEntry(activeEl) {
     var items = document.querySelectorAll(".ws-plugin-item");
@@ -214,13 +211,7 @@
     renderPluginPanel(plugin);
     // 中栏是通用舞台：只有清单里声明了 stage（slots 带 stage.center）的插件才开画布页。
     // 没声明的插件照旧只切工作模式 + 右栏面板，不给它一块它没要过的地方。
-    if (plugin.id === ASSISTANT_PLUGIN_ID) {
-      // 助手不开画布页：点它这一行等于「把右栏还给我」，并顺手展开右栏。
-      setCtx(true);
-      if (window.JzoContextPanel && typeof window.JzoContextPanel.reclaim === "function") {
-        window.JzoContextPanel.reclaim();
-      }
-    } else if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
+    if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {
       window.JzoStage.openPlugin(plugin);
     }
   }
@@ -230,8 +221,8 @@
    * 启动行为（军令 #11 阶段三）：老师选了「打开软件默认进入某插件」，这里执行它。
    *
    * 失效判定不在前端重做一遍——后端 /api/startup 已经把卸载/停用的目标
-   * 回落到默认启动页（数据看板），再不行才落到 chat，并给了 fallback_reason，
-   * 前端只负责照办与如实播报（底栏 + 对话区都记一笔）。
+   * 回落到默认启动页（数据看板），再不行才留空，并给了 fallback_reason，
+   * 前端只负责照办与如实播报（落底栏）。
    * 读不到配置就按后端给的默认走，任何异常都不许挡住启动。
    */
   function applyStartupBehavior(plugins) {
@@ -244,7 +235,7 @@
         }
         // 老师已经亲手点了左栏（或画布已有主）：启动页不再抢画布。
         if (wsState.userPickedPlugin || wsState.activePlugin) return;
-        var effective = String(body.effective || "chat");
+        var effective = String(body.effective || "");
         if (effective.indexOf("plugin:") !== 0) return;
         var wantedId = effective.slice("plugin:".length);
         var target = null;
@@ -506,7 +497,7 @@
   }
 
   // ============ 初始化 ============
-  // 中栏启动时留白（不预开兜底页），右栏默认住 AI 助手插件；左栏条目完全由 /api/plugins 渲染。
+  // 中栏启动时留白（不预开兜底页），右栏默认折叠；左栏条目完全由 /api/plugins 渲染。
   wireDock();
   wireDockMenu();
   wireGhostScroll();
@@ -516,22 +507,15 @@
   wireStageSovereignty();
   setStage("工作台");
   markActiveEntry(null);
-  addBubble("sys", "九章算子工作台已就绪 · 已装插件会自动接入 AI 助手的工具表（tool_calls），结果以「已调用插件」标识回显");
+  addBubble("sys", "九章算子工作台已就绪 · 插件按需占用中栏与右栏");
 
   loadPlugins()
     .then(function (plugins) {
       // 启动行为在插件清单渲染完之后执行：左栏条目已就位，进去才能高亮对应项
-      return applyStartupBehavior(plugins).then(function () {
-        var hasAssistant = plugins.some(function (p) { return p.id === ASSISTANT_PLUGIN_ID && p.enabled !== false; });
-        if (!hasAssistant) {
-          addBubble("sys", "右栏的 AI 助手插件（org.jiuzhang.chat）不在场：装回它才能用自然语言驱动底座。", { tone: "warn" });
-        }
-      });
+      return applyStartupBehavior(plugins);
     })
     .catch(function () { /* 探测失败保留「暂无插件」空态，不打扰用户 */ });
 
-  // Provider 清单只喂给工作区快照（右栏助手据此知道当前模型是谁）。
-  // 右栏顶部那块「模型：OpenAI 兼容…」的展示已于 2026-10-31 撤掉——它占着辅助栏的上沿，
-  // 又不提供任何操作；模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
+  // Provider 清单只喂给工作区快照。模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
   loadProviders().catch(function () { /* 读不到就当没有 provider，不打扰用户 */ });
 })();

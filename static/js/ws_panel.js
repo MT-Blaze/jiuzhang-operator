@@ -11,6 +11,7 @@
     var clampText = deps.clampText;
     var dockLine = deps.dockLine;
     var findActiveProvider = deps.findActiveProvider;
+    var getCtxRail = deps.getCtxRail;
     var loadPlugins = deps.loadPlugins;
     var pluginControlsEl = deps.pluginControlsEl;
     var pluginPanel = deps.pluginPanel;
@@ -35,18 +36,14 @@
    * 插件自带整块右栏面板吗？
    *
    * 声明了 sidebar.right 的插件，它的面板就住在这栏里（比如录题辅助栏）。
-   * 右栏的默认住户是 AI 助手——它没有画布，那几个「问知识库/问能力」按钮只能靠
-   * 宿主这层快捷区发起，所以它不算。其余插件住进右栏时，宿主再画一遍同名按钮
-   * 就成了两套，老师会以为有一个是坏的。
+   * 住进右栏时宿主再画一遍同名快捷按钮就成了两套，老师会以为有一个是坏的。
    *
    * 判据只认插槽本身，不用清单里的 ui.panel 开关：那个开关只管「画不画」，
    * 管不了「插件住不住」，字面上却像后者，早年被误读成「关掉辅助栏」。
    */
   function ownsOwnRightPanel(plugin) {
     if (!plugin || !Array.isArray(plugin.slots)) return false;
-    if (plugin.slots.indexOf("sidebar.right") < 0) return false;
-    var assistantId = window.JzoContextPanel ? window.JzoContextPanel.assistantId : "";
-    return plugin.id !== assistantId;
+    return plugin.slots.indexOf("sidebar.right") >= 0;
   }
 
   function initUiState(plugin) {
@@ -206,7 +203,7 @@
   }
 
   /**
-   * 人点面板按钮 = 请右栏的 AI 助手把这句话发出去（军令 #15）。
+   * 人点面板按钮 = 请右栏的插件面板把这句话发出去。
    * 宿主不再自己调对话接口：按钮只把「指令模板 + 当前参数」交给助手插件，
    * 由它经 Host API 申请一次对话——对话的入口收在插件手里，底座不再代笔。
    */
@@ -275,7 +272,7 @@
   }
 
   /**
-   * AI 助手插件申请设面板参数（军令 #15 任务 1、2）。
+   * 插件申请设面板参数（军令 #15 任务 1、2）。
    * 助手交出「目标插件 + 发送时拍的修订号快照」：目标不对整批拒，
    * 快照对不上（人在请求飞行期间手改过同一字段）单字段跳过——AI 永远赢不过人的手。
    */
@@ -330,18 +327,24 @@
     return snapshot;
   }
 
-  /** 右栏主权对账：画布页签换了主人，插槽跟着换（军令 #15 任务 4）。 */
+  /** 右栏主权对账：画布页签换了主人，插槽跟着换；折叠随住户有无自动跟一次。 */
   function syncContextSlot() {
     if (window.JzoContextPanel && typeof window.JzoContextPanel.sync === "function") {
       window.JzoContextPanel.sync(wsState.installedPlugins, wsState.activeCanvasPluginId);
     }
     syncRightSlotUiState();
+    var rail = typeof getCtxRail === "function" ? getCtxRail() : null;
+    if (!rail) return;
+    var occupied = !!(window.JzoContextPanel && typeof window.JzoContextPanel.activeId === "function"
+      && window.JzoContextPanel.activeId());
+    if (occupied) rail.autoOpenCtx();
+    else rail.collapseCtxIfAuto();
   }
 
   /**
    * 面板参数账本跟着右栏主人走：入住插件若带 select 控件（录题辅助栏的格式/互换），
    * 它就是当前 uiState 的主人，插件的 ui.params.set 才不会被宿主判成 PANEL_MOVED。
-   * 没有 select 控件的插件（如 AI 助手只有按钮）不抢账本，只保留在左栏点击时的那份。
+   * 没有 select 控件的插件（只有按钮）不抢账本，只保留在左栏点击时的那份。
    */
   function syncRightSlotUiState() {
     var id = window.JzoContextPanel && typeof window.JzoContextPanel.activeId === "function"

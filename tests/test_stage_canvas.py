@@ -32,8 +32,9 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('role="tablist"', HTML)
         self.assertIn('id="wsCanvasBody"', HTML)
 
-    def test_02_no_fallback_panel_and_chat_is_a_plugin(self) -> None:
-        """2026-10-31 军令：画布不设兜底页，关完所有页签就留白；对话流只在右栏插件里。"""
+    def test_02_no_fallback_panel_and_no_host_chat(self) -> None:
+        """2026-10-31 军令：画布不设兜底页，关完所有页签就留白；
+        2026-11-05：宿主壳与对话插件一并下架，宿主里不再有第二条对话通道。"""
         self.assertNotIn("wsPanelHome", HTML, "引导页签的面板必须彻底删除")
         self.assertNotIn("引导", HTML, "宿主壳里不许再出现「引导」二字")
         self.assertNotIn("暂无打开页签", HTML, "画布不塞占位文案")
@@ -43,11 +44,10 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertNotIn('id="wsThread"', HTML)
         self.assertNotIn('id="wsChatForm"', HTML)
         self.assertNotIn('id="wsPanelChat"', HTML)
-        plugin_html = (
-            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html"
-        ).read_text(encoding="utf-8")
-        self.assertIn('id="chatThread"', plugin_html)
-        self.assertIn('id="chatForm"', plugin_html)
+        self.assertFalse(
+            (ROOT / "plugins" / "org.jiuzhang.chat").exists(),
+            "AI 助手插件已整块下架，不许悄悄回装",
+        )
 
     def test_03_panels_stack_inside_a_relative_body(self) -> None:
         body = re.findall(r"\.ws-canvas-body\s*\{([^}]*)\}", CSS)
@@ -200,12 +200,11 @@ class WorkspaceWiringTest(unittest.TestCase):
         self.assertIn("plugin.stage", block)
         self.assertIn("window.JzoStage.openPlugin(plugin)", block)
 
-    def test_02_assistant_row_returns_the_right_slot(self) -> None:
-        """军令 #15 任务 4：助手行不开画布页，点它等于把右栏主权收回来。"""
+    def test_02_plugin_row_opens_canvas_without_assistant_branch(self) -> None:
+        """AI 助手下架后，点插件行只剩「声明了 stage 才开画布」，没有特例分支。"""
         block = self.enter_block()
-        self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', WORKSPACE)
-        self.assertIn("plugin.id === ASSISTANT_PLUGIN_ID", block)
-        self.assertIn("window.JzoContextPanel.reclaim()", block)
+        self.assertNotIn("ASSISTANT_PLUGIN_ID", WORKSPACE)
+        self.assertNotIn("JzoContextPanel.reclaim()", block)
         # 2026-10-31 军令：引导页彻底删除；原生页签只剩设置与控制台，且必须有叉
         self.assertNotIn('registerNative({ key: "home"', STAGE, "引导页签必须彻底移除")
         self.assertNotIn('activate("home")', STAGE)
@@ -264,23 +263,18 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertIn("closeTab(editor.key)", handler, "保存后要真正关掉编辑页签")
         self.assertIn("activate(target.key)", handler, "关掉后切回发起端")
 
-    def test_04_copilot_now_lives_in_the_assistant_plugin(self) -> None:
-        """副驾不再是底座私产：宿主只转发选区与回填，AI 一句 DOM 都不碰。"""
-        self.assertNotIn('id="wsCopilot"', HTML, "宿主自带副驾已随对话插件化")
+    def test_04_copilot_is_gone_and_ai_goes_through_host_relay(self) -> None:
+        """副驾不是底座私产：宿主只转发选区与回填，AI 一句 DOM 都不碰。"""
+        self.assertNotIn('id="wsCopilot"', HTML, "宿主自带副驾已随对话一起下架")
         self.assertNotIn('id="cpBackfill"', HTML)
         self.assertNotIn("/api/agent/refine", WORKSPACE, "宿主壳不得替 AI 直接调后端")
-        plugin_html = (
-            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "index.html"
-        ).read_text(encoding="utf-8")
-        plugin_js = (
-            ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js"
-        ).read_text(encoding="utf-8")
-        self.assertIn('id="chatCopilot"', plugin_html)
-        self.assertIn('hostCall("agent.refine"', plugin_js, "改写只能请求底座代调")
-        self.assertIn('hostCall("editor.apply_patch"', plugin_js, "回填只能请求底座代广播")
+        editor_js = (ROOT / "plugins" / "org.jiuzhang.editor" / "dist" / "ui_ai.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('hostCall("agent.refine"', editor_js, "改写只能请求底座代调")
+        self.assertIn('hostCall("editor.apply_patch"', editor_js, "回填只能请求底座代广播")
         self.assertIn('bus.on("stage.selection"', STAGE, "选区要转发给右栏面板")
         self.assertIn('broadcast("editor.apply_patch"', STAGE)
-        self.assertIn("org.jiuzhang.editor", plugin_js, "副驾只认录题插件的选区")
 
     def test_05_dedupe_channels_are_retired(self) -> None:
         """3.6 下架全库查重清洗：relay 分支与命令声明都不许回来。"""

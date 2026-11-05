@@ -9,7 +9,6 @@
 
   function create(deps) {
     var AGENT_TIMEOUT_MS = deps.AGENT_TIMEOUT_MS;
-    var CHAT_HISTORY_MAX = deps.CHAT_HISTORY_MAX;
     var ID_RE = deps.ID_RE;
     var OPEN_BANK_QUERY_MAX = deps.OPEN_BANK_QUERY_MAX;
     var broadcast = deps.broadcast;
@@ -27,43 +26,13 @@
   var ACCOUNT_ID_RE = /^acc_[0-9a-f]{10}$/;
   var AI_RECOGNIZE_TIMEOUT_MS = 125000;
 
-  /** 历史轮次只留 role/content 两个字符串字段，长度设限——模型不必看见插件的内部态。 */
-  function cleanHistory(value) {
-    if (!Array.isArray(value)) return [];
-    return value.slice(-CHAT_HISTORY_MAX)
-      .map(function (turn) {
-        var item = plainObject(turn);
-        var role = textValue(item, "role", 10);
-        if (role !== "assistant" && role !== "sys") role = "user";
-        return { role: role, content: textValue(item, "content", 2000) };
-      })
-      .filter(function (turn) { return turn.content; });
-  }
-
   /**
-   * 智能体接口（军令 #15）。AI 助手是一个普通插件：它不能读库、不能碰宿主 DOM、
-   * 更没有鼠标键盘——所有「查题库 / 开页签 / 改面板 / 装插件」都只能到这里，
+   * 智能体接口（2026-11-05 起只保留 AI 帮改与配置中心）。插件不能读库、不能碰宿主 DOM、
+   * 更没有鼠标键盘——所有「改写 / 装插件 / 开页签 / 改面板」都只能到这里，
    * 由宿主用它自己的身份去做，做完把结果摘要回给插件。
    */
   function relayAgent(method, payload, done, fail, failWith) {
     var jsonHeaders = { "Content-Type": "application/json" };
-
-    if (method === "agent.chat") {
-      var userInput = textValue(payload, "user_input", 4000);
-      if (!userInput) { failWith("BAD_REQUEST", "user_input 不能为空"); return; }
-      fetchJson("/api/agent/chat", {
-        method: "POST",
-        headers: jsonHeaders,
-        timeout: AGENT_TIMEOUT_MS,
-        body: JSON.stringify({
-          user_input: userInput,
-          task_id: textValue(payload, "task_id", 60) || "chat_" + Date.now(),
-          context: plainObject(payload.context),
-          history: cleanHistory(payload.history)
-        })
-      }).then(done, fail);
-      return;
-    }
 
     if (method === "agent.refine") {
       var instruction = textValue(payload, "instruction", 400);
@@ -174,7 +143,7 @@
         value: patchValue
       };
       broadcast("editor.apply_patch", patch);
-      dock("AI 助手请求把改写的" + (patch.field === "solution" ? "解析" : "题干") + "回填到录题表单。",
+      dock("AI 帮改请求把改写的" + (patch.field === "solution" ? "解析" : "题干") + "回填到录题表单。",
         "agent.patch");
       done({ ok: true, field: patch.field, id: patch.id });
       return;
@@ -311,7 +280,6 @@
   }
 
     return {
-      cleanHistory: cleanHistory,
       relayAgent: relayAgent,
     };
   }

@@ -69,6 +69,27 @@
     if (openCtxBtn) openCtxBtn.setAttribute("aria-expanded", String(open));
   }
 
+  // 右栏折叠策略（2026-11-05）：默认收起，只由「当前页签插件声明了 sidebar.right」
+  // 自动拉起一次；老师亲手折叠过就再也不自动弹开。自动拉起的也不在住户搬走后留空壳。
+  var ctxUserWantsOpen = false;  // 老师手动拨过的偏好
+  var ctxTouched = false;        // 手动拨过没有
+  var ctxAutoOpened = false;     // 当前这次展开是不是插件自动拉的
+
+  /** 插件占了右栏时调用：只拉起一次，且绝不覆盖老师的手动折叠。 */
+  function autoOpenCtx() {
+    if (!wsPage || ctxOpen() || mqMobile.matches) return;
+    if (ctxTouched && !ctxUserWantsOpen) return;
+    ctxAutoOpened = true;
+    setCtx(true);
+  }
+
+  /** 住户搬走时调用：只有「自动拉起的那次」才收回，老师自己开的保持原样。 */
+  function collapseCtxIfAuto() {
+    if (!wsPage || !ctxOpen() || !ctxAutoOpened) return;
+    ctxAutoOpened = false;
+    setCtx(false);
+  }
+
   function dockOpen() {
     return !!wsPage && wsPage.getAttribute("data-dock") === "open";
   }
@@ -94,15 +115,22 @@
     });
   }
 
+  function manualCtx(open) {
+    ctxTouched = true;
+    ctxUserWantsOpen = open;
+    ctxAutoOpened = false;
+    setCtx(open);
+  }
+
   if (ctxToggle) {
     ctxToggle.addEventListener("click", function () {
-      setCtx(!ctxOpen());
+      manualCtx(!ctxOpen());
     });
   }
 
   if (openCtxBtn) {
     openCtxBtn.addEventListener("click", function () {
-      setCtx(true);
+      manualCtx(true);
     });
   }
 
@@ -112,17 +140,20 @@
     });
   }
 
-  // 默认态：桌面两栏展开、底栏展开；窄屏抽屉与底栏都收起，避免一进来就糊在中栏上。
+  // 默认态：左栏与底栏桌面展开；右栏一律先收起（没有插件占用时它就是空的）。
+  // 窄屏三者都收起，避免一进来就糊在中栏上。
   setSide(!mqMobile.matches);
-  setCtx(!mqMobile.matches);
+  setCtx(false);
   setDock(!mqMobile.matches);
 
   // 跨断点时必须重算：窄屏收起的抽屉拖宽到桌面会留下「轨道已收起、属性仍写 open」
-  // 的错位；反过来桌面展开态拉到窄屏则会让抽屉直接糊住对话流。
+  // 的错位；反过来桌面展开态拉到窄屏则会让抽屉直接糊住中栏。
   function onBreakpoint(matched) {
     setSide(!matched);
-    setCtx(!matched);
     setDock(!matched);
+    // 右栏回桌面只恢复老师亲手动过的「想开」；从没拨过就一直收着。
+    setCtx(!matched && ctxTouched && ctxUserWantsOpen);
+    if (matched) ctxAutoOpened = false;
   }
   if (typeof mqMobile.addEventListener === "function") {
     mqMobile.addEventListener("change", function (e) { onBreakpoint(e.matches); });
@@ -131,6 +162,8 @@
   }
 
     return {
+      autoOpenCtx: autoOpenCtx,
+      collapseCtxIfAuto: collapseCtxIfAuto,
       ctxOpen: ctxOpen,
       dockOpen: dockOpen,
       immersiveOn: immersiveOn,

@@ -14,23 +14,34 @@
   <link rel="stylesheet" href="/static/css/workspace_controls.css" />
   <link rel="stylesheet" href="/static/css/workspace_canvas.css" />
   <link rel="stylesheet" href="/static/css/workspace_overlay.css" />
+  <!-- 多用户切换（2026-11-05）：独立一份样式，整块功能下架时删掉本行与 ws_users.js 即可 -->
+  <link rel="stylesheet" href="/static/css/ws_users.css" />
 </head>
 <body>
   <div class="ws-page">
-    <!-- 左栏：底座默认入口 + 动态插件区（不写死任何业务功能） -->
-    <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="入口与插件">
+    <!-- 左栏：用户切换 + 动态插件区（不写死任何业务功能） -->
+    <aside class="ws-sidebar" id="wsSidebar" role="complementary" aria-label="用户与插件">
       <header class="ws-sidebar-head">
         <div class="ws-sidebar-title">
-          <h2>入口</h2>
+          <h2>切换用户</h2>
           <span class="ws-plugin-count" id="wsPluginCount" hidden></span>
         </div>
         <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
-        <section class="ws-plugin-entry" aria-label="入口与插件">
-          <!-- 军令 #15：左栏不再有「自由对话」这条底座内置入口。
-               AI 助手是 plugins/org.jiuzhang.chat 装出来的普通插件，和别的插件同权重、
-               同样出现在下面这张动态清单里；找插件、找题目一律对右栏助手说话。 -->
+        <!-- 当前用户卡片：点整张卡打开用户清单。每个用户是一个独立工作区，
+             题库、密钥、插件互不相通（2026-11-05）。 -->
+        <section class="ws-user-switch" id="wsUserSwitch" aria-label="当前用户">
+          <button class="ws-user-card" id="wsUserSwitchBtn" type="button" aria-haspopup="dialog">
+            <span class="ws-user-avatar" aria-hidden="true">用</span>
+            <span class="ws-user-meta">
+              <span class="ws-user-caption">当前用户</span>
+              <strong class="ws-user-name" id="wsUserName">读取中…</strong>
+            </span>
+            <span class="ws-user-action" aria-hidden="true">切换</span>
+          </button>
+        </section>
+        <section class="ws-plugin-entry" aria-label="已装插件">
           <ul class="ws-plugin-list" id="wsPluginList" aria-live="polite">
             <li class="ws-plugin-empty">暂无插件</li>
           </ul>
@@ -102,17 +113,16 @@
       <header class="ws-context-head">
         <div class="ws-context-head-main">
           <h2>辅助栏</h2>
-          <h3 class="ws-context-slot-title" id="wsContextSlotTitle">AI 助手</h3>
-          <span class="ws-context-slot-badge" id="wsContextSlotBadge">右栏插件</span>
+          <h3 class="ws-context-slot-title" id="wsContextSlotTitle">插件辅助栏</h3>
+          <span class="ws-context-slot-badge" id="wsContextSlotBadge" hidden>暂无住户</span>
         </div>
         <button class="ws-btn ws-btn-sm" id="wsToggleCtx" type="button"
           aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
       <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
-        <!-- 右栏插槽（sidebar.right，军令 #13 + #15）：主权交替。
-             默认由 AI 助手插件（org.jiuzhang.chat）入住；当前画布插件若自己也声明了
-             sidebar.right，就暂时由它接管，切走该页签自动归还助手。 -->
-        <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏助手面板">
+        <!-- 右栏插槽（sidebar.right）：主权只认当前画布页签。
+             页签插件声明了 sidebar.right 就由它入住，否则插槽留空、右栏保持折叠。 -->
+        <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏插件面板">
           <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
         </section>
 
@@ -173,6 +183,39 @@
         <p class="ws-intake-hint" id="wsIntakeHint">收 PDF / Word / TeX / MD / 图片；解析完直接进批次列表</p>
       </div>
     </div>
+
+    <!-- ===== 多用户切换（2026-11-05）：独立模块，删掉本节与 ws_users.js/ws_users.css 即整体下架 ===== -->
+    <div class="ws-user-modal" id="wsUserModal" hidden aria-hidden="true"
+      role="dialog" aria-modal="true" aria-labelledby="wsUserModalTitle">
+      <div class="ws-user-modal-card">
+        <header class="ws-user-modal-head">
+          <h2 id="wsUserModalTitle">切换用户</h2>
+          <button class="ws-btn ws-btn-sm" id="wsUserModalClose" type="button">关闭</button>
+        </header>
+        <p class="ws-user-modal-hint">
+          每个用户是一个独立工作区：题库、密钥、插件互不相通。新建用户从 0 题、空密钥、零插件开始。
+        </p>
+        <ul class="ws-user-list" id="wsUserList" aria-label="用户清单"></ul>
+        <form class="ws-user-create" id="wsUserCreateForm">
+          <label class="ws-user-create-label" for="wsUserNewName">新建用户</label>
+          <div class="ws-user-create-row">
+            <input id="wsUserNewName" type="text" maxlength="40" autocomplete="off"
+              placeholder="例如：高二备课" aria-label="新用户名称" />
+            <button class="ws-btn ws-btn-sm" id="wsUserCreateBtn" type="submit">新建空用户</button>
+          </div>
+        </form>
+        <p class="ws-user-status" id="wsUserStatus" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <!-- 切用户/建用户都要重启底座：全屏遮罩只在后端真的调度了重启后出现 -->
+    <div class="ws-restart-overlay" id="wsRestartOverlay" hidden aria-hidden="true">
+      <div class="ws-restart-box" id="wsRestartBox" tabindex="-1">
+        <p class="ws-restart-text" id="wsRestartText">正在重启底座，请稍候…</p>
+        <p class="ws-restart-hint" id="wsRestartHint">底座恢复后本页会自动刷新，请别关闭或手动刷新窗口。</p>
+        <button class="ws-btn ws-btn-sm" id="wsRestartReloadBtn" type="button" hidden>手动刷新</button>
+      </div>
+    </div>
   </div>
 
   <noscript>
@@ -215,6 +258,7 @@
   <script src="/static/js/ws_ctxmenu.js"></script>
   <script src="/static/js/ws_dock.js"></script>
   <script src="/static/js/ws_sidebar.js"></script>
+  <script src="/static/js/ws_users.js"></script>
   <script src="/static/js/workspace.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>

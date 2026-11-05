@@ -65,12 +65,9 @@ class FrontendEvaporatedTest(unittest.TestCase):
         source = stage_source()
         self.assertNotIn("shortcut", source)
 
-    def test_04_chat_plugin_no_longer_asks_the_host(self) -> None:
-        source = (ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js").read_text(
-            encoding="utf-8"
-        )
-        for token in ("shortcut.invoke", "shortcut.press", "MY_KEYS"):
-            self.assertNotIn(token, source)
+    def test_04_assistant_plugin_is_physically_gone(self) -> None:
+        # 2026-11-05：AI 助手整块下架；该插件连目录都不许留下。
+        self.assertFalse((ROOT / "plugins" / "org.jiuzhang.chat").exists())
 
 
 class BackendEvaporatedTest(unittest.TestCase):

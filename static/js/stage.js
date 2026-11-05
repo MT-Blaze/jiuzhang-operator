@@ -8,7 +8,7 @@
  * 两类页签：
  *   - 原生页签：「设置与控制台」，带关闭叉。关掉后可从左栏底部入口重新叫回。
  *     画布不设兜底页：所有页签关掉后中栏留白，不塞任何占位文案。
- *     对话不住在中栏——军令 #15 把 AI 助手交还成右栏里的一个普通插件，
+ *     中栏不做常驻对话——业务界面一律由插件按契约占用，
  *     底座不再为它保留任何特权入口。
  *   - 重型页签：沙箱 iframe 插件。带 LRU 休眠——同时存活的 iframe 最多 MAX_LIVE_FRAMES 个，
  *     最久未用的发 plugin.deactivate 后摘掉文档，页签保留、状态标「休眠」，再点回来重新挂载。
@@ -205,7 +205,6 @@
   var AGENT_READ_METHODS = stageCommand.AGENT_READ_METHODS;
   var AGENT_TIMEOUT_MS = stageCommand.AGENT_TIMEOUT_MS;
   var AI_ONLY_METHODS = stageCommand.AI_ONLY_METHODS;
-  var CHAT_HISTORY_MAX = stageCommand.CHAT_HISTORY_MAX;
   var CLEAN_TEXT_MAX = stageCommand.CLEAN_TEXT_MAX;
   var RELAY_MAX_PER_WINDOW = stageCommand.RELAY_MAX_PER_WINDOW;
   var RELAY_METHODS = stageCommand.RELAY_METHODS;
@@ -261,7 +260,6 @@
   var relayIngest = stageRelayBank.relayIngest;
   var stageRelayAgent = window.JzoStageRelayAgent.create({
     AGENT_TIMEOUT_MS: AGENT_TIMEOUT_MS,
-    CHAT_HISTORY_MAX: CHAT_HISTORY_MAX,
     ID_RE: ID_RE,
     OPEN_BANK_QUERY_MAX: OPEN_BANK_QUERY_MAX,
     broadcast: broadcast,
@@ -453,7 +451,7 @@
       });
     }
 
-    // 智能体通道：AI 助手插件的申请一律在这里由宿主代执行（军令 #15）。
+    // 智能体通道：插件对 AI 帮改/配置中心的申请一律在这里由宿主代执行。
     if (AI_ONLY_METHODS.indexOf(method) >= 0 || AGENT_READ_METHODS.indexOf(method) >= 0) {
       relayAgent(method, payload, done, fail, failWith);
       return;
@@ -536,7 +534,7 @@
       // 插件 iframe 一条也没收到过——右栏助手清不掉已关闭的录题页快照。这里补上投递。
       bus.on("stage.tab.activated", function (event) { broadcast("stage.tab.activated", event.payload); });
       bus.on("stage.tab.closed", function (event) { broadcast("stage.tab.closed", event.payload); });
-      // 录题插件的当前题只喂给右栏面板（AI 助手插件的副驾），不广播给中栏——
+      // 录题插件的当前题只喂给右栏面板（AI 帮改副驾），不广播给中栏——
       // 中栏插件自己就是选区的来源，回灌只会形成回声。
       bus.on("stage.selection", function (event) {
         stageState.panels.forEach(function (panel) { notify(panel, "stage.selection", event.payload); });

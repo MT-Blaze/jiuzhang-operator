@@ -2,8 +2,8 @@
 
 三件事必须同时成立，右栏才算「插件化」而不是换个地方写死：
 1. 清单侧：``slots`` 接受 ``sidebar.right``，未知插槽照旧拒装；
-2. 宿主侧：右栏默认由助手插件（org.jiuzhang.chat）入住；当前画布页签的插件自己声明
-   ``sidebar.right`` 时暂时接管，切走或关掉就归还助手——底座不再自带副驾对话；
+2. 宿主侧：右栏默认折叠；当前画布页签的插件自己声明 ``sidebar.right`` 时才由它入住，
+   切走或关掉就收回（只收回自动拉起的那一次，老师手动开的保持原样）；
 3. 数据侧：面板 iframe 与画布页签共用同一套 Host API 转发（写令牌不落插件手里）。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_sidebar_right_slot``
@@ -26,6 +26,7 @@ HTML = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
 CSS = workspace_css()
 STAGE_JS = stage_source()
 PANEL_JS = (ROOT / "static" / "js" / "context_panel.js").read_text(encoding="utf-8")
+RAIL_JS = (ROOT / "static" / "js" / "ws_rail.js").read_text(encoding="utf-8")
 WORKSPACE_JS = workspace_source()
 SPEC = (ROOT / "docs" / "PLUGIN_SPEC.md").read_text(encoding="utf-8")
 
@@ -96,14 +97,13 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn('id="wsContextSlotBody"', HTML)
         self.assertIn('id="wsContextSlotTitle"', HTML)
 
-    def test_02_right_slot_is_visible_by_default_and_host_copilot_is_gone(self) -> None:
-        """军令 #15 任务 4：右栏默认不折叠、默认住助手插件。
+    def test_02_right_sidebar_starts_collapsed_and_host_copilot_is_gone(self) -> None:
+        """2026-11-05：右栏默认折叠，没有插件占用时它就是空的。
 
         底座自带的 AI 副驾（wsCopilot）必须一起删掉——右栏再留一份宿主私有对话，
-        等于给 AI 开一条不经 Host API 的后门（任务 1）。
+        等于给 AI 开一条不经 Host API 的后门。
         """
-        slot = re.search(r'<section[^>]*id="wsContextSlot"[^>]*>', HTML).group(0)
-        self.assertNotIn("hidden", slot, "右栏默认必须展开，否则开场就是折叠态")
+        self.assertIn("setCtx(false);", RAIL_JS, "右栏启动必须默认收起")
         self.assertNotIn('id="wsCopilot"', HTML, "宿主私有副驾已随对话一起插件化")
         self.assertIn('id="wsContextSlotBadge"', HTML, "主权归属要在标题上看得见")
 
@@ -119,7 +119,7 @@ class HostSlotTest(unittest.TestCase):
         self.assertIn("JzoContextPanel.sync(wsState.installedPlugins, wsState.activeCanvasPluginId)",
                       WORKSPACE_JS)
         self.assertIn("stage.tab.activated", WORKSPACE_JS, "页签换主人必须驱动右栏对账")
-        self.assertIn("stage.tab.closed", WORKSPACE_JS, "关掉页签后主权要归还助手")
+        self.assertIn("stage.tab.closed", WORKSPACE_JS, "关掉页签后主权要重新对账")
 
     def test_05_panel_frame_is_sandboxed(self) -> None:
         sandbox = re.search(r'var SANDBOX = "([^"]+)"', PANEL_JS).group(1)
@@ -171,19 +171,20 @@ class HostSlotTest(unittest.TestCase):
     def test_12_sovereignty_follows_only_the_active_canvas_tab(self) -> None:
         """接管者只认「当前画布页签」那一个插件，不是所有声明了槽的插件。"""
         self.assertIn("function claimant(plugins, activePluginId)", PANEL_JS)
-        self.assertIn(
-            "if (!activePluginId || activePluginId === ASSISTANT_PLUGIN_ID) return null",
-            PANEL_JS,
-        )
+        self.assertIn("if (!activePluginId) return null;", PANEL_JS)
 
-    def test_13_assistant_is_the_default_resident(self) -> None:
-        """军令 #15 任务 4：右栏默认住户是助手插件，切走业务页签就归还它。"""
-        self.assertIn('var ASSISTANT_PLUGIN_ID = "org.jiuzhang.chat"', PANEL_JS)
-        self.assertIn("assistant.chat", PANEL_JS)
-        self.assertIn("function reclaim()", PANEL_JS)
+    def test_13_no_resident_without_a_claiming_tab(self) -> None:
+        """没有页签插件声明 sidebar.right 时，插槽空着、右栏收起；绝不自动弹开。"""
+        self.assertNotIn("ASSISTANT_PLUGIN_ID", PANEL_JS)
+        self.assertNotIn("assistant.chat", PANEL_JS)
+        self.assertIn("function autoOpenCtx()", RAIL_JS)
+        self.assertIn("function collapseCtxIfAuto()", RAIL_JS)
+        self.assertIn("ctxTouched && !ctxUserWantsOpen", RAIL_JS,
+                      "老师手动折叠过就绝不再自动弹开")
 
     def test_14_no_claimant_gives_a_readable_note_not_a_blank(self) -> None:
         self.assertIn('className = "ws-context-slot-note"', PANEL_JS)
+        self.assertIn("当前页签没有右栏面板", PANEL_JS)
         self.assertIn("slotEl.hidden = false", PANEL_JS)
         self.assertNotIn("copilotEl", PANEL_JS, "兜底不许再回到宿主私有副驾那条捷径")
 

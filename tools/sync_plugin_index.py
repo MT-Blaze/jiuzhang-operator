@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_MAIN = ROOT / "plugins.json"
 INDEX_REPO = ROOT.parent / "jiuzhang-plugins" / "plugins.json"
 PLUGIN_DIRS = ("org.jiuzhang.bank-engine", "org.jiuzhang.bank-ui", "org.jiuzhang.editor",
-               "org.jiuzhang.paper-gen", "org.jiuzhang.handout", "org.jiuzhang.chat",
+               "org.jiuzhang.paper-gen", "org.jiuzhang.handout",
                "org.jiuzhang.dashboard")
 # 只有这几条要求索引文案与清单逐字相同（tests/test_clean_latex.py 有契约判据）。
 # 其余条目的索引描述是**店面文案**，比清单多一句「需底座 v1.0.0 及以上」之类的提示，

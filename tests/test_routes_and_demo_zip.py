@@ -75,12 +75,10 @@ class DefaultRouteTest(unittest.TestCase):
     def test_05_settings_route_serves_settings_page(self) -> None:
         self.assertEqual(self._served_file("/settings"), STATIC / "settings.html")
 
-    def test_06_welcome_hint_lives_in_the_assistant_plugin(self) -> None:
-        # 军令 #15：对话流不在宿主壳里，示例题提示只能由右栏助手插件当场问底座要清单
-        text = _read(ROOT / "plugins" / "org.jiuzhang.chat" / "dist" / "plugin.js")
-        self.assertIn("系统已为您预置了 5 道示例数学题", text)
-        self.assertIn("拆分第一题", text)
-        self.assertIn(DEMO_PLUGIN_ID, text)
+    def test_06_assistant_plugin_is_gone(self) -> None:
+        # 2026-11-05：常驻 AI 助手整块下架，宿主壳也不得替它留任何欢迎话术。
+        self.assertFalse((ROOT / "plugins" / "org.jiuzhang.chat").exists(),
+                         "AI 助手插件必须物理删除")
         host_text = workspace_source()
         self.assertNotIn("系统已为您预置了", host_text, "宿主壳不得替插件说谎")
 

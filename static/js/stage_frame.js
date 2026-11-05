@@ -253,7 +253,7 @@
     }
   }
 
-  /** 广播覆盖中栏活页签与右栏面板：AI 助手住在右栏，选区、回流与参数变化都得收到。 */
+  /** 广播覆盖中栏活页签与右栏面板：选区、回流与参数变化都得收到。 */
   function broadcast(event, payload) {
     var targets = liveFrames().concat(stageState.panels.filter(function (panel) { return panel.frame; }));
     targets.forEach(function (tab) { notify(tab, event, payload); });

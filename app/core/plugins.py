@@ -48,8 +48,6 @@ _CAPABILITIES = {
     # 军令 #20：纯视图插件——只读活跃题库、可走查重扫描与合并的宿主通道，
     # 自己不持有题库。与 bank.provider 分离，界面换皮不必动数据引擎。
     "bank.view",
-    # 军令 #15：AI 助手不再是底座特权模块，而是一个走 Host API 的普通插件
-    "assistant.chat",
 }
 _PERMISSIONS = {
     "questions:read",
