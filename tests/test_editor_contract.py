@@ -1640,11 +1640,24 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn("inset: 0", lens)
         self.assertIn(".ed-img-crop-btn", css)
 
-    def test_06_releasing_the_button_finishes_the_crop(self) -> None:
+    def test_06_releasing_the_button_offers_the_crop_actions(self) -> None:
+        """松开鼠标只弹动作选项（配图 / 切分新题 / 取消），不能当场把框吞掉。
+
+        无文本层试卷全靠这一步：老师一页一页框，框完自己决定这块是配图还是新题。
+        """
         js = read("plugin.js")
         up = fn_body(js, "onCropUp")
         self.assertIn("if (!rect || rect.w < CROP_MIN_SIDE || rect.h < CROP_MIN_SIDE)", up)
-        self.assertIn("finishCrop(session);", up)
+        self.assertIn("showCropActions(session);", up,
+                      "松开鼠标必须先给老师选动作，不能直接 finishCrop")
+        self.assertNotIn("finishCrop(session);", up)
+        bar = fn_body(js, "showCropActions")
+        self.assertIn('actionButton("提取为本题配图"', bar)
+        self.assertIn('actionButton("切分新题"', bar)
+        self.assertIn('actionButton("取消"', bar)
+        self.assertIn("canSplitItem(session.item)", bar,
+                      "「切分新题」只许出现在中转站里的题上")
+        self.assertIn("item.pendingId && item.batchId", fn_body(js, "canSplitItem"))
         close = fn_body(js, "closeCrop")
         self.assertIn("lensCanvas.parentNode.removeChild(lensCanvas);", close,
                       "左键松开后放大镜必须消失")
@@ -1655,12 +1668,35 @@ class EditorCropMagnifierTest(unittest.TestCase):
         js = read("plugin.js")
         finish = fn_body(js, "finishCrop")
         self.assertIn("item.cropAsset = { id: assetId, data_url: dataUrl };", finish)
-        self.assertIn("stashOne(item, metaFor(item, {}), false)", finish)
+        self.assertIn("stashOne(item, metaFor(item, {}), false, true)", finish,
+                      "只补配图、不改题干：缺答案也不能拦住配图入池")
+        self.assertIn('if (mode === "split")', finish)
+        self.assertIn("splitFromCrop(item, dataUrl,", finish)
         self.assertIn("item.cropAsset = null;", finish,
                       "存过之后必须清掉，否则下一次保存又写一份重复配图")
         stash = fn_body(js, "stashOne")
         self.assertIn("payload.questions[0].assets = [", stash)
         self.assertIn("data_url: String(item.cropAsset.data_url || \"\")", stash)
+
+    def test_10_split_from_crop_makes_a_real_pending_question(self) -> None:
+        """「切分新题」必须真的落一道待审题（带原卷页号），而不是只在界面上多一格。"""
+        split = read("ui_split.js")
+        call = fn_body(split, "splitFromCrop")
+        self.assertIn('hostCall("pending.save_draft"', call)
+        self.assertIn("batch_id: item.batchId", call)
+        self.assertIn("page_no: pageNo", call)
+        self.assertIn('origin: "editor.split"', call)
+        placeholder = fn_body(split, "placeholderDoc")
+        self.assertIn("已从原卷第 ", placeholder)
+        self.assertIn("tags: [\"待识别\"]", placeholder)
+        # 插件分包后仍要挂进整包：index.html 先加载它，plugin.js 再接线。
+        html = read("index.html")
+        self.assertIn('<script src="ui_split.js"></script>', html)
+        self.assertIn(
+            "splitFromCrop: uiSplit.splitFromCrop",
+            read("plugin.js"),
+            "plugin.js 没把切题通道交给切图台",
+        )
 
     def test_08_the_global_paste_stays_out_of_the_way_while_cropping(self) -> None:
         """切图台开着的时候，全局粘贴不许把这张图当成新卷子吞进批次。

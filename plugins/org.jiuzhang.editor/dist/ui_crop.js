@@ -18,6 +18,7 @@
     var metaFor = deps.metaFor;
     var renderAll = deps.renderAll;
     var scheduleRender = deps.scheduleRender;
+    var splitFromCrop = deps.splitFromCrop;
     var stashOne = deps.stashOne;
 
   // ---------- 左栏切图：圆形放大镜 + 中心十字准星 ----------
@@ -105,7 +106,9 @@
       ctx: null,
       lens: null,
       lctx: null,
-      hint: null
+      hint: null,
+      actions: null,
+      pageNo: Number((item && item.pageImage && item.pageImage.page) || 0) || 1
     };
     crop = session;
     var hint = el("p", "ed-crop-hint", "正在取图…");
@@ -120,6 +123,7 @@
     window.addEventListener("drop", onCropDrop, true);
     window.addEventListener("resize", onCropResize);
     var picture = itemImage(item);
+    if (picture && picture.page) session.pageNo = Number(picture.page) || 1;
     var managed = picture && picture.uri.indexOf("/static/") === 0;
     if (!managed) {
       // 没有现成的托管图：等老师把卷子上的这一页贴进来或拖进来。
@@ -154,6 +158,9 @@
     if (session.hint && session.hint.parentNode) {
       session.hint.parentNode.removeChild(session.hint);
     }
+    if (session.actions && session.actions.parentNode) {
+      session.actions.parentNode.removeChild(session.actions);
+    }
     if (lensCanvas) {
       if (lensCanvas.parentNode) lensCanvas.parentNode.removeChild(lensCanvas);
       lensCanvas = null;
@@ -180,6 +187,7 @@
       canvas.addEventListener("mousedown", function (event) {
         if (event.button !== 0 || !session.bitmap) return;
         event.preventDefault();
+        hideCropActions(session);
         session.dragging = true;
         session.start = cropPoint(session, event.clientX, event.clientY);
         session.rect = null;
@@ -190,7 +198,7 @@
     session.lctx = lensCanvas.getContext("2d");
     resizeLens();
     session.hint.textContent = bitmap
-      ? "移动鼠标看像素，拖拽框选，左键松开切图；Esc 取消。"
+      ? cropHint(session)
       : "把卷子上的这一页 Ctrl+V 贴进来（或拖进来），再拖拽框选。";
   }
 
@@ -252,6 +260,7 @@
     canvas.style.width = displayW + "px";
     canvas.style.height = displayH + "px";
     drawCropCanvas(session);
+    if (session.actions && session.rect) positionActions(session);
   }
 
   function drawCropCanvas(session) {
@@ -355,6 +364,95 @@
     };
   }
 
+  /**
+   * 松开左键不等于切图：先把框留在图上，让老师选「配给本题」还是「切分新题」。
+   * 无文本层的扫描卷就靠这一步把一页拆成十九道题。
+   */
+  function hideCropActions(session) {
+    if (!session) return;
+    if (session.actions && session.actions.parentNode) {
+      session.actions.parentNode.removeChild(session.actions);
+    }
+    session.actions = null;
+  }
+
+  function positionActions(session) {
+    var bar = session.actions;
+    var rect = session.rect;
+    if (!bar || !rect || !session.canvas) return;
+    var width = bar.offsetWidth || 280;
+    var height = bar.offsetHeight || 44;
+    var top = rect.y + rect.h + 6;
+    if (top + height > session.canvas.clientHeight) {
+      top = Math.max(4, rect.y - height - 6);
+    }
+    var left = Math.max(4, Math.min(rect.x, (session.canvas.clientWidth || width) - width - 4));
+    bar.style.top = Math.round(top) + "px";
+    bar.style.left = Math.round(left) + "px";
+  }
+
+  function actionButton(label, primary, onClick) {
+    var button = el("button", "ed-crop-action" + (primary ? " is-primary" : ""), label);
+    button.type = "button";
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function isScanGuide(item) {
+    var stem = String((item && item.question && item.question.stem) || "");
+    return stem.indexOf("未识别出文本") >= 0;
+  }
+
+  /** 只有中转站里的题才谈得上「切分新题」：主库里的题没有批次可并入。 */
+  function canSplitItem(item) {
+    return Boolean(item && item.pendingId && item.batchId && splitFromCrop);
+  }
+
+  /** 松开鼠标后的提示按真会给的动作说，别指着一颗不存在的按钮。 */
+  function cropHint(session) {
+    var guide = isScanGuide(session.item);
+    var split = canSplitItem(session.item);
+    if (guide && split) return "移动鼠标看像素，拖拽框选；松开后点【切分新题】逐题切出。Esc 取消。";
+    if (split) return "移动鼠标看像素，拖拽框选；松开后选【提取为本题配图】或【切分新题】。Esc 取消。";
+    return "移动鼠标看像素，拖拽框选；松开后点【提取为本题配图】。Esc 取消。";
+  }
+
+  function showCropActions(session) {
+    hideCropActions(session);
+    var rect = session && session.rect;
+    var frame = session && session.canvas && session.canvas.parentNode;
+    if (!rect || !frame) return;
+    var bar = el("div", "ed-crop-actions");
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "框选之后要做什么");
+    var assign = function () {
+      return actionButton("提取为本题配图", !isScanGuide(session.item), function () {
+        finishCrop(session, "assign");
+      });
+    };
+    var split = function () {
+      return actionButton("切分新题", isScanGuide(session.item), function () {
+        finishCrop(session, "split");
+      });
+    };
+    var canSplit = canSplitItem(session.item);
+    // 原卷页入口只负责切题：给它配图会把整页换成一小块，剩下的题就框不着了。
+    var buttons = isScanGuide(session.item) && canSplit ? [split()] : [assign()];
+    if (canSplit && !isScanGuide(session.item)) buttons.push(split());
+    buttons.forEach(function (button) { bar.appendChild(button); });
+    bar.appendChild(actionButton("取消", false, function () {
+      session.rect = null;
+      hideCropActions(session);
+      drawCropCanvas(session);
+      session.hint.textContent = "已取消这次框选，再拖一次。";
+    }));
+    frame.appendChild(bar);
+    session.actions = bar;
+    positionActions(session);
+    var primary = bar.querySelector(".is-primary") || bar.firstChild;
+    if (primary) primary.focus();
+  }
+
   function onCropResize() {
     var session = crop;
     if (!session) return;
@@ -393,7 +491,7 @@
       session.hint.textContent = "框太小了，再拖一次。";
       return;
     }
-    finishCrop(session);
+    showCropActions(session);
   }
 
   function onCropKey(event) {
@@ -446,14 +544,17 @@
       session.width = bitmap.width;
       session.height = bitmap.height;
       layoutCrop(session);
-      session.hint.textContent = "移动鼠标看像素，拖拽框选，左键松开切图；Esc 取消。";
+      session.hint.textContent = cropHint(session);
     }, function (error) {
       session.hint.textContent = "这张图解不开（" + ((error && error.message) || "格式不支持") + "）。";
     });
   }
 
-  /** 松手：按源像素切一块，交给底座落盘，再把题面里的配图换过去。 */
-  function finishCrop(session) {
+  /**
+   * 老师选完动作才真正切：mode=assign 配给当前题，mode=split 另起一道待审题。
+   * 截图像素按源图算，避免框选缩放后把题图裁小。
+   */
+  function finishCrop(session, mode) {
     var rect = session.rect;
     var sx = Math.round(rect.x / session.scale);
     var sy = Math.round(rect.y / session.scale);
@@ -479,16 +580,25 @@
     }
     var item = session.item;
     var assetId = cropAssetId();
-    // 松手即收摊：放大镜与切图台当场撤掉，落库挪到后台慢慢办。
-    // 军令原话是「直到左键松开，框选完成，放大镜消失」——镜子不能在等回执的
-    // 那两秒里还杵在屏幕上。
+    var pageNo = session.pageNo || 1;
+    // 选完动作即收摊：放大镜与切图台当场撤掉，落库挪到后台慢慢办。
     closeCrop();
+    if (mode === "split") {
+      // 切分新题：这一块单独成一道待审题，题干留占位，老师接着在中间栏录入。
+      if (!splitFromCrop) {
+        dockWarn("切分新题不可用：录题工作台没有接上切题通道。");
+        return;
+      }
+      splitFromCrop(item, dataUrl, { width: sw, height: sh, page: pageNo });
+      return;
+    }
     if (item.pendingId) {
       // 中转站里的题：字节随草稿一起进池子，配图落 pending_assets/，主库一个字节都不碰。
       item.cropAsset = { id: assetId, data_url: dataUrl };
       item.question.images = [{ id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" }];
       item.dirty = true;
-      stashOne(item, metaFor(item, {}), false).then(function (outcome) {
+      // 只补配图、不动题干：不能因为还没填答案就拒绝把图存进池子。
+      stashOne(item, metaFor(item, {}), false, true).then(function (outcome) {
         if (!outcome || !outcome.ok) {
           dockWarn("切图没能存进中转站：" + ((outcome && outcome.message) || "未知原因"),
             (outcome && outcome.detail) || "");

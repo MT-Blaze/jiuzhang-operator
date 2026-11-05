@@ -249,6 +249,53 @@
   touch-action: none;
 }
 
+/* 框选后的动作条：松开左键先别切，让老师选「配给本题」还是「切分新题」。
+   绝对定位在框下方，放不下就翻到框上方；位置由 ui_crop.js 按框算。 */
+.ed-crop-actions {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(29, 26, 22, 0.18);
+}
+
+.ed-crop-action {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.ed-crop-action:hover,
+.ed-crop-action:focus-visible {
+  border-color: var(--accent);
+}
+
+.ed-crop-action.is-primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ed-img-guide-hint {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: #f6efdd;
+  border-left: 3px solid #b8860b;
+}
+
 /* 放大镜层：整屏一块画布，鼠标穿过它不挡事。 */
 .ed-crop-lens {
   position: fixed;

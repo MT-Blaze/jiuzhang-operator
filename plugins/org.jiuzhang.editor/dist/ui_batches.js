@@ -557,6 +557,15 @@
       renderAll();
       publishSelection();
       noteActivity();
+      // 扫描版没有文本层：左栏的原卷页入口就是老师的唯一入口，必须当场指路。
+      var guides = state.items.filter(function (each) {
+        var stem = String((each.question && each.question.stem) || "");
+        return stem.indexOf("未识别出文本") >= 0;
+      });
+      if (guides.length) {
+        dockWarn("这一批未识别出文本（" + guides.length + " 个原卷页入口）："
+          + "请用左侧【从原卷取图】拖框框选，再点【切分新题】逐题切出入池。");
+      }
       // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。
       var broken = state.items.filter(function (item) { return parsedOf(item).errors.length > 0; });
       if (broken.length) {
@@ -586,11 +595,12 @@
   /**
    * 一道题存回中转池：带 pending_id 就是原地更新，池子里不会多出一道重影。
    * silent=true 时不打扰老师（自动保存与离开前兜底走这条）。
+   * skipValidation=true 只给「补配图」用：缺答案不该把刚切好的图挡在池子外面。
    */
-  function stashOne(item, meta, silent) {
+  function stashOne(item, meta, silent, skipValidation) {
     var parsed = parseExamSource(item.source);
     var doc = questionFromParsed(item, parsed, meta || {});
-    var problems = validateForSave(doc, parsed, meta || {});
+    var problems = skipValidation ? [] : validateForSave(doc, parsed, meta || {});
     if (problems.length) {
       var reason = problems.slice(0, 3).join("；");
       if (!silent) panelSay("这一题还存不进去：" + reason, "warn", "invalid");

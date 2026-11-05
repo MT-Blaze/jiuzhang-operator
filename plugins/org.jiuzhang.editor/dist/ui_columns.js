@@ -66,10 +66,17 @@
     return demo ? { uri: demo, id: "" } : null;
   }
 
+  /** 扫描卷的「原卷页入口」：底座没认出字，只留了页图和指路话。 */
+  function isScanGuide(item) {
+    var stem = String((item.question && item.question.stem) || "");
+    return stem.indexOf("未识别出文本") >= 0;
+  }
+
   function renderImageCell(item, index) {
     var cell = el("div", "ed-img-cell");
     cell.setAttribute("role", "listitem");
     cell.setAttribute("data-index", String(index));
+    var guide = isScanGuide(item);
     var picture = itemImage(item);
     var frame = el("div", "ed-img-frame");
     if (picture) {
@@ -101,7 +108,8 @@
       var tools = el("div", "ed-img-tools");
       var pageOnly = picture && picture.page;
       var cropBtn = el("button", "ed-img-crop-btn",
-        pageOnly ? "从原卷取图" : (picture ? "重新框选" : "框选取图"));
+        guide ? "框选切题"
+          : (pageOnly ? "从原卷取图" : (picture ? "重新框选" : "框选取图")));
       cropBtn.type = "button";
       cropBtn.setAttribute("data-index", String(index));
       cropBtn.setAttribute("aria-label",
@@ -110,6 +118,10 @@
       cropBtn.addEventListener("click", function () { openCrop(item, index); });
       tools.appendChild(cropBtn);
       cell.appendChild(tools);
+    }
+    if (guide) {
+      cell.appendChild(el("p", "ed-img-guide-hint",
+        "未识别出文本：框选一题后点【切分新题】。此条只是原卷页入口，切完可删。"));
     }
     var paper = (item.question && item.question.source && item.question.source.paper_title) || "无来源卷";
     var caption = "第 " + (index + 1) + " 题 · " + paper;

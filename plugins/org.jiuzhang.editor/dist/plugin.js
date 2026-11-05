@@ -501,6 +501,20 @@
   var renderTopLines = uiStdName.renderTopLines;
   var setStdMode = uiStdName.setStdMode;
 
+  // 扫描卷手动切题：框选一块 → 新待审题。排在切图台之前，供它的「切分新题」动作调用。
+  var uiSplit = window.JzoEditorSplit.create({
+    buildExamSource: buildExamSource,
+    dock: dock,
+    dockWarn: dockWarn,
+    errorDetail: errorDetail,
+    hostCall: hostCall,
+    jumpTo: uiColumns.jumpTo,
+    makeItem: makeItem,
+    refreshBatches: refreshBatches,
+    renderAll: renderAll,
+    coreState: coreState,
+  });
+
   var uiCrop = window.JzoEditorCrop.create({
     clampValue: clampValue,
     dock: dock,
@@ -512,6 +526,7 @@
     metaFor: metaFor,
     renderAll: renderAll,
     scheduleRender: scheduleRender,
+    splitFromCrop: uiSplit.splitFromCrop,
     stashOne: stashOne,
   });
   var uiLayout = window.JzoEditorLayout.create({

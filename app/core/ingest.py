@@ -13,6 +13,9 @@
 **认不出就不编**：OCR 失败、PDF 文本层抽不出时，如实记一条「待识别」的待审题
 （图片挂在那儿，题干留个明写的占位），老师自己在审核台里补。
 底座宁可交白卷，也不生成一道看着像样、其实凭空捏造的题。
+**扫描版 PDF 不把整页当成一道题**：文本层不可用时按渲染出的页数各留一条
+「原卷页入口」，题干明写「未识别出文本，请用左侧框选 + 切分新题」；
+真正的一题一题由老师在左栏手动框选切出来。
 """
 
 from __future__ import annotations
@@ -532,44 +535,77 @@ def _placeholder(label: str) -> dict[str, Any]:
     }
 
 
-async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str]:
-    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本)。"""
+def _scan_guide_label(name: str, page: int, total: int, has_pages: bool = True) -> str:
+    """扫描版 PDF 的「原卷页入口」：明说没认出字，指路手动框选。"""
+    if not has_pages:
+        return (
+            f"（未识别出文本：{name}。本机没有 PDF 页面渲染器，左侧看不到原卷页；"
+            "请点【框选取图】后把这一页的截图粘贴进来，再框选切题。）"
+        )
+    where = f"第 {page}/{total} 页" if total > 1 else "第 1 页"
+    return (
+        f"（未识别出文本：{name} {where}。"
+        "请在左侧点【框选切题】拖框框住一道题，再点【切分新题】；"
+        "下一题重复即可。此条只是原卷页入口，切完可删。）"
+    )
+
+
+def _scan_guides(name: str, total_pages: int) -> list[dict[str, Any]]:
+    """一页一条「原卷页入口」，让老师能在左栏逐页手动切题。
+
+    这里**不是**「一页一道题」：题干明写未识别、指路手动切分，
+    绝不把整页冒充成一道题塞进待审池。
+    """
+    total = max(1, min(int(total_pages or 1), 40))
+    has_pages = bool(total_pages)
+    return [_placeholder(_scan_guide_label(name, page, total, has_pages))
+            for page in range(1, total + 1)]
+
+
+async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str, bool]:
+    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否扫描件入口)。
+
+    最后一个 True 表示这批文档只是「原卷页入口」占位：页数要等页面图渲染完
+    才知道，``run_ingest_jobs`` 会按实际页数重铺，绝不当成题目。
+    """
     kind = classify(name)
     warnings: list[str] = []
     if kind == "text":
         text = decode_text(data)
         documents, notes = build_documents(text)
-        return documents, warnings + notes, kind, text
+        return documents, warnings + notes, kind, text, False
     if kind == "docx":
         text = extract_docx_text(data)
         documents, notes = build_documents(text)
-        return documents, warnings + notes, kind, text
+        return documents, warnings + notes, kind, text, False
     if kind == "pdf":
-        text, pages = extract_pdf_text(data)
+        text, _pages = extract_pdf_text(data)
         if _text_usable(text):
             documents, notes = build_documents(text)
-            return documents, warnings + notes, kind, text
+            return documents, warnings + notes, kind, text, False
         warnings.append(
-            f"{name}：PDF 文本层抽不出可读文字，"
-            f"已按 {pages} 页各留一条待识别"
+            f"{name}：未识别出文本（PDF 文本层不可用）。"
+            "已按原卷页留入口，请用左侧【从原卷取图】框选，再点【切分新题】逐题录入。"
         )
         # 文本层不可用就不拿乱码去还原页面图：页图由 PDF 渲染器另出。
-        return [_placeholder(f"（待识别：{name} 第 1 页，文本层抽不出文字，请老师补录）")
-                for _ in range(min(pages, 20))], warnings, kind, ""
+        # 先只给一条占位，run_ingest_jobs 拿到真实页数后再按页重铺。
+        return [_placeholder(_scan_guide_label(name, 1, 1))], warnings, kind, "", True
     if kind == "image":
         mime = IMAGE_MIME.get(suffix_of(name), "image/png")
         if len(data) > MAX_IMAGE_BYTES:
-            return [], warnings + [f"{name}：图片太大（上限 8 MiB），没认"], kind, ""
+            return [], warnings + [f"{name}：图片太大（上限 8 MiB），没认"], kind, "", False
         text, reason = await ocr_image(data, mime)
         if not text.strip():
             warnings.append(f"{name}：{reason or '认不出文字'}，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，图片认不出文字，请老师补录）")], warnings, kind, ""
+            return [_placeholder(f"（待识别：{name}，图片认不出文字，请老师补录）")], \
+                warnings, kind, "", False
         documents, notes = build_documents(text)
         if not documents:
             warnings.append(f"{name}：认出来了，但没拆出题目，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，认出了文字但没拆出题目）")], warnings, kind, text
-        return documents, warnings + notes, kind, text
-    return [], warnings, kind, ""
+            return [_placeholder(f"（待识别：{name}，认出了文字但没拆出题目）")], \
+                warnings, kind, text, False
+        return documents, warnings + notes, kind, text, False
+    return [], warnings, kind, "", False
 
 
 async def ingest_files(files: Any) -> dict[str, Any]:
@@ -714,12 +750,14 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             continue
         page_images: list[dict[str, Any]] = []
         doc_pages: list[int] = []
+        scan_mode = False
         try:
-            documents, _notes, kind, source_text = await _items_from_file(name, data)
+            documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
         except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
             documents = []
             kind = ""
             source_text = ""
+            scan_mode = False
             _notes = [f"{name}：解析出错（{error}）"]
         # 原卷页在识别之后立刻出：哪怕一道题都没拆出来，老师也得能对着原卷补录。
         try:
@@ -727,6 +765,11 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                 name, kind, data, source_text, documents)
         except Exception:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
             page_images, doc_pages = [], []
+        if scan_mode:
+            # 扫描版没有文本层：按**实际渲染出的页数**重铺入口，不是一页一道题。
+            # 渲染器缺席时退成一条，并靠题干里的提示请老师贴入页面截图再框选。
+            documents = _scan_guides(name, len(page_images) if page_images else 1)
+            doc_pages = list(range(1, len(documents) + 1))
         items: list[dict[str, Any]] = []
         if documents:
             items.append({"question": documents[0], "pending_id": pending_id,
