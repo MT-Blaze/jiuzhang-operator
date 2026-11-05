@@ -117,38 +117,12 @@
 
 ---
 
-## 9. 六工序多智能体工作流（2026-11-02 入驻，每会话默认生效）
+## 9. 工程红线、门禁与常用命令
 
-> 本节只放**入口、红线与索引**，细则一律按索引加载，禁止在此堆积细节。
-> 体系资产随仓库走：`.qoder/`（agents / rules / skills / records / skill-bank.json）+ `scripts/check-*`。
-> 流水线只管"允许 / 禁止 / 怎么做"；事实性背景知识查 RepoWiki 与 knowledge cards。
-> **换产品或换 Qoder 版本时**：以本节为准（原可移植投影已于 2026-11-04 随 MD 清理删除，无替代文件）。
+> 六工序多智能体工作流已于 2026-11-05 退役：角色卡、process skill、R05 与 skill-bank 均已删除，新工作流待定。
+> 本节保留与具体流程无关的工程红线、门禁命令、常用命令与环境坑。
 
-### 9.1 触发分级（主公 2026-11-02 裁决）
-
-| 请求类型 | 工作流 | 必跑门禁 |
-|---|---|---|
-| 新功能、多阶段需求、跨底座与插件的改动 | 六工序全链（`/feature-dev`，工序 01→06 + 四道 Eval） | 快门禁每阶段 + 收尾门禁 |
-| 单点缺陷修复、小改文案与样式 | coder → reviewer → eval（跳过 01/03/04 的独立 Eval） | 快门禁 |
-| 纯查询、解释、读代码 | 不起子智能体，直接答 | 无 |
-| 发版、封版、出包 | 走 `domain/build-release` 动线 | 收尾门禁 |
-
-命中前两类时，主对话只做编排与透传，**不自行设计或写代码**；判定结果每轮告知主公，主公可随时说"升级成全链"或"停下"。
-
-### 9.2 六个角色（`.qoder/agents/`，做判分离）
-
-| 角色 | 工序 | 职责边界 | 调用名 |
-|---|---|---|---|
-| architect-agent | 01/03/04 | 调研与方案，只出 [PLAN]/[DESIGN]，禁写代码 | `architect-agent` |
-| coder-agent | 05 | 按方案串行实现，不改方案、不自评 | `coder-agent` |
-| test-agent | 06（做） | 生成并实跑测试/探针/像素证据，不自判质量 | `test-agent` |
-| eval-agent | 判 | L0 证据核验 + G0/L1/L2 三层判定，只判不做 | `eval-agent` |
-| reviewer-agent | 门禁 | L0/L1 符合性，输出 Critical/Suggestion，不动手 | `reviewer-agent` |
-| recorder-agent | 聚合 | 汇编 biz/sys 记录与报告，不补写他人产物 | `recorder-agent` |
-
-**生效条件**（2026-11-02 对照实测）：角色卡要先被用户级注册表收编——`.venv\Scripts\python.exe tools\sync_agents.py` 镜像到 `~/.qoder\agents\jiuzhang-pipeline\`，本机验得 6 张卡随后都以 `enabled:true / ready:true` 出现在 `list_agents`；但 **Agent 工具的可用类型清单在会话启动时快照**，所以**新开会话才认得这六个名字**（`.qoder/skills/` 落盘即用，无此限制）。当次会话兜底：用 `general-purpose` 起子代理并命令其先 `Read` 对应角色卡全文当作自己的指令——此路**不继承** frontmatter 的 `tools/disallowedTools/permissionMode`，只读隔离靠指令自律，交付需经 reviewer 复核 diff。仓库 `.qoder/agents/` 是唯一事实源，主公若在 Agents 设置面改过角色，须回写仓库再重新镜像。
-
-### 9.3 L0 红线（能脚本化的都挂在门禁里）
+### 9.1 L0 红线（能脚本化的都挂在门禁里）
 
 1. 铁律一干净房间：diff 中不得有任何来自旧项目的逐字内容。
 2. 铁律二插件化：插件侧 `fetch(` / `parent.document` / `localStorage` 命中必须为 0；插件不得直连数据库、文件系统、环境变量；插件间不得直接调用。
@@ -160,33 +134,14 @@
 8. `.bat` 必须纯 ASCII + CRLF；禁止正则后行断言；写接口必须鉴权。
 9. `LICENSE` 与本文件铁律一、铁律二不得删改。
 
-### 9.4 门禁命令
+### 9.2 门禁命令
 
 | 档 | 命令 | 时机 |
 |---|---|---|
 | 快门禁（秒级，只读） | `bash scripts/check-quick-gate.sh` | 每个阶段收尾；**不绿 = 未完成，不绿不 commit** |
-| 收尾门禁（分钟级） | `bash scripts/check-release-gate.sh` | 工序 06、发版前 |
+| 收尾门禁（分钟级） | `bash scripts/check-release-gate.sh` | 发版前 |
 
-### 9.5 资产索引（新增资产必须在此登记 + 写 sys 记录 + 进 `skill-bank.json`，三件套缺一视为未完成）
-
-| 资产 | 路径 | 触发 |
-|---|---|---|
-| R00 命名规范 | `.qoder/rules/R00-naming.md` | 新建/重命名任何体系文件前 |
-| R01 模块与构建发布 | `.qoder/rules/R01-module-build.md` | 改结构、加依赖、动版本字段与 `.bat` |
-| R02 编码与错误处理 | `.qoder/rules/R02-coding-error.md` | 写路由/core、写宿主壳与插件 JS、加错误码 |
-| R03 分层·数据·配置 | `.qoder/rules/R03-layer-data-config.md` | 加表加库、写迁移、动 config/.env/令牌 |
-| R04 测试与流程 | `.qoder/rules/R04-test-workflow.md` | 写测试、跑回归、提交、更新项目记忆 |
-| R05 流水线与 Eval | `.qoder/rules/R05-pipeline-eval.md` | 执行流水线、质检判定、四态决策 |
-| skill-bank.json | `.qoder/skill-bank.json` | 三层 skill 清单 + 角色白名单 |
-| 六角色卡 | `.qoder/agents/` | 见 §9.2 |
-| process skills | `.qoder/skills/process/`（`feature-dev`、`init-pipeline`） | `/feature-dev` 编排 |
-| domain skills | `.qoder/skills/domain/`（`add-plugin`、`add-host-api`、`add-data-store`、`run-regression`、`build-release`、`prove-visual-change`） | 对应重复操作 |
-| base skills | `.qoder/skills/base/`（`sync-biz-record`、`sync-sys-record`、`archive-tech-report`） | 记录与归档 |
-| 操作记录 | `.qoder/records/{biz,sys,reports}/` | 按月分层，文件名含日期 |
-| 脚本门禁 | `scripts/check-*.{sh,py}`、`tools/audit_code.py`、`tools/run_all_tests.py` | §9.4 |
-| 角色卡镜像 | `tools/sync_agents.py` | 角色不可调用时 |
-
-### 9.6 常用命令与环境坑
+### 9.3 常用命令与环境坑
 
 | 命令 | 用途 / 坑 |
 |---|---|
@@ -201,11 +156,11 @@
 | `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |
 | `.venv\Scripts\python.exe tools\sync_plugin_index.py` | 同步两份插件索引（需兄弟仓库 `E:/jiuzhang/jiuzhang-plugins` 存在） |
 
-环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 第 92 行要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里 4 支 demo 插件的删除态与 handoff 未跟踪文件是他人在途工作，不得 stage/恢复。
+环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 第 92 行要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里他人的在途改动不得 stage/恢复。
 
-### 9.7 交付证据口径
+### 9.4 交付证据口径
 
-**唯一对外交付证据仍是 §7.1 机械证据回传单**（五项缺一不可）；`.qoder/records/biz/` 只作流水线工序内的过程稿，不做双写同步。Eval 与门禁的结构化结论（工序号/层/过否/原因）作为回传单第 4 项的证据来源抄录，数字必须来自当次实测输出。
+**唯一对外交付证据仍是 §7.1 机械证据回传单**（五项缺一不可）；`.qoder/records/biz/` 只作过程稿，不做双写同步。门禁与验证的结构化结论作为回传单第 4 项的证据来源抄录，数字必须来自当次实测输出。
 
 ---
 

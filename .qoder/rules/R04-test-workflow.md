@@ -22,7 +22,7 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 5. **[L1] 全量回归**：`.venv/Scripts/python.exe tools/run_all_tests.py`（逐模块跑，正则抓 `Ran N tests`，末行 `模块 %d 个，用例 %d 个，失败模块 %d 个` + `全绿`，失败 `sys.exit(1)`，`tools/run_all_tests.py:38`）。等价 bash 版 `tools/sweep_units.sh` 按「退出码 + `grep -q "^OK"`」判定并把日志写入 `.system_generated/sweep/`（`:6-14`，**会落盘，非只读**）。
 6. **[L0] 22 个模块会真起 uvicorn**（含 `Popen|uvicorn`）：`agent_plugin_tools`、`assets_api`、`bank_api`、`bank_batch_io`、`bank_dashboard`、`bank_dedupe`、`host_prefs`、`meta_api`、`pending_api`、`pending_meta`、`plugin_console`、`plugin_index`、`plugin_install`、`plugin_install_url`、`plugin_update`、`provider_config`、`providers_api`、`pwa_contract`、`questions_api`、`rich_card_ui`、`startup_prefs`、`workspace_restart`。
    其中显式设 `JZO_RESTART_DISABLED=1` 保住回包链路的：`tests/test_questions_api.py:47`、`test_bank_dedupe.py:522`、`test_plugin_console.py:346`、`test_workspace_isolation.py:56`、`test_workspace_restart.py:151`（总闸 `app/core/host_restart.py:42`）。**新写触碰切库/重启端点的测试必须照加这个闸**，否则测试在跟自己的服务对话。
-7. **[L1] 断言纪律**（R05 §4）：`Trigger → Action → Effect` 三元组锚业务意图；断言来源四件套 = [REQ] + [DESIGN] + 代码 diff + 存量测试；**测试逻辑必须匹配 HTML 初始态**（Toggle 默认 active 时不许断言切换前为 false——先读 DOM 再写断言）。
+7. **[L1] 断言纪律**：`Trigger → Action → Effect` 三元组锚业务意图；断言来源四件套 = [REQ] + [DESIGN] + 代码 diff + 存量测试；**测试逻辑必须匹配 HTML 初始态**（Toggle 默认 active 时不许断言切换前为 false——先读 DOM 再写断言）。
 
 ## 2. 真机探针（L1）
 
@@ -30,7 +30,7 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 - **[L1] `probe.json` 有三种历史 schema**，归一逻辑现成在 `tools/clean_for_release.py:69-98`：① `checks[]` + `passed/total`（`chat_keys_probe.py:180-183`、`self_update_probe.py:564`）② 只有 `checks[]` 无汇总（`command_ai_probe.py:727`）③ 只有 `failures` 计数（`:96`）。识别不了的 schema 一律判不通过。
 - **[L0] 新探针禁止写死端口与令牌**：现存 5 支写死 8765/8777（`chat_keys_probe.py:23`、`console_panel_probe.py:26-28`、`fold_probe.py:19`、`split_probe.py:26`、`tab_group_probe.py:40-42`）、2 支写死 `dev-token-2026`（`console_panel_probe.py:28`、`tab_group_probe.py:42`），而底座读 `JZO_LOCAL_TOKEN`（`app/core/security.py:55`）→ 轮换即 401（历史事故 `docs/PROJECT_MEMORY.md:389`）。其余 21 支自起隔离 uvicorn 才是正例；端口/状态文件统一走 `tools/probe_paths.py:26-37`。
 - **[L1] 探针预期不许写死题型与插件版本**（军令#24/#21 坑）；**判据可能跑在死代码上**——改动涉及滚动/布局时要先确认被测路径真在生效（行高不锁 → 滚动逻辑全是死代码）。
-- **[L1] 无统一 runner**（grep 无命中）。收尾门禁只归一已存在的报告：`bash scripts/check-probe-reports.sh`；**探针执行本身仍由 test-agent 按需求改动面手跑**（这是本次入驻留下的已知欠账）。
+- **[L1] 无统一 runner**（grep 无命中）。收尾门禁只归一已存在的报告：`bash scripts/check-probe-reports.sh`；**探针执行本身仍由执行者按需求改动面手跑**（这是本次入驻留下的已知欠账）。
 
 ## 3. 前端与视觉验证（L0）
 

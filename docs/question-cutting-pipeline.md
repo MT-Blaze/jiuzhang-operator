@@ -1,7 +1,7 @@
 # 录题切题流水线 · 第一批施工交接（靶卷：哈尔滨九中高二上开学考）
 
 > 产出方式：2026-11-02 的「只聊想法」会话。该会话全程只读代码与靶卷，未改仓库任何文件（本文件除外）。
-> 用途：交给施工会话（建议走 `/feature-dev` 全链）落地。每步都写了「怎么算过」，判据不达标不许 commit。
+> 用途：交给施工会话落地。每步都写了「怎么算过」，判据不达标不许 commit。
 >
 > **开工约定**：本文件是**待办清单，不是已完成**。想法会话一个字代码都没动、没跑测试、没 commit；**施工统一放到当晚 22:00 之后一起做**。
 > 施工前先 `git status` 认清在途改动：2026-11-02 本会话实测工作树有 **76 处未提交改动 = 43 改 + 24 删 + 9 新增未跟踪**。删除不是零头，是**四支插件整只消失**（`bank-browser`、`classic-card`、`exam-paper`、`lecture`）加 `Morning_Report.md`、`docs/pipeline-workflow.md`、`tools/dedupe_probe.py`；改动集中在 `app/api/bank.py`、`app/api/pending.py`、`app/core/pending_*.py`、`app/core/plugins.py`、`plugins.json`、`bank-ui`。**均非本会话所为**，疑似其他会话在途工作——不得覆盖、不得顺手提交、也不得在本清单第 0 步里当作"缓存 bug"来修。
