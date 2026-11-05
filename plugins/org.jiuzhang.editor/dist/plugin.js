@@ -333,6 +333,8 @@
     el: el,
     typeLabels: coreState.TYPE_LABELS,
     difficultyLabels: coreState.DIFFICULTY_LABELS,
+    // 循环引用：识别动作归更下面的 uiAiCopilot，本块排得靠前，只能等它就位后再取。
+    onAiIdentify: function () { return uiAiCopilot.runSingle.apply(uiAiCopilot, arguments); },
   });
 
   var uiColumns = window.JzoEditorColumns.create({
@@ -371,6 +373,26 @@
   var renderAll = uiColumns.renderAll;
   var scheduleRender = uiColumns.scheduleRender;
   var syncScroll = uiColumns.syncScroll;
+
+  // 终极军令 任务一/三：API 配置中心 + 单题/批量识别。独立一整块，可整块下架。
+  var uiAiCopilot = window.JzoEditorAiCopilot.create({
+    closeModal: closeModal,
+    coreState: coreState,
+    dock: dock,
+    dockWarn: dockWarn,
+    dom: dom,
+    el: el,
+    errorDetail: errorDetail,
+    hostCall: hostCall,
+    itemImage: itemImage,
+    markDirty: uiColumns.markDirty,
+    openModal: openModal,
+    parsedOf: uiColumns.parsedOf,
+    publish: publish,
+    refreshRow: uiColumns.refreshRow,
+    toast: toast,
+    writeBackSourceText: uiColumns.writeBackSourceText,
+  });
 
   var uiIntake = window.JzoEditorIntake.create({
     dom: dom,
@@ -649,6 +671,8 @@
     onAiSend: onAiSend,
     onCleanApply: onCleanApply,
     onCleanDrop: onCleanDrop,
+    // AI 配置入口（终极军令 任务一/三）只在辅助栏这帧接活；回执走协议层。
+    wireAiCopilot: uiAiCopilot.wirePanel,
     onApprove: onApprove,
     onDelete: onDelete,
     onDeleteConfirm: onDeleteConfirm,
@@ -714,6 +738,8 @@
     paintAmberBlock: uiAmber.paintBlock,
     runApproveAll: uiAmber.runApproveAll,
     onCanvasApproveAll: uiAmber.onCanvasApproveAll,
+    // 批量识别回执由画布回投辅助栏：协议层两帧共用，回执只在这边说话。
+    onAiBatchReport: uiAiCopilot.onBatchReport,
     publishSelection: publishSelection,
     refreshBatches: refreshBatches,
     renderAll: renderAll,
@@ -724,6 +750,10 @@
     setMode: setMode,
     startIdleWatch: startIdleWatch,
     wireIntake: wireIntake,
+    // 配置弹窗与批量识别的画布半边（终极军令 任务一/三）：只在这一帧动手。
+    wireAiCopilot: uiAiCopilot.wireCanvas,
+    openAiConfig: uiAiCopilot.openConfig,
+    runAiBatch: uiAiCopilot.runBatch,
     coreState: coreState,
   });
 

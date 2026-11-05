@@ -13,6 +13,8 @@
     var delModalEl = deps.dom.delModalEl;
     var batchPurgeModalEl = deps.dom.batchPurgeModalEl;
     var poolDelModalEl = deps.dom.poolDelModalEl;
+    var aiConfigModalEl = deps.dom.aiConfigModalEl;
+    var aiOverwriteModalEl = deps.dom.aiOverwriteModalEl;
 
   // ---------- 弹窗：彻底删除（焦点圈住、Esc 可关、关掉还焦） ----------
   // 查重对比浮层不在这套里：它按军令 #23 一颗按钮都不放（画布里只许有题目内容），
@@ -25,6 +27,9 @@
     // 重题池的【删除】同样走二次确认（军令 #32 · 判据 5.4）：不加进这一串，
     // 焦点圈不住、Esc 也关不掉，等于把红按钮的确认样式做成两套。
     if (poolDelModalEl && !poolDelModalEl.hidden) return poolDelModalEl;
+    // AI 配置中心与覆盖确认（终极军令 任务一/三）：同样要圈得住焦点、Esc 能关。
+    if (aiConfigModalEl && !aiConfigModalEl.hidden) return aiConfigModalEl;
+    if (aiOverwriteModalEl && !aiOverwriteModalEl.hidden) return aiOverwriteModalEl;
     return null;
   }
 

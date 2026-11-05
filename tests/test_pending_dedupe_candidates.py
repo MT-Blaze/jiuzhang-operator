@@ -12,7 +12,7 @@
 - **3.4 主库读不通绝不报 0**：``failed`` 带 ``code`` / ``retryable`` / 「初查失败、
   可重试」，且这条状态同样**落库**——重启后读到的还是「失败、可重试」，不是「0 条重复」。
 
-另钉一条结构底线：``SCHEMA_VERSION`` 升到 10，旧库（user_version=6）连上就自动补表补列，
+另钉一条结构底线：``SCHEMA_VERSION`` 升到 11，旧库（user_version=6）连上就自动补表补列，
 不删不改已有任何一行。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_dedupe_candidates``
@@ -457,7 +457,7 @@ class SchemaMigrationTest(unittest.TestCase):
             os.environ["JZO_DATA_DIR"] = self._saved[0]
 
     def test_01_version_is_ten(self) -> None:
-        self.assertEqual(pending_db.SCHEMA_VERSION, 10)
+        self.assertEqual(pending_db.SCHEMA_VERSION, 11)
 
     def test_02_old_database_gains_the_two_tables(self) -> None:
         con = pending_db.connect()
@@ -465,7 +465,7 @@ class SchemaMigrationTest(unittest.TestCase):
         path = pending_db.pending_db_path()
         con = sqlite3.connect(path)
         try:
-            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 11)
             names = {row[0] for row in con.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'")}
             self.assertIn("dedupe_scans", names)
@@ -493,7 +493,7 @@ class SchemaMigrationTest(unittest.TestCase):
         connect.close()
         con = sqlite3.connect(path)
         try:
-            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(con.execute("PRAGMA user_version").fetchone()[0], 11)
             self.assertEqual(con.execute("SELECT label FROM batches").fetchone()[0], "旧批")
             names = {row[0] for row in con.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'")}

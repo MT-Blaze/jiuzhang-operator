@@ -69,13 +69,19 @@
     "stage.open_bank", "stage.open_editor",
     // 军令 #19：能力路由字典。任何插件都能查表与调度；目标未安装/未声明
     // 一律回明确错误，绝不悄悄落到别的插件上。
-    "command.list", "command.execute"
+    "command.list", "command.execute",
+    // AI 配置中心：密钥池只回掩码，Key 与写令牌都由宿主代持；拉模型与识别
+    // 都是老师点按钮才出网，插件自己碰不到 Key 原文。
+    "ai.center", "ai.account_save", "ai.account_delete",
+    "ai.assign", "ai.models", "ai.recognize"
   ];
   // 智能体接口只对清单里声明了 ai:invoke 的插件开放：
   // 别的插件即使猜对方法名，也只会拿到 PERMISSION_DENIED。
   var AI_ONLY_METHODS = [
     "agent.chat", "agent.refine", "plugin.install_url",
-    "ui.params.set", "editor.apply_patch", "stage.open_bank", "stage.open_editor"
+    "ui.params.set", "editor.apply_patch", "stage.open_bank", "stage.open_editor",
+    "ai.center", "ai.account_save", "ai.account_delete",
+    "ai.assign", "ai.models", "ai.recognize"
   ];
   // 助手要读的两种清单：实现写在 relayAgent 里，分发就必须走到 relayAgent。
   // 它们不在 AI_ONLY_METHODS 里（任何插件都可以读清单），所以得单独点名——

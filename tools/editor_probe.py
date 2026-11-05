@@ -1086,17 +1086,159 @@ def main() -> int:
             check("画布内没有任何顶栏或工具条",
                   canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
                   .count() == 0)
-            check("画布没有底部横条，钮只有逐题跳转与切图",
+            # 每题只读条右侧多了一颗【✨ AI 识别本题】（终极军令任务三），
+            # 它和跳转/切图一样是逐题控件，不是横条上的批量钮。
+            check("画布没有底部横条，钮只有逐题跳转、切图与每题 AI 识别",
                   canvas.locator(".ed-foot").count() == 0
                   and canvas.locator("#edCols button").count()
                   == canvas.locator(".ed-img-jump").count()
                   + canvas.locator(".ed-img-crop-btn").count()
+                  + canvas.locator(".ed-q-meta-ai").count()
+                  and canvas.locator(".ed-q-meta-ai").count() == pending_count
                   and canvas.locator("#edBatchBar, #edBackList").count() == 0,
                   {"col_buttons": canvas.locator("#edCols button").count(),
                    "jumps": canvas.locator(".ed-img-jump").count(),
                    "crops": canvas.locator(".ed-img-crop-btn").count(),
+                   "ai": canvas.locator(".ed-q-meta-ai").count(),
                    "bar": canvas.locator("#edBatchBar, #edBackList").count(),
                    "foot": canvas.locator(".ed-foot").count()})
+
+            # ---------- 终极军令任务一/三：配置中心 + 单题/批量 AI 识别 ----------
+            # 带题图的专用批：识别得真走一遍「取图 → 指派模型 → 套环境 → 换源」。
+            ai_png = make_png(64, 48)
+            (data_dir / "uploads").mkdir(parents=True, exist_ok=True)
+            (data_dir / "uploads" / "img_ai_probe.png").write_bytes(ai_png)
+            ai_question = {
+                "schema_version": "2.0", "type": "solution",
+                "stem": "探针 AI 原题：求 $x+1=2$ 的解。", "difficulty": "L1",
+                "images": [{"id": "img_ai_probe", "role": "stem",
+                            "uri": "/static/uploads/img_ai_probe.png"}],
+            }
+            ai_item = {
+                "question": ai_question,
+                "assets": [{"id": "img_ai_probe",
+                            "data_url": "data:image/png;base64,"
+                                        + base64.b64encode(ai_png).decode()}],
+            }
+            status_ai, ai_body = http_post(base + "/api/pending/batches", {
+                "questions": [ai_item, ai_item],
+                "origin": "probe.ai_copilot",
+            })
+            ai_batch = str(ai_body.get("batch_id") or "")
+            check("AI 探针批（两道带题图）已入池", status_ai == 201 and bool(ai_batch),
+                  {"status": status_ai, "batch": ai_batch})
+            canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.refreshBatches()")
+            page.wait_for_timeout(600)
+            open_batch(ai_batch)
+
+            panel.locator("#epAiConfig").click()
+            expect(canvas.locator("#epAiConfigModal")).to_be_visible(timeout=10000)
+            columns = canvas.locator("#epAiConfigModal .ep-ai-cols").evaluate(
+                "n => getComputedStyle(n).gridTemplateColumns")
+            check("辅助栏【API 配置】把双栏窗开在画布",
+                  len(columns.split()) == 2
+                  and canvas.locator("#epAiConfigModal .ep-ai-col").count() == 2,
+                  {"columns": columns})
+            canvas.locator("#epAiName").fill("探针AI")
+            canvas.locator("#epAiBase").fill(stub.base_url)
+            canvas.locator("#epAiKey").fill("sk-probe-secret-1234")
+            canvas.locator("#epAiSaveAccount").click()
+            mask_node = canvas.locator(".ep-ai-acc-key").first
+            expect(mask_node).to_contain_text("••••", timeout=20000)
+            mask_text = mask_node.inner_text()
+            modal_text = canvas.locator("#epAiConfigModal").inner_text()
+            check("Key 只回掩码，原文不上屏",
+                  "sk-p" in mask_text and "probe-secret" not in modal_text
+                  and canvas.locator("#epAiKey").input_value() == "",
+                  {"mask": mask_text})
+
+            ocr_task = canvas.locator('.ep-ai-task[data-task="ocr"]')
+            ocr_task.locator("select").select_option(label="探针AI")
+            ocr_task.locator("input").fill("probe-stub")
+            ocr_task.locator("button.ep-btn-primary").click()
+            expect(ocr_task.locator(".ep-ai-job-ready")).to_have_text("已就绪", timeout=20000)
+            check("四个任务可指派，模型名手输也留得住",
+                  canvas.locator(".ep-ai-task").count() == 4
+                  and ocr_task.locator("input").input_value() == "probe-stub",
+                  {"tasks": canvas.locator(".ep-ai-task").count()})
+            page.screenshot(path=str(shots / "ai-config.png"))
+            canvas.locator("#epAiConfigClose").click()
+            expect(canvas.locator("#epAiConfigModal")).to_be_hidden(timeout=10000)
+
+            def source_text(index: int) -> str:
+                return canvas.locator(".ed-src-area").nth(index).input_value()
+
+            def wait_source(index: int, fragment: str, timeout: float = 40) -> bool:
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    if fragment in source_text(index):
+                        return True
+                    page.wait_for_timeout(200)
+                return False
+
+            ai_reply = {}
+            try:
+                with page.expect_response(
+                        lambda r: "/api/ai-center/recognize" in r.url, timeout=60000) as hit:
+                    canvas.locator(".ed-q-meta-ai").first.click()
+                ai_reply = hit.value.json()
+            except Exception as error:  # noqa: BLE001 - 失败现场要原样进判据
+                ai_reply = {"probe_error": f"{type(error).__name__}: {error}"}
+            check("单题 AI 识别：底座套好环境后整题换源，不弹窗",
+                  wait_source(0, "探针AI改写", timeout=20)
+                  and not canvas.locator("#epAiOverwriteModal").is_visible()
+                  and canvas.locator(".ed-q-meta-ai").first.get_attribute("data-error") is None,
+                  {"source": source_text(0)[:120], "reply": ai_reply})
+            page.screenshot(path=str(shots / "ai-single.png"))
+
+            batch_replies: list = []
+
+            def collect_ai_reply(response) -> None:
+                if "/api/ai-center/recognize" not in response.url:
+                    return
+                try:
+                    batch_replies.append(response.json())
+                except Exception:  # noqa: BLE001 - 非 JSON 回执原样跳过，不打断采集
+                    pass
+
+            page.on("response", collect_ai_reply)
+            panel.locator("#epAiBatch").click()
+            batch_note = ""
+            deadline = time.time() + 180
+            while time.time() < deadline:
+                batch_note = panel.locator("#epAiBatchNote").inner_text()
+                if "批量识别完成" in batch_note:
+                    break
+                page.wait_for_timeout(300)
+            check("批量 AI 识别全卷：进度与结果回到辅助栏，全程不弹窗",
+                  "批量识别完成" in batch_note and "失败 0" in batch_note
+                  and not canvas.locator("#epAiOverwriteModal").is_visible(),
+                  {"note": batch_note, "replies": batch_replies[:3]})
+            page.screenshot(path=str(shots / "ai-batch.png"))
+
+            canvas.locator(".ed-src-area").first.fill(source_text(0) + "\n% 人工改动")
+            page.wait_for_timeout(300)
+            canvas.locator(".ed-q-meta-ai").first.click()
+            expect(canvas.locator("#epAiOverwriteModal")).to_be_visible(timeout=10000)
+            page.screenshot(path=str(shots / "ai-overwrite.png"))
+            canvas.locator("#epAiOverwriteCancel").click()
+            expect(canvas.locator("#epAiOverwriteModal")).to_be_hidden(timeout=10000)
+            check("有人工修改先弹确认；取消不动正文",
+                  "% 人工改动" in source_text(0))
+            canvas.locator(".ed-q-meta-ai").first.click()
+            expect(canvas.locator("#epAiOverwriteModal")).to_be_visible(timeout=10000)
+            canvas.locator("#epAiOverwriteOk").click()
+            # 覆盖要等往返回来：fill 里本来就有「探针AI改写」，不能当成立刻换源成功。
+            overwrite_deadline = time.time() + 30
+            while time.time() < overwrite_deadline and "% 人工改动" in source_text(0):
+                page.wait_for_timeout(200)
+            check("确认覆盖后正文换成 AI 结果",
+                  "% 人工改动" not in source_text(0)
+                  and wait_source(0, "探针AI改写"),
+                  {"source": source_text(0)[:120]})
+
+            # 回到探针的主批次：后面的元数据/入库判据都按那一批的账来对。
+            open_batch(batch_id)
 
             def row_lines():
                 """三栏每一行虚线的位置：行内三栏的 cell 底边该落在同一条线上。"""
@@ -1152,6 +1294,16 @@ def main() -> int:
                       - round(rnd_box["y"] + rnd_box["height"], 2)) <= 0.5,
                   {"source_bottom": round(src_box["y"] + src_box["height"], 2),
                    "render_bottom": round(rnd_box["y"] + rnd_box["height"], 2)})
+            # 题图是异步加载的：图没长完就量，对齐还停在旧高度，逐行虚线必然差一截。
+            img_deadline = time.time() + 15
+            while time.time() < img_deadline:
+                ready = canvas.locator("#edImageBody").evaluate(
+                    "node => Array.prototype.every.call("
+                    "node.querySelectorAll('img'), img => img.complete)")
+                if ready:
+                    break
+                page.wait_for_timeout(200)
+            page.wait_for_timeout(300)
             lines = row_lines()
             check("三栏虚线逐行落在同一条线上", dashed_ok(lines), {"rows": lines[:3]})
             page.screenshot(path=str(shots / "v3-review.png"))
@@ -1715,8 +1867,11 @@ def main() -> int:
             synced_merge = sync_panel()
             total_before_merge = bank_total(base)
             panel.locator("#epApprove").click()
-            # 查重没出裁决前这颗钮是锁死的，先等它真的可点，免得点了没反应。
-            expect(panel.locator("#epDupMerge")).to_be_enabled(timeout=25000)
+            # 查重没出裁决前这颗钮是锁死的：钮在裁决回来前就「enabled」，
+            # 只等 enabled 会抢在「正在查重…」时点下去，动作被吞。先等裁决框真露出来。
+            expect(panel.locator("#epDupBox")).to_be_visible(timeout=25000)
+            expect(panel.locator("#epDupMerge")).to_be_visible(timeout=25000)
+            expect(panel.locator("#epDupMerge")).to_be_enabled(timeout=10000)
             # 点下去之前先核对"辅助栏现在这道题，就是池子里那一条"：
             # 合并这条动作全靠 pending_id 对上，选区慢半拍会把请求吞掉，
             # 界面不报错、池子不动，判据只剩一条"解析没变"——看不出是哪儿没接上。

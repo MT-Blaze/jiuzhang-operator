@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.agents import router as agents_router
+from app.api.ai_center import router as ai_center_router
 from app.api.assets import router as assets_router
 from app.api.bank import router as bank_router
 from app.api.health import router as health_router
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(questions_router)
     app.include_router(plugins_router)
     app.include_router(providers_router)
+    app.include_router(ai_center_router)
     app.include_router(agents_router)
     app.include_router(workspaces_router)
     app.include_router(bank_router)

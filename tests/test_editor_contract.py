@@ -226,10 +226,14 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
         所以画布里只许有**一只隐藏的** ``<input type="file">``，不许有第二个。
         """
         canvas = canvas_only(read("index.html"))
-        self.assertNotIn("<select", canvas, "画布内禁止出现下拉框")
-        self.assertEqual(canvas.count("<input"), 1, "画布内只许剩收集筐那一只隐藏的选文件 input")
-        at = canvas.index("<input")
-        tag = canvas[at:canvas.index(">", at)]
+        # 双栏 API 配置弹窗必须住在画布：辅助栏整宽只有 300px，塞两栏就成了两根压扁的柴。
+        # 它平时 hidden、只在老师点【API 配置】时出现，与剔除重复弹窗同一个口径——
+        # 不在「画布内容区不许有表单控件」这条禁令的射程内。
+        plain = canvas[:canvas.index('id="epAiConfigModal"')] + canvas[canvas.index('id="edToast"'):]
+        self.assertNotIn("<select", plain, "画布内禁止出现下拉框")
+        self.assertEqual(plain.count("<input"), 1, "画布内只许剩收集筐那一只隐藏的选文件 input")
+        at = plain.index("<input")
+        tag = plain[at:plain.index(">", at)]
         self.assertIn('type="file"', tag, "画布内唯一的 input 必须是选文件用的")
         self.assertIn('id="edBasketFile"', tag)
         self.assertIn("aria-hidden=\"true\"", tag, "选文件 input 必须藏起来，不占版面")
@@ -678,8 +682,11 @@ class EditorHostCallTest(unittest.TestCase):
 
     def test_04_plugin_never_touches_token_or_database(self) -> None:
         js = read("plugin.js")
+        # ``api_key`` 自终极军令任务一起是老师手填的厂商密钥：插件只能随保存请求
+        # 上行一次，读回来永远只有 ``api_key_masked``（见 test_ai_copilot_contract）。
+        # 这里继续钉死宿主令牌、直连网络与浏览器存储。
         for needle in ("X-JZO-Token", "local_token", "/api/", "fetch(", "localStorage",
-                       "api_key", "sk-", "sessionStorage", "indexedDB", "parent.document"):
+                       "sk-", "sessionStorage", "indexedDB", "parent.document"):
             self.assertNotIn(needle, js, f"录题插件不得直接接触：{needle}")
 
     def test_05_activation_branches_on_slot(self) -> None:
@@ -1060,9 +1067,11 @@ class EditorBatchTest(unittest.TestCase):
         # 画布底栏连同它的容器一起删干净（注释里可以留说明，不许留元素）
         self.assertNotIn('class="ed-foot"', canvas, "画布底栏已整条删除")
         # 批量条不许把表单控件带进画布（<button> 不算表单输入控件；
-        # 收集筐那只隐藏的选文件 input 是军令 #27 唯一例外）
-        self.assertNotIn("<select", canvas)
-        self.assertEqual(canvas.count("<input"), 1)
+        # 收集筐那只隐藏的选文件 input 是军令 #27 唯一例外）。
+        # 双栏 API 配置窗与剔除重复弹窗一样平时 hidden、点按钮才出现，不算画布内容区。
+        plain = canvas[:canvas.index('id="epAiConfigModal"')] + canvas[canvas.index('id="edToast"'):]
+        self.assertNotIn("<select", plain)
+        self.assertEqual(plain.count("<input"), 1)
         # 批量提交整体退场：三颗审核钮才是唯一出口
         for gone in ("edSaveAll", "edPoolStash"):
             self.assertNotIn(f'id="{gone}"', read("index.html"),
@@ -1453,7 +1462,7 @@ class EditorReviewDeskTest(unittest.TestCase):
 
         # 答案不同则红字拦截：【覆盖】【合并为解析二】两颗钮锁死，只留【放弃】。
         sync = fn_body(js, "syncDupActions")
-        self.assertIn("node.disabled = blocked;", sync)
+        self.assertIn("node.disabled = blocked || busy;", sync)
         self.assertIn("dupAbandonEl.disabled = false", sync)
 
         # 对比的是**渲染**，不是源码：两侧都走 appendBody / appendRich。

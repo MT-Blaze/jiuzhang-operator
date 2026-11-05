@@ -511,7 +511,7 @@ class DegradedTest(DedupeScanCase):
 
 class CardCompatTest(DedupeScanCase):
     def test_05_batch_card_keeps_eleven_keys_and_adds_dedupe(self) -> None:
-        """判据 5 + ⑤ 重写版：两处卡片（列表与 save_draft 回执）11 键零缺失 + dedupe 是 dict。"""
+        """判据 5 + ⑤ 重写版：两处卡片（列表与 save_draft 回执）14 键零缺失 + dedupe/route 是 dict。"""
         saved = self._draft(_doc(STEM_A), source_name="初查模拟.pdf")
         batch_id = saved["batch_id"]
         receipt = saved["batch"]
@@ -520,12 +520,13 @@ class CardCompatTest(DedupeScanCase):
         for card in (receipt, listed):
             self.assertTrue(CARD_KEYS <= set(card),
                             f"既有键缺失：{sorted(CARD_KEYS - set(card))}")
-            self.assertEqual(set(card) - CARD_KEYS, {"dedupe"}, "不许再偷偷加键")
+            self.assertEqual(set(card) - CARD_KEYS, {"dedupe", "route"}, "不许再偷偷加键")
             for key, expected in CARD_TYPES.items():
                 self.assertIsInstance(card[key], expected, f"{key} 换型了")
                 if expected is int:
                     self.assertNotIsInstance(card[key], bool, f"{key} 不许被 bool 顶替")
             self.assertIsInstance(card["dedupe"], dict)
+            self.assertIsInstance(card["route"], dict, "解析路由标记随卡片一起回")
         self.assertEqual(receipt["source_name"], "初查模拟.pdf")
         self.assertEqual(receipt["total"], 1)
         self.assertEqual(receipt["pending_count"], 1)

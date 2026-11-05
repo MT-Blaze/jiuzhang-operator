@@ -46,7 +46,7 @@ POOL_ASSET_PREFIX = "cimg_"
 POOL_ASSET_RE = re.compile(r"^cimg_[0-9a-f]{16}\.(?:png|jpg|webp)$")
 POOL_ASSET_URI_PREFIX = "/static/pool/"
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 MAX_BATCH_QUESTIONS = 500
 
 # 配图的口径与 uploads 那条通道保持一致：只认 PNG / JPEG / WebP 的魔数，
@@ -136,7 +136,9 @@ CREATE TABLE IF NOT EXISTS batches (
     page_assets_json TEXT NOT NULL DEFAULT '[]',
     -- 原卷批次：1 表示这一批按原卷大图导入，左栏整卷铺页图、老师自己框选切题。
     -- 判定要跨刷新与重启都留着，不能靠「当前有没有题」来猜。
-    scan_batch    INTEGER NOT NULL DEFAULT 0
+    scan_batch    INTEGER NOT NULL DEFAULT 0,
+    -- 解析路由体检：{channel, text_layer, garbled, ...}。只给老师提示，不触发 AI。
+    route_json    TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS pending_questions (
     id          TEXT PRIMARY KEY,
@@ -430,6 +432,8 @@ def _ensure_schema(con: sqlite3.Connection) -> None:
         _migrate_v8_page_images(con)
     if version < 10:
         _migrate_v9_scan_batch(con)
+    if version < 11:
+        _migrate_v10_route_json(con)
     _seed_dictionary(con)
     # 次序号的索引必须等迁移把列补上再建：
     # 老库里还没有 seq 这一列，先建索引就是一句「no such column: seq」，
@@ -579,6 +583,13 @@ def _migrate_v9_scan_batch(con: sqlite3.Connection) -> None:
     have = {str(row[1]) for row in con.execute("PRAGMA table_info(batches)")}
     if "scan_batch" not in have:
         con.execute("ALTER TABLE batches ADD COLUMN scan_batch INTEGER NOT NULL DEFAULT 0")
+
+
+def _migrate_v10_route_json(con: sqlite3.Connection) -> None:
+    """v10 → v11：批次补解析路由体检，默认空对象（老批次没跑过新探测器）。"""
+    have = {str(row[1]) for row in con.execute("PRAGMA table_info(batches)")}
+    if "route_json" not in have:
+        con.execute("ALTER TABLE batches ADD COLUMN route_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def _migrate_v2_columns(con: sqlite3.Connection) -> None:

@@ -31,7 +31,18 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from app.core import page_render, question_parser, scan_text
+from app.core import (
+    page_render,
+    question_parser,
+    text_health,
+)
+from app.core.ingest_route import (
+    auto_split_pages,
+    route_payload,
+    route_scan_pdf,
+    save_route,
+    scan_fallback_route,
+)
 
 __all__ = [
     "classify",
@@ -671,7 +682,33 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                 name, kind, data, source_text, documents)
         except Exception:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
             page_images, doc_pages = [], []
+
         if scan_mode:
+            route, mineru_documents = route_scan_pdf(name, data)
+            if route.get("channel") == "mineru" and mineru_documents:
+                if page_images:
+                    try:
+                        pending_bank.set_batch_pages(batch_id, page_images)
+                    except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
+                        drop_assets(page_images)
+                        continue
+                spread = page_render._spread_pages(len(page_images), len(mineru_documents))
+                items = [
+                    {"question": document,
+                     "pending_id": pending_id if index == 0 else "",
+                     "page_no": spread[index] if index < len(spread) else 1}
+                    for index, document in enumerate(mineru_documents)
+                ]
+                try:
+                    pending_bank.save_draft(items, batch_id=batch_id,
+                                            origin="ingest.mineru",
+                                            page_images=page_images)
+                except Exception:  # noqa: BLE001 - 写不进去就退回切图，卷子不能丢
+                    # 页图已经挂到批次上了：这里不能清文件，否则左栏原卷当场消失。
+                    save_route(pending_bank, batch_id, scan_fallback_route(route, "保存失败"))
+                    continue
+                save_route(pending_bank, batch_id, route)
+                continue
             if page_images:
                 try:
                     pending_bank.set_batch_pages(batch_id, page_images)
@@ -679,14 +716,19 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                     drop_assets(page_images)
                     continue
                 # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
-                _auto_split_pages(name, data, batch_id, page_images)
+                auto_split_pages(name, data, batch_id, page_images)
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
                     pending_bank.delete_pending(pending_id)
                 except pending_bank.PendingError:
                     pass
+            save_route(pending_bank, batch_id, route)
             continue
+
+        health = text_health.text_health(source_text)
+        route = route_payload("image" if kind == "image" else "text", health,
+                               False if kind == "image" else None)
         items: list[dict[str, Any]] = []
         if documents:
             items.append({"question": documents[0], "pending_id": pending_id,
@@ -706,89 +748,4 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             if page_images:
                 drop_assets(page_images)
             continue
-
-
-def _auto_split_shell(page_no: int, number: Any, asset_id: str, title: str,
-                      region: dict[str, Any] | None = None) -> dict[str, Any]:
-    """自动切图生成的一道待审题：文字层读得出就填正文，读不出才落占位提示。
-
-    题干、选项、答案与解析都从题块坐标内的文字还原（Unicode 数学字符折成
-    LaTeX，公式包 ``$...$``）；原题图始终挂在题身上，切图与文字互为对照。
-    """
-    label = str(number or "")
-    parsed = scan_text.parse_scan_text((region or {}).get("text"), label)
-    source = {"question_no": label, "paper_title": title}
-    images = [{
-        "id": asset_id,
-        "role": "stem",
-        "uri": "/static/uploads/" + asset_id + ".png",
-    }]
-    if parsed["stem"]:
-        document = _document(parsed["stem"], parsed["options"], parsed["answer"],
-                             parsed["blanks"], parsed["solution"], label)
-        document["source"] = source
-        document["images"] = images
-        return document
-    return {
-        "schema_version": "2.0",
-        "type": "solution",
-        "stem": "（自动切题：原卷第 %d 页第 %s 题，请对照题图录入题干与答案）"
-                % (page_no, label or "?"),
-        "difficulty": DEFAULT_DIFFICULTY,
-        "source": source,
-        "images": images,
-    }
-
-
-def _auto_split_pages(name: str, data: bytes, batch_id: str,
-                      page_images: list[dict[str, Any]]) -> list[str]:
-    """把页图上的题块全部裁成待审题；失败只记警告，绝不拖垮页图与手动框选。
-
-    题块坐标是页面图像素，``page_render.crop_pdf_regions`` 换回 PDF 点后
-    按 300 dpi 直接从原 PDF 裁图。19 块一次落池，顺序就是卷面顺序。
-    """
-    from app.core import pending_bank
-
-    crops, notes = page_render.crop_pdf_regions(data, page_images)
-    if not crops:
-        return notes
-    title = str(Path(name or "").stem or name or "")[:120]
-    items: list[dict[str, Any]] = []
-    regions: list[dict[str, Any]] = []
-    for entry in page_images:
-        try:
-            page_no = int(entry.get("page") or 0)
-        except (TypeError, ValueError):
-            continue
-        for crop in crops.get(page_no) or []:
-            region = crop["region"]
-            asset_id = "img_auto_%d_%d" % (page_no, int(crop["index"]))
-            items.append({
-                "question": _auto_split_shell(page_no, crop.get("no"), asset_id,
-                                              title, region),
-                "assets": [{
-                    "id": asset_id,
-                    "data_url": "data:image/png;base64,"
-                                + base64.b64encode(crop["png"]).decode("ascii"),
-                }],
-                "page_no": page_no,
-            })
-            regions.append(region)
-    if not items:
-        return notes
-    try:
-        result = pending_bank.save_draft(items, batch_id=batch_id,
-                                         origin="ingest.auto_split")
-    except Exception as error:  # noqa: BLE001 - 自动落池失败仍保留页图与绿框
-        notes.append(f"自动切图落池失败（{error}），可在左侧逐框确认切分")
-        return notes
-    saved_ids = [str(value) for value in (result.get("saved_ids") or [])]
-    for region, pending_id in zip(regions, saved_ids):
-        if pending_id:
-            region["pending_id"] = pending_id
-    try:
-        # 题块与待审题绑定后再写回一次：老师重开批次时框上就知道「已入池」。
-        pending_bank.set_batch_pages(batch_id, page_images)
-    except Exception:  # noqa: BLE001 - 绑定写不进去只影响重开批次的状态标记
-        pass
-    return notes
+        save_route(pending_bank, batch_id, route)

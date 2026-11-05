@@ -1,0 +1,189 @@
+# -*- coding: utf-8 -*-
+"""终极军令 任务一/任务三的前端契约：配置中心、单题/批量识别与人机共驾的边界。
+
+这批判据钉四件事：
+1. 入口与弹窗住在对的那一帧：双栏配置窗必须回画布（辅助栏只有 300px 宽），
+   辅助栏只放【API 配置】与【✨ 批量 AI 识别全卷】两颗入口；
+2. Key 只进不出：回读一律 api_key_masked，插件不碰 localStorage、不直连 fetch；
+3. 方案 A：AI 只回结构化正文 + 底座套好的源码，插件整题换 source，不自己拼环境；
+4. 覆盖机制：有人工修改先问，批量识别经既有 editor.batch_review 主题发令，
+   失败只亮红点 + 报错诊断，绝不弹窗打断。
+
+运行：``.venv/Scripts/python.exe -m unittest tests.test_ai_copilot_contract``
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import unittest
+from pathlib import Path
+
+from tests.core_sources import plugin_bundle, stage_source
+
+ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+HTML = (PLUGIN_DIR / "dist" / "index.html").read_text(encoding="utf-8")
+JS = plugin_bundle("org.jiuzhang.editor")
+CSS = plugin_bundle("org.jiuzhang.editor", "link")
+STAGE_JS = stage_source()
+
+
+def canvas_only(html: str) -> str:
+    return html[html.index('id="edRoot"'):html.index('id="epRoot"')]
+
+
+def panel_only(html: str) -> str:
+    start = html.index('id="epRoot"')
+    return html[start:html.index("<script", start)]
+
+
+def manifest() -> dict:
+    return json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+
+
+class HostRelayTest(unittest.TestCase):
+    """六条 ai.* 方法必须在白名单里，且写操作全由宿主代持令牌。"""
+
+    METHODS = (
+        "ai.center", "ai.account_save", "ai.account_delete",
+        "ai.assign", "ai.models", "ai.recognize",
+    )
+
+    def test_01_every_method_is_whitelisted(self) -> None:
+        block = re.search(r"var RELAY_METHODS = \[(.*?)\];", STAGE_JS, re.S).group(1)
+        listed = set(re.findall(r'"([^"]+)"', block))
+        for method in self.METHODS:
+            self.assertIn(method, listed, f"{method} 不在宿主白名单里，插件一调就被拒")
+
+    def test_02_every_method_has_a_branch(self) -> None:
+        for method in self.METHODS:
+            self.assertIn(f'if (method === "{method}")', STAGE_JS,
+                          f"{method} 没写分支，请求会掉到末尾的 UNSUPPORTED_METHOD")
+
+    def test_03_urls_and_write_token(self) -> None:
+        for url in ("/api/ai-center", "/api/ai-center/accounts",
+                    "/api/ai-center/assign", "/api/ai-center/models",
+                    "/api/ai-center/recognize"):
+            self.assertIn(url, STAGE_JS)
+        start = STAGE_JS.index('if (method === "ai.center")')
+        block = STAGE_JS[start:]
+        # 五个写/出网口子全走宿主代取的一次性令牌；读口子不必带。
+        self.assertGreaterEqual(block.count("withWriteToken("), 5,
+                                "保存账号、删除、指派、拉模型、识别都要宿主代持写令牌")
+
+    def test_04_recognize_waits_longer_than_the_base_budget(self) -> None:
+        self.assertIn("AI_RECOGNIZE_TIMEOUT_MS = 125000", STAGE_JS,
+                      "视觉模型一轮可能几十秒，别按 20 秒的默认预算截断")
+
+
+class ConfigCenterMarkupTest(unittest.TestCase):
+    """双栏配置窗住画布，辅助栏只留两颗入口。"""
+
+    def test_01_dual_column_modal_lives_in_the_canvas(self) -> None:
+        canvas = canvas_only(HTML)
+        self.assertIn('id="epAiConfigModal"', canvas, "双栏窗必须住画布：辅助栏只有 300px")
+        self.assertNotIn('id="epAiConfigModal"', panel_only(HTML))
+        self.assertIn('class="ep-ai-cols"', canvas)
+        self.assertIn('class="ep-ai-col"', canvas)
+        for node_id in ("epAiPoolList", "epAiAssignList", "epAiName", "epAiBase", "epAiKey"):
+            self.assertIn(f'id="{node_id}"', canvas, f"配置窗缺节点 {node_id}")
+
+    def test_02_panel_keeps_only_the_two_entry_buttons(self) -> None:
+        panel = panel_only(HTML)
+        self.assertIn('id="epAiConfig"', panel)
+        self.assertIn('id="epAiBatch"', panel)
+        self.assertIn("✨ 批量 AI 识别全卷", panel)
+        self.assertIn('id="epAiBatchNote"', panel, "批量识别的进度只在辅助栏这一行报")
+        self.assertIn('id="epHeadTools"', panel[:panel.index('id="epAiConfig"')])
+
+    def test_03_overwrite_modal_is_in_the_canvas_and_registered(self) -> None:
+        self.assertIn('id="epAiOverwriteModal"', canvas_only(HTML))
+        self.assertNotIn('id="epAiOverwriteModal"', panel_only(HTML))
+        modal = (PLUGIN_DIR / "dist" / "ui_modal.js").read_text(encoding="utf-8")
+        for name in ("aiConfigModalEl", "aiOverwriteModalEl"):
+            self.assertIn(name, modal, f"{name} 没进焦点圈/ Esc 收口名单")
+
+    def test_04_dual_columns_are_real_grid_columns(self) -> None:
+        self.assertIn(".ep-ai-cols", CSS)
+        block = CSS[CSS.index(".ep-ai-cols"):]
+        self.assertIn("grid-template-columns", block[:block.index("}")])
+        self.assertIn("minmax(0, 1fr) minmax(0, 1.1fr)", block[:block.index("}")])
+
+
+class MaskAndSandboxTest(unittest.TestCase):
+    """Key 只进不出：回读只有掩码，插件不碰存储、不直连网络。"""
+
+    def test_01_keys_are_never_rendered_raw(self) -> None:
+        self.assertIn("api_key_masked", JS, "账号列表只许显示后端给的掩码")
+        # 老师刚敲进框里的 Key 只能随着保存请求一次性交给宿主，读回来的对象永远只有掩码。
+        for line in JS.splitlines():
+            if re.search(r"\.api_key(?!_masked)[\s,;)\]]", line):
+                self.assertIn("payload.api_key", line, f"Key 只许上行、不许回读：{line.strip()}")
+        self.assertIn('type="password"', canvas_only(HTML), "输入 Key 时也不该明文铺在屏上")
+
+    def test_02_no_storage_or_direct_network(self) -> None:
+        for token in ("localStorage", "sessionStorage", "XMLHttpRequest"):
+            self.assertNotIn(token, JS, f"沙箱插件不许碰 {token}")
+        self.assertNotIn("fetch(", JS, "插件只能经宿主 Host API 出网")
+
+    def test_03_no_lookbehind_regex(self) -> None:
+        self.assertIsNone(re.search(r"\(\?<[=!]", JS), "AGENTS §6：后行断言会打挂旧浏览器")
+
+    def test_04_plugin_keeps_the_ai_grant(self) -> None:
+        self.assertIn("ai:invoke", manifest()["permissions"])
+
+
+class SchemeATest(unittest.TestCase):
+    """方案 A：底座套环境，插件只负责整题换上。"""
+
+    def test_01_result_source_is_applied_verbatim(self) -> None:
+        start = JS.index("function applyResult(index, result)")
+        block = JS[start: start + 900]
+        self.assertIn("result && result.source", block)
+        self.assertIn("item.aiSource = source;", block)
+        self.assertNotIn("\\begin{question}", block, "插件不许自己拼环境骨架")
+
+    def test_02_human_edits_are_detected(self) -> None:
+        start = JS.index("function hasHumanEdits(item)")
+        block = JS[start: start + 400]
+        self.assertIn("item.source !== item.aiSource", block)
+        self.assertIn("item.dirty === true", block)
+
+    def test_03_single_button_sits_at_the_meta_strip(self) -> None:
+        strip = (PLUGIN_DIR / "dist" / "ui_meta_strip.js").read_text(encoding="utf-8")
+        self.assertIn("✨ AI 识别本题", strip)
+        self.assertIn("onAiIdentify", strip)
+        self.assertIn("metaStrip.render", JS, "只读条仍是渲染入口")
+
+    def test_04_batch_and_config_ride_the_existing_topic(self) -> None:
+        protocol = (PLUGIN_DIR / "dist" / "core_protocol.js").read_text(encoding="utf-8")
+        self.assertIn('reviewPayload.action === "ai_config"', protocol)
+        self.assertIn('reviewPayload.action === "ai_batch"', protocol)
+        bus = manifest()["bus"]
+        self.assertIn("editor.batch_review", bus["publish"])
+        self.assertIn("editor.batch_review", bus["subscribe"])
+
+
+class FailurePolicyTest(unittest.TestCase):
+    """API 报错只亮红点 + 报错诊断，绝不弹窗打断。"""
+
+    def test_01_error_marks_the_button_instead_of_dialog(self) -> None:
+        self.assertIn('button.setAttribute("data-error", "true")', JS)
+        self.assertIn("dockWarn(", JS)
+        self.assertIn('data-error="true"]::after', CSS, "红点必须是纯样式，不靠额外浮层")
+
+    def test_02_batch_progress_is_reported_back_to_the_panel(self) -> None:
+        self.assertIn("onBatchReport", JS)
+        self.assertIn('phase: "progress"', JS)
+        self.assertIn('phase: "done"', JS)
+        self.assertIn("payload.applied", JS)
+
+    def test_03_route_hint_from_the_base_is_surfaced(self) -> None:
+        batches = (PLUGIN_DIR / "dist" / "ui_batches.js").read_text(encoding="utf-8")
+        self.assertIn("state.route = (result && result.route", batches)
+        self.assertIn("解析路由：", batches, "乱码/扫描件提示要照实转达，绝不自动调 AI")
+
+
+if __name__ == "__main__":
+    unittest.main()

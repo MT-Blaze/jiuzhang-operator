@@ -69,6 +69,8 @@
     // 重题池辅助栏与【全部入库】那颗钮（军令 #32 · 判据 5.3/5.4/43）：都只在辅助栏这帧接活。
     var wireAmber = deps.wireAmber;
     var wirePoolPanel = deps.wirePoolPanel;
+    // 终极军令 任务一/三：API 配置入口与批量识别只在这帧发声，执行全在画布。
+    var wireAiCopilot = deps.wireAiCopilot;
     var delCancelEl = deps.dom.delCancelEl;
     var delModalEl = deps.dom.delModalEl;
     var delOkEl = deps.dom.delOkEl;
@@ -241,6 +243,7 @@
     wireIntake();
     if (wirePoolPanel) wirePoolPanel();
     if (wireAmber) wireAmber();
+    if (wireAiCopilot) wireAiCopilot();
     loadScenes();
     loadMetaHistory();
     renderBatchMeta();

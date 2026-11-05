@@ -55,6 +55,10 @@
     var startIdleWatch = deps.startIdleWatch;
     var state = coreState.state;
     var wireIntake = deps.wireIntake;
+    var wireAiCopilot = deps.wireAiCopilot;
+    var openAiConfig = deps.openAiConfig;
+    var runAiBatch = deps.runAiBatch;
+    var onAiBatchReport = deps.onAiBatchReport;
     var panelRoot = deps.dom.panelRoot;
     var root = deps.dom.root;
     var sourceHintEl = deps.dom.sourceHintEl;
@@ -171,11 +175,16 @@
               Array.isArray(reviewPayload.reasons) ? reviewPayload.reasons : []);
           } else if (reviewPayload.action === "approve_all") runApproveAll();
           else if (reviewPayload.action === "refresh_batches") refreshBatches();
+          // 终极军令 任务一/三：双栏配置窗与批量识别都由辅助栏发令、画布执行。
+          else if (reviewPayload.action === "ai_config") openAiConfig();
+          else if (reviewPayload.action === "ai_batch") runAiBatch();
           return;
         }
         if (reviewFrom === "canvas" && reviewPayload.action === "approve_all") {
           onCanvasApproveAll(reviewPayload);
         }
+        if (reviewFrom === "canvas" && reviewPayload.action === "ai_batch"
+          && typeof onAiBatchReport === "function") onAiBatchReport(reviewPayload);
         return;
       }
       return;
@@ -196,6 +205,7 @@
       wireIntake();
       if (sourceHintEl) sourceHintEl.textContent = "源码 · 整段源码直接编辑";
       startIdleWatch();
+      if (typeof wireAiCopilot === "function") wireAiCopilot();
       // 首屏就是批次列表：中转站还空着就先把这批识别结果入池，好让老师有东西可点。
       refreshBatches().then(function (cards) {
         if (cards.length) return null;

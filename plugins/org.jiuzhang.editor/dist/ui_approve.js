@@ -235,13 +235,16 @@
       });
   }
 
-  /** 覆盖与合并两颗钮在答案不同时必须锁死；界面与判据同一处说了算。 */
+  /** 覆盖与合并两颗钮在答案不同时必须锁死；查重还在路上也锁住——
+   *  那一刻的命中随时会被新结果替换，点下去只会被 doDupAction 静默吞掉。
+   *  界面与判据同一处说了算。 */
   function syncDupActions() {
     var blocked = Boolean(dupReport && dupReport.answer) && dupReport.answer.same === false;
+    var busy = Boolean(panel.saving);
     [deps.dom.dupOverwriteEl, deps.dom.dupMergeEl].forEach(function (node) {
       if (!node) return;
-      node.disabled = blocked;
-      node.setAttribute("aria-disabled", blocked ? "true" : "false");
+      node.disabled = blocked || busy;
+      node.setAttribute("aria-disabled", node.disabled ? "true" : "false");
     });
     if (deps.dom.dupAbandonEl) {
       deps.dom.dupAbandonEl.disabled = false;
@@ -262,6 +265,8 @@
     if (panelApproveEl) {
       panelApproveEl.setAttribute("aria-busy", busy ? "true" : "false");
     }
+    // 查重一开工，裁决钮跟着锁（panel.saving 由调用方先置位）。
+    syncDupActions();
     syncSchoolLock();
   }
 

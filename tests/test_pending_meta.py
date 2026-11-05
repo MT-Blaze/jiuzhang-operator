@@ -475,7 +475,7 @@ class PendingMetaContractTest(unittest.TestCase):
             # 结构版本随「批次扫描标记」（v10）继续上走：
             # 本例判的还是老那条——升上去之后题一条不少、次序不乱。版本号写死在这里，
             # 是为了「升没升到位」一眼可见（原断言是 6，S3 之后不成立，非判据变更）。
-            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 10)
+            self.assertEqual(int(con.execute("PRAGMA user_version").fetchone()[0]), 11)
             columns = {str(row[1]) for row in con.execute("PRAGMA table_info(pending_questions)")}
             self.assertIn("seq", columns, "结构 v4 必须有次序号这一列")
             tag_columns = {str(row[1]) for row in con.execute("PRAGMA table_info(exam_types)")}

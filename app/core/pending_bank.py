@@ -61,6 +61,7 @@ from app.core.pending_bank_batches import (
     delete_batch,
     purge_batch_duplicates,
     set_batch_pages,
+    set_batch_route,
 )
 from app.core.pending_batches import (
     batch_card,

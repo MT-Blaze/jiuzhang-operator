@@ -655,8 +655,8 @@ class PoolPersistenceTest(PoolCase):
         self.assertEqual(caught.exception.existing_id, "q_pool0001")
 
     def test_33_schema_version_and_tables(self) -> None:
-        """结构底线：``SCHEMA_VERSION`` 到 10，旧库连上自动补池表、页面图列与扫描批标记。"""
-        self.assertEqual(self.pending_db.SCHEMA_VERSION, 10)
+        """结构底线：``SCHEMA_VERSION`` 到 11，旧库连上自动补池表、页面图列与扫描批标记。"""
+        self.assertEqual(self.pending_db.SCHEMA_VERSION, 11)
         names = {row[0] for row in self._con().execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
         self.assertIn("duplicate_pool", names)

@@ -21,6 +21,9 @@
       var dirtyEl = document.getElementById("edDirty");
       var toastEl = document.getElementById("edToast");
       var savedEl = document.getElementById("edSaved");
+      // AI 配置中心与覆盖确认两颗弹窗（终极军令 任务一/三）：住在画布帧，平时 hidden。
+      var aiConfigModalEl = document.getElementById("epAiConfigModal");
+      var aiOverwriteModalEl = document.getElementById("epAiOverwriteModal");
       var poolEl = document.getElementById("edPool");
       var batchNoteEl = document.getElementById("edBatchNote");
       var batchesEl = document.getElementById("edBatches");
@@ -56,6 +59,10 @@
       var panelGhostTagMenuEl = document.getElementById("epGhostTagMenu");
       var panelGhostTopicMenuEl = document.getElementById("epGhostTopicMenu");
       var panelApproveEl = document.getElementById("epApprove");
+      // AI 配置与批量识别（终极军令 任务一/三）：入口在辅助栏顶部与底部动作区。
+      var panelAiConfigEl = document.getElementById("epAiConfig");
+      var panelAiBatchEl = document.getElementById("epAiBatch");
+      var panelAiBatchNoteEl = document.getElementById("epAiBatchNote");
       var panelStashEl = document.getElementById("epStash");
       var panelDeleteEl = document.getElementById("epDelete");
       var panelMessageEl = document.getElementById("epMessage");
@@ -173,6 +180,8 @@
       dirtyEl: dirtyEl,
       toastEl: toastEl,
       savedEl: savedEl,
+      aiConfigModalEl: aiConfigModalEl,
+      aiOverwriteModalEl: aiOverwriteModalEl,
       poolEl: poolEl,
       batchNoteEl: batchNoteEl,
       batchesEl: batchesEl,
@@ -206,6 +215,9 @@
       panelGhostTagMenuEl: panelGhostTagMenuEl,
       panelGhostTopicMenuEl: panelGhostTopicMenuEl,
       panelApproveEl: panelApproveEl,
+      panelAiConfigEl: panelAiConfigEl,
+      panelAiBatchEl: panelAiBatchEl,
+      panelAiBatchNoteEl: panelAiBatchNoteEl,
       panelStashEl: panelStashEl,
       panelDeleteEl: panelDeleteEl,
       panelMessageEl: panelMessageEl,

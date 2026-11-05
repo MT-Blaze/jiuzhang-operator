@@ -31,6 +31,15 @@ def read_meta(row: sqlite3.Row) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def read_route(row: sqlite3.Row) -> dict[str, Any]:
+    """解析路由体检；老批次或坏 JSON 一律当空对象，不猜。"""
+    try:
+        data = json.loads(row["route_json"] or "{}")
+    except (TypeError, ValueError, KeyError, IndexError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def read_approved(row: sqlite3.Row) -> list[dict[str, Any]]:
     """这一批已经进主库的题号（公共元数据后改时还要补写它们）。"""
     try:
@@ -89,6 +98,8 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
         "page_only": live == 0 and int(row["total"] or 0) == 0 and bool(_page_images(row)),
         # 纯图片卷：批次级永久标记（v10 起落库），左栏据此铺整卷页图而非逐题原图。
         "scan_batch": bool(row["scan_batch"]) if "scan_batch" in row.keys() else False,
+        # 解析路由体检（v11）：通道、文本层、乱码提示；只做展示，不自动调 AI。
+        "route": read_route(row),
         "page_count": len(_page_images(row)),
         # 后台初查的进程内注解（3.1a）：纯读、不发 IO，无缓存即 pending。
         "dedupe": pending_dedupe.scan_state(batch_id, pooled=pooled, con=con),
@@ -191,6 +202,7 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
         "pending_count": len(rows),
         "total": int(batch["total"] or 0),
         "scan_batch": bool(batch["scan_batch"]) if "scan_batch" in batch.keys() else False,
+        "route": read_route(batch),
     }
 
 

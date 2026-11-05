@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import ingest, pending_bank  # noqa: E402
+from app.core import ingest, ingest_route, pending_bank  # noqa: E402
 
 
 def _pages(count: int) -> list[dict[str, Any]]:
@@ -119,7 +119,7 @@ class AutoSplitPagesTest(unittest.TestCase):
                     pending_bank, "save_draft",
                     return_value={"saved_ids": ["p_auto0001", "p_auto0002"]}) as save, \
                 mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
-            notes = ingest._auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
+            notes = ingest_route.auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
 
         self.assertEqual(notes, [])
         items = save.call_args.args[0]
@@ -142,7 +142,7 @@ class AutoSplitPagesTest(unittest.TestCase):
 
     def test_region_without_text_falls_back_to_placeholder(self) -> None:
         """题块里一个字都读不到时才落占位提示，绝不编题干。"""
-        shell = ingest._auto_split_shell(3, 7, "img_auto_3_6", "模拟1",
+        shell = ingest_route.auto_split_shell(3, 7, "img_auto_3_6", "模拟1",
                                          {"no": 7, "text": ""})
         self.assertIn("第 7 题", shell["stem"])
         self.assertEqual(shell["type"], "solution")
@@ -153,7 +153,7 @@ class AutoSplitPagesTest(unittest.TestCase):
                                return_value=({}, ["没有渲染器"])), \
                 mock.patch.object(pending_bank, "save_draft") as save, \
                 mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
-            notes = ingest._auto_split_pages("无框.pdf", b"%PDF", "B-001", self._pages())
+            notes = ingest_route.auto_split_pages("无框.pdf", b"%PDF", "B-001", self._pages())
         self.assertEqual(notes, ["没有渲染器"])
         save.assert_not_called()
         set_pages.assert_not_called()
@@ -167,7 +167,7 @@ class AutoSplitPagesTest(unittest.TestCase):
                 mock.patch.object(pending_bank, "save_draft",
                                   side_effect=RuntimeError("池子满了")), \
                 mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
-            notes = ingest._auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
+            notes = ingest_route.auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
         self.assertTrue(any("自动切图落池失败" in note for note in notes))
         set_pages.assert_not_called()
         self.assertNotIn("pending_id", pages[0]["regions"][0])
@@ -181,7 +181,7 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(ingest.page_render, "build_pages",
                                return_value=(pages, [1, 2], [])), \
                 mock.patch.object(pending_bank, "set_batch_pages") as set_pages, \
-                mock.patch.object(ingest, "_auto_split_pages",
+                mock.patch.object(ingest, "auto_split_pages",
                                   return_value=[]) as auto_split, \
                 mock.patch.object(pending_bank, "save_draft") as save:
             await ingest.run_ingest_jobs("B-001", [{
@@ -195,7 +195,7 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(ingest.page_render, "build_pages",
                                return_value=([], [], [])), \
                 mock.patch.object(pending_bank, "set_batch_pages") as set_pages, \
-                mock.patch.object(ingest, "_auto_split_pages") as auto_split, \
+                mock.patch.object(ingest, "auto_split_pages") as auto_split, \
                 mock.patch.object(pending_bank, "save_draft") as save:
             await ingest.run_ingest_jobs("B-002", [{
                 "pending_id": "", "name": "无渲染器.pdf", "data": b"%PDF", "page_only": True,

@@ -16,12 +16,56 @@ from typing import Any
 
 from app.core.pending_assets import write_generated_asset
 from app.core.page_render_common import MAX_PAGES, PDF_CROP_DPI, PDF_RENDER_DPI, _entry
-from app.core.page_render_regions import _ink_rows, _pdf_page_regions
+from app.core.page_render_regions import _ink_rows, _pdf_page_regions, _pdf_text_lines
 
 try:  # 内置渲染器缺席只该降级，不该让整个模块导入失败。
     import pypdfium2 as _pdfium
 except Exception:  # noqa: BLE001 - 缺库、坏 wheel 都按「没装上」处理
     _pdfium = None
+
+def pdf_text_health(data: bytes) -> dict[str, Any]:
+    """PDF 文本层体检：有没有字、读不读得出。
+
+    ``has_text_layer`` 为假才走 MinerU 兜底；``garbled`` 只做提示，
+    通道一绝不因为它自动调 AI（老师手动点识别）。
+    """
+    if _pdfium is None:
+        return {"pages": 0, "text_chars": 0, "missing_chars": 0,
+                "has_text_layer": False, "garbled": False}
+    try:
+        document = _pdfium.PdfDocument(data)
+    except Exception:  # noqa: BLE001 - 打不开就当没有文本层
+        return {"pages": 0, "text_chars": 0, "missing_chars": 0,
+                "has_text_layer": False, "garbled": False}
+    pages = 0
+    text_chars = 0
+    missing = 0
+    try:
+        total = len(document)
+        for index in range(min(total, MAX_PAGES)):
+            try:
+                page = document[index]
+                try:
+                    lines = _pdf_text_lines(page)
+                finally:
+                    page.close()
+            except Exception:  # noqa: BLE001 - 单页坏字不影响整份体检
+                continue
+            pages += 1
+            for line in lines:
+                text_chars += len(line.get("text") or "")
+                missing += int(line.get("missing") or 0)
+    finally:
+        document.close()
+    ratio = missing / (missing + text_chars) if (missing + text_chars) else 0.0
+    return {
+        "pages": pages,
+        "text_chars": text_chars,
+        "missing_chars": missing,
+        "has_text_layer": text_chars >= 20,
+        "garbled": missing >= 5 and ratio >= 0.2,
+    }
+
 
 def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
     """pypdfium2（PDFium）逐页渲染；不落地临时 PDF，直接吃内存字节。"""

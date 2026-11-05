@@ -13,6 +13,20 @@
     var DIFFICULTY_LABELS = deps.difficultyLabels || {};
     var TYPE_LABELS = deps.typeLabels || {};
 
+    // 单题 AI 识别（终极军令 任务三）：入口挂在只读条最右侧，动作由 ui_ai_copilot 接。
+    // 不传回调就整颗按钮不画——这块展示能力仍可整块下架。
+    function aiButton(index) {
+      var onAiIdentify = deps.onAiIdentify;
+      if (typeof onAiIdentify !== "function") return null;
+      var button = el("button", "ed-q-meta-ai", "✨ AI 识别本题");
+      button.type = "button";
+      button.setAttribute("data-index", String(index));
+      button.setAttribute("aria-label", "用视觉模型识别第 " + (index + 1) + " 题");
+      button.setAttribute("title", "识别结果整题替换当前正文；有人工修改时会先问");
+      // 只读条本身不挂任何事件：点击由渲染容器统一委托给 ui_ai_copilot。
+      return button;
+    }
+
     function scoreText(raw) {
       var text = String(raw == null ? "" : raw).trim();
       if (!text) return "分值未设";
@@ -52,6 +66,8 @@
       ].forEach(function (text) {
         strip.appendChild(el("span", "ed-q-meta-item", text));
       });
+      var button = aiButton(index);
+      if (button) strip.appendChild(button);
       return strip;
     }
 

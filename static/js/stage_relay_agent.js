@@ -22,6 +22,11 @@
     var urlValue = deps.urlValue;
     var withWriteToken = deps.withWriteToken;
 
+  // 四个任务键与底座 ai_center.TASKS 同名单；账号 id 形状与底座 ACCOUNT_ID_RE 一致。
+  var AI_TASKS = ["ocr", "solve", "meta", "tikz"];
+  var ACCOUNT_ID_RE = /^acc_[0-9a-f]{10}$/;
+  var AI_RECOGNIZE_TIMEOUT_MS = 125000;
+
   /** 历史轮次只留 role/content 两个字符串字段，长度设限——模型不必看见插件的内部态。 */
   function cleanHistory(value) {
     if (!Array.isArray(value)) return [];
@@ -192,6 +197,113 @@
       if (!editorQuestionId) { failWith("BAD_REQUEST", "question_id 不能为空"); return; }
       openEditor({ pluginId: "agent", raw: { question_id: editorQuestionId } });
       done({ ok: true, question_id: editorQuestionId });
+      return;
+    }
+
+    // ---------- AI 配置中心 ----------
+    // 密钥池只回掩码；Key 原文只从插件表单进来、由宿主直送底座落 .env，
+    // 既不回填到插件，也不进任何日志。改账号时 api_key 留空＝保留旧 Key。
+    if (method === "ai.center") {
+      fetchJson("/api/ai-center").then(done, fail);
+      return;
+    }
+
+    if (method === "ai.account_save") {
+      var accountName = textValue(payload, "name", 40);
+      var accountBase = urlValue(payload.base_url, 512);
+      var accountId = textValue(payload, "id", 64);
+      if (!accountName) { failWith("BAD_REQUEST", "账号名称不能为空"); return; }
+      if (!accountBase) { failWith("BAD_URL", "Base URL 必须是 http(s) 直链"); return; }
+      if (accountId && !ACCOUNT_ID_RE.test(accountId)) {
+        failWith("BAD_REQUEST", "账号 id 形状不对");
+        return;
+      }
+      var accountBody = { name: accountName, base_url: accountBase };
+      if (accountId) accountBody.id = accountId;
+      // 没填 Key 就不发这个字段：后端按「保留旧 Key」处理，绝不用空串覆盖。
+      if (typeof payload.api_key === "string") {
+        accountBody.api_key = payload.api_key.trim().slice(0, 512);
+      }
+      withWriteToken("/api/ai-center/accounts", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify(accountBody)
+      }).then(done, fail);
+      return;
+    }
+
+    if (method === "ai.account_delete") {
+      var deleteId = textValue(payload, "account_id", 64);
+      if (!ACCOUNT_ID_RE.test(deleteId)) { failWith("BAD_REQUEST", "账号 id 形状不对"); return; }
+      withWriteToken("/api/ai-center/accounts/" + encodeURIComponent(deleteId), {
+        method: "DELETE",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS
+      }).then(done, fail);
+      return;
+    }
+
+    if (method === "ai.assign") {
+      var assignTaskKey = textValue(payload, "task", 16);
+      var assignAccount = textValue(payload, "account_id", 64);
+      var assignModel = textValue(payload, "model", 128);
+      if (AI_TASKS.indexOf(assignTaskKey) < 0) { failWith("BAD_REQUEST", "未知任务"); return; }
+      if (!ACCOUNT_ID_RE.test(assignAccount)) { failWith("BAD_REQUEST", "账号 id 形状不对"); return; }
+      if (!assignModel) { failWith("BAD_REQUEST", "模型名不能为空；下拉里没有就手动输入"); return; }
+      withWriteToken("/api/ai-center/assign", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify({ task: assignTaskKey, account_id: assignAccount, model: assignModel })
+      }).then(done, fail);
+      return;
+    }
+
+    if (method === "ai.models") {
+      var modelAccount = textValue(payload, "account_id", 64);
+      if (modelAccount && !ACCOUNT_ID_RE.test(modelAccount)) {
+        failWith("BAD_REQUEST", "账号 id 形状不对");
+        return;
+      }
+      var modelBase = urlValue(payload.base_url, 512);
+      if (!modelAccount && !modelBase) {
+        failWith("BAD_REQUEST", "先保存账号，或填 Base URL 与 Key 再拉模型");
+        return;
+      }
+      withWriteToken("/api/ai-center/models", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AGENT_TIMEOUT_MS,
+        body: JSON.stringify({
+          account_id: modelAccount,
+          base_url: modelAccount ? "" : modelBase,
+          api_key: typeof payload.api_key === "string" ? payload.api_key.trim().slice(0, 512) : ""
+        })
+      }).then(done, fail);
+      return;
+    }
+
+    // 单题识别：只回结构化正文与底座套好的 exam-zh 源码，插件不碰 \begin 环境拼装。
+    // 模型一轮可能要几十秒，超时放宽到与后端 120 秒同一量级。
+    if (method === "ai.recognize") {
+      var rawImages = Array.isArray(payload.images) ? payload.images : [];
+      var images = [];
+      for (var index = 0; index < rawImages.length && images.length < 3; index += 1) {
+        var uri = textValue({ v: rawImages[index] }, "v", 20000);
+        if (uri) images.push(uri);
+      }
+      if (!images.length) { failWith("BAD_REQUEST", "这道题没有可识别的题图"); return; }
+      withWriteToken("/api/ai-center/recognize", {
+        method: "POST",
+        headers: jsonHeaders,
+        timeout: AI_RECOGNIZE_TIMEOUT_MS,
+        body: JSON.stringify({
+          images: images,
+          context: plainObject(payload.context),
+          task: "ocr"
+        })
+      }).then(done, fail);
       return;
     }
 

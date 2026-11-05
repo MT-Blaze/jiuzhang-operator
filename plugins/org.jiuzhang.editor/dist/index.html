@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="panel_pool.css">
   <link rel="stylesheet" href="panel_capsule.css">
   <link rel="stylesheet" href="panel_ai.css">
+  <link rel="stylesheet" href="ai_copilot.css">
   <link rel="stylesheet" href="effects.css">
 </head>
 <body>
@@ -188,6 +189,59 @@
       </div>
     </div>
 
+    <!-- API 配置中心（终极军令 任务一）：双栏只在画布这帧铺得开——辅助栏整宽 300px，
+         塞两个栏就成了两根压扁的柴。平时 hidden，老师点辅助栏顶部【API 配置】才打开；
+         密钥输入框只在这一帧，Key 原文进来就直送底座落 .env，回读永远只有掩码。 -->
+    <div class="ep-modal" id="epAiConfigModal" role="dialog" aria-modal="true"
+         aria-labelledby="epAiConfigTitle" hidden>
+      <div class="ep-modal-card ep-ai-card">
+        <h3 class="ep-modal-title" id="epAiConfigTitle">API 配置中心</h3>
+        <p class="ep-ai-tip">密钥只落本机 .env；这里永远只显示掩码。</p>
+        <div class="ep-ai-cols">
+          <section class="ep-ai-col" aria-label="密钥池">
+            <h4 class="ep-ai-col-title">密钥池</h4>
+            <div class="ep-ai-pool" id="epAiPoolList"></div>
+            <div class="ep-ai-form">
+              <label class="ep-ai-field"><span>名称</span>
+                <input id="epAiName" type="text" maxlength="40"
+                       placeholder="如 阿里云 / DeepSeek / MinerU"></label>
+              <label class="ep-ai-field"><span>Base URL</span>
+                <input id="epAiBase" type="text" maxlength="512" placeholder="厂商的 OpenAI 兼容地址，以 /v1 结尾"></label>
+              <label class="ep-ai-field"><span>API Key</span>
+                <input id="epAiKey" type="password" maxlength="512" autocomplete="off"
+                       placeholder="留空＝保留旧 Key"></label>
+              <div class="ep-actions ep-ai-form-acts">
+                <button type="button" class="ep-btn ep-mini-btn" id="epAiSaveAccount">保存账号</button>
+                <button type="button" class="ep-btn ep-mini-btn" id="epAiResetAccount">清空表单</button>
+              </div>
+            </div>
+          </section>
+          <section class="ep-ai-col" aria-label="任务指派">
+            <h4 class="ep-ai-col-title">任务指派</h4>
+            <div class="ep-ai-assign" id="epAiAssignList"></div>
+          </section>
+        </div>
+        <p class="ep-ai-msg" id="epAiConfigMsg" role="status"></p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epAiConfigClose">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 覆盖确认（任务三 · 覆盖机制）：只在检测到人工修改时出现——绝不后台静默覆盖老师的字。 -->
+    <div class="ep-modal" id="epAiOverwriteModal" role="dialog" aria-modal="true"
+         aria-labelledby="epAiOverwriteTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epAiOverwriteTitle">检测到人工修改，是否覆盖？</h3>
+        <p class="ep-modal-text" id="epAiOverwriteText">AI 识别结果会整题替换当前正文。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epAiOverwriteCancel">取消</button>
+          <button type="button" class="ep-btn" id="epAiOverwriteSkip">跳过人工修改</button>
+          <button type="button" class="ep-btn ep-btn-primary" id="epAiOverwriteOk">覆盖</button>
+        </div>
+      </div>
+    </div>
+
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
@@ -220,6 +274,10 @@
         </div>
         <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
                 title="源码与渲染左右互换">布局</button>
+        <!-- API 配置中心（终极军令 任务一）：双栏弹窗住在画布那帧（这一帧只有 300px 宽），
+             这里只负责发一句「打开」，密钥原文与出网全走宿主代持的 ai.* 通道。 -->
+        <button type="button" class="ep-btn ep-mini-btn" id="epAiConfig"
+                title="密钥池与四任务指派">API 配置</button>
         <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
       </div>
       <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"
@@ -471,7 +529,13 @@
         <button type="button" class="ep-btn ep-mini-btn" id="epApproveAll">全部入库</button>
         <button type="button" class="ep-btn ep-mini-btn" id="epStash">存为待审</button>
         <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epDelete">彻底删除</button>
+        <!-- 批量 AI 识别（终极军令 任务三）：这里只发令，逐题识别与覆盖裁决都在画布那帧——
+             那帧才拿得到题图与渲染行。失败只亮红点，绝不弹窗打断老师。 -->
+        <button type="button" class="ep-btn ep-mini-btn" id="epAiBatch"
+                title="逐题调用视觉模型识别本批全部题目">✨ 批量 AI 识别全卷</button>
       </div>
+      <p class="ep-foot-line ep-ai-note" id="epAiBatchNote" role="status"
+         aria-live="polite" data-tone="idle"></p>
       <!-- 查重拦截（军令 #31）：命中时这一行红字常驻在面板最下边，旁边那颗钮开对比窗。
            辅助栏只报「有」与「去看」——渲染对比在画布那帧（那帧才带 MathJax），
            按军令 #23 的铁律，这里绝不放源码，也绝不放预览。 -->
@@ -563,6 +627,9 @@
   <script src="core_receipt.js"></script>
   <script src="ui_ai.js"></script>
   <script src="ui_topics.js"></script>
+  <!-- 终极军令 任务一/三：AI 配置中心与单题/批量识别。独立一块，整块下架只需删这一行脚本、
+       两处 index.html 弹窗、辅助栏两颗入口与 ai_copilot.css。 -->
+  <script src="ui_ai_copilot.js"></script>
   <script src="ui_panel_boot.js"></script>
   <script src="ui_panel_glue.js"></script>
   <script src="core_protocol.js"></script>

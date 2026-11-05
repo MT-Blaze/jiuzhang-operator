@@ -170,6 +170,13 @@ class HostGuardTest(unittest.TestCase):
                 "editor.apply_patch",
                 "stage.open_bank",
                 "stage.open_editor",
+                # AI 配置中心与单题识别：Key 原文、写令牌与出网全由宿主代持。
+                "ai.center",
+                "ai.account_save",
+                "ai.account_delete",
+                "ai.assign",
+                "ai.models",
+                "ai.recognize",
             },
         )
 

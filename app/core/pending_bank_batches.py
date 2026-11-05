@@ -192,6 +192,36 @@ def set_batch_pages(batch_id: Any, page_images: Any) -> dict[str, Any]:
     return {"batch_id": text, "batch": card, "page_images": pages}
 
 
+def set_batch_route(batch_id: Any, payload: Any) -> dict[str, Any]:
+    """记解析路由体检（通道 / 文本层 / 乱码）。内部探测器自己写，不接受前端输入。"""
+    text = str(batch_id or "").strip()
+    if not BATCH_ID_RE.match(text):
+        raise PendingNotFound("批次编号不合法")
+    route = payload if isinstance(payload, dict) else {}
+    con = connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if batch_row(con, text) is None:
+            raise PendingNotFound("中转站里没有这个批次")
+        con.execute(
+            "UPDATE batches SET route_json = ?, updated_at = ? WHERE batch_id = ?",
+            (json.dumps(route, ensure_ascii=False, separators=(",", ":")),
+             questions.now_iso(), text),
+        )
+        live = int(con.execute(
+            "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (text,)
+        ).fetchone()[0])
+        card = batch_card(batch_row(con, text), live,
+                          pooled=pending_dedupe.pooled_counts(con).get(text, 0), con=con)
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    return {"batch_id": text, "batch": card}
+
+
 def delete_batch(batch_id: Any) -> dict[str, Any]:
     """彻底删除一整批：待审题、批次行、初查账与全部原卷资产一起清掉。
 

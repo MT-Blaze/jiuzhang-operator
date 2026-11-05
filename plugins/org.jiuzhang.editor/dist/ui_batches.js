@@ -67,6 +67,7 @@
       state.batchId = "";
       state.pageImages = [];
       state.scanBatch = false;
+      state.route = {};
       // 题库点「去编辑」是从批次列表外直接跳进二屏：先把三栏露出来。
       setMode("review");
       renderAll();
@@ -555,6 +556,8 @@
       state.pageImages = pages;
       state.scanBatch = Boolean(result && (result.scan_batch || result.page_only))
         || (!rows.length && pages.length > 0);
+      // 解析路由体检（终极军令 任务二）：通道与乱码提示照实转达，绝不自动调 AI。
+      state.route = (result && result.route && typeof result.route === "object") ? result.route : {};
       state.items = rows.map(function (row, index) {
         var doc = (row && row.question) || {};
         var item = makeItem(doc, buildExamSource(doc), index);
@@ -587,6 +590,10 @@
           + (autoCount
             ? "已自动切出 " + autoCount + " 道题排进中间；拖绿框可微调，缺题直接框选。"
             : "直接【框选切题】——松开鼠标就生成一道新题。"));
+      }
+      // 乱码 / 纯扫描件：底座只给提示、不自动调模型，要不要 AI 由老师点按钮决定。
+      if (state.route.note) {
+        dock("解析路由：" + state.route.note, state.route.garbled ? "warn" : "info");
       }
       // 识别错得再离谱也照切不误：只在底部日志留一行警告，绝不在画布上弹红窗。
       var broken = state.items.filter(function (item) { return parsedOf(item).errors.length > 0; });
