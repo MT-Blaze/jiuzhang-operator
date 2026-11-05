@@ -560,24 +560,25 @@
 
 .ed-toast {
   position: fixed;
-  left: 50%;
+  right: 22px;
   bottom: 22px;
-  transform: translate(-50%, 12px);
-  max-width: min(520px, 90vw);
+  transform: translateY(12px);
+  max-width: min(420px, 90vw);
   padding: 9px 16px;
   border-radius: 6px;
   background: var(--ink);
   color: #fff;
   font-size: 13px;
   opacity: 0;
-  pointer-events: none;
+  cursor: default;
+  user-select: none;
   transition: opacity 0.18s ease, transform 0.18s ease;
   z-index: 40;
 }
 
 .ed-toast[data-show="true"] {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 
 .ed-toast[data-tone="error"] { background: var(--danger); }

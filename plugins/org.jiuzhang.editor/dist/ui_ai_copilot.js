@@ -30,6 +30,8 @@
     var closeModal = deps.closeModal;
     var itemImage = deps.itemImage;
     var parsedOf = deps.parsedOf;
+    var documentFor = deps.documentFor;
+    var metaFor = deps.metaFor;
     var markDirty = deps.markDirty;
     var refreshRow = deps.refreshRow;
     var writeBackSourceText = deps.writeBackSourceText;
@@ -95,6 +97,32 @@
       return true;
     }
 
+    /**
+     * 静默存回待审池（终极军令 任务三）：识别/解析成功后不再让老师手动点【存为待审】。
+     * 只写中转站，不碰主库；校验不过就如实失败，绝不把半截题塞进池子。
+     */
+    function stashQuietly(index) {
+      var item = state.items[index];
+      if (!item || typeof documentFor !== "function" || typeof metaFor !== "function") {
+        return Promise.reject(new Error("宿主没有提供待审池写入通道"));
+      }
+      var built = documentFor(item, metaFor(item));
+      if (built.problems.length) {
+        return Promise.reject(new Error("还存不进待审池：" + built.problems.slice(0, 3).join("；")));
+      }
+      var payload = {
+        questions: [{ pending_id: item.pendingId || "", question: built.doc }]
+      };
+      if (item.batchId) payload.batch_id = item.batchId;
+      return hostCall("pending.save_draft", payload).then(function (result) {
+        var ids = (result && Array.isArray(result.saved_ids)) ? result.saved_ids : [];
+        if (!item.pendingId && ids[0]) item.pendingId = ids[0];
+        item.dirty = false;
+        return result;
+      });
+    }
+
+
     function askOverwrite(message, onChoice) {
       if (!dom.aiOverwriteModalEl) { onChoice("cancel"); return; }
       if (dom.aiOverwriteModalEl.querySelector(".ep-modal-text")) {
@@ -113,23 +141,36 @@
 
     // ---------------------------------------------------------------- 单题识别
 
-    function callRecognize(index) {
+    function callRecognize(index, mode) {
       var item = state.items[index];
-      var images = imagesOf(item);
-      if (!images.length) {
+      var task = mode === "solve" ? "solve" : "ocr";
+      var images = task === "ocr" ? imagesOf(item) : [];
+      if (task === "ocr" && !images.length) {
         var missing = new Error("这一题没有题图可识别：先框选切题，或挂上原卷页图");
         missing.detail = "";
         return Promise.reject(missing);
       }
       var parsed = parsedOf(item);
       var source = (item.question && item.question.source) || {};
+      var context = {
+        stem: String(parsed.stem || "").slice(0, 6000),
+        options: Array.isArray(parsed.choices) ? parsed.choices.map(function (content, position) {
+          return { key: "ABCDEFGH"[(position || 0)] || "A", content: String(content || "") };
+        }) : [],
+        answer: String(parsed.answer || ""),
+        solution: String(parsed.analysis || ""),
+        type: String(parsed.type || ""),
+        question_no: String(source.question_no || "")
+      };
+      if (task === "solve" && !context.stem.trim()) {
+        var noStem = new Error("这一题还没有题干：先识别本题或手输题干，再点解析");
+        noStem.detail = "";
+        return Promise.reject(noStem);
+      }
       return hostCall("ai.recognize", {
         images: images,
-        context: {
-          stem: String(parsed.stem || "").slice(0, 6000),
-          question_no: String(source.question_no || "")
-        },
-        task: "ocr"
+        context: context,
+        task: task
       }, AI_TIMEOUT_MS).then(function (result) {
         if (!result || result.ok !== true) {
           var failure = new Error((result && result.detail) || "模型没有回话");
@@ -147,33 +188,45 @@
       else button.removeAttribute("aria-busy");
     }
 
-    function runSingle(index, button, force) {
+    function runSingle(index, button, force, mode) {
       var item = state.items[index];
       if (!item) return;
+      var task = mode === "solve" ? "solve" : "ocr";
+      var verb = task === "solve" ? "解析" : "识别";
       if (!force && hasHumanEdits(item)) {
-        askOverwrite("第 " + (index + 1) + " 题检测到人工修改。AI 识别结果会整题替换当前正文。",
+        askOverwrite("第 " + (index + 1) + " 题检测到人工修改。AI " + verb + "结果会整题替换当前正文。",
           function (choice) {
             // 已经确认过就不再问一遍：force 跳开脏标记复检。
-            if (choice === "overwrite") runSingle(index, button, true);
+            if (choice === "overwrite") runSingle(index, button, true, task);
           });
         return;
       }
       markBusy(button, true);
-      callRecognize(index).then(function (result) {
-        markBusy(button, false);
-        if (button) button.removeAttribute("data-error");
-        if (applyResult(index, result)) {
-          toast("第 " + (index + 1) + " 题已按 AI 识别结果重写，还没保存", "ok");
-        } else {
-          dockWarn("第 " + (index + 1) + " 题 AI 识别没有产出正文，源码没动。");
+      callRecognize(index, task).then(function (result) {
+        if (!applyResult(index, result)) {
+          throw new Error("模型没有产出正文");
         }
+        return stashQuietly(index).then(function () {
+          if (button) button.removeAttribute("data-error");
+          markBusy(button, false);
+          toast("第 " + (index + 1) + " 题" + verb + "完成，已存入待审", "ok");
+        });
       }, function (error) {
         markBusy(button, false);
         if (button) {
           button.setAttribute("data-error", "true");
           button.setAttribute("title", shortError(error) + "（详见底部报错诊断）");
         }
-        dockWarn("第 " + (index + 1) + " 题 AI 识别失败：" + shortError(error), errorDetail(error));
+        toast("第 " + (index + 1) + " 题" + verb + "失败，详见报错诊断", "error");
+        dockWarn("第 " + (index + 1) + " 题 AI " + verb + "失败：" + shortError(error), errorDetail(error));
+      }).catch(function (error) {
+        markBusy(button, false);
+        if (button) {
+          button.setAttribute("data-error", "true");
+          button.setAttribute("title", shortError(error) + "（详见底部报错诊断）");
+        }
+        toast("第 " + (index + 1) + " 题" + verb + "完成但存入待审失败", "error");
+        dockWarn("第 " + (index + 1) + " 题 AI " + verb + "后存入待审失败：" + shortError(error), errorDetail(error));
       });
     }
 
@@ -183,8 +236,10 @@
       publish("editor.batch_review", Object.assign({ action: "ai_batch", from: "canvas" }, payload));
     }
 
-    function startBatch(targets, overwriteHuman) {
+    function startBatch(targets, overwriteHuman, mode) {
       batchBusy = true;
+      var task = mode === "solve" ? "solve" : "ocr";
+      var verb = task === "solve" ? "解析" : "识别";
       var stats = { total: targets.length, applied: 0, skipped: 0, failed: 0 };
       var firstError = "";
       var position = 0;
@@ -193,12 +248,13 @@
         if (position >= targets.length) {
           batchBusy = false;
           report({
-            phase: "done", total: stats.total, applied: stats.applied,
+            phase: "done", mode: task, total: stats.total, applied: stats.applied,
             skipped: stats.skipped, failed: stats.failed, message: firstError
           });
-          dock("AI 批量识别完成：成功 " + stats.applied + " 题，跳过 " + stats.skipped
-            + " 题，失败 " + stats.failed + " 题。", stats.failed ? "warn" : "info");
-          if (firstError) dockWarn("AI 批量识别有题目失败，完整原因见报错诊断。", firstError);
+          // 批量只弹一枚总气泡；逐题失败详情已经在报错诊断里。
+          toast("批量 AI " + verb + "完成：成功 " + stats.applied + " · 跳过 "
+            + stats.skipped + " · 失败 " + stats.failed, stats.failed ? "error" : "ok");
+          if (firstError) dockWarn("AI 批量" + verb + "有题目失败，完整原因见报错诊断。", firstError);
           return;
         }
         var index = targets[position];
@@ -210,9 +266,11 @@
           return;
         }
         report({ phase: "progress", index: position, total: stats.total });
-        callRecognize(index).then(function (result) {
-          if (applyResult(index, result)) stats.applied += 1;
-          else stats.failed += 1;
+        callRecognize(index, task).then(function (result) {
+          if (!applyResult(index, result)) throw new Error("模型没有产出正文");
+          return stashQuietly(index);
+        }).then(function () {
+          stats.applied += 1;
           step();
         }, function (error) {
           stats.failed += 1;
@@ -223,30 +281,48 @@
       step();
     }
 
-    function runBatch() {
+    function runBatch(mode) {
       if (batchBusy) return;
+      var task = mode === "solve" ? "solve" : "ocr";
+      var verb = task === "solve" ? "解析" : "识别";
       if (!state.items.length) {
-        report({ phase: "done", total: 0, applied: 0, skipped: 0, failed: 0,
-          message: "这一批还没有题目可识别" });
+        report({ phase: "done", mode: task, total: 0, applied: 0, skipped: 0, failed: 0,
+          message: "这一批还没有题目可" + verb });
         return;
       }
       var targets = [];
       state.items.forEach(function (item, index) {
-        if (imagesOf(item).length) targets.push(index);
+        if (task === "solve") {
+          var parsed = parsedOf(item);
+          if (String(parsed.stem || "").trim()) targets.push(index);
+        } else if (imagesOf(item).length) {
+          targets.push(index);
+        }
       });
       if (!targets.length) {
-        report({ phase: "done", total: 0, applied: 0, skipped: 0, failed: 0,
-          message: "这一批没有题图可识别：先框选切题或挂上原卷页图" });
-        dockWarn("批量 AI 识别没有可识别的题图。");
+        report({ phase: "done", mode: task, total: 0, applied: 0, skipped: 0, failed: 0,
+          message: task === "solve"
+            ? "这一批还没有题干可解析：先识别或手输题干"
+            : "这一批没有题图可识别：先框选切题或挂上原卷页图" });
+        toast("批量 AI " + verb + "没有可处理的题目", "error");
+        dockWarn("批量 AI " + verb + "没有可处理的题目。");
         return;
       }
       var human = targets.filter(function (index) { return hasHumanEdits(state.items[index]); });
-      if (!human.length) { startBatch(targets, false); return; }
+      if (!human.length) { startBatch(targets, false, task); return; }
       askOverwrite("这批里有 " + human.length + " 道题检测到人工修改。要连同它们一起覆盖，还是跳过？",
         function (choice) {
-          if (choice === "cancel") return;
-          startBatch(targets, choice === "overwrite");
+          if (choice === "cancel") {
+            report({ phase: "done", mode: task, total: targets.length, applied: 0,
+              skipped: 0, failed: 0, message: "" });
+            return;
+          }
+          startBatch(targets, choice === "overwrite", task);
         });
+    }
+
+    function runBatchSolve() {
+      runBatch("solve");
     }
 
     // ---------------------------------------------------------------- 配置中心
@@ -506,7 +582,8 @@
         var node = event.target;
         while (node && node !== body) {
           if (node.classList && node.classList.contains("ed-q-meta-ai")) {
-            runSingle(Number(node.getAttribute("data-index")) || 0, node);
+            runSingle(Number(node.getAttribute("data-index")) || 0, node, false,
+              node.getAttribute("data-mode") || "ocr");
             return;
           }
           node = node.parentNode;
@@ -541,44 +618,67 @@
           publish("editor.batch_review", { action: "ai_config", from: "panel" });
         });
       }
-      var batch = dom.panelAiBatchEl;
-      if (batch) {
-        batch.addEventListener("click", function () {
-          batch.removeAttribute("data-error");
-          if (dom.panelAiBatchNoteEl) {
-            dom.panelAiBatchNoteEl.textContent = "正在逐题识别…";
-            dom.panelAiBatchNoteEl.setAttribute("data-tone", "busy");
-          }
-          publish("editor.batch_review", { action: "ai_batch", from: "panel" });
-        });
-      }
+      wireBatchButton(dom.panelAiBatchEl, "ai_batch", "正在逐题识别…");
+      wireBatchButton(document.getElementById("epAiBatchSolve"), "ai_batch_solve", "正在逐题解析…");
+    }
+
+    function wireBatchButton(button, action, busyText) {
+      if (!button) return;
+      button.addEventListener("click", function () {
+        if (button.disabled) return;
+        // 防连点：点下去当场变灰，不等画布回执。
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.removeAttribute("data-error");
+        var note = dom.panelAiBatchNoteEl;
+        if (note) {
+          note.textContent = busyText;
+          note.setAttribute("data-tone", "busy");
+        }
+        publish("editor.batch_review", { action: action, from: "panel" });
+      });
+    }
+
+    function releaseBatchButtons() {
+      [dom.panelAiBatchEl, document.getElementById("epAiBatchSolve")].forEach(function (node) {
+        if (!node) return;
+        node.disabled = false;
+        node.removeAttribute("aria-busy");
+      });
     }
 
     /** 画布把每一题的进度与结果回投辅助栏：话在那边说，红点也亮在那颗钮上。 */
     function onBatchReport(payload) {
       var note = dom.panelAiBatchNoteEl;
       var button = dom.panelAiBatchEl;
+      var solveButton = document.getElementById("epAiBatchSolve");
       var phase = String((payload && payload.phase) || "");
+      var verb = String((payload && payload.mode) || "") === "solve" ? "解析" : "识别";
       if (phase === "progress") {
         if (note) {
-          note.textContent = "AI 识别 " + (Number(payload.index) || 0) + " / "
+          note.textContent = "AI " + verb + " " + (Number(payload.index) || 0) + " / "
             + (Number(payload.total) || 0) + " …";
           note.setAttribute("data-tone", "busy");
         }
         return;
       }
       if (phase !== "done") return;
+      releaseBatchButtons();
       var failed = Number(payload.failed) || 0;
       if (note) {
-        note.textContent = "批量识别完成：成功 " + (Number(payload.applied) || 0)
-          + " · 跳过 " + (Number(payload.skipped) || 0) + " · 失败 " + failed;
-        note.setAttribute("data-tone", failed ? "error" : "ok");
+        var message = String(payload.message || "");
+        note.textContent = message && !Number(payload.total)
+          ? message
+          : "批量" + verb + "完成：成功 " + (Number(payload.applied) || 0)
+            + " · 跳过 " + (Number(payload.skipped) || 0) + " · 失败 " + failed;
+        note.setAttribute("data-tone", failed || message ? "error" : "ok");
       }
-      if (button) {
-        if (failed) button.setAttribute("data-error", "true");
-        else button.removeAttribute("data-error");
+      var active = verb === "解析" ? solveButton : button;
+      if (active) {
+        if (failed) active.setAttribute("data-error", "true");
+        else active.removeAttribute("data-error");
       }
-      if (failed && payload.message) dockWarn("批量 AI 识别有题目失败。", String(payload.message));
+      if (failed && payload.message) dockWarn("批量 AI " + verb + "有题目失败。", String(payload.message));
     }
 
     return {
@@ -587,6 +687,7 @@
       onBatchReport: onBatchReport,
       openConfig: openConfig,
       runBatch: runBatch,
+      runBatchSolve: runBatchSolve,
       runSingle: runSingle,
       wireCanvas: wireCanvas,
       wirePanel: wirePanel,

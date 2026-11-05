@@ -539,6 +539,9 @@
              那帧才拿得到题图与渲染行。失败只亮红点，绝不弹窗打断老师。 -->
         <button type="button" class="ep-btn ep-mini-btn" id="epAiBatch"
                 title="逐题调用视觉模型识别本批全部题目">✨ 批量 AI 识别全卷</button>
+        <!-- 批量解析（终极军令 任务三）：只补答案与解析，题干原样保留；逐题静默存入待审池。 -->
+        <button type="button" class="ep-btn ep-mini-btn" id="epAiBatchSolve"
+                title="逐题调用解题模型补答案与解析，完成后存入待审池">✨ 批量解析全卷</button>
       </div>
       <p class="ep-foot-line ep-ai-note" id="epAiBatchNote" role="status"
          aria-live="polite" data-tone="idle"></p>

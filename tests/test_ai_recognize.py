@@ -122,5 +122,60 @@ class RecognizeTest(unittest.TestCase):
         self.assertEqual(question["question_no"], "12")
 
 
+SOLVE_BINDING = ai_center.TaskBinding(
+    task="solve", account_id="acc_0000000001", name="解题档",
+    base_url="https://gateway.test/v1", api_key="fixture-key", model="qwen-max",
+)
+
+
+class SolveTest(unittest.TestCase):
+    """【解析本题】：只补答案与解析，题干与选项原样保留，不需要题图。"""
+
+    def _run(self, content: str, context=None, binding=SOLVE_BINDING):
+        with mock.patch.object(ai_center, "resolve_task", return_value=binding), \
+                mock.patch.object(ai_recognize.OpenAICompatibleProvider, "chat_completion",
+                                  _chat(content)):
+            return asyncio.run(ai_recognize.recognize([], context or {}, "solve"))
+
+    def test_01_answer_and_solution_are_merged_into_source(self) -> None:
+        context = {
+            "type": "single_choice",
+            "stem": "函数 $f(x)=x^2$ 的导数是（  ）",
+            "options": [{"key": "A", "content": "$x$"}, {"key": "B", "content": "$2x$"}],
+            "answer": "",
+            "question_no": "7",
+        }
+        result = self._run(json.dumps({
+            "answer": "B", "solution": "由幂函数求导公式得 $f'(x)=2x$。", "note": "直接求导",
+        }, ensure_ascii=False), context)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["question"]["answer"], "B")
+        self.assertEqual(result["question"]["stem"], context["stem"], "题干必须原样保留")
+        self.assertEqual(len(result["question"]["options"]), 2)
+        self.assertIn("\\begin{solution}\n答案：B", result["source"])
+        self.assertIn("$2x$", result["source"])
+
+    def test_02_missing_stem_is_rejected_before_network(self) -> None:
+        result = self._run("{}", {"stem": ""})
+        self.assertFalse(result["ok"])
+        self.assertIn("题干", result["detail"])
+
+    def test_03_missing_assignment_is_structured_failure(self) -> None:
+        empty = ai_center.TaskBinding("solve", "", "", "", "", "")
+        result = self._run("{}", {"stem": "求证 $a=b$"}, binding=empty)
+        self.assertFalse(result["ok"])
+        self.assertIn("API 配置", result["detail"])
+
+    def test_04_empty_solution_is_a_failure_not_a_half_write(self) -> None:
+        result = self._run(json.dumps({"answer": "A", "solution": ""}), {"stem": "题干"})
+        self.assertFalse(result["ok"])
+        self.assertIn("解析", result["detail"])
+
+    def test_05_bad_json_is_reported_not_raised(self) -> None:
+        result = self._run("我算不出来", {"stem": "题干"})
+        self.assertFalse(result["ok"])
+        self.assertIn("JSON", result["detail"])
+
+
 if __name__ == "__main__":
     unittest.main()

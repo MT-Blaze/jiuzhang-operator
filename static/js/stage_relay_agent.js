@@ -262,7 +262,12 @@
         var uri = textValue({ v: rawImages[index] }, "v", 20000);
         if (uri) images.push(uri);
       }
-      if (!images.length) { failWith("BAD_REQUEST", "这道题没有可识别的题图"); return; }
+      // ocr 必须带题图；solve 只补答案与解析，题干走 context，不强制题图。
+      var aiTask = textValue(payload, "task", 16) === "solve" ? "solve" : "ocr";
+      if (aiTask === "ocr" && !images.length) {
+        failWith("BAD_REQUEST", "这道题没有可识别的题图");
+        return;
+      }
       withWriteToken("/api/ai-center/recognize", {
         method: "POST",
         headers: jsonHeaders,
@@ -270,7 +275,7 @@
         body: JSON.stringify({
           images: images,
           context: plainObject(payload.context),
-          task: "ocr"
+          task: aiTask
         })
       }).then(done, fail);
       return;

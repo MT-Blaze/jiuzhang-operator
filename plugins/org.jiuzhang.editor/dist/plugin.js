@@ -380,12 +380,14 @@
     coreState: coreState,
     dock: dock,
     dockWarn: dockWarn,
+    documentFor: uiApprove.documentFor,
     dom: dom,
     el: el,
     errorDetail: errorDetail,
     hostCall: hostCall,
     itemImage: itemImage,
     markDirty: uiColumns.markDirty,
+    metaFor: metaFor,
     openModal: openModal,
     parsedOf: uiColumns.parsedOf,
     publish: publish,
@@ -754,6 +756,7 @@
     wireAiCopilot: uiAiCopilot.wireCanvas,
     openAiConfig: uiAiCopilot.openConfig,
     runAiBatch: uiAiCopilot.runBatch,
+    runAiBatchSolve: uiAiCopilot.runBatchSolve,
     coreState: coreState,
   });
 

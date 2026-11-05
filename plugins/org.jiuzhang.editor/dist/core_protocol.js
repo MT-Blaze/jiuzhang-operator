@@ -58,6 +58,7 @@
     var wireAiCopilot = deps.wireAiCopilot;
     var openAiConfig = deps.openAiConfig;
     var runAiBatch = deps.runAiBatch;
+    var runAiBatchSolve = deps.runAiBatchSolve;
     var onAiBatchReport = deps.onAiBatchReport;
     var panelRoot = deps.dom.panelRoot;
     var root = deps.dom.root;
@@ -178,6 +179,7 @@
           // 终极军令 任务一/三：双栏配置窗与批量识别都由辅助栏发令、画布执行。
           else if (reviewPayload.action === "ai_config") openAiConfig();
           else if (reviewPayload.action === "ai_batch") runAiBatch();
+          else if (reviewPayload.action === "ai_batch_solve") runAiBatchSolve();
           return;
         }
         if (reviewFrom === "canvas" && reviewPayload.action === "approve_all") {

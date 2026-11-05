@@ -47,6 +47,17 @@ SYSTEM_PROMPT = r"""你是数学试卷录题助手。看题图，只输出一个
 铁律：只转录看得见的内容，看不清就留空串；绝不编造答案、选项或题号。
 """
 
+SOLVE_SYSTEM_PROMPT = r"""你是数学解题助手。老师已经录好一道题，你只负责补答案与解析，不改题干、不改选项。
+只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：
+- "answer": 最终答案（选择题写字母如 "A" 或 "AB"；填空题写答案；解答题写最终结果）
+- "solution": 完整解析（推导步骤，公式用 $...$；不要写「答案：」三个字）
+- "note": 一句话说明你的思路（可留空）
+铁律：
+1. 数学事实必须正确；题干已给答案时以其为准，只补推导，不另造答案。
+2. 不得编造题干里没有的条件、数值或图形；信息不足就在 note 里说明。
+3. 解析与答案都不能为空。
+"""
+
 
 def _resolve_image(uri: str) -> tuple[str, str]:
     """同源图片路径 → data URL。返回 ``(data_url, 失败原因)``。"""
@@ -177,10 +188,105 @@ def normalize_question(document: dict[str, Any], context: dict[str, Any]) -> dic
     }
 
 
+def _context_question(context: dict[str, Any]) -> dict[str, Any]:
+    """前端交来的现有题目 → 可回传的契约题；只认已知字段，不猜。"""
+    raw_type = str((context or {}).get("type") or "").strip()
+    kind = raw_type if raw_type in QUESTION_TYPES else "solution"
+    options: list[dict[str, str]] = []
+    for index, option in enumerate((context or {}).get("options") or []):
+        if not isinstance(option, dict):
+            continue
+        content = _clean_text(option.get("content"), 2000)
+        if not content:
+            continue
+        key = _clean_text(option.get("key"), 4) or OPTION_KEYS[min(index, len(OPTION_KEYS) - 1)]
+        options.append({"key": key, "content": content})
+    if kind not in ("single_choice", "multiple_choice"):
+        options = []
+    difficulty = _clean_text((context or {}).get("difficulty"), 4).upper()
+    return {
+        "type": kind,
+        "stem": _clean_text((context or {}).get("stem"), 8000),
+        "options": options,
+        "answer": _clean_text((context or {}).get("answer"), 2000),
+        "solution": _clean_text((context or {}).get("solution"), 8000),
+        "question_no": _clean_text((context or {}).get("question_no"), 20),
+        "difficulty": difficulty if difficulty in DIFFICULTIES else "L2",
+    }
+
+
+async def solve(context: dict[str, Any] | None = None) -> dict[str, Any]:
+    """【解析本题】：只补答案与解析，题干与选项原样保留。
+
+    不需要题图：老师往往已经识别并改过题干，再让模型看图只会多烧一遍 token。
+    """
+    question = _context_question(context or {})
+    if not question["stem"]:
+        return {"ok": False, "detail": "这道题还没有题干：先识别本题或手输题干，再点解析。"}
+    binding = ai_center.resolve_task("solve")
+    if not binding.is_configured:
+        return {
+            "ok": False,
+            "detail": "「解题」还没指派可用的模型：先在【API 配置】里填账号、指派任务并保存。",
+        }
+    payload = {
+        "type": question["type"],
+        "stem": question["stem"],
+        "options": question["options"],
+        "answer": question["answer"],
+    }
+    client = OpenAICompatibleProvider(
+        api_key=binding.api_key,
+        base_url=binding.base_url,
+        default_model=binding.model,
+        timeout=120,
+        label=binding.name,
+    )
+    try:
+        result = await client.chat_completion(
+            system_prompt=SOLVE_SYSTEM_PROMPT,
+            user_message="题目如下（JSON）：\n" + json.dumps(payload, ensure_ascii=False),
+            temperature=0.1,
+            max_tokens=4000,
+        )
+    except Exception as exc:  # noqa: BLE001 - 出网失败只回结构化错误，不抛栈
+        return {"ok": False, "detail": f"模型调用失败：{exc}"}
+
+    content = str(result.get("content") or "")
+    try:
+        document = json.loads(_strip_fences(content))
+    except (TypeError, ValueError):
+        return {"ok": False, "detail": "模型没有返回可解析的 JSON：" + content[:500]}
+    if not isinstance(document, dict):
+        return {"ok": False, "detail": "模型返回的 JSON 不是对象"}
+
+    answer = document.get("answer")
+    if isinstance(answer, list):
+        answer = "".join(str(item) for item in answer)
+    elif isinstance(answer, dict):
+        answer = answer.get("final") or answer.get("content") or ""
+    answer_text = _clean_text(answer, 2000)
+    solution_text = _clean_text(document.get("solution") or document.get("analysis"), 8000)
+    if not solution_text:
+        return {"ok": False, "detail": "模型没给出解析正文；题干可能不完整，补全后再试。"}
+    question["answer"] = answer_text
+    question["solution"] = solution_text
+    return {
+        "ok": True,
+        "question": question,
+        "source": build_exam_source(question),
+        "note": _clean_text(document.get("note"), 200),
+        "mock": bool(result.get("mock")),
+        "model": binding.model,
+    }
+
+
 async def recognize(
     images: list[str], context: dict[str, Any] | None = None, task: str = "ocr"
 ) -> dict[str, Any]:
     """识别一道题。配置缺失、图片读不出、模型输出坏掉都返回结构化失败。"""
+    if task == "solve":
+        return await solve(context)
     binding = ai_center.resolve_task(task if task in ai_center.TASK_KEYS else "ocr")
     if not binding.is_configured:
         label = ai_center.TASK_LABELS.get(binding.task, "视觉识别(OCR)")

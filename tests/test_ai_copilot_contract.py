@@ -76,6 +76,12 @@ class HostRelayTest(unittest.TestCase):
         self.assertIn("AI_RECOGNIZE_TIMEOUT_MS = 125000", STAGE_JS,
                       "视觉模型一轮可能几十秒，别按 20 秒的默认预算截断")
 
+    def test_05_solve_does_not_require_an_image(self) -> None:
+        self.assertIn('=== "solve" ? "solve" : "ocr"', STAGE_JS)
+        self.assertIn('if (aiTask === "ocr" && !images.length)', STAGE_JS,
+                      "只有 ocr 强制题图；解析走题干，不该被题图卡住")
+        self.assertIn("task: aiTask", STAGE_JS)
+
 
 class ConfigCenterMarkupTest(unittest.TestCase):
     """双栏配置窗住画布，辅助栏只留两颗入口。"""
@@ -160,9 +166,13 @@ class SchemeATest(unittest.TestCase):
         self.assertIn("item.source !== item.aiSource", block)
         self.assertIn("item.dirty === true", block)
 
-    def test_03_single_button_sits_at_the_meta_strip(self) -> None:
+    def test_03_single_buttons_sit_at_the_meta_strip(self) -> None:
         strip = (PLUGIN_DIR / "dist" / "ui_meta_strip.js").read_text(encoding="utf-8")
         self.assertIn("✨ AI 识别本题", strip)
+        self.assertIn("✨ 解析本题", strip, "任务三要求识别与解析两颗单题钮")
+        self.assertIn('"ocr"', strip)
+        self.assertIn('"solve"', strip)
+        self.assertIn("data-mode", strip)
         self.assertIn("onAiIdentify", strip)
         self.assertIn("metaStrip.render", JS, "只读条仍是渲染入口")
 
@@ -170,9 +180,69 @@ class SchemeATest(unittest.TestCase):
         protocol = (PLUGIN_DIR / "dist" / "core_protocol.js").read_text(encoding="utf-8")
         self.assertIn('reviewPayload.action === "ai_config"', protocol)
         self.assertIn('reviewPayload.action === "ai_batch"', protocol)
+        self.assertIn('reviewPayload.action === "ai_batch_solve"', protocol,
+                      "批量解析要有自己的发令分支")
         bus = manifest()["bus"]
         self.assertIn("editor.batch_review", bus["publish"])
         self.assertIn("editor.batch_review", bus["subscribe"])
+
+    def test_05_both_batch_buttons_live_in_the_panel(self) -> None:
+        panel = panel_only(HTML)
+        self.assertIn('id="epAiBatch"', panel)
+        self.assertIn('id="epAiBatchSolve"', panel)
+        self.assertIn("✨ 批量 AI 识别全卷", panel)
+        self.assertIn("✨ 批量解析全卷", panel)
+        self.assertIn("runBatchSolve", JS)
+
+
+class SilentSaveTest(unittest.TestCase):
+    """识别/解析成功后直接静默存入待审池，不让老师再点一次【存为待审】。"""
+
+    def test_01_success_writes_pending_pool(self) -> None:
+        self.assertIn("function stashQuietly(index)", JS)
+        self.assertIn('hostCall("pending.save_draft"', JS)
+        self.assertIn("documentFor(item, metaFor(item))", JS)
+
+    def test_02_no_manual_step_left_in_the_success_path(self) -> None:
+        start = JS.index("function runSingle(")
+        block = JS[start:start + 1800]
+        self.assertIn("return stashQuietly(index)", block)
+        self.assertIn("已存入待审", block)
+
+    def test_03_batch_also_stashes_each_item(self) -> None:
+        start = JS.index("function startBatch(")
+        block = JS[start:start + 2200]
+        self.assertIn("return stashQuietly(index)", block)
+        self.assertIn("批量 AI ", block, "批量完成只弹总气泡")
+
+
+class ToastContractTest(unittest.TestCase):
+    """右下角气泡：成功 3s、失败 8s、悬停暂停、不可点击。"""
+
+    def test_01_durations(self) -> None:
+        host = (PLUGIN_DIR / "dist" / "core_host.js").read_text(encoding="utf-8")
+        self.assertIn("TOAST_OK_MS = 3000", host)
+        self.assertIn("TOAST_ERROR_MS = 8000", host)
+        self.assertIn('toastEl.addEventListener("mouseenter"', host)
+        self.assertIn('toastEl.addEventListener("mouseleave"', host)
+
+    def test_02_bottom_right_and_not_clickable(self) -> None:
+        css = CSS
+        block = css[css.index(".ed-toast {"):]
+        block = block[:block.index("}")]
+        self.assertIn("right: 22px", block)
+        self.assertIn("bottom: 22px", block)
+        self.assertNotIn("left: 50%", block)
+        html = canvas_only(HTML)
+        start = html.index('id="edToast"')
+        tag = html[html.rindex("<", 0, start):html.index(">", start)]
+        self.assertNotIn("onclick", tag)
+        self.assertNotIn("<a ", tag)
+
+    def test_03_batch_fires_exactly_one_total_toast(self) -> None:
+        start = JS.index("function startBatch(")
+        block = JS[start:JS.index("function runBatch(", start)]
+        self.assertEqual(block.count("toast("), 1, "批量只许弹一枚总气泡")
 
 
 class FailurePolicyTest(unittest.TestCase):

@@ -18,6 +18,11 @@
 
   var requestSeq = 0;
   var toastTimer = 0;
+  var toastDeadline = 0;
+  var toastRemaining = 0;
+  var toastHovering = false;
+  var TOAST_OK_MS = 3000;
+  var TOAST_ERROR_MS = 8000;
 
   // ---------- 宿主通信 ----------
   function hostCall(method, payload, timeoutMs) {
@@ -108,15 +113,38 @@
     try { target.postMessage(packet, "*"); } catch (error) { /* 宿主已走 */ }
   }
 
-  function toast(text, tone) {
-    if (!toastEl) return;
-    toastEl.textContent = text;
-    toastEl.setAttribute("data-tone", tone || "info");
-    toastEl.setAttribute("data-show", "true");
+  function scheduleToast(ms) {
+    toastRemaining = Math.max(0, Number(ms) || 0);
+    if (toastHovering || !toastEl) return;
+    toastDeadline = Date.now() + toastRemaining;
     window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(function () {
       toastEl.setAttribute("data-show", "false");
-    }, 2600);
+    }, toastRemaining);
+  }
+
+  /** 右下角气泡：成功 3s、失败 8s；悬停暂停倒计时，本身不可点击（无任何点击行为）。 */
+  function toast(text, tone) {
+    if (!toastEl) return;
+    toastHovering = false;
+    toastEl.textContent = text;
+    toastEl.setAttribute("data-tone", tone || "info");
+    toastEl.setAttribute("data-show", "true");
+    scheduleToast(String(tone || "") === "error" ? TOAST_ERROR_MS : TOAST_OK_MS);
+  }
+
+  if (toastEl) {
+    toastEl.addEventListener("mouseenter", function () {
+      if (toastHovering || toastEl.getAttribute("data-show") !== "true") return;
+      toastHovering = true;
+      toastRemaining = Math.max(0, toastDeadline - Date.now());
+      window.clearTimeout(toastTimer);
+    });
+    toastEl.addEventListener("mouseleave", function () {
+      if (!toastHovering) return;
+      toastHovering = false;
+      scheduleToast(toastRemaining);
+    });
   }
 
   /** 辅助栏的落地话术：状态区常驻，不用老师盯着画布的一闪而过的提示。 */

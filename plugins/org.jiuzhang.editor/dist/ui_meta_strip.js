@@ -13,18 +13,26 @@
     var DIFFICULTY_LABELS = deps.difficultyLabels || {};
     var TYPE_LABELS = deps.typeLabels || {};
 
-    // 单题 AI 识别（终极军令 任务三）：入口挂在只读条最右侧，动作由 ui_ai_copilot 接。
-    // 不传回调就整颗按钮不画——这块展示能力仍可整块下架。
-    function aiButton(index) {
+    // 单题 AI 入口（终极军令 任务三）：识别与解析两颗钮挂在只读条最右侧，
+    // 动作由 ui_ai_copilot 统一委托。不传回调就整组不画——只读条仍可整块下架。
+    function aiButtons(index) {
       var onAiIdentify = deps.onAiIdentify;
       if (typeof onAiIdentify !== "function") return null;
-      var button = el("button", "ed-q-meta-ai", "✨ AI 识别本题");
-      button.type = "button";
-      button.setAttribute("data-index", String(index));
-      button.setAttribute("aria-label", "用视觉模型识别第 " + (index + 1) + " 题");
-      button.setAttribute("title", "识别结果整题替换当前正文；有人工修改时会先问");
+      var wrap = el("span", "ed-q-meta-ais");
+      [
+        ["ocr", "✨ AI 识别本题", "识别结果整题替换当前正文，并静默存入待审池；有人工修改时会先问"],
+        ["solve", "✨ 解析本题", "只补答案与解析，题干与选项原样保留；完成后静默存入待审池"]
+      ].forEach(function (spec) {
+        var button = el("button", "ed-q-meta-ai", spec[1]);
+        button.type = "button";
+        button.setAttribute("data-index", String(index));
+        button.setAttribute("data-mode", spec[0]);
+        button.setAttribute("aria-label", spec[1].replace("✨ ", "") + " · 第 " + (index + 1) + " 题");
+        button.setAttribute("title", spec[2]);
+        wrap.appendChild(button);
+      });
       // 只读条本身不挂任何事件：点击由渲染容器统一委托给 ui_ai_copilot。
-      return button;
+      return wrap;
     }
 
     function scoreText(raw) {
@@ -66,8 +74,8 @@
       ].forEach(function (text) {
         strip.appendChild(el("span", "ed-q-meta-item", text));
       });
-      var button = aiButton(index);
-      if (button) strip.appendChild(button);
+      var buttons = aiButtons(index);
+      if (buttons) strip.appendChild(buttons);
       return strip;
     }
 

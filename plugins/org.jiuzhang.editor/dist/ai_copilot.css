@@ -2,11 +2,17 @@
    整块可下架：删掉本文件与 index.html 里的 <link>，再撤掉 ui_ai_copilot.js 即可。
    颜色一律取 layout.css 的变量，不新造色板。 */
 
-/* 单题入口：只读条最右侧那颗钮（数据驱动，只读条本身仍可整块下架）。 */
+/* 单题入口：只读条最右侧那组钮（数据驱动，只读条本身仍可整块下架）。 */
+.ed-q-meta-ais {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+
 .ed-q-meta-ai {
   position: relative;
   flex: 0 0 auto;
-  margin-left: auto;
   min-height: 24px;
   padding: 1px 8px;
   border: 1px solid var(--line-strong);

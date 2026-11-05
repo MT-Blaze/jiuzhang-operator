@@ -56,3 +56,29 @@
 
 - `python tools/run_all_tests.py`：模块 84 个，用例 1642 个，失败模块 0 个。
 - `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+
+## 阶段三：AI 识别与解析闭环（2026-11-05）
+
+### 单题与批量入口
+
+- 渲染区只读条右侧两组按钮：【✨ AI 识别本题】（视觉 OCR）与【✨ 解析本题】（解题档）；
+  解析不需要题图，题干来自当前源码，题干与选项原样保留，只补答案与解析。
+- 辅助栏底部新增【✨ 批量解析全卷】，与【✨ 批量 AI 识别全卷】并列；发令走
+  `editor.batch_review` 的 `ai_batch_solve` 分支。
+
+### 防连点与静默保存
+
+- 单题按钮点击即 `disabled + aria-busy`；批量按钮点击即变灰，画布回执 done 后才恢复。
+- 识别/解析成功后调用 `stashQuietly()`：按当前题解析源码 + 元数据组卷，直接
+  `pending.save_draft` 写入待审池；成功后清掉脏标记，失败如实提示并进报错诊断。
+
+### 通知
+
+- Toast 移到右下角：成功 3s、失败 8s；鼠标悬停暂停倒计时，本身没有任何点击行为。
+- 批量任务只弹一枚总气泡（成功 / 跳过 / 失败计数），逐题失败详情只进报错诊断。
+- 宿主中继 `ai.recognize` 接受 `task=solve`：只有 ocr 强制题图，解析不再被题图卡住。
+
+### 验证证据
+
+- `python tools/run_all_tests.py`：模块 84 个，用例 1655 个，失败模块 0 个。
+- `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
