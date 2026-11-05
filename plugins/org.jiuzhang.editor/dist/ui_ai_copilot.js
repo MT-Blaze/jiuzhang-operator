@@ -48,6 +48,7 @@
 
     var cluster = null;
     var editingId = "";
+    var poolStatus = Object.create(null);  // 账号 id → { state: idle|busy|ok|fail, detail }
     var askChoice = null;      // 覆盖确认窗正在等的那次裁决
     var batchBusy = false;
 
@@ -353,6 +354,69 @@
       setMsg("正在编辑「" + ((account && account.name) || "") + "」：Key 留空表示不改。", "info");
     }
 
+    /** 图标按钮的四种状态：待测 / 旋转中 / 通过 / 失败；失败原因只进悬停提示。 */
+    function paintTestButton(button, status) {
+      if (!button) return;
+      var state = (status && status.state) || "idle";
+      var detail = String((status && status.detail) || "");
+      button.setAttribute("data-state", state);
+      if (state === "busy") {
+        button.textContent = "⟳";
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.title = "正在测试连接…";
+        button.setAttribute("aria-label", "正在测试连接");
+        return;
+      }
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      if (state === "ok") {
+        button.textContent = "✅";
+        button.title = detail || "连接正常";
+        button.setAttribute("aria-label", "连接正常");
+      } else if (state === "fail") {
+        button.textContent = "❌";
+        button.title = "连接失败：" + (detail || "未知原因");
+        button.setAttribute("aria-label", button.title);
+      } else {
+        button.textContent = "⟳";
+        button.title = "测试连通性";
+        button.setAttribute("aria-label", "测试连通性");
+      }
+    }
+
+    function setPoolStatus(accountId, state, detail) {
+      poolStatus[accountId] = { state: state, detail: detail || "" };
+      var list = document.getElementById("epAiPoolList");
+      if (!list) return;
+      var rows = list.querySelectorAll(".ep-ai-acc");
+      for (var i = 0; i < rows.length; i += 1) {
+        if (rows[i].getAttribute("data-id") !== accountId) continue;
+        paintTestButton(rows[i].querySelector(".ep-ai-test"), poolStatus[accountId]);
+        return;
+      }
+    }
+
+    /** 连通性＝让底座代持 Key 去读一次 GET {base}/models；插件始终碰不到原文。 */
+    function testAccount(accountId) {
+      if (!accountId) return Promise.resolve(false);
+      setPoolStatus(accountId, "busy", "");
+      return hostCall("ai.models", { account_id: accountId }, CONFIG_TIMEOUT_MS).then(
+        function (result) {
+          if (result && result.ok) {
+            setPoolStatus(accountId, "ok", "连接正常");
+            return true;
+          }
+          setPoolStatus(accountId, "fail", (result && result.detail) || "模型服务没有回声");
+          return false;
+        },
+        function (error) {
+          setPoolStatus(accountId, "fail", shortError(error));
+          return false;
+        }
+      );
+    }
+
     function renderPool() {
       var list = document.getElementById("epAiPoolList");
       if (!list) return;
@@ -363,38 +427,53 @@
         return;
       }
       accounts.forEach(function (account) {
+        var accountId = String(account.id || "");
+        var accountName = String(account.name || "未命名");
         var row = el("div", "ep-ai-acc");
-        row.setAttribute("data-id", String(account.id || ""));
-        var head = el("div", "ep-ai-acc-head");
-        head.appendChild(el("strong", "ep-ai-acc-name", String(account.name || "未命名")));
-        var ready = el("span", "ep-ai-tag", account.configured === false ? "未配 Key" : "已配置");
-        ready.setAttribute("data-ready", account.configured === false ? "false" : "true");
-        head.appendChild(ready);
-        row.appendChild(head);
-        row.appendChild(el("p", "ep-ai-acc-meta", String(account.base_url || "")));
-        row.appendChild(el("p", "ep-ai-acc-key",
-          account.api_key_masked ? "Key " + account.api_key_masked : "Key 未设置"));
-        var acts = el("div", "ep-actions ep-ai-acc-acts");
-        var edit = el("button", "ep-btn ep-mini-btn", "编辑");
+        row.setAttribute("data-id", accountId);
+        var name = el("strong", "ep-ai-acc-name", accountName);
+        name.title = accountName;
+        row.appendChild(name);
+
+        var acts = el("div", "ep-ai-acc-acts");
+        var test = el("button", "ep-btn ep-icon-btn ep-ai-test");
+        test.type = "button";
+        paintTestButton(test, poolStatus[accountId]);
+        test.addEventListener("click", function () {
+          if (test.disabled) return;
+          testAccount(accountId);
+        });
+
+        var edit = el("button", "ep-btn ep-icon-btn", "✎");
         edit.type = "button";
+        edit.title = "编辑「" + accountName + "」";
+        edit.setAttribute("aria-label", "编辑 " + accountName);
         edit.addEventListener("click", function () { fillAccountForm(account); });
-        var del = el("button", "ep-btn ep-mini-btn ep-btn-danger", "删除");
+
+        var del = el("button", "ep-btn ep-icon-btn ep-ai-del", "🗑");
         del.type = "button";
+        del.title = "删除「" + accountName + "」";
+        del.setAttribute("aria-label", "删除 " + accountName);
         var armed = false;
         var timer = 0;
+        function armDelete(on) {
+          armed = on;
+          del.textContent = on ? "⚠" : "🗑";
+          del.setAttribute("data-armed", on ? "true" : "false");
+          del.title = on ? "再点一次确认删除「" + accountName + "」" : "删除「" + accountName + "」";
+          del.setAttribute("aria-label", del.title);
+        }
         del.addEventListener("click", function () {
           if (!armed) {
-            armed = true;
-            del.textContent = "确认删除";
-            timer = window.setTimeout(function () {
-              armed = false;
-              del.textContent = "删除";
-            }, 3000);
+            armDelete(true);
+            timer = window.setTimeout(function () { armDelete(false); }, 3000);
             return;
           }
           window.clearTimeout(timer);
-          removeAccount(String(account.id || ""));
+          removeAccount(accountId);
         });
+
+        acts.appendChild(test);
         acts.appendChild(edit);
         acts.appendChild(del);
         row.appendChild(acts);
@@ -407,6 +486,7 @@
       hostCall("ai.account_delete", { account_id: accountId }, CONFIG_TIMEOUT_MS)
         .then(function () {
           if (editingId === accountId) resetAccountForm();
+          delete poolStatus[accountId];
           return loadCluster();
         }).then(function () {
           setMsg("账号已删除；它的指派与 .env 密钥一并清掉。", "ok");
@@ -553,11 +633,22 @@
       if (editingId) payload.id = editingId;
       // Key 留空＝保留旧 Key：字段干脆不发，绝不用空串覆盖已存的密钥。
       if (apiKey) payload.api_key = apiKey;
-      hostCall("ai.account_save", payload, CONFIG_TIMEOUT_MS).then(function () {
+      var savedId = editingId;
+      hostCall("ai.account_save", payload, CONFIG_TIMEOUT_MS).then(function (saved) {
+        savedId = String((saved && saved.id) || savedId || "");
         return loadCluster();
       }).then(function () {
         resetAccountForm();
-        setMsg("账号已保存；密钥只写在本机 .env，这里只看得到掩码。", "ok");
+        if (!savedId) {
+          setMsg("账号已保存；密钥只写在本机 .env，这里只看得到掩码。", "ok");
+          return;
+        }
+        setMsg("账号已保存，正在验证连通性…", "info");
+        testAccount(savedId).then(function (ok) {
+          setMsg(ok
+            ? "账号已保存，连接正常。"
+            : "账号已保存，但连通性测试未通过：悬停红叉看原因。", ok ? "ok" : "error");
+        });
       }, configFailed("保存账号失败"));
     }
 

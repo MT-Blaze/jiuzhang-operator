@@ -280,6 +280,21 @@ class StubProvider:
             def log_message(self, *args) -> None:
                 pass
 
+            def do_GET(self) -> None:  # noqa: N802 - 密钥池连通性要读 /v1/models
+                if not self.path.rstrip("/").endswith("/models"):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                reply = json.dumps({
+                    "object": "list",
+                    "data": [{"id": "probe-stub", "object": "model"}],
+                }).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(reply)))
+                self.end_headers()
+                self.wfile.write(reply)
+
             def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 的固定入口
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length).decode("utf-8") if length else "{}"
@@ -1172,14 +1187,27 @@ def main() -> int:
             canvas.locator("#epAiBase").fill(stub.base_url)
             canvas.locator("#epAiKey").fill("sk-probe-secret-1234")
             canvas.locator("#epAiSaveAccount").click()
-            mask_node = canvas.locator(".ep-ai-acc-key").first
-            expect(mask_node).to_contain_text("••••", timeout=20000)
-            mask_text = mask_node.inner_text()
+            pool_row = canvas.locator(".ep-ai-acc").first
+            expect(pool_row.locator(".ep-ai-acc-name")).to_have_text("探针AI", timeout=20000)
+            test_icon = pool_row.locator(".ep-ai-test")
+            expect(test_icon).to_have_attribute("data-state", "ok", timeout=20000)
             modal_text = canvas.locator("#epAiConfigModal").inner_text()
-            check("Key 只回掩码，原文不上屏",
-                  "sk-p" in mask_text and "probe-secret" not in modal_text
+            check("密钥池单行只留名称，Base URL 与 Key 不上屏",
+                  pool_row.locator(".ep-ai-acc-meta, .ep-ai-acc-key").count() == 0
+                  and "127.0.0.1" not in modal_text and "sk-p" not in modal_text
+                  and "probe-secret" not in modal_text
                   and canvas.locator("#epAiKey").input_value() == "",
-                  {"mask": mask_text})
+                  {"row": pool_row.inner_text(), "modal": modal_text[:160]})
+            check("操作收成三个图标钮，靠右贴行末",
+                  pool_row.locator("button.ep-icon-btn").count() == 3,
+                  {"buttons": pool_row.locator("button.ep-icon-btn").count()})
+            check("保存后当场验证连通：原地绿勾 + 连接正常悬停",
+                  test_icon.get_attribute("title") == "连接正常"
+                  and test_icon.inner_text() == "✅",
+                  {"state": test_icon.get_attribute("data-state"),
+                   "title": test_icon.get_attribute("title")})
+            test_icon.click()
+            expect(test_icon).to_have_attribute("data-state", "ok", timeout=20000)
 
             ocr_task = canvas.locator('.ep-ai-task[data-task="ocr"]')
             ocr_task.locator("select").select_option(label="探针AI")

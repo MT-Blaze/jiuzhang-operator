@@ -112,10 +112,11 @@
 .ep-ai-assign {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   max-height: 260px;
   overflow-y: auto;
 }
+
+.ep-ai-assign { gap: 8px; }
 
 .ep-ai-empty {
   margin: 0;
@@ -123,21 +124,19 @@
   font-size: 12px;
 }
 
+/* 密钥池 = 单行列表：只留名称，Base URL 与 Key 一律不上屏。 */
 .ep-ai-acc {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--card);
-}
-
-.ep-ai-acc-head {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-height: 34px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--line);
 }
+
+.ep-ai-acc:last-child { border-bottom: 0; }
+
+.ep-ai-acc:hover { background: var(--accent-soft); }
 
 .ep-ai-acc-name {
   flex: 1 1 auto;
@@ -149,39 +148,64 @@
   white-space: nowrap;
 }
 
-.ep-ai-tag {
+.ep-ai-acc-acts,
+.ep-ai-job-acts {
+  display: flex;
   flex: none;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10.5px;
-  font-weight: 700;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
 }
 
-.ep-ai-tag[data-ready="false"] {
-  background: #f3e8dd;
+/* 极小的图标钮：视觉 26px，靠透明外扩命中区补到 44px。 */
+.ep-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1;
+  position: relative;
+}
+
+.ep-icon-btn::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
+
+.ep-icon-btn:hover {
+  border-color: transparent;
+  background: var(--card);
+}
+
+.ep-icon-btn.ep-ai-del:hover,
+.ep-icon-btn.ep-ai-del[data-armed="true"] {
   color: var(--danger);
 }
 
-.ep-ai-acc-meta {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 11px;
-  overflow-wrap: anywhere;
+.ep-ai-test[data-state="idle"] { color: var(--ink-soft); }
+.ep-ai-test[data-state="ok"] { color: var(--accent); }
+.ep-ai-test[data-state="fail"] { color: var(--danger); }
+.ep-ai-test[data-state="busy"] {
+  color: var(--accent);
+  animation: ep-ai-spin 0.9s linear infinite;
 }
 
-.ep-ai-acc-key {
-  margin: 0;
-  color: var(--ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  overflow-wrap: anywhere;
+@keyframes ep-ai-spin {
+  to { transform: rotate(360deg); }
 }
 
-.ep-ai-acc-acts,
-.ep-ai-job-acts {
-  justify-content: flex-end;
+@media (prefers-reduced-motion: reduce) {
+  .ep-ai-test[data-state="busy"] { animation: none; }
 }
 
 .ep-ai-form {

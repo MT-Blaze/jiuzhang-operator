@@ -131,7 +131,8 @@ class MaskAndSandboxTest(unittest.TestCase):
     """Key 只进不出：回读只有掩码，插件不碰存储、不直连网络。"""
 
     def test_01_keys_are_never_rendered_raw(self) -> None:
-        self.assertIn("api_key_masked", JS, "账号列表只许显示后端给的掩码")
+        # 密钥池改成单行列表后只显示名称，连掩码都不再上屏。
+        self.assertNotIn("api_key_masked", JS, "密钥池只显示名称，掩码也不上屏")
         # 老师刚敲进框里的 Key 只能随着保存请求一次性交给宿主，读回来的对象永远只有掩码。
         for line in JS.splitlines():
             if re.search(r"\.api_key(?!_masked)[\s,;)\]]", line):
@@ -148,6 +149,35 @@ class MaskAndSandboxTest(unittest.TestCase):
 
     def test_04_plugin_keeps_the_ai_grant(self) -> None:
         self.assertIn("ai:invoke", manifest()["permissions"])
+
+
+class PoolRowContractTest(unittest.TestCase):
+    """密钥池 = 单行列表：名称占左，三颗图标钮贴右，连通性原地走状态机。"""
+
+    def test_01_row_hides_base_url_and_key(self) -> None:
+        for legacy in ("ep-ai-acc-meta", "ep-ai-acc-key", "ep-ai-acc-head"):
+            self.assertNotIn(legacy, JS, f"单行列表不该再渲染 {legacy}")
+
+    def test_02_row_is_one_flex_line(self) -> None:
+        block = CSS[CSS.index(".ep-ai-acc {"):]
+        block = block[:block.index("}")]
+        self.assertIn("display: flex", block)
+        self.assertIn("align-items: center", block)
+        self.assertNotIn("flex-direction: column", block)
+
+    def test_03_test_icon_has_four_states(self) -> None:
+        self.assertIn("function paintTestButton(", JS)
+        for state in ('"idle"', '"busy"', '"ok"', '"fail"'):
+            self.assertIn(state, JS[JS.index("function paintTestButton("):], f"缺状态 {state}")
+        self.assertIn('"连接正常"', JS, "成功态必须带连接正常提示")
+        self.assertIn('"连接失败："', JS, "失败态悬停要能看原因")
+        self.assertIn(".ep-ai-test[data-state=\"busy\"]", CSS, "测试中要有旋转动画")
+        self.assertIn("@keyframes ep-ai-spin", CSS)
+
+    def test_04_saving_auto_tests_the_row(self) -> None:
+        start = JS.index("function saveAccount(")
+        block = JS[start:JS.index("function openConfig(", start)]
+        self.assertIn("testAccount(savedId)", block, "保存后要立刻在原行验证连通性")
 
 
 class SchemeATest(unittest.TestCase):
