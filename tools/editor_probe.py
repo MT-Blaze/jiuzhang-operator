@@ -1127,7 +1127,7 @@ def main() -> int:
             check("画布内没有任何顶栏或工具条",
                   canvas.locator(".ed-bar, #edRoot header, #edFmtLatex, #edFmtBoxed, #edSwapMode")
                   .count() == 0)
-            # 每题只读条右侧多了一颗【✨ AI 识别本题】（终极军令任务三），
+            # 每题只读条右侧多了一颗【AI识题】（终极军令任务三），
             # 它和跳转/切图一样是逐题控件，不是横条上的批量钮。
             check("画布没有底部横条，钮只有逐题跳转、切图、每题 AI 识别与添加配图",
                   canvas.locator(".ed-foot").count() == 0

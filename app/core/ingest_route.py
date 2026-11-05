@@ -25,12 +25,12 @@ def route_payload(channel: str, health: dict[str, Any],
     has_layer = bool(health.get("has_text_layer")) if text_layer is None else bool(text_layer)
     note = ""
     if channel == "scan_image":
-        note = "纯扫描件：文本层读不出字，已退回切图模式，可逐框确认或点【✨ AI 识别本题】。"
+        note = "纯扫描件：文本层读不出字，已退回切图模式，可逐框确认或点【AI识题】。"
     elif channel == "mineru":
         note = "纯扫描件：已走 MinerU 识别，正文来自 MinerU，题图仍以原卷为准。"
     elif garbled:
         note = ("文本层有 %d 个字形读不出（疑似乱码/公式字体缺映射）："
-                "不会自动调用 AI，需要时点【✨ AI 识别本题】。"
+                "不会自动调用 AI，需要时点【AI识题】。"
                 % int(health.get("missing_chars") or 0))
     return {
         "channel": channel,
@@ -57,7 +57,7 @@ def route_scan_pdf(name: str, data: bytes) -> tuple[dict[str, Any], list[dict[st
     if mineru is None:
         route = route_payload("scan_image", health, text_layer=False)
         route["note"] = ("纯扫描件且没有配置 MinerU：已退回切图模式，"
-                         "可逐框确认或点【✨ AI 识别本题】。")
+                         "可逐框确认或点【AI识题】。")
         return route, []
     outcome = mineru_extract.extract(
         name, data, mineru.base_url, mineru.api_key, model=mineru.model)

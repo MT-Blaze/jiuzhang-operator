@@ -198,8 +198,9 @@ class SchemeATest(unittest.TestCase):
 
     def test_03_single_buttons_sit_at_the_meta_strip(self) -> None:
         strip = (PLUGIN_DIR / "dist" / "ui_meta_strip.js").read_text(encoding="utf-8")
-        self.assertIn("✨ AI 识别本题", strip)
-        self.assertIn("✨ 解析本题", strip, "任务三要求识别与解析两颗单题钮")
+        self.assertIn('"AI识题"', strip)
+        self.assertIn('"AI解析"', strip, "任务三要求识别与解析两颗单题钮")
+        self.assertNotIn("✨", strip, "两颗钮不再带图标，文案精简到四字")
         self.assertIn('"ocr"', strip)
         self.assertIn('"solve"', strip)
         self.assertIn("data-mode", strip)

@@ -251,7 +251,9 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
         js = read("plugin.js")
         self.assertIn('aria-label="LaTeX 源码"', html)
         self.assertNotIn("题干源码", html, "旧版只给题干一栏，v2 中栏必须是全量源码")
-        self.assertIn("exam-zh 全量源码", js)
+        self.assertNotIn("exam-zh 全量源码", js, "源码栏不再挂每题冗言，只留可编辑整段源码")
+        self.assertIn('class="ed-pane-head ed-src-tools"', html,
+                      "源码栏头部是左对齐工具条，后续按钮往右追加")
         self.assertIn("area.value = item.source;", js)
         self.assertIn("var parsed = parseExamSource(item.source);", js)
 

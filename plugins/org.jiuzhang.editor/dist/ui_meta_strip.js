@@ -20,14 +20,14 @@
       if (typeof onAiIdentify !== "function") return null;
       var wrap = el("span", "ed-q-meta-ais");
       [
-        ["ocr", "✨ AI 识别本题", "识别结果整题替换当前正文，并静默存入待审池；有人工修改时会先问"],
-        ["solve", "✨ 解析本题", "只补答案与解析，题干与选项原样保留；完成后静默存入待审池"]
+        ["ocr", "AI识题", "识别结果整题替换当前正文，并静默存入待审池；有人工修改时会先问"],
+        ["solve", "AI解析", "只补答案与解析，题干与选项原样保留；完成后静默存入待审池"]
       ].forEach(function (spec) {
         var button = el("button", "ed-q-meta-ai", spec[1]);
         button.type = "button";
         button.setAttribute("data-index", String(index));
         button.setAttribute("data-mode", spec[0]);
-        button.setAttribute("aria-label", spec[1].replace("✨ ", "") + " · 第 " + (index + 1) + " 题");
+        button.setAttribute("aria-label", spec[1] + " · 第 " + (index + 1) + " 题");
         button.setAttribute("title", spec[2]);
         wrap.appendChild(button);
       });

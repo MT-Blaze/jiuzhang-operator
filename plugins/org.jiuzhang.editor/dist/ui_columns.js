@@ -144,7 +144,6 @@
     if (state.format === "boxed") return renderBoxedCell(item, index);
     var cell = el("div", "ed-src-cell");
     cell.setAttribute("data-index", String(index));
-    cell.appendChild(el("span", "ed-src-tag", "第 " + (index + 1) + " 题 · exam-zh 全量源码"));
     var area = document.createElement("textarea");
     area.className = "ed-src-area";
     area.setAttribute("aria-label", "第 " + (index + 1) + " 题 LaTeX 源码");

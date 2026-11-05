@@ -1,5 +1,11 @@
 /* 源码栏【添加配图】（终极军令 任务四）：独立一块，删掉本文件即恢复原头部。 */
 
+/* 工具条一律靠左：后续功能按钮直接往右追加。 */
+.ed-pane-head.ed-src-tools {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
 .ed-pane-insert-illustration {
   flex: none;
   padding: 3px 9px;
