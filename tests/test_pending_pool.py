@@ -672,6 +672,25 @@ class PoolPersistenceTest(PoolCase):
             "SELECT pool_id FROM duplicate_pool ORDER BY pool_id")]
         self.assertEqual(len(ids), 1)
 
+    def test_35_pool_read_routes_report_schema_error_as_400(self) -> None:
+        """库版本过高时池读接口回 400 并带原因，不许冒成无信息的 500。"""
+        from fastapi import HTTPException
+
+        from app.api import pending as pending_api
+
+        error = self.pending_bank.PendingError("中转站结构版本 99 高于程序支持的 9")
+        with mock.patch.object(self.pending_pool, "list_pool", side_effect=error):
+            with self.assertRaises(HTTPException) as caught:
+                pending_api.pending_pool_list(tier="loose")
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("99", str(caught.exception.detail))
+
+        with mock.patch.object(self.pending_pool, "get_entry", side_effect=error):
+            with self.assertRaises(HTTPException) as caught:
+                pending_api.pending_pool_item("pool_x", tier="loose")
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("99", str(caught.exception.detail))
+
 
 class PoolEvictionTest(PoolCase):
     """判据 3.5／3.6 与 5.4 的后台侧：抽走的时机、原子性与账目。"""
