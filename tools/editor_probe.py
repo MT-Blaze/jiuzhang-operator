@@ -10,9 +10,9 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 
 检查项（按军令 #24 的六条铁律逐条落地）：
 - **首屏是批次列表**：整幅画布铺满卡片行，第一行是原文件名，第二行灰字
-  「月-日 星期 时刻 | 批次 #B-xxx」，右边「待审 n / N」（数字绿色），整行悬停有反馈；
+  「月-日 时刻 | 批次 #B-xxx」，右边「待审 n / N」（数字绿色），整行悬停有反馈；
 - **点行任意位置**（连左内边距那种空白处）直接切入三栏审核，抬头写着当前批次号；
-- **二屏只有三颗钮**：存入主库 / 存为待审 / 彻底删除；旧的保存、变式与批量条全撤；
+- **二屏底栏四颗钮**：单题入库 / 全部入库 / 存为待审 / 彻底删除；旧的保存、变式与批量条全撤；
 - **防呆**：停留超 3 分钟静默存回待审核池，只在底部日志留一行灰字，不弹窗；
 - **查重拦截**（军令 #31）：命中先亮画布红呼吸灯与辅助栏红字，两侧**渲染**对比，
   三个裁决「覆盖 / 放弃 / 合并为解析二」只住辅助栏（画布里一颗按钮都没有）；
@@ -944,7 +944,7 @@ def main() -> int:
             check("撞车期间不给第二所同名简称开门",
                   int(during.get("create_rows") or 0) == 0,
                   {"menu": panel.locator("#epSchoolMenu").inner_text(), "state": during})
-            check("撞车期间【确认建档】与【存入主库】双双锁死",
+            check("撞车期间【确认建档】与【单题入库】双双锁死",
                   # 「撞车前按钮是开的」这一条不能当判据：它取的是上一段入库之后的瞬时态，
                   # 早一拍晚一拍都不一样（2026-11-02 同码两轮，一轮开一轮关）。锁的因果由
                   # 下面「换成没被占用的简称：红与锁当场退掉」那一查负责——只改简称就把按钮放开了。
@@ -1157,8 +1157,8 @@ def main() -> int:
             check("辅助栏不放渲染预览", panel.locator(".ed-q-block").count() == 0)
             audit_texts = [text.strip() for text in
                            panel.locator("#epApprove, #epStash, #epDelete").all_inner_texts()]
-            check("审核动作只有三颗钮：存入主库 / 存为待审 / 彻底删除",
-                  audit_texts == ["存入主库", "存为待审", "彻底删除"],
+            check("审核动作包含：单题入库 / 存为待审 / 彻底删除",
+                  audit_texts == ["单题入库", "存为待审", "彻底删除"],
                   {"buttons": audit_texts})
             check("旧的保存、变式与批量条全撤了",
                   panel.locator("#epSave, #epVariant, #edSaveAll, #edPoolStash").count() == 0
@@ -1496,12 +1496,12 @@ def main() -> int:
                              for item in pool_after][:3]})
             page.screenshot(path=str(shots / "v3-stash.png"))
 
-            # ---------- 存入主库：p_ 号段换成 q_ 号段 ----------
+            # ---------- 单题入库：p_ 号段换成 q_ 号段 ----------
             dock_mark = len(dock_entries())
             total_pre_approve = bank_total(base)
             panel.locator("#epApprove").click()
             approve_line = wait_dock(lambda e: "已存入主库" in e.get("text", ""), 30, dock_mark)
-            check("【存入主库】给出回执", wait_message("已存入主库"),
+            check("【单题入库】给出回执", wait_message("已存入主库"),
                   {"messages": [m.get("text", "") for m in probe_messages()][-4:]})
             check("底部日志记下入库回执", approve_line is not None, {"line": approve_line})
             question_id = ""

@@ -467,6 +467,8 @@
     standardNameOf: standardNameOf,
     // 循环引用：syncBatchContext 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
     syncBatchContext: function () { return uiStdName.syncBatchContext.apply(uiStdName, arguments); },
+    // 循环引用：syncSchoolLock 归更下面的 uiSchoolDict，本块排得靠前，只能等它就位后再取。
+    syncSchoolLock: function () { return uiSchoolDict.syncSchoolLock.apply(uiSchoolDict, arguments); },
     coreState: coreState,
   });
   var applySelection = uiPanel.applySelection;

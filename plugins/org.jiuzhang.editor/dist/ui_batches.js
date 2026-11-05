@@ -90,14 +90,12 @@
       + "-" + hit[4] + ":" + hit[5];
   }
 
-  /** 卡片第二行的短时间：「10-31 星期四 15:30」。年份对老师没意义，省下来给文件名。 */
+  /** 卡片第二行的短时间：「11-05 12:19」。年份与星期都省掉，把宽度留给原文件名。 */
   function shortBatchStamp(createdAt) {
     var text = String(createdAt == null ? "" : createdAt);
     var hit = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(text);
     if (!hit) return text.slice(0, 16) || "时间未知";
-    var day = new Date(Number(hit[1]), Number(hit[2]) - 1, Number(hit[3]));
-    return hit[2] + "-" + hit[3] + " 星期" + WEEKDAYS.charAt(day.getDay())
-      + " " + hit[4] + ":" + hit[5];
+    return hit[2] + "-" + hit[3] + " " + hit[4] + ":" + hit[5];
   }
 
   function currentBatch() {
@@ -578,6 +576,9 @@
     if (leaving) stashBeforeLeave();
     // 辅助栏点的那一下已经走过宿主广播，画布不必把同样的意思再发一遍。
     if (!fromHost) publishView("list");
+    // 先用本地缓存的批次卡片把 list 选区发出去：右栏立刻清掉上一题的编辑面，
+    // 不必等 batch_list 这次网络往返回来。
+    publishSelection();
     refreshBatches();
     if (note) dock(note);
   }

@@ -90,6 +90,9 @@
   var panel = {
     ready: false,
     selection: null,
+    // 当前视图："" 未定 / "list" 批次列表 / "review" 审题。
+    // selection 为空既可能是「还没载入」，也可能是「已明确回到列表」，迟到的草稿只许补前者。
+    view: "",
     source: "",
     meta: {},
     uiRevisions: null,

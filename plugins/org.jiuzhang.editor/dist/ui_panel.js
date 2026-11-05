@@ -25,9 +25,13 @@
     var setSwapButton = deps.setSwapButton;
     var splitTags = deps.splitTags;
     var syncBatchContext = deps.syncBatchContext;
+    var panelApproveAllEl = deps.dom.panelApproveAllEl;
+    var panelApproveEl = deps.dom.panelApproveEl;
     var panelConfidenceEl = deps.dom.panelConfidenceEl;
+    var panelDeleteEl = deps.dom.panelDeleteEl;
     var panelDifficultyEl = deps.dom.panelDifficultyEl;
     var panelHeadNoEl = deps.dom.panelHeadNoEl;
+    var panelStashEl = deps.dom.panelStashEl;
     var panelMetricsEl = deps.dom.panelMetricsEl;
     var panelProgressEl = deps.dom.panelProgressEl;
     var panelQuestionNoEl = deps.dom.panelQuestionNoEl;
@@ -143,10 +147,56 @@
     panelTypeNoteEl.setAttribute("data-from", "ai");
   }
 
-  /** 首屏是批次列表：只切换批次语境，绝不碰那道题还没填完的表单。 */
+  /** 审核动作四颗钮只在有当前题时可用；回到批次列表就整排锁上。 */
+  function setActionsEnabled(enabled) {
+    [panelApproveEl, panelApproveAllEl, panelStashEl, panelDeleteEl].forEach(function (node) {
+      if (!node) return;
+      node.disabled = !enabled;
+      node.setAttribute("aria-disabled", enabled ? "false" : "true");
+    });
+  }
+
+  /**
+   * 回到批次列表：把上一题留在表单里的私有数据全部撤下。
+   * 只把 panel.selection 置空还不够——输入框、胶囊、置信度与动作钮都是上一次
+   * applySelection 写进去的，不清就会挂着「第 1 题」的编辑面，老师以为还在审题。
+   */
+  function clearQuestionState() {
+    panel.source = "";
+    if (panelHeadNoEl) panelHeadNoEl.textContent = "批次概览";
+    if (panelTypeEl) panelTypeEl.selectedIndex = -1;
+    if (panelDifficultyEl) panelDifficultyEl.selectedIndex = -1;
+    if (panelQuestionNoEl) panelQuestionNoEl.value = "";
+    if (panelScoreEl) panelScoreEl.value = "";
+    if (panelTagsEl) panelTagsEl.value = "";
+    if (panelConfidenceEl) {
+      panelConfidenceEl.textContent = "置信度 —";
+      panelConfidenceEl.setAttribute("data-confidence", "");
+    }
+    if (panelTypeNoteEl) {
+      panelTypeNoteEl.textContent = "进入批次后才会载入当前题。";
+      panelTypeNoteEl.setAttribute("data-from", "manual");
+    }
+    if (panelMetricsEl) {
+      ["data-question-id", "data-saved-id", "data-type", "data-difficulty",
+       "data-dirty", "data-topics"].forEach(function (name) {
+        panelMetricsEl.setAttribute(name, "");
+      });
+      panelMetricsEl.textContent = "尚未载入当前题。";
+    }
+    setActionsEnabled(false);
+    renderTags();
+    renderMounted();
+    if (deps.aiClear) deps.aiClear("回到批次列表，等下一题。");
+    if (deps.clearDup) deps.clearDup();
+  }
+
+  /** 首屏是批次列表：切换批次语境，并把上一题的单题编辑面清干净。 */
   function applyListSelection(sel) {
+    panel.view = "list";
     panel.selection = null;
     panel.currentEntry = null;
+    clearQuestionState();
     var cards = Array.isArray(sel.batches) ? sel.batches : [];
     var wanted = String(sel.batch_id || "");
     var current = null;
@@ -169,8 +219,8 @@
       panelProgressEl.setAttribute("data-total", String(cards.length));
     }
     if (panelStatusEl) {
-      panelStatusEl.textContent = "● 待审核";
-      panelStatusEl.setAttribute("data-status", "pending");
+      panelStatusEl.textContent = "● 批次列表";
+      panelStatusEl.setAttribute("data-status", "list");
       panelStatusEl.setAttribute("data-dirty", "false");
     }
     renderPool();
@@ -189,6 +239,7 @@
       applyListSelection(sel);
       return;
     }
+    panel.view = "review";
     var previous = panel.selection;
     if (previous && previous.key && previous.key !== sel.key) {
       // 换题前把老师正在填的这一半按旧题的键存回草稿，别让表单跟着题号一起漂
@@ -200,6 +251,9 @@
       }
     }
     panel.selection = sel;
+    setActionsEnabled(true);
+    // 学校简称冲突会把单题入库重新锁死：回到审核面时必须按当前冲突再说一遍。
+    if (deps.syncSchoolLock) deps.syncSchoolLock();
     // 军令 #31：换题就是换一条待审记录，上一题的红字不许留在这一题头上；
     // 换完顺手做一次后台查重，命中就把红字与【查看主库原题】亮起来。
     if (deps.clearDup) deps.clearDup();

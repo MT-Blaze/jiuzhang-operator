@@ -79,7 +79,8 @@
 
   /** 从宿主代持的工作清单草稿里重建辅助栏选区——两个帧同时挂载，通知不一定赶得上。 */
   function applyDraftSelection(value) {
-    if (panel.selection) return;
+    // 已明确回到批次列表时，迟到的草稿不许再把上一题回灌到右栏。
+    if (panel.selection || panel.view === "list") return;
     var items = value && Array.isArray(value.items) ? value.items : [];
     var active = value ? Number(value.active) || 0 : 0;
     var saved = items[active] || items[0] || null;

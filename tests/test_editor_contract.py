@@ -703,6 +703,13 @@ class EditorPanelTest(unittest.TestCase):
                       'panelDeleteEl.addEventListener("click", onDelete)'):
             self.assertIn(bound, activation, f"辅助栏没绑上 {bound}")
 
+    def test_03b_single_approve_button_is_named_single(self) -> None:
+        """底栏四颗钮分工不变：【单题入库】与【全部入库】成对，旧名【存入主库】只许留在回执话术里。"""
+        panel = panel_only(read("index.html"))
+        self.assertIn('id="epApprove">单题入库</button>', panel)
+        self.assertNotIn('id="epApprove">存入主库</button>', panel,
+                         "按钮文案已统一为【单题入库】，不许新旧两名并存")
+
     def test_04_confidence_is_marked_as_placeholder(self) -> None:
         """置信度来自识别引擎，本期只有假数据：文案必须自己承认是占位。"""
         panel = panel_only(read("index.html"))
@@ -806,8 +813,9 @@ class EditorPanelTest(unittest.TestCase):
         """画布帧与面板帧同时挂载时，stage.selection 可能早于面板就绪——不能把右栏晾成空壳。"""
         js = read("plugin.js")
         self.assertIn("  function applyDraftSelection(value) {", js)
-        self.assertIn("if (panel.selection) return;", fn_body(js, "applyDraftSelection"),
-                      "已经收到活选区后，不许用旧草稿把它盖回去")
+        self.assertIn('if (panel.selection || panel.view === "list") return;',
+                      fn_body(js, "applyDraftSelection"),
+                      "已经收到活选区、或已明确回到批次列表后，不许用旧草稿把它盖回去")
         worklist = fn_body(js, "worklistValue")
         self.assertIn("defaults: defaultsOf(item)", worklist, "草稿要带上元数据默认值")
         self.assertIn("confidence:", worklist)
@@ -1219,12 +1227,39 @@ class EditorReviewDeskTest(unittest.TestCase):
                       js.index('if (message.method === "plugin.deactivate")')]
         self.assertIn('setMode("list");', activate, "画布挂载后先落在批次列表上")
 
+    def test_01b_back_to_list_clears_the_previous_question(self) -> None:
+        """返回批次列表：右栏不许再挂着上一题的表单与动作按钮。"""
+        js = read("plugin.js")
+        back = fn_body(js, "backToList")
+        self.assertIn("publishSelection();", back,
+                      "回列表时立刻发 list 选区，右栏不必等 batch_list 往返才清")
+        list_sel = fn_body(js, "applyListSelection")
+        self.assertIn("clearQuestionState();", list_sel)
+        clear = fn_body(js, "clearQuestionState")
+        for cleared in ('panelHeadNoEl.textContent = "批次概览"',
+                        'panelQuestionNoEl.value = "";',
+                        'panelScoreEl.value = "";',
+                        'panelTagsEl.value = "";',
+                        "setActionsEnabled(false);"):
+            self.assertIn(cleared, clear, f"回列表没清掉 {cleared}")
+        self.assertIn("setActionsEnabled(true);", fn_body(js, "applySelection"),
+                      "重新进批次时必须把动作按钮解锁")
+        # 面板开机时会挂一次 900ms 的草稿补读：它若在【返回列表】之后才回来，
+        # 会把旧题回灌到已经清空的右栏。面板必须记住「已明确回到列表」这个空状态。
+        self.assertIn('panel.view = "list";', list_sel,
+                      "回列表要先记下视图，selection 为空才不会被当成「还没载入」")
+        self.assertIn('panel.view = "review";', fn_body(js, "applySelection"))
+        draft = fn_body(js, "applyDraftSelection")
+        self.assertIn('if (panel.selection || panel.view === "list") return;', draft,
+                      "迟到的草稿只许补「还没载入」，不许覆盖已回到列表的清空态")
+
     def test_02_batch_row_format_matches_the_order(self) -> None:
-        """第一行是原文件名（加大加粗），第二行灰字「11-05 星期三 11:46 | 批次 #B-001」，右「待审 n / N」数字绿色。"""
+        """第一行是原文件名（加大加粗），第二行灰字「11-05 12:19 | 批次 #B-001」，右「待审 n / N」数字绿色。"""
         js = read("plugin.js")
         stamp = fn_body(js, "shortBatchStamp")
-        self.assertIn('var WEEKDAYS = "日一二三四五六";', js)
-        self.assertIn('" 星期" + WEEKDAYS.charAt(day.getDay())', stamp)
+        self.assertIn('" " + hit[4] + ":" + hit[5]', stamp,
+                      "第二行只报月日与时刻，年份和星期都省给文件名")
+        self.assertNotIn("星期", stamp)
         rows = fn_body(js, "renderBatchList")
         self.assertIn('var title = String(card.source_name || card.label || ("批次 #" + card.batch_id));',
                       rows, "卡片第一行必须是原始文件名，老批次才退到批次标签")
