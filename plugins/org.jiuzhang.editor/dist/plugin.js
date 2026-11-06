@@ -26,51 +26,32 @@
   var dom = window.JzoEditorDom.create();
 
   // ---------- 拆出去的模块（PLUGIN_SPEC §2.8.1：单文件不超 800 行） ----------
-  var coreState = window.JzoEditorCoreState.create({
-  });
-  var devFixtures = window.JzoEditorFixtures.create({
-  });
+  var coreState = window.JzoEditorCoreState.create({});
+  var devFixtures = window.JzoEditorFixtures.create({});
   var coreHost = window.JzoEditorHost.create({
     dom: dom,
     coreState: coreState,
   });
-  var dock = coreHost.dock;
-  var dockWarn = coreHost.dockWarn;
-  var errorDetail = coreHost.errorDetail;
-  var hostCall = coreHost.hostCall;
-  var hostError = coreHost.hostError;
-  var nowIso = coreHost.nowIso;
-  var panelSay = coreHost.panelSay;
-  var publish = coreHost.publish;
-  var respond = coreHost.respond;
-  var toast = coreHost.toast;
-  var trunc = coreHost.trunc;
+  var dock = coreHost.dock, dockWarn = coreHost.dockWarn, errorDetail = coreHost.errorDetail;
+  var hostCall = coreHost.hostCall, hostError = coreHost.hostError, nowIso = coreHost.nowIso;
+  var panelSay = coreHost.panelSay, publish = coreHost.publish, respond = coreHost.respond;
+  var toast = coreHost.toast, trunc = coreHost.trunc;
 
   var DEV_FIXTURES = devFixtures.DEV_FIXTURES;
 
-  var coreRich = window.JzoEditorRich.create({
-  });
-  var appendBody = coreRich.appendBody;
-  var appendRich = coreRich.appendRich;
-  var clampValue = coreRich.clampValue;
-  var el = coreRich.el;
-  var safeAssetUri = coreRich.safeAssetUri;
+  var coreRich = window.JzoEditorRich.create({});
+  var appendBody = coreRich.appendBody, appendRich = coreRich.appendRich;
+  var clampValue = coreRich.clampValue, el = coreRich.el, safeAssetUri = coreRich.safeAssetUri;
 
-  var coreExamSource = window.JzoEditorExamSource.create({
-  });
-  var buildExamSource = coreExamSource.buildExamSource;
-  var parseExamSource = coreExamSource.parseExamSource;
+  var coreExamSource = window.JzoEditorExamSource.create({});
+  var buildExamSource = coreExamSource.buildExamSource, parseExamSource = coreExamSource.parseExamSource;
 
   var coreAiFields = window.JzoEditorAiFields.create({
     coreState: coreState,
   });
-  var fieldAtOffset = coreAiFields.fieldAtOffset;
-  var fieldLabel = coreAiFields.fieldLabel;
-  var fieldRanges = coreAiFields.fieldRanges;
-  var keyFromPatchId = coreAiFields.keyFromPatchId;
-  var makeItem = coreAiFields.makeItem;
-  var patchIdFor = coreAiFields.patchIdFor;
-  var replaceField = coreAiFields.replaceField;
+  var fieldAtOffset = coreAiFields.fieldAtOffset, fieldLabel = coreAiFields.fieldLabel;
+  var fieldRanges = coreAiFields.fieldRanges, keyFromPatchId = coreAiFields.keyFromPatchId;
+  var makeItem = coreAiFields.makeItem, patchIdFor = coreAiFields.patchIdFor, replaceField = coreAiFields.replaceField;
   var uiModal = window.JzoEditorModal.create({
     dom: dom,
     coreState: coreState,
@@ -131,6 +112,17 @@
     publish: publish,
     coreState: coreState,
   });
+
+  // 查重三栏（军令·查重三栏）：画布与裁判台的装配都在 ui_dup_wiring.js。
+  var uiDupBits = window.JzoEditorDupWiring.create({
+    dom: dom, coreState: coreState, el: el, renderDoc: uiDup.renderDoc, buildExamSource: buildExamSource,
+    uiBatches: function () { return uiBatches; }, uiColumns: function () { return uiColumns; },
+    publish: publish, hostCall: hostCall, panelSay: panelSay, dock: dock, dockWarn: dockWarn,
+    errorDetail: errorDetail, openModal: openModal, closeModal: closeModal,
+    poolPanel: function () { return uiPoolPanel; },
+  });
+  var uiDupCompare = uiDupBits.compare;
+  var uiDupJudge = uiDupBits.judge;
 
   var uiApprove = window.JzoEditorApprove.create({
     dom: dom,
@@ -712,6 +704,7 @@
     wireGhostCell: wireGhostCell,
     wireIntake: wireIntake,
     wirePoolPanel: uiPoolPanel.wire,
+    wireDupJudge: uiDupJudge.wire,
     wireAmber: uiAmber.wireApproveAll,
     coreState: coreState,
   });
@@ -748,6 +741,10 @@
     showPoolReview: uiPool.show,
     clearPoolReview: uiPool.clear,
     onPoolCanvasClosed: uiPoolPanel.onCanvasClosed,
+    openDupCompare: uiDupCompare.open,
+    updateDupCompare: uiDupCompare.update,
+    closeDupCompare: uiDupCompare.close,
+    onDupCompareClosed: uiDupJudge.onCanvasClosed,
     paintAmberBlock: uiAmber.paintBlock,
     runApproveAll: uiAmber.runApproveAll,
     onCanvasApproveAll: uiAmber.onCanvasApproveAll,
@@ -786,6 +783,8 @@
     uiAmber: uiAmber,
     uiApprove: uiApprove,
     uiBatches: uiBatches,
+    uiDupCompare: uiDupCompare,
+    uiDupJudge: uiDupJudge,
     uiColumns: uiColumns,
     uiFormat: uiFormat,
     uiIntake: uiIntake,

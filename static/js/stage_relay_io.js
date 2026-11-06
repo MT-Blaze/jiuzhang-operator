@@ -30,6 +30,17 @@
     return POOL_TIERS.indexOf(tier) >= 0 ? "?tier=" + tier : "";
   }
 
+  /** 题型 / 难度冲突的二选一只收 main / incoming；别的值一律丢掉，不进请求体。 */
+  function poolResolutions(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var out = {};
+    ["type", "difficulty"].forEach(function (field) {
+      var value = String(raw[field] == null ? "" : raw[field]);
+      if (value === "main" || value === "incoming") out[field] = value;
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
 
   /** relay() 的「Text」分支族：不属本族立刻返回 false，办完返回 true。 */
   function relayText(ctx) {
@@ -399,10 +410,13 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "不认识的池内动作" });
         return true;
       }
+      var poolActBody = { action: poolAction };
+      var poolActResolutions = poolResolutions(payload.resolutions);
+      if (poolActResolutions) poolActBody.resolutions = poolActResolutions;
       withWriteToken("/api/pending/pool/" + encodeURIComponent(poolActId) + "/act", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: poolAction })
+        body: JSON.stringify(poolActBody)
       }).then(function (result) {
         // 并元数据 / 新增解析 / 不重复都会动主库，各端要跟着回流；删除只动池子。
         if (result && result.written) {

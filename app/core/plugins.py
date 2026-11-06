@@ -87,7 +87,9 @@ _BUS_PUBLISH = {"region.dock", "region.left", "region.right", "stage.selection",
                 "editor.pool_review",
                 # 同一步：辅助栏的【全部入库】要让画布先整批扫琥珀灯、有缺件就跳到最上面
                 # 那道；跳与不跳都是画布那帧的事（它才有滚动与题号）。
-                "editor.batch_review"}
+                "editor.batch_review",
+                # 查重三栏：辅助栏的裁判台发令，画布变身三栏；画布 Esc 收窗回投辅助栏。
+                "editor.dup_compare"}
 _BUS_SUBSCRIBE = {
     "ui.params.changed",
     "layout.changed",
@@ -126,6 +128,8 @@ _BUS_SUBSCRIBE = {
     # 画布那帧有 MathJax 与滚动，辅助栏那帧有按钮——两帧之间还是隔宿主这一跳。
     "editor.pool_review",
     "editor.batch_review",
+    # 查重三栏：两帧之间的变身 / 决断后换题 / Esc 收窗都走这一条。
+    "editor.dup_compare",
 }
 # 每个插件最多声明多少个主题。军令 #31 给录题插件加了第九条（查重开窗），
 # 上限跟着抬到 10；4.3 再加两条（清洗对照 + 回执）后录题插件订到 11 条，

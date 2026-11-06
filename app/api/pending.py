@@ -448,13 +448,16 @@ def pending_pool_act(pool_id: str, payload: dict[str, Any] = Body(...)) -> dict[
     成功的那条一律从池里退场并留一行裁决记录（既是审计，也挡重扫复活）。
 
     - 答案明确不同 → 前两项回 **409** ``answer_mismatch``，后两项照走（判据 4.8）；
+    - 题型 / 难度冲突未二选一 → 合并回 **409** ``meta_conflict``，``resolutions`` 形如
+      ``{"type": "main"|"incoming", "difficulty": ...}``；
     - ``keep_separate`` 校验不过 → **200** 且 ``ok=false`` / ``written=false`` /
       ``kept_in_pool=true`` / ``missing`` 列出缺什么——缺项不是异常，是老师要补的活；
     - 池里没有这条 → 404；没有配主库原题却要并入库 → 400。
     """
     body = payload if isinstance(payload, dict) else {}
     try:
-        return pending_pool.act(pool_id, body.get("action"))
+        return pending_pool.act(pool_id, body.get("action"),
+                                resolutions=body.get("resolutions"))
     except pending_pool.PoolActionRefused as exc:
         raise HTTPException(
             status_code=409,

@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="panel_dialog.css">
   <link rel="stylesheet" href="panel_model.css">
   <link rel="stylesheet" href="panel_pool.css">
+  <link rel="stylesheet" href="dup_compare.css">
   <link rel="stylesheet" href="panel_capsule.css">
   <link rel="stylesheet" href="panel_ai.css">
   <link rel="stylesheet" href="ai_copilot.css">
@@ -126,6 +127,7 @@
         <div class="ed-workbench-panes">
           <section class="ed-col ed-col-source" id="edPaneSource" aria-label="LaTeX 源码">
             <div class="ed-pane-head ed-src-tools">
+              <span class="ed-cmp-label" id="edCmpSourceLabel" hidden>新题源码（可编辑）</span>
               <!-- 源码栏工具条：按钮一律靠左排，后续功能往右追加。
                    框选原图插配图（终极军令 任务四）：移除本模块时连同 ui_illustration.js 一起删。 -->
               <button type="button" class="ed-pane-insert-illustration" id="edAddIllustration"
@@ -142,10 +144,20 @@
 
           <section class="ed-col ed-col-render" id="edPaneRender" aria-label="渲染结果">
             <div class="ed-pane-head">
-              <span>渲染</span>
+              <span id="edRenderHeadLabel">渲染</span>
               <em>按内容实际高度</em>
             </div>
             <div class="ed-pane-body" id="edRenderBody"></div>
+          </section>
+
+          <!-- 查重对比第三栏（军令·查重三栏）：主库原题渲染，从右侧滑出。
+               只在 compare 模式出现；容器始终是同一只节点，换题时只换内容不换壳。 -->
+          <section class="ed-col ed-col-original" id="edPaneOriginal" aria-label="原题渲染" hidden>
+            <div class="ed-pane-head">
+              <span>原题渲染</span>
+              <em id="edOriginalIdent">主库原题</em>
+            </div>
+            <div class="ed-pane-body" id="edOriginalBody"></div>
           </section>
         </div>
       </div>
@@ -315,6 +327,31 @@
        画布顶栏撤除后，返回列表与视图切换全部搬进段一死锁区；
        本帧拿不到画布的 DOM，改动只经宿主 ui.params.set → ui.params.changed 对账。 -->
   <div id="epRoot" class="ep-root" hidden>
+
+    <!-- 查重裁判台（军令·查重三栏）：对比模式开启时整栏变脸，只留差异元数据与四件套。
+         独立一块，退出对比即整段收起，原审核表单一个节点都不重建。 -->
+    <section class="ep-judge" id="epJudgeSec" hidden aria-label="查重裁判台">
+      <div class="ep-judge-head">
+        <span class="ep-judge-title">查重裁判台</span>
+        <span class="ep-judge-ident" id="epJudgeIdent"></span>
+      </div>
+      <div class="ep-judge-scroll">
+        <p class="ep-judge-sub">只列两边不一样的元数据；标签与来源自动取并集。</p>
+        <div class="ep-judge-diff" id="epJudgeDiff"></div>
+        <p class="ep-judge-note" id="epJudgeNote" role="status" aria-live="polite"></p>
+      </div>
+      <div class="ep-judge-acts" id="epJudgeActs">
+        <button type="button" class="ep-btn ep-btn-primary ep-mini-btn" id="epJudgeMerge">合并</button>
+        <button type="button" class="ep-btn ep-mini-btn" id="epJudgeSolution">新增解析</button>
+        <button type="button" class="ep-btn ep-mini-btn" id="epJudgeSeparate">不重复</button>
+        <button type="button" class="ep-btn ep-btn-danger ep-mini-btn" id="epJudgeDelete">删除</button>
+      </div>
+      <div class="ep-judge-foot">
+        <button type="button" class="ep-btn ep-mini-btn" id="epJudgeResolve" hidden>重选冲突项</button>
+        <button type="button" class="ep-btn ep-mini-btn" id="epJudgeExit">退出对比</button>
+      </div>
+    </section>
+
     <!-- ============ 段一：顶部固定 · 当前题与单题私有元数据 ============ -->
     <header class="ep-head" id="epHead" aria-label="当前题与私有元数据">
       <div class="ep-head-bar">
@@ -513,6 +550,9 @@
         <div class="ep-pool-head">
           <span class="ep-pool-title">重题池</span>
           <span class="ep-pool-count" id="epPoolCount" data-total="0"></span>
+          <!-- 查重对比（军令·查重三栏）：池里有命中才亮；点它画布才变身三栏。 -->
+          <button type="button" class="ep-btn ep-mini-btn ep-pool-compare" id="epPoolCompare"
+                  hidden title="把画布变成新题源码 / 新题渲染 / 原题渲染三栏">查重对比</button>
         </div>
         <div class="ep-pool-tiers" id="epPoolTiers" role="group" aria-label="判重档位">
           <button type="button" class="ep-seg-btn" data-tier="strict" aria-pressed="false">严</button>
@@ -634,6 +674,35 @@
 
     <!-- 池内【删除】（军令 #32 · 判据 5.4）：同样走二次确认，复用上面那颗红按钮的确认样式。
          删的是池里这一条重复记录与它的成品图，主库原题一个字都不动。 -->
+    <!-- 唯一属性二选一（军令·查重三栏）：题型/难度冲突时必须由老师亲手选一个，
+         没选完【合并】就锁着；这里不替老师猜。 -->
+    <div class="ep-modal" id="epJudgeConflictModal" role="dialog" aria-modal="true"
+         aria-labelledby="epJudgeConflictTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epJudgeConflictTitle">这两项两边不一样，保留哪一边？</h3>
+        <p class="ep-modal-text" id="epJudgeConflictText">题型与难度是唯一属性，不能自动合并。</p>
+        <div class="ep-judge-conflict" id="epJudgeConflictBody"></div>
+        <p class="ep-modal-warn" id="epJudgeConflictWarn" role="alert" hidden>两项都选完才能合并。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epJudgeConflictCancel">先不合并</button>
+          <button type="button" class="ep-btn ep-btn-primary" id="epJudgeConflictOk"
+                  disabled aria-disabled="true">用这个选择合并</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ep-modal" id="epJudgeDelModal" role="dialog" aria-modal="true"
+         aria-labelledby="epJudgeDelTitle" hidden>
+      <div class="ep-modal-card">
+        <h3 class="ep-modal-title" id="epJudgeDelTitle">删掉池里这一道新题？</h3>
+        <p class="ep-modal-text" id="epJudgeDelText">主库那道原题一个字节都不碰；删完自动跳到下一道。</p>
+        <div class="ep-actions">
+          <button type="button" class="ep-btn" id="epJudgeDelCancel">取消</button>
+          <button type="button" class="ep-btn ep-btn-danger" id="epJudgeDelOk">删除并跳下一道</button>
+        </div>
+      </div>
+    </div>
+
     <div class="ep-modal" id="epPoolDelModal" role="dialog" aria-modal="true"
          aria-labelledby="epPoolDelTitle" hidden>
       <div class="ep-modal-card">
@@ -692,6 +761,10 @@
   <script src="ui_amber.js"></script>
   <script src="ui_pool.js"></script>
   <script src="ui_pool_panel.js"></script>
+  <script src="ui_dup_compare.js"></script>
+  <script src="ui_dup_judge_flow.js"></script>
+  <script src="ui_dup_judge.js"></script>
+  <script src="ui_dup_wiring.js"></script>
   <script src="core_commands.js"></script>
   <script src="core_receipt.js"></script>
   <script src="ui_ai.js"></script>

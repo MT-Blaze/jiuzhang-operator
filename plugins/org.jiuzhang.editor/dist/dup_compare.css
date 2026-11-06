@@ -1,0 +1,299 @@
+/* dup_compare.css —— 查重三栏变身与裁判台（军令·查重三栏）。
+   整块独立：删掉这三条 <link>/<script> 与按钮，原审核界面不受影响。 */
+
+/* ---------- 画布：原图栏左移淡出，工作台吃满整行 ---------- */
+
+.ed-cols {
+  transition: grid-template-columns 280ms ease;
+}
+
+.ed-cols[data-compare="true"] {
+  grid-template-columns: 0 0 minmax(0, 1fr);
+}
+
+.ed-col-image {
+  transition: opacity 220ms ease, transform 260ms ease;
+}
+
+.ed-cols[data-compare="true"] .ed-col-image {
+  opacity: 0;
+  transform: translateX(-28px);
+  pointer-events: none;
+}
+
+.ed-cols[data-compare="true"] > #edSplitImage {
+  opacity: 0;
+}
+
+/* ---------- 第三栏：原题渲染从右侧滑出 ---------- */
+
+.ed-workbench-panes > .ed-col-original {
+  order: 4;
+  flex: 0 0 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(36px);
+  border-left: 1px solid var(--line-strong);
+  background: var(--void);
+  transition: flex-basis 300ms ease, opacity 220ms ease, transform 300ms ease;
+}
+
+.ed-cols[data-compare="true"] .ed-workbench-panes > .ed-col-original {
+  flex-basis: 30%;
+  opacity: 1;
+  transform: none;
+}
+
+.ed-cols[data-compare="true"] .ed-workbench-panes > .ed-col-source {
+  flex-basis: 30%;
+}
+
+.ed-cmp-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.ed-cmp-doc {
+  min-height: 100%;
+}
+
+/* 新题源码区：一只整高的可编辑文本域，不跟随审核行滚动。 */
+.ed-cmp-source {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 12px 14px;
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.ed-cmp-source:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--amber);
+}
+
+.ed-cmp-source[data-dirty="true"] {
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+
+/* ---------- 辅助栏：裁判台整栏变脸 ---------- */
+
+.ep-root[data-judge="on"] > #epHead,
+.ep-root[data-judge="on"] > #epScroll,
+.ep-root[data-judge="on"] > #epFootBar,
+.ep-root[data-judge="on"] > .ep-foot-bar {
+  display: none !important;
+}
+
+.ep-judge {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 16px 14px;
+  box-sizing: border-box;
+  background: var(--panel, var(--card));
+  overflow: hidden;
+}
+
+.ep-judge-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ep-judge-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.ep-judge-ident {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-size: 12px;
+  text-align: right;
+}
+
+.ep-judge-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ep-judge-sub {
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.ep-judge-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ep-judge-item {
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.ep-judge-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ep-judge-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ep-judge-line {
+  margin: 7px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ep-judge-line b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ep-judge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ep-judge-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.ep-judge-chip.is-added {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+}
+
+.ep-judge-empty {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.ep-judge-note {
+  margin: 12px 0 0;
+  min-height: 1em;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ep-judge-note[data-tone="error"] { color: var(--danger); }
+.ep-judge-note[data-tone="warn"] { color: var(--amber); }
+.ep-judge-note[data-tone="ok"] { color: var(--ok, #3f8f5a); }
+
+.ep-judge-acts,
+.ep-judge-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ep-judge-acts {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.ep-judge-acts .ep-btn {
+  flex: 1 1 calc(50% - 4px);
+  min-height: 44px;
+}
+
+.ep-judge-foot .ep-btn {
+  flex: 0 0 auto;
+}
+
+.ep-judge-conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.ep-judge-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.ep-judge-choice b {
+  font-size: 12px;
+}
+
+.ep-judge-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.ep-pool-compare {
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-cols,
+  .ed-col-image,
+  .ed-workbench-panes > .ed-col-original {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .ed-cols[data-compare="true"] .ed-workbench-panes > .ed-col-source {
+    flex-basis: 34%;
+  }
+
+  .ed-cols[data-compare="true"] .ed-workbench-panes > .ed-col-original {
+    flex-basis: 34%;
+  }
+}

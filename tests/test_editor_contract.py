@@ -152,14 +152,14 @@ class EditorManifestTest(unittest.TestCase):
                          ["editor.apply_patch", "editor.batch_review", "editor.canvas_state",
                           "editor.clean_review",
                           "editor.clean_review_state", "editor.collect_files",
-                          "editor.dup_review", "editor.pool_review",
+                          "editor.dup_compare", "editor.dup_review", "editor.pool_review",
                           "stage.selection",
                           "system.open_editor", "system.pending_updated",
                           "system.question_updated", "ui.params.changed"])
         self.assertEqual(sorted(bus["publish"]),
                          ["editor.batch_review", "editor.canvas_state", "editor.clean_review",
                           "editor.clean_review_state", "editor.collect_files",
-                          "editor.dup_review", "editor.pool_review",
+                          "editor.dup_compare", "editor.dup_review", "editor.pool_review",
                           "region.dock",
                           "stage.selection",
                           "system.editor_close", "system.return_from_editor"])
@@ -208,8 +208,11 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
 
     def test_01_canvas_has_exactly_three_panes_and_two_splits(self) -> None:
         canvas = canvas_only(read("index.html"))
-        self.assertEqual(canvas.count('class="ed-col '), 3, canvas)
+        # 查重三栏（军令·查重三栏）：审核三栏之外多一只「原题渲染」栏，
+        # 平时 hidden，只在 compare 模式从右侧滑出——静态节点实数因此是 4。
+        self.assertEqual(canvas.count('class="ed-col '), 4, canvas)
         self.assertEqual(canvas.count('class="ed-split"'), 2, canvas)
+        self.assertIn('id="edPaneOriginal"', canvas, "缺少查重对比的原题渲染栏")
         for node_id in ("edCols", "edImageBody", "edSourceBody", "edRenderBody",
                         "edSplitImage", "edSplitSource"):
             self.assertIn(f'id="{node_id}"', canvas, f"缺少三栏节点 {node_id}")
@@ -1300,7 +1303,8 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn('mode: "list",', js)
         set_mode = fn_body(js, "setMode")
         self.assertIn('if (batchesEl) batchesEl.hidden = state.mode !== "list";', set_mode)
-        self.assertIn('if (colsEl) colsEl.hidden = state.mode !== "review";', set_mode)
+        self.assertIn('if (colsEl) colsEl.hidden = state.mode !== "review" && state.mode !== "compare";',
+                      set_mode)
         self.assertNotIn("batchBarEl", set_mode, "画布抬头已撤，模式切换不再管横条")
         activate = js[js.index('if (message.method === "plugin.activate")'):
                       js.index('if (message.method === "plugin.deactivate")')]
@@ -2435,17 +2439,21 @@ class EditorDuplicatePoolScreenTest(unittest.TestCase):
     def test_06_the_panel_and_canvas_split_by_from(self) -> None:
         """两帧只经宿主总线对话：同一主题靠 from 分头，新增主题实数就是两条。"""
         bus = manifest()["bus"]
-        self.assertEqual(len(set(bus["subscribe"]) | set(bus["publish"])), 16,
-                         "订 13 ∪ 发 11 = 16 个主题名，其中池子/扫灯这一对是本轮新增")
-        for topic in ("editor.pool_review", "editor.batch_review"):
+        self.assertEqual(len(set(bus["subscribe"]) | set(bus["publish"])), 17,
+                         "订 14 ∪ 发 12 = 17 个主题名；查重三栏新增 editor.dup_compare")
+        for topic in ("editor.pool_review", "editor.batch_review", "editor.dup_compare"):
             self.assertIn(topic, bus["subscribe"])
             self.assertIn(topic, bus["publish"])
         protocol = read("core_protocol.js")
         self.assertIn('if (poolFrom === "canvas" && poolPayload.phase === "closed") onPoolCanvasClosed();',
                       protocol, "画布按 Esc 自己退池，辅助栏的选中要跟着放开")
+        self.assertIn('onDupCompareClosed()', protocol,
+                      "画布按 Esc 退查重三栏，辅助栏的裁判台要跟着收起")
         stage = stage_source()
         self.assertIn('notify(tab, "editor.pool_review", pair.payload)', stage)
         self.assertIn('notify(panel, "editor.batch_review", pair.payload)', stage)
+        self.assertIn('notify(tab, "editor.dup_compare", pair.payload)', stage)
+        self.assertIn('notify(panel, "editor.dup_compare", pair.payload)', stage)
 
 
 class EditorExportIntegrityTest(unittest.TestCase):

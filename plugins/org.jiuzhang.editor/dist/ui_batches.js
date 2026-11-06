@@ -488,12 +488,13 @@
   }
 
   function setMode(mode) {
-    // 三屏（军令 #32 · 第五步）：list 是批次列表首屏，review 是三栏审核，
-    // pool 是重题池对比——与审核画布物理分开，来回不必再跳屏。
-    state.mode = mode === "review" ? "review" : (mode === "pool" ? "pool" : "list");
+    // 四屏（军令·查重三栏）：list 批次列表 / review 三栏审核 / pool 旧重题池对比 /
+    // compare 查重三栏（新题源码·新题渲染·原题渲染共用 #edCols，不再单开一屏）。
+    state.mode = mode === "review" ? "review"
+      : (mode === "pool" ? "pool" : (mode === "compare" ? "compare" : "list"));
     if (root) root.setAttribute("data-mode", state.mode);
     if (batchesEl) batchesEl.hidden = state.mode !== "list";
-    if (colsEl) colsEl.hidden = state.mode !== "review";
+    if (colsEl) colsEl.hidden = state.mode !== "review" && state.mode !== "compare";
     if (poolCanvasEl) poolCanvasEl.hidden = state.mode !== "pool";
   }
 

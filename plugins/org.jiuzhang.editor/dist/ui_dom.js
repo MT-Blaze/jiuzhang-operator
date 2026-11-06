@@ -128,6 +128,35 @@
       var poolMainEl = document.getElementById("edPoolMainBody");
       var poolIncomingEl = document.getElementById("edPoolIncomingBody");
       var poolWarnEl = document.getElementById("edPoolWarn");
+      // 查重三栏（军令·查重三栏）：原题渲染栏、源码标签与裁判台整块。
+      var originalPaneEl = document.getElementById("edPaneOriginal");
+      var originalBodyEl = document.getElementById("edOriginalBody");
+      var originalIdentEl = document.getElementById("edOriginalIdent");
+      var imagePaneEl = document.getElementById("edPaneImage");
+      var splitImageEl = document.getElementById("edSplitImage");
+      var cmpSourceLabelEl = document.getElementById("edCmpSourceLabel");
+      var renderHeadLabelEl = document.getElementById("edRenderHeadLabel");
+      var panelPoolCompareEl = document.getElementById("epPoolCompare");
+      var judgeSecEl = document.getElementById("epJudgeSec");
+      var judgeIdentEl = document.getElementById("epJudgeIdent");
+      var judgeDiffEl = document.getElementById("epJudgeDiff");
+      var judgeNoteEl = document.getElementById("epJudgeNote");
+      var judgeMergeEl = document.getElementById("epJudgeMerge");
+      var judgeSolutionEl = document.getElementById("epJudgeSolution");
+      var judgeSeparateEl = document.getElementById("epJudgeSeparate");
+      var judgeDeleteEl = document.getElementById("epJudgeDelete");
+      var judgeResolveEl = document.getElementById("epJudgeResolve");
+      var judgeExitEl = document.getElementById("epJudgeExit");
+      var judgeConflictModalEl = document.getElementById("epJudgeConflictModal");
+      var judgeConflictTextEl = document.getElementById("epJudgeConflictText");
+      var judgeConflictBodyEl = document.getElementById("epJudgeConflictBody");
+      var judgeConflictWarnEl = document.getElementById("epJudgeConflictWarn");
+      var judgeConflictCancelEl = document.getElementById("epJudgeConflictCancel");
+      var judgeConflictOkEl = document.getElementById("epJudgeConflictOk");
+      var judgeDelModalEl = document.getElementById("epJudgeDelModal");
+      var judgeDelTextEl = document.getElementById("epJudgeDelText");
+      var judgeDelCancelEl = document.getElementById("epJudgeDelCancel");
+      var judgeDelOkEl = document.getElementById("epJudgeDelOk");
       var panelPoolEntryEl = document.getElementById("epPoolEntry");
       var panelPoolSecEl = document.getElementById("epPoolSec");
       var panelPoolCountEl = document.getElementById("epPoolCount");
@@ -291,6 +320,34 @@
       poolMainEl: poolMainEl,
       poolIncomingEl: poolIncomingEl,
       poolWarnEl: poolWarnEl,
+      originalPaneEl: originalPaneEl,
+      originalBodyEl: originalBodyEl,
+      originalIdentEl: originalIdentEl,
+      imagePaneEl: imagePaneEl,
+      splitImageEl: splitImageEl,
+      cmpSourceLabelEl: cmpSourceLabelEl,
+      renderHeadLabelEl: renderHeadLabelEl,
+      panelPoolCompareEl: panelPoolCompareEl,
+      judgeSecEl: judgeSecEl,
+      judgeIdentEl: judgeIdentEl,
+      judgeDiffEl: judgeDiffEl,
+      judgeNoteEl: judgeNoteEl,
+      judgeMergeEl: judgeMergeEl,
+      judgeSolutionEl: judgeSolutionEl,
+      judgeSeparateEl: judgeSeparateEl,
+      judgeDeleteEl: judgeDeleteEl,
+      judgeResolveEl: judgeResolveEl,
+      judgeExitEl: judgeExitEl,
+      judgeConflictModalEl: judgeConflictModalEl,
+      judgeConflictTextEl: judgeConflictTextEl,
+      judgeConflictBodyEl: judgeConflictBodyEl,
+      judgeConflictWarnEl: judgeConflictWarnEl,
+      judgeConflictCancelEl: judgeConflictCancelEl,
+      judgeConflictOkEl: judgeConflictOkEl,
+      judgeDelModalEl: judgeDelModalEl,
+      judgeDelTextEl: judgeDelTextEl,
+      judgeDelCancelEl: judgeDelCancelEl,
+      judgeDelOkEl: judgeDelOkEl,
       panelPoolEntryEl: panelPoolEntryEl,
       panelPoolSecEl: panelPoolSecEl,
       panelPoolCountEl: panelPoolCountEl,

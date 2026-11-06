@@ -17,6 +17,8 @@
     var uiAmber = deps.uiAmber;
     var uiApprove = deps.uiApprove;
     var uiBatches = deps.uiBatches;
+    var uiDupCompare = deps.uiDupCompare;
+    var uiDupJudge = deps.uiDupJudge;
     var uiColumns = deps.uiColumns;
     var uiFormat = deps.uiFormat;
     var uiIntake = deps.uiIntake;
@@ -65,6 +67,9 @@
   publishView: uiBatches.publishView,
   setMode: uiBatches.setMode,
   stashOne: uiBatches.stashOne,
+  // 查重三栏：探针需要读当前池内条目，不参与业务分支。
+  uiDupCompare: uiDupCompare,
+  uiDupJudge: uiDupJudge,
   onApprove: uiApprove.onApprove,
   onStash: uiApprove.onStash,
   onDelete: uiApprove.onDelete,

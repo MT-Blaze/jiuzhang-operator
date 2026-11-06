@@ -31,7 +31,9 @@
     // 军令 #32 · 第五步：重题池的左右渲染对比住画布那帧，四个动作住辅助栏；
     // 【全部入库】前的整批扫琥珀灯同样要指挥画布跳题。两条都是辅助栏→画布的单向指令。
     "editor.pool_review",
-    "editor.batch_review"
+    "editor.batch_review",
+    // 查重三栏：辅助栏裁判台发令变身、决断后换题、画布 Esc 收窗——双向各投对方一帧。
+    "editor.dup_compare"
   ];
 
   function create(ctx) {

@@ -1,0 +1,15 @@
+{
+  "orig_batch": "B-001",
+  "dup_batch": "B-002",
+  "bank_questions": null,
+  "pool_rows": [
+    {
+      "pool_id": "pool_914c27508c80f1819a18c3d6",
+      "level": "very_similar"
+    },
+    {
+      "pool_id": "pool_bfbf9b5e55202a0b97653eab",
+      "level": "very_similar"
+    }
+  ]
+}

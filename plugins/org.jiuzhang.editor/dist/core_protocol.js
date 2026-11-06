@@ -40,6 +40,10 @@
     var showPoolReview = deps.showPoolReview;
     var clearPoolReview = deps.clearPoolReview;
     var onPoolCanvasClosed = deps.onPoolCanvasClosed;
+    var openDupCompare = deps.openDupCompare;
+    var updateDupCompare = deps.updateDupCompare;
+    var closeDupCompare = deps.closeDupCompare;
+    var onDupCompareClosed = deps.onDupCompareClosed;
     var paintAmberBlock = deps.paintAmberBlock;
     var runApproveAll = deps.runApproveAll;
     var onCanvasApproveAll = deps.onCanvasApproveAll;
@@ -162,6 +166,21 @@
           return;
         }
         if (poolFrom === "canvas" && poolPayload.phase === "closed") onPoolCanvasClosed();
+        return;
+      }
+      if (message.event === "editor.dup_compare") {
+        // 查重三栏（军令·查重三栏）：辅助栏发令，画布变身；画布 Esc 自己退，
+        // 也要回投辅助栏把裁判台收掉。两帧只认自己那一半。
+        var cmpPayload = (message.payload && message.payload.raw) || message.payload || {};
+        var cmpFrom = String(cmpPayload.from || "");
+        if (state.slot === "stage.center") {
+          if (cmpFrom !== "panel") return;
+          if (cmpPayload.phase === "open" && cmpPayload.entry) openDupCompare(cmpPayload.entry);
+          else if (cmpPayload.phase === "update" && cmpPayload.entry) updateDupCompare(cmpPayload.entry);
+          else if (cmpPayload.phase === "closed") closeDupCompare({ notify: false });
+          return;
+        }
+        if (cmpFrom === "canvas" && cmpPayload.phase === "closed") onDupCompareClosed();
         return;
       }
       if (message.event === "editor.batch_review") {

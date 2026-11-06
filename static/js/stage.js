@@ -587,6 +587,17 @@
           eachEditorPanel(function (panel) { notify(panel, "editor.batch_review", pair.payload); });
         }
       });
+      // 查重三栏（军令·查重三栏）：裁判台在辅助栏，三栏变身与渲染冻结在画布。
+      // 与 pool_review 同一条双向路——谁发的就投给另一方，两帧始终隔着宿主。
+      bus.on("editor.dup_compare", function (event) {
+        var pair = editorPairPayload(event);
+        if (!pair) return;
+        if (pair.from === "panel") {
+          eachEditorCanvas(function (tab) { notify(tab, "editor.dup_compare", pair.payload); });
+        } else if (pair.from === "canvas") {
+          eachEditorPanel(function (panel) { notify(panel, "editor.dup_compare", pair.payload); });
+        }
+      });
       // 4.3：LaTeX 清洗预览。正文对照只进画布帧；画布不在就回投 tab_not_live，
       // 让辅助栏立刻降级为纯摘要——绝不让老师按到必然落空的【采用】。
       bus.on("editor.clean_review", function (event) {

@@ -432,13 +432,51 @@ class PoolActionsTest(PoolCase):
         self.assertEqual(result["conflicts"], [])
         self.assertEqual(self.pending_pool.list_pool()["total"], 0)
 
-    def test_11_merge_metadata_conflicts_are_listed_not_overwritten(self) -> None:
-        """4.4 冲突不覆盖：两侧都有且值不同 → 只列清单，主库原值一个不改。"""
+    def test_11_merge_metadata_unique_conflict_needs_resolution(self) -> None:
+        """4.4＋查重三栏：难度冲突未二选一 → 拒绝合并；选了才按选择落库。"""
         pool_id = self._prepare_pool(_doc(difficulty="L4", tags=["新标签"]))[1]
-        result = self.pending_pool.merge_metadata(pool_id)
-        self.assertEqual(result["conflicts"],
+        entry = self.pending_pool.get_entry(pool_id)
+        self.assertEqual(entry["meta_diff"]["requires_resolution"], ["difficulty"])
+        self.assertEqual(entry["meta_diff"]["conflicts"],
                          [{"field": "difficulty", "main": "L2", "incoming": "L4"}])
+        with self.assertRaises(self.pending_pool.PoolActionRefused) as caught:
+            self.pending_pool.merge_metadata(pool_id)
+        self.assertEqual(caught.exception.code, "meta_conflict")
         self.assertEqual(self._bank_row("q_pool0001")["difficulty"], "L2")
+        self.assertEqual(self.pending_pool.list_pool()["total"], 1, "被拒后条目仍留在池里")
+
+        result = self.pending_pool.merge_metadata(
+            pool_id, resolutions={"difficulty": "incoming"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["changed"]["difficulty"], "L4")
+        self.assertEqual(self._bank_row("q_pool0001")["difficulty"], "L4")
+
+    def test_11b_merge_metadata_team_choice_keeps_main(self) -> None:
+        """唯一属性二选一选「保留主库」：冲突照样算已裁决，值一个字不改。"""
+        incoming = _doc(difficulty="L3")
+        pool_id = self._prepare_pool(incoming)[1]
+        incoming["type"] = "multiple_choice"
+        self._set_doc(pool_id, incoming)
+        result = self.pending_pool.merge_metadata(
+            pool_id, resolutions={"type": "main", "difficulty": "main"})
+        self.assertTrue(result["ok"])
+        bank_row = self._bank_row("q_pool0001")
+        self.assertEqual(bank_row["type"], "single_choice")
+        self.assertEqual(bank_row["difficulty"], "L2")
+
+    def test_11c_meta_diff_lists_only_differences(self) -> None:
+        """裁判台只看差异：标签/来源给并集，相同字段不出现。"""
+        pool_id = self._prepare_pool(_doc(
+            tags=["基础", "函数"],
+            source={"paper_title": "期末卷", "question_no": "7", "year": 2026}))[1]
+        diff = self.pending_pool.get_entry(pool_id)["meta_diff"]
+        fields = [item["field"] for item in diff["multi"]]
+        self.assertIn("tags", fields)
+        self.assertIn("source", fields)
+        tags = next(item for item in diff["multi"] if item["field"] == "tags")
+        self.assertEqual(tags["union"], ["基础", "函数"])
+        self.assertEqual(tags["added"], ["基础", "函数"])
+        self.assertEqual(diff["unique"], [], "题型与难度相同就不该出现在差异里")
 
     def test_12_merge_metadata_appends_source(self) -> None:
         """4.4 来源追加：池内这条的原卷并进主库那道题的原卷组，已有挂载不掉。"""

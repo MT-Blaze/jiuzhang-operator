@@ -114,3 +114,39 @@
 - `tools/editor_probe.py phase4`：224/224 通过（含单题/批量 AI 识别、按钮计数与三栏布局）。
 - `python tools/run_all_tests.py`：模块 85 个，用例 1669 个，失败模块 0 个。
 - `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+
+## 阶段五：查重 UI 三栏变身与裁判台（2026-11-06）
+
+### 入口与三栏变身
+
+- 重题池命中后辅助栏出现【查重对比】按钮（`#epPoolCompare`），点击发布
+  `editor.dup_compare` 的 `open` 消息；画布进入第四模式 `compare`，原两栏 `pool` 屏保留。
+- 左【原图区】向左平移淡出并收起（`hidden` + 0 宽），中间画布变三栏：
+  左【新题源码】可编辑、中【新题渲染】、右【原题渲染】从右滑出。
+- 动画与窗口全部落在 `dup_compare.css`；`prefers-reduced-motion` 下直接切换不播放。
+
+### 辅助栏裁判台
+
+- 顶部只列新旧题有差异的元数据：多选属性（标签/来源）取并集展示，唯一属性
+  （题型/难度）冲突时锁死【合并】并要求二选一（`resolutions` 二选一弹窗）。
+- 底部四件套替换原审核按钮：【合并】【新增解析】【不重复】【删除】。
+- 后端 `get_entry` 返回 `meta_diff`（multi/unique/conflicts/requires_resolution/has_difference）；
+  冲突未决时 `merge_metadata` 回 409 `meta_conflict`，由前端弹二选一。
+
+### 静默流转与渲染冻结
+
+- 裁决成功后 `poolPanel.refresh()` 并按原索引自动选中下一道；最后一道退场则退出对比。
+- `#edRenderBody` 与 `#edCmpIncoming` 只建一次，内容离屏构建后 `replaceChildren` 一次性替换；
+  换题只换内容，不重建容器，因此中间渲染区不闪烁、不重载 DOM。
+- compare/judge 交互拆成 `ui_dup_compare.js`（221 行）、`ui_dup_judge.js`（399 行）、
+  `ui_dup_judge_flow.js`（138 行）、`ui_dup_wiring.js`（41 行）+ `dup_compare.css`（299 行），
+  均低于 400 行；差异计算抽到 `app/core/pool_meta.py`（131 行）。
+- 所有动画与数据读取入口均包 `try-catch`，失败经 `dockWarn/errorDetail` 进底部报错诊断。
+
+### 验证证据
+
+- `tools/dup_compare_probe.py dc9`：7/7 通过（三栏变身、裁判台差异、决断流转、节点身份与
+  0 次容器移除、零 pageerror），截图与结果落
+  `.qoder/records/biz/2026-11/20261106_dup-compare-evidence/`。
+- `python tools/run_all_tests.py`：模块 89 个，用例 1750 个，失败模块 0 个。
+- `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。

@@ -1,0 +1,399 @@
+{
+  "tag": "dc9",
+  "base": "http://127.0.0.1:17152",
+  "checks": [
+    {
+      "name": "造现场：主库 2 道原题，重题批自动抽走 ≥2 条进池",
+      "ok": true,
+      "detail": {
+        "orig_batch": "B-001",
+        "dup_batch": "B-002",
+        "bank_questions": null,
+        "pool_rows": [
+          {
+            "pool_id": "pool_914c27508c80f1819a18c3d6",
+            "level": "very_similar"
+          },
+          {
+            "pool_id": "pool_bfbf9b5e55202a0b97653eab",
+            "level": "very_similar"
+          }
+        ]
+      }
+    },
+    {
+      "name": "开机：画布帧与辅助栏帧都活着",
+      "ok": true,
+      "detail": {
+        "canvas": true,
+        "panel": true,
+        "page_errors": []
+      }
+    },
+    {
+      "name": "任务一：原图栏收起（hidden/0 宽），第三栏从右滑出且宽 > 0",
+      "ok": true,
+      "detail": {
+        "canvas": {
+          "mode": "compare",
+          "compare": "true",
+          "imageHidden": true,
+          "imageBox": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "sourceBox": [
+            0,
+            1,
+            267,
+            660
+          ],
+          "originalHidden": false,
+          "originalBox": [
+            623,
+            1,
+            267,
+            660
+          ],
+          "renderBox": [
+            273,
+            1,
+            350,
+            660
+          ],
+          "incoming": true,
+          "original": true,
+          "sourceArea": true
+        },
+        "shots": [
+          "dc9-01-compare-canvas.png",
+          "dc9-01-compare-panel.png"
+        ]
+      }
+    },
+    {
+      "name": "任务二：辅助栏整栏变脸，审核表单让位、裁判台只列差异",
+      "ok": true,
+      "detail": {
+        "judge": "on",
+        "secHidden": false,
+        "secDisplay": "flex",
+        "headDisplay": "none",
+        "diffText": "标签\n基础\n函数\n\n合并后自动并入：函数",
+        "chips": 2,
+        "acts": [
+          {
+            "id": "epJudgeMerge",
+            "text": "合并",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeSolution",
+            "text": "新增解析",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeSeparate",
+            "text": "不重复",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeDelete",
+            "text": "删除",
+            "disabled": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "任务三：决断后自动跳下一道（池子少一条、当前 id 与源码都变了、对比没退出）",
+      "ok": true,
+      "detail": {
+        "ident_before": "很像 89% · 池内 p_be8e1410e898b213c835a2aa · 主库 q_04a45e8e30e9d4b1fbc9e4ec",
+        "ident_after": "很像 89% · 池内 p_c66a1884bf62f1c8021723dd · 主库 q_b7c6f1f9e476ca4189234570",
+        "src_before": "\\begin{question}\n查重三栏甲近形：已知 $x^2-5x+6=0$，求它的两个根之和（　　）。选项 A $5$、B $6$、C $11$、D $1",
+        "src_after": "\\begin{question}\n查重三栏乙近形：数列 $\\{a_n\\}$ 满足 $a_n=2n-1$，求前 3 项的和（　　）。选项 A $9$、B $6$、",
+        "current_before": "pool_914c27508c80f1819a18c3d6",
+        "current_after": "pool_bfbf9b5e55202a0b97653eab",
+        "pool_total_after": 1,
+        "shots": [
+          "dc9-02-after-decision.png",
+          "dc9-02-after-decision-panel.png"
+        ]
+      }
+    },
+    {
+      "name": "渲染冻结：换题前后 #edRenderBody / #edCmpIncoming 同一只节点，0 次容器移除",
+      "ok": true,
+      "detail": {
+        "before": {
+          "bodyMark": "render-body-stable",
+          "incMark": "incoming-stable",
+          "incText": 114,
+          "incBox": [
+            340,
+            628
+          ],
+          "src": "\\begin{question}\n查重三栏甲近形：已知 $x^2-5x+6=0$，求它的两个根之和（　　）。选项 A $5$、B $6$、C $11$、D $1",
+          "current": "pool_914c27508c80f1819a18c3d6"
+        },
+        "after": {
+          "bodyMark": "render-body-stable",
+          "incMark": "incoming-stable",
+          "incText": 126,
+          "incBox": [
+            340,
+            628
+          ],
+          "mode": "compare",
+          "removals": 0,
+          "src": "\\begin{question}\n查重三栏乙近形：数列 $\\{a_n\\}$ 满足 $a_n=2n-1$，求前 3 项的和（　　）。选项 A $9$、B $6$、",
+          "current": "pool_bfbf9b5e55202a0b97653eab"
+        }
+      }
+    },
+    {
+      "name": "全程零 pageerror / 零 console error",
+      "ok": true,
+      "detail": {
+        "page_errors": [],
+        "console_errors": []
+      }
+    }
+  ],
+  "note": {
+    "tag": "dc9",
+    "topic_id": "tp_bo5cc8b581",
+    "seed": {
+      "orig_batch": "B-001",
+      "dup_batch": "B-002",
+      "bank_questions": null,
+      "pool_rows": [
+        {
+          "pool_id": "pool_914c27508c80f1819a18c3d6",
+          "level": "very_similar"
+        },
+        {
+          "pool_id": "pool_bfbf9b5e55202a0b97653eab",
+          "level": "very_similar"
+        }
+      ]
+    },
+    "enter_compare": {
+      "canvas": {
+        "mode": "compare",
+        "compare": "true",
+        "imageHidden": true,
+        "imageBox": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "sourceBox": [
+          0,
+          1,
+          267,
+          660
+        ],
+        "originalHidden": false,
+        "originalBox": [
+          623,
+          1,
+          267,
+          660
+        ],
+        "renderBox": [
+          273,
+          1,
+          350,
+          660
+        ],
+        "incoming": true,
+        "original": true,
+        "sourceArea": true
+      },
+      "panel": {
+        "judge": "on",
+        "secHidden": false,
+        "secDisplay": "flex",
+        "headDisplay": "none",
+        "diffText": "标签\n基础\n函数\n\n合并后自动并入：函数",
+        "chips": 2,
+        "acts": [
+          {
+            "id": "epJudgeMerge",
+            "text": "合并",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeSolution",
+            "text": "新增解析",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeSeparate",
+            "text": "不重复",
+            "disabled": false
+          },
+          {
+            "id": "epJudgeDelete",
+            "text": "删除",
+            "disabled": false
+          }
+        ]
+      },
+      "mode_seq": [
+        [
+          "list",
+          null
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ],
+        [
+          "compare",
+          "true"
+        ]
+      ]
+    },
+    "dup_msgs": {
+      "host": [
+        {
+          "kind": "notification",
+          "phase": "open",
+          "from": "panel"
+        }
+      ],
+      "canvas": [
+        {
+          "kind": "notification",
+          "phase": "open",
+          "from": "panel"
+        }
+      ],
+      "panel": [],
+      "canvas_activate": 0,
+      "canvas_api": true
+    },
+    "compare_ident": "很像 89% · 池内 p_be8e1410e898b213c835a2aa · 主库 q_04a45e8e30e9d4b1fbc9e4ec",
+    "advance": {
+      "before": {
+        "bodyMark": "render-body-stable",
+        "incMark": "incoming-stable",
+        "incText": 114,
+        "incBox": [
+          340,
+          628
+        ],
+        "src": "\\begin{question}\n查重三栏甲近形：已知 $x^2-5x+6=0$，求它的两个根之和（　　）。选项 A $5$、B $6$、C $11$、D $1",
+        "current": "pool_914c27508c80f1819a18c3d6"
+      },
+      "after": {
+        "bodyMark": "render-body-stable",
+        "incMark": "incoming-stable",
+        "incText": 126,
+        "incBox": [
+          340,
+          628
+        ],
+        "mode": "compare",
+        "removals": 0,
+        "src": "\\begin{question}\n查重三栏乙近形：数列 $\\{a_n\\}$ 满足 $a_n=2n-1$，求前 3 项的和（　　）。选项 A $9$、B $6$、",
+        "current": "pool_bfbf9b5e55202a0b97653eab"
+      },
+      "ident_before": "很像 89% · 池内 p_be8e1410e898b213c835a2aa · 主库 q_04a45e8e30e9d4b1fbc9e4ec",
+      "ident_after": "很像 89% · 池内 p_c66a1884bf62f1c8021723dd · 主库 q_b7c6f1f9e476ca4189234570",
+      "pool_total_after": 1
+    }
+  },
+  "page_errors": [],
+  "console_errors": []
+}

@@ -522,6 +522,9 @@
 
   function renderAll() {
     if (!root || root.hidden) return;
+    // 查重三栏的内容由 ui_dup_compare 独占：整屏重排会把它整块抹掉并重建，
+    // 中间渲染区必须保持同一只节点，所以撤销订阅式刷新在这里一律不下手。
+    if (state.mode === "compare") return;
     if (!state.items.length && !state.scanBatch) return;
     var focus = captureFocus();
     var scrolls = [imageBodyEl, sourceBodyEl, renderBodyEl].map(function (node) {
@@ -564,7 +567,7 @@
    * 整屏重排留给挂载、格式切换与拖宽——那时焦点本来就不在框里。
    */
   function refreshRow(index) {
-    if (!root || root.hidden) return;
+    if (!root || root.hidden || state.mode === "compare") return;
     var item = state.items[index];
     if (!item) return;
     var holder = renderBodyEl.children[index];

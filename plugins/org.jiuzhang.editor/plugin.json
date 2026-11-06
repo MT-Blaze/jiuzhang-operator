@@ -81,7 +81,8 @@
       "editor.clean_review",
       "editor.clean_review_state",
       "editor.pool_review",
-      "editor.batch_review"
+      "editor.batch_review",
+      "editor.dup_compare"
     ],
     "publish": [
       "region.dock",
@@ -94,7 +95,8 @@
       "editor.clean_review",
       "editor.clean_review_state",
       "editor.pool_review",
-      "editor.batch_review"
+      "editor.batch_review",
+      "editor.dup_compare"
     ]
   },
   "contributes": {

@@ -40,13 +40,20 @@ from app.core.pending_db import (
     new_pool_id,
 )
 from app.core.pending_meta import contract_probe
+from app.core.pool_meta import (
+    FIELD_LABELS as META_FIELD_LABELS,
+    REQUIRED_UNIQUE_FIELDS,
+    SOURCE_TITLE_FIELD,
+    TYPE_LABELS,
+    meta_diff as _meta_diff,
+    meta_value as _unique_values,
+    resolutions as _resolutions,
+)
 
 ACTIONS = ("merge_metadata", "add_solution", "keep_separate", "delete")
 
 # 答案明确不同时锁死的那两个动作（判据 4.8）；另两个照走，不拦。
 ANSWER_GATED = ("merge_metadata", "add_solution")
-
-SOURCE_TITLE_FIELD = "paper_title"
 
 
 class PoolActionRefused(PendingError):
@@ -153,6 +160,8 @@ def get_entry(pool_id: str, *, tier: Any = None) -> dict[str, Any]:
             # 主库那道刚被别处删掉：详情照发，只如实标没有可对比的原文。
             entry["existing_missing"] = True
     entry["existing"] = existing
+    # 裁判台只看差异：多选属性给并集，唯一属性冲突点名并要求二选一（军令·查重三栏）。
+    entry["meta_diff"] = _meta_diff(existing, entry["incoming"])
     answer_state = pending_dedupe.answer_mismatch(existing.get("answer"),
                                                  entry["incoming"].get("answer"))
     entry["answer"] = {
@@ -463,16 +472,28 @@ def _extra_sources(provider_id: str, main: dict[str, Any],
 # ---------------------------------------------------------------- 四个动作
 
 
-def merge_metadata(pool_id: str) -> dict[str, Any]:
-    """只并元数据：来源追加、标签并集、考向并集（主考向仍用主库原题的）、难度仅补缺。
+def merge_metadata(pool_id: str, *, resolutions: Any = None) -> dict[str, Any]:
+    """只并元数据：来源追加、标签并集、考向并集（主考向仍用主库原题的）。
 
-    题干、选项、答案、解析、配图**一个字不动**（判据 4.4）；两侧都有且值不同的字段
-    不覆盖，原样列进 ``conflicts`` 让老师自己选。
+    题干、选项、答案、解析、配图**一个字不动**（判据 4.4）。唯一属性（题型 / 难度）
+    两侧都有且不同时，必须由老师用 ``resolutions``（``main`` / ``incoming``）二选一；
+    没选就拒绝合并——界面锁按钮只是提示，真正的闸门在这里。
     """
     row = _pool_row(pool_id)
     main = _require_main(row)
     _answer_gate(row, main, "merge_metadata")
     incoming = _json_object(row["doc_json"])
+    diff = _meta_diff(main, incoming)
+    chosen = _resolutions(resolutions)
+    missing = [field for field in diff["requires_resolution"] if field not in chosen]
+    if missing:
+        raise PoolActionRefused(
+            "题型或难度两边不同，必须先决定保留哪一边再合并。",
+            code="meta_conflict",
+            action="merge_metadata",
+            conflicts=[item for item in diff["conflicts"] if item["field"] in missing],
+            requires_resolution=diff["requires_resolution"],
+        )
 
     patch: dict[str, Any] = {}
     changed: dict[str, Any] = {}
@@ -496,14 +517,26 @@ def merge_metadata(pool_id: str) -> dict[str, Any]:
         patch["taxonomy"] = main_tax
         changed["taxonomy"] = main_tax
 
-    for field in ("difficulty", "grade"):
-        has_main = str(main.get(field) or "").strip()
-        has_incoming = str(incoming.get(field) or "").strip()
-        if has_main and has_incoming and has_main != has_incoming:
-            conflicts.append({"field": field, "main": has_main, "incoming": has_incoming})
-        elif not has_main and has_incoming:
-            patch[field] = has_incoming
-            changed[field] = has_incoming
+    for field in REQUIRED_UNIQUE_FIELDS:
+        main_value = _unique_values(main, field)
+        incoming_value = _unique_values(incoming, field)
+        if main_value == incoming_value:
+            continue
+        if chosen.get(field) == "incoming":
+            patch[field] = incoming_value
+            changed[field] = incoming_value
+        elif not main_value and incoming_value:
+            patch[field] = incoming_value
+            changed[field] = incoming_value
+        # 选 main（或两边都有冲突已裁决保留主库）就一个字不改。
+    # 年级不在唯一属性二选一里：冲突只报不改，沿用旧口径。
+    main_grade = str(main.get("grade") or "").strip()
+    incoming_grade = str(incoming.get("grade") or "").strip()
+    if main_grade and incoming_grade and main_grade != incoming_grade:
+        conflicts.append({"field": "grade", "main": main_grade, "incoming": incoming_grade})
+    elif not main_grade and incoming_grade:
+        patch["grade"] = incoming_grade
+        changed["grade"] = incoming_grade
 
     extra = _source_entry(incoming)
     sources = _extra_sources(row["provider_id"], main, extra)
@@ -633,11 +666,16 @@ _ACTS = {
 }
 
 
-def act(pool_id: str, action: Any) -> dict[str, Any]:
-    """四个动作的唯一入口：动作名不认就是不认，不做「猜一个最像的」。"""
+def act(pool_id: str, action: Any, *, resolutions: Any = None) -> dict[str, Any]:
+    """四个动作的唯一入口：动作名不认就是不认，不做「猜一个最像的」。
+
+    ``resolutions`` 只服务合并元数据时的题型/难度二选一，其余动作传了也不认。
+    """
     choice = str(action or "").strip()
     if choice not in _ACTS:
         raise PendingError(f"不认识的池内动作：{action}（只收 {'、'.join(ACTIONS)}）")
+    if choice == "merge_metadata":
+        return merge_metadata(pool_id, resolutions=resolutions)
     return _ACTS[choice](pool_id)
 
 

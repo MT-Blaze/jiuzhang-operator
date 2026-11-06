@@ -63,6 +63,11 @@
     var opened = {};
     // 监听只挂一次的开关：辅助栏会被反复 activate。
     var wired = false;
+    // 查重三栏（军令·查重三栏）：对比模式开启时画布归 ui_dup_compare 独占，
+    // 这里不再把选中推去旧的两栏屏，也不在刷新时擅自收窗。
+    var compareActive = false;
+    var selectionListener = null;
+    var poolStateListener = null;
 
     var ACTION_LABELS = {
       merge_metadata: "合并元数据",
@@ -210,6 +215,7 @@
       // 池里有货也要等老师点入口钮才展开——入口只这一颗，画布那一屏一颗按钮都没有。
       sectionEl.hidden = !selectedEntry && !(revealed && entries.length);
       paintEntry();
+      if (poolStateListener) poolStateListener(entries.length, selectedEntry);
       if (!entries.length) return;
       if (countEl) {
         countEl.textContent = entries.length + " 条";
@@ -231,7 +237,7 @@
         if (selectedId && !rows.some(function (entry) { return String(entry.pool_id) === selectedId; })) {
           selectedId = "";
           selectedEntry = null;
-          notifyCanvas("closed");
+          if (!compareActive) notifyCanvas("closed");
         }
         render();
         return rows;
@@ -244,24 +250,28 @@
     /** 选中一条：取详情（两侧完整文档）→ 交给画布那一屏画渲染，这里只管裁决。 */
     function select(entry) {
       var poolId = String((entry && entry.pool_id) || "");
-      if (!poolId) return;
+      if (!poolId) return Promise.resolve(null);
       if (selectedId === poolId && selectedEntry) {
         render();
-        return;
+        return Promise.resolve(selectedEntry);
       }
       selectedId = poolId;
       selectedEntry = null;
       say("", "info", "idle");
       render();
-      hostCall("pending.pool_get", { pool_id: poolId, tier: tier }).then(function (detail) {
-        if (!detail || String(detail.pool_id) !== selectedId) return;
+      return hostCall("pending.pool_get", { pool_id: poolId, tier: tier }).then(function (detail) {
+        if (!detail || String(detail.pool_id) !== selectedId) return null;
         selectedEntry = detail;
         render();
-        notifyCanvas("open", detail);
+        // 对比模式由裁判台接管：只把详情交回去，旧两栏屏不再抢画布。
+        if (compareActive && selectionListener) selectionListener(detail);
+        else notifyCanvas("open", detail);
+        return detail;
       }, function (error) {
         selectedId = "";
         render();
         say("这一条的详情没取回来：" + ((error && error.message) || "未知原因"), "error", "failed");
+        return null;
       });
     }
 
@@ -398,6 +408,16 @@
 
     function poolSize() { return entries.length; }
 
+    /** 裁判台接管画布时置真：选中不再推旧两栏屏，刷新也不擅自收窗。 */
+    function setCompareActive(on) { compareActive = Boolean(on); }
+
+    function setSelectionListener(fn) { selectionListener = typeof fn === "function" ? fn : null; }
+
+    function setPoolStateListener(fn) {
+      poolStateListener = typeof fn === "function" ? fn : null;
+      if (poolStateListener) poolStateListener(entries.length, selectedEntry);
+    }
+
     return {
       ACTION_LABELS: ACTION_LABELS,
       backToReview: backToReview,
@@ -407,9 +427,13 @@
       refresh: refresh,
       reveal: reveal,
       runAction: runAction,
+      entries: function () { return entries; },
       select: select,
       selected: selected,
       poolSize: poolSize,
+      setCompareActive: setCompareActive,
+      setPoolStateListener: setPoolStateListener,
+      setSelectionListener: setSelectionListener,
       tierNow: tierNow,
       wire: wire,
     };

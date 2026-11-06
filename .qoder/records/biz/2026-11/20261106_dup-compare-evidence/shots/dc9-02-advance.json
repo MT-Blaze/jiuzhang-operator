@@ -1,0 +1,29 @@
+{
+  "before": {
+    "bodyMark": "render-body-stable",
+    "incMark": "incoming-stable",
+    "incText": 114,
+    "incBox": [
+      340,
+      628
+    ],
+    "src": "\\begin{question}\n查重三栏甲近形：已知 $x^2-5x+6=0$，求它的两个根之和（　　）。选项 A $5$、B $6$、C $11$、D $1",
+    "current": "pool_914c27508c80f1819a18c3d6"
+  },
+  "after": {
+    "bodyMark": "render-body-stable",
+    "incMark": "incoming-stable",
+    "incText": 126,
+    "incBox": [
+      340,
+      628
+    ],
+    "mode": "compare",
+    "removals": 0,
+    "src": "\\begin{question}\n查重三栏乙近形：数列 $\\{a_n\\}$ 满足 $a_n=2n-1$，求前 3 项的和（　　）。选项 A $9$、B $6$、",
+    "current": "pool_bfbf9b5e55202a0b97653eab"
+  },
+  "ident_before": "很像 89% · 池内 p_be8e1410e898b213c835a2aa · 主库 q_04a45e8e30e9d4b1fbc9e4ec",
+  "ident_after": "很像 89% · 池内 p_c66a1884bf62f1c8021723dd · 主库 q_b7c6f1f9e476ca4189234570",
+  "pool_total_after": 1
+}
