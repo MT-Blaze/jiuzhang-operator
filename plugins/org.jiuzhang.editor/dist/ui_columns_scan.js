@@ -38,12 +38,43 @@
       openCrop(pageCropItem(page, index), index, cell, true);
     }
 
+    /** 只读绿框层：坐标来自 page.regions 的原图像素，只给老师看位置，不吃任何鼠标。 */
+    function renderGreenLayer(page) {
+      var width = Number(page && page.width) || 0;
+      var height = Number(page && page.height) || 0;
+      var regions = (page && Array.isArray(page.regions)) ? page.regions : [];
+      if (!width || !height || !regions.length) return null;
+      var layer = el("div", "ed-green-layer");
+      regions.forEach(function (region, regionIndex) {
+        var w = Number(region && region.w) || 0;
+        var h = Number(region && region.h) || 0;
+        if (!(w > 0) || !(h > 0)) return;
+        var number = Number(region.no) || regionIndex + 1;
+        var box = el("div", "ed-green-box");
+        box.setAttribute("data-no", String(number));
+        if (region.pending_id) box.setAttribute("data-pending-id", String(region.pending_id));
+        box.style.left = ((Number(region.x) || 0) / width * 100) + "%";
+        box.style.top = ((Number(region.y) || 0) / height * 100) + "%";
+        box.style.width = (w / width * 100) + "%";
+        box.style.height = (h / height * 100) + "%";
+        box.appendChild(el("span", "ed-green-no", String(number)));
+        layer.appendChild(box);
+      });
+      return layer;
+    }
+
     function renderPageSlide(page, index) {
       var pageNo = Number(page && page.page) || index + 1;
       var cell = el("div", "ed-img-cell ed-page-cell");
       cell.setAttribute("role", "listitem");
       cell.setAttribute("data-index", String(index));
       cell.setAttribute("data-page-index", String(index));
+      // 页与页之间只留一道极细虚线 + 页码：整卷像一条连续长纸带。
+      if (index > 0) {
+        var sep = el("div", "ed-page-sep");
+        sep.appendChild(el("span", "ed-page-sep-text", "原卷第 " + pageNo + " 页"));
+        cell.appendChild(sep);
+      }
       var frame = el("div", "ed-img-frame ed-img-page");
       var img = document.createElement("img");
       img.src = safeAssetUri(page && page.uri) || "";
@@ -57,13 +88,16 @@
       var box = el("div", "ed-img-box");
       box.setAttribute("data-box", "stem");
       frame.appendChild(box);
+      var greens = renderGreenLayer(page);
+      if (greens) frame.appendChild(greens);
       // 切图台自己的画布/动作条会冒泡到这里：放行，别一松鼠标就重开一次。
       frame.addEventListener("click", function (event) {
-        if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint")) {
+        if (!event.target.closest(
+            ".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint, .ed-img-tools")) {
           openPageCrop(page, index, cell);
         }
       });
-      cell.appendChild(frame);
+      // 入口浮在页角：页与页之间除了那道虚线，不再插任何按钮。
       var tools = el("div", "ed-img-tools");
       var cropBtn = el("button", "ed-img-crop-btn", "框选切题");
       cropBtn.type = "button";
@@ -73,17 +107,8 @@
         openPageCrop(page, index, cell);
       });
       tools.appendChild(cropBtn);
-      cell.appendChild(tools);
-      var regions = (page && Array.isArray(page.regions)) ? page.regions : [];
-      var pooledCount = regions.filter(function (region) {
-        return Boolean(region && region.pending_id);
-      }).length;
-      var caption = "原卷第 " + pageNo + " 页 · 拖框即生成新题";
-      if (pooledCount) {
-        caption = "原卷第 " + pageNo + " 页 · 已自动切出 " + pooledCount
-          + " 道题排进中间，点顶部【重新切题】微调";
-      }
-      cell.appendChild(el("p", "ed-img-caption", caption));
+      frame.appendChild(tools);
+      cell.appendChild(frame);
       return cell;
     }
 

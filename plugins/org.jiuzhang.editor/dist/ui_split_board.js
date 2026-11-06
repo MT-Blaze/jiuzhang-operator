@@ -190,7 +190,8 @@
     }
 
     function fitWidth(boardSession) {
-      return Math.max(260, boardSession.shell.scroll.clientWidth - 44);
+      // 画板已经去边框：纸带直接铺满滚动区，不再留左右面板内衬。
+      return Math.max(260, boardSession.shell.scroll.clientWidth);
     }
 
     function applyScale(boardSession) {

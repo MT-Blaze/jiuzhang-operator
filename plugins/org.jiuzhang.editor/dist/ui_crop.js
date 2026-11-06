@@ -211,6 +211,9 @@
     if (img) img.hidden = true;
     var box = frame.querySelector(".ed-img-box");
     if (box) box.hidden = true;
+    // 只读绿框层让位给切图台：两套框叠在一起既看不清，也容易误认。
+    var greens = frame.querySelector(".ed-green-layer");
+    if (greens) greens.hidden = true;
     if (session.canvas && session.canvas.parentNode !== frame) {
       if (session.canvas.parentNode) session.canvas.parentNode.removeChild(session.canvas);
       frame.insertBefore(session.canvas, frame.firstChild);

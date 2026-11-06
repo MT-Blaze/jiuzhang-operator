@@ -171,6 +171,7 @@
       }
       if (session.img) session.img.hidden = false;
       if (session.box) session.box.hidden = false;
+      if (session.greens) session.greens.hidden = false;
       // 位图来自 ui_crop 的整页缓存，收摊时不关——关了下一题就解不开同一页。
     }
 
@@ -184,8 +185,10 @@
       session.height = bitmap.height;
       session.img = spot.frame.querySelector("img");
       session.box = spot.frame.querySelector(".ed-img-box");
+      session.greens = spot.frame.querySelector(".ed-green-layer");
       if (session.img) session.img.hidden = true;
       if (session.box) session.box.hidden = true;
+      if (session.greens) session.greens.hidden = true;
       var canvas = document.createElement("canvas");
       canvas.className = "ed-illustration-canvas";
       canvas.setAttribute("aria-label", "配图画板：拖拽框选，双击确认，Esc 取消");

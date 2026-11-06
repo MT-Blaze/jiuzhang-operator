@@ -191,6 +191,17 @@ def main() -> int:
             check("05 画板宽度占视口六到七成",
                   bool(board_box) and 0.58 * 1440 <= board_box["width"] <= 0.72 * 1440,
                   board_box)
+            board_style = canvas.locator("#edSbBoard").evaluate(
+                "node => { var s = getComputedStyle(node);"
+                " return [s.backgroundColor, s.borderTopWidth, s.borderTopLeftRadius,"
+                " s.boxShadow, getComputedStyle(node.querySelector('.ed-sb-pages')).rowGap,"
+                " getComputedStyle(node.querySelector('.ed-sb-scroll')).backgroundColor]; }")
+            result["metrics"]["board_style"] = board_style
+            check("05a 画板已去弹窗边框且内部纸带无缝",
+                  board_style[0] == "rgba(0, 0, 0, 0)" and board_style[1] == "0px"
+                  and board_style[2] == "0px" and board_style[3] == "none"
+                  and board_style[4] == "0px" and board_style[5] == "rgba(0, 0, 0, 0)",
+                  board_style)
             check("06 画板打开时底层滚动被锁死",
                   canvas.locator("#edRoot").evaluate(
                       "() => document.documentElement.style.overflow") == "hidden"
@@ -412,6 +423,31 @@ def main() -> int:
                   final.get("per_page") == [4, 7, 4, 3, 1], final.get("per_page"))
             page.screenshot(path=str(shots / "04_confirmed.png"))
             expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=20000)
+            page.wait_for_timeout(500)
+            left = canvas.locator(".ed-page-cell")
+            caption_count = left.locator(".ed-img-caption").count()
+            sep_count = left.locator(".ed-page-sep").count()
+            sep_text = left.locator(".ed-page-sep").first.inner_text()
+            green_count = left.locator(".ed-green-box").count()
+            green_style = left.locator(".ed-green-box").first.evaluate(
+                "node => { var s = getComputedStyle(node); return [s.pointerEvents,"
+                " s.position, s.borderTopStyle, s.borderTopColor, s.borderTopWidth,"
+                " node.querySelectorAll('button, [data-handle], .ed-sb-handle').length]; }")
+            layer_events = left.locator(".ed-green-layer").first.evaluate(
+                "node => getComputedStyle(node).pointerEvents")
+            result["metrics"]["left_strip"] = {
+                "caption": caption_count, "separators": sep_count, "separator_text": sep_text,
+                "green_boxes": green_count, "green_style": green_style,
+                "layer_events": layer_events}
+            check("29 左栏页底提示文字块已整块撤除", caption_count == 0, caption_count)
+            check("30 页与页之间只留虚线页码",
+                  sep_count == 4 and "原卷第 2 页" in sep_text,
+                  [sep_count, sep_text])
+            check("31 左栏按页画只读绿框（吃不到鼠标、没有手柄）",
+                  green_count == 19 and layer_events == "none" and green_style[0] == "none"
+                  and green_style[1] == "absolute" and green_style[2] == "solid"
+                  and green_style[3] == "rgb(47, 158, 90)" and green_style[4] == "2px"
+                  and green_style[5] == 0, result["metrics"]["left_strip"])
 
             result["metrics"]["console_errors"] = result["console_errors"]
             result["metrics"]["page_errors"] = result["page_errors"]

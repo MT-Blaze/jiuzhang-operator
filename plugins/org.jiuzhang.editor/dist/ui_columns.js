@@ -688,6 +688,18 @@
         var on = index === state.active;
         node.setAttribute("aria-current", on ? "true" : "false");
       });
+    // 整卷纸带的绿框只读：当前题对应那一框加深，其余保持浅绿——不拦任何手势。
+    if (state.scanBatch) {
+      var activeItem = state.items[state.active];
+      var activePending = String((activeItem && activeItem.pendingId) || "");
+      Array.prototype.forEach.call(
+        imageBodyEl ? imageBodyEl.querySelectorAll(".ed-green-box") : [],
+        function (node) {
+          node.classList.toggle("is-active",
+            Boolean(activePending)
+              && node.getAttribute("data-pending-id") === activePending);
+        });
+    }
   }
 
   function jumpTo(index) {

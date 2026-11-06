@@ -1857,9 +1857,20 @@ class EditorSplitBoardContractTest(unittest.TestCase):
         self.assertIn("position: fixed", board)
         self.assertIn("display: flex", board)
         self.assertIn("width: min(68vw", board, "画板占屏幕六到七成宽")
+        # 2026-11-06 阶段一：画板去边框——没有白底、圆角、边框、阴影，
+        # 内部直接铺纸带；遮罩仍是防穿透的半透明层。
+        self.assertNotIn("border", board)
+        self.assertNotIn("border-radius", board)
+        self.assertNotIn("box-shadow", board)
+        self.assertIn("background: transparent", board)
         scroll = rule_body(css, ".ed-sb-scroll")
         self.assertIn("overflow: auto", scroll)
+        self.assertIn("background: transparent", scroll)
         self.assertIn("overscroll-behavior: contain", scroll)
+        pages = rule_body(css, ".ed-sb-pages")
+        self.assertIn("gap: 0", pages)
+        self.assertIn("padding: 0", pages)
+        self.assertIn("background: rgba(18, 22, 28, 0.56)", rule_body(css, ".ed-sb-mask"))
         box = rule_body(css, ".ed-sb-box")
         self.assertIn("position: absolute", box)
         self.assertIn("pointer-events: auto", box)
@@ -1893,6 +1904,43 @@ class EditorSplitBoardContractTest(unittest.TestCase):
         self.assertNotIn("hostCall(", discard)
         self.assertIn("close()", discard)
         self.assertIn("原卷一个字节都没动", discard)
+
+
+class EditorLeftPaperStripContractTest(unittest.TestCase):
+    """左栏整卷纸带（2026-11-06 阶段一）：无缝拼接、只读绿框、提示块撤除。"""
+
+    def test_01_the_gray_caption_block_is_gone(self) -> None:
+        module = read("ui_columns_scan.js")
+        self.assertNotIn("ed-img-caption", module, "左栏页底提示文字块必须整块撤除")
+        self.assertNotIn("已自动切出", module)
+        self.assertNotIn("pooledCount", module)
+        self.assertNotIn("pooledCount", read("plugin.js"))
+
+    def test_02_pages_join_into_one_strip(self) -> None:
+        module = read("ui_columns_scan.js")
+        self.assertIn('"ed-page-sep"', module)
+        self.assertIn('"原卷第 " + pageNo + " 页"', module)
+        css = read("plugin.css")
+        cell = rule_body(css, ".ed-img-cell.ed-page-cell {")
+        self.assertIn("padding: 0", cell, "页面不再留内衬，纸带要无缝相接")
+        self.assertIn("border-bottom: 0", cell)
+        self.assertIn("border-top: 1px dashed", rule_body(css, ".ed-page-sep::before"))
+        self.assertIn("position: absolute", rule_body(css, ".ed-img-cell.ed-page-cell .ed-img-tools"))
+
+    def test_03_green_boxes_are_read_only(self) -> None:
+        module = read("ui_columns_scan.js")
+        self.assertIn('"ed-green-layer"', module)
+        self.assertIn('"ed-green-box"', module)
+        self.assertIn('"data-pending-id"', module)
+        self.assertIn("ed-green-box", read("ui_columns.js"),
+                      "当前题对应的绿框要能加深，但只改 class")
+        css = read("plugin.css")
+        self.assertIn("pointer-events: none", rule_body(css, ".ed-green-layer"))
+        box = rule_body(css, ".ed-green-box {")
+        self.assertIn("pointer-events: none", box)
+        self.assertIn("position: absolute", box)
+        self.assertIn("border: 2px solid #2f9e5a", box)
+        self.assertNotIn("cursor: move", box)
 
 
 class EditorFixtureContractTest(unittest.TestCase):
