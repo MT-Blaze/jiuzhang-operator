@@ -15,6 +15,8 @@
     var el = deps.el;
     var errorDetail = deps.errorDetail;
     var hostCall = deps.hostCall;
+    // 本地 YOLO 模型闸门：返回 false 表示已弹下载窗、本次解析先别开工。
+    var modelGate = deps.modelGate;
     var panelSay = deps.panelSay;
     var publish = deps.publish;
     var refreshBatches = deps.refreshBatches;
@@ -110,6 +112,7 @@
     if (!ids || !ids.length) return;
     if (routeWatchTimer) window.clearInterval(routeWatchTimer);
     var seen = {};
+    var seenStatus = {};
     var polls = 0;
     var maxPolls = recognizeEngine === "mineru" ? 180 : 60;
     routeWatchTimer = window.setInterval(function () {
@@ -126,6 +129,16 @@
             seen[id] = note;
             dock(note);
           }
+          // YOLO 的版本/硬件播报：正文自带 [INFO]/[WARN] 前缀，一律落【运行日志】；
+          // 只有红字 OOM 警示进【报错诊断】。
+          var statuses = Array.isArray(route.layout_status) ? route.layout_status : [];
+          statuses.forEach(function (item) {
+            var text = String((item && item.text) || "");
+            if (!text || seenStatus[id + "|" + text]) return;
+            seenStatus[id + "|" + text] = true;
+            var level = String((item && item.level) || "info");
+            dock(text, level === "error" ? "error" : "info", "editor.layout");
+          });
           if (!route.done) waiting += 1;
         });
         if (!waiting || polls >= maxPolls) {
@@ -159,6 +172,10 @@
         paint();
         dock((kind === "layout" ? "版面引擎：" : "识别引擎：")
           + engineLabel(kind, current()) + "（只对下一次【开始解析】生效）");
+        // 切到 YOLO 且本机没模型：当场弹窗选满血版/量化版，不让老师带着空库去解析。
+        if (kind === "layout" && key === "yolo" && typeof modelGate === "function") {
+          modelGate("yolo");
+        }
       });
     }
 
@@ -402,42 +419,47 @@
   /** 【开始解析】：筐里有多少交多少，宿主那边立批次、后台跑识别。 */
   function basketGo() {
     if (!state.basket.length || basketBusy) return Promise.resolve(null);
-    basketBusy = true;
-    setBasketBusy(true);
     var pickedLayout = currentLayoutEngine();
     var pickedRecognize = currentRecognizeEngine();
-    return Promise.all(state.basket.map(function (entry) {
-      // 剪贴板里的图未必带文件名，补上筐里显示的那个，解析才认得出它。
-      return fileEntry(entry.file, entry.name);
-    })).then(function (payloads) {
-      return ingestEntries(payloads.filter(Boolean), pickedLayout, pickedRecognize);
-    }).then(function (result) {
-      if (result) {
-        basketClear();
-        refreshBatches();
-        if (result.parsing) {
-          // 页图在后台渲染：隔几拍再刷，纯图片批次的「原卷 N 页」会自己长出来。
-          [1500, 4000, 8000, 15000].forEach(function (delay) {
-            window.setTimeout(refreshBatches, delay);
-          });
-          var ids = Array.isArray(result.batch_ids)
-            ? result.batch_ids
-            : (result.batch_id ? [result.batch_id] : []);
-          // MinerU 可能排队十几分钟：持续把路由进度写进底部日志，别让老师干等。
-          watchRoute(ids.map(String), pickedRecognize);
-        }
-      }
-      basketBusy = false;
-      setBasketBusy(false);
-      renderBasket();
-      return result;
-    }, function (error) {
-      basketBusy = false;
-      setBasketBusy(false);
-      renderBasket();
-      dockWarn("开始解析失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
-      return null;
-    });
+    // 选 YOLO 但本机没模型：先弹下载窗，老师选完再自己点一次开始。
+    return Promise.resolve(typeof modelGate === "function" ? modelGate(pickedLayout) : true)
+      .then(function (ready) {
+        if (!ready) return null;
+        basketBusy = true;
+        setBasketBusy(true);
+        return Promise.all(state.basket.map(function (entry) {
+          // 剪贴板里的图未必带文件名，补上筐里显示的那个，解析才认得出它。
+          return fileEntry(entry.file, entry.name);
+        })).then(function (payloads) {
+          return ingestEntries(payloads.filter(Boolean), pickedLayout, pickedRecognize);
+        }).then(function (result) {
+          if (result) {
+            basketClear();
+            refreshBatches();
+            if (result.parsing) {
+              // 页图在后台渲染：隔几拍再刷，纯图片批次的「原卷 N 页」会自己长出来。
+              [1500, 4000, 8000, 15000].forEach(function (delay) {
+                window.setTimeout(refreshBatches, delay);
+              });
+              var ids = Array.isArray(result.batch_ids)
+                ? result.batch_ids
+                : (result.batch_id ? [result.batch_id] : []);
+              // MinerU 可能排队十几分钟：持续把路由进度写进底部日志，别让老师干等。
+              watchRoute(ids.map(String), pickedRecognize);
+            }
+          }
+          basketBusy = false;
+          setBasketBusy(false);
+          renderBasket();
+          return result;
+        }, function (error) {
+          basketBusy = false;
+          setBasketBusy(false);
+          renderBasket();
+          dockWarn("开始解析失败：" + ((error && error.message) || "未知原因"), errorDetail(error));
+          return null;
+        });
+      });
   }
 
   /** 面板实例（在右栏那张 iframe 里）把文件交给宿主，由宿主转进画布的筐。 */

@@ -51,6 +51,17 @@ def save_route(pending_bank: Any, batch_id: str, route: dict[str, Any]) -> None:
         pass
 
 
+def attach_layout(route: dict[str, Any], layout: dict[str, Any] | None) -> dict[str, Any]:
+    """把 YOLO 实际用的版本、硬件与逐级状态挂到批次路由，宿主据此播报到运行日志。"""
+    if not layout:
+        return route
+    if layout.get("status"):
+        route["layout_status"] = list(layout["status"])
+    if layout.get("model"):
+        route["layout_model"] = dict(layout["model"])
+    return route
+
+
 def auto_split_shell(page_no: int, number: Any, asset_id: str, title: str,
                      region: dict[str, Any] | None = None) -> dict[str, Any]:
     """自动切图生成的一道待审题；纯本地提取由 ``recognize_local`` 统一实现。"""
@@ -188,6 +199,7 @@ async def fill_scan_batch(batch_id: str,
     report = ingest_quality.triage_documents([item.get("question") for item in items])
     log_stats(report)
     route = scan_route(layout_engine, recognize_engine, health)
+    attach_layout(route, layout)
     if layout:
         route["layout_detected"] = str(layout.get("engine") or "")
         route["layout_attempts"] = list(layout.get("attempts") or [])

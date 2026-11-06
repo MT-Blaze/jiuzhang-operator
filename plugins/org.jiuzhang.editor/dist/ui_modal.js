@@ -15,6 +15,7 @@
     var poolDelModalEl = deps.dom.poolDelModalEl;
     var aiConfigModalEl = deps.dom.aiConfigModalEl;
     var aiOverwriteModalEl = deps.dom.aiOverwriteModalEl;
+    var modelModalEl = deps.dom.modelModalEl;
 
   // ---------- 弹窗：彻底删除（焦点圈住、Esc 可关、关掉还焦） ----------
   // 查重对比浮层不在这套里：它按军令 #23 一颗按钮都不放（画布里只许有题目内容），
@@ -30,6 +31,8 @@
     // AI 配置中心与覆盖确认（终极军令 任务一/三）：同样要圈得住焦点、Esc 能关。
     if (aiConfigModalEl && !aiConfigModalEl.hidden) return aiConfigModalEl;
     if (aiOverwriteModalEl && !aiOverwriteModalEl.hidden) return aiOverwriteModalEl;
+    // 本地模型下载选择（按需下载）：Esc 能关、焦点圈得住。
+    if (modelModalEl && !modelModalEl.hidden) return modelModalEl;
     return null;
   }
 

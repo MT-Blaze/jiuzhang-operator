@@ -75,8 +75,8 @@
     dom: dom,
     coreState: coreState,
   });
-  var closeModal = uiModal.closeModal;
-  var openModal = uiModal.openModal;
+  var closeModal = uiModal.closeModal, openModal = uiModal.openModal;
+  var uiModel = window.JzoEditorModel.create({ dom: dom, dock: dock, dockWarn: dockWarn, hostCall: hostCall, openModal: openModal, closeModal: closeModal });
 
   // 查重拦截的画布侧对比浮层（军令 #31）：只画两侧渲染，裁决动作全在辅助栏。
   var uiDup = window.JzoEditorDup.create({
@@ -405,6 +405,7 @@
     el: el,
     errorDetail: errorDetail,
     hostCall: hostCall,
+    modelGate: uiModel.ensureLayoutModel,
     panelSay: panelSay,
     publish: publish,
     refreshBatches: refreshBatches,

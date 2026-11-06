@@ -59,6 +59,7 @@ async def run(name: str, data: bytes, pages: list[dict[str, Any]],
     table = providers if providers is not None else default_providers()
     request = {"name": name, "data": data, "pages": pages}
     attempts: list[dict[str, Any]] = []
+    statuses: list[dict[str, str]] = []
     for key in plan(picked):
         provider = table.get(key)
         if provider is None:
@@ -73,6 +74,8 @@ async def run(name: str, data: bytes, pages: list[dict[str, Any]],
         ok = bool(result.get("ok")) and bool(result.get("pages"))
         attempts.append({"engine": key, "ok": ok,
                          "detail": str(result.get("detail") or "")})
+        statuses.extend(item for item in result.get("status") or []
+                        if isinstance(item, dict))
         if ok:
             return {
                 "ok": True,
@@ -81,6 +84,7 @@ async def run(name: str, data: bytes, pages: list[dict[str, Any]],
                 "pages": result.get("pages") or {},
                 "columns": result.get("columns") or {},
                 "attempts": attempts,
+                "status": statuses,
                 "detail": str(result.get("detail") or ""),
             }
     return {
@@ -90,5 +94,6 @@ async def run(name: str, data: bytes, pages: list[dict[str, Any]],
         "pages": {},
         "columns": {},
         "attempts": attempts,
+        "status": statuses,
         "detail": "所有版面引擎都没找到题块",
     }

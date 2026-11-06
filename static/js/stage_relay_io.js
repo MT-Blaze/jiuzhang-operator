@@ -587,7 +587,50 @@
     return false;
   }
 
+  /** relay() 的「Layout」分支族：本地 YOLO 模型仓库。 */
+  function relayLayout(ctx) {
+    var tab = ctx.tab, message = ctx.message, method = ctx.method, payload = ctx.payload;
+    var done = ctx.done, fail = ctx.fail;
+
+    if (method.indexOf("layout.") !== 0) return false;
+
+    if (method === "layout.model_status") {
+      // 只读：模型是否落地、本机有没有显卡加速、下载进度。不出网、不碰库。
+      fetchJson("/api/layout/models/status").then(done, fail);
+      return true;
+    }
+
+    if (method === "layout.model_download") {
+      // 出网口子：老师点【下载】才走到这里；地址只由底座配置决定。
+      var layoutPermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (layoutPermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能下载本地模型"
+        });
+        return true;
+      }
+      var modelKind = textValue(payload, "kind", 16);
+      if (modelKind !== "full" && modelKind !== "quantized") {
+        replyHost(tab, message, false, {
+          code: "BAD_REQUEST",
+          message: "模型编号只认 full / quantized"
+        });
+        return true;
+      }
+      withWriteToken("/api/layout/models/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: modelKind })
+      }).then(done, fail);
+      return true;
+    }
+
+    return false;
+  }
+
     return {
+      relayLayout: relayLayout,
       relayMeta: relayMeta,
       relayPending: relayPending,
       relayText: relayText,

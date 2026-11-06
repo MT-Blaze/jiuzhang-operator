@@ -57,6 +57,8 @@
     "meta.school_create", "meta.school_suggest", "meta.tag_remember",
     // 军令 #25：拖入/粘贴的文件进中转站。
     "ingest.files",
+    // 本地 YOLO 模型仓库：查硬件/模型落地状态（只读），按需下载（老师点击才出网）。
+    "layout.model_status", "layout.model_download",
     "draft.save", "draft.load",
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。

@@ -8,3 +8,6 @@ jsonschema==4.26.0
 # 许可 Apache-2.0 / BSD-3-Clause，符合铁律一白名单（AGPL 的 PyMuPDF 严禁引入）。
 pypdfium2==5.9.0
 uvicorn==0.52.1
+# 本地 YOLO 推理是可选项：不装 onnxruntime 时版面引擎自动降级到云端。
+# Windows 通用显卡加速装 `onnxruntime-directml`，NVIDIA 装 `onnxruntime-gpu`；
+# Python 3.14 目前没有官方轮子，装不上也不影响底座启动。

@@ -589,6 +589,8 @@ com.example.card/
 | `basket.clear` | 清空 | 无参数 |
 | `asset.upload` | 上传框选/切出的题目配图（军令 #13） | 需 `assets:write` 权限；`payload.data_url` 只接受 PNG / JPEG / WebP 的 base64 data URL，解码后 ≤8 MiB；文件名由底座生成，返回 `{id, uri, mime, bytes, sha256}`，`uri` 可直接写进 `\includegraphics{...}` 与 `images[].uri` |
 | `text.clean_latex` | 脏 LaTeX 规则清洗（军令 #21） | `payload.text` ≤20000 字，超长直接回 `BAD_REQUEST`，**不截断**；返回 `{ok, text, changed, rules[], options[]}`。底座实现只有 `app/core/question_parser.py` 的 `clean_dirty_latex` 一处：定界符、等价记号、`\displaystyle`、`\fillin`、文本宏转 Markdown、列表与 `choices` 环境；同一输入永远同一输出，不调模型、不碰题库 |
+| `layout.model_status` | 本地 YOLO 模型仓库快照 | 只读；返回 `{hardware:{ready,providers,gpu,hardware_label}, models:{full,quantized:{present,version,label,display_size,bytes,min_bytes}}, download}`。不出网、不碰库，插件据此决定是否弹下载窗与播报哪一路硬件 |
+| `layout.model_download` | 按需下载本地 YOLO 模型 | 需 `questions:write`；`payload.kind` 只认 `full` / `quantized`，下载地址只来自插件目录 `model_config.json` 的镜像，**请求体不能带 URL**；必须由界面点击发起，禁止启动时自动拉取；先写 `.tmp`，只有大小达到 `min_bytes` 且与 `Content-Length` 一致才原子改名为 `.onnx`，半截文件直接丢弃；后台线程落盘到当前工作区 `plugins/org.jiuzhang.editor/models/`，失败零残留。模型目录与 `.onnx` 等后缀一律不进插件发行包（打包硬上限 10MB） |
 
 安全边界：
 

@@ -33,8 +33,14 @@ DENY_NAMES = {
     ".local_token",
     "plugin.zip",
 }
-DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal", ".db-journal", ".db"}
-DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache", "dev"}
+DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal",
+                 ".db-journal", ".db", ".part",
+                 # 本地 YOLO 模型按需下载、绝不随包分发（军令：插件包 <10MB）。
+                 ".onnx", ".ort", ".pt", ".pth", ".ckpt", ".bin", ".safetensors",
+                 ".h5", ".pb", ".tflite"}
+DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache",
+             "dev", "models"}
+MAX_PACKAGE_BYTES = 10 * 1024 * 1024
 # 军令 #23：``dev/`` 是开发期假数据（fixtures）的落点，只服务本机探针与浏览器验证，
 # 一律不进发行包——沙箱 CSP 是 connect-src 'none'，假数据的唯一运行期事实来源是
 # plugin.js 里 //# FIXTURES-BEGIN/END 之间的内嵌块，由 tools/sync_editor_fixtures.py 同步。
@@ -104,6 +110,12 @@ def build_plugin(plugin_dir: Path, out_dir: Path) -> Path:
         if tmp.exists():
             tmp.unlink()
         raise
+    size = tmp.stat().st_size
+    if size > MAX_PACKAGE_BYTES:
+        tmp.unlink()
+        raise BuildError(
+            f"插件包 {size / 1024 / 1024:.1f} MB 超过 10 MB 上限："
+            "模型等大文件必须按需下载，不能进发行包")
     tmp.replace(target)
     return target
 

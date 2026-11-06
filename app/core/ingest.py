@@ -28,6 +28,7 @@ from typing import Any
 from app.core import page_render, text_health
 from app.core.ingest_media import _items_from_file, _page_of, _placeholder
 from app.core.ingest_route import (
+    attach_layout,
     auto_split_pages,
     fill_scan_batch,
     log_documents,
@@ -303,6 +304,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             if page_images:
                 layout = await layout_router.run(name, data, page_images, picked_layout)
                 _apply_layout(page_images, layout)
+                attach_layout(route, layout)
                 try:
                     pending_bank.set_batch_pages(batch_id, page_images)
                 except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着

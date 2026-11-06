@@ -23,6 +23,7 @@ from app.api.assets import router as assets_router
 from app.api.bank import router as bank_router
 from app.api.health import router as health_router
 from app.api.ingest import router as ingest_router
+from app.api.layout import router as layout_router
 from app.api.meta import router as meta_router
 from app.api.pending import router as pending_router
 from app.api.plugins import router as plugins_router
@@ -167,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(pending_router)
     app.include_router(meta_router)
     app.include_router(ingest_router)
+    app.include_router(layout_router)
     app.include_router(settings_router)
 
     @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)

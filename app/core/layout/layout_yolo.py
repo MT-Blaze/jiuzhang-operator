@@ -1,34 +1,55 @@
-"""本地 YOLO 版面探路：把页图交给本机部署的检测服务，换回题块坐标。
+"""本地 YOLO 版面探路：本机 ONNX 四级瀑布（满血 > 量化 > CPU > 云端）。
 
-只认**本机**服务（``JZO_YOLO_LAYOUT_URL``），绝不偷偷连公网；没部署、
-连不上、返回坏 JSON 都只算这一级失败，由调度员继续降级到云端。
-YOLO 只交坐标、不交文字——正文交给识别引擎，绝不拿模型猜题面。
+模型不进插件包，第一次由界面点击按需下载到当前工作区的插件目录。
+加载顺序严格按军令：满血+GPU → 量化+GPU → 量化+CPU → 失败交云端。
+每一级都把「版本 + 硬件」写进 status，宿主中继到【运行日志】。
+
+YOLO 只交坐标、不交文字；页图读不到或单页推理失败只丢那一页。
 """
 
 from __future__ import annotations
 
-import base64
-import json
-import os
-import urllib.error
-import urllib.request
+import logging
 from typing import Any
 
 from app.core import pending_assets
+from app.core.layout import layout_model_store, layout_yolo_runtime
 
-URL_ENV = "JZO_YOLO_LAYOUT_URL"
-TIMEOUT_ENV = "JZO_YOLO_LAYOUT_TIMEOUT"
-DEFAULT_TIMEOUT = 60.0
-_MIME = {".png": "image/png", ".jpg": "image/jpeg",
-         ".jpeg": "image/jpeg", ".webp": "image/webp"}
+logger = logging.getLogger(__name__)
+
+KIND_LABEL = {"full": "满血版", "quantized": "量化版"}
+OOM_WARNING = "⚠️ 显存不足，加载满血版失败，正在自动降级为量化版..."
+CLOUD_WARNING = "[WARN] 本地 YOLO 彻底失败，已自动降级至云端版面 API"
+OOM_MARKERS = (
+    "out of memory", "outofmemory", "cuda_error_out_of_memory",
+    "failed to allocate", "allocation failure", "not enough memory",
+    "insufficient memory", "bad_alloc", "显存不足", "内存不足",
+)
+
 
 def detect(request: dict[str, Any]) -> dict[str, Any]:
-    """逐页调用本机 YOLO；任何一页失败只丢那一页。"""
-    url = str(os.environ.get(URL_ENV) or "").strip()
-    if not url:
-        return _fail("本机没有部署 YOLO 版面服务（未设置 " + URL_ENV + "）")
-    if not url.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]")):
-        return _fail("YOLO 版面服务必须监听本机回环地址")
+    """逐页推理；单页失败只丢那一页，整级失败交给调度员降云端。"""
+    statuses: list[dict[str, str]] = []
+    hardware = layout_model_store.hardware()
+    if not hardware.get("ready"):
+        statuses.append(_line("warn", CLOUD_WARNING))
+        logger.warning(CLOUD_WARNING)
+        return _fail("本机缺少 onnxruntime：" + str(hardware.get("detail") or ""),
+                     statuses)
+
+    session, chosen, reason = _pick_session(hardware, statuses)
+    if session is None:
+        statuses.append(_line("warn", CLOUD_WARNING))
+        logger.warning(CLOUD_WARNING)
+        return _fail("本地 YOLO 不可用：" + (reason or "模型或运行库缺失"), statuses)
+
+    kind, provider = chosen
+    provider_label = ("CPU运行" if provider == "CPUExecutionProvider"
+                      else str(hardware.get("hardware_label") or "CPU运行"))
+    line = f"[INFO] 版面分析：{reason}本地 YOLO（{KIND_LABEL[kind]} / {provider_label}）"
+    statuses.append(_line("info", line))
+    logger.info(line)
+
     pages: dict[int, list[dict[str, Any]]] = {}
     notes: list[str] = []
     for entry in request.get("pages") or []:
@@ -40,37 +61,94 @@ def detect(request: dict[str, Any]) -> dict[str, Any]:
             continue
         if page_no <= 0 or width <= 0 or height <= 0:
             continue
-        image = _page_image(entry)
-        if not image:
+        raw = _page_image(entry)
+        if raw is None:
             notes.append(f"第 {page_no} 页读不到页图")
             continue
-        raw, mime = image
         try:
-            reply = _post(url, {
-                "page": page_no,
-                "width": width,
-                "height": height,
-                "mime": mime,
-                "image_b64": base64.b64encode(raw).decode("ascii"),
-            })
+            regions = layout_yolo_runtime.infer_regions(session, raw, width, height)
         except Exception as exc:  # noqa: BLE001 - 单页失败继续下一张
-            notes.append(f"第 {page_no} 页 YOLO 调用失败：{exc}")
+            notes.append(f"第 {page_no} 页推理失败：{exc}")
             continue
-        regions = _clean_regions(reply.get("regions"), width, height)
         if regions:
             pages[page_no] = regions
-    ok = bool(pages)
+    if not pages:
+        statuses.append(_line("warn", CLOUD_WARNING))
+        logger.warning(CLOUD_WARNING)
+        detail = "YOLO 没探出题块" + (("：" + "；".join(notes[:3])) if notes else "")
+        return _fail(detail, statuses)
     return {
-        "ok": ok,
+        "ok": True,
         "engine": "yolo",
         "pages": pages,
         "columns": {page: 1 for page in pages},
-        "detail": (f"YOLO 探出 {len(pages)} 页题块" if ok
-                   else "YOLO 没探出题块" + (("：" + "；".join(notes[:3])) if notes else "")),
+        "detail": f"YOLO 探出 {len(pages)} 页题块（{KIND_LABEL[kind]} / {provider_label}）",
+        "status": statuses,
+        "model": {**layout_model_store.describe(kind),
+                  "provider": provider, "hardware": provider_label},
     }
 
 
-def _page_image(entry: dict[str, Any]) -> tuple[bytes, str] | None:
+def _pick_session(hardware: dict[str, Any],
+                  statuses: list[dict[str, str]]) -> tuple[Any, tuple[str, str] | None, str]:
+    """严格按 满血+GPU → 量化+GPU → 量化+CPU 选，返回 (会话, (型号, 提供者), 前缀)。"""
+    gpu_provider = {"cuda": "CUDAExecutionProvider",
+                    "directml": "DmlExecutionProvider"}.get(str(hardware.get("gpu") or ""), "")
+    reason = "已启用"
+    if gpu_provider:
+        if layout_model_store.present("full"):
+            session, error = _load("full", [gpu_provider])
+            if session is not None:
+                return session, ("full", gpu_provider), reason
+            if _is_oom(error):
+                statuses.append(_line("error", OOM_WARNING))
+                logger.warning(OOM_WARNING)
+                reason = "显存不足，已降级为"
+            else:
+                reason = "满血版加载失败，已降级为"
+        session, error = _load("quantized", [gpu_provider])
+        if session is not None:
+            return session, ("quantized", gpu_provider), reason
+        if _is_oom(error):
+            if not any(item.get("text") == OOM_WARNING for item in statuses):
+                statuses.append(_line("error", OOM_WARNING))
+                logger.warning(OOM_WARNING)
+            reason = "显存不足，已降级为"
+        elif reason == "已启用":
+            reason = "显卡加速不可用，已降级为"
+
+    session, error = _load("quantized", ["CPUExecutionProvider"])
+    if session is not None:
+        return session, ("quantized", "CPUExecutionProvider"), reason
+    return None, None, str(error or reason)
+
+
+def _load(kind: str, providers: list[str]) -> tuple[Any, Exception | None]:
+    try:
+        if not layout_model_store.present(kind):
+            raise layout_yolo_runtime.RuntimeErrorYolo(
+                f"{KIND_LABEL[kind]}模型未下载或文件不完整")
+        path = layout_model_store.model_path(kind)
+        return layout_yolo_runtime.load_session(str(path), providers), None
+    except Exception as exc:  # noqa: BLE001 - 本档失败只该换下一档
+        return None, exc
+
+
+def _is_oom(error: Exception | None) -> bool:
+    """MemoryError 或 ONNX Runtime 的显存/内存不足文案都算 OOM。"""
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, MemoryError):
+            return True
+        text = str(error).lower()
+        if any(marker in text for marker in OOM_MARKERS):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
+def _page_image(entry: dict[str, Any]) -> bytes | None:
     name = str(entry.get("name") or "").strip()
     if not name:
         return None
@@ -78,65 +156,13 @@ def _page_image(entry: dict[str, Any]) -> tuple[bytes, str] | None:
         raw = pending_assets.asset_path(name).read_bytes()
     except Exception:  # noqa: BLE001 - 页图不在就交给下一级
         return None
-    suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    return (raw, _MIME.get("." + suffix, "image/png")) if raw else None
+    return raw or None
 
 
-def _post(url: str, payload: dict[str, Any]) -> dict[str, Any]:
-    timeout = _timeout()
-    body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        url, data=body, method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        document = json.loads(response.read(4 * 1024 * 1024).decode("utf-8", "replace"))
-    return document if isinstance(document, dict) else {}
+def _line(level: str, text: str) -> dict[str, str]:
+    return {"level": level, "text": text}
 
 
-def _timeout() -> float:
-    raw = str(os.environ.get(TIMEOUT_ENV) or "").strip()
-    if not raw:
-        return DEFAULT_TIMEOUT
-    try:
-        value = float(raw)
-    except ValueError:
-        return DEFAULT_TIMEOUT
-    return value if 1.0 <= value <= 600.0 else DEFAULT_TIMEOUT
-
-
-def _clean_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]:
-    """服务返回值 → 与 ``page_render`` 同形的题块；越界框直接丢。"""
-    regions: list[dict[str, Any]] = []
-    for index, item in enumerate(raw if isinstance(raw, list) else []):
-        if not isinstance(item, dict):
-            continue
-        try:
-            x = float(item.get("x") or 0)
-            y = float(item.get("y") or 0)
-            w = float(item.get("w") or item.get("width") or 0)
-            h = float(item.get("h") or item.get("height") or 0)
-        except (TypeError, ValueError):
-            continue
-        if w <= 0 or h <= 0 or x < 0 or y < 0:
-            continue
-        w = min(w, width - x)
-        h = min(h, height - y)
-        if w < 8 or h < 8:
-            continue
-        number = item.get("no")
-        regions.append({
-            "no": int(number) if isinstance(number, int) or str(number).isdigit() else index + 1,
-            "x": round(x, 1), "y": round(y, 1),
-            "w": round(w, 1), "h": round(h, 1),
-            "label": " ".join(str(item.get("label") or "").split())[:48],
-            "text": str(item.get("text") or "")[:2000],
-        })
-    regions.sort(key=lambda region: (region["y"], region["x"]))
-    for order, region in enumerate(regions, start=1):
-        region["no"] = order
-    return regions
-
-
-def _fail(detail: str) -> dict[str, Any]:
+def _fail(detail: str, statuses: list[dict[str, str]]) -> dict[str, Any]:
     return {"ok": False, "engine": "yolo", "pages": {}, "columns": {},
-            "detail": detail}
+            "detail": detail, "status": statuses}

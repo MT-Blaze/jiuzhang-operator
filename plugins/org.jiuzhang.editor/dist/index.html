@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="panel_meta.css">
   <link rel="stylesheet" href="panel_dialog.css">
+  <link rel="stylesheet" href="panel_model.css">
   <link rel="stylesheet" href="panel_pool.css">
   <link rel="stylesheet" href="panel_capsule.css">
   <link rel="stylesheet" href="panel_ai.css">
@@ -275,6 +276,26 @@
           <button type="button" class="ep-btn" id="epAiOverwriteCancel">取消</button>
           <button type="button" class="ep-btn" id="epAiOverwriteSkip">跳过人工修改</button>
           <button type="button" class="ep-btn ep-btn-primary" id="epAiOverwriteOk">覆盖</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 本地 YOLO 模型按需下载（可整块下架）：只在选【YOLO】且本机无模型时出现。
+         模型文件绝不进插件包，下载落当前工作区插件目录的 models/。 -->
+    <div class="ep-modal" id="edModelModal" role="dialog" aria-modal="true"
+         aria-labelledby="edModelTitle" hidden>
+      <div class="ep-modal-card ep-model-card">
+        <h3 class="ep-modal-title" id="edModelTitle">下载本地 YOLO 版面模型</h3>
+        <p class="ep-modal-text" id="edModelNote">本地还没有版面模型，请选择要下载的版本。</p>
+        <p class="ep-modal-hint" id="edModelHint"></p>
+        <div class="ep-model-progress" id="edModelProgress" hidden>
+          <span id="edModelProgressText">正在下载…</span>
+          <div class="ep-model-bar"><i id="edModelBar"></i></div>
+        </div>
+        <div class="ep-actions ep-model-actions">
+          <button type="button" class="ep-btn ep-btn-primary" id="edModelFull">下载满血版</button>
+          <button type="button" class="ep-btn" id="edModelQuantized">下载轻量量化版</button>
+          <button type="button" class="ep-btn ep-btn-ghost" id="edModelCancel">暂不下载，交云端</button>
         </div>
       </div>
     </div>
@@ -658,6 +679,7 @@
   <script src="core_save.js"></script>
   <script src="ui_approve.js"></script>
   <script src="ui_modal.js"></script>
+  <script src="ui_model.js"></script>
   <script src="ui_dup.js"></script>
   <!-- 军令 #32 · 第五步：琥珀灯判定（两帧共用）→ 重题池画布那一屏 → 重题池辅助栏那一半。
        顺序按依赖排：面板半块要用画布半块的开合口径，协议块始终在最后。 -->

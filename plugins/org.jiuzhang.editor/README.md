@@ -35,15 +35,26 @@
 - 云端版面把每页图片按 0–1000 归一化坐标返回，后端再换算成页面像素；最多处理 20 页。
 - 全部引擎都失败时，批次仍保留页图与绿框，老师可在左栏逐框确认切题。
 
-### YOLO 版面服务配置
+### 本地 YOLO 模型（按需下载）
 
-| 环境变量 | 默认值 | 用途 |
+模型**不进插件包**：插件目录只有一份 `model_config.json`，老师第一次选【YOLO】
+且本机没有模型时，界面弹窗二选一，点哪一个才下载哪一个。
+
+| 版本 | 用途 | 下载源 |
 | --- | --- | --- |
-| `JZO_YOLO_LAYOUT_URL` | 空（未启用） | 本机 YOLO 版面服务地址，必须是回环地址。 |
-| `JZO_YOLO_LAYOUT_TIMEOUT` | `60` | 单页请求超时（秒）。 |
+| **满血版** | 显卡加速下追求精度；加载失败（显存不足）自动降级 | `gh-proxy.com` / Gitee 镜像 / `hf-mirror.com` |
+| **轻量量化版** | 网络慢或配置低时使用；显卡失败后由 CPU 兜底 | `gh-proxy.com` / Gitee 镜像 |
 
-未配置 `JZO_YOLO_LAYOUT_URL` 时，YOLO 档会如实记录「未配置」并继续走向云端，
-不会静默假装成功。
+- 下载先写 `models/<文件名>.tmp`，大小与完整性校验通过后才原子改名为 `.onnx`；
+  半截文件直接丢弃，绝不进入加载环节。
+- 模型只落在当前工作区的 `plugins/org.jiuzhang.editor/models/`，打包脚本按目录名
+  与后缀双重排除，插件 zip 始终小于 10MB。
+- 加载顺序：满血 + GPU → 量化 + GPU → 量化 + CPU → 云端版面 API；每一级都把
+  「版本 / 硬件」写进批次路由，宿主播报到【运行日志】。
+- 本地推理需要可选的 `onnxruntime`：Windows 通用显卡加速装 `onnxruntime-directml`，
+  NVIDIA 装 `onnxruntime-gpu`；Python 3.14 暂无官方轮子，未安装时自动降云端。
+- 旧的 HTTP 服务变量 `JZO_YOLO_LAYOUT_URL` 已退役，仅保留在文档里供历史部署对照；
+  当前版本不再向任何本机 HTTP 服务转发页图。
 
 ## 二、识别引擎
 
@@ -97,7 +108,7 @@ POST /api/ingest/files
 | --- | --- | --- |
 | `app/core/layout/layout_router.py` | 只按瀑布顺序分发 | < 100 |
 | `app/core/layout/layout_python.py` | 本地文本层探路、单/双栏重排 | < 300 |
-| `app/core/layout/layout_yolo.py` | 本机 YOLO HTTP 探路 | < 200 |
+| `app/core/layout/layout_yolo.py` | 本机 ONNX 四级瀑布与状态播报 | < 400 |
 | `app/core/layout/layout_cloud.py` | 云端视觉模型兜底 | < 200 |
 | `app/core/recognize/recognize_router.py` | 只按瀑布顺序分发 | < 100 |
 | `app/core/recognize/recognize_local.py` | 纯本地文本提取 | < 300 |

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "plugin_id": "org.jiuzhang.editor",
+  "models_dir": "models",
+  "models": {
+    "full": {
+      "label": "满血版",
+      "version": "v1.0",
+      "filename": "doclayout_yolo_full_v1.0.onnx",
+      "display_size": "约 75MB",
+      "size_bytes": 75324598,
+      "min_bytes": 70000000,
+      "license": "Apache-2.0",
+      "urls": [
+        "https://gh-proxy.com/https://github.com/MT-Blaze/jiuzhang-models/releases/download/v1.0/doclayout_yolo_full_v1.0.onnx",
+        "https://gitee.com/jiuzhang-operator/jiuzhang-models/releases/download/v1.0/doclayout_yolo_full_v1.0.onnx",
+        "https://hf-mirror.com/wybxc/DocLayout-YOLO-DocStructBench-onnx/resolve/main/doclayout_yolo_docstructbench_imgsz1024.onnx"
+      ]
+    },
+    "quantized": {
+      "label": "量化版",
+      "version": "v1.0",
+      "filename": "doclayout_yolo_int8_v1.0.onnx",
+      "display_size": "约 20MB",
+      "size_bytes": 20971520,
+      "min_bytes": 10485760,
+      "license": "Apache-2.0",
+      "urls": [
+        "https://gh-proxy.com/https://github.com/MT-Blaze/jiuzhang-models/releases/download/v1.0/doclayout_yolo_int8_v1.0.onnx",
+        "https://gitee.com/jiuzhang-operator/jiuzhang-models/releases/download/v1.0/doclayout_yolo_int8_v1.0.onnx"
+      ]
+    }
+  }
+}
