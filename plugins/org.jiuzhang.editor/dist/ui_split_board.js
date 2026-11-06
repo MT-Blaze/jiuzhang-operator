@@ -35,7 +35,7 @@
 
     var MIN_BOX_CSS = 6;          // 新框最小屏幕边长：手抖点一下不算框
     var MIN_REGION = 6;           // 纸带坐标里的最小边长
-    var ZOOM_MIN = 0.5;
+    var ZOOM_MIN = 0.2;
     var ZOOM_MAX = 5;
     var ZOOM_KEY = "split_board_zoom";
     var ZOOM_SAVE_MS = 260;

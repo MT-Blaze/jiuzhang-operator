@@ -605,6 +605,35 @@ def main() -> int:
             page.wait_for_timeout(500)
             page.screenshot(path=str(shots / "06_cross_confirmed.png"))
 
+            # ---------- 缩放上下限：宏观览卷 20%，微观扣字 500% ----------
+            canvas.locator("#edSplitBoardBtn").click()
+            expect(canvas.locator("#edSbBoard")).to_be_visible(timeout=20000)
+            page.wait_for_timeout(600)
+            page.mouse.move(720, 450)
+            page.keyboard.down("Control")
+            for _ in range(10):
+                page.mouse.wheel(0, 420)
+                page.wait_for_timeout(60)
+            page.keyboard.up("Control")
+            page.wait_for_timeout(300)
+            floor_label = canvas.locator(".ed-sb-zoom").inner_text()
+            result["metrics"]["zoom_floor"] = floor_label
+            check("36 Ctrl+滚轮可缩到 20% 一览全卷", floor_label == "20%", floor_label)
+            page.screenshot(path=str(shots / "07_zoom_floor.png"))
+            page.mouse.move(720, 450)
+            page.keyboard.down("Control")
+            for _ in range(14):
+                page.mouse.wheel(0, -420)
+                page.wait_for_timeout(60)
+            page.keyboard.up("Control")
+            page.wait_for_timeout(300)
+            ceil_label = canvas.locator(".ed-sb-zoom").inner_text()
+            result["metrics"]["zoom_ceiling"] = ceil_label
+            check("37 缩放上限仍是 500%", ceil_label == "500%", ceil_label)
+            page.screenshot(path=str(shots / "08_zoom_ceiling.png"))
+            page.keyboard.press("Escape")
+            expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=10000)
+
             result["metrics"]["console_errors"] = result["console_errors"]
             result["metrics"]["page_errors"] = result["page_errors"]
             check("28 全流程无页面脚本错误", not result["page_errors"], result["page_errors"])
