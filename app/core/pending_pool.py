@@ -49,6 +49,8 @@ from app.core.pool_meta import (
     meta_value as _unique_values,
     resolutions as _resolutions,
 )
+# 源码回写拆在独立舱位（单文件 800 行红线），对外仍从 pending_pool 取。
+from app.core.pool_source import update_document  # noqa: F401
 
 ACTIONS = ("merge_metadata", "add_solution", "keep_separate", "delete")
 

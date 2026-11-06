@@ -116,6 +116,7 @@
   // 查重三栏（军令·查重三栏）：画布与裁判台的装配都在 ui_dup_wiring.js。
   var uiDupBits = window.JzoEditorDupWiring.create({
     dom: dom, coreState: coreState, el: el, renderDoc: uiDup.renderDoc, buildExamSource: buildExamSource,
+    sourceToPatch: coreExamSource.sourceToPatch,
     uiBatches: function () { return uiBatches; }, uiColumns: function () { return uiColumns; },
     publish: publish, hostCall: hostCall, panelSay: panelSay, dock: dock, dockWarn: dockWarn,
     errorDetail: errorDetail, openModal: openModal, closeModal: closeModal,
@@ -709,7 +710,7 @@
     coreState: coreState,
   });
   var activatePanel = uiPanelBoot.activatePanel;
-  var coreProtocol = window.JzoEditorProtocol.create({
+  var coreProtocol = window.JzoEditorProtocol.create(Object.assign({
     dom: dom,
     activatePanel: activatePanel,
     applyAiPatch: applyAiPatch,
@@ -741,10 +742,6 @@
     showPoolReview: uiPool.show,
     clearPoolReview: uiPool.clear,
     onPoolCanvasClosed: uiPoolPanel.onCanvasClosed,
-    openDupCompare: uiDupCompare.open,
-    updateDupCompare: uiDupCompare.update,
-    closeDupCompare: uiDupCompare.close,
-    onDupCompareClosed: uiDupJudge.onCanvasClosed,
     paintAmberBlock: uiAmber.paintBlock,
     runApproveAll: uiAmber.runApproveAll,
     onCanvasApproveAll: uiAmber.onCanvasApproveAll,
@@ -766,7 +763,7 @@
     runAiBatch: uiAiCopilot.runBatch,
     runAiBatchSolve: uiAiCopilot.runBatchSolve,
     coreState: coreState,
-  });
+  }, uiDupBits.protocol));
 
   // ---------- 拆出去的模块：以上每块都只经 deps 拿依赖 ----------
 

@@ -17,6 +17,8 @@
     var el = deps.el;
     var renderDoc = deps.renderDoc;
     var buildExamSource = deps.buildExamSource;
+    var sourceToPatch = deps.sourceToPatch;
+    var hostCall = deps.hostCall;
     var setMode = deps.setMode;
     var renderAll = deps.renderAll;
     var publish = deps.publish;
@@ -39,6 +41,10 @@
     var originalHost = null;
     var sourceArea = null;
     var currentId = "";
+    var currentDoc = {};
+    var savedValue = "";
+    var saveTimer = 0;
+    var saveChain = null;
     var hideTimer = 0;
     var reduced = false;
     try {
@@ -91,6 +97,80 @@
       return originalHost;
     }
 
+    function saveState(value) {
+      if (sourceArea) sourceArea.setAttribute("data-save", value);
+    }
+
+    function snapshot() {
+      return {
+        id: currentId,
+        doc: currentDoc,
+        value: sourceArea ? sourceArea.value : "",
+        saved: savedValue
+      };
+    }
+
+    /** 把一份快照存回池内；只认题面四件，认不全就停手。 */
+    function persist(snap) {
+      if (!snap || !snap.id) return Promise.resolve({ ok: true });
+      if (!sourceToPatch || !hostCall) return Promise.resolve({ ok: true });
+      if (snap.value === snap.saved) {
+        saveState("saved");
+        return Promise.resolve({ ok: true });
+      }
+      var built = sourceToPatch(snap.value, snap.doc || {});
+      if (!built || !built.ok) {
+        saveState("invalid");
+        return Promise.resolve({
+          ok: false,
+          code: "source_invalid",
+          message: "源码还没认全：" + (((built && built.errors) || []).join("；") || "未知原因")
+        });
+      }
+      saveState("saving");
+      return hostCall("pending.pool_save", {
+        pool_id: snap.id,
+        patch: built.patch
+      }).then(function () {
+        if (snap.id === currentId && sourceArea && sourceArea.value === snap.value) {
+          savedValue = snap.value;
+          sourceArea.setAttribute("data-dirty", "false");
+          saveState("saved");
+        }
+        return { ok: true };
+      }, function (error) {
+        if (snap.id === currentId) saveState("error");
+        return {
+          ok: false,
+          message: "源码没存回池：" + ((error && error.message) || "未知原因"),
+          error: error
+        };
+      });
+    }
+
+    function enqueue(snap) {
+      if (!snap || !snap.id || snap.value === snap.saved) return Promise.resolve({ ok: true });
+      var runner = function () { return persist(snap); };
+      var previous = saveChain || Promise.resolve();
+      var chained = previous.then(runner, runner);
+      var tracked = chained.then(function (result) {
+        if (saveChain === tracked) saveChain = null;
+        return result;
+      }, function (error) {
+        if (saveChain === tracked) saveChain = null;
+        throw error;
+      });
+      saveChain = tracked;
+      return tracked;
+    }
+
+    /** 裁决前/切题前强制落盘：抓的永远是 textarea 当下的值。 */
+    function saveNow() {
+      window.clearTimeout(saveTimer);
+      saveTimer = 0;
+      return enqueue(snapshot());
+    }
+
     function ensureSourceArea() {
       if (sourceArea && sourceBodyEl && sourceBodyEl.contains(sourceArea)) return sourceArea;
       sourceArea = document.createElement("textarea");
@@ -100,6 +180,12 @@
       sourceArea.setAttribute("aria-label", "新题源码，可直接编辑");
       sourceArea.addEventListener("input", function () {
         sourceArea.setAttribute("data-dirty", "true");
+        saveState("dirty");
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(function () {
+          saveTimer = 0;
+          saveNow();
+        }, 500);
       });
       if (sourceBodyEl) {
         sourceBodyEl.textContent = "";
@@ -120,7 +206,19 @@
 
     function paint(entry) {
       if (!entry || typeof entry !== "object") return;
-      currentId = String(entry.pool_id || "");
+      var nextId = String(entry.pool_id || "");
+      var sameEntry = nextId === currentId;
+      if (currentId && !sameEntry) {
+        // 老师没点裁决就换了下一道：先把上一道没落盘的源码存回池，再换界面。
+        var old = snapshot();
+        window.clearTimeout(saveTimer);
+        saveTimer = 0;
+        enqueue(old).then(function (result) {
+          if (result && result.ok === false) dockWarn(result.message, null);
+        });
+      }
+      currentId = nextId;
+      currentDoc = entry.incoming || {};
       paintChrome(entry);
       var area = ensureSourceArea();
       var source = "";
@@ -129,9 +227,12 @@
       } catch (error) {
         source = "";
       }
-      if (area.value !== source) {
-        area.value = source;
+      // 同一道题上收到刷新时不覆盖正在编辑的文本，避免把老师的光标和草稿冲掉。
+      if (!sameEntry || area.value === savedValue) {
+        if (area.value !== source) area.value = source;
+        savedValue = source;
         area.setAttribute("data-dirty", "false");
+        saveState("saved");
       }
       paintDoc(ensureIncomingHost(), entry.incoming || {});
       paintDoc(ensureOriginalHost(), entry.existing || {});
@@ -174,8 +275,16 @@
     function close(options) {
       var opts = options || {};
       if (!openFlag) return;
+      var leaving = snapshot();
+      window.clearTimeout(saveTimer);
+      saveTimer = 0;
+      enqueue(leaving).then(function (result) {
+        if (result && result.ok === false) dockWarn(result.message, null);
+      });
       openFlag = false;
       currentId = "";
+      currentDoc = {};
+      savedValue = "";
       window.clearTimeout(hideTimer);
       try {
         if (imagePaneEl) imagePaneEl.hidden = false;
@@ -213,6 +322,7 @@
       currentId: function () { return currentId; },
       isOpen: function () { return openFlag; },
       open: open,
+      saveNow: saveNow,
       update: update,
     };
   }

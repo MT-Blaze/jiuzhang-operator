@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -166,6 +167,28 @@ def dump(name: str, payload: object) -> Path:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str),
                     encoding="utf-8")
     return path
+
+
+def bank_find(base: str, marker: str) -> dict | None:
+    """按题干里的探针标记找回刚入库的题；回 None 表示没写进去。"""
+    url = (base + f"/api/bank/plugins/{BANK_ID}/questions?q="
+           + urllib.parse.quote(marker) + "&page_size=100")
+    _, data = GET(url)
+    for item in data.get("items") or []:
+        if marker in str(item.get("stem") or ""):
+            return item
+    return None
+
+
+_EDIT_SOURCE = r"""([stemMarker, solutionMarker]) => {
+  const ta = document.getElementById('edCmpSource');
+  if (!ta) return null;
+  ta.value = ta.value
+    .replace('\\begin{question}\n', '\\begin{question}\n' + stemMarker + ' ')
+    .replace('\\end{solution}', solutionMarker + '\n\\end{solution}');
+  ta.dispatchEvent(new Event('input', {bubbles: true}));
+  return ta.value;
+}"""
 
 
 def doc(stem: str, tags: list[str], paper: str, no: str, topic_id: str | None = None) -> dict:
@@ -406,6 +429,26 @@ def main() -> int:
             first_ident = panel.evaluate(
                 "() => (document.getElementById('epJudgeIdent')||{}).textContent||''")
 
+            # ---- 任务四：改源码 → 500ms 防抖静默回写池内 ----
+            marker_a_stem = "查重回写探针甲"
+            marker_a_sol = "回写解析甲：先移项，再合并同类项。"
+            canvas.evaluate(_EDIT_SOURCE, [marker_a_stem, marker_a_sol])
+            pool_url = base + f"/api/pending/pool/{before.get('current')}"
+            saved_a = None
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                _, entry_now = GET(pool_url)
+                incoming = (entry_now or {}).get("incoming") or {}
+                if marker_a_stem in str(incoming.get("stem") or ""):
+                    saved_a = incoming
+                    break
+                time.sleep(0.2)
+            check("任务四：新题源码停止输入 500ms 后静默回写池内",
+                  bool(saved_a) and marker_a_sol in str(saved_a.get("solution") or ""),
+                  {"pool_id": before.get("current"),
+                   "stem": str((saved_a or {}).get("stem") or "")[:80],
+                   "solution": str((saved_a or {}).get("solution") or "")[:80]})
+
             def c_advance():
                 btn = panel.locator("#epJudgeSeparate")
                 btn.wait_for(state="visible", timeout=10000)
@@ -449,6 +492,35 @@ def main() -> int:
                       {"before": before, "after": after})
 
             c_advance()
+
+            in_bank_a = bank_find(base, marker_a_stem)
+            check("任务四续：点【不重复】后，入库题干/解析是修改后的最新值",
+                  bool(in_bank_a) and marker_a_sol in str(in_bank_a.get("solution") or ""),
+                  {"question_id": (in_bank_a or {}).get("id"),
+                   "stem": str((in_bank_a or {}).get("stem") or "")[:80],
+                   "solution": str((in_bank_a or {}).get("solution") or "")[:80]})
+
+            # ---- 任务五：改完立刻点裁决，走提交前强保存 ----
+            second_id = canvas.evaluate(
+                "() => (window.__jzoEditorV2 && window.__jzoEditorV2.uiDupCompare)"
+                " ? window.__jzoEditorV2.uiDupCompare.currentId() : null")
+            marker_b_stem = "查重回写探针乙"
+            marker_b_sol = "回写解析乙：直接点裁决也要带上。"
+            canvas.evaluate(_EDIT_SOURCE, [marker_b_stem, marker_b_sol])
+            dirty_b = canvas.evaluate(
+                "() => {const n=document.getElementById('edCmpSource');"
+                " return n ? n.getAttribute('data-dirty') : null;}")
+            panel.locator("#epJudgeSeparate").click()
+            page.wait_for_timeout(2600)
+            in_bank_b = bank_find(base, marker_b_stem)
+            check("任务五：改完立刻点【不重复】，强保存把最新题干/解析带进库",
+                  dirty_b == "true" and bool(in_bank_b)
+                  and marker_b_sol in str(in_bank_b.get("solution") or ""),
+                  {"pool_id": second_id, "dirty_at_click": dirty_b,
+                   "question_id": (in_bank_b or {}).get("id"),
+                   "stem": str((in_bank_b or {}).get("stem") or "")[:80],
+                   "solution": str((in_bank_b or {}).get("solution") or "")[:80]})
+
             check("全程零 pageerror / 零 console error",
                   not PAGE_ERRORS and not CONSOLE_ERRORS,
                   {"page_errors": PAGE_ERRORS[:6], "console_errors": CONSOLE_ERRORS[:6]})

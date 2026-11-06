@@ -389,6 +389,40 @@
       return true;
     }
 
+    if (method === "pending.pool_save") {
+      // 源码回写：老师在新题源码区的编辑先静默存回池内文档，裁决再用最新值。
+      // 只收题面四件；越权字段由底座 400 拒绝，宿主这里先挡明显不合规的载荷。
+      var poolSavePermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (poolSavePermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能回写重题池源码"
+        });
+        return true;
+      }
+      var poolSaveId = textValue(payload, "pool_id", 80);
+      if (!/^pool_[A-Za-z0-9_-]{8,64}$/.test(poolSaveId)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "重题池编号不合法" });
+        return true;
+      }
+      var poolSavePatch = plainObject(payload.patch);
+      if (!poolSavePatch || !Object.keys(poolSavePatch).length) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "没有要保存的源码字段" });
+        return true;
+      }
+      var poolSaveBody = JSON.stringify({ patch: poolSavePatch });
+      if (poolSaveBody.length > 240000) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "源码内容过长" });
+        return true;
+      }
+      withWriteToken("/api/pending/pool/" + encodeURIComponent(poolSaveId) + "/doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: poolSaveBody
+      }).then(done, fail);
+      return true;
+    }
+
     if (method === "pending.pool_act") {
       // 池内四个动作（合并元数据 / 新增解析 / 不重复 / 删除）都写主库或写裁决记录：
       // 与入库同权、同走一次性写令牌；动作名必须在白名单里，底座不做「猜一个最像的」。

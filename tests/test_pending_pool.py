@@ -618,6 +618,74 @@ class PoolActionsTest(PoolCase):
         kept = self.pending_pool.act(pool_id, "keep_separate")
         self.assertTrue(kept["ok"], kept)
 
+    def test_20a_source_edit_writes_back_to_pool_document(self) -> None:
+        """老师改源码 → 防抖/强保存写回池内文档；只动题面四件，别的字段原样保留。"""
+        topic = self._seed_topic("5")
+        pool_id = self._prepare_pool(_doc(taxonomy=topic, tags=["原标签"]))[1]
+        before = self.pending_pool.get_entry(pool_id)["incoming"]
+        result = self.pending_pool.update_document(pool_id, {
+            "type": "single_choice",
+            "stem": "改过的题干（　　）。",
+            "options": [{"key": "A", "content": "$7$"}, {"key": "B", "content": "$8$"}],
+            "answer": {"kind": "choice", "choice_keys": ["B"], "final": "B"},
+            "solution": "改过的解析。",
+        })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["changed"],
+                         ["stem", "options", "answer", "solution"])
+        after = self.pending_pool.get_entry(pool_id)["incoming"]
+        self.assertEqual(after["stem"], "改过的题干（　　）。")
+        self.assertEqual([one["content"] for one in after["options"]], ["$7$", "$8$"])
+        self.assertEqual(after["answer"]["final"], "B")
+        self.assertEqual(after["solution"], "改过的解析。")
+        self.assertEqual(after["tags"], ["原标签"])
+        self.assertEqual(after["taxonomy"], before["taxonomy"])
+        self.assertEqual(after["difficulty"], before["difficulty"])
+
+    def test_20b_source_edit_refuses_fields_outside_the_source_pane(self) -> None:
+        """源码区不归标签/来源/难度管：越权字段与坏形态一律拒绝，池内文档不动。"""
+        pool_id = self._prepare_pool(_doc())[1]
+        original = self.pending_pool.get_entry(pool_id)["incoming"]
+        bad_patches = [
+            {"tags": ["偷改"]},
+            {"difficulty": "L4"},
+            {"stem": ""},
+            {"type": "essay"},
+            {"options": [{"key": "A", "content": "x"}, {"key": "A", "content": "y"}]},
+            {"answer": {"kind": "choice", "choice_keys": ["Z"]}},
+        ]
+        for patch in bad_patches:
+            with self.subTest(patch=patch):
+                with self.assertRaises(self.pending_bank.PendingError):
+                    self.pending_pool.update_document(pool_id, patch)
+        self.assertEqual(self.pending_pool.get_entry(pool_id)["incoming"], original)
+
+    def test_20c_keep_separate_writes_the_edited_source(self) -> None:
+        """改完源码点【不重复】：入库后的题干/解析必须是修改后的最新值。"""
+        topic = self._seed_topic("6")
+        pool_id = self._prepare_pool(_doc(taxonomy=topic))[1]
+        self.pending_pool.update_document(pool_id, {
+            "stem": "回写探针题干（　　）。",
+            "solution": "回写探针解析：先移项再合并。",
+            "answer": {"kind": "choice", "choice_keys": ["C"], "final": "C"},
+        })
+        result = self.pending_pool.act(pool_id, "keep_separate")
+        self.assertTrue(result["ok"], result)
+        created = self.bank.get_question(PLUGIN_ID, result["created_id"])
+        self.assertEqual(created["stem"], "回写探针题干（　　）。")
+        self.assertEqual(created["solution"], "回写探针解析：先移项再合并。")
+        self.assertEqual(created["answer"]["final"], "C")
+
+    def test_20d_merge_gate_reads_the_edited_answer(self) -> None:
+        """改答案后点【合并】：底座按池内最新答案判定，冲突即拒。"""
+        pool_id = self._prepare_pool(_doc())[1]
+        self.pending_pool.update_document(pool_id, {
+            "answer": {"kind": "choice", "choice_keys": ["B"], "final": "B"},
+        })
+        with self.assertRaises(self.pending_pool.PoolActionRefused) as caught:
+            self.pending_pool.act(pool_id, "merge_metadata")
+        self.assertEqual(caught.exception.code, "answer_mismatch")
+
     def test_20_unknown_action_is_refused(self) -> None:
         """池里只有四个动作：【覆盖】【放弃】与任何别的名字都不认。"""
         pool_id = self._prepare_pool(_doc())[1]

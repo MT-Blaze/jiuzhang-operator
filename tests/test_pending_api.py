@@ -216,6 +216,14 @@ class PendingApiContractTest(unittest.TestCase):
                                   token=None)
         self.assertEqual(status, 401)
 
+    def test_01b_pool_doc_route_requires_write_token(self) -> None:
+        """源码回写是写接口：无令牌 401；令牌有效但池里没有这条，回 404 而不是 400。"""
+        path = "/api/pending/pool/pool_abcdefgh12345678/doc"
+        status, _ = self._request(path, "POST", {"patch": {"stem": "x"}}, token=None)
+        self.assertEqual(status, 401)
+        status, body = self._request(path, "POST", {"patch": {"stem": "x"}})
+        self.assertEqual(status, 404, body)
+
     def test_02_batch_numbering_and_p_prefix(self) -> None:
         status, body = self._save([{"question": _question(101)}])
         self.assertEqual(status, 201, body)

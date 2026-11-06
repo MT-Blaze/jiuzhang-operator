@@ -38,6 +38,9 @@
     var delCancelEl = dom.judgeDelCancelEl;
     var delOkEl = dom.judgeDelOkEl;
     var active = false, canvasOpen = false, entry = null, resolutions = {}, flow = null, wired = false;
+    // 源码区住画布帧，裁判台住辅助栏帧；强保存只能隔着宿主总线喊话，等回执再裁决。
+    var saveWaiters = {};
+    var saveSeq = 0;
 
     function panel() { return poolPanel(); }
 
@@ -200,6 +203,36 @@
         pluginId: coreState.PLUGIN_ID, from: "panel", phase: phase,
         entry: entry
       });
+    }
+
+    /** 请画布把 textarea 当下值落盘；回执到不了就拦下裁决，绝不让老师白改。 */
+    function flushSource() {
+      if (!publish || !active || !canvasOpen) return Promise.resolve({ ok: true });
+      var requestId = "save_" + (++saveSeq) + "_" + Date.now();
+      return new Promise(function (resolve) {
+        var timer = window.setTimeout(function () {
+          delete saveWaiters[requestId];
+          resolve({ ok: false, message: "画布没有回话，源码可能没存进池。" });
+        }, 4000);
+        saveWaiters[requestId] = function (payload) {
+          window.clearTimeout(timer);
+          delete saveWaiters[requestId];
+          resolve({
+            ok: payload.ok !== false,
+            message: String(payload.message || "")
+          });
+        };
+        publish("editor.dup_compare", {
+          pluginId: coreState.PLUGIN_ID, from: "panel", phase: "save_request",
+          requestId: requestId
+        });
+      });
+    }
+
+    function onSaveDone(payload) {
+      var id = String((payload && payload.requestId) || "");
+      var waiter = id ? saveWaiters[id] : null;
+      if (waiter) waiter(payload || {});
     }
 
     function enter(detail) {
@@ -366,7 +399,8 @@
       say: say,
       paintActions: paintActions,
       exit: exit,
-      panel: panel
+      panel: panel,
+      flushSource: flushSource
     });
 
     function wire() {
@@ -390,6 +424,7 @@
     return {
       exit: exit,
       onCanvasClosed: onCanvasClosed,
+      onSaveDone: onSaveDone,
       openCompare: openCompare,
       wire: wire,
     };

@@ -146,6 +146,48 @@
   }
 
   /**
+   * 源码 → 回写池内的补丁：只交出题面四件（题型/题干/选项/答案/解析）。
+   * 认不全就 ``ok=false``，由调用方决定「先别存」——绝不拿半截解析结果覆盖旧文档。
+   * ``base.type`` 用于保留源码看不出来的证明题形态（problem 环境本身不分证明/解答）。
+   */
+  function sourceToPatch(text, base) {
+    var parsed = parseExamSource(text);
+    var blockers = (parsed.errors || []).filter(function (line) {
+      return line.indexOf("\\fillin 方括号内容按提示处理") < 0;
+    });
+    if (blockers.length) return { ok: false, errors: blockers, patch: null };
+    var type = parsed.type || String((base && base.type) || "solution");
+    if (type === "solution" && base && base.type === "proof") type = "proof";
+    var patch = { type: type, stem: parsed.stem, solution: parsed.analysis || "" };
+    if (type === "single_choice" || type === "multiple_choice") {
+      patch.options = parsed.choices.map(function (content, position) {
+        return { key: "ABCDEFGH".charAt(position), content: String(content == null ? "" : content) };
+      });
+      var letters = String(parsed.answer || "").toUpperCase().replace(/[^A-H]/g, "").split("");
+      var unique = [];
+      letters.forEach(function (letter) {
+        if (unique.indexOf(letter) < 0) unique.push(letter);
+      });
+      if (!unique.length) {
+        return { ok: false, errors: ["答案没写选项字母"], patch: null };
+      }
+      if (type === "single_choice" && unique.length > 1) {
+        return { ok: false, errors: ["单选只能有一个答案字母"], patch: null };
+      }
+      patch.answer = { kind: "choice", choice_keys: unique, final: unique.join("") };
+    } else {
+      patch.options = [];
+      var value = String(parsed.answer == null ? "" : parsed.answer);
+      patch.answer = {
+        kind: type === "fill_blank" ? "expression" : "text",
+        content: value,
+        final: value
+      };
+    }
+    return { ok: true, errors: [], patch: patch };
+  }
+
+  /**
    * 这里曾经有一份本地清洗规则（定界符归一 + CRLF），判据 1.6 把它收走了：
    * 规则表只准有一处，就是底座的 app/core/latex_style_dict.py。
    * 要洗源码一律发 hostCall("text.clean_latex", {mode: "exam_source"})，
@@ -160,6 +202,7 @@
       matchEnv: matchEnv,
       parseExamSource: parseExamSource,
       solutionBlock: solutionBlock,
+      sourceToPatch: sourceToPatch,
       splitChoices: splitChoices,
     };
   }

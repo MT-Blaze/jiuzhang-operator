@@ -399,6 +399,28 @@ def pending_pool_item(pool_id: str, tier: str = "") -> dict[str, Any]:
 
 
 @router.post(
+    "/api/pending/pool/{pool_id}/doc",
+    summary="源码回写：把新题源码区的编辑静默存回池内文档",
+    dependencies=[Depends(require_write_token)],
+)
+def pending_pool_update_doc(
+    pool_id: str, payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    """请求体 ``{"patch": {"type"?: ..., "stem"?: ..., "options"?: ..., ...}}``。
+
+    只收题面四件；来源/标签/考向/配图/难度越权字段一律 400，不做静默丢弃。
+    这条只写池内文档，不碰主库；老师随后点【合并】/【不重复】时底座再读最新值。
+    """
+    body = payload if isinstance(payload, dict) else {}
+    try:
+        return pending_pool.update_document(pool_id, body.get("patch"))
+    except pending_bank.PendingNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except pending_bank.PendingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
     "/api/pending/pool/collect",
     summary="抽走：把一批初查命中的题从待审池搬进重题池（一条一题、已裁决不复活）",
     dependencies=[Depends(require_write_token)],

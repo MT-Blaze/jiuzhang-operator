@@ -2456,6 +2456,33 @@ class EditorDuplicatePoolScreenTest(unittest.TestCase):
         self.assertIn('notify(panel, "editor.dup_compare", pair.payload)', stage)
 
 
+    def test_07_source_edits_are_saved_before_any_decision(self) -> None:
+        """源码区可编辑就必须能回池：500ms 静默存，裁决前再强存一次。"""
+        compare = read("ui_dup_compare.js")
+        self.assertIn('hostCall("pending.pool_save"', compare,
+                      "新题源码必须经宿主写回池内")
+        self.assertIn("}, 500);", compare, "输入停止 500ms 后自动保存")
+        self.assertIn("function saveNow", compare)
+        self.assertIn("saveNow: saveNow", compare, "裁决层要能拿到强制保存口")
+        flow = read("ui_dup_judge_flow.js")
+        self.assertIn("flushSource", flow)
+        self.assertLess(flow.index("flushSource()"), flow.index("pending.pool_act"),
+                        "必须先抓 textarea 最新值，再执行裁决")
+        # textarea 只住画布帧，裁判台在辅助栏帧：强保存必须走总线往返，不能调本帧 compare。
+        judge = read("ui_dup_judge.js")
+        self.assertIn('phase: "save_request"', judge, "裁判台要隔着宿主请画布落盘")
+        self.assertIn("onSaveDone: onSaveDone", judge, "回执得能送进等待中的裁决")
+        protocol = read("core_protocol.js")
+        self.assertIn('cmpPayload.phase === "save_request"', protocol, "画布帧执行强保存")
+        self.assertIn('cmpPayload.phase === "save_done"', protocol, "辅助栏帧收强保存回执")
+        exam = read("core_exam_source.js")
+        self.assertIn("function sourceToPatch", exam, "源码→题面补丁的转换只有一份")
+        self.assertIn("sourceToPatch: sourceToPatch", exam)
+        stage = stage_source()
+        self.assertIn('"pending.pool_save"', stage)
+        self.assertIn("/api/pending/pool/", stage)
+
+
 class EditorExportIntegrityTest(unittest.TestCase):
     """军令 #32 · S5c：导出对象里不许挂「函数已删、名字还在」的悬挂标识符。
 

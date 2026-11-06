@@ -51,7 +51,7 @@
     // 3.5 一键剔除本批次重复题：先出一条清单（batch / bank 两组），老师勾完再按勾选集执行。
     "pending.batch_duplicates", "pending.purge_duplicates",
     // 军令 #32 · 第五步：重题池。列表 / 单条只读（渲染对比的原料），四个动作走写令牌。
-    "pending.pool_list", "pending.pool_get", "pending.pool_act",
+    "pending.pool_list", "pending.pool_get", "pending.pool_act", "pending.pool_save",
     // 军令 #28：全域数据字典。读场景/学校/标签，写学校与标签（写走一次性令牌）。
     "meta.scenes", "meta.schools", "meta.tags",
     "meta.school_create", "meta.school_suggest", "meta.tag_remember",

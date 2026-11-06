@@ -25,6 +25,7 @@
     var paintActions = deps.paintActions;
     var exit = deps.exit;
     var panel = deps.panel;
+    var flushSource = deps.flushSource;
     var delModalEl = dom.judgeDelModalEl;
     var delTextEl = dom.judgeDelTextEl;
     var delOkEl = dom.judgeDelOkEl;
@@ -58,12 +59,32 @@
       var index = rows.findIndex(function (row) { return String(row.pool_id) === oldId; });
       busy = true;
       paintActions();
-      say("正在执行「" + labelOf(action) + "」…", "info");
+      say("正在保存源码并执行「" + labelOf(action) + "」…", "info");
+      // 裁决永远拿 textarea 的当下值：先强保存，存不进去就不动库。
+      var ready = flushSource ? flushSource() : Promise.resolve({ ok: true });
+      Promise.resolve(ready).then(function (saved) {
+        if (saved && saved.ok === false) {
+          busy = false;
+          paintActions();
+          say(saved.message || "源码没存回池，先修正再裁决。", "error");
+          return;
+        }
+        say("正在执行「" + labelOf(action) + "」…", "info");
+        return send(action, oldId, index);
+      }, function (error) {
+        busy = false;
+        paintActions();
+        say("源码没存回池：" + ((error && error.message) || "未知原因"), "error");
+        dockWarn("裁决前保存源码失败", errorDetail(error));
+      });
+    }
+
+    function send(action, oldId, index) {
       var payload = { pool_id: oldId, action: action };
       if (action === "merge_metadata" && needsResolution().length) {
         payload.resolutions = getResolutions();
       }
-      hostCall("pending.pool_act", payload).then(function (result) {
+      return hostCall("pending.pool_act", payload).then(function (result) {
         busy = false;
         if (result && result.kept_in_pool) {
           var missing = (result.missing || []).join("、");

@@ -92,10 +92,49 @@ grep -rn "fetch(\|parent\.document\|localStorage" plugins/org.jiuzhang.editor/di
 
 ## 【未决问题与偏离】
 
-1. 左栏【新题源码】当前可编辑并带脏标记，但按本轮范围未把编辑结果回写池内文档；若老师改源码后直接裁决，
-   裁决仍基于池内原文档。是否需要“编辑即保存”留给下一轮拍板。
+1. ~~左栏【新题源码】可编辑但未回写池内~~ —— 已于同日补漏（见下节「源码回写补漏」），
+   现在 500ms 防抖静默保存 + 裁决前跨帧强保存，两处均有真机证据。
 2. `compare` 模式下 `renderAll/refreshRow` 主动早退，这是渲染冻结的既定代价：对比期间其它订阅式刷新
    不会重排画布；退出对比后回到 `pool` 屏仍走原刷新链路。
 3. 探针的“当前题已换”同时以 `pool_id` 与源码文本变化判定；`window.__jzoEditorV2` 已补齐
    `uiDupCompare/uiDupJudge`，此前 dc6-dc8 的 `current=null` 是探针面漏暴露，不是业务分支问题。
 4. 未做真机发版包（`build-release`）；本轮交付按源码工作树验收，运行态工作区在提交后已强制同步。
+
+---
+
+# 源码回写补漏回执（2026-11-06 补）
+
+【问题】左栏【新题源码】可编辑但未回写池：老师改完代码直接点裁决，改动丢失。
+【方案】A + B 双保险：输入停止 500ms 静默保存；点【合并】/【不重复】/【删除】/【新增解析】前强制保存，
+存不进去就拦下裁决，一题都不动库。
+
+## 【七跳落点】
+
+| 跳 | 位置 | 说明 |
+| --- | --- | --- |
+| 插件发令 | `ui_dup_compare.js:131` | `hostCall("pending.pool_save", {pool_id, patch})`；`sourceToPatch` 把 exam-zh 源码转题面四件 |
+| 输入触发 | `ui_dup_compare.js:185` | `input` → `data-dirty=true`，500ms 防抖后 `saveNow()` |
+| 强保存握手 | `ui_dup_judge.js:209` | 裁判台发 `editor.dup_compare {phase:"save_request", requestId}`，4s 无回执即拦下 |
+| 画布执行 | `ui_dup_wiring.js:42` | 画布帧 `compare.saveNow()` 落盘后回 `phase:"save_done"` |
+| 协议路由 | `core_protocol.js:184-188` | 画布帧接 `save_request`，辅助栏帧接 `save_done` |
+| 宿主白名单 | `stage_command.js:54`、`stage_relay_io.js:392` | 登记 `pending.pool_save`，要 `questions:write`，校验 pool_id/补丁体积 |
+| 底座 | `app/api/pending.py:401`、`app/core/pool_source.py:105` | `POST /api/pending/pool/{pool_id}/doc`，写入令牌 + 字段白名单 |
+| 存储 | `pool_source.py:105` | 只改 `type/stem/options/answer/solution`；越权字段 400，不静默丢弃 |
+
+`pending_pool.py` 从 932 行瘦到 774 行（源码回写整块移入 `pool_source.py` 173 行），
+`plugin.js` 796 行，均在 800 行舱位线以内。
+
+## 【测试与探针】
+
+1. 目标单测：`tests.test_pending_pool`（43）· `tests.test_pending_api`（35）· `tests.test_editor_contract`（164）· `tests.test_file_size_contract` → OK
+2. 全量回归：`tools/run_all_tests.py` → 模块 89 个，用例 1756 个，失败模块 0 个（全绿）
+3. 快门禁：`bash scripts/check-quick-gate.sh` → PASS（6 项全过，ERROR 0）
+4. 真机探针：`tools/dup_compare_probe.py dc12` → 10/10 通过
+   - 任务四：改源码后不点任何按钮，500ms 后池内 `stem/solution` 已含标记甲；
+   - 任务四续：点【不重复】入库的题干/解析是标记甲（`q_2f7eda21a29537dc7e6c4a4a`）；
+   - 任务五：改完立刻点【不重复】（`data-dirty=true`），入库题干/解析是标记乙（`q_ebf2ca5c5eb2d176490026ef`），
+     证明强保存跨帧握手生效；
+   - 全程零 `pageerror` / 零 console error。
+
+证据：`.qoder/records/biz/2026-11/20261106_dup-compare-evidence/dc12-result.json` 及同批截图
+（dc10/dc11 排查轮次产物已清理）。

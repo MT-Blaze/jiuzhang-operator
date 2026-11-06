@@ -44,6 +44,8 @@
     var updateDupCompare = deps.updateDupCompare;
     var closeDupCompare = deps.closeDupCompare;
     var onDupCompareClosed = deps.onDupCompareClosed;
+    var onDupSaveRequest = deps.onDupSaveRequest;
+    var onDupSaveDone = deps.onDupSaveDone;
     var paintAmberBlock = deps.paintAmberBlock;
     var runApproveAll = deps.runApproveAll;
     var onCanvasApproveAll = deps.onCanvasApproveAll;
@@ -178,9 +180,12 @@
           if (cmpPayload.phase === "open" && cmpPayload.entry) openDupCompare(cmpPayload.entry);
           else if (cmpPayload.phase === "update" && cmpPayload.entry) updateDupCompare(cmpPayload.entry);
           else if (cmpPayload.phase === "closed") closeDupCompare({ notify: false });
+          // 裁决前的强保存由辅助栏发起、画布执行：textarea 只住在画布帧。
+          else if (cmpPayload.phase === "save_request") onDupSaveRequest(cmpPayload);
           return;
         }
         if (cmpFrom === "canvas" && cmpPayload.phase === "closed") onDupCompareClosed();
+        else if (cmpFrom === "canvas" && cmpPayload.phase === "save_done") onDupSaveDone(cmpPayload);
         return;
       }
       if (message.event === "editor.batch_review") {
