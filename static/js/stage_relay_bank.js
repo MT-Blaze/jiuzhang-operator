@@ -66,7 +66,14 @@
         replyHost(tab, message, false, { code: "HOST_MISSING", message: "宿主没有录入通道" });
         return true;
       }
-      intake.ingestEntries(prepared, { silent: true }).then(function (result) {
+      var requestedChannel = textValue(payload, "channel", 24) || "auto";
+      if (["auto", "local_ai", "full_ocr", "mineru"].indexOf(requestedChannel) < 0) {
+        requestedChannel = "auto";
+      }
+      intake.ingestEntries(prepared, {
+        silent: true,
+        channel: requestedChannel
+      }).then(function (result) {
         emitPendingUpdated("ingest", (result && result.saved_ids) || [], result);
         done(result);
       }, fail);

@@ -367,13 +367,15 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
-        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的【API 配置】与
-        # 源码栏头部的【添加配图】——分别是建批次、任务二配置、任务四插配图的唯一入口。
+        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的四颗通道钮与
+        # 【API 配置】、源码栏头部的【添加配图】——各是建批次、选通道、任务配置、
+        # 插配图的唯一入口。
         # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
         plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
                         + canvas[canvas.index('id="edToast"'):])
-        self.assertEqual(plain_canvas.count("<button"), 3,
-                         "画布内只许剩【API 配置】【开始解析】【添加配图】")
+        self.assertEqual(plain_canvas.count("<button"), 7,
+                         "画布内只许剩四颗通道钮、【API 配置】【开始解析】【添加配图】")
+        self.assertIn('id="edRouteChannels"', plain_canvas)
         self.assertIn('id="epAiConfigList"', plain_canvas)
         self.assertIn('id="edAddIllustration"', plain_canvas)
         self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")

@@ -32,16 +32,21 @@ from pathlib import Path
 from typing import Any
 
 from app.core import (
+    ai_center,
     page_render,
     question_parser,
     text_health,
 )
 from app.core.ingest_route import (
+    CHANNEL_AUTO,
+    CHANNEL_FULL_OCR,
     auto_split_pages,
+    fill_scan_batch,
+    log_documents,
+    normalize_channel,
     route_payload,
-    route_scan_pdf,
     save_route,
-    scan_fallback_route,
+    scan_route,
 )
 
 __all__ = [
@@ -499,7 +504,7 @@ async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]]
     return [], warnings, kind, "", False
 
 
-async def ingest_files(files: Any) -> dict[str, Any]:
+async def ingest_files(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
     """把拖进来的一批文件变成中转站里的待审题（**同步跑完**）。
 
     ``files`` 形如 ``[{"name": "卷子.pdf", "data_url": "data:application/pdf;base64,..."}]``。
@@ -509,10 +514,10 @@ async def ingest_files(files: Any) -> dict[str, Any]:
     线上走的是两段式（``stage_ingest`` + ``run_ingest_jobs``）：批次先立起来，
     识别放后台，老师不用盯着屏幕等 OCR。这里保留同步版给脚本与测试用。
     """
-    staged = stage_ingest(files)
+    staged = stage_ingest(files, channel=channel)
     groups = staged.pop("jobs", [])
     for group in groups:
-        await run_ingest_jobs(group["batch_id"], group["jobs"])
+        await run_ingest_jobs(group["batch_id"], group["jobs"], group["channel"])
     if groups:
         # 同步版跑完要按解析后的真账回报：题数与 id 都可能变了。
         from app.core import pending_bank
@@ -533,7 +538,7 @@ async def ingest_files(files: Any) -> dict[str, Any]:
     return staged
 
 
-def stage_ingest(files: Any) -> dict[str, Any]:
+def stage_ingest(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
     """第一段：分拣、解码，**按文件各立一个批次**。
 
     老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
@@ -547,6 +552,7 @@ def stage_ingest(files: Any) -> dict[str, Any]:
         raise IngestError("没有要处理的文件")
     if len(files) > MAX_FILES:
         raise IngestError(f"一次最多处理 {MAX_FILES} 个文件")
+    picked_channel = normalize_channel(channel)
 
     ignored: list[str] = []
     loaded: list[tuple[str, bytes]] = []
@@ -580,7 +586,8 @@ def stage_ingest(files: Any) -> dict[str, Any]:
         one = _stage_one_batch(name, data)
         one_jobs = one.pop("jobs", [])
         if one_jobs:
-            job_groups.append({"batch_id": one["batch_id"], "jobs": one_jobs})
+            job_groups.append({"batch_id": one["batch_id"], "jobs": one_jobs,
+                               "channel": picked_channel})
         batches.append(one)
         warnings.extend(one.get("warnings") or [])
         kinds.extend(one.get("kinds") or [])
@@ -596,6 +603,7 @@ def stage_ingest(files: Any) -> dict[str, Any]:
         "warnings": warnings,
         "ignored": ignored,
         "kinds": kinds,
+        "channel": picked_channel,
         "jobs": job_groups,
     }
 
@@ -643,17 +651,33 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     return result
 
 
-async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
+def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]:
+    """图片走全量 OCR 前先落一条占位题：题图立刻可见，正文等模型回填。"""
+    entry = page_images[0] if page_images else {}
+    uri = str(entry.get("uri") or "")
+    asset_id = str(entry.get("name") or "page_1")
+    return {
+        "schema_version": "2.0",
+        "type": "solution",
+        "stem": f"（自动 OCR：{name}，正在识别）",
+        "difficulty": DEFAULT_DIFFICULTY,
+        "source": {"paper_title": Path(name or "").stem},
+        "images": ([{"id": asset_id, "role": "stem", "uri": uri}] if uri else []),
+    }
+
+
+async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
+                          channel: str = CHANNEL_AUTO) -> None:
     """第二段：识别。
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF：先把原卷页图（含题块坐标）挂到批次上，再按坐标从原 PDF 直接裁图，
-      每块生成一道带原题图的待审题（正文取自题块文字）；裁不出来的块只少一道，
-      页图与手动框选照旧。
+    - PDF / 图片：先出原卷页图并本地切题，再按老师选的通道分诊：
+      自动通道按坏题率决定局部修补还是并发全量 OCR；MinerU 通道逐题发送。
     """
     from app.core import pending_bank
     from app.core.pending_assets import drop_assets
 
+    picked_channel = normalize_channel(channel)
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
@@ -666,16 +690,28 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
         page_images: list[dict[str, Any]] = []
         doc_pages: list[int] = []
         scan_mode = page_only
+        image_ocr = False
         if page_only:
             documents, kind, source_text = [], "pdf", ""
         else:
-            try:
-                documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
-            except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
-                documents = []
-                kind = ""
-                source_text = ""
-                scan_mode = False
+            kind = classify(name)
+            image_ocr = (
+                kind == "image"
+                and picked_channel in (CHANNEL_AUTO, CHANNEL_FULL_OCR)
+                and len(data) <= MAX_IMAGE_BYTES
+                and ai_center.resolve_task("ocr").is_configured
+            )
+            if image_ocr:
+                # 图片通道直接全量 OCR：不再先走旧的整图转写。
+                documents, kind, source_text, scan_mode = [], "image", "", False
+            else:
+                try:
+                    documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
+                except Exception:  # noqa: BLE001 - 后台单份失败不许带崩整批
+                    documents = []
+                    kind = ""
+                    source_text = ""
+                    scan_mode = False
         # 原卷页在识别之后立刻出：哪怕一道题都没拆出来，老师也得能对着原卷补录。
         try:
             page_images, doc_pages, _page_notes = page_render.build_pages(
@@ -684,31 +720,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             page_images, doc_pages = [], []
 
         if scan_mode:
-            route, mineru_documents = route_scan_pdf(name, data)
-            if route.get("channel") == "mineru" and mineru_documents:
-                if page_images:
-                    try:
-                        pending_bank.set_batch_pages(batch_id, page_images)
-                    except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
-                        drop_assets(page_images)
-                        continue
-                spread = page_render._spread_pages(len(page_images), len(mineru_documents))
-                items = [
-                    {"question": document,
-                     "pending_id": pending_id if index == 0 else "",
-                     "page_no": spread[index] if index < len(spread) else 1}
-                    for index, document in enumerate(mineru_documents)
-                ]
-                try:
-                    pending_bank.save_draft(items, batch_id=batch_id,
-                                            origin="ingest.mineru",
-                                            page_images=page_images)
-                except Exception:  # noqa: BLE001 - 写不进去就退回切图，卷子不能丢
-                    # 页图已经挂到批次上了：这里不能清文件，否则左栏原卷当场消失。
-                    save_route(pending_bank, batch_id, scan_fallback_route(route, "保存失败"))
-                    continue
-                save_route(pending_bank, batch_id, route)
-                continue
+            health = page_render.pdf_text_health(data)
+            route = scan_route(picked_channel, health)
             if page_images:
                 try:
                     pending_bank.set_batch_pages(batch_id, page_images)
@@ -717,12 +730,32 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
                     continue
                 # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
                 auto_split_pages(name, data, batch_id, page_images)
+                if any((entry.get("regions") or []) for entry in page_images):
+                    route = await fill_scan_batch(batch_id, picked_channel, health)
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
                     pending_bank.delete_pending(pending_id)
                 except pending_bank.PendingError:
                     pass
+            save_route(pending_bank, batch_id, route)
+            continue
+
+        if image_ocr:
+            health = {"has_text_layer": False, "garbled": False,
+                      "text_chars": 0, "missing_chars": 0}
+            route = scan_route(CHANNEL_FULL_OCR, health)
+            shell = _image_shell(name, page_images)
+            try:
+                pending_bank.save_draft(
+                    [{"question": shell, "pending_id": pending_id, "page_no": 1}],
+                    batch_id=batch_id, origin="ingest.ai_ocr", page_images=page_images)
+            except Exception:  # noqa: BLE001 - 写不进去就退回占位题，卷子不能丢
+                if page_images:
+                    drop_assets(page_images)
+                continue
+            route = await fill_scan_batch(batch_id, CHANNEL_FULL_OCR, health)
+            route["requested_channel"] = picked_channel
             save_route(pending_bank, batch_id, route)
             continue
 
@@ -748,4 +781,5 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]]) -> None:
             if page_images:
                 drop_assets(page_images)
             continue
+        log_documents(documents)
         save_route(pending_bank, batch_id, route)

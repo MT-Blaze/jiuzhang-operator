@@ -44,10 +44,22 @@
           <h2 class="ed-batches-title">待审核批次</h2>
           <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
         </div>
+        <!-- 解析通道（可整块下架：删掉这组按钮与 layout.css 的 .ed-route-channels 即可）。
+             只影响下一次【开始解析】；已解析完的批次绝不重跑。 -->
+        <span class="ed-route-channels" id="edRouteChannels" role="group" aria-label="解析通道">
+          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="auto"
+                  aria-pressed="true">自动</button>
+          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="local_ai"
+                  aria-pressed="false">本地+AI</button>
+          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="full_ocr"
+                  aria-pressed="false">全量OCR</button>
+          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="mineru"
+                  aria-pressed="false">MinerU云端</button>
+        </span>
         <!-- 终极军令 任务二：API 配置入口放在批次列表右上角——老师一进画布先配模型，
              再开始录题；弹窗就在这一帧，点击直达，不跨帧发令。 -->
         <button type="button" class="ep-btn ep-mini-btn ed-batches-ai" id="epAiConfigList"
-                title="密钥池与四任务指派">API 配置</button>
+                title="密钥池与任务指派">API 配置</button>
       </div>
       <div class="ed-batches-body">
         <div class="ed-batch-col">
@@ -288,7 +300,7 @@
         <!-- API 配置中心（终极军令 任务一）：双栏弹窗住在画布那帧（这一帧只有 300px 宽），
              这里只负责发一句「打开」，密钥原文与出网全走宿主代持的 ai.* 通道。 -->
         <button type="button" class="ep-btn ep-mini-btn" id="epAiConfig"
-                title="密钥池与四任务指派">API 配置</button>
+                title="密钥池与任务指派">API 配置</button>
         <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
       </div>
       <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"

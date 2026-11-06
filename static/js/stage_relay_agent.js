@@ -22,7 +22,7 @@
     var withWriteToken = deps.withWriteToken;
 
   // 四个任务键与底座 ai_center.TASKS 同名单；账号 id 形状与底座 ACCOUNT_ID_RE 一致。
-  var AI_TASKS = ["ocr", "solve", "meta", "tikz"];
+  var AI_TASKS = ["ocr", "solve", "meta", "tikz", "mineru"];
   var ACCOUNT_ID_RE = /^acc_[0-9a-f]{10}$/;
   var AI_RECOGNIZE_TIMEOUT_MS = 125000;
 

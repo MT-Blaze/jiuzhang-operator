@@ -278,7 +278,8 @@ class AiCenterApiTest(unittest.TestCase):
         self.assertEqual(status, 200, cluster)
         self.assertEqual(len(cluster["accounts"]), 1)
         self.assertEqual(
-            [task["key"] for task in cluster["tasks"]], ["ocr", "solve", "meta", "tikz"]
+            [task["key"] for task in cluster["tasks"]],
+            ["ocr", "solve", "meta", "tikz", "mineru"],
         )
         self.assertNotIn(FIXTURE_KEY, json.dumps(cluster, ensure_ascii=False))
 

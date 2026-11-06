@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
-from app.core import ingest, pending_bank, questions
+from app.core import ingest, ingest_route, pending_bank, questions
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["ingest"])
@@ -47,11 +47,13 @@ async def ingest_files(background: BackgroundTasks,
     if not isinstance(files, list) or not files:
         raise HTTPException(status_code=400, detail="缺少 files 数组")
     try:
-        staged = ingest.stage_ingest(files)
+        channel = ingest_route.normalize_channel(payload.get("channel"))
+        staged = ingest.stage_ingest(files, channel=channel)
         job_groups = staged.pop("jobs", [])
         # 一个文件一个批次：每批各排各的后台解析，互不拖累。
         for group in job_groups:
-            background.add_task(ingest.run_ingest_jobs, group["batch_id"], group["jobs"])
+            background.add_task(ingest.run_ingest_jobs, group["batch_id"],
+                                group["jobs"], group["channel"])
         staged["parsing"] = bool(job_groups)
         return staged
     except ingest.IngestError as exc:

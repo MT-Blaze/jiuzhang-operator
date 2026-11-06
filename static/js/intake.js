@@ -149,6 +149,8 @@
    */
   function ingestEntries(entries, options) {
     var opts = options || {};
+    var channel = String(opts.channel || "auto");
+    if (["auto", "local_ai", "full_ocr", "mineru"].indexOf(channel) < 0) channel = "auto";
     var prepared = [];
     var oversized = 0;
     for (var i = 0; i < (entries || []).length; i += 1) {
@@ -164,7 +166,7 @@
       return Promise.resolve({ skipped: true, warnings: oversized ? ["文件超过 32 MB 上限。"] : [] });
     }
     return serialize(function () {
-      return postJson(INGEST_URL, { files: prepared });
+      return postJson(INGEST_URL, { files: prepared, channel: channel });
     }).then(function (result) {
       if (opts.silent !== true) announce(result);
       return result;

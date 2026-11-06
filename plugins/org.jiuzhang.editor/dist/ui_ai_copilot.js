@@ -45,7 +45,8 @@
       { key: "ocr", label: "视觉识别(OCR)" },
       { key: "solve", label: "解题" },
       { key: "meta", label: "元数据" },
-      { key: "tikz", label: "TikZ" }
+      { key: "tikz", label: "TikZ" },
+      { key: "mineru", label: "MinerU 云端解析" }
     ];
 
     var cluster = null;
@@ -521,6 +522,7 @@
       taskList().forEach(function (task) {
         var key = String(task.key || "");
         var label = String(task.label || key);
+        var isMineru = key === "mineru";
         var assignment = assignments[key] || {};
         var row = el("div", "ep-ai-task");
         row.setAttribute("data-task", key);
@@ -546,16 +548,15 @@
         });
         select.value = String(assignment.account_id || "");
         row.appendChild(select);
-
         var datalist = document.createElement("datalist");
         datalist.id = "epAiModels-" + key;
         var model = document.createElement("input");
         model.className = "ep-ai-input";
         model.type = "text";
         model.maxLength = 128;
-        model.value = String(assignment.model || "");
+        model.value = String(assignment.model || (isMineru ? "mineru" : ""));
         model.setAttribute("list", datalist.id);
-        model.setAttribute("placeholder", "模型名（下拉里没有就手输）");
+        model.setAttribute("placeholder", isMineru ? "MinerU 固定 vlm" : "模型名（下拉里没有就手输）");
         model.setAttribute("aria-label", label + " · 模型");
         row.appendChild(model);
         row.appendChild(datalist);
@@ -565,7 +566,7 @@
         pull.type = "button";
         var save = el("button", "ep-btn ep-mini-btn ep-btn-primary", "保存指派");
         save.type = "button";
-        acts.appendChild(pull);
+        if (!isMineru) acts.appendChild(pull);
         acts.appendChild(save);
         row.appendChild(acts);
 
@@ -595,7 +596,7 @@
 
         save.addEventListener("click", function () {
           var accountId = String(select.value || "");
-          var modelName = String(model.value || "").trim();
+          var modelName = String(model.value || "").trim() || (isMineru ? "mineru" : "");
           if (!accountId) { setMsg("先给「" + label + "」选一个账号。", "warn"); return; }
           if (!modelName) { setMsg("模型名不能为空；下拉里没有就手动输入。", "warn"); return; }
           hostCall("ai.assign", {

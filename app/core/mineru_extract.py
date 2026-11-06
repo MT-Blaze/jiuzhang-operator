@@ -25,7 +25,8 @@ from typing import Any, Callable
 REQUEST_TIMEOUT = 30
 UPLOAD_TIMEOUT = 120
 POLL_SECONDS = 2.0
-MAX_WAIT_SECONDS = 120.0
+# 单题截图可能排队很久：按 15 分钟等，逐题发送时由调用方显式传值。
+MAX_WAIT_SECONDS = 900.0
 MAX_ZIP_BYTES = 64 * 1024 * 1024
 MAX_MARKDOWN_CHARS = 600_000
 

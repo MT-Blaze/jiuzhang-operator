@@ -108,6 +108,7 @@ body {
 .ed-batches-head {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -125,6 +126,30 @@ body {
    同特异度下把按钮拉成整条横幅。父级选择器压住它，按钮才回到标题行最右侧。 */
 .ed-batches-head .ed-batches-ai {
   flex: none;
+}
+
+/* 解析通道选择器（整块可下架：删掉这组样式与 index.html 的 #edRouteChannels 即可）。
+   窄屏自动换行，四颗钮不许把批次列表的抬头挤出横向滚动。 */
+.ed-route-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: none;
+  margin-left: auto;
+}
+
+.ed-route-channels .ed-channel {
+  flex: none;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ed-route-channels .ed-channel[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .ed-batches-title {

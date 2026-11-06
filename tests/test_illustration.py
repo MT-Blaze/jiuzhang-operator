@@ -49,8 +49,8 @@ class IllustrationEntryTest(unittest.TestCase):
         head = HTML[HTML.index('id="edPaneSource"'):HTML.index('id="edPaneRender"')]
         self.assertIn('id="edAddIllustration"', head, "【添加配图】必须住在源码栏头部")
         self.assertIn("添加配图", head)
-        self.assertLess(head.index('id="edSourceHint"'), head.index('id="edAddIllustration"'),
-                        "按钮排在提示文字之后，不抢标题的位置")
+        self.assertNotIn('id="edSourceHint"', head, "提示文字已撤，工具条从最左侧起步")
+        self.assertEqual(head.count("<button"), 1, "源码栏头部只留这一颗配图钮")
 
     def test_02_module_is_loaded_and_wired(self) -> None:
         self.assertIn('<script src="ui_illustration.js"></script>', HTML)

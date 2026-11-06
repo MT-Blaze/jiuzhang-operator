@@ -31,6 +31,18 @@
 
   // OCR 可能跑很久：宿主那条 HTTP 默认 20 秒就超时，这里给足时间。
   var INGEST_TIMEOUT_MS = 180000;
+  // 四通道只影响**下一次**开始解析；已立起来的批次绝不重跑。
+  var INGEST_CHANNELS = ["auto", "local_ai", "full_ocr", "mineru"];
+
+  function currentChannel() {
+    var picked = String(state.ingestChannel || "auto");
+    return INGEST_CHANNELS.indexOf(picked) < 0 ? "auto" : picked;
+  }
+
+  function channelLabel(key) {
+    return { auto: "自动", local_ai: "本地+AI", full_ocr: "全量OCR", mineru: "MinerU云端" }[key]
+      || "自动";
+  }
 
   function fileEntry(file, fallbackName) {
     return new Promise(function (resolve) {
@@ -46,11 +58,14 @@
   }
 
 
-  /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节。 */
-  function ingestEntries(entries) {
+  /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节与通道。 */
+  function ingestEntries(entries, channel) {
     var files = (entries || []).filter(function (entry) { return entry && entry.data_url; });
     if (!files.length) return Promise.resolve(null);
-    return hostCall("ingest.files", { files: files }, INGEST_TIMEOUT_MS).then(function (result) {
+    return hostCall("ingest.files", {
+      files: files,
+      channel: channel || currentChannel()
+    }, INGEST_TIMEOUT_MS).then(function (result) {
       var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
       var ids = Array.isArray(result && result.batch_ids)
         ? result.batch_ids
@@ -72,6 +87,66 @@
       dockWarn("文件没收进来：" + text, errorDetail(error));
       return null;
     });
+  }
+
+  // 通道只记在这一次点击上：拖入与粘贴都只往筐里放，开始解析才带上它。
+  var routeWatchTimer = null;
+
+  function watchRoute(ids, channel) {
+    if (!ids || !ids.length) return;
+    if (routeWatchTimer) window.clearInterval(routeWatchTimer);
+    var seen = {};
+    var polls = 0;
+    var maxPolls = channel === "mineru" ? 180 : 60;
+    routeWatchTimer = window.setInterval(function () {
+      polls += 1;
+      hostCall("pending.batch_list", {}, 20000).then(function (result) {
+        var cards = (result && Array.isArray(result.batches)) ? result.batches : [];
+        var waiting = 0;
+        cards.forEach(function (card) {
+          var id = String((card && card.batch_id) || "");
+          if (ids.indexOf(id) < 0) return;
+          var route = (card && card.route) || {};
+          var note = String(route.note || "");
+          if (note && note !== seen[id]) {
+            seen[id] = note;
+            dock(note);
+          }
+          if (!route.done) waiting += 1;
+        });
+        if (!waiting || polls >= maxPolls) {
+          window.clearInterval(routeWatchTimer);
+          routeWatchTimer = null;
+        }
+      }, function () {
+        if (polls >= maxPolls) {
+          window.clearInterval(routeWatchTimer);
+          routeWatchTimer = null;
+        }
+      });
+    }, 5000);
+  }
+
+  function wireChannelButtons() {
+    var group = document.getElementById("edRouteChannels");
+    if (!group) return;
+    var buttons = group.querySelectorAll("[data-channel]");
+    function paint() {
+      Array.prototype.forEach.call(buttons, function (button) {
+        var on = String(button.getAttribute("data-channel")) === currentChannel();
+        button.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.addEventListener("click", function () {
+        var key = String(button.getAttribute("data-channel") || "auto");
+        state.ingestChannel = INGEST_CHANNELS.indexOf(key) < 0 ? "auto" : key;
+        paint();
+        dock("解析通道：" + channelLabel(state.ingestChannel)
+          + "（只对下一次【开始解析】生效）");
+      });
+    });
+    paint();
   }
 
   function hasFiles(event) {
@@ -309,11 +384,12 @@
     if (!state.basket.length || basketBusy) return Promise.resolve(null);
     basketBusy = true;
     setBasketBusy(true);
+    var pickedChannel = currentChannel();
     return Promise.all(state.basket.map(function (entry) {
       // 剪贴板里的图未必带文件名，补上筐里显示的那个，解析才认得出它。
       return fileEntry(entry.file, entry.name);
     })).then(function (payloads) {
-      return ingestEntries(payloads.filter(Boolean));
+      return ingestEntries(payloads.filter(Boolean), pickedChannel);
     }).then(function (result) {
       if (result) {
         basketClear();
@@ -323,6 +399,11 @@
           [1500, 4000, 8000, 15000].forEach(function (delay) {
             window.setTimeout(refreshBatches, delay);
           });
+          var ids = Array.isArray(result.batch_ids)
+            ? result.batch_ids
+            : (result.batch_id ? [result.batch_id] : []);
+          // MinerU 可能排队十几分钟：持续把路由进度写进底部日志，别让老师干等。
+          watchRoute(ids.map(String), pickedChannel);
         }
       }
       basketBusy = false;
@@ -434,7 +515,10 @@
       if (inCanvas) basketAdd(files);
       else collectToCanvas(files);
     });
-    if (inCanvas) renderBasket();
+    if (inCanvas) {
+      wireChannelButtons();
+      renderBasket();
+    }
   }
 
     return {

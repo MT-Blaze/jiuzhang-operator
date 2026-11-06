@@ -39,6 +39,7 @@ TASKS: tuple[tuple[str, str], ...] = (
     ("solve", "解题"),
     ("meta", "元数据"),
     ("tikz", "TikZ"),
+    ("mineru", "MinerU 云端解析"),
 )
 TASK_KEYS = {key for key, _ in TASKS}
 TASK_LABELS = dict(TASKS)
@@ -267,7 +268,13 @@ def resolve_task(task: str) -> TaskBinding:
 
 
 def find_mineru() -> TaskBinding | None:
-    """按名称找 MinerU 账号；没有可用 Key 就当没配，绝不拿空 Key 出网。"""
+    """MinerU 账号：先认任务指派，再兼容老配置里名称带 mineru 的账号。
+
+    没有可用 Key 就当没配，绝不拿空 Key 出网。
+    """
+    assigned = resolve_task("mineru")
+    if assigned.is_configured:
+        return assigned
     for account in _load_state()["accounts"]:
         if "mineru" not in account["name"].casefold():
             continue
@@ -275,7 +282,7 @@ def find_mineru() -> TaskBinding | None:
         if not key:
             continue
         return TaskBinding(
-            task="ocr",
+            task="mineru",
             account_id=account["id"],
             name=account["name"],
             base_url=account["base_url"],
