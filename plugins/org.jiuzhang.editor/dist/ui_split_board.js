@@ -1,10 +1,9 @@
 /**
- * ui_split_board.js —— 悬浮切题画板：整页长图 + 框选编辑 + 确认/放弃。
+ * ui_split_board.js —— 悬浮切题画板：整条纸带 + 框选编辑 + 确认/放弃。
  *
- * 老师点【重新切题】，遮罩落下、画板居中；空白拉框新增，框内拖动移动，
- * 角上手柄缩放，Delete/× 删框；Enter/【确认切分】提交，Esc/点遮罩放弃。
- * 坐标按原卷页图像素记账、框按百分比摆放：Ctrl+滚轮缩放时框线与题图无损同步。
- * 整块独立：删掉 index.html 那颗按钮、本脚本与 split_board.css 即下架。
+ * 所有原卷页接成一条纸带，画板本身就是屏幕：框只认纸带坐标，一次可以框穿两页；
+ * 落到存储层时才按页界线机械拆块。Ctrl+滚轮缩放比例记在宿主数据舱里，换批次也生效。
+ * 整块独立：删掉 index.html 那颗按钮、本脚本与三份 split_board_* 模块即下架。
  */
 (function (global) {
   "use strict";
@@ -20,15 +19,30 @@
     var refreshBatches = deps.refreshBatches;
     var splitPageRegion = deps.splitPageRegion;
     var updatePageRegion = deps.updatePageRegion;
+    var splitSpanRegion = deps.splitSpanRegion || function () {
+      return Promise.reject(new Error("跨页切题通道没有接上"));
+    };
+    var updateSpanRegion = deps.updateSpanRegion || function () {
+      return Promise.reject(new Error("跨页重切通道没有接上"));
+    };
     var closeCrop = deps.closeCrop || function () {};
     var toast = deps.toast;
     var openButton = deps.dom.splitBoardBtnEl;
+    var boardDom = window.JzoEditorSplitBoardDom
+      ? window.JzoEditorSplitBoardDom.create({ el: el }) : null;
+    var geom = window.JzoEditorSplitBoardGeom
+      ? window.JzoEditorSplitBoardGeom.create() : null;
 
-    var HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     var MIN_BOX_CSS = 6;          // 新框最小屏幕边长：手抖点一下不算框
-    var MIN_REGION = 6;           // 画板上的框最小原图像素边长
+    var MIN_REGION = 6;           // 纸带坐标里的最小边长
     var ZOOM_MIN = 0.5;
     var ZOOM_MAX = 5;
+    var ZOOM_KEY = "split_board_zoom";
+    var ZOOM_SAVE_MS = 260;
+    var zoomStore = window.JzoEditorSplitBoardZoom
+      ? window.JzoEditorSplitBoardZoom.create({
+        hostCall: hostCall, key: ZOOM_KEY, min: ZOOM_MIN, max: ZOOM_MAX, delay: ZOOM_SAVE_MS
+      }) : null;
     var session = null;
 
     function clamp(value, min, max) {
@@ -51,6 +65,15 @@
       };
     }
 
+    function copyRect(rect) {
+      return {
+        x: Number(rect && rect.x) || 0,
+        y: Number(rect && rect.y) || 0,
+        w: Number(rect && rect.w) || 0,
+        h: Number(rect && rect.h) || 0
+      };
+    }
+
     function itemOf(pendingId) {
       if (!pendingId) return null;
       var items = Array.isArray(state.items) ? state.items : [];
@@ -59,89 +82,10 @@
       }
       return null;
     }
-    // ---------- 画板骨架 ----------
-
-    function buildShell(pages) {
-      var mask = el("div", "ed-sb-mask");
-      mask.id = "edSbMask";
-      var board = el("div", "ed-sb-board");
-      board.id = "edSbBoard";
-      board.setAttribute("role", "dialog");
-      board.setAttribute("aria-modal", "true");
-      board.setAttribute("aria-labelledby", "edSbTitle");
-      board.tabIndex = -1;
-
-      var head = el("header", "ed-sb-head");
-      var title = el("h2", "ed-sb-title", "重新切题");
-      title.id = "edSbTitle";
-      var zoom = el("span", "ed-sb-zoom", "100%");
-      var closeBtn = el("button", "ed-sb-close", "×");
-      closeBtn.type = "button";
-      closeBtn.title = "放弃修改并关闭（Esc）";
-      closeBtn.setAttribute("aria-label", "放弃修改并关闭");
-      head.appendChild(title);
-      head.appendChild(el("span", "ed-sb-head-note", pages.length + " 页原卷"));
-      head.appendChild(zoom);
-      head.appendChild(closeBtn);
-      var scroll = el("div", "ed-sb-scroll");
-      scroll.id = "edSbScroll";
-      scroll.tabIndex = 0;
-      scroll.setAttribute("aria-label", "原卷长图：滚轮滚动，Ctrl+滚轮缩放");
-      var pagesEl = el("div", "ed-sb-pages");
-      pagesEl.id = "edSbPages";
-      scroll.appendChild(pagesEl);
-
-      var foot = el("footer", "ed-sb-foot");
-      var count = el("p", "ed-sb-count", "没有改动");
-      var actions = el("div", "ed-sb-actions");
-      var cancel = el("button", "ed-sb-cancel", "放弃");
-      cancel.type = "button";
-      cancel.title = "放弃本次所有改动（Esc）";
-      var ok = el("button", "ed-sb-ok", "⏎ 确认切分");
-      ok.type = "button";
-      ok.setAttribute("aria-label", "确认切分并提交");
-      actions.appendChild(cancel);
-      actions.appendChild(ok);
-      foot.appendChild(el("p", "ed-sb-hint",
-        "空白处拖拽新增 · 拖框移动 · 角上手柄缩放 · Delete 删框"));
-      foot.appendChild(count);
-      foot.appendChild(actions);
-      board.appendChild(head);
-      board.appendChild(scroll);
-      board.appendChild(foot);
-      mask.appendChild(board);
-      return {
-        mask: mask, board: board, head: head, scroll: scroll, pagesEl: pagesEl,
-        zoom: zoom, close: closeBtn, cancel: cancel, ok: ok, count: count
-      };
-    }
-
-    function buildPages(shell, pages) {
-      var out = [];
-      pages.forEach(function (page, index) {
-        var pageRec = {
-          index: index, page: page, pageNo: Number(page.page) || index + 1,
-          width: Number(page.width), height: Number(page.height)
-        };
-        pageRec.wrap = el("div", "ed-sb-page");
-        pageRec.wrap.setAttribute("data-page", String(pageRec.pageNo));
-        pageRec.wrap.setAttribute("data-page-index", String(index));
-        pageRec.img = el("img", "ed-sb-img");
-        pageRec.img.src = String(page.uri || "");
-        pageRec.img.alt = "原卷第 " + pageRec.pageNo + " 页";
-        pageRec.img.draggable = false;
-        pageRec.img.style.aspectRatio = pageRec.width + " / " + pageRec.height;
-        pageRec.layer = el("div", "ed-sb-layer");
-        pageRec.wrap.appendChild(pageRec.img);
-        pageRec.wrap.appendChild(pageRec.layer);
-        shell.pagesEl.appendChild(pageRec.wrap);
-        out.push(pageRec);
-      });
-      return out;
-    }
 
     function open() {
       if (session) return;
+      if (!geom || !boardDom) { toast("切题画板的模块没加载全，画板打不开。", "error"); return; }
       var pages = Array.isArray(state.pageImages) ? state.pageImages : [];
       if (!state.batchId) { toast("当前不在批次里，切不了题。", "error"); return; }
       if (!pages.length) { toast("这一批没有原卷页图，切题画板打不开。", "error"); return; }
@@ -153,13 +97,15 @@
       closeCrop();
       // 插件在沙箱里只占中间一栏，先请宿主把本页签临时铺满工作区，遮罩才盖得住全屏。
       hostCall("stage.overlay", { on: true });
-      var shell = buildShell(pages);
+      var shell = boardDom.buildShell(pages);
       var htmlEl = document.documentElement, bodyEl = document.body;
       var boardSession = {
-        shell: shell, pages: buildPages(shell, pages),
+        shell: shell, pages: boardDom.buildPages(shell, pages),
+        rows: [], stripHeight: 0,
         live: [], removed: [], selected: null, drag: null,
         scale: 1, baseWidth: 0, scrollTarget: 0, scrollFrame: 0,
-        busy: false, partial: false, partialWarned: false, justMovedAt: 0,
+        zoomTouched: false,
+        busy: false, partial: false, partialWarned: false,
         prevFocus: document.activeElement, prevHtmlOverflow: htmlEl.style.overflow,
         prevBodyOverflow: bodyEl.style.overflow, prevBodyPadding: bodyEl.style.paddingRight
       };
@@ -171,83 +117,117 @@
       bodyEl.style.overflow = "hidden";
       if (gap > 0) bodyEl.style.paddingRight = gap + "px";
       document.body.classList.add("ed-sb-locked");
-      var rect = shell.board.getBoundingClientRect();
-      shell.board.style.left = Math.max(8, (window.innerWidth - rect.width) / 2) + "px";
-      shell.board.style.top = Math.max(8, (window.innerHeight - rect.height) / 2) + "px";
-      shell.board.style.transform = "none";
       boardSession.baseWidth = fitWidth(boardSession);
+      layoutStrip(boardSession);
+      loadRegions(boardSession);
       applyScale(boardSession);
-      boardSession.pages.forEach(function (pageRec) {
-        var regions = Array.isArray(pageRec.page.regions) ? pageRec.page.regions : [];
-        regions.forEach(function (region) {
-          var copy = copyRegion(region);
-          if (copy.w > 0 && copy.h > 0) addBox(boardSession, pageRec, copy, false);
-        });
-      });
       refreshState(boardSession);
       bindBoard(boardSession);
       shell.board.focus();
+      // 缩放比例存在宿主数据舱里：读失败、读回怪值都只退 100%，画板照常能用。
+      if (zoomStore) {
+        zoomStore.read().then(function (scale) {
+          if (session !== boardSession || boardSession.zoomTouched) return;
+          if (!isFinite(scale) || !(scale > 0)) return;
+          boardSession.scale = clamp(scale, ZOOM_MIN, ZOOM_MAX);
+          applyScale(boardSession);
+        });
+      }
     }
 
     function fitWidth(boardSession) {
-      // 画板已经去边框：纸带直接铺满滚动区，不再留左右面板内衬。
+      // 纸带宽度就是滚动区宽度：画板没有边框，题图直接顶到屏幕两侧。
       return Math.max(260, boardSession.shell.scroll.clientWidth);
+    }
+
+    function layoutStrip(boardSession) {
+      boardSession.rows = geom.layout(boardSession.pages, boardSession.baseWidth);
+      boardSession.stripHeight = geom.stripHeight(boardSession.rows);
     }
 
     function applyScale(boardSession) {
       boardSession.shell.pagesEl.style.width =
         Math.round(boardSession.baseWidth * boardSession.scale) + "px";
       boardSession.shell.zoom.textContent = Math.round(boardSession.scale * 100) + "%";
+      repaintAll(boardSession);
       var max = boardSession.shell.scroll.scrollHeight - boardSession.shell.scroll.clientHeight;
       boardSession.scrollTarget = clamp(boardSession.scrollTarget, 0, Math.max(0, max));
     }
+
+    function repaintAll(boardSession) {
+      boardSession.live.forEach(function (rec) { paintBox(boardSession, rec); });
+    }
     // ---------- 框 ----------
 
-    function paintBox(rec) {
-      var page = rec.page;
-      var region = rec.region;
-      rec.el.style.left = (region.x / page.width * 100) + "%";
-      rec.el.style.top = (region.y / page.height * 100) + "%";
-      rec.el.style.width = (region.w / page.width * 100) + "%";
-      rec.el.style.height = (region.h / page.height * 100) + "%";
+    /** 框按「纸带基准像素 × 当前缩放」落位；跨页框就是一条长矩形，没有页缝。 */
+    function paintBox(boardSession, rec) {
+      var scale = boardSession.scale;
+      rec.el.style.left = (rec.rect.x * scale) + "px";
+      rec.el.style.top = (rec.rect.y * scale) + "px";
+      rec.el.style.width = (rec.rect.w * scale) + "px";
+      rec.el.style.height = (rec.rect.h * scale) + "px";
     }
 
-    function buildBox(rec) {
-      var box = el("div", "ed-sb-box");
-      box.setAttribute("data-no", String(rec.region.no || ""));
-      box.setAttribute("data-pending", rec.region.pending_id ? "on" : "off");
-      box.setAttribute("data-new", rec.isNew ? "on" : "off");
-      if (rec.isNew) box.classList.add("is-new");
-      var chip = el("span", "ed-sb-box-no", rec.isNew ? "新" : String(rec.region.no || "?"));
-      var tag = el("span", "ed-sb-box-tag",
-        rec.isNew ? "待切" : (rec.region.pending_id ? "已入池" : "仅坐标"));
-      var remove = el("button", "ed-sb-box-x", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "删除这个框（Delete）");
-      remove.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        removeBox(session, rec);
+    function addBox(boardSession, rect, meta, isNew) {
+      var pieces = geom.piecesOf(rect, boardSession.pages, boardSession.rows,
+        boardSession.baseWidth);
+      var rec = {
+        rect: copyRect(rect),
+        pending_id: String((meta && meta.pending_id) || ""),
+        no: Number(meta && meta.no) || 0,
+        label: String((meta && meta.label) || ""),
+        text: String((meta && meta.text) || ""),
+        crossPage: pieces.length > 1,
+        isNew: Boolean(isNew), modified: Boolean(isNew), deleted: false, el: null
+      };
+      rec.el = boardDom.buildBox(boardSession.shell, rec, function (target) {
+        removeBox(session, target);
       });
-      box.appendChild(chip);
-      box.appendChild(tag);
-      box.appendChild(remove);
-      HANDLES.forEach(function (key) {
-        var handle = el("span", "ed-sb-handle");
-        handle.setAttribute("data-handle", key);
-        box.appendChild(handle);
-      });
-      rec.el = box;
-      rec.page.layer.appendChild(box);
-      paintBox(rec);
-    }
-
-    function addBox(boardSession, pageRec, region, isNew) {
-      var rec = { page: pageRec, pageIndex: pageRec.index, region: region,
-        isNew: Boolean(isNew), modified: Boolean(isNew), deleted: false, el: null };
-      buildBox(rec);
+      paintBox(boardSession, rec);
       boardSession.live.push(rec);
       return rec;
+    }
+
+    function loadRegions(boardSession) {
+      var groups = [], byPending = {};
+      boardSession.pages.forEach(function (pageRec, pageIndex) {
+        var regions = Array.isArray(pageRec.page.regions) ? pageRec.page.regions : [];
+        regions.forEach(function (region) {
+          var copy = copyRegion(region);
+          if (!(copy.w > 0 && copy.h > 0)) return;
+          var rect = geom.rectOfRegion(pageIndex, copy, boardSession.pages,
+            boardSession.rows, boardSession.baseWidth);
+          if (!rect) return;
+          if (!copy.pending_id) {
+            addBox(boardSession, rect, {
+              no: copy.no, label: copy.label, text: copy.text, pending_id: ""
+            }, false);
+            return;
+          }
+          // 同一个待审题被跨页拆成几块时，重开画板要还原成一只整框。
+          var group = byPending[copy.pending_id];
+          if (!group) {
+            group = { pending_id: copy.pending_id, pieces: [], no: copy.no,
+              label: copy.label, text: copy.text };
+            byPending[copy.pending_id] = group;
+            groups.push(group);
+          }
+          group.pieces.push({ pageIndex: pageIndex, region: copy });
+          if (!group.no && copy.no) group.no = copy.no;
+          if (!group.label && copy.label) group.label = copy.label;
+          if (!group.text && copy.text) group.text = copy.text;
+        });
+      });
+      groups.forEach(function (group) {
+        group.pieces.sort(function (a, b) { return a.pageIndex - b.pageIndex; });
+        var rect = geom.rectOfPieces(group.pieces, boardSession.pages,
+          boardSession.rows, boardSession.baseWidth);
+        if (!rect) return;
+        addBox(boardSession, rect, {
+          no: group.no, label: group.label, text: group.text,
+          pending_id: group.pending_id
+        }, false);
+      });
     }
 
     function removeBox(boardSession, rec) {
@@ -290,22 +270,13 @@
     }
     // ---------- 坐标换算 ----------
 
-    function pagePoint(pageRec, clientX, clientY) {
-      var rect = pageRec.img.getBoundingClientRect();
-      if (!rect.width || !rect.height) return null;
-      return {
-        x: clamp((clientX - rect.left) / rect.width * pageRec.width, 0, pageRec.width),
-        y: clamp((clientY - rect.top) / rect.height * pageRec.height, 0, pageRec.height)
-      };
+    /** 鼠标位置 → 纸带基准坐标；整条纸带只有一个坐标系，无论落在哪一页。 */
+    function pointOf(boardSession, clientX, clientY) {
+      var rect = boardSession.shell.pagesEl.getBoundingClientRect();
+      return geom.point(rect, boardSession.scale, clientX, clientY,
+        boardSession.baseWidth, boardSession.stripHeight);
     }
 
-    function pageOfNode(node) {
-      if (!session || !node || !node.closest) return null;
-      var pageNode = node.closest(".ed-sb-page");
-      if (!pageNode) return null;
-      var index = Number(pageNode.getAttribute("data-page-index"));
-      return isNaN(index) ? null : (session.pages[index] || null);
-    }
     function recOfNode(node) {
       if (!session || !node || !node.closest) return null;
       var box = node.closest(".ed-sb-box");
@@ -325,26 +296,10 @@
       shell.scroll.addEventListener("wheel", function (event) {
         onWheel(boardSession, event);
       }, { passive: false });
-      shell.mask.addEventListener("click", function (event) {
-        if (event.target === shell.mask && Date.now() - boardSession.justMovedAt > 250) {
-          discard(boardSession);
-        }
-      });
       shell.close.addEventListener("click", function () { discard(boardSession); });
       shell.cancel.addEventListener("click", function () { discard(boardSession); });
       shell.ok.addEventListener("click", function () { save(boardSession); });
-      shell.head.addEventListener("pointerdown", function (event) {
-        if (event.button !== 0 || event.target.closest("button")) return;
-        var rect = shell.board.getBoundingClientRect();
-        boardSession.drag = {
-          kind: "board",
-          offsetX: event.clientX - rect.left,
-          offsetY: event.clientY - rect.top
-        };
-        shell.board.classList.add("is-moving");
-        event.preventDefault();
-      });
-      shell.pagesEl.addEventListener("pointerdown", function (event) {
+      shell.layer.addEventListener("pointerdown", function (event) {
         onPointerDown(boardSession, event);
       });
       window.addEventListener("pointermove", onPointerMove, true);
@@ -368,8 +323,6 @@
 
     function onPointerDown(boardSession, event) {
       if (event.button !== 0 || boardSession.busy) return;
-      var pageRec = pageOfNode(event.target);
-      if (!pageRec) return;
       var rec = recOfNode(event.target);
       if (rec) {
         if (event.target.closest(".ed-sb-box-x")) {
@@ -379,25 +332,24 @@
           return;
         }
         selectBox(boardSession, rec);
-        var point = pagePoint(pageRec, event.clientX, event.clientY);
+        var point = pointOf(boardSession, event.clientX, event.clientY);
         if (!point) return;
         var handle = event.target.closest(".ed-sb-handle");
         boardSession.drag = {
           kind: handle ? "resize" : "move",
           handle: handle ? String(handle.getAttribute("data-handle") || "") : "",
-          rec: rec, page: pageRec,
-          start: copyRegion(rec.region), startPoint: point, moved: false
+          rec: rec, start: copyRect(rec.rect), startPoint: point, moved: false
         };
         event.preventDefault();
         return;
       }
       selectBox(boardSession, null);
-      var start = pagePoint(pageRec, event.clientX, event.clientY);
+      var start = pointOf(boardSession, event.clientX, event.clientY);
       if (!start) return;
       var temp = el("div", "ed-sb-box is-new is-drawing");
-      pageRec.layer.appendChild(temp);
+      boardSession.shell.layer.appendChild(temp);
       boardSession.drag = {
-        kind: "create", page: pageRec, startPoint: start, el: temp, rect: null
+        kind: "create", startPoint: start, el: temp, rect: null
       };
       event.preventDefault();
     }
@@ -405,98 +357,87 @@
     function onPointerMove(event) {
       if (!session || !session.drag) return;
       var drag = session.drag;
-      if (drag.kind === "board") {
-        var boardRect = session.shell.board.getBoundingClientRect();
-        session.moved = true;
-        session.shell.board.style.left = clamp(event.clientX - drag.offsetX,
-          -(boardRect.width - 160), window.innerWidth - 160) + "px";
-        session.shell.board.style.top = clamp(event.clientY - drag.offsetY,
-          0, window.innerHeight - 60) + "px";
-        return;
-      }
-      var point = pagePoint(drag.page, event.clientX, event.clientY);
+      var point = pointOf(session, event.clientX, event.clientY);
       if (!point) return;
       if (drag.kind === "create") {
-        drag.rect = {
-          x: Math.min(drag.startPoint.x, point.x),
-          y: Math.min(drag.startPoint.y, point.y),
-          w: Math.abs(point.x - drag.startPoint.x),
-          h: Math.abs(point.y - drag.startPoint.y)
-        };
-        paintRect(drag.el, drag.page, drag.rect);
+        drag.rect = geom.clampRect(geom.rectBetween(drag.startPoint, point),
+          session.baseWidth, session.stripHeight);
+        paintRect(session, drag.el, drag.rect);
+        event.preventDefault();
         return;
       }
       if (drag.kind === "move") {
         var start = drag.start;
-        drag.rec.region.x = clamp(start.x + point.x - drag.startPoint.x,
-          0, drag.page.width - start.w);
-        drag.rec.region.y = clamp(start.y + point.y - drag.startPoint.y,
-          0, drag.page.height - start.h);
+        drag.rec.rect.x = clamp(start.x + point.x - drag.startPoint.x,
+          0, Math.max(0, session.baseWidth - start.w));
+        drag.rec.rect.y = clamp(start.y + point.y - drag.startPoint.y,
+          0, Math.max(0, session.stripHeight - start.h));
       } else {
-        resizeRegion(drag, point);
+        resizeRect(drag, point, session);
       }
       drag.moved = true;
       if (!drag.rec.isNew) drag.rec.modified = true;
-      paintBox(drag.rec);
+      paintBox(session, drag.rec);
       refreshState(session);
       event.preventDefault();
     }
 
-    function paintRect(node, pageRec, rect) {
-      node.style.left = (rect.x / pageRec.width * 100) + "%";
-      node.style.top = (rect.y / pageRec.height * 100) + "%";
-      node.style.width = (rect.w / pageRec.width * 100) + "%";
-      node.style.height = (rect.h / pageRec.height * 100) + "%";
+    function paintRect(boardSession, node, rect) {
+      var scale = boardSession.scale;
+      node.style.left = (rect.x * scale) + "px";
+      node.style.top = (rect.y * scale) + "px";
+      node.style.width = (rect.w * scale) + "px";
+      node.style.height = (rect.h * scale) + "px";
     }
 
-    function resizeRegion(drag, point) {
+    function resizeRect(drag, point, boardSession) {
       var start = drag.start;
-      var page = drag.page;
       var handle = drag.handle;
       var left = start.x;
       var top = start.y;
       var right = start.x + start.w;
       var bottom = start.y + start.h;
       if (handle.indexOf("w") >= 0) left = clamp(point.x, 0, right - MIN_REGION);
-      if (handle.indexOf("e") >= 0) right = clamp(point.x, left + MIN_REGION, page.width);
+      if (handle.indexOf("e") >= 0) right = clamp(point.x, left + MIN_REGION, boardSession.baseWidth);
       if (handle.indexOf("n") >= 0) top = clamp(point.y, 0, bottom - MIN_REGION);
-      if (handle.indexOf("s") >= 0) bottom = clamp(point.y, top + MIN_REGION, page.height);
-      drag.rec.region.x = left;
-      drag.rec.region.y = top;
-      drag.rec.region.w = right - left;
-      drag.rec.region.h = bottom - top;
+      if (handle.indexOf("s") >= 0) bottom = clamp(point.y, top + MIN_REGION, boardSession.stripHeight);
+      drag.rec.rect = {
+        x: left, y: top, w: right - left, h: bottom - top
+      };
     }
 
     function onPointerUp(event) {
       if (!session || !session.drag) return;
       var drag = session.drag;
       session.drag = null;
-      session.shell.board.classList.remove("is-moving");
-      if (drag.kind === "board") {
-        session.justMovedAt = Date.now();
-        return;
-      }
       if (drag.kind === "create") {
-        var rect = drag.el.getBoundingClientRect();
+        var box = drag.el.getBoundingClientRect();
         if (drag.el.parentNode) drag.el.parentNode.removeChild(drag.el);
-        if (!drag.rect || rect.width < MIN_BOX_CSS || rect.height < MIN_BOX_CSS) return;
-        addBox(session, drag.page, {
-          no: 0, x: round1(drag.rect.x), y: round1(drag.rect.y),
-          w: round1(drag.rect.w), h: round1(drag.rect.h),
-          label: "", text: "", pending_id: ""
+        if (!drag.rect) return;
+        if (box.width < MIN_BOX_CSS || box.height < MIN_BOX_CSS) return;
+        var created = addBox(session, roundRect(drag.rect), {
+          no: 0, label: "", text: "", pending_id: ""
         }, true);
+        selectBox(session, created);
         refreshState(session);
         return;
       }
       if (!drag.moved) return;
       // 手一松就把坐标收成一位小数：与底座落库口径一致，也免得浮点尾数乱跳。
-      var region = drag.rec.region;
-      region.x = round1(clamp(region.x, 0, drag.page.width - region.w));
-      region.y = round1(clamp(region.y, 0, drag.page.height - region.h));
-      region.w = round1(region.w);
-      region.h = round1(region.h);
-      paintBox(drag.rec);
+      drag.rec.rect = roundRect(drag.rec.rect);
+      paintBox(session, drag.rec);
+      if (!drag.rec.isNew) drag.rec.modified = true;
+      refreshState(session);
       event.preventDefault();
+    }
+
+    function roundRect(rect) {
+      return {
+        x: round1(clamp(rect.x, 0, session.baseWidth)),
+        y: round1(clamp(rect.y, 0, session.stripHeight)),
+        w: round1(rect.w),
+        h: round1(rect.h)
+      };
     }
 
     function onWheel(boardSession, event) {
@@ -532,7 +473,7 @@
       boardSession.scrollFrame = window.requestAnimationFrame(step);
     }
 
-    /** Ctrl+滚轮：以鼠标下的原图点为锚，缩放前后该点纹丝不动。 */
+    /** Ctrl+滚轮：以鼠标下的纸带点为锚，缩放前后该点纹丝不动。 */
     function zoomAt(boardSession, factor, clientX, clientY) {
       var next = clamp(boardSession.scale * factor, ZOOM_MIN, ZOOM_MAX);
       if (Math.abs(next - boardSession.scale) < 0.001) return;
@@ -541,29 +482,29 @@
       var pointX = (clientX - before.left) / oldScale;
       var pointY = (clientY - before.top) / oldScale;
       boardSession.scale = next;
+      boardSession.zoomTouched = true;
       applyScale(boardSession);
       var after = boardSession.shell.pagesEl.getBoundingClientRect();
       var scroll = boardSession.shell.scroll;
       scroll.scrollLeft += after.left + pointX * next - clientX;
       scroll.scrollTop += after.top + pointY * next - clientY;
       boardSession.scrollTarget = scroll.scrollTop;
+      if (zoomStore) zoomStore.queue(boardSession.scale);
     }
 
     function onResize() {
       if (!session) return;
-      var boardRect = session.shell.board.getBoundingClientRect();
-      // 宿主刚把画布铺满、或老师改了窗口大小：没亲手拖过画板就重新居中。
-      if (!session.moved) {
-        session.shell.board.style.left = Math.max(8, (window.innerWidth - boardRect.width) / 2) + "px";
-        session.shell.board.style.top = Math.max(8, (window.innerHeight - boardRect.height) / 2) + "px";
-      }
-      session.shell.board.style.left = clamp(
-        parseFloat(session.shell.board.style.left) || 0, -(boardRect.width - 160),
-        Math.max(0, window.innerWidth - 160)) + "px";
-      session.shell.board.style.top = clamp(
-        parseFloat(session.shell.board.style.top) || 0, 0,
-        Math.max(0, window.innerHeight - 60)) + "px";
-      session.baseWidth = fitWidth(session);
+      var nextBase = fitWidth(session);
+      if (nextBase === session.baseWidth) return;
+      var ratio = nextBase / session.baseWidth;
+      session.live.forEach(function (rec) {
+        rec.rect.x *= ratio;
+        rec.rect.y *= ratio;
+        rec.rect.w *= ratio;
+        rec.rect.h *= ratio;
+      });
+      session.baseWidth = nextBase;
+      layoutStrip(session);
       applyScale(session);
     }
     // ---------- 键盘 ----------
@@ -624,6 +565,7 @@
       var boardSession = session;
       if (!boardSession) return;
       session = null;
+      if (boardSession.zoomTouched && zoomStore) zoomStore.flush(boardSession.scale);
       hostCall("stage.overlay", { on: false }).catch(function () { /* 宿主没这口子就维持原样 */ });
       if (boardSession.scrollFrame) {
         window.cancelAnimationFrame(boardSession.scrollFrame);
@@ -648,41 +590,71 @@
       if (busy && text) boardSession.shell.count.textContent = text;
       if (!busy && !text) refreshState(boardSession);
     }
+    // ---------- 落库 ----------
 
-    /** 最终页图清单：题号按页内自上而下、自左而右重排，坐标收一位小数。 */
+    function pagePieces(boardSession, rec) {
+      var out = [];
+      geom.piecesOf(rec.rect, boardSession.pages, boardSession.rows,
+        boardSession.baseWidth).forEach(function (piece) {
+        var pageRec = boardSession.pages[piece.pageIndex];
+        var source = state.pageImages[piece.pageIndex] || {};
+        out.push({
+          pageIndex: piece.pageIndex,
+          pageNo: pageRec.pageNo,
+          uri: String(source.uri || ""),
+          region: {
+            no: 0,
+            x: round1(piece.region.x),
+            y: round1(piece.region.y),
+            w: round1(piece.region.w),
+            h: round1(piece.region.h),
+            label: rec.label,
+            text: rec.text
+          }
+        });
+      });
+      return out;
+    }
+
+    /** 最终页图清单：跨页框按页界线拆块，同一 pending_id 的块仍是同一道题。 */
     function collectPages(boardSession) {
       var source = Array.isArray(state.pageImages) ? state.pageImages : [];
-      var pages = [];
-      boardSession.pages.forEach(function (pageRec, index) {
-        var original = source[index] || {};
-        var live = boardSession.live.filter(function (rec) {
-          return rec.pageIndex === index && !rec.deleted;
-        });
-        live.sort(function (a, b) {
-          return a.region.y !== b.region.y ? a.region.y - b.region.y : a.region.x - b.region.x;
-        });
-        var regions = live.map(function (rec, order) {
-          var region = rec.region;
-          region.no = order + 1;
-          var out = {
-            no: region.no,
-            x: round1(clamp(region.x, 0, pageRec.width)),
-            y: round1(clamp(region.y, 0, pageRec.height)),
-            w: round1(clamp(region.w, 0, pageRec.width)),
-            h: round1(clamp(region.h, 0, pageRec.height)),
-            label: region.label,
-            text: region.text
+      var buckets = boardSession.pages.map(function () { return []; });
+      boardSession.live.forEach(function (rec) {
+        if (rec.deleted) return;
+        geom.piecesOf(rec.rect, boardSession.pages, boardSession.rows,
+          boardSession.baseWidth).forEach(function (piece) {
+          var pageRec = boardSession.pages[piece.pageIndex];
+          var width = pageRec.width, height = pageRec.height;
+          var w = round1(clamp(piece.region.w, 0, width));
+          var h = round1(clamp(piece.region.h, 0, height));
+          if (w < 4 || h < 4) return;   // 页缝上蹭出来的碎条不值得落库
+          var region = {
+            no: 0,
+            x: round1(clamp(piece.region.x, 0, Math.max(0, width - w))),
+            y: round1(clamp(piece.region.y, 0, Math.max(0, height - h))),
+            w: w,
+            h: h,
+            label: rec.label,
+            text: rec.text
           };
-          if (region.pending_id) out.pending_id = region.pending_id;
-          return out;
+          if (rec.pending_id) region.pending_id = rec.pending_id;
+          buckets[piece.pageIndex].push(region);
         });
-        pages.push({
+      });
+      return boardSession.pages.map(function (pageRec, index) {
+        var original = source[index] || {};
+        var regions = buckets[index];
+        regions.sort(function (a, b) {
+          return a.y !== b.y ? a.y - b.y : a.x - b.x;
+        });
+        regions.forEach(function (region, order) { region.no = order + 1; });
+        return {
           name: String(original.name || ""), uri: String(original.uri || ""),
           page: Number(original.page) || pageRec.pageNo,
           width: pageRec.width, height: pageRec.height, regions: regions
-        });
+        };
       });
-      return pages;
     }
 
     function save(boardSession) {
@@ -704,28 +676,18 @@
       var chain = Promise.resolve();
       // 先补新框：新题一旦建成，后面就算某一步失败，重试也不会重复建题。
       boardSession.live.forEach(function (rec) {
-        if (!rec.isNew || rec.region.pending_id) return;
-        chain = chain.then(function () {
-          return createFromBox(rec);
-        });
+        if (!rec.isNew || rec.pending_id) return;
+        chain = chain.then(function () { return createFromBox(boardSession, rec); });
       });
       // 再按新坐标重切已入池的题图。
       boardSession.live.forEach(function (rec) {
-        if (rec.isNew || !rec.modified || rec.updated || !rec.region.pending_id) return;
-        var item = itemOf(rec.region.pending_id);
-        if (!item) return;
-        chain = chain.then(function () {
-          return updatePageRegion(item, rec.region, { page: rec.page.pageNo })
-            .then(function () {
-              rec.updated = true;
-              boardSession.partial = true;
-            });
-        });
+        if (rec.isNew || !rec.modified || rec.updated || !rec.pending_id) return;
+        chain = chain.then(function () { return updateBox(boardSession, rec); });
       });
       // 最后删题：删除不可逆，放在所有新增/重切之后。
       boardSession.removed.forEach(function (rec) {
         if (rec.deletedOnServer) return;
-        var item = itemOf(rec.region.pending_id);
+        var item = itemOf(rec.pending_id);
         if (!item || !item.pendingId) return;
         chain = chain.then(function () {
           return hostCall("pending.delete", { pending_id: item.pendingId })
@@ -765,19 +727,38 @@
       });
     }
 
-    function createFromBox(rec) {
-      var page = state.pageImages[rec.pageIndex] || {};
+    function createFromBox(boardSession, rec) {
+      var pieces = pagePieces(boardSession, rec);
+      if (!pieces.length) return Promise.reject(new Error("这个框没有落到任何一页上"));
+      var first = pieces[0];
+      var page = state.pageImages[first.pageIndex] || {};
       var pseudo = {
         batchId: String(state.batchId || ""), question: {},
-        pageImage: { uri: String(page.uri || ""), page: rec.page.pageNo }
+        pageImage: { uri: String(page.uri || ""), page: first.pageNo }
       };
-      return splitPageRegion(pseudo, rec.region, { page: rec.page.pageNo })
-        .then(function (created) {
-          if (!created || !created.pendingId) throw new Error("新框没能生成待审题");
-          rec.region.pending_id = created.pendingId;
-          session.partial = true;
-          return created;
-        });
+      var task = pieces.length > 1
+        ? splitSpanRegion(pseudo, pieces)
+        : splitPageRegion(pseudo, pieces[0].region, { page: first.pageNo });
+      return task.then(function (created) {
+        if (!created || !created.pendingId) throw new Error("新框没能生成待审题");
+        rec.pending_id = created.pendingId;
+        boardSession.partial = true;
+        return created;
+      });
+    }
+
+    function updateBox(boardSession, rec) {
+      var item = itemOf(rec.pending_id);
+      if (!item) return Promise.resolve();
+      var pieces = pagePieces(boardSession, rec);
+      if (!pieces.length) return Promise.resolve();
+      var task = pieces.length > 1
+        ? updateSpanRegion(item, pieces)
+        : updatePageRegion(item, pieces[0].region, { page: pieces[0].pageNo });
+      return task.then(function () {
+        rec.updated = true;
+        boardSession.partial = true;
+      });
     }
 
     if (openButton) {

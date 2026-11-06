@@ -29,6 +29,7 @@
     var decodePicture = cropIo.decodePicture;
     var drawCropCanvas = cropIo.drawCropCanvas;
     var loadPageBitmap = cropIo.loadPageBitmap;
+    var stitchRegionsToDataUrl = cropIo.stitchRegionsToDataUrl;
 
   // ---------- 左栏切图：小口径放大镜 + 中心十字准星 ----------
   //
@@ -545,6 +546,25 @@
     });
   }
 
+  /** 跨页框确认切分：先把各页切片拼成一张题图，再走同一条切题通道。 */
+  function splitSpanRegion(item, pieces) {
+    if (!splitFromCrop) return Promise.reject(new Error("切题通道没有接上"));
+    if (!item || !item.batchId) return Promise.reject(new Error("当前页不在中转站批次里"));
+    if (!Array.isArray(pieces) || !pieces.length) {
+      return Promise.reject(new Error("跨页框没有页面块"));
+    }
+    var picture = itemImage(item);
+    var pageNo = Number(pieces[0] && pieces[0].pageNo)
+      || Number(picture && picture.page) || 1;
+    return stitchRegionsToDataUrl(pieces).then(function (stitched) {
+      return splitFromCrop(item, stitched.dataUrl, {
+        width: stitched.width,
+        height: stitched.height,
+        page: pageNo
+      });
+    });
+  }
+
   /**
    * 已入池的绿框被老师拖过：按新坐标重切题图，原地更新那道待审题。
    * 读的必须是原卷页图（item.pageImage），不能走 itemImage——那会先拿到
@@ -559,44 +579,63 @@
     return loadPageBitmap(picture.uri).then(function (bitmap) {
       var cropped = cropRegionToDataUrl(bitmap, region);
       if (!cropped) throw new Error("框选区域没有像素");
-      var assetId = cropAssetId();
-      item.cropAsset = { id: assetId, data_url: cropped.dataUrl };
-      item.question = item.question || {};
-      // 只换这张自动切图，老师后来补的选项图 / 解析图一张都不丢。
-      var previous = Array.isArray(item.question.images) ? item.question.images : null;
-      var images = previous ? previous.slice() : [];
-      var stemAt = -1;
-      for (var index = 0; index < images.length; index += 1) {
-        if (images[index] && images[index].role === "stem") { stemAt = index; break; }
-      }
-      if (stemAt < 0) { images.unshift(null); stemAt = 0; }
-      images[stemAt] = { id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" };
-      item.question.images = images;
-      item.dirty = true;
-      // 只换题图、不动正文：还没填题干也不该被拦下。
-      return stashOne(item, metaFor(item, {}), true, true).then(function (outcome) {
-        if (!outcome || !outcome.ok) {
-          item.cropAsset = null;
-          item.question.images = previous || [];
-          throw new Error((outcome && outcome.message) || "题目没能存回中转站");
-        }
-        var saved = outcome.result && outcome.result.saved_assets && outcome.result.saved_assets[0];
-        var asset = saved && saved.assets && saved.assets[0];
-        if (asset && asset.uri && item.question.images[stemAt]) {
-          item.question.images[stemAt].uri = asset.uri;
-        }
+      return applyStashedCrop(item, cropped, pageNo, "第 " + pageNo + " 页的框");
+    });
+  }
+
+  /** 跨页绿框被拖过：重新拼一张题图，原地更新同一道待审题。 */
+  function updateSpanRegion(item, pieces) {
+    if (!item || !item.pendingId) return Promise.reject(new Error("这一框没有对应的待审题"));
+    if (!stashOne) return Promise.reject(new Error("存题通道没有接上"));
+    if (!Array.isArray(pieces) || !pieces.length) {
+      return Promise.reject(new Error("跨页框没有页面块"));
+    }
+    var pageNo = Number(pieces[0] && pieces[0].pageNo)
+      || Number(item.pageImage && item.pageImage.page) || 1;
+    return stitchRegionsToDataUrl(pieces).then(function (stitched) {
+      return applyStashedCrop(item, stitched, pageNo, "跨页题的框");
+    });
+  }
+
+  /** 切图已经拿到手：换掉题图、存回中转站，单页与跨页共用这一段。 */
+  function applyStashedCrop(item, cropped, pageNo, scope) {
+    var assetId = cropAssetId();
+    item.cropAsset = { id: assetId, data_url: cropped.dataUrl };
+    item.question = item.question || {};
+    // 只换这张自动切图，老师后来补的选项图 / 解析图一张都不丢。
+    var previous = Array.isArray(item.question.images) ? item.question.images : null;
+    var images = previous ? previous.slice() : [];
+    var stemAt = -1;
+    for (var index = 0; index < images.length; index += 1) {
+      if (images[index] && images[index].role === "stem") { stemAt = index; break; }
+    }
+    if (stemAt < 0) { images.unshift(null); stemAt = 0; }
+    images[stemAt] = { id: assetId, role: "stem", uri: "/static/uploads/" + assetId + ".png" };
+    item.question.images = images;
+    item.dirty = true;
+    // 只换题图、不动正文：还没填题干也不该被拦下。
+    return stashOne(item, metaFor(item, {}), true, true).then(function (outcome) {
+      if (!outcome || !outcome.ok) {
         item.cropAsset = null;
-        if (scheduleRender) scheduleRender();
-        if (dock) {
-          dock("第 " + pageNo + " 页的框已微调，题图重切为 "
-            + cropped.width + "×" + cropped.height + " 像素。");
-        }
-        return {
-          uri: (asset && asset.uri) || "",
-          width: cropped.width,
-          height: cropped.height
-        };
-      });
+        item.question.images = previous || [];
+        throw new Error((outcome && outcome.message) || "题目没能存回中转站");
+      }
+      var saved = outcome.result && outcome.result.saved_assets && outcome.result.saved_assets[0];
+      var asset = saved && saved.assets && saved.assets[0];
+      if (asset && asset.uri && item.question.images[stemAt]) {
+        item.question.images[stemAt].uri = asset.uri;
+      }
+      item.cropAsset = null;
+      if (scheduleRender) scheduleRender();
+      if (dock) {
+        dock((scope || ("第 " + pageNo + " 页的框")) + "已微调，题图重切为 "
+          + cropped.width + "×" + cropped.height + " 像素。");
+      }
+      return {
+        uri: (asset && asset.uri) || "",
+        width: cropped.width,
+        height: cropped.height
+      };
     });
   }
 
@@ -705,7 +744,9 @@
       dataUrlToBlob: dataUrlToBlob,
       loadPageBitmap: loadPageBitmap,
       splitPageRegion: splitPageRegion,
+      splitSpanRegion: splitSpanRegion,
       updatePageRegion: updatePageRegion,
+      updateSpanRegion: updateSpanRegion,
       drawCropCanvas: drawCropCanvas,
       drawLens: drawLens,
       ensureLens: ensureLens,

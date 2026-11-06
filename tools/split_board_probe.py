@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""悬浮切题画板真机探针：弹板、滚动锁、Ctrl+滚轮缩放、增删框、放弃与确认。
+"""悬浮切题画板真机探针：全屏纸带、跨页框选、缩放记忆、增删框、放弃与确认。
 
 模拟1.pdf → 19 框 / 19 题，随后在画板里：
-滚轮平滑滚动、遮罩挡住滚动穿透、Ctrl+滚轮以光标为锚放大；
-空白拉框新增、Delete 删框；Esc 与点遮罩放弃后后端一个字节不变；
-最后增一框删一框，Enter 提交，坐标与题图都回写。
+画板铺满视口且控制条悬浮；滚轮平滑滚动、遮罩挡住滚动穿透、Ctrl+滚轮锚定放大；
+缩放比例关板重开仍记得，换到第二批次仍生效；空白拉框新增、横跨页缝的大框能落库；
+Delete 删框；Esc 与【放弃】后后端一个字节不变；最后增一框删一框，Enter 提交。
 
 用法：``.venv/Scripts/python.exe tools/split_board_probe.py <tag>``
 """
@@ -156,6 +156,27 @@ def main() -> int:
         deleted_region = (detail.get("page_images") or [{}])[0].get("regions") or [{}]
         deleted_pid = str(deleted_region[0].get("pending_id") or "")
 
+        # 第二批：同一份卷子换个文件名，用来验证缩放比例换批次也生效。
+        staged2 = http_post(base + "/api/ingest/files", {"files": [{
+            "name": "模拟1-副本.pdf",
+            "data_url": "data:application/pdf;base64,"
+                        + base64.b64encode(PAPER.read_bytes()).decode("ascii"),
+        }]})
+        batch2 = str(staged2.get("batch_id") or "")
+        check("02a 第二批次已建立", bool(batch2) and batch2 != batch_id, batch2)
+        detail2 = {}
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            detail2 = batch_items(base, batch2)
+            if len(detail2.get("page_images") or []) >= 5 and len(detail2.get("items") or []) >= 19:
+                break
+            time.sleep(0.3)
+        baseline2 = snapshot(detail2)
+        result["metrics"]["baseline2"] = baseline2
+        check("02b 第二批次同样是 5 页 / 19 框 / 19 题",
+              baseline2["page_count"] == 5 and baseline2["region_count"] == 19
+              and len(baseline2["item_ids"]) == 19, baseline2)
+
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -170,9 +191,10 @@ def main() -> int:
             entry.click()
             canvas = page.frame_locator(CANVAS)
             expect(canvas.locator("#edRoot")).to_be_visible(timeout=25000)
-            card = canvas.locator(".ed-batch-row").first
+            # 列表按时间倒序，第一批不一定在第一行；用批次号认死目标。
+            card = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id).first
             expect(card).to_be_visible(timeout=20000)
-            card.click()
+            card.locator(".ed-batch-open").click()
             expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=25000)
 
             # ---------- 弹板 ----------
@@ -188,20 +210,41 @@ def main() -> int:
                    canvas.locator(".ed-sb-box").count()])
             board_box = canvas.locator("#edSbBoard").bounding_box()
             result["metrics"]["board_box"] = board_box
-            check("05 画板宽度占视口六到七成",
-                  bool(board_box) and 0.58 * 1440 <= board_box["width"] <= 0.72 * 1440,
-                  board_box)
+            check("05 画板顶天立地铺满视口",
+                  bool(board_box) and board_box["width"] >= 1438
+                  and board_box["height"] >= 898, board_box)
             board_style = canvas.locator("#edSbBoard").evaluate(
                 "node => { var s = getComputedStyle(node);"
-                " return [s.backgroundColor, s.borderTopWidth, s.borderTopLeftRadius,"
-                " s.boxShadow, getComputedStyle(node.querySelector('.ed-sb-pages')).rowGap,"
-                " getComputedStyle(node.querySelector('.ed-sb-scroll')).backgroundColor]; }")
+                " var scroll = node.querySelector('.ed-sb-scroll');"
+                " var sr = scroll.getBoundingClientRect();"
+                " var head = getComputedStyle(node.querySelector('.ed-sb-head'));"
+                " var foot = getComputedStyle(node.querySelector('.ed-sb-foot'));"
+                " return {"
+                " bg: s.backgroundColor, border: s.borderTopWidth,"
+                " radius: s.borderTopLeftRadius, shadow: s.boxShadow,"
+                " scrollPos: getComputedStyle(scroll).position,"
+                " scrollTop: sr.top, scrollHeight: sr.height,"
+                " headBg: head.backgroundColor, headPad: head.paddingTop,"
+                " footBg: foot.backgroundColor, footPad: foot.paddingTop,"
+                " titlePos: getComputedStyle(node.querySelector('.ed-sb-title')).position,"
+                " actionsPos: getComputedStyle(node.querySelector('.ed-sb-actions')).position,"
+                " pageOverflow: getComputedStyle(node.querySelector('.ed-sb-page')).overflow,"
+                " layerEvents: getComputedStyle(node.querySelector('.ed-sb-layer')).pointerEvents"
+                " }; }")
             result["metrics"]["board_style"] = board_style
-            check("05a 画板已去弹窗边框且内部纸带无缝",
-                  board_style[0] == "rgba(0, 0, 0, 0)" and board_style[1] == "0px"
-                  and board_style[2] == "0px" and board_style[3] == "none"
-                  and board_style[4] == "0px" and board_style[5] == "rgba(0, 0, 0, 0)",
-                  board_style)
+            check("05a 画板无边框、控制条透明悬浮、纸带铺满滚动区",
+                  board_style["bg"] == "rgba(0, 0, 0, 0)"
+                  and board_style["border"] == "0px"
+                  and board_style["radius"] == "0px" and board_style["shadow"] == "none"
+                  and board_style["scrollPos"] == "absolute"
+                  and board_style["scrollTop"] <= 1 and board_style["scrollHeight"] >= 898
+                  and board_style["headBg"] == "rgba(0, 0, 0, 0)"
+                  and board_style["footBg"] == "rgba(0, 0, 0, 0)"
+                  and board_style["headPad"] == "0px" and board_style["footPad"] == "0px"
+                  and board_style["titlePos"] == "absolute"
+                  and board_style["actionsPos"] == "absolute"
+                  and board_style["pageOverflow"] == "visible"
+                  and board_style["layerEvents"] == "auto", board_style)
             check("06 画板打开时底层滚动被锁死",
                   canvas.locator("#edRoot").evaluate(
                       "() => document.documentElement.style.overflow") == "hidden"
@@ -213,16 +256,17 @@ def main() -> int:
             image_scroll = canvas.locator("#edImageBody")
             image_scroll.evaluate("node => { node.scrollTop = 120; }")
             before_under = image_scroll.evaluate("node => node.scrollTop")
-            mask = canvas.locator("#edSbMask")
-            mask.hover(position={"x": 6, "y": 6})
+            page.mouse.move(6, 6)
             page.mouse.wheel(0, 700)
             page.wait_for_timeout(500)
             after_under = image_scroll.evaluate("node => node.scrollTop")
             board_scroll = canvas.locator("#edSbScroll")
             board_before = board_scroll.evaluate("node => node.scrollTop")
             result["metrics"]["scroll_through"] = [before_under, after_under, board_before]
-            check("07 遮罩上的滚轮不会穿透到底层",
-                  before_under == after_under and board_before == 0,
+            # 画板已经全屏，不再有“画板之外”；纸带顶到视口左上角，
+            # 该点的滚轮归画板自己，底层编辑器一格都不许动。
+            check("07 全屏画板吃掉滚轮、底层页面纹丝不动",
+                  before_under == after_under,
                   result["metrics"]["scroll_through"])
             board_scroll.hover()
             page.mouse.wheel(0, 700)
@@ -264,10 +308,51 @@ def main() -> int:
             check("11 框线随题图同倍无损放大",
                   box_before > 0 and abs(box_after / box_before - pages_after / pages_before) < 0.03,
                   result["metrics"]["zoom"])
+            zoom_label = canvas.locator(".ed-sb-zoom").inner_text()
             page.screenshot(path=str(shots / "02_zoomed.png"))
             page.keyboard.press("Escape")
             expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=10000)
             check("12 Esc 放弃后画板关闭", canvas.locator("#edSbBoard").count() == 0)
+
+            # ---------- 缩放记忆：关板重开 + 换批次 ----------
+            canvas.locator("#edSplitBoardBtn").click()
+            expect(canvas.locator("#edSbBoard")).to_be_visible(timeout=20000)
+            page.wait_for_timeout(800)
+            reopen_label = canvas.locator(".ed-sb-zoom").inner_text()
+            result["metrics"]["zoom_memory"] = {"saved": zoom_label, "reopen": reopen_label}
+            check("12a 关板重开后缩放比例仍记得",
+                  zoom_label != "100%" and reopen_label == zoom_label,
+                  result["metrics"]["zoom_memory"])
+            page.keyboard.press("Escape")
+            expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=10000)
+
+            # 二屏里批次列表是收起的，先回列表再换批次。
+            # 右侧辅助栏默认收起，用探针面给出的同一条回列表入口。
+            canvas.locator("#edRoot").evaluate(
+                "() => window.__jzoEditorV2.backToList('', true)")
+            second_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch2).first
+            expect(second_row).to_be_visible(timeout=20000)
+            second_row.locator(".ed-batch-open").click()
+            expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=25000)
+            page.wait_for_timeout(600)
+            canvas.locator("#edSplitBoardBtn").click()
+            expect(canvas.locator("#edSbBoard")).to_be_visible(timeout=20000)
+            page.wait_for_timeout(800)
+            batch_label = canvas.locator(".ed-sb-zoom").inner_text()
+            result["metrics"]["zoom_memory_batch"] = [zoom_label, batch_label]
+            check("12b 换批次后缩放比例仍生效", batch_label == zoom_label,
+                  result["metrics"]["zoom_memory_batch"])
+            page.keyboard.press("Escape")
+            expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=10000)
+
+            # 右侧辅助栏默认收起，用探针面给出的同一条回列表入口。
+            canvas.locator("#edRoot").evaluate(
+                "() => window.__jzoEditorV2.backToList('', true)")
+            first_row = canvas.locator('.ed-batch-row[data-batch="%s"]' % batch_id).first
+            expect(first_row).to_be_visible(timeout=20000)
+            first_row.locator(".ed-batch-open").click()
+            expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=25000)
+            page.wait_for_timeout(600)
 
             # ---------- 新增框 + Delete 删框 ----------
             canvas.locator("#edSplitBoardBtn").click()
@@ -352,10 +437,10 @@ def main() -> int:
             page.mouse.move(start_x + 120, start_y + 100, steps=8)
             page.mouse.up()
             page.wait_for_timeout(200)
-            canvas.locator("#edSbMask").click(position={"x": 6, "y": 6})
+            canvas.locator(".ed-sb-cancel").click()
             expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=10000)
             after_mask = snapshot(batch_items(base, batch_id))
-            check("19 点遮罩放弃后后端仍原样",
+            check("19 点【放弃】后后端仍原样",
                   after_mask == after_discard, after_mask)
             check("20 放弃动作没产生任何 4xx/5xx", not result["http_failures"],
                   result["http_failures"][-4:])
@@ -448,6 +533,77 @@ def main() -> int:
                   and green_style[1] == "absolute" and green_style[2] == "solid"
                   and green_style[3] == "rgb(47, 158, 90)" and green_style[4] == "2px"
                   and green_style[5] == 0, result["metrics"]["left_strip"])
+
+            # ---------- 跨页框：一口气画穿第 4/5 页的页缝 ----------
+            before_cross = snapshot(batch_items(base, batch_id))
+            canvas.locator("#edSplitBoardBtn").click()
+            expect(canvas.locator("#edSbBoard")).to_be_visible(timeout=20000)
+            cross_scroll = canvas.locator("#edSbScroll")
+            cross_scroll.evaluate(
+                "node => { var pages = node.querySelectorAll('.ed-sb-page');"
+                " if (pages.length < 5) return;"
+                " node.scrollTop = pages[4].offsetTop - node.clientHeight / 2; }")
+            page.wait_for_timeout(500)
+            page5_box = canvas.locator(".ed-sb-page").nth(4).bounding_box()
+            check("32 已把第 4/5 页的页缝滚到屏幕中间", bool(page5_box), page5_box)
+            assert page5_box is not None
+            seam_y = page5_box["y"]
+            cross_start_x = page5_box["x"] + page5_box["width"] * 0.22
+            cross_end_x = page5_box["x"] + page5_box["width"] * 0.58
+            page.mouse.move(cross_start_x, seam_y - 70)
+            page.mouse.down()
+            page.mouse.move((cross_start_x + cross_end_x) / 2, seam_y - 10, steps=6)
+            page.mouse.move(cross_end_x, seam_y + 70, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(300)
+            cross_boxes = canvas.locator('.ed-sb-box[data-cross="on"].is-new')
+            cross_count = cross_boxes.count()
+            cross_tag = cross_boxes.first.locator(".ed-sb-box-tag").inner_text() \
+                if cross_count else ""
+            cross_rect = cross_boxes.first.bounding_box() if cross_count else None
+            result["metrics"]["cross_box"] = [cross_count, cross_tag, cross_rect, seam_y]
+            check("33 一个框直接画穿页缝（跨页待切）",
+                  cross_count == 1 and cross_tag == "跨页待切" and bool(cross_rect)
+                  and cross_rect["y"] < seam_y < cross_rect["y"] + cross_rect["height"],
+                  result["metrics"]["cross_box"])
+            page.screenshot(path=str(shots / "05_cross_page.png"))
+            page.keyboard.press("Enter")
+            expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=60000)
+
+            cross_final = {}
+            deadline = time.time() + 60
+            while time.time() < deadline:
+                cross_final = snapshot(batch_items(base, batch_id))
+                if (cross_final["region_count"] == before_cross["region_count"] + 2
+                        and len(cross_final["item_ids"]) == len(before_cross["item_ids"]) + 1):
+                    break
+                page.wait_for_timeout(300)
+            result["metrics"]["cross_final"] = cross_final
+            check("34 跨页框提交后：新增 1 道题、按页拆成 2 块",
+                  cross_final["region_count"] == before_cross["region_count"] + 2
+                  and len(cross_final["item_ids"]) == len(before_cross["item_ids"]) + 1,
+                  cross_final)
+            cross_pages = batch_items(base, batch_id).get("page_images") or []
+            old_pids = set(before_cross["region_pending"])
+            fresh_pids = []
+            for each_page in cross_pages[3:5]:
+                for region in each_page.get("regions") or []:
+                    pid = str(region.get("pending_id") or "")
+                    if pid and pid not in old_pids:
+                        fresh_pids.append(pid)
+            shared = sorted(set(fresh_pids))
+            page_counts = [len(each.get("regions") or []) for each in cross_pages]
+            result["metrics"]["cross_pids"] = {"fresh": fresh_pids, "shared": shared,
+                                               "per_page": page_counts}
+            check("35 两页的块共用一个 pending_id，仍是一道题",
+                  len(fresh_pids) == 2 and len(shared) == 1
+                  and shared[0] in cross_final["item_ids"]
+                  and page_counts[3] == before_cross["per_page"][3] + 1
+                  and page_counts[4] == before_cross["per_page"][4] + 1,
+                  result["metrics"]["cross_pids"])
+            expect(canvas.locator(".ed-green-box").first).to_be_visible(timeout=20000)
+            page.wait_for_timeout(500)
+            page.screenshot(path=str(shots / "06_cross_confirmed.png"))
 
             result["metrics"]["console_errors"] = result["console_errors"]
             result["metrics"]["page_errors"] = result["page_errors"]

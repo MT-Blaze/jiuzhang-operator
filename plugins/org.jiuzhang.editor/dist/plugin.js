@@ -592,7 +592,9 @@
     refreshBatches: refreshBatches, toast: toast,
     closeCrop: function () { return uiCrop.closeCrop.apply(uiCrop, arguments); },
     splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },
+    splitSpanRegion: function () { return uiCrop.splitSpanRegion.apply(uiCrop, arguments); },
     updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },
+    updateSpanRegion: function () { return uiCrop.updateSpanRegion.apply(uiCrop, arguments); },
   });
   // 终极军令 任务四：源码栏【添加配图】。独立一整块，可整块下架。
   var uiIllustration = window.JzoEditorIllustration.create({

@@ -111,26 +111,71 @@
       return pending;
     }
 
-    /** 按页面图像素坐标裁一块 PNG：自动切分框的【确认切分】走这里。 */
-    function cropRegionToDataUrl(bitmap, region) {
-      var width = Number(bitmap.width) || 0;
-      var height = Number(bitmap.height) || 0;
+    function sliceOf(bitmap, region) {
+      var width = Number(bitmap && bitmap.width) || 0;
+      var height = Number(bitmap && bitmap.height) || 0;
+      if (!(width > 0 && height > 0)) return null;
       var sx = Math.round(Number(region && region.x) || 0);
       var sy = Math.round(Number(region && region.y) || 0);
       var sw = Math.round(Number(region && region.w) || 0);
       var sh = Math.round(Number(region && region.h) || 0);
-      if (!(width > 0 && height > 0) || !(sw > 0 && sh > 0)) return null;
+      if (!(sw > 0 && sh > 0)) return null;
       sx = clampValue(sx, 0, Math.max(0, width - 1));
       sy = clampValue(sy, 0, Math.max(0, height - 1));
       sw = clampValue(sw, 1, width - sx);
       sh = clampValue(sh, 1, height - sy);
+      return { sx: sx, sy: sy, sw: sw, sh: sh };
+    }
+
+    /** 按页面图像素坐标裁一块 PNG：自动切分框的【确认切分】走这里。 */
+    function cropRegionToDataUrl(bitmap, region) {
+      var slice = sliceOf(bitmap, region);
+      if (!slice) return null;
       var out = document.createElement("canvas");
-      out.width = sw;
-      out.height = sh;
+      out.width = slice.sw;
+      out.height = slice.sh;
       var octx = out.getContext("2d");
       octx.imageSmoothingEnabled = false;
-      octx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, sw, sh);
-      return { dataUrl: out.toDataURL("image/png"), width: sw, height: sh };
+      octx.drawImage(bitmap, slice.sx, slice.sy, slice.sw, slice.sh,
+        0, 0, slice.sw, slice.sh);
+      return { dataUrl: out.toDataURL("image/png"), width: slice.sw, height: slice.sh };
+    }
+
+    /**
+     * 跨页框：各页的切片按同一输出宽度上下拼成一张题图。
+     * 切片宽度随页宽等比缩放，拼出来的题图与纸带上看到的那条长框一致。
+     */
+    function stitchRegionsToDataUrl(pieces) {
+      var list = Array.isArray(pieces) ? pieces : [];
+      if (!list.length) return Promise.reject(new Error("跨页框没有可拼的页面块"));
+      return Promise.all(list.map(function (piece) {
+        return loadPageBitmap(String((piece && piece.uri) || "")).then(function (bitmap) {
+          var slice = sliceOf(bitmap, piece && piece.region);
+          if (!slice) throw new Error("跨页框有一段没有像素");
+          return { bitmap: bitmap, slice: slice };
+        });
+      })).then(function (loaded) {
+        var width = 0;
+        loaded.forEach(function (each) { width = Math.max(width, each.slice.sw); });
+        if (!(width > 0)) throw new Error("跨页框没有可拼的像素");
+        var heights = loaded.map(function (each) {
+          return Math.max(1, Math.round(each.slice.sh * width / each.slice.sw));
+        });
+        var total = 0;
+        heights.forEach(function (height) { total += height; });
+        var out = document.createElement("canvas");
+        out.width = width;
+        out.height = total;
+        var octx = out.getContext("2d");
+        octx.imageSmoothingEnabled = false;
+        var top = 0;
+        loaded.forEach(function (each, index) {
+          octx.drawImage(each.bitmap, each.slice.sx, each.slice.sy,
+            each.slice.sw, each.slice.sh, 0, top, width, heights[index]);
+          top += heights[index];
+        });
+        return { dataUrl: out.toDataURL("image/png"), width: width, height: total };
+      });
     }
 
     return {
@@ -141,7 +186,8 @@
       dataUrlToBlob: dataUrlToBlob,
       decodePicture: decodePicture,
       drawCropCanvas: drawCropCanvas,
-      loadPageBitmap: loadPageBitmap
+      loadPageBitmap: loadPageBitmap,
+      stitchRegionsToDataUrl: stitchRegionsToDataUrl
     };
   }
 

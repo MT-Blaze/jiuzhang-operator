@@ -1831,6 +1831,12 @@ class EditorSplitBoardContractTest(unittest.TestCase):
                         "画板模块必须先于纯图片卷左栏加载")
         self.assertLess(html.index('id="edAddIllustration"'), html.index('id="edSplitBoardBtn"'),
                         "【重新切题】排在【添加配图】右边，工具条一律靠左追加")
+        # 纸带坐标、骨架 DOM、缩放记忆三块拆出去，且都要先于画板加载。
+        for module in ("split_board_geom.js", "split_board_dom.js", "split_board_zoom.js"):
+            self.assertIn('<script src="%s"></script>' % module, html)
+            self.assertLess(html.index(module), html.index("ui_split_board.js"),
+                            module + " 必须在画板之前加载")
+            self.assertTrue((DIST / module).is_file(), module + " 必须真的发货")
         # 原「左栏直接拖绿框」整块撤除，不许留下半截。
         self.assertNotIn("ui_page_boxes.js", html)
         self.assertNotIn("layout_boxes.css", html)
@@ -1842,35 +1848,53 @@ class EditorSplitBoardContractTest(unittest.TestCase):
             "splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },",
             js)
         self.assertIn(
+            "splitSpanRegion: function () { return uiCrop.splitSpanRegion.apply(uiCrop, arguments); },",
+            js)
+        self.assertIn(
             "updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },",
+            js)
+        self.assertIn(
+            "updateSpanRegion: function () { return uiCrop.updateSpanRegion.apply(uiCrop, arguments); },",
             js)
         self.assertNotIn("JzoEditorPageBoxes", js)
         self.assertNotIn("renderPageBoxes", read("ui_columns_scan.js"))
         self.assertIn("splitBoardBtnEl: splitBoardBtnEl,", read("ui_dom.js"))
 
-    def test_02_the_mask_and_board_lock_page_scroll(self) -> None:
+    def test_02_the_board_fills_the_viewport_and_locks_page_scroll(self) -> None:
         css = read("plugin.css")
         mask = rule_body(css, ".ed-sb-mask")
         self.assertIn("position: fixed", mask)
         self.assertIn("inset: 0", mask)
         board = rule_body(css, ".ed-sb-board")
-        self.assertIn("position: fixed", board)
-        self.assertIn("display: flex", board)
-        self.assertIn("width: min(68vw", board, "画板占屏幕六到七成宽")
-        # 2026-11-06 阶段一：画板去边框——没有白底、圆角、边框、阴影，
-        # 内部直接铺纸带；遮罩仍是防穿透的半透明层。
+        self.assertIn("position: absolute", board)
+        self.assertIn("inset: 0", board, "画板自己就是屏幕，不再是一只居中弹窗")
+        self.assertNotIn("width: min(68vw", board)
+        self.assertNotIn("display: flex", board,
+                        "上下控制栏不再占版面，画板不必再纵向分栏")
+        # 2026-11-06 全屏沉浸：画板没有白底、圆角、边框、阴影。
         self.assertNotIn("border", board)
         self.assertNotIn("border-radius", board)
         self.assertNotIn("box-shadow", board)
         self.assertIn("background: transparent", board)
         scroll = rule_body(css, ".ed-sb-scroll")
+        self.assertIn("position: absolute", scroll)
+        self.assertIn("inset: 0", scroll, "纸带从屏幕顶端铺到底端")
         self.assertIn("overflow: auto", scroll)
         self.assertIn("background: transparent", scroll)
         self.assertIn("overscroll-behavior: contain", scroll)
         pages = rule_body(css, ".ed-sb-pages")
-        self.assertIn("gap: 0", pages)
         self.assertIn("padding: 0", pages)
-        self.assertIn("background: rgba(18, 22, 28, 0.56)", rule_body(css, ".ed-sb-mask"))
+        self.assertIn("margin: 0 auto", pages)
+        self.assertIn("background: rgba(18, 22, 28, 0.56)", mask)
+        layer = rule_body(css, ".ed-sb-layer")
+        self.assertIn("position: absolute", layer)
+        self.assertIn("inset: 0", layer)
+        self.assertIn("pointer-events: auto", layer)
+        # 页缝只画虚线提示，不再给页面加边框，否则页与页之间会出现断口。
+        page = rule_body(css, ".ed-sb-page {")
+        self.assertNotIn("overflow", page, "单页容器不许裁剪，跨页框要能横穿")
+        self.assertNotIn("border", page)
+        self.assertIn("border-top: 1px dashed", rule_body(css, ".ed-sb-page + .ed-sb-page::before"))
         box = rule_body(css, ".ed-sb-box")
         self.assertIn("position: absolute", box)
         self.assertIn("pointer-events: auto", box)
@@ -1878,12 +1902,24 @@ class EditorSplitBoardContractTest(unittest.TestCase):
         self.assertIn("border-style: dashed", rule_body(css, ".ed-sb-box.is-new"))
         for key in ("nw", "n", "ne", "e", "se", "s", "sw", "w"):
             rule_body(css, '.ed-sb-handle[data-handle="%s"]' % key)
+        # 控制条透明、零内边距，子元素绝对悬浮在四角。
+        head = rule_body(css, ".ed-sb-head,")
+        self.assertIn("background: transparent", head)
+        self.assertIn("padding: 0", head)
+        self.assertIn("border: 0", head)
+        self.assertIn("pointer-events: none", head)
+        self.assertIn("position: absolute", head)
         module = read("ui_split_board.js")
         for needle in ("Ctrl", "wheel", "Escape", "Enter", "Delete", "Backspace",
                        'body.classList.add("ed-sb-locked")'):
             self.assertIn(needle, module)
+        floating = rule_body(css, ".ed-sb-title,")
+        self.assertIn("position: absolute", floating,
+                      "标题、缩放比例、操作按钮全部绝对悬浮在四角")
+        self.assertIn(".ed-sb-actions {\n  right: 16px;", css,
+                      "操作按钮悬浮在右下角")
 
-    def test_03_zoom_is_cursor_anchored_and_scroll_is_smoothed(self) -> None:
+    def test_03_zoom_is_cursor_anchored_smoothed_and_remembered(self) -> None:
         module = read("ui_split_board.js")
         self.assertIn("event.ctrlKey || event.metaKey", module)
         self.assertIn("Math.exp(-event.deltaY * 0.0015)", module)
@@ -1891,19 +1927,43 @@ class EditorSplitBoardContractTest(unittest.TestCase):
         self.assertIn("requestAnimationFrame(step)", module)
         self.assertIn("scroll.scrollLeft += after.left + pointX * next - clientX", module)
         self.assertIn("scroll.scrollTop += after.top + pointY * next - clientY", module)
+        # 跨批次记忆：比例只许走宿主数据舱，插件侧绝不碰 localStorage。
+        self.assertNotIn("localStorage", module)
+        self.assertIn("split_board_zoom.js", read("index.html"))
+        zoom = read("split_board_zoom.js")
+        self.assertIn('hostCall("draft.save"', zoom)
+        self.assertIn('hostCall("draft.load"', zoom)
+        self.assertIn('key: key', zoom)
+        self.assertIn("catch (error)", zoom)
+        self.assertNotIn("localStorage", zoom)
 
     def test_04_confirm_reuses_pending_and_discard_never_writes(self) -> None:
         module = read("ui_split_board.js")
         self.assertIn('hostCall("pending.set_pages"', module)
         self.assertIn('hostCall("pending.delete"', module)
-        self.assertIn("splitPageRegion(pseudo, rec.region", module)
-        self.assertIn("updatePageRegion(item, rec.region", module)
+        self.assertIn("splitPageRegion(pseudo, pieces[0].region", module)
+        self.assertIn("updatePageRegion(item, pieces[0].region", module)
+        self.assertIn("splitSpanRegion(pseudo, pieces", module)
+        self.assertIn("updateSpanRegion(item, pieces", module)
+        # 跨页框落库：按页拆块，但同一 pending_id 的块仍是同一道题。
+        self.assertIn("geom.piecesOf(rec.rect", module)
+        self.assertIn("region.pending_id = rec.pending_id", module)
         # 放弃路径只拆 DOM，绝不碰任何后端写接口。
         discard = module[module.index("    function discard("):]
         discard = discard[:discard.index("    function close(")]
         self.assertNotIn("hostCall(", discard)
         self.assertIn("close()", discard)
         self.assertIn("原卷一个字节都没动", discard)
+
+    def test_05_geometry_keeps_one_coordinate_system_for_the_whole_strip(self) -> None:
+        geom = read("split_board_geom.js")
+        self.assertIn("function piecesOf(", geom)
+        self.assertIn("function rectOfPieces(", geom)
+        self.assertIn("function rectBetween(", geom)
+        self.assertIn("function clampRect(", geom)
+        self.assertIn("function layout(", geom)
+        # 拆分只按页界线机械切，不改框形状：同一矩形拆出的块上下沿应当对齐。
+        self.assertIn("rect.y + rect.h", geom)
 
 
 class EditorLeftPaperStripContractTest(unittest.TestCase):
