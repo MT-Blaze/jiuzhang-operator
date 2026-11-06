@@ -376,6 +376,7 @@
 
   // 终极军令 任务一/三：API 配置中心 + 单题/批量识别。独立一整块，可整块下架。
   var uiAiCopilot = window.JzoEditorAiCopilot.create({
+    bindSwitcher: uiModal.bindSwitcher,
     closeModal: closeModal,
     coreState: coreState,
     dock: dock,
@@ -392,6 +393,7 @@
     parsedOf: uiColumns.parsedOf,
     publish: publish,
     refreshRow: uiColumns.refreshRow,
+    setSwitcher: uiModal.setSwitcher,
     toast: toast,
     writeBackSourceText: uiColumns.writeBackSourceText,
   });

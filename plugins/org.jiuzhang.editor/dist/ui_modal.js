@@ -50,6 +50,31 @@
     modalRestoreFocus = null;
   }
 
+  /** 折叠表单的通用开关：同步 hidden、aria-expanded 与按钮文案，展开时聚焦首个输入框。 */
+  function setSwitcher(formId, buttonId, open, offText, onText) {
+    var form = document.getElementById(formId);
+    var button = document.getElementById(buttonId);
+    if (form) form.hidden = !open;
+    if (button) {
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+      button.textContent = open ? onText : offText;
+    }
+    var first = open && form && form.querySelector("input, select, textarea");
+    if (first) first.focus();
+  }
+
+  /** 点按钮开合表单：展开时先回调 onOpen（清空旧值），再交给 setSwitcher 聚焦。 */
+  function bindSwitcher(formId, buttonId, offText, onText, onOpen) {
+    var button = document.getElementById(buttonId);
+    if (!button) return;
+    button.addEventListener("click", function () {
+      var form = document.getElementById(formId);
+      var open = !!(form && form.hidden);
+      if (open && onOpen) onOpen();
+      setSwitcher(formId, buttonId, open, offText, onText);
+    });
+  }
+
   document.addEventListener("keydown", function (event) {
     var node = openModalNode();
     if (!node) return;
@@ -73,10 +98,12 @@
   });
 
     return {
+      bindSwitcher: bindSwitcher,
       closeModal: closeModal,
       modalRestoreFocus: modalRestoreFocus,
       openModal: openModal,
       openModalNode: openModalNode,
+      setSwitcher: setSwitcher,
     };
   }
 

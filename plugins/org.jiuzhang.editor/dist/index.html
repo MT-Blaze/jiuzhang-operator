@@ -210,7 +210,9 @@
           <section class="ep-ai-col" aria-label="密钥池">
             <h4 class="ep-ai-col-title">密钥池</h4>
             <div class="ep-ai-pool" id="epAiPoolList"></div>
-            <div class="ep-ai-form">
+            <button type="button" class="ep-btn ep-mini-btn ep-ai-new" id="epAiNewAccount"
+                    aria-expanded="false" aria-controls="epAiAccountForm">+ 新增接口</button>
+            <div class="ep-ai-form" id="epAiAccountForm" hidden>
               <label class="ep-ai-field"><span>名称</span>
                 <input id="epAiName" type="text" maxlength="40"
                        placeholder="如 阿里云 / DeepSeek / MinerU"></label>

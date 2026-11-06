@@ -72,9 +72,11 @@
 .ep-ai-note[data-tone="error"] { color: var(--danger); font-weight: 700; }
 
 /* ---------- 双栏弹窗：左密钥池 / 右任务指派 ---------- */
+/* 弹窗整体放大：900px 宽给左右两栏留足余地；内层一律不滚，只有卡片自己滚。
+   高度吃满这一帧（画布 iframe）留给弹窗的余量，四个任务正好一屏放完。 */
 .ep-ai-card {
-  width: min(760px, 100%);
-  max-height: min(86vh, 760px);
+  width: min(900px, 100%);
+  max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
 
@@ -87,7 +89,8 @@
 .ep-ai-cols {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 14px;
+  gap: 16px;
+  align-items: start;
 }
 
 .ep-ai-col {
@@ -108,12 +111,11 @@
   font-weight: 700;
 }
 
+/* 密钥池与任务指派都按内容自然撑开：内层不留滚动条，接口多了由整张卡片滚。 */
 .ep-ai-pool,
 .ep-ai-assign {
   display: flex;
   flex-direction: column;
-  max-height: 260px;
-  overflow-y: auto;
 }
 
 .ep-ai-assign { gap: 8px; }
@@ -208,6 +210,19 @@
   .ep-ai-test[data-state="busy"] { animation: none; }
 }
 
+/* 新增接口：常驻在密钥池下方；表单默认收起，点它才铺开。 */
+.ep-ai-new {
+  align-self: flex-start;
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.ep-ai-new:hover,
+.ep-ai-new[aria-expanded="true"] {
+  background: var(--accent-soft);
+}
+
 .ep-ai-form {
   display: flex;
   flex-direction: column;
@@ -215,6 +230,8 @@
   padding-top: 8px;
   border-top: 1px dashed var(--line);
 }
+
+.ep-ai-form[hidden] { display: none; }
 
 .ep-ai-field {
   display: flex;
@@ -251,15 +268,26 @@
   justify-content: flex-start;
 }
 
+/* 四个任务要一屏摆完：标题与两颗钮占头行，账号与模型名并排占第二行。 */
 .ep-ai-task {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "head acts" "account model";
+  align-items: center;
+  gap: 6px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--card);
 }
+
+.ep-ai-task .ep-ai-job-head { grid-area: head; min-width: 0; }
+
+.ep-ai-task .ep-ai-job-acts { grid-area: acts; }
+
+.ep-ai-task .ep-ai-select { grid-area: account; width: auto; min-width: 0; }
+
+.ep-ai-task .ep-ai-input { grid-area: model; width: auto; min-width: 0; }
 
 .ep-ai-job-head {
   display: flex;
@@ -304,4 +332,12 @@
 /* 画布窄到放不下两栏时上下叠，不把字段挤成一条缝。 */
 @media (max-width: 620px) {
   .ep-ai-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 再窄就把单行任务也竖着排：两颗钮与账号/模型轮流占整行，375px 不横向溢出。 */
+@media (max-width: 460px) {
+  .ep-ai-task {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "account" "model" "acts";
+  }
 }

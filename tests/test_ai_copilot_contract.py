@@ -126,6 +126,25 @@ class ConfigCenterMarkupTest(unittest.TestCase):
         self.assertIn("grid-template-columns", block[:block.index("}")])
         self.assertIn("minmax(0, 1fr) minmax(0, 1.1fr)", block[:block.index("}")])
 
+    def test_05_account_form_starts_collapsed(self) -> None:
+        """新增表单默认收起：点【+ 新增接口】才铺开，存完自动清空收起。"""
+        canvas = canvas_only(HTML)
+        self.assertIn('id="epAiNewAccount"', canvas)
+        self.assertIn('aria-controls="epAiAccountForm"', canvas)
+        form = canvas[canvas.index('id="epAiAccountForm"'):]
+        self.assertIn("hidden", form[:form.index(">")], "表单必须默认 hidden")
+        self.assertIn(".ep-ai-form[hidden]", CSS, "display:flex 会压过 [hidden]，得显式收口")
+        self.assertIn("function setAccountFormOpen(", JS)
+        self.assertIn('bindSwitcher("epAiAccountForm", "epAiNewAccount"', JS)
+        start = JS.index("function saveAccount(")
+        block = JS[start:JS.index("function openConfig(", start)]
+        self.assertIn("resetAccountForm(true)", block, "保存成功后要清空并收起表单")
+        pool = CSS[CSS.index(".ep-ai-pool,"):]
+        pool = pool[:pool.index("}")]
+        self.assertNotIn("overflow-y", pool, "密钥池内层不再套滚动条")
+        self.assertNotIn("max-height", pool)
+        self.assertIn("width: min(900px, 100%)", CSS)
+
 
 class MaskAndSandboxTest(unittest.TestCase):
     """Key 只进不出：回读只有掩码，插件不碰存储、不直连网络。"""

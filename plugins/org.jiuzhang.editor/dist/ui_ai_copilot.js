@@ -16,6 +16,8 @@
   "use strict";
 
   function create(deps) {
+    var bindSwitcher = deps.bindSwitcher;
+    var setSwitcher = deps.setSwitcher;
     var coreState = deps.coreState;
     var state = coreState.state;
     var dom = deps.dom;
@@ -333,7 +335,7 @@
       return list.length ? list : FALLBACK_TASKS;
     }
 
-    function resetAccountForm() {
+    function resetAccountForm(collapse) {
       editingId = "";
       var name = document.getElementById("epAiName");
       var base = document.getElementById("epAiBase");
@@ -341,6 +343,12 @@
       if (name) name.value = "";
       if (base) base.value = "";
       if (key) { key.value = ""; key.placeholder = "留空＝保留旧 Key"; }
+      if (collapse) setAccountFormOpen(false);
+    }
+
+    /** 新增表单默认收起：只有点【+ 新增接口】或编辑某行时才铺开。 */
+    function setAccountFormOpen(open) {
+      setSwitcher("epAiAccountForm", "epAiNewAccount", open, "+ 新增接口", "收起表单");
     }
 
     function fillAccountForm(account) {
@@ -351,6 +359,7 @@
       if (name) name.value = String((account && account.name) || "");
       if (base) base.value = String((account && account.base_url) || "");
       if (key) { key.value = ""; key.placeholder = "留空＝保留旧 Key"; }
+      setAccountFormOpen(true);
       setMsg("正在编辑「" + ((account && account.name) || "") + "」：Key 留空表示不改。", "info");
     }
 
@@ -423,7 +432,7 @@
       list.textContent = "";
       var accounts = (cluster && Array.isArray(cluster.accounts)) ? cluster.accounts : [];
       if (!accounts.length) {
-        list.appendChild(el("p", "ep-ai-empty", "还没有账号。填下面的表单添加第一个。"));
+        list.appendChild(el("p", "ep-ai-empty", "还没有账号。点下方【+ 新增接口】添加第一个。"));
         return;
       }
       accounts.forEach(function (account) {
@@ -485,7 +494,7 @@
       if (!accountId) return;
       hostCall("ai.account_delete", { account_id: accountId }, CONFIG_TIMEOUT_MS)
         .then(function () {
-          if (editingId === accountId) resetAccountForm();
+          if (editingId === accountId) resetAccountForm(true);
           delete poolStatus[accountId];
           return loadCluster();
         }).then(function () {
@@ -638,7 +647,7 @@
         savedId = String((saved && saved.id) || savedId || "");
         return loadCluster();
       }).then(function () {
-        resetAccountForm();
+        resetAccountForm(true);
         if (!savedId) {
           setMsg("账号已保存；密钥只写在本机 .env，这里只看得到掩码。", "ok");
           return;
@@ -654,7 +663,7 @@
 
     function openConfig() {
       if (!dom.aiConfigModalEl) return;
-      resetAccountForm();
+      resetAccountForm(true);
       setMsg("正在读取密钥池…", "info");
       openModal(dom.aiConfigModalEl);
       loadCluster().then(function () {
@@ -693,7 +702,8 @@
       var save = document.getElementById("epAiSaveAccount");
       if (save) save.addEventListener("click", saveAccount);
       var reset = document.getElementById("epAiResetAccount");
-      if (reset) reset.addEventListener("click", resetAccountForm);
+      if (reset) reset.addEventListener("click", function () { resetAccountForm(); });
+      bindSwitcher("epAiAccountForm", "epAiNewAccount", "+ 新增接口", "收起表单", resetAccountForm);
       var ok = document.getElementById("epAiOverwriteOk");
       if (ok) ok.addEventListener("click", function () { settleAsk("overwrite"); });
       var skip = document.getElementById("epAiOverwriteSkip");

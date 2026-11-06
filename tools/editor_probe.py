@@ -1183,12 +1183,36 @@ def main() -> int:
                   len(columns.split()) == 2
                   and canvas.locator("#epAiConfigModal .ep-ai-col").count() == 2,
                   {"columns": columns})
+            modal_box = canvas.locator("#epAiConfigModal .ep-ai-card").bounding_box() or {}
+            scrolls = canvas.locator("#epAiConfigModal .ep-ai-card").evaluate(
+                "n => ({pool: getComputedStyle(n.querySelector('.ep-ai-pool')).overflowY,"
+                " assign: getComputedStyle(n.querySelector('.ep-ai-assign')).overflowY,"
+                " client: n.clientHeight, scroll: n.scrollHeight,"
+                " poolScroll: n.querySelector('.ep-ai-pool').scrollHeight"
+                " - n.querySelector('.ep-ai-pool').clientHeight,"
+                " assignScroll: n.querySelector('.ep-ai-assign').scrollHeight"
+                " - n.querySelector('.ep-ai-assign').clientHeight})")
+            form_hidden = canvas.locator("#epAiAccountForm").is_hidden()
+            check("弹窗放大到 900px 宽，左右内层都不滚，新增表单默认收起",
+                  modal_box.get("width", 0) >= 850
+                  and scrolls["pool"] == "visible" and scrolls["assign"] == "visible"
+                  and form_hidden,
+                  {"width": modal_box.get("width"), "overflow": scrolls,
+                   "form_hidden": form_hidden})
+            canvas.locator("#epAiNewAccount").click()
+            expect(canvas.locator("#epAiAccountForm")).to_be_visible(timeout=5000)
             canvas.locator("#epAiName").fill("探针AI")
             canvas.locator("#epAiBase").fill(stub.base_url)
             canvas.locator("#epAiKey").fill("sk-probe-secret-1234")
+            page.screenshot(path=str(shots / "ai-config-form.png"))
             canvas.locator("#epAiSaveAccount").click()
             pool_row = canvas.locator(".ep-ai-acc").first
             expect(pool_row.locator(".ep-ai-acc-name")).to_have_text("探针AI", timeout=20000)
+            expect(canvas.locator("#epAiAccountForm")).to_be_hidden(timeout=20000)
+            check("保存成功后表单自动清空并收起",
+                  canvas.locator("#epAiName").input_value() == ""
+                  and canvas.locator("#epAiKey").input_value() == "",
+                  {"name": canvas.locator("#epAiName").input_value()})
             test_icon = pool_row.locator(".ep-ai-test")
             expect(test_icon).to_have_attribute("data-state", "ok", timeout=20000)
             modal_text = canvas.locator("#epAiConfigModal").inner_text()
@@ -1218,6 +1242,18 @@ def main() -> int:
                   canvas.locator(".ep-ai-task").count() == 4
                   and ocr_task.locator("input").input_value() == "probe-stub",
                   {"tasks": canvas.locator(".ep-ai-task").count()})
+            fit = canvas.locator("#epAiConfigModal .ep-ai-card").evaluate(
+                "n => ({client: n.clientHeight, scroll: n.scrollHeight,"
+                " pool: [n.querySelector('.ep-ai-pool').clientHeight,"
+                " n.querySelector('.ep-ai-pool').scrollHeight],"
+                " assign: [n.querySelector('.ep-ai-assign').clientHeight,"
+                " n.querySelector('.ep-ai-assign').scrollHeight]})")
+            # 密钥池不量 scrollHeight：图标钮的透明外扩伪元素会把它撑大几像素，
+            # 但 overflow 是 visible，没有可滚动的内层。
+            check("四个任务与密钥池一屏放完，弹窗内外都不需要滚动条",
+                  fit["scroll"] <= fit["client"]
+                  and fit["assign"][1] <= fit["assign"][0],
+                  fit)
             page.screenshot(path=str(shots / "ai-config.png"))
             canvas.locator("#epAiConfigClose").click()
             expect(canvas.locator("#epAiConfigModal")).to_be_hidden(timeout=10000)
