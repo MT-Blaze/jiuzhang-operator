@@ -50,7 +50,8 @@ class IllustrationEntryTest(unittest.TestCase):
         self.assertIn('id="edAddIllustration"', head, "【添加配图】必须住在源码栏头部")
         self.assertIn("添加配图", head)
         self.assertNotIn('id="edSourceHint"', head, "提示文字已撤，工具条从最左侧起步")
-        self.assertEqual(head.count("<button"), 1, "源码栏头部只留这一颗配图钮")
+        # 头部现在两颗：【添加配图】与悬浮画板的【重新切题】，各司其职。
+        self.assertEqual(head.count("<button"), 2, "源码栏头部只留配图与重新切题两颗钮")
 
     def test_02_module_is_loaded_and_wired(self) -> None:
         self.assertIn('<script src="ui_illustration.js"></script>', HTML)
@@ -102,7 +103,7 @@ class IllustrationBoardTest(unittest.TestCase):
         body = function_body("closeBoard")
         self.assertIn("session.img.hidden = false", body)
         self.assertIn("session.box.hidden = false", body)
-        self.assertIn("session.autoBoxes.hidden = false", body)
+        self.assertNotIn("autoBoxes", body, "绿框已整个下架，收起画板不再有第三样东西要还原")
 
 
 class IllustrationInsertTest(unittest.TestCase):

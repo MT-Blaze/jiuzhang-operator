@@ -17,6 +17,8 @@
       var sourceHintEl = document.getElementById("edSourceHint");
       // 终极军令 任务四：源码栏【添加配图】入口。
       var addIllustrationEl = document.getElementById("edAddIllustration");
+      // 悬浮切题画板入口（整块可下架）。
+      var splitBoardBtnEl = document.getElementById("edSplitBoardBtn");
       var metricsEl = document.getElementById("edMetrics");
       var progressEl = document.getElementById("edProgress");
       var formatEl = document.getElementById("edFormat");
@@ -187,6 +189,7 @@
       imageNameEl: imageNameEl,
       sourceHintEl: sourceHintEl,
       addIllustrationEl: addIllustrationEl,
+      splitBoardBtnEl: splitBoardBtnEl,
       metricsEl: metricsEl,
       progressEl: progressEl,
       formatEl: formatEl,

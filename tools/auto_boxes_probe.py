@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""原卷自动切分框真机探针：模拟1.pdf → 19 个绿框 + 19 道待审题。
+"""原卷自动切分框真机探针：模拟1.pdf → 19 个框 + 19 道待审题。
 
 一次跑通整条闭环：解析完自动裁图入池、中栏排好题、右栏显示元数据，
-老师拖绿框微调时坐标回写并重切题图，手动补框仍能再切一道。
+老师在悬浮画板里拖框微调、Enter 提交后坐标回写并重切题图，手动补框仍能再切一道。
 
 用法：``.venv/Scripts/python.exe tools/auto_boxes_probe.py <tag>``
 
@@ -207,18 +207,20 @@ def main() -> int:
             card.click()
 
             expect(canvas.locator(".ed-page-cell").first).to_be_visible(timeout=25000)
-            expect(canvas.locator(".ed-auto-box").first).to_be_visible(timeout=20000)
+            canvas.locator("#edSplitBoardBtn").click()
+            expect(canvas.locator("#edSbBoard")).to_be_visible(timeout=20000)
+            expect(canvas.locator(".ed-sb-page").first).to_be_visible(timeout=20000)
             page.wait_for_timeout(800)
 
-            box_count = canvas.locator(".ed-auto-box").count()
-            per_page = canvas.locator(".ed-page-cell").evaluate_all(
-                "nodes => nodes.map(node => node.querySelectorAll('.ed-auto-box').length)")
+            box_count = canvas.locator(".ed-sb-box").count()
+            per_page = canvas.locator(".ed-sb-page").evaluate_all(
+                "nodes => nodes.map(node => node.querySelectorAll('.ed-sb-box').length)")
             result["metrics"]["dom_boxes"] = box_count
             result["metrics"]["boxes_per_page"] = per_page
-            check("09 左栏自动画出 19 个绿框", box_count == 19, box_count)
+            check("09 悬浮画板画出 19 个框", box_count == 19, box_count)
             check("10 每页框数与后端一致", per_page == [5, 7, 4, 3, 0], per_page)
 
-            first_box = canvas.locator(".ed-auto-box").first
+            first_box = canvas.locator(".ed-sb-box").first
             style = first_box.evaluate(
                 "node => { var s = getComputedStyle(node);"
                 " return [s.borderTopStyle, s.borderTopColor, s.borderTopWidth, s.position,"
@@ -229,17 +231,18 @@ def main() -> int:
                   and style[2] == "2px" and style[3] == "absolute"
                   and style[4] == "on", style)
 
-            numbers_dom = canvas.locator(".ed-auto-box").evaluate_all(
+            numbers_dom = canvas.locator(".ed-sb-box").evaluate_all(
                 "nodes => nodes.map(node => Number(node.getAttribute('data-no')))")
-            chips = canvas.locator(".ed-auto-box-no").all_inner_texts()
+            chips = canvas.locator(".ed-sb-box-no").all_inner_texts()
             check("12 框上常显题号 1..19",
                   numbers_dom == list(range(1, 20))
                   and chips == [str(number) for number in range(1, 20)],
                   [numbers_dom[:3], chips[:3]])
-            buttons = canvas.locator(".ed-auto-box-split").evaluate_all(
-                "nodes => nodes.map(node => [node.textContent, node.disabled])")
-            check("13 已入池的框标成『已入池』且按钮禁用",
-                  len(buttons) == 19 and buttons[0] == ["已入池", True], buttons[:3])
+            tags = canvas.locator(".ed-sb-box-tag").all_inner_texts()
+            check("13 已入池的框标成『已入池』且每框都有删除角标",
+                  len(tags) == 19 and tags[0] == "已入池"
+                  and canvas.locator(".ed-sb-box-x").count() == 19,
+                  tags[:3])
 
             source_cells = canvas.locator("#edSourceBody .ed-src-area").count()
             render_blocks = canvas.locator("#edRenderBody .ed-q-block").count()
@@ -311,12 +314,16 @@ def main() -> int:
 
             page.screenshot(path=str(shots / "01_auto_boxes.png"), full_page=False)
 
-            # ---------- 拖绿框微调：坐标回写 + 题图重切 ----------
+            # ---------- 画板拖框微调：Enter 提交，坐标回写 + 题图重切 ----------
             detail_before = batch_items(base, batch_id)
             old_x = detail_before["page_images"][0]["regions"][0]["x"]
             old_uri = item_image_uri(detail_before)
-            drag = canvas.locator(".ed-auto-box").first.bounding_box()
-            check("22 第一个绿框可拖拽（有可见尺寸）", bool(drag), drag)
+            first_box = canvas.locator(".ed-sb-box").first
+            # 第一框可能刚好压在画板底栏外，先滚到滚动区正中再拖，手势才落在框上。
+            first_box.evaluate("node => node.scrollIntoView({block: 'center'})")
+            page.wait_for_timeout(300)
+            drag = first_box.bounding_box()
+            check("22 第一个框可拖拽（有可见尺寸）", bool(drag), drag)
             assert drag is not None
             center_x = drag["x"] + drag["width"] / 2
             center_y = drag["y"] + drag["height"] / 2
@@ -324,10 +331,13 @@ def main() -> int:
             page.mouse.down()
             page.mouse.move(center_x + 30, center_y, steps=8)
             page.mouse.up()
+            page.keyboard.press("Enter")
+            expect(canvas.locator("#edSbBoard")).to_have_count(0, timeout=45000)
+            check("22a Enter 确认后画板关闭", canvas.locator("#edSbBoard").count() == 0)
 
             new_x = old_x
             new_uri = old_uri
-            deadline = time.time() + 30
+            deadline = time.time() + 40
             while time.time() < deadline:
                 detail_now = batch_items(base, batch_id)
                 pages_now = detail_now.get("page_images") or []
@@ -340,7 +350,7 @@ def main() -> int:
             result["metrics"]["regions_after_drag"] = {
                 "before": old_x, "after": new_x,
                 "image_before": old_uri, "image_after": new_uri}
-            # 拖的是缩略图上的框：30 个屏幕像素折回页图像素是一大段位移，
+            # 拖的是画板上的框：30 个屏幕像素折回页图像素是一大段位移，
             # 只挪零点几像素说明手势被手柄或按钮吃掉了，不能算回写成功。
             check("23 拖框后新坐标回写到批次页图", new_x - old_x >= 20,
                   {"before": old_x, "after": new_x})

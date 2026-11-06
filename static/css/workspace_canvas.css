@@ -349,6 +349,15 @@ html.ws-dragging * {
   background: var(--paper);
 }
 
+/* 插件自己要求的临时全屏：悬浮切题画板的遮罩必须盖住整个工作区，
+   而不是只盖中间那栏；关闭画板即摘掉这个类，其它布局一概不动。 */
+.ws-tab-panel.ws-plugin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: var(--paper);
+}
+
 .ws-frame-note {
   flex: none;
   margin: 0;

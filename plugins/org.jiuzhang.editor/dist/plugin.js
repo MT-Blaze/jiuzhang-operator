@@ -317,17 +317,6 @@
   var setSwapButton = uiFormat.setSwapButton;
   var toggleSwapFromPanel = uiFormat.toggleSwapFromPanel;
 
-  var uiPageBoxes = window.JzoEditorPageBoxes.create({
-    el: el,
-    dockWarn: dockWarn,
-    hostCall: hostCall,
-    coreState: coreState,
-    // 循环引用：裁图通道归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
-    splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },
-    // 拖框微调后重切题图：同样等 uiCrop 就位。
-    updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },
-  });
-
   // 渲染栏顶部只读元数据条：独立一小块，整块删掉不影响渲染正文。
   var uiMetaStrip = window.JzoEditorMetaStrip.create({
     el: el,
@@ -353,7 +342,6 @@
     keyFromPatchId: keyFromPatchId,
     // 循环引用：openCrop 归更下面的 uiCrop，本块排得靠前，只能等它就位后再取。
     openCrop: function () { return uiCrop.openCrop.apply(uiCrop, arguments); },
-    renderPageBoxes: uiPageBoxes.renderPageBoxes,
     parseExamSource: parseExamSource,
     publishSelectionSoon: publishSelectionSoon,
     queueWorklistSave: queueWorklistSave,
@@ -595,6 +583,16 @@
     scheduleRender: scheduleRender,
     splitFromCrop: uiSplit.splitFromCrop,
     stashOne: stashOne,
+  });
+  // 悬浮切题画板：整页原卷上增删框，Enter 一次提交；独立一整块，可整块下架。
+  // 裁图/存题通道归更上面的 uiCrop 与 uiSplit，这里等它们就位后再取。
+  var uiSplitBoard = window.JzoEditorSplitBoard.create({
+    dom: dom, el: el, coreState: coreState, dock: dock, dockWarn: dockWarn,
+    errorDetail: errorDetail, hostCall: hostCall, renderAll: renderAll,
+    refreshBatches: refreshBatches, toast: toast,
+    closeCrop: function () { return uiCrop.closeCrop.apply(uiCrop, arguments); },
+    splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },
+    updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },
   });
   // 终极军令 任务四：源码栏【添加配图】。独立一整块，可整块下架。
   var uiIllustration = window.JzoEditorIllustration.create({

@@ -211,9 +211,6 @@
     if (img) img.hidden = true;
     var box = frame.querySelector(".ed-img-box");
     if (box) box.hidden = true;
-    // 手动切图台铺上来时，自动绿框层必须让位：否则它会拦截拖拽。
-    var autoBoxes = frame.querySelector(".ed-page-boxes");
-    if (autoBoxes) autoBoxes.hidden = true;
     if (session.canvas && session.canvas.parentNode !== frame) {
       if (session.canvas.parentNode) session.canvas.parentNode.removeChild(session.canvas);
       frame.insertBefore(session.canvas, frame.firstChild);

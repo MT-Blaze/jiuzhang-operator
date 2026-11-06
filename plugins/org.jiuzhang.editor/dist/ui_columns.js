@@ -22,7 +22,6 @@
     var fieldRanges = deps.fieldRanges;
     var keyFromPatchId = deps.keyFromPatchId;
     var openCrop = deps.openCrop;
-    var renderPageBoxes = deps.renderPageBoxes;
     var parseExamSource = deps.parseExamSource;
     var publishSelectionSoon = deps.publishSelectionSoon;
     var queueWorklistSave = deps.queueWorklistSave;
@@ -52,7 +51,6 @@
       el: el,
       toast: toast,
       openCrop: openCrop,
-      renderPageBoxes: renderPageBoxes,
       imageBodyEl: imageBodyEl,
     });
     var emptyColumnNote = scan.emptyColumnNote;

@@ -7,8 +7,8 @@
   <!-- 样式按域分文件，加载次序 = 原单文件次序（同特异度的覆盖关系靠次序，不许重排）：
        layout* = 画布骨架与三栏，panel* = 右栏辅助栏，effects = 动效。见 PLUGIN_SPEC §2.8.2。 -->
   <link rel="stylesheet" href="layout.css">
-  <link rel="stylesheet" href="layout_boxes.css">
   <link rel="stylesheet" href="layout_canvas.css">
+  <link rel="stylesheet" href="split_board.css">
   <link rel="stylesheet" href="illustration.css">
   <link rel="stylesheet" href="panel.css">
   <link rel="stylesheet" href="panel_meta.css">
@@ -130,6 +130,9 @@
                    框选原图插配图（终极军令 任务四）：移除本模块时连同 ui_illustration.js 一起删。 -->
               <button type="button" class="ed-pane-insert-illustration" id="edAddIllustration"
                       title="框选原图上的一块，插到光标所在的题干、解析或选项里">添加配图</button>
+              <!-- 悬浮切题画板（整块可下架）：点开后在整页原卷上增删框，Enter 提交。 -->
+              <button type="button" class="ed-sb-open" id="edSplitBoardBtn"
+                      title="打开悬浮切题画板：增删框、微调坐标，Enter 提交">重新切题</button>
             </div>
             <div class="ed-pane-body" id="edSourceBody"></div>
           </section>
@@ -667,7 +670,7 @@
   <script src="ui_crop_io.js"></script>
   <script src="ui_crop.js"></script>
   <script src="ui_split.js"></script>
-  <script src="ui_page_boxes.js"></script>
+  <script src="ui_split_board.js"></script>
   <script src="ui_meta_strip.js"></script>
   <script src="ui_columns_scan.js"></script>
   <script src="ui_columns.js"></script>

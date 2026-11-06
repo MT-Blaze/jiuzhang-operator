@@ -370,13 +370,14 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
-        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的【API 配置】与
-        # 源码栏头部的【添加配图】——各是建批次、任务配置、插配图的唯一入口。
+        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的【API 配置】、
+        # 源码栏头部的【添加配图】与【重新切题】——各是建批次、任务配置、
+        # 插配图、重切原卷的唯一入口。
         # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
         plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
                         + canvas[canvas.index('id="edToast"'):])
-        self.assertEqual(plain_canvas.count("<button"), 3,
-                         "画布内只许剩【API 配置】【开始解析】【添加配图】")
+        self.assertEqual(plain_canvas.count("<button"), 4,
+                         "画布内只许剩【API 配置】【开始解析】【添加配图】【重新切题】")
         self.assertIn('id="edLayoutEngine"', plain_canvas)
         self.assertIn('id="edRecognizeEngine"', plain_canvas)
         self.assertNotIn('id="edRouteChannels"', canvas, "四通道按钮已换双下拉框")
@@ -1816,60 +1817,82 @@ class EditorCropMagnifierTest(unittest.TestCase):
         self.assertIn("PENDING_ASSET_URI_PREFIX", bank)
 
 
-class EditorPageBoxesContractTest(unittest.TestCase):
-    """自动切分框：底座给坐标，前端画绿框，确认后走同一条切题通道。"""
+class EditorSplitBoardContractTest(unittest.TestCase):
+    """悬浮切题画板：入口、遮罩与滚动锁、Ctrl+滚轮缩放、确认/放弃两条路。"""
 
-    def test_01_the_auto_boxes_module_is_loaded_and_wired(self) -> None:
+    def test_01_the_board_is_loaded_wired_and_old_boxes_are_gone(self) -> None:
         html = read("index.html")
-        self.assertIn('<script src="ui_page_boxes.js"></script>', html)
-        self.assertIn('<script src="ui_columns_scan.js"></script>', html)
-        self.assertLess(html.index("ui_page_boxes.js"), html.index("ui_columns_scan.js"),
-                        "绿框模块必须先于纯图片卷左栏加载")
-        self.assertLess(html.index("ui_columns_scan.js"), html.index("ui_columns.js"),
-                        "整卷页图模块必须先于三栏加载")
+        self.assertIn('<link rel="stylesheet" href="split_board.css">', html)
+        self.assertIn('<script src="ui_split_board.js"></script>', html)
+        self.assertIn('id="edSplitBoardBtn"', html)
+        self.assertLess(html.index("ui_crop.js"), html.index("ui_split_board.js"),
+                        "画板要用切图台的裁像素通道，必须排在它后面")
+        self.assertLess(html.index("ui_split_board.js"), html.index("ui_columns_scan.js"),
+                        "画板模块必须先于纯图片卷左栏加载")
+        self.assertLess(html.index('id="edAddIllustration"'), html.index('id="edSplitBoardBtn"'),
+                        "【重新切题】排在【添加配图】右边，工具条一律靠左追加")
+        # 原「左栏直接拖绿框」整块撤除，不许留下半截。
+        self.assertNotIn("ui_page_boxes.js", html)
+        self.assertNotIn("layout_boxes.css", html)
+        self.assertFalse((DIST / "ui_page_boxes.js").exists())
+        self.assertFalse((DIST / "layout_boxes.css").exists())
         js = read("plugin.js")
-        self.assertIn("var uiPageBoxes = window.JzoEditorPageBoxes.create({", js)
-        self.assertIn("renderPageBoxes: uiPageBoxes.renderPageBoxes,", js)
-        self.assertIn("uiCrop.splitPageRegion.apply(uiCrop, arguments)", js)
-        columns = read("ui_columns_scan.js")
-        self.assertIn("renderPageBoxes(page, index, frame, pageCropItem(page, index))", columns)
-        self.assertIn(".ed-auto-box, .ed-page-boxes", columns,
-                      "点绿框不能冒泡成「再开一个手动切图台」")
+        self.assertIn("var uiSplitBoard = window.JzoEditorSplitBoard.create({", js)
+        self.assertIn(
+            "splitPageRegion: function () { return uiCrop.splitPageRegion.apply(uiCrop, arguments); },",
+            js)
+        self.assertIn(
+            "updatePageRegion: function () { return uiCrop.updatePageRegion.apply(uiCrop, arguments); },",
+            js)
+        self.assertNotIn("JzoEditorPageBoxes", js)
+        self.assertNotIn("renderPageBoxes", read("ui_columns_scan.js"))
+        self.assertIn("splitBoardBtnEl: splitBoardBtnEl,", read("ui_dom.js"))
 
-    def test_02_the_boxes_are_green_dashed_with_confirm_and_handles(self) -> None:
+    def test_02_the_mask_and_board_lock_page_scroll(self) -> None:
         css = read("plugin.css")
-        box = rule_body(css, ".ed-auto-box")
-        self.assertIn("border: 2px dashed #2f9e5a", box)
+        mask = rule_body(css, ".ed-sb-mask")
+        self.assertIn("position: fixed", mask)
+        self.assertIn("inset: 0", mask)
+        board = rule_body(css, ".ed-sb-board")
+        self.assertIn("position: fixed", board)
+        self.assertIn("display: flex", board)
+        self.assertIn("width: min(68vw", board, "画板占屏幕六到七成宽")
+        scroll = rule_body(css, ".ed-sb-scroll")
+        self.assertIn("overflow: auto", scroll)
+        self.assertIn("overscroll-behavior: contain", scroll)
+        box = rule_body(css, ".ed-sb-box")
+        self.assertIn("position: absolute", box)
         self.assertIn("pointer-events: auto", box)
         self.assertIn("touch-action: none", box)
-        layer = rule_body(css, ".ed-page-boxes")
-        self.assertIn("pointer-events: none", layer, "框外的页面仍然可以手动画框")
+        self.assertIn("border-style: dashed", rule_body(css, ".ed-sb-box.is-new"))
         for key in ("nw", "n", "ne", "e", "se", "s", "sw", "w"):
-            rule_body(css, '.ed-auto-handle[data-handle="%s"]' % key)
-        module = read("ui_page_boxes.js")
-        for needle in ("确认切分", "splitPageRegion", "ArrowLeft", "setPointerCapture"):
+            rule_body(css, '.ed-sb-handle[data-handle="%s"]' % key)
+        module = read("ui_split_board.js")
+        for needle in ("Ctrl", "wheel", "Escape", "Enter", "Delete", "Backspace",
+                       'body.classList.add("ed-sb-locked")'):
             self.assertIn(needle, module)
 
-    def test_03_the_confirm_path_reuses_pending_split(self) -> None:
-        crop = read("ui_crop.js")
-        split = fn_body(crop, "splitPageRegion")
-        self.assertIn('hostCall("asset.read"', crop)
-        self.assertIn("splitFromCrop(item, cropped.dataUrl,", split)
-        self.assertIn("cropRegionToDataUrl(bitmap, region)", split)
+    def test_03_zoom_is_cursor_anchored_and_scroll_is_smoothed(self) -> None:
+        module = read("ui_split_board.js")
+        self.assertIn("event.ctrlKey || event.metaKey", module)
+        self.assertIn("Math.exp(-event.deltaY * 0.0015)", module)
+        self.assertIn("getBoundingClientRect()", module)
+        self.assertIn("requestAnimationFrame(step)", module)
+        self.assertIn("scroll.scrollLeft += after.left + pointX * next - clientX", module)
+        self.assertIn("scroll.scrollTop += after.top + pointY * next - clientY", module)
 
-    def test_04_pooled_boxes_drag_and_write_back(self) -> None:
-        # 自动入池的框仍然要能拖：坐标回写页图，题图跟着重切。
-        module = read("ui_page_boxes.js")
-        self.assertIn("pendingItemOf(region)", module)
+    def test_04_confirm_reuses_pending_and_discard_never_writes(self) -> None:
+        module = read("ui_split_board.js")
         self.assertIn('hostCall("pending.set_pages"', module)
-        self.assertIn("updatePageRegion", module)
-        self.assertIn("is-thin", module,
-                      "缩略图上只有几像素高的框必须让出手柄，否则拖不动")
-        css = read("plugin.css")
-        disabled = rule_body(css, '.ed-auto-box[data-pending="on"] .ed-auto-box-split:disabled')
-        self.assertIn("pointer-events: none", disabled,
-                      "已入池的按钮不许挡住框体拖动")
-        self.assertIn("display: none", rule_body(css, ".ed-auto-box.is-thin .ed-auto-handle"))
+        self.assertIn('hostCall("pending.delete"', module)
+        self.assertIn("splitPageRegion(pseudo, rec.region", module)
+        self.assertIn("updatePageRegion(item, rec.region", module)
+        # 放弃路径只拆 DOM，绝不碰任何后端写接口。
+        discard = module[module.index("    function discard("):]
+        discard = discard[:discard.index("    function close(")]
+        self.assertNotIn("hostCall(", discard)
+        self.assertIn("close()", discard)
+        self.assertIn("原卷一个字节都没动", discard)
 
 
 class EditorFixtureContractTest(unittest.TestCase):

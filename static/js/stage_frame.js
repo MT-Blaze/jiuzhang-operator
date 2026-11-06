@@ -105,6 +105,7 @@
     if (tab.state === "live") return Promise.resolve(tab);
     var panel = tab.panel;
     panel.textContent = "";
+    panel.classList.remove("ws-plugin-overlay");
 
     var frame = document.createElement("iframe");
     frame.className = "ws-plugin-frame";
@@ -179,6 +180,7 @@
     notify(tab, "plugin.deactivate", { reason: reason || "lru" });
     if (tab.frame && tab.frame.parentNode) tab.frame.parentNode.removeChild(tab.frame);
     tab.frame = null;
+    tab.panel.classList.remove("ws-plugin-overlay");
     tab.state = "sleep";
     tab.ready = false;
     if (tab.pending) tab.pending.clear();

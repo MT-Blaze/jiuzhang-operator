@@ -14,7 +14,6 @@
     var el = deps.el;
     var toast = deps.toast;
     var openCrop = deps.openCrop;
-    var renderPageBoxes = deps.renderPageBoxes;
     var imageBodyEl = deps.imageBodyEl;
 
     /** 一页原卷 → 切图台认的那张「格子」：框选后直接切出新题，不配给任何已有题。 */
@@ -58,10 +57,11 @@
       var box = el("div", "ed-img-box");
       box.setAttribute("data-box", "stem");
       frame.appendChild(box);
-      var boxCount = renderPageBoxes ? renderPageBoxes(page, index, frame, pageCropItem(page, index)) : 0;
       // 切图台自己的画布/动作条会冒泡到这里：放行，别一松鼠标就重开一次。
       frame.addEventListener("click", function (event) {
-        if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint, .ed-auto-box, .ed-page-boxes")) openPageCrop(page, index, cell);
+        if (!event.target.closest(".ed-crop-canvas, .ed-crop-actions, .ed-crop-hint")) {
+          openPageCrop(page, index, cell);
+        }
       });
       cell.appendChild(frame);
       var tools = el("div", "ed-img-tools");
@@ -81,10 +81,7 @@
       var caption = "原卷第 " + pageNo + " 页 · 拖框即生成新题";
       if (pooledCount) {
         caption = "原卷第 " + pageNo + " 页 · 已自动切出 " + pooledCount
-          + " 道题排进中间，拖绿框可微调";
-      } else if (boxCount) {
-        caption = "原卷第 " + pageNo + " 页 · 已自动框出 " + boxCount
-          + " 道题，悬停绿框确认或微调";
+          + " 道题排进中间，点顶部【重新切题】微调";
       }
       cell.appendChild(el("p", "ed-img-caption", caption));
       return cell;

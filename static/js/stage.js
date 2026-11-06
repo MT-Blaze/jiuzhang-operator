@@ -384,6 +384,15 @@
       return;
     }
 
+    // 悬浮画板要把遮罩铺满整个工作区：沙箱里的插件伸不出页签，由宿主把当前面板
+    // 临时钉到视口上；关闭时原样收回，绝不改写页面其它布局状态。
+    if (method === "stage.overlay") {
+      var overlayOn = payload.on === true;
+      if (tab.panel) tab.panel.classList.toggle("ws-plugin-overlay", overlayOn);
+      replyHost(tab, message, true, { on: overlayOn });
+      return;
+    }
+
     var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
     // 活跃题库的统一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。
     // 录题插件要改真题，不能因为它自己的页签 id 就被引到别的库上（与 bank.create 同规则）。
