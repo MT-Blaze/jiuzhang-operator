@@ -93,6 +93,11 @@
       img.alt = picture.page
         ? "第 " + (index + 1) + " 题 · 原卷第 " + picture.page + " 页"
         : "第 " + (index + 1) + " 题原图";
+      // 题图是异步解码的：renderAll 量行高时它还没长完，事后撑高格子会让这一行
+      // 的虚线整体下坠。每张图落地都补一次重对齐，三栏虚线才逐行同线。
+      img.addEventListener("load", function () {
+        window.requestAnimationFrame(alignRows);
+      });
       img.addEventListener("error", function () {
         if (img.parentNode) {
           img.parentNode.replaceChild(el("p", "ed-img-missing", "原图读取失败"), img);

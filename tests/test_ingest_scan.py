@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import ingest, ingest_route, pending_bank  # noqa: E402
+from app.core import ingest, ingest_media, ingest_route, pending_bank  # noqa: E402
 
 
 def _pages(count: int) -> list[dict[str, Any]]:
@@ -46,7 +46,7 @@ class PdfAlwaysPageSourceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("自动裁好" in warning for warning in warnings))
 
     async def test_word_keeps_auto_split(self) -> None:
-        with mock.patch.object(ingest, "extract_docx_text",
+        with mock.patch.object(ingest_media, "extract_docx_text",
                                return_value="1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。"):
             documents, _warnings, kind, _text, scan = await ingest._items_from_file(
                 "闭环样卷.docx", b"PK")

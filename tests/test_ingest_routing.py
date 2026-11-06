@@ -1,7 +1,7 @@
-"""两通道智能路由 + MinerU 兜底契约。
+"""解析路由账本 + MinerU 适配器契约。
 
-- 通道一：文本层在就纯代码提取；乱码只标记，**绝不自动调 AI**；
-- 通道二：没有文本层先试 MinerU（配了才试），失败/没配退回切图；
+- 文本体检与乱码标记：只写提示，**绝不自动调 AI**；
+- 批次路由：版面与识别两个引擎名并存入账，说明随选择变化；
 - MinerU 适配器的申请-上传-轮询-下载四步与失败收敛。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_ingest_routing``
@@ -15,9 +15,8 @@ import threading
 import unittest
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest import mock
 
-from app.core import ai_center, ingest_route, mineru_extract, text_health
+from app.core import ingest_route, mineru_extract, text_health
 
 
 class TextHealthTest(unittest.TestCase):
@@ -50,56 +49,25 @@ class RoutePayloadTest(unittest.TestCase):
         self.assertIn("切图模式", route["note"])
 
 
-class ScanPdfRouteTest(unittest.TestCase):
-    def test_text_layer_goes_channel_one(self) -> None:
-        with mock.patch.object(ingest_route.page_render, "pdf_text_health", return_value={
-            "has_text_layer": True, "garbled": False, "text_chars": 800, "missing_chars": 0,
-        }), mock.patch.object(ingest_route.ai_center, "find_mineru") as find:
-            route, documents = ingest_route.route_scan_pdf("卷.pdf", b"%PDF")
-        self.assertEqual(route["channel"], "text")
-        self.assertEqual(documents, [])
-        find.assert_not_called()
+class ScanRouteNoteTest(unittest.TestCase):
+    def test_cloud_layout_skips_yolo_in_the_note(self) -> None:
+        route = ingest_route.scan_route("cloud", "mineru",
+                                        {"has_text_layer": True, "garbled": False})
+        self.assertEqual(route["layout_engine"], "cloud")
+        self.assertEqual(route["recognize_engine"], "mineru")
+        self.assertIn("跳过 YOLO", route["note"])
+        self.assertIn("MinerU", route["note"])
+        self.assertEqual(route["phase"], "parsing")
+        self.assertFalse(route["done"])
 
-    def test_no_text_layer_without_mineru_falls_back_to_images(self) -> None:
-        with mock.patch.object(ingest_route.page_render, "pdf_text_health", return_value={
-            "has_text_layer": False, "garbled": False, "text_chars": 0, "missing_chars": 0,
-        }), mock.patch.object(ingest_route.ai_center, "find_mineru", return_value=None):
-            route, documents = ingest_route.route_scan_pdf("扫描卷.pdf", b"%PDF")
-        self.assertEqual(route["channel"], "scan_image")
-        self.assertIn("没有配置 MinerU", route["note"])
-        self.assertEqual(documents, [])
+    def test_auto_layout_mentions_both_fallbacks(self) -> None:
+        route = ingest_route.scan_route("auto", "auto",
+                                        {"has_text_layer": False, "garbled": False})
+        self.assertIn("本机 YOLO", route["note"])
+        self.assertIn("云端", route["note"])
+        self.assertIn("全量", route["note"])
+        self.assertIn("没有文本层", route["note"])
 
-    def test_mineru_success_becomes_documents(self) -> None:
-        binding = ai_center.TaskBinding(
-            task="ocr", account_id="acc_0000000000", name="MinerU",
-            base_url="https://mineru.test", api_key="fixture-key", model="mineru",
-        )
-        with mock.patch.object(ingest_route.page_render, "pdf_text_health", return_value={
-            "has_text_layer": False, "garbled": False, "text_chars": 0, "missing_chars": 0,
-        }), mock.patch.object(ingest_route.ai_center, "find_mineru", return_value=binding), \
-                mock.patch.object(ingest_route.mineru_extract, "extract", return_value={
-                    "ok": True, "markdown": "1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。",
-                    "detail": "MinerU 已识别",
-                }):
-            route, documents = ingest_route.route_scan_pdf("扫描卷.pdf", b"%PDF")
-        self.assertEqual(route["channel"], "mineru")
-        self.assertGreaterEqual(len(documents), 2)
-
-    def test_mineru_failure_keeps_reason_and_falls_back(self) -> None:
-        binding = ai_center.TaskBinding(
-            task="ocr", account_id="acc_0000000000", name="MinerU",
-            base_url="https://mineru.test", api_key="fixture-key", model="mineru",
-        )
-        with mock.patch.object(ingest_route.page_render, "pdf_text_health", return_value={
-            "has_text_layer": False, "garbled": False, "text_chars": 0, "missing_chars": 0,
-        }), mock.patch.object(ingest_route.ai_center, "find_mineru", return_value=binding), \
-                mock.patch.object(ingest_route.mineru_extract, "extract", return_value={
-                    "ok": False, "detail": "连接超时",
-                }):
-            route, documents = ingest_route.route_scan_pdf("扫描卷.pdf", b"%PDF")
-        self.assertEqual(route["channel"], "scan_image")
-        self.assertIn("连接超时", route["note"])
-        self.assertEqual(documents, [])
 
 
 def _zip_with_markdown(text: str) -> bytes:

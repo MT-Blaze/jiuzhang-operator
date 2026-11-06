@@ -67,6 +67,39 @@ def pdf_text_health(data: bytes) -> dict[str, Any]:
     }
 
 
+def pdf_page_lines(data: bytes) -> list[dict[str, Any]]:
+    """PDF 文本层 → 每页行清单（页面点数尺寸 + 行坐标），版面探路专用。
+
+    只交出坐标与文字，不渲染、不落盘；读取失败就交空表，由调用方决定
+    是退回渲染时算好的题块，还是继续降级到 YOLO / 云端。
+    """
+    if _pdfium is None:
+        return []
+    try:
+        document = _pdfium.PdfDocument(data)
+    except Exception:  # noqa: BLE001 - 打不开就当没有文本层
+        return []
+    pages: list[dict[str, Any]] = []
+    try:
+        total = len(document)
+        for index in range(min(total, MAX_PAGES)):
+            try:
+                page = document[index]
+                try:
+                    width, height = (float(value) for value in page.get_size())
+                    lines = _pdf_text_lines(page)
+                finally:
+                    page.close()
+            except Exception:  # noqa: BLE001 - 单页读不出不影响别的页
+                continue
+            if lines:
+                pages.append({"page": index + 1, "width_pt": width,
+                              "height_pt": height, "lines": lines})
+    finally:
+        document.close()
+    return pages
+
+
 def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
     """pypdfium2（PDFium）逐页渲染；不落地临时 PDF，直接吃内存字节。"""
     if _pdfium is None:

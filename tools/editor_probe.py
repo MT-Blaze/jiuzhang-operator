@@ -1238,8 +1238,8 @@ def main() -> int:
             ocr_task.locator("input").fill("probe-stub")
             ocr_task.locator("button.ep-btn-primary").click()
             expect(ocr_task.locator(".ep-ai-job-ready")).to_have_text("已就绪", timeout=20000)
-            check("四个任务可指派，模型名手输也留得住",
-                  canvas.locator(".ep-ai-task").count() == 4
+            check("五个任务可指派，模型名手输也留得住",
+                  canvas.locator(".ep-ai-task").count() == 5
                   and ocr_task.locator("input").input_value() == "probe-stub",
                   {"tasks": canvas.locator(".ep-ai-task").count()})
             fit = canvas.locator("#epAiConfigModal .ep-ai-card").evaluate(
@@ -1250,7 +1250,7 @@ def main() -> int:
                 " n.querySelector('.ep-ai-assign').scrollHeight]})")
             # 密钥池不量 scrollHeight：图标钮的透明外扩伪元素会把它撑大几像素，
             # 但 overflow 是 visible，没有可滚动的内层。
-            check("四个任务与密钥池一屏放完，弹窗内外都不需要滚动条",
+            check("五个任务与密钥池一屏放完，弹窗内外都不需要滚动条",
                   fit["scroll"] <= fit["client"]
                   and fit["assign"][1] <= fit["assign"][0],
                   fit)

@@ -48,6 +48,7 @@ from app.core.page_render_pdf import (  # noqa: F401 - 测试按旧路径打桩
     _pdftotext_words,
     _png_from_bitmap,
     crop_pdf_regions,
+    pdf_page_lines,
     pdf_text_health,
 )
 from app.core.page_render_regions import (  # noqa: F401 - 测试按旧路径取用

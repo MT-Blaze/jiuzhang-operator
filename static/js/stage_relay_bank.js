@@ -66,13 +66,18 @@
         replyHost(tab, message, false, { code: "HOST_MISSING", message: "宿主没有录入通道" });
         return true;
       }
-      var requestedChannel = textValue(payload, "channel", 24) || "auto";
-      if (["auto", "local_ai", "full_ocr", "mineru"].indexOf(requestedChannel) < 0) {
-        requestedChannel = "auto";
+      var layoutEngine = textValue(payload, "layout_engine", 16) || "auto";
+      if (["auto", "yolo", "cloud"].indexOf(layoutEngine) < 0) layoutEngine = "auto";
+      var recognizeEngine = textValue(payload, "recognize_engine", 16)
+        || textValue(payload, "channel", 16) || "auto";
+      // 老调用方仍发 local_ai：归到自动识别，不再单独占一种模式。
+      if (["auto", "full_ocr", "mineru"].indexOf(recognizeEngine) < 0) {
+        recognizeEngine = "auto";
       }
       intake.ingestEntries(prepared, {
         silent: true,
-        channel: requestedChannel
+        layout_engine: layoutEngine,
+        recognize_engine: recognizeEngine
       }).then(function (result) {
         emitPendingUpdated("ingest", (result && result.saved_ids) || [], result);
         done(result);

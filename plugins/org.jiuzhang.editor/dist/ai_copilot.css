@@ -118,7 +118,7 @@
   flex-direction: column;
 }
 
-.ep-ai-assign { gap: 8px; }
+.ep-ai-assign { gap: 6px; }
 
 .ep-ai-empty {
   margin: 0;
@@ -268,14 +268,15 @@
   justify-content: flex-start;
 }
 
-/* 四个任务要一屏摆完：标题与两颗钮占头行，账号与模型名并排占第二行。 */
+/* 五个任务（含 MinerU）也要一屏摆完：标题与两颗钮占头行，账号与模型名并排占第二行。
+   行距压到 5px、内边距 6px，正好兜住第 5 行多出来的高度。 */
 .ep-ai-task {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas: "head acts" "account model";
   align-items: center;
-  gap: 6px;
-  padding: 8px;
+  gap: 5px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--card);

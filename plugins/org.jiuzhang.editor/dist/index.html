@@ -44,18 +44,6 @@
           <h2 class="ed-batches-title">待审核批次</h2>
           <p class="ed-batches-hint" id="edBatchesHint">点任意一行进入审核。未审完的批次排在最前，审完的沉到底。</p>
         </div>
-        <!-- 解析通道（可整块下架：删掉这组按钮与 layout.css 的 .ed-route-channels 即可）。
-             只影响下一次【开始解析】；已解析完的批次绝不重跑。 -->
-        <span class="ed-route-channels" id="edRouteChannels" role="group" aria-label="解析通道">
-          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="auto"
-                  aria-pressed="true">自动</button>
-          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="local_ai"
-                  aria-pressed="false">本地+AI</button>
-          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="full_ocr"
-                  aria-pressed="false">全量OCR</button>
-          <button type="button" class="ep-btn ep-mini-btn ed-channel" data-channel="mineru"
-                  aria-pressed="false">MinerU云端</button>
-        </span>
         <!-- 终极军令 任务二：API 配置入口放在批次列表右上角——老师一进画布先配模型，
              再开始录题；弹窗就在这一帧，点击直达，不跨帧发令。 -->
         <button type="button" class="ep-btn ep-mini-btn ed-batches-ai" id="epAiConfigList"
@@ -71,6 +59,32 @@
              图片贴进来直接出大缩略图，老师一眼看得出贴的是哪道题；
              每项带一个 × 移除；底部的【开始解析】才是唯一的建批次入口。 -->
         <div class="ed-basket-col">
+          <!-- 双引擎选择（可整块下架：删掉这段与 layout.css 的 .ed-basket-engines 即可）。
+               原生 title 悬停即给一行提示；只影响下一次【开始解析】，旧批次绝不重跑。 -->
+          <div class="ed-basket-engines" aria-label="解析引擎">
+            <label class="ed-engine">
+              <span class="ed-engine-label">版面引擎</span>
+              <select class="ed-engine-select" id="edLayoutEngine">
+                <option value="auto" selected
+                        title="自动：先本地文本层探路，失败交本机 YOLO，再失败交云端。">自动</option>
+                <option value="yolo"
+                        title="YOLO：本地文本层失败后强制用本机 YOLO，仍失败再交云端。">YOLO</option>
+                <option value="cloud"
+                        title="云端：本地文本层失败后跳过 YOLO，直接交云端视觉模型。">云端</option>
+              </select>
+            </label>
+            <label class="ed-engine">
+              <span class="ed-engine-label">识别引擎</span>
+              <select class="ed-engine-select" id="edRecognizeEngine">
+                <option value="auto" selected
+                        title="自动：本地先提取；坏题交 AI 修补，坏题率≥30% 转全量，最后 MinerU 兜底。">自动</option>
+                <option value="full_ocr"
+                        title="全量OCR：整批单题截图并发交给视觉模型，失败再交 MinerU。">全量OCR</option>
+                <option value="mineru"
+                        title="MinerU：本地切好单题截图后，逐题发送 MinerU 云端解析。">MinerU</option>
+              </select>
+            </label>
+          </div>
           <div class="ed-basket" id="edBasket" data-count="0" tabindex="0" role="button"
                aria-label="文件收集筐：点此选择文件，或把文件拖到这里">
             <input type="file" id="edBasketFile" class="ed-basket-file" multiple

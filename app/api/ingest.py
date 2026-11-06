@@ -15,7 +15,9 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
-from app.core import ingest, ingest_route, pending_bank, questions
+from app.core import ingest, pending_bank, questions
+from app.core.layout import layout_router
+from app.core.recognize import recognize_router
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["ingest"])
@@ -29,10 +31,12 @@ router = APIRouter(tags=["ingest"])
 )
 async def ingest_files(background: BackgroundTasks,
                        payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """请求体形如 ``{"files": [{"name": "卷子.pdf", "data_url": "data:...;base64,..."}]}``。
+    """请求体形如 ``{"files": [...], "layout_engine": "auto", "recognize_engine": "auto"}``。
 
-    后端按**后缀**分拣：文本类与 Word 走轻量解析，PDF 一律渲染成原卷大图，
-    图片走 OCR。``.zip`` 静默忽略（插件安装包走另一条道）。
+    ``layout_engine`` 取 ``auto`` / ``yolo`` / ``cloud``，``recognize_engine``
+    取 ``auto`` / ``full_ocr`` / ``mineru``；老插件仍可只发 ``channel``，
+    后端会映射到新的识别引擎。后端按**后缀**分拣：文本类与 Word 走轻量解析，
+    PDF 一律渲染成原卷大图，图片走识别引擎。``.zip`` 静默忽略。
 
     **一个文件一个批次**：拖 9 份卷子就立 9 个批次（B-002、B-003……），
     各认各的、各解析各的；``batch_id`` 回第一份的批次号，``batch_ids`` / ``batches``
@@ -47,13 +51,19 @@ async def ingest_files(background: BackgroundTasks,
     if not isinstance(files, list) or not files:
         raise HTTPException(status_code=400, detail="缺少 files 数组")
     try:
-        channel = ingest_route.normalize_channel(payload.get("channel"))
-        staged = ingest.stage_ingest(files, channel=channel)
+        layout_engine = layout_router.normalize_engine(payload.get("layout_engine"))
+        recognize_engine = payload.get("recognize_engine")
+        if not recognize_engine and payload.get("channel"):
+            recognize_engine = recognize_router.from_legacy_channel(payload.get("channel"))
+        recognize_engine = recognize_router.normalize_engine(recognize_engine)
+        staged = ingest.stage_ingest(files, layout_engine=layout_engine,
+                                     recognize_engine=recognize_engine)
         job_groups = staged.pop("jobs", [])
         # 一个文件一个批次：每批各排各的后台解析，互不拖累。
         for group in job_groups:
             background.add_task(ingest.run_ingest_jobs, group["batch_id"],
-                                group["jobs"], group["channel"])
+                                group["jobs"], group["layout_engine"],
+                                group["recognize_engine"])
         staged["parsing"] = bool(job_groups)
         return staged
     except ingest.IngestError as exc:

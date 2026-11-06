@@ -222,17 +222,20 @@ class EditorThreePaneLayoutTest(unittest.TestCase):
                         "中栏必须是源码、右栏才是渲染")
 
     def test_03_canvas_carries_no_form_controls(self) -> None:
-        """题型 / 难度 / 年级是辅助栏的活；画布内出现下拉框或输入框即判不合格。
+        """题型 / 难度 / 年级是辅助栏的活；画布内容区不许出现题型表单。
 
         军令 #27 例外：画布右栏那只收集筐要能点开系统选文件框，
         所以画布里只许有**一只隐藏的** ``<input type="file">``，不许有第二个。
+        双引擎例外：收集筐上方只许有版面 / 识别两个下拉框，其余下拉一律判不合格。
         """
         canvas = canvas_only(read("index.html"))
         # 双栏 API 配置弹窗必须住在画布：辅助栏整宽只有 300px，塞两栏就成了两根压扁的柴。
         # 它平时 hidden、只在老师点【API 配置】时出现，与剔除重复弹窗同一个口径——
         # 不在「画布内容区不许有表单控件」这条禁令的射程内。
         plain = canvas[:canvas.index('id="epAiConfigModal"')] + canvas[canvas.index('id="edToast"'):]
-        self.assertNotIn("<select", plain, "画布内禁止出现下拉框")
+        self.assertEqual(plain.count("<select"), 2, "画布内只许有版面 / 识别两个下拉框")
+        self.assertIn('id="edLayoutEngine"', plain)
+        self.assertIn('id="edRecognizeEngine"', plain)
         self.assertEqual(plain.count("<input"), 1, "画布内只许剩收集筐那一只隐藏的选文件 input")
         at = plain.index("<input")
         tag = plain[at:plain.index(">", at)]
@@ -367,15 +370,16 @@ class EditorTopBarAndAlignmentTest(unittest.TestCase):
             at = canvas.index(f'id="{node_id}"')
             self.assertIn('class="ed-sr"', canvas[max(0, at - 60):at], f"{node_id} 必须 sr-only")
         # 画布上方一根毛的按钮都不留：返回列表已搬进辅助栏顶部死锁区。
-        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的四颗通道钮与
-        # 【API 配置】、源码栏头部的【添加配图】——各是建批次、选通道、任务配置、
-        # 插配图的唯一入口。
+        # 画布内只许剩收集筐的【🚀 开始解析】、批次列表右上角的【API 配置】与
+        # 源码栏头部的【添加配图】——各是建批次、任务配置、插配图的唯一入口。
         # 一键剔除弹窗的按钮不算工具条：它平时 hidden，只在老师点「剔除重复」后出现。
         plain_canvas = (canvas[:canvas.index('id="epBatchPurgeModal"')]
                         + canvas[canvas.index('id="edToast"'):])
-        self.assertEqual(plain_canvas.count("<button"), 7,
-                         "画布内只许剩四颗通道钮、【API 配置】【开始解析】【添加配图】")
-        self.assertIn('id="edRouteChannels"', plain_canvas)
+        self.assertEqual(plain_canvas.count("<button"), 3,
+                         "画布内只许剩【API 配置】【开始解析】【添加配图】")
+        self.assertIn('id="edLayoutEngine"', plain_canvas)
+        self.assertIn('id="edRecognizeEngine"', plain_canvas)
+        self.assertNotIn('id="edRouteChannels"', canvas, "四通道按钮已换双下拉框")
         self.assertIn('id="epAiConfigList"', plain_canvas)
         self.assertIn('id="edAddIllustration"', plain_canvas)
         self.assertNotIn('id="edBackList"', canvas, "返回列表已搬进辅助栏")
@@ -1079,8 +1083,11 @@ class EditorBatchTest(unittest.TestCase):
         # 批量条不许把表单控件带进画布（<button> 不算表单输入控件；
         # 收集筐那只隐藏的选文件 input 是军令 #27 唯一例外）。
         # 双栏 API 配置窗与剔除重复弹窗一样平时 hidden、点按钮才出现，不算画布内容区。
+        # 收集筐上方那两只引擎下拉是本轮唯一的例外：版面引擎 + 识别引擎，一左一右。
         plain = canvas[:canvas.index('id="epAiConfigModal"')] + canvas[canvas.index('id="edToast"'):]
-        self.assertNotIn("<select", plain)
+        self.assertEqual(plain.count("<select"), 2, "画布内只许有版面 / 识别两个下拉框")
+        self.assertIn('id="edLayoutEngine"', plain)
+        self.assertIn('id="edRecognizeEngine"', plain)
         self.assertEqual(plain.count("<input"), 1)
         # 批量提交整体退场：三颗审核钮才是唯一出口
         for gone in ("edSaveAll", "edPoolStash"):
@@ -1541,7 +1548,8 @@ class EditorFileBasketTest(unittest.TestCase):
         self.assertIn("align-items: stretch", basket)
         self.assertIn("text-align: left", basket, "列表行左对齐，不再是居中文案")
         col = css_rule(css, ".ed-basket-col")
-        self.assertIn("align-items: center", col, "筐整体绝对居中")
+        self.assertIn("flex-direction: column", col, "引擎下拉在上、筐在下，竖着摞")
+        self.assertIn("align-items: stretch", col, "筐要横向铺满右栏")
         self.assertIn("justify-content: center", col)
         listing = css_rule(css, ".ed-basket-list")
         self.assertIn("flex-direction: column", listing, "一行一个文件，垂直单列")

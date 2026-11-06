@@ -8,46 +8,48 @@
 - ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
 - ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层抽出题号、文字与坐标，
   左栏自动画切分框。解析完成后底座直接按每块坐标从原 PDF 裁图，把识别出的
-  题全部生成待审题排进中间栏：题块里的文字能读到就填成题干／选项／答案，
-  读不出字的题块才落占位提示；老师只做微调与补录，不再逐框点确认。
+  题全部生成待审题排进中间栏。
 - 图片：走 OCR（AI 视觉）。
 - ``.zip``：**静默忽略**——插件安装包走的是另一条道。
 
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
-**PDF 自动切图入池**：页图与题块坐标出来后，按坐标从原 PDF 直接裁图，
-每块生成一道带原题图的待审题（题号沿用卷面题号、正文取自题块文字），中间栏
-按卷面顺序排好；老师进批次只做两件事——拖绿框微调切图、核对录入的文字。
+
+本文件只负责批次编排与后台作业；文本切题在 ``ingest_text``，
+单文件分拣与 OCR 在 ``ingest_media``，版面与识别引擎各自住在 ``layout/``、``recognize/``。
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
-import io
 import json
-import re
-import zipfile
 from pathlib import Path
 from typing import Any
 
-from app.core import (
-    ai_center,
-    page_render,
-    question_parser,
-    text_health,
-)
+from app.core import page_render, text_health
+from app.core.ingest_media import _items_from_file, _page_of, _placeholder
 from app.core.ingest_route import (
-    CHANNEL_AUTO,
-    CHANNEL_FULL_OCR,
     auto_split_pages,
     fill_scan_batch,
     log_documents,
-    normalize_channel,
     route_payload,
     save_route,
     scan_route,
 )
+from app.core.ingest_text import (
+    DEFAULT_DIFFICULTY,
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_IMAGE_BYTES,
+    IngestError,
+    _document,
+    build_documents,
+    classify,
+    decode_bytes,
+    decode_text,
+    extract_docx_text,
+)
+from app.core.layout import layout_router
+from app.core.recognize import recognize_router
 
 __all__ = [
     "classify",
@@ -59,452 +61,9 @@ __all__ = [
     "run_ingest_jobs",
 ]
 
-# 单个文件的上限：老师拖的是试卷，不是硬盘。
-MAX_FILE_BYTES = 32 * 1024 * 1024
-MAX_FILES = 20
-# 单张图片的上限（OCR 走网络，再大也没意义）。
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
-# 难度只能先给一个默认档：机器不许替老师判断题目难不难。
-DEFAULT_DIFFICULTY = "L2"
 
-TEXT_SUFFIXES = (".tex", ".md", ".markdown", ".txt", ".text")
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
-PDF_SUFFIXES = (".pdf",)
-DOCX_SUFFIXES = (".docx",)
-ZIP_SUFFIXES = (".zip",)
-
-IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg",
-              ".jpeg": "image/jpeg", ".webp": "image/webp"}
-
-OCR_SYSTEM_PROMPT = (
-    "你是试卷转写助手。把图片里的题目**逐字**转成 Markdown + LaTeX 文本："
-    "保留题号、题干、选项（A/B/C/D 各占一行）、答案与解析；"
-    "公式写成 $...$ 或 $$...$$；看不清的地方写 [无法辨认]，"
-    "绝不补写图片上没有的内容。"
-)
-
-_DATA_URL_RE = re.compile(r"^data:([\w./+-]+);base64,([A-Za-z0-9+/=]+)$")
-
-# exam-zh 版式（录题工作台的源码格式）。
-_ENV_RE = re.compile(r"\\begin\{(question|problem)\}([\s\S]*?)\\end\{\1\}")
-_SOLUTION_RE = re.compile(r"\\begin\{solution\}([\s\S]*?)\\end\{solution\}")
-_CHOICES_RE = re.compile(r"\\begin\{choices\}([\s\S]*?)\\end\{choices\}")
-_ITEM_SPLIT_RE = re.compile(r"\\item\b")
-_ANSWER_HEAD_RE = re.compile(r"^\s*答案\s*[:：]\s*([^\n]*)")
-
-# 普通文本的题号头：「1.」「1、」「（1）」「第 1 题」。
-_HEAD_NUM_RE = re.compile(
-    r"^\s*(?:第\s*([0-9]{1,3})\s*题|[\(（]?\s*([0-9]{1,3})\s*[\)）\.．、:：])"
-)
-_FILLIN_RE = re.compile(r"\\fillin(?![A-Za-z])")
-
-# 无题号兜底段的发问词：求、证、算、判这类才像是在问一道题。
-_ASK_RE = re.compile(
-    r"(求|证明|试证|解答|解方程|解不等式|计算|化简|判断|辨析|作图|作出|"
-    r"填空|填写|写出|列举|讨论|估计|估算|回答|比较|试算|论述|探究)"
-)
-# 数学内容的痕迹：有公式、等号、上下标或数字。
-_MATH_HINT_RE = re.compile(r"(\$|=|＝|≠|≤|≥|×|÷|\^|\d)")
-
-
-class IngestError(Exception):
-    """拖进来的东西没法处理（后缀不认识、文件太大、编码不对等）。"""
-
-
-# ---------------------------------------------------------------- 分拣
-
-
-def suffix_of(filename: Any) -> str:
-    """文件名后缀（小写，带点）。"""
-    text = str(filename or "").strip()
-    if "." not in text:
-        return ""
-    return "." + text.rsplit(".", 1)[-1].lower()
-
-
-def classify(filename: Any) -> str:
-    """按后缀分拣：text / docx / pdf / image / zip / unknown。"""
-    suffix = suffix_of(filename)
-    if suffix in TEXT_SUFFIXES:
-        return "text"
-    if suffix in DOCX_SUFFIXES:
-        return "docx"
-    if suffix in PDF_SUFFIXES:
-        return "pdf"
-    if suffix in IMAGE_SUFFIXES:
-        return "image"
-    if suffix in ZIP_SUFFIXES:
-        return "zip"
-    return "unknown"
-
-
-def decode_bytes(data: bytes) -> bytes:
-    """data URL → 字节；不是 data URL 就当裸字节。"""
-    if isinstance(data, str):
-        match = _DATA_URL_RE.match(data.strip())
-        if match:
-            try:
-                return base64.b64decode(match.group(2), validate=False)
-            except (binascii.Error, ValueError) as exc:
-                raise IngestError("文件内容不是合法的 base64") from exc
-        raise IngestError("文件内容必须是 data URL")
-    if not isinstance(data, (bytes, bytearray)):
-        raise IngestError("文件内容必须是字节")
-    return bytes(data)
-
-
-def decode_text(data: bytes) -> str:
-    """文本解码：UTF-8 优先，GBK 兜底（老师的卷子多是 GBK 存的）。"""
-    for encoding in ("utf-8", "utf-8-sig", "gb18030"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
-
-# ---------------------------------------------------------------- 各类文件的取字
-
-
-def extract_docx_text(data: bytes) -> str:
-    """``.docx`` → 纯文本。
-
-    docx 就是个 zip：正文在 ``word/document.xml`` 里。这里只用标准库解，
-    不引第三方依赖——题库侧不因老师拖进来一个 Word 就多背一个包。
-    """
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            names = archive.namelist()
-            part = "word/document.xml"
-            if part not in names:
-                candidates = [name for name in names if name.startswith("word/") and name.endswith(".xml")]
-                if not candidates:
-                    raise IngestError("这个 Word 文件里没有正文（document.xml）")
-                part = candidates[0]
-            raw = archive.read(part)
-    except zipfile.BadZipFile as exc:
-        raise IngestError("这个 .docx 文件损坏，解不开") from exc
-    text = raw.decode("utf-8", errors="replace")
-    # XML 里标签之间的空白没有意义：先收掉，否则每个段落之间会多出一个空行，
-    # 切题时一段题会被劈成好几段。
-    text = re.sub(r">\s+<", "><", text)
-    # 段落与换行先变成真字符，再把剩下的标签剥掉。
-    text = re.sub(r"</w:p>", "\n", text)
-    text = re.sub(r"<w:br[^>]*/>", "\n", text)
-    text = re.sub(r"<w:tab[^>]*/>", "\t", text)
-    text = re.sub(r"<[^>]+>", "", text)
-    return _unescape_xml(text)
-
-
-def _unescape_xml(text: str) -> str:
-    return (text.replace("&lt;", "<").replace("&gt;", ">")
-            .replace("&quot;", '"').replace("&apos;", "'").replace("&amp;", "&"))
-
-
-# ---------------------------------------------------------------- 切题与组卷
-
-
-def _split_exam_zh(text: str) -> list[dict[str, Any]]:
-    """把整段 exam-zh 源码切成一道道题。"""
-    blocks: list[dict[str, Any]] = []
-    matches = list(_ENV_RE.finditer(text))
-    for index, match in enumerate(matches):
-        stop = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        tail = text[match.end():stop]
-        solution = _SOLUTION_RE.search(tail)
-        blocks.append({
-            "env": match.group(1),
-            "body": match.group(2),
-            "solution": solution.group(1) if solution else "",
-        })
-    return blocks
-
-
-def _choices_of(body: str) -> tuple[str, list[str]]:
-    """从题干里摘出 ``\\begin{choices}`` 选项块，返回 (剩下的题干, 选项列表)。"""
-    match = _CHOICES_RE.search(body)
-    if not match:
-        return body, []
-    items = [item.strip() for item in _ITEM_SPLIT_RE.split(match.group(1))]
-    choices = [item for item in items if item]
-    if len(choices) < 2:
-        return body, []
-    rest = body[:match.start()] + body[match.end():]
-    return rest, choices
-
-
-def _match_choice_keys(answer_text: str, options: list[dict[str, str]]) -> list[str]:
-    """把答案文字对上选项字母：对不上就返回空（**绝不猜**）。"""
-    text = str(answer_text or "").strip()
-    if not text:
-        return []
-    upper = text.upper()
-    letters = re.findall(r"[A-H]", upper)
-    residue = re.sub(r"[A-H\s,，、;；]", "", upper)
-    if letters and not residue:
-        keys = [item for item in letters if item in {option["key"] for option in options}]
-        return list(dict.fromkeys(keys))
-    for option in options:
-        if option["content"].strip() == text:
-            return [option["key"]]
-    return []
-
-
-def _document(stem: str, options: list[dict[str, str]], answer_text: str,
-              blanks: int, solution: str = "", question_no: str = "") -> dict[str, Any]:
-    """按解析结果拼一道**契约口径**的题目文档。"""
-    stem = question_parser.normalize_latex(stem)
-    stem = _FILLIN_RE.sub("＿＿＿＿", stem)
-    document: dict[str, Any] = {"stem": stem, "difficulty": DEFAULT_DIFFICULTY}
-    clean_options = [
-        {"key": option["key"], "content": question_parser.normalize_latex(option["content"])}
-        for option in options
-    ]
-    if clean_options:
-        keys = _match_choice_keys(answer_text, clean_options)
-        multi = "（多选）" in stem or "(多选)" in stem
-        document["type"] = "multiple_choice" if (multi and len(keys) >= 2) else "single_choice"
-        document["options"] = clean_options
-        if keys:
-            if document["type"] == "multiple_choice":
-                document["answer"] = {"kind": "choice", "choice_keys": keys,
-                                      "final": "".join(keys)}
-            elif len(keys) == 1:
-                document["answer"] = {"kind": "choice", "choice_keys": keys,
-                                      "final": keys[0]}
-    elif blanks > 0:
-        document["type"] = "fill_blank"
-        if answer_text:
-            document["answer"] = {"kind": "text", "content": answer_text, "final": answer_text}
-    else:
-        document["type"] = "solution"
-        if answer_text:
-            document["answer"] = {"kind": "text", "content": answer_text, "final": answer_text}
-    if solution:
-        document["solution"] = question_parser.normalize_latex(solution)
-    if question_no:
-        document["source"] = {"question_no": question_no}
-    return document
-
-
-def _document_from_exam_zh(block: dict[str, Any]) -> dict[str, Any] | None:
-    """一段 exam-zh 源码 → 一道题；拆不出题干就返回 None（如实跳过）。"""
-    body, choices = _choices_of(block["body"])
-    stem = body.strip()
-    if not stem:
-        return None
-    answer_text = ""
-    analysis = ""
-    solution = str(block["solution"] or "").strip()
-    if solution:
-        head = _ANSWER_HEAD_RE.match(solution)
-        if head:
-            answer_text = head.group(1).strip()
-            analysis = solution[head.end():].strip()
-        else:
-            analysis = solution
-    options = [{"key": chr(ord("A") + index), "content": item}
-               for index, item in enumerate(choices)]
-    blanks = len(_FILLIN_RE.findall(stem))
-    return _document(stem, options, answer_text, blanks, analysis)
-
-
-def _split_numbered(text: str) -> list[tuple[str, str]]:
-    """按题号切段；题号不成串就退回按空行切段。返回 [(段落, 题号)]。"""
-    lines = text.split("\n")
-    heads: list[tuple[int, int]] = []
-    for index, line in enumerate(lines):
-        match = _HEAD_NUM_RE.match(line)
-        if not match:
-            continue
-        number = match.group(1) or match.group(2)
-        if number:
-            heads.append((index, int(number)))
-    if len(heads) >= 2:
-        run = _longest_number_run(heads)
-        if len(run) >= 2:
-            segments: list[tuple[str, str]] = []
-            for order, (line_index, number) in enumerate(run):
-                stop = run[order + 1][0] if order + 1 < len(run) else len(lines)
-                segment = "\n".join(lines[line_index:stop]).strip()
-                if segment:
-                    segments.append((segment, str(number)))
-            return segments
-    return [(part.strip(), "") for part in _split_paragraphs(text)]
-
-
-def _longest_number_run(heads: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """找出最长的一段「题号连续递增」的题号链。
-
-    只有连续递增才算一列题；孤零零一个「2.」多半是句子里的数字，不切。
-    """
-    best: list[tuple[int, int]] = []
-    current: list[tuple[int, int]] = []
-    for head in heads:
-        if current and head[1] == current[-1][1] + 1:
-            current.append(head)
-        else:
-            if len(current) > len(best):
-                best = current
-            current = [head]
-    if len(current) > len(best):
-        best = current
-    return best
-
-
-def _split_paragraphs(text: str) -> list[str]:
-    """按空行切段：没有题号的纸卷也只能这么切。"""
-    parts = re.split(r"\n\s*\n+", text)
-    return [part.strip() for part in parts if len(part.strip()) >= 8]
-
-
-def _looks_like_question(segment: str, parsed: dict[str, Any]) -> bool:
-    """无题号的兜底段要**像一道数学题**才收下。
-
-    早先的兜底是「有字就算题」，于是老师拖进来一段说明文字，审核台里就躺着一道
-    「题」——内容确实是老师的原话，但它不是题。这里只收有数学题特征的段：
-    有选项、有空、有答案标记，或者有求/证这类发问词且带数学内容。
-    """
-    if parsed.get("options"):
-        return True
-    if int(parsed.get("blanks") or 0) > 0:
-        return True
-    if str(parsed.get("answer") or "").strip():
-        return True
-    if not _ASK_RE.search(segment):
-        return False
-    return bool(_MATH_HINT_RE.search(segment))
-
-
-def build_documents(text: str) -> tuple[list[dict[str, Any]], list[str]]:
-    """整段文本 → 一批题目文档（契约口径）与警告。
-
-    先认 exam-zh 版式；认不出再按题号切；再不行按空行切。
-    """
-    warnings: list[str] = []
-    blocks = _split_exam_zh(text)
-    if blocks:
-        documents: list[dict[str, Any]] = []
-        for block in blocks:
-            document = _document_from_exam_zh(block)
-            if document is None:
-                warnings.append("有一段 exam-zh 源码没拆出题干，已跳过")
-                continue
-            documents.append(document)
-        if documents:
-            return documents, warnings
-    documents = []
-    for segment, number in _split_numbered(text):
-        parsed = question_parser.parse_question(segment)
-        if not str(parsed.get("stem") or "").strip():
-            continue
-        if not number and not _looks_like_question(segment, parsed):
-            continue
-        options = [
-            {"key": str(option.get("label") or ""), "content": str(option.get("text") or "")}
-            for option in parsed.get("options") or []
-        ]
-        documents.append(_document(
-            str(parsed.get("stem") or ""),
-            options,
-            str(parsed.get("answer") or ""),
-            int(parsed.get("blanks") or 0),
-            question_no=number,
-        ))
-    if not documents:
-        warnings.append("这份文件里没拆出任何题目")
-    return documents, warnings
-
-
-# ---------------------------------------------------------------- OCR
-
-
-async def ocr_image(data: bytes, mime: str) -> tuple[str, str]:
-    """图片 → 文字。返回 (文本, 失败原因)；失败时文本是空串。
-
-    认不出就是认不出：失败时**不编**任何题目文字，由调用方记「待识别」。
-    """
-    from app.core import ai_client
-
-    client = ai_client.get_client()
-    if client.is_mock:
-        return "", "本机没有配置可用的 AI Provider（缺密钥），图片认不出来"
-    data_url = f"data:{mime};base64," + base64.b64encode(data).decode("ascii")
-    try:
-        result = await client.chat_completion(
-            system_prompt=OCR_SYSTEM_PROMPT,
-            user_message="请把这张图片里的题目逐字转写出来。",
-            temperature=0.1,
-            max_tokens=4000,
-            images=[data_url],
-        )
-    except Exception as exc:  # noqa: BLE001 — 任何失败都如实报，绝不编题
-        return "", f"OCR 调用失败：{exc}"
-    return str(result.get("content") or ""), ""
-
-
-# ---------------------------------------------------------------- 入口
-
-
-def _placeholder(label: str) -> dict[str, Any]:
-    """一条「待识别」的占位题：题干写明要老师补，不含任何编造内容。"""
-    return {
-        "type": "solution",
-        "stem": label,
-        "difficulty": DEFAULT_DIFFICULTY,
-        "tags": ["待识别"],
-    }
-
-
-def _page_of(doc_pages: list[int], index: int) -> int:
-    """第 index 道题落在原卷第几页；没有页号就退到第 1 页。"""
-    if 0 <= index < len(doc_pages):
-        return int(doc_pages[index]) or 1
-    return 1
-
-
-async def _items_from_file(name: str, data: bytes) -> tuple[list[dict[str, Any]], list[str], str, str, bool]:
-    """一个文件 → (题目文档, 警告, 分拣类别, 抽出来的源文本, 是否原卷大图)。
-
-    最后一个 ``True`` 表示这份 PDF 只当原卷大图：**一道题都不落池**，
-    只把每页渲染成页面图并附带文本层抽出的题块坐标，老师在左栏确认切分。
-    """
-    kind = classify(name)
-    warnings: list[str] = []
-    if kind == "text":
-        text = decode_text(data)
-        documents, notes = build_documents(text)
-        return documents, warnings + notes, kind, text, False
-    if kind == "docx":
-        text = extract_docx_text(data)
-        documents, notes = build_documents(text)
-        return documents, warnings + notes, kind, text, False
-    if kind == "pdf":
-        # 这里只负责分拣：页图、题块坐标与自动切图都在后台解析完成后做。
-        warnings.append(
-            f"{name}：已按原卷大图导入。页面图渲染完成后，识别出的每道题会自动裁好"
-            "并排进待审池，左侧绿框可拖拽微调。"
-        )
-        return [], warnings, kind, "", True
-    if kind == "image":
-        mime = IMAGE_MIME.get(suffix_of(name), "image/png")
-        if len(data) > MAX_IMAGE_BYTES:
-            return [], warnings + [f"{name}：图片太大（上限 8 MiB），没认"], kind, "", False
-        text, reason = await ocr_image(data, mime)
-        if not text.strip():
-            warnings.append(f"{name}：{reason or '认不出文字'}，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，图片认不出文字，请老师补录）")], \
-                warnings, kind, "", False
-        documents, notes = build_documents(text)
-        if not documents:
-            warnings.append(f"{name}：认出来了，但没拆出题目，留了一条待识别")
-            return [_placeholder(f"（待识别：{name}，认出了文字但没拆出题目）")], \
-                warnings, kind, text, False
-        return documents, warnings + notes, kind, text, False
-    return [], warnings, kind, "", False
-
-
-async def ingest_files(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
+async def ingest_files(files: Any, layout_engine: str = layout_router.LAYOUT_AUTO,
+                       recognize_engine: str = recognize_router.RECOGNIZE_AUTO) -> dict[str, Any]:
     """把拖进来的一批文件变成中转站里的待审题（**同步跑完**）。
 
     ``files`` 形如 ``[{"name": "卷子.pdf", "data_url": "data:application/pdf;base64,..."}]``。
@@ -514,10 +73,12 @@ async def ingest_files(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any
     线上走的是两段式（``stage_ingest`` + ``run_ingest_jobs``）：批次先立起来，
     识别放后台，老师不用盯着屏幕等 OCR。这里保留同步版给脚本与测试用。
     """
-    staged = stage_ingest(files, channel=channel)
+    staged = stage_ingest(files, layout_engine=layout_engine,
+                          recognize_engine=recognize_engine)
     groups = staged.pop("jobs", [])
     for group in groups:
-        await run_ingest_jobs(group["batch_id"], group["jobs"], group["channel"])
+        await run_ingest_jobs(group["batch_id"], group["jobs"],
+                              group["layout_engine"], group["recognize_engine"])
     if groups:
         # 同步版跑完要按解析后的真账回报：题数与 id 都可能变了。
         from app.core import pending_bank
@@ -538,7 +99,8 @@ async def ingest_files(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any
     return staged
 
 
-def stage_ingest(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
+def stage_ingest(files: Any, layout_engine: str = layout_router.LAYOUT_AUTO,
+                 recognize_engine: str = recognize_router.RECOGNIZE_AUTO) -> dict[str, Any]:
     """第一段：分拣、解码，**按文件各立一个批次**。
 
     老师拖进 9 份卷子就立 9 个批次（B-002、B-003……），各认各的、各解析各的。
@@ -552,7 +114,8 @@ def stage_ingest(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
         raise IngestError("没有要处理的文件")
     if len(files) > MAX_FILES:
         raise IngestError(f"一次最多处理 {MAX_FILES} 个文件")
-    picked_channel = normalize_channel(channel)
+    picked_layout = layout_router.normalize_engine(layout_engine)
+    picked_recognize = recognize_router.normalize_engine(recognize_engine)
 
     ignored: list[str] = []
     loaded: list[tuple[str, bytes]] = []
@@ -587,7 +150,8 @@ def stage_ingest(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
         one_jobs = one.pop("jobs", [])
         if one_jobs:
             job_groups.append({"batch_id": one["batch_id"], "jobs": one_jobs,
-                               "channel": picked_channel})
+                               "layout_engine": picked_layout,
+                               "recognize_engine": picked_recognize})
         batches.append(one)
         warnings.extend(one.get("warnings") or [])
         kinds.extend(one.get("kinds") or [])
@@ -603,7 +167,8 @@ def stage_ingest(files: Any, channel: str = CHANNEL_AUTO) -> dict[str, Any]:
         "warnings": warnings,
         "ignored": ignored,
         "kinds": kinds,
-        "channel": picked_channel,
+        "layout_engine": picked_layout,
+        "recognize_engine": picked_recognize,
         "jobs": job_groups,
     }
 
@@ -666,18 +231,36 @@ def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _apply_layout(page_images: list[dict[str, Any]],
+                  layout: dict[str, Any] | None) -> None:
+    """把版面引擎探出的题块就地写回页图；没探到就保留原有绿框。"""
+    found = (layout or {}).get("pages") or {}
+    if not found:
+        return
+    for entry in page_images:
+        try:
+            page_no = int(entry.get("page") or 0)
+        except (TypeError, ValueError):
+            continue
+        regions = found.get(page_no) or found.get(str(page_no))
+        if isinstance(regions, list) and regions:
+            entry["regions"] = regions
+
+
 async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
-                          channel: str = CHANNEL_AUTO) -> None:
+                          layout_engine: str = layout_router.LAYOUT_AUTO,
+                          recognize_engine: str = recognize_router.RECOGNIZE_AUTO) -> None:
     """第二段：识别。
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF / 图片：先出原卷页图并本地切题，再按老师选的通道分诊：
-      自动通道按坏题率决定局部修补还是并发全量 OCR；MinerU 通道逐题发送。
+    - PDF：先出原卷页图，版面引擎（纯 Python 永远第一）探出题块，再自动切图；
+      切完由识别引擎（本地 → AI → MinerU）按坏题率决定补哪些题。
     """
     from app.core import pending_bank
     from app.core.pending_assets import drop_assets
 
-    picked_channel = normalize_channel(channel)
+    picked_layout = layout_router.normalize_engine(layout_engine)
+    picked_recognize = recognize_router.normalize_engine(recognize_engine)
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
@@ -695,14 +278,9 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             documents, kind, source_text = [], "pdf", ""
         else:
             kind = classify(name)
-            image_ocr = (
-                kind == "image"
-                and picked_channel in (CHANNEL_AUTO, CHANNEL_FULL_OCR)
-                and len(data) <= MAX_IMAGE_BYTES
-                and ai_center.resolve_task("ocr").is_configured
-            )
+            image_ocr = kind == "image" and len(data) <= MAX_IMAGE_BYTES
             if image_ocr:
-                # 图片通道直接全量 OCR：不再先走旧的整图转写。
+                # 图片本身就是页图：先落占位壳，再交给识别引擎（本地 → AI/MinerU）。
                 documents, kind, source_text, scan_mode = [], "image", "", False
             else:
                 try:
@@ -721,8 +299,10 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
 
         if scan_mode:
             health = page_render.pdf_text_health(data)
-            route = scan_route(picked_channel, health)
+            route = scan_route(picked_layout, picked_recognize, health)
             if page_images:
+                layout = await layout_router.run(name, data, page_images, picked_layout)
+                _apply_layout(page_images, layout)
                 try:
                     pending_bank.set_batch_pages(batch_id, page_images)
                 except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
@@ -731,7 +311,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
                 auto_split_pages(name, data, batch_id, page_images)
                 if any((entry.get("regions") or []) for entry in page_images):
-                    route = await fill_scan_batch(batch_id, picked_channel, health)
+                    route = await fill_scan_batch(
+                        batch_id, picked_recognize, health, picked_layout, layout)
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
@@ -744,7 +325,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         if image_ocr:
             health = {"has_text_layer": False, "garbled": False,
                       "text_chars": 0, "missing_chars": 0}
-            route = scan_route(CHANNEL_FULL_OCR, health)
+            route = scan_route(picked_layout, picked_recognize, health)
             shell = _image_shell(name, page_images)
             try:
                 pending_bank.save_draft(
@@ -754,8 +335,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 if page_images:
                     drop_assets(page_images)
                 continue
-            route = await fill_scan_batch(batch_id, CHANNEL_FULL_OCR, health)
-            route["requested_channel"] = picked_channel
+            route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout)
             save_route(pending_bank, batch_id, route)
             continue
 

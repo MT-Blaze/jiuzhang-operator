@@ -128,28 +128,40 @@ body {
   flex: none;
 }
 
-/* 解析通道选择器（整块可下架：删掉这组样式与 index.html 的 #edRouteChannels 即可）。
-   窄屏自动换行，四颗钮不许把批次列表的抬头挤出横向滚动。 */
-.ed-route-channels {
+/* 双引擎选择器（整块可下架：删掉这组样式与 index.html 的 .ed-basket-engines 即可）。
+   并排悬在收集筐上方；窄屏自动换行，不把筐挤出横向滚动。 */
+.ed-basket-engines {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   flex: none;
-  margin-left: auto;
 }
 
-.ed-route-channels .ed-channel {
-  flex: none;
-  min-height: 32px;
-  padding: 0 10px;
+.ed-engine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.ed-engine-label {
+  flex: none;
   white-space: nowrap;
 }
 
-.ed-route-channels .ed-channel[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+.ed-engine-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
 }
 
 .ed-batches-title {
@@ -424,11 +436,13 @@ body {
   overflow-y: auto;
 }
 
-/* 右栏只有一只筐，筐整体绝对居中。 */
+/* 右栏：双引擎选择在上、收集筐吃掉余下整块（竖排，不是左右并排）。 */
 .ed-basket-col {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
+  gap: 8px;
   min-width: 0;
   min-height: 0;
 }
@@ -441,7 +455,7 @@ body {
   align-items: stretch;
   gap: 10px;
   width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
   min-height: 240px;
   padding: 16px 14px;
   border: 2px dashed var(--line-strong);

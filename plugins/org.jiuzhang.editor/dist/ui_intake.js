@@ -31,17 +31,26 @@
 
   // OCR 可能跑很久：宿主那条 HTTP 默认 20 秒就超时，这里给足时间。
   var INGEST_TIMEOUT_MS = 180000;
-  // 四通道只影响**下一次**开始解析；已立起来的批次绝不重跑。
-  var INGEST_CHANNELS = ["auto", "local_ai", "full_ocr", "mineru"];
+  // 双引擎只影响**下一次**开始解析；已立起来的批次绝不重跑。
+  // 版面管「框在哪」，识别管「字是什么」，各选各的，互不替代。
+  var LAYOUT_ENGINES = ["auto", "yolo", "cloud"];
+  var RECOGNIZE_ENGINES = ["auto", "full_ocr", "mineru"];
 
-  function currentChannel() {
-    var picked = String(state.ingestChannel || "auto");
-    return INGEST_CHANNELS.indexOf(picked) < 0 ? "auto" : picked;
+  function currentLayoutEngine() {
+    var picked = String(state.ingestLayoutEngine || "auto");
+    return LAYOUT_ENGINES.indexOf(picked) < 0 ? "auto" : picked;
   }
 
-  function channelLabel(key) {
-    return { auto: "自动", local_ai: "本地+AI", full_ocr: "全量OCR", mineru: "MinerU云端" }[key]
-      || "自动";
+  function currentRecognizeEngine() {
+    var picked = String(state.ingestRecognizeEngine || "auto");
+    return RECOGNIZE_ENGINES.indexOf(picked) < 0 ? "auto" : picked;
+  }
+
+  function engineLabel(kind, key) {
+    if (kind === "layout") {
+      return { auto: "自动", yolo: "YOLO", cloud: "云端" }[key] || "自动";
+    }
+    return { auto: "自动", full_ocr: "全量OCR", mineru: "MinerU" }[key] || "自动";
   }
 
   function fileEntry(file, fallbackName) {
@@ -58,13 +67,18 @@
   }
 
 
-  /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节与通道。 */
-  function ingestEntries(entries, channel) {
+  /** 文件交给宿主建批次：识别与题库都在宿主那边，插件只递字节与两个引擎名。 */
+  function ingestEntries(entries, layoutEngine, recognizeEngine) {
     var files = (entries || []).filter(function (entry) { return entry && entry.data_url; });
     if (!files.length) return Promise.resolve(null);
+    var pickedLayout = LAYOUT_ENGINES.indexOf(String(layoutEngine || "")) < 0
+      ? currentLayoutEngine() : String(layoutEngine);
+    var pickedRecognize = RECOGNIZE_ENGINES.indexOf(String(recognizeEngine || "")) < 0
+      ? currentRecognizeEngine() : String(recognizeEngine);
     return hostCall("ingest.files", {
       files: files,
-      channel: channel || currentChannel()
+      layout_engine: pickedLayout,
+      recognize_engine: pickedRecognize
     }, INGEST_TIMEOUT_MS).then(function (result) {
       var saved = Array.isArray(result && result.saved_ids) ? result.saved_ids.length : 0;
       var ids = Array.isArray(result && result.batch_ids)
@@ -89,15 +103,15 @@
     });
   }
 
-  // 通道只记在这一次点击上：拖入与粘贴都只往筐里放，开始解析才带上它。
+  // 引擎只记在这一次点击上：拖入与粘贴都只往筐里放，开始解析才带上它。
   var routeWatchTimer = null;
 
-  function watchRoute(ids, channel) {
+  function watchRoute(ids, recognizeEngine) {
     if (!ids || !ids.length) return;
     if (routeWatchTimer) window.clearInterval(routeWatchTimer);
     var seen = {};
     var polls = 0;
-    var maxPolls = channel === "mineru" ? 180 : 60;
+    var maxPolls = recognizeEngine === "mineru" ? 180 : 60;
     routeWatchTimer = window.setInterval(function () {
       polls += 1;
       hostCall("pending.batch_list", {}, 20000).then(function (result) {
@@ -127,25 +141,31 @@
     }, 5000);
   }
 
-  function wireChannelButtons() {
-    var group = document.getElementById("edRouteChannels");
-    if (!group) return;
-    var buttons = group.querySelectorAll("[data-channel]");
+  /** 两个下拉框各记各的：改版面不碰识别，改识别不碰版面。 */
+  function wireEngineSelects() {
+    var layoutSelect = document.getElementById("edLayoutEngine");
+    var recognizeSelect = document.getElementById("edRecognizeEngine");
+
     function paint() {
-      Array.prototype.forEach.call(buttons, function (button) {
-        var on = String(button.getAttribute("data-channel")) === currentChannel();
-        button.setAttribute("aria-pressed", on ? "true" : "false");
+      if (layoutSelect) layoutSelect.value = currentLayoutEngine();
+      if (recognizeSelect) recognizeSelect.value = currentRecognizeEngine();
+    }
+
+    function bindSelect(select, kind, allowed, store, current) {
+      if (!select) return;
+      select.addEventListener("change", function () {
+        var key = String(select.value || "auto");
+        store(allowed.indexOf(key) < 0 ? "auto" : key);
+        paint();
+        dock((kind === "layout" ? "版面引擎：" : "识别引擎：")
+          + engineLabel(kind, current()) + "（只对下一次【开始解析】生效）");
       });
     }
-    Array.prototype.forEach.call(buttons, function (button) {
-      button.addEventListener("click", function () {
-        var key = String(button.getAttribute("data-channel") || "auto");
-        state.ingestChannel = INGEST_CHANNELS.indexOf(key) < 0 ? "auto" : key;
-        paint();
-        dock("解析通道：" + channelLabel(state.ingestChannel)
-          + "（只对下一次【开始解析】生效）");
-      });
-    });
+
+    bindSelect(layoutSelect, "layout", LAYOUT_ENGINES,
+      function (key) { state.ingestLayoutEngine = key; }, currentLayoutEngine);
+    bindSelect(recognizeSelect, "recognize", RECOGNIZE_ENGINES,
+      function (key) { state.ingestRecognizeEngine = key; }, currentRecognizeEngine);
     paint();
   }
 
@@ -384,12 +404,13 @@
     if (!state.basket.length || basketBusy) return Promise.resolve(null);
     basketBusy = true;
     setBasketBusy(true);
-    var pickedChannel = currentChannel();
+    var pickedLayout = currentLayoutEngine();
+    var pickedRecognize = currentRecognizeEngine();
     return Promise.all(state.basket.map(function (entry) {
       // 剪贴板里的图未必带文件名，补上筐里显示的那个，解析才认得出它。
       return fileEntry(entry.file, entry.name);
     })).then(function (payloads) {
-      return ingestEntries(payloads.filter(Boolean), pickedChannel);
+      return ingestEntries(payloads.filter(Boolean), pickedLayout, pickedRecognize);
     }).then(function (result) {
       if (result) {
         basketClear();
@@ -403,7 +424,7 @@
             ? result.batch_ids
             : (result.batch_id ? [result.batch_id] : []);
           // MinerU 可能排队十几分钟：持续把路由进度写进底部日志，别让老师干等。
-          watchRoute(ids.map(String), pickedChannel);
+          watchRoute(ids.map(String), pickedRecognize);
         }
       }
       basketBusy = false;
@@ -516,7 +537,7 @@
       else collectToCanvas(files);
     });
     if (inCanvas) {
-      wireChannelButtons();
+      wireEngineSelects();
       renderBasket();
     }
   }
