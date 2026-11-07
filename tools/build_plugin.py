@@ -4,10 +4,14 @@
     .venv/Scripts/python.exe tools/build_plugin.py plugins/org.jiuzhang.bank-engine
     .venv/Scripts/python.exe tools/build_plugin.py --all
     .venv/Scripts/python.exe tools/build_plugin.py <dir> --out dist/plugins
+    .venv/Scripts/python.exe tools/build_plugin.py --suite
+    .venv/Scripts/python.exe tools/build_plugin.py --suite org.jiuzhang.bank-engine org.jiuzhang.bank-ui
 
-设计口径（PLUGIN_SPEC §1.2）：
-- zip 只是分发容器，顶层必须是 ``<id>/``，解压即用；
+设计口径（PLUGIN_SPEC §1.2 / §1.8）：
+- zip 只是分发容器，单插件包顶层必须是 ``<id>/``，解压即用；
+- 套件包顶层是 ``suite.json`` + 各子插件目录，一次安装、同进同退；
 - 打包前必须通过 ``app.core.plugins.validate_plugin`` 全套契约校验，校验不过不产出；
+- 套件必须自带全部依赖（requires 闭包），否则等于发一个空壳套件；
 - 拒绝把密钥、临时文件、嵌套 zip、符号链接、缓存打进去；
 - 同一输入重复打包得到稳定条目顺序（按路径排序），便于人工比对。
 """
@@ -24,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core import plugin_suite  # noqa: E402
 from app.core.plugins import PluginRejected, validate_plugin  # noqa: E402
 
 DENY_NAMES = {
@@ -41,6 +46,7 @@ DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db
 DENY_DIRS = {"__pycache__", ".git", ".idea", ".vscode", "node_modules", ".pytest_cache",
              "dev", "models"}
 MAX_PACKAGE_BYTES = 10 * 1024 * 1024
+MAX_SUITE_BYTES = 20 * 1024 * 1024
 # 军令 #23：``dev/`` 是开发期假数据（fixtures）的落点，只服务本机探针与浏览器验证，
 # 一律不进发行包——沙箱 CSP 是 connect-src 'none'，假数据的唯一运行期事实来源是
 # plugin.js 里 //# FIXTURES-BEGIN/END 之间的内嵌块，由 tools/sync_editor_fixtures.py 同步。
@@ -48,6 +54,14 @@ MAX_PACKAGE_BYTES = 10 * 1024 * 1024
 # core-bank 的 ``bank/schema.sql`` 仍在包里，首启由底座 ensure_bank 建空库；
 # 真题库与它的配图只在本地开发机存在，绝不进任何对外发布的 zip。
 DENY_PAYLOAD_PREFIXES = ("bank/assets/",)
+
+SUITE_DEFAULT_MEMBERS = ("org.jiuzhang.bank-engine", "org.jiuzhang.bank-ui")
+SUITE_DEFAULT_ID = "org.jiuzhang.bank-suite"
+SUITE_DEFAULT_NAME = "真题题库套件"
+SUITE_DEFAULT_DESCRIPTION = (
+    "题库引擎 + 真题题库视图：一次安装即用，左栏只留一个【真题题库】入口，"
+    "引擎在后台静默运行。"
+)
 
 
 class BuildError(Exception):
@@ -130,15 +144,187 @@ def discover_package_dirs(plugins_dir: Path) -> list[Path]:
     return result
 
 
+def _resolve_plugin_dirs(members: list[str], plugins_dir: Path) -> list[Path]:
+    result: list[Path] = []
+    for item in members:
+        candidate = Path(item)
+        if not (candidate / "plugin.json").is_file():
+            candidate = plugins_dir / item
+        if not (candidate / "plugin.json").is_file():
+            raise BuildError(f"找不到插件目录：{item}")
+        result.append(candidate.resolve())
+    return result
+
+
+def _version_key(version: str) -> tuple[tuple[int, ...], int, str]:
+    """语义化版本排序键：正式版高于同号预发布版。"""
+    base = version.split("+", 1)[0]
+    main, _, prerelease = base.partition("-")
+    try:
+        numbers = tuple(int(part) for part in main.split("."))
+    except ValueError:
+        numbers = (0,)
+    return numbers, 0 if prerelease else 1, prerelease
+
+
+def _order_by_dependency(loaded: list[tuple[dict, Path]]) -> list[tuple[dict, Path]]:
+    """按 requires 拓扑排序：依赖在前，环直接拒绝。"""
+    by_id = {info["id"]: (info, path) for info, path in loaded}
+    ordered: list[tuple[dict, Path]] = []
+    visiting: set[str] = set()
+    done: set[str] = set()
+
+    def visit(plugin_id: str) -> None:
+        if plugin_id in done:
+            return
+        if plugin_id in visiting:
+            raise BuildError(f"套件内出现循环依赖：{plugin_id}")
+        visiting.add(plugin_id)
+        info, path = by_id[plugin_id]
+        for required in info.get("requires") or []:
+            if required in by_id:
+                visit(required)
+        visiting.discard(plugin_id)
+        done.add(plugin_id)
+        ordered.append((info, path))
+
+    for plugin_id in by_id:
+        visit(plugin_id)
+    return ordered
+
+
+def build_suite(
+    member_dirs: list[Path],
+    out_dir: Path,
+    *,
+    suite_id: str = SUITE_DEFAULT_ID,
+    suite_name: str = SUITE_DEFAULT_NAME,
+    description: str = SUITE_DEFAULT_DESCRIPTION,
+    version: str = "",
+) -> Path:
+    """把若干已校验的子插件打成一个套件包（顶层 suite.json + 各 <id>/）。"""
+    loaded: list[tuple[dict, Path]] = []
+    for plugin_dir in member_dirs:
+        plugin_dir = plugin_dir.resolve()
+        try:
+            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            command_issues: list[dict[str, str]] = []
+            info = validate_plugin(plugin_dir, manifest, command_issues)
+        except (OSError, json.JSONDecodeError, PluginRejected) as exc:
+            raise BuildError(f"{plugin_dir.name} 清单校验失败：{exc}") from exc
+        for issue in command_issues:
+            label = f"「{issue['id']}」" if issue.get("id") else ""
+            print(f"[WARN] {info['id']} 的命令 {label} 未登记：{issue.get('reason', '')}")
+        loaded.append((info, plugin_dir))
+
+    ids = [info["id"] for info, _ in loaded]
+    duplicates = sorted({item for item in ids if ids.count(item) > 1})
+    if duplicates:
+        raise BuildError("套件里有重复的插件 id：" + "、".join(duplicates))
+
+    member_ids = set(ids)
+    for info, _ in loaded:
+        missing = [item for item in info.get("requires") or [] if item not in member_ids]
+        if missing:
+            raise BuildError(
+                f"套件不完整：{info['id']} 依赖的 " + "、".join(missing)
+                + " 不在套件成员里（套件必须自带全部依赖）")
+
+    ordered = _order_by_dependency(loaded)
+    suite_version = version or max(
+        (info["version"] for info, _ in loaded), key=_version_key
+    )
+    suite_manifest = {
+        "schema_version": plugin_suite.SUITE_SCHEMA_VERSION,
+        "id": suite_id,
+        "name": suite_name,
+        "version": suite_version,
+        "description": description,
+        "plugins": [info["id"] for info, _ in ordered],
+    }
+    try:
+        plugin_suite.parse_suite_manifest(suite_manifest)
+    except plugin_suite.SuiteRejected as exc:
+        raise BuildError(f"套件清单不合法：{exc}") from exc
+
+    packed: list[tuple[dict, list[tuple[Path, Path]]]] = []
+    total = 0
+    for info, plugin_dir in ordered:
+        payload = list(_iter_payload(plugin_dir))
+        if not payload:
+            raise BuildError(f"{info['id']} 的目录是空的")
+        total += sum(path.stat().st_size for _, path in payload)
+        packed.append((info, payload))
+    if total > MAX_SUITE_BYTES:
+        raise BuildError(
+            f"套件解压总量 {total / 1024 / 1024:.1f} MB 超过 20 MB 上限："
+            "大文件必须按需下载，不能进发行包")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"{suite_id}.zip"
+    tmp = target.with_suffix(".zip.part")
+    if tmp.exists():
+        tmp.unlink()
+
+    try:
+        with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            archive.writestr(
+                plugin_suite.SUITE_FILENAME,
+                json.dumps(suite_manifest, ensure_ascii=False, indent=2) + "\n",
+            )
+            for info, payload in packed:
+                for relative, path in payload:
+                    arcname = PurePosixPath(info["id"], *relative.parts).as_posix()
+                    archive.write(path, arcname)
+    except BaseException:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+    size = tmp.stat().st_size
+    if size > MAX_SUITE_BYTES:
+        tmp.unlink()
+        raise BuildError(
+            f"套件包 {size / 1024 / 1024:.1f} MB 超过 20 MB 上限："
+            "大文件必须按需下载，不能进发行包")
+    tmp.replace(target)
+    return target
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验并打包九章算子插件（标准 zip，顶层为插件 id）")
     parser.add_argument("plugin_dir", nargs="?", help="插件目录（含 plugin.json）")
     parser.add_argument("--all", action="store_true", help="打包 plugins/ 下全部插件")
     parser.add_argument("--plugins-dir", default=str(ROOT / "plugins"), help="插件根目录")
     parser.add_argument("--out", default=str(ROOT / "dist" / "plugins"), help="zip 输出目录")
+    parser.add_argument(
+        "--suite", nargs="*", default=None, metavar="PLUGIN",
+        help="打套件包：成员为插件 id 或目录；不带成员时默认题库引擎 + 真题题库",
+    )
+    parser.add_argument("--suite-id", default=SUITE_DEFAULT_ID, help="套件 id")
+    parser.add_argument("--suite-name", default=SUITE_DEFAULT_NAME, help="套件显示名")
+    parser.add_argument("--suite-version", default="", help="套件版本（缺省取成员最高版本）")
     args = parser.parse_args(argv)
 
     plugins_dir = Path(args.plugins_dir)
+    out_dir = Path(args.out)
+
+    if args.suite is not None:
+        members = args.suite or list(SUITE_DEFAULT_MEMBERS)
+        try:
+            member_dirs = _resolve_plugin_dirs(members, plugins_dir)
+            target = build_suite(
+                member_dirs,
+                out_dir,
+                suite_id=args.suite_id,
+                suite_name=args.suite_name,
+                version=args.suite_version,
+            )
+        except (BuildError, OSError) as exc:
+            print(f"[FAIL] 套件 {args.suite_id}: {exc}")
+            return 1
+        print(f"[OK] 套件 -> {target} ({target.stat().st_size / 1024:.1f} KB)")
+        return 0
+
     if args.all:
         targets = discover_package_dirs(plugins_dir)
     elif args.plugin_dir:

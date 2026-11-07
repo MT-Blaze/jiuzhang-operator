@@ -56,6 +56,11 @@ class InstalledPlugin(BaseModel):
     stage: dict[str, Any] | None = None
     bus: dict[str, Any] | None = None
     min_host_version: str = ""
+    # 硬依赖（PLUGIN_SPEC §1.8）：缺依赖的插件在发现阶段就已 enabled=false。
+    requires: list[str] = []
+    missing_requires: list[str] = []
+    dependency_blocked: bool = False
+    dependency_error: str = ""
     # 能力路由字典（PLUGIN_SPEC §2.14）：这条插件声明并被宿主登记的命令。
     # 越权命名空间与坏条目已在清单校验时丢弃（见 GET /api/plugins 的 commands_rejected）。
     commands: list[dict[str, Any]] = []
@@ -65,9 +70,23 @@ class InstalledPlugin(BaseModel):
     uninstallable: bool = True
 
 
+class PluginSuiteInfo(BaseModel):
+    """套件包元信息；单插件安装时为 None。"""
+
+    id: str
+    name: str
+    version: str = ""
+    description: str = ""
+    plugins: list[str] = []
+
+
 class PluginInstallResponse(BaseModel):
     installed: bool
+    # plugin = 本次落地的第一个插件（单插件安装就是它）；
+    # plugins = 本次落地的全部插件（套件安装时不止一个）。
     plugin: InstalledPlugin
+    plugins: list[InstalledPlugin] = []
+    suite: PluginSuiteInfo | None = None
     source_host: str | None = None
 
 
@@ -115,12 +134,17 @@ async def install_plugin(request: Request, replace: bool = False) -> PluginInsta
 
     try:
         # 解压与磁盘 IO 是阻塞操作，放线程池执行，不卡事件循环
-        info = await run_in_threadpool(install_plugin_from_zip, b"".join(chunks), replace)
+        result = await run_in_threadpool(install_plugin_from_zip, b"".join(chunks), replace)
     except PluginInstallError as exc:
         raise HTTPException(
             status_code=exc.status, detail={"message": exc.message, "code": exc.code}
         ) from exc
-    return PluginInstallResponse(installed=True, plugin=InstalledPlugin(**info))
+    return PluginInstallResponse(
+        installed=True,
+        plugin=InstalledPlugin(**result["plugin"]),
+        plugins=[InstalledPlugin(**info) for info in result["plugins"]],
+        suite=PluginSuiteInfo(**result["suite"]) if result["suite"] else None,
+    )
 
 
 @router.post(
@@ -155,14 +179,16 @@ def install_plugin_from_url(payload: dict[str, Any] = Body(...)) -> PluginInstal
 
     try:
         data, used_url = download_plugin_zip_sources(url, mirrors)
-        info = install_plugin_from_zip(data, replace)
+        result = install_plugin_from_zip(data, replace)
     except PluginInstallError as exc:
         raise HTTPException(
             status_code=exc.status, detail={"message": exc.message, "code": exc.code}
         ) from exc
     return PluginInstallResponse(
         installed=True,
-        plugin=InstalledPlugin(**info),
+        plugin=InstalledPlugin(**result["plugin"]),
+        plugins=[InstalledPlugin(**info) for info in result["plugins"]],
+        suite=PluginSuiteInfo(**result["suite"]) if result["suite"] else None,
         source_host=plugin_index.describe_public_url(used_url),
     )
 

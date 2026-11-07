@@ -34,6 +34,7 @@ from app.api.workspaces import router as workspaces_router
 from app.core import plugin_update, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
+from app.core.plugins import discover_plugins
 from app.core.security import local_write_token
 
 
@@ -132,6 +133,21 @@ def _resume_plugin_updates() -> None:
         logger.warning("续更失败：%s（%s）", row.get("id"), row.get("reason"))
 
 
+def _log_plugin_dependency_problems() -> None:
+    """启动时点名缺依赖的插件（PLUGIN_SPEC §1.8）。
+
+    发现流程已把它们置为 enabled=false，这里只是让老师在控制台也看得见原因；
+    自检失败只记日志，绝不因为一个坏插件拖垮底座启动。
+    """
+    try:
+        report = discover_plugins()
+    except Exception:  # noqa: BLE001 - 自检是增强能力，不允许挡住启动
+        logger.exception("插件依赖自检失败，已跳过")
+        return
+    for row in report.get("dependency_blocked") or []:
+        logger.warning("插件依赖不满足：%s", row.get("reason") or row.get("id"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # 军令 #18：先装载工作区指针、迁移旧全局数据并生成 plugins/ 结构，
@@ -139,6 +155,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     workspace_bootstrap.bootstrap()
     init_db()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+    _log_plugin_dependency_problems()
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；
     # 插件一律由用户在「设置 → 插件管理与控制」里亲手装。
     threading.Thread(target=_resume_plugin_updates, name="jzo-update-resume", daemon=True).start()

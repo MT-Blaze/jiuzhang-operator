@@ -128,6 +128,7 @@
     }
     ordered.forEach(function (plugin) {
       var off = plugin.enabled === false;
+      var blocked = plugin.dependency_blocked === true;
       var li = el("li", "mg-card");
       li.setAttribute("data-id", plugin.id);
       if (off) li.setAttribute("data-state", "disabled");
@@ -136,10 +137,15 @@
       // 大字只属于老师给它的叫法；没起昵称时 displayName 回落官方原名
       head.appendChild(el("span", "mg-card-name",
         window.JzoPrefs ? window.JzoPrefs.displayName(plugin) : (plugin.name || plugin.id)));
-      var status = el("span", "mg-card-state", off ? "已停用" : "已启用");
+      var status = el("span", "mg-card-state", blocked ? "依赖不满足" : (off ? "已停用" : "已启用"));
       status.setAttribute("data-state", off ? "off" : "on");
       head.appendChild(status);
       li.appendChild(head);
+
+      // 依赖缺失/被停用：说清缺谁、为什么没亮，绝不让老师面对一个空壳界面。
+      if (blocked && plugin.dependency_error) {
+        li.appendChild(el("p", "mg-card-deps", plugin.dependency_error));
+      }
 
       // 小字才是官方原名与版本——昵称再花哨也不掩盖它装的是哪一个包
       li.appendChild(el("p", "mg-card-official",
@@ -157,6 +163,10 @@
       var toggle = el("button", "q-button mg-toggle");
       toggle.type = "button";
       toggle.textContent = off ? "启用" : "停用";
+      // 依赖不满足时单点「启用」只会写进本机偏好，发现阶段仍会把它按住；
+      // 干脆禁用按钮并指向真正的解法——先装/启用依赖插件。
+      toggle.disabled = blocked;
+      if (blocked) toggle.title = "先安装或启用它依赖的插件：" + (plugin.missing_requires || []).join("、");
       toggle.addEventListener("click", function () {
         setEnabled(plugin, off);
       });

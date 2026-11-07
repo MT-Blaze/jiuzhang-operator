@@ -454,7 +454,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": True,
         },
         "org.jiuzhang.bank-ui": {
-            "version": "1.0.2",
+            "version": "1.0.3",
             "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",

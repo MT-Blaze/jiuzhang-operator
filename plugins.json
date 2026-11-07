@@ -1,7 +1,7 @@
 {
   "index_version": "1.0",
   "name": "九章算子官方插件索引",
-  "updated_at": "2026-11-05",
+  "updated_at": "2026-11-07",
   "entries": [
     {
       "id": "org.jiuzhang.bank-engine",
@@ -22,7 +22,7 @@
     {
       "id": "org.jiuzhang.bank-ui",
       "name": "真题题库",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "kind": "tool",
       "api_version": "1.0",
       "description": "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列；数据一律向当前活跃题库引擎申请，自己不碰数据库。",

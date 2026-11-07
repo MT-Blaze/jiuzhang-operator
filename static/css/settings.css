@@ -178,6 +178,8 @@
 .mg-card-state[data-state="on"] { background: rgba(47, 107, 79, 0.14); color: #2f6b4f; }
 .mg-card-state[data-state="off"] { background: rgba(155, 59, 45, 0.14); color: #9b3b2d; }
 .mg-card-desc { margin: 8px 0 4px; font-size: 13px; color: var(--ink, #1f1c18); }
+/* 依赖不满足：红字一条，说清缺谁；不弹窗、不遮挡其他插件卡片 */
+.mg-card-deps { margin: 6px 0 4px; font-size: 12px; color: #9b3b2d; word-break: break-all; }
 /* 小字那一行才是官方原名与版本：昵称再大也盖不住装的是哪一个包 */
 .mg-card-official { margin: 4px 0 0; font-size: 12px; color: var(--muted, #6f675c); }
 .mg-card-sub { margin: 0 0 8px; font-size: 11px; color: var(--muted, #6f675c); word-break: break-all; }

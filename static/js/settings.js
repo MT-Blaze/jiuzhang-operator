@@ -186,9 +186,16 @@
           if (!response.ok) {
             throw httpFailure(response, text, body, "/api/plugins/install", "POST", payloadLabel);
           }
-          var plugin = (body && body.plugin) || {};
+          var plugins = (body && Array.isArray(body.plugins) && body.plugins.length)
+            ? body.plugins : [(body && body.plugin) || {}];
+          var names = plugins.map(function (item) {
+            return (item.name || item.id || "?") + " v" + (item.version || "?");
+          }).join("、");
+          var suite = body && body.suite;
           setStatus(
-            "已安装 " + (plugin.name || plugin.id) + " v" + (plugin.version || "?") +
+            (suite
+              ? "已安装套件「" + (suite.name || suite.id) + "」，共 " + plugins.length + " 个插件：" + names
+              : "已安装 " + names) +
             "。工作台左栏与对话工具即刻生效，无需重启。",
             "ok"
           );

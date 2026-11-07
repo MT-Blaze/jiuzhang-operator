@@ -68,8 +68,15 @@
               method: "POST", url: "/api/plugins/install", payload: payloadLabel
             });
           }
-          var plugin = body && body.plugin ? body.plugin : {};
-          addBubble("sys", "插件已安装：" + (plugin.name || plugin.id) + " v" + (plugin.version || "?"));
+          var plugins = (body && Array.isArray(body.plugins) && body.plugins.length)
+            ? body.plugins : [(body && body.plugin) || {}];
+          var names = plugins.map(function (item) {
+            return (item.name || item.id || "?") + " v" + (item.version || "?");
+          }).join("、");
+          var suite = body && body.suite;
+          addBubble("sys", suite
+            ? "套件「" + (suite.name || suite.id) + "」已安装，共 " + plugins.length + " 个插件：" + names
+            : "插件已安装：" + names);
           // 装完立即刷新插件区；刷新失败不回滚安装结果，也不谎报安装失败。
           return loadPlugins().catch(function () { return null; });
         });

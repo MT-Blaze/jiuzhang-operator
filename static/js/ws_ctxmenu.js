@@ -255,6 +255,20 @@
           window.JzoStage.setPluginCatalog(plugins);
         }
 
+        // 依赖不满足的插件已被后端置为 enabled=false：同一份签名只播报一次，
+        // 老师能在对话区看见「为什么它没出现」，而不是以为装丢了。
+        var blocked = (data && data.dependency_blocked) || [];
+        var blockedSignature = blocked.map(function (row) {
+          return (row.id || "") + ":" + (row.reason || "");
+        }).join("|");
+        if (opts.announce !== false && blocked.length &&
+            blockedSignature !== wsState.dependencySignature) {
+          addBubble("sys", "插件依赖不满足，已保持停用：" + blocked.map(function (row) {
+            return "「" + (row.name || row.id) + "」（" + (row.reason || "缺少依赖") + "）";
+          }).join("；"), { tone: "warn" });
+        }
+        wsState.dependencySignature = blockedSignature;
+
         if (opts.announce !== false && changed) {
           if (added.length) {
             addBubble("sys", "检测到新插件 " + added.map(function (p) {

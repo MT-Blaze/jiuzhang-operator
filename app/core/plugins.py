@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.core import commands as command_registry
-from app.core import plugin_state
+from app.core import plugin_state, plugin_suite
 from app.core.config import plugins_dir
 
 PROTOCOL = "jzo-plugin/1"
@@ -474,6 +474,13 @@ def validate_plugin(
     if manifest["kind"] == "renderer":
         _require("question.render" in capabilities, "renderer 必须声明 question.render")
 
+    # 硬依赖（PLUGIN_SPEC §1.8）：缺了它插件就只是空壳，所以拒绝安装，
+    # 而不是像 bus 那样宽容丢弃。写坏的声明必须让作者当场看见。
+    try:
+        requires = plugin_suite.normalize_requires(manifest.get("requires"), plugin_id)
+    except ValueError as exc:
+        raise PluginRejected(str(exc)) from exc
+
     # 舞台声明与插槽必须自洽：写了 stage 却没要 stage.center，等于声明了没有落点的能力
     if "stage" in manifest:
         _require("stage.center" in slots, "声明 stage 必须同时在 slots 里带上 stage.center")
@@ -530,6 +537,8 @@ def validate_plugin(
         "slots": slots,
         "capabilities": capabilities,
         "permissions": permissions,
+        # 硬依赖：发现阶段按这张表算闭包，缺依赖的插件一律不启用（§1.8）。
+        "requires": requires,
         "headless": headless,
         "entry_url": entry_url,
         "css_url": css_url,
@@ -627,6 +636,23 @@ def discover_plugins() -> dict[str, Any]:
             except (PluginRejected, OSError, json.JSONDecodeError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 
+    # 依赖闭包（PLUGIN_SPEC §1.8）：装了但缺依赖的插件一律不启用。
+    # 用 enabled=False 表达，前端所有既有判据（左栏、舞台、右栏认领）自动生效，
+    # 不用逐个改；dependency_error 负责说清为什么，绝不留一个空壳界面。
+    blocked = plugin_suite.dependency_report(plugins, set(disabled))
+    for info in plugins:
+        problem = blocked.get(info["id"])
+        info["dependency_blocked"] = problem is not None
+        info["missing_requires"] = (
+            sorted(set(problem["missing"]) | set(problem["disabled"]) | set(problem["blocked"]))
+            if problem else []
+        )
+        info["dependency_error"] = (
+            plugin_suite.dependency_message(info["id"], problem) if problem else ""
+        )
+        if problem:
+            info["enabled"] = False
+
     installed = [info["id"] for info in plugins]
     sidebar = plugin_state.prune_sidebar(prefs["sidebar"], set(installed))
     tree = _sidebar_with_unlisted(sidebar, installed)
@@ -653,6 +679,16 @@ def discover_plugins() -> dict[str, Any]:
         # 插件之间不直连，command.execute 查的就是这张表。
         "commands": registry["commands"],
         "commands_rejected": command_issues + registry["issues"],
+        # 因依赖缺失/被停用而保持停用的插件：左栏与设置页据此给出人话提示。
+        "dependency_blocked": [
+            {
+                "id": info["id"],
+                "name": info["name"],
+                "missing_requires": info["missing_requires"],
+                "reason": info["dependency_error"],
+            }
+            for info in plugins if info["dependency_blocked"]
+        ],
         # 后端树为空 = 用户从没在设置面板拖过组。前端据此决定要不要一次性搬走
         # 早期存在浏览器里的左栏顺序（搬完即弃，不做双向同步）。
         "sidebar_customized": bool(sidebar),
