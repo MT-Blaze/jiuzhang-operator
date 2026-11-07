@@ -2,19 +2,23 @@
 """插件包结构只读校验（L0 门禁）。
 
 范围取自 tools/sync_plugin_index.py 的 PLUGIN_DIRS（官方七支的唯一清单），
-外加反向核对：plugins/ 下任何含 plugin.json 的目录都必须已在 PLUGIN_DIRS 登记。
+外加反向核对：plugins/ 下任何含 plugin.toml 的目录都必须已在 PLUGIN_DIRS 登记。
 
 用法：.venv/Scripts/python.exe scripts/check_plugin_package.py
 只读，不写任何文件；违反 L0 即 rc=1。
 """
 from __future__ import annotations
 
-import json
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.core import manifests  # noqa: E402
+
 PLUGIN_DIRS_RE = re.compile(r"PLUGIN_DIRS\s*=\s*\((.*?)\)", re.S)
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*){2,}$")
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -42,23 +46,25 @@ def declared_official_plugins() -> list[str]:
 
 
 def check_manifest(plugin_dir: Path) -> None:
-    manifest_path = plugin_dir / "plugin.json"
-    if not manifest_path.is_file():
-        fail(f"{plugin_dir.name}: 缺 plugin.json")
+    if (plugin_dir / manifests.LEGACY_PLUGIN_MANIFEST).exists():
+        fail(f"{plugin_dir.name}: 官方插件目录不许留 {manifests.LEGACY_PLUGIN_MANIFEST}")
+    manifest_path = manifests.manifest_path(plugin_dir)
+    if manifest_path is None:
+        fail(f"{plugin_dir.name}: 缺 {manifests.PLUGIN_MANIFEST}")
         return
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(plugin_dir)
     except Exception as exc:  # noqa: BLE001 - 门禁要把解析失败如实报出来
-        fail(f"{plugin_dir.name}: plugin.json 不是合法 JSON（{exc}）")
+        fail(f"{plugin_dir.name}: {manifests.PLUGIN_MANIFEST} 解析失败（{exc}）")
         return
 
     if manifest.get("id") != plugin_dir.name:
-        fail(f"{plugin_dir.name}: 顶层目录名 != plugin.json 的 id（{manifest.get('id')!r}）")
+        fail(f"{plugin_dir.name}: 顶层目录名 != 清单的 id（{manifest.get('id')!r}）")
     if not ID_RE.match(str(manifest.get("id", ""))):
         fail(f"{plugin_dir.name}: id 不符合反向域名格式")
     for field in REQUIRED_FIELDS:
         if field not in manifest:
-            fail(f"{plugin_dir.name}: plugin.json 缺字段 {field}")
+            fail(f"{plugin_dir.name}: 清单缺字段 {field}")
     for field in ("version", "min_host_version"):
         value = manifest.get(field)
         if value is not None and not SEMVER_RE.match(str(value)):
@@ -90,7 +96,7 @@ def main() -> int:
     official = declared_official_plugins()
     on_disk = sorted(
         path.name for path in (ROOT / "plugins").iterdir()
-        if path.is_dir() and (path / "plugin.json").is_file()
+        if path.is_dir() and manifests.manifest_path(path) is not None
     )
     for name in official:
         path = ROOT / "plugins" / name
@@ -104,8 +110,8 @@ def main() -> int:
         fail(f"plugins/ 下存在未登记进 PLUGIN_DIRS 的插件目录：{', '.join(unregistered)}")
 
     seed = ROOT / "plugins" / "org.jiuzhang.core-bank"
-    if seed.is_dir() and (seed / "plugin.json").exists():
-        fail("种子库 org.jiuzhang.core-bank 出现了 plugin.json，它不应该是插件")
+    if seed.is_dir() and manifests.manifest_path(seed) is not None:
+        fail("种子库 org.jiuzhang.core-bank 出现了插件清单，它不应该是插件")
 
     for note in notes:
         print(f"[NOTE] {note}")

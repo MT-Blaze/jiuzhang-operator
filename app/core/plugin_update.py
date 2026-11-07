@@ -38,6 +38,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app import __version__
+from app.core import manifests
 from app.core.config import current_workspace_id, plugins_dir, settings, workspace_storage_dir
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
@@ -332,9 +333,9 @@ def apply_plugin_update(entry: dict[str, Any], *, local_version: str = "",
             raise UpdateRejected(f"包里的 id 与条目不符：{info.get('id')} ≠ {plugin_id}",
                                  code="id_mismatch")
         try:
-            manifest = json.loads((staged_root / "plugin.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise UpdateRejected(f"新包 plugin.json 无法解析：{exc}") from exc
+            manifest = manifests.load_manifest(staged_root)
+        except (OSError, ValueError) as exc:
+            raise UpdateRejected(f"新包插件清单无法解析：{exc}") from exc
         required = manifest_min_host(manifest if isinstance(manifest, dict) else {})
         if not host_satisfies(required):
             raise UpdateRejected(

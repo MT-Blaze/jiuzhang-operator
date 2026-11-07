@@ -1,7 +1,7 @@
 """构建军令 #16 模块三的取证夹具包（light 权重探针插件）。
 
 只服务于 tools/stage_weight_probe.py：装进本机、验完就卸，不进官方插件索引、不进发行包。
-zip 最外层目录名 == plugin.json 的 id（PLUGIN_SPEC §1.2），LICENSE 取仓库根那份 Apache-2.0 全文。
+zip 最外层目录名 == plugin.toml 的 id（PLUGIN_SPEC §1.2），LICENSE 取仓库根那份 Apache-2.0 全文。
 
 运行：``.venv/Scripts/python.exe examples/build_stage_weight_probe_plugin.py``
 """
@@ -18,7 +18,7 @@ OUTPUT_ZIP = ROOT / "examples" / "stage_weight_probe_plugin.zip"
 PLUGIN_ID = "org.example.stage-weight"
 
 INCLUDED_FILES = (
-    "plugin.json",
+    "plugin.toml",
     "dist/index.html",
     "dist/plugin.js",
 )

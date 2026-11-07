@@ -23,6 +23,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+from app.core import manifests  # noqa: E402
 CEILING = 800
 # 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 800 行。
 DEV_ONLY = ("tools",)
@@ -89,7 +91,7 @@ class PluginAssetWiringTest(unittest.TestCase):
             else None
 
     def plugins(self) -> list[Path]:
-        return sorted(p.parent for p in ROOT.glob("plugins/*/plugin.json"))
+        return sorted(p for p in (ROOT / "plugins").iterdir() if p.is_dir() and manifests.manifest_path(p) is not None)
 
     def test_01_every_local_asset_is_loaded(self) -> None:
         for plugin in self.plugins():

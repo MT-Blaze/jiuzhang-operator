@@ -48,7 +48,7 @@
   - `app/api/`：底座级 HTTP 路由（健康检查、鉴权、导航、总线）。
   - `app/core/`：配置、路径、安全、日志等基础能力。
   - `schemas/`：跨边界数据契约。
-  - `plugins/`：插件包（每个插件一个目录，含 `plugin.json`）。
+  - `plugins/`：插件包（每个插件一个目录，含 `plugin.toml`）。
   - `static/`：宿主壳静态资源。
 - 禁止在根目录堆放业务模块。
 
@@ -93,7 +93,7 @@
 
 1. **【改动清单】**：新增/修改/删除了哪些文件（逐个点名，修改带行号或函数名）；
    并自查有没有动到禁改区——`LICENSE`、本文件铁律一与铁律二、`schemas/` 破坏性变更、用户 `data/` 目录。
-2. **【包结构自检】**（涉及插件才填）：顶层目录名 == `plugin.json` 的 `id`；无 `backend` 字段；
+2. **【包结构自检】**（涉及插件才填）：顶层目录名 == `plugin.toml` 的 `id`；无 `backend` 字段；
    附 Apache-2.0 `LICENSE` 全文；`min_host_version` / `engine.host_version` 与当前底座版本的关系如实写明。
 3. **【三查结果】**：`fetch(`、`parent.document`、`localStorage` 三项 grep 命中数（插件侧必须为 0）；
    请求 id 全部符合 `^[A-Za-z0-9_-]{1,80}$` 且不含点号（含点号必被宿主 `BAD_REQUEST_ID` 拒发）。
@@ -127,8 +127,8 @@
 1. 铁律一干净房间：diff 中不得有任何来自旧项目的逐字内容。
 2. 铁律二插件化：插件侧 `fetch(` / `parent.document` / `localStorage` 命中必须为 0；插件不得直连数据库、文件系统、环境变量；插件间不得直接调用。
 3. 出网铁律：任何出网必须由界面当场点击发起，禁止定时器轮询与启动时顺手拉。
-4. 两份 `plugins.json` 必须逐字节全等；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
-5. 版本单一事实源 `app/__init__.py`；`plugin.json` 顶层 `id` == 目录名、无 `backend`、必带 Apache-2.0 `LICENSE`。
+4. 本地 `plugins.toml` 与兄弟仓库 `E:/jiuzhang-plugins/plugins.json` 的条目集合、版本号、镜像描述必须语义一致（`tools/sync_plugin_index.py` 同步、`scripts/check_plugin_index_parity.py` 校验）；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
+5. 版本单一事实源 `app/__init__.py`；`plugin.toml` 顶层 `id` == 目录名、无 `backend`、必带 Apache-2.0 `LICENSE`。
 6. `data/` 是用户财产，底座可写范围仅 `data/update_state.json` 与 `data/workspaces/<id>/*.json`。
 7. 测试只能用 `.venv` 解释器逐模块跑；禁止 pytest、禁止 `unittest discover`（零用例假通过）。
 8. `.bat` 必须纯 ASCII + CRLF；禁止正则后行断言；写接口必须鉴权。

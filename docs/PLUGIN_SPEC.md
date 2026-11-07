@@ -37,14 +37,14 @@
 - **唯一格式**：一个标准 zip 包，**解压即用**。禁止 `.jzo` 或任何自定义后缀/容器格式——对齐主流生态，任何压缩软件、浏览器下载、`unzip` 都能打开它，跑路风险为零。
 - zip 只是打包与传输容器，不是运行时格式。安装**永远由用户亲手发起**，共三条等价的路：① 亲手解压后把目录放进 `plugins/`；② 把本地 zip **拖进工作台任意位置，或到「设置与控制」页（`/settings`）拖入/选中文件**，由底座校验后落地（`POST /api/plugins/install`，过一次性写令牌）；③ 在「插件索引」页点某条目的**【在线安装】**，由底座按该条目直链下载那一个 zip 后走同款校验落地（`POST /api/plugins/install-url`，见 §1.4，2026-10-24 军令追认）。底座**绝不自动安装、绝不自动拉取任何远程 zip、绝不自动更新**——每一次安装都必须由用户当场亲手发起（交一个本地文件，或点一次【在线安装】）。静默安装的唯一例外见本节末「官方例外：随包种子插件首启静默安装」。
 - **底座禁止写死任何插件下载源**（防跑路）：代码与配置里不得出现任何内置的插件市场地址、插件 zip 的 CDN 域名或自动更新 URL。唯一允许内置的是**官方插件仓库索引自身的镜像序列**（`app/core/plugin_sources.py`，只含 `plugins.json` 地址，不含任何插件 zip 地址），且只在用户点【拉取清单】后按序换源。允许的出网口子只有两个，且都由用户当场点击发起：§1.3 的索引拉取（输入框默认预填**官方索引**的 gh-proxy 国内可达镜像直链，用户可当场改成任何自信任地址）与 §1.4 的在线安装（只下用户点选条目的那一个 zip）。除此之外底座不替用户访问任何远程地址。
-- **套件包**：顶层带 `suite.json` 的 zip 按 §1.8 一次安装多个子插件（如题库引擎 + 视图），整包同进同退；单插件包仍按 `<id>/` 版式，两种包都走同一条安装接口。
-- **安装接口的安全底线**：上传的 zip 必须先解压到临时暂存区、逐条目过安全校验、再过完 `plugin.json` 全套契约校验，才允许落地 `plugins/`。拒绝加密条目、符号链接、绝对路径、盘符路径、`..` 穿越、嵌套 zip；条目数与解压总量设上限（防 zip 炸弹）；已存在同名插件时默认拒绝（`409 exists`），只有用户显式确认 `replace` 才覆盖。落地目录名以清单 `id` 为唯一事实来源。实现见 `app/core/plugin_install.py`。
-- **包结构**：zip 顶层目录名即插件 id，其内含 `plugin.json` 与 `dist/`、`templates/` 等资源：
+- **套件包**：顶层带 `suite.toml` 的 zip 按 §1.8 一次安装多个子插件（如题库引擎 + 视图），整包同进同退；单插件包仍按 `<id>/` 版式，两种包都走同一条安装接口。
+- **安装接口的安全底线**：上传的 zip 必须先解压到临时暂存区、逐条目过安全校验、再过完 `plugin.toml` 全套契约校验，才允许落地 `plugins/`。拒绝加密条目、符号链接、绝对路径、盘符路径、`..` 穿越、嵌套 zip；条目数与解压总量设上限（防 zip 炸弹）；已存在同名插件时默认拒绝（`409 exists`），只有用户显式确认 `replace` 才覆盖。落地目录名以清单 `id` 为唯一事实来源。实现见 `app/core/plugin_install.py`。
+- **包结构**：zip 顶层目录名即插件 id，其内含 `plugin.toml` 与 `dist/`、`templates/` 等资源：
 
 ```text
 org.example.card.zip
 └── org.example.card/
-    ├── plugin.json
+    ├── plugin.toml
     ├── dist/{plugin.js,styles.css}
     └── templates/card.html
 ```
@@ -58,42 +58,38 @@ org.example.card.zip
 
 除此之外不存在任何自动安装通道：插件必须由用户当场亲手发起（见上文与 §1.3）。
 
-### 1.3 plugins.json 插件索引标准
+### 1.3 插件索引标准（本地 `plugins.toml`，远端 TOML/JSON）
 
-索引是一份**纯静态 JSON**，任何人（个人 Gitee 仓库、对象存储、局域网 Nginx）都能发布；底座对它只做「拉取 + 结构校验 + 展示」，**不解压、不安装、不执行**。
+索引是一份**纯静态配置**，任何人（个人 Gitee 仓库、对象存储、局域网 Nginx）都能发布；底座对它只做「拉取 + 结构校验 + 展示」，**不解压、不安装、不执行**。底座随包分发的索引是根目录 `plugins.toml`（TOML）；用户自填地址拉回的清单可以是 TOML，也可以是 JSON——JSON 只经 `app/core/wire.py` 读入内存对象，不落盘、不转存、不再生成新的 `.json` 文件。
 
-- **拉取入口**：`POST /api/plugins/index`，请求体 `{"url": "...", "allow_mirrors": true}`。地址来自前端「插件索引」页或「设置与控制」页（`static/plugins.html` / `static/settings.html`，两处复用同一实现）的输入框，输入框**默认预填官方插件仓库 `MT-Blaze/jiuzhang-plugins` 的 `plugins.json` 的 gh-proxy 反代直链**（2026-10-24 v0.5.2 军令追认；国内可直连，用户可当场改成任何自信任地址），点【拉取清单】才发起请求——底座不在用户不点击时访问任何地址。
+- **拉取入口**：`POST /api/plugins/index`，请求体 `{"url": "...", "allow_mirrors": true}`（HTTP 线格式由 FastAPI 处理，响应同上）。地址来自前端「插件索引」页或「设置与控制」页（`static/plugins.html` / `static/settings.html`，两处复用同一实现）的输入框，输入框**默认预填官方插件仓库 `MT-Blaze/jiuzhang-plugins` 的 `plugins.json` 的 gh-proxy 反代直链**（2026-10-24 v0.5.2 军令追认；国内可直连，用户可当场改成任何自信任地址），点【拉取清单】才发起请求——底座不在用户不点击时访问任何地址。
 - **官方镜像换源**：请求地址等于官方索引地址时，底座按 `app/core/plugin_sources.py` 的固定序列逐个尝试（gh-proxy → ghfast → jsDelivr → fastly.jsDelivr → Raw），单源 6 秒、备用源各 5 秒；响应里带回 `source_url`、`attempts[]` 与 `fallback_used`，前端如实展示「主源失败、已切到哪一路」。主源选反代而不是 jsDelivr，是因为 jsDelivr 的 `@main` 分支缓存最长可滞后 12 小时，刚推库的新索引可能在首批用户那里仍是旧版。用户改过的自定义地址**只试一次**，不换源——不能把用户的私有地址悄悄换成第三方。全部候选都失败时，错误信息逐源列出失败原因，并提示用户可在输入框手动改填其他索引地址。
 - **为什么这个只读接口要带写令牌**：它会替用户向外部发起请求（另一个口子是 §1.4 在线安装），不给令牌等于让浏览器里另一个页面的脚本白嫖本机网络身份。令牌仍是 [`AGENTS.md`](AGENTS.md) 约定的一次性轮换令牌。
 - **地址守卫**（`app/core/plugin_index.validate_index_url`）：只接受 `http` / `https`；必须有主机名；**拒绝携带用户名口令**；拒绝 `file:`、`data:` 与相对路径——即不发任何请求前先拒。单次拉取上限 512 KB、条目上限 200。
-- **容错口径**：单条写错只让那一条出局并给出可读原因（`rejected[]`），**不得**把整份清单判死；所有镜像都失败、非 JSON、版本不符一律返回 400 + 人话（附每一路的失败原因），不得 500。
+- **容错口径**：单条写错只让那一条出局并给出可读原因（`rejected[]`），**不得**把整份清单判死；所有镜像都失败、无法解析、版本不符一律返回 400 + 人话（附每一路的失败原因），不得 500。
 
-结构（JSON Schema 见 [`schemas/plugins-index.json`](../schemas/plugins-index.json)，可运行样例见 [`examples/plugins-index.example.json`](../examples/plugins-index.example.json)）：
+结构（可运行样例见 [`examples/plugins-index.example.toml`](../examples/plugins-index.example.toml)）：
 
-```json
-{
-  "index_version": "1.0",
-  "name": "示例索引",
-  "updated_at": "2026-10-21",
-  "entries": [
-    {
-      "id": "org.example.card",
-      "name": "经典卡片渲染器",
-      "version": "1.0.0",
-      "zip_url": "https://example.org/plugins/org.example.card-1.0.0.zip",
-      "mirrors": ["https://example.cn/plugins/org.example.card-1.0.0.zip"],
-      "kind": "renderer",
-      "api_version": "jzo-plugin/1",
-      "description": "一句话说明，最长 200 字",
-      "homepage": "https://example.org/plugins/card"
-    }
-  ]
-}
+```toml
+index_version = "1.0"
+name = "示例索引"
+updated_at = "2026-10-21"
+
+[[entries]]
+id = "org.example.card"
+name = "经典卡片渲染器"
+version = "1.0.0"
+zip_url = "https://example.org/plugins/org.example.card-1.0.0.zip"
+mirrors = ["https://example.cn/plugins/org.example.card-1.0.0.zip"]
+kind = "renderer"
+api_version = "jzo-plugin/1"
+description = "一句话说明，最长 200 字"
+homepage = "https://example.org/plugins/card"
 ```
 
 - **必填**：`index_version`（恒为 `"1.0"`）、`entries`；每条必填 `id`（反向域名，与目录名一致）、`name`、`version`（语义化）、`zip_url`（http(s) 可直达的 zip 地址）。
 - **可选**：`mirrors`（≤8 条备用地址，同样必须 http(s) 且不带凭证）、`kind`、`api_version`、`min_host_version`（该条目所需的最低底座版本，语义化；缺省视为不设限）、`description`、`homepage`。
-- **可选的顶层 `host` 块**（底座自更新用，见 §1.7）：`{"version": "x.y.z", "zip_url": "...", "mirrors": [...], "notes": "..."}`；字段非法只让 `host` 块自己出局，不牵连 `entries`。
+- **可选的顶层 `[host]` 块**（底座自更新用，见 §1.7）：`version`、`zip_url`、`mirrors`、`notes`；字段非法只让 `host` 块自己出局，不牵连 `entries`。
 - **索引不是授权体系**：`updated_at`、`api_version` 只用于展示与人工判断，底座**绝不**据此拒绝加载旧插件、强制升级或远程禁用——那会直接违反 §1.1。
 
 ### 1.4 在线安装（按需下载单个 zip，2026-10-24 军令追认）
@@ -111,9 +107,9 @@ org.example.card.zip
 
 对话助手可以直接调用已安装插件的**只读能力**，让「拆分第一题」这类指令真正执行，而不是只回一句计划。
 
-- **工具来源**：底座扫描 `plugins/*/plugin.json`，只把清单里显式声明的能力翻译成 OpenAI `tools`：`question.import` → `import_questions`，`question.render` → `render_question`。没有这两类能力的插件不会出现在工具表里，避免给模型假工具。工具名统一为 `plugin_<id 净化>`。
+- **工具来源**：底座扫描 `plugins/*/plugin.toml`，只把清单里显式声明的能力翻译成 OpenAI `tools`：`question.import` → `import_questions`，`question.render` → `render_question`。没有这两类能力的插件不会出现在工具表里，避免给模型假工具。工具名统一为 `plugin_<id 净化>`。
 - **参数约束**：`action` 用枚举，`question_no` 限 1–200，`question_id` 必须匹配 `q_` 前缀；模型给的参数一律视为不可信，由底座重新校验后才执行。
-- **执行边界**：后端**不执行插件 JS**（前端插件仍只在沙箱 iframe 里跑）。工具只读两处数据：插件自带的 `seed/questions.json`（≤2 MB、≤200 题）与当前工作区题库；不写库、不触网、不读环境变量、不碰插件私有状态。
+- **执行边界**：后端**不执行插件 JS**（前端插件仍只在沙箱 iframe 里跑）。工具只读两处数据：插件自带的 `seed/questions.toml`（≤2 MB、≤200 题）与当前工作区题库；不写库、不触网、不读环境变量、不碰插件私有状态。
 - **路由**：模型返回 `tool_calls` 时由后端拦截执行；模型漏判或 Provider 不支持工具时，宿主只对**高置信句式**（明确题号 + 拆分/渲染/导入）做兜底路由，响应里 `route=host` 如实标注，绝不把兜底伪装成模型决策。
 - **呈现**：插件结果作为自然语言气泡返回，前端在气泡上显式标注「[已调用插件]」，并展示真实执行的插件名。
 - **不做**：不开放插件自定义任意函数、不执行工具返回的代码、不把工具结果写回题目结构。
@@ -145,7 +141,7 @@ org.example.card.zip
 - **一键**：一次点击对应一次批量任务，任务范围就是本次检查结果里「有更新且兼容」的那些条目，不多不少，不跨条目借源；
 - **单次**：任务跑完就结束，不排队、不续跑、不定时重试；失败条目如实逐条列出，由人再点一次。
 
-**版本比较与兼容校验**：本地版本读各插件 `plugin.json` 的 `version`，远端版本读索引条目同名字段，按语义化版本（`主.次.修订`，数字段逐段比大小，非数字段按标识符序）判定「更高」；**版本号写坏、缺字段、id 对不上**的条目只让它自己出局并在界面列出原因，不牵连其他插件。兼容校验：条目或本地清单声明了 `min_host_version` 时，与底座 `app.__version__` 比对，不够则该条目标记为**需先更新底座**，红色按钮变灰提示、更新任务跳过它——**绝不覆盖本地代码**。
+**版本比较与兼容校验**：本地版本读各插件 `plugin.toml` 的 `version`，远端版本读索引条目同名字段，按语义化版本（`主.次.修订`，数字段逐段比大小，非数字段按标识符序）判定「更高」；**版本号写坏、缺字段、id 对不上**的条目只让它自己出局并在界面列出原因，不牵连其他插件。兼容校验：条目或本地清单声明了 `min_host_version` 时，与底座 `app.__version__` 比对，不够则该条目标记为**需先更新底座**，红色按钮变灰提示、更新任务跳过它——**绝不覆盖本地代码**。
 
 **热更新的死命令（裁决 3 的前半）**：更新一个插件 = 下载该条目 `zip_url`（失败按同条目 `mirrors`）→ 走 §1.2/§1.4 **完全同款**的暂存区校验 → 只覆盖 `plugins/<id>/` 下的**代码目录**。**严禁触碰 `data/` 目录**：工作区的物理题库、插件私有数据、启用状态、令牌、日志都不在更新的写范围内；校验不通过的 zip 在落地前就被整体丢弃，失败零残留（与在线安装同一套原子改名语义）。已装插件的更新天然需要 `replace=True`，但只针对同一 `id` 的目录，不得改名换目录。
 
@@ -159,20 +155,20 @@ org.example.card.zip
 
 **问题**：题库能力由「数据引擎 + 视图插件」两支组成，分开安装时老师要装两次、还容易只装 UI 得到一个空壳。**解法**：允许把有依赖关系的插件打成一个**套件包**，一次安装、同进同退；依赖声明是硬约束，缺了就不启用。
 
-**套件包版式**：标准 zip，顶层是 `suite.json` + 各子插件目录（目录名仍等于各自清单 `id`，结构与单插件包完全一致）：
+**套件包版式**：标准 zip，顶层是 `suite.toml` + 各子插件目录（目录名仍等于各自清单 `id`，结构与单插件包完全一致）：
 
 ```text
 org.jiuzhang.bank-suite.zip
-├── suite.json
+├── suite.toml
 ├── org.jiuzhang.bank-engine/
-│   ├── plugin.json
+│   ├── plugin.toml
 │   └── ...
 └── org.jiuzhang.bank-ui/
-    ├── plugin.json
+    ├── plugin.toml
     └── dist/...
 ```
 
-`suite.json` 字段：
+`suite.toml` 字段：
 
 | 字段 | 必填 | 规则 |
 | --- | --- | --- |
@@ -185,15 +181,15 @@ org.jiuzhang.bank-suite.zip
 
 **安装语义**（`app/core/plugin_install.py`）：
 
-- 顶层有 `suite.json` 即按套件安装；单插件包仍是原来的两种版式，互不混淆。
-- 套件包顶层**只许**出现 `suite.json` 与 `plugins` 声明的成员目录；多一个未声明的顶层目录整包拒绝（不静默忽略别人的插件）。
+- 顶层有 `suite.toml` 即按套件安装；单插件包仍是原来的两种版式，互不混淆。
+- 套件包顶层**只许**出现 `suite.toml` 与 `plugins` 声明的成员目录；多一个未声明的顶层目录整包拒绝（不静默忽略别人的插件）。
 - 全部成员先解压到同一暂存区、逐个过完 §1.2 全套安全与契约校验，再开始落地；**整包同进同退**：任何一步失败按备份回滚，`plugins/` 不留半套。
 - 已存在任一同名插件且未显式 `replace` 时整包 409，不覆盖任何一个；`replace=true` 时逐个备份旧目录、失败全部还原。
 - **依赖预检**：成员的 `requires` 若既不在本套件里、也不在本机已装插件里，整包拒绝（`400 missing_dependency`），提示补装依赖或安装完整套件。
 - 套件必须**自带全部依赖**（`requires` 闭包），缺一个成员就打不出套件、也装不上——套件的目的就是「一次装完」，不是「先装一半」。
 - 安装响应回 `plugins[]`（本次落地的全部插件）与 `suite`（套件元信息），单插件安装时 `plugins` 只有一项、`suite` 为 `null`。套件安装**不写任何启用状态**：已装插件原状态保持不变。
 
-**`requires` 硬依赖**（`plugin.json` 可选字段）：
+**`requires` 硬依赖**（`plugin.toml` 可选字段）：
 
 - 值是非空数组（≤16），每项是反向域名插件 id；不得依赖自己、不得重复。写坏**拒绝安装**（与 `bus` 的宽容归一不同：少一条依赖会变成空壳，必须让作者当场看见）。
 - **发现阶段防呆**：底座每次发现插件都按 `requires` 算依赖闭包（可传递、可成环）。只要依赖不在「已装且未被停用」的集合里，该插件就被置为 `enabled=false`，并在 `/api/plugins` 回 `dependency_blocked: true`、`missing_requires[]`、`dependency_error`（人话原因）；顶层 `dependency_blocked[]` 汇总全部被卡住的插件。左栏、舞台、右栏认领、命令路由因此都不会出现空壳界面。
@@ -285,8 +281,8 @@ interface DataSource {
 
 #### 2.3.1 五步装上一个自己的插件
 
-1. **建目录**：目录名就是插件 `id`（反向域名，如 `com.example.card`），后面必须与 `plugin.json` 里的 `id` 一字不差。
-2. **写 `plugin.json`**：字段逐项见 §2.3.2，直接抄下面的例子。
+1. **建目录**：目录名就是插件 `id`（反向域名，如 `com.example.card`），后面必须与 `plugin.toml` 里的 `id` 一字不差。
+2. **写 `plugin.toml`**：字段逐项见 §2.3.2，直接抄下面的例子。
 3. **放 `LICENSE`**：插件根目录必须有 `LICENSE` 文件，内容是 Apache-2.0 全文（复制仓库根目录那份即可）。
 4. **写入口页**：`dist/index.html` 是入口，`dist/plugin.js` 写逻辑；样式放 `dist/plugin.css`，在入口页里正常 `<link>` 即可。
 5. **打包安装**：把整个插件目录压成 zip（zip 最外层是 `id/` 目录，别只压 `dist/`），然后任选一条路：拖进工作台任意位置 / 到「设置与控制」页手动安装 / 解压后把目录放进 `plugins/` / 在插件索引页点【在线安装】。装完打开 `/api/plugins`：`plugins[]` 里有你的 id 就成功了；`rejected[]` 会用中文写清哪条不合格。
@@ -295,7 +291,7 @@ interface DataSource {
 
 ```text
 com.example.card/
-├── plugin.json
+├── plugin.toml
 ├── LICENSE
 ├── README.md            # 可选
 └── dist/
@@ -322,26 +318,26 @@ com.example.card/
 </html>
 ```
 
-#### 2.3.2 plugin.json 字段逐项说明
+#### 2.3.2 plugin.toml 字段逐项说明
 
 最小可用清单：
 
-```json
-{
-  "schema_version": "1.0",
-  "id": "com.example.card",
-  "name": "我的题卡",
-  "version": "0.1.0",
-  "api_version": "1.0",
-  "kind": "renderer",
-  "description": "一句话说明这个插件做什么，最多 200 字。",
-  "author": "你的名字",
-  "license": "Apache-2.0",
-  "entry": { "frontend": "dist/index.html" },
-  "slots": ["question.card"],
-  "capabilities": ["question.render"],
-  "permissions": ["questions:read"]
-}
+```toml
+schema_version = "1.0"
+id = "com.example.card"
+name = "我的题卡"
+version = "0.1.0"
+api_version = "1.0"
+kind = "renderer"
+description = "一句话说明这个插件做什么，最多 200 字。"
+author = "你的名字"
+license = "Apache-2.0"
+slots = ["question.card"]
+capabilities = ["question.render"]
+permissions = ["questions:read"]
+
+[entry]
+frontend = "dist/index.html"
 ```
 
 | 字段 | 必填 | 规则（写错会被拒装） |
@@ -354,27 +350,27 @@ com.example.card/
 | `kind` | 是 | `renderer` / `importer` / `exporter` / `tool` |
 | `description` | 是 | 1–200 字 |
 | `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
-| `entry` | 是 | 对象，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
+| `entry` | 是 | 表，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
 | `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4）/ `sidebar.right`（右栏辅助面板，见 §2.9） |
 | `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export` / `question.edit`（v0.6.2 录题写入）/ `paper.generate` / `handout.render`；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
 | `stage` | 否 | 中央画布接管声明（v0.6.0，见 §2.4）；对象。写了 `stage` 就必须同时在 `slots` 里带上 `stage.center`，否则拒装 |
-| `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；对象。不写时按 `{"subscribe":["ui.params.changed"],"publish":["region.dock"]}` 兜底 |
-| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；对象，只认 `contributes.commands` 数组（≤32 条，每条 `{id,title,description?,requires_user?,params_schema?,returns?}`）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明；`requires_user: true` 表示执行前须用户当场确认；`params_schema` 是封口的 JSON Schema 保守子集，供调用方/AI 发车前校验参数 |
+| `bus` | 否 | 事件总线订阅/发布白名单（v0.6.0，见 §2.5）；表。不写时按 subscribe 仅 `ui.params.changed`、publish 仅 `region.dock` 兜底 |
+| `contributes` | 否 | 能力路由声明（v0.11.2，见 §2.14）；表，只认 `contributes.commands` 数组（≤32 条，每条含 `id`、`title`、`description`、`requires_user`、`params_schema`、`returns`，后四项可选）。坏条目**逐条丢弃**并进 `commands_rejected`，不拒装；`org.jiuzhang.*` 只能由官方插件声明；`requires_user: true` 表示执行前须用户当场确认；`params_schema` 是封口的 JSON Schema 保守子集，供调用方/AI 发车前校验参数 |
 | `show_in_sidebar` | 否 | 布尔（v0.8.0）。缺省 `true`：插件在工作台左栏占一个入口。**显式填 `false`** 时不出现在左栏（仍可经对话工具、被其它插件调用或在「设置→插件管理与控制」里管理）——适合纯渲染/后台型插件不抢位。底座对插件的**启用/停用**是另一本账，落在本机 `data/plugin_state.json`，不属于清单 |
 | `min_host_version` | 否 | 语义化版本字符串（v0.8.3）。声明本插件能跑的**最低底座版本**；【检查更新】时底座拿它与自身 `__version__` 比对，不够则该插件的更新被标为「需先更新底座」并保持原样不覆盖。**缺省视为不设限**。此字段只用于更新提示，底座**绝不**据此拒绝加载已装插件或远程禁用（§1.1） |
 | `requires` | 否 | 字符串数组（v1.0.3，见 §1.8）。声明硬依赖的插件 id，如 `["org.jiuzhang.bank-engine"]`；全部依赖可用插件才启用，缺一个就 `enabled=false` 并给出人话原因。写坏（非数组、非法 id、自依赖、重复）直接拒装。依赖不校验版本、不联网 |
 | `backend` | **禁止出现** | 底座当前没有后端插件运行时，声明即拒装——不允许假能力 |
 
-> **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.json` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
+> **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.toml` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
 >
-> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.json`，一个题目数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](../schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
+> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.toml`，一个 `[[questions]]` 数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](../schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
 
-**`ui` 字段（v0.5.5 右侧面板）**：形如 `{"title": "…", "hint": "…", "controls": [...]}`，控件总数 ≤8。
-- `select`：`{"type":"select","key":"grade","label":"年级","options":[{"value":"高一","label":"高一"}],"default":"高一"}`；`key` 匹配 `^[a-z][a-z0-9_]{0,15}$`，选项 ≤12，值与标签纯文本。当前值随对话 `context.ui.values` 注入模型，模型可用 `update_params` 代人切换——但人类手动改过的字段以人类为准。
-- `button`：`{"type":"button","id":"random_question","label":"随机出题","command":"随机出一道题（年级：{grade}；难度：{difficulty}）"}`；`command` ≤200 字，`{key}` 占位符在点击时替换为面板当前值，点击等于在对话区发送该指令。
+**`ui` 字段（v0.5.5 右侧面板）**：顶层三键 `title`、`hint`、`controls`（`[[ui.controls]]` 数组），控件总数 ≤8。
+- `select`：键为 `type`（`"select"`）、`key`、`label`、`options`（`[[ui.controls.options]]` 的 `value` / `label` 对）、`default`；`key` 匹配 `^[a-z][a-z0-9_]{0,15}$`，选项 ≤12，值与标签纯文本。当前值随对话 `context.ui.values` 注入模型，模型可用 `update_params` 代人切换——但人类手动改过的字段以人类为准。
+- `button`：键为 `type`（`"button"`）、`id`、`label`、`command`；`command` ≤200 字，`{key}` 占位符在点击时替换为面板当前值，点击等于在对话区发送该指令。
 - 不写 `ui` 时底座按 `kind`/`capabilities` 生成默认面板（导入类给年级/难度下拉 + 随机出题等按钮），保证右栏永远可操作。
 
 #### 2.3.3 和宿主说话：消息协议
@@ -531,7 +527,7 @@ com.example.card/
 - 声明了 `stage` 的插件默认占**一个页签**（按插件 id 去重，重复点击只是切回）；若清单写 `"singleton": false`，重复点击会开出 `插件名 #2`、`#3`，各页签拥有独立 iframe 与独立 `plugin.activate`；
 - 页签可关闭；关闭即停用并摘除 iframe。
 
-清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.json`](../examples/demo_plugin/plugin.json)）：
+清单里这样声明（完整示例见 [`examples/demo_plugin/plugin.toml`](../examples/demo_plugin/plugin.toml)）：
 
 ```json
 {
@@ -638,7 +634,7 @@ com.example.card/
 | `asset.upload` | 上传框选/切出的题目配图（军令 #13） | 需 `assets:write` 权限；`payload.data_url` 只接受 PNG / JPEG / WebP 的 base64 data URL，解码后 ≤8 MiB；文件名由底座生成，返回 `{id, uri, mime, bytes, sha256}`，`uri` 可直接写进 `\includegraphics{...}` 与 `images[].uri` |
 | `text.clean_latex` | 脏 LaTeX 规则清洗（军令 #21） | `payload.text` ≤20000 字，超长直接回 `BAD_REQUEST`，**不截断**；返回 `{ok, text, changed, rules[], options[]}`。底座实现只有 `app/core/question_parser.py` 的 `clean_dirty_latex` 一处：定界符、等价记号、`\displaystyle`、`\fillin`、文本宏转 Markdown、列表与 `choices` 环境；同一输入永远同一输出，不调模型、不碰题库 |
 | `layout.model_status` | 本地 YOLO 模型仓库快照 | 只读；返回 `{hardware:{ready,providers,gpu,hardware_label}, models:{full,quantized:{present,version,label,display_size,bytes,min_bytes}}, download}`。不出网、不碰库，插件据此决定是否弹下载窗与播报哪一路硬件 |
-| `layout.model_download` | 按需下载本地 YOLO 模型 | 需 `questions:write`；`payload.kind` 只认 `full` / `quantized`，下载地址只来自插件目录 `model_config.json` 的镜像，**请求体不能带 URL**；必须由界面点击发起，禁止启动时自动拉取；先写 `.tmp`，只有大小达到 `min_bytes` 且与 `Content-Length` 一致才原子改名为 `.onnx`，半截文件直接丢弃；后台线程落盘到当前工作区 `plugins/org.jiuzhang.editor/models/`，失败零残留。模型目录与 `.onnx` 等后缀一律不进插件发行包（打包硬上限 10MB） |
+| `layout.model_download` | 按需下载本地 YOLO 模型 | 需 `questions:write`；`payload.kind` 只认 `full` / `quantized`，下载地址只来自插件目录 `model_config.toml` 的镜像，**请求体不能带 URL**；必须由界面点击发起，禁止启动时自动拉取；先写 `.tmp`，只有大小达到 `min_bytes` 且与 `Content-Length` 一致才原子改名为 `.onnx`，半截文件直接丢弃；后台线程落盘到当前工作区 `plugins/org.jiuzhang.editor/models/`，失败零残留。模型目录与 `.onnx` 等后缀一律不进插件发行包（打包硬上限 10MB） |
 
 安全边界：
 
@@ -652,7 +648,7 @@ com.example.card/
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `bank.update` / `bank.delete` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.json)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.json)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.json) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【清洗当前题 LaTeX】按钮，辅助栏 `#epAiClean`）。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.toml)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.toml)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.toml) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【清洗当前题 LaTeX】按钮，辅助栏 `#epAiClean`）。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 
@@ -812,7 +808,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 
-右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)。
+右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.toml)。
 它不再是「底座自带副驾 + 插件来抢」的关系：AI 助手自己就是一只普通插件（§2.10），和画布上的插件众生平等，
 右栏只是它当前的落脚点。业务插件声明 `"slots": ["sidebar.right"]` 后，**只有当它自己是当前画布页签时**
 才暂时接管右栏；切走该页签，右栏立刻归还助手插件——**没有插件认领时插槽不隐藏**，兜底是一块可读说明，
@@ -849,7 +845,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 ### 2.10 AI 助手插件的权限边界（2026-10-24 军令 #15，长期铁律）
 
-「右侧对话框」不是底座的一部分，它是 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)
+「右侧对话框」不是底座的一部分，它是 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.toml)
 这只普通插件：不透明源沙箱 iframe、`jzo-plugin/1` 协议、没有 DOM 特权、没有库连接、没有令牌。
 本节钉死四条，任何实现与本文冲突时以本文为准。
 
@@ -941,7 +937,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 - 大字＝**自定义昵称**（老师起的），没起过就回落官方原名；小字＝**官方原名 + 版本号**，永远如实写着包里的名字。
 - 昵称只写本机 `data/plugin_state.json` 的 `nicknames`，经 `POST /api/plugins/{id}/nickname` 落盘；
-  **不改 `plugin.json`、不改清单、不进插件包**——卸载重装后插件本体照旧，昵称也照旧（只要没清状态文件）。
+  **不改 `plugin.toml`、不改清单、不进插件包**——卸载重装后插件本体照旧，昵称也照旧（只要没清状态文件）。
 - 卡片尾部只给【启用/停用】【改昵称】【卸载】三个动作；
   **坚决不设「恢复默认名」那类按钮**（清空输入框即回落，不需要一个专门按钮去宣告这件事）。
 - 列表**平铺不折叠**：一卡一插件，没有 `<details>`、没有折叠开关；分组不作为折叠容器出现，
@@ -1042,7 +1038,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 能力路由字典就是这张表：**清单声明 → 宿主内存字典 → 调用方查表 → 宿主转发给目标插件**。
 调用方永远拿不到目标插件的 iframe，也永远不需要知道它是谁。
 
-**1）清单写法。** 插件在 `plugin.json` 顶层写 `contributes.commands`：
+**1）清单写法。** 插件在 `plugin.toml` 顶层写 `contributes.commands`：
 
 ```json
 "contributes": {
@@ -1214,7 +1210,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 ### 2.15 官方插件能力与接口说明书（v0.11.2 军令 #20）
 
 本节是五个官方插件对外承诺的**能力清单**，面向第三方二开与 AI 工具链：每个 `command_id`
-要传什么、会返回什么、会动到什么，逐条写死。字段以各插件 `plugin.json` 的
+要传什么、会返回什么、会动到什么，逐条写死。字段以各插件 `plugin.toml` 的
 `contributes.commands` 为准；本节与清单冲突时以清单为准并修文档。
 
 **1）读法与通则。**
@@ -1502,7 +1498,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 阶段 | 宿主行为 | 插件义务 |
 | --- | --- | --- |
-| 发现 | 每次 `GET /api/plugins` 扫描 `plugins/`、读取并校验 `plugin.json`（不合格进 `rejected[]`，不影响其他插件） | 清单合法，目录名与 `id` 一致 |
+| 发现 | 每次 `GET /api/plugins` 扫描 `plugins/`、读取并校验 `plugin.toml`（不合格进 `rejected[]`，不影响其他插件） | 清单合法，目录名与 `id` 一致 |
 | 加载 | 在沙箱 iframe 中打开 `entry.frontend`（经 `/plugin-assets/<id>/dist/...` 分发） | 页面能独立加载，不依赖宿主全局变量 |
 | 激活 | 发出 `plugin.activate` 请求（接管画布时带 `payload.slot = "stage.center"`，30 秒超时） | 初始化内部状态并回响应（`ready: true`） |
 | 运行 | 按用户操作发出 `question.render` 等请求；右栏参数变化以 `ui.params.changed` 通知广播 | 处理消息并回 `result`，错误回 `error`；通知按幂等处理 |
@@ -1543,7 +1539,7 @@ try {
 
 - 宿主当前只认 `api_version` 主版本 **1**（写作 `"1.x"`），主版本不符直接拒装；次版本用于向后兼容的新增能力。
 - `version` 是插件自己的语义化版本，只用于展示与人工判断；底座不据此强制升级，也不会远程禁用旧版（对齐 §1.1）。
-- 协议标识固定为 `jzo-plugin/1`，出现在消息封包与 `/api/plugins` 响应的 `protocol` 字段；它**不是** `plugin.json` 的字段，别写进清单。
+- 协议标识固定为 `jzo-plugin/1`，出现在消息封包与 `/api/plugins` 响应的 `protocol` 字段；它**不是** `plugin.toml` 的字段，别写进清单。
 
 ---
 
@@ -1572,7 +1568,7 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
 
 1. 严禁点对点耦合：插件之间不直接调用、不共享全局状态、不互相找 iframe；所有插件间通信必须
    且只能经过底座中转（事件总线，或能力路由字典 command.list / command.execute）。要把自己的
-   能力开放给别的插件，在 plugin.json 的 contributes.commands 登记命令 id；想调别人的能力，
+   能力开放给别的插件，在 plugin.toml 的 contributes.commands 登记命令 id；想调别人的能力，
    先查表再请宿主转发（§2.14）。
 2. 数据读写：严禁插件直接访问底座数据库、文件系统、环境变量或密钥；题库数据必须调用
    标准宿主 API——向宿主 postMessage 一条 kind:"request" 消息，方法名只能取自白名单
@@ -1583,7 +1579,7 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
    bank.list / bank.stats / bank.random 按插件自己的 plugin.id 读「插件自带的库」，要用就得随包
    放 bank/schema.sql；basket.* 是工作区题篮，与具体哪个库无关。请求 id 必须匹配 ^[A-Za-z0-9_-]{1,80}$。
 3. 状态同步：改状态必须通过事件总线广播（向宿主发 kind:"notification" 消息，事件名必须在
-   plugin.json 的 bus.publish 白名单里，如 region.dock）；严禁直接调用其他插件的函数，
+   plugin.toml 的 bus.publish 白名单里，如 region.dock）；严禁直接调用其他插件的函数，
    严禁伪造 ui.params.* 或 layout.* 事件。
 4. UI 隔离：所有视图封闭在自己专属的 iframe 沙箱内；严禁越权操作父窗口 DOM——与宿主唯一
    的通道是 window.parent.postMessage，拿不到宿主页面、Cookie 和 localStorage
@@ -1593,7 +1589,7 @@ FastAPI + 原生前端底座，插件以 zip 包安装，运行在沙箱 iframe�
    JavaScript（ES2017 以内，禁止正则后行断言），公式文本按 Markdown + LaTeX 约定处理。
 
 插件包结构（zip 顶层目录名 = 插件 id）：
-  <id>/plugin.json      # schema_version:"1.0"、id(反向域名)、name、version(语义化)、
+  <id>/plugin.toml      # schema_version:"1.0"、id(反向域名)、name、version(语义化)、
                         # api_version:"1.0"、kind(renderer/importer/exporter/tool)、
                         # description、license:"Apache-2.0"、entry.frontend:"dist/index.html"、
                         # slots、capabilities、permissions；可选 stage / bus / ui /
@@ -1640,7 +1636,7 @@ result 序列化后必须 ≤65536 字节（超了回 COMMAND_RESULT_TOO_LARGE�
 模板源码在 [`examples/template-plugin/`](../examples/template-plugin/)，同一内容的成品包是
 [`examples/template-plugin.zip`](../examples/template-plugin.zip)（重打：`.venv/Scripts/python.exe examples/build_template_plugin.py`）。
 
-1. `plugin.json` 的 `id` / `name` / `version`——**解压出来的目录名必须与 `id` 一字不差**，否则拒装。
+1. `plugin.toml` 的 `id` / `name` / `version`——**解压出来的目录名必须与 `id` 一字不差**，否则拒装。
 2. `dist/plugin.js` 顶部的 `var PLUGIN_ID = "org.example.template";` 改成自己的 `id`。
 3. `dist/index.html` 的标题与界面（样式请另存 `dist/plugin.css` 外挂，入口页内联 `<style>` 会被 CSP 拦）。
 

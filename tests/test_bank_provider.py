@@ -21,7 +21,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank_provider
+from app.core import bank_provider, toml_io
 from app.core.config import settings
 from tests.core_sources import stage_source  # noqa: E402
 
@@ -56,10 +56,10 @@ class _Isolated(unittest.TestCase):
                 os.environ[key] = value
 
     def _strip_capability(self, plugin_id: str) -> None:
-        manifest = self.plugins_dir / plugin_id / "plugin.json"
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest = self.plugins_dir / plugin_id / "plugin.toml"
+        data = toml_io.load(manifest, {})
         data["capabilities"] = [c for c in data["capabilities"] if c != bank_provider.PROVIDER_CAPABILITY]
-        manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        toml_io.write(manifest, data)
 
 
 class ProviderResolutionTest(_Isolated):
@@ -125,10 +125,10 @@ class ProviderResolutionTest(_Isolated):
         """配置指向一个已卸载的第三方库：必须回默认库，而不是随便挑一个装着的。"""
         third = self.plugins_dir / "com.example.bank"
         shutil.copytree(self.plugins_dir / BANK, third)
-        manifest = third / "plugin.json"
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        manifest = third / "plugin.toml"
+        data = toml_io.load(manifest, {})
         data["id"] = "com.example.bank"
-        manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        toml_io.write(manifest, data)
         bank_provider.set_provider("com.example.bank")
         shutil.rmtree(third)
         info = bank_provider.resolve()

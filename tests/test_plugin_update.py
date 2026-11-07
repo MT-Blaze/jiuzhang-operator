@@ -16,7 +16,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugin_update
+from app.core import plugin_update, toml_io
 from app.core.config import Settings
 from app.core.plugin_update import (
     HOST_EXCLUDED_DIRS,
@@ -79,8 +79,8 @@ def build_zip(version: str = "1.0.0", top_dir: str | None = PLUGIN_ID,
         def prefixed(name: str) -> str:
             return f"{top_dir}/{name}" if top_dir else name
 
-        zf.writestr(prefixed("plugin.json"),
-                    json.dumps(manifest(version, min_host, engine_host, plugin_id), ensure_ascii=False))
+        zf.writestr(prefixed("plugin.toml"),
+                    toml_io.dumps(manifest(version, min_host, engine_host, plugin_id)))
         zf.writestr(prefixed("LICENSE"), LICENSE_TEXT)
         zf.writestr(prefixed("dist/plugin.js"), f"console.log('v{version}');")
         for name, text in (extra or {}).items():
@@ -147,8 +147,8 @@ class IsolatedDirsMixin(unittest.TestCase):
         """在临时 plugins/ 里摆一个「已装的旧版本」，可附带数据文件。"""
         destination = self.plugins_dir / PLUGIN_ID
         (destination / "dist").mkdir(parents=True, exist_ok=True)
-        (destination / "plugin.json").write_text(
-            json.dumps(manifest(version), ensure_ascii=False), encoding="utf-8")
+        (destination / "plugin.toml").write_text(
+            toml_io.dumps(manifest(version)), encoding="utf-8")
         (destination / "LICENSE").write_text(LICENSE_TEXT, encoding="utf-8")
         (destination / "dist" / "plugin.js").write_text(f"console.log('v{version}');", encoding="utf-8")
         for name, text in (files or {}).items():
@@ -380,7 +380,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         root = self.plugins_dir / PLUGIN_ID
         self.assertEqual((root / "dist" / "plugin.js").read_text(encoding="utf-8"),
                          "console.log('v2.0.0');")
-        self.assertEqual(json.loads((root / "plugin.json").read_text(encoding="utf-8"))["version"], "2.0.0")
+        self.assertEqual(toml_io.load(root / "plugin.toml", {})["version"], "2.0.0")
 
     def test_05_incompatible_index_entry_never_touches_local_code(self):
         self.install_local("1.0.0")
@@ -392,7 +392,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         self.assertIn("需先更新底座", caught.exception.message)
         self.assertEqual((self.plugins_dir / PLUGIN_ID / "dist" / "plugin.js").read_text(encoding="utf-8"),
                          before)
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "1.0.0")
 
     def test_06_incompatible_new_manifest_is_caught_by_the_second_gate(self):
@@ -402,7 +402,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
             apply_plugin_update(entry("2.0.0"), local_version="1.0.0",
                                 data=build_zip("2.0.0", min_host="99.0.0"))
         self.assertEqual(caught.exception.code, "incompatible")
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "1.0.0")
 
     def test_07_engine_host_version_also_gates(self):
@@ -410,7 +410,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         with self.assertRaises(UpdateRejected):
             apply_plugin_update(entry("2.0.0"), local_version="1.0.0",
                                 data=build_zip("2.0.0", engine_host="99.0.0"))
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "1.0.0")
 
     def test_08_compatible_requirement_passes_and_is_reported(self):
@@ -428,7 +428,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         self.assertEqual(caught.exception.code, "id_mismatch")
         self.assertFalse((self.plugins_dir / "org.jiuzhang.someone-else").exists(),
                          "不得改名换目录")
-        self.assertTrue((self.plugins_dir / PLUGIN_ID / "plugin.json").is_file())
+        self.assertTrue((self.plugins_dir / PLUGIN_ID / "plugin.toml").is_file())
 
     def test_10_entry_without_id_is_rejected(self):
         with self.assertRaises(UpdateRejected):
@@ -440,10 +440,10 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         self.install_local("1.0.0")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as zf:
-            zf.writestr(f"{PLUGIN_ID}/plugin.json", json.dumps(manifest("2.0.0"), ensure_ascii=False))
+            zf.writestr(f"{PLUGIN_ID}/plugin.toml", toml_io.dumps(manifest("2.0.0")))
         with self.assertRaises(PluginInstallError):
             apply_plugin_update(entry("2.0.0"), local_version="1.0.0", data=buffer.getvalue())
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "1.0.0")
 
     def test_12_missing_zip_url_without_data_is_rejected(self):
@@ -469,7 +469,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
         result = apply_plugin_update(entry("2.0.0"), local_version="", data=build_zip("2.0.0"))
         self.assertEqual(result["from"], "")
         self.assertEqual(result["preserved"], [])
-        self.assertTrue((self.plugins_dir / PLUGIN_ID / "plugin.json").is_file())
+        self.assertTrue((self.plugins_dir / PLUGIN_ID / "plugin.toml").is_file())
 
 
 class ApplyUpdatesBatchTest(IsolatedDirsMixin):
@@ -580,7 +580,7 @@ class PendingStateTest(IsolatedDirsMixin):
         self.assertTrue(result["had_pending"])
         self.assertEqual([row["id"] for row in result["resumed"]], [PLUGIN_ID])
         self.assertEqual(result["failed"], [])
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "2.0.0")
         self.assertEqual((self.plugins_dir / PLUGIN_ID / "bank" / "bank.db").read_text(encoding="utf-8"),
                          "真题库")
@@ -602,7 +602,7 @@ class PendingStateTest(IsolatedDirsMixin):
         write_pending("", [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0", "zip_path": str(zip_path)}])
         result = resume_pending()
         self.assertEqual([row["id"] for row in result["failed"]], [PLUGIN_ID])
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"],
                          "1.0.0")
 
     def test_09_resume_without_pending_is_a_noop(self):
@@ -958,7 +958,7 @@ class ModuleSurfaceTest(unittest.TestCase):
     def test_03_every_real_core_bank_file_survives_an_update(self):
         """拿本机 bank-engine 目录里的真实文件名跑一遍合并：一个都不许丢。
 
-        官方发行包只含代码（``plugin.json`` / ``LICENSE`` / ``dist/*``），
+        官方发行包只含代码（``plugin.toml`` / ``LICENSE`` / ``dist/*``），
         题库、备份、灌库报告与几十张题目配图都不在包里，靠合并语义保住；
         万一包里带了同名 ``bank.db``（空壳种子库），则必须以旧的为准。
         """
@@ -975,11 +975,11 @@ class ModuleSurfaceTest(unittest.TestCase):
             root = Path(tmp)
             local = root / "local"
             staged = root / "staged"
-            for name in real_names + ["plugin.json", "LICENSE", "dist/plugin.js"]:
+            for name in real_names + ["plugin.toml", "LICENSE", "dist/plugin.js"]:
                 path = local / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("本机内容", encoding="utf-8")
-            for name in ("plugin.json", "LICENSE", "dist/plugin.js", "bank.db"):
+            for name in ("plugin.toml", "LICENSE", "dist/plugin.js", "bank.db"):
                 path = staged / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("新包内容", encoding="utf-8")
@@ -991,14 +991,14 @@ class ModuleSurfaceTest(unittest.TestCase):
                 self.assertEqual((staged / name).read_text(encoding="utf-8"), "本机内容",
                                  f"{name} 的内容被新包顶掉了")
             self.assertIn("bank.db", kept["data_overridden"])
-            self.assertEqual((staged / "plugin.json").read_text(encoding="utf-8"), "新包内容")
+            self.assertEqual((staged / "plugin.toml").read_text(encoding="utf-8"), "新包内容")
             self.assertEqual((staged / "dist" / "plugin.js").read_text(encoding="utf-8"), "新包内容")
 
     def test_04_data_whitelist_covers_the_database_and_backup_suffixes(self):
         for name in ("bank.db", "bank.db-wal", "bank.db-shm", "jiuzhang.sqlite3",
                      "bank.db.pre-v082.bak", "download.part", "migration_report.json"):
             self.assertTrue(plugin_update._is_data_file(Path(name)), f"{name} 必须按数据文件办")
-        for name in ("plugin.json", "dist/plugin.js", "LICENSE", "plugin.css", "schema.sql"):
+        for name in ("plugin.toml", "dist/plugin.js", "LICENSE", "plugin.css", "schema.sql"):
             self.assertFalse(plugin_update._is_data_file(Path(name)), f"{name} 是代码，不该按数据办")
 
 
@@ -1164,8 +1164,8 @@ class UpdateHttpTest(unittest.TestCase):
             import shutil
             shutil.rmtree(destination)
         (destination / "dist").mkdir(parents=True)
-        (destination / "plugin.json").write_text(
-            json.dumps(manifest(version, plugin_id=plugin_id), ensure_ascii=False), encoding="utf-8")
+        (destination / "plugin.toml").write_text(
+            toml_io.dumps(manifest(version, plugin_id=plugin_id)), encoding="utf-8")
         (destination / "LICENSE").write_text(LICENSE_TEXT, encoding="utf-8")
         (destination / "dist" / "plugin.js").write_text(f"console.log('v{version}');", encoding="utf-8")
         if with_data:
@@ -1223,7 +1223,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.assertEqual([row["id"] for row in body["updated"]], [PLUGIN_ID])
         self.assertEqual(body["updated"][0]["to"], "2.0.0")
         self.assertEqual(body["failed"], [])
-        self.assertEqual(json.loads((destination / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(destination / "plugin.toml", {})["version"],
                          "2.0.0")
         self.assertEqual((destination / "dist" / "plugin.js").read_text(encoding="utf-8"),
                          "console.log('v2.0.0');")
@@ -1239,7 +1239,7 @@ class UpdateHttpTest(unittest.TestCase):
         skipped = {row["id"]: row for row in body["skipped"]}
         self.assertIn("org.jiuzhang.future", skipped)
         self.assertEqual(skipped["org.jiuzhang.future"]["state"], "incompatible")
-        self.assertEqual(json.loads((future_dir / "plugin.json").read_text(encoding="utf-8"))["version"],
+        self.assertEqual(toml_io.load(future_dir / "plugin.toml", {})["version"],
                          "1.0.0", "不兼容的条目绝不允许覆盖本地代码")
         self.assertEqual((future_dir / "dist" / "plugin.js").read_text(encoding="utf-8"),
                          "console.log('v1.0.0');")
@@ -1317,8 +1317,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.assertTrue(last["had_pending"])
         self.assertEqual([row["id"] for row in last["resumed"]], [PLUGIN_ID])
         self.assertEqual(last["failed"], [])
-        self.assertEqual(json.loads((self.plugins_dir / PLUGIN_ID / "plugin.json")
-                                    .read_text(encoding="utf-8"))["version"], "2.0.0")
+        self.assertEqual(toml_io.load(self.plugins_dir / PLUGIN_ID / "plugin.toml", {})["version"], "2.0.0")
         self.assertEqual((self.plugins_dir / PLUGIN_ID / "bank" / "bank.db").read_text(encoding="utf-8"),
                          "老师的真题库", "续更同样必须保住题库")
         self.assertEqual(body["pending"], [], "补齐跑完就清状态")

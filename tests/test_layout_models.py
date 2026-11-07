@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import sys
 import tempfile
@@ -17,6 +16,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
+from app.core import toml_io
 from app.core.layout import layout_model_store as store
 from app.core.layout import layout_router, layout_yolo, layout_yolo_runtime
 from app.core import ingest_route
@@ -44,8 +44,7 @@ def write_config(plugin_dir: Path, *, full_min: int = 16, quant_min: int = 8) ->
             },
         },
     }
-    (plugin_dir / "model_config.json").write_text(
-        json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    toml_io.write(plugin_dir / "model_config.toml", document)
 
 
 class ModelStoreTest(unittest.TestCase):
@@ -63,7 +62,7 @@ class ModelStoreTest(unittest.TestCase):
         store._THREADS.clear()
 
     def test_01_real_config_has_mirrors_and_versions(self) -> None:
-        document = json.loads((PLUGIN_DIR / "model_config.json").read_text(encoding="utf-8"))
+        document = toml_io.load(PLUGIN_DIR / "model_config.toml", {})
         for kind in ("full", "quantized"):
             entry = document["models"][kind]
             self.assertEqual(entry["version"], "v1.0")

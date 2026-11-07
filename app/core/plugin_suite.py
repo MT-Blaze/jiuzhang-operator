@@ -1,4 +1,4 @@
-"""插件套件（suite.json）与插件依赖声明（requires）的契约。
+"""插件套件（suite.toml）与插件依赖声明（requires）的契约。
 
 契约来源：PLUGIN_SPEC §1.8。套件只是**分发容器**：一个 zip 里装若干子插件，
 底座仍然按普通插件目录逐个发现、启用与校验；套件本身不是插件，不占左栏、
@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-SUITE_FILENAME = "suite.json"
+SUITE_FILENAME = "suite.toml"
 SUITE_SCHEMA_VERSION = "1.0"
 MAX_SUITE_PLUGINS = 16
 MAX_REQUIRES = 16
@@ -22,7 +22,7 @@ _SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
 class SuiteRejected(ValueError):
-    """suite.json 未通过校验。"""
+    """套件清单未通过校验。"""
 
 
 def normalize_requires(raw: Any, plugin_id: str) -> list[str]:
@@ -52,31 +52,31 @@ def normalize_requires(raw: Any, plugin_id: str) -> list[str]:
 
 
 def parse_suite_manifest(raw: Any) -> dict[str, Any]:
-    """校验 suite.json 并返回归一后的套件元信息。"""
+    """校验 suite.toml 并返回归一后的套件元信息。"""
     if not isinstance(raw, dict):
-        raise SuiteRejected("suite.json 必须是 JSON 对象")
+        raise SuiteRejected("套件清单必须是表（TOML 对象）")
     if raw.get("schema_version") != SUITE_SCHEMA_VERSION:
-        raise SuiteRejected(f"suite.json 的 schema_version 必须为 {SUITE_SCHEMA_VERSION}")
+        raise SuiteRejected(f"套件清单的 schema_version 必须为 {SUITE_SCHEMA_VERSION}")
 
     suite_id = raw.get("id")
     if not isinstance(suite_id, str) or _PLUGIN_ID.fullmatch(suite_id) is None:
-        raise SuiteRejected("suite.json 的 id 缺失或不是反向域名格式")
+        raise SuiteRejected("套件清单的 id 缺失或不是反向域名格式")
 
     name = raw.get("name")
     if not isinstance(name, str) or not 1 <= len(name) <= 64:
-        raise SuiteRejected("suite.json 的 name 长度必须为 1–64")
+        raise SuiteRejected("套件清单的 name 长度必须为 1–64")
 
     version = raw.get("version", "")
     if version and (not isinstance(version, str) or _SEMVER.fullmatch(version) is None):
-        raise SuiteRejected("suite.json 的 version 必须是语义化版本")
+        raise SuiteRejected("套件清单的 version 必须是语义化版本")
 
     description = raw.get("description", "")
     if not isinstance(description, str):
-        raise SuiteRejected("suite.json 的 description 必须是字符串")
+        raise SuiteRejected("套件清单的 description 必须是字符串")
 
     plugins = raw.get("plugins")
     if not isinstance(plugins, list) or not plugins:
-        raise SuiteRejected("suite.json 的 plugins 必须是非空数组")
+        raise SuiteRejected("套件清单的 plugins 必须是非空数组")
     if len(plugins) > MAX_SUITE_PLUGINS:
         raise SuiteRejected(f"一个套件最多装 {MAX_SUITE_PLUGINS} 个子插件")
 
@@ -84,9 +84,9 @@ def parse_suite_manifest(raw: Any) -> dict[str, Any]:
     members: list[str] = []
     for item in plugins:
         if not isinstance(item, str) or _PLUGIN_ID.fullmatch(item) is None:
-            raise SuiteRejected(f"suite.json 的成员 {item!r} 不是合法插件 id")
+            raise SuiteRejected(f"suite.toml 的成员 {item!r} 不是合法插件 id")
         if item in seen:
-            raise SuiteRejected(f"suite.json 的成员重复：{item}")
+            raise SuiteRejected(f"suite.toml 的成员重复：{item}")
         seen.add(item)
         members.append(item)
     if suite_id in seen:

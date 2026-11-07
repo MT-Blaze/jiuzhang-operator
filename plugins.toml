@@ -1,0 +1,75 @@
+index_version = "1.0"
+name = "九章算子官方插件索引"
+updated_at = "2026-11-07"
+
+[[entries]]
+id = "org.jiuzhang.bank-engine"
+name = "题库引擎"
+version = "1.0.1"
+kind = "tool"
+api_version = "1.0"
+description = "无界面的题库数据引擎（军令 #20 从 core-bank 拆出）：负责七表结构、题目读写、大纲与考向、查重扫描与收敛合并事务。只经 Host API 调用，数据落在当前工作区；引擎受保护，控制台不可卸载。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.bank-engine.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-engine"
+min_host_version = "1.0.0"
+
+[[entries]]
+id = "org.jiuzhang.bank-ui"
+name = "真题题库"
+version = "1.0.3"
+kind = "tool"
+api_version = "1.0"
+description = "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列；数据一律向当前活跃题库引擎申请，自己不碰数据库。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.bank-ui.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-ui"
+min_host_version = "1.0.0"
+
+[[entries]]
+id = "org.jiuzhang.paper-gen"
+name = "组卷排版"
+version = "1.0.1"
+kind = "tool"
+api_version = "1.0"
+description = "把题篮里的真题排成 A4 练习卷：自动分页、公式渲染、答案可选、可直接打印为 PDF。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.paper-gen.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.paper-gen.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.paper-gen"
+min_host_version = "1.0.0"
+
+[[entries]]
+id = "org.jiuzhang.handout"
+name = "讲义排版"
+version = "1.0.1"
+kind = "tool"
+api_version = "1.0"
+description = "把 Markdown 讲义原稿实时排成 A4：标题分级、公式渲染、列表与表格自动分页，可直接打印为 PDF。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.handout.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.handout.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.handout"
+min_host_version = "1.0.0"
+
+[[entries]]
+id = "org.jiuzhang.editor"
+name = "录题工作台"
+version = "2.12.0"
+kind = "tool"
+api_version = "1.0"
+description = "录题工作台：三段式辅助栏。顶部固定当前题私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据（含年级）随画布滚动收起，底部存库/待审/删除。标签与考向走幽灵胶囊：空胶囊常驻，悬停接光标，打字出带路径搜索，回车取第一条。边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。查重命中亮红呼吸灯，可覆盖/放弃/合并解析二。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.editor.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.editor.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.editor"
+min_host_version = "1.0.0"
+
+[[entries]]
+id = "org.jiuzhang.dashboard"
+name = "数据看板"
+version = "1.0.1"
+kind = "renderer"
+api_version = "1.0"
+description = "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达题库）。全部数据来自活跃题库的只读看板通道。需底座 v1.0.0 及以上。"
+zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip"
+mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.dashboard.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.dashboard.zip"]
+homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.dashboard"
+min_host_version = "1.0.0"

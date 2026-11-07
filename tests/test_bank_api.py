@@ -24,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from app.core import manifests  # noqa: E402
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1400,8 +1401,7 @@ class StageRelayContractTest(unittest.TestCase):
         for channel in ('sharedBase + "/review?', 'sharedBase + "/questions/', 'sharedBase + "/topics'):
             self.assertIn(channel, source)
         # 题库端不再持有写权限，也不再有行内改题；改题按钮只发跳转
-        bank_manifest = json.loads(
-            (ROOT / "plugins" / "org.jiuzhang.bank-ui" / "plugin.json").read_text(encoding="utf-8"))
+        bank_manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.bank-ui")
         self.assertEqual(bank_manifest["permissions"], ["questions:read"])
         self.assertIn("system.open_editor", bank_manifest["bus"]["publish"])
         bank_js = plugin_bundle("org.jiuzhang.bank-ui")

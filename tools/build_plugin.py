@@ -9,7 +9,7 @@
 
 设计口径（PLUGIN_SPEC §1.2 / §1.8）：
 - zip 只是分发容器，单插件包顶层必须是 ``<id>/``，解压即用；
-- 套件包顶层是 ``suite.json`` + 各子插件目录，一次安装、同进同退；
+- 套件包顶层是 ``suite.toml`` + 各子插件目录，一次安装、同进同退；
 - 打包前必须通过 ``app.core.plugins.validate_plugin`` 全套契约校验，校验不过不产出；
 - 套件必须自带全部依赖（requires 闭包），否则等于发一个空壳套件；
 - 拒绝把密钥、临时文件、嵌套 zip、符号链接、缓存打进去；
@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -28,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_suite  # noqa: E402
+from app.core import manifests, plugin_suite, toml_io  # noqa: E402
 from app.core.plugins import PluginRejected, validate_plugin  # noqa: E402
 
 DENY_NAMES = {
@@ -91,15 +90,14 @@ def _iter_payload(plugin_dir: Path):
 
 def build_plugin(plugin_dir: Path, out_dir: Path) -> Path:
     plugin_dir = plugin_dir.resolve()
-    manifest_path = plugin_dir / "plugin.json"
-    if not manifest_path.is_file():
-        raise BuildError(f"{plugin_dir} 下没有 plugin.json")
+    if manifests.manifest_path(plugin_dir) is None:
+        raise BuildError(f"{plugin_dir} 下没有 plugin.toml")
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(plugin_dir)
         # 声明了却被丢弃的命令要当场回给作者：打包成功不等于命令生效
         command_issues: list[dict[str, str]] = []
         info = validate_plugin(plugin_dir, manifest, command_issues)
-    except (OSError, json.JSONDecodeError, PluginRejected) as exc:
+    except (OSError, ValueError, PluginRejected) as exc:
         raise BuildError(f"清单校验失败：{exc}") from exc
     for issue in command_issues:
         label = f"「{issue['id']}」" if issue.get("id") else ""
@@ -139,7 +137,7 @@ def discover_package_dirs(plugins_dir: Path) -> list[Path]:
         return []
     result: list[Path] = []
     for child in sorted(plugins_dir.iterdir(), key=lambda item: item.name):
-        if child.is_dir() and (child / "plugin.json").is_file():
+        if child.is_dir() and manifests.manifest_path(child) is not None:
             result.append(child)
     return result
 
@@ -148,9 +146,9 @@ def _resolve_plugin_dirs(members: list[str], plugins_dir: Path) -> list[Path]:
     result: list[Path] = []
     for item in members:
         candidate = Path(item)
-        if not (candidate / "plugin.json").is_file():
+        if manifests.manifest_path(candidate) is None:
             candidate = plugins_dir / item
-        if not (candidate / "plugin.json").is_file():
+        if manifests.manifest_path(candidate) is None:
             raise BuildError(f"找不到插件目录：{item}")
         result.append(candidate.resolve())
     return result
@@ -202,15 +200,15 @@ def build_suite(
     description: str = SUITE_DEFAULT_DESCRIPTION,
     version: str = "",
 ) -> Path:
-    """把若干已校验的子插件打成一个套件包（顶层 suite.json + 各 <id>/）。"""
+    """把若干已校验的子插件打成一个套件包（顶层 suite.toml + 各 <id>/）。"""
     loaded: list[tuple[dict, Path]] = []
     for plugin_dir in member_dirs:
         plugin_dir = plugin_dir.resolve()
         try:
-            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            manifest = manifests.load_manifest(plugin_dir)
             command_issues: list[dict[str, str]] = []
             info = validate_plugin(plugin_dir, manifest, command_issues)
-        except (OSError, json.JSONDecodeError, PluginRejected) as exc:
+        except (OSError, ValueError, PluginRejected) as exc:
             raise BuildError(f"{plugin_dir.name} 清单校验失败：{exc}") from exc
         for issue in command_issues:
             label = f"「{issue['id']}」" if issue.get("id") else ""
@@ -270,7 +268,7 @@ def build_suite(
         with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
             archive.writestr(
                 plugin_suite.SUITE_FILENAME,
-                json.dumps(suite_manifest, ensure_ascii=False, indent=2) + "\n",
+                toml_io.dumps(suite_manifest),
             )
             for info, payload in packed:
                 for relative, path in payload:
@@ -292,7 +290,7 @@ def build_suite(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验并打包九章算子插件（标准 zip，顶层为插件 id）")
-    parser.add_argument("plugin_dir", nargs="?", help="插件目录（含 plugin.json）")
+    parser.add_argument("plugin_dir", nargs="?", help="插件目录（含 plugin.toml）")
     parser.add_argument("--all", action="store_true", help="打包 plugins/ 下全部插件")
     parser.add_argument("--plugins-dir", default=str(ROOT / "plugins"), help="插件根目录")
     parser.add_argument("--out", default=str(ROOT / "dist" / "plugins"), help="zip 输出目录")

@@ -20,7 +20,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import commands
+from app.core import commands, manifests
 from app.core.plugins import discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source, template_source, workspace_source  # noqa: E402
 
@@ -314,7 +314,7 @@ class HostApiContractTest(unittest.TestCase):
 class TemplatePluginTest(unittest.TestCase):
     def test_19_template_declares_and_handles_a_command(self) -> None:
         template = ROOT / "examples" / "template-plugin"
-        manifest = json.loads((template / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(template)
         with tempfile.TemporaryDirectory() as tmp:
             # 校验器要求顶层目录名与 id 一字不差；模板目录为了肉眼好认叫 template-plugin。
             plugin_dir = Path(tmp) / manifest["id"]
@@ -507,8 +507,8 @@ class OfficialPluginCommandsTest(unittest.TestCase):
         cls.info = {}
         cls.missing_issues = []
         for plugin_id in cls.EXPECTED:
-            path = ROOT / "plugins" / plugin_id / "plugin.json"
-            manifest = json.loads(path.read_text(encoding="utf-8"))
+            path = manifests.manifest_path(ROOT / "plugins" / plugin_id)
+            manifest = manifests.load_manifest(path.parent)
             cls.manifests[plugin_id] = manifest
             issues: list = []
             cls.info[plugin_id] = validate_plugin(path.parent, manifest, issues)

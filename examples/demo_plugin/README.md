@@ -7,7 +7,7 @@
 - 能力：`question.import`、`question.render`
 - 权限：`questions:read`
 - 协议：`jzo-plugin/1`
-- 题目数据：`seed/questions.json`，逐题通过 `schemas/question.json`（Question 1.0）校验
+- 题目数据：`seed/questions.toml`，逐题通过 `schemas/question.toml`（Question 1.0）校验
 
 插件运行在无 `allow-same-origin` 的沙箱 iframe 中：只接收宿主投递的题目快照，
 返回经过转义的 HTML 片段；不联网、不读宿主存储、不接触宿主 DOM。
@@ -22,5 +22,5 @@
 python examples/build_demo_plugin.py
 ```
 
-脚本会重新校验 `seed/questions.json`、把题目内联进 `dist/plugin.js` 的构建副本，
+脚本会重新校验 `seed/questions.toml`、把题目内联进 `dist/plugin.js` 的构建副本，
 并生成 `examples/demo_plugin.zip`（底座首次运行时静默安装的就是这个包）。

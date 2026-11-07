@@ -20,6 +20,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from app.core import manifests
 from app.core.plugins import validate_plugin
 from tools.build_plugin import build_plugin
 from tests.core_sources import bundle_local_assets  # noqa: E402
@@ -43,7 +44,7 @@ def read(name: str) -> str:
 
 class HandoutManifestTest(unittest.TestCase):
     def test_01_manifest_passes_host_validation(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         info = validate_plugin(PLUGIN_DIR, manifest)
         self.assertEqual(info["id"], "org.jiuzhang.handout")
         self.assertIn("stage.center", info["slots"])
@@ -51,7 +52,7 @@ class HandoutManifestTest(unittest.TestCase):
         self.assertEqual(info["permissions"], [], "讲义插件不需要任何宿主数据权限")
 
     def test_02_stage_is_singleton_with_priority(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         stage = manifest["stage"]
         self.assertEqual(stage["region"], "center")
         self.assertEqual(stage["mode"], "takeover")
@@ -60,14 +61,14 @@ class HandoutManifestTest(unittest.TestCase):
         self.assertLessEqual(len(stage["title"]), 24)
 
     def test_03_ui_size_control_matches_state(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         controls = {item["key"]: item for item in manifest["ui"]["controls"]}
         self.assertEqual(controls["size"]["default"], "标准")
         self.assertIn("大字", [item["value"] for item in controls["size"]["options"]])
         self.assertIn('size: "normal"', read("plugin.js"))
 
     def test_04_bus_is_minimal(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         # 讲义是输出端：只订阅「题目已更新」（新名 + 老插件别名两条）用来标脏，不申请任何写通道。
         # 这条清单必须与 plugin.js 里真的按 event 分支处理的主题逐字全等——由
         # tests.test_plugin_bus_parity 统一守，这里只钉住「没有多要写通道」。
@@ -161,7 +162,7 @@ class HandoutPackageTest(unittest.TestCase):
             self.assertNotIn(".env", parts)
             self.assertNotIn("__pycache__", parts)
         joined = "\n".join(names)
-        self.assertIn("org.jiuzhang.handout/plugin.json", joined)
+        self.assertIn("org.jiuzhang.handout/plugin.toml", joined)
         self.assertIn("org.jiuzhang.handout/dist/index.html", joined)
         self.assertIn("org.jiuzhang.handout/LICENSE", joined)
         self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))

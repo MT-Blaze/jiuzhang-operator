@@ -5,9 +5,9 @@
 
 - 拒绝加密条目、符号链接、绝对路径、``..`` 穿越、嵌套 zip；
 - 条目数与解压总量设上限，防 zip 炸弹；
-- 解压先进临时暂存区，过完 ``plugin.json`` 全套契约校验才落地；
+- 解压先进临时暂存区，过完 ``plugin.toml`` 全套契约校验才落地；
 - 已存在同名插件时默认拒绝（409），用户显式确认 ``replace`` 才覆盖；
-- 套件包（顶层 ``suite.json``）一次装多个子插件，整包同进同退：
+- 套件包（顶层 ``suite.toml``）一次装多个子插件，整包同进同退：
   依赖预检不过整包拒绝，落地中途失败按备份回滚，plugins/ 不留半套。
 """
 
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import shutil
 import stat
 import tempfile
@@ -25,7 +24,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from app.core import plugin_suite
+from app.core import manifests, plugin_suite, toml_io, wire
 from app.core.config import plugins_dir
 from app.core.plugins import _PLUGIN_ID, PluginRejected, discover_plugins, validate_plugin
 
@@ -73,27 +72,16 @@ def _check_entry(info: zipfile.ZipInfo) -> PurePosixPath:
 def _find_plugin_root(entries: list[PurePosixPath]) -> tuple[str, ...]:
     """定位单插件包内的插件根目录。
 
-    两种合法结构：zip 顶层就是插件目录内容（plugin.json 在顶层），
+    两种合法结构：zip 顶层就是插件目录内容（``plugin.toml`` 在顶层），
     或所有条目都收在唯一一个顶层目录下（该目录名即插件 id）。
-    返回插件根的前缀 parts（顶层结构时为空元组）。
+    旧包的 ``plugin.json`` 同样认，落地时统一转成 TOML。
     """
-    if PurePosixPath("plugin.json") in entries:
-        return ()
-
-    # __MACOSX、.DS_Store 之类打包噪音不参与「唯一顶层目录」判定
-    tops = {
-        parts[0]
-        for parts in (entry.parts for entry in entries)
-        if parts and parts[0] != "__MACOSX" and not parts[0].startswith(".")
-    }
-    if len(tops) == 1:
-        top = next(iter(tops))
-        if PurePosixPath(top) / "plugin.json" in entries:
-            return (top,)
-
+    prefix = manifests.plugin_root_prefix(entries)
+    if prefix is not None:
+        return prefix
     raise PluginInstallError(
-        "找不到 plugin.json：zip 顶层目录名必须等于插件 id，其内含 plugin.json；"
-        "或把 plugin.json 直接放在 zip 顶层"
+        "找不到 plugin.toml：zip 顶层目录名必须等于插件 id，其内含 plugin.toml；"
+        "或把 plugin.toml 直接放在 zip 顶层"
     )
 
 
@@ -118,8 +106,8 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path, prefix: tuple[str, ...]) -
         target.parent.mkdir(parents=True, exist_ok=True)
         with zf.open(info) as src, open(target, "wb") as dst:
             shutil.copyfileobj(src, dst, length=1024 * 256)
-    if not (plugin_root / "plugin.json").is_file():
-        raise PluginInstallError("解压后未找到 plugin.json")
+    if manifests.manifest_path(plugin_root) is None:
+        raise PluginInstallError("解压后未找到 plugin.toml")
     return plugin_root
 
 
@@ -131,13 +119,13 @@ def _stage_plugin(
     unpacked.mkdir()
     plugin_root = _safe_extract(zf, unpacked, prefix)
     try:
-        manifest = json.loads((plugin_root / "plugin.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise PluginInstallError(f"plugin.json 无法解析：{exc}") from exc
+        manifest = manifests.normalize_manifest(plugin_root)
+    except (OSError, ValueError) as exc:
+        raise PluginInstallError(f"插件清单无法解析：{exc}") from exc
 
     plugin_id = manifest.get("id") if isinstance(manifest, dict) else None
     if not isinstance(plugin_id, str) or _PLUGIN_ID.fullmatch(plugin_id) is None:
-        raise PluginInstallError("plugin.json 的 id 缺失或不是反向域名格式")
+        raise PluginInstallError("插件清单的 id 缺失或不是反向域名格式")
 
     named_root = staging / plugin_id
     if named_root.exists():
@@ -146,7 +134,7 @@ def _stage_plugin(
     try:
         info = validate_plugin(named_root, manifest)
     except PluginRejected as exc:
-        raise PluginInstallError(f"plugin.json 未通过契约校验：{exc}") from exc
+        raise PluginInstallError(f"插件清单未通过契约校验：{exc}") from exc
     except OSError as exc:
         raise PluginInstallError(f"插件包读取失败：{exc}") from exc
     return named_root, info
@@ -155,44 +143,48 @@ def _stage_plugin(
 def _read_suite_manifest(
     zf: zipfile.ZipFile, entries: list[PurePosixPath]
 ) -> dict[str, Any] | None:
-    """顶层有 suite.json 就是套件包；单插件包返回 None。
+    """顶层有 suite.toml 就是套件包；单插件包返回 None。
 
-    套件版式固定为「顶层 suite.json + 各子插件目录」，不猜、不兼容单插件
-    的两种旧版式——套件是底座新增的分发形态，没有历史包袱要背。
+    套件版式固定为「顶层 suite.toml + 各子插件目录」；旧包的 ``suite.json``
+    只读兼容，落地时不需要它随行。
     """
-    if PurePosixPath(plugin_suite.SUITE_FILENAME) not in entries:
+    names = manifests.suite_entry_names(entries)
+    if not names:
         return None
+    name = names[0]
 
-    raw_info = zf.getinfo(plugin_suite.SUITE_FILENAME)
+    raw_info = zf.getinfo(name)
     if raw_info.file_size > plugin_suite.MAX_SUITE_BYTES:
-        raise PluginInstallError("suite.json 超过 64 KB 上限")
+        raise PluginInstallError("suite.toml 超过 64 KB 上限")
     try:
-        raw = json.loads(zf.read(raw_info).decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PluginInstallError(f"suite.json 无法解析：{exc}") from exc
+        text = zf.read(raw_info).decode("utf-8")
+        raw = toml_io.loads(text) if name.endswith(".toml") else wire.loads(text)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise PluginInstallError(f"suite.toml 无法解析：{exc}") from exc
     try:
         return plugin_suite.parse_suite_manifest(raw)
     except plugin_suite.SuiteRejected as exc:
-        raise PluginInstallError(f"suite.json 未通过契约校验：{exc}") from exc
+        raise PluginInstallError(f"suite.toml 未通过契约校验：{exc}") from exc
 
 
 def _check_suite_layout(entries: list[PurePosixPath], suite: dict[str, Any]) -> None:
-    """套件包顶层只许有 suite.json 与清单里声明的成员目录。"""
+    """套件包顶层只许有套件清单与清单里声明的成员目录。"""
     members = set(suite["plugins"])
     tops = {
         parts[0]
         for parts in (entry.parts for entry in entries)
         if parts and parts[0] != "__MACOSX" and not parts[0].startswith(".")
     }
-    extra = sorted(tops - members - {plugin_suite.SUITE_FILENAME})
+    allowed = set(manifests.SUITE_MANIFESTS)
+    extra = sorted(tops - members - allowed)
     if extra:
         raise PluginInstallError(
-            "套件包里有 suite.json 未声明的顶层内容：" + "、".join(extra)
+            "套件包里有套件清单未声明的顶层内容：" + "、".join(extra)
         )
     absent = sorted(members - tops)
     if absent:
         raise PluginInstallError(
-            "suite.json 声明的成员在包里不存在：" + "、".join(absent)
+            "suite.toml 声明的成员在包里不存在：" + "、".join(absent)
         )
 
 
@@ -204,7 +196,7 @@ def _check_suite_closure(staged: list[tuple[Path, dict[str, Any]]]) -> None:
         if missing:
             raise PluginInstallError(
                 f"套件不完整：{info['id']} 依赖的 " + "、".join(missing)
-                + " 不在 suite.json 的 plugins 里（套件必须自带全部依赖）",
+                + " 不在 suite.toml 的 plugins 里（套件必须自带全部依赖）",
                 code="incomplete_suite",
             )
 

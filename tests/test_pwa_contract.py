@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import struct
 import unittest
 from pathlib import Path
@@ -21,7 +20,9 @@ def _read(path: Path) -> str:
 
 class PwaManifestTest(unittest.TestCase):
     def test_01_manifest_has_installable_fields(self) -> None:
-        data = json.loads(_read(STATIC / "manifest.json"))
+        from app.core import pwa
+
+        data = pwa.MANIFEST.as_dict()
         self.assertTrue(data["name"])
         self.assertTrue(data["short_name"])
         self.assertEqual(data["start_url"], "/")
@@ -31,7 +32,15 @@ class PwaManifestTest(unittest.TestCase):
         sizes = {icon["sizes"] for icon in data["icons"]}
         self.assertTrue({"192x192", "512x512"} <= sizes, sizes)
 
-    def test_02_icons_are_real_png_at_declared_size(self) -> None:
+    def test_02_manifest_is_served_by_route_not_json_file(self) -> None:
+        from app.main import app
+        from app.core import pwa
+
+        self.assertFalse((STATIC / "manifest.json").exists(), "磁盘上不许再有 .json 清单")
+        paths = {getattr(route, "path", None) for route in app.routes}
+        self.assertIn(pwa.MANIFEST_PATH, paths, "缺少 PWA 清单路由")
+
+    def test_03_icons_are_real_png_at_declared_size(self) -> None:
         for size in (192, 512):
             path = STATIC / "icons" / f"icon-{size}.png"
             raw = path.read_bytes()
@@ -39,14 +48,14 @@ class PwaManifestTest(unittest.TestCase):
             width, height = struct.unpack(">II", raw[16:24])
             self.assertEqual((width, height), (size, size), path.name)
 
-    def test_03_pages_advertise_manifest_and_register_sw(self) -> None:
+    def test_04_pages_advertise_manifest_and_register_sw(self) -> None:
         for name in PAGES:
             text = _read(STATIC / name)
             self.assertIn('rel="manifest"', text, f"{name} 没挂 PWA 清单")
-            self.assertIn("/static/manifest.json", text, name)
+            self.assertIn("/manifest.webmanifest", text, name)
             self.assertIn("/static/js/pwa.js", text, f"{name} 没注册 SW")
 
-    def test_04_service_worker_is_root_scoped_and_cache_free(self) -> None:
+    def test_05_service_worker_is_root_scoped_and_cache_free(self) -> None:
         from app.main import app
 
         paths = {getattr(route, "path", None) for route in app.routes}

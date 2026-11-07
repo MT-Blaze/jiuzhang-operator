@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_index, plugin_sources  # noqa: E402
+from app.core import plugin_index, plugin_sources, toml_io  # noqa: E402
 
 TOKEN = "index-test-token"
 
@@ -46,9 +46,7 @@ def good_entry(**overrides) -> dict:
 class IndexParsingTest(unittest.TestCase):
     def test_shipped_example_index_is_valid_and_self_describing(self) -> None:
         """仓库自带的示例必须能被自己的解析器接受（防止规范与样例分叉）。"""
-        payload = json.loads(
-            (ROOT / "examples" / "plugins-index.example.json").read_text(encoding="utf-8")
-        )
+        payload = toml_io.load(ROOT / "examples" / "plugins-index.example.toml", {})
         parsed = plugin_index.parse_index(payload)
         self.assertEqual(parsed["rejected"], [])
         self.assertGreaterEqual(parsed["entry_count"], 1)
@@ -115,7 +113,7 @@ class UrlGuardTest(unittest.TestCase):
 
     def test_fetch_never_accepts_local_protocols_before_touching_network(self) -> None:
         """file:// 必须在发起任何请求前被拒——否则一个地址就能读走本机任意文件。"""
-        sample = ROOT / "examples" / "plugins-index.example.json"
+        sample = ROOT / "examples" / "plugins-index.example.toml"
         with self.assertRaises(plugin_index.IndexRejected):
             plugin_index.fetch_index(sample.as_uri())
 
@@ -211,7 +209,7 @@ class PluginIndexApiTest(unittest.TestCase):
         self.assertTrue(first["mirrors"])
 
     def test_03_rejects_non_http_scheme(self) -> None:
-        sample = (ROOT / "examples" / "plugins-index.example.json").as_posix()
+        sample = (ROOT / "examples" / "plugins-index.example.toml").as_posix()
         status, body = self.call("POST", "/api/plugins/index", {"url": "file:///" + sample.lstrip("/")}, token=TOKEN)
         self.assertEqual(status, 400)
         self.assertIn("http", str(body["detail"]))

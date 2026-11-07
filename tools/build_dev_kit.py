@@ -31,7 +31,7 @@ SOURCES = (
     ("docs/PLUGIN_SPEC.md", "PLUGIN_SPEC.md"),
     ("docs/API_REFERENCE.md", "API_REFERENCE.md"),
     ("docs/PROJECT_MEMORY.md", "PROJECT_MEMORY.md"),
-    ("examples/template-plugin/plugin.json", "template-plugin/plugin.json"),
+    ("examples/template-plugin/plugin.toml", "template-plugin/plugin.toml"),
     ("examples/template-plugin/LICENSE", "template-plugin/LICENSE"),
     ("examples/template-plugin/dist/index.html", "template-plugin/dist/index.html"),
     ("examples/template-plugin.zip", "template-plugin.zip"),
@@ -67,7 +67,7 @@ def template_dist_entries() -> list[tuple[str, str]]:
 FORBIDDEN_NAME = re.compile(
     r"(^|[/-])(\.env|\.git|\.venv|data|__pycache__|node_modules)([/-]|$)"
     r"|\.env(\.|$)|\.(db|db-shm|db-wal|db-journal|log|bak|key|pem)(\.|$)"
-    r"|questions?\.json$|seed/questions",
+    r"|questions?\.(json|toml)$|seed/questions",
     re.I,
 )
 

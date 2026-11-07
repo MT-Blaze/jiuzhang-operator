@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.core import commands as command_registry
-from app.core import plugin_state, plugin_suite
+from app.core import manifests, plugin_state, plugin_suite, toml_io
 from app.core.config import plugins_dir
 
 PROTOCOL = "jzo-plugin/1"
@@ -409,7 +408,7 @@ def validate_plugin(
     ``command_issues`` 是可选出参：发现流程把被丢弃的命令声明收进去记账，
     安装/打包流程不传，保持旧调用点不变。
     """
-    _require(isinstance(manifest, dict), "plugin.json 必须是 JSON 对象")
+    _require(isinstance(manifest, dict), "插件清单必须是表（TOML 对象）")
     _require(manifest.get("schema_version") == "1.0", "schema_version 必须为 1.0")
 
     plugin_id = manifest.get("id")
@@ -590,7 +589,7 @@ def _retired_plugin_ids(root: Path) -> set[str]:
     """
     from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 
-    if not (root / DEFAULT_PROVIDER_ID / "plugin.json").is_file():
+    if manifests.manifest_path(root / DEFAULT_PROVIDER_ID) is None:
         return set()
     return set(LEGACY_PROVIDER_IDS)
 
@@ -614,8 +613,8 @@ def discover_plugins() -> dict[str, Any]:
                 continue
             if plugin_dir.name in retired:
                 continue
-            manifest_path = plugin_dir / "plugin.json"
-            if not manifest_path.is_file():
+            manifest_path = manifests.manifest_path(plugin_dir)
+            if manifest_path is None:
                 continue
             try:
                 stat = manifest_path.stat()
@@ -625,7 +624,7 @@ def discover_plugins() -> dict[str, Any]:
             except OSError:
                 fingerprint.append(f"{plugin_dir.name}:unreadable")
             try:
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest = manifests.load_manifest(plugin_dir)
                 info = validate_plugin(plugin_dir, manifest, command_issues)
                 info["enabled"] = info["id"] not in disabled
                 # 视图层偏好就地附着：昵称空串表示「没起过名，用官方原名」，
@@ -633,7 +632,7 @@ def discover_plugins() -> dict[str, Any]:
                 info["nickname"] = prefs["nicknames"].get(info["id"], "")
                 info["disabled_at"] = prefs["disabled_at"].get(info["id"], "")
                 plugins.append(info)
-            except (PluginRejected, OSError, json.JSONDecodeError) as exc:
+            except (PluginRejected, OSError, ValueError) as exc:
                 rejected.append({"id": plugin_dir.name, "reason": str(exc)})
 
     # 依赖闭包（PLUGIN_SPEC §1.8）：装了但缺依赖的插件一律不启用。
@@ -664,8 +663,8 @@ def discover_plugins() -> dict[str, Any]:
     fingerprint.append("disabled:" + ",".join(sorted(disabled)))
     # 改昵称、挪分组都算清单变化——左栏与设置面板必须当场重排，
     # 而不是等下一次重启或手动刷新。
-    fingerprint.append("nick:" + json.dumps(prefs["nicknames"], sort_keys=True, ensure_ascii=False))
-    fingerprint.append("side:" + json.dumps(tree, sort_keys=True, ensure_ascii=False))
+    fingerprint.append("nick:" + toml_io.dumps({"values": prefs["nicknames"]}))
+    fingerprint.append("side:" + toml_io.dumps({"tree": tree}))
     # 热插拔的判据：清单文件的 mtime/size 任何一项变化都会改签名。
     # 前端只拿签名比对，不必自己猜“有没有新插件”；同版本号覆盖安装也能被发现。
     signature = hashlib.sha256("\n".join(fingerprint).encode("utf-8")).hexdigest()[:16]

@@ -100,7 +100,7 @@ curl -X GET http://127.0.0.1:8000/healthz
 1. 复制 [`examples/template-plugin/`](examples/template-plugin/)（成品包
    [`template-plugin.zip`](examples/template-plugin.zip)），改三处——清单里的 `id`/`name`（**目录名与 `id` 一字不差**）、
    `dist/plugin.js` 顶部的 `PLUGIN_ID`、入口页界面；
-2. 照最小清单填 `plugin.json`（字段表见 [PLUGIN_SPEC.md §2.3.2](docs/PLUGIN_SPEC.md)）：`entry.frontend` 必须在 `dist/` 下，
+2. 照最小清单填 `plugin.toml`（字段表见 [PLUGIN_SPEC.md §2.3.2](docs/PLUGIN_SPEC.md)）：`entry.frontend` 必须在 `dist/` 下，
    根目录带 Apache-2.0 的 `LICENSE`，禁止 `backend` 字段；要接管中央画布就加 `"slots": ["stage.center"]` 与 `stage` / `bus` 声明（§2.4）；
 3. 把 zip 拖进工作台任意位置，或在「设置与控制 → 插件」里装，然后打开 `/api/plugins` 看自己的 id 有没有出现。
 

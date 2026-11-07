@@ -20,6 +20,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from app.core import manifests
 from app.core.plugins import validate_plugin
 from tests.core_sources import bundle_local_assets
 from tools.build_plugin import build_plugin
@@ -39,14 +40,14 @@ def read(name: str) -> str:
 
 class PaperGenManifestTest(unittest.TestCase):
     def test_01_manifest_passes_host_validation(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         info = validate_plugin(PLUGIN_DIR, manifest)
         self.assertEqual(info["id"], "org.jiuzhang.paper-gen")
         self.assertIn("stage.center", info["slots"])
         self.assertTrue(info["entry_url"].startswith("/plugin-assets/"))
 
     def test_02_stage_is_high_priority_and_single_instance(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         stage = manifest["stage"]
         self.assertEqual(stage["region"], "center")
         self.assertEqual(stage["mode"], "takeover")
@@ -55,12 +56,12 @@ class PaperGenManifestTest(unittest.TestCase):
         self.assertLessEqual(len(stage["title"]), 24, "舞台页签标题不得超过 24 字")
 
     def test_03_permissions_are_read_only(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         self.assertEqual(manifest["permissions"], ["questions:read"])
         self.assertIn("paper.generate", manifest["capabilities"])
 
     def test_04_ui_controls_match_plugin_state(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         controls = {item["key"]: item for item in manifest["ui"]["controls"]}
         self.assertEqual(controls["answers"]["default"], "隐藏")
         self.assertEqual(controls["density"]["default"], "标准")
@@ -69,7 +70,7 @@ class PaperGenManifestTest(unittest.TestCase):
         self.assertIn('density: "normal"', source)
 
     def test_05_bus_only_takes_what_it_needs(self) -> None:
-        manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(PLUGIN_DIR)
         # 组卷是输出端：订阅题篮变化与回流刷新（新名 + 老插件别名），发布只多一个「去编辑」跳转。
         # `stage.tab.activated` 已删：代码里压根没有这条分支，留着就是假授权
         # （清单与代码逐字全等由 tests.test_plugin_bus_parity 统一守）。
@@ -226,7 +227,7 @@ class PaperGenPackageTest(unittest.TestCase):
             self.assertNotIn(".env", parts, name)
             self.assertNotIn("__pycache__", parts, name)
         joined = "\n".join(names)
-        self.assertIn("org.jiuzhang.paper-gen/plugin.json", joined)
+        self.assertIn("org.jiuzhang.paper-gen/plugin.toml", joined)
         self.assertIn("org.jiuzhang.paper-gen/dist/index.html", joined)
         self.assertIn("org.jiuzhang.paper-gen/LICENSE", joined)
         self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))

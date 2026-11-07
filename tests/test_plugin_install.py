@@ -21,6 +21,10 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app.core import toml_io  # noqa: E402
+
 TOKEN = "plugin-install-test-token"
 
 PLUGIN_ID = "org.jiuzhang.install-test"
@@ -57,7 +61,7 @@ def build_zip(
             return f"{top_dir}/{name}" if top_dir else name
 
         if manifest is not None:
-            zf.writestr(prefixed("plugin.json"), json.dumps(manifest, ensure_ascii=False))
+            zf.writestr(prefixed("plugin.toml"), toml_io.dumps(manifest))
         zf.writestr(prefixed("LICENSE"), LICENSE_TEXT)
         zf.writestr(prefixed("dist/plugin.js"), PLUGIN_JS)
         for name, text in (extra or {}).items():
@@ -161,7 +165,7 @@ class PluginInstallApiTest(unittest.TestCase):
         self.assertEqual(body["plugin"]["version"], "1.0.0", body)
 
         installed = self.plugins_dir / PLUGIN_ID
-        self.assertTrue((installed / "plugin.json").is_file())
+        self.assertTrue((installed / "plugin.toml").is_file())
         self.assertTrue((installed / "dist" / "plugin.js").is_file())
 
         status, listed = self.get_json("/api/plugins")
@@ -180,7 +184,7 @@ class PluginInstallApiTest(unittest.TestCase):
         self.assertEqual(body["plugin"]["version"], "1.1.0", body)
 
     def test_04_flat_zip_layout_installs_under_manifest_id(self) -> None:
-        # plugin.json 直接在 zip 顶层：落地目录名以清单 id 为准
+        # plugin.toml 直接在 zip 顶层：落地目录名以清单 id 为准
         status, body = self.post_zip(build_zip(top_dir=None))
         self.assertEqual(status, 409, body)  # 同 id 已装 → 冲突语义一致
         status, body = self.post_zip(build_zip(top_dir=None), replace=True)
@@ -222,7 +226,7 @@ class PluginInstallApiTest(unittest.TestCase):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as zf:
             for name, text in [
-                (f"{PLUGIN_ID}/plugin.json", json.dumps(MANIFEST, ensure_ascii=False)),
+                (f"{PLUGIN_ID}/plugin.toml", toml_io.dumps(MANIFEST)),
                 (f"{PLUGIN_ID}/LICENSE", LICENSE_TEXT),
                 (f"{PLUGIN_ID}/dist/plugin.js", PLUGIN_JS),
             ]:
@@ -251,7 +255,7 @@ class PluginInstallApiTest(unittest.TestCase):
         payload = build_zip(manifest=None)
         status, body = self.post_zip(payload, replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("plugin.json", json.dumps(body, ensure_ascii=False))
+        self.assertIn("plugin.toml", json.dumps(body, ensure_ascii=False))
 
     def test_12_rejects_manifest_contract_violation(self) -> None:
         broken = {**MANIFEST, "license": "MIT"}  # 契约要求 Apache-2.0
@@ -260,10 +264,10 @@ class PluginInstallApiTest(unittest.TestCase):
         self.assertIn("license", json.dumps(body, ensure_ascii=False))
 
     def test_13_failed_install_leaves_previous_version_intact(self) -> None:
-        before = (self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8")
+        before = (self.plugins_dir / PLUGIN_ID / "plugin.toml").read_text(encoding="utf-8")
         status, _ = self.post_zip(build_zip(manifest={**MANIFEST, "license": "MIT"}), replace=True)
         self.assertEqual(status, 400)
-        after = (self.plugins_dir / PLUGIN_ID / "plugin.json").read_text(encoding="utf-8")
+        after = (self.plugins_dir / PLUGIN_ID / "plugin.toml").read_text(encoding="utf-8")
         self.assertEqual(before, after)
 
 

@@ -22,7 +22,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugins as plugins_core
+from app.core import manifests, plugins as plugins_core
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +32,7 @@ STAGE = stage_source()
 PLUGIN_JS = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
 PLUGIN_CSS = (PLUGIN_DIR / "dist" / "plugin.css").read_text(encoding="utf-8")
 PLUGIN_HTML = (PLUGIN_DIR / "dist" / "index.html").read_text(encoding="utf-8")
-MANIFEST = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+MANIFEST = manifests.load_manifest(PLUGIN_DIR)
 
 
 class DashboardManifestTest(unittest.TestCase):
@@ -50,10 +50,10 @@ class DashboardManifestTest(unittest.TestCase):
 
     def test_02_sidebar_first_position_by_priority(self) -> None:
         self.assertEqual(MANIFEST["stage"]["priority"], 100)
-        for manifest_path in (ROOT / "plugins").glob("*/plugin.json"):
-            if manifest_path.parent.name == PLUGIN_ID:
+        for plugin_dir in (ROOT / "plugins").iterdir():
+            if plugin_dir.name == PLUGIN_ID or manifests.manifest_path(plugin_dir) is None:
                 continue
-            other = json.loads(manifest_path.read_text(encoding="utf-8"))
+            other = manifests.load_manifest(plugin_dir)
             other_priority = (other.get("stage") or {}).get("priority", 0)
             self.assertGreater(
                 MANIFEST["stage"]["priority"], other_priority,

@@ -32,12 +32,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 from pathlib import Path
 from typing import Any
 
+from app.core import manifests
 from app.core.bank_provider import PROVIDER_CAPABILITY
 from app.core.config import plugins_dir, settings
 
@@ -82,7 +82,7 @@ def _current_workspace_bank(plugin_id: str) -> Path:
 def _read_manifest(plugin_dir: Path) -> dict[str, Any]:
     """删代码之前读一眼清单；读坏一律当空清单，后面的判词按保守方向走。"""
     try:
-        manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(plugin_dir)
     except (OSError, ValueError):
         return {}
     return manifest if isinstance(manifest, dict) else {}

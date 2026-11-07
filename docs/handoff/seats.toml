@@ -1,0 +1,21 @@
+_note = "三席分属 deepseek / glm / qwen 三个家族：主脑要最强推理，审查必须异族才挑得出共同盲区，干活要快且便宜。同一把 token plan 密钥可通吃，多样性在型号不在密钥。"
+
+[seats]
+
+[seats.brain]
+name = "主脑"
+base_url = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
+model = "deepseek-v4-pro"
+api_key_env = "JZO_AI_API_KEY"
+
+[seats.review]
+name = "审查"
+base_url = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
+model = "glm-5.3"
+api_key_env = "JZO_AI_API_KEY"
+
+[seats.worker]
+name = "干活"
+base_url = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
+model = "qwen3.8-flash"
+api_key_env = "JZO_AI_API_KEY"

@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path, PurePosixPath
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -31,7 +31,7 @@ from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
-from app.core import plugin_update, workspace_bootstrap
+from app.core import plugin_update, pwa, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
 from app.core.plugins import discover_plugins
@@ -232,6 +232,15 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.get(pwa.MANIFEST_PATH, include_in_schema=False)
+    async def read_web_manifest() -> JSONResponse:
+        """PWA 清单：Web 标准强制 JSON，内容由 dataclass 生成，磁盘上不留 .json 文件。"""
+        return JSONResponse(
+            content=pwa.MANIFEST.as_dict(),
+            media_type=pwa.MANIFEST_MEDIA_TYPE,
+            headers=NO_CACHE_HEADERS,
+        )
+
     @app.get("/", include_in_schema=False)
     async def read_root() -> FileResponse:
         """根路径直达工作台（10.24 军令任务 1）：用户打开浏览器就该看到能干活的地方，
@@ -279,8 +288,8 @@ def create_app() -> FastAPI:
         它不是内置插件市场：底座不会自动读它，也只有用户点了按钮才会访问。
         """
         return FileResponse(
-            settings.project_root / "examples" / "plugins-index.example.json",
-            media_type="application/json; charset=utf-8",
+            settings.project_root / "examples" / "plugins-index.example.toml",
+            media_type="application/toml; charset=utf-8",
         )
 
     @app.get("/schemas/question.json", include_in_schema=False)

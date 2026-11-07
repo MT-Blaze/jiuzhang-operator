@@ -2,12 +2,11 @@
 
 模型不进插件包：老师第一次选【YOLO】时才从国内镜像按需下载，落进当前
 工作区插件目录的 ``models/``。下载只由界面点击发起，地址只认
-``model_config.json`` 里写死的镜像，绝不接受插件或请求体自带的 URL。
+``model_config.toml`` 里写死的镜像，绝不接受插件或请求体自带的 URL。
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import threading
@@ -15,12 +14,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from app.core import config
+from app.core import config, toml_io
 
 logger = logging.getLogger(__name__)
 
 PLUGIN_ID = "org.jiuzhang.editor"
-CONFIG_NAME = "model_config.json"
+CONFIG_NAME = "model_config.toml"
 MODEL_KINDS = ("full", "quantized")
 CHUNK_BYTES = 1024 * 1024
 PART_SUFFIX = ".tmp"
@@ -48,10 +47,7 @@ def _config_path() -> Path:
 
 def load_config() -> dict[str, Any]:
     """每次按当前工作区重读；缺失或损坏一律当「没有模型配置」。"""
-    try:
-        document = json.loads(_config_path().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-        return {"models": {}}
+    document = toml_io.load(_config_path(), {"models": {}})
     if not isinstance(document, dict) or not isinstance(document.get("models"), dict):
         return {"models": {}}
     return document
@@ -62,7 +58,7 @@ def _entry(kind: str) -> dict[str, Any]:
         raise ModelStoreError("模型编号只认 full / quantized")
     entry = (load_config().get("models") or {}).get(kind)
     if not isinstance(entry, dict) or not entry.get("filename"):
-        raise ModelStoreError(f"model_config.json 里没有可用的 {kind} 条目")
+        raise ModelStoreError(f"model_config.toml 里没有可用的 {kind} 条目")
     return entry
 
 

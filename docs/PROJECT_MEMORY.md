@@ -176,7 +176,7 @@
 > `markDupeKept`、`buildDupeCard`、`renderDedupeGroup`、`renderDedupePanel`、`mergeDupeGroup`，
 > `scheduleRefresh` 加 `state.view === "dedupe"` 守卫）、`dist/plugin.css`（`.cb-dupe*` 整块，含
 > `grid-template-columns:repeat(2,minmax(0,1fr))` 与 `@media (max-width:880px)` 单列兜底）、
-> `plugin.json`（0.6.0 → **0.7.0**，描述补查重清洗）、`static/js/stage.js`（`RELAY_METHODS` 加两条 +
+> `plugin.toml`（0.6.0 → **0.7.0**，描述补查重清洗）、`static/js/stage.js`（`RELAY_METHODS` 加两条 +
 > provider-only 分支）、`API_REFERENCE.md`（§2 分类行 + **新增 §2.17** + §1.3 `system.question_updated`
 > 补 `merge`）、`tests/test_stage_canvas.py`（新增 `test_05_dedupe_is_provider_only_and_copys_are_bounded`）、
 > 新增真机探针 `tools/dedupe_probe.py`。
@@ -290,12 +290,12 @@
 > 才说），故未动。
 > **下一步**：阶段八 重打包——`tools/sync_plugin_index.py` 重算索引，两份 `plugins.json` 逐字全等，出包。
 > ⑪ **#18-终 阶段八（2026-10-25）**——重打包与索引同步（提交 `249f805`），**八阶段到此跑完**。
-> `tools/sync_plugin_index.py` 按 `plugin.json` 真值回写：core-bank 索引条目 `0.6.0 → 0.7.0`
+> `tools/sync_plugin_index.py` 按 `plugin.toml` 真值回写：core-bank 索引条目 `0.6.0 → 0.7.0`
 > （阶段五加了【查重清洗】却没同步索引，【检查更新】会一直以为没更新），`updated_at` 跟当天，
 > 同一份文本落两处后**主仓库 `plugins.json` 与 `E:/jiuzhang-plugins/plugins.json` 逐字节全等**；
 > 插件仓库那份索引里已退役的 `org.jiuzhang.placeholder` 条目随之从索引消失（**它的 zip 仍在盘上、
 > 插件仓库工作树未提交，等主公处置**——`git status` 显示 4 个 zip + plugins.json 已改）。
-> 四个对外插件用 `tools/build_plugin.py` 重出：顶层目录名 == `plugin.json` 的 id、带 Apache-2.0 LICENSE、
+> 四个对外插件用 `tools/build_plugin.py` 重出：顶层目录名 == `plugin.toml` 的 id、带 Apache-2.0 LICENSE、
 > 零 `.db` 零 `bank/assets/`；抽包验货确认阶段七的修复真进了发布件。底座包
 > `dist/jiuzhang-operator-beta-v0.10.0.zip` **2,146,161 B / 274 条目 / 单顶层目录**，无 `.env`、
 > 无 `data/`、无 `.venv`、无 `.system_generated`，唯一 `.db` 是 0 题空基线（`user_version=2`），
@@ -356,7 +356,7 @@
 > **一条自曝**：修 tab_group 过程中曾直连过开发底座跑了一次，那次按默认路径临时改写过**根
 > `data/plugin_state.json`**，收尾按字节还原（现存 `disabled` 1 项 / `disabled_at` 9 项 / `sidebar` 4 节点，
 > 全是主公自己的历史偏好）；此后一律用 `JZO_STATE_FILE` 指到隔离工作区，根 `data/` 再没被探针写过。
-> **仍未清**：四个对外插件（core-bank/paper-gen/handout/editor）的 `plugin.json` 没有 `min_host_version`
+> **仍未清**：四个对外插件（core-bank/paper-gen/handout/editor）的 `plugin.toml` 没有 `min_host_version`
 > 字段（对外包不声明底座下限）；`examples/` 里示例插件的 `min_host_version` 保留为**最低要求**口径，未跟升到 0.11.0。
 > 全程未 push、未建远端、未发 Release。
 > ⑬ **#18-结 第七条遗留收口（2026-10-25，主公当场授权推两仓）**——三件事：
@@ -393,7 +393,7 @@
 > `state_backup is None`，探针自己造的 `folder:`/补位夹具名永久留在清单里 → 判据 22 变假红，收尾必须自带清扫分支；
 > ③ 我这次的 runner 用 `JZO_STATE_FILE` 给**每支探针**一个隔离偏好文件并逐字节比对根 `data/plugin_state.json`，
 > 结果 `root_data_plugin_state_unchanged=true`——上一轮那条自曝（探针写过根偏好文件）本轮没有重演。
-> **仍未清**：对外四插件 `plugin.json` 依旧没有 `min_host_version`；`examples/plugins-index.example.json`
+> **仍未清**：对外四插件 `plugin.toml` 依旧没有 `min_host_version`；`examples/plugins-index.example.json`
 > 仍写已退役的 `org.jiuzhang.classic-card`（文档夹具，`test_plugin_index.py:210` 钉着首条 id）；
 > 插件声明的 `publish` 侧（如 `system.open_editor`）不在 `_BUS_PUBLISH` 白名单里、被 `_normalize_bus` 静默裁掉——
 > 本轮判为**文档级失真**（真实跳转走宿主中继方法，插件实际只 post `region.dock`）未动；
@@ -456,7 +456,7 @@
 > `sidebar_slot_probe` 崩在等 `#wsContextSlotBody` 里的 iframe。下一棒先重锚这三只探针，别当底座回归查。
 
 > **军令 #15（2026-10-24）AI 助手插件化与权限边界重构**：右侧对话框从宿主壳里整体搬出，
-> 落为普通插件 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`、
+> 落为普通插件 [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.toml)（`slots: ["sidebar.right"]`、
 > `capabilities: ["assistant.chat"]`、`permissions: ["ai:invoke"]`）；四项任务全部落地，决策记录见 ADR-009
 > （声明取代 ADR-002 第 4 条）。要点：① AI 的每一次动手都是 Host API 请求（`AI_ONLY_METHODS` 七条 +
 > 清单授权守卫），插件侧 `fetch`/`parent.document`/`localStorage` 命中为 0；② `trigger_button` 通道从
@@ -699,7 +699,7 @@
    随包仍跟踪的是 `v063.db`（0 题空基线）与 `schema.sql`。
 2. **发行包不含真题**：`build_release.bat` 的 robocopy 排除 `bank.db` / `v063_migrated.db` / `bank/assets/`，
    再把空基线 `v063.db` 复制成包内 `bank.db`（约 155 KB、0 题）。`build_plugin` 把 `.db` 后缀与 `bank/assets/`
-   列入剔除，所以 `org.jiuzhang.core-bank.zip` 只剩 `schema.sql` + `plugin.json` + `dist/`，在线安装即空壳。
+   列入剔除，所以 `org.jiuzhang.core-bank.zip` 只剩 `schema.sql` + `plugin.toml` + `dist/`，在线安装即空壳。
 3. **运行期按需建空库**：`ensure_bank` 不再因缺种子报错——
    `default` 工作区有本机种子就复制、没有就退回 `schema.sql` 建空库；
    **非 default 工作区（用户新建的）一律建空库，绝不把 default 的真题复制过去**。
@@ -875,12 +875,12 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 「我只是想让侧栏清爽一点，结果 456 题没了」这种不可挽回的事故。默认勾选【保留数据】
 就是把最坏路径留给人主动选择，而不是让底座替人决定。
 
-**题库引擎的免死金牌（军令 #18-结 任务三，2026-10-25）**：凡 `plugin.json` 声明
+**题库引擎的免死金牌（军令 #18-结 任务三，2026-10-25）**：凡 `plugin.toml` 声明
 `capabilities: ["bank.provider"]` 的插件（现网只有 `org.jiuzhang.core-bank`），卸载时**无视前端的
 `keep_data`**——后端 `uninstall_plugin()` 先把 `keep_data` 强制抬成 `True` 再走删除，回包多带一个
 `provider_guarded: true`；设置页卸载弹窗识别到 provider 就把【不保留数据】置灰（`disabled` +
 `aria-disabled` + 焦点改落到【取消】），并把「题库引擎已被保护，数据将原地保留」这条红字提示摆在按钮上方。
-判据只认 `plugin.json` 的 `capabilities` 数组：清单坏/缺/写成字符串一律不认，照常按 `keep_data` 办事，
+判据只认 `plugin.toml` 的 `capabilities` 数组：清单坏/缺/写成字符串一律不认，照常按 `keep_data` 办事，
 **不许用「猜它是引擎」来兜底**。锁它的三条：`tests/test_plugin_console.py`
 （`test_provider_forced_keep_ignores_keep_data_false` / `test_bad_or_missing_manifest_is_not_treated_as_provider` /
 `test_07_uninstall_provider_via_api_forces_keep`）+ 真机探针 `tools/provider_uninstall_probe.py`（20 项，含非 provider 对照组）。
@@ -909,7 +909,7 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 4. **UI 封闭在专属沙箱 iframe**——严禁越权操作父窗口 DOM；
 5. **只用原生 JS/CSS**——严禁重型框架与 CDN 资源。
 
-**配套交付**：`examples/template-plugin/`（`plugin.json` + `dist/index.html` + `dist/plugin.js` +
+**配套交付**：`examples/template-plugin/`（`plugin.toml` + `dist/index.html` + `dist/plugin.js` +
 `LICENSE`，注释内含宿主 API 调用与总线广播示例）；`examples/build_template_plugin.py` 产
 `examples/template-plugin.zip` 供老师下载；README 新增《如何用 AI 开发九章算子插件？》——
 一段可复制给任何大模型的提示词（铁律 + 封包格式 + 激活义务 + 自检三查）；
@@ -960,7 +960,7 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 ### ADR-009：AI 助手降格为普通插件——权限只有 API 一条路（主公 2026-10-24 军令 #15 定调）
 
 **决策**：右侧对话框不再是底座的一部分，它是一只普通 UI 插件
-[`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.json)（`slots: ["sidebar.right"]`，
+[`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.toml)（`slots: ["sidebar.right"]`，
 `capabilities: ["assistant.chat"]`，`permissions: ["ai:invoke"]`），与画布上的插件**众生平等**。
 本决策**声明取代 ADR-002 第 4 条**：AI 副驾不住在底座托管的右栏里，它自己就是右栏的住户。
 
@@ -1023,7 +1023,7 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
    （`plugin.suspend/resume`，不摘文档、不占名额），`MAX_LIVE_FRAMES=3` 只数 heavy。
 
 **为什么**：老师认插件靠自己的叫法、靠自己的分组，官方原名和安装顺序对他没有意义；把这套偏好塞进
-`plugin.json` 等于让一台机器的命名污染所有人的清单，塞进 `localStorage` 等于让顺序有两个事实来源
+`plugin.toml` 等于让一台机器的命名污染所有人的清单，塞进 `localStorage` 等于让顺序有两个事实来源
 （军令 #16 之前控制台与左栏顺序对不上，正是这么来的）。键位与右键同理——没有一张裁决表时，
 「谁最后注册谁赢」会让插件互相抢方向盘，而抢赢了的键按下去没反应（静音表）比抢输了更难查。
 
@@ -1235,7 +1235,7 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
       `parent_id` + `sort_order` 懒展开（册→章→节→考向），每个节点带子树题量 / 笔记数 / 待补录标记，
       点节点即按子树筛题（真机验证：点「1.1 集合的概念」得 23 题，与后端逐字一致）；
       插件读路径全部改吃新出参（`grade` 顶层、`taxonomy` 来自路径树、`answer` 合成对象、
-      `extensions` 对象态）。难度口径：core-bank `plugin.json` 的 `ui.controls`、editor 下拉、
+      `extensions` 对象态）。难度口径：core-bank `plugin.toml` 的 `ui.controls`、editor 下拉、
       classic-card / paper-gen / demo 种子与 workspace.js + workspace.css 全部改 L1–L4，
       中文标签按契约 2.0 = **基础 / 中档 / 难 / 压轴**（旧值 basic/medium/hard/novel 只做渲染兜底）。
       **注意一处与军令字面口径的偏离**：发令写的是「基础/中档/压轴/新定义」，但上一道裁决已「彻底废弃
@@ -1423,7 +1423,7 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
 - 禁改区自查：LICENSE / AGENTS.md 铁律一二 / schemas 破坏性变更 / data 目录 —— 是否触碰（是/否 + 依据）
 
 【包结构自检】（涉及插件才填，不涉及就写「本次不涉及插件」）
-- 顶层目录名 == plugin.json 的 id？
+- 顶层目录名 == plugin.toml 的 id？
 - 有无 backend 字段（底座不支持，必须为空/不存在）？
 - 有无 Apache-2.0 LICENSE 全文？
 - min_host_version / engine.host_version 与当前 app.__version__ 的关系？

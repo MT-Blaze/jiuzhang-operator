@@ -28,7 +28,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from app.core import plugin_lifecycle, plugin_state
+from app.core import manifests, plugin_lifecycle, plugin_state, toml_io
 from app.core.config import root_data_dir, settings
 from app.core.plugins import discover_plugins, validate_plugin
 
@@ -54,16 +54,15 @@ def _make_bank_db(path: Path, questions: int) -> None:
 
 class ShowInSidebarContractTest(unittest.TestCase):
     def _manifest(self, plugin_dir: Path) -> dict:
-        return validate_plugin(plugin_dir, json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8")))
+        return validate_plugin(plugin_dir, manifests.load_manifest(plugin_dir))
 
     def test_explicit_false_and_default_true(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sample = Path(tmp) / "org.jiuzhang.dashboard"
             shutil.copytree(ROOT / "plugins" / "org.jiuzhang.dashboard", sample)
-            manifest_path = sample / "plugin.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = manifests.load_manifest(sample)
             manifest["show_in_sidebar"] = False
-            manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+            toml_io.write(sample / "plugin.toml", manifest)
             self.assertIs(self._manifest(sample)["show_in_sidebar"], False)
         self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")["show_in_sidebar"], False,
                       "题库引擎是无界面的数据端，不该在左栏占位")
@@ -267,9 +266,8 @@ class UninstallLifecycleTest(unittest.TestCase):
 
         provider 的 ``banks/<id>.db`` 就是老师攒下的真题本体，换渲染引擎可以，连锅端不行。
         """
-        (self.plugins_dir / self.pid / "plugin.json").write_text(
-            json.dumps({"capabilities": ["bank.provider", "question.render"]}, ensure_ascii=False),
-            encoding="utf-8")
+        toml_io.write(self.plugins_dir / self.pid / "plugin.toml",
+                      {"capabilities": ["bank.provider", "question.render"]})
         db = self.data_dir / "banks" / f"{self.pid}.db"
         _make_bank_db(db, 456)
         payload = db.read_bytes()
@@ -297,7 +295,7 @@ class UninstallLifecycleTest(unittest.TestCase):
                 plugin_dir = self.plugins_dir / self.pid
                 plugin_dir.mkdir(parents=True, exist_ok=True)
                 if raw is None:
-                    self.assertFalse((plugin_dir / "plugin.json").exists(), "首轮必须是不带清单的基线")
+                    self.assertIsNone(manifests.manifest_path(plugin_dir), "首轮必须是不带清单的基线")
                 else:
                     (plugin_dir / "plugin.json").write_text(raw, encoding="utf-8")
                 db = self.data_dir / "banks" / f"{self.pid}.db"
@@ -332,10 +330,9 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         plugins.mkdir(parents=True)
         # 拷一个真实、合规的小插件进来，并显式隐藏左栏入口，当被操作对象
         shutil.copytree(ROOT / "plugins" / cls.CARD, plugins / cls.CARD)
-        manifest_path = plugins / cls.CARD / "plugin.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(plugins / cls.CARD)
         manifest["show_in_sidebar"] = False
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        toml_io.write(plugins / cls.CARD / "plugin.toml", manifest)
         cls.port = cls._free_port()
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = str(root / "data")

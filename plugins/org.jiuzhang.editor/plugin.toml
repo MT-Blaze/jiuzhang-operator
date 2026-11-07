@@ -1,0 +1,130 @@
+schema_version = "1.0"
+id = "org.jiuzhang.editor"
+name = "录题工作台"
+version = "2.12.0"
+api_version = "1.0"
+kind = "tool"
+description = "录题工作台：三段式辅助栏。顶部固定当前题私有元数据（题号/题型/难度/分值/考向/标签），中部公共元数据（含年级）随画布滚动收起，底部存库/待审/删除。标签与考向走幽灵胶囊：空胶囊常驻，悬停接光标，打字出带路径搜索，回车取第一条。边缘同步冷蓝呼吸灯。拖入多文件各立独立批次。学校只存 school_id。查重命中亮红呼吸灯，可覆盖/放弃/合并解析二。"
+author = "九章算子"
+license = "Apache-2.0"
+min_host_version = "1.0.0"
+slots = ["stage.center", "sidebar.right"]
+capabilities = ["question.edit"]
+permissions = ["assets:write", "assets:read", "questions:read", "questions:write", "ai:invoke"]
+
+[entry]
+frontend = "dist/index.html"
+
+[ui]
+
+[[ui.controls]]
+type = "select"
+key = "format"
+label = "源码格式"
+default = "latex"
+
+[[ui.controls.options]]
+value = "latex"
+label = "源码 · 标准 LaTeX"
+
+[[ui.controls.options]]
+value = "boxed"
+label = "卡片 · 框框视图"
+
+[[ui.controls]]
+type = "select"
+key = "view"
+label = "画布视图"
+default = "review"
+
+[[ui.controls.options]]
+value = "review"
+label = "审核三栏"
+
+[[ui.controls.options]]
+value = "list"
+label = "批次列表"
+
+[[ui.controls]]
+type = "select"
+key = "swap"
+label = "中右栏互换"
+default = "false"
+
+[[ui.controls.options]]
+value = "false"
+label = "源码在左"
+
+[[ui.controls.options]]
+value = "true"
+label = "渲染在左"
+
+[stage]
+region = "center"
+mode = "takeover"
+title = "录题工作台"
+priority = 65
+singleton = true
+
+[bus]
+subscribe = ["ui.params.changed", "system.open_editor", "editor.apply_patch", "stage.selection", "system.question_updated", "system.pending_updated", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare"]
+publish = ["region.dock", "stage.selection", "system.return_from_editor", "system.editor_close", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare"]
+
+[contributes]
+
+[[contributes.commands]]
+id = "org.jiuzhang.action.input.open_question"
+title = "打开题目编辑"
+description = "把题库里的一道题源码与元数据载入画布三栏；载入本身不写库，点保存才落库。"
+returns = "{question_id, editing}"
+
+[contributes.commands.params_schema]
+type = "object"
+required = ["question_id"]
+additionalProperties = false
+
+[contributes.commands.params_schema.properties]
+
+[contributes.commands.params_schema.properties.question_id]
+type = "string"
+description = "题目 id（q_ 开头）"
+maxLength = 80
+
+[[contributes.commands]]
+id = "org.jiuzhang.action.process.clean_latex"
+title = "清洗当前题 LaTeX"
+description = "对画布中栏的 exam-zh 源码做定界符规范化（\\( \\)、\\[ \\] 归一为 $ 与 $$）；会改写未保存内容，必须在执行前确认。"
+requires_user = true
+returns = "{touched}"
+
+[contributes.commands.params_schema]
+type = "object"
+additionalProperties = false
+
+[contributes.commands.params_schema.properties]
+
+[[contributes.commands]]
+id = "org.jiuzhang.action.input.save_question"
+title = "保存当前题目"
+description = "把当前题的源码与辅助栏元数据组装成 2.0 结构写入题库（新题走 bank.create，编辑态走 bank.update 且保住既有多来源）；写库且会回流刷新各端，必须在执行前确认。"
+requires_user = true
+returns = "{question_id, created}"
+
+[contributes.commands.params_schema]
+type = "object"
+additionalProperties = false
+
+[contributes.commands.params_schema.properties]
+
+[[contributes.commands]]
+id = "org.jiuzhang.action.process.create_variant"
+title = "派生变式题"
+description = "用当前表单另存一道新题（底座重新签发 id），绝不覆盖原题；写库，必须在执行前确认。"
+requires_user = true
+returns = "{question_id, parent_id}"
+
+[contributes.commands.params_schema]
+type = "object"
+additionalProperties = false
+
+[contributes.commands.params_schema.properties]

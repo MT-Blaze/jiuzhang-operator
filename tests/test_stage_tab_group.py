@@ -17,13 +17,14 @@
 
 from __future__ import annotations
 
-import json
 import re
 import unittest
 from pathlib import Path
 from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+
+from app.core import manifests  # noqa: E402
 STATIC = ROOT / "static"
 STAGE = stage_source()
 WORKSPACE = workspace_source()
@@ -224,7 +225,7 @@ class ContractAndFixtureTest(unittest.TestCase):
         self.assertIn("浅休眠 | `stage.weight = \"light\"`", SPEC, "生命周期表也要有浅休眠那一行")
 
     def test_02_probe_fixture_declares_light_and_is_not_a_singleton(self) -> None:
-        manifest = json.loads((FIXTURE / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(FIXTURE)
         self.assertEqual(manifest["stage"]["weight"], "light")
         self.assertIs(manifest["stage"]["singleton"], False)
         self.assertEqual(manifest["bus"]["publish"], ["region.dock"])

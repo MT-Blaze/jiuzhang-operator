@@ -14,7 +14,7 @@
   var PROTOCOL = "jzo-plugin/1";
   var PLUGIN_ID = "org.jiuzhang.demo-bank";
 
-  // 构建脚本会把 seed/questions.json 内联到下面这个占位数组里。
+  // 构建脚本会把 seed/questions.toml 内联到下面这个占位数组里。
   var SEED_QUESTIONS = /*__SEED_QUESTIONS__*/[];
 
   var TYPE_LABELS = {

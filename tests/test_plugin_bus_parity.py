@@ -1,7 +1,7 @@
 """官方插件的 bus.subscribe 与代码监听必须逐字全等（#18-结 第七条遗留）。
 
 三段判据，缺一不算收口：
-- **清单 == 代码**：``plugin.json`` 的 ``bus.subscribe`` 与 ``dist/plugin.js`` 里真的按 ``event``
+- **清单 == 代码**：``plugin.toml`` 的 ``bus.subscribe`` 与 ``dist/plugin.js`` 里真的按 ``event``
   分支处理的主题集合必须完全相等——多写是假授权，少写是暗通道；
 - **声明即生效**：声明的每个主题必须活在宿主白名单里，装上后一条不许被 ``_normalize_bus`` 丢弃；
 - **投递可达**：代码处理的每个主题必须能在 ``static/js`` 里找到宿主的一次 ``broadcast``/``notify``，
@@ -19,6 +19,7 @@ import re
 import unittest
 from pathlib import Path
 
+from app.core import manifests
 from app.core.plugins import _normalize_bus
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +31,7 @@ DELIVERED = re.compile(r"\b(?:broadcast|notify)\(\s*(?:[^,()]+,\s*)?[\"']([A-Za-
 
 
 def official_plugins() -> list[Path]:
-    return sorted(p for p in PLUGINS_DIR.glob("org.jiuzhang.*") if (p / "plugin.json").is_file())
+    return sorted(p for p in PLUGINS_DIR.glob("org.jiuzhang.*") if manifests.manifest_path(p) is not None)
 
 
 def handled_topics(plugin_dir: Path) -> set[str]:
@@ -41,7 +42,7 @@ def handled_topics(plugin_dir: Path) -> set[str]:
 
 
 def declared_topics(plugin_dir: Path) -> set[str]:
-    manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+    manifest = manifests.load_manifest(plugin_dir)
     return set((manifest.get("bus") or {}).get("subscribe") or [])
 
 

@@ -17,6 +17,7 @@ import json
 import re
 import unittest
 from pathlib import Path
+from app.core import manifests  # noqa: E402
 from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,11 +139,7 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertNotIn("assistantId", helper, "常驻助手已下架，判据不许再给它开后门")
         self.assertIn("ui.panel === false || ownsOwnRightPanel(plugin)", JS,
                       "宿主必须同时认结构性判据与显式开关")
-        editor = json.loads(
-            (ROOT / "plugins" / "org.jiuzhang.editor" / "plugin.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        editor = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.editor")
         self.assertNotIn("panel", editor.get("ui", {}),
                          "录题清单里不许再留 ui.panel=false")
         self.assertIn("sidebar.right", editor["slots"],

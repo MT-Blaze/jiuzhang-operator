@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.core import plugin_index, plugin_search, plugin_state, plugin_update
+from app.core import manifests, plugin_index, plugin_search, plugin_state, plugin_update
 from app.core.config import plugins_dir
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
@@ -231,7 +231,7 @@ def set_plugin_enabled(plugin_id: str, payload: dict[str, Any] = Body(...)) -> d
         raise HTTPException(status_code=400, detail="enabled 必须是布尔值")
     if not (Path(plugin_id).name == plugin_id and plugin_id):
         raise HTTPException(status_code=400, detail="插件 ID 非法")
-    if not (plugins_dir() / plugin_id / "plugin.json").is_file():
+    if manifests.manifest_path(plugins_dir() / plugin_id) is None:
         raise HTTPException(status_code=404, detail=f"插件不存在：{plugin_id}")
     enabled = payload["enabled"]
     plugin_state.set_enabled(plugin_id, enabled)
@@ -252,7 +252,7 @@ def set_plugin_nickname(plugin_id: str, payload: dict[str, Any] = Body(...)) -> 
         raise HTTPException(status_code=400, detail="nickname 必须是字符串")
     if not (Path(plugin_id).name == plugin_id and plugin_id):
         raise HTTPException(status_code=400, detail="插件 ID 非法")
-    if not (plugins_dir() / plugin_id / "plugin.json").is_file():
+    if manifests.manifest_path(plugins_dir() / plugin_id) is None:
         raise HTTPException(status_code=404, detail=f"插件不存在：{plugin_id}")
     nickname = plugin_state.set_nickname(plugin_id, payload["nickname"])
     return {"id": plugin_id, "nickname": nickname}

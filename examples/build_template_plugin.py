@@ -16,11 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "examples" / "template-plugin"
 OUTPUT_ZIP = ROOT / "examples" / "template-plugin.zip"
 
-# zip 内的唯一顶层目录名，必须等于 plugin.json 的 id
+# zip 内的唯一顶层目录名，必须等于 plugin.toml 的 id
 PLUGIN_ID = "org.example.template"
 
 INCLUDED_FILES = (
-    "plugin.json",
+    "plugin.toml",
     "LICENSE",
     "dist/index.html",
     "dist/layout.css",

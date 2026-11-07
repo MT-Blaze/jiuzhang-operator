@@ -1,7 +1,7 @@
 """构建 examples/demo_plugin.zip（种子题库插件包）。
 
 流程：
-1. 用 jsonschema 按 schemas/question.json 逐题校验 seed/questions.json；
+1. 用 jsonschema 按 schemas/question.json 逐题校验 seed/questions.toml；
 2. 把题目内联进 dist/plugin.js 的构建副本（替换 ``/*__SEED_QUESTIONS__*/[]`` 占位）；
 3. 打成 zip：唯一顶层目录名 = 插件 id，满足 PLUGIN_SPEC §1.2 与安装器契约。
 
@@ -21,14 +21,14 @@ SCHEMA_PATH = ROOT / "schemas" / "question.json"
 OUTPUT_ZIP = ROOT / "examples" / "demo_plugin.zip"
 QUESTIONS_PLACEHOLDER = "/*__SEED_QUESTIONS__*/[]"
 
-# zip 内的唯一顶层目录名，必须等于 plugin.json 的 id
+# zip 内的唯一顶层目录名，必须等于 plugin.toml 的 id
 PLUGIN_ID = "org.jiuzhang.demo-bank"
 
 INCLUDED_FILES = (
-    "plugin.json",
+    "plugin.toml",
     "LICENSE",
     "README.md",
-    "seed/questions.json",
+    "seed/questions.toml",
     "dist/index.html",
     "dist/plugin.css",
     "dist/plugin.js",
@@ -36,11 +36,14 @@ INCLUDED_FILES = (
 
 
 def load_questions() -> list[dict]:
-    questions = json.loads(
-        (SOURCE_DIR / "seed" / "questions.json").read_text(encoding="utf-8")
-    )
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from app.core import toml_io
+
+    document = toml_io.load(SOURCE_DIR / "seed" / "questions.toml", {"questions": []})
+    questions = document["questions"]
     if not isinstance(questions, list) or len(questions) != 5:
-        raise SystemExit("seed/questions.json 必须恰好包含 5 道题")
+        raise SystemExit("seed/questions.toml 必须恰好包含 5 道题")
 
     from jsonschema import Draft202012Validator
 

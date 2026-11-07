@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_index, plugin_sources  # noqa: E402
+from app.core import manifests, plugin_index, plugin_sources, toml_io  # noqa: E402
 from app.core.plugin_download import (  # noqa: E402
     download_plugin_zip,
     download_plugin_zip_sources,
@@ -59,7 +59,7 @@ def _write_online_probe_zip(target: Path) -> None:
         "permissions": ["questions:read"],
     }
     with zipfile.ZipFile(target, "w") as zf:
-        zf.writestr(f"{ONLINE_PROBE_ID}/plugin.json", json.dumps(manifest, ensure_ascii=False))
+        zf.writestr(f"{ONLINE_PROBE_ID}/plugin.toml", toml_io.dumps(manifest))
         zf.writestr(f"{ONLINE_PROBE_ID}/LICENSE", "Apache License 2.0\n")
         zf.writestr(f"{ONLINE_PROBE_ID}/dist/index.html", "<!doctype html><html><body></body></html>")
         zf.writestr(f"{ONLINE_PROBE_ID}/dist/plugin.js", "/* probe */\n")
@@ -72,10 +72,10 @@ def _free_port() -> int:
 
 
 class OfficialIndexFileTest(unittest.TestCase):
-    """主仓库根 plugins.json 是官方索引的本地镜像，必须与插件仓库口径一致且不夹带 zip。"""
+    """主仓库根 plugins.toml 是官方索引的本地镜像，必须与插件仓库口径一致且不夹带 zip。"""
 
     def test_01_root_plugins_json_parses_with_zero_rejections(self) -> None:
-        payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
+        payload = toml_io.load(ROOT / "plugins.toml", {})
         parsed = plugin_index.parse_index(payload)
         self.assertEqual(parsed["rejected"], [])
         ids = [entry["id"] for entry in parsed["entries"]]
@@ -86,7 +86,7 @@ class OfficialIndexFileTest(unittest.TestCase):
 
     def test_02_official_entries_use_plugin_repo_mirrors(self) -> None:
         """v0.5.2：索引与 zip 全部指向独立插件仓库，主地址走 gh-proxy。"""
-        payload = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
+        payload = toml_io.load(ROOT / "plugins.toml", {})
         self.assertTrue(payload["entries"], "官方索引不应为空")
         for entry in payload["entries"]:
             self.assertTrue(entry["zip_url"].startswith("https://gh-proxy.com/"))
@@ -104,7 +104,7 @@ class OfficialIndexFileTest(unittest.TestCase):
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(tmp)
             plugin_dir = Path(tmp) / DEMO_ID
-            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            manifest = manifests.load_manifest(plugin_dir)
             info = validate_plugin(plugin_dir, manifest)
         self.assertEqual(info["id"], DEMO_ID)
         self.assertEqual(info["kind"], "importer")
@@ -119,7 +119,7 @@ class OfficialIndexFileTest(unittest.TestCase):
                 self.assertTrue(all(n.startswith(TEMPLATE_ID + "/") for n in names))
                 zf.extractall(tmp)
             plugin_dir = Path(tmp) / TEMPLATE_ID
-            manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+            manifest = manifests.load_manifest(plugin_dir)
             info = validate_plugin(plugin_dir, manifest)
         self.assertEqual(info["id"], TEMPLATE_ID)
         self.assertEqual(info["min_host_version"], "1.0.0")

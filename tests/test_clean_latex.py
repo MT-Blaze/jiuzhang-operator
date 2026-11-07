@@ -22,7 +22,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
-from app.core import plugins
+from app.core import manifests, plugins, toml_io
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,8 +136,8 @@ class EditorAiCleanerTest(unittest.TestCase):
 
     def test_04_manifest_and_index_agree(self) -> None:
         """清单与官方索引的版本号、描述必须逐字相同——不写死数字，插件一升号就假红。"""
-        manifest = json.loads((EDITOR_DIR / "plugin.json").read_text(encoding="utf-8"))
-        index = json.loads((ROOT / "plugins.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(EDITOR_DIR)
+        index = toml_io.load(ROOT / "plugins.toml", {})
         entries = [item for item in index["entries"] if item["id"] == "org.jiuzhang.editor"]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["version"], manifest["version"])
@@ -151,7 +151,7 @@ class EditorAiCleanerTest(unittest.TestCase):
         「清单写着、通道不存在」正是 bus_parity 判据要拦的那类暗通道。
         """
         core_bus = (ROOT / "static" / "js" / "core_bus.js").read_text(encoding="utf-8")
-        manifest = json.loads((EDITOR_DIR / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(EDITOR_DIR)
         declared = manifest["bus"]["subscribe"]
         for topic in ("editor.clean_review", "editor.clean_review_state"):
             self.assertIn(topic, declared, "清单没声明订阅，宿主不会投递")

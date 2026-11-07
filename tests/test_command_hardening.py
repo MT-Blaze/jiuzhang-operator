@@ -18,7 +18,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import commands
+from app.core import commands, manifests
 from app.core.plugins import validate_plugin
 from tests.core_sources import settings_source, stage_source, template_source  # noqa: E402
 
@@ -209,7 +209,7 @@ class DeveloperExperienceTest(unittest.TestCase):
         script = (template / "dist" / "plugin.js").read_text(encoding="utf-8")
         # 宿主通道的真实形状在 core_host.js 里，判据看整包（PLUGIN_SPEC §2.8.1 的文件分份）
         bundle = template_source()
-        manifest = json.loads((template / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(template)
         self.assertIn('id="list-cmd-btn"', html)
         self.assertIn('id="echo-cmd-btn"', html)
         self.assertIn('callHost("command.list")', bundle)

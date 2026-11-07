@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
-from app.core import plugins
+from app.core import manifests, plugins, toml_io
 from app.core.plugins import PluginRejected, validate_plugin
 
 PLUGIN_ID = "com.example.stage-probe"
@@ -44,9 +44,7 @@ def build_plugin_dir(root: Path, manifest: dict) -> Path:
     (plugin_dir / "dist").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "LICENSE").write_text("Apache License 2.0 (fixture)", encoding="utf-8")
     (plugin_dir / "dist" / "index.html").write_text("<!doctype html><title>p</title>", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
-    )
+    toml_io.write(plugin_dir / "plugin.toml", manifest)
     return plugin_dir
 
 
@@ -138,8 +136,8 @@ class BusGrantTest(unittest.TestCase):
         self.assertLessEqual(plugins._BUS_MAX_TOPICS, 16, "总线主题上限不许无节制抬升")
         # 抬上来的余量得真够用：任何官方插件的订阅清单都不许被截断。
         for manifest_path in sorted((Path(__file__).resolve().parents[1] / "plugins")
-                                    .glob("org.jiuzhang.*/plugin.json")):
-            declared = json.loads(manifest_path.read_text(encoding="utf-8")).get("bus") or {}
+                                    .glob("org.jiuzhang.*/plugin.toml")):
+            declared = toml_io.load(manifest_path, {}).get("bus") or {}
             self.assertLessEqual(len(declared.get("subscribe") or []), plugins._BUS_MAX_TOPICS,
                                  f"{manifest_path.parent.name} 的订阅已超出总线上限")
 
@@ -160,8 +158,8 @@ class BusGrantTest(unittest.TestCase):
         headless 数据引擎（军令 #20）没有界面，可以一条都不订——其余插件必须有订阅。
         """
         root = Path(__file__).resolve().parents[1]
-        for manifest_path in sorted((root / "plugins").glob("org.jiuzhang.*/plugin.json")):
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for manifest_path in sorted((root / "plugins").glob("org.jiuzhang.*/plugin.toml")):
+            manifest = toml_io.load(manifest_path, {})
             declared = (manifest.get("bus") or {}).get("subscribe") or []
             if manifest.get("headless") is not True:
                 self.assertTrue(declared, manifest["id"])
@@ -185,7 +183,7 @@ class DiscoverySurfaceTest(unittest.TestCase):
         """官方示例插件必须真能上舞台，否则这条能力就没有活的样板。"""
         root = Path(__file__).resolve().parents[1]
         source = root / "examples" / "demo_plugin"
-        manifest = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
+        manifest = manifests.load_manifest(source)
         self.assertIn("stage.center", manifest["slots"])
         self.assertEqual(manifest["stage"]["mode"], "takeover")
 

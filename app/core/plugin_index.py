@@ -1,16 +1,18 @@
-"""插件索引（plugins.json）的解析与按需拉取。
+"""插件索引（本地 plugins.toml / 远端 TOML 或 JSON）的解析与按需拉取。
 
 索引地址来自用户在「插件索引」页的输入框（默认预填官方国内镜像，可当场改掉，
 点【拉取清单】才发请求，PLUGIN_SPEC §1.3）。主源失败时按 ``plugin_sources``
 登记的顺序自动切换备用镜像——只在用户填的是官方地址时成立，用户改成第三方
-索引后底座只访问那一个地址。本模块只做「取回一份 JSON 并校验其结构」，
+索引后底座只访问那一个地址。本模块只做「取回一份清单并校验其结构」，
 **不解压、不安装、不执行**，也不做任何签名/摘要/授权校验——
 索引里的地址是不是官方，由用户自己判断。
+
+远端官方仓库目前仍发布 JSON，这是外部协议的只读兼容口；本仓库自己的索引
+镜像一律是 TOML。
 """
 
 from __future__ import annotations
 
-import json
 import re
 import urllib.error
 import urllib.request
@@ -18,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import plugin_sources
+from app.core import plugin_sources, toml_io, wire
 
 INDEX_VERSION = "1.0"
 MAX_INDEX_BYTES = 512 * 1024
@@ -161,7 +163,7 @@ def parse_index(payload: Any) -> dict[str, Any]:
     单条坏数据只让它自己出局并在界面上如实列出，不得让整份索引判死——
     否则用户面对的是「拉取失败」四个字，而不是一百条里那一条写错了字段。
     """
-    _require(isinstance(payload, dict), "插件索引的顶层必须是 JSON 对象")
+    _require(isinstance(payload, dict), "插件索引的顶层必须是表（对象）")
     _require(
         payload.get("index_version") == INDEX_VERSION,
         "index_version 必须为 %s（收到：%r）" % (INDEX_VERSION, payload.get("index_version")),
@@ -226,9 +228,13 @@ def _fetch_once(target: str, timeout: float) -> dict[str, Any]:
     _require(len(body) <= MAX_INDEX_BYTES, "索引超过 %d KB 上限" % (MAX_INDEX_BYTES // 1024))
 
     try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise IndexRejected("该地址返回的不是合法 JSON（%s）" % exc) from exc
+        text = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise IndexRejected("该地址返回的不是 UTF-8 文本（%s）" % exc) from exc
+    try:
+        payload = wire.loads(text) if text.lstrip().startswith("{") else toml_io.loads(text)
+    except ValueError as exc:
+        raise IndexRejected("该地址返回的不是合法 TOML 或 JSON（%s）" % exc) from exc
 
     return parse_index(payload)
 

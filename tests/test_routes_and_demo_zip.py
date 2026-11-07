@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import tomllib
 import unittest
 import zipfile
 from pathlib import Path
 
 from app import __version__  # noqa: F401  确保包可导入
+from app.core import toml_io  # noqa: E402
 from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,12 +103,12 @@ class DemoZipContractTest(unittest.TestCase):
         self.assertEqual(tops, {DEMO_PLUGIN_ID})
 
     def test_02_required_members_present(self) -> None:
-        for relative in ("plugin.json", "LICENSE", "dist/index.html", "dist/plugin.js",
-                         "seed/questions.json"):
+        for relative in ("plugin.toml", "LICENSE", "dist/index.html", "dist/plugin.js",
+                         "seed/questions.toml"):
             self.assertIn(f"{DEMO_PLUGIN_ID}/{relative}", self.names)
 
     def test_03_manifest_matches_contract(self) -> None:
-        manifest = json.loads(self._member("plugin.json"))
+        manifest = tomllib.loads(self._member("plugin.toml").decode("utf-8"))
         self.assertEqual(manifest["id"], DEMO_PLUGIN_ID)
         self.assertEqual(manifest["license"], "Apache-2.0")
         self.assertEqual(manifest["api_version"], "1.0")
@@ -117,7 +119,8 @@ class DemoZipContractTest(unittest.TestCase):
 
         schema = json.loads(_read(ROOT / "schemas" / "question.json"))
         validator = Draft202012Validator(schema)
-        questions = json.loads(self._member("seed/questions.json"))
+        document = toml_io.loads(self._member("seed/questions.toml").decode("utf-8"))
+        questions = document["questions"]
         self.assertEqual(len(questions), 5)
         for question in questions:
             errors = list(validator.iter_errors(question))

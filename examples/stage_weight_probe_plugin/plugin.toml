@@ -1,0 +1,31 @@
+schema_version = "1.0"
+id = "org.example.stage-weight"
+name = "舞台权重探针"
+version = "0.1.0"
+api_version = "1.0"
+kind = "tool"
+description = "军令 #16 模块三取证夹具：把宿主下发的 plugin.suspend / plugin.resume 原话回显到底栏，证明浅休眠通知真的走完了线。"
+author = "九章算子"
+license = "Apache-2.0"
+slots = ["stage.center"]
+capabilities = ["question.render"]
+permissions = []
+min_host_version = "0.9.0"
+
+[entry]
+frontend = "dist/index.html"
+
+[stage]
+region = "center"
+mode = "takeover"
+title = "舞台权重探针"
+priority = 5
+singleton = false
+weight = "light"
+
+[bus]
+subscribe = []
+publish = ["region.dock"]
+
+[engine]
+host_version = "0.9.0"

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import importlib.util
 import io
-import json
 import os
 import shutil
 import tempfile
@@ -23,7 +22,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import bank_query, plugin_install, plugin_state, plugin_suite
+from app.core import bank_query, plugin_install, plugin_state, plugin_suite, toml_io
 from app.core.config import plugins_dir
 from app.core.plugins import discover_plugins
 
@@ -79,7 +78,7 @@ class SuiteCase(unittest.TestCase):
         return sorted(path.name for path in self.plugins_dir.iterdir())
 
     def _suite_zip(self, members: list[str], extra: dict[str, str] | None = None) -> bytes:
-        """按套件版式拼一个最小 zip：suite.json + 指定成员的真实目录。"""
+        """按套件版式拼一个最小 zip：suite.toml + 指定成员的真实目录。"""
         manifest = {
             "schema_version": "1.0",
             "id": SUITE,
@@ -89,7 +88,7 @@ class SuiteCase(unittest.TestCase):
         }
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr("suite.json", json.dumps(manifest, ensure_ascii=False))
+            archive.writestr("suite.toml", toml_io.dumps(manifest))
             for plugin_id in members:
                 source = ROOT / "plugins" / plugin_id
                 for path in sorted(source.rglob("*")):
@@ -107,13 +106,13 @@ class BuildSuiteTest(SuiteCase):
             [ROOT / "plugins" / UI, ROOT / "plugins" / ENGINE], self.out_dir
         )
         with zipfile.ZipFile(target) as archive:
-            suite = json.loads(archive.read("suite.json"))
+            suite = toml_io.loads(archive.read("suite.toml").decode("utf-8"))
             names = set(archive.namelist())
         self.assertEqual([ENGINE, UI], suite["plugins"], "依赖必须排在前面")
         self.assertEqual(SUITE, suite["id"])
-        self.assertIn(f"{ENGINE}/plugin.json", names)
-        self.assertIn(f"{UI}/plugin.json", names)
-        self.assertNotIn(f"{UI}/dev/fixtures.json", names)
+        self.assertIn(f"{ENGINE}/plugin.toml", names)
+        self.assertIn(f"{UI}/plugin.toml", names)
+        self.assertNotIn(f"{UI}/dev/fixtures.toml", names)
 
     def test_build_suite_rejects_missing_dependency_member(self) -> None:
         with self.assertRaises(build_tool.BuildError) as ctx:
@@ -178,7 +177,7 @@ class SuiteInstallTest(SuiteCase):
             plugin_install.install_plugin_from_zip(data)
         self.assertEqual(409, ctx.exception.status)
         self.assertFalse((self.plugins_dir / UI).exists(), "冲突时不许偷偷装另一半")
-        self.assertTrue((self.plugins_dir / ENGINE / "plugin.json").is_file())
+        self.assertTrue((self.plugins_dir / ENGINE / "plugin.toml").is_file())
 
         plugin_install.install_plugin_from_zip(data, replace=True)
         self.assertEqual([ENGINE, UI], self._installed_ids())

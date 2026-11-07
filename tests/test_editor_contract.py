@@ -7,7 +7,7 @@
 - 辅助栏（``#epRoot``）只有元数据表单 + 审核动作 + 格式切换，**不放源码、不放预览**；
 - 源码只用 exam-zh 标准环境（question/choices/problem/solution），填空用 ``\\fillin``；
 - 解析器 / 重组器 / 本地清洗三件套的口径（阶段 2 复用同一份实现，不许另写）；
-- 假数据 ``dev/fixtures.json`` 是单一事实来源：过 Schema 2.0、按《格式宪法》写源码、
+- 假数据 ``dev/fixtures.toml`` 是单一事实来源：过 Schema 2.0、按《格式宪法》写源码、
   与 plugin.js 内嵌块逐字一致，且**绝不进发行包**；
 - 沙箱红线：无 fetch / parent.document / 浏览器本地存储 / 远程资源 / 后行断言。
 
@@ -26,6 +26,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from app.core import manifests, toml_io
 from app.core.plugins import validate_plugin
 from tools.build_plugin import build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
@@ -33,7 +34,7 @@ from tests.core_sources import stage_source, workspace_source  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
 DIST = PLUGIN_DIR / "dist"
-FIXTURES = PLUGIN_DIR / "dev" / "fixtures.json"
+FIXTURES = PLUGIN_DIR / "dev" / "fixtures.toml"
 BEGIN = "  //# FIXTURES-BEGIN"
 END = "  //# FIXTURES-END"
 
@@ -69,7 +70,7 @@ def _bundle(tag: str, attr: str) -> str:
 
 
 def manifest() -> dict:
-    return json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+    return manifests.load_manifest(PLUGIN_DIR)
 
 
 def css_rule(css: str, selector: str) -> str:
@@ -2008,11 +2009,11 @@ class EditorLeftPaperStripContractTest(unittest.TestCase):
 
 
 class EditorFixtureContractTest(unittest.TestCase):
-    """假数据：每道题都是一份合法的 question.json 2.0，dev/ 只在本机存在。"""
+    """假数据：每道题都是一份合法的 Question 2.1，dev/ 只在本机存在。"""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.items = json.loads(FIXTURES.read_text(encoding="utf-8"))
+        cls.items = toml_io.load(FIXTURES, {})["questions"]
 
     def test_01_fixtures_are_valid_questions(self) -> None:
         from jsonschema import Draft202012Validator
@@ -2057,7 +2058,7 @@ class EditorFixtureContractTest(unittest.TestCase):
         block = js[js.index(BEGIN) + len(BEGIN):js.index(END)]
         inline = json.loads(block.strip()[len("var DEV_FIXTURES = "):].rstrip(";"))
         self.assertEqual(inline, self.items,
-                         "内嵌假数据与 dev/fixtures.json 漂移，先跑 tools/sync_editor_fixtures.py")
+                         "内嵌假数据与 dev/fixtures.toml 漂移，先跑 tools/sync_editor_fixtures.py")
 
     def test_05_sync_tool_owns_the_marker_block(self) -> None:
         tool = (ROOT / "tools" / "sync_editor_fixtures.py").read_text(encoding="utf-8")
@@ -2316,7 +2317,7 @@ class EditorPackageTest(unittest.TestCase):
             self.assertNotIn(".env", name.split("/"))
             self.assertNotIn("__pycache__", name.split("/"))
         joined = "\n".join(names)
-        self.assertIn("org.jiuzhang.editor/plugin.json", joined)
+        self.assertIn("org.jiuzhang.editor/plugin.toml", joined)
         self.assertIn("org.jiuzhang.editor/dist/index.html", joined)
         self.assertIn("org.jiuzhang.editor/LICENSE", joined)
         self.assertFalse(any(name.endswith((".pyc", ".log", ".tmp", ".zip")) for name in names))
@@ -2324,7 +2325,7 @@ class EditorPackageTest(unittest.TestCase):
     def test_02_dev_fixtures_never_ship(self) -> None:
         """军令 #23：假数据不进发行包——对外只有真实题库，运行期靠 dist/dev_fixtures.js 的内嵌块。"""
         names = self._names()
-        offenders = [each for each in names if "/dev/" in each or each.endswith("fixtures.json")]
+        offenders = [each for each in names if "/dev/" in each or each.endswith("fixtures.toml")]
         self.assertEqual(offenders, [], f"发行包混进开发期文件：{offenders}")
         self.assertIn("org.jiuzhang.editor/dist/plugin.js", names)
         self.assertIn("org.jiuzhang.editor/dist/dev_fixtures.js", names)

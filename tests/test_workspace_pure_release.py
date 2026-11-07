@@ -124,7 +124,7 @@ class PluginPackagePurityTest(unittest.TestCase):
                          [n for n in names if n.endswith(".db")])
         self.assertFalse(any("/assets/" in name for name in names), "题库配图资产不随包发布")
         self.assertIn("org.jiuzhang.bank-engine/bank/schema.sql", joined, "空壳仍须带 schema 供建库")
-        self.assertIn("org.jiuzhang.bank-engine/plugin.json", joined)
+        self.assertIn("org.jiuzhang.bank-engine/plugin.toml", joined)
 
     def test_release_script_excludes_structural_backups(self) -> None:
         """结构升级备份是 456 题库的整份副本，漏进发行包等于把真题再发一遍。

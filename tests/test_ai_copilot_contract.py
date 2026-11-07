@@ -19,6 +19,7 @@ import re
 import unittest
 from pathlib import Path
 
+from app.core import manifests
 from tests.core_sources import plugin_bundle, stage_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +40,7 @@ def panel_only(html: str) -> str:
 
 
 def manifest() -> dict:
-    return json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+    return manifests.load_manifest(PLUGIN_DIR)
 
 
 class HostRelayTest(unittest.TestCase):

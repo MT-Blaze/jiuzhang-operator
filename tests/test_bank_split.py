@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank
+from app.core import bank, manifests
 from app.core.config import settings
 from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
@@ -38,8 +38,7 @@ STAMP = "2026-01-15T09:00:00+08:00"
 
 
 def _manifest(plugin_id: str) -> dict:
-    path = ROOT / "plugins" / plugin_id / "plugin.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return manifests.load_manifest(ROOT / "plugins" / plugin_id)
 
 
 def _digest(path: Path) -> str:
@@ -140,6 +139,7 @@ class ManifestBoundaryTest(unittest.TestCase):
                 "description": "拆分前的旧题库插件目录，只用于升级映射的发现判据。",
                 "capabilities": ["bank.provider"],
             })
+            (legacy_dir / "plugin.toml").unlink()
             (legacy_dir / "plugin.json").write_text(
                 json.dumps(legacy_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
             saved = (os.environ.get("JZO_PLUGINS_DIR"), os.environ.get("JZO_DATA_DIR"),
