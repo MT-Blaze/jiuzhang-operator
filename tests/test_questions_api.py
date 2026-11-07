@@ -228,7 +228,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         self.assertEqual(filtered["items"][0]["id"], solution["id"])
 
     def test_06b_choice_options_stay_an_array_through_read_models(self) -> None:
-        """回归：options 是数组（schemas/question.json 的口径），响应模型不得按 dict 校验。
+        """回归：options 是数组（app/core/question_contract.py 的口径），响应模型不得按 dict 校验。
 
         曾经 ``app/core/models.Question.options`` 声明为 dict[str, str]，写入侧按 Schema
         放行了数组，读取侧 ResponseValidationError 直接把 500 打到 GET /api/questions

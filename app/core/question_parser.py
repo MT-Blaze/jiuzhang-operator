@@ -5,7 +5,7 @@ LaTeX 定界符不统一（``\\(`` / ``\\[`` / 半角混排）、选项挤在题
 填空答案混在解析段里，以及肉眼看不出的公式括号失衡。这里把
 「清洗 → 拆分 → 提取 → 体检」拆成互不依赖的纯函数，宿主与插件可复用同一口径。
 
-口径来自 ``schemas/question.json`` 与 PLUGIN_SPEC（Markdown + LaTeX，
+口径来自 ``app/core/question_contract.py`` 与 PLUGIN_SPEC（Markdown + LaTeX，
 行内 ``$...$``、独立 ``$$...$$``），实现独立完成，不引用旧题库源码。
 """
 

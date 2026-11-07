@@ -55,7 +55,6 @@ def default_database_path() -> Path:
 class Settings:
     project_root: Path = PROJECT_ROOT
     static_dir: Path = PROJECT_ROOT / "static"
-    schemas_dir: Path = PROJECT_ROOT / "schemas"
     docs_dir: Path = PROJECT_ROOT / "docs"
 
     # 当前工作区 id；None 表示 default。它是指针文件在本进程里的镜像：

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import json
 import tomllib
 import unittest
 import zipfile
@@ -115,16 +114,16 @@ class DemoZipContractTest(unittest.TestCase):
         self.assertNotIn("backend", manifest)
 
     def test_04_five_questions_pass_schema(self) -> None:
-        from jsonschema import Draft202012Validator
+        from app.core import question_contract
 
-        schema = json.loads(_read(ROOT / "schemas" / "question.json"))
-        validator = Draft202012Validator(schema)
         document = toml_io.loads(self._member("seed/questions.toml").decode("utf-8"))
         questions = document["questions"]
         self.assertEqual(len(questions), 5)
         for question in questions:
-            errors = list(validator.iter_errors(question))
-            self.assertEqual(errors, [], f"题目 {question.get('id')} 不合规：{errors}")
+            try:
+                question_contract.validate(question)
+            except question_contract.ContractError as exc:
+                self.fail(f"题目 {question.get('id')} 不合规：{exc.errors}")
 
     def test_05_plugin_js_has_questions_inlined(self) -> None:
         script = self._member("dist/plugin.js").decode("utf-8")

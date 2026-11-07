@@ -10,7 +10,7 @@ PDF 文本层给的是**字形顺序**，不是 TeX 源码：数学字母多半�
 - 从题块文字里剥出题号、题干、选项、答案与解析。
 
 认不出的字符原样保留，**绝不猜测**：拿不准的片段宁可留在正文里，也不
-伪造公式或答案。口径与 ``schemas/question.json`` 一致（行内 ``$...$``）。
+伪造公式或答案。口径与 ``app/core/question_contract.py`` 一致（行内 ``$...$``）。
 """
 
 from __future__ import annotations

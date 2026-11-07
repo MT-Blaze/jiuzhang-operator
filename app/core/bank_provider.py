@@ -2,7 +2,7 @@
 
 官方 ``org.jiuzhang.bank-engine`` 是**默认** provider（军令 #20 把数据引擎与
 视图插件拆开后，provider 只认无界面的引擎）。第三方只要装一个声明
-``bank.provider`` 能力、并按 ``schemas/question.json`` 出参的插件，就可以被选为
+``bank.provider`` 能力、并按 ``app/core/question_contract.py`` 出参的插件，就可以被选为
 活跃题库（PLUGIN_SPEC §2.6.1）。本模块只管三件事：
 
 1. **读配置**：``data/workspaces/<id>/bank_provider.json``（用户亲手在控制台里选的，

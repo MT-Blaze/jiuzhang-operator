@@ -564,7 +564,7 @@ def import_questions(
 def create_question(plugin_id: str, payload: Any, *, sources: Any = None) -> dict[str, Any]:
     """往指定插件题库新增一道题，返回按读路径装配后的标准结构。
 
-    录题插件不碰数据库：它把表单整理成 ``schemas/question.json`` 结构，经宿主
+    录题插件不碰数据库：它把表单整理成 ``app/core/question_contract.py`` 结构，经宿主
     带一次性令牌转到这里。校验与底座 ``questions`` 表共用同一份 Schema，
     避免两份存储对同一道题各说各话。ID 由底座生成，插件不得指定历史 ID。
 

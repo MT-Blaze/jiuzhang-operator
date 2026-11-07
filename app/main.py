@@ -292,18 +292,11 @@ def create_app() -> FastAPI:
             media_type="application/toml; charset=utf-8",
         )
 
-    @app.get("/schemas/question.json", include_in_schema=False)
-    async def read_question_schema() -> FileResponse:
+    @app.get("/spec/question", include_in_schema=False)
+    async def read_question_contract() -> FileResponse:
         return FileResponse(
-            settings.schemas_dir / "question.json",
-            media_type="application/schema+json",
-        )
-
-    @app.get("/schemas/plugins-index.json", include_in_schema=False)
-    async def read_plugins_index_schema() -> FileResponse:
-        return FileResponse(
-            settings.schemas_dir / "plugins-index.json",
-            media_type="application/schema+json",
+            settings.docs_dir / "QUESTION_CONTRACT.md",
+            media_type="text/markdown; charset=utf-8",
         )
 
     @app.get("/spec/plugin", include_in_schema=False)

@@ -9,7 +9,7 @@
 - **出身**：干净房间（Clean Room）开发，全部代码从零手写，不复用任何历史项目代码。
 - **插件**：官方插件与索引都在独立的 [jiuzhang-plugins](https://github.com/MT-Blaze/jiuzhang-plugins) 仓库，
   安装方式见下文「只读入口」与「自己写一个插件」。
-- **数据**：题目以 [JSON Schema](schemas/question.json) 为唯一交换格式，数学内容用 Markdown + LaTeX；
+- **数据**：题目以 [Question dataclass 契约](app/core/question_contract.py)为唯一交换格式，数学内容用 Markdown + LaTeX；
   题库是本机 `data/` 里的明文 SQLite，随时整目录拷走，卸载不销毁、不加密、不留水印。
 - **运行**：Python **3.10 及以上**（3.10/3.11/3.12/3.13/3.14 都在支持范围，开发机实测 3.14.6）/ FastAPI；
   前端是原生 HTML、CSS、JavaScript，无构建链、无 Node 依赖、资源全本地。
@@ -78,7 +78,7 @@ curl -X GET http://127.0.0.1:8000/healthz
 ```
 
 题目字段（`options` 是 `{key, content}` 数组、答案形态由 `answer.kind` 声明）一律以
-[schemas/question.json](schemas/question.json) 为准，写法不符会被写入侧拒绝并给出可读原因。
+[app/core/question_contract.py](app/core/question_contract.py) 为准，写法不符会被写入侧拒绝并给出可读原因。
 
 ## 只读入口
 
@@ -90,7 +90,7 @@ curl -X GET http://127.0.0.1:8000/healthz
 | `/about` | 底座介绍页 |
 | `/healthz` | 健康检查 JSON（含 `boot_id`，是「新进程真起来了」的唯一凭据） |
 | `/api/plugins` | 已加载插件清单（`rejected[]` 列出未通过校验的插件与中文原因） |
-| `/schemas/question.json`、`/spec/plugin`、`/api/openapi.json` | 题目 Schema、插件规范、机器可读接口描述 |
+| `/spec/question`、`/spec/plugin`、`/api/openapi.json` | 题目契约、插件规范、机器可读接口描述 |
 
 ## 自己写一个插件
 

@@ -366,7 +366,7 @@ frontend = "dist/index.html"
 
 > **最常见的坑**：`protocol`、`entry_url`、`assets` 是**宿主返回**的字段，不是 `plugin.toml` 的写法。清单里写它们不会被读取；照老教程写还缺 `schema_version` 和 `entry.frontend`，会被直接拒装。CSS 也不用登记，放 `dist/plugin.css` 并在入口页 `<link>` 即可。
 >
-> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.toml`，一个 `[[questions]]` 数组，最多 200 题、文件不超过 2 MB，每题符合 [`schemas/question.json`](../schemas/question.json)，并在 `capabilities` 里声明 `question.import`。
+> 想写 `importer`（让对话能读你自带的题库）：在插件根目录放 `seed/questions.toml`，一个 `[[questions]]` 数组，最多 200 题、文件不超过 2 MB，每题符合[题目契约](QUESTION_CONTRACT.md)，并在 `capabilities` 里声明 `question.import`。
 
 **`ui` 字段（v0.5.5 右侧面板）**：顶层三键 `title`、`hint`、`controls`（`[[ui.controls]]` 数组），控件总数 ≤8。
 - `select`：键为 `type`（`"select"`）、`key`、`label`、`options`（`[[ui.controls.options]]` 的 `value` / `label` 对）、`default`；`key` 匹配 `^[a-z][a-z0-9_]{0,15}$`，选项 ≤12，值与标签纯文本。当前值随对话 `context.ui.values` 注入模型，模型可用 `update_params` 代人切换——但人类手动改过的字段以人类为准。
@@ -624,7 +624,7 @@ frontend = "dist/index.html"
 | `bank.get` | 单题全文 | `id` 必须匹配 `^[A-Za-z0-9_-]{1,80}$` |
 | `bank.sources` | 一题挂的全部原卷（一题多卷，军令 #21） | `payload.id` 同上；按挂载先后返回 `{question_id, items[]}`，第一项即主来源；`bank.get` 只给主来源，编辑态靠这里回填整组 |
 | `bank.random` | 按条件随机一题 | 无匹配时返回 404 |
-| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 `schemas/question.json`；**只能写入当前活跃题库 provider**（默认 `org.jiuzhang.bank-engine`），插件自报目标无效；ID / 时间戳由底座生成。`payload.sources` 可选：额外原卷（≤8 条，字段只收 `paper_title` / `year` / `exam_type` / `school` / `question_no`），走关系表，不进题目文档 |
+| `bank.create` | 新增一道题（v0.6.2） | 需 `questions:write` 权限；`payload.question` 必须符合 Question dataclass 契约；**只能写入当前活跃题库 provider**（默认 `org.jiuzhang.bank-engine`），插件自报目标无效；ID / 时间戳由底座生成。`payload.sources` 可选：额外原卷（≤8 条，字段只收 `paper_title` / `year` / `exam_type` / `school` / `question_no`），走关系表，不进题目文档 |
 | `bank.update` | 修改一道题 | 需 `questions:write`；`payload.sources` 给了就整组重挂（空数组只留主来源），`question.source: null` 清空主来源；其余口径见 `API_REFERENCE.md` §2.7 |
 | `basket.list` | 读题篮 | `expand: true` 时附带题目全文 |
 | `basket.add` | 加题（批量） | 最多 200 个 id；全部必须存在于**当前插件自己的题库**，否则整批拒绝 |
@@ -656,7 +656,7 @@ frontend = "dist/index.html"
 provider 不再兼任视图。任何第三方插件只要满足三条，就能被底座当作活跃题库使用：
 
 1. **清单声明能力** `capabilities: ["bank.provider"]`，并在 `permissions` 里声明 `questions:read`（要接受写入再加 `questions:write`）；
-2. **实现标准读方法**：`bank.list` / `bank.stats` / `bank.get` / `bank.random`（可选 `bank.topics` / `bank.topic_notes` / `bank.review`），出参结构必须逐字符合 `schemas/question.json`（含 `id` 全局身份、Markdown + LaTeX 文本、`extensions` 反向域名键）；
+2. **实现标准读方法**：`bank.list` / `bank.stats` / `bank.get` / `bank.random`（可选 `bank.topics` / `bank.topic_notes` / `bank.review`），出参结构必须逐字符合 Question dataclass 契约（含 `id` 全局身份、Markdown + LaTeX 文本、`extensions` 反向域名键）；
 3. **不越界**：数据只经 Host API 与总线进出，插件不得直连数据库、文件系统、环境变量或密钥（AGENTS 铁律二）。
 
 路由口径（缺一即违规）：

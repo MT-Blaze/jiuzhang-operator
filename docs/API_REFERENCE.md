@@ -113,7 +113,7 @@
 - **插件自带库**（随包放 `bank/schema.sql` 与 `bank/bank.db`）：`bank.list` / `bank.stats` / `bank.random`，按页签自己的 id 路由，天然多库并存；
 - **活跃公共题库**（provider，默认 `org.jiuzhang.bank-engine`）：`bank.get` / `bank.sources` / `bank.topics` / `bank.topic_notes` / `bank.review` / `bank.create` / `bank.update` / `bank.delete` / `bank.dashboard_stats` / `bank.dashboard_heatmap`，跨页签共享。
 
-### 2.1 题目标准结构（出参逐字符合 `schemas/question.json` 2.1）
+### 2.1 题目标准结构（出参逐字符合 Question dataclass 契约 2.1，见 `/spec/question`）
 
 ```json
 {
@@ -406,7 +406,7 @@ payload = { command_id, context, from, trace }
 | `GET /api/bank/plugins/{plugin_id}/review?flag=&page=&page_size=` | 待审队列 |
 | `GET /api/bank/plugins/{plugin_id}/random?...筛选同 list` | 随机一题（无匹配 404） |
 | `GET /api/bank/export` | 导出当前工作区题库为标准交换包 `.json`（`Content-Disposition: attachment`；`{format, format_version, schema_version, exported_at, plugin_id, count, questions}`） |
-| ✍ `POST /api/bank/import` | 批量导入题目包：`{"filename", "content_base64", "mode": "upsert"\|"skip"}`；`.json`（单题/数组/`questions` 交换包）或 `.zip`（内含 `.json`）。宿主逐题校验 `schemas/question.json`，一题不过整批回滚并逐题报错（422） |
+| ✍ `POST /api/bank/import` | 批量导入题目包：`{"filename", "content_base64", "mode": "upsert"\|"skip"}`；`.json`（单题/数组/`questions` 交换包）或 `.zip`（内含 `.json`）。宿主逐题按 Question dataclass 契约校验，一题不过整批回滚并逐题报错（422） |
 
 ### 3.2 题篮
 
@@ -656,7 +656,7 @@ zip 顶层目录名即插件 id，纯 zip 解压即用。
 
 ### 6.6 审题 Agent（`review`）
 
-输入是单题完整 JSON（与 `schemas/question.json` 一致）。检查四项：答案一致性（选项字母是否存在、
+输入是单题完整 JSON（与 Question dataclass 契约一致）。检查四项：答案一致性（选项字母是否存在、
 填空答案与题干是否匹配）、解析完整性（有无解析块且覆盖关键步骤）、配图合理性（题干提图而无图则标
 `missing_image`）、难度合理性。输出 JSON 对象含 `checks` 数组（每项 `{field,status,detail}`）、
 `overall_score`（1–5）与 `suggestions`。

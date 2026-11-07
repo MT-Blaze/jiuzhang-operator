@@ -1,4 +1,4 @@
-"""core-bank 引擎的编解码层：七张关系表 ⇄ ``schemas/question.json`` 标准文档。
+"""core-bank 引擎的编解码层：七张关系表 ⇄ ``app/core/question_contract.py`` 标准文档。
 
 存储层与契约的差异全部在这里抹平：``extensions``（库内有序数组 ↔ 契约反向域名对象）、
 ``answer``（库内单列文本 ↔ 契约对象；库内 NULL 时出参**省略**该字段，不拿字母冒充答案）、

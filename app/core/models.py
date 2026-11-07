@@ -24,7 +24,7 @@ class _OmitAbsent(BaseModel):
 
 
 class QuestionOption(_OmitAbsent):
-    """单个选项（schemas/question.json 的 $defs/option）。
+    """单个选项（app/core/question_contract.py 的 $defs/option）。
 
     响应模型不加 key 的正则约束：写法校验归写入侧的 JSON Schema 负责，
     这里过严会让存量数据把整个列表接口打成 500。

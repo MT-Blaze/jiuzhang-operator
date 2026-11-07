@@ -2016,14 +2016,14 @@ class EditorFixtureContractTest(unittest.TestCase):
         cls.items = toml_io.load(FIXTURES, {})["questions"]
 
     def test_01_fixtures_are_valid_questions(self) -> None:
-        from jsonschema import Draft202012Validator
+        from app.core import question_contract
 
-        schema = json.loads((ROOT / "schemas" / "question.json").read_text(encoding="utf-8"))
-        validator = Draft202012Validator(schema)
         self.assertTrue(self.items, "假数据不能是空数组")
         for item in self.items:
-            errors = list(validator.iter_errors(item))
-            self.assertEqual(errors, [], f"假数据 {item.get('id')} 不合规：{errors}")
+            try:
+                question_contract.validate(item)
+            except question_contract.ContractError as exc:
+                self.fail(f"假数据 {item.get('id')} 不合规：{exc.errors}")
             self.assertEqual(item["schema_version"], "2.1")
 
     def test_02_dev_block_carries_source_and_stage_hints(self) -> None:

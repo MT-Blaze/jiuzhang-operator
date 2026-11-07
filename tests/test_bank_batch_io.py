@@ -2,7 +2,7 @@
 
 两道关口各守一头：
 - 包这一层（``app/core/bank_transfer.py``）：坏 JSON、坏 zip、空包、超限都要拒；
-- 题目这一层（``app/core/bank.py`` + ``schemas/question.json``）：逐题校验，一题不过整批回滚。
+- 题目这一层（``app/core/bank.py`` + ``app/core/question_contract.py``）：逐题校验，一题不过整批回滚。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_batch_io``
 """

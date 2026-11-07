@@ -4,7 +4,7 @@
 并在改动结构前生成可验证备份（见 docs/AGENTS.md 第 4 节）。
 
 v1 → v2：difficulty 的 CHECK 由 basic/medium/hard/novel 改为 L1/L2/L3/L4
-（schemas/question.json 2.0 的连带项）。SQLite 不能就地改 CHECK，因此走
+（app/core/question_contract.py 2.0 的连带项）。SQLite 不能就地改 CHECK，因此走
 「备份 → 建新表 → 按映射搬值 → 换名 → 校验行数」的重建路径。
 """
 

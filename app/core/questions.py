@@ -1,6 +1,6 @@
-"""题目仓储：Schema 校验、行 ↔ 标准结构转换与 SQLite 读写。
+"""题目仓储：契约校验、行 ↔ 标准结构转换与 SQLite 读写。
 
-``schemas/question.json`` 是唯一校验来源；本模块不另造字段规则。
+``app/core/question_contract.py`` 的 dataclass 是唯一校验来源；本模块不另造字段规则。
 """
 
 from __future__ import annotations
@@ -10,12 +10,9 @@ import json
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from typing import Any, Iterable
 
-from jsonschema import Draft202012Validator
-
-from app.core.config import settings
+from app.core import question_contract
 from app.core.contract import (
     DIFFICULTY_LEVELS,
     normalize_contract_version,
@@ -83,22 +80,11 @@ def now_iso() -> str:
     return datetime.now(LOCAL_TZ).isoformat(timespec="seconds")
 
 
-@lru_cache(maxsize=1)
-def _validator() -> Draft202012Validator:
-    schema = json.loads((settings.schemas_dir / "question.json").read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
-
-
 def validate_question(document: dict[str, Any]) -> None:
-    errors: list[str] = []
-    for error in sorted(_validator().iter_errors(document), key=lambda item: list(item.absolute_path)):
-        location = ".".join(str(part) for part in error.absolute_path) or "(root)"
-        errors.append(f"{location}: {error.message}")
-        if len(errors) >= 20:
-            break
-    if errors:
-        raise QuestionValidationError(errors)
+    try:
+        question_contract.validate(document)
+    except question_contract.ContractError as exc:
+        raise QuestionValidationError(exc.errors) from exc
 
 
 def _encode_json(value: Any) -> str | None:

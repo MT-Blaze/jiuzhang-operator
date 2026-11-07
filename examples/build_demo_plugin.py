@@ -1,7 +1,7 @@
 """构建 examples/demo_plugin.zip（种子题库插件包）。
 
 流程：
-1. 用 jsonschema 按 schemas/question.json 逐题校验 seed/questions.toml；
+1. 用 `app/core/question_contract.py` 的 dataclass 契约逐题校验 seed/questions.toml；
 2. 把题目内联进 dist/plugin.js 的构建副本（替换 ``/*__SEED_QUESTIONS__*/[]`` 占位）；
 3. 打成 zip：唯一顶层目录名 = 插件 id，满足 PLUGIN_SPEC §1.2 与安装器契约。
 
@@ -17,7 +17,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "examples" / "demo_plugin"
-SCHEMA_PATH = ROOT / "schemas" / "question.json"
 OUTPUT_ZIP = ROOT / "examples" / "demo_plugin.zip"
 QUESTIONS_PLACEHOLDER = "/*__SEED_QUESTIONS__*/[]"
 
@@ -45,15 +44,15 @@ def load_questions() -> list[dict]:
     if not isinstance(questions, list) or len(questions) != 5:
         raise SystemExit("seed/questions.toml 必须恰好包含 5 道题")
 
-    from jsonschema import Draft202012Validator
+    from app.core import question_contract
 
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(schema)
     for index, question in enumerate(questions, start=1):
-        errors = sorted(validator.iter_errors(question), key=lambda e: list(e.path))
-        if errors:
-            messages = "; ".join(f"{'/'.join(map(str, e.path))}: {e.message}" for e in errors)
-            raise SystemExit(f"第 {index} 题未通过 Question Schema 校验：{messages}")
+        try:
+            question_contract.validate(question)
+        except question_contract.ContractError as exc:
+            raise SystemExit(
+                f"第 {index} 题未通过 Question 契约校验：{'; '.join(exc.errors)}"
+            ) from exc
     return questions
 
 

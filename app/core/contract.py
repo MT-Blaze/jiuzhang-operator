@@ -1,6 +1,6 @@
 """题目契约的版本与难度口径（叶子模块，不依赖 app.core 任何其他模块）。
 
-为什么单独一层：``schemas/question.json`` 的 L1–L4 口径同时被存储自举（db.py）、
+为什么单独一层：``app/core/question_contract.py`` 的 L1–L4 口径同时被存储自举（db.py）、
 仓储读写（questions.py）与插件题库（bank.py）使用，任何一处另写一份映射表都会
 在下次升版时漏改；放在无依赖的叶子模块里，三者共用同一事实来源。
 """

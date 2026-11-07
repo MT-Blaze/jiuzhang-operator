@@ -7,7 +7,7 @@
 
 存储层是 7 张关系表（schools / topics / questions / topic_notes / sources /
 question_topics / question_sources + bank_meta），对外仍然只给
-``schemas/question.json`` 的标准文档结构。两者的差异全部在 ``bank_codec.py`` 里抹平：
+``app/core/question_contract.py`` 的标准文档结构。两者的差异全部在 ``bank_codec.py`` 里抹平：
 
 - ``extensions``：库内是有序数组 ``[{key,label,value}]``，契约是反向域名对象；
 - ``answer``：库内是单个文本列（选择题存 "A,C"，非选择题存答案正文），契约是

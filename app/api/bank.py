@@ -323,7 +323,7 @@ def bank_create_question(plugin_id: str, payload: dict[str, Any] = Body(...)) ->
 def bank_export() -> Response:
     """把当前工作区题库打包成交换包，直接落盘成 ``.json``。
 
-    出参是 ``schemas/question.json`` 的标准结构，与题库浏览器、组卷插件看到的是
+    出参是 ``app/core/question_contract.py`` 的标准结构，与题库浏览器、组卷插件看到的是
     同一份口径；导出的文件原样再导入回来即幂等还原。
     """
     plugin_id = provider.resolve()["plugin_id"]
@@ -351,7 +351,7 @@ def bank_import(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
     请求体形如 ``{"filename": "pack.json", "content_base64": "..."}``：包可以是单个
     题目对象、题目数组，或带 ``questions`` 的交换包；``.zip`` 里每个 ``.json`` 成员
-    都按同一口径解析。校验在宿主做（``schemas/question.json``），任一题不合格即整批
+    都按同一口径解析。校验在宿主做（``app/core/question_contract.py``），任一题不合格即整批
     回滚并逐题报错，不写半截数据。
     """
     if not isinstance(payload, dict):

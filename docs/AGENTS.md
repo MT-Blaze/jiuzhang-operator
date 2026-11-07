@@ -31,7 +31,7 @@
 
 ## 3. 数据契约
 
-- `schemas/question.json` 是题目在底座、插件、导入导出之间流转的**唯一标准结构**。
+- `app/core/question_contract.py` 的 Question dataclass 是题目在底座、插件、导入导出之间流转的**唯一标准结构**；字段定义与校验同住一处，不另存 Schema 文件。
 - 文本字段统一为 Markdown + LaTeX：行内公式 `$...$`，独立公式 `$$...$$`。不得另造公式方言。
 - 题目全局身份只有 `id`（`q_` 前缀的稳定字符串）。原卷题号只属于来源关系（`source.question_no`），不得当作全局身份。
 - 变更 Schema 必须：升 `schema_version`、同步更新示例、说明迁移方式、补充校验测试。破坏性变更升主版本。
@@ -42,12 +42,12 @@
 
 - 后端：Python 3.10+、FastAPI、Uvicorn。
 - 前端：原生 HTML + CSS + JavaScript，无打包器、无 Node 运行时依赖；资源必须本地化，可完全离线运行。
-- 数据库：SQLite（`app/core/db.py`，标准库 `sqlite3`，WAL 优先）；结构版本写入 `PRAGMA user_version`，升级必须版本化、可回滚、备份优先；题目写入按 `schemas/question.json` 校验。
+- 数据库：SQLite（`app/core/db.py`，标准库 `sqlite3`，WAL 优先）；结构版本写入 `PRAGMA user_version`，升级必须版本化、可回滚、备份优先；题目写入按 Question dataclass 契约校验。
 - 路径唯一来源：`app/core/config.py`。禁止依赖当前工作目录拼路径。
 - 目录约定：
   - `app/api/`：底座级 HTTP 路由（健康检查、鉴权、导航、总线）。
   - `app/core/`：配置、路径、安全、日志等基础能力。
-  - `schemas/`：跨边界数据契约。
+  - `app/core/question_contract.py`：题目跨边界数据契约（dataclass）。
   - `plugins/`：插件包（每个插件一个目录，含 `plugin.toml`）。
   - `static/`：宿主壳静态资源。
 - 禁止在根目录堆放业务模块。
@@ -71,7 +71,7 @@
 
 ## 7. 验证与提交
 
-- 修改后端后至少运行：`python -m json.tool schemas/question.json`（涉及 Schema 时）、启动服务并请求 `/healthz`。
+- 修改后端后至少运行：`tests/test_question_contract.py`（涉及题目契约时）、启动服务并请求 `/healthz`。
 - 有测试后必须运行 `unittest`（**不许引入 pytest**，见 `STACK.md` §6）：单模块用
   `.venv\Scripts\python.exe -m unittest tests.test_plugin_install_url`；全量回归逐模块跑
   `for /f %f in ('dir /b tests\test_*.py') do .venv\Scripts\python.exe -m unittest tests.%~nf`。

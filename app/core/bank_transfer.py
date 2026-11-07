@@ -2,7 +2,7 @@
 
 这一层只管「包长什么样」：怎么把文件拆成题目、怎么把题目打包成文件。
 校验与落库由 ``app/core/bank.py`` 统一负责——校验口径只有一份
-（``schemas/question.json``），两处各写一套必然对不上。
+（``app/core/question_contract.py``），两处各写一套必然对不上。
 """
 
 from __future__ import annotations

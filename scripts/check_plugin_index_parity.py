@@ -5,8 +5,7 @@
   每条 version 相同；要求镜像文案的条目 description 也相同。远端仓库仍发布 JSON，
   属于主仓范围之外的外部协议，因此按语义比对而不是逐字节比对。
 - 索引条目版本必须等于插件目录 ``plugin.toml`` 的实际版本
-- ``schemas/*.json`` 必须是合法 JSON，且 ``schemas/question.json`` 的每个 example
-  必须自校验通过
+- 题目契约以 ``app/core/question_contract.py`` 的 dataclass 为准，示例种子题必须过校验
 
 兄弟仓库路径与官方清单都从 tools/sync_plugin_index.py 读，不在本脚本里写死。
 
@@ -16,7 +15,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 
@@ -24,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import manifests, toml_io, wire  # noqa: E402
+from app.core import manifests, question_contract, toml_io, wire  # noqa: E402
 
 SYNC = ROOT / "tools" / "sync_plugin_index.py"
 failures: list[str] = []
@@ -96,38 +94,26 @@ def main() -> int:
                     if entry_id in mirror_ids and local[entry_id].get("description") != remote[entry_id].get("description"):
                         fail(f"{entry_id}: 索引 description 不一致（该条目要求镜像）")
 
-    for schema_path in sorted((ROOT / "schemas").glob("*.json")):
+    seed_path = ROOT / "examples" / "demo_plugin" / "seed" / "questions.toml"
+    try:
+        seeds = toml_io.load(seed_path, {}).get("questions") or []
+    except (OSError, ValueError) as exc:
+        fail(f"示例种子题读不出来（{exc}）")
+        seeds = []
+    if not seeds:
+        fail("示例种子题为空：改契约必须同步可运行示例")
+    for index, item in enumerate(seeds):
         try:
-            schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            fail(f"{schema_path.name}: 不是合法 JSON（{exc}）")
-            continue
-        if schema_path.name != "question.json":
-            continue
-        if not schema.get("required"):
-            fail("question.json: required 为空")
-        if "schema_version" not in (schema.get("properties") or {}):
-            fail("question.json: properties 缺 schema_version")
-        examples = schema.get("examples") or []
-        if not examples:
-            fail("question.json: examples 为空（改契约必须同步示例）")
-        try:
-            from jsonschema import Draft202012Validator
-        except ImportError:
-            fail("缺 jsonschema，无法自校验示例（必须用 .venv/Scripts/python.exe 跑门禁）")
-        else:
-            validator = Draft202012Validator(schema)
-            for index, example in enumerate(examples):
-                errors = sorted(validator.iter_errors(example), key=lambda e: e.path)
-                for error in errors[:3]:
-                    fail(f"question.json: examples[{index}] 不过校验（{'/'.join(map(str, error.path))}: {error.message}）")
+            question_contract.validate(item)
+        except question_contract.ContractError as exc:
+            fail(f"种子题[{index}] 不过契约校验：{'; '.join(exc.errors[:3])}")
 
     if failures:
         for item in failures:
             print(f"[FAIL] {item}")
         print(f"check-plugin-index-parity: {len(failures)} 项违反 L0")
         return 1
-    print("check-plugin-index-parity: PASS（两份索引语义一致、条目版本一致、Schema 示例自校验通过）")
+    print("check-plugin-index-parity: PASS（两份索引语义一致、条目版本一致、示例题过契约校验）")
     return 0
 
 

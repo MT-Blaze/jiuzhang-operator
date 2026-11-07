@@ -1,6 +1,6 @@
 """core-bank 题库 Host API：七表筛选、分页、注入、并发、题篮鉴权与配图边界。
 
-存储层是 v0.6.3 冻结的 7 张关系表，出参是 schemas/question.json 的标准文档；
+存储层是 v0.6.3 冻结的 7 张关系表，出参是 app/core/question_contract.py 的标准文档；
 本测同时守住两条口径：契约 2.0 的难度 L1–L4，以及 1.0 旧值的归一（basic→L1…）。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_api``

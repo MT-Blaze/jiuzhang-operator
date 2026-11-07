@@ -105,7 +105,7 @@
             <h3 class="st-sub">批量导入与导出题目</h3>
             <p class="st-note">
               导入 <code>.json</code>（单道题、题目数组，或带 <code>questions</code> 的交换包）
-              或 <code>.zip</code>（内含 <code>.json</code>）；底座按 <code>schemas/question.json</code>
+              或 <code>.zip</code>（内含 <code>.json</code>）；底座按 <code>app/core/question_contract.py</code> 的 Question 契约
               逐题校验，<strong>一题不合格就整批回滚</strong>，并报出是包里第几道题坏了。
               导出则把当前工作区题库打包成标准 <code>.json</code>，导出的文件能原样再导入回来。
             </p>
@@ -555,7 +555,7 @@
           <span class="sep" aria-hidden="true">·</span>
           <a href="/spec/plugin">插件规范</a>
           <span class="sep" aria-hidden="true">·</span>
-          <a href="/schemas/plugins-index.json">索引 Schema</a>
+          <a href="/spec/question">题目契约</a>
         </p>
       </section>
     </main>

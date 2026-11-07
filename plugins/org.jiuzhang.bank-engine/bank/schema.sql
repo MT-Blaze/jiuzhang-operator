@@ -1,7 +1,7 @@
 -- 九章算子 · core-bank 存储层表结构 v0.8.2（结构冻结版）
 --
 -- 设计原则：存储层只存事实，不存输入校验与查重指纹一类的过程态字段。
--- 全部 DDL 为本仓库原创表达；题目标准结构见 schemas/question.json，
+-- 全部 DDL 为本仓库原创表达；题目标准结构见 app/core/question_contract.py，
 -- 表与契约的对应关系在出参适配层完成，不在存储层另造字段方言。
 --
 -- 落地顺序即依赖顺序：schools / textbooks / topics 先建，sources 与 questions 居中，
