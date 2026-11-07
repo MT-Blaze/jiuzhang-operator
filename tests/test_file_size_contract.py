@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
-"""单文件体积门禁（终极军令 任务四 / 任务五）：巨无霸文件一律不许存在。
+"""单文件体积门禁（最高铁律【500行红线】/ 军令任务四、五）：巨无霸文件一律不许存在。
 
-PLUGIN_SPEC §2.8.1 写死了「任何 JS/CSS 单文件不超过 800 行」，光写在文档里守不住：
-录题插件曾经一份 plugin.js 冲到 5876 行。这个测试把红线变成机械判据，覆盖四处：
+PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律都写死了「单文件不超过 500 行」，
+光写在文档里守不住：录题插件曾经一份 plugin.js 冲到 5876 行。这个测试把红线变成机械判据，
+覆盖四处：
 
 1. 发行包内的 JS 与 CSS（``plugins/*/dist``）、底座静态资源（``static/js``、``static/css``）、
-   模板插件（``examples/template-plugin``）——**每份都不许超过 800 行**；
+   模板插件（``examples/template-plugin``）——**每份都不许超过 500 行**；
 2. 插件 ``dist`` 里的每个本地 JS/CSS 都必须被 ``index.html`` 引到，写了不引等于没发货；
    底座同样：``static/js``、``static/css`` 里的每一份都得有加载页引它（HostAssetWiringTest）；
 3. 按 ``create(deps)`` 拆模块后，被依赖的命名空间必须**在加载次序里排在前面**，
    否则组合根执行时 ``window.Jzo*`` 还不存在，白屏都算轻的——插件与底座两条链都钉这条；
-4. 底座 Python（``app/**``）同样 800 行封死——拆库时留下的教训：2226 行的
+4. 底座 Python（``app/**``）同样 500 行封死——拆库时留下的教训：2226 行的
    ``app/core/bank.py`` 让契约测试无处下手。
+
+``LEGACY_OVER_CEILING`` 是迁移冻结台账：本版之前已经超限的存量文件登记实测行数，
+**只许减不许增**，拆分达标后必须从台账删除；任何不在台账里的文件越过 500 行直接判红。
+这样既不让存量债把门禁逼回 800，也不为赶门禁在夜里盲拆大文件引入回归。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_file_size_contract``
 """
@@ -25,9 +30,53 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 from app.core import manifests  # noqa: E402
-CEILING = 800
-# 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 800 行。
+CEILING = 500
+# 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 500 行。
 DEV_ONLY = ("tools",)
+# 存量超限冻结台账（路径 → 本版实测行数）。只减不增；达标即删行。
+LEGACY_OVER_CEILING = {
+    "plugins/org.jiuzhang.editor/dist/ui_ai_copilot.js": 800,
+    "plugins/org.jiuzhang.editor/dist/plugin.js": 796,
+    "plugins/org.jiuzhang.editor/dist/layout_canvas.css": 791,
+    "plugins/org.jiuzhang.editor/dist/ui_batches.js": 789,
+    "plugins/org.jiuzhang.editor/dist/ui_columns.js": 786,
+    "app/core/pending_dedupe.py": 783,
+    "plugins/org.jiuzhang.editor/dist/ui_split_board.js": 779,
+    "app/core/pending_pool.py": 773,
+    "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
+    "static/js/stage.js": 765,
+    "static/css/settings.css": 753,
+    "plugins/org.jiuzhang.editor/dist/layout.css": 746,
+    "app/core/plugin_update.py": 735,
+    "app/core/plugins.py": 725,
+    "plugins/org.jiuzhang.paper-gen/dist/core_layout.js": 695,
+    "static/js/stage_relay_io.js": 689,
+    "app/core/pending_db.py": 676,
+    "app/core/pending_bank.py": 644,
+    "app/core/bank_schema.py": 624,
+    "app/core/bank_write.py": 623,
+    "plugins/org.jiuzhang.bank-ui/dist/plugin.css": 596,
+    "plugins/org.jiuzhang.editor/dist/ui_intake.js": 595,
+    "app/core/bank_query.py": 593,
+    "plugins/org.jiuzhang.bank-ui/dist/ui_browse.js": 566,
+    "plugins/org.jiuzhang.bank-ui/dist/plugin.js": 565,
+    "static/js/st_workspace.js": 564,
+    "plugins/org.jiuzhang.paper-gen/dist/plugin.css": 563,
+    "app/core/dedupe_signature.py": 540,
+    "static/js/stage_command.js": 540,
+    "static/js/st_backup.js": 537,
+    "app/core/restore.py": 532,
+    "plugins/org.jiuzhang.editor/dist/ui_ai.js": 529,
+    "plugins/org.jiuzhang.editor/dist/ui_school_dict.js": 521,
+    "static/js/stage_frame.js": 521,
+    "static/js/workspace.js": 521,
+    "plugins/org.jiuzhang.paper-gen/dist/plugin.js": 520,
+    "app/api/bank.py": 516,
+    "plugins/org.jiuzhang.handout/dist/plugin.js": 515,
+    "app/core/latex_style_dict.py": 506,
+    "static/css/workspace.css": 504,
+    "app/api/pending.py": 501,
+}
 
 
 def lines_of(path: Path) -> int:
@@ -44,7 +93,7 @@ def tracked(globs: tuple[str, ...]) -> list[Path]:
 
 
 class ScriptSizeCeilingTest(unittest.TestCase):
-    """发行资产（插件 dist、底座 static、模板插件）单文件不超 800 行。"""
+    """发行资产（插件 dist、底座 static、模板插件）单文件不超 500 行。"""
 
     GLOBS = (
         "plugins/*/dist/**/*.js",
@@ -55,19 +104,31 @@ class ScriptSizeCeilingTest(unittest.TestCase):
         "examples/template-plugin/**/dist/**/*.css",
     )
 
+    @staticmethod
+    def violations(paths) -> list[str]:
+        out = []
+        for path in paths:
+            count = lines_of(path)
+            rel = path.relative_to(ROOT).as_posix()
+            frozen = LEGACY_OVER_CEILING.get(rel)
+            if frozen is None:
+                if count > CEILING:
+                    out.append(f"{rel}（{count} 行；新文件上限 {CEILING}）")
+            elif count > frozen:
+                out.append(f"{rel}（{count} 行；冻结上限 {frozen}，只许减不许增）")
+        return out
+
     def test_01_no_oversized_ship_file(self) -> None:
-        oversized = [(p, lines_of(p)) for p in tracked(self.GLOBS) if lines_of(p) > CEILING]
+        oversized = self.violations(tracked(self.GLOBS))
         self.assertEqual(
             oversized, [],
-            "以下文件超过 %d 行，按功能拆小再交：%s" % (
-                CEILING, ", ".join(f"{p.relative_to(ROOT).as_posix()}（{n} 行）" for p, n in oversized)))
+            "以下文件越过 500 行红线，按功能拆小再交：%s" % ", ".join(oversized))
 
     def test_02_no_oversized_host_python(self) -> None:
-        oversized = [(p, lines_of(p)) for p in tracked(("app/**/*.py",)) if lines_of(p) > CEILING]
+        oversized = self.violations(tracked(("app/**/*.py",)))
         self.assertEqual(
             oversized, [],
-            "底座 Python 超过 %d 行的：[%s]" % (
-                CEILING, ", ".join(f"{p.relative_to(ROOT).as_posix()}（{n} 行）" for p, n in oversized)))
+            "底座 Python 越过 500 行红线：[%s]" % ", ".join(oversized))
 
     def test_03_probe_scripts_are_dev_only(self) -> None:
         """开发期探针不参与门禁，但必须只待在 tools/ 里，不许混进发行目录。"""
@@ -75,6 +136,21 @@ class ScriptSizeCeilingTest(unittest.TestCase):
             self.fail(f"探针 {path} 混进了插件发行目录")
         for path in ROOT.glob("app/**/*probe*.py"):
             self.fail(f"探针 {path} 混进了底座")
+
+    def test_04_legacy_ledger_stays_honest(self) -> None:
+        """冻结台账只减不增：达标即删行，行数变了也要同步，防止拿旧额度偷偷长胖。"""
+        stale = []
+        for rel, frozen in sorted(LEGACY_OVER_CEILING.items()):
+            path = ROOT / rel
+            if not path.is_file():
+                stale.append(f"{rel} 已不存在，删台账")
+                continue
+            count = lines_of(path)
+            if count <= CEILING:
+                stale.append(f"{rel} 已降到 {count} 行（≤{CEILING}），删台账")
+            elif count != frozen:
+                stale.append(f"{rel} 实测 {count} 行，与冻结值 {frozen} 不符，更新台账")
+        self.assertEqual(stale, [], "存量台账失效：" + "；".join(stale))
 
 
 class PluginAssetWiringTest(unittest.TestCase):
