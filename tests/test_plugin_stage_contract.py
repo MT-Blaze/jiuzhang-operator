@@ -11,7 +11,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
+import copy
 import shutil
 import tempfile
 import unittest
@@ -55,7 +61,7 @@ class StageDeclarationTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def validate(self, **overrides) -> dict:
-        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        manifest = copy.deepcopy(BASE_MANIFEST)
         manifest.update(overrides)
         return validate_plugin(build_plugin_dir(self.root, manifest), manifest)
 
@@ -103,7 +109,7 @@ class BusGrantTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def validate(self, bus) -> dict:
-        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        manifest = copy.deepcopy(BASE_MANIFEST)
         if bus is not None:
             manifest["bus"] = bus
         return validate_plugin(build_plugin_dir(self.root, manifest), manifest)

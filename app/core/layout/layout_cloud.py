@@ -8,11 +8,10 @@
 from __future__ import annotations
 
 import base64
-import json
 import re
 from typing import Any
 
-from app.core import ai_center, pending_assets
+from app.core import ai_center, pending_assets, wire
 from app.core.ai_client import OpenAICompatibleProvider
 
 MAX_PAGES = 20
@@ -58,7 +57,7 @@ async def detect(request: dict[str, Any]) -> dict[str, Any]:
                 user_message="请只输出这一页的题块 JSON。",
                 temperature=0.0, max_tokens=2000, images=[image])
             content = _unwrap(str(result.get("content") or ""))
-            document = json.loads(content)
+            document = wire.loads(content)
         except Exception as exc:  # noqa: BLE001 - 单页失败只影响这一页
             notes.append(f"第 {page_no} 页云端版面失败：{exc}")
             continue

@@ -22,9 +22,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import hashlib
 import io
-import json
 import os
 import re
 import shutil
@@ -56,21 +62,21 @@ TOKEN = "jzo-self-update-probe-token"
 
 # 复制进沙箱发行版的程序文件（够跑起来即可，不搬测试与工具目录）
 COPY_ITEMS = ("app", "static", "schemas", "examples", "docs", "index.html", "LICENSE",
-              "README.md", "plugins.json", "requirements.txt", "start.bat",
+              "README.md", "plugins.toml", "requirements.txt", "start.bat",
               "build_release.bat")
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
 
 # 运行期自己会变的文件：不算「老师资产」，逐字节对比时排除。
 # 底座每次启动都会重写自己的库、索引缓存、工作区登记与更新状态，
 # 这些变化是应用自己写的，不是自更新干的。
-RUNTIME_FILES = {".local_token", "plugin_index_cache.json", "plugin_state.json",
+RUNTIME_FILES = {".local_token", "plugin_index_cache.toml", "plugin_state.toml",
                  "jiuzhang.db", "jiuzhang.db-wal", "jiuzhang.db-shm",
-                 "update_state.json", "workspaces.json"}
+                 "update_state.toml", "workspaces.toml"}
 RUNTIME_PREFIXES = ("banks/", "uploads/")
 
 
 def is_runtime_file(relative: str) -> bool:
-    # 军令 #18 起续更清单按工作区落位（data/workspaces/<id>/update_state.json），
+    # 军令 #18 起续更清单按工作区落位（data/workspaces/<id>/update_state.toml），
     # 只比全路径的旧口径会把这份底座自己写的文件误判成「被动过的老师资产」。
     name = relative.rsplit("/", 1)[-1]
     return name in RUNTIME_FILES or relative.startswith(RUNTIME_PREFIXES)
@@ -79,7 +85,7 @@ def is_runtime_file(relative: str) -> bool:
 SMUGGLED = {
     "data/EVIL_DATA.txt": "包里夹带的假 data\n",
     "plugins/org.probe.local/EVIL_PLUGIN.txt": "包里夹带的假插件\n",
-    "plugins/evil.plugin/plugin.json": '{"id": "org.evil.plugin"}\n',
+    "plugins/evil.plugin/plugin.toml": 'id = "org.evil.plugin"\n',
     "dist/EVIL_DIST.txt": "包里夹带的假 dist\n",
     ".system_generated/EVIL_SYSGEN.txt": "包里夹带的假暂存\n",
 }
@@ -113,7 +119,7 @@ def tree_hashes(root: Path, skip: set[str] | None = None) -> dict[str, str]:
 def health_version(base: str) -> str:
     try:
         with urllib.request.urlopen(base + "/healthz", timeout=2) as response:
-            return str(json.loads(response.read().decode("utf-8")).get("version") or "")
+            return str(wire.loads(response.read().decode("utf-8")).get("version") or "")
     except Exception:  # noqa: BLE001 - 探针只关心拿不拿得到版本号
         return ""
 
@@ -241,13 +247,13 @@ def seed_teacher_assets(install: Path) -> None:
     data.mkdir(parents=True, exist_ok=True)
     (data / "teacher_notes.txt").write_text("老师的私有笔记：自更新不许碰\n", encoding="utf-8")
     (data / "teacher_bank.db").write_bytes(b"TEACHER-BANK-BYTES-0001")
-    (data / "config.json").write_text(
-        json.dumps({"theme": "ink", "paper": "a4"}, ensure_ascii=False), encoding="utf-8")
+    (data / "config.toml").write_text(
+        toml_io.dumps({"theme": "ink", "paper": "a4"}), encoding="utf-8")
 
     plugin = install / "plugins" / "org.probe.local"
     (plugin / "dist").mkdir(parents=True, exist_ok=True)
     (plugin / "bank").mkdir(parents=True, exist_ok=True)
-    (plugin / "plugin.json").write_text(json.dumps({
+    (plugin / "plugin.toml").write_text(toml_io.dumps({
         "schema_version": "1.0",
         "id": "org.probe.local",
         "name": "本地插件",
@@ -260,7 +266,7 @@ def seed_teacher_assets(install: Path) -> None:
         "capabilities": ["question.render"],
         "permissions": ["questions:read"],
         "entry": {"frontend": "dist/index.html"},
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }), encoding="utf-8")
     (plugin / "LICENSE").write_text("Apache-2.0 probe fixture\n", encoding="utf-8")
     (plugin / "dist" / "index.html").write_text("<!doctype html><p>本地插件</p>\n", encoding="utf-8")
     (plugin / "bank" / "bank.db").write_bytes(b"LOCAL-PLUGIN-BANK-BYTES")
@@ -275,7 +281,7 @@ def install_minimal_core_bank(install: Path) -> None:
     source = ROOT / "plugins" / "org.jiuzhang.bank-engine"
     target = install / "plugins" / "org.jiuzhang.bank-engine"
     (target / "bank").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source / "plugin.json", target / "plugin.json")
+    shutil.copy2(source / "plugin.toml", target / "plugin.toml")
     shutil.copy2(source / "LICENSE", target / "LICENSE")
     shutil.copy2(source / "bank" / "schema.sql", target / "bank" / "schema.sql")
     # 军令 #20：引擎是无界面插件，没有 dist/；有才复制，避免拿旧布局去猜。
@@ -341,7 +347,7 @@ def write_index(serve_dir: Path, base: str, version: str) -> None:
         },
     }
     (serve_dir / "plugins.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        wire.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ------------------------------------------------------------------ 起底座
@@ -488,7 +494,7 @@ def main() -> int:
 
         record("本地插件目录逐字节未变", before_plugins == after_plugins,
                "%d 个文件" % len(after_plugins))
-        teacher = ("teacher_notes.txt", "teacher_bank.db", "config.json")
+        teacher = ("teacher_notes.txt", "teacher_bank.db", "config.toml")
         record("data/ 里老师的资产逐字节未变",
                all(before_data.get(name) == after_data.get(name) for name in teacher),
                "、".join(teacher))
@@ -537,15 +543,10 @@ def main() -> int:
                "日志：%s" % log_source.name)
 
         # 续更清单从军令 #18 起属于当前工作区；根 data/ 下再出现同名文件就是落错了地方。
-        state_path = install / "data" / "workspaces" / "default" / "update_state.json"
-        state = {}
-        if state_path.is_file():
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-            except ValueError:
-                state = {}
+        state_path = install / "data" / "workspaces" / "default" / "update_state.toml"
+        state = toml_io.load(state_path) if state_path.is_file() else {}
         record("续更清单按工作区落位且版本号正确",
-               not (install / "data" / "update_state.json").exists()
+               not (install / "data" / "update_state.toml").exists()
                and str(state.get("host_version") or "") == HOST_VERSION,
                "host_version=%s，路径=%s" % (state.get("host_version") or "", state_path.relative_to(install)))
 
@@ -567,11 +568,11 @@ def main() -> int:
         "shots": sorted(str(item.relative_to(work)) for item in shots.glob("*.png")),
         "expected_noise": noise,
     }
-    (work / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
+    (work / "result.toml").write_text(toml_io.dumps(result, default=str),
                                        encoding="utf-8")
     print("----")
     print("自更新真机压测：%d/%d 通过" % (passed, len(checks)))
-    print("产物：%s" % (work / "result.json"))
+    print("产物：%s" % (work / "result.toml"))
     return 0 if passed == len(checks) else 1
 
 

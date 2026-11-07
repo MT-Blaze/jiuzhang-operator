@@ -20,8 +20,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import base64
-import json
 import os
 import sqlite3
 import sys
@@ -177,7 +183,7 @@ class PoolCase(unittest.TestCase):
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         question_id, document["type"], document["stem"],
-                        json.dumps(document["options"], ensure_ascii=False,
+                        wire.dumps(document["options"], ensure_ascii=False,
                                    separators=(",", ":")),
                         str((document.get("answer") or {}).get("final") or "A"),
                         document.get("solution"), "[]",
@@ -276,13 +282,13 @@ class PoolCase(unittest.TestCase):
         """改写池内条目自带的文档：造「缺答案 / 占位符未清」这类料。"""
         con = self._con()
         con.execute("UPDATE duplicate_pool SET doc_json = ? WHERE pool_id = ?",
-                    (json.dumps(document, ensure_ascii=False), pool_id))
+                    (wire.dumps(document, ensure_ascii=False), pool_id))
         con.commit()
 
     def _pool_asset_names(self, pool_id: str) -> list[str]:
         """池内这条自己那份成品图的文件名（``pool_assets/cimg_…``，与待审池不同目录）。"""
         row = self._pool_raw(pool_id)
-        return [str(item["name"]) for item in json.loads(row["assets_json"] or "[]")]
+        return [str(item["name"]) for item in wire.loads(row["assets_json"] or "[]")]
 
 
 class PoolAdmissionTest(PoolCase):
@@ -340,7 +346,7 @@ class PoolAdmissionTest(PoolCase):
         """4.3 底图不进池：条目只带题自己的成品图，没有任何整页底图的位置。"""
         batch_id, pool_id = self._prepare_pool(_doc(images=[_IMAGE]), assets=_ASSET)
         row = self._pool_raw(pool_id)
-        assets = json.loads(row["assets_json"])
+        assets = wire.loads(row["assets_json"])
         self.assertEqual(len(assets), 1)
         self.assertTrue(str(assets[0]["name"]).startswith("cimg_"),
                         "图跟题走：池内这条的成品图是自己那一份，不是批次的 pimg_")
@@ -366,7 +372,7 @@ class PoolAdmissionTest(PoolCase):
             "SELECT 1 FROM pending_questions WHERE id = ?", (item_id,)).fetchone(), None,
             "抽走＝待审行已删")
         self.assertIn(batch_name,
-                      json.loads(self._con().execute(
+                      wire.loads(self._con().execute(
                           "SELECT assets_json FROM batches WHERE batch_id = ?",
                           (batch_id,)).fetchone()[0]),
                       "批次残留切图清单继续记着 pimg_，等未审数归零由 _settle_batch 清")
@@ -573,7 +579,7 @@ class PoolActionsTest(PoolCase):
         """
         batch_id, pool_id = self._prepare_pool(_doc(images=[_IMAGE]), assets=_ASSET)
         pool_name = self._pool_asset_names(pool_id)[0]
-        batch_names = json.loads(self._con().execute(
+        batch_names = wire.loads(self._con().execute(
             "SELECT assets_json FROM batches WHERE batch_id = ?", (batch_id,)).fetchone()[0])
         self.assertTrue(batch_names, "批次侧的残留切图清单本该记着这枚 pimg_")
 
@@ -1345,7 +1351,7 @@ class PoolEvictionTest(PoolCase):
     def _pending_asset_names(self, batch_id: str) -> list[str]:
         row = self._con().execute("SELECT assets_json FROM batches WHERE batch_id = ?",
                                   (batch_id,)).fetchone()
-        return [str(name) for name in json.loads(row["assets_json"] or "[]") if name]
+        return [str(name) for name in wire.loads(row["assets_json"] or "[]") if name]
 
 
 if __name__ == "__main__":

@@ -12,13 +12,19 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
+import copy
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import commands, manifests
+from app.core import commands, manifests, toml_io
 from app.core.plugins import validate_plugin
 from tests.core_sources import settings_source, stage_source, template_source  # noqa: E402
 
@@ -45,7 +51,7 @@ def build_plugin_dir(root: Path) -> Path:
     (plugin_dir / "dist").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "LICENSE").write_text("Apache License 2.0 (fixture)", encoding="utf-8")
     (plugin_dir / "dist" / "index.html").write_text("<!doctype html><title>p</title>", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(json.dumps(MANIFEST, ensure_ascii=False), encoding="utf-8")
+    toml_io.write(plugin_dir / "plugin.toml", MANIFEST)
     return plugin_dir
 
 
@@ -57,7 +63,7 @@ def between(text: str, start: str, end: str) -> str:
 class RequiresUserNormalizeTest(unittest.TestCase):
     def validate(self, entries: list) -> list[dict]:
         with tempfile.TemporaryDirectory() as tmp:
-            manifest = json.loads(json.dumps(MANIFEST))
+            manifest = copy.deepcopy(MANIFEST)
             manifest["contributes"] = {"commands": entries}
             info = validate_plugin(build_plugin_dir(Path(tmp)), manifest)
         return info["commands"]

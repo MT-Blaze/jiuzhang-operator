@@ -1,7 +1,7 @@
 """备份子系统的本机配置：开关、本地目录、WebDAV 凭据。
 
 三条铁律写死在这里：
-- 凭据只落 ``data/workspaces/<id>/backup.json``，**绝不进备份包**（包里没有钥匙）；
+- 凭据只落 ``data/workspaces/<id>/backup.toml``，**绝不进备份包**（包里没有钥匙）；
 - 给前端的视图里密码只报「有没有」，绝不回明文；
 - 网盘备份依赖本地备份：用户亲手关掉本地时，网盘必须一起关，绝不允许
   「无本地文件可传」的空转开关。
@@ -11,9 +11,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from app.core import state_store
 from app.core.backup_files import (
     backup_settings_path,
     current_workspace_id,
@@ -39,15 +39,7 @@ def default_backup_settings(workspace_id: str | None = None) -> dict[str, Any]:
 def load_backup_settings(workspace_id: str | None = None) -> dict[str, Any]:
     ws_id = workspace_id or current_workspace_id()
     defaults = default_backup_settings(ws_id)
-    path = backup_settings_path(ws_id)
-    if not path.is_file():
-        return defaults
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return defaults
-    if not isinstance(raw, dict):
-        return defaults
+    raw = state_store.load_table(backup_settings_path(ws_id))
     for key in ("url", "username", "password", "remote_dir", "local_dir"):
         if isinstance(raw.get(key), str):
             defaults[key] = raw[key].strip() if key != "password" else raw[key]
@@ -95,12 +87,7 @@ def record_upload_result(result: dict[str, Any], workspace_id: str | None = None
 
 
 def _write_settings(values: dict[str, Any], ws_id: str) -> None:
-    """落盘走「临时文件 + 原子替换」：中途崩了不会留下半份配置。"""
-    path = backup_settings_path(ws_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(values, ensure_ascii=False, indent=2), encoding="utf-8")
-    temp.replace(path)
+    state_store.save(backup_settings_path(ws_id), values)
 
 
 def normalize_toggles(values: dict[str, Any]) -> dict[str, Any]:

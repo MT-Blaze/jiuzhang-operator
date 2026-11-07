@@ -8,8 +8,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import concurrent.futures
-import json
 import os
 import re
 import shutil
@@ -218,7 +224,7 @@ class BankApiContractTest(unittest.TestCase):
     # ---------- HTTP 辅助 ----------
     def _request(self, path: str, method: str = "GET", body: dict | None = None,
                  token: bool = False) -> tuple[int, dict]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -227,15 +233,15 @@ class BankApiContractTest(unittest.TestCase):
             request.add_header("X-JZO-Token", TOKEN)
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read().decode("utf-8") or "{}")
+                return response.status, wire.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
             try:
                 payload = error.read().decode("utf-8")
             finally:
                 error.close()
             try:
-                parsed = json.loads(payload or "{}")
-            except json.JSONDecodeError:
+                parsed = wire.loads(payload or "{}")
+            except wire.JSONDecodeError:
                 parsed = {"raw": payload}
             return error.code, parsed
 
@@ -333,7 +339,7 @@ class BankApiContractTest(unittest.TestCase):
             ).fetchone()[0]
         finally:
             con.close()
-        stored = json.loads(raw)
+        stored = wire.loads(raw)
         self.assertIsInstance(stored, list)
         self.assertTrue(all({"key", "label", "value"} == set(item) for item in stored))
         self.assertIn("录题插件私有数据", [item["label"] for item in stored])
@@ -348,7 +354,7 @@ class BankApiContractTest(unittest.TestCase):
                 token=True,
             )
             self.assertEqual(status, 422, (question_type, data))
-            self.assertIn("core-bank 存储层只收", json.dumps(data, ensure_ascii=False))
+            self.assertIn("core-bank 存储层只收", wire.dumps(data, ensure_ascii=False))
 
     def test_z7_create_links_known_topic_and_rejects_unknown_one(self) -> None:
         status, data = self._request(
@@ -359,7 +365,7 @@ class BankApiContractTest(unittest.TestCase):
             token=True,
         )
         self.assertEqual(status, 422, data)
-        self.assertIn("大纲里没有节点", json.dumps(data, ensure_ascii=False))
+        self.assertIn("大纲里没有节点", wire.dumps(data, ensure_ascii=False))
 
         status, created = self._request(
             f"/api/bank/plugins/{PLUGIN_ID}/questions", "POST",
@@ -519,24 +525,21 @@ class BankApiContractTest(unittest.TestCase):
         self.assertEqual(data["total"], 0)
 
     def test_basket_survives_a_tampered_file(self) -> None:
-        """`basket.json` 是人能改的文件：缺 plugin_id 的条目只得出局，不许把读接口打成 500。
+        """`basket.toml` 是人能改的文件：缺 plugin_id 的条目只得出局，不许把读接口打成 500。
 
         展开读题时宿主按 plugin_id 分组取题，旧过滤器只验 question_id，
         一条缺库的条目会让 ``item["plugin_id"]`` 抛 KeyError 整篮判死。
         """
         self._request("/api/basket", "DELETE", token=True)
-        (self.data_dir / "basket.json").write_text(
-            json.dumps(
-                {
-                    "items": [
-                        {"question_id": "q_test_000001"},
-                        {"question_id": "q_test_000002", "plugin_id": PLUGIN_ID},
-                        "不是对象",
-                        {"question_id": "", "plugin_id": PLUGIN_ID},
-                    ]
-                },
-                ensure_ascii=False,
-            ),
+        (self.data_dir / "basket.toml").write_text(
+            "[[items]]\n"
+            'question_id = "q_test_000001"\n\n'
+            "[[items]]\n"
+            'question_id = "q_test_000002"\n'
+            f'plugin_id = "{PLUGIN_ID}"\n\n'
+            "[[items]]\n"
+            'question_id = ""\n'
+            f'plugin_id = "{PLUGIN_ID}"\n',
             encoding="utf-8",
         )
         status, data = self._request("/api/basket")
@@ -851,7 +854,7 @@ class BankApiContractTest(unittest.TestCase):
             {"question": {"clear_flags": ["definitely_not_a_flag"]}}, token=True,
         )
         self.assertEqual(status, 422, data)
-        self.assertIn("未知审核标记", json.dumps(data, ensure_ascii=False))
+        self.assertIn("未知审核标记", wire.dumps(data, ensure_ascii=False))
         status, listed = self._request(f"/api/bank/plugins/{PLUGIN_ID}/questions/{target}")
         self.assertIn("structure_conflict",
                       listed["extensions"]["org.jiuzhang.core-bank.migration"]["flags"])
@@ -1001,7 +1004,7 @@ class BankApiContractTest(unittest.TestCase):
             ).fetchone()[0]
         finally:
             con.close()
-        entries = {item["key"]: item["value"] for item in json.loads(raw)}
+        entries = {item["key"]: item["value"] for item in wire.loads(raw)}
         self.assertEqual(entries.get("org.jiuzhang.core-bank.tags"), {"tags": ["判别式"]})
         self.assertEqual(entries.get("org.jiuzhang.core-bank.taxonomy", {}).get("chapter"),
                          "2. 一元二次函数")
@@ -1021,7 +1024,7 @@ class BankApiContractTest(unittest.TestCase):
             ).fetchone()[0]
         finally:
             con.close()
-        entries = {item["key"]: item["value"] for item in json.loads(raw)}
+        entries = {item["key"]: item["value"] for item in wire.loads(raw)}
         self.assertNotIn("org.jiuzhang.core-bank.tags", entries)
         self.assertNotIn("org.jiuzhang.core-bank.taxonomy", entries)
 

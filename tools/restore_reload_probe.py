@@ -8,7 +8,7 @@
 恢复也就真的会把代码盖回去；而恢复端点不像切库/导入那样调度真重启——底座一直在跑。
 「盖回去之后界面到底加载什么」当时只验了 UI 提示与重启后的清单，这一支把它量出来。
 
-夹具 ``org.example.restore-reload`` 有两个构建：v1 / v2 的 ``plugin.json``（名字、版本号）
+夹具 ``org.example.restore-reload`` 有两个构建：v1 / v2 的 ``plugin.toml``（名字、版本号）
 与 ``dist/plugin.js`` 都不同，脚本一执行就把 ``RUN:v1`` / ``RUN:v2`` 写进自己的 DOM
 并借底栏带回——**标记来自 JS 执行，不来自 HTML 文本**，所以「旧脚本还在跑」骗不了人。
 
@@ -26,9 +26,15 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import hashlib
 import io
-import json
 import os
 import re
 import socket
@@ -137,8 +143,7 @@ def build_zip(label: str, version: str, name: str) -> bytes:
     )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{PLUGIN_ID}/plugin.json",
-                    json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr(f"{PLUGIN_ID}/plugin.toml", toml_io.dumps(manifest))
         zf.writestr(f"{PLUGIN_ID}/dist/index.html", html)
         zf.writestr(f"{PLUGIN_ID}/dist/plugin.js", FIXTURE_JS % (label, PLUGIN_ID))
         zf.writestr(f"{PLUGIN_ID}/LICENSE", (ROOT / "LICENSE").read_text(encoding="utf-8"))
@@ -147,14 +152,14 @@ def build_zip(label: str, version: str, name: str) -> bytes:
 
 def api(method: str, path: str, body=None, blob: bytes | None = None):
     data = blob if blob is not None else (
-        json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None)
+        wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None)
     request = urllib.request.Request(ORIGIN + path, data=data, method=method)
     request.add_header("Accept", "application/json")
     request.add_header("X-JZO-Token", TOKEN)
     if data is not None and blob is None:
         request.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(request, timeout=120) as resp:
-        return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+        return resp.status, wire.loads(resp.read().decode("utf-8") or "{}")
 
 
 def api_status(method: str, path: str, body=None, blob: bytes | None = None) -> tuple[int, dict]:
@@ -163,15 +168,15 @@ def api_status(method: str, path: str, body=None, blob: bytes | None = None) -> 
     except urllib.error.HTTPError as error:
         raw = error.read().decode("utf-8", errors="replace")
         try:
-            return error.code, json.loads(raw)
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw)
+        except wire.JSONDecodeError:
             return error.code, {"detail": raw}
 
 
 def fingerprint(plugin_dir: Path) -> dict[str, str]:
     """盘上指纹：只用来证明「代码真的被盖回去了」，不经 HTTP、不混入缓存变量。"""
     out = {}
-    for relative in ("plugin.json", "dist/plugin.js", "dist/index.html"):
+    for relative in ("plugin.toml", "dist/plugin.js", "dist/index.html"):
         path = plugin_dir / relative
         out[relative] = (hashlib.sha256(path.read_bytes()).hexdigest()[:16]
                          if path.is_file() else "missing")
@@ -200,7 +205,7 @@ def marker(page) -> str:
 
 
 def dump(path: Path, payload) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(toml_io.dumps(payload), encoding="utf-8")
 
 
 def run(tag: str) -> dict:
@@ -250,7 +255,7 @@ def run(tag: str) -> dict:
         env = dict(os.environ)
         env["JZO_DATA_DIR"] = str(data_dir)
         env["JZO_PLUGINS_DIR"] = str(plugins_dir)
-        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.json")
+        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.toml")
         env["JZO_LOCAL_TOKEN"] = TOKEN
         env["JZO_RESTART_DISABLED"] = "1"
         env.pop("JZO_AI_API_KEY", None)
@@ -285,7 +290,7 @@ def run(tag: str) -> dict:
               local.get("package_name") or backup_run.get("detail"))
 
         manifest_path = Path(str(local.get("manifest") or "")) if local.get("manifest") else None
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path else {}
+        manifest = toml_io.load(manifest_path) if manifest_path else {}
         fixture_paths = [item.get("path") for item in (manifest.get("files") or [])
                          if item.get("category") == "plugins"
                          and str(item.get("path", "")).find(PLUGIN_ID) >= 0]
@@ -407,8 +412,8 @@ def run(tag: str) -> dict:
     passed = sum(1 for item in checks if item["passed"])
     result = {"tag": tag, "total": len(checks), "passed": passed,
               "crashed": crashed, "checks": checks, "evidence": evidence, "raw_api": raw}
-    dump(out / "probe.json", result)
-    print(json.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
+    dump(out / "probe.toml", result)
+    print(wire.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
     for item in checks:
         print(("PASS " if item["passed"] else "FAIL ") + item["name"] + " | " + item["detail"])
     if crashed:

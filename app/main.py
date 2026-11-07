@@ -115,7 +115,7 @@ logger = logging.getLogger("uvicorn.error")
 def _resume_plugin_updates() -> None:
     """重启续更：把上一轮用户亲手点选、因底座重启没更完的插件补齐。
 
-    **只消费 ``data/update_state.json`` 与本机已下载的包，不出网**（AGENTS §2
+    **只消费 ``data/update_state.toml`` 与本机已下载的包，不出网**（AGENTS §2
     出网铁律的续更例外）。放在守护线程里跑：补齐失败绝不能挡住启动，
     用户打开设置页还能再点一次。
     """

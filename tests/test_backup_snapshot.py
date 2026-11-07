@@ -6,7 +6,7 @@
    图片哈希、文件清单、生成时间、待回填的 Zstd 包哈希）；
 3. 逐题哈希能按快照库原样复算；
 4. default 工作区不把其他工作区、宿主状态与凭据文件卷进来；
-5. **本区配置（``plugin_state.json`` 等）与 ``plugins/`` 代码进包**，缓存/版本库/凭据/别区不进；
+5. **本区配置（``plugin_state.toml`` 等）与 ``plugins/`` 代码进包**，缓存/版本库/凭据/别区不进；
 6. 插件目录摘要可由文件清单复算，篡改或漏文件即被恢复校验拒掉。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_backup_snapshot``
@@ -14,7 +14,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
+import copy
 import os
 import shutil
 import sqlite3
@@ -66,8 +72,8 @@ class SnapshotTest(unittest.TestCase):
         self.conn = _make_bank(self.ws_dir / "banks" / f"{PROVIDER}.db", 5)
         (self.ws_dir / "uploads").mkdir()
         (self.ws_dir / "uploads" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\nDATA")
-        (self.ws_dir / "config.json").write_text('{"provider":"x"}', encoding="utf-8")
-        (self.ws_dir / "backup.json").write_text('{"password":"secret"}', encoding="utf-8")
+        (self.ws_dir / "config.toml").write_text('provider = "x"\n', encoding="utf-8")
+        (self.ws_dir / "backup.toml").write_text('password = "secret"\n', encoding="utf-8")
         (self.ws_dir / ".local_token").write_text("token", encoding="utf-8")
 
     def tearDown(self) -> None:
@@ -127,11 +133,11 @@ class SnapshotTest(unittest.TestCase):
             categories = {item["path"]: item["category"] for item in manifest["files"]}
             self.assertEqual("bank", categories[f"banks/{PROVIDER}.db"])
             self.assertEqual("uploads", categories["uploads/pic.png"])
-            self.assertEqual("other", categories["config.json"])
+            self.assertEqual("other", categories["config.toml"])
             required = {item["path"]: item["required"] for item in manifest["files"]}
             self.assertTrue(required[f"banks/{PROVIDER}.db"])
             self.assertTrue(required["uploads/pic.png"])
-            self.assertNotIn("backup.json", categories)
+            self.assertNotIn("backup.toml", categories)
             self.assertNotIn(".local_token", categories)
         finally:
             import shutil
@@ -165,18 +171,18 @@ class SnapshotTest(unittest.TestCase):
         (other / "banks" / "foreign.db").write_bytes(b"not ours")
         (other / "plugins").mkdir()
         (other / "plugins" / "org.jiuzhang.foreign").mkdir()
-        (other / "plugins" / "org.jiuzhang.foreign" / "plugin.json").write_text(
-            "{}", encoding="utf-8"
+        (other / "plugins" / "org.jiuzhang.foreign" / "plugin.toml").write_text(
+            'id = "org.jiuzhang.foreign"\n', encoding="utf-8"
         )
-        (self.data / "plugin_state.json").write_text("{}", encoding="utf-8")
-        (self.data / "workspaces.json").write_text("[]", encoding="utf-8")
+        (self.data / "plugin_state.toml").write_text("", encoding="utf-8")
+        (self.data / "workspaces.toml").write_text("workspaces = []\n", encoding="utf-8")
         settings.workspace_id = None
         stage, manifest = backup.snapshot_workspace("default")
         try:
             paths = {item["path"] for item in manifest["files"]}
             self.assertFalse(any(path.startswith("workspaces/") for path in paths))
-            self.assertNotIn("plugin_state.json", paths)
-            self.assertNotIn("workspaces.json", paths)
+            self.assertNotIn("plugin_state.toml", paths)
+            self.assertNotIn("workspaces.toml", paths)
             self.assertFalse(
                 any(path.startswith("ws/") for path in paths),
                 "default 区自己没配覆盖层时，不许把别区的 plugins/ 当成 ws/ 卷进来",
@@ -206,15 +212,15 @@ class OverlaySnapshotTest(unittest.TestCase):
         os.environ.pop("JZO_PLUGINS_DIR", None)
         settings.workspace_id = WS_ID
         self.conn = _make_bank(self.ws_dir / "banks" / f"{PROVIDER}.db", 2)
-        (self.ws_dir / "plugin_state.json").write_text(
-            json.dumps({"enabled": {self.PLUGIN: True}}), encoding="utf-8"
+        (self.ws_dir / "plugin_state.toml").write_text(
+            'enabled = "demo"\n', encoding="utf-8"
         )
-        (self.ws_dir / "startup.json").write_text('{"page":"workspace"}', encoding="utf-8")
+        (self.ws_dir / "startup.toml").write_text('page = "workspace"\n', encoding="utf-8")
         (self.ws_dir / ".env").write_text("SECRET=1", encoding="utf-8")
-        (self.ws_dir / "backup.json").write_text('{"password":"secret"}', encoding="utf-8")
+        (self.ws_dir / "backup.toml").write_text('password = "secret"\n', encoding="utf-8")
         code = self.ws_dir / "plugins" / self.PLUGIN
         (code / "dist").mkdir(parents=True)
-        (code / "plugin.json").write_text('{"id":"%s"}' % self.PLUGIN, encoding="utf-8")
+        (code / "plugin.toml").write_text('id = "%s"\n' % self.PLUGIN, encoding="utf-8")
         (code / "dist" / "plugin.js").write_text("console.log(1)", encoding="utf-8")
         (code / "dist" / "plugin.css").write_text(".a{}", encoding="utf-8")
         (code / "__pycache__").mkdir()
@@ -223,7 +229,7 @@ class OverlaySnapshotTest(unittest.TestCase):
         (code / ".git" / "config").write_text("[core]", encoding="utf-8")
         foreign = self.data / "workspaces" / "ws_ffffffffffffffff" / "plugins" / "org.jiuzhang.foreign"
         foreign.mkdir(parents=True)
-        (foreign / "plugin.json").write_text("{}", encoding="utf-8")
+        (foreign / "plugin.toml").write_text('id = "org.jiuzhang.foreign"\n', encoding="utf-8")
 
     def tearDown(self) -> None:
         self.conn.close()
@@ -243,17 +249,17 @@ class OverlaySnapshotTest(unittest.TestCase):
         try:
             categories = {item["path"]: item["category"] for item in manifest["files"]}
             required = {item["path"]: item["required"] for item in manifest["files"]}
-            self.assertEqual("other", categories["ws/plugin_state.json"])
-            self.assertEqual("other", categories["ws/startup.json"])
-            self.assertEqual("plugins", categories[f"ws/plugins/{self.PLUGIN}/plugin.json"])
+            self.assertEqual("other", categories["ws/plugin_state.toml"])
+            self.assertEqual("other", categories["ws/startup.toml"])
+            self.assertEqual("plugins", categories[f"ws/plugins/{self.PLUGIN}/plugin.toml"])
             self.assertEqual("plugins", categories[f"ws/plugins/{self.PLUGIN}/dist/plugin.js"])
-            self.assertFalse(required[f"ws/plugins/{self.PLUGIN}/plugin.json"],
+            self.assertFalse(required[f"ws/plugins/{self.PLUGIN}/plugin.toml"],
                              "插件代码是可选恢复项，不能强迫老师连代码一起覆盖")
-            self.assertFalse(required["ws/plugin_state.json"], "配置同样可勾掉")
+            self.assertFalse(required["ws/plugin_state.toml"], "配置同样可勾掉")
             for leaked in (f"ws/plugins/{self.PLUGIN}/__pycache__/junk.pyc",
                            f"ws/plugins/{self.PLUGIN}/.git/config",
-                           "ws/.env", "ws/backup.json",
-                           "ws/plugins/org.jiuzhang.foreign/plugin.json"):
+                           "ws/.env", "ws/backup.toml",
+                           "ws/plugins/org.jiuzhang.foreign/plugin.toml"):
                 self.assertNotIn(leaked, categories, f"{leaked} 不该进包")
             self.assertTrue((stage / "ws" / "plugins" / self.PLUGIN / "dist" / "plugin.js").is_file())
         finally:
@@ -290,12 +296,12 @@ class OverlaySnapshotTest(unittest.TestCase):
             }
             base = {**manifest, "package": package}
             restore.validate_manifest(base, WS_ID)
-            tampered = json.loads(json.dumps(base))
+            tampered = copy.deepcopy(base)
             tampered["plugins"][0]["sha256"] = "f" * 64
             with self.assertRaises(restore.RestoreError) as caught:
                 restore.validate_manifest(tampered, WS_ID)
             self.assertIn("摘要", str(caught.exception))
-            dropped = json.loads(json.dumps(base))
+            dropped = copy.deepcopy(base)
             dropped["files"] = [item for item in dropped["files"]
                                 if item["path"] != f"ws/plugins/{self.PLUGIN}/dist/plugin.js"]
             with self.assertRaises(restore.RestoreError):
@@ -313,7 +319,7 @@ class OverlaySnapshotTest(unittest.TestCase):
     def test_09_host_only_bookkeeping_files_never_enter_the_package(self) -> None:
         # 真机取证踩出来的坑：data/current_workspace 曾被当普通数据文件扫进包，
         # 而恢复校验又拦住宿主级文件——两头不一致会让整包判废，一份都恢复不了。
-        for name in ("current_workspace", "workspaces.json", "deletion_audit.json", ".local_token"):
+        for name in ("current_workspace", "workspaces.toml", "deletion_audit.toml", ".local_token"):
             (self.ws_dir / name).write_text("host", encoding="utf-8")
         stage, manifest = self._manifest()
         try:
@@ -321,7 +327,7 @@ class OverlaySnapshotTest(unittest.TestCase):
             for name in backup.HOST_ONLY_FILES:
                 self.assertNotIn(name, paths, f"{name} 是宿主级账本/凭据，不该进包")
             self.assertIn(f"banks/{PROVIDER}.db", paths, "跳过宿主文件后业务数据仍要照常进包")
-            self.assertIn("ws/plugin_state.json", paths)
+            self.assertIn("ws/plugin_state.toml", paths)
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 

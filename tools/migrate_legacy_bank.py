@@ -11,14 +11,20 @@
 - ``plugins/org.jiuzhang.bank-engine/bank/bank.db``：随插件包分发的题库种子
 - ``plugins/org.jiuzhang.bank-engine/bank/assets/``：题目配图（随包）
 - ``data/banks/org.jiuzhang.core-bank.db``：当前工作区可直接查询的副本
-- ``data/bank_migration_report.json``：迁移审计报告（含 LaTeX 完整性核对）
+- ``data/bank_migration_report.toml``：迁移审计报告（含 LaTeX 完整性核对）
 """
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import argparse
 import hashlib
-import json
 import re
 import shutil
 import sqlite3
@@ -226,8 +232,8 @@ def convert_row(
     raw_paths = row.get("image_paths")
     if isinstance(raw_paths, str) and raw_paths.strip():
         try:
-            parsed = json.loads(raw_paths)
-        except json.JSONDecodeError:
+            parsed = wire.loads(raw_paths)
+        except wire.JSONDecodeError:
             parsed = []
         if isinstance(parsed, list):
             extra_paths = [item for item in parsed if isinstance(item, str) and item.strip()]
@@ -484,11 +490,11 @@ def migrate(
         report["grades"][grade] = report["grades"].get(grade, 0) + 1
         report["difficulties"][document["difficulty"]] = report["difficulties"].get(document["difficulty"], 0) + 1
 
-    report_path = Path(settings.data_dir) / "bank_migration_report.json"
+    report_path = Path(settings.data_dir) / "bank_migration_report.toml"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    (bank_dir / "migration_report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    toml_io.write(report_path, report)
+    (bank_dir / "migration_report.toml").write_text(
+        toml_io.dumps(report), encoding="utf-8"
     )
     return report
 
@@ -522,8 +528,8 @@ def main(argv: list[str] | None = None) -> int:
         f"LaTeX 不一致 {report['latex_mismatch_rows']} · "
         f"种子库 {report['seed_db_bytes'] / 1024:.1f} KB"
     )
-    print("题型：" + json.dumps(report["types"], ensure_ascii=False))
-    print("年级：" + json.dumps(report["grades"], ensure_ascii=False))
+    print("题型：" + wire.dumps(report["types"], ensure_ascii=False))
+    print("年级：" + wire.dumps(report["grades"], ensure_ascii=False))
     return 1 if report["failed_count"] else 0
 
 

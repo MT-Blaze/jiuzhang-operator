@@ -14,8 +14,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -28,7 +34,7 @@ HANDOFF = ROOT / "docs" / "handoff"
 ORDERS = HANDOFF / "orders"
 RECEIPTS = HANDOFF / "receipts"
 VERDICTS = HANDOFF / "verdicts"
-STATE = HANDOFF / "state.json"
+STATE = HANDOFF / "state.toml"
 
 LOCAL_TZ = timezone(timedelta(hours=8))
 
@@ -161,7 +167,7 @@ def cmd_order(args: argparse.Namespace) -> int:
     text = ORDER_TEMPLATE.format(
         order_id=order_id, title=title, created_at=now(),
         brain=args.brain or "未指定", items=items.strip(),
-        title_json=json.dumps(title, ensure_ascii=False),
+        title_json=wire.dumps(title, ensure_ascii=False),
     )
     target = ORDERS / f"{order_id:03d}.md"
     target.write_text(text, encoding="utf-8")
@@ -178,8 +184,8 @@ def classify_probe(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return info
     try:
-        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, ValueError):
+        data = toml_io.load(path)
+    except OSError:
         info["parsed"] = False
         return info
     info["parsed"] = True
@@ -315,7 +321,7 @@ def cmd_receipt(args: argparse.Namespace) -> int:
         test_block=test_block,
         probe_text=probe_text,
         open_issues=(args.open_issues or "（如实填写欠账、偏离与未验证项；没有就写「无」）").strip(),
-        marker=json.dumps(marker, ensure_ascii=False),
+        marker=wire.dumps(marker, ensure_ascii=False),
     )
     target = RECEIPTS / f"{order_id:03d}.md"
     target.write_text(redact(text), encoding="utf-8")
@@ -389,7 +395,7 @@ def verify_text(text: str, *, actual: dict[str, Any] | None = None,
         problems.append("缺机器可读标记 `<!-- handoff:{...} -->`，数字无法复核")
         return problems
     try:
-        data = json.loads(marker.group(1))
+        data = wire.loads(marker.group(1))
     except ValueError:
         problems.append("机器可读标记不是合法 JSON")
         return problems
@@ -457,7 +463,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                            allow_no_probe=bool(args.allow_no_probe))
 
     marker = MARKER_RE.search(text)
-    data = json.loads(marker.group(1)) if marker else {}
+    data = wire.loads(marker.group(1)) if marker else {}
     claimed_head = str(data.get("head") or "")
     if claimed_head and actual["head"] and claimed_head != actual["head"]:
         # 不是判废项（先出回传单后提交是正常流程），但必须让人看见证据的基准点。
@@ -514,7 +520,7 @@ def cmd_pack(args: argparse.Namespace) -> int:
         return 2
     text = receipt.read_text(encoding="utf-8", errors="replace")
     marker = MARKER_RE.search(text)
-    data = json.loads(marker.group(1)) if marker else {}
+    data = wire.loads(marker.group(1)) if marker else {}
     order_id = int(data.get("order_id") or 0)
     order_path = ORDERS / f"{order_id:03d}.md"
     order_text = order_path.read_text(encoding="utf-8", errors="replace") if order_path.is_file() else ""
@@ -576,14 +582,14 @@ def call_gateway(messages: list[dict[str, str]], *, model: str, base: str,
     import urllib.error
     import urllib.request
 
-    body = json.dumps({"model": model, "messages": messages, "stream": False}).encode("utf-8")
+    body = wire.dumps({"model": model, "messages": messages, "stream": False}).encode("utf-8")
     request = urllib.request.Request(
         base.rstrip("/") + "/chat/completions", data=body, method="POST",
         headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            payload = wire.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"网关回 HTTP {exc.code}") from exc
     except (urllib.error.URLError, OSError) as exc:
@@ -609,7 +615,7 @@ def load_env() -> dict[str, str]:
     return values
 
 
-SEATS_FILE = HANDOFF / "seats.json"
+SEATS_FILE = HANDOFF / "seats.toml"
 
 # 席位与模型必须解耦：三席共用一个模型，审查席就等于自己给自己判卷。
 # 配置留空的字段回落到 .env 的 JZO_AI_BASE_URL / JZO_AI_MODEL。
@@ -625,8 +631,8 @@ def load_seats() -> dict[str, dict[str, Any]]:
     seats: dict[str, dict[str, Any]] = {key: dict(value) for key, value in DEFAULT_SEATS.items()}
     if SEATS_FILE.is_file():
         try:
-            data = json.loads(SEATS_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            data = toml_io.load(SEATS_FILE)
+        except OSError:
             return seats
         for key, value in (data.get("seats") or {}).items():
             if isinstance(value, dict):
@@ -706,8 +712,7 @@ def cmd_seats(args: argparse.Namespace) -> int:
             "_note": "留空的字段回落到 .env 的 JZO_AI_BASE_URL / JZO_AI_MODEL。"
                      "审查席请填**另一家**的模型，否则 seats --check 会报同族。",
         }
-        SEATS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                              encoding="utf-8")
+        SEATS_FILE.write_text(toml_io.dumps(payload), encoding="utf-8")
         print(f"[seats] 已写模板 {rel(SEATS_FILE)}")
         return 0
 
@@ -810,11 +815,11 @@ def _write_state(payload: dict[str, Any]) -> None:
     merged: dict[str, Any] = {}
     if STATE.is_file():
         try:
-            merged = json.loads(STATE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            merged = toml_io.load(STATE)
+        except OSError:
             merged = {}
     merged.update(payload)
-    STATE.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    STATE.write_text(toml_io.dumps(merged), encoding="utf-8")
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
@@ -841,7 +846,7 @@ def build_parser() -> argparse.ArgumentParser:
     receipt = sub.add_parser("receipt", help="采集证据生成回传单")
     receipt.add_argument("--order", required=True)
     receipt.add_argument("--modules", default="", help="逗号分隔的单测模块名")
-    receipt.add_argument("--probe", default="", help="探针 probe.json 路径")
+    receipt.add_argument("--probe", default="", help="探针 probe.toml 路径")
     receipt.add_argument("--forbidden", default="")
     receipt.add_argument("--plugin-check", default="")
     receipt.add_argument("--open-issues", default="")

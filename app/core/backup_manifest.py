@@ -13,9 +13,9 @@ JSON 键排序后求 SHA-256，任何一次复算都必须得到同一串——�
 
 from __future__ import annotations
 
+from app.core import wire  # noqa: E402
 import base64
 import hashlib
-import json
 import shutil
 import sqlite3
 import tempfile
@@ -146,7 +146,7 @@ def question_hashes(db_path: Path) -> tuple[int, dict[str, str], int]:
         hashes: dict[str, str] = {}
         for row in rows:
             payload = {column: _jsonable(row[index]) for index, column in enumerate(columns)}
-            canonical = json.dumps(
+            canonical = wire.dumps(
                 payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
             hashes[str(row[columns.index("id")])] = hashlib.sha256(canonical).hexdigest()
@@ -163,7 +163,7 @@ def _has_table(con: sqlite3.Connection, name: str) -> bool:
 
 
 def _digest_rows(rows: list[dict[str, Any]]) -> str:
-    canonical = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = wire.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 

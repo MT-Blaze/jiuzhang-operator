@@ -14,9 +14,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import base64
 import inspect
-import json
 import os
 import shutil
 import socket
@@ -169,7 +175,7 @@ class PendingApiContractTest(unittest.TestCase):
 
     def _request(self, path: str, method: str = "GET", body: dict | None = None,
                  token: str | None = TOKEN) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -179,11 +185,11 @@ class PendingApiContractTest(unittest.TestCase):
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read()
-                return response.status, (json.loads(raw.decode("utf-8")) if raw else None)
+                return response.status, (wire.loads(raw.decode("utf-8")) if raw else None)
         except urllib.error.HTTPError as error:
             try:
                 raw = error.read()
-                return error.code, (json.loads(raw.decode("utf-8")) if raw else None)
+                return error.code, (wire.loads(raw.decode("utf-8")) if raw else None)
             finally:
                 error.close()
 
@@ -231,7 +237,7 @@ class PendingApiContractTest(unittest.TestCase):
         self.assertRegex(batch_id, r"^B-\d{3,}$")
         item_id = body["saved_ids"][0]
         self.assertRegex(item_id, r"^p_[A-Za-z0-9_-]{8,64}$", "池子里的题走 p_ 号段")
-        self.assertNotIn(str(item_id), json.dumps(body["batch"], ensure_ascii=False))
+        self.assertNotIn(str(item_id), wire.dumps(body["batch"], ensure_ascii=False))
         # 第二批的号必须比第一批大：号段只增不复用
         status, second = self._save([{"question": _question(102)}])
         self.assertEqual(status, 201, second)
@@ -725,7 +731,7 @@ class PoolEvictionHttpTest(unittest.TestCase):
 
     def _request(self, path: str, method: str = "GET",
                  body: dict | None = None) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         request.add_header("X-JZO-Token", TOKEN)
@@ -734,11 +740,11 @@ class PoolEvictionHttpTest(unittest.TestCase):
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read()
-                return response.status, (json.loads(raw.decode("utf-8")) if raw else None)
+                return response.status, (wire.loads(raw.decode("utf-8")) if raw else None)
         except urllib.error.HTTPError as error:
             try:
                 raw = error.read()
-                return error.code, (json.loads(raw.decode("utf-8")) if raw else None)
+                return error.code, (wire.loads(raw.decode("utf-8")) if raw else None)
             finally:
                 error.close()
 
@@ -936,7 +942,7 @@ class PoolEvictionHttpTest(unittest.TestCase):
         listing = {p.name: p.stat().st_size for p in pool_dir.glob("*")} if pool_dir.is_dir() else {}
         cimg_re = _re.compile(r"^cimg_[0-9a-f]{16}\.png$")
         for row in rows:
-            names = [str(a.get("name") or "") for a in json.loads(row["assets_json"] or "[]")]
+            names = [str(a.get("name") or "") for a in wire.loads(row["assets_json"] or "[]")]
             self.assertTrue(names, f"池行 {row['pool_id']} 该带着题自己的成品图")
             for name in names:
                 self.assertRegex(name, cimg_re,
@@ -947,14 +953,14 @@ class PoolEvictionHttpTest(unittest.TestCase):
             self.assertNotIn("pimg_", row["assets_json"], "待审号段的图不许记进池账")
             self.assertNotIn("page_original", row["doc_json"], "文档里不许留底图地址")
             # 题面 uri 必须已经改写到 /static/pool/（图跟题走的另一半）
-            doc = json.loads(row["doc_json"])
+            doc = wire.loads(row["doc_json"])
             for image in doc.get("images") or []:
                 self.assertTrue(str(image.get("uri") or "").startswith("/static/pool/"), doc)
             self.assertEqual(row["source_name"], "", "没传原文件名时溯源字段为空串")
         # 池目录与池账一一对应：多出来的任何一张页图都会在这条上炸；底图文件本身
         # 躺在 data/ 根（夹具自放），目录里不许出现同名者。
         rows_assets = {n for row in rows for n in
-                       [str(a.get("name") or "") for a in json.loads(row["assets_json"] or "[]")]}
+                       [str(a.get("name") or "") for a in wire.loads(row["assets_json"] or "[]")]}
         self.assertEqual(set(listing), rows_assets,
                          f"pool_assets/ 目录里出现了池账之外的文件：{set(listing) - rows_assets}")
         self.assertNotIn(original.name, listing, "整页底图不许被复制进 pool_assets/")

@@ -2,7 +2,7 @@
 """军令 #16 模块三真机取证：画布页签的沉浸全屏、溢出横滚、分组合并与休眠分层。
 
 用法：``.venv/Scripts/python.exe tools/tab_group_probe.py <out_dir_tag>``
-产出：截图 png + probe.json（结构化判据与 pageerror）
+产出：截图 png + probe.toml（结构化判据与 pageerror）
 
 判据逐条对应军令原文：
   - 「双击任意 Tab 进入全屏（干碎浏览器地址栏），左侧导航栏自动折叠，右侧和底部保留」，
@@ -17,12 +17,11 @@
 跑之前底座必须在 8765 端口起来。探针会临时安装并随后卸载取证夹具插件
 （``examples/stage_weight_probe_plugin``）与若干由它改 id 生成的补位夹具
 （``org.example.tabfill-NN``，只为凑满「超过 10 个页签」的场面），
-并临时改写当前工作区的 ``plugin_state.json``（隔离底座用 ``JZO_STATE_FILE`` 指路）——
+并临时改写当前工作区的 ``plugin_state.toml``（隔离底座用 ``JZO_STATE_FILE`` 指路）——
 这些都在收尾还原，判据 22 专门复核还原结果。
 探针中途炸裂时不写「全绿」假象：炸点本身记成一条失败判据，已跑到的判据照常落盘。
 """
 import io
-import json
 import subprocess
 import sys
 import time
@@ -47,7 +46,7 @@ FILLER_PREFIX = "org.example.tabfill"
 # 仓库现只装 6 个插件，本机再怎么装也凑不出这个场面，所以探针自带补位夹具：
 # 把取证夹具改几个 id 再装上，只为把页签数推过那条线并留出分组余量，不承载任何业务。
 MIN_PLUGIN_TABS = 14
-# ADR-012 之后偏好状态住在当前工作区容器里（``<data>/workspaces/<区>/plugin_state.json``），
+# ADR-012 之后偏好状态住在当前工作区容器里（``<data>/workspaces/<区>/plugin_state.toml``），
 # 根 data/ 那份是历史遗留、宿主根本不读。这里按 JZO_STATE_FILE → JZO_DATA_DIR +
 # current_workspace 指针解析，绝不回落根目录那份幽灵文件。
 STATE_FILE = resolve_plugin_state_file(ROOT / "data")
@@ -106,18 +105,18 @@ def is_noise(text):
 
 def api_get(path):
     with urllib.request.urlopen(ORIGIN + path, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return wire.loads(resp.read().decode("utf-8"))
 
 
 def api_send(path, body, method="POST"):
     req = urllib.request.Request(
         ORIGIN + path,
-        data=json.dumps(body).encode("utf-8"),
+        data=wire.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
         method=method,
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return wire.loads(resp.read().decode("utf-8"))
 
 
 def api_upload(path, blob):
@@ -128,13 +127,13 @@ def api_upload(path, blob):
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return wire.loads(resp.read().decode("utf-8"))
 
 
 def api_delete(path):
     req = urllib.request.Request(ORIGIN + path, headers={"X-JZO-Token": TOKEN}, method="DELETE")
     with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return wire.loads(resp.read().decode("utf-8"))
 
 
 def filler_zip_bytes(seq: int):
@@ -146,12 +145,12 @@ def filler_zip_bytes(seq: int):
         for name in src.namelist():
             data = src.read(name)
             relative = name.split("/", 1)[1]
-            if relative == "plugin.json":
-                meta = json.loads(data.decode("utf-8"))
+            if relative == "plugin.toml":
+                meta = wire.loads(data.decode("utf-8"))
                 meta["id"] = plugin_id
                 meta["name"] = "补位夹具 %02d" % seq
                 meta["description"] = "军令 #16 模块三补位夹具：只为把画布页签数推过 10，供溢出与分组判据取证。"
-                data = json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8")
+                data = wire.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8")
             dst.writestr("%s/%s" % (plugin_id, relative), data)
     return plugin_id, buf.getvalue()
 
@@ -179,7 +178,7 @@ def run(tag: str) -> dict:
     checks = []
     errors = []
     state_backup = STATE_FILE.read_bytes() if STATE_FILE.exists() else None
-    STATE_FILE.write_text(json.dumps({"disabled": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+    STATE_FILE.write_text(toml_io.dumps({"disabled": []}), encoding="utf-8")
 
     def strip_probe_folders(tree):
         """把上一轮崩在还原前留下的探针文件夹摊平，只认探针自造的那几种名号。
@@ -522,8 +521,8 @@ def run(tag: str) -> dict:
                 # 组真的当场没了：把后端那棵树一起记下来，看是树变了还是渲染断了链。
                 after["tree"] = [(str(n.get("id"))[-12:], len(n.get("children") or []))
                                  for n in api_get("/api/plugins")["sidebar"]]
-                # probe.json 的 detail 只留 500 字，现场先原样打到 stdout，免得回头查不到。
-                print("判据 20 缺组现场：", json.dumps(after, ensure_ascii=False))
+                # probe.toml 的 detail 只留 500 字，现场先原样打到 stdout，免得回头查不到。
+                print("判据 20 缺组现场：", wire.dumps(after, ensure_ascii=False))
             check("20 点子页签即切页并收摊，组名页签标明当前在这一组",
                   after.get("missing") is not True and after.get("hidden") is True
                   and after.get("aria") == "true" and after.get("selected"), after)
@@ -552,19 +551,18 @@ def run(tag: str) -> dict:
     else:
         # 开局没有偏好文件（全新隔离工作区）：没东西可还原，就只能自己扫干净——
         # 否则探针造的 folder: 与补位夹具名永久留在清单里，判据 22 变成假红。
-        STATE_FILE.write_text(json.dumps({"disabled": [], "disabled_at": {},
-                                          "nicknames": {}, "sidebar": []},
-                                         ensure_ascii=False, indent=2), encoding="utf-8")
+        STATE_FILE.write_text(toml_io.dumps({"disabled": [], "disabled_at": {},
+                                          "nicknames": {}, "sidebar": []}), encoding="utf-8")
     try:
         remaining = [p["id"] for p in api_get("/api/plugins")["plugins"]]
-        leftover = json.loads(STATE_FILE.read_text(encoding="utf-8") or "{}")
+        leftover = toml_io.load(STATE_FILE)
         restored = (FIXTURE_ID not in remaining
                     and not [i for i in remaining if i.startswith(FILLER_PREFIX)]
                     and not leftover.get("nicknames")
                     and not [n for n in leftover.get("sidebar", [])
                              if str(n.get("id", "")).startswith("folder:")])
         detail = ([i for i in remaining if i == FIXTURE_ID or i.startswith(FILLER_PREFIX)],
-                  json.dumps(leftover, ensure_ascii=False)[:200])
+                  wire.dumps(leftover, ensure_ascii=False)[:200])
     except Exception as exc:  # noqa: BLE001
         restored, detail = False, repr(exc)
     check("22 夹具已卸载且隔离工作区偏好还原", removed and restored,
@@ -579,8 +577,8 @@ def run(tag: str) -> dict:
         "raw_pageerrors": len(errors),
         "checks": checks,
     }
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["probe_json"] = str(out / "probe.json")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    report["probe_json"] = str(out / "probe.toml")
     return report
 
 
@@ -594,4 +592,4 @@ if __name__ == "__main__":
     for c in rep["checks"]:
         print("%s %-52s %s" % ("PASS" if c["passed"] else "FAIL", c["name"], c["detail"]))
     if rep["pageerrors"]:
-        print("PAGE ERRORS:", json.dumps(rep["pageerrors"], ensure_ascii=False)[:800])
+        print("PAGE ERRORS:", wire.dumps(rep["pageerrors"], ensure_ascii=False)[:800])

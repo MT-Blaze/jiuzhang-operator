@@ -9,14 +9,19 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import io
-import json
 import threading
 import unittest
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from app.core import ingest_route, mineru_extract, text_health
+from app.core import ingest_route, mineru_extract, text_health, wire
 
 
 class TextHealthTest(unittest.TestCase):
@@ -84,7 +89,7 @@ class _MineruHandler(BaseHTTPRequestHandler):
     uploaded = bytearray()
 
     def _json(self, payload: dict, code: int = 200) -> None:
-        body = json.dumps(payload).encode("utf-8")
+        body = wire.dumps(payload).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))

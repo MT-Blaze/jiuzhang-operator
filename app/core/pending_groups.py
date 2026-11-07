@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-import json
+from app.core import wire  # noqa: E402
 from typing import Any
 
 from app.core.pending_compare import (
@@ -45,8 +45,8 @@ def bank_fingerprint_map(main_rows: list[Any],
 
 def _pool_entry(row: Any) -> dict[str, Any]:
     """池内一行算成「id + 录入次序 + 文字键 + 指纹」。"""
-    document = json.loads(row["doc_json"] or "{}")
-    assets = json.loads(row["assets_json"] or "[]") if row["assets_json"] else []
+    document = wire.loads(row["doc_json"] or "{}")
+    assets = wire.loads(row["assets_json"] or "[]") if row["assets_json"] else []
     text_key = _text_key(document.get("type"), document.get("stem"), document.get("options"))
     return {
         "id": str(row["id"]),

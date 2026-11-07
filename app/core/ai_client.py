@@ -10,14 +10,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 import urllib.request
 import urllib.error
 from typing import Any
 
-from app.core import providers
+from app.core import providers, wire
 from app.core.provider import AIProvider
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
@@ -133,12 +132,12 @@ class OpenAICompatibleProvider(AIProvider):
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice or "auto"
 
-        data = json.dumps(payload).encode("utf-8")
+        data = wire.dumps(payload).encode("utf-8")
 
         def _post() -> Any:
             request = urllib.request.Request(url, data=data, headers=headers, method="POST")
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
+                return wire.loads(response.read().decode("utf-8"))
 
         try:
             # urllib 是阻塞 IO：模型响应动辄十几秒，直接调用会把事件循环按住，
@@ -279,7 +278,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
             "哈师大附中": "哈尔滨师范大学附属中学",
         }
         full = known.get(short, f"{short}（Mock 补全，请老师确认）" if short else "")
-        content = json.dumps(
+        content = wire.dumps(
             {"full_name": full, "confidence": 0.42 if short else 0.0},
             ensure_ascii=False,
         )
@@ -296,7 +295,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
     # 只认拆题 Agent 的专属前缀：对话提示词里含 "split_paper" 动作名，
     # 用 "split" 子串判断会把普通对话误当成拆题。
     if "拆题专家" in system_prompt:
-        content = json.dumps(
+        content = wire.dumps(
             [
                 {
                     "id": "q1",
@@ -318,7 +317,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
         )
     # Review agent: return quality checks
     elif "审题质检" in system_prompt or "review" in system_prompt.lower():
-        content = json.dumps(
+        content = wire.dumps(
             {
                 "checks": [
                     {"field": "answer", "status": "pass"},
@@ -331,9 +330,9 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
         )
     # Chat agent: return action based on keywords
     elif (panel_params := _mock_panel_params(system_prompt, user_message)) is not None:
-        content = json.dumps(panel_params, ensure_ascii=False)
+        content = wire.dumps(panel_params, ensure_ascii=False)
     elif "拆分" in user_message or "split" in lower_msg:
-        content = json.dumps(
+        content = wire.dumps(
             {
                 "action": "split_paper",
                 "page_range": [3, 5],
@@ -342,7 +341,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
             ensure_ascii=False,
         )
     elif "审题" in user_message or "review" in lower_msg:
-        content = json.dumps(
+        content = wire.dumps(
             {
                 "checks": [
                     {"field": "answer", "status": "pass"},
@@ -354,7 +353,7 @@ def _mock_chat(system_prompt: str, user_message: str) -> dict[str, Any]:
             ensure_ascii=False,
         )
     else:
-        content = json.dumps(
+        content = wire.dumps(
             {
                 "action": "clarify",
                 "question": "请明确您的具体需求？",

@@ -19,11 +19,10 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import json
 import unicodedata
 from typing import Any, Iterable
 
-from app.core import bank
+from app.core import bank, wire
 from app.core import latex_style_dict
 from app.core.question_parser import normalize_latex
 
@@ -66,8 +65,8 @@ def _json_list(raw: Any) -> list[Any]:
     if not isinstance(raw, str) or not raw.strip():
         return []
     try:
-        parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+        parsed = wire.loads(raw)
+    except (wire.JSONDecodeError, TypeError):
         return []
     return parsed if isinstance(parsed, list) else []
 

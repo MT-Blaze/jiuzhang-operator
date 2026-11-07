@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-import json
+from app.core import wire  # noqa: E402
 import sys
 import zipfile
 from pathlib import Path
@@ -60,7 +60,7 @@ def build_plugin_js(questions: list[dict]) -> str:
     template = (SOURCE_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
     if QUESTIONS_PLACEHOLDER not in template:
         raise SystemExit(f"dist/plugin.js 缺少占位符 {QUESTIONS_PLACEHOLDER}")
-    inline = json.dumps(questions, ensure_ascii=False, indent=2)
+    inline = wire.dumps(questions, ensure_ascii=False, indent=2)
     # 内联进 <script> 场景也要安全：杜绝 </script 提前闭合
     inline = inline.replace("</", "<\\/")
     return template.replace(QUESTIONS_PLACEHOLDER, inline)

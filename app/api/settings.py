@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import json
 import secrets
 import shutil
 import tempfile
@@ -20,7 +19,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.core import backup as backup_core
 from app.core import restore as restore_core
-from app.core import webdav
+from app.core import toml_io, webdav
 from app.core.startup_prefs import StartupRejected, resolve, set_target
 from app.core.security import require_write_token
 
@@ -204,7 +203,7 @@ def list_remote_backups() -> dict[str, Any]:
         {
             "stem": stem,
             "package": f"backup_{stem}.zst",
-            "manifest": f"manifest_{stem}.json",
+            "manifest": f"manifest_{stem}.toml",
             "complete": {"package", "manifest"} <= kinds,
         }
         for stem, kinds in sorted(stems.items(), reverse=True)
@@ -226,9 +225,9 @@ def read_remote_backup_manifest(stem: str) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="jzo-remote-preview-") as tmp:
         try:
             manifest_path = webdav.download_backup(
-                config, f"manifest_{stem}.json", Path(tmp) / f"manifest_{stem}.json"
+                config, f"manifest_{stem}.toml", Path(tmp) / f"manifest_{stem}.toml"
             )
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = toml_io.loads(manifest_path.read_text(encoding="utf-8"))
         except (webdav.WebdavError, OSError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=f"网盘 manifest 读取失败：{exc}") from exc
     try:
@@ -267,9 +266,9 @@ def check_restore(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
                 raise restore_core.RestoreError("备份标识非法")
             config = _webdav_config()
             manifest_path = webdav.download_backup(
-                config, f"manifest_{stem}.json", work / f"manifest_{stem}.json"
+                config, f"manifest_{stem}.toml", work / f"manifest_{stem}.toml"
             )
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = toml_io.loads(manifest_path.read_text(encoding="utf-8"))
             filename = (manifest.get("package") or {}).get("filename")
             if filename != f"backup_{stem}.zst":
                 raise restore_core.RestoreError("远端 manifest 与备份标识不符")

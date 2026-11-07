@@ -95,7 +95,7 @@ class Settings:
 
     @property
     def config_path(self) -> Path:
-        return self.data_dir / "config.json"
+        return self.data_dir / "config.toml"
 
     host: str = os.environ.get("JZO_HOST", "127.0.0.1")
     port: int = int(os.environ.get("JZO_PORT", "8000"))

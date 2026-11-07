@@ -246,7 +246,7 @@ def set_plugin_enabled(plugin_id: str, payload: dict[str, Any] = Body(...)) -> d
 def set_plugin_nickname(plugin_id: str, payload: dict[str, Any] = Body(...)) -> dict:
     """昵称是老师给插件起的名字，不是清单字段——发布件不许被本机改动污染。
 
-    写范围只有 ``data/plugin_state.json``（ADR-007）：插件代码目录与题库原地不动。
+    写范围只有 ``data/plugin_state.toml``（ADR-007）：插件代码目录与题库原地不动。
     """
     if not isinstance(payload, dict) or not isinstance(payload.get("nickname"), str):
         raise HTTPException(status_code=400, detail="nickname 必须是字符串")
@@ -293,7 +293,7 @@ def uninstall(plugin_id: str, keep_data: bool = True) -> dict:
 # 或对话工具触发——它们的唯一入口是设置页上用户当场的那一次点击。
 # 检查更新只发一次只读 GET；批量下载只发生在【一键更新全部插件】这一次点击里，
 # 跑完即止，不排队、不续跑、不重试。写范围只有 plugins/<id>/ 与底座程序文件，
-# 严禁触碰 data/（唯一例外是 data/update_state.json 这份续更清单）。
+# 严禁触碰 data/（唯一例外是 data/update_state.toml 这份续更清单）。
 
 def _index_for_check(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """取本次检查用的索引：给了 url 就当场拉一次，否则复用用户上一轮亲手拉回的缓存。"""
@@ -378,7 +378,7 @@ def apply_updates_endpoint(payload: dict[str, Any] = Body(...)) -> dict:
 
 @router.get(
     "/api/plugins/update/pending",
-    summary="双轨更新·续更待办：读 data/update_state.json（底座唯一允许写进 data/ 的更新痕迹）",
+    summary="双轨更新·续更待办：读 data/update_state.toml（底座唯一允许写进 data/ 的更新痕迹）",
     dependencies=[Depends(require_write_token)],
 )
 def pending_updates_endpoint() -> dict:

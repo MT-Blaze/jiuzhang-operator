@@ -4,12 +4,18 @@
 用法：``.venv/Scripts/python.exe tools/bank_probe.py <tag>``
 
 隔离：复制插件与数据到 ``.system_generated/bank_probe/<tag>/``，服务另起端口，
-不碰开发者本机 data/ 与 plugins/。产出 screenshots + probe.json。
+不碰开发者本机 data/ 与 plugins/。产出 screenshots + probe.toml。
 """
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -116,7 +122,7 @@ def main() -> int:
 
             def api(path: str) -> dict:
                 with urllib.request.urlopen(base + path, timeout=15) as response:
-                    return json.loads(response.read().decode("utf-8"))
+                    return wire.loads(response.read().decode("utf-8"))
 
             def walk(parent_id: str = "", ancestors: tuple = (), depth: int = 0):
                 if depth > 5:
@@ -211,8 +217,8 @@ def main() -> int:
             expect(frame.locator("#cbBasketCount")).to_contain_text("题篮 1", timeout=15000)
             check("题篮计数 1", True)
             page.wait_for_timeout(400)
-            basket_file = data_dir / "basket.json"
-            basket = json.loads(basket_file.read_text(encoding="utf-8")) if basket_file.is_file() else {}
+            basket_file = data_dir / "basket.toml"
+            basket = toml_io.load(basket_file) if basket_file.is_file() else {}
             basket_items = basket.get("items") or []
             check("题篮落盘", len(basket_items) == 1, {"items": len(basket_items)})
             dock_text = page.locator("#wsDockLog").inner_text()
@@ -269,7 +275,7 @@ def main() -> int:
 
     result["ok"] = all(item["ok"] for item in result["checks"]) and not result["page_errors"]
     result["console_errors"] = result["console_errors"][:20]
-    (work / "probe.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(toml_io.dumps(result), encoding="utf-8")
     print(("PASS" if result["ok"] else "FAIL") + f" · {len(result['checks'])} 项检查 · {work}")
     for item in result["checks"]:
         print(("  ✓ " if item["ok"] else "  ✗ ") + item["name"])

@@ -17,7 +17,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import socket
 import sqlite3
@@ -65,7 +71,7 @@ SOLUTION_PAIR = "求导得 $f'(x)=3x^{2}-1$，代 $x=1$ 得 $2$。"
 
 
 def _encode(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return wire.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _options(spec: list[dict[str, str]], *, shuffle: bool = False, dfrac: bool = True) -> str:
@@ -339,7 +345,7 @@ class ScanTest(DedupeCase):
     def _digest(self) -> str:
         rows = self._sql("SELECT id, type, stem, options, answer, solution, extensions,"
                          " difficulty, created_at, updated_at FROM questions ORDER BY id")
-        return json.dumps([tuple(row) for row in rows], ensure_ascii=False)
+        return wire.dumps([tuple(row) for row in rows], ensure_ascii=False)
 
 
 class MergeTest(DedupeCase):
@@ -371,7 +377,7 @@ class MergeTest(DedupeCase):
             {(SRC_A, "1"), (SRC_B, "7")}, "同一张卷子同题号并成一行，副本独有的来源要搬过来")
         self.assertEqual(self._sql(
             "SELECT 1 FROM question_sources WHERE question_id IN ('q_dup002','q_dup003')"), [])
-        keys = {item["key"] for item in json.loads(self._row("q_dup001")["extensions"])}
+        keys = {item["key"] for item in wire.loads(self._row("q_dup001")["extensions"])}
         self.assertIn("org.jiuzhang.core-bank.migration", keys, "副本独有的单题备注要搬过来")
         self.assertIn("org.jiuzhang.editor", keys, "保留项自己的备注不许被动")
         self.assertEqual(report["moved"]["topics"], sorted([KX_B, KX_C]))
@@ -406,7 +412,7 @@ class MergeTest(DedupeCase):
         self._sql("UPDATE questions SET extensions = ? WHERE id = 'q_dup002'",
                   (_extensions({"org.jiuzhang.editor": {"note": "副本备注"}}),))
         report = self._merge("q_dup001", ["q_dup002"])
-        entry = next(item for item in json.loads(self._row("q_dup001")["extensions"])
+        entry = next(item for item in wire.loads(self._row("q_dup001")["extensions"])
                      if item["key"] == "org.jiuzhang.editor")
         self.assertEqual(entry["value"], {"note": "保留项备注"},
                          "同名键保留项赢：底座不合成插件私有数据（AGENTS §3）")
@@ -420,7 +426,7 @@ class MergeTest(DedupeCase):
         report = self._merge("q_dup001", ["q_dup002"])
         self.assertFalse(report["same_fingerprint"], "带图与不带图本不是同一指纹，这是老师强制合并的")
         self.assertEqual(report["fingerprint_mismatch"], ["q_dup002"])
-        entry = next(item for item in json.loads(self._row("q_dup001")["extensions"])
+        entry = next(item for item in wire.loads(self._row("q_dup001")["extensions"])
                      if item["key"] == "org.jiuzhang.core-bank.images")
         self.assertEqual(entry["value"]["images"][0]["uri"], "/static/uploads/copy.png",
                          "老师的配图不许随副本一起消失")
@@ -554,7 +560,7 @@ class DedupeHttpTest(unittest.TestCase):
 
     def _request(self, path: str, method: str = "GET", body: dict | None = None,
                  token: bool = False) -> tuple[int, dict]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -563,13 +569,13 @@ class DedupeHttpTest(unittest.TestCase):
             request.add_header("X-JZO-Token", TOKEN)
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                return response.status, json.loads(response.read().decode("utf-8") or "{}")
+                return response.status, wire.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
             payload = error.read()
             error.close()
             try:
-                return error.code, json.loads(payload.decode("utf-8") or "{}")
-            except json.JSONDecodeError:
+                return error.code, wire.loads(payload.decode("utf-8") or "{}")
+            except wire.JSONDecodeError:
                 return error.code, {"raw": payload.decode("utf-8", "replace")}
 
     def _total(self) -> int:

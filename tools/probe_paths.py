@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """真机探针共用的路径解析：偏好状态只从「当前工作区」读。
 
-ADR-012 之后 ``plugin_state.json`` 住在 ``<data>/workspaces/<区>/`` 里，
-根 ``data/plugin_state.json`` 是历史遗留、宿主根本不读。探针若还去根目录比对，
+ADR-012 之后 ``plugin_state.toml`` 住在 ``<data>/workspaces/<区>/`` 里，
+根 ``data/plugin_state.toml`` 是历史遗留、宿主根本不读。探针若还去根目录比对，
 「偏好已还原」验的就是一份没人看的文件——等于没验。
 
 优先级：
@@ -34,4 +34,4 @@ def resolve_plugin_state_file(root: Path | None = None) -> Path:
         workspace_id = ""
     if not WORKSPACE_ID_RE.fullmatch(workspace_id):
         workspace_id = DEFAULT_WORKSPACE_ID
-    return data_root / "workspaces" / workspace_id / "plugin_state.json"
+    return data_root / "workspaces" / workspace_id / "plugin_state.toml"

@@ -10,7 +10,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -142,13 +148,13 @@ class DashboardApiTest(unittest.TestCase):
         request.add_header("Accept", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read().decode("utf-8"))
+                return response.status, wire.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             payload = error.read().decode("utf-8")
             error.close()
             try:
-                return error.code, json.loads(payload or "{}")
-            except json.JSONDecodeError:
+                return error.code, wire.loads(payload or "{}")
+            except wire.JSONDecodeError:
                 return error.code, {"raw": payload}
 
     # ---------- /api/bank/dashboard/stats ----------

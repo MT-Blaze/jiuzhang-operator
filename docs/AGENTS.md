@@ -98,7 +98,7 @@
 3. **【三查结果】**：`fetch(`、`parent.document`、`localStorage` 三项 grep 命中数（插件侧必须为 0）；
    请求 id 全部符合 `^[A-Za-z0-9_-]{1,80}$` 且不含点号（含点号必被宿主 `BAD_REQUEST_ID` 拒发）。
 4. **【测试与探针】**：跑了哪些单测模块、各自 N/N 绿（解释器必须是 `.venv/Scripts/python.exe`）；
-   真机探针跑没跑、判据 passed/total、截图与 `probe.json` 的落盘路径；前端改动是否在浏览器里真人路径走过。
+   真机探针跑没跑、判据 passed/total、截图与 `probe.toml` 的落盘路径；前端改动是否在浏览器里真人路径走过。
 5. **【未决问题与偏离】**：欠账、与契约的偏离及处理理由、军令用词歧义时采的解释性口径、
    因环境限制**未验证**的部分——一律如实汇报，不用推测代替证据。
 
@@ -129,7 +129,7 @@
 3. 出网铁律：任何出网必须由界面当场点击发起，禁止定时器轮询与启动时顺手拉。
 4. 本地 `plugins.toml` 与兄弟仓库 `E:/jiuzhang-plugins/plugins.json` 的条目集合、版本号、镜像描述必须语义一致（`tools/sync_plugin_index.py` 同步、`scripts/check_plugin_index_parity.py` 校验）；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
 5. 版本单一事实源 `app/__init__.py`；`plugin.toml` 顶层 `id` == 目录名、无 `backend`、必带 Apache-2.0 `LICENSE`。
-6. `data/` 是用户财产，底座可写范围仅 `data/update_state.json` 与 `data/workspaces/<id>/*.json`。
+6. `data/` 是用户财产，底座可写范围仅 `data/update_state.toml` 与 `data/workspaces/<id>/*.toml`。
 7. 测试只能用 `.venv` 解释器逐模块跑；禁止 pytest、禁止 `unittest discover`（零用例假通过）。
 8. `.bat` 必须纯 ASCII + CRLF；禁止正则后行断言；写接口必须鉴权。
 9. `LICENSE` 与本文件铁律一、铁律二不得删改。
@@ -150,7 +150,7 @@
 | `.venv\Scripts\python.exe tools\run_all_tests.py` | 全模块回归，失败模块 → rc=1 |
 | `bash scripts/check-quick-gate.sh` / `check-release-gate.sh` | 两档门禁 |
 | `.venv\Scripts\python.exe tools\audit_code.py` | 静态红线（基线 ERROR 0 / WARN 36 / INFO 4） |
-| `.venv\Scripts\python.exe tools\<名>_probe.py` | 真机探针，产物 `.system_generated/<探针名>/<tag>/probe.json` + 截图 |
+| `.venv\Scripts\python.exe tools\<名>_probe.py` | 真机探针，产物 `.system_generated/<探针名>/<tag>/probe.toml` + 截图 |
 | `.venv\Scripts\python.exe tools\build_plugin.py --all` | 打插件 zip（写 `dist/`） |
 | `build_release.bat` | 打底座包（写 `dist/`，包内 `bank.db` 是 0 题空基线） |
 | `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |

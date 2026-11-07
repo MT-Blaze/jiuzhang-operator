@@ -9,11 +9,17 @@
 用法：
     JZO_RESTART_DISABLED=1 .venv/Scripts/python.exe tools/test47_flake_loop.py 50
 产物（新 tag，不覆盖）：
-    .qoder/records/biz/2026-11/20261103_order32-s6-evidence/s6i_test47_loop_<ts>.json
+    .qoder/records/biz/2026-11/20261103_order32-s6-evidence/s6i_test47_loop_<ts>.toml
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import re
 import subprocess
 import sys
@@ -65,8 +71,8 @@ def main() -> int:
         "rows": [{k: v for k, v in r.items() if k != "output_tail"} for r in rows],
     }
     EVIDENCE.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE / f"s6i_test47_loop_{time.strftime('%Y%m%d_%H%M%S')}.json"
-    path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    path = EVIDENCE / f"s6i_test47_loop_{time.strftime('%Y%m%d_%H%M%S')}.toml"
+    path.write_text(toml_io.dumps(out), encoding="utf-8")
     print("EVIDENCE=" + path.name)
     print(f"FAILS={len(fails)}/{runs}")
     return 0

@@ -15,8 +15,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import base64
-import json
 import os
 import shutil
 import socket
@@ -59,7 +65,7 @@ def wait_health(base: str, process: subprocess.Popen, log_path: Path) -> None:
 
 
 def http_json(url: str, payload: dict | None = None) -> tuple[int, dict]:
-    body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = None if payload is None else wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if payload is not None:
         headers["X-JZO-Token"] = TOKEN
@@ -67,13 +73,13 @@ def http_json(url: str, payload: dict | None = None) -> tuple[int, dict]:
                                      headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         raw = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(raw or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": raw}
 
 
@@ -262,9 +268,9 @@ def main() -> int:
 
     failed = [item for item in result["checks"] if not item["ok"]]
     result["ok"] = not failed and not result.get("error")
-    report = work / "report.json"
-    report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    report = work / "report.toml"
+    report.write_text(toml_io.dumps(result), encoding="utf-8")
+    print(wire.dumps(result, ensure_ascii=False, indent=2))
     print("\nreport:", report)
     return 0 if result["ok"] else 1
 

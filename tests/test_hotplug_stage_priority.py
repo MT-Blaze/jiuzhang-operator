@@ -11,7 +11,12 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import tempfile
 import unittest
@@ -19,7 +24,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugins as plugins_core
+from app.core import plugins as plugins_core, toml_io
 from tools.build_plugin import BuildError, build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
@@ -49,9 +54,7 @@ def make_plugin(root: Path, manifest: dict = MANIFEST) -> Path:
     (plugin_dir / "dist").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "LICENSE").write_text("Apache License 2.0 (fixture)", encoding="utf-8")
     (plugin_dir / "dist" / "index.html").write_text("<!doctype html><title>p</title>", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
-    )
+    toml_io.write(plugin_dir / "plugin.toml", manifest)
     return plugin_dir
 
 
@@ -103,7 +106,7 @@ class DiscoverySignatureTest(unittest.TestCase):
             # 签名只认 mtime/size；同版本号覆盖时 size 不变，必须让 mtime 确定性地前进。
             # Windows 的文件时间戳会被系统时钟粒度量化（本机实测连续两次写入 92% 同戳），
             # 直接 utime(now) 约三分之一概率仍等于旧值——这不是产品缺陷，是测试自身的抖。
-            manifest_path = self.plugins_dir / MANIFEST["id"] / "plugin.json"
+            manifest_path = self.plugins_dir / MANIFEST["id"] / "plugin.toml"
             bumped = manifest_path.stat().st_mtime + 1
             os.utime(manifest_path, (bumped, bumped))
             second = plugins_core.discover_plugins()

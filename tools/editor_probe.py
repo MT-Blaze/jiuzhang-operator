@@ -24,8 +24,15 @@ AI 改写走本机 OpenAI 兼容桩（JZO_AI_BASE_URL 指向 127.0.0.1），
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import base64
-import json
+import copy
 import os
 import re
 import shutil
@@ -152,32 +159,32 @@ def wait_health(base: str, process: subprocess.Popen, log_path: Path | None = No
 def http_json(url: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
 def http_post(url: str, payload: dict) -> tuple[int, dict]:
     """带写令牌直接打 Host API：探针要自己往中转站塞批次（模拟后台识别入池）。"""
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
@@ -285,7 +292,7 @@ class StubProvider:
                     self.send_response(404)
                     self.end_headers()
                     return
-                reply = json.dumps({
+                reply = wire.dumps({
                     "object": "list",
                     "data": [{"id": "probe-stub", "object": "model"}],
                 }).encode("utf-8")
@@ -299,8 +306,8 @@ class StubProvider:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length).decode("utf-8") if length else "{}"
                 try:
-                    body = json.loads(raw or "{}")
-                except json.JSONDecodeError:
+                    body = wire.loads(raw or "{}")
+                except wire.JSONDecodeError:
                     body = {}
                 user = ""
                 system = ""
@@ -327,8 +334,8 @@ class StubProvider:
                          "solution": marker + "由 $x+1=2$ 得 $x=1$。",
                          "question_no": "", "difficulty": "L1"}
                     )
-                    payload = json.dumps(document, ensure_ascii=False)
-                    reply = json.dumps({
+                    payload = wire.dumps(document, ensure_ascii=False)
+                    reply = wire.dumps({
                         "choices": [{"message": {"content": payload}}],
                         "model": "probe-stub",
                         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
@@ -351,11 +358,11 @@ class StubProvider:
                         "哈九中": "哈尔滨市第九中学校",
                     }
                     full = known.get(short, f"{short}（探针补全）" if short else "")
-                    payload = json.dumps(
+                    payload = wire.dumps(
                         {"full_name": full, "confidence": 0.9 if full else 0.0},
                         ensure_ascii=False,
                     )
-                    reply = json.dumps({
+                    reply = wire.dumps({
                         "choices": [{"message": {"content": payload}}],
                         "model": "probe-stub",
                         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
@@ -372,9 +379,9 @@ class StubProvider:
                 original = content_match.group(1).strip() if content_match else ""
                 owner.hits += 1
                 owner.fields.append(field)
-                payload = json.dumps({field: self.server.marker_text(original),
+                payload = wire.dumps({field: self.server.marker_text(original),
                                       "note": "探针桩按指令改写"}, ensure_ascii=False)
-                reply = json.dumps({
+                reply = wire.dumps({
                     "choices": [{"message": {"content": payload}}],
                     "model": "probe-stub",
                     "usage": {"prompt_tokens": 1, "completion_tokens": 1},
@@ -1948,7 +1955,7 @@ def main() -> int:
                    "items": len(pending_items(base, dup_batch))})
 
             # 【合并为解析二】：主库那题留着，只把池子里这条的解析并进去。
-            merge_doc = json.loads(json.dumps(dup_doc))
+            merge_doc = copy.deepcopy(dup_doc)
             merge_doc["solution"] = "探针解法二：把 $x$ 直接代回原式即可。"
             status_m, merge_body = http_post(
                 base + "/api/pending/batches",
@@ -1995,7 +2002,7 @@ def main() -> int:
             # 答案不同 → 红字拦截：覆盖与合并两颗钮都锁死，只留放弃。
             original_keys = list(((dup_doc or {}).get("answer") or {}).get("choice_keys") or ["A"])
             other_key = next(k for k in ("A", "B", "C", "D") if k not in original_keys)
-            clash_doc = json.loads(json.dumps(dup_doc))
+            clash_doc = copy.deepcopy(dup_doc)
             clash_doc["answer"] = {"kind": "choice", "choice_keys": [other_key], "final": other_key}
             status_c, clash_body = http_post(
                 base + "/api/pending/batches",
@@ -2207,7 +2214,7 @@ def main() -> int:
                     "    node.dispatchEvent(new DragEvent(kind, {dataTransfer: dt, bubbles: true}));"
                     "  });"
                     "  return true;"
-                    "}()" % (json.dumps(name), json.dumps(mime))
+                    "}()" % (wire.dumps(name), wire.dumps(mime))
                 )
                 canvas.locator("#edBasket").evaluate(script)
 
@@ -2290,7 +2297,7 @@ def main() -> int:
                 "  window.dispatchEvent(new ClipboardEvent('paste',"
                 "    {clipboardData: dt, bubbles: true}));"
                 "  return true;"
-                "}()" % json.dumps("辅助栏粘来的.png")
+                "}()" % wire.dumps("辅助栏粘来的.png")
             )
             panel.locator("#epRoot").evaluate(panel_paste_script)
             page.wait_for_timeout(800)
@@ -2316,7 +2323,7 @@ def main() -> int:
                 "  window.dispatchEvent(new ClipboardEvent('paste',"
                 "    {clipboardData: dt, bubbles: true}));"
                 "  return true;"
-                "}()" % (json.dumps(PNG_BYTES), json.dumps("粘贴截图.png"))
+                "}()" % (wire.dumps(PNG_BYTES), wire.dumps("粘贴截图.png"))
             )
             cards_before_paste = len(pending_cards(base))
             canvas.locator("#edRoot").evaluate(paste_script)
@@ -2568,7 +2575,7 @@ def main() -> int:
 
             def b31a_doc(mark: str, no: int) -> dict:
                 """本批独有的干净题：主库里没有，同 mark 同序号的才在批内互相撞车。"""
-                doc = json.loads(json.dumps(UNIQUE_DOC))
+                doc = copy.deepcopy(UNIQUE_DOC)
                 doc["stem"] = ("探针31a初查题 %s#%d：双曲线 $y=\\frac{1}{x+%d}$ 的定义域是（  ）"
                                % (mark, no, no))
                 doc["source"] = dict(UNIQUE_DOC["source"], paper_title="探针31a卷",
@@ -2867,8 +2874,8 @@ def main() -> int:
 
     result["ok"] = bool(result["checks"]) and all(item["ok"] for item in result["checks"]) \
         and not result["page_errors"] and "error" not in result
-    (work / "probe.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    (work / "probe.toml").write_text(
+        toml_io.dumps(result), encoding="utf-8"
     )
 
     passed = sum(1 for item in result["checks"] if item["ok"])
@@ -2877,7 +2884,7 @@ def main() -> int:
     for item in result["checks"]:
         print(("  OK  " if item["ok"] else "  FAIL") + item["name"])
         if not item["ok"]:
-            print("      " + json.dumps(item.get("detail"), ensure_ascii=False)[:400])
+            print("      " + wire.dumps(item.get("detail"), ensure_ascii=False)[:400])
     if result["console_errors"]:
         print("console:", result["console_errors"][:8])
     if result["http_failures"]:
@@ -2885,7 +2892,7 @@ def main() -> int:
     if result["page_errors"]:
         print("pageerrors:", result["page_errors"][:8])
     if result.get("na_notes"):
-        print("na:", json.dumps(result["na_notes"], ensure_ascii=False)[:1200])
+        print("na:", wire.dumps(result["na_notes"], ensure_ascii=False)[:1200])
     if "error" in result:
         print("error:", result["error"])
     return 0 if result["ok"] else 1

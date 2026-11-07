@@ -6,13 +6,12 @@
 from __future__ import annotations
 
 import copy
-import json
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
-from app.core import question_contract
+from app.core import question_contract, wire
 from app.core.contract import (
     DIFFICULTY_LEVELS,
     normalize_contract_version,
@@ -90,7 +89,7 @@ def validate_question(document: dict[str, Any]) -> None:
 def _encode_json(value: Any) -> str | None:
     if value is None:
         return None
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return wire.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _new_id() -> str:
@@ -142,7 +141,7 @@ def _row_to_document(row: sqlite3.Row) -> dict[str, Any]:
     for field, column in JSON_FIELDS.items():
         raw = row[column]
         if raw is not None:
-            document[field] = json.loads(raw)
+            document[field] = wire.loads(raw)
     if row["solution"] is not None:
         document["solution"] = row["solution"]
 

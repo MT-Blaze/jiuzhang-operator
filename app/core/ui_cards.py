@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-import json
+from app.core import wire  # noqa: E402
 from typing import Any
 
 from app.core.contract import normalize_difficulty
@@ -128,7 +128,7 @@ def frame(block: dict[str, Any] | None) -> str:
         return ""
     if not _renderable(block):
         return ""
-    body = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
+    body = wire.dumps(block, ensure_ascii=False, separators=(",", ":"))
     return "```ui_json\n" + body + "\n```"
 
 

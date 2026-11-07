@@ -9,9 +9,8 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
-from app.core import bank_fts, pinyin, question_parser
+from app.core import bank_fts, pinyin, question_parser, wire
 from app.core.bank_codec import _assemble
 from app.core.bank_schema import (
     ASSEMBLE_CHUNK,
@@ -588,7 +587,7 @@ def metadata(plugin_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for row in rows:
         try:
-            result[row["key"]] = json.loads(row["value"])
-        except json.JSONDecodeError:
+            result[row["key"]] = wire.loads(row["value"])
+        except wire.JSONDecodeError:
             result[row["key"]] = row["value"]
     return result

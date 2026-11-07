@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
+from app.core import wire  # noqa: E402
 import hashlib
-import json
 import re
 import shutil
 import sqlite3
@@ -600,15 +600,15 @@ def upgrade_structure(plugin_id: str, path: Path | None = None) -> dict[str, Any
 
 
 def _encode(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return wire.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _decode(raw: Any, default: Any) -> Any:
     if raw is None or raw == "":
         return default
     try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+        return wire.loads(raw)
+    except (wire.JSONDecodeError, TypeError):
         return default
 
 

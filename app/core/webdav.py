@@ -1,7 +1,7 @@
 """WebDAV 备份客户端：整包 PUT，不做分片与断点续传。
 
 边界（军令 #17 第三步）：
-- 凭据由调用方从 ``data/workspaces/<ws_id>/backup.json`` 读出后传入，本模块不落盘、不打日志；
+- 凭据由调用方从 ``data/workspaces/<ws_id>/backup.toml`` 读出后传入，本模块不落盘、不打日志；
 - 上传的就是本地备份文件本身，不生成临时包；
 - 上传失败不删远端旧份；只有整包 + manifest 都成功后才按「只删本工具命名文件」清理到最近 1 份。
 """
@@ -192,7 +192,7 @@ def upload_backup(
     uploaded: list[str] = []
     try:
         uploaded.append(_put_file(config, directory, package, package_content_type()))
-        uploaded.append(_put_file(config, directory, manifest, "application/json"))
+        uploaded.append(_put_file(config, directory, manifest, "application/toml"))
     except WebdavError:
         # 上传失败：旧份原样保留，至少还有一份可用。
         raise

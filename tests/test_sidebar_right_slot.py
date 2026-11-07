@@ -11,13 +11,19 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+import copy
 import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
+from app.core import toml_io
 from app.core.plugins import PluginRejected, validate_plugin
 from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
@@ -53,9 +59,7 @@ def build_plugin_dir(root: Path, manifest: dict) -> Path:
     (plugin_dir / "dist").mkdir(parents=True, exist_ok=True)
     (plugin_dir / "LICENSE").write_text("Apache License 2.0 (fixture)", encoding="utf-8")
     (plugin_dir / "dist" / "index.html").write_text("<!doctype html><title>p</title>", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
-    )
+    toml_io.write(plugin_dir / "plugin.toml", manifest)
     return plugin_dir
 
 
@@ -66,7 +70,7 @@ class ManifestSlotTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def validate(self, **overrides) -> dict:
-        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        manifest = copy.deepcopy(BASE_MANIFEST)
         manifest.update(overrides)
         return validate_plugin(build_plugin_dir(self.root, manifest), manifest)
 

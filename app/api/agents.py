@@ -7,14 +7,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.core import ai_client, question_parser
+from app.core import ai_client, question_parser, wire
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])
 
@@ -88,7 +87,7 @@ def build_refine_user_message(
     }
     return (
         "## 当前题目（只读上下文）\n"
-        + json.dumps(snapshot, ensure_ascii=False)
+        + wire.dumps(snapshot, ensure_ascii=False)
         + f"\n\n## 需要改写的字段\n{field}\n\n## 该字段当前内容\n{original}\n\n"
         + "## 老师指令\n" + instruction.strip()
     )
@@ -102,7 +101,7 @@ def parse_refine_reply(raw: str, field: str) -> dict[str, str]:
     """
     text = strip_code_fences(raw or "")
     try:
-        data = json.loads(text)
+        data = wire.loads(text)
     except (ValueError, TypeError) as exc:
         raise ValueError("AI 副驾返回的不是合法 JSON") from exc
     if not isinstance(data, dict):

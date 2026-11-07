@@ -24,11 +24,17 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import argparse
 import hashlib
 import html as html_mod
 import io
-import json
 import re
 import sqlite3
 import sys
@@ -47,7 +53,6 @@ SCHOOLS_JSON = Path("E:/math-question-bank-main/mathbank/resources/schools.json"
 OUTLINE_JSON = Path("E:/math-question-bank-main/mathbank/resources/curriculums/A.json")
 MIGRATED_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063_migrated.db"
 SEED_NEW_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank_v063.db"
-REPORT_JSON = ROOT / "data/bank_v063_migration_report.json"
 REPORT_MD = ROOT / "data/bank_v063_migration_report.md"
 
 LOCAL_TZ_NOW = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -153,16 +158,16 @@ def read_doc_bank() -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
             "legacy_id": int(re.search(r"(\d+)$", row["id"]).group(1)),
             "type": row["type"],
             "stem": row["stem"],
-            "options": json.loads(row["options_json"] or "[]"),
-            "answer": json.loads(row["answer_json"]) if row["answer_json"] else None,
+            "options": wire.loads(row["options_json"] or "[]"),
+            "answer": wire.loads(row["answer_json"]) if row["answer_json"] else None,
             "solution": row["solution"] or "",
             "grade": row["grade"],
             "chapter": row["chapter"],
             "textbook": row["textbook"],
-            "tags": json.loads(row["tags_json"] or "[]"),
-            "images": json.loads(row["images_json"] or "[]") if row["images_json"] else [],
-            "extensions": json.loads(row["extensions_json"] or "{}"),
-            "source": json.loads(row["source_json"] or "{}"),
+            "tags": wire.loads(row["tags_json"] or "[]"),
+            "images": wire.loads(row["images_json"] or "[]") if row["images_json"] else [],
+            "extensions": wire.loads(row["extensions_json"] or "{}"),
+            "source": wire.loads(row["source_json"] or "{}"),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -212,7 +217,7 @@ def build_topics(legacy_topic_ids: set[str], section_index: dict[tuple[str, str,
                  link_by_legacy: dict[int, dict[str, Any]]) -> tuple[
     list[dict[str, Any]], dict[str, str], dict[str, Any]]:
     """从 A.json 建 册/章/节/考向 四级节点；旧库用到但大纲查无的考向补 draft 节点。"""
-    raw = json.loads(OUTLINE_JSON.read_text(encoding="utf-8"))
+    raw = wire.loads(OUTLINE_JSON.read_text(encoding="utf-8"))
     nodes: list[dict[str, Any]] = []
     seen: set[str] = set()
     by_id: dict[str, dict[str, Any]] = {}
@@ -318,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     legacy_ids = {d["legacy_id"] for d in docs.values()}
     leg = read_legacy(legacy_ids)
 
-    schools_raw = json.loads(SCHOOLS_JSON.read_text(encoding="utf-8"))
+    schools_raw = wire.loads(SCHOOLS_JSON.read_text(encoding="utf-8"))
     schools = {}
     for item in schools_raw:
         schools[item["id"]] = {
@@ -353,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     bad = [n for n in nodes if not re.fullmatch(r"tp_(bo|ch|se|kx)[0-9a-f]{8}", n["id"])
            or not n["path"].startswith("tp_") or not (1 <= len(n["name"]) <= 120)]
     if bad:
-        raise AssertionError("节点违反表约束：%s" % json.dumps(bad[:3], ensure_ascii=False)[:400])
+        raise AssertionError("节点违反表约束：%s" % wire.dumps(bad[:3], ensure_ascii=False)[:400])
     con.executemany(
         "INSERT INTO topics (id, parent_id, name, path, sort_order, status, created_at, updated_at)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -456,8 +461,8 @@ def main(argv: list[str] | None = None) -> int:
                                "value": doc["extensions"]["org.jiuzhang.editor"]})
 
         questions.append([qid, final_type, doc["stem"],
-                          json.dumps(doc["options"], ensure_ascii=False), answer_value,
-                          doc["solution"] or None, json.dumps(extensions, ensure_ascii=False),
+                          wire.dumps(doc["options"], ensure_ascii=False), answer_value,
+                          doc["solution"] or None, wire.dumps(extensions, ensure_ascii=False),
                           leg["difficulty"].get(legacy_id) or "L3",
                           doc["created_at"] or LOCAL_TZ_NOW, doc["updated_at"] or LOCAL_TZ_NOW])
 
@@ -539,9 +544,9 @@ def main(argv: list[str] | None = None) -> int:
         "INSERT INTO topic_notes (topic_id, note_type, content, sort_order, created_at, updated_at)"
         " VALUES (?, ?, ?, ?, ?, ?)", notes)
     con.execute("INSERT INTO bank_meta (key, value) VALUES (?, ?)",
-                ("migrated_v063_at", json.dumps(LOCAL_TZ_NOW)))
+                ("migrated_v063_at", wire.dumps(LOCAL_TZ_NOW)))
     con.execute("INSERT INTO bank_meta (key, value) VALUES (?, ?)",
-                ("sources_files", json.dumps([str(SCHOOLS_JSON), str(OUTLINE_JSON),
+                ("sources_files", wire.dumps([str(SCHOOLS_JSON), str(OUTLINE_JSON),
                                               str(LEGACY_DB), str(DOC_DB)])))
     con.execute("PRAGMA user_version = 1")
     con.commit()
@@ -592,9 +597,6 @@ def main(argv: list[str] | None = None) -> int:
         "outline_root_counts": tree_sample,
         "top_topics": deep,
     }
-    REPORT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_JSON.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
     buf = io.StringIO()
     buf.write("# v0.6.3 灌库校验报告\n\n")
     buf.write("- 迁移时间：%s（本机本地钟）\n" % LOCAL_TZ_NOW)
@@ -611,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
                   topic_stats["books"], topic_stats["chapters"], topic_stats["sections"],
                   topic_stats["topics"], topic_stats["orphans"],
                   topic_stats.get("sections_drafted", 0), topic_stats.get("sections_unresolved", 0)))
-    buf.write("- 题目挂载层别：%s\n" % json.dumps(layer_hits, ensure_ascii=False))
+    buf.write("- 题目挂载层别：%s\n" % wire.dumps(layer_hits, ensure_ascii=False))
     buf.write("- 学校建档导入 %d 所；教研笔记入表 %d 条（丢弃 %d 条：knowledge 导图 DSL 与悬空键）\n" % (
         len(schools_raw), len(notes), dropped_notes))
     buf.write("- 题型纠偏：改判多选 %d 题（其中尾句补判 %d 题）；选择题答案全空 %d 题；题型待人工 %d 题；结构冲突 %d 题\n" % (
@@ -628,10 +630,10 @@ def main(argv: list[str] | None = None) -> int:
             len(leg["legacy_missing"]), leg["legacy_missing"]))
     REPORT_MD.write_text(buf.getvalue(), encoding="utf-8")
 
-    print(json.dumps({"counts": counts, "fk_violations": violations, "type_fix": type_fix,
-                      "questions_with_topic": join_ok, "questions_with_source": src_ok,
-                      "notes_written": len(notes), "orphans_attached": orphan_attached,
-                      "report_md": str(REPORT_MD)}, ensure_ascii=False, indent=2))
+    print(toml_io.dumps({"counts": counts, "fk_violations": violations, "type_fix": type_fix,
+                         "questions_with_topic": join_ok, "questions_with_source": src_ok,
+                         "notes_written": len(notes), "orphans_attached": orphan_attached,
+                         "report_md": str(REPORT_MD)}))
 
     if args.promote:
         import shutil

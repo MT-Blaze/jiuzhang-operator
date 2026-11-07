@@ -15,7 +15,7 @@
 
 ```
 docs/handoff/
-  state.json         当前轮次指针（order_id / status / updated_at）
+  state.toml         当前轮次指针（order_id / status / updated_at）
   orders/            军令卡（下行），手写或粘贴原文
   receipts/          机械证据回传单（上行），由脚本生成
   verdicts/          复审结论与下一道军令（军师写，施工照办）
@@ -32,7 +32,7 @@ docs/handoff/
 :: 3. 回传单：证据由脚本采集，不由模型复述
 .venv\Scripts\python.exe tools\handoff.py receipt --order 31 ^
     --modules tests.test_pending_dedupe,tests.test_pending_api ^
-    --probe .system_generated/editor_probe/s31/probe.json
+    --probe .system_generated/editor_probe/s31/probe.toml
 
 :: 4. 机械校验：缺项、假绿、数字对不上，一律非零退出
 .venv\Scripts\python.exe tools\handoff.py verify docs\handoff\receipts\31.md --rerun
@@ -66,11 +66,11 @@ python tools\handoff.py verify docs\handoff\receipts\30.md --allow-no-tests --al
 三席共用一个模型，等于自己给自己判卷——共同盲区永远挑不出来。所以席位与模型必须解耦：
 
 ```bat
-python tools\handoff.py seats --init      :: 生成 docs/handoff/seats.json
+python tools\handoff.py seats --init      :: 生成 docs/handoff/seats.toml
 python tools\handoff.py seats --check     :: 逐席探连通性，并点出同族席位
 ```
 
-`seats.json` 里每个席位独立配 `base_url` / `model` / `api_key_env`，留空的字段回落到 `.env`
+`seats.toml` 里每个席位独立配 `base_url` / `model` / `api_key_env`，留空的字段回落到 `.env`
 的 `JZO_AI_BASE_URL` / `JZO_AI_MODEL`。审查席请填**另一家**的模型：
 
 | 席位 | 职责 | 用谁 |

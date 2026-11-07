@@ -21,8 +21,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import base64
-import json
+import copy
 import os
 import shutil
 import socket
@@ -209,7 +216,7 @@ class PendingMetaContractTest(unittest.TestCase):
                 con.execute(
                     "INSERT INTO pending_questions (id, batch_id, doc_json, assets_json,"
                     " origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (pending_id, "B-001", json.dumps(_question(1), ensure_ascii=False),
+                    (pending_id, "B-001", wire.dumps(_question(1), ensure_ascii=False),
                      "[]", "old.pool", "2026-01-01T00:00:00+08:00",
                      "2026-01-01T00:00:00+08:00"),
                 )
@@ -222,7 +229,7 @@ class PendingMetaContractTest(unittest.TestCase):
 
     def _request(self, path: str, method: str = "GET", body: dict | None = None,
                  token: str | None = TOKEN) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -232,11 +239,11 @@ class PendingMetaContractTest(unittest.TestCase):
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read()
-                return response.status, (json.loads(raw.decode("utf-8")) if raw else None)
+                return response.status, (wire.loads(raw.decode("utf-8")) if raw else None)
         except urllib.error.HTTPError as error:
             try:
                 raw = error.read()
-                return error.code, (json.loads(raw.decode("utf-8")) if raw else None)
+                return error.code, (wire.loads(raw.decode("utf-8")) if raw else None)
             finally:
                 error.close()
 
@@ -343,7 +350,7 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertIn("联考", item["question"]["tags"], "可见标签一个都不许被挤掉")
         self.assertFalse([tag for tag in item["question"]["tags"] if tag.startswith("#")],
                          "校名不再拆成隐藏标签")
-        document = json.dumps(item["question"], ensure_ascii=False)
+        document = wire.dumps(item["question"], ensure_ascii=False)
         self.assertNotIn("哈三中", document)
         self.assertNotIn("哈师大附中", document)
         self.assertEqual([s["short_name"] for s in result["meta"]["school_details"]],
@@ -628,7 +635,7 @@ class PendingMetaContractTest(unittest.TestCase):
         source = self._batch_items(batch_id)[0]["question"]["source"]
         self.assertEqual(source["school_ids"], [school_id])
         self.assertEqual(source["school_id"], school_id)
-        self.assertNotIn("哈三中", json.dumps(source, ensure_ascii=False),
+        self.assertNotIn("哈三中", wire.dumps(source, ensure_ascii=False),
                          "题目文档只存 school_id，校名一个字节都不许进去")
 
     def test_17_scenes_are_the_eleven_ruled_ones(self) -> None:
@@ -821,7 +828,7 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(status, 200, result)
 
         item = self._batch_items(batch_id)[0]
-        doc = json.loads(json.dumps(item["question"], ensure_ascii=False))
+        doc = copy.deepcopy(item["question"])
         doc["source"] = {"year": 2024, "question_no": "12"}
         status, re_saved = self._save(
             [{"pending_id": item["id"], "question": doc}], batch_id=batch_id)

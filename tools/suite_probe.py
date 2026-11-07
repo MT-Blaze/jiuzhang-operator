@@ -12,13 +12,19 @@
   5. 经引擎写一道题再读回来，题干一致（引擎真在后台干活）；
   6. 真实浏览器里点开唯一入口，题目列表渲染出那道题，无 JS 错误。
 
-产出：``.system_generated/suite_probe/<tag>/probe.json`` + 截图；任一判据红即非零退出。
+产出：``.system_generated/suite_probe/<tag>/probe.toml`` + 截图；任一判据红即非零退出。
 """
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import importlib.util
-import json
 import os
 import shutil
 import socket
@@ -73,7 +79,7 @@ def api_json(base: str, path: str, *, method: str = "GET", payload=None,
     data = None
     headers = {}
     if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     if token:
         headers["X-JZO-Token"] = TOKEN
@@ -81,13 +87,13 @@ def api_json(base: str, path: str, *, method: str = "GET", payload=None,
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             raw = response.read()
-            return response.status, json.loads(raw.decode("utf-8") or "null")
+            return response.status, wire.loads(raw.decode("utf-8") or "null")
     except urllib.error.HTTPError as error:
         raw = error.read()
         error.close()
         try:
-            return error.code, json.loads(raw.decode("utf-8") or "null")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw.decode("utf-8") or "null")
+        except wire.JSONDecodeError:
             return error.code, raw.decode("utf-8", "replace")
 
 
@@ -136,10 +142,10 @@ def main() -> int:
     def finish(code: int) -> int:
         report["total"] = len(report["checks"])
         report["passed"] = sum(1 for item in report["checks"] if item["ok"])
-        (work / "probe.json").write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(json.dumps({"passed": report["passed"], "total": report["total"],
-                          "probe": str(work / "probe.json")}, ensure_ascii=False))
+        (work / "probe.toml").write_text(
+            toml_io.dumps(report), encoding="utf-8")
+        print(wire.dumps({"passed": report["passed"], "total": report["total"],
+                          "probe": str(work / "probe.toml")}, ensure_ascii=False))
         return code
 
     try:
@@ -158,7 +164,7 @@ def main() -> int:
         )
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                status, body = response.status, json.loads(response.read().decode("utf-8"))
+                status, body = response.status, wire.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             status, body = error.code, error.read().decode("utf-8", "replace")
         members = [item.get("id") for item in (body or {}).get("plugins", [])] \

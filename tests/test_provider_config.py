@@ -5,8 +5,13 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import asyncio
-import json
 import os
 import socket
 import subprocess
@@ -21,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from app.core import ai_client
+from app.core import ai_client, wire
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "provider-config-test-token"
@@ -49,7 +54,7 @@ class _ModelsHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server 命名约定
         if self.path.rstrip("/").endswith("/models"):
-            body = json.dumps({"data": [{"id": "m1"}, {"id": "m2"}]}).encode("utf-8")
+            body = wire.dumps({"data": [{"id": "m1"}, {"id": "m2"}]}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -125,7 +130,7 @@ class ProviderConfigApiTest(unittest.TestCase):
     def call(
         self, method: str, path: str, body: dict | None = None, token: str | None = TOKEN
     ) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -146,8 +151,8 @@ class ProviderConfigApiTest(unittest.TestCase):
         if not raw:
             return None
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return wire.loads(raw)
+        except wire.JSONDecodeError:
             return raw.decode("utf-8", errors="replace")
 
     # --- 鉴权 ---
@@ -176,7 +181,7 @@ class ProviderConfigApiTest(unittest.TestCase):
         self.assertTrue(body["configured"], body)
         self.assertEqual(body["model"], "llama3", body)
         self.assertEqual(body["host"], f"127.0.0.1:{self.gateway.server_address[1]}", body)
-        self.assertNotIn(FIXTURE_KEY, json.dumps(body, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(body, ensure_ascii=False))
 
         # 列表接口同样只给「已配置 + 主机名」，密钥不出现在任何响应里
         status, listed = self.call("GET", "/api/providers", token=None)
@@ -184,7 +189,7 @@ class ProviderConfigApiTest(unittest.TestCase):
         ollama = [p for p in listed["providers"] if p["name"] == "ollama"][0]
         self.assertTrue(ollama["configured"], ollama)
         self.assertFalse(ollama["mock"], ollama)
-        self.assertNotIn(FIXTURE_KEY, json.dumps(listed, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(listed, ensure_ascii=False))
 
         # 密钥落在本机 .env（测试夹具文件），未入库
         env_text = self.env_file.read_text(encoding="utf-8")
@@ -225,7 +230,7 @@ class ProviderConfigApiTest(unittest.TestCase):
         self.assertTrue(body["ok"], body)
         self.assertEqual(body["status_code"], 200, body)
         self.assertIn("2", body["detail"], body)
-        self.assertNotIn(FIXTURE_KEY, json.dumps(body, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(body, ensure_ascii=False))
 
     def test_06_connectivity_reports_unreachable_as_structured_result(self) -> None:
         dead_port = _free_port()
@@ -259,7 +264,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
         self.rfile.read(length)
         if self._delay:
             time.sleep(self._delay)
-        body = b'{"error": "boom"}' if self._status != 200 else json.dumps(self._reply).encode("utf-8")
+        body = b'{"error": "boom"}' if self._status != 200 else wire.dumps(self._reply).encode("utf-8")
         self.send_response(self._status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))

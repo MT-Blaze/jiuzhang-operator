@@ -23,7 +23,7 @@
 
 插件私有数据的物理位置只有当前工作区的 ``banks/<plugin_id>.db`` 一处，删它即彻底清理；
 题目行里的 ``extensions.<反向域名>`` 属于老师的题库本体，卸载**不得**顺手改写（PLUGIN_SPEC §3）。
-该区 ``plugin_state.json`` / ``startup.json`` / ``bank_provider.json`` 里的残留键由读取侧
+该区 ``plugin_state.toml`` / ``startup.toml`` / ``bank_provider.toml`` 里的残留键由读取侧
 按「未安装即忽略」兜底（见 plugins.prune_sidebar 与各 state 模块的校验），卸载不写这些文件。
 
 安全：插件 id 必须先过格式校验；只在本底座 plugins_dir 与当前工作区 data_dir 之内操作，

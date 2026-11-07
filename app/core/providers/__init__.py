@@ -7,13 +7,13 @@
 from __future__ import annotations
 
 import importlib
-import json
 import os
 import pkgutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from app.core import state_store
 from app.core.config import settings
 
 CONFIG_KEY = "provider"
@@ -65,21 +65,13 @@ def _config_path() -> Path:
 
 
 def _read_config() -> dict[str, object]:
-    try:
-        data = json.loads(_config_path().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return state_store.load_table(_config_path())
 
 
 def _write_config(patch: dict[str, str]) -> None:
-    path = _config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     document = _read_config()
     document.update(patch)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    state_store.save(_config_path(), document)
 
 
 def active_name() -> str:

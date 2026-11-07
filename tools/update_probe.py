@@ -21,9 +21,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import hashlib
 import io
-import json
 import os
 import re
 import shutil
@@ -85,7 +91,7 @@ def wait_health(base: str, process: subprocess.Popen, timeout: float = 30,
 
 
 def http_json(base: str, path: str, token: str = "", body: dict | None = None) -> tuple[int, dict]:
-    data = None if body is None else json.dumps(body).encode("utf-8")
+    data = None if body is None else wire.dumps(body).encode("utf-8")
     request = urllib.request.Request(base + path, data=data, method="POST" if data else "GET")
     if data is not None:
         request.add_header("Content-Type", "application/json")
@@ -93,13 +99,13 @@ def http_json(base: str, path: str, token: str = "", body: dict | None = None) -
         request.add_header("X-JZO-Token", token)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
@@ -128,8 +134,8 @@ def plugin_zip(plugin_id: str, version: str, marker: str, *, min_host: str = "",
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         prefix = plugin_id + "/"
-        archive.writestr(prefix + "plugin.json",
-                         json.dumps(manifest(plugin_id, version, min_host), ensure_ascii=False))
+        archive.writestr(prefix + "plugin.toml",
+                         toml_io.dumps(manifest(plugin_id, version, min_host)))
         archive.writestr(prefix + "LICENSE", LICENSE_TEXT)
         archive.writestr(prefix + "dist/index.html",
                          "<!doctype html><title>%s</title><p>%s</p>" % (plugin_id, marker))
@@ -158,8 +164,8 @@ def write_installed(plugins_dir: Path, plugin_id: str, version: str = "0.1.0",
                     files: dict[str, str] | None = None) -> Path:
     target = plugins_dir / plugin_id
     (target / "dist").mkdir(parents=True, exist_ok=True)
-    (target / "plugin.json").write_text(
-        json.dumps(manifest(plugin_id, version), ensure_ascii=False), encoding="utf-8")
+    (target / "plugin.toml").write_text(
+        toml_io.dumps(manifest(plugin_id, version)), encoding="utf-8")
     (target / "LICENSE").write_text(LICENSE_TEXT, encoding="utf-8")
     (target / "dist" / "index.html").write_text(
         "<!doctype html><p>%s %s</p>" % (plugin_id, version), encoding="utf-8")
@@ -203,7 +209,7 @@ def write_index(server_dir: Path, base: str, plugin_ids: list[str]) -> None:
         },
     }
     (server_dir / "plugins.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        wire.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class SilentHandler(SimpleHTTPRequestHandler):
@@ -222,8 +228,8 @@ def start_server(directory: Path) -> tuple[ThreadingHTTPServer, str]:
 
 def version_on_disk(plugin_dir: Path) -> str:
     try:
-        return str(json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))["version"])
-    except (OSError, ValueError, KeyError):
+        return str(toml_io.load(plugin_dir / "plugin.toml").get("version") or "")
+    except (OSError, ValueError):
         return ""
 
 
@@ -352,7 +358,7 @@ def main() -> int:
     server, base = start_server(server_dir)
     write_index(server_dir, base, basic_ids)
     (server_dir / "plugins-full.json").write_text(
-        json.dumps({
+        wire.dumps({
             "index_version": "1.0",
             "index_name": "双轨更新真机探针（含广播条目）",
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -439,7 +445,7 @@ def main() -> int:
             hot_card.locator("button").click()
             expect(page.locator("#upLog")).to_contain_text("已更新 " + PLUGIN_HOT)
             ok = wait_disk_version(plugins_dir / PLUGIN_HOT, "0.2.0")
-            results.append((ok, "单条更新：磁盘 plugin.json 0.1.0 → 0.2.0"))
+            results.append((ok, "单条更新：磁盘 plugin.toml 0.1.0 → 0.2.0"))
             hot_code = plugins_dir / PLUGIN_HOT / "dist" / "plugin.js"
             hot_code_text = hot_code.read_text(encoding="utf-8") if hot_code.is_file() else ""
             results.append((hot_code.is_file() and "hot 0.2.0" in hot_code_text,
@@ -591,8 +597,8 @@ def main() -> int:
     artifacts["checks"] = [{"ok": ok, "label": label} for ok, label in results]
     artifacts["page_errors"] = page_errors
     artifacts["console_errors"] = console_errors
-    (work / "probe.json").write_text(
-        json.dumps(artifacts, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(
+        toml_io.dumps(artifacts), encoding="utf-8")
 
     for ok, label in results:
         print(("PASS " if ok else "FAIL ") + label)

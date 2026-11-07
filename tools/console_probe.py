@@ -19,7 +19,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -389,7 +395,7 @@ def main() -> int:
 
     result["ok"] = (all(item["ok"] for item in result["checks"])
                     and not result["page_errors"] and not result["console_errors"])
-    (work / "probe.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(toml_io.dumps(result), encoding="utf-8")
     print(("PASS" if result["ok"] else "FAIL") + f" · {len(result['checks'])} 项 · {work}")
     for item in result["checks"]:
         print(("  ok " if item["ok"] else "  XX ") + item["name"])

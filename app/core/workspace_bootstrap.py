@@ -4,10 +4,10 @@
 
 1. 从 ``data/current_workspace`` 指针装载当前工作区（缺失/损坏回落 default）；
 2. 把旧版本的全局插件与宿主状态**移动**进 default 工作区：根 ``plugins/``、
-   ``data/plugin_state.json``、``data/startup.json``、``data/bank_provider.json``、
-   ``data/update_state.json``、根 ``.env``（凭据）；
+   ``data/plugin_state.toml``、``data/startup.toml``、``data/bank_provider.toml``、
+   ``data/update_state.toml``、根 ``.env``（凭据）；
 3. 保证 default 与当前工作区都有 ``plugins/`` 子目录和一份空
-   ``plugin_state.json``（新工作区结构生成也走这里）；
+   ``plugin_state.toml``（新工作区结构生成也走这里）；
 4. 把当前工作区的 ``.env`` 载入 ``os.environ``（覆盖旧值），实现「切库重启后
    加载该区自己的凭据」。
 
@@ -129,13 +129,13 @@ def _migrate_legacy_state() -> list[str]:
 
 
 def ensure_workspace_layout(workspace_id: str) -> Path:
-    """保证工作区有 plugins/ 与空 plugin_state.json；返回工作区目录。"""
+    """保证工作区有 plugins/ 与空 plugin_state.toml；返回工作区目录。"""
     root = workspace_storage_dir(workspace_id)
     root.mkdir(parents=True, exist_ok=True)
     (root / PLUGINS_DIRNAME).mkdir(parents=True, exist_ok=True)
     state = root / plugin_state.STATE_FILENAME
     if not state.exists():
-        state.write_text("{}\n", encoding="utf-8")
+        state.write_text("", encoding="utf-8")
     return root
 
 

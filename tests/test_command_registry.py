@@ -12,7 +12,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
+import copy
 import os
 import shutil
 import tempfile
@@ -20,7 +26,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import commands, manifests
+from app.core import commands, manifests, toml_io
 from app.core.plugins import discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source, template_source, workspace_source  # noqa: E402
 
@@ -49,9 +55,7 @@ def build_plugin_dir(root: Path, manifest: dict) -> Path:
     (plugin_dir / "dist" / "index.html").write_text(
         "<!doctype html><title>p</title>", encoding="utf-8"
     )
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
-    )
+    toml_io.write(plugin_dir / "plugin.toml", manifest)
     return plugin_dir
 
 
@@ -62,7 +66,7 @@ class NormalizeCommandsTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def validate(self, contributes, plugin_id: str | None = None) -> tuple[dict, list]:
-        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        manifest = copy.deepcopy(BASE_MANIFEST)
         if plugin_id:
             manifest["id"] = plugin_id
         if contributes is not None:
@@ -211,12 +215,12 @@ class DiscoveryContractTest(unittest.TestCase):
     def test_13_discovery_ships_registry_and_rejections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            good = json.loads(json.dumps(BASE_MANIFEST))
+            good = copy.deepcopy(BASE_MANIFEST)
             good["contributes"] = {
                 "commands": [{"id": "org.jiuzhang.action.output.export_word", "title": "导出为Word"}]
             }
             build_plugin_dir(root, good)
-            bad = json.loads(json.dumps(BASE_MANIFEST))
+            bad = copy.deepcopy(BASE_MANIFEST)
             bad["id"] = THIRD_PARTY_ID
             bad["contributes"] = {
                 "commands": [{"id": "org.jiuzhang.action.output.export_word", "title": "蹭名"}]
@@ -336,7 +340,7 @@ class ParamsSchemaTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def validate(self, schema) -> tuple[dict, list]:
-        manifest = json.loads(json.dumps(BASE_MANIFEST))
+        manifest = copy.deepcopy(BASE_MANIFEST)
         command = {"id": "org.jiuzhang.action.data.probe", "title": "参数探针"}
         if schema is not ...:
             command["params_schema"] = schema

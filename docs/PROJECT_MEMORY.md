@@ -829,7 +829,7 @@
 
 **四条实现死命令**：
 1. **严禁触碰 `data/`**：插件更新只解压覆盖 `plugins/<id>/` 代码目录。工作区的物理题库、插件私有数据、
-   启用状态、令牌、日志都不在写范围内。唯一例外 `data/update_state.json`（续更状态，只存版本号与待办 id）。
+   启用状态、令牌、日志都不在写范围内。唯一例外 `data/update_state.toml`（续更状态，只存版本号与待办 id）。
 2. **兼容校验用 `min_host_version`**：条目或本地清单声明时与底座 `app.__version__` 比对，不够则标
    「需先更新底座」、灰按钮、跳过覆盖，**绝不覆盖本地代码**。缺省视为不设限。
 3. **更新经 EventBus 广播 `plugin.updated`**：载荷 `{id, from, to}`；宿主监听后刷新插件列表与左栏，
@@ -862,9 +862,9 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 | **停用** | 「暂时不用」或「侧栏太乱」 | **原地保留** | **原地保留** | 一键恢复，题目与配置零损失 |
 | **卸载** | 弹窗问【保留数据】（**默认勾选**） | 删除 | 勾＝**留**；不勾＝物理销毁 | 保留数据时重装同名插件即恢复取数 |
 
-**停用的绝对禁令（代码审查必查项）**：停用**只许**往 `data/plugin_state.json` 里增删一个 id，
+**停用的绝对禁令（代码审查必查项）**：停用**只许**往 `data/plugin_state.toml` 里增删一个 id，
 **绝不允许**删除、移动、改名 `data/` 下的任何文件，也不许删插件代码目录。
-现实现是 `app/core/plugin_state.set_enabled()`，它的写范围有且仅有那一个 JSON（原子写：`.json.tmp` → `replace`）；
+现实现是 `app/core/plugin_state.set_enabled()`，它的写范围有且仅有那一个 TOML（原子写：`.toml.tmp` → `replace`）；
 `discover_plugins()` 只把 `enabled` 标成 `False`，卸载/清空一类动作根本不在它的调用路径上。
 **审查口径**：任何给 `set_enabled` / `POST /api/plugins/{plugin_id}/enabled` 新增的副作用——尤其是出现
 `shutil`、`unlink`、`rmtree` 或往 `data/` 里写空文件之类的「顺手清理」——一律视为回归，当场驳回。
@@ -1007,7 +1007,7 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
    右键归插件自己决定。
 3. **输入铁律写进契约**：聊天框裸 `Enter` 只换行、`Ctrl/Cmd+Enter` 才发送且与【发送】按钮同一个出口；
    单行搜索框不属聊天框，`Enter` 检索保留。口径见 PLUGIN_SPEC §2.11。
-4. **主机偏好落 `data/plugin_state.json`，不进发布清单**：昵称、文件夹分组树、停用时间、键位改绑都是
+4. **主机偏好落 `data/plugin_state.toml`，不进发布清单**：昵称、文件夹分组树、停用时间、键位改绑都是
    「这台机器自己的组织方式」，与 ADR-007 的写范围同源（仍只这一个文件，代码与题库原地不动）。
    发现层把它们投影进 `/api/plugins` 并计入签名，于是**左栏树是顺序的唯一事实来源**——
    控制台的「已启用」与左栏读同一棵树，天然 100% 同序，不必再造第二份顺序账；
@@ -1045,10 +1045,10 @@ CSS 层沉浸（左栏摘走、右栏与底栏保留）在真人浏览器里走�
 且每一段都要能回答「出事时老师能不能原样找回」。
 
 1. **备份单位是当前工作区**：快照扫本区数据目录；**军令 #18-终 阶段二起**，manifest 还收录
-   本区配置（`plugin_state.json`/`startup.json`/`bank_provider.json`/`update_state.json`）与本区
+   本区配置（`plugin_state.toml`/`startup.toml`/`bank_provider.toml`/`update_state.toml`）与本区
    `plugins/` 插件代码目录，二者在快照里统一挂 `ws/` 前缀，落点回 `data/workspaces/<id>/`；
-   `.git`/`__pycache__`/`node_modules` 之类不是插件代码，不打包。凭据文件（`.env`、`backup.json`）
-   与宿主级账本（`workspaces.json`、`current_workspace`、`deletion_audit.json`、`.local_token`）永不进包，
+   `.git`/`__pycache__`/`node_modules` 之类不是插件代码，不打包。凭据文件（`.env`、`backup.toml`）
+   与宿主级账本（`workspaces.toml`、`current_workspace`、`deletion_audit.toml`、`.local_token`）永不进包，
    恢复侧另设一道门禁：这三类文件出现在清单里即视为篡改、整包拒收。
 2. **快照必须走 SQLite backup API**：禁止直接复制 `.db` 主文件；**包内成员必须恰好等于 manifest 的
    `files` 清单**——打包器只装清单点名的文件，恢复侧复核前先清掉「自己只读打开快照库时 SQLite 顺手落下的
@@ -1056,11 +1056,11 @@ CSS 层沉浸（左栏摘走、右栏与底栏保留）在真人浏览器里走�
    备出一份**永远恢复不了**的包，#18-终 阶段二真机探针抓到）。manifest 记录逐题哈希（按 `PRAGMA table_info`
    全字段规范化复算）、uploads 清单哈希、数据文件清单（相对路径 + 大小 + 哈希）与包哈希，
    包哈希在打包后回填。
-3. **两个保留策略都只删本工具命名文件**：本地 `backup_*.zst` / `manifest_*.json` 保留最近 **3** 份，
+3. **两个保留策略都只删本工具命名文件**：本地 `backup_*.zst` / `manifest_*.toml` 保留最近 **3** 份，
    远端同名文件保留最近 **1** 份；老师自己放进目录的文件永不清理。上传失败不删远端旧份——
    宁可多留一份，也不许出现「新的没传上、旧的已删掉」。
 4. **出网只由老师当场点击发起**：网盘上传是【立即备份】这一次点击的后半段，没有定时器、没有启动顺手传；
-   凭据只明文存本机 `data/workspaces/<ws_id>/backup.json`，不写日志、不下发前端、不进包，
+   凭据只明文存本机 `data/workspaces/<ws_id>/backup.toml`，不写日志、不下发前端、不进包，
    读取时 `resolve()` 必须落在 `root_data_dir()` 内。
 5. **恢复先验后写**：本地/网盘双源，网盘先下载到临时区；题库数据与 `uploads/` 必选、
    其他数据文件与**插件代码**默认勾选可取消；包哈希、文件哈希与**插件目录摘要**任何一项不符即拒，
@@ -1068,7 +1068,7 @@ CSS 层沉浸（左栏摘走、右栏与底栏保留）在真人浏览器里走�
    （插件代码写坏同样连坐回滚），不留半恢复状态；覆盖到插件代码时完成后明说「必须重启底座才生效」。
 6. **删除只进系统回收站**：必须红字提示并手输「确认删除」四个字；每个路径 `resolve()` 校验不出
    `root_data_dir()`；Windows 走 `SHFileOperationW` + `FOF_ALLOWUNDO`，禁止 `unlink`/`rmtree`；
-   审计写 `data/deletion_audit.json`（时间、工作区 id、路径、结果，上限 500 条），只记操作事实、不记题目数据。
+   审计写 `data/deletion_audit.toml`（时间、工作区 id、路径、结果，上限 500 条），只记操作事实、不记题目数据。
 7. **明确不做**：自动备份、启动/退出静默传、定时轮询、断点续传、传完关机、断网死等、合库查重。
    备份与恢复是设置页里的宿主自有面板，不做插件、不新增独立路由、不升 `PLUGIN_SPEC`。
 
@@ -1103,9 +1103,9 @@ default 区那份若清单上仍写着 `current_workspace`，新底座会在预�
    `data/workspaces/<当前区>/`；指针 `data/current_workspace` 坏了或缺失一律回落 `default`，
    底座不能被一个坏指针关在门外。`JZO_PLUGINS_DIR`/`JZO_ENV_FILE` 是测试与便携部署的显式覆盖口子，
    **设了它两区就共用同一份代码目录，隔离判据当场失效**——阶段三的两支探针因此刻意不设。
-2. **容器里装什么**：`plugins/`（本区插件代码）、`plugin_state.json`（启停/昵称/左栏树）、
-   `startup.json`、`bank_provider.json`、`update_state.json`、`.env`。
-   `default` 区的**业务数据**（`jiuzhang.db`、`uploads/`、`config.json`）仍住根 `data/`（历史布局，
+2. **容器里装什么**：`plugins/`（本区插件代码）、`plugin_state.toml`（启停/昵称/左栏树）、
+   `startup.toml`、`bank_provider.toml`、`update_state.toml`、`.env`。
+   `default` 区的**业务数据**（`jiuzhang.db`、`uploads/`、`config.toml`）仍住根 `data/`（历史布局，
    军令 #18 不搬库——贸然搬动老师的真题不可逆）；非 default 区业务数据住各自目录。
 3. **全局快捷键仲裁层整层拆除**（#18 第二步）：宿主不再维护跨区按键表，也不再有「注册即全局生效」的通道；
    按键只在插件自己的沙箱里起作用，由 `tests/test_shortcut_removal_contract.py` 钉住不许回流。
@@ -1272,7 +1272,7 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
 
 - [x] **双轨静默更新（军令 #13 任务 10 补齐运行时并真机验证）**：完成底座自更新与插件热更新两轨——
       ① 底座 `update.bat` 方案：临时脚本 → 结束自身 → robocopy 覆盖程序文件并**保护 `data/`**（排除
-      `.venv .git dist __pycache__ .system_generated`）→ 重启 → 读 `data/update_state.json` 接着补更插件；
+      `.venv .git dist __pycache__ .system_generated`）→ 重启 → 读 `data/update_state.toml` 接着补更插件；
       ② 插件热更新：`app/core/plugin_update.py`（semver 比较 + 串行 apply，只覆盖 `plugins/<id>/` 代码目录）；
       ③ **严格的版本兼容性拦截**：条目/清单的 `min_host_version` 与底座 `__version__` 比对，
       不够则标「需先更新底座」、灰按钮、**绝不覆盖本地代码**；

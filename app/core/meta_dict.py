@@ -15,12 +15,11 @@
 
 from __future__ import annotations
 
-import json
 import re
 import secrets
 from typing import Any
 
-from app.core import ai_client, pending_db, pinyin, questions
+from app.core import ai_client, pending_db, pinyin, questions, wire
 
 
 class MetaDictError(Exception):
@@ -229,7 +228,7 @@ def _parse_suggestion(content: str) -> tuple[str, float]:
     if text.startswith("```"):
         text = re.sub(r"^```[A-Za-z]*\s*|\s*```$", "", text).strip()
     try:
-        data = json.loads(text)
+        data = wire.loads(text)
     except (TypeError, ValueError):
         data = None
     if isinstance(data, dict):

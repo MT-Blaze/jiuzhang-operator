@@ -16,13 +16,12 @@
 from __future__ import annotations
 
 import copy
-import json
 import re
 import secrets
 import sqlite3
 from typing import Any
 
-from app.core import bank, questions
+from app.core import bank, questions, wire
 from app.core.pending_db import (
     GROUP_ITEM_SEP,
     GROUP_SEP,
@@ -257,7 +256,7 @@ def sync_batch_sources(con: sqlite3.Connection, batch_id: str,
     warnings: list[str] = []
     for row in rows:
         try:
-            document = json.loads(row["doc_json"])
+            document = wire.loads(row["doc_json"])
         except (TypeError, ValueError):
             skipped += 1
             warnings.append(f"{row['id']}：文档损坏，未同步")
@@ -269,7 +268,7 @@ def sync_batch_sources(con: sqlite3.Connection, batch_id: str,
             continue
         con.execute(
             "UPDATE pending_questions SET doc_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
+            (wire.dumps(document, ensure_ascii=False, separators=(",", ":")),
              questions.now_iso(), row["id"]),
         )
         synced += 1

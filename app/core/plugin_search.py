@@ -11,13 +11,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.core import plugin_index, ui_cards
+from app.core import plugin_index, state_store, ui_cards, wire
 from app.core.config import root_data_dir
 from app.core.plugins import discover_plugins
 
@@ -26,7 +25,7 @@ TOOL_SUGGEST = "suggest_install"
 TOOL_NAMES = {TOOL_SEARCH, TOOL_SUGGEST}
 HOST_PLUGIN = {"id": "builtin.plugin-index", "name": "插件索引"}
 
-CACHE_FILENAME = "plugin_index_cache.json"
+CACHE_FILENAME = "plugin_index_cache.toml"
 MAX_QUERY = 200
 MAX_RESULTS = 5
 MAX_REASON = 200
@@ -91,24 +90,16 @@ def save_index_cache(index: dict[str, Any]) -> None:
         # 一起缓存，用户点【检查更新】时才能在离线路径上比对底座版本。
         "host": index.get("host") if isinstance(index.get("host"), dict) else None,
     }
-    path = cache_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        temporary.replace(path)
-    except OSError:
+        state_store.save(cache_path(), payload)
+    except (OSError, ValueError):
         # 缓存是增强能力：磁盘只读或空间不足时，不让拉取清单本身失败。
         return
 
 
 def load_index_cache() -> dict[str, Any] | None:
-    path = cache_path()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
+    payload = state_store.load_table(cache_path(), None)
+    if not payload:
         return None
     entries = payload.get("entries")
     if not isinstance(entries, list):
@@ -363,8 +354,8 @@ def _suggest_outcome(plugin_id: str, reason: str) -> dict[str, Any]:
 def _parse_arguments(arguments: Any) -> dict[str, Any]:
     if isinstance(arguments, str):
         try:
-            payload = json.loads(arguments or "{}")
-        except json.JSONDecodeError as exc:
+            payload = wire.loads(arguments or "{}")
+        except wire.JSONDecodeError as exc:
             raise ValueError("工具参数不是合法 JSON：%s" % exc) from exc
     else:
         payload = arguments

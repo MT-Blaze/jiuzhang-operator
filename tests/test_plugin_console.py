@@ -14,7 +14,12 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import shutil
 import socket
@@ -28,7 +33,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from app.core import manifests, plugin_lifecycle, plugin_state, toml_io
+from app.core import manifests, plugin_lifecycle, plugin_state, toml_io, wire
 from app.core.config import root_data_dir, settings
 from app.core.plugins import discover_plugins, validate_plugin
 
@@ -99,16 +104,15 @@ class PluginStateTest(unittest.TestCase):
         plugin_state.set_enabled("org.jiuzhang.any", False)
         self.assertFalse(plugin_state.is_enabled("org.jiuzhang.any"))
         # 状态真的落盘（不是只存内存）
-        persisted = json.loads(
-            (Path(self.tmp.name) / "workspaces" / "default" / "plugin_state.json")
-            .read_text(encoding="utf-8")
+        persisted = toml_io.load(
+            Path(self.tmp.name) / "workspaces" / "default" / "plugin_state.toml"
         )
         self.assertIn("org.jiuzhang.any", persisted["disabled"])
         plugin_state.set_enabled("org.jiuzhang.any", True)
         self.assertTrue(plugin_state.is_enabled("org.jiuzhang.any"))
 
     def test_disable_never_touches_code_or_data(self) -> None:
-        """ADR-007 禁令锁：停用只改 plugin_state.json，代码与 data/ 必须一根汗毛都不能动。
+        """ADR-007 禁令锁：停用只改 plugin_state.toml，代码与 data/ 必须一根汗毛都不能动。
 
         判据取整棵树快照（相对路径 + 字节数 + mtime_ns）逐条比对：
         只断言「文件还在」会漏掉「被清空 / 被改名 / 被重写」这三种破坏。
@@ -129,7 +133,7 @@ class PluginStateTest(unittest.TestCase):
             return {
                 str(item.relative_to(base)).replace("\\", "/"): (item.stat().st_size, item.stat().st_mtime_ns)
                 for item in sorted(base.rglob("*"))
-                if item.is_file() and item.name != "plugin_state.json"
+                if item.is_file() and item.name != "plugin_state.toml"
             }
 
         before_data = snapshot(data_root)
@@ -289,15 +293,15 @@ class UninstallLifecycleTest(unittest.TestCase):
         误判成非 provider 才会毁数据，所以判断取保守方向，把销毁权留给显式声明。
         """
         for index, raw in enumerate(
-                (None, "{ this is not json", json.dumps({"capabilities": "bank.provider"}),
-                 json.dumps({"capabilities": ["question.render"]}))):
+                (None, "[这不是 TOML", 'capabilities = "bank.provider"',
+                 'capabilities = ["question.render"]')):
             with self.subTest(manifest=index):
                 plugin_dir = self.plugins_dir / self.pid
                 plugin_dir.mkdir(parents=True, exist_ok=True)
                 if raw is None:
                     self.assertIsNone(manifests.manifest_path(plugin_dir), "首轮必须是不带清单的基线")
                 else:
-                    (plugin_dir / "plugin.json").write_text(raw, encoding="utf-8")
+                    (plugin_dir / "plugin.toml").write_text(raw, encoding="utf-8")
                 db = self.data_dir / "banks" / f"{self.pid}.db"
                 _make_bank_db(db, 1)
 
@@ -375,7 +379,7 @@ class ConsoleAndImportApiTest(unittest.TestCase):
             return s.getsockname()[1]
 
     def _call(self, method, path, body=None, token=True):
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         req = urllib.request.Request(self.base + path, data=data, method=method)
         req.add_header("Accept", "application/json")
         if data is not None:
@@ -384,12 +388,12 @@ class ConsoleAndImportApiTest(unittest.TestCase):
             req.add_header("X-JZO-Token", self.TOKEN)
         try:
             with urllib.request.urlopen(req, timeout=15) as r:
-                return r.status, json.loads(r.read().decode("utf-8") or "{}")
+                return r.status, wire.loads(r.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", "replace")
             try:
-                return e.code, json.loads(raw or "{}")
-            except json.JSONDecodeError:
+                return e.code, wire.loads(raw or "{}")
+            except wire.JSONDecodeError:
                 return e.code, {"raw": raw}
 
     def _plugins(self):

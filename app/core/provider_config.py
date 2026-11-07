@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import json
+from app.core import wire  # noqa: E402
 import os
 import urllib.error
 import urllib.request
@@ -152,10 +152,10 @@ def test_connectivity(profile: ProviderProfile) -> dict[str, object]:
 
     model_count: int | None = None
     try:
-        document = json.loads(body)
+        document = wire.loads(body)
         if isinstance(document, dict) and isinstance(document.get("data"), list):
             model_count = len(document["data"])
-    except json.JSONDecodeError:
+    except wire.JSONDecodeError:
         pass
     detail = "连通正常" + (f"，/models 返回 {model_count} 个模型" if model_count is not None else "")
     return {"ok": True, "status_code": 200, "host": host, "detail": detail}

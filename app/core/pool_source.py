@@ -7,10 +7,9 @@
 from __future__ import annotations
 
 import copy
-import json
 from typing import Any
 
-from app.core import questions
+from app.core import questions, wire
 from app.core.pending_db import PendingError, PendingNotFound, connect
 
 _EDITABLE_FIELDS = ("type", "stem", "options", "answer", "solution")
@@ -154,7 +153,7 @@ def update_document(pool_id: str, patch: Any) -> dict[str, Any]:
     try:
         cursor = con.execute(
             "UPDATE duplicate_pool SET doc_json = ?, updated_at = ? WHERE pool_id = ?",
-            (json.dumps(document, ensure_ascii=False), stamp, str(row["pool_id"])),
+            (wire.dumps(document, ensure_ascii=False), stamp, str(row["pool_id"])),
         )
         if cursor.rowcount == 0:
             raise PendingNotFound("重题池里没有这一条")

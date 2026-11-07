@@ -1,7 +1,7 @@
 """启动行为（军令 #11 阶段三）：老师选「打开软件先落在哪个界面」。
 
 覆盖三件事：
-1. **后端持久化与校验**——落盘 ``data/startup.json``，写入严格（插件必须已装且
+1. **后端持久化与校验**——落盘 ``data/startup.toml``，写入严格（插件必须已装且
    已启用，否则 400 级拒绝），读取宽容（插件被删/被停用则回落默认欢迎页，
    带 fallback_reason 并打 WARNING 日志，配置原地保留）；
 2. **下拉数据源口径**——只遍历已启用插件，停用的不进候选；
@@ -12,7 +12,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import tempfile
 import unittest
@@ -90,7 +96,7 @@ class StartupPrefsTest(unittest.TestCase):
         self.mod.set_target("plugin:" + DASHBOARD_ID)
         path = self.data_dir / self.mod.STATE_FILENAME
         self.assertTrue(path.is_file())
-        self.assertEqual({"target": "plugin:" + DASHBOARD_ID}, json.loads(path.read_text(encoding="utf-8")))
+        self.assertEqual({"target": "plugin:" + DASHBOARD_ID}, toml_io.load(path))
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.resolve()["effective"])
         self.assertEqual("plugin", self.mod.resolve()["kind"])
         self.assertEqual(DASHBOARD_ID, self.mod.resolve()["plugin_id"])
@@ -158,7 +164,7 @@ class StartupPrefsTest(unittest.TestCase):
         的现场只能靠改盘复现——那正是老师会遇到的情形。
         """
         (self.data_dir / self.mod.STATE_FILENAME).write_text(
-            json.dumps({"target": target}, ensure_ascii=False), encoding="utf-8")
+            toml_io.dumps({"target": target}), encoding="utf-8")
 
     def test_24_unavailable_chosen_plugin_falls_back_to_default_page(self) -> None:
         """老师选的插件没了，不许把老师丢在空画布上：改用默认启动页并说明原因。"""
@@ -192,12 +198,12 @@ class StartupPrefsTest(unittest.TestCase):
 
     def test_23_corrupt_state_file_is_treated_as_unconfigured(self) -> None:
         path = self.data_dir / self.mod.STATE_FILENAME
-        path.write_text("{ not json", encoding="utf-8")
+        path.write_text('target = "', encoding="utf-8")
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target())
-        path.write_text(json.dumps({"target": "plugin:../evil"}), encoding="utf-8")
+        path.write_text('target = "plugin:../evil"', encoding="utf-8")
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target(),
                          "形状非法的历史配置一律当作没配过")
-        path.write_text(json.dumps(["chat"]), encoding="utf-8")
+        path.write_text('target = ["chat"]', encoding="utf-8")
         self.assertEqual("plugin:" + DASHBOARD_ID, self.mod.read_target())
 
 
@@ -415,7 +421,7 @@ class StartupHttpTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def _call(self, method: str, body: dict | None = None, token: bool = False) -> tuple[int, dict]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = self.urllib_request.Request(self.base + "/api/startup", data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -424,13 +430,13 @@ class StartupHttpTest(unittest.TestCase):
             request.add_header("X-JZO-Token", TOKEN)
         try:
             with self.urllib_request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read().decode("utf-8") or "{}")
+                return response.status, wire.loads(response.read().decode("utf-8") or "{}")
         except self.urllib_error.HTTPError as error:
             payload = error.read().decode("utf-8")
             error.close()
             try:
-                return error.code, json.loads(payload or "{}")
-            except json.JSONDecodeError:
+                return error.code, wire.loads(payload or "{}")
+            except wire.JSONDecodeError:
                 return error.code, {"raw": payload}
 
     def test_01_get_is_open_and_defaults_to_dashboard(self) -> None:
@@ -440,7 +446,7 @@ class StartupHttpTest(unittest.TestCase):
         self.assertFalse(body["configured"])
         self.assertEqual("plugin:" + DASHBOARD_ID, body["default_target"])
         self.assertIn(DASHBOARD_ID, [item["id"] for item in body["candidates"]])
-        self.assertNotIn("local_token", json.dumps(body), "启动接口不许回任何令牌信息")
+        self.assertNotIn("local_token", wire.dumps(body), "启动接口不许回任何令牌信息")
 
     def test_02_post_without_token_is_rejected(self) -> None:
         status, _ = self._call("POST", {"target": "chat"})
@@ -459,8 +465,7 @@ class StartupHttpTest(unittest.TestCase):
         self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"])
         self.assertEqual("数据看板", body["plugin_name"])
         self.assertEqual({"target": "plugin:" + DASHBOARD_ID},
-                         json.loads((self.data_dir / "workspaces" / "default" / "startup.json")
-                                     .read_text(encoding="utf-8")))
+                         toml_io.load(self.data_dir / "workspaces" / "default" / "startup.toml"))
 
         status, body = self._call("GET")
         self.assertEqual("plugin:" + DASHBOARD_ID, body["effective"])

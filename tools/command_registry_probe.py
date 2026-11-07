@@ -25,8 +25,14 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import io
-import json
 import os
 import re
 import shutil
@@ -366,7 +372,7 @@ def build_zip(plugin_id: str, name: str, description: str, script: str, commands
     )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{plugin_id}/plugin.json", json.dumps(body, ensure_ascii=False, indent=2))
+        zf.writestr(f"{plugin_id}/plugin.toml", toml_io.dumps(body))
         zf.writestr(f"{plugin_id}/dist/index.html", html)
         zf.writestr(f"{plugin_id}/dist/plugin.js", script)
         zf.writestr(f"{plugin_id}/LICENSE", (ROOT / "LICENSE").read_text(encoding="utf-8"))
@@ -375,7 +381,7 @@ def build_zip(plugin_id: str, name: str, description: str, script: str, commands
 
 def api_status(method: str, path: str, body=None, blob: bytes | None = None) -> tuple[int, dict]:
     data = blob if blob is not None else (
-        json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None)
+        wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None)
     request = urllib.request.Request(ORIGIN + path, data=data, method=method)
     request.add_header("Accept", "application/json")
     request.add_header("X-JZO-Token", TOKEN)
@@ -383,12 +389,12 @@ def api_status(method: str, path: str, body=None, blob: bytes | None = None) -> 
         request.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=120) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+            return resp.status, wire.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         raw = error.read().decode("utf-8", errors="replace")
         try:
-            return error.code, json.loads(raw)
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw)
+        except wire.JSONDecodeError:
             return error.code, {"detail": raw}
 
 
@@ -490,7 +496,7 @@ def click_dialog(page, index: int) -> bool:
 
 
 def dump(path: Path, payload) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(toml_io.dumps(payload), encoding="utf-8")
 
 
 def run(tag: str) -> dict:
@@ -531,7 +537,7 @@ def run(tag: str) -> dict:
         env = dict(os.environ)
         env["JZO_DATA_DIR"] = str(data_dir)
         env["JZO_PLUGINS_DIR"] = str(plugins_dir)
-        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.json")
+        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.toml")
         env["JZO_LOCAL_TOKEN"] = TOKEN
         env["JZO_RESTART_DISABLED"] = "1"
         env.pop("JZO_AI_API_KEY", None)
@@ -951,8 +957,8 @@ def run(tag: str) -> dict:
     passed = sum(1 for item in checks if item["passed"])
     result = {"tag": tag, "total": len(checks), "passed": passed,
               "crashed": crashed, "checks": checks, "evidence": evidence, "raw_api": raw}
-    dump(out / "probe.json", result)
-    print(json.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
+    dump(out / "probe.toml", result)
+    print(wire.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
     for item in checks:
         print(("PASS " if item["passed"] else "FAIL ") + item["name"] + " | " + item["detail"])
     if crashed:

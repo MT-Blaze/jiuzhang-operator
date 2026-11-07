@@ -12,13 +12,19 @@
   5. 后端两条旧路由直接 404（前端不可达之外再加一道）；
   6. 宿主页与插件 iframe 无未捕获 JS 错误。
 
-产出：``.system_generated/bank_ui_smoke_probe/<tag>/probe.json``（① checks[] + passed/total）
-与两张截图。任一判据红即以非零码退出，但 probe.json 始终落盘。
+产出：``.system_generated/bank_ui_smoke_probe/<tag>/probe.toml``（① checks[] + passed/total）
+与两张截图。任一判据红即以非零码退出，但 probe.toml 始终落盘。
 """
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -60,13 +66,13 @@ def wait_health(base: str, process: subprocess.Popen) -> None:
 def api_get(base: str, path: str) -> tuple[int, object]:
     try:
         with urllib.request.urlopen(base + path, timeout=15) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "null")
+            return response.status, wire.loads(response.read().decode("utf-8") or "null")
     except urllib.error.HTTPError as error:
         raw = error.read()
         error.close()
         try:
-            return error.code, json.loads(raw.decode("utf-8") or "null")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw.decode("utf-8") or "null")
+        except wire.JSONDecodeError:
             return error.code, raw.decode("utf-8", "replace")
 
 
@@ -112,10 +118,10 @@ def main() -> int:
     def finish(code: int) -> int:
         report["total"] = len(report["checks"])
         report["passed"] = sum(1 for item in report["checks"] if item["ok"])
-        (work / "probe.json").write_text(
-            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(json.dumps({"passed": report["passed"], "total": report["total"],
-                          "probe": str(work / "probe.json")}, ensure_ascii=False))
+        (work / "probe.toml").write_text(
+            toml_io.dumps(report), encoding="utf-8")
+        print(wire.dumps({"passed": report["passed"], "total": report["total"],
+                          "probe": str(work / "probe.toml")}, ensure_ascii=False))
         return code
 
     try:

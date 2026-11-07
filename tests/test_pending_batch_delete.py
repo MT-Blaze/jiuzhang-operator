@@ -14,8 +14,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import base64
-import json
 import os
 import sqlite3
 import sys
@@ -218,7 +224,7 @@ class BatchLifecycleCase(unittest.TestCase):
         self._settle_dedupe_threads()
         con = self.pending_db.connect()
         try:
-            item_asset = json.loads(con.execute(
+            item_asset = wire.loads(con.execute(
                 "SELECT assets_json FROM pending_questions WHERE id = ?", (item_id,)
             ).fetchone()["assets_json"])
             con.execute("INSERT OR REPLACE INTO dedupe_scans"

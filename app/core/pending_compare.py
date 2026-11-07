@@ -20,12 +20,11 @@ re-export 本模块全部名字，调用点（``api/pending.py``、``pending_poo
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from pathlib import Path
 from typing import Any
 
-from app.core import bank, bank_dedupe
+from app.core import bank, bank_dedupe, wire
 from app.core.bank_codec import answer_from_storage
 from app.core.config import settings
 from app.core.pending_db import (
@@ -181,7 +180,7 @@ def _answer_object(raw: Any) -> dict[str, Any]:
         return raw
     if isinstance(raw, str) and raw.strip().startswith("{"):
         try:
-            parsed = json.loads(raw)
+            parsed = wire.loads(raw)
         except (ValueError, TypeError):
             return {}
         return parsed if isinstance(parsed, dict) else {}
@@ -283,7 +282,7 @@ def _better(verdict: dict[str, Any], current: dict[str, Any] | None,
 
 def _candidate_entry(row: Any) -> dict[str, Any]:
     """池内一行 → 候选比对行（题面文本 + 题型 + **契约答案对象**）。"""
-    document = json.loads(row["doc_json"] or "{}")
+    document = wire.loads(row["doc_json"] or "{}")
     return {
         "id": str(row["id"]),
         "seq": int(row["seq"] or 0),

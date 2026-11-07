@@ -12,10 +12,9 @@
   3. 画布没有舞台头 / 模型胶囊 / 上下文按钮，也没有「沙箱运行中」提示；
   4. 底栏三视图可切换，报错诊断悬停提示 + 双击原位变字、剪贴板内容=整行、
      不弹 Toast、不选中文字、不抢焦点（含 http 老回路的焦点归还）；
-  5. 插件行可原生拖拽排序，顺序写回后端偏好树（data/plugin_state.json），刷新后保持；
+  5. 插件行可原生拖拽排序，顺序写回后端偏好树（data/plugin_state.toml），刷新后保持；
   6. 宿主页零未捕获 JS 错误。
 """
-import json
 import os
 import shutil
 import socket
@@ -136,18 +135,18 @@ def run(tag: str) -> dict:
             check("右栏无插件占用时默认折叠（头部不占高）",
                   state["sidebarHead"] and state["sidebarHead"]["height"] == 48
                   and state["contextHead"] and state["contextHead"]["height"] == 0,
-                  json.dumps([state["sidebarHead"], state["contextHead"]]))
+                  wire.dumps([state["sidebarHead"], state["contextHead"]]))
             check("左右栏头部顶线对齐", state["sidebarHead"] and state["contextHead"]
                   and state["sidebarHead"]["top"] == state["contextHead"]["top"], "")
             check("左栏题库下拉已移入设置", not state["bankSelect"] and not state["bankNew"], "")
             check("AI 助手插件已整块下架（左栏不再有对话入口）", not state["chatInList"],
-                  json.dumps(state["rows"], ensure_ascii=False)[:200])
+                  wire.dumps(state["rows"], ensure_ascii=False)[:200])
             check("管理入口死锁栏底且无悬浮小图标",
                   state["footConsole"] and not state["footReset"], "")
             check("舞台头/模型胶囊/上下文按钮已删除",
                   not state["stageHead"] and not state["modelBtn"] and not state["contextBtn"], "")
             check("底栏三视图就位", state["dockTabs"] == ["运行日志", "报错诊断", "系统终端"],
-                  json.dumps(state["dockTabs"], ensure_ascii=False))
+                  wire.dumps(state["dockTabs"], ensure_ascii=False))
 
             # ---------- 报错诊断：悬停提示、双击原位变字 ----------
             page.evaluate("""() => {
@@ -170,7 +169,7 @@ def run(tag: str) -> dict:
             }""")
             report["notes"]["error_view"] = error_state
             check("报错诊断只显示错误行", error_state["view"] == "error" and error_state["rows"] == 1,
-                  json.dumps(error_state, ensure_ascii=False))
+                  wire.dumps(error_state, ensure_ascii=False))
             check("错误行带「双击复制」提示", error_state["hint"] == "双击复制", str(error_state["hint"]))
             page.hover('#wsDockLog .ws-dock-item')
             snap("20-error-hover")
@@ -188,7 +187,7 @@ def run(tag: str) -> dict:
             report["notes"]["copied"] = copied
             snap("21-error-copied")
             check("双击后原位变字为「已复制」", copied["hint"] == "已复制" and copied["copied"],
-                  json.dumps(copied, ensure_ascii=False))
+                  wire.dumps(copied, ensure_ascii=False))
             check("复制反馈不弹 Toast", copied["toast"] == 0, str(copied["toast"]))
 
             # 剪贴板必须拿到整行（时间 + 主题 + 正文），不是行内某个 span
@@ -211,7 +210,7 @@ def run(tag: str) -> dict:
             report["notes"]["clipboard"] = clipboard_probe
             check("剪贴板内容与整行 data-copy 完全一致",
                   clipboard_probe["clipboard"] == clipboard_probe["row"],
-                  json.dumps(clipboard_probe, ensure_ascii=False)[:300])
+                  wire.dumps(clipboard_probe, ensure_ascii=False)[:300])
             check("双击不留下文字选区", clipboard_probe["selection"] == "",
                   repr(clipboard_probe["selection"]))
             check("报错行禁用文本选择（CSS user-select）",
@@ -219,7 +218,7 @@ def run(tag: str) -> dict:
             check("「已复制」落在被双击行内且右对齐（不串行、不飘出）",
                   clipboard_probe["sameRow"] and clipboard_probe["inside"]
                   and clipboard_probe["rightAligned"],
-                  json.dumps(clipboard_probe, ensure_ascii=False)[:300])
+                  wire.dumps(clipboard_probe, ensure_ascii=False)[:300])
 
             # http 老回路：隐藏 textarea 会抢焦点，复制后必须还给原元素
             page.wait_for_timeout(1400)   # 等上一轮「已复制」闪完，避免误判成本轮结果
@@ -240,12 +239,12 @@ def run(tag: str) -> dict:
             snap("22-error-copied-fallback")
             check("老回路复制后焦点归还（不抢焦点）",
                   after_fallback["active"] == "wsDockTabError" and fallback == "wsDockTabError",
-                  json.dumps(report["notes"]["fallback"], ensure_ascii=False))
+                  wire.dumps(report["notes"]["fallback"], ensure_ascii=False))
             check("老回路复制不选中文字", after_fallback["selection"] == "",
                   repr(after_fallback["selection"]))
             check("老回路复制仍是原位文字反馈、无 Toast",
                   after_fallback["hint"] in ("已复制", "复制失败") and after_fallback["toast"] == 0,
-                  json.dumps(after_fallback, ensure_ascii=False))
+                  wire.dumps(after_fallback, ensure_ascii=False))
             page.click('#wsDockTabTerminal')
             page.wait_for_timeout(150)
             terminal_rows = page.evaluate(
@@ -256,7 +255,7 @@ def run(tag: str) -> dict:
             # ---------- 原生拖拽排序 + 刷新保持 ----------
             rows = state["rows"]
             check("插件行声明原生 draggable", all(r["draggable"] == "true" for r in rows),
-                  json.dumps([r["draggable"] for r in rows]))
+                  wire.dumps([r["draggable"] for r in rows]))
             keys_before = [r["key"] for r in rows]
             if len(rows) >= 3:
                 first = page.locator('.ws-plugin-row').nth(0)
@@ -276,7 +275,7 @@ def run(tag: str) -> dict:
                 )
                 report["notes"]["drag"] = {"before": keys_before, "after": keys_after, "stored": stored}
                 check("拖拽改变了行顺序", keys_after != keys_before,
-                      json.dumps({"before": keys_before[:3], "after": keys_after[:3]}, ensure_ascii=False))
+                      wire.dumps({"before": keys_before[:3], "after": keys_after[:3]}, ensure_ascii=False))
                 visible = [k for k in (stored or []) if k in keys_after]
                 check("顺序写回后端偏好树（左栏树是顺序唯一事实来源）",
                       bool(keys_after) and visible == keys_after, str(stored)[:200])
@@ -288,10 +287,10 @@ def run(tag: str) -> dict:
                 keys_reload = page.evaluate("""() => Array.from(
                   document.querySelectorAll('#wsPluginList .ws-plugin-row')
                 ).map(r => r.getAttribute('data-key'))""")
-                check("刷新后拖拽顺序保持", keys_reload == keys_after, json.dumps(keys_reload[:3]))
+                check("刷新后拖拽顺序保持", keys_reload == keys_after, wire.dumps(keys_reload[:3]))
                 snap("30-drag-order")
             else:
-                check("至少有 3 个条目可拖拽", False, json.dumps(keys_before, ensure_ascii=False))
+                check("至少有 3 个条目可拖拽", False, wire.dumps(keys_before, ensure_ascii=False))
 
             # ---------- 沙箱提示已删：打开一个插件画布 ----------
             page.get_by_role("button", name="录题、改题、删题工作台").click()
@@ -300,7 +299,7 @@ def run(tag: str) -> dict:
             check("「沙箱运行中」提示已删除", not note, "")
             snap("40-plugin-canvas")
 
-            check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
+            check("宿主页零未捕获 JS 错误", not report["errors"], wire.dumps(report["errors"])[:300])
             browser.close()
     finally:
         server.terminate()
@@ -316,8 +315,8 @@ def finish(report: dict, out: Path) -> dict:
     passed = sum(1 for c in report["checks"] if c["ok"])
     report["passed"] = passed
     report["total"] = len(report["checks"])
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"passed {passed}/{len(report['checks'])} -> {out / 'probe.json'}")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    print(f"passed {passed}/{len(report['checks'])} -> {out / 'probe.toml'}")
     for item in report["checks"]:
         if not item["ok"]:
             print("FAIL:", item["name"], "|", item["detail"])

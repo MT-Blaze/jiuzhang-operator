@@ -11,8 +11,14 @@ Delete 删框；Esc 与【放弃】后后端一个字节不变；最后增一框
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import base64
-import json
 import os
 import shutil
 import socket
@@ -55,18 +61,18 @@ def wait_health(base: str, process: subprocess.Popen, log_path: Path) -> None:
 
 def http_json(url: str) -> dict:
     with urllib.request.urlopen(url, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8") or "{}")
+        return wire.loads(response.read().decode("utf-8") or "{}")
 
 
 def http_post(url: str, payload: dict) -> dict:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
-            return json.loads(response.read().decode("utf-8") or "{}")
+            return wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         error.close()
@@ -653,13 +659,13 @@ def main() -> int:
     result["passed"] = passed
     result["total"] = len(result["checks"])
     result["ok"] = passed == len(result["checks"])
-    (work / "probe.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(
+        toml_io.dumps(result), encoding="utf-8")
     for item in result["checks"]:
         print(("PASS " if item["ok"] else "FAIL ") + item["name"] + " " + str(item.get("detail")))
     print("probe: %d/%d · %s" % (passed, len(result["checks"]),
                                  "PASS" if result["ok"] else "FAIL"))
-    print("证据：" + str(work / "probe.json"))
+    print("证据：" + str(work / "probe.toml"))
     return 0 if result["ok"] else 1
 
 

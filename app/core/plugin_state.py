@@ -1,6 +1,6 @@
 """插件主机状态：启停、停用时间、自定义昵称与左栏文件夹树。
 
-状态是**当前工作区自己的配置**，落在 ``data/workspaces/<id>/plugin_state.json``
+状态是**当前工作区自己的配置**，落在 ``data/workspaces/<id>/plugin_state.toml``
 （军令 #18：全局状态随插件一起按工作区物理隔离）。
 写范围有且仅有这一个文件——ADR-007 的禁令不只约束「停用」，而是约束整个状态层：
 题目数据、插件代码、工作区文件一律不许被这里顺手碰掉。
@@ -15,15 +15,15 @@
 
 from __future__ import annotations
 
-import json
 import re
 import threading
 from datetime import datetime
 from typing import Any
 
+from app.core import state_store
 from app.core.config import current_workspace_id, workspace_storage_dir
 
-STATE_FILENAME = "plugin_state.json"
+STATE_FILENAME = "plugin_state.toml"
 _lock = threading.Lock()
 
 NICKNAME_MAX = 40
@@ -50,22 +50,11 @@ def _state_path():
 
 
 def _load_raw() -> dict[str, Any]:
-    path = _state_path()
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return state_store.load_table(_state_path())
 
 
 def _write(raw: dict[str, Any]) -> None:
-    path = _state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    state_store.save(_state_path(), raw)
 
 
 def _mutate(apply) -> dict[str, Any]:

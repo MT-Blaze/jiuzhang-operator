@@ -12,18 +12,17 @@ default 根目录、别的数据目录或 ``plugins/``。
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from app.core import state_store
 from app.core.config import root_data_dir
 
-AUDIT_FILENAME = "deletion_audit.json"
+AUDIT_FILENAME = "deletion_audit.toml"
 CONFIRM_TEXT = "确认删除"
 AUDIT_MAX_RECORDS = 500
 
@@ -116,30 +115,12 @@ def audit_path() -> Path:
 def append_audit(record: dict[str, Any]) -> Path:
     """追加一条审计记录；文件只保留最近 ``AUDIT_MAX_RECORDS`` 条。"""
     path = audit_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     with _audit_lock:
-        records: list[Any] = []
-        if path.is_file():
-            try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(loaded, list):
-                    records = loaded
-            except (OSError, ValueError):
-                records = []
+        records = state_store.load_records(path, "records")
         records.append(record)
         if len(records) > AUDIT_MAX_RECORDS:
             records = records[-AUDIT_MAX_RECORDS:]
-        fd, temp_name = tempfile.mkstemp(prefix=".deletion_audit-", dir=str(path.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump(records, handle, ensure_ascii=False, indent=2)
-            os.replace(temp_name, path)
-        except BaseException:
-            try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
+        state_store.save(path, {"records": records})
     return path
 
 

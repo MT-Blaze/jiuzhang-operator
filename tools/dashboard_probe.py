@@ -17,7 +17,6 @@
   6. 底栏出现「数据看板已就绪」；全程宿主页无未捕获 JS 错误。
 """
 import collections
-import json
 import os
 import shutil
 import socket
@@ -52,7 +51,7 @@ def wait_port(deadline_seconds: float) -> bool:
 
 def http_get(path: str):
     with urllib.request.urlopen(f"http://127.0.0.1:{PORT}{path}", timeout=20) as resp:
-        return json.loads(resp.read())
+        return wire.loads(resp.read())
 
 
 def run(tag: str) -> dict:
@@ -78,9 +77,9 @@ def run(tag: str) -> dict:
             shutil.copytree(source, plugins_dir / plugin_id)
             report["notes"][plugin_id + "_copied"] = True
     check("看板、题库视图与引擎复制进隔离目录",
-          (plugins_dir / PLUGIN_ID / "plugin.json").is_file()
-          and (plugins_dir / BANK_ID / "plugin.json").is_file()
-          and (plugins_dir / ENGINE_ID / "plugin.json").is_file())
+          (plugins_dir / PLUGIN_ID / "plugin.toml").is_file()
+          and (plugins_dir / BANK_ID / "plugin.toml").is_file()
+          and (plugins_dir / ENGINE_ID / "plugin.toml").is_file())
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)
@@ -118,7 +117,7 @@ def run(tag: str) -> dict:
         plugins = discovery.get("plugins") or []
         entry = next((p for p in plugins if p.get("id") == PLUGIN_ID), None)
         check("底座发现数据看板（未拒收）", entry is not None,
-              f"count={len(plugins)} rejected={json.dumps(discovery.get('rejected'), ensure_ascii=False)}")
+              f"count={len(plugins)} rejected={wire.dumps(discovery.get('rejected'), ensure_ascii=False)}")
 
         backend_stats = http_get("/api/bank/dashboard/stats")
         backend_heat = http_get("/api/bank/dashboard/heatmap")
@@ -151,7 +150,7 @@ def run(tag: str) -> dict:
             # _sidebar_with_unlisted 的既有设计），空树首启时 core-bank 天然排在 dashboard 前；
             # 本判据只验「看板入口在不在、能不能点开」，不锁死第一位。
             check("左栏列出数据看板", any("数据看板" in text for text in sidebar_first),
-                  json.dumps(sidebar_first, ensure_ascii=False))
+                  wire.dumps(sidebar_first, ensure_ascii=False))
             snap("00-sidebar")
 
             page.evaluate("""
@@ -177,7 +176,7 @@ def run(tag: str) -> dict:
               };
             }
             """.replace("%ID%", PLUGIN_ID))
-            check("点入口开出画布页签", f"plugin:{PLUGIN_ID}" in tabs, json.dumps(tabs))
+            check("点入口开出画布页签", f"plugin:{PLUGIN_ID}" in tabs, wire.dumps(tabs))
             check("iframe 沙箱为 allow-scripts allow-modals", frame_info["sandbox"] == "allow-scripts allow-modals",
                   str(frame_info["sandbox"]))
             check("挂载无故障框", not frame_info["panelError"], frame_info["panelError"])
@@ -234,7 +233,7 @@ def run(tag: str) -> dict:
 
             card_map = {c["kind"]: c["value"] for c in (ui.get("cards") or [])}
             check("四张卡片渲染出数字", len(card_map) == 4 and all(v not in ("", "—") for v in card_map.values()),
-                  json.dumps(card_map, ensure_ascii=False))
+                  wire.dumps(card_map, ensure_ascii=False))
             check("总题数与后端逐字一致",
                   card_map.get("total") == str(backend_stats.get("total_questions")),
                   f"ui={card_map.get('total')} backend={backend_stats.get('total_questions')}")
@@ -252,7 +251,7 @@ def run(tag: str) -> dict:
                   f"ui={ui.get('nonzeroCells')} backend={nonzero_days}")
 
             recent = ui.get("recent") or []
-            check("最近录入 ≤5 条且已渲染", 0 < len(recent) <= 5, json.dumps(recent, ensure_ascii=False)[:200])
+            check("最近录入 ≤5 条且已渲染", 0 < len(recent) <= 5, wire.dumps(recent, ensure_ascii=False)[:200])
             snap("20-dashboard")
 
             # 点击第一条最近题目 → system.open_bank → 宿主打开活跃题库页签
@@ -267,7 +266,7 @@ def run(tag: str) -> dict:
             () => Array.from(document.querySelectorAll('#wsTabs .ws-tab')).map(t => t.getAttribute('data-tab'))
             """)
             check("点击最近题目跳转到题库页签（system.open_bank 走白名单）",
-                  f"plugin:{BANK_ID}" in tabs_after, json.dumps(tabs_after))
+                  f"plugin:{BANK_ID}" in tabs_after, wire.dumps(tabs_after))
             dock_after = page.evaluate("""
             () => {
               const dock = document.getElementById('wsDockLog');
@@ -297,7 +296,7 @@ def finish(report: dict, out: Path) -> dict:
     report["summary"] = {"total": total, "passed": passed, "failed": total - passed,
                          "pageErrors": len(report["errors"])}
     out.mkdir(parents=True, exist_ok=True)
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
     report["out_dir"] = str(out)
     return report
 
@@ -305,7 +304,7 @@ def finish(report: dict, out: Path) -> dict:
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "run"
     result = run(tag)
-    print(json.dumps(result["summary"], ensure_ascii=False))
+    print(wire.dumps(result["summary"], ensure_ascii=False))
     for c in result["checks"]:
         print(("PASS " if c["ok"] else "FAIL ") + c["name"] + " :: " + c["detail"][:160])
     print("out_dir:", result.get("out_dir"))

@@ -18,7 +18,6 @@
      不再静默留白；
   6. 宿主页零未捕获 JS 错误。
 """
-import json
 import os
 import shutil
 import socket
@@ -129,7 +128,7 @@ def call(method: str, path: str, payload=None, token: str = "", port: int = PORT
     import urllib.error
     import urllib.request
 
-    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    data = None if payload is None else wire.dumps(payload).encode("utf-8")
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, method=method)
     request.add_header("Accept", "application/json")
     if data is not None:
@@ -138,12 +137,12 @@ def call(method: str, path: str, payload=None, token: str = "", port: int = PORT
         request.add_header("X-JZO-Token", token)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload_text = error.read().decode("utf-8", "replace")
         try:
-            return error.code, json.loads(payload_text or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload_text or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload_text}
 
 
@@ -153,7 +152,7 @@ def build_plugin(plugins_dir: Path) -> None:
     (target / "LICENSE").write_text("Apache License 2.0 (probe fixture)", encoding="utf-8")
     (target / "dist" / "index.html").write_text(PLUGIN_HTML, encoding="utf-8")
     (target / "dist" / "plugin.js").write_text(PLUGIN_JS, encoding="utf-8")
-    (target / "plugin.json").write_text(json.dumps(MANIFEST, ensure_ascii=False, indent=2), encoding="utf-8")
+    (target / "plugin.toml").write_text(toml_io.dumps(MANIFEST), encoding="utf-8")
 
 
 def run(tag: str) -> dict:
@@ -192,7 +191,7 @@ def run(tag: str) -> dict:
         status, listing = call("GET", "/api/plugins")
         ids = [item.get("id") for item in listing.get("plugins", [])]
         check("探针插件被后端接受（slots 含 sidebar.right）", status == 200 and PLUGIN_ID in ids,
-              json.dumps(listing.get("rejected"), ensure_ascii=False)[:300])
+              wire.dumps(listing.get("rejected"), ensure_ascii=False)[:300])
 
         with sync_playwright() as p:
             browser = p.chromium.launch()
@@ -227,7 +226,7 @@ def run(tag: str) -> dict:
             report["notes"]["initial"] = state
             snap("10-panel-mounted")
 
-            check("当前页签插件认领插槽后右栏可见", state["slotHidden"] is False, json.dumps(state, ensure_ascii=False))
+            check("当前页签插件认领插槽后右栏可见", state["slotHidden"] is False, wire.dumps(state, ensure_ascii=False))
             check("插槽里挂的就是认领者本人",
                   state["src"] is not None and PLUGIN_ID in str(state["src"]),
                   f"src={state['src']}")
@@ -246,7 +245,7 @@ def run(tag: str) -> dict:
             report["notes"]["inside"] = inside
             check("activate 收到 sidebar.right 且插件回 ready",
                   inside["slot"] == "sidebar.right" and inside["root"] == "面板已就绪",
-                  json.dumps(inside, ensure_ascii=False))
+                  wire.dumps(inside, ensure_ascii=False))
             check("面板可走 Host API（basket.list 往返）", inside["api"] == "题篮 0 题", inside["api"])
 
             status, settings = call("GET", "/api/settings")
@@ -269,8 +268,8 @@ def run(tag: str) -> dict:
             snap("20-fallback-note")
             check("停用后右栏不静默留白：给出可读兜底且不再挂 iframe",
                   fallback["frames"] == 0 and bool(str(fallback["note"]).strip()),
-                  json.dumps(fallback, ensure_ascii=False))
-            check("宿主页零未捕获 JS 错误", not report["errors"], json.dumps(report["errors"])[:300])
+                  wire.dumps(fallback, ensure_ascii=False))
+            check("宿主页零未捕获 JS 错误", not report["errors"], wire.dumps(report["errors"])[:300])
             browser.close()
     finally:
         server.terminate()
@@ -286,8 +285,8 @@ def finish(report: dict, out: Path) -> dict:
     passed = sum(1 for c in report["checks"] if c["ok"])
     report["passed"] = passed
     report["total"] = len(report["checks"])
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"passed {passed}/{len(report['checks'])} -> {out / 'probe.json'}")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    print(f"passed {passed}/{len(report['checks'])} -> {out / 'probe.toml'}")
     for item in report["checks"]:
         if not item["ok"]:
             print("FAIL:", item["name"], "|", item["detail"])

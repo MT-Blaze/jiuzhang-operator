@@ -13,8 +13,8 @@ MinerU 只是备选通道，绝不能因为它连不上就吞掉整批卷子。
 
 from __future__ import annotations
 
+from app.core import wire  # noqa: E402
 import io
-import json
 import secrets
 import time
 import urllib.error
@@ -44,7 +44,7 @@ def _request(url: str, *, method: str = "GET", token: str = "",
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     elif raw is not None:
         headers["Content-Type"] = "application/octet-stream"
@@ -88,7 +88,7 @@ def extract(name: str, data: bytes, base_url: str, token: str, *,
                 "model_version": version,
             },
         )
-        document = json.loads(raw.decode("utf-8", errors="replace"))
+        document = wire.loads(raw.decode("utf-8", errors="replace"))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
             ValueError) as exc:
         return {"ok": False, "detail": f"MinerU 申请上传地址失败：{exc}"}
@@ -115,7 +115,7 @@ def extract(name: str, data: bytes, base_url: str, token: str, *,
         sleep(POLL_SECONDS)
         try:
             raw = _request(root + "/extract-results/batch/" + batch_id, token=token)
-            document = json.loads(raw.decode("utf-8", errors="replace"))
+            document = wire.loads(raw.decode("utf-8", errors="replace"))
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
                 ValueError) as exc:
             return {"ok": False, "detail": f"MinerU 查询结果失败：{exc}"}

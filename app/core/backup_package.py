@@ -8,19 +8,19 @@
 恢复侧的「清单外文件」门禁当场判废，整个包一份都恢复不出来。
 
 写成品一律「临时文件 + 原子替换」：中途崩溃不会留下半份包或半份 manifest。
-本地保留只删本工具命名的 ``backup_*.zst`` / ``manifest_*.json``，别的文件一个都不碰。
+本地保留只删本工具命名的 ``backup_*.zst`` / ``manifest_*.toml``，别的文件一个都不碰。
 
 快照与 manifest 的生成见 backup_manifest.py；路径与禁令见 backup_files.py；配置见 backup_settings.py。
 """
 
 from __future__ import annotations
 
-import json
 import os
 import tarfile
 from pathlib import Path
 from typing import Any
 
+from app.core import toml_io, wire
 from app.core.backup_codec import open_package
 
 from app.core.backup_files import (
@@ -36,6 +36,17 @@ from app.core.backup_files import (
 )
 from app.core.backup_manifest import workspace_snapshot
 from app.core.backup_settings import load_backup_settings
+
+
+def _read_manifest(manifest_path: Path) -> dict[str, Any]:
+    """优先读 TOML 清单；旧版 ``manifest_*.json`` 只在迁移期兜底读取。"""
+    toml_path = Path(manifest_path)
+    if toml_path.is_file():
+        return toml_io.loads(toml_path.read_text(encoding="utf-8"))
+    legacy = toml_path.with_suffix(".json")
+    if legacy.is_file():
+        return wire.read_object(legacy)
+    raise FileNotFoundError(str(toml_path))
 
 
 def package_snapshot(
@@ -66,7 +77,7 @@ def package_snapshot(
         if not path.is_file():
             raise BackupError(f"快照缺少文件：{rel}")
     package_path = out / f"backup_{stamp}.zst"
-    manifest_path = out / f"manifest_{stamp}.json"
+    manifest_path = out / f"manifest_{stamp}.toml"
     temp_path = out / f".backup_{stamp}.part"
     try:
         with open_package(temp_path, "wb", level=10) as compressed:
@@ -88,11 +99,7 @@ def package_snapshot(
         "sha256": sha256_file(package_path),
         "size": package_path.stat().st_size,
     }
-    temp_manifest = out / f".manifest_{stamp}.part"
-    temp_manifest.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    temp_manifest.replace(manifest_path)
+    toml_io.write(manifest_path, manifest)
     return {"package": package_path, "manifest_path": manifest_path, "manifest": manifest}
 
 
@@ -125,7 +132,7 @@ def create_local_backup(
 
 
 def prune_local_backups(directory: str | os.PathLike[str], keep: int = 3) -> list[Path]:
-    """只删本工具命名的 backup_*.zst / manifest_*.json，保留最近 keep 份。"""
+    """只删本工具命名的 backup_*.zst / manifest_*.toml，保留最近 keep 份。"""
     folder = Path(directory)
     if not folder.is_dir():
         return []
@@ -173,7 +180,7 @@ def list_local_backups(
         if not match:
             continue
         stem = match.group(1)
-        manifest_path = folder / f"manifest_{stem}.json"
+        manifest_path = folder / f"manifest_{stem}.toml"
         entry: dict[str, Any] = {
             "stem": stem,
             "package": package.name,
@@ -183,7 +190,7 @@ def list_local_backups(
             "error": "",
         }
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = _read_manifest(manifest_path)
             entry["ok"] = True
             entry["workspace_id"] = manifest.get("workspace_id", "")
             entry["question_count"] = manifest.get("question_count", 0)
@@ -210,12 +217,14 @@ def load_local_backup_manifest(
     folder = Path(directory) if directory else Path(
         load_backup_settings(ws_id).get("local_dir") or default_local_dir(ws_id)
     )
-    manifest_path = folder / f"manifest_{stem}.json"
+    manifest_path = folder / f"manifest_{stem}.toml"
     package_path = folder / f"backup_{stem}.zst"
-    if not manifest_path.is_file() or not package_path.is_file():
+    if not manifest_path.is_file() and not manifest_path.with_suffix(".json").is_file():
+        raise BackupError("该备份不存在或缺少包文件")
+    if not package_path.is_file():
         raise BackupError("该备份不存在或缺少包文件")
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = _read_manifest(manifest_path)
     except (OSError, ValueError) as exc:
         raise BackupError(f"manifest 无法读取：{exc}") from exc
     return manifest, package_path

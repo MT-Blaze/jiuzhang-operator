@@ -14,14 +14,19 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank_provider, toml_io
+from app.core import bank_provider, toml_io, wire
 from app.core.config import settings
 from tests.core_sources import stage_source  # noqa: E402
 
@@ -137,7 +142,7 @@ class ProviderResolutionTest(_Isolated):
 
     def test_08_corrupt_config_is_treated_as_unset(self) -> None:
         bank_provider.state_path().parent.mkdir(parents=True, exist_ok=True)
-        bank_provider.state_path().write_text("{ 这不是 JSON", encoding="utf-8")
+        bank_provider.state_path().write_text('plugin_id = "', encoding="utf-8")
         info = bank_provider.resolve()
         self.assertEqual(BANK, info["plugin_id"])
         self.assertEqual("", info["fallback_reason"])
@@ -146,7 +151,7 @@ class ProviderResolutionTest(_Isolated):
         """升级过渡（军令 #20）：旧配置里的 core-bank 映射到引擎，且如实报 migrated_from。"""
         bank_provider.state_path().parent.mkdir(parents=True, exist_ok=True)
         bank_provider.state_path().write_text(
-            json.dumps({"plugin_id": LEGACY}), encoding="utf-8")
+            f'plugin_id = "{LEGACY}"' + "\n", encoding="utf-8")
         info = bank_provider.resolve()
         self.assertEqual(BANK, info["plugin_id"])
         self.assertEqual(LEGACY, info["migrated_from"])
@@ -156,7 +161,7 @@ class ProviderResolutionTest(_Isolated):
         """引擎没装时旧配置不能被静默改写，回退原因要说得出口。"""
         bank_provider.state_path().parent.mkdir(parents=True, exist_ok=True)
         bank_provider.state_path().write_text(
-            json.dumps({"plugin_id": LEGACY}), encoding="utf-8")
+            f'plugin_id = "{LEGACY}"' + "\n", encoding="utf-8")
         shutil.rmtree(self.plugins_dir / BANK)
         info = bank_provider.resolve()
         self.assertEqual(BANK, info["plugin_id"])

@@ -5,7 +5,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import socket
 import subprocess
@@ -103,7 +109,7 @@ class ProvidersApiContractTest(unittest.TestCase):
         body: dict | None = None,
         token: str | None = TOKEN,
     ) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -124,8 +130,8 @@ class ProvidersApiContractTest(unittest.TestCase):
         if not raw:
             return None
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return wire.loads(raw)
+        except wire.JSONDecodeError:
             return raw.decode("utf-8", errors="replace")
 
     def test_01_list_exposes_no_secret(self) -> None:
@@ -148,7 +154,7 @@ class ProvidersApiContractTest(unittest.TestCase):
         self.assertEqual(actives[0]["host"], "gateway.test", actives[0])
         self.assertFalse(actives[0]["mock"], actives[0])
 
-        body = json.dumps(document, ensure_ascii=False)
+        body = wire.dumps(document, ensure_ascii=False)
         for secret in SECRET_VALUES:
             self.assertNotIn(secret, body)
 
@@ -174,7 +180,7 @@ class ProvidersApiContractTest(unittest.TestCase):
         self.assertEqual(document["model"], "fixture-model-bailian")
         self.assertTrue(document["mock"], document)
 
-        config = json.loads((self.data_dir / "config.json").read_text(encoding="utf-8"))
+        config = toml_io.load(self.data_dir / "config.toml")
         self.assertEqual(config.get("provider"), "bailian", config)
 
         status, listed = self.call("GET", "/api/providers", token=None)
@@ -186,7 +192,7 @@ class ProvidersApiContractTest(unittest.TestCase):
     def test_05_unknown_profile_is_404(self) -> None:
         status, document = self.call("POST", "/api/providers/active", {"name": "no-such-vendor"})
         self.assertEqual(status, 404, document)
-        self.assertIn("no-such-vendor", json.dumps(document, ensure_ascii=False))
+        self.assertIn("no-such-vendor", wire.dumps(document, ensure_ascii=False))
 
 
 class ProviderResolutionTest(unittest.TestCase):
@@ -197,7 +203,7 @@ class ProviderResolutionTest(unittest.TestCase):
 
         self.providers = providers
         self.tmp = tempfile.TemporaryDirectory()
-        self.config_path = Path(self.tmp.name) / "config.json"
+        self.config_path = Path(self.tmp.name) / "config.toml"
         self.patcher = mock.patch.object(self.providers, "_config_path", return_value=self.config_path)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
@@ -213,17 +219,17 @@ class ProviderResolutionTest(unittest.TestCase):
 
     def test_stored_config_wins_over_fallback(self) -> None:
         self.config_path.write_text(
-            json.dumps({"provider": "siliconflow"}), encoding="utf-8"
+            'provider = "siliconflow"\n', encoding="utf-8"
         )
         self.assertEqual(self.providers.active_name(), "siliconflow")
 
     def test_env_override_wins_over_stored_config(self) -> None:
-        self.config_path.write_text(json.dumps({"provider": "siliconflow"}), encoding="utf-8")
+        self.config_path.write_text('provider = "siliconflow"\n', encoding="utf-8")
         with mock.patch.dict(os.environ, {"JZO_AI_PROVIDER": "bailian"}):
             self.assertEqual(self.providers.active_name(), "bailian")
 
     def test_unknown_stored_value_falls_back(self) -> None:
-        self.config_path.write_text(json.dumps({"provider": "ghost"}), encoding="utf-8")
+        self.config_path.write_text('provider = "ghost"\n', encoding="utf-8")
         self.assertEqual(self.providers.active_name(), "openai-compatible")
 
     def test_set_active_rejects_unregistered_name(self) -> None:

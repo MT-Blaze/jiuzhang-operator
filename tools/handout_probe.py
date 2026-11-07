@@ -15,7 +15,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -353,8 +359,8 @@ def main() -> int:
 
     result["ok"] = bool(result["checks"]) and all(item["ok"] for item in result["checks"]) \
         and not result["page_errors"] and "error" not in result
-    (work / "probe.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    (work / "probe.toml").write_text(
+        toml_io.dumps(result), encoding="utf-8"
     )
 
     passed = sum(1 for item in result["checks"] if item["ok"])

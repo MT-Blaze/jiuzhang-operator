@@ -17,8 +17,14 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import io
-import json
 import os
 import re
 import shutil
@@ -73,8 +79,7 @@ HOST_VERSION = re.search(
 
 def manifest_versions() -> dict[str, str]:
     """仓内清单的版本号——探针不许写死版本，否则插件一升号就把判据打成假红。"""
-    return {plugin_id: json.loads(
-        (ROOT / "plugins" / plugin_id / "plugin.json").read_text(encoding="utf-8"))["version"]
+    return {plugin_id: toml_io.load(ROOT / "plugins" / plugin_id / "plugin.toml")["version"]
         for plugin_id in OFFICIAL}
 
 CALLER_JS = """
@@ -148,7 +153,7 @@ def caller_zip() -> bytes:
             '<body><p id="mark">HTML-ONLY</p><script src="./plugin.js"></script></body></html>')
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{CALLER_ID}/plugin.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr(f"{CALLER_ID}/plugin.toml", toml_io.dumps(manifest))
         zf.writestr(f"{CALLER_ID}/dist/index.html", html)
         zf.writestr(f"{CALLER_ID}/dist/plugin.js", CALLER_JS)
         zf.writestr(f"{CALLER_ID}/LICENSE", (ROOT / "LICENSE").read_text(encoding="utf-8"))
@@ -163,12 +168,12 @@ def api_status(method: str, path: str, blob: bytes | None = None) -> tuple[int, 
         request.add_header("Content-Type", "application/octet-stream")
     try:
         with urllib.request.urlopen(request, timeout=120) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+            return resp.status, wire.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         raw = error.read().decode("utf-8", errors="replace")
         try:
-            return error.code, json.loads(raw)
-        except json.JSONDecodeError:
+            return error.code, wire.loads(raw)
+        except wire.JSONDecodeError:
             return error.code, {"detail": raw}
 
 
@@ -254,7 +259,7 @@ def click_dialog(page, index: int) -> bool:
 
 
 def dump(path: Path, payload) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(toml_io.dumps(payload), encoding="utf-8")
 
 
 def run(tag: str) -> dict:
@@ -296,7 +301,7 @@ def run(tag: str) -> dict:
         env = dict(os.environ)
         env["JZO_DATA_DIR"] = str(data_dir)
         env["JZO_PLUGINS_DIR"] = str(plugins_dir)
-        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.json")
+        env["JZO_STATE_FILE"] = str(data_dir / "workspaces" / "default" / "plugin_state.toml")
         env["JZO_LOCAL_TOKEN"] = TOKEN
         env["JZO_RESTART_DISABLED"] = "1"
         env.pop("JZO_AI_API_KEY", None)
@@ -492,8 +497,8 @@ def run(tag: str) -> dict:
     passed = sum(1 for item in checks if item["passed"])
     result = {"tag": tag, "total": len(checks), "passed": passed,
               "crashed": crashed, "checks": checks, "evidence": evidence, "raw_api": raw}
-    dump(out / "probe.json", result)
-    print(json.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
+    dump(out / "probe.toml", result)
+    print(wire.dumps({"total": result["total"], "passed": passed}, ensure_ascii=False))
     for item in checks:
         print(("PASS " if item["passed"] else "FAIL ") + item["name"] + " | " + item["detail"])
     if crashed:

@@ -25,7 +25,7 @@
 
 from __future__ import annotations
 
-import json
+from app.core import wire  # noqa: E402
 import re
 from typing import Any
 
@@ -215,7 +215,7 @@ def normalize_params_schema(value: Any) -> tuple[dict[str, Any], str]:
     schema = _sanitize_schema(value)
     try:
         encoded = len(
-            json.dumps(schema, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            wire.dumps(schema, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         )
     except (TypeError, ValueError):
         return {}, "params_schema 无法序列化"

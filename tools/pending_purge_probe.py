@@ -17,7 +17,13 @@
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -74,31 +80,31 @@ def free_port() -> int:
 def http_json(url: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
 def http_post(url: str, payload: dict) -> tuple[int, dict]:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
@@ -313,14 +319,14 @@ def main() -> int:
     total = len(result["checks"])
     result["passed"] = passed
     result["total"] = total
-    report = work / "probe.json"
-    report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"tag": tag, "passed": passed, "total": total,
+    report = work / "probe.toml"
+    report.write_text(toml_io.dumps(result), encoding="utf-8")
+    print(wire.dumps({"tag": tag, "passed": passed, "total": total,
                       "error": result.get("error"), "report": str(report)},
                      ensure_ascii=False))
     for entry in result["checks"]:
         if not entry["ok"]:
-            print("FAIL:", entry["name"], json.dumps(entry["detail"], ensure_ascii=False)[:300])
+            print("FAIL:", entry["name"], wire.dumps(entry["detail"], ensure_ascii=False)[:300])
     return 0 if passed == total and total > 0 and not result.get("error") else 1
 
 

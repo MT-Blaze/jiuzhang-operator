@@ -9,9 +9,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import base64
 import io
-import json
 import os
 import shutil
 import socket
@@ -53,7 +59,7 @@ def _zip_bytes(members: dict[str, object]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, payload in members.items():
-            archive.writestr(name, json.dumps(payload, ensure_ascii=False))
+            archive.writestr(name, wire.dumps(payload, ensure_ascii=False))
     return buffer.getvalue()
 
 
@@ -68,13 +74,13 @@ class BundleParsingTest(unittest.TestCase):
 
     def test_single_question_object(self) -> None:
         documents = self.transfer.parse_bundle(
-            json.dumps(_question(1), ensure_ascii=False).encode("utf-8"), "one.json"
+            wire.dumps(_question(1), ensure_ascii=False).encode("utf-8"), "one.json"
         )
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["id"], "q_pack000001")
 
     def test_question_array(self) -> None:
-        raw = json.dumps([_question(1), _question(2)], ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps([_question(1), _question(2)], ensure_ascii=False).encode("utf-8")
         self.assertEqual(len(self.transfer.parse_bundle(raw, "many.json")), 2)
 
     def test_exchange_bundle(self) -> None:
@@ -83,7 +89,7 @@ class BundleParsingTest(unittest.TestCase):
             "format_version": "1.0",
             "questions": [_question(1)],
         }
-        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.assertEqual(len(self.transfer.parse_bundle(raw, "bundle.json")), 1)
 
     def test_zip_reads_every_json_member(self) -> None:
@@ -113,7 +119,7 @@ class BundleParsingTest(unittest.TestCase):
         self.assertIn(".json", str(ctx.exception))
 
     def test_non_object_item_is_rejected(self) -> None:
-        raw = json.dumps([_question(1), "不是题目"], ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps([_question(1), "不是题目"], ensure_ascii=False).encode("utf-8")
         with self.assertRaises(self.transfer.TransferError) as ctx:
             self.transfer.parse_bundle(raw, "many.json")
         self.assertIn("第 2 项", str(ctx.exception))
@@ -129,7 +135,7 @@ class BundleParsingTest(unittest.TestCase):
         self.assertEqual(bundle["format"], "jiuzhang.question.bundle")
         self.assertEqual(bundle["count"], 1)
         self.assertEqual(bundle["schema_version"], "2.1")
-        raw = json.dumps(bundle, ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps(bundle, ensure_ascii=False).encode("utf-8")
         self.assertEqual(len(self.transfer.parse_bundle(raw, "bundle.json")), 1)
 
 
@@ -206,7 +212,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
     # ---------- HTTP 辅助 ----------
     def _request(self, path: str, method: str = "GET", body: dict | None = None,
                  token: bool = False) -> tuple[int, dict]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -215,15 +221,15 @@ class BankBatchIoHttpTest(unittest.TestCase):
             request.add_header("X-JZO-Token", TOKEN)
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read().decode("utf-8") or "{}")
+                return response.status, wire.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
             try:
                 payload = error.read().decode("utf-8")
             finally:
                 error.close()
             try:
-                parsed = json.loads(payload or "{}")
-            except json.JSONDecodeError:
+                parsed = wire.loads(payload or "{}")
+            except wire.JSONDecodeError:
                 parsed = {"raw": payload}
             return error.code, parsed
 
@@ -245,7 +251,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
 
     # ---------- 导入 ----------
     def test_import_requires_token(self) -> None:
-        raw = json.dumps([_question(90)], ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps([_question(90)], ensure_ascii=False).encode("utf-8")
         status, data = self._import(raw, "pack.json", token=False)
         self.assertEqual(status, 401, data)
 
@@ -253,7 +259,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         before = self._total()
         payload = {"questions": [_question(101), _question(102), _question(103)]}
         status, data = self._import(
-            json.dumps(payload, ensure_ascii=False).encode("utf-8"), "bundle.json"
+            wire.dumps(payload, ensure_ascii=False).encode("utf-8"), "bundle.json"
         )
         self.assertEqual(status, 200, data)
         self.assertEqual(data["imported"], 3)
@@ -270,7 +276,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
 
     def test_import_is_idempotent_for_the_same_ids(self) -> None:
         payload = {"questions": [_question(121)]}
-        raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
         status, first = self._import(raw, "again.json")
         self.assertEqual(status, 200, first)
         before = self._total()
@@ -281,7 +287,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         self.assertEqual(self._total(), before, "同 ID 再导入不得多出题")
 
     def test_import_skip_mode_keeps_existing_question(self) -> None:
-        raw = json.dumps({"questions": [_question(122)]}, ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps({"questions": [_question(122)]}, ensure_ascii=False).encode("utf-8")
         status, first = self._import(raw, "skip.json")
         self.assertEqual(status, 200, first)
         before = self._total()
@@ -302,7 +308,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         broken = _question(131)
         broken["stem"] = ""              # 空题干不合契约
         payload = {"questions": [_question(130), broken]}
-        status, data = self._import(json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        status, data = self._import(wire.dumps(payload, ensure_ascii=False).encode("utf-8"),
                                     "bad-question.json")
         self.assertEqual(status, 422, data)
         self.assertIn("errors", data["detail"])
@@ -313,7 +319,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         """别人的题包带着别人的大纲：硬挂到自己树上才是错挂，忽略并如实计数。"""
         document = _question(140)
         document["taxonomy"] = {"textbook": "人教A版", "topic_ids": ["tp_kxdeadc0de"]}
-        raw = json.dumps({"questions": [document]}, ensure_ascii=False).encode("utf-8")
+        raw = wire.dumps({"questions": [document]}, ensure_ascii=False).encode("utf-8")
         status, data = self._import(raw, "topic.json")
         self.assertEqual(status, 200, data)
         self.assertEqual(data["dropped_topics"], 1)
@@ -332,7 +338,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("attachment;", response.headers.get("Content-Disposition", ""))
             self.assertIn(".json", response.headers.get("Content-Disposition", ""))
-            bundle = json.loads(response.read().decode("utf-8"))
+            bundle = wire.loads(response.read().decode("utf-8"))
         self.assertEqual(bundle["format"], "jiuzhang.question.bundle")
         self.assertEqual(bundle["plugin_id"], PLUGIN_ID)
         self.assertEqual(bundle["count"], len(bundle["questions"]))
@@ -346,8 +352,8 @@ class BankBatchIoHttpTest(unittest.TestCase):
     def test_exported_bundle_can_be_imported_back(self) -> None:
         request = urllib.request.Request(self.base + "/api/bank/export")
         with urllib.request.urlopen(request, timeout=15) as response:
-            bundle = json.loads(response.read().decode("utf-8"))
-        raw = json.dumps(bundle, ensure_ascii=False).encode("utf-8")
+            bundle = wire.loads(response.read().decode("utf-8"))
+        raw = wire.dumps(bundle, ensure_ascii=False).encode("utf-8")
         before = self._total()
         status, data = self._import(raw, "roundtrip.json")
         self.assertEqual(status, 200, data)

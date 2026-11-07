@@ -6,13 +6,13 @@
 布局（所有工作区一致，default 也不例外）：
 
 - ``data/workspaces/<id>/plugins/``        该区插件代码
-- ``data/workspaces/<id>/plugin_state.json`` 该区启停/昵称/左栏树
-- ``data/workspaces/<id>/startup.json``     该区启动界面
-- ``data/workspaces/<id>/bank_provider.json`` 该区题库 provider
-- ``data/workspaces/<id>/update_state.json`` 该区续更状态
+- ``data/workspaces/<id>/plugin_state.toml`` 该区启停/昵称/左栏树
+- ``data/workspaces/<id>/startup.toml``     该区启动界面
+- ``data/workspaces/<id>/bank_provider.toml`` 该区题库 provider
+- ``data/workspaces/<id>/update_state.toml`` 该区续更状态
 - ``data/workspaces/<id>/.env``             该区凭据
 
-default 工作区的**题库、图片与 config.json** 仍住在根 ``data/``（历史布局，
+default 工作区的**题库、图片与 config.toml** 仍住在根 ``data/``（历史布局，
 军令 #18 没有要求搬库，贸然搬动老师的题会带来不可逆风险）。
 
 指针 ``data/current_workspace`` 只存一个工作区 id；缺失、损坏或 id 非法一律

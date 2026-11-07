@@ -2,9 +2,8 @@
 """S6m · tests.test_pending_api 整模块连跑 N 次（默认 10），只报计数与失败原文。
 
 复用 test47_flake_loop 的口径：exit==0 才算过，记录 stderr 尾部原文。
-证据写 s6m_api_loop_<时间戳>.json（新 tag，不覆盖）。
+证据写 s6m_api_loop_<时间戳>.toml（新 tag，不覆盖）。
 """
-import json
 import pathlib
 import re
 import subprocess
@@ -12,6 +11,10 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from app.core import toml_io  # noqa: E402
+
 PY = ROOT / ".venv" / "Scripts" / "python.exe"
 TARGET = "tests.test_pending_api"
 EVIDENCE = (ROOT / ".qoder" / "records" / "biz" / "2026-11" /
@@ -43,8 +46,8 @@ def main():
     body = {"target": TARGET, "runs": runs, "fail_count": fails,
             "rows": rows,
             "started": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-    out = EVIDENCE / f"s6m_api_loop_{time.strftime('%Y%m%d_%H%M%S')}.json"
-    out.write_text(json.dumps(body, ensure_ascii=False, indent=1), encoding="utf-8")
+    out = EVIDENCE / f"s6m_api_loop_{time.strftime('%Y%m%d_%H%M%S')}.toml"
+    out.write_text(toml_io.dumps(body), encoding="utf-8")
     print(f"EVIDENCE={out.name}")
     print(f"FAILS={fails}/{runs}")
 

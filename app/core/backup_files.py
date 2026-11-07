@@ -2,11 +2,11 @@
 
 边界（军令 #17 + #18 第五步 / #18-终 阶段二）：
 - 只认「当前工作区」；不自动备份、不联网；
-- 凭据文件（``.env`` / ``backup.json``）绝不进包——备份里可以有代码与数据，不能有钥匙；
-- 宿主级路由/账本文件（``workspaces.json`` / ``current_workspace`` 等）进包等于把别的机器的
+- 凭据文件（``.env`` / ``backup.toml``）绝不进包——备份里可以有代码与数据，不能有钥匙；
+- 宿主级路由/账本文件（``workspaces.toml`` / ``current_workspace`` 等）进包等于把别的机器的
   指针盖回来，恢复它足以把工作区切走，打包与恢复两头都禁；
 - **插件代码与工作区状态要进包**（#18-终 阶段二）：``data/workspaces/<id>/plugins/`` 的代码目录
-  与 ``plugin_state.json`` / ``startup.json`` / ``bank_provider.json`` / ``update_state.json``
+  与 ``plugin_state.toml`` / ``startup.toml`` / ``bank_provider.toml`` / ``update_state.toml``
   以 ``ws/`` 前缀收录，恢复时只覆盖**当前工作区**自己那一份；其他工作区的目录一概不碰；
   版本库与缓存目录（``.git`` / ``__pycache__`` / ``node_modules`` 之类）不是插件代码，不打包。
 
@@ -28,29 +28,29 @@ WORKSPACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 
 BACKUP_STEM_RE = re.compile(r"^(\d{8}_\d{6}_\d{3})$")
 BACKUP_FILE_RE = re.compile(r"^backup_(\d{8}_\d{6}_\d{3})\.zst$")
-MANIFEST_FILE_RE = re.compile(r"^manifest_(\d{8}_\d{6}_\d{3})\.json$")
+MANIFEST_FILE_RE = re.compile(r"^manifest_(\d{8}_\d{6}_\d{3})\.(?:toml|json)$")
 
 # 不属于「当前工作区数据」的宿主级文件：备份既不打包它们，恢复也不碰。
 GLOBAL_FILES = {
     ".local_token",
-    "workspaces.json",
-    "plugin_state.json",
-    "plugin_index_cache.json",
-    "startup.json",
-    "bank_provider.json",
-    "backup_settings.json",
-    "deletion_audit.json",
-    "update_state.json",
+    "workspaces.toml", "workspaces.json",
+    "plugin_state.toml", "plugin_state.json",
+    "plugin_index_cache.toml", "plugin_index_cache.json",
+    "startup.toml", "startup.json",
+    "bank_provider.toml", "bank_provider.json",
+    "backup_settings.toml", "backup_settings.json",
+    "deletion_audit.toml", "deletion_audit.json",
+    "update_state.toml", "update_state.json",
 }
 # 凭据文件可以备份到本机以外？不。它只属于本机配置，绝不进包。
-SECRET_FILES = {"backup.json", ".env"}
+SECRET_FILES = {"backup.toml", "backup.json", ".env"}
 # 宿主级路由/账本文件：装在数据根上，描述的却是「本机现在开哪个区、谁还能写」。
 # 进包等于把别的机器的指针盖回来，恢复它足以把工作区切走——打包与恢复两头都禁。
 # 打包侧漏一个名字，恢复侧就会把整包判废，所以这张表与 GLOBAL_FILES 同处维护。
 HOST_ONLY_FILES = SECRET_FILES | {
     ".local_token",
-    "workspaces.json",
-    "deletion_audit.json",
+    "workspaces.toml", "workspaces.json",
+    "deletion_audit.toml", "deletion_audit.json",
     "current_workspace",
 }
 # 工作区目录里不属于「业务数据」的代码/宿主目录：插件代码由军令 #18 第五步
@@ -65,10 +65,10 @@ SIDECAR_SUFFIXES = (".db-wal", ".db-shm", ".db-journal")
 OVERLAY_PREFIX = "ws/"
 OVERLAY_PLUGINS_PREFIX = OVERLAY_PREFIX + "plugins/"
 OVERLAY_STATE_FILES = (
-    "plugin_state.json",
-    "startup.json",
-    "bank_provider.json",
-    "update_state.json",
+    "plugin_state.toml", "plugin_state.json",
+    "startup.toml", "startup.json",
+    "bank_provider.toml", "bank_provider.json",
+    "update_state.toml", "update_state.json",
 )
 # 版本库、缓存与虚拟环境不是插件代码，卷进包里只会让备份变大且恢复无用。
 PLUGIN_SKIP_DIRS = {
@@ -111,12 +111,12 @@ def workspace_dir(workspace_id: str | None = None) -> Path:
 
 
 def backup_settings_path(workspace_id: str | None = None) -> Path:
-    """凭据与开关落点：data/workspaces/<ws_id>/backup.json（含 default）。"""
+    """凭据与开关落点：data/workspaces/<ws_id>/backup.toml（含 default）。"""
     ws_id = workspace_id or current_workspace_id()
     if not WORKSPACE_ID_RE.fullmatch(ws_id):
         raise BackupError("工作区 ID 非法")
     root = root_data_dir().resolve()
-    path = (root / "workspaces" / ws_id / "backup.json").resolve()
+    path = (root / "workspaces" / ws_id / "backup.toml").resolve()
     if root not in path.parents:
         raise BackupError("备份配置路径越界")
     return path

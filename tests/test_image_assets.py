@@ -12,9 +12,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import contextlib
 import io
-import json
 import sqlite3
 import tempfile
 import unittest
@@ -59,13 +65,13 @@ class AuditReportTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_tool(self, *extra: str) -> tuple[int, str, dict]:
-        report_path = Path(self.tmp.name) / "report.json"
+        report_path = Path(self.tmp.name) / "report.toml"
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code = check_image_assets.main(
-                ["--data-dir", str(self.data), "--json", str(report_path), *extra]
+                ["--data-dir", str(self.data), "--toml", str(report_path), *extra]
             )
-        payload = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
+        payload = toml_io.load(report_path) if report_path.exists() else {}
         return code, buf.getvalue(), payload
 
     def test_01_seven_table_reports_missing_dangling_and_placeholder(self) -> None:
@@ -74,12 +80,12 @@ class AuditReportTest(unittest.TestCase):
             SEVEN_TABLE,
             [
                 ("q1", "题一 ![配图](/static/uploads/a.png)", "",
-                 json.dumps([{"key": "A", "content": "甲"}], ensure_ascii=False),
-                 json.dumps([{"key": "org.demo.images", "value": {
+                 wire.dumps([{"key": "A", "content": "甲"}], ensure_ascii=False),
+                 wire.dumps([{"key": "org.demo.images", "value": {
                      "images": [image_entry("img_a", "/static/uploads/a.png")]}}],
                      ensure_ascii=False)),
                 ("q2", "题二 \\includegraphics{/static/uploads/b.png}", "",
-                 json.dumps([{"key": "A", "content": "", "image_ids": ["img_missing"]}],
+                 wire.dumps([{"key": "A", "content": "", "image_ids": ["img_missing"]}],
                             ensure_ascii=False),
                  "[]"),
                 ("q3", "〔原卷配图缺失〕题干", "〔原卷配图缺失〕", "[]", "[]"),
@@ -102,7 +108,7 @@ class AuditReportTest(unittest.TestCase):
             self.data / "banks" / "wide.db",
             WIDE_TABLE,
             [("w1", "![a](https://example.com/a.png) ![b](asset://x.png)", "",
-              "[]", json.dumps([image_entry("img_1", "/static/uploads/a.png")],
+              "[]", wire.dumps([image_entry("img_1", "/static/uploads/a.png")],
                                ensure_ascii=False))],
         )
         _, _, report = self.run_tool()

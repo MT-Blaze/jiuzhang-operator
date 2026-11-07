@@ -2,7 +2,7 @@
 """军令 #16 模块二真机取证：控制台插件面板的显示、排序、时间与实时对齐。
 
 用法：``python tools/console_panel_probe.py <out_dir_tag>``
-产出：截图 png + probe.json（结构化判据与 pageerror）
+产出：截图 png + probe.toml（结构化判据与 pageerror）
 
 判据逐条对应军令原文：
   - 卡片大字＝自定义昵称，小字＝官方原名与版本，且**没有**「恢复默认名」那类按钮；
@@ -13,7 +13,6 @@
 
 跑之前底座必须在 8765 端口起来。
 """
-import json
 import sys
 import urllib.request
 from pathlib import Path
@@ -59,7 +58,7 @@ def rail_order(tree, plugins):
 
 def api_get(path):
     with urllib.request.urlopen(ORIGIN + path, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        return wire.loads(resp.read().decode("utf-8"))
 
 
 def run(tag: str) -> dict:
@@ -248,11 +247,11 @@ def run(tag: str) -> dict:
         page.get_by_role("menuitem", name="解散文件夹").click()
         page.wait_for_timeout(1200)
         restored = api_get("/api/plugins")
-        # 偏好还原要看当前工作区那份状态文件本身：根 data/plugin_state.json 是历史遗留，
+        # 偏好还原要看当前工作区那份状态文件本身：根 data/plugin_state.toml 是历史遗留，
         # 宿主根本不读，拿它比对等于验了个寂寞。隔离跑时由 JZO_DATA_DIR / JZO_STATE_FILE 指路。
         state_file = resolve_plugin_state_file(Path(__file__).resolve().parents[1] / "data")
         try:
-            raw_state = json.loads(state_file.read_text(encoding="utf-8") or "{}")
+            raw_state = toml_io.load(state_file)
         except (OSError, ValueError):
             raw_state = None
         state_clean = (
@@ -278,8 +277,8 @@ def run(tag: str) -> dict:
         "pageerrors": errors,
         "checks": checks,
     }
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["probe_json"] = str(out / "probe.json")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    report["probe_json"] = str(out / "probe.toml")
     return report
 
 
@@ -293,4 +292,4 @@ if __name__ == "__main__":
     for c in rep["checks"]:
         print("%s %-52s %s" % ("PASS" if c["passed"] else "FAIL", c["name"], c["detail"]))
     if rep["pageerrors"]:
-        print("PAGE ERRORS:", json.dumps(rep["pageerrors"], ensure_ascii=False)[:600])
+        print("PAGE ERRORS:", wire.dumps(rep["pageerrors"], ensure_ascii=False)[:600])

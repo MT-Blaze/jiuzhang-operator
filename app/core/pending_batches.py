@@ -10,10 +10,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.core import questions
+from app.core import questions, wire
 from app.core.pending_db import (
     BATCH_ID_RE,
     PENDING_ID_RE,
@@ -25,7 +24,7 @@ from app.core.pending_db import (
 def read_meta(row: sqlite3.Row) -> dict[str, Any]:
     """批次上的公共元数据；读不出来就当空对象，不猜。"""
     try:
-        data = json.loads(row["meta_json"] or "{}")
+        data = wire.loads(row["meta_json"] or "{}")
     except (TypeError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -34,7 +33,7 @@ def read_meta(row: sqlite3.Row) -> dict[str, Any]:
 def read_route(row: sqlite3.Row) -> dict[str, Any]:
     """解析路由体检；老批次或坏 JSON 一律当空对象，不猜。"""
     try:
-        data = json.loads(row["route_json"] or "{}")
+        data = wire.loads(row["route_json"] or "{}")
     except (TypeError, ValueError, KeyError, IndexError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -43,7 +42,7 @@ def read_route(row: sqlite3.Row) -> dict[str, Any]:
 def read_approved(row: sqlite3.Row) -> list[dict[str, Any]]:
     """这一批已经进主库的题号（公共元数据后改时还要补写它们）。"""
     try:
-        data = json.loads(row["approved_json"] or "[]")
+        data = wire.loads(row["approved_json"] or "[]")
     except (TypeError, ValueError):
         return []
     return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
@@ -66,7 +65,7 @@ def remember_approved(con: sqlite3.Connection, batch_id: str, question_id: str) 
     items.append({"question_id": question_id, "approved_at": questions.now_iso()})
     con.execute(
         "UPDATE batches SET approved_json = ? WHERE batch_id = ?",
-        (json.dumps(items[-200:], ensure_ascii=False, separators=(",", ":")), batch_id),
+        (wire.dumps(items[-200:], ensure_ascii=False, separators=(",", ":")), batch_id),
     )
 
 
@@ -209,7 +208,7 @@ def list_batch_questions(batch_id: str) -> dict[str, Any]:
 def _page_images(row: sqlite3.Row) -> list[dict[str, Any]]:
     """批次上的原卷页面图清单；读不出来就当没有，不猜。"""
     try:
-        entries = json.loads(row["page_assets_json"] or "[]")
+        entries = wire.loads(row["page_assets_json"] or "[]")
     except (TypeError, ValueError, IndexError):
         return []
     if not isinstance(entries, list):
@@ -218,9 +217,9 @@ def _page_images(row: sqlite3.Row) -> list[dict[str, Any]]:
 
 
 def row_to_item(row: sqlite3.Row) -> dict[str, Any]:
-    document = json.loads(row["doc_json"])
+    document = wire.loads(row["doc_json"])
     document["id"] = row["id"]
-    assets = json.loads(row["assets_json"]) if row["assets_json"] else []
+    assets = wire.loads(row["assets_json"]) if row["assets_json"] else []
     return {
         "id": row["id"],
         "batch_id": row["batch_id"],

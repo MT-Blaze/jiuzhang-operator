@@ -16,7 +16,13 @@ JZO_RESTART_DISABLED=1；不碰仓库 data/。点按一律走 Playwright 真实�
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -47,7 +53,7 @@ CONSOLE_ERRORS: list[str] = []
 def check(name: str, ok: object, detail: object = None) -> None:
     CHECKS.append({"name": name, "ok": bool(ok), "detail": detail})
     print(("PASS " if ok else "FAIL ") + name + " | "
-          + json.dumps(detail, ensure_ascii=False, default=str)[:900], flush=True)
+          + wire.dumps(detail, ensure_ascii=False, default=str)[:900], flush=True)
 
 
 def free_port() -> int:
@@ -59,8 +65,8 @@ def free_port() -> int:
 def _decode(resp) -> tuple[int, dict]:
     body = resp.read().decode("utf-8", errors="replace")
     try:
-        return int(getattr(resp, "status", 200)), json.loads(body or "{}")
-    except json.JSONDecodeError:
+        return int(getattr(resp, "status", 200)), wire.loads(body or "{}")
+    except wire.JSONDecodeError:
         return int(getattr(resp, "status", 200)), {"raw": body[:300]}
 
 
@@ -72,13 +78,13 @@ def GET(url: str) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:300]}
 
 
 def POST(url: str, payload: object) -> tuple[int, dict]:
-    req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode(),
+    req = urllib.request.Request(url, data=wire.dumps(payload, ensure_ascii=False).encode(),
                                  method="POST",
                                  headers={"Content-Type": "application/json",
                                           "X-JZO-Token": TOKEN})
@@ -89,8 +95,8 @@ def POST(url: str, payload: object) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:300]}
 
 
@@ -164,7 +170,7 @@ def shot(obj, name: str, page=None) -> Path | None:
 def dump(name: str, payload: object) -> Path:
     SHOTS.mkdir(parents=True, exist_ok=True)
     path = uniq(SHOTS / name)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+    path.write_text(toml_io.dumps(payload, default=str),
                     encoding="utf-8")
     return path
 
@@ -274,7 +280,7 @@ def main() -> int:
                          "bank_questions": GET(base + "/api/bank/questions?page=1&page_size=1")[1].get("total"),
                          "pool_rows": [{"pool_id": r.get("pool_id"), "level": r.get("level")}
                                        for r in rows]}
-        dump(f"{tag}-00-seed.json", NOTES["seed"])
+        dump(f"{tag}-00-seed.toml", NOTES["seed"])
         check("造现场：主库 2 道原题，重题批自动抽走 ≥2 条进池",
               len(ids) == 2 and len(rows) >= 2, NOTES["seed"])
 
@@ -473,7 +479,7 @@ def main() -> int:
                 NOTES["advance"] = {"before": before, "after": after,
                                     "ident_before": first_ident, "ident_after": after_ident,
                                     "pool_total_after": pool_total}
-                dump(f"{tag}-02-advance.json", NOTES["advance"])
+                dump(f"{tag}-02-advance.toml", NOTES["advance"])
                 check("任务三：决断后自动跳下一道（池子少一条、当前 id 与源码都变了、对比没退出）",
                       pool_total >= 1 and after.get("mode") == "compare"
                       and after.get("current") and after.get("current") != before.get("current")
@@ -538,11 +544,10 @@ def main() -> int:
             proc.kill()
         handle.close()
         EVID.mkdir(parents=True, exist_ok=True)
-        out = uniq(EVID / f"{tag}-result.json")
-        out.write_text(json.dumps({"tag": tag, "base": base, "checks": CHECKS,
+        out = uniq(EVID / f"{tag}-result.toml")
+        out.write_text(toml_io.dumps({"tag": tag, "base": base, "checks": CHECKS,
                                    "note": NOTES, "page_errors": PAGE_ERRORS,
-                                   "console_errors": CONSOLE_ERRORS},
-                                  ensure_ascii=False, indent=2, default=str),
+                                   "console_errors": CONSOLE_ERRORS}, default=str),
                        encoding="utf-8")
         print(f"证据：{out}", flush=True)
     ok = sum(1 for c in CHECKS if c["ok"])

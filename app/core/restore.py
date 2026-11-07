@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import secrets
@@ -26,7 +25,7 @@ from typing import Any
 
 from app.core.backup_codec import open_package
 
-from app.core import backup
+from app.core import backup, wire
 
 REQUIRED_CATEGORIES = {"bank", "uploads"}
 CATEGORIES = {"bank", "uploads", "other", "plugins"}
@@ -82,7 +81,7 @@ def _require(condition: bool, message: str) -> None:
 def is_host_only(relative: str) -> bool:
     """判断某条清单路径是否是「工作区根上的宿主级文件」。
 
-    只查根与覆盖层根这两级——插件目录里真有一个叫 ``backup.json`` 的样例文件是合法的，
+    只查根与覆盖层根这两级——插件目录里真有一个叫 ``backup.toml`` 的样例文件是合法的，
     不能因为它就整包拒收。
     """
     parts = relative.split("/")
@@ -238,7 +237,7 @@ def verify_stage(stage_dir: str | Path, manifest: dict[str, Any]) -> None:
         if item["category"] == "uploads"
     ]
     digest = hashlib.sha256(
-        json.dumps(images, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        wire.dumps(images, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     _require(digest == manifest.get("images_hash"), "图片清单摘要不符")
 

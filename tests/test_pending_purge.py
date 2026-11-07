@@ -15,7 +15,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import sqlite3
 import sys
@@ -131,7 +137,7 @@ class PurgeCase(unittest.TestCase):
                         question_id,
                         document["type"],
                         document["stem"],
-                        json.dumps(document["options"], ensure_ascii=False, separators=(",", ":")),
+                        wire.dumps(document["options"], ensure_ascii=False, separators=(",", ":")),
                         "A",
                         document.get("solution"),
                         "[]",

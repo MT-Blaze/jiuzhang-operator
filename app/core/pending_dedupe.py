@@ -12,13 +12,12 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import threading
 from typing import Any
 
-from app.core import bank, bank_dedupe, questions
+from app.core import bank, bank_dedupe, questions, wire
 from app.core.pending_batches import batch_row
 from app.core.pending_db import PendingNotFound, connect
 
@@ -362,7 +361,7 @@ def _write_scan_rows(con: Any, batch_id: str, state: dict[str, Any],
              str(item["level"]), int(item.get("percent") or 0),
              float(item.get("similarity") or 0.0),
              str(item.get("fingerprint") or ""),
-             json.dumps(item.get("signals") or [], ensure_ascii=False),
+             wire.dumps(item.get("signals") or [], ensure_ascii=False),
              str(state.get("at") or questions.now_iso())))
     return True
 
@@ -451,7 +450,7 @@ def _load_scan(batch_id: str, con: Any = None) -> dict[str, Any] | None:
                 "percent": int(found["percent"] or 0),
                 "fingerprint": str(found["fingerprint"] or ""),
                 "similarity": float(found["similarity"] or 0.0),
-                "signals": json.loads(found["signals_json"] or "[]"),
+                "signals": wire.loads(found["signals_json"] or "[]"),
             })
         # 与 ``collect_candidates`` 的成序**完全一致**（题号优先，再按档位）：
         # 重启前后是同一份账，差别只在内存里还是库里。

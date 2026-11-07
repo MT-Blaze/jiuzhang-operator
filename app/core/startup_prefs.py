@@ -17,19 +17,19 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
 from pathlib import Path
 from typing import Any
 
+from app.core import state_store
 from app.core.config import current_workspace_id, workspace_storage_dir
 from app.core.plugins import discover_plugins
 
 logger = logging.getLogger("jzo.startup")
 
-STATE_FILENAME = "startup.json"
+STATE_FILENAME = "startup.toml"
 PLUGIN_PREFIX = "plugin:"
 # 默认启动页：数据看板。没配过、配置损坏、首选插件失效，都往这里回落。
 DEFAULT_PLUGIN_ID = "org.jiuzhang.dashboard"
@@ -47,14 +47,7 @@ def state_path() -> Path:
 
 
 def _load_raw() -> dict[str, Any]:
-    path = state_path()
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return state_store.load_table(state_path())
 
 
 def normalize(target: Any) -> str | None:
@@ -129,12 +122,7 @@ def set_target(target: Any) -> str:
         if plugin.get("enabled") is False:
             raise StartupRejected(f"插件 {plugin_id} 已停用，先启用它再设为启动界面")
     with _lock:
-        payload = {"target": value}
-        path = state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        state_store.save(state_path(), {"target": value})
     return value
 
 

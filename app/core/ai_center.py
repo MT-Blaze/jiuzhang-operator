@@ -1,7 +1,7 @@
 """AI 配置中心：多厂商密钥池 + 四任务指派。
 
 与 Provider 注册表的分工：注册表管「系统预置档」，这里管「老师自己加的账号」。
-非密钥字段（名称、Base URL、任务指派）落当前工作区 ``config.json``；
+非密钥字段（名称、Base URL、任务指派）落当前工作区 ``config.toml``；
 API Key 只写当前工作区 ``.env`` 与 ``os.environ``，热生效、永不入库、永不下发明文。
 
 红线（AGENTS §5 / STACK §1.6）：
@@ -12,7 +12,6 @@ API Key 只写当前工作区 ``.env`` 与 ``os.environ``，热生效、永不�
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import secrets
@@ -22,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from app.core import state_store, wire
 from app.core.config import settings
 from app.core.provider_config import ProviderConfigError, env_file_path, validate_base_url
 
@@ -73,19 +73,11 @@ def _config_path() -> Path:
 
 
 def _read_document() -> dict[str, object]:
-    try:
-        document = json.loads(_config_path().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return document if isinstance(document, dict) else {}
+    return state_store.load_table(_config_path())
 
 
 def _write_document(document: dict[str, object]) -> None:
-    path = _config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    state_store.save(_config_path(), document)
 
 
 def _clean_name(raw: str) -> str:
@@ -434,8 +426,8 @@ def fetch_models(
         return {"ok": False, "models": [], "host": host, "detail": f"连不上：{reason}"}
 
     try:
-        document = json.loads(body)
-    except json.JSONDecodeError:
+        document = wire.loads(body)
+    except wire.JSONDecodeError:
         return {"ok": False, "models": [], "host": host, "detail": "接口返回的不是 JSON"}
     rows = document.get("data") if isinstance(document, dict) else None
     models: list[str] = []

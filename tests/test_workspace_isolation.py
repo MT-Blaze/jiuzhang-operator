@@ -5,7 +5,7 @@
 1. 当前工作区指针缺失/损坏/非法一律回落 default，坏指针不能挡住启动；
 2. ``plugins_dir()``、各状态文件、``.env`` 落点都跟着当前工作区实时求值，
    切换工作区后立即换目录（不再有导入期死值）；
-3. 新工作区生成 ``plugins/`` 与空 ``plugin_state.json``，重复自举不覆盖用户状态；
+3. 新工作区生成 ``plugins/`` 与空 ``plugin_state.toml``，重复自举不覆盖用户状态；
 4. 旧全局数据只在非隔离运行（无 ``JZO_DATA_DIR`` / ``JZO_PLUGINS_DIR``）时迁移，
    开发工作树只复制、发行包移动，目标已存在时只补缺不覆盖；
 5. 删除工作区整目录（含 ``plugins/``）进系统回收站，绝不 unlink/rmtree。
@@ -15,9 +15,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import asyncio
 import base64
-import json
 import os
 import sqlite3
 import tempfile
@@ -27,7 +32,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from app.api import workspaces as workspaces_api
-from app.core import bank_provider, plugin_state, plugin_update, startup_prefs
+from app.core import bank_provider, plugin_state, plugin_update, startup_prefs, toml_io, wire
 from app.core import workspace_bootstrap, workspace_paths, workspace_removal
 from app.core.config import current_workspace_id, env_file_path, plugins_dir, settings
 
@@ -123,14 +128,14 @@ class LayoutTest(_TempEnv):
         root = workspace_bootstrap.ensure_workspace_layout("ws_fresh")
         self.assertEqual(self.data / "workspaces" / "ws_fresh", root)
         self.assertTrue((root / "plugins").is_dir())
-        self.assertEqual("{}\n", (root / "plugin_state.json").read_text(encoding="utf-8"))
+        self.assertEqual("", (root / "plugin_state.toml").read_text(encoding="utf-8"))
 
     def test_02_rebootstrap_never_overwrites_user_state(self) -> None:
         root = workspace_bootstrap.ensure_workspace_layout("ws_fresh")
-        state = root / "plugin_state.json"
-        state.write_text('{"org.x.y": false}\n', encoding="utf-8")
+        state = root / "plugin_state.toml"
+        state.write_text("org.x.y = false\n", encoding="utf-8")
         workspace_bootstrap.ensure_workspace_layout("ws_fresh")
-        self.assertEqual('{"org.x.y": false}\n', state.read_text(encoding="utf-8"))
+        self.assertEqual("org.x.y = false\n", state.read_text(encoding="utf-8"))
 
     def test_03_create_workspace_lands_plugins_and_state(self) -> None:
         old_pointer = workspace_paths.read_current_workspace_pointer()
@@ -140,8 +145,8 @@ class LayoutTest(_TempEnv):
         self.assertFalse(result["restarting"], "JZO_RESTART_DISABLED=1 必须让进程活着回包")
         storage = self.data / "workspaces" / workspace_id
         self.assertTrue((storage / "plugins").is_dir(), "新工作区必须有独立插件目录")
-        self.assertEqual("{}\n", (storage / "plugin_state.json").read_text(encoding="utf-8"))
-        registry = json.loads((self.data / "workspaces.json").read_text(encoding="utf-8"))
+        self.assertEqual("", (storage / "plugin_state.toml").read_text(encoding="utf-8"))
+        registry = toml_io.load(self.data / "workspaces.toml").get("workspaces", [])
         self.assertIn(workspace_id, [row["id"] for row in registry])
         self.assertEqual(workspace_id, workspace_paths.read_current_workspace_pointer())
         self.assertEqual(workspace_id, settings.workspace_id)
@@ -171,7 +176,7 @@ class LayoutTest(_TempEnv):
         self.assertFalse(result["restarting"], "受控环境不该真的重启进程")
         storage = self.data / "workspaces" / workspace_id
         self.assertTrue((storage / "plugins").is_dir())
-        self.assertEqual("{}\n", (storage / "plugin_state.json").read_text(encoding="utf-8"))
+        self.assertEqual("", (storage / "plugin_state.toml").read_text(encoding="utf-8"))
         self.assertTrue((storage / "banks" / f"{PROVIDER}.db").is_file())
         self.assertEqual(1, result["question_count"])
 
@@ -210,7 +215,7 @@ class MigrationTest(unittest.TestCase):
         legacy = self.fake_project / "plugins"
         for name in names:
             (legacy / name / "dist").mkdir(parents=True)
-            (legacy / name / "plugin.json").write_text("{}", encoding="utf-8")
+            (legacy / name / "plugin.toml").write_text("", encoding="utf-8")
         return legacy
 
     def test_01_dev_checkout_copies_and_keeps_source(self) -> None:
@@ -218,7 +223,7 @@ class MigrationTest(unittest.TestCase):
         legacy = self._legacy_plugins()
         action = workspace_bootstrap._migrate_legacy_plugins(self.target)
         self.assertEqual("copy", action)
-        self.assertTrue((self.target / "org.demo.one" / "plugin.json").is_file())
+        self.assertTrue((self.target / "org.demo.one" / "plugin.toml").is_file())
         self.assertTrue(legacy.is_dir(), "开发工作树的根 plugins/ 是源码，绝不能被移走")
 
     def test_02_package_moves_and_removes_legacy_folder(self) -> None:
@@ -226,18 +231,18 @@ class MigrationTest(unittest.TestCase):
         action = workspace_bootstrap._migrate_legacy_plugins(self.target)
         self.assertEqual("move", action)
         self.assertFalse(legacy.exists(), "发行包里迁移完成后根插件文件夹必须消失")
-        self.assertTrue((self.target / "org.demo.one" / "plugin.json").is_file())
+        self.assertTrue((self.target / "org.demo.one" / "plugin.toml").is_file())
 
     def test_03_existing_target_only_fills_missing(self) -> None:
         (self.fake_project / ".git").mkdir()
         legacy = self._legacy_plugins(("org.demo.one", "org.demo.two"))
         existing = self.target / "org.demo.one"
         existing.mkdir(parents=True)
-        marker = existing / "plugin.json"
-        marker.write_text('{"user":"kept"}', encoding="utf-8")
+        marker = existing / "plugin.toml"
+        marker.write_text('user = "kept"\n', encoding="utf-8")
         action = workspace_bootstrap._migrate_legacy_plugins(self.target)
         self.assertEqual("merge:1", action)
-        self.assertEqual('{"user":"kept"}', marker.read_text(encoding="utf-8"))
+        self.assertEqual('user = "kept"\n', marker.read_text(encoding="utf-8"))
         self.assertTrue((self.target / "org.demo.two").is_dir())
         self.assertTrue((legacy / "org.demo.one").exists())
 
@@ -256,7 +261,7 @@ class MigrationTest(unittest.TestCase):
         names = [plugin_state.STATE_FILENAME, startup_prefs.STATE_FILENAME,
                  bank_provider.STATE_FILENAME, plugin_update.PENDING_FILENAME]
         for name in names:
-            (self.data / name).write_text('{"k": 1}\n', encoding="utf-8")
+            (self.data / name).write_text("k = 1\n", encoding="utf-8")
         (self.fake_project / ".env").write_text("JZO_AI_API_KEY=x\n", encoding="utf-8")
         moved = workspace_bootstrap._migrate_legacy_state()
         default_root = self.data / "workspaces" / "default"
@@ -268,14 +273,14 @@ class MigrationTest(unittest.TestCase):
 
     def test_06_existing_state_is_never_overwritten(self) -> None:
         (self.fake_project / ".git").mkdir()
-        (self.data / plugin_state.STATE_FILENAME).write_text('{"old": true}\n', encoding="utf-8")
+        (self.data / plugin_state.STATE_FILENAME).write_text("old = true\n", encoding="utf-8")
         default_root = self.data / "workspaces" / "default"
         default_root.mkdir(parents=True)
         kept = default_root / plugin_state.STATE_FILENAME
-        kept.write_text('{"new": true}\n', encoding="utf-8")
+        kept.write_text("new = true\n", encoding="utf-8")
         moved = workspace_bootstrap._migrate_legacy_state()
         self.assertEqual([], moved)
-        self.assertEqual('{"new": true}\n', kept.read_text(encoding="utf-8"))
+        self.assertEqual("new = true\n", kept.read_text(encoding="utf-8"))
         self.assertTrue((self.data / plugin_state.STATE_FILENAME).is_file(), "源文件保留待人工确认")
 
 
@@ -289,7 +294,7 @@ class BootstrapEnvTest(_TempEnv):
                          workspace_paths.current_workspace_pointer_path().read_text(encoding="utf-8"))
         default_root = self.data / "workspaces" / "default"
         self.assertTrue((default_root / "plugins").is_dir())
-        self.assertEqual("{}\n", (default_root / "plugin_state.json").read_text(encoding="utf-8"))
+        self.assertEqual("", (default_root / "plugin_state.toml").read_text(encoding="utf-8"))
 
     def test_02_bootstrap_loads_only_current_workspace_env_and_explicit_wins(self) -> None:
         pointer = workspace_paths.current_workspace_pointer_path()
@@ -325,7 +330,7 @@ class DeleteWorkspaceTest(_TempEnv):
         storage = self.data / "workspaces" / workspace_id
         (storage / "plugins" / "org.demo" / "dist").mkdir(parents=True)
         (storage / "plugins" / "org.demo" / "dist" / "index.html").write_text("x", encoding="utf-8")
-        (storage / "plugin_state.json").write_text("{}\n", encoding="utf-8")
+        (storage / "plugin_state.toml").write_text("", encoding="utf-8")
         with mock.patch.object(workspace_removal, "send_to_recycle_bin") as recycle:
             result = workspace_removal.recycle_workspace(workspace_id)
         recycle.assert_called_once()
@@ -334,7 +339,7 @@ class DeleteWorkspaceTest(_TempEnv):
         self.assertTrue((recycled / "plugins" / "org.demo" / "dist" / "index.html").is_file(),
                         "插件代码必须随工作区目录一起进回收站")
         self.assertEqual(workspace_id, result["workspace_id"])
-        audit = json.loads((self.data / workspace_removal.AUDIT_FILENAME).read_text(encoding="utf-8"))
+        audit = toml_io.load(self.data / workspace_removal.AUDIT_FILENAME)["records"]
         self.assertEqual("success", audit[-1]["result"])
 
     def test_delete_refuses_paths_outside_the_workspace_root(self) -> None:

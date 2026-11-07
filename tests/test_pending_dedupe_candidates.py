@@ -20,7 +20,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import sqlite3
 import sys
@@ -64,7 +70,7 @@ def _pool_row(item_id: str, document: dict, seq: int) -> dict:
     """造一行「池内行」——``collect_candidates`` 是纯函数，不碰数据库就能单独验。"""
     return {
         "id": item_id,
-        "doc_json": json.dumps(document, ensure_ascii=False),
+        "doc_json": wire.dumps(document, ensure_ascii=False),
         "assets_json": "[]",
         "seq": seq,
     }
@@ -75,7 +81,7 @@ def _bank_row(question_id: str, document: dict) -> dict:
         "id": question_id,
         "type": document["type"],
         "stem": document["stem"],
-        "options": json.dumps(document["options"], ensure_ascii=False),
+        "options": wire.dumps(document["options"], ensure_ascii=False),
         "extensions": "[]",
         "answer": "A",
     }
@@ -261,7 +267,7 @@ class _ScanCase(unittest.TestCase):
                     " extensions, difficulty, created_at, updated_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (question_id, document["type"], document["stem"],
-                     json.dumps(document["options"], ensure_ascii=False,
+                     wire.dumps(document["options"], ensure_ascii=False,
                                 separators=(",", ":")),
                      "A", None, "[]", document.get("difficulty", "L2"),
                      "2026-01-15T09:00:00+08:00", "2026-01-15T09:00:00+08:00"))

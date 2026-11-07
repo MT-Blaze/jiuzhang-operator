@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-__all__ = ["JSONDecodeError", "loads", "read", "read_object"]
+__all__ = ["JSONDecodeError", "dumps", "loads", "read", "read_object"]
 
 
 JSONDecodeError = json.JSONDecodeError
@@ -24,6 +24,12 @@ JSONDecodeError = json.JSONDecodeError
 
 def loads(text: str) -> Any:
     return json.loads(text)
+
+
+def dumps(value: Any, **options: Any) -> str:
+    """把外部协议/数据库列需要的数据编成 JSON 文本；只允许在本边界内出现。"""
+    options.setdefault("ensure_ascii", False)
+    return json.dumps(value, **options)
 
 
 def read(path: Path) -> Any:

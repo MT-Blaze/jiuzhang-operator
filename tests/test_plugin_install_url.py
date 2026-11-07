@@ -5,7 +5,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -325,26 +331,26 @@ class InstallUrlApiTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def post_install(self, body: dict | None, token: str | None = TOKEN):
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + "/api/plugins/install-url", data=data, method="POST")
         request.add_header("Content-Type", "application/json")
         if token:
             request.add_header("X-JZO-Token", token)
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                return response.status, json.loads(response.read())
+                return response.status, wire.loads(response.read())
         except urllib.error.HTTPError as error:
             raw = error.read()
             try:
-                return error.code, json.loads(raw)
-            except json.JSONDecodeError:
+                return error.code, wire.loads(raw)
+            except wire.JSONDecodeError:
                 return error.code, raw.decode("utf-8", errors="replace")
             finally:
                 error.close()
 
     def get_json(self, path: str):
         with urllib.request.urlopen(self.base + path, timeout=10) as response:
-            return response.status, json.loads(response.read())
+            return response.status, wire.loads(response.read())
 
     def test_01_requires_write_token(self) -> None:
         status, _ = self.post_install({"url": self.cdn_base + "/" + ONLINE_PROBE_ID + ".zip"}, token=None)

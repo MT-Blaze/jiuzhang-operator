@@ -94,7 +94,7 @@ def main() -> int:
                 violations.append(name)
         # 文本载荷里再扫一遍常见密钥形态：礼包是给外部老师的，宁可误报也不漏报
         for info in zf.infolist():
-            if not info.filename.endswith((".md", ".json", ".js", ".html")):
+            if not info.filename.endswith((".md", ".toml", ".js", ".html")):
                 continue
             body = zf.read(info.filename).decode("utf-8", errors="replace")
             for pattern in (r"sk-[A-Za-z0-9]{12,}", r"JZO_[A-Z_]*API_KEY\s*=\s*\S+",

@@ -5,7 +5,12 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import socket
 import subprocess
@@ -20,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from app.core import ai_center
+from app.core import ai_center, wire
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "ai-center-test-token"
@@ -35,7 +40,7 @@ class _ModelsHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - http.server 命名约定
         _ModelsHandler.seen_auth.append(self.headers.get("Authorization") or "")
         if self.path.rstrip("/").endswith("/models"):
-            body = json.dumps({"data": [{"id": "m1"}, {"id": "m2"}, "m3"]}).encode("utf-8")
+            body = wire.dumps({"data": [{"id": "m1"}, {"id": "m2"}, "m3"]}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -59,7 +64,7 @@ class AiCenterCoreTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
-        self.config_file = root / "config.json"
+        self.config_file = root / "config.toml"
         self.env_file = root / "test.env"
         self.patches = [
             mock.patch.object(ai_center, "_config_path", side_effect=lambda: self.config_file),
@@ -90,11 +95,11 @@ class AiCenterCoreTest(unittest.TestCase):
         self.assertTrue(account["configured"])
         self.assertEqual(account["api_key_masked"], "fixt••••90")
         cluster = ai_center.cluster()
-        self.assertNotIn(FIXTURE_KEY, json.dumps(cluster, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(cluster, ensure_ascii=False))
         env_text = self.env_file.read_text(encoding="utf-8")
         self.assertIn(FIXTURE_KEY, env_text, "密钥必须落本机 .env")
         config_text = self.config_file.read_text(encoding="utf-8")
-        self.assertNotIn(FIXTURE_KEY, config_text, "config.json 只存非密钥字段")
+        self.assertNotIn(FIXTURE_KEY, config_text, "config.toml 只存非密钥字段")
         self.assertIn("阿里", config_text)
 
     def test_02_rename_keeps_key_and_duplicate_name_rejected(self) -> None:
@@ -165,7 +170,7 @@ class AiCenterCoreTest(unittest.TestCase):
             result = ai_center.fetch_models(account_id=account["id"])
             self.assertTrue(result["ok"], result)
             self.assertEqual(result["models"], ["m1", "m2", "m3"])
-            self.assertNotIn(FIXTURE_KEY, json.dumps(result, ensure_ascii=False))
+            self.assertNotIn(FIXTURE_KEY, wire.dumps(result, ensure_ascii=False))
             temp = ai_center.fetch_models(base_url=base_url, api_key="temp-key-abcdef")
             self.assertTrue(temp["ok"], temp)
             self.assertTrue(
@@ -231,7 +236,7 @@ class AiCenterApiTest(unittest.TestCase):
 
     def call(self, method: str, path: str, body: dict | None = None,
              token: str | None = TOKEN) -> tuple[int, object]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -252,8 +257,8 @@ class AiCenterApiTest(unittest.TestCase):
         if not raw:
             return None
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return wire.loads(raw)
+        except wire.JSONDecodeError:
             return raw.decode("utf-8", errors="replace")
 
     def test_01_writes_require_token(self) -> None:
@@ -273,7 +278,7 @@ class AiCenterApiTest(unittest.TestCase):
         )
         self.assertEqual(status, 200, account)
         self.assertTrue(account["configured"])
-        self.assertNotIn(FIXTURE_KEY, json.dumps(account, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(account, ensure_ascii=False))
         status, cluster = self.call("GET", "/api/ai-center", token=None)
         self.assertEqual(status, 200, cluster)
         self.assertEqual(len(cluster["accounts"]), 1)
@@ -281,7 +286,7 @@ class AiCenterApiTest(unittest.TestCase):
             [task["key"] for task in cluster["tasks"]],
             ["ocr", "solve", "meta", "tikz", "mineru"],
         )
-        self.assertNotIn(FIXTURE_KEY, json.dumps(cluster, ensure_ascii=False))
+        self.assertNotIn(FIXTURE_KEY, wire.dumps(cluster, ensure_ascii=False))
 
         status, models = self.call(
             "POST", "/api/ai-center/models", {"account_id": account["id"]}

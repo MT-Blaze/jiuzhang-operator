@@ -11,10 +11,16 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import argparse
 import hashlib
 import io
-import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -224,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     REPORT_PATH.write_text(report(db_path, info, problems, digest), encoding="utf-8")
     write_empty_check(db_path, info, digest)
 
-    print(json.dumps({
+    print(wire.dumps({
         "db": str(db_path),
         "bytes": db_path.stat().st_size if db_path.exists() else 0,
         "schema_sha256_12": digest[:12],

@@ -17,7 +17,13 @@
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -44,14 +50,14 @@ RESULT: dict[str, object] = {"checks": [], "scales": [], "timeline": [], "kill_t
 def check(name: str, ok: object, detail: object = None) -> None:
     RESULT["checks"].append({"name": name, "ok": bool(ok), "detail": detail})
     print(("PASS " if ok else "FAIL ") + name + " | "
-          + json.dumps(detail, ensure_ascii=False, default=str)[:600], flush=True)
+          + wire.dumps(detail, ensure_ascii=False, default=str)[:600], flush=True)
 
 
 def mark(event: str, **extra: object) -> None:
     row = {"t": round(time.time(), 3), "clock": time.strftime("%H:%M:%S"), "event": event}
     row.update(extra)
     RESULT["timeline"].append(row)
-    print("-- " + json.dumps(row, ensure_ascii=False, default=str)[:400], flush=True)
+    print("-- " + wire.dumps(row, ensure_ascii=False, default=str)[:400], flush=True)
 
 
 def free_port() -> int:
@@ -63,8 +69,8 @@ def free_port() -> int:
 def _decode(resp: object) -> tuple[int, dict]:
     body = resp.read().decode("utf-8", errors="replace")  # type: ignore[attr-defined]
     try:
-        return int(getattr(resp, "status", 200)), json.loads(body or "{}")
-    except json.JSONDecodeError:
+        return int(getattr(resp, "status", 200)), wire.loads(body or "{}")
+    except wire.JSONDecodeError:
         return int(getattr(resp, "status", 200)), {"raw": body[:400]}
 
 
@@ -76,13 +82,13 @@ def GET(url: str) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:400]}
 
 
 def POST(url: str, payload: object) -> tuple[int, dict]:
-    req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode(),
+    req = urllib.request.Request(url, data=wire.dumps(payload, ensure_ascii=False).encode(),
                                  method="POST",
                                  headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN})
     try:
@@ -92,8 +98,8 @@ def POST(url: str, payload: object) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:400]}
 
 
@@ -357,12 +363,12 @@ def main() -> int:
         except Exception:
             pass
         EVID.mkdir(parents=True, exist_ok=True)
-        out_json = EVID / f"s6d-scale-{tag}.json"
+        out_json = EVID / f"s6d-scale-{tag}.toml"
         n = 1
         while out_json.exists():
-            out_json = EVID / f"s6d-scale-{tag}-{n}.json"
+            out_json = EVID / f"s6d-scale-{tag}-{n}.toml"
             n += 1
-        out_json.write_text(json.dumps(RESULT, ensure_ascii=False, indent=2, default=str),
+        out_json.write_text(toml_io.dumps(RESULT, default=str),
                            encoding="utf-8")
         print(f"证据：{out_json}", flush=True)
     ok = sum(1 for c in RESULT["checks"] if c["ok"])

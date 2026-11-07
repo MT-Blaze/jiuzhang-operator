@@ -8,8 +8,13 @@ MKCOL / PROPFIND / PUT / DELETE 与 Basic 认证，避免把「协议层」也 m
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import base64
-import json
 import os
 import tempfile
 import threading
@@ -18,7 +23,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from app.core import backup, webdav
+from app.core import backup, toml_io, webdav, wire
 from app.core.config import settings
 
 WS_ID = "ws_abcdef0123456789"
@@ -208,10 +213,10 @@ class CredentialTest(_Base):
 
         path = backup.backup_settings_path(WS_ID)
         self.assertEqual(
-            (self.data / "workspaces" / WS_ID / "backup.json").resolve(), path
+            (self.data / "workspaces" / WS_ID / "backup.toml").resolve(), path
         )
         self.assertNotIn("plugins", path.parts)
-        on_disk = json.loads(path.read_text(encoding="utf-8"))
+        on_disk = toml_io.load(path)
         self.assertEqual("s3cret", on_disk["password"])
 
         loaded = backup.load_backup_settings(WS_ID)
@@ -220,7 +225,7 @@ class CredentialTest(_Base):
         self.assertNotIn("password", public)
         self.assertTrue(public["password_set"])
         self.assertEqual("••••••••", public["password_masked"])
-        self.assertNotIn("s3cret", json.dumps(public, ensure_ascii=False))
+        self.assertNotIn("s3cret", wire.dumps(public, ensure_ascii=False))
 
         backup.save_backup_settings({"username": "teacher2", "password": "••••••••"}, WS_ID)
         self.assertEqual("s3cret", backup.load_backup_settings(WS_ID)["password"])
@@ -294,7 +299,7 @@ class RemoteCleanupTest(_Base):
         self.addCleanup(fake.close)
         fake.files[f"backup_{OLD_STAMP}.zst"] = b"old-zst"
         fake.files[f"manifest_{OLD_STAMP}.json"] = b"{}"
-        fake.httpd.fail_name = f"manifest_{FAIL_STAMP}.json"
+        fake.httpd.fail_name = f"manifest_{FAIL_STAMP}.toml"
         package, manifest_path = self._pair(FAIL_STAMP)
         config = {
             "url": fake.url,
@@ -316,7 +321,7 @@ class RemoteCleanupTest(_Base):
             webdav.upload_backup(
                 {"url": "http://127.0.0.1:9/dav"},
                 self.out / f"backup_{NEW_STAMP}.zst",
-                self.out / f"manifest_{NEW_STAMP}.json",
+                self.out / f"manifest_{NEW_STAMP}.toml",
             )
 
     def test_05_existing_remote_dir_405_is_tolerated(self) -> None:

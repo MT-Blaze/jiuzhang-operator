@@ -28,11 +28,10 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any
 
-from app.core import bank
+from app.core import bank, wire
 from app.core import bank_fts
 
 MAX_GROUPS = 200      # 一次最多回多少组：再多就该分页看，不许把全库倒进 iframe
@@ -49,7 +48,7 @@ class MergeRejected(bank.BankConflict):
 
 
 def _encode(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return wire.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _stamp() -> str:

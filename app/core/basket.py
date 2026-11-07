@@ -5,17 +5,17 @@
 - 沙箱 iframe 没有 localStorage 可用，刷新就丢；
 - 一次组卷可能跨多个题库插件，宿主必须按 ``plugin_id`` 分别取题并校验存在性。
 
-存储为当前工作区的 ``data/basket.json``，原子写入；数量上限 200。
+存储为当前工作区的 ``data/basket.toml``，原子写入；数量上限 200。
 """
 
 from __future__ import annotations
 
-import json
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from app.core import state_store
 from app.core.config import settings
 
 MAX_BASKET = 200
@@ -28,7 +28,7 @@ class BasketError(Exception):
 
 
 def _path() -> Path:
-    return Path(settings.data_dir) / "basket.json"
+    return Path(settings.data_dir) / "basket.toml"
 
 
 def _now() -> str:
@@ -36,17 +36,11 @@ def _now() -> str:
 
 
 def _read() -> dict[str, Any]:
-    path = _path()
-    if not path.is_file():
-        return {"items": []}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"items": []}
-    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+    data = state_store.load_table(_path(), {"items": []})
+    if not isinstance(data.get("items"), list):
         return {"items": []}
     # question_id 与 plugin_id 缺一不算一条合法的篮内条目：写盘的两条路径（add/replace）
-    # 都保证带齐，这里读到缺的只可能是手改过的 basket.json，下游按库分组取题会直接 KeyError。
+    # 都保证带齐，这里读到缺的只可能是手改过的 basket.toml，下游按库分组取题会直接 KeyError。
     items = [
         item
         for item in data["items"]
@@ -58,12 +52,7 @@ def _read() -> dict[str, Any]:
 
 
 def _write(items: list[dict[str, Any]]) -> None:
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"updated_at": _now(), "items": items}
-    tmp = path.with_suffix(".json.part")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    state_store.save(_path(), {"updated_at": _now(), "items": items})
 
 
 def list_items() -> list[dict[str, Any]]:

@@ -12,7 +12,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import socket
 import subprocess
@@ -101,18 +107,18 @@ class MetaDictApiTest(unittest.TestCase):
             self.base + urllib.parse.quote(path, safe="/?=&"), method=method
         )
         if body is not None:
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            data = wire.dumps(body, ensure_ascii=False).encode("utf-8")
             request.add_header("Content-Type", "application/json")
         if token:
             request.add_header("X-JZO-Token", token)
         try:
             with urllib.request.urlopen(request, data=data, timeout=30) as response:
                 raw = response.read()
-                return response.status, (json.loads(raw.decode("utf-8")) if raw else None)
+                return response.status, (wire.loads(raw.decode("utf-8")) if raw else None)
         except urllib.error.HTTPError as error:
             try:
                 raw = error.read()
-                return error.code, (json.loads(raw.decode("utf-8")) if raw else None)
+                return error.code, (wire.loads(raw.decode("utf-8")) if raw else None)
             finally:
                 error.close()
 
@@ -176,7 +182,7 @@ class MetaDictApiTest(unittest.TestCase):
     def test_06_suggestion_needs_a_short_name(self) -> None:
         status, body = self._request("/api/meta/schools/suggest", "POST", {"short_name": "  "})
         self.assertEqual(status, 400, body)
-        self.assertIn("简称", json.dumps(body, ensure_ascii=False))
+        self.assertIn("简称", wire.dumps(body, ensure_ascii=False))
 
     # ---------- 交叉标签 ----------
 
@@ -216,7 +222,7 @@ class MetaDictApiTest(unittest.TestCase):
         status, body = self._request("/api/meta/tags", "POST",
                                      {"name": "联考", "scene": "星座题"})
         self.assertEqual(status, 400, body)
-        self.assertIn("不认识的场景", json.dumps(body, ensure_ascii=False))
+        self.assertIn("不认识的场景", wire.dumps(body, ensure_ascii=False))
         status, body = self._request("/api/meta/tags", "POST", {"name": "   "})
         self.assertEqual(status, 400, body)
 

@@ -1,7 +1,7 @@
 """主机状态偏好层（军令 #16；#18 第二步裁剪）：昵称、左栏文件夹树、停用时间。
 
 钉死三件事：
-1. **写范围只有一个文件**——所有偏好都落当前工作区的 ``plugin_state.json``，
+1. **写范围只有一个文件**——所有偏好都落当前工作区的 ``plugin_state.toml``，
    不新建侧文件、不碰插件代码目录、不碰各工作区题库（ADR-007 的口径扩展到整个状态层）；
 2. **发现层把偏好投影进清单**——左栏树是「已启用顺序」的唯一事实来源，
    新装插件不会因为没人排过序就消失，卸载插件不会在树上留幽灵；
@@ -14,7 +14,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import tempfile
 import unittest
@@ -54,8 +60,8 @@ def _plugin_dir(root: Path, manifest: dict) -> Path:
     (plugin_dir / "dist" / "index.html").write_text(
         "<!doctype html><title>p</title>", encoding="utf-8"
     )
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+    (plugin_dir / "plugin.toml").write_text(
+        toml_io.dumps(manifest), encoding="utf-8"
     )
     return plugin_dir
 
@@ -77,7 +83,7 @@ class PluginStatePrefsTest(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def _raw(self) -> dict:
-        return json.loads((self.data_dir / self.mod.STATE_FILENAME).read_text(encoding="utf-8"))
+        return toml_io.load(self.data_dir / self.mod.STATE_FILENAME)
 
     # ---------- 昵称 ----------
     def test_10_nickname_round_trip_and_clear(self) -> None:
@@ -93,7 +99,10 @@ class PluginStatePrefsTest(unittest.TestCase):
 
     def test_12_corrupt_nickname_map_is_dropped_on_read(self) -> None:
         path = self.data_dir / self.mod.STATE_FILENAME
-        path.write_text(json.dumps({"nicknames": {"": "x", ALPHA: "   ", 42: "y"}}), encoding="utf-8")
+        path.write_text(
+            '[nicknames]\n"" = "x"\n"com.example.prefs-alpha" = "   "\n"42" = "y"\n',
+            encoding="utf-8",
+        )
         self.assertEqual({}, self.mod.state()["nicknames"])
 
     # ---------- 停用时间 ----------
@@ -107,12 +116,12 @@ class PluginStatePrefsTest(unittest.TestCase):
         self.assertIn(ALPHA, self.mod.state()["disabled_at"], "重新启用不抹历史停用时间——如实记账")
 
     def test_21_enable_toggle_touches_only_the_state_file(self) -> None:
-        (self.data_dir / "keepme.json").write_text("{}", encoding="utf-8")
+        (self.data_dir / "keepme.txt").write_text("keep", encoding="utf-8")
         self.mod.set_enabled(ALPHA, False)
         self.mod.set_enabled(ALPHA, True)
         names = sorted(p.name for p in self.data_dir.iterdir())
-        self.assertEqual(["keepme.json", self.mod.STATE_FILENAME], names,
-                         "状态层只许多出 plugin_state.json 这一个文件")
+        self.assertEqual(["keepme.txt", self.mod.STATE_FILENAME], names,
+                         "状态层只许多出 plugin_state.toml 这一个文件")
 
     # ---------- 左栏树 ----------
     def test_30_sidebar_round_trip_and_dedup(self) -> None:
@@ -167,7 +176,7 @@ class PluginStatePrefsTest(unittest.TestCase):
     # ---------- 整份文件的保真 ----------
     def test_50_unknown_keys_are_carried_forward(self) -> None:
         path = self.data_dir / self.mod.STATE_FILENAME
-        path.write_text(json.dumps({"legacy_flag": True, "disabled": [ALPHA]}), encoding="utf-8")
+        path.write_text(toml_io.dumps({"legacy_flag": True, "disabled": [ALPHA]}), encoding="utf-8")
         self.mod.set_nickname(ALPHA, "甲")
         payload = self._raw()
         self.assertTrue(payload["legacy_flag"], "未知键原样带着走，状态层不许顺手清掉别人的字段")
@@ -368,7 +377,7 @@ class PrefsHttpTest(unittest.TestCase):
 
     def _call(self, method: str, path: str, body: dict | None = None,
               token: bool = False) -> tuple[int, dict]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = self.urllib_request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -377,13 +386,13 @@ class PrefsHttpTest(unittest.TestCase):
             request.add_header("X-JZO-Token", TOKEN)
         try:
             with self.urllib_request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read().decode("utf-8") or "{}")
+                return response.status, wire.loads(response.read().decode("utf-8") or "{}")
         except self.urllib_error.HTTPError as error:
             payload = error.read().decode("utf-8")
             error.close()
             try:
-                return error.code, json.loads(payload or "{}")
-            except json.JSONDecodeError:
+                return error.code, wire.loads(payload or "{}")
+            except wire.JSONDecodeError:
                 return error.code, {"raw": payload}
 
     def test_01_reads_are_open(self) -> None:
@@ -411,9 +420,7 @@ class PrefsHttpTest(unittest.TestCase):
         listing = self._call("GET", "/api/plugins")[1]
         self.assertEqual("我的 甲台",
                          next(item for item in listing["plugins"] if item["id"] == ALPHA)["nickname"])
-        persisted = json.loads(
-            (self.data_dir / "workspaces" / "default" / "plugin_state.json").read_text(encoding="utf-8")
-        )
+        persisted = toml_io.load(self.data_dir / "workspaces" / "default" / "plugin_state.toml")
         self.assertEqual({ALPHA: "我的 甲台"}, persisted["nicknames"])
 
         status, body = self._call("POST", f"/api/plugins/{ALPHA}/nickname",

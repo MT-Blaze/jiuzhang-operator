@@ -38,11 +38,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import threading
 from typing import Any
 
-from app.core import bank, bank_dedupe, pending_dedupe, questions
+from app.core import bank, bank_dedupe, pending_dedupe, questions, wire
 from app.core.pending_assets import (
     backup_path,
     decode_data_url,
@@ -174,13 +173,13 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                 "  total, pending_count, assets_json, page_assets_json)"
                 " VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
                 (target_batch, batch_label(local_now()), now, now, backup_text, name_text,
-                 "[]", json.dumps(pages or [], ensure_ascii=False, separators=(",", ":"))),
+                 "[]", wire.dumps(pages or [], ensure_ascii=False, separators=(",", ":"))),
             )
         if pages is not None:
             # 重导 / 解析完成：这一批的原卷页以本次为准，旧清单整体换掉。
             con.execute(
                 "UPDATE batches SET page_assets_json = ? WHERE batch_id = ?",
-                (json.dumps(pages, ensure_ascii=False, separators=(",", ":")), target_batch),
+                (wire.dumps(pages, ensure_ascii=False, separators=(",", ":")), target_batch),
             )
         current = batch_row(con, target_batch)
         # 公共元数据是这一批的「共同出处」：每次暂存都按批次上的那一份重写，
@@ -225,8 +224,8 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     document["id"], target_batch,
-                    json.dumps(document, ensure_ascii=False, separators=(",", ":")),
-                    json.dumps(stored, ensure_ascii=False, separators=(",", ":")),
+                    wire.dumps(document, ensure_ascii=False, separators=(",", ":")),
+                    wire.dumps(stored, ensure_ascii=False, separators=(",", ":")),
                     str(origin or "")[:64], now, now, seq, page_no or 1,
                 ),
             )
@@ -234,12 +233,12 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
             inserted += 1
             names.extend(str(item.get("name") or "") for item in stored)
         row = batch_row(con, target_batch)
-        merged = list(json.loads(row["assets_json"] or "[]"))
+        merged = list(wire.loads(row["assets_json"] or "[]"))
         merged.extend(name for name in names if name)
         con.execute(
             "UPDATE batches SET total = total + ?, assets_json = ?, updated_at = ?"
             " WHERE batch_id = ?",
-            (inserted, json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
+            (inserted, wire.dumps(merged, ensure_ascii=False, separators=(",", ":")),
              now, target_batch),
         )
         refresh_batch(con, target_batch)
@@ -316,7 +315,7 @@ def _replace_pending(con: sqlite3.Connection, pending_id: str, document: dict[st
     ).fetchone()
     if row is None:
         raise PendingNotFound("中转站里没有这一条")
-    merged = list(json.loads(row["assets_json"] or "[]"))
+    merged = list(wire.loads(row["assets_json"] or "[]"))
     known = {str(item.get("name") or "") for item in merged}
     for item in stored_assets:
         name = str(item.get("name") or "")
@@ -327,8 +326,8 @@ def _replace_pending(con: sqlite3.Connection, pending_id: str, document: dict[st
     con.execute(
         "UPDATE pending_questions SET doc_json = ?, assets_json = ?, updated_at = ?,"
         " page_no = COALESCE(?, page_no) WHERE id = ?",
-        (json.dumps(document, ensure_ascii=False, separators=(",", ":")),
-         json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
+        (wire.dumps(document, ensure_ascii=False, separators=(",", ":")),
+         wire.dumps(merged, ensure_ascii=False, separators=(",", ":")),
          questions.now_iso(), page_no, pending_id),
     )
     return merged
@@ -408,7 +407,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
             raise PendingNotFound("中转站里没有这个批次")
         con.execute(
             "UPDATE batches SET meta_json = ?, updated_at = ? WHERE batch_id = ?",
-            (json.dumps(meta, ensure_ascii=False, separators=(",", ":")),
+            (wire.dumps(meta, ensure_ascii=False, separators=(",", ":")),
              questions.now_iso(), batch_id),
         )
         synced, skipped, warnings = sync_batch_sources(con, batch_id, meta)

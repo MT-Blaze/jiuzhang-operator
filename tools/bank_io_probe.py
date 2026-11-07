@@ -3,7 +3,7 @@
 
 取证口径（军令 #14 阶段四）：
 - 控制台「工作区」面板带【导入题目包】与【导出当前题库】两个入口；
-- 导出点下去真下载一个 ``.json``，内容是标准交换包，题数与题库一致；
+- 导出点下去真下载一个 ``.toml``，内容是标准交换包，题数与题库一致；
 - 导入走真实文件选择器（``<input type=file>`` → base64 → 宿主校验 → 批量写入），
   状态行如实报「已导入 N 题」，题库里真的多了这 N 道；
 - 坏包必须被宿主拒掉并报「导入失败」，题库一题不增；
@@ -16,7 +16,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -78,7 +84,7 @@ def seed_questions(count: int, offset: int = 0) -> list[dict]:
 def api_total(base: str) -> int:
     url = f"{base}/api/bank/plugins/{PLUGIN_ID}/questions?page_size=1"
     with urllib.request.urlopen(url, timeout=10) as response:
-        return int(json.loads(response.read().decode("utf-8"))["total"])
+        return int(wire.loads(response.read().decode("utf-8"))["total"])
 
 
 def main() -> int:
@@ -151,7 +157,7 @@ def main() -> int:
             download = download_info.value
             target = work / "exported-bank.json"
             download.save_as(str(target))
-            bundle = json.loads(target.read_text(encoding="utf-8"))
+            bundle = wire.loads(target.read_text(encoding="utf-8"))
             check("导出点下去真下载了一个 .json 文件",
                   download.suggested_filename.endswith(".json"), {"name": download.suggested_filename})
             check("导出内容是标准交换包",
@@ -167,7 +173,7 @@ def main() -> int:
             # ---- 导入：真文件选择器 ----
             pack = work / "pack.json"
             pack.write_text(
-                json.dumps({"questions": seed_questions(2, offset=900)}, ensure_ascii=False),
+                toml_io.dumps({"questions": seed_questions(2, offset=900)}),
                 encoding="utf-8",
             )
             with page.expect_file_chooser(timeout=10000) as chooser_info:
@@ -206,7 +212,7 @@ def main() -> int:
 
     result["ok"] = (all(item["ok"] for item in result["checks"])
                     and not result["page_errors"] and not result["console_errors"])
-    (work / "probe.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(toml_io.dumps(result), encoding="utf-8")
     print(("PASS" if result["ok"] else "FAIL") + f" · {len(result['checks'])} 项 · {work}")
     for item in result["checks"]:
         print(("  ok " if item["ok"] else "  XX ") + item["name"])

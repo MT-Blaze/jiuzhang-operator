@@ -6,7 +6,7 @@
 隔离口径：``JZO_DATA_DIR`` 与 ``JZO_PLUGINS_DIR`` 指向 ``.system_generated/stage/<tag>/``，
 不碰开发者本机的 ``data/`` 与 ``plugins/``；探针插件是脚本临时生成的，跑完留在隔离目录里备查。
 
-产出：截图 png + probe.json（结构化断言、页签状态轨迹、console 错误）。
+产出：截图 png + probe.toml（结构化断言、页签状态轨迹、console 错误）。
 
 判据来自 2026-10-26 军令任务 3（2026-10-31 军令修订）：
   1. 启动不预开任何兜底页：原生页签只剩「设置与控制台」且未选中，画布留白；
@@ -21,7 +21,7 @@
      页签栏左端「入口」按钮与页签同高、同字号、同底色、同圆角（2026-10-31 军令）。
 """
 import collections
-import json
+import copy
 import os
 import socket
 import subprocess
@@ -33,6 +33,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from app.core import toml_io  # noqa: E402
 PORT = 8778
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 MAX_LIVE = 3
@@ -131,13 +133,13 @@ def make_plugin(plugins_dir: Path, letter: str, mode: str = "takeover") -> str:
     plugin_id = f"org.jiuzhang.stage-probe-{letter}"
     plugin_dir = plugins_dir / plugin_id
     (plugin_dir / "dist").mkdir(parents=True, exist_ok=True)
-    manifest = json.loads(json.dumps(MANIFEST))
+    manifest = copy.deepcopy(MANIFEST)
     manifest["id"] = plugin_id
     manifest["name"] = f"舞台探针{letter.upper()}"
     manifest["stage"]["title"] = f"探针{letter.upper()}"
     manifest["stage"]["mode"] = mode
-    (plugin_dir / "plugin.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (plugin_dir / "plugin.toml").write_text(
+        toml_io.dumps(manifest), encoding="utf-8")
     (plugin_dir / "LICENSE").write_text("Apache License 2.0 (probe fixture)", encoding="utf-8")
     # 插件页 CSP 只给 style-src 'self' <底座源>：内联 <style> 会被拦，样式必须外挂
     (plugin_dir / "dist" / "plugin.css").write_text(
@@ -299,10 +301,10 @@ def run(tag: str) -> dict:
                   len(initial["tabs"]) == 0
                   and initial["frameCount"] == 0
                   and initial["visiblePanels"] == 0,
-                  json.dumps(initial["tabs"], ensure_ascii=False))
+                  repr(initial["tabs"]))
             check("页签栏里没有任何「引导」页签",
                   all("引导" not in t["label"] for t in initial["tabs"]),
-                  json.dumps([t["label"] for t in initial["tabs"]], ensure_ascii=False))
+                  repr([t["label"] for t in initial["tabs"]]))
 
             # 等 SW 完成首次接管再刷新：activate/claim 与导航的竞态会让 Playwright 的
             # load 等待悬空（真机 F5 不受影响，探针却会假红）。
@@ -331,7 +333,7 @@ def run(tag: str) -> dict:
                 console_tab = next((t for t in st["tabs"] if t["key"] == "console"), None)
                 check(f"第 {round_no} 次 F5 后重开的控制台页签带 ×",
                       bool(console_tab and console_tab["hasClose"]),
-                      json.dumps(console_tab, ensure_ascii=False) if console_tab else "无控制台页签")
+                      repr(console_tab) if console_tab else "无控制台页签")
             check("左栏列出探针插件",
                   page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length") >= 5,
                   str(page.evaluate("() => document.querySelectorAll('#wsPluginList .ws-plugin-item').length")))
@@ -359,15 +361,15 @@ def run(tag: str) -> dict:
                       clicked is not None and probe_tab is not None,
                       f"clicked={clicked} tabs={len(st['tabs'])}")
                 check(f"插件{letter.upper()} 页签为选中态", probe_tab and probe_tab["selected"] == "true",
-                      json.dumps(probe_tab, ensure_ascii=False) if probe_tab else "无此页签")
+                      repr(probe_tab) if probe_tab else "无此页签")
                 panel = panel_of(st, pid)
                 frame = next((f for f in st["frames"] if f["tab"] == f"plugin:{pid}"), None)
                 check(f"插件{letter.upper()} iframe 沙箱为 allow-scripts allow-modals",
                       bool(frame and frame["sandbox"] == "allow-scripts allow-modals"),
-                      json.dumps(frame, ensure_ascii=False) if frame else "")
+                      repr(frame) if frame else "")
                 check(f"插件{letter.upper()} 挂载无故障框（activate 30s 内回 ready）",
                       bool(panel and panel["hasFrame"] and not panel["error"]),
-                      json.dumps(panel, ensure_ascii=False) if panel else "")
+                      repr(panel) if panel else "")
                 check(f"插件{letter.upper()} activate 后经总线回话（底栏出现其自报的接管事件）",
                       f"{pid} 已接管中央画布" in dock, dock[-200:])
                 if index <= MAX_LIVE:
@@ -378,11 +380,11 @@ def run(tag: str) -> dict:
                     first_tab = next((t for t in st["tabs"] if t["key"] == f"plugin:{ids[0]}"), None)
                     check("最久未用的插件A 被标为休眠",
                           first_tab and "休眠" in first_tab["state"],
-                          json.dumps(first_tab, ensure_ascii=False) if first_tab else "")
+                          repr(first_tab) if first_tab else "")
                     first_panel = panel_of(st, ids[0])
                     check("休眠页签的 iframe 已摘除并留说明",
                           bool(first_panel and not first_panel["hasFrame"] and "休眠" in first_panel["note"]),
-                          json.dumps(first_panel, ensure_ascii=False) if first_panel else "")
+                          repr(first_panel) if first_panel else "")
                     check("当前活动页签没被自己休眠掉",
                           bool(panel_of(st, pid) and panel_of(st, pid)["hasFrame"]), str(pid))
 
@@ -397,12 +399,12 @@ def run(tag: str) -> dict:
             panel_a = panel_of(woke, ids[0])
             check("点休眠页签能唤醒并重挂 iframe",
                   bool(panel_a and panel_a["hasFrame"] and not panel_a["error"]),
-                  json.dumps(panel_a, ensure_ascii=False) if panel_a else "")
+                  repr(panel_a) if panel_a else "")
             check("唤醒后插件重新走了一遍 activate（底栏接管事件计数 +1）",
                   wake_dock.count(f"{ids[0]} 已接管中央画布") == wake_before + 1,
                   f"{wake_before} → {wake_dock.count(f'{ids[0]} 已接管中央画布')}")
             tab_a = next((t for t in woke["tabs"] if t["key"] == f"plugin:{ids[0]}"), None)
-            check("唤醒后页签去掉休眠标记", tab_a and not tab_a["state"], json.dumps(tab_a, ensure_ascii=False))
+            check("唤醒后页签去掉休眠标记", tab_a and not tab_a["state"], repr(tab_a))
             check("唤醒一个就休眠另一个（总数仍受 LRU 管住）", woke["frameCount"] <= MAX_LIVE, str(woke["frameCount"]))
 
             # ---------- 右栏参数 → notification → region.dock ----------
@@ -419,7 +421,7 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(1000)
             after = snap("16-param-change")
             after_dock = dock_text()
-            check("右栏面板下拉可改", changed is not None, json.dumps(changed, ensure_ascii=False))
+            check("右栏面板下拉可改", changed is not None, repr(changed))
             live_ids = [m["tab"].split("plugin:", 1)[1] for m in after["marks"] if m["hasFrame"]]
             check("面板改动经 notification 抵达存活插件，插件回话带上新值",
                   bool(changed) and any(
@@ -435,10 +437,10 @@ def run(tag: str) -> dict:
             check("fullscreen 插件接管时翻全屏标志", full["fullscreen"] == "on", str(full["fullscreen"]))
             check("全屏下左右栏与底栏让位",
                   not full["sidebarVisible"] and not full["ctxVisible"] and not full["dockVisible"],
-                  json.dumps({k: full[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
+                  repr({k: full[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
             check("全屏不改用户的折叠偏好（data-side/data-ctx 原样）",
                   full["dataSide"] in (None, "open") and full["dataCtx"] in (None, "open"),
-                  json.dumps({"side": full["dataSide"], "ctx": full["dataCtx"]}))
+                  repr({"side": full["dataSide"], "ctx": full["dataCtx"]}))
             # 切到控制台页签应退出全屏
             page.locator('#wsTabs .ws-tab[data-tab="console"]').click()
             page.wait_for_timeout(800)
@@ -446,7 +448,7 @@ def run(tag: str) -> dict:
             check("切到控制台页签即退出全屏", back["fullscreen"] in (None, "off"), str(back["fullscreen"]))
             check("退出全屏后左右栏与底栏回来",
                   back["sidebarVisible"] and back["ctxVisible"],
-                  json.dumps({k: back[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
+                  repr({k: back[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
 
             # ---------- 关闭页签 ----------
             tab_count_before = len(back["tabs"])
@@ -457,7 +459,7 @@ def run(tag: str) -> dict:
                   f"{tab_count_before} → {len(closed['tabs'])}")
             check("所有存活页签都稳定带 ×",
                   all(t["hasClose"] for t in closed["tabs"]),
-                  json.dumps([t for t in closed["tabs"] if not t["hasClose"]], ensure_ascii=False))
+                  repr([t for t in closed["tabs"] if not t["hasClose"]]))
             check("设置与控制台页签可关闭（有 × 按钮）",
                   page.evaluate("""() => {
                     const t = document.querySelector('#wsTabs .ws-tab[data-tab=\"console\"]');
@@ -479,7 +481,7 @@ def run(tag: str) -> dict:
             check("左栏底部入口能把控制台页签叫回来",
                   console_tab is not None and console_tab["selected"] == "true"
                   and len(console_back["tabs"]) == n_before_console,
-                  json.dumps(console_back["tabs"], ensure_ascii=False))
+                  repr(console_back["tabs"]))
 
             # ---------- 入口按钮与页签同形（2026-10-31 军令） ----------
             page.locator("#wsToggleSidebar").click()
@@ -502,11 +504,11 @@ def run(tag: str) -> dict:
               return {button: pick(btn), tab: pick(tab)};
             }""")
             btn_shape, tab_shape = shape["button"], shape["tab"]
-            check("收起左栏后入口按钮可见", btn_shape["visible"], json.dumps(shape, ensure_ascii=False))
+            check("收起左栏后入口按钮可见", btn_shape["visible"], repr(shape))
             check("入口按钮与页签同高、同字号、同底色、同圆角、同内边距",
                   all(btn_shape[k] == tab_shape[k]
                       for k in ("h", "font", "bg", "radius", "padTop", "padLeft", "borderBottom")),
-                  json.dumps(shape, ensure_ascii=False))
+                  repr(shape))
             page.locator("#wsOpenSidebar").click()
             page.wait_for_timeout(400)
 
@@ -518,7 +520,7 @@ def run(tag: str) -> dict:
             page.wait_for_timeout(600)
             empty = snap("23-all-closed")
             check("关完所有页签后页签栏清空", len(empty["tabs"]) == 0,
-                  json.dumps(empty["tabs"], ensure_ascii=False))
+                  repr(empty["tabs"]))
             check("关完所有页签后画布无可见面板（留白）", empty["visiblePanels"] == 0,
                   str(empty["visiblePanels"]))
             check("关完所有页签后不出现兜底页或占位文案",
@@ -527,13 +529,13 @@ def run(tag: str) -> dict:
             # 全屏页签被关掉时三区必须回归，不能留下空画布压着左右栏
             check("关完所有页签后左右栏与底栏回归",
                   empty["sidebarVisible"] and empty["ctxVisible"],
-                  json.dumps({k: empty[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
+                  repr({k: empty[k] for k in ("sidebarVisible", "ctxVisible", "dockVisible")}))
 
             # 拆分后的组合根必须真的跑完：任何一帧里的未捕获异常都是功能断链。
             # 2026-11-02 正是靠这一条捞出 st_workspace 在 create 体内当场调用宿主用
             # thunk 注入的 el —— 设置页从 stPlugins 往后整段没执行，字符串测试却全绿。
             check("全程零页面异常（含画布里的设置 iframe）", not report["errors"],
-                  json.dumps(report["errors"], ensure_ascii=False)[:400])
+                  repr(report["errors"])[:400])
 
             page.close()
             browser.close()
@@ -553,7 +555,7 @@ def finish(report: dict, out: Path, _unused) -> dict:
     report["summary"] = {"total": total, "passed": passed, "failed": total - passed,
                          "pageErrors": len(report["errors"])}
     out.mkdir(parents=True, exist_ok=True)
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
     report["out_dir"] = str(out)
     return report
 
@@ -565,11 +567,11 @@ if __name__ == "__main__":
         sys.exit(2)
     rep = run(tag)
     print("out_dir:", rep.get("out_dir"))
-    print("summary:", json.dumps(rep.get("summary", {}), ensure_ascii=False))
+    print("summary:", repr(rep.get("summary", {})))
     for c in rep["checks"]:
         print(("  PASS  " if c["ok"] else "  FAIL  ") + c["name"] + ("  | " + c["detail"] if c["detail"] else ""))
     if rep["errors"]:
-        print("PAGE ERRORS:", json.dumps(rep["errors"], ensure_ascii=False))
+        print("PAGE ERRORS:", repr(rep["errors"]))
     bad_console = [c for c in rep["console"] if c["type"] == "error"]
     if bad_console:
-        print("CONSOLE ERRORS:", json.dumps(bad_console[:8], ensure_ascii=False))
+        print("CONSOLE ERRORS:", repr(bad_console[:8]))

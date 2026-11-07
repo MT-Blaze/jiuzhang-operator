@@ -15,7 +15,6 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
-import json
 import os
 import re
 import secrets
@@ -24,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from app.core import bank
+from app.core import bank, wire
 from app.core.config import settings
 from app.core.pending_db import (
     DATA_URL_RE,
@@ -213,7 +212,7 @@ def backup_paths(source_backup: str) -> list[Path]:
         return []
     if text.startswith("["):
         try:
-            items = json.loads(text)
+            items = wire.loads(text)
         except (TypeError, ValueError) as exc:
             raise PendingError("原文件副本清单损坏") from exc
         if not isinstance(items, list):

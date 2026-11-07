@@ -9,8 +9,13 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import asyncio
-import json
 import os
 import shutil
 import tempfile
@@ -21,7 +26,7 @@ from unittest import mock
 from fastapi import HTTPException
 
 from app.api import workspaces
-from app.core import workspace_removal
+from app.core import toml_io, workspace_removal
 from app.core.config import settings
 from tests.core_sources import settings_source  # noqa: E402
 
@@ -43,7 +48,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
         (self.ws_dir / "banks" / "org.jiuzhang.bank-engine.db").write_bytes(b"SQLite format 3\0")
         (self.ws_dir / "uploads").mkdir()
         (self.ws_dir / "uploads" / "pic.png").write_bytes(b"PNG")
-        (self.ws_dir / "config.json").write_text('{"ok":true}', encoding="utf-8")
+        (self.ws_dir / "config.toml").write_text('ok = true\n', encoding="utf-8")
         self._write_registry([
             {"id": "default", "name": "默认工作区", "created_at": "system"},
             {"id": WS_ID, "name": "待删工作区", "created_at": "auto"},
@@ -58,14 +63,13 @@ class WorkspaceDeleteTest(unittest.TestCase):
             os.environ["JZO_DATA_DIR"] = data_dir
 
     def _write_registry(self, entries: list[dict]) -> None:
-        (self.root / "workspaces.json").write_text(
-            json.dumps(entries, ensure_ascii=False), encoding="utf-8"
+        (self.root / "workspaces.toml").write_text(
+            toml_io.dumps({"workspaces": entries}), encoding="utf-8"
         )
 
     def _registry_ids(self) -> list[str]:
-        path = self.root / "workspaces.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return [entry["id"] for entry in data]
+        path = self.root / "workspaces.toml"
+        return [entry["id"] for entry in toml_io.load(path).get("workspaces", [])]
 
     def _delete(self, confirm: str = "确认删除") -> dict:
         return asyncio.run(
@@ -87,7 +91,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
             recycle.assert_not_called()
         self.assertTrue(self.ws_dir.is_dir())
         self.assertIn(WS_ID, self._registry_ids())
-        self.assertFalse((self.root / "deletion_audit.json").exists())
+        self.assertFalse((self.root / "deletion_audit.toml").exists())
 
     def test_02_recycle_receives_exact_workspace_dir_and_audits(self) -> None:
         self.recycled: list[Path] = []
@@ -102,7 +106,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
         self.assertNotIn(WS_ID, self._registry_ids())
         self.assertIn("default", self._registry_ids())
 
-        audit = json.loads((self.root / "deletion_audit.json").read_text(encoding="utf-8"))
+        audit = toml_io.load(self.root / "deletion_audit.toml")["records"]
         self.assertEqual(len(audit), 1)
         record = audit[0]
         self.assertEqual(record["workspace_id"], WS_ID)
@@ -123,7 +127,7 @@ class WorkspaceDeleteTest(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 400)
         self.assertTrue(self.ws_dir.is_dir())
         self.assertIn(WS_ID, self._registry_ids())
-        audit = json.loads((self.root / "deletion_audit.json").read_text(encoding="utf-8"))
+        audit = toml_io.load(self.root / "deletion_audit.toml")["records"]
         self.assertEqual(audit[-1]["result"], "failed")
         self.assertIn("回收站拒绝", audit[-1]["detail"])
 

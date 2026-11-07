@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import json
 import secrets
 import sqlite3
 from pathlib import Path
@@ -17,7 +16,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core import bank as core_bank
-from app.core import bank_provider, host_restart, workspace_removal
+from app.core import bank_provider, host_restart, state_store, workspace_removal
 from app.core.config import (
     default_database_path,
     root_data_dir,
@@ -160,37 +159,28 @@ _REQUIRED_TABLES = {
 
 def _workspace_config_path() -> Path:
     """工作区登记表永远住在根 data 目录，不随当前工作区漂移。"""
-    return root_data_dir() / "workspaces.json"
+    return root_data_dir() / "workspaces.toml"
 
 
 def _load_workspaces() -> list[dict[str, Any]]:
     """Load workspace registry from disk.
 
-    ``workspaces.json`` 是人可以直接改的文件。``id`` 是工作区的身份：没有它，条目既切不过去、
+    ``workspaces.toml`` 是人可以直接改的文件。``id`` 是工作区的身份：没有它，条目既切不过去、
     删不掉，也会在左栏下拉里挂成一行选不动的假工作区（计数还会错算成默认区的），
     所以读的时候按「是不是一个工作区」判掉；``name`` 之类展示字段缺失由调用方 ``.get()`` 兜。
     """
-    path = _workspace_config_path()
-    if not path.exists():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
-    if not isinstance(data, list):
-        return []
+    data = state_store.load_records(_workspace_config_path(), "workspaces")
     return [
         item
         for item in data
-        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
+        if isinstance(item.get("id"), str) and item["id"]
     ]
 
 
 def _save_workspaces(workspaces: list[dict[str, Any]]) -> None:
-    """Save workspace registry to disk."""
-    path = _workspace_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(workspaces, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Save workspace registry to disk；TOML 表数组只接受对象行，非对象条目写前剔除。"""
+    rows = [item for item in workspaces if isinstance(item, dict)]
+    state_store.save(_workspace_config_path(), {"workspaces": rows})
 
 
 @router.get("", summary="列出所有工作区")

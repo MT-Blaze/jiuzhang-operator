@@ -9,7 +9,12 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import sqlite3
 import tempfile
@@ -17,7 +22,7 @@ import unittest
 from pathlib import Path
 
 from app.api import workspaces
-from app.core import bank
+from app.core import bank, toml_io
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +55,7 @@ class ActiveTextbookTest(unittest.TestCase):
             con.commit()
         finally:
             con.close()
-        self.registry = Path(self.tmp.name) / "workspaces.json"
+        self.registry = Path(self.tmp.name) / "workspaces.toml"
         self._write_registry("")
 
     def _restore(self) -> None:
@@ -63,11 +68,11 @@ class ActiveTextbookTest(unittest.TestCase):
                 os.environ[key] = value
 
     def _write_registry(self, textbook_id: str) -> None:
-        self.registry.write_text(json.dumps([
+        toml_io.write(self.registry, {"workspaces": [
             {"id": "default", "name": "默认工作区", "created_at": "system"},
             {"id": "ws_probe", "name": "探针工作区", "created_at": "auto",
              "textbook_id": textbook_id},
-        ], ensure_ascii=False), encoding="utf-8")
+        ]})
 
     def test_01_workspace_choice_wins(self) -> None:
         self._write_registry(TB_B)

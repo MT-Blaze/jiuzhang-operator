@@ -6,7 +6,7 @@
     .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8777
     .venv/Scripts/python.exe tools/split_probe.py v060
 
-产出：截图 png + probe.json（结构化度量、mousemove 计数、console 错误）。
+产出：截图 png + probe.toml（结构化度量、mousemove 计数、console 错误）。
 
 判据来自 2026-10-26 军令：
   1. 三条分隔条都能用**真鼠标**拖动，CSS 变量与栅格轨道同步变化（不许只动一本账）；
@@ -17,7 +17,6 @@
   5. 手柄可键盘操作（方向键 8px、Shift 32px、Home 复位）；
   6. 375px 窄屏不横向溢出，分隔条按约定隐藏。
 """
-import json
 import sys
 from pathlib import Path
 
@@ -114,17 +113,17 @@ def run(tag: str) -> dict:
         base = snap("00-initial")
         check("初始即默认 240/300/190",
               base["vars"]["side"] == 240 and base["vars"]["context"] == 300 and base["vars"]["dock"] == 190,
-              json.dumps(base["vars"]))
+              wire.dumps(base["vars"]))
         check("变量与 JzoSplitPane.sizes() 同源", base["api"] == {"side": 240, "context": 300, "dock": 190},
-              json.dumps(base["api"]))
+              wire.dumps(base["api"]))
         check("栅格五列（左右栏 + 三条 gutter + 画布）", len(base["grid"].split()) == 5, base["grid"])
         check("三条分隔条可见且指针为 resize 光标",
               all(h["display"] != "none" and "resize" in (h["cursor"] or "")
                   for h in base["handles"].values()),
-              json.dumps({k: v["cursor"] for k, v in base["handles"].items()}, ensure_ascii=False))
+              wire.dumps({k: v["cursor"] for k, v in base["handles"].items()}, ensure_ascii=False))
         check("手柄带 separator 语义与当前值",
               all(h["rolenow"] == "separator" and h["valuenow"] for h in base["handles"].values()),
-              json.dumps({k: (v["rolenow"], v["valuenow"]) for k, v in base["handles"].items()}))
+              wire.dumps({k: (v["rolenow"], v["valuenow"]) for k, v in base["handles"].items()}))
         check("初始无横向溢出", base["hOverflow"] <= 0, str(base["hOverflow"]))
 
         # ---------- 打开插件画布页签，让 iframe 真的在场 ----------
@@ -245,19 +244,19 @@ def run(tag: str) -> dict:
             if st["frameCount"] >= 1:
                 check(f"拖 {handle_key}：iframe 全程 pointer-events=none（不吃鼠标）",
                       set(probe["pointerEventsDuringDrag"]) == {"none"},
-                      json.dumps(sorted(set(probe["pointerEventsDuringDrag"]))))
+                      wire.dumps(sorted(set(probe["pointerEventsDuringDrag"]))))
                 check(f"拖 {handle_key}：宿主 window 持续收到 mousemove", probe["moves"] >= steps,
                       f"moves={probe['moves']} steps={steps}")
                 check(f"拖 {handle_key}：拖拽期 data-resizing 标志在场",
-                      handle_key in run["resizingFlagsSeen"], json.dumps(run["resizingFlagsSeen"]))
-            saved = json.loads(after["storage"]) if after["storage"] else {}
+                      handle_key in run["resizingFlagsSeen"], wire.dumps(run["resizingFlagsSeen"]))
+            saved = wire.loads(after["storage"]) if after["storage"] else {}
             check(f"拖 {handle_key}：尺寸已写 localStorage",
-                  saved.get(var_key) == after["vars"][var_key], json.dumps(saved))
+                  saved.get(var_key) == after["vars"][var_key], wire.dumps(saved))
 
         dragged = snap("19-after-drags")
         check("拖拽后三区都不是默认值",
               all(dragged["vars"][k] != DEFAULTS[k] for k in ("side", "context", "dock")),
-              json.dumps(dragged["vars"]))
+              wire.dumps(dragged["vars"]))
 
         # ---------- 刷新还原 ----------
         page.reload(wait_until="networkidle")
@@ -265,13 +264,13 @@ def run(tag: str) -> dict:
         restored = snap("20-after-reload")
         check("刷新后尺寸原样还原",
               all(restored["vars"][k] == dragged["vars"][k] for k in ("side", "context", "dock")),
-              f"{json.dumps(dragged['vars'])} → {json.dumps(restored['vars'])}")
+              f"{wire.dumps(dragged['vars'])} → {wire.dumps(restored['vars'])}")
         dock_lines = page.evaluate(
             """() => Array.from(document.querySelectorAll('#wsDockLog li'))
                     .map(n => n.textContent.replace(/\\s+/g, ' ').trim())""")
         check("还原不刷底栏（by=restore 静默）",
               not any("布局已调整" in line for line in dock_lines),
-              "底栏 %d 行：%s" % (len(dock_lines), json.dumps(dock_lines, ensure_ascii=False)[:300]))
+              "底栏 %d 行：%s" % (len(dock_lines), wire.dumps(dock_lines, ensure_ascii=False)[:300]))
 
         # ---------- 双击分隔条回默认（悬浮复位图标已随二级菜单一起退役） ----------
         for pane in ("side", "context", "dock"):
@@ -280,8 +279,8 @@ def run(tag: str) -> dict:
         reset = snap("21-after-reset")
         check("双击三区回默认 240/300/190",
               all(reset["vars"][k] == DEFAULTS[k] for k in ("side", "context", "dock")),
-              json.dumps(reset["vars"]))
-        stored = json.loads(reset["storage"] or "{}")
+              wire.dumps(reset["vars"]))
+        stored = wire.loads(reset["storage"] or "{}")
         check("双击回默认写进记忆（刷新不弹回）",
               all(stored.get(k) == DEFAULTS[k] for k in ("side", "context", "dock")),
               str(reset["storage"]))
@@ -324,7 +323,7 @@ def run(tag: str) -> dict:
         corrupt = snap("23-corrupt-storage")
         check("localStorage 脏数据回落默认且不白屏",
               all(corrupt["vars"][k] == DEFAULTS[k] for k in ("side", "context", "dock")),
-              json.dumps(corrupt["vars"]))
+              wire.dumps(corrupt["vars"]))
 
         # ---------- 窄屏 ----------
         page.set_viewport_size({"width": 375, "height": 780})
@@ -333,7 +332,7 @@ def run(tag: str) -> dict:
         check("375px 无横向溢出", narrow["hOverflow"] <= 0, str(narrow["hOverflow"]))
         check("375px 分隔条按约定隐藏",
               all(h["display"] == "none" for h in narrow["handles"].values()),
-              json.dumps({k: v["display"] for k, v in narrow["handles"].items()}))
+              wire.dumps({k: v["display"] for k, v in narrow["handles"].items()}))
 
         page.close()
         browser.close()
@@ -342,9 +341,9 @@ def run(tag: str) -> dict:
     passed = sum(1 for c in report["checks"] if c["ok"])
     report["summary"] = {"total": total, "passed": passed, "failed": total - passed,
                          "pageErrors": len(report["errors"])}
-    (out / "probe.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["probe_json"] = str(out / "probe.json")
+    (out / "probe.toml").write_text(
+        toml_io.dumps(report), encoding="utf-8")
+    report["probe_json"] = str(out / "probe.toml")
     report["out_dir"] = str(out)
     return report
 
@@ -353,14 +352,14 @@ if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "run"
     rep = run(tag)
     print("out_dir:", rep["out_dir"])
-    print("summary:", json.dumps(rep["summary"], ensure_ascii=False))
+    print("summary:", wire.dumps(rep["summary"], ensure_ascii=False))
     for c in rep["checks"]:
         print(("  PASS  " if c["ok"] else "  FAIL  ") + c["name"] + ("  | " + c["detail"] if c["detail"] else ""))
     for r in rep["dragRuns"]:
         print(f"  drag {r['handle']:<8} {r['varBefore']}→{r['varAfter']} moves={r['moves']} "
               f"pointerEvents={r['pointerEventsSeen']} flags={r['resizingFlagsSeen']}")
     if rep["errors"]:
-        print("PAGE ERRORS:", json.dumps(rep["errors"], ensure_ascii=False))
+        print("PAGE ERRORS:", wire.dumps(rep["errors"], ensure_ascii=False))
     bad_console = [c for c in rep["console"] if c["type"] == "error"]
     if bad_console:
-        print("CONSOLE ERRORS:", json.dumps(bad_console, ensure_ascii=False))
+        print("CONSOLE ERRORS:", wire.dumps(bad_console, ensure_ascii=False))

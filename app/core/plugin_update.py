@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import io
-import json
 import locale
 import os
 import re
@@ -38,7 +37,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app import __version__
-from app.core import manifests
+from app.core import manifests, state_store
 from app.core.config import current_workspace_id, plugins_dir, settings, workspace_storage_dir
 from app.core.plugin_download import download_plugin_zip_sources
 from app.core.plugin_install import (
@@ -65,9 +64,9 @@ HOST_EXCLUDED_FILES = ("*.pyc", "*.pyo")
 
 # 插件目录里属于「老师财产」的文件：更新覆盖时必须原样保住
 DATA_SUFFIXES = (".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3", ".bak", ".part")
-DATA_FILENAMES = ("migration_report.json",)
+DATA_FILENAMES = ("migration_report.toml", "migration_report.json")
 
-PENDING_FILENAME = "update_state.json"
+PENDING_FILENAME = "update_state.toml"
 STAGE_DIR_NAME = "jzo-update-stage"
 
 # 底座 zip 解压后必须能认出来是底座（防拿插件包/任意包冒充底座覆盖程序文件）
@@ -397,7 +396,7 @@ def apply_updates(rows: list[dict[str, Any]], *, allow_download: bool = True) ->
 # ----------------------------------------------------------------- 续更状态
 
 def pending_path() -> Path:
-    """``data/workspaces/<id>/update_state.json``：续更清单只属于当前工作区。"""
+    """``data/workspaces/<id>/update_state.toml``：续更清单只属于当前工作区。"""
     return workspace_storage_dir(current_workspace_id()) / PENDING_FILENAME
 
 
@@ -407,15 +406,7 @@ def _now() -> str:
 
 def read_pending() -> dict[str, Any]:
     """读续更状态；缺失或损坏一律当作「没有待办」，绝不挡启动。"""
-    path = pending_path()
-    if not path.is_file():
-        return {"host_version": "", "pending": [], "written_at": ""}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"host_version": "", "pending": [], "written_at": ""}
-    if not isinstance(data, dict):
-        return {"host_version": "", "pending": [], "written_at": ""}
+    data = state_store.load_table(pending_path())
     rows = data.get("pending")
     pending = [row for row in rows if isinstance(row, dict) and row.get("id")] if isinstance(rows, list) else []
     return {
@@ -437,11 +428,7 @@ def write_pending(host_version_target: str = "", pending: list[dict[str, Any]] |
         "written_at": _now(),
     }
     with _lock:
-        path = pending_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        state_store.save(pending_path(), payload)
     return payload
 
 

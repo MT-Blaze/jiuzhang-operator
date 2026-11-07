@@ -5,8 +5,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import io
-import json
 import os
 import socket
 import stat
@@ -132,19 +138,19 @@ class PluginInstallApiTest(unittest.TestCase):
             request.add_header("X-JZO-Token", token)
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                return response.status, json.loads(response.read())
+                return response.status, wire.loads(response.read())
         except urllib.error.HTTPError as error:
             raw = error.read()
             try:
-                return error.code, json.loads(raw)
-            except json.JSONDecodeError:
+                return error.code, wire.loads(raw)
+            except wire.JSONDecodeError:
                 return error.code, raw.decode("utf-8", errors="replace")
             finally:
                 error.close()
 
     def get_json(self, path: str) -> tuple[int, object]:
         with urllib.request.urlopen(self.base + path, timeout=10) as response:
-            return response.status, json.loads(response.read())
+            return response.status, wire.loads(response.read())
 
     # --- 鉴权 ---
 
@@ -197,7 +203,7 @@ class PluginInstallApiTest(unittest.TestCase):
         payload = build_zip(raw_entries={f"{PLUGIN_ID}/../../evil.txt": b"pwned"})
         status, body = self.post_zip(payload, replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("穿越", json.dumps(body, ensure_ascii=False))
+        self.assertIn("穿越", wire.dumps(body, ensure_ascii=False))
 
     def test_06_rejects_absolute_and_drive_paths(self) -> None:
         status, body = self.post_zip(build_zip(raw_entries={"/etc/evil.txt": b"x"}), replace=True)
@@ -220,7 +226,7 @@ class PluginInstallApiTest(unittest.TestCase):
         payload = mark_encrypted(build_zip())
         status, body = self.post_zip(payload, replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("加密", json.dumps(body, ensure_ascii=False))
+        self.assertIn("加密", wire.dumps(body, ensure_ascii=False))
 
     def test_08_rejects_symlink_entry(self) -> None:
         buffer = io.BytesIO()
@@ -237,13 +243,13 @@ class PluginInstallApiTest(unittest.TestCase):
             zf.writestr(link, "../../../")
         status, body = self.post_zip(buffer.getvalue(), replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("符号链接", json.dumps(body, ensure_ascii=False))
+        self.assertIn("符号链接", wire.dumps(body, ensure_ascii=False))
 
     def test_09_rejects_nested_zip(self) -> None:
         payload = build_zip(extra={"dist/inner.zip": "not-a-plugin"})
         status, body = self.post_zip(payload, replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("嵌套", json.dumps(body, ensure_ascii=False))
+        self.assertIn("嵌套", wire.dumps(body, ensure_ascii=False))
 
     def test_10_rejects_non_zip_and_empty_body(self) -> None:
         status, body = self.post_zip(b"PK\x03\x04 broken", replace=True)
@@ -255,13 +261,13 @@ class PluginInstallApiTest(unittest.TestCase):
         payload = build_zip(manifest=None)
         status, body = self.post_zip(payload, replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("plugin.toml", json.dumps(body, ensure_ascii=False))
+        self.assertIn("plugin.toml", wire.dumps(body, ensure_ascii=False))
 
     def test_12_rejects_manifest_contract_violation(self) -> None:
         broken = {**MANIFEST, "license": "MIT"}  # 契约要求 Apache-2.0
         status, body = self.post_zip(build_zip(manifest=broken), replace=True)
         self.assertEqual(status, 400, body)
-        self.assertIn("license", json.dumps(body, ensure_ascii=False))
+        self.assertIn("license", wire.dumps(body, ensure_ascii=False))
 
     def test_13_failed_install_leaves_previous_version_intact(self) -> None:
         before = (self.plugins_dir / PLUGIN_ID / "plugin.toml").read_text(encoding="utf-8")

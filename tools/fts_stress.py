@@ -7,11 +7,17 @@
   1. FTS5 建索引耗时；
   2. 300 次真实形态查询（两字词/长短语/公式片段）的 p50 / p95 / 最大值；
   3. 同一批查询走老 ``LIKE`` 的耗时，作为对照口径。
-不碰开发者 ``data/``，报告落 ``.system_generated/fts-stress/<tag>/report.json``。
+不碰开发者 ``data/``，报告落 ``.system_generated/fts-stress/<tag>/report.toml``。
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import random
 import sqlite3
 import statistics
@@ -84,8 +90,8 @@ def run(tag: str) -> dict:
 
         if not bank_fts.available():
             report["fts5"] = False
-            (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            print("FTS5 不可用，压测未执行 ->", out / "report.json")
+            (out / "report.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+            print("FTS5 不可用，压测未执行 ->", out / "report.toml")
             return report
 
         def fill_index() -> int:
@@ -142,8 +148,8 @@ def run(tag: str) -> dict:
         report["passed"] = report["fts_ms"]["p95"] <= P95_BUDGET_MS and hits > 0
         con.close()
 
-    (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({
+    (out / "report.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    print(wire.dumps({
         "index_ms": report["index_ms"],
         "indexed": report["indexed"],
         "p50": report["fts_ms"]["p50"],
@@ -152,7 +158,7 @@ def run(tag: str) -> dict:
         "hits": report["queries_with_hits"],
         "passed": report["passed"],
     }, ensure_ascii=False))
-    print("report ->", out / "report.json")
+    print("report ->", out / "report.toml")
     return report
 
 

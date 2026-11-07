@@ -2,7 +2,7 @@
 """军令 #20 真机取证：题库引擎的免死金牌升级为「整包不可卸载」。
 
 用法：``.venv/Scripts/python.exe tools/provider_uninstall_probe.py <out_dir_tag>``
-产出：截图 png + probe.json（结构化判据与 pageerror）
+产出：截图 png + probe.toml（结构化判据与 pageerror）
 
 军令 #18-结 时代的口径是「弹窗把『不保留数据』置灰、点确认仍保数据」；
 军令 #20 拆出无界面的 bank-engine 后，引擎连代码目录都不许删：设置页不再给
@@ -20,8 +20,14 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import hashlib
-import json
 import os
 import shutil
 import socket
@@ -137,7 +143,7 @@ def run(tag: str) -> dict:
 
     def api_get(path: str) -> dict:
         with urllib.request.urlopen(origin + path, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return wire.loads(resp.read().decode("utf-8"))
 
     def api_delete(plugin_id: str) -> tuple[int, dict]:
         request = urllib.request.Request(
@@ -147,11 +153,11 @@ def run(tag: str) -> dict:
         )
         try:
             with urllib.request.urlopen(request, timeout=15) as resp:
-                return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+                return resp.status, wire.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
             body = error.read().decode("utf-8", "replace")
             try:
-                payload = json.loads(body or "{}")
+                payload = wire.loads(body or "{}")
             except ValueError:
                 payload = {"detail": body}
             return error.code, payload
@@ -197,7 +203,7 @@ def run(tag: str) -> dict:
             check("06 直接 DELETE 引擎返回 409", status == 409, {"status": status, "body": payload})
             check("07 拒绝理由说人话", "受保护不可卸载" in str(payload.get("detail", "")),
                   payload.get("detail"))
-            check("08 引擎代码目录仍在", (plugins_dir / ENGINE / "plugin.json").is_file())
+            check("08 引擎代码目录仍在", (plugins_dir / ENGINE / "plugin.toml").is_file())
             check("09 引擎物理题库内容原样保留（456 题与题文散列全等）",
                   engine_db.is_file() and bank_signature(engine_db) == engine_before,
                   (engine_before, bank_signature(engine_db) if engine_db.is_file() else "MISSING"))
@@ -242,8 +248,8 @@ def run(tag: str) -> dict:
         "pageerrors": errors,
         "checks": checks,
     }
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["probe_json"] = str(out / "probe.json")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
+    report["probe_json"] = str(out / "probe.toml")
     return report
 
 
@@ -257,4 +263,4 @@ if __name__ == "__main__":
     for c in rep["checks"]:
         print("%s %-56s %s" % ("PASS" if c["passed"] else "FAIL", c["name"], c["detail"]))
     if rep["pageerrors"]:
-        print("PAGE ERRORS:", json.dumps(rep["pageerrors"], ensure_ascii=False)[:600])
+        print("PAGE ERRORS:", wire.dumps(rep["pageerrors"], ensure_ascii=False)[:600])

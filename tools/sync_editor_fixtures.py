@@ -11,14 +11,19 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import toml_io
+from app.core import toml_io, wire
 
 PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
 FIXTURES = PLUGIN_DIR / "dev" / "fixtures.toml"
@@ -34,7 +39,7 @@ def rendered() -> str:
     data = document.get("questions")
     if not isinstance(data, list):
         raise SystemExit("fixtures.toml 必须包含 questions 数组")
-    return DECL + json.dumps(data, ensure_ascii=False, indent=2) + ";"
+    return DECL + wire.dumps(data, ensure_ascii=False, indent=2) + ";"
 
 
 def main() -> int:

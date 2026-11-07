@@ -12,7 +12,7 @@
 与 `tools/cleanup_workspace.py` 的分工：那个是本机性能急救（一次性回收 GB 级探针产物）；
 本脚本是发版例行动作，复用同一套护栏与清理手法，另外做三件事——
 ① 连临时诊断脚本 `diag_*.py` 一起清；② 探针产物的保留标准从「时间最新」换成
-「最近一次判据全绿的跑批」（看 `probe.json`，不看 mtime）；③ 收尾自动 `git gc --prune=now`。
+「最近一次判据全绿的跑批」（看 `probe.toml`，不看 mtime）；③ 收尾自动 `git gc --prune=now`。
 
 护栏沿用 cleanup_workspace 的禁改区（`data/` 题库、`.venv/` 解释器、`examples/` 契约资产、
 `.git/` 历史），并额外加一条发版特有的：**git 已跟踪的文件一律不删**——本脚本只清产物，
@@ -20,9 +20,15 @@
 """
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io  # noqa: E402
+
 import argparse
 import datetime
-import json
 import os
 import subprocess
 import sys
@@ -67,10 +73,10 @@ def check_passed(check: dict) -> bool | None:
 
 
 def probe_verdict(probe_file: Path) -> tuple[bool, str]:
-    """读一份 probe.json 判全绿不全绿；schema 不认或读不动一律按「不算通过」处理。"""
+    """读一份 probe.toml 判全绿不全绿；schema 不认或读不动一律按「不算通过」处理。"""
     try:
-        payload = json.loads(probe_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        payload = toml_io.load(probe_file)
+    except OSError as exc:
         return False, f"读不了 {exc.__class__.__name__}"
     checks = None
     if isinstance(payload, dict):
@@ -107,7 +113,7 @@ def latest_passing_run() -> tuple[Path | None, str]:
     detail = ""
     scanned = 0
     for probe_file, _ in cw.walk_files(GENERATED_DIR):
-        if Path(probe_file).name != "probe.json":
+        if Path(probe_file).name != "probe.toml":
             continue
         scanned += 1
         run_dir = Path(probe_file).parent
@@ -118,7 +124,7 @@ def latest_passing_run() -> tuple[Path | None, str]:
         if mtime > best_mtime:
             best, best_mtime, detail = run_dir, mtime, why
     if best is None:
-        return None, f"{scanned} 份 probe.json 里没有一份是全绿的"
+        return None, f"{scanned} 份 probe.toml 里没有一份是全绿的"
     return best, f"{relative(best)}（{detail}）"
 
 

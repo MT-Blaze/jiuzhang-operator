@@ -2,7 +2,7 @@
 """工作台左栏折叠状态机：真机取证脚本（Playwright + Chromium）。
 
 用法：python tools/fold_probe.py <out_dir_tag>
-产出：截图 png + probe.json（结构化度量与 console 错误）
+产出：截图 png + probe.toml（结构化度量与 console 错误）
 
 判据来自 10.24 军令：
   - 折叠/展开 5 轮，grid 轨道必须随之在 240px/0 之间切换，不得残留空列
@@ -10,7 +10,6 @@
   - 侧栏收起时其内部按钮/长文本不得越过左边界进入主对话区（溢出检查）
   - 360px 窄屏抽屉必须能滑出、能收起，且收起时不可命中
 """
-import json
 import sys
 from pathlib import Path
 
@@ -214,9 +213,9 @@ def run(tag: str) -> dict:
             page.close()
         browser.close()
 
-    (out / "probe.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["probe_json"] = str(out / "probe.json")
+    (out / "probe.toml").write_text(
+        toml_io.dumps(report), encoding="utf-8")
+    report["probe_json"] = str(out / "probe.toml")
     return report
 
 
@@ -239,11 +238,11 @@ if __name__ == "__main__":
               f"ctx[{st['ctxDisplay']}]={fmt(st['ctxRect'])} ctxModel={fmt(st['ctxModelRect'])} "
               f"toggle='{st['toggleText']}'")
     if rep["errors"]:
-        print("PAGE ERRORS:", json.dumps(rep["errors"], ensure_ascii=False))
+        print("PAGE ERRORS:", wire.dumps(rep["errors"], ensure_ascii=False))
     legacy = [st for st in rep["states"] if st.get("step") == "95-inline-legacy-hidden"]
     if legacy:
         print("legacy-inline fold filled:", bool(legacy[0].get("legacyFoldFilled")))
     if rep["deadlock"]:
         print("DEADLOCK:")
         for d in rep["deadlock"]:
-            print("  ", json.dumps(d, ensure_ascii=False))
+            print("  ", wire.dumps(d, ensure_ascii=False))

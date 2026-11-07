@@ -5,8 +5,13 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import io
-import json
 import os
 import tempfile
 import threading
@@ -16,7 +21,7 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugin_update, toml_io
+from app.core import plugin_update, toml_io, wire
 from app.core.config import Settings
 from app.core.plugin_update import (
     HOST_EXCLUDED_DIRS,
@@ -341,17 +346,17 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
             "bank/bank.db": "456 道真题的二进制内容",
             "bank/bank.db.pre-v082.bak": "上一版备份",
             "bank/v063.db": "灌库中间产物",
-            "bank/migration_report.json": '{"migrated": 456}',
+            "bank/migration_report.toml": "migrated = 456\n",
         })
         result = apply_plugin_update(entry("2.0.0"), local_version="1.0.0", data=build_zip("2.0.0"))
         root = self.plugins_dir / PLUGIN_ID
         self.assertEqual((root / "bank" / "bank.db").read_text(encoding="utf-8"), "456 道真题的二进制内容")
         self.assertEqual((root / "bank" / "bank.db.pre-v082.bak").read_text(encoding="utf-8"), "上一版备份")
         self.assertEqual((root / "bank" / "v063.db").read_text(encoding="utf-8"), "灌库中间产物")
-        self.assertEqual(json.loads((root / "bank" / "migration_report.json").read_text(encoding="utf-8")),
+        self.assertEqual(toml_io.load(root / "bank" / "migration_report.toml"),
                          {"migrated": 456})
         self.assertEqual(sorted(result["preserved"]),
-                         ["bank/bank.db", "bank/bank.db.pre-v082.bak", "bank/migration_report.json",
+                         ["bank/bank.db", "bank/bank.db.pre-v082.bak", "bank/migration_report.toml",
                           "bank/v063.db"])
 
     def test_03_old_data_wins_over_same_named_new_file(self):
@@ -544,28 +549,32 @@ class PendingStateTest(IsolatedDirsMixin):
 
     def test_03_state_file_lives_in_data_dir_and_holds_no_question_data(self):
         write_pending("9.9.9", [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0", "zip_path": "x"}])
-        path = self.state_dir / "update_state.json"
-        self.assertTrue(path.is_file(), "续更状态只能落在当前工作区的 update_state.json")
+        path = self.state_dir / "update_state.toml"
+        self.assertTrue(path.is_file(), "续更状态只能落在当前工作区的 update_state.toml")
         text = path.read_text(encoding="utf-8")
         self.assertNotIn("stem", text)
         self.assertNotIn("questions", text)
 
     def test_04_corrupt_state_never_blocks_boot(self):
-        (self.state_dir / "update_state.json").write_text("{ 这不是 JSON", encoding="utf-8")
+        (self.state_dir / "update_state.toml").write_text('host_version = "', encoding="utf-8")
         self.assertEqual(read_pending(), {"host_version": "", "pending": [], "written_at": ""})
 
-        (self.state_dir / "update_state.json").write_text('["数组不是对象"]', encoding="utf-8")
+        (self.state_dir / "update_state.toml").write_text('host_version = "x"\n', encoding="utf-8")
         self.assertEqual(read_pending()["pending"], [])
 
-        (self.state_dir / "update_state.json").write_text(
-            json.dumps({"host_version": "9.9.9", "pending": [{"no_id": 1}, "坏", {"id": "org.x"}]}),
+        (self.state_dir / "update_state.toml").write_text(
+            'host_version = "9.9.9"\n\n'
+            "[[pending]]\n"
+            "no_id = 1\n\n"
+            "[[pending]]\n"
+            'id = "org.x"\n',
             encoding="utf-8")
         self.assertEqual(read_pending()["pending"], [{"id": "org.x"}])
 
     def test_05_clear_is_idempotent(self):
         write_pending("9.9.9", [{"id": PLUGIN_ID}])
         self.assertEqual(clear_pending()["pending"], [])
-        self.assertFalse((self.state_dir / "update_state.json").exists())
+        self.assertFalse((self.state_dir / "update_state.toml").exists())
         self.assertEqual(clear_pending()["pending"], [], "文件不存在也算成功")
 
     def test_06_resume_applies_local_zip_without_any_network(self):
@@ -929,14 +938,14 @@ class NoSilentNetworkTest(unittest.TestCase):
         self.assertNotIn("download", body, "续更只消费本机清单与已下载的包，不再额外出网")
 
     def test_04_update_write_scope_never_targets_the_data_dir(self):
-        """插件更新的写范围只有 plugins/<id>/；data/ 只允许 update_state.json 一处痕迹。"""
+        """插件更新的写范围只有 plugins/<id>/；data/ 只允许 update_state.toml 一处痕迹。"""
         body = self.source.split("def apply_plugin_update(", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("plugins_dir()", body)
         self.assertNotIn("data_dir", body)
         self.assertNotIn("root_data_dir", body)
 
     def test_05_pending_state_is_the_only_file_written_under_data(self):
-        self.assertEqual(plugin_update.PENDING_FILENAME, "update_state.json")
+        self.assertEqual(plugin_update.PENDING_FILENAME, "update_state.toml")
         body = self.source.split("def write_pending(", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("pending_path()", body)
         self.assertNotIn("data_dir", body.replace("root_data_dir", ""))
@@ -996,7 +1005,8 @@ class ModuleSurfaceTest(unittest.TestCase):
 
     def test_04_data_whitelist_covers_the_database_and_backup_suffixes(self):
         for name in ("bank.db", "bank.db-wal", "bank.db-shm", "jiuzhang.sqlite3",
-                     "bank.db.pre-v082.bak", "download.part", "migration_report.json"):
+                     "bank.db.pre-v082.bak", "download.part", "migration_report.toml",
+                     "migration_report.json"):
             self.assertTrue(plugin_update._is_data_file(Path(name)), f"{name} 必须按数据文件办")
         for name in ("plugin.toml", "dist/plugin.js", "LICENSE", "plugin.css", "schema.sql"):
             self.assertFalse(plugin_update._is_data_file(Path(name)), f"{name} 是代码，不该按数据办")
@@ -1024,7 +1034,7 @@ class UpdateHttpTest(unittest.TestCase):
         cls.plugin_zip = build_zip("2.0.0")
         cls.host_zip = build_host_zip(cls.HOST_VERSION)
         cls.bind_index_port()
-        cls.index_body = json.dumps({
+        cls.index_body = wire.dumps({
             "index_version": "1.0",
             "name": "本机测试索引",
             "updated_at": "2026-10-23T00:00:00+08:00",
@@ -1140,7 +1150,7 @@ class UpdateHttpTest(unittest.TestCase):
         import urllib.error
         import urllib.request
 
-        data = json.dumps(body).encode("utf-8") if body is not None else None
+        data = wire.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         if data is not None:
             request.add_header("Content-Type", "application/json")
@@ -1148,12 +1158,12 @@ class UpdateHttpTest(unittest.TestCase):
             request.add_header("X-JZO-Token", token)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                return response.status, json.loads(response.read().decode("utf-8"))
+                return response.status, wire.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode("utf-8", "replace")
             exc.close()
             try:
-                return exc.code, json.loads(raw)
+                return exc.code, wire.loads(raw)
             except ValueError:
                 return exc.code, raw
 
@@ -1190,7 +1200,7 @@ class UpdateHttpTest(unittest.TestCase):
         """没有缓存又不给 url 时只能 409：底座绝不自己出网。"""
         status, body = self.call("POST", "/api/plugins/update/check", {})
         self.assertEqual(status, 409)
-        self.assertIn("不会自己出网", json.dumps(body, ensure_ascii=False))
+        self.assertIn("不会自己出网", wire.dumps(body, ensure_ascii=False))
 
     def test_03_check_reports_plugins_and_host(self):
         self.seed_local("1.0.0")
@@ -1258,7 +1268,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.assertEqual(body["pending"], [])
         self.assertIn("last_resume", body)
 
-        (self.state_dir / "update_state.json").write_text(json.dumps(
+        (self.state_dir / "update_state.toml").write_text(toml_io.dumps(
             {"host_version": "99.0.0", "written_at": "2026-10-23T00:00:00+08:00",
              "pending": [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0", "zip_path": "x"}]}),
             encoding="utf-8")
@@ -1268,7 +1278,7 @@ class UpdateHttpTest(unittest.TestCase):
         status, body = self.call("POST", "/api/plugins/update/pending-clear", {})
         self.assertEqual(status, 200)
         self.assertTrue(body["cleared"])
-        self.assertFalse((self.state_dir / "update_state.json").exists())
+        self.assertFalse((self.state_dir / "update_state.toml").exists())
 
     def test_09_host_apply_prepares_but_refuses_to_launch_on_a_dev_worktree(self):
         status, body = self.call("POST", "/api/plugins/update/host-apply", {})
@@ -1285,7 +1295,7 @@ class UpdateHttpTest(unittest.TestCase):
 
         status, body = self.call("POST", "/api/plugins/update/host-apply", {"launch": True})
         self.assertEqual(status, 409)
-        detail = json.dumps(body, ensure_ascii=False)
+        detail = wire.dumps(body, ensure_ascii=False)
         self.assertIn("dev_worktree", detail)
         self.assertEqual(self.process.poll(), None, "底座进程绝不能被测试杀掉")
 
@@ -1294,7 +1304,7 @@ class UpdateHttpTest(unittest.TestCase):
         self.seed_local("1.0.0")
         staged = self.root / "staged-pkg.zip"
         staged.write_bytes(build_zip("2.0.0"))
-        (self.state_dir / "update_state.json").write_text(json.dumps(
+        (self.state_dir / "update_state.toml").write_text(toml_io.dumps(
             {"host_version": "", "written_at": "2026-10-23T00:00:00+08:00",
              "pending": [{"id": PLUGIN_ID, "from": "1.0.0", "to": "2.0.0",
                           "zip_path": staged.as_posix()}]}), encoding="utf-8")

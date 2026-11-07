@@ -5,7 +5,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import wire  # noqa: E402
+
 import os
 import socket
 import subprocess
@@ -95,7 +101,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         body: dict | None = None,
         token: str | None = None,
     ) -> tuple[int, object, dict[str, str]]:
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Accept", "application/json")
         if data is not None:
@@ -118,8 +124,8 @@ class QuestionsApiContractTest(unittest.TestCase):
         if not raw:
             return None
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return wire.loads(raw)
+        except wire.JSONDecodeError:
             return raw.decode("utf-8", errors="replace")
 
     def create(self, stem: str, **overrides) -> dict:
@@ -351,7 +357,7 @@ class OneTimeTokenTest(unittest.TestCase):
 
     def call(self, method: str, path: str, body: dict | None = None, token: str | None = None) -> tuple[int, bytes, dict]:
         url = f"http://127.0.0.1:{self.port}{path}"
-        data = json.dumps(body).encode() if body else None
+        data = wire.dumps(body).encode() if body else None
         headers = {"Content-Type": "application/json"}
         if token:
             headers["X-JZO-Token"] = token
@@ -367,7 +373,7 @@ class OneTimeTokenTest(unittest.TestCase):
         # Get initial token from settings
         status, body, _ = self.call("GET", "/api/settings")
         self.assertEqual(status, 200)
-        settings = json.loads(body)
+        settings = wire.loads(body)
         token1 = settings["local_token"]
         self.assertTrue(len(token1) > 20)
 
@@ -380,7 +386,7 @@ class OneTimeTokenTest(unittest.TestCase):
         payload2 = {"type": "fill_blank", "stem": "令牌测试2", "difficulty": "basic"}
         status, body2, _ = self.call("POST", "/api/questions", payload2, token=token1)
         self.assertEqual(status, 401, "Second use of same token should be rejected")
-        error = json.loads(body2)
+        error = wire.loads(body2)
         # Error message contains "失效" or "过期" indicating token is consumed
         detail = error["detail"]
         self.assertTrue("已失效" in detail or "已过期" in detail or "用后即焚" in detail,
@@ -391,7 +397,7 @@ class OneTimeTokenTest(unittest.TestCase):
         # Get new token after first rotation
         status, body, _ = self.call("GET", "/api/settings")
         self.assertEqual(status, 200)
-        settings = json.loads(body)
+        settings = wire.loads(body)
         token2 = settings["local_token"]
 
         # Use new token - should succeed
@@ -406,7 +412,7 @@ class OneTimeTokenTest(unittest.TestCase):
         下一次点【确认入库】必然 401，只能刷新页面——这条把前提钉死。
         """
         status, body, _ = self.call("GET", "/api/settings")
-        token = json.loads(body)["local_token"]
+        token = wire.loads(body)["local_token"]
 
         bad = {"type": "single_choice", "difficulty": "basic"}  # 缺 stem，Schema 拒
         status, rejected, _ = self.call("POST", "/api/questions", bad, token=token)
@@ -418,7 +424,7 @@ class OneTimeTokenTest(unittest.TestCase):
 
         status, fresh, _ = self.call("GET", "/api/settings")
         self.assertEqual(status, 200)
-        new_token = json.loads(fresh)["local_token"]
+        new_token = wire.loads(fresh)["local_token"]
         self.assertNotEqual(new_token, token)
         status, _, _ = self.call("POST", "/api/questions", good, token=new_token)
         self.assertEqual(status, 201, "换到新令牌后写入应当立即恢复")
@@ -477,7 +483,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         req = urllib.request.Request(url)
         try:
             resp = urllib.request.urlopen(req)
-            data = json.loads(resp.read())
+            data = wire.loads(resp.read())
             return data.get("local_token", "")
         except Exception:
             return ""
@@ -490,7 +496,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
 
     def call(self, method: str, path: str, body: dict | None = None, token: str | None = None) -> tuple[int, bytes, dict]:
         url = f"http://127.0.0.1:{self.port}{path}"
-        data = json.dumps(body).encode() if body else None
+        data = wire.dumps(body).encode() if body else None
         headers = {"Content-Type": "application/json"}
         if token:
             headers["X-JZO-Token"] = token
@@ -506,12 +512,12 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         # Create workspace A
         status, body, _ = self.call("POST", "/api/workspaces", {"name": "测试工作区A"}, token=self.token)
         self.assertIn(status, [200, 201], f"Should create workspace A, got {status}: {body}")
-        ws_a = json.loads(body)
+        ws_a = wire.loads(body)
         
         # Create workspace B
         status, body, _ = self.call("POST", "/api/workspaces", {"name": "测试工作区B"}, token=self.token)
         self.assertIn(status, [200, 201], f"Should create workspace B, got {status}: {body}")
-        ws_b = json.loads(body)
+        ws_b = wire.loads(body)
         
         # Switch to workspace A and get new token
         status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws_a["id"]}, token=self.token)
@@ -530,7 +536,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         # List questions in workspace B - should be empty
         status, body_b, _ = self.call("GET", "/api/questions")
         self.assertEqual(status, 200)
-        data_b = json.loads(body_b)
+        data_b = wire.loads(body_b)
         questions_b = data_b.get("items", []) if isinstance(data_b, dict) else data_b
         self.assertEqual(len(questions_b), 0, "Workspace B should have no questions from A")
         
@@ -541,7 +547,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         
         status, body_a, _ = self.call("GET", "/api/questions")
         self.assertEqual(status, 200)
-        data_a = json.loads(body_a)
+        data_a = wire.loads(body_a)
         questions_a = data_a.get("items", []) if isinstance(data_a, dict) else data_a
         self.assertTrue(len(questions_a) >= 1, "Workspace A should have at least one question")
         self.assertEqual(questions_a[0]["stem"], "工作区A专属题目")
@@ -550,7 +556,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         """Get current token from settings endpoint."""
         status, body, _ = self.call("GET", "/api/settings")
         if status == 200:
-            data = json.loads(body)
+            data = wire.loads(body)
             return data.get("local_token", "")
         return ""
     
@@ -559,13 +565,13 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         # Get initial token
         status, body, _ = self.call("GET", "/api/settings")
         self.assertEqual(status, 200)
-        initial_settings = json.loads(body)
+        initial_settings = wire.loads(body)
         token_before = initial_settings["local_token"]
         
         # Create and switch to new workspace
         status, ws_body, _ = self.call("POST", "/api/workspaces", {"name": "令牌测试工作区"}, token=self.token)
         self.assertIn(status, [200, 201])
-        ws = json.loads(ws_body)
+        ws = wire.loads(ws_body)
         
         status, _, _ = self.call("POST", "/api/workspaces/switch", {"workspace_id": ws["id"]}, token=self.token)
         self.assertEqual(status, 200)
@@ -573,7 +579,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
         # Get new token
         status, body, _ = self.call("GET", "/api/settings")
         self.assertEqual(status, 200)
-        new_settings = json.loads(body)
+        new_settings = wire.loads(body)
         token_after = new_settings["local_token"]
         
         # Token should be different after workspace switch
@@ -599,7 +605,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
 
         status, body, _ = self.call("GET", "/api/workspaces")
         self.assertEqual(status, 200)
-        data = json.loads(body)
+        data = wire.loads(body)
         self.assertEqual(data["current"], "default")
 
         actives = [w for w in data["workspaces"] if w.get("is_active")]
@@ -618,14 +624,14 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
             "POST", "/api/workspaces", {"name": "名字回传工作区"}, token=self.token
         )
         self.assertIn(status, [200, 201])
-        ws = json.loads(body)
+        ws = wire.loads(body)
         self.token = self._get_current_token()
 
         status, body, _ = self.call(
             "POST", "/api/workspaces/switch", {"workspace_id": ws["id"]}, token=self.token
         )
         self.assertEqual(status, 200)
-        result = json.loads(body)
+        result = wire.loads(body)
         self.assertEqual(result["name"], "名字回传工作区")
         self.assertEqual(result["workspace_id"], ws["id"])
         self.assertTrue(result["is_active"])
@@ -636,7 +642,7 @@ class MultiWorkspaceIsolationTest(unittest.TestCase):
             "POST", "/api/workspaces/switch", {"workspace_id": "default"}, token=self.token
         )
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["name"], "默认工作区")
+        self.assertEqual(wire.loads(body)["name"], "默认工作区")
         self.token = self._get_current_token()
 
 

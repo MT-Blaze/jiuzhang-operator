@@ -7,7 +7,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import sys
 import unittest
 from pathlib import Path
@@ -28,13 +34,13 @@ def _marker(**overrides) -> str:
         "three_checks": {"fetch(": 0, "parent.document": 0, "localStorage": 0},
     }
     payload.update(overrides)
-    return "<!-- handoff:" + json.dumps(payload, ensure_ascii=False) + " -->"
+    return "<!-- handoff:" + wire.dumps(payload, ensure_ascii=False) + " -->"
 
 
 def _receipt(*, test_line: str = "| `tests.test_pending_api` | Ran 16 tests | 绿 |",
              forbidden: str = "禁改区自查：未触碰。",
              open_issues: str = "无",
-             probe_line: str = "探针：`probe.json` · passed 40/40",
+             probe_line: str = "探针：`probe.toml` · passed 40/40",
              marker: str = "") -> str:
     return f"""# 回传单
 
@@ -233,8 +239,8 @@ class ProbeClassifyTest(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "probe.json"
-            path.write_text(json.dumps({"checks": [
+            path = Path(tmp) / "probe.toml"
+            path.write_text(toml_io.dumps({"checks": [
                 {"ok": True}, {"ok": True}, {"ok": False},
             ]}), encoding="utf-8")
             info = handoff.classify_probe(path)
@@ -242,7 +248,7 @@ class ProbeClassifyTest(unittest.TestCase):
         self.assertEqual(info["passed"], 2)
 
     def test_25_missing_probe_is_recorded_honestly(self):
-        info = handoff.classify_probe(Path("no-such-probe.json"))
+        info = handoff.classify_probe(Path("no-such-probe.toml"))
         self.assertFalse(info["exists"])
 
 
@@ -292,13 +298,13 @@ class OrderTest(unittest.TestCase):
             handoff.ORDERS = base / "orders"
             handoff.RECEIPTS = base / "receipts"
             handoff.VERDICTS = base / "verdicts"
-            handoff.STATE = base / "state.json"
+            handoff.STATE = base / "state.toml"
             try:
                 self.assertEqual(handoff.main(["order", "--id", "77", "--title", "查重拦截"]), 0)
                 text = (handoff.ORDERS / "077.md").read_text(encoding="utf-8")
                 match = handoff.MARKER_RE.search(text)
                 self.assertIsNotNone(match)
-                payload = json.loads(match.group(1))
+                payload = wire.loads(match.group(1))
                 self.assertEqual(payload["order_id"], 77)
                 self.assertEqual(payload["title"], "查重拦截")
             finally:

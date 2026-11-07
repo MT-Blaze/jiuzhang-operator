@@ -19,7 +19,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import socket
@@ -64,13 +70,13 @@ def http_json(url: str, method: str = "GET", body: dict | None = None, token: st
     data = None
     headers = {"Accept": "application/json"}
     if body is not None:
-        data = json.dumps(body).encode("utf-8")
+        data = wire.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
     if token:
         headers["X-JZO-Token"] = token
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=15) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return wire.loads(response.read().decode("utf-8"))
 
 
 def longest_questions(limit: int) -> list[str]:
@@ -540,7 +546,7 @@ def main() -> int:
                 result["metrics"]["ready_plus1"] = {"pages": ready.get("pages"), "render_ms": metrics.get_attribute("data-render-ms")}
                 check("basket.changed 驱动组卷 +1", True, {"candidate": candidate})
                 page.wait_for_timeout(400)
-                basket = json.loads((data_dir / "basket.json").read_text(encoding="utf-8"))
+                basket = toml_io.load(data_dir / "basket.toml")
                 check("题篮落盘 51 题", len(basket.get("items") or []) == 51,
                       {"items": len(basket.get("items") or [])})
 
@@ -554,7 +560,7 @@ def main() -> int:
             result["metrics"]["ready_minus1"] = {"pages": ready.get("pages"), "render_ms": metrics.get_attribute("data-render-ms")}
             check("侧栏移除一题 → 50", True)
             page.wait_for_timeout(400)
-            basket = json.loads((data_dir / "basket.json").read_text(encoding="utf-8"))
+            basket = toml_io.load(data_dir / "basket.toml")
             check("题篮文件同步回 50", len(basket.get("items") or []) == 50,
                   {"items": len(basket.get("items") or [])})
             page.screenshot(path=str(shots / "a4-after-remove.png"))
@@ -578,7 +584,7 @@ def main() -> int:
             process.kill()
 
     result["ok"] = all(item["ok"] for item in result["checks"]) and not result["page_errors"]
-    (work / "probe.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work / "probe.toml").write_text(toml_io.dumps(result), encoding="utf-8")
     print(("PASS" if result["ok"] else "FAIL") + f" · {len(result['checks'])} 项检查 · {work}")
     for item in result["checks"]:
         print(("  ✓ " if item["ok"] else "  ✗ ") + item["name"])

@@ -19,7 +19,6 @@
   5. 设置页「系统设置」分区可选可存：下拉列出已启用插件，点保存真的落盘；
   6. 全程宿主页无未捕获 JS 错误。
 """
-import json
 import os
 import shutil
 import socket
@@ -69,7 +68,7 @@ def wait_port(deadline_seconds: float) -> bool:
 
 
 def call(method: str, path: str, body=None, token: bool = False):
-    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    data = wire.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     request = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=data, method=method)
     request.add_header("Accept", "application/json")
     if data is not None:
@@ -78,13 +77,13 @@ def call(method: str, path: str, body=None, token: bool = False):
         request.add_header("X-JZO-Token", TOKEN)
     try:
         with urllib.request.urlopen(request, timeout=20) as resp:
-            return resp.status, json.loads(resp.read().decode("utf-8") or "{}")
+            return resp.status, wire.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
@@ -96,9 +95,9 @@ def run(tag: str) -> dict:
         shutil.rmtree(out, ignore_errors=True)
     data_dir.mkdir(parents=True, exist_ok=True)
     plugins_dir.mkdir(parents=True, exist_ok=True)
-    # ADR-012：启动行为是工作区容器的成员，落 `data/workspaces/<区>/startup.json`，
+    # ADR-012：启动行为是工作区容器的成员，落 `data/workspaces/<区>/startup.toml`，
     # 不再住根 data/——探针按区取路径，硬编码根路径只会拿到恒假的「没落盘」。
-    startup_file = data_dir / "workspaces" / "default" / "startup.json"
+    startup_file = data_dir / "workspaces" / "default" / "startup.toml"
 
     report = {"tag": tag, "checks": [], "console": [], "errors": [], "shots": [], "notes": {}}
 
@@ -107,7 +106,7 @@ def run(tag: str) -> dict:
         return bool(ok)
 
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    check("数据看板插件复制进隔离目录", (plugins_dir / PLUGIN_ID / "plugin.json").is_file())
+    check("数据看板插件复制进隔离目录", (plugins_dir / PLUGIN_ID / "plugin.toml").is_file())
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)
@@ -139,15 +138,15 @@ def run(tag: str) -> dict:
         check("未配置时默认落数据看板（不是欢迎页、更不是设置页）",
               status == 200 and body.get("effective") == "plugin:" + PLUGIN_ID
               and body.get("fallback_reason") == "",
-              json.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
+              wire.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
         check("候选清单遍历已启用插件", PLUGIN_ID in [c.get("id") for c in (body.get("candidates") or [])],
-              json.dumps(body.get("candidates"), ensure_ascii=False)[:200])
+              wire.dumps(body.get("candidates"), ensure_ascii=False)[:200])
 
         status, _ = call("POST", "/api/startup", {"target": "plugin:" + PLUGIN_ID})
         check("保存启动行为不带令牌必被拦（401）", status == 401, f"status={status}")
         status, body = call("POST", "/api/startup", {"target": "plugin:org.example.gone"}, token=True)
         check("指向未安装插件必被拒（400，不落盘）", status == 400,
-              f"status={status} detail={json.dumps(body, ensure_ascii=False)[:160]}")
+              f"status={status} detail={wire.dumps(body, ensure_ascii=False)[:160]}")
         check("被拒的目标没有污染配置文件", not startup_file.is_file())
 
         with sync_playwright() as p:
@@ -172,7 +171,7 @@ def run(tag: str) -> dict:
                   and state["stageTitle"] == "数据看板"
                   and state["activePluginId"] == PLUGIN_ID
                   and state["tabs"] == ["plugin:" + PLUGIN_ID],
-                  json.dumps(state, ensure_ascii=False))
+                  wire.dumps(state, ensure_ascii=False))
             check("默认启动时「设置与控制台」一个页签都不许自己冒出来",
                   "console" not in state["tabs"],
                   {"tabs": state["tabs"]})
@@ -182,7 +181,7 @@ def run(tag: str) -> dict:
             check("带令牌保存成功并落盘",
                   status == 200 and body.get("effective") == "plugin:" + PLUGIN_ID
                   and startup_file.is_file(),
-                  json.dumps({k: body.get(k) for k in ("target", "effective", "plugin_name")}, ensure_ascii=False))
+                  wire.dumps({k: body.get(k) for k in ("target", "effective", "plugin_name")}, ensure_ascii=False))
             report["notes"]["startup_json"] = startup_file.read_text(encoding="utf-8").strip()
 
             # ---------- 黄金路径：开机直接落在老师选的界面 ----------
@@ -191,7 +190,7 @@ def run(tag: str) -> dict:
             state = page.evaluate(JS_STATE)
             report["notes"]["boot_into_plugin"] = state
             check("启动自动进入所选插件页签（无需手点）", f"plugin:{PLUGIN_ID}" in state["tabs"],
-                  json.dumps(state["tabs"]))
+                  wire.dumps(state["tabs"]))
             check("舞台标题就是所选插件", "数据看板" in state["stageTitle"], state["stageTitle"])
             check("左栏对应条目高亮（aria-current）", state["activePluginId"] == PLUGIN_ID,
                   str(state["activePluginId"]))
@@ -202,7 +201,7 @@ def run(tag: str) -> dict:
             status, body = call("GET", "/api/startup")
             check("插件停用后后端回退欢迎页并说明原因",
                   status == 200 and body.get("effective") == "chat" and "已停用" in body.get("fallback_reason", ""),
-                  json.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
+                  wire.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
             page.goto(BASE, wait_until="networkidle")
             page.wait_for_timeout(2000)
             state = page.evaluate(JS_STATE)
@@ -225,7 +224,7 @@ def run(tag: str) -> dict:
             status, body = call("GET", "/api/startup")
             check("重新启用后原配置自动恢复生效",
                   body.get("effective") == "plugin:" + PLUGIN_ID and not body.get("fallback_reason"),
-                  json.dumps({k: body.get(k) for k in ("effective", "fallback_reason")}, ensure_ascii=False))
+                  wire.dumps({k: body.get(k) for k in ("effective", "fallback_reason")}, ensure_ascii=False))
 
             # ---------- 失效回退：卸载（目录移走） ----------
             backup = out / "backup-dashboard"
@@ -235,7 +234,7 @@ def run(tag: str) -> dict:
                 check("插件被卸载后回退欢迎页并说明原因",
                       status == 200 and body.get("effective") == "chat" and "已卸载" in body.get("fallback_reason", "")
                       and body.get("target") == "plugin:" + PLUGIN_ID,
-                      json.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
+                      wire.dumps({k: body.get(k) for k in ("target", "effective", "fallback_reason")}, ensure_ascii=False))
                 page.goto(BASE, wait_until="networkidle")
                 page.wait_for_timeout(2000)
                 state = page.evaluate(JS_STATE)
@@ -298,12 +297,12 @@ def run(tag: str) -> dict:
             report["notes"]["settings_panel"] = panel
             check("设置页有「系统设置」分区且被 ?panel=system 选中",
                   panel["navExists"] and panel["navActive"] and panel["panelVisible"],
-                  json.dumps({k: panel[k] for k in ("navExists", "navActive", "panelVisible")}))
+                  wire.dumps({k: panel[k] for k in ("navExists", "navActive", "panelVisible")}))
             values = [o["v"] for o in panel["options"]]
             check("下拉数据源含默认欢迎页与已启用插件",
-                  "chat" in values and ("plugin:" + PLUGIN_ID) in values, json.dumps(values, ensure_ascii=False))
+                  "chat" in values and ("plugin:" + PLUGIN_ID) in values, wire.dumps(values, ensure_ascii=False))
             check("下拉恰为「欢迎页 + 隔离目录里那一个已启用插件」",
-                  values == ["chat", "plugin:" + PLUGIN_ID], json.dumps(values, ensure_ascii=False))
+                  values == ["chat", "plugin:" + PLUGIN_ID], wire.dumps(values, ensure_ascii=False))
             check("当前生效状态如实回显", bool(panel["nowText"]), panel["nowText"][:160])
             snap("40-settings-system", spage)
 
@@ -321,14 +320,14 @@ def run(tag: str) -> dict:
             """)
             report["notes"]["settings_saved"] = saved
             check("点【保存启动行为】成功回显", "已保存" in saved["status"] and saved["tone"] == "ok",
-                  json.dumps(saved, ensure_ascii=False)[:200])
+                  wire.dumps(saved, ensure_ascii=False)[:200])
             snap("50-settings-saved", spage)
             settings_ctx.close()
 
             status, body = call("GET", "/api/startup")
             check("UI 保存真的落盘（后端读到同一目标）",
                   body.get("effective") == "plugin:" + PLUGIN_ID,
-                  json.dumps({k: body.get(k) for k in ("target", "effective")}, ensure_ascii=False))
+                  wire.dumps({k: body.get(k) for k in ("target", "effective")}, ensure_ascii=False))
 
             # 保存后再开一次工作台，闭环验证「设置页选的 = 下次启动落地的」
             page.goto(BASE, wait_until="networkidle")
@@ -368,7 +367,7 @@ def finish(report: dict, out: Path) -> dict:
     report["summary"] = {"total": total, "passed": passed, "failed": total - passed,
                          "pageErrors": len(report["errors"])}
     out.mkdir(parents=True, exist_ok=True)
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
     report["out_dir"] = str(out)
     return report
 
@@ -376,7 +375,7 @@ def finish(report: dict, out: Path) -> dict:
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "run"
     result = run(tag)
-    print(json.dumps(result["summary"], ensure_ascii=False))
+    print(wire.dumps(result["summary"], ensure_ascii=False))
     for c in result["checks"]:
         print(("PASS " if c["ok"] else "FAIL ") + c["name"] + " :: " + c["detail"][:180])
     print("out_dir:", result.get("out_dir"))

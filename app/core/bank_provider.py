@@ -5,7 +5,7 @@
 ``bank.provider`` 能力、并按 ``app/core/question_contract.py`` 出参的插件，就可以被选为
 活跃题库（PLUGIN_SPEC §2.6.1）。本模块只管三件事：
 
-1. **读配置**：``data/workspaces/<id>/bank_provider.json``（用户亲手在控制台里选的，
+1. **读配置**：``data/workspaces/<id>/bank_provider.toml``（用户亲手在控制台里选的，
    没配就用默认）；
 2. **验配置**：被选中的 id 必须已安装**且**声明 ``bank.provider``，否则不算数；
 3. **兜底**：配置失效时回退默认 provider 并如实带 ``fallback_reason``——
@@ -17,11 +17,11 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
+from app.core import state_store
 from app.core.config import current_workspace_id, workspace_storage_dir
 from app.core.plugins import discover_plugins
 
@@ -31,7 +31,7 @@ DEFAULT_PROVIDER_ID = "org.jiuzhang.bank-engine"
 # 新引擎；引擎装上后不再让它参与发现（同一份数据不能有两个主人）。
 LEGACY_PROVIDER_IDS = ("org.jiuzhang.core-bank",)
 PROVIDER_CAPABILITY = "bank.provider"
-STATE_FILENAME = "bank_provider.json"
+STATE_FILENAME = "bank_provider.toml"
 # 跨页签共享的通道：非题库插件（如录题端）也要能读公共真题库、写新题。
 SHARED_METHODS = (
     "bank.get", "bank.topics", "bank.topic_notes", "bank.review", "bank.sources",
@@ -60,14 +60,7 @@ def _installed() -> dict[str, dict[str, Any]]:
 
 def configured_id() -> str | None:
     """用户配置的 provider id；文件缺失/损坏一律当作「没配过」，不报错。"""
-    path = state_path()
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    value = data.get("plugin_id") if isinstance(data, dict) else None
+    value = state_store.load_table(state_path()).get("plugin_id")
     if not isinstance(value, str) or not _PLUGIN_ID_RE.match(value):
         return None
     return value
@@ -134,8 +127,5 @@ def set_provider(plugin_id: str) -> dict[str, Any]:
         raise ProviderRejected(f"插件 {plugin_id} 未安装，不能设为题库")
     if not eligible(plugin):
         raise ProviderRejected(f"插件 {plugin_id} 未声明 {PROVIDER_CAPABILITY} 能力，不能设为题库")
-    path = state_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"plugin_id": plugin_id}, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8")
+    state_store.save(state_path(), {"plugin_id": plugin_id})
     return resolve()

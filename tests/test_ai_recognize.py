@@ -5,13 +5,18 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import asyncio
 import base64
-import json
 import unittest
 from unittest import mock
 
-from app.core import ai_center, ai_recognize
+from app.core import ai_center, ai_recognize, wire
 from app.core.exam_source import build_exam_source
 
 IMAGE = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode("ascii")
@@ -87,7 +92,7 @@ class RecognizeTest(unittest.TestCase):
             "question_no": "7",
             "difficulty": "L2",
         }
-        result = self._run("```json\n" + json.dumps(document, ensure_ascii=False) + "\n```")
+        result = self._run("```json\n" + wire.dumps(document, ensure_ascii=False) + "\n```")
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["question"]["type"], "single_choice")
         self.assertEqual(result["question"]["question_no"], "7")
@@ -108,7 +113,7 @@ class RecognizeTest(unittest.TestCase):
         self.assertIn("JSON", result["detail"])
 
     def test_04_empty_stem_is_rejected(self) -> None:
-        result = self._run(json.dumps({"stem": "", "type": "solution"}))
+        result = self._run(wire.dumps({"stem": "", "type": "solution"}))
         self.assertFalse(result["ok"])
         self.assertIn("题干", result["detail"])
 
@@ -143,7 +148,7 @@ class RecognizeTest(unittest.TestCase):
             "answer": r"\(5\)",
             "solution": r"由韦达定理 \[m_1+m_2=5\] 得证。",
         }
-        result = self._run(json.dumps(document, ensure_ascii=False))
+        result = self._run(wire.dumps(document, ensure_ascii=False))
         self.assertTrue(result["ok"], result)
         question = result["question"]
         self.assertEqual(question["stem"], r"若 $m_{1}\,m_{2}$ 是方程两根，求 $m_{1}+m_{2}$。")
@@ -177,7 +182,7 @@ class SolveTest(unittest.TestCase):
             "answer": "",
             "question_no": "7",
         }
-        result = self._run(json.dumps({
+        result = self._run(wire.dumps({
             "answer": "B", "solution": "由幂函数求导公式得 $f'(x)=2x$。", "note": "直接求导",
         }, ensure_ascii=False), context)
         self.assertTrue(result["ok"], result)
@@ -199,7 +204,7 @@ class SolveTest(unittest.TestCase):
         self.assertIn("API 配置", result["detail"])
 
     def test_04_empty_solution_is_a_failure_not_a_half_write(self) -> None:
-        result = self._run(json.dumps({"answer": "A", "solution": ""}), {"stem": "题干"})
+        result = self._run(wire.dumps({"answer": "A", "solution": ""}), {"stem": "题干"})
         self.assertFalse(result["ok"])
         self.assertIn("解析", result["detail"])
 
@@ -210,7 +215,7 @@ class SolveTest(unittest.TestCase):
 
     def test_06_model_answer_and_solution_are_normalized_stem_kept(self) -> None:
         context = {"type": "solution", "stem": r"若 \(m_1 m_2\) 是两根", "answer": "", "options": []}
-        result = self._run(json.dumps({
+        result = self._run(wire.dumps({
             "answer": r"\(m_1=1\)", "solution": r"由 \[m_1 m_2=2\] 得证。",
         }, ensure_ascii=False), context)
         self.assertTrue(result["ok"], result)

@@ -25,7 +25,13 @@ Esc 收窗、关掉画布页签再试图清洗。
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -81,31 +87,31 @@ def free_port() -> int:
 def http_json(url: str) -> tuple[int, dict]:
     try:
         with urllib.request.urlopen(url, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
 def http_post(url: str, payload: dict) -> tuple[int, dict]:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload}
 
 
@@ -231,7 +237,7 @@ def main() -> int:
             if status != 201 or not batch_ids[-1]:
                 raise RuntimeError("入池失败：status=%s body=%s" % (status, body))
         _, pool = http_json(base + f"/api/pending/batches/{batch_ids[0]}/questions")
-        pool_doc_before = json.dumps((pool.get("items") or [{}])[0].get("question"),
+        pool_doc_before = wire.dumps((pool.get("items") or [{}])[0].get("question"),
                                      ensure_ascii=False, sort_keys=True)
         check("三批各一道题入池（脏 / 已规范 / 解析带选项块）",
               len(set(batch_ids)) == 3 and all(batch_ids), {"batches": batch_ids})
@@ -381,7 +387,7 @@ def main() -> int:
 
             # ================= ②已规范题：无浮层、无按钮 =================
             _, pool_mid = http_json(base + f"/api/pending/batches/{batch_ids[0]}/questions")
-            pool_doc_mid = json.dumps((pool_mid.get("items") or [{}])[0].get("question"),
+            pool_doc_mid = wire.dumps((pool_mid.get("items") or [{}])[0].get("question"),
                                       ensure_ascii=False, sort_keys=True)
             check("两段都采用后：中转池里那道题仍与入池时逐字节相同（采用只改内存里的画布源码）",
                   pool_doc_mid == pool_doc_before,
@@ -471,7 +477,7 @@ def main() -> int:
 
         _, pool_after = http_json(base + f"/api/pending/batches/{batch_ids[0]}/questions")
         rows_after = pool_after.get("items") or []
-        result["metrics"]["pool_after_leave"] = json.dumps(
+        result["metrics"]["pool_after_leave"] = wire.dumps(
             (rows_after[0].get("question") if rows_after else {}), ensure_ascii=False)[:300]
         check("清洗全程不新增题、不删题（池子里还是那一道）",
               len(rows_after) == 1, {"rows": len(rows_after),
@@ -494,14 +500,14 @@ def main() -> int:
     total = len(result["checks"])
     result["passed"] = passed
     result["total"] = total
-    report = work / "probe.json"
-    report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"tag": tag, "passed": passed, "total": total,
+    report = work / "probe.toml"
+    report.write_text(toml_io.dumps(result), encoding="utf-8")
+    print(wire.dumps({"tag": tag, "passed": passed, "total": total,
                       "error": result.get("error"), "report": str(report)},
                      ensure_ascii=False))
     for entry in result["checks"]:
         if not entry["ok"]:
-            print("FAIL:", entry["name"], json.dumps(entry["detail"], ensure_ascii=False)[:320])
+            print("FAIL:", entry["name"], wire.dumps(entry["detail"], ensure_ascii=False)[:320])
     return 0 if passed == total and total > 0 and not result.get("error") else 1
 
 

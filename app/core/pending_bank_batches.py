@@ -9,11 +9,10 @@
 
 from __future__ import annotations
 
-import json
 import math
 from typing import Any
 
-from app.core import bank, pending_dedupe, questions
+from app.core import bank, pending_dedupe, questions, wire
 from app.core.pending_assets import backup_path, backup_paths, drop_assets
 from app.core.pending_batches import batch_card, batch_row, refresh_batch
 from app.core.pending_db import (
@@ -120,7 +119,7 @@ def _page_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]
 def _row_assets(row: Any) -> list[dict[str, Any]]:
     """行上的配图清单；读不出来就当空数组（账要清，配图清不了也不能拦住删题）。"""
     try:
-        data = json.loads(row["assets_json"] or "[]")
+        data = wire.loads(row["assets_json"] or "[]")
     except (TypeError, ValueError):
         return []
     return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
@@ -176,7 +175,7 @@ def set_batch_pages(batch_id: Any, page_images: Any) -> dict[str, Any]:
             raise PendingNotFound("中转站里没有这个批次")
         con.execute(
             "UPDATE batches SET page_assets_json = ?, updated_at = ? WHERE batch_id = ?",
-            (json.dumps(pages, ensure_ascii=False, separators=(",", ":")), now, text),
+            (wire.dumps(pages, ensure_ascii=False, separators=(",", ":")), now, text),
         )
         live = int(con.execute(
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (text,)
@@ -205,7 +204,7 @@ def set_batch_route(batch_id: Any, payload: Any) -> dict[str, Any]:
             raise PendingNotFound("中转站里没有这个批次")
         con.execute(
             "UPDATE batches SET route_json = ?, updated_at = ? WHERE batch_id = ?",
-            (json.dumps(route, ensure_ascii=False, separators=(",", ":")),
+            (wire.dumps(route, ensure_ascii=False, separators=(",", ":")),
              questions.now_iso(), text),
         )
         live = int(con.execute(
@@ -243,7 +242,7 @@ def delete_batch(batch_id: Any) -> dict[str, Any]:
         ).fetchall()
         item_assets = [asset for one in rows for asset in _row_assets(one)]
         try:
-            page_assets = json.loads(row["page_assets_json"] or "[]")
+            page_assets = wire.loads(row["page_assets_json"] or "[]")
         except (TypeError, ValueError):
             page_assets = []
         con.execute("DELETE FROM pending_questions WHERE batch_id = ?", (text,))
@@ -450,8 +449,8 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
             card = batch_card(row, live,
                               pooled=pending_dedupe.pooled_counts(con).get(str(batch_id), 0),
                               con=con)
-            assets = json.loads(row["assets_json"] or "[]")
-            page_assets = json.loads(row["page_assets_json"] or "[]")
+            assets = wire.loads(row["assets_json"] or "[]")
+            page_assets = wire.loads(row["page_assets_json"] or "[]")
         finally:
             con.rollback()  # 只读事务就地收尾：本连接一行都没写
     finally:

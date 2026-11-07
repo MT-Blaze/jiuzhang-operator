@@ -20,7 +20,6 @@
 ``PROBE_CORE_BANK=1`` 时把本机官方题库插件复制进隔离目录，多一条「真取到题目并渲染卡片」的黄金路径判据。
 """
 import collections
-import json
 import os
 import shutil
 import socket
@@ -84,11 +83,10 @@ def run(tag: str) -> dict:
 
     with zipfile.ZipFile(ZIP_PATH) as zf:
         zf.extractall(plugins_dir)
-    check("模板 zip 解出 plugin.json", (plugins_dir / PLUGIN_ID / "plugin.json").is_file(),
+    check("模板 zip 解出 plugin.toml", (plugins_dir / PLUGIN_ID / "plugin.toml").is_file(),
           str(plugins_dir / PLUGIN_ID))
     # 期望值取自包内清单本身：底座下限会随发版抬升，写死版本号只会变成假阴性。
-    with open(plugins_dir / PLUGIN_ID / "plugin.json", encoding="utf-8") as fh:
-        fixture = json.load(fh)
+    fixture = toml_io.load(plugins_dir / PLUGIN_ID / "plugin.toml")
 
     # PROBE_CORE_BANK=1 时把本机官方题库插件复制进隔离目录，验「取到 N 题」的黄金路径；
     # 只读复制，不碰开发者本机 data/ 与 plugins/。
@@ -136,12 +134,12 @@ def run(tag: str) -> dict:
         plugins = discovery.get("plugins") or []
         entry = next((p for p in plugins if p.get("id") == PLUGIN_ID), None)
         check("底座发现模板插件（未拒收）", entry is not None,
-              f"count={len(plugins)} rejected={json.dumps(discovery.get('rejected'), ensure_ascii=False)}")
+              f"count={len(plugins)} rejected={wire.dumps(discovery.get('rejected'), ensure_ascii=False)}")
         check("清单里的 bus/stage/min_host_version 原样回传",
               bool(entry and entry.get("bus", {}).get("publish") == ["region.dock"]
                    and entry.get("stage")
                    and entry.get("min_host_version") == fixture.get("min_host_version")),
-              json.dumps({k: (entry or {}).get(k) for k in ("bus", "stage", "min_host_version")},
+              wire.dumps({k: (entry or {}).get(k) for k in ("bus", "stage", "min_host_version")},
                          ensure_ascii=False))
 
         with sync_playwright() as p:
@@ -245,7 +243,7 @@ def run(tag: str) -> dict:
                 check("坏 id 请求当场拿到宿主错误回执（不再等超时）",
                       bool(bad_reply) and bad_reply.get("timedOut") is False
                       and bad_reply.get("ok") is False and bad_reply.get("code") == "BAD_REQUEST_ID",
-                      json.dumps(bad_reply, ensure_ascii=False))
+                      wire.dumps(bad_reply, ensure_ascii=False))
                 page.wait_for_timeout(1200)
                 st3 = snap("30-bad-id")
                 report["notes"]["dock_text_after_bad_id"] = st3["dockText"]
@@ -273,7 +271,7 @@ def urllib_stub():
     def _ctx():
         def get(url):
             with urllib.request.urlopen(url, timeout=20) as resp:
-                return json.loads(resp.read())
+                return wire.loads(resp.read())
         yield get
 
     return _ctx()
@@ -285,7 +283,7 @@ def finish(report: dict, out: Path) -> dict:
     report["summary"] = {"total": total, "passed": passed, "failed": total - passed,
                          "pageErrors": len(report["errors"])}
     out.mkdir(parents=True, exist_ok=True)
-    (out / "probe.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out / "probe.toml").write_text(toml_io.dumps(report), encoding="utf-8")
     report["out_dir"] = str(out)
     return report
 
@@ -293,7 +291,7 @@ def finish(report: dict, out: Path) -> dict:
 if __name__ == "__main__":
     tag = sys.argv[1] if len(sys.argv) > 1 else "run"
     result = run(tag)
-    print(json.dumps(result["summary"], ensure_ascii=False))
+    print(wire.dumps(result["summary"], ensure_ascii=False))
     for c in result["checks"]:
         print(("PASS " if c["ok"] else "FAIL ") + c["name"] + " :: " + c["detail"][:160])
     print("out_dir:", result.get("out_dir"))

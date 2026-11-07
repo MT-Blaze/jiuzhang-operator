@@ -14,8 +14,13 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import hashlib
-import json
 import os
 import shutil
 import sqlite3
@@ -23,7 +28,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank, manifests
+from app.core import bank, manifests, wire
 from app.core.config import settings
 from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
@@ -141,7 +146,7 @@ class ManifestBoundaryTest(unittest.TestCase):
             })
             (legacy_dir / "plugin.toml").unlink()
             (legacy_dir / "plugin.json").write_text(
-                json.dumps(legacy_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                wire.dumps(legacy_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
             saved = (os.environ.get("JZO_PLUGINS_DIR"), os.environ.get("JZO_DATA_DIR"),
                      settings.workspace_id)
             os.environ["JZO_PLUGINS_DIR"] = str(plugins_dir)

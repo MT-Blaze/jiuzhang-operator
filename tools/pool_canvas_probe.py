@@ -12,14 +12,20 @@ JZO_RESTART_DISABLED=1；显式删掉 JZO_POOL_ADMIT_DISABLED（要验的就是�
 证据落点：``.qoder/records/biz/2026-11/20261103_order32-s6-evidence/``
   · 画布截图 → ``s6b-shots/<tag>-<序号>-<内容>.png``
   · 辅助栏截图与 DOM 转储 → ``s6b-panels/<tag>-<序号>-<内容>.png/.txt``
-  · 结果 JSON → ``<tag>-browser-result.json``
+  · 结果 JSON → ``<tag>-browser-result.toml``
 所有文件只新增不覆盖：撞名自动加 ``-1/-2`` 后缀。
 
 用法：``.venv\\Scripts\\python.exe tools\\pool_canvas_probe.py <tag>``
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import re
 import shutil
@@ -68,7 +74,7 @@ R2_STEM = ("S6d 未清项题：已知 $a_n=$（待识别），求它的前三项
 def check(name: str, ok: object, detail: object = None) -> None:
     CHECKS.append({"name": name, "ok": bool(ok), "detail": detail})
     print(("PASS " if ok else "FAIL ") + name + " | "
-          + json.dumps(detail, ensure_ascii=False, default=str)[:700], flush=True)
+          + wire.dumps(detail, ensure_ascii=False, default=str)[:700], flush=True)
 
 
 def guarded(name: str, fn) -> None:
@@ -90,8 +96,8 @@ def free_port() -> int:
 def _decode(resp) -> tuple[int, dict]:
     body = resp.read().decode("utf-8", errors="replace")
     try:
-        return int(getattr(resp, "status", 200)), json.loads(body or "{}")
-    except json.JSONDecodeError:
+        return int(getattr(resp, "status", 200)), wire.loads(body or "{}")
+    except wire.JSONDecodeError:
         return int(getattr(resp, "status", 200)), {"raw": body[:300]}
 
 
@@ -103,13 +109,13 @@ def GET(url: str) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:300]}
 
 
 def POST(url: str, payload: object) -> tuple[int, dict]:
-    req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode(),
+    req = urllib.request.Request(url, data=wire.dumps(payload, ensure_ascii=False).encode(),
                                  method="POST",
                                  headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN})
     try:
@@ -119,8 +125,8 @@ def POST(url: str, payload: object) -> tuple[int, dict]:
         body = e.read().decode("utf-8", errors="replace")
         e.close()
         try:
-            return e.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return e.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return e.code, {"raw": body[:300]}
 
 
@@ -236,7 +242,7 @@ def dump(name: str, payload: object) -> Path:
     folder = PANELS if name.startswith("panel") else SHOTS
     folder.mkdir(parents=True, exist_ok=True)
     path = uniq(folder / name)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+    path.write_text(toml_io.dumps(payload, default=str),
                     encoding="utf-8")
     return path
 
@@ -492,7 +498,7 @@ def main() -> int:
                                                   .get("batches") or []
                                                   if str(r.get("batch_id")) == review_batch), {}),
                              "pool_after_seed": len(pool_rows), "bank_total_http": None}
-            dump(f"{tag}-00-seed-and-tiers.json", {"note": NOTES["seed"], "tiers": TIERS})
+            dump(f"{tag}-00-seed-and-tiers.toml", {"note": NOTES["seed"], "tiers": TIERS})
             check("造现场：主库 3 道原题 + 重题批自动抽走后进池 ≥2 条",
                   s_orig == 200 and s_dup == 200 and len(pool_rows) >= 2,
                   {"pool_rows": len(pool_rows), "dup_card": NOTES["seed"]["dup_card"].get("pending_count"),
@@ -615,7 +621,7 @@ def main() -> int:
                             canvasBox: cr?[cr.left-rootRect.left,cr.top-rootRect.top,cr.right-rootRect.left,cr.bottom-rootRect.top]:null};}""")
                 p = shot(canvas.locator(".ed-root"), f"{tag}-03-pool-canvas.png", page=page)
                 red = best_family(p, [0, 0, 1439, 899], "red", depth=8) if p else None
-                dump(f"{tag}-03-pool-canvas-dom.json", {"state": st, "red": red})
+                dump(f"{tag}-03-pool-canvas-dom.toml", {"state": st, "red": red})
                 check("C3 池画布：模式=pool、这一屏一颗按钮都没有、没有源码栏",
                       st.get("mode") == "pool" and st.get("buttonsInPool") == 0
                       and not st.get("sourceBar"),
@@ -702,7 +708,7 @@ def main() -> int:
                             btnHidden: b?b.hidden:null, scrollTop: document.scrollingElement?document.scrollingElement.scrollTop:null,
                             rootScroll:{h:document.documentElement.scrollHeight, ch:document.documentElement.clientHeight}};}""")
                 NOTES["c7_dock_dom"] = dock
-                dump(f"panel{tag}-07-dock-dom.json", dock)
+                dump(f"panel{tag}-07-dock-dom.toml", dock)
                 total_before = GET(base + "/api/bank/questions?page=1&page_size=1")[1]
                 bank_before = total_before.get("total")
                 try:
@@ -753,7 +759,7 @@ def main() -> int:
                     message: (document.getElementById('epMessage')||{}).textContent,
                     preview: (document.getElementById('epAiPreview')||{}).textContent,
                     applyEnabled: !(document.getElementById('epAiApply')||{}).disabled})""")
-                dump(f"panel{tag}-08-clean-entry.json", {"state": st, "clicked": clicked, "after": after})
+                dump(f"panel{tag}-08-clean-entry.toml", {"state": st, "clicked": clicked, "after": after})
                 shot(panel.locator(".ep-root"), f"panel{tag}-08-clean.png", page=page)
                 # 修C8：原 URL /api/text/clean-latex 全仓不存在（404 定论=探针写错）；
                 # 真实路由 = agents.py:19 prefix("/api/agent") + :399 post("/clean_latex")
@@ -813,12 +819,11 @@ def main() -> int:
             proc.kill()
         handle.close()
         EVID.mkdir(parents=True, exist_ok=True)
-        out = uniq(EVID / f"{tag}-browser-result.json")
-        out.write_text(json.dumps({"tag": tag, "base": base, "checks": CHECKS, "note": NOTES,
+        out = uniq(EVID / f"{tag}-browser-result.toml")
+        out.write_text(toml_io.dumps({"tag": tag, "base": base, "checks": CHECKS, "note": NOTES,
                                    "tiers": TIERS, "page_errors": PAGE_ERRORS,
                                    "console_errors": CONSOLE,
-                                   "pool_responses": POOL_RESPONSES[-20:]},
-                                  ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+                                   "pool_responses": POOL_RESPONSES[-20:]}, default=str), encoding="utf-8")
         print(f"证据：{out}", flush=True)
     ok = sum(1 for c in CHECKS if c["ok"])
     print("=" * 60)

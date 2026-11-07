@@ -15,7 +15,12 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import os
 import sqlite3
 import tempfile
@@ -26,7 +31,7 @@ from unittest import mock
 from fastapi import HTTPException
 
 from app.api import settings as settings_api
-from app.core import backup, restore
+from app.core import backup, restore, toml_io, wire
 from app.core.config import settings
 from tests.core_sources import settings_source  # noqa: E402
 
@@ -46,7 +51,7 @@ class RestoreTest(unittest.TestCase):
         (self.ws_dir / "uploads").mkdir()
         self.db_path = self.ws_dir / "banks" / f"{PROVIDER}.db"
         self.upload_path = self.ws_dir / "uploads" / "pic.png"
-        self.config_path = self.ws_dir / "config.json"
+        self.config_path = self.ws_dir / "config.toml"
         self._saved = (
             os.environ.get("JZO_DATA_DIR"),
             os.environ.get("JZO_PLUGINS_DIR"),
@@ -58,16 +63,16 @@ class RestoreTest(unittest.TestCase):
 
         self._write_db("旧题干")
         self.upload_path.write_bytes(b"OLD-PNG")
-        self.config_path.write_text('{"v":"old"}', encoding="utf-8")
+        self.config_path.write_text('v = "old"', encoding="utf-8")
         self.plugin_file = self.plugins / "org.jiuzhang.demo" / "dist" / "plugin.js"
         self.plugin_file.parent.mkdir(parents=True)
         self.plugin_file.write_text("OLD-CODE", encoding="utf-8")
-        self.plugin_json = self.plugin_file.parent.parent / "plugin.json"
-        self.plugin_json.write_text('{"id":"org.jiuzhang.demo"}', encoding="utf-8")
-        self.state_path = self.ws_dir / "plugin_state.json"
-        self.state_path.write_text('{"v":"old"}', encoding="utf-8")
+        self.plugin_json = self.plugin_file.parent.parent / "plugin.toml"
+        self.plugin_json.write_text('id = "org.jiuzhang.demo"', encoding="utf-8")
+        self.state_path = self.ws_dir / "plugin_state.toml"
+        self.state_path.write_text('v = "old"', encoding="utf-8")
         self.plugin_rel = "ws/plugins/org.jiuzhang.demo/dist/plugin.js"
-        self.state_rel = "ws/plugin_state.json"
+        self.state_rel = "ws/plugin_state.toml"
         self.out = self.root / "backups"
         backup.save_backup_settings(
             {"local_enabled": True, "local_dir": str(self.out)}, WS_ID
@@ -80,9 +85,9 @@ class RestoreTest(unittest.TestCase):
 
         self._write_db("新题干")
         self.upload_path.write_bytes(b"NEW-PNG")
-        self.config_path.write_text('{"v":"new"}', encoding="utf-8")
+        self.config_path.write_text('v = "new"', encoding="utf-8")
         self.plugin_file.write_text("NEW-CODE", encoding="utf-8")
-        self.state_path.write_text('{"v":"new"}', encoding="utf-8")
+        self.state_path.write_text('v = "new"', encoding="utf-8")
 
     def tearDown(self) -> None:
         data, plugins, ws = self._saved
@@ -110,7 +115,7 @@ class RestoreTest(unittest.TestCase):
             con.close()
 
     def _manifest(self) -> dict:
-        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        return toml_io.load(self.manifest_path)
 
     def _prepare(self, files=None) -> dict:
         return restore.prepare_local_restore(self.stem, files, WS_ID)
@@ -131,7 +136,7 @@ class RestoreTest(unittest.TestCase):
         self.assertIn("哈希", str(caught.exception))
         self.assertEqual("新题干", self._db_stem())
         self.assertEqual(b"NEW-PNG", self.upload_path.read_bytes())
-        self.assertEqual('{"v":"new"}', self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual('v = "new"', self.config_path.read_text(encoding="utf-8"))
 
         with self.assertRaises(HTTPException) as api_error:
             settings_api.check_restore(
@@ -146,7 +151,7 @@ class RestoreTest(unittest.TestCase):
         selected = restore.normalize_selection(manifest, [])
         self.assertIn(self.bank_rel, selected)
         self.assertIn("uploads/pic.png", selected)
-        self.assertNotIn("config.json", selected)
+        self.assertNotIn("config.toml", selected)
 
         plan = self._prepare([self.bank_rel])
         try:
@@ -160,14 +165,14 @@ class RestoreTest(unittest.TestCase):
         result = self._restore([self.bank_rel, "uploads/pic.png"])
         self.assertIn(self.bank_rel, result["restored"])
         self.assertIn("uploads/pic.png", result["restored"])
-        self.assertNotIn("config.json", result["restored"])
+        self.assertNotIn("config.toml", result["restored"])
         self.assertEqual("旧题干", self._db_stem())
         self.assertEqual(b"OLD-PNG", self.upload_path.read_bytes())
-        self.assertEqual('{"v":"new"}', self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual('v = "new"', self.config_path.read_text(encoding="utf-8"))
 
     # 4. 覆盖前 .pre-restore.bak 生成且只留最近 1 份
     def test_04_pre_restore_backup_generated_and_pruned(self) -> None:
-        self._restore([self.bank_rel, "uploads/pic.png", "config.json"])
+        self._restore([self.bank_rel, "uploads/pic.png", "config.toml"])
         db_bak = Path(str(self.db_path) + ".pre-restore.bak")
         upload_bak = Path(str(self.upload_path) + ".pre-restore.bak")
         config_bak = Path(str(self.config_path) + ".pre-restore.bak")
@@ -183,17 +188,17 @@ class RestoreTest(unittest.TestCase):
         finally:
             con.close()
         self.assertEqual(b"NEW-PNG", upload_bak.read_bytes())
-        self.assertEqual('{"v":"new"}', config_bak.read_text(encoding="utf-8"))
+        self.assertEqual('v = "new"', config_bak.read_text(encoding="utf-8"))
 
         # 第二次恢复只勾题库 + 图片（必选），config 未覆盖 → 旧 config 副本应被清掉。
-        self.config_path.write_text('{"v":"newer"}', encoding="utf-8")
+        self.config_path.write_text('v = "newer"', encoding="utf-8")
         self._restore([self.bank_rel, "uploads/pic.png"])
         self.assertFalse(config_bak.exists(), "上一轮的非本轮副本应清理，只留最近 1 套")
         self.assertTrue(db_bak.is_file() and upload_bak.is_file())
 
     # 5. 落盘中途失败整批回滚
     def test_05_failure_midway_rolls_back_everything(self) -> None:
-        plan = self._prepare([self.bank_rel, "uploads/pic.png", "config.json"])
+        plan = self._prepare([self.bank_rel, "uploads/pic.png", "config.toml"])
         real_copy = restore._atomic_copy
         calls = {"n": 0}
 
@@ -212,7 +217,7 @@ class RestoreTest(unittest.TestCase):
 
         self.assertEqual("新题干", self._db_stem())
         self.assertEqual(b"NEW-PNG", self.upload_path.read_bytes())
-        self.assertEqual('{"v":"new"}', self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual('v = "new"', self.config_path.read_text(encoding="utf-8"))
         self.assertEqual([], list(self.ws_dir.glob(".restore-rollback-*")))
         self.assertEqual([], list(self.ws_dir.rglob("*.restore-new")))
         self.assertTrue(Path(str(self.db_path) + ".pre-restore.bak").is_file())
@@ -250,13 +255,13 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual(["org.jiuzhang.demo"], [item["id"] for item in manifest["plugins"]])
 
         result = self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
-                                "ws/plugins/org.jiuzhang.demo/plugin.json", self.state_rel])
+                                "ws/plugins/org.jiuzhang.demo/plugin.toml", self.state_rel])
         self.assertEqual("旧题干", self._db_stem())
         self.assertEqual("OLD-CODE", self.plugin_file.read_text(encoding="utf-8"),
                          "插件代码必须真被覆盖回备份时的版本")
-        self.assertEqual('{"v":"old"}', self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual('v = "old"', self.state_path.read_text(encoding="utf-8"))
         self.assertEqual(
-            sorted([self.plugin_rel, "ws/plugins/org.jiuzhang.demo/plugin.json"]),
+            sorted([self.plugin_rel, "ws/plugins/org.jiuzhang.demo/plugin.toml"]),
             sorted(result["plugins_restored"]),
         )
         self.assertTrue(Path(str(self.plugin_file) + ".pre-restore.bak").is_file(),
@@ -268,7 +273,7 @@ class RestoreTest(unittest.TestCase):
         self.assertEqual("旧题干", self._db_stem())
         self.assertEqual([], result["plugins_restored"])
         self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
-        self.assertEqual('{"v":"new"}', self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual('v = "new"', self.state_path.read_text(encoding="utf-8"))
         self.assertFalse(list(self.plugins.rglob("*.pre-restore.bak")))
 
     # 10. 恢复只碰当前区，别区的插件与库原样不动
@@ -276,19 +281,19 @@ class RestoreTest(unittest.TestCase):
         foreign = self.data / "workspaces" / "ws_foreign000000000"
         foreign_code = foreign / "plugins" / "org.jiuzhang.foreign"
         foreign_code.mkdir(parents=True)
-        (foreign_code / "plugin.json").write_text("FOREIGN", encoding="utf-8")
+        (foreign_code / "plugin.toml").write_text("FOREIGN", encoding="utf-8")
         (foreign / "banks").mkdir()
         (foreign / "banks" / "foreign.db").write_bytes(b"FOREIGN-DB")
         self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
-                       "ws/plugins/org.jiuzhang.demo/plugin.json", self.state_rel])
-        self.assertEqual("FOREIGN", (foreign_code / "plugin.json").read_text(encoding="utf-8"))
+                       "ws/plugins/org.jiuzhang.demo/plugin.toml", self.state_rel])
+        self.assertEqual("FOREIGN", (foreign_code / "plugin.toml").read_text(encoding="utf-8"))
         self.assertEqual(b"FOREIGN-DB", (foreign / "banks" / "foreign.db").read_bytes())
 
     # 11. 插件摘要对不上：拒在最前面，工作区一个字节都不动
     def test_11_tampered_plugin_digest_blocks_restore(self) -> None:
         manifest = self._manifest()
         manifest["plugins"][0]["sha256"] = "f" * 64
-        self.manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        toml_io.write(self.manifest_path, manifest)
         before_code = self.plugin_file.read_text(encoding="utf-8")
         before_stem = self._db_stem()
         with self.assertRaises(restore.RestoreError) as caught:
@@ -384,9 +389,9 @@ class RestoreUiContractTest(unittest.TestCase):
                  "category": "bank", "required": True},
                 {"path": "uploads/a.png", "size": 1, "sha256": "0" * 64,
                  "category": "uploads", "required": True},
-                {"path": "ws/plugins/org.jiuzhang.demo/plugin.json", "size": 3,
+                {"path": "ws/plugins/org.jiuzhang.demo/plugin.toml", "size": 3,
                  "sha256": "0" * 64, "category": "plugins", "required": False},
-                {"path": "config.json", "size": 1, "sha256": "0" * 64,
+                {"path": "config.toml", "size": 1, "sha256": "0" * 64,
                  "category": "other", "required": False},
             ],
         }
@@ -397,7 +402,7 @@ class RestoreUiContractTest(unittest.TestCase):
             ["bank", "other", "plugins", "uploads"], sorted(preview["groups"])
         )
         self.assertEqual(
-            ["ws/plugins/org.jiuzhang.demo/plugin.json"], preview["groups"]["plugins"]
+            ["ws/plugins/org.jiuzhang.demo/plugin.toml"], preview["groups"]["plugins"]
         )
         self.assertEqual(1, len(preview["plugins"]))
         self.assertEqual(3, preview["plugins"][0]["bytes"])

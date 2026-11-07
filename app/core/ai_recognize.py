@@ -11,14 +11,13 @@
 from __future__ import annotations
 
 import base64
-import json
 import re
 import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import ai_center, latex_style_dict, question_parser
+from app.core import ai_center, latex_style_dict, question_parser, wire
 from app.core.ai_client import OpenAICompatibleProvider
 from app.core.config import settings
 from app.core.exam_source import OPTION_KEYS, build_exam_source
@@ -255,7 +254,7 @@ async def solve(context: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         result = await client.chat_completion(
             system_prompt=SOLVE_SYSTEM_PROMPT,
-            user_message="题目如下（JSON）：\n" + json.dumps(payload, ensure_ascii=False),
+            user_message="题目如下（JSON）：\n" + wire.dumps(payload, ensure_ascii=False),
             temperature=0.1,
             max_tokens=4000,
         )
@@ -264,7 +263,7 @@ async def solve(context: dict[str, Any] | None = None) -> dict[str, Any]:
 
     content = str(result.get("content") or "")
     try:
-        document = json.loads(_strip_fences(content))
+        document = wire.loads(_strip_fences(content))
     except (TypeError, ValueError):
         return {"ok": False, "detail": "模型没有返回可解析的 JSON：" + content[:500]}
     if not isinstance(document, dict):
@@ -315,11 +314,11 @@ async def recognize(
         return {"ok": False, "detail": "这道题没有题图可识别：先框选切题或挂上原卷页图。"}
 
     payload = dict(context or {})
-    if len(json.dumps(payload, ensure_ascii=False)) > MAX_CONTEXT_CHARS:
+    if len(wire.dumps(payload, ensure_ascii=False)) > MAX_CONTEXT_CHARS:
         payload = {"type": payload.get("type"), "stem": str(payload.get("stem") or "")[:6000]}
     user_message = (
         "已有信息（可能为空，仅作对照；以图为准）：\n"
-        + json.dumps(payload, ensure_ascii=False)
+        + wire.dumps(payload, ensure_ascii=False)
         + "\n请只输出一个 JSON 对象。"
     )
 
@@ -343,7 +342,7 @@ async def recognize(
 
     content = str(result.get("content") or "")
     try:
-        document = json.loads(_strip_fences(content))
+        document = wire.loads(_strip_fences(content))
     except (TypeError, ValueError):
         return {"ok": False, "detail": "模型没有返回可解析的 JSON：" + content[:500]}
     if not isinstance(document, dict):

@@ -19,14 +19,19 @@ A4、按内容实际高度」这条已定决策一并撤除，因此不再保留
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+
 import re
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import manifests, toml_io
+from app.core import manifests, toml_io, wire
 from app.core.plugins import validate_plugin
 from tools.build_plugin import build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
@@ -2056,7 +2061,7 @@ class EditorFixtureContractTest(unittest.TestCase):
     def test_04_inline_block_equals_the_file(self) -> None:
         js = read("dev_fixtures.js")
         block = js[js.index(BEGIN) + len(BEGIN):js.index(END)]
-        inline = json.loads(block.strip()[len("var DEV_FIXTURES = "):].rstrip(";"))
+        inline = wire.loads(block.strip()[len("var DEV_FIXTURES = "):].rstrip(";"))
         self.assertEqual(inline, self.items,
                          "内嵌假数据与 dev/fixtures.toml 漂移，先跑 tools/sync_editor_fixtures.py")
 

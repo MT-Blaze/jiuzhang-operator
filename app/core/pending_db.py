@@ -12,7 +12,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import secrets
 import sqlite3
@@ -20,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.core import bank, pinyin, questions
+from app.core import bank, pinyin, questions, wire
 from app.core.config import settings
 
 PENDING_ID_PREFIX = "p_"
@@ -486,7 +485,7 @@ def _migrate_v4_dictionary(con: sqlite3.Connection) -> None:
     rows = con.execute("SELECT batch_id, meta_json FROM batches").fetchall()
     for row in rows:
         try:
-            meta = json.loads(row["meta_json"] or "{}")
+            meta = wire.loads(row["meta_json"] or "{}")
         except (TypeError, ValueError):
             continue
         if not isinstance(meta, dict):
@@ -521,7 +520,7 @@ def _migrate_v4_dictionary(con: sqlite3.Connection) -> None:
             meta["standard_name"] = build_standard_name(meta)
         con.execute(
             "UPDATE batches SET meta_json = ? WHERE batch_id = ?",
-            (json.dumps(meta, ensure_ascii=False, separators=(",", ":")), row["batch_id"]),
+            (wire.dumps(meta, ensure_ascii=False, separators=(",", ":")), row["batch_id"]),
         )
 
 

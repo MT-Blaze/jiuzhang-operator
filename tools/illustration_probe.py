@@ -17,8 +17,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import base64
-import json
 import os
 import shutil
 import socket
@@ -87,20 +93,20 @@ def wait_health(base: str, process: subprocess.Popen, log_path: Path) -> None:
 
 
 def http_post(url: str, payload: dict) -> tuple[int, dict]:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url, data=body, method="POST",
         headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         payload_text = error.read().decode("utf-8")
         error.close()
         try:
-            return error.code, json.loads(payload_text or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(payload_text or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": payload_text}
 
 
@@ -303,9 +309,9 @@ def run(tag: str) -> dict:
             snap(page, "40-esc-cancelled")
 
             check("宿主页零未捕获 JS 错误", not result["page_errors"],
-                  json.dumps(result["page_errors"], ensure_ascii=False)[:400])
+                  wire.dumps(result["page_errors"], ensure_ascii=False)[:400])
             check("零 4xx/5xx", not result["http_failures"],
-                  json.dumps(result["http_failures"], ensure_ascii=False)[:400])
+                  wire.dumps(result["http_failures"], ensure_ascii=False)[:400])
             browser.close()
     finally:
         process.terminate()
@@ -318,8 +324,8 @@ def run(tag: str) -> dict:
     passed = sum(1 for item in result["checks"] if item["ok"])
     result["passed"] = passed
     result["total"] = len(result["checks"])
-    (work / "probe.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"passed {passed}/{len(result['checks'])} -> {work / 'probe.json'}")
+    (work / "probe.toml").write_text(toml_io.dumps(result), encoding="utf-8")
+    print(f"passed {passed}/{len(result['checks'])} -> {work / 'probe.toml'}")
     for item in result["checks"]:
         if not item["ok"]:
             print("FAIL:", item["name"], "|", item["detail"])

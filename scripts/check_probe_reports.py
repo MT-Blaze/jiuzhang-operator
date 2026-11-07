@@ -3,7 +3,7 @@
 
 判据归一复用 tools/clean_for_release.py 的 probe_verdict（同时认三种历史 schema：
 checks[]+passed/total、只有 checks[]、只有 failures 计数；认不出 schema 一律算不通过）。
-每个探针只取**最新一份** probe.json 判定，历史红跑批不追究（否则开发迭代留下的红永远清不掉）。
+每个探针只取**最新一份** probe.toml 判定，历史红跑批不追究（否则开发迭代留下的红永远清不掉）。
 
 用法：
     .venv/Scripts/python.exe scripts/check_probe_reports.py
@@ -36,7 +36,7 @@ def main() -> int:
     failures: list[str] = []
     rows: list[tuple[str, str, str, bool]] = []
     for probe_dir in sorted(p for p in GENERATED.iterdir() if p.is_dir()):
-        reports = sorted(probe_dir.rglob("probe.json"), key=lambda p: p.stat().st_mtime)
+        reports = sorted(probe_dir.rglob("probe.toml"), key=lambda p: p.stat().st_mtime)
         if not reports:
             continue
         newest = reports[-1]
@@ -55,7 +55,7 @@ def main() -> int:
         failures.append(f"要求的探针 {name} 没有报告（未跑或产物被清）")
 
     if not rows:
-        failures.append(".system_generated/ 下没有任何 probe.json——工序 06 必须有真机探针证据")
+        failures.append(".system_generated/ 下没有任何 probe.toml——工序 06 必须有真机探针证据")
 
     if failures:
         print(f"check-probe-reports: {len(failures)} 项不合格")

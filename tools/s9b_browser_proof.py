@@ -10,7 +10,13 @@
 """
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import os
 import shutil
 import subprocess
@@ -279,8 +285,8 @@ def main() -> int:
         ok = sum(1 for c in pcp.CHECKS if c["ok"])
         body = {"tag": tag, "checks": pcp.CHECKS, "notes": pcp.NOTES,
                 "all_pass": ok == len(pcp.CHECKS)}
-        (EVIDENCE / f"s9b_browser_proof_{tag}.json").write_text(
-            json.dumps(body, ensure_ascii=False, indent=1), encoding="utf-8")
+        (EVIDENCE / f"s9b_browser_proof_{tag}.toml").write_text(
+            toml_io.dumps(body), encoding="utf-8")
         for src in sorted(list(pcp.SHOTS.glob("*.png")) + list(pcp.PANELS.glob("*.png"))):
             shutil.copy2(src, EVIDENCE / f"s9b_shot_{src.stem}{src.suffix}".replace("panel", ""))
         print("=" * 60)

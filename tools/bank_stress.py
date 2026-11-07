@@ -10,8 +10,14 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import argparse
-import json
 import os
 import shutil
 import socket
@@ -146,15 +152,15 @@ def http_get(base: str, path: str, token: bool = False) -> tuple[int, dict]:
         request.add_header("X-JZO-Token", TOKEN)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+            return response.status, wire.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as error:
         try:
             body = error.read().decode("utf-8")
         finally:
             error.close()
         try:
-            return error.code, json.loads(body or "{}")
-        except json.JSONDecodeError:
+            return error.code, wire.loads(body or "{}")
+        except wire.JSONDecodeError:
             return error.code, {"raw": body}
 
 
@@ -248,13 +254,13 @@ def http_phase(threads: int) -> dict:
             ids = [item["id"] for item in page.get("items", [])][:50]
             request = urllib.request.Request(
                 base + "/api/basket",
-                data=json.dumps({"plugin_id": PLUGIN_ID, "ids": ids, "mode": "replace"}).encode("utf-8"),
+                data=wire.dumps({"plugin_id": PLUGIN_ID, "ids": ids, "mode": "replace"}).encode("utf-8"),
                 method="POST",
                 headers={"Content-Type": "application/json", "X-JZO-Token": TOKEN},
             )
             try:
                 with urllib.request.urlopen(request, timeout=20) as response:
-                    basket_total = json.loads(response.read().decode("utf-8"))["total"]
+                    basket_total = wire.loads(response.read().decode("utf-8"))["total"]
             except urllib.error.HTTPError as error:
                 error.close()
                 errors.append(f"basket add -> HTTP {error.code}")
@@ -326,9 +332,9 @@ def main(argv: list[str] | None = None) -> int:
         "schema_errors": schema_errors,
         "temp_dir": str(TMP),
     }
-    out = ROOT / "data" / "bank_stress_report.json"
+    out = ROOT / "data" / "bank_stress_report.toml"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    out.write_text(toml_io.dumps(report), encoding="utf-8")
 
     ok = (
         insert["error_count"] == 0

@@ -226,7 +226,7 @@ class SwitchEndpointTest(_IsolatedData):
         self.assertEqual(settings.workspace_id, before)
 
     def test_registry_entry_without_name_or_id_does_not_break_the_switch(self) -> None:
-        """``workspaces.json`` 是人能改的文件：条目缺 name 只退回 id，非对象条目读时出局。
+        """``workspaces.toml`` 是人能改的文件：条目缺 name 只退回 id，非对象条目读时出局。
 
         切库回包是在「指针已写入、重启已发起」之后才组装的，这里抛 KeyError 会变成
         「库确实切了、前端只收到 500」的半截状态——比显示成 id 难查得多。

@@ -24,10 +24,9 @@
 from __future__ import annotations
 
 import copy
-import json
 from typing import Any
 
-from app.core import bank, bank_dedupe, pending_assets, pending_batches
+from app.core import bank, bank_dedupe, pending_assets, pending_batches, wire
 from app.core import pending_dedupe, questions
 from app.core.pending_db import (
     PENDING_ASSET_URI_PREFIX,
@@ -98,7 +97,7 @@ def _row_view(row: Any) -> dict[str, Any]:
 
 def _json_list(raw: Any) -> list[Any]:
     try:
-        value = json.loads(raw or "[]")
+        value = wire.loads(raw or "[]")
     except (TypeError, ValueError):
         return []
     return value if isinstance(value, list) else []
@@ -106,7 +105,7 @@ def _json_list(raw: Any) -> list[Any]:
 
 def _json_object(raw: Any) -> dict[str, Any]:
     try:
-        value = json.loads(raw or "{}")
+        value = wire.loads(raw or "{}")
     except (TypeError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
@@ -324,7 +323,7 @@ def admit_from_scan(batch_id: str, *, provider_id: Any = None, tier: Any = None,
                 continue
             created_assets.extend(pool_assets)
             doc_text = _swap_doc_uris(
-                json.dumps(_json_object(row["doc_json"]), ensure_ascii=False), mapping)
+                wire.dumps(_json_object(row["doc_json"]), ensure_ascii=False), mapping)
             con.execute(
                 "INSERT OR IGNORE INTO duplicate_pool (pool_id, item_id, batch_id,"
                 " source_name, provider_id, main_id, level, percent, similarity,"
@@ -335,9 +334,9 @@ def admit_from_scan(batch_id: str, *, provider_id: Any = None, tier: Any = None,
                     resolved_provider, str(candidate.get("existing_id") or ""),
                     str(candidate.get("level") or ""), int(candidate.get("percent") or 0),
                     float(candidate.get("similarity") or 0.0),
-                    json.dumps(candidate.get("signals") or [], ensure_ascii=False),
+                    wire.dumps(candidate.get("signals") or [], ensure_ascii=False),
                     doc_text,
-                    json.dumps(pool_assets, ensure_ascii=False),
+                    wire.dumps(pool_assets, ensure_ascii=False),
                     now, now,
                 ),
             )
@@ -747,7 +746,7 @@ def _finish(row: Any, action: str, payload: dict[str, Any]) -> dict[str, Any]:
             (
                 new_pool_action_id(), str(row["pool_id"]), str(row["item_id"]),
                 str(row["batch_id"] or ""), str(row["main_id"] or ""), action,
-                json.dumps(record, ensure_ascii=False), questions.now_iso(),
+                wire.dumps(record, ensure_ascii=False), questions.now_iso(),
             ),
         )
         cursor = con.execute("DELETE FROM duplicate_pool WHERE pool_id = ?",

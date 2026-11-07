@@ -5,7 +5,7 @@
 
     .venv/Scripts/python.exe tools/check_image_assets.py            # 只读报表
     .venv/Scripts/python.exe tools/check_image_assets.py --apply    # 用本地同名文件补齐
-    .venv/Scripts/python.exe tools/check_image_assets.py --json .system_generated/image_assets.json
+    .venv/Scripts/python.exe tools/check_image_assets.py --toml .system_generated/image_assets.toml
 
 排查口径：
 - 引用来源四处——题干/解析里的 ``![...](...)`` 与 ``\\includegraphics{...}``、
@@ -20,9 +20,15 @@
 
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io, wire  # noqa: E402
+
 import argparse
 import collections
-import json
 import re
 import shutil
 import sqlite3
@@ -61,7 +67,7 @@ def _loads(raw: Any, fallback: Any) -> Any:
     if not isinstance(raw, str) or not raw.strip():
         return fallback
     try:
-        return json.loads(raw)
+        return wire.loads(raw)
     except ValueError:
         return fallback
 
@@ -197,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", default=str(ROOT / "data"), help="工作区根目录（默认 data/）")
     parser.add_argument("--source", action="append", default=[], help="补图来源目录，可重复")
     parser.add_argument("--apply", action="store_true", help="把找到的同名文件复制进 uploads")
-    parser.add_argument("--json", default="", help="报表落盘路径")
+    parser.add_argument("--toml", default="", help="报表落盘路径（TOML）")
     args = parser.parse_args(argv)
 
     data_dir = Path(args.data_dir).resolve()
@@ -250,11 +256,10 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 78)
     print("合计：数据库 %d 个 · 缺失 %d 张 · 补齐 %d 张 · 未落位占位符 %d 处"
           % (len(reports), total_missing, total_restored, total_placeholders))
-    if args.json:
-        target = Path(args.json)
+    if args.toml:
+        target = Path(args.toml)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps({"reports": reports}, ensure_ascii=False, indent=2) + "\n",
-                          encoding="utf-8")
+        target.write_text(toml_io.dumps({"reports": reports}, default=str), encoding="utf-8")
         print("报表已写入 " + str(target))
     if not args.apply:
         print("（只读模式；加 --apply 才把本机已有的同名图片复制进 uploads）")

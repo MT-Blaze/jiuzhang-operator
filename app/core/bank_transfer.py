@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
+from app.core import wire  # noqa: E402
 import io
-import json
 import zipfile
 from typing import Any
 
@@ -55,10 +55,10 @@ def parse_bundle(raw: bytes, filename: str = "") -> list[dict[str, Any]]:
     documents: list[dict[str, Any]] = []
     for name, blob in members:
         try:
-            payload = json.loads(blob.decode("utf-8-sig"))
+            payload = wire.loads(blob.decode("utf-8-sig"))
         except UnicodeDecodeError as exc:
             raise TransferError(f"{name} 不是 UTF-8 文本") from exc
-        except json.JSONDecodeError as exc:
+        except wire.JSONDecodeError as exc:
             raise TransferError(f"{name} 不是合法的 JSON：{exc}") from exc
         documents.extend(_extract_documents(payload, name))
     if not documents:

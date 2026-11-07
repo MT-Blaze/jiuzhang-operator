@@ -10,7 +10,13 @@
 
 from __future__ import annotations
 
-import json
+import sys as _sys
+from pathlib import Path as _path
+
+_sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
+
+from app.core import toml_io  # noqa: E402
+
 import os
 import sys
 import tempfile
@@ -74,7 +80,7 @@ class PruneSpineTest(GeneratedDirCase):
     """`.system_generated/` 只留一条 spine——「保留最新目录」会把 840 MB 的历史跑批整块留下。"""
 
     def test_01_keeps_named_leaf_and_dooms_siblings(self) -> None:
-        keeper = touch(self.base / "editor_probe" / "run-green" / "probe.json", "{}").parent
+        keeper = touch(self.base / "editor_probe" / "run-green" / "probe.toml", "").parent
         touch(self.base / "editor_probe" / "run-red" / "a.png")
         touch(self.base / "paper_probe" / "old" / "b.png")
         touch(self.base / "loose.log")
@@ -88,17 +94,18 @@ class PruneSpineTest(GeneratedDirCase):
         self.assertEqual({p.name for p, _, _ in cw.prune_generated(0, None)}, {"a", "b"})
 
     def test_03_keeper_outside_generated_is_rejected(self) -> None:
-        outside = touch(self.base.parent / "sneaky" / "probe.json", "{}").parent
+        outside = touch(self.base.parent / "sneaky" / "probe.toml", "").parent
         with self.assertRaises(SystemExit):
             cw.prune_generated(1, outside)
 
 
 class ProbeVerdictTest(unittest.TestCase):
-    """probe.json 有三种历史 schema 都得认；**认不出就当作不通过**，宁可多留不可误删。"""
+    """probe.toml 有三种历史 schema 都得认；**认不出就当作不通过**，宁可多留不可误删。"""
 
     def verdict(self, payload: object) -> tuple[bool, str]:
         with tempfile.TemporaryDirectory() as tmp:
-            probe = touch(Path(tmp) / "probe.json", payload if isinstance(payload, str) else json.dumps(payload))
+            probe = touch(Path(tmp) / "probe.toml",
+                          payload if isinstance(payload, str) else toml_io.dumps(payload))
             return cfr.probe_verdict(probe)
 
     def test_01_ok_key_all_green(self) -> None:
@@ -114,26 +121,27 @@ class ProbeVerdictTest(unittest.TestCase):
         self.assertTrue(self.verdict({"passed": 153, "total": 153})[0])
         self.assertFalse(self.verdict({"passed": 24, "total": 25})[0])
 
-    def test_04_unknown_schema_and_broken_json_are_not_pass(self) -> None:
+    def test_04_unknown_schema_and_broken_toml_are_not_pass(self) -> None:
         self.assertFalse(self.verdict({"result": "也许行了"})[0])
-        self.assertFalse(self.verdict("{不是 json")[0])
+        self.assertFalse(self.verdict("[[[不是 toml")[0])
 
 
 class LatestPassingRunTest(GeneratedDirCase):
     """发版脚本留的是「最近一次全绿的跑批」，不是「时间最新的产物」。"""
 
     def test_01_picks_green_over_newer_red(self) -> None:
-        green = touch(self.base / "editor_probe" / "run-1" / "probe.json",
-                      json.dumps({"checks": [{"name": "a", "ok": True}]})).parent
-        red = touch(self.base / "paper_probe" / "run-2" / "probe.json",
-                    json.dumps({"checks": [{"name": "a", "ok": False}]})).parent
+        green = touch(self.base / "editor_probe" / "run-1" / "probe.toml",
+                      toml_io.dumps({"checks": [{"name": "a", "ok": True}]})).parent
+        red = touch(self.base / "paper_probe" / "run-2" / "probe.toml",
+                    toml_io.dumps({"checks": [{"name": "a", "ok": False}]})).parent
         make_newer(red)
         keeper, note = cfr.latest_passing_run()
         self.assertEqual(keeper, green)
         self.assertIn("1/1 判据通过", note)
 
     def test_02_no_green_means_wipe_all(self) -> None:
-        touch(self.base / "only" / "probe.json", json.dumps({"checks": [{"name": "a", "ok": False}]}))
+        touch(self.base / "only" / "probe.toml",
+              toml_io.dumps({"checks": [{"name": "a", "ok": False}]}))
         keeper, note = cfr.latest_passing_run()
         self.assertIsNone(keeper)
         self.assertIn("没有一份是全绿的", note)

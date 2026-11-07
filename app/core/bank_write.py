@@ -8,9 +8,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
-from app.core import question_parser, questions as question_contract
+from app.core import question_parser, questions as question_contract, wire
 from app.core.bank_codec import _grade_from, answer_to_storage, extensions_to_array
 from app.core.bank_query import _fts_clear, _fts_upsert, get_question
 from app.core.bank_schema import (
@@ -455,7 +454,7 @@ def import_documents(
                 con.execute(
                     "INSERT INTO bank_meta (key, value) VALUES (?, ?)"
                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (str(key), json.dumps(value, ensure_ascii=False)),
+                    (str(key), wire.dumps(value, ensure_ascii=False)),
                 )
         con.commit()
     except BaseException:

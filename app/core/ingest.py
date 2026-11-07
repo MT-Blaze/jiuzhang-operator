@@ -21,11 +21,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
-from app.core import page_render, text_health
+from app.core import page_render, text_health, wire
 from app.core.ingest_media import _items_from_file, _page_of, _placeholder
 from app.core.ingest_route import (
     attach_layout,
@@ -188,7 +187,7 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     from app.core import pending_bank
 
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
-    backup = json.dumps([pending_bank.store_source_backup(name, data)],
+    backup = wire.dumps([pending_bank.store_source_backup(name, data)],
                         ensure_ascii=False, separators=(",", ":"))
     scan_only = _is_scan_source(name)
     if scan_only:
