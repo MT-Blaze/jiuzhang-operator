@@ -220,7 +220,7 @@
         var chain = Promise.resolve();
         targets.forEach(function (item) {
           chain = chain.then(function () {
-            return hostCall("pending.approve", { pending_id: item.pendingId }).then(function () {
+            return hostCall("pending.approve", { pending_id: item.pendingId, engine: true }).then(function () {
               stored += 1;
               item.status = "stored";
             }, function (error) {

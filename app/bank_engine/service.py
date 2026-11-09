@@ -8,11 +8,22 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
-from app.bank_engine import builder, dao_base, dao_dimensions, dao_questions, seeding
+from app.bank_engine import (
+    builder,
+    dao_base,
+    dao_dictionary,
+    dao_dimensions,
+    dao_questions,
+    entry,
+    seeding,
+    writer,
+)
 from app.bank_engine.models import (
     Chapter,
+    CreatedQuestion,
+    Dictionaries,
     EngineStatus,
     ExamDirection,
     KnowledgeNode,
@@ -193,6 +204,23 @@ def question(question_id: str, *, db_path: Path | None = None) -> QuestionRecord
         return dao_questions.get_question(conn, question_id)
 
 
+def dictionaries(*, db_path: Path | None = None) -> Dictionaries:
+    """录题下拉框的五张小字典：每一张都单表读出，不做跨表拼接。"""
+    with session(db_path) as conn:
+        return dao_dictionary.load_dictionaries(conn)
+
+
+def create_question(document: Any, *, db_path: Path | None = None) -> CreatedQuestion:
+    """表单 → 解析外键 → 主表与从表分步落库；不合法时抛 ``EntryRejected``。
+
+    一次会话内完成解析与写入：解析看到的外键与写入时的库是同一份，
+    避免两次开库之间维度表被改掉。
+    """
+    with session(db_path) as conn:
+        prepared = entry.prepare_question(conn, document)
+        return writer.create_question(conn, prepared)
+
+
 def textbooks(
     *,
     subject_id: int | None = None,
@@ -222,6 +250,8 @@ __all__ = [
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
     "chapters",
+    "create_question",
+    "dictionaries",
     "ensure_ready",
     "exam_direction",
     "exam_directions",

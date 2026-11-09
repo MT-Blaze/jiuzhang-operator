@@ -21,6 +21,7 @@ from app.api.agents import router as agents_router
 from app.api.ai_center import router as ai_center_router
 from app.api.assets import router as assets_router
 from app.api.bank import router as bank_router
+from app.api.bank_engine import router as bank_engine_router
 from app.api.health import router as health_router
 from app.api.ingest import router as ingest_router
 from app.api.layout import router as layout_router
@@ -194,6 +195,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_router)
     app.include_router(workspaces_router)
     app.include_router(bank_router)
+    app.include_router(bank_engine_router)
     app.include_router(assets_router)
     app.include_router(pending_router)
     app.include_router(meta_router)

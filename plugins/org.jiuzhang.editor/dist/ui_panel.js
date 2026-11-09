@@ -90,7 +90,9 @@
       tags: d.tags || "",
       score: d.score || "",
       topic_ids: [],
-      topic_names: {}
+      topic_names: {},
+      knowledge_point_ids: [],
+      knowledge_names: {}
     };
   }
 

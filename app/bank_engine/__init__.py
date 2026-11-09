@@ -3,6 +3,8 @@
 from app.bank_engine.builder import build_engine
 from app.bank_engine.models import (
     Chapter,
+    CreatedQuestion,
+    Dictionaries,
     EngineStatus,
     ExamDirection,
     KnowledgeNode,
@@ -14,6 +16,8 @@ from app.bank_engine.models import (
 )
 from app.bank_engine.service import (
     chapters,
+    create_question,
+    dictionaries,
     ensure_ready,
     exam_direction,
     exam_directions,
@@ -29,6 +33,8 @@ from app.bank_engine.service import (
 
 __all__ = [
     "Chapter",
+    "CreatedQuestion",
+    "Dictionaries",
     "EngineStatus",
     "ExamDirection",
     "KnowledgeNode",
@@ -39,6 +45,8 @@ __all__ = [
     "Textbook",
     "build_engine",
     "chapters",
+    "create_question",
+    "dictionaries",
     "ensure_ready",
     "exam_direction",
     "exam_directions",

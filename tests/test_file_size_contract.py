@@ -52,7 +52,7 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.paper-gen/dist/core_layout.js": 695,
     "static/js/stage_relay_io.js": 689,
     "app/core/pending_db.py": 676,
-    "app/core/pending_bank.py": 644,
+    "app/core/pending_bank.py": 631,
     "app/core/bank_schema.py": 624,
     "app/core/bank_write.py": 623,
     "plugins/org.jiuzhang.bank-ui/dist/plugin.css": 596,
@@ -75,7 +75,6 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.handout/dist/plugin.js": 515,
     "app/core/latex_style_dict.py": 506,
     "static/css/workspace.css": 504,
-    "app/api/pending.py": 501,
 }
 
 

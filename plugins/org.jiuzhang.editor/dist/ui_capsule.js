@@ -19,18 +19,30 @@
   function create(ctx) {
     var ui = global.JzoReactive.reactive({
       tag: { state: "idle", items: [], active: -1 },
-      topic: { state: "idle", items: [], active: -1 }
+      topic: { state: "idle", items: [], active: -1 },
+      knowledge: { state: "idle", items: [], active: -1 }
     });
     var GHOST_DELAY_MS = ctx.delay || 150;
     // 幽灵胶囊的 DOM 与计时器（不是数据，不进响应式状态）。
-    var ghostState = { tag: null, topic: null };
+    var ghostState = { tag: null, topic: null, knowledge: null };
+    var KINDS = ["tag", "topic", "knowledge"];
 
     function ghostHost(kind) {
-      return kind === "topic" ? ctx.mountedList : ctx.tagList;
+      if (kind === "topic") return ctx.mountedList;
+      if (kind === "knowledge") return ctx.knowledgeList;
+      return ctx.tagList;
     }
 
     function ghostMenu(kind) {
-      return kind === "topic" ? ctx.topicMenu : ctx.tagMenu;
+      if (kind === "topic") return ctx.topicMenu;
+      if (kind === "knowledge") return ctx.knowledgeMenu;
+      return ctx.tagMenu;
+    }
+
+    function ghostLabel(kind) {
+      if (kind === "topic") return "搜索并挂载考向";
+      if (kind === "knowledge") return "搜索并挂载知识点";
+      return "搜索并添加标签";
     }
 
     function ensureGhost(kind) {
@@ -46,7 +58,7 @@
       input.type = "text";
       input.maxLength = 24;
       input.autocomplete = "off";
-      input.setAttribute("aria-label", kind === "topic" ? "搜索并挂载考向" : "搜索并添加标签");
+      input.setAttribute("aria-label", ghostLabel(kind));
       input.setAttribute("placeholder", "打字搜索");
       input.addEventListener("input", function () { onGhostInput(kind); });
       input.addEventListener("keydown", function (event) { onGhostKey(kind, event); });
@@ -148,6 +160,7 @@
       window.clearTimeout(rec.searchTimer);
       rec.searchTimer = window.setTimeout(function () {
         if (kind === "topic") searchGhostTopics(query);
+        else if (kind === "knowledge") searchGhostKnowledge(query);
         else searchGhostTags(query);
       }, GHOST_SEARCH_DELAY_MS);
     }
@@ -164,8 +177,8 @@
         }
         var typed = rec.input ? String(rec.input.value || "").trim() : "";
         if (!typed) return;
-        // 考向只能从大纲树里取：凭空造一个节点等于在题库里造假考向。
-        if (kind === "topic") return;
+        // 考向与知识点只能从大纲树里取：凭空造一个节点等于在题库里造假维度。
+        if (kind === "topic" || kind === "knowledge") return;
         closeGhostMenu(kind);
         resetGhost(kind);
         ctx.commitTags(ctx.splitTags(ctx.tagsValue()).concat([typed]));
@@ -211,6 +224,11 @@
       if (kind === "topic") {
         var node = item.value;
         ctx.toggleTopic({ id: node.id, name: node.name });
+        return;
+      }
+      if (kind === "knowledge") {
+        var point = item.value;
+        ctx.toggleKnowledge({ id: point.id, name: point.name });
         return;
       }
       ctx.commitTags(ctx.splitTags(ctx.tagsValue()).concat([item.name]));
@@ -263,7 +281,7 @@
 
     /** 状态 → DOM：空壳的活/睡、显示/隐藏、候选菜单，全由这一处画。 */
     global.JzoReactive.watch(function () {
-      ["tag", "topic"].forEach(function (kind) {
+      KINDS.forEach(function (kind) {
         var rec = ghostState[kind];
         if (!rec || !rec.ghost) return;
         rec.ghost.setAttribute("data-state", ui[kind].state);
@@ -292,67 +310,29 @@
       var wire = ghostState.topic;
       var seq = wire ? (wire.seq || 0) + 1 : 1;
       if (wire) wire.seq = seq;
-      ctx.hostCall("bank.topics", { q: query }).then(function (result) {
-        if (!ghostState.topic || ghostState.topic.seq !== seq) return;
-        var rows = (result && Array.isArray(result.items)) ? result.items : [];
-        // 候选条数要有上限：底下是全库大纲，一口气铺满会把菜单撑爆。
-        var items = rows.slice(0, GHOST_TOPIC_LIMIT).map(function (node) {
-          return { name: String(node.name || ""), path: "", hint: "", value: node };
-        });
-        showGhostMenu("topic", items);
-        // 路径里祖先的名字要现查：bank.topics 给的是一串 id，不给人看的名字。
-        items.forEach(function (item, index) {
-          resolveTopicPath(item.value && item.value.path, item.name).then(function (text) {
-            if (!ghostState.topic || !ui.topic.items[index]) return;
-            ui.topic.items[index].path = text;
-          });
-        });
-      }, function () { closeGhostMenu("topic"); });
+      ctx.hostCall("bank.engine_directions", { q: query, limit: GHOST_TOPIC_LIMIT })
+        .then(function (result) {
+          if (!ghostState.topic || ghostState.topic.seq !== seq) return;
+          var rows = (result && Array.isArray(result.items)) ? result.items : [];
+          showGhostMenu("topic", rows.slice(0, GHOST_TOPIC_LIMIT).map(function (node) {
+            return { name: String(node.name || ""), path: "", hint: "", value: node };
+          }));
+        }, function () { closeGhostMenu("topic"); });
     }
 
-    /** 问一层子节点，把这层所有 id → 名字收进缓存。
-     *  同一层只问一次，并发的解析共用同一个在途请求。 */
-    function fetchTopicChildren(parentId) {
-      var store = ctx.topicStore;
-      var key = String(parentId || "");
-      if (store.topicChildren[key]) return Promise.resolve(store.topicChildren[key]);
-      if (store.topicPending[key]) return store.topicPending[key];
-      var request = ctx.hostCall("bank.topics", key ? { parent_id: key } : {}).then(function (result) {
-        var items = (result && Array.isArray(result.items)) ? result.items : [];
-        var names = {};
-        items.forEach(function (node) {
-          names[node.id] = node.name;
-          store.topicNames[node.id] = node.name;
-        });
-        store.topicChildren[key] = names;
-        delete store.topicPending[key];
-        return names;
-      }, function () {
-        delete store.topicPending[key];
-        return {};
-      });
-      store.topicPending[key] = request;
-      return request;
-    }
-
-    /** bank.topics 的 path 是 id 链：逐级把祖先的名字问出来，拼成给人看的「册 › 章 › 考向」。
-     *  叶子自己的名字搜索时就知道了，不必再为它多问一趟。 */
-    function resolveTopicPath(path, leafName) {
-      var chain = String(path || "").split("/").filter(Boolean);
-      if (!chain.length) return Promise.resolve("");
-      var store = ctx.topicStore;
-      var step = function (index) {
-        if (index >= chain.length - 1) return Promise.resolve();
-        if (store.topicNames[chain[index]]) return step(index + 1);
-        var parentId = index === 0 ? "" : chain[index - 1];
-        return fetchTopicChildren(parentId).then(function () { return step(index + 1); });
-      };
-      return step(0).then(function () {
-        return chain.map(function (id, index) {
-          if (index === chain.length - 1 && leafName) return leafName;
-          return store.topicNames[id] || "";
-        }).filter(Boolean).join(" › ");
-      });
+    /** 知识点与考向同一种菜：候选来自 31 表的 dim_knowledge_points，不走旧大纲树。 */
+    function searchGhostKnowledge(query) {
+      var wire = ghostState.knowledge;
+      var seq = wire ? (wire.seq || 0) + 1 : 1;
+      if (wire) wire.seq = seq;
+      ctx.hostCall("bank.engine_knowledge", { q: query, limit: GHOST_TOPIC_LIMIT })
+        .then(function (result) {
+          if (!ghostState.knowledge || ghostState.knowledge.seq !== seq) return;
+          var rows = (result && Array.isArray(result.items)) ? result.items : [];
+          showGhostMenu("knowledge", rows.slice(0, GHOST_TOPIC_LIMIT).map(function (node) {
+            return { name: String(node.name || ""), path: "", hint: "", value: node };
+          }));
+        }, function () { closeGhostMenu("knowledge"); });
     }
 
     /** 标签胶囊：#epTags 只当「逗号串」的存档位，界面上的真身是这一串小胶囊。 */
@@ -398,12 +378,38 @@
       });
     }
 
+    function renderKnowledge() {
+      if (!ctx.knowledgeList) return;
+      var entry = ctx.entry() || {};
+      var ids = entry.knowledge_point_ids || [];
+      var names = entry.knowledge_names || {};
+      var fresh = chipRow("knowledge");
+      ids.forEach(function (id) {
+        var chip = ctx.el("span", "ep-chip");
+        chip.setAttribute("data-knowledge", id);
+        chip.appendChild(ctx.el("span", "ep-chip-name", names[id] || id));
+        var removeBtn = ctx.el("button", "ep-chip-x", "摘");
+        removeBtn.type = "button";
+        removeBtn.setAttribute("aria-label", "摘除知识点 " + (names[id] || id));
+        removeBtn.addEventListener("click", function () {
+          ctx.toggleKnowledge({ id: id, name: names[id] || id });
+        });
+        chip.appendChild(removeBtn);
+        insertChip(ctx.knowledgeList, chip, fresh);
+      });
+    }
+
     return {
       state: ui,
       renderTags: renderTags,
       renderMounted: renderMounted,
+      renderKnowledge: renderKnowledge,
       wireCell: wireGhostCell,
-      closeMenus: function () { closeGhostMenu("tag"); closeGhostMenu("topic"); }
+      closeMenus: function () {
+        closeGhostMenu("tag");
+        closeGhostMenu("topic");
+        closeGhostMenu("knowledge");
+      }
     };
   }
 

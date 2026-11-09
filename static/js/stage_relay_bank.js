@@ -97,6 +97,57 @@
 
     if (method.indexOf("bank.") !== 0) return false;
 
+    if (method === "bank.engine_meta") {
+      // 五张小字典 + 考试类型清单：录题端的下拉框只认 31 表里的真实种子。
+      fetchJson("/api/bank/engine/meta").then(done, fail);
+      return true;
+    }
+
+    if (method === "bank.engine_directions" || method === "bank.engine_knowledge") {
+      var engineParams = new URLSearchParams();
+      var engineQuery = textValue(payload, "q", 100);
+      if (engineQuery) engineParams.set("q", engineQuery);
+      engineParams.set("limit", String(intValue(payload, "limit", 20, 1, 60)));
+      var engineSubject = intValue(payload, "subject_id", 0, 0, 9999);
+      if (engineSubject) engineParams.set("subject_id", String(engineSubject));
+      var engineGrade = intValue(payload, "grade_id", 0, 0, 9999);
+      if (engineGrade) engineParams.set("grade_id", String(engineGrade));
+      var enginePath = method === "bank.engine_directions"
+        ? "/api/bank/engine/exam-directions"
+        : "/api/bank/engine/knowledge-points";
+      fetchJson(enginePath + "?" + engineParams.toString()).then(done, fail);
+      return true;
+    }
+
+    if (method === "bank.engine_create") {
+      var enginePermissions = (tab.plugin && tab.plugin.permissions) || [];
+      if (enginePermissions.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能写入题库"
+        });
+        return true;
+      }
+      var engineQuestion = payload.question;
+      if (!engineQuestion || typeof engineQuestion !== "object" || Array.isArray(engineQuestion)) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "缺少待写入的 question 对象" });
+        return true;
+      }
+      withWriteToken("/api/bank/engine/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(engineQuestion)
+      }).then(function (result) {
+        emit("system.question_updated", {
+          action: "create",
+          id: result && result.id,
+          pluginId: tab.plugin.id
+        });
+        done(result);
+      }, fail);
+      return true;
+    }
+
     if (method === "bank.create") {
       var permissions = (tab.plugin && tab.plugin.permissions) || [];
       if (permissions.indexOf("questions:write") < 0) {

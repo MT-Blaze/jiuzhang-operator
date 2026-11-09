@@ -67,11 +67,13 @@
       var panelTagsEl = document.getElementById("epTags");
       var panelTagListEl = document.getElementById("epTagList");
       var panelMountedEl = document.getElementById("epMounted");
+      var panelKnowledgeListEl = document.getElementById("epMountedKnowledge");
       var panelMetaSecEl = document.getElementById("epMetaSec");
       var panelMetaFoldEl = document.getElementById("epMetaFold");
       var panelMetaSummaryEl = document.getElementById("epMetaSummary");
       var panelGhostTagMenuEl = document.getElementById("epGhostTagMenu");
       var panelGhostTopicMenuEl = document.getElementById("epGhostTopicMenu");
+      var panelGhostKnowledgeMenuEl = document.getElementById("epGhostKnowledgeMenu");
       var panelApproveEl = document.getElementById("epApprove");
       // AI 配置与批量识别（终极军令 任务一/三）：入口在辅助栏顶部与底部动作区。
       var panelAiConfigEl = document.getElementById("epAiConfig");
@@ -208,6 +210,7 @@
       var panelRegionListEl = document.getElementById("epMetaRegionList");
       var panelBodyListEl = document.getElementById("epMetaBodyList");
       var panelSubjectListEl = document.getElementById("epMetaSubjectList");
+      var panelGradeListEl = document.getElementById("epMetaGradeList");
 
     return {
       root: root,
@@ -263,11 +266,13 @@
       panelTagsEl: panelTagsEl,
       panelTagListEl: panelTagListEl,
       panelMountedEl: panelMountedEl,
+      panelKnowledgeListEl: panelKnowledgeListEl,
       panelMetaSecEl: panelMetaSecEl,
       panelMetaFoldEl: panelMetaFoldEl,
       panelMetaSummaryEl: panelMetaSummaryEl,
       panelGhostTagMenuEl: panelGhostTagMenuEl,
       panelGhostTopicMenuEl: panelGhostTopicMenuEl,
+      panelGhostKnowledgeMenuEl: panelGhostKnowledgeMenuEl,
       panelApproveEl: panelApproveEl,
       panelAiConfigEl: panelAiConfigEl,
       panelAiBatchEl: panelAiBatchEl,
@@ -397,6 +402,7 @@
       panelRegionListEl: panelRegionListEl,
       panelBodyListEl: panelBodyListEl,
       panelSubjectListEl: panelSubjectListEl,
+      panelGradeListEl: panelGradeListEl,
     };
   }
 

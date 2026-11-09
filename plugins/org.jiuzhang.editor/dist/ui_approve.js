@@ -271,9 +271,12 @@
   }
 
   /** 真入库：写完把红字熄掉，把池子里的账重算一遍。 */
-  function approveNow(item) {
+  function approveNow(item, entry) {
     batchNote("正在存入主库…", "running");
-    return hostCall("pending.approve", { pending_id: item.pendingId }).then(function (result) {
+    var payload = { pending_id: item.pendingId, engine: true };
+    // 引擎分支收的是契约文档：学科缺省数学，年级/考向/知识点都在 taxonomy 里。
+    if (entry) payload.question = documentFor(item, entry).doc;
+    return hostCall("pending.approve", payload).then(function (result) {
       panel.saving = false;
       approveBusy(false);
       clearDupWarning();
@@ -335,6 +338,13 @@
     }
     panel.saving = true;
     approveBusy(true);
+    var engineProblems = documentFor(item, entry).problems;
+    if (engineProblems.length) {
+      panel.saving = false;
+      approveBusy(false);
+      panelSay("这一题还存不进去：" + engineProblems.slice(0, 3).join("；"), "warn", "invalid");
+      return;
+    }
     panelSay("正在查重…", "info", "checking");
     batchNote("正在查重…", "running");
     precheck(item).then(function (report) {
@@ -348,7 +358,7 @@
         inspectDup();
         return null;
       }
-      return approveNow(item);
+      return approveNow(item, entry);
     }).catch(function (error) {
       panel.saving = false;
       approveBusy(false);

@@ -413,6 +413,14 @@
              aria-label="考向候选" hidden></div>
       </div>
 
+      <!-- 第二行半 知识点：与考向同一套幽灵胶囊，落 v2 的 question_knowledge_map。 -->
+      <div class="ep-cell">
+        <span class="ep-mini-label">知识点</span>
+        <div class="ep-chips" id="epMountedKnowledge" role="list" aria-label="本题已挂知识点"></div>
+        <div class="ep-menu ep-menu-ghost" id="epGhostKnowledgeMenu" role="listbox"
+             aria-label="知识点候选" hidden></div>
+      </div>
+
       <!-- 第三行 标签：胶囊 + 幽灵胶囊（拼音模糊搜索）。#epTags 藏起来只当「逗号串」的存档位。 -->
       <div class="ep-cell">
         <span class="ep-mini-label">标签</span>
@@ -470,7 +478,7 @@
             <label class="ep-field ep-field-narrow">
               <span class="ep-label">年级</span>
               <input id="epMetaGrade" class="ep-input" type="text" maxlength="20"
-                     placeholder="高一">
+                     list="epMetaGradeList" placeholder="高一">
             </label>
           </div>
           <label class="ep-field">
@@ -527,6 +535,7 @@
           <datalist id="epMetaRegionList"></datalist>
           <datalist id="epMetaBodyList"></datalist>
           <datalist id="epMetaSubjectList"></datalist>
+          <datalist id="epMetaGradeList"></datalist>
           <p class="ep-hint" id="epSceneNote">场景决定标签排序：外国题先出 AMC / A-Level / IB，校考题先出月考与模考。</p>
           <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步；学校只存字典 ID，按简称能搜到。</p>
         </div>

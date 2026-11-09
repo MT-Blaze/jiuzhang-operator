@@ -106,6 +106,8 @@
     var panelMetaSecEl = deps.dom.panelMetaSecEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
     var panelMetaYearEl = deps.dom.panelMetaYearEl;
+    var panelSubjectListEl = deps.dom.panelSubjectListEl;
+    var panelGradeListEl = deps.dom.panelGradeListEl;
     var panelRoot = deps.dom.panelRoot;
     var panelSchoolConfirmCancelEl = deps.dom.panelSchoolConfirmCancelEl;
     var panelSchoolConfirmOkEl = deps.dom.panelSchoolConfirmOkEl;
@@ -115,6 +117,52 @@
     var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelSwapEl = deps.dom.panelSwapEl;
     var panelTypeEl = deps.dom.panelTypeEl;
+
+  /** 下拉框的“选项文案”从引擎字典来：题型与难度的名字以 31 表为准。 */
+  function engineLabels(rows, fallback) {
+    var labels = {};
+    (rows || []).forEach(function (row) {
+      if (row && row.code) labels[row.code] = String(row.name || row.code);
+    });
+    Object.keys(fallback || {}).forEach(function (key) {
+      if (!labels[key]) labels[key] = fallback[key];
+    });
+    return labels;
+  }
+
+  function fillDataList(node, rows) {
+    if (!node) return;
+    node.textContent = "";
+    (rows || []).forEach(function (row) {
+      var option = document.createElement("option");
+      option.value = String((row && row.name) || "");
+      node.appendChild(option);
+    });
+  }
+
+  function applyEngineMeta(meta) {
+    if (!meta || typeof meta !== "object") return;
+    panel.engineMeta = meta;
+    var typeNames = engineLabels(meta.question_types, TYPE_LABELS);
+    var typeLabels = {};
+    TYPE_VALUES.forEach(function (value) {
+      var code = value === "single_choice" || value === "multiple_choice" ? "choice" : value;
+      var suffix = value === "single_choice" ? "（单选）"
+        : value === "multiple_choice" ? "（多选）" : "";
+      typeLabels[value] = (typeNames[code] || TYPE_LABELS[value] || value) + suffix;
+    });
+    fillSelect(panelTypeEl, TYPE_VALUES, typeLabels);
+    var difficultyLabels = engineLabels(meta.difficulties, DIFFICULTY_LABELS);
+    fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, difficultyLabels);
+    fillDataList(panelSubjectListEl, meta.subjects);
+    fillDataList(panelGradeListEl, meta.grades);
+  }
+
+  function loadEngineMeta() {
+    return hostCall("bank.engine_meta", {}).then(applyEngineMeta, function () {
+      return null;   // 引擎没建成时保留本地默认文案，不挡住录题
+    });
+  }
 
   function activatePanel() {
     if (!panelRoot) return;
@@ -126,6 +174,8 @@
     renderMounted();
     wireGhostCell("tag");
     wireGhostCell("topic");
+    wireGhostCell("knowledge");
+    loadEngineMeta();
     // 批次公共元数据：画布一滚动就收成一行矮标题；鼠标停在标题上才展开，
     // 移开鼠标不收起——老师正在填的字段不许被自动折叠抢走。
     if (panelMetaFoldEl) {

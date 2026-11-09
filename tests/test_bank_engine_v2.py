@@ -20,6 +20,7 @@ from pathlib import Path
 from app.bank_engine import builder, service
 from app.bank_engine import paths as engine_paths
 from app.bank_engine.seeding import EXPECTED_COUNTS
+from app.bank_engine.writer import EntryRejected
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
@@ -196,6 +197,121 @@ class EngineDaoTest(unittest.TestCase):
         chapters = service.chapters(books[0].id, db_path=self.db_path)
         self.assertTrue(chapters)
         self.assertTrue(all(chapter.parent_id is None for chapter in chapters))
+
+
+class EngineEntryWriteTest(unittest.TestCase):
+    """录题落库：表单只交名字/编码，主表与从表分步写入，绝不整包塞进 JSON 列。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp(prefix="engine-entry-"))
+        cls.db_path = cls.tmp / "engine.v2.db"
+        builder.build_engine(db_path=cls.db_path, schema=SCHEMA)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, True)
+
+    def _document(self) -> dict:
+        return {
+            "type": "choice",
+            "stem": "已知集合 $A=\\{1,2\\}$，判断 $1$ 与 $A$ 的关系。",
+            "difficulty": "L2",
+            "quality": "NORMAL",
+            "subject": "数学",
+            "grade": "高一",
+            "options": [
+                {"key": "A", "content": "$1\\in A$"},
+                {"key": "B", "content": "$1\\notin A$"},
+            ],
+            "answer": {"kind": "choice", "choice_keys": ["A"], "final": "A"},
+            "solution": "由列举法直接读出元素属于集合。",
+            "exam_direction_ids": ["tp_kx9b03d9eb"],
+            "knowledge_point_ids": ["math_function"],
+            "tags": ["集合"],
+            "source": {
+                "paper_title": "沙盒联调卷",
+                "exam_type": "自编题",
+                "year": 2026,
+                "region": "北京",
+                "question_no": "1",
+                "score": 5,
+            },
+        }
+
+    def test_create_question_splits_into_child_tables(self) -> None:
+        created = service.create_question(self._document(), db_path=self.db_path)
+        self.assertTrue(created.created)
+        self.assertRegex(created.id, r"^q_[0-9a-f]{12}$")
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            question = conn.execute(
+                "SELECT subject_id, question_type_id, difficulty_id, quality_id "
+                "FROM questions WHERE id = ?", (created.id,)
+            ).fetchone()
+            self.assertIsNotNone(question)
+            self.assertEqual(question["subject_id"], 2)
+            self.assertEqual(question["difficulty_id"], 2)
+
+            options = conn.execute(
+                "SELECT option_label, is_correct FROM question_options "
+                "WHERE question_id = ? ORDER BY option_label", (created.id,)
+            ).fetchall()
+            self.assertEqual([(row["option_label"], row["is_correct"]) for row in options],
+                             [("A", 1), ("B", 0)])
+
+            answer = conn.execute(
+                "SELECT answer_content FROM question_answers WHERE question_id = ?",
+                (created.id,)
+            ).fetchone()
+            self.assertEqual(answer["answer_content"], "A")
+
+            solution = conn.execute(
+                "SELECT content FROM question_solutions WHERE question_id = ?",
+                (created.id,)
+            ).fetchone()
+            self.assertIn("列举法", solution["content"])
+
+            direction = conn.execute(
+                "SELECT e.code FROM question_exam_map m "
+                "JOIN dim_exam_directions e ON e.id = m.exam_direction_id "
+                "WHERE m.question_id = ?", (created.id,)
+            ).fetchone()
+            self.assertEqual(direction["code"], "tp_kx9b03d9eb")
+
+            point = conn.execute(
+                "SELECT k.code FROM question_knowledge_map m "
+                "JOIN dim_knowledge_points k ON k.id = m.knowledge_point_id "
+                "WHERE m.question_id = ?", (created.id,)
+            ).fetchone()
+            self.assertEqual(point["code"], "math_function")
+
+            source = conn.execute(
+                "SELECT s.name, s.year, m.question_no, m.score FROM question_source_map m "
+                "JOIN dim_sources s ON s.id = m.source_id WHERE m.question_id = ?",
+                (created.id,)
+            ).fetchone()
+            self.assertEqual(source["name"], "沙盒联调卷")
+            self.assertEqual(source["year"], 2026)
+            self.assertEqual(source["score"], 5.0)
+
+            tag = conn.execute(
+                "SELECT namespace, field_value FROM question_supplements "
+                "WHERE question_id = ?", (created.id,)
+            ).fetchone()
+            self.assertEqual((tag["namespace"], tag["field_value"]), ("标签", "集合"))
+
+    def test_unknown_dimension_code_is_rejected_before_any_write(self) -> None:
+        document = self._document()
+        document["exam_direction_ids"] = ["tp_kxffffffff"]
+        with sqlite3.connect(self.db_path) as conn:
+            before = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        with self.assertRaises(EntryRejected):
+            service.create_question(document, db_path=self.db_path)
+        with sqlite3.connect(self.db_path) as conn:
+            after = conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        self.assertEqual(before, after, "解析失败必须一题不落")
 
 
 class EngineSourceHygieneTest(unittest.TestCase):

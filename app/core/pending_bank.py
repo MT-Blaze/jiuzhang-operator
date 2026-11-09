@@ -90,6 +90,7 @@ from app.core.pending_db import (
     new_pending_id,
     next_batch_id,
 )
+from app.core.pending_finish import finish_pending
 from app.core.pending_dedupe import (
     answer_key,
     answer_mismatch,
@@ -508,7 +509,7 @@ def _merge_solution(pending_id: str, provider_id: str, existing_id: str,
     except BaseException:
         restore_assets(mapping)
         raise
-    finished = _finish_pending(item, pending_id, existing_id)
+    finished = finish_pending(item, pending_id, existing_id)
     return {
         "pending_id": pending_id,
         "question_id": existing_id,
@@ -521,27 +522,9 @@ def _merge_solution(pending_id: str, provider_id: str, existing_id: str,
     }
 
 
-def _finish_pending(item: dict[str, Any], pending_id: str,
-                    question_id: str) -> dict[str, Any]:
-    """入库/合并的收尾：池子里这条删掉、批次记一笔、未审数归零就物理清理。"""
-    batch_id = str(item.get("batch_id") or "")
-    con = connect()
-    try:
-        con.execute("BEGIN IMMEDIATE")
-        con.execute("DELETE FROM pending_questions WHERE id = ?", (pending_id,))
-        remember_approved(con, batch_id, str(question_id or ""))
-        con.commit()
-    except BaseException:
-        con.rollback()
-        raise
-    finally:
-        con.close()
-    drop_assets(item.get("assets") or [])
-    return _settle_batch(batch_id)
-
-
 def approve(pending_id: str, provider_id: str, *, force: bool = False,
-            action: str = "") -> dict[str, Any]:
+            action: str = "", engine: bool = False,
+            document: dict[str, Any] | None = None) -> dict[str, Any]:
     """审核通过（**存入主库**）：``p_`` 转 ``q_`` 落进主库，配图搬进 ``uploads/``。
 
     顺序是刻意的：先把配图搬进主库资源目录，再写题库——写库失败就把配图搬回去，
@@ -565,6 +548,10 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False,
     merge = choice == ACTION_MERGE_SOLUTION
 
     item = get_pending(pending_id)
+    if engine:
+        from app.core.pending_engine import approve_engine
+
+        return approve_engine(pending_id, item, document)
     assets = item.get("assets") or []
     document = copy.deepcopy(item["question"])
     document.pop("id", None)
@@ -600,7 +587,7 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False,
         restore_assets(mapping)
         raise
 
-    finished = _finish_pending(item, pending_id, str(question.get("id") or ""))
+    finished = finish_pending(item, pending_id, str(question.get("id") or ""))
     return {
         "pending_id": pending_id,
         "question_id": question.get("id") or "",

@@ -32,6 +32,8 @@
     var metricsEl = deps.dom.metricsEl;
     var panelMetricsEl = deps.dom.panelMetricsEl;
     var panelStatusEl = deps.dom.panelStatusEl;
+    var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
+    var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
     var savedEl = deps.dom.savedEl;
 
   // ---------- 落库（辅助栏发起；命令面走同一份实现，绝不让两处各写一套） ----------
@@ -108,6 +110,10 @@
     });
     var topicIds = (meta.topic_ids || []).filter(function (id) { return TOPIC_ID_RE.test(String(id)); }).slice(0, TOPIC_LIMIT);
     if (topicIds.length) taxonomy.topic_ids = topicIds;
+    var knowledgeIds = (meta.knowledge_point_ids || []).map(function (id) {
+      return String(id == null ? "" : id).trim().slice(0, 64);
+    }).filter(Boolean).slice(0, TOPIC_LIMIT);
+    if (knowledgeIds.length) taxonomy.knowledge_point_ids = knowledgeIds;
     if (Object.keys(taxonomy).length) doc.taxonomy = taxonomy;
     var source = {};
     if (meta.paper_title) source.paper_title = String(meta.paper_title).trim().slice(0, 120);
@@ -130,6 +136,47 @@
     if (Object.keys(editorExt).length) extras["org.jiuzhang.editor"] = editorExt;
     if (Object.keys(extras).length) doc.extensions = extras;
     return doc;
+  }
+
+  /**
+   * 引擎 v2 的录题文档：字段名与 31 表一一对应，旧的 extensions 不再参与。
+   * 题目号由引擎签发；这里只交“老师填了什么”，考向/知识点用字典 code。
+   */
+  function engineFromDoc(doc, meta) {
+    var batch = panel.batchMeta || {};
+    var subject = panelMetaSubjectEl ? String(panelMetaSubjectEl.value || "").trim() : "";
+    var grade = panelMetaGradeEl ? String(panelMetaGradeEl.value || "").trim() : "";
+    var engine = {
+      type: doc.type,
+      stem: doc.stem,
+      difficulty: doc.difficulty || "L1",
+      quality: String(meta.quality || "NORMAL"),
+      subject: subject || String(batch.subject || "数学"),
+      grade: grade || String(batch.grade || doc.grade || ""),
+      answer: doc.answer,
+      solution: doc.solution || "",
+      options: doc.options || []
+    };
+    var taxonomy = doc.taxonomy || {};
+    if (Array.isArray(taxonomy.topic_ids) && taxonomy.topic_ids.length) {
+      engine.exam_direction_ids = taxonomy.topic_ids.slice(0, TOPIC_LIMIT);
+    }
+    if (Array.isArray(taxonomy.knowledge_point_ids) && taxonomy.knowledge_point_ids.length) {
+      engine.knowledge_point_ids = taxonomy.knowledge_point_ids.slice(0, TOPIC_LIMIT);
+    }
+    if (Array.isArray(doc.tags) && doc.tags.length) engine.tags = doc.tags;
+    if (Array.isArray(doc.images) && doc.images.length) engine.images = doc.images;
+    if (doc.source) {
+      engine.source = {
+        paper_title: doc.source.paper_title || "",
+        exam_type: doc.source.exam_type || "",
+        year: doc.source.year,
+        region: doc.source.region || "",
+        question_no: doc.source.question_no || "",
+        score: Number(meta.score) || 0
+      };
+    }
+    return engine;
   }
 
   /** 保存前的最小校验：先把源码认全，再逐条对照契约的硬边界，问题一律用老师看得懂的话说。 */
@@ -175,7 +222,10 @@
     if (updating) payload.id = item.savedId;
     // 不带 sources：契约的「没给就保持原样」保住一题多卷的其余原卷，
     // 阶段 2 的辅助栏只有一张原卷输入，不能拿它去覆盖老师挂好的整组来源。
-    var method = updating ? "bank.update" : "bank.create";
+    // 新题一律走 v2 引擎：主表与从表由底座分步落库；已入库的旧题仍走旧库更新，
+    // 避免拿引擎字段去改旧 17 表记录。
+    if (!updating) payload.question = engineFromDoc(doc, meta || {});
+    var method = updating ? "bank.update" : "bank.engine_create";
     return hostCall(method, payload).then(function (result) {
       var id = (result && result.id) || (updating ? item.savedId : "");
       if (mode !== "variant") {
@@ -261,6 +311,7 @@
   }
 
     return {
+      engineFromDoc: engineFromDoc,
       flushMetaDraft: flushMetaDraft,
       lettersFrom: lettersFrom,
       loadMetaDraft: loadMetaDraft,

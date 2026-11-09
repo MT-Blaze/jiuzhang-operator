@@ -478,6 +478,7 @@
     splitTags: splitTags,
     // 循环引用：toggleTopic 归更下面的 uiTopics，本块排得靠前，只能等它就位后再取。
     toggleTopic: function () { return uiTopics.toggleTopic.apply(uiTopics, arguments); },
+    toggleKnowledge: function () { return uiTopics.toggleKnowledge.apply(uiTopics, arguments); },
     coreState: coreState,
   });
   var applyDraftSelection = uiPanelGlue.applyDraftSelection;
@@ -486,8 +487,7 @@
   var onCanvasState = uiPanelGlue.onCanvasState;
   var onPanelPendingUpdated = uiPanelGlue.onPanelPendingUpdated;
   var renderFoldSummary = uiPanelGlue.renderFoldSummary;
-  var renderMounted = uiPanelGlue.renderMounted;
-  var renderTags = uiPanelGlue.renderTags;
+  var renderMounted = uiPanelGlue.renderMounted, renderTags = uiPanelGlue.renderTags;
   var signalCanvasScroll = uiPanelGlue.signalCanvasScroll;
   var wireGhostCell = uiPanelGlue.wireGhostCell;
   var wireLamp = uiPanelGlue.wireLamp;

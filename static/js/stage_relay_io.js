@@ -341,18 +341,18 @@
         }, fail);
         return true;
       }
-      // 存入主库：查重命中时后端回 409，插件拿 detail.existing_id 去问老师要不要强行覆盖。
-      // 军令 #31：老师面对「高度相似」时的三种裁决里，覆盖与合并写成 action 递下去；
-      // 「放弃」不写库，插件本地收口，根本不发这一趟。
+      // 存入主库：命中回 409；覆盖/合并写 action，「放弃」不发；engine=true 转落 v2 引擎。
       var dupAction = textValue(payload, "action", 40);
       if (dupAction && dupAction !== "overwrite" && dupAction !== "merge_solution") {
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "不认识的入库动作" });
         return true;
       }
+      var approveBody = { force: payload.force === true, action: dupAction, engine: payload.engine === true,
+        question: payload.question && typeof payload.question === "object" ? payload.question : null };
       withWriteToken("/api/pending/items/" + encodeURIComponent(pendingId) + "/approve", {
         method: "POST",
         headers: jsonHeaders,
-        body: JSON.stringify({ force: payload.force === true, action: dupAction })
+        body: JSON.stringify(approveBody)
       }).then(function (result) {
         emitPendingUpdated("approve", [pendingId], result);
         emit("system.question_updated", {

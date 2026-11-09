@@ -24,9 +24,12 @@
     var publish = deps.publish;
     var splitTags = deps.splitTags;
     var toggleTopic = deps.toggleTopic;
+    var toggleKnowledge = deps.toggleKnowledge;
     var imageBodyEl = deps.dom.imageBodyEl;
     var panelGhostTagMenuEl = deps.dom.panelGhostTagMenuEl;
     var panelGhostTopicMenuEl = deps.dom.panelGhostTopicMenuEl;
+    var panelGhostKnowledgeMenuEl = deps.dom.panelGhostKnowledgeMenuEl;
+    var panelKnowledgeListEl = deps.dom.panelKnowledgeListEl;
     var panelMetaFoldEl = deps.dom.panelMetaFoldEl;
     var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
     var panelMetaSecEl = deps.dom.panelMetaSecEl;
@@ -47,21 +50,25 @@
     hostCall: hostCall,
     tagList: panelTagListEl,
     mountedList: panelMountedEl,
+    knowledgeList: panelKnowledgeListEl,
     tagMenu: panelGhostTagMenuEl,
     topicMenu: panelGhostTopicMenuEl,
+    knowledgeMenu: panelGhostKnowledgeMenuEl,
     tagsValue: function () { return panelTagsEl ? panelTagsEl.value : ""; },
     entry: function () { return panel.currentEntry || {}; },
     topicStore: panel,
     scene: function () { return panelMetaSceneEl ? String(panelMetaSceneEl.value || "") : ""; },
     commitTags: function (tags) { commitTags(tags); },
     toggleTopic: function (topic) { toggleTopic(topic); },
+    toggleKnowledge: function (point) { toggleKnowledge(point); },
     splitTags: splitTags,
     delay: GHOST_DELAY_MS
   });
 
   function renderTags() { capsule.renderTags(); }
 
-  function renderMounted() { capsule.renderMounted(); }
+  /** 挂载区一处重画：考向串与知识点串同属「已挂载」，分开画只会漂移。 */
+  function renderMounted() { capsule.renderMounted(); capsule.renderKnowledge(); }
 
   function wireGhostCell(kind) { capsule.wireCell(kind); }
 

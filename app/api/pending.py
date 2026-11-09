@@ -20,6 +20,8 @@ from app.core import bank, pending_bank, pending_dedupe, pending_pool, questions
 from app.core import bank_provider as provider
 from app.core.pending_db import BATCH_ID_RE
 from app.core.security import require_write_token
+from app.bank_engine.writer import EntryRejected
+from app.api.pending_approve_errors import approve_error
 
 router = APIRouter(tags=["pending"])
 
@@ -212,37 +214,16 @@ def pending_approve(pending_id: str, payload: dict[str, Any] | None = Body(defau
     body = payload if isinstance(payload, dict) else {}
     force = body.get("force") is True
     action = body.get("action")
+    engine = body.get("engine") is True
+    document = body.get("question") if isinstance(body.get("question"), dict) else None
     try:
         plugin_id = provider.resolve()["plugin_id"]
         return pending_bank.approve(pending_id, plugin_id, force=force,
-                                    action=str(action or ""))
-    except pending_bank.PendingDuplicateAnswer as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"message": str(exc), "existing_id": exc.existing_id, "duplicate": True,
-                    "answer_mismatch": True, "code": "duplicate_answer_mismatch",
-                    "existing_answer": exc.existing_answer,
-                    "incoming_answer": exc.incoming_answer},
-        ) from exc
-    except pending_bank.PendingDuplicate as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"message": str(exc), "existing_id": exc.existing_id, "duplicate": True},
-        ) from exc
-    except pending_bank.PendingNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except questions.QuestionValidationError as exc:
-        raise HTTPException(
-            status_code=422, detail={"message": "题目不符合 Schema", "errors": exc.errors}
-        ) from exc
-    except bank.BankNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except bank.BankError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+                                    action=str(action or ""), engine=engine,
+                                    document=document)
+    except (EntryRejected, pending_bank.PendingError, bank.BankError,
+            questions.QuestionValidationError) as exc:
+        raise approve_error(exc) from exc
 
 
 @router.post(

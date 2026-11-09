@@ -45,8 +45,37 @@
     renderPanelMetrics();
   }
 
+  /** 知识点与考向同一套开关：只是落在不同的关系表（question_knowledge_map）。 */
+  function toggleKnowledge(node) {
+    var entry = panel.currentEntry || (panel.currentEntry = {});
+    var ids = (entry.knowledge_point_ids || []).slice();
+    var names = entry.knowledge_names || {};
+    var position = ids.indexOf(node.id);
+    if (position >= 0) {
+      ids.splice(position, 1);
+      delete names[node.id];
+    } else if (ids.length >= TOPIC_LIMIT) {
+      panelSay("知识点最多挂 " + TOPIC_LIMIT + " 个，先摘掉一个。", "warn", "idle");
+      return;
+    } else {
+      ids.push(node.id);
+      names[node.id] = node.name;
+    }
+    entry.knowledge_point_ids = ids;
+    entry.knowledge_names = names;
+    panel.currentEntry = entry;
+    if (panel.selection) {
+      panel.meta[panel.selection.key] = entry;
+      panel.selection.dirty = true;
+    }
+    queueMetaSave();
+    renderMounted();
+    renderPanelMetrics();
+  }
+
     return {
       toggleTopic: toggleTopic,
+      toggleKnowledge: toggleKnowledge,
     };
   }
 

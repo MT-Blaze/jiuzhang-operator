@@ -6,6 +6,121 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class Subject:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+
+
+@dataclass(frozen=True)
+class Grade:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    stage: str | None
+
+
+@dataclass(frozen=True)
+class QuestionType:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+
+
+@dataclass(frozen=True)
+class Difficulty:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    level: int
+    description: str | None
+
+
+@dataclass(frozen=True)
+class Quality:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+
+
+@dataclass(frozen=True)
+class Dictionaries:
+    subjects: tuple[Subject, ...]
+    grades: tuple[Grade, ...]
+    question_types: tuple[QuestionType, ...]
+    difficulties: tuple[Difficulty, ...]
+    qualities: tuple[Quality, ...]
+
+
+@dataclass(frozen=True)
+class NewOption:
+    label: str
+    content: str
+    is_correct: bool = False
+
+
+@dataclass(frozen=True)
+class NewImage:
+    belongs_to: str
+    path: str
+    alt: str | None = None
+    sort_order: int = 0
+    option_label: str | None = None
+
+
+@dataclass(frozen=True)
+class NewSupplement:
+    namespace: str
+    field_key: str
+    field_value: str
+    sort_order: int = 0
+
+
+@dataclass(frozen=True)
+class NewSource:
+    name: str
+    exam_type: str
+    year: int | None = None
+    region: str | None = None
+    question_no: str | None = None
+    score: float = 0.0
+    grade_id: int | None = None
+    chapter_id: int | None = None
+    school_id: int | None = None
+
+
+@dataclass(frozen=True)
+class NewQuestion:
+    """录入表单校验后的落库对象：所有外键都已解析成整数 id。"""
+
+    stem: str
+    subject_id: int
+    question_type_id: int
+    difficulty_id: int
+    quality_id: int
+    options: tuple[NewOption, ...] = ()
+    answer: str = ""
+    solution: str = ""
+    remark: str = ""
+    supplements: tuple[NewSupplement, ...] = ()
+    images: tuple[NewImage, ...] = ()
+    exam_direction_ids: tuple[int, ...] = ()
+    knowledge_point_ids: tuple[int, ...] = ()
+    source: NewSource | None = None
+
+
+@dataclass(frozen=True)
+class CreatedQuestion:
+    id: str
+    created: bool = True
+
+
+@dataclass(frozen=True)
 class ExamDirection:
     id: int
     name: str

@@ -23,14 +23,14 @@
     var textValue = deps.textValue;
 
   // ---------- 插件数据通道（Host API 转发） ----------
-  // 插件不直连数据库、也不联网；它只能申请下列方法，由宿主按「当前页签自己的
-  // plugin.id」去查接口。插件在 payload 里自报 plugin_id 一律不认，防止串库。
-  // 读接口开放；题篮写操作由宿主代取一次性令牌（插件永远看不到令牌）。
+  // 插件不直连数据库、也不联网；只能申请下列方法，由宿主按当前页签的 plugin.id 查接口，
+  // payload 里自报 plugin_id 一律不认。读接口开放；写操作由宿主代取一次性令牌。
   var RELAY_METHODS = [
     "bank.list", "bank.stats", "bank.get", "bank.random", "bank.create",
     "bank.active_list", "bank.active_stats",
     "bank.topics", "bank.topic_notes", "bank.review", "bank.update", "bank.delete",
     "bank.sources",
+    "bank.engine_meta", "bank.engine_directions", "bank.engine_knowledge", "bank.engine_create",
     "bank.dashboard_stats", "bank.dashboard_heatmap",
     "basket.list", "basket.add", "basket.active_add", "basket.remove", "basket.clear",
     "asset.upload",

@@ -659,14 +659,14 @@ class EditorHostCallTest(unittest.TestCase):
         self.assertIn('var DRAFT_LAYOUT_KEY = "editor:v2:layout"', js)
 
     def test_02_writes_go_through_the_host_and_only_two_methods(self) -> None:
-        """阶段 2 接写库：题面只许 bank.create / bank.update，删题仍缺席。
+        """题面只许两条写路：新题 bank.engine_create、旧题回写 bank.update。
 
         写令牌永远在宿主侧；插件连 bank.delete 都不声明，误删真题就没有通道。
         （asset.upload 是另一条二进制通道：军令 #26 的切图用它落盘配图，
-        题面本身仍只走 bank.create / bank.update —— 见 EditorCropMagnifierTest。）
+        题面本身仍只走这两条 —— 见 EditorCropMagnifierTest。）
         """
         js = read("plugin.js")
-        self.assertIn('var method = updating ? "bank.update" : "bank.create";', js)
+        self.assertIn('var method = updating ? "bank.update" : "bank.engine_create";', js)
         for forbidden in ("bank.delete", "bank.review"):
             self.assertNotIn(forbidden, js, f"本期不得接入 {forbidden}")
         self.assertNotIn("保存入库在阶段 2 接入", js, "阶段 1 的占位拒绝必须退场")
@@ -873,10 +873,10 @@ class EditorPanelTest(unittest.TestCase):
                      "function loadTopicRoots(", 'id="epTopicTree"', ".ep-tree",
                      ".ep-topic-expander"):
             self.assertNotIn(gone, js + html, f"{gone} 已随考向大纲树退场")
-        self.assertIn('ctx.hostCall("bank.topics", key ? { parent_id: key } : {})', js,
-                      "路径解析按层懒取：只问祖先那一层，别一上来把整棵大纲拖进右栏")
-        self.assertIn('ctx.hostCall("bank.topics", { q: query })', js,
-                      "候选来自拼音模糊搜索，与大纲共用同一条只读通道")
+        self.assertIn('ctx.hostCall("bank.engine_directions", { q: query, limit: GHOST_TOPIC_LIMIT })', js,
+                      "考向候选直查引擎的 dim_exam_directions，不再按层爬旧大纲")
+        self.assertIn('ctx.hostCall("bank.engine_knowledge", { q: query, limit: GHOST_TOPIC_LIMIT })', js,
+                      "知识点候选同样来自引擎的 dim_knowledge_points")
         self.assertIn("var TOPIC_LIMIT = 8", js)
         toggle = fn_body(js, "toggleTopic")
         self.assertIn("ids.length >= TOPIC_LIMIT", toggle, "挂载数量必须有上限")
@@ -1146,7 +1146,7 @@ class EditorBatchTest(unittest.TestCase):
 
     def test_04_review_reuses_the_same_bank_write_methods(self) -> None:
         js = read("plugin.js")
-        self.assertEqual(js.count('var method = updating ? "bank.update" : "bank.create";'), 1,
+        self.assertEqual(js.count('var method = updating ? "bank.update" : "bank.engine_create";'), 1,
                          "另开写库通道就是第二套事实来源")
         for forbidden in ("bank.delete", "bank.review"):
             self.assertNotIn(forbidden, js)
@@ -2204,14 +2204,12 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         # 回车取第一条（候选与高亮都在响应式状态里）
         self.assertIn("if (ui[kind].items.length) {", js)
         self.assertIn("pickGhostItem(kind, ui[kind].active >= 0 ? ui[kind].active : 0);", js)
-        # 候选菜单带路径：条目要走 resolveTopicPath，路径用「 › 」拼。
-        self.assertIn("hostCall(\"bank.topics\", { q: query })", js)
-        self.assertIn("resolveTopicPath(item.value && item.value.path, item.name)", js)
-        self.assertIn(".join(\" › \")", js)
-        # 宿主每 10 秒最多放 80 个请求：候选条数有上限，路径解析按层缓存。
+        # 候选来自引擎单表：考向查 dim_exam_directions，知识点查 dim_knowledge_points。
+        self.assertIn("hostCall(\"bank.engine_directions\", { q: query, limit: GHOST_TOPIC_LIMIT })", js)
+        self.assertIn("hostCall(\"bank.engine_knowledge\", { q: query, limit: GHOST_TOPIC_LIMIT })", js)
+        # 宿主每 10 秒最多放 80 个请求：候选条数有上限。
         self.assertIn("var GHOST_TOPIC_LIMIT = 8;", js)
         self.assertIn("rows.slice(0, GHOST_TOPIC_LIMIT)", js)
-        self.assertIn("function fetchTopicChildren(parentId)", js)
         # 打字别一口一个请求：等手停下来再查。
         self.assertIn("var GHOST_SEARCH_DELAY_MS = 180;", js)
         # UI 极致瘦身令（2026-11-02）：空胶囊是唯一的「这里能点」提示，移出鼠标只许睡回去
