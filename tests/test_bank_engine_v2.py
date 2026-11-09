@@ -1,4 +1,4 @@
-"""题库引擎 v2 契约测试：31 表结构、全量种子、自动建库与无 JSON 的 DAO。
+"""题库引擎 v2 契约测试：32 表结构、全量种子、自动建库与无 JSON 的 DAO。
 
 守的底线：
 1. 自动建库后计数与沙盒验收库一致，integrity / foreign_key 双绿；
@@ -96,10 +96,12 @@ class EngineBuildTest(unittest.TestCase):
     def test_build_reports_all_expected_counts(self) -> None:
         self.assertTrue(self.report.created)
         self.assertEqual(self.report.counts, EXPECTED_COUNTS)
-        self.assertEqual(self.report.counts["dim_knowledge_points"], 11318)
+        self.assertEqual(self.report.counts["dim_knowledge_points"], 11388)
         self.assertEqual(self.report.counts["dim_textbook_chapters"], 3528)
         self.assertEqual(self.report.counts["dim_schools"], 347)
-        self.assertEqual(self.report.counts["dim_exam_directions"], 373)
+        self.assertEqual(self.report.counts["dim_exam_directions"], 567)
+        self.assertEqual(self.report.counts["knowledge_exam_map"], 200)
+        self.assertEqual(self.report.counts["chapter_knowledge_map"], 74)
 
     def test_existing_database_is_reused(self) -> None:
         again = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
@@ -108,17 +110,17 @@ class EngineBuildTest(unittest.TestCase):
 
     def test_status_reports_integrity_and_foreign_keys(self) -> None:
         report = service.status(self.db_path)
-        self.assertEqual(report.schema_version, 3)
+        self.assertEqual(report.schema_version, 4)
         self.assertEqual(report.integrity, "ok")
         self.assertEqual(report.foreign_key_violations, 0)
-        self.assertGreaterEqual(report.table_count, 31)
+        self.assertGreaterEqual(report.table_count, 32)
 
     def test_missing_database_is_built_on_demand(self) -> None:
         fresh = self.tmp / "on-demand.v2.db"
         report = service.status(fresh)
         self.assertTrue(fresh.is_file())
-        self.assertEqual(report.schema_version, 3)
-        self.assertEqual(report.counts["dim_knowledge_points"], 11318)
+        self.assertEqual(report.schema_version, 4)
+        self.assertEqual(report.counts["dim_knowledge_points"], 11388)
 
 
 class EngineDaoTest(unittest.TestCase):
@@ -141,7 +143,7 @@ class EngineDaoTest(unittest.TestCase):
 
     def test_exam_directions_list_and_count(self) -> None:
         items, total = service.exam_directions(subject_id=2, limit=5, db_path=self.db_path)
-        self.assertEqual(total, 309)
+        self.assertEqual(total, 503)
         self.assertEqual(len(items), 5)
         self.assertTrue(all(item.subject_id == 2 for item in items))
 
@@ -187,9 +189,55 @@ class EngineDaoTest(unittest.TestCase):
 
     def test_knowledge_tree_keeps_hierarchy(self) -> None:
         roots = service.knowledge_tree(2, db_path=self.db_path)
-        self.assertEqual(len(roots), 198)
+        self.assertEqual(len(roots), 268)
         self.assertEqual(roots[0].point.name, "函数")
         self.assertGreater(len(roots[0].children), 0)
+
+    def test_required1_bridge_walks_direction_to_chapter(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            direction = conn.execute(
+                "SELECT id, name FROM dim_exam_directions WHERE code = 'ED_MATH_H_001'"
+            ).fetchone()
+            self.assertIsNotNone(direction)
+            point_ids = tuple(
+                int(row[0]) for row in conn.execute(
+                    "SELECT knowledge_point_id FROM knowledge_exam_map "
+                    "WHERE exam_direction_id = ?", (direction["id"],)
+                )
+            )
+            self.assertEqual(len(point_ids), 1)
+            point = conn.execute(
+                "SELECT id, name, code FROM dim_knowledge_points WHERE id = ?",
+                (point_ids[0],),
+            ).fetchone()
+            self.assertEqual((point["name"], point["code"]), ("集合的含义", "KP_MATH_H_001"))
+            chapter_ids = tuple(
+                int(row[0]) for row in conn.execute(
+                    "SELECT chapter_id FROM chapter_knowledge_map "
+                    "WHERE knowledge_point_id = ?", (point["id"],)
+                )
+            )
+            self.assertEqual(len(chapter_ids), 1)
+            chapter = conn.execute(
+                "SELECT name, textbook_id FROM dim_textbook_chapters WHERE id = ?",
+                (chapter_ids[0],),
+            ).fetchone()
+            self.assertEqual(chapter["textbook_id"], 9101)
+            self.assertIn("集合的概念", chapter["name"])
+
+    def test_required1_knowledge_names_carry_no_chapter_titles(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            names = [
+                str(row[0]) for row in conn.execute(
+                    "SELECT name FROM dim_knowledge_points WHERE code LIKE 'KP_MATH_H_%'"
+                )
+            ]
+        self.assertEqual(len(names), 70)
+        self.assertEqual(
+            [name for name in names if re.match(r"^(第[一二三四五六七八九十]+[章节]|\d)", name)],
+            [],
+        )
 
     def test_textbooks_and_chapters(self) -> None:
         books = service.textbooks(subject_id=2, grade_id=10, db_path=self.db_path)
@@ -338,11 +386,11 @@ class EngineSourceHygieneTest(unittest.TestCase):
         }
         self.assertEqual(oversized, {})
 
-    def test_schema_is_the_31_table_contract(self) -> None:
+    def test_schema_is_the_32_table_contract(self) -> None:
         body = SCHEMA.read_text(encoding="utf-8")
-        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 31)
-        self.assertEqual(len(builder.BASE_TABLES), 31)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 3)
+        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 32)
+        self.assertEqual(len(builder.BASE_TABLES), 32)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 4)
 
     def test_dictionaries_carry_stage_instead_of_grade(self) -> None:
         body = SCHEMA.read_text(encoding="utf-8")

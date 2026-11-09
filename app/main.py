@@ -149,7 +149,7 @@ def _log_plugin_dependency_problems() -> None:
 
 
 def _ensure_bank_engine() -> None:
-    """题库引擎 v2 自举：首次启动自动建 31 表并落全量种子，已有合法库直接复用。"""
+    """题库引擎 v2 自举：首次启动自动建 32 表并落全量种子，已有合法库直接复用。"""
     try:
         from app.bank_engine.builder import build_engine
 

@@ -177,6 +177,14 @@ CREATE TABLE knowledge_exam_map (
                        REFERENCES dim_exam_directions(id) ON DELETE RESTRICT,
     PRIMARY KEY (knowledge_point_id, exam_direction_id)
 ) WITHOUT ROWID;
+-- [功能注释] 章节与知识点关联表：教材物理目录不写入知识点树，二者经此桥表多对多
+CREATE TABLE chapter_knowledge_map (
+    chapter_id         INTEGER NOT NULL
+                       REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
+    knowledge_point_id INTEGER NOT NULL
+                       REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
+    PRIMARY KEY (chapter_id, knowledge_point_id)
+) WITHOUT ROWID;
 -- [功能注释] 导入批次表：记录每次入库的流水线版本、起止时间与状态
 CREATE TABLE ingest_batches (
     id               INTEGER PRIMARY KEY,
@@ -465,6 +473,8 @@ CREATE INDEX ix_question_solutions_question ON question_solutions (question_id);
 CREATE INDEX ix_question_supplements_question ON question_supplements (question_id);
 CREATE INDEX ix_knowledge_exam_map_exam_direction
     ON knowledge_exam_map (exam_direction_id);
+CREATE INDEX ix_chapter_knowledge_map_knowledge_point
+    ON chapter_knowledge_map (knowledge_point_id);
 CREATE INDEX ix_question_exam_map_exam_direction
     ON question_exam_map (exam_direction_id);
 CREATE INDEX ix_question_knowledge_map_knowledge_point
@@ -522,6 +532,6 @@ AFTER DELETE ON question_source_map BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;
 
 COMMIT;

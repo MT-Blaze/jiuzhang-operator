@@ -1,4 +1,4 @@
-"""题库引擎 v2 的自动建库：按插件 schema 建 31 表，再灌入全量种子。
+"""题库引擎 v2 的自动建库：按插件 schema 建 32 表，再灌入全量种子。
 
 建库在临时文件里完成，原子替换目标库；任何一步失败都不留下半成品。
 已有合法结构直接复用；低版本库先在原地迁移，只有显式 ``force`` 或结构损坏时才重建，
@@ -29,6 +29,7 @@ BASE_TABLES: tuple[str, ...] = (
     "dim_knowledge_points",
     "dim_exam_directions",
     "knowledge_exam_map",
+    "chapter_knowledge_map",
     "ingest_batches",
     "raw_questions",
     "questions",
@@ -152,7 +153,7 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
             for table in ("dim_knowledge_points", "dim_exam_directions", *_TEACHING_TABLES):
                 if "grade_id" in _columns(conn, table):
                     conn.execute(f"ALTER TABLE {table} DROP COLUMN grade_id")
-            conn.execute(f"PRAGMA user_version = {paths.SCHEMA_VERSION}")
+            conn.execute("PRAGMA user_version = 3")
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
@@ -161,12 +162,41 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA foreign_keys = ON")
 
 
+def _migrate_v3_to_v4(conn: sqlite3.Connection) -> None:
+    """v3 → v4：补章节-知识点桥表，教材物理目录与逻辑知识点彻底解耦。"""
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN")
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS chapter_knowledge_map ("
+                "chapter_id INTEGER NOT NULL "
+                "REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT, "
+                "knowledge_point_id INTEGER NOT NULL "
+                "REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT, "
+                "PRIMARY KEY (chapter_id, knowledge_point_id)) WITHOUT ROWID"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_chapter_knowledge_map_knowledge_point "
+                "ON chapter_knowledge_map (knowledge_point_id)"
+            )
+            conn.execute(f"PRAGMA user_version = {paths.SCHEMA_VERSION}")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.isolation_level = ""
+
+
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version != 2:
+    if version not in (2, 3):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
-    _migrate_v2_to_v3(conn)
+    if version == 2:
+        _migrate_v2_to_v3(conn)
+    _migrate_v3_to_v4(conn)
     return True
 
 
