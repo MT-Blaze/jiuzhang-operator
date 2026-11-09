@@ -289,27 +289,26 @@ class QuestionsApiContractTest(unittest.TestCase):
         self.assertEqual(status, 200)
         plugin_ids = [plugin["id"] for plugin in discovery["plugins"]]
         self.assertIn("org.jiuzhang.bank-engine", plugin_ids)
-        self.assertIn("org.jiuzhang.bank-ui", plugin_ids)
+        self.assertNotIn("org.jiuzhang.bank-ui", plugin_ids, "合并后不许再出现第二个题库包")
         self.assertEqual(discovery["protocol"], "jzo-plugin/1")
 
         engine = next(item for item in discovery["plugins"]
                       if item["id"] == "org.jiuzhang.bank-engine")
-        self.assertTrue(engine["headless"], "引擎没有界面，entry_url 必须为空")
-        self.assertEqual(engine["entry_url"], "")
+        self.assertFalse(engine["headless"], "引擎与界面合并后是带界面的题库包")
+        self.assertTrue(engine["entry_url"].endswith("/webui/index.html"))
 
-        plugin = next(item for item in discovery["plugins"] if item["id"] == "org.jiuzhang.bank-ui")
-        status, _, headers = self.call("GET", plugin["entry_url"])
+        status, _, headers = self.call("GET", engine["entry_url"])
         self.assertEqual(status, 200)
         self.assertIn("text/html", _header(headers, "content-type"))
         self.assertIn("default-src 'none'", _header(headers, "content-security-policy"))
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.bank-ui/%2e%2e/plugin.json"
+            "GET", "/plugin-assets/org.jiuzhang.bank-engine/%2e%2e/plugin.json"
         )
         self.assertEqual(status, 404)
 
         status, _, _ = self.call(
-            "GET", "/plugin-assets/org.jiuzhang.bank-ui/dist/plugin.js"
+            "GET", "/plugin-assets/org.jiuzhang.bank-engine/webui/plugin.js"
         )
         self.assertEqual(status, 200)
 

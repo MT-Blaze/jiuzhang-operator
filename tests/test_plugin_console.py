@@ -73,8 +73,8 @@ class ShowInSidebarContractTest(unittest.TestCase):
             manifest["show_in_sidebar"] = False
             toml_io.write(sample / "plugin.toml", manifest)
             self.assertIs(self._manifest(sample)["show_in_sidebar"], False)
-        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")["show_in_sidebar"], False,
-                      "题库引擎是无界面的数据端，不该在左栏占位")
+        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")["show_in_sidebar"], True,
+                      "题库与界面合并后是左栏唯一入口")
 
     def test_discover_tags_enabled_flag(self) -> None:
         data = discover_plugins()

@@ -17,6 +17,8 @@ from app.core.config import plugins_dir
 
 PROTOCOL = "jzo-plugin/1"
 SUPPORTED_API_MAJOR = 1
+# 前端资源根：dist/ 是通用约定，webui/ 供「引擎 + 界面同包」的插件；只认包内相对路径。
+_ASSET_ROOTS = ("dist", "webui")
 
 _PLUGIN_ID = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
 _API_VERSION = re.compile(r"^(\d+)\.\d+$")
@@ -507,10 +509,8 @@ def validate_plugin(
             not relative.is_absolute() and ".." not in relative.parts,
             "entry.frontend 必须是包内相对路径",
         )
-        _require(
-            len(relative.parts) > 1 and relative.parts[0] == "dist",
-            "entry.frontend 必须位于 dist/",
-        )
+        _require(len(relative.parts) > 1 and relative.parts[0] in _ASSET_ROOTS,
+                 "entry.frontend 必须位于 dist/ 或 webui/")
         frontend_path = plugin_dir.joinpath(*relative.parts)
         _require(frontend_path.is_file(), "entry.frontend 指向的文件不存在")
         entry_url = f"/plugin-assets/{plugin_id}/{relative.as_posix()}"
@@ -581,17 +581,17 @@ def _sidebar_with_unlisted(tree: list[dict[str, Any]], plugin_ids: list[str]) ->
 
 
 def _retired_plugin_ids(root: Path) -> set[str]:
-    """拆分升级映射：引擎已装时，旧 core-bank 目录不再参与发现。
+    """历史插件目录不再参与发现：旧 core-bank 与已并入引擎的旧视图插件。
 
-    旧 core-bank 的代码目录可能还留在此前的工作区里（插件目录属于工作区）。
-    同一份题库不能有两个主人：引擎接管数据后把它从发现结果里摘掉，
-    界面只留新视图插件；目录与旧物理库都原地保留，需要时可以整体回退。
+    旧视图插件已物理并入 bank-engine，老工作区残留目录也不再作为第二个插件
+    出现在控制台（否则老师会被要求分别更新两个包）；目录原样保留以便回退。
     """
     from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 
+    retired = {"org.jiuzhang.bank-ui"}
     if manifests.manifest_path(root / DEFAULT_PROVIDER_ID) is None:
-        return set()
-    return set(LEGACY_PROVIDER_IDS)
+        return retired
+    return retired | set(LEGACY_PROVIDER_IDS)
 
 
 def discover_plugins() -> dict[str, Any]:
@@ -700,14 +700,14 @@ def resolve_plugin_asset(plugin_id: str, asset_path: str) -> Path:
         raise PluginAssetError("插件 ID 非法")
 
     package_root = (plugins_dir() / plugin_id).resolve()
-    if not (package_root / "dist").is_dir():
+    if not any((package_root / root).is_dir() for root in _ASSET_ROOTS):
         raise PluginAssetError("插件不存在")
 
     relative = PurePosixPath(asset_path.replace("\\", "/"))
     if not relative.parts or relative.is_absolute() or ".." in relative.parts:
         raise PluginAssetError("插件资源路径非法")
-    if relative.parts[0] != "dist":
-        raise PluginAssetError("只允许访问插件的 dist/ 资源")
+    if relative.parts[0] not in _ASSET_ROOTS:
+        raise PluginAssetError("只允许访问插件的 dist/ 或 webui/ 资源")
 
     walk = package_root
     for part in relative.parts:

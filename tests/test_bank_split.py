@@ -1,12 +1,13 @@
-"""军令 #20 题库拆分解耦：引擎 / 视图边界与数据兼容。
+"""题库合并：引擎与视图同包、旧视图目录退役、数据兼容。
 
-拆分后最容易出事的四条线，各有判据：
+合并后最容易出事的几条线，各有判据：
 
-1. **清单边界**：引擎是 headless provider——没有 iframe、不进左栏、不可卸载；
-   视图插件只声明 ``bank.view``，绝不冒充 provider；
-2. **旧库只读复制**：升级后旧 ``core-bank`` 物理库字节不动，新引擎库把题目原样带过来，
+1. **清单边界**：``org.jiuzhang.bank-engine`` 同时声明 provider 与 view，
+   前端入口在 ``webui/``，不可卸载且要在左栏出现；
+2. **单包唯一**：旧 ``org.jiuzhang.bank-ui`` 目录不再作为独立插件被发现，
+   老工作区残留也不会变成第二个更新条目；
+3. **旧库只读复制**：升级后旧 ``core-bank`` 物理库字节不动，新引擎库把题目原样带过来，
    旧库连同 ``-wal`` 一起复制，失败留下的孤儿边车不带走；
-3. **升级映射**：引擎已装时旧插件目录退出发现，旧目录与旧物理库原地保留；
 4. **退役护栏**：全库查重的 relay 分支与命令声明已下架，不许被加回来。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_split``
@@ -35,7 +36,7 @@ from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = "org.jiuzhang.bank-engine"
-UI = "org.jiuzhang.bank-ui"
+RETIRED_UI = "org.jiuzhang.bank-ui"
 LEGACY = "org.jiuzhang.core-bank"
 PAPER = "org.jiuzhang.paper-gen"
 BASELINE = ROOT / "tests" / "fixtures" / "v063.db"
@@ -72,69 +73,95 @@ def _question_ids(path: Path) -> list[str]:
 
 
 class ManifestBoundaryTest(unittest.TestCase):
-    """两份清单各司其职：引擎只给能力，视图只给界面。"""
+    """一个包同时承担能力与界面；旧视图目录退出历史舞台。"""
 
-    def test_01_engine_is_a_headless_provider_without_ui(self) -> None:
+    def test_01_engine_is_the_single_merged_package(self) -> None:
         manifest = _manifest(ENGINE)
-        self.assertIs(manifest.get("headless"), True)
+        self.assertIsNot(manifest.get("headless"), True, "合并后引擎有界面，不再 headless")
         self.assertIs(manifest.get("uninstallable"), False, "引擎必须带免死金牌")
-        self.assertIs(manifest.get("show_in_sidebar"), False, "引擎不占左栏")
-        self.assertEqual([], manifest.get("slots"))
-        for key in ("entry", "ui", "stage"):
-            self.assertNotIn(key, manifest, f"headless 引擎不得声明 {key}")
-        self.assertEqual(["bank.provider"], manifest.get("capabilities"))
+        self.assertIsNot(manifest.get("show_in_sidebar"), False, "合并包必须在左栏出现")
+        self.assertIn("stage.center", manifest.get("slots") or [])
+        self.assertIn("question.card", manifest.get("slots") or [])
+        self.assertTrue({"bank.provider", "bank.view"} <= set(manifest.get("capabilities") or []))
         self.assertEqual({"questions:read", "questions:write"},
                          set(manifest.get("permissions") or []))
-
-    def test_02_view_plugin_declares_bank_view_only(self) -> None:
-        manifest = _manifest(UI)
-        self.assertIn("bank.view", manifest.get("capabilities") or [])
-        self.assertNotIn("bank.provider", manifest.get("capabilities") or [],
-                         "视图插件不得冒充题库 provider")
-        self.assertNotEqual(False, manifest.get("show_in_sidebar", True))
-        self.assertNotEqual(False, manifest.get("uninstallable", True))
-        self.assertIn("question.card", manifest.get("slots") or [])
+        self.assertEqual("九章题库", manifest.get("name"))
         frontend = (manifest.get("entry") or {}).get("frontend") or ""
-        self.assertTrue((ROOT / "plugins" / UI / frontend).is_file(), frontend)
+        self.assertTrue(frontend.startswith("webui/"), frontend)
+        self.assertTrue((ROOT / "plugins" / ENGINE / frontend).is_file(), frontend)
 
-    def test_03_validation_turns_headless_into_empty_entry(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            engine_dir = Path(tmp) / ENGINE
-            ui_dir = Path(tmp) / UI
-            shutil.copytree(ROOT / "plugins" / ENGINE, engine_dir)
-            shutil.copytree(ROOT / "plugins" / UI, ui_dir)
-            engine_info = validate_plugin(engine_dir, _manifest(ENGINE))
-            ui_info = validate_plugin(ui_dir, _manifest(UI))
-        self.assertTrue(engine_info["headless"])
-        self.assertEqual("", engine_info["entry_url"])
-        self.assertIsNone(engine_info["ui"])
-        self.assertEqual([], engine_info["slots"])
-        self.assertFalse(engine_info["uninstallable"])
-        self.assertFalse(engine_info["show_in_sidebar"])
-        self.assertFalse(ui_info["headless"])
-        self.assertTrue(ui_info["entry_url"].startswith(f"/plugin-assets/{UI}/dist/"))
-        self.assertIn("bank.view", ui_info["capabilities"])
+    def test_02_retired_view_plugin_directory_is_gone(self) -> None:
+        self.assertFalse((ROOT / "plugins" / RETIRED_UI).exists(),
+                         "旧 bank-ui 目录必须物理删除，不能作为第二个包继续发布")
+        self.assertIn("system.open_editor", _manifest(ENGINE)["bus"]["publish"])
+
+    def test_03_validation_exposes_frontend_and_commands(self) -> None:
+        info = validate_plugin(ROOT / "plugins" / ENGINE, _manifest(ENGINE))
+        self.assertFalse(info["headless"])
+        self.assertTrue(info["entry_url"].startswith(f"/plugin-assets/{ENGINE}/webui/"))
+        self.assertIsNotNone(info["ui"])
+        self.assertIsNotNone(info["stage"])
+        self.assertFalse(info["uninstallable"])
+        self.assertTrue(info["show_in_sidebar"])
+        ids = {command["id"] for command in info["commands"]}
+        self.assertEqual({
+            "org.jiuzhang.action.data.bank_stats",
+            "org.jiuzhang.action.data.bank_search",
+            "org.jiuzhang.action.data.bank_topics",
+            "org.jiuzhang.action.view.filter_questions",
+            "org.jiuzhang.action.view.review_queue",
+        }, ids)
 
     def test_04_headless_cannot_smuggle_an_entry_or_ui(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / ENGINE
             shutil.copytree(ROOT / "plugins" / ENGINE, target)
             manifest = _manifest(ENGINE)
-            for extra in ({"entry": {"frontend": "dist/index.html"}},
-                          {"ui": {"title": "偷塞的界面"}},
-                          {"stage": {"center": {"takeover": True}}}):
+            for extra in ({"headless": True},
+                          {"headless": True, "ui": {"title": "偷塞的界面"}},
+                          {"headless": True, "stage": {"center": {"takeover": True}}}):
                 broken = {**manifest, **extra}
                 with self.assertRaises(PluginRejected, msg=str(extra)):
                     validate_plugin(target, broken)
 
-    def test_05_retired_core_bank_leaves_discovery_only_when_engine_is_gone(self) -> None:
-        """旧插件目录可能还留在老工作区：引擎一装，它就得退出发现（同一份题库不能两个主人）。"""
+    def test_05_retired_view_directory_never_shows_up_in_discovery(self) -> None:
+        """老工作区残留的 bank-ui 目录不许再变成第二个插件/第二个更新条目。"""
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             plugins_dir = base / "plugins"
             plugins_dir.mkdir()
-            for plugin_id in (ENGINE, UI):
-                shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
+            shutil.copytree(ROOT / "plugins" / ENGINE, plugins_dir / ENGINE)
+            leftover = plugins_dir / RETIRED_UI
+            shutil.copytree(ROOT / "plugins" / ENGINE, leftover)
+            stale = _manifest(ENGINE)
+            stale.update({"id": RETIRED_UI, "name": "旧真题题库"})
+            (leftover / "plugin.toml").unlink()
+            (leftover / "plugin.json").write_text(
+                wire.dumps(stale, ensure_ascii=False, indent=2), encoding="utf-8")
+            saved = (os.environ.get("JZO_PLUGINS_DIR"), os.environ.get("JZO_DATA_DIR"),
+                     settings.workspace_id)
+            os.environ["JZO_PLUGINS_DIR"] = str(plugins_dir)
+            os.environ["JZO_DATA_DIR"] = str(base / "data")
+            settings.workspace_id = None
+            try:
+                ids = {item["id"] for item in discover_plugins()["plugins"]}
+                self.assertIn(ENGINE, ids)
+                self.assertNotIn(RETIRED_UI, ids, "残留的旧视图目录必须退出发现")
+            finally:
+                for key, value in zip(("JZO_PLUGINS_DIR", "JZO_DATA_DIR"), saved[:2]):
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                settings.workspace_id = saved[2]
+
+    def test_06_retired_core_bank_leaves_discovery_only_when_engine_is_gone(self) -> None:
+        """旧 core-bank 目录可能还留在老工作区：引擎一装，它就得退出发现。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            plugins_dir = base / "plugins"
+            plugins_dir.mkdir()
+            shutil.copytree(ROOT / "plugins" / ENGINE, plugins_dir / ENGINE)
             legacy_dir = plugins_dir / LEGACY
             shutil.copytree(ROOT / "plugins" / ENGINE, legacy_dir)
             legacy_manifest = _manifest(ENGINE)
@@ -155,7 +182,6 @@ class ManifestBoundaryTest(unittest.TestCase):
             try:
                 ids = {item["id"] for item in discover_plugins()["plugins"]}
                 self.assertIn(ENGINE, ids)
-                self.assertIn(UI, ids)
                 self.assertNotIn(LEGACY, ids, "引擎已装时旧 core-bank 不该再被发现")
                 shutil.rmtree(plugins_dir / ENGINE)
                 ids = {item["id"] for item in discover_plugins()["plugins"]}
@@ -257,9 +283,9 @@ class HostGateTest(unittest.TestCase):
         self.assertNotIn('method === "bank.dedupe_scan"', source)
         self.assertNotIn('method === "bank.dedupe_merge"', source)
 
-    def test_03_bank_view_plugin_reads_the_active_bank_not_its_own(self) -> None:
-        """视图插件只走 active_* / active_add：它的页签 id 不是题库 id。"""
-        source = plugin_bundle(UI)
+    def test_03_bank_view_reads_the_active_bank_not_its_own(self) -> None:
+        """合并包的视图仍走 active_* / active_add：页签 id 与题库 id 同源。"""
+        source = plugin_bundle(ENGINE)
         self.assertIn("bank.active_list", source)
         self.assertIn("basket.active_add", source)
         self.assertNotIn("bank.list", source)

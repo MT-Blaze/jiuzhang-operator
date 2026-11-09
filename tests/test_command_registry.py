@@ -444,22 +444,15 @@ class ParamsSchemaTest(unittest.TestCase):
 
 
 class OfficialPluginCommandsTest(unittest.TestCase):
-    """官方五个插件的能力声明必须与说明书 §2.15 一致。"""
+    """官方插件的清单能力声明必须与说明书 §2.15 一致。"""
 
     EXPECTED = {
         "org.jiuzhang.bank-engine": {
-            "version": "2.0.0",
+            "version": "3.0.0",
             "commands": [
                 "org.jiuzhang.action.data.bank_stats",
                 "org.jiuzhang.action.data.bank_search",
                 "org.jiuzhang.action.data.bank_topics",
-            ],
-            "requires_user": [],
-            "headless": True,
-        },
-        "org.jiuzhang.bank-ui": {
-            "version": "1.0.3",
-            "commands": [
                 "org.jiuzhang.action.view.filter_questions",
                 "org.jiuzhang.action.view.review_queue",
             ],
@@ -559,12 +552,18 @@ class OfficialPluginCommandsTest(unittest.TestCase):
                 with self.subTest(plugin=plugin_id, command=command_id):
                     self.assertIn('commandId === "' + command_id + '"', script)
 
-    def test_33_headless_engine_is_executed_by_the_backend_not_relayed(self) -> None:
-        self.assertTrue(self.info["org.jiuzhang.bank-engine"]["headless"])
+    def test_33_merged_engine_is_a_ui_package_with_relayed_commands(self) -> None:
+        info = self.info["org.jiuzhang.bank-engine"]
+        self.assertFalse(info["headless"])
+        self.assertTrue(info["entry_url"].endswith("/webui/index.html"))
+        ids = {item["id"] for item in info["commands"]}
+        self.assertTrue(any(".data." in item for item in ids), "数据命令仍在引擎包里")
+        self.assertTrue(any(".view." in item for item in ids), "视图命令也在同一包里")
+        # 真 headless 包仍不许被中转：先查字典再判 headless，未知命令回 COMMAND_NOT_FOUND
         stage = stage_source()
         guard = stage.index('failWith("COMMAND_HEADLESS"')
         lookup = stage.index("var entry = commandIndex[commandId]")
-        self.assertLess(lookup, guard, "先查字典再判 headless，未知命令仍回 COMMAND_NOT_FOUND")
+        self.assertLess(lookup, guard)
 
 
 if __name__ == "__main__":

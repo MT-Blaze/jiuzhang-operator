@@ -33,9 +33,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 PLUGIN_ID = "org.jiuzhang.dashboard"
-# 军令 #20：跳转目标是视图插件，数据来自无界面的引擎——两个都要装进隔离目录。
-BANK_ID = "org.jiuzhang.bank-ui"
-ENGINE_ID = "org.jiuzhang.bank-engine"
+# 军令 #20：跳转目标是题库视图；合并后视图与数据引擎是同一个包。
+BANK_ID = "org.jiuzhang.bank-engine"
+ENGINE_ID = BANK_ID
 
 
 def wait_port(deadline_seconds: float) -> bool:
@@ -69,14 +69,14 @@ def run(tag: str) -> dict:
         report["checks"].append({"name": name, "ok": bool(ok), "detail": str(detail)[:400]})
         return bool(ok)
 
-    # 只读复制三个插件进隔离目录：看板本体 + 题库视图 + 数据引擎
+    # 只读复制两个插件进隔离目录：看板本体 + 合并后的题库包
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    for plugin_id in (BANK_ID, ENGINE_ID):
+    for plugin_id in (ENGINE_ID,):
         source = ROOT / "plugins" / plugin_id
         if source.is_dir():
             shutil.copytree(source, plugins_dir / plugin_id)
             report["notes"][plugin_id + "_copied"] = True
-    check("看板、题库视图与引擎复制进隔离目录",
+    check("看板与合并后的题库包已复制进隔离目录",
           (plugins_dir / PLUGIN_ID / "plugin.toml").is_file()
           and (plugins_dir / BANK_ID / "plugin.toml").is_file()
           and (plugins_dir / ENGINE_ID / "plugin.toml").is_file())

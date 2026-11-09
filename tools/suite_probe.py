@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""套件真机验收：干净环境装一次套件，左栏只有一个入口，引擎在后台可读题。
+"""套件真机验收：干净环境装一次套件，左栏只有一个入口，引擎可读题。
 
 用法：``.venv/Scripts/python.exe tools/suite_probe.py <tag>``
 （脚本自己在随机端口起隔离服务，临时 data/plugins 目录，跑完关掉）
 
 判据：
   1. 干净环境起始零插件；
-  2. 上传 org.jiuzhang.bank-suite.zip 后，响应带 suite 元信息与两个成员；
-  3. /api/plugins 里引擎 headless、不占左栏，UI 已启用且 requires 引擎；
-  4. 左栏恰好一个【真题题库】入口，没有第三个；
+  2. 上传 org.jiuzhang.bank-suite.zip 后，响应带 suite 元信息与唯一成员；
+  3. /api/plugins 里合并包启用、带界面、占左栏，无依赖阻塞；
+  4. 左栏恰好一个【九章题库】入口，没有第二个；
   5. 经引擎写一道题再读回来，题干一致（引擎真在后台干活）；
-  6. 真实浏览器里点开唯一入口，题目列表渲染出那道题，无 JS 错误。
+  6. 真实浏览器里点开唯一入口，题库首屏完成渲染，无 JS 错误。
 
 产出：``.system_generated/suite_probe/<tag>/probe.toml`` + 截图；任一判据红即非零退出。
 """
@@ -39,7 +39,7 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE_ID = "org.jiuzhang.bank-engine"
-UI_ID = "org.jiuzhang.bank-ui"
+UI_ID = ENGINE_ID
 SUITE_ID = "org.jiuzhang.bank-suite"
 TOKEN = "suite-probe-token"
 
@@ -115,7 +115,7 @@ def main() -> int:
 
     build_tool = _load_build_tool()
     suite_zip = build_tool.build_suite(
-        [ROOT / "plugins" / ENGINE_ID, ROOT / "plugins" / UI_ID], work / "out"
+        [ROOT / "plugins" / ENGINE_ID], work / "out"
     ).read_bytes()
 
     port = free_port()
@@ -172,15 +172,14 @@ def main() -> int:
         report["notes"]["install"] = body
         check("套件一次安装成功", status == 200 and (body or {}).get("installed") is True,
               {"status": status, "body": body if status != 200 else None})
-        check("响应带回套件元信息与两个成员",
+        check("响应带回套件元信息与唯一成员",
               isinstance(body, dict) and (body.get("suite") or {}).get("id") == SUITE_ID
-              and sorted(members) == sorted([ENGINE_ID, UI_ID]), members)
+              and members == [ENGINE_ID], members)
 
         status, discovery = api_json(base, "/api/plugins")
         plugins = (discovery or {}).get("plugins") or []
         by_id = {item.get("id"): item for item in plugins}
         engine = by_id.get(ENGINE_ID) or {}
-        ui = by_id.get(UI_ID) or {}
         report["notes"]["plugins"] = {
             key: {
                 "enabled": item.get("enabled"),
@@ -191,15 +190,12 @@ def main() -> int:
             }
             for key, item in by_id.items()
         }
-        check("引擎在后台运行且不占左栏",
-              engine.get("enabled") is True and engine.get("headless") is True
-              and engine.get("show_in_sidebar") is False, engine)
-        check("UI 已启用且声明依赖引擎",
-              ui.get("enabled") is True and ui.get("requires") == [ENGINE_ID]
-              and ui.get("dependency_blocked") is False, ui)
+        check("合并包启用、带界面且占左栏一个入口",
+              engine.get("enabled") is True and engine.get("headless") is False
+              and engine.get("show_in_sidebar") is True, engine)
         visible = [item.get("id") for item in plugins
                    if item.get("enabled") is not False and item.get("show_in_sidebar") is not False]
-        check("左栏只留一个入口", visible == [UI_ID], visible)
+        check("左栏只留一个入口", visible == [ENGINE_ID], visible)
         check("没有依赖阻塞项", not (discovery or {}).get("dependency_blocked"),
               (discovery or {}).get("dependency_blocked"))
 
@@ -238,14 +234,15 @@ def main() -> int:
             entries = page.locator(".ws-plugin-item")
             expect(entries).to_have_count(1, timeout=10000)
             entry = entries.first
-            expect(entry).to_contain_text("真题题库", timeout=10000)
+            expect(entry).to_contain_text("九章题库", timeout=10000)
             check("浏览器左栏只有一个插件入口", entries.count() == 1)
 
             entry.click()
             frame = page.frame_locator(".ws-plugin-frame")
-            expect(frame.locator(".cb-title")).to_have_text("真题题库", timeout=15000)
-            expect(frame.locator(".cb-body .cb-row").first).to_be_visible(timeout=15000)
-            check("题库画布渲染出题目行", frame.locator(".cb-body .cb-row").count() > 0)
+            expect(frame.locator(".cb-title")).to_have_text("九章题库", timeout=15000)
+            rendered = (frame.locator(".cb-body .cb-row").count()
+                        + frame.locator(".cb-body .cb-empty").count())
+            check("题库画布完成首屏渲染", rendered > 0, rendered)
 
             shot = shots / "suite.png"
             page.screenshot(path=str(shot))

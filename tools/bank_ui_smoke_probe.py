@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""bank-ui 真机冒烟（3.6 下架全库查重后的替代探针）。
+"""题库合并包真机冒烟（3.6 下架全库查重后的替代探针）。
 
 用法：``.venv/Scripts/python.exe tools/bank_ui_smoke_probe.py <tag>``
 （脚本自己在随机端口起隔离服务，跑完关掉）
 
 判据（design §4.4-5/6）：
-  1. 左栏点「真题题库」能挂载，页签只剩「题目列表」「待审任务」两个；
+  1. 左栏点「九章题库」能挂载，页签只剩「题目列表」「待审任务」两个；
   2. 两个页签各点一次都不报错、不空白；
   3. 全程没有对 ``/api/bank/plugins/*/duplicates`` 的请求；
-  4. ``/api/plugins`` 里 bank-ui 的 commands 恰为两条；
+  4. ``/api/plugins`` 里合并包的 commands 恰为五条（3 条数据 + 2 条视图）；
   5. 后端两条旧路由直接 404（前端不可达之外再加一道）；
   6. 宿主页与插件 iframe 无未捕获 JS 错误。
 
@@ -38,8 +38,8 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_ID = "org.jiuzhang.bank-ui"
-ENGINE_ID = "org.jiuzhang.bank-engine"
+PLUGIN_ID = "org.jiuzhang.bank-engine"
+ENGINE_ID = PLUGIN_ID
 
 
 def free_port() -> int:
@@ -92,7 +92,6 @@ def main() -> int:
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    shutil.copytree(ROOT / "plugins" / ENGINE_ID, plugins_dir / ENGINE_ID)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -132,8 +131,8 @@ def main() -> int:
                       if item.get("id") == PLUGIN_ID), None)
         commands = [item.get("id") for item in ((entry or {}).get("commands") or [])]
         report["notes"]["bank_ui_commands"] = commands
-        check("底座发现 bank-ui", entry is not None, bool(entry))
-        check("bank-ui 只剩两条命令", len(commands) == 2, commands)
+        check("底座发现合并后的题库包", entry is not None, bool(entry))
+        check("题库包声明的五条命令都在", len(commands) == 5, commands)
         check("查重两条命令已下架",
               "org.jiuzhang.action.data.dedupe_scan" not in commands
               and "org.jiuzhang.action.data.dedupe_merge" not in commands, commands)
@@ -165,12 +164,12 @@ def main() -> int:
             page.on("request", lambda request: report["requested_urls"].append(request.url))
             page.goto(base + "/workspace", wait_until="networkidle")
 
-            item = page.locator(".ws-plugin-item", has_text="真题题库").first
+            item = page.locator(".ws-plugin-item", has_text="九章题库").first
             expect(item).to_be_visible(timeout=10000)
             item.click()
             frame = page.frame_locator(".ws-plugin-frame")
-            expect(frame.locator(".cb-title")).to_have_text("真题题库", timeout=15000)
-            check("bank-ui 挂载", True)
+            expect(frame.locator(".cb-title")).to_have_text("九章题库", timeout=15000)
+            check("合并包挂载", True)
 
             tabs = frame.locator('[role="tab"]')
             expect(tabs).to_have_count(2, timeout=15000)

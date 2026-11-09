@@ -31,11 +31,10 @@
   var UNGROUPED_KEY = "ungrouped";  // 没进任何文件夹的插件，共用这一个集合分组
 
   // 录题插件的写入目标不再写死：跨页签共享的题库通道走「活跃 provider」，
-  // 由底座按 data/bank_provider.json 解析（PLUGIN_SPEC §2.6.1）。军令 #20 之后
-  // provider 只认无界面的题库引擎；取不到 provider 时仍用它，不能让「读不到配置」
-  // 打死整条数据通道。界面与引擎分家：跳转题库要打开「声明 bank.view 的视图插件」。
+  // 由底座按 data/bank_provider.toml 解析（PLUGIN_SPEC §2.6.1）。引擎与界面已合并
+  // 为同一个插件包，provider 自身也声明 bank.view；跳转题库仍按能力找，不认死 id。
   var BANK_PROVIDER_DEFAULT = "org.jiuzhang.bank-engine";
-  var BANK_VIEW_DEFAULT = "org.jiuzhang.bank-ui";
+  var BANK_VIEW_DEFAULT = "org.jiuzhang.bank-engine";
   // 宿主替插件出网的时间闸：草稿箱、题篮、任何 relay 里的 fetch 共用这一个口径，
   // 所以它必须留在组合根最上面——拆出去的模块只能按值领它。
   var RELAY_TIMEOUT_MS = 20000;

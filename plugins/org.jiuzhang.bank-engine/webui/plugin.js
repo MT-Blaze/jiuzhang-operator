@@ -1,5 +1,5 @@
 /**
- * 真题题库视图插件运行时（org.jiuzhang.bank-ui）。
+ * 九章题库视图插件运行时（org.jiuzhang.bank-engine）。
  *
  * 本插件只有界面，没有题库：列表/大纲/待审一律经 jzo-plugin/1 协议向宿主
  * 申请「活跃题库」的数据，宿主再交给题库引擎（app/core/bank.py）查询。
@@ -17,7 +17,7 @@
   "use strict";
 
   var PROTOCOL = "jzo-plugin/1";
-  var PLUGIN_ID = "org.jiuzhang.bank-ui";
+  var PLUGIN_ID = "org.jiuzhang.bank-engine";
   var PAGE_SIZE = 12;
   var REQUEST_TIMEOUT_MS = 15000;
 
@@ -214,7 +214,7 @@
     if (!stageMode || !root) return;
     root.textContent = "";
     var head = el("header", "cb-head");
-    head.appendChild(el("h1", "cb-title", "真题题库"));
+    head.appendChild(el("h1", "cb-title", "九章题库"));
     head.appendChild(el("p", "cb-sub", "本地 SQLite · 共 " + state.total + " 题 · 左栏点大纲取题，筛选条件以右侧面板为准"));
     var count = el("span", "cb-count", "题篮 " + Object.keys(basketIds).length);
     count.id = "cbBasketCount";
@@ -385,106 +385,19 @@
     }, 2200);
   }
 
-  // ---------- 能力路由字典（军令 #20） ----------
-  var FILTER_SETS = {
-    grade: ["全部", "高一", "高二", "高三"],
-    difficulty: ["全部", "L1", "L2", "L3", "L4"],
-    type: ["全部", "single_choice", "multiple_choice", "fill_blank", "solution"]
-  };
-  var QUESTION_ID_RE = /^q_[A-Za-z0-9_-]{1,78}$/;
-
-  function commandReject(source, message, code, text) {
-    respond(source, message.id, false, null, code, text);
-  }
-
-  function rejectUnknown(context, allowed) {
-    var unknown = Object.keys(context).filter(function (key) {
-      return allowed.indexOf(key) < 0;
-    });
-    return unknown.length ? "不认识的参数：" + unknown.join("、") : "";
-  }
-
-  function filterFromContext(context) {
-    var result = { ok: true, values: {} };
-    var unknown = rejectUnknown(context, ["grade", "difficulty", "type", "search"]);
-    if (unknown) {
-      result.ok = false;
-      result.message = unknown;
-      return result;
-    }
-    Object.keys(FILTER_SETS).forEach(function (key) {
-      if (context[key] === undefined) return;
-      if (typeof context[key] !== "string" || FILTER_SETS[key].indexOf(context[key]) < 0) {
-        result.ok = false;
-        result.message = key + " 只接受 " + FILTER_SETS[key].join("/");
-        return;
-      }
-      result.values[key] = context[key];
-    });
-    if (context.search !== undefined
-        && (typeof context.search !== "string" || context.search.length > 100)) {
-      result.ok = false;
-      result.message = "search 必须是不超过 100 字的字符串";
-    }
-    return result;
-  }
-
-  function handleCommandExecute(source, message) {
-    var payload = message.payload || {};
-    var commandId = typeof payload.command_id === "string" ? payload.command_id : "";
-    var context = payload.context && typeof payload.context === "object" ? payload.context : {};
-
-    if (commandId === "org.jiuzhang.action.view.filter_questions") {
-      var parsed = filterFromContext(context);
-      if (!parsed.ok) return commandReject(source, message, "BAD_PARAMS", parsed.message);
-      Object.keys(parsed.values).forEach(function (key) { state[key] = parsed.values[key]; });
-      if (typeof context.search === "string") state.search = context.search.trim().slice(0, 100);
-      state.view = "list";
-      state.page = 1;
-      state.showSolution = false;
-      var reload = loadQuestions();
-      if (!reload || typeof reload.then !== "function") {
-        return commandReject(source, message, "COMMAND_BUSY", "题库正在加载，请稍后再试");
-      }
-      reload.then(function () {
-        respond(source, message.id, true, {
-          total: state.total,
-          filters: {
-            grade: state.grade,
-            difficulty: state.difficulty,
-            type: state.type,
-            search: state.search
-          }
-        });
+  // ---------- 能力路由 ----------
+  var commands = null;
+  function commandRouter() {
+    if (!commands) {
+      commands = window.JzoBankCommands.create({
+        respond: respond,
+        hostCall: hostCall,
+        state: state,
+        loadQuestions: loadQuestions,
+        loadReview: loadReview
       });
-      return;
     }
-
-    if (commandId === "org.jiuzhang.action.view.review_queue") {
-      var reviewUnknown = rejectUnknown(context, ["flag"]);
-      if (reviewUnknown) {
-        return commandReject(source, message, "BAD_PARAMS", reviewUnknown);
-      }
-      if (context.flag !== undefined && (typeof context.flag !== "string" || context.flag.length > 40)) {
-        return commandReject(source, message, "BAD_PARAMS", "flag 必须是不超过 40 字的字符串");
-      }
-      state.reviewFlag = typeof context.flag === "string" ? context.flag.trim() : "";
-      var reviewCall = loadReview(1);
-      if (!reviewCall || typeof reviewCall.then !== "function") {
-        return commandReject(source, message, "COMMAND_BUSY", "待审队列正在加载，请稍后再试");
-      }
-      reviewCall.then(function () {
-        respond(source, message.id, true, {
-          total: state.reviewTotal,
-          pages: state.reviewPages,
-          flag: state.reviewFlag,
-          flags: state.reviewSummary.flags || []
-        });
-      });
-      return;
-    }
-
-    commandReject(source, message, "UNKNOWN_COMMAND", "未声明的方法：" + commandId);
+    return commands;
   }
 
   // ---------- 协议 ----------
@@ -539,7 +452,7 @@
       });
     }
     if (message.method === "command.execute") {
-      return handleCommandExecute(event.source, message);
+      return commandRouter().handle(event.source, message);
     }
     respond(event.source, message.id, false, null, "UNSUPPORTED_METHOD", "未实现的方法：" + message.method);
   });
@@ -560,6 +473,6 @@
   // 独立打开（无宿主）时给一条明确说明，不假装有数据
   if (window.parent === window && root) {
     root.hidden = false;
-    root.appendChild(el("p", "cb-empty", "请从九章算子工作台左侧打开「真题题库」；插件单独打开时拿不到宿主题库。"));
+    root.appendChild(el("p", "cb-empty", "请从九章算子工作台左侧打开「九章题库」；插件单独打开时拿不到宿主题库。"));
   }
 })();

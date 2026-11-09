@@ -5,7 +5,7 @@
     .venv/Scripts/python.exe tools/build_plugin.py --all
     .venv/Scripts/python.exe tools/build_plugin.py <dir> --out dist/plugins
     .venv/Scripts/python.exe tools/build_plugin.py --suite
-    .venv/Scripts/python.exe tools/build_plugin.py --suite org.jiuzhang.bank-engine org.jiuzhang.bank-ui
+    .venv/Scripts/python.exe tools/build_plugin.py --suite org.jiuzhang.bank-engine
 
 设计口径（PLUGIN_SPEC §1.2 / §1.8）：
 - zip 只是分发容器，单插件包顶层必须是 ``<id>/``，解压即用；
@@ -54,12 +54,11 @@ MAX_SUITE_BYTES = 20 * 1024 * 1024
 # 真题库与它的配图只在本地开发机存在，绝不进任何对外发布的 zip。
 DENY_PAYLOAD_PREFIXES = ("bank/assets/",)
 
-SUITE_DEFAULT_MEMBERS = ("org.jiuzhang.bank-engine", "org.jiuzhang.bank-ui")
+SUITE_DEFAULT_MEMBERS = ("org.jiuzhang.bank-engine",)
 SUITE_DEFAULT_ID = "org.jiuzhang.bank-suite"
-SUITE_DEFAULT_NAME = "真题题库套件"
+SUITE_DEFAULT_NAME = "九章题库套件"
 SUITE_DEFAULT_DESCRIPTION = (
-    "题库引擎 + 真题题库视图：一次安装即用，左栏只留一个【真题题库】入口，"
-    "引擎在后台静默运行。"
+    "九章题库：31 表引擎与题库视图已在同一个插件包内，安装一次即拥有完整题库。"
 )
 
 
@@ -296,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=str(ROOT / "dist" / "plugins"), help="zip 输出目录")
     parser.add_argument(
         "--suite", nargs="*", default=None, metavar="PLUGIN",
-        help="打套件包：成员为插件 id 或目录；不带成员时默认题库引擎 + 真题题库",
+        help="打套件包：成员为插件 id 或目录；不带成员时默认只打九章题库合并包",
     )
     parser.add_argument("--suite-id", default=SUITE_DEFAULT_ID, help="套件 id")
     parser.add_argument("--suite-name", default=SUITE_DEFAULT_NAME, help="套件显示名")

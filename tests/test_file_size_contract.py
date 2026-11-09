@@ -44,7 +44,7 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_split_board.js": 779,
     "app/core/pending_pool.py": 773,
     "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
-    "static/js/stage.js": 765,
+    "static/js/stage.js": 764,
     "static/css/settings.css": 753,
     "plugins/org.jiuzhang.editor/dist/layout.css": 746,
     "app/core/plugin_update.py": 735,
@@ -55,11 +55,8 @@ LEGACY_OVER_CEILING = {
     "app/core/pending_bank.py": 631,
     "app/core/bank_schema.py": 624,
     "app/core/bank_write.py": 623,
-    "plugins/org.jiuzhang.bank-ui/dist/plugin.css": 596,
     "plugins/org.jiuzhang.editor/dist/ui_intake.js": 595,
     "app/core/bank_query.py": 593,
-    "plugins/org.jiuzhang.bank-ui/dist/ui_browse.js": 566,
-    "plugins/org.jiuzhang.bank-ui/dist/plugin.js": 565,
     "static/js/st_workspace.js": 564,
     "plugins/org.jiuzhang.paper-gen/dist/plugin.css": 563,
     "app/core/dedupe_signature.py": 540,
@@ -97,6 +94,8 @@ class ScriptSizeCeilingTest(unittest.TestCase):
     GLOBS = (
         "plugins/*/dist/**/*.js",
         "plugins/*/dist/**/*.css",
+        "plugins/*/webui/**/*.js",
+        "plugins/*/webui/**/*.css",
         "static/js/**/*.js",
         "static/css/**/*.css",
         "examples/template-plugin/**/dist/**/*.js",
@@ -168,38 +167,44 @@ class PluginAssetWiringTest(unittest.TestCase):
     def plugins(self) -> list[Path]:
         return sorted(p for p in (ROOT / "plugins").iterdir() if p.is_dir() and manifests.manifest_path(p) is not None)
 
+    @staticmethod
+    def _entry(plugin: Path) -> Path:
+        manifest = manifests.load_manifest(plugin)
+        frontend = (manifest.get("entry") or {}).get("frontend") or "dist/index.html"
+        return plugin / frontend
+
     def test_01_every_local_asset_is_loaded(self) -> None:
         for plugin in self.plugins():
-            html = plugin / "dist" / "index.html"
+            html = self._entry(plugin)
             if not html.is_file():
                 continue
             text = html.read_text(encoding="utf-8")
             listed = {v[2:] if v.startswith("./") else v for v in
                       re.findall(r'<script src="([^"]+)"', text)
                       + re.findall(r'<link rel="stylesheet" href="([^"]+)"', text)}
-            for asset in sorted((plugin / "dist").glob("*.*")):
+            for asset in sorted(html.parent.glob("*.*")):
                 if asset.suffix not in (".js", ".css") or asset == html:
                     continue
                 self.assertIn(
                     asset.name, listed,
-                    f"{asset.name} 在 dist 里却没人加载——要么写进 index.html，要么删掉")
+                    f"{asset.name} 在入口目录里却没人加载——要么写进 index.html，要么删掉")
 
     def test_02_namespace_defined_before_first_use(self) -> None:
         for plugin in self.plugins():
-            html = plugin / "dist" / "index.html"
+            html = self._entry(plugin)
             if not html.is_file():
                 continue
             raw = re.findall(r'<script src="([^"]+)"', html.read_text(encoding="utf-8"))
             order = [s[2:] if s.startswith("./") else s for s in raw]
             seq = {}
             for pos, src in enumerate(order):
-                path = self.local(src) or plugin / "dist" / src
+                path = self.local(src) or html.parent / src
                 if not path.is_file():
                     continue
                 for name in self.NAMESPACE_RE.findall(path.read_text(encoding="utf-8")):
                     seq.setdefault(name, pos)
             for pos, src in enumerate(order):
-                path = self.local(src) or plugin / "dist" / src
+                path = self.local(src) or html.parent / src
                 if not path.is_file():
                     continue
                 for name in self.USE_RE.findall(path.read_text(encoding="utf-8")):

@@ -47,7 +47,6 @@ CALLER_ID = "com.example.contract-caller"
 CALLER_CMD = "com.example.contract-caller.ping"
 OFFICIAL = [
     "org.jiuzhang.bank-engine",
-    "org.jiuzhang.bank-ui",
     "org.jiuzhang.paper-gen",
     "org.jiuzhang.handout",
     "org.jiuzhang.editor",
@@ -68,7 +67,7 @@ EXPECTED_IDS = [
     "org.jiuzhang.action.view.filter_questions",
     "org.jiuzhang.action.view.review_queue",
 ]
-HEADLESS_CMD = "org.jiuzhang.action.data.bank_stats"
+DATA_CMD = "org.jiuzhang.action.data.bank_stats"
 FILTER_CMD = "org.jiuzhang.action.view.filter_questions"
 CONFIRM_CMD = "org.jiuzhang.action.input.save_question"
 OPEN_CMD = "org.jiuzhang.action.input.open_question"
@@ -388,20 +387,20 @@ def run(tag: str) -> dict:
                       and item.get("params_schema", {}).get("additionalProperties") is False
                       for item in official_listed.values()),
               len(official_listed))
-        check("10 字典条目的提供方是官方插件本身，不串号",
-              official_listed.get(FILTER_CMD, {}).get("plugin_id") == "org.jiuzhang.bank-ui"
-              and official_listed.get(HEADLESS_CMD, {}).get("plugin_id")
+        check("10 字典条目的提供方是合并后的题库包本身，不串号",
+              official_listed.get(FILTER_CMD, {}).get("plugin_id") == "org.jiuzhang.bank-engine"
+              and official_listed.get(DATA_CMD, {}).get("plugin_id")
               == "org.jiuzhang.bank-engine",
               {cid: item.get("plugin_id") for cid, item in list(official_listed.items())[:3]})
 
-        headless = caller.evaluate(
+        data_run = caller.evaluate(
             "(args) => window.probeCall('command.execute', args)",
-            {"command_id": HEADLESS_CMD, "context": {}})
-        evidence["headless"] = headless
-        check("11 无界面引擎命令回 COMMAND_HEADLESS，不假装成功也不开空白页",
-              headless.get("ok") is False
-              and (headless.get("error") or {}).get("code") == "COMMAND_HEADLESS",
-              headless.get("error"))
+            {"command_id": DATA_CMD, "context": {}})
+        evidence["data_command"] = data_run
+        data_result = (data_run.get("result") or {}).get("result") or {}
+        check("11 数据命令在合并包内直接执行，返回当前题库统计",
+              data_run.get("ok") is True and isinstance(data_result.get("total"), int),
+              data_result)
 
         filtered = caller.evaluate(
             "(args) => window.probeCall('command.execute', args)",
@@ -410,7 +409,7 @@ def run(tag: str) -> dict:
         filter_result = ((filtered.get("result") or {}).get("result") or {})
         check("12 视图命令真实执行：题库筛选回显筛选态与题量（隔离库为空）",
               filtered.get("ok") is True
-              and (filtered.get("result") or {}).get("plugin_id") == "org.jiuzhang.bank-ui"
+              and (filtered.get("result") or {}).get("plugin_id") == "org.jiuzhang.bank-engine"
               and filter_result.get("filters", {}).get("grade") == "高一"
               and filter_result.get("filters", {}).get("difficulty") == "L2"
               and isinstance(filter_result.get("total"), int),

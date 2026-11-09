@@ -1403,11 +1403,12 @@ class StageRelayContractTest(unittest.TestCase):
         self.assertIn("var sharedBase = ", source)
         for channel in ('sharedBase + "/review?', 'sharedBase + "/questions/', 'sharedBase + "/topics'):
             self.assertIn(channel, source)
-        # 题库端不再持有写权限，也不再有行内改题；改题按钮只发跳转
-        bank_manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.bank-ui")
-        self.assertEqual(bank_manifest["permissions"], ["questions:read"])
+        # 合并后的题库包既是 provider 也是视图：写权限用于 provider 自述可写，
+        # 界面本身仍不内联改题，改题一律发 system.open_editor 跳录题端。
+        bank_manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")
+        self.assertEqual(bank_manifest["permissions"], ["questions:read", "questions:write"])
         self.assertIn("system.open_editor", bank_manifest["bus"]["publish"])
-        bank_js = plugin_bundle("org.jiuzhang.bank-ui")
+        bank_js = plugin_bundle("org.jiuzhang.bank-engine")
         self.assertIn('publish("system.open_editor"', bank_js)
         self.assertNotIn('hostCall("bank.update"', bank_js)
         for plugin in ("org.jiuzhang.paper-gen", "org.jiuzhang.handout"):

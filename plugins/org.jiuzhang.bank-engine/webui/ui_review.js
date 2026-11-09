@@ -1,5 +1,5 @@
 /**
- * 待审任务工作台（org.jiuzhang.bank-ui / ui_review.js）。
+ * 待审任务工作台（org.jiuzhang.bank-engine / ui_review.js）。
  *
  * 从 plugin.js 拆出（PLUGIN_SPEC §2.8.1「单文件不得过 800 行」）：
  * - 待审：按迁移标记（缺答案依据、题型待判、只挂到节层…）分组列出，逐条判

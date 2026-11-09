@@ -4,26 +4,14 @@ updated_at = "2026-11-09"
 
 [[entries]]
 id = "org.jiuzhang.bank-engine"
-name = "题库引擎"
-version = "2.0.0"
+name = "九章题库"
+version = "3.0.0"
 kind = "tool"
 api_version = "1.0"
-description = "无界面的题库数据引擎：承载 31 张纯关系表、全量教材树与知识点、考向与题目映射。只经 Host API 调用，数据落在当前工作区；引擎受保护，控制台不可卸载。"
+description = "九章题库：31 张纯关系表的数据引擎与大纲/题目/待审视图合为一体，同一插件包同时注册 Host API 命令与 webui 前端入口；数据只经底座读写，插件不碰数据库。"
 zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"
 mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.bank-engine.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"]
 homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-engine"
-min_host_version = "1.0.0"
-
-[[entries]]
-id = "org.jiuzhang.bank-ui"
-name = "真题题库"
-version = "1.0.3"
-kind = "tool"
-api_version = "1.0"
-description = "题库视图插件（纯前端）：左侧大纲树、题目列表与详情、待审队列；数据一律向当前活跃题库引擎申请，自己不碰数据库。"
-zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip"
-mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.bank-ui.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-ui.zip"]
-homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-ui"
 min_host_version = "1.0.0"
 
 [[entries]]

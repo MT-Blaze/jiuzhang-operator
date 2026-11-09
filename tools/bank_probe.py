@@ -29,9 +29,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-# 军令 #20：界面与数据引擎分家——探针要同时装两个，点的是视图插件。
-PLUGIN_ID = "org.jiuzhang.bank-ui"
-ENGINE_ID = "org.jiuzhang.bank-engine"
+# 题库与界面已合并成单一包：探针只装这一个，点开的就是同一个插件。
+PLUGIN_ID = "org.jiuzhang.bank-engine"
+ENGINE_ID = PLUGIN_ID
 
 
 def free_port() -> int:
@@ -72,7 +72,6 @@ def main() -> int:
     shots.mkdir(parents=True)
 
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    shutil.copytree(ROOT / "plugins" / ENGINE_ID, plugins_dir / ENGINE_ID)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -101,13 +100,13 @@ def main() -> int:
             page.on("pageerror", lambda error: result["page_errors"].append(str(error)))
             page.goto(base + "/workspace", wait_until="networkidle")
 
-            item = page.locator(".ws-plugin-item", has_text="真题题库").first
+            item = page.locator(".ws-plugin-item", has_text="九章题库").first
             expect(item).to_be_visible(timeout=10000)
-            check("左栏出现真题题库", True)
+            check("左栏出现九章题库", True)
             item.click()
 
             frame_locator = page.frame_locator(".ws-plugin-frame")
-            expect(frame_locator.locator(".cb-title")).to_have_text("真题题库", timeout=15000)
+            expect(frame_locator.locator(".cb-title")).to_have_text("九章题库", timeout=15000)
             expect(frame_locator.locator(".cb-row")).to_have_count(12, timeout=15000)
             expect(frame_locator.locator(".cb-pager")).to_contain_text("共 456 题", timeout=15000)
             check("插件挂载并载入 456 题", True)

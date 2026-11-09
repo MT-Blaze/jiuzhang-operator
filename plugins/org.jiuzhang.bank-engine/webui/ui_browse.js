@@ -1,10 +1,9 @@
 /**
- * 题面浏览：富文本、列表、大纲树与详情（org.jiuzhang.bank-ui / ui_browse.js）。
+ * 题面浏览：富文本、列表、大纲树与详情（org.jiuzhang.bank-engine / ui_browse.js）。
  *
- * 从 plugin.js 拆出（PLUGIN_SPEC §2.8.1「单文件不得过 800 行」）：
- * - 安全渲染：MathJax 定界符（$…$ / $$…$$ / \(…\)）与配图只走 textContent，
- *   真题原文里的尖括号与反斜杠宏一律印不成 HTML；
- * - 列表：一行一题，标签翻译与迁移标记都在这里，翻页器 mountPager 复用给工作台；
+ * 从 plugin.js 拆出（PLUGIN_SPEC §2.8.1「单文件不得过 500 行」）：
+ * - 安全渲染与通用格式化分别在 ui_rich.js / ui_format.js，本文件只管装配；
+ * - 列表：一行一题，标签翻译与迁移标记走通用格式化；
  * - 大纲树：册/章/节/考向按 bank.topics 懒加载，开合与已取回的层记在 tree；
  * - 详情：题干、选项、答案与解析，外加该考向的笔记（军令 #21 任务二）。
  *
@@ -32,104 +31,18 @@
     // 只留当前节点的结果；老师连点两个节点时用 seq 丢掉先发后到的旧响应。
     var notes = { topicId: "", loading: false, items: [], error: "", seq: 0 };
 
-    // ---------- 安全渲染 ----------
-    function renderMathToken(text) {
-      var span = document.createElement("span");
-      var paren = text.slice(0, 6) === "\\paren";
-      var display = !paren && text.slice(0, 2) === "$$";
-      var body = paren ? text : (display ? text.slice(2, -2) : text.slice(1, -1));
-      var html = window.JzoMath ? window.JzoMath.render(body, display) : "";
-      if (html) {
-        span.innerHTML = html;
-        span.className = display ? "cb-math-block" : "cb-math";
-        return span;
-      }
-      span.textContent = text;
-      return span;
-    }
-
-    function appendInline(target, text) {
-      var pattern = /(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$|\\paren\*?(?:\[[^\]]*\])?|\*\*[^*]+\*\*)/g;
-      var last = 0;
-      var match;
-      while ((match = pattern.exec(text)) !== null) {
-        if (match.index > last) target.appendChild(document.createTextNode(text.slice(last, match.index)));
-        var token = match[0];
-        if (token.slice(0, 1) === "$" || token.slice(0, 6) === "\\paren") {
-          target.appendChild(renderMathToken(token));
-        } else {
-          var strong = document.createElement("strong");
-          strong.textContent = token.slice(2, -2);
-          target.appendChild(strong);
-        }
-        last = pattern.lastIndex;
-      }
-      if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
-    }
-
-    function appendRich(target, source, imageMap) {
-      var text = String(source == null ? "" : source);
-      var blocks = text.split(/\n{2,}/);
-      blocks.forEach(function (block) {
-        var trimmed = block.trim();
-        if (!trimmed) return;
-        var image = trimmed.match(/^!\[([^\]]*)\]\((\/static\/uploads\/[^)\s]+)\)$/);
-        if (image) {
-          var img = document.createElement("img");
-          img.className = "cb-img";
-          img.src = image[2];
-          img.alt = image[1] || "配图";
-          img.loading = "lazy";
-          target.appendChild(img);
-          return;
-        }
-        var paragraph = document.createElement("p");
-        paragraph.style.margin = "0 0 8px";
-        appendInline(paragraph, trimmed);
-        target.appendChild(paragraph);
-        if (imageMap) {
-          // 段落中残留的图片语法（迁移后的正文一般已是独立段落，这里兜底）
-          Array.prototype.forEach.call(paragraph.querySelectorAll("img"), function (node) {
-            if (node.getAttribute("src").indexOf("/static/uploads/") !== 0) node.remove();
-          });
-        }
-      });
-    }
+    var rich = window.JzoBankRich.create();
+    var appendRich = rich.appendRich;
 
     // ---------- 列表 ----------
-    function el(tag, className, text) {
-      var node = document.createElement(tag);
-      if (className) node.className = className;
-      if (text != null) node.textContent = text;
-      return node;
-    }
-
-    // 契约 2.0 只发 L1–L4；旧键留着只为渲染历史缓存里的题卡
-    function difficultyLabel(value) {
-      return {
-        L1: "基础", L2: "中档", L3: "难", L4: "压轴",
-        basic: "基础", medium: "中档", hard: "难", novel: "压轴"
-      }[value] || value;
-    }
-
-    function typeLabel(value) {
-      return {
-        single_choice: "单选", multiple_choice: "多选", fill_blank: "填空",
-        solution: "解答", proof: "证明", unknown: "待定"
-      }[value] || value;
-    }
-
-    function sourceLine(question) {
-      var source = question.source || {};
-      return [source.paper_title, source.question_no ? "原卷 " + source.question_no + " 题" : ""]
-        .filter(Boolean).join(" · ");
-    }
-
-    function migrationFlags(question) {
-      var entry = (question.extensions || {})["org.jiuzhang.core-bank.migration"];
-      var flags = entry && entry.flags;
-      return Array.isArray(flags) ? flags : [];
-    }
+    var fmt = window.JzoBankFormat.create();
+    var el = fmt.el;
+    var difficultyLabel = fmt.difficultyLabel;
+    var typeLabel = fmt.typeLabel;
+    var sourceLine = fmt.sourceLine;
+    var migrationFlags = fmt.migrationFlags;
+    var mountPager = fmt.mountPager;
+    var answerText = fmt.answerText;
 
     function buildRow(question, index) {
       var row = document.createElement("article");
@@ -186,31 +99,6 @@
         }
       });
       return row;
-    }
-
-    // 列表视图与待审视图的分页器是同一个形状（上一页—页码—下一页），只差数据源与翻页动作。
-    function mountPager(page, pages, total, onGo) {
-      var pager = el("div", "cb-pager");
-      var prev = el("button", "cb-btn", "上一页");
-      prev.type = "button";
-      prev.disabled = page <= 1;
-      prev.addEventListener("click", function () { if (page > 1) onGo(page - 1); });
-      var next = el("button", "cb-btn", "下一页");
-      next.type = "button";
-      next.disabled = page >= pages;
-      next.addEventListener("click", function () { if (page < pages) onGo(page + 1); });
-      pager.appendChild(prev);
-      pager.appendChild(el("span", null, "第 " + page + " / " + pages + " 页 · 共 " + total + " 题"));
-      pager.appendChild(next);
-      return pager;
-    }
-
-    // 答案口径只有一处真相：选项题报选项键、其余报正文，两者都没有就是「待补」。
-    function answerText(question) {
-      var answer = question.answer;
-      if (answer && answer.kind === "choice") return (answer.choice_keys || []).join("、");
-      if (answer && answer.content) return String(answer.content);
-      return "";
     }
 
     // ---------- 大纲树（bank.topics 懒加载） ----------

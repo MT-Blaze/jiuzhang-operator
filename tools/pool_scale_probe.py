@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVID = ROOT / ".qoder" / "records" / "biz" / "2026-11" / "20261103_order32-s6-evidence"
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = "org.jiuzhang.bank-ui"
+BANK_UI_ID = BANK_ID
 TOKEN = "s6d-scale-probe-token"
 N_ORIGINALS = 200
 SCALES = (100, 200, 300)
@@ -250,7 +250,7 @@ def main() -> int:
     data_dir, plugins_dir = work / "data", work / "plugins"
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
-    for pid in (EDITOR_ID, BANK_ID, BANK_UI_ID):
+    for pid in (EDITOR_ID, BANK_ID):
         shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
     log_path = work / "server.log"
     proc, base, handle = start_server(data_dir, plugins_dir, log_path)

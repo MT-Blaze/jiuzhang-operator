@@ -21,7 +21,7 @@ from app.core import manifests, toml_io, wire  # noqa: E402
 
 INDEX_MAIN = ROOT / "plugins.toml"
 INDEX_REPO = ROOT.parent / "jiuzhang-plugins" / "plugins.json"
-PLUGIN_DIRS = ("org.jiuzhang.bank-engine", "org.jiuzhang.bank-ui", "org.jiuzhang.editor",
+PLUGIN_DIRS = ("org.jiuzhang.bank-engine", "org.jiuzhang.editor",
                "org.jiuzhang.paper-gen", "org.jiuzhang.handout",
                "org.jiuzhang.dashboard")
 # 只有这几条要求索引文案与清单逐字相同（tests/test_clean_latex.py 有契约判据）。

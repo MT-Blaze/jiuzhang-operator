@@ -112,14 +112,23 @@ def bundle_local_scripts(html_path: Path) -> str:
 PLUGINS_DIR = ROOT / "plugins"
 
 
-def plugin_bundle(plugin_id: str, tag: str = "script") -> str:
-    """官方插件的「整包源码」：按 dist/index.html 的加载次序拼本地 JS（或 CSS）。
+def plugin_entry(plugin_id: str) -> Path:
+    """插件入口页：路径以清单的 ``entry.frontend`` 为准（dist/ 或 webui/）。"""
+    from app.core import manifests
 
-    插件按 PLUGIN_SPEC §2.8.1/§2.8.2 拆成多文件后，任何只读 dist/plugin.js 的断言
+    manifest = manifests.load_manifest(PLUGINS_DIR / plugin_id)
+    frontend = (manifest.get("entry") or {}).get("frontend") or "dist/index.html"
+    return PLUGINS_DIR / plugin_id / frontend
+
+
+def plugin_bundle(plugin_id: str, tag: str = "script") -> str:
+    """官方插件的「整包源码」：按入口页的加载次序拼本地 JS（或 CSS）。
+
+    插件按 PLUGIN_SPEC §2.8.1/§2.8.2 拆成多文件后，任何只读入口页附近的断言
     都会悄悄缩小覆盖面——安全三查、总线事件名、渲染契约都在别的文件里也有。
     凡是要对「插件写了什么」下结论的测试，一律读本函数。
     """
-    return bundle_local_assets(PLUGINS_DIR / plugin_id / "dist" / "index.html", tag)
+    return bundle_local_assets(plugin_entry(plugin_id), tag)
 
 
 

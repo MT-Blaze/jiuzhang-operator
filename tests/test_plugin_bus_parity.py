@@ -1,7 +1,7 @@
 """官方插件的 bus.subscribe 与代码监听必须逐字全等（#18-结 第七条遗留）。
 
 三段判据，缺一不算收口：
-- **清单 == 代码**：``plugin.toml`` 的 ``bus.subscribe`` 与 ``dist/plugin.js`` 里真的按 ``event``
+- **清单 == 代码**：``plugin.toml`` 的 ``bus.subscribe`` 与入口页加载的插件 JS 里真的按 ``event``
   分支处理的主题集合必须完全相等——多写是假授权，少写是暗通道；
 - **声明即生效**：声明的每个主题必须活在宿主白名单里，装上后一条不许被 ``_normalize_bus`` 丢弃；
 - **投递可达**：代码处理的每个主题必须能在 ``static/js`` 里找到宿主的一次 ``broadcast``/``notify``，
@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.core import manifests
 from app.core.plugins import _normalize_bus
+from tests.core_sources import plugin_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGINS_DIR = ROOT / "plugins"
@@ -34,10 +35,8 @@ def official_plugins() -> list[Path]:
 
 
 def handled_topics(plugin_dir: Path) -> set[str]:
-    found: set[str] = set()
-    for js in (plugin_dir / "dist").glob("*.js"):
-        found |= set(HANDLED.findall(js.read_text(encoding="utf-8")))
-    return found
+    """入口页（dist/ 或 webui/）加载的全部本地脚本，按页面次序拼接后扫描。"""
+    return set(HANDLED.findall(plugin_bundle(plugin_dir.name)))
 
 
 def declared_topics(plugin_dir: Path) -> set[str]:
@@ -72,9 +71,8 @@ class BusParityContract(unittest.TestCase):
         expect = {
             "org.jiuzhang.chat": {"stage.tab.activated", "stage.tab.closed", "stage.selection",
                                   "question.updated", "plugin.updated", "panel.button.click"},
-            "org.jiuzhang.bank-engine": set(),
-            "org.jiuzhang.bank-ui": {"ui.params.changed", "system.question_updated",
-                                     "question.updated", "system.bank_query"},
+            "org.jiuzhang.bank-engine": {"ui.params.changed", "system.question_updated",
+                                         "question.updated", "system.bank_query"},
             "org.jiuzhang.dashboard": {"question.updated", "system.question_updated"},
             "org.jiuzhang.editor": {"system.open_editor", "ui.params.changed", "editor.apply_patch",
                                     "stage.selection", "system.question_updated",

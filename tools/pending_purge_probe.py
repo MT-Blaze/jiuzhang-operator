@@ -40,7 +40,7 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = "org.jiuzhang.bank-ui"
+BANK_UI_ID = BANK_ID
 TOKEN = "pending-purge-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 CARD_RE = re.compile(r"待审\s*(\d+)\s*/\s*(\d+)")
@@ -154,7 +154,7 @@ def main() -> int:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
-    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
+    for plugin_id in (EDITOR_ID, BANK_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()

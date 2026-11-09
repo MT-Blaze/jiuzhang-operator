@@ -3,7 +3,7 @@
 
 用法：``.venv/Scripts/python.exe tools/illustration_probe.py <tag>``
 
-隔离：editor / bank-engine / bank-ui 复制进独立插件目录，另起端口与数据目录。
+隔离：editor / 合并后的题库包复制进独立插件目录，另起端口与数据目录。
 探针自己往中转站塞一道带题图的选择题，然后在真浏览器里走完整动线：
 
 1. 光标落在 ``\\item`` 选项里 → 【添加配图】→ 左栏原图变画板（十字准心）；
@@ -42,7 +42,7 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = "org.jiuzhang.bank-ui"
+BANK_UI_ID = BANK_ID
 TOKEN = "illustration-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 
@@ -155,7 +155,7 @@ def run(tag: str) -> dict:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots, data_dir / "uploads"):
         folder.mkdir(parents=True)
-    for plugin_id in (EDITOR_ID, BANK_ID, BANK_UI_ID):
+    for plugin_id in (EDITOR_ID, BANK_ID):
         shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
     (data_dir / "uploads" / "img_illu_probe.png").write_bytes(make_png(240, 160))
 
