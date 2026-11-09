@@ -159,6 +159,7 @@ class EditorManifestTest(unittest.TestCase):
                           "editor.clean_review",
                           "editor.clean_review_state", "editor.collect_files",
                           "editor.dup_compare", "editor.dup_review", "editor.pool_review",
+                          "editor.settings",
                           "stage.selection",
                           "system.open_editor", "system.pending_updated",
                           "system.question_updated", "ui.params.changed"])
@@ -166,6 +167,7 @@ class EditorManifestTest(unittest.TestCase):
                          ["editor.batch_review", "editor.canvas_state", "editor.clean_review",
                           "editor.clean_review_state", "editor.collect_files",
                           "editor.dup_compare", "editor.dup_review", "editor.pool_review",
+                          "editor.settings",
                           "region.dock",
                           "stage.selection",
                           "system.editor_close", "system.return_from_editor"])
@@ -2443,9 +2445,10 @@ class EditorDuplicatePoolScreenTest(unittest.TestCase):
     def test_06_the_panel_and_canvas_split_by_from(self) -> None:
         """两帧只经宿主总线对话：同一主题靠 from 分头，新增主题实数就是两条。"""
         bus = manifest()["bus"]
-        self.assertEqual(len(set(bus["subscribe"]) | set(bus["publish"])), 17,
-                         "订 14 ∪ 发 12 = 17 个主题名；查重三栏新增 editor.dup_compare")
-        for topic in ("editor.pool_review", "editor.batch_review", "editor.dup_compare"):
+        self.assertEqual(len(set(bus["subscribe"]) | set(bus["publish"])), 18,
+                         "订 15 ∪ 发 13 = 18 个主题名；录题偏好新增 editor.settings")
+        for topic in ("editor.pool_review", "editor.batch_review", "editor.dup_compare",
+                      "editor.settings"):
             self.assertIn(topic, bus["subscribe"])
             self.assertIn(topic, bus["publish"])
         protocol = read("core_protocol.js")
@@ -2532,6 +2535,55 @@ class EditorExportIntegrityTest(unittest.TestCase):
         bundle = read("plugin.js")
         self.assertNotIn("cleanExamSource", bundle,
                          "清洗规则已归底座，插件里不许再留这个名字（尤其不许只留导出位）")
+
+
+class EditorBusinessSettingsTest(unittest.TestCase):
+    """业务参数下沉：AI 提示词 / 预设难度 / 自动暂存住辅助栏，偏好交宿主草稿代持。"""
+
+    def test_01_the_three_controls_live_in_the_aux_bar(self) -> None:
+        panel = panel_only(read("index.html"))
+        for node_id in ("epBizSec", "epBizAi", "epBizDifficulty", "epBizAutosave"):
+            self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少录题偏好控件 {node_id}")
+        self.assertLess(panel.index('id="epMetaSec"'), panel.index('id="epBizSec"'))
+        self.assertLess(panel.index('id="epBizSec"'), panel.index('id="epAiSec"'))
+
+    def test_02_preferences_go_through_the_host_draft(self) -> None:
+        js = read("ui_settings.js")
+        self.assertIn('DRAFT_KEY = "editor:v2:prefs"', js)
+        self.assertIn('hostCall("draft.save"', js)
+        self.assertIn('hostCall("draft.load"', js)
+        for forbidden in ("localStorage", "sessionStorage", "fetch(", "parent.document"):
+            self.assertNotIn(forbidden, js, f"偏好模块越界用了 {forbidden}")
+
+    def test_03_ai_toggle_hides_the_ai_section(self) -> None:
+        js = read("ui_settings.js")
+        self.assertIn('getElementById("epAiSec")', js)
+        self.assertIn("aiSecEl.hidden = values.ai_prompt === false", js)
+
+    def test_04_preset_difficulty_is_the_default_for_new_questions(self) -> None:
+        js = read("ui_panel.js")
+        self.assertIn("presetDifficulty()", js)
+        self.assertIn('difficulty: d.difficulty || presetDifficulty() || "L1"', js,
+                      "识别没给难度时必须先落老师预设")
+        self.assertIn("merged.difficulty || presetDifficulty() || \"L1\"", js)
+
+    def test_05_autosave_toggle_guards_the_idle_save(self) -> None:
+        js = read("ui_batches.js")
+        self.assertIn("settings.autosaveOn() === false", js)
+        # 原样保留那条灰字回执：换开关不许改老师看得见的文案。
+        self.assertIn('dock("检测到长时间无操作，已自动存入待审核池。", "note")', js)
+
+    def test_06_the_two_frames_sync_through_the_host_bus(self) -> None:
+        js = read("ui_settings.js")
+        self.assertIn('publish("editor.settings"', js)
+        protocol = read("core_protocol.js")
+        self.assertIn('message.event === "editor.settings"', protocol)
+        bus = manifest()["bus"]
+        self.assertIn("editor.settings", bus["publish"])
+        self.assertIn("editor.settings", bus["subscribe"])
+        stage = stage_source()
+        self.assertIn('notify(tab, "editor.settings", pair.payload)', stage)
+        self.assertIn('notify(panel, "editor.settings", pair.payload)', stage)
 
 
 if __name__ == "__main__":

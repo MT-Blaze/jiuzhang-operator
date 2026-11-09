@@ -38,6 +38,8 @@
     var openModal = deps.openModal;
     var panel = coreState.panel;
     var panelSay = deps.panelSay;
+    // 录题偏好（可整块下架）：老师关掉自动暂存后，闲置闸门只重置时钟、不落任何动作。
+    var settings = deps.settings || null;
     var parseExamSource = deps.parseExamSource;
     var parsedOf = deps.parsedOf;
     var pending = coreState.pending;
@@ -707,6 +709,10 @@
 
   /** 长时间无操作 → 静默存回中转池，只在底部日志留一行灰字，绝不弹窗抢老师。 */
   function autoSaveIdle() {
+    if (settings && settings.autosaveOn() === false) {
+      lastActivityAt = Date.now();
+      return;
+    }
     var item = state.items[state.active];
     if (!item || !item.pendingId) return;
     idleBusy = true;

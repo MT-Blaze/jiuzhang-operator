@@ -131,6 +131,21 @@
       li.appendChild(head);
 
       if (row.reason) li.appendChild(el("p", "mg-card-desc", row.reason));
+      // 纯状态展示：已是最新时补一句「这个插件是干什么的」，可更新时列出这一版
+      // 改了什么。业务参数一律在各插件自己的画布/辅助栏里调，这里不设任何入口。
+      if (row.state === "up_to_date" && row.description) {
+        li.appendChild(el("p", "up-desc", row.description));
+      }
+      if (row.state === "update_available") {
+        if (row.changelog) {
+          var notes = el("div", "up-changelog");
+          notes.appendChild(el("p", "up-changelog-title", "更新内容"));
+          notes.appendChild(el("p", "up-changelog-body", row.changelog));
+          li.appendChild(notes);
+        } else if (row.description) {
+          li.appendChild(el("p", "up-desc", row.description));
+        }
+      }
       li.appendChild(el("p", "mg-card-sub", "id：" + row.id));
 
       var tools = el("div", "mg-card-tools");

@@ -164,5 +164,33 @@ class SafetyTest(unittest.TestCase):
         self.assertIn("textContent", body_of(JS, "function renderInstalled(plugins, body)"))
 
 
+class UpdateStatusDisplayTest(unittest.TestCase):
+    """更新面板纯展示：已是最新给说明，可更新给更新日志，绝不加任何配置入口。"""
+
+    def test_01_up_to_date_renders_the_description(self) -> None:
+        block = body_of(JS, "function renderUpdateRows()")
+        self.assertIn('row.state === "up_to_date" && row.description', block)
+        self.assertIn('el("p", "up-desc", row.description)', block)
+
+    def test_02_update_available_renders_the_changelog(self) -> None:
+        block = body_of(JS, "function renderUpdateRows()")
+        self.assertIn('row.state === "update_available"', block)
+        self.assertIn('"更新内容"', block)
+        self.assertIn("row.changelog", block)
+        self.assertIn('up-changelog-body', block)
+
+    def test_03_no_settings_entry_in_the_update_panel(self) -> None:
+        """老师定调：这里只做状态展示，一颗配置/设置按钮都不许有。"""
+        block = body_of(JS, "function renderUpdateRows()")
+        for word in ("配置", "设置", "偏好"):
+            self.assertNotIn(word, block, f"更新卡片里出现了被禁的入口文案：{word}")
+        self.assertEqual(block.count('el("button"'), 2,
+                         "只保留【更新】与灰掉的【需先更新底座】两颗按钮")
+
+    def test_04_changelog_styles_are_read_only(self) -> None:
+        self.assertIn(".up-changelog-body", CSS)
+        self.assertIn("white-space: pre-line", CSS, "多行更新日志要按换行原样排")
+
+
 if __name__ == "__main__":
     unittest.main()

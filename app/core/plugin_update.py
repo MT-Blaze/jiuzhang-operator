@@ -198,6 +198,10 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
             "reason": "",
             "zip_url": "",
             "mirrors": [],
+            # 「已是最新」时控制台只展示说明、「可更新」时只展示更新日志；
+            # 这里统一把两段文字带上，界面不再回头翻索引。只读，不触发任何动作。
+            "description": str(plugin.get("description") or ""),
+            "changelog": "",
         }
         if entry is None:
             row["reason"] = "索引里没有这个插件（本地装的，或索引未收录）"
@@ -209,6 +213,9 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
         row["min_host_version"] = str(entry.get("min_host_version") or "")
         row["zip_url"] = str(entry.get("zip_url") or "")
         row["mirrors"] = list(entry.get("mirrors") or [])
+        # 索引里的说明是「这个版本现在是什么」的最新口径；索引没写才回落本机清单。
+        row["description"] = str(entry.get("description") or row["description"])
+        row["changelog"] = str(entry.get("changelog") or "")
 
         verdict = compare_versions(remote_version, local_version)
         if verdict is None:

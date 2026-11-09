@@ -27,6 +27,7 @@ MAX_INDEX_BYTES = 512 * 1024
 FETCH_TIMEOUT_SECONDS = 6.0
 MIRROR_TIMEOUT_SECONDS = 5.0
 MAX_ENTRIES = 200
+CHANGELOG_MAX_CHARS = 2000
 
 _ALLOWED_SCHEMES = {"http", "https"}
 _PLUGIN_ID = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
@@ -110,6 +111,12 @@ def _parse_entry(entry: Any, position: int) -> dict[str, Any]:
     if not isinstance(description, str) or len(description) > 200:
         raise ValueError("%s 的 description 长度必须为 0–200" % where)
 
+    # 更新日志只给控制台「可更新」时展示，纯文本、允许换行；写坏了只当没有，
+    # 不让一个可选字段把整条目连坐掉。
+    changelog = entry.get("changelog", "")
+    if not isinstance(changelog, str) or len(changelog) > CHANGELOG_MAX_CHARS:
+        changelog = ""
+
     homepage = _validate_download_url(entry.get("homepage"), "homepage", where)
 
     # min_host_version 只在「检查更新」时用来拦下不兼容的更新，缺省不设限；
@@ -125,6 +132,7 @@ def _parse_entry(entry: Any, position: int) -> dict[str, Any]:
         "zip_url": zip_url,
         "mirrors": [item for item in mirrors if item],
         "description": description,
+        "changelog": changelog.strip(),
         "homepage": homepage,
         "kind": entry.get("kind") if isinstance(entry.get("kind"), str) else "",
         "api_version": entry.get("api_version") if isinstance(entry.get("api_version"), str) else "",

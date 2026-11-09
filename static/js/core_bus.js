@@ -33,7 +33,9 @@
     "editor.pool_review",
     "editor.batch_review",
     // 查重三栏：辅助栏裁判台发令变身、决断后换题、画布 Esc 收窗——双向各投对方一帧。
-    "editor.dup_compare"
+    "editor.dup_compare",
+    // 录题偏好：辅助栏改三件高频参数，画布据此收敛行为（自动暂存/预设难度）。
+    "editor.settings"
   ];
 
   function create(ctx) {

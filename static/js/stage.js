@@ -597,6 +597,17 @@
           eachEditorPanel(function (panel) { notify(panel, "editor.dup_compare", pair.payload); });
         }
       });
+      // 录题偏好（可整块下架）：辅助栏改 AI 提示词 / 预设难度 / 自动暂存，
+      // 只投给另一帧——谁发的都不收回自己的回声。
+      bus.on("editor.settings", function (event) {
+        var pair = editorPairPayload(event);
+        if (!pair) return;
+        if (pair.from === "panel") {
+          eachEditorCanvas(function (tab) { notify(tab, "editor.settings", pair.payload); });
+        } else if (pair.from === "canvas") {
+          eachEditorPanel(function (panel) { notify(panel, "editor.settings", pair.payload); });
+        }
+      });
       // 4.3：LaTeX 清洗预览。正文对照只进画布帧；画布不在就回投 tab_not_live，
       // 让辅助栏立刻降级为纯摘要——绝不让老师按到必然落空的【采用】。
       bus.on("editor.clean_review", function (event) {

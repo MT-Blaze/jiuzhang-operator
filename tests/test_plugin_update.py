@@ -330,6 +330,30 @@ class CheckUpdatesTest(IsolatedDirsMixin):
         self.assertEqual(rows[PLUGIN_ID]["state"], "update_available")
         self.assertEqual(rows[PLUGIN_ID]["local_version"], "1.0.0")
 
+    def test_11_status_texts_ride_along_without_any_config_button(self):
+        """控制台纯展示：已是最新带说明、可更新带更新日志；两段都只是文字。"""
+        installed = [{"id": PLUGIN_ID, "name": "更新契约测试插件", "version": "1.0.0",
+                      "description": "本机清单里的说明"}]
+        same = check_updates(index([entry("1.0.0", description="索引里的最新说明")]),
+                             installed=installed)["plugins"][0]
+        self.assertEqual(same["state"], "up_to_date")
+        self.assertEqual(same["description"], "索引里的最新说明", "索引口径优先")
+        self.assertEqual(same["changelog"], "")
+
+        newer = check_updates(index([entry("2.0.0", description="索引里的最新说明",
+                                           changelog="1. 新增预设难度\n2. 修复草稿串区")]),
+                              installed=installed)["plugins"][0]
+        self.assertEqual(newer["state"], "update_available")
+        self.assertEqual(newer["description"], "索引里的最新说明")
+        self.assertEqual(newer["changelog"], "1. 新增预设难度\n2. 修复草稿串区")
+
+    def test_12_description_falls_back_to_the_local_manifest(self):
+        """索引没写说明时，已是最新仍能显示本机清单那句说明。"""
+        installed = [{"id": PLUGIN_ID, "name": "更新契约测试插件", "version": "1.0.0",
+                      "description": "本机清单里的说明"}]
+        row = check_updates(index([entry("1.0.0", description="")]), installed=installed)["plugins"][0]
+        self.assertEqual(row["description"], "本机清单里的说明")
+
 
 class ApplyPluginUpdateTest(IsolatedDirsMixin):
     def test_01_update_replaces_code_and_reports_versions(self):

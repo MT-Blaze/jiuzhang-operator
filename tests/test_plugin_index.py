@@ -97,6 +97,24 @@ class IndexParsingTest(unittest.TestCase):
         with self.assertRaises(plugin_index.IndexRejected):
             plugin_index.parse_index([])
 
+    def test_changelog_is_optional_text_and_never_kills_its_entry(self) -> None:
+        """更新日志只供控制台展示：留空合法，超长或非文本只丢这一个字段。"""
+        parsed = plugin_index.parse_index({
+            "index_version": "1.0",
+            "entries": [
+                good_entry(changelog="新增预设难度\n修复草稿串区"),
+                good_entry(id="cn.example.blank", changelog=""),
+                good_entry(id="cn.example.big", changelog="x" * 3000),
+                good_entry(id="cn.example.bad", changelog={"not": "text"}),
+            ],
+        })
+        self.assertEqual(parsed["rejected"], [])
+        by_id = {row["id"]: row for row in parsed["entries"]}
+        self.assertEqual(by_id["cn.example.card"]["changelog"], "新增预设难度\n修复草稿串区")
+        self.assertEqual(by_id["cn.example.blank"]["changelog"], "")
+        self.assertEqual(by_id["cn.example.big"]["changelog"], "")
+        self.assertEqual(by_id["cn.example.bad"]["changelog"], "")
+
 
 class UrlGuardTest(unittest.TestCase):
     def test_only_plain_http_urls_without_credentials_are_accepted(self) -> None:

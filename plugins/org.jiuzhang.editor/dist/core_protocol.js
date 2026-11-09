@@ -15,6 +15,7 @@
     var activatePanel = deps.activatePanel;
     var applyAiPatch = deps.applyAiPatch;
     var applySelection = deps.applySelection;
+    var applySettings = deps.applySettings;
     var applySwap = deps.applySwap;
     var applyWidths = deps.applyWidths;
     var basketAdd = deps.basketAdd;
@@ -105,6 +106,12 @@
         if (state.slot !== "stage.center") {
           applySelection((message.payload && message.payload.raw) || {});
         }
+        return;
+      }
+      if (message.event === "editor.settings") {
+        // 录题偏好：面板改、画布收。谁发的都不回播，避免两帧互相回声。
+        var settingsPayload = (message.payload && message.payload.raw) || message.payload || {};
+        if (typeof applySettings === "function") applySettings(settingsPayload);
         return;
       }
       if (message.event === "editor.canvas_state") {

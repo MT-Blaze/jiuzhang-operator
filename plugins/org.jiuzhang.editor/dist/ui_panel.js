@@ -12,6 +12,8 @@
     var TYPE_LABELS = coreState.TYPE_LABELS;
     var aiClear = deps.aiClear;
     var panel = coreState.panel;
+    // 录题偏好里的「预设难度」：识别没给难度时兜底；没接偏好模块就回落 L1。
+    var presetDifficulty = deps.presetDifficulty || function () { return ""; };
     var panelSay = deps.panelSay;
     var queueMetaSave = deps.queueMetaSave;
     var renderAi = deps.renderAi;
@@ -78,7 +80,7 @@
     var d = (sel && sel.defaults) || {};
     return {
       type: d.type || "",
-      difficulty: d.difficulty || "L1",
+      difficulty: d.difficulty || presetDifficulty() || "L1",
       grade: d.grade || "",
       textbook: d.textbook || "",
       chapter: d.chapter || "",
@@ -287,7 +289,7 @@
       panelConfidenceEl.setAttribute("data-confidence", confidence == null ? "" : String(confidence));
     }
     if (panelTypeEl) panelTypeEl.value = merged.type || sel.ai_type || "single_choice";
-    if (panelDifficultyEl) panelDifficultyEl.value = merged.difficulty || "L1";
+    if (panelDifficultyEl) panelDifficultyEl.value = merged.difficulty || presetDifficulty() || "L1";
     if (panelQuestionNoEl) panelQuestionNoEl.value = merged.question_no || "";
     if (panelTagsEl) panelTagsEl.value = merged.tags || "";
     if (panelScoreEl) panelScoreEl.value = merged.score || "";

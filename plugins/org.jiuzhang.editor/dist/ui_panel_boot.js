@@ -167,6 +167,8 @@
   function activatePanel() {
     if (!panelRoot) return;
     panelRoot.hidden = false;
+    // 录题偏好（可整块下架）：只在辅助栏这一帧挂监听、露出来。
+    if (deps.mountSettings) deps.mountSettings();
     fillSelect(panelTypeEl, TYPE_VALUES, TYPE_LABELS);
     fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, DIFFICULTY_LABELS);
     bindFormChanges();

@@ -67,8 +67,8 @@ priority = 65
 singleton = true
 
 [bus]
-subscribe = ["ui.params.changed", "system.open_editor", "editor.apply_patch", "stage.selection", "system.question_updated", "system.pending_updated", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare"]
-publish = ["region.dock", "stage.selection", "system.return_from_editor", "system.editor_close", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare"]
+subscribe = ["ui.params.changed", "system.open_editor", "editor.apply_patch", "stage.selection", "system.question_updated", "system.pending_updated", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare", "editor.settings"]
+publish = ["region.dock", "stage.selection", "system.return_from_editor", "system.editor_close", "editor.collect_files", "editor.canvas_state", "editor.dup_review", "editor.clean_review", "editor.clean_review_state", "editor.pool_review", "editor.batch_review", "editor.dup_compare", "editor.settings"]
 
 [contributes]
 

@@ -37,6 +37,14 @@
   var panelSay = coreHost.panelSay, publish = coreHost.publish, respond = coreHost.respond;
   var toast = coreHost.toast, trunc = coreHost.trunc;
 
+  // 录题偏好（可整块下架）：AI 提示词 / 预设难度 / 自动暂存。两帧各持一份，
+  // 面板改、画布收，跨帧只走宿主总线 editor.settings。
+  var uiSettings = window.JzoEditorSettings.create({
+    coreState: coreState,
+    hostCall: hostCall,
+    publish: publish,
+  });
+
   var DEV_FIXTURES = devFixtures.DEV_FIXTURES;
 
   var coreRich = window.JzoEditorRich.create({});
@@ -279,6 +287,7 @@
     renderDeleteBatchButton: uiBatchDelete.renderDeleteBatchButton,
     toast: toast,
     validateForSave: validateForSave,
+    settings: uiSettings,
     coreState: coreState,
   });
   var loadForEdit = uiBatches.loadForEdit;
@@ -501,6 +510,7 @@
     queueMetaSave: queueMetaSave,
     // 表单一有动静就重算辅助栏那圈琥珀灯（判据 5.2：左侧题卡与右侧辅助栏边缘同时亮）。
     repaintPanel: uiAmber.repaintPanel,
+    presetDifficulty: uiSettings.presetDifficulty,
     // 分值/难度一改，渲染栏题卡顶部的只读条同步换字（不重排整行、不抢输入焦点）。
     paintMetaStrip: uiColumns.refreshMetaStrip,
     renderAi: renderAi,
@@ -643,6 +653,7 @@
     stashOnUnload: stashOnUnload,
     syncScroll: syncScroll,
     wireLamp: wireLamp,
+    mountSettings: uiSettings.mount,
     coreState: coreState,
   });
   var bind = uiBoot.bind;
@@ -715,6 +726,7 @@
     activatePanel: activatePanel,
     applyAiPatch: applyAiPatch,
     applySelection: applySelection,
+    applySettings: uiSettings.applyRemote,
     applySwap: applySwap,
     applyWidths: applyWidths,
     basketAdd: basketAdd,

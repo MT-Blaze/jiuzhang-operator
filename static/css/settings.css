@@ -233,6 +233,18 @@
 .up-card[data-state="up_to_date"] { opacity: 0.82; }
 .up-card .q-button[disabled] { cursor: not-allowed; opacity: 0.55; }
 
+/* 「已是最新」的说明 / 「可更新」的更新日志：只读文字，没有任何入口按钮。 */
+.up-desc { margin: 6px 0 4px; font-size: 13px; line-height: 1.6; color: var(--muted, #6f675c); }
+.up-changelog {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent, #8a6a1f);
+  border-radius: 0 6px 6px 0;
+  background: rgba(138, 106, 31, 0.06);
+}
+.up-changelog-title { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted, #6f675c); }
+.up-changelog-body { margin: 0; font-size: 13px; line-height: 1.6; white-space: pre-line; word-break: break-word; }
+
 /* 出网请求没有进度事件，就如实给「不确定进度」条：只表示仍在跑，不伪造百分比。 */
 .up-progress {
   position: relative;

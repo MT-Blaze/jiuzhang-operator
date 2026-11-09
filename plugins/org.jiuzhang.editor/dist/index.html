@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="panel_capsule.css">
   <link rel="stylesheet" href="panel_ai.css">
   <link rel="stylesheet" href="ai_copilot.css">
+  <link rel="stylesheet" href="panel_biz.css">
   <link rel="stylesheet" href="effects.css">
 </head>
 <body>
@@ -545,6 +546,32 @@
            原卷名 / 年份 / 类型是批次公共元数据拼出的标准名的只读镜像，年级随识别结果入题，
            考向挂载的唯一入口是段一的幽灵胶囊——同一功能绝不在辅助栏出现第二遍。 -->
 
+      <!-- 录题偏好（可整块下架）：AI 提示词、预设难度、自动暂存三件高频业务参数
+           就在这里调，老师录题不离开当前工作流。删掉本段、ui_settings.js、
+           panel_biz.css 与 plugin.js 里的 settings 依赖即整块移除。
+           偏好经宿主草稿代持（按工作区分箱），插件不碰浏览器本地存储。 -->
+      <section class="ep-sec ep-biz" id="epBizSec" hidden aria-label="录题偏好">
+        <div class="ep-biz-head">
+          <h3 class="ep-sec-title">录题偏好</h3>
+          <span class="ep-biz-hint">按工作区记住</span>
+        </div>
+        <label class="ep-biz-row">
+          <span class="ep-biz-label">AI 提示词</span>
+          <input type="checkbox" class="ep-biz-switch" id="epBizAi" checked>
+          <span class="ep-biz-desc">关掉后收起下方【AI 帮改】段，纯手工录题</span>
+        </label>
+        <label class="ep-biz-row">
+          <span class="ep-biz-label">预设难度</span>
+          <select class="ep-mini-select ep-biz-select" id="epBizDifficulty"></select>
+          <span class="ep-biz-desc">识别没给难度时，新题默认用它</span>
+        </label>
+        <label class="ep-biz-row">
+          <span class="ep-biz-label">自动暂存</span>
+          <input type="checkbox" class="ep-biz-switch" id="epBizAutosave" checked>
+          <span class="ep-biz-desc">闲置 3 分钟自动存入待审核池</span>
+        </label>
+      </section>
+
       <!-- AI 帮改：平时收起，只留一行标题；展开才露指令框与预览。
            黄金位是老师核题的地方，这块不许常驻占着一屏。 -->
       <!-- 重题池（军令 #32 · 第五步）：档位与四个动作全在这一栏，画布那一屏只画渲染。
@@ -781,6 +808,8 @@
   <!-- 终极军令 任务一/三：AI 配置中心与单题/批量识别。独立一块，整块下架只需删这一行脚本、
        两处 index.html 弹窗、辅助栏两颗入口与 ai_copilot.css。 -->
   <script src="ui_ai_copilot.js"></script>
+  <!-- 录题偏好（可整块下架）：三件高频业务参数住辅助栏，见 ui_settings.js 开头。 -->
+  <script src="ui_settings.js"></script>
   <script src="ui_panel_boot.js"></script>
   <script src="ui_panel_glue.js"></script>
   <script src="core_protocol.js"></script>

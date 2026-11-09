@@ -158,15 +158,18 @@ homepage = "https://example.org/plugins/card"
 **套件包版式**：标准 zip，顶层是 `suite.toml` + 各子插件目录（目录名仍等于各自清单 `id`，结构与单插件包完全一致）：
 
 ```text
-org.jiuzhang.bank-suite.zip
+org.example.bank-suite.zip
 ├── suite.toml
-├── org.jiuzhang.bank-engine/
+├── org.example.bank-data/
 │   ├── plugin.toml
 │   └── ...
-└── org.jiuzhang.bank-ui/
+└── org.example.bank-view/
     ├── plugin.toml
     └── dist/...
 ```
+
+> 官方题库不采用套件包：数据引擎与浏览视图已合并为同一个 `org.jiuzhang.bank-engine`，
+> 一份 `plugin.toml` 同时注册后端能力与 `webui` 前端入口。
 
 `suite.toml` 字段：
 
@@ -648,7 +651,7 @@ frontend = "dist/index.html"
   `ai:invoke` 权限，未声明一律 `PERMISSION_DENIED`——助手插件的完整边界见 §2.10；
 - 写入类方法（`bank.create` / `bank.update` / `bank.delete` / `asset.upload`）在宿主侧先查页签插件的 `permissions`，未声明 `questions:write` / `assets:write` 直接回 `FORBIDDEN`，不进入后端。
 
-当前使用方：军令 #20 起拆成两支——[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.toml)（headless 数据端，声明 `bank.provider`，纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003）与 [`org.jiuzhang.bank-ui`](../plugins/org.jiuzhang.bank-ui/plugin.toml)（纯前端视图端，声明 `bank.view`，经 `bank.active_list` 取当前活跃题库）；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.toml) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【清洗当前题 LaTeX】按钮，辅助栏 `#epAiClean`）。后续组卷、讲义插件复用同一通道，不新增协议。
+当前使用方：[`org.jiuzhang.bank-engine`](../plugins/org.jiuzhang.bank-engine/plugin.toml) 是合并后的单一题库包——同一份清单同时声明 `bank.provider` 数据端与 `webui` 浏览视图（`bank.view`），纯净发版只随包冻结 `schema.sql`，不携带真题，见 ADR-003；[`org.jiuzhang.editor`](../plugins/org.jiuzhang.editor/plugin.toml) 经 `bank.create` / `bank.update` 写入新题与多来源、经 `bank.sources` 回填整组来源卷、经 `asset.upload` 落地框选或本地上传的配图，并经 `text.clean_latex` 调用底座统一清洗（【清洗当前题 LaTeX】按钮，辅助栏 `#epAiClean`）。后续组卷、讲义插件复用同一通道，不新增协议。
 
 #### 2.6.1 题库 provider 可替换（v0.8.2，军令 #20 拆分后）——底座不写死存储引擎
 
@@ -662,7 +665,7 @@ provider 不再兼任视图。任何第三方插件只要满足三条，就能�
 路由口径（缺一即违规）：
 
 - **谁在用**：宿主（`static/js/stage.js`）启动时向 `GET /api/bank/provider` 取「当前活跃 provider」，把 `bank.get` / `bank.topics` / `bank.create` 等**跨页签共享**的通道指向它；`bank.list` / `bank.stats` / `bank.random` 与题篮仍按**页签自己的 plugin.id** 走 `/api/bank/plugins/{plugin_id}/…`，天然多库并存。
-- **浏览型插件怎么取题**：像题库浏览视图这种**自己没有题库**的插件（军令 #20 的 `bank-ui` 即此形态，声明 `bank.view`），禁止用 `bank.list` / `bank.stats`（那会按它自己的页签 id 去查一个空库），必须用 `bank.active_list` / `bank.active_stats`——这两条与 `bank.get` / `bank.topics` 同源，永远指向当前活跃 provider。
+- **浏览型插件怎么取题**：像题库浏览视图这种**自己没有题库**的插件（声明 `bank.view`；官方题库已把视图半边并进 `bank-engine` 同一个包），禁止用 `bank.list` / `bank.stats`（那会按它自己的页签 id 去查一个空库），必须用 `bank.active_list` / `bank.active_stats`——这两条与 `bank.get` / `bank.topics` 同源，永远指向当前活跃 provider。
 - **谁在选**：活跃 provider 落在本机 `data/workspaces/<id>/bank_provider.json`（按工作区隔离），由用户在【设置与控制台 → 工作区管理】里选；写入接口需带一次性写令牌。旧版 `org.jiuzhang.core-bank` 的配置在引擎已安装时自动映射为 `bank-engine`，读取结果带 `migrated_from` 如实回报。
 - **怎么选得上**：被设置的 id 必须**已安装**且**声明了 `bank.provider` 能力**，否则底座拒绝写入并回 400；读取时若配置的 provider 已卸载或不合规，**回退默认 provider 并如实回报 `fallback_reason`**——「插件坏了，底座还能用」（AGENTS §2）。
 - **不许写死**：底座与插件代码里不得出现官方题库插件 id 作为路由目标（打包/索引/测试夹具除外）。默认值只允许出现在 `app/core/bank_provider.py` 的 `DEFAULT_PROVIDER_ID` 与 `LEGACY_PROVIDER_IDS` 两处；`bank.view` 的默认插件 id 只允许出现在宿主 `static/js/stage.js` 的 `BANK_VIEW_DEFAULT` 一处（取不到清单时兜底）。
@@ -745,7 +748,7 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 请求 id 过守卫由 `test_03d_template_request_id_passes_host_message_guard` 钉死，
 真机链路（左栏入口→沙箱页签→activate 回执→宿主 API 往返→`region.dock` 落底栏→坏 id 当场回执与底栏记账）由
 `tools/template_plugin_probe.py` 取证：2026-10-25（军令 #20 拆分后复跑）模板在
-`bank-engine` + `bank-ui` 隔离目录里跑黄金路径 **18/18**，沙箱内实测取题与渲染全通；
+`bank-engine` 合并包的隔离目录里跑黄金路径 **18/18**，沙箱内实测取题与渲染全通；
 且不进 dist 发放包（`build_release.bat` 的 `/XF` 排除，胖仓库红线）。
 
 #### 2.8.1 JS 按职能拆文件（2026-11-01 终极军令任务五，长期铁律）
@@ -1234,20 +1237,20 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 
 | 插件 id | 名称 | 版本 | 形态 | 通道 | 命令数 |
 | --- | --- | --- | --- | --- | --- |
-| `org.jiuzhang.bank-engine` | 题库引擎 | 1.0.1 | `headless: true`，`bank.provider` | headless（底座后端） | 3 |
-| `org.jiuzhang.bank-ui` | 真题题库 | 1.0.1 | iframe 视图，`bank.view` | iframe | 4 |
+| `org.jiuzhang.bank-engine` | 九章题库 | 3.0.0 | 后端数据端 + iframe 视图，`bank.provider` / `bank.view` | headless + iframe | 5 |
 | `org.jiuzhang.paper-gen` | 组卷排版 | 1.0.1 | iframe 视图 | iframe | 2 |
 | `org.jiuzhang.handout` | 讲义排版 | 1.0.1 | iframe 视图 | iframe | 3 |
-| `org.jiuzhang.editor` | 录题工作台 | 2.8.0 | iframe 视图 | iframe | 4 |
+| `org.jiuzhang.editor` | 录题工作台 | 2.12.0 | iframe 视图 | iframe | 4 |
 | `org.jiuzhang.chat` | AI 助手 | 1.1.1 | iframe 视图，`assistant.chat` | iframe | 0（只吃别人的命令） |
 | `org.jiuzhang.dashboard` | 数据看板 | 1.0.1 | iframe 视图 | iframe | 0（只读看板通道） |
 
-合计 16 条命令。`bank-engine` 与 `bank-ui` 是同一份题库数据的「引擎/视图」两支：
-视图插件只经 Host API 取数，引擎没有界面、不参与导航，二者不直接通信（§2.6.1、§2.7）。
+合计 14 条命令。`bank-engine` 是同一份题库数据的「引擎 + 视图」合体：
+一份清单同时注册 Host API 命令与 `webui` 前端入口，视图半边只经 Host API 取数，
+不再有独立的第二个题库包（旧 `org.jiuzhang.bank-ui` 已物理删除，§2.6.1、§2.7）。
 `chat` 与 `dashboard` 不对外声明 `org.jiuzhang.action.*` 命令：前者是命令面的消费者，
 后者只读活跃题库的看板通道。
 
-**3）`org.jiuzhang.bank-engine`（题库引擎，headless）。**
+**3）`org.jiuzhang.bank-engine`（九章题库：数据引擎半边）。**
 
 所有命令只读，只返回标准结构的摘要，不返回答案、解析与原始 SQL 行。
 
@@ -1264,7 +1267,7 @@ GitHub 口径（刚刚 / N 分钟前 / N 小时前 / N 天前 / N 个月前 / N 
 - `bank_topics` 的 `textbook_id` 只约束根层与搜索结果；给定 `parent_id` 后不再按版本过滤
   （父节点已经确定版本身份）。
 
-**4）`org.jiuzhang.bank-ui`（真题题库，iframe）。**
+**4）`org.jiuzhang.bank-engine`（九章题库：浏览视图半边，与上面同一个清单）。**
 
 | 命令 id | 标题 | 参数 | 返回 | 风险 |
 | --- | --- | --- | --- | --- |
