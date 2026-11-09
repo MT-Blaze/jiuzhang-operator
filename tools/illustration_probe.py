@@ -42,7 +42,6 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = BANK_ID
 TOKEN = "illustration-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 

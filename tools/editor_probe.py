@@ -55,13 +55,11 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = BANK_ID
 TOKEN = "editor-probe-token"
 MARK = "探针v3草稿"
 
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 PANEL = "#wsContextSlot .ws-context-frame"
-BANK_UI = "#wsPanel_plugin_org_jiuzhang_bank-engine .ws-plugin-frame"
 
 BATCH_STAMP_RE = re.compile(r"^\d{2}-\d{2} \d{2}:\d{2} \| 批次 #B-\d{3,}$")
 # 卡片右侧是「待审 n / N」：n 是这一批在池里的真实行数，N 是录入时累加的总数。
@@ -2549,19 +2547,6 @@ def main() -> int:
                       {"rows": canvas.locator(".ed-batch-row").count(),
                        "cards": len(pending_cards(base))})
                 page.screenshot(path=str(shots / f"v3-reload-{round_index}.png"))
-
-            # ---------- 回流：题库画布搜得到本次入库的题 ----------
-            bank_item = page.locator(".ws-plugin-item", has_text="九章题库").first
-            bank_item.click()
-            bank_frame = page.frame_locator(BANK_UI)
-            search = bank_frame.locator(".cb-search")
-            expect(search).to_be_visible(timeout=20000)
-            search.fill(MARK)
-            search.press("Enter")
-            page.wait_for_timeout(1500)
-            rows = bank_frame.locator(".cb-row").count()
-            check("题库画布搜到本次入库的题", rows >= 1, {"rows": rows})
-            page.screenshot(path=str(shots / "v3-bank-ui.png"))
 
             # ---------- 军令 #31 · 3.1a 导入批次后台自动初查的显形（判据 7/8/9/10） ----------
             # 台账 ⑤（913-921 行）+ 勘误·二（936-980 行）为准：

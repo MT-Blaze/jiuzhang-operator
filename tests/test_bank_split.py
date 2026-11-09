@@ -1,9 +1,9 @@
-"""题库合并：引擎与视图同包、旧视图目录退役、数据兼容。
+"""题库去 UI 化：引擎退居纯后台、旧视图目录退役、数据兼容。
 
-合并后最容易出事的几条线，各有判据：
+去 UI 后最容易出事的几条线，各有判据：
 
-1. **清单边界**：``org.jiuzhang.bank-engine`` 同时声明 provider 与 view，
-   前端入口在 ``webui/``，不可卸载且要在左栏出现；
+1. **清单边界**：``org.jiuzhang.bank-engine`` 只声明 provider，``headless: true``，
+   不注册 entry / ui / stage / slots，不占左栏；
 2. **单包唯一**：旧 ``org.jiuzhang.bank-ui`` 目录不再作为独立插件被发现，
    老工作区残留也不会变成第二个更新条目；
 3. **旧库只读复制**：升级后旧 ``core-bank`` 物理库字节不动，新引擎库把题目原样带过来，
@@ -32,7 +32,7 @@ from pathlib import Path
 from app.core import bank, manifests, wire
 from app.core.config import settings
 from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
-from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
+from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = "org.jiuzhang.bank-engine"
@@ -73,43 +73,41 @@ def _question_ids(path: Path) -> list[str]:
 
 
 class ManifestBoundaryTest(unittest.TestCase):
-    """一个包同时承担能力与界面；旧视图目录退出历史舞台。"""
+    """引擎只做后台 provider；旧视图目录退出历史舞台。"""
 
-    def test_01_engine_is_the_single_merged_package(self) -> None:
+    def test_01_engine_is_the_single_headless_package(self) -> None:
         manifest = _manifest(ENGINE)
-        self.assertIsNot(manifest.get("headless"), True, "合并后引擎有界面，不再 headless")
+        self.assertIs(manifest.get("headless"), True, "引擎已退居纯后台，不再带界面")
         self.assertIs(manifest.get("uninstallable"), False, "引擎必须带免死金牌")
-        self.assertIsNot(manifest.get("show_in_sidebar"), False, "合并包必须在左栏出现")
-        self.assertIn("stage.center", manifest.get("slots") or [])
-        self.assertIn("question.card", manifest.get("slots") or [])
-        self.assertTrue({"bank.provider", "bank.view"} <= set(manifest.get("capabilities") or []))
+        self.assertIs(manifest.get("show_in_sidebar"), False, "纯引擎不在左栏占位")
+        self.assertEqual(manifest.get("slots") or [], [])
+        self.assertEqual(["bank.provider"], manifest.get("capabilities"))
         self.assertEqual({"questions:read", "questions:write"},
                          set(manifest.get("permissions") or []))
         self.assertEqual("九章题库", manifest.get("name"))
-        frontend = (manifest.get("entry") or {}).get("frontend") or ""
-        self.assertTrue(frontend.startswith("webui/"), frontend)
-        self.assertTrue((ROOT / "plugins" / ENGINE / frontend).is_file(), frontend)
+        self.assertNotIn("entry", manifest, "headless 插件不得声明前端入口")
+        self.assertNotIn("ui", manifest)
+        self.assertNotIn("stage", manifest)
+        self.assertFalse((ROOT / "plugins" / ENGINE / "webui").exists(),
+                         "webui 目录必须物理删除，纯引擎不留前端资产")
 
     def test_02_retired_view_plugin_directory_is_gone(self) -> None:
         self.assertFalse((ROOT / "plugins" / RETIRED_UI).exists(),
                          "旧 bank-ui 目录必须物理删除，不能作为第二个包继续发布")
-        self.assertIn("system.open_editor", _manifest(ENGINE)["bus"]["publish"])
 
-    def test_03_validation_exposes_frontend_and_commands(self) -> None:
+    def test_03_validation_exposes_headless_and_data_commands(self) -> None:
         info = validate_plugin(ROOT / "plugins" / ENGINE, _manifest(ENGINE))
-        self.assertFalse(info["headless"])
-        self.assertTrue(info["entry_url"].startswith(f"/plugin-assets/{ENGINE}/webui/"))
-        self.assertIsNotNone(info["ui"])
-        self.assertIsNotNone(info["stage"])
+        self.assertTrue(info["headless"])
+        self.assertEqual("", info["entry_url"])
+        self.assertIsNone(info["ui"])
+        self.assertIsNone(info["stage"])
         self.assertFalse(info["uninstallable"])
-        self.assertTrue(info["show_in_sidebar"])
+        self.assertFalse(info["show_in_sidebar"])
         ids = {command["id"] for command in info["commands"]}
         self.assertEqual({
             "org.jiuzhang.action.data.bank_stats",
             "org.jiuzhang.action.data.bank_search",
             "org.jiuzhang.action.data.bank_topics",
-            "org.jiuzhang.action.view.filter_questions",
-            "org.jiuzhang.action.view.review_queue",
         }, ids)
 
     def test_04_headless_cannot_smuggle_an_entry_or_ui(self) -> None:
@@ -117,9 +115,9 @@ class ManifestBoundaryTest(unittest.TestCase):
             target = Path(tmp) / ENGINE
             shutil.copytree(ROOT / "plugins" / ENGINE, target)
             manifest = _manifest(ENGINE)
-            for extra in ({"headless": True},
-                          {"headless": True, "ui": {"title": "偷塞的界面"}},
-                          {"headless": True, "stage": {"center": {"takeover": True}}}):
+            for extra in ({"ui": {"title": "偷塞的界面"}},
+                          {"stage": {"region": "center", "mode": "takeover"}},
+                          {"entry": {"frontend": "webui/index.html"}}):
                 broken = {**manifest, **extra}
                 with self.assertRaises(PluginRejected, msg=str(extra)):
                     validate_plugin(target, broken)
@@ -283,13 +281,11 @@ class HostGateTest(unittest.TestCase):
         self.assertNotIn('method === "bank.dedupe_scan"', source)
         self.assertNotIn('method === "bank.dedupe_merge"', source)
 
-    def test_03_bank_view_reads_the_active_bank_not_its_own(self) -> None:
-        """合并包的视图仍走 active_* / active_add：页签 id 与题库 id 同源。"""
-        source = plugin_bundle(ENGINE)
-        self.assertIn("bank.active_list", source)
-        self.assertIn("basket.active_add", source)
-        self.assertNotIn("bank.list", source)
-        self.assertNotIn("basket.add", source)
+    def test_03_the_engine_no_longer_ships_a_bank_view(self) -> None:
+        """去 UI 后引擎不再声明 bank.view，也不许把 webui 资产偷偷加回来。"""
+        manifest = _manifest(ENGINE)
+        self.assertNotIn("bank.view", manifest.get("capabilities") or [])
+        self.assertFalse((ROOT / "plugins" / ENGINE / "webui").exists())
 
 
 if __name__ == "__main__":

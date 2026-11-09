@@ -34,13 +34,6 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _header(headers: dict[str, str], name: str) -> str:
-    for key, value in headers.items():
-        if key.lower() == name.lower():
-            return value
-    return ""
-
-
 class QuestionsApiContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -294,13 +287,9 @@ class QuestionsApiContractTest(unittest.TestCase):
 
         engine = next(item for item in discovery["plugins"]
                       if item["id"] == "org.jiuzhang.bank-engine")
-        self.assertFalse(engine["headless"], "引擎与界面合并后是带界面的题库包")
-        self.assertTrue(engine["entry_url"].endswith("/webui/index.html"))
-
-        status, _, headers = self.call("GET", engine["entry_url"])
-        self.assertEqual(status, 200)
-        self.assertIn("text/html", _header(headers, "content-type"))
-        self.assertIn("default-src 'none'", _header(headers, "content-security-policy"))
+        self.assertTrue(engine["headless"], "题库引擎已退居纯后台")
+        self.assertFalse(engine["show_in_sidebar"])
+        self.assertEqual("", engine["entry_url"])
 
         status, _, _ = self.call(
             "GET", "/plugin-assets/org.jiuzhang.bank-engine/%2e%2e/plugin.json"
@@ -310,7 +299,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         status, _, _ = self.call(
             "GET", "/plugin-assets/org.jiuzhang.bank-engine/webui/plugin.js"
         )
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 404, "webui 已物理删除，旧前端资产不得再被取到")
 
 
 class OneTimeTokenTest(unittest.TestCase):

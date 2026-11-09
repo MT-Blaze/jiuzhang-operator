@@ -31,7 +31,15 @@ DELIVERED = re.compile(r"\b(?:broadcast|notify)\(\s*(?:[^,()]+,\s*)?[\"']([A-Za-
 
 
 def official_plugins() -> list[Path]:
-    return sorted(p for p in PLUGINS_DIR.glob("org.jiuzhang.*") if manifests.manifest_path(p) is not None)
+    """带界面的官方插件：headless 引擎没有入口页，bus 主题对账不适用。"""
+    out = []
+    for plugin_dir in sorted(PLUGINS_DIR.glob("org.jiuzhang.*")):
+        if manifests.manifest_path(plugin_dir) is None:
+            continue
+        if manifests.load_manifest(plugin_dir).get("headless"):
+            continue
+        out.append(plugin_dir)
+    return out
 
 
 def handled_topics(plugin_dir: Path) -> set[str]:
@@ -71,8 +79,6 @@ class BusParityContract(unittest.TestCase):
         expect = {
             "org.jiuzhang.chat": {"stage.tab.activated", "stage.tab.closed", "stage.selection",
                                   "question.updated", "plugin.updated", "panel.button.click"},
-            "org.jiuzhang.bank-engine": {"ui.params.changed", "system.question_updated",
-                                         "question.updated", "system.bank_query"},
             "org.jiuzhang.dashboard": {"question.updated", "system.question_updated"},
             "org.jiuzhang.editor": {"system.open_editor", "ui.params.changed", "editor.apply_patch",
                                     "stage.selection", "system.question_updated",

@@ -1,8 +1,8 @@
 """套件安装与整包同进同退契约（PLUGIN_SPEC §1.8）。
 
-题库合并成单一插件包后，套件只剩一个成员，这里守四条底线：
+题库引擎退居纯后台后，套件只剩一个成员，这里守四条底线：
 
-1. 套件一次装全部成员；左栏只出现一个带界面的「九章题库」入口；
+1. 套件一次装全部成员；左栏不再出现「九章题库」入口，引擎只经 Host API 供业务插件调用；
 2. 包里声明的成员缺一不可，未声明内容一律拒绝且不落残渣；
 3. 冲突时整包拒绝，绝不偷偷覆盖已装插件；显式 replace 才整体替换；
 4. 套件包不能按单个插件热更新，必须整包安装。
@@ -102,16 +102,16 @@ class SuiteCase(unittest.TestCase):
 
 
 class BuildSuiteTest(SuiteCase):
-    def test_build_suite_packs_the_merged_package(self) -> None:
+    def test_build_suite_packs_the_headless_package(self) -> None:
         target = build_tool.build_suite([ROOT / "plugins" / ENGINE], self.out_dir)
         with zipfile.ZipFile(target) as archive:
             suite = toml_io.loads(archive.read("suite.toml").decode("utf-8"))
             names = set(archive.namelist())
-        self.assertEqual([ENGINE], suite["plugins"], "合并后套件只该有题库一个成员")
+        self.assertEqual([ENGINE], suite["plugins"], "套件只该有题库引擎一个成员")
         self.assertEqual(SUITE, suite["id"])
         self.assertIn(f"{ENGINE}/plugin.toml", names)
-        self.assertIn(f"{ENGINE}/webui/index.html", names)
-        self.assertIn(f"{ENGINE}/webui/plugin.js", names)
+        self.assertIn(f"{ENGINE}/bank/schema.sql", names, "纯引擎仍须随包带建库脚本")
+        self.assertNotIn(f"{ENGINE}/webui/index.html", names)
         self.assertNotIn(f"{ENGINE}/dev/fixtures.toml", names)
 
     def test_build_suite_default_members_match_the_official_list(self) -> None:
@@ -119,7 +119,7 @@ class BuildSuiteTest(SuiteCase):
 
 
 class SuiteInstallTest(SuiteCase):
-    def test_install_kit_lands_merged_package_with_one_sidebar_entry(self) -> None:
+    def test_install_kit_lands_headless_package_without_sidebar_entry(self) -> None:
         result = plugin_install.install_plugin_from_zip(self._build_suite())
 
         self.assertEqual(SUITE, result["suite"]["id"])
@@ -131,15 +131,15 @@ class SuiteInstallTest(SuiteCase):
         engine = by_id[ENGINE]
         self.assertTrue(engine["enabled"])
         self.assertFalse(engine["dependency_blocked"])
-        self.assertFalse(engine["headless"])
-        self.assertTrue(engine["show_in_sidebar"])
-        self.assertTrue(engine["entry_url"].endswith("/webui/index.html"))
+        self.assertTrue(engine["headless"])
+        self.assertFalse(engine["show_in_sidebar"])
+        self.assertEqual("", engine["entry_url"])
 
         visible = [
             info["id"] for info in report["plugins"]
             if info["enabled"] and info["show_in_sidebar"]
         ]
-        self.assertEqual([ENGINE], visible, "左栏只该有【九章题库】一个入口")
+        self.assertEqual([], visible, "纯引擎不再在左栏占位")
         self.assertEqual([], report["dependency_blocked"])
 
         items, total = bank_query.list_questions(ENGINE)

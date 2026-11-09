@@ -178,7 +178,7 @@ def main() -> int:
     data_dir, plugins_dir = work / "data", work / "plugins"
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
-    for pid in (pcp.EDITOR_ID, pcp.BANK_ID, pcp.BANK_UI_ID, pcp.CHAT_ID):
+    for pid in (pcp.EDITOR_ID, pcp.BANK_ID, pcp.CHAT_ID):
         shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
     port = pcp.free_port()
     base = f"http://127.0.0.1:{port}"

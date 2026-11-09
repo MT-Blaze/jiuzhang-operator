@@ -7,13 +7,12 @@
 取证对象是仓库里的五个官方插件，不装任何替身夹具（只额外装一个第三方调用方，
 用来走真实的 postMessage / command.execute 通道）：
 
-1. ``/api/plugins``：14 条命令、五类命名空间、requires_user 标记、说明与参数 schema 同源；
+1. ``/api/plugins``：12 条命令、五类命名空间、requires_user 标记、说明与参数 schema 同源；
 2. ``command.list`` 从调用方 iframe 查表：每条都带 description / params_schema / returns；
 3. 无界面引擎命令经宿主转发回 ``COMMAND_HEADLESS``，不假装执行；
-4. 视图命令真实执行：题库筛选回筛选态、题量为 0（隔离库为空）；
-5. 录题命令用数据库行号冒充题目 id：插件按 ``q_`` 公开 id 口径拒绝；
-6. 高副作用命令（保存当前题目）先弹确认卡，点「拒绝」回 ``COMMAND_DENIED``；
-7. 设置页「命令能力字典」表头含「说明」，行数与字典一致且说明列非空。
+4. 录题命令用数据库行号冒充题目 id：插件按 ``q_`` 公开 id 口径拒绝；
+5. 高副作用命令（保存当前题目）先弹确认卡，点「拒绝」回 ``COMMAND_DENIED``；
+6. 设置页「命令能力字典」表头含「说明」，行数与字典一致且说明列非空。
 """
 from __future__ import annotations
 
@@ -64,11 +63,9 @@ EXPECTED_IDS = [
     "org.jiuzhang.action.process.create_variant",
     "org.jiuzhang.action.process.generate_paper",
     "org.jiuzhang.action.process.render_handout",
-    "org.jiuzhang.action.view.filter_questions",
-    "org.jiuzhang.action.view.review_queue",
 ]
 DATA_CMD = "org.jiuzhang.action.data.bank_stats"
-FILTER_CMD = "org.jiuzhang.action.view.filter_questions"
+SEARCH_CMD = "org.jiuzhang.action.data.bank_search"
 CONFIRM_CMD = "org.jiuzhang.action.input.save_question"
 OPEN_CMD = "org.jiuzhang.action.input.open_question"
 HOST_VERSION = re.search(
@@ -387,9 +384,9 @@ def run(tag: str) -> dict:
                       and item.get("params_schema", {}).get("additionalProperties") is False
                       for item in official_listed.values()),
               len(official_listed))
-        check("10 字典条目的提供方是合并后的题库包本身，不串号",
-              official_listed.get(FILTER_CMD, {}).get("plugin_id") == "org.jiuzhang.bank-engine"
-              and official_listed.get(DATA_CMD, {}).get("plugin_id")
+        check("10 字典条目的提供方是纯后台引擎本身，不串号",
+              official_listed.get(DATA_CMD, {}).get("plugin_id") == "org.jiuzhang.bank-engine"
+              and official_listed.get(SEARCH_CMD, {}).get("plugin_id")
               == "org.jiuzhang.bank-engine",
               {cid: item.get("plugin_id") for cid, item in list(official_listed.items())[:3]})
 
@@ -397,30 +394,17 @@ def run(tag: str) -> dict:
             "(args) => window.probeCall('command.execute', args)",
             {"command_id": DATA_CMD, "context": {}})
         evidence["data_command"] = data_run
-        data_result = (data_run.get("result") or {}).get("result") or {}
-        check("11 数据命令在合并包内直接执行，返回当前题库统计",
-              data_run.get("ok") is True and isinstance(data_result.get("total"), int),
-              data_result)
-
-        filtered = caller.evaluate(
-            "(args) => window.probeCall('command.execute', args)",
-            {"command_id": FILTER_CMD, "context": {"grade": "高一", "difficulty": "L2"}})
-        evidence["filter"] = filtered
-        filter_result = ((filtered.get("result") or {}).get("result") or {})
-        check("12 视图命令真实执行：题库筛选回显筛选态与题量（隔离库为空）",
-              filtered.get("ok") is True
-              and (filtered.get("result") or {}).get("plugin_id") == "org.jiuzhang.bank-engine"
-              and filter_result.get("filters", {}).get("grade") == "高一"
-              and filter_result.get("filters", {}).get("difficulty") == "L2"
-              and isinstance(filter_result.get("total"), int),
-              filter_result)
+        check("11 无界面引擎不经 iframe 假装执行，回 COMMAND_HEADLESS 指路 Host API",
+              data_run.get("ok") is False
+              and (data_run.get("error") or {}).get("code") == "COMMAND_HEADLESS",
+              data_run.get("error"))
 
         bad_id = caller.evaluate(
             "(args) => window.probeCall('command.execute', args)",
             {"command_id": OPEN_CMD, "context": {"question_id": "42"}})
         evidence["bad_id"] = bad_id
         bad_message = str(((bad_id.get("error") or {}).get("message")) or "")
-        check("13 用数据库行号冒充题目 id 被插件按 q_ 公开 id 口径拒绝",
+        check("12 用数据库行号冒充题目 id 被插件按 q_ 公开 id 口径拒绝",
               bad_id.get("ok") is False and "q_" in bad_message,
               bad_id.get("error"))
 
@@ -431,14 +415,14 @@ def run(tag: str) -> dict:
         confirm_dialog = wait_dialog(page)
         evidence["confirm_dialog"] = confirm_dialog
         confirm_text = (confirm_dialog or {}).get("message") or ""
-        check("14 高副作用命令先弹确认卡：点名调用方、命令与目标插件",
+        check("13 高副作用命令先弹确认卡：点名调用方、命令与目标插件",
               confirm_dialog is not None and "命令契约调用方" in confirm_text
               and "保存当前题目" in confirm_text and "录题工作台" in confirm_text,
               confirm_dialog)
         clicked = click_dialog(page, 0)
         denied = poll_result(caller, "confirm")
         evidence["confirm_denied"] = denied
-        check("15 点「拒绝」回 COMMAND_DENIED，目标插件没有执行",
+        check("14 点「拒绝」回 COMMAND_DENIED，目标插件没有执行",
               clicked and denied is not None
               and (denied.get("error") or {}).get("code") == "COMMAND_DENIED",
               denied.get("error") if denied else "NO_RESULT")
@@ -459,20 +443,20 @@ def run(tag: str) -> dict:
         })
         """)
         evidence["settings_table"] = {"headers": table["headers"], "rows": table["rows"][:4]}
-        check("16 设置页字典表头含「说明」，15 条命令（14 官方 + 1 夹具）逐行渲染",
+        check("15 设置页字典表头含「说明」，13 条命令（12 官方 + 1 夹具）逐行渲染",
               table["headers"] == ["命令 id", "标题", "提供方", "说明", "执行前"]
               and len(table["rows"]) == len(EXPECTED_IDS) + 1
               and all(row["id"] for row in table["rows"])
               and all(row["desc"] for row in table["rows"]
                       if row["id"] in EXPECTED_IDS),
               {"headers": table["headers"], "rows": len(table["rows"])})
-        check("17 设置页把高副作用命令标成「需确认」，只读命令标「直接执行」",
+        check("16 设置页把高副作用命令标成「需确认」，只读命令标「直接执行」",
               next((row["flag"] for row in table["rows"] if row["id"] == CONFIRM_CMD), "") == "需确认"
-              and next((row["flag"] for row in table["rows"] if row["id"] == FILTER_CMD), "") == "直接执行",
+              and next((row["flag"] for row in table["rows"] if row["id"] == DATA_CMD), "") == "直接执行",
               {row["id"]: row["flag"] for row in table["rows"][:4]})
         settings.screenshot(path=str(out / "settings_commands.png"), full_page=True)
         page.screenshot(path=str(out / "workspace_after_commands.png"), full_page=True)
-        check("18 全程宿主页零未捕获 JS 错误", not errors, errors[:2])
+        check("17 全程宿主页零未捕获 JS 错误", not errors, errors[:2])
     except Exception as exc:  # noqa: BLE001 - 崩了也要把已有判据带出去
         crashed.append(repr(exc))
     finally:

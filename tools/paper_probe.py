@@ -14,7 +14,7 @@
 - 狂拉滚动条：随机跳页后当前视口页必须在 1s 内挂出真实内容，不许大面积白屏；
 - MathJax 节点真实渲染；打印前补齐不缺页；
 - 题库再入篮一题 → 组卷页经 basket.changed 自动 +1；
-- 组卷侧栏移除一题 → 题篮回到 50 且预览重排。
+- 组卷侧栏移除一题 → 题篮回到 49 且预览重排。
 """
 
 from __future__ import annotations
@@ -41,7 +41,6 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = BANK_ID
 PAPER_ID = "org.jiuzhang.paper-gen"
 
 
@@ -524,44 +523,20 @@ def main() -> int:
             check("切回隐藏逐页无溢出", sweep_hide["vertical"] == [], sweep_hide["vertical"][:6])
             seq = int(metrics.get_attribute("data-reflow") or "0")
 
-            # ---------- EventBus：题库再入篮一题 → 组卷自动 +1 ----------
-            page.locator(".ws-plugin-item", has_text="九章题库").first.click()
-            bank_panel = page.locator("#wsPanel_plugin_org_jiuzhang_bank-engine")
-            bank_frame = bank_panel.frame_locator(".ws-plugin-frame")
-            expect(bank_frame.locator(".cb-row").first).to_be_visible(timeout=20000)
-            seeded_set = set(seeded)
-            row_ids = bank_frame.locator(".cb-row").evaluate_all(
-                "els => els.map(el => el.getAttribute('data-id'))"
-            )
-            candidate = next((rid for rid in row_ids if rid not in seeded_set), None)
-            check("找到未入篮的真题", bool(candidate), {"id": candidate})
-            if candidate:
-                row = bank_frame.locator(f'.cb-row[data-id="{candidate}"]')
-                row.locator("button", has_text="入篮").click()
-                expect(bank_frame.locator("#cbBasketCount")).to_contain_text("题篮 51", timeout=20000)
-                page.locator(".ws-tab", has_text="组卷排版").first.click()
-                seq = wait_reflow(metrics, seq)
-                expect(metrics).to_have_attribute("data-questions", "51", timeout=30000)
-                ready = wait_doc_ready(metrics)
-                result["metrics"]["ready_plus1"] = {"pages": ready.get("pages"), "render_ms": metrics.get_attribute("data-render-ms")}
-                check("basket.changed 驱动组卷 +1", True, {"candidate": candidate})
-                page.wait_for_timeout(400)
-                basket = toml_io.load(data_dir / "basket.toml")
-                check("题篮落盘 51 题", len(basket.get("items") or []) == 51,
-                      {"items": len(basket.get("items") or [])})
-
-            # ---------- 侧栏移除一题 → 回到 50 ----------
+            # ---------- 侧栏移除一题 → 回到 49 ----------
+            # 题库已退居纯后台引擎，不再有可直接点「入篮」的画布；
+            # EventBus 的回流判据改由这里的「移除」走 basket.changed 验证。
             paper_frame = paper_panel.frame_locator(".ws-plugin-frame")
             expect(paper_frame.locator(".pg-item").first).to_be_visible(timeout=20000)
             paper_frame.locator(".pg-remove").first.click()
             seq = wait_reflow(metrics, seq)
-            expect(metrics).to_have_attribute("data-questions", "50", timeout=30000)
+            expect(metrics).to_have_attribute("data-questions", "49", timeout=30000)
             ready = wait_doc_ready(metrics)
             result["metrics"]["ready_minus1"] = {"pages": ready.get("pages"), "render_ms": metrics.get_attribute("data-render-ms")}
-            check("侧栏移除一题 → 50", True)
+            check("侧栏移除一题 → 49", True)
             page.wait_for_timeout(400)
             basket = toml_io.load(data_dir / "basket.toml")
-            check("题篮文件同步回 50", len(basket.get("items") or []) == 50,
+            check("题篮文件同步回 49", len(basket.get("items") or []) == 49,
                   {"items": len(basket.get("items") or [])})
             page.screenshot(path=str(shots / "a4-after-remove.png"))
 

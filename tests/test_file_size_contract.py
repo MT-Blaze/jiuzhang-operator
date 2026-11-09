@@ -93,8 +93,6 @@ class ScriptSizeCeilingTest(unittest.TestCase):
     GLOBS = (
         "plugins/*/dist/**/*.js",
         "plugins/*/dist/**/*.css",
-        "plugins/*/webui/**/*.js",
-        "plugins/*/webui/**/*.css",
         "static/js/**/*.js",
         "static/css/**/*.css",
         "examples/template-plugin/**/dist/**/*.js",

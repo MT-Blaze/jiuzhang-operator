@@ -453,11 +453,9 @@ class OfficialPluginCommandsTest(unittest.TestCase):
                 "org.jiuzhang.action.data.bank_stats",
                 "org.jiuzhang.action.data.bank_search",
                 "org.jiuzhang.action.data.bank_topics",
-                "org.jiuzhang.action.view.filter_questions",
-                "org.jiuzhang.action.view.review_queue",
             ],
             "requires_user": [],
-            "headless": False,
+            "headless": True,
         },
         "org.jiuzhang.paper-gen": {
             "version": "1.0.1",
@@ -552,13 +550,17 @@ class OfficialPluginCommandsTest(unittest.TestCase):
                 with self.subTest(plugin=plugin_id, command=command_id):
                     self.assertIn('commandId === "' + command_id + '"', script)
 
-    def test_33_merged_engine_is_a_ui_package_with_relayed_commands(self) -> None:
+    def test_33_headless_engine_only_keeps_data_commands(self) -> None:
         info = self.info["org.jiuzhang.bank-engine"]
-        self.assertFalse(info["headless"])
-        self.assertTrue(info["entry_url"].endswith("/webui/index.html"))
+        self.assertTrue(info["headless"])
+        self.assertEqual("", info["entry_url"])
         ids = {item["id"] for item in info["commands"]}
-        self.assertTrue(any(".data." in item for item in ids), "数据命令仍在引擎包里")
-        self.assertTrue(any(".view." in item for item in ids), "视图命令也在同一包里")
+        self.assertEqual({
+            "org.jiuzhang.action.data.bank_stats",
+            "org.jiuzhang.action.data.bank_search",
+            "org.jiuzhang.action.data.bank_topics",
+        }, ids, "视图命令随界面一起退役，只留供业务插件调用的数据命令")
+        self.assertFalse(any(".view." in item for item in ids))
         # 真 headless 包仍不许被中转：先查字典再判 headless，未知命令回 COMMAND_NOT_FOUND
         stage = stage_source()
         guard = stage.index('failWith("COMMAND_HEADLESS"')

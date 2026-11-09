@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""套件真机验收：干净环境装一次套件，左栏只有一个入口，引擎可读题。
+"""套件真机验收：干净环境装一次套件，左栏不再出现题库入口，引擎可读题。
 
 用法：``.venv/Scripts/python.exe tools/suite_probe.py <tag>``
 （脚本自己在随机端口起隔离服务，临时 data/plugins 目录，跑完关掉）
@@ -7,10 +7,10 @@
 判据：
   1. 干净环境起始零插件；
   2. 上传 org.jiuzhang.bank-suite.zip 后，响应带 suite 元信息与唯一成员；
-  3. /api/plugins 里合并包启用、带界面、占左栏，无依赖阻塞；
-  4. 左栏恰好一个【九章题库】入口，没有第二个；
+  3. /api/plugins 里引擎启用、headless、不占左栏，无依赖阻塞；
+  4. 左栏没有任何【九章题库】入口（纯后台引擎不配画布）；
   5. 经引擎写一道题再读回来，题干一致（引擎真在后台干活）；
-  6. 真实浏览器里点开唯一入口，题库首屏完成渲染，无 JS 错误。
+  6. 真实浏览器里宿主工作区正常打开，无 JS 错误。
 
 产出：``.system_generated/suite_probe/<tag>/probe.toml`` + 截图；任一判据红即非零退出。
 """
@@ -190,12 +190,12 @@ def main() -> int:
             }
             for key, item in by_id.items()
         }
-        check("合并包启用、带界面且占左栏一个入口",
-              engine.get("enabled") is True and engine.get("headless") is False
-              and engine.get("show_in_sidebar") is True, engine)
+        check("引擎启用、headless 且不占左栏",
+              engine.get("enabled") is True and engine.get("headless") is True
+              and engine.get("show_in_sidebar") is False, engine)
         visible = [item.get("id") for item in plugins
                    if item.get("enabled") is not False and item.get("show_in_sidebar") is not False]
-        check("左栏只留一个入口", visible == [ENGINE_ID], visible)
+        check("左栏没有题库入口", visible == [], visible)
         check("没有依赖阻塞项", not (discovery or {}).get("dependency_blocked"),
               (discovery or {}).get("dependency_blocked"))
 
@@ -232,17 +232,8 @@ def main() -> int:
             page.goto(base + "/workspace", wait_until="networkidle")
 
             entries = page.locator(".ws-plugin-item")
-            expect(entries).to_have_count(1, timeout=10000)
-            entry = entries.first
-            expect(entry).to_contain_text("九章题库", timeout=10000)
-            check("浏览器左栏只有一个插件入口", entries.count() == 1)
-
-            entry.click()
-            frame = page.frame_locator(".ws-plugin-frame")
-            expect(frame.locator(".cb-title")).to_have_text("九章题库", timeout=15000)
-            rendered = (frame.locator(".cb-body .cb-row").count()
-                        + frame.locator(".cb-body .cb-empty").count())
-            check("题库画布完成首屏渲染", rendered > 0, rendered)
+            expect(entries).to_have_count(0, timeout=10000)
+            check("浏览器左栏没有题库入口", entries.count() == 0)
 
             shot = shots / "suite.png"
             page.screenshot(path=str(shot))

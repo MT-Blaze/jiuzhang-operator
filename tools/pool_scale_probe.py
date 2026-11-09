@@ -39,7 +39,6 @@ ROOT = Path(__file__).resolve().parents[1]
 EVID = ROOT / ".qoder" / "records" / "biz" / "2026-11" / "20261103_order32-s6-evidence"
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
-BANK_UI_ID = BANK_ID
 TOKEN = "s6d-scale-probe-token"
 N_ORIGINALS = 200
 SCALES = (100, 200, 300)

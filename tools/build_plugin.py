@@ -58,7 +58,7 @@ SUITE_DEFAULT_MEMBERS = ("org.jiuzhang.bank-engine",)
 SUITE_DEFAULT_ID = "org.jiuzhang.bank-suite"
 SUITE_DEFAULT_NAME = "九章题库套件"
 SUITE_DEFAULT_DESCRIPTION = (
-    "九章题库：31 表引擎与题库视图已在同一个插件包内，安装一次即拥有完整题库。"
+    "九章题库：31 表纯后台数据引擎，不带界面，供录题、组卷、讲义等业务插件经 Host API 调用。"
 )
 
 
