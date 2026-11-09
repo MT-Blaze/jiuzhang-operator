@@ -22,8 +22,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from app.core import state_store, wire
-from app.core.config import settings
-from app.core.provider_config import ProviderConfigError, env_file_path, validate_base_url
+from app.core.config import env_file_path, settings
 
 STATE_KEY = "ai_center"
 ENV_PREFIX = "JZO_AIPOOL_"
@@ -61,8 +60,23 @@ class TaskBinding:
         return bool(self.base_url and self.api_key and self.model)
 
 
-class AiCenterError(ProviderConfigError):
+class AiCenterError(Exception):
     """配置被拒绝，``message`` 必须是给人看的话。"""
+
+
+def validate_base_url(url: str) -> str:
+    """只放行 http/https、有主机名、不带用户名口令的地址。"""
+    text = (url or "").strip()
+    if not text:
+        raise AiCenterError("Base URL 不能为空")
+    parsed = urlparse(text)
+    if parsed.scheme not in ("http", "https"):
+        raise AiCenterError("Base URL 只接受 http 或 https")
+    if not parsed.hostname:
+        raise AiCenterError("Base URL 缺少主机名")
+    if parsed.username or parsed.password:
+        raise AiCenterError("Base URL 禁止携带用户名口令")
+    return text.rstrip("/")
 
 
 # ---------- 持久化 ----------
@@ -131,7 +145,7 @@ def _load_state() -> dict[str, object]:
             continue
         try:
             base_url = validate_base_url(str(entry.get("base_url") or ""))
-        except ProviderConfigError:
+        except AiCenterError:
             continue
         seen_ids.add(account_id)
         seen_names.add(name.casefold())
@@ -298,7 +312,7 @@ def save_account(
     clean_name = _clean_name(name)
     try:
         clean_url = validate_base_url(base_url)
-    except ProviderConfigError as exc:
+    except AiCenterError as exc:
         raise AiCenterError(str(exc)) from exc
     clean_key = _clean_key(api_key) if api_key is not None else None
     accounts = state["accounts"]
@@ -401,7 +415,7 @@ def fetch_models(
     else:
         try:
             target_base = validate_base_url(base_url)
-        except ProviderConfigError as exc:
+        except AiCenterError as exc:
             raise AiCenterError(str(exc)) from exc
         target_key = _clean_key(api_key)
     if not target_key:

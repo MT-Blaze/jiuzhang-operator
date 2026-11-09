@@ -10,7 +10,6 @@
   function create(deps) {
     var clampText = deps.clampText;
     var dockLine = deps.dockLine;
-    var findActiveProvider = deps.findActiveProvider;
     var getCtxRail = deps.getCtxRail;
     var loadPlugins = deps.loadPlugins;
     var pluginControlsEl = deps.pluginControlsEl;
@@ -295,14 +294,10 @@
    * 助手插件能看见的全部世界就是这一份 JSON——没有 DOM、没有令牌、没有库连接。
    */
   function stateSnapshot() {
-    var active = findActiveProvider();
     var snapshot = {
       current_task: wsState.currentTask || "未选择",
       stage: (stageTitle && stageTitle.textContent) || wsState.currentTask || "工作台",
       textbook: "未选择",
-      model: active ? (active.model || active.label || "未知") : "未就绪",
-      mock: active ? Boolean(active.mock || !active.configured) : true,
-      provider: active || null,
       right_slot: window.JzoContextPanel ? window.JzoContextPanel.activeId() : null,
       tabs: window.JzoStage && typeof window.JzoStage.tabs === "function" ? window.JzoStage.tabs() : []
     };

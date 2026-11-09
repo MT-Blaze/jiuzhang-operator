@@ -1,7 +1,8 @@
-"""AI Provider 注册表：扫描本目录模块收集配置档，并按工作区持久化活跃项。
+"""AI Provider 注册表：扫描本目录模块收集配置档，活跃项只由环境变量决定。
 
 见 PLUGIN_SPEC §2.1：新增 Provider 只需在本目录放一个导出 ``profiles()`` 的模块，
-无需改动底座与前端。密钥与模型名一律来自环境变量，禁止在本目录硬编码。
+无需改动底座。密钥与模型名一律来自环境变量（本机 ``.env``），禁止硬编码，
+也不提供任何 UI 切换或落盘入口。
 """
 
 from __future__ import annotations
@@ -10,13 +11,8 @@ import importlib
 import os
 import pkgutil
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
-from app.core import state_store
-from app.core.config import settings
-
-CONFIG_KEY = "provider"
 FALLBACK_NAME = "openai-compatible"
 
 
@@ -60,39 +56,15 @@ def registry() -> dict[str, ProviderProfile]:
     return profiles
 
 
-def _config_path() -> Path:
-    return settings.config_path
-
-
-def _read_config() -> dict[str, object]:
-    return state_store.load_table(_config_path())
-
-
-def _write_config(patch: dict[str, str]) -> None:
-    document = _read_config()
-    document.update(patch)
-    state_store.save(_config_path(), document)
-
-
 def active_name() -> str:
-    """环境变量 > 工作区配置 > 默认档；默认档缺席时取首个已注册档。"""
+    """环境变量 ``JZO_AI_PROVIDER`` 决定活跃档；缺省取默认档，默认档缺席取首个注册档。"""
     profiles = registry()
     from_env = env_value("JZO_AI_PROVIDER")
     if from_env in profiles:
         return from_env
-    stored = _read_config().get(CONFIG_KEY)
-    if isinstance(stored, str) and stored in profiles:
-        return stored
     if FALLBACK_NAME in profiles:
         return FALLBACK_NAME
     return next(iter(profiles), "")
-
-
-def set_active_name(name: str) -> None:
-    """把活跃档写入当前工作区配置；名称未注册时拒绝。"""
-    if name not in registry():
-        raise KeyError(f"未注册的 Provider：{name}")
-    _write_config({CONFIG_KEY: name})
 
 
 def active_profile() -> ProviderProfile:

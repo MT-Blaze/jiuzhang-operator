@@ -619,23 +619,6 @@ html[data-embedded="1"] .st-main {
   color: var(--muted);
 }
 
-/* 模型配置 */
-.st-provider-target {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink);
-  word-break: break-all;
-}
-
-.st-provider-target[data-state="off"] {
-  color: var(--down);
-}
-
-.st-provider-hint code {
-  color: var(--muted);
-}
-
 .st-check {
   display: flex;
   align-items: center;

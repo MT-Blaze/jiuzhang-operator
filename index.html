@@ -805,8 +805,8 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
         <div class="card">
           <span class="card-index">04</span>
           <span class="tag tag-done">已通</span>
-          <span class="card-title">多厂商 AI 切换</span>
-          <span class="card-desc">扫描式 Provider 注册表；对外只暴露「是否已配置 + 接口主机名」，密钥永不回传、永不入库、永不进插件。</span>
+          <span class="card-title">AI 能力静默接入</span>
+          <span class="card-desc">模型与密钥只从本机 .env 读取，界面上不设任何配置入口；密钥永不回传、永不入库、永不进插件。</span>
         </div>
 
         <div class="card">
@@ -833,33 +833,26 @@ td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
         <div class="card">
           <span class="card-index">08</span>
           <span class="tag tag-done">已通</span>
-          <span class="card-title">多模型配置面板</span>
-          <span class="card-desc">左栏填 Base URL 与 API Key、测连通性，一键热切换云端 / 本地（Ollama）模型；密钥只落本机 .env，永不回显、永不入库。</span>
-        </div>
-
-        <div class="card">
-          <span class="card-index">09</span>
-          <span class="tag tag-done">已通</span>
           <span class="card-title">四区可拖拽工作台</span>
           <span class="card-desc">左入口 / 中画布 / 右上下文 / 下输出，四条边界全能鼠标拖拽调尺寸，原生实现零拖拽库；尺寸落 localStorage、刷新照旧，左下角一键回默认。中画布用 Tabs 同时承载原生对话页与重型 iframe 插件页。</span>
         </div>
 
         <div class="card">
-          <span class="card-index">10</span>
+          <span class="card-index">09</span>
           <span class="tag tag-done">已通</span>
           <span class="card-title">题目录入 / 编辑表单</span>
           <span class="card-desc">录题工作台（org.jiuzhang.editor）接管中央舞台：中间表单录题干/选项/答案/解析/难度/知识点，右侧 A4 实时预览排版，一键清洗 LaTeX，经宿主 bank.create 写入真题库——令牌始终留在宿主侧。</span>
         </div>
 
         <div class="card">
-          <span class="card-index">11</span>
+          <span class="card-index">10</span>
           <span class="tag tag-done">已通</span>
           <span class="card-title">录入 / 题库 / 组卷 / 讲义插件</span>
           <span class="card-desc">四个业务插件已落在 plugins/ 并进官方索引：真题题库（456 题 SQLite）、组卷排版（A4 分页）、讲义排版（Markdown 转 A4）、录题工作台。导出与 AI 辅助仍是缺口。</span>
         </div>
 
         <div class="card">
-          <span class="card-index">12</span>
+          <span class="card-index">11</span>
           <span class="tag tag-todo">待做</span>
           <span class="card-title">导出插件与批量编辑</span>
           <span class="card-desc">导出（Word/PDF 逐题）、已入库题目的编辑与删除界面尚未开写；录题插件目前只新增、不改旧题。</span>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>设置与控制 · 九章算子</title>
-  <meta name="description" content="九章算子设置与控制：工作区与教材版本、插件管理与安装、模型 Provider 配置。所有出网请求都由用户当场点击发起，底座不自动拉取、不自动更新。">
+  <meta name="description" content="九章算子设置与控制：工作区与教材版本、插件管理与安装、备份恢复与系统设置。所有出网请求都由用户当场点击发起，底座不自动拉取、不自动更新。">
   <meta name="theme-color" content="#a63b2b">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
@@ -34,11 +34,11 @@
 
     <main class="st-main">
       <section class="st-head" aria-labelledby="st-title">
-        <p class="eyebrow">WORKSPACE · PLUGINS · MODEL</p>
+        <p class="eyebrow">WORKSPACE · PLUGINS · SETTINGS</p>
         <h1 id="st-title">设置与控制</h1>
         <p class="st-lede">
           底座的管理现场只有这一处：左边选分区，右边干活。
-          工作区（含教材版本）、插件（管理与安装）、模型配置（Provider 与密钥）各占一栏。
+          工作区（含教材版本）、插件（管理与安装）、备份恢复与系统设置各占一栏。
           底座<strong>不自动拉取、不自动更新、不批量下载</strong>——每一次出网都由你当场点击发起。
         </p>
       </section>
@@ -50,8 +50,6 @@
             aria-selected="true" aria-controls="stPanelWorkspace" data-panel="workspace">工作区</button>
           <button class="st-nav-item" id="stNavPlugin" type="button" role="tab"
             aria-selected="false" aria-controls="stPanelPlugin" data-panel="plugin" tabindex="-1">插件</button>
-          <button class="st-nav-item" id="stNavProvider" type="button" role="tab"
-            aria-selected="false" aria-controls="stPanelProvider" data-panel="provider" tabindex="-1">模型配置</button>
           <button class="st-nav-item" id="stNavBackup" type="button" role="tab"
             aria-selected="false" aria-controls="stPanelBackup" data-panel="backup" tabindex="-1">备份与恢复</button>
           <button class="st-nav-item" id="stNavSystem" type="button" role="tab"
@@ -277,45 +275,6 @@
                 </section>
               </section>
             </div>
-          </section>
-
-          <!-- ================= 模型配置 ================= -->
-          <section class="st-panel" id="stPanelProvider" role="tabpanel" aria-labelledby="stNavProvider" tabindex="0" hidden>
-            <h2 id="pv-title">模型与 API Key 配置</h2>
-            <p class="st-note">
-              全仓唯一的模型配置现场（工作台的 Provider 弹窗已退役）。切换即时生效、无需重启；
-              <strong>密钥只写本机 <code>.env</code> 与环境变量</strong>——永不入库、永不写日志、永不回显、永不进入插件上下文。
-            </p>
-            <p class="st-provider-target" id="pvTarget" role="status" aria-live="polite">正在读取 Provider 注册表…</p>
-            <label class="q-field" for="pvSelect">
-              <span>模型 Provider</span>
-              <select id="pvSelect" class="st-provider-select"></select>
-            </label>
-            <label class="q-field" for="pvBaseUrl">
-              <span>Base URL（留空则不改）</span>
-              <input id="pvBaseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false"
-                placeholder="https://api.example.com/v1 或 http://127.0.0.1:11434/v1">
-            </label>
-            <label class="q-field" for="pvApiKey">
-              <span>API Key（留空则不改；填了只落本机 .env）</span>
-              <input id="pvApiKey" type="password" autocomplete="off" spellcheck="false"
-                placeholder="永不回显、永不入库">
-            </label>
-            <label class="q-field" for="pvModel">
-              <span>模型名（留空则不改）</span>
-              <input id="pvModel" type="text" autocomplete="off" spellcheck="false"
-                placeholder="如 qwen-plus / deepseek-ai/DeepSeek-V3 / llama3">
-            </label>
-            <div class="st-install-actions">
-              <button type="button" class="q-button" id="pvSwitchBtn">设为当前模型</button>
-              <button type="button" class="q-button" id="pvSaveBtn">保存配置</button>
-              <button type="button" class="q-button" id="pvTestBtn">测试连通性</button>
-            </div>
-            <p class="st-note st-provider-hint">
-              本地 Ollama：Base URL 填 <code>http://127.0.0.1:11434/v1</code>，API Key 填任意占位（如 <code>ollama</code>）。
-              未配置密钥时底座走 Mock 回显，不会伪造模型输出。
-            </p>
-            <p class="pl-status" id="pvResult" role="status" aria-live="polite" hidden></p>
           </section>
 
           <!-- ================= 备份与恢复 ================= -->
@@ -575,7 +534,6 @@
   <script src="/static/js/st_update.js"></script>
   <script src="/static/js/st_nav.js"></script>
   <script src="/static/js/st_workspace.js"></script>
-  <script src="/static/js/st_provider.js"></script>
   <script src="/static/js/st_startup.js"></script>
   <script src="/static/js/st_backup.js"></script>
   <script src="/static/js/settings.js"></script>

@@ -5,7 +5,7 @@
 - 工作台左下入口是**带文字**的「设置与控制台」，有更新待办时挂文字徽标；
 - 工作台**不许再有弹窗**：模型胶囊与 Provider 弹窗节点全数退役；
 - 页签内是同源 iframe 装载的 ``/settings?embedded=1``，站点外壳必须隐藏；
-- 设置页左菜单五项（工作区/插件/模型配置/备份与恢复/系统设置），右详情；
+- 设置页左菜单四项（工作区/插件/备份与恢复/系统设置），右详情；
 - 插件分区是二级页签（管理/检查更新/在线索引/手动安装），键盘可切、不做弹窗；
 - 检查更新分区带 aria 进度条，空闲时收起；
 - 工作区列表里的教材版本下拉与 ``/api/bank/textbooks`` 的生效版本一致；
@@ -126,7 +126,6 @@ def main() -> int:
                             return !!n && n.getBoundingClientRect().width > 0; };
                         return { workspace: box('stPanelWorkspace'),
                                  plugin: box('stPanelPlugin'),
-                                 provider: box('stPanelProvider'),
                                  backup: box('stPanelBackup'),
                                  system: box('stPanelSystem') };
                     })(),
@@ -145,11 +144,11 @@ def main() -> int:
             check("页签内是内嵌模式（embedded=1）", inner["embedded"] == "1", inner)
             check("内嵌时收起站点外壳（主导航/页头不可见）",
                   inner["navVisible"] is False and inner["headVisible"] is False, inner)
-            check("左菜单五项齐全（工作区/插件/模型配置/备份与恢复/系统设置）",
-                  inner["nav"] == ["工作区", "插件", "模型配置", "备份与恢复", "系统设置"], inner["nav"])
+            check("左菜单四项齐全（工作区/插件/备份与恢复/系统设置）",
+                  inner["nav"] == ["工作区", "插件", "备份与恢复", "系统设置"], inner["nav"])
             check("默认落在工作区面板，其余面板不占位",
                   inner["panels"]["workspace"] is True
-                  and not any(inner["panels"][key] for key in ("plugin", "provider", "backup", "system")),
+                  and not any(inner["panels"][key] for key in ("plugin", "backup", "system")),
                   inner["panels"])
             check("真左右分栏（菜单在左、面板在右、菜单宽 200 上下）",
                   inner["split"] and inner["split"]["navLeft"] < inner["split"]["panelLeft"]
@@ -244,13 +243,11 @@ def main() -> int:
                   {"backend": [item["id"] for item in scope["books"].get("items", [])],
                    "options": textbook["values"]})
 
-            # ---- 模型配置迁入控制台，页签内是唯一表单 ----
-            frame.locator("#stNavProvider").click()
-            expect(frame.locator("#stPanelProvider")).to_be_visible(timeout=10000)
-            check("模型配置在控制台页签内（无弹窗）",
-                  frame.locator("#pvSelect").is_visible()
+            # ---- 模型配置已从底座移除 ----
+            check("设置页不再有模型配置入口",
+                  frame.locator("#stNavProvider").count() == 0
+                  and frame.locator("#stPanelProvider").count() == 0
                   and page.locator(".ws-modal-overlay").count() == 0)
-            check("不再有顶栏模型胶囊", page.locator("#wsModelBtn").count() == 0)
 
             geo = page.evaluate(
                 """() => {
@@ -324,29 +321,10 @@ def main() -> int:
                 })""")
             check("防变砖：直连 /settings 仍是完整独立页",
                   fallback["embedded"] is None and fallback["navVisible"] is True, fallback)
-            check("独立页同样是五项左菜单右详情",
-                  fallback["navCount"] == 5 and fallback["split"]
+            check("独立页同样是四项左菜单右详情",
+                  fallback["navCount"] == 4 and fallback["split"]
                   and fallback["split"]["navLeft"] < fallback["split"]["panelLeft"]
                   and fallback["split"]["sameRow"] is True, fallback["split"])
-            standalone.locator("#stNavProvider").click()
-            check("独立页菜单可切区（点模型配置出表单）",
-                  standalone.locator("#stPanelProvider").is_visible()
-                  and standalone.locator("#pvSelect").is_visible())
-            compact = standalone.evaluate(
-                """() => {
-                    const ids = ['pvSelect', 'pvBaseUrl', 'pvApiKey', 'pvModel'];
-                    const rects = ids.map((id) => document.getElementById(id).getBoundingClientRect());
-                    const gaps = [];
-                    for (let i = 1; i < rects.length; i += 1) {
-                        gaps.push(Math.round(rects[i].top - rects[i - 1].bottom));
-                    }
-                    return { heights: rects.map((r) => Math.round(r.height)),
-                             maxGap: Math.max.apply(null, gaps),
-                             panelH: Math.round(document.getElementById('stPanelProvider')
-                                 .getBoundingClientRect().height) };
-                }""")
-            check("表单未被拉伸（字段高 ≤60、相邻间距 ≤40）",
-                  max(compact["heights"]) <= 60 and compact["maxGap"] <= 40, compact)
             standalone.screenshot(path=str(work / "shots" / "settings-standalone.png"))
             standalone.set_viewport_size({"width": 375, "height": 780})
             standalone.wait_for_timeout(250)

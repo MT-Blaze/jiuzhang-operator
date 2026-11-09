@@ -134,7 +134,7 @@ class ConsoleSubTabsTest(unittest.TestCase):
         self.assertRegex(CSS, r"\.st-subnav-item\s*\{[^}]*min-height:\s*44px")
 
     def test_04_no_modal_for_plugin_management(self) -> None:
-        self.assertNotIn("mg-modal-overlay", HTML.split("stPluginTabs", 1)[1].split("模型配置", 1)[0])
+        self.assertNotIn("mg-modal-overlay", HTML.split("stPluginTabs", 1)[1].split("stPanelBackup", 1)[0])
 
 
 class WorkspaceTextbookSwitchTest(unittest.TestCase):

@@ -1,9 +1,9 @@
 /**
- * 设置与控制：左菜单选分区，右面板干活（工作区 / 插件 / 模型配置）。
+ * 设置与控制：左菜单选分区，右面板干活（工作区 / 插件 / 备份 / 系统）。
  *
  * 在线索引的拉取/安装逻辑仍由 plugins.js 负责（同一套表单 id），本文件负责：
  * ① 分区导航（含宿主指定面板）；② 工作区列表、切换与新建（新建可选教材版本）；
- * ③ 手动安装：文件选择 + 拖拽区 + 状态回显；④ 模型 Provider 的切换/保存/测连通。
+ * ③ 手动安装：文件选择 + 拖拽区 + 状态回显。
  * 边界与工作台拖装一致：只收 .zip、上限 50 MB、写接口带本机令牌、409 需显式
  * 确认覆盖，失败不留半个文件。所有插件名与状态只走 textContent，不拼 HTML。
  */
@@ -65,12 +65,6 @@
 
   var stNav = window.JzoStNav.create({
     loadBackup: loadBackup,
-  });
-  var stProvider = window.JzoStProvider.create({
-    apiCall: apiCall,
-    el: el,
-    mgSet: mgSet,
-    readJson: readJson,
   });
   var stStartup = window.JzoStStartup.create({
     apiCall: apiCall,

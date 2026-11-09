@@ -11,7 +11,7 @@
     var loadBackup = deps.loadBackup;
 
   // ============ 左菜单 + 右面板：分区导航 ============
-  var PANEL_KEYS = ["workspace", "plugin", "provider", "backup", "system"];
+  var PANEL_KEYS = ["workspace", "plugin", "backup", "system"];
   var navItems = {};
   var panelEls = {};
   PANEL_KEYS.forEach(function (key) {

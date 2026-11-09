@@ -1217,11 +1217,20 @@ class UpdateHttpTest(unittest.TestCase):
             status, _ = self.call(method, path, body, token="wrong-token")
             self.assertEqual(status, 401, f"{method} {path} 令牌错了居然放行了")
 
-    def test_02_check_without_a_cached_index_refuses_to_go_online(self):
-        """没有缓存又不给 url 时只能 409：底座绝不自己出网。"""
-        status, body = self.call("POST", "/api/plugins/update/check", {})
-        self.assertEqual(status, 409)
-        self.assertIn("不会自己出网", wire.dumps(body, ensure_ascii=False))
+    def test_02_check_without_a_cached_index_falls_back_to_the_bundled_one(self):
+        """没有缓存又不给 url 时用随包 plugins.toml 离线对账：不 409，也绝不自己出网。"""
+        target = self.seed_local("1.0.0", "org.jiuzhang.bank-engine")
+        try:
+            status, body = self.call("POST", "/api/plugins/update/check", {})
+        finally:
+            import shutil
+            shutil.rmtree(target, ignore_errors=True)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["index_source"], "bundled")
+        rows = {row["id"]: row for row in body["plugins"]}
+        self.assertIn("org.jiuzhang.bank-engine", rows)
+        self.assertEqual(rows["org.jiuzhang.bank-engine"]["remote_version"], "3.0.0")
+        self.assertEqual(rows["org.jiuzhang.bank-engine"]["state"], "update_available")
 
     def test_03_check_reports_plugins_and_host(self):
         self.seed_local("1.0.0")

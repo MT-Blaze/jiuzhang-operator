@@ -17,10 +17,12 @@ import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from app.core import plugin_sources, toml_io, wire
+from app.core.config import PROJECT_ROOT
 
 INDEX_VERSION = "1.0"
 MAX_INDEX_BYTES = 512 * 1024
@@ -28,6 +30,9 @@ FETCH_TIMEOUT_SECONDS = 6.0
 MIRROR_TIMEOUT_SECONDS = 5.0
 MAX_ENTRIES = 200
 CHANGELOG_MAX_CHARS = 2000
+BUNDLED_INDEX_FILENAME = "plugins.toml"
+# 已并入 bank-engine 的旧视图插件：任何索引/缓存里残留都不再单列。
+RETIRED_INDEX_IDS = frozenset({"org.jiuzhang.bank-ui"})
 
 _ALLOWED_SCHEMES = {"http", "https"}
 _PLUGIN_ID = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
@@ -189,6 +194,12 @@ def parse_index(payload: Any) -> dict[str, Any]:
         except ValueError as exc:
             rejected.append({"position": str(position), "reason": str(exc)})
             continue
+        if entry["id"] in RETIRED_INDEX_IDS:
+            rejected.append({
+                "position": str(position),
+                "reason": "%s 已并入 org.jiuzhang.bank-engine，索引不再单列" % entry["id"],
+            })
+            continue
         if entry["id"] in seen_ids:
             rejected.append({"position": str(position), "reason": "%s 的 id 与前一条重复" % entry["id"]})
             continue
@@ -214,6 +225,66 @@ def parse_index(payload: Any) -> dict[str, Any]:
         "host": host,
         "host_rejected": host_rejected,
     }
+
+
+def _version_key(value: Any) -> tuple[int, int, int]:
+    parsed = str(value or "").strip().split("-", 1)[0].split("+", 1)[0]
+    parts = parsed.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return (0, 0, 0)
+    return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def load_bundled_index() -> dict[str, Any] | None:
+    """读随底座发布的 ``plugins.toml``；不存在或解析失败返回 None。
+
+    这是本机自带的主注册表，不联网。远端索引可能滞后于本仓发版，合并它
+    才能保证合并后的新包在「检查更新」里始终有一席之地。
+    """
+    path = Path(PROJECT_ROOT) / BUNDLED_INDEX_FILENAME
+    try:
+        payload = toml_io.load(path, None)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        index = parse_index(payload)
+    except IndexRejected:
+        return None
+    index.update({
+        "source_url": "",
+        "source_host": "",
+        "fetched_at": "",
+        "requested_host": "",
+        "fallback_used": False,
+        "attempts": [],
+    })
+    return index
+
+
+def merge_bundled_entries(index: dict[str, Any]) -> dict[str, Any]:
+    """把本仓 ``plugins.toml`` 并进远端/缓存索引：同 id 取较新版本，缺条补齐。
+
+    远端镜像或本机缓存可能落后于底座自身发版（尤其刚合并/改名的新包），
+    只按远端索引对账会让本仓已登记的插件看起来「失踪」。合并只读本机文件，
+    不改变「检查更新必须由用户点击才出网」的铁律。
+    """
+    bundled = load_bundled_index()
+    if bundled is None:
+        return index
+    merged: dict[str, dict[str, Any]] = {}
+    for entry in index.get("entries") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            merged[str(entry["id"])] = entry
+    for entry in bundled["entries"]:
+        current = merged.get(entry["id"])
+        if current is None or _version_key(entry["version"]) > _version_key(current.get("version")):
+            merged[entry["id"]] = entry
+    result = dict(index)
+    result["entries"] = list(merged.values())
+    result["entry_count"] = len(result["entries"])
+    return result
 
 
 def _fetch_once(target: str, timeout: float) -> dict[str, Any]:

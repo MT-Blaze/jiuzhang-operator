@@ -28,7 +28,6 @@ from app.api.layout import router as layout_router
 from app.api.meta import router as meta_router
 from app.api.pending import router as pending_router
 from app.api.plugins import router as plugins_router
-from app.api.providers import router as providers_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.workspaces import router as workspaces_router
@@ -190,7 +189,6 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(questions_router)
     app.include_router(plugins_router)
-    app.include_router(providers_router)
     app.include_router(ai_center_router)
     app.include_router(agents_router)
     app.include_router(workspaces_router)

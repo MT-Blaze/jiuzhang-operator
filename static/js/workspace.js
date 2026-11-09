@@ -13,7 +13,6 @@
   // --- State ---
   // 跨模块共享的可变态：拆文件后依赖按值传，只有挂在同一个对象上才写得到同一份账。
   var wsState = {
-    providerList: [],
     installedPlugins: [],
     writeToken: null,
     // 老师亲手点过左栏没有？启动行为要等 /api/startup 回来才动手，
@@ -126,7 +125,6 @@
   var wsPanel = window.JzoWsPanel.create({
     clampText: clampText,
     dockLine: dockLine,
-    findActiveProvider: findActiveProvider,
     // 右栏折叠策略归 wsRail；它晚于本模块创建，用取值器推迟到调用时才拿。
     getCtxRail: function () { return wsRail; },
     loadPlugins: loadPlugins,
@@ -300,30 +298,6 @@
       });
   }
 
-  // 模型 Provider：加载 / 切换 / 配置。
-  // 右栏顶部那块「模型：…」展示已于 2026-10-31 撤掉——它占着辅助栏的顶，
-  // 又不提供任何操作；模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
-  function findActiveProvider() {
-    for (var i = 0; i < wsState.providerList.length; i += 1) {
-      if (wsState.providerList[i].active) return wsState.providerList[i];
-    }
-    return null;
-  }
-
-  function loadProviders() {
-    return fetch("/api/providers", { cache: "no-store" })
-      .then(function (r) {
-        return window.JzoHttp.readText(r, function (text, data) {
-          if (!r.ok) throw window.JzoHttp.fromResponse(r, text, data, { url: "/api/providers" });
-          return data || {};
-        });
-      })
-      .then(function (data) {
-        wsState.providerList = data.providers || [];
-        return data;
-      });
-  }
-
   // --- 控制台页签：全仓唯一的「配置现场」 ---
   var UPDATE_NOTICE_KEY = "jzo.updateNotice";
   var consoleDot = document.getElementById("wsConsoleDot");
@@ -395,8 +369,8 @@
     }
   }
 
-  // 定调令：工作台不许再有弹窗。左栏入口只把老师带进页签，
-  // 模型配置表单在控制台里只有那一份；有更新待办时直接落到「插件 · 检查更新」。
+  // 定调令：工作台不许再有弹窗。左栏入口只把老师带进页签；
+  // 有更新待办时直接落到「插件 · 检查更新」。
   (function wireConsoleEntry() {
     renderUpdateNotice(readUpdateNotice());
     var btn = document.getElementById("wsConsoleBtn");
@@ -406,7 +380,6 @@
         else openConsoleTab();
       });
     }
-    // 控制台里改了模型配置 → 顶栏胶囊立即重拉状态，不让老师对着旧标签发愣。
     window.addEventListener("message", function (event) {
       if (event.origin !== window.location.origin) return;
       var data = event.data;
@@ -414,7 +387,6 @@
         renderUpdateNotice(data.count);
         return;
       }
-      if (data && data.jzo === "providers.changed") loadProviders().catch(function () {});
       // 控制台里改了昵称/启停/分组 → 左栏当场跟上，不等 5 秒轮询。
       if (data && data.jzo === "prefs.changed") loadPlugins({ announce: false }).catch(function () {});
     });
@@ -515,7 +487,4 @@
       return applyStartupBehavior(plugins);
     })
     .catch(function () { /* 探测失败保留「暂无插件」空态，不打扰用户 */ });
-
-  // Provider 清单只喂给工作区快照。模型配置的真身只在控制台「模型配置」里，状态由那里自己管。
-  loadProviders().catch(function () { /* 读不到就当没有 provider，不打扰用户 */ });
 })();

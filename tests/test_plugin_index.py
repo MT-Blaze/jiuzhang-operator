@@ -116,6 +116,37 @@ class IndexParsingTest(unittest.TestCase):
         self.assertEqual(by_id["cn.example.bad"]["changelog"], "")
 
 
+class BundledIndexMergeTest(unittest.TestCase):
+    def test_retired_view_plugin_is_never_listed(self) -> None:
+        parsed = plugin_index.parse_index({
+            "index_version": "1.0",
+            "entries": [good_entry(id="org.jiuzhang.bank-ui", name="旧真题题库")],
+        })
+        self.assertEqual(parsed["entry_count"], 0)
+        self.assertIn("已并入", parsed["rejected"][0]["reason"])
+
+    def test_bundled_registry_fills_stale_remote_entry(self) -> None:
+        """远端/缓存还停在旧版本时，本仓主注册表的合并包必须顶上去。"""
+        stale = {
+            "index_version": "1.0",
+            "entries": [good_entry(id="org.jiuzhang.bank-engine", name="题库引擎", version="1.0.1")],
+        }
+        merged = plugin_index.merge_bundled_entries(plugin_index.parse_index(stale))
+        by_id = {row["id"]: row for row in merged["entries"]}
+        self.assertEqual(by_id["org.jiuzhang.bank-engine"]["version"], "3.0.0")
+        self.assertEqual(by_id["org.jiuzhang.bank-engine"]["name"], "九章题库")
+        self.assertIn("org.jiuzhang.paper-gen", by_id, "本仓登记的条目要补齐")
+
+    def test_newer_remote_entry_is_not_downgraded(self) -> None:
+        ahead = {
+            "index_version": "1.0",
+            "entries": [good_entry(id="org.jiuzhang.bank-engine", name="九章题库", version="3.0.1")],
+        }
+        merged = plugin_index.merge_bundled_entries(plugin_index.parse_index(ahead))
+        by_id = {row["id"]: row for row in merged["entries"]}
+        self.assertEqual(by_id["org.jiuzhang.bank-engine"]["version"], "3.0.1")
+
+
 class UrlGuardTest(unittest.TestCase):
     def test_only_plain_http_urls_without_credentials_are_accepted(self) -> None:
         self.assertEqual(

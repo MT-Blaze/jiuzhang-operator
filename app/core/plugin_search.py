@@ -116,8 +116,9 @@ def load_index_cache() -> dict[str, Any] | None:
         )
     except (plugin_index.IndexRejected, ValueError):
         return None
+    merged = plugin_index.merge_bundled_entries({"entries": parsed["entries"]})
     return {
-        "entries": parsed["entries"],
+        "entries": merged["entries"],
         "host": parsed["host"],
         "host_rejected": parsed["host_rejected"],
         "source_host": str(payload.get("source_host") or ""),

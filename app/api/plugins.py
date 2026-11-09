@@ -304,17 +304,21 @@ def _index_for_check(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
             index = plugin_index.fetch_index(url.strip(), allow_mirrors=allow_mirrors)
         except plugin_index.IndexRejected as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        index = plugin_index.merge_bundled_entries(index)
         plugin_search.save_index_cache(index)
         return index, "fetched"
 
     cached = plugin_search.load_index_cache()
     if cached is None:
-        raise HTTPException(
-            status_code=409,
-            detail="本机还没有插件索引缓存。请先在「插件索引」页点【拉取清单】，"
-                   "或在本次请求里给出 url（底座不会自己出网）。",
-        )
-    return cached, "cache"
+        bundled = plugin_index.load_bundled_index()
+        if bundled is None:
+            raise HTTPException(
+                status_code=409,
+                detail="本机还没有插件索引缓存。请先在「插件索引」页点【拉取清单】，"
+                       "或在本次请求里给出 url（底座不会自己出网）。",
+            )
+        return bundled, "bundled"
+    return plugin_index.merge_bundled_entries(cached), "cache"
 
 
 @router.post(
