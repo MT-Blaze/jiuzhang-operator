@@ -976,9 +976,7 @@ class ModuleSurfaceTest(unittest.TestCase):
             self.skipTest("本机没有 bank-engine 的 bank/ 目录")
         real_names = sorted(item.relative_to(bank_dir).as_posix()
                             for item in bank_dir.rglob("*") if item.is_file())
-        self.assertIn("bank.db", real_names)
-        self.assertTrue(any(name.startswith("assets/") for name in real_names),
-                        "core-bank 应有题目配图目录")
+        self.assertIn("schema.sql", real_names, "引擎包必须携带 31 表 schema")
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -988,18 +986,17 @@ class ModuleSurfaceTest(unittest.TestCase):
                 path = local / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("本机内容", encoding="utf-8")
-            for name in ("plugin.toml", "LICENSE", "dist/plugin.js", "bank.db"):
+            for name in ("plugin.toml", "LICENSE", "dist/plugin.js"):
                 path = staged / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("新包内容", encoding="utf-8")
 
-            kept = plugin_update._preserve_local_files(local, staged)
+            plugin_update._preserve_local_files(local, staged)
 
             for name in real_names:
                 self.assertTrue((staged / name).is_file(), f"{name} 更新后会丢失")
                 self.assertEqual((staged / name).read_text(encoding="utf-8"), "本机内容",
                                  f"{name} 的内容被新包顶掉了")
-            self.assertIn("bank.db", kept["data_overridden"])
             self.assertEqual((staged / "plugin.toml").read_text(encoding="utf-8"), "新包内容")
             self.assertEqual((staged / "dist" / "plugin.js").read_text(encoding="utf-8"), "新包内容")
 

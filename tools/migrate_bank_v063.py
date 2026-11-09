@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SCHEMA_PATH = ROOT / "plugins/org.jiuzhang.bank-engine/bank/schema.sql"
+SCHEMA_PATH = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 DOC_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank.db"
 LEGACY_DB = ROOT / ".scratch-recon-063/legacy.db"
 SCHOOLS_JSON = Path("E:/math-question-bank-main/mathbank/resources/schools.json")

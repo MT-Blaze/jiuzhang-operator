@@ -43,7 +43,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+SCHEMA = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 ENGINE = "org.jiuzhang.bank-engine"
 PLAIN = "org.jiuzhang.dashboard"
 TOKEN = "provider-probe-token"

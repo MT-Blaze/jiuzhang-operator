@@ -147,8 +147,8 @@ class BankApiContractTest(unittest.TestCase):
 
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        # 建库只认插件包里的冻结 schema.sql，测试沙箱必须带上同一份
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+        # v1 兼容链路只认底座自带的旧 schema，测试沙箱必须带上同一份
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
         cls.seed_path = seed_dir / "bank.db"
 
@@ -1170,7 +1170,7 @@ class BankApiContractTest(unittest.TestCase):
 class MigratedBankIntegrityTest(unittest.TestCase):
     """真实迁移产物：456 道真题在新表上必须装配得回来、过得了 Schema、不造假。"""
 
-    migrated = ROOT / "plugins" / PLUGIN_ID / "bank" / "v063_migrated.db"
+    migrated = ROOT / "tests" / "fixtures" / "v063_migrated.db"
 
     @classmethod
     def setUpClass(cls) -> None:

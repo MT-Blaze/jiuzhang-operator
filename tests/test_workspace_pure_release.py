@@ -28,6 +28,7 @@ from tests.core_sources import settings_source, workspace_source  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 SCHEMA = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
+LEGACY_SCHEMA = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 
 
 def _make_seed_db(path: Path, questions: int) -> None:
@@ -35,7 +36,7 @@ def _make_seed_db(path: Path, questions: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(path)
     try:
-        con.executescript(SCHEMA.read_text(encoding="utf-8"))
+        con.executescript(LEGACY_SCHEMA.read_text(encoding="utf-8"))
         now = "2026-10-24T00:00:00+08:00"
         for index in range(questions):
             con.execute(

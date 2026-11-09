@@ -153,7 +153,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         os.environ["JZO_PLUGINS_DIR"] = str(cls.plugins_dir)
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql", seed_dir / "schema.sql")
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql", seed_dir / "schema.sql")
 
         sys.path.insert(0, str(ROOT))
         from app.core import bank  # noqa: PLC0415

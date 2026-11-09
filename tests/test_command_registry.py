@@ -448,7 +448,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
 
     EXPECTED = {
         "org.jiuzhang.bank-engine": {
-            "version": "1.0.1",
+            "version": "2.0.0",
             "commands": [
                 "org.jiuzhang.action.data.bank_stats",
                 "org.jiuzhang.action.data.bank_search",

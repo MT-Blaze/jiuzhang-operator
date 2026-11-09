@@ -29,7 +29,7 @@ from app.core.config import settings
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 SEED_DB = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
-SCHEMA_SQL = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
+SCHEMA_SQL = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 
 # v0.6.3 的三张被升级器读写的表：topics 没有 textbook_id 列、没有并集不变量 CHECK
 _SAVED_PLUGINS_ENV: str | None = None

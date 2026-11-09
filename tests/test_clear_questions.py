@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "clear_all_questions.py"
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+SCHEMA = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 NOW = "2026-01-01T00:00:00+08:00"
 
 

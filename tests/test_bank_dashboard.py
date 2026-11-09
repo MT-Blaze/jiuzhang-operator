@@ -80,7 +80,7 @@ class DashboardApiTest(unittest.TestCase):
 
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
         cls.seed_path = seed_dir / "bank.db"
 

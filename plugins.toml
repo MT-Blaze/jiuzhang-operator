@@ -1,14 +1,14 @@
 index_version = "1.0"
 name = "九章算子官方插件索引"
-updated_at = "2026-11-07"
+updated_at = "2026-11-09"
 
 [[entries]]
 id = "org.jiuzhang.bank-engine"
 name = "题库引擎"
-version = "1.0.1"
+version = "2.0.0"
 kind = "tool"
 api_version = "1.0"
-description = "无界面的题库数据引擎（军令 #20 从 core-bank 拆出）：负责七表结构、题目读写、大纲与考向、查重扫描与收敛合并事务。只经 Host API 调用，数据落在当前工作区；引擎受保护，控制台不可卸载。"
+description = "无界面的题库数据引擎：承载 31 张纯关系表、全量教材树与知识点、考向与题目映射。只经 Host API 调用，数据落在当前工作区；引擎受保护，控制台不可卸载。"
 zip_url = "https://gh-proxy.com/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"
 mirrors = ["https://ghfast.top/https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip", "https://cdn.jsdelivr.net/gh/MT-Blaze/jiuzhang-plugins@main/plugins/org.jiuzhang.bank-engine.zip", "https://raw.githubusercontent.com/MT-Blaze/jiuzhang-plugins/main/plugins/org.jiuzhang.bank-engine.zip"]
 homepage = "https://github.com/MT-Blaze/jiuzhang-operator/tree/main/plugins/org.jiuzhang.bank-engine"

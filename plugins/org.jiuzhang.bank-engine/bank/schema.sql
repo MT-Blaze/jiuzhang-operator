@@ -1,245 +1,532 @@
--- 九章算子 · core-bank 存储层表结构 v0.8.2（结构冻结版）
---
--- 设计原则：存储层只存事实，不存输入校验与查重指纹一类的过程态字段。
--- 全部 DDL 为本仓库原创表达；题目标准结构见 app/core/question_contract.py，
--- 表与契约的对应关系在出参适配层完成，不在存储层另造字段方言。
---
--- 落地顺序即依赖顺序：schools / textbooks / topics 先建，sources 与 questions 居中，
--- 多对多关联表与版本映射表收尾。外键全部 ON DELETE CASCADE，题目删除不留孤儿。
---
--- ★多版本大纲的三条地基规则（主公 2026-10-24 定调，详见 PLUGIN_SPEC §2.7）：
---   1. **考向是并集**：``topics`` 里层别为 ``tp_kx`` 的考向节点**不属于任何教材版本**
---      （``textbook_id`` 必须为 NULL），谁有新考向就往池子里加；
---   2. **大纲树是子集视图**：册/章/节是**版本目录节点**，带 ``textbook_id``；
---      左侧树按版本取，取的就是该版本目录节点 + 映射表落出来的子集；
---   3. **一道题跨版本靠映射表**：``node_topic_map`` 是「版本目录节点 → 考向」的多对多，
---      同一考向可同时出现在人教A版的第三章和苏教版的第五章下，题目本身不复制。
---   现网只有人教A版一份数据，但架子必须先立住；苏教版导入时只新增 textbooks 一行
---   与它自己的目录节点 + 映射行，**绝不复制考向**。
+-- 九章题库结构（沙盒终极定稿，schema version 2）
+-- 31 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
+-- SQLite 外键开关按连接生效，读写前必须先执行 PRAGMA foreign_keys = ON。
+-- 外键动作全部收敛为 RESTRICT（保护被引用数据）或 CASCADE（随父行清理从表）。
+-- 命名规范：平铺字典 dict_，业务维度 dim_（树状维度与强绑定学科年级的维度一律 dim_），
+--           题目从表 question_，多对多桥接 _map。
 
 PRAGMA foreign_keys = ON;
 
--- 1) 学校表：只登记办学实体本身，与「哪张卷子」无关。
-CREATE TABLE schools (
-    id          TEXT    NOT NULL,
-    full_name   TEXT    NOT NULL,
-    short_name  TEXT    NOT NULL DEFAULT '',
-    province    TEXT    NOT NULL DEFAULT '',
-    city        TEXT    NOT NULL DEFAULT '',
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
-    CONSTRAINT pk_schools         PRIMARY KEY (id),
-    CONSTRAINT ck_schools_id      CHECK (id GLOB 'sch_[0-9a-f]*' AND length(id) BETWEEN 7 AND 32),
-    CONSTRAINT ck_schools_full    CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
-    CONSTRAINT ck_schools_short   CHECK (length(short_name) <= 60),
-    CONSTRAINT ck_schools_region  CHECK (length(province) <= 40 AND length(city) <= 40)
+BEGIN;
+-- [功能注释] 学科字典：存学科名称与编码，是教材、知识点等学科维度的根
+CREATE TABLE dict_subjects (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 学科名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 学科编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX uq_schools_full_name ON schools (full_name);
-CREATE INDEX idx_schools_short_name ON schools (short_name);
-
--- 1b) 教材版本表：一行一个「教材版本」（人教A版 / 人教B版 / 苏教版 / 北师大版…）。
---     考向并集与它无关，它只给目录节点与映射行提供版本身份。
---     id 定长 11：tb_ + 8 位十六进制摘要（与 sch_/tp_ 同族口径，底座签发）。
-CREATE TABLE textbooks (
-    id          TEXT    NOT NULL,
-    name        TEXT    NOT NULL,
-    publisher   TEXT    NOT NULL DEFAULT '',
-    edition     TEXT    NOT NULL DEFAULT '',
-    is_default  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
-    CONSTRAINT pk_textbooks         PRIMARY KEY (id),
-    CONSTRAINT ck_textbooks_id      CHECK (length(id) = 11 AND substr(id, 1, 3) = 'tb_'
-                                                   AND substr(id, 4, 8) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
-    CONSTRAINT ck_textbooks_name    CHECK (length(trim(name)) BETWEEN 1 AND 60),
-    CONSTRAINT ck_textbooks_pub     CHECK (length(publisher) <= 60),
-    CONSTRAINT ck_textbooks_edition CHECK (length(edition) <= 40),
-    CONSTRAINT ck_textbooks_flag    CHECK (is_default IN (0, 1)),
-    CONSTRAINT ck_textbooks_updated CHECK (updated_at >= created_at)
+-- [功能注释] 年级字典：存年级名称、编码与学段，供教材与题目来源定位年级
+CREATE TABLE dict_grades (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 年级名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 年级编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 学段，标记年级所属的小学 / 初中 / 高中等学段，可为空
+    stage      TEXT
 );
-CREATE UNIQUE INDEX uq_textbooks_name ON textbooks (name);
--- 默认版本至多一个：读路径据此决定「打开工作台先看哪版大纲」，不靠代码写死教材名。
-CREATE UNIQUE INDEX uq_textbooks_default ON textbooks (is_default) WHERE is_default = 1;
-
--- 2) 大纲表：教材/章/节/考向单表物化路径，parent_id 自引用成树。
---    id 定长 13：tp_ + 两位层别码（bo 册 / ch 章 / se 节 / kx 考向）+ 8 位十六进制摘要；
---    层别不另设冗余列，看 id 前缀即知。path 存 id 序列，sort_order 定同父兄弟序。
---    textbook_id：版本目录节点（bo/ch/se）填所属版本，**考向（kx）必须留 NULL**——
---    考向是所有教材版本的并集，绑版本就等于把考向私有化。
---    本列不加内联外键：SQLite 的 ALTER TABLE 无法给既有表追加 FK，加了会让
---    「新建库」与「迁移库」两种结构分叉；引用完整性由 node_topic_map 的 FK、
---    适配层校验与契约测试三处共同守住（同一口径见 bank.py 的 TOPIC_LAYER）。
-CREATE TABLE topics (
-    id           TEXT    NOT NULL,
-    parent_id    TEXT    NULL,
-    textbook_id  TEXT    NULL,
-    name         TEXT    NOT NULL,
-    path         TEXT    NOT NULL,
-    sort_order   INTEGER NOT NULL DEFAULT 0,
-    status       TEXT    NOT NULL DEFAULT 'active',
-    created_at   TEXT    NOT NULL,
-    updated_at   TEXT    NOT NULL,
-    CONSTRAINT pk_topics        PRIMARY KEY (id),
-    CONSTRAINT ck_topics_id     CHECK (length(id) = 13 AND substr(id, 1, 5) IN ('tp_bo', 'tp_ch', 'tp_se', 'tp_kx')
-                                               AND substr(id, 6, 8) GLOB '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'),
-    CONSTRAINT ck_topics_name   CHECK (length(trim(name)) BETWEEN 1 AND 120),
-    CONSTRAINT ck_topics_path   CHECK (path GLOB 'tp_*' AND length(path) <= 512),
-    CONSTRAINT ck_topics_status CHECK (status IN ('active', 'archived', 'draft')),
-    CONSTRAINT ck_topics_sort   CHECK (sort_order >= 0),
-    CONSTRAINT ck_topics_acyclic CHECK (parent_id IS NULL OR parent_id <> id),
-    CONSTRAINT ck_topics_textbook CHECK (textbook_id IS NULL OR (textbook_id GLOB 'tb_*' AND length(textbook_id) = 11)),
-    -- 并集不变量：考向节点不绑版本。违反它就是把考向私有化，跨版本复用立刻失效。
-    CONSTRAINT ck_topics_taxonomy_shared CHECK (substr(id, 1, 5) <> 'tp_kx' OR textbook_id IS NULL),
-    CONSTRAINT fk_topics_parent FOREIGN KEY (parent_id) REFERENCES topics (id) ON DELETE CASCADE
+-- [功能注释] 题型字典：存选择题、填空题等题型枚举
+CREATE TABLE dict_question_types (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 题型名称，如选择题、填空题，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 题型编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX uq_topics_path      ON topics (path);
-CREATE UNIQUE INDEX uq_topics_sibling   ON topics (parent_id, sort_order);
-CREATE INDEX      idx_topics_parent_id  ON topics (parent_id);
-CREATE INDEX      idx_topics_name       ON topics (name);
-CREATE INDEX      idx_topics_textbook   ON topics (textbook_id);
-
--- 3) 题目主表：纯题目内容。
---    选项/扩展为 JSON 数组，答案与解析为正文；无选项题型强制 options = '[]'。
---    extensions 留给教师自己的单题备注（有序数组），不再承接查重、校验过程态。
-CREATE TABLE questions (
-    id          TEXT    NOT NULL,
-    type        TEXT    NOT NULL,
-    stem        TEXT    NOT NULL,
-    options     TEXT    NOT NULL DEFAULT '[]',
-    answer      TEXT    NULL,
-    solution    TEXT    NULL,
-    extensions  TEXT    NOT NULL DEFAULT '[]',
-    difficulty  TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
-    CONSTRAINT pk_questions            PRIMARY KEY (id),
-    CONSTRAINT ck_questions_id         CHECK (id GLOB 'q_[A-Za-z0-9]*' AND length(id) BETWEEN 3 AND 80),
-    CONSTRAINT ck_questions_type       CHECK (type IN ('single_choice', 'multiple_choice', 'fill_blank', 'solution')),
-    CONSTRAINT ck_questions_difficulty CHECK (difficulty IN ('L1', 'L2', 'L3', 'L4')),
-    CONSTRAINT ck_questions_stem       CHECK (length(trim(stem)) >= 1),
-    CONSTRAINT ck_questions_options    CHECK (json_valid(options) = 1 AND json_type(options) = 'array'),
-    CONSTRAINT ck_questions_ext        CHECK (json_valid(extensions) = 1 AND json_type(extensions) = 'array'),
-    CONSTRAINT ck_questions_answer     CHECK (answer IS NULL OR length(answer) <= 20000),
-    CONSTRAINT ck_choices_have_options CHECK (
-        type NOT IN ('single_choice', 'multiple_choice') OR json_array_length(options) >= 2
-    ),
-    CONSTRAINT ck_nonchoices_no_options CHECK (
-        type IN ('single_choice', 'multiple_choice') OR json_array_length(options) = 0
-    ),
-    CONSTRAINT ck_questions_updated     CHECK (updated_at >= created_at)
-);
-CREATE INDEX idx_questions_type       ON questions (type);
-CREATE INDEX idx_questions_difficulty ON questions (difficulty);
-CREATE INDEX idx_questions_updated_at ON questions (updated_at);
-
--- 4) 考向教研笔记表：方法、易错点一类的教研正文挂在考向节点上，不属于单题。
-CREATE TABLE topic_notes (
-    id          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    topic_id    TEXT    NOT NULL,
-    note_type   TEXT    NOT NULL,
-    content     TEXT    NOT NULL DEFAULT '',
+-- [功能注释] 难度字典：存认知五阶名称、编码、等级、说明与 AI 判定提示词，供题目难度定位
+CREATE TABLE dict_difficulties (
+    id          INTEGER PRIMARY KEY,
+    -- [字段注释] 难度名称，展示给用户看的业务词汇，全局唯一
+    name        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 难度编码，系统底层唯一标识，不随名称更改
+    code        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
-    CONSTRAINT ck_topic_notes_type CHECK (note_type IN ('method', 'pitfall', 'knowledge', 'insight')),
-    CONSTRAINT ck_topic_notes_sort CHECK (sort_order >= 0),
-    CONSTRAINT fk_topic_notes_topic FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE
+    -- [字段注释] 难度等级，固定 1-5 的整数刻度，全局唯一，供难度排序与筛选
+    level       INTEGER NOT NULL UNIQUE CHECK (level BETWEEN 1 AND 5),
+    -- [字段注释] 难度说明，用于详细解释该认知层级的考查侧重点
+    description TEXT,
+    -- [字段注释] AI 判定提示词，提供给流水线大模型进行难度打标的专属量化指令
+    ai_prompt   TEXT
 );
-CREATE UNIQUE INDEX uq_topic_notes_slot   ON topic_notes (topic_id, note_type, sort_order);
-CREATE INDEX      idx_topic_notes_lookup  ON topic_notes (topic_id, note_type);
+-- [功能注释] 题目质量字典：存经典题、普通题、烂题的质量分档，供题目质量定位
+CREATE TABLE dict_question_qualities (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 质量分档名称，经典题 / 普通题 / 烂题，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 质量分档编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+-- 学校字典：textbook_id 表示该校主用教材版本，与题目来源章节版本互通
+-- [功能注释] 学校字典：存学校全称、简称、地区及主用教材版本，供题目来源标注学校
+CREATE TABLE dim_schools (
+    id          INTEGER PRIMARY KEY,
+    -- [字段注释] 学校全称，展示给用户看的完整业务名称，全局唯一
+    name        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 学校简称，用于题目来源等场景的快捷展示，同一地区内唯一
+    short_name  TEXT NOT NULL,
+    -- [字段注释] 学校编码，系统底层唯一标识，不随名称更改
+    code        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 所属地区（只填核心地名，严禁带省/市/自治区后缀），用于题目来源的时空标注，可为空
+    region      TEXT,
+    textbook_id INTEGER REFERENCES dim_textbooks(id) ON DELETE RESTRICT,
+    UNIQUE (region, short_name)
+);
+-- [功能注释] 教材版本字典：存版本名称、出版社，并归属学科与年级
+CREATE TABLE dim_textbooks (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 教材版本名称，如人教版、北师大版，同一学科内唯一
+    name       TEXT NOT NULL,
+    -- [字段注释] 教材版本编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 出版社名称，记录教材的出版机构，可为空
+    publisher  TEXT,
+    subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    UNIQUE (subject_id, name)
+);
+-- 教材章节字典：parent_id 自关联，父节点为章，子节点为节
+-- [功能注释] 教材章节字典：parent_id 自关联成“章 -> 节”，供题目来源定位章节
+CREATE TABLE dim_textbook_chapters (
+    id          INTEGER PRIMARY KEY,
+    -- [字段注释] 章节名称，同一教材同一父节点下唯一
+    name        TEXT NOT NULL,
+    -- [字段注释] 章节编码，系统底层唯一标识，不随名称更改
+    code        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于同级章节的展示顺序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    textbook_id INTEGER NOT NULL REFERENCES dim_textbooks(id) ON DELETE CASCADE,
+    parent_id   INTEGER REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
+    CHECK (parent_id IS NULL OR parent_id <> id)
+);
 
--- 5) 来源表：一张试卷一行；题号与「本校本题」的关系不属于来源本身。
---    school_id 可空：源卷未登记办学实体时留 NULL。
---    实测 SQLite 只在「可空 + ON DELETE SET NULL」下才能在撤档学校时保住这张卷；
---    NOT NULL DEFAULT '' 配 SET DEFAULT 会被外键检查拦死，RESTRICT 则连卷一起删不掉。
---    grade（高一/高二/高三）是主公 2026-10-23 裁定的年级落位：与 year/exam_type 同级，
---    不塞进 exam_type（那会让一列两套语义）。本轮结构解冻只补这一列，其余列名与约束不动。
-CREATE TABLE sources (
-    id          TEXT    NOT NULL PRIMARY KEY,
-    school_id   TEXT    NULL,
-    year        INTEGER NULL,
-    exam_type   TEXT    NOT NULL DEFAULT '',
-    grade       TEXT    NOT NULL DEFAULT '',
-    paper_name  TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL,
-    updated_at  TEXT    NOT NULL,
-    CONSTRAINT ck_sources_school CHECK (school_id IS NULL OR (school_id GLOB 'sch_[0-9a-f]*' AND length(school_id) BETWEEN 7 AND 32)),
-    CONSTRAINT ck_sources_year  CHECK (year IS NULL OR (year BETWEEN 1990 AND 2100)),
-    CONSTRAINT ck_sources_exam  CHECK (length(exam_type) <= 40),
-    CONSTRAINT ck_sources_grade CHECK (length(grade) <= 20),
-    CONSTRAINT ck_sources_paper CHECK (length(trim(paper_name)) BETWEEN 1 AND 200),
-    CONSTRAINT uq_sources_paper UNIQUE (school_id, year, exam_type, grade, paper_name),
-    CONSTRAINT fk_sources_school FOREIGN KEY (school_id) REFERENCES schools (id) ON DELETE SET NULL
+CREATE UNIQUE INDEX ux_dim_textbook_chapters_sibling_name
+    ON dim_textbook_chapters (textbook_id, COALESCE(parent_id, 0), name);
+-- [功能注释] 题目来源字典：存题目出处名称（试卷、教辅、导学案等）、考试类型、年份与地区，并挂接年级、章节、学校等时空属性
+CREATE TABLE dim_sources (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 题目来源名称，如某年某卷、某教辅，展示给用户看的业务词汇
+    name       TEXT NOT NULL,
+    -- [字段注释] 题目来源编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 考试类型：固定为 11 种考试场景之一——高考题 / 联考题 / 区域统考题 / 校考题 / 机构题 / 汇编题 / 自编题 / 强基题 / 竞赛题 / 自主招生题 / 外国题
+    exam_type  TEXT NOT NULL CHECK (exam_type IN ('高考题', '联考题', '区域统考题', '校考题', '机构题', '汇编题', '自编题', '强基题', '竞赛题', '自主招生题', '外国题')),
+    -- [字段注释] 来源年份，限定 1900-2100，可为空
+    year       INTEGER CHECK (year IS NULL OR year BETWEEN 1900 AND 2100),
+    -- [字段注释] 来源地区，标注试卷或教辅的适用区域，可为空
+    region     TEXT,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    chapter_id INTEGER REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
+    school_id  INTEGER REFERENCES dim_schools(id) ON DELETE RESTRICT
 );
-CREATE INDEX idx_sources_school_id ON sources (school_id);
-CREATE INDEX idx_sources_year      ON sources (year);
-CREATE INDEX idx_sources_grade     ON sources (grade);
 
--- 6) 题目-考向多对多：出同类题直接按 topic_id 反查此表，不再另建同类题关联表。
-CREATE TABLE question_topics (
-    question_id  TEXT    NOT NULL,
-    topic_id     TEXT    NOT NULL,
-    is_primary   INTEGER NOT NULL DEFAULT 0,
-    sort_order   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT    NOT NULL,
-    CONSTRAINT pk_question_topics  PRIMARY KEY (question_id, topic_id),
-    CONSTRAINT ck_question_topics_primary CHECK (is_primary IN (0, 1)),
-    CONSTRAINT fk_qt_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
-    CONSTRAINT fk_qt_topic    FOREIGN KEY (topic_id)    REFERENCES topics (id)    ON DELETE CASCADE
+CREATE UNIQUE INDEX ux_dim_sources_natural_key
+    ON dim_sources (name, COALESCE(year, 0), COALESCE(region, ''));
+-- [功能注释] 知识点字典：parent_id 自关联成“函数 -> 性质 -> 奇偶性”层级，供题目绑定底层概念
+CREATE TABLE dim_knowledge_points (
+    id          INTEGER PRIMARY KEY,
+    -- [字段注释] 知识点名称，展示给用户看的业务词汇，同一学科同一父节点下唯一
+    name        TEXT NOT NULL,
+    -- [字段注释] 知识点编码，系统底层唯一标识，不随名称更改，全局唯一
+    code        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于同级知识点的展示顺序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    subject_id  INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    grade_id    INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    parent_id   INTEGER REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
+    CHECK (parent_id IS NULL OR parent_id <> id)
 );
-CREATE INDEX idx_question_topics_topic  ON question_topics (topic_id);
-CREATE UNIQUE INDEX uq_question_topics_primary
-    ON question_topics (question_id) WHERE is_primary = 1;
 
--- 7) 题目-来源多对多：同一题被不同学校不同年份考过，就各占一行，原卷题号随行保存。
-CREATE TABLE question_sources (
-    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    question_id  TEXT    NOT NULL,
-    source_id    TEXT    NOT NULL,
-    question_no  TEXT    NOT NULL DEFAULT '',
-    created_at   TEXT    NOT NULL,
-    CONSTRAINT ck_qs_question_no   CHECK (length(question_no) <= 20),
-    CONSTRAINT uq_question_sources_slot UNIQUE (question_id, source_id, question_no),
-    CONSTRAINT fk_qs_question FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
-    CONSTRAINT fk_qs_source   FOREIGN KEY (source_id)  REFERENCES sources (id)   ON DELETE CASCADE
+-- 唯一性按学科隔离：不同学科允许出现同名知识点
+CREATE UNIQUE INDEX ux_dim_knowledge_points_sibling_name
+    ON dim_knowledge_points (subject_id, COALESCE(parent_id, 0), name);
+-- [功能注释] 考向字典：存讲义标题与组卷抓手，一个考向可跨多个知识点
+CREATE TABLE dim_exam_directions (
+    id          INTEGER PRIMARY KEY,
+    -- [字段注释] 考向名称，展示给用户看的业务词汇，同一学科内唯一
+    name        TEXT NOT NULL,
+    -- [字段注释] 考向编码，系统底层唯一标识，不随名称更改，全局唯一
+    code        TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于讲义与组卷列表的展示顺序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    subject_id  INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    grade_id    INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    -- [字段注释] 考向所属教材节次，精确锚定考向在教材中的位置，可为空
+    chapter_id  INTEGER REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
+    -- [字段注释] 考向说明，用于前端展示讲义标题与考查边界，可为空
+    description TEXT,
+    UNIQUE (subject_id, name)
 );
-CREATE INDEX idx_question_sources_question ON question_sources (question_id);
-CREATE INDEX idx_question_sources_source  ON question_sources (source_id);
+-- [功能注释] 知识点与考向关联表：一个考向可串联多个知识点，二者多对多
+CREATE TABLE knowledge_exam_map (
+    knowledge_point_id INTEGER NOT NULL
+                       REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
+    exam_direction_id  INTEGER NOT NULL
+                       REFERENCES dim_exam_directions(id) ON DELETE RESTRICT,
+    PRIMARY KEY (knowledge_point_id, exam_direction_id)
+) WITHOUT ROWID;
+-- [功能注释] 导入批次表：记录每次入库的流水线版本、起止时间与状态
+CREATE TABLE ingest_batches (
+    id               INTEGER PRIMARY KEY,
+    -- [字段注释] 入库流水线的版本号，用于追溯本次导入所用的解析器版本
+    pipeline_version TEXT NOT NULL,
+    -- [字段注释] 本批次开始导入的时间，默认取当前 UTC 时间
+    started_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    -- [字段注释] 本批次结束导入的时间，仍未结束时为空
+    finished_at      TEXT,
+    -- [字段注释] 批次状态，限定 pending / running / completed / failed
+    status           TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+    -- [字段注释] 批次备注，记录本次导入的补充说明，可为空
+    note             TEXT
+);
+-- [功能注释] 原始题目表：保留导入原文与内容哈希，是题目溯源链的起点
+CREATE TABLE raw_questions (
+    id           TEXT PRIMARY KEY,
+    batch_id     INTEGER NOT NULL REFERENCES ingest_batches(id) ON DELETE RESTRICT,
+    -- [字段注释] 导入时的原始题目文本，保持原样不做清洗
+    raw_content  TEXT NOT NULL,
+    -- [字段注释] 原文内容的哈希值，用于查重与溯源比对
+    content_hash TEXT NOT NULL,
+    -- [字段注释] 解析状态，限定 pending / parsed / failed
+    status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'parsed', 'failed')),
+    -- [字段注释] 解析失败时的错误信息，解析成功时为空
+    error        TEXT,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+-- [功能注释] 题目主表：存题干、题型、难度等固有属性，不含答案、解析和时空外键
+CREATE TABLE questions (
+    id               TEXT PRIMARY KEY
+                     CHECK (length(id) > 2 AND substr(id, 1, 2) = 'q_'),
+    -- [字段注释] 题干原文，只存 Markdown/LaTeX 原文
+    stem             TEXT NOT NULL,
+    subject_id       INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    question_type_id INTEGER NOT NULL REFERENCES dict_question_types(id) ON DELETE RESTRICT,
+    difficulty_id    INTEGER NOT NULL REFERENCES dict_difficulties(id) ON DELETE RESTRICT,
+    -- [字段注释] 题目质量分档外键，无数据库默认值，写入时必须由调用方显式提供
+    quality_id       INTEGER NOT NULL
+                     REFERENCES dict_question_qualities(id) ON DELETE RESTRICT,
+    raw_id           TEXT REFERENCES raw_questions(id) ON DELETE RESTRICT,
+    -- [字段注释] 软删除时间，为空表示题目有效，非空表示已标记删除
+    deleted_at       TEXT DEFAULT NULL,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    -- [字段注释] 该记录最近一次更新的时间
+    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+-- [功能注释] 选项从表：存选项标号、内容与正确标记，随题目级联清理
+CREATE TABLE question_options (
+    id           INTEGER PRIMARY KEY,
+    question_id  TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 选项标号，如 A / B / C / D，同一题内唯一
+    option_label TEXT NOT NULL,
+    -- [字段注释] 选项内容原文，允许 Markdown/LaTeX
+    content      TEXT NOT NULL,
+    -- [字段注释] 是否正确选项，1 表示正确，0 表示错误
+    is_correct   INTEGER NOT NULL DEFAULT 0 CHECK (is_correct IN (0, 1)),
+    UNIQUE (question_id, option_label),
+    UNIQUE (question_id, id)
+);
+-- [功能注释] 图片从表：存图片路径与归属（题干/答案/解析/选项），选项图绑定具体选项
+CREATE TABLE question_images (
+    id          INTEGER PRIMARY KEY,
+    question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 图片归属位置，限定题干 / 答案 / 解析 / 选项
+    belongs_to  TEXT NOT NULL
+                CHECK (belongs_to IN ('stem', 'answer', 'solution', 'option')),
+    option_id   INTEGER,
+    -- [字段注释] 图片文件路径，指向项目资源目录
+    path        TEXT NOT NULL,
+    -- [字段注释] 图片替代文本（无障碍/防裂图用，可为空）
+    alt         TEXT,
+    -- [字段注释] 图片在所属位置内的展示排序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    CHECK (
+        (belongs_to = 'option' AND option_id IS NOT NULL)
+        OR (belongs_to <> 'option' AND option_id IS NULL)
+    ),
+    FOREIGN KEY (question_id, option_id)
+        REFERENCES question_options (question_id, id) ON DELETE CASCADE
+);
+-- 答案从表：答案彻底脱离主表，is_primary 标记主答案
+-- [功能注释] 答案从表：存答案原文与主答案标记，一道题可有多条答案
+CREATE TABLE question_answers (
+    id             INTEGER PRIMARY KEY,
+    question_id    TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 答案原文，允许 Markdown/LaTeX
+    answer_content TEXT NOT NULL,
+    -- [字段注释] 是否主答案，1 表示主答案，同一题最多一条
+    is_primary     INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+    -- [字段注释] 多条答案的展示排序，数值越小越靠前
+    sort_order     INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 
--- 8) 版本目录节点 → 考向 的映射表：多版本大纲的唯一桥。
---    一行 = 「某版本的某个目录节点（册/章/节）下出现某考向」。
---    同一考向可以被任意多个版本的任意多个节点引用，于是：
---      · 苏教版导入时只新增它自己的 textbooks 行 + 目录节点 + 映射行，考向零复制；
---      · 左侧大纲树按 textbook_id 取子集，题目仍按 question_topics 反查考向，
---        换版本不改题目、不改考向、不改题-考向关联。
---    outline_node_id 只许指版本目录节点（bo/ch/se），topic_id 只许指考向（kx）——
---    两条 CHECK 把「映射」钉死成「目录 → 考向」，防止有人拿它挂章挂章、节挂节。
---    sort_order 只是**该考向在自己父节点下的兄弟序快照**，用于同版本内稳定展示；
---    跨节点的展示序一律回读 topics.sort_order，这里不设唯一约束——
---    曾经设过 (textbook_id, outline_node_id, sort_order) 唯一索引，迁移时把一半映射行
---    静默 IGNORE 掉了（同节下两个考向兄弟序相同），纯关系表不该替被引用方记账。
-CREATE TABLE node_topic_map (
-    outline_node_id  TEXT    NOT NULL,
-    topic_id         TEXT    NOT NULL,
-    textbook_id      TEXT    NOT NULL,
-    sort_order       INTEGER NOT NULL DEFAULT 0,
-    created_at       TEXT    NOT NULL,
-    CONSTRAINT pk_node_topic_map     PRIMARY KEY (outline_node_id, topic_id),
-    CONSTRAINT ck_ntm_outline_layer  CHECK (substr(outline_node_id, 1, 5) IN ('tp_bo', 'tp_ch', 'tp_se')),
-    CONSTRAINT ck_ntm_topic_layer    CHECK (substr(topic_id, 1, 5) = 'tp_kx'),
-    CONSTRAINT ck_ntm_textbook       CHECK (textbook_id GLOB 'tb_*' AND length(textbook_id) = 11),
-    CONSTRAINT ck_ntm_sort           CHECK (sort_order >= 0),
-    CONSTRAINT fk_ntm_outline  FOREIGN KEY (outline_node_id) REFERENCES topics (id)     ON DELETE CASCADE,
-    CONSTRAINT fk_ntm_topic    FOREIGN KEY (topic_id)       REFERENCES topics (id)     ON DELETE CASCADE,
-    CONSTRAINT fk_ntm_textbook FOREIGN KEY (textbook_id)    REFERENCES textbooks (id)  ON DELETE CASCADE
+CREATE UNIQUE INDEX ux_question_answers_primary
+    ON question_answers (question_id) WHERE is_primary = 1;
+-- 备注：1 对 1，只存 remark 原文
+-- [功能注释] 题目备注从表：与题目 1 对 1，只存备注原文
+CREATE TABLE question_remarks (
+    question_id TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 备注原文，与题目 1 对 1，只存 Markdown/LaTeX 原文
+    remark      TEXT NOT NULL
 );
--- 按版本取大纲子集、按考向反查它在哪些版本出现过，都靠这两条索引。
-CREATE INDEX idx_ntm_textbook ON node_topic_map (textbook_id, outline_node_id);
-CREATE INDEX idx_ntm_topic    ON node_topic_map (topic_id);
+-- 解析从表：完整解析原文，不再写入主表；方法/思想/素养统一由解析侧关联表承载
+-- [功能注释] 解析从表：存完整解析原文，支持一题多解
+CREATE TABLE question_solutions (
+    id          INTEGER PRIMARY KEY,
+    question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 解析原文，允许 Markdown/LaTeX
+    content     TEXT NOT NULL,
+    -- [字段注释] 是否主解析，1 表示主解析，同一题最多一条
+    is_primary  INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+    -- [字段注释] 多种解法的展示排序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 
--- 题库元信息：来源说明、结构版本等键值对，不参与业务查询。
-CREATE TABLE bank_meta (
-    key    TEXT NOT NULL,
-    value  TEXT NOT NULL,
-    CONSTRAINT pk_bank_meta PRIMARY KEY (key)
+CREATE UNIQUE INDEX ux_question_solutions_primary
+    ON question_solutions (question_id) WHERE is_primary = 1;
+-- 题目补充从表：思路、分析、易错点、点睛等教研杂项，按命名空间行存储，不使用嵌套格式
+-- [功能注释] 题目补充从表：存思路、分析、易错点、点睛等教研杂项，不写入主表
+CREATE TABLE question_supplements (
+    id          INTEGER PRIMARY KEY,
+    question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 补充内容的命名空间，如思路 / 分析 / 易错点 / 点睛
+    namespace   TEXT NOT NULL,
+    -- [字段注释] 命名空间内的字段名，同一题目同一命名空间内唯一
+    field_key   TEXT NOT NULL,
+    -- [字段注释] 补充字段的原文内容，允许 Markdown/LaTeX
+    field_value TEXT NOT NULL,
+    -- [字段注释] 同一题目补充内容的展示排序，数值越小越靠前
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (question_id, namespace, field_key)
 );
+-- [功能注释] 题目统计从表：与题目 1 对 1，记录被题目来源引用的次数，由触发器自动记账
+CREATE TABLE question_statistics (
+    question_id     TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+    -- [字段注释] 被题目来源引用的次数，由触发器在来源关系增删时自动加减
+    reference_count INTEGER NOT NULL DEFAULT 0
+);
+-- [功能注释] 题目与考向关联表：题目直接挂靠考向，支撑按考向一键组卷与生成讲义
+CREATE TABLE question_exam_map (
+    question_id       TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    exam_direction_id INTEGER NOT NULL
+                      REFERENCES dim_exam_directions(id) ON DELETE RESTRICT,
+    PRIMARY KEY (question_id, exam_direction_id)
+) WITHOUT ROWID;
+-- [功能注释] 题目与知识点关联表：题目直接绑定底层概念，支撑概念级检索与统计
+CREATE TABLE question_knowledge_map (
+    question_id        TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    knowledge_point_id INTEGER NOT NULL
+                       REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
+    PRIMARY KEY (question_id, knowledge_point_id)
+) WITHOUT ROWID;
+-- [功能注释] 题目来源关系：题目与题目来源多对多，承载题号与分值
+CREATE TABLE question_source_map (
+    question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    source_id   INTEGER NOT NULL REFERENCES dim_sources(id) ON DELETE RESTRICT,
+    -- [字段注释] 题目在该来源中的题号，可为空
+    question_no TEXT,
+    -- [字段注释] 该题在该来源中的分值，非负，默认 0
+    score       REAL NOT NULL DEFAULT 0 CHECK (score >= 0),
+    PRIMARY KEY (question_id, source_id)
+) WITHOUT ROWID;
+-- [功能注释] 学科思想字典：存学科思想名称与编码，供解析思想关联引用
+CREATE TABLE dict_subject_thoughts (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 学科思想名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 学科思想编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 所属学科外键，区分数学思想、物理守恒思想、化学平衡思想等
+    subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有思想填入对应年级
+    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+);
+-- [功能注释] 解题方法字典：存解题方法名称与编码，供解析方法关联引用
+CREATE TABLE dict_solution_methods (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 解题方法名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 解题方法编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 所属学科外键，区分数学、物理、化学等学科的方法体系
+    subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有方法填入对应年级
+    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+);
+-- [功能注释] 核心素养字典：存核心素养名称与编码，供解析素养关联引用
+CREATE TABLE dict_core_competencies (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 核心素养名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 核心素养编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 所属学科外键，区分各学科核心素养体系
+    subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有素养填入对应年级
+    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+);
+-- [功能注释] 解析与学科思想关联表：解析与学科思想多对多，解析删除时级联清理
+CREATE TABLE solution_thought_map (
+    solution_id INTEGER NOT NULL
+                REFERENCES question_solutions(id) ON DELETE CASCADE,
+    thought_id  INTEGER NOT NULL
+                REFERENCES dict_subject_thoughts(id) ON DELETE RESTRICT,
+    PRIMARY KEY (solution_id, thought_id)
+) WITHOUT ROWID;
+-- [功能注释] 解析与解题方法关联表：解析与解题方法多对多，解析删除时级联清理
+CREATE TABLE solution_method_map (
+    solution_id INTEGER NOT NULL
+                REFERENCES question_solutions(id) ON DELETE CASCADE,
+    method_id   INTEGER NOT NULL
+                REFERENCES dict_solution_methods(id) ON DELETE RESTRICT,
+    PRIMARY KEY (solution_id, method_id)
+) WITHOUT ROWID;
+-- [功能注释] 解析与核心素养关联表：解析与核心素养多对多，解析删除时级联清理
+CREATE TABLE solution_competency_map (
+    solution_id   INTEGER NOT NULL
+                  REFERENCES question_solutions(id) ON DELETE CASCADE,
+    competency_id INTEGER NOT NULL
+                  REFERENCES dict_core_competencies(id) ON DELETE RESTRICT,
+    PRIMARY KEY (solution_id, competency_id)
+) WITHOUT ROWID;
+
+CREATE INDEX ix_dim_textbooks_subject ON dim_textbooks (subject_id);
+CREATE INDEX ix_dim_textbooks_grade ON dim_textbooks (grade_id);
+CREATE INDEX ix_dim_textbook_chapters_textbook
+    ON dim_textbook_chapters (textbook_id);
+CREATE INDEX ix_dim_textbook_chapters_parent ON dim_textbook_chapters (parent_id);
+CREATE INDEX ix_dim_schools_short ON dim_schools (short_name);
+CREATE INDEX ix_dim_schools_textbook ON dim_schools (textbook_id);
+CREATE INDEX ix_dim_sources_grade ON dim_sources (grade_id);
+CREATE INDEX ix_dim_sources_chapter ON dim_sources (chapter_id);
+CREATE INDEX ix_dim_sources_school ON dim_sources (school_id);
+CREATE INDEX ix_dim_knowledge_points_subject
+    ON dim_knowledge_points (subject_id);
+CREATE INDEX ix_dim_knowledge_points_grade
+    ON dim_knowledge_points (grade_id);
+CREATE INDEX ix_dim_knowledge_points_parent
+    ON dim_knowledge_points (parent_id);
+CREATE INDEX ix_dim_exam_directions_subject
+    ON dim_exam_directions (subject_id);
+CREATE INDEX ix_dim_exam_directions_grade
+    ON dim_exam_directions (grade_id);
+CREATE INDEX ix_dim_exam_directions_chapter
+    ON dim_exam_directions (chapter_id);
+CREATE INDEX ix_dict_subject_thoughts_subject
+    ON dict_subject_thoughts (subject_id);
+CREATE INDEX ix_dict_subject_thoughts_grade
+    ON dict_subject_thoughts (grade_id);
+CREATE INDEX ix_dict_solution_methods_subject
+    ON dict_solution_methods (subject_id);
+CREATE INDEX ix_dict_solution_methods_grade
+    ON dict_solution_methods (grade_id);
+CREATE INDEX ix_dict_core_competencies_subject
+    ON dict_core_competencies (subject_id);
+CREATE INDEX ix_dict_core_competencies_grade
+    ON dict_core_competencies (grade_id);
+CREATE INDEX ix_ingest_batches_status ON ingest_batches (status);
+CREATE INDEX ix_raw_questions_batch ON raw_questions (batch_id);
+CREATE INDEX ix_raw_questions_status ON raw_questions (status);
+CREATE INDEX ix_raw_questions_content_hash ON raw_questions (content_hash);
+CREATE INDEX ix_questions_subject ON questions (subject_id);
+CREATE INDEX ix_questions_type ON questions (question_type_id);
+CREATE INDEX ix_questions_difficulty ON questions (difficulty_id);
+CREATE INDEX ix_questions_quality ON questions (quality_id);
+CREATE INDEX ix_questions_raw ON questions (raw_id);
+CREATE INDEX ix_questions_deleted ON questions (deleted_at);
+CREATE INDEX ix_question_options_question ON question_options (question_id);
+CREATE INDEX ix_question_images_question ON question_images (question_id);
+CREATE INDEX ix_question_images_option ON question_images (option_id);
+CREATE INDEX ix_question_answers_question ON question_answers (question_id);
+CREATE INDEX ix_question_solutions_question ON question_solutions (question_id);
+CREATE INDEX ix_question_supplements_question ON question_supplements (question_id);
+CREATE INDEX ix_knowledge_exam_map_exam_direction
+    ON knowledge_exam_map (exam_direction_id);
+CREATE INDEX ix_question_exam_map_exam_direction
+    ON question_exam_map (exam_direction_id);
+CREATE INDEX ix_question_knowledge_map_knowledge_point
+    ON question_knowledge_map (knowledge_point_id);
+CREATE INDEX ix_question_source_map_source ON question_source_map (source_id);
+CREATE INDEX ix_solution_thought_map_thought
+    ON solution_thought_map (thought_id);
+CREATE INDEX ix_solution_method_map_method
+    ON solution_method_map (method_id);
+CREATE INDEX ix_solution_competency_map_competency
+    ON solution_competency_map (competency_id);
+
+-- 外部内容 FTS5：仅索引题干；答案与解析位于从表，查重由 Python 层复核
+CREATE VIRTUAL TABLE questions_fts USING fts5(
+    stem,
+    content = 'questions',
+    content_rowid = 'rowid',
+    tokenize = 'unicode61'
+);
+
+CREATE TRIGGER trg_questions_fts_insert AFTER INSERT ON questions BEGIN
+    INSERT INTO questions_fts (rowid, stem)
+    VALUES (new.rowid, new.stem);
+END;
+
+CREATE TRIGGER trg_questions_fts_delete AFTER DELETE ON questions BEGIN
+    INSERT INTO questions_fts (questions_fts, rowid, stem)
+    VALUES ('delete', old.rowid, old.stem);
+END;
+
+CREATE TRIGGER trg_questions_fts_update AFTER UPDATE OF stem ON questions BEGIN
+    INSERT INTO questions_fts (questions_fts, rowid, stem)
+    VALUES ('delete', old.rowid, old.stem);
+    INSERT INTO questions_fts (rowid, stem)
+    VALUES (new.rowid, new.stem);
+END;
+
+-- 统计从表自动记账：题目落库即初始化计数，来源关系增删即同步增减
+CREATE TRIGGER trg_questions_statistics_init AFTER INSERT ON questions BEGIN
+    INSERT INTO question_statistics (question_id, reference_count)
+    VALUES (new.id, 0);
+END;
+
+CREATE TRIGGER trg_question_source_map_statistics_insert
+AFTER INSERT ON question_source_map BEGIN
+    UPDATE question_statistics
+    SET reference_count = reference_count + 1
+    WHERE question_id = new.question_id;
+END;
+
+CREATE TRIGGER trg_question_source_map_statistics_delete
+AFTER DELETE ON question_source_map BEGIN
+    UPDATE question_statistics
+    SET reference_count = reference_count - 1
+    WHERE question_id = old.question_id;
+END;
+
+PRAGMA user_version = 2;
+
+COMMIT;

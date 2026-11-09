@@ -81,8 +81,8 @@ class PendingApiContractTest(unittest.TestCase):
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        # 建库只认插件包里的冻结 schema.sql，测试沙箱必须带上同一份
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+        # v1 兼容链路只认底座自带的旧 schema，测试沙箱必须带上同一份
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
         # S6m·夹具起动竞态修法（同 PoolEvictionHttpTest.setUpClass 的现成先例）：主库
         # 由**测试自己**在 Popen 之前按冻结 schema 建好。后台初查线程会先把
@@ -659,7 +659,7 @@ class PoolEvictionHttpTest(unittest.TestCase):
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
         # 主库由**测试自己**按冻结 schema 建出来。上一台服务不需要这一步：它关着自动抽走，
         # 库是 ``approve`` 那一次「缺库才建」顺手建起来的；这一台开着抽走，
@@ -1109,7 +1109,7 @@ class FinalGateHttpTest(PoolEvictionHttpTest):
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         seed_dir = cls.plugins_dir / PLUGIN_ID / "bank"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql",
+        shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
         from app.core import bank_schema
 

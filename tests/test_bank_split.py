@@ -38,7 +38,7 @@ ENGINE = "org.jiuzhang.bank-engine"
 UI = "org.jiuzhang.bank-ui"
 LEGACY = "org.jiuzhang.core-bank"
 PAPER = "org.jiuzhang.paper-gen"
-BASELINE = ROOT / "plugins" / ENGINE / "bank" / "v063.db"
+BASELINE = ROOT / "tests" / "fixtures" / "v063.db"
 STAMP = "2026-01-15T09:00:00+08:00"
 
 

@@ -42,9 +42,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _make_bank_db(path: Path, questions: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        candidate = Path(str(path) + suffix)
+        if candidate.exists():
+            candidate.unlink()
     con = sqlite3.connect(path)
     try:
-        con.executescript((ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql").read_text(encoding="utf-8"))
+        con.executescript((ROOT / "app" / "legacy" / "bank_schema_v1.sql").read_text(encoding="utf-8"))
         now = "2026-10-24T00:00:00+08:00"
         for index in range(questions):
             con.execute(

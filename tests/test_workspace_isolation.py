@@ -155,7 +155,7 @@ class LayoutTest(_TempEnv):
 
     def test_04_import_workspace_lands_plugins_and_state(self) -> None:
         source = self.root / "source.db"
-        schema = (ROOT / "plugins" / PROVIDER / "bank" / "schema.sql").read_text(encoding="utf-8")
+        schema = (ROOT / "app" / "legacy" / "bank_schema_v1.sql").read_text(encoding="utf-8")
         con = sqlite3.connect(source)
         try:
             con.executescript(schema)

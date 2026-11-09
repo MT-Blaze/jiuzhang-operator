@@ -148,12 +148,25 @@ def _log_plugin_dependency_problems() -> None:
         logger.warning("插件依赖不满足：%s", row.get("reason") or row.get("id"))
 
 
+def _ensure_bank_engine() -> None:
+    """题库引擎 v2 自举：首次启动自动建 31 表并落全量种子，已有合法库直接复用。"""
+    try:
+        from app.bank_engine.builder import build_engine
+
+        report = build_engine()
+    except Exception:  # noqa: BLE001 - 引擎自举失败不得挡住底座启动
+        logger.exception("题库引擎 v2 自举失败，已跳过；可运行 scripts/build_bank_engine.py 重建")
+        return
+    logger.info("题库引擎 v2 就绪：%s（本次新建=%s）", report.db_path, report.created)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # 军令 #18：先装载工作区指针、迁移旧全局数据并生成 plugins/ 结构，
     # 之后所有插件路径才按当前工作区求值。
     workspace_bootstrap.bootstrap()
     init_db()
+    _ensure_bank_engine()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     _log_plugin_dependency_problems()
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；

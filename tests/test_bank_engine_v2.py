@@ -1,0 +1,233 @@
+"""题库引擎 v2 契约测试：31 表结构、全量种子、自动建库与无 JSON 的 DAO。
+
+守的底线：
+1. 自动建库后计数与沙盒验收库一致，integrity / foreign_key 双绿；
+2. 按考向、按知识点查题只走「单驱动表 + 分片回表」，能完整装配整题；
+3. 新代码无 ``import json``，单文件不超过 500 行。
+
+运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_engine_v2``
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+
+from app.bank_engine import builder, service
+from app.bank_engine import paths as engine_paths
+from app.bank_engine.seeding import EXPECTED_COUNTS
+
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+ENGINE_DIR = ROOT / "app" / "bank_engine"
+BUILD_SCRIPT = ROOT / "scripts" / "build_bank_engine.py"
+SAMPLE_QUESTION = "q_test0001"
+SAMPLE_DIRECTION = 1
+SAMPLE_POINT = 9001
+
+
+def _insert_sample(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO questions (id, stem, subject_id, question_type_id, difficulty_id, quality_id) "
+        "VALUES (?, ?, 2, 1, 2, 2)",
+        (SAMPLE_QUESTION, "已知集合 $A=\\{1,2\\}$，判断 1 与 A 的关系。"),
+    )
+    conn.executemany(
+        "INSERT INTO question_options (question_id, option_label, content, is_correct) "
+        "VALUES (?, ?, ?, ?)",
+        [
+            (SAMPLE_QUESTION, "A", "$1\\in A$", 1),
+            (SAMPLE_QUESTION, "B", "$1\\notin A$", 0),
+        ],
+    )
+    conn.execute(
+        "INSERT INTO question_answers (question_id, answer_content, is_primary) VALUES (?, ?, 1)",
+        (SAMPLE_QUESTION, "A"),
+    )
+    conn.execute(
+        "INSERT INTO question_solutions (question_id, content, is_primary) VALUES (?, ?, 1)",
+        (SAMPLE_QUESTION, "由集合列举法直接读出。"),
+    )
+    conn.execute(
+        "INSERT INTO question_remarks (question_id, remark) VALUES (?, ?)",
+        (SAMPLE_QUESTION, "概念辨析题"),
+    )
+    conn.execute(
+        "INSERT INTO question_supplements (question_id, namespace, field_key, field_value) "
+        "VALUES (?, '思路', '主线', '先看元素是否在列举集合中')",
+        (SAMPLE_QUESTION,),
+    )
+    conn.execute(
+        "INSERT INTO dim_sources (id, name, code, exam_type, year, region, school_id) "
+        "VALUES (1, '沙盒联调卷', 'src_test0001', '自编题', 2026, '北京', 1)"
+    )
+    conn.execute(
+        "INSERT INTO question_source_map (question_id, source_id, question_no, score) "
+        "VALUES (?, 1, '1', 5.0)",
+        (SAMPLE_QUESTION,),
+    )
+    conn.execute(
+        "INSERT INTO question_exam_map (question_id, exam_direction_id) VALUES (?, ?)",
+        (SAMPLE_QUESTION, SAMPLE_DIRECTION),
+    )
+    conn.execute(
+        "INSERT INTO question_knowledge_map (question_id, knowledge_point_id) VALUES (?, ?)",
+        (SAMPLE_QUESTION, SAMPLE_POINT),
+    )
+    conn.commit()
+
+
+class EngineBuildTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp(prefix="engine-v2-"))
+        cls.db_path = cls.tmp / "nested" / "engine.v2.db"
+        cls.report = builder.build_engine(db_path=cls.db_path, schema=SCHEMA)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, True)
+
+    def test_build_reports_all_expected_counts(self) -> None:
+        self.assertTrue(self.report.created)
+        self.assertEqual(self.report.counts, EXPECTED_COUNTS)
+        self.assertEqual(self.report.counts["dim_knowledge_points"], 11318)
+        self.assertEqual(self.report.counts["dim_textbook_chapters"], 3528)
+        self.assertEqual(self.report.counts["dim_schools"], 347)
+        self.assertEqual(self.report.counts["dim_exam_directions"], 373)
+
+    def test_existing_database_is_reused(self) -> None:
+        again = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
+        self.assertFalse(again.created)
+        self.assertEqual(again.counts, EXPECTED_COUNTS)
+
+    def test_status_reports_integrity_and_foreign_keys(self) -> None:
+        report = service.status(self.db_path)
+        self.assertEqual(report.schema_version, 2)
+        self.assertEqual(report.integrity, "ok")
+        self.assertEqual(report.foreign_key_violations, 0)
+        self.assertGreaterEqual(report.table_count, 31)
+
+    def test_missing_database_is_built_on_demand(self) -> None:
+        fresh = self.tmp / "on-demand.v2.db"
+        report = service.status(fresh)
+        self.assertTrue(fresh.is_file())
+        self.assertEqual(report.schema_version, 2)
+        self.assertEqual(report.counts["dim_knowledge_points"], 11318)
+
+
+class EngineDaoTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp(prefix="engine-dao-"))
+        cls.db_path = cls.tmp / "engine.v2.db"
+        builder.build_engine(db_path=cls.db_path, schema=SCHEMA)
+        conn = sqlite3.connect(cls.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            _insert_sample(conn)
+        finally:
+            conn.close()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, True)
+
+    def test_exam_directions_list_and_count(self) -> None:
+        items, total = service.exam_directions(subject_id=2, limit=5, db_path=self.db_path)
+        self.assertEqual(total, 309)
+        self.assertEqual(len(items), 5)
+        self.assertTrue(all(item.subject_id == 2 for item in items))
+
+    def test_questions_by_exam_direction(self) -> None:
+        page = service.questions_of_direction(
+            SAMPLE_DIRECTION, limit=10, db_path=self.db_path
+        )
+        self.assertEqual(page.total, 1)
+        summary = page.items[0]
+        self.assertEqual(summary.id, SAMPLE_QUESTION)
+        self.assertEqual(summary.question_type, "choice")
+        self.assertEqual(summary.difficulty, "L2")
+        self.assertEqual(summary.quality, "NORMAL")
+
+    def test_questions_by_knowledge_point(self) -> None:
+        page = service.questions_of_point(SAMPLE_POINT, db_path=self.db_path)
+        self.assertEqual(page.total, 1)
+        self.assertEqual(page.items[0].id, SAMPLE_QUESTION)
+
+    def test_question_assembly_is_complete(self) -> None:
+        record = service.question(SAMPLE_QUESTION, db_path=self.db_path)
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(len(record.options), 2)
+        self.assertTrue(record.options[0].is_correct)
+        self.assertEqual(record.answers[0].content, "A")
+        self.assertEqual(record.solutions[0].content, "由集合列举法直接读出。")
+        self.assertEqual(record.remarks, ("概念辨析题",))
+        self.assertEqual(record.supplements[0].namespace, "思路")
+        self.assertEqual(record.sources[0].school_name, "黑山县第二高级中学")
+        self.assertEqual(record.sources[0].score, 5.0)
+        self.assertEqual(record.exam_directions[0].id, SAMPLE_DIRECTION)
+        self.assertEqual(record.knowledge_points[0].id, SAMPLE_POINT)
+
+    def test_missing_question_returns_none(self) -> None:
+        self.assertIsNone(service.question("q_missing", db_path=self.db_path))
+
+    def test_pagination_bounds_are_validated(self) -> None:
+        with self.assertRaises(ValueError):
+            service.questions_of_direction(SAMPLE_DIRECTION, limit=0, db_path=self.db_path)
+        with self.assertRaises(ValueError):
+            service.questions_of_point(SAMPLE_POINT, offset=-1, db_path=self.db_path)
+
+    def test_knowledge_tree_keeps_hierarchy(self) -> None:
+        roots = service.knowledge_tree(2, db_path=self.db_path)
+        self.assertEqual(len(roots), 198)
+        self.assertEqual(roots[0].point.name, "函数")
+        self.assertGreater(len(roots[0].children), 0)
+
+    def test_textbooks_and_chapters(self) -> None:
+        books = service.textbooks(subject_id=2, grade_id=10, db_path=self.db_path)
+        self.assertTrue(books)
+        chapters = service.chapters(books[0].id, db_path=self.db_path)
+        self.assertTrue(chapters)
+        self.assertTrue(all(chapter.parent_id is None for chapter in chapters))
+
+
+class EngineSourceHygieneTest(unittest.TestCase):
+    def test_no_json_import_in_new_engine_code(self) -> None:
+        pattern = re.compile(r"^\s*(?:import\s+json|from\s+json\s+import)", re.MULTILINE)
+        offenders = [
+            path.name
+            for path in ENGINE_DIR.rglob("*.py")
+            if pattern.search(path.read_text(encoding="utf-8"))
+        ]
+        if pattern.search(BUILD_SCRIPT.read_text(encoding="utf-8")):
+            offenders.append(BUILD_SCRIPT.name)
+        self.assertEqual(offenders, [])
+
+    def test_no_json_files_in_engine_tree(self) -> None:
+        self.assertEqual(list(ENGINE_DIR.rglob("*.json")), [])
+        self.assertEqual(list((ROOT / "plugins" / "org.jiuzhang.bank-engine").rglob("*.json")), [])
+
+    def test_engine_files_stay_under_500_lines(self) -> None:
+        oversized = {
+            path.relative_to(ROOT).as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+            for path in [*ENGINE_DIR.rglob("*.py"), BUILD_SCRIPT]
+            if len(path.read_text(encoding="utf-8").splitlines()) > 500
+        }
+        self.assertEqual(oversized, {})
+
+    def test_schema_is_the_31_table_contract(self) -> None:
+        body = SCHEMA.read_text(encoding="utf-8")
+        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 31)
+        self.assertEqual(len(builder.BASE_TABLES), 31)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

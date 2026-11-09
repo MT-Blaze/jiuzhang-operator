@@ -1,13 +1,11 @@
 """core-bank 引擎的地基：库文件从哪来、结构怎么建怎么升、以及通用编解码原语。
 
-七张关系表的建库与升级全在这一层：``ensure_bank`` 把包内 ``bank/bank.db`` 原子复制成工作区副本，
-``_check_structure`` 按 ``bank/schema.sql`` 守卫结构，``upgrade_structure`` 走 v0.8.2 的
-「考向并集 + 教材版本映射」升级（自检不过整事务回滚）。
+七张关系表的建库与升级全在这一层：``ensure_bank`` 原子复制工作区库，
+``_check_structure`` 守卫结构，``upgrade_structure`` 走 v0.8.2 升级（自检不过整事务回滚）。
 常量与错误类型也是这一层的对外口径——表名、列名、层别码只从这里取，绝不接受插件输入。
 
-上层按域分工：编解码与出参装配见 bank_codec.py，过滤与读取见 bank_query.py，
-写入路径见 bank_write.py，看板见 bank_dashboard.py，人工审核与改删见 bank_review.py；
-对外仍然只有 ``app.core.bank`` 一个入口。"""
+上层按域分工：编解码 bank_codec.py、查询 bank_query.py、写入 bank_write.py、看板 bank_dashboard.py、审核 bank_review.py；对外入口仍是 ``app.core.bank``。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +17,7 @@ import sqlite3
 import threading
 from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 from app.core.config import DEFAULT_WORKSPACE_ID, current_workspace_id, plugins_dir, settings
+from app.legacy import LEGACY_SCHEMA_PATH
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -153,7 +152,8 @@ def _seed_path(plugin_id: str) -> Path:
 
 
 def _schema_path(plugin_id: str) -> Path:
-    """冻结表结构的唯一事实来源：插件包里的 bank/schema.sql。"""
+    if plugin_id == DEFAULT_PROVIDER_ID:
+        return LEGACY_SCHEMA_PATH
     return plugins_dir() / plugin_id / "bank" / "schema.sql"
 
 
