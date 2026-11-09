@@ -13,7 +13,7 @@
   2. 点入口开画布页签，iframe 沙箱为 allow-scripts allow-modals，activate 回 ready（底栏 plugin.mounted）；
   3. 四张卡片渲染出真实数字，且总题数与后端 /api/bank/dashboard/stats 逐字一致；
   4. 热力图是 CSS Grid 绿格子：格子总数 = 365 + 周对齐补位，非零格数与后端按日计数一致；
-  5. 最近录入 ≤5 条；点击第一条 → 宿主打开活跃题库（core-bank）页签（system.open_bank 走白名单）；
+  5. 最近录入 ≤5 条；点击第一条 → 宿主打开录题工作台并载入该题（system.open_editor 走白名单）；
   6. 底栏出现「数据看板已就绪」；全程宿主页无未捕获 JS 错误。
 """
 import collections
@@ -36,6 +36,7 @@ PLUGIN_ID = "org.jiuzhang.dashboard"
 # 军令 #20：跳转目标是题库视图；合并后视图与数据引擎是同一个包。
 BANK_ID = "org.jiuzhang.bank-engine"
 ENGINE_ID = BANK_ID
+EDITOR_ID = "org.jiuzhang.editor"
 
 
 def wait_port(deadline_seconds: float) -> bool:
@@ -69,17 +70,17 @@ def run(tag: str) -> dict:
         report["checks"].append({"name": name, "ok": bool(ok), "detail": str(detail)[:400]})
         return bool(ok)
 
-    # 只读复制两个插件进隔离目录：看板本体 + 合并后的题库包
+    # 只读复制三个插件进隔离目录：看板本体 + 纯后台题库引擎 + 跳转目标录题工作台
     shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
-    for plugin_id in (ENGINE_ID,):
+    for plugin_id in (ENGINE_ID, EDITOR_ID):
         source = ROOT / "plugins" / plugin_id
         if source.is_dir():
             shutil.copytree(source, plugins_dir / plugin_id)
             report["notes"][plugin_id + "_copied"] = True
-    check("看板与合并后的题库包已复制进隔离目录",
+    check("看板、题库引擎与录题工作台已复制进隔离目录",
           (plugins_dir / PLUGIN_ID / "plugin.toml").is_file()
-          and (plugins_dir / BANK_ID / "plugin.toml").is_file()
-          and (plugins_dir / ENGINE_ID / "plugin.toml").is_file())
+          and (plugins_dir / ENGINE_ID / "plugin.toml").is_file()
+          and (plugins_dir / EDITOR_ID / "plugin.toml").is_file())
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)
@@ -147,8 +148,7 @@ def run(tag: str) -> dict:
             """)
             report["notes"]["sidebar_order"] = sidebar_first
             # 左栏顺序 = 用户排的序 + 树上还没有的按发现顺序追加（app/core/plugins.py
-            # _sidebar_with_unlisted 的既有设计），空树首启时 core-bank 天然排在 dashboard 前；
-            # 本判据只验「看板入口在不在、能不能点开」，不锁死第一位。
+            # _sidebar_with_unlisted 的既有设计）；本判据只验「看板入口在不在、能不能点开」，不锁死第一位。
             check("左栏列出数据看板", any("数据看板" in text for text in sidebar_first),
                   wire.dumps(sidebar_first, ensure_ascii=False))
             snap("00-sidebar")
@@ -254,7 +254,7 @@ def run(tag: str) -> dict:
             check("最近录入 ≤5 条且已渲染", 0 < len(recent) <= 5, wire.dumps(recent, ensure_ascii=False)[:200])
             snap("20-dashboard")
 
-            # 点击第一条最近题目 → system.open_bank → 宿主打开活跃题库页签
+            # 点击第一条最近题目 → system.open_editor → 宿主打开录题工作台
             real_frame.evaluate("""
             () => {
               const b = document.querySelector('.db-recent-link');
@@ -265,8 +265,8 @@ def run(tag: str) -> dict:
             tabs_after = page.evaluate("""
             () => Array.from(document.querySelectorAll('#wsTabs .ws-tab')).map(t => t.getAttribute('data-tab'))
             """)
-            check("点击最近题目跳转到题库页签（system.open_bank 走白名单）",
-                  f"plugin:{BANK_ID}" in tabs_after, wire.dumps(tabs_after))
+            check("点击最近题目跳转到录题工作台页签（system.open_editor 走白名单）",
+                  f"plugin:{EDITOR_ID}" in tabs_after, wire.dumps(tabs_after))
             dock_after = page.evaluate("""
             () => {
               const dock = document.getElementById('wsDockLog');
@@ -274,9 +274,9 @@ def run(tag: str) -> dict:
             }
             """)
             check("底栏记了跳转/未授权丢弃不得出现",
-                  ("已跳转到题库" in dock_after or "正在打开题库" in dock_after)
+                  ("已跳转到录题工作台" in dock_after or "正在跳转到录题工作台" in dock_after)
                   and "未授权事件" not in dock_after, dock_after[-300:])
-            snap("30-jumped-to-bank")
+            snap("30-jumped-to-editor")
 
             check("宿主页无未捕获 JS 错误", len(report["errors"]) == 0, report["errors"][:3])
             browser.close()

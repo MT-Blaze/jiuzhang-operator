@@ -15,7 +15,8 @@ rem    the legacy third-party database - clean-room rule 1 forbids shipping it, 
 rem    plugins\org.jiuzhang.bank-engine\bank\v063.db + v063_migrated.db (v0.6.3: structural baseline and
 rem    migration build artifacts; the runtime seed is bank.db only, so 1.7 MB of duplicate dbs stay out)
 rem    plugins\org.jiuzhang.core-bank\ (retired by order #20: only local bank.db / .bak leftovers remain
-rem    on this dev machine; bank-engine's merged webui replaces the old bank-ui, and the 456-question seed must never ship)
+rem    on this dev machine; bank-engine is a headless provider now, the old bank-ui is gone,
+rem    and the 456-question seed must never ship)
 rem  Keeps everything a receiver needs to run:
 rem    app, static, schemas, plugins, examples, docs, tests,
 rem    start.bat, requirements.txt, README and the guides, .env.example

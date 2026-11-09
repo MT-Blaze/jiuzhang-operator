@@ -4,7 +4,7 @@ name = "数据看板"
 version = "1.0.1"
 api_version = "1.0"
 kind = "renderer"
-description = "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达题库）。全部数据来自活跃题库的只读看板通道。"
+description = "录题战绩一览：总题数、今日入库、待审核、已落库四张数据卡片，过去 365 天的绿格子入库热力图，以及最近录入的 5 道题（点击直达录题工作台）。全部数据来自活跃题库的只读看板通道。"
 author = "九章算子"
 license = "Apache-2.0"
 min_host_version = "1.0.0"
@@ -24,7 +24,7 @@ singleton = true
 
 [bus]
 subscribe = ["question.updated", "system.question_updated"]
-publish = ["region.dock", "system.open_bank"]
+publish = ["region.dock", "system.open_editor"]
 
 [engine]
 host_version = "1.0.0"

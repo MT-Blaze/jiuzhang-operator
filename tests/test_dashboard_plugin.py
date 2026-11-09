@@ -3,11 +3,11 @@
 钉死五件事：
 1. 真实插件目录过全套 validate_plugin 契约，不被拒装；
 2. 左栏第一位：stage.priority 高于所有其他官方插件；
-3. 宿主接线：RELAY 白名单含两条看板通道，PUBLISH_ALLOW 含 system.open_bank，
-   且 openBank 的目标是「活跃 provider」而非写死的字面量；
+3. 宿主接线：RELAY 白名单含两条看板通道，PUBLISH_ALLOW 含 system.open_editor，
+   且 openEditor 的目标是「录题工作台」而非已退役的题库视图；
 4. 原生 DOM 铁律：插件三文件无 iframe、无重型框架、无远程资源、无 localStorage、
    无正则后行断言（AGENTS §6），请求 id 用官方无点号形状；
-5. 看板 UI 三件套齐全：四卡片 / 7 行 CSS Grid 热力图 / 最近 5 题可点击跳题库。
+5. 看板 UI 三件套齐全：四卡片 / 7 行 CSS Grid 热力图 / 最近 5 题可点击跳录题工作台。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_dashboard_plugin``
 """
@@ -73,18 +73,14 @@ class HostWiringTest(unittest.TestCase):
         self.assertIn('fetchJson("/api/bank/dashboard/stats")', STAGE)
         self.assertIn('fetchJson("/api/bank/dashboard/heatmap")', STAGE)
 
-    def test_02_open_bank_is_publish_allowed_and_view_routed(self) -> None:
-        self.assertIn('"system.open_bank"', STAGE)
-        self.assertIn('bus.on("system.open_bank"', STAGE)
-        self.assertIn("function openBank", STAGE)
-        # 军令 #20：跳转目标是声明 bank.view 的视图插件，不再把 provider 当页签打开
-        open_bank_body = STAGE[STAGE.index("function openBank"):]
-        # openBank 住在 stage_inbound.js，切片取到该模块的导出块为止（模块里最后一个函数就是它）
-        open_bank_body = open_bank_body[:open_bank_body.index("\n    return {\n")]
-        self.assertIn("loadBankView()", open_bank_body)
-        self.assertIn("findBankViewTab()", open_bank_body)
-        self.assertNotIn("org.jiuzhang.bank-engine", open_bank_body)
-        self.assertNotIn("org.jiuzhang.bank-ui", open_bank_body, "视图插件也要按能力找，不写死 id")
+    def test_02_recent_click_routes_to_editor(self) -> None:
+        self.assertIn('"system.open_editor"', STAGE)
+        self.assertIn('bus.on("system.open_editor"', STAGE)
+        self.assertIn("function openEditor", STAGE)
+        # 题库界面已退役：看板跳转改为打开录题工作台，不再依赖 bank.view 页签
+        self.assertIn('"system.open_editor"', PLUGIN_JS)
+        self.assertNotIn("system.open_bank", PLUGIN_JS)
+        self.assertIn("system.open_editor", MANIFEST["bus"]["publish"])
 
 
 class NativeDomHygieneTest(unittest.TestCase):
@@ -121,9 +117,9 @@ class DashboardUiContractTest(unittest.TestCase):
         self.assertIn("renderHeatmap", PLUGIN_JS)
         self.assertIn("bank.dashboard_heatmap", PLUGIN_JS)
 
-    def test_03_recent_five_clickable_to_bank(self) -> None:
+    def test_03_recent_five_clickable_to_editor(self) -> None:
         self.assertIn("db-recent-link", PLUGIN_JS)
-        self.assertIn("system.open_bank", PLUGIN_JS)
+        self.assertIn("system.open_editor", PLUGIN_JS)
         self.assertIn("question_id", PLUGIN_JS)
         self.assertIn("db-recent-link", PLUGIN_CSS)
         # 触控目标不小于 44px（AGENTS §6）

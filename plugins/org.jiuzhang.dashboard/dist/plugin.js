@@ -3,7 +3,7 @@
  *
  * 全部原生 DOM 渲染，无框架、无 iframe、无远程资源；数据只走宿主开放的两条
  * 只读通道 bank.dashboard_stats / bank.dashboard_heatmap（API_REFERENCE §2.12/§2.13）。
- * 点击最近题目发 system.open_bank 通知，由宿主打开活跃题库页签——插件之间不直连。
+ * 点击最近题目发 system.open_editor 通知，由宿主打开录题工作台并载入该题——插件之间不直连。
  */
 (function () {
   "use strict";
@@ -189,11 +189,11 @@
       var day = String(item.created_at || "").slice(0, 10);
       if (day) button.appendChild(el("span", "db-tag", day));
       button.addEventListener("click", function () {
-        // 跳转由宿主完成：打开活跃题库页签（插件之间不直连，AGENTS 铁律二）
-        notifyHost("system.open_bank", { question_id: item.id, from: "org.jiuzhang.dashboard" });
-        dock("正在跳转到题库，题目 " + item.id);
+        // 跳转由宿主完成：打开录题工作台并载入该题（插件之间不直连，AGENTS 铁律二）
+        notifyHost("system.open_editor", { question_id: item.id, from: "org.jiuzhang.dashboard" });
+        dock("正在跳转到录题工作台，题目 " + item.id);
       });
-      button.setAttribute("aria-label", "打开题库查看：" + (item.stem || item.id));
+      button.setAttribute("aria-label", "在录题工作台打开：" + (item.stem || item.id));
       li.appendChild(button);
       list.appendChild(li);
     });

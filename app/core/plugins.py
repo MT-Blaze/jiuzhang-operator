@@ -656,9 +656,9 @@ def discover_plugins() -> dict[str, Any]:
         if problem:
             info["enabled"] = False
 
-    installed = [info["id"] for info in plugins]
-    sidebar = plugin_state.prune_sidebar(prefs["sidebar"], set(installed))
-    tree = _sidebar_with_unlisted(sidebar, installed)
+    sidebar_ids = [info["id"] for info in plugins if info["show_in_sidebar"]]
+    sidebar = plugin_state.prune_sidebar(prefs["sidebar"], set(sidebar_ids))
+    tree = _sidebar_with_unlisted(sidebar, sidebar_ids)
     parents = plugin_state.folder_of(tree)
     for info in plugins:
         info["folder_id"] = parents.get("plugin:" + info["id"], "")
