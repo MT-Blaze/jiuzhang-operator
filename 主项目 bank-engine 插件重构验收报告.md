@@ -110,18 +110,19 @@ knowledge_tree(subject_id, grade_id=None) -> tuple[KnowledgeNode, ...]
 
 | 库 | 结构 | 题目数 | 处置 |
 | --- | --- | ---: | --- |
-| `data/banks/org.jiuzhang.bank-engine.db`（旧引擎库） | 17 表 | 0 | 原地保留，未删除 |
-| `data/banks/org.jiuzhang.core-bank.db`（退役 core-bank） | 17 表 | 456 | 原地保留，字节未动，作为真题回退源 |
-| `data/banks/org.jiuzhang.bank-engine.v2.db`（新心脏） | 31 业务表 + FTS | 0 | 新建，承接后续录题与组卷 |
+| `data/banks/org.jiuzhang.bank-engine.db`（旧引擎库） | 17 表 | 0 | 已移入归档目录，不再占用现役数据区 |
+| `data/banks/org.jiuzhang.core-bank.db`（退役 core-bank） | 17 表 | 456 | 已移入归档目录；按老师指示确认为历史测试数据，直接丢弃 |
+| `data/banks/org.jiuzhang.bank-engine.v2.db`（新心脏） | 31 业务表 + FTS | 0 | 现役唯一题库，承接后续录题与组卷 |
 
 合并结论：
 
 - 旧 `bank-engine` 库本身是空库（0 题），没有可迁移的题目，因此不存在题目复制与查重冲突；
-- 真正的 456 道真题位于已退役的 `core-bank` 旧库及工作区备份中，本次**未迁移、未改写**，避免在老师未确认口径前动真题；
+- 真正的 456 道真题是早期测试数据，老师已明确指示**直接丢弃、不做任何迁移**；新旧库之间零搬迁、零改写；
+- 全部旧库、旧测试库、旧备份与迁移报告已封存至 `E:\jiuzhang\_archive\legacy-bank-data-20261109`，现役 `data/banks/` 只保留 `org.jiuzhang.bank-engine.v2.db`；
 - 旧底座读写链路（录入、待审核、导入导出、看板）继续在 `app/legacy/bank_schema_v1.sql` 上运行，不再读取插件包；插件包 `bank/schema.sql` 专供 v2 引擎；
 - 新旧两条链路使用不同物理库，旧功能不回归，新引擎可独立扩展。
 
-后续如需把 456 道真题导入 v2，建议单独立项：按 `questions` 主表 + 从表逐条写入，来源题号落 `question_source_map`，查重走 `raw_questions.content_hash`，不触碰现有旧库。
+旧真题不再导入 v2；待前端录入界面就绪后，由老师直接重新录入新题开展测试。
 
 ---
 
@@ -146,6 +147,6 @@ v2 契约测试覆盖：建库计数、已有库复用、缺失库按需自建�
 
 ## 七、未完成事项与风险
 
-1. **456 道真题尚未进入 v2**：需老师确认后再做迁移，本次刻意不碰。
+1. **456 道旧真题已封存丢弃**：按老师指示不做迁移，新题等录入界面就绪后重新录入。
 2. **v2 尚未接入前端录入 / 待审核流程**：当前微内核以 Python 服务层与脚本提供能力，Host API 接线可作为下一阶段。
 3. **未 push**：主项目与沙盒均只做本地提交，等待老师最终检阅后统一推送。
