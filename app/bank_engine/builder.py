@@ -1,7 +1,8 @@
 """题库引擎 v2 的自动建库：按插件 schema 建 31 表，再灌入全量种子。
 
 建库在临时文件里完成，原子替换目标库；任何一步失败都不留下半成品。
-已有合法结构直接复用；只有显式 ``force`` 或结构损坏时才重建，重建前先备份。
+已有合法结构直接复用；低版本库先在原地迁移，只有显式 ``force`` 或结构损坏时才重建，
+重建前先备份。
 """
 
 from __future__ import annotations
@@ -109,6 +110,66 @@ def _backup_invalid(path: Path) -> Path | None:
     return target
 
 
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute("PRAGMA table_info(" + table + ")")}
+
+
+_TEACHING_TABLES = (
+    "dict_subject_thoughts",
+    "dict_solution_methods",
+    "dict_core_competencies",
+)
+
+
+def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
+    """v2 → v3：知识点/考向/教学字典去掉年级外键，教学字典改驻学段。
+
+    教学字典原有年级先折算成学段再删列，迁移不丢数据；整段在单事务内完成。
+    """
+    conn.isolation_level = None
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("BEGIN")
+        try:
+            for index in (
+                "ix_dim_knowledge_points_grade",
+                "ix_dim_exam_directions_grade",
+                "ix_dict_subject_thoughts_grade",
+                "ix_dict_solution_methods_grade",
+                "ix_dict_core_competencies_grade",
+            ):
+                conn.execute("DROP INDEX IF EXISTS " + index)
+            for table in _TEACHING_TABLES:
+                if "stage" not in _columns(conn, table):
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN stage TEXT")
+                    conn.execute(
+                        f"UPDATE {table} SET stage = (SELECT g.stage FROM dict_grades g "
+                        f"WHERE g.id = {table}.grade_id) WHERE grade_id IS NOT NULL"
+                    )
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS ix_{table}_stage ON {table} (stage)"
+                )
+            for table in ("dim_knowledge_points", "dim_exam_directions", *_TEACHING_TABLES):
+                if "grade_id" in _columns(conn, table):
+                    conn.execute(f"ALTER TABLE {table} DROP COLUMN grade_id")
+            conn.execute(f"PRAGMA user_version = {paths.SCHEMA_VERSION}")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
+def migrate(conn: sqlite3.Connection, version: int) -> bool:
+    if version == paths.SCHEMA_VERSION:
+        return False
+    if version != 2:
+        raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
+    _migrate_v2_to_v3(conn)
+    return True
+
+
 def _build_into(path: Path, schema: Path) -> dict[str, int]:
     temp = path.with_name(path.name + ".part")
     for suffix in ("", "-wal", "-shm", "-journal"):
@@ -148,6 +209,8 @@ def build_engine(
         conn = sqlite3.connect(target, timeout=10.0)
         try:
             conn.execute("PRAGMA foreign_keys = ON")
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            migrate(conn, version)
             counts = validate_connection(conn, require_seeds=False)
         except (sqlite3.Error, EngineBuildError):
             conn.close()

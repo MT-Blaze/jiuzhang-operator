@@ -108,7 +108,7 @@ class EngineBuildTest(unittest.TestCase):
 
     def test_status_reports_integrity_and_foreign_keys(self) -> None:
         report = service.status(self.db_path)
-        self.assertEqual(report.schema_version, 2)
+        self.assertEqual(report.schema_version, 3)
         self.assertEqual(report.integrity, "ok")
         self.assertEqual(report.foreign_key_violations, 0)
         self.assertGreaterEqual(report.table_count, 31)
@@ -117,7 +117,7 @@ class EngineBuildTest(unittest.TestCase):
         fresh = self.tmp / "on-demand.v2.db"
         report = service.status(fresh)
         self.assertTrue(fresh.is_file())
-        self.assertEqual(report.schema_version, 2)
+        self.assertEqual(report.schema_version, 3)
         self.assertEqual(report.counts["dim_knowledge_points"], 11318)
 
 
@@ -342,7 +342,30 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 31)
         self.assertEqual(len(builder.BASE_TABLES), 31)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 2)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 3)
+
+    def test_dictionaries_carry_stage_instead_of_grade(self) -> None:
+        body = SCHEMA.read_text(encoding="utf-8")
+
+        def ddl(table: str) -> str:
+            block = re.search(
+                r"CREATE TABLE " + table + r" \((.*?)\n\);", body, re.DOTALL
+            )
+            self.assertIsNotNone(block, table)
+            assert block is not None
+            return block.group(1)
+
+        for table in (
+            "dim_knowledge_points",
+            "dim_exam_directions",
+            "dict_subject_thoughts",
+            "dict_solution_methods",
+            "dict_core_competencies",
+        ):
+            self.assertNotIn("grade_id", ddl(table), table)
+        for table in ("dict_subject_thoughts", "dict_solution_methods", "dict_core_competencies"):
+            self.assertIn("stage      TEXT", ddl(table), table)
+            self.assertIn(f"ix_{table}_stage", body)
 
 
 if __name__ == "__main__":

@@ -93,7 +93,7 @@ def load_exam_directions(
 ) -> dict[int, ExamDirection]:
     rows = load_rows_by_ids(
         conn,
-        "SELECT id, name, code, sort_order, subject_id, grade_id, chapter_id, description "
+        "SELECT id, name, code, sort_order, subject_id, chapter_id, description "
         "FROM dim_exam_directions",
         ids,
     )
@@ -104,7 +104,6 @@ def load_exam_directions(
             code=str(row["code"]),
             sort_order=int(row["sort_order"]),
             subject_id=int(row["subject_id"]),
-            grade_id=None if row["grade_id"] is None else int(row["grade_id"]),
             chapter_id=None if row["chapter_id"] is None else int(row["chapter_id"]),
             description=None if row["description"] is None else str(row["description"]),
         )
@@ -117,7 +116,7 @@ def load_knowledge_points(
 ) -> dict[int, KnowledgePoint]:
     rows = load_rows_by_ids(
         conn,
-        "SELECT id, name, code, sort_order, subject_id, grade_id, parent_id "
+        "SELECT id, name, code, sort_order, subject_id, parent_id "
         "FROM dim_knowledge_points",
         ids,
     )
@@ -128,7 +127,6 @@ def load_knowledge_points(
             code=str(row["code"]),
             sort_order=int(row["sort_order"]),
             subject_id=int(row["subject_id"]),
-            grade_id=None if row["grade_id"] is None else int(row["grade_id"]),
             parent_id=None if row["parent_id"] is None else int(row["parent_id"]),
         )
         for row in rows.values()

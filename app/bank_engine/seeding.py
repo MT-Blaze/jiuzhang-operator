@@ -89,7 +89,7 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
         statements.append(
             (
                 f"INSERT INTO {table} "
-                "(id, code, name, sort_order, subject_id, grade_id) "
+                "(id, code, name, sort_order, subject_id, stage) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 tuple(rows),
             )
@@ -110,14 +110,14 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             ),
             (
                 "INSERT INTO dim_knowledge_points "
-                "(id, code, name, sort_order, subject_id, grade_id, parent_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(id, code, name, sort_order, subject_id, parent_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 knowledge,
             ),
             (
                 "INSERT INTO dim_exam_directions "
-                "(id, name, code, sort_order, subject_id, grade_id, chapter_id, description) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, name, code, sort_order, subject_id, chapter_id, description) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 directions,
             ),
             (

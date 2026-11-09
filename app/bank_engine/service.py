@@ -89,7 +89,6 @@ def status(db_path: Path | None = None) -> EngineStatus:
 def exam_directions(
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     chapter_id: int | None = None,
     keyword: str | None = None,
     limit: int = 100,
@@ -101,7 +100,6 @@ def exam_directions(
         items = dao_dimensions.list_exam_directions(
             conn,
             subject_id=subject_id,
-            grade_id=grade_id,
             chapter_id=chapter_id,
             keyword=keyword,
             limit=limit,
@@ -110,7 +108,6 @@ def exam_directions(
         total = dao_dimensions.count_exam_directions(
             conn,
             subject_id=subject_id,
-            grade_id=grade_id,
             chapter_id=chapter_id,
             keyword=keyword,
         )
@@ -139,7 +136,6 @@ def questions_of_direction(
 def knowledge_points(
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     parent_id: int | None = None,
     roots_only: bool = False,
     keyword: str | None = None,
@@ -152,7 +148,6 @@ def knowledge_points(
         items = dao_dimensions.list_knowledge_points(
             conn,
             subject_id=subject_id,
-            grade_id=grade_id,
             parent_id=parent_id,
             roots_only=roots_only,
             keyword=keyword,
@@ -162,7 +157,6 @@ def knowledge_points(
         total = dao_dimensions.count_knowledge_points(
             conn,
             subject_id=subject_id,
-            grade_id=grade_id,
             parent_id=parent_id,
             roots_only=roots_only,
             keyword=keyword,
@@ -178,11 +172,10 @@ def knowledge_point(point_id: int, *, db_path: Path | None = None) -> KnowledgeP
 def knowledge_tree(
     subject_id: int,
     *,
-    grade_id: int | None = None,
     db_path: Path | None = None,
 ) -> tuple[KnowledgeNode, ...]:
     with session(db_path) as conn:
-        return dao_dimensions.knowledge_tree(conn, subject_id=subject_id, grade_id=grade_id)
+        return dao_dimensions.knowledge_tree(conn, subject_id=subject_id)
 
 
 def questions_of_point(

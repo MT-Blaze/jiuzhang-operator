@@ -110,8 +110,6 @@
       engineParams.set("limit", String(intValue(payload, "limit", 20, 1, 60)));
       var engineSubject = intValue(payload, "subject_id", 0, 0, 9999);
       if (engineSubject) engineParams.set("subject_id", String(engineSubject));
-      var engineGrade = intValue(payload, "grade_id", 0, 0, 9999);
-      if (engineGrade) engineParams.set("grade_id", String(engineGrade));
       var enginePath = method === "bank.engine_directions"
         ? "/api/bank/engine/exam-directions"
         : "/api/bank/engine/knowledge-points";

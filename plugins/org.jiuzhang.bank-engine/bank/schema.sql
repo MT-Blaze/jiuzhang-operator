@@ -1,4 +1,4 @@
--- 九章题库结构（沙盒终极定稿，schema version 2）
+-- 九章题库结构（沙盒终极定稿，schema version 3）
 -- 31 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
 -- SQLite 外键开关按连接生效，读写前必须先执行 PRAGMA foreign_keys = ON。
 -- 外键动作全部收敛为 RESTRICT（保护被引用数据）或 CASCADE（随父行清理从表）。
@@ -145,7 +145,6 @@ CREATE TABLE dim_knowledge_points (
     -- [字段注释] 排序序号，用于同级知识点的展示顺序，数值越小越靠前
     sort_order  INTEGER NOT NULL DEFAULT 0,
     subject_id  INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    grade_id    INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
     parent_id   INTEGER REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
     CHECK (parent_id IS NULL OR parent_id <> id)
 );
@@ -154,6 +153,7 @@ CREATE TABLE dim_knowledge_points (
 CREATE UNIQUE INDEX ux_dim_knowledge_points_sibling_name
     ON dim_knowledge_points (subject_id, COALESCE(parent_id, 0), name);
 -- [功能注释] 考向字典：存讲义标题与组卷抓手，一个考向可跨多个知识点
+-- 年级不落冗余外键：通过 chapter_id → 教材章节 → 教材版本继承年级
 CREATE TABLE dim_exam_directions (
     id          INTEGER PRIMARY KEY,
     -- [字段注释] 考向名称，展示给用户看的业务词汇，同一学科内唯一
@@ -163,7 +163,6 @@ CREATE TABLE dim_exam_directions (
     -- [字段注释] 排序序号，用于讲义与组卷列表的展示顺序，数值越小越靠前
     sort_order  INTEGER NOT NULL DEFAULT 0,
     subject_id  INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    grade_id    INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
     -- [字段注释] 考向所属教材节次，精确锚定考向在教材中的位置，可为空
     chapter_id  INTEGER REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
     -- [字段注释] 考向说明，用于前端展示讲义标题与考查边界，可为空
@@ -362,8 +361,8 @@ CREATE TABLE dict_subject_thoughts (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分数学思想、物理守恒思想、化学平衡思想等
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有思想填入对应年级
-    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
+    stage      TEXT
 );
 -- [功能注释] 解题方法字典：存解题方法名称与编码，供解析方法关联引用
 CREATE TABLE dict_solution_methods (
@@ -376,8 +375,8 @@ CREATE TABLE dict_solution_methods (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分数学、物理、化学等学科的方法体系
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有方法填入对应年级
-    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
+    stage      TEXT
 );
 -- [功能注释] 核心素养字典：存核心素养名称与编码，供解析素养关联引用
 CREATE TABLE dict_core_competencies (
@@ -390,8 +389,8 @@ CREATE TABLE dict_core_competencies (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分各学科核心素养体系
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属年级外键，全学段通用时留空，初高中特有素养填入对应年级
-    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT
+    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
+    stage      TEXT
 );
 -- [功能注释] 解析与学科思想关联表：解析与学科思想多对多，解析删除时级联清理
 CREATE TABLE solution_thought_map (
@@ -430,28 +429,24 @@ CREATE INDEX ix_dim_sources_chapter ON dim_sources (chapter_id);
 CREATE INDEX ix_dim_sources_school ON dim_sources (school_id);
 CREATE INDEX ix_dim_knowledge_points_subject
     ON dim_knowledge_points (subject_id);
-CREATE INDEX ix_dim_knowledge_points_grade
-    ON dim_knowledge_points (grade_id);
 CREATE INDEX ix_dim_knowledge_points_parent
     ON dim_knowledge_points (parent_id);
 CREATE INDEX ix_dim_exam_directions_subject
     ON dim_exam_directions (subject_id);
-CREATE INDEX ix_dim_exam_directions_grade
-    ON dim_exam_directions (grade_id);
 CREATE INDEX ix_dim_exam_directions_chapter
     ON dim_exam_directions (chapter_id);
 CREATE INDEX ix_dict_subject_thoughts_subject
     ON dict_subject_thoughts (subject_id);
-CREATE INDEX ix_dict_subject_thoughts_grade
-    ON dict_subject_thoughts (grade_id);
+CREATE INDEX ix_dict_subject_thoughts_stage
+    ON dict_subject_thoughts (stage);
 CREATE INDEX ix_dict_solution_methods_subject
     ON dict_solution_methods (subject_id);
-CREATE INDEX ix_dict_solution_methods_grade
-    ON dict_solution_methods (grade_id);
+CREATE INDEX ix_dict_solution_methods_stage
+    ON dict_solution_methods (stage);
 CREATE INDEX ix_dict_core_competencies_subject
     ON dict_core_competencies (subject_id);
-CREATE INDEX ix_dict_core_competencies_grade
-    ON dict_core_competencies (grade_id);
+CREATE INDEX ix_dict_core_competencies_stage
+    ON dict_core_competencies (stage);
 CREATE INDEX ix_ingest_batches_status ON ingest_batches (status);
 CREATE INDEX ix_raw_questions_batch ON raw_questions (batch_id);
 CREATE INDEX ix_raw_questions_status ON raw_questions (status);
@@ -527,6 +522,6 @@ AFTER DELETE ON question_source_map BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 COMMIT;

@@ -17,7 +17,7 @@ BOOK_ROWS: tuple[tuple[int, str, str, int, str, int, int], ...] = tuple(
 CHAPTER_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = tuple(
     row for module in MODULES for row in module.CHAPTER_ROWS
 )
-KNOWLEDGE_ROWS: tuple[tuple[int, str, str, int, int, int | None, int | None], ...] = tuple(
+KNOWLEDGE_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = tuple(
     row for module in MODULES for row in module.KNOWLEDGE_ROWS
 )
 

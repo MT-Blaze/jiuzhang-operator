@@ -46,13 +46,11 @@ def engine_meta() -> dict[str, Any]:
 def engine_exam_directions(
     q: str = Query(default="", max_length=100),
     subject_id: int | None = Query(default=None, ge=1),
-    grade_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     items, total = service.exam_directions(
         subject_id=subject_id,
-        grade_id=grade_id,
         keyword=q.strip() or None,
         limit=limit,
         offset=offset,
@@ -65,7 +63,6 @@ def engine_exam_directions(
                 "direction_id": item.id,
                 "name": item.name,
                 "code": item.code,
-                "grade_id": item.grade_id,
                 "chapter_id": item.chapter_id,
             }
             for item in items
@@ -80,13 +77,11 @@ def engine_exam_directions(
 def engine_knowledge_points(
     q: str = Query(default="", max_length=100),
     subject_id: int | None = Query(default=None, ge=1),
-    grade_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     items, total = service.knowledge_points(
         subject_id=subject_id,
-        grade_id=grade_id,
         keyword=q.strip() or None,
         limit=limit,
         offset=offset,
@@ -99,7 +94,6 @@ def engine_knowledge_points(
                 "name": item.name,
                 "code": item.code,
                 "parent_id": item.parent_id,
-                "grade_id": item.grade_id,
             }
             for item in items
         ],

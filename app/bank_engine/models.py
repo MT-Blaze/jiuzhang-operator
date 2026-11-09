@@ -127,7 +127,6 @@ class ExamDirection:
     code: str
     sort_order: int
     subject_id: int
-    grade_id: int | None
     chapter_id: int | None
     description: str | None
     question_count: int = 0
@@ -140,7 +139,6 @@ class KnowledgePoint:
     code: str
     sort_order: int
     subject_id: int
-    grade_id: int | None
     parent_id: int | None
     question_count: int = 0
 

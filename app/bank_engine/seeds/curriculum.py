@@ -1,8 +1,8 @@
 """国家课标基础字典：年级、学科、题型与教研三维（思想 / 方法 / 素养）。
 
 依据《义务教育课程方案和课程标准（2022 年版）》与《普通高中课程标准
-（2017 年版 2020 年修订）》整理。全学段通用的教研维度 grade_id 留空，
-仅对明确属于某一学段的条目绑定年级。
+（2017 年版 2020 年修订）》整理。全学段通用的教研维度 stage 留空，
+仅对明确属于某一学段的条目标注学段。
 """
 
 from __future__ import annotations
@@ -52,14 +52,12 @@ QUESTION_TYPE_ROWS: tuple[tuple[int, str, str, int], ...] = (
 )
 
 SUBJECT_MATH_ID = 2
-GRADE_G7_ID = 7
-GRADE_G11_ID = 11
-GRADE_G10_ID = 10
+STAGE_SENIOR = "高中"
 QUESTION_TYPE_CHOICE_ID = 1
 QUESTION_TYPE_SOLUTION_ID = 3
 
-# id / code / name / sort_order / subject_id / grade_id
-SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
+# id / code / name / sort_order / subject_id / stage
+SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, str | None], ...] = (
     (9001, "math_number_shape", "数形结合", 1, SUBJECT_MATH_ID, None),
     (9002, "math_function_equation", "函数与方程", 2, SUBJECT_MATH_ID, None),
     (9003, "math_transformation", "转化与化归", 3, SUBJECT_MATH_ID, None),
@@ -84,8 +82,8 @@ SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
     (9404, "english_pragmatic", "语用意识", 4, 3, None),
 )
 
-# id / code / name / sort_order / subject_id / grade_id
-SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
+# id / code / name / sort_order / subject_id / stage
+SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, str | None], ...] = (
     (9001, "math_definition", "定义法", 1, SUBJECT_MATH_ID, None),
     (9002, "math_substitution", "换元法", 2, SUBJECT_MATH_ID, None),
     (9003, "math_completing_square", "配方法", 3, SUBJECT_MATH_ID, None),
@@ -93,7 +91,7 @@ SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
     (9005, "math_shift_subtract", "错位相减", 5, SUBJECT_MATH_ID, None),
     (9006, "math_telescoping", "裂项相消", 6, SUBJECT_MATH_ID, None),
     (9007, "math_discriminant", "判别式法", 7, SUBJECT_MATH_ID, None),
-    (9008, "math_derivative", "导数法", 8, SUBJECT_MATH_ID, GRADE_G11_ID),
+    (9008, "math_derivative", "导数法", 8, SUBJECT_MATH_ID, STAGE_SENIOR),
     (9009, "math_construction", "构造法", 9, SUBJECT_MATH_ID, None),
     (
         9010,
@@ -101,7 +99,7 @@ SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
         "数学归纳法",
         10,
         SUBJECT_MATH_ID,
-        GRADE_G11_ID,
+        STAGE_SENIOR,
     ),
     (9011, "math_contradiction", "反证法", 11, SUBJECT_MATH_ID, None),
     (9101, "physics_control_variable", "控制变量法", 1, 4, None),
@@ -129,8 +127,8 @@ SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
     (9405, "english_discourse_analysis", "语篇分析法", 5, 3, None),
 )
 
-# id / code / name / sort_order / subject_id / grade_id
-CORE_COMPETENCY_ROWS: tuple[tuple[int, str, str, int, int, int | None], ...] = (
+# id / code / name / sort_order / subject_id / stage
+CORE_COMPETENCY_ROWS: tuple[tuple[int, str, str, int, int, str | None], ...] = (
     (9001, "math_abstraction", "数学抽象", 1, SUBJECT_MATH_ID, None),
     (9002, "math_logical_reasoning", "逻辑推理", 2, SUBJECT_MATH_ID, None),
     (9003, "math_modeling", "数学建模", 3, SUBJECT_MATH_ID, None),
@@ -220,8 +218,8 @@ def curriculum_statements() -> list[tuple[str, tuple]]:
     statements.extend(
         (
             "INSERT INTO dim_knowledge_points "
-            "(id, code, name, sort_order, subject_id, grade_id, parent_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(id, code, name, sort_order, subject_id, parent_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             row,
         )
         for row in KNOWLEDGE_POINT_ROWS
@@ -229,7 +227,7 @@ def curriculum_statements() -> list[tuple[str, tuple]]:
     statements.extend(
         (
             "INSERT INTO dict_subject_thoughts "
-            "(id, code, name, sort_order, subject_id, grade_id) "
+            "(id, code, name, sort_order, subject_id, stage) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             row,
         )
@@ -238,7 +236,7 @@ def curriculum_statements() -> list[tuple[str, tuple]]:
     statements.extend(
         (
             "INSERT INTO dict_solution_methods "
-            "(id, code, name, sort_order, subject_id, grade_id) "
+            "(id, code, name, sort_order, subject_id, stage) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             row,
         )
@@ -247,7 +245,7 @@ def curriculum_statements() -> list[tuple[str, tuple]]:
     statements.extend(
         (
             "INSERT INTO dict_core_competencies "
-            "(id, code, name, sort_order, subject_id, grade_id) "
+            "(id, code, name, sort_order, subject_id, stage) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             row,
         )

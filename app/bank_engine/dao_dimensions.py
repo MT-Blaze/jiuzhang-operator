@@ -9,10 +9,8 @@ from app.bank_engine import dao_base
 from app.bank_engine.dao_questions import direction_question_counts, point_question_counts
 from app.bank_engine.models import Chapter, ExamDirection, KnowledgeNode, KnowledgePoint, Textbook
 
-DIRECTION_COLUMNS = (
-    "id, name, code, sort_order, subject_id, grade_id, chapter_id, description"
-)
-POINT_COLUMNS = "id, name, code, sort_order, subject_id, grade_id, parent_id"
+DIRECTION_COLUMNS = "id, name, code, sort_order, subject_id, chapter_id, description"
+POINT_COLUMNS = "id, name, code, sort_order, subject_id, parent_id"
 TEXTBOOK_COLUMNS = "id, name, code, sort_order, publisher, subject_id, grade_id"
 CHAPTER_COLUMNS = "id, name, code, sort_order, textbook_id, parent_id"
 
@@ -29,7 +27,6 @@ def _direction(row: sqlite3.Row, counts: dict[int, int]) -> ExamDirection:
         code=str(row["code"]),
         sort_order=int(row["sort_order"]),
         subject_id=int(row["subject_id"]),
-        grade_id=None if row["grade_id"] is None else int(row["grade_id"]),
         chapter_id=None if row["chapter_id"] is None else int(row["chapter_id"]),
         description=None if row["description"] is None else str(row["description"]),
         question_count=counts.get(direction_id, 0),
@@ -44,7 +41,6 @@ def _point(row: sqlite3.Row, counts: dict[int, int]) -> KnowledgePoint:
         code=str(row["code"]),
         sort_order=int(row["sort_order"]),
         subject_id=int(row["subject_id"]),
-        grade_id=None if row["grade_id"] is None else int(row["grade_id"]),
         parent_id=None if row["parent_id"] is None else int(row["parent_id"]),
         question_count=counts.get(point_id, 0),
     )
@@ -54,7 +50,6 @@ def count_exam_directions(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     chapter_id: int | None = None,
     keyword: str | None = None,
 ) -> int:
@@ -63,9 +58,6 @@ def count_exam_directions(
     if subject_id is not None:
         clauses.append("subject_id = ?")
         params.append(subject_id)
-    if grade_id is not None:
-        clauses.append("grade_id = ?")
-        params.append(grade_id)
     if chapter_id is not None:
         clauses.append("chapter_id = ?")
         params.append(chapter_id)
@@ -80,7 +72,6 @@ def list_exam_directions(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     chapter_id: int | None = None,
     keyword: str | None = None,
     limit: int = 100,
@@ -91,9 +82,6 @@ def list_exam_directions(
     if subject_id is not None:
         clauses.append("subject_id = ?")
         params.append(subject_id)
-    if grade_id is not None:
-        clauses.append("grade_id = ?")
-        params.append(grade_id)
     if chapter_id is not None:
         clauses.append("chapter_id = ?")
         params.append(chapter_id)
@@ -103,7 +91,7 @@ def list_exam_directions(
     sql = (
         "SELECT " + DIRECTION_COLUMNS + " FROM dim_exam_directions"
         + _where(clauses, params)
-        + " ORDER BY subject_id, grade_id, sort_order, id LIMIT ? OFFSET ?"
+        + " ORDER BY subject_id, sort_order, id LIMIT ? OFFSET ?"
     )
     rows = conn.execute(sql, params + [limit, offset]).fetchall()
     counts = direction_question_counts(conn, [int(row["id"]) for row in rows])
@@ -127,19 +115,17 @@ def count_knowledge_points(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     parent_id: int | None = None,
     roots_only: bool = False,
     keyword: str | None = None,
 ) -> int:
-    clauses, params = _point_filters(subject_id, grade_id, parent_id, roots_only, keyword)
+    clauses, params = _point_filters(subject_id, parent_id, roots_only, keyword)
     sql = "SELECT COUNT(*) FROM dim_knowledge_points" + _where(clauses, params)
     return int(conn.execute(sql, params).fetchone()[0])
 
 
 def _point_filters(
     subject_id: int | None,
-    grade_id: int | None,
     parent_id: int | None,
     roots_only: bool,
     keyword: str | None,
@@ -149,9 +135,6 @@ def _point_filters(
     if subject_id is not None:
         clauses.append("subject_id = ?")
         params.append(subject_id)
-    if grade_id is not None:
-        clauses.append("grade_id = ?")
-        params.append(grade_id)
     if roots_only:
         clauses.append("parent_id IS NULL")
     elif parent_id is not None:
@@ -167,14 +150,13 @@ def list_knowledge_points(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
-    grade_id: int | None = None,
     parent_id: int | None = None,
     roots_only: bool = False,
     keyword: str | None = None,
     limit: int = 200,
     offset: int = 0,
 ) -> tuple[KnowledgePoint, ...]:
-    clauses, params = _point_filters(subject_id, grade_id, parent_id, roots_only, keyword)
+    clauses, params = _point_filters(subject_id, parent_id, roots_only, keyword)
     sql = (
         "SELECT " + POINT_COLUMNS + " FROM dim_knowledge_points"
         + _where(clauses, params)
@@ -202,13 +184,9 @@ def knowledge_tree(
     conn: sqlite3.Connection,
     *,
     subject_id: int,
-    grade_id: int | None = None,
 ) -> tuple[KnowledgeNode, ...]:
     clauses = ["subject_id = ?"]
     params: list[Any] = [subject_id]
-    if grade_id is not None:
-        clauses.append("grade_id = ?")
-        params.append(grade_id)
     sql = (
         "SELECT " + POINT_COLUMNS + " FROM dim_knowledge_points WHERE "
         + " AND ".join(clauses)
@@ -238,9 +216,6 @@ def list_textbooks(
     if subject_id is not None:
         clauses.append("subject_id = ?")
         params.append(subject_id)
-    if grade_id is not None:
-        clauses.append("grade_id = ?")
-        params.append(grade_id)
     sql = (
         "SELECT " + TEXTBOOK_COLUMNS + " FROM dim_textbooks"
         + _where(clauses, params)

@@ -12,7 +12,7 @@ from .knowledge_sciences import (
 )
 
 KNOWLEDGE_POINT_ROWS: tuple[
-    tuple[int, str, str, int, int, int | None, int | None], ...
+    tuple[int, str, str, int, int, int | None], ...
 ] = (
     *CHINESE_KNOWLEDGE_ROWS,
     *MATH_KNOWLEDGE_ROWS,
@@ -32,7 +32,7 @@ def validate_knowledge_rows() -> None:
     if len(set(codes)) != len(codes):
         raise ValueError("知识点编码重复")
     siblings: set[tuple[int, int, str]] = set()
-    for row_id, _code, name, _sort, subject, _grade, parent in KNOWLEDGE_POINT_ROWS:
+    for row_id, _code, name, _sort, subject, parent in KNOWLEDGE_POINT_ROWS:
         if parent == row_id:
             raise ValueError(f"知识点自环：{row_id}")
         if parent is not None:
