@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from app.bank_engine import paths, regions, seeding
+from app.bank_engine import migrate_v7, paths, regions, seeding
 from app.bank_engine.models import BuildReport
 from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
 
@@ -417,7 +417,7 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version not in (2, 3, 4, 5):
+    if version not in (2, 3, 4, 5, 6):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
     if version == 2:
         _migrate_v2_to_v3(conn)
@@ -425,7 +425,9 @@ def migrate(conn: sqlite3.Connection, version: int) -> bool:
         _migrate_v3_to_v4(conn)
     if version in (2, 3, 4):
         _migrate_v4_to_v5(conn)
-    _migrate_v5_to_v6(conn)
+    if version in (2, 3, 4, 5):
+        _migrate_v5_to_v6(conn)
+    migrate_v7.upgrade(conn)
     return True
 
 
@@ -446,6 +448,7 @@ def _build_into(path: Path, schema: Path) -> dict[str, int]:
         conn.executescript(body)
         with conn:
             counts = seeding.apply_seeds(conn)
+            migrate_v7.backfill_sort_order(conn)
         validate_connection(conn, require_seeds=True)
     finally:
         conn.close()

@@ -184,6 +184,8 @@ CREATE TABLE knowledge_exam_map (
                        REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
     exam_direction_id  INTEGER NOT NULL
                        REFERENCES dim_exam_directions(id) ON DELETE RESTRICT,
+    -- [字段注释] 考向内辅助知识点标签的展示顺序，同一考向内 0..n-1，数值越小越靠前
+    sort_order         INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (knowledge_point_id, exam_direction_id)
 ) WITHOUT ROWID;
 -- [功能注释] 章节与知识点关联表：教材物理目录不写入知识点树，二者经此桥表多对多
@@ -192,6 +194,8 @@ CREATE TABLE chapter_knowledge_map (
                        REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
     knowledge_point_id INTEGER NOT NULL
                        REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
+    -- [字段注释] 章节内知识点的展示顺序，同一章节内 0..n-1，数值越小越靠前
+    sort_order         INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chapter_id, knowledge_point_id)
 ) WITHOUT ROWID;
 -- ===== 主表区：业务实体与事实表，不是维度字典 =====
@@ -569,6 +573,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 6;
+PRAGMA user_version = 7;
 
 COMMIT;

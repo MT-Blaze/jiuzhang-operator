@@ -180,6 +180,24 @@ class Chapter:
 
 
 @dataclass(frozen=True)
+class ChapterNode:
+    chapter: Chapter
+    children: tuple["ChapterNode", ...] = ()
+
+
+@dataclass(frozen=True)
+class LinkedKnowledgePoint:
+    """桥表视角的知识点：sort_order 是关联行上的顺序，不是知识点字典自身的。"""
+
+    id: int
+    name: str
+    code: str
+    subject_id: int
+    parent_id: int | None
+    sort_order: int
+
+
+@dataclass(frozen=True)
 class Region:
     id: int
     name: str

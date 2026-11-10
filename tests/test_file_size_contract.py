@@ -219,7 +219,8 @@ class HostAssetWiringTest(unittest.TestCase):
     光有 800 行门禁守不住「新文件写了没挂」和「挂在用它的脚本之后」这两件事。
     """
 
-    PAGES = ("static/index.html", "static/workspace.html", "static/settings.html", "static/plugins.html")
+    PAGES = ("static/index.html", "static/workspace.html", "static/settings.html",
+             "static/plugins.html", "static/dict_console.html")
 
     def page_assets(self) -> tuple[set, list]:
         listed = set()

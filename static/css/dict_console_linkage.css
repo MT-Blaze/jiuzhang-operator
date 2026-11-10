@@ -1,0 +1,145 @@
+/* 四栏联动教研字典（阶段三）：独立样式，整块下架删本文件 + HTML 引用行即可。
+ * 配色继承 app.css 变量；375px 单列堆叠不横溢；全部热区 ≥44px（AGENTS §6）。 */
+
+.dcl-wrap { margin-bottom: 26px; min-width: 0; }
+.dcl-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.dcl-col {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.dcl-col-title { margin: 0 0 2px; font-family: var(--serif); font-size: 0.95rem; }
+.dcl-col-hint { margin: 0 0 8px; font-size: 0.74rem; color: var(--muted); }
+.dcl-col-body { min-width: 0; }
+.dcl-state { margin: 6px 0; min-height: 1.2em; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
+.dcl-tools { margin-bottom: 8px; }
+
+/* ---------- 左栏章节树 ---------- */
+.dcl-tree {
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.dcl-tree-list { list-style: none; margin: 0; padding: 0; }
+.dcl-tree-row { display: flex; align-items: center; gap: 2px; }
+.dcl-tree-caret {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dcl-tree-spacer { flex: none; width: 44px; }
+.dcl-tree-node {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.dcl-tree-node:hover { background: var(--accent-soft); }
+.dcl-tree-node.dcl-selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.dcl-tree-caret:focus-visible, .dcl-tree-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ---------- 通用清单（知识点 / 考向 / 标签） ---------- */
+.dcl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.dcl-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.dcl-item:last-child { border-bottom: none; }
+.dcl-item.dcl-selected { background: var(--accent-soft); }
+.dcl-item.dcl-dragging { opacity: 0.5; }
+.dcl-grip { flex: none; color: var(--faint); cursor: grab; font-size: 0.8rem; }
+.dcl-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.dcl-item-main:hover { background: var(--accent-soft); }
+.dcl-item-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dcl-item-del { flex: none; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.78rem; color: var(--down); }
+.dcl-empty { padding: 12px 10px; color: var(--muted); font-size: 0.82rem; }
+.dcl-item-new { flex-wrap: wrap; background: var(--paper-deep); }
+.dcl-new-input { flex: 1 1 120px; min-width: 0; }
+.dcl-item-btn { min-height: 44px; padding: 0 12px; font-size: 0.8rem; }
+
+/* ---------- 最右栏辅助标签 ---------- */
+.dcl-tag-search { width: 100%; flex-basis: 100%; margin-bottom: 8px; }
+.dcl-tag-name { flex: 1 1 auto; min-width: 0; font-size: 0.84rem; overflow-wrap: anywhere; }
+.dcl-tag-del { flex: none; min-width: 44px; min-height: 44px; padding: 0; font-size: 14px; color: var(--down); }
+.dcl-search-results {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--card);
+}
+.dcl-search-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.dcl-search-item:last-child { border-bottom: none; }
+.dcl-search-name { flex: 1 1 auto; min-width: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
+.dcl-search-add { flex: none; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.78rem; }
+
+/* ---------- 响应式：宽屏四栏 → 中屏两栏 → 窄屏单列，375px 不横溢 ---------- */
+@media (max-width: 1200px) {
+  .dcl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .dcl-grid { grid-template-columns: minmax(0, 1fr); }
+  .dcl-tree, .dcl-list { max-height: 320px; }
+}

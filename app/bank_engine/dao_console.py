@@ -17,9 +17,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.bank_engine.models import (
+    ExamDirection,
     ExamType,
     Grade,
     ImportReport,
+    KnowledgePoint,
     ReferenceHit,
     Region,
     School,
@@ -99,12 +101,31 @@ SPECS: dict[str, TableSpec] = {
         int_columns=("region_id", "textbook_id"), nullable=("region", "region_id", "textbook_id"),
         global_filters=(("textbook_id", "textbook_id"),),
     ),
+    # 阶段三：四栏联动的双击改名复用这套规格驱动 CRUD（新增走联动专用口）。
+    "dim_knowledge_points": TableSpec(
+        table="dim_knowledge_points", label="知识点", model=KnowledgePoint,
+        columns=("id", "name", "code", "sort_order", "subject_id", "parent_id"),
+        editable=("name", "code", "sort_order"), required=("name", "code"),
+        search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order", "subject_id", "parent_id"), nullable=("parent_id",),
+        global_filters=(("subject_id", "subject_id"),),
+    ),
+    "dim_exam_directions": TableSpec(
+        table="dim_exam_directions", label="考向", model=ExamDirection,
+        columns=("id", "name", "code", "sort_order", "subject_id", "chapter_id", "description"),
+        editable=("name", "code", "sort_order", "description"), required=("name", "code"),
+        search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order", "subject_id", "chapter_id"),
+        nullable=("chapter_id", "description"),
+        global_filters=(("subject_id", "subject_id"),),
+    ),
 }
 
 COLUMN_LABELS: dict[str, str] = {
     "id": "ID", "name": "名称", "code": "编码", "sort_order": "排序",
     "stage": "学段", "level": "层级", "parent_id": "父级ID", "short_name": "简称",
     "region": "地区", "region_id": "区划ID", "textbook_id": "教材ID",
+    "subject_id": "学科ID", "chapter_id": "章节ID", "description": "说明",
 }
 
 # 子表中文名：删除防呆对话框给老师看的人话，未收录的退回表名。
@@ -282,9 +303,17 @@ def update_row(
 
 
 def find_references(
-    conn: sqlite3.Connection, table: str, row_id: int
+    conn: sqlite3.Connection,
+    table: str,
+    row_id: int,
+    *,
+    exclude: dict[str, tuple[str, Any]] | None = None,
 ) -> tuple[ReferenceHit, ...]:
-    """逐张子表单表计数：谁的外键指向这一行。不做连级 JOIN。"""
+    """逐张子表单表计数：谁的外键指向这一行。不做连级 JOIN。
+
+    exclude 给联动删除用：{子表: (列, 值)}，计数时排除该列等于此值的行
+    （例如删考向时不算当前知识点自己的关联行）；列名只来自内部白名单调用方。
+    """
     get_spec(table)
     children = [
         str(row["name"])
@@ -298,9 +327,13 @@ def find_references(
             if str(fk["table"]) != table:
                 continue
             column = str(fk["from"])
-            count = int(conn.execute(
-                "SELECT COUNT(*) FROM " + child + " WHERE " + column + " = ?", (row_id,)
-            ).fetchone()[0])
+            sql = "SELECT COUNT(*) FROM " + child + " WHERE " + column + " = ?"
+            params: list[Any] = [row_id]
+            if exclude and child in exclude:
+                ex_col, ex_val = exclude[child]
+                sql += " AND " + ex_col + " <> ?"
+                params.append(ex_val)
+            count = int(conn.execute(sql, params).fetchone()[0])
             if count > 0:
                 hits.append(ReferenceHit(
                     table=child, label=TABLE_LABELS.get(child, child),

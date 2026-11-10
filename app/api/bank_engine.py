@@ -248,3 +248,117 @@ def engine_dict_update(
 def engine_dict_delete(table: str, row_id: int) -> dict[str, Any]:
     _guard(lambda: service.console_delete(table, row_id))
     return {"deleted": True, "id": row_id}
+
+
+# ---- 四栏联动（阶段三）：章节树 → 章节知识点 → 考向 → 辅助标签 ----
+# 读接口开放；写接口（新增 / 删除 / 排序 / 挂标签）必须带一次性令牌。
+# 整块下架：删本段路由 + dao_linkage / migrate_v7 + 前端 linkage 模块即可。
+
+
+def _id_list(payload: dict[str, Any], key: str) -> list[int]:
+    values = payload.get(key)
+    if not isinstance(values, list):
+        raise ValueError("缺少整数 id 数组：" + key)
+    return values
+
+
+@router.get("/api/bank/engine/linkage/chapter-tree", summary="教材章节树：全局设置选定教材后整树读出")
+def engine_linkage_chapter_tree(textbook_id: int = Query(ge=1)) -> dict[str, Any]:
+    nodes = _guard(lambda: service.linkage_chapter_tree(textbook_id))
+    return {"items": [asdict(node) for node in nodes], "total": len(nodes)}
+
+
+@router.get("/api/bank/engine/linkage/chapters/{chapter_id}/points", summary="章节知识点清单：按桥表 sort_order")
+def engine_linkage_chapter_points(chapter_id: int) -> dict[str, Any]:
+    items = _guard(lambda: service.linkage_chapter_points(chapter_id))
+    return {"items": [asdict(item) for item in items], "total": len(items)}
+
+
+@router.get("/api/bank/engine/linkage/points/{point_id}/directions", summary="知识点考向清单")
+def engine_linkage_point_directions(point_id: int) -> dict[str, Any]:
+    items = _guard(lambda: service.linkage_point_directions(point_id))
+    return {"items": [asdict(item) for item in items], "total": len(items)}
+
+
+@router.get("/api/bank/engine/linkage/directions/{direction_id}/tags", summary="考向辅助知识点标签：按桥表 sort_order")
+def engine_linkage_direction_tags(direction_id: int) -> dict[str, Any]:
+    items = _guard(lambda: service.linkage_direction_tags(direction_id))
+    return {"items": [asdict(item) for item in items], "total": len(items)}
+
+
+@router.put(
+    "/api/bank/engine/linkage/chapters/{chapter_id}/points/order",
+    summary="章节内知识点拖拽排序：提交完整清单，sort_order 落库",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_chapter_points_order(
+    chapter_id: int, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    ids = _guard(lambda: _id_list(payload, "point_ids"))
+    _guard(lambda: service.linkage_reorder("chapter_points", chapter_id, ids))
+    return {"saved": True, "count": len(ids)}
+
+
+@router.put(
+    "/api/bank/engine/linkage/directions/{direction_id}/tags/order",
+    summary="考向内辅助标签拖拽排序：提交完整清单，sort_order 落库",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_direction_tags_order(
+    direction_id: int, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    ids = _guard(lambda: _id_list(payload, "point_ids"))
+    _guard(lambda: service.linkage_reorder("direction_tags", direction_id, ids))
+    return {"saved": True, "count": len(ids)}
+
+
+@router.post(
+    "/api/bank/engine/linkage/points/{point_id}/directions",
+    summary="新增考向并挂到当前知识点：学科继承知识点",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_add_direction(
+    point_id: int, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    name = payload.get("name")
+    if not isinstance(name, str):
+        raise HTTPException(
+            status_code=400, detail={"code": "bad_request", "message": "缺少考向名称（name 字段）"}
+        )
+    return asdict(_guard(lambda: service.linkage_add_direction(point_id, name)))
+
+
+@router.delete(
+    "/api/bank/engine/linkage/points/{point_id}/directions/{direction_id}",
+    summary="删除考向：排除当前关联后仍被引用即 409 防呆",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_delete_direction(point_id: int, direction_id: int) -> dict[str, Any]:
+    _guard(lambda: service.linkage_delete_direction(point_id, direction_id))
+    return {"deleted": True, "id": direction_id}
+
+
+@router.post(
+    "/api/bank/engine/linkage/directions/{direction_id}/tags",
+    summary="全局搜索知识点挂为考向辅助标签：排到末尾",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_add_tag(
+    direction_id: int, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    point_id = payload.get("point_id")
+    if not isinstance(point_id, int) or isinstance(point_id, bool):
+        raise HTTPException(
+            status_code=400, detail={"code": "bad_request", "message": "缺少整数 point_id"}
+        )
+    return asdict(_guard(lambda: service.linkage_add_tag(direction_id, point_id)))
+
+
+@router.delete(
+    "/api/bank/engine/linkage/directions/{direction_id}/tags/{point_id}",
+    summary="移除辅助标签：只解除关联，不删知识点本体",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_remove_tag(direction_id: int, point_id: int) -> dict[str, Any]:
+    _guard(lambda: service.linkage_remove_tag(direction_id, point_id))
+    return {"deleted": True, "id": point_id}

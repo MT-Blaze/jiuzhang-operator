@@ -145,7 +145,7 @@ class EngineBuildTest(unittest.TestCase):
 
     def test_status_reports_integrity_and_foreign_keys(self) -> None:
         report = service.status(self.db_path)
-        self.assertEqual(report.schema_version, 6)
+        self.assertEqual(report.schema_version, engine_paths.SCHEMA_VERSION)
         self.assertEqual(report.integrity, "ok")
         self.assertEqual(report.foreign_key_violations, 0)
         self.assertGreaterEqual(report.table_count, 35)
@@ -154,7 +154,7 @@ class EngineBuildTest(unittest.TestCase):
         fresh = self.tmp / "on-demand.v2.db"
         report = service.status(fresh)
         self.assertTrue(fresh.is_file())
-        self.assertEqual(report.schema_version, 6)
+        self.assertEqual(report.schema_version, engine_paths.SCHEMA_VERSION)
         self.assertEqual(report.counts["dim_knowledge_points"], 11388)
 
 
@@ -436,7 +436,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 35)
         self.assertEqual(len(builder.BASE_TABLES), 35)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 6)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 7)
         self.assertNotIn("dim_sources", body)
         self.assertNotIn("question_source_map", body)
         self.assertIn("exam_school_map", builder.BASE_TABLES)

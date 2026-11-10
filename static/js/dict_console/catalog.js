@@ -39,8 +39,8 @@
       desc: "教研核心：知识点、考向、思想方法、核心素养，以及章节—知识点—考向的联动映射。",
       stage: 3,
       items: [
-        { table: "dim_knowledge_points", name: "知识点", desc: "全学科知识点树，四栏联动的中栏。" },
-        { table: "dim_exam_directions", name: "考向", desc: "考向清单，四栏联动的右栏。" },
+        { table: "dim_knowledge_points", name: "知识点", desc: "四栏联动中栏：双击改名、拖拽排序。", linkage: true },
+        { table: "dim_exam_directions", name: "考向", desc: "四栏联动右栏：新增 / 改名 / 删除防呆。", linkage: true },
         { table: "dict_subject_thoughts", name: "学科思想", desc: "数形结合、分类讨论等思想标签。" },
         { table: "dict_solution_methods", name: "解题方法", desc: "配方法、换元法等 method 标签。" },
         { table: "dict_core_competencies", name: "核心素养", desc: "三会导向的核心素养表现。" }

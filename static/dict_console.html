@@ -11,6 +11,8 @@
   <link rel="stylesheet" href="/static/css/app.css" />
   <!-- 数据字典控制台（2026-11-10 四阶段军令）：独立样式，整块下架删本行即可 -->
   <link rel="stylesheet" href="/static/css/dict_console.css" />
+  <!-- 四栏联动（阶段三）：独立样式，整块下架删本行即可 -->
+  <link rel="stylesheet" href="/static/css/dict_console_linkage.css" />
 </head>
 <body>
   <div class="dc-page">
@@ -103,6 +105,13 @@
   <script src="/static/js/dict_console/tabs.js"></script>
   <script src="/static/js/dict_console/row_ops.js"></script>
   <script src="/static/js/dict_console/table.js"></script>
+  <!-- 四栏联动（阶段三）：整块下架删这六行与 panels.js 的 DcLinkage.mount 调用 -->
+  <script src="/static/js/dict_console/linkage_dnd.js"></script>
+  <script src="/static/js/dict_console/linkage_tree.js"></script>
+  <script src="/static/js/dict_console/linkage_points.js"></script>
+  <script src="/static/js/dict_console/linkage_directions.js"></script>
+  <script src="/static/js/dict_console/linkage_tags.js"></script>
+  <script src="/static/js/dict_console/linkage.js"></script>
   <script src="/static/js/dict_console/panels.js"></script>
   <script src="/static/js/dict_console/import.js"></script>
   <script src="/static/js/dict_console/sidebar.js"></script>

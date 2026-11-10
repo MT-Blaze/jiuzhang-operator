@@ -16,6 +16,7 @@ from app.bank_engine import (
     dao_console,
     dao_dictionary,
     dao_dimensions,
+    dao_linkage,
     dao_questions,
     entry,
     seeding,
@@ -23,6 +24,7 @@ from app.bank_engine import (
 )
 from app.bank_engine.models import (
     Chapter,
+    ChapterNode,
     CreatedQuestion,
     Dictionaries,
     EngineStatus,
@@ -30,6 +32,7 @@ from app.bank_engine.models import (
     ImportReport,
     KnowledgeNode,
     KnowledgePoint,
+    LinkedKnowledgePoint,
     QuestionPage,
     QuestionRecord,
     ReferenceHit,
@@ -300,6 +303,70 @@ def console_import(text: str, *, db_path: Path | None = None) -> ImportReport:
         return dao_console.import_rows(conn, data)
 
 
+# ---- 四栏联动（阶段三）：章节树 / 关联读写 / 拖拽排序，dataclass 进出 ----
+
+
+def linkage_chapter_tree(textbook_id: int, *, db_path: Path | None = None) -> tuple[ChapterNode, ...]:
+    with session(db_path) as conn:
+        return dao_linkage.chapter_tree(conn, textbook_id)
+
+
+def linkage_chapter_points(
+    chapter_id: int, *, db_path: Path | None = None
+) -> tuple[LinkedKnowledgePoint, ...]:
+    with session(db_path) as conn:
+        return dao_linkage.chapter_points(conn, chapter_id)
+
+
+def linkage_point_directions(
+    point_id: int, *, db_path: Path | None = None
+) -> tuple[ExamDirection, ...]:
+    with session(db_path) as conn:
+        return dao_linkage.point_directions(conn, point_id)
+
+
+def linkage_direction_tags(
+    direction_id: int, *, db_path: Path | None = None
+) -> tuple[LinkedKnowledgePoint, ...]:
+    with session(db_path) as conn:
+        return dao_linkage.direction_tags(conn, direction_id)
+
+
+def linkage_reorder(
+    map_key: str, group_id: int, member_ids: list[int], *, db_path: Path | None = None
+) -> None:
+    with session(db_path) as conn:
+        dao_linkage.reorder(conn, map_key, group_id, member_ids)
+
+
+def linkage_add_direction(
+    point_id: int, name: str, *, db_path: Path | None = None
+) -> ExamDirection:
+    with session(db_path) as conn:
+        return dao_linkage.add_direction(conn, point_id, name)
+
+
+def linkage_delete_direction(
+    point_id: int, direction_id: int, *, db_path: Path | None = None
+) -> None:
+    with session(db_path) as conn:
+        dao_linkage.delete_direction(conn, point_id, direction_id)
+
+
+def linkage_add_tag(
+    direction_id: int, point_id: int, *, db_path: Path | None = None
+) -> LinkedKnowledgePoint:
+    with session(db_path) as conn:
+        return dao_linkage.add_tag(conn, direction_id, point_id)
+
+
+def linkage_remove_tag(
+    direction_id: int, point_id: int, *, db_path: Path | None = None
+) -> None:
+    with session(db_path) as conn:
+        dao_linkage.remove_tag(conn, direction_id, point_id)
+
+
 __all__ = [
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
@@ -319,6 +386,15 @@ __all__ = [
     "knowledge_point",
     "knowledge_points",
     "knowledge_tree",
+    "linkage_add_direction",
+    "linkage_add_tag",
+    "linkage_chapter_points",
+    "linkage_chapter_tree",
+    "linkage_delete_direction",
+    "linkage_direction_tags",
+    "linkage_point_directions",
+    "linkage_remove_tag",
+    "linkage_reorder",
     "question",
     "questions_of_direction",
     "questions_of_point",

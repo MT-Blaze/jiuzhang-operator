@@ -107,13 +107,20 @@
     });
   }
 
-  /** 分类面板：可编辑五表渲染表格块，其余字典只读总览卡（行数实时）。 */
+  /** 分类面板：教研属性顶部挂四栏联动；可编辑表渲染表格块，其余只读总览卡。 */
   function renderCategory(panel, tab, ctx, category) {
     panel.textContent = "";
     panel.appendChild(el("h2", "dc-panel-title", category.title));
     panel.appendChild(el("p", "dc-panel-hint", category.desc));
+    var linkageMounted = false;
+    if (category.key === "teaching" && window.DcLinkage) {
+      window.DcLinkage.mount(panel, ctx);
+      linkageMounted = true;
+    }
     var editable = category.items.filter(function (item) { return item.editable; });
-    var pending = category.items.filter(function (item) { return !item.editable; });
+    var pending = category.items.filter(function (item) {
+      return !item.editable && !(linkageMounted && item.linkage);
+    });
 
     if (editable.length) {
       panel.appendChild(el("p", "dc-panel-hint",
@@ -123,7 +130,7 @@
 
     if (pending.length) {
       panel.appendChild(el("h3", "dc-panel-title", "待交付字典"));
-      panel.appendChild(el("p", "dc-panel-hint", "以下字典暂为只读总览，编辑能力随阶段三交付。"));
+      panel.appendChild(el("p", "dc-panel-hint", "以下字典暂为只读总览。"));
       var loading = stateBox(panel, "正在读取真实行数…");
       window.DcClient.fetchJson("/api/bank/engine/status").then(function (status) {
         if (!panel.isConnected) return;
