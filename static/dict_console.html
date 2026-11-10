@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数据字典控制台 · 九章算子</title>
+  <meta name="theme-color" content="#a63b2b" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <!-- 数据字典控制台（2026-11-10 四阶段军令）：独立样式，整块下架删本行即可 -->
+  <link rel="stylesheet" href="/static/css/dict_console.css" />
+</head>
+<body>
+  <div class="dc-page">
+    <header class="dc-topbar">
+      <a class="dc-brand" href="/workspace" aria-label="返回工作台">
+        <span class="dc-seal" aria-hidden="true">九</span>
+        <span class="dc-brand-text">
+          <span class="dc-brand-cn">数据字典控制台</span>
+          <span class="dc-brand-en">JIUZHANG DICTIONARY</span>
+        </span>
+      </a>
+      <nav class="dc-topnav" aria-label="页面导航">
+        <a class="dc-btn" href="/workspace">返回工作台</a>
+        <a class="dc-btn" href="/settings">设置与控制台</a>
+      </nav>
+    </header>
+
+    <div class="dc-layout">
+      <!-- 中央画布：多标签平铺。默认只有【数据看板】；点辅助栏分类新开同名页签 -->
+      <main class="dc-canvas" role="main" aria-label="字典画布">
+        <div class="dc-tabs-wrap">
+          <div class="dc-tabs" id="dcTabs" role="tablist" aria-label="画布标签页"></div>
+        </div>
+        <div class="dc-panels" id="dcPanels"></div>
+      </main>
+
+      <!-- 右侧辅助栏：全局设置 / 字典导航 / 操作区，自上而下三个区块 -->
+      <aside class="dc-sidebar" role="complementary" aria-label="辅助栏">
+        <section class="dc-block" aria-labelledby="dcGlobalsTitle">
+          <h2 class="dc-block-title" id="dcGlobalsTitle">全局设置</h2>
+          <p class="dc-block-hint">选定后自动记住，字典查询默认携带。</p>
+          <div class="dc-field">
+            <label for="dcStage">学段</label>
+            <select id="dcStage" disabled>
+              <option value="">加载中…</option>
+            </select>
+          </div>
+          <div class="dc-field">
+            <label for="dcSubject">学科</label>
+            <select id="dcSubject" disabled>
+              <option value="">加载中…</option>
+            </select>
+          </div>
+          <div class="dc-field">
+            <label for="dcTextbook">教材版本</label>
+            <select id="dcTextbook" disabled>
+              <option value="">加载中…</option>
+            </select>
+          </div>
+          <p class="dc-globals-state" id="dcGlobalsState" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="dc-block" aria-labelledby="dcNavTitle">
+          <details class="dc-nav" id="dcNavDetails" open>
+            <summary id="dcNavTitle">
+              <span>字典维护</span>
+              <span class="dc-nav-caret" aria-hidden="true"></span>
+            </summary>
+            <ul class="dc-nav-list" id="dcNavList"></ul>
+          </details>
+        </section>
+
+        <section class="dc-block" aria-labelledby="dcOpsTitle">
+          <h2 class="dc-block-title" id="dcOpsTitle">操作区</h2>
+          <div class="dc-ops">
+            <button class="dc-btn dc-btn-block" id="dcImportBtn" type="button">导入数据</button>
+            <button class="dc-btn dc-btn-block dc-btn-primary" id="dcBackupBtn" type="button">一键备份</button>
+          </div>
+          <p class="dc-ops-state" id="dcOpsState" role="status" aria-live="polite"></p>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="dc-footer">
+      <span>九章算子 · 数据字典控制台</span>
+      <span class="dc-footer-sep" aria-hidden="true"></span>
+      <span>表表平等 · 星型切换 · 应用层组装</span>
+    </footer>
+  </div>
+
+  <noscript><p class="dc-noscript">数据字典控制台需要 JavaScript 才能运行。</p></noscript>
+
+  <!-- 请求报错现场：最先加载，之后每笔 fetch 的非 2xx 都有完整记录 -->
+  <script src="/static/js/http.js"></script>
+  <!-- 控制台自有模块：全部收在 dict_console/ 一个目录，整块下架删目录即可 -->
+  <script src="/static/js/dict_console/catalog.js"></script>
+  <script src="/static/js/dict_console/client.js"></script>
+  <script src="/static/js/dict_console/dialog.js"></script>
+  <script src="/static/js/dict_console/globals.js"></script>
+  <script src="/static/js/dict_console/tabs.js"></script>
+  <script src="/static/js/dict_console/panels.js"></script>
+  <script src="/static/js/dict_console/sidebar.js"></script>
+  <script src="/static/js/dict_console/main.js"></script>
+  <script src="/static/js/pwa.js"></script>
+</body>
+</html>

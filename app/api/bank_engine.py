@@ -42,6 +42,15 @@ def engine_meta() -> dict[str, Any]:
     }
 
 
+@router.get("/api/bank/engine/textbooks", summary="教材版本清单：按学科/年级过滤，供字典控制台全局设置")
+def engine_textbooks(
+    subject_id: int | None = Query(default=None, ge=1),
+    grade_id: int | None = Query(default=None, ge=1),
+) -> dict[str, Any]:
+    items = service.textbooks(subject_id=subject_id, grade_id=grade_id)
+    return {"items": [asdict(item) for item in items], "total": len(items)}
+
+
 @router.get("/api/bank/engine/exam-directions", summary="考向检索：关键字模糊查，按大纲顺序")
 def engine_exam_directions(
     q: str = Query(default="", max_length=100),

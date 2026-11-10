@@ -1,0 +1,344 @@
+/* 数据字典控制台（2026-11-10 四阶段军令）
+ * 独立一份样式：整块下架时删本文件 + dict_console.html 的引用行即可。
+ * 配色与字体全部继承 app.css 的 --paper/--ink/--accent 变量，不另造主题。 */
+
+.dc-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 顶栏 ---------- */
+.dc-topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.dc-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink);
+  min-height: 44px;
+}
+.dc-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 700;
+}
+.dc-brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+.dc-brand-cn { font-family: var(--serif); font-size: 1.05rem; font-weight: 700; }
+.dc-brand-en { font-size: 0.62rem; letter-spacing: 0.18em; color: var(--muted); }
+.dc-topnav { display: flex; gap: 8px; }
+
+/* ---------- 按钮 ---------- */
+.dc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.dc-btn:hover { background: var(--card-hover); border-color: var(--accent); }
+.dc-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dc-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.dc-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.dc-btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.dc-btn-block { width: 100%; }
+
+/* ---------- 主从布局：中央画布 + 右侧辅助栏 ---------- */
+.dc-layout {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 14px;
+  padding: 14px 18px;
+  min-height: 0;
+}
+.dc-canvas {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.dc-sidebar {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+/* ---------- 页签栏 ---------- */
+.dc-tabs-wrap {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-deep);
+}
+.dc-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.dc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 6px 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  white-space: nowrap;
+}
+.dc-tab-main {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.dc-tab:hover { background: var(--card); }
+.dc-tab:hover .dc-tab-main { color: var(--ink); }
+.dc-tab-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dc-tab[data-active="true"] {
+  background: var(--card);
+  border-color: var(--line);
+}
+.dc-tab[data-active="true"] .dc-tab-main { color: var(--accent); font-weight: 600; }
+/* 热区 44px 起步（AGENTS §6），叉号字形保持小号不撑大页签观感 */
+.dc-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dc-tab-close:hover { background: var(--accent-soft); color: var(--accent); }
+.dc-tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- 画布面板 ---------- */
+.dc-panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.dc-panel { padding: 18px; }
+.dc-panel[hidden] { display: none; }
+.dc-panel-title { margin: 0 0 4px; font-family: var(--serif); font-size: 1.15rem; }
+.dc-panel-hint { margin: 0 0 14px; color: var(--muted); font-size: 0.84rem; }
+.dc-panel-state { margin: 12px 0; color: var(--muted); }
+.dc-panel-error { color: var(--down); white-space: pre-line; }
+
+/* ---------- 看板与字典卡片 ---------- */
+.dc-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.dc-stat {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.dc-stat-num { display: block; font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+.dc-stat-label { font-size: 0.8rem; color: var(--muted); }
+.dc-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.dc-card {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.dc-card-name { margin: 0 0 2px; font-size: 0.95rem; font-weight: 600; }
+.dc-card-table { font-size: 0.75rem; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
+.dc-card-count { margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
+.dc-card-count strong { color: var(--accent); font-size: 1.05rem; }
+.dc-card-desc { margin: 6px 0 0; font-size: 0.8rem; color: var(--muted); }
+
+/* ---------- 辅助栏区块 ---------- */
+.dc-block {
+  flex: none;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.dc-block-title { margin: 0 0 6px; font-family: var(--serif); font-size: 1rem; }
+.dc-block-hint { margin: 0 0 10px; font-size: 0.78rem; color: var(--muted); }
+.dc-field { margin-bottom: 10px; }
+.dc-field label { display: block; margin-bottom: 4px; font-size: 0.84rem; color: var(--muted); }
+.dc-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.dc-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dc-field select:disabled { opacity: 0.6; }
+.dc-globals-state { margin: 4px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
+
+/* ---------- 字典导航（原生 details 折叠，键盘可达） ---------- */
+.dc-nav summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  margin: -6px -4px 0;
+  padding: 0 4px;
+  font-family: var(--serif);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.dc-nav summary::-webkit-details-marker { display: none; }
+.dc-nav summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dc-nav-caret {
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.dc-nav[open] .dc-nav-caret { transform: rotate(225deg); }
+.dc-nav-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dc-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+.dc-nav-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dc-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dc-nav-item[aria-current="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.dc-nav-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+
+/* ---------- 操作区 ---------- */
+.dc-ops { display: flex; flex-direction: column; gap: 8px; }
+.dc-ops-state { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
+
+/* ---------- 对话框（焦点陷阱 + Esc + 焦点归位由 dialog.js 负责） ---------- */
+.dc-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(31, 28, 24, 0.45);
+}
+.dc-dialog {
+  width: min(460px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.dc-dialog-title { margin: 0 0 8px; font-family: var(--serif); font-size: 1.05rem; }
+.dc-dialog-message { margin: 0 0 14px; font-size: 0.9rem; color: var(--ink); white-space: pre-line; }
+.dc-dialog-tools { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---------- 底栏 ---------- */
+.dc-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+.dc-footer-sep { width: 1px; height: 12px; background: var(--line-strong); }
+.dc-noscript { padding: 24px; text-align: center; }
+
+/* ---------- 响应式：≤900px 辅助栏落到画布下方；375px 不横溢 ---------- */
+@media (max-width: 900px) {
+  .dc-layout { flex-direction: column; }
+  .dc-sidebar { width: auto; overflow-y: visible; }
+  .dc-canvas { min-height: 50vh; }
+}
+@media (max-width: 480px) {
+  .dc-topbar { flex-wrap: wrap; }
+  .dc-layout { padding: 10px; }
+  .dc-panel { padding: 12px; }
+  .dc-stat-row { grid-template-columns: repeat(2, 1fr); }
+  .dc-card-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dc-nav-caret { transition: none; }
+}

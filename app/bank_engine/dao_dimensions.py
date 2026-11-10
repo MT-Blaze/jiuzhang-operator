@@ -216,6 +216,9 @@ def list_textbooks(
     if subject_id is not None:
         clauses.append("subject_id = ?")
         params.append(subject_id)
+    if grade_id is not None:
+        clauses.append("grade_id = ?")
+        params.append(grade_id)
     sql = (
         "SELECT " + TEXTBOOK_COLUMNS + " FROM dim_textbooks"
         + _where(clauses, params)

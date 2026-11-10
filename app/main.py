@@ -294,6 +294,16 @@ def create_app() -> FastAPI:
         return FileResponse(settings.static_dir / "settings.html",
                             headers=NO_CACHE_HEADERS)
 
+    @app.get("/dict", include_in_schema=False)
+    async def read_dict_console_page() -> FileResponse:
+        """数据字典控制台（2026-11-10 四阶段军令）：多标签画布 + 右侧辅助栏。
+
+        整块下架口径：删本路由、static/dict_console.html、static/css/dict_console.css、
+        static/js/dict_console/ 与工作台左栏入口锚点即可，不留残余。
+        """
+        return FileResponse(settings.static_dir / "dict_console.html",
+                            headers=NO_CACHE_HEADERS)
+
     @app.get("/plugins/index-example", include_in_schema=False)
     async def read_example_index() -> FileResponse:
         """本机自带的示例索引，供「先试一次」按钮用同源地址走通流程。

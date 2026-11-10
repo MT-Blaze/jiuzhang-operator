@@ -61,6 +61,16 @@
           <span>设置与控制台</span>
           <span class="ws-console-badge" id="wsConsoleDot" aria-live="polite" hidden></span>
         </button>
+        <!-- 数据字典控制台入口（2026-11-10）：整块下架时删掉本锚点、workspace_overlay.css
+             里 .ws-dict-entry 段与 /dict 路由即可 -->
+        <a class="ws-console-entry ws-dict-entry" href="/dict"
+          aria-label="打开数据字典控制台" title="数据字典控制台">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M5 4h14v16H5zM5 9h14M10 9v11" fill="none"
+              stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+          </svg>
+          <span>数据字典</span>
+        </a>
       </footer>
     </aside>
 
