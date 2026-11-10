@@ -139,7 +139,7 @@
   }
 
   /**
-   * 引擎 v2 的录题文档：字段名与 31 表一一对应，旧的 extensions 不再参与。
+   * 引擎 v2 的录题文档：字段名与 35 表一一对应，旧的 extensions 不再参与。
    * 题目号由引擎签发；这里只交“老师填了什么”，考向/知识点用字典 code。
    */
   function engineFromDoc(doc, meta) {

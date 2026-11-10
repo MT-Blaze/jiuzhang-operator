@@ -1,4 +1,4 @@
-"""录题表单 → ``NewQuestion``：把老师填的名字/编码解析成 32 表的外键。
+"""录题表单 → ``NewQuestion``：把老师填的名字/编码解析成 35 表的外键。
 
 只做解析与归一，不写库；任何解析不了的词都在这里收成 ``EntryRejected``，
 由路由原样回 422。所有字典查询都是单表 SELECT，跨表关系留给 writer 分步落库。
@@ -11,16 +11,15 @@ from typing import Any
 
 from app.bank_engine import dao_dictionary
 from app.bank_engine.models import (
+    NewExam,
     NewImage,
     NewOption,
     NewQuestion,
-    NewSource,
     NewSupplement,
 )
 from app.bank_engine.writer import EntryRejected, normalize_exam_type
 
 _IMAGE_ROLES = {"stem": "stem", "option": "option", "solution": "solution", "answer": "answer"}
-_SLOT_MIN, _SLOT_MAX = 1900, 2100
 
 
 def _text(value: Any, limit: int) -> str:
@@ -167,28 +166,68 @@ def _taxonomy_ids(document: dict[str, Any], key: str) -> Any:
     return taxonomy.get(key)
 
 
-def _source(
-    document: dict[str, Any], *, grade_id: int | None, chapter_id: int | None
-) -> NewSource | None:
+DEFAULT_EXAM_GRADE_ID = 12
+
+
+def _school_ids(conn: sqlite3.Connection, raw: dict[str, Any]) -> tuple[int, ...]:
+    values = raw.get("school_ids")
+    if not isinstance(values, list):
+        values = []
+    primary = raw.get("school_id")
+    if primary not in (None, ""):
+        values = [primary, *values]
+    ids: list[int] = []
+    missing: list[str] = []
+    for item in values[:24]:
+        school_id = _int_or_none(item)
+        if school_id is None:
+            code = _text(item, 40)
+            row = conn.execute(
+                "SELECT id FROM dim_schools WHERE code = ?", (code,)
+            ).fetchone()
+            school_id = None if row is None else int(row[0])
+            if school_id is None:
+                missing.append(code)
+                continue
+        if school_id not in ids:
+            ids.append(school_id)
+    if missing:
+        raise EntryRejected("学校编码不在字典里：" + "、".join(missing))
+    return tuple(ids)
+
+
+def _exam(
+    conn: sqlite3.Connection,
+    document: dict[str, Any],
+    *,
+    subject_id: int,
+    grade_id: int | None,
+) -> NewExam | None:
     raw = document.get("source")
     if not isinstance(raw, dict):
         return None
-    name = _text(raw.get("paper_title") or raw.get("name"), 120)
-    if not name:
+    exam_subject = _text(
+        raw.get("exam_subject") or raw.get("body") or raw.get("paper_title") or raw.get("name"),
+        120,
+    )
+    if not exam_subject:
         return None
     year = _int_or_none(raw.get("year"))
-    if year is not None and not (_SLOT_MIN <= year <= _SLOT_MAX):
-        year = None
-    return NewSource(
-        name=name,
-        exam_type=normalize_exam_type(raw.get("exam_type")),
+    if year is None or not 1900 <= year <= 2100:
+        year = 1900
+    month = _int_or_none(raw.get("month"))
+    if month is not None and not 1 <= month <= 12:
+        month = None
+    return NewExam(
         year=year,
-        region=_text(raw.get("region"), 64) or None,
+        month=month,
+        subject_id=subject_id,
+        grade_id=grade_id or DEFAULT_EXAM_GRADE_ID,
+        exam_type=normalize_exam_type(raw.get("exam_type")),
+        exam_subject=exam_subject,
         question_no=_text(raw.get("question_no"), 20) or None,
         score=_float_or_zero(raw.get("score")),
-        grade_id=grade_id,
-        chapter_id=chapter_id,
-        school_id=_int_or_none(raw.get("school_id")),
+        school_ids=_school_ids(conn, raw),
     )
 
 
@@ -246,7 +285,6 @@ def prepare_question(conn: sqlite3.Connection, document: Any) -> NewQuestion:
     if missing_points:
         raise EntryRejected("知识点编码不在字典里：" + "、".join(missing_points))
 
-    chapter_id = _int_or_none(document.get("chapter_id"))
     return NewQuestion(
         stem=_text(document.get("stem"), 50000),
         subject_id=subject.id,
@@ -261,7 +299,12 @@ def prepare_question(conn: sqlite3.Connection, document: Any) -> NewQuestion:
         images=_images(document),
         exam_direction_ids=direction_ids,
         knowledge_point_ids=point_ids,
-        source=_source(document, grade_id=None if grade is None else grade.id, chapter_id=chapter_id),
+        exam=_exam(
+            conn,
+            document,
+            subject_id=subject.id,
+            grade_id=None if grade is None else grade.id,
+        ),
     )
 
 

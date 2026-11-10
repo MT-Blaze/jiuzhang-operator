@@ -1,4 +1,4 @@
-"""题库引擎 v2：32 表关系库、全量种子与无 JSON 的 DAO / 服务接口。"""
+"""题库引擎 v2：35 表关系库、全量种子与无 JSON 的 DAO / 服务接口。"""
 
 from app.bank_engine.builder import build_engine
 from app.bank_engine.models import (

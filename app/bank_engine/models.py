@@ -49,12 +49,21 @@ class Quality:
 
 
 @dataclass(frozen=True)
+class ExamType:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+
+
+@dataclass(frozen=True)
 class Dictionaries:
     subjects: tuple[Subject, ...]
     grades: tuple[Grade, ...]
     question_types: tuple[QuestionType, ...]
     difficulties: tuple[Difficulty, ...]
     qualities: tuple[Quality, ...]
+    exam_types: tuple[ExamType, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,16 +91,16 @@ class NewSupplement:
 
 
 @dataclass(frozen=True)
-class NewSource:
-    name: str
+class NewExam:
+    year: int
+    subject_id: int
+    grade_id: int
     exam_type: str
-    year: int | None = None
-    region: str | None = None
+    exam_subject: str
+    month: int | None = None
     question_no: str | None = None
     score: float = 0.0
-    grade_id: int | None = None
-    chapter_id: int | None = None
-    school_id: int | None = None
+    school_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,7 +120,7 @@ class NewQuestion:
     images: tuple[NewImage, ...] = ()
     exam_direction_ids: tuple[int, ...] = ()
     knowledge_point_ids: tuple[int, ...] = ()
-    source: NewSource | None = None
+    exam: NewExam | None = None
 
 
 @dataclass(frozen=True)
@@ -210,19 +219,19 @@ class QuestionSupplement:
 
 
 @dataclass(frozen=True)
-class QuestionSource:
+class QuestionExam:
     id: int
-    name: str
     code: str
+    year: int
+    month: int | None
+    subject_id: int
+    grade_id: int
     exam_type: str
-    year: int | None
-    region: str | None
+    exam_subject: str
     question_no: str | None
     score: float
-    grade_id: int | None
-    chapter_id: int | None
-    school_id: int | None
-    school_name: str | None = None
+    school_ids: tuple[int, ...] = ()
+    school_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -255,7 +264,7 @@ class QuestionRecord:
     remarks: tuple[str, ...] = ()
     supplements: tuple[QuestionSupplement, ...] = ()
     images: tuple[QuestionImage, ...] = ()
-    sources: tuple[QuestionSource, ...] = ()
+    exams: tuple[QuestionExam, ...] = ()
     exam_directions: tuple[ExamDirection, ...] = ()
     knowledge_points: tuple[KnowledgePoint, ...] = ()
 

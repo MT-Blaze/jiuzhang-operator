@@ -12,12 +12,12 @@ from typing import Iterable
 from app.bank_engine import dao_base
 from app.bank_engine.models import (
     QuestionAnswer,
+    QuestionExam,
     QuestionImage,
     QuestionOption,
     QuestionPage,
     QuestionRecord,
     QuestionSolution,
-    QuestionSource,
     QuestionSummary,
     QuestionSupplement,
 )
@@ -178,45 +178,71 @@ def _images(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionImage, 
     )
 
 
-def _sources(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionSource, ...]:
+def _schools_by_exam(
+    conn: sqlite3.Connection, exam_ids: list[int]
+) -> dict[int, tuple[tuple[int, str], ...]]:
+    links: dict[int, list[int]] = {}
+    for part in dao_base.chunks(exam_ids):
+        clause, params = dao_base.in_sql("exam_id", part)
+        for row in conn.execute(
+            "SELECT exam_id, school_id FROM exam_school_map WHERE " + clause
+            + " ORDER BY exam_id, school_id",
+            params,
+        ):
+            links.setdefault(int(row["exam_id"]), []).append(int(row["school_id"]))
+    school_ids = [school_id for values in links.values() for school_id in values]
+    schools = dao_base.load_rows_by_ids(conn, "SELECT id, name FROM dim_schools", school_ids)
+    return {
+        exam_id: tuple(
+            (school_id, str(schools[school_id]["name"]))
+            for school_id in school_ids_of_exam
+            if school_id in schools
+        )
+        for exam_id, school_ids_of_exam in links.items()
+    }
+
+
+def _exams(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionExam, ...]:
     maps = conn.execute(
-        "SELECT source_id, question_no, score FROM question_source_map "
-        "WHERE question_id = ? ORDER BY source_id",
+        "SELECT exam_id, question_no, score FROM question_exams "
+        "WHERE question_id = ? ORDER BY exam_id",
         (question_id,),
     ).fetchall()
     if not maps:
         return ()
-    source_ids = [int(row["source_id"]) for row in maps]
+    exam_ids = [int(row["exam_id"]) for row in maps]
     rows = dao_base.load_rows_by_ids(
         conn,
-        "SELECT id, name, code, exam_type, year, region, grade_id, chapter_id, school_id "
-        "FROM dim_sources",
-        source_ids,
+        "SELECT id, code, year, month, subject_id, grade_id, exam_type_id, exam_subject "
+        "FROM exams",
+        exam_ids,
     )
-    school_ids = [int(row["school_id"]) for row in rows.values() if row["school_id"] is not None]
-    schools = dao_base.load_rows_by_ids(
-        conn, "SELECT id, name FROM dim_schools", school_ids
+    type_ids = [int(row["exam_type_id"]) for row in rows.values()]
+    types = dao_base.load_rows_by_ids(
+        conn, "SELECT id, name FROM dict_exam_types", type_ids
     )
-    items: list[QuestionSource] = []
+    schools = _schools_by_exam(conn, exam_ids)
+    items: list[QuestionExam] = []
     for row in maps:
-        source = rows.get(int(row["source_id"]))
-        if source is None:
+        exam = rows.get(int(row["exam_id"]))
+        if exam is None:
             continue
-        school_id = _optional_int(source["school_id"])
+        exam_schools = schools.get(int(exam["id"]), ())
         items.append(
-            QuestionSource(
-                id=int(source["id"]),
-                name=str(source["name"]),
-                code=str(source["code"]),
-                exam_type=str(source["exam_type"]),
-                year=_optional_int(source["year"]),
-                region=None if source["region"] is None else str(source["region"]),
+            QuestionExam(
+                id=int(exam["id"]),
+                code=str(exam["code"]),
+                year=int(exam["year"]),
+                month=None if exam["month"] is None else int(exam["month"]),
+                subject_id=int(exam["subject_id"]),
+                grade_id=int(exam["grade_id"]),
+                exam_type=str(types[int(exam["exam_type_id"])]["name"])
+                if int(exam["exam_type_id"]) in types else "",
+                exam_subject=str(exam["exam_subject"]),
                 question_no=None if row["question_no"] is None else str(row["question_no"]),
                 score=float(row["score"]),
-                grade_id=_optional_int(source["grade_id"]),
-                chapter_id=_optional_int(source["chapter_id"]),
-                school_id=school_id,
-                school_name=None if school_id is None else str(schools[school_id]["name"]),
+                school_ids=tuple(school_id for school_id, _ in exam_schools),
+                school_names=tuple(name for _, name in exam_schools),
             )
         )
     return tuple(items)
@@ -266,7 +292,7 @@ def get_question(conn: sqlite3.Connection, question_id: str) -> QuestionRecord |
         remarks=_remarks(conn, question_id),
         supplements=_supplements(conn, question_id),
         images=_images(conn, question_id),
-        sources=_sources(conn, question_id),
+        exams=_exams(conn, question_id),
         exam_directions=tuple(
             directions[key] for key in sorted(directions)
         ),

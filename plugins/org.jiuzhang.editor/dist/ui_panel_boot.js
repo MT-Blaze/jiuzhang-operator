@@ -118,7 +118,7 @@
     var panelSwapEl = deps.dom.panelSwapEl;
     var panelTypeEl = deps.dom.panelTypeEl;
 
-  /** 下拉框的“选项文案”从引擎字典来：题型与难度的名字以 31 表为准。 */
+  /** 下拉框的“选项文案”从引擎字典来：题型与难度的名字以 35 表为准。 */
   function engineLabels(rows, fallback) {
     var labels = {};
     (rows || []).forEach(function (row) {

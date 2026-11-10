@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from app.bank_engine import regions
 from app.bank_engine.seeds.books.registry import BOOK_ROWS, CHAPTER_ROWS
 from app.bank_engine.seeds.curriculum import (
     CORE_COMPETENCY_ROWS,
@@ -18,6 +19,7 @@ from app.bank_engine.seeds.curriculum import (
     SUBJECT_THOUGHT_ROWS,
 )
 from app.bank_engine.seeds.dictionaries import DIFFICULTY_SEED_ROWS, QUALITY_SEED_ROWS
+from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
 from app.bank_engine.seeds.exam_direction_seed import EXAM_DIRECTION_ROWS
 from app.bank_engine.seeds.knowledge_seed import KNOWLEDGE_POINT_ROWS
 from app.bank_engine.seeds.math_required1 import (
@@ -30,6 +32,7 @@ from app.bank_engine.seeds.migrated_textbook_seed import (
     MIGRATED_BOOK_ROWS,
     MIGRATED_CHAPTER_ROWS,
 )
+from app.bank_engine.seeds.region_seed import REGION_ROWS
 from app.bank_engine.seeds.school_seed import SCHOOL_ROWS
 
 EXPECTED_COUNTS: dict[str, int] = {
@@ -38,6 +41,7 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_question_types": 3,
     "dict_difficulties": 5,
     "dict_question_qualities": 3,
+    "dict_exam_types": 16,
     "dict_subject_thoughts": 22,
     "dict_solution_methods": 34,
     "dict_core_competencies": 47,
@@ -47,7 +51,10 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dim_exam_directions": 567,
     "knowledge_exam_map": 200,
     "chapter_knowledge_map": 74,
+    "dim_regions": 367,
     "dim_schools": 347,
+    "exams": 4,
+    "exam_school_map": 9,
 }
 
 _TEACHING_DICTIONARIES = (
@@ -63,7 +70,7 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
     textbooks = tuple(BOOK_ROWS) + tuple(MIGRATED_BOOK_ROWS)
     chapters = tuple(CHAPTER_ROWS) + tuple(MIGRATED_CHAPTER_ROWS)
     knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_REQUIRED1_KNOWLEDGE_ROWS)
-    schools = tuple(SCHOOL_ROWS)
+    schools = tuple((*row, regions.match_region_id(row[4])) for row in SCHOOL_ROWS)
     directions = tuple(EXAM_DIRECTION_ROWS) + tuple(MATH_REQUIRED1_EXAM_ROWS)
     statements: list[tuple[str, tuple[tuple[Any, ...], ...]]] = [
         (
@@ -92,6 +99,11 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             "VALUES (?, ?, ?, ?)",
             qualities,
         ),
+        (
+            "INSERT INTO dict_exam_types (id, name, code, sort_order) "
+            "VALUES (?, ?, ?, ?)",
+            tuple(EXAM_TYPE_ROWS),
+        ),
     ]
     for table, rows in _TEACHING_DICTIONARIES:
         statements.append(
@@ -104,6 +116,12 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
         )
     statements.extend(
         (
+            (
+                "INSERT INTO dim_regions "
+                "(id, name, code, level, parent_id, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                tuple(REGION_ROWS),
+            ),
             (
                 "INSERT INTO dim_textbooks "
                 "(id, name, code, sort_order, publisher, subject_id, grade_id) "
@@ -140,9 +158,19 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             ),
             (
                 "INSERT INTO dim_schools "
-                "(id, name, short_name, code, region, textbook_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(id, name, short_name, code, region, textbook_id, region_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 schools,
+            ),
+            (
+                "INSERT INTO exams "
+                "(id, code, year, month, subject_id, grade_id, exam_type_id, exam_subject) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                tuple(EXAM_ROWS),
+            ),
+            (
+                "INSERT INTO exam_school_map (exam_id, school_id) VALUES (?, ?)",
+                tuple(EXAM_SCHOOL_ROWS),
             ),
         )
     )

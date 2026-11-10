@@ -320,7 +320,7 @@
         }, function () { closeGhostMenu("topic"); });
     }
 
-    /** 知识点与考向同一种菜：候选来自 31 表的 dim_knowledge_points，不走旧大纲树。 */
+    /** 知识点与考向同一种菜：候选来自 35 表的 dim_knowledge_points，不走旧大纲树。 */
     function searchGhostKnowledge(query) {
       var wire = ghostState.knowledge;
       var seq = wire ? (wire.seq || 0) + 1 : 1;

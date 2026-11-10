@@ -1,5 +1,5 @@
--- 九章题库结构（沙盒终极定稿，schema version 3）
--- 31 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
+-- 九章题库结构（沙盒终极定稿，schema version 6）
+-- 35 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
 -- SQLite 外键开关按连接生效，读写前必须先执行 PRAGMA foreign_keys = ON。
 -- 外键动作全部收敛为 RESTRICT（保护被引用数据）或 CASCADE（随父行清理从表）。
 -- 命名规范：平铺字典 dict_，业务维度 dim_（树状维度与强绑定学科年级的维度一律 dim_），
@@ -66,6 +66,35 @@ CREATE TABLE dict_question_qualities (
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0
 );
+-- [功能注释] 考试类型字典：存高考题、联考题、区域统考题、校考题、一模、二模、期中、期末、月考等考试场景
+CREATE TABLE dict_exam_types (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 考试类型名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 考试类型编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+-- [功能注释] 行政区划字典：按国标 GB/T 2260 存省、地两级行政区划，parent_id 自关联成“省 -> 市”
+CREATE TABLE dim_regions (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 行政区划名称，只填核心地名（如“黑龙江”“哈尔滨”），不带省/市/自治区/地区后缀
+    name       TEXT NOT NULL,
+    -- [字段注释] 国标 GB/T 2260 行政区划代码，六位数字，全局唯一
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 区划层级，1 表示省级，2 表示地级
+    level      INTEGER NOT NULL CHECK (level IN (1, 2)),
+    -- [字段注释] 父级区划外键，省级为空，地级指向所属省级
+    parent_id  INTEGER REFERENCES dim_regions(id) ON DELETE RESTRICT,
+    -- [字段注释] 排序序号，同一父级内按行政顺序排列，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    CHECK ((level = 1 AND parent_id IS NULL) OR (level = 2 AND parent_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX ux_dim_regions_sibling_name
+    ON dim_regions (COALESCE(parent_id, 0), name);
+CREATE INDEX ix_dim_regions_parent ON dim_regions (parent_id);
 -- 学校字典：textbook_id 表示该校主用教材版本，与题目来源章节版本互通
 -- [功能注释] 学校字典：存学校全称、简称、地区及主用教材版本，供题目来源标注学校
 CREATE TABLE dim_schools (
@@ -78,6 +107,8 @@ CREATE TABLE dim_schools (
     code        TEXT NOT NULL UNIQUE,
     -- [字段注释] 所属地区（只填核心地名，严禁带省/市/自治区后缀），用于题目来源的时空标注，可为空
     region      TEXT,
+    -- [字段注释] 所属行政区划外键，指向 dim_regions，旧数据未匹配时可为空
+    region_id   INTEGER REFERENCES dim_regions(id) ON DELETE RESTRICT,
     textbook_id INTEGER REFERENCES dim_textbooks(id) ON DELETE RESTRICT,
     UNIQUE (region, short_name)
 );
@@ -113,28 +144,32 @@ CREATE TABLE dim_textbook_chapters (
 
 CREATE UNIQUE INDEX ux_dim_textbook_chapters_sibling_name
     ON dim_textbook_chapters (textbook_id, COALESCE(parent_id, 0), name);
--- [功能注释] 题目来源字典：存题目出处名称（试卷、教辅、导学案等）、考试类型、年份与地区，并挂接年级、章节、学校等时空属性
-CREATE TABLE dim_sources (
-    id         INTEGER PRIMARY KEY,
-    -- [字段注释] 题目来源名称，如某年某卷、某教辅，展示给用户看的业务词汇
-    name       TEXT NOT NULL,
-    -- [字段注释] 题目来源编码，系统底层唯一标识，不随名称更改
-    code       TEXT NOT NULL UNIQUE,
-    -- [字段注释] 考试类型：固定为 11 种考试场景之一——高考题 / 联考题 / 区域统考题 / 校考题 / 机构题 / 汇编题 / 自编题 / 强基题 / 竞赛题 / 自主招生题 / 外国题
-    exam_type  TEXT NOT NULL CHECK (exam_type IN ('高考题', '联考题', '区域统考题', '校考题', '机构题', '汇编题', '自编题', '强基题', '竞赛题', '自主招生题', '外国题')),
-    -- [字段注释] 来源年份，限定 1900-2100，可为空
-    year       INTEGER CHECK (year IS NULL OR year BETWEEN 1900 AND 2100),
-    -- [字段注释] 来源地区，标注试卷或教辅的适用区域，可为空
-    region     TEXT,
+-- [功能注释] 试卷主表：用年份、月份、学科、年级、考试类型与考试主体拼出唯一试卷，不再存死板名称
+CREATE TABLE exams (
+    id           INTEGER PRIMARY KEY,
+    -- [字段注释] 试卷编码，系统底层唯一标识，不随属性更改
+    code         TEXT NOT NULL UNIQUE,
+    -- [字段注释] 试卷年份，限定 1900-2100
+    year         INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
+    -- [字段注释] 试卷月份，允许为空（不明月份的历史卷）
+    month        INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
+    -- [字段注释] 学科外键，每张试卷必须归属一个学科
+    subject_id   INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    -- [字段注释] 年级外键，每张试卷必须归属一个年级
+    grade_id     INTEGER NOT NULL REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试类型外键，指向考试类型字典
+    exam_type_id INTEGER NOT NULL REFERENCES dict_exam_types(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试主体，如 T8联盟 / 东北三省联考 / 哈尔滨一模 / 哈三中
+    exam_subject TEXT NOT NULL,
     -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
-    chapter_id INTEGER REFERENCES dim_textbook_chapters(id) ON DELETE RESTRICT,
-    school_id  INTEGER REFERENCES dim_schools(id) ON DELETE RESTRICT
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
-
-CREATE UNIQUE INDEX ux_dim_sources_natural_key
-    ON dim_sources (name, COALESCE(year, 0), COALESCE(region, ''));
+-- [功能注释] 试卷与学校关联表：一张联考卷可同时关联多所学校，多对多拆行
+CREATE TABLE exam_school_map (
+    exam_id   INTEGER NOT NULL REFERENCES exams(id) ON DELETE RESTRICT,
+    school_id INTEGER NOT NULL REFERENCES dim_schools(id) ON DELETE RESTRICT,
+    PRIMARY KEY (exam_id, school_id)
+) WITHOUT ROWID;
 -- [功能注释] 知识点字典：parent_id 自关联成“函数 -> 性质 -> 奇偶性”层级，供题目绑定底层概念
 CREATE TABLE dim_knowledge_points (
     id          INTEGER PRIMARY KEY,
@@ -348,15 +383,15 @@ CREATE TABLE question_knowledge_map (
                        REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
     PRIMARY KEY (question_id, knowledge_point_id)
 ) WITHOUT ROWID;
--- [功能注释] 题目来源关系：题目与题目来源多对多，承载题号与分值
-CREATE TABLE question_source_map (
+-- [功能注释] 题目与试卷关系：题目与试卷多对多，承载题号与分值
+CREATE TABLE question_exams (
     question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-    source_id   INTEGER NOT NULL REFERENCES dim_sources(id) ON DELETE RESTRICT,
-    -- [字段注释] 题目在该来源中的题号，可为空
+    exam_id     INTEGER NOT NULL REFERENCES exams(id) ON DELETE RESTRICT,
+    -- [字段注释] 题目在该试卷中的题号，可为空
     question_no TEXT,
-    -- [字段注释] 该题在该来源中的分值，非负，默认 0
+    -- [字段注释] 该题在该试卷中的分值，非负，默认 0
     score       REAL NOT NULL DEFAULT 0 CHECK (score >= 0),
-    PRIMARY KEY (question_id, source_id)
+    PRIMARY KEY (question_id, exam_id)
 ) WITHOUT ROWID;
 -- [功能注释] 学科思想字典：存学科思想名称与编码，供解析思想关联引用
 CREATE TABLE dict_subject_thoughts (
@@ -431,10 +466,11 @@ CREATE INDEX ix_dim_textbook_chapters_textbook
     ON dim_textbook_chapters (textbook_id);
 CREATE INDEX ix_dim_textbook_chapters_parent ON dim_textbook_chapters (parent_id);
 CREATE INDEX ix_dim_schools_short ON dim_schools (short_name);
+CREATE INDEX ix_dim_schools_region ON dim_schools (region_id);
 CREATE INDEX ix_dim_schools_textbook ON dim_schools (textbook_id);
-CREATE INDEX ix_dim_sources_grade ON dim_sources (grade_id);
-CREATE INDEX ix_dim_sources_chapter ON dim_sources (chapter_id);
-CREATE INDEX ix_dim_sources_school ON dim_sources (school_id);
+CREATE INDEX ix_exams_lookup
+    ON exams (year, month, subject_id, grade_id, exam_type_id);
+CREATE INDEX ix_exam_school_map_school ON exam_school_map (school_id);
 CREATE INDEX ix_dim_knowledge_points_subject
     ON dim_knowledge_points (subject_id);
 CREATE INDEX ix_dim_knowledge_points_parent
@@ -479,7 +515,7 @@ CREATE INDEX ix_question_exam_map_exam_direction
     ON question_exam_map (exam_direction_id);
 CREATE INDEX ix_question_knowledge_map_knowledge_point
     ON question_knowledge_map (knowledge_point_id);
-CREATE INDEX ix_question_source_map_source ON question_source_map (source_id);
+CREATE INDEX ix_question_exams_exam ON question_exams (exam_id);
 CREATE INDEX ix_solution_thought_map_thought
     ON solution_thought_map (thought_id);
 CREATE INDEX ix_solution_method_map_method
@@ -512,26 +548,26 @@ CREATE TRIGGER trg_questions_fts_update AFTER UPDATE OF stem ON questions BEGIN
     VALUES (new.rowid, new.stem);
 END;
 
--- 统计从表自动记账：题目落库即初始化计数，来源关系增删即同步增减
+-- 统计从表自动记账：题目落库即初始化计数，试卷关系增删即同步增减
 CREATE TRIGGER trg_questions_statistics_init AFTER INSERT ON questions BEGIN
     INSERT INTO question_statistics (question_id, reference_count)
     VALUES (new.id, 0);
 END;
 
-CREATE TRIGGER trg_question_source_map_statistics_insert
-AFTER INSERT ON question_source_map BEGIN
+CREATE TRIGGER trg_question_exams_statistics_insert
+AFTER INSERT ON question_exams BEGIN
     UPDATE question_statistics
     SET reference_count = reference_count + 1
     WHERE question_id = new.question_id;
 END;
 
-CREATE TRIGGER trg_question_source_map_statistics_delete
-AFTER DELETE ON question_source_map BEGIN
+CREATE TRIGGER trg_question_exams_statistics_delete
+AFTER DELETE ON question_exams BEGIN
     UPDATE question_statistics
     SET reference_count = reference_count - 1
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 6;
 
 COMMIT;

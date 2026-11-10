@@ -1000,7 +1000,7 @@ class ModuleSurfaceTest(unittest.TestCase):
             self.skipTest("本机没有 bank-engine 的 bank/ 目录")
         real_names = sorted(item.relative_to(bank_dir).as_posix()
                             for item in bank_dir.rglob("*") if item.is_file())
-        self.assertIn("schema.sql", real_names, "引擎包必须携带 32 表 schema")
+        self.assertIn("schema.sql", real_names, "引擎包必须携带 35 表 schema")
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

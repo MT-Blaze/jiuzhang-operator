@@ -98,7 +98,7 @@
     if (method.indexOf("bank.") !== 0) return false;
 
     if (method === "bank.engine_meta") {
-      // 五张小字典 + 考试类型清单：录题端的下拉框只认 31 表里的真实种子。
+      // 五张小字典 + 考试类型清单：录题端的下拉框只认 35 表里的真实种子。
       fetchJson("/api/bank/engine/meta").then(done, fail);
       return true;
     }

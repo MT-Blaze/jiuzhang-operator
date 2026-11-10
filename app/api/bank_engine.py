@@ -1,6 +1,6 @@
 """题库引擎 v2 的 Host API：录题下拉框的真实字典、考向 / 知识点检索与录题落库。
 
-插件在沙箱里碰不到 ``.v2.db``；这里把 32 张表的能力收成四条口子：
+插件在沙箱里碰不到 ``.v2.db``；这里把 35 张表的能力收成四条口子：
 
 - 读字典（学科 / 年级 / 题型 / 难度 / 质量）与考试类型清单；
 - 按关键字查考向、知识点，返回给幽灵胶囊直接上屏；
@@ -18,7 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.bank_engine import service
-from app.bank_engine.writer import EXAM_TYPES, EntryRejected
+from app.bank_engine.writer import EntryRejected
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["bank-engine"])
@@ -38,7 +38,7 @@ def engine_meta() -> dict[str, Any]:
         "question_types": [asdict(item) for item in dictionaries.question_types],
         "difficulties": [asdict(item) for item in dictionaries.difficulties],
         "qualities": [asdict(item) for item in dictionaries.qualities],
-        "exam_types": list(EXAM_TYPES),
+        "exam_types": [asdict(item) for item in dictionaries.exam_types],
     }
 
 

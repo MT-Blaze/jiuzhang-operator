@@ -15,6 +15,7 @@ import argparse
 import re
 import sys
 import zipfile
+from html import unescape
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -42,41 +43,45 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "字典表(14张)",
+        "字典表(16张)",
         (
             "dict_subjects",
             "dict_grades",
             "dict_question_types",
             "dict_difficulties",
             "dict_question_qualities",
+            "dict_exam_types",
             "dim_textbooks",
             "dim_textbook_chapters",
             "dim_schools",
-            "dim_sources",
+            "exams",
             "dim_knowledge_points",
             "dim_exam_directions",
             "dict_subject_thoughts",
             "dict_solution_methods",
             "dict_core_competencies",
+            "dim_regions",
         ),
     ),
     (
-        "关系表(7张)",
+        "关系表(9张)",
         (
             "question_exam_map",
             "question_knowledge_map",
             "knowledge_exam_map",
-            "question_source_map",
+            "question_exams",
+            "exam_school_map",
             "solution_thought_map",
             "solution_method_map",
             "solution_competency_map",
+            "chapter_knowledge_map",
         ),
     ),
 )
 
 # (min, max, 列宽, 列样式)
 COLUMN_WIDTHS: tuple[tuple[int, int, str, str | None], ...] = (
-    (1, 1, "4", "11"),
+    (1, 1, "4", "9"),
     (2, 2, "6.25", None),
     (3, 3, "24", None),
     (4, 4, "38", None),
@@ -89,10 +94,21 @@ COLUMN_WIDTHS: tuple[tuple[int, int, str, str | None], ...] = (
     (11, 11, "16", None),
     (12, 12, "14", None),
 )
-MERGES: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A32")
+MERGES: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A27", "A28:A36")
+# 旧版式（33 / 32 / 31 表）的分组范围，仅用于校验旧文件后升级到 MERGES
+LEGACY_MERGES_V5: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A26", "A27:A34")
+LEGACY_MERGES_V4: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A33")
+LEGACY_MERGES_V3: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A32")
+NEW_LAST_ROW = 36
 HEADER_HEIGHT = "26.1"
 ROW_HEIGHT = "33.950000000000003"
 ROW_HEIGHT_OVERRIDES: dict[int, str] = {20: "48.95"}
+
+# 旧表名 → 新表名的行别名：旧行沿用原字段批注，只换表名。
+LEGACY_ROW_ALIASES: dict[str, str] = {
+    "dim_sources": "exams",
+    "question_source_map": "question_exams",
+}
 HEADERS: tuple[str, ...] = (
     "表分类",
     "序号",
@@ -119,22 +135,26 @@ TABLE_LABELS: dict[str, str] = {
     "dict_question_types": "题型字典",
     "dict_difficulties": "难度字典",
     "dict_question_qualities": "题目质量字典",
+    "dict_exam_types": "考试类型字典",
     "dim_textbooks": "教材字典",
     "dim_textbook_chapters": "教材章节字典",
     "dim_schools": "学校字典",
-    "dim_sources": "题目来源字典",
+    "exams": "试卷主表",
     "dim_knowledge_points": "知识点字典",
     "dim_exam_directions": "考向字典",
+    "dim_regions": "行政区划字典",
     "dict_subject_thoughts": "学科思想字典",
     "dict_solution_methods": "解题方法字典",
     "dict_core_competencies": "核心素养字典",
     "question_exam_map": "题目与考向关联表",
     "question_knowledge_map": "题目与知识点关联表",
     "knowledge_exam_map": "知识点与考向关联表",
-    "question_source_map": "题目来源关系",
+    "question_exams": "题目与试卷关联表",
+    "exam_school_map": "试卷与学校关联表",
     "solution_thought_map": "解析与学科思想关联表",
     "solution_method_map": "解析与解题方法关联表",
     "solution_competency_map": "解析与核心素养关联表",
+    "chapter_knowledge_map": "章节与知识点关联表",
 }
 
 FIELD_LABELS: dict[str, str] = {
@@ -185,7 +205,12 @@ FIELD_LABELS: dict[str, str] = {
     "parent_id": "父节点外键",
     "short_name": "学校简称",
     "region": "地区",
+    "region_id": "行政区划外键",
     "exam_type": "考试类型",
+    "exam_type_id": "考试类型外键",
+    "exam_subject": "试卷主体",
+    "exam_id": "试卷外键",
+    "month": "月份",
     "year": "年份",
     "chapter_id": "章节外键",
     "school_id": "学校外键",
@@ -200,7 +225,12 @@ FIELD_LABELS: dict[str, str] = {
     "competency_id": "核心素养外键",
 }
 TABLE_FIELD_LABELS: dict[tuple[str, str], str] = {
+    ("exams", "exam_subject"): "试卷主体（联考/考区/学校）",
     ("dim_exam_directions", "description"): "考向说明",
+    ("dim_regions", "name"): "行政区划名称",
+    ("dim_regions", "code"): "国标代码（GB/T 2260）",
+    ("dim_regions", "level"): "层级（1省2市）",
+    ("dim_regions", "parent_id"): "父级区划外键",
 }
 STAGE_COMMENT = "所属学段（小学/初中/高中/通用）"
 
@@ -269,7 +299,7 @@ def parse_schema(path: Path) -> dict[str, dict]:
 def _shared_strings(xml: str) -> list[str]:
     entries = re.findall(r"<si>(.*?)</si>", xml, re.S)
     return [
-        "".join(re.findall(r"<t[^>]*>(.*?)</t>", entry, re.S))
+        unescape("".join(re.findall(r"<t[^>]*>(.*?)</t>", entry, re.S)))
         for entry in entries
     ]
 
@@ -291,6 +321,16 @@ def _cell_texts(sheet_xml: str, strings: list[str]) -> dict[int, dict[str, str]]
             cells[re.match(r"([A-Z]+)", ref.group(1)).group(1)] = text  # type: ignore[union-attr]
         out[number] = cells
     return out
+
+
+def _cell_styles(sheet_xml: str) -> dict[str, str]:
+    styles: dict[str, str] = {}
+    for attrs in re.findall(r"<c\b([^>]*?)(?:/>|>)", sheet_xml):
+        ref = re.search(r'\br="([A-Z]+\d+)"', attrs)
+        style = re.search(r'\bs="(\d+)"', attrs)
+        if ref and style:
+            styles[ref.group(1)] = style.group(1)
+    return styles
 
 
 def _layout_rows(schema: dict[str, dict]) -> list[dict]:
@@ -339,10 +379,25 @@ def _cell(ref: str, style: int, text: str | None, strings: list[str], index: dic
     return f'<c r="{ref}" s="{style}" t="s"><v>{index[text]}</v></c>'
 
 
-def _render_sheet_data(rows: list[dict], strings: list[str], index: dict[str, int]) -> str:
+def _render_sheet_data(
+    rows: list[dict],
+    strings: list[str],
+    index: dict[str, int],
+    old_styles: dict[str, str],
+) -> str:
+    def style_of(letter: str, old_row: int | None, default: int) -> int:
+        ref = f"{letter}{old_row}" if old_row is not None else ""
+        return int(old_styles[ref]) if ref in old_styles else default
+
     out: list[str] = []
     header = "".join(
-        _cell(f"{_column_letter(col)}1", 8 if col == 0 else 1, text, strings, index)
+        _cell(
+            f"{_column_letter(col)}1",
+            style_of(_column_letter(col), 1, 8 if col == 0 else 1),
+            text,
+            strings,
+            index,
+        )
         for col, text in enumerate(HEADERS)
     )
     out.append(
@@ -352,15 +407,28 @@ def _render_sheet_data(rows: list[dict], strings: list[str], index: dict[str, in
     )
     for row in rows:
         number = row["row"]
+        old_row = row.get("old_row")
         height = ROW_HEIGHT_OVERRIDES.get(number, ROW_HEIGHT)
         cells = [
-            _cell(f"A{number}", 9 if row["category"] else 10, row["category"], strings, index),
-            _cell(f"B{number}", 2, f"表{row['index']}", strings, index),
             _cell(
-                f"C{number}", 3,
+                f"A{number}",
+                style_of("A", old_row, 9 if row["category"] else 10),
+                row["category"],
+                strings,
+                index,
+            ),
+            _cell(
+                f"B{number}", style_of("B", old_row, 2),
+                f"表{row['index']}", strings, index,
+            ),
+            _cell(
+                f"C{number}", style_of("C", old_row, 3),
                 row["name"] + "\r\n" + TABLE_LABELS[row["name"]], strings, index,
             ),
-            _cell(f"D{number}", 3, row["comment"], strings, index),
+            _cell(
+                f"D{number}", style_of("D", old_row, 3),
+                row["comment"], strings, index,
+            ),
         ]
         for offset in range(MAX_FIELDS):
             column = FIRST_FIELD_COL + offset
@@ -370,8 +438,16 @@ def _render_sheet_data(rows: list[dict], strings: list[str], index: dict[str, in
                 text = field["name"] + "\r\n" + _field_label(row["name"], field["name"])
             else:
                 text = None
-            style = 4 if row["name"] == "dict_difficulties" and offset in (5, 6) else 3
-            cells.append(_cell(ref, style, text, strings, index))
+            default_style = 4 if row["name"] == "dict_difficulties" and offset in (5, 6) else 3
+            cells.append(
+                _cell(
+                    ref,
+                    style_of(_column_letter(column), old_row, default_style),
+                    text,
+                    strings,
+                    index,
+                )
+            )
         out.append(
             f'<row r="{number}" spans="1:14" ht="{height}" customHeight="1" '
             'x14ac:dyDescent="0.15">' + "".join(cells) + "</row>"
@@ -379,7 +455,12 @@ def _render_sheet_data(rows: list[dict], strings: list[str], index: dict[str, in
     return "".join(out)
 
 
-def _check_layout(sheet_xml: str) -> None:
+def _check_layout(
+    sheet_xml: str,
+    *,
+    merges: tuple[str, ...] = MERGES,
+    last_row: int = NEW_LAST_ROW,
+) -> None:
     cols = {
         (int(minimum), int(maximum)): (width, style or None)
         for minimum, maximum, width, style in re.findall(
@@ -390,18 +471,38 @@ def _check_layout(sheet_xml: str) -> None:
     expected = {(minimum, maximum): (width, style) for minimum, maximum, width, style in COLUMN_WIDTHS}
     if cols != expected:
         raise ExportError(f"列宽与硬编码版式不一致：\n实际 {cols}\n期望 {expected}")
-    merges = set(re.findall(r'<mergeCell ref="([^"]+)"/>', sheet_xml))
-    if merges != set(MERGES):
-        raise ExportError(f"合并单元格与硬编码版式不一致：实际 {sorted(merges)}")
+    actual_merges = set(re.findall(r'<mergeCell ref="([^"]+)"/>', sheet_xml))
+    if actual_merges != set(merges):
+        raise ExportError(f"合并单元格与硬编码版式不一致：实际 {sorted(actual_merges)}")
     heights = {
         int(number): height
         for number, height in re.findall(r'<row r="(\d+)"[^>]*\bht="([\d.]+)"', sheet_xml)
     }
     expected_heights = {1: HEADER_HEIGHT}
-    expected_heights.update({row: ROW_HEIGHT for row in range(2, 33)})
-    expected_heights.update(ROW_HEIGHT_OVERRIDES)
-    if {key: value for key, value in heights.items() if key <= 32} != expected_heights:
+    expected_heights.update({row: ROW_HEIGHT for row in range(2, last_row + 1)})
+    expected_heights.update({row: height for row, height in ROW_HEIGHT_OVERRIDES.items() if row <= last_row})
+    if {key: value for key, value in heights.items() if key <= last_row} != expected_heights:
         raise ExportError(f"行高与硬编码版式不一致：实际 {heights}")
+
+
+def _rewrite_merges(sheet_xml: str, merges: tuple[str, ...]) -> str:
+    block = re.search(r"<mergeCells\b[^>]*>.*?</mergeCells>", sheet_xml, re.S)
+    if block is None:
+        raise ExportError("工作簿缺少合并单元格声明")
+    body = "".join(f'<mergeCell ref="{ref}"/>' for ref in merges)
+    new_block = f'<mergeCells count="{len(merges)}">{body}</mergeCells>'
+    return sheet_xml[: block.start()] + new_block + sheet_xml[block.end():]
+
+
+def _rewrite_dimension(sheet_xml: str, last_row: int) -> str:
+    pattern = re.compile(r'<dimension ref="([A-Z]+)1:([A-Z]+)\d+"/>')
+    if not pattern.search(sheet_xml):
+        raise ExportError("工作簿缺少 dimension 声明")
+    return pattern.sub(
+        lambda match: f'<dimension ref="{match.group(1)}1:{match.group(2)}{last_row}"/>',
+        sheet_xml,
+        count=1,
+    )
 
 
 def _update_shared(xml: str, strings: list[str], sheet_refs: int) -> str:
@@ -425,14 +526,16 @@ def _comment_plan(
         by_cell[(_ref_row(ref), re.match(r"[A-Z]+", ref).group(0))] = index  # type: ignore[union-attr]
     plan: list[tuple[str, str, int]] = []
     for row in rows:
-        number = row["row"]
+        number = row.get("old_row")
+        if number is None:
+            continue
         old_fields: dict[str, str] = {}
         for column in range(FIRST_FIELD_COL, FIRST_FIELD_COL + MAX_FIELDS):
             text = old_cells.get(number, {}).get(_column_letter(column))
             if text:
                 old_fields[text.splitlines()[0]] = _column_letter(column)
         for offset, field in enumerate(row["fields"]):
-            ref = f"{_column_letter(FIRST_FIELD_COL + offset)}{number}"
+            ref = f"{_column_letter(FIRST_FIELD_COL + offset)}{row['row']}"
             source = by_cell.get((number, old_fields.get(field["name"], "")))
             block = blocks[source] if source is not None else None
             if block is None and field["name"] == "stage":
@@ -494,19 +597,53 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
         vml = archive.read(VML1).decode("utf-8")
         sheet2_xml = archive.read("xl/worksheets/sheet2.xml").decode("utf-8")
 
-    _check_layout(sheet_xml)
+    actual_merges = set(re.findall(r'<mergeCell ref="([^"]+)"/>', sheet_xml))
+    if actual_merges == set(MERGES):
+        layout_merges, old_last_row = MERGES, NEW_LAST_ROW
+    elif actual_merges == set(LEGACY_MERGES_V5):
+        layout_merges, old_last_row = LEGACY_MERGES_V5, 34
+    elif actual_merges == set(LEGACY_MERGES_V4):
+        layout_merges, old_last_row = LEGACY_MERGES_V4, 33
+    elif actual_merges == set(LEGACY_MERGES_V3):
+        layout_merges, old_last_row = LEGACY_MERGES_V3, 32
+    else:
+        raise ExportError(f"工作簿合并区不属于已知版式：{sorted(actual_merges)}")
+    _check_layout(sheet_xml, merges=layout_merges, last_row=old_last_row)
+
     strings = _shared_strings(shared_xml)
     index = {text: position for position, text in enumerate(strings)}
     old_cells = _cell_texts(sheet_xml, strings)
+    old_name_rows: dict[str, int] = {}
+    for number, cells in old_cells.items():
+        text = cells.get("C")
+        if number >= 2 and text:
+            old_name_rows[text.splitlines()[0]] = number
+    known = {row["name"] for row in rows}
+    aliased = {old for old, new in LEGACY_ROW_ALIASES.items() if new in known}
+    orphaned = sorted(set(old_name_rows) - known - aliased)
+    if orphaned:
+        raise ExportError("工作簿仍有 schema 已删除的表：" + "、".join(orphaned))
     for row in rows:
-        actual = old_cells.get(row["row"], {}).get("C")
-        if actual is None or actual.splitlines()[0] != row["name"]:
-            raise ExportError(f"第 {row['row']} 行表名与版式不符：{actual!r}")
+        old_row = old_name_rows.get(row["name"])
+        old_name = row["name"]
+        if old_row is None:
+            for legacy, target in LEGACY_ROW_ALIASES.items():
+                if target == row["name"] and legacy in old_name_rows:
+                    old_row, old_name = old_name_rows[legacy], legacy
+                    break
+        row["old_row"] = old_row
+        if old_row is None:
+            continue
+        actual = old_cells[old_row].get("C")
+        if actual is None or actual.splitlines()[0] != old_name:
+            raise ExportError(f"第 {old_row} 行表名与版式不符：{actual!r}")
 
-    data = _render_sheet_data(rows, strings, index)
+    data = _render_sheet_data(rows, strings, index, _cell_styles(sheet_xml))
     start = sheet_xml.index("<sheetData>") + len("<sheetData>")
     end = sheet_xml.index("</sheetData>")
     new_sheet = sheet_xml[:start] + data + sheet_xml[end:]
+    new_sheet = _rewrite_merges(new_sheet, MERGES)
+    new_sheet = _rewrite_dimension(new_sheet, rows[-1]["row"])
     plan, new_comments = _comment_plan(rows, old_cells, comments_xml)
     new_vml = _update_vml(vml, plan, len(re.findall(r"<comment\b", comments_xml)))
     refs = len(re.findall(r'<c\b[^>]*\bt="s"', new_sheet)) + len(
@@ -518,9 +655,10 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
         {
             "table": row["name"],
             "old": [
-                old_cells[row["row"]][_column_letter(column)].splitlines()[0]
+                old_cells[row["old_row"]][_column_letter(column)].splitlines()[0]
                 for column in range(FIRST_FIELD_COL, FIRST_FIELD_COL + MAX_FIELDS)
-                if old_cells.get(row["row"], {}).get(_column_letter(column))
+                if row["old_row"] is not None
+                and old_cells.get(row["old_row"], {}).get(_column_letter(column))
             ],
             "new": [field["name"] for field in row["fields"]],
         }
