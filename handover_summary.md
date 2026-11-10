@@ -22,7 +22,7 @@
 |---|---|---|---|
 | 一 | 控制台骨架 + 辅助栏 + 多标签机制 | ✅ 2026-11-10 完成 | `0e4e31d` |
 | 二 | 字典渲染与防呆（基础五表 CRUD） | ✅ 2026-11-10 完成 | `c3ae97d` |
-| 三 | 四栏联动（章节→知识点→考向→辅助知识点） | ⬜ 待做 | — |
+| 三 | 四栏联动（章节→知识点→考向→辅助知识点） | ✅ 2026-11-10 完成 | `9cce806` |
 | 四 | 全量验收 + 封版 commit | ⬜ 待做 | — |
 
 ## 阶段一已交付（commit 0e4e31d，17 文件 +1777 行）
@@ -138,6 +138,67 @@
   优先考虑扩 SPECS 而非另起炉灶；但 chapter_knowledge_map/knowledge_exam_map 需先做
   schema 迁移补 sort_order 列（见下）。
 
+## 阶段三已交付（commit 9cce806，23 文件 +2457 行）
+
+### 数据层：引擎库 v6→v7
+
+- `app/bank_engine/migrate_v7.py`：两张桥表（chapter_knowledge_map / knowledge_exam_map）
+  补 `sort_order INTEGER NOT NULL DEFAULT 0`。
+  - `backup_pre_v7` 用 sqlite backup API 落 `<db>.pre-v7.bak`，幂等；
+  - 回填按主键序在组内编 0..n-1；`verify_sort_order` 校验每组连续，失败即抛；
+  - `upgrade` 单事务（BEGIN/COMMIT/ROLLBACK）+ `PRAGMA user_version = 7`；
+  - `rollback` DROP COLUMN 回 v6，测试已覆盖。
+- `builder.migrate()` 接受 v6 并接 migrate_v7；全新建库也走同一回填。
+- `paths.SCHEMA_VERSION = 7`；插件 schema.sql 同步补列与版本号。
+
+### 后端：dao_linkage（全单表，无 JOIN）
+
+- `app/bank_engine/dao_linkage.py`（251 行）：
+  - `LINK_MAPS` 白名单（chapter_points / direction_tags）；
+  - `chapter_tree`（章节单表读出，Python 层组树）、`chapter_points`/`direction_tags`
+    （桥表按 sort_order 排序，知识点本体另查）、`point_directions`；
+  - `reorder`：提交清单必须与现有成员集合完全一致（不多不少不重），executemany 落库；
+  - `add_direction`（学科继承知识点、编码 `tp_u`+uuid、自动挂到当前点）、
+    `delete_direction`（排除当前点关联后 `find_references`，仍被引用 → ReferencedError）；
+  - `add_tag`（重复挂载 ConflictError、末尾追加）/ `remove_tag`（只解关联）。
+- `service.py` 薄封装（`db_path` 关键字参数）；`api/bank_engine.py` +10 条联动路由，
+  写路由全部 `Depends(require_write_token)`，ReferencedError→409、ValueError→400。
+
+### 前端：四栏联动（全部 IIFE，<500 行，整块可下架）
+
+- `linkage.js`（装配 `.dcl-grid` 四栏与级联选择）、`linkage_tree.js`（全局设置教材驱动，
+  未选教材时如实提示；监听 `dc:globals-changed`）、`linkage_points.js`（双击改名 +
+  `DcDnd` 拖拽/Alt+方向键排序）、`linkage_directions.js`（行内新增、双击改名、删除防呆）、
+  `linkage_tags.js`（全局搜索添加、移除、拖拽排序）、`linkage_dnd.js`（共享拖拽器）。
+- `dict_console_linkage.css`：4 栏 → ≤1200px 2 栏 → ≤700px 单列；热区 ≥44px。
+- `panels.js` 教研分类挂载联动面板；`catalog.js` 两表标 `linkage:true` 不进待交付卡。
+
+### 测试与证据
+
+- `tests/test_dict_console_stage3.py`：29 项（迁移/备份/回滚/回填、树与桥表顺序、
+  排序拒绝不一致、增删考向/标签、409 映射、写鉴权、红线）。
+- 目录约定修正：`tests/test_file_size_contract.py` 的 PAGES 补 `static/dict_console.html`，
+  否则 `dict_console.css` 会被判成孤儿资源（阶段一/二遗留，非阶段三引入，现已修复）。
+- 回归：`tests.test_dict_console + stage2 + stage3 + test_bank_engine_v2 + test_bank_api +
+  test_file_size_contract` 共 **147 项全绿**；快门禁 **PASS（6 项，ERROR 0，WARN 40 存量）**。
+- 真机探针 **PASS · 22 项**：`.system_generated/dict_console_probe_stage3/stage3/probe.toml`
+  （ok=true、console_errors=[]、page_errors=[]、http_diagnostics 2 条为预期 409），
+  截图 01 树+知识点 / 02 键盘排序 / 03 新增考向 / 04 标签排序 / 05 被引用 409 /
+  06 刷新后顺序 / 07 375px。
+- 探针硬证据：改名/排序/标签顺序均经「刷新后重新读取」验证真落库；
+  给新考向挂第二个标签再删考向 → 409 对话框列出引用来源；移除标签后删除成功。
+- 像素证据：01 y=200 可见四栏色带（左树 / 中两栏 / 右设置栏）；05 y=200、y=700 全宽 D 遮罩
+  + y=450 居中对话框；07 375px 内容 x≤350、四栏纵向堆叠（overflow=0）。
+
+### 给阶段四的提醒
+
+- 工作区仍有 `tools/export_schema_to_excel.py` 他人未提交改动：**绝不 stage**。
+- 阶段一探针的「基石 6 张卡」断言已过时（阶段二起 3 表 + 3 卡）；
+  全量验收以 `dict_console_probe_stage2.py` 与 `dict_console_probe_stage3.py` 为准。
+- 封版 commit message 用户钦定：`前端重大升级：完成四栏联动教研字典控制台`；**暂不 push**。
+- 最终验收建议：两个探针都复跑绿的 + 单测 147 项 + 快门禁 + 真机走查四阶段主路径 +
+  375px + 键盘 + 409 防呆；如端到端无缺陷即可封版。
+
 ## 阶段二任务书（已完成，存档备查）
 
 **范围：基础五表的读写与防呆**——学科(dict_subjects)、年级(dict_grades)、
@@ -157,13 +218,12 @@
 6. 完成后：单测 + 探针 + 快门禁 → commit（中文，标「阶段二」）→ 更新本文件 →
    结束回合回报。**不要自行开新会话**。
 
-## 阶段三预告（勿提前做）
+## 阶段三任务书（已完成，存档备查）
 
 四栏联动：左教材章节树（全局设置驱动）→ 中章节知识点（chapter_knowledge_map，
 双击改名、拖拽排序）→ 右知识点考向（knowledge_exam_map，CRUD）→
 最右考向辅助知识点标签（全局搜索添加、移除、拖拽排序持久化 sort_order）。
-**注意：chapter_knowledge_map 与 knowledge_exam_map 当前都没有 sort_order 列，
-阶段三需要 schema 迁移（user_version 6→7），走 add-data-store 技能的迁移动线。**
+已按 add-data-store 动线完成 v6→v7 迁移（备份/回填/自检/回滚）。
 
 ## 阶段四预告
 
@@ -174,10 +234,10 @@
 
 ## 关键技术事实（已核实，可直接用）
 
-- 引擎库：`data/banks/org.jiuzhang.bank-engine.v2.db`，user_version=6，40 表。
+- 引擎库：`data/banks/org.jiuzhang.bank-engine.v2.db`，user_version=7（阶段三迁移），40 表。
   真实种子：15 学科、12 年级（小学/初中/高中）、16 考试类型、128 教材、3528 章节、
   11388 知识点、567 考向、367 行政区划、347 学校；
-  chapter_knowledge_map=74 行、knowledge_exam_map=200 行（均无 sort_order 列）。
+  chapter_knowledge_map=74 行、knowledge_exam_map=200 行，均已带 sort_order 且组内 0..n-1。
 - 已有引擎路由（`app/api/bank_engine.py`）：/api/bank/engine/meta（subjects/grades 等）、
   /status（table_count/schema_version/integrity/foreign_key_violations/counts 全表行数）、
   /textbooks（本阶段新增）、/exam-directions 等。读接口全部免鉴权。
