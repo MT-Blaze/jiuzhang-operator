@@ -2,8 +2,7 @@
  * 辅助栏：字典导航 + 操作区。
  * 导航：三大分类各一枚按钮，点击交给画布新开 / 激活同名页签（不覆盖当前页签）。
  * 操作区：【一键备份】走底座现成的备份体系（/api/settings/backup*），
- * 未开启本地备份时先征求老师同意再开启；【导入数据】的字典批量导入随阶段二交付，
- * 当前如实告知并给出工作台入口，不做假流程。
+ * 未开启本地备份时先征求老师同意再开启；【导入数据】交给 DcImport 走 TOML 批量导入。
  */
 (function () {
   "use strict";
@@ -99,19 +98,11 @@
     });
   }
 
-  function onImport(button) {
-    window.DcDialog.alert({
-      title: "导入数据",
-      message: "字典批量导入（TOML）将随阶段二「字典渲染与防呆」一同交付。\n当前阶段可先在画布查看各字典的真实行数；试卷与题目录入请前往工作台拖入。",
-      anchor: button
-    });
-  }
-
   function init(context, elements) {
     ctx = context;
     renderNav(elements.navList);
     elements.backupBtn.addEventListener("click", function () { onBackup(elements.backupBtn, elements.opsState); });
-    elements.importBtn.addEventListener("click", function () { onImport(elements.importBtn); });
+    window.DcImport.init(elements.importBtn);
   }
 
   window.DcSidebar = { init: init, syncNav: syncNav };

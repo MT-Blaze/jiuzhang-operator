@@ -13,6 +13,7 @@ from typing import Any, Iterator
 from app.bank_engine import (
     builder,
     dao_base,
+    dao_console,
     dao_dictionary,
     dao_dimensions,
     dao_questions,
@@ -26,12 +27,15 @@ from app.bank_engine.models import (
     Dictionaries,
     EngineStatus,
     ExamDirection,
+    ImportReport,
     KnowledgeNode,
     KnowledgePoint,
     QuestionPage,
     QuestionRecord,
+    ReferenceHit,
     Textbook,
 )
+from app.core import toml_io
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 200
@@ -239,10 +243,74 @@ def chapters(
         )
 
 
+# ---- 字典控制台（阶段二）：基础五表读写与删除防呆，dataclass 进出 ----
+
+
+def console_list(
+    table: str,
+    *,
+    keyword: str | None = None,
+    filters: dict[str, Any] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    db_path: Path | None = None,
+) -> tuple[tuple[Any, ...], int]:
+    limit, offset = _bounds(limit, offset)
+    with session(db_path) as conn:
+        return dao_console.list_rows(
+            conn, table, keyword=keyword, filters=filters, limit=limit, offset=offset
+        )
+
+
+def console_row(table: str, row_id: int, *, db_path: Path | None = None) -> Any:
+    with session(db_path) as conn:
+        return dao_console.get_row(conn, table, row_id)
+
+
+def console_references(
+    table: str, row_id: int, *, db_path: Path | None = None
+) -> tuple[ReferenceHit, ...]:
+    with session(db_path) as conn:
+        return dao_console.find_references(conn, table, row_id)
+
+
+def console_insert(table: str, values: dict[str, Any], *, db_path: Path | None = None) -> Any:
+    with session(db_path) as conn:
+        return dao_console.insert_row(conn, table, values)
+
+
+def console_update(
+    table: str, row_id: int, values: dict[str, Any], *, db_path: Path | None = None
+) -> Any:
+    with session(db_path) as conn:
+        return dao_console.update_row(conn, table, row_id, values)
+
+
+def console_delete(table: str, row_id: int, *, db_path: Path | None = None) -> None:
+    with session(db_path) as conn:
+        dao_console.delete_row(conn, table, row_id)
+
+
+def console_import(text: str, *, db_path: Path | None = None) -> ImportReport:
+    try:
+        data = toml_io.loads(text)
+    except ValueError as exc:
+        raise ValueError("TOML 解析失败：" + str(exc)) from exc
+    with session(db_path) as conn:
+        return dao_console.import_rows(conn, data)
+
+
 __all__ = [
     "DEFAULT_LIMIT",
     "MAX_LIMIT",
     "chapters",
+    "console_delete",
+    "console_import",
+    "console_insert",
+    "console_list",
+    "console_references",
+    "console_row",
+    "console_update",
     "create_question",
     "dictionaries",
     "ensure_ready",

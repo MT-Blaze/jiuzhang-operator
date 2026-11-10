@@ -1,8 +1,8 @@
 /**
- * 画布面板渲染：数据看板 + 三大分类总览。
+ * 画布面板渲染：数据看板 + 三大分类面板。
  * 所有数字来自 /api/bank/engine/status 的真实计数，不写死、不占位。
- * 阶段一边界：分类面板只做总览导航；表格编辑与防呆随阶段二、四栏联动随阶段三交付，
- * 面板上如实标注，不做假按钮。
+ * 阶段二：分类里 marked editable 的基础五表升级为可编辑表格（DcTable），
+ * 其余字典仍为只读总览卡，编辑能力随阶段三交付，面板上如实标注。
  */
 (function () {
   "use strict";
@@ -107,29 +107,36 @@
     });
   }
 
-  /** 分类总览：该分类下每张字典一张卡，行数实时取自引擎状态。 */
+  /** 分类面板：可编辑五表渲染表格块，其余字典只读总览卡（行数实时）。 */
   function renderCategory(panel, tab, ctx, category) {
     panel.textContent = "";
     panel.appendChild(el("h2", "dc-panel-title", category.title));
     panel.appendChild(el("p", "dc-panel-hint", category.desc));
-    panel.appendChild(el("p", "dc-panel-hint",
-      category.stage === 3
-        ? "只读总览 · 四栏联动编辑随阶段三交付。"
-        : "只读总览 · 表格编辑与删除防呆随阶段二交付。"));
-    var loading = stateBox(panel, "正在读取真实行数…");
-    window.DcClient.fetchJson("/api/bank/engine/status").then(function (status) {
-      if (!panel.isConnected) return;
-      loading.remove();
-      var grid = el("div", "dc-card-grid");
-      category.items.forEach(function (item) {
-        grid.appendChild(dictCard(item, status.counts || {}));
+    var editable = category.items.filter(function (item) { return item.editable; });
+    var pending = category.items.filter(function (item) { return !item.editable; });
+
+    if (editable.length) {
+      panel.appendChild(el("p", "dc-panel-hint",
+        "双击单元格改名（blur 保存，Esc 放弃）· 新增行 · 删除自动防呆 · 搜索与全局设置联动。"));
+      editable.forEach(function (item) { window.DcTable.mount(panel, item, ctx); });
+    }
+
+    if (pending.length) {
+      panel.appendChild(el("h3", "dc-panel-title", "待交付字典"));
+      panel.appendChild(el("p", "dc-panel-hint", "以下字典暂为只读总览，编辑能力随阶段三交付。"));
+      var loading = stateBox(panel, "正在读取真实行数…");
+      window.DcClient.fetchJson("/api/bank/engine/status").then(function (status) {
+        if (!panel.isConnected) return;
+        loading.remove();
+        var grid = el("div", "dc-card-grid");
+        pending.forEach(function (item) { grid.appendChild(dictCard(item, status.counts || {})); });
+        panel.appendChild(grid);
+      }).catch(function (error) {
+        if (!panel.isConnected) return;
+        loading.remove();
+        errorBox(panel, error, function () { renderCategory(panel, tab, ctx, category); });
       });
-      panel.appendChild(grid);
-    }).catch(function (error) {
-      if (!panel.isConnected) return;
-      loading.remove();
-      errorBox(panel, error, function () { renderCategory(panel, tab, ctx, category); });
-    });
+    }
   }
 
   window.DcPanels = { renderDashboard: renderDashboard, renderCategory: renderCategory };

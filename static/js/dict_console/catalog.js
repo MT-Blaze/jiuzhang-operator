@@ -13,12 +13,12 @@
       desc: "录题与检索共用的基础枚举：学科、年级、题型、难度、质量、考试类型。",
       stage: 2,
       items: [
-        { table: "dict_subjects", name: "学科", desc: "语数英等 15 个一级学科。" },
-        { table: "dict_grades", name: "年级", desc: "小学到高三 12 个年级，含学段归属。" },
+        { table: "dict_subjects", name: "学科", desc: "语数英等 15 个一级学科。", editable: true },
+        { table: "dict_grades", name: "年级", desc: "小学到高三 12 个年级，含学段归属。", editable: true },
         { table: "dict_question_types", name: "题型", desc: "选择 / 填空 / 解答三类。" },
         { table: "dict_difficulties", name: "难度", desc: "L1–L5 五级难度。" },
         { table: "dict_question_qualities", name: "题目质量", desc: "正常 / 待审 / 精品等质量标记。" },
-        { table: "dict_exam_types", name: "考试类型", desc: "月考、期中、期末、模考等 16 类。" }
+        { table: "dict_exam_types", name: "考试类型", desc: "月考、期中、期末、模考等 16 类。", editable: true }
       ]
     },
     {
@@ -27,8 +27,8 @@
       desc: "真实世界的实体：行政区划、学校、教材与教材章节。",
       stage: 2,
       items: [
-        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划树。" },
-        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，挂靠区划与教材。" },
+        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划树。", editable: true },
+        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，挂靠区划与教材。", editable: true },
         { table: "dim_textbooks", name: "教材版本", desc: "各出版社教材，按学科与年级分册。" },
         { table: "dim_textbook_chapters", name: "教材章节", desc: "章 / 节目录树，四栏联动的左栏。" }
       ]

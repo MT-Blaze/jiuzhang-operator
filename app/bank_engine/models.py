@@ -180,6 +180,42 @@ class Chapter:
 
 
 @dataclass(frozen=True)
+class Region:
+    id: int
+    name: str
+    code: str
+    level: int
+    parent_id: int | None
+    sort_order: int
+
+
+@dataclass(frozen=True)
+class School:
+    id: int
+    name: str
+    short_name: str
+    code: str
+    region: str | None
+    region_id: int | None
+    textbook_id: int | None
+
+
+@dataclass(frozen=True)
+class ReferenceHit:
+    table: str
+    label: str
+    column: str
+    count: int
+
+
+@dataclass(frozen=True)
+class ImportReport:
+    inserted: dict[str, int] = field(default_factory=dict)
+    skipped: dict[str, int] = field(default_factory=dict)
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class QuestionOption:
     id: int
     label: str
