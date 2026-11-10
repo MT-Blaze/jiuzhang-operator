@@ -80,6 +80,7 @@ class NewImage:
     alt: str | None = None
     sort_order: int = 0
     option_label: str | None = None
+    tikz_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -262,6 +263,7 @@ class QuestionImage:
     alt: str | None
     sort_order: int
     option_id: int | None
+    tikz_code: str | None = None
 
 
 @dataclass(frozen=True)

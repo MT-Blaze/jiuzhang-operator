@@ -56,6 +56,13 @@
     return "";
   }
 
+  /** 图片优先级：tikz_code 渲染出的 tikz_uri 优先，失败或为空回退原图 uri / path。 */
+  function imageUri(image) {
+    return safeAssetUri(image && image.tikz_uri)
+      || safeAssetUri(image && image.uri)
+      || safeAssetUri(image && image.path);
+  }
+
   function appendImageRef(parent, uri, alt, raw) {
     var path = safeAssetUri(uri);
     if (!path) {
@@ -155,6 +162,7 @@
       resetMathCount: function () { mathCount = 0; },
       mathNode: mathNode,
       safeAssetUri: safeAssetUri,
+      imageUri: imageUri,
     };
   }
 

@@ -30,6 +30,7 @@ from app.api.pending import router as pending_router
 from app.api.plugins import router as plugins_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
+from app.api.tikz import router as tikz_router
 from app.api.workspaces import router as workspaces_router
 from app.core import plugin_update, pwa, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
@@ -200,6 +201,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router)
     app.include_router(layout_router)
     app.include_router(settings_router)
+    app.include_router(tikz_router)
 
     @app.get("/static/uploads/{asset_path:path}", include_in_schema=False)
     async def read_upload(asset_path: str) -> FileResponse:

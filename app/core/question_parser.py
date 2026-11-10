@@ -17,6 +17,7 @@ import unicodedata
 from typing import Any
 
 from app.core import latex_style_dict
+from app.core.question_images import is_remote_image, strip_derived_fields
 
 __all__ = [
     "normalize_latex",
@@ -360,23 +361,6 @@ def _issue(code: str, message: str) -> dict[str, str]:
     return {"code": code, "message": message}
 
 
-def _image_target(reference: str) -> str:
-    if "{" in reference and "}" in reference:
-        return reference[reference.find("{") + 1 : reference.rfind("}")].strip()
-    if "](" in reference and reference.endswith(")"):
-        return reference[reference.find("](") + 2 : -1].strip()
-    return reference.strip()
-
-
-def _is_remote_image(reference: str) -> bool:
-    """只有 http(s)、协议相对、data:、file: 算远程；asset:// 是底座逻辑地址，必须放行。"""
-    target = _image_target(reference).strip("\"'")
-    lowered = target.lower()
-    if lowered.startswith(("asset://", "uploads/", "/static/", "./", "../")):
-        return False
-    return lowered.startswith(("http://", "https://", "//", "data:", "file:"))
-
-
 def sanity_check(
     stem: str, options: list[dict[str, Any]] | None = None, answer: str = ""
 ) -> list[dict[str, str]]:
@@ -409,7 +393,7 @@ def sanity_check(
                 issues.append(_issue("unmatched_environment", f"环境 {name} 没有对应的 \\end"))
 
     for reference in _IMAGE_REF.findall(text):
-        if _is_remote_image(reference):
+        if is_remote_image(reference):
             issues.append(_issue("remote_asset", f"图片引用必须走 asset:// 或底座托管路径：{reference[:60]}"))
             break
 
@@ -436,6 +420,7 @@ def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
     if not isinstance(document, dict):
         return document, [_issue("invalid_document", "题目必须是 JSON 对象")]
     cleaned = copy.deepcopy(document)
+    strip_derived_fields(cleaned.get("images"))
     for field in ("stem", "solution"):
         if isinstance(cleaned.get(field), str):
             cleaned[field] = normalize_latex(cleaned[field])

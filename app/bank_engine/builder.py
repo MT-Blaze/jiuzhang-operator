@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from app.bank_engine import migrate_v7, paths, regions, seeding
+from app.bank_engine import migrate_v7, migrate_v8, paths, regions, seeding
 from app.bank_engine.models import BuildReport
 from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
 
@@ -417,7 +417,7 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version not in (2, 3, 4, 5, 6):
+    if version not in (2, 3, 4, 5, 6, 7):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
     if version == 2:
         _migrate_v2_to_v3(conn)
@@ -427,7 +427,11 @@ def migrate(conn: sqlite3.Connection, version: int) -> bool:
         _migrate_v4_to_v5(conn)
     if version in (2, 3, 4, 5):
         _migrate_v5_to_v6(conn)
-    migrate_v7.upgrade(conn)
+    # v7 的迁移含 sort_order 回填，只对 v6 及更老的库执行；v7 库直接进 v8，
+    # 否则会按主键序重排老师已经拖好的顺序。
+    if version in (2, 3, 4, 5, 6):
+        migrate_v7.upgrade(conn)
+    migrate_v8.upgrade(conn)
     return True
 
 

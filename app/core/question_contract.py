@@ -133,9 +133,10 @@ class Image:
     alt: str | None = None
     sha256: str | None = None
     layout: ImageLayout | None = None
+    tikz_code: str | None = None
     @classmethod
     def from_document(cls, data: Any, path: str, errors: list[str]) -> Image:
-        allowed = {"id", "role", "option_key", "uri", "alt", "sha256", "layout"}
+        allowed = {"id", "role", "option_key", "uri", "alt", "sha256", "layout", "tikz_code"}
         mapping = _mapping(data, path, errors, allowed) or {}
         _present(mapping, path, ("id", "role", "uri"), errors)
         image_id = _text(mapping.get("id"), f"{path}.id", errors, pattern=_IMAGE_ID_RE) or ""
@@ -156,10 +157,12 @@ class Image:
         layout = None
         if "layout" in mapping:
             layout = ImageLayout.from_document(mapping["layout"], f"{path}.layout", errors)
-        return cls(image_id, role, uri, option_key, alt, sha256, layout)
+        tikz_code = (_text(mapping["tikz_code"], f"{path}.tikz_code", errors, maximum=20000)
+                     if "tikz_code" in mapping else None)
+        return cls(image_id, role, uri, option_key, alt, sha256, layout, tikz_code)
     def as_document(self) -> dict[str, Any]:
         document = {"id": self.id, "role": self.role, "uri": self.uri}
-        for key in ("option_key", "alt", "sha256"):
+        for key in ("option_key", "alt", "sha256", "tikz_code"):
             value = getattr(self, key)
             if value is not None:
                 document[key] = value
@@ -378,8 +381,7 @@ class Question:
                    "grade", "difficulty", "tags", "taxonomy", "source", "images",
                    "extensions", "meta"}
         mapping = _mapping(data, path, caught, allowed) or {}
-        _present(mapping, path, ("schema_version", "id", "type", "stem", "difficulty", "meta"),
-                 caught)
+        _present(mapping, path, ("schema_version", "id", "type", "stem", "difficulty", "meta"), caught)
         version = _text(mapping.get("schema_version"), f"{path}.schema_version", caught)
         if version is not None and version != CONTRACT_VERSION:
             caught.append(f"{path}.schema_version: 必须是 {CONTRACT_VERSION}")
@@ -389,8 +391,7 @@ class Question:
                      minimum=1, maximum=50000) or ""
         difficulty = _enum(mapping.get("difficulty"), f"{path}.difficulty", caught,
                            DIFFICULTY_LEVELS) or "L1"
-        grade = (_text(mapping["grade"], f"{path}.grade", caught, maximum=20)
-                 if "grade" in mapping else None)
+        grade = _text(mapping["grade"], f"{path}.grade", caught, maximum=20) if "grade" in mapping else None
         solution = (_text(mapping["solution"], f"{path}.solution", caught, minimum=1,
                           maximum=50000) if "solution" in mapping else None)
 
@@ -461,8 +462,7 @@ class Question:
         meta = (Meta.from_document(mapping["meta"], f"{path}.meta", caught)
                 if "meta" in mapping else Meta("", "", 1, "draft"))
 
-        if len(caught) > _MAX_ERRORS:
-            del caught[_MAX_ERRORS:]
+        if len(caught) > _MAX_ERRORS: del caught[_MAX_ERRORS:]
         if errors is None and caught:
             raise ContractError(caught)
         return cls(version or CONTRACT_VERSION, question_id, qtype, stem, difficulty, meta,

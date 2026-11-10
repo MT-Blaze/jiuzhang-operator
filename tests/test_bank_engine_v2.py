@@ -436,8 +436,9 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 35)
         self.assertEqual(len(builder.BASE_TABLES), 35)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 7)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 8)
         self.assertNotIn("dim_sources", body)
+        self.assertIn("tikz_code", body)
         self.assertNotIn("question_source_map", body)
         self.assertIn("exam_school_map", builder.BASE_TABLES)
 

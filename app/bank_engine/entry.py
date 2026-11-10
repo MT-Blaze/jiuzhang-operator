@@ -123,6 +123,7 @@ def _images(document: dict[str, Any]) -> tuple[NewImage, ...]:
                 alt=_text(item.get("alt"), 200) or None,
                 sort_order=index,
                 option_label=_text(item.get("option_key"), 1).upper() or None,
+                tikz_code=_text(item.get("tikz_code"), 20000) or None,
             )
         )
     return tuple(images)

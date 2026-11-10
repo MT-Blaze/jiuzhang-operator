@@ -173,6 +173,7 @@ def _images(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionImage, 
             None if row["alt"] is None else str(row["alt"]),
             int(row["sort_order"]),
             _optional_int(row["option_id"]),
+            None if row["tikz_code"] is None else str(row["tikz_code"]),
         )
         for row in rows
     )

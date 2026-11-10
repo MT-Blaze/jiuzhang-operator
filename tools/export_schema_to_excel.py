@@ -29,9 +29,9 @@ VML1 = "xl/drawings/vmlDrawing1.vml"
 
 # ---- 手工调好的版式，硬编码后只校验不回写（改这里等于改版式，必须人工确认）----
 TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("主表(4张)", ("questions", "ingest_batches", "raw_questions", "exams")),
+    ("主表(3张)", ("questions", "ingest_batches", "raw_questions")),
     (
-        "从表(7张)",
+        "从表(8张)",
         (
             "question_options",
             "question_images",
@@ -40,26 +40,28 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "question_solutions",
             "question_supplements",
             "question_statistics",
+            "exams",
         ),
     ),
     (
-        "字典表(15张)",
+        "系统基石字典(4张)",
+        ("dict_subjects", "dict_grades", "dim_regions", "dict_exam_types"),
+    ),
+    (
+        "实体维度字典(3张)",
+        ("dim_textbooks", "dim_textbook_chapters", "dim_schools"),
+    ),
+    (
+        "教研属性字典(8张)",
         (
-            "dict_subjects",
-            "dict_grades",
             "dict_question_types",
             "dict_difficulties",
             "dict_question_qualities",
-            "dict_exam_types",
-            "dim_textbooks",
-            "dim_textbook_chapters",
-            "dim_schools",
             "dim_knowledge_points",
             "dim_exam_directions",
             "dict_subject_thoughts",
             "dict_solution_methods",
             "dict_core_competencies",
-            "dim_regions",
         ),
     ),
     (
@@ -93,8 +95,11 @@ COLUMN_WIDTHS: tuple[tuple[int, int, str, str | None], ...] = (
     (11, 11, "16", None),
     (12, 12, "14", None),
 )
-MERGES: tuple[str, ...] = ("A2:A5", "A6:A12", "A13:A27", "A28:A36")
-# 旧版式（exams 误放字典表的 35 表 / 33 / 32 / 31 表）的分组范围，仅用于校验旧文件后升级到 MERGES
+MERGES: tuple[str, ...] = ("A2:A4", "A5:A12", "A13:A16", "A17:A19", "A20:A27", "A28:A36")
+# 旧版式仅用于校验旧文件后升级到 MERGES：
+# V7 = exams 在主表、字典未拆三系列（主表4/从表7/字典15/关系9，exams 在第 5 行）
+LEGACY_MERGES_V7: tuple[str, ...] = ("A2:A5", "A6:A12", "A13:A27", "A28:A36")
+# V6~V3 = exams 误放字典区的 35 / 33 / 32 / 31 表版式（exams 在字典区第 20 行）
 LEGACY_MERGES_V6: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A27", "A28:A36")
 LEGACY_MERGES_V5: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A26", "A27:A34")
 LEGACY_MERGES_V4: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A33")
@@ -102,8 +107,9 @@ LEGACY_MERGES_V3: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A32")
 NEW_LAST_ROW = 36
 HEADER_HEIGHT = "26.1"
 ROW_HEIGHT = "33.950000000000003"
-# 长说明的试卷行加高；旧版式里同一张卷在字典区第 20 行
-ROW_HEIGHT_OVERRIDES: dict[int, str] = {5: "48.95"}
+# 长说明的试卷行加高：exams 现归从表第 12 行；V7 旧版式在第 5 行，V6~V3 在字典区第 20 行
+ROW_HEIGHT_OVERRIDES: dict[int, str] = {12: "48.95"}
+LEGACY_ROW_HEIGHT_OVERRIDES_V7: dict[int, str] = {5: "48.95"}
 LEGACY_ROW_HEIGHT_OVERRIDES: dict[int, str] = {20: "48.95"}
 
 HEADERS: tuple[str, ...] = (
@@ -185,6 +191,7 @@ FIELD_LABELS: dict[str, str] = {
     "belongs_to": "图片归属",
     "option_id": "选项外键",
     "path": "文件路径",
+    "tikz_code": "TikZ 源码",
     "alt": "替代文本",
     "answer_content": "答案内容",
     "is_primary": "是否主项",
@@ -416,9 +423,10 @@ def _render_sheet_data(
         old_row = row.get("old_row")
         height = ROW_HEIGHT_OVERRIDES.get(number, ROW_HEIGHT)
         cells = [
+            # A 列竖排分类标签：锚点格居中竖排(样式10)，合并区身体格竖排(样式11)
             _cell(
                 f"A{number}",
-                style_of("A", old_row, 9 if row["category"] else 10),
+                10 if row["category"] else 11,
                 row["category"],
                 strings,
                 index,
@@ -635,6 +643,9 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
     if actual_merges == set(MERGES):
         layout_merges, old_last_row = MERGES, NEW_LAST_ROW
         old_overrides = ROW_HEIGHT_OVERRIDES
+    elif actual_merges == set(LEGACY_MERGES_V7):
+        layout_merges, old_last_row = LEGACY_MERGES_V7, 36
+        old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES_V7
     elif actual_merges == set(LEGACY_MERGES_V6):
         layout_merges, old_last_row = LEGACY_MERGES_V6, 36
         old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES

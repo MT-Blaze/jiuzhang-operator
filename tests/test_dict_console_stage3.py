@@ -29,7 +29,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.bank_engine import builder, dao_console, dao_linkage, migrate_v7, service  # noqa: E402
+from app.bank_engine import (  # noqa: E402
+    builder,
+    dao_console,
+    dao_linkage,
+    migrate_v7,
+    migrate_v8,
+    service,
+)
 from app.bank_engine.models import (  # noqa: E402
     Chapter,
     ChapterNode,
@@ -61,10 +68,11 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    def test_fresh_build_is_v7_with_sort_order(self) -> None:
-        self.assertEqual(self._version(), 7)
+    def test_fresh_build_is_v8_with_sort_order(self) -> None:
+        self.assertEqual(self._version(), 8)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
+        self.assertIn("tikz_code", self._columns("question_images"))
         with service.session(self.db_path) as conn:
             migrate_v7.verify_sort_order(conn)
             self.assertEqual(conn.execute(
@@ -78,15 +86,18 @@ class MigrationTest(unittest.TestCase):
         if backup.exists():
             backup.unlink()
         with service.session(self.db_path) as conn:
+            migrate_v8.rollback(conn)
             migrate_v7.rollback(conn)
         self.assertEqual(self._version(), 6)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertNotIn("sort_order", self._columns(table))
+        self.assertNotIn("tikz_code", self._columns("question_images"))
         report = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.assertFalse(report.created)
-        self.assertEqual(self._version(), 7)
+        self.assertEqual(self._version(), 8)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
+        self.assertIn("tikz_code", self._columns("question_images"))
         self.assertTrue(backup.is_file())
         with service.session(backup) as conn:
             self.assertEqual(int(conn.execute("PRAGMA user_version").fetchone()[0]), 6)

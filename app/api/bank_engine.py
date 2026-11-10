@@ -19,6 +19,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.bank_engine import dao_console, service
 from app.bank_engine.writer import EntryRejected
+from app.core import tikz_render
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["bank-engine"])
@@ -156,6 +157,18 @@ def engine_create_question(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"id": created.id, "created": created.created}
+
+
+@router.get("/api/bank/engine/questions/{question_id}", summary="读单题：图片按 tikz_code 优先生成矢量图")
+def engine_question(question_id: str) -> dict[str, Any]:
+    record = service.question(question_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    payload = asdict(record)
+    payload["images"] = [
+        tikz_render.resolve_image(dict(image)) for image in payload.get("images", [])
+    ]
+    return payload
 
 
 # ---- 字典控制台（阶段二）：基础五表读写与删除防呆 ----

@@ -199,9 +199,17 @@ def _insert_images(
                 continue
         conn.execute(
             "INSERT INTO question_images "
-            "(question_id, belongs_to, option_id, path, alt, sort_order) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (question_id, belongs_to, option_id, image.path[:500], image.alt, position),
+            "(question_id, belongs_to, option_id, path, tikz_code, alt, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                question_id,
+                belongs_to,
+                option_id,
+                image.path[:500],
+                None if not image.tikz_code else image.tikz_code[:20000],
+                image.alt,
+                position,
+            ),
         )
 
 

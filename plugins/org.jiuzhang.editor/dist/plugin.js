@@ -49,7 +49,7 @@
 
   var coreRich = window.JzoEditorRich.create({});
   var appendBody = coreRich.appendBody, appendRich = coreRich.appendRich;
-  var clampValue = coreRich.clampValue, el = coreRich.el, safeAssetUri = coreRich.safeAssetUri;
+  var clampValue = coreRich.clampValue, el = coreRich.el, safeAssetUri = coreRich.safeAssetUri, imageUri = coreRich.imageUri;
 
   var coreExamSource = window.JzoEditorExamSource.create({});
   var buildExamSource = coreExamSource.buildExamSource, parseExamSource = coreExamSource.parseExamSource;
@@ -349,7 +349,7 @@
     queueWorklistSave: queueWorklistSave,
     renderPool: renderPool,
     replaceField: replaceField,
-    safeAssetUri: safeAssetUri,
+    safeAssetUri: safeAssetUri, imageUri: imageUri,
     setFormatButtons: setFormatButtons,
     // 琥珀灯：题卡上的 data-amber 由这一处画，判定口径全在 uiAmber。
     amberReasons: uiAmber.amberReasons,

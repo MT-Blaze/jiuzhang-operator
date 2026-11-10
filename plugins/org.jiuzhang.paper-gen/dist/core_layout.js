@@ -90,7 +90,7 @@
         (question.options || []).map(function (option) {
           return option.key + ":" + (option.content || "") + ":" + (option.image_ids || []).join(",");
         }).join("|"),
-        (question.images || []).map(function (image) { return image.id + ":" + image.uri; }).join("|")
+        (question.images || []).map(function (image) { return image.id + ":" + (image.tikz_uri || image.uri || image.path); }).join("|")
       ].map(hashText).join("~");
     }
 

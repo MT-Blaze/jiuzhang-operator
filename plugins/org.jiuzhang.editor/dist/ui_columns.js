@@ -27,7 +27,7 @@
     var queueWorklistSave = deps.queueWorklistSave;
     var renderPool = deps.renderPool;
     var replaceField = deps.replaceField;
-    var safeAssetUri = deps.safeAssetUri;
+    var safeAssetUri = deps.safeAssetUri, imageUri = deps.imageUri;
     var setFormatButtons = deps.setFormatButtons;
     var amberReasons = deps.amberReasons;
     var metaFor = deps.metaFor;
@@ -66,7 +66,7 @@
   function itemImage(item) {
     var images = (item.question && Array.isArray(item.question.images)) ? item.question.images : [];
     for (var index = 0; index < images.length; index += 1) {
-      var uri = safeAssetUri(images[index] && images[index].uri);
+      var uri = imageUri(images[index]);
       if (uri) return { uri: uri, id: String((images[index] && images[index].id) || "") };
     }
     // 原卷页是批次层的东西：题自己没裁图时，左栏拿它给老师对照原卷。
@@ -343,7 +343,7 @@
     // 自动切出来的题：右边直接看着题图录题干，不用来回对原卷。
     var images = (item.question && Array.isArray(item.question.images)) ? item.question.images : [];
     images.forEach(function (image) {
-      var uri = safeAssetUri(image && image.uri);
+      var uri = imageUri(image);
       if (!uri) return;
       var figure = el("figure", "ed-q-image");
       var picture = document.createElement("img");

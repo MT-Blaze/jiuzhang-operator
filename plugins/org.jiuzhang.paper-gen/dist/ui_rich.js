@@ -31,6 +31,17 @@
     return span;
   }
 
+  function safeUploadUri(value) {
+    return typeof value === "string" && value.indexOf("/static/uploads/") === 0 ? value : "";
+  }
+
+  // 图片优先级：tikz_code 渲染出的矢量图优先，其次原图 uri/path。
+  function imageUri(image) {
+    return safeUploadUri(image && image.tikz_uri)
+      || safeUploadUri(image && image.uri)
+      || safeUploadUri(image && image.path);
+  }
+
   function imageNode(uri, alt) {
     if (typeof uri !== "string" || uri.indexOf("/static/uploads/") !== 0) return null;
     var size = imageSizeCache.get(uri);
@@ -56,8 +67,8 @@
     var jobs = [];
     (items || []).forEach(function (question) {
       (question.images || []).forEach(function (image) {
-        var uri = image && image.uri;
-        if (typeof uri !== "string" || uri.indexOf("/static/uploads/") !== 0) return;
+        var uri = imageUri(image);
+        if (!uri) return;
         if (imageSizeCache.has(uri)) return;
         imageSizeCache.set(uri, null);
         jobs.push(new Promise(function (resolve) {
@@ -273,7 +284,7 @@
       var body = el("span", "pg-opt-body");
       appendRich(body, option.content);
       optionImages(question, option).forEach(function (image) {
-        var img = imageNode(image.uri, image.alt);
+        var img = imageNode(imageUri(image), image.alt);
         if (img) body.appendChild(img);
       });
       row.appendChild(body);

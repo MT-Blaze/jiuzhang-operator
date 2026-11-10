@@ -291,8 +291,10 @@ CREATE TABLE question_images (
     belongs_to  TEXT NOT NULL
                 CHECK (belongs_to IN ('stem', 'answer', 'solution', 'option')),
     option_id   INTEGER,
-    -- [字段注释] 图片文件路径，指向项目资源目录
+    -- [字段注释] 原图文件路径，指向项目资源目录；该文件是老师资产，任何情况下都不删除
     path        TEXT NOT NULL,
+    -- [功能注释] LaTeX/TikZ 源码；非空时前端优先渲染为矢量图，为空则回退显示 path 原图
+    tikz_code   TEXT,
     -- [字段注释] 图片替代文本（无障碍/防裂图用，可为空）
     alt         TEXT,
     -- [字段注释] 图片在所属位置内的展示排序，数值越小越靠前
@@ -573,6 +575,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 
 COMMIT;

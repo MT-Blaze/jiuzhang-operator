@@ -219,6 +219,10 @@ def _page_images(row: sqlite3.Row) -> list[dict[str, Any]]:
 def row_to_item(row: sqlite3.Row) -> dict[str, Any]:
     document = wire.loads(row["doc_json"])
     document["id"] = row["id"]
+    if isinstance(document.get("images"), list):
+        from app.core.tikz_render import resolve_images
+
+        document["images"] = resolve_images(document["images"])
     assets = wire.loads(row["assets_json"]) if row["assets_json"] else []
     return {
         "id": row["id"],
