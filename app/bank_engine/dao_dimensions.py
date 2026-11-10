@@ -7,11 +7,21 @@ from typing import Any
 
 from app.bank_engine import dao_base
 from app.bank_engine.dao_questions import direction_question_counts, point_question_counts
-from app.bank_engine.models import Chapter, ExamDirection, KnowledgeNode, KnowledgePoint, Textbook
+from app.bank_engine.models import (
+    Chapter,
+    ExamDirection,
+    KnowledgeNode,
+    KnowledgePoint,
+    Textbook,
+    TextbookVersion,
+)
 
 DIRECTION_COLUMNS = "id, name, code, sort_order, subject_id, chapter_id, description"
 POINT_COLUMNS = "id, name, code, sort_order, subject_id, parent_id"
-TEXTBOOK_COLUMNS = "id, name, code, sort_order, publisher, subject_id, grade_id"
+TEXTBOOK_COLUMNS = (
+    "id, name, code, sort_order, publisher, subject_id, grade_id, version_id, volume_name"
+)
+VERSION_COLUMNS = "id, name, code, sort_order, publisher, subject_id"
 CHAPTER_COLUMNS = "id, name, code, sort_order, textbook_id, parent_id"
 
 
@@ -205,11 +215,41 @@ def knowledge_tree(
     return tuple(build(root) for root in children.get(None, ()))
 
 
+def list_textbook_versions(
+    conn: sqlite3.Connection,
+    *,
+    subject_id: int | None = None,
+) -> tuple[TextbookVersion, ...]:
+    """版本下拉框的唯一数据源：只出纯净版本名，绝不混入册次。"""
+    clauses: list[str] = []
+    params: list[Any] = []
+    if subject_id is not None:
+        clauses.append("subject_id = ?")
+        params.append(subject_id)
+    sql = (
+        "SELECT " + VERSION_COLUMNS + " FROM dim_textbook_versions"
+        + _where(clauses, params)
+        + " ORDER BY subject_id, sort_order, id"
+    )
+    return tuple(
+        TextbookVersion(
+            id=int(row["id"]),
+            name=str(row["name"]),
+            code=str(row["code"]),
+            sort_order=int(row["sort_order"]),
+            publisher=None if row["publisher"] is None else str(row["publisher"]),
+            subject_id=int(row["subject_id"]),
+        )
+        for row in conn.execute(sql, params)
+    )
+
+
 def list_textbooks(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
     grade_id: int | None = None,
+    version_id: int | None = None,
 ) -> tuple[Textbook, ...]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -219,6 +259,9 @@ def list_textbooks(
     if grade_id is not None:
         clauses.append("grade_id = ?")
         params.append(grade_id)
+    if version_id is not None:
+        clauses.append("version_id = ?")
+        params.append(version_id)
     sql = (
         "SELECT " + TEXTBOOK_COLUMNS + " FROM dim_textbooks"
         + _where(clauses, params)
@@ -233,6 +276,8 @@ def list_textbooks(
             publisher=None if row["publisher"] is None else str(row["publisher"]),
             subject_id=int(row["subject_id"]),
             grade_id=None if row["grade_id"] is None else int(row["grade_id"]),
+            version_id=None if row["version_id"] is None else int(row["version_id"]),
+            volume_name=None if row["volume_name"] is None else str(row["volume_name"]),
         )
         for row in conn.execute(sql, params)
     )
@@ -279,5 +324,6 @@ __all__ = [
     "list_chapters",
     "list_exam_directions",
     "list_knowledge_points",
+    "list_textbook_versions",
     "list_textbooks",
 ]

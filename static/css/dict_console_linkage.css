@@ -58,6 +58,13 @@
 }
 .dcl-tree-node:hover { background: var(--accent-soft); }
 .dcl-tree-node.dcl-selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+/* 册次是树的顶级节点：加粗与底色把它和章/节区分开（年级、册次一目了然） */
+.dcl-tree-volume {
+  font-family: var(--serif);
+  font-size: 0.88rem;
+  font-weight: 600;
+  background: var(--accent-soft);
+}
 .dcl-tree-caret:focus-visible, .dcl-tree-node:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

@@ -70,8 +70,8 @@ class TextbooksRouteTest(unittest.TestCase):
         canned = (Textbook(id=1, name="人教A版必修一", code="t1", sort_order=1,
                            publisher="人民教育出版社", subject_id=2, grade_id=10),)
         with mock.patch.object(bank_engine.service, "textbooks", return_value=canned) as call:
-            body = bank_engine.engine_textbooks(subject_id=2, grade_id=10)
-        call.assert_called_once_with(subject_id=2, grade_id=10)
+            body = bank_engine.engine_textbooks(subject_id=2, grade_id=10, version_id=None)
+        call.assert_called_once_with(subject_id=2, grade_id=10, version_id=None)
         self.assertEqual(body["total"], 1)
         self.assertEqual(body["items"][0]["name"], "人教A版必修一")
         self.assertEqual(body["items"][0]["subject_id"], 2)

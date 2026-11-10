@@ -1,9 +1,9 @@
 /**
  * 全局设置：学段 / 学科 / 教材版本三个下拉框的状态中心。
+ * 【教材版本】只列 dim_textbook_versions 的纯净版本名（人教A版/统编版…），
+ * 册次不在这里出现——左侧章节树按「版本 → 册次 → 章 → 节」展开。
  * 选定即写 localStorage（键 jzo.dictConsole.globals.v1），刷新后还原；
  * 后续所有字典查询经 query() 默认携带这三个参数。
- * 联动口径：学科或学段变化 → 教材版本按 subject_id + 年级所属学段重过滤，
- * 已选教材不在新清单里就自动回到「全部教材」。
  */
 (function () {
   "use strict";
@@ -13,10 +13,10 @@
 
   var els = null;
   var stateEl = null;
-  var state = { stage: "", subject_id: "", textbook_id: "" };
+  var state = { stage: "", subject_id: "", version_id: "" };
   var subjects = [];
   var grades = [];
-  var textbooks = [];
+  var versions = [];
   var ready = false;
 
   function load() {
@@ -27,7 +27,8 @@
       if (saved && typeof saved === "object") {
         state.stage = String(saved.stage || "");
         state.subject_id = String(saved.subject_id || "");
-        state.textbook_id = String(saved.textbook_id || "");
+        // 旧键 textbook_id 存的是某一册，和版本 id 不是一回事，一律丢弃。
+        state.version_id = String(saved.version_id || "");
       }
     } catch (error) {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -45,7 +46,7 @@
   }
 
   function current() {
-    return { stage: state.stage, subject_id: state.subject_id, textbook_id: state.textbook_id };
+    return { stage: state.stage, subject_id: state.subject_id, version_id: state.version_id };
   }
 
   /** 字典查询默认携带的参数：只带已选项，id 一律转整数。 */
@@ -53,15 +54,8 @@
     var out = {};
     if (state.stage) out.stage = state.stage;
     if (state.subject_id) out.subject_id = Number(state.subject_id);
-    if (state.textbook_id) out.textbook_id = Number(state.textbook_id);
+    if (state.version_id) out.version_id = Number(state.version_id);
     return out;
-  }
-
-  function gradeStage(gradeId) {
-    for (var i = 0; i < grades.length; i += 1) {
-      if (String(grades[i].id) === String(gradeId)) return grades[i].stage || "";
-    }
-    return "";
   }
 
   function stageOptions() {
@@ -72,10 +66,9 @@
     return seen;
   }
 
-  function filteredTextbooks() {
-    return textbooks.filter(function (book) {
-      if (state.subject_id && String(book.subject_id) !== state.subject_id) return false;
-      if (state.stage && book.grade_id != null && gradeStage(book.grade_id) !== state.stage) return false;
+  function filteredVersions() {
+    return versions.filter(function (version) {
+      if (state.subject_id && String(version.subject_id) !== state.subject_id) return false;
       return true;
     });
   }
@@ -108,12 +101,12 @@
     state.stage = els.stage.value;
   }
 
-  function renderTextbooks() {
-    var options = [{ value: "", label: "全部教材" }].concat(filteredTextbooks().map(function (book) {
-      return { value: String(book.id), label: book.name };
+  function renderVersions() {
+    var options = [{ value: "", label: "全部版本" }].concat(filteredVersions().map(function (version) {
+      return { value: String(version.id), label: version.name };
     }));
-    fill(els.textbook, options, state.textbook_id);
-    state.textbook_id = els.textbook.value;
+    fill(els.textbook, options, state.version_id);
+    state.version_id = els.textbook.value;
   }
 
   function label() {
@@ -121,8 +114,10 @@
     parts.push(state.stage || "全部学段");
     var subject = subjects.filter(function (item) { return String(item.id) === state.subject_id; })[0];
     parts.push(subject ? subject.name : "全部学科");
-    var book = textbooks.filter(function (item) { return String(item.id) === state.textbook_id; })[0];
-    parts.push(book ? book.name : "全部教材");
+    var version = versions.filter(function (item) {
+      return String(item.id) === state.version_id;
+    })[0];
+    parts.push(version ? version.name : "全部版本");
     return parts.join(" · ");
   }
 
@@ -131,8 +126,10 @@
   }
 
   function onChange(key) {
-    state[key] = els[key === "subject_id" ? "subject" : key === "textbook_id" ? "textbook" : "stage"].value;
-    if (key !== "textbook_id") renderTextbooks();
+    if (key === "stage") state.stage = els.stage.value;
+    else if (key === "subject_id") state.subject_id = els.subject.value;
+    else state.version_id = els.textbook.value;
+    if (key !== "version_id") renderVersions();
     persist();
     renderState();
     emit();
@@ -148,19 +145,19 @@
     load();
     return Promise.all([
       window.DcClient.fetchJson("/api/bank/engine/meta"),
-      window.DcClient.fetchJson("/api/bank/engine/textbooks")
+      window.DcClient.fetchJson("/api/bank/engine/textbook-versions")
     ]).then(function (results) {
       subjects = results[0].subjects || [];
       grades = results[0].grades || [];
-      textbooks = results[1].items || [];
+      versions = results[1].items || [];
       ready = true;
       renderStages();
       renderSubjects();
-      renderTextbooks();
+      renderVersions();
       [els.stage, els.subject, els.textbook].forEach(function (select) { select.disabled = false; });
       els.stage.addEventListener("change", function () { onChange("stage"); });
       els.subject.addEventListener("change", function () { onChange("subject_id"); });
-      els.textbook.addEventListener("change", function () { onChange("textbook_id"); });
+      els.textbook.addEventListener("change", function () { onChange("version_id"); });
       persist();
       renderState();
       emit();

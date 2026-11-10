@@ -35,6 +35,7 @@ from app.bank_engine import (  # noqa: E402
     dao_linkage,
     migrate_v7,
     migrate_v8,
+    migrate_v9,
     service,
 )
 from app.bank_engine.models import (  # noqa: E402
@@ -68,13 +69,18 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    def test_fresh_build_is_v8_with_sort_order(self) -> None:
-        self.assertEqual(self._version(), 8)
+    def test_fresh_build_is_v9_with_versions(self) -> None:
+        self.assertEqual(self._version(), 9)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
+        self.assertIn("version_id", self._columns("dim_textbooks"))
+        self.assertIn("volume_name", self._columns("dim_textbooks"))
         with service.session(self.db_path) as conn:
             migrate_v7.verify_sort_order(conn)
+            migrate_v9.verify_versions(conn)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 19)
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
             self.assertEqual(conn.execute(
@@ -86,18 +92,23 @@ class MigrationTest(unittest.TestCase):
         if backup.exists():
             backup.unlink()
         with service.session(self.db_path) as conn:
+            migrate_v9.rollback(conn)
             migrate_v8.rollback(conn)
             migrate_v7.rollback(conn)
         self.assertEqual(self._version(), 6)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertNotIn("sort_order", self._columns(table))
         self.assertNotIn("tikz_code", self._columns("question_images"))
+        self.assertNotIn("version_id", self._columns("dim_textbooks"))
         report = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.assertFalse(report.created)
-        self.assertEqual(self._version(), 8)
+        self.assertEqual(self._version(), 9)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
+        self.assertIn("version_id", self._columns("dim_textbooks"))
+        with service.session(self.db_path) as conn:
+            migrate_v9.verify_versions(conn)
         self.assertTrue(backup.is_file())
         with service.session(backup) as conn:
             self.assertEqual(int(conn.execute("PRAGMA user_version").fetchone()[0]), 6)
@@ -115,6 +126,34 @@ class MigrationTest(unittest.TestCase):
             second = migrate_v7.backup_pre_v7(conn)
         self.assertEqual(first, second)
         self.assertEqual(first.stat().st_mtime_ns, mtime)
+
+    def test_versions_are_pure_and_books_carry_volume(self) -> None:
+        versions = service.textbook_versions(subject_id=2, db_path=self.db_path)
+        names = [item.name for item in versions]
+        self.assertEqual(names, ["人教A版", "人教版"])
+        for name in names:
+            self.assertNotIn("必修", name)
+            self.assertNotIn("选修", name)
+            self.assertNotIn("·", name)
+        book = next(item for item in versions if item.name == "人教A版")
+        books = service.textbooks(version_id=book.id, db_path=self.db_path)
+        self.assertEqual(
+            [item.volume_name for item in books],
+            ["必修一", "必修二", "选修一", "选修二", "选修三"],
+        )
+
+    def test_version_tree_groups_books_then_chapters(self) -> None:
+        book = next(item for item in service.textbook_versions(
+            subject_id=2, db_path=self.db_path) if item.name == "人教A版")
+        books = service.linkage_version_tree(book.id, db_path=self.db_path)
+        self.assertEqual(len(books), 5)
+        for node in books:
+            self.assertEqual(node.textbook.version_id, book.id)
+            self.assertTrue(node.chapters)
+            self.assertTrue(all(
+                chapter.chapter.textbook_id == node.textbook.id
+                for chapter in node.chapters
+            ))
 
     def test_backfill_matches_primary_key_order(self) -> None:
         with service.session(self.db_path) as conn:
@@ -152,7 +191,12 @@ class LinkageServiceTest(unittest.TestCase):
             ).fetchone()[0])
             cls.point_id = int(conn.execute(
                 "SELECT knowledge_point_id FROM knowledge_exam_map "
-                "WHERE exam_direction_id = ? ORDER BY sort_order LIMIT 1",
+                "WHERE exam_direction_id = ? AND sort_order = 0",
+                (cls.direction_id,),
+            ).fetchone()[0])
+            cls.secondary_point_id = int(conn.execute(
+                "SELECT knowledge_point_id FROM knowledge_exam_map "
+                "WHERE exam_direction_id = ? AND sort_order > 0 ORDER BY sort_order LIMIT 1",
                 (cls.direction_id,),
             ).fetchone()[0])
             cls.other_point_id = int(conn.execute(
@@ -230,9 +274,12 @@ class LinkageServiceTest(unittest.TestCase):
         self.assertEqual(keys, sorted(keys))
         self.assertIn(self.direction_id, [item.id for item in directions])
         tags = service.linkage_direction_tags(self.direction_id, db_path=self.db_path)
-        self.assertGreaterEqual(len(tags), 2)
-        self.assertEqual([tag.sort_order for tag in tags], list(range(len(tags))))
-        self.assertEqual(tags[0].id, self.point_id)
+        self.assertEqual([tag.id for tag in tags], [self.secondary_point_id])
+        self.assertEqual([tag.sort_order for tag in tags], [1])
+        # 换到辅助知识点视角看同一考向：自己必须被排除，主关联也不出现。
+        own = service.linkage_direction_tags(
+            self.direction_id, exclude_point_id=self.secondary_point_id, db_path=self.db_path)
+        self.assertEqual(own, ())
 
     def test_unknown_ids_raise_lookup(self) -> None:
         with self.assertRaises(dao_console.ConsoleLookupError):
@@ -295,8 +342,7 @@ class LinkageServiceTest(unittest.TestCase):
         self.assertIn(direction.id, [item.id for item in service.linkage_point_directions(
             self.point_id, db_path=self.db_path)])
         tags = service.linkage_direction_tags(direction.id, db_path=self.db_path)
-        self.assertEqual([tag.id for tag in tags], [self.point_id])
-        self.assertEqual(tags[0].sort_order, 0)
+        self.assertEqual(tags, ())
 
     def test_add_direction_empty_name_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -309,7 +355,7 @@ class LinkageServiceTest(unittest.TestCase):
             service.linkage_delete_direction(self.point_id, direction.id, db_path=self.db_path)
         self.assertIn("knowledge_exam_map", {hit.table for hit in ctx.exception.hits})
         tags = service.linkage_direction_tags(direction.id, db_path=self.db_path)
-        self.assertEqual([tag.id for tag in tags], [self.point_id, self.other_point_id])
+        self.assertEqual([tag.id for tag in tags], [self.other_point_id])
         service.linkage_remove_tag(direction.id, self.other_point_id, db_path=self.db_path)
         service.linkage_delete_direction(self.point_id, direction.id, db_path=self.db_path)
         with self.assertRaises(dao_console.ConsoleLookupError):
@@ -330,14 +376,14 @@ class LinkageServiceTest(unittest.TestCase):
         with self.assertRaises(dao_console.ConflictError):
             service.linkage_add_tag(direction.id, self.other_point_id, db_path=self.db_path)
         tags = service.linkage_direction_tags(direction.id, db_path=self.db_path)
-        self.assertEqual([item.id for item in tags], [self.point_id, self.other_point_id])
+        self.assertEqual([item.id for item in tags], [self.other_point_id])
 
     def test_remove_tag_only_unlinks(self) -> None:
         direction = self._new_direction()
         service.linkage_add_tag(direction.id, self.other_point_id, db_path=self.db_path)
         service.linkage_remove_tag(direction.id, self.other_point_id, db_path=self.db_path)
         tags = service.linkage_direction_tags(direction.id, db_path=self.db_path)
-        self.assertEqual([item.id for item in tags], [self.point_id])
+        self.assertEqual([item.id for item in tags], [])
         still = service.knowledge_point(self.other_point_id, db_path=self.db_path)
         self.assertEqual(still.id, self.other_point_id)
         with self.assertRaises(dao_console.ConsoleLookupError):
@@ -346,10 +392,11 @@ class LinkageServiceTest(unittest.TestCase):
     # ---- 双击改名走阶段二规格驱动通道，联动读即时反映 ----
 
     def test_rename_point_and_direction_via_console_spec(self) -> None:
-        point = service.console_row("dim_knowledge_points", self.point_id, db_path=self.db_path)
-        service.console_update("dim_knowledge_points", self.point_id,
+        point = service.console_row("dim_knowledge_points", self.secondary_point_id,
+                                    db_path=self.db_path)
+        service.console_update("dim_knowledge_points", self.secondary_point_id,
                                {"name": "联动改名测试知识点"}, db_path=self.db_path)
-        self.addCleanup(service.console_update, "dim_knowledge_points", self.point_id,
+        self.addCleanup(service.console_update, "dim_knowledge_points", self.secondary_point_id,
                         {"name": point.name}, db_path=self.db_path)
         tags = service.linkage_direction_tags(self.direction_id, db_path=self.db_path)
         self.assertEqual(tags[0].name, "联动改名测试知识点")

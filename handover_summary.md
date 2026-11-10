@@ -260,7 +260,8 @@
 ## 关键技术事实（已核实，可直接用）
 
 - 引擎库：`data/banks/org.jiuzhang.bank-engine.v2.db`，user_version=7（阶段三迁移），40 表。
-  真实种子：15 学科、12 年级（小学/初中/高中）、16 考试类型、128 教材、3528 章节、
+  真实种子：15 学科、12 年级（小学/初中/高中）、16 考试类型、128 教材、3519 章节
+  （2026-11-10 清洗 9 条与父章同名的空节后：3528 → 3519）、
   11388 知识点、567 考向、367 行政区划、347 学校；
   chapter_knowledge_map=74 行、knowledge_exam_map=200 行，均已带 sort_order 且组内 0..n-1。
 - 已有引擎路由（`app/api/bank_engine.py`）：/api/bank/engine/meta（subjects/grades 等）、

@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from app.bank_engine import migrate_v7, migrate_v8, paths, regions, seeding
+from app.bank_engine import migrate_v7, migrate_v8, migrate_v9, paths, regions, seeding
 from app.bank_engine.models import BuildReport
 from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
 
@@ -26,6 +26,7 @@ BASE_TABLES: tuple[str, ...] = (
     "dict_exam_types",
     "dim_regions",
     "dim_schools",
+    "dim_textbook_versions",
     "dim_textbooks",
     "dim_textbook_chapters",
     "exams",
@@ -417,7 +418,7 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version not in (2, 3, 4, 5, 6, 7):
+    if version not in (2, 3, 4, 5, 6, 7, 8):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
     if version == 2:
         _migrate_v2_to_v3(conn)
@@ -432,6 +433,7 @@ def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version in (2, 3, 4, 5, 6):
         migrate_v7.upgrade(conn)
     migrate_v8.upgrade(conn)
+    migrate_v9.upgrade(conn)
     return True
 
 

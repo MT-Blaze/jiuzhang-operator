@@ -1,6 +1,7 @@
 /**
- * 四栏联动 · 最右栏辅助知识点标签（阶段三）。
- * 选中考向后：标签来自 knowledge_exam_map（sort_order 持久化），
+ * 四栏联动 · 最右栏辅助知识点标签（阶段三，v9 起修正主辅口径）。
+ * 选中考向后：标签只来自 knowledge_exam_map 的辅助行（sort_order > 0），
+ * 并排除当前选中的主知识点——主知识点绝不会出现在自己的辅助列表里。
  * 全局搜索知识点（/api/bank/engine/knowledge-points）一键挂为标签，
  * 可移除（只解除关联）、拖拽 / Alt+方向键排序，刷新后顺序仍在。
  */
@@ -35,6 +36,7 @@
     body.appendChild(state);
     body.appendChild(list);
     var directionId = null;
+    var pointId = null;
     var rows = [];
 
     function render() {
@@ -70,8 +72,10 @@
       });
     }
 
-    function load(id) {
+    function load(id, primaryPointId) {
       directionId = id;
+      // undefined = 保留当前主知识点；null = 上游清空；数字 = 新选中的主知识点。
+      if (primaryPointId !== undefined) pointId = primaryPointId;
       rows = [];
       search.disabled = !id;
       search.value = "";
@@ -79,9 +83,9 @@
       results.hidden = true;
       if (!id) { render(); state.textContent = ""; return Promise.resolve(); }
       state.textContent = "正在读取辅助标签…";
-      return window.DcClient.fetchJson(
-        "/api/bank/engine/linkage/directions/" + id + "/tags"
-      ).then(function (data) {
+      var url = "/api/bank/engine/linkage/directions/" + id + "/tags";
+      if (pointId) url += "?exclude_point_id=" + encodeURIComponent(pointId);
+      return window.DcClient.fetchJson(url).then(function (data) {
         if (!body.isConnected) return;
         rows = data.items || [];
         render();
@@ -123,7 +127,10 @@
         var button = el("button", "dc-btn dcl-search-add", "添加");
         button.type = "button";
         button.setAttribute("aria-label", "添加「" + point.name + "」为辅助标签");
-        if (tagged[point.point_id]) {
+        if (point.point_id === pointId) {
+          button.disabled = true;
+          button.textContent = "主知识点";
+        } else if (tagged[point.point_id]) {
           button.disabled = true;
           button.textContent = "已添加";
         }
@@ -156,9 +163,11 @@
     window.DcDnd.attach(list, {
       onOrder: function (ids) {
         if (!directionId || !ids.length) return;
+        var payload = { point_ids: ids };
+        if (pointId) payload.exclude_point_id = Number(pointId);
         window.DcClient.writeJson(
           "/api/bank/engine/linkage/directions/" + directionId + "/tags/order",
-          { point_ids: ids }, "PUT"
+          payload, "PUT"
         ).then(function () {
           var byId = {};
           rows.forEach(function (point) { byId[point.id] = point; });

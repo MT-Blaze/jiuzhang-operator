@@ -160,6 +160,18 @@ class KnowledgeNode:
 
 
 @dataclass(frozen=True)
+class TextbookVersion:
+    """教材版本（人教A版/统编版…）：与册次解耦的独立维度。"""
+
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    publisher: str | None
+    subject_id: int
+
+
+@dataclass(frozen=True)
 class Textbook:
     id: int
     name: str
@@ -168,6 +180,8 @@ class Textbook:
     publisher: str | None
     subject_id: int
     grade_id: int | None
+    version_id: int | None = None
+    volume_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +198,14 @@ class Chapter:
 class ChapterNode:
     chapter: Chapter
     children: tuple["ChapterNode", ...] = ()
+
+
+@dataclass(frozen=True)
+class TextbookTree:
+    """章节树顶层节点：一册教材 → 章 → 节。"""
+
+    textbook: Textbook
+    chapters: tuple[ChapterNode, ...] = ()
 
 
 @dataclass(frozen=True)

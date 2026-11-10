@@ -102,7 +102,7 @@ class EngineBuildTest(unittest.TestCase):
         self.assertTrue(self.report.created)
         self.assertEqual(self.report.counts, EXPECTED_COUNTS)
         self.assertEqual(self.report.counts["dim_knowledge_points"], 11388)
-        self.assertEqual(self.report.counts["dim_textbook_chapters"], 3528)
+        self.assertEqual(self.report.counts["dim_textbook_chapters"], 3519)
         self.assertEqual(self.report.counts["dim_schools"], 347)
         self.assertEqual(self.report.counts["dim_regions"], 367)
         self.assertEqual(self.report.counts["dim_exam_directions"], 567)
@@ -432,11 +432,12 @@ class EngineSourceHygieneTest(unittest.TestCase):
         }
         self.assertEqual(oversized, {})
 
-    def test_schema_is_the_35_table_contract(self) -> None:
+    def test_schema_is_the_36_table_contract(self) -> None:
         body = SCHEMA.read_text(encoding="utf-8")
-        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 35)
-        self.assertEqual(len(builder.BASE_TABLES), 35)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 8)
+        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 36)
+        self.assertEqual(len(builder.BASE_TABLES), 36)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 9)
+        self.assertIn("dim_textbook_versions", body)
         self.assertNotIn("dim_sources", body)
         self.assertIn("tikz_code", body)
         self.assertNotIn("question_source_map", body)

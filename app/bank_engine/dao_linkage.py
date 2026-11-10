@@ -6,9 +6,10 @@
 - 删除考向沿用阶段二防呆：先查外键引用（排除当前知识点自己的关联行），
   仍被引用即抛 ReferencedError，由 API 换成 409。
 
-sort_order 口径（v7 迁移补列）：
-- chapter_knowledge_map.sort_order：章节内知识点顺序，按 chapter_id 分组；
-- knowledge_exam_map.sort_order：考向内辅助标签顺序，按 exam_direction_id 分组；
+sort_order 口径（v9 起）：
+- chapter_knowledge_map.sort_order：章节内知识点顺序，按 chapter_id 分组，0..n-1；
+- knowledge_exam_map.sort_order：0 = 考向归属该知识点（主关联），>=1 = 辅助标签顺序，
+  按 exam_direction_id 分组；辅助标签只读 >0 且排除当前主知识点，绝不把自己挂回自己；
 - 拖拽排序提交完整成员清单，集合不一致即拒绝，防止误丢关联。
 """
 
@@ -24,7 +25,13 @@ from app.bank_engine.models import (
     ChapterNode,
     ExamDirection,
     LinkedKnowledgePoint,
+    TextbookTree,
 )
+
+# knowledge_exam_map.sort_order 的主次口径（v9 起明确）：
+# 0 = 该考向归属当前知识点（主关联，不参与辅助标签展示/排序）；
+# >=1 = 辅助知识点标签，按 1..n 排序。
+PRIMARY_ORDER = 0
 
 # 联动键 → (桥表, 分组列, 成员列)：白名单常量，排序 API 只认这两个键。
 LINK_MAPS: dict[str, tuple[str, str, str]] = {
@@ -60,14 +67,37 @@ def chapter_tree(conn: sqlite3.Connection, textbook_id: int) -> tuple[ChapterNod
     return tuple(build(root) for root in children.get(None, ()))
 
 
+def version_tree(conn: sqlite3.Connection, version_id: int) -> tuple[TextbookTree, ...]:
+    """版本 → 册次 → 章 → 节：每册单表读章节，层级在 Python 层组装。"""
+    _require(conn, "dim_textbook_versions", version_id)
+    books = dao_dimensions.list_textbooks(conn, version_id=version_id)
+    return tuple(
+        TextbookTree(textbook=book, chapters=chapter_tree(conn, book.id))
+        for book in books
+    )
+
+
 def _linked_points(
-    conn: sqlite3.Connection, map_key: str, group_id: int
+    conn: sqlite3.Connection,
+    map_key: str,
+    group_id: int,
+    *,
+    exclude_point_id: int | None = None,
 ) -> tuple[LinkedKnowledgePoint, ...]:
     table, group_col, member_col = _map_spec(map_key)
+    clauses = [group_col + " = ?"]
+    params: list[Any] = [group_id]
+    if map_key == "direction_tags":
+        clauses.append("sort_order > ?")
+        params.append(PRIMARY_ORDER)
+        if exclude_point_id is not None:
+            clauses.append(member_col + " <> ?")
+            params.append(int(exclude_point_id))
     rows = conn.execute(
         "SELECT " + member_col + ", sort_order FROM " + table
-        + " WHERE " + group_col + " = ? ORDER BY sort_order, " + member_col,
-        (group_id,),
+        + " WHERE " + " AND ".join(clauses)
+        + " ORDER BY sort_order, " + member_col,
+        params,
     ).fetchall()
     points = dao_base.load_knowledge_points(conn, [int(row[0]) for row in rows])
     out: list[LinkedKnowledgePoint] = []
@@ -88,42 +118,85 @@ def chapter_points(conn: sqlite3.Connection, chapter_id: int) -> tuple[LinkedKno
     return _linked_points(conn, "chapter_points", chapter_id)
 
 
-def direction_tags(conn: sqlite3.Connection, direction_id: int) -> tuple[LinkedKnowledgePoint, ...]:
+def direction_tags(
+    conn: sqlite3.Connection,
+    direction_id: int,
+    *,
+    exclude_point_id: int | None = None,
+) -> tuple[LinkedKnowledgePoint, ...]:
+    """辅助知识点标签：只取 sort_order>0，且排除当前选中的主知识点。"""
     _require(conn, "dim_exam_directions", direction_id)
-    return _linked_points(conn, "direction_tags", direction_id)
+    return _linked_points(
+        conn, "direction_tags", direction_id, exclude_point_id=exclude_point_id
+    )
 
 
 def point_directions(conn: sqlite3.Connection, point_id: int) -> tuple[ExamDirection, ...]:
+    """知识点自己的考向：只认 sort_order=0 的归属关系，辅助关联不算。"""
     _require(conn, "dim_knowledge_points", point_id)
     rows = conn.execute(
-        "SELECT exam_direction_id FROM knowledge_exam_map WHERE knowledge_point_id = ?",
-        (point_id,),
+        "SELECT exam_direction_id FROM knowledge_exam_map "
+        "WHERE knowledge_point_id = ? AND sort_order = ?",
+        (point_id, PRIMARY_ORDER),
     ).fetchall()
     directions = dao_base.load_exam_directions(conn, [int(row[0]) for row in rows])
     return tuple(sorted(directions.values(), key=lambda item: (item.sort_order, item.id)))
 
 
-def reorder(
-    conn: sqlite3.Connection, map_key: str, group_id: int, member_ids: list[int]
-) -> None:
-    """拖拽排序落库：提交的清单必须与现有成员完全一致（不多不少不重）。"""
+def _order_members(
+    conn: sqlite3.Connection, map_key: str, group_id: int
+) -> list[tuple[int, int]]:
+    """排序分组的现有成员（成员 id, sort_order）：辅助标签组只含 >0 的行。"""
     table, group_col, member_col = _map_spec(map_key)
+    clauses = [group_col + " = ?"]
+    params: list[Any] = [group_id]
+    if map_key == "direction_tags":
+        clauses.append("sort_order > ?")
+        params.append(PRIMARY_ORDER)
+    rows = conn.execute(
+        "SELECT " + member_col + ", sort_order FROM " + table
+        + " WHERE " + " AND ".join(clauses)
+        + " ORDER BY sort_order, " + member_col,
+        params,
+    ).fetchall()
+    return [(int(row[0]), int(row[1])) for row in rows]
+
+
+def reorder(
+    conn: sqlite3.Connection,
+    map_key: str,
+    group_id: int,
+    member_ids: list[int],
+    *,
+    exclude_point_id: int | None = None,
+) -> None:
+    """拖拽排序落库：提交的清单必须与现有成员完全一致（不多不少不重）。
+
+    辅助标签组从 1 起编号，0 永远留给主关联；被当前主知识点排除的行
+    不进清单、排在最后，保证组内编号仍连续。
+    """
+    _map_spec(map_key)
     if not isinstance(member_ids, list) or any(
         not isinstance(value, int) or isinstance(value, bool) for value in member_ids
     ):
         raise ValueError("排序清单必须是整数 id 数组")
-    rows = conn.execute(
-        "SELECT " + member_col + " FROM " + table + " WHERE " + group_col + " = ?",
-        (group_id,),
-    ).fetchall()
-    existing = {int(row[0]) for row in rows}
+    members = _order_members(conn, map_key, group_id)
+    hidden: list[int] = []
+    if map_key == "direction_tags" and exclude_point_id is not None:
+        hidden = [member for member, _ in members if member == int(exclude_point_id)]
+        members = [item for item in members if item[0] != int(exclude_point_id)]
+    existing = {member for member, _ in members}
     if len(member_ids) != len(existing) or set(member_ids) != existing:
         raise ValueError("排序清单与现有条目不一致：请先刷新再拖拽")
+    table, group_col, member_col = _map_spec(map_key)
+    start = 1 if map_key == "direction_tags" else 0
+    ordered = member_ids + hidden
     try:
         conn.executemany(
             "UPDATE " + table + " SET sort_order = ? WHERE "
             + group_col + " = ? AND " + member_col + " = ?",
-            [(order, group_id, member) for order, member in enumerate(member_ids)],
+            [(order, group_id, member)
+             for order, member in enumerate(ordered, start=start)],
         )
         conn.commit()
     except sqlite3.Error:
@@ -197,14 +270,19 @@ def add_tag(conn: sqlite3.Connection, direction_id: int, point_id: int) -> Linke
     _require(conn, "dim_exam_directions", direction_id)
     _require(conn, "dim_knowledge_points", point_id)
     duplicate = conn.execute(
-        "SELECT 1 FROM knowledge_exam_map WHERE knowledge_point_id = ? AND exam_direction_id = ?",
+        "SELECT sort_order FROM knowledge_exam_map "
+        "WHERE knowledge_point_id = ? AND exam_direction_id = ?",
         (point_id, direction_id),
     ).fetchone()
     if duplicate is not None:
+        if int(duplicate[0]) == PRIMARY_ORDER:
+            raise ConflictError("该知识点是本考向的主知识点，不能再挂为辅助标签")
         raise ConflictError("该知识点已是此考向的辅助标签")
+    # sort_order=0 永远留给主关联，辅助标签从 1 起排。
     next_order = int(conn.execute(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM knowledge_exam_map WHERE exam_direction_id = ?",
-        (direction_id,),
+        "SELECT COALESCE(MAX(sort_order), ?) + 1 FROM knowledge_exam_map "
+        "WHERE exam_direction_id = ?",
+        (PRIMARY_ORDER, direction_id),
     ).fetchone()[0])
     try:
         conn.execute(
@@ -249,4 +327,5 @@ __all__ = [
     "point_directions",
     "remove_tag",
     "reorder",
+    "version_tree",
 ]

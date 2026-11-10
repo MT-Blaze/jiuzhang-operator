@@ -37,6 +37,8 @@ from app.bank_engine.models import (
     QuestionRecord,
     ReferenceHit,
     Textbook,
+    TextbookTree,
+    TextbookVersion,
 )
 from app.core import toml_io
 
@@ -225,12 +227,21 @@ def textbooks(
     *,
     subject_id: int | None = None,
     grade_id: int | None = None,
+    version_id: int | None = None,
     db_path: Path | None = None,
 ) -> tuple[Textbook, ...]:
     with session(db_path) as conn:
         return dao_dimensions.list_textbooks(
-            conn, subject_id=subject_id, grade_id=grade_id
+            conn, subject_id=subject_id, grade_id=grade_id, version_id=version_id
         )
+
+
+def textbook_versions(
+    *, subject_id: int | None = None, db_path: Path | None = None
+) -> tuple[TextbookVersion, ...]:
+    """全局设置【教材版本】下拉框：只出纯净版本名，册次交给章节树。"""
+    with session(db_path) as conn:
+        return dao_dimensions.list_textbook_versions(conn, subject_id=subject_id)
 
 
 def chapters(
@@ -311,6 +322,13 @@ def linkage_chapter_tree(textbook_id: int, *, db_path: Path | None = None) -> tu
         return dao_linkage.chapter_tree(conn, textbook_id)
 
 
+def linkage_version_tree(
+    version_id: int, *, db_path: Path | None = None
+) -> tuple[TextbookTree, ...]:
+    with session(db_path) as conn:
+        return dao_linkage.version_tree(conn, version_id)
+
+
 def linkage_chapter_points(
     chapter_id: int, *, db_path: Path | None = None
 ) -> tuple[LinkedKnowledgePoint, ...]:
@@ -326,17 +344,29 @@ def linkage_point_directions(
 
 
 def linkage_direction_tags(
-    direction_id: int, *, db_path: Path | None = None
+    direction_id: int,
+    *,
+    exclude_point_id: int | None = None,
+    db_path: Path | None = None,
 ) -> tuple[LinkedKnowledgePoint, ...]:
     with session(db_path) as conn:
-        return dao_linkage.direction_tags(conn, direction_id)
+        return dao_linkage.direction_tags(
+            conn, direction_id, exclude_point_id=exclude_point_id
+        )
 
 
 def linkage_reorder(
-    map_key: str, group_id: int, member_ids: list[int], *, db_path: Path | None = None
+    map_key: str,
+    group_id: int,
+    member_ids: list[int],
+    *,
+    exclude_point_id: int | None = None,
+    db_path: Path | None = None,
 ) -> None:
     with session(db_path) as conn:
-        dao_linkage.reorder(conn, map_key, group_id, member_ids)
+        dao_linkage.reorder(
+            conn, map_key, group_id, member_ids, exclude_point_id=exclude_point_id
+        )
 
 
 def linkage_add_direction(
@@ -395,10 +425,12 @@ __all__ = [
     "linkage_point_directions",
     "linkage_remove_tag",
     "linkage_reorder",
+    "linkage_version_tree",
     "question",
     "questions_of_direction",
     "questions_of_point",
     "session",
     "status",
+    "textbook_versions",
     "textbooks",
 ]

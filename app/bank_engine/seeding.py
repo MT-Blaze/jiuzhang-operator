@@ -8,7 +8,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from app.bank_engine import regions
+from app.bank_engine import regions, textbook_versions
 from app.bank_engine.seeds.books.registry import BOOK_ROWS, CHAPTER_ROWS
 from app.bank_engine.seeds.curriculum import (
     CORE_COMPETENCY_ROWS,
@@ -35,6 +35,10 @@ from app.bank_engine.seeds.migrated_textbook_seed import (
 from app.bank_engine.seeds.region_seed import REGION_ROWS
 from app.bank_engine.seeds.school_seed import SCHOOL_ROWS
 
+# 完整书名在灌种时切成「版本 + 册次」：版本行先落，教材册再挂 version_id。
+BOOK_SOURCE_ROWS = tuple(BOOK_ROWS) + tuple(MIGRATED_BOOK_ROWS)
+VERSION_ROWS, BOOK_VERSION_MAP = textbook_versions.build_version_rows(BOOK_SOURCE_ROWS)
+
 EXPECTED_COUNTS: dict[str, int] = {
     "dict_subjects": 15,
     "dict_grades": 12,
@@ -45,8 +49,9 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_subject_thoughts": 22,
     "dict_solution_methods": 34,
     "dict_core_competencies": 47,
+    "dim_textbook_versions": len(VERSION_ROWS),
     "dim_textbooks": 128,
-    "dim_textbook_chapters": 3528,
+    "dim_textbook_chapters": 3519,
     "dim_knowledge_points": 11388,
     "dim_exam_directions": 567,
     "knowledge_exam_map": 200,
@@ -67,7 +72,9 @@ _TEACHING_DICTIONARIES = (
 def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
     subjects = tuple((row[0], row[1], row[2], row[0]) for row in SUBJECT_ROWS)
     qualities = tuple((row[0], row[1], row[2], row[0]) for row in QUALITY_SEED_ROWS)
-    textbooks = tuple(BOOK_ROWS) + tuple(MIGRATED_BOOK_ROWS)
+    textbooks = tuple(
+        (*row, *BOOK_VERSION_MAP[int(row[0])]) for row in BOOK_SOURCE_ROWS
+    )
     chapters = tuple(CHAPTER_ROWS) + tuple(MIGRATED_CHAPTER_ROWS)
     knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_REQUIRED1_KNOWLEDGE_ROWS)
     schools = tuple((*row, regions.match_region_id(row[4])) for row in SCHOOL_ROWS)
@@ -123,9 +130,15 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
                 tuple(REGION_ROWS),
             ),
             (
+                "INSERT INTO dim_textbook_versions "
+                "(id, name, code, sort_order, publisher, subject_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                VERSION_ROWS,
+            ),
+            (
                 "INSERT INTO dim_textbooks "
-                "(id, name, code, sort_order, publisher, subject_id, grade_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(id, name, code, sort_order, publisher, subject_id, grade_id, "
+                "version_id, volume_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 textbooks,
             ),
             (

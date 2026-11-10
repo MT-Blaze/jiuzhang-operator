@@ -41,19 +41,20 @@
 
     var tags = window.DcLinkTags.mount(tagsBody);
     var directions = window.DcLinkDirections.mount(directionsBody, {
+      // 考向选中时保留上一步的主知识点，最右栏据此排除自身。
       onSelect: function (directionId) { tags.load(directionId); }
     });
     var points = window.DcLinkPoints.mount(pointsBody, {
       onSelect: function (pointId) {
         directions.load(pointId);
-        tags.load(null);
+        tags.load(null, pointId);
       }
     });
     window.DcLinkTree.mount(treeBody, ctx, {
       onSelect: function (chapterId) {
         points.load(chapterId);
         directions.load(null);
-        tags.load(null);
+        tags.load(null, null);
       }
     });
     return wrap;

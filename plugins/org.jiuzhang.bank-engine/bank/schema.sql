@@ -112,19 +112,37 @@ CREATE TABLE dim_schools (
     textbook_id INTEGER REFERENCES dim_textbooks(id) ON DELETE RESTRICT,
     UNIQUE (region, short_name)
 );
--- [功能注释] 教材版本字典：存版本名称、出版社，并归属学科与年级
+-- [功能注释] 教材版本字典：只存纯净版本名（人教A版/统编版），严禁把册次拼进版本名
+CREATE TABLE dim_textbook_versions (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 版本名称，如人教A版、人教B版、苏教版，同一学科内唯一
+    name       TEXT NOT NULL,
+    -- [字段注释] 版本编码，系统底层唯一标识，按学科隔离（含学科后缀）
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于全局设置【教材版本】下拉框的展示顺序
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- [字段注释] 出版社名称，如人民教育出版社，可为空
+    publisher  TEXT,
+    subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    UNIQUE (subject_id, name)
+);
+-- [功能注释] 教材册字典：version_id 显式指向版本，volume_name 只存册次（必修一/七年级上册）
 CREATE TABLE dim_textbooks (
     id         INTEGER PRIMARY KEY,
-    -- [字段注释] 教材版本名称，如人教版、北师大版，同一学科内唯一
+    -- [字段注释] 完整书名，保留版本与册次的原始全称，用于来源展示
     name       TEXT NOT NULL,
     -- [字段注释] 教材版本编码，系统底层唯一标识，不随名称更改
     code       TEXT NOT NULL UNIQUE,
-    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    -- [字段注释] 排序序号，用于同版本内册次的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 出版社名称，记录教材的出版机构，可为空
     publisher  TEXT,
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
     grade_id   INTEGER REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    -- [字段注释] 所属版本外键，指向 dim_textbook_versions
+    version_id INTEGER REFERENCES dim_textbook_versions(id) ON DELETE RESTRICT,
+    -- [字段注释] 纯册次名，如必修一、选择性必修第一册、七年级上册，不得含版本名
+    volume_name TEXT,
     UNIQUE (subject_id, name)
 );
 -- 教材章节字典：parent_id 自关联，父节点为章，子节点为节
@@ -469,6 +487,9 @@ CREATE TABLE solution_competency_map (
 
 CREATE INDEX ix_dim_textbooks_subject ON dim_textbooks (subject_id);
 CREATE INDEX ix_dim_textbooks_grade ON dim_textbooks (grade_id);
+CREATE INDEX ix_dim_textbooks_version ON dim_textbooks (version_id);
+CREATE INDEX ix_dim_textbook_versions_subject
+    ON dim_textbook_versions (subject_id);
 CREATE INDEX ix_dim_textbook_chapters_textbook
     ON dim_textbook_chapters (textbook_id);
 CREATE INDEX ix_dim_textbook_chapters_parent ON dim_textbook_chapters (parent_id);
@@ -575,6 +596,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 8;
+PRAGMA user_version = 9;
 
 COMMIT;

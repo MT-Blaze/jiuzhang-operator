@@ -70,12 +70,23 @@ def engine_meta() -> dict[str, Any]:
     }
 
 
-@router.get("/api/bank/engine/textbooks", summary="教材版本清单：按学科/年级过滤，供字典控制台全局设置")
+@router.get("/api/bank/engine/textbook-versions", summary="教材版本清单：只出纯净版本名，供全局设置下拉")
+def engine_textbook_versions(
+    subject_id: int | None = Query(default=None, ge=1),
+) -> dict[str, Any]:
+    items = service.textbook_versions(subject_id=subject_id)
+    return {"items": [asdict(item) for item in items], "total": len(items)}
+
+
+@router.get("/api/bank/engine/textbooks", summary="教材册清单：按学科/年级/版本过滤")
 def engine_textbooks(
     subject_id: int | None = Query(default=None, ge=1),
     grade_id: int | None = Query(default=None, ge=1),
+    version_id: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    items = service.textbooks(subject_id=subject_id, grade_id=grade_id)
+    items = service.textbooks(
+        subject_id=subject_id, grade_id=grade_id, version_id=version_id
+    )
     return {"items": [asdict(item) for item in items], "total": len(items)}
 
 
@@ -281,6 +292,12 @@ def engine_linkage_chapter_tree(textbook_id: int = Query(ge=1)) -> dict[str, Any
     return {"items": [asdict(node) for node in nodes], "total": len(nodes)}
 
 
+@router.get("/api/bank/engine/linkage/version-tree", summary="版本章节树：版本 → 册次 → 章 → 节")
+def engine_linkage_version_tree(version_id: int = Query(ge=1)) -> dict[str, Any]:
+    books = _guard(lambda: service.linkage_version_tree(version_id))
+    return {"items": [asdict(book) for book in books], "total": len(books)}
+
+
 @router.get("/api/bank/engine/linkage/chapters/{chapter_id}/points", summary="章节知识点清单：按桥表 sort_order")
 def engine_linkage_chapter_points(chapter_id: int) -> dict[str, Any]:
     items = _guard(lambda: service.linkage_chapter_points(chapter_id))
@@ -293,9 +310,14 @@ def engine_linkage_point_directions(point_id: int) -> dict[str, Any]:
     return {"items": [asdict(item) for item in items], "total": len(items)}
 
 
-@router.get("/api/bank/engine/linkage/directions/{direction_id}/tags", summary="考向辅助知识点标签：按桥表 sort_order")
-def engine_linkage_direction_tags(direction_id: int) -> dict[str, Any]:
-    items = _guard(lambda: service.linkage_direction_tags(direction_id))
+@router.get("/api/bank/engine/linkage/directions/{direction_id}/tags", summary="考向辅助知识点标签：只出辅助标签并排除当前主知识点")
+def engine_linkage_direction_tags(
+    direction_id: int,
+    exclude_point_id: int | None = Query(default=None, ge=1),
+) -> dict[str, Any]:
+    items = _guard(lambda: service.linkage_direction_tags(
+        direction_id, exclude_point_id=exclude_point_id
+    ))
     return {"items": [asdict(item) for item in items], "total": len(items)}
 
 
@@ -321,7 +343,15 @@ def engine_linkage_direction_tags_order(
     direction_id: int, payload: dict[str, Any] = Body(...)
 ) -> dict[str, Any]:
     ids = _guard(lambda: _id_list(payload, "point_ids"))
-    _guard(lambda: service.linkage_reorder("direction_tags", direction_id, ids))
+    exclude = payload.get("exclude_point_id")
+    if exclude is not None and (not isinstance(exclude, int) or isinstance(exclude, bool)):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "bad_request", "message": "exclude_point_id 必须是整数"},
+        )
+    _guard(lambda: service.linkage_reorder(
+        "direction_tags", direction_id, ids, exclude_point_id=exclude
+    ))
     return {"saved": True, "count": len(ids)}
 
 
