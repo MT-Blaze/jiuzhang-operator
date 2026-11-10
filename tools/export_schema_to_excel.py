@@ -29,7 +29,7 @@ VML1 = "xl/drawings/vmlDrawing1.vml"
 
 # ---- 手工调好的版式，硬编码后只校验不回写（改这里等于改版式，必须人工确认）----
 TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("主表(3张)", ("questions", "ingest_batches", "raw_questions")),
+    ("主表(4张)", ("questions", "ingest_batches", "raw_questions", "exams")),
     (
         "从表(7张)",
         (
@@ -43,7 +43,7 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "字典表(16张)",
+        "字典表(15张)",
         (
             "dict_subjects",
             "dict_grades",
@@ -54,7 +54,6 @@ TABLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "dim_textbooks",
             "dim_textbook_chapters",
             "dim_schools",
-            "exams",
             "dim_knowledge_points",
             "dim_exam_directions",
             "dict_subject_thoughts",
@@ -94,21 +93,19 @@ COLUMN_WIDTHS: tuple[tuple[int, int, str, str | None], ...] = (
     (11, 11, "16", None),
     (12, 12, "14", None),
 )
-MERGES: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A27", "A28:A36")
-# 旧版式（33 / 32 / 31 表）的分组范围，仅用于校验旧文件后升级到 MERGES
+MERGES: tuple[str, ...] = ("A2:A5", "A6:A12", "A13:A27", "A28:A36")
+# 旧版式（exams 误放字典表的 35 表 / 33 / 32 / 31 表）的分组范围，仅用于校验旧文件后升级到 MERGES
+LEGACY_MERGES_V6: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A27", "A28:A36")
 LEGACY_MERGES_V5: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A26", "A27:A34")
 LEGACY_MERGES_V4: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A33")
 LEGACY_MERGES_V3: tuple[str, ...] = ("A2:A4", "A5:A11", "A12:A25", "A26:A32")
 NEW_LAST_ROW = 36
 HEADER_HEIGHT = "26.1"
 ROW_HEIGHT = "33.950000000000003"
-ROW_HEIGHT_OVERRIDES: dict[int, str] = {20: "48.95"}
+# 长说明的试卷行加高；旧版式里同一张卷在字典区第 20 行
+ROW_HEIGHT_OVERRIDES: dict[int, str] = {5: "48.95"}
+LEGACY_ROW_HEIGHT_OVERRIDES: dict[int, str] = {20: "48.95"}
 
-# 旧表名 → 新表名的行别名：旧行沿用原字段批注，只换表名。
-LEGACY_ROW_ALIASES: dict[str, str] = {
-    "dim_sources": "exams",
-    "question_source_map": "question_exams",
-}
 HEADERS: tuple[str, ...] = (
     "表分类",
     "序号",
@@ -233,6 +230,15 @@ TABLE_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("dim_regions", "parent_id"): "父级区划外键",
 }
 STAGE_COMMENT = "所属学段（小学/初中/高中/通用）"
+# 表改名后仍带着旧表口径的批注：这些格子按 schema 的 [字段注释] 重写正文，其余批注原样保留
+COMMENT_TEXT_SYNC: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("exams", "code"),
+        ("exams", "year"),
+        ("question_exams", "question_no"),
+        ("question_exams", "score"),
+    }
+)
 
 SKIP_FIELD = re.compile(r"^(PRIMARY KEY|UNIQUE|FOREIGN KEY|REFERENCES|CHECK|CONSTRAINT)\b", re.I)
 COLUMN_DEF = re.compile(r"^([a-z_][a-z0-9_]*)\s+(INTEGER|TEXT|REAL|BLOB|NUMERIC)\b")
@@ -460,6 +466,7 @@ def _check_layout(
     *,
     merges: tuple[str, ...] = MERGES,
     last_row: int = NEW_LAST_ROW,
+    overrides: dict[int, str] = ROW_HEIGHT_OVERRIDES,
 ) -> None:
     cols = {
         (int(minimum), int(maximum)): (width, style or None)
@@ -480,7 +487,7 @@ def _check_layout(
     }
     expected_heights = {1: HEADER_HEIGHT}
     expected_heights.update({row: ROW_HEIGHT for row in range(2, last_row + 1)})
-    expected_heights.update({row: height for row, height in ROW_HEIGHT_OVERRIDES.items() if row <= last_row})
+    expected_heights.update({row: height for row, height in overrides.items() if row <= last_row})
     if {key: value for key, value in heights.items() if key <= last_row} != expected_heights:
         raise ExportError(f"行高与硬编码版式不一致：实际 {heights}")
 
@@ -511,6 +518,27 @@ def _update_shared(xml: str, strings: list[str], sheet_refs: int) -> str:
     new_head = re.sub(r'\bcount="\d+"', f'count="{sheet_refs}"', head)
     new_head = re.sub(r'\buniqueCount="\d+"', f'uniqueCount="{len(strings)}"', new_head)
     return xml[: xml.index(head)] + new_head + body + "</sst>"
+
+
+STRING_CELL = re.compile(r'(<c\b[^>]*\bt="s"[^>]*>\s*<v>)(\d+)(</v></c>)')
+
+
+def _compact_strings(
+    sheets: tuple[str, ...], strings: list[str]
+) -> tuple[tuple[str, ...], list[str]]:
+    """按单元格实际引用重排共享字符串，把已删表留下的孤儿文本彻底剔除。"""
+    order: dict[int, int] = {}
+    kept: list[str] = []
+
+    def swap(match: re.Match[str]) -> str:
+        old = int(match.group(2))
+        if old not in order:
+            order[old] = len(kept)
+            kept.append(strings[old])
+        return f"{match.group(1)}{order[old]}{match.group(3)}"
+
+    return tuple(STRING_CELL.sub(swap, sheet) for sheet in sheets), kept
+
 
 
 def _comment_plan(
@@ -547,6 +575,12 @@ def _comment_plan(
                     )
             if block is None:
                 continue
+            if (row["name"], field["name"]) in COMMENT_TEXT_SYNC and field["comment"]:
+                block = re.sub(
+                    r"<t(?:\s[^>]*)?>.*?</t>",
+                    "<t>" + escape(field["comment"]) + "</t>",
+                    block, count=1, flags=re.S,
+                )
             block = re.sub(r'\bref="[A-Z]+\d+"', f'ref="{ref}"', block, count=1)
             plan.append((ref, block, source if source is not None else -1))
     head = comments_xml[: comments_xml.index("<commentList>") + len("<commentList>")]
@@ -600,15 +634,24 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
     actual_merges = set(re.findall(r'<mergeCell ref="([^"]+)"/>', sheet_xml))
     if actual_merges == set(MERGES):
         layout_merges, old_last_row = MERGES, NEW_LAST_ROW
+        old_overrides = ROW_HEIGHT_OVERRIDES
+    elif actual_merges == set(LEGACY_MERGES_V6):
+        layout_merges, old_last_row = LEGACY_MERGES_V6, 36
+        old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES
     elif actual_merges == set(LEGACY_MERGES_V5):
         layout_merges, old_last_row = LEGACY_MERGES_V5, 34
+        old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES
     elif actual_merges == set(LEGACY_MERGES_V4):
         layout_merges, old_last_row = LEGACY_MERGES_V4, 33
+        old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES
     elif actual_merges == set(LEGACY_MERGES_V3):
         layout_merges, old_last_row = LEGACY_MERGES_V3, 32
+        old_overrides = LEGACY_ROW_HEIGHT_OVERRIDES
     else:
         raise ExportError(f"工作簿合并区不属于已知版式：{sorted(actual_merges)}")
-    _check_layout(sheet_xml, merges=layout_merges, last_row=old_last_row)
+    _check_layout(
+        sheet_xml, merges=layout_merges, last_row=old_last_row, overrides=old_overrides
+    )
 
     strings = _shared_strings(shared_xml)
     index = {text: position for position, text in enumerate(strings)}
@@ -619,23 +662,16 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
         if number >= 2 and text:
             old_name_rows[text.splitlines()[0]] = number
     known = {row["name"] for row in rows}
-    aliased = {old for old, new in LEGACY_ROW_ALIASES.items() if new in known}
-    orphaned = sorted(set(old_name_rows) - known - aliased)
+    orphaned = sorted(set(old_name_rows) - known)
     if orphaned:
         raise ExportError("工作簿仍有 schema 已删除的表：" + "、".join(orphaned))
     for row in rows:
         old_row = old_name_rows.get(row["name"])
-        old_name = row["name"]
-        if old_row is None:
-            for legacy, target in LEGACY_ROW_ALIASES.items():
-                if target == row["name"] and legacy in old_name_rows:
-                    old_row, old_name = old_name_rows[legacy], legacy
-                    break
         row["old_row"] = old_row
         if old_row is None:
             continue
         actual = old_cells[old_row].get("C")
-        if actual is None or actual.splitlines()[0] != old_name:
+        if actual is None or actual.splitlines()[0] != row["name"]:
             raise ExportError(f"第 {old_row} 行表名与版式不符：{actual!r}")
 
     data = _render_sheet_data(rows, strings, index, _cell_styles(sheet_xml))
@@ -644,6 +680,7 @@ def export(workbook: Path, schema_path: Path, *, dry_run: bool = False) -> dict:
     new_sheet = sheet_xml[:start] + data + sheet_xml[end:]
     new_sheet = _rewrite_merges(new_sheet, MERGES)
     new_sheet = _rewrite_dimension(new_sheet, rows[-1]["row"])
+    (new_sheet, sheet2_xml), strings = _compact_strings((new_sheet, sheet2_xml), strings)
     plan, new_comments = _comment_plan(rows, old_cells, comments_xml)
     new_vml = _update_vml(vml, plan, len(re.findall(r"<comment\b", comments_xml)))
     refs = len(re.findall(r'<c\b[^>]*\bt="s"', new_sheet)) + len(

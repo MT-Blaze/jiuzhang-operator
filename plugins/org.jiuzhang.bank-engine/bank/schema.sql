@@ -144,32 +144,6 @@ CREATE TABLE dim_textbook_chapters (
 
 CREATE UNIQUE INDEX ux_dim_textbook_chapters_sibling_name
     ON dim_textbook_chapters (textbook_id, COALESCE(parent_id, 0), name);
--- [功能注释] 试卷主表：用年份、月份、学科、年级、考试类型与考试主体拼出唯一试卷，不再存死板名称
-CREATE TABLE exams (
-    id           INTEGER PRIMARY KEY,
-    -- [字段注释] 试卷编码，系统底层唯一标识，不随属性更改
-    code         TEXT NOT NULL UNIQUE,
-    -- [字段注释] 试卷年份，限定 1900-2100
-    year         INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
-    -- [字段注释] 试卷月份，允许为空（不明月份的历史卷）
-    month        INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
-    -- [字段注释] 学科外键，每张试卷必须归属一个学科
-    subject_id   INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 年级外键，每张试卷必须归属一个年级
-    grade_id     INTEGER NOT NULL REFERENCES dict_grades(id) ON DELETE RESTRICT,
-    -- [字段注释] 考试类型外键，指向考试类型字典
-    exam_type_id INTEGER NOT NULL REFERENCES dict_exam_types(id) ON DELETE RESTRICT,
-    -- [字段注释] 考试主体，如 T8联盟 / 东北三省联考 / 哈尔滨一模 / 哈三中
-    exam_subject TEXT NOT NULL,
-    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
-    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
--- [功能注释] 试卷与学校关联表：一张联考卷可同时关联多所学校，多对多拆行
-CREATE TABLE exam_school_map (
-    exam_id   INTEGER NOT NULL REFERENCES exams(id) ON DELETE RESTRICT,
-    school_id INTEGER NOT NULL REFERENCES dim_schools(id) ON DELETE RESTRICT,
-    PRIMARY KEY (exam_id, school_id)
-) WITHOUT ROWID;
 -- [功能注释] 知识点字典：parent_id 自关联成“函数 -> 性质 -> 奇偶性”层级，供题目绑定底层概念
 CREATE TABLE dim_knowledge_points (
     id          INTEGER PRIMARY KEY,
@@ -220,6 +194,27 @@ CREATE TABLE chapter_knowledge_map (
                        REFERENCES dim_knowledge_points(id) ON DELETE RESTRICT,
     PRIMARY KEY (chapter_id, knowledge_point_id)
 ) WITHOUT ROWID;
+-- ===== 主表区：业务实体与事实表，不是维度字典 =====
+-- [功能注释] 试卷主表（业务事实表）：记录真实考试事实，按年份、月份、学科、年级、考试类型与考试主体拼出唯一试卷，不再存死板名称
+CREATE TABLE exams (
+    id           INTEGER PRIMARY KEY,
+    -- [字段注释] 试卷编码，系统底层唯一标识，不随属性更改
+    code         TEXT NOT NULL UNIQUE,
+    -- [字段注释] 试卷年份，限定 1900-2100
+    year         INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
+    -- [字段注释] 试卷月份，允许为空（不明月份的历史卷）
+    month        INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
+    -- [字段注释] 学科外键，每张试卷必须归属一个学科
+    subject_id   INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    -- [字段注释] 年级外键，每张试卷必须归属一个年级
+    grade_id     INTEGER NOT NULL REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试类型外键，指向考试类型字典
+    exam_type_id INTEGER NOT NULL REFERENCES dict_exam_types(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试主体，如 T8联盟 / 东北三省联考 / 哈尔滨一模 / 哈三中
+    exam_subject TEXT NOT NULL,
+    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 -- [功能注释] 导入批次表：记录每次入库的流水线版本、起止时间与状态
 CREATE TABLE ingest_batches (
     id               INTEGER PRIMARY KEY,
@@ -392,6 +387,12 @@ CREATE TABLE question_exams (
     -- [字段注释] 该题在该试卷中的分值，非负，默认 0
     score       REAL NOT NULL DEFAULT 0 CHECK (score >= 0),
     PRIMARY KEY (question_id, exam_id)
+) WITHOUT ROWID;
+-- [功能注释] 试卷与学校关联表：一张联考卷可同时关联多所学校，多对多拆行
+CREATE TABLE exam_school_map (
+    exam_id   INTEGER NOT NULL REFERENCES exams(id) ON DELETE RESTRICT,
+    school_id INTEGER NOT NULL REFERENCES dim_schools(id) ON DELETE RESTRICT,
+    PRIMARY KEY (exam_id, school_id)
 ) WITHOUT ROWID;
 -- [功能注释] 学科思想字典：存学科思想名称与编码，供解析思想关联引用
 CREATE TABLE dict_subject_thoughts (
