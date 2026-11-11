@@ -114,7 +114,7 @@ class ConsoleServiceTest(unittest.TestCase):
             limit=200,
             db_path=self.db_path,
         )
-        self.assertIn("数形结合", {item.name for item in thoughts})
+        self.assertIn("数形结合思想", {item.name for item in thoughts})
 
         primary_methods, _ = service.console_list(
             "dict_solution_methods",
@@ -188,6 +188,157 @@ class ConsoleServiceTest(unittest.TestCase):
                      "提出问题", "获取证据", "作出解释", "表达交流",
                      "科学本质", "科学态度", "社会责任"):
             self.assertIn(name, competency_names)
+
+    def test_junior_and_primary_math_teaching_dicts_are_complete(self) -> None:
+        junior_methods, junior_total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "初中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        junior_names = {item.name for item in junior_methods}
+        self.assertGreaterEqual(junior_total, 40)
+        for name in ("配方法", "公式法", "因式分解法", "换元法", "待定系数法",
+                     "代入消元法", "加减消元法", "判别式法", "面积法",
+                     "截长补短法", "几何变换法", "反证法", "辅助线法",
+                     "相似三角形法", "勾股定理法", "分类讨论法"):
+            self.assertIn(name, junior_names)
+
+        primary_methods, primary_total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "小学", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        primary_names = {item.name for item in primary_methods}
+        self.assertGreaterEqual(primary_total, 30)
+        for name in ("画图法", "线段图法", "列表法", "假设法", "转化法",
+                     "对应法", "代数法", "算术法", "凑十法", "破十法",
+                     "平十法", "枚举法", "归一法", "统筹法"):
+            self.assertIn(name, primary_names)
+        self.assertNotIn("导数法", primary_names)
+
+        junior_thoughts, junior_thought_total = service.console_list(
+            "dict_subject_thoughts",
+            filters={"stage": "初中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        junior_thought_names = {item.name for item in junior_thoughts}
+        self.assertGreaterEqual(junior_thought_total, 8)
+        for name in ("方程思想", "函数思想", "转化与化归思想", "分类讨论思想",
+                     "数形结合思想", "整体思想", "类比思想", "模型思想"):
+            self.assertIn(name, junior_thought_names)
+
+        primary_thoughts, primary_thought_total = service.console_list(
+            "dict_subject_thoughts",
+            filters={"stage": "小学", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        primary_thought_names = {item.name for item in primary_thoughts}
+        self.assertGreaterEqual(primary_thought_total, 6)
+        for name in ("数形结合思想", "转化与化归思想", "对应思想",
+                     "模型思想", "分类讨论思想", "符号思想"):
+            self.assertIn(name, primary_thought_names)
+
+        junior_core, junior_core_total = service.console_list(
+            "dict_core_competencies",
+            filters={"stage": "初中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        junior_core_names = {item.name for item in junior_core}
+        self.assertGreaterEqual(junior_core_total, 9)
+        for name in ("抽象能力", "运算能力", "几何直观", "空间观念", "推理能力",
+                     "数据观念", "模型观念", "应用意识", "创新意识"):
+            self.assertIn(name, junior_core_names)
+
+        primary_core, primary_core_total = service.console_list(
+            "dict_core_competencies",
+            filters={"stage": "小学", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        primary_core_names = {item.name for item in primary_core}
+        self.assertGreaterEqual(primary_core_total, 11)
+        for name in ("数感", "量感", "符号意识", "运算能力", "几何直观",
+                     "空间观念", "推理意识", "数据意识", "模型意识",
+                     "应用意识", "创新意识"):
+            self.assertIn(name, primary_core_names)
+
+    def test_junior_physics_teaching_dicts_are_complete(self) -> None:
+        methods, method_total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "初中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        method_names = {item.name for item in methods}
+        self.assertGreaterEqual(method_total, 30)
+        for name in ("控制变量法", "比值定义法", "等效替代法", "转换法",
+                     "理想实验法", "类比法", "推理法", "图像法",
+                     "实验探究法", "整体法", "隔离法", "极值法", "极限法",
+                     "假设法", "逆向思维法", "模型法", "估算法"):
+            self.assertIn(name, method_names)
+
+        thoughts, thought_total = service.console_list(
+            "dict_subject_thoughts",
+            filters={"stage": "初中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        thought_names = {item.name for item in thoughts}
+        self.assertGreaterEqual(thought_total, 8)
+        for name in ("守恒思想", "等效替代", "转换思想", "控制变量思想",
+                     "理想化思想", "类比思想", "模型建构思想", "数形结合思想"):
+            self.assertIn(name, thought_names)
+
+        competencies, competency_total = service.console_list(
+            "dict_core_competencies",
+            filters={"stage": "初中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        competency_names = {item.name for item in competencies}
+        self.assertGreaterEqual(competency_total, 14)
+        for name in ("物理观念", "物质观念", "运动与相互作用观念", "能量观念",
+                     "科学思维", "模型建构", "科学推理", "科学论证",
+                     "质疑创新", "科学探究", "科学态度与责任"):
+            self.assertIn(name, competency_names)
+
+    def test_same_name_across_subjects_is_not_a_conflict(self) -> None:
+        same_names = {}
+        for subject_id in (2, 4):
+            methods, _ = service.console_list(
+                "dict_solution_methods",
+                filters={"subject_id": subject_id},
+                limit=200,
+                db_path=self.db_path,
+            )
+            same_names[subject_id] = {item.name for item in methods}
+        self.assertIn("公式法", same_names[2])
+        self.assertIn("公式法", same_names[4])
+        self.assertIn("估算法", same_names[2])
+        self.assertIn("估算法", same_names[4])
+
+        thoughts = {}
+        for subject_id in (2, 4):
+            items, _ = service.console_list(
+                "dict_subject_thoughts",
+                filters={"subject_id": subject_id},
+                limit=200,
+                db_path=self.db_path,
+            )
+            thoughts[subject_id] = {item.name for item in items}
+        self.assertIn("数形结合思想", thoughts[2])
+        self.assertIn("数形结合思想", thoughts[4])
+
+        for table in ("dict_solution_methods", "dict_subject_thoughts",
+                      "dict_core_competencies"):
+            items, _ = service.console_list(table, limit=200, db_path=self.db_path)
+            pairs = [(item.subject_id, item.name) for item in items]
+            self.assertEqual(len(pairs), len(set(pairs)), table)
 
     def test_core_names_have_no_subject_suffix(self) -> None:
         items, _ = service.console_list(
