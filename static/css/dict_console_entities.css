@@ -190,16 +190,31 @@
   .det-op-danger { opacity: 0.7; pointer-events: auto; }
 }
 
-/* 层级字号：省 / 版本最大，市 / 册次次之，章、节逐级收小 */
-.det-row[data-level="1"] .det-name { font-family: var(--serif); font-size: 1rem; font-weight: 700; }
-.det-row[data-level="2"] .det-name { font-size: 0.92rem; font-weight: 600; }
-.det-row[data-level="3"] .det-name { font-size: 0.88rem; }
-.det-row[data-level="4"] .det-name,
-.det-row[data-level="5"] .det-name { font-size: 0.83rem; }
+/* 层级字号：学段最大，科目 / 版本次之，册次与章节逐级收小 */
+.det-row[data-level="1"] .det-name { font-family: var(--serif); font-size: 1.02rem; font-weight: 700; }
+.det-row[data-level="2"] .det-name { font-size: 0.94rem; font-weight: 600; }
+.det-row[data-level="3"] .det-name { font-size: 0.9rem; font-weight: 600; }
+.det-row[data-level="4"] .det-name { font-size: 0.86rem; }
+.det-row[data-level="5"] .det-name,
+.det-row[data-level="6"] .det-name { font-size: 0.82rem; }
 .det-row[data-level="1"] { border-bottom: 1px solid var(--line); }
-.det-row[data-level="2"] .det-name { color: var(--ink); }
-.det-row[data-level="4"] .det-sub,
-.det-row[data-level="5"] .det-sub { opacity: 0.85; }
+.det-row[data-level="5"] .det-sub,
+.det-row[data-level="6"] .det-sub { opacity: 0.85; }
+
+/* 搜索命中：左侧色条 + 「命中」字样双通道提示，不只靠颜色传达状态 */
+.det-hit-row > .det-row {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--accent-soft);
+}
+.det-hit-row .det-name { font-weight: 700; }
+.det-hit-flag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.64rem;
+}
 
 .det-empty { padding: 14px 10px; margin: 0; color: var(--muted); font-size: 0.84rem; }
 

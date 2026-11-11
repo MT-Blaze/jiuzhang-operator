@@ -131,7 +131,9 @@
   <!-- 实体维度双树（2026-11-11）：底层分表、前端合树；整块下架删这三行 -->
   <script src="/static/js/dict_console/entity_shared.js?v=20261111b"></script>
   <script src="/static/js/dict_console/entity_schools.js?v=20261111b"></script>
-  <script src="/static/js/dict_console/entity_textbooks.js?v=20261111b"></script>
+  <!-- 教材与章节树顶两级：学段 → 科目，必须先于 entity_textbooks 加载 -->
+  <script src="/static/js/dict_console/textbook_stage_tree.js?v=20261111c"></script>
+  <script src="/static/js/dict_console/entity_textbooks.js?v=20261111c"></script>
   <script src="/static/js/dict_console/panels.js?v=20261111b"></script>
   <script src="/static/js/dict_console/import.js?v=20261111b"></script>
   <script src="/static/js/dict_console/sidebar.js?v=20261111b"></script>
