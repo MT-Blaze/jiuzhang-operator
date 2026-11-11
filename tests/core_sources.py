@@ -96,7 +96,7 @@ def bundle_local_assets(html_path: Path, tag: str) -> str:
     for value in re.findall(pattern, html):
         if value.startswith("/static/"):
             continue
-        path = directory / value
+        path = directory / value.split("?", 1)[0].split("#", 1)[0]
         if not path.is_file():
             raise AssertionError(f"{html_path.name} 引了不存在的{('样式' if tag == 'link' else '脚本')}：{value}")
         parts.append(path.read_text(encoding="utf-8"))

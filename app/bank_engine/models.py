@@ -202,6 +202,7 @@ class TextbookVersion:
     sort_order: int
     publisher: str | None
     subject_id: int
+    stages: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

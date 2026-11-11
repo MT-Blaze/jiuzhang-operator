@@ -215,12 +215,41 @@ def knowledge_tree(
     return tuple(build(root) for root in children.get(None, ()))
 
 
+STAGE_ORDER = ("小学", "初中", "高中")
+
+
+def version_stages(conn: sqlite3.Connection) -> dict[int, tuple[str, ...]]:
+    """版本 → 学段集合：由该版本下教材册的年级反推，分步查三张表后在应用层组装。"""
+    grade_stage = {
+        int(row["id"]): str(row["stage"])
+        for row in conn.execute("SELECT id, stage FROM dict_grades WHERE stage IS NOT NULL")
+    }
+    buckets: dict[int, list[str]] = {}
+    for row in conn.execute(
+        "SELECT version_id, grade_id FROM dim_textbooks WHERE version_id IS NOT NULL"
+    ):
+        stage = grade_stage.get(int(row["grade_id"])) if row["grade_id"] is not None else None
+        if stage is None:
+            continue
+        filled = buckets.setdefault(int(row["version_id"]), [])
+        if stage not in filled:
+            filled.append(stage)
+    return {
+        version_id: tuple(sorted(stages, key=STAGE_ORDER.index))
+        for version_id, stages in buckets.items()
+    }
+
+
 def list_textbook_versions(
     conn: sqlite3.Connection,
     *,
     subject_id: int | None = None,
+    stage: str | None = None,
 ) -> tuple[TextbookVersion, ...]:
-    """版本下拉框的唯一数据源：只出纯净版本名，绝不混入册次。"""
+    """版本下拉框的唯一数据源：只出纯净版本名，绝不混入册次。
+
+    ``stage`` 按教材册所属年级的学段收口：选高中时不把小学/初中版本混进来。
+    """
     clauses: list[str] = []
     params: list[Any] = []
     if subject_id is not None:
@@ -231,17 +260,24 @@ def list_textbook_versions(
         + _where(clauses, params)
         + " ORDER BY subject_id, sort_order, id"
     )
-    return tuple(
-        TextbookVersion(
-            id=int(row["id"]),
-            name=str(row["name"]),
-            code=str(row["code"]),
-            sort_order=int(row["sort_order"]),
-            publisher=None if row["publisher"] is None else str(row["publisher"]),
-            subject_id=int(row["subject_id"]),
+    stages_by_version = version_stages(conn)
+    items: list[TextbookVersion] = []
+    for row in conn.execute(sql, params):
+        stages = stages_by_version.get(int(row["id"]), ())
+        if stage and stage not in stages:
+            continue
+        items.append(
+            TextbookVersion(
+                id=int(row["id"]),
+                name=str(row["name"]),
+                code=str(row["code"]),
+                sort_order=int(row["sort_order"]),
+                publisher=None if row["publisher"] is None else str(row["publisher"]),
+                subject_id=int(row["subject_id"]),
+                stages=stages,
+            )
         )
-        for row in conn.execute(sql, params)
-    )
+    return tuple(items)
 
 
 def list_textbooks(
@@ -326,4 +362,5 @@ __all__ = [
     "list_knowledge_points",
     "list_textbook_versions",
     "list_textbooks",
+    "version_stages",
 ]

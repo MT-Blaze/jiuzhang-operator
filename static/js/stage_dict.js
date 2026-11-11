@@ -121,7 +121,10 @@
             return { id: item.id, name: item.name };
           }),
           versions: ((results[1] || {}).items || []).map(function (item) {
-            return { id: item.id, name: item.name, subject_id: item.subject_id };
+            return {
+              id: item.id, name: item.name, subject_id: item.subject_id,
+              stages: Array.isArray(item.stages) ? item.stages : []
+            };
           })
         };
         return globalsOptions;
@@ -173,6 +176,10 @@
         })[0];
         if (versionId && (!version || (subjectId && Number(version.subject_id) !== subjectId))) {
           replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与学科不匹配" });
+          return;
+        }
+        if (versionId && stage && version.stages.length && version.stages.indexOf(stage) === -1) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与学段不匹配" });
           return;
         }
         var saved = {

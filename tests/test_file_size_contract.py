@@ -42,7 +42,7 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_columns.js": 786,
     "app/core/pending_dedupe.py": 783,
     "plugins/org.jiuzhang.editor/dist/ui_split_board.js": 779,
-    "static/js/stage.js": 774,
+    "static/js/stage.js": 775,
     "app/core/pending_pool.py": 773,
     "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
     "static/css/settings.css": 748,
@@ -60,7 +60,7 @@ LEGACY_OVER_CEILING = {
     "static/js/st_workspace.js": 564,
     "plugins/org.jiuzhang.paper-gen/dist/plugin.css": 563,
     "app/core/dedupe_signature.py": 540,
-    "static/js/stage_command.js": 540,
+    "static/js/stage_command.js": 541,
     "static/js/st_backup.js": 537,
     "app/core/restore.py": 532,
     "plugins/org.jiuzhang.editor/dist/ui_ai.js": 529,
@@ -176,9 +176,11 @@ class PluginAssetWiringTest(unittest.TestCase):
             if not html.is_file():
                 continue
             text = html.read_text(encoding="utf-8")
-            listed = {v[2:] if v.startswith("./") else v for v in
-                      re.findall(r'<script src="([^"]+)"', text)
-                      + re.findall(r'<link rel="stylesheet" href="([^"]+)"', text)}
+            raw_listed = re.findall(r'<script src="([^"]+)"', text) +                 re.findall(r'<link rel="stylesheet" href="([^"]+)"', text)
+            listed = {
+                (v[2:] if v.startswith("./") else v).split("?", 1)[0].split("#", 1)[0]
+                for v in raw_listed
+            }
             for asset in sorted(html.parent.glob("*.*")):
                 if asset.suffix not in (".js", ".css") or asset == html:
                     continue
@@ -192,7 +194,10 @@ class PluginAssetWiringTest(unittest.TestCase):
             if not html.is_file():
                 continue
             raw = re.findall(r'<script src="([^"]+)"', html.read_text(encoding="utf-8"))
-            order = [s[2:] if s.startswith("./") else s for s in raw]
+            order = [
+                (s[2:] if s.startswith("./") else s).split("?", 1)[0].split("#", 1)[0]
+                for s in raw
+            ]
             seq = {}
             for pos, src in enumerate(order):
                 path = self.local(src) or html.parent / src

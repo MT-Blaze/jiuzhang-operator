@@ -74,6 +74,8 @@
   function filteredVersions() {
     return versions.filter(function (version) {
       if (draft.subject_id && String(version.subject_id) !== draft.subject_id) return false;
+      // 版本按学段收口：高中数学绝不能再混进只服务小学/初中的人教版。
+      if (draft.stage && version.stages && version.stages.indexOf(draft.stage) === -1) return false;
       return true;
     });
   }
@@ -173,7 +175,7 @@
     if (key === "stage") draft.stage = els.stage.value;
     else if (key === "subject_id") draft.subject_id = els.subject.value;
     else draft.version_id = els.textbook.value;
-    if (key === "subject_id") renderVersions();
+    if (key === "stage" || key === "subject_id") renderVersions();
   }
 
   function setExpanded(expanded) {

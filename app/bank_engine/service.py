@@ -237,11 +237,16 @@ def textbooks(
 
 
 def textbook_versions(
-    *, subject_id: int | None = None, db_path: Path | None = None
+    *,
+    subject_id: int | None = None,
+    stage: str | None = None,
+    db_path: Path | None = None,
 ) -> tuple[TextbookVersion, ...]:
-    """全局设置【教材版本】下拉框：只出纯净版本名，册次交给章节树。"""
+    """全局设置【教材版本】下拉框：只出纯净版本名，按学段收口，册次交给章节树。"""
     with session(db_path) as conn:
-        return dao_dimensions.list_textbook_versions(conn, subject_id=subject_id)
+        return dao_dimensions.list_textbook_versions(
+            conn, subject_id=subject_id, stage=stage
+        )
 
 
 def chapters(

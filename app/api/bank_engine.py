@@ -73,8 +73,9 @@ def engine_meta() -> dict[str, Any]:
 @router.get("/api/bank/engine/textbook-versions", summary="教材版本清单：只出纯净版本名，供全局设置下拉")
 def engine_textbook_versions(
     subject_id: int | None = Query(default=None, ge=1),
+    stage: str | None = Query(default=None, max_length=20),
 ) -> dict[str, Any]:
-    items = service.textbook_versions(subject_id=subject_id)
+    items = service.textbook_versions(subject_id=subject_id, stage=stage)
     return {"items": [asdict(item) for item in items], "total": len(items)}
 
 

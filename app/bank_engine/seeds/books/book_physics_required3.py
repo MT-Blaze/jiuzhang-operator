@@ -1,4 +1,4 @@
-"""人教版（2019）高中物理必修第三册：完整章节目录与细颗粒知识点树。"""
+"""人教版·必修第三册：完整章节目录与细颗粒知识点树。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ BOOK_ID = 4103
 # id / name / code / sort_order / publisher / subject_id / grade_id
 BOOK_ROW: tuple[int, str, str, int, str, int, int] = (
     BOOK_ID,
-    "人教版（2019）高中物理必修第三册",
+    "人教版·必修第三册",
     "phys_r3",
     3,
     "人民教育出版社",

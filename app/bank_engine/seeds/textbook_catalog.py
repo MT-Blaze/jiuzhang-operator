@@ -2,7 +2,8 @@
 
 只落「版本 → 册次」两层（dim_textbook_versions / dim_textbooks）；
 章节留给真实教材目录，不生成占位节点。
-版本 id 从 101 起、册 id 从 9501/9601 起，避开旧种子自动切出的 1..19 与 1xxx/9xxx 号段。
+版本 id 从 101 起、册 id 从 9511/9607 起，避开旧种子自动切出的 1..19 与 1xxx/9xxx 号段。
+人教A版与物理人教版已有带真实章节的种子册，这里绝不重复造同名的空占位册。
 """
 
 from __future__ import annotations
@@ -25,12 +26,7 @@ CATALOG_VERSION_ROWS: tuple[tuple[int, str, str, int, str, int], ...] = (
 )
 
 CATALOG_BOOK_ROWS: tuple[tuple[int, str, str, int, str, int, int, int, str], ...] = (
-    # 数学 · 人教A版（沿用已有版本 3；旧册 1..5，新册排在其后）
-    (9501, "人教A版·必修第一册", "hs_math_rja_b1", 6, "人民教育出版社", MATH_SUBJECT_ID, 10, 3, "必修第一册"),
-    (9502, "人教A版·必修第二册", "hs_math_rja_b2", 7, "人民教育出版社", MATH_SUBJECT_ID, 10, 3, "必修第二册"),
-    (9503, "人教A版·选择性必修第一册", "hs_math_rja_x1", 8, "人民教育出版社", MATH_SUBJECT_ID, 11, 3, "选择性必修第一册"),
-    (9504, "人教A版·选择性必修第二册", "hs_math_rja_x2", 9, "人民教育出版社", MATH_SUBJECT_ID, 11, 3, "选择性必修第二册"),
-    (9505, "人教A版·选择性必修第三册", "hs_math_rja_x3", 10, "人民教育出版社", MATH_SUBJECT_ID, 11, 3, "选择性必修第三册"),
+    # 数学 · 人教A版：五册由 migrated_textbook_seed 提供真实章节，此处不再重复占位。
     # 数学 · 人教B版（版本 101）
     (9506, "人教B版·必修第一册", "hs_math_rjb_b1", 1, "人民教育出版社", MATH_SUBJECT_ID, 10, 101, "必修第一册"),
     (9507, "人教B版·必修第二册", "hs_math_rjb_b2", 2, "人民教育出版社", MATH_SUBJECT_ID, 10, 101, "必修第二册"),
@@ -61,13 +57,7 @@ CATALOG_BOOK_ROWS: tuple[tuple[int, str, str, int, str, int, int, int, str], ...
     (9528, "沪教版·选择性必修第一册", "hs_math_hj_x1", 3, "上海教育出版社", MATH_SUBJECT_ID, 11, 105, "选择性必修第一册"),
     (9529, "沪教版·选择性必修第二册", "hs_math_hj_x2", 4, "上海教育出版社", MATH_SUBJECT_ID, 11, 105, "选择性必修第二册"),
     (9530, "沪教版·选择性必修第三册", "hs_math_hj_x3", 5, "上海教育出版社", MATH_SUBJECT_ID, 11, 105, "选择性必修第三册"),
-    # 物理 · 人教版（沿用已有版本 9；旧初中册 30..32，新高中册排在其前）
-    (9601, "人教版·必修第一册", "hs_phys_rj_b1", 1, "人民教育出版社", PHYSICS_SUBJECT_ID, 10, 9, "必修第一册"),
-    (9602, "人教版·必修第二册", "hs_phys_rj_b2", 2, "人民教育出版社", PHYSICS_SUBJECT_ID, 10, 9, "必修第二册"),
-    (9603, "人教版·必修第三册", "hs_phys_rj_b3", 3, "人民教育出版社", PHYSICS_SUBJECT_ID, 10, 9, "必修第三册"),
-    (9604, "人教版·选择性必修第一册", "hs_phys_rj_x1", 4, "人民教育出版社", PHYSICS_SUBJECT_ID, 11, 9, "选择性必修第一册"),
-    (9605, "人教版·选择性必修第二册", "hs_phys_rj_x2", 5, "人民教育出版社", PHYSICS_SUBJECT_ID, 11, 9, "选择性必修第二册"),
-    (9606, "人教版·选择性必修第三册", "hs_phys_rj_x3", 6, "人民教育出版社", PHYSICS_SUBJECT_ID, 11, 9, "选择性必修第三册"),
+    # 物理 · 人教版：六册由 book_physics_* 种子提供真实章节并自动归入「人教版」。
     # 物理 · 鲁科版（版本 106）
     (9607, "鲁科版·必修第一册", "hs_phys_lk_b1", 1, "山东科学技术出版社", PHYSICS_SUBJECT_ID, 10, 106, "必修第一册"),
     (9608, "鲁科版·必修第二册", "hs_phys_lk_b2", 2, "山东科学技术出版社", PHYSICS_SUBJECT_ID, 10, 106, "必修第二册"),

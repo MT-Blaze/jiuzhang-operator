@@ -1,20 +1,20 @@
-"""人教版（2019）高中物理选择性必修第一册：完整章节目录与细颗粒知识点树。"""
+"""人教版·选择性必修第一册：完整章节目录与细颗粒知识点树。"""
 
 from __future__ import annotations
 
 SUBJECT = 4
-G10 = 10
+G11 = 11
 BOOK_ID = 4104
 
 # id / name / code / sort_order / publisher / subject_id / grade_id
 BOOK_ROW: tuple[int, str, str, int, str, int, int] = (
     BOOK_ID,
-    "人教版（2019）高中物理选择性必修第一册",
+    "人教版·选择性必修第一册",
     "phys_e1",
     4,
     "人民教育出版社",
     SUBJECT,
-    G10,
+    G11,
 )
 
 # id / name / code / sort_order / textbook_id / parent_id

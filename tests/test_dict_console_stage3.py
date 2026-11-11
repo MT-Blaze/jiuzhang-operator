@@ -83,7 +83,7 @@ class MigrationTest(unittest.TestCase):
             migrate_v7.verify_sort_order(conn)
             migrate_v9.verify_versions(conn)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 28)
+                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 27)
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
             self.assertEqual(conn.execute(
@@ -147,9 +147,8 @@ class MigrationTest(unittest.TestCase):
         self.assertEqual(
             [item.volume_name for item in books],
             [
-                "必修一", "必修二", "必修第一册", "必修第二册",
-                "选修一", "选修二", "选修三",
-                "选择性必修第一册", "选择性必修第二册", "选择性必修第三册",
+                "必修第一册", "必修第二册", "选择性必修第一册",
+                "选择性必修第二册", "选择性必修第三册",
             ],
         )
 
@@ -157,7 +156,7 @@ class MigrationTest(unittest.TestCase):
         book = next(item for item in service.textbook_versions(
             subject_id=2, db_path=self.db_path) if item.name == "人教A版")
         books = service.linkage_version_tree(book.id, db_path=self.db_path)
-        self.assertEqual(len(books), 10)
+        self.assertEqual(len(books), 5)
         for node in books:
             self.assertEqual(node.textbook.version_id, book.id)
         with_chapters = [node for node in books if node.chapters]

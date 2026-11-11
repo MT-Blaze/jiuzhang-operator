@@ -75,11 +75,48 @@ class HighSchoolCatalogTest(unittest.TestCase):
                 "FROM dim_textbooks b JOIN dim_textbook_versions v ON v.id = b.version_id "
                 "WHERE b.code LIKE 'hs_%'"
             ).fetchall()
-        self.assertEqual(len(rows), 60)
+        self.assertEqual(len(rows), 49)
         self.assertTrue(all(
             row["subject_id"] == row["version_subject"] and row["subject_id"] in (2, 4)
             for row in rows
         ))
+
+    def test_stage_filter_keeps_high_school_versions_clean(self) -> None:
+        math_names = [
+            item.name for item in service.textbook_versions(
+                subject_id=2, stage="高中", db_path=self.db_path
+            )
+        ]
+        self.assertEqual(
+            math_names,
+            ["人教A版", "人教B版", "北师大版", "苏教版", "湘教版", "沪教版"],
+        )
+        self.assertNotIn("人教版", math_names)
+        primary_names = [
+            item.name for item in service.textbook_versions(
+                subject_id=2, stage="小学", db_path=self.db_path
+            )
+        ]
+        self.assertIn("人教版", primary_names)
+        self.assertNotIn("人教A版", primary_names)
+        physics_names = [
+            item.name for item in service.textbook_versions(
+                subject_id=4, stage="高中", db_path=self.db_path
+            )
+        ]
+        self.assertEqual(
+            physics_names,
+            ["人教版", "鲁科版", "沪科版", "粤教版", "教科版"],
+        )
+
+    def test_physics_pep_version_is_merged(self) -> None:
+        names = [
+            item.name for item in service.textbook_versions(
+                subject_id=4, db_path=self.db_path
+            )
+        ]
+        self.assertIn("人教版", names)
+        self.assertNotIn("人教版（2019）", names)
 
     def test_new_volumes_carry_no_placeholder_chapters(self) -> None:
         with service.session(self.db_path) as conn:
