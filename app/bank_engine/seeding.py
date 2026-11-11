@@ -88,7 +88,7 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dim_exam_directions": 567,
     "knowledge_exam_map": 200,
     "chapter_knowledge_map": 74,
-    "dim_regions": 367,
+    "dim_regions": len(REGION_ROWS),
     "dim_schools": 347,
     "exams": 1,
     "exam_school_map": 2,

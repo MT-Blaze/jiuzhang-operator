@@ -78,7 +78,7 @@ class ConsoleServiceTest(unittest.TestCase):
         self.assertEqual(total, 347)
         self.assertTrue(all(isinstance(item, School) for item in schools))
         regions, rtotal = service.console_list("dim_regions", limit=200, db_path=self.db_path)
-        self.assertEqual(rtotal, 367)
+        self.assertEqual(rtotal, 368)
         self.assertTrue(all(isinstance(item, Region) for item in regions))
 
     def test_keyword_search_filters(self) -> None:

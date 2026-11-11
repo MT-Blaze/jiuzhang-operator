@@ -105,7 +105,7 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(self.report.counts["dim_knowledge_points"], 11388)
         self.assertEqual(self.report.counts["dim_textbook_chapters"], 3519)
         self.assertEqual(self.report.counts["dim_schools"], 347)
-        self.assertEqual(self.report.counts["dim_regions"], 367)
+        self.assertEqual(self.report.counts["dim_regions"], 368)
         self.assertEqual(self.report.counts["dim_exam_directions"], 567)
         self.assertEqual(self.report.counts["knowledge_exam_map"], 200)
         self.assertEqual(self.report.counts["chapter_knowledge_map"], 74)
@@ -121,7 +121,7 @@ class EngineBuildTest(unittest.TestCase):
                     "SELECT level, COUNT(*) FROM dim_regions GROUP BY level"
                 ).fetchall()
             )
-            self.assertEqual(levels, {1: 34, 2: 333})
+            self.assertEqual(levels, {1: 34, 2: 334})
             self.assertEqual(
                 conn.execute(
                     "SELECT COUNT(*) FROM dim_schools WHERE region_id IS NULL"
@@ -135,6 +135,14 @@ class EngineBuildTest(unittest.TestCase):
                     "AND r.name = '哈尔滨' AND r.level = 2"
                 ).fetchone()[0],
                 22,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM dim_schools s JOIN dim_regions r "
+                    "ON r.id = s.region_id WHERE s.name = '梅河口市第五中学' "
+                    "AND r.code = '220581' AND r.name = '梅河口市'"
+                ).fetchone()[0],
+                1,
             )
         finally:
             conn.close()

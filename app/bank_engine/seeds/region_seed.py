@@ -1,8 +1,10 @@
-"""全国行政区划国标种子：34 个省级 + 333 个地级，共 367 条。
+"""全国行政区划国标种子：34 个省级 + 334 个地级，共 368 条。
 
-代码取自 GB/T 2260 行政区划代码；名称只保留核心地名（如“黑龙江”“哈尔滨”），
-与 dim_schools.region 的文本口径一致，便于逐字匹配回填 region_id。
-省级 id 1-34，地级 id 35-367，父子顺序与插入顺序一致。
+代码取自 GB/T 2260 行政区划代码；名称一般只保留核心地名（如“黑龙江”“哈尔滨”），
+与 dim_schools.region 的文本口径一致，便于逐字匹配回填 region_id；
+省直管县级市保留规范全称（如“梅河口市”），匹配时按前缀兜底。
+省级 id 1-34，地级 id 35-367；省直管县级市按地级节点追加在末尾（id 368），
+不改动既有 id，避免存量库里学校的 region_id 整体错位。
 """
 
 from __future__ import annotations
@@ -193,17 +195,28 @@ PROVINCE_TREE: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     ("澳门", "820000", ()),
 )
 
+# 省直管县级市：国标是县级代码，但库里只有省 / 地两级，按地级节点挂到所属省下，
+# 才能让学校按 region_id 正常挂接并在区划树上显示。(省名, 名称, 国标代码, 省内排序)
+EXTRA_CITIES: tuple[tuple[str, str, str, int], ...] = (
+    ("吉林", "梅河口市", "220581", 10),
+)
+
 
 def _build_rows() -> tuple[tuple[int, str, str, int, int | None, int], ...]:
     rows: list[tuple[int, str, str, int, int | None, int]] = []
+    province_ids: dict[str, int] = {}
     next_id = 1
     for province_order, (name, code, children) in enumerate(PROVINCE_TREE, start=1):
         province_id = next_id
         rows.append((province_id, name, code, 1, None, province_order))
+        province_ids[name] = province_id
         next_id += 1
         for city_order, (city_name, city_code) in enumerate(children, start=1):
             rows.append((next_id, city_name, city_code, 2, province_id, city_order))
             next_id += 1
+    for province_name, city_name, city_code, city_order in EXTRA_CITIES:
+        rows.append((next_id, city_name, city_code, 2, province_ids[province_name], city_order))
+        next_id += 1
     return tuple(rows)
 
 
