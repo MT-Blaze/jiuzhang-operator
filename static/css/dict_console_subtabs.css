@@ -1,0 +1,139 @@
+/* 字典控制台二级标签 + 教材章节左右树表（2026-11-11）
+ * 独立一份样式：整块下架删本文件 + dict_console.html 的引用行即可。
+ * 配色继续继承 app.css 的 --paper/--ink/--accent 变量，热区 ≥44px。 */
+
+/* ---------- 二级标签：浏览器页签观感，选中加粗高亮 ---------- */
+.dc-subtabs-wrap { margin: 0 0 14px; }
+.dc-subtabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  background: var(--paper-deep);
+  scrollbar-width: thin;
+}
+.dc-subtab {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dc-subtab:hover { background: var(--card-hover); color: var(--ink); }
+.dc-subtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dc-subtab[aria-selected="true"] {
+  margin-bottom: -1px;
+  border-color: var(--line);
+  border-bottom: 1px solid var(--card);
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 700;
+}
+.dc-subpanels { padding-top: 4px; }
+
+/* 只读字典的角标：告诉老师这张表不在控制台改 */
+.dc-table-readonly {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+/* ---------- 教材章节：左树右表 ---------- */
+.dc-chapters { min-width: 0; }
+.dcc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.dcc-pane {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.dcc-title { margin: 0 0 6px; font-family: var(--serif); font-size: 0.95rem; }
+.dcc-state { margin: 4px 0 10px; min-height: 1.2em; font-size: 0.78rem; color: var(--muted); }
+.dcc-tree { max-height: 560px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.dcc-list { list-style: none; margin: 0; padding: 0; }
+.dcc-row { display: flex; align-items: center; gap: 2px; }
+.dcc-caret {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dcc-spacer { flex: none; width: 44px; }
+.dcc-node {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.dcc-node:hover { background: var(--accent-soft); }
+.dcc-node.is-selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.dcc-volume { font-family: var(--serif); font-size: 0.88rem; font-weight: 600; background: var(--accent-soft); }
+.dcc-caret:focus-visible, .dcc-node:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.dcc-detail { min-height: 120px; }
+.dcc-detail-name { margin: 0 0 4px; font-family: var(--serif); font-size: 1rem; font-weight: 700; }
+.dcc-detail-meta { margin: 0 0 10px; font-size: 0.8rem; color: var(--muted); }
+.dcc-kv {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0 0 12px;
+  font-size: 0.84rem;
+}
+.dcc-kv dt { color: var(--muted); }
+.dcc-kv dd { margin: 0; overflow-wrap: anywhere; }
+.dcc-subtitle { margin: 8px 0 6px; font-size: 0.88rem; }
+.dcc-table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.dcc-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.dcc-table th, .dcc-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.dcc-table th { background: var(--paper-deep); font-weight: 600; color: var(--muted); }
+.dcc-table td:first-child { white-space: normal; overflow-wrap: anywhere; }
+.dcc-table tbody tr:last-child td { border-bottom: none; }
+.dcc-empty { padding: 12px 10px; margin: 0; color: var(--muted); font-size: 0.82rem; }
+
+@media (max-width: 900px) {
+  .dcc-layout { grid-template-columns: minmax(0, 1fr); }
+  .dcc-tree { max-height: 360px; }
+  .dcc-table-scroll { max-height: 320px; }
+}
+@media (max-width: 480px) {
+  .dc-subtab { padding: 0 12px; font-size: 0.84rem; }
+  .dcc-kv { grid-template-columns: 78px minmax(0, 1fr); }
+}

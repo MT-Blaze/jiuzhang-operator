@@ -57,6 +57,36 @@ class ExamType:
 
 
 @dataclass(frozen=True)
+class SubjectThought:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    subject_id: int
+    stage: str | None
+
+
+@dataclass(frozen=True)
+class SolutionMethod:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    subject_id: int
+    stage: str | None
+
+
+@dataclass(frozen=True)
+class CoreCompetency:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+    subject_id: int
+    stage: str | None
+
+
+@dataclass(frozen=True)
 class Dictionaries:
     subjects: tuple[Subject, ...]
     grades: tuple[Grade, ...]

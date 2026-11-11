@@ -1,8 +1,8 @@
 /**
  * 画布面板渲染：数据看板 + 三大分类面板。
  * 所有数字来自 /api/bank/engine/status 的真实计数，不写死、不占位。
- * 阶段二：分类里 marked editable 的基础五表升级为可编辑表格（DcTable），
- * 其余字典仍为只读总览卡，编辑能力随阶段三交付，面板上如实标注。
+ * 分类面板内按 catalog.subs 渲染二级标签：一个标签只挂一张表 / 一棵树 / 一组联动，
+ * 可编辑表沿用 DcTable，补齐的只读字典也用同一套表格（隐藏新增与删除），不再纵向堆叠。
  */
 (function () {
   "use strict";
@@ -42,19 +42,6 @@
     return category.items.reduce(function (sum, item) {
       return sum + (counts[item.table] || 0);
     }, 0);
-  }
-
-  function dictCard(item, counts) {
-    var card = el("div", "dc-card");
-    card.appendChild(el("h3", "dc-card-name", item.name));
-    card.appendChild(el("div", "dc-card-table", item.table));
-    var count = el("p", "dc-card-count");
-    var num = el("strong", "", String(counts[item.table] != null ? counts[item.table] : "—"));
-    count.appendChild(num);
-    count.appendChild(document.createTextNode(" 行"));
-    card.appendChild(count);
-    card.appendChild(el("p", "dc-card-desc", item.desc));
-    return card;
   }
 
   /** 数据看板：引擎真实状态 + 三大分类入口卡 + 当前全局设置。 */
@@ -107,43 +94,43 @@
     });
   }
 
-  /** 分类面板：教研属性顶部挂四栏联动；可编辑表渲染表格块，其余只读总览卡。 */
+  /** 二级标签的内容：联动 / 章节树 / 单表（可编辑与否由 catalog 的 editable 决定）。 */
+  function renderSub(host, sub, ctx, category) {
+    if (sub.mode === "linkage") {
+      if (window.DcLinkage) window.DcLinkage.mount(host, ctx);
+      return;
+    }
+    if (sub.mode === "chapters") {
+      if (window.DcChapterTree) window.DcChapterTree.mount(host, ctx);
+      return;
+    }
+    var item = window.DcCatalog.itemOf(category, sub.table) || {
+      table: sub.table, name: sub.label, desc: category.title + " · " + sub.label
+    };
+    window.DcTable.mount(host, item, ctx, { readOnly: !item.editable });
+  }
+
+  /** 分类面板：分类标题下挂一排二级标签，一个标签只渲染一张表 / 一棵树 / 一组联动。 */
   function renderCategory(panel, tab, ctx, category) {
     panel.textContent = "";
     panel.appendChild(el("h2", "dc-panel-title", category.title));
     panel.appendChild(el("p", "dc-panel-hint", category.desc));
-    var linkageMounted = false;
-    if (category.key === "teaching" && window.DcLinkage) {
-      window.DcLinkage.mount(panel, ctx);
-      linkageMounted = true;
-    }
-    var editable = category.items.filter(function (item) { return item.editable; });
-    var pending = category.items.filter(function (item) {
-      return !item.editable && !(linkageMounted && item.linkage);
+    var subs = window.DcCatalog.subsOf(category);
+    window.DcSubTabs.mount(panel, {
+      idPrefix: category.key,
+      label: category.title + "二级标签",
+      items: subs.map(function (sub) {
+        return {
+          key: sub.key,
+          label: sub.label,
+          render: function (host) { renderSub(host, sub, ctx, category); }
+        };
+      }),
+      initial: typeof ctx.subFor === "function" ? ctx.subFor(category.key) : "",
+      onActivate: function (subKey) {
+        if (typeof ctx.rememberSub === "function") ctx.rememberSub(category.key, subKey);
+      }
     });
-
-    if (editable.length) {
-      panel.appendChild(el("p", "dc-panel-hint",
-        "双击单元格改名（blur 保存，Esc 放弃）· 新增行 · 删除自动防呆 · 搜索与全局设置联动。"));
-      editable.forEach(function (item) { window.DcTable.mount(panel, item, ctx); });
-    }
-
-    if (pending.length) {
-      panel.appendChild(el("h3", "dc-panel-title", "待交付字典"));
-      panel.appendChild(el("p", "dc-panel-hint", "以下字典暂为只读总览。"));
-      var loading = stateBox(panel, "正在读取真实行数…");
-      window.DcClient.fetchJson("/api/bank/engine/status").then(function (status) {
-        if (!panel.isConnected) return;
-        loading.remove();
-        var grid = el("div", "dc-card-grid");
-        pending.forEach(function (item) { grid.appendChild(dictCard(item, status.counts || {})); });
-        panel.appendChild(grid);
-      }).catch(function (error) {
-        if (!panel.isConnected) return;
-        loading.remove();
-        errorBox(panel, error, function () { renderCategory(panel, tab, ctx, category); });
-      });
-    }
   }
 
   window.DcPanels = { renderDashboard: renderDashboard, renderCategory: renderCategory };

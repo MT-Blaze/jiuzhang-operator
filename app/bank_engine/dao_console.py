@@ -17,15 +17,23 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.bank_engine.models import (
+    Chapter,
+    CoreCompetency,
+    Difficulty,
     ExamDirection,
     ExamType,
     Grade,
     ImportReport,
     KnowledgePoint,
+    Quality,
+    QuestionType,
     ReferenceHit,
     Region,
     School,
+    SolutionMethod,
     Subject,
+    SubjectThought,
+    TextbookVersion,
 )
 
 
@@ -119,6 +127,62 @@ SPECS: dict[str, TableSpec] = {
         nullable=("chapter_id", "description"),
         global_filters=(("subject_id", "subject_id"),),
     ),
+    # 二级标签补齐的只读字典：同一套规格驱动，editable 留空，前端只渲染平铺表格。
+    "dict_question_types": TableSpec(
+        table="dict_question_types", label="题型", model=QuestionType,
+        columns=("id", "name", "code", "sort_order"),
+        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order",), nullable=(), global_filters=(),
+    ),
+    "dict_difficulties": TableSpec(
+        table="dict_difficulties", label="难度", model=Difficulty,
+        columns=("id", "name", "code", "sort_order", "level", "description"),
+        editable=(), required=(), search=("name", "code", "description"),
+        order="level, sort_order, id", int_columns=("sort_order", "level"),
+        nullable=("description",), global_filters=(),
+    ),
+    "dict_question_qualities": TableSpec(
+        table="dict_question_qualities", label="题目质量", model=Quality,
+        columns=("id", "name", "code", "sort_order"),
+        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order",), nullable=(), global_filters=(),
+    ),
+    "dim_textbook_versions": TableSpec(
+        table="dim_textbook_versions", label="教材版本", model=TextbookVersion,
+        columns=("id", "name", "code", "sort_order", "publisher", "subject_id"),
+        editable=(), required=(), search=("name", "code", "publisher"),
+        order="sort_order, id", int_columns=("sort_order", "subject_id"),
+        nullable=("publisher",), global_filters=(("subject_id", "subject_id"),),
+    ),
+    "dim_textbook_chapters": TableSpec(
+        table="dim_textbook_chapters", label="教材章节", model=Chapter,
+        columns=("id", "name", "code", "sort_order", "textbook_id", "parent_id"),
+        editable=(), required=(), search=("name", "code"),
+        order="textbook_id, sort_order, id",
+        int_columns=("sort_order", "textbook_id", "parent_id"),
+        nullable=("parent_id",), global_filters=(("textbook_id", "textbook_id"),),
+    ),
+    "dict_subject_thoughts": TableSpec(
+        table="dict_subject_thoughts", label="学科思想", model=SubjectThought,
+        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
+        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+    ),
+    "dict_solution_methods": TableSpec(
+        table="dict_solution_methods", label="解题方法", model=SolutionMethod,
+        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
+        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+    ),
+    "dict_core_competencies": TableSpec(
+        table="dict_core_competencies", label="核心素养", model=CoreCompetency,
+        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
+        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+    ),
 }
 
 COLUMN_LABELS: dict[str, str] = {
@@ -126,11 +190,14 @@ COLUMN_LABELS: dict[str, str] = {
     "stage": "学段", "level": "层级", "parent_id": "父级ID", "short_name": "简称",
     "region": "地区", "region_id": "区划ID", "textbook_id": "教材ID",
     "subject_id": "学科ID", "chapter_id": "章节ID", "description": "说明",
+    "publisher": "出版社",
 }
 
 # 子表中文名：删除防呆对话框给老师看的人话，未收录的退回表名。
 TABLE_LABELS: dict[str, str] = {
     "dict_subjects": "学科", "dict_grades": "年级", "dict_exam_types": "考试类型",
+    "dict_question_types": "题型", "dict_difficulties": "难度",
+    "dict_question_qualities": "题目质量", "dim_textbook_versions": "教材版本",
     "dim_regions": "行政区划", "dim_schools": "学校", "dim_textbooks": "教材版本",
     "dim_textbook_chapters": "教材章节", "dim_knowledge_points": "知识点",
     "dim_exam_directions": "考向", "exams": "试卷", "questions": "题目",
