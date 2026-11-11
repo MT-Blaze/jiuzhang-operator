@@ -16,7 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-from app.bank_engine.dict_stage import STAGE_VALUES, clean_stage, filter_pair
+from app.bank_engine.dict_stage import STAGE_ALL, STAGE_VALUES, clean_stage
 from app.bank_engine.models import (
     Chapter,
     CoreCompetency,
@@ -70,8 +70,6 @@ class TableSpec:
     global_filters: tuple[tuple[str, str], ...]
     # 非编辑列但必填的外键：新增时由前端按全局设置带入（列名, 全局参数名）。
     scope: tuple[tuple[str, str], ...] = ()
-    # 跨学段通用的教研字典：按学段过滤时把「全学段」行一并带上。
-    shared_stage: bool = False
 
 
 def _teaching_spec(table: str, label: str, model: type) -> TableSpec:
@@ -83,7 +81,7 @@ def _teaching_spec(table: str, label: str, model: type) -> TableSpec:
         required=("name", "code", "subject_id"), search=("name", "code"),
         order="sort_order, id", int_columns=("sort_order", "subject_id"),
         nullable=(), global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
-        scope=(("subject_id", "subject_id"), ("stage", "stage")), shared_stage=True,
+        scope=(("subject_id", "subject_id"), ("stage", "stage")),
     )
 
 
@@ -272,10 +270,15 @@ def _filters(
         params.extend(like for _ in spec.search)
     for param, col in spec.global_filters:
         value = filters.get(param)
-        if value is not None and value != "":
-            clause, extra = filter_pair(spec.shared_stage, col, value)
-            clauses.append(clause)
-            params.extend(extra)
+        if value is None or value == "":
+            continue
+        if col == "stage":
+            # 学段一律兼容检索：任何具体学段都与「全学段」并集，不做硬等值。
+            clauses.append("stage IN (?, ?)")
+            params.extend((value, STAGE_ALL))
+            continue
+        clauses.append(col + " = ?")
+        params.append(value)
     return clauses, params
 
 

@@ -424,8 +424,8 @@ CREATE TABLE exam_school_map (
 -- [功能注释] 学科思想字典：存学科思想名称与编码，供解析思想关联引用
 CREATE TABLE dict_subject_thoughts (
     id         INTEGER PRIMARY KEY,
-    -- [字段注释] 学科思想名称，展示给用户看的业务词汇，全局唯一
-    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 学科思想名称，展示给用户看的业务词汇，同学科内唯一
+    name       TEXT NOT NULL,
     -- [字段注释] 学科思想编码，系统底层唯一标识，不随名称更改
     code       TEXT NOT NULL UNIQUE,
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
@@ -434,13 +434,14 @@ CREATE TABLE dict_subject_thoughts (
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
     -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
     stage      TEXT NOT NULL DEFAULT '全学段'
-               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
+               CHECK (stage IN ('小学', '初中', '高中', '全学段')),
+    UNIQUE (subject_id, name)
 );
 -- [功能注释] 解题方法字典：存解题方法名称与编码，供解析方法关联引用
 CREATE TABLE dict_solution_methods (
     id         INTEGER PRIMARY KEY,
-    -- [字段注释] 解题方法名称，展示给用户看的业务词汇，全局唯一
-    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 解题方法名称，展示给用户看的业务词汇，同学科内唯一
+    name       TEXT NOT NULL,
     -- [字段注释] 解题方法编码，系统底层唯一标识，不随名称更改
     code       TEXT NOT NULL UNIQUE,
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
@@ -449,13 +450,14 @@ CREATE TABLE dict_solution_methods (
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
     -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
     stage      TEXT NOT NULL DEFAULT '全学段'
-               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
+               CHECK (stage IN ('小学', '初中', '高中', '全学段')),
+    UNIQUE (subject_id, name)
 );
 -- [功能注释] 核心素养字典：存核心素养名称与编码，供解析素养关联引用
 CREATE TABLE dict_core_competencies (
     id         INTEGER PRIMARY KEY,
-    -- [字段注释] 核心素养名称，展示给用户看的业务词汇，全局唯一
-    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 核心素养名称，展示给用户看的业务词汇，同学科内唯一
+    name       TEXT NOT NULL,
     -- [字段注释] 核心素养编码，系统底层唯一标识，不随名称更改
     code       TEXT NOT NULL UNIQUE,
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
@@ -464,7 +466,8 @@ CREATE TABLE dict_core_competencies (
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
     -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
     stage      TEXT NOT NULL DEFAULT '全学段'
-               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
+               CHECK (stage IN ('小学', '初中', '高中', '全学段')),
+    UNIQUE (subject_id, name)
 );
 -- [功能注释] 解析与学科思想关联表：解析与学科思想多对多，解析删除时级联清理
 CREATE TABLE solution_thought_map (
@@ -603,6 +606,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 10;
+PRAGMA user_version = 11;
 
 COMMIT;

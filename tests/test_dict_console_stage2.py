@@ -137,6 +137,50 @@ class ConsoleServiceTest(unittest.TestCase):
         self.assertIn("分离参数法", {item.name for item in senior_methods})
         self.assertIn("极值点偏移法", {item.name for item in senior_methods})
 
+    def test_cross_stage_math_methods_visible_in_high_school(self) -> None:
+        methods, total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "高中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        names = {item.name for item in methods}
+        self.assertGreaterEqual(total, 30)
+        self.assertIn("配方法", names)
+        self.assertIn("待定系数法", names)
+
+    def test_core_names_have_no_subject_suffix(self) -> None:
+        items, _ = service.console_list(
+            "dict_core_competencies", limit=200, db_path=self.db_path
+        )
+        dirty = [item.name for item in items if "（生物）" in item.name
+                 or "（科学）" in item.name or "（美术）" in item.name]
+        self.assertEqual(dirty, [])
+
+    def test_name_is_unique_per_subject_not_globally(self) -> None:
+        first = service.console_insert(
+            "dict_core_competencies",
+            {"name": "验收同名素养", "code": "zz_core_same_a", "subject_id": 1},
+            db_path=self.db_path,
+        )
+        self.addCleanup(
+            service.console_delete, "dict_core_competencies", first.id, db_path=self.db_path
+        )
+        second = service.console_insert(
+            "dict_core_competencies",
+            {"name": "验收同名素养", "code": "zz_core_same_b", "subject_id": 2},
+            db_path=self.db_path,
+        )
+        self.addCleanup(
+            service.console_delete, "dict_core_competencies", second.id, db_path=self.db_path
+        )
+        with self.assertRaises(dao_console.ConflictError):
+            service.console_insert(
+                "dict_core_competencies",
+                {"name": "验收同名素养", "code": "zz_core_same_c", "subject_id": 1},
+                db_path=self.db_path,
+            )
+
     def test_stage_is_never_null_and_enum_only(self) -> None:
         for table in (
             "dict_subject_thoughts",

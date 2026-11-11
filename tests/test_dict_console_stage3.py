@@ -71,8 +71,8 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    def test_fresh_build_is_v10_with_versions(self) -> None:
-        self.assertEqual(self._version(), 10)
+    def test_fresh_build_is_v11_with_versions(self) -> None:
+        self.assertEqual(self._version(), 11)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
@@ -108,7 +108,7 @@ class MigrationTest(unittest.TestCase):
         self.assertNotIn("version_id", self._columns("dim_textbooks"))
         report = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.assertFalse(report.created)
-        self.assertEqual(self._version(), 10)
+        self.assertEqual(self._version(), 11)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))

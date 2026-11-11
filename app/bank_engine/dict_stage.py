@@ -21,10 +21,3 @@ def clean_stage(raw: object, *, required: bool) -> str:
     if text not in STAGE_VALUES:
         raise ValueError(STAGE_HINT)
     return text
-
-
-def filter_pair(shared_stage: bool, column: str, value: object) -> tuple[str, tuple]:
-    """跨学段通用字典按学段检索时，把「全学段」行一起带上。"""
-    if shared_stage and column == "stage":
-        return (column + " IN (?, ?)", (value, STAGE_ALL))
-    return (column + " = ?", (value,))
