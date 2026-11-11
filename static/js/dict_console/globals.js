@@ -118,7 +118,8 @@
 
   function renderToggle() {
     if (!ui || !ui.label) return;
-    ui.label.textContent = ready ? shortLabel() : "全局设置加载中…";
+    ui.label.textContent = ready ? shortLabel() : "加载中…";
+    if (ui.toggle) ui.toggle.title = ready ? "全局设置：" + label() : "全局设置";
   }
 
   function renderState() {
@@ -215,6 +216,24 @@
     }
   }
 
+  /** 宿主（工作台看板右栏）保存后原地灌入，不经过本页面板。 */
+  function apply(saved) {
+    if (!saved || typeof saved !== "object") return false;
+    state.stage = String(saved.stage || "");
+    state.subject_id = String(saved.subject_id || "");
+    state.version_id = String(saved.version_id || "");
+    draft = copy(state);
+    persist();
+    if (ready) {
+      renderDraft();
+      renderState();
+    }
+    renderToggle();
+    emit();
+    if (ui && ui.panel) closePanel(false);
+    return true;
+  }
+
   /**
    * 挂载设置面板并拉取真实字典。失败时下拉保持禁用并如实报错，
    * 绝不拿假选项顶替（数据字典拒绝骨架）。
@@ -261,7 +280,7 @@
   }
 
   window.DcGlobals = {
-    init: init, current: current, query: query, label: label,
+    init: init, apply: apply, current: current, query: query, label: label,
     EVENT_NAME: EVENT_NAME, STORAGE_KEY: STORAGE_KEY
   };
 })();

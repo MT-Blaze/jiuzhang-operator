@@ -11,8 +11,12 @@
   function create(deps) {
     var dictView = deps.dictView;
     var canvasTab = deps.canvasTab;
+    var fetchJson = deps.fetchJson;
     var replyHost = deps.replyHost;
     var textValue = deps.textValue;
+
+    var GLOBALS_KEY = "jzo.dictConsole.globals.v1";
+    var globalsOptions = null;
 
     function catalogue() {
       var api = window.DcCatalog;
@@ -70,6 +74,128 @@
       });
     }
 
+    // ---------- 全局设置通道（看板右栏插件不碰 localStorage，由宿主代存代取） ----------
+    function emptyGlobals() {
+      return { stage: "", subject_id: "", version_id: "" };
+    }
+
+    function readGlobals() {
+      try {
+        var saved = window.localStorage.getItem(GLOBALS_KEY);
+        var parsed = saved ? JSON.parse(saved) : null;
+        if (!parsed || typeof parsed !== "object") return emptyGlobals();
+        return {
+          stage: String(parsed.stage || ""),
+          subject_id: parsed.subject_id == null ? "" : String(parsed.subject_id),
+          version_id: parsed.version_id == null ? "" : String(parsed.version_id)
+        };
+      } catch (error) {
+        return emptyGlobals();
+      }
+    }
+
+    function writeGlobals(globals) {
+      try {
+        window.localStorage.setItem(GLOBALS_KEY, JSON.stringify(globals));
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    /** 选项来自真实字典接口，失败如实回错，不拿假选项顶替。 */
+    function loadGlobalsOptions() {
+      if (globalsOptions) return Promise.resolve(globalsOptions);
+      return Promise.all([
+        fetchJson("/api/bank/engine/meta"),
+        fetchJson("/api/bank/engine/textbook-versions")
+      ]).then(function (results) {
+        var meta = results[0] || {};
+        var stages = [];
+        (meta.grades || []).forEach(function (grade) {
+          if (grade && grade.stage && stages.indexOf(grade.stage) === -1) stages.push(grade.stage);
+        });
+        globalsOptions = {
+          stages: stages,
+          subjects: (meta.subjects || []).map(function (item) {
+            return { id: item.id, name: item.name };
+          }),
+          versions: ((results[1] || {}).items || []).map(function (item) {
+            return { id: item.id, name: item.name, subject_id: item.subject_id };
+          })
+        };
+        return globalsOptions;
+      });
+    }
+
+    function optionsFailed(tab, message, error, prefix) {
+      replyHost(tab, message, false, {
+        code: "HOST_" + ((error && error.status) || 0),
+        message: prefix + ((error && error.message) || "未知原因"),
+        retryable: true
+      });
+    }
+
+    function globalsGet(tab, message) {
+      loadGlobalsOptions().then(function (options) {
+        replyHost(tab, message, true, {
+          current: readGlobals(),
+          stages: options.stages,
+          subjects: options.subjects,
+          versions: options.versions
+        });
+      }, function (error) {
+        optionsFailed(tab, message, error, "读取全局设置失败：");
+      });
+      return true;
+    }
+
+    function globalsSave(tab, message, payload) {
+      var stage = textValue(payload, "stage", 20);
+      var subjectText = textValue(payload, "subject_id", 20);
+      var versionText = textValue(payload, "version_id", 20);
+      loadGlobalsOptions().then(function (options) {
+        var subjectId = Number(subjectText) || 0;
+        var versionId = Number(versionText) || 0;
+        if (stage && options.stages.indexOf(stage) === -1) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的学段" });
+          return;
+        }
+        var subject = options.subjects.filter(function (item) {
+          return Number(item.id) === subjectId;
+        })[0];
+        if (subjectId && !subject) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的学科" });
+          return;
+        }
+        var version = options.versions.filter(function (item) {
+          return Number(item.id) === versionId;
+        })[0];
+        if (versionId && (!version || (subjectId && Number(version.subject_id) !== subjectId))) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与学科不匹配" });
+          return;
+        }
+        var saved = {
+          stage: stage,
+          subject_id: subjectId ? String(subjectId) : "",
+          version_id: versionId ? String(versionId) : ""
+        };
+        if (!writeGlobals(saved)) {
+          replyHost(tab, message, false, {
+            code: "STORAGE_FAILED",
+            message: "本机存储不可用，全局设置未能保存"
+          });
+          return;
+        }
+        var canvas = canvasTab();
+        if (canvas) dictView.applyGlobals(canvas, saved);
+        replyHost(tab, message, true, { saved: true, current: saved });
+      }, function (error) {
+        optionsFailed(tab, message, error, "保存全局设置失败：");
+      });
+      return true;
+    }
+
     /** @returns {boolean} true 表示本方法已处理并已回执。 */
     function handle(tab, message, method, payload) {
       if (method === "dict.catalog") {
@@ -79,6 +205,12 @@
       if (method === "dict.open") {
         open(tab, message, payload);
         return true;
+      }
+      if (method === "dict.globals_get") {
+        return globalsGet(tab, message);
+      }
+      if (method === "dict.globals_save") {
+        return globalsSave(tab, message, payload);
       }
       return false;
     }

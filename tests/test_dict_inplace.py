@@ -78,8 +78,10 @@ class InPlaceLayerTest(unittest.TestCase):
 
     def test_unknown_category_and_table_are_rejected(self) -> None:
         source = DICT.read_text(encoding="utf-8")
-        self.assertEqual(source.count('"BAD_REQUEST"'), 4)
+        # dict.open 四条 + dict.globals_save 三条（学段/学科/版本配学科）
+        self.assertEqual(source.count('"BAD_REQUEST"'), 7)
         self.assertIn("未知的字典表", source)
+        self.assertIn("教材版本与学科不匹配", source)
 
     def test_layer_goes_to_canvas_tab_not_the_rail_handle(self) -> None:
         """右栏句柄只有 frame 没有 panel：铺错地方会抛异常，回执还得走发请求那一帧。"""

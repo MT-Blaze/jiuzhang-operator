@@ -136,29 +136,33 @@ class ConsoleSkeletonTest(unittest.TestCase):
         """字典导航是数据看板插件自己的 sidebar.right 面板，只在看板页签激活时入住。"""
         manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.dashboard")
         self.assertIn("sidebar.right", manifest["slots"])
-        plugin_js = (ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist" / "plugin.js")
-        source = plugin_js.read_text(encoding="utf-8")
-        self.assertIn("字典维护", source)
+        plugin_dir = ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist"
+        source = ((plugin_dir / "plugin.js").read_text(encoding="utf-8")
+                  + (plugin_dir / "rail.js").read_text(encoding="utf-8"))
+        self.assertIn("字典分类", source)
         self.assertIn('call("dict.catalog")', source)
         self.assertIn('call("dict.open"', source)
         stage_dict = (ROOT / "static" / "js" / "stage_dict.js").read_text(encoding="utf-8")
         self.assertIn("DcCatalog", stage_dict)
         self.assertIn("/dict?embedded=1&cat=", stage_dict)
 
-    def test_dashboard_rail_is_chips_not_cards(self) -> None:
-        """2026-11-11 大统一：右栏与字典控制台同款极简 Chips，臃肿分类卡彻底退场。"""
+    def test_dashboard_rail_is_three_categories_and_globals(self) -> None:
+        """2026-11-11 极简令：右栏与字典控制台同构——全局设置 + 三大主分类。"""
         plugin_dir = ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist"
-        source = (plugin_dir / "plugin.js").read_text(encoding="utf-8")
+        source = ((plugin_dir / "plugin.js").read_text(encoding="utf-8")
+                  + (plugin_dir / "rail.js").read_text(encoding="utf-8"))
         css = (plugin_dir / "plugin.css").read_text(encoding="utf-8")
-        self.assertIn("db-chip-group", source)
-        self.assertIn("db-chip-row", source)
-        self.assertIn('aria-pressed', source)
-        for dead in ("db-dict-cat", "db-dict-head", "db-dict-hint", "db-dict-nav"):
-            self.assertNotIn(dead, source, f"分类卡残留：{dead}")
-            self.assertNotIn(dead, css, f"分类卡样式残留：{dead}")
-        self.assertIn(".db-chip {", css)
-        self.assertIn("min-height: 32px", css)
-        self.assertIn("inset: -6px", css)
+        self.assertIn("DbRail.mount", source)
+        self.assertIn("dict.globals_get", source)
+        self.assertIn("dict.globals_save", source)
+        self.assertIn("db-cat-btn", source)
+        self.assertIn("aria-pressed", source)
+        for dead in ("db-chip-group", "db-chip-row", "db-chip", "db-dict-body"):
+            self.assertNotIn(dead, source, f"旧小标签残留：{dead}")
+            self.assertNotIn(dead, css, f"旧小标签样式残留：{dead}")
+        self.assertIn(".db-cat-btn {", css)
+        self.assertIn("min-height: 56px", css)
+        self.assertIn(".db-globals-toggle {", css)
 
 
 if __name__ == "__main__":

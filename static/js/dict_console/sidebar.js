@@ -1,8 +1,9 @@
 /**
- * 辅助栏：字典小标签 + 操作区。
- * 三大分类下只铺紧凑小标签，点标签只在画布新开 / 激活该字典页签。
+ * 辅助栏：全局设置 + 三大主分类。
+ * 分类区只铺三枚宽按钮，点按钮在画布打开 / 激活该分类页签，
+ * 具体字典交给画布顶部的二级标签（学科、年级…）承载。
  * 辅助栏只渲染一次：画布开页、切页、关页都不重渲、不改高亮（常驻总控台）。
- * 操作区：【一键备份】走底座现成的备份体系（/api/settings/backup*），
+ * 顶栏操作：【一键备份】走底座现成的备份体系（/api/settings/backup*），
  * 未开启本地备份时先征求老师同意再开启；【导入数据】交给 DcImport 走 TOML 批量导入。
  */
 (function () {
@@ -17,31 +18,15 @@
   function renderNav(container) {
     container.textContent = "";
     window.DcCatalog.CATEGORIES.forEach(function (category) {
-      var group = document.createElement("div");
-      group.className = "dc-chip-group";
-
-      var title = document.createElement("h3");
-      title.className = "dc-chip-group-title";
-      title.textContent = shortTitle(category);
-
-      var row = document.createElement("div");
-      row.className = "dc-chip-row";
-      row.setAttribute("role", "group");
-      row.setAttribute("aria-label", category.title);
-
-      category.items.forEach(function (item) {
-        var chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "dc-chip";
-        chip.textContent = item.name;
-        chip.setAttribute("aria-label", "在画布新开「" + item.name + "」页签");
-        chip.addEventListener("click", function () { ctx.openDict(category.key, item.table); });
-        row.appendChild(chip);
-      });
-
-      group.appendChild(title);
-      group.appendChild(row);
-      container.appendChild(group);
+      var label = shortTitle(category);
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "dc-cat-btn";
+      button.textContent = label;
+      button.title = category.desc;
+      button.setAttribute("aria-label", "在画布打开「" + label + "」分类");
+      button.addEventListener("click", function () { ctx.openCategory(category.key); });
+      container.appendChild(button);
     });
   }
 

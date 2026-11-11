@@ -79,7 +79,25 @@
       return { active: true, key: target.key, title: target.title };
     }
 
-    return { toggle: toggle };
+    /** 宿主右栏保存全局设置后，原地灌进已打开的字典页，不重载 iframe。 */
+    function applyGlobals(tab, globals) {
+      var view = viewOf(tab);
+      if (!view) return false;
+      var frame = view.frame;
+      var api = frame.contentWindow && frame.contentWindow.DcGlobals;
+      if (api && typeof api.apply === "function") {
+        api.apply(globals);
+        return true;
+      }
+      frame.addEventListener("load", function once() {
+        frame.removeEventListener("load", once);
+        var next = frame.contentWindow && frame.contentWindow.DcGlobals;
+        if (next && typeof next.apply === "function") next.apply(globals);
+      });
+      return true;
+    }
+
+    return { toggle: toggle, applyGlobals: applyGlobals };
   }
 
   global.JzoStageDictView = { create: create };

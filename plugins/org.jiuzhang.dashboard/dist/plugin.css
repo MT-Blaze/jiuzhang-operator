@@ -182,9 +182,8 @@ html, body {
 
 .db-empty { color: var(--db-sub); padding: 8px 2px; }
 
-/* ---------- 右栏：字典小标签（本插件 sidebar.right 专属面板） ----------
-   与字典控制台辅助栏同款几何：32px 胶囊、12px 间距借 6px 热区凑满 44px 触控。 */
-.db-dict-body { padding: 2px; }
+/* ---------- 右栏：全局设置 + 三大主分类（本插件 sidebar.right 专属面板） ---------- */
+.db-rail { display: flex; flex-direction: column; gap: 12px; }
 
 .db-dict-state {
   margin: 0;
@@ -193,75 +192,165 @@ html, body {
   font-size: 12px;
 }
 
-.db-chip-groups { display: flex; flex-direction: column; gap: 14px; }
-.db-chip-group { display: flex; flex-direction: column; gap: 8px; }
+/* 全局设置：平时只有一枚状态按钮，点开才铺三下拉 */
+.db-globals {
+  padding: 8px;
+  border: 1px solid var(--db-line);
+  border-radius: 10px;
+  background: var(--db-card);
+}
 
-.db-chip-group-title {
+.db-globals-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--db-sub);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.db-chip-group-title::before {
-  content: "";
-  width: 3px;
-  height: 12px;
-  border-radius: 2px;
-  background: var(--db-accent);
-}
-
-.db-chip-row { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px; margin: -6px; }
-
-.db-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 11px;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 10px;
   border: 1px solid var(--db-line-strong);
-  border-radius: 999px;
+  border-radius: 9px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-globals-toggle:hover { border-color: var(--db-accent); background: var(--db-accent-soft); }
+.db-globals-toggle:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 2px; }
+
+.db-globals-icon { flex: none; font-size: 0.95rem; line-height: 1; }
+
+.db-globals-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.db-globals-title {
+  color: var(--db-sub);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+}
+
+.db-globals-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.db-globals-caret {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--db-sub);
+  border-bottom: 2px solid var(--db-sub);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+
+.db-globals-toggle[aria-expanded="true"] .db-globals-caret { transform: rotate(225deg); }
+
+.db-globals-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--db-line);
+}
+
+.db-globals-panel[hidden] { display: none; }
+
+.db-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.db-field-label { color: var(--db-sub); font-size: 12px; }
+
+.db-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--db-line-strong);
+  border-radius: 8px;
   background: var(--db-card);
   color: var(--db-text);
   font: inherit;
   font-size: 13px;
-  line-height: 1.1;
-  white-space: nowrap;
+}
+
+.db-select:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 1px; }
+.db-select:disabled { opacity: 0.6; }
+
+.db-globals-confirm {
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 8px;
+  border: 1px solid var(--db-accent);
+  border-radius: 8px;
+  background: var(--db-accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-/* 视觉保持紧凑，热区扩到 44px：上下左右各借 6px，正好用掉 12px 间距 */
-.db-chip::before {
+.db-globals-confirm:hover:not(:disabled) { filter: brightness(1.08); }
+.db-globals-confirm:disabled { opacity: 0.55; cursor: not-allowed; }
+.db-globals-confirm:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 2px; }
+
+/* 三大主分类：宽按钮，具体字典交给画布顶部的二级标签 */
+.db-cats { display: flex; flex-direction: column; gap: 10px; }
+
+.db-cat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid var(--db-line-strong);
+  border-radius: 10px;
+  background: var(--db-card);
+  color: var(--db-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-cat-btn::after {
   content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--db-sub);
+  border-bottom: 2px solid var(--db-sub);
+  transform: rotate(-45deg);
 }
 
-.db-chip:hover {
+.db-cat-btn:hover { border-color: var(--db-accent); background: var(--db-accent-soft); color: var(--db-accent); }
+.db-cat-btn:hover::after { border-color: var(--db-accent); }
+.db-cat-btn:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 2px; }
+.db-cat-btn:active { transform: translateY(1px); }
+
+/* 激活态除配色外加内描边，状态不只靠颜色传达 */
+.db-cat-btn[aria-pressed="true"] {
   border-color: var(--db-accent);
   background: var(--db-accent-soft);
   color: var(--db-accent);
-}
-
-.db-chip:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 2px; }
-.db-chip:active { transform: translateY(1px); }
-
-/* 激活态除配色外还加粗描边，状态不只靠颜色传达 */
-.db-chip[aria-pressed="true"] {
-  border-color: var(--db-accent);
-  background: var(--db-accent-soft);
-  color: var(--db-accent);
-  font-weight: 700;
   box-shadow: inset 0 0 0 1px var(--db-accent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .db-chip:active { transform: none; }
+  .db-globals-caret { transition: none; }
+  .db-cat-btn:active { transform: none; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -276,6 +276,7 @@
   var stageDict = window.JzoStageDict.create({
     dictView: window.JzoStageDictView.create({ dock: dock }),
     canvasTab: function () { return findTab(stageState.activeKey); },
+    fetchJson: fetchJson,
     replyHost: replyHost,
     textValue: textValue,
   });

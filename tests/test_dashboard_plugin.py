@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ID = "org.jiuzhang.dashboard"
 PLUGIN_DIR = ROOT / "plugins" / PLUGIN_ID
 STAGE = stage_source()
-PLUGIN_JS = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
+RAIL_JS = (PLUGIN_DIR / "dist" / "rail.js").read_text(encoding="utf-8")
+PLUGIN_JS = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8") + RAIL_JS
 PLUGIN_CSS = (PLUGIN_DIR / "dist" / "plugin.css").read_text(encoding="utf-8")
 PLUGIN_HTML = (PLUGIN_DIR / "dist" / "index.html").read_text(encoding="utf-8")
 MANIFEST = manifests.load_manifest(PLUGIN_DIR)
@@ -85,8 +86,8 @@ class HostWiringTest(unittest.TestCase):
 
 class NativeDomHygieneTest(unittest.TestCase):
     def test_01_no_iframe_no_framework_no_remote_assets(self) -> None:
-        for name, source in (("plugin.js", PLUGIN_JS), ("index.html", PLUGIN_HTML),
-                             ("plugin.css", PLUGIN_CSS)):
+        for name, source in (("plugin.js", PLUGIN_JS), ("rail.js", RAIL_JS),
+                             ("index.html", PLUGIN_HTML), ("plugin.css", PLUGIN_CSS)):
             self.assertNotIn("<iframe", source.lower(), f"{name} 不得嵌 iframe")
             self.assertNotIn("createElement(\"iframe\"", source, name)
             self.assertNotIn("http://", source, f"{name} 不得引远程资源")
@@ -129,6 +130,14 @@ class DashboardUiContractTest(unittest.TestCase):
         self.assertIn("system.question_updated", PLUGIN_JS)
         self.assertIn("question.updated", PLUGIN_JS)
         self.assertIn("REFRESH_DEBOUNCE_MS", PLUGIN_JS)
+
+    def test_05_assets_are_cache_busted(self) -> None:
+        """index.html 引用一律带 ?v=：浏览器旧缓存不得留下旧右栏。"""
+        self.assertIn("./plugin.css?v=", PLUGIN_HTML)
+        self.assertIn("./plugin.js?v=", PLUGIN_HTML)
+        self.assertIn("./rail.js?v=", PLUGIN_HTML)
+        self.assertNotIn('src="./plugin.js"', PLUGIN_HTML)
+        self.assertNotIn('href="./plugin.css"', PLUGIN_HTML)
 
 
 if __name__ == "__main__":

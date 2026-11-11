@@ -83,83 +83,12 @@
     return node;
   }
 
-  // ---------- 字典小标签（sidebar.right） ----------
-  // 与字典控制台辅助栏同款：三大分类各一排紧凑 Chips，无描述、无折叠卡。
-  // 只渲染一次；点标签只改 aria-pressed，绝不重建 DOM（辅助栏常驻不重绘）。
-  var chips = [];
-
-  function dictState(body, text) {
-    body.textContent = "";
-    body.appendChild(el("p", "db-dict-state", text));
-  }
-
-  function markPressed(categoryKey, table) {
-    chips.forEach(function (entry) {
-      var on = entry.category === categoryKey && entry.table === table;
-      entry.node.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-
-  function openDict(category, item) {
-    call("dict.open", { category: category.key, table: item.table }).then(function (result) {
-      var on = Boolean(result && result.active);
-      markPressed(on ? category.key : "", on ? item.table : "");
-      dock(on
-        ? "画布已原地切到「" + item.name + "」，再点一次该标签返回看板。"
-        : "已收起字典表，画布回到数据看板。");
-    }, function (error) {
-      dock("打开「" + item.name + "」失败：" + error.message);
-    });
-  }
-
-  function buildChipGroup(category) {
-    var group = el("div", "db-chip-group");
-    group.appendChild(el("h3", "db-chip-group-title", category.title.replace(/字典$/, "")));
-
-    var row = el("div", "db-chip-row");
-    row.setAttribute("role", "group");
-    row.setAttribute("aria-label", category.title);
-    category.items.forEach(function (item) {
-      var chip = el("button", "db-chip", item.name);
-      chip.type = "button";
-      chip.setAttribute("aria-pressed", "false");
-      chip.setAttribute("data-dict-table", item.table);
-      chip.setAttribute("aria-label", "在画布原地打开「" + item.name + "」，再点一次返回看板");
-      chip.addEventListener("click", function () { openDict(category, item); });
-      chips.push({ node: chip, category: category.key, table: item.table });
-      row.appendChild(chip);
-    });
-    group.appendChild(row);
-    return group;
-  }
-
-  function renderDictChips(body, categories) {
-    body.textContent = "";
-    chips = [];
-    if (!Array.isArray(categories) || !categories.length) {
-      dictState(body, "字典目录为空，请先完成题库初始化。");
-      return;
-    }
-    var groups = el("div", "db-chip-groups");
-    categories.forEach(function (category) {
-      groups.appendChild(buildChipGroup(category));
-    });
-    body.appendChild(groups);
-  }
-
+  // ---------- 右栏（sidebar.right）：全局设置 + 三大主分类 ----------
+  // 具体渲染在 rail.js：插件不碰浏览器存储，全局设置经宿主 dict.globals_* 通道。
   function buildDictNav() {
     root.textContent = "";
-    var body = el("div", "db-dict-body");
-    body.setAttribute("aria-label", "字典维护");
-    body.appendChild(el("p", "db-dict-state", "正在读取字典分类…"));
-    root.appendChild(body);
+    window.DbRail.mount(root, { call: call, dock: dock, el: el });
     root.hidden = false;
-
-    call("dict.catalog").then(function (result) {
-      renderDictChips(body, result && result.categories);
-    }, function (error) {
-      dictState(body, "字典目录读取失败：" + error.message);
-    });
   }
 
   // ---------- 渲染 ----------
