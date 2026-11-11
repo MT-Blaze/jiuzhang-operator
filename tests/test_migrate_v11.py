@@ -30,7 +30,18 @@ class MigrateV11Test(unittest.TestCase):
         self.conn.close()
         shutil.rmtree(self.tmp, True)
 
+    def _collapse_to_v11_rows(self) -> None:
+        """v11 的唯一口径容不下逐学段同名行：先收成每学科每名一行，模拟真实 v11 库。"""
+        for table in ("dict_subject_thoughts", "dict_solution_methods",
+                      "dict_core_competencies"):
+            self.conn.execute(
+                "DELETE FROM " + table + " WHERE id NOT IN "
+                "(SELECT MIN(id) FROM " + table + " GROUP BY subject_id, name)"
+            )
+        self.conn.commit()
+
     def test_roundtrip_relaxes_unique_and_cleans_names(self) -> None:
+        self._collapse_to_v11_rows()
         migrate_v11.rollback(self.conn)
         self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], 10)
         legacy = self.conn.execute(

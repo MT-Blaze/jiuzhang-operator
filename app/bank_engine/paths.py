@@ -8,7 +8,7 @@ from app.core.config import PROJECT_ROOT, plugins_dir, settings
 
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 ENGINE_DB_FILENAME = f"{PLUGIN_ID}.v2.db"
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def schema_path() -> Path:

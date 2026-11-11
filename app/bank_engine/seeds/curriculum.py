@@ -2,11 +2,13 @@
 
 依据《义务教育课程方案和课程标准（2022 年版）》与《普通高中课程标准
 （2017 年版 2020 年修订）》整理。教研维度的 stage 只允许四个明码值：
-小学 / 初中 / 高中 / 全学段，绝不留空；跨学段通用条目一律标「全学段」。
+小学 / 初中 / 高中 / 全学段，绝不留空。解题方法可用「全学段」；
+学科思想与核心素养按课标逐学段分列，见 ``curriculum_standards.py``。
 """
 
 from __future__ import annotations
 
+from .curriculum_standards import CORE_COMPETENCY_ROWS, SUBJECT_THOUGHT_ROWS
 from .knowledge_seed import KNOWLEDGE_POINT_ROWS
 
 # id / code / name
@@ -59,62 +61,8 @@ STAGE_ALL = "全学段"
 QUESTION_TYPE_CHOICE_ID = 1
 QUESTION_TYPE_SOLUTION_ID = 3
 
-# id / code / name / sort_order / subject_id / stage
-SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
-    (9001, "math_number_shape", "数形结合思想", 1, SUBJECT_MATH_ID, STAGE_ALL),
-    (9002, "math_function_equation", "函数与方程思想", 2, SUBJECT_MATH_ID, STAGE_SENIOR),
-    (9003, "math_transformation", "转化与化归思想", 3, SUBJECT_MATH_ID, STAGE_ALL),
-    (9004, "math_classification", "分类讨论思想", 4, SUBJECT_MATH_ID, STAGE_ALL),
-    (9005, "math_special_general", "特殊与一般思想", 5, SUBJECT_MATH_ID, STAGE_ALL),
-    (9006, "math_function_thought", "函数思想", 6, SUBJECT_MATH_ID, STAGE_ALL),
-    (9007, "math_modeling_thought", "建模思想", 7, SUBJECT_MATH_ID, STAGE_SENIOR),
-    (9008, "math_limit_thought", "极限思想", 8, SUBJECT_MATH_ID, STAGE_SENIOR),
-    (9009, "math_statistics_thought", "统计思想", 9, SUBJECT_MATH_ID, STAGE_ALL),
-    (9010, "math_algorithm_thought", "算法思想", 10, SUBJECT_MATH_ID, STAGE_SENIOR),
-    (9011, "math_holistic_thought", "整体思想", 11, SUBJECT_MATH_ID, STAGE_ALL),
-    (9012, "math_analogy_thought", "类比思想", 12, SUBJECT_MATH_ID, STAGE_ALL),
-    (9013, "math_induction_thought", "归纳思想", 13, SUBJECT_MATH_ID, STAGE_ALL),
-    # 义务教育阶段常用的基本思想：方程、模型、抽象、推理三条为全学段通用口径。
-    (9601, "math_equation_thought", "方程思想", 70, SUBJECT_MATH_ID, STAGE_JUNIOR),
-    (9602, "math_model_thought", "模型思想", 71, SUBJECT_MATH_ID, STAGE_ALL),
-    (9603, "math_abstraction_thought", "抽象思想", 72, SUBJECT_MATH_ID, STAGE_ALL),
-    (9604, "math_reasoning_thought", "推理思想", 73, SUBJECT_MATH_ID, STAGE_ALL),
-    (9605, "math_correspondence_thought", "对应思想", 74, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9606, "math_symbol_thought", "符号思想", 75, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9607, "math_set_thought", "集合思想", 76, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9101, "physics_equivalent_substitution", "等效替代", 1, 4, STAGE_ALL),
-    (9102, "physics_conservation", "守恒思想", 2, 4, STAGE_ALL),
-    (9103, "physics_idealization", "理想化思想", 3, 4, STAGE_ALL),
-    (9104, "physics_symmetry", "对称思想", 4, 4, STAGE_ALL),
-    (9110, "physics_infinitesimal_thought", "微元思想", 5, 4, STAGE_ALL),
-    (9111, "physics_limit_thought", "极限思想", 6, 4, STAGE_ALL),
-    (9112, "physics_number_shape_thought", "数形结合思想", 7, 4, STAGE_ALL),
-    (9113, "physics_control_variable_thought", "控制变量思想", 8, 4, STAGE_ALL),
-    (9114, "physics_conversion_thought", "转换思想", 9, 4, STAGE_ALL),
-    (9115, "physics_analogy_thought", "类比思想", 10, 4, STAGE_ALL),
-    (9116, "physics_system_thought", "系统思想", 11, 4, STAGE_ALL),
-    (9117, "physics_modeling_thought", "建模思想", 12, 4, STAGE_ALL),
-    # 初中物理起步阶段就要求建立的两种思想。
-    (9641, "physics_model_construction_thought", "模型建构思想", 70, 4, STAGE_JUNIOR),
-    (9642, "physics_experiment_thought", "实验思想", 71, 4, STAGE_JUNIOR),
-    (9201, "chem_macro_micro", "宏微结合", 1, 5, STAGE_ALL),
-    (9202, "chem_change_conservation", "变化守恒", 2, 5, STAGE_ALL),
-    (9203, "chem_classification", "分类思想", 3, 5, STAGE_ALL),
-    (9204, "chem_structure_property", "结构决定性质", 4, 5, STAGE_ALL),
-    (9205, "chem_equilibrium", "平衡思想", 5, 5, STAGE_ALL),
-    (9301, "chinese_unity", "文道统一", 1, 1, STAGE_ALL),
-    (9302, "chinese_context", "情境体验", 2, 1, STAGE_ALL),
-    (9303, "chinese_reading_writing", "读写结合", 3, 1, STAGE_ALL),
-    (9304, "chinese_immersion", "涵泳品味", 4, 1, STAGE_ALL),
-    (9401, "english_discourse", "语篇意识", 1, 3, STAGE_ALL),
-    (9402, "english_cross_culture", "跨文化交际", 2, 3, STAGE_ALL),
-    (9403, "english_situational", "情境交际", 3, 3, STAGE_ALL),
-    (9404, "english_pragmatic", "语用意识", 4, 3, STAGE_ALL),
-    (9501, "bio_structure_function", "结构与功能观", 1, 6, STAGE_ALL),
-    (9502, "bio_evolution_adaptation", "进化与适应观", 2, 6, STAGE_ALL),
-    (9503, "bio_homeostasis", "稳态与平衡观", 3, 6, STAGE_ALL),
-    (9504, "bio_matter_energy", "物质与能量观", 4, 6, STAGE_ALL),
-)
+# 学科思想与核心素养的课标原文清单见 curriculum_standards.py，
+# 本文件只负责其余基础字典与解题方法。
 
 # id / code / name / sort_order / subject_id / stage
 SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
@@ -298,105 +246,6 @@ SOLUTION_METHOD_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
     (9403, "english_context_guessing", "语境猜词法", 3, 3, STAGE_ALL),
     (9404, "english_word_formation", "构词法", 4, 3, STAGE_ALL),
     (9405, "english_discourse_analysis", "语篇分析法", 5, 3, STAGE_ALL),
-)
-
-# id / code / name / sort_order / subject_id / stage
-CORE_COMPETENCY_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
-    (9001, "math_abstraction", "数学抽象", 1, SUBJECT_MATH_ID, STAGE_ALL),
-    (9002, "math_logical_reasoning", "逻辑推理", 2, SUBJECT_MATH_ID, STAGE_ALL),
-    (9003, "math_modeling", "数学建模", 3, SUBJECT_MATH_ID, STAGE_ALL),
-    (9004, "math_intuitive_imagination", "直观想象", 4, SUBJECT_MATH_ID, STAGE_ALL),
-    (9005, "math_operation", "数学运算", 5, SUBJECT_MATH_ID, STAGE_ALL),
-    (9006, "math_data_analysis", "数据分析", 6, SUBJECT_MATH_ID, STAGE_ALL),
-    # 义务教育数学课标（2022 年版）11 个核心素养表现，小学、初中分列。
-    (9631, "math_operation_ability", "运算能力", 70, SUBJECT_MATH_ID, STAGE_ALL),
-    (9632, "math_geometric_intuition", "几何直观", 71, SUBJECT_MATH_ID, STAGE_ALL),
-    (9633, "math_spatial_concept", "空间观念", 72, SUBJECT_MATH_ID, STAGE_ALL),
-    (9634, "math_application_awareness", "应用意识", 73, SUBJECT_MATH_ID, STAGE_ALL),
-    (9635, "math_innovation_awareness", "创新意识", 74, SUBJECT_MATH_ID, STAGE_ALL),
-    (9641, "math_abstraction_ability", "抽象能力", 75, SUBJECT_MATH_ID, STAGE_JUNIOR),
-    (9642, "math_reasoning_ability", "推理能力", 76, SUBJECT_MATH_ID, STAGE_JUNIOR),
-    (9643, "math_data_concept", "数据观念", 77, SUBJECT_MATH_ID, STAGE_JUNIOR),
-    (9644, "math_model_concept", "模型观念", 78, SUBJECT_MATH_ID, STAGE_JUNIOR),
-    (9651, "math_number_sense", "数感", 79, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9652, "math_quantity_sense", "量感", 80, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9653, "math_symbol_awareness", "符号意识", 81, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9654, "math_reasoning_awareness", "推理意识", 82, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9655, "math_data_awareness", "数据意识", 83, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9656, "math_model_awareness", "模型意识", 84, SUBJECT_MATH_ID, STAGE_PRIMARY),
-    (9101, "physics_concept", "物理观念", 1, 4, STAGE_ALL),
-    (9102, "physics_scientific_thinking", "科学思维", 2, 4, STAGE_ALL),
-    (9103, "physics_inquiry", "科学探究", 3, 4, STAGE_ALL),
-    (9104, "physics_attitude", "科学态度与责任", 4, 4, STAGE_ALL),
-    (9110, "physics_matter_concept", "物质观念", 5, 4, STAGE_ALL),
-    (9111, "physics_motion_interaction_concept", "运动与相互作用观念", 6, 4, STAGE_ALL),
-    (9112, "physics_energy_concept", "能量观念", 7, 4, STAGE_ALL),
-    (9113, "physics_model_construction", "模型建构", 8, 4, STAGE_ALL),
-    (9114, "physics_scientific_reasoning", "科学推理", 9, 4, STAGE_ALL),
-    (9115, "physics_scientific_argumentation", "科学论证", 10, 4, STAGE_ALL),
-    (9116, "physics_questioning_innovation", "质疑创新", 11, 4, STAGE_ALL),
-    (9117, "physics_raising_questions", "提出问题", 12, 4, STAGE_ALL),
-    (9118, "physics_obtaining_evidence", "获取证据", 13, 4, STAGE_ALL),
-    (9119, "physics_making_explanation", "作出解释", 14, 4, STAGE_ALL),
-    (9120, "physics_expression_communication", "表达交流", 15, 4, STAGE_ALL),
-    (9121, "physics_nature_of_science", "科学本质", 16, 4, STAGE_ALL),
-    (9122, "physics_scientific_attitude", "科学态度", 17, 4, STAGE_ALL),
-    (9123, "physics_social_responsibility", "社会责任", 18, 4, STAGE_ALL),
-    (9201, "chem_macro_micro_analysis", "宏观辨识与微观探析", 1, 5, STAGE_ALL),
-    (9202, "chem_change_equilibrium", "变化观念与平衡思想", 2, 5, STAGE_ALL),
-    (9203, "chem_evidence_model", "证据推理与模型认知", 3, 5, STAGE_ALL),
-    (9204, "chem_inquiry_innovation", "科学探究与创新意识", 4, 5, STAGE_ALL),
-    (9205, "chem_social_responsibility", "科学态度与社会责任", 5, 5, STAGE_ALL),
-    (9301, "chinese_cultural_confidence", "文化自信", 1, 1, STAGE_ALL),
-    (9302, "chinese_language_use", "语言运用", 2, 1, STAGE_ALL),
-    (9303, "chinese_thinking", "思维能力", 3, 1, STAGE_ALL),
-    (9304, "chinese_aesthetic_creation", "审美创造", 4, 1, STAGE_ALL),
-    (9401, "english_language_ability", "语言能力", 1, 3, STAGE_ALL),
-    (9402, "english_cultural_awareness", "文化意识", 2, 3, STAGE_ALL),
-    (9403, "english_thinking_quality", "思维品质", 3, 3, STAGE_ALL),
-    (9404, "english_learning_ability", "学习能力", 4, 3, STAGE_ALL),
-    (9501, "bio_life_concept", "生命观念", 1, 6, STAGE_ALL),
-    (9502, "bio_scientific_thinking", "科学思维", 2, 6, STAGE_ALL),
-    (9503, "bio_inquiry", "科学探究", 3, 6, STAGE_ALL),
-    (9504, "bio_social_responsibility", "社会责任", 4, 6, STAGE_ALL),
-    (9601, "politics_identity", "政治认同", 1, 7, STAGE_ALL),
-    (9602, "politics_scientific_spirit", "科学精神", 2, 7, STAGE_ALL),
-    (9603, "politics_rule_of_law", "法治意识", 3, 7, STAGE_ALL),
-    (9604, "politics_public_participation", "公共参与", 4, 7, STAGE_ALL),
-    (9701, "history_materialism", "唯物史观", 1, 8, STAGE_ALL),
-    (9702, "history_time_space", "时空观念", 2, 8, STAGE_ALL),
-    (9703, "history_evidence", "史料实证", 3, 8, STAGE_ALL),
-    (9704, "history_interpretation", "历史解释", 4, 8, STAGE_ALL),
-    (9705, "history_patriotism", "家国情怀", 5, 8, STAGE_ALL),
-    (9801, "geography_human_nature", "人地协调观", 1, 9, STAGE_ALL),
-    (9802, "geography_comprehensive_thinking", "综合思维", 2, 9, STAGE_ALL),
-    (9803, "geography_regional_cognition", "区域认知", 3, 9, STAGE_ALL),
-    (9804, "geography_practice", "地理实践力", 4, 9, STAGE_ALL),
-    (9901, "it_awareness", "信息意识", 1, 11, STAGE_ALL),
-    (9902, "it_computational_thinking", "计算思维", 2, 11, STAGE_ALL),
-    (9903, "it_digital_innovation", "数字化学习与创新", 3, 11, STAGE_ALL),
-    (9904, "it_social_responsibility", "信息社会责任", 4, 11, STAGE_ALL),
-    (9911, "pe_movement_ability", "运动能力", 1, 12, STAGE_ALL),
-    (9912, "pe_health_behavior", "健康行为", 2, 12, STAGE_ALL),
-    (9913, "pe_sports_morality", "体育品德", 3, 12, STAGE_ALL),
-    (9921, "labor_concept", "劳动观念", 1, 15, STAGE_ALL),
-    (9922, "labor_ability", "劳动能力", 2, 15, STAGE_ALL),
-    (9923, "labor_habit_quality", "劳动习惯和品质", 3, 15, STAGE_ALL),
-    (9924, "labor_spirit", "劳动精神", 4, 15, STAGE_ALL),
-    # 同名课标条目按 (subject_id, name) 联合唯一，不再给名称加学科后缀。
-    (9951, "science_concept", "科学观念", 1, 10, STAGE_ALL),
-    (9952, "science_thinking", "科学思维", 2, 10, STAGE_ALL),
-    (9953, "science_inquiry", "探究实践", 3, 10, STAGE_ALL),
-    (9954, "science_attitude", "态度责任", 4, 10, STAGE_ALL),
-    (9961, "music_aesthetic_perception", "审美感知", 1, 13, STAGE_ALL),
-    (9962, "music_artistic_expression", "艺术表现", 2, 13, STAGE_ALL),
-    (9963, "music_creative_practice", "创意实践", 3, 13, STAGE_ALL),
-    (9964, "music_cultural_understanding", "文化理解", 4, 13, STAGE_ALL),
-    (9971, "art_image_reading", "图像识读", 1, 14, STAGE_ALL),
-    (9972, "art_artistic_expression", "美术表现", 2, 14, STAGE_ALL),
-    (9973, "art_aesthetic_judgment", "审美判断", 3, 14, STAGE_ALL),
-    (9974, "art_creative_practice", "创意实践", 4, 14, STAGE_ALL),
-    (9975, "art_cultural_understanding", "文化理解", 5, 14, STAGE_ALL),
 )
 
 CURRICULUM_COUNTS: dict[str, int] = {

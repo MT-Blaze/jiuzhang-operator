@@ -114,7 +114,9 @@ class ConsoleServiceTest(unittest.TestCase):
             limit=200,
             db_path=self.db_path,
         )
-        self.assertIn("数形结合思想", {item.name for item in thoughts})
+        thought_names = {item.name for item in thoughts}
+        self.assertIn("数形结合", thought_names)
+        self.assertIn("数学抽象", thought_names)
 
         primary_methods, _ = service.console_list(
             "dict_solution_methods",
@@ -162,17 +164,14 @@ class ConsoleServiceTest(unittest.TestCase):
                      "控制变量法", "实验探究法", "对称法", "极限思维法"):
             self.assertIn(name, method_names)
 
-        thoughts, thought_total = service.console_list(
+        # 课标没有给物理单列「学科思想」清单，本表宁缺毋滥，不写自造术语。
+        _, thought_total = service.console_list(
             "dict_subject_thoughts",
             filters={"stage": "高中", "subject_id": 4},
             limit=200,
             db_path=self.db_path,
         )
-        thought_names = {item.name for item in thoughts}
-        self.assertGreaterEqual(thought_total, 10)
-        for name in ("守恒思想", "微元思想", "等效替代", "对称思想",
-                     "数形结合思想", "系统思想"):
-            self.assertIn(name, thought_names)
+        self.assertEqual(thought_total, 0)
 
         competencies, competency_total = service.console_list(
             "dict_core_competencies",
@@ -181,13 +180,11 @@ class ConsoleServiceTest(unittest.TestCase):
             db_path=self.db_path,
         )
         competency_names = {item.name for item in competencies}
-        self.assertGreaterEqual(competency_total, 14)
-        for name in ("物理观念", "科学思维", "科学探究", "科学态度与责任",
-                     "物质观念", "运动与相互作用观念", "能量观念",
-                     "模型建构", "科学推理", "科学论证", "质疑创新",
-                     "提出问题", "获取证据", "作出解释", "表达交流",
-                     "科学本质", "科学态度", "社会责任"):
-            self.assertIn(name, competency_names)
+        self.assertEqual(competency_total, 4)
+        self.assertEqual(
+            competency_names,
+            {"物理观念", "科学思维", "科学探究", "科学态度与责任"},
+        )
 
     def test_junior_and_primary_math_teaching_dicts_are_complete(self) -> None:
         junior_methods, junior_total = service.console_list(
@@ -224,11 +221,8 @@ class ConsoleServiceTest(unittest.TestCase):
             limit=200,
             db_path=self.db_path,
         )
-        junior_thought_names = {item.name for item in junior_thoughts}
-        self.assertGreaterEqual(junior_thought_total, 8)
-        for name in ("方程思想", "函数思想", "转化与化归思想", "分类讨论思想",
-                     "数形结合思想", "整体思想", "类比思想", "模型思想"):
-            self.assertIn(name, junior_thought_names)
+        self.assertEqual(junior_thought_total, 1)
+        self.assertEqual({item.name for item in junior_thoughts}, {"数形结合"})
 
         primary_thoughts, primary_thought_total = service.console_list(
             "dict_subject_thoughts",
@@ -236,11 +230,8 @@ class ConsoleServiceTest(unittest.TestCase):
             limit=200,
             db_path=self.db_path,
         )
-        primary_thought_names = {item.name for item in primary_thoughts}
-        self.assertGreaterEqual(primary_thought_total, 6)
-        for name in ("数形结合思想", "转化与化归思想", "对应思想",
-                     "模型思想", "分类讨论思想", "符号思想"):
-            self.assertIn(name, primary_thought_names)
+        self.assertEqual(primary_thought_total, 1)
+        self.assertEqual({item.name for item in primary_thoughts}, {"数形结合"})
 
         junior_core, junior_core_total = service.console_list(
             "dict_core_competencies",
@@ -249,10 +240,12 @@ class ConsoleServiceTest(unittest.TestCase):
             db_path=self.db_path,
         )
         junior_core_names = {item.name for item in junior_core}
-        self.assertGreaterEqual(junior_core_total, 9)
-        for name in ("抽象能力", "运算能力", "几何直观", "空间观念", "推理能力",
-                     "数据观念", "模型观念", "应用意识", "创新意识"):
-            self.assertIn(name, junior_core_names)
+        self.assertEqual(junior_core_total, 9)
+        self.assertEqual(
+            junior_core_names,
+            {"抽象能力", "运算能力", "几何直观", "空间观念", "推理能力",
+             "数据观念", "模型观念", "应用意识", "创新意识"},
+        )
 
         primary_core, primary_core_total = service.console_list(
             "dict_core_competencies",
@@ -261,11 +254,13 @@ class ConsoleServiceTest(unittest.TestCase):
             db_path=self.db_path,
         )
         primary_core_names = {item.name for item in primary_core}
-        self.assertGreaterEqual(primary_core_total, 11)
-        for name in ("数感", "量感", "符号意识", "运算能力", "几何直观",
-                     "空间观念", "推理意识", "数据意识", "模型意识",
-                     "应用意识", "创新意识"):
-            self.assertIn(name, primary_core_names)
+        self.assertEqual(primary_core_total, 11)
+        self.assertEqual(
+            primary_core_names,
+            {"数感", "量感", "符号意识", "运算能力", "几何直观",
+             "空间观念", "推理意识", "数据意识", "模型意识",
+             "应用意识", "创新意识"},
+        )
 
     def test_junior_physics_teaching_dicts_are_complete(self) -> None:
         methods, method_total = service.console_list(
@@ -282,17 +277,13 @@ class ConsoleServiceTest(unittest.TestCase):
                      "假设法", "逆向思维法", "模型法", "估算法"):
             self.assertIn(name, method_names)
 
-        thoughts, thought_total = service.console_list(
+        _, thought_total = service.console_list(
             "dict_subject_thoughts",
             filters={"stage": "初中", "subject_id": 4},
             limit=200,
             db_path=self.db_path,
         )
-        thought_names = {item.name for item in thoughts}
-        self.assertGreaterEqual(thought_total, 8)
-        for name in ("守恒思想", "等效替代", "转换思想", "控制变量思想",
-                     "理想化思想", "类比思想", "模型建构思想", "数形结合思想"):
-            self.assertIn(name, thought_names)
+        self.assertEqual(thought_total, 0)
 
         competencies, competency_total = service.console_list(
             "dict_core_competencies",
@@ -301,11 +292,11 @@ class ConsoleServiceTest(unittest.TestCase):
             db_path=self.db_path,
         )
         competency_names = {item.name for item in competencies}
-        self.assertGreaterEqual(competency_total, 14)
-        for name in ("物理观念", "物质观念", "运动与相互作用观念", "能量观念",
-                     "科学思维", "模型建构", "科学推理", "科学论证",
-                     "质疑创新", "科学探究", "科学态度与责任"):
-            self.assertIn(name, competency_names)
+        self.assertEqual(competency_total, 4)
+        self.assertEqual(
+            competency_names,
+            {"物理观念", "科学思维", "科学探究", "科学态度与责任"},
+        )
 
     def test_same_name_across_subjects_is_not_a_conflict(self) -> None:
         same_names = {}
@@ -322,23 +313,24 @@ class ConsoleServiceTest(unittest.TestCase):
         self.assertIn("估算法", same_names[2])
         self.assertIn("估算法", same_names[4])
 
-        thoughts = {}
-        for subject_id in (2, 4):
-            items, _ = service.console_list(
-                "dict_subject_thoughts",
-                filters={"subject_id": subject_id},
-                limit=200,
-                db_path=self.db_path,
-            )
-            thoughts[subject_id] = {item.name for item in items}
-        self.assertIn("数形结合思想", thoughts[2])
-        self.assertIn("数形结合思想", thoughts[4])
+        # 同一课标名称在不同学段各成一行：物理观念 初中 / 高中并存。
+        physics_competencies, _ = service.console_list(
+            "dict_core_competencies",
+            filters={"subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        physics_stages = {
+            item.stage for item in physics_competencies if item.name == "物理观念"
+        }
+        self.assertEqual(physics_stages, {"初中", "高中"})
 
         for table in ("dict_solution_methods", "dict_subject_thoughts",
                       "dict_core_competencies"):
-            items, _ = service.console_list(table, limit=200, db_path=self.db_path)
-            pairs = [(item.subject_id, item.name) for item in items]
-            self.assertEqual(len(pairs), len(set(pairs)), table)
+            items, total = service.console_list(table, limit=200, db_path=self.db_path)
+            self.assertEqual(len(items), total, table)
+            keys = [(item.subject_id, item.name, item.stage) for item in items]
+            self.assertEqual(len(keys), len(set(keys)), table)
 
     def test_core_names_have_no_subject_suffix(self) -> None:
         items, _ = service.console_list(
@@ -348,10 +340,11 @@ class ConsoleServiceTest(unittest.TestCase):
                  or "（科学）" in item.name or "（美术）" in item.name]
         self.assertEqual(dirty, [])
 
-    def test_name_is_unique_per_subject_not_globally(self) -> None:
+    def test_name_is_unique_per_subject_and_stage(self) -> None:
         first = service.console_insert(
             "dict_core_competencies",
-            {"name": "验收同名素养", "code": "zz_core_same_a", "subject_id": 1},
+            {"name": "验收同名素养", "code": "zz_core_same_a",
+             "subject_id": 1, "stage": "小学"},
             db_path=self.db_path,
         )
         self.addCleanup(
@@ -359,16 +352,27 @@ class ConsoleServiceTest(unittest.TestCase):
         )
         second = service.console_insert(
             "dict_core_competencies",
-            {"name": "验收同名素养", "code": "zz_core_same_b", "subject_id": 2},
+            {"name": "验收同名素养", "code": "zz_core_same_b",
+             "subject_id": 1, "stage": "初中"},
             db_path=self.db_path,
         )
         self.addCleanup(
             service.console_delete, "dict_core_competencies", second.id, db_path=self.db_path
         )
+        third = service.console_insert(
+            "dict_core_competencies",
+            {"name": "验收同名素养", "code": "zz_core_same_c",
+             "subject_id": 2, "stage": "小学"},
+            db_path=self.db_path,
+        )
+        self.addCleanup(
+            service.console_delete, "dict_core_competencies", third.id, db_path=self.db_path
+        )
         with self.assertRaises(dao_console.ConflictError):
             service.console_insert(
                 "dict_core_competencies",
-                {"name": "验收同名素养", "code": "zz_core_same_c", "subject_id": 1},
+                {"name": "验收同名素养", "code": "zz_core_same_d",
+                 "subject_id": 1, "stage": "小学"},
                 db_path=self.db_path,
             )
 
@@ -383,6 +387,10 @@ class ConsoleServiceTest(unittest.TestCase):
             self.assertTrue(
                 all(item.stage in dao_console.STAGE_VALUES for item in items), table
             )
+        # 课标清单必须逐学段分列，学科思想与核心素养零「全学段」。
+        for table in ("dict_subject_thoughts", "dict_core_competencies"):
+            items, _ = service.console_list(table, limit=200, db_path=self.db_path)
+            self.assertNotIn("全学段", {item.stage for item in items}, table)
 
     def test_stage_insert_defaults_to_all_and_rejects_bad_value(self) -> None:
         row = service.console_insert(

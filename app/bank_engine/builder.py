@@ -17,6 +17,7 @@ from app.bank_engine import (
     migrate_legacy,
     migrate_v10,
     migrate_v11,
+    migrate_v12,
     migrate_v7,
     migrate_v8,
     migrate_v9,
@@ -127,7 +128,7 @@ def _backup_invalid(path: Path) -> Path | None:
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version not in (2, 3, 4, 5, 6, 7, 8, 9, 10):
+    if version not in (2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
     if version < 6:
         migrate_legacy.run(conn, version)
@@ -143,6 +144,8 @@ def migrate(conn: sqlite3.Connection, version: int) -> bool:
         migrate_v10.upgrade(conn)
     if version < 11:
         migrate_v11.upgrade(conn)
+    if version < 12:
+        migrate_v12.upgrade(conn)
     return True
 
 

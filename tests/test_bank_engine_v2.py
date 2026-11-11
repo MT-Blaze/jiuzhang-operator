@@ -447,7 +447,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 36)
         self.assertEqual(len(builder.BASE_TABLES), 36)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 11)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 12)
         self.assertIn("dim_textbook_versions", body)
         self.assertNotIn("dim_sources", body)
         self.assertIn("tikz_code", body)
@@ -477,7 +477,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
             block = ddl(table)
             self.assertIn("stage      TEXT NOT NULL", block, table)
             self.assertIn("CHECK (stage IN ('小学', '初中', '高中', '全学段'))", block, table)
-            self.assertIn("UNIQUE (subject_id, name)", block, table)
+            self.assertIn("UNIQUE (subject_id, name, stage)", block, table)
             self.assertIn(f"ix_{table}_stage", body)
 
 

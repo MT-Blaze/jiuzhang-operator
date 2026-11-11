@@ -34,6 +34,8 @@ from app.bank_engine import (  # noqa: E402
     dao_console,
     dao_linkage,
     migrate_v10,
+    migrate_v11,
+    migrate_v12,
     migrate_v7,
     migrate_v8,
     migrate_v9,
@@ -71,8 +73,8 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    def test_fresh_build_is_v11_with_versions(self) -> None:
-        self.assertEqual(self._version(), 11)
+    def test_fresh_build_is_v12_with_versions(self) -> None:
+        self.assertEqual(self._version(), 12)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
@@ -97,6 +99,8 @@ class MigrationTest(unittest.TestCase):
         if backup.exists():
             backup.unlink()
         with service.session(self.db_path) as conn:
+            migrate_v12.rollback(conn)
+            migrate_v11.rollback(conn)
             migrate_v10.rollback(conn)
             migrate_v9.rollback(conn)
             migrate_v8.rollback(conn)
@@ -108,7 +112,7 @@ class MigrationTest(unittest.TestCase):
         self.assertNotIn("version_id", self._columns("dim_textbooks"))
         report = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.assertFalse(report.created)
-        self.assertEqual(self._version(), 11)
+        self.assertEqual(self._version(), 12)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
