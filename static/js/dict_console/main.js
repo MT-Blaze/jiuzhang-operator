@@ -1,8 +1,8 @@
 /**
  * 控制台装配：全局设置 → 页签管理器 → 辅助栏 → 默认【数据看板】。
  * 分类页签经 openCategory 统一开口：已存在直接激活，不存在才新开（阶段一交互核心）。
- * 内嵌模式（?embedded=1&cat=xxx）：作为工作台画布页签时只渲染指定分类，
- * 顶栏/辅助栏/页签条由工作台接管，这里不再重复画一份。
+ * 内嵌模式（?embedded=1&cat=xxx）：作为工作台画布的原地层时只渲染指定分类，
+ * 顶栏/辅助栏/页签条由工作台接管，这里不再重复画一份；换表走 window.DcEmbedded.go。
  * 二级标签状态：URL 的 cat/sub 参数 + localStorage 双写，刷新后停在原标签。
  */
 (function () {
@@ -48,9 +48,11 @@
     if (embedded) document.body.classList.add("dc-embedded");
 
     var subMemory = readSubMemory();
+    var subTabs = {};   // 分类 key -> 二级标签句柄，供内嵌模式原地换表
 
     var ctx = {
       globals: window.DcGlobals,
+      registerSubTabs: function (categoryKey, handle) { subTabs[categoryKey] = handle; },
       subFor: function (categoryKey) {
         var routed = params.get("cat") === categoryKey ? params.get("sub") : "";
         return routed || subMemory[categoryKey] || "";
@@ -111,6 +113,18 @@
       tabs.open("dashboard", "数据看板", function (panel, tab) {
         window.DcPanels.renderDashboard(panel, tab, ctx);
       }, { pinned: true });
+    }
+
+    // 内嵌模式的原地路由：工作台画布点右栏小标签时走这里换表，不重载本文档。
+    if (embedded) {
+      window.DcEmbedded = {
+        go: function (categoryKey, subKey) {
+          if (!window.DcCatalog.byKey(categoryKey)) return false;
+          ctx.openCategory(categoryKey);
+          if (subKey && subTabs[categoryKey]) subTabs[categoryKey].activate(subKey);
+          return true;
+        }
+      };
     }
 
     window.DcGlobals.init({

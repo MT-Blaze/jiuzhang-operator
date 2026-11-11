@@ -16,6 +16,8 @@
   <link rel="stylesheet" href="/static/css/workspace_overlay.css" />
   <!-- 多用户切换（2026-11-05）：独立一份样式，整块功能下架时删掉本行与 ws_users.js 即可 -->
   <link rel="stylesheet" href="/static/css/ws_users.css" />
+  <!-- 字典页原地层（2026-11-11）：整块下架删本行与 stage_dict_view.js 即可 -->
+  <link rel="stylesheet" href="/static/css/workspace_dict_inplace.css" />
 </head>
 <body>
   <div class="ws-page">
@@ -234,8 +236,6 @@
   <script src="/static/js/contextmenu.js"></script>
   <script src="/static/js/splitpane.js"></script>
   <script src="/static/js/stage_frame.js"></script>
-  <!-- 宿主自有 iframe 页签（数据字典等）：同源装载，不覆盖现有看板/录题页签 -->
-  <script src="/static/js/stage_frame_open.js"></script>
   <script src="/static/js/stage_command.js"></script>
   <script src="/static/js/stage_http.js"></script>
   <script src="/static/js/stage_draft.js"></script>
@@ -244,6 +244,8 @@
   <script src="/static/js/stage_tabbar.js"></script>
   <script src="/static/js/stage_inbound.js"></script>
   <script src="/static/js/stage_dict.js"></script>
+  <!-- 字典页原地层：字典表铺进当前画布，不再新开页签（右栏因此不重挂） -->
+  <script src="/static/js/stage_dict_view.js"></script>
   <script src="/static/js/stage_relay_agent.js"></script>
   <script src="/static/js/stage.js"></script>
   <script src="/static/js/context_panel.js"></script>

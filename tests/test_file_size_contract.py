@@ -42,9 +42,9 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_columns.js": 786,
     "app/core/pending_dedupe.py": 783,
     "plugins/org.jiuzhang.editor/dist/ui_split_board.js": 779,
+    "static/js/stage.js": 774,
     "app/core/pending_pool.py": 773,
     "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
-    "static/js/stage.js": 775,
     "static/css/settings.css": 748,
     "plugins/org.jiuzhang.editor/dist/layout.css": 746,
     "app/core/plugin_update.py": 742,
@@ -227,10 +227,15 @@ class HostAssetWiringTest(unittest.TestCase):
         order = []
         for page in self.PAGES:
             text = (ROOT / page).read_text(encoding="utf-8")
-            listed |= set(re.findall(r'<script src="/static/js/([^"]+)"', text))
-            listed |= set(re.findall(r'<link rel="stylesheet" href="/static/css/([^"]+)"', text))
-            order.append([s for s in re.findall(r'<script src="/static/js/([^"]+)"', text)])
+            # 引用可能带 ?v= 缓存版本号，落盘比对只认路径部分
+            listed |= {self.bare(v) for v in re.findall(r'<script src="/static/js/([^"]+)"', text)}
+            listed |= {self.bare(v) for v in re.findall(r'<link rel="stylesheet" href="/static/css/([^"]+)"', text)}
+            order.append([self.bare(s) for s in re.findall(r'<script src="/static/js/([^"]+)"', text)])
         return listed, order
+
+    @staticmethod
+    def bare(src: str) -> str:
+        return src.split("?", 1)[0].split("#", 1)[0]
 
     def test_01_every_host_asset_is_loaded(self) -> None:
         listed, _ = self.page_assets()

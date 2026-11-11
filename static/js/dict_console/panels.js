@@ -122,7 +122,7 @@
   function renderCategory(panel, tab, ctx, category) {
     panel.textContent = "";
     var subs = window.DcCatalog.subsOf(category);
-    window.DcSubTabs.mount(panel, {
+    var handle = window.DcSubTabs.mount(panel, {
       idPrefix: category.key,
       label: category.title + "二级标签",
       items: subs.map(function (sub) {
@@ -137,6 +137,7 @@
         if (typeof ctx.rememberSub === "function") ctx.rememberSub(category.key, subKey);
       }
     });
+    if (typeof ctx.registerSubTabs === "function") ctx.registerSubTabs(category.key, handle);
   }
 
   /** 单字典页签：只挂这一张表 / 一棵树 / 一组联动，不经过二级标签。 */

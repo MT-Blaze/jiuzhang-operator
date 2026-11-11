@@ -639,7 +639,7 @@ frontend = "dist/index.html"
 | `layout.model_status` | 本地 YOLO 模型仓库快照 | 只读；返回 `{hardware:{ready,providers,gpu,hardware_label}, models:{full,quantized:{present,version,label,display_size,bytes,min_bytes}}, download}`。不出网、不碰库，插件据此决定是否弹下载窗与播报哪一路硬件 |
 | `layout.model_download` | 按需下载本地 YOLO 模型 | 需 `questions:write`；`payload.kind` 只认 `full` / `quantized`，下载地址只来自插件目录 `model_config.toml` 的镜像，**请求体不能带 URL**；必须由界面点击发起，禁止启动时自动拉取；先写 `.tmp`，只有大小达到 `min_bytes` 且与 `Content-Length` 一致才原子改名为 `.onnx`，半截文件直接丢弃；后台线程落盘到当前工作区 `plugins/org.jiuzhang.editor/models/`，失败零残留。模型目录与 `.onnx` 等后缀一律不进插件发行包（打包硬上限 10MB） |
 | `dict.catalog` | 字典导航分类目录 | 只读宿主已加载的 `DcCatalog`，返回分类键、标题、说明与表清单；不碰库、不出网 |
-| `dict.open` | 打开某类字典页签 | `payload.category` 只认目录里已知的分类键；宿主打开自有的 `/dict?embedded=1&cat=…` 画布页签，插件不能传 URL，也拿不到字典页 DOM |
+| `dict.open` | 把某张字典表原地铺进当前画布 | `payload.category` 只认目录里已知的分类键，`payload.table` 可选、给了就必须是该分类下的表名（缺省取该分类第一个二级标签）。宿主在**当前页签面板内**叠一层自有的 `/dict?embedded=1&cat=…&sub=…`，**不新开画布页签**；再点同一枚标签即收起该层、画布回到原插件。返回 `{key, title, active, category, table}`，`active=false` 表示本次是收起。插件不能传 URL，也拿不到字典页 DOM |
 
 安全边界：
 

@@ -1,9 +1,10 @@
 /**
  * 数据看板插件：四张数据卡片 + 365 天绿格子热力图 + 最近录入 5 题。
  *
- * 画布（stage.center）画战绩；右栏（sidebar.right）画本插件专属的字典维护导航。
+ * 画布（stage.center）画战绩；右栏（sidebar.right）铺本插件专属的字典小标签。
  * 全部原生 DOM 渲染，无框架、无 iframe、无远程资源；数据只走宿主开放的只读通道
  * bank.dashboard_stats / bank.dashboard_heatmap 与 dict.catalog / dict.open。
+ * 点小标签由宿主把字典表原地铺进当前画布，再点同一枚即收回看板——不新开页签。
  * 点击最近题目发 system.open_editor 通知，由宿主打开录题工作台并载入该题——插件之间不直连。
  */
 (function () {
@@ -82,94 +83,80 @@
     return node;
   }
 
-  // ---------- 字典导航（sidebar.right） ----------
+  // ---------- 字典小标签（sidebar.right） ----------
+  // 与字典控制台辅助栏同款：三大分类各一排紧凑 Chips，无描述、无折叠卡。
+  // 只渲染一次；点标签只改 aria-pressed，绝不重建 DOM（辅助栏常驻不重绘）。
+  var chips = [];
+
   function dictState(body, text) {
     body.textContent = "";
     body.appendChild(el("p", "db-dict-state", text));
   }
 
-  function openCategory(category) {
-    call("dict.open", { category: category.key }).then(function () {
-      dock("已打开「" + category.title + "」字典页签。");
+  function markPressed(categoryKey, table) {
+    chips.forEach(function (entry) {
+      var on = entry.category === categoryKey && entry.table === table;
+      entry.node.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  function openDict(category, item) {
+    call("dict.open", { category: category.key, table: item.table }).then(function (result) {
+      var on = Boolean(result && result.active);
+      markPressed(on ? category.key : "", on ? item.table : "");
+      dock(on
+        ? "画布已原地切到「" + item.name + "」，再点一次该标签返回看板。"
+        : "已收起字典表，画布回到数据看板。");
     }, function (error) {
-      dock("打开「" + category.title + "」失败：" + error.message);
+      dock("打开「" + item.name + "」失败：" + error.message);
     });
   }
 
-  function buildCategory(category) {
-    var card = el("div", "db-dict-cat");
-    var head = el("div", "db-dict-cat-head");
+  function buildChipGroup(category) {
+    var group = el("div", "db-chip-group");
+    group.appendChild(el("h3", "db-chip-group-title", category.title.replace(/字典$/, "")));
 
-    var openBtn = el("button", "db-dict-cat-open");
-    openBtn.type = "button";
-    openBtn.setAttribute("data-dict-cat", category.key);
-    openBtn.setAttribute("aria-label", "在画布新开「" + category.title + "」页签");
-    openBtn.appendChild(el("span", "db-dict-cat-name", category.title));
-    openBtn.appendChild(el("span", "db-dict-cat-count", category.items.length + " 张表"));
-    openBtn.addEventListener("click", function () { openCategory(category); });
-    head.appendChild(openBtn);
-
-    var listId = "dbDictCat_" + category.key;
-    var toggle = el("button", "db-dict-cat-toggle", "▾");
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", "true");
-    toggle.setAttribute("aria-controls", listId);
-    toggle.setAttribute("aria-label", "折叠或展开「" + category.title + "」的表清单");
-    head.appendChild(toggle);
-
-    var list = el("ul", "db-dict-cat-list");
-    list.id = listId;
+    var row = el("div", "db-chip-row");
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", category.title);
     category.items.forEach(function (item) {
-      var li = el("li");
-      li.appendChild(el("strong", "", item.name));
-      li.appendChild(document.createTextNode(" · " + (item.desc || "")));
-      list.appendChild(li);
+      var chip = el("button", "db-chip", item.name);
+      chip.type = "button";
+      chip.setAttribute("aria-pressed", "false");
+      chip.setAttribute("data-dict-table", item.table);
+      chip.setAttribute("aria-label", "在画布原地打开「" + item.name + "」，再点一次返回看板");
+      chip.addEventListener("click", function () { openDict(category, item); });
+      chips.push({ node: chip, category: category.key, table: item.table });
+      row.appendChild(chip);
     });
-
-    toggle.addEventListener("click", function () {
-      var expanded = toggle.getAttribute("aria-expanded") === "true";
-      toggle.setAttribute("aria-expanded", String(!expanded));
-      list.hidden = expanded;
-      toggle.textContent = expanded ? "▸" : "▾";
-    });
-
-    card.appendChild(head);
-    card.appendChild(list);
-    return card;
+    group.appendChild(row);
+    return group;
   }
 
-  function renderDictCategories(body, categories) {
+  function renderDictChips(body, categories) {
     body.textContent = "";
+    chips = [];
     if (!Array.isArray(categories) || !categories.length) {
       dictState(body, "字典目录为空，请先完成题库初始化。");
       return;
     }
+    var groups = el("div", "db-chip-groups");
     categories.forEach(function (category) {
-      body.appendChild(buildCategory(category));
+      groups.appendChild(buildChipGroup(category));
     });
+    body.appendChild(groups);
   }
 
   function buildDictNav() {
     root.textContent = "";
-    var panel = el("section", "db-dict-nav");
-    panel.setAttribute("aria-label", "字典维护导航");
-
-    var head = el("div", "db-dict-head");
-    var icon = el("span", "db-dict-icon", "📁");
-    icon.setAttribute("aria-hidden", "true");
-    head.appendChild(icon);
-    head.appendChild(el("span", "db-dict-title", "字典维护导航"));
-    panel.appendChild(head);
-    panel.appendChild(el("p", "db-dict-hint", "点分类在画布新开页签"));
-
     var body = el("div", "db-dict-body");
+    body.setAttribute("aria-label", "字典维护");
     body.appendChild(el("p", "db-dict-state", "正在读取字典分类…"));
-    panel.appendChild(body);
-    root.appendChild(panel);
+    root.appendChild(body);
     root.hidden = false;
 
     call("dict.catalog").then(function (result) {
-      renderDictCategories(body, result && result.categories);
+      renderDictChips(body, result && result.categories);
     }, function (error) {
       dictState(body, "字典目录读取失败：" + error.message);
     });

@@ -173,7 +173,6 @@
   var registerNative = stageFrame.registerNative;
   var rehydratePlugin = stageFrame.rehydratePlugin;
   var updatePlugin = stageFrame.updatePlugin;
-  var openFrame = window.JzoStageFrameOpen.create({ addTab: addTab, activate: activate, findTab: findTab, dock: dock, emit: emit }).open;
   var stageHttp = window.JzoStageHttp.create({
     RELAY_TIMEOUT_MS: RELAY_TIMEOUT_MS,
   });
@@ -275,7 +274,8 @@
   });
   var relayAgent = stageRelayAgent.relayAgent;
   var stageDict = window.JzoStageDict.create({
-    openFrame: openFrame,
+    dictView: window.JzoStageDictView.create({ dock: dock }),
+    canvasTab: function () { return findTab(stageState.activeKey); },
     replyHost: replyHost,
     textValue: textValue,
   });
@@ -711,7 +711,6 @@
 
   window.JzoStage = {
     openPlugin: openPlugin,
-    openFrame: openFrame,
     updatePlugin: updatePlugin,
     rehydratePlugin: rehydratePlugin,
     setSidebarTree: setSidebarTree,

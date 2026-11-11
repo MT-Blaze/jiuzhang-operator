@@ -1,15 +1,16 @@
 /**
- * 字典导航 Host API：目录只读宿主已加载的 DcCatalog，开页只收合法分类键。
+ * 字典导航 Host API：目录只读宿主已加载的 DcCatalog，开页只收合法分类键与表名。
  *
  * 字典导航属于数据看板插件自己的 sidebar.right 面板；底座在这里只做两件事：
- * 把目录以只读副本交给插件，以及替插件打开宿主自有的 /dict 画布页签。
+ * 把目录以只读副本交给插件，以及把指定字典表原地铺进当前画布（stage_dict_view）。
  * 插件拿不到任意 URL，也碰不到字典页的 DOM。
  */
 (function (global) {
   "use strict";
 
   function create(deps) {
-    var openFrame = deps.openFrame;
+    var dictView = deps.dictView;
+    var canvasTab = deps.canvasTab;
     var replyHost = deps.replyHost;
     var textValue = deps.textValue;
 
@@ -36,10 +37,37 @@
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的字典分类" });
         return;
       }
-      var tabKey = "dict:" + category.key;
-      openFrame(tabKey, category.title,
-        "/dict?embedded=1&cat=" + encodeURIComponent(category.key));
-      replyHost(tab, message, true, { key: tabKey, title: category.title });
+      var table = textValue(payload, "table", 60);
+      var sub = table ? api.subOf(category, table) : null;
+      if (table && !sub) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的字典表" });
+        return;
+      }
+      if (!sub) sub = api.subsOf(category)[0] || null;
+      if (!sub) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "该分类没有可显示的字典表" });
+        return;
+      }
+      // 请求来自右栏辅助栏，那把句柄只有 frame 没有 panel：字典层必须铺进
+      // 当前画布页签的面板，回执仍走发请求的那一帧。
+      var canvas = canvasTab();
+      if (!canvas || !canvas.panel) {
+        replyHost(tab, message, false, { code: "BAD_REQUEST", message: "当前没有可承载字典表的画布页签" });
+        return;
+      }
+      var result = dictView.toggle(canvas, {
+        key: "dict:" + sub.key,
+        title: sub.label,
+        token: category.key + "|" + (table || sub.key),
+        cat: category.key,
+        sub: sub.key,
+        src: "/dict?embedded=1&cat=" + encodeURIComponent(category.key)
+          + "&sub=" + encodeURIComponent(sub.key)
+      });
+      replyHost(tab, message, true, {
+        key: result.key, title: result.title, active: result.active,
+        category: category.key, table: table
+      });
     }
 
     /** @returns {boolean} true 表示本方法已处理并已回执。 */

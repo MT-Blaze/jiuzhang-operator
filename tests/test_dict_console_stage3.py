@@ -538,7 +538,9 @@ class LinkageRedLineTest(unittest.TestCase):
             self.assertIn("dict_console/" + name + ".js", html)
         self.assertIn("dict_console_linkage.css", html)
         catalog = (CONSOLE_DIR / "catalog.js").read_text(encoding="utf-8")
-        self.assertIn("linkage: true", catalog)
+        # 知识点与考向不再各自挂 linkage 标记，统一收进 knowledge-linkage 这张联动子页签
+        self.assertIn('{ key: "knowledge-linkage", label: "知识点与考向", mode: "linkage" }', catalog)
+        self.assertEqual(catalog.count('sub: "knowledge-linkage"'), 2)
 
 
 if __name__ == "__main__":
