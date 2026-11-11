@@ -17,6 +17,7 @@
   6. 底栏出现「数据看板已就绪」；全程宿主页无未捕获 JS 错误。
 """
 import collections
+import datetime
 import os
 import shutil
 import socket
@@ -30,6 +31,11 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.core import toml_io, wire  # noqa: E402
+
 PORT = 8781
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 PLUGIN_ID = "org.jiuzhang.dashboard"
@@ -81,6 +87,15 @@ def run(tag: str) -> dict:
           (plugins_dir / PLUGIN_ID / "plugin.toml").is_file()
           and (plugins_dir / ENGINE_ID / "plugin.toml").is_file()
           and (plugins_dir / EDITOR_ID / "plugin.toml").is_file())
+
+    # 只读复制本机题库种子（*.db，无 WAL 残留）：卡片与热力图要有真实数字才算验到「数据准确」
+    local_banks = ROOT / "data" / "banks"
+    if local_banks.is_dir():
+        target_banks = data_dir / "banks"
+        target_banks.mkdir(parents=True, exist_ok=True)
+        for source_db in sorted(local_banks.glob("*.db")):
+            shutil.copy2(source_db, target_banks / source_db.name)
+        report["notes"]["bank_seeded"] = [p.name for p in sorted(target_banks.glob("*.db"))]
 
     env = dict(os.environ)
     env["JZO_DATA_DIR"] = str(data_dir)
@@ -249,6 +264,105 @@ def run(tag: str) -> dict:
             check("非零格子数与后端按日计数一致",
                   ui.get("nonzeroCells") == nonzero_days,
                   f"ui={ui.get('nonzeroCells')} backend={nonzero_days}")
+
+            # ---- 时间维度切换：近一年（默认）/ 近一月 / 近一周，切档只在前端切片 ----
+            def heat_state():
+                return real_frame.evaluate("""
+                () => {
+                  const grid = document.getElementById('dbHeatmap');
+                  const cells = Array.from(grid.querySelectorAll('.db-cell'));
+                  const visible = cells.filter(c => c.style.visibility !== 'hidden');
+                  const rows = new Set(visible.map(c => Math.round(c.getBoundingClientRect().top)));
+                  const switches = Array.from(document.querySelectorAll('.db-range-btn'));
+                  const big = Array.from(grid.querySelectorAll('.db-cell--lg'));
+                  return {
+                    cls: grid.className,
+                    title: (document.getElementById('dbHeatTitle') || {}).textContent || '',
+                    visible: visible.length,
+                    rows: rows.size,
+                    dates: visible.map(c => c.getAttribute('data-date')),
+                    tooltips: visible.slice(0, 1).map(c => c.getAttribute('title')),
+                    weekdays: Array.from(grid.querySelectorAll('.db-cell-weekday')).map(n => n.textContent),
+                    counts: big.map(n => {
+                      const c = n.querySelector('.db-cell-count');
+                      return c ? c.textContent : '';
+                    }),
+                    pressed: switches.filter(b => b.getAttribute('aria-pressed') === 'true')
+                                     .map(b => b.getAttribute('data-range')),
+                    switches: switches.length
+                  };
+                }
+                """)
+
+            def click_range(key):
+                real_frame.evaluate("""
+                (k) => {
+                  const b = document.querySelector('.db-range-btn[data-range="' + k + '"]');
+                  if (b) b.click();
+                }
+                """, key)
+                page.wait_for_timeout(250)
+
+            expected_month = [c["date"] for c in backend_heat[-30:]]
+            expected_week = [c["date"] for c in backend_heat[-7:]]
+            expected_counts = {c["date"]: c["count"] for c in backend_heat}
+
+            year_state = heat_state()
+            report["notes"]["range_year"] = {k: year_state.get(k) for k in ("title", "visible", "rows", "pressed")}
+            check("默认选中近一年且铺满 365 天",
+                  year_state.get("pressed") == ["year"] and year_state.get("visible") == 365,
+                  wire.dumps(report["notes"]["range_year"], ensure_ascii=False))
+            check("近一年标题与布局未变",
+                  "过去 365 天" in (year_state.get("title") or "")
+                  and "db-heatmap--year" in (year_state.get("cls") or ""),
+                  f"title={year_state.get('title')} cls={year_state.get('cls')}")
+
+            click_range("month")
+            month_state = heat_state()
+            report["notes"]["range_month"] = {k: month_state.get(k) for k in
+                                              ("title", "visible", "rows", "pressed", "dates", "tooltips")}
+            check("近一月：切档即时重绘为 30 格 × 5 行",
+                  month_state.get("visible") == 30 and month_state.get("rows") == 5,
+                  f"visible={month_state.get('visible')} rows={month_state.get('rows')}")
+            check("近一月：日期序列与后端后 30 天逐日一致",
+                  month_state.get("dates") == expected_month,
+                  f"ui={month_state.get('dates', [None])[0]}..{month_state.get('dates', [None])[-1]}"
+                  f" backend={expected_month[0]}..{expected_month[-1]}")
+            check("近一月：悬停提示含日期与题数",
+                  (month_state.get("tooltips") or [""])[0]
+                  == f"{expected_month[0]}：{expected_counts[expected_month[0]]} 题",
+                  str(month_state.get("tooltips")))
+            snap("21-range-month")
+
+            click_range("week")
+            week_state = heat_state()
+            expected_weekdays = ["周" + "一二三四五六日"[datetime.date.fromisoformat(d).weekday()]
+                                 for d in expected_week]
+            expected_week_counts = [str(expected_counts[d]) for d in expected_week]
+            report["notes"]["range_week"] = {k: week_state.get(k) for k in
+                                             ("title", "visible", "rows", "pressed", "dates",
+                                              "weekdays", "counts", "tooltips")}
+            check("近一周：切档即时重绘为 7 格单行",
+                  week_state.get("visible") == 7 and week_state.get("rows") == 1,
+                  f"visible={week_state.get('visible')} rows={week_state.get('rows')}")
+            check("近一周：日期与后端后 7 天一致",
+                  week_state.get("dates") == expected_week,
+                  wire.dumps(week_state.get("dates"), ensure_ascii=False))
+            check("近一周：格内周几与实际日期对应",
+                  week_state.get("weekdays") == expected_weekdays,
+                  f"ui={week_state.get('weekdays')} expect={expected_weekdays}")
+            check("近一周：格内题数与后端逐日一致",
+                  week_state.get("counts") == expected_week_counts,
+                  f"ui={week_state.get('counts')} expect={expected_week_counts}")
+            check("近一周：切档后按钮状态唯一",
+                  week_state.get("pressed") == ["week"], str(week_state.get("pressed")))
+            snap("22-range-week")
+
+            click_range("year")
+            back_state = heat_state()
+            check("切回近一年恢复 365 天布局",
+                  back_state.get("visible") == 365 and back_state.get("pressed") == ["year"],
+                  f"visible={back_state.get('visible')} pressed={back_state.get('pressed')}")
 
             recent = ui.get("recent") or []
             check("最近录入 ≤5 条且已渲染", 0 < len(recent) <= 5, wire.dumps(recent, ensure_ascii=False)[:200])

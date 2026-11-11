@@ -140,5 +140,34 @@ class DashboardUiContractTest(unittest.TestCase):
         self.assertNotIn('href="./plugin.css"', PLUGIN_HTML)
 
 
+class HeatmapRangeSwitchTest(unittest.TestCase):
+    """热力图时间维度：近一周 / 近一月 / 近一年，默认近一年。"""
+
+    def test_01_three_ranges_default_to_year(self) -> None:
+        for label in ("近一周", "近一月", "近一年"):
+            self.assertIn(label, PLUGIN_JS)
+        self.assertIn('DEFAULT_HEAT_RANGE = "year"', PLUGIN_JS)
+        self.assertIn("db-range-switch", PLUGIN_JS)
+        self.assertIn("db-range-btn", PLUGIN_CSS)
+        self.assertIn('aria-pressed', PLUGIN_JS)
+
+    def test_02_each_range_has_its_own_layout(self) -> None:
+        self.assertIn("appendWeekGrid", PLUGIN_JS)
+        self.assertIn("appendMonthGrid", PLUGIN_JS)
+        self.assertIn("appendYearGrid", PLUGIN_JS)
+        self.assertIn("db-heatmap--week", PLUGIN_CSS)
+        self.assertIn("db-heatmap--month", PLUGIN_CSS)
+        self.assertIn("repeat(7, minmax(0, 1fr))", PLUGIN_CSS)
+        self.assertIn(".db-cell-weekday", PLUGIN_CSS)
+
+    def test_03_switch_slices_locally_without_refetch(self) -> None:
+        # 后端一次给 365 天，切档只在前端按日期切片，不再请求 bank.dashboard_heatmap
+        self.assertIn("heatDays.slice(heatDays.length - spec.days)", PLUGIN_JS)
+        self.assertEqual(PLUGIN_JS.count('call("bank.dashboard_heatmap")'), 1)
+
+    def test_04_hover_keeps_date_and_count(self) -> None:
+        self.assertIn('node.title = cell.date + "：" + cell.count + " 题"', PLUGIN_JS)
+
+
 if __name__ == "__main__":
     unittest.main()

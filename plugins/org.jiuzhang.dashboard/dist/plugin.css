@@ -95,6 +95,55 @@ html, body {
   font-weight: 600;
 }
 
+/* 标题 + 极简分段切换器（近一周 / 近一月 / 近一年） */
+.db-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.db-panel-head .db-panel-title { margin: 0; }
+
+.db-range-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--db-line);
+  border-radius: 999px;
+  background: var(--db-bg);
+}
+
+.db-range-btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--db-sub);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.db-range-btn:hover { color: var(--db-accent); }
+
+.db-range-btn[aria-pressed="true"] {
+  background: var(--db-card);
+  color: var(--db-accent);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--db-line), 0 1px 2px rgba(31, 35, 41, 0.12);
+}
+
+.db-range-btn:focus-visible { outline: 2px solid var(--db-accent); outline-offset: 1px; }
+
+@media (pointer: coarse) {
+  .db-range-btn { min-height: 44px; padding: 0 16px; }
+}
+
 .db-heatmap-scroll { overflow-x: auto; }
 
 .db-heatmap {
@@ -105,6 +154,59 @@ html, body {
   gap: 3px;
   width: max-content;
 }
+
+/* 近一月：7 列 × 5 行，格子随容器变宽 */
+.db-heatmap--month {
+  grid-template-rows: none;
+  grid-auto-flow: row;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: 28px;
+  gap: 5px;
+  width: 100%;
+}
+
+.db-heatmap--month .db-cell {
+  width: auto;
+  height: 100%;
+  border-radius: 4px;
+}
+
+/* 近一周：单行 7 格放大，格内直显周几与当日题数 */
+.db-heatmap--week {
+  grid-template-rows: none;
+  grid-auto-flow: row;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.db-heatmap--week .db-cell--lg {
+  width: auto;
+  height: auto;
+  min-height: 76px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.db-cell-weekday {
+  font-size: 12px;
+  color: var(--db-sub);
+}
+
+.db-cell-count {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-heatmap--week .db-cell[data-level="3"] .db-cell-weekday,
+.db-heatmap--week .db-cell[data-level="4"] .db-cell-weekday { color: rgba(255, 255, 255, 0.85); }
+.db-heatmap--week .db-cell[data-level="3"] .db-cell-count,
+.db-heatmap--week .db-cell[data-level="4"] .db-cell-count { color: #ffffff; }
 
 .db-cell {
   width: 11px;
