@@ -100,6 +100,14 @@
       if (window.DcLinkage) window.DcLinkage.mount(host, ctx);
       return;
     }
+    if (sub.mode === "regions-schools") {
+      if (window.DcEntitySchools) window.DcEntitySchools.mount(host, ctx);
+      return;
+    }
+    if (sub.mode === "textbooks-chapters") {
+      if (window.DcEntityTextbooks) window.DcEntityTextbooks.mount(host, ctx);
+      return;
+    }
     if (sub.mode === "chapters") {
       if (window.DcChapterTree) window.DcChapterTree.mount(host, ctx);
       return;

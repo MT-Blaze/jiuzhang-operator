@@ -157,6 +157,41 @@ class WritableDictSpecTest(unittest.TestCase):
         self.assertNotEqual({row.id for row in first}, {row.id for row in second})
         self.assertGreater(total, 50)
 
+    def test_textbook_volume_lifecycle(self) -> None:
+        versions, _ = service.console_list(
+            "dim_textbook_versions", filters={"subject_id": 1}, limit=200,
+            db_path=self.db_path,
+        )
+        row = service.console_insert(
+            "dim_textbooks",
+            {
+                "name": "验收册次", "code": "zz_t_volume", "sort_order": 99,
+                "subject_id": 1, "version_id": versions[0].id, "volume_name": "验收上册",
+            },
+            db_path=self.db_path,
+        )
+        self.addCleanup(self._drop, "dim_textbooks", row.id)
+        changed = service.console_update(
+            "dim_textbooks", row.id, {"volume_name": "验收下册"}, db_path=self.db_path
+        )
+        self.assertEqual(changed.volume_name, "验收下册")
+        service.console_delete("dim_textbooks", row.id, db_path=self.db_path)
+        with self.assertRaises(dao_console.ConsoleLookupError):
+            service.console_row("dim_textbooks", row.id, db_path=self.db_path)
+
+    def test_volume_with_chapters_cannot_be_deleted(self) -> None:
+        with service.session(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT textbook_id FROM dim_textbook_chapters "
+                "WHERE textbook_id IS NOT NULL LIMIT 1"
+            ).fetchone()
+        self.assertIsNotNone(row)
+        with self.assertRaises(dao_console.ReferencedError) as ctx:
+            service.console_delete(
+                "dim_textbooks", int(row["textbook_id"]), db_path=self.db_path
+            )
+        self.assertIn("dim_textbook_chapters", {hit.table for hit in ctx.exception.hits})
+
     def _drop(self, table: str, row_id: int) -> None:
         try:
             service.console_delete(table, row_id, db_path=self.db_path)
@@ -169,22 +204,32 @@ class SubTabsWiringTest(unittest.TestCase):
         html = (ROOT / "static" / "dict_console.html").read_text(encoding="utf-8")
         for ref in (
             "/static/css/dict_console_subtabs.css",
+            "/static/css/dict_console_entities.css",
             "/static/js/dict_console/subtabs.js",
             "/static/js/dict_console/chapter_ops.js",
-            "/static/js/dict_console/chapters.js",
+            "/static/js/dict_console/entity_shared.js",
+            "/static/js/dict_console/entity_schools.js",
+            "/static/js/dict_console/entity_textbooks.js",
         ):
             self.assertIn(ref, html)
             self.assertTrue((ROOT / ref.lstrip("/")).is_file(), ref)
 
     def test_new_assets_stay_under_500_lines(self) -> None:
-        for name in ("subtabs.js", "chapters.js", "chapter_ops.js", "row_ops.js"):
+        for name in (
+            "subtabs.js", "chapters.js", "chapter_ops.js", "row_ops.js",
+            "entity_shared.js", "entity_schools.js", "entity_textbooks.js",
+        ):
             path = CONSOLE_DIR / name
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 500, name)
-        css = ROOT / "static" / "css" / "dict_console_subtabs.css"
-        self.assertLess(len(css.read_text(encoding="utf-8").splitlines()), 500)
+        for css_name in ("dict_console_subtabs.css", "dict_console_entities.css"):
+            css = ROOT / "static" / "css" / css_name
+            self.assertLess(len(css.read_text(encoding="utf-8").splitlines()), 500, css_name)
 
     def test_subtabs_js_never_uses_innerhtml_or_eval(self) -> None:
-        for name in ("subtabs.js", "chapters.js", "chapter_ops.js"):
+        for name in (
+            "subtabs.js", "chapters.js", "chapter_ops.js",
+            "entity_shared.js", "entity_schools.js", "entity_textbooks.js",
+        ):
             text = (CONSOLE_DIR / name).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"\.innerHTML\s*=", name)
             self.assertNotRegex(text, r"\beval\s*\(", name)
@@ -193,16 +238,20 @@ class SubTabsWiringTest(unittest.TestCase):
         catalog = (CONSOLE_DIR / "catalog.js").read_text(encoding="utf-8")
         for label in (
             "学科", "年级", "题型", "难度", "题目质量", "考试类型",
-            "教材版本", "学校", "教材章节", "行政区划",
+            "行政区划与学校", "教材与章节",
             "知识点与考向", "学科思想", "解题方法", "核心素养",
         ):
             self.assertIn('label: "' + label + '"', catalog)
         self.assertIn('mode: "linkage"', catalog)
-        self.assertIn('mode: "chapters"', catalog)
+        self.assertIn('mode: "regions-schools"', catalog)
+        self.assertIn('mode: "textbooks-chapters"', catalog)
+        self.assertNotIn('mode: "chapters"', catalog)
 
     def test_category_panel_uses_subtabs_only(self) -> None:
         panels = (CONSOLE_DIR / "panels.js").read_text(encoding="utf-8")
         self.assertIn("DcSubTabs.mount", panels)
+        self.assertIn("DcEntitySchools.mount", panels)
+        self.assertIn("DcEntityTextbooks.mount", panels)
         self.assertNotIn("待交付字典", panels)
         self.assertNotIn("readOnly", panels)
 

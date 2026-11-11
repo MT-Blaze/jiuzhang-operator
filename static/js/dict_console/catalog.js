@@ -34,19 +34,18 @@
     {
       key: "entity",
       title: "实体维度字典",
-      desc: "真实世界的实体：行政区划、学校、教材与教材章节。",
+      desc: "底层分表、前端合树：行政区划与学校一棵树，教材版本与章节一棵树。",
       stage: 2,
       items: [
-        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划树。" },
-        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，挂靠区划与教材。" },
+        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划，按 parent_id 合树。" },
+        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，按 region_id 挂到地级市。" },
         { table: "dim_textbook_versions", name: "教材版本", desc: "各出版社教材版本，按学科区分。" },
-        { table: "dim_textbook_chapters", name: "教材章节", desc: "章 / 节目录树，四栏联动的左栏。" }
+        { table: "dim_textbooks", name: "教材册次", desc: "版本下的必修一 / 七年级上册等册次。" },
+        { table: "dim_textbook_chapters", name: "教材章节", desc: "章 / 节目录树，按 parent_id 逐层展开。" }
       ],
       subs: [
-        { key: "dim_textbook_versions", label: "教材版本", table: "dim_textbook_versions" },
-        { key: "dim_schools", label: "学校", table: "dim_schools" },
-        { key: "dim_textbook_chapters", label: "教材章节", mode: "chapters" },
-        { key: "dim_regions", label: "行政区划", table: "dim_regions" }
+        { key: "regions-schools", label: "行政区划与学校", mode: "regions-schools" },
+        { key: "textbooks-chapters", label: "教材与章节", mode: "textbooks-chapters" }
       ]
     },
     {

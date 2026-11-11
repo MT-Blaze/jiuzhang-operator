@@ -33,6 +33,7 @@ from app.bank_engine.models import (
     SolutionMethod,
     Subject,
     SubjectThought,
+    Textbook,
     TextbookVersion,
 )
 
@@ -161,6 +162,18 @@ SPECS: dict[str, TableSpec] = {
         nullable=("publisher",), global_filters=(("subject_id", "subject_id"),),
         scope=(("subject_id", "subject_id"),),
     ),
+    # 教材册次：版本 → 册次 → 章 → 节 树的中层，必须可增删改才能整树维护。
+    "dim_textbooks": TableSpec(
+        table="dim_textbooks", label="教材册次", model=Textbook,
+        columns=("id", "name", "code", "sort_order", "publisher", "subject_id",
+                 "grade_id", "version_id", "volume_name"),
+        editable=("name", "code", "sort_order", "publisher", "volume_name"),
+        required=("name", "code", "subject_id", "version_id", "volume_name"),
+        search=("name", "code", "volume_name"), order="version_id, sort_order, id",
+        int_columns=("sort_order", "subject_id", "grade_id", "version_id"),
+        nullable=("publisher", "grade_id"), global_filters=(("subject_id", "subject_id"),),
+        scope=(("subject_id", "subject_id"),),
+    ),
     "dim_textbook_chapters": TableSpec(
         table="dim_textbook_chapters", label="教材章节", model=Chapter,
         columns=("id", "name", "code", "sort_order", "textbook_id", "parent_id"),
@@ -225,6 +238,10 @@ TABLE_LABELS: dict[str, str] = {
     "dict_subject_thoughts": "学科思想", "dict_solution_methods": "解题方法",
     "dict_core_competencies": "核心素养",
 }
+
+
+# ON DELETE CASCADE 的子表不出现在外键列表里：删册次前先拦，别顺手带走整册章节。
+CASCADE_GUARDS: dict[str, tuple[str, str]] = {"dim_textbooks": ("dim_textbook_chapters", "textbook_id")}
 
 
 def get_spec(table: str) -> TableSpec:
@@ -425,10 +442,15 @@ def find_references(
                 params.append(ex_val)
             count = int(conn.execute(sql, params).fetchone()[0])
             if count > 0:
-                hits.append(ReferenceHit(
-                    table=child, label=TABLE_LABELS.get(child, child),
-                    column=column, count=count,
-                ))
+                hits.append(ReferenceHit(child, TABLE_LABELS.get(child, child), column, count))
+    guard = CASCADE_GUARDS.get(table)
+    if guard:
+        child, column = guard
+        count = int(conn.execute(
+            "SELECT COUNT(*) FROM " + child + " WHERE " + column + " = ?", (row_id,)
+        ).fetchone()[0])
+        if count:
+            hits.append(ReferenceHit(child, TABLE_LABELS.get(child, child), column, count))
     return tuple(hits)
 
 
@@ -470,20 +492,8 @@ def import_rows(conn: sqlite3.Connection, data: dict[str, Any]) -> ImportReport:
 
 
 __all__ = [
-    "COLUMN_LABELS",
-    "ConflictError",
-    "ConsoleLookupError",
-    "ReferencedError",
-    "SPECS",
-    "TABLE_LABELS",
-    "TableSpec",
-    "delete_row",
-    "fields_meta",
-    "find_references",
-    "get_row",
-    "get_spec",
-    "import_rows",
-    "insert_row",
-    "list_rows",
-    "update_row",
+    "COLUMN_LABELS", "ConflictError", "ConsoleLookupError", "ReferencedError",
+    "SPECS", "TABLE_LABELS", "TableSpec", "delete_row", "fields_meta",
+    "find_references", "get_row", "get_spec", "import_rows", "insert_row",
+    "list_rows", "update_row",
 ]

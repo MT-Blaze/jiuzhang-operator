@@ -1,0 +1,168 @@
+/* 实体维度双树（2026-11-11）：行政区划+学校、教材版本+册次+章节。
+ * 只负责层级观感与折叠动画；按钮底样式沿用 dict_console.css 的 dc-btn。
+ * 整块下架：删本文件 + dict_console.html 的一行 link + entity_*.js 三行即可。 */
+
+.det-panel { min-width: 0; }
+.det-tree {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  max-height: 680px;
+  overflow: auto;
+}
+.det-list, .det-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.det-children {
+  margin-left: 22px;
+  padding-left: 8px;
+  border-left: 1px dashed var(--line);
+}
+.det-children[hidden] { display: none; }
+.det-item { min-width: 0; }
+
+.det-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding-right: 4px;
+  border-radius: 8px;
+}
+.det-row:hover { background: var(--card-hover); }
+.det-row.is-selected { background: var(--accent-soft); }
+
+.det-caret {
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.det-caret:hover { color: var(--accent); background: var(--accent-soft); }
+.det-caret:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.det-spacer { display: inline-block; cursor: default; }
+
+.det-label {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.det-label:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.det-name { overflow-wrap: anywhere; }
+.det-sub {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+.det-crumb {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.68rem;
+}
+.det-crumb:empty { display: none; }
+.det-tag {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.det-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.det-ops {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.det-row:hover .det-ops,
+.det-row:focus-within .det-ops,
+.det-ops:hover { opacity: 1; }
+.det-op {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.det-op:hover { border-color: var(--line-strong); background: var(--card); color: var(--ink); }
+.det-op:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.det-op-danger { color: var(--down); }
+.det-op-danger:hover { border-color: var(--down); color: var(--down); }
+
+/* 层级字号：省 / 版本最大，市 / 册次次之，章、节逐级收小 */
+.det-row[data-level="1"] .det-name { font-family: var(--serif); font-size: 1rem; font-weight: 700; }
+.det-row[data-level="2"] .det-name { font-size: 0.92rem; font-weight: 600; }
+.det-row[data-level="3"] .det-name { font-size: 0.88rem; }
+.det-row[data-level="4"] .det-name,
+.det-row[data-level="5"] .det-name { font-size: 0.83rem; }
+.det-row[data-level="1"] { border-bottom: 1px solid var(--line); }
+.det-row[data-level="2"] .det-name { color: var(--ink); }
+.det-row[data-level="4"] .det-sub,
+.det-row[data-level="5"] .det-sub { opacity: 0.85; }
+
+.det-empty { padding: 14px 10px; margin: 0; color: var(--muted); font-size: 0.84rem; }
+
+/* 折叠动画：只在新展开的直接子项上做一次轻微下落，不阻塞操作 */
+.det-children.det-reveal > .det-item { animation: detDrop 0.2s ease-out both; }
+.det-children.det-reveal > .det-item:nth-child(2) { animation-delay: 0.02s; }
+.det-children.det-reveal > .det-item:nth-child(3) { animation-delay: 0.04s; }
+.det-children.det-reveal > .det-item:nth-child(4) { animation-delay: 0.06s; }
+@keyframes detDrop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 720px) {
+  .det-row { flex-wrap: wrap; padding-bottom: 4px; }
+  .det-label { flex-basis: calc(100% - 52px); }
+  .det-badge { margin-left: 46px; }
+  .det-ops { margin-left: auto; }
+  .det-tree { max-height: 520px; padding: 6px; }
+  .det-children { margin-left: 12px; padding-left: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .det-children.det-reveal > .det-item { animation: none; }
+  .det-ops { transition: none; }
+}
