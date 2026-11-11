@@ -41,7 +41,7 @@ DICT_TABLES = {
     "dict_question_types": (QuestionType, 3),
     "dict_difficulties": (Difficulty, 5),
     "dict_question_qualities": (Quality, 3),
-    "dim_textbook_versions": (TextbookVersion, 19),
+    "dim_textbook_versions": (TextbookVersion, 28),
     "dim_textbook_chapters": (Chapter, 3519),
     "dict_subject_thoughts": (SubjectThought, 22),
     "dict_solution_methods": (SolutionMethod, 34),

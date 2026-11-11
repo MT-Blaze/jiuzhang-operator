@@ -83,7 +83,7 @@ class MigrationTest(unittest.TestCase):
             migrate_v7.verify_sort_order(conn)
             migrate_v9.verify_versions(conn)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 19)
+                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 28)
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
             self.assertEqual(conn.execute(
@@ -134,7 +134,10 @@ class MigrationTest(unittest.TestCase):
     def test_versions_are_pure_and_books_carry_volume(self) -> None:
         versions = service.textbook_versions(subject_id=2, db_path=self.db_path)
         names = [item.name for item in versions]
-        self.assertEqual(names, ["人教A版", "人教版"])
+        self.assertEqual(
+            set(names),
+            {"人教A版", "人教版", "人教B版", "北师大版", "苏教版", "湘教版", "沪教版"},
+        )
         for name in names:
             self.assertNotIn("必修", name)
             self.assertNotIn("选修", name)
@@ -143,17 +146,23 @@ class MigrationTest(unittest.TestCase):
         books = service.textbooks(version_id=book.id, db_path=self.db_path)
         self.assertEqual(
             [item.volume_name for item in books],
-            ["必修一", "必修二", "选修一", "选修二", "选修三"],
+            [
+                "必修一", "必修二", "必修第一册", "必修第二册",
+                "选修一", "选修二", "选修三",
+                "选择性必修第一册", "选择性必修第二册", "选择性必修第三册",
+            ],
         )
 
     def test_version_tree_groups_books_then_chapters(self) -> None:
         book = next(item for item in service.textbook_versions(
             subject_id=2, db_path=self.db_path) if item.name == "人教A版")
         books = service.linkage_version_tree(book.id, db_path=self.db_path)
-        self.assertEqual(len(books), 5)
+        self.assertEqual(len(books), 10)
         for node in books:
             self.assertEqual(node.textbook.version_id, book.id)
-            self.assertTrue(node.chapters)
+        with_chapters = [node for node in books if node.chapters]
+        self.assertEqual(len(with_chapters), 5)
+        for node in with_chapters:
             self.assertTrue(all(
                 chapter.chapter.textbook_id == node.textbook.id
                 for chapter in node.chapters

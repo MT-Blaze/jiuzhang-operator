@@ -49,14 +49,14 @@ class TextbooksServiceTest(unittest.TestCase):
 
     def test_full_list_matches_seed_count(self) -> None:
         items = service.textbooks(db_path=self.db_path)
-        self.assertEqual(len(items), 128)
+        self.assertEqual(len(items), 188)
         self.assertTrue(all(isinstance(item, Textbook) for item in items))
 
     def test_subject_filter_is_single_table(self) -> None:
         items = service.textbooks(subject_id=2, db_path=self.db_path)
         self.assertTrue(items)
         self.assertTrue(all(item.subject_id == 2 for item in items))
-        self.assertLess(len(items), 128)
+        self.assertLess(len(items), 188)
 
     def test_grade_filter_narrows_further(self) -> None:
         items = service.textbooks(subject_id=1, grade_id=10, db_path=self.db_path)

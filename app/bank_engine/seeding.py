@@ -34,10 +34,21 @@ from app.bank_engine.seeds.migrated_textbook_seed import (
 )
 from app.bank_engine.seeds.region_seed import REGION_ROWS
 from app.bank_engine.seeds.school_seed import SCHOOL_ROWS
+from app.bank_engine.seeds.textbook_catalog import (
+    CATALOG_BOOK_ROWS,
+    CATALOG_VERSION_ROWS,
+)
 
 # 完整书名在灌种时切成「版本 + 册次」：版本行先落，教材册再挂 version_id。
+# 高中数学与物理的 9 个新增版本由 textbook_catalog 显式给号，不参与自动切版本，
+# 避免新增分组挤动既有 1..19 的版本 id。
 BOOK_SOURCE_ROWS = tuple(BOOK_ROWS) + tuple(MIGRATED_BOOK_ROWS)
 VERSION_ROWS, BOOK_VERSION_MAP = textbook_versions.build_version_rows(BOOK_SOURCE_ROWS)
+ALL_VERSION_ROWS = VERSION_ROWS + CATALOG_VERSION_ROWS
+ALL_BOOK_ROWS = (
+    tuple((*row, *BOOK_VERSION_MAP[int(row[0])]) for row in BOOK_SOURCE_ROWS)
+    + CATALOG_BOOK_ROWS
+)
 
 EXPECTED_COUNTS: dict[str, int] = {
     "dict_subjects": 15,
@@ -49,8 +60,8 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_subject_thoughts": 22,
     "dict_solution_methods": 34,
     "dict_core_competencies": 47,
-    "dim_textbook_versions": len(VERSION_ROWS),
-    "dim_textbooks": 128,
+    "dim_textbook_versions": len(ALL_VERSION_ROWS),
+    "dim_textbooks": len(ALL_BOOK_ROWS),
     "dim_textbook_chapters": 3519,
     "dim_knowledge_points": 11388,
     "dim_exam_directions": 567,
@@ -72,9 +83,7 @@ _TEACHING_DICTIONARIES = (
 def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
     subjects = tuple((row[0], row[1], row[2], row[0]) for row in SUBJECT_ROWS)
     qualities = tuple((row[0], row[1], row[2], row[0]) for row in QUALITY_SEED_ROWS)
-    textbooks = tuple(
-        (*row, *BOOK_VERSION_MAP[int(row[0])]) for row in BOOK_SOURCE_ROWS
-    )
+    textbooks = ALL_BOOK_ROWS
     chapters = tuple(CHAPTER_ROWS) + tuple(MIGRATED_CHAPTER_ROWS)
     knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_REQUIRED1_KNOWLEDGE_ROWS)
     schools = tuple((*row, regions.match_region_id(row[4])) for row in SCHOOL_ROWS)
@@ -133,7 +142,7 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
                 "INSERT INTO dim_textbook_versions "
                 "(id, name, code, sort_order, publisher, subject_id) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                VERSION_ROWS,
+                ALL_VERSION_ROWS,
             ),
             (
                 "INSERT INTO dim_textbooks "
