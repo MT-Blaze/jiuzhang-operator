@@ -1,6 +1,7 @@
 /**
- * 辅助栏：字典导航 + 操作区。
- * 导航：三大分类各一枚按钮，点击交给画布新开 / 激活同名页签（不覆盖当前页签）。
+ * 辅助栏：字典小标签 + 操作区。
+ * 三大分类下只铺紧凑小标签，点标签只在画布新开 / 激活该字典页签。
+ * 辅助栏只渲染一次：画布开页、切页、关页都不重渲、不改高亮（常驻总控台）。
  * 操作区：【一键备份】走底座现成的备份体系（/api/settings/backup*），
  * 未开启本地备份时先征求老师同意再开启；【导入数据】交给 DcImport 走 TOML 批量导入。
  */
@@ -8,34 +9,39 @@
   "use strict";
 
   var ctx = null;
-  var navButtons = {};
 
-  function renderNav(listEl) {
-    listEl.textContent = "";
-    window.DcCatalog.CATEGORIES.forEach(function (category) {
-      var li = document.createElement("li");
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "dc-nav-item";
-      btn.setAttribute("aria-current", "false");
-      var name = document.createElement("span");
-      name.textContent = category.title;
-      var badge = document.createElement("span");
-      badge.className = "dc-nav-badge";
-      badge.textContent = category.items.length + " 张表";
-      btn.appendChild(name);
-      btn.appendChild(badge);
-      btn.addEventListener("click", function () { ctx.openCategory(category.key); });
-      li.appendChild(btn);
-      listEl.appendChild(li);
-      navButtons[category.key] = btn;
-    });
+  function shortTitle(category) {
+    return category.title.replace(/字典$/, "");
   }
 
-  /** 页签激活态回写导航：当前分类高亮，看板激活时全不亮。 */
-  function syncNav(activeKey) {
-    Object.keys(navButtons).forEach(function (key) {
-      navButtons[key].setAttribute("aria-current", key === activeKey ? "true" : "false");
+  function renderNav(container) {
+    container.textContent = "";
+    window.DcCatalog.CATEGORIES.forEach(function (category) {
+      var group = document.createElement("div");
+      group.className = "dc-chip-group";
+
+      var title = document.createElement("h3");
+      title.className = "dc-chip-group-title";
+      title.textContent = shortTitle(category);
+
+      var row = document.createElement("div");
+      row.className = "dc-chip-row";
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", category.title);
+
+      category.items.forEach(function (item) {
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "dc-chip";
+        chip.textContent = item.name;
+        chip.setAttribute("aria-label", "在画布新开「" + item.name + "」页签");
+        chip.addEventListener("click", function () { ctx.openDict(category.key, item.table); });
+        row.appendChild(chip);
+      });
+
+      group.appendChild(title);
+      group.appendChild(row);
+      container.appendChild(group);
     });
   }
 
@@ -105,5 +111,5 @@
     window.DcImport.init(elements.importBtn);
   }
 
-  window.DcSidebar = { init: init, syncNav: syncNav };
+  window.DcSidebar = { init: init };
 })();

@@ -37,11 +37,11 @@
       desc: "底层分表、前端合树：行政区划与学校一棵树，教材版本与章节一棵树。",
       stage: 2,
       items: [
-        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划，按 parent_id 合树。" },
-        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，按 region_id 挂到地级市。" },
-        { table: "dim_textbook_versions", name: "教材版本", desc: "各出版社教材版本，按学科区分。" },
-        { table: "dim_textbooks", name: "教材册次", desc: "版本下的必修一 / 七年级上册等册次。" },
-        { table: "dim_textbook_chapters", name: "教材章节", desc: "章 / 节目录树，按 parent_id 逐层展开。" }
+        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划，按 parent_id 合树。", sub: "regions-schools" },
+        { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，按 region_id 挂到地级市。", sub: "regions-schools" },
+        { table: "dim_textbook_versions", name: "教材版本", desc: "各出版社教材版本，按学科区分。", sub: "textbooks-chapters" },
+        { table: "dim_textbooks", name: "教材册次", desc: "版本下的必修一 / 七年级上册等册次。", sub: "textbooks-chapters" },
+        { table: "dim_textbook_chapters", name: "教材章节", desc: "章 / 节目录树，按 parent_id 逐层展开。", sub: "textbooks-chapters" }
       ],
       subs: [
         { key: "regions-schools", label: "行政区划与学校", mode: "regions-schools" },
@@ -54,8 +54,8 @@
       desc: "教研核心：知识点、考向、思想方法、核心素养，以及章节—知识点—考向的联动映射。",
       stage: 3,
       items: [
-        { table: "dim_knowledge_points", name: "知识点", desc: "四栏联动中栏：双击改名、拖拽排序。", linkage: true },
-        { table: "dim_exam_directions", name: "考向", desc: "四栏联动右栏：新增 / 改名 / 删除防呆。", linkage: true },
+        { table: "dim_knowledge_points", name: "知识点", desc: "四栏联动中栏：双击改名、拖拽排序。", sub: "knowledge-linkage" },
+        { table: "dim_exam_directions", name: "考向", desc: "四栏联动右栏：新增 / 改名 / 删除防呆。", sub: "knowledge-linkage" },
         { table: "dict_subject_thoughts", name: "学科思想", desc: "数形结合、分类讨论等思想标签。" },
         { table: "dict_solution_methods", name: "解题方法", desc: "配方法、换元法等 method 标签。" },
         { table: "dict_core_competencies", name: "核心素养", desc: "三会导向的核心素养表现。" }
@@ -92,7 +92,23 @@
     });
   }
 
+  /** 字典小标签 → 二级标签：单表同名直取，合树 / 联动按 item.sub 显式指定。 */
+  function subOf(category, table) {
+    if (!category || !table) return null;
+    var subs = subsOf(category);
+    var i;
+    for (i = 0; i < subs.length; i += 1) {
+      if (subs[i].table === table) return subs[i];
+    }
+    var item = itemOf(category, table);
+    if (!item || !item.sub) return null;
+    for (i = 0; i < subs.length; i += 1) {
+      if (subs[i].key === item.sub) return subs[i];
+    }
+    return null;
+  }
+
   window.DcCatalog = {
-    CATEGORIES: CATEGORIES, byKey: byKey, itemOf: itemOf, subsOf: subsOf
+    CATEGORIES: CATEGORIES, byKey: byKey, itemOf: itemOf, subsOf: subsOf, subOf: subOf
   };
 })();

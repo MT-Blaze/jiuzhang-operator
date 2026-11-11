@@ -1,9 +1,7 @@
 /**
- * 全局设置：学段 / 学科 / 教材版本三个下拉框的状态中心。
- * 【教材版本】只列 dim_textbook_versions 的纯净版本名（人教A版/统编版…），
- * 册次不在这里出现——左侧章节树按「版本 → 册次 → 章 → 节」展开。
- * 选定即写 localStorage（键 jzo.dictConsole.globals.v1），刷新后还原；
- * 后续所有字典查询经 query() 默认携带这三个参数。
+ * 全局设置：单按钮显示当前状态，展开后三下拉先改草稿，点【确定】才生效。
+ * 选定组合写 localStorage（jzo.dictConsole.globals.v1），广播 dc:globals-changed，
+ * 字典查询经 query() 默认携带这三个参数。失败时如实报错，不拿假选项顶替。
  */
 (function () {
   "use strict";
@@ -12,12 +10,19 @@
   var EVENT_NAME = "dc:globals-changed";
 
   var els = null;
+  var ui = null;
   var stateEl = null;
   var state = { stage: "", subject_id: "", version_id: "" };
+  var draft = { stage: "", subject_id: "", version_id: "" };
   var subjects = [];
   var grades = [];
   var versions = [];
   var ready = false;
+  var panelOpen = false;
+
+  function copy(source) {
+    return { stage: source.stage, subject_id: source.subject_id, version_id: source.version_id };
+  }
 
   function load() {
     try {
@@ -68,9 +73,19 @@
 
   function filteredVersions() {
     return versions.filter(function (version) {
-      if (state.subject_id && String(version.subject_id) !== state.subject_id) return false;
+      if (draft.subject_id && String(version.subject_id) !== draft.subject_id) return false;
       return true;
     });
+  }
+
+  function subjectName(id) {
+    var hit = subjects.filter(function (item) { return String(item.id) === String(id); })[0];
+    return hit ? hit.name : "";
+  }
+
+  function versionName(id) {
+    var hit = versions.filter(function (item) { return String(item.id) === String(id); })[0];
+    return hit ? hit.name : "";
   }
 
   function fill(select, options, kept) {
@@ -85,64 +100,144 @@
     if (select.value !== kept) select.value = "";
   }
 
-  function renderSubjects() {
-    var options = [{ value: "", label: "全部学科" }].concat(subjects.map(function (item) {
-      return { value: String(item.id), label: item.name };
-    }));
-    fill(els.subject, options, state.subject_id);
-    state.subject_id = els.subject.value;
+  function label() {
+    return [
+      state.stage || "全部学段",
+      subjectName(state.subject_id) || "全部学科",
+      versionName(state.version_id) || "全部版本"
+    ].join(" · ");
+  }
+
+  function shortLabel() {
+    return [
+      state.stage || "全学段",
+      subjectName(state.subject_id) || "全学科",
+      versionName(state.version_id) || "全版本"
+    ].join(" · ");
+  }
+
+  function renderToggle() {
+    if (!ui || !ui.label) return;
+    ui.label.textContent = ready ? shortLabel() : "全局设置加载中…";
+  }
+
+  function renderState() {
+    if (!stateEl) return;
+    stateEl.textContent = ready ? "确定后立即生效，字典查询默认携带。" : "字典数据加载中…";
+  }
+
+  function fill(select, options, kept) {
+    select.textContent = "";
+    options.forEach(function (opt) {
+      var node = document.createElement("option");
+      node.value = opt.value;
+      node.textContent = opt.label;
+      select.appendChild(node);
+    });
+    select.value = kept;
+    if (select.value !== kept) select.value = "";
   }
 
   function renderStages() {
     var options = [{ value: "", label: "全部学段" }].concat(stageOptions().map(function (name) {
       return { value: name, label: name };
     }));
-    fill(els.stage, options, state.stage);
-    state.stage = els.stage.value;
+    fill(els.stage, options, draft.stage);
+    draft.stage = els.stage.value;
+  }
+
+  function renderSubjects() {
+    var options = [{ value: "", label: "全部学科" }].concat(subjects.map(function (item) {
+      return { value: String(item.id), label: item.name };
+    }));
+    fill(els.subject, options, draft.subject_id);
+    draft.subject_id = els.subject.value;
   }
 
   function renderVersions() {
     var options = [{ value: "", label: "全部版本" }].concat(filteredVersions().map(function (version) {
       return { value: String(version.id), label: version.name };
     }));
-    fill(els.textbook, options, state.version_id);
+    fill(els.textbook, options, draft.version_id);
+    draft.version_id = els.textbook.value;
+  }
+
+  function renderDraft() {
+    renderStages();
+    renderSubjects();
+    renderVersions();
+  }
+
+  function syncDraft(key) {
+    if (key === "stage") draft.stage = els.stage.value;
+    else if (key === "subject_id") draft.subject_id = els.subject.value;
+    else draft.version_id = els.textbook.value;
+    if (key === "subject_id") renderVersions();
+  }
+
+  function setExpanded(expanded) {
+    panelOpen = expanded;
+    ui.panel.hidden = !expanded;
+    ui.toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  }
+
+  function openPanel() {
+    draft = copy(state);
+    if (ready) renderDraft();
+    setExpanded(true);
+    if (ready) els.stage.focus();
+  }
+
+  function closePanel(revert) {
+    if (revert) draft = copy(state);
+    setExpanded(false);
+  }
+
+  function commit() {
+    if (!ready) return;
+    state.stage = els.stage.value;
+    state.subject_id = els.subject.value;
     state.version_id = els.textbook.value;
-  }
-
-  function label() {
-    var parts = [];
-    parts.push(state.stage || "全部学段");
-    var subject = subjects.filter(function (item) { return String(item.id) === state.subject_id; })[0];
-    parts.push(subject ? subject.name : "全部学科");
-    var version = versions.filter(function (item) {
-      return String(item.id) === state.version_id;
-    })[0];
-    parts.push(version ? version.name : "全部版本");
-    return parts.join(" · ");
-  }
-
-  function renderState() {
-    if (stateEl) stateEl.textContent = ready ? "当前：" + label() : "字典数据加载中…";
-  }
-
-  function onChange(key) {
-    if (key === "stage") state.stage = els.stage.value;
-    else if (key === "subject_id") state.subject_id = els.subject.value;
-    else state.version_id = els.textbook.value;
-    if (key !== "version_id") renderVersions();
     persist();
+    renderToggle();
     renderState();
     emit();
+    closePanel(false);
+    ui.toggle.focus();
+  }
+
+  function onToggle() {
+    if (panelOpen) {
+      closePanel(true);
+      ui.toggle.focus();
+    } else {
+      openPanel();
+    }
   }
 
   /**
-   * 挂载三个下拉框并拉取真实字典。失败时下拉保持禁用并如实报错，
+   * 挂载设置面板并拉取真实字典。失败时下拉保持禁用并如实报错，
    * 绝不拿假选项顶替（数据字典拒绝骨架）。
    */
-  function init(selectEls, statusEl) {
-    els = selectEls;
+  function init(elements, statusEl, toggleEls) {
+    els = elements;
     stateEl = statusEl || null;
+    ui = toggleEls || {};
     load();
+    draft = copy(state);
+    renderToggle();
+    if (ui.toggle) ui.toggle.addEventListener("click", onToggle);
+    if (ui.confirm) ui.confirm.addEventListener("click", commit);
+    els.stage.addEventListener("change", function () { syncDraft("stage"); });
+    els.subject.addEventListener("change", function () { syncDraft("subject_id"); });
+    els.textbook.addEventListener("change", function () { syncDraft("version_id"); });
+    document.addEventListener("keydown", function (event) {
+      if (!panelOpen || event.key !== "Escape") return;
+      event.preventDefault();
+      closePanel(true);
+      if (ui.toggle) ui.toggle.focus();
+    });
+
     return Promise.all([
       window.DcClient.fetchJson("/api/bank/engine/meta"),
       window.DcClient.fetchJson("/api/bank/engine/textbook-versions")
@@ -151,17 +246,15 @@
       grades = results[0].grades || [];
       versions = results[1].items || [];
       ready = true;
-      renderStages();
-      renderSubjects();
-      renderVersions();
+      renderDraft();
       [els.stage, els.subject, els.textbook].forEach(function (select) { select.disabled = false; });
-      els.stage.addEventListener("change", function () { onChange("stage"); });
-      els.subject.addEventListener("change", function () { onChange("subject_id"); });
-      els.textbook.addEventListener("change", function () { onChange("version_id"); });
+      if (ui.confirm) ui.confirm.disabled = false;
       persist();
+      renderToggle();
       renderState();
       emit();
     }).catch(function (error) {
+      if (ui && ui.label) ui.label.textContent = "全局设置加载失败";
       if (stateEl) stateEl.textContent = "全局设置加载失败：" + error.message;
       throw error;
     });

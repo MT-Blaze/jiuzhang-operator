@@ -1,0 +1,116 @@
+/* 辅助栏极简瘦身（2026-11-11）：全局设置折叠成单按钮，字典入口压成小标签。
+ * 独立一份样式：整块下架时删本文件与 dict_console.html 的引用行即可。 */
+
+.dc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- 全局设置：平时只有一枚状态按钮 ---------- */
+.dc-block-globals { padding: 8px; }
+.dc-globals-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+.dc-globals-toggle:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dc-globals-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dc-globals-icon { flex: none; font-size: 0.95rem; line-height: 1; }
+.dc-globals-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.dc-globals-caret {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.dc-globals-toggle[aria-expanded="true"] .dc-globals-caret { transform: rotate(225deg); }
+.dc-globals-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.dc-globals-panel[hidden] { display: none; }
+.dc-globals-panel .dc-field:last-of-type { margin-bottom: 12px; }
+.dc-globals-panel .dc-globals-state { margin-top: 8px; }
+
+/* ---------- 字典导航：三大分类 + 自动换行的小标签 ---------- */
+.dc-chip-groups { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.dc-chip-group { display: flex; flex-direction: column; gap: 8px; }
+.dc-chip-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.dc-chip-group-title::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* 行内留 6px 给标签的扩展热区，避免撑出横向滚动条 */
+.dc-chip-row { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px; margin: -6px; }
+.dc-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* 视觉保持紧凑，热区扩到 44px：上下左右各借 6px，正好用掉 12px 间距 */
+.dc-chip::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+}
+.dc-chip:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.dc-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dc-chip:active { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-globals-caret { transition: none; }
+  .dc-chip:active { transform: none; }
+}

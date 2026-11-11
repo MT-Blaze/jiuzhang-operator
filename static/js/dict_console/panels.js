@@ -139,5 +139,14 @@
     });
   }
 
-  window.DcPanels = { renderDashboard: renderDashboard, renderCategory: renderCategory };
+  /** 单字典页签：只挂这一张表 / 一棵树 / 一组联动，不经过二级标签。 */
+  function renderDict(panel, tab, ctx, category, sub) {
+    panel.textContent = "";
+    panel.appendChild(el("h2", "dc-panel-title", sub.label));
+    renderSub(panel, sub, ctx, category);
+  }
+
+  window.DcPanels = {
+    renderDashboard: renderDashboard, renderCategory: renderCategory, renderDict: renderDict
+  };
 })();

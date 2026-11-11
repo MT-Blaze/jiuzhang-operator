@@ -69,6 +69,14 @@
         tabs.open(category.key, category.title, function (panel, tab) {
           window.DcPanels.renderCategory(panel, tab, ctx, category);
         });
+      },
+      openDict: function (categoryKey, table) {
+        var category = window.DcCatalog.byKey(categoryKey);
+        var sub = window.DcCatalog.subOf(category, table);
+        if (!category || !sub) return;
+        tabs.open("dict:" + sub.key, sub.label, function (panel, tab) {
+          window.DcPanels.renderDict(panel, tab, ctx, category, sub);
+        });
       }
     };
 
@@ -76,7 +84,6 @@
       document.getElementById("dcTabs"),
       document.getElementById("dcPanels"),
       { onChange: function (key) {
-        window.DcSidebar.syncNav(key);
         var category = window.DcCatalog.byKey(key);
         if (category) {
           replaceRoute(key, subMemory[key] || defaultSub(category));
@@ -110,7 +117,12 @@
       stage: document.getElementById("dcStage"),
       subject: document.getElementById("dcSubject"),
       textbook: document.getElementById("dcTextbook")
-    }, document.getElementById("dcGlobalsState")).catch(function () {
+    }, document.getElementById("dcGlobalsState"), {
+      toggle: document.getElementById("dcGlobalsToggle"),
+      panel: document.getElementById("dcGlobalsPanel"),
+      confirm: document.getElementById("dcGlobalsConfirm"),
+      label: document.getElementById("dcGlobalsToggleLabel")
+    }).catch(function () {
       /* 失败原因已写进辅助栏状态行，画布照常可用 */
     });
   }

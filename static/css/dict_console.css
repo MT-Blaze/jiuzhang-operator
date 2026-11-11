@@ -226,61 +226,6 @@
 .dc-field select:disabled { opacity: 0.6; }
 .dc-globals-state { margin: 4px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
 
-/* ---------- 字典导航（原生 details 折叠，键盘可达） ---------- */
-.dc-nav summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  margin: -6px -4px 0;
-  padding: 0 4px;
-  font-family: var(--serif);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  list-style: none;
-}
-.dc-nav summary::-webkit-details-marker { display: none; }
-.dc-nav summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.dc-nav-caret {
-  width: 9px;
-  height: 9px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg);
-  transition: transform 0.15s ease;
-}
-.dc-nav[open] .dc-nav-caret { transform: rotate(225deg); }
-.dc-nav-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.dc-nav-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.9rem;
-  cursor: pointer;
-  text-align: left;
-}
-.dc-nav-item:hover { border-color: var(--accent); background: var(--accent-soft); }
-.dc-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.dc-nav-item[aria-current="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.dc-nav-badge {
-  flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.72rem;
-}
-
 /* ---------- 操作区 ---------- */
 .dc-ops { display: flex; flex-direction: column; gap: 8px; }
 .dc-ops-state { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
@@ -351,10 +296,6 @@
   .dc-stat-row { grid-template-columns: repeat(2, 1fr); }
   .dc-card-grid { grid-template-columns: 1fr; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .dc-nav-caret { transition: none; }
-}
-
 /* ---------- 内嵌模式（2026-11-11）：作为工作台画布页签时不再重复顶栏/辅助栏 ---------- */
 body.dc-embedded .dc-page { height: 100vh; min-height: 0; }
 body.dc-embedded .dc-topbar,
