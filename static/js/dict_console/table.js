@@ -113,6 +113,9 @@
   }
 
   function mount(panel, item, ctx) {
+    if (item.table === "dim_regions" && window.DcRegionsTree) {
+      return window.DcRegionsTree.mount(panel, item, ctx);
+    }
     var section = el("section", "dc-table-block");
     section.setAttribute("data-table", item.table);
     section.setAttribute("aria-label", item.name + "字典表");

@@ -1,0 +1,48 @@
+/* 行政区划树形折叠表格（2026-11-11）：整块下架删本文件与 HTML 里的一行 link 即可。 */
+.dc-regions-tree .dc-tree-lead {
+  width: 1%;
+  padding-right: 2px;
+  padding-left: 8px;
+  text-align: center;
+}
+.dc-regions-tree .dc-tree-toggle {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.dc-regions-tree .dc-tree-toggle:hover { color: var(--accent); background: var(--accent-soft); }
+.dc-regions-tree .dc-tree-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dc-regions-tree .dc-tree-branch,
+.dc-regions-tree .dc-tree-dot {
+  display: inline-block;
+  width: 26px;
+  text-align: center;
+  color: var(--faint);
+}
+.dc-regions-tree .dc-tree-parent {
+  display: inline-block;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.dc-regions-tree .dc-row-province td[data-col="name"] { font-weight: 600; }
+.dc-regions-tree .dc-row-province td { background: var(--paper-deep); }
+.dc-regions-tree .dc-row-city td[data-col="name"] { padding-left: 22px; }
+.dc-regions-tree tr.dc-row-reveal td { animation: dcTreeReveal 0.22s ease-out; }
+@keyframes dcTreeReveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dc-regions-tree tr.dc-row-reveal td { animation: none; }
+}
