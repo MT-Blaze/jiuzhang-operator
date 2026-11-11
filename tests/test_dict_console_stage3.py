@@ -438,7 +438,7 @@ class LinkageRouteTest(unittest.TestCase):
                 bank_engine.engine_linkage_delete_direction(1, 2)
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertEqual(ctx.exception.detail["code"], "referenced")
-        self.assertEqual(ctx.exception.detail["message"], "已被引用，禁止删除")
+        self.assertEqual(ctx.exception.detail["message"], "已被引用，无法删除")
 
     def test_order_route_maps_value_error_to_400(self) -> None:
         from app.api import bank_engine

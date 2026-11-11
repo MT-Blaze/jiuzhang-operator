@@ -46,7 +46,7 @@ class ReferencedError(RuntimeError):
 
     def __init__(self, hits: tuple[ReferenceHit, ...]) -> None:
         self.hits = hits
-        super().__init__("该行已被其他表引用，禁止删除")
+        super().__init__("该行已被其他表引用，无法删除")
 
 
 class ConflictError(RuntimeError):
@@ -66,6 +66,8 @@ class TableSpec:
     int_columns: tuple[str, ...]
     nullable: tuple[str, ...]
     global_filters: tuple[tuple[str, str], ...]
+    # 非编辑列但必填的外键：新增时由前端按全局设置带入（列名, 全局参数名）。
+    scope: tuple[tuple[str, str], ...] = ()
 
 
 SPECS: dict[str, TableSpec] = {
@@ -127,61 +129,77 @@ SPECS: dict[str, TableSpec] = {
         nullable=("chapter_id", "description"),
         global_filters=(("subject_id", "subject_id"),),
     ),
-    # 二级标签补齐的只读字典：同一套规格驱动，editable 留空，前端只渲染平铺表格。
+    # 二级标签里的字典：与基础表同一套规格驱动，全部开放新增 / 改名 / 删除。
     "dict_question_types": TableSpec(
         table="dict_question_types", label="题型", model=QuestionType,
         columns=("id", "name", "code", "sort_order"),
-        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        editable=("name", "code", "sort_order"), required=("name", "code"),
+        search=("name", "code"), order="sort_order, id",
         int_columns=("sort_order",), nullable=(), global_filters=(),
     ),
     "dict_difficulties": TableSpec(
         table="dict_difficulties", label="难度", model=Difficulty,
         columns=("id", "name", "code", "sort_order", "level", "description"),
-        editable=(), required=(), search=("name", "code", "description"),
+        editable=("name", "code", "sort_order", "level", "description"),
+        required=("name", "code", "level"), search=("name", "code", "description"),
         order="level, sort_order, id", int_columns=("sort_order", "level"),
         nullable=("description",), global_filters=(),
     ),
     "dict_question_qualities": TableSpec(
         table="dict_question_qualities", label="题目质量", model=Quality,
         columns=("id", "name", "code", "sort_order"),
-        editable=(), required=(), search=("name", "code"), order="sort_order, id",
+        editable=("name", "code", "sort_order"), required=("name", "code"),
+        search=("name", "code"), order="sort_order, id",
         int_columns=("sort_order",), nullable=(), global_filters=(),
     ),
     "dim_textbook_versions": TableSpec(
         table="dim_textbook_versions", label="教材版本", model=TextbookVersion,
         columns=("id", "name", "code", "sort_order", "publisher", "subject_id"),
-        editable=(), required=(), search=("name", "code", "publisher"),
+        editable=("name", "code", "sort_order", "publisher"),
+        required=("name", "code", "subject_id"), search=("name", "code", "publisher"),
         order="sort_order, id", int_columns=("sort_order", "subject_id"),
         nullable=("publisher",), global_filters=(("subject_id", "subject_id"),),
+        scope=(("subject_id", "subject_id"),),
     ),
     "dim_textbook_chapters": TableSpec(
         table="dim_textbook_chapters", label="教材章节", model=Chapter,
         columns=("id", "name", "code", "sort_order", "textbook_id", "parent_id"),
-        editable=(), required=(), search=("name", "code"),
+        editable=("name", "code", "sort_order", "parent_id"),
+        required=("name", "code", "textbook_id"), search=("name", "code"),
         order="textbook_id, sort_order, id",
         int_columns=("sort_order", "textbook_id", "parent_id"),
         nullable=("parent_id",), global_filters=(("textbook_id", "textbook_id"),),
+        scope=(("textbook_id", "textbook_id"),),
     ),
     "dict_subject_thoughts": TableSpec(
         table="dict_subject_thoughts", label="学科思想", model=SubjectThought,
         columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=(), required=(), search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        editable=("name", "code", "sort_order", "stage"),
+        required=("name", "code", "subject_id"), search=("name", "code"),
+        order="sort_order, id", int_columns=("sort_order", "subject_id"),
+        nullable=("stage",),
         global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+        scope=(("subject_id", "subject_id"), ("stage", "stage")),
     ),
     "dict_solution_methods": TableSpec(
         table="dict_solution_methods", label="解题方法", model=SolutionMethod,
         columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=(), required=(), search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        editable=("name", "code", "sort_order", "stage"),
+        required=("name", "code", "subject_id"), search=("name", "code"),
+        order="sort_order, id", int_columns=("sort_order", "subject_id"),
+        nullable=("stage",),
         global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+        scope=(("subject_id", "subject_id"), ("stage", "stage")),
     ),
     "dict_core_competencies": TableSpec(
         table="dict_core_competencies", label="核心素养", model=CoreCompetency,
         columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=(), required=(), search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order", "subject_id"), nullable=("stage",),
+        editable=("name", "code", "sort_order", "stage"),
+        required=("name", "code", "subject_id"), search=("name", "code"),
+        order="sort_order, id", int_columns=("sort_order", "subject_id"),
+        nullable=("stage",),
         global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+        scope=(("subject_id", "subject_id"), ("stage", "stage")),
     ),
 }
 
@@ -217,13 +235,16 @@ def get_spec(table: str) -> TableSpec:
 
 
 def fields_meta(spec: TableSpec) -> tuple[dict[str, Any], ...]:
-    """给前端表格的列描述：列名、中文名、是否可编辑、值类型。"""
+    """给前端表格的列描述：列名、中文名、是否可编辑、值类型、必填与全局带入来源。"""
+    scope_of = dict(spec.scope)
     return tuple(
         {
             "key": col,
             "label": COLUMN_LABELS.get(col, col),
             "editable": col in spec.editable,
+            "required": col in spec.required,
             "kind": "int" if col in spec.int_columns else "text",
+            "scope": scope_of.get(col, ""),
         }
         for col in spec.columns
     )
@@ -290,7 +311,9 @@ def _clean_values(
     spec: TableSpec, values: dict[str, Any], *, for_insert: bool
 ) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for col in spec.editable:
+    # 新增时必填的外键（如 subject_id）虽不做单元格编辑，也要允许前端从全局设置带入。
+    columns = spec.editable + (spec.required if for_insert else ())
+    for col in dict.fromkeys(columns):
         label = COLUMN_LABELS.get(col, col)
         if col not in values:
             if for_insert and col in spec.required:

@@ -38,7 +38,7 @@ def _guard(call: Callable[[], Any]) -> Any:
             status_code=409,
             detail={
                 "code": "referenced",
-                "message": "已被引用，禁止删除",
+                "message": "已被引用，无法删除",
                 "references": [asdict(hit) for hit in exc.hits],
             },
         ) from exc

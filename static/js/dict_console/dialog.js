@@ -12,11 +12,24 @@
   function close(confirmed) {
     if (!active) return;
     var box = active;
+    var values = {};
+    if (confirmed && box.inputs && box.inputs.length) {
+      var missing = null;
+      box.inputs.forEach(function (item) {
+        values[item.key] = item.input.value.trim();
+        if (item.required && !values[item.key] && !missing) missing = item;
+      });
+      if (missing) {
+        missing.input.setAttribute("aria-invalid", "true");
+        missing.input.focus();
+        return;
+      }
+    }
     active = null;
     document.removeEventListener("keydown", onKeydown, true);
     if (box.backdrop.parentNode) box.backdrop.parentNode.removeChild(box.backdrop);
     if (box.anchor && typeof box.anchor.focus === "function") box.anchor.focus();
-    if (confirmed && typeof box.onConfirm === "function") box.onConfirm();
+    if (confirmed && typeof box.onConfirm === "function") box.onConfirm(values);
     if (!confirmed && typeof box.onCancel === "function") box.onCancel();
   }
 
@@ -38,8 +51,9 @@
   }
 
   /**
-   * spec: {title, message, confirmText, cancelText, alertOnly, anchor, onConfirm, onCancel}
-   * alertOnly=true 时只有【知道了】，Esc 与遮罩等价于关闭。
+   * spec: {title, message, confirmText, cancelText, alertOnly, anchor, onConfirm, onCancel,
+   *        fields: [{key, label, value, placeholder, required}]}
+   * alertOnly=true 时只有【知道了】，Esc 与遮罩等价于关闭；fields 非空时 onConfirm 收到 {key: value}。
    */
   function open(spec) {
     var options = spec || {};
@@ -64,9 +78,33 @@
     message.textContent = String(options.message || "");
     box.appendChild(message);
 
+    var focusables = [];
+    var inputs = [];
+    if (options.fields && options.fields.length) {
+      var form = document.createElement("div");
+      form.className = "dc-dialog-fields";
+      options.fields.forEach(function (field) {
+        var label = document.createElement("label");
+        label.className = "dc-dialog-field";
+        var caption = document.createElement("span");
+        caption.textContent = String(field.label || field.key);
+        var input = document.createElement("input");
+        input.type = "text";
+        input.className = "dc-dialog-input";
+        input.value = field.value == null ? "" : String(field.value);
+        input.placeholder = String(field.placeholder || "");
+        input.setAttribute("aria-label", String(field.label || field.key));
+        label.appendChild(caption);
+        label.appendChild(input);
+        form.appendChild(label);
+        inputs.push({ key: field.key, required: !!field.required, input: input });
+        focusables.push(input);
+      });
+      box.appendChild(form);
+    }
+
     var tools = document.createElement("div");
     tools.className = "dc-dialog-tools";
-    var focusables = [];
     var cancel = null;
     if (!options.alertOnly) {
       cancel = document.createElement("button");
@@ -87,7 +125,7 @@
     backdrop.appendChild(box);
     document.body.appendChild(backdrop);
     active = {
-      backdrop: backdrop, focusables: focusables,
+      backdrop: backdrop, focusables: focusables, inputs: inputs,
       anchor: options.anchor || document.activeElement,
       onConfirm: options.onConfirm, onCancel: options.onCancel
     };
@@ -98,7 +136,8 @@
       if (event.target === backdrop) close(false);
     });
     document.addEventListener("keydown", onKeydown, true);
-    ok.focus();
+    if (inputs.length) inputs[0].input.focus();
+    else ok.focus();
   }
 
   window.DcDialog = {

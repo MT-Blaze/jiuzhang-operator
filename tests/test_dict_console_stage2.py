@@ -256,7 +256,7 @@ class ConsoleRouteTest(unittest.TestCase):
                 bank_engine.engine_dict_delete("dict_subjects", 2)
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertEqual(ctx.exception.detail["code"], "referenced")
-        self.assertEqual(ctx.exception.detail["message"], "已被引用，禁止删除")
+        self.assertEqual(ctx.exception.detail["message"], "已被引用，无法删除")
         self.assertEqual(ctx.exception.detail["references"][0]["label"], "教材版本")
 
     def test_guard_maps_conflict_and_lookup(self) -> None:

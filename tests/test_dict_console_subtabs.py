@@ -1,10 +1,10 @@
-"""数据字典控制台 · 二级标签契约：只读字典规格 + 前端静态装配。
+"""数据字典控制台 · 二级标签契约：八表全开放 + 前端静态装配。
 
 钉住四件事：
 1. 二级标签里出现的每张表都有 dao_console 规格，且返回真实 Dataclass 行；
-2. 补齐的字典全部只读（fields_meta 无 editable 列），前端不出现增删入口；
-3. subtabs.js / chapters.js / dict_console_subtabs.css 真被页面加载；
-4. 分类面板只挂 DcSubTabs，不再把多张表纵向堆叠。
+2. 八张原先只读的字典全部开放新增 / 改名 / 删除，删除仍保留外键引用防呆；
+3. subtabs.js / chapters.js / chapter_ops.js / dict_console_subtabs.css 真被页面加载；
+4. 分类面板只挂 DcSubTabs，不再把多张表纵向堆叠，也不再出现只读角标。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_dict_console_subtabs``
 """
@@ -37,7 +37,7 @@ from app.bank_engine.models import (  # noqa: E402
 SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 CONSOLE_DIR = ROOT / "static" / "js" / "dict_console"
 
-READ_ONLY = {
+DICT_TABLES = {
     "dict_question_types": (QuestionType, 3),
     "dict_difficulties": (Difficulty, 5),
     "dict_question_qualities": (Quality, 3),
@@ -49,7 +49,7 @@ READ_ONLY = {
 }
 
 
-class ReadOnlyDictSpecTest(unittest.TestCase):
+class WritableDictSpecTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp(prefix="dict-subtabs-"))
@@ -61,22 +61,76 @@ class ReadOnlyDictSpecTest(unittest.TestCase):
         shutil.rmtree(cls.tmp, True)
 
     def test_every_subtable_is_registered_and_seeded(self) -> None:
-        for table, (model, expected) in READ_ONLY.items():
+        for table, (model, expected) in DICT_TABLES.items():
             self.assertIn(table, dao_console.SPECS)
             items, total = service.console_list(table, limit=200, db_path=self.db_path)
             self.assertEqual(total, expected, table)
             self.assertTrue(items, table)
             self.assertTrue(all(isinstance(item, model) for item in items), table)
 
-    def test_read_only_specs_expose_no_editable_field(self) -> None:
-        for table in READ_ONLY:
+    def test_all_eight_dicts_expose_editable_fields(self) -> None:
+        for table in DICT_TABLES:
             fields = dao_console.fields_meta(dao_console.get_spec(table))
             self.assertTrue(fields)
-            self.assertFalse(
-                any(field["editable"] for field in fields), table
+            editable = [field["key"] for field in fields if field["editable"]]
+            self.assertTrue(editable, table)
+            self.assertIn("name", editable, table)
+            self.assertIn("code", editable, table)
+
+    def test_insert_update_delete_every_dict(self) -> None:
+        with service.session(self.db_path) as conn:
+            book_id = int(conn.execute("SELECT id FROM dim_textbooks LIMIT 1").fetchone()["id"])
+        cases = {
+            "dict_question_types": {"name": "验收题型", "code": "zz_t_type"},
+            "dict_question_qualities": {"name": "验收质量", "code": "zz_t_quality"},
+            "dim_textbook_versions": {
+                "name": "验收版本", "code": "zz_t_version", "subject_id": 1
+            },
+            "dim_textbook_chapters": {
+                "name": "验收章节", "code": "zz_t_chapter", "textbook_id": book_id
+            },
+            "dict_subject_thoughts": {
+                "name": "验收思想", "code": "zz_t_thought", "subject_id": 1
+            },
+            "dict_solution_methods": {
+                "name": "验收方法", "code": "zz_t_method", "subject_id": 1
+            },
+            "dict_core_competencies": {
+                "name": "验收素养", "code": "zz_t_competency", "subject_id": 1
+            },
+        }
+        for table, payload in cases.items():
+            with self.subTest(table=table):
+                row = service.console_insert(table, payload, db_path=self.db_path)
+                self.addCleanup(self._drop, table, row.id)
+                changed = service.console_update(
+                    table, row.id, {"name": payload["name"] + "改"}, db_path=self.db_path
+                )
+                self.assertEqual(changed.name, payload["name"] + "改")
+                service.console_delete(table, row.id, db_path=self.db_path)
+                with self.assertRaises(dao_console.ConsoleLookupError):
+                    service.console_row(table, row.id, db_path=self.db_path)
+
+    def test_difficulty_update_keeps_domain_check(self) -> None:
+        fields = dao_console.fields_meta(dao_console.get_spec("dict_difficulties"))
+        self.assertIn("level", [field["key"] for field in fields if field["editable"]])
+        changed = service.console_update(
+            "dict_difficulties", 1, {"description": "验收说明"}, db_path=self.db_path
+        )
+        self.assertEqual(changed.description, "验收说明")
+        with self.assertRaises(dao_console.ConflictError):
+            service.console_insert(
+                "dict_difficulties", {"name": "越界难度", "code": "zz_t_l6", "level": 6},
+                db_path=self.db_path,
             )
 
-    def test_keyword_search_works_on_read_only_table(self) -> None:
+    def test_delete_still_guards_references(self) -> None:
+        items, _ = service.console_list("dim_textbook_versions", limit=1, db_path=self.db_path)
+        with self.assertRaises(dao_console.ReferencedError) as ctx:
+            service.console_delete("dim_textbook_versions", items[0].id, db_path=self.db_path)
+        self.assertTrue(ctx.exception.hits)
+
+    def test_keyword_search_works_on_dict_table(self) -> None:
         items, total = service.console_list(
             "dict_question_types", keyword="choice", db_path=self.db_path
         )
@@ -103,6 +157,12 @@ class ReadOnlyDictSpecTest(unittest.TestCase):
         self.assertNotEqual({row.id for row in first}, {row.id for row in second})
         self.assertGreater(total, 50)
 
+    def _drop(self, table: str, row_id: int) -> None:
+        try:
+            service.console_delete(table, row_id, db_path=self.db_path)
+        except (dao_console.ReferencedError, dao_console.ConsoleLookupError):
+            pass
+
 
 class SubTabsWiringTest(unittest.TestCase):
     def test_new_assets_exist_and_are_loaded(self) -> None:
@@ -110,20 +170,21 @@ class SubTabsWiringTest(unittest.TestCase):
         for ref in (
             "/static/css/dict_console_subtabs.css",
             "/static/js/dict_console/subtabs.js",
+            "/static/js/dict_console/chapter_ops.js",
             "/static/js/dict_console/chapters.js",
         ):
             self.assertIn(ref, html)
             self.assertTrue((ROOT / ref.lstrip("/")).is_file(), ref)
 
     def test_new_assets_stay_under_500_lines(self) -> None:
-        for name in ("subtabs.js", "chapters.js"):
+        for name in ("subtabs.js", "chapters.js", "chapter_ops.js", "row_ops.js"):
             path = CONSOLE_DIR / name
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 500, name)
         css = ROOT / "static" / "css" / "dict_console_subtabs.css"
         self.assertLess(len(css.read_text(encoding="utf-8").splitlines()), 500)
 
     def test_subtabs_js_never_uses_innerhtml_or_eval(self) -> None:
-        for name in ("subtabs.js", "chapters.js"):
+        for name in ("subtabs.js", "chapters.js", "chapter_ops.js"):
             text = (CONSOLE_DIR / name).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"\.innerHTML\s*=", name)
             self.assertNotRegex(text, r"\beval\s*\(", name)
@@ -143,7 +204,18 @@ class SubTabsWiringTest(unittest.TestCase):
         panels = (CONSOLE_DIR / "panels.js").read_text(encoding="utf-8")
         self.assertIn("DcSubTabs.mount", panels)
         self.assertNotIn("待交付字典", panels)
-        self.assertIn("readOnly", panels)
+        self.assertNotIn("readOnly", panels)
+
+    def test_no_readonly_badge_or_gate_left(self) -> None:
+        table = (CONSOLE_DIR / "table.js").read_text(encoding="utf-8")
+        self.assertNotIn("readOnly", table)
+        self.assertNotIn("dc-table-readonly", table)
+        self.assertIn("DcRowOps.addRow", table)
+        self.assertIn("DcRowOps.deleteRow", table)
+        css = (ROOT / "static" / "css" / "dict_console_subtabs.css").read_text(encoding="utf-8")
+        self.assertNotIn("dc-table-readonly", css)
+        catalog = (CONSOLE_DIR / "catalog.js").read_text(encoding="utf-8")
+        self.assertNotIn("editable", catalog)
 
     def test_state_memory_wired_in_main_and_subtabs(self) -> None:
         main = (CONSOLE_DIR / "main.js").read_text(encoding="utf-8")
@@ -152,7 +224,7 @@ class SubTabsWiringTest(unittest.TestCase):
         subtabs = (CONSOLE_DIR / "subtabs.js").read_text(encoding="utf-8")
         self.assertIn('pane.style.display = on ? "block" : "none"', subtabs)
         table = (CONSOLE_DIR / "table.js").read_text(encoding="utf-8")
-        self.assertIn("readOnly", table)
+        self.assertNotIn("readOnly", table)
         self.assertNotRegex(table, r"\.innerHTML\s*=")
 
 

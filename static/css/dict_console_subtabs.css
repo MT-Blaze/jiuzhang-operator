@@ -41,16 +41,6 @@
 }
 .dc-subpanels { padding-top: 4px; }
 
-/* 只读字典的角标：告诉老师这张表不在控制台改 */
-.dc-table-readonly {
-  flex: none;
-  padding: 3px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
 /* ---------- 教材章节：左树右表 ---------- */
 .dc-chapters { min-width: 0; }
 .dcc-layout {
@@ -103,6 +93,20 @@
 .dcc-caret:focus-visible, .dcc-node:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .dcc-detail { min-height: 120px; }
+.dcc-ops { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.dcc-op {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.dcc-op:hover { background: var(--accent-soft); color: var(--accent); }
+.dcc-op:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dcc-detail-name { margin: 0 0 4px; font-family: var(--serif); font-size: 1rem; font-weight: 700; }
 .dcc-detail-meta { margin: 0 0 10px; font-size: 0.8rem; color: var(--muted); }
 .dcc-kv {

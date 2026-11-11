@@ -1,14 +1,24 @@
 /**
- * 字典行操作（阶段二）：双击单元格编辑、新增行、删除防呆。
+ * 字典行操作：双击单元格编辑、新增行、删除防呆。
  * 编辑：双击或聚焦后 Enter/F2 变 input，blur 即 PUT 保存，Esc 放弃；
  * 删除：先确认再 DELETE，被引用时后端回 409，弹「已被引用，禁止删除」并列出引用来源。
+ * 新增：必填外键（学科 / 教材）自动取右侧全局设置，缺了就当场提示，不发空请求。
  * 全部文案走 textContent，写请求经 DcClient.writeJson 自动取新鲜令牌。
  */
 (function () {
   "use strict";
 
+  var SCOPE_LABELS = { subject_id: "学科", stage: "学段", textbook_id: "教材" };
+
   function cellText(value) {
     return value == null ? "" : String(value);
+  }
+
+  function scopeValue(controller, field) {
+    if (!field.scope) return null;
+    var query = controller.ctx.globals.query();
+    var value = query[field.scope];
+    return value == null || value === "" ? null : value;
   }
 
   function rowName(row) {
@@ -73,13 +83,21 @@
         var input = document.createElement("input");
         input.type = "text";
         input.className = "dc-cell-input";
-        input.placeholder = field.label;
+        input.placeholder = field.label + (field.required ? "（必填）" : "");
         input.setAttribute("aria-label", "新增" + field.label);
+        var preset = scopeValue(controller, field);
+        if (preset != null) input.value = String(preset);
         inputs[field.key] = input;
         td.appendChild(input);
         input.addEventListener("keydown", function (event) {
           if (event.key === "Escape") { event.preventDefault(); tr.remove(); }
         });
+      } else if (field.scope) {
+        var inherited = scopeValue(controller, field);
+        td.className = "dc-cell-id";
+        td.textContent = inherited == null
+          ? "先选" + (SCOPE_LABELS[field.scope] || field.label)
+          : "按全局：" + inherited;
       } else {
         td.className = "dc-cell-id";
         td.textContent = "自动";
@@ -105,9 +123,27 @@
     cancel.addEventListener("click", function () { tr.remove(); });
     save.addEventListener("click", function () {
       var payload = {};
-      Object.keys(inputs).forEach(function (key) {
-        if (inputs[key].value.trim() !== "") payload[key] = inputs[key].value;
+      var problems = [];
+      controller.fields.forEach(function (field) {
+        var value = inputs[field.key] ? inputs[field.key].value.trim() : "";
+        if (field.editable && value !== "") {
+          payload[field.key] = value;
+          return;
+        }
+        var inherited = field.scope ? scopeValue(controller, field) : null;
+        if (inherited != null) {
+          payload[field.key] = inherited;
+          return;
+        }
+        if (field.required) {
+          problems.push((field.editable ? "请填写" : "请先在右侧全局设置选择")
+            + "「" + (SCOPE_LABELS[field.scope] || field.label) + "」");
+        }
       });
+      if (problems.length) {
+        window.DcDialog.alert({ title: "还不能保存", message: problems.join("\n"), anchor: save });
+        return;
+      }
       save.disabled = true;
       save.setAttribute("aria-busy", "true");
       window.DcClient.writeJson(controller.url, payload, "POST").then(function () {
@@ -123,7 +159,7 @@
 
   function referenceMessage(error, row) {
     var detail = error.detail;
-    var lines = ["「" + rowName(row) + "」已被引用，禁止删除。"];
+    var lines = ["「" + rowName(row) + "」已被引用，无法删除。"];
     var refs = detail && Array.isArray(detail.references) ? detail.references : [];
     if (refs.length) {
       lines.push("", "引用来源：");
@@ -150,7 +186,7 @@
         }).catch(function (error) {
           if (error.status === 409 && error.detail && error.detail.code === "referenced") {
             window.DcDialog.alert({
-              title: "已被引用，禁止删除", message: referenceMessage(error, row), anchor: anchor
+              title: "已被引用，无法删除", message: referenceMessage(error, row), anchor: anchor
             });
           } else {
             window.DcDialog.alert({ title: "删除失败", message: error.message, anchor: anchor });
@@ -160,5 +196,8 @@
     });
   }
 
-  window.DcRowOps = { editCell: editCell, addRow: addRow, deleteRow: deleteRow };
+  window.DcRowOps = {
+    editCell: editCell, addRow: addRow, deleteRow: deleteRow,
+    referenceMessage: referenceMessage
+  };
 })();

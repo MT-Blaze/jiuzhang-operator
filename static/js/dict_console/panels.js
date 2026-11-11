@@ -2,7 +2,7 @@
  * 画布面板渲染：数据看板 + 三大分类面板。
  * 所有数字来自 /api/bank/engine/status 的真实计数，不写死、不占位。
  * 分类面板内按 catalog.subs 渲染二级标签：一个标签只挂一张表 / 一棵树 / 一组联动，
- * 可编辑表沿用 DcTable，补齐的只读字典也用同一套表格（隐藏新增与删除），不再纵向堆叠。
+ * 所有单表字典一律可增删改，统一走 DcTable，不再有只读表格。
  */
 (function () {
   "use strict";
@@ -94,7 +94,7 @@
     });
   }
 
-  /** 二级标签的内容：联动 / 章节树 / 单表（可编辑与否由 catalog 的 editable 决定）。 */
+  /** 二级标签的内容：联动 / 章节树 / 单表（单表一律可增删改）。 */
   function renderSub(host, sub, ctx, category) {
     if (sub.mode === "linkage") {
       if (window.DcLinkage) window.DcLinkage.mount(host, ctx);
@@ -107,7 +107,7 @@
     var item = window.DcCatalog.itemOf(category, sub.table) || {
       table: sub.table, name: sub.label, desc: category.title + " · " + sub.label
     };
-    window.DcTable.mount(host, item, ctx, { readOnly: !item.editable });
+    window.DcTable.mount(host, item, ctx);
   }
 
   /** 分类面板：分类标题下挂一排二级标签，一个标签只渲染一张表 / 一棵树 / 一组联动。 */

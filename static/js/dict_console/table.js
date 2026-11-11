@@ -1,7 +1,8 @@
 /**
- * 字典表格（阶段二）：分类页签里每张可编辑表一个表格块。
+ * 字典表格（阶段二）：分类页签里每张表一个表格块。
  * 搜索框 + 分页 + 全局设置三参数（DcGlobals.query()）真正带进查询；
  * 全局设置变化或搜索输入即刷新。行内交互（编辑/新增/删除）交给 DcRowOps。
+ * 本地私有系统：所有字典一律可增删改，表格不再有只读态。
  * 整块下架：删本目录与 panels.js 的 DcTable.mount 调用即可。
  */
 (function () {
@@ -33,7 +34,7 @@
       th.scope = "col";
       tr.appendChild(th);
     });
-    if (!controller.readOnly) tr.appendChild(el("th", "dc-th-action", "操作"));
+    tr.appendChild(el("th", "dc-th-action", "操作"));
     controller.els.thead.textContent = "";
     controller.els.thead.appendChild(tr);
   }
@@ -44,7 +45,7 @@
     if (!controller.rows.length) {
       var empty = document.createElement("tr");
       var td = el("td", "dc-table-empty", "无匹配数据");
-      td.colSpan = controller.fields.length + (controller.readOnly ? 0 : 1);
+      td.colSpan = controller.fields.length + 1;
       empty.appendChild(td);
       tbody.appendChild(empty);
       return;
@@ -53,7 +54,7 @@
       var tr = document.createElement("tr");
       tr.setAttribute("data-id", String(row.id));
       controller.fields.forEach(function (field) {
-        var editable = field.editable && !controller.readOnly;
+        var editable = !!field.editable;
         var td = el("td", editable ? "dc-cell-editable" : "dc-cell-id",
           row[field.key] == null ? "" : String(row[field.key]));
         td.setAttribute("data-col", field.key);
@@ -72,17 +73,15 @@
         }
         tr.appendChild(td);
       });
-      if (!controller.readOnly) {
-        var action = document.createElement("td");
-        var del = el("button", "dc-btn dc-row-btn dc-row-delete", "删除");
-        del.type = "button";
-        del.setAttribute("aria-label", "删除 " + (row.name || row.code || row.id));
-        del.addEventListener("click", function () {
-          window.DcRowOps.deleteRow(controller, row, del);
-        });
-        action.appendChild(del);
-        tr.appendChild(action);
-      }
+      var action = document.createElement("td");
+      var del = el("button", "dc-btn dc-row-btn dc-row-delete", "删除");
+      del.type = "button";
+      del.setAttribute("aria-label", "删除 " + (row.name || row.code || row.id));
+      del.addEventListener("click", function () {
+        window.DcRowOps.deleteRow(controller, row, del);
+      });
+      action.appendChild(del);
+      tr.appendChild(action);
       tbody.appendChild(tr);
     });
   }
@@ -113,8 +112,7 @@
     });
   }
 
-  function mount(panel, item, ctx, options) {
-    var readOnly = !!(options && options.readOnly);
+  function mount(panel, item, ctx) {
     var section = el("section", "dc-table-block");
     section.setAttribute("data-table", item.table);
     section.setAttribute("aria-label", item.name + "字典表");
@@ -137,11 +135,7 @@
     var count = el("span", "dc-table-count", "");
     count.setAttribute("role", "status");
     tools.appendChild(search);
-    if (readOnly) {
-      tools.appendChild(el("span", "dc-table-readonly", "只读"));
-    } else {
-      tools.appendChild(add);
-    }
+    tools.appendChild(add);
     tools.appendChild(count);
     section.appendChild(tools);
 
@@ -174,7 +168,6 @@
     var controller = {
       table: item.table, url: "/api/bank/engine/dict/" + item.table, ctx: ctx,
       fields: [], rows: [], total: 0, limit: PAGE_SIZE, offset: 0, keyword: "",
-      readOnly: readOnly,
       section: section,
       els: { search: search, add: add, count: count, thead: thead, tbody: tbody,
              prev: prev, next: next, pageinfo: pageinfo, state: state },

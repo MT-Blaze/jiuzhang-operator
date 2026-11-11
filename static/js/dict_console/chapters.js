@@ -59,6 +59,21 @@
       if (button) button.classList.add("is-selected");
     }
 
+    function actionButton(text, label, onClick) {
+      var btn = el("button", "dcc-op", text);
+      btn.type = "button";
+      btn.setAttribute("aria-label", label);
+      btn.title = label;
+      btn.addEventListener("click", onClick);
+      return btn;
+    }
+
+    function opsBar(buttons) {
+      var bar = el("div", "dcc-ops");
+      buttons.forEach(function (btn) { bar.appendChild(btn); });
+      return bar;
+    }
+
     function detailTable(headers, rows) {
       var scroll = el("div", "dcc-table-scroll");
       var table = el("table", "dcc-table");
@@ -85,6 +100,17 @@
 
     function showChapter(chapter, children) {
       detail.textContent = "";
+      detail.appendChild(opsBar([
+        actionButton("＋ 子章节", "在「" + chapter.name + "」下新增章节", function () {
+          window.DcChapterOps.add(chapter, children, chapter.textbook_id, load);
+        }),
+        actionButton("改名", "修改「" + chapter.name + "」的名称", function () {
+          window.DcChapterOps.rename(chapter, load);
+        }),
+        actionButton("删除", "删除章节「" + chapter.name + "」", function () {
+          window.DcChapterOps.remove(chapter, load);
+        })
+      ]));
       detail.appendChild(el("p", "dcc-detail-name", chapter.name));
       var meta = [
         ["ID", chapter.id], ["编码", chapter.code], ["排序", chapter.sort_order],
@@ -109,6 +135,10 @@
 
     function showBook(book, chapters) {
       detail.textContent = "";
+      detail.appendChild(opsBar([
+        actionButton("＋ 新增章", "给「" + (book.volume_name || book.name) + "」新增顶层章节",
+          function () { window.DcChapterOps.add(null, chapters, book.id, load); })
+      ]));
       detail.appendChild(el("p", "dcc-detail-name", book.volume_name || book.name));
       detail.appendChild(el("p", "dcc-detail-meta",
         "共 " + chapters.length + " 章 · " + countNodes(chapters) + " 个节点"));
@@ -148,6 +178,9 @@
         button.addEventListener("click", function () {
           select(button);
           showChapter(chapter, children);
+        });
+        button.addEventListener("dblclick", function () {
+          window.DcChapterOps.rename(chapter, load);
         });
         row.appendChild(button);
         li.appendChild(row);
