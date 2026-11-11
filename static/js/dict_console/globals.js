@@ -17,6 +17,8 @@
   var subjects = [];
   var grades = [];
   var versions = [];
+  var knownVersions = [];
+  var versionSeq = 0;
   var ready = false;
   var panelOpen = false;
 
@@ -86,8 +88,37 @@
   }
 
   function versionName(id) {
-    var hit = versions.filter(function (item) { return String(item.id) === String(id); })[0];
+    var hit = knownVersions.filter(function (item) { return String(item.id) === String(id); })[0];
     return hit ? hit.name : "";
+  }
+
+  function rememberVersions(items) {
+    (items || []).forEach(function (item) {
+      var seen = knownVersions.some(function (known) { return String(known.id) === String(item.id); });
+      if (!seen) knownVersions.push(item);
+    });
+  }
+
+  /** 学段 / 学科一变就按新条件重拉版本：跨学段版本（如小学的人教版）绝不留在高中清单里。 */
+  function refreshVersions() {
+    var seq = ++versionSeq;
+    var query = [];
+    if (draft.stage) query.push("stage=" + encodeURIComponent(draft.stage));
+    if (draft.subject_id) query.push("subject_id=" + encodeURIComponent(draft.subject_id));
+    var url = "/api/bank/engine/textbook-versions";
+    if (query.length) url += "?" + query.join("&");
+    els.textbook.disabled = true;
+    return window.DcClient.fetchJson(url).then(function (body) {
+      if (seq !== versionSeq) return;
+      versions = (body && body.items) || [];
+      rememberVersions(versions);
+      renderVersions();
+      els.textbook.disabled = false;
+    }, function (error) {
+      if (seq !== versionSeq) return;
+      els.textbook.disabled = false;
+      if (stateEl) stateEl.textContent = "教材版本刷新失败：" + error.message;
+    });
   }
 
   function fill(select, options, kept) {
@@ -175,7 +206,11 @@
     if (key === "stage") draft.stage = els.stage.value;
     else if (key === "subject_id") draft.subject_id = els.subject.value;
     else draft.version_id = els.textbook.value;
-    if (key === "stage" || key === "subject_id") renderVersions();
+    if (key === "stage" || key === "subject_id") {
+      draft.version_id = els.textbook.value;
+      renderVersions();
+      refreshVersions();
+    }
   }
 
   function setExpanded(expanded) {
@@ -186,7 +221,10 @@
 
   function openPanel() {
     draft = copy(state);
-    if (ready) renderDraft();
+    if (ready) {
+      renderDraft();
+      refreshVersions();
+    }
     setExpanded(true);
     if (ready) els.stage.focus();
   }
@@ -266,6 +304,8 @@
       subjects = results[0].subjects || [];
       grades = results[0].grades || [];
       versions = results[1].items || [];
+      knownVersions = [];
+      rememberVersions(versions);
       ready = true;
       renderDraft();
       [els.stage, els.subject, els.textbook].forEach(function (select) { select.disabled = false; });

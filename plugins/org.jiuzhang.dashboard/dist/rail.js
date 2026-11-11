@@ -21,8 +21,10 @@
     var ui = {};
     var catButtons = [];
     var options = { stages: [], subjects: [], versions: [] };
+    var knownVersions = [];
     var current = { stage: "", subject_id: "", version_id: "" };
     var draft = { stage: "", subject_id: "", version_id: "" };
+    var versionSeq = 0;
     var panelOpen = false;
     var ready = false;
 
@@ -51,10 +53,19 @@
     }
 
     function versionName(id) {
-      var hit = options.versions.filter(function (item) {
+      var hit = knownVersions.filter(function (item) {
         return String(item.id) === String(id);
       })[0];
       return hit ? hit.name : "";
+    }
+
+    function rememberVersions(items) {
+      (items || []).forEach(function (item) {
+        var seen = knownVersions.some(function (known) {
+          return String(known.id) === String(item.id);
+        });
+        if (!seen) knownVersions.push(item);
+      });
     }
 
     function shortLabel() {
@@ -106,12 +117,35 @@
     function renderVersions() {
       var rows = [{ value: "", label: ALL_VERSION }].concat(options.versions.filter(function (version) {
         if (draft.subject_id && String(version.subject_id) !== draft.subject_id) return false;
+        if (draft.stage && Array.isArray(version.stages) && version.stages.indexOf(draft.stage) === -1) return false;
         return true;
       }).map(function (version) {
         return { value: String(version.id), label: version.name };
       }));
       fill(ui.textbook, rows, draft.version_id);
       draft.version_id = ui.textbook.value;
+    }
+
+    /** 学段 / 学科一变就重拉版本清单；旧选中项不在新清单里时由 fill 自动落回“全部版本”。 */
+    function reloadVersions() {
+      var seq = ++versionSeq;
+      var payload = {};
+      if (draft.stage) payload.stage = draft.stage;
+      if (draft.subject_id) payload.subject_id = Number(draft.subject_id);
+      ui.textbook.disabled = true;
+      setState("正在刷新教材版本…");
+      call("dict.globals_get", payload).then(function (result) {
+        if (seq !== versionSeq) return;
+        options.versions = (result && result.versions) || [];
+        rememberVersions(options.versions);
+        renderVersions();
+        ui.textbook.disabled = false;
+        setState("");
+      }, function (error) {
+        if (seq !== versionSeq) return;
+        ui.textbook.disabled = false;
+        setState("教材版本刷新失败：" + error.message);
+      });
     }
 
     function renderDraft() {
@@ -131,11 +165,11 @@
       if (!ready) return;
       draft = copy(current);
       renderDraft();
-      setState("");
       panelOpen = true;
       ui.panel.hidden = false;
       ui.toggle.setAttribute("aria-expanded", "true");
       ui.stage.focus();
+      reloadVersions();
     }
 
     function onToggle() {
@@ -232,10 +266,13 @@
       confirm.addEventListener("click", commit);
       stage.addEventListener("change", function () {
         draft.stage = stage.value;
+        draft.version_id = textbook.value;
+        reloadVersions();
       });
       subject.addEventListener("change", function () {
         draft.subject_id = subject.value;
-        renderVersions();
+        draft.version_id = textbook.value;
+        reloadVersions();
       });
       textbook.addEventListener("change", function () {
         draft.version_id = textbook.value;
@@ -293,6 +330,8 @@
         subjects: result.subjects || [],
         versions: result.versions || []
       };
+      knownVersions = [];
+      rememberVersions(options.versions);
       current = normalize(result.current);
       draft = copy(current);
       ready = true;

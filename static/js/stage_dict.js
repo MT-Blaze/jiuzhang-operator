@@ -16,7 +16,7 @@
     var textValue = deps.textValue;
 
     var GLOBALS_KEY = "jzo.dictConsole.globals.v1";
-    var globalsOptions = null;
+    var globalsMeta = null;
 
     function catalogue() {
       var api = window.DcCatalog;
@@ -103,31 +103,40 @@
       }
     }
 
-    /** 选项来自真实字典接口，失败如实回错，不拿假选项顶替。 */
-    function loadGlobalsOptions() {
-      if (globalsOptions) return Promise.resolve(globalsOptions);
-      return Promise.all([
-        fetchJson("/api/bank/engine/meta"),
-        fetchJson("/api/bank/engine/textbook-versions")
-      ]).then(function (results) {
-        var meta = results[0] || {};
+    /** 学段 / 学科来自真实字典接口；教材版本按当前学段与学科单独拉，避免跨学段串味。 */
+    function loadGlobalsMeta() {
+      if (globalsMeta) return Promise.resolve(globalsMeta);
+      return fetchJson("/api/bank/engine/meta").then(function (meta) {
+        meta = meta || {};
         var stages = [];
         (meta.grades || []).forEach(function (grade) {
           if (grade && grade.stage && stages.indexOf(grade.stage) === -1) stages.push(grade.stage);
         });
-        globalsOptions = {
+        globalsMeta = {
           stages: stages,
           subjects: (meta.subjects || []).map(function (item) {
             return { id: item.id, name: item.name };
-          }),
-          versions: ((results[1] || {}).items || []).map(function (item) {
-            return {
-              id: item.id, name: item.name, subject_id: item.subject_id,
-              stages: Array.isArray(item.stages) ? item.stages : []
-            };
           })
         };
-        return globalsOptions;
+        return globalsMeta;
+      });
+    }
+
+    function mapVersion(item) {
+      return {
+        id: item.id, name: item.name, subject_id: item.subject_id,
+        stages: Array.isArray(item.stages) ? item.stages : []
+      };
+    }
+
+    function loadVersionList(stage, subjectId) {
+      var query = [];
+      if (stage) query.push("stage=" + encodeURIComponent(stage));
+      if (subjectId) query.push("subject_id=" + encodeURIComponent(subjectId));
+      var url = "/api/bank/engine/textbook-versions";
+      if (query.length) url += "?" + query.join("&");
+      return fetchJson(url).then(function (body) {
+        return ((body || {}).items || []).map(mapVersion);
       });
     }
 
@@ -139,13 +148,19 @@
       });
     }
 
-    function globalsGet(tab, message) {
-      loadGlobalsOptions().then(function (options) {
+    function globalsGet(tab, message, payload) {
+      var stage = textValue(payload, "stage", 20);
+      var subjectId = Number(textValue(payload, "subject_id", 20)) || 0;
+      Promise.all([
+        loadGlobalsMeta(),
+        loadVersionList(stage, subjectId)
+      ]).then(function (results) {
+        var meta = results[0];
         replyHost(tab, message, true, {
           current: readGlobals(),
-          stages: options.stages,
-          subjects: options.subjects,
-          versions: options.versions
+          stages: meta.stages,
+          subjects: meta.subjects,
+          versions: results[1]
         });
       }, function (error) {
         optionsFailed(tab, message, error, "读取全局设置失败：");
@@ -157,29 +172,31 @@
       var stage = textValue(payload, "stage", 20);
       var subjectText = textValue(payload, "subject_id", 20);
       var versionText = textValue(payload, "version_id", 20);
-      loadGlobalsOptions().then(function (options) {
-        var subjectId = Number(subjectText) || 0;
-        var versionId = Number(versionText) || 0;
-        if (stage && options.stages.indexOf(stage) === -1) {
+      var subjectId = Number(subjectText) || 0;
+      var versionId = Number(versionText) || 0;
+      Promise.all([
+        loadGlobalsMeta(),
+        loadVersionList(stage, subjectId)
+      ]).then(function (results) {
+        var meta = results[0];
+        var versions = results[1];
+        if (stage && meta.stages.indexOf(stage) === -1) {
           replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的学段" });
           return;
         }
-        var subject = options.subjects.filter(function (item) {
+        var subject = meta.subjects.filter(function (item) {
           return Number(item.id) === subjectId;
         })[0];
         if (subjectId && !subject) {
           replyHost(tab, message, false, { code: "BAD_REQUEST", message: "未知的学科" });
           return;
         }
-        var version = options.versions.filter(function (item) {
+        // 版本清单已按学段 + 学科收口，不在清单里就是跨学段串味，直接拒绝。
+        var version = versions.filter(function (item) {
           return Number(item.id) === versionId;
         })[0];
-        if (versionId && (!version || (subjectId && Number(version.subject_id) !== subjectId))) {
-          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与学科不匹配" });
-          return;
-        }
-        if (versionId && stage && version.stages.length && version.stages.indexOf(stage) === -1) {
-          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与学段不匹配" });
+        if (versionId && !version) {
+          replyHost(tab, message, false, { code: "BAD_REQUEST", message: "教材版本与当前学段 / 学科不匹配" });
           return;
         }
         var saved = {
@@ -214,7 +231,7 @@
         return true;
       }
       if (method === "dict.globals_get") {
-        return globalsGet(tab, message);
+        return globalsGet(tab, message, payload);
       }
       if (method === "dict.globals_save") {
         return globalsSave(tab, message, payload);
