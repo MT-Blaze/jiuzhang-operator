@@ -371,8 +371,9 @@ def _seed_sample_exams(conn: sqlite3.Connection) -> None:
             (code, year, month, subject_id, grade_id, exam_type_id, subject),
         )
         sample_ids[code] = int(cursor.lastrowid)
-    for exam_index, school_id in EXAM_SCHOOL_ROWS:
-        code = EXAM_ROWS[exam_index - 1][1]
+    codes = {row[0]: row[1] for row in EXAM_ROWS}
+    for exam_id, school_id in EXAM_SCHOOL_ROWS:
+        code = codes[exam_id]
         conn.execute(
             "INSERT OR IGNORE INTO exam_school_map (exam_id, school_id) VALUES (?, ?)",
             (sample_ids[code], school_id),

@@ -45,7 +45,7 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_question_types": 3,
     "dict_difficulties": 5,
     "dict_question_qualities": 3,
-    "dict_exam_types": 16,
+    "dict_exam_types": 13,
     "dict_subject_thoughts": 22,
     "dict_solution_methods": 34,
     "dict_core_competencies": 47,
@@ -58,8 +58,8 @@ EXPECTED_COUNTS: dict[str, int] = {
     "chapter_knowledge_map": 74,
     "dim_regions": 367,
     "dim_schools": 347,
-    "exams": 4,
-    "exam_school_map": 9,
+    "exams": 1,
+    "exam_school_map": 2,
 }
 
 _TEACHING_DICTIONARIES = (

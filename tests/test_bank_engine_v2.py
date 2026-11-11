@@ -108,9 +108,9 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(self.report.counts["dim_exam_directions"], 567)
         self.assertEqual(self.report.counts["knowledge_exam_map"], 200)
         self.assertEqual(self.report.counts["chapter_knowledge_map"], 74)
-        self.assertEqual(self.report.counts["dict_exam_types"], 16)
-        self.assertEqual(self.report.counts["exams"], 4)
-        self.assertEqual(self.report.counts["exam_school_map"], 9)
+        self.assertEqual(self.report.counts["dict_exam_types"], 13)
+        self.assertEqual(self.report.counts["exams"], 1)
+        self.assertEqual(self.report.counts["exam_school_map"], 2)
 
     def test_regions_are_two_levels_and_schools_are_linked(self) -> None:
         conn = sqlite3.connect(self.db_path)

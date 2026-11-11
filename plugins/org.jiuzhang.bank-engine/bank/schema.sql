@@ -66,7 +66,8 @@ CREATE TABLE dict_question_qualities (
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0
 );
--- [功能注释] 考试类型字典：存高考题、联考题、区域统考题、校考题、一模、二模、期中、期末、月考等考试场景
+-- [功能注释] 考试类型字典：存高考真题、一模、二模、期中、期末、月考、竞赛、强基、自主招生等命题来源
+-- 考试范围（联考 / 区域统考 / 校考）不在此表，落在 exams.exam_subject
 CREATE TABLE dict_exam_types (
     id         INTEGER PRIMARY KEY,
     -- [字段注释] 考试类型名称，展示给用户看的业务词汇，全局唯一
