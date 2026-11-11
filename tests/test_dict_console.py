@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.bank_engine import builder, service  # noqa: E402
+from app.bank_engine import builder, seeding, service  # noqa: E402
 from app.bank_engine.models import Textbook  # noqa: E402
 from app.core import manifests  # noqa: E402
 
@@ -49,14 +49,16 @@ class TextbooksServiceTest(unittest.TestCase):
 
     def test_full_list_matches_seed_count(self) -> None:
         items = service.textbooks(db_path=self.db_path)
-        self.assertEqual(len(items), 177)
+        self.assertEqual(len(items), seeding.EXPECTED_COUNTS["dim_textbooks"])
         self.assertTrue(all(isinstance(item, Textbook) for item in items))
 
     def test_subject_filter_is_single_table(self) -> None:
         items = service.textbooks(subject_id=2, db_path=self.db_path)
         self.assertTrue(items)
         self.assertTrue(all(item.subject_id == 2 for item in items))
-        self.assertLess(len(items), 177)
+        self.assertLess(
+            len(items), seeding.EXPECTED_COUNTS["dim_textbooks"]
+        )
 
     def test_grade_filter_narrows_further(self) -> None:
         items = service.textbooks(subject_id=1, grade_id=10, db_path=self.db_path)

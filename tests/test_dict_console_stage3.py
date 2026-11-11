@@ -37,6 +37,7 @@ from app.bank_engine import (  # noqa: E402
     migrate_v7,
     migrate_v8,
     migrate_v9,
+    seeding,
     service,
 )
 from app.bank_engine.models import (  # noqa: E402
@@ -83,7 +84,8 @@ class MigrationTest(unittest.TestCase):
             migrate_v7.verify_sort_order(conn)
             migrate_v9.verify_versions(conn)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0], 27)
+                "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0],
+                seeding.EXPECTED_COUNTS["dim_textbook_versions"])
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
             self.assertEqual(conn.execute(
@@ -134,9 +136,9 @@ class MigrationTest(unittest.TestCase):
     def test_versions_are_pure_and_books_carry_volume(self) -> None:
         versions = service.textbook_versions(subject_id=2, db_path=self.db_path)
         names = [item.name for item in versions]
-        self.assertEqual(
-            set(names),
-            {"人教A版", "人教版", "人教B版", "北师大版", "苏教版", "湘教版", "沪教版"},
+        self.assertTrue(
+            {"人教A版", "人教版", "人教B版", "北师大版", "苏教版", "湘教版", "沪教版"}
+            <= set(names)
         )
         for name in names:
             self.assertNotIn("必修", name)

@@ -106,7 +106,7 @@ class HighSchoolCatalogTest(unittest.TestCase):
         ]
         self.assertEqual(
             physics_names,
-            ["人教版", "鲁科版", "沪科版", "粤教版", "教科版"],
+            ["人教版", "鲁科版", "沪科版", "粤教版", "教科版", "苏教版", "沪科技版"],
         )
 
     def test_physics_pep_version_is_merged(self) -> None:

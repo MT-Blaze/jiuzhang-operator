@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.bank_engine import builder, dao_console, service  # noqa: E402
+from app.bank_engine import builder, dao_console, seeding, service  # noqa: E402
 from app.bank_engine.models import (  # noqa: E402
     Chapter,
     CoreCompetency,
@@ -41,7 +41,9 @@ DICT_TABLES = {
     "dict_question_types": (QuestionType, 3),
     "dict_difficulties": (Difficulty, 5),
     "dict_question_qualities": (Quality, 3),
-    "dim_textbook_versions": (TextbookVersion, 27),
+    "dim_textbook_versions": (
+        TextbookVersion, seeding.EXPECTED_COUNTS["dim_textbook_versions"]
+    ),
     "dim_textbook_chapters": (Chapter, 3519),
     "dict_subject_thoughts": (SubjectThought, 22),
     "dict_solution_methods": (SolutionMethod, 34),
