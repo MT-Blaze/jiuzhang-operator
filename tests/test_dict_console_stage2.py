@@ -96,6 +96,75 @@ class ConsoleServiceTest(unittest.TestCase):
         self.assertTrue(all(item.stage == "小学" for item in items))
         self.assertTrue(all(isinstance(item, Grade) for item in items))
 
+    def test_shared_stage_filter_keeps_all_stage_rows(self) -> None:
+        for table in (
+            "dict_subject_thoughts",
+            "dict_solution_methods",
+            "dict_core_competencies",
+        ):
+            items, total = service.console_list(
+                table, filters={"stage": "高中"}, limit=200, db_path=self.db_path
+            )
+            self.assertGreater(total, 0, table)
+            self.assertTrue(all(item.stage in ("高中", "全学段") for item in items), table)
+
+        thoughts, _ = service.console_list(
+            "dict_subject_thoughts",
+            filters={"stage": "高中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        self.assertIn("数形结合", {item.name for item in thoughts})
+
+        primary_methods, _ = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "小学", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        names = {item.name for item in primary_methods}
+        self.assertIn("定义法", names)
+        self.assertNotIn("导数法", names)
+
+    def test_stage_is_never_null_and_enum_only(self) -> None:
+        for table in (
+            "dict_subject_thoughts",
+            "dict_solution_methods",
+            "dict_core_competencies",
+        ):
+            items, _ = service.console_list(table, limit=200, db_path=self.db_path)
+            self.assertTrue(items, table)
+            self.assertTrue(
+                all(item.stage in dao_console.STAGE_VALUES for item in items), table
+            )
+
+    def test_stage_insert_defaults_to_all_and_rejects_bad_value(self) -> None:
+        row = service.console_insert(
+            "dict_subject_thoughts",
+            {"name": "验收通用思想", "code": "zz_stage_default", "subject_id": 1},
+            db_path=self.db_path,
+        )
+        self.addCleanup(
+            service.console_delete, "dict_subject_thoughts", row.id, db_path=self.db_path
+        )
+        self.assertEqual(row.stage, "全学段")
+        with self.assertRaises(ValueError):
+            service.console_update(
+                "dict_subject_thoughts", row.id, {"stage": "大学"}, db_path=self.db_path
+            )
+        cleared = service.console_update(
+            "dict_subject_thoughts", row.id, {"stage": ""}, db_path=self.db_path
+        )
+        self.assertEqual(cleared.stage, "全学段")
+
+    def test_grade_stage_cannot_be_empty(self) -> None:
+        with self.assertRaises(ValueError):
+            service.console_insert(
+                "dict_grades",
+                {"name": "验收年级", "code": "zz_stage_grade", "sort_order": 99},
+                db_path=self.db_path,
+            )
+
     def test_global_textbook_filter_on_schools(self) -> None:
         # 种子学校未挂教材（textbook_id 全空）：先给一所学校挂上真实教材再验证过滤机制。
         with service.session(self.db_path) as conn:

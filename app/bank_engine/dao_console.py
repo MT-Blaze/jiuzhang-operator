@@ -16,6 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from app.bank_engine.dict_stage import STAGE_VALUES, clean_stage, filter_pair
 from app.bank_engine.models import (
     Chapter,
     CoreCompetency,
@@ -69,6 +70,21 @@ class TableSpec:
     global_filters: tuple[tuple[str, str], ...]
     # 非编辑列但必填的外键：新增时由前端按全局设置带入（列名, 全局参数名）。
     scope: tuple[tuple[str, str], ...] = ()
+    # 跨学段通用的教研字典：按学段过滤时把「全学段」行一并带上。
+    shared_stage: bool = False
+
+
+def _teaching_spec(table: str, label: str, model: type) -> TableSpec:
+    """三张教研属性字典共用一套规格：学科 + 明码学段，跨学段并集检索。"""
+    return TableSpec(
+        table=table, label=label, model=model,
+        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
+        editable=("name", "code", "sort_order", "stage"),
+        required=("name", "code", "subject_id"), search=("name", "code"),
+        order="sort_order, id", int_columns=("sort_order", "subject_id"),
+        nullable=(), global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
+        scope=(("subject_id", "subject_id"), ("stage", "stage")), shared_stage=True,
+    )
 
 
 SPECS: dict[str, TableSpec] = {
@@ -83,9 +99,10 @@ SPECS: dict[str, TableSpec] = {
     "dict_grades": TableSpec(
         table="dict_grades", label="年级", model=Grade,
         columns=("id", "name", "code", "sort_order", "stage"),
-        editable=("name", "code", "sort_order", "stage"), required=("name", "code"),
+        editable=("name", "code", "sort_order", "stage"),
+        required=("name", "code", "stage"),
         search=("name", "code", "stage"), order="sort_order, id",
-        int_columns=("sort_order",), nullable=("stage",),
+        int_columns=("sort_order",), nullable=(),
         global_filters=(("stage", "stage"),),
     ),
     "dict_exam_types": TableSpec(
@@ -184,36 +201,9 @@ SPECS: dict[str, TableSpec] = {
         nullable=("parent_id",), global_filters=(("textbook_id", "textbook_id"),),
         scope=(("textbook_id", "textbook_id"),),
     ),
-    "dict_subject_thoughts": TableSpec(
-        table="dict_subject_thoughts", label="学科思想", model=SubjectThought,
-        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=("name", "code", "sort_order", "stage"),
-        required=("name", "code", "subject_id"), search=("name", "code"),
-        order="sort_order, id", int_columns=("sort_order", "subject_id"),
-        nullable=("stage",),
-        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
-        scope=(("subject_id", "subject_id"), ("stage", "stage")),
-    ),
-    "dict_solution_methods": TableSpec(
-        table="dict_solution_methods", label="解题方法", model=SolutionMethod,
-        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=("name", "code", "sort_order", "stage"),
-        required=("name", "code", "subject_id"), search=("name", "code"),
-        order="sort_order, id", int_columns=("sort_order", "subject_id"),
-        nullable=("stage",),
-        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
-        scope=(("subject_id", "subject_id"), ("stage", "stage")),
-    ),
-    "dict_core_competencies": TableSpec(
-        table="dict_core_competencies", label="核心素养", model=CoreCompetency,
-        columns=("id", "name", "code", "sort_order", "subject_id", "stage"),
-        editable=("name", "code", "sort_order", "stage"),
-        required=("name", "code", "subject_id"), search=("name", "code"),
-        order="sort_order, id", int_columns=("sort_order", "subject_id"),
-        nullable=("stage",),
-        global_filters=(("subject_id", "subject_id"), ("stage", "stage")),
-        scope=(("subject_id", "subject_id"), ("stage", "stage")),
-    ),
+    "dict_subject_thoughts": _teaching_spec("dict_subject_thoughts", "学科思想", SubjectThought),
+    "dict_solution_methods": _teaching_spec("dict_solution_methods", "解题方法", SolutionMethod),
+    "dict_core_competencies": _teaching_spec("dict_core_competencies", "核心素养", CoreCompetency),
 }
 
 COLUMN_LABELS: dict[str, str] = {
@@ -283,8 +273,9 @@ def _filters(
     for param, col in spec.global_filters:
         value = filters.get(param)
         if value is not None and value != "":
-            clauses.append(col + " = ?")
-            params.append(value)
+            clause, extra = filter_pair(spec.shared_stage, col, value)
+            clauses.append(clause)
+            params.extend(extra)
     return clauses, params
 
 
@@ -333,11 +324,17 @@ def _clean_values(
     for col in dict.fromkeys(columns):
         label = COLUMN_LABELS.get(col, col)
         if col not in values:
+            if for_insert and col == "stage":
+                out[col] = clean_stage(None, required=col in spec.required)
+                continue
             if for_insert and col in spec.required:
                 raise ValueError("缺少必填字段：" + label)
             continue
         raw = values[col]
         empty = raw is None or (isinstance(raw, str) and raw.strip() == "")
+        if col == "stage":
+            out[col] = clean_stage(raw, required=col in spec.required)
+            continue
         if empty and col in spec.nullable:
             out[col] = None
             continue

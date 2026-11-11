@@ -27,8 +27,8 @@ CREATE TABLE dict_grades (
     code       TEXT NOT NULL UNIQUE,
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0,
-    -- [字段注释] 学段，标记年级所属的小学 / 初中 / 高中等学段，可为空
-    stage      TEXT
+    -- [字段注释] 学段，只能是 小学 / 初中 / 高中 / 全学段，不许为空
+    stage      TEXT NOT NULL CHECK (stage IN ('小学', '初中', '高中', '全学段'))
 );
 -- [功能注释] 题型字典：存选择题、填空题等题型枚举
 CREATE TABLE dict_question_types (
@@ -432,8 +432,9 @@ CREATE TABLE dict_subject_thoughts (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分数学思想、物理守恒思想、化学平衡思想等
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
-    stage      TEXT
+    -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
+    stage      TEXT NOT NULL DEFAULT '全学段'
+               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
 );
 -- [功能注释] 解题方法字典：存解题方法名称与编码，供解析方法关联引用
 CREATE TABLE dict_solution_methods (
@@ -446,8 +447,9 @@ CREATE TABLE dict_solution_methods (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分数学、物理、化学等学科的方法体系
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
-    stage      TEXT
+    -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
+    stage      TEXT NOT NULL DEFAULT '全学段'
+               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
 );
 -- [功能注释] 核心素养字典：存核心素养名称与编码，供解析素养关联引用
 CREATE TABLE dict_core_competencies (
@@ -460,8 +462,9 @@ CREATE TABLE dict_core_competencies (
     sort_order INTEGER NOT NULL DEFAULT 0,
     -- [字段注释] 所属学科外键，区分各学科核心素养体系
     subject_id INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
-    -- [字段注释] 所属学段（小学/初中/高中/通用），可为空
-    stage      TEXT
+    -- [字段注释] 所属学段：小学 / 初中 / 高中 / 全学段，不许为空
+    stage      TEXT NOT NULL DEFAULT '全学段'
+               CHECK (stage IN ('小学', '初中', '高中', '全学段'))
 );
 -- [功能注释] 解析与学科思想关联表：解析与学科思想多对多，解析删除时级联清理
 CREATE TABLE solution_thought_map (

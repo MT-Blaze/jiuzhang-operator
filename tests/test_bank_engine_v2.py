@@ -474,7 +474,9 @@ class EngineSourceHygieneTest(unittest.TestCase):
         ):
             self.assertNotIn("grade_id", ddl(table), table)
         for table in ("dict_subject_thoughts", "dict_solution_methods", "dict_core_competencies"):
-            self.assertIn("stage      TEXT", ddl(table), table)
+            block = ddl(table)
+            self.assertIn("stage      TEXT NOT NULL", block, table)
+            self.assertIn("CHECK (stage IN ('小学', '初中', '高中', '全学段'))", block, table)
             self.assertIn(f"ix_{table}_stage", body)
 
 

@@ -63,7 +63,7 @@ class SubjectThought:
     code: str
     sort_order: int
     subject_id: int
-    stage: str | None
+    stage: str
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class SolutionMethod:
     code: str
     sort_order: int
     subject_id: int
-    stage: str | None
+    stage: str
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ class CoreCompetency:
     code: str
     sort_order: int
     subject_id: int
-    stage: str | None
+    stage: str
 
 
 @dataclass(frozen=True)

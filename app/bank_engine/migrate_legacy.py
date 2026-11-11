@@ -223,6 +223,10 @@ def _v2_to_v3(conn: sqlite3.Connection) -> None:
                         f"WHERE g.id = {table}.grade_id) WHERE grade_id IS NOT NULL"
                     )
                 conn.execute(
+                    f"UPDATE {table} SET stage = '全学段' "
+                    f"WHERE stage IS NULL OR TRIM(stage) = ''"
+                )
+                conn.execute(
                     f"CREATE INDEX IF NOT EXISTS ix_{table}_stage ON {table} (stage)"
                 )
             for table in ("dim_knowledge_points", "dim_exam_directions", *_TEACHING_TABLES):
