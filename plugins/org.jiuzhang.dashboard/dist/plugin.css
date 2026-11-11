@@ -180,6 +180,111 @@ html, body {
 
 .db-empty { color: var(--db-sub); padding: 8px 2px; }
 
+/* ---------- 右栏：字典维护导航（本插件 sidebar.right 专属面板） ---------- */
+.db-dict-nav {
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  background: var(--db-card);
+  overflow: hidden;
+}
+
+.db-dict-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--db-line);
+  background: #eef5f0;
+}
+
+.db-dict-icon { flex: none; font-size: 1.05rem; line-height: 1; }
+.db-dict-title { font-size: 14px; font-weight: 700; }
+
+.db-dict-hint {
+  margin: 0;
+  padding: 8px 12px 0;
+  color: var(--db-sub);
+  font-size: 12px;
+}
+
+.db-dict-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.db-dict-state {
+  margin: 0;
+  padding: 6px 2px;
+  color: var(--db-sub);
+  font-size: 12px;
+}
+
+.db-dict-cat {
+  border: 1px solid var(--db-line);
+  border-radius: 9px;
+  background: var(--db-card);
+  overflow: hidden;
+}
+
+.db-dict-cat-head { display: flex; align-items: stretch; }
+
+.db-dict-cat-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--db-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-dict-cat-open:hover { background: #f2f6f4; }
+.db-dict-cat-open:focus-visible { outline: 2px solid var(--db-accent); outline-offset: -2px; }
+
+.db-dict-cat-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--db-sub);
+}
+
+.db-dict-cat-toggle {
+  flex: none;
+  width: 40px;
+  border: none;
+  border-left: 1px solid var(--db-line);
+  background: transparent;
+  color: var(--db-sub);
+  font: inherit;
+  cursor: pointer;
+}
+
+.db-dict-cat-toggle:hover { background: #f2f6f4; color: var(--db-text); }
+.db-dict-cat-toggle:focus-visible { outline: 2px solid var(--db-accent); outline-offset: -2px; }
+
+.db-dict-cat-list {
+  margin: 0;
+  padding: 4px 10px 8px 24px;
+  border-top: 1px dashed var(--db-line);
+  list-style: disc;
+}
+
+.db-dict-cat-list[hidden] { display: none; }
+.db-dict-cat-list li { margin: 3px 0; font-size: 12px; line-height: 1.45; color: var(--db-sub); }
+.db-dict-cat-list strong { color: var(--db-text); font-weight: 600; }
+
 @media (prefers-reduced-motion: no-preference) {
   .db-recent-link { transition: background 120ms ease; }
 }

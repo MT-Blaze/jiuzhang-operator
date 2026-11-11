@@ -638,6 +638,8 @@ frontend = "dist/index.html"
 | `text.clean_latex` | 脏 LaTeX 规则清洗（军令 #21） | `payload.text` ≤20000 字，超长直接回 `BAD_REQUEST`，**不截断**；返回 `{ok, text, changed, rules[], options[]}`。底座实现只有 `app/core/question_parser.py` 的 `clean_dirty_latex` 一处：定界符、等价记号、`\displaystyle`、`\fillin`、文本宏转 Markdown、列表与 `choices` 环境；同一输入永远同一输出，不调模型、不碰题库 |
 | `layout.model_status` | 本地 YOLO 模型仓库快照 | 只读；返回 `{hardware:{ready,providers,gpu,hardware_label}, models:{full,quantized:{present,version,label,display_size,bytes,min_bytes}}, download}`。不出网、不碰库，插件据此决定是否弹下载窗与播报哪一路硬件 |
 | `layout.model_download` | 按需下载本地 YOLO 模型 | 需 `questions:write`；`payload.kind` 只认 `full` / `quantized`，下载地址只来自插件目录 `model_config.toml` 的镜像，**请求体不能带 URL**；必须由界面点击发起，禁止启动时自动拉取；先写 `.tmp`，只有大小达到 `min_bytes` 且与 `Content-Length` 一致才原子改名为 `.onnx`，半截文件直接丢弃；后台线程落盘到当前工作区 `plugins/org.jiuzhang.editor/models/`，失败零残留。模型目录与 `.onnx` 等后缀一律不进插件发行包（打包硬上限 10MB） |
+| `dict.catalog` | 字典导航分类目录 | 只读宿主已加载的 `DcCatalog`，返回分类键、标题、说明与表清单；不碰库、不出网 |
+| `dict.open` | 打开某类字典页签 | `payload.category` 只认目录里已知的分类键；宿主打开自有的 `/dict?embedded=1&cat=…` 画布页签，插件不能传 URL，也拿不到字典页 DOM |
 
 安全边界：
 
@@ -811,11 +813,10 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 
 ### 2.9 右栏辅助面板（sidebar.right，2026-10-24 军令 #13；主权交替由军令 #15 重定）
 
-右栏**默认不折叠、默认住户是助手插件** [`org.jiuzhang.chat`](../plugins/org.jiuzhang.chat/plugin.toml)。
-它不再是「底座自带副驾 + 插件来抢」的关系：AI 助手自己就是一只普通插件（§2.10），和画布上的插件众生平等，
-右栏只是它当前的落脚点。业务插件声明 `"slots": ["sidebar.right"]` 后，**只有当它自己是当前画布页签时**
-才暂时接管右栏；切走该页签，右栏立刻归还助手插件——**没有插件认领时插槽不隐藏**，兜底是一块可读说明，
-绝不把右栏留成白屏，也绝不复活底座私有的对话 DOM。
+右栏**默认折叠，没有固定住户**。它是底座提供的空容器：业务插件声明 `"slots": ["sidebar.right"]` 后，
+**只有当它自己是当前画布页签时**才接管右栏；切走该页签，面板随之卸载——**没有插件认领时插槽不隐藏**，
+兜底是一块可读说明（「当前页签没有右栏面板」），绝不把右栏留成白屏，也绝不复活底座私有的业务 DOM。
+字典维护导航就是数据看板插件 `org.jiuzhang.dashboard` 自己的 `sidebar.right` 面板，底座壳里不写死这份 UI。
 
 ```json
 {
@@ -832,17 +833,17 @@ OfficialIndexFileTest::test_03c_template_plugin_zip_passes_full_plugin_contract`
 - **接管者只认当前画布页签**：`claimant(plugins, activePluginId)` 只在「当前激活的画布页签所属插件」里找
   认领者；其他插件即使声明了 `sidebar.right` 也不参与。页签切换（`stage.tab.activated` / `stage.tab.closed`）
   触发 `JzoContextPanel.sync()` 重挂，右栏主权跟着画布走。
-- **助手是默认住户**：右栏插槽的 `plugin_id` 为 `org.jiuzhang.chat` 时由 `reclaim()` 收回；
-  助手被停用或卸载后没有认领者，插槽显示 `.ws-context-slot-note` 兜底文案，不隐藏、不白屏。
+- **没有固定住户**：没有认领者时插槽显示 `.ws-context-slot-note` 兜底文案，不隐藏、不白屏；
+  同一个插件可同时声明 `stage.center` 与 `sidebar.right`，按 `plugin.activate` 的 `slot` 各自渲染。
 - **隔离与协议不变**：面板同样是 `sandbox="allow-scripts allow-modals"` 的沙箱 iframe（不透明源），
   走 `jzo-plugin/1`；挂载后宿主发 `plugin.activate`，payload 为 `{"slot": "sidebar.right"}`，
   插件照常回 `{ready: true}`。
 - **Host API 与画布页签完全一致**：`bank.*` / `basket.*` / `draft.*` 都可用，写操作仍由宿主代持
   一次性令牌，插件看不到令牌；`bus.publish` 白名单同 §2.5（`region.right` 专供向本栏投递文本）。
 - **激活失败要能退回**：`plugin.activate` 超时或报错时，宿主记录 `context.panel.error` 并卸载该认领者、
-  收回给助手插件，绝不把右栏留成白屏。
+  显示兜底说明，绝不把右栏留成白屏。
 - **尺寸自适应**：右栏可拖拽、可折叠（宽度 0），面板必须按容器宽度自适应；
-  宿主给面板的默认可视高度是 `52vh`（不小于 300px），面板内部自行滚动，禁止撑破右栏。
+  面板吃掉右栏剩余高度并在内部自行滚动，禁止撑破右栏。
 - **刷新时机**：插件装卸、停用、覆盖升级都会让 `/api/plugins` 清单签名变化，右栏随之重挂；
   运行中的面板 iframe 不热替换代码（§4），与画布页签同规则。
 

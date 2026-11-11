@@ -1,8 +1,9 @@
 /**
  * 数据看板插件：四张数据卡片 + 365 天绿格子热力图 + 最近录入 5 题。
  *
- * 全部原生 DOM 渲染，无框架、无 iframe、无远程资源；数据只走宿主开放的两条
- * 只读通道 bank.dashboard_stats / bank.dashboard_heatmap（API_REFERENCE §2.12/§2.13）。
+ * 画布（stage.center）画战绩；右栏（sidebar.right）画本插件专属的字典维护导航。
+ * 全部原生 DOM 渲染，无框架、无 iframe、无远程资源；数据只走宿主开放的只读通道
+ * bank.dashboard_stats / bank.dashboard_heatmap 与 dict.catalog / dict.open。
  * 点击最近题目发 system.open_editor 通知，由宿主打开录题工作台并载入该题——插件之间不直连。
  */
 (function () {
@@ -12,6 +13,7 @@
   var REQUEST_TIMEOUT_MS = 15000;
   var REFRESH_DEBOUNCE_MS = 280;   // 宿主双名广播（system.question_updated / question.updated），去重
 
+  var PLUGIN_ID = "org.jiuzhang.dashboard";
   var DIFFICULTY_LABELS = { L1: "基础", L2: "中档", L3: "难", L4: "压轴" };
   var TYPE_LABELS = {
     single_choice: "单选", multiple_choice: "多选",
@@ -23,6 +25,7 @@
   var pending = new Map();
   var refreshTimer = 0;
   var activated = false;
+  var activeSlot = "";
 
   // ---------- 宿主通道 ----------
   function call(method, payload) {
@@ -77,6 +80,99 @@
     if (className) node.className = className;
     if (text !== undefined && text !== null) node.textContent = text;
     return node;
+  }
+
+  // ---------- 字典导航（sidebar.right） ----------
+  function dictState(body, text) {
+    body.textContent = "";
+    body.appendChild(el("p", "db-dict-state", text));
+  }
+
+  function openCategory(category) {
+    call("dict.open", { category: category.key }).then(function () {
+      dock("已打开「" + category.title + "」字典页签。");
+    }, function (error) {
+      dock("打开「" + category.title + "」失败：" + error.message);
+    });
+  }
+
+  function buildCategory(category) {
+    var card = el("div", "db-dict-cat");
+    var head = el("div", "db-dict-cat-head");
+
+    var openBtn = el("button", "db-dict-cat-open");
+    openBtn.type = "button";
+    openBtn.setAttribute("data-dict-cat", category.key);
+    openBtn.setAttribute("aria-label", "在画布新开「" + category.title + "」页签");
+    openBtn.appendChild(el("span", "db-dict-cat-name", category.title));
+    openBtn.appendChild(el("span", "db-dict-cat-count", category.items.length + " 张表"));
+    openBtn.addEventListener("click", function () { openCategory(category); });
+    head.appendChild(openBtn);
+
+    var listId = "dbDictCat_" + category.key;
+    var toggle = el("button", "db-dict-cat-toggle", "▾");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "true");
+    toggle.setAttribute("aria-controls", listId);
+    toggle.setAttribute("aria-label", "折叠或展开「" + category.title + "」的表清单");
+    head.appendChild(toggle);
+
+    var list = el("ul", "db-dict-cat-list");
+    list.id = listId;
+    category.items.forEach(function (item) {
+      var li = el("li");
+      li.appendChild(el("strong", "", item.name));
+      li.appendChild(document.createTextNode(" · " + (item.desc || "")));
+      list.appendChild(li);
+    });
+
+    toggle.addEventListener("click", function () {
+      var expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      list.hidden = expanded;
+      toggle.textContent = expanded ? "▸" : "▾";
+    });
+
+    card.appendChild(head);
+    card.appendChild(list);
+    return card;
+  }
+
+  function renderDictCategories(body, categories) {
+    body.textContent = "";
+    if (!Array.isArray(categories) || !categories.length) {
+      dictState(body, "字典目录为空，请先完成题库初始化。");
+      return;
+    }
+    categories.forEach(function (category) {
+      body.appendChild(buildCategory(category));
+    });
+  }
+
+  function buildDictNav() {
+    root.textContent = "";
+    var panel = el("section", "db-dict-nav");
+    panel.setAttribute("aria-label", "字典维护导航");
+
+    var head = el("div", "db-dict-head");
+    var icon = el("span", "db-dict-icon", "📁");
+    icon.setAttribute("aria-hidden", "true");
+    head.appendChild(icon);
+    head.appendChild(el("span", "db-dict-title", "字典维护导航"));
+    panel.appendChild(head);
+    panel.appendChild(el("p", "db-dict-hint", "点分类在画布新开页签"));
+
+    var body = el("div", "db-dict-body");
+    body.appendChild(el("p", "db-dict-state", "正在读取字典分类…"));
+    panel.appendChild(body);
+    root.appendChild(panel);
+    root.hidden = false;
+
+    call("dict.catalog").then(function (result) {
+      renderDictCategories(body, result && result.categories);
+    }, function (error) {
+      dictState(body, "字典目录读取失败：" + error.message);
+    });
   }
 
   // ---------- 渲染 ----------
@@ -277,6 +373,13 @@
 
     try {
       if (msg.method === "plugin.activate") {
+        activeSlot = (msg.payload && msg.payload.slot) || "stage.center";
+        if (activeSlot !== "stage.center") {
+          // 右栏那一帧只画本插件自己的字典导航，不拉看板统计。
+          buildDictNav();
+          reply(event.source, msg.id, { ready: true, plugin_id: PLUGIN_ID, slot: activeSlot });
+          return;
+        }
         activated = true;
         if (!root.hidden && document.getElementById("dbCards")) {
           // 休眠后重新激活：骨架还在，只刷数据
@@ -285,12 +388,16 @@
           buildSkeleton();
           loadAll(true);
         }
-        reply(event.source, msg.id, { ready: true, plugin_id: "org.jiuzhang.dashboard" });
+        reply(event.source, msg.id, { ready: true, plugin_id: PLUGIN_ID, slot: activeSlot });
         return;
       }
       if (msg.method === "plugin.deactivate") {
-        activated = false;
-        window.clearTimeout(refreshTimer);
+        if (activeSlot === "stage.center") {
+          activated = false;
+          window.clearTimeout(refreshTimer);
+        } else {
+          root.hidden = true;
+        }
         reply(event.source, msg.id, { ready: false });
         return;
       }

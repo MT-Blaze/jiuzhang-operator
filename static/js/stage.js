@@ -135,7 +135,6 @@
   var openBank = stageInbound.openBank;
   var openEditor = stageInbound.openEditor;
 
-
   var stageFrame = window.JzoStageFrame.create({
     MAX_LIVE_FRAMES: MAX_LIVE_FRAMES,
     PROTOCOL: PROTOCOL,
@@ -275,8 +274,11 @@
     withWriteToken: withWriteToken,
   });
   var relayAgent = stageRelayAgent.relayAgent;
-
-
+  var stageDict = window.JzoStageDict.create({
+    openFrame: openFrame,
+    replyHost: replyHost,
+    textValue: textValue,
+  });
 
   // ---------- 拆出去的模块：以上每块都只经 deps 拿依赖 ----------
 
@@ -318,11 +320,6 @@
   function touch(tab) {
     tabsCore.touch(tab);
   }
-
-
-
-
-
 
   function relay(tab, message) {
     var method = String(message.method || "");
@@ -390,6 +387,9 @@
       replyHost(tab, message, true, { on: overlayOn });
       return;
     }
+
+    // 字典导航：目录与开页都在 stage_dict.js，底座不写死任何字典业务 UI。
+    if (stageDict.handle(tab, message, method, payload)) return;
 
     var base = "/api/bank/plugins/" + encodeURIComponent(pluginId);
     // 活跃题库的统一入口：读单题正文、大纲树、教研笔记与待审队列一律走它。

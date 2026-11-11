@@ -126,7 +126,7 @@ class SidebarStructureTest(unittest.TestCase):
 
     def test_09_host_stops_drawing_its_own_quick_panel(self) -> None:
         """2026-11-11 起宿主那层「人机共设」快捷区整块下架：
-        右栏只画字典维护导航与插件自己的 sidebar.right 面板，不再代画一套同名控件。"""
+        右栏只留 sidebar.right 插槽，由当前页签插件自带面板，宿主不代画任何业务控件。"""
         self.assertNotIn("renderPluginPanel", JS)
         self.assertNotIn("wsPluginPanel", JS)
         editor = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.editor")

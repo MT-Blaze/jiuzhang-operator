@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 
 from app.bank_engine import builder, service  # noqa: E402
 from app.bank_engine.models import Textbook  # noqa: E402
+from app.core import manifests  # noqa: E402
 
 SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 CONSOLE_DIR = ROOT / "static" / "js" / "dict_console"
@@ -119,11 +120,28 @@ class ConsoleSkeletonTest(unittest.TestCase):
         self.assertNotIn('href="/dict"', html)
         self.assertNotIn("ws-dict-entry", html)
 
-    def test_workspace_mounts_dict_navigation_in_right_rail(self) -> None:
+    def test_workspace_rail_is_a_pure_container(self) -> None:
+        """2026-11-11 架构纠偏：右栏归底座当容器，字典导航不许再写死在全局壳里。"""
         html = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
-        self.assertIn('id="wsDictNav"', html)
-        self.assertIn("字典维护导航", html)
-        self.assertIn("/static/js/ws_dict_nav.js", html)
+        self.assertNotIn('id="wsDictNav"', html)
+        self.assertNotIn("字典维护导航", html)
+        self.assertNotIn("/static/js/ws_dict_nav.js", html)
+        self.assertFalse((ROOT / "static" / "js" / "ws_dict_nav.js").exists())
+        css = (ROOT / "static" / "css" / "workspace_canvas.css").read_text(encoding="utf-8")
+        self.assertNotIn(".ws-dict-nav", css)
+
+    def test_dashboard_plugin_owns_dict_navigation(self) -> None:
+        """字典导航是数据看板插件自己的 sidebar.right 面板，只在看板页签激活时入住。"""
+        manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.dashboard")
+        self.assertIn("sidebar.right", manifest["slots"])
+        plugin_js = (ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist" / "plugin.js")
+        source = plugin_js.read_text(encoding="utf-8")
+        self.assertIn("字典维护导航", source)
+        self.assertIn('call("dict.catalog")', source)
+        self.assertIn('call("dict.open"', source)
+        stage_dict = (ROOT / "static" / "js" / "stage_dict.js").read_text(encoding="utf-8")
+        self.assertIn("DcCatalog", stage_dict)
+        self.assertIn("/dict?embedded=1&cat=", stage_dict)
 
 
 if __name__ == "__main__":

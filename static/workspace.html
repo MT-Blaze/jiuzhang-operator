@@ -120,23 +120,9 @@
           aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
       <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
-        <!-- 字典维护导航（2026-11-11）：字典入口从左侧整页搬进右栏。
-             整块下架时删掉本节、workspace_canvas.css 里 .ws-dict-nav 段与 ws_dict_nav.js 即可。 -->
-        <section class="ws-section ws-dict-nav" id="wsDictNav" aria-label="字典维护导航">
-          <button class="ws-dict-nav-head" id="wsDictNavToggle" type="button"
-            aria-expanded="true" aria-controls="wsDictNavBody">
-            <span class="ws-dict-nav-icon" aria-hidden="true">📁</span>
-            <span class="ws-dict-nav-title">字典维护导航</span>
-            <span class="ws-dict-nav-hint">点分类在画布新开页签</span>
-            <span class="ws-dict-nav-caret" aria-hidden="true">▾</span>
-          </button>
-          <div class="ws-dict-nav-body" id="wsDictNavBody">
-            <p class="ws-dict-nav-state">正在读取字典分类…</p>
-          </div>
-        </section>
-
         <!-- 右栏插槽（sidebar.right）：主权只认当前画布页签。
-             页签插件声明了 sidebar.right 就由它入住，否则插槽留空、右栏保持折叠。 -->
+             页签插件声明了 sidebar.right 就由它入住，否则插槽留空、右栏保持折叠。
+             底座在这里只提供容器，不写死任何业务面板。 -->
         <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏插件面板">
           <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
         </section>
@@ -257,6 +243,7 @@
   <script src="/static/js/stage_relay_bank.js"></script>
   <script src="/static/js/stage_tabbar.js"></script>
   <script src="/static/js/stage_inbound.js"></script>
+  <script src="/static/js/stage_dict.js"></script>
   <script src="/static/js/stage_relay_agent.js"></script>
   <script src="/static/js/stage.js"></script>
   <script src="/static/js/context_panel.js"></script>
@@ -268,7 +255,6 @@
   <script src="/static/js/ws_sidebar.js"></script>
   <script src="/static/js/ws_users.js"></script>
   <script src="/static/js/workspace.js"></script>
-  <script src="/static/js/ws_dict_nav.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>
 </html>
