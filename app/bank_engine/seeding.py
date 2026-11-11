@@ -12,6 +12,7 @@ from app.bank_engine import regions, textbook_versions
 from app.bank_engine.seeds.books.registry import BOOK_ROWS, CHAPTER_ROWS
 from app.bank_engine.seeds.curriculum import (
     CORE_COMPETENCY_ROWS,
+    CURRICULUM_COUNTS,
     GRADE_ROWS,
     QUESTION_TYPE_ROWS,
     SOLUTION_METHOD_ROWS,
@@ -78,9 +79,9 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_difficulties": 5,
     "dict_question_qualities": 3,
     "dict_exam_types": 8,
-    "dict_subject_thoughts": 34,
-    "dict_solution_methods": 85,
-    "dict_core_competencies": 64,
+    "dict_subject_thoughts": CURRICULUM_COUNTS["dict_subject_thoughts"],
+    "dict_solution_methods": CURRICULUM_COUNTS["dict_solution_methods"],
+    "dict_core_competencies": CURRICULUM_COUNTS["dict_core_competencies"],
     "dim_textbook_versions": len(ALL_VERSION_ROWS),
     "dim_textbooks": len(ALL_BOOK_ROWS),
     "dim_textbook_chapters": 3519,

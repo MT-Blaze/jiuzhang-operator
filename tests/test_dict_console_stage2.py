@@ -149,6 +149,46 @@ class ConsoleServiceTest(unittest.TestCase):
         self.assertIn("配方法", names)
         self.assertIn("待定系数法", names)
 
+    def test_high_school_physics_teaching_dicts_are_complete(self) -> None:
+        methods, method_total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "高中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        method_names = {item.name for item in methods}
+        self.assertGreaterEqual(method_total, 30)
+        for name in ("整体法", "隔离法", "正交分解法", "微元法", "图像法",
+                     "控制变量法", "实验探究法", "对称法", "极限思维法"):
+            self.assertIn(name, method_names)
+
+        thoughts, thought_total = service.console_list(
+            "dict_subject_thoughts",
+            filters={"stage": "高中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        thought_names = {item.name for item in thoughts}
+        self.assertGreaterEqual(thought_total, 10)
+        for name in ("守恒思想", "微元思想", "等效替代", "对称思想",
+                     "数形结合思想", "系统思想"):
+            self.assertIn(name, thought_names)
+
+        competencies, competency_total = service.console_list(
+            "dict_core_competencies",
+            filters={"stage": "高中", "subject_id": 4},
+            limit=200,
+            db_path=self.db_path,
+        )
+        competency_names = {item.name for item in competencies}
+        self.assertGreaterEqual(competency_total, 14)
+        for name in ("物理观念", "科学思维", "科学探究", "科学态度与责任",
+                     "物质观念", "运动与相互作用观念", "能量观念",
+                     "模型建构", "科学推理", "科学论证", "质疑创新",
+                     "提出问题", "获取证据", "作出解释", "表达交流",
+                     "科学本质", "科学态度", "社会责任"):
+            self.assertIn(name, competency_names)
+
     def test_core_names_have_no_subject_suffix(self) -> None:
         items, _ = service.console_list(
             "dict_core_competencies", limit=200, db_path=self.db_path

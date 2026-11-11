@@ -46,15 +46,18 @@ def plan(conn: sqlite3.Connection) -> tuple[list[Pending], list[str]]:
     subjects = {int(row[0]) for row in conn.execute("SELECT id FROM dict_subjects")}
     for table, seed_rows in TABLES.items():
         taken_codes = {str(row[0]) for row in conn.execute("SELECT code FROM " + table)}
-        taken_names = {str(row[0]) for row in conn.execute("SELECT name FROM " + table)}
+        taken_names = {
+            (int(row[0]), str(row[1]))
+            for row in conn.execute("SELECT subject_id, name FROM " + table)
+        }
         taken_ids = {int(row[0]) for row in conn.execute("SELECT id FROM " + table)}
         next_id = max(taken_ids, default=0)
         for seed in seed_rows:
             row_id, code, name, sort_order, subject_id, stage = seed
             if code in taken_codes:
                 continue
-            if name in taken_names:
-                conflicts.append(f"{table} 名称已占用：{name}（code={code}）")
+            if (int(subject_id), name) in taken_names:
+                conflicts.append(f"{table} 同学科内名称已占用：{name}（code={code}）")
                 continue
             if int(subject_id) not in subjects:
                 conflicts.append(f"{table} 学科不存在：{name}（subject_id={subject_id}）")
@@ -68,7 +71,7 @@ def plan(conn: sqlite3.Connection) -> tuple[list[Pending], list[str]]:
             pending.append(Pending(table, (int(row_id), code, name, int(sort_order),
                                            int(subject_id), stage)))
             taken_codes.add(code)
-            taken_names.add(name)
+            taken_names.add((int(subject_id), name))
             taken_ids.add(int(row_id))
     return pending, conflicts
 
