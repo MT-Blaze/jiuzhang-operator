@@ -45,9 +45,15 @@ DICT_TABLES = {
         TextbookVersion, seeding.EXPECTED_COUNTS["dim_textbook_versions"]
     ),
     "dim_textbook_chapters": (Chapter, 3519),
-    "dict_subject_thoughts": (SubjectThought, 22),
-    "dict_solution_methods": (SolutionMethod, 34),
-    "dict_core_competencies": (CoreCompetency, 47),
+    "dict_subject_thoughts": (
+        SubjectThought, seeding.EXPECTED_COUNTS["dict_subject_thoughts"]
+    ),
+    "dict_solution_methods": (
+        SolutionMethod, seeding.EXPECTED_COUNTS["dict_solution_methods"]
+    ),
+    "dict_core_competencies": (
+        CoreCompetency, seeding.EXPECTED_COUNTS["dict_core_competencies"]
+    ),
 }
 
 

@@ -125,6 +125,17 @@ class ConsoleServiceTest(unittest.TestCase):
         names = {item.name for item in primary_methods}
         self.assertIn("定义法", names)
         self.assertNotIn("导数法", names)
+        self.assertNotIn("隐零点法", names)
+
+        senior_methods, senior_total = service.console_list(
+            "dict_solution_methods",
+            filters={"stage": "高中", "subject_id": 2},
+            limit=200,
+            db_path=self.db_path,
+        )
+        self.assertGreaterEqual(senior_total, 30)
+        self.assertIn("分离参数法", {item.name for item in senior_methods})
+        self.assertIn("极值点偏移法", {item.name for item in senior_methods})
 
     def test_stage_is_never_null_and_enum_only(self) -> None:
         for table in (
