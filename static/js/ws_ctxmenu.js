@@ -10,7 +10,6 @@
   function create(deps) {
     var addBubble = deps.addBubble;
     var applyPrefsLayer = deps.applyPrefsLayer;
-    var clearPluginPanel = deps.clearPluginPanel;
     var commitTree = deps.commitTree;
     var copyPlainText = deps.copyPlainText;
     var dockLine = deps.dockLine;
@@ -22,8 +21,8 @@
     var notifyConsolePrefs = deps.notifyConsolePrefs;
     var pluginListEl = deps.pluginListEl;
     var postJson = deps.postJson;
-    var renderPluginPanel = deps.renderPluginPanel;
     var renderPlugins = deps.renderPlugins;
+    var resetUiState = deps.resetUiState;
     var rowTitle = deps.rowTitle;
     var setStage = deps.setStage;
     var syncContextSlot = deps.syncContextSlot;
@@ -235,10 +234,9 @@
           if (still) {
             wsState.activePlugin = still;
             syncUiState(still);
-            renderPluginPanel(still);
           } else {
             wsState.activePlugin = null;
-            clearPluginPanel();
+            resetUiState();
             setStage("工作台");
             markActiveEntry(null);
           }

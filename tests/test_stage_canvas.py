@@ -221,8 +221,9 @@ class WorkspaceWiringTest(unittest.TestCase):
 
     def test_03_param_changes_are_published_on_the_bus(self) -> None:
         self.assertIn("function publishUiParams(source, changedKey)", WORKSPACE)
-        self.assertIn('publishUiParams("human", control.key)', WORKSPACE)
-        self.assertIn('publishUiParams("ai", null)', WORKSPACE, "AI 代人改参数也要广播")
+        self.assertNotIn('publishUiParams("human", control.key)', WORKSPACE,
+                         "右栏快捷操作面板已下架，参数只在插件自带面板里改")
+        self.assertIn('publishUiParams("ai", null)', WORKSPACE, "插件经宿主改参数也要广播")
         self.assertIn("window.JzoUiState", WORKSPACE)
 
     def test_04_no_third_party_drag_or_ui_library(self) -> None:

@@ -275,10 +275,6 @@
     min-height: 44px;
     margin-top: 0;
   }
-
-  .ws-ui-select {
-    min-height: 44px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -311,11 +307,6 @@
 }
 .ws-console-entry:hover { color: #a5382f; border-color: #e3c9c3; background: #f4e7e3; }
 .ws-console-entry:focus-visible { outline: 2px solid #a5382f; outline-offset: 2px; }
-
-/* 数据字典控制台入口（2026-11-10）：与设置按钮同形，锚点去下划线；
-   整块下架时删掉本段与 workspace.html 里的 .ws-dict-entry 锚点 */
-.ws-sidebar-foot { flex-direction: column; gap: 8px; }
-.ws-dict-entry { text-decoration: none; }
 
 /* 更新待办徽标：文字 + 颜色双通道，不靠颜色单独传达状态。 */
 .ws-console-badge {

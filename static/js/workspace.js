@@ -55,12 +55,6 @@
   var stageTitle = document.getElementById("wsStageTitle");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
-  var pluginPanel = document.getElementById("wsPluginPanel");
-  var pluginPanelTitle = document.getElementById("wsPluginPanelTitle");
-  var pluginPanelDesc = document.getElementById("wsPluginPanelDesc");
-  var pluginControlsEl = document.getElementById("wsPluginControls");
-  var pluginPanelHint = document.getElementById("wsPluginPanelHint");
-  var uiStateSummary = document.getElementById("wsUiStateSummary");
   var ctxToggle = document.getElementById("wsToggleCtx");
   var dockToggle = document.getElementById("wsToggleDock");
   var dockClearBtn = document.getElementById("wsDockClear");
@@ -84,8 +78,8 @@
   var wsCtxmenu = window.JzoWsCtxmenu.create({
     addBubble: addBubble,
     applyPrefsLayer: applyPrefsLayer,
-    // 循环引用：clearPluginPanel 归更下面的 wsPanel，本块排得靠前，只能等它就位后再取。
-    clearPluginPanel: function () { return wsPanel.clearPluginPanel.apply(wsPanel, arguments); },
+    // 循环引用：resetUiState 归更下面的 wsPanel，本块排得靠前，只能等它就位后再取。
+    resetUiState: function () { return wsPanel.resetUiState.apply(wsPanel, arguments); },
     // 循环引用：commitTree 归更下面的 wsSidebar，本块排得靠前，只能等它就位后再取。
     commitTree: function () { return wsSidebar.commitTree.apply(wsSidebar, arguments); },
     copyPlainText: copyPlainText,
@@ -102,8 +96,6 @@
     pluginListEl: pluginListEl,
     // 循环引用：postJson 归更下面的 wsSidebar，本块排得靠前，只能等它就位后再取。
     postJson: function () { return wsSidebar.postJson.apply(wsSidebar, arguments); },
-    // 循环引用：renderPluginPanel 归更下面的 wsPanel，本块排得靠前，只能等它就位后再取。
-    renderPluginPanel: function () { return wsPanel.renderPluginPanel.apply(wsPanel, arguments); },
     // 循环引用：renderPlugins 归更下面的 wsSidebar，本块排得靠前，只能等它就位后再取。
     renderPlugins: function () { return wsSidebar.renderPlugins.apply(wsSidebar, arguments); },
     // 循环引用：rowTitle 归更下面的 wsSidebar，本块排得靠前，只能等它就位后再取。
@@ -123,23 +115,15 @@
 
 
   var wsPanel = window.JzoWsPanel.create({
-    clampText: clampText,
     dockLine: dockLine,
     // 右栏折叠策略归 wsRail；它晚于本模块创建，用取值器推迟到调用时才拿。
     getCtxRail: function () { return wsRail; },
     loadPlugins: loadPlugins,
-    pluginControlsEl: pluginControlsEl,
-    pluginPanel: pluginPanel,
-    pluginPanelDesc: pluginPanelDesc,
-    pluginPanelHint: pluginPanelHint,
-    pluginPanelTitle: pluginPanelTitle,
     publishUiParams: publishUiParams,
     stageTitle: stageTitle,
-    uiStateSummary: uiStateSummary,
     wsState: wsState,
   });
   var initUiState = wsPanel.initUiState;
-  var renderPluginPanel = wsPanel.renderPluginPanel;
   var syncContextSlot = wsPanel.syncContextSlot;
   var wsRail = window.JzoWsRail.create({
     ctxToggle: ctxToggle,
@@ -206,7 +190,6 @@
     var name = plugin.name || plugin.id || "插件";
     setStage(name);
     initUiState(plugin);
-    renderPluginPanel(plugin);
     // 中栏是通用舞台：只有清单里声明了 stage（slots 带 stage.center）的插件才开画布页。
     // 没声明的插件照旧只切工作模式 + 右栏面板，不给它一块它没要过的地方。
     if (plugin.stage && window.JzoStage && typeof window.JzoStage.openPlugin === "function") {

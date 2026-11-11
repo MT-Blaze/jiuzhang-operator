@@ -1,100 +1,125 @@
-/* ============ 右侧插件面板（双向操控） ============ */
-.ws-plugin-panel {
-  padding: 12px;
+/* ============ 右栏：字典维护导航（原左侧字典大页搬入） ============ */
+.ws-dict-nav {
+  flex: none;
+  margin-bottom: 12px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
-  background: var(--card);
-  /* 快捷操作区不许把右栏插槽挤扁：它自己最多占一半高度，超出部分自己滚 */
-  flex: 0 1 auto;
-  min-height: 0;
-  max-height: 50%;
+  background: linear-gradient(180deg, #fff7ed, var(--card));
+  overflow: hidden;
+}
+
+.ws-dict-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-dict-nav-head:hover { background: #f6e4dc; }
+.ws-dict-nav-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-dict-nav-icon { flex: none; font-size: 1.15rem; line-height: 1; }
+.ws-dict-nav-title { flex: none; font-family: var(--serif); font-size: 0.98rem; font-weight: 700; }
+
+.ws-dict-nav-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.ws-dict-nav-caret { flex: none; color: var(--accent); }
+
+.ws-dict-nav-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 42vh;
+  padding: 8px;
   overflow-y: auto;
 }
 
-.ws-plugin-panel-head {
+.ws-dict-nav-body[hidden] { display: none; }
+
+.ws-dict-nav-state {
+  margin: 0;
+  padding: 6px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.ws-dict-cat {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.ws-dict-cat-head { display: flex; align-items: stretch; }
+
+.ws-dict-cat-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-
-.ws-plugin-panel-head h3 {
-  margin: 0;
-  font-size: 0.82rem;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  color: var(--ink);
-}
-
-.ws-plugin-panel-badge {
-  flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.68rem;
-  font-weight: 600;
-}
-
-.ws-plugin-panel-desc {
-  margin: 6px 0 10px;
-  font-size: 0.78rem;
-  line-height: 1.55;
-  color: var(--muted);
-}
-
-.ws-plugin-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.ws-ui-field {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.ws-ui-field-label {
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.ws-ui-select {
-  min-height: 40px;
+  gap: 6px;
   padding: 6px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--paper);
+  border: none;
+  background: transparent;
   color: var(--ink);
-  font-family: inherit;
-  font-size: 0.82rem;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
 }
 
-.ws-ui-select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.ws-dict-cat-open:hover { background: var(--accent-soft); }
+.ws-dict-cat-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.ws-dict-cat-count {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--muted);
 }
 
-.ws-ui-action {
-  width: 100%;
-}
-
-.ws-plugin-panel-state {
-  margin: 10px 0 0;
-  font-size: 0.72rem;
-  line-height: 1.5;
-  color: var(--accent);
-}
-
-.ws-plugin-panel-hint {
-  margin: 6px 0 0;
-  font-size: 0.7rem;
-  line-height: 1.5;
+.ws-dict-cat-toggle {
+  flex: none;
+  width: 40px;
+  border: none;
+  border-left: 1px solid var(--line);
+  background: transparent;
   color: var(--faint);
+  font: inherit;
+  cursor: pointer;
 }
+
+.ws-dict-cat-toggle:hover { background: var(--accent-soft); color: var(--ink); }
+.ws-dict-cat-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.ws-dict-cat-list {
+  margin: 0;
+  padding: 4px 10px 8px 24px;
+  border-top: 1px dashed var(--line);
+  list-style: disc;
+}
+
+.ws-dict-cat-list[hidden] { display: none; }
+.ws-dict-cat-list li { margin: 3px 0; font-size: 0.76rem; line-height: 1.45; color: var(--muted); }
+.ws-dict-cat-list strong { color: var(--ink); font-weight: 600; }
 
 /* ============ 拖拽手柄：视觉隐形，命中区比 gutter 宽 ============ */
 .ws-resizer {

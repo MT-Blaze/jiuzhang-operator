@@ -163,6 +163,7 @@
     tabsEl: tabsEl,
     touch: touch,
   });
+  var addTab = stageFrame.addTab;
   var attachPanel = stageFrame.attachPanel;
   var broadcast = stageFrame.broadcast;
   var notify = stageFrame.notify;
@@ -173,6 +174,7 @@
   var registerNative = stageFrame.registerNative;
   var rehydratePlugin = stageFrame.rehydratePlugin;
   var updatePlugin = stageFrame.updatePlugin;
+  var openFrame = window.JzoStageFrameOpen.create({ addTab: addTab, activate: activate, findTab: findTab, dock: dock, emit: emit }).open;
   var stageHttp = window.JzoStageHttp.create({
     RELAY_TIMEOUT_MS: RELAY_TIMEOUT_MS,
   });
@@ -273,9 +275,6 @@
     withWriteToken: withWriteToken,
   });
   var relayAgent = stageRelayAgent.relayAgent;
-
-
-
 
 
 
@@ -712,6 +711,7 @@
 
   window.JzoStage = {
     openPlugin: openPlugin,
+    openFrame: openFrame,
     updatePlugin: updatePlugin,
     rehydratePlugin: rehydratePlugin,
     setSidebarTree: setSidebarTree,

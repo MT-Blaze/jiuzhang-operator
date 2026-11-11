@@ -1,48 +1,27 @@
 /**
- * ws_panel.js —— workspace.js 的「右侧插件面板」小节抽出来的独立模块
- * （PLUGIN_SPEC §2.8.1 同款口径：底座 JS 单文件不超过 800 行）。
+ * ws_panel.js —— 工作台右栏的「插件参数账本」与右栏主权对账。
  *
- * 依赖一律由 create(deps) 交进来，模块不认全局、也不碰宿主 DOM。
+ * 2026-11-11 起右栏不再画「插件快捷操作」面板：视觉位置让给字典维护导航。
+ * 参数账本保留——录题辅助栏等插件仍经 Host API 的 ui.params.set 跨帧改参数，
+ * 宿主继续负责「人改过的字段优先于 AI」的仲裁，只是不再多画一套同名控件。
  */
 (function (global) {
   "use strict";
 
   function create(deps) {
-    var clampText = deps.clampText;
     var dockLine = deps.dockLine;
     var getCtxRail = deps.getCtxRail;
     var loadPlugins = deps.loadPlugins;
-    var pluginControlsEl = deps.pluginControlsEl;
-    var pluginPanel = deps.pluginPanel;
-    var pluginPanelDesc = deps.pluginPanelDesc;
-    var pluginPanelHint = deps.pluginPanelHint;
-    var pluginPanelTitle = deps.pluginPanelTitle;
     var publishUiParams = deps.publishUiParams;
     var stageTitle = deps.stageTitle;
-    var uiStateSummary = deps.uiStateSummary;
     var wsState = deps.wsState;
 
-  // ============ 右侧插件面板（双向操控） ============
-  // 控件由 plugin.json 的 ui 字段（或底座按能力生成的默认面板）下发。
-  // 人类改下拉 → revisions[key] 加一；AI 改参数时用发送时的快照比对，
-  // 只要人类在请求飞行期间动过同一字段，AI 的设定就让位。
+  // ============ 右栏插件参数账本 ============
+  // 控件由 plugin.json 的 ui 字段下发。人类在插件自带面板里改下拉 → revisions[key] 加一；
+  // AI 改参数时用发送时的快照比对，只要人类在请求飞行期间动过同一字段，AI 的设定就让位。
   function panelControls(plugin) {
     var ui = plugin && plugin.ui;
     return ui && Array.isArray(ui.controls) ? ui.controls : [];
-  }
-
-  /**
-   * 插件自带整块右栏面板吗？
-   *
-   * 声明了 sidebar.right 的插件，它的面板就住在这栏里（比如录题辅助栏）。
-   * 住进右栏时宿主再画一遍同名快捷按钮就成了两套，老师会以为有一个是坏的。
-   *
-   * 判据只认插槽本身，不用清单里的 ui.panel 开关：那个开关只管「画不画」，
-   * 管不了「插件住不住」，字面上却像后者，早年被误读成「关掉辅助栏」。
-   */
-  function ownsOwnRightPanel(plugin) {
-    if (!plugin || !Array.isArray(plugin.slots)) return false;
-    return plugin.slots.indexOf("sidebar.right") >= 0;
   }
 
   function initUiState(plugin) {
@@ -56,7 +35,6 @@
     });
     wsState.uiPanelControls = controls;
     wsState.uiState = { pluginId: plugin ? plugin.id : null, values: values, revisions: {} };
-    updateUiStateSummary();
   }
 
   function syncUiState(plugin) {
@@ -75,97 +53,9 @@
     wsState.uiState.values = next;
   }
 
-  function clearPluginPanel() {
+  function resetUiState() {
     wsState.uiPanelControls = [];
     wsState.uiState = { pluginId: null, values: {}, revisions: {} };
-    if (pluginPanel) pluginPanel.hidden = true;
-    if (pluginControlsEl) pluginControlsEl.textContent = "";
-    if (uiStateSummary) uiStateSummary.textContent = "";
-  }
-
-  function renderPluginPanel(plugin) {
-    if (!pluginPanel || !pluginControlsEl) return;
-    var controls = panelControls(plugin);
-    if (!controls.length) {
-      clearPluginPanel();
-      return;
-    }
-    var ui = plugin.ui || {};
-    // 插件自带的整块面板（如录题辅助栏）已经住进右栏插槽时，
-    // 宿主这层「人机共设」快捷操作只会重复一遍，不画。
-    if (ui.panel === false || ownsOwnRightPanel(plugin)) {
-      pluginControlsEl.textContent = "";
-      if (pluginPanel) pluginPanel.hidden = true;
-      updateUiStateSummary();
-      return;
-    }
-    if (pluginPanelTitle) pluginPanelTitle.textContent = ui.title || ((plugin.name || "插件") + "快捷操作");
-    if (pluginPanelDesc) {
-      pluginPanelDesc.textContent = plugin.description || "该插件未提供说明。";
-    }
-    if (pluginPanelHint) {
-      pluginPanelHint.textContent = ui.hint || "点按钮等于发送对应指令；你手动改过的参数优先于 AI 的自动设定。";
-    }
-    pluginControlsEl.textContent = "";
-
-    controls.forEach(function (control) {
-      if (control.type === "select") {
-        var field = document.createElement("label");
-        field.className = "ws-ui-field";
-        var label = document.createElement("span");
-        label.className = "ws-ui-field-label";
-        label.textContent = control.label || control.key;
-        var select = document.createElement("select");
-        select.className = "ws-ui-select";
-        select.setAttribute("data-ui-key", control.key);
-        (control.options || []).forEach(function (option) {
-          var item = document.createElement("option");
-          item.value = option.value;
-          item.textContent = option.label || option.value;
-          if (wsState.uiState.values[control.key] === option.value) item.selected = true;
-          select.appendChild(item);
-        });
-        select.addEventListener("change", function () {
-          wsState.uiState.values[control.key] = select.value;
-          wsState.uiState.revisions[control.key] = (wsState.uiState.revisions[control.key] || 0) + 1;
-          updateUiStateSummary();
-          publishUiParams("human", control.key);
-        });
-        field.appendChild(label);
-        field.appendChild(select);
-        pluginControlsEl.appendChild(field);
-        return;
-      }
-      if (control.type === "button") {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "ws-btn ws-btn-sm ws-ui-action";
-        btn.setAttribute("data-ui-button", control.id);
-        btn.textContent = control.label || "执行";
-        btn.addEventListener("click", function () {
-          publishPanelButton(control.command, control.label || "面板按钮");
-        });
-        pluginControlsEl.appendChild(btn);
-      }
-    });
-
-    pluginPanel.hidden = false;
-    updateUiStateSummary();
-  }
-
-  function updateUiStateSummary() {
-    if (!uiStateSummary) return;
-    var parts = [];
-    wsState.uiPanelControls.forEach(function (control) {
-      if (control.type !== "select") return;
-      var value = wsState.uiState.values[control.key];
-      if (value == null || value === "") return;
-      var edited = wsState.uiState.revisions[control.key] ? "（你已改）" : "";
-      parts.push((control.label || control.key) + "：" + value + edited);
-    });
-    uiStateSummary.textContent = parts.length
-      ? "当前参数 " + parts.join(" · ")
-      : "面板操作会实时同步给 AI。";
   }
 
   function currentUiValues() {
@@ -192,33 +82,6 @@
       }
       return { id: control.id, type: "button", label: control.label };
     });
-  }
-
-  function expandCommand(template) {
-    return String(template || "").replace(/\{([a-z][a-z0-9_]{0,15})\}/g, function (whole, key) {
-      var value = wsState.uiState.values[key];
-      return value == null ? whole : String(value);
-    });
-  }
-
-  /**
-   * 人点面板按钮 = 请右栏的插件面板把这句话发出去。
-   * 宿主不再自己调对话接口：按钮只把「指令模板 + 当前参数」交给助手插件，
-   * 由它经 Host API 申请一次对话——对话的入口收在插件手里，底座不再代笔。
-   */
-  function publishPanelButton(command, label) {
-    var text = clampText(expandCommand(command), 400);
-    if (!text) {
-      dockLine("面板按钮「" + clampText(label, 40) + "」没有可用的指令模板。", "host.warn");
-      return;
-    }
-    if (window.JzoStage && typeof window.JzoStage.broadcast === "function") {
-      window.JzoStage.broadcast("panel.button.click", {
-        plugin_id: wsState.uiState.pluginId,
-        command: text,
-        label: clampText(label, 40)
-      });
-    }
   }
 
   function findUiControl(id, type) {
@@ -256,15 +119,9 @@
         return;
       }
       wsState.uiState.values[key] = incoming;
-      var select = pluginControlsEl
-        ? pluginControlsEl.querySelector('[data-ui-key="' + key + '"]')
-        : null;
-      if (select) select.value = incoming;
       applied.push({ label: control.label, value: incoming });
     });
     if (applied.length) {
-      updateUiStateSummary();
-      // AI 代人改参数同样要广播：中栏插件看到的参数必须和右栏一致
       publishUiParams("ai", null);
     }
     return { applied: applied, skipped: skipped };
@@ -355,7 +212,6 @@
     });
     if (!hasSelect) return;
     syncUiState(claimant);
-    renderPluginPanel(claimant);
   }
 
   // 助手插件向底座要服务的唯一门面：白名单在 stage.js，能力在这里。
@@ -363,6 +219,10 @@
     stateSnapshot: stateSnapshot,
     applyAiParams: applyAiParams,
     syncContextSlot: syncContextSlot,
+    openContextRail: function () {
+      var rail = typeof getCtxRail === "function" ? getCtxRail() : null;
+      if (rail && typeof rail.openCtx === "function") rail.openCtx();
+    },
     refreshPlugins: function () { return loadPlugins({ announce: true }); },
     activeCanvasPlugin: function () { return wsState.activeCanvasPluginId; }
   };
@@ -370,22 +230,17 @@
     return {
       applyAiParams: applyAiParams,
       applyUiParams: applyUiParams,
-      clearPluginPanel: clearPluginPanel,
       compactControls: compactControls,
       currentUiValues: currentUiValues,
-      expandCommand: expandCommand,
       findUiControl: findUiControl,
       initUiState: initUiState,
-      ownsOwnRightPanel: ownsOwnRightPanel,
       panelControls: panelControls,
-      publishPanelButton: publishPanelButton,
-      renderPluginPanel: renderPluginPanel,
+      resetUiState: resetUiState,
       snapshotRevisions: snapshotRevisions,
       stateSnapshot: stateSnapshot,
       syncContextSlot: syncContextSlot,
       syncRightSlotUiState: syncRightSlotUiState,
       syncUiState: syncUiState,
-      updateUiStateSummary: updateUiStateSummary,
     };
   }
 

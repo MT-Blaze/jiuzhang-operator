@@ -170,6 +170,8 @@
       mqMobile: mqMobile,
       onBreakpoint: onBreakpoint,
       openCtxBtn: openCtxBtn,
+      // 字典导航等宿主入口请右栏「钉开」：算老师的手动意图，不会被自动折叠收回。
+      openCtx: function () { manualCtx(true); },
       openSidebarBtn: openSidebarBtn,
       setCtx: setCtx,
       setDock: setDock,

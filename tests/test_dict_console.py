@@ -114,10 +114,16 @@ class ConsoleSkeletonTest(unittest.TestCase):
         self.assertEqual(list(CONSOLE_DIR.rglob("*.json")), [])
         self.assertFalse((ROOT / "static" / "dict_console.json").exists())
 
-    def test_workspace_has_removable_entry(self) -> None:
+    def test_workspace_has_no_standalone_dict_entry(self) -> None:
         html = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
-        self.assertIn('href="/dict"', html)
-        self.assertIn("ws-dict-entry", html)
+        self.assertNotIn('href="/dict"', html)
+        self.assertNotIn("ws-dict-entry", html)
+
+    def test_workspace_mounts_dict_navigation_in_right_rail(self) -> None:
+        html = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
+        self.assertIn('id="wsDictNav"', html)
+        self.assertIn("字典维护导航", html)
+        self.assertIn("/static/js/ws_dict_nav.js", html)
 
 
 if __name__ == "__main__":

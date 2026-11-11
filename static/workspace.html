@@ -61,16 +61,6 @@
           <span>设置与控制台</span>
           <span class="ws-console-badge" id="wsConsoleDot" aria-live="polite" hidden></span>
         </button>
-        <!-- 数据字典控制台入口（2026-11-10）：整块下架时删掉本锚点、workspace_overlay.css
-             里 .ws-dict-entry 段与 /dict 路由即可 -->
-        <a class="ws-console-entry ws-dict-entry" href="/dict"
-          aria-label="打开数据字典控制台" title="数据字典控制台">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-            <path d="M5 4h14v16H5zM5 9h14M10 9v11" fill="none"
-              stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
-          </svg>
-          <span>数据字典</span>
-        </a>
       </footer>
     </aside>
 
@@ -130,21 +120,25 @@
           aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
       <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
+        <!-- 字典维护导航（2026-11-11）：字典入口从左侧整页搬进右栏。
+             整块下架时删掉本节、workspace_canvas.css 里 .ws-dict-nav 段与 ws_dict_nav.js 即可。 -->
+        <section class="ws-section ws-dict-nav" id="wsDictNav" aria-label="字典维护导航">
+          <button class="ws-dict-nav-head" id="wsDictNavToggle" type="button"
+            aria-expanded="true" aria-controls="wsDictNavBody">
+            <span class="ws-dict-nav-icon" aria-hidden="true">📁</span>
+            <span class="ws-dict-nav-title">字典维护导航</span>
+            <span class="ws-dict-nav-hint">点分类在画布新开页签</span>
+            <span class="ws-dict-nav-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="ws-dict-nav-body" id="wsDictNavBody">
+            <p class="ws-dict-nav-state">正在读取字典分类…</p>
+          </div>
+        </section>
+
         <!-- 右栏插槽（sidebar.right）：主权只认当前画布页签。
              页签插件声明了 sidebar.right 就由它入住，否则插槽留空、右栏保持折叠。 -->
         <section class="ws-section ws-context-slot" id="wsContextSlot" aria-label="右栏插件面板">
           <div class="ws-context-slot-body" id="wsContextSlotBody"></div>
-        </section>
-
-        <section class="ws-section ws-plugin-panel" id="wsPluginPanel" aria-label="插件快捷操作" hidden>
-          <div class="ws-plugin-panel-head">
-            <h3 id="wsPluginPanelTitle">插件快捷操作</h3>
-            <span class="ws-plugin-panel-badge">人机共设</span>
-          </div>
-          <p class="ws-plugin-panel-desc" id="wsPluginPanelDesc"></p>
-          <div class="ws-plugin-controls" id="wsPluginControls"></div>
-          <p class="ws-plugin-panel-state" id="wsUiStateSummary" role="status" aria-live="polite"></p>
-          <p class="ws-plugin-panel-hint" id="wsPluginPanelHint">这些控件只由你手动操作；AI 只能向底座申请设值，且你改过的参数优先。</p>
         </section>
       </div>
     </aside>
@@ -243,6 +237,8 @@
   <script src="/static/js/core_bus.js"></script>
   <script src="/static/js/core_tabs.js"></script>
   <script src="/static/js/core_log.js"></script>
+  <!-- 字典分类目录与右栏导航共用这一份；分类名/表清单只改 catalog.js -->
+  <script src="/static/js/dict_console/catalog.js"></script>
   <!-- 录入入口（宿主壳）：拖入的文件、粘贴的截图、屏幕截取。
        必须早于 stage.js：插件转发进来的字节由它代发，写令牌只在宿主侧。 -->
   <script src="/static/js/intake.js"></script>
@@ -252,6 +248,8 @@
   <script src="/static/js/contextmenu.js"></script>
   <script src="/static/js/splitpane.js"></script>
   <script src="/static/js/stage_frame.js"></script>
+  <!-- 宿主自有 iframe 页签（数据字典等）：同源装载，不覆盖现有看板/录题页签 -->
+  <script src="/static/js/stage_frame_open.js"></script>
   <script src="/static/js/stage_command.js"></script>
   <script src="/static/js/stage_http.js"></script>
   <script src="/static/js/stage_draft.js"></script>
@@ -270,6 +268,7 @@
   <script src="/static/js/ws_sidebar.js"></script>
   <script src="/static/js/ws_users.js"></script>
   <script src="/static/js/workspace.js"></script>
+  <script src="/static/js/ws_dict_nav.js"></script>
   <script src="/static/js/pwa.js"></script>
 </body>
 </html>
