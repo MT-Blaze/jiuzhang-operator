@@ -3,7 +3,8 @@
  * 底层仍是 dim_textbook_versions / dim_textbooks / dim_textbook_chapters 三张独立表，
  * 前端按 version_id、textbook_id、parent_id 合树：版本 → 册次 → 章 → 节。
  * 默认只露全部版本；点版本展开册次，点册次展开章，逐层下拉，章节按需构建。
- * 双击节点改名、行尾＋/改名/删；册次＋默认新增顶层章，章节＋默认新增子章节。
+ * 双击节点文字原地改名（无改名按钮），删除悬停该行才显示；
+ * 册次＋默认新增顶层章，章节＋默认新增子章节。
  * 整块下架：删本文件与 entities.css 的 det-* 段即可。
  */
 (function () {
@@ -12,6 +13,7 @@
   var S = window.DcEntityShared;
   var VERSION_URL = "/api/bank/engine/dict/dim_textbook_versions";
   var BOOK_URL = "/api/bank/engine/dict/dim_textbooks";
+  var CHAPTER_URL = "/api/bank/engine/dict/dim_textbook_chapters";
 
   function countNodes(nodes) {
     return (nodes || []).reduce(function (sum, node) {
@@ -146,15 +148,8 @@
       return reloadAll().then(function () { if (message) setStatus(message); });
     }
 
-    function renameVersion(version, anchor) {
-      S.rename({
-        title: "修改教材版本名称",
-        message: "编码保持不变；同一学科内版本名不能重复。",
-        anchor: anchor,
-        url: VERSION_URL + "/" + version.id,
-        fields: [{ key: "name", label: "版本名称", required: true, value: version.name }],
-        onDone: function () { refresh("已改名。"); }
-      });
+    function renamed() {
+      refresh("已改名。");
     }
 
     function removeVersion(version, anchor) {
@@ -213,20 +208,6 @@
       });
     }
 
-    function renameBook(book, anchor) {
-      S.rename({
-        title: "修改册次",
-        message: "册次名决定树上显示；完整书名保留给来源展示。",
-        anchor: anchor,
-        url: BOOK_URL + "/" + book.id,
-        fields: [
-          { key: "volume_name", label: "册次名", required: true, value: book.volume_name || "" },
-          { key: "name", label: "完整书名", required: true, value: book.name }
-        ],
-        onDone: function () { refresh("已改名。"); }
-      });
-    }
-
     function removeBook(book, anchor) {
       S.remove({ url: BOOK_URL, row: book, anchor: anchor, reload: reloadAll, setStatus: setStatus });
     }
@@ -260,8 +241,9 @@
         children: box,
         addText: "节", addLabel: "在「" + chapter.name + "」下新增子章节",
         add: function (btn) { addChapterUnderNode(book, node, btn); },
-        rename: function (btn) {
-          window.DcChapterOps.rename(chapter, function () { refresh("已改名。"); });
+        edit: {
+          url: CHAPTER_URL + "/" + chapter.id, field: "name",
+          value: chapter.name, label: "章节名称", onDone: renamed
         },
         remove: function () {
           window.DcChapterOps.remove(chapter, function () { refresh("已删除章节。"); });
@@ -290,7 +272,10 @@
         children: box,
         addText: "章", addLabel: "给「" + bookLabel(book) + "」新增顶层章",
         add: function (btn) { addChapterUnderBook(book, btn); },
-        rename: function (btn) { renameBook(book, btn); },
+        edit: {
+          url: BOOK_URL + "/" + book.id, field: "volume_name",
+          value: bookLabel(book), label: "册次名", onDone: renamed
+        },
         remove: function (btn) { removeBook(book, btn); },
         lazy: roots.length ? function () {
           roots.forEach(function (node) {
@@ -322,7 +307,10 @@
         children: box,
         addText: "册", addLabel: "在「" + version.name + "」下新增册次",
         add: function (btn) { addBook(version, btn); },
-        rename: function (btn) { renameVersion(version, btn); },
+        edit: {
+          url: VERSION_URL + "/" + version.id, field: "name",
+          value: version.name, label: "版本名称", onDone: renamed
+        },
         remove: function (btn) { removeVersion(version, btn); }
       });
     }

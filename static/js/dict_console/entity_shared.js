@@ -1,5 +1,6 @@
 /**
- * 实体维度双树共用的小工具（2026-11-11）：分页拉全量、增改删对话框、排序号。
+ * 实体维度双树共用的小工具（2026-11-11）：分页拉全量、新增/删除对话框、内联改名、排序号。
+ * 改名一律双击节点文字出输入框（blur/Enter 保存、Esc 取消、F2 键盘可达），不设“改名”按钮。
  * 两棵树各自持有 DOM 与展开状态，这里只提供无状态函数，互不共享渲染。
  * 全部文案走 textContent；写请求经 DcClient.writeJson 自带一次性令牌。
  * 整块下架：删本文件、entity_schools.js、entity_textbooks.js 与 entities.css。
@@ -69,18 +70,47 @@
     window.DcRowOps.deleteRow(controller, spec.row, spec.anchor);
   }
 
-  function rename(spec) {
-    window.DcDialog.open({
-      title: spec.title,
-      message: spec.message || "",
-      confirmText: "保存",
-      anchor: spec.anchor,
-      fields: spec.fields,
-      onConfirm: function (values) {
-        window.DcClient.writeJson(spec.url, values, "PUT").then(function () {
-          spec.onDone();
-        }).catch(function (error) { fail("保存失败", error, spec.anchor); });
+  /** 双击节点文字 → 原地输入框：blur/Enter 保存，Esc 还原；空值视同取消，不写库。 */
+  function inlineEdit(spec) {
+    var host = spec.host;
+    if (!host || host.querySelector("input")) return;
+    var original = spec.value == null ? "" : String(spec.value);
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "det-inline-input";
+    input.value = original;
+    input.setAttribute("aria-label", spec.label || "修改名称");
+    host.textContent = "";
+    host.appendChild(input);
+    input.focus();
+    input.select();
+    var done = false;
+    function finish(save) {
+      if (done) return;
+      done = true;
+      var value = input.value.trim();
+      if (!save || !value || value === original) {
+        host.textContent = original;
+        if (spec.restoreFocus) spec.restoreFocus.focus();
+        return;
       }
+      var payload = {};
+      payload[spec.field] = value;
+      window.DcClient.writeJson(spec.url, payload, "PUT").then(function () {
+        host.textContent = value;
+        spec.onDone(value);
+      }).catch(function (error) {
+        host.textContent = original;
+        fail("保存失败", error, spec.restoreFocus || host);
+      });
+    }
+    input.addEventListener("click", function (event) { event.stopPropagation(); });
+    input.addEventListener("dblclick", function (event) { event.stopPropagation(); });
+    input.addEventListener("blur", function () { finish(true); });
+    input.addEventListener("keydown", function (event) {
+      event.stopPropagation();
+      if (event.key === "Enter") { event.preventDefault(); input.blur(); }
+      else if (event.key === "Escape") { event.preventDefault(); finish(false); }
     });
   }
 
@@ -130,7 +160,7 @@
     return ul;
   }
 
-  /** 一行 = 箭头 + 名称/编码/面包屑 + 计数 + ＋/改名/删；子级容器随行挂在 li 上。 */
+  /** 一行 = 箭头 + 名称（学校行拆全称/简称两栏）+ 计数 + ＋/删；子级容器挂在 li 上。 */
   function makeRow(opts) {
     var expandedSet = opts.expandedSet || new Set();
     var li = el("li", "det-item");
@@ -139,6 +169,8 @@
     row.dataset.level = String(opts.level);
     row.style.setProperty("--det-depth", String(opts.depth || 0));
     if (opts.expanded) row.classList.add("is-open");
+    var isSchool = opts.short != null;
+    if (isSchool) row.classList.add("det-row-school");
 
     function toggle() {
       var box = li._detBox;
@@ -171,18 +203,55 @@
       row.appendChild(spacer());
     }
 
+    var nameSpan = el("span", "det-name", opts.name);
     var label = el("button", "det-label");
     label.type = "button";
-    label.appendChild(el("span", "det-name", opts.name));
-    if (opts.sub) label.appendChild(el("span", "det-sub", opts.sub));
-    if (opts.tag) label.appendChild(el("span", "det-tag", opts.tag));
-    label.appendChild(el("span", "det-crumb", opts.crumb || ""));
-    label.addEventListener("click", function () {
+    label.appendChild(nameSpan);
+    var shortBtn = null;
+    var shortSpan = null;
+    if (isSchool) {
+      shortSpan = el("span", "det-short", opts.short);
+      shortBtn = el("button", "det-label det-short-cell");
+      shortBtn.type = "button";
+      shortBtn.appendChild(shortSpan);
+    } else {
+      if (opts.sub) label.appendChild(el("span", "det-sub", opts.sub));
+      if (opts.tag) label.appendChild(el("span", "det-tag", opts.tag));
+    }
+    var crumb = el("span", "det-crumb", opts.crumb || "");
+    if (!isSchool) label.appendChild(crumb);
+
+    function activate() {
       if (opts.hasChildren) toggle();
       else if (typeof opts.onSelect === "function") opts.onSelect(li);
-    });
-    if (opts.rename) label.addEventListener("dblclick", function () { opts.rename(label); });
+    }
+    label.addEventListener("click", activate);
+    if (shortBtn) shortBtn.addEventListener("click", activate);
+
+    function wireEdit(btn, span, editSpec) {
+      if (!editSpec) return;
+      btn.title = "双击或按 F2 修改" + (editSpec.label || "名称");
+      function start() {
+        inlineEdit({
+          host: span, value: editSpec.value, label: editSpec.label,
+          url: editSpec.url, field: editSpec.field,
+          onDone: editSpec.onDone, restoreFocus: btn
+        });
+      }
+      btn.addEventListener("dblclick", function (event) {
+        event.stopPropagation();
+        start();
+      });
+      btn.addEventListener("keydown", function (event) {
+        if (event.key === "F2") { event.preventDefault(); start(); }
+      });
+    }
+    wireEdit(label, nameSpan, opts.edit);
+    if (shortBtn) wireEdit(shortBtn, shortSpan, opts.editShort);
+
     row.appendChild(label);
+    if (shortBtn) row.appendChild(shortBtn);
+    if (isSchool) row.appendChild(crumb);
 
     if (opts.badge) row.appendChild(el("span", "det-badge", opts.badge));
 
@@ -193,13 +262,6 @@
       addBtn.setAttribute("aria-label", opts.addLabel || "新增");
       addBtn.addEventListener("click", function () { opts.add(addBtn); });
       ops.appendChild(addBtn);
-    }
-    if (opts.rename) {
-      var renameBtn = el("button", "det-op", "改名");
-      renameBtn.type = "button";
-      renameBtn.setAttribute("aria-label", "修改「" + opts.name + "」的名称");
-      renameBtn.addEventListener("click", function () { opts.rename(renameBtn); });
-      ops.appendChild(renameBtn);
     }
     if (opts.remove) {
       var delBtn = el("button", "det-op det-op-danger", "删");
@@ -235,7 +297,7 @@
 
   window.DcEntityShared = {
     el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder,
-    fail: fail, remove: remove, rename: rename, add: add,
+    fail: fail, remove: remove, inlineEdit: inlineEdit, add: add,
     caret: caret, spacer: spacer, childList: childList,
     makeRow: makeRow, bindTree: bindTree
   };

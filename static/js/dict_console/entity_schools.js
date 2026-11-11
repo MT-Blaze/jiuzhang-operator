@@ -2,7 +2,8 @@
  * 实体维度 · 行政区划与学校（2026-11-11）：
  * 底层仍是 dim_regions / dim_schools 两张独立表，前端按 parent_id、region_id 合树。
  * 默认只露 34 个省级；点省展开地级市，点市展开该市学校。
- * 双击节点改名、行尾＋/改名/删；市节点＋默认在该市下新建学校。
+ * 学校行两栏对齐：全称 | 简称；sch_ 系统编码只留在底层，界面绝不展示。
+ * 双击节点文字原地改名；删除按钮悬停该行才出现；市节点＋默认在该市下新建学校。
  * 整块下架：删本文件与 entities.css 的 det-* 段即可。
  */
 (function () {
@@ -71,15 +72,15 @@
     var makeRow = S.bindTree(state.expanded, select);
     var childList = S.childList;
 
-    function renameRegion(row, anchor) {
-      S.rename({
-        title: "修改区划名称",
-        message: "编码保持不变；同一父级下名称不能重复。",
-        anchor: anchor,
-        url: REGION_URL + "/" + row.id,
-        fields: [{ key: "name", label: "区划名称", required: true, value: row.name }],
-        onDone: function () { reload().then(function () { setStatus("已改名。"); }); }
-      });
+    function renamed() {
+      reload().then(function () { setStatus("已改名。"); });
+    }
+
+    function regionEdit(row) {
+      return {
+        url: REGION_URL + "/" + row.id, field: "name", value: row.name,
+        label: "区划名称", onDone: renamed
+      };
     }
 
     function removeRegion(row, anchor) {
@@ -133,35 +134,39 @@
       });
     }
 
-    function renameSchool(row, anchor) {
-      S.rename({
-        title: "修改学校",
-        message: "全称与简称都要保留；编码不变。",
-        anchor: anchor,
-        url: SCHOOL_URL + "/" + row.id,
-        fields: [
-          { key: "name", label: "学校全称", required: true, value: row.name },
-          { key: "short_name", label: "学校简称", required: true, value: row.short_name }
-        ],
-        onDone: function () { reload().then(function () { setStatus("已改名。"); }); }
-      });
+    function schoolEdit(school, field, label) {
+      return {
+        url: SCHOOL_URL + "/" + school.id, field: field,
+        value: field === "name" ? school.name : (school.short_name || ""),
+        label: label, onDone: renamed
+      };
+    }
+
+    /** 学校编码是系统底层标识：新增时自动签发 sch_ 随机码，老师全程不见编码。 */
+    function newSchoolCode() {
+      var bytes = new Uint8Array(6);
+      window.crypto.getRandomValues(bytes);
+      var hex = "";
+      for (var i = 0; i < bytes.length; i += 1) {
+        hex += (bytes[i] + 256).toString(16).slice(1);
+      }
+      return "sch_" + hex.slice(0, 11);
     }
 
     function addSchool(city, anchor) {
       var siblings = state.schools[city.id] || [];
       S.add({
         title: "在「" + city.name + "」下新增学校",
-        message: "学校全称全局唯一；简称在同一地区内唯一。",
+        message: "学校全称全局唯一；简称在同一地区内唯一。系统编码自动签发，无需填写。",
         anchor: anchor,
         url: SCHOOL_URL,
         fields: [
           { key: "name", label: "学校全称", required: true, placeholder: "如 哈尔滨市第三中学校" },
-          { key: "short_name", label: "学校简称", required: true, placeholder: "如 哈三中" },
-          { key: "code", label: "学校编码", required: true, placeholder: "如 hrb3z" }
+          { key: "short_name", label: "学校简称", required: true, placeholder: "如 哈三中" }
         ],
         build: function (values) {
           return {
-            name: values.name, short_name: values.short_name, code: values.code,
+            name: values.name, short_name: values.short_name, code: newSchoolCode(),
             region: city.name, region_id: city.id, sort_order: S.nextOrder(siblings)
           };
         },
@@ -182,18 +187,35 @@
     function renderSchool(school) {
       return makeRow({
         level: 3, depth: 2, name: school.name,
-        sub: (school.short_name || "") + (school.code ? " · " + school.code : ""),
+        short: school.short_name || "",
         crumb: school._crumb || "",
-        remove: function (btn) { removeSchool(school, btn); },
-        rename: function (btn) { renameSchool(school, btn); }
+        edit: schoolEdit(school, "name", "学校全称"),
+        editShort: schoolEdit(school, "short_name", "学校简称"),
+        remove: function (btn) { removeSchool(school, btn); }
       });
+    }
+
+    /** 学校分组顶栏：与学校行同一套网格，钉住“全称 | 简称”两栏语义。 */
+    function schoolHead() {
+      var li = S.el("li", "det-item");
+      var row = S.el("div", "det-row det-row-school det-school-head");
+      row.setAttribute("aria-hidden", "true");
+      row.appendChild(S.spacer());
+      row.appendChild(S.el("span", "det-school-col", "学校全称"));
+      row.appendChild(S.el("span", "det-school-col", "学校简称"));
+      row.appendChild(S.el("span", "det-school-pad", ""));
+      li.appendChild(row);
+      return li;
     }
 
     function renderCity(province, city) {
       var kids = state.schools[city.id] || [];
       var expanded = state.expanded.has("c:" + city.id);
       var box = kids.length ? childList(2, expanded) : null;
-      if (box) kids.forEach(function (school) { box.appendChild(renderSchool(school)); });
+      if (box) {
+        box.appendChild(schoolHead());
+        kids.forEach(function (school) { box.appendChild(renderSchool(school)); });
+      }
       return makeRow({
         level: 2, depth: 1, name: city.name, sub: city.code,
         badge: kids.length + " 校",
@@ -203,7 +225,7 @@
         children: box,
         addText: "校", addLabel: "在「" + city.name + "」下新增学校",
         add: function (btn) { addSchool(city, btn); },
-        rename: function (btn) { renameRegion(city, btn); },
+        edit: regionEdit(city),
         remove: function (btn) { removeRegion(city, btn); }
       });
     }
@@ -224,7 +246,7 @@
         children: box,
         addText: "市", addLabel: "在「" + province.name + "」下新增地级市",
         add: function (btn) { addCity(province, btn); },
-        rename: function (btn) { renameRegion(province, btn); },
+        edit: regionEdit(province),
         remove: function (btn) { removeRegion(province, btn); }
       });
     }
@@ -277,6 +299,7 @@
       if (state.unassigned.length) {
         var orphanOpen = state.expanded.has("u:");
         var box = childList(1, orphanOpen);
+        box.appendChild(schoolHead());
         state.unassigned.forEach(function (school) { box.appendChild(renderSchool(school)); });
         ul.appendChild(makeRow({
           level: 1, depth: 0, name: "未归属区划", sub: "region_id 为空",
@@ -299,6 +322,7 @@
     }
 
     function render() {
+      tree.classList.toggle("det-searching", !!state.keyword);
       if (state.keyword) renderSearch(state.keyword);
       else renderTree();
     }
@@ -328,7 +352,7 @@
         });
         state.loaded = true;
         render();
-        setStatus(state.keyword ? "" : "双击节点可改名；市节点＋默认在该市下建学校。");
+        setStatus(state.keyword ? "" : "双击节点文字直接改名（Esc 取消）；市节点＋默认在该市下建学校。");
       }).catch(function (error) {
         if (!section.isConnected || seq !== state.seq) return;
         setStatus("加载失败：" + error.message);

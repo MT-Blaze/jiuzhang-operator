@@ -104,6 +104,52 @@
   white-space: nowrap;
 }
 
+/* 学校行两栏网格：全称 | 简称 严格对齐，sch_ 系统编码不进界面。
+ * 列宽固定比例 + 两端定宽，同一分组内行行对齐；顶栏用同一套网格钉住列语义。 */
+.det-row-school {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1.5fr) minmax(0, 1fr) auto 44px;
+  align-items: center;
+  gap: 0;
+}
+.det-row-school .det-label { padding: 0 18px 0 6px; }
+.det-row-school .det-ops { grid-column: 5; justify-self: end; }
+.det-short {
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+.det-short:empty::before { content: "双击填简称"; opacity: 0.55; font-size: 0.78rem; }
+.det-school-head {
+  min-height: 30px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+.det-school-head:hover { background: transparent; }
+.det-school-col { padding: 0 18px 0 6px; }
+/* 搜索平铺时面包屑落到第二行，两栏宽度不被面包屑撑得行行不一 */
+.det-searching .det-row-school .det-crumb {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  justify-self: start;
+  margin: 0 6px 4px;
+}
+
+/* 双击节点文字后的原地输入框：blur/Enter 保存、Esc 取消 */
+.det-inline-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+.det-inline-input:focus { outline: 2px solid var(--accent-soft); outline-offset: 1px; }
+
 .det-ops {
   flex: none;
   display: flex;
@@ -128,8 +174,21 @@
 }
 .det-op:hover { border-color: var(--line-strong); background: var(--card); color: var(--ink); }
 .det-op:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.det-op-danger { color: var(--down); }
+/* 删除按钮平时隐身但保留占位与 Tab 可达：悬停/键盘聚焦该行才现身，行内不抖动 */
+.det-op-danger {
+  color: var(--down);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.det-row:hover .det-op-danger,
+.det-row:focus-within .det-op-danger,
+.det-op-danger:focus-visible { opacity: 1; pointer-events: auto; }
 .det-op-danger:hover { border-color: var(--down); color: var(--down); }
+/* 触屏没有 hover：删除按钮常显淡色，保证可点 */
+@media (hover: none) {
+  .det-op-danger { opacity: 0.7; pointer-events: auto; }
+}
 
 /* 层级字号：省 / 版本最大，市 / 册次次之，章、节逐级收小 */
 .det-row[data-level="1"] .det-name { font-family: var(--serif); font-size: 1rem; font-weight: 700; }
@@ -161,8 +220,16 @@
   .det-ops { margin-left: auto; }
   .det-tree { max-height: 520px; padding: 6px; }
   .det-children { margin-left: 12px; padding-left: 5px; }
+  /* 窄屏学校行：全称独占一行，简称落到第二行，避免长全称挤成竖排 */
+  .det-row-school { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .det-row-school .det-label { padding: 0 8px 0 6px; }
+  .det-row-school .det-ops { grid-column: 3; grid-row: 1; align-self: start; }
+  .det-row-school .det-short-cell { grid-column: 2; grid-row: 2; }
+  .det-searching .det-row-school .det-crumb { grid-column: 2; grid-row: 3; }
+  .det-school-head { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .det-children.det-reveal > .det-item { animation: none; }
   .det-ops { transition: none; }
+  .det-op-danger { transition: none; }
 }
