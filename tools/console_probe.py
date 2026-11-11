@@ -8,8 +8,9 @@
 - 设置页左菜单四项（工作区/插件/备份与恢复/系统设置），右详情；
 - 插件分区是二级页签（管理/检查更新/在线索引/手动安装），键盘可切、不做弹窗；
 - 检查更新分区带 aria 进度条，空闲时收起；
-- 工作区列表里的教材版本下拉与 ``/api/bank/textbooks`` 的生效版本一致；
-- 大纲树根层按生效教材版本过滤，考向并集（textbook_id 为 NULL）仍可见；
+- 工作区列表里的教材版本下拉与 ``/api/bank/textbooks`` 同现：清单为空（版本已搬进
+  新引擎 dim_textbook_versions）时按设计不渲染，只能跟随默认版本；
+- 大纲树根层不串版本；启用多版本清单时按生效版本收口，考向并集（textbook_id 为 NULL）仍可见；
 - 有更新待办时点左下入口直接落到「插件 · 检查更新」；
 - 防变砖：直连 /settings 仍是完整独立页；
 - 375px 不横向溢出，菜单与二级页签热区仍 ≥44px；全程零 console / page error。
@@ -218,8 +219,6 @@ def main() -> int:
                     .map((s) => ({ value: s.value, options: s.options.length }))""")
             check("新建工作区含【教材版本】下拉且首项为「跟随默认版本」",
                   textbook["count"] >= 1 and textbook["values"][0] == "", textbook)
-            check("已有工作区带内联教材版本下拉",
-                  len(inline) >= 1 and all(item["options"] >= 1 for item in inline), inline)
             scope = page.evaluate(
                 """async () => {
                     const provider = await (await fetch('/api/bank/provider', {cache:'no-store'})).json();
@@ -229,18 +228,25 @@ def main() -> int:
                     return { provider: provider.plugin_id, books: books, topics: topics };
                 }""")
             active = scope["books"].get("active_textbook_id") or ""
+            books = scope["books"].get("items") or []
             items = scope["topics"].get("items") or []
-            check("教材版本接口给出当前工作区生效版本",
-                  bool(active) and any(item["id"] == active for item in scope["books"].get("items", [])),
-                  {"active": active, "ids": [item["id"] for item in scope["books"].get("items", [])]})
-            check("大纲根层按生效版本过滤（考向并集 NULL 仍可见）",
-                  scope["topics"].get("textbook_id") == active
-                  and all(item.get("textbook_id") in (active, None) for item in items)
-                  and len(items) > 0,
+            # 多版本清单已搬进新引擎 dim_textbook_versions；旧 textbooks 表为空时，
+            # 设置页按设计不渲染内联下拉，工作区只能「跟随默认版本」。
+            check("已有工作区内联教材版本下拉与清单同现",
+                  bool(books) == bool(inline)
+                  and (not inline or all(item["options"] >= 1 for item in inline)), inline)
+            check("工作区生效版本与教材清单自洽（空清单即跟随默认）",
+                  (not books and active == "")
+                  or (bool(active) and any(item["id"] == active for item in books)),
+                  {"active": active, "ids": [item["id"] for item in books]})
+            check("大纲根层不串版本（启用版本过滤时按生效版本收口）",
+                  (not books and not items)
+                  or (scope["topics"].get("textbook_id") == active
+                      and all(item.get("textbook_id") in (active, None) for item in items)),
                   {"active": active, "roots": [(item["id"], item.get("textbook_id")) for item in items[:8]]})
             check("教材下拉与后端清单同源",
-                  all(item["id"] in textbook["values"] for item in scope["books"].get("items", [])),
-                  {"backend": [item["id"] for item in scope["books"].get("items", [])],
+                  all(item["id"] in textbook["values"] for item in books),
+                  {"backend": [item["id"] for item in books],
                    "options": textbook["values"]})
 
             # ---- 模型配置已从底座移除 ----
@@ -249,6 +255,9 @@ def main() -> int:
                   and frame.locator("#stPanelProvider").count() == 0
                   and page.locator(".ws-modal-overlay").count() == 0)
 
+            # 右栏默认收起（2026-11-05 定案），先点开再量「上下通高」。
+            page.locator("#wsOpenCtx").click()
+            page.wait_for_timeout(200)
             geo = page.evaluate(
                 """() => {
                     const rect = (sel) => { const el = document.querySelector(sel);
@@ -271,7 +280,7 @@ def main() -> int:
             result["geometry"] = geo
             check("左栏上下通高（顶到视口顶、高≈视口高）",
                   geo["sideTop"] == 0 and abs(geo["sideH"] - geo["viewportH"]) <= 1, geo)
-            check("右栏上下通高", geo["ctxTop"] == 0 and abs(geo["ctxH"] - geo["viewportH"]) <= 1, geo)
+            check("右栏展开后上下通高", geo["ctxTop"] == 0 and abs(geo["ctxH"] - geo["viewportH"]) <= 1, geo)
             check("输出日志区宽度严格等于中列宽度", geo["dockW"] == geo["centerW"], geo)
             check("输出日志区不横跨左右两栏（左边界与画布对齐）",
                   geo["dockLeft"] == geo["centerLeft"], geo)
