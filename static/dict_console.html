@@ -8,19 +8,19 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261111a" />
   <!-- 数据字典控制台（2026-11-10 四阶段军令）：独立样式，整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console.css" />
+  <link rel="stylesheet" href="/static/css/dict_console.css?v=20261111a" />
   <!-- 四栏联动（阶段三）：独立样式，整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console_linkage.css" />
+  <link rel="stylesheet" href="/static/css/dict_console_linkage.css?v=20261111a" />
   <!-- 二级标签与章节树（2026-11-11）：独立样式，整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console_subtabs.css" />
+  <link rel="stylesheet" href="/static/css/dict_console_subtabs.css?v=20261111a" />
   <!-- 行政区划树形折叠表（2026-11-11）：整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console_regions.css" />
+  <link rel="stylesheet" href="/static/css/dict_console_regions.css?v=20261111a" />
   <!-- 实体维度双树（2026-11-11）：区划+学校、教材+章节，整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console_entities.css" />
+  <link rel="stylesheet" href="/static/css/dict_console_entities.css?v=20261111a" />
   <!-- 辅助栏极简瘦身（2026-11-11）：折叠设置 + 字典小标签，整块下架删本行即可 -->
-  <link rel="stylesheet" href="/static/css/dict_console_sidebar.css" />
+  <link rel="stylesheet" href="/static/css/dict_console_sidebar.css?v=20261111a" />
 </head>
 <body>
   <div class="dc-page">
@@ -108,36 +108,36 @@
   <noscript><p class="dc-noscript">数据字典控制台需要 JavaScript 才能运行。</p></noscript>
 
   <!-- 请求报错现场：最先加载，之后每笔 fetch 的非 2xx 都有完整记录 -->
-  <script src="/static/js/http.js"></script>
+  <script src="/static/js/http.js?v=20261111a"></script>
   <!-- 控制台自有模块：全部收在 dict_console/ 一个目录，整块下架删目录即可 -->
-  <script src="/static/js/dict_console/catalog.js"></script>
-  <script src="/static/js/dict_console/client.js"></script>
-  <script src="/static/js/dict_console/dialog.js"></script>
-  <script src="/static/js/dict_console/globals.js"></script>
-  <script src="/static/js/dict_console/tabs.js"></script>
-  <script src="/static/js/dict_console/row_ops.js"></script>
+  <script src="/static/js/dict_console/catalog.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/client.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/dialog.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/globals.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/tabs.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/row_ops.js?v=20261111a"></script>
   <!-- 行政区划树形折叠表（2026-11-11）：整块下架删本行与 table.js 里的 DcRegionsTree 分支 -->
-  <script src="/static/js/dict_console/regions_tree.js"></script>
-  <script src="/static/js/dict_console/table.js"></script>
+  <script src="/static/js/dict_console/regions_tree.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/table.js?v=20261111a"></script>
   <!-- 四栏联动（阶段三）：整块下架删这六行与 panels.js 的 DcLinkage.mount 调用 -->
-  <script src="/static/js/dict_console/linkage_dnd.js"></script>
-  <script src="/static/js/dict_console/linkage_tree.js"></script>
-  <script src="/static/js/dict_console/linkage_points.js"></script>
-  <script src="/static/js/dict_console/linkage_directions.js"></script>
-  <script src="/static/js/dict_console/linkage_tags.js"></script>
-  <script src="/static/js/dict_console/linkage.js"></script>
+  <script src="/static/js/dict_console/linkage_dnd.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/linkage_tree.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/linkage_points.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/linkage_directions.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/linkage_tags.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/linkage.js?v=20261111a"></script>
   <!-- 二级标签与章节树（2026-11-11）：整块下架删这两行与 dict_console_subtabs.css -->
-  <script src="/static/js/dict_console/subtabs.js"></script>
-  <script src="/static/js/dict_console/chapter_ops.js"></script>
-  <script src="/static/js/dict_console/chapters.js"></script>
+  <script src="/static/js/dict_console/subtabs.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/chapter_ops.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/chapters.js?v=20261111a"></script>
   <!-- 实体维度双树（2026-11-11）：底层分表、前端合树；整块下架删这三行 -->
-  <script src="/static/js/dict_console/entity_shared.js"></script>
-  <script src="/static/js/dict_console/entity_schools.js"></script>
-  <script src="/static/js/dict_console/entity_textbooks.js"></script>
-  <script src="/static/js/dict_console/panels.js"></script>
-  <script src="/static/js/dict_console/import.js"></script>
-  <script src="/static/js/dict_console/sidebar.js"></script>
-  <script src="/static/js/dict_console/main.js"></script>
-  <script src="/static/js/pwa.js"></script>
+  <script src="/static/js/dict_console/entity_shared.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/entity_schools.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/entity_textbooks.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/panels.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/import.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/sidebar.js?v=20261111a"></script>
+  <script src="/static/js/dict_console/main.js?v=20261111a"></script>
+  <script src="/static/js/pwa.js?v=20261111a"></script>
 </body>
 </html>
