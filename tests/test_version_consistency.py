@@ -144,6 +144,27 @@ class LauncherSelfHealTest(unittest.TestCase):
         self.assertEqual(gotos - labels, set(), "存在跳不到的标签")
 
 
+class SilentLauncherTest(unittest.TestCase):
+    """双击即用且不弹黑框：VBS 用隐藏窗口跑 start.bat；停止脚本只认本目录。"""
+
+    def test_01_launcher_runs_start_bat_hidden(self) -> None:
+        raw = (ROOT / "启动九章算子.vbs").read_bytes()
+        text = raw.decode("ascii")
+        self.assertEqual(text.count("\r\n"), text.count("\n"))
+        self.assertIn("start.bat", text)
+        self.assertIn("GetParentFolderName(WScript.ScriptFullName)", text)
+        # 0 = 隐藏控制台，False = 启动器立即退出
+        self.assertIn(", 0, False", text)
+
+    def test_02_stop_script_targets_this_folder_only(self) -> None:
+        text = (ROOT / "停止九章算子.vbs").read_bytes().decode("ascii")
+        self.assertIn("taskkill /PID", text)
+        self.assertIn("/T /F", text)
+        self.assertIn("start.bat", text)
+        self.assertIn("GetParentFolderName(WScript.ScriptFullName)", text)
+        self.assertIn("InStr(1, LCase(proc.CommandLine), here", text)
+
+
 class ProbeVersionContractTest(unittest.TestCase):
     """探针不许写死插件版本号：插件一升号，判据就变假红（军令 #21 全量回归实测）。
 
