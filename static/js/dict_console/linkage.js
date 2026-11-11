@@ -28,9 +28,6 @@
   function mount(panel, ctx) {
     var wrap = el("section", "dcl-wrap");
     wrap.setAttribute("aria-label", "四栏联动教研字典");
-    wrap.appendChild(el("h3", "dc-panel-title", "四栏联动教研字典"));
-    wrap.appendChild(el("p", "dc-panel-hint",
-      "左起：教材章节 → 章节知识点 → 考向 → 辅助知识点标签。双击改名 · 拖拽或 Alt+方向键排序（自动保存）· 删除自动防呆。"));
     var grid = el("div", "dcl-grid");
     var treeBody = column(grid, "① 教材章节", "全局设置选教材后展示真实章节", "教材章节树");
     var pointsBody = column(grid, "② 章节知识点", "双击改名 · 拖拽排序", "章节知识点清单");

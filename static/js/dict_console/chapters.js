@@ -23,8 +23,6 @@
 
   function mount(host, ctx) {
     var wrap = el("section", "dc-chapters");
-    wrap.appendChild(el("p", "dc-panel-hint",
-      "左树右表：左侧按「版本 → 册次 → 章 → 节」展开，右侧跟随选中节点显示章节明细。"));
 
     var state = el("p", "dcc-state", "");
     state.setAttribute("role", "status");

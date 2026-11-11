@@ -105,16 +105,14 @@
       return;
     }
     var item = window.DcCatalog.itemOf(category, sub.table) || {
-      table: sub.table, name: sub.label, desc: category.title + " · " + sub.label
+      table: sub.table, name: sub.label
     };
     window.DcTable.mount(host, item, ctx);
   }
 
-  /** 分类面板：分类标题下挂一排二级标签，一个标签只渲染一张表 / 一棵树 / 一组联动。 */
+  /** 分类面板：只挂一排二级标签，一个标签只渲染一张表 / 一棵树 / 一组联动。 */
   function renderCategory(panel, tab, ctx, category) {
     panel.textContent = "";
-    panel.appendChild(el("h2", "dc-panel-title", category.title));
-    panel.appendChild(el("p", "dc-panel-hint", category.desc));
     var subs = window.DcCatalog.subsOf(category);
     window.DcSubTabs.mount(panel, {
       idPrefix: category.key,

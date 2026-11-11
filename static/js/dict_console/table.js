@@ -117,13 +117,6 @@
     section.setAttribute("data-table", item.table);
     section.setAttribute("aria-label", item.name + "字典表");
 
-    var head = el("div", "dc-table-head");
-    var title = el("h3", "dc-table-name", item.name);
-    title.appendChild(el("span", "dc-card-table", " " + item.table));
-    head.appendChild(title);
-    head.appendChild(el("p", "dc-table-desc", item.desc));
-    section.appendChild(head);
-
     var tools = el("div", "dc-table-tools");
     var search = document.createElement("input");
     search.type = "search";

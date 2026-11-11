@@ -195,7 +195,6 @@
   background: var(--paper);
 }
 .dc-card-name { margin: 0 0 2px; font-size: 0.95rem; font-weight: 600; }
-.dc-card-table { font-size: 0.75rem; color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
 .dc-card-count { margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
 .dc-card-count strong { color: var(--accent); font-size: 1.05rem; }
 .dc-card-desc { margin: 6px 0 0; font-size: 0.8rem; color: var(--muted); }
@@ -368,9 +367,6 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 
 /* ---------- 字典表格（阶段二）：搜索 + 分页 + 双击编辑 + 删除防呆 ---------- */
 .dc-table-block { margin-bottom: 24px; min-width: 0; }
-.dc-table-head { margin-bottom: 8px; }
-.dc-table-name { margin: 0; font-family: var(--serif); font-size: 1rem; }
-.dc-table-desc { margin: 2px 0 0; font-size: 0.8rem; color: var(--muted); }
 .dc-table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .dc-table-search {
   flex: 1 1 180px;
