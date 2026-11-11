@@ -452,8 +452,8 @@
 
         <div class="ep-fold-body" id="epMetaFoldBody">
           <!-- 最上方两行（军令 #25 / #28）：第一行灰字是原文件名，第二行是标准名。
-               标准名由年份-地区-主体-场景-类型-学科实时拼出来；老师手改即暂停联动，
-               再动任意元数据就恢复自动重拼，并用淡色「已更新」闪一下。 -->
+               标准名按考试类型规则实时拼出来（月考带月份、模考带轮次、期中期末带学期）；
+               老师手改即暂停联动，再动任意元数据就恢复自动重拼，并用淡色「已更新」闪一下。 -->
           <div class="ep-top">
             <p class="ep-src-name" id="epSrcName" data-name="" title="原文件名">还没有批次</p>
             <div class="ep-std-row">
@@ -520,12 +520,8 @@
           <div class="ep-row">
             <label class="ep-field ep-field-narrow">
               <span class="ep-label">考试类型</span>
-              <div class="ep-combo">
-                <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
-                       autocomplete="off" role="combobox" aria-expanded="false"
-                       aria-controls="epTagMenu" aria-autocomplete="list" placeholder="高三联考">
-                <div class="ep-menu" id="epTagMenu" role="listbox" aria-label="交叉标签候选" hidden></div>
-              </div>
+              <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
+                     list="epExamTypeList" placeholder="模考">
             </label>
             <label class="ep-field ep-field-narrow">
               <span class="ep-label">学科</span>
@@ -533,10 +529,32 @@
                      list="epMetaSubjectList" placeholder="数学">
             </label>
           </div>
+          <!-- 考试类型的条件字段：月考填月份、模考填轮次、期中/期末选学期，其余类型整行隐藏。 -->
+          <div class="ep-row" id="epExamDetailRow" hidden>
+            <label class="ep-field ep-field-narrow" id="epMonthField" hidden>
+              <span class="ep-label">月份</span>
+              <input id="epMetaMonth" class="ep-input" type="number" min="1" max="12"
+                     inputmode="numeric" placeholder="9">
+            </label>
+            <label class="ep-field ep-field-narrow" id="epMockRoundField" hidden>
+              <span class="ep-label">轮次</span>
+              <input id="epMetaMockRound" class="ep-input" type="number" min="1" max="10"
+                     inputmode="numeric" placeholder="2">
+            </label>
+            <label class="ep-field ep-field-narrow" id="epSemesterField" hidden>
+              <span class="ep-label">学期</span>
+              <select id="epMetaSemester" class="ep-select">
+                <option value="">未指定</option>
+                <option value="上学期">上学期</option>
+                <option value="下学期">下学期</option>
+              </select>
+            </label>
+          </div>
           <datalist id="epMetaRegionList"></datalist>
           <datalist id="epMetaBodyList"></datalist>
           <datalist id="epMetaSubjectList"></datalist>
           <datalist id="epMetaGradeList"></datalist>
+          <datalist id="epExamTypeList"></datalist>
           <p class="ep-hint" id="epSceneNote">场景决定标签排序：外国题先出 AMC / A-Level / IB，校考题先出月考与模考。</p>
           <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步；学校只存字典 ID，按简称能搜到。</p>
         </div>

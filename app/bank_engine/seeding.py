@@ -45,7 +45,7 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_question_types": 3,
     "dict_difficulties": 5,
     "dict_question_qualities": 3,
-    "dict_exam_types": 13,
+    "dict_exam_types": 8,
     "dict_subject_thoughts": 22,
     "dict_solution_methods": 34,
     "dict_core_competencies": 47,
@@ -177,8 +177,9 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             ),
             (
                 "INSERT INTO exams "
-                "(id, code, year, month, subject_id, grade_id, exam_type_id, exam_subject) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, year, exam_org_name, school_id, month, exam_type_id, "
+                "mock_round, grade_id, semester, subject_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 tuple(EXAM_ROWS),
             ),
             (

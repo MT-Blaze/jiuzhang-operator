@@ -22,6 +22,7 @@ import sqlite3
 from typing import Any
 
 from app.core import bank, questions, wire
+from app.core.exam_name import compose_exam_name
 from app.core.pending_db import (
     GROUP_ITEM_SEP,
     GROUP_SEP,
@@ -61,20 +62,23 @@ def clean_text(value: Any, limit: int) -> str:
 
 
 def build_standard_name(meta: dict[str, Any]) -> str:
-    """标准名：``年份-地区-主体-场景-类型-学科``。
+    """标准名：按考试类型规则动态拼装，空段不占位。
 
-    空段不占位（少一段就少一个连字符），纯靠拼接算出来；只有老师手动改过
-    标准名且元数据没再动时，才保留手改值（见 ``normalize_batch_meta``）。
+    月考带月份、模考带轮次、期中/期末带学期，其余类型只到类型名；
+    只有老师手动改过标准名且元数据没再动时，才保留手改值
+    （见 ``normalize_batch_meta``）。
     """
-    parts = [
-        str(meta.get("year") or ""),
-        str(meta.get("region") or ""),
-        str(meta.get("body") or ""),
-        str(meta.get("scene_type") or ""),
-        str(meta.get("exam_type") or ""),
-        str(meta.get("subject") or ""),
-    ]
-    return "-".join(part for part in parts if part)[:META_NAME_LIMIT]
+    exam_type = str(meta.get("exam_type") or meta.get("scene_type") or "")
+    return compose_exam_name(
+        year=meta.get("year"),
+        exam_type=exam_type,
+        exam_org_name=str(meta.get("body") or ""),
+        grade_name=str(meta.get("grade") or ""),
+        month=meta.get("month"),
+        mock_round=meta.get("mock_round"),
+        semester=meta.get("semester"),
+        subject_name=str(meta.get("subject") or ""),
+    )[:META_NAME_LIMIT]
 
 
 def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
@@ -116,6 +120,7 @@ def _meta_fingerprint(meta: dict[str, Any]) -> tuple[Any, ...]:
     return (
         meta.get("year"), meta.get("region"), meta.get("grade"), meta.get("body"),
         meta.get("exam_type"), meta.get("subject"), meta.get("scene_type"),
+        meta.get("month"), meta.get("mock_round"), meta.get("semester"),
         tuple(meta.get("school_ids") or []),
     )
 
@@ -154,6 +159,28 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
         if not 1900 <= year <= 2100:
             raise PendingError("年份要在 1900–2100 之间")
 
+    month: int | None = None
+    raw_month = str(merged.get("month") or "").strip()
+    if raw_month:
+        if not raw_month.isdigit():
+            raise PendingError("月份只能填数字")
+        month = int(raw_month)
+        if not 1 <= month <= 12:
+            raise PendingError("月份要在 1–12 之间")
+
+    mock_round: int | None = None
+    raw_round = str(merged.get("mock_round") or "").strip()
+    if raw_round:
+        if not raw_round.isdigit():
+            raise PendingError("模考轮次只能填数字")
+        mock_round = int(raw_round)
+        if not 1 <= mock_round <= 10:
+            raise PendingError("模考轮次要在 1–10 之间")
+
+    semester = clean_text(merged.get("semester"), 8)
+    if semester and semester not in ("上学期", "下学期"):
+        raise PendingError("学期只能是上学期或下学期")
+
     try:
         scene_type = meta_dict.normalize_scene(merged.get("scene_type"))
     except meta_dict.MetaDictError as exc:
@@ -166,6 +193,9 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
         "grade": clean_text(merged.get("grade"), 20),
         "body": clean_text(merged.get("body"), 64),
         "exam_type": clean_text(merged.get("exam_type"), 64),
+        "month": month,
+        "mock_round": mock_round,
+        "semester": semester,
         "subject": clean_text(merged.get("subject"), 64),
         "scene_type": scene_type,
         "school_ids": _school_ids_from_payload(merged),
@@ -205,6 +235,22 @@ def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tu
     for field in ("body", "scene_type", "exam_type"):
         value = str(meta.get(field) or "")
         if value:
+            updated[field] = value
+        else:
+            updated.pop(field, None)
+    org = str(meta.get("body") or "")
+    if org:
+        updated["exam_org_name"] = org
+    else:
+        updated.pop("exam_org_name", None)
+    exam_type = str(meta.get("exam_type") or "")
+    for field, relevant in (
+        ("month", exam_type == "月考"),
+        ("mock_round", exam_type == "模考"),
+        ("semester", exam_type in ("期中", "期末")),
+    ):
+        value = meta.get(field)
+        if relevant and value not in (None, ""):
             updated[field] = value
         else:
             updated.pop(field, None)

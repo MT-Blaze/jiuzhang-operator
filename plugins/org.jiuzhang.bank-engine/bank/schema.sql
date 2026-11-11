@@ -1,5 +1,5 @@
--- 九章题库结构（沙盒终极定稿，schema version 6）
--- 35 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
+-- 九章题库结构（沙盒终极定稿，schema version 10）
+-- 36 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
 -- SQLite 外键开关按连接生效，读写前必须先执行 PRAGMA foreign_keys = ON。
 -- 外键动作全部收敛为 RESTRICT（保护被引用数据）或 CASCADE（随父行清理从表）。
 -- 命名规范：平铺字典 dict_，业务维度 dim_（树状维度与强绑定学科年级的维度一律 dim_），
@@ -66,8 +66,8 @@ CREATE TABLE dict_question_qualities (
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0
 );
--- [功能注释] 考试类型字典：存高考真题、一模、二模、期中、期末、月考、竞赛、强基、自主招生等命题来源
--- 考试范围（联考 / 区域统考 / 校考）不在此表，落在 exams.exam_subject
+-- [功能注释] 考试类型字典：只保留高考、学业水平、模考、期中、期末、月考、周测、开学考 8 个大类
+-- 轮次（一模/二模）落 exams.mock_round，考试范围（联考 / 统考 / 校考）落 exams.exam_org_name
 CREATE TABLE dict_exam_types (
     id         INTEGER PRIMARY KEY,
     -- [字段注释] 考试类型名称，展示给用户看的业务词汇，全局唯一
@@ -218,25 +218,27 @@ CREATE TABLE chapter_knowledge_map (
     PRIMARY KEY (chapter_id, knowledge_point_id)
 ) WITHOUT ROWID;
 -- ===== 主表区：业务实体与事实表，不是维度字典 =====
--- [功能注释] 试卷主表（业务事实表）：记录真实考试事实，按年份、月份、学科、年级、考试类型与考试主体拼出唯一试卷，不再存死板名称
+-- [功能注释] 试卷主表（业务事实表）：只存考试属性，试卷名按规则动态拼装，不落库冗余保存
 CREATE TABLE exams (
-    id           INTEGER PRIMARY KEY,
-    -- [字段注释] 试卷编码，系统底层唯一标识，不随属性更改
-    code         TEXT NOT NULL UNIQUE,
+    id            INTEGER PRIMARY KEY,
     -- [字段注释] 试卷年份，限定 1900-2100
-    year         INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
-    -- [字段注释] 试卷月份，允许为空（不明月份的历史卷）
-    month        INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
-    -- [字段注释] 学科外键，每张试卷必须归属一个学科
-    subject_id   INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT,
+    year          INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
+    -- [字段注释] 考试组织或学校名称，如 T8联盟 / 哈尔滨市教育局 / 哈三中，可为空
+    exam_org_name TEXT,
+    -- [字段注释] 来源学校外键，只有具体校考才填，联考/统考为空
+    school_id     INTEGER REFERENCES dim_schools(id) ON DELETE RESTRICT,
+    -- [字段注释] 试卷月份，仅月考等按月份命名的考试使用，可为空
+    month         INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
+    -- [字段注释] 考试类型外键，指向考试类型字典的 8 个大类
+    exam_type_id  INTEGER NOT NULL REFERENCES dict_exam_types(id) ON DELETE RESTRICT,
+    -- [字段注释] 模考轮次，1 表示一模、2 表示二模，非模考为空
+    mock_round    INTEGER CHECK (mock_round IS NULL OR mock_round BETWEEN 1 AND 10),
     -- [字段注释] 年级外键，每张试卷必须归属一个年级
-    grade_id     INTEGER NOT NULL REFERENCES dict_grades(id) ON DELETE RESTRICT,
-    -- [字段注释] 考试类型外键，指向考试类型字典
-    exam_type_id INTEGER NOT NULL REFERENCES dict_exam_types(id) ON DELETE RESTRICT,
-    -- [字段注释] 考试主体，如 T8联盟 / 东北三省联考 / 哈尔滨一模 / 哈三中
-    exam_subject TEXT NOT NULL,
-    -- [字段注释] 该记录的创建时间，默认取当前 UTC 时间
-    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    grade_id      INTEGER NOT NULL REFERENCES dict_grades(id) ON DELETE RESTRICT,
+    -- [字段注释] 学期，仅期中/期末使用，限定上学期 / 下学期，可为空
+    semester      TEXT CHECK (semester IS NULL OR semester IN ('上学期', '下学期')),
+    -- [字段注释] 学科外键，每张试卷必须归属一个学科
+    subject_id    INTEGER NOT NULL REFERENCES dict_subjects(id) ON DELETE RESTRICT
 );
 -- [功能注释] 导入批次表：记录每次入库的流水线版本、起止时间与状态
 CREATE TABLE ingest_batches (
@@ -499,6 +501,7 @@ CREATE INDEX ix_dim_schools_region ON dim_schools (region_id);
 CREATE INDEX ix_dim_schools_textbook ON dim_schools (textbook_id);
 CREATE INDEX ix_exams_lookup
     ON exams (year, month, subject_id, grade_id, exam_type_id);
+CREATE INDEX ix_exams_school ON exams (school_id);
 CREATE INDEX ix_exam_school_map_school ON exam_school_map (school_id);
 CREATE INDEX ix_dim_knowledge_points_subject
     ON dim_knowledge_points (subject_id);
@@ -597,6 +600,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 9;
+PRAGMA user_version = 10;
 
 COMMIT;

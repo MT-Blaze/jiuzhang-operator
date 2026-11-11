@@ -34,6 +34,10 @@
     var panelStatusEl = deps.dom.panelStatusEl;
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
+    var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
+    var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
+    var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
     var savedEl = deps.dom.savedEl;
 
   // ---------- 落库（辅助栏发起；命令面走同一份实现，绝不让两处各写一套） ----------
@@ -166,16 +170,44 @@
     }
     if (Array.isArray(doc.tags) && doc.tags.length) engine.tags = doc.tags;
     if (Array.isArray(doc.images) && doc.images.length) engine.images = doc.images;
-    if (doc.source) {
-      engine.source = {
-        paper_title: doc.source.paper_title || "",
-        exam_type: doc.source.exam_type || "",
-        year: doc.source.year,
-        region: doc.source.region || "",
-        question_no: doc.source.question_no || "",
-        score: Number(meta.score) || 0
-      };
+    var source = doc.source || {};
+    var examType = panelMetaExamTypeEl
+      ? String(panelMetaExamTypeEl.value || "").trim()
+      : String(source.exam_type || batch.exam_type || "").trim();
+    var out = {
+      exam_type: examType,
+      region: source.region || "",
+      question_no: source.question_no || "",
+      score: Number(meta.score) || 0
+    };
+    if (source.paper_title) out.paper_title = String(source.paper_title);
+    var year = Number(source.year || batch.year);
+    if (year >= 1900 && year <= 2100) out.year = Math.floor(year);
+    var org = String(source.exam_org_name || batch.body || "").trim();
+    if (org) out.exam_org_name = org.slice(0, 120);
+    var month = panelMetaMonthEl ? panelMetaMonthEl.value : (source.month || batch.month);
+    if (examType === "月考" && Number(month) >= 1 && Number(month) <= 12) {
+      out.month = Math.floor(Number(month));
     }
+    var round = panelMetaMockRoundEl
+      ? panelMetaMockRoundEl.value : (source.mock_round || batch.mock_round);
+    if (examType === "模考" && Number(round) >= 1 && Number(round) <= 10) {
+      out.mock_round = Math.floor(Number(round));
+    }
+    var semester = panelMetaSemesterEl
+      ? String(panelMetaSemesterEl.value || "").trim()
+      : String(source.semester || batch.semester || "").trim();
+    if ((examType === "期中" || examType === "期末")
+        && (semester === "上学期" || semester === "下学期")) {
+      out.semester = semester;
+    }
+    var schoolIds = Array.isArray(source.school_ids) ? source.school_ids.slice()
+      : (Array.isArray(batch.school_ids) ? batch.school_ids.slice() : []);
+    if (schoolIds.length) {
+      out.school_ids = schoolIds.map(function (id) { return String(id); }).filter(Boolean);
+      out.school_id = String(source.school_id || out.school_ids[0] || "");
+    }
+    if (doc.source || examType || out.year || out.exam_org_name) engine.source = out;
     return engine;
   }
 

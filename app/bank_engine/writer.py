@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import secrets
 import sqlite3
@@ -19,27 +18,26 @@ from app.bank_engine.models import CreatedQuestion, NewExam, NewImage, NewQuesti
 from app.bank_engine.seeds.curriculum import QUESTION_TYPE_CHOICE_ID
 
 EXAM_TYPES = (
-    "高考真题", "一模", "二模", "期中", "期末", "月考",
-    "竞赛题", "强基题", "自主招生", "外国题", "机构题", "汇编题", "自编题",
+    "高考", "学业水平", "模考", "期中", "期末", "月考", "周测", "开学考",
 )
 OPTION_LABEL_RE = re.compile(r"^[A-H]$")
 IMAGE_SLOTS = ("stem", "answer", "solution", "option")
-# 表单里的考试类型是老师随手写的词，落库必须收敛到字典里的 13 个名称之一。
-# 联考 / 统考 / 校考属于考试范围，落在 exams.exam_subject，不再参与类型收敛。
+# 表单里的考试类型是老师随手写的词，落库必须收敛到字典里的 8 个大类。
+# 轮次（一模/二模）落 exams.mock_round，考试组织/学校落 exams.exam_org_name / school_id。
 _EXAM_TYPE_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("高考真题", ("高考真题", "高考")),
-    ("一模", ("一模",)),
-    ("二模", ("二模",)),
+    ("高考", ("高考真题", "高考", "全国卷", "甲卷", "乙卷", "新课标")),
+    ("学业水平", ("学业水平", "学考", "会考", "合格考")),
     ("期中", ("期中",)),
     ("期末", ("期末",)),
-    ("月考", ("月考", "周测")),
-    ("竞赛题", ("竞赛", "奥赛", "联赛")),
-    ("强基题", ("强基",)),
-    ("自主招生", ("自主招生题", "自主招生")),
-    ("外国题", ("外国", "amc", "a-level", "a level", "ib", "ap ")),
-    ("机构题", ("机构", "补习", "培训")),
-    ("汇编题", ("汇编", "真题集")),
-    ("自编题", ("自编",)),
+    ("月考", ("月考", "月测")),
+    ("周测", ("周测", "周练")),
+    ("开学考", ("开学考", "开学测", "摸底考")),
+    # 其余模考口径兜底：一模到七模、联考、统考、竞赛/强基等仍归「模考」大类。
+    ("模考", (
+        "一模", "二模", "三模", "四模", "五模", "六模", "七模", "零模",
+        "模考", "模拟", "联考", "统考", "竞赛", "奥赛", "联赛", "强基",
+        "自主招生", "外国", "amc", "a-level", "a level", "ib", "ap ",
+    )),
 )
 
 
@@ -59,7 +57,7 @@ def normalize_exam_type(text: str) -> str:
     for canonical, hints in _EXAM_TYPE_HINTS:
         if any(hint in lowered for hint in hints):
             return canonical
-    return "自编题"
+    return ""
 
 
 def new_question_id() -> str:
@@ -115,8 +113,10 @@ def _validate(conn: sqlite3.Connection, question: NewQuestion) -> None:
             problems.append("试卷年份必须在 1900–2100 之间")
         if exam.month is not None and not 1 <= exam.month <= 12:
             problems.append("试卷月份必须在 1–12 之间")
-        if not exam.exam_subject.strip():
-            problems.append("考试主体不能为空")
+        if exam.mock_round is not None and not 1 <= exam.mock_round <= 10:
+            problems.append("模考轮次必须在 1–10 之间")
+        if exam.semester not in (None, "上学期", "下学期"):
+            problems.append("学期只能是上学期或下学期")
         if exam.subject_id != question.subject_id:
             problems.append("试卷学科与题目学科不一致")
         if conn.execute(
@@ -129,7 +129,10 @@ def _validate(conn: sqlite3.Connection, question: NewQuestion) -> None:
         ):
             if conn.execute("SELECT 1 FROM " + table + " WHERE id = ?", (value,)).fetchone() is None:
                 problems.append(f"试卷里的{label}不存在")
-        for school_id in exam.school_ids:
+        school_ids = list(dict.fromkeys(
+            ([exam.school_id] if exam.school_id else []) + list(exam.school_ids)
+        ))
+        for school_id in school_ids:
             if conn.execute("SELECT 1 FROM dim_schools WHERE id = ?", (school_id,)).fetchone() is None:
                 problems.append("试卷里的学校不存在：" + str(school_id))
     if problems:
@@ -256,20 +259,6 @@ def _insert_maps(conn: sqlite3.Connection, question_id: str, question: NewQuesti
         )
 
 
-def _exam_code(exam: NewExam) -> str:
-    seed = "\u0001".join(
-        (
-            str(exam.year),
-            str(exam.month or 0),
-            str(exam.subject_id),
-            str(exam.grade_id),
-            exam.exam_type,
-            exam.exam_subject,
-        )
-    ).encode("utf-8")
-    return "exm_" + hashlib.sha1(seed).hexdigest()[:16]
-
-
 def _exam_type_id(conn: sqlite3.Connection, name: str) -> int:
     row = conn.execute("SELECT id FROM dict_exam_types WHERE name = ?", (name,)).fetchone()
     if row is None:
@@ -281,15 +270,20 @@ def _ensure_exam(conn: sqlite3.Connection, exam: NewExam) -> int:
     exam_type_id = _exam_type_id(conn, exam.exam_type)
     row = conn.execute(
         "SELECT id FROM exams WHERE year = ? AND COALESCE(month, 0) = ? "
-        "AND subject_id = ? AND grade_id = ? AND exam_type_id = ? AND exam_subject = ? "
+        "AND COALESCE(mock_round, 0) = ? AND COALESCE(semester, '') = ? "
+        "AND COALESCE(exam_org_name, '') = ? AND COALESCE(school_id, 0) = ? "
+        "AND subject_id = ? AND grade_id = ? AND exam_type_id = ? "
         "ORDER BY id LIMIT 1",
         (
             exam.year,
             exam.month or 0,
+            exam.mock_round or 0,
+            exam.semester or "",
+            exam.exam_org_name or "",
+            exam.school_id or 0,
             exam.subject_id,
             exam.grade_id,
             exam_type_id,
-            exam.exam_subject,
         ),
     ).fetchone()
     if row is not None:
@@ -297,20 +291,26 @@ def _ensure_exam(conn: sqlite3.Connection, exam: NewExam) -> int:
     else:
         cursor = conn.execute(
             "INSERT INTO exams "
-            "(code, year, month, subject_id, grade_id, exam_type_id, exam_subject) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(year, exam_org_name, school_id, month, exam_type_id, "
+            "mock_round, grade_id, semester, subject_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                _exam_code(exam),
                 exam.year,
+                exam.exam_org_name,
+                exam.school_id,
                 exam.month,
-                exam.subject_id,
-                exam.grade_id,
                 exam_type_id,
-                exam.exam_subject,
+                exam.mock_round,
+                exam.grade_id,
+                exam.semester,
+                exam.subject_id,
             ),
         )
         exam_id = int(cursor.lastrowid)
-    for school_id in dict.fromkeys(exam.school_ids):
+    school_ids = dict.fromkeys(
+        ([exam.school_id] if exam.school_id else []) + list(exam.school_ids)
+    )
+    for school_id in school_ids:
         conn.execute(
             "INSERT OR IGNORE INTO exam_school_map (exam_id, school_id) VALUES (?, ?)",
             (exam_id, school_id),
@@ -319,7 +319,7 @@ def _ensure_exam(conn: sqlite3.Connection, exam: NewExam) -> int:
 
 
 def _insert_exam(conn: sqlite3.Connection, question_id: str, exam: NewExam | None) -> None:
-    if exam is None or not exam.exam_subject.strip():
+    if exam is None:
         return
     exam_id = _ensure_exam(conn, exam)
     conn.execute(

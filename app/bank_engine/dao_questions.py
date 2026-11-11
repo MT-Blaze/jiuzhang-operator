@@ -21,6 +21,7 @@ from app.bank_engine.models import (
     QuestionSummary,
     QuestionSupplement,
 )
+from app.core.exam_name import compose_exam_name
 
 QUESTION_COLUMNS = (
     "id, stem, subject_id, question_type_id, difficulty_id, quality_id, "
@@ -214,13 +215,20 @@ def _exams(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionExam, ..
     exam_ids = [int(row["exam_id"]) for row in maps]
     rows = dao_base.load_rows_by_ids(
         conn,
-        "SELECT id, code, year, month, subject_id, grade_id, exam_type_id, exam_subject "
-        "FROM exams",
+        "SELECT id, year, exam_org_name, school_id, month, exam_type_id, "
+        "mock_round, grade_id, semester, subject_id FROM exams",
         exam_ids,
     )
     type_ids = [int(row["exam_type_id"]) for row in rows.values()]
     types = dao_base.load_rows_by_ids(
         conn, "SELECT id, name FROM dict_exam_types", type_ids
+    )
+    names = dao_base.dictionary_names(conn)
+    primary_ids = [
+        int(row["school_id"]) for row in rows.values() if row["school_id"] is not None
+    ]
+    primary_schools = dao_base.load_rows_by_ids(
+        conn, "SELECT id, name FROM dim_schools", primary_ids
     )
     schools = _schools_by_exam(conn, exam_ids)
     items: list[QuestionExam] = []
@@ -228,18 +236,52 @@ def _exams(conn: sqlite3.Connection, question_id: str) -> tuple[QuestionExam, ..
         exam = rows.get(int(row["exam_id"]))
         if exam is None:
             continue
-        exam_schools = schools.get(int(exam["id"]), ())
+        exam_schools = list(schools.get(int(exam["id"]), ()))
+        primary_id = None if exam["school_id"] is None else int(exam["school_id"])
+        if primary_id is not None and primary_id not in {sid for sid, _ in exam_schools}:
+            primary = primary_schools.get(primary_id)
+            exam_schools.insert(
+                0, (primary_id, str(primary["name"]) if primary is not None else "")
+            )
+        exam_type = (
+            str(types[int(exam["exam_type_id"])]["name"])
+            if int(exam["exam_type_id"]) in types else ""
+        )
+        grade_id = int(exam["grade_id"])
+        subject_id = int(exam["subject_id"])
+        grade_name = names["grades"].get(grade_id, "")
+        subject_name = names["subjects"].get(subject_id, "")
+        school_name = next((name for _, name in exam_schools if name), None)
+        mock_round = None if exam["mock_round"] is None else int(exam["mock_round"])
+        month = None if exam["month"] is None else int(exam["month"])
+        semester = None if exam["semester"] is None else str(exam["semester"])
         items.append(
             QuestionExam(
                 id=int(exam["id"]),
-                code=str(exam["code"]),
                 year=int(exam["year"]),
-                month=None if exam["month"] is None else int(exam["month"]),
-                subject_id=int(exam["subject_id"]),
-                grade_id=int(exam["grade_id"]),
-                exam_type=str(types[int(exam["exam_type_id"])]["name"])
-                if int(exam["exam_type_id"]) in types else "",
-                exam_subject=str(exam["exam_subject"]),
+                month=month,
+                subject_id=subject_id,
+                grade_id=grade_id,
+                exam_type=exam_type,
+                exam_org_name=(
+                    None if exam["exam_org_name"] is None else str(exam["exam_org_name"])
+                ),
+                school_id=primary_id,
+                mock_round=mock_round,
+                semester=semester,
+                display_name=compose_exam_name(
+                    year=int(exam["year"]),
+                    exam_type=exam_type,
+                    exam_org_name=(
+                        None if exam["exam_org_name"] is None else str(exam["exam_org_name"])
+                    ),
+                    school_name=school_name,
+                    grade_name=grade_name,
+                    month=month,
+                    mock_round=mock_round,
+                    semester=semester,
+                    subject_name=subject_name,
+                ),
                 question_no=None if row["question_no"] is None else str(row["question_no"]),
                 score=float(row["score"]),
                 school_ids=tuple(school_id for school_id, _ in exam_schools),

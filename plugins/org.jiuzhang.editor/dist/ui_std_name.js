@@ -19,6 +19,13 @@
     var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
+    var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
+    var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
+    var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
+    var panelExamDetailRowEl = deps.dom.panelExamDetailRowEl;
+    var panelMonthFieldEl = deps.dom.panelMonthFieldEl;
+    var panelMockRoundFieldEl = deps.dom.panelMockRoundFieldEl;
+    var panelSemesterFieldEl = deps.dom.panelSemesterFieldEl;
     var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
     var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
@@ -70,8 +77,12 @@
       year: panelMetaYearEl ? panelMetaYearEl.value : meta.year,
       region: panelMetaRegionEl ? panelMetaRegionEl.value : meta.region,
       body: panelMetaBodyEl ? panelMetaBodyEl.value : meta.body,
+      grade: panelMetaGradeEl ? panelMetaGradeEl.value : meta.grade,
       scene_type: panelMetaSceneEl ? panelMetaSceneEl.value : meta.scene_type,
       exam_type: panelMetaExamTypeEl ? panelMetaExamTypeEl.value : meta.exam_type,
+      month: panelMetaMonthEl ? panelMetaMonthEl.value : meta.month,
+      mock_round: panelMetaMockRoundEl ? panelMetaMockRoundEl.value : meta.mock_round,
+      semester: panelMetaSemesterEl ? panelMetaSemesterEl.value : meta.semester,
       subject: panelMetaSubjectEl ? panelMetaSubjectEl.value : meta.subject
     });
   }
@@ -159,7 +170,13 @@
     if (panelMetaGradeEl) panelMetaGradeEl.value = String(meta.grade || "");
     if (panelMetaBodyEl) panelMetaBodyEl.value = String(meta.body || "");
     if (panelMetaExamTypeEl) panelMetaExamTypeEl.value = String(meta.exam_type || "");
+    if (panelMetaMonthEl) panelMetaMonthEl.value = meta.month == null ? "" : String(meta.month);
+    if (panelMetaMockRoundEl) {
+      panelMetaMockRoundEl.value = meta.mock_round == null ? "" : String(meta.mock_round);
+    }
+    if (panelMetaSemesterEl) panelMetaSemesterEl.value = String(meta.semester || "");
     if (panelMetaSubjectEl) panelMetaSubjectEl.value = String(meta.subject || "");
+    toggleExamFields();
     renderSceneOptions();
     if (panelMetaSceneEl) panelMetaSceneEl.value = String(meta.scene_type || "");
     var details = Array.isArray(meta.school_details) ? meta.school_details : [];
@@ -198,6 +215,7 @@
 
   function applyMetaSync() {
     if (!panel.batchId) return Promise.resolve(null);
+    var examType = panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "";
     var payload = {
       batch_id: panel.batchId,
       year: panelMetaYearEl ? String(panelMetaYearEl.value || "").trim() : "",
@@ -205,7 +223,14 @@
       grade: panelMetaGradeEl ? String(panelMetaGradeEl.value || "").trim() : "",
       body: panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "",
       scene_type: panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "",
-      exam_type: panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "",
+      exam_type: examType,
+      // 条件字段只送与当前类型相关的那一个；其余送空串，PATCH 语义下等于清掉旧值。
+      month: examType === "月考" && panelMetaMonthEl
+        ? String(panelMetaMonthEl.value || "").trim() : "",
+      mock_round: examType === "模考" && panelMetaMockRoundEl
+        ? String(panelMetaMockRoundEl.value || "").trim() : "",
+      semester: (examType === "期中" || examType === "期末") && panelMetaSemesterEl
+        ? String(panelMetaSemesterEl.value || "").trim() : "",
       subject: panelMetaSubjectEl ? String(panelMetaSubjectEl.value || "").trim() : "",
       // 题目只认字典 ID：名字一个字节都不往题目里写。
       school_ids: panel.schools.map(function (item) { return String(item.id || ""); })
@@ -269,6 +294,7 @@
     }
     // 元数据一动，手改过的标准名立刻交回自动拼接（军令 #28 双向联动）。
     if (panel.stdManual) setStdMode(false);
+    toggleExamFields();
     renderSchools();
     renderTopLines({ flash: true });
     queueMetaSync();
@@ -277,9 +303,21 @@
   function onSceneChange() {
     if (panel.stdManual) setStdMode(false);
     renderTopLines({ flash: true });
-    // 场景一换，交叉标签的排序与候选立刻跟着换。
-    loadTags(panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "");
     queueMetaSync();
+  }
+
+  /** 考试类型决定条件字段：月考看月份、模考看轮次、期中/期末看学期，其余整行收起。 */
+  function toggleExamFields() {
+    var examType = panelMetaExamTypeEl ? String(panelMetaExamTypeEl.value || "").trim() : "";
+    var showMonth = examType === "月考";
+    var showRound = examType === "模考" || /[一二三四五六七八九十\d]+模/.test(examType);
+    var showSemester = examType === "期中" || examType === "期末";
+    if (panelMonthFieldEl) panelMonthFieldEl.hidden = !showMonth;
+    if (panelMockRoundFieldEl) panelMockRoundFieldEl.hidden = !showRound;
+    if (panelSemesterFieldEl) panelSemesterFieldEl.hidden = !showSemester;
+    if (panelExamDetailRowEl) {
+      panelExamDetailRowEl.hidden = !(showMonth || showRound || showSemester);
+    }
   }
 
   /** 老师手改标准名：自动拼接当场暂停，改完这一段就以手改为准。 */
@@ -342,6 +380,7 @@
       stdFlashTimer: stdFlashTimer,
       stdLiveName: stdLiveName,
       syncBatchContext: syncBatchContext,
+      toggleExamFields: toggleExamFields,
     };
   }
 

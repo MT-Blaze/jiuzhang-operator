@@ -293,7 +293,7 @@ class PendingMetaContractTest(unittest.TestCase):
             "schools": ["哈三中"],
         })
         self.assertEqual(status, 200, result)
-        self.assertEqual(result["meta"]["standard_name"], "2024-黑吉辽-三省六校-高三联考-数学")
+        self.assertEqual(result["meta"]["standard_name"], "2024年三省六校高三联考数学")
 
     def test_02_client_cannot_hand_edit_the_standard_name(self) -> None:
         status, body = self._save([{"question": _question(211)}])
@@ -307,7 +307,7 @@ class PendingMetaContractTest(unittest.TestCase):
             "standard_name": "我手改的标准名",
         })
         self.assertEqual(status, 200, result)
-        self.assertEqual(result["meta"]["standard_name"], "2023-黑龙江-哈三中-一模-数学",
+        self.assertEqual(result["meta"]["standard_name"], "2023年哈三中一模数学",
                          "标准名是底座拼的，客户端带来的那一版一律作废")
 
     def test_03_every_question_in_the_batch_gets_the_sources(self) -> None:
@@ -329,7 +329,7 @@ class PendingMetaContractTest(unittest.TestCase):
             self.assertEqual(source["region"], "黑吉辽")
             self.assertEqual(source["body"], "三省六校")
             self.assertEqual(source["exam_type"], "高三联考")
-            self.assertEqual(source["paper_title"], "2024-黑吉辽-三省六校-高三联考-数学")
+            self.assertEqual(source["paper_title"], "2024年三省六校高三联考数学")
 
     def test_04_detail_schools_are_stored_as_ids_not_names(self) -> None:
         """明细学校只落字典 ID：题目文档里一个校名字节都不许出现。"""
@@ -654,7 +654,7 @@ class PendingMetaContractTest(unittest.TestCase):
             "year": 2025, "scene_type": "高考题", "subject": "数学",
         })
         self.assertEqual(status, 200, result)
-        self.assertEqual(result["meta"]["standard_name"], "2025-高考题-数学",
+        self.assertEqual(result["meta"]["standard_name"], "2025年高考题数学",
                          "标准名里要有场景这一段")
         source = self._batch_items(batch_id)[0]["question"]["source"]
         self.assertEqual(source["scene_type"], "高考题")
@@ -729,7 +729,7 @@ class PendingMetaContractTest(unittest.TestCase):
         status, auto = self._set_meta(batch_id, base)
         self.assertEqual(status, 200, auto)
         self.assertEqual(auto["meta"]["name_mode"], "auto")
-        self.assertEqual(auto["meta"]["standard_name"], "2024-黑吉辽-三省六校-高三联考-数学")
+        self.assertEqual(auto["meta"]["standard_name"], "2024年三省六校高三联考数学")
 
         status, manual = self._set_meta(batch_id, {
             "name_mode": "manual", "standard_name": "老师自己起的卷名",
@@ -748,7 +748,7 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(status, 200, resumed)
         self.assertEqual(resumed["meta"]["name_mode"], "auto")
         self.assertEqual(resumed["meta"]["standard_name"],
-                         "2024-黑龙江-三省六校-高三联考-数学",
+                         "2024年三省六校高三联考数学",
                          "元数据再改，标准名继续自动重拼")
 
     def test_20_ai_school_suggestion_only_suggests(self) -> None:
@@ -795,7 +795,7 @@ class PendingMetaContractTest(unittest.TestCase):
             ).fetchone()
             link = con.execute(
                 "SELECT school_id FROM sources WHERE paper_name = ?",
-                ("2024-黑龙江-哈三中-一模-数学",),
+                ("2024年哈三中一模数学",),
             ).fetchone()
         finally:
             con.close()
@@ -838,7 +838,7 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(source["scene_type"], "校考题", source)
         self.assertEqual(source["body"], "哈九中", source)
         self.assertEqual(source["school_ids"], [school_id], source)
-        self.assertEqual(source["paper_title"], "2024-黑龙江-哈九中-校考题-一模-数学",
+        self.assertEqual(source["paper_title"], "2024年哈九中一模数学",
                          "标准名要按批次重写回原卷名")
 
     def test_23_batch_grade_writes_the_root_field_and_the_bank(self) -> None:
@@ -865,8 +865,8 @@ class PendingMetaContractTest(unittest.TestCase):
         status, result = self._set_meta(batch_id, {"grade": "高一"})
         self.assertEqual(status, 200, result)
         self.assertEqual(result["meta"]["grade"], "高一", "年级要留在批次上，不许静默丢弃")
-        self.assertEqual(result["meta"]["standard_name"], "2024-黑吉辽-数学",
-                         "标准名的拼接口径里没有年级这一段，加了也不许改口径")
+        self.assertEqual(result["meta"]["standard_name"], "2024年高一数学",
+                         "标准名按年份+年级+类型+学科拼，地区不再占用字节")
         self.assertEqual(
             [str(item["question"].get("grade") or "") for item in self._batch_items(batch_id)],
             ["高一", "高一"], "年级是契约根字段：改批次就得整批跟着改")

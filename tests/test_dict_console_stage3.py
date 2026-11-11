@@ -33,6 +33,7 @@ from app.bank_engine import (  # noqa: E402
     builder,
     dao_console,
     dao_linkage,
+    migrate_v10,
     migrate_v7,
     migrate_v8,
     migrate_v9,
@@ -69,13 +70,15 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    def test_fresh_build_is_v9_with_versions(self) -> None:
-        self.assertEqual(self._version(), 9)
+    def test_fresh_build_is_v10_with_versions(self) -> None:
+        self.assertEqual(self._version(), 10)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))
         self.assertIn("version_id", self._columns("dim_textbooks"))
         self.assertIn("volume_name", self._columns("dim_textbooks"))
+        self.assertNotIn("exam_subject", self._columns("exams"))
+        self.assertIn("mock_round", self._columns("exams"))
         with service.session(self.db_path) as conn:
             migrate_v7.verify_sort_order(conn)
             migrate_v9.verify_versions(conn)
@@ -92,6 +95,7 @@ class MigrationTest(unittest.TestCase):
         if backup.exists():
             backup.unlink()
         with service.session(self.db_path) as conn:
+            migrate_v10.rollback(conn)
             migrate_v9.rollback(conn)
             migrate_v8.rollback(conn)
             migrate_v7.rollback(conn)
@@ -102,7 +106,7 @@ class MigrationTest(unittest.TestCase):
         self.assertNotIn("version_id", self._columns("dim_textbooks"))
         report = builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.assertFalse(report.created)
-        self.assertEqual(self._version(), 9)
+        self.assertEqual(self._version(), 10)
         for table, _, _ in migrate_v7.ORDERED_MAPS:
             self.assertIn("sort_order", self._columns(table))
         self.assertIn("tikz_code", self._columns("question_images"))

@@ -21,7 +21,6 @@
 (function () {
   "use strict";
 
-
   // ---------- 取节点（dist/ui_dom.js）----------
   var dom = window.JzoEditorDom.create();
 
@@ -696,6 +695,7 @@
     onMetaFieldChange: onMetaFieldChange,
     onSceneChange: onSceneChange,
     onSchoolEnter: onSchoolEnter,
+    toggleExamFields: uiStdName.toggleExamFields,
     onStash: onStash,
     onStdInput: onStdInput,
     onTagEnter: onTagEnter,

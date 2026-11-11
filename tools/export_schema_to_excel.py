@@ -212,7 +212,9 @@ FIELD_LABELS: dict[str, str] = {
     "region_id": "行政区划外键",
     "exam_type": "考试类型",
     "exam_type_id": "考试类型外键",
-    "exam_subject": "试卷主体",
+    "exam_org_name": "考试组织/学校名称",
+    "mock_round": "模考轮次",
+    "semester": "学期",
     "exam_id": "试卷外键",
     "month": "月份",
     "year": "年份",
@@ -229,7 +231,8 @@ FIELD_LABELS: dict[str, str] = {
     "competency_id": "核心素养外键",
 }
 TABLE_FIELD_LABELS: dict[tuple[str, str], str] = {
-    ("exams", "exam_subject"): "试卷主体（联考/考区/学校）",
+    ("exams", "exam_org_name"): "考试组织/学校（如 T8联盟）",
+    ("exams", "mock_round"): "模考轮次（1=一模，2=二模）",
     ("dim_exam_directions", "description"): "考向说明",
     ("dim_regions", "name"): "行政区划名称",
     ("dim_regions", "code"): "国标代码（GB/T 2260）",

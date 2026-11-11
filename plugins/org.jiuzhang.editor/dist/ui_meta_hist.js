@@ -20,18 +20,30 @@
 
   // ---------- 批次公共元数据（辅助栏顶部） ----------
 
-  /** 标准名：年份-地区-主体-场景-类型-学科。空段不占位；底座也用同一口径重算，客户端说了不算。 */
+  /** 标准名：按考试类型规则动态拼装，空段不占位；底座也用同一口径重算，客户端说了不算。 */
   function standardNameOf(meta) {
     var m = meta || {};
-    var parts = [
-      m.year == null || m.year === "" ? "" : String(m.year),
-      String(m.region || ""),
-      String(m.body || ""),
-      String(m.scene_type || ""),
-      String(m.exam_type || ""),
-      String(m.subject || "")
-    ];
-    return parts.filter(function (part) { return part; }).join("-").slice(0, 120);
+    var examType = String(m.exam_type || m.scene_type || "").trim();
+    var parts = [];
+    if (m.year != null && m.year !== "") parts.push(String(m.year) + "年");
+    var org = String(m.body || "").trim();
+    if (org) parts.push(org);
+    var grade = String(m.grade || "").trim();
+    if (grade) parts.push(grade);
+    if (examType === "月考") {
+      if (m.month) parts.push(String(m.month) + "月");
+      parts.push("月考");
+    } else if (examType === "模考") {
+      parts.push(m.mock_round ? String(m.mock_round) + "模" : "模考");
+    } else if (examType === "期中" || examType === "期末") {
+      if (m.semester) parts.push(String(m.semester));
+      parts.push(examType);
+    } else if (examType) {
+      parts.push(examType);
+    }
+    var subject = String(m.subject || "").trim();
+    if (subject) parts.push(subject);
+    return parts.join("").slice(0, 120);
   }
 
   function fillDataList(node, values) {

@@ -64,8 +64,9 @@ def _insert_sample(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         "INSERT INTO exams "
-        "(id, code, year, month, subject_id, grade_id, exam_type_id, exam_subject) "
-        "VALUES (9001, 'exm_test0001', 2026, 9, 2, 12, 16, '沙盒联调卷')"
+        "(id, year, exam_org_name, school_id, month, exam_type_id, "
+        "mock_round, grade_id, semester, subject_id) "
+        "VALUES (9001, 2026, '沙盒联调卷', 1, NULL, 8, NULL, 12, NULL, 2)"
     )
     conn.executemany(
         "INSERT INTO exam_school_map (exam_id, school_id) VALUES (9001, ?)",
@@ -108,7 +109,7 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(self.report.counts["dim_exam_directions"], 567)
         self.assertEqual(self.report.counts["knowledge_exam_map"], 200)
         self.assertEqual(self.report.counts["chapter_knowledge_map"], 74)
-        self.assertEqual(self.report.counts["dict_exam_types"], 13)
+        self.assertEqual(self.report.counts["dict_exam_types"], 8)
         self.assertEqual(self.report.counts["exams"], 1)
         self.assertEqual(self.report.counts["exam_school_map"], 2)
 
@@ -208,8 +209,9 @@ class EngineDaoTest(unittest.TestCase):
         self.assertEqual(record.solutions[0].content, "由集合列举法直接读出。")
         self.assertEqual(record.remarks, ("概念辨析题",))
         self.assertEqual(record.supplements[0].namespace, "思路")
-        self.assertEqual(record.exams[0].exam_subject, "沙盒联调卷")
-        self.assertEqual(record.exams[0].exam_type, "自编题")
+        self.assertEqual(record.exams[0].exam_org_name, "沙盒联调卷")
+        self.assertEqual(record.exams[0].exam_type, "开学考")
+        self.assertIn("2026年沙盒联调卷", record.exams[0].display_name)
         self.assertEqual(record.exams[0].school_ids, (1, 2))
         self.assertEqual(record.exams[0].school_names[0], "黑山县第二高级中学")
         self.assertEqual(record.exams[0].score, 5.0)
@@ -317,7 +319,8 @@ class EngineEntryWriteTest(unittest.TestCase):
             "tags": ["集合"],
             "source": {
                 "paper_title": "沙盒联调卷",
-                "exam_type": "自编题",
+                "exam_type": "开学考",
+                "exam_org_name": "沙盒联调卷",
                 "year": 2026,
                 "question_no": "1",
                 "score": 5,
@@ -374,11 +377,11 @@ class EngineEntryWriteTest(unittest.TestCase):
             self.assertEqual(point["code"], "math_function")
 
             exam = conn.execute(
-                "SELECT e.exam_subject, e.year, m.question_no, m.score FROM question_exams m "
+                "SELECT e.exam_org_name, e.year, m.question_no, m.score FROM question_exams m "
                 "JOIN exams e ON e.id = m.exam_id WHERE m.question_id = ?",
                 (created.id,)
             ).fetchone()
-            self.assertEqual(exam["exam_subject"], "沙盒联调卷")
+            self.assertEqual(exam["exam_org_name"], "沙盒联调卷")
             self.assertEqual(exam["year"], 2026)
             self.assertEqual(exam["score"], 5.0)
 
@@ -436,7 +439,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 36)
         self.assertEqual(len(builder.BASE_TABLES), 36)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 9)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 10)
         self.assertIn("dim_textbook_versions", body)
         self.assertNotIn("dim_sources", body)
         self.assertIn("tikz_code", body)

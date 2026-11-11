@@ -195,6 +195,13 @@
       var panelMetaBodyEl = document.getElementById("epMetaBody");
       var panelMetaSceneEl = document.getElementById("epMetaScene");
       var panelMetaExamTypeEl = document.getElementById("epMetaExamType");
+      var panelMetaMonthEl = document.getElementById("epMetaMonth");
+      var panelMetaMockRoundEl = document.getElementById("epMetaMockRound");
+      var panelMetaSemesterEl = document.getElementById("epMetaSemester");
+      var panelExamDetailRowEl = document.getElementById("epExamDetailRow");
+      var panelMonthFieldEl = document.getElementById("epMonthField");
+      var panelMockRoundFieldEl = document.getElementById("epMockRoundField");
+      var panelSemesterFieldEl = document.getElementById("epSemesterField");
       var panelMetaSubjectEl = document.getElementById("epMetaSubject");
       var panelMetaSchoolsEl = document.getElementById("epMetaSchools");
       var panelSchoolListEl = document.getElementById("epSchoolList");
@@ -211,6 +218,7 @@
       var panelBodyListEl = document.getElementById("epMetaBodyList");
       var panelSubjectListEl = document.getElementById("epMetaSubjectList");
       var panelGradeListEl = document.getElementById("epMetaGradeList");
+      var panelExamTypeListEl = document.getElementById("epExamTypeList");
 
     return {
       root: root,
@@ -387,6 +395,13 @@
       panelMetaBodyEl: panelMetaBodyEl,
       panelMetaSceneEl: panelMetaSceneEl,
       panelMetaExamTypeEl: panelMetaExamTypeEl,
+      panelMetaMonthEl: panelMetaMonthEl,
+      panelMetaMockRoundEl: panelMetaMockRoundEl,
+      panelMetaSemesterEl: panelMetaSemesterEl,
+      panelExamDetailRowEl: panelExamDetailRowEl,
+      panelMonthFieldEl: panelMonthFieldEl,
+      panelMockRoundFieldEl: panelMockRoundFieldEl,
+      panelSemesterFieldEl: panelSemesterFieldEl,
       panelMetaSubjectEl: panelMetaSubjectEl,
       panelMetaSchoolsEl: panelMetaSchoolsEl,
       panelSchoolListEl: panelSchoolListEl,
@@ -403,6 +418,7 @@
       panelBodyListEl: panelBodyListEl,
       panelSubjectListEl: panelSubjectListEl,
       panelGradeListEl: panelGradeListEl,
+      panelExamTypeListEl: panelExamTypeListEl,
     };
   }
 

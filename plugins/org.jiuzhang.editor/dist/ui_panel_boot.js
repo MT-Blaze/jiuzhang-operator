@@ -99,6 +99,11 @@
     var panelFmtLatexEl = deps.dom.panelFmtLatexEl;
     var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
+    var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
+    var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
+    var panelExamTypeListEl = deps.dom.panelExamTypeListEl;
+    var toggleExamFields = deps.toggleExamFields;
     var panelMetaFoldEl = deps.dom.panelMetaFoldEl;
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
@@ -156,6 +161,7 @@
     fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, difficultyLabels);
     fillDataList(panelSubjectListEl, meta.subjects);
     fillDataList(panelGradeListEl, meta.grades);
+    fillDataList(panelExamTypeListEl, meta.exam_types);
   }
 
   function loadEngineMeta() {
@@ -177,7 +183,7 @@
     wireGhostCell("tag");
     wireGhostCell("topic");
     wireGhostCell("knowledge");
-    loadEngineMeta();
+    loadEngineMeta().then(function () { renderBatchMeta(); });
     // 批次公共元数据：画布一滚动就收成一行矮标题；鼠标停在标题上才展开，
     // 移开鼠标不收起——老师正在填的字段不许被自动折叠抢走。
     if (panelMetaFoldEl) {
@@ -236,7 +242,8 @@
     }
     // 批次公共元数据：改一次，这一批所有题立刻跟着改
     [panelMetaYearEl, panelMetaRegionEl, panelMetaGradeEl, panelMetaBodyEl,
-     panelMetaSubjectEl].forEach(function (node) {
+     panelMetaSubjectEl, panelMetaMonthEl, panelMetaMockRoundEl,
+     panelMetaSemesterEl].forEach(function (node) {
       if (!node) return;
       node.addEventListener("input", onMetaFieldChange);
       node.addEventListener("change", onMetaFieldChange);
@@ -269,25 +276,15 @@
     if (panelSchoolConfirmCancelEl) {
       panelSchoolConfirmCancelEl.addEventListener("click", cancelSchoolConfirm);
     }
-    // 交叉标签：场景决定候选排序；打一个字就模糊查；回车把新标签记进本地库。
+    // 考试类型：候选来自引擎字典的 8 大类；输入即时切换月份/轮次/学期字段，
+    // 松手（change）再整批同步，避免把打了一半的类型名送到每一道题。
     if (panelMetaExamTypeEl) {
       panelMetaExamTypeEl.addEventListener("input", function () {
-        loadTags(String(panelMetaExamTypeEl.value || "").trim());
         if (panel.stdManual) setStdMode(false);
+        if (toggleExamFields) toggleExamFields();
         renderTopLines({ flash: true });
       });
-      panelMetaExamTypeEl.addEventListener("focus", function () {
-        loadTags(String(panelMetaExamTypeEl.value || "").trim());
-      });
-      panelMetaExamTypeEl.addEventListener("keydown", function (event) {
-        if (String(event.key || "") !== "Enter") return;
-        event.preventDefault();
-        onTagEnter();
-      });
       panelMetaExamTypeEl.addEventListener("change", onMetaFieldChange);
-      panelMetaExamTypeEl.addEventListener("blur", function () {
-        window.setTimeout(hideTagMenu, 120);
-      });
     }
     if (panelStdNameEl) {
       panelStdNameEl.addEventListener("input", onStdInput);

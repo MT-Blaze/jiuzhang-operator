@@ -18,6 +18,7 @@ from app.bank_engine.models import (
     NewSupplement,
 )
 from app.bank_engine.writer import EntryRejected, normalize_exam_type
+from app.core.exam_name import parse_mock_round
 
 _IMAGE_ROLES = {"stem": "stem", "option": "option", "solution": "solution", "answer": "answer"}
 
@@ -207,11 +208,9 @@ def _exam(
     raw = document.get("source")
     if not isinstance(raw, dict):
         return None
-    exam_subject = _text(
-        raw.get("exam_subject") or raw.get("body") or raw.get("paper_title") or raw.get("name"),
-        120,
-    )
-    if not exam_subject:
+    exam_type = normalize_exam_type(raw.get("exam_type"))
+    if not exam_type:
+        # 试卷类型是外键必填项：认不出类型时宁可不挂试卷，也不写一张空类型卷。
         return None
     year = _int_or_none(raw.get("year"))
     if year is None or not 1900 <= year <= 2100:
@@ -219,16 +218,33 @@ def _exam(
     month = _int_or_none(raw.get("month"))
     if month is not None and not 1 <= month <= 12:
         month = None
+    mock_round = _int_or_none(raw.get("mock_round"))
+    if mock_round is None:
+        mock_round = parse_mock_round(raw.get("exam_type"))
+    if mock_round is not None and not 1 <= mock_round <= 10:
+        mock_round = None
+    semester = _text(raw.get("semester"), 8) or None
+    if semester not in (None, "上学期", "下学期"):
+        semester = None
+    school_ids = _school_ids(conn, raw)
+    explicit_school = raw.get("school_id")
+    school_id = school_ids[0] if explicit_school not in (None, "") and school_ids else None
     return NewExam(
         year=year,
+        exam_org_name=_text(
+            raw.get("exam_org_name") or raw.get("body") or raw.get("exam_subject"), 120
+        )
+        or None,
+        school_id=school_id,
         month=month,
+        mock_round=mock_round,
+        semester=semester,
         subject_id=subject_id,
         grade_id=grade_id or DEFAULT_EXAM_GRADE_ID,
-        exam_type=normalize_exam_type(raw.get("exam_type")),
-        exam_subject=exam_subject,
+        exam_type=exam_type,
         question_no=_text(raw.get("question_no"), 20) or None,
         score=_float_or_zero(raw.get("score")),
-        school_ids=_school_ids(conn, raw),
+        school_ids=school_ids,
     )
 
 

@@ -114,7 +114,7 @@ class ConsoleServiceTest(unittest.TestCase):
         items, total = service.console_list(
             "dict_exam_types", limit=5, offset=0, db_path=self.db_path
         )
-        self.assertEqual(total, 13)
+        self.assertEqual(total, 8)
         self.assertEqual(len(items), 5)
         self.assertTrue(all(isinstance(item, ExamType) for item in items))
         with self.assertRaises(ValueError):
@@ -173,7 +173,7 @@ class ConsoleServiceTest(unittest.TestCase):
 
     def test_delete_referenced_exam_type_blocked(self) -> None:
         with self.assertRaises(dao_console.ReferencedError) as ctx:
-            service.console_delete("dict_exam_types", 5, db_path=self.db_path)
+            service.console_delete("dict_exam_types", 3, db_path=self.db_path)
         self.assertIn("exams", {hit.table for hit in ctx.exception.hits})
 
     def test_delete_referenced_region_blocked(self) -> None:

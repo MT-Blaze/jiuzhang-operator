@@ -127,8 +127,11 @@ class NewExam:
     subject_id: int
     grade_id: int
     exam_type: str
-    exam_subject: str
+    exam_org_name: str | None = None
+    school_id: int | None = None
     month: int | None = None
+    mock_round: int | None = None
+    semester: str | None = None
     question_no: str | None = None
     score: float = 0.0
     school_ids: tuple[int, ...] = ()
@@ -329,13 +332,16 @@ class QuestionSupplement:
 @dataclass(frozen=True)
 class QuestionExam:
     id: int
-    code: str
     year: int
     month: int | None
     subject_id: int
     grade_id: int
     exam_type: str
-    exam_subject: str
+    exam_org_name: str | None
+    school_id: int | None
+    mock_round: int | None
+    semester: str | None
+    display_name: str
     question_no: str | None
     score: float
     school_ids: tuple[int, ...] = ()

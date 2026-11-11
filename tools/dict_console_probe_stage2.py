@@ -123,10 +123,10 @@ def main() -> int:
             grades = page.locator(".dc-table-block[data-table='dict_grades']")
             expect(grades.locator(".dc-table-count")).to_contain_text("共 12 行", timeout=30000)
             exam_types = page.locator(".dc-table-block[data-table='dict_exam_types']")
-            expect(exam_types.locator(".dc-table-count")).to_contain_text("共 16 行", timeout=30000)
-            check("年级 12 行 / 考试类型 16 行同屏渲染",
+            expect(exam_types.locator(".dc-table-count")).to_contain_text("共 8 行", timeout=30000)
+            check("年级 12 行 / 考试类型 8 行同屏渲染",
                   "共 12 行" in grades.locator(".dc-table-count").inner_text()
-                  and "共 16 行" in exam_types.locator(".dc-table-count").inner_text())
+                  and "共 8 行" in exam_types.locator(".dc-table-count").inner_text())
             page.screenshot(path=str(work / "shots" / "01_foundation_tables.png"))
 
             # ---- 搜索过滤 ----
