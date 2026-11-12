@@ -15,12 +15,12 @@ from __future__ import annotations
 # 学科思想：只收课标或教研口径明确出现的名称，并按学段分列。
 # id / code / name / sort_order / subject_id / stage
 SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
-    (9001, "math_number_shape_primary", "数形结合", 1, 2, "小学"),
-    (9002, "math_number_shape_junior", "数形结合", 1, 2, "初中"),
-    (9003, "math_abstraction_thought", "数学抽象", 1, 2, "高中"),
-    (9004, "math_logical_reasoning_thought", "逻辑推理", 2, 2, "高中"),
-    (9005, "math_modeling_thought", "数学建模", 3, 2, "高中"),
-    (9006, "math_number_shape_senior", "数形结合", 4, 2, "高中"),
+    (9001, 'math_number_shape_primary', '数形结合', 1, 2, '小学'),
+    (9002, 'math_number_shape_junior', '数形结合', 1, 2, '初中'),
+    (9003, 'math_abstraction_thought', '数学抽象', 1, 2, '高中'),
+    (9004, 'math_logical_reasoning_thought', '逻辑推理', 2, 2, '高中'),
+    (9005, 'math_modeling_thought', '数学建模', 3, 2, '高中'),
+    (9006, 'math_number_shape_senior', '数形结合', 4, 2, '高中'),
 )
 
 # (subject_id, stage, id_base, ((code, name), ...))

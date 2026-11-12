@@ -9,14 +9,14 @@ from __future__ import annotations
 
 # id / name / code / sort_order
 EXAM_TYPE_ROWS: tuple[tuple[int, str, str, int], ...] = (
-    (1, "高考", "gaokao", 1),
-    (2, "学业水平", "academic_proficiency", 2),
-    (3, "模考", "mock", 3),
-    (4, "期中", "midterm", 4),
-    (5, "期末", "final", 5),
-    (6, "月考", "monthly", 6),
-    (7, "周测", "weekly_test", 7),
-    (8, "开学考", "opening_exam", 8),
+    (1, '高考', 'gaokao', 1),
+    (2, '结业考试', 'academic_proficiency', 2),
+    (3, '模考', 'mock', 3),
+    (4, '期中', 'midterm', 4),
+    (5, '期末', 'final', 5),
+    (6, '月考', 'monthly', 6),
+    (7, '小考', 'weekly_test', 7),
+    (8, '开学考', 'opening_exam', 8),
 )
 
 # id / year / exam_org_name / school_id / month / exam_type_id / mock_round

@@ -8,8 +8,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from app.bank_engine import regions, textbook_versions
-from app.bank_engine.seeds.books.registry import BOOK_ROWS, CHAPTER_ROWS
+from app.bank_engine import regions
+from app.bank_engine.seeds.books.registry import CHAPTER_ROWS
 from app.bank_engine.seeds.curriculum import (
     CORE_COMPETENCY_ROWS,
     CURRICULUM_COUNTS,
@@ -29,48 +29,18 @@ from app.bank_engine.seeds.math_required1 import (
     MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS,
     MATH_REQUIRED1_KNOWLEDGE_ROWS,
 )
-from app.bank_engine.seeds.migrated_textbook_seed import (
-    MIGRATED_BOOK_ROWS,
-    MIGRATED_CHAPTER_ROWS,
-)
+from app.bank_engine.seeds.migrated_textbook_seed import MIGRATED_CHAPTER_ROWS
 from app.bank_engine.seeds.region_seed import REGION_ROWS
 from app.bank_engine.seeds.school_seed import SCHOOL_ROWS
-from app.bank_engine.seeds import national_catalog
-from app.bank_engine.seeds.textbook_catalog import (
-    CATALOG_BOOK_ROWS,
-    CATALOG_VERSION_ROWS,
+from app.bank_engine.seeds.textbook_snapshot import (
+    SNAPSHOT_BOOK_ROWS,
+    SNAPSHOT_VERSION_ROWS,
 )
 
-# 完整书名在灌种时切成「版本 + 册次」：版本行先落，教材册再挂 version_id。
-# 高中数学与物理的 9 个新增版本由 textbook_catalog 显式给号，不参与自动切版本，
-# 避免新增分组挤动既有 1..19 的版本 id。
-BOOK_SOURCE_ROWS = tuple(BOOK_ROWS) + tuple(MIGRATED_BOOK_ROWS)
-VERSION_ROWS, BOOK_VERSION_MAP = textbook_versions.build_version_rows(BOOK_SOURCE_ROWS)
-
-
-def _stage_coverage(rows: tuple[tuple, ...]) -> dict[int, set[str]]:
-    codes = {name: code for code, name in national_catalog.STAGE_NAMES.items()}
-    stages = {int(row[0]): codes.get(str(row[4]), "") for row in GRADE_ROWS}
-    covered: dict[int, set[str]] = {}
-    for row in rows:
-        stage = stages.get(int(row[6]))
-        if stage:
-            covered.setdefault(int(row[7]), set()).add(stage)
-    return covered
-
-
-_BASE_VERSION_ROWS = VERSION_ROWS + CATALOG_VERSION_ROWS
-_BASE_BOOK_ROWS = (
-    tuple((*row, *BOOK_VERSION_MAP[int(row[0])]) for row in BOOK_SOURCE_ROWS)
-    + CATALOG_BOOK_ROWS
-)
-# 全国版本目录只补「已有版本没覆盖到的学段」，每版每学段挂一册真实首册当锚点。
-NATIONAL_VERSION_ROWS, NATIONAL_BOOK_ROWS = national_catalog.build(
-    {(int(row[5]), str(row[1])): int(row[0]) for row in _BASE_VERSION_ROWS},
-    _stage_coverage(_BASE_BOOK_ROWS),
-)
-ALL_VERSION_ROWS = _BASE_VERSION_ROWS + NATIONAL_VERSION_ROWS
-ALL_BOOK_ROWS = _BASE_BOOK_ROWS + NATIONAL_BOOK_ROWS
+# 版本与册次以出厂快照为准：库里沿用了历史签发编号（含已删号的空档），
+# 重新按 spec 推演无法复刻，故 2026-11-12 已从活跃库反向固化为字面量表。
+ALL_VERSION_ROWS = SNAPSHOT_VERSION_ROWS
+ALL_BOOK_ROWS = SNAPSHOT_BOOK_ROWS
 
 EXPECTED_COUNTS: dict[str, int] = {
     "dict_subjects": 15,
