@@ -202,6 +202,15 @@ class SilentLauncherTest(unittest.TestCase):
         stop_block = self.text[self.text.index(":stop"):self.text.index(":run")]
         self.assertIn("call :instance_gate stop", stop_block)
 
+    def test_06_same_folder_reuse_requires_matching_version(self) -> None:
+        """同目录旧版本进程不许复用：文件已升版时，双击 start.bat 必须真重启。"""
+        self.assertIn('set "LOCALVER="', self.text, "缺少本目录期望版本读取")
+        self.assertIn('findstr /b /c:"__version__"', self.text)
+        self.assertIn("$localVer='%LOCALVER%';", self.text)
+        self.assertIn("RunVer=$runVer", self.text, "缺少实例 /healthz 版本采集")
+        self.assertIn("$_.SameDir -and (-not $localVer -or $_.RunVer -eq $localVer)", self.text,
+                      "同目录复用必须比对版本")
+
     def test_04_port_busy_reports_pid_and_process_name(self) -> None:
         """占用者身份不明时不许武断说「不是九章算子」，必须报 PID / 进程名并给中文指引。"""
         self.assertNotIn("NOT Jiuzhang Operator", self.text)

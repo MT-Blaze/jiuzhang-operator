@@ -306,6 +306,14 @@ class CheckUpdatesTest(IsolatedDirsMixin):
             self.assertFalse(result["host"]["update_available"])
             self.assertTrue(result["host"]["reason"])
 
+    def test_08b_rejected_host_block_keeps_the_parser_reason(self):
+        """host 块存在但被解析器拒绝时，界面要看到具体原因，而不是笼统的「缺失」。"""
+        broken = index([])
+        broken["host_rejected"] = "host 缺少 zip_url（底座的下载地址）"
+        result = check_updates(broken)
+        self.assertFalse(result["host"]["update_available"])
+        self.assertIn("host 缺少 zip_url", result["host"]["reason"])
+
     def test_09_summary_counts_match_rows(self):
         result = check_updates(
             index([entry("2.0.0"), entry("9.9.9", min_host="99.0.0", plugin_id="org.jiuzhang.b"),

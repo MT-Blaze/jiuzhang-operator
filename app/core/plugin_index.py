@@ -269,6 +269,9 @@ def merge_bundled_entries(index: dict[str, Any]) -> dict[str, Any]:
     远端镜像或本机缓存可能落后于底座自身发版（尤其刚合并/改名的新包），
     只按远端索引对账会让本仓已登记的插件看起来「失踪」。合并只读本机文件，
     不改变「检查更新必须由用户点击才出网」的铁律。
+
+    顶层 ``host`` 块同样参与合并：远端索引还没补上底座版本声明时，本仓
+    自带的声明必须能顶上去，否则【检查更新】会误报「索引未声明底座版本」。
     """
     bundled = load_bundled_index()
     if bundled is None:
@@ -284,6 +287,19 @@ def merge_bundled_entries(index: dict[str, Any]) -> dict[str, Any]:
     result = dict(index)
     result["entries"] = list(merged.values())
     result["entry_count"] = len(result["entries"])
+
+    remote_host = index.get("host") if isinstance(index.get("host"), dict) else None
+    bundled_host = bundled.get("host") if isinstance(bundled.get("host"), dict) else None
+    use_bundled_host = bundled_host is not None and (
+        remote_host is None
+        or _version_key(bundled_host.get("version")) > _version_key(remote_host.get("version"))
+    )
+    if use_bundled_host:
+        result["host"] = bundled_host
+        result["host_rejected"] = ""
+    else:
+        result["host"] = remote_host
+        result["host_rejected"] = str(index.get("host_rejected") or "")
     return result
 
 

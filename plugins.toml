@@ -2,6 +2,14 @@ index_version = "1.0"
 name = "九章算子官方插件索引"
 updated_at = "2026-11-12"
 
+# 底座自更新声明（PLUGIN_SPEC §1.3 / §1.7）：【检查更新】拿 version 与
+# app/__init__.py 的 __version__ 比对；zip_url 必须是完整底座发行包。
+[host]
+version = "1.2.0"
+zip_url = "https://gh-proxy.com/https://github.com/MT-Blaze/jiuzhang-operator/archive/refs/heads/main.zip"
+mirrors = ["https://ghfast.top/https://github.com/MT-Blaze/jiuzhang-operator/archive/refs/heads/main.zip", "https://github.kkgithub.com/MT-Blaze/jiuzhang-operator/archive/refs/heads/main.zip", "https://ghproxy.net/https://github.com/MT-Blaze/jiuzhang-operator/archive/refs/heads/main.zip"]
+notes = "底座 1.2.0：插件全局化、单实例启动器与安装器重构；更新只覆盖程序文件，data/ 与 plugins/ 全程保护。"
+
 [[entries]]
 id = "org.jiuzhang.bank-engine"
 name = "九章题库"

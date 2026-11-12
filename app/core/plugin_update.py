@@ -237,12 +237,11 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
 
     host_block = index.get("host") if isinstance(index.get("host"), dict) else None
     host_row: dict[str, Any] = {
-        "current": host_version(),
-        "available": "",
-        "update_available": False,
-        "notes": "",
-        "reason": "索引未声明底座版本（host 块缺失或不合格）",
+        "current": host_version(), "available": "", "update_available": False,
+        "notes": "", "reason": "索引未声明底座版本（host 块缺失或不合格）",
     }
+    if not host_block and index.get("host_rejected"):
+        host_row["reason"] = f"索引的 host 块不合格：{index['host_rejected']}"
     if host_block:
         available = str(host_block.get("version") or "")
         verdict = compare_versions(available, host_version())

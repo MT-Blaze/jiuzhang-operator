@@ -27,7 +27,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import plugin_index, plugin_sources, toml_io  # noqa: E402
+from app import __version__  # noqa: E402
+from app.core import plugin_index, plugin_search, plugin_sources, toml_io  # noqa: E402
 
 TOKEN = "index-test-token"
 
@@ -145,6 +146,42 @@ class BundledIndexMergeTest(unittest.TestCase):
         merged = plugin_index.merge_bundled_entries(plugin_index.parse_index(ahead))
         by_id = {row["id"]: row for row in merged["entries"]}
         self.assertEqual(by_id["org.jiuzhang.bank-engine"]["version"], "3.0.1")
+
+    def test_bundled_host_block_is_shipped_and_matches_version(self) -> None:
+        """本仓索引必须带 host 块，且版本跟 app.__version__ 同源。"""
+        bundled = plugin_index.load_bundled_index()
+        self.assertIsNotNone(bundled)
+        host = bundled.get("host")
+        self.assertIsNotNone(host, "本仓 plugins.toml 必须声明顶层 host 块")
+        self.assertEqual(host["version"], __version__, "host.version 必须等于底座单源版本")
+        self.assertTrue(host.get("zip_url"), "host 块必须给出底座 zip 地址")
+
+    def test_bundled_host_block_fills_remote_index_without_one(self) -> None:
+        """远端索引还没补 host 块时，本仓声明要顶上去。"""
+        stale = plugin_index.parse_index({"index_version": "1.0", "entries": []})
+        merged = plugin_index.merge_bundled_entries(stale)
+        self.assertIsNotNone(merged["host"])
+        self.assertEqual(merged["host"]["version"], __version__)
+
+    def test_newer_remote_host_block_wins(self) -> None:
+        ahead = plugin_index.parse_index({
+            "index_version": "1.0",
+            "entries": [],
+            "host": {"version": "99.0.0", "zip_url": "https://example.invalid/host.zip"},
+        })
+        merged = plugin_index.merge_bundled_entries(ahead)
+        self.assertEqual(merged["host"]["version"], "99.0.0")
+
+    def test_cache_load_restores_bundled_host_block(self) -> None:
+        """缓存文件里没有 host 时，加载路径也必须补上本仓声明。"""
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "plugin_index_cache.toml"
+            with mock.patch.object(plugin_search, "cache_path", return_value=path):
+                plugin_search.save_index_cache({"entries": [], "host": None})
+                loaded = plugin_search.load_index_cache()
+        self.assertIsNotNone(loaded)
+        self.assertIsNotNone(loaded.get("host"))
+        self.assertEqual(loaded["host"]["version"], __version__)
 
 
 class UrlGuardTest(unittest.TestCase):
