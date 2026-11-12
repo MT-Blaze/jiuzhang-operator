@@ -49,10 +49,8 @@
 
     function render() {
       list.textContent = "";
-      if (!rows) {
-        list.appendChild(el("li", "dkl-tag-empty", "读取中…"));
-        return;
-      }
+      // 标签加载中留空白，不写「读取中」文字，避免行内文案闪一下再消失。
+      if (!rows) return;
       if (!rows.length) {
         list.appendChild(el("li", "dkl-tag-empty", "无"));
         return;
@@ -77,11 +75,14 @@
     function load() {
       var url = tagsUrl(spec.directionId)
         + "?exclude_point_id=" + encodeURIComponent(spec.primaryPointId);
+      list.setAttribute("aria-busy", "true");
       return window.DcClient.fetchJson(url).then(function (data) {
         rows = data.items || [];
+        list.removeAttribute("aria-busy");
         render();
       }).catch(function (error) {
         rows = null;
+        list.removeAttribute("aria-busy");
         render();
         notify("辅助标签加载失败：" + error.message);
       });

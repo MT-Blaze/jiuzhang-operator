@@ -2,27 +2,6 @@
  * 独立样式，整块下架删本文件 + HTML 引用行即可；热区 ≥44px，375px 不横溢。 */
 
 .dkl-wrap { min-width: 0; }
-.dkl-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
-  margin: 2px 0 4px;
-}
-.dkl-hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
-.dkl-count { margin-left: auto; font-size: 0.76rem; color: var(--faint); }
-/* 状态条钉死一行高：加载中 / 已清空不再把下面的整棵树上下顶动 5px。
- * 文案过长用省略号收尾，全文挂在 title 上，屏幕阅读器照读 aria-live 全量。 */
-.dkl-state {
-  margin: 0 0 4px;
-  height: 1.6em;
-  line-height: 1.6;
-  font-size: 0.78rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ---------- 树骨架：左对齐 + 细灰树线，不做物理缩进 ---------- */
 .dkl-tree { min-width: 0; }
@@ -278,8 +257,6 @@
 
 /* ---------- 窄屏：考向行改单列堆叠，辅助标签落到下一行 ---------- */
 @media (max-width: 720px) {
-  .dkl-head { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .dkl-count { margin-left: 0; }
   .dkl-guide-seg,
   .dkl-guide-cur { width: 9px; }
   .dkl-dir-head { display: none; }

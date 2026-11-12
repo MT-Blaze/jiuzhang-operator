@@ -31,12 +31,6 @@
     return prefix.concat([!isLast]);
   }
 
-  function countNodes(nodes) {
-    return (nodes || []).reduce(function (sum, node) {
-      return sum + 1 + countNodes(node.children);
-    }, 0);
-  }
-
   function opButton(text, danger, label, onClick) {
     var button = el("button", "dkl-op" + (danger ? " dkl-op-danger" : ""), text);
     button.type = "button";
@@ -70,6 +64,6 @@
 
   window.DcLinkGuide = {
     span: span, childPrefix: childPrefix, empty: empty, nameButton: nameButton,
-    countNodes: countNodes, opButton: opButton
+    opButton: opButton
   };
 })();

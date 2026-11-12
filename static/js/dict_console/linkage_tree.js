@@ -22,25 +22,20 @@
   function mount(panel, ctx) {
     var wrap = el("section", "dkl-wrap");
     wrap.setAttribute("aria-label", "知识点与考向折叠树");
-    var head = el("div", "dkl-head");
-    head.appendChild(el("p", "dkl-hint",
-      "册次 → 章节 → 主知识点 → 考向：单击文字展开 / 折叠，双击文字原地改名；考向行右侧直接增删辅助知识点。"));
-    var countEl = el("span", "dkl-count", "");
-    head.appendChild(countEl);
-    var state = el("p", "dkl-state", "");
-    state.setAttribute("role", "status");
-    state.setAttribute("aria-live", "polite");
     var tree = el("div", "dkl-tree");
-    wrap.appendChild(head);
-    wrap.appendChild(state);
+    // 树上方不留任何可见文字：状态只喂屏幕阅读器，避免切换列表时闪动。
+    var live = el("p", "dc-sr-only", "");
+    live.setAttribute("role", "status");
+    live.setAttribute("aria-live", "polite");
     wrap.appendChild(tree);
+    wrap.appendChild(live);
     panel.appendChild(wrap);
 
     var expanded = { b: {}, c: {}, p: {} };
     var pointsCache = {};
     var directionsCache = {};
     var chapterReloaders = {};
-    function setStatus(text) { state.textContent = text; state.title = text; }
+    function setStatus(text) { live.textContent = text; }
     function dictController(url, reload) { return { url: url, ctx: ctx, reload: reload, setStatus: setStatus }; }
     function editName(url, anchor, row) {
       window.DcRowOps.editCell({ url: url, ctx: ctx }, anchor, row, { key: "name", label: "名称" });
@@ -184,15 +179,14 @@
           paintDirections();
           return Promise.resolve();
         }
-        setStatus("正在读取「" + point.name + "」的考向…");
         return window.DcClient.fetchJson(
           "/api/bank/engine/linkage/points/" + point.id + "/directions"
         ).then(function (data) {
           directionsCache[point.id] = data.items || [];
           paintDirections();
-          setStatus("");
         }).catch(function (error) {
-          setStatus("考向加载失败：" + error.message);
+          children.textContent = "";
+          children.appendChild(G.empty(dirPrefix, "考向加载失败：" + error.message));
         });
       }
 
@@ -336,15 +330,14 @@
           paintPoints();
           return Promise.resolve();
         }
-        setStatus("正在读取「" + chapter.name + "」的知识点…");
         return window.DcClient.fetchJson(
           "/api/bank/engine/linkage/chapters/" + chapter.id + "/points"
         ).then(function (data) {
           pointsCache[chapter.id] = data.items || [];
           paintPoints();
-          setStatus("");
         }).catch(function (error) {
-          setStatus("知识点加载失败：" + error.message);
+          pointList.textContent = "";
+          pointList.appendChild(G.empty(subPrefix, "知识点加载失败：" + error.message));
         });
       }
       chapterReloaders[chapter.id] = function () { return ensurePoints(true); };
@@ -448,35 +441,37 @@
 
     // ---------- 装载 ----------
 
+    function notice(text) {
+      var ul = el("ul", "dkl-list dkl-books");
+      ul.setAttribute("role", "tree");
+      ul.appendChild(G.empty([], text));
+      tree.appendChild(ul);
+    }
+
     function load() {
       var versionId = ctx.globals.query().version_id;
       tree.textContent = "";
       chapterReloaders = {};
-      countEl.textContent = "";
       if (!versionId) {
-        setStatus("请先在右侧全局设置选择教材版本。");
+        notice("请先在右侧全局设置选择教材版本。");
         return;
       }
-      setStatus("正在读取章节树…");
       window.DcClient.fetchJson(
         "/api/bank/engine/linkage/version-tree?version_id=" + encodeURIComponent(versionId)
       ).then(function (data) {
         if (!wrap.isConnected) return;
         var books = data.items || [];
         if (!books.length) {
-          setStatus("该版本下还没有册次，先到「教材体系」建册次与章节。");
+          notice("该版本下还没有册次，先到「教材体系」建册次与章节。");
           return;
         }
         var ul = el("ul", "dkl-list dkl-books");
         ul.setAttribute("role", "tree");
         books.forEach(function (item) { ul.appendChild(bookNode(item)); });
         tree.appendChild(ul);
-        var nodes = books.reduce(function (sum, item) { return sum + G.countNodes(item.chapters); }, 0);
-        countEl.textContent = "共 " + books.length + " 册 · " + nodes + " 个章节节点";
-        setStatus("");
       }).catch(function (error) {
         if (!wrap.isConnected) return;
-        setStatus("章节树加载失败：" + error.message);
+        notice("章节树加载失败：" + error.message);
       });
     }
 
