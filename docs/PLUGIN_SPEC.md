@@ -1639,7 +1639,7 @@ result 序列化后必须 ≤65536 字节（超了回 COMMAND_RESULT_TOO_LARGE�
 
 ### 8.3 装上去先跑三查
 
-1. 打开 `http://127.0.0.1:8000/api/plugins`，看 `rejected[]` 里有没有自己的插件与中文拒收原因。
+1. 打开 `http://127.0.0.1:65496/api/plugins`，看 `rejected[]` 里有没有自己的插件与中文拒收原因。
 2. 全文搜索 `fetch(`、`parent.document`、`localStorage`——出现任何一处都说明 AI 违反了铁律，退回重造。
 3. 全文搜索 `kind: "request"` 附近那行，看请求 id 是不是带点号的写法（如 `插件id_1`）——
    宿主会当场拒发并回 `BAD_REQUEST_ID`，底栏「输出日志区」同时记一笔 `plugin.error`；

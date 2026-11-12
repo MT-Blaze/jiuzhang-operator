@@ -268,6 +268,12 @@ def create_app() -> FastAPI:
         return FileResponse(settings.static_dir / "workspace.html",
                             headers=NO_CACHE_HEADERS)
 
+    @app.get("/e", include_in_schema=False)
+    async def read_workbench_entry() -> FileResponse:
+        """教师唯一标准入口：``/e`` 直达工作台主页面（与 ``/`` 同页）。"""
+        return FileResponse(settings.static_dir / "workspace.html",
+                            headers=NO_CACHE_HEADERS)
+
     @app.get("/about", include_in_schema=False)
     async def read_about_page() -> FileResponse:
         return FileResponse(settings.static_dir / "index.html",

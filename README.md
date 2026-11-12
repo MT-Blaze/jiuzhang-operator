@@ -42,12 +42,13 @@
    ```
 
    不建 `.env` 也能用，只是 AI 那一步降级为 Mock。密钥永不入库、永不写日志、永不进插件上下文。
-3. 双击 `启动九章算子.vbs`：静默启动，**不弹黑色窗口**，等 `/healthz` 真正应答后自动拉起浏览器。
-   它调用 `start.bat` 完成自检端口（8000 被陈留实例占用会明确提示并另选端口）、
-   自愈 pip（缺 pip 先 `ensurepip`，修不好再重建 `.venv`）、装依赖。
-   需要看启动日志或排查故障时，仍可双击 `start.bat`（会保留黑色窗口）。
-   停止后台服务：双击 `停止九章算子.vbs`。
-4. 浏览器落在智能工作台 `http://127.0.0.1:8000`；设置与控制页在 `/settings`（左栏底部齿轮）。
+3. 双击 `start.bat`（唯一官方启动器）：黑框一闪即隐，先精准结束本项目的旧 python/uvicorn
+   实例，再在后台静默拉起 65496 端口服务，等 `/healthz` 真正应答后自动打开浏览器。
+   它同时负责自愈 pip（缺 pip 先 `ensurepip`，修不好再重建 `.venv`）与装依赖；
+   全部过程写入 `data/launcher.log`，排查故障就看这个文件。
+   停止后台服务：在本目录命令行执行 `start.bat --stop`（只停本项目的进程）。
+4. 浏览器落在智能工作台 `http://127.0.0.1:65496/e`；设置与控制页在 `/settings`（左栏底部齿轮）。
+   端口固定为 `65496`，不再顺延换口；若该端口被**别的程序**占用，启动器会明确报错而不是误杀对方。
 
 工作台顶部的模型徽标会写明当前用的是谁：绿色「真实模型 · <模型名> · <接口主机>」即已接通，
 红色「Mock 降级」表示没有密钥。多厂商切换与密钥边界见 [PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §2.1、[STACK.md](docs/STACK.md) §1.6。
@@ -59,7 +60,7 @@ cd E:\jiuzhang\jiuzhang-operator
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 65496
 ```
 
 **Python 版本与备份压缩**：备份打包优先用 zstd——**Python 3.14** 自带标准库 `compression.zstd`；
@@ -73,7 +74,7 @@ uvicorn app.main:app --reload --port 8000
 写入类接口需要本地令牌（`JZO_LOCAL_TOKEN`，或首启生成的 `data/.local_token`，权限 0600）：
 
 ```bash
-curl -X GET http://127.0.0.1:8000/healthz
+curl -X GET http://127.0.0.1:65496/healthz
 ```
 
 ```json

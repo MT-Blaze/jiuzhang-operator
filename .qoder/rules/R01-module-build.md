@@ -28,7 +28,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 
 | 动作 | 唯一入口 | 性质 | 备注 |
 |---|---|---|---|
-| 本地启动 | `start.bat` | 会装依赖、起服务 | 默认端口 8000，被占自动顺延到 8009，全占 rc=1（`:22-23,127-141`）；起 venv + ensurepip + 三源镜像重试（`:38-39,57-83,88-109`） |
+| 本地启动 | `start.bat` | 会装依赖、起服务 | 唯一官方启动器：自隐藏后精准杀本项目旧进程，固定端口 65496，健康后自动开 `/e`；`--stop` 停服 |
 | 底座发版包 | `build_release.bat` | **写 `dist/`** | 版本名取 `app/__init__.py`；robocopy 排除 `.venv/data/.git/dist/*.scratch*`/demo-bank/core-bank/v063*.db/bank.db（`:51-53`）；把 `v063.db` 复制成空 `bank.db`（`:67`，缺则 rc=1） |
 | 插件打包 | `.venv/Scripts/python.exe tools/build_plugin.py <目录>` 或 `--all` | **写 `dist/plugins/`** | 打包前调 `validate_plugin`（`:81`），拒符号链接（`:67-68`）与 `.db/.zip/.pyc/dev/`（`:36-44`） |
 | 开发套件 | `tools/build_dev_kit.py` | **写 `dist/`** | 打包后自审红线：禁名正则（`:67-72`）+ 密钥形态扫描（`:100-103`），违令删包并 rc=1（`:111-112`） |
@@ -44,7 +44,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 3. **[L1] `.bat` 必须纯 ASCII + 全 CRLF**：中文会被 cp936 误解崩掉（`docs/PROJECT_MEMORY.md:1506-1510`），换行由 `.gitattributes:1-2` 钉死（`* text=auto eol=lf` + `*.bat text eol=crlf`），`tests/test_version_consistency.py:109-110,136-139` 会抓。
 4. **[L1] Git Bash 下 `find.exe` 抢占 PATH 会让整篇批处理终止**（`docs/PROJECT_MEMORY.md:1501`）；无控制台时 `timeout`/`echo` 不可靠（`:1503-1505`）。
 5. **[L1] `tools/verify_bank_empty.py:8` 的 `ROOT` 已改为按 `__file__` 推导**（2026-11-05 仓库迁入 `E:\jiuzhang\` 时修掉旧盘符写死）；`:10` 仍会写 `data/bank_v063_empty_check.md`（属写盘，非只读）。
-6. **[L1] 5 支探针手依 8765/8777**（`tools/split_probe.py:4-6`、`fold_probe.py:19` 等），其余 21 支自起隔离 uvicorn；生产端口只来自 `JZO_PORT`（默认 8000，`app/core/config.py:93`）。
+6. **[L1] 5 支探针手依 8765/8777**（`tools/split_probe.py:4-6`、`fold_probe.py:19` 等），其余 21 支自起隔离 uvicorn；生产端口只来自 `JZO_PORT`（默认 65496，`app/core/config.py:102`）。
 7. **[L1] 禁止 `taskkill /F /IM python.exe`**（`docs/PROJECT_MEMORY.md:1483`）；`JZO_PLUGINS_DIR` 仅进程启动前生效（`:1487`）。
 8. **无 CI 先例**：`.github/` 不存在，仓内零 `*.yml`。门禁只在本机跑，别假设有流水线兜底。
 

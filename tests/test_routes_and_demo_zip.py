@@ -56,6 +56,10 @@ class DefaultRouteTest(unittest.TestCase):
     def test_03_workspace_route_kept(self) -> None:
         self.assertEqual(self._served_file("/workspace"), STATIC / "workspace.html")
 
+    def test_03b_e_route_serves_workspace(self) -> None:
+        """专属端口时代的唯一标准入口：/e 直达工作台主页面。"""
+        self.assertEqual(self._served_file("/e"), STATIC / "workspace.html")
+
     def test_04_sidebar_has_no_about_link(self) -> None:
         """v0.5.4：About 与插件索引不再堆在左栏，统一收进设置页。"""
         text = _read(STATIC / "workspace.html")

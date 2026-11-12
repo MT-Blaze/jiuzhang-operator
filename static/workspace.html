@@ -8,16 +8,16 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261113" />
   <!-- workspace.css 按域拆四份，加载次序 = 原单文件次序（同特异度的覆盖靠次序，不许重排） -->
-  <link rel="stylesheet" href="/static/css/workspace.css" />
-  <link rel="stylesheet" href="/static/css/workspace_controls.css" />
-  <link rel="stylesheet" href="/static/css/workspace_canvas.css" />
-  <link rel="stylesheet" href="/static/css/workspace_overlay.css" />
+  <link rel="stylesheet" href="/static/css/workspace.css?v=20261113" />
+  <link rel="stylesheet" href="/static/css/workspace_controls.css?v=20261113" />
+  <link rel="stylesheet" href="/static/css/workspace_canvas.css?v=20261113" />
+  <link rel="stylesheet" href="/static/css/workspace_overlay.css?v=20261113" />
   <!-- 多用户切换（2026-11-05）：独立一份样式，整块功能下架时删掉本行与 ws_users.js 即可 -->
-  <link rel="stylesheet" href="/static/css/ws_users.css" />
+  <link rel="stylesheet" href="/static/css/ws_users.css?v=20261113" />
   <!-- 字典页原地层（2026-11-11）：整块下架删本行与 stage_dict_view.js 即可 -->
-  <link rel="stylesheet" href="/static/css/workspace_dict_inplace.css" />
+  <link rel="stylesheet" href="/static/css/workspace_dict_inplace.css?v=20261113" />
 </head>
 <body>
   <div class="ws-page">
@@ -215,50 +215,50 @@
   </noscript>
 
   <!-- 公式：本地 MathJax（SVG 输出，字体随包内嵌，离线可用） -->
-  <script src="/static/vendor/mathjax/jzo_mathjax.js"></script>
-  <script src="/static/vendor/mathjax/tex-svg-full.js"></script>
+  <script src="/static/vendor/mathjax/jzo_mathjax.js?v=20261113"></script>
+  <script src="/static/vendor/mathjax/tex-svg-full.js?v=20261113"></script>
   <!-- 请求报错现场：必须最先加载，之后每一笔 fetch 的非 2xx 都有完整记录 -->
-  <script src="/static/js/http.js"></script>
-  <script src="/static/js/bus.js"></script>
+  <script src="/static/js/http.js?v=20261113"></script>
+  <script src="/static/js/bus.js?v=20261113"></script>
   <!-- 底座微内核（军令 #30）：总线白名单、页签账本、底栏输出区的账与渲染。
        纯逻辑模块，必须先于使用它们的 stage.js / workspace.js 加载。 -->
-  <script src="/static/js/core_bus.js"></script>
-  <script src="/static/js/core_tabs.js"></script>
-  <script src="/static/js/core_log.js"></script>
+  <script src="/static/js/core_bus.js?v=20261113"></script>
+  <script src="/static/js/core_tabs.js?v=20261113"></script>
+  <script src="/static/js/core_log.js?v=20261113"></script>
   <!-- 字典分类目录与右栏导航共用这一份；分类名/表清单只改 catalog.js -->
-  <script src="/static/js/dict_console/catalog.js"></script>
+  <script src="/static/js/dict_console/catalog.js?v=20261113"></script>
   <!-- 录入入口（宿主壳）：拖入的文件、粘贴的截图、屏幕截取。
        必须早于 stage.js：插件转发进来的字节由它代发，写令牌只在宿主侧。 -->
-  <script src="/static/js/intake.js"></script>
+  <script src="/static/js/intake.js?v=20261113"></script>
   <!-- 主机偏好层（军令 #16）：左栏树的读端与右键菜单、对话框，必须先于拖拽与舞台加载 -->
-  <script src="/static/js/prefs.js"></script>
-  <script src="/static/js/dialogs.js"></script>
-  <script src="/static/js/contextmenu.js"></script>
-  <script src="/static/js/splitpane.js"></script>
-  <script src="/static/js/stage_frame.js"></script>
-  <script src="/static/js/stage_command.js"></script>
-  <script src="/static/js/stage_http.js"></script>
-  <script src="/static/js/stage_draft.js"></script>
-  <script src="/static/js/stage_relay_io.js"></script>
-  <script src="/static/js/stage_relay_bank.js"></script>
-  <script src="/static/js/stage_tabbar.js"></script>
-  <script src="/static/js/stage_inbound.js"></script>
-  <script src="/static/js/stage_dict.js"></script>
+  <script src="/static/js/prefs.js?v=20261113"></script>
+  <script src="/static/js/dialogs.js?v=20261113"></script>
+  <script src="/static/js/contextmenu.js?v=20261113"></script>
+  <script src="/static/js/splitpane.js?v=20261113"></script>
+  <script src="/static/js/stage_frame.js?v=20261113"></script>
+  <script src="/static/js/stage_command.js?v=20261113"></script>
+  <script src="/static/js/stage_http.js?v=20261113"></script>
+  <script src="/static/js/stage_draft.js?v=20261113"></script>
+  <script src="/static/js/stage_relay_io.js?v=20261113"></script>
+  <script src="/static/js/stage_relay_bank.js?v=20261113"></script>
+  <script src="/static/js/stage_tabbar.js?v=20261113"></script>
+  <script src="/static/js/stage_inbound.js?v=20261113"></script>
+  <script src="/static/js/stage_dict.js?v=20261113"></script>
   <!-- 字典页原地层：字典表铺进当前画布，不再新开页签（右栏因此不重挂） -->
-  <script src="/static/js/stage_dict_view.js"></script>
-  <script src="/static/js/stage_relay_agent.js"></script>
-  <script src="/static/js/stage.js"></script>
-  <script src="/static/js/context_panel.js"></script>
-  <script src="/static/js/ws_panel.js"></script>
-  <script src="/static/js/ws_rail.js"></script>
-  <script src="/static/js/ws_dropzone.js"></script>
-  <script src="/static/js/ws_ctxmenu.js"></script>
-  <script src="/static/js/ws_dock.js"></script>
-  <script src="/static/js/ws_sidebar.js"></script>
-  <script src="/static/js/ws_users.js"></script>
+  <script src="/static/js/stage_dict_view.js?v=20261113"></script>
+  <script src="/static/js/stage_relay_agent.js?v=20261113"></script>
+  <script src="/static/js/stage.js?v=20261113"></script>
+  <script src="/static/js/context_panel.js?v=20261113"></script>
+  <script src="/static/js/ws_panel.js?v=20261113"></script>
+  <script src="/static/js/ws_rail.js?v=20261113"></script>
+  <script src="/static/js/ws_dropzone.js?v=20261113"></script>
+  <script src="/static/js/ws_ctxmenu.js?v=20261113"></script>
+  <script src="/static/js/ws_dock.js?v=20261113"></script>
+  <script src="/static/js/ws_sidebar.js?v=20261113"></script>
+  <script src="/static/js/ws_users.js?v=20261113"></script>
   <!-- 启动落脚点：上次停留的插件页优先，首次打开落数据看板（须早于 workspace.js） -->
-  <script src="/static/js/ws_startup.js"></script>
-  <script src="/static/js/workspace.js"></script>
-  <script src="/static/js/pwa.js"></script>
+  <script src="/static/js/ws_startup.js?v=20261113"></script>
+  <script src="/static/js/workspace.js?v=20261113"></script>
+  <script src="/static/js/pwa.js?v=20261113"></script>
 </body>
 </html>

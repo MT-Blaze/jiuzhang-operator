@@ -92,7 +92,7 @@ def active_textbook_id(plugin_id: str) -> str:
 
 
 def _request_port(request: Request) -> int:
-    """重启脚本要绑回用户当前访问的端口，不能盲信默认 8000。"""
+    """重启脚本要绑回用户当前访问的端口，不能盲信默认端口。"""
     port = request.url.port
     if isinstance(port, int) and 0 < port < 65536:
         return port

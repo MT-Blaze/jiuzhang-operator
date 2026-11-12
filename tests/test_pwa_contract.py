@@ -82,8 +82,10 @@ class LauncherHealthWaitTest(unittest.TestCase):
         self.assertNotIn("timeout /t 4", text, "固定等待已删除")
         self.assertIn("/healthz", text, "启动器必须等健康检查应答")
         self.assertIn("Start-Process", text, "必须交给系统默认浏览器")
-        self.assertLess(text.index(":port_set"), text.index("Start-Process"))
-        self.assertLess(text.index("Start-Process"), text.index("-m uvicorn"))
+        health_at = text.index("$health='%HEALTH%'")
+        browser_at = text.index("Start-Process $entry")
+        self.assertLess(health_at, browser_at, "必须等 /healthz 应答后才开浏览器")
+        self.assertLess(text.index("'--port','65496'"), health_at, "先拉起服务，再等健康检查")
 
 
 if __name__ == "__main__":

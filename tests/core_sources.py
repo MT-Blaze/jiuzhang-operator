@@ -35,6 +35,8 @@ def _loaded_scripts(page: Path, keep) -> list[str]:
     html = page.read_text(encoding="utf-8")
     names: list[str] = []
     for value in re.findall(r"<script[^>]*src=\"([^\"]+)\"", html):
+        # 缓存版本号（?v=20261113）只属于浏览器，落盘文件名不带它。
+        value = value.split("?", 1)[0].split("#", 1)[0]
         if not value.startswith("/static/js/"):
             continue
         name = value.rsplit("/", 1)[-1]
@@ -145,6 +147,7 @@ def workspace_css() -> str:
     html = WORKSPACE_HTML.read_text(encoding="utf-8")
     parts: list[str] = []
     for value in re.findall(r"<link[^>]*href=\"([^\"]+)\"", html):
+        value = value.split("?", 1)[0].split("#", 1)[0]
         if not value.startswith("/static/css/") or "workspace" not in value:
             continue
         path = ROOT / "static" / value[len("/static/"):]

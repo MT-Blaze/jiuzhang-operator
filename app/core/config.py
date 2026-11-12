@@ -98,7 +98,8 @@ class Settings:
         return self.data_dir / "config.toml"
 
     host: str = os.environ.get("JZO_HOST", "127.0.0.1")
-    port: int = int(os.environ.get("JZO_PORT", "8000"))
+    # 专属端口 65496：避免与本机其他开发服务（8000 段）抢口，一个项目只认一个口。
+    port: int = int(os.environ.get("JZO_PORT", "65496"))
 
 
 settings = Settings()

@@ -6,7 +6,7 @@
 
 修法：页面上一切版本号改为由 ``static/js/version.js`` 读 ``/healthz`` 盖章（唯一事实来源
 是 ``app/__init__.py`` 的 ``__version__``），HTML 里写死的那份降级为「无 JS / 底座离线」
-时的兜底文案；``start.bat`` 启动前自检端口，被占则换口，不再让人对着旧进程发愣。
+时的兜底文案；``start.bat`` 固定 65496 并先杀本项目旧进程，不再让人对着旧进程发愣。
 本测试把兜底文案钉死在 ``__version__`` 上——下次升版忘了同步，这里立刻红。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_version_consistency``
@@ -116,13 +116,16 @@ class LauncherSelfHealTest(unittest.TestCase):
         # 探测必须发生在装依赖之前，否则照样死在 No module named pip 上。
         self.assertLess(self.text.index(":pipcheck"), self.text.index(":deps"))
 
-    def test_02_port_probe_before_serving(self) -> None:
+    def test_02_single_fixed_port_by_design(self) -> None:
+        """专属端口时代不再换口：固定 65496，端口被外程序占用时必须报错退出。"""
         self.assertIn("netstat -ano -p TCP", self.text, "缺少端口占用自检")
         self.assertIn("LISTENING", self.text)
-        self.assertIn("FREEPORT", self.text)
-        # uvicorn 必须用自检后选定的端口，且 URL 在选口之后才拼。
-        self.assertLess(self.text.index(":port_set"), self.text.index("-m uvicorn"))
-        self.assertLess(self.text.index('set "URL='), self.text.index("-m uvicorn"))
+        self.assertIn('set "PORT=65496"', self.text)
+        self.assertNotIn("FREEPORT", self.text, "专属端口模式不允许再顺延换口")
+        self.assertIn(":port_busy", self.text, "端口被外程序占用时必须有明确出口")
+        # 服务必须绑在 65496，且入口固定为 /e。
+        self.assertIn("'--port','65496'", self.text)
+        self.assertIn('set "ENTRY=%URL%/e"', self.text)
 
     def test_03_package_sources_keep_version_pins(self) -> None:
         """三级取包：默认源 -> 国内镜像 -> 官方源；版本钉子一个都不许松。"""
@@ -145,24 +148,25 @@ class LauncherSelfHealTest(unittest.TestCase):
 
 
 class SilentLauncherTest(unittest.TestCase):
-    """双击即用且不弹黑框：VBS 用隐藏窗口跑 start.bat；停止脚本只认本目录。"""
+    """双击即用且不弹黑框：start.bat 自隐藏重启，VBS 启动器已废弃删除。"""
 
-    def test_01_launcher_runs_start_bat_hidden(self) -> None:
-        raw = (ROOT / "启动九章算子.vbs").read_bytes()
-        text = raw.decode("ascii")
-        self.assertEqual(text.count("\r\n"), text.count("\n"))
-        self.assertIn("start.bat", text)
-        self.assertIn("GetParentFolderName(WScript.ScriptFullName)", text)
-        # 0 = 隐藏控制台，False = 启动器立即退出
-        self.assertIn(", 0, False", text)
+    def setUp(self) -> None:
+        self.text = (ROOT / "start.bat").read_bytes().decode("ascii")
 
-    def test_02_stop_script_targets_this_folder_only(self) -> None:
-        text = (ROOT / "停止九章算子.vbs").read_bytes().decode("ascii")
-        self.assertIn("taskkill /PID", text)
-        self.assertIn("/T /F", text)
-        self.assertIn("start.bat", text)
-        self.assertIn("GetParentFolderName(WScript.ScriptFullName)", text)
-        self.assertIn("InStr(1, LCase(proc.CommandLine), here", text)
+    def test_01_launcher_relaunches_itself_hidden(self) -> None:
+        self.assertIn('if /i "%~1"=="--run"', self.text)
+        self.assertIn("Start-Process -FilePath '%~f0' -ArgumentList '--run'", self.text)
+        self.assertIn("-WindowStyle Hidden", self.text)
+
+    def test_02_vbs_launchers_are_gone(self) -> None:
+        self.assertFalse((ROOT / "启动九章算子.vbs").exists(), "VBS 启动器必须物理删除")
+        self.assertFalse((ROOT / "停止九章算子.vbs").exists(), "VBS 停止脚本必须物理删除")
+
+    def test_03_kill_is_scoped_to_this_project(self) -> None:
+        """只杀 CommandLine 含本项目绝对路径的 python/uvicorn，绝不碰别的 Python。"""
+        self.assertIn("CommandLine.IndexOf($root", self.text)
+        self.assertIn("python|pythonw|uvicorn", self.text)
+        self.assertNotIn("taskkill /F /IM python.exe", self.text)
 
 
 class ProbeVersionContractTest(unittest.TestCase):

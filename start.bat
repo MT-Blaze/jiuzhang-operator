@@ -1,175 +1,147 @@
 @echo off
 setlocal EnableExtensions
-title Jiuzhang Operator
-
-rem ============================================================
-rem  Jiuzhang Operator - one-click launcher (Windows)
-rem  Double-click this file to start. Keep this window open
-rem  while you use the app. Closing this window stops the server.
-rem  Full instructions: see the Markdown install guide in this folder.
-rem
-rem  Self-healing ladder, walked top to bottom (no admin rights,
-rem  no hand editing, no "call me and I will fix it" steps):
-rem    1. no venv          -> create one
-rem    2. no pip in venv   -> ensurepip, then rebuild the venv
-rem    3. deps fail        -> retry other package sources
-rem    4. port taken       -> serve on the next free port
-rem ============================================================
-
 cd /d "%~dp0"
 
+rem ============================================================
+rem  Jiuzhang Operator - THE ONE official launcher (Windows)
+rem
+rem  Double-click this file. It does everything by itself:
+rem    1. relaunches itself in a hidden window (the black box
+rem       flashes once and is gone)
+rem    2. stops only THIS project's old python/uvicorn processes
+rem       (never any other Python program on the computer)
+rem    3. starts the server silently on 127.0.0.1:65496
+rem    4. waits until /healthz answers, then opens the browser
+rem       at http://127.0.0.1:65496/e
+rem
+rem  The port is fixed at 65496 on purpose: one project, one port.
+rem  If a foreign program owns 65496, this launcher reports it and
+rem  stops - it never kills that program and never moves to another
+rem  port (moving ports was the root cause of "I edited code but saw
+rem  an old page").
+rem
+rem  To stop the server without starting a new one, run:
+rem      start.bat --stop
+rem
+rem  All output goes to data\launcher.log.
+rem ============================================================
+
+rem ---------- stage 0: hide this console ----------
+if /i "%~1"=="--run" goto run
+if /i "%~1"=="--stop" goto stop
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -FilePath '%~f0' -ArgumentList '--run' -WindowStyle Hidden"
+exit /b 0
+
+rem ---------- optional: stop the server (start.bat --stop) ----------
+:stop
+set "LOG=data\launcher.log"
+if not exist "data" mkdir "data"
+call :log "--stop requested"
+call :kill_project_servers
+call :log "server stopped"
+exit /b 0
+
+:run
 set "HOST=127.0.0.1"
-set "PORT=8000"
-set "LASTPORT=8009"
+set "PORT=65496"
+set "URL=http://%HOST%:%PORT%"
+set "ENTRY=%URL%/e"
+set "HEALTH=%URL%/healthz"
 set "VENV_PY=.venv\Scripts\python.exe"
+set "LOG=data\launcher.log"
 
-echo ============================================================
-echo   Jiuzhang Operator - starting up
-echo ============================================================
-echo.
+if not exist "data" mkdir "data"
+call :log "================ launcher start ================"
 
-rem ---------- Step 1: locate or create the virtual environment ----------
-if exist "%VENV_PY%" (
-    echo [1/5] Virtual environment found.
-    goto pipcheck
-)
-
-echo [1/5] Creating virtual environment ^(first run only^)...
+rem ---------- stage 1: virtual environment ----------
+if exist "%VENV_PY%" goto pipcheck
+call :log "creating .venv (first run only)"
 py -3 -m venv .venv 2>nul
 if not exist "%VENV_PY%" python -m venv .venv 2>nul
-if exist "%VENV_PY%" goto pipcheck
-
-echo.
-echo [ERROR] Could not create a virtual environment.
-echo         Please install Python 3.10 or newer from
-echo         https://www.python.org/downloads/  ^(check "Add to PATH"^),
-echo         then double-click start.bat again.
-echo.
-pause
-exit /b 1
+if not exist "%VENV_PY%" goto no_python
 
 :pipcheck
-rem ---------- Step 2: make sure pip works inside that venv ----------
-rem  A venv can be born without pip: a stripped or offline Python,
-rem  "venv --without-pip", or a first run that was interrupted halfway.
-rem  Without this step the launcher dies on "No module named pip" and
-rem  the user sees a wall of red text with no way out.
 "%VENV_PY%" -m pip --version >nul 2>&1
 if not errorlevel 1 goto deps
-
-echo [2/5] pip is missing inside .venv - repairing with ensurepip...
+call :log "pip missing - repairing with ensurepip"
 "%VENV_PY%" -m ensurepip --upgrade >nul 2>&1
 "%VENV_PY%" -m pip --version >nul 2>&1
 if not errorlevel 1 goto deps
-
-echo         ensurepip did not fix it. Rebuilding .venv from scratch...
+call :log "ensurepip failed - rebuilding .venv"
 rmdir /s /q .venv 2>nul
 py -3 -m venv .venv 2>nul
 if not exist "%VENV_PY%" python -m venv .venv 2>nul
-if not exist "%VENV_PY%" goto pip_broken
+if not exist "%VENV_PY%" goto no_python
 "%VENV_PY%" -m ensurepip --upgrade >nul 2>&1
 "%VENV_PY%" -m pip --version >nul 2>&1
 if not errorlevel 1 goto deps
+goto no_python
 
-:pip_broken
-echo.
-echo [ERROR] Could not get a working pip inside .venv.
-echo         Reinstall Python 3.10 or newer from
-echo         https://www.python.org/downloads/  ^(keep "Add to PATH"
-echo         and the bundled pip option checked^), delete the .venv
-echo         folder next to this file, then double-click start.bat again.
-echo.
-pause
-exit /b 1
-
+rem ---------- stage 2: dependencies ----------
 :deps
-rem ---------- Step 3: install dependencies ----------
-echo [3/5] Installing dependencies ^(needs internet on first run^)...
-"%VENV_PY%" -m pip install --disable-pip-version-check -r requirements.txt
+call :log "checking dependencies"
+"%VENV_PY%" -m pip install --disable-pip-version-check -r requirements.txt >>"%LOG%" 2>&1
 if not errorlevel 1 goto deps_ok
-
-rem  Attempt 2: a domestic mirror. On Chinese networks the official
-rem  index is usually the slow or failing one, so try a well stocked
-rem  mirror here before falling back to pypi.org. None of these retries
-rem  loosen the version pins in requirements.txt.
-echo.
-echo         First source failed. Retrying from a domestic mirror:
-echo         https://pypi.tuna.tsinghua.edu.cn/simple
-echo.
-"%VENV_PY%" -m pip install --disable-pip-version-check --index-url https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+call :log "default index failed - retrying domestic mirror"
+"%VENV_PY%" -m pip install --disable-pip-version-check --index-url https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt >>"%LOG%" 2>&1
 if not errorlevel 1 goto deps_ok
-
-rem  Attempt 3: the official source, in case the default or the mirror
-rem  is stale and has not synced one of the pinned versions yet.
-echo.
-echo         Mirror failed too. Retrying from the official source:
-echo         https://pypi.org/simple
-echo.
-"%VENV_PY%" -m pip install --disable-pip-version-check --index-url https://pypi.org/simple -r requirements.txt
+call :log "mirror failed - retrying official pypi"
+"%VENV_PY%" -m pip install --disable-pip-version-check --index-url https://pypi.org/simple -r requirements.txt >>"%LOG%" 2>&1
 if not errorlevel 1 goto deps_ok
+goto deps_failed
 
-echo.
-echo [ERROR] Dependency installation failed on every source.
-echo         Check your internet connection or proxy settings,
-echo         then double-click start.bat again.
-echo.
-pause
-exit /b 1
-
+rem ---------- stage 3: stop old instances of THIS project ONLY ----------
+rem  Scope is the command line: only python/pythonw/uvicorn processes
+rem  whose CommandLine contains this folder's absolute path are killed.
+rem  A stray python from another project never matches, so it survives.
 :deps_ok
-rem ---------- Step 4: pick a port nobody is listening on ----------
-rem  If an older copy of the app is still running on 8000, uvicorn
-rem  cannot bind and the browser keeps talking to that OLD instance -
-rem  old pages, old version number, confusing everyone. Serving on the
-rem  next free port keeps the double-click telling the truth.
-echo [4/5] Looking for a free port ...
-set "FREEPORT="
-for /l %%p in (%PORT%,1,%LASTPORT%) do (
-    if not defined FREEPORT (
-        netstat -ano -p TCP 2>nul | findstr /c:":%%p " | findstr /c:"LISTENING" >nul
-        if errorlevel 1 set "FREEPORT=%%p"
-    )
-)
-if defined FREEPORT goto port_picked
+call :log "stopping old Jiuzhang python/uvicorn processes"
+call :kill_project_servers
 
-echo.
-echo [ERROR] Every port from %PORT% to %LASTPORT% is already in use.
-echo         Close the programs holding them ^(or reboot^), then
-echo         double-click start.bat again.
-echo.
-pause
+rem  Give Windows a moment to release the socket, then make sure the
+rem  port is really free. If something foreign still holds it, bail out.
+"%SystemRoot%\System32\ping.exe" -n 2 127.0.0.1 >nul
+netstat -ano -p TCP | findstr ":65496" | findstr "LISTENING" >nul
+if not errorlevel 1 goto port_busy
+
+rem ---------- stage 4: start the server silently ----------
+call :log "starting hidden uvicorn on port 65496"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$a=@('-m','uvicorn','app.main:app','--host','127.0.0.1','--port','65496'); Start-Process -FilePath '.venv\Scripts\python.exe' -ArgumentList $a -WorkingDirectory '%~dp0' -WindowStyle Hidden -RedirectStandardOutput '%~dp0data\uvicorn-65496.out.log' -RedirectStandardError '%~dp0data\uvicorn-65496.err.log'"
+
+rem ---------- stage 5: wait for health, then open the browser ----------
+call :log "waiting for %HEALTH%"
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$entry='%ENTRY%'; $health='%HEALTH%'; for ($i=0; $i -lt 240; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri $health -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process $entry; exit 0 } } catch { }; Start-Sleep -Milliseconds 500 }; exit 1"
+if errorlevel 1 goto start_failed
+call :log "browser opened: %ENTRY%"
+call :log "launcher done"
+exit /b 0
+
+:port_busy
+call :log "ERROR: port 65496 is held by a foreign program"
+powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Port 65496 is already used by another program. Close that program (it is NOT Jiuzhang Operator), then double-click start.bat again.','Jiuzhang Operator')"
 exit /b 1
 
-:port_picked
-if "%FREEPORT%"=="%PORT%" goto port_set
-echo         Port %PORT% is busy - most likely an older Jiuzhang window
-echo         is still open. Serving on %FREEPORT% instead so you are
-echo         looking at THIS copy, not the old one.
-echo         Close that old window if you want port %PORT% back.
+:no_python
+call :log "ERROR: no usable Python found"
+powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Python 3.10 or newer was not found. Install it from python.org with Add to PATH checked, then double-click start.bat again.','Jiuzhang Operator')"
+exit /b 1
 
-:port_set
-set "PORT=%FREEPORT%"
-set "URL=http://%HOST%:%PORT%"
+:deps_failed
+call :log "ERROR: dependency installation failed on every source"
+powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Could not install dependencies. Check the network or proxy, then double-click start.bat again. Details: data\launcher.log','Jiuzhang Operator')"
+exit /b 1
 
-rem ---------- Step 5: open the browser once /healthz answers ----------
-rem  A fixed sleep lies when the first start is slow. Poll the health
-rem  endpoint from a hidden helper window, then hand over to the default
-rem  browser only when the server is actually serving.
-echo [5/5] Waiting for the server, then opening %URL% ...
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "for ($i = 0; $i -lt 120; $i++) { try { $r = Invoke-WebRequest -UseBasicParsing -Uri '%URL%/healthz' -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process '%URL%'; break } } catch { }; Start-Sleep -Milliseconds 500 }"
+:start_failed
+call :log "ERROR: server did not answer /healthz in time"
+powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('The server did not answer on port 65496 within 120 seconds. See data\launcher.log and data\uvicorn-65496.err.log for details.','Jiuzhang Operator')"
+exit /b 1
 
-echo.
-echo         Starting server. KEEP THIS WINDOW OPEN.
-echo.
-echo         App:       %URL%
-echo         Workspace: %URL%/workspace
-echo         Plugins:   %URL%/plugins
-echo.
-echo         To stop: close this window, or press Ctrl+C.
-echo.
-"%VENV_PY%" -m uvicorn app.main:app --host %HOST% --port %PORT%
+rem ---------- kill only THIS project's python/uvicorn ----------
+:kill_project_servers
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=[IO.Path]::GetFullPath('%~dp0'); $n=0; Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(python|pythonw|uvicorn)\.exe$' -and $_.CommandLine -and $_.CommandLine.IndexOf($root,[StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $n++ }; Add-Content -Path 'data\launcher.log' -Value ('stopped project processes: ' + $n)"
+exit /b 0
 
-echo.
-echo Server stopped. You can close this window.
-pause
-endlocal
+rem ---------- tiny logger ----------
+:log
+>>"%LOG%" echo [%DATE% %TIME%] %~1
+exit /b 0
