@@ -317,6 +317,35 @@ class WorkspaceBootWiringTest(unittest.TestCase):
         fn = WORKSPACE_JS.split("function applyStartupBehavior", 1)[1].split("\n  }\n", 1)[0]
         self.assertIn(".catch(function ()", fn, "读不到配置也要停在默认欢迎页")
 
+    def test_06_last_stayed_page_beats_startup_setting(self) -> None:
+        """刷新后先回到老师上次停留的插件页，而不是重新按启动行为猜。"""
+        fn = WORKSPACE_JS.split("function applyStartupBehavior", 1)[1].split("\n  }\n", 1)[0]
+        self.assertIn("JzoWsStartup.restore(plugins, enterPluginMode, pluginListEl)", fn)
+        self.assertLess(fn.index("JzoWsStartup.restore"), fn.index('fetch("/api/startup"'),
+                        "本地记忆必须先于启动行为设置被读取")
+
+    def test_07_unremembered_boot_lands_on_dashboard(self) -> None:
+        """没有本地记忆时默认落数据看板：常量与兜底都必须指向它。"""
+        self.assertIn('var DEFAULT_PLUGIN_ID = "org.jiuzhang.dashboard";', WORKSPACE_JS)
+        fn = WORKSPACE_JS.split("function applyStartupBehavior", 1)[1].split("\n  }\n", 1)[0]
+        self.assertIn('"plugin:" + window.JzoWsStartup.DEFAULT_PLUGIN_ID', fn,
+                      "后端没给可落地目标时必须回落数据看板")
+        self.assertIn("JzoWsStartup.DEFAULT_PLUGIN_ID", fn.split(".catch(function ()", 1)[1],
+                      "配置读取失败时也要落默认页")
+
+    def test_08_activation_is_remembered(self) -> None:
+        self.assertIn('jzo.workspace.lastPlugin.v1', WORKSPACE_JS)
+        self.assertIn("JzoWsStartup.remember(plugin.id)", WORKSPACE_JS,
+                      "从左栏进插件就要记账")
+        self.assertIn("JzoWsStartup.remember(payload.pluginId)", WORKSPACE_JS,
+                      "在页签栏切页也要记账")
+
+    def test_09_startup_memory_loads_before_composition_root(self) -> None:
+        html = (ROOT / "static" / "workspace.html").read_text(encoding="utf-8")
+        self.assertIn('/static/js/ws_startup.js', html)
+        self.assertLess(html.index('/static/js/ws_startup.js'), html.index('/static/js/workspace.js'),
+                        "ws_startup.js 必须先于 workspace.js 加载")
+
 
 class StageConsoleLazyTest(unittest.TestCase):
     """军令 #28 第二条：刷新工作台绝不许自动弹出「设置与控制台」。"""

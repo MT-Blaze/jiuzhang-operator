@@ -155,8 +155,6 @@
   });
 
 
-
-
   // ---------- 拆出去的模块：以上每块都只经 deps 拿依赖 ----------
 
   // ============ 宿主提示统一落底栏 ============
@@ -195,6 +193,8 @@
 
   function enterPluginMode(plugin, item) {
     wsState.activePlugin = plugin;
+    // 记住老师停在哪：刷新后优先回到这里，不再每次都被默认页拽走。
+    if (window.JzoWsStartup) window.JzoWsStartup.remember(plugin.id);
     markActiveEntry(item);
     var name = plugin.name || plugin.id || "插件";
     setStage(name);
@@ -216,6 +216,11 @@
    * 读不到配置就按后端给的默认走，任何异常都不许挡住启动。
    */
   function applyStartupBehavior(plugins) {
+    // 本地缓存优先：上次停在哪，刷新后就回哪；缓存的插件已失效才往下走启动行为。
+    if (!wsState.userPickedPlugin && !wsState.activePlugin && window.JzoWsStartup &&
+        window.JzoWsStartup.restore(plugins, enterPluginMode, pluginListEl)) {
+      return Promise.resolve();
+    }
     return fetch("/api/startup", { cache: "no-store" })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (body) {
@@ -226,6 +231,11 @@
         // 老师已经亲手点了左栏（或画布已有主）：启动页不再抢画布。
         if (wsState.userPickedPlugin || wsState.activePlugin) return;
         var effective = String(body.effective || "");
+        // 后端没给可落地目标（如配置的插件刚被卸掉）时，按默认页数据看板再试一次；
+        // 看板也不在就留白，不拿别的插件顶包。
+        if (effective.indexOf("plugin:") !== 0 && window.JzoWsStartup) {
+          effective = "plugin:" + window.JzoWsStartup.DEFAULT_PLUGIN_ID;
+        }
         if (effective.indexOf("plugin:") !== 0) return;
         var wantedId = effective.slice("plugin:".length);
         var target = null;
@@ -240,7 +250,12 @@
         }
         enterPluginMode(target, item);
       })
-      .catch(function () { /* 配置读不到就当没配过，默认欢迎页照旧 */ });
+      .catch(function () {
+        // 配置读不到也不影响开机：没有缓存时至少把默认页数据看板落上。
+        if (wsState.userPickedPlugin || wsState.activePlugin || !window.JzoWsStartup) return;
+        window.JzoWsStartup.enter(
+          plugins, window.JzoWsStartup.DEFAULT_PLUGIN_ID, enterPluginMode, pluginListEl);
+      });
   }
 
 
@@ -433,6 +448,8 @@
     window.JzoBus.on("stage.tab.activated", function (event) {
       var payload = (event && event.payload) || {};
       wsState.activeCanvasPluginId = typeof payload.pluginId === "string" ? payload.pluginId : "";
+      // 页签栏切页也算「上次停留的页」；控制台没有 pluginId，不参与记账。
+      if (payload.pluginId && window.JzoWsStartup) window.JzoWsStartup.remember(payload.pluginId);
       syncContextSlot();
     });
     // 关掉页签后 stage 会自己 emit 一次 activated；这里先清账，避免主权挂在已关插件上
