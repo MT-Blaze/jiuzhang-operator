@@ -33,6 +33,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PORT = 8779
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 PLUGIN_ID = "org.example.template"
@@ -91,7 +94,7 @@ def run(tag: str) -> dict:
     # PROBE_CORE_BANK=1 时把本机官方题库插件复制进隔离目录，验「取到 N 题」的黄金路径；
     # 只读复制，不碰开发者本机 data/ 与 plugins/。
     if os.environ.get("PROBE_CORE_BANK") == "1":
-        source_bank = ROOT / "plugins" / "org.jiuzhang.bank-engine"
+        source_bank = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine"
         if source_bank.is_dir():
             shutil.copytree(source_bank, plugins_dir / "org.jiuzhang.bank-engine")
             report["notes"]["engine_copied"] = True

@@ -43,6 +43,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 SCHEMA = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 ENGINE = "org.jiuzhang.bank-engine"
 PLAIN = "org.jiuzhang.dashboard"
@@ -130,7 +133,7 @@ def run(tag: str) -> dict:
     data_dir = base / "data"
     plugins_dir.mkdir()
     for pid in (ENGINE, PLAIN):
-        shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
+        shutil.copytree(PLUGIN_SOURCE_DIR / pid, plugins_dir / pid)
     engine_db = data_dir / "banks" / f"{ENGINE}.db"
     plain_db = data_dir / "banks" / f"{PLAIN}.db"
     make_bank(engine_db, 456)

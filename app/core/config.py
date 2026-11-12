@@ -38,6 +38,7 @@ __all__ = [
     "default_database_path",
     "env_file_path",
     "load_current_workspace",
+    "plugin_source_root",
     "plugins_dir",
     "root_data_dir",
     "settings",
@@ -120,6 +121,21 @@ def plugins_dir() -> Path:
     if override:
         return Path(override)
     return workspace_storage_dir(current_workspace_id()) / "plugins"
+
+
+def plugin_source_root() -> Path | None:
+    """插件源码根：底座仓库不再存放插件源码，只在开发/发版时跨目录取。
+
+    解析顺序：``JZO_PLUGIN_SOURCE_DIR`` 显式覆盖 → 同级 ``../jiuzhang-plugins/src``
+    → ``None``（发行包里插件已被装进工作区，调用方自行回落 ``plugins_dir()``）。
+    """
+    override = os.environ.get("JZO_PLUGIN_SOURCE_DIR", "").strip()
+    if override:
+        return Path(override)
+    sibling = PROJECT_ROOT.parent / "jiuzhang-plugins" / "src"
+    if sibling.is_dir():
+        return sibling
+    return None
 
 
 def env_file_path() -> Path:

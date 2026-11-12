@@ -25,8 +25,10 @@ from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
 from app.core import manifests, plugins, toml_io
+from app.core.config import plugin_source_root
 from app.core.plugins import PluginRejected, validate_plugin
 
+PLUGIN_SOURCE_DIR = plugin_source_root() or (_path(__file__).resolve().parents[1] / "plugins")
 PLUGIN_ID = "com.example.stage-probe"
 
 BASE_MANIFEST = {
@@ -141,8 +143,7 @@ class BusGrantTest(unittest.TestCase):
         # 12 已经把第 13 条静默裁掉。再抬必须先重数官方插件的实际主题名。
         self.assertLessEqual(plugins._BUS_MAX_TOPICS, 16, "总线主题上限不许无节制抬升")
         # 抬上来的余量得真够用：任何官方插件的订阅清单都不许被截断。
-        for manifest_path in sorted((Path(__file__).resolve().parents[1] / "plugins")
-                                    .glob("org.jiuzhang.*/plugin.toml")):
+        for manifest_path in sorted(PLUGIN_SOURCE_DIR.glob("org.jiuzhang.*/plugin.toml")):
             declared = toml_io.load(manifest_path, {}).get("bus") or {}
             self.assertLessEqual(len(declared.get("subscribe") or []), plugins._BUS_MAX_TOPICS,
                                  f"{manifest_path.parent.name} 的订阅已超出总线上限")

@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 from app.core import plugin_update, toml_io, wire
-from app.core.config import Settings
+from app.core.config import Settings, plugin_source_root
 from app.core.plugin_update import (
     HOST_EXCLUDED_DIRS,
     HOST_EXCLUDED_FILES,
@@ -995,7 +995,8 @@ class ModuleSurfaceTest(unittest.TestCase):
         题库、备份、灌库报告与几十张题目配图都不在包里，靠合并语义保住；
         万一包里带了同名 ``bank.db``（空壳种子库），则必须以旧的为准。
         """
-        bank_dir = Path(__file__).resolve().parents[1] / "plugins" / "org.jiuzhang.bank-engine" / "bank"
+        source_root = plugin_source_root() or (Path(__file__).resolve().parents[1] / "plugins")
+        bank_dir = source_root / "org.jiuzhang.bank-engine" / "bank"
         if not bank_dir.is_dir():
             self.skipTest("本机没有 bank-engine 的 bank/ 目录")
         real_names = sorted(item.relative_to(bank_dir).as_posix()

@@ -36,6 +36,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STAMP = "2026-01-15T09:00:00+08:00"
 STEM = "一键剔除口径题：已知 $f(x)=x^2-5x+6$，求它的零点个数（　　）。"
@@ -78,7 +81,7 @@ class PurgeCase(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        os.environ.get("JZO_POOL_ADMIT_DISABLED"), settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         settings.workspace_id = None
         self.addCleanup(self._restore_env)
         # 军令 #32 · S5d：本模块的用例前提全是「两条都还躺在待审里」，而判据 3.5 让

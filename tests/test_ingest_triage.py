@@ -24,7 +24,10 @@ from app.core.layout import layout_router
 from app.core.recognize import (recognize_ai, recognize_mineru, recognize_router)
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor"
 HTML = (PLUGIN_DIR / "dist" / "index.html").read_text(encoding="utf-8")
 INTAKE_JS = (PLUGIN_DIR / "dist" / "ui_intake.js").read_text(encoding="utf-8")
 

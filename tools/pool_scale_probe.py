@@ -36,6 +36,9 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 EVID = ROOT / ".qoder" / "records" / "biz" / "2026-11" / "20261103_order32-s6-evidence"
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
@@ -250,7 +253,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     for pid in (EDITOR_ID, BANK_ID):
-        shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
+        shutil.copytree(PLUGIN_SOURCE_DIR / pid, plugins_dir / pid)
     log_path = work / "server.log"
     proc, base, handle = start_server(data_dir, plugins_dir, log_path)
     db = find_pending_db(data_dir)

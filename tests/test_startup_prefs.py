@@ -27,6 +27,9 @@ from unittest import mock
 from tests.core_sources import settings_source, stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 TOKEN = "startup-contract-token"
 SETTINGS_HTML = (ROOT / "static" / "settings.html").read_text(encoding="utf-8")
 SETTINGS_JS = settings_source()
@@ -241,7 +244,7 @@ class StartupCandidatesIntegrationTest(unittest.TestCase):
     def test_01_candidates_come_from_discovery(self) -> None:
         from app.core import startup_prefs
 
-        with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(ROOT / "plugins")}):
+        with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(PLUGIN_SOURCE_DIR)}):
             ids = [item["id"] for item in startup_prefs.candidates()]
         self.assertIn(DASHBOARD_ID, ids, "数据看板必须出现在启动行为下拉里")
         self.assertTrue(all("plugin:" + item["id"] == item["target"]
@@ -410,7 +413,7 @@ class StartupHttpTest(unittest.TestCase):
         cls.plugins_dir = cls.root / "plugins"
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         cls.plugins_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(ROOT / "plugins" / DASHBOARD_ID, cls.plugins_dir / DASHBOARD_ID)
+        shutil.copytree(PLUGIN_SOURCE_DIR / DASHBOARD_ID, cls.plugins_dir / DASHBOARD_ID)
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind(("127.0.0.1", 0))

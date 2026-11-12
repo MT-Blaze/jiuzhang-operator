@@ -40,6 +40,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 # ``settings.data_dir`` 每次求值都现读 ``JZO_DATA_DIR``（app/core/config.py:66 是 property，
 # 不是导入期死值），所以底座可以在这里照常顶层 import，临时工作区在 setUp 里换。
 from app.core import bank_dedupe, pending_dedupe, pending_db  # noqa: E402
@@ -237,7 +240,7 @@ class _ScanCase(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         # 现网指针可能指向别的工作区：不置 None，data_dir 会拼成 tmp/workspaces/<id>
         settings.workspace_id = None
         self.addCleanup(self._restore_env)

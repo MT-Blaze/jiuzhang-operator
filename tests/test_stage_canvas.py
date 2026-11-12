@@ -19,6 +19,9 @@ from pathlib import Path
 from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 CSS = workspace_css()
@@ -45,7 +48,7 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertNotIn('id="wsChatForm"', HTML)
         self.assertNotIn('id="wsPanelChat"', HTML)
         self.assertFalse(
-            (ROOT / "plugins" / "org.jiuzhang.chat").exists(),
+            (PLUGIN_SOURCE_DIR / "org.jiuzhang.chat").exists(),
             "AI 助手插件已整块下架，不许悄悄回装",
         )
 
@@ -269,7 +272,7 @@ class HostRelayV071Test(unittest.TestCase):
         self.assertNotIn('id="wsCopilot"', HTML, "宿主自带副驾已随对话一起下架")
         self.assertNotIn('id="cpBackfill"', HTML)
         self.assertNotIn("/api/agent/refine", WORKSPACE, "宿主壳不得替 AI 直接调后端")
-        editor_js = (ROOT / "plugins" / "org.jiuzhang.editor" / "dist" / "ui_ai.js").read_text(
+        editor_js = (PLUGIN_SOURCE_DIR / "org.jiuzhang.editor" / "dist" / "ui_ai.js").read_text(
             encoding="utf-8"
         )
         self.assertIn('hostCall("agent.refine"', editor_js, "改写只能请求底座代调")

@@ -37,7 +37,10 @@ from tools.build_plugin import build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor"
 DIST = PLUGIN_DIR / "dist"
 FIXTURES = PLUGIN_DIR / "dev" / "fixtures.toml"
 BEGIN = "  //# FIXTURES-BEGIN"

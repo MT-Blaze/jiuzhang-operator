@@ -34,6 +34,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import toml_io, wire  # noqa: E402
 
 PORT = 8781
@@ -77,9 +80,9 @@ def run(tag: str) -> dict:
         return bool(ok)
 
     # 只读复制三个插件进隔离目录：看板本体 + 纯后台题库引擎 + 跳转目标录题工作台
-    shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
+    shutil.copytree(PLUGIN_SOURCE_DIR / PLUGIN_ID, plugins_dir / PLUGIN_ID)
     for plugin_id in (ENGINE_ID, EDITOR_ID):
-        source = ROOT / "plugins" / plugin_id
+        source = PLUGIN_SOURCE_DIR / plugin_id
         if source.is_dir():
             shutil.copytree(source, plugins_dir / plugin_id)
             report["notes"][plugin_id + "_copied"] = True

@@ -26,6 +26,9 @@ from app.core import bank, toml_io
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 TB_A = "tb_aaaaaaaa"
 TB_B = "tb_bbbbbbbb"
@@ -38,7 +41,7 @@ class ActiveTextbookTest(unittest.TestCase):
         self._saved = (settings.workspace_id, os.environ.get("JZO_DATA_DIR"),
                        os.environ.get("JZO_PLUGINS_DIR"))
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         settings.workspace_id = "ws_probe"
         self.addCleanup(self._restore)
 

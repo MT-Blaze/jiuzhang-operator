@@ -43,6 +43,9 @@ from tools.pixel_scan import decode_png  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 EVID = ROOT / ".qoder" / "records" / "biz" / "2026-11" / "20261103_order32-s6-evidence"
 SHOTS = EVID / "s6b-shots"
 PANELS = EVID / "s6b-panels"
@@ -385,7 +388,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     for pid in (EDITOR_ID, BANK_ID):
-        shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
+        shutil.copytree(PLUGIN_SOURCE_DIR / pid, plugins_dir / pid)
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     env = os.environ.copy()

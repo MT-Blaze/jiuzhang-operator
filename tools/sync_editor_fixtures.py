@@ -23,9 +23,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import toml_io, wire
 
-PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor"
 FIXTURES = PLUGIN_DIR / "dev" / "fixtures.toml"
 SCRIPT = PLUGIN_DIR / "dist" / "dev_fixtures.js"
 

@@ -24,6 +24,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import bank  # noqa: E402  结构与升级的唯一实现
 
 PLUGIN_ID = "org.jiuzhang.bank-engine"
@@ -79,7 +82,7 @@ def inspect(path: Path) -> dict:
 def default_targets() -> list[Path]:
     targets = [
         ROOT / "data/banks/org.jiuzhang.core-bank.db",
-        ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank.db",
+        PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine/bank/bank.db",
     ]
     return [path for path in targets if path.is_file()]
 

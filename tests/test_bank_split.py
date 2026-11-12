@@ -35,6 +35,9 @@ from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 ENGINE = "org.jiuzhang.bank-engine"
 RETIRED_UI = "org.jiuzhang.bank-ui"
 LEGACY = "org.jiuzhang.core-bank"
@@ -44,7 +47,7 @@ STAMP = "2026-01-15T09:00:00+08:00"
 
 
 def _manifest(plugin_id: str) -> dict:
-    return manifests.load_manifest(ROOT / "plugins" / plugin_id)
+    return manifests.load_manifest(PLUGIN_SOURCE_DIR / plugin_id)
 
 
 def _digest(path: Path) -> str:
@@ -88,15 +91,15 @@ class ManifestBoundaryTest(unittest.TestCase):
         self.assertNotIn("entry", manifest, "headless 插件不得声明前端入口")
         self.assertNotIn("ui", manifest)
         self.assertNotIn("stage", manifest)
-        self.assertFalse((ROOT / "plugins" / ENGINE / "webui").exists(),
+        self.assertFalse((PLUGIN_SOURCE_DIR / ENGINE / "webui").exists(),
                          "webui 目录必须物理删除，纯引擎不留前端资产")
 
     def test_02_retired_view_plugin_directory_is_gone(self) -> None:
-        self.assertFalse((ROOT / "plugins" / RETIRED_UI).exists(),
+        self.assertFalse((PLUGIN_SOURCE_DIR / RETIRED_UI).exists(),
                          "旧 bank-ui 目录必须物理删除，不能作为第二个包继续发布")
 
     def test_03_validation_exposes_headless_and_data_commands(self) -> None:
-        info = validate_plugin(ROOT / "plugins" / ENGINE, _manifest(ENGINE))
+        info = validate_plugin(PLUGIN_SOURCE_DIR / ENGINE, _manifest(ENGINE))
         self.assertTrue(info["headless"])
         self.assertEqual("", info["entry_url"])
         self.assertIsNone(info["ui"])
@@ -113,7 +116,7 @@ class ManifestBoundaryTest(unittest.TestCase):
     def test_04_headless_cannot_smuggle_an_entry_or_ui(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / ENGINE
-            shutil.copytree(ROOT / "plugins" / ENGINE, target)
+            shutil.copytree(PLUGIN_SOURCE_DIR / ENGINE, target)
             manifest = _manifest(ENGINE)
             for extra in ({"ui": {"title": "偷塞的界面"}},
                           {"stage": {"region": "center", "mode": "takeover"}},
@@ -128,9 +131,9 @@ class ManifestBoundaryTest(unittest.TestCase):
             base = Path(tmp)
             plugins_dir = base / "plugins"
             plugins_dir.mkdir()
-            shutil.copytree(ROOT / "plugins" / ENGINE, plugins_dir / ENGINE)
+            shutil.copytree(PLUGIN_SOURCE_DIR / ENGINE, plugins_dir / ENGINE)
             leftover = plugins_dir / RETIRED_UI
-            shutil.copytree(ROOT / "plugins" / ENGINE, leftover)
+            shutil.copytree(PLUGIN_SOURCE_DIR / ENGINE, leftover)
             stale = _manifest(ENGINE)
             stale.update({"id": RETIRED_UI, "name": "旧真题题库"})
             (leftover / "plugin.toml").unlink()
@@ -159,9 +162,9 @@ class ManifestBoundaryTest(unittest.TestCase):
             base = Path(tmp)
             plugins_dir = base / "plugins"
             plugins_dir.mkdir()
-            shutil.copytree(ROOT / "plugins" / ENGINE, plugins_dir / ENGINE)
+            shutil.copytree(PLUGIN_SOURCE_DIR / ENGINE, plugins_dir / ENGINE)
             legacy_dir = plugins_dir / LEGACY
-            shutil.copytree(ROOT / "plugins" / ENGINE, legacy_dir)
+            shutil.copytree(PLUGIN_SOURCE_DIR / ENGINE, legacy_dir)
             legacy_manifest = _manifest(ENGINE)
             legacy_manifest.update({
                 "id": LEGACY,
@@ -203,7 +206,7 @@ class LegacyBankCopyTest(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = str(base / "data")
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         settings.workspace_id = None
         bank._structure_cache.clear()
         self.addCleanup(self._restore)
@@ -285,7 +288,7 @@ class HostGateTest(unittest.TestCase):
         """去 UI 后引擎不再声明 bank.view，也不许把 webui 资产偷偷加回来。"""
         manifest = _manifest(ENGINE)
         self.assertNotIn("bank.view", manifest.get("capabilities") or [])
-        self.assertFalse((ROOT / "plugins" / ENGINE / "webui").exists())
+        self.assertFalse((PLUGIN_SOURCE_DIR / ENGINE / "webui").exists())
 
 
 if __name__ == "__main__":

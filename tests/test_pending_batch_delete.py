@@ -35,6 +35,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8"
@@ -85,7 +88,7 @@ class BatchLifecycleCase(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        os.environ.get("JZO_POOL_ADMIT_DISABLED"), settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         # 本模块只判批次生死，不判「扫完自动抽走」；抽走会把刚落的题搬出池子。
         os.environ["JZO_POOL_ADMIT_DISABLED"] = "1"
         settings.workspace_id = None

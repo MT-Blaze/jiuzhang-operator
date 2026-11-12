@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests  # noqa: E402
 
 PLUGIN_DIRS_RE = re.compile(r"PLUGIN_DIRS\s*=\s*\((.*?)\)", re.S)
@@ -94,12 +97,15 @@ def check_manifest(plugin_dir: Path) -> None:
 
 def main() -> int:
     official = declared_official_plugins()
+    if not PLUGIN_SOURCE_DIR.is_dir():
+        fail(f"找不到插件源码根 {PLUGIN_SOURCE_DIR}：设置 JZO_PLUGIN_SOURCE_DIR 或检出同级 jiuzhang-plugins")
+        return 1
     on_disk = sorted(
-        path.name for path in (ROOT / "plugins").iterdir()
+        path.name for path in PLUGIN_SOURCE_DIR.iterdir()
         if path.is_dir() and manifests.manifest_path(path) is not None
     )
     for name in official:
-        path = ROOT / "plugins" / name
+        path = PLUGIN_SOURCE_DIR / name
         if not path.is_dir():
             fail(f"PLUGIN_DIRS 登记了 {name}，但 plugins/{name} 不存在")
             continue
@@ -109,7 +115,7 @@ def main() -> int:
     if unregistered:
         fail(f"plugins/ 下存在未登记进 PLUGIN_DIRS 的插件目录：{', '.join(unregistered)}")
 
-    seed = ROOT / "plugins" / "org.jiuzhang.core-bank"
+    seed = PLUGIN_SOURCE_DIR / "org.jiuzhang.core-bank"
     if seed.is_dir() and manifests.manifest_path(seed) is not None:
         fail("种子库 org.jiuzhang.core-bank 出现了插件清单，它不应该是插件")
 

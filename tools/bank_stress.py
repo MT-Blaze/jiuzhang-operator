@@ -33,8 +33,11 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
-SEED = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
+SEED = PLUGIN_SOURCE_DIR / PLUGIN_ID / "bank" / "bank.db"
 LEGACY = Path("E:/math-question-bank-main/math_question_bank.db")
 TOKEN = "stress-token-local"
 

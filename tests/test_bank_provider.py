@@ -31,6 +31,9 @@ from app.core.config import settings
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 BANK = "org.jiuzhang.bank-engine"
 LEGACY = "org.jiuzhang.core-bank"
 PAPER = "org.jiuzhang.paper-gen"
@@ -47,7 +50,7 @@ class _Isolated(unittest.TestCase):
         self.plugins_dir.mkdir()
         self._saved = (os.environ.get("JZO_PLUGINS_DIR"), os.environ.get("JZO_DATA_DIR"))
         for name in (BANK, PAPER):
-            shutil.copytree(ROOT / "plugins" / name, self.plugins_dir / name)
+            shutil.copytree(PLUGIN_SOURCE_DIR / name, self.plugins_dir / name)
         os.environ["JZO_PLUGINS_DIR"] = str(self.plugins_dir)
         os.environ["JZO_DATA_DIR"] = str(base / "data")
         self.addCleanup(self._restore)

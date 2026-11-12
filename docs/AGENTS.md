@@ -48,7 +48,10 @@
   - `app/api/`：底座级 HTTP 路由（健康检查、鉴权、导航、总线）。
   - `app/core/`：配置、路径、安全、日志等基础能力。
   - `app/core/question_contract.py`：题目跨边界数据契约（dataclass）。
-  - `plugins/`：插件包（每个插件一个目录，含 `plugin.toml`）。
+  - 插件源码：不在本仓库，统一放在兄弟仓库 `jiuzhang-plugins/src/<id>/`；开发时按
+    `JZO_PLUGIN_SOURCE_DIR` 或同级 `../jiuzhang-plugins/src` 解析（`app/core/config.py`
+    的 `plugin_source_root()`）。本仓库只在发版包内出现 `plugins/`（由 `build_release.bat`
+    跨目录装配），运行时插件装进当前工作区的 `plugins/`。
   - `static/`：宿主壳静态资源。
 - 禁止在根目录堆放业务模块。
 

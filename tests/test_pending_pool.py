@@ -43,6 +43,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STAMP = "2026-01-15T09:00:00+08:00"
 STEM = "重题池口径题：已知 $x^2-5x+6=0$，求它的两个根之和（　　）。"
@@ -128,7 +131,7 @@ class PoolCase(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         settings.workspace_id = None
         self.addCleanup(self._restore_env)
         # save_draft 会甩出 jzo-dedupe-warm 线程，它持着 tmp 里两座库的 SQLite 句柄：

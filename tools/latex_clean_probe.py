@@ -47,6 +47,9 @@ from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from pixel_scan import decode_png  # noqa: E402  纯标准库 PNG 解码，复用既有像素工具
 
 EDITOR_ID = "org.jiuzhang.editor"
@@ -196,7 +199,7 @@ def main() -> int:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
-    shutil.copytree(ROOT / "plugins" / EDITOR_ID, plugins_dir / EDITOR_ID)
+    shutil.copytree(PLUGIN_SOURCE_DIR / EDITOR_ID, plugins_dir / EDITOR_ID)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"

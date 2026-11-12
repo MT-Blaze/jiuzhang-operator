@@ -9,7 +9,10 @@ venv/
 
 # Runtime data
 .env
-data/
+# data/ 是用户题库的物理载体，默认全部忽略；唯独 data/seed/ 是发版空库基线，
+# 属于构建输入（0 题冻结库），必须随仓库走。
+data/*
+!data/seed/
 data/backups/
 static/uploads/
 .system_generated/

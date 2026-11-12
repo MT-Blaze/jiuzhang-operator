@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests, toml_io, wire  # noqa: E402
 
 INDEX_MAIN = ROOT / "plugins.toml"
@@ -33,7 +36,7 @@ MIRROR_DESCRIPTION = ("org.jiuzhang.editor",)
 def actual_manifests() -> dict[str, dict]:
     out: dict[str, dict] = {}
     for name in PLUGIN_DIRS:
-        manifest = manifests.load_manifest(ROOT / "plugins" / name)
+        manifest = manifests.load_manifest(PLUGIN_SOURCE_DIR / name)
         out[manifest["id"]] = manifest
     return out
 

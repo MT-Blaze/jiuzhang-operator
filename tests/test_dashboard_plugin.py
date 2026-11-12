@@ -25,8 +25,11 @@ from app.core import manifests, plugins as plugins_core
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.dashboard"
-PLUGIN_DIR = ROOT / "plugins" / PLUGIN_ID
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / PLUGIN_ID
 STAGE = stage_source()
 RAIL_JS = (PLUGIN_DIR / "dist" / "rail.js").read_text(encoding="utf-8")
 PLUGIN_JS = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8") + RAIL_JS
@@ -50,7 +53,7 @@ class DashboardManifestTest(unittest.TestCase):
 
     def test_02_sidebar_first_position_by_priority(self) -> None:
         self.assertEqual(MANIFEST["stage"]["priority"], 100)
-        for plugin_dir in (ROOT / "plugins").iterdir():
+        for plugin_dir in (PLUGIN_SOURCE_DIR).iterdir():
             if plugin_dir.name == PLUGIN_ID or manifests.manifest_path(plugin_dir) is None:
                 continue
             other = manifests.load_manifest(plugin_dir)

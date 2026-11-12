@@ -40,6 +40,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 EDITOR_ID = "org.jiuzhang.editor"
 BANK_ID = "org.jiuzhang.bank-engine"
 TOKEN = "illustration-probe-token"
@@ -155,7 +158,7 @@ def run(tag: str) -> dict:
     for folder in (data_dir, plugins_dir, shots, data_dir / "uploads"):
         folder.mkdir(parents=True)
     for plugin_id in (EDITOR_ID, BANK_ID):
-        shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
+        shutil.copytree(PLUGIN_SOURCE_DIR / plugin_id, plugins_dir / plugin_id)
     (data_dir / "uploads" / "img_illu_probe.png").write_bytes(make_png(240, 160))
 
     port = free_port()

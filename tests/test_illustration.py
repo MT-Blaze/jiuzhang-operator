@@ -21,7 +21,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DIST = ROOT / "plugins" / "org.jiuzhang.editor" / "dist"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+DIST = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor" / "dist"
 HTML = (DIST / "index.html").read_text(encoding="utf-8")
 JS = (DIST / "ui_illustration.js").read_text(encoding="utf-8")
 CSS = (DIST / "illustration.css").read_text(encoding="utf-8")

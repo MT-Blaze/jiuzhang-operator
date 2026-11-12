@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.bank_engine import builder, dao_console, seeding, service  # noqa: E402
 from app.bank_engine.models import (  # noqa: E402
     Chapter,
@@ -34,7 +37,7 @@ from app.bank_engine.models import (  # noqa: E402
     TextbookVersion,
 )
 
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 CONSOLE_DIR = ROOT / "static" / "js" / "dict_console"
 
 DICT_TABLES = {

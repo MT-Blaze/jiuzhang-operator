@@ -18,9 +18,10 @@ import unittest
 from pathlib import Path
 
 from app.bank_engine import builder, migrate_v14
+from app.core.config import plugin_source_root
 
-SCHEMA = Path(__file__).resolve().parents[1] / (
-    "plugins/org.jiuzhang.bank-engine/bank/schema.sql"
+SCHEMA = (plugin_source_root() or (Path(__file__).resolve().parents[1] / "plugins")) / (
+    "org.jiuzhang.bank-engine/bank/schema.sql"
 )
 
 

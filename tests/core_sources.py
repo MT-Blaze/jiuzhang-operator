@@ -20,7 +20,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from app.core.config import plugin_source_root
+
 ROOT = Path(__file__).resolve().parents[1]
+# 插件源码在兄弟仓库；发行包（无源码仓）退回包内 plugins/。
+PLUGINS_DIR = plugin_source_root() or (ROOT / "plugins")
 JS_DIR = ROOT / "static" / "js"
 TEMPLATE_DIST = ROOT / "examples" / "template-plugin" / "dist"
 
@@ -109,9 +113,6 @@ def bundle_local_assets(html_path: Path, tag: str) -> str:
 
 def bundle_local_scripts(html_path: Path) -> str:
     return bundle_local_assets(html_path, "script")
-
-
-PLUGINS_DIR = ROOT / "plugins"
 
 
 def plugin_entry(plugin_id: str) -> Path:

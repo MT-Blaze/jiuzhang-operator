@@ -39,6 +39,9 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 TOKEN = "dedupe-token"
 # 建库时间必须落在过去：schema 上有 ck_questions_updated（updated_at >= created_at），
@@ -209,7 +212,7 @@ class DedupeCase(unittest.TestCase):
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
                        settings.workspace_id)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         settings.workspace_id = None
         self.addCleanup(self._restore_env)
         self.db_path = Path(self.tmp.name) / "banks" / f"{PLUGIN_ID}.db"
@@ -516,14 +519,14 @@ class DedupeHttpTest(unittest.TestCase):
         cls._saved_env = {key: os.environ.get(key)
                           for key in ("JZO_DATA_DIR", "JZO_PLUGINS_DIR", "JZO_LOCAL_TOKEN")}
         os.environ["JZO_DATA_DIR"] = str(cls.data_dir)
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         os.environ["JZO_LOCAL_TOKEN"] = TOKEN
         build_bank(banks / f"{PLUGIN_ID}.db")
 
         cls.port = _free_port()
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = str(cls.data_dir)
-        env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        env["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         env["JZO_LOCAL_TOKEN"] = TOKEN
         env["JZO_RESTART_DISABLED"] = "1"
         cls.process = subprocess.Popen(

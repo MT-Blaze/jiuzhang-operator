@@ -34,6 +34,9 @@ from app.core import manifests  # noqa: E402
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 TOKEN = "bank-contract-token"
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 GRADES = ("高一", "高二", "高三")
@@ -1181,7 +1184,7 @@ class MigratedBankIntegrityTest(unittest.TestCase):
         cls.previous = os.environ.get("JZO_DATA_DIR")
         cls.previous_plugins = os.environ.get("JZO_PLUGINS_DIR")
         os.environ["JZO_DATA_DIR"] = str(data_dir)
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         sys.path.insert(0, str(ROOT))
         from app.core import bank  # noqa: PLC0415
 
@@ -1405,7 +1408,7 @@ class StageRelayContractTest(unittest.TestCase):
             self.assertIn(channel, source)
         # 题库退居纯后台引擎：仍声明可写的 provider 权限，但不再自带界面，
         # 改题一律发 system.open_editor 跳录题端（由业务插件负责）。
-        bank_manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")
+        bank_manifest = manifests.load_manifest(PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine")
         self.assertEqual(bank_manifest["permissions"], ["questions:read", "questions:write"])
         self.assertTrue(bank_manifest["headless"])
         self.assertEqual(bank_manifest["slots"], [])

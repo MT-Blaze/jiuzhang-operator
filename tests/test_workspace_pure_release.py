@@ -26,8 +26,11 @@ from tools.build_plugin import build_plugin
 from tests.core_sources import settings_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
-SCHEMA = ROOT / "plugins" / PLUGIN_ID / "bank" / "schema.sql"
+SCHEMA = PLUGIN_SOURCE_DIR / PLUGIN_ID / "bank" / "schema.sql"
 LEGACY_SCHEMA = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 
 
@@ -115,7 +118,7 @@ class EnsureBankWorkspaceTest(unittest.TestCase):
 class PluginPackagePurityTest(unittest.TestCase):
     def test_engine_zip_carries_no_database_or_assets(self) -> None:
         with tempfile.TemporaryDirectory() as out:
-            target = build_plugin(ROOT / "plugins" / PLUGIN_ID, Path(out))
+            target = build_plugin(PLUGIN_SOURCE_DIR / PLUGIN_ID, Path(out))
             with zipfile.ZipFile(target) as bundle:
                 names = bundle.namelist()
         joined = "\n".join(names)

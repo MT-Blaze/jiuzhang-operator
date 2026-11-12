@@ -32,6 +32,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PORT = 8782
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 SETTINGS = f"http://127.0.0.1:{PORT}/settings?panel=system"
@@ -105,7 +108,7 @@ def run(tag: str) -> dict:
         report["checks"].append({"name": name, "ok": bool(ok), "detail": str(detail)[:400]})
         return bool(ok)
 
-    shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
+    shutil.copytree(PLUGIN_SOURCE_DIR / PLUGIN_ID, plugins_dir / PLUGIN_ID)
     check("数据看板插件复制进隔离目录", (plugins_dir / PLUGIN_ID / "plugin.toml").is_file())
 
     env = dict(os.environ)

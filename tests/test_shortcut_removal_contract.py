@@ -18,6 +18,9 @@ from pathlib import Path
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 STATIC = ROOT / "static"
 HTML_FILES = (STATIC / "workspace.html", STATIC / "settings.html")
 HOST_SCRIPTS = tuple((STATIC / "js").glob("*.js"))
@@ -67,7 +70,7 @@ class FrontendEvaporatedTest(unittest.TestCase):
 
     def test_04_assistant_plugin_is_physically_gone(self) -> None:
         # 2026-11-05：AI 助手整块下架；该插件连目录都不许留下。
-        self.assertFalse((ROOT / "plugins" / "org.jiuzhang.chat").exists())
+        self.assertFalse((PLUGIN_SOURCE_DIR / "org.jiuzhang.chat").exists())
 
 
 class BackendEvaporatedTest(unittest.TestCase):

@@ -16,10 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.bank_engine import builder, dao_dimensions, seeding  # noqa: E402
 from app.bank_engine.seeds import national_catalog  # noqa: E402
 
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 
 NON_MAINSTREAM = {
     ("mathematics", "冀教版"),

@@ -48,6 +48,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STAMP = "2026-01-15T09:00:00+08:00"
 FAIL_CODE = "dedupe_scan_bank_unavailable"
@@ -136,7 +139,7 @@ class DedupeScanCase(unittest.TestCase):
         # 读代码要翻两处才知道本模块动了哪几个环境变量。
         self.addCleanup(self._restore_env)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         # 本模块测的是初查的账目与线程编排；抽走（判据 3.5）会把命中的行从待审池
         # 删掉，「缓存＝引擎」「redundant≥1」这些前提就此对不上。抽走本身由
         # tests/test_pending_pool.py 的 PoolEvictionTest 六条盯死，这里按用例隔离关掉。

@@ -52,6 +52,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core.plugin_update import (  # noqa: E402
     HOST_EXCLUDED_DIRS,
     _batch_encoding,
@@ -348,7 +351,7 @@ def main() -> int:
     write_installed(plugins_dir, PLUGIN_BROADCAST)
     # 工作台要有活跃题库才不会让 /api/bank/* 回 400（控制台零报错判据需要）。
     # 复制的是当前仓库里的官方插件，只进隔离目录，不动源目录。
-    shutil.copytree(ROOT / "plugins" / "org.jiuzhang.bank-engine",
+    shutil.copytree(PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine",
                     plugins_dir / "org.jiuzhang.bank-engine")
 
     basic_ids = [PLUGIN_HOT, PLUGIN_BULK, PLUGIN_MANIFEST, PLUGIN_BLOCKED]

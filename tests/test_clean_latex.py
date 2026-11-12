@@ -25,8 +25,11 @@ from app.core import manifests, plugins, toml_io
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 STAGE_JS = stage_source()
-EDITOR_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+EDITOR_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor"
 EDITOR_JS = plugin_bundle("org.jiuzhang.editor")
 EDITOR_HTML = (EDITOR_DIR / "dist" / "index.html").read_text(encoding="utf-8")
 

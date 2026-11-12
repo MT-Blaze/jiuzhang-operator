@@ -24,6 +24,9 @@ from app.core import bank_query, plugin_install, plugin_suite, toml_io
 from app.core.plugins import discover_plugins
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 ENGINE = "org.jiuzhang.bank-engine"
 SUITE = "org.jiuzhang.bank-suite"
 
@@ -65,7 +68,7 @@ class SuiteCase(unittest.TestCase):
                 os.environ[key] = value
 
     def _build_suite(self) -> bytes:
-        target = build_tool.build_suite([ROOT / "plugins" / ENGINE], self.out_dir)
+        target = build_tool.build_suite([PLUGIN_SOURCE_DIR / ENGINE], self.out_dir)
         return target.read_bytes()
 
     def _installed_ids(self) -> list[str]:
@@ -91,7 +94,7 @@ class SuiteCase(unittest.TestCase):
             archive.writestr("suite.toml", toml_io.dumps(manifest))
             payload = members if payload_members is None else payload_members
             for plugin_id in payload:
-                source = ROOT / "plugins" / plugin_id
+                source = PLUGIN_SOURCE_DIR / plugin_id
                 for path in sorted(source.rglob("*")):
                     if path.is_file():
                         relative = path.relative_to(source).as_posix()
@@ -103,7 +106,7 @@ class SuiteCase(unittest.TestCase):
 
 class BuildSuiteTest(SuiteCase):
     def test_build_suite_packs_the_headless_package(self) -> None:
-        target = build_tool.build_suite([ROOT / "plugins" / ENGINE], self.out_dir)
+        target = build_tool.build_suite([PLUGIN_SOURCE_DIR / ENGINE], self.out_dir)
         with zipfile.ZipFile(target) as archive:
             suite = toml_io.loads(archive.read("suite.toml").decode("utf-8"))
             names = set(archive.namelist())

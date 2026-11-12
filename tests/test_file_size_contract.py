@@ -29,6 +29,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests  # noqa: E402
 CEILING = 500
 # 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 500 行。
@@ -78,10 +81,30 @@ def lines_of(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
+def rel_of(path: Path) -> str:
+    """台账键统一成仓库内相对路径；插件源码在兄弟仓库，键仍以 plugins/ 开头。"""
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return "plugins/" + path.relative_to(PLUGIN_SOURCE_DIR).as_posix()
+
+
+def path_for(rel: str) -> Path:
+    if rel.startswith("plugins/"):
+        return PLUGIN_SOURCE_DIR / rel[len("plugins/"):]
+    return ROOT / rel
+
+
 def tracked(globs: tuple[str, ...]) -> list[Path]:
     out = []
     for pattern in globs:
         for path in ROOT.glob(pattern):
+            if path.is_file():
+                out.append(path)
+    for pattern in globs:
+        if not pattern.startswith("plugins/"):
+            continue
+        for path in PLUGIN_SOURCE_DIR.glob(pattern[len("plugins/"):]):
             if path.is_file():
                 out.append(path)
     return sorted(out)
@@ -104,7 +127,7 @@ class ScriptSizeCeilingTest(unittest.TestCase):
         out = []
         for path in paths:
             count = lines_of(path)
-            rel = path.relative_to(ROOT).as_posix()
+            rel = rel_of(path)
             frozen = LEGACY_OVER_CEILING.get(rel)
             if frozen is None:
                 if count > CEILING:
@@ -127,7 +150,7 @@ class ScriptSizeCeilingTest(unittest.TestCase):
 
     def test_03_probe_scripts_are_dev_only(self) -> None:
         """开发期探针不参与门禁，但必须只待在 tools/ 里，不许混进发行目录。"""
-        for path in ROOT.glob("plugins/**/tools/**/*.py"):
+        for path in PLUGIN_SOURCE_DIR.glob("**/tools/**/*.py"):
             self.fail(f"探针 {path} 混进了插件发行目录")
         for path in ROOT.glob("app/**/*probe*.py"):
             self.fail(f"探针 {path} 混进了底座")
@@ -136,7 +159,7 @@ class ScriptSizeCeilingTest(unittest.TestCase):
         """冻结台账只减不增：达标即删行，行数变了也要同步，防止拿旧额度偷偷长胖。"""
         stale = []
         for rel, frozen in sorted(LEGACY_OVER_CEILING.items()):
-            path = ROOT / rel
+            path = path_for(rel)
             if not path.is_file():
                 stale.append(f"{rel} 已不存在，删台账")
                 continue
@@ -162,7 +185,7 @@ class PluginAssetWiringTest(unittest.TestCase):
             else None
 
     def plugins(self) -> list[Path]:
-        return sorted(p for p in (ROOT / "plugins").iterdir() if p.is_dir() and manifests.manifest_path(p) is not None)
+        return sorted(p for p in (PLUGIN_SOURCE_DIR).iterdir() if p.is_dir() and manifests.manifest_path(p) is not None)
 
     @staticmethod
     def _entry(plugin: Path) -> Path:

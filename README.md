@@ -119,7 +119,9 @@ curl -X GET http://127.0.0.1:65496/healthz
 - 测试**不引入 pytest**，必须用 `.venv` 里的解释器逐模块跑：
   `.venv\Scripts\python.exe -m unittest tests.test_editor_contract`。
 - 目录骨架：`app/`（底座路由与核心）、`static/`（宿主壳）、`schemas/`（跨边界契约）、
-  `plugins/`（每个插件一个目录）、`examples/`（模板与示例）、`tests/`（契约测试）、`tools/`（打包与真机取证脚本）。
+  `examples/`（模板与示例）、`tests/`（契约测试）、`tools/`（打包与真机取证脚本）。
+- 插件源码不在本仓库：开发时按 `JZO_PLUGIN_SOURCE_DIR` 读取，缺省探测同级
+  `../jiuzhang-plugins/src`；发版包内的 `plugins/` 由 `build_release.bat` 跨目录装配。
 
 ## 许可与社区
 

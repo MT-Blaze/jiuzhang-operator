@@ -46,13 +46,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 SCHEMA_PATH = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
-DOC_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank.db"
+DOC_DB = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine/bank/bank.db"
 LEGACY_DB = ROOT / ".scratch-recon-063/legacy.db"
 SCHOOLS_JSON = Path("E:/math-question-bank-main/mathbank/resources/schools.json")
 OUTLINE_JSON = Path("E:/math-question-bank-main/mathbank/resources/curriculums/A.json")
-MIGRATED_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/v063_migrated.db"
-SEED_NEW_DB = ROOT / "plugins/org.jiuzhang.bank-engine/bank/bank_v063.db"
+MIGRATED_DB = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine/bank/v063_migrated.db"
+SEED_NEW_DB = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine/bank/bank_v063.db"
 REPORT_MD = ROOT / "data/bank_v063_migration_report.md"
 
 LOCAL_TZ_NOW = datetime.now().astimezone().isoformat(timespec="seconds")

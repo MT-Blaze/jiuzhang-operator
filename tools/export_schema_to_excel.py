@@ -20,7 +20,10 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+DEFAULT_SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 
 SHEET1 = "xl/worksheets/sheet1.xml"
 SHARED = "xl/sharedStrings.xml"

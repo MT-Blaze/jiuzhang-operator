@@ -23,7 +23,10 @@ from app.bank_engine.seeding import EXPECTED_COUNTS
 from app.bank_engine.writer import EntryRejected
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 ENGINE_DIR = ROOT / "app" / "bank_engine"
 BUILD_SCRIPT = ROOT / "scripts" / "build_bank_engine.py"
 SAMPLE_QUESTION = "q_test0001"
@@ -456,7 +459,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
 
     def test_no_json_files_in_engine_tree(self) -> None:
         self.assertEqual(list(ENGINE_DIR.rglob("*.json")), [])
-        self.assertEqual(list((ROOT / "plugins" / "org.jiuzhang.bank-engine").rglob("*.json")), [])
+        self.assertEqual(list((PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine").rglob("*.json")), [])
 
     def test_engine_files_stay_under_500_lines(self) -> None:
         oversized = {

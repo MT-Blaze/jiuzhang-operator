@@ -38,6 +38,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 ENGINE_ID = "org.jiuzhang.bank-engine"
 UI_ID = ENGINE_ID
 SUITE_ID = "org.jiuzhang.bank-suite"
@@ -115,7 +118,7 @@ def main() -> int:
 
     build_tool = _load_build_tool()
     suite_zip = build_tool.build_suite(
-        [ROOT / "plugins" / ENGINE_ID], work / "out"
+        [PLUGIN_SOURCE_DIR / ENGINE_ID], work / "out"
     ).read_bytes()
 
     port = free_port()

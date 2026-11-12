@@ -31,6 +31,9 @@ from app.core.plugins import discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source, template_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 BASE_MANIFEST = {
     "schema_version": "1.0",
     "id": "org.jiuzhang.command-probe",
@@ -502,7 +505,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
         cls.info = {}
         cls.missing_issues = []
         for plugin_id in cls.EXPECTED:
-            path = manifests.manifest_path(ROOT / "plugins" / plugin_id)
+            path = manifests.manifest_path(PLUGIN_SOURCE_DIR / plugin_id)
             manifest = manifests.load_manifest(path.parent)
             cls.manifests[plugin_id] = manifest
             issues: list = []

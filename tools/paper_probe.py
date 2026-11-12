@@ -40,6 +40,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 BANK_ID = "org.jiuzhang.bank-engine"
 PAPER_ID = "org.jiuzhang.paper-gen"
 
@@ -80,7 +83,7 @@ def http_json(url: str, method: str = "GET", body: dict | None = None, token: st
 
 def longest_questions(limit: int) -> list[str]:
     """按题干 + 选项 + 解析总字数挑最长的真题，专挑排版最难的。"""
-    db_path = ROOT / "plugins" / BANK_ID / "bank" / "bank.db"
+    db_path = PLUGIN_SOURCE_DIR / BANK_ID / "bank" / "bank.db"
     connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     try:
         rows = connection.execute(
@@ -313,7 +316,7 @@ def main() -> int:
     shots.mkdir(parents=True)
 
     for plugin_id in (BANK_ID, PAPER_ID):
-        shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
+        shutil.copytree(PLUGIN_SOURCE_DIR / plugin_id, plugins_dir / plugin_id)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"

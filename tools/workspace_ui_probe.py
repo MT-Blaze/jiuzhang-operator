@@ -29,6 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import toml_io, wire  # noqa: E402
 
 PORT = 8793
@@ -103,7 +106,7 @@ def run(tag: str) -> dict:
     env["JZO_DATA_DIR"] = str(data_dir)
     # 探针只借仓库 plugins/ 当代码目录（只读）。ADR-012 之后不设这个口子，插件区
     # 会解析到 data/workspaces/default/plugins——空目录，左栏一行都没有。
-    env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+    env["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
     env.pop("JZO_AI_API_KEY", None)
     env.pop("JZO_AI_BASE_URL", None)
 

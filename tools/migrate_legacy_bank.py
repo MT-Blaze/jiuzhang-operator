@@ -37,6 +37,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import bank  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.questions import validate_question  # noqa: E402
@@ -502,7 +505,7 @@ def migrate(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="迁移历史真题库到九章算子 core-bank")
     parser.add_argument("--source", default=str(DEFAULT_SOURCE))
-    parser.add_argument("--plugin-dir", default=str(ROOT / "plugins" / PLUGIN_ID))
+    parser.add_argument("--plugin-dir", default=str(PLUGIN_SOURCE_DIR / PLUGIN_ID))
     parser.add_argument("--assets", default=str(DEFAULT_ASSET_DIR))
     parser.add_argument("--no-images", action="store_true")
     args = parser.parse_args(argv)

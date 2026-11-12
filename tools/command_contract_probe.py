@@ -39,6 +39,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PORT = 8787
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOKEN = "command-contract-probe-token"
@@ -75,7 +78,7 @@ HOST_VERSION = re.search(
 
 def manifest_versions() -> dict[str, str]:
     """仓内清单的版本号——探针不许写死版本，否则插件一升号就把判据打成假红。"""
-    return {plugin_id: toml_io.load(ROOT / "plugins" / plugin_id / "plugin.toml")["version"]
+    return {plugin_id: toml_io.load(PLUGIN_SOURCE_DIR / plugin_id / "plugin.toml")["version"]
         for plugin_id in OFFICIAL}
 
 CALLER_JS = """
@@ -268,7 +271,7 @@ def run(tag: str) -> dict:
     for path in (data_dir, plugins_dir):
         path.mkdir(parents=True, exist_ok=True)
     for plugin_id in OFFICIAL:
-        shutil.copytree(ROOT / "plugins" / plugin_id, plugins_dir / plugin_id)
+        shutil.copytree(PLUGIN_SOURCE_DIR / plugin_id, plugins_dir / plugin_id)
 
     checks: list[dict] = []
     evidence: dict = {}

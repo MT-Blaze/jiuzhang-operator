@@ -40,6 +40,9 @@ from app.core.plugins import discover_plugins, validate_plugin
 ROOT = Path(__file__).resolve().parents[1]
 
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 def _make_bank_db(path: Path, questions: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     for suffix in ("", "-wal", "-shm", "-journal"):
@@ -68,12 +71,12 @@ class ShowInSidebarContractTest(unittest.TestCase):
     def test_explicit_false_and_default_true(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             sample = Path(tmp) / "org.jiuzhang.dashboard"
-            shutil.copytree(ROOT / "plugins" / "org.jiuzhang.dashboard", sample)
+            shutil.copytree(PLUGIN_SOURCE_DIR / "org.jiuzhang.dashboard", sample)
             manifest = manifests.load_manifest(sample)
             manifest["show_in_sidebar"] = False
             toml_io.write(sample / "plugin.toml", manifest)
             self.assertIs(self._manifest(sample)["show_in_sidebar"], False)
-        self.assertIs(self._manifest(ROOT / "plugins" / "org.jiuzhang.bank-engine")["show_in_sidebar"], False,
+        self.assertIs(self._manifest(PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine")["show_in_sidebar"], False,
                       "纯后台引擎不在左栏占位")
 
     def test_discover_tags_enabled_flag(self) -> None:
@@ -337,7 +340,7 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         plugins = root / "plugins"
         plugins.mkdir(parents=True)
         # 拷一个真实、合规的小插件进来，并显式隐藏左栏入口，当被操作对象
-        shutil.copytree(ROOT / "plugins" / cls.CARD, plugins / cls.CARD)
+        shutil.copytree(PLUGIN_SOURCE_DIR / cls.CARD, plugins / cls.CARD)
         manifest = manifests.load_manifest(plugins / cls.CARD)
         manifest["show_in_sidebar"] = False
         toml_io.write(plugins / cls.CARD / "plugin.toml", manifest)
@@ -469,7 +472,7 @@ class ConsoleAndImportApiTest(unittest.TestCase):
         uninstallable，设置页才认得出谁是引擎；缺字段只能靠硬编码插件 id。
         """
         engine = "org.jiuzhang.bank-engine"
-        shutil.copytree(ROOT / "plugins" / engine, Path(self.tmp.name) / "plugins" / engine)
+        shutil.copytree(PLUGIN_SOURCE_DIR / engine, Path(self.tmp.name) / "plugins" / engine)
         db = Path(self.tmp.name) / "data" / "banks" / f"{engine}.db"
         _make_bank_db(db, 7)
         payload = db.read_bytes()

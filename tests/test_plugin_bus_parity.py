@@ -23,7 +23,10 @@ from app.core.plugins import _normalize_bus
 from tests.core_sources import plugin_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGINS_DIR = ROOT / "plugins"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+PLUGINS_DIR = PLUGIN_SOURCE_DIR
 HOST_JS = sorted((ROOT / "static" / "js").glob("*.js"))
 
 HANDLED = re.compile(r"\.event\s*(?:===|==)\s*[\"']([A-Za-z0-9_.]+)[\"']")

@@ -27,6 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests, plugin_suite, toml_io  # noqa: E402
 from app.core.plugins import PluginRejected, validate_plugin  # noqa: E402
 
@@ -291,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验并打包九章算子插件（标准 zip，顶层为插件 id）")
     parser.add_argument("plugin_dir", nargs="?", help="插件目录（含 plugin.toml）")
     parser.add_argument("--all", action="store_true", help="打包 plugins/ 下全部插件")
-    parser.add_argument("--plugins-dir", default=str(ROOT / "plugins"), help="插件根目录")
+    parser.add_argument("--plugins-dir", default=str(PLUGIN_SOURCE_DIR), help="插件根目录")
     parser.add_argument("--out", default=str(ROOT / "dist" / "plugins"), help="zip 输出目录")
     parser.add_argument(
         "--suite", nargs="*", default=None, metavar="PLUGIN",

@@ -29,9 +29,12 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 GENERATED_DIR = ROOT / ".system_generated"
 DIST_DIR = ROOT / "dist"
-PLUGINS_DIR = ROOT / "plugins"
+PLUGINS_DIR = PLUGIN_SOURCE_DIR
 
 # 无论传什么参数都不许被删到的地方（题库命根子 + 解释器 + 契约资产 + 历史）。
 FORBIDDEN_ROOTS = (ROOT / "data", ROOT / ".venv", ROOT / "examples", ROOT / ".git")

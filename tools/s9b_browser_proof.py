@@ -27,6 +27,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 import pool_canvas_probe as pcp  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
@@ -179,7 +182,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     for pid in (pcp.EDITOR_ID, pcp.BANK_ID, pcp.CHAT_ID):
-        shutil.copytree(ROOT / "plugins" / pid, plugins_dir / pid)
+        shutil.copytree(PLUGIN_SOURCE_DIR / pid, plugins_dir / pid)
     port = pcp.free_port()
     base = f"http://127.0.0.1:{port}"
     env = os.environ.copy()

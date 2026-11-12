@@ -23,7 +23,10 @@ from app.core import ingest_route
 from tools import build_plugin as builder
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.editor"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.editor"
 
 
 def write_config(plugin_dir: Path, *, full_min: int = 16, quant_min: int = 8) -> None:

@@ -37,6 +37,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 EDITOR_ID = "org.jiuzhang.editor"
 TOKEN = "yolo-model-probe-token"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
@@ -152,7 +155,7 @@ def main() -> int:
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
     plugin_dir = plugins_dir / EDITOR_ID
-    shutil.copytree(ROOT / "plugins" / EDITOR_ID, plugin_dir)
+    shutil.copytree(PLUGIN_SOURCE_DIR / EDITOR_ID, plugin_dir)
     pdf_path = work / "scan.pdf"
     pdf_path.write_bytes(scanned_pdf())
 

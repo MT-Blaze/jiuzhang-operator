@@ -21,6 +21,9 @@ from app.core import toml_io  # noqa: E402
 from tests.core_sources import workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 STATIC = ROOT / "static"
 DEMO_ZIP = ROOT / "examples" / "demo_plugin.zip"
 DEMO_PLUGIN_ID = "org.jiuzhang.demo-bank"
@@ -82,7 +85,7 @@ class DefaultRouteTest(unittest.TestCase):
 
     def test_06_assistant_plugin_is_gone(self) -> None:
         # 2026-11-05：常驻 AI 助手整块下架，宿主壳也不得替它留任何欢迎话术。
-        self.assertFalse((ROOT / "plugins" / "org.jiuzhang.chat").exists(),
+        self.assertFalse((PLUGIN_SOURCE_DIR / "org.jiuzhang.chat").exists(),
                          "AI 助手插件必须物理删除")
         host_text = workspace_source()
         self.assertNotIn("系统已为您预置了", host_text, "宿主壳不得替插件说谎")

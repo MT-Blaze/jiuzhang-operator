@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests, question_contract, toml_io, wire  # noqa: E402
 
 SYNC = ROOT / "tools" / "sync_plugin_index.py"
@@ -70,9 +73,9 @@ def main() -> int:
             if extra:
                 fail(f"索引有条目但不在 PLUGIN_DIRS：{', '.join(map(str, extra))}")
             for entry_id, entry in local.items():
-                if manifests.manifest_path(ROOT / "plugins" / entry_id) is None:
+                if manifests.manifest_path(PLUGIN_SOURCE_DIR / entry_id) is None:
                     continue
-                manifest = manifests.load_manifest(ROOT / "plugins" / entry_id)
+                manifest = manifests.load_manifest(PLUGIN_SOURCE_DIR / entry_id)
                 if entry.get("version") != manifest.get("version"):
                     fail(f"{entry_id}: 索引 version={entry.get('version')!r} != 清单 version={manifest.get('version')!r}")
                 if entry_id in mirror_ids and entry.get("description") != manifest.get("description"):

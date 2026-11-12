@@ -25,7 +25,10 @@ from tests.core_sources import bundle_local_assets
 from tools.build_plugin import build_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIR = ROOT / "plugins" / "org.jiuzhang.paper-gen"
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
+PLUGIN_DIR = PLUGIN_SOURCE_DIR / "org.jiuzhang.paper-gen"
 DIST = PLUGIN_DIR / "dist"
 
 

@@ -23,11 +23,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.bank_engine import builder, seeding, service  # noqa: E402
 from app.bank_engine.models import Textbook  # noqa: E402
 from app.core import manifests  # noqa: E402
 
-SCHEMA = ROOT / "plugins" / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
+SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 CONSOLE_DIR = ROOT / "static" / "js" / "dict_console"
 NEW_FILES = [
     ROOT / "static" / "dict_console.html",
@@ -136,9 +139,9 @@ class ConsoleSkeletonTest(unittest.TestCase):
 
     def test_dashboard_plugin_owns_dict_navigation(self) -> None:
         """字典导航是数据看板插件自己的 sidebar.right 面板，只在看板页签激活时入住。"""
-        manifest = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.dashboard")
+        manifest = manifests.load_manifest(PLUGIN_SOURCE_DIR / "org.jiuzhang.dashboard")
         self.assertIn("sidebar.right", manifest["slots"])
-        plugin_dir = ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist"
+        plugin_dir = PLUGIN_SOURCE_DIR / "org.jiuzhang.dashboard" / "dist"
         source = ((plugin_dir / "plugin.js").read_text(encoding="utf-8")
                   + (plugin_dir / "rail.js").read_text(encoding="utf-8"))
         self.assertIn("字典分类", source)
@@ -150,7 +153,7 @@ class ConsoleSkeletonTest(unittest.TestCase):
 
     def test_dashboard_rail_is_three_categories_and_globals(self) -> None:
         """2026-11-11 极简令：右栏与字典控制台同构——全局设置 + 三大主分类。"""
-        plugin_dir = ROOT / "plugins" / "org.jiuzhang.dashboard" / "dist"
+        plugin_dir = PLUGIN_SOURCE_DIR / "org.jiuzhang.dashboard" / "dist"
         source = ((plugin_dir / "plugin.js").read_text(encoding="utf-8")
                   + (plugin_dir / "rail.js").read_text(encoding="utf-8"))
         css = (plugin_dir / "plugin.css").read_text(encoding="utf-8")

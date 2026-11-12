@@ -6,17 +6,18 @@ rem ============================================================
 rem  Jiuzhang Operator - release package builder (Windows)
 rem  Double-click to produce a clean, redistributable zip in dist\.
 rem
+rem  Plugin source lives in the sibling repository, never in this base repo:
+rem    JZO_PLUGIN_SOURCE_DIR  (explicit)
+rem    ../jiuzhang-plugins/src (default probe)
+rem  The staged package still carries plugins/<id>/ because a fresh receiver
+rem  installs them into the default workspace on first launch.
+rem
 rem  Strips secrets and heavy/generated content:
 rem    .env, .venv, venv, data, .git, caches, logs, .system_generated,
-rem    plugins\org.jiuzhang.demo-bank (runtime seed install; source is examples\demo_plugin.zip),
-rem    plugin bodies must never bloat the base package - see plugins.json index
-rem    .scratch-recon-063\ and any .scratch*\ (v0.6.3: dev recon sandbox holding a READ-ONLY COPY of
-rem    the legacy third-party database - clean-room rule 1 forbids shipping it, and it is git-ignored too)
-rem    plugins\org.jiuzhang.bank-engine\bank\v063.db + v063_migrated.db (v0.6.3: structural baseline and
-rem    migration build artifacts; the runtime seed is bank.db only, so 1.7 MB of duplicate dbs stay out)
-rem    plugins\org.jiuzhang.core-bank\ (retired by order #20: only local bank.db / .bak leftovers remain
-rem    on this dev machine; bank-engine is a headless provider now, the old bank-ui is gone,
-rem    and the 456-question seed must never ship)
+rem    root plugins\ (source of truth is the sibling plugin repo),
+rem    any *.db / *.bak / sqlite sidecars (the only db shipped is the
+rem    frozen 0-question seed copied in Step 2b).
+rem
 rem  Keeps everything a receiver needs to run:
 rem    app, static, schemas, plugins, examples, docs, tests,
 rem    start.bat, requirements.txt, README and the guides, .env.example
@@ -36,8 +37,22 @@ set "STAGE=%TEMP%\%RELNAME%"
 set "OUTDIR=%~dp0dist"
 set "ZIP=%OUTDIR%\%RELNAME%.zip"
 
+rem ---------- Step 0b: locate plugin source ----------
+set "PLUGIN_SRC=%JZO_PLUGIN_SOURCE_DIR%"
+if not defined PLUGIN_SRC set "PLUGIN_SRC=%~dp0..\jiuzhang-plugins\src"
+if not exist "%PLUGIN_SRC%\org.jiuzhang.bank-engine\plugin.toml" (
+    echo.
+    echo [ERROR] Plugin source not found: "%PLUGIN_SRC%"
+    echo         Set JZO_PLUGIN_SOURCE_DIR or keep ../jiuzhang-plugins/src next to this repo.
+    echo.
+    pause
+    exit /b 1
+)
+set "PLUGIN_SRC=%PLUGIN_SRC%\"
+
 echo ============================================================
 echo   Building %RELNAME%.zip
+echo   Plugins: %PLUGIN_SRC%
 echo ============================================================
 echo.
 
@@ -45,13 +60,11 @@ rem ---------- Step 1: clean staging ----------
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
 mkdir "%STAGE%"
 
-rem ---------- Step 2: copy tree, excluding sensitive / heavy / generated ----------
-echo [1/3] Copying project files (excluding secrets, venv, data, caches)...
-rem  Bare names exclude that dir anywhere; full paths pin data/dist to the repo
-rem  root only, so a plugin's own dist\ assets are never stripped by mistake.
+rem ---------- Step 2: copy base tree, excluding sensitive / heavy / generated ----------
+echo [1/4] Copying base project files...
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
-  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch-recon-063 .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins\org.jiuzhang.demo-bank" "%~dp0plugins\org.jiuzhang.core-bank" "%~dp0plugins\org.jiuzhang.bank-engine\bank\assets" ^
-  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal *.bak backup_*.zst manifest_*.json "%~dp0examples\template-plugin.zip" "%~dp0plugins\org.jiuzhang.bank-engine\bank\v063_migrated.db" "%~dp0plugins\org.jiuzhang.bank-engine\bank\v063.db" "%~dp0plugins\org.jiuzhang.bank-engine\bank\bank.db"
+  /XD .venv venv .git .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch-recon-063 .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins" ^
+  /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db-shm *.db-wal *.db-journal *.bak backup_*.zst manifest_*.json "%~dp0examples\template-plugin.zip"
 if errorlevel 8 (
     echo.
     echo [ERROR] File copy failed. Nothing was packaged.
@@ -61,21 +74,41 @@ if errorlevel 8 (
     exit /b 1
 )
 
+rem ---------- Step 2a: stage plugin source from the sibling repo ----------
+echo [2/4] Staging plugin source...
+robocopy "%PLUGIN_SRC%." "%STAGE%\plugins" /E /NFL /NDL /NJH /NJS /NP ^
+  /XD .git __pycache__ node_modules .pytest_cache .idea .vscode ^
+  /XF *.log *.pyc *.pyo Thumbs.db .DS_Store *.db *.db-shm *.db-wal *.db-journal *.bak
+if errorlevel 8 (
+    echo.
+    echo [ERROR] Plugin source copy failed. Nothing was packaged.
+    echo.
+    pause
+    exit /b 1
+)
+
 rem ---------- Step 2b: ship a PURE empty seed (ADR-003) ----------
-rem The real 456-question bank.db stays on THIS dev machine only. The redistributable
-rem ships the frozen empty baseline (v063.db, ~155 KB, 0 rows) as bank.db so a fresh
+rem The real 456-question bank.db stays on the dev machine only. The redistributable
+rem ships the frozen empty baseline (data\seed\v063.db, 0 rows) as bank.db so a fresh
 rem receiver opens an empty library and builds it up through the Workspace selector.
-copy /Y "%~dp0plugins\org.jiuzhang.bank-engine\bank\v063.db" "%STAGE%\plugins\org.jiuzhang.bank-engine\bank\bank.db" >nul
+if not exist "%~dp0data\seed\v063.db" (
+    echo.
+    echo [ERROR] Empty seed missing: data\seed\v063.db
+    echo.
+    pause
+    exit /b 1
+)
+copy /Y "%~dp0data\seed\v063.db" "%STAGE%\plugins\org.jiuzhang.bank-engine\bank\bank.db" >nul
 if not exist "%STAGE%\plugins\org.jiuzhang.bank-engine\bank\bank.db" (
     echo.
-    echo [ERROR] Empty seed not staged - v063.db baseline is missing in the source tree.
+    echo [ERROR] Empty seed not staged - bank-engine\bank\ does not exist.
     echo.
     pause
     exit /b 1
 )
 
 rem ---------- Step 3: zip the staging folder (single top-level dir) ----------
-echo [2/3] Compressing...
+echo [3/4] Compressing...
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 if exist "%ZIP%" del "%ZIP%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -LiteralPath '%STAGE%' -DestinationPath '%ZIP%' -Force"
@@ -88,7 +121,7 @@ if not exist "%ZIP%" (
 )
 
 rem ---------- Step 4: clean up staging ----------
-echo [3/3] Cleaning up...
+echo [4/4] Cleaning up...
 rmdir /s /q "%STAGE%"
 
 echo.

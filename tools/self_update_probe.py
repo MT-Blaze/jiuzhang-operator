@@ -53,6 +53,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app import __version__  # noqa: E402
 
 HOST_VERSION = "99.0.0"
@@ -278,7 +281,7 @@ def install_minimal_core_bank(install: Path) -> None:
     发行版就是这样发的：题库是空壳，老师在工作区里自己录。沙箱里少了它，
     工作区的「教材版本」接口会 400，探针的控制台错误判据就会被这条噪声污染。
     """
-    source = ROOT / "plugins" / "org.jiuzhang.bank-engine"
+    source = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine"
     target = install / "plugins" / "org.jiuzhang.bank-engine"
     (target / "bank").mkdir(parents=True, exist_ok=True)
     shutil.copy2(source / "plugin.toml", target / "plugin.toml")

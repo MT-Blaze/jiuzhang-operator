@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import bank, bank_schema, db  # noqa: E402 - 底座模块按路径导入，测试不装包
 
 PROBE_DDL = ("CREATE TABLE one (id INTEGER PRIMARY KEY);", "CREATE TABLE two (id INTEGER);")
@@ -80,7 +83,7 @@ class NewTableDdlShapeTest(unittest.TestCase):
 
     def setUp(self) -> None:
         # 工作区物理隔离后默认落点是 data/workspaces/<id>/plugins；这里钉住仓库里的插件包
-        env = mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(ROOT / "plugins")})
+        env = mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(PLUGIN_SOURCE_DIR)})
         env.start()
         self.addCleanup(env.stop)
 

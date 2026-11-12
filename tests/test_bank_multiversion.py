@@ -27,8 +27,11 @@ from app.core import bank
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
-SEED_DB = ROOT / "plugins" / PLUGIN_ID / "bank" / "bank.db"
+SEED_DB = PLUGIN_SOURCE_DIR / PLUGIN_ID / "bank" / "bank.db"
 SCHEMA_SQL = ROOT / "app" / "legacy" / "bank_schema_v1.sql"
 
 # v0.6.3 的三张被升级器读写的表：topics 没有 textbook_id 列、没有并集不变量 CHECK
@@ -38,7 +41,7 @@ _SAVED_PLUGINS_ENV: str | None = None
 def setUpModule() -> None:
     global _SAVED_PLUGINS_ENV
     _SAVED_PLUGINS_ENV = os.environ.get("JZO_PLUGINS_DIR")
-    os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+    os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
 
 
 def tearDownModule() -> None:

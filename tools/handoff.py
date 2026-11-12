@@ -30,6 +30,9 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 HANDOFF = ROOT / "docs" / "handoff"
 ORDERS = HANDOFF / "orders"
 RECEIPTS = HANDOFF / "receipts"
@@ -116,7 +119,7 @@ def _require_python() -> str:
 def three_checks() -> dict[str, int]:
     """插件侧三项命中数。只扫 ``plugins/*/dist/*.js``，宿主 JS 不在判据内。"""
     counts = {name: 0 for name in THREE_CHECKS}
-    plugins = ROOT / "plugins"
+    plugins = PLUGIN_SOURCE_DIR
     if not plugins.is_dir():
         return counts
     for path in plugins.glob("*/dist/*.js"):

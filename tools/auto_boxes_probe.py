@@ -33,6 +33,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PAPER = ROOT.parent / "testdata" / "20261105" / "模拟1.pdf"
 EDITOR_ID = "org.jiuzhang.editor"
 TOKEN = "auto-boxes-probe-token"
@@ -107,7 +110,7 @@ def main() -> int:
     shots = work / "shots"
     for folder in (data_dir, plugins_dir, shots):
         folder.mkdir(parents=True)
-    shutil.copytree(ROOT / "plugins" / EDITOR_ID, plugins_dir / EDITOR_ID)
+    shutil.copytree(PLUGIN_SOURCE_DIR / EDITOR_ID, plugins_dir / EDITOR_ID)
 
     if not PAPER.is_file():
         print("找不到试卷：" + str(PAPER))

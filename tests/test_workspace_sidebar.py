@@ -20,6 +20,9 @@ from app.core import manifests  # noqa: E402
 from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 JS = workspace_source()
@@ -129,7 +132,7 @@ class SidebarStructureTest(unittest.TestCase):
         右栏只留 sidebar.right 插槽，由当前页签插件自带面板，宿主不代画任何业务控件。"""
         self.assertNotIn("renderPluginPanel", JS)
         self.assertNotIn("wsPluginPanel", JS)
-        editor = manifests.load_manifest(ROOT / "plugins" / "org.jiuzhang.editor")
+        editor = manifests.load_manifest(PLUGIN_SOURCE_DIR / "org.jiuzhang.editor")
         self.assertNotIn("panel", editor.get("ui", {}),
                          "录题清单里不许再留 ui.panel=false")
         self.assertIn("sidebar.right", editor["slots"],

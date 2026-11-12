@@ -38,6 +38,9 @@ from app.core.config import settings, switch_workspace
 from tests.core_sources import settings_source, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 WARNING_TEXT = ("切换工作区需要重启底座以加载该区的插件与配置，"
                 "未保存的草稿会留在原工作区、切回时自动恢复，是否继续？")
 
@@ -66,7 +69,7 @@ class _IsolatedData(unittest.TestCase):
         self._saved_env = {key: os.environ.get(key)
                            for key in ("JZO_DATA_DIR", "JZO_PLUGINS_DIR", "JZO_RESTART_DISABLED")}
         os.environ["JZO_DATA_DIR"] = str(self.data)
-        os.environ["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         self.addCleanup(self._restore)
 
     def _restore(self) -> None:

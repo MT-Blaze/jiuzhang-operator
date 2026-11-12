@@ -25,6 +25,9 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 TOKEN = "contract-test-token"
 
 
@@ -41,7 +44,7 @@ class QuestionsApiContractTest(unittest.TestCase):
         cls.port = _free_port()
         env = os.environ.copy()
         env["JZO_DATA_DIR"] = cls.tmp.name
-        env["JZO_PLUGINS_DIR"] = str(ROOT / "plugins")
+        env["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         env["JZO_LOCAL_TOKEN"] = TOKEN
         env["JZO_RESTART_DISABLED"] = "1"
         cls.process = subprocess.Popen(

@@ -36,6 +36,9 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+from app.core.config import plugin_source_root  # noqa: E402
+
+PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.handout"
 
 
@@ -140,7 +143,7 @@ def main() -> int:
     data_dir.mkdir(parents=True)
     plugins_dir.mkdir(parents=True)
     shots.mkdir(parents=True)
-    shutil.copytree(ROOT / "plugins" / PLUGIN_ID, plugins_dir / PLUGIN_ID)
+    shutil.copytree(PLUGIN_SOURCE_DIR / PLUGIN_ID, plugins_dir / PLUGIN_ID)
 
     port = free_port()
     base = f"http://127.0.0.1:{port}"
