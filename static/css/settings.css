@@ -640,11 +640,6 @@ html[data-embedded="1"] .st-main {
   color: var(--muted);
 }
 
-.st-backup-when {
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .st-restore-picker,
 .st-restore-preview,
 .st-restore-done {

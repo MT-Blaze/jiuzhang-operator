@@ -45,7 +45,7 @@ LEGACY_OVER_CEILING = {
     "static/js/stage.js": 775,
     "app/core/pending_pool.py": 773,
     "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
-    "static/css/settings.css": 748,
+    "static/css/settings.css": 743,
     "plugins/org.jiuzhang.editor/dist/layout.css": 746,
     "app/core/plugin_update.py": 742,
     "app/core/plugins.py": 729,

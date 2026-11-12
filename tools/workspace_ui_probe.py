@@ -61,9 +61,13 @@ STATE_JS = """
     name: (r.querySelector('.ws-plugin-item-name') || {}).textContent || ''
   })) : [];
   const dock = document.getElementById('wsDockLog');
+  const page = document.querySelector('.ws-page');
   return {
     sidebarHead: rect('.ws-sidebar-head'),
     contextHead: rect('.ws-context-head'),
+    ctxOccupant: (window.JzoContextPanel && typeof window.JzoContextPanel.activeId === 'function'
+      && window.JzoContextPanel.activeId()) || '',
+    ctxMode: page ? page.getAttribute('data-ctx') : null,
     bankSelect: !!document.getElementById('wsBankSelect'),
     bankNew: !!document.getElementById('wsBankNew'),
     modelBtn: !!document.getElementById('wsModelBtn'),
@@ -135,12 +139,17 @@ def run(tag: str) -> dict:
             report["notes"]["initial"] = state
             snap("10-layout")
 
-            # 阶段一大瘦身后：右栏没有插件占用时默认折叠，头部不占高；
-            # 左栏头部仍是固定的 48px，两栏顶线起点一致。
-            check("右栏无插件占用时默认折叠（头部不占高）",
+            # 右栏折叠跟随住户有无：默认启动页数据看板声明了 sidebar.right，
+            # 有权入住就展开（头部 48px）；切到无住户的页签时必须收回 0 高。
+            # 「无住户一定折叠」的机制本身由 tests/test_workspace_fold_state.py 锁死。
+            occupied = bool(state["ctxOccupant"])
+            check("右栏折叠跟随住户有无（有住户展开 / 无住户折叠）",
                   state["sidebarHead"] and state["sidebarHead"]["height"] == 48
-                  and state["contextHead"] and state["contextHead"]["height"] == 0,
-                  wire.dumps([state["sidebarHead"], state["contextHead"]]))
+                  and state["contextHead"] and state["contextHead"]["height"] == (48 if occupied else 0)
+                  and state["ctxMode"] == ("open" if occupied else "hidden"),
+                  wire.dumps({"occupant": state["ctxOccupant"], "mode": state["ctxMode"],
+                              "sidebarHead": state["sidebarHead"],
+                              "contextHead": state["contextHead"]}, ensure_ascii=False))
             check("左右栏头部顶线对齐", state["sidebarHead"] and state["contextHead"]
                   and state["sidebarHead"]["top"] == state["contextHead"]["top"], "")
             check("左栏题库下拉已移入设置", not state["bankSelect"] and not state["bankNew"], "")

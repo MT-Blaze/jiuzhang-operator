@@ -313,41 +313,6 @@
   color: var(--down);
 }
 
-/* 表单字段（工作台内联使用；弹窗样式随 Provider 弹窗一并退役） */
-
-.ws-field {
-  display: block;
-  margin-bottom: 12px;
-}
-
-.ws-field span {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 0.8rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.ws-field input,
-.ws-workspace-select {
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--paper-deep);
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 0.88rem;
-}
-
-.ws-field input:focus,
-.ws-workspace-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
 /* 拖拽安装遮罩 */
 .ws-drop-overlay {
   position: fixed;

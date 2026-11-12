@@ -215,8 +215,6 @@ html.dc-standalone { scrollbar-gutter: stable; }
   border-radius: 12px;
   background: var(--card);
 }
-.dc-block-title { margin: 0 0 6px; font-family: var(--serif); font-size: 1rem; }
-.dc-block-hint { margin: 0 0 10px; font-size: 0.78rem; color: var(--muted); }
 .dc-field { margin-bottom: 10px; }
 .dc-field label { display: block; margin-bottom: 4px; font-size: 0.84rem; color: var(--muted); }
 .dc-field select {
@@ -233,10 +231,6 @@ html.dc-standalone { scrollbar-gutter: stable; }
 .dc-field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dc-field select:disabled { opacity: 0.6; }
 .dc-globals-state { margin: 4px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
-
-/* ---------- 操作区 ---------- */
-.dc-ops { display: flex; flex-direction: column; gap: 8px; }
-.dc-ops-state { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
 
 /* ---------- 对话框（焦点陷阱 + Esc + 焦点归位由 dialog.js 负责） ---------- */
 .dc-dialog-backdrop {
