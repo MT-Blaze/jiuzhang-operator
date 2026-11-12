@@ -40,7 +40,7 @@
     var pointsCache = {};
     var directionsCache = {};
     var chapterReloaders = {};
-    function setStatus(text) { state.textContent = text; }
+    function setStatus(text) { state.textContent = text; state.title = text; }
     function dictController(url, reload) { return { url: url, ctx: ctx, reload: reload, setStatus: setStatus }; }
     function editName(url, anchor, row) {
       window.DcRowOps.editCell({ url: url, ctx: ctx }, anchor, row, { key: "name", label: "名称" });

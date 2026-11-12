@@ -11,12 +11,17 @@
 }
 .dkl-hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
 .dkl-count { margin-left: auto; font-size: 0.76rem; color: var(--faint); }
+/* 状态条钉死一行高：加载中 / 已清空不再把下面的整棵树上下顶动 5px。
+ * 文案过长用省略号收尾，全文挂在 title 上，屏幕阅读器照读 aria-live 全量。 */
 .dkl-state {
   margin: 0 0 4px;
-  min-height: 1.2em;
+  height: 1.6em;
+  line-height: 1.6;
   font-size: 0.78rem;
   color: var(--muted);
-  white-space: pre-line;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- 树骨架：左对齐 + 细灰树线，不做物理缩进 ---------- */

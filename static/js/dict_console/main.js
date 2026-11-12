@@ -46,6 +46,8 @@
     var params = new URLSearchParams(window.location.search);
     var embedded = params.get("embedded") === "1";
     if (embedded) document.body.classList.add("dc-embedded");
+    // 独立页交给文档滚动，靠 dict_console.css 的 html.dc-standalone 恒留滚动槽
+    document.documentElement.classList.toggle("dc-standalone", !embedded);
 
     var subMemory = readSubMemory();
     var subTabs = {};   // 分类 key -> 二级标签句柄，供内嵌模式原地换表

@@ -8,6 +8,10 @@
   flex-direction: column;
 }
 
+/* 独立页由文档本身滚动：滚动槽同样恒留，展开 / 折叠内容不许挤动页面宽度。
+ * 内嵌模式（body.dc-embedded）滚动交给 .dc-panels，文档自身不留槽，故只认这个类。 */
+html.dc-standalone { scrollbar-gutter: stable; }
+
 /* ---------- 顶栏 ---------- */
 .dc-topbar {
   flex: none;
@@ -161,8 +165,10 @@
 .dc-tab-close:hover { background: var(--accent-soft); color: var(--accent); }
 .dc-tab-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* ---------- 画布面板 ---------- */
-.dc-panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* ---------- 画布面板 ----------
+ * 滚动槽恒留（scrollbar-gutter: stable）：展开知识点树时内容变长，
+ * 滚动条出现的那一瞬不再横向吃掉 15px，整页宽度纹丝不动。 */
+.dc-panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .dc-panel { padding: 8px 0 16px; }
 .dc-panel[hidden] { display: none; }
 .dc-panel-title { margin: 0 0 4px; font-family: var(--serif); font-size: 1.15rem; }
