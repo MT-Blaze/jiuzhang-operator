@@ -266,8 +266,8 @@ def run(tag: str) -> dict:
               all(restored["vars"][k] == dragged["vars"][k] for k in ("side", "context", "dock")),
               f"{wire.dumps(dragged['vars'])} → {wire.dumps(restored['vars'])}")
         dock_lines = page.evaluate(
-            """() => Array.from(document.querySelectorAll('#wsDockLog li'))
-                    .map(n => n.textContent.replace(/\\s+/g, ' ').trim())""")
+            """() => (window.JzoDockLedger ? window.JzoDockLedger() : [])
+                    .map(n => n.line.replace(/\\s+/g, ' ').trim())""")
         check("还原不刷底栏（by=restore 静默）",
               not any("布局已调整" in line for line in dock_lines),
               "底栏 %d 行：%s" % (len(dock_lines), wire.dumps(dock_lines, ensure_ascii=False)[:300]))

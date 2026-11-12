@@ -45,8 +45,10 @@
       if (bus && typeof bus.emit === "function") bus.emit(topic, payload, { source: "stage" });
     }
 
-    function dock(text, topic) {
-      emit("region.dock", { text: text, topic: topic || "" });
+    function dock(text, topic, level) {
+      var payload = { text: text, topic: topic || "" };
+      if (level) payload.level = level;
+      emit("region.dock", payload);
     }
 
     /** 插件想发这个主题？true = 越权，调用方必须丢弃并记一笔。 */

@@ -22,15 +22,53 @@
   var DOCK_VIEWS = window.JzoCoreLog.DOCK_VIEWS;
   var dockCore = window.JzoCoreLog.create({
     el: dockLog,
-    entries: function () { return wsState.dockEntries; },
+    entries: function () { return entriesForView(); },
     view: function () { return wsState.dockView; },
     scrollEl: function () {
       return dockOpen() ? document.getElementById("wsDockBody") : null;
     }
   });
 
-  // 三级分类只按事件主题与关键词判，不做内容猜谜：
-  // error 进【报错诊断】，宿主生命周期进【系统终端】，其余留在【运行日志】。
+  // 【运行日志】与【系统终端】各记一本账：
+  //   系统底座主题（stage./region./layout./plugin./system./workspace./provider.）只进系统终端；
+  //   其余业务主题（dict./bank./editor./prefs./agent./basket./host. 等）只进运行日志。
+  // 整块下架：恢复成单一账本，删掉本段与 core_log.js 里的 scope 判定即可。
+  var SYSTEM_TOPIC_RE = /^(stage|region|layout|plugin|system|workspace|provider)\./i;
+  var LEVELS = ["note", "info", "ok", "warn", "error", "system"];
+
+  function isSystemTopic(topic) {
+    return SYSTEM_TOPIC_RE.test(String(topic || ""));
+  }
+
+  function normalizeLevel(raw) {
+    var kind = String(raw == null ? "" : raw).toLowerCase();
+    if (kind === "warning") return "warn";
+    if (kind === "success") return "ok";
+    if (kind === "fatal") return "error";
+    return LEVELS.indexOf(kind) >= 0 ? kind : "";
+  }
+
+  /** 当前视图该读哪本账：报错诊断把两本账里的 warn/error 合起来按时间排。 */
+  function allEntries() {
+    return wsState.sysEntries.concat(wsState.runtimeEntries).sort(function (a, b) {
+      return a.at - b.at;
+    });
+  }
+
+  function entriesForView() {
+    var view = wsState.dockView;
+    if (view === "terminal") return wsState.sysEntries;
+    if (view === "error") return allEntries();
+    return wsState.runtimeEntries;
+  }
+
+  function clearDock() {
+    wsState.sysEntries = [];
+    wsState.runtimeEntries = [];
+    renderDock();
+  }
+
+  // 只判级别与语气，不做内容猜谜；落哪本账由 route 决定，不靠 level 兼任。
   function dockLevel(topic, text) {
     var name = String(topic || "");
     // 「记一笔」级别：只是流水，不惊动人。显式声明的 note 优先于关键词判定。
@@ -165,15 +203,22 @@
     });
   }
 
-  function dockLine(text, topic, level, detail) {
+  /**
+   * 记一行账。scope 由调用方按「事件从哪来」决定：
+   *   system —— 底座/内核生命周期，进【系统终端】；
+   *   runtime —— 真实业务操作，进【运行日志】。
+   * 不传 scope 时才退回按主题名判，兼容宿主里直接调 dockLine 的老调用点。
+   */
+  function dockLine(text, topic, level, detail, scope) {
     var full = String(text == null ? "" : text);
     var body = full.slice(0, 400);
     var name = String(topic || "");
     var at = stamp();
-    var kind = String(level || "");
-    if (kind === "warning") kind = "warn";
-    if (["note", "warn", "error", "system", "info"].indexOf(kind) < 0) kind = "";
-    if (!kind) kind = dockLevel(name, full);
+    var kind = normalizeLevel(level) || dockLevel(name, full);
+    if (!kind) kind = "info";
+    var target = scope === "system" || scope === "runtime"
+      ? scope
+      : (kind === "system" || isSystemTopic(name) ? "system" : "runtime");
     // 完整现场独立存放：运行日志只显示摘要，诊断页才铺原文。
     var detailText = String(detail == null ? "" : detail).slice(0, 20000);
     if (!detailText && (kind === "error" || kind === "warn")) detailText = full.slice(0, 20000);
@@ -181,52 +226,75 @@
     var line = kind === "note"
       ? "[" + at.slice(0, 5) + "] " + body
       : at + (name ? " [" + name + "] " : " ") + body;
-    wsState.dockEntries.push({
+    var ledger = target === "system" ? wsState.sysEntries : wsState.runtimeEntries;
+    ledger.push({
       time: at,
+      at: Date.now(),
       topic: name,
       text: body,
       detail: detailText,
       level: kind,
+      scope: target,
       line: line,
     });
-    while (wsState.dockEntries.length > DOCK_MAX) wsState.dockEntries.shift();
+    while (ledger.length > DOCK_MAX) ledger.shift();
     renderDock();
   }
 
   function wireDock() {
     if (!window.JzoBus || typeof window.JzoBus.on !== "function") return;
+    // 两条独立订阅、两本账：region.dock 按语义来源分流，layout.changed 只进系统终端。
     window.JzoBus.on("region.dock", function (event) {
       var payload = event.payload || {};
       // tone 是老口径、level 是新口径：两者都收，warn/error 一律进【报错诊断】。
-      var tone = String(payload.level || payload.tone || "");
+      var tone = normalizeLevel(payload.level || payload.tone);
       var detail = typeof payload.detail === "string" ? payload.detail
         : (typeof payload.detail_text === "string" ? payload.detail_text : "");
-      dockLine(payload.text || "（空消息）", payload.topic || event.topic, tone, detail);
+      // 插件经宿主桥投来的消息带 pluginId：那是插件业务日志，永远进运行日志。
+      var fromPlugin = Boolean(payload.pluginId);
+      var semantic = String(payload.topic || "");
+      var route = payload.scope === "system" || payload.scope === "runtime"
+        ? payload.scope
+        : (fromPlugin ? "runtime"
+          : (tone === "system" || isSystemTopic(semantic) || (!semantic && isSystemTopic(event.topic)))
+            ? "system" : "runtime");
+      dockLine(payload.text || "（空消息）", semantic || (fromPlugin ? "" : event.topic),
+        tone, detail, route);
     });
     window.JzoBus.on("layout.changed", function (event) {
       var payload = event.payload || {};
       if (payload.by === "restore") return;   // 刷新恢复不必刷屏
       var sizes = payload.sizes || {};
       dockLine("布局已调整（" + (payload.by || "drag") + "）：左 " + sizes.side +
-        " / 右 " + sizes.context + " / 下 " + sizes.dock, "layout.changed");
+        " / 右 " + sizes.context + " / 下 " + sizes.dock, "layout.changed", "", "", "system");
     });
     if (dockClearBtn) {
-      dockClearBtn.addEventListener("click", function () {
-        wsState.dockEntries = [];
-        renderDock();
-      });
+      dockClearBtn.addEventListener("click", clearDock);
     }
   }
+
+    // 只读台账快照：探针与诊断一次取全两本账；页面渲染仍按视图各取一本。
+    window.JzoDockLedger = function () {
+      return allEntries().map(function (entry) {
+        return {
+          time: entry.time, at: entry.at, topic: entry.topic, text: entry.text,
+          level: entry.level, scope: entry.scope, line: entry.line,
+        };
+      });
+    };
 
     return {
       DOCK_MAX: DOCK_MAX,
       DOCK_VIEWS: DOCK_VIEWS,
+      clearDock: clearDock,
       copyPlainText: copyPlainText,
       dockCore: dockCore,
       dockLevel: dockLevel,
       dockLine: dockLine,
+      entriesForView: entriesForView,
       entryVisible: entryVisible,
       fallbackCopy: fallbackCopy,
+      isSystemTopic: isSystemTopic,
       renderDock: renderDock,
       setDockView: setDockView,
       stamp: stamp,

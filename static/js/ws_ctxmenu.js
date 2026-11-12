@@ -14,6 +14,7 @@
     var copyPlainText = deps.copyPlainText;
     var dockLine = deps.dockLine;
     var dockLog = deps.dockLog;
+    var entriesForView = deps.entriesForView;
     var entryVisible = deps.entryVisible;
     var findInstalled = deps.findInstalled;
     var keyPluginId = deps.keyPluginId;
@@ -168,7 +169,7 @@
     if (!dockLog || !window.JzoMenu) return;
     dockLog.addEventListener("contextmenu", function (event) {
       var item = event.target && event.target.closest ? event.target.closest(".ws-dock-item") : null;
-      var lines = wsState.dockEntries.filter(entryVisible).map(function (row) { return row.line; });
+      var lines = entriesForView().filter(entryVisible).map(function (row) { return row.line; });
       var items = [];
       if (item) {
         items.push({

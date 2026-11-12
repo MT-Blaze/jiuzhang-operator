@@ -31,7 +31,9 @@
     // 右栏主权：当前画布页签绑定的插件 id。
     // 它若声明了 sidebar.right 就接管右栏，否则右栏留空（默认折叠）。
     activeCanvasPluginId: "",
-    dockEntries: [],
+    // 输出日志区两本账：业务操作进运行日志，底座/内核事件进系统终端，互不串台。
+    runtimeEntries: [],
+    sysEntries: [],
     dockView: "log",
     // 底座被改坏时仍可直连 /settings 强制进同一套面板（防变砖兜底，见军令例外条款）。
     consoleFrameLoaded: false,
@@ -73,6 +75,7 @@
   });
   var copyPlainText = wsDock.copyPlainText;
   var dockLine = wsDock.dockLine;
+  var entriesForView = wsDock.entriesForView;
   var entryVisible = wsDock.entryVisible;
   var wireDock = wsDock.wireDock;
   var wsCtxmenu = window.JzoWsCtxmenu.create({
@@ -85,6 +88,7 @@
     copyPlainText: copyPlainText,
     dockLine: dockLine,
     dockLog: dockLog,
+    entriesForView: entriesForView,
     entryVisible: entryVisible,
     // 循环引用：findInstalled 归更下面的 wsSidebar，本块排得靠前，只能等它就位后再取。
     findInstalled: function () { return wsSidebar.findInstalled.apply(wsSidebar, arguments); },
@@ -164,7 +168,12 @@
   function addBubble(role, text, opts) {
     if (role !== "sys") return null;
     var line = clampText(text, 300);
-    if (line) dockLine(line, opts && opts.tone === "warn" ? "host.warn" : "host.notice");
+    if (!line) return null;
+    var warn = Boolean(opts && opts.tone === "warn");
+    // 启动/兜底这类底座自己的动静归【系统终端】；老师亲手触发的插件操作留在【运行日志】。
+    var system = Boolean(opts && opts.scope === "system");
+    dockLine(line, system ? "system.notice" : (warn ? "host.warn" : "host.notice"),
+      warn ? "warn" : "", "", system ? "system" : "runtime");
     return null;
   }
 
@@ -212,7 +221,7 @@
       .then(function (body) {
         if (!body) return;
         if (body.fallback_reason) {
-          addBubble("sys", String(body.fallback_reason), { tone: "warn" });
+          addBubble("sys", String(body.fallback_reason), { tone: "warn", scope: "system" });
         }
         // 老师已经亲手点了左栏（或画布已有主）：启动页不再抢画布。
         if (wsState.userPickedPlugin || wsState.activePlugin) return;
@@ -462,7 +471,7 @@
   wireStageSovereignty();
   setStage("工作台");
   markActiveEntry(null);
-  addBubble("sys", "九章算子工作台已就绪 · 插件按需占用中栏与右栏");
+  addBubble("sys", "九章算子工作台已就绪 · 插件按需占用中栏与右栏", { scope: "system" });
 
   loadPlugins()
     .then(function (plugins) {

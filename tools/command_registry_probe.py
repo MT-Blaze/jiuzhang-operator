@@ -90,7 +90,7 @@ JS_STATE = """
 () => ({
   labels: Array.from(document.querySelectorAll('#wsTabs .ws-tab-label'))
     .map(el => el.textContent.trim()),
-  dock: Array.from(document.querySelectorAll('#wsDockLog li')).map(li => li.textContent)
+  dock: (window.JzoDockLedger ? window.JzoDockLedger() : []).map(e => e.line)
 })
 """
 

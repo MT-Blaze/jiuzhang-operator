@@ -73,6 +73,17 @@
   color: var(--faint);
 }
 
+/* 运行日志里的真实业务回执：成功绿、失败红，一眼分得清做成没做成。 */
+.ws-dock-item[data-level="ok"] .ws-dock-text,
+.ws-dock-item[data-level="ok"] .ws-dock-topic {
+  color: var(--ok);
+}
+
+.ws-dock-item[data-level="error"] .ws-dock-text,
+.ws-dock-item[data-level="error"] .ws-dock-topic {
+  color: var(--down);
+}
+
 /* 「出了岔子但没挡住老师」：一句话提醒，颜色比正文重一点，比报错轻。
    后台切题识别有出入就走这一档——只留一行日志，绝不弹红窗。 */
 .ws-dock-item[data-level="warn"] .ws-dock-text {
@@ -155,7 +166,7 @@
   font-weight: 600;
 }
 
-/* 系统终端：等宽、整行不截断，像看日志文件一样看宿主事件。 */
+/* 系统终端：等宽、整行不截断，像看日志文件一样看宿主事件；整屏灰字，与业务日志分家。 */
 .ws-dock-log[data-view="terminal"] {
   font-family: ui-monospace, Consolas, "Courier New", monospace;
   font-size: 0.74rem;
@@ -166,7 +177,9 @@
   word-break: break-all;
 }
 
-.ws-dock-log[data-view="terminal"] .ws-dock-topic {
+.ws-dock-log[data-view="terminal"] .ws-dock-time,
+.ws-dock-log[data-view="terminal"] .ws-dock-topic,
+.ws-dock-log[data-view="terminal"] .ws-dock-text {
   color: var(--muted);
 }
 

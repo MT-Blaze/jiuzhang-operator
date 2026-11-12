@@ -1528,7 +1528,7 @@ class EditorReviewDeskTest(unittest.TestCase):
         self.assertIn('kind === "note"', dock_line)
         self.assertIn('at.slice(0, 5)', dock_line)
         stage = stage_source()
-        self.assertIn('"note", "error", "info", "system", "warn"', stage,
+        self.assertIn('"note", "ok", "error", "info", "system", "warn"', stage,
                       "插件自报的 warn 级别必须在宿主白名单里")
 
 

@@ -8,19 +8,19 @@
   "use strict";
 
   var DOCK_EMPTY = {
-    log: "暂无输出。插件与面板事件会出现在这里。",
+    log: "暂无业务日志。字典、题库等真实操作记录会出现在这里。",
     error: "没有报错。插件与底座的事件流一切正常。",
     terminal: "暂无系统事件。"
   };
   var DOCK_VIEWS = { log: true, error: true, terminal: true };
 
   function create(ctx) {
-    /** 「出了岔子」与「报错」同住诊断页：warn 只是语气轻，但不许在诊断里缺席。 */
+    /** 三个视图各认各的账：报错诊断收两本账里的 warn/error，运行日志只认业务账。 */
     function entryVisible(entry) {
       var dockView = ctx.view();
       if (dockView === "error") return entry.level === "error" || entry.level === "warn";
-      if (dockView === "terminal") return entry.level === "system";
-      return true;
+      if (dockView === "terminal") return entry.scope === "system";
+      return entry.scope === "runtime";
     }
 
     function renderDock() {

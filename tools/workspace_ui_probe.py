@@ -26,6 +26,11 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.core import toml_io, wire  # noqa: E402
+
 PORT = 8793
 BASE = f"http://127.0.0.1:{PORT}/workspace"
 
@@ -148,13 +153,48 @@ def run(tag: str) -> dict:
             check("底栏三视图就位", state["dockTabs"] == ["运行日志", "报错诊断", "系统终端"],
                   wire.dumps(state["dockTabs"], ensure_ascii=False))
 
+            # 首屏：系统事件（就绪、唤醒、挂载）只准落在系统终端，运行日志不许串台。
+            first_log = page.evaluate("""() => {
+              const rows = Array.from(document.querySelectorAll('#wsDockLog .ws-dock-item'));
+              return { view: document.getElementById('wsDockLog').getAttribute('data-view'),
+                       lines: rows.map(r => r.textContent) };
+            }""")
+            report["notes"]["first_log"] = first_log
+            check("首屏运行日志不含 stage./plugin. 系统事件",
+                  all('stage.' not in line and 'plugin.' not in line for line in first_log["lines"]),
+                  wire.dumps(first_log["lines"], ensure_ascii=False)[:300])
+
             # ---------- 报错诊断：悬停提示、双击原位变字 ----------
             page.evaluate("""() => {
               window.JzoBus.emit('region.dock', {
                 text: '插件“演示”激活失败：入口加载失败', topic: 'plugin.error'
               });
-              window.JzoBus.emit('region.dock', { text: '普通运行日志一行', topic: 'plugin.mounted' });
+              window.JzoBus.emit('region.dock', {
+                text: '字典新增成功：dict_subjects', topic: 'dict.post', level: 'ok'
+              });
+              window.JzoBus.emit('region.dock', {
+                text: '唤醒插件“演示”…', topic: 'stage.tab.wake'
+              });
             }""")
+            page.click('#wsDockTabLog')
+            page.wait_for_timeout(150)
+            log_state = page.evaluate("""() => {
+              const rows = Array.from(document.querySelectorAll('#wsDockLog .ws-dock-item'));
+              return {
+                view: document.getElementById('wsDockLog').getAttribute('data-view'),
+                lines: rows.map(r => r.textContent),
+                levels: rows.map(r => r.getAttribute('data-level'))
+              };
+            }""")
+            report["notes"]["runtime_log"] = log_state
+            check("运行日志只收业务操作（字典新增成功）",
+                  log_state["view"] == "log"
+                  and any("字典新增成功" in line for line in log_state["lines"])
+                  and all("stage.tab.wake" not in line for line in log_state["lines"]),
+                  wire.dumps(log_state, ensure_ascii=False)[:300])
+            check("运行日志成功行标记为 ok（绿色）", "ok" in log_state["levels"],
+                  wire.dumps(log_state["levels"], ensure_ascii=False))
+
             page.click('#wsDockTabError')
             page.wait_for_timeout(200)
             error_state = page.evaluate("""() => {
@@ -247,9 +287,17 @@ def run(tag: str) -> dict:
                   wire.dumps(after_fallback, ensure_ascii=False))
             page.click('#wsDockTabTerminal')
             page.wait_for_timeout(150)
-            terminal_rows = page.evaluate(
-                "() => document.querySelectorAll('#wsDockLog .ws-dock-item').length")
-            check("系统终端显示宿主生命周期事件", terminal_rows >= 1, f"rows={terminal_rows}")
+            terminal_state = page.evaluate("""() => {
+              const rows = Array.from(document.querySelectorAll('#wsDockLog .ws-dock-item'));
+              return {
+                lines: rows.map(r => r.textContent),
+                grey: rows[0] ? getComputedStyle(rows[0].querySelector('.ws-dock-text')).color : ''
+              };
+            }""")
+            report["notes"]["terminal"] = terminal_state
+            check("系统终端显示 stage.tab.wake 等底座事件",
+                  any("stage.tab.wake" in line for line in terminal_state["lines"]),
+                  wire.dumps(terminal_state["lines"], ensure_ascii=False)[:300])
             page.click('#wsDockTabLog')
 
             # ---------- 原生拖拽排序 + 刷新保持 ----------

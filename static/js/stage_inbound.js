@@ -97,8 +97,9 @@
         if (tone === "warn" || tone === "warning") level = "warn";
         else if (tone === "error" || tone === "fatal") level = "error";
         else if (tone === "note") level = "note";
+        else if (tone === "ok" || tone === "success") level = "ok";
       }
-      if (["note", "error", "info", "system", "warn"].indexOf(level) < 0) level = "";
+      if (["note", "ok", "error", "info", "system", "warn"].indexOf(level) < 0) level = "";
       // 插件自报的主题名只作归类用：长度卡死，防止插件拿它夹带长文本。
       var dockTopic = String(message.payload && message.payload.topic || "").slice(0, 60);
       // 错误现场（Response 全文 / 堆栈）单独放行：报错诊断要打完整，不许只剩一句干话。

@@ -42,7 +42,7 @@ JS_STATE = """
 () => {
   const frame = document.querySelector('.ws-plugin-frame');
   const panel = document.querySelector('.ws-tab-panel[data-tab="plugin:%ID%"]');
-  const dock = document.getElementById('wsDockLog');
+  const dockLines = window.JzoDockLedger ? window.JzoDockLedger().map(e => e.line) : [];
   return {
     tabs: Array.from(document.querySelectorAll('#wsTabs .ws-tab')).map(t => t.getAttribute('data-tab')),
     sidebarHasTemplate: Array.from(document.querySelectorAll('#wsPluginList .ws-plugin-item'))
@@ -51,7 +51,7 @@ JS_STATE = """
     frameSrc: frame ? (frame.getAttribute('src') || '').slice(0, 90) : null,
     panelError: panel ? ((panel.querySelector('.ws-frame-error') || {}).textContent || '') : '无页签面板',
     panelNote: panel ? ((panel.querySelector('.ws-frame-note') || {}).textContent || '') : '',
-    dockText: dock ? dock.textContent.replace(/\\s+/g, ' ').slice(-600) : ''
+    dockText: dockLines.join(' ').slice(-600)
   };
 }
 """.replace("%ID%", PLUGIN_ID)

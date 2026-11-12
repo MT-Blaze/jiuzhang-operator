@@ -199,8 +199,8 @@ def run(tag: str) -> dict:
 
             dock_text = page.evaluate("""
             () => {
-              const dock = document.getElementById('wsDockLog');
-              return dock ? dock.textContent.replace(/\\s+/g, ' ') : '';
+              const lines = (window.JzoDockLedger ? window.JzoDockLedger() : []).map(e => e.line);
+              return lines.join(' ').replace(/\\s+/g, ' ');
             }
             """)
             check("底栏记 plugin.mounted / 已就绪",
@@ -383,8 +383,8 @@ def run(tag: str) -> dict:
                   f"plugin:{EDITOR_ID}" in tabs_after, wire.dumps(tabs_after))
             dock_after = page.evaluate("""
             () => {
-              const dock = document.getElementById('wsDockLog');
-              return dock ? dock.textContent.replace(/\\s+/g, ' ') : '';
+              const lines = (window.JzoDockLedger ? window.JzoDockLedger() : []).map(e => e.line);
+              return lines.join(' ').replace(/\\s+/g, ' ');
             }
             """)
             check("底栏记了跳转/未授权丢弃不得出现",

@@ -274,7 +274,7 @@
   });
   var relayAgent = stageRelayAgent.relayAgent;
   var stageDict = window.JzoStageDict.create({
-    dictView: window.JzoStageDictView.create({ dock: dock }),
+    dictView: window.JzoStageDictView.create({ dock: dock, bizDock: dock }),
     canvasTab: function () { return findTab(stageState.activeKey); },
     fetchJson: fetchJson,
     replyHost: replyHost,
@@ -306,8 +306,8 @@
     busCore.emit(topic, payload);
   }
 
-  function dock(text, topic) {
-    busCore.dock(text, topic);
+  function dock(text, topic, level) {
+    busCore.dock(text, topic, level);
   }
 
   function findTab(key) {

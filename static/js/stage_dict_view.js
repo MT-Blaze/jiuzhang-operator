@@ -11,6 +11,23 @@
 
   function create(deps) {
     var dock = deps.dock;
+    var bizDock = deps.bizDock || dock;
+    var frames = [];
+
+    // 字典控制台的写操作回执（新增/改名/删除成功或失败）经 postMessage 递回宿主：
+    // 只认本模块亲手造的帧，业务日志进【运行日志】，底座事件不从这里过。
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("message", function (event) {
+        if (event.origin !== window.location.origin) return;
+        var data = event.data;
+        if (!data || data.jzo !== "dict.ops") return;
+        var known = frames.some(function (view) {
+          return view.frame && view.frame.isConnected && view.frame.contentWindow === event.source;
+        });
+        if (!known) return;
+        bizDock(String(data.text || ""), String(data.topic || "dict.api"), String(data.level || ""));
+      });
+    }
 
     /** 休眠会清空面板，旧层随之脱离文档；账必须跟着销，不能拿死节点当活层。 */
     function viewOf(tab) {
@@ -36,6 +53,7 @@
 
       var view = { layer: layer, frame: frame, token: "", cat: "", sub: "" };
       tab.dictView = view;
+      frames.push(view);
       return view;
     }
 

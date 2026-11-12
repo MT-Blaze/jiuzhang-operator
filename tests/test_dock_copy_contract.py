@@ -19,6 +19,7 @@ from pathlib import Path
 from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+JS_DIR = ROOT / "static" / "js"
 CSS = workspace_css()
 JS = workspace_source()
 
@@ -140,21 +141,60 @@ class InPlaceFeedbackTest(unittest.TestCase):
 
 
 class DockRoutingTest(unittest.TestCase):
-    """军令 #28：普通流水进【运行日志】，warn/error 必须落到【报错诊断】并带完整现场。"""
+    """底栏分流契约：系统底座事件只进【系统终端】，业务操作只进【运行日志】。"""
 
     def test_01_error_view_takes_warn_and_error(self) -> None:
         block = function_body(JS, "  function entryVisible(entry)")
         self.assertIn('if (dockView === "error") return entry.level === "error" || entry.level === "warn";',
                       block)
-        self.assertIn('if (dockView === "terminal") return entry.level === "system";', block)
+        self.assertIn('if (dockView === "terminal") return entry.scope === "system";', block)
+        self.assertIn('return entry.scope === "runtime";', block,
+                      "运行日志必须彻底屏蔽系统底座事件")
 
-    def test_02_bare_not_found_is_recognised_as_error(self) -> None:
+    def test_02_system_topics_are_the_base_families(self) -> None:
+        block = JS[JS.index("  var SYSTEM_TOPIC_RE"):JS.index("  function isSystemTopic")]
+        for prefix in ("stage", "region", "layout", "plugin", "system", "workspace", "provider"):
+            self.assertIn(prefix, block, f"系统终端口径漏了 {prefix}.*")
+        self.assertIn('wsState.sysEntries', JS)
+        self.assertIn('wsState.runtimeEntries', JS)
+
+    def test_03_plugin_business_logs_stay_in_runtime(self) -> None:
+        """插件经宿主桥投来的 region.dock 带 pluginId：那是业务日志，不许被传输主题拖进终端。"""
+        start = JS.index('window.JzoBus.on("region.dock"')
+        block = JS[start:JS.index('window.JzoBus.on("layout.changed"', start)]
+        self.assertIn("var fromPlugin = Boolean(payload.pluginId);", block)
+        self.assertIn('fromPlugin ? "runtime"', block)
+        self.assertIn('"layout.changed", "", "", "system"', JS,
+                      "布局调整是底座事件，只进系统终端")
+
+    def test_04_views_read_separate_ledgers(self) -> None:
+        block = function_body(JS, "  function entriesForView()")
+        self.assertIn('if (view === "terminal") return wsState.sysEntries;', block)
+        self.assertIn("return wsState.runtimeEntries;", block)
+        self.assertIn("if (view === \"error\") return allEntries();", block)
+        merged = function_body(JS, "  function allEntries()")
+        self.assertIn("wsState.sysEntries.concat(wsState.runtimeEntries)", merged,
+                      "报错诊断要把两本账里的告警合起来")
+
+    def test_05_dict_business_ops_reach_the_runtime_log(self) -> None:
+        """字典控制台在 iframe 里：写操作成功/失败必须经 postMessage 递给宿主。"""
+        console = ROOT / "static" / "js" / "dict_console"
+        ops = (console / "ops_log.js").read_text(encoding="utf-8")
+        self.assertIn('data.jzo !== "dict.ops"', (JS_DIR / "stage_dict_view.js").read_text(encoding="utf-8"))
+        self.assertIn('var FLAG = "dict.ops";', ops)
+        client = (console / "client.js").read_text(encoding="utf-8")
+        self.assertIn("window.DcOpsLog.ok(", client)
+        self.assertIn("window.DcOpsLog.fail(", client)
+        html = (ROOT / "static" / "dict_console.html").read_text(encoding="utf-8")
+        self.assertIn("dict_console/ops_log.js", html)
+
+    def test_06_bare_not_found_is_recognised_as_error(self) -> None:
         start = JS.index("  function dockLevel(topic, text)")
         block = JS[start:JS.index("  function stamp()", start)]
         self.assertIn("not found", block, "英文 HTTP 原话（如 Not Found）必须判进报错诊断")
         self.assertIn("失败|错误|异常|超时|冲突", block)
 
-    def test_03_detail_is_kept_whole_and_summarised_separately(self) -> None:
+    def test_07_detail_is_kept_whole_and_summarised_separately(self) -> None:
         start = JS.index("  function dockLine(")
         block = JS[start:JS.index("  function wireDock()", start)]
         self.assertIn("detailText", block)
@@ -163,7 +203,7 @@ class DockRoutingTest(unittest.TestCase):
                       block, "没有额外现场时，至少把整句话原样留下")
         self.assertIn("detail: detailText", block)
 
-    def test_04_error_view_renders_the_raw_detail(self) -> None:
+    def test_08_error_view_renders_the_raw_detail(self) -> None:
         block = function_body(JS, "  function renderDock()")
         self.assertIn('detail.className = "ws-dock-detail";', block)
         self.assertIn('detail.textContent = entry.detail;', block)
@@ -172,9 +212,9 @@ class DockRoutingTest(unittest.TestCase):
         self.assertIn("white-space: pre-wrap", body, "堆栈与 Response 原文必须按原样折行")
         self.assertIn("overflow: auto", body)
 
-    def test_05_bus_accepts_tone_and_level(self) -> None:
+    def test_09_bus_accepts_tone_and_level(self) -> None:
         start = JS.index("  function wireDock()")
-        block = JS[start:start + 3000]
+        block = JS[start:start + 3600]
         self.assertIn('payload.level || payload.tone', block)
         self.assertIn("payload.detail_text", block, "老口径 detail_text 也要收")
         self.assertIn("dockLine(payload.text", block)
