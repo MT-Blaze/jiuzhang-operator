@@ -148,7 +148,7 @@
 
 | 命令 | 用途 / 坑 |
 |---|---|
-| `start.bat` | 唯一官方启动器：自隐藏、只杀本项目旧进程、固定 65496、健康后自动开 `/e`；`start.bat --stop` 停服 |
+| `start.bat` | 唯一官方启动器：自隐藏；先探 65496–65505 单实例锁（同目录复用、异目录按 PID 清场），再按端口身份校验清理、固定 65496 起服并写 `data/.current_port`，健康后自动开 `/e`；`start.bat --stop` 全局停服 |
 | `.venv\Scripts\python.exe -m unittest tests.<模块>` | 单模块测试；**系统 Python 会把全部模块打成假报错** |
 | `.venv\Scripts\python.exe tools\run_all_tests.py` | 全模块回归，失败模块 → rc=1 |
 | `bash scripts/check-quick-gate.sh` / `check-release-gate.sh` | 两档门禁 |

@@ -6,7 +6,8 @@
 
 修法：页面上一切版本号改为由 ``static/js/version.js`` 读 ``/healthz`` 盖章（唯一事实来源
 是 ``app/__init__.py`` 的 ``__version__``），HTML 里写死的那份降级为「无 JS / 底座离线」
-时的兜底文案；``start.bat`` 固定 65496 并先杀本项目旧进程，不再让人对着旧进程发愣。
+时的兜底文案；``start.bat`` 固定 65496，并按「端口 PID + 身份签名」清理旧实例（跨安装目录也认），
+不再让人对着旧进程发愣。
 本测试把兜底文案钉死在 ``__version__`` 上——下次升版忘了同步，这里立刻红。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_version_consistency``
@@ -14,6 +15,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 import unittest
 from pathlib import Path
@@ -103,7 +105,7 @@ class DocsVersionTest(unittest.TestCase):
 
 
 class LauncherSelfHealTest(unittest.TestCase):
-    """start.bat 的自愈台阶：pip 缺失能修、端口被占能换。"""
+    """start.bat 的自愈台阶：pip 缺失能修、端口占用有明确出口。"""
 
     def setUp(self) -> None:
         self.raw = (ROOT / "start.bat").read_bytes()
@@ -162,11 +164,57 @@ class SilentLauncherTest(unittest.TestCase):
         self.assertFalse((ROOT / "启动九章算子.vbs").exists(), "VBS 启动器必须物理删除")
         self.assertFalse((ROOT / "停止九章算子.vbs").exists(), "VBS 停止脚本必须物理删除")
 
-    def test_03_kill_is_scoped_to_this_project(self) -> None:
-        """只杀 CommandLine 含本项目绝对路径的 python/uvicorn，绝不碰别的 Python。"""
-        self.assertIn("CommandLine.IndexOf($root", self.text)
-        self.assertIn("python|pythonw|uvicorn", self.text)
-        self.assertNotIn("taskkill /F /IM python.exe", self.text)
+    def test_03_cross_folder_kill_is_port_and_identity_scoped(self) -> None:
+        """按端口找 PID，校验身份后才杀：别的安装目录留下的九章进程也能被认出来。"""
+        self.assertIn("Get-NetTCPConnection -LocalPort $port -State Listen", self.text)
+        self.assertIn("Select-String (':' + $port + '\\s')", self.text, "缺少 netstat 兜底取 PID")
+        self.assertIn("jiuzhang-operator", self.text, "缺少 /healthz 服务名签名")
+        self.assertIn("app.main:app", self.text, "缺少命令行签名")
+        self.assertIn("taskkill /F /T /PID", self.text, "九章旧进程必须按 PID 连树杀掉")
+        self.assertIn("IndexOf('--port ' + $port)", self.text, "同族进程也必须绑在同一端口，避免误杀别的实例")
+        self.assertIn("Start-Sleep -Milliseconds 500", self.text, "杀完必须轮询等端口真正释放")
+        self.assertIn(":kill_port_owner", self.text)
+        self.assertNotIn("GetFullPath", self.text, "按当前路径匹配的旧逻辑必须删干净")
+        self.assertNotIn("kill_project_servers", self.text)
+        self.assertLess(
+            self.text.index(":deps_ok"),
+            self.text.index("call :kill_port_owner", self.text.index(":deps_ok")),
+        )
+
+    def test_05_single_instance_lock_reuses_or_cleans(self) -> None:
+        """单实例锁：先探 65496..65505（含 .current_port），同目录复用、异目录清理。"""
+        self.assertIn("for ($p=65496; $p -le 65505; $p++)", self.text, "缺少端口上探")
+        self.assertIn("Test-Path 'data\\.current_port'", self.text, "缺少上次端口读取")
+        self.assertIn("Set-Content -Path 'data\\.current_port'", self.text, "缺少实际端口写入")
+        self.assertIn("Remove-Item 'data\\.current_port'", self.text, "--stop 必须清掉端口记录")
+        self.assertIn("$root='%~dp0'", self.text, "缺少本目录身份基准")
+        self.assertIn("$_.SameDir", self.text)
+        self.assertIn("$reuse.Port", self.text, "缺少同目录实例复用")
+        self.assertIn("exit 10", self.text, "复用后必须直接退出，绝不启动第二个进程")
+        self.assertIn("$foreign", self.text)
+        self.assertIn("exit 2", self.text, "65496 被陌生程序占用时必须报错退出")
+        # 门卫必须发生在建 venv / 装依赖之前，否则「已在运行」也要空等几分钟。
+        self.assertLess(
+            self.text.index("call :instance_gate", self.text.index(":run")),
+            self.text.index(":pipcheck"),
+        )
+        # --stop 走同一个门卫的 stop 分支，全局清场。
+        stop_block = self.text[self.text.index(":stop"):self.text.index(":run")]
+        self.assertIn("call :instance_gate stop", stop_block)
+
+    def test_04_port_busy_reports_pid_and_process_name(self) -> None:
+        """占用者身份不明时不许武断说「不是九章算子」，必须报 PID / 进程名并给中文指引。"""
+        self.assertNotIn("NOT Jiuzhang Operator", self.text)
+        block = self.text[self.text.index(":port_busy"):self.text.index(":no_python")]
+        self.assertIn("data\\port-owner.pid", block)
+        self.assertIn("data\\port-owner.name", block)
+        payload = re.search(r"FromBase64String\('([A-Za-z0-9+/=]+)'\)", block)
+        self.assertIsNotNone(payload, "中文提示必须由 base64 承载以保持纯 ASCII")
+        assert payload is not None
+        message = base64.b64decode(payload.group(1)).decode("utf-8")
+        self.assertIn("{PID}", message)
+        self.assertIn("{NAME}", message)
+        self.assertIn("请手动结束该进程", message)
 
 
 class ProbeVersionContractTest(unittest.TestCase):

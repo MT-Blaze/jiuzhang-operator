@@ -28,7 +28,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 
 | 动作 | 唯一入口 | 性质 | 备注 |
 |---|---|---|---|
-| 本地启动 | `start.bat` | 会装依赖、起服务 | 唯一官方启动器：自隐藏后精准杀本项目旧进程，固定端口 65496，健康后自动开 `/e`；`--stop` 停服 |
+| 本地启动 | `start.bat` | 会装依赖、起服务 | 唯一官方启动器：自隐藏；先探 65496–65505 单实例锁（同目录复用、异目录按 PID 清场），身份看 `/healthz` 或 `app.main:app`；固定端口 65496，写 `data/.current_port`，健康后自动开 `/e`；`--stop` 全局停服 |
 | 底座发版包 | `build_release.bat` | **写 `dist/`** | 版本名取 `app/__init__.py`；robocopy 排除 `.venv/data/.git/dist/*.scratch*`/demo-bank/core-bank/v063*.db/bank.db（`:51-53`）；把 `v063.db` 复制成空 `bank.db`（`:67`，缺则 rc=1） |
 | 插件打包 | `.venv/Scripts/python.exe tools/build_plugin.py <目录>` 或 `--all` | **写 `dist/plugins/`** | 打包前调 `validate_plugin`（`:81`），拒符号链接（`:67-68`）与 `.db/.zip/.pyc/dev/`（`:36-44`） |
 | 开发套件 | `tools/build_dev_kit.py` | **写 `dist/`** | 打包后自审红线：禁名正则（`:67-72`）+ 密钥形态扫描（`:100-103`），违令删包并 rc=1（`:111-112`） |
