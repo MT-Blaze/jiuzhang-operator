@@ -19,7 +19,7 @@ description: 九章算子模块结构、依赖与构建发布约束。改动 app
 
 ## 2. 版本单一事实源（L0）
 
-1. **[L0] 底座版本唯一源**：`app/__init__.py:8` `__version__ = "1.1.0"`；消费点 `app/main.py:150`、`app/core/plugin_update.py:143-145`；`/healthz` 回同一个值（`app/api/health.py:15-21`，含 `boot_id`）。前端与文档只许盖章，不许写死（`tests/test_version_consistency.py:64-81`）。
+1. **[L0] 底座版本唯一源**：`app/__init__.py:8` `__version__ = "1.2.0"`；消费点 `app/main.py:150`、`app/core/plugin_update.py:143-145`；`/healthz` 回同一个值（`app/api/health.py:15-21`，含 `boot_id`）。前端与文档只许盖章，不许写死（`tests/test_version_consistency.py:64-81`）。
 2. **[L0] 插件版本三处取更严**：`plugin.json` 顶层 `version`（第 5 行）+ `min_host_version`（第 11 行）+ `engine.host_version`（现仅 `plugins/org.jiuzhang.dashboard/plugin.json:30`），拦截逻辑 `app/core/plugin_update.py:158-161,319-322,341`。
 3. **[L1] 探针与测试禁止写死插件版本**（`tests/test_version_consistency.py` 会抓），插件升级不得让存量测试变红。
 4. **[L0] 两份 plugins.json 必须逐字节全等**：主仓 `plugins.json` 与兄弟仓库 `E:/jiuzhang/jiuzhang-plugins/plugins.json`，写入方 `tools/sync_plugin_index.py:18-19,60-61`，rc=0 仅当全等（`:68`）。改索引必跑 sync，不许手改其中一份（口径出处 `docs/PROJECT_MEMORY.md:290,294`）。

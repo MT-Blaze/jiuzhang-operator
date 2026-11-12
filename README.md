@@ -94,7 +94,7 @@ curl -X GET http://127.0.0.1:65496/healthz
 ```
 
 ```json
-{ "status": "ok", "service": "jiuzhang-operator", "version": "1.1.0", "time": "2026-10-21T12:00:00+00:00" }
+{ "status": "ok", "service": "jiuzhang-operator", "version": "1.2.0", "time": "2026-10-21T12:00:00+00:00" }
 ```
 
 题目字段（`options` 是 `{key, content}` 数组、答案形态由 `answer.kind` 声明）一律以
