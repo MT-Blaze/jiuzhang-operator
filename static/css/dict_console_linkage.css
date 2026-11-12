@@ -37,6 +37,9 @@
   user-select: none;
   opacity: 0.75;
 }
+/* 行有上下内边距，guide 用负外边距顶到行边缘，相邻行的竖线才能连成一条 */
+.dkl-row .dkl-guide { margin-block: -3px; }
+.dkl-row-direction .dkl-guide { margin-block: -4px; }
 .dkl-guide-seg,
 .dkl-guide-cur { flex: none; position: relative; width: 11px; }
 .dkl-guide-seg::before {
@@ -104,7 +107,7 @@
 }
 /* 箭头视觉只有 20px，热区用伪元素补到 44px；右侧压到名字上的部分由名字接管，两者都执行展开 */
 .dkl-caret::after { content: ""; position: absolute; inset: 0 -12px; }
-.dkl-caret-empty { display: inline-block; width: 20px; height: 44px; }
+.dkl-caret-empty { display: inline-block; width: 20px; }
 .dkl-caret:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .dkl-name {

@@ -14,7 +14,7 @@
     return node;
   }
 
-  function span(prefix, isLast, blank) {
+  function span(prefix, isLast, blank, caret) {
     var wrap = el("span", "dkl-guide");
     wrap.setAttribute("aria-hidden", "true");
     prefix.forEach(function (open) {
@@ -23,6 +23,7 @@
     wrap.appendChild(el("span", "dkl-guide-cur"
       + (isLast ? " dkl-guide-last" : "")
       + (blank ? " dkl-guide-blank-cur" : "")));
+    if (caret) wrap.appendChild(el("span", "dkl-caret-empty"));
     return wrap;
   }
 
@@ -46,7 +47,7 @@
 
   function empty(prefix, text) {
     var li = el("li", "dkl-empty");
-    li.appendChild(span(prefix, true, true));
+    li.appendChild(span(prefix, true, true, true));
     li.appendChild(el("span", "dkl-empty-text", text));
     return li;
   }
