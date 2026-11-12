@@ -2,7 +2,7 @@
  * 知识点与考向 · 折叠树（一条线钻到底）：册次 → 章节 → 主知识点 → 考向。
  * 逐级展开时才向上游拉数据；考向行最右一列是辅助知识点标签（DcLinkTags.mountCell），
  * 可全局搜索添加、点 × 解除、拖拽排序。章节 / 知识点 / 考向均支持双击改名、
- * 悬停删除，知识点在章节内可拖拽排序。
+ * 悬停删除，知识点在章节内可拖拽排序。行首树线与改名按钮在 DcLinkGuide。
  * 整块下架：删本目录 linkage*.js + linkage CSS + panels.js 的 DcLinkage.mount 调用。
  */
 (function () {
@@ -19,18 +19,12 @@
     return node;
   }
 
-  function countNodes(nodes) {
-    return (nodes || []).reduce(function (sum, node) {
-      return sum + 1 + countNodes(node.children);
-    }, 0);
-  }
-
   function mount(panel, ctx) {
     var wrap = el("section", "dkl-wrap");
     wrap.setAttribute("aria-label", "知识点与考向折叠树");
     var head = el("div", "dkl-head");
     head.appendChild(el("p", "dkl-hint",
-      "册次 → 章节 → 主知识点 → 考向；点箭头逐级展开，考向行右侧直接增删辅助知识点。"));
+      "册次 → 章节 → 主知识点 → 考向：单击文字展开 / 折叠，双击文字原地改名；考向行右侧直接增删辅助知识点。"));
     var countEl = el("span", "dkl-count", "");
     head.appendChild(countEl);
     var state = el("p", "dkl-state", "");
@@ -47,59 +41,41 @@
     var directionsCache = {};
     var chapterReloaders = {};
     function setStatus(text) { state.textContent = text; }
-    function dictController(url, reload) {
-      return { url: url, ctx: ctx, reload: reload, setStatus: setStatus };
-    }
+    function dictController(url, reload) { return { url: url, ctx: ctx, reload: reload, setStatus: setStatus }; }
     function editName(url, anchor, row) {
       window.DcRowOps.editCell({ url: url, ctx: ctx }, anchor, row, { key: "name", label: "名称" });
     }
-    function nameButton(text, label, edit) {
-      var button = el("button", "dkl-name", text);
-      button.type = "button";
-      button.title = "双击改名（F2）";
-      button.setAttribute("aria-label", label + "：双击改名，F2 也可");
-      button.addEventListener("dblclick", function () { edit(button); });
-      button.addEventListener("keydown", function (event) {
-        if (event.key !== "F2") return;
-        event.preventDefault();
-        edit(button);
-      });
-      return button;
-    }
-    function opButton(text, danger, label, onClick) {
-      var button = el("button", "dkl-op" + (danger ? " dkl-op-danger" : ""), text);
-      button.type = "button";
-      button.setAttribute("aria-label", label);
-      button.addEventListener("click", function () { onClick(button); });
-      return button;
-    }
+    var G = window.DcLinkGuide;
 
     // ---------- 考向行（第三级） ----------
-    function pointNode(chapter, point) {
+    function pointNode(chapter, point, prefix, isLast) {
       var li = el("li", "dkl-node dkl-point");
       li.setAttribute("data-id", String(point.id));
       li.setAttribute("role", "treeitem");
       li.draggable = true;
       var row = el("div", "dkl-row dkl-row-point");
-      var grip = el("span", "dkl-grip", "⠿");
-      grip.setAttribute("aria-hidden", "true");
-      row.appendChild(grip);
+      row.appendChild(G.span(prefix, isLast));
       var caret = el("button", "dkl-caret", "▸");
       caret.type = "button";
       caret.setAttribute("aria-expanded", "false");
       caret.setAttribute("aria-label", "展开或折叠「" + point.name + "」的考向");
       row.appendChild(caret);
-      row.appendChild(nameButton(point.name, "主知识点「" + point.name + "」", function (button) {
+      row.appendChild(G.nameButton(point.name, "主知识点「" + point.name + "」", function (button) {
         editName(POINT_URL, button, point);
+      }, function () {
+        if (children.hidden) openPoint(); else closePoint();
       }));
       var badge = el("span", "dkl-badge", "");
       row.appendChild(badge);
+      var grip = el("span", "dkl-grip", "⠿");
+      grip.setAttribute("aria-hidden", "true");
+      row.appendChild(grip);
       var ops = el("div", "dkl-ops");
-      var add = opButton("＋考向", false, "为「" + point.name + "」新增考向", function () {
+      var add = G.opButton("＋考向", false, "为「" + point.name + "」新增考向", function () {
         startAddDirection();
       });
       ops.appendChild(add);
-      ops.appendChild(opButton("删除", true, "删除主知识点「" + point.name + "」", function (button) {
+      ops.appendChild(G.opButton("删除", true, "删除主知识点「" + point.name + "」", function (button) {
         window.DcRowOps.deleteRow(dictController(POINT_URL, function () {
           delete expanded.p[point.id];
           delete directionsCache[point.id];
@@ -109,6 +85,7 @@
       }));
       row.appendChild(ops);
       li.appendChild(row);
+      var dirPrefix = G.childPrefix(prefix, isLast);
       var children = el("ul", "dkl-list dkl-children dkl-direction-list");
       children.setAttribute("role", "group");
       children.hidden = true;
@@ -124,24 +101,30 @@
         var rows = directionsCache[point.id] || [];
         badge.textContent = rows.length + " 个考向";
         if (!rows.length && !children.querySelector(".dkl-dir-new")) {
-          children.appendChild(el("li", "dkl-empty", "该知识点暂无考向，点「＋考向」新增。"));
+          children.appendChild(G.empty(dirPrefix, "该知识点暂无考向，点「＋考向」新增。"));
         }
       }
       function dirHead() {
         var headLi = el("li", "dkl-dir-head");
-        headLi.appendChild(el("span", "dkl-dir-col", "考向"));
+        var main = el("div", "dkl-dir-main");
+        main.appendChild(G.span(dirPrefix, false, true));
+        main.appendChild(el("span", "dkl-dir-col", "考向"));
+        headLi.appendChild(main);
         headLi.appendChild(el("span", "dkl-dir-col", "辅助知识点"));
         headLi.appendChild(el("span", "dkl-dir-col dkl-dir-col-ops", "操作"));
         return headLi;
       }
-      function directionRow(dir) {
+      function directionRow(dir, last) {
         var dirLi = el("li", "dkl-node dkl-direction");
         dirLi.setAttribute("data-direction-id", String(dir.id));
         dirLi.setAttribute("role", "treeitem");
         var dirRow = el("div", "dkl-row dkl-row-direction");
-        dirRow.appendChild(nameButton(dir.name, "考向「" + dir.name + "」", function (button) {
+        var main = el("div", "dkl-dir-main");
+        main.appendChild(G.span(dirPrefix, last));
+        main.appendChild(G.nameButton(dir.name, "考向「" + dir.name + "」", function (button) {
           editName(DIRECTION_URL, button, dir);
         }));
+        dirRow.appendChild(main);
         var cell = window.DcLinkTags.mountCell({
           directionId: dir.id,
           directionName: dir.name,
@@ -151,7 +134,7 @@
         });
         dirRow.appendChild(cell.el);
         var dirOps = el("div", "dkl-ops");
-        dirOps.appendChild(opButton("删除", true, "删除考向「" + dir.name + "」", function (button) {
+        dirOps.appendChild(G.opButton("删除", true, "删除考向「" + dir.name + "」", function (button) {
           window.DcDialog.open({
             title: "删除确认",
             message: "确认删除考向「" + dir.name + "」？将同时解除它与当前知识点的关联。",
@@ -190,7 +173,9 @@
         var rows = directionsCache[point.id] || [];
         children.textContent = "";
         children.appendChild(dirHead());
-        rows.forEach(function (dir) { children.appendChild(directionRow(dir)); });
+        rows.forEach(function (dir, index) {
+          children.appendChild(directionRow(dir, index === rows.length - 1));
+        });
         painted = true;
         updateBadge();
       }
@@ -244,6 +229,7 @@
           cancel.type = "button";
           var newLi = el("li", "dkl-node dkl-dir-new");
           var newRow = el("div", "dkl-row dkl-dir-new-row");
+          newRow.appendChild(G.span(dirPrefix, false, true));
           newRow.appendChild(input);
           newRow.appendChild(save);
           newRow.appendChild(cancel);
@@ -286,26 +272,29 @@
 
     // ---------- 章节（第一级，可嵌套） ----------
 
-    function chapterNode(node) {
+    function chapterNode(node, prefix, isLast) {
       var chapter = node.chapter;
       var li = el("li", "dkl-node dkl-chapter");
       li.setAttribute("data-chapter-id", String(chapter.id));
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-chapter");
+      row.appendChild(G.span(prefix, isLast));
       var caret = el("button", "dkl-caret", "▸");
       caret.type = "button";
       caret.setAttribute("aria-expanded", "false");
       caret.setAttribute("aria-label", "展开或折叠「" + chapter.name + "」");
       row.appendChild(caret);
-      row.appendChild(nameButton(chapter.name, "章节「" + chapter.name + "」", function (button) {
+      row.appendChild(G.nameButton(chapter.name, "章节「" + chapter.name + "」", function (button) {
         editName(CHAPTER_URL, button, chapter);
+      }, function () {
+        if (children.hidden) openChapter(); else closeChapter();
       }));
       // 现存章节编码多是 tp_* 技术码，只有纯数字编码（如 1.2）才值得露出来。
       if (chapter.code && /^[\d.]+$/.test(chapter.code)) row.appendChild(el("span", "dkl-sub", chapter.code));
       var badge = el("span", "dkl-badge", "");
       row.appendChild(badge);
       var ops = el("div", "dkl-ops");
-      ops.appendChild(opButton("删除", true, "删除章节「" + chapter.name + "」", function (button) {
+      ops.appendChild(G.opButton("删除", true, "删除章节「" + chapter.name + "」", function (button) {
         window.DcRowOps.deleteRow(dictController(CHAPTER_URL, function () {
           delete expanded.c[chapter.id];
           load();
@@ -314,10 +303,13 @@
       }));
       row.appendChild(ops);
       li.appendChild(row);
+      var subPrefix = G.childPrefix(prefix, isLast);
       var children = el("ul", "dkl-list dkl-children");
       children.setAttribute("role", "group");
       children.hidden = true;
-      (node.children || []).forEach(function (child) { children.appendChild(chapterNode(child)); });
+      (node.children || []).forEach(function (child) {
+        children.appendChild(chapterNode(child, subPrefix, false));
+      });
       var host = el("li", "dkl-points-host");
       var pointList = el("ul", "dkl-list dkl-point-list");
       pointList.setAttribute("aria-label", "「" + chapter.name + "」的主知识点");
@@ -329,9 +321,11 @@
       function paintPoints() {
         var rows = pointsCache[chapter.id] || [];
         pointList.textContent = "";
-        rows.forEach(function (point) { pointList.appendChild(pointNode(chapter, point)); });
+        rows.forEach(function (point, index) {
+          pointList.appendChild(pointNode(chapter, point, subPrefix, index === rows.length - 1));
+        });
         if (!rows.length && !(node.children || []).length) {
-          pointList.appendChild(el("li", "dkl-empty", "该章节暂无主知识点。"));
+          pointList.appendChild(G.empty(subPrefix, "该章节暂无主知识点。"));
         }
         badge.textContent = rows.length + " 个知识点";
         pointsPainted = true;
@@ -408,7 +402,9 @@
       var row = el("div", "dkl-row dkl-row-book");
       var children = el("ul", "dkl-list dkl-children");
       children.setAttribute("role", "group");
-      chapters.forEach(function (child) { children.appendChild(chapterNode(child)); });
+      chapters.forEach(function (child, index) {
+        children.appendChild(chapterNode(child, [], index === chapters.length - 1));
+      });
       li.appendChild(children);
 
       var caret;
@@ -425,7 +421,15 @@
         caret.setAttribute("aria-hidden", "true");
       }
       row.appendChild(caret);
-      row.appendChild(el("span", "dkl-book-name", book.volume_name || book.name));
+      var bookName = el("button", "dkl-name dkl-book-name", book.volume_name || book.name);
+      bookName.type = "button";
+      bookName.setAttribute("aria-label", "展开或折叠「" + (book.volume_name || book.name) + "」");
+      bookName.addEventListener("click", function () {
+        if (!chapters.length) return;
+        expanded.b[book.id] = expanded.b[book.id] === false;
+        paintBook();
+      });
+      row.appendChild(bookName);
       if (book.name && book.name !== book.volume_name) {
         row.appendChild(el("span", "dkl-sub", book.name));
       }
@@ -467,7 +471,7 @@
         ul.setAttribute("role", "tree");
         books.forEach(function (item) { ul.appendChild(bookNode(item)); });
         tree.appendChild(ul);
-        var nodes = books.reduce(function (sum, item) { return sum + countNodes(item.chapters); }, 0);
+        var nodes = books.reduce(function (sum, item) { return sum + G.countNodes(item.chapters); }, 0);
         countEl.textContent = "共 " + books.length + " 册 · " + nodes + " 个章节节点";
         setStatus("");
       }).catch(function (error) {

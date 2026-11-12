@@ -66,7 +66,7 @@
             window.DcRowOps.editCell(controller, td, row, field);
           });
           td.addEventListener("keydown", function (event) {
-            if (event.key === "Enter" || event.key === "F2") {
+            if (event.key === "Enter") {
               event.preventDefault();
               window.DcRowOps.editCell(controller, td, row, field);
             }

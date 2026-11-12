@@ -1,6 +1,7 @@
 /**
  * 实体维度双树共用的小工具（2026-11-11）：分页拉全量、新增/删除对话框、内联改名、排序号。
- * 改名一律双击节点文字出输入框（blur/Enter 保存、Esc 取消、F2 键盘可达），不设“改名”按钮。
+ * 改名一律双击节点文字出输入框（blur/Enter 保存、Esc 取消），不设“改名”按钮；
+ * 单击 / 双击由 bindNodeClick 统一分流：单击延迟 200ms 再落展开，双击撤销并直接改名。
  * 两棵树各自持有 DOM 与展开状态，这里只提供无状态函数，互不共享渲染。
  * 全部文案走 textContent；写请求经 DcClient.writeJson 自带一次性令牌。
  * 整块下架：删本文件、entity_schools.js、entity_textbooks.js 与 entities.css。
@@ -114,6 +115,46 @@
     });
   }
 
+  /**
+   * 单击 / 双击分流（知识点树与实体树共用同一套手感）：
+   * 单击先挂 200ms 定时器，到点才执行 toggle；双击清掉定时器并直接 edit。
+   * 慢双击时第一次点击可能已经落地展开，双击回调先补一次 toggle 把它撤回来。
+   */
+  function bindNodeClick(button, spec) {
+    var timer = null;
+    var fired = false;
+    function clear() {
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+    }
+    function toggle() {
+      if (typeof spec.toggle === "function") spec.toggle();
+    }
+    button.addEventListener("click", function (event) {
+      if (event.detail > 1) { clear(); return; }
+      if (!timer) fired = false;
+      clear();
+      timer = window.setTimeout(function () {
+        timer = null;
+        fired = true;
+        toggle();
+      }, 200);
+    });
+    if (typeof spec.edit === "function") {
+      button.addEventListener("dblclick", function (event) {
+        event.preventDefault();
+        clear();
+        if (fired) {
+          fired = false;
+          toggle();
+        }
+        spec.edit();
+      });
+    }
+  }
+
   function add(spec) {
     window.DcDialog.open({
       title: spec.title,
@@ -225,29 +266,28 @@
       if (opts.hasChildren) toggle();
       else if (typeof opts.onSelect === "function") opts.onSelect(li);
     }
-    label.addEventListener("click", activate);
-    if (shortBtn) shortBtn.addEventListener("click", activate);
 
     function wireEdit(btn, span, editSpec) {
-      if (!editSpec) return;
-      btn.title = "双击或按 F2 修改" + (editSpec.label || "名称");
-      function start() {
+      if (!editSpec) return null;
+      btn.title = "双击修改" + (editSpec.label || "名称");
+      return function start() {
         inlineEdit({
           host: span, value: editSpec.value, label: editSpec.label,
           url: editSpec.url, field: editSpec.field,
           onDone: editSpec.onDone, restoreFocus: btn
         });
-      }
-      btn.addEventListener("dblclick", function (event) {
-        event.stopPropagation();
-        start();
-      });
-      btn.addEventListener("keydown", function (event) {
-        if (event.key === "F2") { event.preventDefault(); start(); }
+      };
+    }
+    bindNodeClick(label, {
+      toggle: activate,
+      edit: wireEdit(label, nameSpan, opts.edit)
+    });
+    if (shortBtn) {
+      bindNodeClick(shortBtn, {
+        toggle: activate,
+        edit: wireEdit(shortBtn, shortSpan, opts.editShort)
       });
     }
-    wireEdit(label, nameSpan, opts.edit);
-    if (shortBtn) wireEdit(shortBtn, shortSpan, opts.editShort);
 
     row.appendChild(label);
     if (shortBtn) row.appendChild(shortBtn);
@@ -298,6 +338,7 @@
   window.DcEntityShared = {
     el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder,
     fail: fail, remove: remove, inlineEdit: inlineEdit, add: add,
+    bindNodeClick: bindNodeClick,
     caret: caret, spacer: spacer, childList: childList,
     makeRow: makeRow, bindTree: bindTree
   };

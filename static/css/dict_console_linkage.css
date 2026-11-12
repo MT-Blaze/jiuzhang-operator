@@ -19,17 +19,59 @@
   white-space: pre-line;
 }
 
-/* ---------- 树骨架：靠左虚线表达层级，不用盒子 ---------- */
+/* ---------- 树骨架：左对齐 + 细灰树线，不做物理缩进 ---------- */
 .dkl-tree { min-width: 0; }
 .dkl-list { list-style: none; margin: 0; padding: 0; }
-.dkl-children { margin-left: 13px; padding-left: 9px; border-left: 1px dashed var(--line); }
+/* 层级不再靠 margin/padding 撑开，全部交给行首的 dkl-guide 画线 */
+.dkl-children,
+.dkl-point-list { list-style: none; margin: 0; padding: 0; }
 .dkl-children[hidden] { display: none; }
-.dkl-points-host { list-style: none; }
+.dkl-points-host { list-style: none; margin: 0; padding: 0; }
+
+.dkl-guide {
+  flex: none;
+  display: inline-flex;
+  align-self: stretch;
+  min-height: 100%;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.75;
+}
+.dkl-guide-seg,
+.dkl-guide-cur { flex: none; position: relative; width: 11px; }
+.dkl-guide-seg::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--faint);
+}
+.dkl-guide-blank::before { border-left-color: transparent; }
+.dkl-guide-cur::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--faint);
+}
+.dkl-guide-last::before { bottom: 50%; }
+.dkl-guide-cur::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 8px;
+  border-top: 1px solid var(--faint);
+}
+.dkl-guide-blank-cur::before,
+.dkl-guide-blank-cur::after { display: none; }
 
 .dkl-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-height: 44px;
   padding: 2px 4px;
   border-bottom: 1px solid var(--line);
@@ -42,29 +84,34 @@
   background: var(--paper-deep);
   font-family: var(--serif);
 }
-.dkl-book-name { flex: 1 1 auto; min-width: 0; font-size: 0.95rem; font-weight: 600; overflow-wrap: anywhere; }
+.dkl-book-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .dkl-sub { flex: none; font-size: 0.72rem; color: var(--faint); }
 .dkl-badge { flex: none; margin-left: auto; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 
 .dkl-caret {
   flex: none;
-  width: 44px;
-  min-width: 44px;
+  position: relative;
+  width: 20px;
+  min-width: 20px;
   height: 44px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1;
   cursor: pointer;
 }
-.dkl-caret-empty { display: inline-block; width: 44px; height: 44px; }
+/* 箭头视觉只有 20px，热区用伪元素补到 44px；右侧压到名字上的部分由名字接管，两者都执行展开 */
+.dkl-caret::after { content: ""; position: absolute; inset: 0 -12px; }
+.dkl-caret-empty { display: inline-block; width: 20px; height: 44px; }
 .dkl-caret:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .dkl-name {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
-  padding: 2px 6px;
+  padding: 2px 4px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -77,18 +124,22 @@
 }
 .dkl-name:hover { background: var(--accent-soft); }
 .dkl-name:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dkl-row-book .dkl-name { font-size: 0.95rem; font-weight: 600; }
 .dkl-row-chapter .dkl-name { font-size: 0.92rem; font-weight: 600; }
 .dkl-row-point .dkl-name { font-size: 0.87rem; }
 .dkl-row-direction .dkl-name { font-size: 0.83rem; font-weight: 400; }
 
+/* 拖拽把手退到行尾，不再占行首、不推文字 */
 .dkl-grip {
   flex: none;
   width: 14px;
   text-align: center;
   color: var(--faint);
   font-size: 0.8rem;
+  opacity: 0.4;
   cursor: grab;
 }
+.dkl-row:hover .dkl-grip { opacity: 0.9; }
 .dkl-point.dkl-dragging { opacity: 0.5; }
 
 /* 操作按钮：平时隐身，悬停 / 键盘聚焦才出现；触屏常显 */
@@ -114,7 +165,7 @@
 .dkl-row-direction,
 .dkl-dir-head {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(190px, 1fr) auto;
+  grid-template-columns: minmax(0, 1.05fr) minmax(190px, 1fr) 52px;
   align-items: center;
   gap: 6px;
 }
@@ -122,6 +173,15 @@
 .dkl-row-direction { padding: 3px 4px; }
 .dkl-row-direction .dkl-ops { justify-content: flex-end; }
 .dkl-direction { position: relative; }
+/* 考向名与表头共用一格：guide 占位宽度一致，文字才能和「考向」表头像素对齐 */
+.dkl-dir-main {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+.dkl-dir-head .dkl-dir-main .dkl-dir-col { padding-left: 4px; }
 .dkl-dir-head {
   min-height: 30px;
   padding: 0 4px;
@@ -197,13 +257,23 @@
 .dkl-dir-new-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-bottom: 1px solid var(--line); }
 .dkl-dir-input { flex: 1 1 auto; min-width: 0; min-height: 44px; }
 
-.dkl-empty { list-style: none; padding: 10px 6px; font-size: 0.8rem; color: var(--muted); }
+.dkl-empty {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  list-style: none;
+  padding: 10px 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.dkl-empty-text { min-width: 0; }
 
 /* ---------- 窄屏：考向行改单列堆叠，辅助标签落到下一行 ---------- */
 @media (max-width: 720px) {
   .dkl-head { flex-direction: column; align-items: flex-start; gap: 2px; }
   .dkl-count { margin-left: 0; }
-  .dkl-children { margin-left: 7px; padding-left: 5px; }
+  .dkl-guide-seg,
+  .dkl-guide-cur { width: 9px; }
   .dkl-dir-head { display: none; }
   .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 6px 4px; }
   .dkl-row-direction .dkl-ops { justify-content: flex-start; }
