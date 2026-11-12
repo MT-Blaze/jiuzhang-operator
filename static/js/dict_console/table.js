@@ -1,6 +1,7 @@
 /**
  * 字典表格（阶段二）：分类页签里每张表一个表格块。
- * 搜索框 + 分页 + 全局设置三参数（DcGlobals.query()）真正带进查询；
+ * 搜索框 + 全局设置三参数（DcGlobals.query()）真正带进查询；
+ * 字典体量很小，一次拉全量后直接铺开，不再有分页器。
  * 全局设置变化或搜索输入即刷新。行内交互（编辑/新增/删除）交给 DcRowOps。
  * 本地私有系统：所有字典一律可增删改，表格不再有只读态。
  * 整块下架：删本目录与 panels.js 的 DcTable.mount 调用即可。
@@ -8,7 +9,7 @@
 (function () {
   "use strict";
 
-  var PAGE_SIZE = 50;
+  var PAGE = 200;
 
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -17,11 +18,11 @@
     return node;
   }
 
-  function buildUrl(controller) {
+  function buildUrl(controller, offset) {
     var params = new URLSearchParams();
     if (controller.keyword) params.set("q", controller.keyword);
-    params.set("limit", String(controller.limit));
-    params.set("offset", String(controller.offset));
+    params.set("limit", String(PAGE));
+    params.set("offset", String(offset || 0));
     var globals = controller.ctx.globals.query();
     Object.keys(globals).forEach(function (key) { params.set(key, String(globals[key])); });
     return controller.url + "?" + params.toString();
@@ -86,25 +87,31 @@
     });
   }
 
-  function renderPager(controller) {
-    var pages = Math.max(1, Math.ceil(controller.total / controller.limit));
-    var page = Math.floor(controller.offset / controller.limit) + 1;
-    controller.els.count.textContent = "共 " + controller.total + " 行";
-    controller.els.pageinfo.textContent = "第 " + page + " / " + pages + " 页";
-    controller.els.prev.disabled = controller.offset <= 0;
-    controller.els.next.disabled = controller.offset + controller.limit >= controller.total;
+  /** 接口单页上限 200；按 total 继续翻页，把整张字典一次性拉回前端铺开。 */
+  function fetchAll(controller) {
+    var acc = [];
+    function step(offset) {
+      return window.DcClient.fetchJson(buildUrl(controller, offset)).then(function (data) {
+        var items = data.items || [];
+        acc = acc.concat(items);
+        var total = data.total || 0;
+        if (items.length && acc.length < total) return step(offset + PAGE);
+        return { items: acc, total: total, fields: data.fields || [] };
+      });
+    }
+    return step(0);
   }
 
   function fetchRows(controller) {
     controller.setStatus("正在读取…");
-    return window.DcClient.fetchJson(buildUrl(controller)).then(function (data) {
+    return fetchAll(controller).then(function (data) {
       if (!controller.section.isConnected) return;
-      controller.fields = data.fields || [];
-      controller.rows = data.items || [];
-      controller.total = data.total || 0;
+      controller.fields = data.fields.length ? data.fields : controller.fields;
+      controller.rows = data.items;
+      controller.total = data.total;
       renderHead(controller);
       renderRows(controller);
-      renderPager(controller);
+      controller.els.count.textContent = "共 " + controller.total + " 行";
       controller.setStatus("");
     }).catch(function (error) {
       if (!controller.section.isConnected) return;
@@ -144,17 +151,6 @@
     scroll.appendChild(table);
     section.appendChild(scroll);
 
-    var pager = el("div", "dc-table-pager");
-    var prev = el("button", "dc-btn dc-table-prev", "上一页");
-    prev.type = "button";
-    var pageinfo = el("span", "dc-table-pageinfo", "");
-    var next = el("button", "dc-btn dc-table-next", "下一页");
-    next.type = "button";
-    pager.appendChild(prev);
-    pager.appendChild(pageinfo);
-    pager.appendChild(next);
-    section.appendChild(pager);
-
     var state = el("p", "dc-table-state", "");
     state.setAttribute("role", "status");
     state.setAttribute("aria-live", "polite");
@@ -163,15 +159,11 @@
 
     var controller = {
       table: item.table, url: "/api/bank/engine/dict/" + item.table, ctx: ctx,
-      fields: [], rows: [], total: 0, limit: PAGE_SIZE, offset: 0, keyword: "",
+      fields: [], rows: [], total: 0, keyword: "",
       section: section,
-      els: { search: search, add: add, count: count, thead: thead, tbody: tbody,
-             prev: prev, next: next, pageinfo: pageinfo, state: state },
+      els: { search: search, add: add, count: count, thead: thead, tbody: tbody, state: state },
       setStatus: function (text) { state.textContent = text; },
-      reload: function (resetOffset) {
-        if (resetOffset) controller.offset = 0;
-        return fetchRows(controller);
-      }
+      reload: function () { return fetchRows(controller); }
     };
 
     var timer = null;
@@ -179,29 +171,21 @@
       window.clearTimeout(timer);
       timer = window.setTimeout(function () {
         controller.keyword = search.value.trim();
-        controller.reload(true);
+        controller.reload();
       }, 250);
     });
     add.addEventListener("click", function () { window.DcRowOps.addRow(controller); });
-    prev.addEventListener("click", function () {
-      controller.offset = Math.max(0, controller.offset - controller.limit);
-      controller.reload(false);
-    });
-    next.addEventListener("click", function () {
-      controller.offset += controller.limit;
-      controller.reload(false);
-    });
 
     function onGlobals() {
       if (!section.isConnected) {
         document.removeEventListener(window.DcGlobals.EVENT_NAME, onGlobals);
         return;
       }
-      controller.reload(true);
+      controller.reload();
     }
     document.addEventListener(window.DcGlobals.EVENT_NAME, onGlobals);
 
-    controller.reload(true);
+    controller.reload();
     return controller;
   }
 

@@ -1,5 +1,5 @@
 /**
- * 四栏联动共享拖拽器（阶段三）：HTML5 拖拽 + Alt+方向键键盘排序两条路。
+ * 知识点与考向树共享拖拽器：HTML5 拖拽 + Alt+方向键键盘排序两条路。
  * 列表项带 data-id 且 draggable；拖动中实时插位预览，松手（dragend）把
  * 当前 DOM 顺序交给 onOrder 落库。键盘路兼顾触屏与读屏（AGENTS §6）。
  * 整块下架：删本文件与各列的 DcDnd.attach 调用即可。
@@ -38,7 +38,7 @@
       var item = closestItem(event.target, listEl);
       if (!item) return;
       dragged = item;
-      item.classList.add("dcl-dragging");
+      item.classList.add("dkl-dragging");
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = "move";
         try { event.dataTransfer.setData("text/plain", item.getAttribute("data-id")); } catch (error) { /* IE 残党 */ }
@@ -62,7 +62,7 @@
 
     listEl.addEventListener("dragend", function () {
       if (!dragged) return;
-      dragged.classList.remove("dcl-dragging");
+      dragged.classList.remove("dkl-dragging");
       dragged = null;
       options.onOrder(currentIds(listEl));
     });

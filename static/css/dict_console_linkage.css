@@ -1,152 +1,215 @@
-/* 四栏联动教研字典（阶段三）：独立样式，整块下架删本文件 + HTML 引用行即可。
- * 配色继承 app.css 变量；375px 单列堆叠不横溢；全部热区 ≥44px（AGENTS §6）。 */
+/* 知识点与考向折叠树（2026-11-12）：平铺在画布上，无卡片外框。
+ * 独立样式，整块下架删本文件 + HTML 引用行即可；热区 ≥44px，375px 不横溢。 */
 
-.dcl-wrap { margin-bottom: 26px; min-width: 0; }
-.dcl-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+.dkl-wrap { min-width: 0; }
+.dkl-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin: 2px 0 4px;
 }
-.dcl-col {
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper);
+.dkl-hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
+.dkl-count { margin-left: auto; font-size: 0.76rem; color: var(--faint); }
+.dkl-state {
+  margin: 0 0 4px;
+  min-height: 1.2em;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: pre-line;
 }
-.dcl-col-title { margin: 0 0 2px; font-family: var(--serif); font-size: 0.95rem; }
-.dcl-col-hint { margin: 0 0 8px; font-size: 0.74rem; color: var(--muted); }
-.dcl-col-body { min-width: 0; }
-.dcl-state { margin: 6px 0; min-height: 1.2em; font-size: 0.78rem; color: var(--muted); white-space: pre-line; }
-.dcl-tools { margin-bottom: 8px; }
 
-/* ---------- 左栏章节树 ---------- */
-.dcl-tree {
-  max-height: 480px;
-  overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-}
-.dcl-tree-list { list-style: none; margin: 0; padding: 0; }
-.dcl-tree-row { display: flex; align-items: center; gap: 2px; }
-.dcl-tree-caret {
-  flex: none;
-  min-width: 44px;
+/* ---------- 树骨架：靠左虚线表达层级，不用盒子 ---------- */
+.dkl-tree { min-width: 0; }
+.dkl-list { list-style: none; margin: 0; padding: 0; }
+.dkl-children { margin-left: 13px; padding-left: 9px; border-left: 1px dashed var(--line); }
+.dkl-children[hidden] { display: none; }
+.dkl-points-host { list-style: none; }
+
+.dkl-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: 44px;
-  border: none;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.dkl-row:focus-within { background: var(--card-hover); }
+
+/* 册次＝表头带，让「学年册别」一眼分段；不是卡片，只是整行浅底 */
+.dkl-row-book {
+  border-top: 1px solid var(--line-strong);
+  background: var(--paper-deep);
+  font-family: var(--serif);
+}
+.dkl-book-name { flex: 1 1 auto; min-width: 0; font-size: 0.95rem; font-weight: 600; overflow-wrap: anywhere; }
+.dkl-sub { flex: none; font-size: 0.72rem; color: var(--faint); }
+.dkl-badge { flex: none; margin-left: auto; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+
+.dkl-caret {
+  flex: none;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  border: 0;
   background: transparent;
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
 }
-.dcl-tree-spacer { flex: none; width: 44px; }
-.dcl-tree-node {
+.dkl-caret-empty { display: inline-block; width: 44px; height: 44px; }
+.dkl-caret:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.dkl-name {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
-  padding: 4px 8px;
-  border: none;
+  padding: 2px 6px;
+  border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 0.84rem;
-  text-align: left;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-.dcl-tree-node:hover { background: var(--accent-soft); }
-.dcl-tree-node.dcl-selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-/* 册次是树的顶级节点：加粗与底色把它和章/节区分开（年级、册次一目了然） */
-.dcl-tree-volume {
-  font-family: var(--serif);
   font-size: 0.88rem;
-  font-weight: 600;
-  background: var(--accent-soft);
-}
-.dcl-tree-caret:focus-visible, .dcl-tree-node:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-/* ---------- 通用清单（知识点 / 考向 / 标签） ---------- */
-.dcl-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 480px;
-  overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--card);
-}
-.dcl-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--line);
-}
-.dcl-item:last-child { border-bottom: none; }
-.dcl-item.dcl-selected { background: var(--accent-soft); }
-.dcl-item.dcl-dragging { opacity: 0.5; }
-.dcl-grip { flex: none; color: var(--faint); cursor: grab; font-size: 0.8rem; }
-.dcl-item-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 44px;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.85rem;
   text-align: left;
   cursor: pointer;
   overflow-wrap: anywhere;
 }
-.dcl-item-main:hover { background: var(--accent-soft); }
-.dcl-item-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.dcl-item-del { flex: none; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.78rem; color: var(--down); }
-.dcl-empty { padding: 12px 10px; color: var(--muted); font-size: 0.82rem; }
-.dcl-item-new { flex-wrap: wrap; background: var(--paper-deep); }
-.dcl-new-input { flex: 1 1 120px; min-width: 0; }
-.dcl-item-btn { min-height: 44px; padding: 0 12px; font-size: 0.8rem; }
+.dkl-name:hover { background: var(--accent-soft); }
+.dkl-name:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dkl-row-chapter .dkl-name { font-size: 0.92rem; font-weight: 600; }
+.dkl-row-point .dkl-name { font-size: 0.87rem; }
+.dkl-row-direction .dkl-name { font-size: 0.83rem; font-weight: 400; }
 
-/* ---------- 最右栏辅助标签 ---------- */
-.dcl-tag-search { width: 100%; flex-basis: 100%; margin-bottom: 8px; }
-.dcl-tag-name { flex: 1 1 auto; min-width: 0; font-size: 0.84rem; overflow-wrap: anywhere; }
-.dcl-tag-del { flex: none; min-width: 44px; min-height: 44px; padding: 0; font-size: 14px; color: var(--down); }
-.dcl-search-results {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  max-height: 240px;
-  overflow-y: auto;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--card);
+.dkl-grip {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--faint);
+  font-size: 0.8rem;
+  cursor: grab;
 }
-.dcl-search-item {
-  display: flex;
+.dkl-point.dkl-dragging { opacity: 0.5; }
+
+/* 操作按钮：平时隐身，悬停 / 键盘聚焦才出现；触屏常显 */
+.dkl-ops { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s ease; }
+.dkl-row:hover .dkl-ops,
+.dkl-row:focus-within .dkl-ops { opacity: 1; }
+.dkl-op {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.dkl-op:hover { background: var(--accent-soft); }
+.dkl-op-danger { color: var(--down); }
+.dkl-op:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (hover: none) { .dkl-ops { opacity: 1; } }
+
+/* ---------- 第三级考向行：右列辅助知识点 ---------- */
+.dkl-row-direction,
+.dkl-dir-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(190px, 1fr) auto;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--line);
 }
-.dcl-search-item:last-child { border-bottom: none; }
-.dcl-search-name { flex: 1 1 auto; min-width: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
-.dcl-search-add { flex: none; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 0.78rem; }
+.dkl-row-direction .dkl-name { width: 100%; }
+.dkl-row-direction { padding: 3px 4px; }
+.dkl-row-direction .dkl-ops { justify-content: flex-end; }
+.dkl-direction { position: relative; }
+.dkl-dir-head {
+  min-height: 30px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 0.71rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.dkl-dir-col-ops { text-align: right; }
 
-/* ---------- 响应式：宽屏四栏 → 中屏两栏 → 窄屏单列，375px 不横溢 ---------- */
-@media (max-width: 1200px) {
-  .dcl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dkl-tags-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.dkl-tag-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.dkl-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
 }
-@media (max-width: 700px) {
-  .dcl-grid { grid-template-columns: minmax(0, 1fr); }
-  .dcl-tree, .dcl-list { max-height: 320px; }
+.dkl-tag-name { padding: 2px 4px 2px 9px; font-size: 0.74rem; overflow-wrap: anywhere; }
+.dkl-tag-x {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--down);
+  font-size: 13px;
+  cursor: pointer;
+}
+.dkl-tag-x:hover { background: var(--accent-soft); }
+.dkl-tag-x:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dkl-tag-empty { list-style: none; padding: 0 4px; font-size: 0.73rem; color: var(--faint); }
+.dkl-tag-add {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.dkl-tag-add:hover { color: var(--accent); border-color: var(--accent); }
+.dkl-tag-add:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 添加弹层：挂在考向行（li）上，不遮表格主体 */
+.dkl-tag-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 2px);
+  right: 0;
+  width: min(340px, 92vw);
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.dkl-tag-input { width: 100%; min-height: 44px; }
+.dkl-tag-results { list-style: none; margin: 8px 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.dkl-tag-result { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+.dkl-tag-result:last-child { border-bottom: 0; }
+.dkl-tag-result-name { flex: 1 1 auto; min-width: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
+.dkl-tag-result-add { flex: none; min-width: 44px; min-height: 44px; padding: 0 12px; font-size: 0.78rem; }
+.dkl-tag-pop-tools { display: flex; justify-content: flex-end; }
+.dkl-tag-pop-close { min-height: 44px; }
+
+/* 新增考向的内联行 */
+.dkl-dir-new-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.dkl-dir-input { flex: 1 1 auto; min-width: 0; min-height: 44px; }
+
+.dkl-empty { list-style: none; padding: 10px 6px; font-size: 0.8rem; color: var(--muted); }
+
+/* ---------- 窄屏：考向行改单列堆叠，辅助标签落到下一行 ---------- */
+@media (max-width: 720px) {
+  .dkl-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .dkl-count { margin-left: 0; }
+  .dkl-children { margin-left: 7px; padding-left: 5px; }
+  .dkl-dir-head { display: none; }
+  .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 6px 4px; }
+  .dkl-row-direction .dkl-ops { justify-content: flex-start; }
+  .dkl-tag-pop { right: auto; left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dkl-ops { transition: none; }
 }

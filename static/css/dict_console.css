@@ -69,12 +69,13 @@
 .dc-btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 .dc-btn-block { width: 100%; }
 
-/* ---------- 主从布局：中央画布 + 右侧辅助栏 ---------- */
+/* ---------- 主从布局：中央画布 + 右侧辅助栏 ----------
+ * 画布不再套白底圆角卡片：标签、搜索、表格/树直接铺在页面纸面上。 */
 .dc-layout {
   flex: 1 1 auto;
   display: flex;
-  gap: 14px;
-  padding: 14px 18px;
+  gap: 16px;
+  padding: 0 16px 10px;
   min-height: 0;
 }
 .dc-canvas {
@@ -82,14 +83,15 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
 }
 .dc-sidebar {
   flex: none;
   width: 300px;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -100,7 +102,7 @@
 .dc-tabs-wrap {
   flex: none;
   border-bottom: 1px solid var(--line);
-  background: var(--paper-deep);
+  background: transparent;
 }
 .dc-tabs {
   display: flex;
@@ -161,7 +163,7 @@
 
 /* ---------- 画布面板 ---------- */
 .dc-panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-.dc-panel { padding: 18px; }
+.dc-panel { padding: 8px 0 16px; }
 .dc-panel[hidden] { display: none; }
 .dc-panel-title { margin: 0 0 4px; font-family: var(--serif); font-size: 1.15rem; }
 .dc-panel-hint { margin: 0 0 14px; color: var(--muted); font-size: 0.84rem; }
@@ -291,8 +293,8 @@
 }
 @media (max-width: 480px) {
   .dc-topbar { flex-wrap: wrap; }
-  .dc-layout { padding: 10px; }
-  .dc-panel { padding: 12px; }
+  .dc-layout { padding: 0 10px 8px; }
+  .dc-panel { padding: 6px 0 12px; }
   .dc-stat-row { grid-template-columns: repeat(2, 1fr); }
   .dc-card-grid { grid-template-columns: 1fr; }
 }
@@ -324,7 +326,7 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 .dc-table-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dc-table-count { flex: none; font-size: 0.8rem; color: var(--muted); }
 /* 宽表在容器内横向滚动，页面本身不横溢（375px 红线） */
-.dc-table-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.dc-table-scroll { max-width: 100%; overflow-x: auto; border: 0; border-radius: 0; }
 .dc-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 0.85rem; }
 .dc-table th, .dc-table td {
   padding: 6px 10px;
@@ -332,7 +334,12 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
   text-align: left;
   white-space: nowrap;
 }
-.dc-table th { background: var(--paper-deep); font-weight: 600; color: var(--muted); }
+.dc-table th {
+  background: transparent;
+  border-bottom: 1px solid var(--line-strong);
+  font-weight: 600;
+  color: var(--muted);
+}
 .dc-table tbody tr:last-child td { border-bottom: none; }
 .dc-th-action { width: 1%; }
 .dc-cell-id { color: var(--faint); font-family: ui-monospace, Consolas, monospace; }
@@ -358,8 +365,6 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 .dc-row-btn { min-width: 44px; min-height: 44px; padding: 0 12px; font-size: 0.8rem; }
 .dc-row-delete { color: var(--down); }
 .dc-table-empty { text-align: center; color: var(--muted); padding: 18px; }
-.dc-table-pager { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.dc-table-pageinfo { font-size: 0.8rem; color: var(--muted); }
 .dc-table-state { margin: 8px 0 0; min-height: 1.2em; font-size: 0.8rem; color: var(--muted); white-space: pre-line; }
 @media (max-width: 480px) {
   .dc-table-search { flex-basis: 100%; }

@@ -1,4 +1,4 @@
-"""数据字典控制台 · 阶段三契约：四栏联动与 v6→v7 迁移。
+"""数据字典控制台 · 阶段三契约：折叠树联动与 v6→v7 迁移。
 
 钉住六件事：
 1. 迁移正反向：新建即 v7 且桥表带 sort_order；rollback 降回 v6 丢列，
@@ -528,7 +528,7 @@ class LinkageRedLineTest(unittest.TestCase):
             ROOT / "app" / "bank_engine" / "migrate_v7.py",
             ROOT / "static" / "css" / "dict_console_linkage.css",
         ] + sorted(CONSOLE_DIR.glob("linkage*.js"))
-        self.assertGreaterEqual(len(list(CONSOLE_DIR.glob("linkage*.js"))), 6)
+        self.assertGreaterEqual(len(list(CONSOLE_DIR.glob("linkage*.js"))), 4)
         for path in paths:
             lines = len(path.read_text(encoding="utf-8").splitlines())
             self.assertLess(lines, 500, path.name + " 超 500 行：" + str(lines))
@@ -547,8 +547,7 @@ class LinkageRedLineTest(unittest.TestCase):
 
     def test_teaching_category_wires_linkage_modules(self) -> None:
         html = (ROOT / "static" / "dict_console.html").read_text(encoding="utf-8")
-        for name in ("linkage_dnd", "linkage_tree", "linkage_points",
-                     "linkage_directions", "linkage_tags", "linkage"):
+        for name in ("linkage_dnd", "linkage_tags", "linkage_tree", "linkage"):
             self.assertIn("dict_console/" + name + ".js", html)
         self.assertIn("dict_console_linkage.css", html)
         catalog = (CONSOLE_DIR / "catalog.js").read_text(encoding="utf-8")

@@ -4,11 +4,11 @@
 
 .det-panel { min-width: 0; }
 .det-tree {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--paper);
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   max-height: 680px;
   overflow: auto;
 }
@@ -233,7 +233,7 @@
   .det-label { flex-basis: calc(100% - 52px); }
   .det-badge { margin-left: 46px; }
   .det-ops { margin-left: auto; }
-  .det-tree { max-height: 520px; padding: 6px; }
+  .det-tree { max-height: 520px; padding: 0; }
   .det-children { margin-left: 12px; padding-left: 5px; }
   /* 窄屏学校行：全称独占一行，简称落到第二行，避免长全称挤成竖排 */
   .det-row-school { grid-template-columns: 44px minmax(0, 1fr) 44px; }

@@ -2,26 +2,26 @@
  * 独立一份样式：整块下架删本文件 + dict_console.html 的引用行即可。
  * 配色继续继承 app.css 的 --paper/--ink/--accent 变量，热区 ≥44px。 */
 
-/* ---------- 二级标签：浏览器页签观感，选中加粗高亮 ---------- */
-.dc-subtabs-wrap { margin: 0 0 14px; }
+/* ---------- 二级标签：平铺的下划线页签，不再套卡片外框 ---------- */
+.dc-subtabs-wrap { margin: 0 0 10px; }
 .dc-subtabs {
   display: flex;
-  gap: 2px;
-  padding: 6px 8px 0;
+  gap: 4px;
+  padding: 0;
   overflow-x: auto;
-  border: 1px solid var(--line);
-  border-bottom: none;
-  border-radius: 10px 10px 0 0;
-  background: var(--paper-deep);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
   scrollbar-width: thin;
 }
 .dc-subtab {
   flex: none;
   min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 9px 9px 0 0;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -32,14 +32,12 @@
 .dc-subtab:hover { background: var(--card-hover); color: var(--ink); }
 .dc-subtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .dc-subtab[aria-selected="true"] {
-  margin-bottom: -1px;
-  border-color: var(--line);
-  border-bottom: 1px solid var(--card);
-  background: var(--card);
+  border-bottom-color: var(--accent);
+  background: transparent;
   color: var(--accent);
   font-weight: 700;
 }
-.dc-subpanels { padding-top: 4px; }
+.dc-subpanels { padding-top: 6px; }
 
 /* ---------- 教材章节：左树右表 ---------- */
 .dc-chapters { min-width: 0; }
