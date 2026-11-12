@@ -8,7 +8,7 @@
   "use strict";
 
   var EXAM_ALIASES = {
-    "模拟考": ["模考", "模拟", "模拟考试", "联考", "联合考试", "一模", "二模", "三模",
+    "模拟考": ["模考", "模拟", "模拟考试", "一模", "二模", "三模",
       "四模", "五模", "六模", "七模", "八模", "九模", "十模"],
     "高考": ["全国卷", "新高考"],
     "学业水平": ["会考", "学考"],
@@ -69,7 +69,10 @@
     }
 
     function bodyItems() {
-      var items = itemsOf(uniqueNames([panel.history && panel.history.body]), "历史");
+      var items = itemsOf(uniqueNames([
+        panel.engineMeta && panel.engineMeta.exam_orgs,
+        panel.history && panel.history.body
+      ]), "考试主体");
       panel.schools.forEach(function (school) {
         items.push({
           id: "school:" + text(school.id),
@@ -87,8 +90,10 @@
         subject: uniqueNames([namesOf(panel.engineMeta && panel.engineMeta.subjects),
           panel.history && panel.history.subject]),
         grade: uniqueNames([namesOf(panel.engineMeta && panel.engineMeta.grades)]),
-        region: uniqueNames([["全国"], namesOf(panel.engineMeta && panel.engineMeta.regions),
+        // 地区一律来自底座字典：全国/东三省这类宏观节点也由后端给，前端不再硬编码。
+        region: uniqueNames([namesOf(panel.engineMeta && panel.engineMeta.regions),
           panel.history && panel.history.region]),
+        exam_level: namesOf(panel.engineMeta && panel.engineMeta.exam_levels),
         semester: ["上学期", "下学期"],
         scene: panel.scenes || []
       };
@@ -111,9 +116,22 @@
       setValue("grade", meta.grade);
       setValue("region", meta.region);
       setValue("semester", meta.semester);
+      setValue("exam_level", meta.exam_level);
       setValue("exam_type", meta.exam_type);
       setValue("body", meta.body);
       setValue("scene", meta.scene_type);
+    }
+
+    // ---------- 考试层级级联：全国统考收起参考地区与考试主体 ----------
+
+    function applyExamLevelCascade() {
+      var national = valueOf("exam_level") === "全国统考";
+      if (dom.panelRegionFieldEl) dom.panelRegionFieldEl.hidden = national;
+      if (dom.panelBodyFieldEl) dom.panelBodyFieldEl.hidden = national;
+      if (national) {
+        setValue("region", "");
+        setValue("body", "");
+      }
     }
 
     // ---------- 主体是学校：立即绑定字典 ID，让第五行能据此收起 ----------
@@ -242,7 +260,13 @@
       makeCombo("region", dom.panelMetaRegionEl, {});
       makeCombo("semester", dom.panelMetaSemesterEl, {});
       makeCombo("scene", dom.panelMetaSceneEl, {});
-      makeCombo("exam_type", dom.panelMetaExamTypeEl, { onAccept: onExamTypeAccept });
+      makeCombo("exam_level", dom.panelMetaExamLevelEl, {});
+      // 类型允许手填：老师写的新类型后端会立即建档，前端不许在失焦时把字清掉。
+      makeCombo("exam_type", dom.panelMetaExamTypeEl, {
+        strict: false,
+        allowFreeText: true,
+        onAccept: onExamTypeAccept
+      });
       // 主体可能是学校也可能是一个联盟：允许手填，命中学校字典才收起第五行。
       makeCombo("body", dom.panelMetaBodyEl, {
         strict: false,
@@ -267,6 +291,7 @@
     }
 
     return {
+      applyExamLevelCascade: applyExamLevelCascade,
       applyParsed: applyParsed,
       bindFields: bindFields,
       getValue: valueOf,

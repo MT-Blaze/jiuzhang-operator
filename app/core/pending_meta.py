@@ -119,7 +119,8 @@ def _meta_fingerprint(meta: dict[str, Any]) -> tuple[Any, ...]:
     """判断「元数据有没有被改过」的比对键：标准名与手动模式不算元数据。"""
     return (
         meta.get("year"), meta.get("region"), meta.get("grade"), meta.get("body"),
-        meta.get("exam_type"), meta.get("subject"), meta.get("scene_type"),
+        meta.get("exam_type"), meta.get("exam_level"), meta.get("subject"),
+        meta.get("scene_type"),
         meta.get("month"), meta.get("mock_round"), meta.get("semester"),
         tuple(meta.get("school_ids") or []),
     )
@@ -193,6 +194,7 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
         "grade": clean_text(merged.get("grade"), 20),
         "body": clean_text(merged.get("body"), 64),
         "exam_type": clean_text(merged.get("exam_type"), 64),
+        "exam_level": clean_text(merged.get("exam_level"), 32),
         "month": month,
         "mock_round": mock_round,
         "semester": semester,
@@ -228,9 +230,18 @@ def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tu
     source = document.get("source")
     updated = dict(source) if isinstance(source, dict) else {}
     updated.pop("school", None)
+    exam_level = str(meta.get("exam_level") or "")
+    if exam_level:
+        updated["exam_level"] = exam_level
+    else:
+        updated.pop("exam_level", None)
+    national = exam_level == "全国统考"
     if meta.get("year"):
         updated["year"] = int(meta["year"])
-    if meta.get("region"):
+    # 全国统考没有参考地区与考试主体：旧值一并清掉，绝不让上一版残留。
+    if national:
+        updated.pop("region", None)
+    elif meta.get("region"):
         updated["region"] = str(meta["region"])
     for field in ("body", "scene_type", "exam_type"):
         value = str(meta.get(field) or "")
@@ -238,7 +249,7 @@ def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tu
             updated[field] = value
         else:
             updated.pop(field, None)
-    org = str(meta.get("body") or "")
+    org = "" if national else str(meta.get("body") or "")
     if org:
         updated["exam_org_name"] = org
     else:

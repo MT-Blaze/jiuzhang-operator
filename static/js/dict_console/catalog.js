@@ -12,7 +12,7 @@
     {
       key: "foundation",
       title: "系统基石字典",
-      desc: "录题与检索共用的基础枚举：学科、年级、题型、难度、质量、考试类型。",
+      desc: "录题与检索共用的基础枚举：学科、年级、题型、难度、质量、考试层级、考试类型与考试主体。",
       stage: 2,
       items: [
         { table: "dict_subjects", name: "学科", desc: "语数英等 15 个一级学科。" },
@@ -20,7 +20,9 @@
         { table: "dict_question_types", name: "题型", desc: "选择 / 填空 / 解答三类。" },
         { table: "dict_difficulties", name: "难度", desc: "L1–L5 五级难度。" },
         { table: "dict_question_qualities", name: "题目质量", desc: "正常 / 待审 / 精品等质量标记。" },
-        { table: "dict_exam_types", name: "考试类型", desc: "高考、学业水平、模拟考、期中、期末、月考、周测、开学考 8 类。" }
+        { table: "dict_exam_levels", name: "考试层级", desc: "全国统考、跨省联考、省级统考……学校统考 7 级。" },
+        { table: "dict_exam_types", name: "考试类型", desc: "高考、学业水平、模拟考、期中、期末、月考、周测、开学考 8 类。" },
+        { table: "dict_exam_orgs", name: "考试主体", desc: "出卷主体：学校 / 联考联盟 / 各级教育部门，学校主体挂 school_id。" }
       ],
       subs: [
         { key: "dict_subjects", label: "学科", table: "dict_subjects" },
@@ -28,7 +30,9 @@
         { key: "dict_question_types", label: "题型", table: "dict_question_types" },
         { key: "dict_difficulties", label: "难度", table: "dict_difficulties" },
         { key: "dict_question_qualities", label: "题目质量", table: "dict_question_qualities" },
-        { key: "dict_exam_types", label: "考试类型", table: "dict_exam_types" }
+        { key: "dict_exam_levels", label: "考试层级", table: "dict_exam_levels" },
+        { key: "dict_exam_types", label: "考试类型", table: "dict_exam_types" },
+        { key: "dict_exam_orgs", label: "考试主体", table: "dict_exam_orgs" }
       ]
     },
     {
@@ -37,7 +41,7 @@
       desc: "底层分表、前端合树：行政区划与学校一棵树，教材版本与章节一棵树。",
       stage: 2,
       items: [
-        { table: "dim_regions", name: "行政区划", desc: "省 / 市两级区划，按 parent_id 合树。", sub: "regions-schools" },
+        { table: "dim_regions", name: "行政区划", desc: "全国 / 东三省宏观节点 + 省 / 市两级区划，按 parent_id 合树。", sub: "regions-schools" },
         { table: "dim_schools", name: "学校", desc: "学校全称 / 简称，按 region_id 挂到地级市。", sub: "regions-schools" },
         { table: "dim_textbook_versions", name: "教材版本", desc: "各出版社教材版本，按学科区分。", sub: "textbooks-chapters" },
         { table: "dim_textbooks", name: "教材册次", desc: "版本下的必修一 / 七年级上册等册次。", sub: "textbooks-chapters" },

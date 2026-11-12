@@ -1,10 +1,12 @@
-"""全国行政区划国标种子：34 个省级 + 334 个地级，共 368 条。
+"""全国行政区划国标种子：34 个省级 + 334 个地级 + 2 个宏观节点，共 370 条。
 
 代码取自 GB/T 2260 行政区划代码；名称一般只保留核心地名（如“黑龙江”“哈尔滨”），
 与 dim_schools.region 的文本口径一致，便于逐字匹配回填 region_id；
 省直管县级市保留规范全称（如“梅河口市”），匹配时按前缀兜底。
 省级 id 1-34，地级 id 35-367；省直管县级市按地级节点追加在末尾（id 368），
 不改动既有 id，避免存量库里学校的 region_id 整体错位。
+id 369「全国」、370「东三省」是 level=0 的宏观叶子节点，只供跨省/全国卷选地区，
+不再往下挂子级，原有省 / 市两级树原样保留。
 """
 
 from __future__ import annotations
@@ -254,6 +256,12 @@ EXTRA_CITIES: tuple[tuple[str, str, str, int], ...] = (
     ('吉林', '梅河口市', '220581', 10),
 )
 
+# 宏观节点：level=0 叶子，parent_id 为空，只作为“参考地区”候选，不参与省市树。
+MACRO_REGIONS: tuple[tuple[str, str, int], ...] = (
+    ('全国', '000000', 0),
+    ('东三省', '000001', 1),
+)
+
 
 def _build_rows() -> tuple[tuple[int, str, str, int, int | None, int], ...]:
     rows: list[tuple[int, str, str, int, int | None, int]] = []
@@ -269,6 +277,9 @@ def _build_rows() -> tuple[tuple[int, str, str, int, int | None, int], ...]:
             next_id += 1
     for province_name, city_name, city_code, city_order in EXTRA_CITIES:
         rows.append((next_id, city_name, city_code, 2, province_ids[province_name], city_order))
+        next_id += 1
+    for name, code, order in MACRO_REGIONS:
+        rows.append((next_id, name, code, 0, None, order))
         next_id += 1
     return tuple(rows)
 

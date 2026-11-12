@@ -1,5 +1,5 @@
--- 九章题库结构（沙盒终极定稿，schema version 10）
--- 36 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
+-- 九章题库结构（schema version 14）
+-- 38 张纯正关系表：所有嵌套结构拆为关系行，文本字段只存 Markdown/LaTeX 原文。
 -- SQLite 外键开关按连接生效，读写前必须先执行 PRAGMA foreign_keys = ON。
 -- 外键动作全部收敛为 RESTRICT（保护被引用数据）或 CASCADE（随父行清理从表）。
 -- 命名规范：平铺字典 dict_，业务维度 dim_（树状维度与强绑定学科年级的维度一律 dim_），
@@ -67,7 +67,7 @@ CREATE TABLE dict_question_qualities (
     sort_order INTEGER NOT NULL DEFAULT 0
 );
 -- [功能注释] 考试类型字典：只保留高考、学业水平、模拟考、期中、期末、月考、周测、开学考 8 个大类
--- 轮次（一模/二模）落 exams.mock_round，考试范围（联考 / 统考 / 校考）落 exams.exam_org_name
+-- 轮次（一模/二模）落 exams.mock_round，考试范围（全国 / 跨省 / 省级 / 地市 / 学校）落 exams.exam_level_id
 CREATE TABLE dict_exam_types (
     id         INTEGER PRIMARY KEY,
     -- [字段注释] 考试类型名称，展示给用户看的业务词汇，全局唯一
@@ -77,20 +77,44 @@ CREATE TABLE dict_exam_types (
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0
 );
--- [功能注释] 行政区划字典：按国标 GB/T 2260 存省、地两级行政区划，parent_id 自关联成“省 -> 市”
+-- [功能注释] 考试层级字典：全国统考 / 跨省联考 / 省级统考 / 跨地市联考 / 地市统考 / 学区区县统考 / 学校统考
+CREATE TABLE dict_exam_levels (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 考试层级名称，展示给用户看的业务词汇，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 考试层级编码，系统底层唯一标识，不随名称更改
+    code       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+-- [功能注释] 考试主体字典：承接联考联盟、教育局、考试院、学校等组织；学校主体可回挂 dim_schools
+CREATE TABLE dict_exam_orgs (
+    id         INTEGER PRIMARY KEY,
+    -- [字段注释] 考试主体名称，如 T8联盟 / 哈尔滨市教育局 / 哈三中，全局唯一
+    name       TEXT NOT NULL UNIQUE,
+    -- [字段注释] 主体类型，限定学校 / 联考联盟 / 地市级 / 省级 / 国家级 / 区县级 / 其他
+    org_type   TEXT NOT NULL DEFAULT '其他'
+               CHECK (org_type IN ('学校', '联考联盟', '地市级', '省级', '国家级', '区县级', '其他')),
+    -- [字段注释] 主体是具体学校时回挂学校外键，联盟 / 教育局等组织为空
+    school_id  INTEGER REFERENCES dim_schools(id) ON DELETE RESTRICT
+);
+-- [功能注释] 行政区划字典：按国标 GB/T 2260 存省、地两级行政区划，外加全国 / 东三省两个宏观叶子节点
 CREATE TABLE dim_regions (
     id         INTEGER PRIMARY KEY,
     -- [字段注释] 行政区划名称，只填核心地名（如“黑龙江”“哈尔滨”），不带省/市/自治区/地区后缀
     name       TEXT NOT NULL,
-    -- [字段注释] 国标 GB/T 2260 行政区划代码，六位数字，全局唯一
+    -- [字段注释] 国标 GB/T 2260 行政区划代码，六位数字，全局唯一；宏观节点用 000000 / 000001
     code       TEXT NOT NULL UNIQUE,
-    -- [字段注释] 区划层级，1 表示省级，2 表示地级
-    level      INTEGER NOT NULL CHECK (level IN (1, 2)),
-    -- [字段注释] 父级区划外键，省级为空，地级指向所属省级
+    -- [字段注释] 区划层级，0 表示全国 / 东三省等宏观叶子，1 表示省级，2 表示地级
+    level      INTEGER NOT NULL CHECK (level IN (0, 1, 2)),
+    -- [字段注释] 父级区划外键，省级与宏观节点为空，地级指向所属省级
     parent_id  INTEGER REFERENCES dim_regions(id) ON DELETE RESTRICT,
     -- [字段注释] 排序序号，同一父级内按行政顺序排列，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0,
-    CHECK ((level = 1 AND parent_id IS NULL) OR (level = 2 AND parent_id IS NOT NULL))
+    CHECK (
+        (level IN (0, 1) AND parent_id IS NULL)
+        OR (level = 2 AND parent_id IS NOT NULL)
+    )
 );
 
 CREATE UNIQUE INDEX ux_dim_regions_sibling_name
@@ -223,10 +247,12 @@ CREATE TABLE exams (
     id            INTEGER PRIMARY KEY,
     -- [字段注释] 试卷年份，限定 1900-2100
     year          INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 2100),
-    -- [字段注释] 考试组织或学校名称，如 T8联盟 / 哈尔滨市教育局 / 哈三中，可为空
-    exam_org_name TEXT,
-    -- [字段注释] 来源学校外键，只有具体校考才填，联考/统考为空
-    school_id     INTEGER REFERENCES dim_schools(id) ON DELETE RESTRICT,
+    -- [字段注释] 参考地区外键，指向行政区划；全国卷用「全国」，跨省联考用「东三省」或具体省份
+    region_id     INTEGER REFERENCES dim_regions(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试主体外键，T8联盟 / 教育局 / 考试院 / 学校等，可为空
+    exam_org_id   INTEGER REFERENCES dict_exam_orgs(id) ON DELETE RESTRICT,
+    -- [字段注释] 考试层级外键，全国统考 / 跨省联考 / 省级统考 / 跨地市联考 / 地市统考 / 区县统考 / 学校统考
+    exam_level_id INTEGER REFERENCES dict_exam_levels(id) ON DELETE RESTRICT,
     -- [字段注释] 试卷月份，仅月考等按月份命名的考试使用，可为空
     month         INTEGER CHECK (month IS NULL OR month BETWEEN 1 AND 12),
     -- [字段注释] 考试类型外键，指向考试类型字典的 8 个大类
@@ -507,8 +533,11 @@ CREATE INDEX ix_dim_schools_region ON dim_schools (region_id);
 CREATE INDEX ix_dim_schools_textbook ON dim_schools (textbook_id);
 CREATE INDEX ix_exams_lookup
     ON exams (year, month, subject_id, grade_id, exam_type_id);
-CREATE INDEX ix_exams_school ON exams (school_id);
+CREATE INDEX ix_exams_region ON exams (region_id);
+CREATE INDEX ix_exams_org ON exams (exam_org_id);
+CREATE INDEX ix_exams_level ON exams (exam_level_id);
 CREATE INDEX ix_exam_school_map_school ON exam_school_map (school_id);
+CREATE INDEX ix_dict_exam_orgs_school ON dict_exam_orgs (school_id);
 CREATE INDEX ix_dim_knowledge_points_subject
     ON dim_knowledge_points (subject_id);
 CREATE INDEX ix_dim_knowledge_points_parent
@@ -606,6 +635,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 13;
+PRAGMA user_version = 14;
 
 COMMIT;

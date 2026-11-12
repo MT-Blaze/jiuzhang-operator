@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from app.bank_engine import dao_dictionary
+from app.bank_engine import dao_dictionary, regions
 from app.bank_engine.models import (
     NewExam,
     NewImage,
@@ -198,6 +198,25 @@ def _school_ids(conn: sqlite3.Connection, raw: dict[str, Any]) -> tuple[int, ...
     return tuple(ids)
 
 
+def _region_id(conn: sqlite3.Connection, raw: dict[str, Any]) -> int | None:
+    numeric = _int_or_none(raw.get("region_id"))
+    if numeric is not None:
+        row = conn.execute("SELECT id FROM dim_regions WHERE id = ?", (numeric,)).fetchone()
+        if row is not None:
+            return int(row[0])
+    text = _text(raw.get("region"), 64)
+    if not text:
+        return None
+    row = conn.execute(
+        "SELECT id FROM dim_regions WHERE name = ? "
+        "ORDER BY CASE level WHEN 0 THEN 0 WHEN 1 THEN 1 ELSE 2 END, id LIMIT 1",
+        (text,),
+    ).fetchone()
+    if row is not None:
+        return int(row[0])
+    return regions.match_region_id(text)
+
+
 def _exam(
     conn: sqlite3.Connection,
     document: dict[str, Any],
@@ -210,7 +229,7 @@ def _exam(
         return None
     exam_type = normalize_exam_type(raw.get("exam_type"))
     if not exam_type:
-        # 试卷类型是外键必填项：认不出类型时宁可不挂试卷，也不写一张空类型卷。
+        # 连类型都没填时不硬编一个假类型；写了类型就一定挂上，由 writer 兜底建档。
         return None
     year = _int_or_none(raw.get("year"))
     if year is None or not 1900 <= year <= 2100:
@@ -227,15 +246,17 @@ def _exam(
     if semester not in (None, "上学期", "下学期"):
         semester = None
     school_ids = _school_ids(conn, raw)
-    explicit_school = raw.get("school_id")
-    school_id = school_ids[0] if explicit_school not in (None, "") and school_ids else None
     return NewExam(
         year=year,
-        exam_org_name=_text(
-            raw.get("exam_org_name") or raw.get("body") or raw.get("exam_subject"), 120
+        exam_level=_text(raw.get("exam_level") or raw.get("level"), 32) or None,
+        exam_org=_text(
+            raw.get("exam_org") or raw.get("exam_org_name")
+            or raw.get("body") or raw.get("exam_subject"),
+            120,
         )
         or None,
-        school_id=school_id,
+        exam_org_type=_text(raw.get("exam_org_type"), 16) or None,
+        region_id=_region_id(conn, raw),
         month=month,
         mock_round=mock_round,
         semester=semester,

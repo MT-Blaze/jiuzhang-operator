@@ -15,13 +15,19 @@ CREATE TABLE IF NOT EXISTS dim_regions (
     id         INTEGER PRIMARY KEY,
     name       TEXT NOT NULL,
     code       TEXT NOT NULL UNIQUE,
-    level      INTEGER NOT NULL CHECK (level IN (1, 2)),
+    level      INTEGER NOT NULL CHECK (level IN (0, 1, 2)),
     parent_id  INTEGER REFERENCES dim_regions(id) ON DELETE RESTRICT,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    CHECK ((level = 1 AND parent_id IS NULL) OR (level = 2 AND parent_id IS NOT NULL))
+    CHECK (
+        (level IN (0, 1) AND parent_id IS NULL)
+        OR (level = 2 AND parent_id IS NOT NULL)
+    )
 )
 """
 
+_MACRO: tuple[tuple[int, str], ...] = tuple(
+    (row[0], row[1]) for row in REGION_ROWS if row[3] == 0
+)
 _PROVINCES: tuple[tuple[int, str], ...] = tuple(
     (row[0], row[1]) for row in REGION_ROWS if row[3] == 1
 )
@@ -45,6 +51,8 @@ def match_region_id(text: str | None) -> int | None:
     value = str(text or "").strip()
     if not value:
         return None
+    if value in {name for _, name in _MACRO}:
+        return next(rid for rid, name in _MACRO if name == value)
     if value in {name for _, name in _PROVINCES}:
         return next(pid for pid, name in _PROVINCES if name == value)
     province = max(

@@ -11,7 +11,7 @@
     "七": 7, "八": 8, "九": 9, "十": 10 };
 
   var EXAM_RULES = [
-    ["模拟考", /模拟考|模拟考试|联考|联合考试|[一二三四五六七八九十\d]+模/],
+    ["模拟考", /模拟考|模拟考试|[一二三四五六七八九十\d]+模/],
     ["高考", /高考|全国卷|新高考/],
     ["学业水平", /学业水平|会考|学考/],
     ["期中", /期中/],
@@ -107,9 +107,8 @@
     var subject = longestHit(flat, source.subjects);
     if (subject) out.subject = subject;
 
-    var regions = (source.regions || []).slice();
-    if (regions.indexOf("全国") < 0) regions.push("全国");
-    var region = longestHit(flat, regions);
+    // 地区只认字典里的真名：全国/东三省由底座字典给，前端不再自己补。
+    var region = longestHit(flat, source.regions);
     if (region) out.region = region;
 
     var school = trimSchool((flat.match(SCHOOL_RE) || [])[0]);

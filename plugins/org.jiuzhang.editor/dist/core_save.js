@@ -35,6 +35,7 @@
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaExamLevelEl = deps.dom.panelMetaExamLevelEl;
     var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
     var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
     var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
@@ -174,16 +175,22 @@
     var examType = panelMetaExamTypeEl
       ? String(panelMetaExamTypeEl.value || "").trim()
       : String(source.exam_type || batch.exam_type || "").trim();
+    var examLevel = panelMetaExamLevelEl
+      ? String(panelMetaExamLevelEl.value || "").trim()
+      : String(source.exam_level || batch.exam_level || "").trim();
+    // 全国统考没有「参考地区」与「考试主体」：前端收起时也确保不把旧值带进卷子。
+    var national = examLevel === "全国统考";
     var out = {
       exam_type: examType,
-      region: source.region || "",
+      region: national ? "" : String(source.region || batch.region || ""),
       question_no: source.question_no || "",
       score: Number(meta.score) || 0
     };
+    if (examLevel) out.exam_level = examLevel;
     if (source.paper_title) out.paper_title = String(source.paper_title);
     var year = Number(source.year || batch.year);
     if (year >= 1900 && year <= 2100) out.year = Math.floor(year);
-    var org = String(source.exam_org_name || batch.body || "").trim();
+    var org = national ? "" : String(source.exam_org_name || batch.body || "").trim();
     if (org) out.exam_org_name = org.slice(0, 120);
     var month = panelMetaMonthEl ? panelMetaMonthEl.value : (source.month || batch.month);
     if (examType === "月考" && Number(month) >= 1 && Number(month) <= 12) {
@@ -206,9 +213,8 @@
       : (Array.isArray(batch.school_ids) ? batch.school_ids.slice() : []);
     if (schoolIds.length) {
       out.school_ids = schoolIds.map(function (id) { return String(id); }).filter(Boolean);
-      out.school_id = String(source.school_id || out.school_ids[0] || "");
     }
-    if (doc.source || examType || out.year || out.exam_org_name) engine.source = out;
+    if (doc.source || examType || examLevel || out.year || out.exam_org_name) engine.source = out;
     return engine;
   }
 

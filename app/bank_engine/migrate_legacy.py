@@ -9,7 +9,12 @@ from __future__ import annotations
 import sqlite3
 
 from app.bank_engine import regions
-from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
+from app.bank_engine.seeds.exam_seed import EXAM_TYPE_ROWS
+
+# v6 时代的示例卷是旧 10 列形态（org 文本 + school_id）；v14 之后的新种子
+# 换了外键口径，这条历史路径不能跟着变，否则老库升到 v6 就插错列。
+_LEGACY_SAMPLE_EXAMS = ((4, 2025, "T8联盟", 258, None, 3, 1, 12, None, 2),)
+_LEGACY_SAMPLE_SCHOOLS = ((4, 258), (4, 237))
 
 _TEACHING_TABLES = (
     "dict_subject_thoughts",
@@ -30,18 +35,10 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
 
 
 def _exam_type_id(conn: sqlite3.Connection, name: str) -> int:
-    from app.bank_engine.builder import EngineBuildError
+    from app.bank_engine.writer import ensure_exam_type_id
 
-    row = conn.execute("SELECT id FROM dict_exam_types WHERE name = ?", (name,)).fetchone()
-    if row is not None:
-        return int(row[0])
-    row = conn.execute(
-        "SELECT id FROM dict_exam_types WHERE name IN ('模拟考', '模考')"
-        " ORDER BY CASE name WHEN '模拟考' THEN 0 ELSE 1 END"
-    ).fetchone()
-    if row is None:
-        raise EngineBuildError("考试类型字典缺少「模拟考」兜底行")
-    return int(row[0])
+    text = str(name or "").strip() or "模拟考"
+    return ensure_exam_type_id(conn, text)
 
 
 def _source_subject_grade(conn: sqlite3.Connection, row: tuple) -> tuple[int, int]:
@@ -172,7 +169,7 @@ def _seed_sample_exams(conn: sqlite3.Connection) -> None:
     for (
         seed_id, year, org, school_id, month, exam_type_id, mock_round, grade_id,
         semester, subject_id,
-    ) in EXAM_ROWS:
+    ) in _LEGACY_SAMPLE_EXAMS:
         row = conn.execute(
             "SELECT id FROM exams WHERE year = ? AND COALESCE(month, 0) = ? "
             "AND COALESCE(mock_round, 0) = ? AND COALESCE(semester, '') = ? "
@@ -196,7 +193,7 @@ def _seed_sample_exams(conn: sqlite3.Connection) -> None:
              semester, subject_id),
         )
         sample_ids[seed_id] = int(cursor.lastrowid)
-    for exam_id, school_id in EXAM_SCHOOL_ROWS:
+    for exam_id, school_id in _LEGACY_SAMPLE_SCHOOLS:
         conn.execute(
             "INSERT OR IGNORE INTO exam_school_map (exam_id, school_id) VALUES (?, ?)",
             (sample_ids[exam_id], school_id),

@@ -178,6 +178,7 @@
     // ---------- 字段变化：主体联动、条件显隐、标准名重拼、整批同步 ----------
 
     function onMetaFieldChange() {
+      fields.applyExamLevelCascade();
       var body = valueOf("body");
       if (body !== panel.lastBody) {
         panel.lastBody = body;
@@ -226,13 +227,16 @@
       if (!panel.batchId) return Promise.resolve(null);
       window.clearTimeout(metaSyncTimer);
       var examType = valueOf("exam_type");
+      var examLevel = valueOf("exam_level");
+      var national = examLevel === "全国统考";
       var payload = {
         batch_id: panel.batchId,
         source_name: text(panelSrcNameEl && panelSrcNameEl.value),
         year: valueOf("year"),
-        region: valueOf("region"),
+        region: national ? "" : valueOf("region"),
         grade: valueOf("grade"),
-        body: valueOf("body"),
+        body: national ? "" : valueOf("body"),
+        exam_level: examLevel,
         scene_type: valueOf("scene"),
         exam_type: examType,
         month: examType === "月考" ? valueOf("month") : "",
@@ -340,7 +344,8 @@
       rememberBodySchool(meta);
       fields.refresh();
       fields.syncFromMeta(meta);
-      panel.lastBody = text(meta.body);
+      fields.applyExamLevelCascade();
+      panel.lastBody = valueOf("body");
       setStdMode(false);
       toggleExamFields();
       renderSchools();

@@ -57,7 +57,7 @@ def engine_status() -> dict[str, Any]:
     return asdict(service.status())
 
 
-@router.get("/api/bank/engine/meta", summary="录题下拉框的五张小字典与考试类型清单")
+@router.get("/api/bank/engine/meta", summary="录题下拉框的全部字典：基础五表 + 考试类型/层级/主体 + 区划")
 def engine_meta() -> dict[str, Any]:
     dictionaries = service.dictionaries()
     return {
@@ -67,6 +67,8 @@ def engine_meta() -> dict[str, Any]:
         "difficulties": [asdict(item) for item in dictionaries.difficulties],
         "qualities": [asdict(item) for item in dictionaries.qualities],
         "exam_types": [asdict(item) for item in dictionaries.exam_types],
+        "exam_levels": [asdict(item) for item in dictionaries.exam_levels],
+        "exam_orgs": [asdict(item) for item in dictionaries.exam_orgs],
         "regions": [asdict(item) for item in service.regions()],
     }
 

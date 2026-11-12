@@ -20,7 +20,13 @@ from app.bank_engine.seeds.curriculum import (
     SUBJECT_THOUGHT_ROWS,
 )
 from app.bank_engine.seeds.dictionaries import DIFFICULTY_SEED_ROWS, QUALITY_SEED_ROWS
-from app.bank_engine.seeds.exam_seed import EXAM_ROWS, EXAM_SCHOOL_ROWS, EXAM_TYPE_ROWS
+from app.bank_engine.seeds.exam_seed import (
+    EXAM_LEVEL_ROWS,
+    EXAM_ORG_ROWS,
+    EXAM_ROWS,
+    EXAM_SCHOOL_ROWS,
+    EXAM_TYPE_ROWS,
+)
 from app.bank_engine.seeds.exam_direction_seed import EXAM_DIRECTION_ROWS
 from app.bank_engine.seeds.knowledge_seed import KNOWLEDGE_POINT_ROWS
 from app.bank_engine.seeds.math_required1 import (
@@ -49,6 +55,8 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dict_difficulties": 5,
     "dict_question_qualities": 3,
     "dict_exam_types": 8,
+    "dict_exam_levels": 7,
+    "dict_exam_orgs": 1,
     "dict_subject_thoughts": CURRICULUM_COUNTS["dict_subject_thoughts"],
     "dict_solution_methods": CURRICULUM_COUNTS["dict_solution_methods"],
     "dict_core_competencies": CURRICULUM_COUNTS["dict_core_competencies"],
@@ -111,6 +119,16 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             "INSERT INTO dict_exam_types (id, name, code, sort_order) "
             "VALUES (?, ?, ?, ?)",
             tuple(EXAM_TYPE_ROWS),
+        ),
+        (
+            "INSERT INTO dict_exam_levels (id, name, code, sort_order) "
+            "VALUES (?, ?, ?, ?)",
+            tuple(EXAM_LEVEL_ROWS),
+        ),
+        (
+            "INSERT INTO dict_exam_orgs (id, name, org_type, school_id) "
+            "VALUES (?, ?, ?, ?)",
+            tuple(EXAM_ORG_ROWS),
         ),
     ]
     for table, rows in _TEACHING_DICTIONARIES:
@@ -178,9 +196,9 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             ),
             (
                 "INSERT INTO exams "
-                "(id, year, exam_org_name, school_id, month, exam_type_id, "
-                "mock_round, grade_id, semester, subject_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, year, region_id, exam_org_id, exam_level_id, month, "
+                "exam_type_id, mock_round, grade_id, semester, subject_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 tuple(EXAM_ROWS),
             ),
             (

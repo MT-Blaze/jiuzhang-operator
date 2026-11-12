@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.bank_engine import builder, migrate_v13
+from app.bank_engine import builder, migrate_v13, migrate_v14
 
 SCHEMA = Path(__file__).resolve().parents[1] / (
     "plugins/org.jiuzhang.bank-engine/bank/schema.sql"
@@ -29,6 +29,8 @@ class MigrateV13Test(unittest.TestCase):
         self.db_path = self.tmp / "engine.db"
         builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.conn = sqlite3.connect(self.db_path)
+        # 现行结构是 v14；先把 exams 退回 v13 形态，再验 v12↔v13 的字典改名。
+        migrate_v14.rollback(self.conn)
         self.addCleanup(self._cleanup)
 
     def _cleanup(self) -> None:

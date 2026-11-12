@@ -29,6 +29,7 @@ COLUMNS: dict[str, tuple[str, ...]] = {
         "id", "code", "name", "sort_order", "level", "description", "ai_prompt",
     ),
     "dict_question_qualities": ("id", "code", "name", "sort_order"),
+    "dict_exam_levels": ("id", "name", "code", "sort_order"),
     "dict_exam_types": ("id", "name", "code", "sort_order"),
     "dict_subject_thoughts": (
         "id", "code", "name", "sort_order", "subject_id", "stage",

@@ -30,6 +30,7 @@
     var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
     var panelMetaConfirmNoteEl = deps.dom.panelMetaConfirmNoteEl;
     var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaExamLevelEl = deps.dom.panelMetaExamLevelEl;
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
     var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
@@ -190,6 +191,7 @@
       grade: value(panelMetaGradeEl),
       body: value(panelMetaBodyEl),
       exam_type: value(panelMetaExamTypeEl),
+      exam_level: value(panelMetaExamLevelEl),
       subject: value(panelMetaSubjectEl),
       month: value(panelMetaMonthEl),
       mock_round: value(panelMetaMockRoundEl),

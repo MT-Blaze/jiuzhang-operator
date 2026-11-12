@@ -57,6 +57,22 @@ class ExamType:
 
 
 @dataclass(frozen=True)
+class ExamLevel:
+    id: int
+    name: str
+    code: str
+    sort_order: int
+
+
+@dataclass(frozen=True)
+class ExamOrg:
+    id: int
+    name: str
+    org_type: str
+    school_id: int | None
+
+
+@dataclass(frozen=True)
 class SubjectThought:
     id: int
     name: str
@@ -94,6 +110,8 @@ class Dictionaries:
     difficulties: tuple[Difficulty, ...]
     qualities: tuple[Quality, ...]
     exam_types: tuple[ExamType, ...] = ()
+    exam_levels: tuple[ExamLevel, ...] = ()
+    exam_orgs: tuple[ExamOrg, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -127,8 +145,10 @@ class NewExam:
     subject_id: int
     grade_id: int
     exam_type: str
-    exam_org_name: str | None = None
-    school_id: int | None = None
+    exam_level: str | None = None
+    exam_org: str | None = None
+    exam_org_type: str | None = None
+    region_id: int | None = None
     month: int | None = None
     mock_round: int | None = None
     semester: str | None = None
@@ -338,8 +358,10 @@ class QuestionExam:
     subject_id: int
     grade_id: int
     exam_type: str
+    exam_level: str | None
+    exam_org_id: int | None
     exam_org_name: str | None
-    school_id: int | None
+    region_id: int | None
     mock_round: int | None
     semester: str | None
     display_name: str

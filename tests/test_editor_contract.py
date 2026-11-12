@@ -2214,9 +2214,12 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertLess(order.index("core_meta_parse.js"), order.index("ui_meta_combo.js"))
         self.assertLess(order.index("ui_meta_combo.js"), order.index("ui_meta_fields.js"))
         self.assertLess(order.index("ui_meta_fields.js"), order.index("ui_std_name.js"))
-        self.assertIn('"模拟考": ["模考", "模拟", "模拟考试", "联考"',
+        self.assertIn('"模拟考": ["模考", "模拟", "模拟考试", "一模"',
                       read("ui_meta_fields.js"),
-                      "考试类型的别名表要认『模考/联考/一模』")
+                      "考试类型的别名表要认『模考/一模』")
+        self.assertNotIn('"模拟考": ["模考", "模拟", "模拟考试", "联考"',
+                         read("ui_meta_fields.js"),
+                         "联考/统考不再静默归成模拟考，老师写什么就挂什么")
 
     def test_02c_the_five_rows_reveal_by_exam_type(self) -> None:
         """五行布局与条件显隐：月考看月份、模拟考看轮次、期中期末看学期。"""

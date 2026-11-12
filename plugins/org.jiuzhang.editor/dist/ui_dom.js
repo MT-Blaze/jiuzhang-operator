@@ -196,9 +196,12 @@
       var panelStdFlashEl = document.getElementById("epStdFlash");
       var panelStdHintEl = document.getElementById("epStdHint");
       var panelMetaYearEl = document.getElementById("epMetaYear");
+      var panelRegionFieldEl = document.getElementById("epRegionField");
+      var panelBodyFieldEl = document.getElementById("epBodyField");
       var panelMetaRegionEl = document.getElementById("epMetaRegion");
       var panelMetaGradeEl = document.getElementById("epMetaGrade");
       var panelMetaBodyEl = document.getElementById("epMetaBody");
+      var panelMetaExamLevelEl = document.getElementById("epMetaExamLevel");
       var panelMetaSceneEl = document.getElementById("epMetaScene");
       var panelMetaExamTypeEl = document.getElementById("epMetaExamType");
       var panelMetaMonthEl = document.getElementById("epMetaMonth");
@@ -396,11 +399,14 @@
       panelStdFlashEl: panelStdFlashEl,
       panelStdHintEl: panelStdHintEl,
       panelMetaYearEl: panelMetaYearEl,
+      panelRegionFieldEl: panelRegionFieldEl,
+      panelBodyFieldEl: panelBodyFieldEl,
       panelMetaRegionEl: panelMetaRegionEl,
       panelMetaGradeEl: panelMetaGradeEl,
       panelMetaBodyEl: panelMetaBodyEl,
       panelMetaSceneEl: panelMetaSceneEl,
       panelMetaExamTypeEl: panelMetaExamTypeEl,
+      panelMetaExamLevelEl: panelMetaExamLevelEl,
       panelMetaMonthEl: panelMetaMonthEl,
       panelMetaMockRoundEl: panelMetaMockRoundEl,
       panelMetaSemesterEl: panelMetaSemesterEl,

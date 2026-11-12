@@ -415,8 +415,14 @@
                      placeholder="9">
             </label>
           </div>
-          <!-- 第三行：考试类型（搜索选）、轮次（只在模拟考出现，填 1、2、3）。 -->
+          <!-- 第三行：考试层级（字典）、考试类型（搜索选）、轮次（只在模拟考出现）。
+               层级选「全国统考」时，第四行的参考地区与考试主体自动收起。 -->
           <div class="ep-row">
+            <label class="ep-field ep-field-narrow">
+              <span class="ep-label">考试层级</span>
+              <input id="epMetaExamLevel" class="ep-input" type="text" maxlength="32"
+                     autocomplete="off" placeholder="省级统考">
+            </label>
             <label class="ep-field ep-field-narrow">
               <span class="ep-label">考试类型</span>
               <input id="epMetaExamType" class="ep-input" type="text" maxlength="64"
@@ -430,12 +436,12 @@
           </div>
           <!-- 第四行：参考地区、考试主体（主体若是学校本身，第五行自动收起）。 -->
           <div class="ep-row">
-            <label class="ep-field ep-field-narrow">
+            <label class="ep-field ep-field-narrow" id="epRegionField">
               <span class="ep-label">参考地区</span>
               <input id="epMetaRegion" class="ep-input" type="text" maxlength="64"
-                     autocomplete="off" placeholder="哈尔滨 / 黑龙江 / 全国">
+                     autocomplete="off" placeholder="哈尔滨 / 黑龙江">
             </label>
-            <label class="ep-field ep-field-narrow">
+            <label class="ep-field ep-field-narrow" id="epBodyField">
               <span class="ep-label">考试主体</span>
               <input id="epMetaBody" class="ep-input" type="text" maxlength="64"
                      autocomplete="off" placeholder="哈三中 / T8联盟 / 教育局">

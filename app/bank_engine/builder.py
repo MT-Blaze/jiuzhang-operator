@@ -19,6 +19,7 @@ from app.bank_engine import (
     migrate_v11,
     migrate_v12,
     migrate_v13,
+    migrate_v14,
     migrate_v7,
     migrate_v8,
     migrate_v9,
@@ -34,6 +35,8 @@ BASE_TABLES: tuple[str, ...] = (
     "dict_difficulties",
     "dict_question_qualities",
     "dict_exam_types",
+    "dict_exam_levels",
+    "dict_exam_orgs",
     "dim_regions",
     "dim_schools",
     "dim_textbook_versions",
@@ -129,7 +132,7 @@ def _backup_invalid(path: Path) -> Path | None:
 def migrate(conn: sqlite3.Connection, version: int) -> bool:
     if version == paths.SCHEMA_VERSION:
         return False
-    if version not in (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+    if version not in (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
         raise EngineBuildError(f"无法从结构版本 {version} 迁移到 {paths.SCHEMA_VERSION}")
     if version < 6:
         migrate_legacy.run(conn, version)
@@ -149,6 +152,8 @@ def migrate(conn: sqlite3.Connection, version: int) -> bool:
         migrate_v12.upgrade(conn)
     if version < 13:
         migrate_v13.upgrade(conn)
+    if version < 14:
+        migrate_v14.upgrade(conn)
     return True
 
 

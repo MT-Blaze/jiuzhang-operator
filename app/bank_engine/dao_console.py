@@ -18,24 +18,10 @@ from typing import Any
 
 from app.bank_engine.dict_stage import STAGE_ALL, STAGE_VALUES, clean_stage
 from app.bank_engine.models import (
-    Chapter,
-    CoreCompetency,
-    Difficulty,
-    ExamDirection,
-    ExamType,
-    Grade,
-    ImportReport,
-    KnowledgePoint,
-    Quality,
-    QuestionType,
-    ReferenceHit,
-    Region,
-    School,
-    SolutionMethod,
-    Subject,
-    SubjectThought,
-    Textbook,
-    TextbookVersion,
+    Chapter, CoreCompetency, Difficulty, ExamDirection, ExamLevel, ExamOrg,
+    ExamType, Grade, ImportReport, KnowledgePoint, Quality, QuestionType,
+    ReferenceHit, Region, School, SolutionMethod, Subject, SubjectThought,
+    Textbook, TextbookVersion,
 )
 
 
@@ -105,10 +91,22 @@ SPECS: dict[str, TableSpec] = {
     ),
     "dict_exam_types": TableSpec(
         table="dict_exam_types", label="考试类型", model=ExamType,
-        columns=("id", "name", "code", "sort_order"),
-        editable=("name", "code", "sort_order"), required=("name", "code"),
-        search=("name", "code"), order="sort_order, id",
+        columns=("id", "name", "code", "sort_order"), editable=("name", "code", "sort_order"),
+        required=("name", "code"), search=("name", "code"), order="sort_order, id",
         int_columns=("sort_order",), nullable=(), global_filters=(),
+    ),
+    "dict_exam_levels": TableSpec(
+        table="dict_exam_levels", label="考试层级", model=ExamLevel,
+        columns=("id", "name", "code", "sort_order"), editable=("name", "code", "sort_order"),
+        required=("name", "code"), search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order",), nullable=(), global_filters=(),
+    ),
+    # 考试主体：学校主体可回挂 dim_schools；联盟 / 教育局等组织 school_id 留空。
+    "dict_exam_orgs": TableSpec(
+        table="dict_exam_orgs", label="考试主体", model=ExamOrg,
+        columns=("id", "name", "org_type", "school_id"), search=("name", "org_type"),
+        editable=("name", "org_type", "school_id"), required=("name", "org_type"),
+        order="id", int_columns=("school_id",), nullable=("school_id",), global_filters=(),
     ),
     "dim_regions": TableSpec(
         table="dim_regions", label="行政区划", model=Region,
@@ -209,12 +207,14 @@ COLUMN_LABELS: dict[str, str] = {
     "stage": "学段", "level": "层级", "parent_id": "父级ID", "short_name": "简称",
     "region": "地区", "region_id": "区划ID", "textbook_id": "教材ID",
     "subject_id": "学科ID", "chapter_id": "章节ID", "description": "说明",
-    "publisher": "出版社",
+    "publisher": "出版社", "org_type": "主体类型", "school_id": "学校ID",
+    "exam_org_id": "考试主体ID", "exam_level_id": "考试层级ID",
 }
 
 # 子表中文名：删除防呆对话框给老师看的人话，未收录的退回表名。
 TABLE_LABELS: dict[str, str] = {
     "dict_subjects": "学科", "dict_grades": "年级", "dict_exam_types": "考试类型",
+    "dict_exam_levels": "考试层级", "dict_exam_orgs": "考试主体",
     "dict_question_types": "题型", "dict_difficulties": "难度",
     "dict_question_qualities": "题目质量", "dim_textbook_versions": "教材版本",
     "dim_regions": "行政区划", "dim_schools": "学校", "dim_textbooks": "教材版本",

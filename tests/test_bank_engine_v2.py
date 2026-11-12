@@ -1,4 +1,4 @@
-"""题库引擎 v2 契约测试：35 表结构、全量种子、自动建库与无 JSON 的 DAO。
+"""题库引擎 v2 契约测试：38 表结构、全量种子、自动建库与无 JSON 的 DAO。
 
 守的底线：
 1. 自动建库后计数与沙盒验收库一致，integrity / foreign_key 双绿；
@@ -63,10 +63,14 @@ def _insert_sample(conn: sqlite3.Connection) -> None:
         (SAMPLE_QUESTION,),
     )
     conn.execute(
+        "INSERT INTO dict_exam_orgs (id, name, org_type, school_id) "
+        "VALUES (9001, '沙盒联调卷', '其他', NULL)"
+    )
+    conn.execute(
         "INSERT INTO exams "
-        "(id, year, exam_org_name, school_id, month, exam_type_id, "
+        "(id, year, region_id, exam_org_id, exam_level_id, month, exam_type_id, "
         "mock_round, grade_id, semester, subject_id) "
-        "VALUES (9001, 2026, '沙盒联调卷', 1, NULL, 8, NULL, 12, NULL, 2)"
+        "VALUES (9001, 2026, 1, 9001, 7, NULL, 8, NULL, 12, NULL, 2)"
     )
     conn.executemany(
         "INSERT INTO exam_school_map (exam_id, school_id) VALUES (9001, ?)",
@@ -105,22 +109,26 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(self.report.counts["dim_knowledge_points"], 11388)
         self.assertEqual(self.report.counts["dim_textbook_chapters"], 3519)
         self.assertEqual(self.report.counts["dim_schools"], 347)
-        self.assertEqual(self.report.counts["dim_regions"], 368)
+        self.assertEqual(self.report.counts["dim_regions"], 370)
         self.assertEqual(self.report.counts["dim_exam_directions"], 567)
         self.assertEqual(self.report.counts["knowledge_exam_map"], 200)
         self.assertEqual(self.report.counts["chapter_knowledge_map"], 74)
+        self.assertEqual(self.report.counts["dict_exam_levels"], 7)
         self.assertEqual(self.report.counts["dict_exam_types"], 8)
+        self.assertEqual(self.report.counts["dict_exam_orgs"], 1)
         self.assertEqual(self.report.counts["exams"], 1)
         self.assertEqual(self.report.counts["exam_school_map"], 2)
 
     def test_region_dictionary_feeds_meta_search(self) -> None:
         regions = service.regions(db_path=self.db_path)
-        self.assertEqual(len(regions), 368)
+        self.assertEqual(len(regions), 370)
         hits = service.regions(keyword="哈尔滨", db_path=self.db_path)
         self.assertTrue(hits, "参考地区要支持按关键字模糊查")
         self.assertTrue(all("哈尔滨" in item.name for item in hits))
         provinces = service.regions(level=1, db_path=self.db_path)
         self.assertEqual(len(provinces), 34)
+        macro = service.regions(level=0, db_path=self.db_path)
+        self.assertEqual({item.name for item in macro}, {"全国", "东三省"})
 
     def test_regions_are_two_levels_and_schools_are_linked(self) -> None:
         conn = sqlite3.connect(self.db_path)
@@ -130,7 +138,7 @@ class EngineBuildTest(unittest.TestCase):
                     "SELECT level, COUNT(*) FROM dim_regions GROUP BY level"
                 ).fetchall()
             )
-            self.assertEqual(levels, {1: 34, 2: 334})
+            self.assertEqual(levels, {0: 2, 1: 34, 2: 334})
             self.assertEqual(
                 conn.execute(
                     "SELECT COUNT(*) FROM dim_schools WHERE region_id IS NULL"
@@ -166,7 +174,7 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(report.schema_version, engine_paths.SCHEMA_VERSION)
         self.assertEqual(report.integrity, "ok")
         self.assertEqual(report.foreign_key_violations, 0)
-        self.assertGreaterEqual(report.table_count, 35)
+        self.assertGreaterEqual(report.table_count, 38)
 
     def test_missing_database_is_built_on_demand(self) -> None:
         fresh = self.tmp / "on-demand.v2.db"
@@ -337,6 +345,7 @@ class EngineEntryWriteTest(unittest.TestCase):
             "source": {
                 "paper_title": "沙盒联调卷",
                 "exam_type": "开学考",
+                "exam_level": "学校统考",
                 "exam_org_name": "沙盒联调卷",
                 "year": 2026,
                 "question_no": "1",
@@ -394,11 +403,16 @@ class EngineEntryWriteTest(unittest.TestCase):
             self.assertEqual(point["code"], "math_function")
 
             exam = conn.execute(
-                "SELECT e.exam_org_name, e.year, m.question_no, m.score FROM question_exams m "
-                "JOIN exams e ON e.id = m.exam_id WHERE m.question_id = ?",
+                "SELECT o.name AS exam_org_name, l.name AS exam_level, e.year, "
+                "m.question_no, m.score FROM question_exams m "
+                "JOIN exams e ON e.id = m.exam_id "
+                "LEFT JOIN dict_exam_orgs o ON o.id = e.exam_org_id "
+                "LEFT JOIN dict_exam_levels l ON l.id = e.exam_level_id "
+                "WHERE m.question_id = ?",
                 (created.id,)
             ).fetchone()
             self.assertEqual(exam["exam_org_name"], "沙盒联调卷")
+            self.assertEqual(exam["exam_level"], "学校统考")
             self.assertEqual(exam["year"], 2026)
             self.assertEqual(exam["score"], 5.0)
 
@@ -452,16 +466,18 @@ class EngineSourceHygieneTest(unittest.TestCase):
         }
         self.assertEqual(oversized, {})
 
-    def test_schema_is_the_36_table_contract(self) -> None:
+    def test_schema_is_the_38_table_contract(self) -> None:
         body = SCHEMA.read_text(encoding="utf-8")
-        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 36)
-        self.assertEqual(len(builder.BASE_TABLES), 36)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 13)
+        self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 38)
+        self.assertEqual(len(builder.BASE_TABLES), 38)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 14)
         self.assertIn("dim_textbook_versions", body)
         self.assertNotIn("dim_sources", body)
         self.assertIn("tikz_code", body)
         self.assertNotIn("question_source_map", body)
         self.assertIn("exam_school_map", builder.BASE_TABLES)
+        self.assertIn("dict_exam_levels", builder.BASE_TABLES)
+        self.assertIn("dict_exam_orgs", builder.BASE_TABLES)
 
     def test_dictionaries_carry_stage_instead_of_grade(self) -> None:
         body = SCHEMA.read_text(encoding="utf-8")

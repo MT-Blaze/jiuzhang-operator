@@ -14,6 +14,8 @@ from app.bank_engine import dao_base
 from app.bank_engine.models import (
     Dictionaries,
     Difficulty,
+    ExamLevel,
+    ExamOrg,
     ExamType,
     Grade,
     Quality,
@@ -87,7 +89,27 @@ def load_dictionaries(conn: sqlite3.Connection) -> Dictionaries:
             "SELECT id, name, code, sort_order FROM dict_exam_types ORDER BY sort_order, id"
         )
     )
-    return Dictionaries(subjects, grades, types, difficulties, qualities, exam_types)
+    exam_levels = tuple(
+        ExamLevel(int(row["id"]), str(row["name"]), str(row["code"]), int(row["sort_order"]))
+        for row in conn.execute(
+            "SELECT id, name, code, sort_order FROM dict_exam_levels ORDER BY sort_order, id"
+        )
+    )
+    exam_orgs = tuple(
+        ExamOrg(
+            int(row["id"]),
+            str(row["name"]),
+            str(row["org_type"]),
+            None if row["school_id"] is None else int(row["school_id"]),
+        )
+        for row in conn.execute(
+            "SELECT id, name, org_type, school_id FROM dict_exam_orgs ORDER BY id"
+        )
+    )
+    return Dictionaries(
+        subjects, grades, types, difficulties, qualities,
+        exam_types, exam_levels, exam_orgs,
+    )
 
 
 def _find(items: Iterable, value: str, attr: str):
