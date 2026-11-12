@@ -763,12 +763,24 @@ class EditorPanelTest(unittest.TestCase):
         self.assertNotIn("epFmtLatex", canvas, "视图切换只活在辅助栏，画布内不许重开一套")
 
     def test_02_panel_never_carries_source_or_preview(self) -> None:
-        """铁律：源码只在中栏、渲染只在中栏右邻。辅助栏唯一的 textarea 是给 AI 写指令的。"""
+        """铁律：整段源码只在中栏、渲染只在中栏右邻。
+
+        辅助栏只许三只 textarea：AI 指令、答案、解析——后两只都是段级字段，
+        不是整段源码，也不画 MathJax 预览。
+        """
         panel = panel_only(read("index.html"))
-        self.assertEqual(panel.count("<textarea"), 1, "辅助栏只许出现指令框这一个 textarea")
-        at = panel.index("<textarea")
-        tag = panel[at:panel.index(">", at)]
-        self.assertIn('id="epAiAsk"', tag, "唯一的 textarea 必须是 AI 指令框")
+        self.assertEqual(panel.count("<textarea"), 3, "辅助栏只许指令/答案/解析三只 textarea")
+        tags = []
+        cursor = 0
+        while True:
+            at = panel.find("<textarea", cursor)
+            if at < 0:
+                break
+            tags.append(panel[at:panel.index(">", at)])
+            cursor = at + 1
+        for node_id in ("epAiAsk", "epAnswerInput", "epAnalysisInput"):
+            self.assertTrue(any(f'id="{node_id}"' in tag for tag in tags),
+                            f"缺少 {node_id} 这只字段框")
         for forbidden in ("edSourceBody", "edRenderBody", "edQBlock", "mathjax",
                           "ed-src-area", "ed-box-area"):
             self.assertNotIn(forbidden, panel, f"辅助栏越界放了 {forbidden}")
@@ -1080,8 +1092,9 @@ class EditorBatchTest(unittest.TestCase):
         # 画布抬头大横条与它那颗回列表的钮一起撤干净
         for gone in ("edBatchBar", "edBackList"):
             self.assertNotIn(f'id="{gone}"', canvas, f"{gone} 已随画布抬头撤除")
-        # 返回列表与源码/卡片/互换同住辅助栏顶部死锁区，挤在同一行
-        head = panel[panel.index('id="epHead"'):panel.index('id="epScroll"')]
+        # 返回列表与源码/卡片/互换同住题目私有层，挤在同一行
+        at = panel.index('id="epHead"')
+        head = panel[at:panel.index("</header>", at)]
         for node_id in ("epHeadTools", "epBackList", "epFmtLatex", "epFmtBoxed", "epSwap"):
             self.assertIn(f'id="{node_id}"', head, f"辅助栏死锁区缺少 {node_id}")
         foot = panel[panel.index('id="epDock"'):]
@@ -2093,20 +2106,32 @@ class EditorFixtureContractTest(unittest.TestCase):
 
 
 class EditorThreeSegmentPanelTest(unittest.TestCase):
-    """军令 #29：辅助栏三段式排版 + 双侧呼吸灯 + 幽灵胶囊。"""
+    """2026-11 辅助栏结构重构：公共层折叠 + 私有层吸顶 + 答案解析层。"""
 
-    def test_01_the_panel_is_three_fixed_segments(self) -> None:
-        """段一顶部固定（当前题与私有元数据）、段二自己滚、段三底部固定。"""
+    def test_01_the_panel_stacks_public_private_and_answer_layers(self) -> None:
+        """公共 → 题目 → 答案解析依次排在滚动区，底部动作带固定。"""
         panel = panel_only(read("index.html"))
         for node_id in ("epHead", "epHeadNo", "epScore", "epMetaSec", "epMetaFold",
-                        "epMetaSummary", "epDock", "epViewNote"):
+                        "epMetaSummary", "epMetaConfirm", "epAnswerSec", "epAnswerInput",
+                        "epAnalysisInput", "epDock", "epViewNote"):
             self.assertIn(f'id="{node_id}"', panel, f"辅助栏缺少 {node_id}")
-        # 三段的先后顺序不能乱：头 → 滚动区 → 脚
-        self.assertLess(panel.index('id="epHead"'), panel.index('id="epScroll"'))
-        self.assertLess(panel.index('id="epScroll"'), panel.index('id="epDock"'))
+        self.assertLess(panel.index('id="epScroll"'), panel.index('id="epMetaSec"'))
+        self.assertLess(panel.index('id="epMetaSec"'), panel.index('id="epHead"'))
+        self.assertLess(panel.index('id="epHead"'), panel.index('id="epAnswerSec"'))
+        self.assertLess(panel.index('id="epAnswerSec"'), panel.index('id="epDock"'))
         css = read("plugin.css")
         self.assertIn("flex-direction: column", rule_body(css, ".ep-root"))
         self.assertIn("overflow-y: auto", rule_body(css, ".ep-scroll"))
+        meta_rule = rule_body(css, ".ep-scroll > .ep-meta")
+        self.assertIn("position: sticky", meta_rule)
+        self.assertIn("top: 0", meta_rule)
+        head_rule = rule_body(css, ".ep-scroll > .ep-head")
+        self.assertIn("position: sticky", head_rule)
+        self.assertIn("top: var(--ep-meta-sticky)", head_rule,
+                      "题目层要吸在公共层收起后的真实高度上")
+        answer_rule = rule_body(css, ".ep-answer")
+        self.assertIn("position: sticky", answer_rule)
+        self.assertIn("bottom: 0", answer_rule, "答案解析层吸在滚动区底部")
 
     def test_01b_the_head_tools_share_one_row(self) -> None:
         """军令 #30 + 瘦身令：返回列表 + 源码/卡片 + 布局必须挤在段一同一行，按钮不带图标。"""
@@ -2149,30 +2174,57 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertEqual(cells[1], "清洗当前题 LaTeX", "契约文档命令表的标题列要同步改名")
         self.assertNotIn("AI 清洗公式", spec, "契约文档全文不许再留旧名【AI 清洗公式】")
 
-    def test_02_the_private_metadata_lives_in_the_head(self) -> None:
-        """段一只放单题私有的六项：题号、题型、难度、分值、考向、标签。"""
-        head = read("index.html")
-        head = head[head.index('id="epHead"'):head.index('id="epScroll"')]
+    def test_02_the_private_metadata_lives_in_the_question_layer(self) -> None:
+        """公共层只放批次字段，题目层只放单题私有的六项。"""
+        panel = read("index.html")
+        scroll = panel[panel.index('id="epScroll"'):panel.index('id="epDock"')]
+        meta = scroll[scroll.index('id="epMetaSec"'):scroll.index('id="epHead"')]
+        for node_id in ("epStdName", "epMetaYear", "epMetaRegion", "epMetaGrade",
+                        "epMetaBody", "epMetaScene", "epMetaExamType", "epMetaSubject"):
+            self.assertIn(f'id="{node_id}"', meta, f"公共层缺少 {node_id}")
+        head = scroll[scroll.index('id="epHead"'):scroll.index('id="epAnswerSec"')]
         for node_id in ("epQuestionNo", "epType", "epDifficulty", "epScore",
                         "epTagList", "epMounted"):
-            self.assertIn(f'id="{node_id}"', head, f"段一缺少 {node_id}")
-        # 段二不许再放单题私有的分值
-        tail = read("index.html")
-        tail = tail[tail.index('id="epScroll"'):]
-        self.assertNotIn('id="epScore"', tail, "分值属于单题私有，不许落进批次段")
+            self.assertIn(f'id="{node_id}"', head, f"题目层缺少 {node_id}")
+        self.assertNotIn('id="epScore"', meta, "分值属于单题私有，不许落进公共层")
+        self.assertNotIn('id="epQuestionNo"', meta, "题号属于单题私有，不许落进公共层")
 
     def test_03_the_batch_section_folds_on_canvas_scroll(self) -> None:
-        """画布一滚动就收成一行矮标题；鼠标停在标题上才展开，移开不收。"""
+        """画布一滚动就收成一行矮标题；标题只认点击，确定后切题保持折叠。"""
         js = read("plugin.js")
         self.assertIn('panelMetaSecEl.setAttribute("data-fold", "closed")', js)
         self.assertIn('panelMetaSecEl.setAttribute("data-fold", "open")', js)
-        self.assertIn('panelMetaFoldEl.addEventListener("mouseenter", expandMetaSection)', js)
-        # 移开鼠标不许收起：mouseleave 上不许挂收起动作
+        self.assertIn('panelMetaFoldEl.addEventListener("click"', js)
+        self.assertNotIn('panelMetaFoldEl.addEventListener("mouseenter"', js,
+                         "悬停不许自动展开：老师正在填的字段不能被鼠标路过抢走")
         self.assertNotIn('panelMetaFoldEl.addEventListener("mouseleave"', js,
                          "移开鼠标不许把老师正在填的批次字段收走")
         self.assertIn('if (raw.scroll) collapseMetaSection();', js)
+        self.assertIn('panelMetaConfirmEl.addEventListener("click", confirmMetaSection)', js,
+                      "公共层右下角那颗【确定】必须真的绑上")
+        confirm = fn_body(js, "confirmMetaSection")
+        self.assertIn("panel.metaConfirmed = true", confirm, "确定后要在内存里封存状态")
+        self.assertIn("panel.confirmedMeta = {", confirm, "确定后要封存当前公共字段")
+        self.assertIn("collapseMetaSection()", confirm, "确定后立刻折叠")
+        select = fn_body(js, "applySelection")
+        self.assertIn("panel.metaConfirmed && switched", select,
+                      "点过确定后，切题/切批次必须保持折叠")
         css = read("plugin.css")
-        self.assertIn('[data-fold="closed"] .ep-fold-body', css, "折叠只由通用规则管，段二不再专属")
+        self.assertIn('[data-fold="closed"] .ep-fold-body', css, "折叠由通用规则管")
+
+    def test_03b_the_answer_editor_patches_the_source(self) -> None:
+        """第三层的答案/解析框经 editor.apply_patch 回填，不允许在面板里拼整段源码。"""
+        js = read("plugin.js")
+        send = fn_body(js, "sendField")
+        self.assertIn('hostCall("editor.apply_patch"', send)
+        self.assertIn("field: field", send)
+        ranges = fn_body(js, "fieldRanges")
+        self.assertIn("answer: null", ranges, "答案行要有独立段，才能只改答案")
+        replace = fn_body(js, "replaceField")
+        self.assertIn('"答案：" + cleaned', replace, "答案回填要保住答案行前缀")
+        stage = stage_source()
+        self.assertIn('patchField !== "solution" && patchField !== "answer"', stage,
+                      "宿主中继必须原样放行 answer，不能一律压成题干")
 
     def test_04_the_lamp_breathes_on_both_sides(self) -> None:
         """悬停 200ms：画布那道题与辅助栏边缘同时亮莫兰迪冷蓝的呼吸灯。"""

@@ -26,6 +26,17 @@
     var toggleTopic = deps.toggleTopic;
     var toggleKnowledge = deps.toggleKnowledge;
     var imageBodyEl = deps.dom.imageBodyEl;
+    var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
+    var panelMetaConfirmNoteEl = deps.dom.panelMetaConfirmNoteEl;
+    var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
+    var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
+    var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
+    var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
+    var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
+    var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
+    var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
+    var panelMetaYearEl = deps.dom.panelMetaYearEl;
+    var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelGhostTagMenuEl = deps.dom.panelGhostTagMenuEl;
     var panelGhostTopicMenuEl = deps.dom.panelGhostTopicMenuEl;
     var panelGhostKnowledgeMenuEl = deps.dom.panelGhostKnowledgeMenuEl;
@@ -39,8 +50,15 @@
     var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelTagListEl = deps.dom.panelTagListEl;
     var panelTagsEl = deps.dom.panelTagsEl;
+    var patchIdFor = deps.patchIdFor;
     var renderBodyEl = deps.dom.renderBodyEl;
     var sourceBodyEl = deps.dom.sourceBodyEl;
+
+  // 第三层：答案与解析两只可编辑框（独立模块：删此块+脚本行+#epAnswerSec 即可整块下架）。
+  var answerEditor = window.JzoEditorAnswerEditor.create({
+    coreState: coreState, dom: deps.dom, hostCall: hostCall,
+    parseExamSource: parseExamSource, patchIdFor: patchIdFor,
+  });
 
   // ---------- 幽灵胶囊（军令 #29 / #30）：标签与考向共用一套 ----------
   // 空壳、候选、高亮与已经挂上的胶囊都在 dist/ui_capsule.js 里；
@@ -159,6 +177,29 @@
 
   function expandMetaSection() { breath.expandMetaSection(); }
 
+  /** 右下角【确定】：只把当前公共字段封存在内存，并立刻收起；批次同步留给入库。 */
+  function confirmMetaSection() {
+    var value = function (node) { return node ? String(node.value || "") : ""; };
+    panel.metaConfirmed = true;
+    panel.confirmedMeta = {
+      std_name: value(panelStdNameEl),
+      year: value(panelMetaYearEl),
+      region: value(panelMetaRegionEl),
+      grade: value(panelMetaGradeEl),
+      body: value(panelMetaBodyEl),
+      exam_type: value(panelMetaExamTypeEl),
+      subject: value(panelMetaSubjectEl),
+      month: value(panelMetaMonthEl),
+      mock_round: value(panelMetaMockRoundEl),
+      semester: value(panelMetaSemesterEl)
+    };
+    if (panelMetaConfirmNoteEl) {
+      panelMetaConfirmNoteEl.textContent = "已封存；切题保持折叠，入库时再同步";
+    }
+    collapseMetaSection();
+    panelSay("批次公共元数据已确认，切题时保持折叠。", "ok", "idle");
+  }
+
   /** 收起来时那一行矮标题要报点什么：标准名最有用，没有就报场景。 */
   function renderFoldSummary() {
     if (!panelMetaSummaryEl) return;
@@ -168,11 +209,13 @@
   }
 
     return {
+      answerEditor: answerEditor,
       applyDraftSelection: applyDraftSelection,
       breath: breath,
       capsule: capsule,
       collapseMetaSection: collapseMetaSection,
       commitTags: commitTags,
+      confirmMetaSection: confirmMetaSection,
       expandMetaSection: expandMetaSection,
       onCanvasState: onCanvasState,
       onPanelPendingUpdated: onPanelPendingUpdated,

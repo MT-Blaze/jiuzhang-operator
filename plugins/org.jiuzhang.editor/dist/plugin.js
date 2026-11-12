@@ -481,7 +481,7 @@
     // 循环引用：onFormChange 归更下面的 uiPanel，本块排得靠前，只能等它就位后再取。
     onFormChange: function () { return uiPanel.onFormChange.apply(uiPanel, arguments); },
     panelSay: panelSay,
-    parseExamSource: parseExamSource,
+    parseExamSource: parseExamSource, patchIdFor: patchIdFor,
     publish: publish,
     splitTags: splitTags,
     // 循环引用：toggleTopic 归更下面的 uiTopics，本块排得靠前，只能等它就位后再取。
@@ -490,21 +490,21 @@
     coreState: coreState,
   });
   var applyDraftSelection = uiPanelGlue.applyDraftSelection;
-  var collapseMetaSection = uiPanelGlue.collapseMetaSection;
+  var collapseMetaSection = uiPanelGlue.collapseMetaSection, confirmMetaSection = uiPanelGlue.confirmMetaSection;
   var expandMetaSection = uiPanelGlue.expandMetaSection;
   var onCanvasState = uiPanelGlue.onCanvasState;
   var onPanelPendingUpdated = uiPanelGlue.onPanelPendingUpdated;
   var renderFoldSummary = uiPanelGlue.renderFoldSummary;
   var renderMounted = uiPanelGlue.renderMounted, renderTags = uiPanelGlue.renderTags;
   var signalCanvasScroll = uiPanelGlue.signalCanvasScroll;
-  var wireGhostCell = uiPanelGlue.wireGhostCell;
-  var wireLamp = uiPanelGlue.wireLamp;
+  var wireGhostCell = uiPanelGlue.wireGhostCell, wireLamp = uiPanelGlue.wireLamp;
 
   var uiPanel = window.JzoEditorPanel.create({
     dom: dom,
     aiClear: aiClear,
+    clearAnswerEditor: uiPanelGlue.answerEditor.clear,
     clearDup: uiApprove.clearDupWarning,
-    panelSay: panelSay,
+    collapseMetaSection: collapseMetaSection, panelSay: panelSay,
     precheckDup: precheckDup,
     queueMetaSave: queueMetaSave,
     // 表单一有动静就重算辅助栏那圈琥珀灯（判据 5.2：左侧题卡与右侧辅助栏边缘同时亮）。
@@ -512,7 +512,7 @@
     presetDifficulty: uiSettings.presetDifficulty,
     // 分值/难度一改，渲染栏题卡顶部的只读条同步换字（不重排整行、不抢输入焦点）。
     paintMetaStrip: uiColumns.refreshMetaStrip,
-    renderAi: renderAi,
+    renderAi: renderAi, renderAnswerEditor: uiPanelGlue.answerEditor.render,
     // 循环引用：renderBatchMeta 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
     renderBatchMeta: function () { return uiStdName.renderBatchMeta.apply(uiStdName, arguments); },
     renderMounted: renderMounted,
@@ -669,7 +669,7 @@
     cleanViaHost: cleanViaHost,
     clearSchoolConflict: clearSchoolConflict,
     closeModal: closeModal,
-    collapseMetaSection: collapseMetaSection,
+    collapseMetaSection: collapseMetaSection, confirmMetaSection: confirmMetaSection,
     confirmSchoolCreate: confirmSchoolCreate,
     expandMetaSection: expandMetaSection,
     fillSelect: fillSelect,
@@ -714,7 +714,7 @@
     toggleSwapFromPanel: toggleSwapFromPanel,
     wireGhost: wireGhost,
     wireGhostCell: wireGhostCell,
-    wireIntake: wireIntake,
+    wireAnswerEditor: uiPanelGlue.answerEditor.wire, wireIntake: wireIntake,
     wirePoolPanel: uiPoolPanel.wire,
     wireDupJudge: uiDupJudge.wire,
     wireAmber: uiAmber.wireApproveAll,

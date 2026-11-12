@@ -818,64 +818,17 @@ def main() -> int:
                   chip_id.startswith("sch_") and "哈三中" in chip_text,
                   {"id": chip_id, "chips": chip_text})
 
-            # ---------- 军令 #28：交叉标签（按场景加权 + 模糊匹配 + 回车即记） ----------
+            # ---------- 考试类型：原生 datalist（旧交叉标签菜单已随极简结构退场） ----------
             panel.locator("#epMetaExamType").fill("")
             panel.locator("#epMetaScene").select_option("外国题")
             panel.locator("#epMetaExamType").focus()
-            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
-            foreign_menu = [text.strip() for text in
-                            panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
-            check("选【外国题】时 AMC / A-Level / IB 先冒头",
-                  [line.split("\n")[0].strip() for line in foreign_menu][:3]
-                  == ["AMC", "A-Level", "IB"],
-                  {"menu": foreign_menu})
+            exam_list = panel.locator("#epExamTypeList option").all_inner_texts()
+            check("考试类型走原生候选：输入框挂着底座八大类 datalist",
+                  panel.locator("#epMetaExamType").get_attribute("list") == "epExamTypeList"
+                  and len(exam_list) >= 8,
+                  {"list": panel.locator("#epMetaExamType").get_attribute("list"),
+                   "options": exam_list[:10]})
             panel.locator("#epMetaScene").select_option("校考题")
-            panel.locator("#epMetaExamType").fill("模")
-            expect(panel.locator("#epTagMenu .ep-menu-item")).to_have_count(8, timeout=10000)
-            mo_menu = [text.strip().split("\n")[0].strip() for text in
-                       panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
-            check("打一个「模」字，零到七模一次带出来",
-                  all(name in mo_menu for name in
-                      ("零模", "一模", "二模", "三模", "四模", "五模", "六模", "七模")),
-                  {"menu": mo_menu})
-            page.screenshot(path=str(shots / "v28-tag-menu.png"))
-            # 终极军令任务二：拼音首字母是第二条检索路，依据还得亮在候选右边。
-            panel.locator("#epMetaExamType").fill("ym")
-            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
-            pinyin_menu = [text.strip().split("\n")[0].strip() for text in
-                           panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
-            check("敲拼音首字母 ym 捞出「一模」", "一模" in pinyin_menu, {"menu": pinyin_menu})
-            tag_hints = panel.locator("#epTagMenu .ep-menu-hint").all_inner_texts()
-            check("候选右侧亮出首字母依据", any("YM" in str(h) for h in tag_hints),
-                  {"hints": tag_hints[:8]})
-            panel.locator("#epMetaExamType").fill("百日誓师考")
-            panel.locator("#epMetaExamType").press("Enter")
-            deadline = time.time() + 20
-            saved_tag = None
-            while time.time() < deadline:
-                status, tag_body = http_json(
-                    base + "/api/meta/tags?scene=" + urllib.parse.quote("校考题")
-                    + "&q=" + urllib.parse.quote("百日"))
-                saved_tag = next((tag for tag in tag_body.get("tags", [])
-                                  if tag.get("name") == "百日誓师考"), None)
-                # 种子里早有一条全局权重的「百日誓师考」；要等的是本场景那一笔。
-                if saved_tag and saved_tag.get("scene_weight", 0) >= 1:
-                    break
-                page.wait_for_timeout(200)
-            check("老师手打的新标签，回车即记进本地标签库",
-                  saved_tag is not None and saved_tag.get("scene_weight", 0) >= 1,
-                  {"tag": saved_tag})
-            panel.locator("#epMetaExamType").fill("百日")
-            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
-            next_menu = panel.locator("#epTagMenu").inner_text()
-            check("下次再打「百日」，新标签立刻弹出来",
-                  "百日誓师考" in next_menu, {"menu": next_menu[:120]})
-            panel.locator("#epMetaExamType").fill("rsk")
-            expect(panel.locator("#epTagMenu")).to_be_visible(timeout=10000)
-            remembered_menu = [text.strip().split("\n")[0].strip() for text in
-                               panel.locator("#epTagMenu .ep-menu-item").all_inner_texts()]
-            check("手打的标签连拼音一起记住：敲 rsk 捞出「百日誓师考」",
-                  "百日誓师考" in remembered_menu, {"menu": remembered_menu})
             panel.locator("#epMetaExamType").fill("高三联考")
             panel.locator("#epMetaExamType").press("Enter")
             page.wait_for_timeout(300)
@@ -1453,29 +1406,31 @@ def main() -> int:
                   {"root": root_box, "dock": dock_box})
             page.screenshot(path=str(shots / "v3-panel.png"))
 
-            # ---------- 军令 #29：辅助栏三段式 + 双侧呼吸灯 + 幽灵胶囊 ----------
-            head_box = panel.locator("#epHead").bounding_box()
-            mid_box = panel.locator("#epScroll").bounding_box()
+            # ---------- UI 重构：公共层 → 题目私有层 → 答案解析层 ----------
+            scroll_box = panel.locator("#epScroll").bounding_box()
             foot_box = panel.locator("#epDock").bounding_box()
             root_box = panel.locator("#epRoot").bounding_box()
-            check("辅助栏排成三段：段一顶部 · 段二中部 · 段三底部",
-                  None not in (head_box, mid_box, foot_box)
-                  and head_box["y"] + head_box["height"] <= mid_box["y"] + 1
-                  and mid_box["y"] + mid_box["height"] <= foot_box["y"] + 1,
-                  {"head": head_box, "mid": mid_box, "foot": foot_box})
-            check("段一钉在顶边、段三钉在底边（只有中段会滚）",
-                  root_box is not None and head_box is not None and foot_box is not None
-                  and abs(head_box["y"] - root_box["y"]) <= 2
+            check("三层都住进同一个滚动区（公共 → 题目 → 解析），台账仍钉在辅助栏底边",
+                  None not in (scroll_box, foot_box, root_box)
+                  and panel.locator("#epScroll > #epMetaSec").count() == 1
+                  and panel.locator("#epScroll > #epHead").count() == 1
+                  and panel.locator("#epScroll > #epAnswerSec").count() == 1
+                  and scroll_box["y"] + scroll_box["height"] <= foot_box["y"] + 1
                   and 0 <= root_box["y"] + root_box["height"]
                   - (foot_box["y"] + foot_box["height"]) <= 4,
-                  {"root": root_box, "head": head_box, "foot": foot_box})
-            check("段一只装单题私有元数据：题号 · 题型 · 分值 · 难度 · 考向 · 标签",
+                  {"scroll": scroll_box, "foot": foot_box, "root": root_box})
+            sticky_pos = [panel.locator(sel).evaluate("node => getComputedStyle(node).position")
+                          for sel in ("#epMetaSec", "#epHead", "#epAnswerSec")]
+            check("公共层顶边吸顶、题目层吸在公共层下方、解析层吸在底边",
+                  sticky_pos == ["sticky", "sticky", "sticky"],
+                  {"positions": sticky_pos})
+            check("题目层只装单题私有元数据：题号 · 题型 · 分值 · 难度 · 考向 · 标签",
                   panel.locator("#epHead").locator(
                       "#epQuestionNo, #epType, #epScore, #epDifficulty").count() == 4
                   and panel.locator("#epHead #epMounted").count() == 1
                   and panel.locator("#epHead #epTagList").count() == 1
-                  and panel.locator("#epScroll #epMetaSec").count() == 1
-                  and panel.locator("#epScroll #epMetaYear").count() == 1,
+                  and panel.locator("#epMetaSec #epMetaYear").count() == 1
+                  and panel.locator("#epHead #epMetaYear").count() == 0,
                   {"private": panel.locator("#epHead").locator(
                       "#epQuestionNo, #epType, #epScore, #epDifficulty").count()})
             # 终极军令任务三：私有元数据就三行——1 行四控件，2 行考向，3 行标签。
@@ -1546,10 +1501,17 @@ def main() -> int:
                   re.match(r"^待入库：\d+ · 已入库：\d+", ledger) is not None,
                   {"ledger": ledger})
 
-            # ---------- 段二自动折叠：画布一滚动就收成一行矮标题 ----------
+            # ---------- 公共层折叠：画布一动就收；题目层与解析层跟着吸顶 ----------
             check("批次公共元数据默认展开",
                   panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
                   {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+            check("公共层右下角有【确定】，解析层有答案与解析两只可编辑框",
+                  panel.locator("#epMetaSec #epMetaConfirm").count() == 1
+                  and panel.locator("#epAnswerSec #epAnswerInput").count() == 1
+                  and panel.locator("#epAnswerSec #epAnalysisInput").count() == 1,
+                  {"confirm": panel.locator("#epMetaConfirm").count(),
+                   "answer": panel.locator("#epAnswerInput").count(),
+                   "analysis": panel.locator("#epAnalysisInput").count()})
             # 1440×900 下这一卷的内容还没撑出滚动条：先把窗口压矮，让"滚动触发折叠"
             # 这个判据真的有一根滚动条可拉；判完立刻恢复原窗口尺寸。
             page.set_viewport_size({"width": 1440, "height": 520})
@@ -1576,6 +1538,25 @@ def main() -> int:
                 page.wait_for_timeout(100)
             check("画布一滚动，批次公共元数据立刻收成一行矮标题",
                   fold_state == "closed", {"fold": fold_state, "scrolled": scrolled})
+            page.wait_for_timeout(300)
+            meta_box = panel.locator("#epMetaSec").bounding_box()
+            head_box = panel.locator("#epHead").bounding_box()
+            answer_box = panel.locator("#epAnswerSec").bounding_box()
+            scroll_box = panel.locator("#epScroll").bounding_box()
+            check("公共层一收，题目层顶边紧贴公共层底边（差值 ≤ 2px）",
+                  None not in (meta_box, head_box)
+                  and abs(head_box["y"] - (meta_box["y"] + meta_box["height"])) <= 2,
+                  {"meta_bottom": round(meta_box["y"] + meta_box["height"], 1)
+                   if meta_box else None,
+                   "head_top": round(head_box["y"], 1) if head_box else None})
+            check("解析层吸在滚动区底边，不会被台账盖住",
+                  None not in (answer_box, scroll_box)
+                  and abs((answer_box["y"] + answer_box["height"])
+                          - (scroll_box["y"] + scroll_box["height"])) <= 12,
+                  {"answer_bottom": round(answer_box["y"] + answer_box["height"], 1)
+                   if answer_box else None,
+                   "scroll_bottom": round(scroll_box["y"] + scroll_box["height"], 1)
+                   if scroll_box else None})
             page.set_viewport_size({"width": 1440, "height": 900})
             page.wait_for_timeout(300)
             check("辅助栏不留虚线接收框（收件只有画布的收集筐）",
@@ -1587,16 +1568,37 @@ def main() -> int:
                   fold_summary == std_now and bool(std_now),
                   {"summary": fold_summary, "std": std_now})
             page.screenshot(path=str(shots / "v29-fold.png"))
-            panel.locator("#epMetaFold").hover()
-            page.wait_for_timeout(400)
-            check("鼠标悬停在矮标题上：批次公共元数据展开",
+            panel.locator("#epMetaFold").click()
+            page.wait_for_timeout(300)
+            check("点一下公共层矮标题：原地展开",
                   panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
                   {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
-            panel.locator("#epMessage").hover()
-            page.wait_for_timeout(600)
-            check("鼠标移开也不收起（老师正在填的字段不许被抢走）",
-                  panel.locator("#epMetaSec").get_attribute("data-fold") == "open",
-                  {"fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
+            panel.locator("#epMetaConfirm").click()
+            page.wait_for_timeout(300)
+            confirm_note = panel.locator("#epMetaConfirmNote").inner_text().strip()
+            check("点【确定】：公共层立刻折叠，值封存在内存",
+                  panel.locator("#epMetaSec").get_attribute("data-fold") == "closed"
+                  and "已封存" in confirm_note,
+                  {"fold": panel.locator("#epMetaSec").get_attribute("data-fold"),
+                   "note": confirm_note})
+            total_items = canvas.locator("#edRoot").evaluate(
+                "() => (window.__jzoEditorV2.state.items || []).length")
+            before_progress = panel.locator("#epProgress").inner_text().strip()
+            if total_items > 1:
+                canvas.locator("#edRoot").evaluate("() => window.__jzoEditorV2.jumpTo(1)")
+            switched = False
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                if panel.locator("#epProgress").inner_text().strip() != before_progress:
+                    switched = True
+                    break
+                page.wait_for_timeout(100)
+            check("点过确定后切到第 2 题：公共层保持折叠，绝不自己弹开",
+                  total_items > 1 and switched
+                  and panel.locator("#epMetaSec").get_attribute("data-fold") == "closed",
+                  {"total": total_items, "switched": switched,
+                   "progress": panel.locator("#epProgress").inner_text().strip(),
+                   "fold": panel.locator("#epMetaSec").get_attribute("data-fold")})
 
             # ---------- 双侧呼吸灯：画布悬停 200ms，两边同时亮 ----------
             row0 = canvas.locator('.ed-img-cell[data-index="0"]')

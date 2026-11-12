@@ -28,13 +28,13 @@
   /**
    * 题干段 = 题干环境正文里、choices 之前的那一段；
    * 解析段 = solution 正文里、「答案：」首行之后的那一段。
-   * 这两段就是 AI 与清洗的全部活动范围—— choices 与答案行由格式宪法锁死。
+   * AI 仍只吃题干/解析；辅助栏第三层的答案框走 ``answer`` 段，不参与光标定位。
    */
   function fieldRanges(src) {
     var text = String(src == null ? "" : src).replace(/\r\n/g, "\n");
     var stem = envSpan(text, "question") || envSpan(text, "problem");
     var solution = envSpan(text, "solution");
-    var out = { stem: null, solution: null };
+    var out = { answer: null, stem: null, solution: null };
     if (stem) {
       var choices = envSpan(text, "choices", stem.bodyAt);
       var stemEnd = choices && choices.beginAt < stem.bodyEnd ? choices.beginAt : stem.bodyEnd;
@@ -43,6 +43,10 @@
     if (solution) {
       var body = text.slice(solution.bodyAt, solution.bodyEnd);
       var answerLine = /^[ \t]*答案\s*[:：][^\n]*\n?/.exec(body);
+      var answerText = answerLine ? answerLine[0].replace(/\n$/, "") : "";
+      if (answerLine) {
+        out.answer = { start: solution.bodyAt, end: solution.bodyAt + answerText.length };
+      }
       out.solution = {
         start: solution.bodyAt + (answerLine ? answerLine[0].length : 0),
         end: solution.bodyEnd
@@ -51,7 +55,11 @@
     return out;
   }
 
-  function fieldLabel(field) { return field === "solution" ? "解析" : "题干"; }
+  function fieldLabel(field) {
+    if (field === "solution") return "解析";
+    if (field === "answer") return "答案";
+    return "题干";
+  }
 
   /** 光标/选区落在哪一段：choices、答案行与环境名之外一律不算可改字段，如实回 null。 */
   function fieldAtOffset(src, offset) {
@@ -68,14 +76,45 @@
 
   function replaceField(src, field, value) {
     var text = String(src == null ? "" : src);
-    var range = fieldRanges(text)[field === "solution" ? "solution" : "stem"];
-    if (!range) {
-      return { ok: false, message: "源码里找不到" + fieldLabel(field) + "段：先在源码补上对应环境" };
-    }
+    var key = field === "solution" || field === "answer" ? field : "stem";
+    var ranges = fieldRanges(text);
+    var range = ranges[key];
     if (String(value == null ? "" : value).length > FIELD_MAX) {
       return { ok: false, message: fieldLabel(field) + "改写超出 " + FIELD_MAX + " 字上限，未回填" };
     }
     var body = String(value == null ? "" : value).trim();
+    if (!range) {
+      // 第三层的两只框允许从零补解析：没有 solution 就整段补上，不拿半截结构去骗解析器。
+      if (key === "answer") {
+        var clean = body.replace(/^答案\s*[:：]\s*/, "");
+        if (ranges.solution) {
+          // solution 在、但缺「答案：」行：补在正文最前面，不另起一段环境。
+          return {
+            ok: true,
+            text: text.slice(0, ranges.solution.start) + "\n答案：" + clean + "\n"
+              + text.slice(ranges.solution.start)
+          };
+        }
+        return {
+          ok: true,
+          text: text.replace(/\s+$/, "") + "\n\n\\begin{solution}\n答案：" + clean + "\n\\end{solution}\n"
+        };
+      }
+      if (key === "solution") {
+        return {
+          ok: true,
+          text: text.replace(/\s+$/, "") + "\n\n\\begin{solution}\n答案：\n" + body + "\n\\end{solution}\n"
+        };
+      }
+      return { ok: false, message: "源码里找不到" + fieldLabel(field) + "段：先在源码补上对应环境" };
+    }
+    if (key === "answer") {
+      var cleaned = body.replace(/^答案\s*[:：]\s*/, "");
+      return {
+        ok: true,
+        text: text.slice(0, range.start) + "答案：" + cleaned + text.slice(range.end)
+      };
+    }
     return { ok: true, text: text.slice(0, range.start) + "\n" + body + "\n" + text.slice(range.end) };
   }
 

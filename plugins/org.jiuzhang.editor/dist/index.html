@@ -319,10 +319,12 @@
     <div id="edToast" class="ed-toast" role="status" aria-live="polite" data-show="false"></div>
   </div>
 
-  <!-- 辅助栏实例（sidebar.right）：三段式（军令 #29，UI 极致瘦身令后再收一刀）。
-       段一 顶部永远固定：返回列表 + 源码/卡片/布局、当前题号 + 单题私有元数据。
-       段二 中部自动折叠：只剩批次公共元数据——画布一滚动就收成一行矮标题，鼠标悬停标题才展开，移开不收。
-       段三 底部永远固定：存入主库 / 存为待审 / 彻底删除，最下一行灰字报账。
+  <!-- 辅助栏实例（sidebar.right）：公共在前、私有在后（2026-11 结构重构）。
+       第一层 批次公共元数据：默认展开，点标题展开/收起，画布一滚动就收成矮标题；
+               右下角【确定】把当前值在内存里封存，切题也不再自动弹开。
+       第二层 题目私有元数据：紧跟在公共层下方，position: sticky 吸在折叠后的公共层底部。
+       第三层 解析私有元数据：答案与解析两只可编辑框，吸在滚动区底部。
+       最底一条固定动作带：单题入库 / 存为待审 / 彻底删除，最下一行灰字报账。
        按军令 #23 的铁律，这里绝不放 LaTeX 源码、也绝不放渲染预览——那两样留在画布中栏与右栏。
        同一功能绝不摆两遍：来源字段是公共元数据的镜像、考向只在段一挂，两块都已在 2026-11-02 下线。
        画布顶栏撤除后，返回列表与视图切换全部搬进段一死锁区；
@@ -353,94 +355,11 @@
       </div>
     </section>
 
-    <!-- ============ 段一：顶部固定 · 当前题与单题私有元数据 ============ -->
-    <header class="ep-head" id="epHead" aria-label="当前题与私有元数据">
-      <div class="ep-head-bar">
-        <span class="ep-head-no" id="epHeadNo">第 — 题</span>
-        <span class="ep-badge" id="epStatus" data-status="pending" data-dirty="false">● 待审核</span>
-        <span class="ep-head-count" id="epProgress" data-active="0" data-total="0">第 — / — 题</span>
-      </div>
-      <!-- 死锁区第二行（军令 #30）：返回列表 + 源码/卡片 + 布局全部挤在同一行；
-           画布上方从此一根毛的按钮都不留。按钮一律不挂图标，只留文字。 -->
-      <div class="ep-head-tools" id="epHeadTools" role="group" aria-label="画布视图">
-        <button type="button" class="ep-btn ep-back-btn ep-mini-btn" id="epBackList"
-                title="回到批次列表">返回列表</button>
-        <div class="ep-seg" role="group" aria-label="源码格式">
-          <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
-                  aria-pressed="true" title="源码 · 标准 LaTeX">源码</button>
-          <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
-                  aria-pressed="false" title="卡片 · 框框视图">卡片</button>
-        </div>
-        <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
-                title="源码与渲染左右互换">布局</button>
-        <!-- API 配置中心（终极军令 任务一）：双栏弹窗住在画布那帧（这一帧只有 300px 宽），
-             这里只负责发一句「打开」，密钥原文与出网全走宿主代持的 ai.* 通道。 -->
-        <button type="button" class="ep-btn ep-mini-btn" id="epAiConfig"
-                title="密钥池与任务指派">API 配置</button>
-        <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
-      </div>
-      <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"
-         data-batch="idle">辅助栏跟随当前题</p>
-      <span class="ep-sr" id="epConfidence" data-confidence="">置信度 —（假数据占位）</span>
-
-      <!-- 私有字段第一行（终极军令任务三）：题号 | 题型 | 分值 | 难度。
-           窄栏自动折行（flex-wrap），一行放不下就换到下一行，不许撑破面板。 -->
-      <div class="ep-head-grid">
-        <label class="ep-mini">
-          <span class="ep-mini-label">题号</span>
-          <input id="epQuestionNo" class="ep-mini-input" type="text" maxlength="20" placeholder="3">
-        </label>
-        <label class="ep-mini">
-          <span class="ep-mini-label">题型</span>
-          <select id="epType" class="ep-mini-select" aria-describedby="epTypeNote"></select>
-        </label>
-        <label class="ep-mini">
-          <span class="ep-mini-label">分值</span>
-          <input id="epScore" class="ep-mini-input" type="text" inputmode="decimal"
-                 maxlength="6" placeholder="5">
-        </label>
-        <label class="ep-mini">
-          <span class="ep-mini-label">难度</span>
-          <select id="epDifficulty" class="ep-mini-select"></select>
-        </label>
-      </div>
-      <p class="ep-hint ep-head-hint" id="epTypeNote" data-from="ai">题型由源码自动判断，可人工改。</p>
-
-      <!-- 第二行 考向：已挂的胶囊 + 幽灵胶囊（打字出带提纲路径的拼音模糊搜索，回车取第一条）。 -->
-      <div class="ep-cell">
-        <span class="ep-mini-label">考向</span>
-        <div class="ep-chips" id="epMounted" role="list" aria-label="本题已挂考向"></div>
-        <div class="ep-menu ep-menu-ghost" id="epGhostTopicMenu" role="listbox"
-             aria-label="考向候选" hidden></div>
-      </div>
-
-      <!-- 第二行半 知识点：与考向同一套幽灵胶囊，落 v2 的 question_knowledge_map。 -->
-      <div class="ep-cell">
-        <span class="ep-mini-label">知识点</span>
-        <div class="ep-chips" id="epMountedKnowledge" role="list" aria-label="本题已挂知识点"></div>
-        <div class="ep-menu ep-menu-ghost" id="epGhostKnowledgeMenu" role="listbox"
-             aria-label="知识点候选" hidden></div>
-      </div>
-
-      <!-- 第三行 标签：胶囊 + 幽灵胶囊（拼音模糊搜索）。#epTags 藏起来只当「逗号串」的存档位。 -->
-      <div class="ep-cell">
-        <span class="ep-mini-label">标签</span>
-        <div class="ep-chips" id="epTagList" role="list" aria-label="本题标签"></div>
-        <input id="epTags" type="hidden" value="">
-        <div class="ep-menu ep-menu-ghost" id="epGhostTagMenu" role="listbox"
-             aria-label="标签候选" hidden></div>
-      </div>
-
-      <!-- 辅助栏的唯一常驻话术：审核动作的进度与回执都落在这里。 -->
-      <p class="ep-msg" id="epMessage" role="status" aria-live="polite"
-         data-tone="info" data-save-state="idle">等待画布送来的当前题。</p>
-    </header>
-
-    <!-- ============ 段二：中部 · 批次公共元数据（可折叠） ============ -->
+    <!-- ============ 滚动区：公共层 → 题目私有层 → 答案解析层 ============ -->
     <div class="ep-scroll" id="epScroll">
       <section class="ep-sec ep-meta" id="epMetaSec" data-fold="open" aria-label="批次公共元数据">
         <button type="button" class="ep-fold-head" id="epMetaFold" aria-expanded="true"
-                aria-controls="epMetaFoldBody" title="画布滚动时自动收起，鼠标悬停这里展开">
+                aria-controls="epMetaFoldBody" title="点标题展开或收起；画布一滚动就自动收起">
           <span class="ep-sec-title">批次公共元数据</span>
           <span class="ep-fold-summary" id="epMetaSummary">—</span>
           <span class="ep-fold-arrow" aria-hidden="true">▾</span>
@@ -557,8 +476,98 @@
           <datalist id="epExamTypeList"></datalist>
           <p class="ep-hint" id="epSceneNote">场景决定标签排序：外国题先出 AMC / A-Level / IB，校考题先出月考与模考。</p>
           <p class="ep-hint" id="epMetaNote">改这几个字段，这一批的题立刻同步；学校只存字典 ID，按简称能搜到。</p>
+          <!-- 确定只做两件事：把当前值在内存里封存、立刻把公共层收成矮标题；
+               批次同步仍留给最后的【入库】环节，这里不抢跑。 -->
+          <div class="ep-meta-confirm">
+            <span class="ep-meta-confirm-note" id="epMetaConfirmNote">核对完点确定，切题不再自动弹开</span>
+            <button type="button" class="ep-btn ep-btn-primary ep-mini-btn"
+                    id="epMetaConfirm">确定</button>
+          </div>
         </div>
       </section>
+
+      <!-- ============ 第二层：题目私有元数据（吸顶） ============ -->
+      <header class="ep-head" id="epHead" aria-label="当前题与私有元数据">
+        <div class="ep-head-bar">
+          <span class="ep-head-no" id="epHeadNo">第 — 题</span>
+          <span class="ep-badge" id="epStatus" data-status="pending" data-dirty="false">● 待审核</span>
+          <span class="ep-head-count" id="epProgress" data-active="0" data-total="0">第 — / — 题</span>
+        </div>
+        <!-- 死锁区第二行（军令 #30）：返回列表 + 源码/卡片 + 布局全部挤在同一行；
+             画布上方从此一根毛的按钮都不留。按钮一律不挂图标，只留文字。 -->
+        <div class="ep-head-tools" id="epHeadTools" role="group" aria-label="画布视图">
+          <button type="button" class="ep-btn ep-back-btn ep-mini-btn" id="epBackList"
+                  title="回到批次列表">返回列表</button>
+          <div class="ep-seg" role="group" aria-label="源码格式">
+            <button type="button" class="ep-seg-btn is-on" id="epFmtLatex" data-format="latex"
+                    aria-pressed="true" title="源码 · 标准 LaTeX">源码</button>
+            <button type="button" class="ep-seg-btn" id="epFmtBoxed" data-format="boxed"
+                    aria-pressed="false" title="卡片 · 框框视图">卡片</button>
+          </div>
+          <button type="button" class="ep-btn ep-swap-btn ep-mini-btn" id="epSwap" aria-pressed="false"
+                  title="源码与渲染左右互换">布局</button>
+          <!-- API 配置中心（终极军令 任务一）：双栏弹窗住在画布那帧（这一帧只有 300px 宽），
+               这里只负责发一句「打开」，密钥原文与出网全走宿主代持的 ai.* 通道。 -->
+          <button type="button" class="ep-btn ep-mini-btn" id="epAiConfig"
+                  title="密钥池与任务指派">API 配置</button>
+          <span class="ep-sr" id="epViewNote">源码与卡片只改画布中栏的编辑视图。</span>
+        </div>
+        <p class="ep-batch" id="edBatchNote" role="status" aria-live="polite"
+           data-batch="idle">辅助栏跟随当前题</p>
+        <span class="ep-sr" id="epConfidence" data-confidence="">置信度 —（假数据占位）</span>
+
+        <!-- 私有字段第一行（终极军令任务三）：题号 | 题型 | 分值 | 难度。
+             窄栏自动折行（flex-wrap），一行放不下就换到下一行，不许撑破面板。 -->
+        <div class="ep-head-grid">
+          <label class="ep-mini">
+            <span class="ep-mini-label">题号</span>
+            <input id="epQuestionNo" class="ep-mini-input" type="text" maxlength="20" placeholder="3">
+          </label>
+          <label class="ep-mini">
+            <span class="ep-mini-label">题型</span>
+            <select id="epType" class="ep-mini-select" aria-describedby="epTypeNote"></select>
+          </label>
+          <label class="ep-mini">
+            <span class="ep-mini-label">分值</span>
+            <input id="epScore" class="ep-mini-input" type="text" inputmode="decimal"
+                   maxlength="6" placeholder="5">
+          </label>
+          <label class="ep-mini">
+            <span class="ep-mini-label">难度</span>
+            <select id="epDifficulty" class="ep-mini-select"></select>
+          </label>
+        </div>
+        <p class="ep-hint ep-head-hint" id="epTypeNote" data-from="ai">题型由源码自动判断，可人工改。</p>
+
+        <!-- 第二行 考向：已挂的胶囊 + 幽灵胶囊（打字出带提纲路径的拼音模糊搜索，回车取第一条）。 -->
+        <div class="ep-cell">
+          <span class="ep-mini-label">考向</span>
+          <div class="ep-chips" id="epMounted" role="list" aria-label="本题已挂考向"></div>
+          <div class="ep-menu ep-menu-ghost" id="epGhostTopicMenu" role="listbox"
+               aria-label="考向候选" hidden></div>
+        </div>
+
+        <!-- 第二行半 知识点：与考向同一套幽灵胶囊，落 v2 的 question_knowledge_map。 -->
+        <div class="ep-cell">
+          <span class="ep-mini-label">知识点</span>
+          <div class="ep-chips" id="epMountedKnowledge" role="list" aria-label="本题已挂知识点"></div>
+          <div class="ep-menu ep-menu-ghost" id="epGhostKnowledgeMenu" role="listbox"
+               aria-label="知识点候选" hidden></div>
+        </div>
+
+        <!-- 第三行 标签：胶囊 + 幽灵胶囊（拼音模糊搜索）。#epTags 藏起来只当「逗号串」的存档位。 -->
+        <div class="ep-cell">
+          <span class="ep-mini-label">标签</span>
+          <div class="ep-chips" id="epTagList" role="list" aria-label="本题标签"></div>
+          <input id="epTags" type="hidden" value="">
+          <div class="ep-menu ep-menu-ghost" id="epGhostTagMenu" role="listbox"
+               aria-label="标签候选" hidden></div>
+        </div>
+
+        <!-- 辅助栏的唯一常驻话术：审核动作的进度与回执都落在这里。 -->
+        <p class="ep-msg" id="epMessage" role="status" aria-live="polite"
+           data-tone="info" data-save-state="idle">等待画布送来的当前题。</p>
+      </header>
 
       <!-- 「来源（随手填）」与「考向大纲」树已整块下线（UI 极致瘦身令，2026-11-02）：
            原卷名 / 年份 / 类型是批次公共元数据拼出的标准名的只读镜像，年级随识别结果入题，
@@ -672,9 +681,30 @@
           </div>
         </div>
       </section>
+
+      <!-- ============ 第三层：解析私有元数据（吸底） ============
+           答案与解析各一只可编辑框，改完自动经宿主回填画布源码；
+           它不是整段源码、也不是渲染预览，按军令 #23 仍在辅助栏红线之内。 -->
+      <section class="ep-sec ep-answer" id="epAnswerSec" aria-label="答案与解析">
+        <div class="ep-answer-head">
+          <h3 class="ep-sec-title">答案与解析</h3>
+          <span class="ep-hint ep-answer-note" id="epAnswerNote" role="status"
+                aria-live="polite">改完自动回填画布，未入库</span>
+        </div>
+        <label class="ep-answer-field">
+          <span class="ep-label">答案</span>
+          <textarea id="epAnswerInput" class="ep-input ep-answer-input" rows="1" maxlength="20000"
+                    placeholder="如：A / 42 / x=1"></textarea>
+        </label>
+        <label class="ep-answer-field">
+          <span class="ep-label">解析</span>
+          <textarea id="epAnalysisInput" class="ep-input ep-analysis-input" rows="3" maxlength="20000"
+                    placeholder="解析正文；「答案：」行由上面那只框管"></textarea>
+        </label>
+      </section>
     </div>
 
-    <!-- ============ 段三：底部固定 · 审核动作 + 台账 ============ -->
+    <!-- ============ 底部固定：审核动作 + 台账 ============ -->
     <footer class="ep-foot-bar" id="epDock">
       <div class="ep-foot-row ep-foot-actions">
         <button type="button" class="ep-btn ep-btn-primary ep-mini-btn" id="epApprove">单题入库</button>
@@ -802,6 +832,7 @@
   <script src="ui_columns.js"></script>
   <script src="ui_illustration.js"></script>
   <script src="ui_panel.js"></script>
+  <script src="ui_answer_editor.js"></script>
   <script src="ui_layout.js"></script>
   <script src="core_selection.js"></script>
   <script src="ui_format.js"></script>

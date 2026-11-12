@@ -111,6 +111,9 @@
     batchId: "",
     batchCard: null,
     batchMeta: {},
+    // 【确定】之后的公共层：值只在内存里封存，切题保持折叠；入库时才谈同步。
+    metaConfirmed: false,
+    confirmedMeta: null,
     // 明细学校只存字典记录（id + 全称 + 简称），题目里也只认 school_id。
     schools: [],
     // 老师刚建档、还没进回执快照的学校：回执晚到时不能把它抹掉。

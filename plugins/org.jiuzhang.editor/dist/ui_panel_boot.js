@@ -25,6 +25,7 @@
     var clearSchoolConflict = deps.clearSchoolConflict;
     var closeModal = deps.closeModal;
     var collapseMetaSection = deps.collapseMetaSection;
+    var confirmMetaSection = deps.confirmMetaSection;
     var confirmSchoolCreate = deps.confirmSchoolCreate;
     var expandMetaSection = deps.expandMetaSection;
     var fillSelect = deps.fillSelect;
@@ -68,6 +69,7 @@
     var wireIntake = deps.wireIntake;
     // 重题池辅助栏与【全部入库】那颗钮（军令 #32 · 判据 5.3/5.4/43）：都只在辅助栏这帧接活。
     var wireAmber = deps.wireAmber;
+    var wireAnswerEditor = deps.wireAnswerEditor;
     var wirePoolPanel = deps.wirePoolPanel;
     var wireDupJudge = deps.wireDupJudge;
     // 终极军令 任务一/三：API 配置入口与批量识别只在这帧发声，执行全在画布。
@@ -104,6 +106,7 @@
     var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
     var panelExamTypeListEl = deps.dom.panelExamTypeListEl;
     var toggleExamFields = deps.toggleExamFields;
+    var panelMetaConfirmEl = deps.dom.panelMetaConfirmEl;
     var panelMetaFoldEl = deps.dom.panelMetaFoldEl;
     var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
     var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
@@ -184,15 +187,17 @@
     wireGhostCell("topic");
     wireGhostCell("knowledge");
     loadEngineMeta().then(function () { renderBatchMeta(); });
-    // 批次公共元数据：画布一滚动就收成一行矮标题；鼠标停在标题上才展开，
-    // 移开鼠标不收起——老师正在填的字段不许被自动折叠抢走。
+    // 批次公共元数据：画布一滚动就收成矮标题；标题只认点击展开/收起，
+    // 不再用悬停自动弹开——老师正在填的字段不许被鼠标路过抢走。
     if (panelMetaFoldEl) {
-      panelMetaFoldEl.addEventListener("mouseenter", expandMetaSection);
       panelMetaFoldEl.addEventListener("click", function () {
         var open = panelMetaSecEl && panelMetaSecEl.getAttribute("data-fold") === "open";
         if (open) collapseMetaSection();
         else expandMetaSection();
       });
+    }
+    if (panelMetaConfirmEl) {
+      panelMetaConfirmEl.addEventListener("click", confirmMetaSection);
     }
     [panelFmtLatexEl, panelFmtBoxedEl].forEach(function (node) {
       if (!node) return;
@@ -291,6 +296,7 @@
       panelStdNameEl.addEventListener("change", onStdInput);
     }
     wireIntake();
+    if (wireAnswerEditor) wireAnswerEditor();
     if (wirePoolPanel) wirePoolPanel();
     if (wireDupJudge) wireDupJudge();
     if (wireAmber) wireAmber();

@@ -22,6 +22,7 @@
     });
     var lampTimer = 0;
     var scrollSignalAt = 0;
+    var lastStickyOffset = -1;
 
     function paintLamp() {
       var cells = document.querySelectorAll(ROW_SELECTOR);
@@ -57,6 +58,14 @@
         ctx.panelMetaSummaryEl.textContent = ui.summary;
         ctx.panelMetaSummaryEl.title = ui.summary === "—" ? "" : ui.summary;
       }
+      // 题目层的吸顶线必须等于公共层收起后的真实高度：展开时归零，收起时量一次。
+      window.requestAnimationFrame(function () {
+        if (!ctx.panelRoot || !ctx.panelMetaSecEl) return;
+        var offset = ui.foldOpen ? 0 : ctx.panelMetaSecEl.offsetHeight;
+        if (offset === lastStickyOffset) return;
+        lastStickyOffset = offset;
+        ctx.panelRoot.style.setProperty("--ep-meta-sticky", offset + "px");
+      });
     }
 
     global.JzoReactive.watch(function () {

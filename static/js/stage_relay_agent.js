@@ -137,14 +137,16 @@
     if (method === "editor.apply_patch") {
       var patchValue = textValue(payload, "value", 20000);
       if (!patchValue) { failWith("BAD_REQUEST", "回填内容为空"); return; }
+      var patchField = textValue(payload, "field", 20);
+      if (patchField !== "solution" && patchField !== "answer") patchField = "stem";
       var patch = {
         id: textValue(payload, "id", 80),
-        field: textValue(payload, "field", 20) === "solution" ? "solution" : "stem",
+        field: patchField,
         value: patchValue
       };
       broadcast("editor.apply_patch", patch);
-      dock("AI 帮改请求把改写的" + (patch.field === "solution" ? "解析" : "题干") + "回填到录题表单。",
-        "agent.patch");
+      var patchLabel = patch.field === "solution" ? "解析" : patch.field === "answer" ? "答案" : "题干";
+      dock("辅助栏请求把改写的" + patchLabel + "回填到录题表单。", "agent.patch");
       done({ ok: true, field: patch.field, id: patch.id });
       return;
     }

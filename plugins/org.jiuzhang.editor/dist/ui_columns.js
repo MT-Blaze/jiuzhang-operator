@@ -599,7 +599,7 @@
     }
     area.value = item.source;
     growTextarea(area);
-    var range = fieldRanges(item.source)[field === "solution" ? "solution" : "stem"];
+    var range = fieldRanges(item.source)[field === "solution" ? "solution" : field === "answer" ? "answer" : "stem"];
     if (range && document.activeElement === area) {
       // 光标停在改写段末尾：老师接着看结果，不必自己找位置
       area.setSelectionRange(range.end, range.end);
@@ -607,12 +607,12 @@
   }
 
   /**
-   * 辅助栏点了【采用】才有这条通知。只替换题干段/解析段的正文，
+   * 辅助栏点了【采用】或第三层改了答案/解析才有这条通知。只替换对应段的正文，
    * 目标题认不出来、段找不到、内容超长都如实拒绝——绝不用半截改写覆盖老师的源码。
    */
   function applyAiPatch(payload) {
     var raw = payload && payload.raw ? payload.raw : payload;
-    var field = raw && (raw.field === "solution" || raw.field === "stem") ? raw.field : "";
+    var field = raw && (raw.field === "solution" || raw.field === "stem" || raw.field === "answer") ? raw.field : "";
     var value = String((raw && raw.value) || "");
     if (!field || !value.trim()) {
       toast("AI 回填缺字段或内容为空，源码没动", "error");
@@ -638,7 +638,7 @@
     markDirty();
     writeBackSourceText(item, state.active, field);
     refreshRow(state.active);
-    toast("已采用 AI 改写的" + fieldLabel(field) + "，还没保存", "ok");
+    toast("已回填" + fieldLabel(field) + "，还没保存", "ok");
     return true;
   }
 

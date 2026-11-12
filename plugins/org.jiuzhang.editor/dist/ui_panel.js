@@ -11,6 +11,9 @@
     var coreState = deps.coreState;
     var TYPE_LABELS = coreState.TYPE_LABELS;
     var aiClear = deps.aiClear;
+    var clearAnswerEditor = deps.clearAnswerEditor || function () {};
+    var collapseMetaSection = deps.collapseMetaSection || function () {};
+    var renderAnswerEditor = deps.renderAnswerEditor || function () {};
     var panel = coreState.panel;
     // 录题偏好里的「预设难度」：识别没给难度时兜底；没接偏好模块就回落 L1。
     var presetDifficulty = deps.presetDifficulty || function () { return ""; };
@@ -204,6 +207,8 @@
     panel.selection = null;
     panel.currentEntry = null;
     clearQuestionState();
+    clearAnswerEditor();
+    if (panel.metaConfirmed) collapseMetaSection();
     var cards = Array.isArray(sel.batches) ? sel.batches : [];
     var wanted = String(sel.batch_id || "");
     var current = null;
@@ -248,6 +253,7 @@
     }
     panel.view = "review";
     var previous = panel.selection;
+    var switched = !previous || previous.key !== sel.key || previous.batch_id !== sel.batch_id;
     if (previous && previous.key && previous.key !== sel.key) {
       // 换题前把老师正在填的这一半按旧题的键存回草稿，别让表单跟着题号一起漂
       panel.meta[previous.key] = Object.assign(panel.meta[previous.key] || defaultEntry(previous), readForm());
@@ -258,6 +264,8 @@
       }
     }
     panel.selection = sel;
+    // 公共层点过【确定】后，切题/切批次一律保持折叠；同一题内的回显不抢老师刚展开的面板。
+    if (panel.metaConfirmed && switched) collapseMetaSection();
     setActionsEnabled(true);
     // 学校简称冲突会把单题入库重新锁死：回到审核面时必须按当前冲突再说一遍。
     if (deps.syncSchoolLock) deps.syncSchoolLock();
@@ -303,6 +311,7 @@
     renderMounted();
     renderPanelMetrics();
     renderAi();
+    renderAnswerEditor();
     renderPool();
     if (panelSelectionError()) {
       panelSay(panelSelectionError(), "error", "invalid");

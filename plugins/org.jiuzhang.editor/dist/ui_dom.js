@@ -71,6 +71,12 @@
       var panelMetaSecEl = document.getElementById("epMetaSec");
       var panelMetaFoldEl = document.getElementById("epMetaFold");
       var panelMetaSummaryEl = document.getElementById("epMetaSummary");
+      var panelMetaConfirmEl = document.getElementById("epMetaConfirm");
+      var panelMetaConfirmNoteEl = document.getElementById("epMetaConfirmNote");
+      var panelAnswerSecEl = document.getElementById("epAnswerSec");
+      var panelAnswerInputEl = document.getElementById("epAnswerInput");
+      var panelAnalysisInputEl = document.getElementById("epAnalysisInput");
+      var panelAnswerNoteEl = document.getElementById("epAnswerNote");
       var panelGhostTagMenuEl = document.getElementById("epGhostTagMenu");
       var panelGhostTopicMenuEl = document.getElementById("epGhostTopicMenu");
       var panelGhostKnowledgeMenuEl = document.getElementById("epGhostKnowledgeMenu");
@@ -278,6 +284,12 @@
       panelMetaSecEl: panelMetaSecEl,
       panelMetaFoldEl: panelMetaFoldEl,
       panelMetaSummaryEl: panelMetaSummaryEl,
+      panelMetaConfirmEl: panelMetaConfirmEl,
+      panelMetaConfirmNoteEl: panelMetaConfirmNoteEl,
+      panelAnswerSecEl: panelAnswerSecEl,
+      panelAnswerInputEl: panelAnswerInputEl,
+      panelAnalysisInputEl: panelAnalysisInputEl,
+      panelAnswerNoteEl: panelAnswerNoteEl,
       panelGhostTagMenuEl: panelGhostTagMenuEl,
       panelGhostTopicMenuEl: panelGhostTopicMenuEl,
       panelGhostKnowledgeMenuEl: panelGhostKnowledgeMenuEl,
