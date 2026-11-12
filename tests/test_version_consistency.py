@@ -190,7 +190,12 @@ class ProbeVersionContractTest(unittest.TestCase):
 
 
 class InstallerContractTest(unittest.TestCase):
-    """install.bat 是首发入口：纯 ASCII + CRLF、只走镜像、布局与文档都对得上。"""
+    """install.bat 是首发入口：纯 ASCII + CRLF、只走镜像、布局与文档都对得上。
+
+    2026-11-13 第八令：老师真机双击时下载阶段黑框静默，被当成卡死强行关掉。
+    下载改由 Windows 自带 ``curl.exe -f -L --progress-bar -o`` 承担并画进度条；
+    本组测试把「不许退回 Invoke-WebRequest」「四个镜像按返回码回退」钉死。
+    """
 
     def setUp(self) -> None:
         self.raw = (ROOT / "install.bat").read_bytes()
@@ -223,6 +228,25 @@ class InstallerContractTest(unittest.TestCase):
         labels = set(re.findall(r"(?m)^:([A-Za-z_][A-Za-z0-9_]*)", self.text))
         gotos = set(re.findall(r"goto\s+([A-Za-z_][A-Za-z0-9_]*)", self.text))
         self.assertEqual(gotos - labels, set(), "存在跳不到的标签")
+
+    def test_06_download_uses_curl_with_progress_bar(self) -> None:
+        """下载必须交给 Windows 自带 curl.exe 并强制 --progress-bar。"""
+        self.assertIn("where curl.exe", self.text, "缺少 curl.exe 可用性探测")
+        self.assertIn("curl.exe -f -L --progress-bar", self.text, "缺少带进度条的 curl 下载命令")
+        self.assertIn('-o "%DEST%" "%URL%"', self.text, "curl 必须把文件写到临时路径")
+        self.assertNotIn("Invoke-WebRequest", self.text, "下载不许再退回 Invoke-WebRequest")
+
+    def test_07_curl_exit_code_drives_four_mirror_fallback(self) -> None:
+        """非 0 返回码即判该镜像失败并落到下一个，四个都挂则显式报错退出。"""
+        block = self.text[self.text.index(":download"):self.text.index("rem ---------- unicode console output ----------")]
+        self.assertEqual(block.count("call :try_mirror"), 4, "必须依次尝试四个镜像节点")
+        self.assertLess(block.index("ghproxy.net"), block.index("github.kkgithub.com"))
+        self.assertLess(block.index("github.kkgithub.com"), block.index("gh-proxy.com"))
+        self.assertLess(block.index("gh-proxy.com"), block.index("ghfast.top"))
+        self.assertIn("if errorlevel 1 exit /b 1", block, "curl 非 0 返回码必须判失败")
+        self.assertIn("if not errorlevel 1 exit /b 0", block)
+        self.assertIn("if errorlevel 1 goto download_failed", self.text, "四镜像全挂必须显式报错退出")
+        self.assertIn(":download_failed", self.text)
 
 
 if __name__ == "__main__":
