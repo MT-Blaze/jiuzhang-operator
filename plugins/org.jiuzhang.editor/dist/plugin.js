@@ -410,6 +410,8 @@
     dockWarn: dockWarn,
     errorDetail: errorDetail,
     hostCall: hostCall,
+    // 循环引用：refreshDicts 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
+    refreshDicts: function () { return uiStdName.refreshDicts.apply(uiStdName, arguments); },
     coreState: coreState,
   });
   var loadMetaHistory = uiMetaHist.loadMetaHistory;
@@ -473,6 +475,8 @@
     dom: dom,
     // 循环引用：applySelection 归更下面的 uiPanel，本块排得靠前，只能等它就位后再取。
     applySelection: function () { return uiPanel.applySelection.apply(uiPanel, arguments); },
+    // 循环引用：applyMetaSync 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
+    applyMetaSync: function () { return uiStdName.applyMetaSync.apply(uiStdName, arguments); },
     el: el,
     hostCall: hostCall,
     // 循环引用：loadBatchMeta 归更下面的 uiStdName，本块排得靠前，只能等它就位后再取。
@@ -550,13 +554,8 @@
     uiSchoolDict: uiSchoolDict,
     coreState: coreState,
   });
-  var onMetaFieldChange = uiStdName.onMetaFieldChange;
-  var onSceneChange = uiStdName.onSceneChange;
-  var onStdInput = uiStdName.onStdInput;
   var queueMetaSync = uiStdName.queueMetaSync;
   var renderBatchMeta = uiStdName.renderBatchMeta;
-  var renderTopLines = uiStdName.renderTopLines;
-  var setStdMode = uiStdName.setStdMode;
 
   // 扫描卷手动切题：框选一块 → 新待审题。排在切图台之前，供它的「切分新题」动作调用。
   var uiSplit = window.JzoEditorSplit.create({
@@ -663,6 +662,7 @@
     aiFoldOpen: aiFoldOpen,
     applyDraftSelection: applyDraftSelection,
     backToListFromPanel: backToListFromPanel,
+    bindFields: uiStdName.bindFields,
     bindFormChanges: bindFormChanges,
     cancelSchoolConfirm: cancelSchoolConfirm,
     chooseFormatFromPanel: chooseFormatFromPanel,
@@ -692,24 +692,19 @@
     onApprove: onApprove,
     onDelete: onDelete,
     onDeleteConfirm: onDeleteConfirm,
-    onMetaFieldChange: onMetaFieldChange,
-    onSceneChange: onSceneChange,
     onSchoolEnter: onSchoolEnter,
-    toggleExamFields: uiStdName.toggleExamFields,
     onStash: onStash,
-    onStdInput: onStdInput,
     onTagEnter: onTagEnter,
     renderAi: renderAi,
     renderBatchMeta: renderBatchMeta,
+    refreshDicts: uiStdName.refreshDicts,
     renderMounted: renderMounted,
     renderTags: renderTags,
-    renderTopLines: renderTopLines,
     scheduleSchoolConflict: scheduleSchoolConflict,
     searchSchools: searchSchools,
     setAiFold: setAiFold,
     setFormatButtons: setFormatButtons,
     setSchoolError: setSchoolError,
-    setStdMode: setStdMode,
     setSwapButton: setSwapButton,
     toggleSwapFromPanel: toggleSwapFromPanel,
     wireGhost: wireGhost,

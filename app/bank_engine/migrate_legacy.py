@@ -35,9 +35,12 @@ def _exam_type_id(conn: sqlite3.Connection, name: str) -> int:
     row = conn.execute("SELECT id FROM dict_exam_types WHERE name = ?", (name,)).fetchone()
     if row is not None:
         return int(row[0])
-    row = conn.execute("SELECT id FROM dict_exam_types WHERE name = '模考'").fetchone()
+    row = conn.execute(
+        "SELECT id FROM dict_exam_types WHERE name IN ('模拟考', '模考')"
+        " ORDER BY CASE name WHEN '模拟考' THEN 0 ELSE 1 END"
+    ).fetchone()
     if row is None:
-        raise EngineBuildError("考试类型字典缺少「模考」兜底行")
+        raise EngineBuildError("考试类型字典缺少「模拟考」兜底行")
     return int(row[0])
 
 

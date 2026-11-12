@@ -762,7 +762,7 @@ def main() -> int:
                   and stat_terms["balanced"],
                   {"stat": batch_stat, "card": card})
 
-            # ---------- 批次公共元数据：辅助栏顶部，改一次整批跟着改 ----------
+            # ---------- 批次公共元数据：无原生下拉，打字才弹模糊候选 ----------
             check("辅助栏顶部有公共元数据面板",
                   panel.locator(".ep-meta").count() == 1
                   and panel.locator("#epMetaYear").count() == 1
@@ -771,29 +771,95 @@ def main() -> int:
                   and panel.locator("#epMetaScene").count() == 1
                   and panel.locator("#epMetaExamType").count() == 1
                   and panel.locator("#epMetaSubject").count() == 1
+                  and panel.locator("#epMetaGrade").count() == 1
                   and panel.locator("#epStdName").count() == 1
+                  and panel.locator("#epSrcName").count() == 1
                   and panel.locator("#epSchoolInput").count() == 1,
                   {"meta_sections": panel.locator(".ep-meta").count()})
-            check("标准名那一格可以手改（双向联动的入口）",
-                  panel.locator("#epStdName").get_attribute("readonly") is None
-                  and panel.locator("#epStdName").get_attribute("data-mode") == "auto"
-                  and panel.locator("#epStdHint").get_attribute("data-mode") == "auto",
-                  {"readonly": panel.locator("#epStdName").get_attribute("readonly"),
-                   "mode": panel.locator("#epStdName").get_attribute("data-mode")})
-            check("辅助栏顶部第一行是原文件名、第二行是标准名",
-                  panel.locator("#epSrcName").count() == 1
-                  and panel.locator("#epStdName").count() == 1
-                  and panel.locator(".ep-top .ep-src-name").count() == 1,
-                  {})
-            # 11 个场景由底座字典下发：先等下拉真的装满，再往下考标准名。
-            expect(panel.locator("#epMetaScene option")).to_have_count(12, timeout=15000)
+            native = panel.locator("#epRoot").evaluate(
+                """() => ({
+                    datalists: document.querySelectorAll('#epRoot datalist').length,
+                    hanging: Array.prototype.filter.call(
+                        document.querySelectorAll('#epRoot input'),
+                        node => node.getAttribute('list')).length,
+                    selects: document.querySelectorAll('#epRoot .ep-meta select').length
+                })""")
+            check("旧家具清场：公共层没有 datalist，输入框也不挂 list= 原生下拉",
+                  native["datalists"] == 0 and native["hanging"] == 0
+                  and native["selects"] == 0, native)
+            check("第一行原文件名可手改、第二行标准名是只读文字标签",
+                  panel.locator("#epSrcName").evaluate("n => n.tagName === 'INPUT'")
+                  and panel.locator(".ep-top .ep-src-input").count() == 1
+                  and panel.locator("#epStdName").evaluate(
+                      "n => n.tagName === 'P' && !n.isContentEditable")
+                  and "只读" in panel.locator("#epStdHint").inner_text(),
+                  {"hint": panel.locator("#epStdHint").inner_text()})
+
+            def pick_from_menu(text_piece: str) -> None:
+                """悬浮候选里点一条：菜单挂在 iframe 的 body 上，按文字点。"""
+                menu = panel.locator("ul.ep-pick-menu:visible .ep-pick-item")
+                expect(menu.first).to_be_visible(timeout=10000)
+                target = menu.filter(has_text=text_piece).first
+                expect(target).to_be_visible(timeout=10000)
+                target.click()
+
+            # 学科：打「数」就弹模糊候选，点中才落值。
+            panel.locator("#epMetaSubject").click()
+            panel.locator("#epMetaSubject").fill("数")
+            subject_hits = panel.locator("ul.ep-pick-menu:visible .ep-pick-item").all_inner_texts()
+            check("点『学科』打『数』：悬浮列表弹出模糊候选，框上没有原生箭头",
+                  any("数学" in hit for hit in subject_hits),
+                  {"hits": subject_hits[:8]})
+            pick_from_menu("数学")
+            check("点中候选才落到框里",
+                  panel.locator("#epMetaSubject").input_value() == "数学",
+                  {"subject": panel.locator("#epMetaSubject").input_value()})
+
+            # 参考地区：候选来自底座地区字典（省/市/全国）。
+            panel.locator("#epMetaRegion").fill("黑")
+            region_hits = panel.locator("ul.ep-pick-menu:visible .ep-pick-item").all_inner_texts()
+            check("参考地区候选来自底座地区字典",
+                  any("黑龙江" in hit for hit in region_hits),
+                  {"hits": region_hits[:8]})
+            pick_from_menu("黑龙江")
+
+            # 年级与场景：都走同一套自绘候选框。
+            panel.locator("#epMetaGrade").fill("高二")
+            pick_from_menu("高二")
+            panel.locator("#epMetaScene").fill("校")
+            pick_from_menu("校考题")
+
+            # 考试类型：选「模拟考」→ 轮次框弹出来；选「期中」→ 学期框弹出来。
+            check("轮次/学期两框初始收起",
+                  panel.locator("#epMockRoundField").is_hidden()
+                  and panel.locator("#epSemesterField").is_hidden(), {})
+            panel.locator("#epMetaExamType").fill("模拟")
+            pick_from_menu("模拟考")
+            expect(panel.locator("#epMockRoundField")).to_be_visible(timeout=5000)
+            check("选「模拟考」：轮次框当场弹出来（填 1、2、3）",
+                  panel.locator("#epMockRoundField").is_visible()
+                  and "轮次" in panel.locator("#epMockRoundField").inner_text(),
+                  {"round": panel.locator("#epMockRoundField").inner_text()})
+            panel.locator("#epMetaMockRound").fill("2")
+            panel.locator("#epMetaExamType").fill("期中")
+            pick_from_menu("期中")
+            expect(panel.locator("#epSemesterField")).to_be_visible(timeout=5000)
+            check("选「期中」：学期框弹出来，轮次框收回去",
+                  panel.locator("#epSemesterField").is_visible()
+                  and panel.locator("#epMockRoundField").is_hidden(), {})
+            panel.locator("#epMetaExamType").fill("模拟")
+            pick_from_menu("模拟考")
+            expect(panel.locator("#epMockRoundField")).to_be_visible(timeout=5000)
+            check("切回「模拟考」：轮次框回到场上、学期框收起",
+                  panel.locator("#epMockRoundField").is_visible()
+                  and panel.locator("#epSemesterField").is_hidden(), {})
+
             panel.locator("#epMetaYear").fill("2024")
-            panel.locator("#epMetaRegion").fill("黑吉辽")
             panel.locator("#epMetaBody").fill("三省六校")
-            panel.locator("#epMetaScene").select_option("校考题")
-            panel.locator("#epMetaExamType").fill("高三联考")
-            panel.locator("#epMetaSubject").fill("数学")
+            panel.locator("#epMetaBody").press("Tab")  # 手填主体：失焦才认词
             expect(panel.locator("#epMetaSchools")).to_be_visible(timeout=8000)
+            check("主体填的是非学校组织：第五行参考学校在场",
+                  panel.locator("#epMetaSchools").is_visible(), {})
 
             # ---------- 军令 #28：学校字典（AI 补全 → 确认 → 建档） ----------
             panel.locator("#epSchoolInput").fill("哈三中")
@@ -818,28 +884,13 @@ def main() -> int:
                   chip_id.startswith("sch_") and "哈三中" in chip_text,
                   {"id": chip_id, "chips": chip_text})
 
-            # ---------- 考试类型：原生 datalist（旧交叉标签菜单已随极简结构退场） ----------
-            panel.locator("#epMetaExamType").fill("")
-            panel.locator("#epMetaScene").select_option("外国题")
-            panel.locator("#epMetaExamType").focus()
-            exam_list = panel.locator("#epExamTypeList option").all_inner_texts()
-            check("考试类型走原生候选：输入框挂着底座八大类 datalist",
-                  panel.locator("#epMetaExamType").get_attribute("list") == "epExamTypeList"
-                  and len(exam_list) >= 8,
-                  {"list": panel.locator("#epMetaExamType").get_attribute("list"),
-                   "options": exam_list[:10]})
-            panel.locator("#epMetaScene").select_option("校考题")
-            panel.locator("#epMetaExamType").fill("高三联考")
-            panel.locator("#epMetaExamType").press("Enter")
-            page.wait_for_timeout(300)
+            # ---------- 标准名：只读文字，改元数据实时重拼 ----------
+            expected_name = "2024年三省六校高二2模数学"
+            standard = panel.locator("#epStdName").inner_text().strip()
+            check("标准名按「年份-主体-年级-类型-学科」自动拼，空段不占位",
+                  standard == expected_name, {"standard": standard})
 
-            standard = panel.locator("#epStdName").input_value()
-            check("标准名按「年份-地区-主体-场景-类型-学科」自动拼出来",
-                  standard == "2024-黑吉辽-三省六校-校考题-高三联考-数学",
-                  {"standard": standard})
-
-            # ---------- 军令 #28：标准名双向联动（闪烁 / 手改暂停 / 再动恢复） ----------
-            panel.locator("#epMetaRegion").fill("黑龙江")
+            panel.locator("#epMetaMockRound").fill("3")
             page.wait_for_timeout(150)
             flash_live = panel.locator("#epStdFlash").evaluate(
                 "n => ({text: (n.textContent || '').trim(), show: n.getAttribute('data-show')})")
@@ -850,38 +901,30 @@ def main() -> int:
                 })""")
             check("元数据一改，标准名实时重拼并闪一下「已更新」",
                   flash_live["show"] == "true" and "已更新" in flash_live["text"],
-                  {"flash": flash_live, "name": panel.locator("#epStdName").input_value()})
+                  {"flash": flash_live, "name": panel.locator("#epStdName").inner_text().strip()})
             check("重拼的标准名当场闪淡黄（主公要的是那一闪，不是只有文字）",
                   std_paint["flash"] == "true"
                   and std_paint["background"] == "rgb(253, 243, 214)",
                   {"paint": std_paint})
             page.screenshot(path=str(shots / "v28-std-flash.png"))
-            panel.locator("#epStdName").fill("我手改的卷名")
-            page.wait_for_timeout(200)
-            check("手改标准名：自动拼接当场暂停",
-                  panel.locator("#epStdName").get_attribute("data-mode") == "manual"
-                  and "暂停" in panel.locator("#epStdHint").inner_text(),
-                  {"mode": panel.locator("#epStdName").get_attribute("data-mode"),
-                   "hint": panel.locator("#epStdHint").inner_text()})
-            panel.locator("#epMetaRegion").fill("黑吉辽")
+            panel.locator("#epMetaMockRound").fill("2")
             page.wait_for_timeout(400)
-            resumed = panel.locator("#epStdName").input_value()
-            resumed_mode = panel.locator("#epStdName").get_attribute("data-mode")
-            check("再动元数据：自动拼接恢复，手改名被重拼覆盖",
-                  resumed_mode == "auto"
-                  and resumed == "2024-黑吉辽-三省六校-校考题-高三联考-数学",
-                  {"mode": resumed_mode, "name": resumed})
-
-            expected_name = "2024-黑吉辽-三省六校-校考题-高三联考-数学"
-            # UI 极致瘦身令收尾：年级回到批次公共元数据，与年份、地区同一行。
+            check("标准名只读：轮次一改就跟着重拼，没有手改入口",
+                  panel.locator("#epStdName").inner_text().strip() == expected_name
+                  and panel.locator("#epStdName").evaluate(
+                      "n => n.tagName === 'P' && !n.isContentEditable")
+                  and panel.locator("#epStdHint").get_attribute("data-mode") == "auto",
+                  {"std": panel.locator("#epStdName").inner_text().strip(),
+                   "mode": panel.locator("#epStdHint").get_attribute("data-mode")})
+            # UI 极致瘦身令收尾：年级回到批次公共元数据，与学科、学期同一行。
             grade_wiring = panel.locator("#epMetaGrade").evaluate(
                 """n => ({
                     row: !!(n.closest('.ep-row')
-                            && n.closest('.ep-row').querySelector('#epMetaYear, #epMetaRegion')),
+                            && n.closest('.ep-row').querySelector('#epMetaSubject, #epSemesterField')),
                     maxlength: n.getAttribute('maxlength'),
                     placeholder: n.getAttribute('placeholder')
                 })""")
-            check("批次公共元数据有年级输入框，就排在年份、地区旁边",
+            check("批次公共元数据有年级输入框，就排在学科、学期旁边",
                   panel.locator("#epMetaGrade").count() == 1 and grade_wiring["row"],
                   {"grade": grade_wiring})
             deadline = time.time() + 30
@@ -897,9 +940,9 @@ def main() -> int:
                 page.wait_for_timeout(300)
             check("改公共字段，这一批的题立刻同步 sources",
                   synced_source.get("body") == "三省六校"
-                  and synced_source.get("region") == "黑吉辽"
+                  and synced_source.get("region") == "黑龙江"
                   and synced_source.get("scene_type") == "校考题"
-                  and synced_source.get("exam_type") == "高三联考"
+                  and synced_source.get("exam_type") == "模拟考"
                   and int(synced_source.get("year") or 0) == 2024
                   and synced_source.get("paper_title") == expected_name,
                   {"source": synced_source})
@@ -1021,7 +1064,7 @@ def main() -> int:
             deadline = time.time() + 15
             std_value = ""
             while time.time() < deadline:
-                std_value = panel.locator("#epStdName").input_value()
+                std_value = panel.locator("#epStdName").inner_text().strip()
                 if std_value == expected_name:
                     break
                 page.wait_for_timeout(200)
@@ -1034,6 +1077,7 @@ def main() -> int:
             # ---------- UI 极致瘦身令收尾：年级回到批次公共元数据 ----------
             # 用「高三」而不是题级 fixture 里的「高一」：撞值的同步会假绿，差值才是证据。
             panel.locator("#epMetaGrade").fill("高三")
+            panel.locator("#epMetaGrade").press("Tab")
             page.wait_for_timeout(700)
             deadline = time.time() + 20
             grade_items: list = []
@@ -1057,9 +1101,24 @@ def main() -> int:
                    "input": panel.locator("#epMetaGrade").input_value(),
                    "items": [str((each.get("question") or {}).get("grade") or "")
                              for each in grade_items]})
-            check("年级不进标准名口径：仍按年份-地区-主体-场景-类型-学科拼",
-                  panel.locator("#epStdName").input_value() == expected_name,
-                  {"std": panel.locator("#epStdName").input_value()})
+            grade_std = "2024年三省六校高三2模数学"
+            check("年级进标准名：标准名跟着重拼成「…高三…」",
+                  panel.locator("#epStdName").inner_text().strip() == grade_std,
+                  {"std": panel.locator("#epStdName").inner_text().strip()})
+
+            # ---------- 关键防呆：主体本身就是学校，第五行参考学校整行收起 ----------
+            panel.locator("#epMetaBody").fill("哈三中")
+            pick_from_menu("哈三中")
+            page.wait_for_timeout(400)
+            check("主体选到具体学校：第五行【参考学校】当场收起",
+                  panel.locator("#epMetaSchools").is_hidden(),
+                  {"hidden": panel.locator("#epMetaSchools").is_hidden()})
+            panel.locator("#epMetaBody").fill("三省六校")
+            panel.locator("#epMetaBody").press("Tab")
+            page.wait_for_timeout(400)
+            check("主体改回非学校组织：第五行重新出现",
+                  panel.locator("#epMetaSchools").is_visible(),
+                  {"hidden": panel.locator("#epMetaSchools").is_hidden()})
 
             # ---------- 三栏骨架 ----------
             pending_count = int(card["pending_count"])
@@ -1562,7 +1621,7 @@ def main() -> int:
             check("辅助栏不留虚线接收框（收件只有画布的收集筐）",
                   panel.locator("#epIntake").count() == 0,
                   {"intake": panel.locator("#epIntake").count()})
-            std_now = panel.locator("#epStdName").input_value()
+            std_now = panel.locator("#epStdName").inner_text().strip()
             fold_summary = panel.locator("#epMetaSummary").inner_text().strip()
             check("收起后那行矮标题报着标准名",
                   fold_summary == std_now and bool(std_now),

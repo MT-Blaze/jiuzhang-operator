@@ -13,6 +13,7 @@
     var LAMP_DELAY_MS = coreState.LAMP_DELAY_MS;
     var TAG_LIMIT = coreState.TAG_LIMIT;
     var applySelection = deps.applySelection;
+    var applyMetaSync = deps.applyMetaSync;
     var el = deps.el;
     var hostCall = deps.hostCall;
     var loadBatchMeta = deps.loadBatchMeta;
@@ -36,6 +37,7 @@
     var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
     var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
     var panelMetaYearEl = deps.dom.panelMetaYearEl;
+    var panelSrcNameEl = deps.dom.panelSrcNameEl;
     var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelGhostTagMenuEl = deps.dom.panelGhostTagMenuEl;
     var panelGhostTopicMenuEl = deps.dom.panelGhostTopicMenuEl;
@@ -47,7 +49,6 @@
     var panelMetaSummaryEl = deps.dom.panelMetaSummaryEl;
     var panelMountedEl = deps.dom.panelMountedEl;
     var panelRoot = deps.dom.panelRoot;
-    var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelTagListEl = deps.dom.panelTagListEl;
     var panelTagsEl = deps.dom.panelTagsEl;
     var patchIdFor = deps.patchIdFor;
@@ -177,12 +178,13 @@
 
   function expandMetaSection() { breath.expandMetaSection(); }
 
-  /** 右下角【确定】：只把当前公共字段封存在内存，并立刻收起；批次同步留给入库。 */
+  /** 右下角【确定】：把当前公共字段整批存到后台，并立刻收起公共层。 */
   function confirmMetaSection() {
     var value = function (node) { return node ? String(node.value || "") : ""; };
     panel.metaConfirmed = true;
     panel.confirmedMeta = {
-      std_name: value(panelStdNameEl),
+      source_name: value(panelSrcNameEl),
+      std_name: panelStdNameEl ? String(panelStdNameEl.textContent || "").trim() : "",
       year: value(panelMetaYearEl),
       region: value(panelMetaRegionEl),
       grade: value(panelMetaGradeEl),
@@ -193,17 +195,18 @@
       mock_round: value(panelMetaMockRoundEl),
       semester: value(panelMetaSemesterEl)
     };
+    if (typeof applyMetaSync === "function") applyMetaSync();
     if (panelMetaConfirmNoteEl) {
-      panelMetaConfirmNoteEl.textContent = "已封存；切题保持折叠，入库时再同步";
+      panelMetaConfirmNoteEl.textContent = "已封存并同步到后台；切题保持折叠";
     }
     collapseMetaSection();
-    panelSay("批次公共元数据已确认，切题时保持折叠。", "ok", "idle");
+    panelSay("批次公共元数据已确认并同步。", "ok", "idle");
   }
 
   /** 收起来时那一行矮标题要报点什么：标准名最有用，没有就报场景。 */
   function renderFoldSummary() {
     if (!panelMetaSummaryEl) return;
-    var std = panelStdNameEl ? String(panelStdNameEl.value || "").trim() : "";
+    var std = panelStdNameEl ? String(panelStdNameEl.textContent || "").trim() : "";
     var scene = panelMetaSceneEl ? String(panelMetaSceneEl.value || "").trim() : "";
     breath.renderFoldSummary(std || scene || "—");
   }

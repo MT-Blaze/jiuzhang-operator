@@ -113,6 +113,15 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(self.report.counts["exams"], 1)
         self.assertEqual(self.report.counts["exam_school_map"], 2)
 
+    def test_region_dictionary_feeds_meta_search(self) -> None:
+        regions = service.regions(db_path=self.db_path)
+        self.assertEqual(len(regions), 368)
+        hits = service.regions(keyword="哈尔滨", db_path=self.db_path)
+        self.assertTrue(hits, "参考地区要支持按关键字模糊查")
+        self.assertTrue(all("哈尔滨" in item.name for item in hits))
+        provinces = service.regions(level=1, db_path=self.db_path)
+        self.assertEqual(len(provinces), 34)
+
     def test_regions_are_two_levels_and_schools_are_linked(self) -> None:
         conn = sqlite3.connect(self.db_path)
         try:
@@ -447,7 +456,7 @@ class EngineSourceHygieneTest(unittest.TestCase):
         body = SCHEMA.read_text(encoding="utf-8")
         self.assertEqual(len(re.findall(r"CREATE TABLE", body)), 36)
         self.assertEqual(len(builder.BASE_TABLES), 36)
-        self.assertEqual(engine_paths.SCHEMA_VERSION, 12)
+        self.assertEqual(engine_paths.SCHEMA_VERSION, 13)
         self.assertIn("dim_textbook_versions", body)
         self.assertNotIn("dim_sources", body)
         self.assertIn("tikz_code", body)

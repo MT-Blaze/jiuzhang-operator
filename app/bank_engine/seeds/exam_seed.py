@@ -11,7 +11,7 @@ from __future__ import annotations
 EXAM_TYPE_ROWS: tuple[tuple[int, str, str, int], ...] = (
     (1, '高考', 'gaokao', 1),
     (2, '结业考试', 'academic_proficiency', 2),
-    (3, '模考', 'mock', 3),
+    (3, '模拟考', 'mock', 3),
     (4, '期中', 'midterm', 4),
     (5, '期末', 'final', 5),
     (6, '月考', 'monthly', 6),

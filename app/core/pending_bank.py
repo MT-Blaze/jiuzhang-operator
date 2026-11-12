@@ -411,6 +411,14 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
             (wire.dumps(meta, ensure_ascii=False, separators=(",", ":")),
              questions.now_iso(), batch_id),
         )
+        # 原文件名在面板顶部可手改：带了就一并封存，空串表示恢复批次的既有名字。
+        if isinstance(payload, dict) and "source_name" in payload:
+            source_name = clean_text(payload.get("source_name"), 120)
+            if source_name:
+                con.execute(
+                    "UPDATE batches SET source_name = ? WHERE batch_id = ?",
+                    (source_name, batch_id),
+                )
         synced, skipped, warnings = sync_batch_sources(con, batch_id, meta)
         remember_meta(con, meta)
         refresh_batch(con, batch_id)

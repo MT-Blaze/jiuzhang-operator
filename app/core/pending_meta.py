@@ -64,7 +64,7 @@ def clean_text(value: Any, limit: int) -> str:
 def build_standard_name(meta: dict[str, Any]) -> str:
     """标准名：按考试类型规则动态拼装，空段不占位。
 
-    月考带月份、模考带轮次、期中/期末带学期，其余类型只到类型名；
+    月考带月份、模拟考带轮次、期中/期末带学期，其余类型只到类型名；
     只有老师手动改过标准名且元数据没再动时，才保留手改值
     （见 ``normalize_batch_meta``）。
     """
@@ -246,7 +246,7 @@ def apply_meta_to_document(document: dict[str, Any], meta: dict[str, Any]) -> tu
     exam_type = str(meta.get("exam_type") or "")
     for field, relevant in (
         ("month", exam_type == "月考"),
-        ("mock_round", exam_type == "模考"),
+        ("mock_round", exam_type in ("模考", "模拟考")),
         ("semester", exam_type in ("期中", "期末")),
     ):
         value = meta.get(field)

@@ -895,5 +895,22 @@ class PendingMetaContractTest(unittest.TestCase):
         self.assertEqual(row[0], "高一", "年级落进 sources.grade，教师筛选才认得它")
 
 
+    def test_30_source_name_is_persisted_from_meta_patch(self) -> None:
+        status, body = self._save([{"question": _question(301)}])
+        self.assertEqual(status, 201, body)
+        batch_id = body["batch_id"]
+        status, result = self._set_meta(batch_id, {
+            "source_name": "2024 哈尔滨三中 九月月考.pdf",
+        })
+        self.assertEqual(status, 200, result)
+        status, listing = self._request("/api/pending/batches")
+        self.assertEqual(status, 200)
+        card = next(
+            entry for entry in listing["batches"] if entry["batch_id"] == batch_id
+        )
+        self.assertEqual(card["source_name"], "2024 哈尔滨三中 九月月考.pdf",
+                         "原文件名可手改，点确定时要跟着批次一起封存")
+
+
 if __name__ == "__main__":
     unittest.main()

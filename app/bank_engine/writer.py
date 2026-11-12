@@ -18,7 +18,7 @@ from app.bank_engine.models import CreatedQuestion, NewExam, NewImage, NewQuesti
 from app.bank_engine.seeds.curriculum import QUESTION_TYPE_CHOICE_ID
 
 EXAM_TYPES = (
-    "高考", "学业水平", "模考", "期中", "期末", "月考", "周测", "开学考",
+    "高考", "学业水平", "模拟考", "期中", "期末", "月考", "周测", "开学考",
 )
 OPTION_LABEL_RE = re.compile(r"^[A-H]$")
 IMAGE_SLOTS = ("stem", "answer", "solution", "option")
@@ -32,8 +32,8 @@ _EXAM_TYPE_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("月考", ("月考", "月测")),
     ("周测", ("周测", "周练")),
     ("开学考", ("开学考", "开学测", "摸底考")),
-    # 其余模考口径兜底：一模到七模、联考、统考、竞赛/强基等仍归「模考」大类。
-    ("模考", (
+    # 其余模考口径兜底：一模到七模、联考、统考、竞赛/强基等仍归「模拟考」大类。
+    ("模拟考", (
         "一模", "二模", "三模", "四模", "五模", "六模", "七模", "零模",
         "模考", "模拟", "联考", "统考", "竞赛", "奥赛", "联赛", "强基",
         "自主招生", "外国", "amc", "a-level", "a level", "ib", "ap ",

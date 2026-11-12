@@ -44,24 +44,21 @@
     var onApprove = deps.onApprove;
     var onDelete = deps.onDelete;
     var onDeleteConfirm = deps.onDeleteConfirm;
-    var onMetaFieldChange = deps.onMetaFieldChange;
-    var onSceneChange = deps.onSceneChange;
     var onSchoolEnter = deps.onSchoolEnter;
     var onStash = deps.onStash;
-    var onStdInput = deps.onStdInput;
     var onTagEnter = deps.onTagEnter;
+    var bindFields = deps.bindFields;
+    var refreshDicts = deps.refreshDicts;
     var panel = coreState.panel;
     var renderAi = deps.renderAi;
     var renderBatchMeta = deps.renderBatchMeta;
     var renderMounted = deps.renderMounted;
     var renderTags = deps.renderTags;
-    var renderTopLines = deps.renderTopLines;
     var scheduleSchoolConflict = deps.scheduleSchoolConflict;
     var searchSchools = deps.searchSchools;
     var setAiFold = deps.setAiFold;
     var setFormatButtons = deps.setFormatButtons;
     var setSchoolError = deps.setSchoolError;
-    var setStdMode = deps.setStdMode;
     var setSwapButton = deps.setSwapButton;
     var toggleSwapFromPanel = deps.toggleSwapFromPanel;
     var wireGhost = deps.wireGhost;
@@ -99,30 +96,15 @@
     var panelDifficultyEl = deps.dom.panelDifficultyEl;
     var panelFmtBoxedEl = deps.dom.panelFmtBoxedEl;
     var panelFmtLatexEl = deps.dom.panelFmtLatexEl;
-    var panelMetaBodyEl = deps.dom.panelMetaBodyEl;
-    var panelMetaExamTypeEl = deps.dom.panelMetaExamTypeEl;
-    var panelMetaMonthEl = deps.dom.panelMetaMonthEl;
-    var panelMetaMockRoundEl = deps.dom.panelMetaMockRoundEl;
-    var panelMetaSemesterEl = deps.dom.panelMetaSemesterEl;
-    var panelExamTypeListEl = deps.dom.panelExamTypeListEl;
-    var toggleExamFields = deps.toggleExamFields;
     var panelMetaConfirmEl = deps.dom.panelMetaConfirmEl;
     var panelMetaFoldEl = deps.dom.panelMetaFoldEl;
-    var panelMetaGradeEl = deps.dom.panelMetaGradeEl;
-    var panelMetaRegionEl = deps.dom.panelMetaRegionEl;
-    var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
     var panelMetaSecEl = deps.dom.panelMetaSecEl;
-    var panelMetaSubjectEl = deps.dom.panelMetaSubjectEl;
-    var panelMetaYearEl = deps.dom.panelMetaYearEl;
-    var panelSubjectListEl = deps.dom.panelSubjectListEl;
-    var panelGradeListEl = deps.dom.panelGradeListEl;
     var panelRoot = deps.dom.panelRoot;
     var panelSchoolConfirmCancelEl = deps.dom.panelSchoolConfirmCancelEl;
     var panelSchoolConfirmOkEl = deps.dom.panelSchoolConfirmOkEl;
     var panelSchoolInputEl = deps.dom.panelSchoolInputEl;
     var panelScrollEl = deps.dom.panelScrollEl;
     var panelStashEl = deps.dom.panelStashEl;
-    var panelStdNameEl = deps.dom.panelStdNameEl;
     var panelSwapEl = deps.dom.panelSwapEl;
     var panelTypeEl = deps.dom.panelTypeEl;
 
@@ -136,16 +118,6 @@
       if (!labels[key]) labels[key] = fallback[key];
     });
     return labels;
-  }
-
-  function fillDataList(node, rows) {
-    if (!node) return;
-    node.textContent = "";
-    (rows || []).forEach(function (row) {
-      var option = document.createElement("option");
-      option.value = String((row && row.name) || "");
-      node.appendChild(option);
-    });
   }
 
   function applyEngineMeta(meta) {
@@ -162,9 +134,6 @@
     fillSelect(panelTypeEl, TYPE_VALUES, typeLabels);
     var difficultyLabels = engineLabels(meta.difficulties, DIFFICULTY_LABELS);
     fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, difficultyLabels);
-    fillDataList(panelSubjectListEl, meta.subjects);
-    fillDataList(panelGradeListEl, meta.grades);
-    fillDataList(panelExamTypeListEl, meta.exam_types);
   }
 
   function loadEngineMeta() {
@@ -181,12 +150,13 @@
     fillSelect(panelTypeEl, TYPE_VALUES, TYPE_LABELS);
     fillSelect(panelDifficultyEl, DIFFICULTY_VALUES, DIFFICULTY_LABELS);
     bindFormChanges();
+    bindFields();
     renderTags();
     renderMounted();
     wireGhostCell("tag");
     wireGhostCell("topic");
     wireGhostCell("knowledge");
-    loadEngineMeta().then(function () { renderBatchMeta(); });
+    loadEngineMeta().then(function () { refreshDicts(); renderBatchMeta(); });
     // 批次公共元数据：画布一滚动就收成矮标题；标题只认点击展开/收起，
     // 不再用悬停自动弹开——老师正在填的字段不许被鼠标路过抢走。
     if (panelMetaFoldEl) {
@@ -245,15 +215,8 @@
     if (panelAiFoldEl) {
       panelAiFoldEl.addEventListener("click", function () { setAiFold(!aiFoldOpen()); });
     }
-    // 批次公共元数据：改一次，这一批所有题立刻跟着改
-    [panelMetaYearEl, panelMetaRegionEl, panelMetaGradeEl, panelMetaBodyEl,
-     panelMetaSubjectEl, panelMetaMonthEl, panelMetaMockRoundEl,
-     panelMetaSemesterEl].forEach(function (node) {
-      if (!node) return;
-      node.addEventListener("input", onMetaFieldChange);
-      node.addEventListener("change", onMetaFieldChange);
-    });
-    if (panelMetaSceneEl) panelMetaSceneEl.addEventListener("change", onSceneChange);
+    // 批次公共元数据：改一次，这一批所有题立刻跟着改。
+    // 字段本身（含候选框）在 activatePanel 开头由 bindFields 接好，这里不再重复挂监听。
     // 学校输入框：搜字典 → 选中即加；查不到就走 AI 补全 → 老师确认 → 建档。
     if (panelSchoolInputEl) {
       panelSchoolInputEl.addEventListener("input", function () {
@@ -281,28 +244,14 @@
     if (panelSchoolConfirmCancelEl) {
       panelSchoolConfirmCancelEl.addEventListener("click", cancelSchoolConfirm);
     }
-    // 考试类型：候选来自引擎字典的 8 大类；输入即时切换月份/轮次/学期字段，
-    // 松手（change）再整批同步，避免把打了一半的类型名送到每一道题。
-    if (panelMetaExamTypeEl) {
-      panelMetaExamTypeEl.addEventListener("input", function () {
-        if (panel.stdManual) setStdMode(false);
-        if (toggleExamFields) toggleExamFields();
-        renderTopLines({ flash: true });
-      });
-      panelMetaExamTypeEl.addEventListener("change", onMetaFieldChange);
-    }
-    if (panelStdNameEl) {
-      panelStdNameEl.addEventListener("input", onStdInput);
-      panelStdNameEl.addEventListener("change", onStdInput);
-    }
     wireIntake();
     if (wireAnswerEditor) wireAnswerEditor();
     if (wirePoolPanel) wirePoolPanel();
     if (wireDupJudge) wireDupJudge();
     if (wireAmber) wireAmber();
     if (wireAiCopilot) wireAiCopilot();
-    loadScenes();
-    loadMetaHistory();
+    loadScenes().then(refreshDicts);
+    loadMetaHistory().then(refreshDicts);
     renderBatchMeta();
     renderAi();
     setFormatButtons("latex");

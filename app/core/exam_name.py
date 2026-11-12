@@ -2,7 +2,7 @@
 
 四条规则（主公 2026-11-11 定案）：
 - 月考：年份 + 组织/学校 + 年级 + 月份 + 月考 + 学科；
-- 模考：年份 + 组织/学校 + 年级 + 轮次 + 模考 + 学科（不显示月份，轮次优先显示 2模）；
+- 模拟考：年份 + 组织/学校 + 年级 + 轮次 + 模拟考 + 学科（不显示月份，轮次优先显示 2模）；
 - 期中/期末：年份 + 组织/学校 + 年级 + 学期 + 类型 + 学科；
 - 其他：年份 + 组织/学校 + 年级 + 类型 + 学科。
 空段不占位，段与段之间不加分隔符。
@@ -67,8 +67,8 @@ def compose_exam_name(
         if month:
             parts.append(f"{int(month)}月")
         parts.append("月考")
-    elif exam_type == "模考":
-        parts.append(round_label(mock_round) or "模考")
+    elif exam_type in ("模考", "模拟考"):
+        parts.append(round_label(mock_round) or "模拟考")
     elif exam_type in ("期中", "期末"):
         if semester:
             parts.append(str(semester).strip())

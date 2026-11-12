@@ -204,7 +204,6 @@
       var panelMetaMonthEl = document.getElementById("epMetaMonth");
       var panelMetaMockRoundEl = document.getElementById("epMetaMockRound");
       var panelMetaSemesterEl = document.getElementById("epMetaSemester");
-      var panelExamDetailRowEl = document.getElementById("epExamDetailRow");
       var panelMonthFieldEl = document.getElementById("epMonthField");
       var panelMockRoundFieldEl = document.getElementById("epMockRoundField");
       var panelSemesterFieldEl = document.getElementById("epSemesterField");
@@ -220,11 +219,6 @@
       var panelSchoolConfirmCancelEl = document.getElementById("epSchoolConfirmCancel");
       var panelSchoolErrorEl = document.getElementById("epSchoolError");
       var panelTagMenuEl = document.getElementById("epTagMenu");
-      var panelRegionListEl = document.getElementById("epMetaRegionList");
-      var panelBodyListEl = document.getElementById("epMetaBodyList");
-      var panelSubjectListEl = document.getElementById("epMetaSubjectList");
-      var panelGradeListEl = document.getElementById("epMetaGradeList");
-      var panelExamTypeListEl = document.getElementById("epExamTypeList");
 
     return {
       root: root,
@@ -410,7 +404,6 @@
       panelMetaMonthEl: panelMetaMonthEl,
       panelMetaMockRoundEl: panelMetaMockRoundEl,
       panelMetaSemesterEl: panelMetaSemesterEl,
-      panelExamDetailRowEl: panelExamDetailRowEl,
       panelMonthFieldEl: panelMonthFieldEl,
       panelMockRoundFieldEl: panelMockRoundFieldEl,
       panelSemesterFieldEl: panelSemesterFieldEl,
@@ -426,11 +419,6 @@
       panelSchoolConfirmCancelEl: panelSchoolConfirmCancelEl,
       panelSchoolErrorEl: panelSchoolErrorEl,
       panelTagMenuEl: panelTagMenuEl,
-      panelRegionListEl: panelRegionListEl,
-      panelBodyListEl: panelBodyListEl,
-      panelSubjectListEl: panelSubjectListEl,
-      panelGradeListEl: panelGradeListEl,
-      panelExamTypeListEl: panelExamTypeListEl,
     };
   }
 

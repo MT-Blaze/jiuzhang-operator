@@ -67,6 +67,7 @@ def engine_meta() -> dict[str, Any]:
         "difficulties": [asdict(item) for item in dictionaries.difficulties],
         "qualities": [asdict(item) for item in dictionaries.qualities],
         "exam_types": [asdict(item) for item in dictionaries.exam_types],
+        "regions": [asdict(item) for item in service.regions()],
     }
 
 

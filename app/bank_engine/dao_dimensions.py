@@ -12,12 +12,14 @@ from app.bank_engine.models import (
     ExamDirection,
     KnowledgeNode,
     KnowledgePoint,
+    Region,
     Textbook,
     TextbookVersion,
 )
 
 DIRECTION_COLUMNS = "id, name, code, sort_order, subject_id, chapter_id, description"
 POINT_COLUMNS = "id, name, code, sort_order, subject_id, parent_id"
+REGION_COLUMNS = "id, name, code, level, parent_id, sort_order"
 TEXTBOOK_COLUMNS = (
     "id, name, code, sort_order, publisher, subject_id, grade_id, version_id, volume_name"
 )
@@ -319,6 +321,38 @@ def list_textbooks(
     )
 
 
+def list_regions(
+    conn: sqlite3.Connection,
+    *,
+    keyword: str | None = None,
+    level: int | None = None,
+) -> tuple[Region, ...]:
+    """行政区划字典：省 / 市两级，做参考地区的模糊搜索。"""
+    clauses: list[str] = []
+    params: list[Any] = []
+    if keyword:
+        clauses.append("name LIKE ?")
+        params.append("%" + keyword + "%")
+    if level is not None:
+        clauses.append("level = ?")
+        params.append(level)
+    sql = (
+        "SELECT " + REGION_COLUMNS + " FROM dim_regions" + _where(clauses, params)
+        + " ORDER BY sort_order, id"
+    )
+    return tuple(
+        Region(
+            id=int(row["id"]),
+            name=str(row["name"]),
+            code=str(row["code"]),
+            level=int(row["level"]),
+            parent_id=None if row["parent_id"] is None else int(row["parent_id"]),
+            sort_order=int(row["sort_order"]),
+        )
+        for row in conn.execute(sql, params)
+    )
+
+
 def list_chapters(
     conn: sqlite3.Connection,
     textbook_id: int,
@@ -360,6 +394,7 @@ __all__ = [
     "list_chapters",
     "list_exam_directions",
     "list_knowledge_points",
+    "list_regions",
     "list_textbook_versions",
     "list_textbooks",
     "version_stages",

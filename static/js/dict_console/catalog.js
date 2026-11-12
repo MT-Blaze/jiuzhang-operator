@@ -20,7 +20,7 @@
         { table: "dict_question_types", name: "题型", desc: "选择 / 填空 / 解答三类。" },
         { table: "dict_difficulties", name: "难度", desc: "L1–L5 五级难度。" },
         { table: "dict_question_qualities", name: "题目质量", desc: "正常 / 待审 / 精品等质量标记。" },
-        { table: "dict_exam_types", name: "考试类型", desc: "高考、学业水平、模考、期中、期末、月考、周测、开学考 8 类。" }
+        { table: "dict_exam_types", name: "考试类型", desc: "高考、学业水平、模拟考、期中、期末、月考、周测、开学考 8 类。" }
       ],
       subs: [
         { key: "dict_subjects", label: "学科", table: "dict_subjects" },

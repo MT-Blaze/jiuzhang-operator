@@ -491,6 +491,18 @@
         var parsedYear = Number(rawYear);
         if (Number.isFinite(parsedYear)) metaYear = Math.floor(parsedYear);
       }
+      var rawMonth = payload.month;
+      var metaMonth = null;
+      if (rawMonth !== undefined && rawMonth !== null && rawMonth !== "") {
+        var parsedMonth = Number(rawMonth);
+        if (Number.isFinite(parsedMonth)) metaMonth = Math.floor(parsedMonth);
+      }
+      var rawRound = payload.mock_round;
+      var metaRound = null;
+      if (rawRound !== undefined && rawRound !== null && rawRound !== "") {
+        var parsedRound = Number(rawRound);
+        if (Number.isFinite(parsedRound)) metaRound = Math.floor(parsedRound);
+      }
       var metaSchools = [];
       if (Array.isArray(payload.schools)) {
         payload.schools.slice(0, 24).forEach(function (item) {
@@ -515,10 +527,15 @@
         grade: textValue(payload, "grade", 20),
         body: textValue(payload, "body", 60),
         exam_type: textValue(payload, "exam_type", 60),
+        month: metaMonth,
+        mock_round: metaRound,
+        semester: textValue(payload, "semester", 8),
         subject: textValue(payload, "subject", 40),
         scene_type: textValue(payload, "scene_type", 60),
         schools: metaSchools,
         school_ids: metaSchoolIds,
+        // 顶部原文件名可手改：跟着这一批一起封存，空串表示不改。
+        source_name: textValue(payload, "source_name", 120),
         // 双向联动：手改标准名时 name_mode=manual；元数据一动，底座自动回 auto。
         name_mode: payload.name_mode === "manual" ? "manual" : "auto",
         standard_name: textValue(payload, "standard_name", 120)

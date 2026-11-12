@@ -66,7 +66,7 @@ CREATE TABLE dict_question_qualities (
     -- [字段注释] 排序序号，用于前端下拉框或列表的展示顺序，数值越小越靠前
     sort_order INTEGER NOT NULL DEFAULT 0
 );
--- [功能注释] 考试类型字典：只保留高考、学业水平、模考、期中、期末、月考、周测、开学考 8 个大类
+-- [功能注释] 考试类型字典：只保留高考、学业水平、模拟考、期中、期末、月考、周测、开学考 8 个大类
 -- 轮次（一模/二模）落 exams.mock_round，考试范围（联考 / 统考 / 校考）落 exams.exam_org_name
 CREATE TABLE dict_exam_types (
     id         INTEGER PRIMARY KEY,
@@ -606,6 +606,6 @@ AFTER DELETE ON question_exams BEGIN
     WHERE question_id = old.question_id;
 END;
 
-PRAGMA user_version = 12;
+PRAGMA user_version = 13;
 
 COMMIT;

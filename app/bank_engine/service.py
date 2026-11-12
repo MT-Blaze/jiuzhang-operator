@@ -36,6 +36,7 @@ from app.bank_engine.models import (
     QuestionPage,
     QuestionRecord,
     ReferenceHit,
+    Region,
     Textbook,
     TextbookTree,
     TextbookVersion,
@@ -210,6 +211,17 @@ def dictionaries(*, db_path: Path | None = None) -> Dictionaries:
     """录题下拉框的五张小字典：每一张都单表读出，不做跨表拼接。"""
     with session(db_path) as conn:
         return dao_dictionary.load_dictionaries(conn)
+
+
+def regions(
+    *,
+    keyword: str | None = None,
+    level: int | None = None,
+    db_path: Path | None = None,
+) -> tuple[Region, ...]:
+    """参考地区的模糊搜索字典：省 / 市两级行政区划。"""
+    with session(db_path) as conn:
+        return dao_dimensions.list_regions(conn, keyword=keyword, level=level)
 
 
 def create_question(document: Any, *, db_path: Path | None = None) -> CreatedQuestion:
@@ -434,6 +446,7 @@ __all__ = [
     "question",
     "questions_of_direction",
     "questions_of_point",
+    "regions",
     "session",
     "status",
     "textbook_versions",

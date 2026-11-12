@@ -13,10 +13,8 @@
     var errorDetail = deps.errorDetail;
     var hostCall = deps.hostCall;
     var panel = coreState.panel;
-    var panelBodyListEl = deps.dom.panelBodyListEl;
     var panelMetaSceneEl = deps.dom.panelMetaSceneEl;
-    var panelRegionListEl = deps.dom.panelRegionListEl;
-    var panelSubjectListEl = deps.dom.panelSubjectListEl;
+    var refreshDicts = deps.refreshDicts;
 
   // ---------- 批次公共元数据（辅助栏顶部） ----------
 
@@ -33,8 +31,8 @@
     if (examType === "月考") {
       if (m.month) parts.push(String(m.month) + "月");
       parts.push("月考");
-    } else if (examType === "模考") {
-      parts.push(m.mock_round ? String(m.mock_round) + "模" : "模考");
+    } else if (examType === "模拟考" || examType === "模考") {
+      parts.push(m.mock_round ? String(m.mock_round) + "模" : "模拟考");
     } else if (examType === "期中" || examType === "期末") {
       if (m.semester) parts.push(String(m.semester));
       parts.push(examType);
@@ -46,26 +44,12 @@
     return parts.join("").slice(0, 120);
   }
 
-  function fillDataList(node, values) {
-    if (!node) return;
-    node.textContent = "";
-    (values || []).forEach(function (value) {
-      var text = String(value || "");
-      if (!text) return;
-      var option = document.createElement("option");
-      option.value = text;
-      node.appendChild(option);
-    });
-  }
-
   /** 历史值：地区 / 主体 / 学科各一份联想，另有主体 → 明细学校的对应。 */
   function loadMetaHistory() {
     return hostCall("pending.meta_history", {}).then(function (result) {
       panel.history = (result && result.history) || {};
       panel.groups = (result && result.groups) || {};
-      fillDataList(panelRegionListEl, panel.history.region);
-      fillDataList(panelBodyListEl, panel.history.body);
-      fillDataList(panelSubjectListEl, panel.history.subject);
+      if (typeof refreshDicts === "function") refreshDicts();
       return panel.history;
     }).catch(function () {
       return null;
@@ -74,27 +58,9 @@
 
   // ---------- 场景表：11 个主场景，底座说了算 ----------
 
+  /** 场景不再住原生 select：只把字典交回候选框，值由 ui_std_name 回填。 */
   function renderSceneOptions() {
-    if (!panelMetaSceneEl) return;
-    var current = String(panelMetaSceneEl.value || (panel.batchMeta || {}).scene_type || "");
-    panelMetaSceneEl.textContent = "";
-    var blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "未分类";
-    panelMetaSceneEl.appendChild(blank);
-    panel.scenes.forEach(function (name) {
-      var option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
-      panelMetaSceneEl.appendChild(option);
-    });
-    if (current && panel.scenes.indexOf(current) < 0) {
-      var extra = document.createElement("option");
-      extra.value = current;
-      extra.textContent = current;
-      panelMetaSceneEl.appendChild(extra);
-    }
-    panelMetaSceneEl.value = current;
+    if (typeof refreshDicts === "function") refreshDicts();
   }
 
   function loadScenes() {
@@ -112,7 +78,6 @@
   }
 
     return {
-      fillDataList: fillDataList,
       loadMetaHistory: loadMetaHistory,
       loadScenes: loadScenes,
       renderSceneOptions: renderSceneOptions,

@@ -2189,6 +2189,90 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         self.assertNotIn('id="epScore"', meta, "分值属于单题私有，不许落进公共层")
         self.assertNotIn('id="epQuestionNo"', meta, "题号属于单题私有，不许落进公共层")
 
+    def test_02b_the_meta_fields_are_arrowless_fuzzy_pickers(self) -> None:
+        """旧家具清场：公共元数据不许再有原生 datalist/select，候选一律走自绘悬浮列表。"""
+        html = read("index.html")
+        self.assertNotIn("<datalist", html, "旧家具已扬：整页不许再出现原生 datalist")
+        self.assertNotIn('list="ep', html, "输入框不许再挂 list= 去接原生下拉")
+        meta = panel_only(html)[:panel_only(html).index('id="epMetaScene"')]
+        self.assertNotIn("<select", meta, "公共元数据的原生 select 已换成自绘候选框")
+        combo = read("ui_meta_combo.js")
+        self.assertIn("global.JzoEditorMetaCombo = { create: create };", combo)
+        self.assertIn('menu.className = "ep-pick-menu"', combo)
+        self.assertIn("document.body.appendChild(menu)", combo,
+                      "悬浮列表要挂在 body 上，不能被面板滚动区裁掉")
+        self.assertIn('input.setAttribute("role", "combobox")', combo)
+        self.assertIn("var MAX_MATCHES = 12;", combo, "模糊候选最多 12 条")
+        self.assertIn("var strict = options.strict !== false;", combo)
+        self.assertIn('flagInvalid("字典里没有「" + raw + "」，已清空")', combo,
+                      "防呆：不在字典里的词离开输入框就清空并爆红")
+        self.assertIn("if (allowFree)", combo, "主体允许手填，只爆红不清空")
+        order = [src for src in re.findall(r'<script src="([^"]+)"', html)
+                 if not src.startswith("/static/")]
+        for name in ("core_meta_parse.js", "ui_meta_combo.js", "ui_meta_fields.js"):
+            self.assertIn(name, order, f"{name} 必须被加载")
+        self.assertLess(order.index("core_meta_parse.js"), order.index("ui_meta_combo.js"))
+        self.assertLess(order.index("ui_meta_combo.js"), order.index("ui_meta_fields.js"))
+        self.assertLess(order.index("ui_meta_fields.js"), order.index("ui_std_name.js"))
+        self.assertIn('"模拟考": ["模考", "模拟", "模拟考试", "联考"',
+                      read("ui_meta_fields.js"),
+                      "考试类型的别名表要认『模考/联考/一模』")
+
+    def test_02c_the_five_rows_reveal_by_exam_type(self) -> None:
+        """五行布局与条件显隐：月考看月份、模拟考看轮次、期中期末看学期。"""
+        meta = panel_only(read("index.html"))
+        meta = meta[meta.index('id="epSrcName"'):meta.index('id="epMetaNote"')]
+        rows = ["epMetaSubject", "epMetaGrade", "epSemesterField", "epMetaYear",
+                "epMonthField", "epMetaExamType", "epMockRoundField", "epMetaRegion",
+                "epMetaBody", "epMetaSchools"]
+        positions = [meta.index(f'id="{node_id}"') for node_id in rows]
+        self.assertEqual(positions, sorted(positions), "五行字段顺序：学科/年级/学期 → 年份/月份 → 类型/轮次 → 地区/主体 → 学校")
+        for hidden_id in ("epSemesterField", "epMonthField", "epMockRoundField"):
+            tag = meta[meta.rindex("<label", 0, meta.index(f'id="{hidden_id}"')):]
+            tag = tag[:tag.index(">") + 1]
+            self.assertIn("hidden", tag, f"{hidden_id} 初始收起，由考试类型决定是否出现")
+        js = read("ui_std_name.js")
+        self.assertIn('var showMonth = examType === "月考";', js)
+        self.assertIn("var showRound = isMock(examType);", js)
+        self.assertIn('var showSemester = examType === "期中" || examType === "期末";', js)
+        self.assertIn('examType === "模拟考" || examType === "模考"', js,
+                      "『模拟考』是新字典名，旧名『模考』也照样认成轮次")
+        self.assertIn('panelMonthFieldEl.hidden = !showMonth;', js)
+        self.assertIn('panelMockRoundFieldEl.hidden = !showRound;', js)
+        self.assertIn('panelSemesterFieldEl.hidden = !showSemester;', js)
+        school = read("ui_school_dict.js")
+        self.assertIn("panel.bodyAutoSchoolId", school, "主体命中学校要记下 auto 学校 ID")
+        self.assertIn("panelMetaSchoolsEl.hidden = !body || isSchool;", school,
+                      "主体本身就是学校时，第五行参考学校整行收起")
+        self.assertIn("panel.schools.some(function (item) {", school,
+                      "历史里已加进胶囊的同名学校也要认得出")
+
+    def test_02d_the_source_name_parses_and_meta_persists(self) -> None:
+        """原文件名可手改、失焦正则回填；标准名只读；【确定】把整面板字段封存到后台。"""
+        html = read("index.html")
+        self.assertIn('id="epSrcName"', html)
+        self.assertNotIn('<input id="epStdName"', html, "标准名不许再是输入框")
+        self.assertIn('<p id="epStdName"', html, "标准名是纯文字标签")
+        js = read("ui_std_name.js")
+        self.assertIn("panelStdNameEl.textContent = value;", js)
+        self.assertNotIn("panelStdNameEl.value =", js, "标准名只读：一个字节也不许往输入框里写")
+        self.assertIn("标准名只读", js)
+        fields = read("ui_meta_fields.js")
+        self.assertIn('dom.panelSrcNameEl.addEventListener("blur", deps.onSourceBlur);',
+                      fields, "原文件名失焦触发正则解析")
+        self.assertIn("fields.parseSourceName(raw)", js)
+        parse = read("core_meta_parse.js")
+        for token in ("模拟考", "高考", "期中", "期末", "月考", "学业水平",
+                      "高级中学", "中学", "教育局", "联盟"):
+            self.assertIn(token, parse, f"文件名解析要认『{token}』")
+        self.assertIn('source_name: text(panelSrcNameEl && panelSrcNameEl.value),', js,
+                      "原文件名要跟着公共面板一起封存")
+        self.assertIn('name_mode: "auto",', js)
+        self.assertIn("standard_name: text(panelStdNameEl && panelStdNameEl.textContent)", js)
+        self.assertIn('hostCall("pending.set_meta", payload)', js)
+        glue = read("ui_panel_glue.js")
+        self.assertIn("applyMetaSync", glue, "点【确定】必须立刻同步，不靠 400ms 防抖")
+
     def test_03_the_batch_section_folds_on_canvas_scroll(self) -> None:
         """画布一滚动就收成一行矮标题；标题只认点击，确定后切题保持折叠。"""
         js = read("plugin.js")

@@ -1,8 +1,6 @@
 /**
  * ui_school_dict.js —— plugin.js 的「学校字典」小节抽出来的独立模块
- * （PLUGIN_SPEC §2.8.1：任何插件 JS 单文件不超过 800 行）。
- *
- * 依赖一律由 create(deps) 交进来，模块不认全局、也不碰宿主 DOM。
+ * （PLUGIN_SPEC §2.8.1：单文件不超 500 行）。依赖由 create(deps) 交进来。
  */
 (function (global) {
   "use strict";
@@ -36,9 +34,7 @@
   // ---------- 学校字典：题目只存 school_id，校名一律回字典查 ----------
 
   // 简称冲突的实时账本：谁占了这个简称、占给谁，一句话都不许含糊。
-  var schoolConflict = null;
-  var schoolConflictSeq = 0;
-  var schoolConflictTimer = 0;
+  var schoolConflict = null, schoolConflictSeq = 0, schoolConflictTimer = 0;
 
   function schoolConflictText(record) {
     return "❌ 简称冲突，已被【" + String(record.full_name || record.short_name || "") + "】占用";
@@ -129,11 +125,14 @@
     return chip;
   }
 
-  /** 明细学校胶囊：主体填了才冒出来；点 × 去掉一所。 */
+  /** 明细学校胶囊：主体填了才冒出来；主体本身就是某所学校时，第五行整行收起。 */
   function renderSchools() {
     if (!panelMetaSchoolsEl || !panelSchoolListEl) return;
     var body = panelMetaBodyEl ? String(panelMetaBodyEl.value || "").trim() : "";
-    panelMetaSchoolsEl.hidden = !body;
+    var isSchool = Boolean(panel.bodyAutoSchoolId) || panel.schools.some(function (item) {
+      return body === String(item.short_name || "") || body === String(item.full_name || "");
+    });
+    panelMetaSchoolsEl.hidden = !body || isSchool;
     panelSchoolListEl.textContent = "";
     panel.schools.forEach(function (record) {
       panelSchoolListEl.appendChild(schoolChip(record || {}));

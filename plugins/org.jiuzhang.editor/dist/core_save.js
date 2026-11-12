@@ -191,7 +191,8 @@
     }
     var round = panelMetaMockRoundEl
       ? panelMetaMockRoundEl.value : (source.mock_round || batch.mock_round);
-    if (examType === "模考" && Number(round) >= 1 && Number(round) <= 10) {
+    if ((examType === "模拟考" || examType === "模考")
+        && Number(round) >= 1 && Number(round) <= 10) {
       out.mock_round = Math.floor(Number(round));
     }
     var semester = panelMetaSemesterEl

@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.bank_engine import builder, migrate_v12
+from app.bank_engine import builder, migrate_v12, migrate_v13
 
 SCHEMA = Path(__file__).resolve().parents[1] / (
     "plugins/org.jiuzhang.bank-engine/bank/schema.sql"
@@ -30,6 +30,8 @@ class MigrateV12Test(unittest.TestCase):
         self.db_path = self.tmp / "engine.db"
         builder.build_engine(db_path=self.db_path, schema=SCHEMA)
         self.conn = sqlite3.connect(self.db_path)
+        # 本文件只考 v11 ↔ v12：先把最新库降回 v12，断言才有意义。
+        migrate_v13.rollback(self.conn)
         self.addCleanup(self._cleanup)
 
     def _cleanup(self) -> None:
