@@ -1,14 +1,12 @@
-"""当前工作区恢复：校验、覆盖前备份与可回滚落盘。
+"""当前工作区恢复：校验、覆盖前备份与可回滚落盘（军令 #17 第四步 + #34）。
 
-边界（军令 #17 第四步 + #18-终 阶段二）：
-- 只恢复当前工作区：包内清单之外的文件一律不写；``ws/`` 前缀的条目落回
-  ``data/workspaces/<id>/``（配置与插件代码），其余落回该区数据根，别的区一个字节都不碰；
-- 先校验包哈希、逐文件哈希、逐题哈希与**插件目录摘要**，任何一项不过就拒绝，不落任何数据；
-- 覆盖前为当前库、边车与将被覆盖的文件生成 ``.pre-restore.bak``，只留最近 1 份；
-- 落盘用「先移到回滚区、再原子替换」的可回滚流程，失败整批还原，不留半恢复状态；
-- 插件代码恢复后必须重启底座才生效（``reload_required`` 一直为真，前端据此提示）。
-
-本模块不碰 HTTP；下载、勾选与二次确认由 API 层负责。
+- 只恢复当前工作区：清单外的文件不写；``ws/`` 条目落回 ``data/workspaces/<id>/``
+  （配置状态），其余落回该区数据根，别的区一个字节都不碰；
+- **插件代码不恢复**：全机一份（底座根 ``plugins/``），旧包里的 ``ws/plugins/`` 条目
+  跳过并在结果里如实回报；
+- 先验包哈希、逐文件/逐题哈希与旧包插件摘要，任何一项不过就拒绝，不落任何数据；
+- 覆盖前为库、边车与将被覆盖文件生成 ``.pre-restore.bak``，只留最近 1 份；
+- 落盘走可回滚流程，失败整批还原，不留半恢复状态。本模块不碰 HTTP。
 """
 
 from __future__ import annotations
@@ -405,7 +403,8 @@ def create_pre_restore_backup(workspace_id: str, selected: list[str]) -> list[st
 
     # 上一轮可能覆盖过别的文件：只保留本轮这一套，其余旧副本删掉。
     # default 工作区的数据根是 data/，必须绕开别的工作区与备份目录；
-    # 覆盖层根 data/workspaces/<id> 只属于本区，整棵都要扫（含 plugins/ 里的副本）。
+    # 覆盖层根 data/workspaces/<id> 只属于本区，整棵都要扫（旧版插件副本里的
+    # .pre-restore.bak 也一并清掉，不让历史残留永远留着）。
     sweeps: list[tuple[Path, set[str]]] = []
     root_is_default = root == backup.root_data_dir().resolve()
     sweeps.append((root, set(backup.WORKSPACE_SKIP_DIRS) if root_is_default else set()))
@@ -457,10 +456,7 @@ def apply_restore(
     selected: list[str],
     manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    """按勾选覆盖；任一步失败就把整批文件还原到恢复前。
-
-    落点分两套根：``ws/`` 前缀进本区覆盖层（配置与插件代码），其余进本区数据根。
-    """
+    """按勾选覆盖，任一步失败整批还原；旧包 ``ws/plugins/`` 跳过不落盘。"""
     root = backup.workspace_dir(workspace_id).resolve()
     stage = Path(stage_dir)
     expected = {item["path"]: item for item in manifest["files"]}
@@ -468,8 +464,12 @@ def apply_restore(
     rollback.mkdir(parents=True, exist_ok=False)
     applied: list[tuple[Path, bool, Path | None]] = []
     restored: list[str] = []
+    plugins_skipped: list[str] = []
     try:
         for rel in selected:
+            if rel.startswith(backup.OVERLAY_PLUGINS_PREFIX):
+                plugins_skipped.append(rel)
+                continue
             item = expected.get(rel)
             _require(item is not None, f"勾选项不在备份清单里：{rel}")
             source = stage / rel
@@ -507,10 +507,10 @@ def apply_restore(
     shutil.rmtree(rollback, ignore_errors=True)
     return {
         "restored": restored,
-        "plugins_restored": [
-            rel for rel in restored if rel.startswith(backup.OVERLAY_PLUGINS_PREFIX)
-        ],
-        "reload_required": True,
+        # 兼容旧前端字段：工作区备份不再携带插件代码，这个列表永远为空。
+        "plugins_restored": [],
+        "plugins_skipped": plugins_skipped,
+        "reload_required": bool(restored),
     }
 
 

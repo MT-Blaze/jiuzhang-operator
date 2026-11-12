@@ -5,12 +5,15 @@
 
 布局（所有工作区一致，default 也不例外）：
 
-- ``data/workspaces/<id>/plugins/``        该区插件代码
+- ``data/workspaces/<id>/banks/``           该区题库物理库
 - ``data/workspaces/<id>/plugin_state.toml`` 该区启停/昵称/左栏树
 - ``data/workspaces/<id>/startup.toml``     该区启动界面
 - ``data/workspaces/<id>/bank_provider.toml`` 该区题库 provider
 - ``data/workspaces/<id>/update_state.toml`` 该区续更状态
 - ``data/workspaces/<id>/.env``             该区凭据
+
+**插件代码不在工作区**：全局只有一份，读 ``config.plugins_dir()``（底座根
+``plugins/`` 或开发树的兄弟仓库 ``src/``）。工作区只保存启停与界面偏好。
 
 default 工作区的**题库、图片与 config.toml** 仍住在根 ``data/``（历史布局，
 军令 #18 没有要求搬库，贸然搬动老师的题会带来不可逆风险）。
@@ -45,7 +48,7 @@ def root_data_dir() -> Path:
 
 
 def workspace_storage_dir(workspace_id: str) -> Path:
-    """工作区**配置与插件**目录：``data/workspaces/<id>``（default 同口径）。"""
+    """工作区**配置与数据**目录：``data/workspaces/<id>``（default 同口径）。"""
     if not valid_workspace_id(workspace_id):
         raise ValueError("工作区 ID 非法")
     return root_data_dir() / "workspaces" / workspace_id

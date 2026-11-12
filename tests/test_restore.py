@@ -1,4 +1,4 @@
-"""军令 #17 第四步 + #18-终 阶段二契约：恢复校验、必选/可选、覆盖前备份与失败回滚。
+"""军令 #17 第四步 + #34 契约：恢复校验、必选/可选、覆盖前备份与失败回滚。
 
 钉八件事：
 1. 包哈希不符直接拒，工作区一个字节都不动；
@@ -6,9 +6,10 @@
 3. 覆盖前生成 ``.pre-restore.bak``（库、边车、将被覆盖的文件），只留最近 1 份；
 4. 落盘中途失败整批回滚，不留半恢复状态；
 5. 网盘来源下载失败即止（不进入恢复）；
-6. **插件代码与本区配置随包恢复**，不勾就一行不动，且只碰当前工作区；
-7. 插件目录摘要对不上、清单里塞凭据/隐藏/别区路径，一律拒在最前面；
-8. 只读打开快照库留下的 ``-wal``/``-shm`` 边车不算「清单外文件」，但真正的清单外文件照旧判废。
+6. **本区配置随包恢复**，不勾就一行不动，且只碰当前工作区；
+7. 旧包的插件目录摘要对不上、清单里塞凭据/隐藏/别区路径，一律拒在最前面；
+8. 旧包里的 ``ws/plugins/`` 条目自动跳过并回报——插件代码已全局化，恢复不碰它；
+9. 只读打开快照库留下的 ``-wal``/``-shm`` 边车不算「清单外文件」，但真正的清单外文件照旧判废。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_restore``
 """
@@ -246,58 +247,61 @@ class RestoreTest(unittest.TestCase):
         with self.assertRaises(restore.RestoreError):
             restore.validate_manifest({**self._manifest(), "files": []}, WS_ID)
 
-    # 8. 插件代码与工作区配置能整批恢复（军令 #18-终 阶段二）
-    def test_08_plugin_code_and_state_round_trip(self) -> None:
+    # 8. 工作区配置能整批恢复；插件代码在全局面，不受备份影响
+    def test_08_state_round_trip_and_plugin_code_untouched(self) -> None:
         manifest = self._manifest()
         paths = {item["path"] for item in manifest["files"]}
-        self.assertIn(self.plugin_rel, paths)
         self.assertIn(self.state_rel, paths)
-        self.assertEqual(["org.jiuzhang.demo"], [item["id"] for item in manifest["plugins"]])
+        self.assertNotIn(self.plugin_rel, paths)
+        self.assertEqual([], manifest["plugins"])
 
-        result = self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
-                                "ws/plugins/org.jiuzhang.demo/plugin.toml", self.state_rel])
+        result = self._restore([self.bank_rel, "uploads/pic.png", self.state_rel])
         self.assertEqual("旧题干", self._db_stem())
-        self.assertEqual("OLD-CODE", self.plugin_file.read_text(encoding="utf-8"),
-                         "插件代码必须真被覆盖回备份时的版本")
+        self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"),
+                         "插件代码不在备份里，恢复必须原样不动")
         self.assertEqual('v = "old"', self.state_path.read_text(encoding="utf-8"))
-        self.assertEqual(
-            sorted([self.plugin_rel, "ws/plugins/org.jiuzhang.demo/plugin.toml"]),
-            sorted(result["plugins_restored"]),
-        )
-        self.assertTrue(Path(str(self.plugin_file) + ".pre-restore.bak").is_file(),
-                        "覆盖插件代码前同样要留一份 .pre-restore.bak")
+        self.assertEqual([], result["plugins_restored"])
+        self.assertEqual([], result["plugins_skipped"])
+        self.assertTrue(Path(str(self.state_path) + ".pre-restore.bak").is_file(),
+                        "覆盖配置前同样要留一份 .pre-restore.bak")
 
-    # 9. 不勾插件就一行代码都不动
-    def test_09_plugins_are_optional_and_stay_untouched_when_unchecked(self) -> None:
+    # 9. 不勾配置就一行都不动
+    def test_09_state_is_optional_and_stays_untouched_when_unchecked(self) -> None:
         result = self._restore([self.bank_rel, "uploads/pic.png"])
         self.assertEqual("旧题干", self._db_stem())
         self.assertEqual([], result["plugins_restored"])
+        self.assertEqual([], result["plugins_skipped"])
         self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
         self.assertEqual('v = "new"', self.state_path.read_text(encoding="utf-8"))
         self.assertFalse(list(self.plugins.rglob("*.pre-restore.bak")))
 
-    # 10. 恢复只碰当前区，别区的插件与库原样不动
-    def test_10_restore_leaves_other_workspaces_alone(self) -> None:
+    # 10. 恢复只碰当前区，别区数据与全局插件原样不动
+    def test_10_restore_leaves_other_workspaces_and_global_plugins_alone(self) -> None:
         foreign = self.data / "workspaces" / "ws_foreign000000000"
         foreign_code = foreign / "plugins" / "org.jiuzhang.foreign"
         foreign_code.mkdir(parents=True)
         (foreign_code / "plugin.toml").write_text("FOREIGN", encoding="utf-8")
         (foreign / "banks").mkdir()
         (foreign / "banks" / "foreign.db").write_bytes(b"FOREIGN-DB")
-        self._restore([self.bank_rel, "uploads/pic.png", self.plugin_rel,
-                       "ws/plugins/org.jiuzhang.demo/plugin.toml", self.state_rel])
+        self._restore([self.bank_rel, "uploads/pic.png", self.state_rel])
         self.assertEqual("FOREIGN", (foreign_code / "plugin.toml").read_text(encoding="utf-8"))
         self.assertEqual(b"FOREIGN-DB", (foreign / "banks" / "foreign.db").read_bytes())
+        self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
 
-    # 11. 插件摘要对不上：拒在最前面，工作区一个字节都不动
-    def test_11_tampered_plugin_digest_blocks_restore(self) -> None:
+    # 11. 旧包的插件摘要对不上：拒在最前面，工作区一个字节都不动
+    def test_11_tampered_old_plugin_digest_blocks_restore(self) -> None:
         manifest = self._manifest()
+        manifest["files"].append({
+            "path": self.plugin_rel, "size": 8,
+            "sha256": "a" * 64, "category": "plugins", "required": False,
+        })
+        manifest["plugins"] = backup.plugins_inventory(manifest["files"])
+        restore.validate_manifest(manifest, WS_ID)
         manifest["plugins"][0]["sha256"] = "f" * 64
-        toml_io.write(self.manifest_path, manifest)
         before_code = self.plugin_file.read_text(encoding="utf-8")
         before_stem = self._db_stem()
         with self.assertRaises(restore.RestoreError) as caught:
-            self._prepare()
+            restore.validate_manifest(manifest, WS_ID)
         self.assertIn("摘要", str(caught.exception))
         self.assertEqual(before_code, self.plugin_file.read_text(encoding="utf-8"))
         self.assertEqual(before_stem, self._db_stem())
@@ -318,16 +322,14 @@ class RestoreTest(unittest.TestCase):
                 str(caught.exception),
             )
 
-    # 13. 插件代码写坏也整批回滚，不留半恢复
-    def test_13_plugin_write_failure_rolls_everything_back(self) -> None:
-        plan = self._prepare([self.bank_rel, "uploads/pic.png", self.plugin_rel])
+    # 13. 配置写坏也整批回滚，不留半恢复
+    def test_13_state_write_failure_rolls_everything_back(self) -> None:
+        plan = self._prepare([self.bank_rel, "uploads/pic.png", self.state_rel])
         real_copy = restore._atomic_copy
-        seen: list[str] = []
 
         def flaky(source, target):
-            seen.append(Path(target).name)
-            if Path(target).name == "plugin.js":
-                raise OSError("模拟插件写入失败")
+            if Path(target).name == "plugin_state.toml":
+                raise OSError("模拟配置写入失败")
             real_copy(source, target)
 
         try:
@@ -337,10 +339,10 @@ class RestoreTest(unittest.TestCase):
         finally:
             restore.cleanup_plan(plan)
 
-        self.assertEqual("新题干", self._db_stem(), "插件失败必须连坐回滚题库")
+        self.assertEqual("新题干", self._db_stem(), "配置失败必须连坐回滚题库")
         self.assertEqual(b"NEW-PNG", self.upload_path.read_bytes())
+        self.assertEqual('v = "new"', self.state_path.read_text(encoding="utf-8"))
         self.assertEqual("NEW-CODE", self.plugin_file.read_text(encoding="utf-8"))
-        self.assertEqual([], list(self.plugins.rglob("*.restore-new")))
 
     # 14. 读快照库留下的边车不许把整包判废（确认执行时还要再复核一遍）
     def test_14_snapshot_sidecars_do_not_block_reverification(self) -> None:
@@ -370,7 +372,7 @@ class RestoreTest(unittest.TestCase):
 
 
 class RestoreUiContractTest(unittest.TestCase):
-    """恢复面板的分组必须与后端分组一一对应——漏了「插件代码」，老师就看不见刚备的插件。"""
+    """恢复面板必须按新口径说话：插件代码全机一份，旧包插件条目只跳过、不落盘。"""
 
     def setUp(self) -> None:
         self.js = settings_source()
@@ -383,14 +385,14 @@ class RestoreUiContractTest(unittest.TestCase):
             "question_hashes": {},
             "package": {"filename": "backup_20260101_010101_001.zst",
                         "sha256": "0" * 64, "size": 1},
-            "plugins": [{"id": "org.jiuzhang.demo", "files": 1, "bytes": 3, "sha256": "a" * 64}],
+            "plugins": [],
             "files": [
                 {"path": "banks/x.db", "size": 1, "sha256": "0" * 64,
                  "category": "bank", "required": True},
                 {"path": "uploads/a.png", "size": 1, "sha256": "0" * 64,
                  "category": "uploads", "required": True},
-                {"path": "ws/plugins/org.jiuzhang.demo/plugin.toml", "size": 3,
-                 "sha256": "0" * 64, "category": "plugins", "required": False},
+                {"path": "ws/plugin_state.toml", "size": 3,
+                 "sha256": "0" * 64, "category": "other", "required": False},
                 {"path": "config.toml", "size": 1, "sha256": "0" * 64,
                  "category": "other", "required": False},
             ],
@@ -401,21 +403,21 @@ class RestoreUiContractTest(unittest.TestCase):
         self.assertEqual(
             ["bank", "other", "plugins", "uploads"], sorted(preview["groups"])
         )
-        self.assertEqual(
-            ["ws/plugins/org.jiuzhang.demo/plugin.toml"], preview["groups"]["plugins"]
-        )
-        self.assertEqual(1, len(preview["plugins"]))
-        self.assertEqual(3, preview["plugins"][0]["bytes"])
-        for group in preview["groups"]:
-            self.assertIn('["%s",' % group, self.js, f"前端少了 {group} 这一组的标题")
+        self.assertEqual([], preview["groups"]["plugins"])
+        self.assertIn("ws/plugin_state.toml", preview["groups"]["other"])
+        for group, label in (("bank", "题库数据（必选）"),
+                             ("uploads", "图片资产（必选）"),
+                             ("other", "其他数据文件（可选，默认勾选）")):
+            self.assertIn(group, preview["groups"], f"后端少了 {group} 分组")
+            self.assertIn(label, self.js, f"前端少了 {group} 这一组的标题")
 
-    def test_plugin_restore_tells_the_teacher_how_new_code_loads(self) -> None:
-        # 插件代码是磁盘上的文件，宿主每个页签只在挂载时读一次：
-        # 重开页签就够，重启底座是可选路径。文案不许再把它说成唯一出路。
-        self.assertIn("result.plugins_restored", self.js)
-        self.assertIn("关掉对应页签再重新打开即载入新代码，不必重启底座", self.js)
-        self.assertNotIn("必须重启底座才会生效", self.js)
-        self.assertIn("插件代码（可选，覆盖后重开页签或重启生效）", self.js)
+    def test_legacy_plugin_entries_are_reported_as_skipped(self) -> None:
+        # 插件代码已全局化：旧包条目不许再被当成可恢复勾选项展示。
+        self.assertNotIn('["plugins", "插件代码（可选，覆盖后重开页签或重启生效）"]', self.js)
+        self.assertNotIn("plugins_restored", self.js)
+        self.assertIn("result.plugins_skipped", self.js)
+        self.assertIn("旧包插件代码（已全局化，恢复时自动跳过）", self.js)
+        self.assertIn("插件代码全机一份，不再随工作区恢复", self.js)
 
 
 if __name__ == "__main__":

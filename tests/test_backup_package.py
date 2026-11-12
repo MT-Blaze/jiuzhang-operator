@@ -1,7 +1,8 @@
-"""军令 #17 第二步 + #18-终 阶段二契约：压缩打包、本地保留 3 份、路径校验与开关联动。
+"""军令 #17 第二步 + #34 契约：压缩打包、本地保留 3 份、路径校验与开关联动。
 
-阶段二钉两条：插件代码与工作区配置进包且包体积如实；包内成员必须**恰好等于**清单——
-读 WAL 库顺手落下的 ``-wal``/``-shm`` 边车一旦混进包，恢复侧「清单外文件」门禁会把整包判废。
+钉两条：插件代码全机一份（军令 #34），**不进工作区备份包**；工作区配置照常进包，
+包体积与哈希如实。包内成员必须**恰好等于**清单——读 WAL 库顺手落下的 ``-wal``/``-shm``
+边车一旦混进包，恢复侧「清单外文件」门禁会把整包判废。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_backup_package``
 """
@@ -115,7 +116,7 @@ class PackageTest(unittest.TestCase):
         self.assertTrue(accepted.is_dir())
         self.assertTrue(accepted.is_absolute())
 
-    def test_05_plugin_code_is_packed_with_honest_size(self) -> None:
+    def test_05_plugin_code_never_enters_the_package(self) -> None:
         first = backup.create_local_backup(WS_ID, local_dir=self.out)
         first_size = Path(first["package"]).stat().st_size
 
@@ -128,52 +129,51 @@ class PackageTest(unittest.TestCase):
         (code / ".git").mkdir()
         (code / ".git" / "config").write_text("[core]", encoding="utf-8")
         (self.ws_dir / "plugin_state.toml").write_text("enabled = true\n", encoding="utf-8")
+        # 历史残留：旧版曾把插件代码复制进工作区，也必须整目录跳过。
+        legacy = self.ws_dir / "plugins" / "org.jiuzhang.demo"
+        legacy.mkdir(parents=True)
+        (legacy / "plugin.toml").write_text('id = "org.jiuzhang.demo"\n', encoding="utf-8")
 
         result = backup.create_local_backup(WS_ID, local_dir=self.out)
         package = Path(result["package"])
         manifest = toml_io.load(Path(result["manifest"]))
         self.assertEqual(package.stat().st_size, manifest["package"]["size"], "包体积必须如实")
         self.assertEqual(backup.sha256_file(package), manifest["package"]["sha256"])
-        self.assertGreater(manifest["package"]["size"], first_size, "加了插件代码，包必须变大")
 
         with open_package(package, "rb") as compressed:
             with tarfile.open(fileobj=compressed, mode="r") as archive:
                 names = set(archive.getnames())
-        self.assertIn("ws/plugins/org.jiuzhang.demo/plugin.toml", names)
-        self.assertIn("ws/plugins/org.jiuzhang.demo/dist/plugin.js", names)
         self.assertIn("ws/plugin_state.toml", names)
+        self.assertFalse([name for name in names if "plugins/" in name],
+                         "插件代码全机一份，工作区备份里不许出现")
         self.assertFalse([name for name in names if "__pycache__" in name or "/.git/" in name],
                          "缓存与版本库不许进包")
 
-        entries = manifest["plugins"]
-        self.assertEqual(1, len(entries))
-        self.assertEqual("org.jiuzhang.demo", entries[0]["id"])
-        self.assertEqual(2, entries[0]["files"])
-        self.assertEqual(
-            len('id = "org.jiuzhang.demo"\n') + len("console.log(1)"), entries[0]["bytes"]
-        )
-        self.assertEqual(64, len(entries[0]["sha256"]))
-        listed = [item for item in manifest["files"] if item["category"] == "plugins"]
-        self.assertEqual(entries, backup.plugins_inventory(listed))
-        self.assertEqual(1, len([row for row in backup.list_local_backups(self.out, WS_ID)
-                                 if row["plugin_count"] == 1]))
+        self.assertEqual([], manifest["plugins"])
+        self.assertFalse([item for item in manifest["files"] if item["category"] == "plugins"])
+        self.assertGreaterEqual(manifest["package"]["size"], first_size, "包体积仍须如实")
+        self.assertTrue(all(row["plugin_count"] == 0
+                            for row in backup.list_local_backups(self.out, WS_ID)))
 
-    def test_06_local_jzo_plugins_dir_override_is_the_one_packed(self) -> None:
-        """探针/便携部署用 JZO_PLUGINS_DIR 指路，备份必须跟着底座实际加载的那份代码。"""
+    def test_06_plugin_dirs_from_any_root_are_never_packed(self) -> None:
+        """全局 plugins/ 与工作区 plugins/ 都不属于工作区备份的数据面。"""
         code = self.plugins / "org.jiuzhang.override-check"
         code.mkdir(parents=True)
         (code / "plugin.toml").write_text('id = "org.jiuzhang.override-check"\n', encoding="utf-8")
         (self.ws_dir / "plugins").mkdir(parents=True)
-        (self.ws_dir / "plugins" / "org.jiuzhang.in-workspace").mkdir()
-        (self.ws_dir / "plugins" / "org.jiuzhang.in-workspace" / "plugin.toml").write_text(
+        in_ws = self.ws_dir / "plugins" / "org.jiuzhang.in-workspace"
+        in_ws.mkdir()
+        (in_ws / "plugin.toml").write_text(
             'id = "org.jiuzhang.in-workspace"\n', encoding="utf-8"
         )
+        (self.ws_dir / "plugin_state.toml").write_text("enabled = true\n", encoding="utf-8")
         manifest = toml_io.load(
             Path(backup.create_local_backup(WS_ID, local_dir=self.out)["manifest"])
         )
-        ids = sorted(item["id"] for item in manifest["plugins"])
-        self.assertEqual(["org.jiuzhang.override-check"], ids,
-                         "指路口子生效时，只备实际加载的那一份，不双份收录")
+        self.assertEqual([], manifest["plugins"])
+        paths = {item["path"] for item in manifest["files"]}
+        self.assertIn("ws/plugin_state.toml", paths)
+        self.assertFalse([rel for rel in paths if "plugins/" in rel])
 
     def test_07_wal_sidecars_never_smuggle_into_the_package(self) -> None:
         db = self.ws_dir / "banks" / f"{PROVIDER}.db"

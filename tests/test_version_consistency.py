@@ -189,5 +189,41 @@ class ProbeVersionContractTest(unittest.TestCase):
         self.assertIn('== manifest_versions()', text)
 
 
+class InstallerContractTest(unittest.TestCase):
+    """install.bat 是首发入口：纯 ASCII + CRLF、只走镜像、布局与文档都对得上。"""
+
+    def setUp(self) -> None:
+        self.raw = (ROOT / "install.bat").read_bytes()
+        self.text = self.raw.decode("ascii")
+
+    def test_01_ascii_only_with_crlf(self) -> None:
+        self.assertEqual(self.text.count("\r\n"), self.text.count("\n"))
+        self.assertGreater(self.text.count("\r\n"), 100)
+
+    def test_02_mirror_fallback_order_and_no_bare_github(self) -> None:
+        first = self.text.index("https://ghproxy.net/https://github.com/")
+        second = self.text.index("https://github.kkgithub.com/")
+        self.assertLess(first, second, "主镜像必须先于备用镜像")
+        # 任何下载 URL 都必须以镜像主机开头，不允许直接以 github.com 起头。
+        self.assertNotIn('"https://github.com/', self.text, "install.bat 不许直连 github.com")
+
+    def test_03_both_repos_main_zip_and_plugin_src_layout(self) -> None:
+        self.assertIn("MT-Blaze/%REL%/archive/refs/heads/main.zip", self.text)
+        self.assertIn('if /i "%KIND%"=="plugins" set "REL=jiuzhang-plugins"', self.text)
+        self.assertIn("jiuzhang-plugins-main\\src", self.text)
+        self.assertIn('xcopy "%PL_SRC%\\*" "%~dp0plugins\\"', self.text)
+
+    def test_04_calls_start_and_writes_migration_guide(self) -> None:
+        self.assertIn('call "%~dp0start.bat"', self.text)
+        self.assertIn("FromBase64String", self.text, "中文迁移说明必须由 PowerShell 解码写出")
+        # 说明文件用 base64 承载文件名，批处理本体才能保持纯 ASCII。
+        self.assertIn("5aaC5L2V6L+B56e75pen5pWw5o2uLnR4dA==", self.text)
+
+    def test_05_every_goto_has_a_label(self) -> None:
+        labels = set(re.findall(r"(?m)^:([A-Za-z_][A-Za-z0-9_]*)", self.text))
+        gotos = set(re.findall(r"goto\s+([A-Za-z_][A-Za-z0-9_]*)", self.text))
+        self.assertEqual(gotos - labels, set(), "存在跳不到的标签")
+
+
 if __name__ == "__main__":
     unittest.main()

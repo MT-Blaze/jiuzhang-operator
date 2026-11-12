@@ -1,4 +1,4 @@
-"""军令 #17 第一步 + #18-终 阶段二契约：当前工作区一致性快照与 manifest。
+"""军令 #17 第一步 + #34 契约：当前工作区一致性快照与 manifest。
 
 钉六件事：
 1. 有 WAL 且连接仍开着时，快照仍可读、题目数与活库一致，且不把边车原样装包；
@@ -6,8 +6,8 @@
    图片哈希、文件清单、生成时间、待回填的 Zstd 包哈希）；
 3. 逐题哈希能按快照库原样复算；
 4. default 工作区不把其他工作区、宿主状态与凭据文件卷进来；
-5. **本区配置（``plugin_state.toml`` 等）与 ``plugins/`` 代码进包**，缓存/版本库/凭据/别区不进；
-6. 插件目录摘要可由文件清单复算，篡改或漏文件即被恢复校验拒掉。
+5. **本区配置（``plugin_state.toml`` 等）进包，插件代码一概不进**——插件代码全机一份；
+6. 旧包里的插件目录摘要仍可由文件清单复算并校验，篡改或漏文件即被拒绝。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_backup_snapshot``
 """
@@ -195,7 +195,7 @@ class SnapshotTest(unittest.TestCase):
 
 
 class OverlaySnapshotTest(unittest.TestCase):
-    """军令 #18-终 阶段二：配置与插件代码进包，缓存/凭据/别区一概不进。"""
+    """军令 #34：本区配置进包；插件代码全局一份，工作区新旧副本一概不进。"""
 
     PLUGIN = "org.jiuzhang.demo"
 
@@ -205,11 +205,12 @@ class OverlaySnapshotTest(unittest.TestCase):
         self.data = self.root / "data"
         self.ws_dir = self.data / "workspaces" / WS_ID
         (self.ws_dir / "banks").mkdir(parents=True)
+        self.plugins = self.root / "plugins"
         self._saved_data = os.environ.get("JZO_DATA_DIR")
         self._saved_plugins = os.environ.get("JZO_PLUGINS_DIR")
         self._saved_ws = settings.workspace_id
         os.environ["JZO_DATA_DIR"] = str(self.data)
-        os.environ.pop("JZO_PLUGINS_DIR", None)
+        os.environ["JZO_PLUGINS_DIR"] = str(self.plugins)
         settings.workspace_id = WS_ID
         self.conn = _make_bank(self.ws_dir / "banks" / f"{PROVIDER}.db", 2)
         (self.ws_dir / "plugin_state.toml").write_text(
@@ -218,15 +219,15 @@ class OverlaySnapshotTest(unittest.TestCase):
         (self.ws_dir / "startup.toml").write_text('page = "workspace"\n', encoding="utf-8")
         (self.ws_dir / ".env").write_text("SECRET=1", encoding="utf-8")
         (self.ws_dir / "backup.toml").write_text('password = "secret"\n', encoding="utf-8")
-        code = self.ws_dir / "plugins" / self.PLUGIN
+        # 全局插件代码：备份必须视而不见。
+        code = self.plugins / self.PLUGIN
         (code / "dist").mkdir(parents=True)
         (code / "plugin.toml").write_text('id = "%s"\n' % self.PLUGIN, encoding="utf-8")
         (code / "dist" / "plugin.js").write_text("console.log(1)", encoding="utf-8")
-        (code / "dist" / "plugin.css").write_text(".a{}", encoding="utf-8")
-        (code / "__pycache__").mkdir()
-        (code / "__pycache__" / "junk.pyc").write_bytes(b"\x00cache")
-        (code / ".git").mkdir()
-        (code / ".git" / "config").write_text("[core]", encoding="utf-8")
+        # 历史残留的工作区插件副本（旧版会复制进区）：也应整目录跳过。
+        legacy = self.ws_dir / "plugins" / self.PLUGIN
+        legacy.mkdir(parents=True)
+        (legacy / "plugin.toml").write_text('id = "%s"\n' % self.PLUGIN, encoding="utf-8")
         foreign = self.data / "workspaces" / "ws_ffffffffffffffff" / "plugins" / "org.jiuzhang.foreign"
         foreign.mkdir(parents=True)
         (foreign / "plugin.toml").write_text('id = "org.jiuzhang.foreign"\n', encoding="utf-8")
@@ -244,57 +245,55 @@ class OverlaySnapshotTest(unittest.TestCase):
     def _manifest(self) -> tuple[Path, dict]:
         return backup.snapshot_workspace(WS_ID)
 
-    def test_05_state_files_and_plugin_code_are_in_the_package(self) -> None:
+    def test_05_state_files_are_packed_but_no_plugin_code_at_all(self) -> None:
         stage, manifest = self._manifest()
         try:
             categories = {item["path"]: item["category"] for item in manifest["files"]}
             required = {item["path"]: item["required"] for item in manifest["files"]}
             self.assertEqual("other", categories["ws/plugin_state.toml"])
             self.assertEqual("other", categories["ws/startup.toml"])
-            self.assertEqual("plugins", categories[f"ws/plugins/{self.PLUGIN}/plugin.toml"])
-            self.assertEqual("plugins", categories[f"ws/plugins/{self.PLUGIN}/dist/plugin.js"])
-            self.assertFalse(required[f"ws/plugins/{self.PLUGIN}/plugin.toml"],
-                             "插件代码是可选恢复项，不能强迫老师连代码一起覆盖")
-            self.assertFalse(required["ws/plugin_state.toml"], "配置同样可勾掉")
-            for leaked in (f"ws/plugins/{self.PLUGIN}/__pycache__/junk.pyc",
-                           f"ws/plugins/{self.PLUGIN}/.git/config",
-                           "ws/.env", "ws/backup.toml",
-                           "ws/plugins/org.jiuzhang.foreign/plugin.toml"):
+            self.assertFalse(required["ws/plugin_state.toml"], "配置可勾掉")
+            for leaked in (
+                f"ws/plugins/{self.PLUGIN}/plugin.toml",
+                f"plugins/{self.PLUGIN}/plugin.toml",
+                "ws/.env", "ws/backup.toml",
+                "ws/plugins/org.jiuzhang.foreign/plugin.toml",
+            ):
                 self.assertNotIn(leaked, categories, f"{leaked} 不该进包")
-            self.assertTrue((stage / "ws" / "plugins" / self.PLUGIN / "dist" / "plugin.js").is_file())
+            self.assertFalse([rel for rel, kind in categories.items() if kind == "plugins"],
+                             "插件代码已全局化，包里不许再出现 plugins 分组")
+            self.assertFalse((stage / "ws" / "plugins").exists())
+            self.assertTrue((stage / "ws" / "plugin_state.toml").is_file())
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 
-    def test_06_plugin_inventory_is_per_directory_digest(self) -> None:
+    def test_06_manifest_has_no_plugin_inventory_for_new_packages(self) -> None:
         stage, manifest = self._manifest()
         try:
-            entries = manifest["plugins"]
-            self.assertEqual([self.PLUGIN], [item["id"] for item in entries])
-            entry = entries[0]
-            self.assertEqual(3, entry["files"])
-            self.assertEqual(
-                sum(len(text) for text in
-                    ('{"id":"%s"}' % self.PLUGIN, "console.log(1)", ".a{}")),
-                entry["bytes"],
-            )
-            self.assertEqual(64, len(entry["sha256"]))
-            files = [item for item in manifest["files"] if item["category"] == "plugins"]
-            expected = backup.plugins_inventory(files)
-            self.assertEqual(expected, entries, "同一份清单必须复算得出同一个摘要")
+            self.assertEqual([], manifest["plugins"])
+            self.assertEqual([], [item for item in manifest["files"]
+                                  if item["category"] == "plugins"])
             restore.validate_manifest({**manifest, "package": {
                 "filename": "backup_20260101_010101_001.zst",
                 "sha256": "0" * 64, "size": 1}}, WS_ID)
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 
-    def test_07_tampered_or_stale_plugin_digest_is_rejected(self) -> None:
+    def test_07_old_package_plugin_digest_is_still_checked(self) -> None:
+        """旧包（含 ws/plugins 条目）仍要验摘要；篡改或漏文件当场拒。"""
         stage, manifest = self._manifest()
         try:
             package = {
                 "filename": "backup_20260101_010101_001.zst",
                 "sha256": "0" * 64, "size": 1,
             }
-            base = {**manifest, "package": package}
+            old = copy.deepcopy(manifest)
+            old["files"].append({
+                "path": f"ws/plugins/{self.PLUGIN}/plugin.toml", "size": 3,
+                "sha256": "a" * 64, "category": "plugins", "required": False,
+            })
+            old["plugins"] = backup.plugins_inventory(old["files"])
+            base = {**old, "package": package}
             restore.validate_manifest(base, WS_ID)
             tampered = copy.deepcopy(base)
             tampered["plugins"][0]["sha256"] = "f" * 64
@@ -303,18 +302,23 @@ class OverlaySnapshotTest(unittest.TestCase):
             self.assertIn("摘要", str(caught.exception))
             dropped = copy.deepcopy(base)
             dropped["files"] = [item for item in dropped["files"]
-                                if item["path"] != f"ws/plugins/{self.PLUGIN}/dist/plugin.js"]
+                                if item["category"] != "plugins"]
             with self.assertRaises(restore.RestoreError):
                 restore.validate_manifest(dropped, WS_ID)
         finally:
             shutil.rmtree(stage, ignore_errors=True)
 
-    def test_08_snapshot_refuses_a_plugin_dir_with_a_bad_name(self) -> None:
-        (self.ws_dir / "plugins" / "Evil").mkdir()
-        (self.ws_dir / "plugins" / "Evil" / "x.js").write_text("x", encoding="utf-8")
-        with self.assertRaises(backup.BackupError) as caught:
-            backup.snapshot_workspace(WS_ID, self.root / "stage-evil")
-        self.assertIn("目录名非法", str(caught.exception))
+    def test_08_workspace_plugin_dirs_are_skipped_entirely(self) -> None:
+        evil = self.ws_dir / "plugins" / "Evil"
+        evil.mkdir()
+        (evil / "x.js").write_text("x", encoding="utf-8")
+        stage, manifest = self._manifest()
+        try:
+            paths = {item["path"] for item in manifest["files"]}
+            self.assertFalse([rel for rel in paths if rel.startswith("ws/plugins/")])
+            self.assertFalse((stage / "ws" / "plugins").exists())
+        finally:
+            shutil.rmtree(stage, ignore_errors=True)
 
     def test_09_host_only_bookkeeping_files_never_enter_the_package(self) -> None:
         # 真机取证踩出来的坑：data/current_workspace 曾被当普通数据文件扫进包，

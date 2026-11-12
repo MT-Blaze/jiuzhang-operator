@@ -1,23 +1,18 @@
-"""工作区布局自举与旧全局数据迁移（军令 #18 第三步）。
+"""工作区布局自举（军令 #34：插件全局化）。
 
-启动时按顺序做四件事，全部幂等：
+启动时按顺序做三件事，全部幂等：
 
 1. 从 ``data/current_workspace`` 指针装载当前工作区（缺失/损坏回落 default）；
-2. 把旧版本的全局插件与宿主状态**移动**进 default 工作区：根 ``plugins/``、
-   ``data/plugin_state.toml``、``data/startup.toml``、``data/bank_provider.toml``、
-   ``data/update_state.toml``、根 ``.env``（凭据）；
-3. 保证 default 与当前工作区都有 ``plugins/`` 子目录和一份空
-   ``plugin_state.toml``（新工作区结构生成也走这里）；
-4. 把当前工作区的 ``.env`` 载入 ``os.environ``（覆盖旧值），实现「切库重启后
+2. 保证 default 与当前工作区都有 ``banks/`` 与一份空 ``plugin_state.toml``
+   （新工作区结构生成也走这里）——**绝不创建 ``plugins/``**，插件代码只认
+   全局 ``plugins_dir()``；
+3. 把当前工作区的 ``.env`` 载入 ``os.environ``（覆盖旧值），实现「切库重启后
    加载该区自己的凭据」。
 
-**开发工作树的例外**：仓库根存在 ``.git`` 时，根 ``plugins/`` 是受 git 跟踪的
-源码与发行包原料，移动/删除它会把工作树打烂。此时只**复制一次**到 default
-工作区（目标已存在则不再覆盖），根目录原样保留；``.env`` 同样只复制。
-发行包（无 ``.git``）仍严格按军令移动并在移走后删除根插件文件夹。
+旧根 ``plugins/`` 不再迁入工作区：它现在就是全局插件目录，原地生效。
+开发工作树把插件源码放在兄弟仓库 ``../jiuzhang-plugins/src``，同样原地直读。
 
-``JZO_PLUGINS_DIR`` 是测试/探针的显式覆盖：一旦设置，跳过插件迁移，绝不把
-仓库里的插件搬进临时数据目录。
+``JZO_PLUGINS_DIR`` 是测试/探针的显式覆盖：一旦设置，全局插件目录就是它。
 """
 
 from __future__ import annotations
@@ -44,14 +39,13 @@ from app.core.workspace_paths import read_current_workspace_pointer
 logger = logging.getLogger("jzo.workspace")
 
 LEGACY_ENV_FILE = PROJECT_ROOT / ".env"
-LEGACY_PLUGINS_DIR = PROJECT_ROOT / "plugins"
-PLUGINS_DIRNAME = "plugins"
+BANKS_DIRNAME = "banks"
 
 _lock = threading.Lock()
 
 
 def _is_dev_checkout() -> bool:
-    """仓库根存在 ``.git``：根 plugins/ 是源码，禁止移走/删除。"""
+    """仓库根存在 ``.git``：开发树的旧状态文件只复制，不破坏工作树。"""
     return (PROJECT_ROOT / ".git").exists()
 
 
@@ -74,27 +68,6 @@ def _transfer(source: Path, target: Path) -> str:
         return "copy"
     shutil.move(str(source), str(target))
     return "move"
-
-
-def _migrate_legacy_plugins(target: Path) -> str:
-    """旧根 plugins/ → default 工作区。返回实际动作（空串表示没迁）。"""
-    if _isolated_run():
-        return ""
-    legacy = LEGACY_PLUGINS_DIR
-    if not legacy.is_dir() or legacy.resolve() == target.resolve():
-        return ""
-    if target.exists():
-        # 目标已有插件（上一次迁移或用户安装过）：只补缺失的目录，绝不覆盖。
-        copied = 0
-        for child in sorted(legacy.iterdir(), key=lambda item: item.name):
-            if child.name.startswith(".") or (target / child.name).exists():
-                continue
-            _transfer(child, target / child.name)
-            copied += 1
-        return "merge:%d" % copied if copied else ""
-    action = _transfer(legacy, target)
-    logger.info("旧全局插件目录已%s到 default 工作区：%s", "复制" if action == "copy" else "移动", target)
-    return action
 
 
 def _known_state_files() -> list[tuple[Path, Path]]:
@@ -129,10 +102,13 @@ def _migrate_legacy_state() -> list[str]:
 
 
 def ensure_workspace_layout(workspace_id: str) -> Path:
-    """保证工作区有 plugins/ 与空 plugin_state.toml；返回工作区目录。"""
+    """保证工作区有 banks/ 与空 plugin_state.toml；返回工作区目录。
+
+    插件代码是全局的一份，这里**不建 plugins/ 目录**——数据与代码彻底分家。
+    """
     root = workspace_storage_dir(workspace_id)
     root.mkdir(parents=True, exist_ok=True)
-    (root / PLUGINS_DIRNAME).mkdir(parents=True, exist_ok=True)
+    (root / BANKS_DIRNAME).mkdir(parents=True, exist_ok=True)
     state = root / plugin_state.STATE_FILENAME
     if not state.exists():
         state.write_text("", encoding="utf-8")
@@ -166,13 +142,10 @@ def load_env_file(path: Path, *, override: bool = False) -> dict[str, str]:
 
 
 def bootstrap() -> dict[str, Any]:
-    """启动自举：装载指针、迁移旧数据、生成结构、载入凭据。"""
+    """启动自举：装载指针、迁移旧宿主状态、生成工作区结构、载入凭据。"""
     with _lock:
         workspace_id = load_current_workspace()
-        default_root = workspace_storage_dir(DEFAULT_WORKSPACE_ID)
-        default_root.mkdir(parents=True, exist_ok=True)
 
-        plugins_action = _migrate_legacy_plugins(default_root / PLUGINS_DIRNAME)
         moved_state = _migrate_legacy_state()
 
         ensure_workspace_layout(DEFAULT_WORKSPACE_ID)
@@ -186,7 +159,6 @@ def bootstrap() -> dict[str, Any]:
 
         return {
             "workspace_id": workspace_id,
-            "plugins_migration": plugins_action,
             "state_moved": moved_state,
             "env_loaded": sorted(loaded_keys),
         }

@@ -1,8 +1,9 @@
 """全局配置。所有路径以仓库根目录为锚点，不依赖当前工作目录。
 
-支持多工作区（Workspace）隔离：每个工作区拥有独立的数据库、上传资源、配置、
-插件代码与插件状态（军令 #18）。插件路径不再有导入期死值——每次调用
-:func:`plugins_dir` 都按当前工作区重新求值。
+支持多工作区（Workspace）隔离：每个工作区拥有独立的数据库、上传资源、配置
+与插件启停状态。**插件代码是全局的一份**（军令 #34）：默认读底座根
+``plugins/``，开发工作树没有根插件目录时直读兄弟仓库
+``../jiuzhang-plugins/src``，因此改源码刷新浏览器即生效，不再往工作区复制运行副本。
 """
 
 from __future__ import annotations
@@ -112,26 +113,41 @@ def current_workspace_id() -> str:
 
 
 def plugins_dir() -> Path:
-    """当前工作区的插件目录，每次调用重新求值。
+    """全局插件代码目录（与当前工作区无关），每次调用重新求值。
 
-    ``JZO_PLUGINS_DIR`` 是测试与便携部署的显式覆盖口子（探针整套依赖它），
-    没设置时才按当前工作区解析到 ``data/workspaces/<id>/plugins``。
+    解析顺序：
+
+    1. ``JZO_PLUGINS_DIR`` 显式覆盖（测试与便携部署）；
+    2. 底座根 ``plugins/``（发行包 / install.bat 装配后的唯一正式位置）；
+    3. 兄弟仓库 ``../jiuzhang-plugins/src``（开发工作树源直读，改源码刷新即生效）；
+    4. 仍无则回到底座根 ``plugins/``（安装时由调用方创建）。
+
+    顺序的意义：装了发行包的用户只认包内插件；开发机没有根插件目录时直接读源码，
+    两边都不会在 ``data/workspaces/`` 下留运行副本。
     """
     override = os.environ.get("JZO_PLUGINS_DIR", "").strip()
     if override:
         return Path(override)
-    return workspace_storage_dir(current_workspace_id()) / "plugins"
+    bundled = PROJECT_ROOT / "plugins"
+    if bundled.is_dir():
+        return bundled
+    source = plugin_source_root()
+    return source if source is not None else bundled
 
 
 def plugin_source_root() -> Path | None:
     """插件源码根：底座仓库不再存放插件源码，只在开发/发版时跨目录取。
 
-    解析顺序：``JZO_PLUGIN_SOURCE_DIR`` 显式覆盖 → 同级 ``../jiuzhang-plugins/src``
-    → ``None``（发行包里插件已被装进工作区，调用方自行回落 ``plugins_dir()``）。
+    解析顺序：``JZO_PLUGIN_SOURCE_DIR`` 显式覆盖 → 底座根 ``plugins/``
+    （install.bat 装配后的源码）→ 同级 ``../jiuzhang-plugins/src``（开发树）。
+    都不在时返回 ``None``，调用方回落到 :func:`plugins_dir`。
     """
     override = os.environ.get("JZO_PLUGIN_SOURCE_DIR", "").strip()
     if override:
         return Path(override)
+    bundled = PROJECT_ROOT / "plugins"
+    if bundled.is_dir():
+        return bundled
     sibling = PROJECT_ROOT.parent / "jiuzhang-plugins" / "src"
     if sibling.is_dir():
         return sibling

@@ -1,14 +1,14 @@
 """备份子系统的「路径与文件清单」层：什么该进包、什么绝不。
 
-边界（军令 #17 + #18 第五步 / #18-终 阶段二）：
+边界（军令 #17 + #18 + #34）：
 - 只认「当前工作区」；不自动备份、不联网；
-- 凭据文件（``.env`` / ``backup.toml``）绝不进包——备份里可以有代码与数据，不能有钥匙；
+- 凭据文件（``.env`` / ``backup.toml``）绝不进包——备份里可以有数据，不能有钥匙；
 - 宿主级路由/账本文件（``workspaces.toml`` / ``current_workspace`` 等）进包等于把别的机器的
   指针盖回来，恢复它足以把工作区切走，打包与恢复两头都禁；
-- **插件代码与工作区状态要进包**（#18-终 阶段二）：``data/workspaces/<id>/plugins/`` 的代码目录
-  与 ``plugin_state.toml`` / ``startup.toml`` / ``bank_provider.toml`` / ``update_state.toml``
-  以 ``ws/`` 前缀收录，恢复时只覆盖**当前工作区**自己那一份；其他工作区的目录一概不碰；
-  版本库与缓存目录（``.git`` / ``__pycache__`` / ``node_modules`` 之类）不是插件代码，不打包。
+- **插件代码不进包**（#34 插件全局化）：插件代码全机只有一份，与工作区数据无关；
+  工作区的 ``plugin_state.toml`` / ``startup.toml`` / ``bank_provider.toml`` /
+  ``update_state.toml`` 仍以 ``ws/`` 前缀收录，恢复时只覆盖**当前工作区**自己那一份；
+- 版本库与缓存目录（``.git`` / ``__pycache__`` / ``node_modules`` 之类）不进包。
 
 本模块只算路径与清单，不碰 SQLite、不做压缩、不写配置。
 """
@@ -53,31 +53,25 @@ HOST_ONLY_FILES = SECRET_FILES | {
     "deletion_audit.toml", "deletion_audit.json",
     "current_workspace",
 }
-# 工作区目录里不属于「业务数据」的代码/宿主目录：插件代码由军令 #18 第五步
-# 单独按 manifest 收录，这里先整目录跳过，避免把插件包当普通文件扫进快照。
+# 工作区目录里不属于「业务数据」的代码/宿主目录：旧版插件副本、备份产物与
+# 工作区容器都整目录跳过。插件代码现在是全局一份，不再参与工作区备份。
 WORKSPACE_SKIP_DIRS = {"workspaces", "backups", "audit", "plugins"}
 SIDECAR_SUFFIXES = (".db-wal", ".db-shm", ".db-journal")
 
-# ---------- 工作区覆盖层：配置 + 插件代码（军令 #18-终 阶段二） ----------
+# ---------- 工作区覆盖层：仅配置状态（军令 #34） ----------
 # 覆盖层文件住在 data/workspaces/<id>/（default 也一样），而 default 的**数据**住在根 data/，
-# 两套根不一样。快照里用 ws/ 前缀标出「这是覆盖层的文件」，恢复时据此挑落点，
-# 保证包里的 plugins/ 只会落回当前工作区自己那份。
+# 两套根不一样。快照里用 ws/ 前缀标出「这是覆盖层的文件」，恢复时据此挑落点。
+# 旧版备份里可能还有 ws/plugins/ 条目（插件代码），恢复时一律跳过并如实回报。
 OVERLAY_PREFIX = "ws/"
 OVERLAY_PLUGINS_PREFIX = OVERLAY_PREFIX + "plugins/"
+# 覆盖层状态文件名单（插件代码不在此列：全局一份，见文件头）。
 OVERLAY_STATE_FILES = (
     "plugin_state.toml", "plugin_state.json",
     "startup.toml", "startup.json",
     "bank_provider.toml", "bank_provider.json",
     "update_state.toml", "update_state.json",
 )
-# 版本库、缓存与虚拟环境不是插件代码，卷进包里只会让备份变大且恢复无用。
-PLUGIN_SKIP_DIRS = {
-    ".git", ".svn", ".hg", "__pycache__", ".pytest_cache", ".mypy_cache",
-    "node_modules", ".venv", "venv", ".idea",
-}
-PLUGIN_SKIP_SUFFIXES = (".pyc", ".pyo", ".tmp")
 PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,80}$")
-PLUGIN_FILE_LIMIT = 3000   # 单包插件文件上限：正常插件十几到几十个文件，超了说明卷进了缓存目录
 
 
 class BackupError(Exception):
@@ -197,45 +191,20 @@ def overlay_dir(workspace_id: str | None = None) -> Path:
     return target
 
 
-def overlay_plugins_dir(workspace_id: str | None = None) -> Path:
-    """该区插件代码目录。
-
-    ``JZO_PLUGINS_DIR`` 是探针与便携部署的显式指路口子，只对**当前工作区**生效——
-    备份必须跟着底座实际加载的那一份代码走，否则探针对里跑出来的环境会备出一份空包。
-    """
-    ws_id = workspace_id or current_workspace_id()
-    override = os.environ.get("JZO_PLUGINS_DIR", "").strip()
-    if override and ws_id == current_workspace_id():
-        return Path(override).resolve()
-    return overlay_dir(ws_id) / "plugins"
-
-
 def overlay_rel(path: Path, workspace_id: str | None = None) -> str:
-    """覆盖层文件的快照内路径：插件带 ``ws/plugins/``，状态文件带 ``ws/``。"""
-    resolved = Path(path).resolve()
-    plugins_root = overlay_plugins_dir(workspace_id)
-    try:
-        return OVERLAY_PLUGINS_PREFIX + resolved.relative_to(plugins_root).as_posix()
-    except ValueError:
-        pass
-    return OVERLAY_PREFIX + resolved.relative_to(overlay_dir(workspace_id)).as_posix()
+    """覆盖层状态文件的快照内路径：一律 ``ws/<名字>``。"""
+    return OVERLAY_PREFIX + Path(path).resolve().relative_to(overlay_dir(workspace_id)).as_posix()
 
 
 def overlay_target(relative: str, workspace_id: str | None = None) -> Path:
-    """``ws/...`` → 本机落点；越界与非覆盖层路径一律拒。"""
+    """``ws/...`` → 本机落点；越界与旧插件代码路径一律拒。"""
     if not isinstance(relative, str) or not relative.startswith(OVERLAY_PREFIX):
         raise BackupError("不是覆盖层路径")
     tail = relative[len(OVERLAY_PREFIX):]
     if not tail or tail.startswith("/"):
         raise BackupError("覆盖层路径非法")
     if tail.startswith("plugins/"):
-        root = overlay_plugins_dir(workspace_id)
-        target = (root / tail[len("plugins/"):]).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError as exc:
-            raise BackupError("插件恢复目标越界") from exc
-        return target
+        raise BackupError("插件代码已全局化，工作区备份不再恢复插件目录")
     root = overlay_dir(workspace_id)
     target = (root / tail).resolve()
     try:
@@ -246,7 +215,7 @@ def overlay_target(relative: str, workspace_id: str | None = None) -> Path:
 
 
 def iter_overlay_files(workspace_id: str | None = None) -> list[Path]:
-    """列出该区的工作区状态文件与插件代码文件（绝对路径，按快照内路径排序）。"""
+    """列出该区的工作区状态文件（绝对路径，按快照内路径排序）。"""
     ws_id = workspace_id or current_workspace_id()
     root = overlay_dir(ws_id)
     found: list[tuple[str, Path]] = []
@@ -254,25 +223,6 @@ def iter_overlay_files(workspace_id: str | None = None) -> list[Path]:
         path = root / name
         if path.is_file() and name not in SECRET_FILES:
             found.append((OVERLAY_PREFIX + name, path.resolve()))
-    plugins_root = overlay_plugins_dir(ws_id)
-    if plugins_root.is_dir():
-        for base, dirs, files in os.walk(plugins_root):
-            dirs[:] = sorted(name for name in dirs if name not in PLUGIN_SKIP_DIRS and not name.startswith("."))
-            for name in sorted(files):
-                if name.startswith(".") or name.lower().endswith(PLUGIN_SKIP_SUFFIXES):
-                    continue
-                if name.endswith(SIDECAR_SUFFIXES) or _skip_name(name):
-                    continue
-                path = Path(base) / name
-                try:
-                    resolved = path.resolve()
-                    resolved.relative_to(plugins_root.resolve())
-                except (OSError, ValueError):
-                    continue
-                if resolved.is_file():
-                    found.append((overlay_rel(resolved, ws_id), resolved))
-    if len(found) > PLUGIN_FILE_LIMIT:
-        raise BackupError(f"覆盖层文件超过 {PLUGIN_FILE_LIMIT} 个，已拒绝打包（疑似卷进缓存目录）")
     found.sort(key=lambda pair: pair[0])
     return [path for _, path in found]
 

@@ -163,8 +163,8 @@ def _ensure_bank_engine() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    # 军令 #18：先装载工作区指针、迁移旧全局数据并生成 plugins/ 结构，
-    # 之后所有插件路径才按当前工作区求值。
+    # 军令 #34：先装载工作区指针、生成工作区数据目录（banks/ 与状态文件，
+    # 不建 plugins/）；插件代码全局一份，路径由 config.plugins_dir() 统一解析。
     workspace_bootstrap.bootstrap()
     init_db()
     _ensure_bank_engine()

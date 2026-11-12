@@ -9,8 +9,9 @@ rem
 rem  Plugin source lives in the sibling repository, never in this base repo:
 rem    JZO_PLUGIN_SOURCE_DIR  (explicit)
 rem    ../jiuzhang-plugins/src (default probe)
-rem  The staged package still carries plugins/<id>/ because a fresh receiver
-rem  installs them into the default workspace on first launch.
+rem  The staged package carries plugins/<id>/ as the ONE global plugin
+rem  directory (army order #34). Workspaces never hold plugin copies;
+rem  they only hold data under data\workspaces\<id>\.
 rem
 rem  Strips secrets and heavy/generated content:
 rem    .env, .venv, venv, data, .git, caches, logs, .system_generated,
@@ -19,11 +20,12 @@ rem    any *.db / *.bak / sqlite sidecars (the only db shipped is the
 rem    frozen 0-question seed copied in Step 2b).
 rem
 rem  Keeps everything a receiver needs to run:
-rem    app, static, schemas, plugins, examples, docs, tests,
-rem    start.bat, requirements.txt, README and the guides, .env.example
+rem    install.bat (first-run entry), app, static, schemas, plugins,
+rem    examples, docs, tests, start.bat, requirements.txt, README and
+rem    the guides, .env.example
 rem
 rem  The dist\ output folder is git-ignored; nothing here is committed.
-rem  Receiver: extract the zip, then double-click start.bat
+rem  Receiver: create an empty folder, drop install.bat in it, double-click
 rem            (needs Python 3.11+ and internet on first run).
 rem ============================================================
 
@@ -107,6 +109,18 @@ if not exist "%STAGE%\plugins\org.jiuzhang.bank-engine\bank\bank.db" (
     exit /b 1
 )
 
+rem ---------- Step 2c: first-run entry must be present ----------
+rem install.bat is the intended first-run entry for a fresh receiver:
+rem empty folder -> drop install.bat -> double-click. It downloads both
+rem repos from mirrors, then calls start.bat. Never ship without it.
+if not exist "%STAGE%\install.bat" (
+    echo.
+    echo [ERROR] install.bat missing from the package - it is the first-run entry.
+    echo.
+    pause
+    exit /b 1
+)
+
 rem ---------- Step 3: zip the staging folder (single top-level dir) ----------
 echo [3/4] Compressing...
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
@@ -129,7 +143,9 @@ echo ============================================================
 echo   DONE: %ZIP%
 echo ============================================================
 echo   Ship this zip. No .env, no data, no .venv inside.
-echo   Receiver extracts it and double-clicks start.bat.
+echo   Receiver creates an empty folder, drops install.bat in it,
+echo   and double-clicks - the installer downloads both repos and
+echo   calls start.bat automatically.
 echo.
 pause
 endlocal
