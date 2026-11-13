@@ -245,15 +245,19 @@
     }
 
     function load() {
-      var versionId = ctx.globals.query().version_id;
+      var globals = ctx.globals.query();
+      var versionId = globals.version_id;
       reset();
       if (!versionId) {
         state.textContent = "请先在右侧全局设置选择教材版本；选定后左侧立即展开真实章节树。";
         return;
       }
       state.textContent = "正在读取章节树…";
+      var query = Object.keys(globals).map(function (key) {
+        return encodeURIComponent(key) + "=" + encodeURIComponent(globals[key]);
+      });
       window.DcClient.fetchJson(
-        "/api/bank/engine/linkage/version-tree?version_id=" + encodeURIComponent(versionId)
+        "/api/bank/engine/linkage/version-tree?" + query.join("&")
       ).then(function (data) {
         if (!wrap.isConnected) return;
         books = data.items || [];

@@ -220,12 +220,17 @@ def knowledge_tree(
 STAGE_ORDER = ("小学", "初中", "高中")
 
 
-def version_stages(conn: sqlite3.Connection) -> dict[int, tuple[str, ...]]:
-    """版本 → 学段集合：由该版本下教材册的年级反推，分步查三张表后在应用层组装。"""
-    grade_stage = {
+def grade_stages(conn: sqlite3.Connection) -> dict[int, str]:
+    """年级 → 学段：单表读 dict_grades，教材册的学段由 grade_id 反查。"""
+    return {
         int(row["id"]): str(row["stage"])
         for row in conn.execute("SELECT id, stage FROM dict_grades WHERE stage IS NOT NULL")
     }
+
+
+def version_stages(conn: sqlite3.Connection) -> dict[int, tuple[str, ...]]:
+    """版本 → 学段集合：由该版本下教材册的年级反推，分步查三张表后在应用层组装。"""
+    grade_stage = grade_stages(conn)
     buckets: dict[int, list[str]] = {}
     for row in conn.execute(
         "SELECT version_id, grade_id FROM dim_textbooks WHERE version_id IS NOT NULL"
@@ -288,6 +293,7 @@ def list_textbooks(
     subject_id: int | None = None,
     grade_id: int | None = None,
     version_id: int | None = None,
+    stage: str | None = None,
 ) -> tuple[Textbook, ...]:
     clauses: list[str] = []
     params: list[Any] = []
@@ -300,6 +306,13 @@ def list_textbooks(
     if version_id is not None:
         clauses.append("version_id = ?")
         params.append(version_id)
+    if stage is not None:
+        # 学段收口：册次按 grade_id 反查年级学段，跨学段版本只出当前学段的册。
+        grade_ids = [gid for gid, name in grade_stages(conn).items() if name == stage]
+        if not grade_ids:
+            return ()
+        clauses.append("grade_id IN (" + ", ".join("?" * len(grade_ids)) + ")")
+        params.extend(grade_ids)
     sql = (
         "SELECT " + TEXTBOOK_COLUMNS + " FROM dim_textbooks"
         + _where(clauses, params)

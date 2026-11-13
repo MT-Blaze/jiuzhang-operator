@@ -442,6 +442,11 @@
       rootList = ul;
     }
 
+    function scopedUrl(path) {
+      var g = ctx.globals.query();
+      var q = Object.keys(g).map(function (k) { return k + "=" + encodeURIComponent(g[k]); }).join("&");
+      return q ? path + "?" + q : path;
+    }
     function load() {
       var versionId = ctx.globals.query().version_id;
       var seq = ++loadSeq;
@@ -453,10 +458,8 @@
         return;
       }
       Promise.all([
-        window.DcClient.fetchJson("/api/bank/engine/textbook-versions"),
-        window.DcClient.fetchJson(
-          "/api/bank/engine/linkage/version-tree?version_id=" + encodeURIComponent(versionId)
-        )
+        window.DcClient.fetchJson(scopedUrl("/api/bank/engine/textbook-versions")),
+        window.DcClient.fetchJson(scopedUrl("/api/bank/engine/linkage/version-tree"))
       ]).then(function (results) {
         if (!wrap.isConnected || seq !== loadSeq) return;
         versions = results[0].items || [];

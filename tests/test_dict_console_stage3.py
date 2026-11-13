@@ -180,6 +180,30 @@ class MigrationTest(unittest.TestCase):
                 for chapter in node.chapters
             ))
 
+    def test_version_tree_filters_books_by_stage_and_subject(self) -> None:
+        version = next(item for item in service.textbook_versions(
+            subject_id=2, db_path=self.db_path) if item.name == "人教版")
+        all_books = service.linkage_version_tree(version.id, db_path=self.db_path)
+        self.assertEqual(len(all_books), 18)
+        junior = service.linkage_version_tree(
+            version.id, stage="初中", subject_id=2, db_path=self.db_path)
+        self.assertEqual({node.textbook.grade_id for node in junior}, {7, 8, 9})
+        self.assertEqual(len(junior), 6)
+        self.assertEqual(
+            service.linkage_version_tree(
+                version.id, stage="高中", subject_id=2, db_path=self.db_path), ())
+        self.assertEqual(
+            service.linkage_version_tree(
+                version.id, stage="初中", subject_id=1, db_path=self.db_path), ())
+        high = next(item for item in service.textbook_versions(
+            subject_id=2, db_path=self.db_path) if item.name == "人教A版")
+        high_books = service.linkage_version_tree(
+            high.id, stage="高中", subject_id=2, db_path=self.db_path)
+        self.assertEqual(len(high_books), 5)
+        self.assertEqual(
+            service.linkage_version_tree(
+                high.id, stage="初中", subject_id=2, db_path=self.db_path), ())
+
     def test_backfill_matches_primary_key_order(self) -> None:
         with service.session(self.db_path) as conn:
             for table, group_col, member_col in migrate_v7.ORDERED_MAPS:
@@ -602,6 +626,16 @@ class LinkageRouteTest(unittest.TestCase):
         self.assertEqual(body["total"], 1)
         self.assertEqual(body["items"][0]["chapter"]["name"], "第一章")
         self.assertEqual(body["items"][0]["children"][0]["chapter"]["parent_id"], 1)
+
+    def test_version_tree_route_forwards_stage_and_subject(self) -> None:
+        from app.api import bank_engine
+
+        with mock.patch.object(bank_engine.service, "linkage_version_tree",
+                               return_value=()) as spy:
+            body = bank_engine.engine_linkage_version_tree(
+                version_id=4, stage="初中", subject_id=2)
+        spy.assert_called_once_with(4, stage="初中", subject_id=2)
+        self.assertEqual(body, {"items": [], "total": 0})
 
     def test_guard_maps_referenced_to_409_on_direction_delete(self) -> None:
         from app.api import bank_engine

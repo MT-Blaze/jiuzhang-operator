@@ -68,6 +68,13 @@ class TextbooksServiceTest(unittest.TestCase):
         self.assertTrue(items)
         self.assertTrue(all(item.subject_id == 1 and item.grade_id == 10 for item in items))
 
+    def test_stage_filter_limits_to_that_stage(self) -> None:
+        items = service.textbooks(subject_id=2, stage="初中", db_path=self.db_path)
+        self.assertTrue(items)
+        self.assertTrue(all(item.grade_id in (7, 8, 9) for item in items))
+        self.assertEqual(
+            service.textbooks(subject_id=2, stage="大学", db_path=self.db_path), ())
+
 
 class TextbooksRouteTest(unittest.TestCase):
     def test_route_passes_filters_and_returns_plain_objects(self) -> None:
@@ -76,8 +83,10 @@ class TextbooksRouteTest(unittest.TestCase):
         canned = (Textbook(id=1, name="人教A版必修一", code="t1", sort_order=1,
                            publisher="人民教育出版社", subject_id=2, grade_id=10),)
         with mock.patch.object(bank_engine.service, "textbooks", return_value=canned) as call:
-            body = bank_engine.engine_textbooks(subject_id=2, grade_id=10, version_id=None)
-        call.assert_called_once_with(subject_id=2, grade_id=10, version_id=None)
+            body = bank_engine.engine_textbooks(
+                subject_id=2, grade_id=10, version_id=None, stage="高中")
+        call.assert_called_once_with(
+            subject_id=2, grade_id=10, version_id=None, stage="高中")
         self.assertEqual(body["total"], 1)
         self.assertEqual(body["items"][0]["name"], "人教A版必修一")
         self.assertEqual(body["items"][0]["subject_id"], 2)

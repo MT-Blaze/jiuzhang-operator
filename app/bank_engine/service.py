@@ -240,11 +240,13 @@ def textbooks(
     subject_id: int | None = None,
     grade_id: int | None = None,
     version_id: int | None = None,
+    stage: str | None = None,
     db_path: Path | None = None,
 ) -> tuple[Textbook, ...]:
     with session(db_path) as conn:
         return dao_dimensions.list_textbooks(
-            conn, subject_id=subject_id, grade_id=grade_id, version_id=version_id
+            conn, subject_id=subject_id, grade_id=grade_id, version_id=version_id,
+            stage=stage,
         )
 
 
@@ -340,10 +342,16 @@ def linkage_chapter_tree(textbook_id: int, *, db_path: Path | None = None) -> tu
 
 
 def linkage_version_tree(
-    version_id: int, *, db_path: Path | None = None
+    version_id: int,
+    *,
+    stage: str | None = None,
+    subject_id: int | None = None,
+    db_path: Path | None = None,
 ) -> tuple[TextbookTree, ...]:
     with session(db_path) as conn:
-        return dao_linkage.version_tree(conn, version_id)
+        return dao_linkage.version_tree(
+            conn, version_id, stage=stage, subject_id=subject_id
+        )
 
 
 def linkage_chapter_points(

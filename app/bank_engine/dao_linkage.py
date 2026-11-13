@@ -67,10 +67,21 @@ def chapter_tree(conn: sqlite3.Connection, textbook_id: int) -> tuple[ChapterNod
     return tuple(build(root) for root in children.get(None, ()))
 
 
-def version_tree(conn: sqlite3.Connection, version_id: int) -> tuple[TextbookTree, ...]:
-    """版本 → 册次 → 章 → 节：每册单表读章节，层级在 Python 层组装。"""
+def version_tree(
+    conn: sqlite3.Connection,
+    version_id: int,
+    *,
+    stage: str | None = None,
+    subject_id: int | None = None,
+) -> tuple[TextbookTree, ...]:
+    """版本 → 册次 → 章 → 节：每册单表读章节，层级在 Python 层组装。
+
+    ``stage`` / ``subject_id`` 收口跨学段版本（如人教A版）：只出当前学段、学科的册次。
+    """
     _require(conn, "dim_textbook_versions", version_id)
-    books = dao_dimensions.list_textbooks(conn, version_id=version_id)
+    books = dao_dimensions.list_textbooks(
+        conn, version_id=version_id, stage=stage, subject_id=subject_id
+    )
     return tuple(
         TextbookTree(textbook=book, chapters=chapter_tree(conn, book.id))
         for book in books

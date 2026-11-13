@@ -87,9 +87,10 @@ def engine_textbooks(
     subject_id: int | None = Query(default=None, ge=1),
     grade_id: int | None = Query(default=None, ge=1),
     version_id: int | None = Query(default=None, ge=1),
+    stage: str | None = Query(default=None, max_length=20),
 ) -> dict[str, Any]:
     items = service.textbooks(
-        subject_id=subject_id, grade_id=grade_id, version_id=version_id
+        subject_id=subject_id, grade_id=grade_id, version_id=version_id, stage=stage
     )
     return {"items": [asdict(item) for item in items], "total": len(items)}
 
@@ -297,8 +298,14 @@ def engine_linkage_chapter_tree(textbook_id: int = Query(ge=1)) -> dict[str, Any
 
 
 @router.get("/api/bank/engine/linkage/version-tree", summary="版本章节树：版本 → 册次 → 章 → 节")
-def engine_linkage_version_tree(version_id: int = Query(ge=1)) -> dict[str, Any]:
-    books = _guard(lambda: service.linkage_version_tree(version_id))
+def engine_linkage_version_tree(
+    version_id: int = Query(ge=1),
+    stage: str | None = Query(default=None, max_length=20),
+    subject_id: int | None = Query(default=None, ge=1),
+) -> dict[str, Any]:
+    books = _guard(lambda: service.linkage_version_tree(
+        version_id, stage=stage, subject_id=subject_id
+    ))
     return {"items": [asdict(book) for book in books], "total": len(books)}
 
 
