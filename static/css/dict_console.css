@@ -419,7 +419,7 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 /* 触屏把行高与排序芯片热区恢复到 44px */
 @media (pointer: coarse) {
   .dc-inline-row { min-height: 44px; }
-  .dc-sort { min-height: 32px; }
+  .dc-sort { min-width: 44px; min-height: 44px; }
 }
 .dc-row-delete { color: var(--down); }
 .dc-table-empty { text-align: center; color: var(--muted); padding: 18px; }

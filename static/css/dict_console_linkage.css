@@ -319,9 +319,10 @@
 /* 触屏没有悬停：行高与按钮热区恢复到 44px，保证手指好点 */
 @media (pointer: coarse) {
   .dkl-row { min-height: 44px; padding: 4px; }
-  .dkl-name, .dkl-op { min-height: 36px; }
-  .dc-ghost-add { min-height: 36px; }
-  .dkl-tag-x, .dkl-tag-add { width: 36px; height: 36px; }
+  .dkl-name, .dkl-op { min-height: 44px; }
+  .dkl-op { min-width: 44px; }
+  .dc-ghost-add { min-height: 44px; }
+  .dkl-tag-x, .dkl-tag-add { width: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -240,8 +240,8 @@
 /* 触屏没有悬停：行高与操作热区恢复到 44px */
 @media (pointer: coarse) {
   .det-row { min-height: 44px; }
-  .det-label { min-height: 36px; }
-  .det-op { min-width: 44px; min-height: 36px; }
+  .det-label { min-height: 44px; }
+  .det-op { min-width: 44px; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .det-children.det-reveal > .det-item { animation: none; }
