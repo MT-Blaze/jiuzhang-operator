@@ -247,11 +247,11 @@ class ProbeVersionContractTest(unittest.TestCase):
 
 
 class InstallerContractTest(unittest.TestCase):
-    """install.bat 是首发入口：纯 ASCII + CRLF、只走镜像、布局与文档都对得上。
+    """install.bat 是首发入口：纯 ASCII + CRLF、只走镜像、双文件夹布局。
 
-    2026-11-13 第八令：老师真机双击时下载阶段黑框静默，被当成卡死强行关掉。
-    下载改由 Windows 自带 ``curl.exe -f -L --progress-bar -o`` 承担并画进度条；
-    本组测试把「不许退回 Invoke-WebRequest」「四个镜像按返回码回退」钉死。
+    2026-11-13 第十令：底座改从 Releases 的纯净发行包下载，插件仓库仍是
+    main 分支源码；装完必须是两个平级文件夹 ``jiuzhang-operator`` 与
+    ``jiuzhang-plugins``，底座靠 ``../jiuzhang-plugins/src`` 自动发现插件。
     """
 
     def setUp(self) -> None:
@@ -269,31 +269,50 @@ class InstallerContractTest(unittest.TestCase):
         # 任何下载 URL 都必须以镜像主机开头，不允许直接以 github.com 起头。
         self.assertNotIn('"https://github.com/', self.text, "install.bat 不许直连 github.com")
 
-    def test_03_both_repos_main_zip_and_plugin_src_layout(self) -> None:
-        self.assertIn("MT-Blaze/%REL%/archive/refs/heads/main.zip", self.text)
+    def test_03_base_uses_release_asset_plugins_use_main_zip(self) -> None:
+        self.assertIn("releases/latest/download/jiuzhang-operator.zip", self.text)
+        self.assertNotIn("MT-Blaze/jiuzhang-operator/archive/refs/heads/main.zip", self.text,
+                         "底座不许再拉 main 分支源码 zip")
+        self.assertIn("archive/refs/heads/main.zip", self.text, "插件仓库仍拉 main 分支源码")
         self.assertIn('if /i "%KIND%"=="plugins" set "REL=jiuzhang-plugins"', self.text)
-        self.assertIn("jiuzhang-plugins-main\\src", self.text)
-        self.assertIn('xcopy "%PL_SRC%\\*" "%~dp0plugins\\"', self.text)
+        self.assertIn('set "ASSET=releases/latest/download/jiuzhang-operator.zip"', self.text)
 
-    def test_04_calls_start_and_writes_migration_guide(self) -> None:
-        self.assertIn('call "%~dp0start.bat"', self.text)
+    def test_04_sibling_folder_layout_and_content_probe(self) -> None:
+        self.assertIn('set "OP_DST=%~dp0jiuzhang-operator"', self.text)
+        self.assertIn('set "PL_DST=%~dp0jiuzhang-plugins"', self.text)
+        self.assertIn('xcopy "%OP_SRC%\\*" "%OP_DST%\\"', self.text)
+        self.assertIn('xcopy "%PL_SRC%\\*" "%PL_DST%\\"', self.text)
+        self.assertIn("org.jiuzhang.bank-engine\\plugin.toml", self.text,
+                      "插件包必须按内容探测顶层目录，不能写死 zip 内目录名")
+        self.assertNotIn('xcopy "%PL_SRC%\\*" "%~dp0plugins\\"', self.text,
+                         "插件源码不许再摊平进底座 plugins/")
+
+    def test_05_calls_nested_start_and_writes_migration_guide(self) -> None:
+        self.assertIn('call "%~dp0jiuzhang-operator\\start.bat"', self.text)
+        self.assertNotIn('call "%~dp0start.bat"', self.text, "旧根目录入口必须换掉")
         self.assertIn("FromBase64String", self.text, "中文迁移说明必须由 PowerShell 解码写出")
-        # 说明文件用 base64 承载文件名，批处理本体才能保持纯 ASCII。
         self.assertIn("5aaC5L2V6L+B56e75pen5pWw5o2uLnR4dA==", self.text)
 
-    def test_05_every_goto_has_a_label(self) -> None:
+    def test_06_migration_guide_points_at_new_data_dir(self) -> None:
+        blobs = re.findall(r"FromBase64String\('([A-Za-z0-9+/=]+)'\)", self.text)
+        decoded = [base64.b64decode(blob).decode("utf-8") for blob in blobs if len(blob) > 40]
+        guide = next(text for text in decoded if "迁移步骤" in text)
+        self.assertIn("jiuzhang-operator\\data", guide)
+        self.assertIn("jiuzhang-plugins\\src", guide)
+
+    def test_07_every_goto_has_a_label(self) -> None:
         labels = set(re.findall(r"(?m)^:([A-Za-z_][A-Za-z0-9_]*)", self.text))
         gotos = set(re.findall(r"goto\s+([A-Za-z_][A-Za-z0-9_]*)", self.text))
         self.assertEqual(gotos - labels, set(), "存在跳不到的标签")
 
-    def test_06_download_uses_curl_with_progress_bar(self) -> None:
+    def test_08_download_uses_curl_with_progress_bar(self) -> None:
         """下载必须交给 Windows 自带 curl.exe 并强制 --progress-bar。"""
         self.assertIn("where curl.exe", self.text, "缺少 curl.exe 可用性探测")
         self.assertIn("curl.exe -f -L --progress-bar", self.text, "缺少带进度条的 curl 下载命令")
         self.assertIn('-o "%DEST%" "%URL%"', self.text, "curl 必须把文件写到临时路径")
         self.assertNotIn("Invoke-WebRequest", self.text, "下载不许再退回 Invoke-WebRequest")
 
-    def test_07_curl_exit_code_drives_four_mirror_fallback(self) -> None:
+    def test_09_curl_exit_code_drives_four_mirror_fallback(self) -> None:
         """非 0 返回码即判该镜像失败并落到下一个，四个都挂则显式报错退出。"""
         block = self.text[self.text.index(":download"):self.text.index("rem ---------- unicode console output ----------")]
         self.assertEqual(block.count("call :try_mirror"), 4, "必须依次尝试四个镜像节点")

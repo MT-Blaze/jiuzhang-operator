@@ -48,10 +48,10 @@
   - `app/api/`：底座级 HTTP 路由（健康检查、鉴权、导航、总线）。
   - `app/core/`：配置、路径、安全、日志等基础能力。
   - `app/core/question_contract.py`：题目跨边界数据契约（dataclass）。
-  - 插件源码：不在本仓库，统一放在兄弟仓库 `jiuzhang-plugins/src/<id>/`；开发时按
-    `JZO_PLUGIN_SOURCE_DIR` 或同级 `../jiuzhang-plugins/src` 解析（`app/core/config.py`
-    的 `plugin_source_root()`）。本仓库只在发版包内出现 `plugins/`（由 `build_release.bat`
-    跨目录装配），运行时插件装进当前工作区的 `plugins/`。
+  - 插件源码：不在本仓库，统一放在兄弟仓库 `jiuzhang-plugins/src/<id>/`；开发与发行布局
+    都按 `JZO_PLUGIN_SOURCE_DIR` 或同级 `../jiuzhang-plugins/src` 解析（`app/core/config.py`
+    的 `plugin_source_root()`）。发行包是纯净运行树，不再携带 `plugins/`；`install.bat`
+    把底座放成 `jiuzhang-operator/`、插件仓库整体放成平级 `jiuzhang-plugins/`。
   - `static/`：宿主壳静态资源。
 - 禁止在根目录堆放业务模块。
 
@@ -155,7 +155,7 @@
 | `.venv\Scripts\python.exe tools\audit_code.py` | 静态红线（基线 ERROR 0 / WARN 36 / INFO 4） |
 | `.venv\Scripts\python.exe tools\<名>_probe.py` | 真机探针，产物 `.system_generated/<探针名>/<tag>/probe.toml` + 截图 |
 | `.venv\Scripts\python.exe tools\build_plugin.py --all` | 打插件 zip（写 `dist/`） |
-| `build_release.bat` | 打底座包（写 `dist/`，包内 `bank.db` 是 0 题空基线） |
+| `build_release.bat` | 打底座纯净包（写 `dist/`，同时产出稳定名 `jiuzhang-operator.zip`；不含 `plugins/`、`data/`、`tests`/`tools`/`.qoder`） |
 | `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |
 | `.venv\Scripts\python.exe tools\sync_plugin_index.py` | 同步两份插件索引（需兄弟仓库 `E:/jiuzhang/jiuzhang-plugins` 存在） |
 

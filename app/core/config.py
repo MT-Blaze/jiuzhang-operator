@@ -118,8 +118,8 @@ def plugins_dir() -> Path:
     解析顺序：
 
     1. ``JZO_PLUGINS_DIR`` 显式覆盖（测试与便携部署）；
-    2. 底座根 ``plugins/``（发行包 / install.bat 装配后的唯一正式位置）；
-    3. 兄弟仓库 ``../jiuzhang-plugins/src``（开发工作树源直读，改源码刷新即生效）；
+    2. 底座根 ``plugins/``（旧版单文件夹安装的兼容位置）；
+    3. 兄弟仓库 ``../jiuzhang-plugins/src``（开发树与新版双文件夹安装，改源码刷新即生效）；
     4. 仍无则回到底座根 ``plugins/``（安装时由调用方创建）。
 
     顺序的意义：装了发行包的用户只认包内插件；开发机没有根插件目录时直接读源码，
@@ -139,8 +139,9 @@ def plugin_source_root() -> Path | None:
     """插件源码根：底座仓库不再存放插件源码，只在开发/发版时跨目录取。
 
     解析顺序：``JZO_PLUGIN_SOURCE_DIR`` 显式覆盖 → 底座根 ``plugins/``
-    （install.bat 装配后的源码）→ 同级 ``../jiuzhang-plugins/src``（开发树）。
-    都不在时返回 ``None``，调用方回落到 :func:`plugins_dir`。
+    （旧版单文件夹安装兼容）→ 同级 ``../jiuzhang-plugins/src``（开发树与
+    install.bat 双文件夹布局）。都不在时返回 ``None``，调用方回落到
+    :func:`plugins_dir`。
     """
     override = os.environ.get("JZO_PLUGIN_SOURCE_DIR", "").strip()
     if override:

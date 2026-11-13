@@ -33,14 +33,17 @@
 
 1. 新建一个**空文件夹**（路径含中文与空格都没关系，但别放进只读盘）。
 2. 把 `install.bat` 放进这个空文件夹，双击运行。它会：
-   - 通过镜像加速下载 `jiuzhang-operator` 与 `jiuzhang-plugins` 的 main 分支
-     （主镜像超时或失败自动切换备用镜像，不直连 GitHub 裸域）；
-   - 把底座解压到当前文件夹，把插件源码放进本文件夹的 `plugins/`；
+   - 从 Releases 下载最新纯净发行包 `jiuzhang-operator.zip`（不含 tests/tools/.qoder
+     等开发文件）；插件仓库 `jiuzhang-plugins` 仍下载 main 分支源码包；
+   - 主镜像超时或失败自动切换备用镜像，不直连 GitHub 裸域；
+   - 在当前文件夹生成两个平级目录：`jiuzhang-operator/`（底座）与
+     `jiuzhang-plugins/`（插件源码），保留插件仓库完整结构；
    - 在根目录生成「如何迁移旧数据.txt」，然后把临时压缩包清理干净；
-   - 自动调用 `start.bat` 启动服务并打开浏览器。
-3. 迁移旧数据：把旧版本根目录下的 `data/` 整个复制到新文件夹（同名覆盖即可），
-   题库、图片、配置与备份都会原样继承；具体步骤见生成的说明文件。
-4. 想要 AI 能力就在**仓库根目录**建一个 `.env`（该文件已被 `.gitignore` 拦住，绝不会进版本库）：
+   - 自动调用 `jiuzhang-operator/start.bat` 启动服务并打开浏览器。
+3. 迁移旧数据：把旧版本根目录下的 `data/` 整个复制到 `jiuzhang-operator/data/`
+   （同名合并即可），题库、图片、配置与备份都会原样继承；具体步骤见生成的说明文件。
+4. 想要 AI 能力就在 `jiuzhang-operator/` 下建一个 `.env`（该文件已被 `.gitignore`
+   拦住，绝不会进版本库）：
 
    ```ini
    JZO_AI_BASE_URL=https://你的网关地址/compatible-mode/v1
@@ -50,21 +53,23 @@
    ```
 
    不建 `.env` 也能用，只是 AI 那一步降级为 Mock。密钥永不入库、永不写日志、永不进插件上下文。
-5. 日常启动仍双击 `start.bat`（唯一官方启动器）：黑框一闪即隐。它先探测 `65496`～`65505`（含
-   `data/.current_port` 记录的上次端口）找已运行的九章算子——**同一个目录**就直接打开浏览器并退出
-   （点多少次都只有一个实例）；**换了安装目录**就按端口找到 PID 清掉旧实例再重启。身份校验看
-   `/healthz` 是否回 `jiuzhang-operator`，或命令行是否含 `app.main:app`，陌生程序绝不误杀。
-   随后在后台静默拉起 65496 端口服务，等 `/healthz` 真正应答后自动打开浏览器，并把实际端口写入
-   `data/.current_port`。它同时负责自愈 pip（缺 pip 先 `ensurepip`，修不好再重建 `.venv`）与装依赖；
-   全部过程写入 `data/launcher.log`，排查故障就看这个文件。
-   停止后台服务：在本目录命令行执行 `start.bat --stop`（清掉扫到的所有九章算子实例，不碰其他程序）。
+5. 日常启动仍双击 `jiuzhang-operator/start.bat`（唯一官方启动器）：黑框一闪即隐。它先探测
+   `65496`～`65505`（含 `data/.current_port` 记录的上次端口）找已运行的九章算子——**同一个目录**
+   就直接打开浏览器并退出（点多少次都只有一个实例）；**换了安装目录**就按端口找到 PID 清掉旧实例
+   再重启。身份校验看 `/healthz` 是否回 `jiuzhang-operator`，或命令行是否含 `app.main:app`，
+   陌生程序绝不误杀。随后在后台静默拉起 65496 端口服务，等 `/healthz` 真正应答后自动打开浏览器，
+   并把实际端口写入 `data/.current_port`。它同时负责自愈 pip（缺 pip 先 `ensurepip`，修不好再重建
+   `.venv`）与装依赖；全部过程写入 `data/launcher.log`，排查故障就看这个文件。
+   停止后台服务：在 `jiuzhang-operator/` 下执行 `start.bat --stop`（清掉扫到的所有九章算子实例，
+   不碰其他程序）。
 6. 浏览器落在智能工作台 `http://127.0.0.1:65496/e`；设置与控制页在 `/settings`（左栏底部齿轮）。
    端口固定为 `65496`，不再顺延换口；若该端口被**别的程序**占用，启动器会报出占用者的 PID 和进程名
    并停止，不会误杀它。
 
-**改插件源码即时生效（无需重装）**：插件代码全机只有一份，放在底座根目录的 `plugins/`
-（开发工作树里默认直读兄弟仓库 `../jiuzhang-plugins/src/`）。修改其中的前端或后端源码后，
-直接刷新浏览器里的 `/e` 即可看到新效果，不用重新安装、不用设置环境变量、不用重启底座。
+**改插件源码即时生效（无需重装）**：插件代码全机只有一份，放在与底座平级的
+`jiuzhang-plugins/src/`（底座按 `../jiuzhang-plugins/src` 自动发现；开发工作树同样如此）。
+修改其中的前端或后端源码后，直接刷新浏览器里的 `/e` 即可看到新效果，不用重新安装、
+不用设置环境变量、不用重启底座。
 
 工作台顶部的模型徽标会写明当前用的是谁：绿色「真实模型 · <模型名> · <接口主机>」即已接通，
 红色「Mock 降级」表示没有密钥。多厂商切换与密钥边界见 [PLUGIN_SPEC.md](docs/PLUGIN_SPEC.md) §2.1、[STACK.md](docs/STACK.md) §1.6。
@@ -137,7 +142,8 @@ curl -X GET http://127.0.0.1:65496/healthz
 - 目录骨架：`app/`（底座路由与核心）、`static/`（宿主壳）、`schemas/`（跨边界契约）、
   `examples/`（模板与示例）、`tests/`（契约测试）、`tools/`（打包与真机取证脚本）。
 - 插件源码不在本仓库：开发时按 `JZO_PLUGIN_SOURCE_DIR` 读取，缺省探测同级
-  `../jiuzhang-plugins/src`；发版包内的 `plugins/` 由 `build_release.bat` 跨目录装配。
+  `../jiuzhang-plugins/src`；`install.bat` 把插件仓库整体放成与底座平级的
+  `jiuzhang-plugins/`，发行包本身不再携带 `plugins/`。
 
 ## 许可与社区
 
