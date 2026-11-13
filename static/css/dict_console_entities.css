@@ -174,6 +174,16 @@
 }
 .det-op:hover { border-color: var(--line-strong); background: var(--card); color: var(--ink); }
 .det-op:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 统一「+」：默认就带描边和底色，视觉 28px 左右，热区仍是 44px，不像删除键那样隐身 */
+.det-op-add {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  border-color: var(--line-strong);
+  background: var(--card);
+}
+.det-op-add:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 /* 删除按钮平时隐身但保留占位与 Tab 可达：悬停/键盘聚焦该行才现身，行内不抖动 */
 .det-op-danger {
   color: var(--down);

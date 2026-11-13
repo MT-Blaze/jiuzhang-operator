@@ -360,6 +360,41 @@ def engine_linkage_direction_tags_order(
 
 
 @router.post(
+    "/api/bank/engine/linkage/chapters/{chapter_id}/points",
+    summary="新增知识点并挂到当前章节：学科继承章节所属册次",
+    dependencies=[Depends(require_write_token)],
+)
+def engine_linkage_add_point(
+    chapter_id: int, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    name = payload.get("name")
+    if not isinstance(name, str):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "bad_request", "message": "缺少知识点名称（name 字段）"},
+        )
+    code = payload.get("code")
+    if code is not None and not isinstance(code, str):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "bad_request", "message": "code 必须是字符串"},
+        )
+    sort_order = payload.get("sort_order")
+    if sort_order is not None and (
+        not isinstance(sort_order, int) or isinstance(sort_order, bool)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "bad_request", "message": "sort_order 必须是整数"},
+        )
+    return asdict(_guard(
+        lambda: service.linkage_add_point(
+            chapter_id, name, code=code, sort_order=sort_order
+        )
+    ))
+
+
+@router.post(
     "/api/bank/engine/linkage/points/{point_id}/directions",
     summary="新增考向并挂到当前知识点：学科继承知识点",
     dependencies=[Depends(require_write_token)],
@@ -372,7 +407,17 @@ def engine_linkage_add_direction(
         raise HTTPException(
             status_code=400, detail={"code": "bad_request", "message": "缺少考向名称（name 字段）"}
         )
-    return asdict(_guard(lambda: service.linkage_add_direction(point_id, name)))
+    sort_order = payload.get("sort_order")
+    if sort_order is not None and (
+        not isinstance(sort_order, int) or isinstance(sort_order, bool)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "bad_request", "message": "sort_order 必须是整数"},
+        )
+    return asdict(_guard(
+        lambda: service.linkage_add_direction(point_id, name, sort_order=sort_order)
+    ))
 
 
 @router.delete(

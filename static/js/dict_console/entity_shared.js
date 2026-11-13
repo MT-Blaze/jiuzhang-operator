@@ -53,6 +53,16 @@
     }, 1);
   }
 
+  /** 空值取兜底；非整数 / 负数直接拒绝，避免把脏排序写进库。 */
+  function orderValue(value, fallback) {
+    if (value == null || String(value).trim() === "") return fallback;
+    var number = Number(value);
+    if (!isFinite(number) || Math.floor(number) !== number || number < 0) {
+      throw new Error("排序号必须是 0 或正整数");
+    }
+    return number;
+  }
+
   function fail(title, error, anchor) {
     window.DcDialog.alert({
       title: title,
@@ -201,7 +211,7 @@
     return ul;
   }
 
-  /** 一行 = 箭头 + 名称（学校行拆全称/简称两栏）+ 计数 + ＋/删；子级容器挂在 li 上。 */
+  /** 一行 = 箭头 + 名称（学校行拆全称/简称两栏）+ 计数 + +/删；子级容器挂在 li 上。 */
   function makeRow(opts) {
     var expandedSet = opts.expandedSet || new Set();
     var li = el("li", "det-item");
@@ -297,7 +307,7 @@
 
     var ops = el("span", "det-ops");
     if (opts.add) {
-      var addBtn = el("button", "det-op", "\uFF0B" + (opts.addText || ""));
+      var addBtn = el("button", "det-op det-op-add", "+");
       addBtn.type = "button";
       addBtn.setAttribute("aria-label", opts.addLabel || "新增");
       addBtn.addEventListener("click", function () { opts.add(addBtn); });
@@ -336,7 +346,7 @@
   }
 
   window.DcEntityShared = {
-    el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder,
+    el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder, orderValue: orderValue,
     fail: fail, remove: remove, inlineEdit: inlineEdit, add: add,
     bindNodeClick: bindNodeClick,
     caret: caret, spacer: spacer, childList: childList,

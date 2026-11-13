@@ -230,6 +230,15 @@ class LinkageServiceTest(unittest.TestCase):
                 "ORDER BY id LIMIT 1",
                 (cls.direction_id,),
             ).fetchone()[0])
+            cls.empty_chapter_id = int(conn.execute(
+                "SELECT id FROM dim_textbook_chapters WHERE id NOT IN "
+                "(SELECT chapter_id FROM chapter_knowledge_map) ORDER BY id LIMIT 1"
+            ).fetchone()[0])
+            cls.empty_point_id = int(conn.execute(
+                "SELECT id FROM dim_knowledge_points WHERE id NOT IN "
+                "(SELECT knowledge_point_id FROM knowledge_exam_map WHERE sort_order = 0) "
+                "ORDER BY id LIMIT 1"
+            ).fetchone()[0])
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -253,6 +262,25 @@ class LinkageServiceTest(unittest.TestCase):
             service.linkage_delete_direction(self.point_id, direction_id, db_path=self.db_path)
         except (dao_console.ConsoleLookupError, dao_console.ReferencedError):
             pass
+
+    def _purge_point(self, chapter_id: int, point_id: int) -> None:
+        with service.session(self.db_path) as conn:
+            conn.execute(
+                "DELETE FROM chapter_knowledge_map "
+                "WHERE chapter_id = ? AND knowledge_point_id = ?",
+                (chapter_id, point_id),
+            )
+            conn.execute("DELETE FROM knowledge_exam_map WHERE knowledge_point_id = ?",
+                         (point_id,))
+            conn.execute("DELETE FROM dim_knowledge_points WHERE id = ?", (point_id,))
+            conn.commit()
+
+    def _new_point(self, chapter_id: int | None = None, **kwargs: object) -> LinkedKnowledgePoint:
+        target = chapter_id or self.empty_chapter_id
+        name = "联动测试知识点_" + uuid.uuid4().hex[:8]
+        point = service.linkage_add_point(target, name, db_path=self.db_path, **kwargs)
+        self.addCleanup(self._purge_point, target, point.id)
+        return point
 
     # ---- 章节树 ----
 
@@ -373,6 +401,62 @@ class LinkageServiceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             service.linkage_add_direction(self.point_id, "   ", db_path=self.db_path)
 
+    def test_add_direction_honours_explicit_sort_order(self) -> None:
+        name = "联动排序考向_" + uuid.uuid4().hex[:8]
+        direction = service.linkage_add_direction(
+            self.empty_point_id, name, sort_order=0, db_path=self.db_path
+        )
+        self.addCleanup(self._purge_direction, direction.id)
+        self.assertEqual(direction.sort_order, 0)
+        items = service.linkage_point_directions(self.empty_point_id, db_path=self.db_path)
+        self.assertEqual([item.id for item in items], [direction.id])
+        with self.assertRaises(ValueError):
+            service.linkage_add_direction(
+                self.point_id, "负排序考向_" + uuid.uuid4().hex[:8],
+                sort_order=-1, db_path=self.db_path,
+            )
+        with self.assertRaises(ValueError):
+            service.linkage_add_direction(
+                self.point_id, "布尔排序考向_" + uuid.uuid4().hex[:8],
+                sort_order=True, db_path=self.db_path,
+            )
+
+    def test_add_point_inherits_subject_and_links_chapter(self) -> None:
+        point = self._new_point()
+        self.assertTrue(point.code.startswith("kp_u"))
+        self.assertIsNone(point.parent_id)
+        chapter = service.console_row("dim_textbook_chapters", self.empty_chapter_id,
+                                      db_path=self.db_path)
+        book = service.console_row("dim_textbooks", chapter.textbook_id,
+                                   db_path=self.db_path)
+        self.assertEqual(point.subject_id, book.subject_id)
+        items = service.linkage_chapter_points(self.empty_chapter_id, db_path=self.db_path)
+        self.assertEqual([item.id for item in items], [point.id])
+        self.assertEqual(items[0].sort_order, 0)
+        self.assertEqual(items[0].name, point.name)
+
+    def test_add_point_sort_order_controls_bridge_position(self) -> None:
+        first = self._new_point(sort_order=0)
+        second = self._new_point(sort_order=1)
+        items = service.linkage_chapter_points(self.empty_chapter_id, db_path=self.db_path)
+        self.assertEqual([item.id for item in items], [first.id, second.id])
+        self.assertEqual([item.sort_order for item in items], [0, 1])
+
+    def test_add_point_rejects_bad_input_and_duplicates(self) -> None:
+        with self.assertRaises(ValueError):
+            service.linkage_add_point(self.empty_chapter_id, "   ", db_path=self.db_path)
+        with self.assertRaises(ValueError):
+            service.linkage_add_point(
+                self.empty_chapter_id, "负排序知识点", sort_order=-1, db_path=self.db_path
+            )
+        with self.assertRaises(dao_console.ConsoleLookupError):
+            service.linkage_add_point(999999, "不存在章节知识点", db_path=self.db_path)
+        first = self._new_point()
+        with self.assertRaises(dao_console.ConflictError):
+            service.linkage_add_point(
+                self.empty_chapter_id, first.name, db_path=self.db_path
+            )
+
     def test_delete_direction_blocked_while_other_point_references(self) -> None:
         direction = self._new_direction()
         service.linkage_add_tag(direction.id, self.other_point_id, db_path=self.db_path)
@@ -483,10 +567,24 @@ class LinkageRouteTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             bank_engine.engine_linkage_add_direction(1, {})
         self.assertEqual(ctx.exception.status_code, 400)
-        for payload in ({"point_id": "3"}, {"point_id": True}, {}):
+        for payload in (
+            {"name": "x", "sort_order": True},
+            {"name": "x", "sort_order": "1"},
+        ):
             with self.assertRaises(HTTPException) as ctx2:
-                bank_engine.engine_linkage_add_tag(1, payload)
+                bank_engine.engine_linkage_add_direction(1, payload)
             self.assertEqual(ctx2.exception.status_code, 400)
+        for payload in (
+            {}, {"name": 3}, {"name": "x", "code": 3},
+            {"name": "x", "sort_order": True},
+        ):
+            with self.assertRaises(HTTPException) as ctx3:
+                bank_engine.engine_linkage_add_point(1, payload)
+            self.assertEqual(ctx3.exception.status_code, 400)
+        for payload in ({"point_id": "3"}, {"point_id": True}, {}):
+            with self.assertRaises(HTTPException) as ctx4:
+                bank_engine.engine_linkage_add_tag(1, payload)
+            self.assertEqual(ctx4.exception.status_code, 400)
 
     def test_routes_registered_in_host(self) -> None:
         from app.main import create_app
@@ -525,7 +623,7 @@ class LinkageRouteTest(unittest.TestCase):
                 deps = [d.call for d in route.dependant.dependencies]
                 self.assertTrue(any(call.__name__ == "require_write_token" for call in deps),
                                 path)
-        self.assertEqual(writes, 6)
+        self.assertEqual(writes, 7)
 
 
 class LinkageRedLineTest(unittest.TestCase):
@@ -534,6 +632,7 @@ class LinkageRedLineTest(unittest.TestCase):
             ROOT / "app" / "bank_engine" / "dao_linkage.py",
             ROOT / "app" / "bank_engine" / "migrate_v7.py",
             ROOT / "static" / "css" / "dict_console_linkage.css",
+            CONSOLE_DIR / "tree_add.js",
         ] + sorted(CONSOLE_DIR.glob("linkage*.js"))
         self.assertGreaterEqual(len(list(CONSOLE_DIR.glob("linkage*.js"))), 4)
         for path in paths:
@@ -554,13 +653,37 @@ class LinkageRedLineTest(unittest.TestCase):
 
     def test_teaching_category_wires_linkage_modules(self) -> None:
         html = (ROOT / "static" / "dict_console.html").read_text(encoding="utf-8")
-        for name in ("linkage_dnd", "linkage_tags", "linkage_tree", "linkage"):
+        for name in (
+            "tree_add", "linkage_dnd", "linkage_tags", "linkage_guide",
+            "linkage_tree", "linkage", "linkage_add", "linkage_directions",
+        ):
             self.assertIn("dict_console/" + name + ".js", html)
         self.assertIn("dict_console_linkage.css", html)
         catalog = (CONSOLE_DIR / "catalog.js").read_text(encoding="utf-8")
         # 知识点与考向不再各自挂 linkage 标记，统一收进 knowledge-linkage 这张联动子页签
         self.assertIn('{ key: "knowledge-linkage", label: "知识点与考向", mode: "linkage" }', catalog)
         self.assertEqual(catalog.count('sub: "knowledge-linkage"'), 2)
+
+    def test_unified_plus_per_level_and_no_plus_on_direction(self) -> None:
+        tree = (CONSOLE_DIR / "linkage_tree.js").read_text(encoding="utf-8")
+        css = (ROOT / "static" / "css" / "dict_console_linkage.css").read_text(encoding="utf-8")
+        shared = (CONSOLE_DIR / "entity_textbooks.js").read_text(encoding="utf-8")
+        add = (CONSOLE_DIR / "linkage_add.js").read_text(encoding="utf-8")
+        # 六级共用同一个「+」：版本 / 册次 / 章 / 节 / 知识点都走 DcTreeAdd.plus
+        self.assertGreaterEqual(tree.count("T.plus("), 4)
+        self.assertIn("DcTreeAdd.emptyAdd(", (CONSOLE_DIR / "linkage_guide.js").read_text(encoding="utf-8"))
+        # 册次与章节树同样只露一个 +，不再带「节 / 章 / 册」后缀文案
+        self.assertIn('"det-op det-op-add", "+"', (
+            CONSOLE_DIR / "entity_shared.js").read_text(encoding="utf-8"))
+        self.assertNotIn("addText", shared)
+        # 考向是最底层：方向行没有 +，只能改名 / 删 / 挂标签
+        directions = (CONSOLE_DIR / "linkage_directions.js").read_text(encoding="utf-8")
+        self.assertNotIn("DcTreeAdd.plus", directions)
+        # 热区：视觉 28px，伪元素扩到 44px
+        self.assertIn(".node-add", css)
+        self.assertIn("inset: -8px", css)
+        # 排序号进入两种弹窗（新增考向除外，留空由后端排末尾）
+        self.assertIn("sortField", add)
 
 
 if __name__ == "__main__":

@@ -204,17 +204,93 @@ def reorder(
         raise
 
 
-def add_direction(conn: sqlite3.Connection, point_id: int, name: str) -> ExamDirection:
+def _clean_sort_order(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("排序号必须是 0 或正整数")
+    return value
+
+
+def add_point(
+    conn: sqlite3.Connection,
+    chapter_id: int,
+    name: str,
+    code: str | None = None,
+    sort_order: int | None = None,
+) -> LinkedKnowledgePoint:
+    """在指定章节下新建知识点并挂桥表：学科从章节所属册次继承，编码可自动签发。"""
+    _require(conn, "dim_textbook_chapters", chapter_id)
+    clean = str(name or "").strip()
+    if not clean:
+        raise ValueError("知识点名称不能为空")
+    chapter = conn.execute(
+        "SELECT textbook_id FROM dim_textbook_chapters WHERE id = ?", (chapter_id,)
+    ).fetchone()
+    book = conn.execute(
+        "SELECT subject_id FROM dim_textbooks WHERE id = ?", (int(chapter[0]),)
+    ).fetchone()
+    if book is None:
+        raise ConsoleLookupError("章节所属册次不存在：" + str(chapter[0]))
+    subject_id = int(book[0])
+    clean_code = str(code or "").strip()
+    if not clean_code:
+        clean_code = "kp_u" + uuid.uuid4().hex[:12]
+    if sort_order is None:
+        point_order = int(conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM dim_knowledge_points "
+            "WHERE subject_id = ? AND parent_id IS NULL",
+            (subject_id,),
+        ).fetchone()[0])
+        bridge_order = int(conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM chapter_knowledge_map "
+            "WHERE chapter_id = ?",
+            (chapter_id,),
+        ).fetchone()[0])
+    else:
+        point_order = bridge_order = _clean_sort_order(sort_order)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO dim_knowledge_points "
+            "(name, code, sort_order, subject_id, parent_id) VALUES (?, ?, ?, ?, NULL)",
+            (clean, clean_code, point_order, subject_id),
+        )
+        point_id = int(cursor.lastrowid)
+        conn.execute(
+            "INSERT INTO chapter_knowledge_map "
+            "(chapter_id, knowledge_point_id, sort_order) VALUES (?, ?, ?)",
+            (chapter_id, point_id, bridge_order),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise ConflictError("知识点名称同学科内已存在，或编码重复（" + str(exc) + "）") from exc
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+    return LinkedKnowledgePoint(
+        id=point_id, name=clean, code=clean_code, subject_id=subject_id,
+        parent_id=None, sort_order=bridge_order,
+    )
+
+
+def add_direction(
+    conn: sqlite3.Connection,
+    point_id: int,
+    name: str,
+    sort_order: int | None = None,
+) -> ExamDirection:
     """新增考向并挂到当前知识点：学科继承知识点，编码自动签发。"""
     _require(conn, "dim_knowledge_points", point_id)
     clean = str(name or "").strip()
     if not clean:
         raise ValueError("考向名称不能为空")
     point = dao_base.load_knowledge_points(conn, [point_id])[point_id]
-    next_order = int(conn.execute(
-        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM dim_exam_directions WHERE subject_id = ?",
-        (point.subject_id,),
-    ).fetchone()[0])
+    if sort_order is None:
+        next_order = int(conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM dim_exam_directions WHERE subject_id = ?",
+            (point.subject_id,),
+        ).fetchone()[0])
+    else:
+        next_order = _clean_sort_order(sort_order)
     code = "tp_u" + uuid.uuid4().hex[:12]
     try:
         cursor = conn.execute(
@@ -319,6 +395,7 @@ def remove_tag(conn: sqlite3.Connection, direction_id: int, point_id: int) -> No
 __all__ = [
     "LINK_MAPS",
     "add_direction",
+    "add_point",
     "add_tag",
     "chapter_points",
     "chapter_tree",

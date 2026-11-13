@@ -236,6 +236,7 @@
 
     function addBook(version, anchor) {
       var siblings = state.books[version.id] || [];
+      var next = S.nextOrder(siblings);
       S.add({
         title: "在「" + version.name + "」下新增册次",
         message: "册次名只填“必修一 / 七年级上册”，完整书名保留版本与册次全称。",
@@ -244,13 +245,14 @@
         fields: [
           { key: "volume_name", label: "册次名", required: true, placeholder: "如 必修一" },
           { key: "name", label: "完整书名", required: true, placeholder: "如 人教A版数学必修一" },
-          { key: "code", label: "册次编码", required: true, placeholder: "如 rja_m_1" }
+          { key: "code", label: "册次编码", required: true, placeholder: "如 rja_m_1" },
+          { key: "sort_order", label: "排序号", value: String(next), placeholder: "0 起，数字越小越靠前" }
         ],
         build: function (values) {
           return {
             name: values.name, code: values.code, volume_name: values.volume_name,
             version_id: version.id, subject_id: version.subject_id,
-            sort_order: S.nextOrder(siblings)
+            sort_order: S.orderValue(values.sort_order, next)
           };
         },
         onDone: function () {
@@ -274,12 +276,15 @@
         fields: [
           { key: "name", label: "版本名称", required: true, placeholder: "如 人教A版" },
           { key: "code", label: "版本编码", required: true, placeholder: "如 rja_math" },
-          { key: "publisher", label: "出版社", placeholder: "如 人民教育出版社" }
+          { key: "publisher", label: "出版社", placeholder: "如 人民教育出版社" },
+          { key: "sort_order", label: "排序号", value: String(S.nextOrder(state.versions)),
+            placeholder: "0 起，数字越小越靠前" }
         ],
         build: function (values) {
           return {
             name: values.name, code: values.code, publisher: values.publisher,
-            subject_id: subjectId, sort_order: S.nextOrder(state.versions)
+            subject_id: subjectId,
+            sort_order: S.orderValue(values.sort_order, S.nextOrder(state.versions))
           };
         },
         onDone: function () { refresh("已新增版本。"); }
@@ -320,7 +325,7 @@
         hasChildren: kids.length > 0,
         expanded: expanded,
         children: box,
-        addText: "节", addLabel: "在「" + chapter.name + "」下新增子章节",
+        addLabel: "在「" + chapter.name + "」下新增子章节",
         add: function (btn) { addChapterUnderNode(book, node, btn); },
         edit: {
           url: CHAPTER_URL + "/" + chapter.id, field: "name",
@@ -353,7 +358,7 @@
         hasChildren: roots.length > 0,
         expanded: expanded,
         children: box,
-        addText: "章", addLabel: "给「" + bookLabel(book) + "」新增顶层章",
+        addLabel: "给「" + bookLabel(book) + "」新增顶层章",
         add: function (btn) { addChapterUnderBook(book, btn); },
         edit: {
           url: BOOK_URL + "/" + book.id, field: "volume_name",
@@ -388,7 +393,7 @@
         hasChildren: books.length > 0,
         expanded: expanded,
         children: box,
-        addText: "册", addLabel: "在「" + version.name + "」下新增册次",
+        addLabel: "在「" + version.name + "」下新增册次",
         add: function (btn) { addBook(version, btn); },
         edit: {
           url: VERSION_URL + "/" + version.id, field: "name",

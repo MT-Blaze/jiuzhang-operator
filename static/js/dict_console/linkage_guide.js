@@ -39,10 +39,14 @@
     return button;
   }
 
-  function empty(prefix, text) {
+  /** add 非空时在文案旁补一个「＋ 添加」按钮：空状态也能直接长出下一级。 */
+  function empty(prefix, text, add) {
     var li = el("li", "dkl-empty");
     li.appendChild(span(prefix, true, true, true));
     li.appendChild(el("span", "dkl-empty-text", text));
+    if (add) {
+      li.appendChild(window.DcTreeAdd.emptyAdd(add));
+    }
     return li;
   }
 

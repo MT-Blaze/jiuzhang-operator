@@ -256,12 +256,27 @@
     }
   }
 
+  /** 新建版本后原地记住名称：否则切换标签只能退化成「全版本」。 */
+  function rememberCreatedVersion(saved) {
+    if (!saved.version_id || !saved.version_name) return;
+    var item = {
+      id: Number(saved.version_id), name: String(saved.version_name),
+      code: "", sort_order: 0, publisher: null,
+      subject_id: state.subject_id ? Number(state.subject_id) : null,
+      stages: state.stage ? [state.stage] : []
+    };
+    rememberVersions([item]);
+    var exists = versions.some(function (known) { return String(known.id) === String(item.id); });
+    if (!exists) versions.push(item);
+  }
+
   /** 宿主（工作台看板右栏）保存后原地灌入，不经过本页面板。 */
   function apply(saved) {
     if (!saved || typeof saved !== "object") return false;
     state.stage = String(saved.stage || "");
     state.subject_id = String(saved.subject_id || "");
     state.version_id = String(saved.version_id || "");
+    rememberCreatedVersion(saved);
     draft = copy(state);
     persist();
     if (ready) {

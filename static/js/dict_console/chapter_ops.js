@@ -16,6 +16,16 @@
     }, 1);
   }
 
+  /** 空值取兜底；非整数 / 负数直接拒绝，避免把脏排序写进库。 */
+  function orderValue(value, fallback) {
+    if (value == null || String(value).trim() === "") return fallback;
+    var number = Number(value);
+    if (!isFinite(number) || Math.floor(number) !== number || number < 0) {
+      throw new Error("排序号必须是 0 或正整数");
+    }
+    return number;
+  }
+
   function alertError(title, error, anchor) {
     window.DcDialog.alert({ title: title, message: error.message, anchor: anchor });
   }
@@ -35,20 +45,28 @@
   /** parent 为空 = 给册次加顶层章；否则在该章下加子节点。 */
   function add(parent, siblings, textbookId, onDone) {
     var under = parent ? "在「" + parent.name + "」下" : "给本册";
+    var next = nextOrder(siblings);
     window.DcDialog.open({
       title: under + "新增章节",
       message: "名称与编码都要填；编码全局唯一，可填章节号（如 1.2）。",
       confirmText: "新增",
       fields: [
         { key: "name", label: "章节名称", required: true, placeholder: "如 函数的概念" },
-        { key: "code", label: "章节编码", required: true, placeholder: "如 1.2" }
+        { key: "code", label: "章节编码", required: true, placeholder: "如 1.2" },
+        { key: "sort_order", label: "排序号", value: String(next), placeholder: "0 起，数字越小越靠前" }
       ],
       onConfirm: function (values) {
-        var payload = {
-          name: values.name, code: values.code,
-          textbook_id: parent ? parent.textbook_id : textbookId,
-          sort_order: nextOrder(siblings)
-        };
+        var payload;
+        try {
+          payload = {
+            name: values.name, code: values.code,
+            textbook_id: parent ? parent.textbook_id : textbookId,
+            sort_order: orderValue(values.sort_order, next)
+          };
+        } catch (error) {
+          alertError("还不能新增", error);
+          return;
+        }
         if (parent) payload.parent_id = parent.id;
         window.DcClient.writeJson(URL, payload, "POST").then(function () {
           onDone();

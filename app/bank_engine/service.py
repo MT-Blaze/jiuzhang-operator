@@ -386,11 +386,31 @@ def linkage_reorder(
         )
 
 
+def linkage_add_point(
+    chapter_id: int,
+    name: str,
+    code: str | None = None,
+    sort_order: int | None = None,
+    *,
+    db_path: Path | None = None,
+) -> LinkedKnowledgePoint:
+    with session(db_path) as conn:
+        return dao_linkage.add_point(
+            conn, chapter_id, name, code=code, sort_order=sort_order
+        )
+
+
 def linkage_add_direction(
-    point_id: int, name: str, *, db_path: Path | None = None
+    point_id: int,
+    name: str,
+    sort_order: int | None = None,
+    *,
+    db_path: Path | None = None,
 ) -> ExamDirection:
     with session(db_path) as conn:
-        return dao_linkage.add_direction(conn, point_id, name)
+        return dao_linkage.add_direction(
+            conn, point_id, name, sort_order=sort_order
+        )
 
 
 def linkage_delete_direction(
