@@ -19,12 +19,13 @@
 
   /**
    * 列表末尾的幽灵行：整行即热区，视觉低饱和、悬停才提亮。
-   * spec = {text, label, guide(), onClick(button)}
+   * spec = {text, label, lines(), guide(), onClick(button)}
    */
   function ghostRow(spec) {
     var options = spec || {};
     var text = options.text || "添加子节点";
     var li = el("li", "dc-ghost-item");
+    if (typeof options.lines === "function") li.appendChild(options.lines());
     if (typeof options.guide === "function") li.appendChild(options.guide());
     var button = el("button", "dc-ghost-add", "\uFF0B " + text);
     button.type = "button";
@@ -80,7 +81,7 @@
 
   /**
    * 行内新增：host 里插一行输入框，不弹窗。
-   * spec = {host, anchor, guide(), liClass, rowClass, inputClass, defaultValue,
+   * spec = {host, anchor, lines(), guide(), liClass, rowClass, inputClass, defaultValue,
    *         placeholder, label, url, payload(name), onSaved(created), onCancel,
    *         failTitle}
    * 同一个容器已有输入行时只聚焦，不重复长行。
@@ -96,6 +97,7 @@
     }
     var li = el("li", spec.liClass || "dc-inline-item");
     var row = el("div", spec.rowClass || "dc-inline-row");
+    if (typeof spec.lines === "function") row.appendChild(spec.lines());
     if (typeof spec.guide === "function") row.appendChild(spec.guide());
     var input = el("input", spec.inputClass || "dc-inline-input");
     input.type = "text";

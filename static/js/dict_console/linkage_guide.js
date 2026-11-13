@@ -1,6 +1,8 @@
 /**
  * 知识点树 · 行首细灰树线与改名按钮（2026-11-12）。
  * prefix 记录每位祖先是否还要往下画竖线，当前层画 ├ / └；层级不再用 padding 缩进。
+ * 竖线由行级导线层（DcLinkGuide.lines）按整行高度画，行内内容怎么换行都不会断；
+ * 行首 guide 只保留缩进占位与水平折线。
  * nameButton 复用 DcEntityShared.bindNodeClick：单击 200ms 防抖展开、双击原地改名。
  * 整块下架：删本文件与 dict_console.html 引用行即可。
  */
@@ -27,6 +29,26 @@
     return wrap;
   }
 
+  function lineEl(col, last) {
+    var node = el("span", "dkl-guide-line" + (last ? " dkl-guide-line-last" : ""));
+    node.setAttribute("aria-hidden", "true");
+    node.style.setProperty("--col", String(col));
+    return node;
+  }
+
+  /** 行级全高导线层：prefix 里每个 open 的祖先列一根，当前列再补一根（末位收半截）。 */
+  function lines(prefix, last) {
+    var wrap = el("span", "dkl-guide-lines");
+    wrap.setAttribute("aria-hidden", "true");
+    prefix.forEach(function (open, col) {
+      if (open) wrap.appendChild(lineEl(col, false));
+    });
+    if (last !== null && last !== undefined) {
+      wrap.appendChild(lineEl(prefix.length, !!last));
+    }
+    return wrap;
+  }
+
   function childPrefix(prefix, isLast) {
     return prefix.concat([!isLast]);
   }
@@ -42,7 +64,9 @@
   /** add 非空时在文案旁补一个「＋ 添加」按钮：空状态也能直接长出下一级。 */
   function empty(prefix, text, add) {
     var li = el("li", "dkl-empty");
-    li.appendChild(span(prefix, true, true, true));
+    var hasLine = prefix.length > 0;
+    li.appendChild(lines(prefix, hasLine ? true : null));
+    li.appendChild(span(prefix, true, !hasLine, true));
     li.appendChild(el("span", "dkl-empty-text", text));
     if (add) {
       li.appendChild(window.DcTreeAdd.emptyAdd(add));
@@ -51,11 +75,13 @@
   }
 
   /** 子节点列表末尾的幽灵行：低饱和整行热区，点击就地长出新输入行。 */
-  function ghost(prefix, text, label, onClick) {
+  function ghost(prefix, text, label, onClick, last) {
+    var isLast = last !== false;
     return window.DcTreeAdd.ghostRow({
       text: text,
       label: label,
-      guide: function () { return span(prefix, true, true, true); },
+      lines: function () { return lines(prefix, isLast); },
+      guide: function () { return span(prefix, isLast, false, true); },
       onClick: onClick
     });
   }
@@ -82,7 +108,7 @@
   }
 
   window.DcLinkGuide = {
-    span: span, childPrefix: childPrefix, empty: empty, ghost: ghost,
+    span: span, lines: lines, childPrefix: childPrefix, empty: empty, ghost: ghost,
     nameButton: nameButton, opButton: opButton, sort: sort
   };
 })();

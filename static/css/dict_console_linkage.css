@@ -4,14 +4,38 @@
 .dkl-wrap { min-width: 0; }
 
 /* ---------- 树骨架：左对齐 + 细灰树线，不做物理缩进 ---------- */
-.dkl-tree { min-width: 0; }
+.dkl-tree { --dkl-col-w: 11px; min-width: 0; }
 .dkl-list { list-style: none; margin: 0; padding: 0; }
-/* 层级不再靠 margin/padding 撑开，全部交给行首的 dkl-guide 画线 */
+/* 层级不再靠 margin/padding 撑开，全部交给行首导线层 */
 .dkl-children,
 .dkl-point-list { list-style: none; margin: 0; padding: 0; }
 .dkl-children[hidden] { display: none; }
 .dkl-points-host { list-style: none; margin: 0; padding: 0; }
 
+/* 导线层挂在整行上，竖线高度跟行高而不是跟行首单元格：
+ * 章节名换行、考向辅助标签堆高、幽灵行 / 空状态都不会再留断口。 */
+.dkl-row,
+.dc-ghost-item,
+.dkl-empty,
+.dkl-dir-head { position: relative; }
+.dkl-guide-lines {
+  position: absolute;
+  inset: 0 0 -1px 0;
+  pointer-events: none;
+  opacity: 0.75;
+}
+.dkl-guide-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(4px + var(--col, 0) * var(--dkl-col-w));
+  width: 1px;
+  background: var(--faint);
+}
+/* 列表末位：本列只画到行中线，收成 └ */
+.dkl-guide-line-last { bottom: auto; height: 50%; }
+
+/* 行首 guide 只负责缩进占位与水平折线，竖线统一交给 dkl-guide-lines */
 .dkl-guide {
   flex: none;
   display: inline-flex;
@@ -21,29 +45,8 @@
   user-select: none;
   opacity: 0.75;
 }
-/* 行有上下内边距，guide 用负外边距顶到行边缘，相邻行的竖线才能连成一条 */
-.dkl-row .dkl-guide { margin-block: -3px; }
-.dkl-row-direction .dkl-guide { margin-block: -4px; }
 .dkl-guide-seg,
-.dkl-guide-cur { flex: none; position: relative; width: 11px; }
-.dkl-guide-seg::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid var(--faint);
-}
-.dkl-guide-blank::before { border-left-color: transparent; }
-.dkl-guide-cur::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  border-left: 1px solid var(--faint);
-}
-.dkl-guide-last::before { bottom: 50%; }
+.dkl-guide-cur { flex: none; position: relative; width: var(--dkl-col-w); }
 .dkl-guide-cur::after {
   content: "";
   position: absolute;
@@ -52,7 +55,6 @@
   width: 8px;
   border-top: 1px solid var(--faint);
 }
-.dkl-guide-blank-cur::before,
 .dkl-guide-blank-cur::after { display: none; }
 
 .dkl-row {
@@ -65,9 +67,11 @@
 }
 .dkl-row:focus-within { background: var(--card-hover); }
 
-/* 册次＝表头带，让「学年册别」一眼分段；不是卡片，只是整行浅底 */
+/* 册次＝表头带，让「学年册别」一眼分段；不是卡片，只是整行浅底。
+ * 顶边用内阴影而不是 border-top：border 会把 padding box 压下去 1px，
+ * 上一行画到 border box 底的竖线就会和本行差 1px，形成断口。 */
 .dkl-row-book {
-  border-top: 1px solid var(--line-strong);
+  box-shadow: inset 0 1px 0 var(--line-strong);
   background: var(--paper-deep);
   font-family: var(--serif);
 }
@@ -155,6 +159,7 @@
   align-items: center;
   gap: 2px;
   list-style: none;
+  padding-left: 4px;
   border-bottom: 1px solid var(--line);
 }
 .dc-ghost-add {
@@ -192,7 +197,7 @@
 .node-empty-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* 版本行：这条树的根，比册次再重一档 */
-.dkl-row-version { border-top: 1px solid var(--line-strong); background: var(--paper-deep); }
+.dkl-row-version { box-shadow: inset 0 1px 0 var(--line-strong); background: var(--paper-deep); }
 .dkl-row-version .dkl-name { font-size: 0.95rem; font-weight: 700; }
 
 /* 工具条：新增版本不属于任何一行，单独放树顶 */
@@ -326,8 +331,7 @@
 
 /* ---------- 窄屏：考向行改单列堆叠，辅助标签落到下一行 ---------- */
 @media (max-width: 720px) {
-  .dkl-guide-seg,
-  .dkl-guide-cur { width: 9px; }
+  .dkl-tree { --dkl-col-w: 9px; }
   .dkl-dir-head { display: none; }
   .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 6px 4px; }
   .dkl-row-direction .dkl-ops { justify-content: flex-start; }

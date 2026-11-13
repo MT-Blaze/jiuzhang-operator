@@ -97,6 +97,7 @@
       li.setAttribute("role", "treeitem");
       li.draggable = true;
       var row = el("div", "dkl-row dkl-row-point");
+      row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
       var caret = caretButton("展开或折叠「" + point.name + "」的考向", false);
       row.appendChild(caret);
@@ -145,6 +146,7 @@
       li.setAttribute("data-chapter-id", String(chapter.id));
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-chapter");
+      row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
       var caret = caretButton("展开或折叠「" + chapter.name + "」", false);
       row.appendChild(caret);
@@ -182,8 +184,9 @@
       pointList.setAttribute("aria-label", "「" + chapter.name + "」的主知识点");
       host.appendChild(pointList);
       // 有子节点时，末位统一交给幽灵行：章节行的竖线一直落到它身上。
+      // 幽灵行后面还接着知识点列表，所以它不负责收口，竖线继续往下画。
       var sectionGhost = kids.length ? G.ghost(subPrefix, "添加节",
-        "为「" + chapter.name + "」新增节", function (button) { addSection(button); }) : null;
+        "为「" + chapter.name + "」新增节", function (button) { addSection(button); }, false) : null;
       if (sectionGhost) children.appendChild(sectionGhost);
       children.appendChild(host);
       li.appendChild(children);
@@ -301,6 +304,7 @@
       li.setAttribute("data-book-id", String(book.id));
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-book");
+      row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
       var caret = caretButton("展开或折叠「" + (book.volume_name || book.name) + "」", true);
       row.appendChild(caret);

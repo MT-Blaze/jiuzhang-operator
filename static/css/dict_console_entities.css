@@ -17,10 +17,12 @@
   margin: 0;
   padding: 0;
 }
+/* 层级竖线：与「知识点与考向」树的导线同色同重（faint 75%），实线不再是虚线。
+ * 子级 ul 本身带 border-left，末位子项（含行内新增行）自然被包到底，不会多一截。 */
 .det-children {
   margin-left: 22px;
   padding-left: 8px;
-  border-left: 1px dashed var(--line);
+  border-left: 1px solid color-mix(in srgb, var(--faint) 75%, transparent);
 }
 .det-children[hidden] { display: none; }
 .det-item { min-width: 0; }

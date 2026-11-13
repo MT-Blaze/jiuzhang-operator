@@ -20,6 +20,12 @@
     };
   }
 
+  function lines(prefix) {
+    return function () {
+      return window.DcLinkGuide.lines(prefix || [], false);
+    };
+  }
+
   function rowClass(extra) {
     return "dkl-row dc-inline-row" + (extra ? " " + extra : "");
   }
@@ -61,6 +67,7 @@
       host: spec.host,
       before: spec.before,
       anchor: spec.anchor,
+      lines: lines(spec.prefix),
       guide: guide(spec.prefix),
       rowClass: rowClass("dkl-row-book"),
       placeholder: "册次名，如 必修一",
@@ -88,6 +95,7 @@
       host: spec.host,
       before: spec.before,
       anchor: spec.anchor,
+      lines: lines(spec.prefix),
       guide: guide(spec.prefix),
       rowClass: rowClass(parent ? "dkl-row-chapter dkl-section" : "dkl-row-chapter"),
       placeholder: parent ? "新节名，如 集合的概念" : "新章名，如 第一章 集合",
@@ -116,6 +124,7 @@
       host: spec.host,
       before: spec.before,
       anchor: spec.anchor,
+      lines: lines(spec.prefix),
       guide: guide(spec.prefix),
       rowClass: rowClass("dkl-row-point"),
       placeholder: "新知识点名，如 集合的概念",
@@ -134,6 +143,7 @@
       host: spec.host,
       before: spec.before,
       anchor: spec.anchor,
+      lines: lines(spec.prefix),
       guide: guide(spec.prefix),
       rowClass: rowClass(),
       placeholder: "新考向名，如 判断函数奇偶性",
