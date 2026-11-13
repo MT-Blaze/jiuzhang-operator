@@ -7,7 +7,8 @@
 硬口径：
 1. 学科名称、素养名称一律照抄课标原文，不加学科后缀、不改写、不合并；
 2. 同一名称在不同学段都属于官方表述时，按学段各存一行，不写「全学段」；
-3. 课标没有单列「学科思想」的学科，本表不臆造，宁缺毋滥。
+3. 课标没有单列「学科思想」的学科，只收该学科教研大纲稳定沿用的通用思想名，
+   不写自造词；暂未整理的学段留空，宁缺毋滥。
 """
 
 from __future__ import annotations
@@ -21,6 +22,19 @@ SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
     (9004, 'math_logical_reasoning_thought', '逻辑推理', 2, 2, '高中'),
     (9005, 'math_modeling_thought', '数学建模', 3, 2, '高中'),
     (9006, 'math_number_shape_senior', '数形结合', 4, 2, '高中'),
+    # 物理：课标未单列「学科思想」清单，按高中物理教研大纲的通用思想名整理。
+    (9101, 'physics_ideal_model_thought', '理想模型', 1, 4, '高中'),
+    (9102, 'physics_equivalent_substitution_thought', '等效替代', 2, 4, '高中'),
+    (9103, 'physics_control_variable_thought', '控制变量', 3, 4, '高中'),
+    (9104, 'physics_infinitesimal_thought', '微元', 4, 4, '高中'),
+    (9105, 'physics_limit_thought', '极限', 5, 4, '高中'),
+    (9106, 'physics_symmetry_thought', '对称', 6, 4, '高中'),
+    (9107, 'physics_conservation_thought', '守恒', 7, 4, '高中'),
+    (9108, 'physics_analogy_thought', '类比', 8, 4, '高中'),
+    (9109, 'physics_number_shape_thought', '数形结合', 9, 4, '高中'),
+    (9110, 'physics_experimental_induction_thought', '实验归纳', 10, 4, '高中'),
+    (9111, 'physics_hypothesis_thought', '科学假说', 11, 4, '高中'),
+    (9112, 'physics_transformation_thought', '转化', 12, 4, '高中'),
 )
 
 # (subject_id, stage, id_base, ((code, name), ...))

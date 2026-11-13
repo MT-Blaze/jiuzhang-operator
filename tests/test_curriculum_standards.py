@@ -1,8 +1,8 @@
 """课标原文清单契约：全学科、全学段逐条钉死，零「全学段」、零自造词。
 
 依据《义务教育课程方案和课程标准（2022 年版）》与《普通高中课程标准
-（2017 年版 2020 年修订）》；学科没有官方「学科思想」单列清单时留空，
-不拿解题方法或自造术语充数。
+（2017 年版 2020 年修订）》；学科没有官方「学科思想」单列清单时，只收
+教研大纲稳定沿用的通用思想名，不拿自造术语充数。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_curriculum_standards -v``
 """
@@ -74,12 +74,16 @@ EXPECTED_THOUGHTS: dict[tuple[int, str], tuple[str, ...]] = {
     (2, "小学"): ("数形结合",),
     (2, "初中"): ("数形结合",),
     (2, "高中"): ("数学抽象", "逻辑推理", "数学建模", "数形结合"),
+    # 高中物理教研大纲的通用思想名，顺序即清单顺序。
+    (4, "高中"): (
+        "理想模型", "等效替代", "控制变量", "微元", "极限", "对称",
+        "守恒", "类比", "数形结合", "实验归纳", "科学假说", "转化",
+    ),
 }
 
 DIRTY_TERMS = (
-    "等效替代", "守恒", "微元", "控制变量", "函数思想", "方程思想",
-    "转化与化归", "分类讨论", "整体思想", "类比思想", "模型思想",
-    "系统思想", "对称思想", "理想化思想", "转换思想", "模型建构思想",
+    "函数思想", "方程思想", "转化与化归", "分类讨论", "整体思想",
+    "模型思想", "系统思想", "理想化思想", "转换思想", "模型建构思想",
     "（生物）", "（科学）", "（美术）",
 )
 
@@ -99,7 +103,7 @@ class CurriculumStandardsTest(unittest.TestCase):
             with self.subTest(subject_stage=key):
                 self.assertEqual(tuple(groups[key]), names)
 
-    def test_subject_thoughts_only_official_math_terms(self) -> None:
+    def test_subject_thoughts_match_curriculum_and_physics_outline(self) -> None:
         groups = _groups(SUBJECT_THOUGHT_ROWS)
         self.assertEqual(set(groups), set(EXPECTED_THOUGHTS))
         for key, names in EXPECTED_THOUGHTS.items():
@@ -128,9 +132,9 @@ class CurriculumStandardsTest(unittest.TestCase):
 
     def test_counts_follow_seed_source(self) -> None:
         self.assertEqual(len(CORE_COMPETENCY_ROWS), 168)
-        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 6)
+        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 18)
         self.assertEqual(CURRICULUM_COUNTS["dict_core_competencies"], 168)
-        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 6)
+        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 18)
 
 
 if __name__ == "__main__":

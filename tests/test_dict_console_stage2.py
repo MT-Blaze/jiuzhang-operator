@@ -167,14 +167,19 @@ class ConsoleServiceTest(unittest.TestCase):
                      "控制变量法", "实验探究法", "对称法", "极限思维法"):
             self.assertIn(name, method_names)
 
-        # 课标没有给物理单列「学科思想」清单，本表宁缺毋滥，不写自造术语。
-        _, thought_total = service.console_list(
+        # 高中物理教研大纲的通用思想名必须齐备，切换「高中 · 物理」不得空表。
+        thoughts, thought_total = service.console_list(
             "dict_subject_thoughts",
             filters={"stage": "高中", "subject_id": 4},
             limit=200,
             db_path=self.db_path,
         )
-        self.assertEqual(thought_total, 0)
+        thought_names = {item.name for item in thoughts}
+        self.assertEqual(thought_total, 12)
+        for name in ("理想模型", "等效替代", "控制变量", "微元", "极限", "对称",
+                     "守恒", "类比", "数形结合", "实验归纳", "科学假说", "转化"):
+            self.assertIn(name, thought_names)
+        self.assertTrue(all(item.stage == "高中" for item in thoughts))
 
         competencies, competency_total = service.console_list(
             "dict_core_competencies",
