@@ -50,6 +50,16 @@
     return li;
   }
 
+  /** 子节点列表末尾的幽灵行：低饱和整行热区，点击就地长出新输入行。 */
+  function ghost(prefix, text, label, onClick) {
+    return window.DcTreeAdd.ghostRow({
+      text: text,
+      label: label,
+      guide: function () { return span(prefix, true, true, true); },
+      onClick: onClick
+    });
+  }
+
   function nameButton(text, label, edit, toggle) {
     var button = el("button", "dkl-name", text);
     button.type = "button";
@@ -72,7 +82,7 @@
   }
 
   window.DcLinkGuide = {
-    span: span, childPrefix: childPrefix, empty: empty, nameButton: nameButton,
-    opButton: opButton, sort: sort
+    span: span, childPrefix: childPrefix, empty: empty, ghost: ghost,
+    nameButton: nameButton, opButton: opButton, sort: sort
   };
 })();

@@ -72,11 +72,14 @@
       var item = closestItem(event.target, listEl);
       if (!item) return;
       event.preventDefault();
-      if (event.key === "ArrowUp" && item.previousElementSibling) {
-        listEl.insertBefore(item, item.previousElementSibling);
+      var prev = item.previousElementSibling;
+      var next = item.nextElementSibling;
+      // 末位幽灵行不属于成员，不能被换到已排序条目之前。
+      if (event.key === "ArrowUp" && prev && prev.hasAttribute("data-id")) {
+        listEl.insertBefore(item, prev);
       }
-      if (event.key === "ArrowDown" && item.nextElementSibling) {
-        listEl.insertBefore(item.nextElementSibling, item);
+      if (event.key === "ArrowDown" && next && next.hasAttribute("data-id")) {
+        listEl.insertBefore(next, item);
       }
       focusItem(item);
       options.onOrder(currentIds(listEl));

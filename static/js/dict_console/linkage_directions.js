@@ -1,6 +1,6 @@
 /**
  * 知识点与考向树 · 考向清单（2026-11-13 从 linkage_tree.js 拆出）：
- * 每个主知识点自己懒加载自己的考向，行尾统一「+」新增、空状态带「＋ 添加」。
+ * 每个主知识点自己懒加载自己的考向，末位低饱和幽灵行新增、空状态带「＋ 添加」。
  * 双击考向改名、悬停删除；辅助知识点标签仍由 DcLinkTags.mountCell 负责。
  * 整块下架：删本文件、linkage_tree.js 的 DcLinkageDirections.mount 调用即可。
  */
@@ -127,7 +127,8 @@
     function add(anchor) {
       window.DcLinkageAdd.direction({
         point: point, host: list, prefix: prefix, anchor: anchor,
-        before: list.querySelector(".dkl-empty"),
+        before: list.querySelector(":scope > .dc-ghost-item")
+          || list.querySelector(":scope > .dkl-empty"),
         onDone: function () {
           return ensure(true).then(function () {
             setStatus("已新增考向。");
@@ -145,9 +146,11 @@
           onClick: add
         }));
       } else {
-        rows.forEach(function (dir, index) {
-          list.appendChild(directionRow(dir, index === rows.length - 1));
+        rows.forEach(function (dir) {
+          list.appendChild(directionRow(dir, false));
         });
+        list.appendChild(G.ghost(prefix, "添加考向",
+          "为「" + point.name + "」新增考向", add));
       }
       painted = true;
       notifyCount();

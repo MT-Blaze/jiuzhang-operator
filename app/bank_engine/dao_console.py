@@ -6,8 +6,7 @@
 - 删除前用 ``PRAGMA foreign_key_list`` 逐张子表单表计数，发现引用即拦截，
   跨表关系在 Python 层组装，不做连级 JOIN。
 
-spec 驱动：五张表共用一套读写逻辑，列定义、可编辑列、搜索列与全局设置
-绑定都集中在 ``SPECS``，改口径只改这里。
+spec 驱动：所有表共用一套读写逻辑，列定义、可编辑列、搜索列与全局设置绑定都集中在 ``SPECS``。
 """
 
 from __future__ import annotations
@@ -58,6 +57,17 @@ class TableSpec:
     scope: tuple[tuple[str, str], ...] = ()
 
 
+def _flat_spec(table: str, label: str, model: type) -> TableSpec:
+    """四张纯顺序字典共用一套规格：只有名称 / 编码 / 排序，无全局过滤。"""
+    return TableSpec(
+        table=table, label=label, model=model,
+        columns=("id", "name", "code", "sort_order"),
+        editable=("name", "code", "sort_order"), required=("name", "code"),
+        search=("name", "code"), order="sort_order, id",
+        int_columns=("sort_order",), nullable=(), global_filters=(),
+    )
+
+
 def _teaching_spec(table: str, label: str, model: type) -> TableSpec:
     """三张教研属性字典共用一套规格：学科 + 明码学段，跨学段并集检索。"""
     return TableSpec(
@@ -89,18 +99,8 @@ SPECS: dict[str, TableSpec] = {
         int_columns=("sort_order",), nullable=(),
         global_filters=(("stage", "stage"),),
     ),
-    "dict_exam_types": TableSpec(
-        table="dict_exam_types", label="考试类型", model=ExamType,
-        columns=("id", "name", "code", "sort_order"), editable=("name", "code", "sort_order"),
-        required=("name", "code"), search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order",), nullable=(), global_filters=(),
-    ),
-    "dict_exam_levels": TableSpec(
-        table="dict_exam_levels", label="考试层级", model=ExamLevel,
-        columns=("id", "name", "code", "sort_order"), editable=("name", "code", "sort_order"),
-        required=("name", "code"), search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order",), nullable=(), global_filters=(),
-    ),
+    "dict_exam_types": _flat_spec("dict_exam_types", "考试类型", ExamType),
+    "dict_exam_levels": _flat_spec("dict_exam_levels", "考试层级", ExamLevel),
     # 考试主体：学校主体可回挂 dim_schools；联盟 / 教育局等组织 school_id 留空。
     "dict_exam_orgs": TableSpec(
         table="dict_exam_orgs", label="考试主体", model=ExamOrg,
@@ -144,13 +144,7 @@ SPECS: dict[str, TableSpec] = {
         global_filters=(("subject_id", "subject_id"),),
     ),
     # 二级标签里的字典：与基础表同一套规格驱动，全部开放新增 / 改名 / 删除。
-    "dict_question_types": TableSpec(
-        table="dict_question_types", label="题型", model=QuestionType,
-        columns=("id", "name", "code", "sort_order"),
-        editable=("name", "code", "sort_order"), required=("name", "code"),
-        search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order",), nullable=(), global_filters=(),
-    ),
+    "dict_question_types": _flat_spec("dict_question_types", "题型", QuestionType),
     "dict_difficulties": TableSpec(
         table="dict_difficulties", label="难度", model=Difficulty,
         columns=("id", "name", "code", "sort_order", "level", "description"),
@@ -159,13 +153,7 @@ SPECS: dict[str, TableSpec] = {
         order="level, sort_order, id", int_columns=("sort_order", "level"),
         nullable=("description",), global_filters=(),
     ),
-    "dict_question_qualities": TableSpec(
-        table="dict_question_qualities", label="题目质量", model=Quality,
-        columns=("id", "name", "code", "sort_order"),
-        editable=("name", "code", "sort_order"), required=("name", "code"),
-        search=("name", "code"), order="sort_order, id",
-        int_columns=("sort_order",), nullable=(), global_filters=(),
-    ),
+    "dict_question_qualities": _flat_spec("dict_question_qualities", "题目质量", Quality),
     "dim_textbook_versions": TableSpec(
         table="dim_textbook_versions", label="教材版本", model=TextbookVersion,
         columns=("id", "name", "code", "sort_order", "publisher", "subject_id"),
@@ -230,6 +218,11 @@ TABLE_LABELS: dict[str, str] = {
 
 # ON DELETE CASCADE 的子表不出现在外键列表里：删册次前先拦，别顺手带走整册章节。
 CASCADE_GUARDS: dict[str, tuple[str, str]] = {"dim_textbooks": ("dim_textbook_chapters", "textbook_id")}
+
+# 本体自有的从属桥表：不算外部引用，删除时先级联清理（题目关联仍照常拦截）。
+OWNED_LINKS: dict[str, tuple[tuple[str, str], ...]] = {
+    "dim_knowledge_points": (("chapter_knowledge_map", "knowledge_point_id"),),
+}
 
 
 def get_spec(table: str) -> TableSpec:
@@ -418,18 +411,19 @@ def find_references(
 ) -> tuple[ReferenceHit, ...]:
     """逐张子表单表计数：谁的外键指向这一行。不做连级 JOIN。
 
+    OWNED_LINKS 里的从属桥表不计入（如知识点的章节挂载关系），
     exclude 给联动删除用：{子表: (列, 值)}，计数时排除该列等于此值的行
     （例如删考向时不算当前知识点自己的关联行）；列名只来自内部白名单调用方。
     """
     get_spec(table)
-    children = [
-        str(row["name"])
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-        )
-    ]
+    owned = {child for child, _ in OWNED_LINKS.get(table, ())}
+    children = [str(row["name"]) for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    )]
     hits: list[ReferenceHit] = []
     for child in children:
+        if child in owned:
+            continue
         for fk in conn.execute("PRAGMA foreign_key_list(" + child + ")"):
             if str(fk["table"]) != table:
                 continue
@@ -459,8 +453,14 @@ def delete_row(conn: sqlite3.Connection, table: str, row_id: int) -> None:
     hits = find_references(conn, table, row_id)
     if hits:
         raise ReferencedError(hits)
-    conn.execute("DELETE FROM " + get_spec(table).table + " WHERE id = ?", (row_id,))
-    conn.commit()
+    try:
+        for child, column in OWNED_LINKS.get(table, ()):
+            conn.execute("DELETE FROM " + child + " WHERE " + column + " = ?", (row_id,))
+        conn.execute("DELETE FROM " + get_spec(table).table + " WHERE id = ?", (row_id,))
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
 
 
 def import_rows(conn: sqlite3.Connection, data: dict[str, Any]) -> ImportReport:

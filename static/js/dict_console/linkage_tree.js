@@ -1,7 +1,8 @@
 /**
  * 知识点与考向 · 六级折叠树（2026-11-13）：版本 → 册次 → 章 → 节 → 知识点 → 考向。
- * 每行悬停只露一个「+」，加什么由行所在层级决定：版本加册次、册次加章、章加节、
- * 节加知识点、知识点加考向；考向是最底层，不再给 +。空状态旁同样带「＋ 添加」；
+ * 行尾不再挂「+」：子节点列表最下方统一一行低饱和幽灵行，点它就地长出输入框；
+ * 空状态旁保留「＋ 添加」；右侧只留排序芯片与删除。
+ * 版本加册次、册次加章、章加节、节加知识点、知识点加考向；考向是最底层，没有下一级。
  * 请求地址统一收在 DcLinkageAdd，考向清单在 DcLinkageDirections。
  * 整块下架：删本目录 linkage*.js / tree_add.js + linkage CSS + panels.js 的 mount 调用。
  */
@@ -113,12 +114,6 @@
       grip.setAttribute("aria-hidden", "true");
       row.appendChild(grip);
       var ops = el("div", "dkl-ops");
-      ops.appendChild(T.plus({
-        label: "为「" + point.name + "」新增考向",
-        onClick: function (button) {
-          fold.open().then(function () { dirs.add(button); });
-        }
-      }));
       ops.appendChild(G.opButton("删除", true, "删除主知识点「" + point.name + "」", function (button) {
         window.DcRowOps.deleteRow(dictController(POINT_URL, function () {
           delete expanded.p[point.id];
@@ -166,12 +161,6 @@
       row.appendChild(G.sort(chapter.sort_order, "章节「" + chapter.name + "」的排序号",
         function (value) { return window.DcLinkageSort.save(CHAPTER_URL, chapter, value, load); }));
       var ops = el("div", "dkl-ops");
-      ops.appendChild(T.plus({
-        label: isSection ? "为「" + chapter.name + "」新增知识点" : "为「" + chapter.name + "」新增节",
-        onClick: function (button) {
-          if (isSection) addPoint(button); else addSection(button);
-        }
-      }));
       ops.appendChild(G.opButton("删除", true, "删除章节「" + chapter.name + "」", function (button) {
         window.DcRowOps.deleteRow(dictController(CHAPTER_URL, function () {
           delete expanded.c[chapter.id];
@@ -192,6 +181,10 @@
       var pointList = el("ul", "dkl-list dkl-point-list");
       pointList.setAttribute("aria-label", "「" + chapter.name + "」的主知识点");
       host.appendChild(pointList);
+      // 有子节点时，末位统一交给幽灵行：章节行的竖线一直落到它身上。
+      var sectionGhost = kids.length ? G.ghost(subPrefix, "添加节",
+        "为「" + chapter.name + "」新增节", function (button) { addSection(button); }) : null;
+      if (sectionGhost) children.appendChild(sectionGhost);
       children.appendChild(host);
       li.appendChild(children);
       var pointsPainted = false;
@@ -199,11 +192,14 @@
       function paintPoints() {
         var rows = pointsCache[chapter.id] || [];
         pointList.textContent = "";
-        rows.forEach(function (point, index) {
+        rows.forEach(function (point) {
           pointList.appendChild(pointNode(chapter, point, subPrefix,
-            index === rows.length - 1, function () { return ensurePoints(true); }, reorderPoint));
+            false, function () { return ensurePoints(true); }, reorderPoint));
         });
-        if (!rows.length && !kids.length) {
+        if (rows.length) {
+          pointList.appendChild(G.ghost(subPrefix, "添加知识点",
+            "为「" + chapter.name + "」新增知识点", function (button) { addPoint(button); }));
+        } else if (!kids.length) {
           if (isSection) {
             pointList.appendChild(G.empty(subPrefix, "该章节暂无主知识点。", {
               label: "为「" + chapter.name + "」新增知识点",
@@ -244,7 +240,8 @@
         fold.open().then(function () {
           window.DcLinkageAdd.point({
             chapter: chapter, host: pointList, prefix: subPrefix, anchor: anchor,
-            before: pointList.querySelector(".dkl-empty"),
+            before: pointList.querySelector(":scope > .dc-ghost-item")
+              || pointList.querySelector(":scope > .dkl-empty"),
             onDone: function () {
               ensurePoints(true).then(function () {
                 setStatus("已在「" + chapter.name + "」下新增知识点。");
@@ -258,7 +255,7 @@
         fold.open();
         window.DcLinkageAdd.chapter({
           book: book, parent: chapter, siblings: kids || [],
-          host: children, before: host, prefix: subPrefix, anchor: anchor,
+          host: children, before: sectionGhost, prefix: subPrefix, anchor: anchor,
           onDone: function () {
             fold.open();
             setStatus("已在「" + chapter.name + "」下新增节。");
@@ -320,24 +317,22 @@
       row.appendChild(el("span", "dkl-badge", chapters.length + " 章"));
       row.appendChild(G.sort(book.sort_order, "册次「" + (book.volume_name || book.name) + "」的排序号",
         function (value) { return window.DcLinkageSort.save(BOOK_URL, book, value, load); }));
-      var ops = el("div", "dkl-ops");
-      ops.appendChild(T.plus({
-        label: "给「" + (book.volume_name || book.name) + "」新增章",
-        onClick: function (button) { addChapter(button); }
-      }));
-      row.appendChild(ops);
       li.appendChild(row);
       var subPrefix = G.childPrefix(prefix, isLast);
       var children = el("ul", "dkl-list dkl-children");
       children.setAttribute("role", "group");
-      chapters.forEach(function (child, index) {
-        children.appendChild(chapterNode(book, child, subPrefix, index === chapters.length - 1, 0));
+      chapters.forEach(function (child) {
+        children.appendChild(chapterNode(book, child, subPrefix, false, 0));
       });
       if (!chapters.length) {
         children.appendChild(G.empty(subPrefix, "本册暂无章节。", {
           label: "给「" + (book.volume_name || book.name) + "」新增章",
           onClick: function (button) { addChapter(button); }
         }));
+      } else {
+        children.appendChild(G.ghost(subPrefix, "添加章",
+          "给「" + (book.volume_name || book.name) + "」新增章",
+          function (button) { addChapter(button); }));
       }
       li.appendChild(children);
 
@@ -347,7 +342,8 @@
         window.DcLinkageAdd.chapter({
           book: book, parent: null, siblings: chapters,
           host: children, prefix: subPrefix, anchor: anchor,
-          before: children.querySelector(".dkl-empty"),
+          before: children.querySelector(":scope > .dc-ghost-item")
+            || children.querySelector(":scope > .dkl-empty"),
           onDone: function () {
             fold.open();
             setStatus("已给「" + (book.volume_name || book.name) + "」新增章。");
@@ -376,23 +372,21 @@
       row.appendChild(el("span", "dkl-badge", books.length + " 册"));
       row.appendChild(G.sort(version.sort_order, "版本「" + (version.name || version.id) + "」的排序号",
         function (value) { return window.DcLinkageSort.save(VERSION_URL, version, value, load); }));
-      var ops = el("div", "dkl-ops");
-      ops.appendChild(T.plus({
-        label: "在「" + (version.name || version.id) + "」下新增册次",
-        onClick: function (button) { addBook(button); }
-      }));
-      row.appendChild(ops);
       li.appendChild(row);
       var children = el("ul", "dkl-list dkl-children");
       children.setAttribute("role", "group");
-      books.forEach(function (item, index) {
-        children.appendChild(bookNode(version, item, [], index === books.length - 1));
+      books.forEach(function (item) {
+        children.appendChild(bookNode(version, item, [], false));
       });
       if (!books.length) {
         children.appendChild(G.empty([], "该版本下还没有册次。", {
           label: "在「" + (version.name || version.id) + "」下新增册次",
           onClick: function (button) { addBook(button); }
         }));
+      } else {
+        children.appendChild(G.ghost([], "添加册次",
+          "在「" + (version.name || version.id) + "」下新增册次",
+          function (button) { addBook(button); }));
       }
       li.appendChild(children);
 
@@ -401,7 +395,8 @@
         fold.open();
         window.DcLinkageAdd.book({
           version: version, books: books, host: children, prefix: [], anchor: anchor,
-          before: children.querySelector(".dkl-empty"),
+          before: children.querySelector(":scope > .dc-ghost-item")
+            || children.querySelector(":scope > .dkl-empty"),
           onDone: function () {
             fold.open();
             setStatus("已在「" + (version.name || version.id) + "」下新增册次。");
@@ -422,7 +417,7 @@
       }
       window.DcLinkageAdd.version({
         host: rootList, anchor: anchor, versions: versions,
-        before: rootList.querySelector(".dkl-empty"),
+        before: rootList.querySelector(":scope > .dkl-empty"),
         onDone: function (created) {
           var now = ctx.globals.current();
           ctx.globals.apply({

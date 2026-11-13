@@ -1,9 +1,10 @@
 /**
- * 树形节点统一新增入口（2026-11-13）：所有层级只露一个「+」，
- * 点 + 不弹窗，直接在父节点下长出一行输入框；Enter / 失焦保存，Esc 取消。
+ * 树形节点统一新增入口（2026-11-13）：行内不再挂「+」，新增入口只有两处——
+ * 子节点列表最下方的一行低饱和「＋ 添加子节点」幽灵行，以及空状态的「＋ 添加」；
+ * 点它不弹窗，直接在列表末尾长出一行输入框；Enter / 失焦保存，Esc 取消。
  * 编码字段不上界面：调用方用 timestampCode 生成 custom_* 给后端；
  * 排序由 nextOrder 取同级最大值 + 1，界面仍按 sort_order 渲染。
- * 本模块只提供无状态的界面件：+ 按钮、行内新增行、排序芯片与通用错误框。
+ * 本模块只提供无状态的界面件：幽灵行、空状态按钮、行内新增行、排序芯片与通用错误框。
  * 整块下架：删本文件、dict_console.html 引用行与各树的行内新增调用即可。
  */
 (function () {
@@ -16,12 +17,18 @@
     return node;
   }
 
-  /** 行尾统一「+」：视觉 28×28，热区由行高撑到 44px；触屏不靠 hover。 */
-  function plus(spec) {
+  /**
+   * 列表末尾的幽灵行：整行即热区，视觉低饱和、悬停才提亮。
+   * spec = {text, label, guide(), onClick(button)}
+   */
+  function ghostRow(spec) {
     var options = spec || {};
-    var label = options.label || "新增子节点";
-    var button = el("button", "node-add", "+");
+    var text = options.text || "添加子节点";
+    var li = el("li", "dc-ghost-item");
+    if (typeof options.guide === "function") li.appendChild(options.guide());
+    var button = el("button", "dc-ghost-add", "\uFF0B " + text);
     button.type = "button";
+    var label = options.label || text;
     button.setAttribute("aria-label", label);
     button.title = label;
     button.addEventListener("click", function (event) {
@@ -29,7 +36,8 @@
       event.stopPropagation();
       options.onClick(button);
     });
-    return button;
+    li.appendChild(button);
+    return li;
   }
 
   /** 空状态文案旁的行内按钮：文案固定「＋ 添加」，无障碍名说明加什么。 */
@@ -230,7 +238,7 @@
   }
 
   window.DcTreeAdd = {
-    plus: plus, emptyAdd: emptyAdd, nextOrder: nextOrder,
+    ghostRow: ghostRow, emptyAdd: emptyAdd, nextOrder: nextOrder,
     timestampCode: timestampCode, fail: fail, inlineAdd: inlineAdd, sortChip: sortChip
   };
 })();

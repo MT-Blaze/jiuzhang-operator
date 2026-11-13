@@ -457,6 +457,73 @@ class LinkageServiceTest(unittest.TestCase):
                 self.empty_chapter_id, first.name, db_path=self.db_path
             )
 
+    # ---- 知识点删除：章节挂载是从属关系，题目引用才拦截 ----
+
+    def test_new_point_without_question_links_deletes_and_clears_bridge(self) -> None:
+        point = self._new_point()
+        with service.session(self.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM chapter_knowledge_map WHERE knowledge_point_id = ?",
+                (point.id,),
+            ).fetchone()[0], 1)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM question_knowledge_map WHERE knowledge_point_id = ?",
+                (point.id,),
+            ).fetchone()[0], 0)
+        # 只挂了父章节这一条桥表行，不算外部引用：预览为空、删除不报 409。
+        self.assertEqual(
+            service.console_references("dim_knowledge_points", point.id, db_path=self.db_path),
+            (),
+        )
+        service.console_delete("dim_knowledge_points", point.id, db_path=self.db_path)
+        with service.session(self.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM chapter_knowledge_map WHERE knowledge_point_id = ?",
+                (point.id,),
+            ).fetchone()[0], 0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM dim_knowledge_points WHERE id = ?", (point.id,),
+            ).fetchone()[0], 0)
+        with self.assertRaises(dao_console.ConsoleLookupError):
+            service.console_row("dim_knowledge_points", point.id, db_path=self.db_path)
+
+    def test_point_with_question_link_still_blocked(self) -> None:
+        point = self._new_point()
+        with service.session(self.db_path) as conn:
+            def first(table: str) -> int:
+                return int(conn.execute(
+                    "SELECT id FROM " + table + " ORDER BY id LIMIT 1").fetchone()[0])
+            question_id = "q_" + uuid.uuid4().hex[:12]
+            conn.execute(
+                "INSERT INTO questions (id, stem, subject_id, question_type_id, "
+                "difficulty_id, quality_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (question_id, "引用知识点删除防呆用例", first("dict_subjects"),
+                 first("dict_question_types"), first("dict_difficulties"),
+                 first("dict_question_qualities")),
+            )
+            conn.execute(
+                "INSERT INTO question_knowledge_map (question_id, knowledge_point_id) "
+                "VALUES (?, ?)",
+                (question_id, point.id),
+            )
+            conn.commit()
+        # 题目关联删除会留下孤儿引用，仍然 409 拦截。
+        self.addCleanup(self._drop_question, question_id)
+        with self.assertRaises(dao_console.ReferencedError) as ctx:
+            service.console_delete("dim_knowledge_points", point.id, db_path=self.db_path)
+        self.assertIn(
+            "question_knowledge_map", {hit.table for hit in ctx.exception.hits}
+        )
+        self.assertEqual(
+            service.console_row("dim_knowledge_points", point.id, db_path=self.db_path).id,
+            point.id,
+        )
+
+    def _drop_question(self, question_id: str) -> None:
+        with service.session(self.db_path) as conn:
+            conn.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+            conn.commit()
+
     def test_delete_direction_blocked_while_other_point_references(self) -> None:
         direction = self._new_direction()
         service.linkage_add_tag(direction.id, self.other_point_id, db_path=self.db_path)
@@ -664,32 +731,46 @@ class LinkageRedLineTest(unittest.TestCase):
         self.assertIn('{ key: "knowledge-linkage", label: "知识点与考向", mode: "linkage" }', catalog)
         self.assertEqual(catalog.count('sub: "knowledge-linkage"'), 2)
 
-    def test_unified_plus_per_level_and_no_plus_on_direction(self) -> None:
+    def test_ghost_row_is_the_only_inline_add_entry(self) -> None:
         tree = (CONSOLE_DIR / "linkage_tree.js").read_text(encoding="utf-8")
         css = (ROOT / "static" / "css" / "dict_console_linkage.css").read_text(encoding="utf-8")
         shared = (CONSOLE_DIR / "entity_textbooks.js").read_text(encoding="utf-8")
         add = (CONSOLE_DIR / "linkage_add.js").read_text(encoding="utf-8")
-        # 六级共用同一个「+」：版本 / 册次 / 章 / 节 / 知识点都走 DcTreeAdd.plus
-        self.assertGreaterEqual(tree.count("T.plus("), 4)
-        self.assertIn("DcTreeAdd.emptyAdd(", (CONSOLE_DIR / "linkage_guide.js").read_text(encoding="utf-8"))
+        tree_add = (CONSOLE_DIR / "tree_add.js").read_text(encoding="utf-8")
+        guide = (CONSOLE_DIR / "linkage_guide.js").read_text(encoding="utf-8")
+        directions = (CONSOLE_DIR / "linkage_directions.js").read_text(encoding="utf-8")
+        # 行内「+」全部下线：版本 / 册次 / 章 / 节 / 知识点都不再挂 plus 按钮
+        self.assertNotIn("T.plus(", tree)
+        self.assertNotIn("DcTreeAdd.plus", directions)
+        self.assertNotIn("function plus", tree_add)
+        self.assertNotIn(".node-add", css)
+        # 新增入口只剩两处：子节点末尾的幽灵行 + 空状态「＋ 添加」
+        self.assertIn("function ghostRow", tree_add)
+        self.assertIn("dc-ghost-add", tree_add)
+        self.assertIn("G.ghost(", directions)
+        self.assertGreaterEqual(tree.count("G.ghost("), 4)
+        # 幽灵行必须按直接子级查找：知识点列表里嵌着考向幽灵行，
+        # 裸 querySelector 会选中子节点里那个，导致输入框追加到幽灵行之后。
+        self.assertIn(':scope > .dc-ghost-item', tree)
+        self.assertIn(':scope > .dc-ghost-item', directions)
+        self.assertIn("DcTreeAdd.emptyAdd(", guide)
+        self.assertIn(".dc-ghost-add", css)
+        # 幽灵行热区 ≥44px，低饱和：默认降透明度，悬停提亮
+        self.assertIn("min-height: 44px", css)
+        self.assertIn("opacity: 0.7", css)
+        # 排序芯片保留在右侧
+        self.assertIn("G.sort(", tree)
+        self.assertIn("DcLinkageSort", guide)
         # 册次与章节树同样只露一个 +，不再带「节 / 章 / 册」后缀文案
         self.assertIn('"det-op det-op-add", "+"', (
             CONSOLE_DIR / "entity_shared.js").read_text(encoding="utf-8"))
         self.assertNotIn("addText", shared)
-        # 考向是最底层：方向行没有 +，只能改名 / 删 / 挂标签
-        directions = (CONSOLE_DIR / "linkage_directions.js").read_text(encoding="utf-8")
-        self.assertNotIn("DcTreeAdd.plus", directions)
-        # 热区：视觉 28px，伪元素扩到 44px
-        self.assertIn(".node-add", css)
-        self.assertIn("inset: -8px", css)
         # 新增不再弹窗：六级全部走 DcTreeAdd.inlineAdd，编码 custom_* 前端签发
         self.assertIn("inlineAdd", add)
         self.assertIn("timestampCode", add)
         self.assertNotIn("DcDialog.open", add)
         self.assertNotIn("fields:", add)
         self.assertIn("nextOrder", add)
-        # 排序号芯片入口在 linkage_guide，落库在 linkage_sort
-        self.assertIn("DcLinkageSort", (CONSOLE_DIR / "linkage_guide.js").read_text(encoding="utf-8"))
         self.assertIn("points/order", (CONSOLE_DIR / "linkage_sort.js").read_text(encoding="utf-8"))
         # 实体教材树同样改为行内新增
         entity_add = (CONSOLE_DIR / "entity_textbook_add.js").read_text(encoding="utf-8")
