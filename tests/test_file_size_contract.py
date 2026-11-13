@@ -39,9 +39,9 @@ DEV_ONLY = ("tools",)
 # 存量超限冻结台账（路径 → 本版实测行数）。只减不增；达标即删行。
 LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_ai_copilot.js": 800,
-    "plugins/org.jiuzhang.editor/dist/plugin.js": 803,
+    "plugins/org.jiuzhang.editor/dist/plugin.js": 798,
     "plugins/org.jiuzhang.editor/dist/layout_canvas.css": 791,
-    "plugins/org.jiuzhang.editor/dist/ui_batches.js": 795,
+    "plugins/org.jiuzhang.editor/dist/ui_batches.js": 776,
     "plugins/org.jiuzhang.editor/dist/ui_columns.js": 786,
     "app/core/pending_dedupe.py": 783,
     "plugins/org.jiuzhang.editor/dist/ui_split_board.js": 779,
