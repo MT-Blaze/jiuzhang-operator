@@ -94,9 +94,9 @@ class MigrationTest(unittest.TestCase):
                 "SELECT COUNT(*) FROM dim_textbook_versions").fetchone()[0],
                 seeding.EXPECTED_COUNTS["dim_textbook_versions"])
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
+                "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 481)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM knowledge_exam_map").fetchone()[0], 200)
+                "SELECT COUNT(*) FROM knowledge_exam_map").fetchone()[0], 653)
 
     def test_rollback_then_rebuild_upgrades_in_place(self) -> None:
         # 幂等备份可能已被其他用例提前落盘（v7 状态）；先清掉，让本次升级备份真正的 v6。
@@ -132,9 +132,9 @@ class MigrationTest(unittest.TestCase):
         with service.session(self.db_path) as conn:
             migrate_v7.verify_sort_order(conn)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 74)
+                "SELECT COUNT(*) FROM chapter_knowledge_map").fetchone()[0], 481)
             self.assertEqual(conn.execute(
-                "SELECT COUNT(*) FROM knowledge_exam_map").fetchone()[0], 200)
+                "SELECT COUNT(*) FROM knowledge_exam_map").fetchone()[0], 653)
 
     def test_backup_is_idempotent(self) -> None:
         with service.session(self.db_path) as conn:

@@ -36,6 +36,11 @@ from app.bank_engine.seeds.math_required1 import (
     MATH_REQUIRED1_KNOWLEDGE_ROWS,
 )
 from app.bank_engine.seeds.migrated_textbook_seed import MIGRATED_CHAPTER_ROWS
+from app.bank_engine.seeds.physics import (
+    PHYSICS_CHAPTER_KNOWLEDGE_ROWS,
+    PHYSICS_EXAM_ROWS,
+    PHYSICS_KNOWLEDGE_EXAM_ROWS,
+)
 from app.bank_engine.seeds.region_seed import REGION_ROWS
 from app.bank_engine.seeds.school_seed import SCHOOL_ROWS
 from app.bank_engine.seeds.textbook_snapshot import (
@@ -64,9 +69,12 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dim_textbooks": len(ALL_BOOK_ROWS),
     "dim_textbook_chapters": 3519,
     "dim_knowledge_points": 11388,
-    "dim_exam_directions": 567,
-    "knowledge_exam_map": 200,
-    "chapter_knowledge_map": 74,
+    "dim_exam_directions": len(EXAM_DIRECTION_ROWS) + len(MATH_REQUIRED1_EXAM_ROWS)
+    + len(PHYSICS_EXAM_ROWS),
+    "knowledge_exam_map": len(MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS)
+    + len(PHYSICS_KNOWLEDGE_EXAM_ROWS),
+    "chapter_knowledge_map": len(MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS)
+    + len(PHYSICS_CHAPTER_KNOWLEDGE_ROWS),
     "dim_regions": len(REGION_ROWS),
     "dim_schools": 347,
     "exams": 1,
@@ -87,7 +95,11 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
     chapters = tuple(CHAPTER_ROWS) + tuple(MIGRATED_CHAPTER_ROWS)
     knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_REQUIRED1_KNOWLEDGE_ROWS)
     schools = tuple((*row, regions.match_region_id(row[4])) for row in SCHOOL_ROWS)
-    directions = tuple(EXAM_DIRECTION_ROWS) + tuple(MATH_REQUIRED1_EXAM_ROWS)
+    directions = (
+        tuple(EXAM_DIRECTION_ROWS)
+        + tuple(MATH_REQUIRED1_EXAM_ROWS)
+        + tuple(PHYSICS_EXAM_ROWS)
+    )
     statements: list[tuple[str, tuple[tuple[Any, ...], ...]]] = [
         (
             "INSERT INTO dict_subjects (id, code, name, sort_order) "
@@ -180,13 +192,19 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
             ),
             (
                 "INSERT INTO knowledge_exam_map "
-                "(knowledge_point_id, exam_direction_id) VALUES (?, ?)",
-                tuple(MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS),
+                "(knowledge_point_id, exam_direction_id, sort_order) "
+                "VALUES (?, ?, ?)",
+                tuple((point, direction, 0) for point, direction
+                      in MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS)
+                + tuple(PHYSICS_KNOWLEDGE_EXAM_ROWS),
             ),
             (
                 "INSERT INTO chapter_knowledge_map "
-                "(chapter_id, knowledge_point_id) VALUES (?, ?)",
-                tuple(MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS),
+                "(chapter_id, knowledge_point_id, sort_order) "
+                "VALUES (?, ?, ?)",
+                tuple((chapter, point, 0) for chapter, point
+                      in MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS)
+                + tuple(PHYSICS_CHAPTER_KNOWLEDGE_ROWS),
             ),
             (
                 "INSERT INTO dim_schools "
