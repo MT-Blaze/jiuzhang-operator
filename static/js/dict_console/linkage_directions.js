@@ -125,10 +125,14 @@
     }
 
     function add(anchor) {
-      window.DcLinkageAdd.direction(point, anchor, function () {
-        return ensure(true).then(function () {
-          setStatus("已新增考向。");
-        });
+      window.DcLinkageAdd.direction({
+        point: point, host: list, prefix: prefix, anchor: anchor,
+        before: list.querySelector(".dkl-empty"),
+        onDone: function () {
+          return ensure(true).then(function () {
+            setStatus("已新增考向。");
+          });
+        }
       });
     }
 

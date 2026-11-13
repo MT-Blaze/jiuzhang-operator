@@ -230,83 +230,25 @@
 
     function renamed() { refresh("已改名。"); }
 
+    function sortApply(url, row) {
+      return function (value) {
+        return window.DcClient.writeJson(url + "/" + row.id, { sort_order: value }, "PUT")
+          .then(function () { return reloadAll(); });
+      };
+    }
+
     function removeVersion(version, anchor) {
       S.remove({ url: VERSION_URL, row: version, anchor: anchor, reload: reloadAll, setStatus: setStatus });
-    }
-
-    function addBook(version, anchor) {
-      var siblings = state.books[version.id] || [];
-      var next = S.nextOrder(siblings);
-      S.add({
-        title: "在「" + version.name + "」下新增册次",
-        message: "册次名只填“必修一 / 七年级上册”，完整书名保留版本与册次全称。",
-        anchor: anchor,
-        url: BOOK_URL,
-        fields: [
-          { key: "volume_name", label: "册次名", required: true, placeholder: "如 必修一" },
-          { key: "name", label: "完整书名", required: true, placeholder: "如 人教A版数学必修一" },
-          { key: "code", label: "册次编码", required: true, placeholder: "如 rja_m_1" },
-          { key: "sort_order", label: "排序号", value: String(next), placeholder: "0 起，数字越小越靠前" }
-        ],
-        build: function (values) {
-          return {
-            name: values.name, code: values.code, volume_name: values.volume_name,
-            version_id: version.id, subject_id: version.subject_id,
-            sort_order: S.orderValue(values.sort_order, next)
-          };
-        },
-        onDone: function () {
-          state.expanded.add("v:" + version.id);
-          refresh("已新增册次。");
-        }
-      });
-    }
-
-    function addVersionRow(anchor) {
-      var subjectId = ctx.globals.query().subject_id;
-      if (!subjectId) {
-        S.fail("还不能新增版本", new Error("请先在右侧全局设置选择学科，再新增教材版本。"), anchor);
-        return;
-      }
-      S.add({
-        title: "新增教材版本",
-        message: "版本名只填“人教A版 / 苏教版”，不要把册次拼进版本名。",
-        anchor: anchor,
-        url: VERSION_URL,
-        fields: [
-          { key: "name", label: "版本名称", required: true, placeholder: "如 人教A版" },
-          { key: "code", label: "版本编码", required: true, placeholder: "如 rja_math" },
-          { key: "publisher", label: "出版社", placeholder: "如 人民教育出版社" },
-          { key: "sort_order", label: "排序号", value: String(S.nextOrder(state.versions)),
-            placeholder: "0 起，数字越小越靠前" }
-        ],
-        build: function (values) {
-          return {
-            name: values.name, code: values.code, publisher: values.publisher,
-            subject_id: subjectId,
-            sort_order: S.orderValue(values.sort_order, S.nextOrder(state.versions))
-          };
-        },
-        onDone: function () { refresh("已新增版本。"); }
-      });
     }
 
     function removeBook(book, anchor) {
       S.remove({ url: BOOK_URL, row: book, anchor: anchor, reload: reloadAll, setStatus: setStatus });
     }
 
-    function addChapterUnderBook(book, anchor) {
-      state.expanded.add("b:" + book.id);
-      window.DcChapterOps.add(null, chapterRoots(book), book.id,
-        function () { refresh("已新增章。"); });
-    }
-
-    function addChapterUnderNode(book, node, anchor) {
-      state.expanded.add("b:" + book.id);
-      state.expanded.add("h:" + node.chapter.id);
-      window.DcChapterOps.add(node.chapter, node.children, book.id,
-        function () { refresh("已新增子章节。"); });
-    }
+    var addOps = window.DcTextbookAdd.mount({
+      tree: tree, state: state, ctx: ctx,
+      refresh: function (message) { return refresh(message); }
+    });
 
     // ---- 版本 → 册次 → 章 → 节（第四层及以下沿用原渲染与交互，不改数据口径） ----
 
@@ -322,11 +264,15 @@
         crumb: crumb,
         badge: kids.length ? kids.length + " 节" : "",
         key: key,
+        sort: {
+          value: chapter.sort_order, label: "章节「" + chapter.name + "」的排序号",
+          apply: sortApply(CHAPTER_URL, chapter)
+        },
         hasChildren: kids.length > 0,
         expanded: expanded,
         children: box,
         addLabel: "在「" + chapter.name + "」下新增子章节",
-        add: function (btn) { addChapterUnderNode(book, node, btn); },
+        add: function (btn) { addOps.addChapterUnderNode(book, node, btn); },
         edit: {
           url: CHAPTER_URL + "/" + chapter.id, field: "name",
           value: chapter.name, label: "章节名称", onDone: renamed
@@ -355,11 +301,15 @@
         sub: (full ? full + " · " : "") + (book.code || ""),
         badge: all.length + " 章 · " + countNodes(all) + " 节点",
         key: key,
+        sort: {
+          value: book.sort_order, label: "册次「" + bookLabel(book) + "」的排序号",
+          apply: sortApply(BOOK_URL, book)
+        },
         hasChildren: roots.length > 0,
         expanded: expanded,
         children: box,
         addLabel: "给「" + bookLabel(book) + "」新增顶层章",
-        add: function (btn) { addChapterUnderBook(book, btn); },
+        add: function (btn) { addOps.addChapterUnderBook(book, btn); },
         edit: {
           url: BOOK_URL + "/" + book.id, field: "volume_name",
           value: bookLabel(book), label: "册次名", onDone: renamed
@@ -390,11 +340,15 @@
         sub: [version.publisher, version.code].filter(Boolean).join(" · "),
         badge: all.length + " 册 · " + chapterTotal + " 章",
         key: key,
+        sort: {
+          value: version.sort_order, label: "版本「" + version.name + "」的排序号",
+          apply: sortApply(VERSION_URL, version)
+        },
         hasChildren: books.length > 0,
         expanded: expanded,
         children: box,
         addLabel: "在「" + version.name + "」下新增册次",
-        add: function (btn) { addBook(version, btn); },
+        add: function (btn) { addOps.addBook(version, btn); },
         edit: {
           url: VERSION_URL + "/" + version.id, field: "name",
           value: version.name, label: "版本名称", onDone: renamed
@@ -469,7 +423,7 @@
       }
     }
 
-    addVersion.addEventListener("click", function () { addVersionRow(addVersion); });
+    addVersion.addEventListener("click", function () { addOps.addVersionRow(addVersion); });
 
     var timer = null;
     search.addEventListener("input", function () {

@@ -20,6 +20,42 @@
     return node;
   }
 
+  function caretButton(label, isOpen) {
+    var caret = el("button", "dkl-caret", isOpen ? "▾" : "▸");
+    caret.type = "button";
+    caret.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    caret.setAttribute("aria-label", label);
+    return caret;
+  }
+
+  function toggleOn(button, isClosed, open, close) {
+    button.addEventListener("click", function () {
+      if (isClosed()) open(); else close();
+    });
+  }
+
+  /** 一行折叠逻辑：箭头、aria-expanded、容器 hidden 与展开记忆一次配好。 */
+  function foldOf(caret, box, track, key, onOpen) {
+    var fold = {
+      open: function () {
+        track[key] = true;
+        box.hidden = false;
+        caret.textContent = "▾";
+        caret.setAttribute("aria-expanded", "true");
+        return onOpen ? onOpen() : Promise.resolve();
+      },
+      close: function () {
+        track[key] = false;
+        box.hidden = true;
+        caret.textContent = "▸";
+        caret.setAttribute("aria-expanded", "false");
+      },
+      isClosed: function () { return box.hidden; }
+    };
+    toggleOn(caret, fold.isClosed, fold.open, fold.close);
+    return fold;
+  }
+
   function mount(panel, ctx) {
     var T = window.DcTreeAdd;
     var G = window.DcLinkGuide;
@@ -46,6 +82,7 @@
     var expanded = { v: true, b: {}, c: {}, p: {} };
     var pointsCache = {};
     var versions = [];
+    var rootList = null;
     var loadSeq = 0;
     function setStatus(text) { live.textContent = text; }
     function dictController(url, reload) {
@@ -53,26 +90,25 @@
     }
 
     // ---------- 知识点 / 考向（第四、五级，考向最底层不给 +） ----------
-    function pointNode(chapter, point, prefix, isLast, reloadPoints) {
+    function pointNode(chapter, point, prefix, isLast, reloadPoints, reorderPoint) {
       var li = el("li", "dkl-node dkl-point");
       li.setAttribute("data-id", String(point.id));
       li.setAttribute("role", "treeitem");
       li.draggable = true;
       var row = el("div", "dkl-row dkl-row-point");
       row.appendChild(G.span(prefix, isLast));
-      var caret = el("button", "dkl-caret", "▸");
-      caret.type = "button";
-      caret.setAttribute("aria-expanded", "false");
-      caret.setAttribute("aria-label", "展开或折叠「" + point.name + "」的考向");
+      var caret = caretButton("展开或折叠「" + point.name + "」的考向", false);
       row.appendChild(caret);
       var badge = el("span", "dkl-badge", "");
       row.appendChild(G.nameButton(point.name, "主知识点「" + point.name + "」", function (button) {
         window.DcRowOps.editCell(dictController(POINT_URL), button, point,
           { key: "name", label: "名称" });
       }, function () {
-        if (dirs.el.hidden) openPoint(); else closePoint();
+        if (fold.isClosed()) fold.open(); else fold.close();
       }));
       row.appendChild(badge);
+      row.appendChild(G.sort(point.sort_order, "知识点「" + point.name + "」的排序号",
+        function (value) { return reorderPoint(point, value); }));
       var grip = el("span", "dkl-grip", "⠿");
       grip.setAttribute("aria-hidden", "true");
       row.appendChild(grip);
@@ -80,8 +116,7 @@
       ops.appendChild(T.plus({
         label: "为「" + point.name + "」新增考向",
         onClick: function (button) {
-          var ready = dirs.el.hidden ? openPoint() : Promise.resolve();
-          ready.then(function () { dirs.add(button); });
+          fold.open().then(function () { dirs.add(button); });
         }
       }));
       ops.appendChild(G.opButton("删除", true, "删除主知识点「" + point.name + "」", function (button) {
@@ -99,22 +134,10 @@
         onCount: function (count) { badge.textContent = count + " 个考向"; }
       });
       li.appendChild(dirs.el);
-      function openPoint() {
-        expanded.p[point.id] = true;
-        caret.textContent = "▾";
-        caret.setAttribute("aria-expanded", "true");
+      var fold = foldOf(caret, dirs.el, expanded.p, point.id, function () {
         return dirs.open();
-      }
-      function closePoint() {
-        expanded.p[point.id] = false;
-        caret.textContent = "▸";
-        caret.setAttribute("aria-expanded", "false");
-        dirs.close();
-      }
-      caret.addEventListener("click", function () {
-        if (dirs.el.hidden) openPoint(); else closePoint();
       });
-      if (expanded.p[point.id]) openPoint(); else closePoint();
+      if (expanded.p[point.id]) fold.open(); else fold.close();
       return li;
     }
 
@@ -128,21 +151,20 @@
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-chapter");
       row.appendChild(G.span(prefix, isLast));
-      var caret = el("button", "dkl-caret", "▸");
-      caret.type = "button";
-      caret.setAttribute("aria-expanded", "false");
-      caret.setAttribute("aria-label", "展开或折叠「" + chapter.name + "」");
+      var caret = caretButton("展开或折叠「" + chapter.name + "」", false);
       row.appendChild(caret);
       row.appendChild(G.nameButton(chapter.name, "章节「" + chapter.name + "」", function (button) {
         window.DcRowOps.editCell(dictController(CHAPTER_URL), button, chapter,
           { key: "name", label: "名称" });
       }, function () {
-        if (children.hidden) openChapter(); else closeChapter();
+        if (fold.isClosed()) fold.open(); else fold.close();
       }));
       // 现存章节编码多是 tp_* 技术码，只有纯数字编码（如 1.2）才值得露出来。
       if (chapter.code && /^[\d.]+$/.test(chapter.code)) row.appendChild(el("span", "dkl-sub", chapter.code));
       var badge = el("span", "dkl-badge", "");
       row.appendChild(badge);
+      row.appendChild(G.sort(chapter.sort_order, "章节「" + chapter.name + "」的排序号",
+        function (value) { return window.DcLinkageSort.save(CHAPTER_URL, chapter, value, load); }));
       var ops = el("div", "dkl-ops");
       ops.appendChild(T.plus({
         label: isSection ? "为「" + chapter.name + "」新增知识点" : "为「" + chapter.name + "」新增节",
@@ -179,7 +201,7 @@
         pointList.textContent = "";
         rows.forEach(function (point, index) {
           pointList.appendChild(pointNode(chapter, point, subPrefix,
-            index === rows.length - 1, function () { return ensurePoints(true); }));
+            index === rows.length - 1, function () { return ensurePoints(true); }, reorderPoint));
         });
         if (!rows.length && !kids.length) {
           if (isSection) {
@@ -214,43 +236,44 @@
         });
       }
 
-      function openChapter() {
-        expanded.c[chapter.id] = true;
-        children.hidden = false;
-        caret.textContent = "▾";
-        caret.setAttribute("aria-expanded", "true");
+      var fold = foldOf(caret, children, expanded.c, chapter.id, function () {
         return pointsPainted ? Promise.resolve() : ensurePoints(false);
-      }
-
-      function closeChapter() {
-        expanded.c[chapter.id] = false;
-        children.hidden = true;
-        caret.textContent = "▸";
-        caret.setAttribute("aria-expanded", "false");
-      }
+      });
 
       function addPoint(anchor) {
-        var ready = children.hidden ? openChapter() : Promise.resolve();
-        ready.then(function () {
-          window.DcLinkageAdd.point(chapter, (pointsCache[chapter.id] || []).length, anchor, function () {
-            ensurePoints(true).then(function () {
-              setStatus("已在「" + chapter.name + "」下新增知识点。");
-            });
+        fold.open().then(function () {
+          window.DcLinkageAdd.point({
+            chapter: chapter, host: pointList, prefix: subPrefix, anchor: anchor,
+            before: pointList.querySelector(".dkl-empty"),
+            onDone: function () {
+              ensurePoints(true).then(function () {
+                setStatus("已在「" + chapter.name + "」下新增知识点。");
+              });
+            }
           });
         });
       }
 
       function addSection(anchor) {
-        window.DcLinkageAdd.chapter(book, chapter, kids, anchor, function () {
-          expanded.c[chapter.id] = true;
-          setStatus("已在「" + chapter.name + "」下新增节。");
-          load();
+        fold.open();
+        window.DcLinkageAdd.chapter({
+          book: book, parent: chapter, siblings: kids || [],
+          host: children, before: host, prefix: subPrefix, anchor: anchor,
+          onDone: function () {
+            fold.open();
+            setStatus("已在「" + chapter.name + "」下新增节。");
+            load();
+          }
         });
       }
 
-      caret.addEventListener("click", function () {
-        if (children.hidden) openChapter(); else closeChapter();
-      });
+      function reorderPoint(point, value) {
+        return window.DcLinkageSort.reorderPoints(
+          chapter.id, point.id, pointsCache[chapter.id] || [], value,
+          function () { return ensurePoints(true); }
+        ).then(function () { setStatus("主知识点顺序已保存。"); });
+      }
+
       window.DcDnd.attach(pointList, {
         onOrder: function (ids) {
           if (!ids.length) return;
@@ -269,7 +292,7 @@
           });
         }
       });
-      if (expanded.c[chapter.id]) openChapter(); else closeChapter();
+      if (expanded.c[chapter.id]) fold.open(); else fold.close();
       return li;
     }
 
@@ -282,22 +305,21 @@
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-book");
       row.appendChild(G.span(prefix, isLast));
-      var caret = el("button", "dkl-caret", "▾");
-      caret.type = "button";
-      caret.setAttribute("aria-expanded", "true");
-      caret.setAttribute("aria-label", "展开或折叠「" + (book.volume_name || book.name) + "」");
+      var caret = caretButton("展开或折叠「" + (book.volume_name || book.name) + "」", true);
       row.appendChild(caret);
       row.appendChild(G.nameButton(book.volume_name || book.name,
         "册次「" + (book.volume_name || book.name) + "」", function (button) {
           window.DcRowOps.editCell(dictController(BOOK_URL), button, book,
             { key: "volume_name", label: "册次名" });
         }, function () {
-          if (children.hidden) openBook(); else closeBook();
+          if (fold.isClosed()) fold.open(); else fold.close();
         }));
       if (book.name && book.name !== book.volume_name) {
         row.appendChild(el("span", "dkl-sub", book.name));
       }
       row.appendChild(el("span", "dkl-badge", chapters.length + " 章"));
+      row.appendChild(G.sort(book.sort_order, "册次「" + (book.volume_name || book.name) + "」的排序号",
+        function (value) { return window.DcLinkageSort.save(BOOK_URL, book, value, load); }));
       var ops = el("div", "dkl-ops");
       ops.appendChild(T.plus({
         label: "给「" + (book.volume_name || book.name) + "」新增章",
@@ -319,30 +341,21 @@
       }
       li.appendChild(children);
 
-      function openBook() {
-        expanded.b[book.id] = true;
-        children.hidden = false;
-        caret.textContent = "▾";
-        caret.setAttribute("aria-expanded", "true");
-      }
-      function closeBook() {
-        expanded.b[book.id] = false;
-        children.hidden = true;
-        caret.textContent = "▸";
-        caret.setAttribute("aria-expanded", "false");
-      }
+      var fold = foldOf(caret, children, expanded.b, book.id);
       function addChapter(anchor) {
-        if (children.hidden) openBook();
-        window.DcLinkageAdd.chapter(book, null, chapters, anchor, function () {
-          expanded.b[book.id] = true;
-          setStatus("已给「" + (book.volume_name || book.name) + "」新增章。");
-          load();
+        fold.open();
+        window.DcLinkageAdd.chapter({
+          book: book, parent: null, siblings: chapters,
+          host: children, prefix: subPrefix, anchor: anchor,
+          before: children.querySelector(".dkl-empty"),
+          onDone: function () {
+            fold.open();
+            setStatus("已给「" + (book.volume_name || book.name) + "」新增章。");
+            load();
+          }
         });
       }
-      caret.addEventListener("click", function () {
-        if (children.hidden) openBook(); else closeBook();
-      });
-      if (expanded.b[book.id] === false) closeBook(); else openBook();
+      if (expanded.b[book.id] === false) fold.close(); else fold.open();
       return li;
     }
 
@@ -351,19 +364,18 @@
       var li = el("li", "dkl-node dkl-version");
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-version");
-      var caret = el("button", "dkl-caret", "▾");
-      caret.type = "button";
-      caret.setAttribute("aria-expanded", "true");
-      caret.setAttribute("aria-label", "展开或折叠「" + version.name + "」");
+      var caret = caretButton("展开或折叠「" + version.name + "」", true);
       row.appendChild(caret);
       row.appendChild(G.nameButton(version.name || ("版本 #" + version.id),
         "教材版本「" + (version.name || version.id) + "」", function (button) {
           window.DcRowOps.editCell(dictController(VERSION_URL), button, version,
             { key: "name", label: "版本名" });
         }, function () {
-          if (children.hidden) openVersion(); else closeVersion();
+          if (fold.isClosed()) fold.open(); else fold.close();
         }));
       row.appendChild(el("span", "dkl-badge", books.length + " 册"));
+      row.appendChild(G.sort(version.sort_order, "版本「" + (version.name || version.id) + "」的排序号",
+        function (value) { return window.DcLinkageSort.save(VERSION_URL, version, value, load); }));
       var ops = el("div", "dkl-ops");
       ops.appendChild(T.plus({
         label: "在「" + (version.name || version.id) + "」下新增册次",
@@ -384,42 +396,41 @@
       }
       li.appendChild(children);
 
-      function openVersion() {
-        expanded.v = true;
-        children.hidden = false;
-        caret.textContent = "▾";
-        caret.setAttribute("aria-expanded", "true");
-      }
-      function closeVersion() {
-        expanded.v = false;
-        children.hidden = true;
-        caret.textContent = "▸";
-        caret.setAttribute("aria-expanded", "false");
-      }
+      var fold = foldOf(caret, children, expanded, "v");
       function addBook(anchor) {
-        if (children.hidden) openVersion();
-        window.DcLinkageAdd.book(version, books, anchor, function () {
-          expanded.v = true;
-          setStatus("已在「" + (version.name || version.id) + "」下新增册次。");
-          load();
+        fold.open();
+        window.DcLinkageAdd.book({
+          version: version, books: books, host: children, prefix: [], anchor: anchor,
+          before: children.querySelector(".dkl-empty"),
+          onDone: function () {
+            fold.open();
+            setStatus("已在「" + (version.name || version.id) + "」下新增册次。");
+            load();
+          }
         });
       }
-      caret.addEventListener("click", function () {
-        if (children.hidden) openVersion(); else closeVersion();
-      });
-      if (expanded.v) openVersion(); else closeVersion();
+      if (expanded.v) fold.open(); else fold.close();
       return li;
     }
 
     // ---------- 装载 ----------
     function addVersion(anchor) {
-      var nextSort = versions.reduce(function (max, item) {
-        return Math.max(max, Number(item.sort_order) || 0);
-      }, 0) + 1;
-      window.DcLinkageAdd.version(anchor, nextSort, function (created) {
-        var now = ctx.globals.current();
-        ctx.globals.apply({ stage: now.stage, subject_id: now.subject_id, version_id: created.id, version_name: created.name });
-        setStatus("已新增教材版本「" + created.name + "」，已切换到该版本。");
+      if (!rootList || !rootList.isConnected) {
+        rootList = el("ul", "dkl-list dkl-books");
+        rootList.setAttribute("role", "tree");
+        tree.appendChild(rootList);
+      }
+      window.DcLinkageAdd.version({
+        host: rootList, anchor: anchor, versions: versions,
+        before: rootList.querySelector(".dkl-empty"),
+        onDone: function (created) {
+          var now = ctx.globals.current();
+          ctx.globals.apply({
+            stage: now.stage, subject_id: now.subject_id,
+            version_id: created.id, version_name: created.name
+          });
+          setStatus("已新增教材版本「" + created.name + "」，已切换到该版本。");
+        }
       });
     }
     addVersionBtn.addEventListener("click", function () { addVersion(addVersionBtn); });
@@ -429,12 +440,14 @@
       ul.setAttribute("role", "tree");
       ul.appendChild(G.empty([], text));
       tree.appendChild(ul);
+      rootList = ul;
     }
 
     function load() {
       var versionId = ctx.globals.query().version_id;
       var seq = ++loadSeq;
       tree.textContent = "";
+      rootList = null;
       pointsCache = {};
       if (!versionId) {
         notice("还没有选定教材版本：点上方【＋ 新增版本】新建，或到右侧全局设置里选一个。");
@@ -460,6 +473,7 @@
         ul.setAttribute("role", "tree");
         ul.appendChild(versionNode(version, books));
         tree.appendChild(ul);
+        rootList = ul;
       }).catch(function (error) {
         if (!wrap.isConnected || seq !== loadSeq) return;
         notice("知识点树加载失败：" + error.message);

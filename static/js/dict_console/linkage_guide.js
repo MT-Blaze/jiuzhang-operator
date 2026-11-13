@@ -66,8 +66,13 @@
     return button;
   }
 
+  /** 行尾排序号芯片：value 当前值，apply(value) 返回 Promise。 */
+  function sort(value, label, apply) {
+    return window.DcLinkageSort.chip(value, label, apply);
+  }
+
   window.DcLinkGuide = {
     span: span, childPrefix: childPrefix, empty: empty, nameButton: nameButton,
-    opButton: opButton
+    opButton: opButton, sort: sort
   };
 })();

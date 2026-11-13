@@ -78,6 +78,8 @@
       } : null
     });
     li.classList.add("det-stage-subject");
+    li.dataset.subjectId = String(item.id);
+    li.dataset.stage = bucket.name;
     return li;
   }
 

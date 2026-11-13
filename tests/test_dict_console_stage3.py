@@ -682,8 +682,21 @@ class LinkageRedLineTest(unittest.TestCase):
         # 热区：视觉 28px，伪元素扩到 44px
         self.assertIn(".node-add", css)
         self.assertIn("inset: -8px", css)
-        # 排序号进入两种弹窗（新增考向除外，留空由后端排末尾）
-        self.assertIn("sortField", add)
+        # 新增不再弹窗：六级全部走 DcTreeAdd.inlineAdd，编码 custom_* 前端签发
+        self.assertIn("inlineAdd", add)
+        self.assertIn("timestampCode", add)
+        self.assertNotIn("DcDialog.open", add)
+        self.assertNotIn("fields:", add)
+        self.assertIn("nextOrder", add)
+        # 排序号芯片入口在 linkage_guide，落库在 linkage_sort
+        self.assertIn("DcLinkageSort", (CONSOLE_DIR / "linkage_guide.js").read_text(encoding="utf-8"))
+        self.assertIn("points/order", (CONSOLE_DIR / "linkage_sort.js").read_text(encoding="utf-8"))
+        # 实体教材树同样改为行内新增
+        entity_add = (CONSOLE_DIR / "entity_textbook_add.js").read_text(encoding="utf-8")
+        self.assertIn("S.addInline", entity_add)
+        self.assertNotIn("S.add(", entity_add)
+        self.assertIn("_detAddBox", (CONSOLE_DIR / "entity_shared.js").read_text(encoding="utf-8"))
+        self.assertIn("addInline", (CONSOLE_DIR / "entity_shared.js").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

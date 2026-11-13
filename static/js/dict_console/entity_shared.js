@@ -187,6 +187,25 @@
     });
   }
 
+  /**
+   * 行内新增（2026-11-13）：先展开该行子级，再复用 DcTreeAdd 的输入行，不弹窗。
+   * li 为节点行时自动长出子级容器；无节点（如树顶新增版本）时可直接传 spec.host。
+   */
+  function addInline(li, spec) {
+    var host = spec.host || (li && typeof li._detAddBox === "function" ? li._detAddBox() : null);
+    if (!host) {
+      fail(spec.failTitle || "还不能新增",
+        new Error("这一行当前无法展开子级，请刷新后重试。"), spec.anchor);
+      return null;
+    }
+    return window.DcTreeAdd.inlineAdd({
+      host: host, anchor: spec.anchor, liClass: "det-item",
+      placeholder: spec.placeholder, defaultValue: spec.defaultValue,
+      label: spec.label, url: spec.url, payload: spec.payload,
+      onSaved: spec.onSaved, failTitle: spec.failTitle
+    });
+  }
+
   /** 节点行的折叠箭头；无子节点时占位，保证同层文字对齐。 */
   function caret(expanded, label, onClick) {
     var btn = el("button", "det-caret", expanded ? "\u25BE" : "\u25B8");
@@ -247,6 +266,31 @@
       }
     }
 
+    /** 给行内新增用：确保子级容器存在并展开；首个子节点落地前也能先长出输入行。 */
+    li._detAddBox = function () {
+      if (!li._detBox) {
+        var fresh = el("ul", "det-children");
+        fresh.style.setProperty("--det-depth", String((opts.depth || 0) + 1));
+        li._detBox = fresh;
+        li.appendChild(fresh);
+        if (!li._detCaret) {
+          li._detCaret = caret(true, opts.name, toggle);
+          var spacerEl = row.querySelector(".det-spacer");
+          if (spacerEl) row.replaceChild(li._detCaret, spacerEl);
+        }
+      } else if (li._detBox.hidden) {
+        toggle();
+      }
+      if (li._detKey) expandedSet.add(li._detKey);
+      li._detBox.hidden = false;
+      if (li._detCaret) {
+        li._detCaret.textContent = "\u25BE";
+        li._detCaret.setAttribute("aria-expanded", "true");
+      }
+      row.classList.add("is-open");
+      return li._detBox;
+    };
+
     if (opts.hasChildren) {
       li._detCaret = caret(opts.expanded, opts.name, toggle);
       row.appendChild(li._detCaret);
@@ -304,6 +348,12 @@
     if (isSchool) row.appendChild(crumb);
 
     if (opts.badge) row.appendChild(el("span", "det-badge", opts.badge));
+    if (opts.sort) {
+      row.appendChild(window.DcTreeAdd.sortChip({
+        value: opts.sort.value, label: opts.sort.label,
+        className: "dc-sort det-sort", apply: opts.sort.apply
+      }));
+    }
 
     var ops = el("span", "det-ops");
     if (opts.add) {
@@ -347,7 +397,7 @@
 
   window.DcEntityShared = {
     el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder, orderValue: orderValue,
-    fail: fail, remove: remove, inlineEdit: inlineEdit, add: add,
+    fail: fail, remove: remove, inlineEdit: inlineEdit, add: add, addInline: addInline,
     bindNodeClick: bindNodeClick,
     caret: caret, spacer: spacer, childList: childList,
     makeRow: makeRow, bindTree: bindTree

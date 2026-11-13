@@ -1,9 +1,10 @@
 /**
  * 树形节点统一新增入口（2026-11-13）：所有层级只露一个「+」，
- * 按钮文案不再写「新增知识点 / 新增考向」，具体加什么由所在树层决定。
- * 本模块只提供无状态的界面件与通用弹窗：+ 按钮、空状态「＋ 添加」按钮、
- * 名称 / 排序字段与整数排序校验；请求地址与载荷由各树自己拼。
- * 整块下架：删本文件、dict_console.html 引用行与两处树的 + 调用即可。
+ * 点 + 不弹窗，直接在父节点下长出一行输入框；Enter / 失焦保存，Esc 取消。
+ * 编码字段不上界面：调用方用 timestampCode 生成 custom_* 给后端；
+ * 排序由 nextOrder 取同级最大值 + 1，界面仍按 sort_order 渲染。
+ * 本模块只提供无状态的界面件：+ 按钮、行内新增行、排序芯片与通用错误框。
+ * 整块下架：删本文件、dict_console.html 引用行与各树的行内新增调用即可。
  */
 (function () {
   "use strict";
@@ -46,22 +47,19 @@
     return button;
   }
 
-  function sortField(value) {
-    return {
-      key: "sort_order", label: "排序号",
-      value: value == null ? "" : String(value),
-      placeholder: "0 起，数字越小越靠前"
-    };
+  /** 同级最大 sort_order + 1；空表从 1 起，与旧弹窗口径一致。 */
+  function nextOrder(rows, getter) {
+    return (rows || []).reduce(function (max, row) {
+      var raw = getter ? getter(row) : row && row.sort_order;
+      var value = Number(raw);
+      if (!isFinite(value) || value < 0) value = 0;
+      return Math.max(max, value + 1);
+    }, 1);
   }
 
-  /** 空值取兜底；非整数 / 负数直接拒绝，避免把脏排序写进库。 */
-  function sortValue(value, fallback) {
-    if (value == null || String(value).trim() === "") return fallback;
-    var number = Number(value);
-    if (!isFinite(number) || Math.floor(number) !== number || number < 0) {
-      throw new Error("排序号必须是 0 或正整数");
-    }
-    return number;
+  /** 前端直接签发编码：全局唯一，custom_ 前缀一眼看出是控制台手工新增。 */
+  function timestampCode() {
+    return "custom_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
 
   function fail(title, error, anchor) {
@@ -73,35 +71,166 @@
   }
 
   /**
-   * 统一新增弹窗：spec = {title, message, anchor, fields, build, url, onDone, failTitle}。
-   * build 抛错时留在弹窗内提示，不把半截载荷发出去。
+   * 行内新增：host 里插一行输入框，不弹窗。
+   * spec = {host, anchor, guide(), liClass, rowClass, inputClass, defaultValue,
+   *         placeholder, label, url, payload(name), onSaved(created), onCancel,
+   *         failTitle}
+   * 同一个容器已有输入行时只聚焦，不重复长行。
    */
-  function open(spec) {
-    window.DcDialog.open({
-      title: spec.title,
-      message: spec.message || "",
-      confirmText: "新增",
-      anchor: spec.anchor,
-      fields: spec.fields,
-      onConfirm: function (values) {
-        var payload;
-        try {
-          payload = spec.build(values);
-        } catch (error) {
-          fail(spec.title, error, spec.anchor);
-          return;
-        }
-        window.DcClient.writeJson(spec.url, payload, "POST").then(function (created) {
-          if (typeof spec.onDone === "function") spec.onDone(created);
-        }).catch(function (error) {
-          fail(spec.failTitle || "新增失败", error, spec.anchor);
-        });
+  function inlineAdd(spec) {
+    if (!spec || !spec.host) throw new Error("缺少行内新增的挂载容器");
+    var host = spec.host;
+    var existing = host.querySelector(".dc-inline-row input");
+    if (existing) {
+      existing.focus();
+      existing.select();
+      return existing.parentNode;
+    }
+    var li = el("li", spec.liClass || "dc-inline-item");
+    var row = el("div", spec.rowClass || "dc-inline-row");
+    if (typeof spec.guide === "function") row.appendChild(spec.guide());
+    var input = el("input", spec.inputClass || "dc-inline-input");
+    input.type = "text";
+    input.value = spec.defaultValue || "";
+    input.placeholder = spec.placeholder || "输入名称";
+    input.setAttribute("aria-label", spec.label || "新增名称");
+    row.appendChild(input);
+    li.appendChild(row);
+    if (spec.before && spec.before.parentNode === host) host.insertBefore(li, spec.before);
+    else host.appendChild(li);
+    input.focus();
+    input.select();
+
+    var done = false;
+    function finish(save) {
+      if (done) return;
+      var name = input.value.trim();
+      if (!save || !name) {
+        done = true;
+        li.remove();
+        if (spec.anchor && typeof spec.anchor.focus === "function") spec.anchor.focus();
+        if (typeof spec.onCancel === "function") spec.onCancel();
+        return;
+      }
+      var payload;
+      try {
+        payload = spec.payload(name);
+      } catch (error) {
+        fail(spec.failTitle || "还不能新增", error, input);
+        return;
+      }
+      done = true;
+      input.disabled = true;
+      input.setAttribute("aria-busy", "true");
+      window.DcClient.writeJson(spec.url, payload, "POST").then(function (created) {
+        li.remove();
+        if (typeof spec.onSaved === "function") spec.onSaved(created);
+      }).catch(function (error) {
+        done = false;
+        input.disabled = false;
+        input.setAttribute("aria-busy", "false");
+        input.focus();
+        input.select();
+        fail(spec.failTitle || "新增失败", error, input);
+      });
+    }
+    input.addEventListener("click", function (event) { event.stopPropagation(); });
+    input.addEventListener("dblclick", function (event) { event.stopPropagation(); });
+    input.addEventListener("blur", function () { finish(true); });
+    input.addEventListener("keydown", function (event) {
+      event.stopPropagation();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        input.blur();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
       }
     });
+    return li;
+  }
+
+  /**
+   * 排序芯片：平时显示「#排序号」，点一下变数字输入框；
+   * Enter / 失焦调 spec.apply(value)，Esc 还原。apply 返回 Promise。
+   */
+  function sortChip(spec) {
+    var button = el("button", spec.className || "dc-sort", "#" + spec.value);
+    button.type = "button";
+    var label = spec.label || "排序号";
+    button.title = label + "：" + spec.value + "，点击修改";
+    button.setAttribute("aria-label", label + "，当前 " + spec.value + "，点击修改");
+    button.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.querySelector("input")) return;
+      var input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.step = "1";
+      input.value = String(spec.value);
+      input.className = "dc-sort-input";
+      input.setAttribute("aria-label", label);
+      button.textContent = "";
+      button.appendChild(input);
+      input.focus();
+      input.select();
+
+      var busy = false;
+      function restore() {
+        button.textContent = "#" + spec.value;
+        button.removeAttribute("aria-busy");
+      }
+      function finish(save) {
+        if (busy) return;
+        var raw = input.value.trim();
+        if (!save || raw === "") {
+          restore();
+          return;
+        }
+        var value = Number(raw);
+        if (!isFinite(value) || Math.floor(value) !== value || value < 0) {
+          fail("排序号无效", new Error("排序号必须是 0 或正整数"), input);
+          input.focus();
+          input.select();
+          return;
+        }
+        if (value === Number(spec.value)) {
+          restore();
+          return;
+        }
+        busy = true;
+        input.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        Promise.resolve(spec.apply(value)).then(function () {
+          spec.value = value;
+          restore();
+        }).catch(function (error) {
+          busy = false;
+          input.disabled = false;
+          restore();
+          fail(spec.failTitle || "排序保存失败", error, button);
+        });
+      }
+      input.addEventListener("click", function (click) { click.stopPropagation(); });
+      input.addEventListener("blur", function () { finish(true); });
+      input.addEventListener("keydown", function (keyEvent) {
+        keyEvent.stopPropagation();
+        if (keyEvent.key === "Enter") {
+          keyEvent.preventDefault();
+          input.blur();
+        } else if (keyEvent.key === "Escape") {
+          keyEvent.preventDefault();
+          finish(false);
+          button.focus();
+        }
+      });
+    });
+    return button;
   }
 
   window.DcTreeAdd = {
-    plus: plus, emptyAdd: emptyAdd, sortField: sortField, sortValue: sortValue,
-    fail: fail, open: open
+    plus: plus, emptyAdd: emptyAdd, nextOrder: nextOrder,
+    timestampCode: timestampCode, fail: fail, inlineAdd: inlineAdd, sortChip: sortChip
   };
 })();

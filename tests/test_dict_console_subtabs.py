@@ -221,6 +221,7 @@ class SubTabsWiringTest(unittest.TestCase):
             "/static/js/dict_console/entity_shared.js",
             "/static/js/dict_console/entity_schools.js",
             "/static/js/dict_console/textbook_stage_tree.js",
+            "/static/js/dict_console/entity_textbook_add.js",
             "/static/js/dict_console/entity_textbooks.js",
         ):
             self.assertIn(ref, html)
@@ -230,7 +231,7 @@ class SubTabsWiringTest(unittest.TestCase):
         for name in (
             "subtabs.js", "chapters.js", "chapter_ops.js", "row_ops.js",
             "entity_shared.js", "entity_schools.js", "textbook_stage_tree.js",
-            "entity_textbooks.js",
+            "entity_textbook_add.js", "entity_textbooks.js",
         ):
             path = CONSOLE_DIR / name
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 500, name)
@@ -242,7 +243,7 @@ class SubTabsWiringTest(unittest.TestCase):
         for name in (
             "subtabs.js", "chapters.js", "chapter_ops.js",
             "entity_shared.js", "entity_schools.js", "textbook_stage_tree.js",
-            "entity_textbooks.js",
+            "entity_textbook_add.js", "entity_textbooks.js",
         ):
             text = (CONSOLE_DIR / name).read_text(encoding="utf-8")
             self.assertNotRegex(text, r"\.innerHTML\s*=", name)
