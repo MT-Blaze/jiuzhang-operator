@@ -74,7 +74,11 @@ EXPECTED_THOUGHTS: dict[tuple[int, str], tuple[str, ...]] = {
     (2, "小学"): ("数形结合",),
     (2, "初中"): ("数形结合",),
     (2, "高中"): ("数学抽象", "逻辑推理", "数学建模", "数形结合"),
-    # 高中物理教研大纲的通用思想名，顺序即清单顺序。
+    # 初高中物理教研大纲的通用思想名，顺序即清单顺序。
+    (4, "初中"): (
+        "理想模型", "等效替代", "控制变量", "比值定义", "转换", "类比",
+        "比较", "归纳", "科学推理", "守恒", "数形结合",
+    ),
     (4, "高中"): (
         "理想模型", "等效替代", "控制变量", "微元", "极限", "对称",
         "守恒", "类比", "数形结合", "实验归纳", "科学假说", "转化",
@@ -132,9 +136,9 @@ class CurriculumStandardsTest(unittest.TestCase):
 
     def test_counts_follow_seed_source(self) -> None:
         self.assertEqual(len(CORE_COMPETENCY_ROWS), 168)
-        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 18)
+        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 29)
         self.assertEqual(CURRICULUM_COUNTS["dict_core_competencies"], 168)
-        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 18)
+        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 29)
 
 
 if __name__ == "__main__":

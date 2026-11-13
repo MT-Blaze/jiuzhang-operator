@@ -285,13 +285,19 @@ class ConsoleServiceTest(unittest.TestCase):
                      "假设法", "逆向思维法", "模型法", "估算法"):
             self.assertIn(name, method_names)
 
-        _, thought_total = service.console_list(
+        # 初中物理教研大纲的通用思想名必须齐备，切换「初中 · 物理」不得空表。
+        thoughts, thought_total = service.console_list(
             "dict_subject_thoughts",
             filters={"stage": "初中", "subject_id": 4},
             limit=200,
             db_path=self.db_path,
         )
-        self.assertEqual(thought_total, 0)
+        thought_names = {item.name for item in thoughts}
+        self.assertEqual(thought_total, 11)
+        for name in ("理想模型", "等效替代", "控制变量", "比值定义", "转换",
+                     "类比", "比较", "归纳", "科学推理", "守恒", "数形结合"):
+            self.assertIn(name, thought_names)
+        self.assertTrue(all(item.stage == "初中" for item in thoughts))
 
         competencies, competency_total = service.console_list(
             "dict_core_competencies",
