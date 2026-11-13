@@ -4,7 +4,7 @@
 .dkl-wrap { min-width: 0; }
 
 /* ---------- 树骨架：左对齐 + 细灰树线，不做物理缩进 ---------- */
-.dkl-tree { --dkl-col-w: 11px; min-width: 0; }
+.dkl-tree { --dkl-col-w: 24px; min-width: 0; }
 .dkl-list { list-style: none; margin: 0; padding: 0; }
 /* 层级不再靠 margin/padding 撑开，全部交给行首导线层 */
 .dkl-children,
@@ -52,7 +52,8 @@
   position: absolute;
   left: 0;
   top: 50%;
-  width: 8px;
+  /* 折线顶到内容起点前 4px：列宽变大后不能还停在老位置 */
+  width: calc(var(--dkl-col-w) - 4px);
   border-top: 1px solid var(--faint);
 }
 .dkl-guide-blank-cur::after { display: none; }
@@ -62,7 +63,7 @@
   align-items: center;
   gap: 4px;
   min-height: 44px;
-  padding: 2px 4px;
+  padding: 4px 4px;
   border-bottom: 1px solid var(--line);
 }
 .dkl-row:focus-within { background: var(--card-hover); }
@@ -231,7 +232,7 @@
   gap: 6px;
 }
 .dkl-row-direction .dkl-name { width: 100%; }
-.dkl-row-direction { padding: 3px 4px; }
+.dkl-row-direction { padding: 5px 4px; }
 .dkl-row-direction .dkl-ops { justify-content: flex-end; }
 .dkl-direction { position: relative; }
 /* 考向名与表头共用一格：guide 占位宽度一致，文字才能和「考向」表头像素对齐 */
@@ -331,9 +332,9 @@
 
 /* ---------- 窄屏：考向行改单列堆叠，辅助标签落到下一行 ---------- */
 @media (max-width: 720px) {
-  .dkl-tree { --dkl-col-w: 9px; }
+  .dkl-tree { --dkl-col-w: 16px; }
   .dkl-dir-head { display: none; }
-  .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 6px 4px; }
+  .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 8px 4px; }
   .dkl-row-direction .dkl-ops { justify-content: flex-start; }
   .dkl-tag-pop { right: auto; left: 0; }
 }
