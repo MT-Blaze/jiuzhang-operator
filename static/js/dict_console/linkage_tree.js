@@ -21,39 +21,25 @@
     return node;
   }
 
-  function caretButton(label, isOpen) {
-    var caret = el("button", "dkl-caret", isOpen ? "▾" : "▸");
-    caret.type = "button";
-    caret.setAttribute("aria-expanded", isOpen ? "true" : "false");
-    caret.setAttribute("aria-label", label);
-    return caret;
-  }
-
-  function toggleOn(button, isClosed, open, close) {
-    button.addEventListener("click", function () {
-      if (isClosed()) open(); else close();
-    });
-  }
-
-  /** 一行折叠逻辑：箭头、aria-expanded、容器 hidden 与展开记忆一次配好。 */
-  function foldOf(caret, box, track, key, onOpen) {
+  /**
+   * 一行折叠逻辑：展开状态、aria-expanded 与容器 hidden 一次配好。
+   * 行首不再有三角标，点名称文字即折叠；aria 状态挂在名称按钮上。
+   */
+  function foldOf(box, track, key, label, onOpen) {
     var fold = {
       open: function () {
         track[key] = true;
         box.hidden = false;
-        caret.textContent = "▾";
-        caret.setAttribute("aria-expanded", "true");
+        if (label) label.setAttribute("aria-expanded", "true");
         return onOpen ? onOpen() : Promise.resolve();
       },
       close: function () {
         track[key] = false;
         box.hidden = true;
-        caret.textContent = "▸";
-        caret.setAttribute("aria-expanded", "false");
+        if (label) label.setAttribute("aria-expanded", "false");
       },
       isClosed: function () { return box.hidden; }
     };
-    toggleOn(caret, fold.isClosed, fold.open, fold.close);
     return fold;
   }
 
@@ -99,15 +85,14 @@
       var row = el("div", "dkl-row dkl-row-point");
       row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
-      var caret = caretButton("展开或折叠「" + point.name + "」的考向", false);
-      row.appendChild(caret);
       var badge = el("span", "dkl-badge", "");
-      row.appendChild(G.nameButton(point.name, "主知识点「" + point.name + "」", function (button) {
+      var nameBtn = G.nameButton(point.name, "主知识点「" + point.name + "」", function (button) {
         window.DcRowOps.editCell(dictController(POINT_URL), button, point,
           { key: "name", label: "名称" });
       }, function () {
         if (fold.isClosed()) fold.open(); else fold.close();
-      }));
+      });
+      row.appendChild(nameBtn);
       row.appendChild(badge);
       row.appendChild(G.sort(point.sort_order, "知识点「" + point.name + "」的排序号",
         function (value) { return reorderPoint(point, value); }));
@@ -130,7 +115,7 @@
         onCount: function (count) { badge.textContent = count + " 个考向"; }
       });
       li.appendChild(dirs.el);
-      var fold = foldOf(caret, dirs.el, expanded.p, point.id, function () {
+      var fold = foldOf(dirs.el, expanded.p, point.id, nameBtn, function () {
         return dirs.open();
       });
       if (expanded.p[point.id]) fold.open(); else fold.close();
@@ -148,14 +133,13 @@
       var row = el("div", "dkl-row dkl-row-chapter");
       row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
-      var caret = caretButton("展开或折叠「" + chapter.name + "」", false);
-      row.appendChild(caret);
-      row.appendChild(G.nameButton(chapter.name, "章节「" + chapter.name + "」", function (button) {
+      var nameBtn = G.nameButton(chapter.name, "章节「" + chapter.name + "」", function (button) {
         window.DcRowOps.editCell(dictController(CHAPTER_URL), button, chapter,
           { key: "name", label: "名称" });
       }, function () {
         if (fold.isClosed()) fold.open(); else fold.close();
-      }));
+      });
+      row.appendChild(nameBtn);
       // 现存章节编码多是 tp_* 技术码，只有纯数字编码（如 1.2）才值得露出来。
       if (chapter.code && /^[\d.]+$/.test(chapter.code)) row.appendChild(el("span", "dkl-sub", chapter.code));
       var badge = el("span", "dkl-badge", "");
@@ -235,7 +219,7 @@
         });
       }
 
-      var fold = foldOf(caret, children, expanded.c, chapter.id, function () {
+      var fold = foldOf(children, expanded.c, chapter.id, nameBtn, function () {
         return pointsPainted ? Promise.resolve() : ensurePoints(false);
       });
 
@@ -306,15 +290,14 @@
       var row = el("div", "dkl-row dkl-row-book");
       row.appendChild(G.lines(prefix, isLast));
       row.appendChild(G.span(prefix, isLast));
-      var caret = caretButton("展开或折叠「" + (book.volume_name || book.name) + "」", true);
-      row.appendChild(caret);
-      row.appendChild(G.nameButton(book.volume_name || book.name,
+      var nameBtn = G.nameButton(book.volume_name || book.name,
         "册次「" + (book.volume_name || book.name) + "」", function (button) {
           window.DcRowOps.editCell(dictController(BOOK_URL), button, book,
             { key: "volume_name", label: "册次名" });
         }, function () {
           if (fold.isClosed()) fold.open(); else fold.close();
-        }));
+        });
+      row.appendChild(nameBtn);
       if (book.name && book.name !== book.volume_name) {
         row.appendChild(el("span", "dkl-sub", book.name));
       }
@@ -340,7 +323,7 @@
       }
       li.appendChild(children);
 
-      var fold = foldOf(caret, children, expanded.b, book.id);
+      var fold = foldOf(children, expanded.b, book.id, nameBtn);
       function addChapter(anchor) {
         fold.open();
         window.DcLinkageAdd.chapter({
@@ -364,15 +347,14 @@
       var li = el("li", "dkl-node dkl-version");
       li.setAttribute("role", "treeitem");
       var row = el("div", "dkl-row dkl-row-version");
-      var caret = caretButton("展开或折叠「" + version.name + "」", true);
-      row.appendChild(caret);
-      row.appendChild(G.nameButton(version.name || ("版本 #" + version.id),
+      var nameBtn = G.nameButton(version.name || ("版本 #" + version.id),
         "教材版本「" + (version.name || version.id) + "」", function (button) {
           window.DcRowOps.editCell(dictController(VERSION_URL), button, version,
             { key: "name", label: "版本名" });
         }, function () {
           if (fold.isClosed()) fold.open(); else fold.close();
-        }));
+        });
+      row.appendChild(nameBtn);
       row.appendChild(el("span", "dkl-badge", books.length + " 册"));
       row.appendChild(G.sort(version.sort_order, "版本「" + (version.name || version.id) + "」的排序号",
         function (value) { return window.DcLinkageSort.save(VERSION_URL, version, value, load); }));
@@ -394,7 +376,7 @@
       }
       li.appendChild(children);
 
-      var fold = foldOf(caret, children, expanded, "v");
+      var fold = foldOf(children, expanded, "v", nameBtn);
       function addBook(anchor) {
         fold.open();
         window.DcLinkageAdd.book({

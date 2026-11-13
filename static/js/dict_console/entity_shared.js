@@ -206,23 +206,6 @@
     });
   }
 
-  /** 节点行的折叠箭头；无子节点时占位，保证同层文字对齐。 */
-  function caret(expanded, label, onClick) {
-    var btn = el("button", "det-caret", expanded ? "\u25BE" : "\u25B8");
-    btn.type = "button";
-    btn.setAttribute("aria-expanded", expanded ? "true" : "false");
-    btn.setAttribute("aria-label", (expanded ? "折叠 " : "展开 ") + label);
-    btn.addEventListener("click", function (event) {
-      event.stopPropagation();
-      onClick();
-    });
-    return btn;
-  }
-
-  function spacer() {
-    return el("span", "det-caret det-spacer", "");
-  }
-
   function childList(depth, open) {
     var ul = el("ul", "det-children");
     ul.style.setProperty("--det-depth", String(depth));
@@ -230,7 +213,7 @@
     return ul;
   }
 
-  /** 一行 = 箭头 + 名称（学校行拆全称/简称两栏）+ 计数 + +/删；子级容器挂在 li 上。 */
+  /** 节点行的折叠开关不在行首三角标上：点名称文字即展开 / 收起。 */
   function makeRow(opts) {
     var expandedSet = opts.expandedSet || new Set();
     var li = el("li", "det-item");
@@ -256,8 +239,7 @@
         build();
       }
       box.hidden = open;
-      li._detCaret.textContent = open ? "\u25B8" : "\u25BE";
-      li._detCaret.setAttribute("aria-expanded", open ? "false" : "true");
+      if (li._detLabel) li._detLabel.setAttribute("aria-expanded", open ? "false" : "true");
       row.classList.toggle("is-open", !open);
       if (!open) {
         box.classList.remove("det-reveal");
@@ -273,35 +255,24 @@
         fresh.style.setProperty("--det-depth", String((opts.depth || 0) + 1));
         li._detBox = fresh;
         li.appendChild(fresh);
-        if (!li._detCaret) {
-          li._detCaret = caret(true, opts.name, toggle);
-          var spacerEl = row.querySelector(".det-spacer");
-          if (spacerEl) row.replaceChild(li._detCaret, spacerEl);
-        }
       } else if (li._detBox.hidden) {
         toggle();
       }
       if (li._detKey) expandedSet.add(li._detKey);
       li._detBox.hidden = false;
-      if (li._detCaret) {
-        li._detCaret.textContent = "\u25BE";
-        li._detCaret.setAttribute("aria-expanded", "true");
-      }
+      if (li._detLabel) li._detLabel.setAttribute("aria-expanded", "true");
       row.classList.add("is-open");
       return li._detBox;
     };
-
-    if (opts.hasChildren) {
-      li._detCaret = caret(opts.expanded, opts.name, toggle);
-      row.appendChild(li._detCaret);
-    } else {
-      row.appendChild(spacer());
-    }
 
     var nameSpan = el("span", "det-name", opts.name);
     var label = el("button", "det-label");
     label.type = "button";
     label.appendChild(nameSpan);
+    if (opts.hasChildren) {
+      label.setAttribute("aria-expanded", opts.expanded ? "true" : "false");
+      li._detLabel = label;
+    }
     var shortBtn = null;
     var shortSpan = null;
     if (isSchool) {
@@ -399,7 +370,7 @@
     el: el, fetchAll: fetchAll, listAll: listAll, nextOrder: nextOrder, orderValue: orderValue,
     fail: fail, remove: remove, inlineEdit: inlineEdit, add: add, addInline: addInline,
     bindNodeClick: bindNodeClick,
-    caret: caret, spacer: spacer, childList: childList,
+    childList: childList,
     makeRow: makeRow, bindTree: bindTree
   };
 })();

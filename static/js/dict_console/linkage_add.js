@@ -16,7 +16,7 @@
 
   function guide(prefix) {
     return function () {
-      return window.DcLinkGuide.span(prefix || [], true, false, true);
+      return window.DcLinkGuide.span(prefix || [], true, false);
     };
   }
 

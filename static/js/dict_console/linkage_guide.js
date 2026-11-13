@@ -16,7 +16,8 @@
     return node;
   }
 
-  function span(prefix, isLast, blank, caret) {
+  /** 行首 guide 只保留缩进占位与水平折线：折叠不再有三角标，点名称文字即可。 */
+  function span(prefix, isLast, blank) {
     var wrap = el("span", "dkl-guide");
     wrap.setAttribute("aria-hidden", "true");
     prefix.forEach(function (open) {
@@ -25,7 +26,6 @@
     wrap.appendChild(el("span", "dkl-guide-cur"
       + (isLast ? " dkl-guide-last" : "")
       + (blank ? " dkl-guide-blank-cur" : "")));
-    if (caret) wrap.appendChild(el("span", "dkl-caret-empty"));
     return wrap;
   }
 
@@ -57,7 +57,10 @@
     var button = el("button", "dkl-op" + (danger ? " dkl-op-danger" : ""), text);
     button.type = "button";
     button.setAttribute("aria-label", label);
-    button.addEventListener("click", function () { onClick(button); });
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
+      onClick(button);
+    });
     return button;
   }
 
@@ -66,7 +69,7 @@
     var li = el("li", "dkl-empty");
     var hasLine = prefix.length > 0;
     li.appendChild(lines(prefix, hasLine ? true : null));
-    li.appendChild(span(prefix, true, !hasLine, true));
+    li.appendChild(span(prefix, true, !hasLine));
     li.appendChild(el("span", "dkl-empty-text", text));
     if (add) {
       li.appendChild(window.DcTreeAdd.emptyAdd(add));
@@ -81,7 +84,7 @@
       text: text,
       label: label,
       lines: function () { return lines(prefix, isLast); },
-      guide: function () { return span(prefix, isLast, false, true); },
+      guide: function () { return span(prefix, isLast, false); },
       onClick: onClick
     });
   }

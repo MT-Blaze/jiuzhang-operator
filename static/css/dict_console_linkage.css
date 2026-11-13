@@ -20,7 +20,7 @@
 .dkl-dir-head { position: relative; }
 .dkl-guide-lines {
   position: absolute;
-  inset: 0 0 -1px 0;
+  inset: 0;
   pointer-events: none;
   opacity: 0.75;
 }
@@ -58,21 +58,19 @@
 }
 .dkl-guide-blank-cur::after { display: none; }
 
+/* 行与行之间只留纯背景：不画横向边框，也不画内阴影横线；
+ * 层级关系全部交给左侧缩进竖线。 */
 .dkl-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 44px;
-  padding: 4px 4px;
-  border-bottom: 1px solid var(--line);
+  min-height: 30px;
+  padding: 1px 4px;
 }
 .dkl-row:focus-within { background: var(--card-hover); }
 
-/* 册次＝表头带，让「学年册别」一眼分段；不是卡片，只是整行浅底。
- * 顶边用内阴影而不是 border-top：border 会把 padding box 压下去 1px，
- * 上一行画到 border box 底的竖线就会和本行差 1px，形成断口。 */
+/* 册次＝表头带，让「学年册别」一眼分段；不是卡片，只是整行浅底。 */
 .dkl-row-book {
-  box-shadow: inset 0 1px 0 var(--line-strong);
   background: var(--paper-deep);
   font-family: var(--serif);
 }
@@ -80,30 +78,11 @@
 .dkl-sub { flex: none; font-size: 0.72rem; color: var(--faint); }
 .dkl-badge { flex: none; margin-left: auto; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
 
-.dkl-caret {
-  flex: none;
-  position: relative;
-  width: 20px;
-  min-width: 20px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1;
-  cursor: pointer;
-}
-/* 箭头视觉只有 20px，热区用伪元素补到 44px；右侧压到名字上的部分由名字接管，两者都执行展开 */
-.dkl-caret::after { content: ""; position: absolute; inset: 0 -12px; }
-.dkl-caret-empty { display: inline-block; width: 20px; }
-.dkl-caret:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-
 .dkl-name {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 44px;
-  padding: 2px 4px;
+  min-height: 28px;
+  padding: 1px 4px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -139,8 +118,8 @@
 .dkl-row:hover .dkl-ops,
 .dkl-row:focus-within .dkl-ops { opacity: 1; }
 .dkl-op {
-  min-height: 44px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -161,13 +140,12 @@
   gap: 2px;
   list-style: none;
   padding-left: 4px;
-  border-bottom: 1px solid var(--line);
 }
 .dc-ghost-add {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 44px;
-  padding: 2px 6px;
+  min-height: 28px;
+  padding: 1px 6px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -198,7 +176,7 @@
 .node-empty-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* 版本行：这条树的根，比册次再重一档 */
-.dkl-row-version { box-shadow: inset 0 1px 0 var(--line-strong); background: var(--paper-deep); }
+.dkl-row-version { background: var(--paper-deep); }
 .dkl-row-version .dkl-name { font-size: 0.95rem; font-weight: 700; }
 
 /* 工具条：新增版本不属于任何一行，单独放树顶 */
@@ -232,7 +210,7 @@
   gap: 6px;
 }
 .dkl-row-direction .dkl-name { width: 100%; }
-.dkl-row-direction { padding: 5px 4px; }
+.dkl-row-direction { padding: 1px 4px; }
 .dkl-row-direction .dkl-ops { justify-content: flex-end; }
 .dkl-direction { position: relative; }
 /* 考向名与表头共用一格：guide 占位宽度一致，文字才能和「考向」表头像素对齐 */
@@ -245,9 +223,8 @@
 }
 .dkl-dir-head .dkl-dir-main .dkl-dir-col { padding-left: 4px; }
 .dkl-dir-head {
-  min-height: 30px;
+  min-height: 24px;
   padding: 0 4px;
-  border-bottom: 1px solid var(--line-strong);
   font-size: 0.71rem;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -267,8 +244,8 @@
 .dkl-tag-name { padding: 2px 4px 2px 9px; font-size: 0.74rem; overflow-wrap: anywhere; }
 .dkl-tag-x {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -281,8 +258,8 @@
 .dkl-tag-empty { list-style: none; padding: 0 4px; font-size: 0.73rem; color: var(--faint); }
 .dkl-tag-add {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 28px;
+  height: 28px;
   border: 1px dashed var(--line-strong);
   border-radius: 999px;
   background: transparent;
@@ -316,7 +293,7 @@
 .dkl-tag-pop-close { min-height: 44px; }
 
 /* 新增考向的内联行 */
-.dkl-dir-new-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.dkl-dir-new-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; }
 .dkl-dir-input { flex: 1 1 auto; min-width: 0; min-height: 44px; }
 
 .dkl-empty {
@@ -324,7 +301,7 @@
   align-items: center;
   gap: 2px;
   list-style: none;
-  padding: 10px 4px;
+  padding: 6px 4px;
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -337,6 +314,14 @@
   .dkl-row-direction { grid-template-columns: minmax(0, 1fr); padding: 8px 4px; }
   .dkl-row-direction .dkl-ops { justify-content: flex-start; }
   .dkl-tag-pop { right: auto; left: 0; }
+}
+
+/* 触屏没有悬停：行高与按钮热区恢复到 44px，保证手指好点 */
+@media (pointer: coarse) {
+  .dkl-row { min-height: 44px; padding: 4px; }
+  .dkl-name, .dkl-op { min-height: 36px; }
+  .dc-ghost-add { min-height: 36px; }
+  .dkl-tag-x, .dkl-tag-add { width: 36px; height: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

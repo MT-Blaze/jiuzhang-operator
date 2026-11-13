@@ -364,19 +364,18 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 .dc-row-new td { background: var(--paper-deep); }
 .dc-row-btn { min-width: 44px; min-height: 44px; padding: 0 12px; font-size: 0.8rem; }
 
-/* 树里点 + 直接长出的输入行（不弹窗）：Enter / 失焦保存，Esc 取消 */
+/* 树里点 + 直接长出的输入行（不弹窗）：Enter / 失焦保存，Esc 取消；行间不画横线 */
 .dc-inline-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--line);
+  min-height: 30px;
 }
 .dc-inline-input {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 36px;
-  padding: 4px 8px;
+  min-height: 26px;
+  padding: 2px 8px;
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: var(--card);
@@ -390,9 +389,9 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 /* 行尾排序号芯片：点击变数字输入框，改完立即重排 */
 .dc-sort {
   flex: none;
-  min-width: 34px;
-  min-height: 30px;
-  padding: 0 6px;
+  min-width: 30px;
+  min-height: 22px;
+  padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -406,7 +405,7 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
 .dc-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dc-sort-input {
   width: 52px;
-  min-height: 30px;
+  min-height: 22px;
   padding: 0 4px;
   border: 1px solid var(--accent);
   border-radius: 6px;
@@ -417,6 +416,11 @@ body.dc-embedded .dc-canvas { border: 0; border-radius: 0; background: var(--pap
   font-variant-numeric: tabular-nums;
 }
 .dc-sort[aria-busy="true"] { opacity: 0.55; }
+/* 触屏把行高与排序芯片热区恢复到 44px */
+@media (pointer: coarse) {
+  .dc-inline-row { min-height: 44px; }
+  .dc-sort { min-height: 32px; }
+}
 .dc-row-delete { color: var(--down); }
 .dc-table-empty { text-align: center; color: var(--muted); padding: 18px; }
 .dc-table-state { margin: 8px 0 0; min-height: 1.2em; font-size: 0.8rem; color: var(--muted); white-space: pre-line; }

@@ -57,7 +57,7 @@
       var headLi = el("li", "dkl-dir-head");
       var main = el("div", "dkl-dir-main");
       headLi.appendChild(G.lines(prefix, null));
-      main.appendChild(G.span(prefix, false, true, true));
+      main.appendChild(G.span(prefix, false, true));
       main.appendChild(el("span", "dkl-dir-col", "考向"));
       headLi.appendChild(main);
       headLi.appendChild(el("span", "dkl-dir-col", "辅助知识点"));
@@ -72,7 +72,7 @@
       var dirRow = el("div", "dkl-row dkl-row-direction");
       dirRow.appendChild(G.lines(prefix, last));
       var main = el("div", "dkl-dir-main");
-      main.appendChild(G.span(prefix, last, false, true));
+      main.appendChild(G.span(prefix, last, false));
       main.appendChild(G.nameButton(dir.name, "考向「" + dir.name + "」", function (button) {
         window.DcRowOps.editCell({ url: DIRECTION_URL }, button, dir,
           { key: "name", label: "名称" });

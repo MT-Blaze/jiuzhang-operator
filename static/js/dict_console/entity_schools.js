@@ -200,7 +200,6 @@
       var li = S.el("li", "det-item");
       var row = S.el("div", "det-row det-row-school det-school-head");
       row.setAttribute("aria-hidden", "true");
-      row.appendChild(S.spacer());
       row.appendChild(S.el("span", "det-school-col", "学校全称"));
       row.appendChild(S.el("span", "det-school-col", "学校简称"));
       row.appendChild(S.el("span", "det-school-pad", ""));
