@@ -1,80 +1,106 @@
-/* ============ 左栏「切换用户」（2026-11-05） ============
-   独立一份样式：整块功能下架时删掉本文件与 ws_users.js 即可，不牵动其他栏。 */
+/* ============ 左栏底部栏（2026-11-13） ============
+   工作区胶囊 + 两枚 44px 图标；独立一份样式，整块下架时删掉本文件与 ws_users.js 即可。 */
 
-.ws-user-switch {
-  padding: 10px 10px 4px;
+.ws-sidebar-foot {
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
 }
 
-.ws-user-card {
+.ws-ws-switch {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
+  gap: 8px;
+  height: 44px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
   color: var(--ink);
   font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
 }
 
-.ws-user-card:hover {
-  border-color: var(--accent);
+.ws-ws-switch:hover {
+  background: var(--accent-soft);
 }
 
-.ws-user-card:focus-visible {
+.ws-ws-switch:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
-.ws-user-avatar {
+.ws-ws-avatar {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
 }
 
-.ws-user-meta {
-  flex: 1 1 auto;
+.ws-ws-name {
+  flex: 0 1 auto;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.ws-user-caption {
-  font-size: 0.68rem;
-  color: var(--faint);
-  letter-spacing: 0.04em;
-}
-
-.ws-user-name {
-  font-size: 0.88rem;
-  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ws-user-action {
+.ws-ws-chevron {
   flex: none;
-  font-size: 0.72rem;
-  color: var(--accent);
+  color: var(--faint);
+}
+
+.ws-foot-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ws-foot-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #6b645b;
+  cursor: pointer;
+}
+
+.ws-foot-btn:hover {
+  color: #a5382f;
+  border-color: #e3c9c3;
+  background: #f4e7e3;
+}
+
+.ws-foot-btn:focus-visible {
+  outline: 2px solid #a5382f;
+  outline-offset: 1px;
 }
 
 /* ============ 用户清单弹窗 ============ */
 
-.ws-user-modal {
+/* ============ 工作区三合一弹窗 ============ */
+
+.ws-switch-modal {
   position: fixed;
   inset: 0;
   z-index: 1300;
@@ -85,12 +111,12 @@
   background: rgba(31, 28, 24, 0.55);
 }
 
-.ws-user-modal[hidden] {
+.ws-switch-modal[hidden] {
   display: none;
 }
 
-.ws-user-modal-card {
-  width: min(94vw, 460px);
+.ws-switch-card {
+  width: min(94vw, 480px);
   max-height: 86vh;
   overflow: auto;
   padding: 18px 20px 20px;
@@ -99,7 +125,7 @@
   box-shadow: var(--shadow);
 }
 
-.ws-user-modal-head {
+.ws-switch-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -107,28 +133,42 @@
   margin-bottom: 8px;
 }
 
-.ws-user-modal-head h2 {
+.ws-switch-head h2 {
   margin: 0;
   font-size: 1.05rem;
 }
 
-.ws-user-modal-hint {
-  margin: 0 0 12px;
+.ws-switch-hint {
+  margin: 0 0 4px;
   font-size: 0.78rem;
   line-height: 1.6;
   color: var(--muted);
 }
 
-.ws-user-list {
+.ws-switch-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.ws-switch-section-title {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.ws-switch-list {
   list-style: none;
-  margin: 0 0 14px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.ws-user-item {
+.ws-switch-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,55 +178,42 @@
   border-radius: 10px;
 }
 
-.ws-user-item[data-active="1"] {
+.ws-switch-item[data-active="1"] {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.ws-user-item-main {
+.ws-switch-item-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.ws-user-item-name {
+.ws-switch-item-name {
   font-size: 0.9rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ws-user-item-meta {
+.ws-switch-item-meta {
   font-size: 0.72rem;
   color: var(--muted);
 }
 
-.ws-user-empty {
+.ws-switch-empty {
   padding: 10px 2px;
   font-size: 0.8rem;
   color: var(--muted);
 }
 
-.ws-user-create {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.ws-user-create-label {
-  font-size: 0.76rem;
-  color: var(--muted);
-}
-
-.ws-user-create-row {
+.ws-switch-row {
   display: flex;
   gap: 8px;
 }
 
-.ws-user-create-row input {
+.ws-switch-row input {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
@@ -199,27 +226,31 @@
   font-size: 0.86rem;
 }
 
-.ws-user-create-row input:focus-visible {
+.ws-switch-row input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.ws-user-status {
-  margin: 12px 0 0;
+.ws-switch-status {
+  margin: 14px 0 0;
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--muted);
 }
 
-.ws-user-status[data-tone="down"] {
+.ws-switch-status[data-tone="down"] {
   color: #9b3b2d;
 }
 
-.ws-user-status[data-tone="warn"] {
+.ws-switch-status[data-tone="warn"] {
   color: #8a5a12;
 }
 
-/* ============ 切用户重启遮罩 ============ */
+.ws-switch-status[data-tone="ok"] {
+  color: #2f6b46;
+}
+
+/* ============ 工作区切换重启遮罩 ============ */
 
 .ws-restart-overlay {
   position: fixed;
@@ -260,23 +291,24 @@
 }
 
 @media (max-width: 420px) {
-  .ws-user-create-row {
+  .ws-switch-row {
     flex-direction: column;
   }
 
-  .ws-user-create-row .ws-btn {
+  .ws-switch-row .ws-btn {
     width: 100%;
   }
 
-  .ws-user-item {
+  .ws-switch-item {
     flex-direction: column;
     align-items: stretch;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-user-card,
-  .ws-user-item {
+  .ws-ws-switch,
+  .ws-foot-btn,
+  .ws-switch-item {
     transition: none;
   }
 }

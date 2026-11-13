@@ -150,3 +150,32 @@
   `.qoder/records/biz/2026-11/20261106_dup-compare-evidence/`。
 - `python tools/run_all_tests.py`：模块 89 个，用例 1750 个，失败模块 0 个。
 - `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+
+## 阶段六：侧边栏底部栏与工作区管理浮层（2026-11-13）
+
+### 布局
+
+- 删除左栏顶部「当前用户 / 默认工作区 / 切换」整块，垂直空间还给插件列表。
+- 左栏最底部固定 footer：左侧工作区名（首字圆框 + 名称，过长省略号），
+  右侧两枚 44×44 图标——切换工作区、设置齿轮；齿轮角标改成小圆点数字。
+
+### 工作区浮层
+
+- 点工作区名打开 Modal，仅三块：【切换工作区】列表、点选即切换并刷新；
+  【新建工作区】；【重命名当前工作区】。
+- 切换沿用 boot_id 轮询 + 重启遮罩；重命名只改显示名，不建目录、不重启。
+- 新增 `app/api/workspace_rename.py`（写令牌鉴权，1–40 字），
+  `app/api/workspaces.py` 抽出后回到 494 行，守住 500 行红线。
+
+### 可下架
+
+- 能力整块落在 `ws_users.js` + `ws_users.css`，移除时删 footer 的两段 markup
+  与两处引用即可，侧栏其余结构不动。
+
+### 验证证据
+
+- 真机（349px 内容宽）：footer 279px、横向溢出 0；工作区 165×44，两图标 44×44；
+  切换 / 新建 / 重命名 / 齿轮开控制台均通过。
+- `tools/run_all_tests.py`：模块 106 个，用例 2023 个，失败模块 0 个。
+- `bash scripts/check-quick-gate.sh`：PASS（6 项全过）。
+- 回传单与截图：`.qoder/records/biz/2026-11/20261113_sidebar-footer/`。

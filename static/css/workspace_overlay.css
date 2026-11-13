@@ -300,38 +300,21 @@
 }
 
 /* 控制台页签：同源 iframe 铺满画布，设置页自己负责内嵌时收起外壳 */
-/* 左栏底部的控制台入口：44×44 热区是 AGENTS §6 的硬线（触控目标不小于 44px），
-   定调令要求左下角不再有固定齿轮，所以这是「管理抽屉」图标 + 按钮，不是跳页链接。 */
-.ws-console-entry {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 9px;
-  width: 100%;
-  height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
-  color: #6b645b;
-  font: inherit;
-  font-size: 0.86rem;
-  cursor: pointer;
-}
-.ws-console-entry:hover { color: #a5382f; border-color: #e3c9c3; background: #f4e7e3; }
-.ws-console-entry:focus-visible { outline: 2px solid #a5382f; outline-offset: 2px; }
-
-/* 更新待办徽标：文字 + 颜色双通道，不靠颜色单独传达状态。 */
+/* 更新待办徽标：数字 + 颜色双通道，不靠颜色单独传达状态；贴在齿轮右上角。 */
 .ws-console-badge {
-  flex: none;
-  margin-left: auto;
-  padding: 2px 8px;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: #a5382f;
   color: #fff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 16px;
+  text-align: center;
   white-space: nowrap;
 }
 

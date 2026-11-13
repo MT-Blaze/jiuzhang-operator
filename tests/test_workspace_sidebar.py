@@ -4,7 +4,7 @@
 1. 删除写死的「拆分试卷 / 校对解析 / 组卷导出」与常驻对话入口（2026-11-05）；
 2. 插件区按 ``/api/plugins`` 的发现结果渲染，空态显示「暂无插件」；
 3. 点插件只注入工作模式上下文并更新舞台标题，不得跳转页面；
-4. 左栏 = 切换用户卡片 + 插件列表 + 栏底控制台入口。
+4. 左栏 = 插件列表 + 栏底工作区胶囊与设置齿轮（2026-11-13 起）。
 
 本测试只钉结构，不启浏览器；真机与像素证据由 ``.system_generated`` 下的探针产出。
 
@@ -27,6 +27,8 @@ STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 JS = workspace_source()
 CSS = workspace_css()
+# 底部栏与工作区弹窗的样式住在可整块下架的独立模块里，不在 workspace_css() 的拼包内。
+USER_CSS = (STATIC / "css" / "ws_users.css").read_text(encoding="utf-8")
 
 
 def rule_body(css: str, selector: str) -> str:
@@ -42,15 +44,16 @@ class SidebarStructureTest(unittest.TestCase):
             self.assertNotIn(label, HTML, f"左栏仍写死业务入口：{label}")
             self.assertNotIn(label, JS)
 
-    def test_02_left_column_starts_with_the_user_switch(self) -> None:
-        """2026-11-05：左栏首块是「切换用户」，底座不再有内置对话入口。"""
+    def test_02_left_column_starts_with_the_plugin_area(self) -> None:
+        """2026-11-13：顶部「当前用户」大卡退役，工作区入口收进栏底。"""
         self.assertNotIn('class="ws-entry-item"', HTML)
         self.assertNotIn('id="wsChatEntry"', HTML)
         self.assertNotIn('data-key="chat"', HTML)
         self.assertNotIn("chatEntry", JS)
-        self.assertIn('id="wsUserSwitchBtn"', HTML)
-        self.assertIn("当前用户", HTML)
-        self.assertIn('id="wsUserModal"', HTML)
+        self.assertNotIn('id="wsUserSwitchBtn"', HTML, "顶部用户大卡应已移除")
+        self.assertNotIn(">切换用户<", HTML)
+        self.assertIn('id="wsWorkspaceBtn"', HTML)
+        self.assertIn('id="wsWorkspaceModal"', HTML)
         self.assertIn("ws_users.js", HTML)
 
     def test_03_plugin_area_has_empty_state(self) -> None:
@@ -82,20 +85,33 @@ class SidebarStructureTest(unittest.TestCase):
         # 工作台脚本也不再引用已删除的安装按钮
         self.assertNotIn("wsPluginInstallBtn", JS)
 
-    def test_07_console_entry_is_44px_and_not_a_gear_link(self) -> None:
-        """v0.8.2 定调：左下角不再有固定齿轮，也不再跳独立页。"""
+    def test_07_footer_has_gear_entry_and_44px_hit_area(self) -> None:
+        """2026-11-13 定调：栏底 = 工作区胶囊 + 切换图标 + 齿轮，不再是大块按钮。"""
         self.assertNotIn('id="wsSettingsLink"', HTML, "齿轮链接应已被控制台入口取代")
         self.assertIn('id="wsConsoleBtn"', HTML)
         self.assertIn('aria-label="打开设置与控制台"', HTML)
         self.assertIn('JzoStage.activate("console")', JS, "入口应开画布页签而不是跳页")
-        block = re.search(r"\.ws-console-entry\s*\{([^}]*)\}", CSS)
-        self.assertIsNotNone(block, "缺少控制台入口样式")
-        self.assertRegex(block.group(1), r"width:\s*100%", "管理入口必须占满栏底")
-        self.assertRegex(block.group(1), r"height:\s*44px")
+        block = re.search(r"\.ws-foot-btn\s*\{([^}]*)\}", USER_CSS)
+        self.assertIsNotNone(block, "缺少底部图标按钮样式")
+        self.assertRegex(block.group(1), r"width:\s*44px", "图标热区必须 44px 宽")
+        self.assertRegex(block.group(1), r"height:\s*44px", "图标热区必须 44px 高")
         self.assertNotIn(".ws-settings-link", CSS, "旧齿轮样式已零引用，该删干净")
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
-        self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须死锁在左栏最底部")
+        self.assertIsNotNone(foot, "左栏栏底不见了")
+        self.assertIn('id="wsWorkspaceBtn"', foot.group(1), "工作区胶囊必须死锁在左栏最底部")
+        self.assertIn('id="wsWorkspaceSwitchBtn"', foot.group(1), "切换图标必须留在栏底")
+        self.assertIn('id="wsConsoleBtn"', foot.group(1), "设置入口必须死锁在左栏最底部")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标已按定调令移除")
+
+    def test_10_footer_truncates_long_names(self) -> None:
+        """375px 下长工作区名必须省略，不能把齿轮挤出栏外。"""
+        name_rule = rule_body(USER_CSS, ".ws-ws-name {")
+        for required in ("min-width: 0", "overflow: hidden",
+                         "text-overflow: ellipsis", "white-space: nowrap"):
+            self.assertIn(required, name_rule, f"工作区名缺 {required}，窄屏会溢出")
+        switch_rule = rule_body(USER_CSS, ".ws-ws-switch {")
+        self.assertIn("min-width: 0", switch_rule)
+        self.assertIn("height: 44px", switch_rule)
 
     def test_08_right_context_keeps_only_the_assistant_and_fills_the_column(self) -> None:
         """军令 #18 第一步：右栏只留 AI 助手，三个占位区与历史链删干净。

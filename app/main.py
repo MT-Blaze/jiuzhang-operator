@@ -32,6 +32,7 @@ from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
 from app.api.tikz import router as tikz_router
 from app.api.workspaces import router as workspaces_router
+from app.api.workspace_rename import router as workspace_rename_router
 from app.core import plugin_update, pwa, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
@@ -193,6 +194,7 @@ def create_app() -> FastAPI:
     app.include_router(ai_center_router)
     app.include_router(agents_router)
     app.include_router(workspaces_router)
+    app.include_router(workspace_rename_router)
     app.include_router(bank_router)
     app.include_router(bank_engine_router)
     app.include_router(assets_router)

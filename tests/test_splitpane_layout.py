@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 HTML = (STATIC / "workspace.html").read_text(encoding="utf-8")
 CSS = workspace_css()
+# 底部栏图标样式在可整块下架的模块里，不在 workspace_css() 的拼包内。
+USER_CSS = (STATIC / "css" / "ws_users.css").read_text(encoding="utf-8")
 JS = (STATIC / "js" / "splitpane.js").read_text(encoding="utf-8")
 BUS = (STATIC / "js" / "bus.js").read_text(encoding="utf-8")
 
@@ -66,18 +68,22 @@ class HandleMarkupTest(unittest.TestCase):
             orientation = "horizontal" if pane == "dock" else "vertical"
             self.assertIn(f'aria-orientation="{orientation}"', markup)
 
-    def test_03_console_entry_is_locked_in_sidebar_foot(self) -> None:
-        """v0.8.4：悬浮小图标（恢复布局）退役，栏底只留死锁的【设置与控制台】。"""
+    def test_03_footer_keeps_workspace_and_console_entries(self) -> None:
+        """2026-11-13：栏底改为工作区胶囊 + 图标按钮，两者都必须留在最底部。"""
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
         self.assertIsNotNone(foot, "左栏栏底不见了")
-        self.assertIn('id="wsConsoleBtn"', foot.group(1), "管理入口必须固定在左下角")
-        self.assertIn("设置与控制台", foot.group(1))
+        self.assertIn('id="wsWorkspaceBtn"', foot.group(1), "工作区入口必须固定在左下角")
+        self.assertIn('id="wsConsoleBtn"', foot.group(1), "设置入口必须固定在左下角")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标应已移除")
-        bodies = rule_bodies(".ws-console-entry")
-        self.assertTrue(bodies, "缺少管理入口样式")
+        bodies = [
+            body
+            for group, body in re.findall(r"([^{}]+)\{([^{}]*)\}", USER_CSS)
+            if ".ws-foot-btn" in group
+        ]
+        self.assertTrue(bodies, "缺少底部图标按钮样式")
         joined = "\n".join(bodies)
         self.assertRegex(joined, r"height:\s*44px")
-        self.assertRegex(joined, r"width:\s*100%")
+        self.assertRegex(joined, r"width:\s*44px")
 
 
 class DragSafetyTest(unittest.TestCase):

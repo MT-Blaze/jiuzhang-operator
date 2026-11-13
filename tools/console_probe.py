@@ -298,8 +298,9 @@ def main() -> int:
             page.reload(wait_until="networkidle")
             dot = page.locator("#wsConsoleDot")
             expect(dot).to_be_visible(timeout=10000)
-            check("更新待办以文字徽标呈现（不只靠颜色）",
-                  "2" in dot.inner_text() and "更新" in dot.inner_text(),
+            check("更新待办以数字徽标呈现（不只靠颜色），语义写在 aria-label",
+                  dot.inner_text().strip() == "2"
+                  and "更新" in (page.locator("#wsConsoleBtn").get_attribute("aria-label") or ""),
                   {"badge": dot.inner_text(), "aria": page.locator("#wsConsoleBtn").get_attribute("aria-label")})
             page.locator("#wsConsoleBtn").click()
             expect(page.locator("#wsConsoleFrame")).to_be_visible(timeout=10000)

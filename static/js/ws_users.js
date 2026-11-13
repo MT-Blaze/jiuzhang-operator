@@ -1,5 +1,5 @@
 /**
- * ws_users.js —— 左栏「切换用户」（2026-11-05）。
+ * ws_users.js —— 左栏底部栏：工作区胶囊 + 三合一工作区弹窗（2026-11-13）。
  *
  * 用户 == 工作区：切换/新建都走 /api/workspaces，后端写指针后重启底座。
  * 这里只负责用户清单、切换确认与重启遮罩；数据隔离（题库/密钥/插件）由后端目录结构保证。
@@ -8,24 +8,31 @@
 (function () {
   "use strict";
 
-  var cardBtn = document.getElementById("wsUserSwitchBtn");
-  var nameEl = document.getElementById("wsUserName");
-  var modal = document.getElementById("wsUserModal");
-  var modalClose = document.getElementById("wsUserModalClose");
-  var listEl = document.getElementById("wsUserList");
-  var statusEl = document.getElementById("wsUserStatus");
-  var form = document.getElementById("wsUserCreateForm");
-  var nameInput = document.getElementById("wsUserNewName");
-  var createBtn = document.getElementById("wsUserCreateBtn");
+  var workspaceBtn = document.getElementById("wsWorkspaceBtn");
+  var switchBtn = document.getElementById("wsWorkspaceSwitchBtn");
+  var nameEl = document.getElementById("wsWorkspaceName");
+  var avatarEl = document.getElementById("wsWorkspaceAvatar");
+  var modal = document.getElementById("wsWorkspaceModal");
+  var modalClose = document.getElementById("wsWorkspaceModalClose");
+  var listEl = document.getElementById("wsWorkspaceList");
+  var statusEl = document.getElementById("wsWorkspaceStatus");
+  var createForm = document.getElementById("wsWorkspaceCreateForm");
+  var nameInput = document.getElementById("wsWorkspaceNewName");
+  var createBtn = document.getElementById("wsWorkspaceCreateBtn");
+  var renameForm = document.getElementById("wsWorkspaceRenameForm");
+  var renameInput = document.getElementById("wsWorkspaceRenameName");
+  var renameBtn = document.getElementById("wsWorkspaceRenameBtn");
   var overlay = document.getElementById("wsRestartOverlay");
   var overlayBox = document.getElementById("wsRestartBox");
   var overlayText = document.getElementById("wsRestartText");
   var overlayHint = document.getElementById("wsRestartHint");
   var reloadBtn = document.getElementById("wsRestartReloadBtn");
 
-  if (!cardBtn || !modal || !listEl) return;
+  if (!workspaceBtn || !modal || !listEl) return;
 
   var busy = false;
+  var currentId = "default";
+  var currentName = "默认工作区";
   var prevFocus = null;
   var pollTimer = null;
   var POLL_MS = 600;
@@ -43,6 +50,25 @@
     statusEl.textContent = text || "";
     statusEl.setAttribute("data-tone", tone || "info");
     statusEl.hidden = !text;
+  }
+
+  function initialOf(name) {
+    var text = String(name || "").trim();
+    return text ? text.slice(0, 1).toUpperCase() : "工";
+  }
+
+  function paintWorkspace(ws) {
+    var id = String((ws && (ws.id || ws.workspace_id)) || currentId || "default");
+    var label = String((ws && ws.name) || (id === "default" ? "默认工作区" : id));
+    currentId = id;
+    currentName = label;
+    if (nameEl) {
+      nameEl.textContent = label;
+      nameEl.title = label;
+    }
+    if (avatarEl) avatarEl.textContent = initialOf(label);
+    if (renameInput && document.activeElement !== renameInput) renameInput.value = label;
+    if (workspaceBtn) workspaceBtn.title = "当前工作区：" + label;
   }
 
   function reloadPage() {
@@ -85,13 +111,13 @@
       .catch(function () { return ""; });
   }
 
-  function loadUsers() {
+  function loadWorkspaces() {
     return requestJson("/api/workspaces", "GET").then(function (data) {
       var list = (data && data.workspaces) || [];
-      var current = (data && data.current) || "";
+      var current = (data && data.current) || "default";
       var active = null;
       list.forEach(function (ws) { if (ws.id === current) active = ws; });
-      if (nameEl) nameEl.textContent = active ? (active.name || active.id) : "默认工作区";
+      paintWorkspace(active || { id: current, name: current === "default" ? "默认工作区" : current });
       renderList(list, current);
       return data;
     });
@@ -100,19 +126,20 @@
   function renderList(list, current) {
     listEl.textContent = "";
     if (!list.length) {
-      listEl.appendChild(el("li", "ws-user-empty", "尚未登记任何用户"));
+      listEl.appendChild(el("li", "ws-switch-empty", "尚未登记任何工作区"));
       return;
     }
     list.forEach(function (ws) {
-      var li = el("li", "ws-user-item");
-      li.setAttribute("data-active", ws.is_active || ws.id === current ? "1" : "0");
-      var main = el("div", "ws-user-item-main");
-      main.appendChild(el("strong", "ws-user-item-name", ws.name || ws.id));
-      main.appendChild(el("span", "ws-user-item-meta",
-        Number(ws.question_count || 0) + " 题" + (ws.id === current ? " · 当前用户" : "")));
+      var active = ws.is_active || ws.id === current;
+      var li = el("li", "ws-switch-item");
+      li.setAttribute("data-active", active ? "1" : "0");
+      var main = el("div", "ws-switch-item-main");
+      main.appendChild(el("strong", "ws-switch-item-name", ws.name || ws.id));
+      main.appendChild(el("span", "ws-switch-item-meta",
+        Number(ws.question_count || 0) + " 题" + (active ? " · 当前工作区" : "")));
       li.appendChild(main);
-      if (ws.id !== current) {
-        var go = el("button", "ws-btn ws-btn-sm", "切换到此用户");
+      if (!active) {
+        var go = el("button", "ws-btn ws-btn-sm", "切换");
         go.type = "button";
         go.addEventListener("click", function () { switchTo(ws); });
         li.appendChild(go);
@@ -126,11 +153,11 @@
     prevFocus = document.activeElement;
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
-    setStatus("正在读取用户清单…", "info");
-    loadUsers()
-      .then(function () { setStatus("", "info"); })
-      .catch(function (error) { setStatus("读取用户失败：" + error.message, "down"); });
+    setStatus("正在读取工作区清单…", "info");
     if (nameInput) nameInput.value = "";
+    loadWorkspaces()
+      .then(function () { setStatus("", "info"); })
+      .catch(function (error) { setStatus("读取工作区失败：" + error.message, "down"); });
     if (modalClose) modalClose.focus();
   }
 
@@ -214,13 +241,18 @@
     tick();
   }
 
+  function setBusy(value) {
+    busy = value;
+    [createBtn, renameBtn].forEach(function (btn) {
+      if (!btn) return;
+      btn.disabled = value;
+      btn.setAttribute("aria-busy", value ? "true" : "false");
+    });
+  }
+
   function runSwitch(request, waitText) {
     if (busy) return;
-    busy = true;
-    if (createBtn) {
-      createBtn.disabled = true;
-      createBtn.setAttribute("aria-busy", "true");
-    }
+    setBusy(true);
     closeModal(false);
     showOverlay(waitText);
     readBootId().then(function (oldBootId) {
@@ -245,11 +277,7 @@
       waitForRestart(String(result.boot_id || outcome.bootId || ""));
     }).catch(function (error) {
       hideOverlay();
-      busy = false;
-      if (createBtn) {
-        createBtn.disabled = false;
-        createBtn.setAttribute("aria-busy", "false");
-      }
+      setBusy(false);
       modal.hidden = false;
       modal.setAttribute("aria-hidden", "false");
       setStatus("操作失败：" + error.message, "down");
@@ -263,18 +291,43 @@
     }, "正在切换到「" + (ws.name || ws.id) + "」并重启底座，请稍候…");
   }
 
-  function createUser(event) {
+  function createWorkspace(event) {
     if (event) event.preventDefault();
     if (busy) return;
     var name = String((nameInput && nameInput.value) || "").trim();
     if (!name) {
-      setStatus("请先填写新用户名称。", "warn");
+      setStatus("请先填写新工作区名称。", "warn");
       if (nameInput) nameInput.focus();
       return;
     }
     runSwitch(function () {
       return requestJson("/api/workspaces", "POST", { name: name, textbook_id: "" });
-    }, "正在新建空用户「" + name + "」并重启底座，请稍候…");
+    }, "正在新建工作区「" + name + "」并重启底座，请稍候…");
+  }
+
+  function renameWorkspace(event) {
+    if (event) event.preventDefault();
+    if (busy) return;
+    var name = String((renameInput && renameInput.value) || "").trim();
+    if (!name) {
+      setStatus("请先填写新名称。", "warn");
+      if (renameInput) renameInput.focus();
+      return;
+    }
+    if (name === currentName) {
+      setStatus("名称没有变化。", "warn");
+      return;
+    }
+    setBusy(true);
+    setStatus("正在保存名称…", "info");
+    requestJson("/api/workspaces/rename", "POST", { workspace_id: currentId, name: name })
+      .then(function (data) {
+        paintWorkspace({ id: currentId, name: (data && data.name) || name });
+        setStatus("已重命名为「" + currentName + "」。", "ok");
+        return loadWorkspaces();
+      })
+      .catch(function (error) { setStatus("重命名失败：" + error.message, "down"); })
+      .then(function () { setBusy(false); });
   }
 
   function trapFocus(event) {
@@ -295,7 +348,8 @@
     }
   }
 
-  cardBtn.addEventListener("click", openModal);
+  workspaceBtn.addEventListener("click", openModal);
+  if (switchBtn) switchBtn.addEventListener("click", openModal);
   if (modalClose) modalClose.addEventListener("click", function () { closeModal(true); });
   modal.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
@@ -308,13 +362,15 @@
   modal.addEventListener("click", function (event) {
     if (event.target === modal) closeModal(true);
   });
-  if (form) form.addEventListener("submit", createUser);
+  if (createForm) createForm.addEventListener("submit", createWorkspace);
+  if (renameForm) renameForm.addEventListener("submit", renameWorkspace);
   if (reloadBtn) reloadBtn.addEventListener("click", function () {
     hideOverlay();
     reloadPage();
   });
 
-  loadUsers().catch(function () {
+  loadWorkspaces().catch(function () {
     if (nameEl) nameEl.textContent = "默认工作区";
+    if (avatarEl) avatarEl.textContent = "默";
   });
 })();

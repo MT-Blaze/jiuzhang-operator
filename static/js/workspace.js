@@ -325,7 +325,7 @@
     var label = wsState.updateNoticeCount > 0 ? "有 " + wsState.updateNoticeCount + " 项更新" : "";
     if (consoleDot) {
       consoleDot.hidden = wsState.updateNoticeCount <= 0;
-      consoleDot.textContent = label;
+      consoleDot.textContent = wsState.updateNoticeCount > 0 ? String(wsState.updateNoticeCount) : "";
     }
     var btn = document.getElementById("wsConsoleBtn");
     if (btn) {
