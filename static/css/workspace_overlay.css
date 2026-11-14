@@ -291,8 +291,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ws-page,
   .ws-sidebar,
-  .ws-context {
+  .ws-context,
+  .ws-rail-toggle,
+  .ws-rail-toggle::after {
     transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;

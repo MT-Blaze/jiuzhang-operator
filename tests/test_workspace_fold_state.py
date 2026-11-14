@@ -192,28 +192,32 @@ class PaneTrackPinningTest(unittest.TestCase):
 
 
 class ReopenEntryTest(unittest.TestCase):
-    """展开入口：任何折叠态下都必须出现、常驻、且压得过栏内容。"""
+    """侧栏开关：图标钉在页签栏两端，两态常驻、热区 44px、提示与快捷键齐全。"""
 
     def test_01_entry_lives_in_tab_bar(self) -> None:
         """v0.8.4 定调：舞台头已删除，展开入口并入贴顶的页签栏。"""
         self.assertIn('id="wsOpenSidebar"', HTML)
-        wrap = re.search(r'class="ws-tabs-wrap">(.*?)</div>', HTML, re.S)
+        wrap = re.search(r'class="ws-tabs-wrap">(.*?)<div class="ws-canvas-body"', HTML, re.S)
         self.assertIsNotNone(wrap, "页签栏容器不见了")
-        self.assertIn("wsOpenSidebar", wrap.group(1), "展开入口必须留在页签栏里")
+        self.assertIn("wsOpenSidebar", wrap.group(1), "左侧栏开关必须留在页签栏里")
+        self.assertIn("wsOpenCtx", wrap.group(1), "右侧栏开关必须留在页签栏里")
 
-    def test_02_entry_appears_when_side_hidden(self) -> None:
-        self.assertEqual(rule_body(".ws-drawer-btn").count("display: none"), 1)
-        self.assertRegex(
-            rule_body('.ws-page[data-side="hidden"] .ws-drawer-btn'),
-            r"display:\s*inline-flex",
-        )
+    def test_02_toggles_are_always_visible(self) -> None:
+        """2026-11-14：不再「收起才冒头」，两枚图标常驻页签栏两端。"""
+        body = rule_body(".ws-rail-toggle")
+        self.assertRegex(body, r"display:\s*inline-flex")
+        self.assertNotIn("display: none", body, "图标开关不许再默认隐身")
+        self.assertNotRegex(CSS, r'\.ws-page\[data-(?:side|ctx)="(?:hidden|open)"\] \.ws-rail-toggle',
+                            "开关可见性不许再被折叠态门控")
 
     def test_03_entry_layering_is_pinned_above_panels(self) -> None:
-        """层级加固：入口钮要 position 定位 + z-index，且不许被 flex 挤掉。"""
-        body = rule_body(".ws-drawer-btn")
-        self.assertRegex(body, r"position:\s*relative", "入口钮缺 position，z-index 不生效")
-        self.assertRegex(body, r"z-index:\s*\d+", "入口钮缺 z-index")
-        self.assertRegex(body, r"flex:\s*none", "入口钮会被挤压缩窄")
+        """层级加固：开关要 position + z-index，且不许被页签挤掉。"""
+        body = rule_body(".ws-rail-toggle")
+        self.assertRegex(body, r"position:\s*relative", "开关缺 position，z-index 不生效")
+        self.assertRegex(body, r"z-index:\s*\d+", "开关缺 z-index")
+        self.assertRegex(body, r"flex:\s*none", "开关会被页签挤压缩窄")
+        self.assertRegex(body, r"width:\s*44px", "开关热区必须 44px 宽")
+        self.assertRegex(body, r"height:\s*44px", "开关热区必须 44px 高")
 
     def test_04_entry_toggle_text_stays_in_sync(self) -> None:
         """折叠钮文案只能由状态机写入，且两态各有说法。"""
@@ -221,30 +225,57 @@ class ReopenEntryTest(unittest.TestCase):
         self.assertIn('setAttribute("data-side"', body)
         self.assertIn('open ? "折叠" : "展开"', body)
         self.assertIn('aria-expanded', body)
+        self.assertIn('paintRailButton(openSidebarBtn', body, "图标开关的提示/aria 必须随开合更新")
 
     def test_05_context_has_its_own_collapse_and_reopen(self) -> None:
-        """辅助栏（原右栏上下文）：栏内有折叠钮，栏藏起来后页签栏出现【辅助栏】钮。"""
+        """辅助栏：栏内保留折叠钮，页签栏右端的图标开关负责双向切换。"""
         self.assertIn('id="wsToggleCtx"', HTML, "辅助栏头部缺少折叠钮")
         self.assertIn('aria-label="辅助栏"', HTML, "右栏名字必须是「辅助栏」")
         self.assertNotIn("aria-label=\"上下文\"", HTML)
         self.assertNotIn("<h2>上下文</h2>", HTML)
-        # 页签栏整块都要看：【辅助栏】钮钉在所有页签的最右侧（2026-10-31 焊死），
-        # 它排在 #wsTabs 之后，所以不能只截到第一个 </div>。
-        wrap = re.search(r'class="ws-tabs-wrap">(.*?)<div class="ws-canvas-body"', HTML, re.S)
-        self.assertIsNotNone(wrap)
-        self.assertIn("wsOpenCtx", wrap.group(1), "辅助栏的回头路必须留在页签栏里")
-        self.assertIn("wsOpenSidebar", wrap.group(1), "入口钮必须留在页签栏里")
-        self.assertEqual(rule_body(".ws-ctx-btn").count("display: none"), 1)
-        self.assertRegex(
-            rule_body('.ws-page[data-ctx="hidden"] .ws-ctx-btn'),
-            r"display:\s*inline-flex",
-        )
-        # 两栏折叠互不牵连：data-side 的那条规则不许把【辅助栏】钮也带出来
-        self.assertNotIn(".ws-ctx-btn", rule_body('.ws-page[data-side="hidden"] .ws-drawer-btn'))
         body = re.search(r"function setCtx\(open\).*?\n  \}", JS, re.S).group(0)
         self.assertIn('setAttribute("data-ctx"', body)
         self.assertIn('open ? "折叠" : "展开"', body)
-        self.assertIn("openCtxBtn", body)
+        self.assertIn('paintRailButton(openCtxBtn', body)
+        # 右端开关必须真双向：开着的点一下要收起，不能只往「开」的方向走
+        handler = re.search(
+            r'if \(openCtxBtn\) \{\s*openCtxBtn\.addEventListener\("click", function \(\) \{(.*?)\}\);',
+            JS, re.S,
+        )
+        self.assertIsNotNone(handler, "右侧栏开关没有点击绑定")
+        self.assertIn("manualCtx(!ctxOpen())", handler.group(1))
+
+    def test_07_toggles_carry_tooltip(self) -> None:
+        """悬停提示只报开合动作；快捷键已按 2026-11-14 定调撤销，不许回潮。"""
+        for node_id, label in (
+            ("wsOpenSidebar", "侧边栏"),
+            ("wsOpenCtx", "辅助栏"),
+        ):
+            tag = re.search(r'<button[^>]*id="' + node_id + r'"[^>]*>', HTML)
+            self.assertIsNotNone(tag, f"{node_id} 按钮不见了")
+            markup = tag.group(0)
+            self.assertIn("data-tip=", markup, f"{node_id} 缺悬停提示")
+            self.assertIn(label, markup)
+            self.assertNotIn("aria-keyshortcuts", markup, "快捷键已撤销，aria 不许再挂键位")
+        for combo in ("Control+B", "Control+J", "Ctrl+B", "Ctrl+J"):
+            self.assertNotIn(combo, HTML)
+            self.assertNotIn(combo, JS)
+        self.assertIn(".ws-rail-toggle:hover::after", CSS, "提示气泡缺悬停态")
+        self.assertIn(".ws-rail-toggle:focus-visible::after", CSS, "提示气泡缺键盘聚焦态")
+        self.assertIn("data-tip", rule_body(".ws-rail-toggle::after"))
+        self.assertNotIn('key === "b"', JS, "侧栏开关不许再绑 Ctrl+B")
+        self.assertNotIn('key === "j"', JS, "侧栏开关不许再绑 Ctrl+J")
+
+    def test_08_collapse_animation_is_drag_safe(self) -> None:
+        """轨道宽度 200ms 插值，画布随折随铺；拖拽时关掉过渡，减动效时近乎瞬切。"""
+        page = rule_bodies(".ws-page")
+        self.assertIn("transition: grid-template-columns 200ms", page)
+        self.assertRegex(rule_body(".ws-page[data-resizing]"), r"transition:\s*none")
+        motion = re.search(
+            r"@media \(prefers-reduced-motion: reduce\) \{[^}]*\.ws-page,[^}]*\.ws-rail-toggle::after",
+            CSS, re.S,
+        )
+        self.assertIsNotNone(motion, "减动效块必须同时罩住栅格过渡与提示气泡")
 
     def test_06_dock_collapse_keeps_a_clickable_handle(self) -> None:
         """底栏折叠不许整区 display:none：留 44px 头条，折叠钮翻成「展开」。"""
@@ -391,10 +422,11 @@ class MobileDrawerTest(unittest.TestCase):
         self.assertRegex(block.group(1), r"min-height:\s*44px")
 
     def test_06_tab_strip_survives_narrow_screens(self) -> None:
-        """窄屏没有舞台头可挤：页签栏只许横向滚动，不许把抽屉入口推出屏外。"""
+        """窄屏没有舞台头可挤：页签条自己横滚，两端开关不被挤走。"""
         body = media_body_max(768)
         self.assertIn("overflow-x: auto", rule_body(".ws-tabs"))
-        self.assertIn("flex: none", rule_body(".ws-drawer-btn"))
+        self.assertIn("flex: 1 1 auto", rule_body(".ws-tabs"))
+        self.assertIn("flex: none", rule_body(".ws-rail-toggle"))
         self.assertNotIn("ws-stage-head", body, "窄屏仍在给已删除的舞台头写样式")
 
 

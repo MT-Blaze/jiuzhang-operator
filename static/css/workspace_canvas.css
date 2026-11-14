@@ -77,14 +77,14 @@ html.ws-dragging * {
   min-width: 0;
 }
 
-/* 页签栏贴顶：抽屉入口、页签与辅助栏回头路挤在同一条底线上，
-   谁也不许旁边留死白空隙——三者必须像连体婴儿一样挨着。 */
+/* 页签栏贴顶：两端各钉一枚侧栏开关，页签吃掉中间的剩余宽度并自行横滚，
+   开关永远贴边不被挤走，也不会跟着页签一起滚出视口。 */
 .ws-tabs-wrap {
   display: flex;
   align-items: flex-end;
   gap: 0;
   flex: none;
-  padding-left: 12px;
+  padding-left: 8px;
   border-bottom: 1px solid var(--line);
   background: var(--card);
 }
@@ -93,8 +93,8 @@ html.ws-dragging * {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  /* 页签条只占内容宽：辅助栏回头路要贴着最后一枚页签，不许被推到窗口最右端 */
-  flex: 0 1 auto;
+  /* 中间整段交给页签，右端开关才会被推到最右；页签自身从左边排起 */
+  flex: 1 1 auto;
   min-width: 0;
   padding: 6px 0 0;
   overflow-x: auto;

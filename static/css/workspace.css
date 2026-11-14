@@ -307,74 +307,67 @@
   background: var(--paper);
 }
 
-/* 抽屉/重开入口：侧栏可见时用它自带的折叠钮；一旦隐藏（桌面收轨道或移动滑出），
-   页签栏这枚「入口」钮出现，保证任何状态下都能把左栏叫回来。
-   它常驻页签栏，不参与挤压、不被裁剪、层级高于两侧栏；
-   外观与页签逐一相同（背景/圆角/内边距/字号/36px 高度），但没有关闭叉——
-   它本质是按钮，不是页签。 */
-.ws-drawer-btn {
-  display: none;
-  flex: none;
-  white-space: nowrap;
+/* 左右侧栏开关（2026-11-14）：图标钮钉在页签栏两端，两态都常驻可见；
+   点击翻 data-side / data-ctx 开合侧栏，不绑键盘快捷键。
+   44px 热区、键盘可达；悬浮或聚焦时在按钮下方浮出操作提示。 */
+.ws-rail-toggle {
   position: relative;
-  z-index: 4;
-}
-
-.ws-page[data-side="hidden"] .ws-drawer-btn {
+  z-index: 6;
+  flex: none;
   display: inline-flex;
   align-items: center;
-}
-
-/* 辅助栏的回头路与左栏同款，但只由 data-ctx 触发：
-   两栏折叠互不影响，不能让左边收起时冒出一枚「辅助栏」钮。 */
-.ws-ctx-btn {
-  display: none;
-  flex: none;
-  white-space: nowrap;
-  position: relative;
-  z-index: 4;
-}
-
-.ws-page[data-ctx="hidden"] .ws-ctx-btn {
-  display: inline-flex;
-  align-items: center;
-}
-
-/* 页签栏里的按钮一律长成页签的样子：同一行、同底边、同形。
-   只覆盖外观，不接管页签的 aria/选中态——按钮不参与 tablist 的选中切换。 */
-.ws-tabs-wrap .ws-drawer-btn,
-.ws-tabs-wrap .ws-ctx-btn {
-  align-self: flex-end;
   justify-content: center;
-  min-height: 36px;
-  /* 零外边距：入口钮紧贴第一枚页签，辅助栏钮紧贴最后一枚页签，中间不留缝 */
-  margin: 6px 0 0 0;
-  padding: 6px 10px 6px 12px;
-  border: 1px solid var(--line);
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  background: var(--paper-deep);
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--faint);
-  font-family: inherit;
-  font-size: 0.8rem;
-  box-shadow: none;
+  cursor: pointer;
   transition: background 150ms ease, color 150ms ease;
 }
 
-.ws-tabs-wrap .ws-drawer-btn:hover,
-.ws-tabs-wrap .ws-drawer-btn:focus-visible,
-.ws-tabs-wrap .ws-ctx-btn:hover,
-.ws-tabs-wrap .ws-ctx-btn:focus-visible {
-  background: var(--card);
-  border-color: var(--line);
+.ws-rail-toggle:hover {
+  background: var(--paper-deep);
   color: var(--ink);
-  outline: none;
 }
 
-.ws-tabs-wrap .ws-drawer-btn:focus-visible,
-.ws-tabs-wrap .ws-ctx-btn:focus-visible {
+.ws-rail-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* 提示气泡：右端那枚反向锚定，窄屏也不会顶出视口 */
+.ws-rail-toggle::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgba(31, 28, 24, 0.94);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease 60ms, transform 120ms ease 60ms;
+}
+
+.ws-rail-toggle--right::after {
+  left: auto;
+  right: 0;
+}
+
+.ws-rail-toggle:hover::after,
+.ws-rail-toggle:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ============ 右栏：上下文面板 ============ */

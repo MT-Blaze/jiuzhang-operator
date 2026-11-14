@@ -25,6 +25,14 @@
     return !!wsPage && wsPage.getAttribute("data-side") === "open";
   }
 
+  function paintRailButton(btn, open, name) {
+    if (!btn) return;
+    var action = open ? "隐藏" : "显示";
+    btn.setAttribute("aria-expanded", String(open));
+    btn.setAttribute("aria-label", action + name);
+    btn.setAttribute("data-tip", action + name);
+  }
+
   function setSide(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-side", open ? "open" : "hidden");
@@ -32,7 +40,7 @@
       sidebarToggle.setAttribute("aria-expanded", String(open));
       sidebarToggle.textContent = open ? "折叠" : "展开";
     }
-    if (openSidebarBtn) openSidebarBtn.setAttribute("aria-expanded", String(open));
+    paintRailButton(openSidebarBtn, open, "侧边栏");
   }
 
   function ctxOpen() {
@@ -66,7 +74,7 @@
       ctxToggle.setAttribute("aria-expanded", String(open));
       ctxToggle.textContent = open ? "折叠" : "展开";
     }
-    if (openCtxBtn) openCtxBtn.setAttribute("aria-expanded", String(open));
+    paintRailButton(openCtxBtn, open, "辅助栏");
   }
 
   // 右栏折叠策略（2026-11-05）：默认收起，只由「当前页签插件声明了 sidebar.right」
@@ -130,7 +138,7 @@
 
   if (openCtxBtn) {
     openCtxBtn.addEventListener("click", function () {
-      manualCtx(true);
+      manualCtx(!ctxOpen());
     });
   }
 

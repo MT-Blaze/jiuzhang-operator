@@ -66,29 +66,21 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('id="wsDockLog"', HTML)
         self.assertIn('id="wsToggleDock"', HTML)
 
-    def test_05_bar_buttons_share_the_tab_shape(self) -> None:
-        """页签栏里的「入口 / 辅助栏」是按钮：与页签同背景、同圆角、同内边距、同字号同高，但没有叉。"""
+    def test_05_bar_buttons_are_fixed_icon_toggles(self) -> None:
+        """2026-11-14：页签栏两端的「入口 / 辅助栏」文字块退役，换成定宽图标开关。"""
         drawer = re.search(r'<button class="[^"]*ws-drawer-btn"[^>]*>(.*?)</button>', HTML, re.S)
-        self.assertIsNotNone(drawer, "页签栏左端的「入口」钮不见了")
-        self.assertIn("入口", drawer.group(1))
-        self.assertNotIn("ws-tab-close", drawer.group(1), "按钮不是页签，不许长关闭叉")
-        rule = re.search(
-            r"\.ws-tabs-wrap \.ws-drawer-btn,\s*\n\.ws-tabs-wrap \.ws-ctx-btn \{([^}]*)\}", CSS
-        )
-        self.assertIsNotNone(rule, "页签栏按钮要有与页签同形的样式块")
-        body = rule.group(1)
-        for token in (
-            "min-height: 36px",
-            # 零外边距：入口钮紧贴第一枚页签，辅助栏钮紧贴最后一枚页签（2026-10-31 焊死）
-            "margin: 6px 0 0 0",
-            "padding: 6px 10px 6px 12px",
-            "border-radius: 8px 8px 0 0",
-            "background: var(--paper-deep)",
-            "font-size: 0.8rem",
-            # 底端对齐：三枚按钮与页签必须贴在同一根底线上
-            "align-self: flex-end",
-        ):
-            self.assertIn(token, body, f"与页签同形缺了 {token}")
+        self.assertIsNotNone(drawer, "页签栏左端的侧栏开关不见了")
+        self.assertIn("<svg", drawer.group(1), "开关必须是图标")
+        self.assertNotIn("入口", drawer.group(1), "文字块「入口」必须退场")
+        self.assertNotIn("ws-tab-close", drawer.group(1), "开关不是页签，不许长关闭叉")
+        ctx = re.search(r'<button class="[^"]*ws-ctx-btn"[^>]*>(.*?)</button>', HTML, re.S)
+        self.assertIsNotNone(ctx, "页签栏右端的辅助栏开关不见了")
+        self.assertIn("<svg", ctx.group(1))
+        self.assertNotIn("辅助栏", ctx.group(1), "文字块「辅助栏」必须退场")
+        body = re.search(r"\.ws-rail-toggle\s*\{([^}]*)\}", CSS)
+        self.assertIsNotNone(body, "图标开关缺少样式块")
+        for token in ("width: 44px", "height: 44px", "flex: none", "position: relative"):
+            self.assertIn(token, body.group(1), f"图标开关缺 {token}")
 
     def test_06_native_tabs_carry_close_buttons(self) -> None:
         """设置与控制台渲染关闭叉；原生页签的面板关掉后留在文档里供重建。"""

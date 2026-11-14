@@ -73,7 +73,6 @@ LEGACY_OVER_CEILING = {
     "app/api/bank.py": 516,
     "plugins/org.jiuzhang.handout/dist/plugin.js": 515,
     "app/core/latex_style_dict.py": 506,
-    "static/css/workspace.css": 504,
 }
 
 
