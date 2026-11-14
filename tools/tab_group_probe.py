@@ -296,7 +296,7 @@ def run(tag: str) -> dict:
         snap("02-immersive")
 
         # --- 3. 全屏中点画布【入口】→ 覆盖层（#18 第二步后不再有全局键） -------------
-        # 沉浸态左栏是 display:none，栏内的【折叠】按钮够不着；唤出只能走画布上的【入口】。
+        # 沉浸态左栏是 display:none，只能走页签栏左端的图标开关；这枚图标也是收回通道。
         page.locator("#wsOpenSidebar").click()
         page.wait_for_timeout(700)
         state = bar()
@@ -304,7 +304,7 @@ def run(tag: str) -> dict:
               state["rail"] == "on" and state["sidebarPos"] == "fixed"
               and state["sidebarWidth"] >= 200 and state["fullscreen"] is True, state)
         snap("03-immersive-rail")
-        page.locator("#wsToggleSidebar").click()
+        page.locator("#wsOpenSidebar").click()
         page.wait_for_timeout(700)
         state = bar()
         check("06b 再点一次把浮层收回（左栏让位、全屏不退）",

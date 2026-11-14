@@ -28,7 +28,6 @@
           <h2>插件</h2>
           <span class="ws-plugin-count" id="wsPluginCount" hidden></span>
         </div>
-        <button class="ws-btn ws-btn-sm" id="wsToggleSidebar" aria-expanded="true" aria-controls="wsSidebarBody">折叠</button>
       </header>
       <div class="ws-sidebar-body" id="wsSidebarBody">
         <section class="ws-plugin-entry" aria-label="已装插件">
@@ -110,11 +109,11 @@
       aria-orientation="vertical" tabindex="0" aria-label="拖动调整右栏宽度"></div>
 
     <!-- 右栏：辅助栏。视图/元数据/AI 帮改/审核动作由入住插件自己决定；
-         栏本身归底座，顶部的折叠钮把整栏收走，页签栏右端的图标开关再叫回来。 -->
+         栏本身归底座，开合统一走页签栏右端的图标开关。 -->
     <aside class="ws-context" id="wsContext" role="complementary" aria-label="辅助栏">
       <!-- 抬头合并（2026-11-01）：「录题工作台 / 插件接管」原本另起一行，
            白白占掉辅助栏最宝贵的纵向空间。标题与徽标搬上栏头这一行，
-           和「辅助栏」、【折叠】钮同处一条水平线；插件自己那行抬头
+           和「辅助栏」同处一条水平线；插件自己那行抬头
            （录题辅助栏 / 视图·元数据…）随之退场——那四个字与栏名重复，
            四个分区标题（编辑视图 / 元数据 / AI 帮改 / 审核动作）本就在面板里。 -->
       <header class="ws-context-head">
@@ -123,8 +122,6 @@
           <h3 class="ws-context-slot-title" id="wsContextSlotTitle">插件辅助栏</h3>
           <span class="ws-context-slot-badge" id="wsContextSlotBadge" hidden>暂无住户</span>
         </div>
-        <button class="ws-btn ws-btn-sm" id="wsToggleCtx" type="button"
-          aria-expanded="true" aria-controls="wsContext">折叠</button>
       </header>
       <div class="ws-context-body ws-ghost-scroll" id="wsContextBody">
         <!-- 右栏插槽（sidebar.right）：主权只认当前画布页签。
@@ -282,7 +279,7 @@
   <script src="/static/js/ws_users.js?v=20261114"></script>
   <!-- 启动落脚点：上次停留的插件页优先，首次打开落数据看板（须早于 workspace.js） -->
   <script src="/static/js/ws_startup.js?v=20261113"></script>
-  <script src="/static/js/workspace.js?v=20261113"></script>
+  <script src="/static/js/workspace.js?v=20261114"></script>
   <script src="/static/js/pwa.js?v=20261113"></script>
 </body>
 </html>

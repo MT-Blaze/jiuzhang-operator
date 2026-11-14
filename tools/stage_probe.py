@@ -483,32 +483,30 @@ def run(tag: str) -> dict:
                   and len(console_back["tabs"]) == n_before_console,
                   repr(console_back["tabs"]))
 
-            # ---------- 入口按钮与页签同形（2026-10-31 军令） ----------
-            page.locator("#wsToggleSidebar").click()
+            # ---------- 页签栏两端侧栏图标（2026-11-14） ----------
+            page.locator("#wsOpenSidebar").click()
             page.wait_for_timeout(400)
             snap("22-entry-shape")
             shape = page.evaluate("""() => {
               const btn = document.getElementById('wsOpenSidebar');
-              const tab = document.querySelector('#wsTabs .ws-tab');
-              const cs = node => getComputedStyle(node);
-              const pick = node => ({
-                h: Math.round(node.getBoundingClientRect().height),
-                radius: cs(node).borderTopLeftRadius,
-                font: cs(node).fontSize,
-                bg: cs(node).backgroundColor,
-                padTop: cs(node).paddingTop,
-                padLeft: cs(node).paddingLeft,
-                borderBottom: cs(node).borderBottomWidth,
-                visible: node.getBoundingClientRect().width > 0
-              });
-              return {button: pick(btn), tab: pick(tab)};
+              const ctxBtn = document.getElementById('wsOpenCtx');
+              const b = btn.getBoundingClientRect();
+              return {
+                w: Math.round(b.width), h: Math.round(b.height),
+                text: btn.textContent.trim(),
+                svg: Boolean(btn.querySelector('svg')),
+                side: document.querySelector('.ws-page').getAttribute('data-side'),
+                oldSidebarToggle: Boolean(document.getElementById('wsToggleSidebar')),
+                oldCtxToggle: Boolean(document.getElementById('wsToggleCtx')),
+                ctxVisible: ctxBtn.getBoundingClientRect().width > 0
+              };
             }""")
-            btn_shape, tab_shape = shape["button"], shape["tab"]
-            check("收起左栏后入口按钮可见", btn_shape["visible"], repr(shape))
-            check("入口按钮与页签同高、同字号、同底色、同圆角、同内边距",
-                  all(btn_shape[k] == tab_shape[k]
-                      for k in ("h", "font", "bg", "radius", "padTop", "padLeft", "borderBottom")),
-                  repr(shape))
+            check("收起左栏后页签栏图标仍可见", shape["w"] == 44 and shape["h"] == 44, repr(shape))
+            check("侧栏图标无文字、带 svg", shape["svg"] and shape["text"] == "", repr(shape))
+            check("图标点击后左栏确实收起", shape["side"] == "hidden", repr(shape))
+            check("左右栏头的文字折叠钮已删除",
+                  not shape["oldSidebarToggle"] and not shape["oldCtxToggle"], repr(shape))
+            check("右侧栏图标同样常驻", shape["ctxVisible"], repr(shape))
             page.locator("#wsOpenSidebar").click()
             page.wait_for_timeout(400)
 

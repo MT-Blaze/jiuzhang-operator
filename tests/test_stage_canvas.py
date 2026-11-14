@@ -67,7 +67,8 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIn('id="wsToggleDock"', HTML)
 
     def test_05_bar_buttons_are_fixed_icon_toggles(self) -> None:
-        """2026-11-14：页签栏两端的「入口 / 辅助栏」文字块退役，换成定宽图标开关。"""
+        """2026-11-14：页签栏两端的「入口 / 辅助栏」文字块退役，换成定宽图标开关；
+        两栏顶部原有的「折叠」文字钮同步删除，开合只剩这一组图标。"""
         drawer = re.search(r'<button class="[^"]*ws-drawer-btn"[^>]*>(.*?)</button>', HTML, re.S)
         self.assertIsNotNone(drawer, "页签栏左端的侧栏开关不见了")
         self.assertIn("<svg", drawer.group(1), "开关必须是图标")
@@ -77,6 +78,8 @@ class CanvasMarkupTest(unittest.TestCase):
         self.assertIsNotNone(ctx, "页签栏右端的辅助栏开关不见了")
         self.assertIn("<svg", ctx.group(1))
         self.assertNotIn("辅助栏", ctx.group(1), "文字块「辅助栏」必须退场")
+        self.assertNotIn('id="wsToggleSidebar"', HTML, "左栏顶部的「折叠」文字钮必须删除")
+        self.assertNotIn('id="wsToggleCtx"', HTML, "右栏顶部的「折叠」文字钮必须删除")
         body = re.search(r"\.ws-rail-toggle\s*\{([^}]*)\}", CSS)
         self.assertIsNotNone(body, "图标开关缺少样式块")
         for token in ("width: 44px", "height: 44px", "flex: none", "position: relative"):

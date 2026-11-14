@@ -1,5 +1,5 @@
 /**
- * ws_rail.js —— workspace.js 的「折叠：左栏」小节抽出来的独立模块
+ * ws_rail.js —— workspace.js 的「侧栏开合」小节抽出来的独立模块
  * （PLUGIN_SPEC §2.8.1 同款口径：底座 JS 单文件不超过 800 行）。
  *
  * 依赖一律由 create(deps) 交进来，模块不认全局、也不碰宿主 DOM。
@@ -8,9 +8,7 @@
   "use strict";
 
   function create(deps) {
-    var ctxToggle = deps.ctxToggle;
     var dockToggle = deps.dockToggle;
-    var sidebarToggle = deps.sidebarToggle;
 
   // ============ 折叠：左栏 / 右栏（data 属性驱动，桌面收轨道、移动滑抽屉） ============
   // 状态机只有一个事实来源：.ws-page 上的 data-side / data-ctx。
@@ -36,10 +34,6 @@
   function setSide(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-side", open ? "open" : "hidden");
-    if (sidebarToggle) {
-      sidebarToggle.setAttribute("aria-expanded", String(open));
-      sidebarToggle.textContent = open ? "折叠" : "展开";
-    }
     paintRailButton(openSidebarBtn, open, "侧边栏");
   }
 
@@ -70,10 +64,6 @@
   function setCtx(open) {
     if (!wsPage) return;
     wsPage.setAttribute("data-ctx", open ? "open" : "hidden");
-    if (ctxToggle) {
-      ctxToggle.setAttribute("aria-expanded", String(open));
-      ctxToggle.textContent = open ? "折叠" : "展开";
-    }
     paintRailButton(openCtxBtn, open, "辅助栏");
   }
 
@@ -111,12 +101,6 @@
     }
   }
 
-  if (sidebarToggle) {
-    sidebarToggle.addEventListener("click", function () {
-      toggleRail();
-    });
-  }
-
   if (openSidebarBtn) {
     openSidebarBtn.addEventListener("click", function () {
       toggleRail();
@@ -128,12 +112,6 @@
     ctxUserWantsOpen = open;
     ctxAutoOpened = false;
     setCtx(open);
-  }
-
-  if (ctxToggle) {
-    ctxToggle.addEventListener("click", function () {
-      manualCtx(!ctxOpen());
-    });
   }
 
   if (openCtxBtn) {

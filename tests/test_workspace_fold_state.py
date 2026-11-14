@@ -219,23 +219,25 @@ class ReopenEntryTest(unittest.TestCase):
         self.assertRegex(body, r"width:\s*44px", "开关热区必须 44px 宽")
         self.assertRegex(body, r"height:\s*44px", "开关热区必须 44px 高")
 
-    def test_04_entry_toggle_text_stays_in_sync(self) -> None:
-        """折叠钮文案只能由状态机写入，且两态各有说法。"""
+    def test_04_entry_state_stays_in_sync(self) -> None:
+        """侧栏开合只由图标开关自己表达，栏头不再有文字折叠钮。"""
         body = re.search(r"function setSide\(open\).*?\n  \}", JS, re.S).group(0)
         self.assertIn('setAttribute("data-side"', body)
-        self.assertIn('open ? "折叠" : "展开"', body)
-        self.assertIn('aria-expanded', body)
+        self.assertNotIn("textContent", body, "栏头文字折叠钮已删除，setSide 不许再回写文案")
+        self.assertNotIn('"折叠"', body)
+        self.assertNotIn('"展开"', body)
         self.assertIn('paintRailButton(openSidebarBtn', body, "图标开关的提示/aria 必须随开合更新")
 
     def test_05_context_has_its_own_collapse_and_reopen(self) -> None:
-        """辅助栏：栏内保留折叠钮，页签栏右端的图标开关负责双向切换。"""
-        self.assertIn('id="wsToggleCtx"', HTML, "辅助栏头部缺少折叠钮")
+        """辅助栏：开合只由页签栏右端的图标开关双向切换，栏头文字钮已退役。"""
+        self.assertNotIn('id="wsToggleCtx"', HTML, "辅助栏头部的文字折叠钮必须删除")
+        self.assertNotIn('id="wsToggleSidebar"', HTML, "左栏头部的文字折叠钮必须删除")
         self.assertIn('aria-label="辅助栏"', HTML, "右栏名字必须是「辅助栏」")
         self.assertNotIn("aria-label=\"上下文\"", HTML)
         self.assertNotIn("<h2>上下文</h2>", HTML)
         body = re.search(r"function setCtx\(open\).*?\n  \}", JS, re.S).group(0)
         self.assertIn('setAttribute("data-ctx"', body)
-        self.assertIn('open ? "折叠" : "展开"', body)
+        self.assertNotIn("textContent", body, "栏头文字折叠钮已删除，setCtx 不许再回写文案")
         self.assertIn('paintRailButton(openCtxBtn', body)
         # 右端开关必须真双向：开着的点一下要收起，不能只往「开」的方向走
         handler = re.search(
@@ -428,6 +430,20 @@ class MobileDrawerTest(unittest.TestCase):
         self.assertIn("flex: 1 1 auto", rule_body(".ws-tabs"))
         self.assertIn("flex: none", rule_body(".ws-rail-toggle"))
         self.assertNotIn("ws-stage-head", body, "窄屏仍在给已删除的舞台头写样式")
+
+    def test_07_edge_icons_close_the_drawer(self) -> None:
+        """抽屉展开时栏内已无文字折叠钮，两端图标必须压在抽屉之上，仍可收回。"""
+        body = media_body_max(768)
+        toggle = re.search(r"\.ws-rail-toggle\s*\{([^}]*)\}", body)
+        self.assertIsNotNone(toggle, "窄屏没给图标开关单独一条规则")
+        self.assertIn("z-index: 120", toggle.group(1), "图标开关压在抽屉（z-index 110）之下就点不着")
+        self.assertNotRegex(
+            body,
+            r'data-(?:side|ctx)="open"\] \.ws-(?:drawer|ctx)-btn\s*\{[^}]*visibility:\s*hidden',
+            "抽屉展开时不许再把唯一的开合图标藏起来",
+        )
+        self.assertIn('[data-side="open"] .ws-sidebar-head', body, "抽屉抬头要给左图标留出位置")
+        self.assertIn('[data-ctx="open"] .ws-context-head', body, "抽屉抬头要给右图标留出位置")
 
 
 class StateMachineTest(unittest.TestCase):

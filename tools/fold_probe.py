@@ -23,7 +23,6 @@ JS_STATE = """
   const page = document.querySelector('.ws-page');
   const sb = document.getElementById('wsSidebar');
   const drawer = document.getElementById('wsOpenSidebar');
-  const toggle = document.getElementById('wsToggleSidebar');
   const center = document.querySelector('.ws-center');
   const ctx = document.getElementById('wsContext');
   const ctxModel = document.getElementById('ctxModel');
@@ -37,12 +36,6 @@ JS_STATE = """
   if (box && box.w > 0 && box.h > 0) {
     const el = document.elementFromPoint(box.x + box.w / 2, box.y + box.h / 2);
     hit = el ? (el.id || el.className || el.tagName) : 'none';
-  }
-  const tbox = rect(toggle);
-  let thit = null;
-  if (tbox && tbox.w > 0 && tbox.h > 0 && tbox.x >= 0) {
-    const el = document.elementFromPoint(tbox.x + tbox.w / 2, tbox.y + tbox.h / 2);
-    thit = el ? (el.id || el.className || el.tagName) : 'none';
   }
   // 侧栏内容是否溢出到主区：取侧栏内所有可绘元素的最右边界
   let rightmost = null;
@@ -69,15 +62,11 @@ JS_STATE = """
     drawerRect: box,
     drawerHit: hit,
     drawerClickable: hit === 'wsOpenSidebar',
-    toggleRect: tbox,
-    toggleHit: thit,
-    toggleReachable: thit === 'wsToggleSidebar',
     hOverflow: document.documentElement.scrollWidth - window.innerWidth,
     centerRect: rect(center),
     ctxRect: rect(ctx),
     ctxDisplay: getComputedStyle(ctx).display,
     ctxModelRect: rect(ctxModel),
-    toggleText: toggle ? toggle.textContent.trim() : null,
     sidebarRightmost: rightmost,
     overflowIntoCenter: (rightmost !== null && center && rect(center).w > 0)
       ? rightmost > Math.round(rect(center).x + 1)
@@ -134,9 +123,9 @@ def run(tag: str) -> dict:
 
             snap("00-initial")
             for i in range(1, 6):
-                # 状态机事实来源 = data-side；收起态点「任务」，展开态点「折叠」
+                # 状态机事实来源 = data-side；同一枚页签栏图标负责收起与展开
                 opening = report["states"][-1]["dataSide"] != "open"
-                sel = "#wsOpenSidebar" if opening else "#wsToggleSidebar"
+                sel = "#wsOpenSidebar"
                 real_click(sel, f"{i:02}-{'show' if opening else 'hide'}")
                 page.wait_for_timeout(320)
                 snap(f"{i:02}-{'show' if opening else 'hide'}")
@@ -165,7 +154,7 @@ def run(tag: str) -> dict:
                     page.wait_for_selector(
                         '.ws-plugin-frame[title^="录题工作台"]', timeout=15000)
                     page.wait_for_timeout(1400)
-                    page.locator("#wsToggleSidebar").click(timeout=3000)
+                    page.locator("#wsOpenSidebar").click(timeout=3000)
                     page.wait_for_timeout(420)
                     ed = snap("96-editor-folded")
                     frame_rect = ed.get("editorFrameRect") or {}
@@ -235,8 +224,7 @@ if __name__ == "__main__":
             f"ovf={st['overflowIntoCenter']}"
         )
         print(f"           sb={fmt(st['sidebarRect'])} center={fmt(st['centerRect'])} "
-              f"ctx[{st['ctxDisplay']}]={fmt(st['ctxRect'])} ctxModel={fmt(st['ctxModelRect'])} "
-              f"toggle='{st['toggleText']}'")
+              f"ctx[{st['ctxDisplay']}]={fmt(st['ctxRect'])} ctxModel={fmt(st['ctxModelRect'])}")
     if rep["errors"]:
         print("PAGE ERRORS:", wire.dumps(rep["errors"], ensure_ascii=False))
     legacy = [st for st in rep["states"] if st.get("step") == "95-inline-legacy-hidden"]

@@ -1,0 +1,880 @@
+{
+  "checks": [
+    {
+      "name": "桌面：两个文字折叠钮已从 DOM 消失",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 1195,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：左右栏头都不再有按钮",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 1195,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：两侧边缘图标 44×44 且可命中",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 1195,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：点左图标收起侧栏",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 1440,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：收起后画布顶到 x=0 并铺满",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 1440,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：同一图标展开侧栏",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 1195,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：点右图标展开辅助栏",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "open",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 890,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1091,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "桌面：同一右图标收起辅助栏，中栏吃回右栏空间",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 245,
+          "y": 0,
+          "w": 1195,
+          "h": 705
+        },
+        "vw": 1440,
+        "leftToggle": {
+          "x": 253,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 1396,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：默认抽屉收起，无横向溢出",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：左图标展开抽屉，且图标浮在抽屉之上",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "56px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：抽屉抬头给图标留位",
+      "ok": true,
+      "detail": {
+        "side": "open",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "56px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：再点左图标可收回抽屉",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：右图标展开辅助栏，且图标浮在抽屉之上",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "open",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "56px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：右抽屉抬头给图标留位",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "open",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "56px",
+        "overflowX": 0
+      }
+    },
+    {
+      "name": "窄屏：再点右图标可收回辅助栏",
+      "ok": true,
+      "detail": {
+        "side": "hidden",
+        "ctx": "hidden",
+        "center": {
+          "x": 0,
+          "y": 0,
+          "w": 375,
+          "h": 768
+        },
+        "vw": 375,
+        "leftToggle": {
+          "x": 8,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "rightToggle": {
+          "x": 331,
+          "y": 0,
+          "w": 44,
+          "h": 44
+        },
+        "leftHit": "wsOpenSidebar",
+        "rightHit": "wsOpenCtx",
+        "oldLeft": false,
+        "oldRight": false,
+        "sidebarHeadButtons": 0,
+        "ctxHeadButtons": 0,
+        "sidebarPadLeft": "16px",
+        "ctxPadRight": "16px",
+        "overflowX": 0
+      }
+    }
+  ],
+  "states": [
+    {
+      "label": "desktop-baseline",
+      "side": "open",
+      "ctx": "hidden",
+      "center": {
+        "x": 245,
+        "y": 0,
+        "w": 1195,
+        "h": 705
+      },
+      "vw": 1440,
+      "leftToggle": {
+        "x": 253,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 1396,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "desktop-side-hidden",
+      "side": "hidden",
+      "ctx": "hidden",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 705
+      },
+      "vw": 1440,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 1396,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "desktop-side-reopened",
+      "side": "open",
+      "ctx": "hidden",
+      "center": {
+        "x": 245,
+        "y": 0,
+        "w": 1195,
+        "h": 705
+      },
+      "vw": 1440,
+      "leftToggle": {
+        "x": 253,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 1396,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "desktop-ctx-open",
+      "side": "open",
+      "ctx": "open",
+      "center": {
+        "x": 245,
+        "y": 0,
+        "w": 890,
+        "h": 705
+      },
+      "vw": 1440,
+      "leftToggle": {
+        "x": 253,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 1091,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "desktop-ctx-closed",
+      "side": "open",
+      "ctx": "hidden",
+      "center": {
+        "x": 245,
+        "y": 0,
+        "w": 1195,
+        "h": 705
+      },
+      "vw": 1440,
+      "leftToggle": {
+        "x": 253,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 1396,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "narrow-initial",
+      "side": "hidden",
+      "ctx": "hidden",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 375,
+        "h": 768
+      },
+      "vw": 375,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 331,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "narrow-side-open",
+      "side": "open",
+      "ctx": "hidden",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 375,
+        "h": 768
+      },
+      "vw": 375,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 331,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "56px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "narrow-side-closed",
+      "side": "hidden",
+      "ctx": "hidden",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 375,
+        "h": 768
+      },
+      "vw": 375,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 331,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    },
+    {
+      "label": "narrow-ctx-open",
+      "side": "hidden",
+      "ctx": "open",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 375,
+        "h": 768
+      },
+      "vw": 375,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 331,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "56px",
+      "overflowX": 0
+    },
+    {
+      "label": "narrow-ctx-closed",
+      "side": "hidden",
+      "ctx": "hidden",
+      "center": {
+        "x": 0,
+        "y": 0,
+        "w": 375,
+        "h": 768
+      },
+      "vw": 375,
+      "leftToggle": {
+        "x": 8,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "rightToggle": {
+        "x": 331,
+        "y": 0,
+        "w": 44,
+        "h": 44
+      },
+      "leftHit": "wsOpenSidebar",
+      "rightHit": "wsOpenCtx",
+      "oldLeft": false,
+      "oldRight": false,
+      "sidebarHeadButtons": 0,
+      "ctxHeadButtons": 0,
+      "sidebarPadLeft": "16px",
+      "ctxPadRight": "16px",
+      "overflowX": 0
+    }
+  ],
+  "errors": [],
+  "passed": 15,
+  "total": 15,
+  "pageErrors": 0
+}

@@ -99,8 +99,8 @@ class ImmersiveTest(unittest.TestCase):
         self.assertIn("setSide(!sideOpen())", body, "非沉浸态还得是原来那本折叠账")
         self.assertNotIn('setAttribute("data-immersive"', WORKSPACE,
                          "data-immersive 是画布的手势，只有 stage.js 能写")
-        self.assertGreaterEqual(WORKSPACE.count("toggleRail()"), 3,
-                                "两枚左栏按钮共用同一个开关，不许两份实现")
+        self.assertGreaterEqual(WORKSPACE.count("toggleRail()"), 2,
+                                "左栏开合只留页签栏图标一个入口，不许两份实现")
 
 
 class OverflowTest(unittest.TestCase):

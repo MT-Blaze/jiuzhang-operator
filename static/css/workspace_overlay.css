@@ -268,10 +268,19 @@
     transition: transform 200ms ease, visibility 0s linear 0s;
   }
 
-  /* 抽屉浮起时，舞台头那枚入口钮让位给抽屉自带的「折叠」，避免两枚按钮抢焦点 */
-  .ws-page[data-side="open"] .ws-drawer-btn,
-  .ws-page[data-ctx="open"] .ws-ctx-btn {
-    visibility: hidden;
+  /* 抽屉浮起时，页签栏两端的图标开关必须压在抽屉之上：
+     栏内已没有第二枚折叠钮，收回通道只剩这枚图标本身。 */
+  .ws-rail-toggle {
+    z-index: 120;
+  }
+
+  .ws-page[data-side="open"] .ws-sidebar-head,
+  .ws-page[data-immersive-rail="on"] .ws-sidebar-head {
+    padding-left: 56px;
+  }
+
+  .ws-page[data-ctx="open"] .ws-context-head {
+    padding-right: 56px;
   }
 
 

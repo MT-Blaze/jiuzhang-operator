@@ -53,11 +53,9 @@
   var EDITOR_PLUGIN_ID = "org.jiuzhang.editor";
 
   // --- DOM refs ---
-  var sidebarToggle = document.getElementById("wsToggleSidebar");
   var stageTitle = document.getElementById("wsStageTitle");
   var pluginListEl = document.getElementById("wsPluginList");
   var pluginCountEl = document.getElementById("wsPluginCount");
-  var ctxToggle = document.getElementById("wsToggleCtx");
   var dockToggle = document.getElementById("wsToggleDock");
   var dockClearBtn = document.getElementById("wsDockClear");
   var dockLog = document.getElementById("wsDockLog");
@@ -130,9 +128,7 @@
   var initUiState = wsPanel.initUiState;
   var syncContextSlot = wsPanel.syncContextSlot;
   var wsRail = window.JzoWsRail.create({
-    ctxToggle: ctxToggle,
     dockToggle: dockToggle,
-    sidebarToggle: sidebarToggle,
   });
   var setCtx = wsRail.setCtx;
   var wsSidebar = window.JzoWsSidebar.create({
