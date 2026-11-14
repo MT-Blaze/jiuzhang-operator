@@ -9,7 +9,6 @@
   "use strict";
 
   var workspaceBtn = document.getElementById("wsWorkspaceBtn");
-  var switchBtn = document.getElementById("wsWorkspaceSwitchBtn");
   var nameEl = document.getElementById("wsWorkspaceName");
   var avatarEl = document.getElementById("wsWorkspaceAvatar");
   var modal = document.getElementById("wsWorkspaceModal");
@@ -349,7 +348,6 @@
   }
 
   workspaceBtn.addEventListener("click", openModal);
-  if (switchBtn) switchBtn.addEventListener("click", openModal);
   if (modalClose) modalClose.addEventListener("click", function () { closeModal(true); });
   modal.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {

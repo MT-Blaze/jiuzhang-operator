@@ -69,11 +69,12 @@ class HandleMarkupTest(unittest.TestCase):
             self.assertIn(f'aria-orientation="{orientation}"', markup)
 
     def test_03_footer_keeps_workspace_and_console_entries(self) -> None:
-        """2026-11-13：栏底改为工作区胶囊 + 图标按钮，两者都必须留在最底部。"""
+        """2026-11-14：栏底只留工作区胶囊 + 齿轮，两者都必须留在最底部。"""
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
         self.assertIsNotNone(foot, "左栏栏底不见了")
         self.assertIn('id="wsWorkspaceBtn"', foot.group(1), "工作区入口必须固定在左下角")
         self.assertIn('id="wsConsoleBtn"', foot.group(1), "设置入口必须固定在左下角")
+        self.assertNotIn('id="wsWorkspaceSwitchBtn"', foot.group(1), "切换箭头已移除")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标应已移除")
         bodies = [
             body

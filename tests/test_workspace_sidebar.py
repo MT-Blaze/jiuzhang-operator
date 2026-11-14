@@ -86,7 +86,7 @@ class SidebarStructureTest(unittest.TestCase):
         self.assertNotIn("wsPluginInstallBtn", JS)
 
     def test_07_footer_has_gear_entry_and_44px_hit_area(self) -> None:
-        """2026-11-13 定调：栏底 = 工作区胶囊 + 切换图标 + 齿轮，不再是大块按钮。"""
+        """2026-11-14 定调：栏底只留工作区胶囊 + 齿轮，冗余切图标与上箭头全部退场。"""
         self.assertNotIn('id="wsSettingsLink"', HTML, "齿轮链接应已被控制台入口取代")
         self.assertIn('id="wsConsoleBtn"', HTML)
         self.assertIn('aria-label="打开设置与控制台"', HTML)
@@ -99,9 +99,15 @@ class SidebarStructureTest(unittest.TestCase):
         foot = re.search(r'<footer class="ws-sidebar-foot">(.*?)</footer>', HTML, re.S)
         self.assertIsNotNone(foot, "左栏栏底不见了")
         self.assertIn('id="wsWorkspaceBtn"', foot.group(1), "工作区胶囊必须死锁在左栏最底部")
-        self.assertIn('id="wsWorkspaceSwitchBtn"', foot.group(1), "切换图标必须留在栏底")
         self.assertIn('id="wsConsoleBtn"', foot.group(1), "设置入口必须死锁在左栏最底部")
+        self.assertNotIn('id="wsWorkspaceSwitchBtn"', foot.group(1),
+                         "右侧左右切换箭头已按 2026-11-14 定调移除，切工作区走名称弹窗")
+        self.assertNotIn("ws-ws-chevron", foot.group(1), "名称右侧的上箭头会遮挡文字，应已移除")
+        self.assertNotIn("wsWorkspaceSwitchBtn", JS, "切换箭头已删，脚本不许再找它")
         self.assertNotIn('id="wsResetLayout"', foot.group(1), "悬浮小图标已按定调令移除")
+        # 栏底只认两个可点目标：工作区胶囊 + 齿轮
+        targets = re.findall(r"<(?:button|a)\b[^>]*>", foot.group(1))
+        self.assertEqual(len(targets), 2, "栏底应只剩工作区胶囊与设置齿轮两枚可点目标")
 
     def test_10_footer_truncates_long_names(self) -> None:
         """375px 下长工作区名必须省略，不能把齿轮挤出栏外。"""

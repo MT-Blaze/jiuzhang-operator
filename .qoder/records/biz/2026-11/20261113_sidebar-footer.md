@@ -32,7 +32,8 @@
 - 切回默认：页面重载后 footer 显示「高一数学」；
 - 齿轮：打开「设置与控制台」tab，iframe `src=/settings?embedded=1`。
 
-截图：`desktop.png`、`narrow-sidebar.png`、`narrow-modal.png`。
+截图：`20261113_sidebar-footer/desktop.png`、`20261113_sidebar-footer/narrow-sidebar.png`、
+`20261113_sidebar-footer/narrow-modal.png`。
 
 ## 门禁
 

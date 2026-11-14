@@ -1,5 +1,5 @@
-/* ============ 左栏底部栏（2026-11-13） ============
-   工作区胶囊 + 两枚 44px 图标；独立一份样式，整块下架时删掉本文件与 ws_users.js 即可。 */
+/* ============ 左栏底部栏（2026-11-14） ============
+   工作区胶囊 + 设置齿轮；独立一份样式，整块下架时删掉本文件与 ws_users.js 即可。 */
 
 .ws-sidebar-foot {
   justify-content: space-between;
@@ -58,20 +58,9 @@
   white-space: nowrap;
 }
 
-.ws-ws-chevron {
-  flex: none;
-  color: var(--faint);
-}
-
-.ws-foot-actions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
 .ws-foot-btn {
   position: relative;
+  flex: none;
   width: 44px;
   height: 44px;
   display: inline-flex;
