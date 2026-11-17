@@ -65,7 +65,7 @@ LEGACY_OVER_CEILING = {
     "app/core/dedupe_signature.py": 540,
     "static/js/stage_command.js": 541,
     "static/js/st_backup.js": 537,
-    "app/core/restore.py": 532,
+    "app/core/backup/restore.py": 532,
     "plugins/org.jiuzhang.editor/dist/ui_ai.js": 529,
     "plugins/org.jiuzhang.editor/dist/ui_school_dict.js": 520,
     "static/js/stage_frame.js": 521,

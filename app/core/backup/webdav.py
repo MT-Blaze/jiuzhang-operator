@@ -16,8 +16,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from app.core.backup import BACKUP_FILE_RE, MANIFEST_FILE_RE
-from app.core.backup_codec import content_type as package_content_type
+from app.core.backup.service import BACKUP_FILE_RE, MANIFEST_FILE_RE
+from app.core.backup.package.codec import content_type as package_content_type
 
 DAV_NS = "DAV:"
 PROPFIND_BODY = (

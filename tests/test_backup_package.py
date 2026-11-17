@@ -23,8 +23,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import backup, restore, toml_io, wire
-from app.core.backup_codec import open_package
+from app.core import toml_io, wire
+from app.core.backup import restore, service as backup
+from app.core.backup.package.codec import open_package
 from app.core.config import settings
 
 PROVIDER = "org.jiuzhang.bank-engine"

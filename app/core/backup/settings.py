@@ -6,7 +6,7 @@
 - 网盘备份依赖本地备份：用户亲手关掉本地时，网盘必须一起关，绝不允许
   「无本地文件可传」的空转开关。
 
-路径口径与「哪些文件不许进包」见 backup_files.py。
+路径口径与「哪些文件不许进包」见 ``package/files.py``。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core import state_store
-from app.core.backup_files import (
+from app.core.backup.package.files import (
     backup_settings_path,
     current_workspace_id,
     default_local_dir,

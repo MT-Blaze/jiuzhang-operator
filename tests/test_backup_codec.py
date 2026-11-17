@@ -2,7 +2,7 @@
 """压缩降级层的判据：群友的 Python 没有 3.14 的 ``compression.zstd``，备份子系统不能跟着塌。
 
 ``compression.zstd`` 是 PEP 784（Python 3.14）才进标准库的，写死这一句就等于让
-3.10~3.13 的群友开机即 ``ModuleNotFoundError``。`app/core/backup_codec.py` 按
+3.10~3.13 的群友开机即 ``ModuleNotFoundError``。`app/core/backup/package/codec.py` 按
 标准库 zstd → pip zstandard → gzip 降级，读侧按文件头魔数分辨格式。
 本机跑在 3.14 上，所以「没有 zstd」这条路靠**把 ZSTD_MODULE 打桩成 None** 来真跑，
 而不是只在代码里看一眼。
@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import backup_codec as codec  # noqa: E402
-from app.core.backup_files import BackupError  # noqa: E402
+from app.core.backup.package import codec  # noqa: E402
+from app.core.backup.package.files import BackupError  # noqa: E402
 
 
 class BackendTest(unittest.TestCase):

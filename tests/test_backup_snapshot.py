@@ -29,7 +29,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import backup, backup_manifest, restore
+from app.core.backup import restore, service as backup
+from app.core.backup.package import manifest as backup_manifest
 from app.core.config import settings
 
 PROVIDER = "org.jiuzhang.bank-engine"

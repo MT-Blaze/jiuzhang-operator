@@ -17,9 +17,10 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from app.core import backup as backup_core
-from app.core import restore as restore_core
-from app.core import toml_io, webdav
+from app.core import toml_io
+from app.core.backup import restore as restore_core
+from app.core.backup import service as backup_core
+from app.core.backup import webdav
 from app.core.startup_prefs import StartupRejected, resolve, set_target
 from app.core.security import require_write_token
 
@@ -112,7 +113,7 @@ def run_backup() -> dict[str, Any]:
     upload: dict[str, Any] = {"ok": False, "skipped": True}
     if config.get("webdav_enabled"):
         try:
-            from app.core import webdav
+            from app.core.backup import webdav
 
             upload = webdav.upload_backup(
                 config, result["package"], result["manifest"]

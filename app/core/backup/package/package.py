@@ -1,6 +1,6 @@
 """备份子系统的成品层：压缩打包、本地保留策略与清单读取。
 
-压缩走 backup_codec 的兼容层——本机有 zstd（3.14 标准库或 pip zstandard）就用 zstd，
+压缩走 ``codec.py`` 的兼容层——本机有 zstd（3.14 标准库或 pip zstandard）就用 zstd，
 只有 zlib 系能力时自动降 gzip，读侧按文件头魔数分辨，所以包名照旧是 ``.zst``。
 
 打包只装 manifest 点名的文件——读一份 WAL 库会在同目录落下 ``-wal``/``-shm`` 边车，
@@ -10,7 +10,7 @@
 写成品一律「临时文件 + 原子替换」：中途崩溃不会留下半份包或半份 manifest。
 本地保留只删本工具命名的 ``backup_*.zst`` / ``manifest_*.toml``，别的文件一个都不碰。
 
-快照与 manifest 的生成见 backup_manifest.py；路径与禁令见 backup_files.py；配置见 backup_settings.py。
+快照与 manifest 的生成见 ``manifest.py``；路径与禁令见 ``files.py``；配置见 ``../settings.py``。
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from app.core import toml_io, wire
-from app.core.backup_codec import open_package
+from app.core.backup.package.codec import open_package
 
-from app.core.backup_files import (
+from app.core.backup.package.files import (
     BACKUP_FILE_RE,
     BACKUP_STEM_RE,
     MANIFEST_FILE_RE,
@@ -34,8 +34,8 @@ from app.core.backup_files import (
     stamp_now,
     validate_local_dir,
 )
-from app.core.backup_manifest import workspace_snapshot
-from app.core.backup_settings import load_backup_settings
+from app.core.backup.package.manifest import workspace_snapshot
+from app.core.backup.settings import load_backup_settings
 
 
 def _read_manifest(manifest_path: Path) -> dict[str, Any]:

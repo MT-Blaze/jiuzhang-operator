@@ -23,7 +23,8 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from app.core import backup, toml_io, webdav, wire
+from app.core import toml_io, wire
+from app.core.backup import service as backup, webdav
 from app.core.config import settings
 
 WS_ID = "ws_abcdef0123456789"

@@ -2,22 +2,22 @@
 
 实现在同目录四块里，按「谁管什么」切分（PLUGIN_SPEC §2.8 同款口径，Python 侧同理）：
 
-- ``backup_files.py``    —— 路径、命名、白/黑名单与文件计划：什么该进包、什么绝不；
-- ``backup_manifest.py`` —— 一致性快照与 manifest：SQLite backup API、逐题哈希、目录摘要；
-- ``backup_package.py``  —— 成品层：压缩打包、本地保留策略、清单读取；
-- ``backup_settings.py`` —— 本机配置：开关、本地目录、WebDAV 凭据（凭据绝不进包）。
+- ``package/files.py``    —— 路径、命名、白/黑名单与文件计划：什么该进包、什么绝不；
+- ``package/manifest.py`` —— 一致性快照与 manifest：SQLite backup API、逐题哈希、目录摘要；
+- ``package/package.py``  —— 成品层：压缩打包、本地保留策略、清单读取；
+- ``settings.py``         —— 本机配置：开关、本地目录、WebDAV 凭据（凭据绝不进包）。
 
 本文件只做一件事：把这四块的对外名字汇总成「备份子系统」这一个入口，
-调用方（``app/api/settings.py``、``app/core/restore.py``、``app/core/webdav.py``、测试）
-一律 ``from app.core import backup``，不需要知道里面切了几刀、以后还会切几刀。
+调用方（``app/api/settings.py``、``restore.py``、``webdav.py``、测试）
+一律 ``from app.core.backup import service``，不需要知道里面切了几刀、以后还会切几刀。
 
-边界与禁令写在 ``backup_files.py`` 的模块文档里，这里不重复。
+边界与禁令写在 ``package/files.py`` 的模块文档里，这里不重复。
 """
 
 from __future__ import annotations
 
 from app.core.config import root_data_dir
-from app.core.backup_files import (
+from app.core.backup.package.files import (
     BACKUP_FILE_RE,
     BACKUP_STEM_RE,
     GLOBAL_FILES,
@@ -50,7 +50,7 @@ from app.core.backup_files import (
     validate_local_dir,
     workspace_dir,
 )
-from app.core.backup_manifest import (
+from app.core.backup.package.manifest import (
     MANIFEST_VERSION,
     build_manifest,
     manifest_question_hashes_ok,
@@ -62,14 +62,14 @@ from app.core.backup_manifest import (
     verify_manifest_hashes,
     workspace_snapshot,
 )
-from app.core.backup_package import (
+from app.core.backup.package.package import (
     create_local_backup,
     list_local_backups,
     load_local_backup_manifest,
     package_snapshot,
     prune_local_backups,
 )
-from app.core.backup_settings import (
+from app.core.backup.settings import (
     default_backup_settings,
     load_backup_settings,
     normalize_toggles,

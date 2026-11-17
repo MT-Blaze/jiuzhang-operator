@@ -32,7 +32,8 @@ from unittest import mock
 from fastapi import HTTPException
 
 from app.api import settings as settings_api
-from app.core import backup, restore, toml_io, wire
+from app.core import toml_io, wire
+from app.core.backup import restore, service as backup
 from app.core.config import settings
 from tests.core_sources import settings_source  # noqa: E402
 
@@ -210,7 +211,7 @@ class RestoreTest(unittest.TestCase):
             real_copy(source, target)
 
         try:
-            with mock.patch("app.core.restore._atomic_copy", side_effect=flaky):
+            with mock.patch("app.core.backup.restore._atomic_copy", side_effect=flaky):
                 with self.assertRaises(OSError):
                     restore.execute_restore(WS_ID, plan)
         finally:
@@ -333,7 +334,7 @@ class RestoreTest(unittest.TestCase):
             real_copy(source, target)
 
         try:
-            with mock.patch("app.core.restore._atomic_copy", side_effect=flaky):
+            with mock.patch("app.core.backup.restore._atomic_copy", side_effect=flaky):
                 with self.assertRaises(OSError):
                     restore.execute_restore(WS_ID, plan)
         finally:

@@ -8,7 +8,7 @@ SQLite 一律走 backup API 生成自包含快照，绝不直接复制 .db 主�
 JSON 键排序后求 SHA-256，任何一次复算都必须得到同一串——不依赖 SELECT * 的偶然列序。
 恢复侧靠它判定「题真的没少、也没被悄悄改过」。
 
-文件清单与路径规则见 backup_files.py；打包与保留见 backup_package.py。
+文件清单与路径规则见 ``package/files.py``；打包与保留见 ``package/package.py``。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from app.core.backup_files import (
+from app.core.backup.package.files import (
     PLUGIN_ID_RE,
     SIDECAR_SUFFIXES,
     BackupError,

@@ -2,7 +2,7 @@
 """备份包压缩后端的兼容层：同一份包在 Python 3.10 ~ 3.14 之间都要能读写。
 
 **为什么要有这一层**：``compression.zstd`` 是 Python 3.14 才进标准库的（PEP 784），而
-``backup_package.py`` 与 ``restore.py`` 过去都写死 ``from compression import zstd``——
+``package/package.py`` 与 ``restore.py`` 过去都写死 ``from compression import zstd``——
 3.10/3.11/3.12 的群友一启动就在 import 期 ``ModuleNotFoundError``，备份子系统整块打不开。
 这里按 **标准库 zstd → pip zstandard → 标准库 gzip** 逐级降级，本机装得到哪档就用哪档。
 
@@ -19,7 +19,7 @@ import gzip
 from pathlib import Path
 from typing import IO, Any
 
-from app.core.backup_files import BackupError
+from app.core.backup.package.files import BackupError
 
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 GZIP_MAGIC = b"\x1f\x8b"

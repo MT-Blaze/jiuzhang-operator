@@ -21,9 +21,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from app.core.backup_codec import open_package
-
-from app.core import backup, wire
+from app.core import wire
+from app.core.backup import service as backup
+from app.core.backup.package.codec import open_package
 
 REQUIRED_CATEGORIES = {"bank", "uploads"}
 CATEGORIES = {"bank", "uploads", "other", "plugins"}
