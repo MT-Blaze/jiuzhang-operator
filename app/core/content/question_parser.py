@@ -16,8 +16,8 @@ import re
 import unicodedata
 from typing import Any
 
-from app.core import latex_style_dict
-from app.core.question_images import is_remote_image, strip_derived_fields
+from app.core.content import latex_style_dict
+from app.core.content.question_images import is_remote_image, strip_derived_fields
 
 __all__ = [
     "normalize_latex",
@@ -30,7 +30,7 @@ __all__ = [
     "clean_question",
 ]
 
-# 等价记号的写法字典住在 app/core/latex_style_dict.py——全仓唯一一份（军令 #32 · S1）。
+# 等价记号的写法字典住在 app/core/content/latex_style_dict.py——全仓唯一一份（军令 #32 · S1）。
 # 这里不再重复规则表：编辑器【清洗当前题 LaTeX】与查重比对共用同一张表。
 
 _OPTION_LINE = re.compile(
@@ -86,7 +86,7 @@ def _math_spans(text: str) -> list[tuple[int, int, bool]]:
 def normalize_latex(text: str) -> str:
     """定界符与等价记号归一；不动正文里的中文与人名，也不改写公式内容本身。
 
-    记号归一的规则表在 ``app/core/latex_style_dict.SYMBOL_ALIASES``，本函数的
+    记号归一的规则表在 ``app/core/content/latex_style_dict.SYMBOL_ALIASES``，本函数的
     输出口径保持不变——查重指纹（``app/core/bank_dedupe.py``）直接复用它。
     """
     if not isinstance(text, str):
@@ -162,7 +162,7 @@ def _clean_fragment(text: str, rules: list[str]) -> str:
         rules.append("whitespace")
     normalized = normalize_latex(text)
     # 定界符换成 $ 之后才交给写法字典：上标补括号、\frac 显式参数、减号统一
-    # 都只在数学段内按命令切词改写（app/core/latex_style_dict，全仓唯一一份字典）。
+    # 都只在数学段内按命令切词改写（app/core/content/latex_style_dict，全仓唯一一份字典）。
     written = latex_style_dict.clean_for_write(normalized)
     if written["changed"]:
         rules.extend(written["rules"])
@@ -179,7 +179,7 @@ def clean_dirty_latex(text: Any) -> dict[str, Any]:
     属于排版层，留给渲染端处理，清洗不猜列结构。
 
     写法字典（等价记号、上标补括号、``\\frac`` 显式参数、减号统一）不在本文件，
-    统一取自 ``app/core/latex_style_dict.clean_for_write``——编辑器的
+    统一取自 ``app/core/content/latex_style_dict.clean_for_write``——编辑器的
     【清洗当前题 LaTeX】与查重比对因此共用同一张表（军令 #32 · S1，判据 1.6）。
     返回体保持 ``{text, changed, rules, options}`` 四键不变；没认出的命令名清单
     由写法字典自己的返回值携带，本函数不往外扩键。
@@ -223,7 +223,7 @@ def clean_exam_source(text: Any) -> dict[str, Any]:
     拿它洗源码等于把骨架拆了。
 
     规则表仍然只有一处：定界符归一在 ``normalize_latex``，等价记号 / 上标补括号 /
-    ``\\frac`` 显式参数 / 减号统一全部取自 ``app/core/latex_style_dict.clean_for_write``
+    ``\\frac`` 显式参数 / 减号统一全部取自 ``app/core/content/latex_style_dict.clean_for_write``
     ——与查重比对（``bank_dedupe``）、与【清洗当前题 LaTeX】用的是同一张字典（判据 1.6）。
     插件侧因此可以把自己那份正则规则表整份删掉。
 

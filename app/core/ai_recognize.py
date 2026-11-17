@@ -17,9 +17,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import ai_center, latex_style_dict, question_parser, wire
+from app.core import ai_center, wire
 from app.core.ai_client import OpenAICompatibleProvider
 from app.core.config import settings
+from app.core.content import latex_style_dict, question_parser
 from app.core.exam_source import OPTION_KEYS, build_exam_source
 
 MAX_IMAGES = 3

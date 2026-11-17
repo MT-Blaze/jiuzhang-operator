@@ -200,7 +200,7 @@ def _document_from(row: sqlite3.Row, links: list[dict[str, Any]],
             }
     images = _extension_value(extensions, EXT_IMAGES_KEY)
     if images and images.get("images"):
-        from app.core.tikz_render import resolve_images
+        from app.core.content.tikz_render import resolve_images
 
         document["images"] = resolve_images(images["images"])
     stored_tags = _extension_value(extensions, EXT_TAGS_KEY)

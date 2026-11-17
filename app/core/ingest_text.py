@@ -9,7 +9,8 @@ import re
 import zipfile
 from typing import Any
 
-from app.core import docx_classify, question_parser
+from app.core import docx_classify
+from app.core.content import question_parser
 
 __all__ = [
     "DEFAULT_DIFFICULTY",

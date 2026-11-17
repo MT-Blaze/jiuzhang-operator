@@ -24,7 +24,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.core import page_render, text_health, wire
+from app.core import page_render, wire
+from app.core.content import text_health
 from app.core.ingest_media import _items_from_file, _page_of, _placeholder
 from app.core.ingest_route import (
     attach_layout,

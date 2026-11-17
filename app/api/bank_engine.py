@@ -19,7 +19,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.bank_engine import dao_console, service
 from app.bank_engine.writer import EntryRejected
-from app.core import tikz_render
+from app.core.content import tikz_render
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["bank-engine"])

@@ -25,7 +25,7 @@ import io
 import unittest
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
-from app.core import latex_style_dict, question_parser
+from app.core.content import latex_style_dict, question_parser
 
 
 def write(text: str) -> str:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.core.question_parser import normalize_latex
+from app.core.content.question_parser import normalize_latex
 
 OPTION_KEYS = "ABCDEFGH"
 _EMPTY_BRACKET = re.compile(r"[（(][ \t\u3000]*[）)]")

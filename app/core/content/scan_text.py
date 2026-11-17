@@ -19,7 +19,7 @@ import re
 import unicodedata
 from typing import Any
 
-from app.core import question_parser
+from app.core.content import question_parser
 
 __all__ = ["text_to_latex", "parse_scan_text"]
 

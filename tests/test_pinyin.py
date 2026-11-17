@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.core import pinyin
+from app.core.content import pinyin
 
 
 class PinyinInitialsTest(unittest.TestCase):

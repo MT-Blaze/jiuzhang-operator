@@ -21,7 +21,8 @@ import unittest
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from app.core import ingest_route, mineru_extract, text_health, wire
+from app.core import ingest_route, mineru_extract, wire
+from app.core.content import text_health
 
 
 class TextHealthTest(unittest.TestCase):

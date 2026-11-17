@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import sqlite3
-from app.core import bank_fts, pinyin, question_parser, wire
+from app.core import bank_fts, wire
 from app.core.bank_codec import _assemble
 from app.core.bank_schema import (
     ASSEMBLE_CHUNK,
@@ -26,11 +26,11 @@ from app.core.bank_schema import (
     REVIEW_FLAGS,
     TEXTBOOK_ID_RE,
     TOPIC_ID_RE,
-    _like,
-    _placeholders,
+    _like, _placeholders,
     connect,
 )
 from app.core.contract import normalize_difficulty
+from app.core.content import pinyin, question_parser
 from typing import Any, Iterable
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core import scan_text
+from app.core.content import scan_text
 
 
 def build_document(region: dict[str, Any] | None, page_no: int, number: Any,

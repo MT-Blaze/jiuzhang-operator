@@ -20,7 +20,7 @@ from fastapi import HTTPException
 
 from app.api import tikz as tikz_api
 from app.bank_engine import builder, migrate_v8, service
-from app.core import question_parser, tikz_render
+from app.core.content import question_parser, tikz_render
 
 ROOT = Path(__file__).resolve().parents[1]
 from app.core.config import plugin_source_root  # noqa: E402

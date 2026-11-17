@@ -23,8 +23,8 @@ import unicodedata
 from typing import Any, Iterable
 
 from app.core import bank, wire
-from app.core import latex_style_dict
-from app.core.question_parser import normalize_latex
+from app.core.content import latex_style_dict
+from app.core.content.question_parser import normalize_latex
 
 
 # 只收「排版级」中文标点，且必须在 NFKC 之前删：NFKC 会把「，」变成「,」，

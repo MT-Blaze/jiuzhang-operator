@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException
 
-from app.core import tikz_render
+from app.core.content import tikz_render
 
 router = APIRouter(prefix="/api/tikz", tags=["tikz"])
 

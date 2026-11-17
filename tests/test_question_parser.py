@@ -1,4 +1,4 @@
-"""录题清洗与解析（app/core/question_parser.py）契约测试：军令 #13 任务 4。
+"""录题清洗与解析（app/core/content/question_parser.py）契约测试：军令 #13 任务 4。
 
 覆盖四块纯逻辑：LaTeX 定界符归一与脏文本清洗、选项剥离、填空答案提取、题干体检。
 全部是字符串进/字符串出的纯函数，不碰数据库与网络。
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.core.question_parser import (
+from app.core.content.question_parser import (
     clean_dirty_latex,
     clean_question,
     count_blanks,
