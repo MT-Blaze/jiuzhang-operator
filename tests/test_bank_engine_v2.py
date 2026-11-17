@@ -109,13 +109,13 @@ class EngineBuildTest(unittest.TestCase):
     def test_build_reports_all_expected_counts(self) -> None:
         self.assertTrue(self.report.created)
         self.assertEqual(self.report.counts, EXPECTED_COUNTS)
-        self.assertEqual(self.report.counts["dim_knowledge_points"], 11388)
+        self.assertEqual(self.report.counts["dim_knowledge_points"], 11577)
         self.assertEqual(self.report.counts["dim_textbook_chapters"], 3519)
         self.assertEqual(self.report.counts["dim_schools"], 347)
         self.assertEqual(self.report.counts["dim_regions"], 370)
-        self.assertEqual(self.report.counts["dim_exam_directions"], 1020)
-        self.assertEqual(self.report.counts["knowledge_exam_map"], 653)
-        self.assertEqual(self.report.counts["chapter_knowledge_map"], 481)
+        self.assertEqual(self.report.counts["dim_exam_directions"], 1569)
+        self.assertEqual(self.report.counts["knowledge_exam_map"], 1202)
+        self.assertEqual(self.report.counts["chapter_knowledge_map"], 607)
         self.assertEqual(self.report.counts["dict_exam_levels"], 7)
         self.assertEqual(self.report.counts["dict_exam_types"], 8)
         self.assertEqual(self.report.counts["dict_exam_orgs"], 1)
@@ -184,7 +184,7 @@ class EngineBuildTest(unittest.TestCase):
         report = service.status(fresh)
         self.assertTrue(fresh.is_file())
         self.assertEqual(report.schema_version, engine_paths.SCHEMA_VERSION)
-        self.assertEqual(report.counts["dim_knowledge_points"], 11388)
+        self.assertEqual(report.counts["dim_knowledge_points"], 11577)
 
 
 class EngineDaoTest(unittest.TestCase):
@@ -207,7 +207,7 @@ class EngineDaoTest(unittest.TestCase):
 
     def test_exam_directions_list_and_count(self) -> None:
         items, total = service.exam_directions(subject_id=2, limit=5, db_path=self.db_path)
-        self.assertEqual(total, 503)
+        self.assertEqual(total, 1052)
         self.assertEqual(len(items), 5)
         self.assertTrue(all(item.subject_id == 2 for item in items))
 

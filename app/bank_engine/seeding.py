@@ -29,11 +29,11 @@ from app.bank_engine.seeds.exam_seed import (
 )
 from app.bank_engine.seeds.exam_direction_seed import EXAM_DIRECTION_ROWS
 from app.bank_engine.seeds.knowledge_seed import KNOWLEDGE_POINT_ROWS
-from app.bank_engine.seeds.math_required1 import (
-    MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS,
-    MATH_REQUIRED1_EXAM_ROWS,
-    MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS,
-    MATH_REQUIRED1_KNOWLEDGE_ROWS,
+from app.bank_engine.seeds.math import (
+    MATH_CHAPTER_KNOWLEDGE_ROWS,
+    MATH_EXAM_ROWS,
+    MATH_KNOWLEDGE_EXAM_ROWS,
+    MATH_KNOWLEDGE_ROWS,
 )
 from app.bank_engine.seeds.migrated_textbook_seed import MIGRATED_CHAPTER_ROWS
 from app.bank_engine.seeds.physics import (
@@ -68,12 +68,12 @@ EXPECTED_COUNTS: dict[str, int] = {
     "dim_textbook_versions": len(ALL_VERSION_ROWS),
     "dim_textbooks": len(ALL_BOOK_ROWS),
     "dim_textbook_chapters": 3519,
-    "dim_knowledge_points": 11388,
-    "dim_exam_directions": len(EXAM_DIRECTION_ROWS) + len(MATH_REQUIRED1_EXAM_ROWS)
+    "dim_knowledge_points": len(KNOWLEDGE_POINT_ROWS) + len(MATH_KNOWLEDGE_ROWS),
+    "dim_exam_directions": len(EXAM_DIRECTION_ROWS) + len(MATH_EXAM_ROWS)
     + len(PHYSICS_EXAM_ROWS),
-    "knowledge_exam_map": len(MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS)
+    "knowledge_exam_map": len(MATH_KNOWLEDGE_EXAM_ROWS)
     + len(PHYSICS_KNOWLEDGE_EXAM_ROWS),
-    "chapter_knowledge_map": len(MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS)
+    "chapter_knowledge_map": len(MATH_CHAPTER_KNOWLEDGE_ROWS)
     + len(PHYSICS_CHAPTER_KNOWLEDGE_ROWS),
     "dim_regions": len(REGION_ROWS),
     "dim_schools": 347,
@@ -93,11 +93,11 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
     qualities = tuple((row[0], row[1], row[2], row[0]) for row in QUALITY_SEED_ROWS)
     textbooks = ALL_BOOK_ROWS
     chapters = tuple(CHAPTER_ROWS) + tuple(MIGRATED_CHAPTER_ROWS)
-    knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_REQUIRED1_KNOWLEDGE_ROWS)
+    knowledge = tuple(KNOWLEDGE_POINT_ROWS) + tuple(MATH_KNOWLEDGE_ROWS)
     schools = tuple((*row, regions.match_region_id(row[4])) for row in SCHOOL_ROWS)
     directions = (
         tuple(EXAM_DIRECTION_ROWS)
-        + tuple(MATH_REQUIRED1_EXAM_ROWS)
+        + tuple(MATH_EXAM_ROWS)
         + tuple(PHYSICS_EXAM_ROWS)
     )
     statements: list[tuple[str, tuple[tuple[Any, ...], ...]]] = [
@@ -194,16 +194,13 @@ def _statements() -> tuple[tuple[str, tuple[tuple[Any, ...], ...]], ...]:
                 "INSERT INTO knowledge_exam_map "
                 "(knowledge_point_id, exam_direction_id, sort_order) "
                 "VALUES (?, ?, ?)",
-                tuple((point, direction, 0) for point, direction
-                      in MATH_REQUIRED1_KNOWLEDGE_EXAM_ROWS)
-                + tuple(PHYSICS_KNOWLEDGE_EXAM_ROWS),
+                tuple(MATH_KNOWLEDGE_EXAM_ROWS) + tuple(PHYSICS_KNOWLEDGE_EXAM_ROWS),
             ),
             (
                 "INSERT INTO chapter_knowledge_map "
                 "(chapter_id, knowledge_point_id, sort_order) "
                 "VALUES (?, ?, ?)",
-                tuple((chapter, point, 0) for chapter, point
-                      in MATH_REQUIRED1_CHAPTER_KNOWLEDGE_ROWS)
+                tuple(MATH_CHAPTER_KNOWLEDGE_ROWS)
                 + tuple(PHYSICS_CHAPTER_KNOWLEDGE_ROWS),
             ),
             (
