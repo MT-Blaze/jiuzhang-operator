@@ -17,6 +17,10 @@ from typing import Any
 # 递增的一串才算一列题，页眉页脚的说明数字不参与；找不到任何题号就交空清单，
 # 前端仍可手动框选——绝不按猜出来的区域硬切。
 _PDF_HEAD = re.compile(r"^\s*(\d{1,2})\s*[.．、]\s*\S")
+# 文本层常把题号并进上一句或大节标题：「…要求的. 1．」「…答题卡… 12．」。
+# 只认句末标点后的 1-2 位数字，且数字后不能紧跟数字——「1.5」不是题号。
+_PDF_EMBEDDED_HEAD = re.compile(
+    r"[。．.；;：:]\s*(\d{1,2})\s*[.．、]\s*(?:(?!\d)\S|$)")
 # 卷首说明与页眉页脚：这些行也常带「1. 2. 3.」，但都不是题。
 _PDF_INSTRUCTION = re.compile(
     r"答题卡|答卷前|考试结束|考生|考场|座位号|注意事项|绝密|启用前|"
@@ -51,19 +55,26 @@ _BARE_PAGE_HEIGHT_RATIO = 0.85
 def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
                       first_page: bool = False,
-                      words: Any = None) -> list[dict[str, Any]]:
+                      words: Any = None,
+                      lines: list[dict[str, Any]] | None = None,
+                      apply_fallbacks: bool = True) -> list[dict[str, Any]]:
     """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。
 
+    ``lines`` 可由上层先扫全卷、剥离页眉页脚后传进来；不传才现读。
+    ``apply_fallbacks`` 为假时不跑单页兜底（页脚正则与裸页码三判据）——
+    全卷跨页判定已经接管，单页、两页卷则连兜底也不该动行清单。
     ``words`` 可以是词清单，也可以是按需返回词清单的函数——只在某一行真有
     读不出的字形时才会被调用。
     """
     try:
         page_width, page_height = (float(value) for value in page.get_size())
-        lines = _pdf_text_lines(page)
+        if lines is None:
+            lines = _pdf_text_lines(page)
     except Exception:  # noqa: BLE001 - 文本层坏了只影响自动框，不影响页图
         return []
     return _question_regions(lines, page_width, page_height, pixel_width, pixel_height,
-                             ink_rows=ink_rows, first_page=first_page, words=words)
+                             ink_rows=ink_rows, first_page=first_page, words=words,
+                             apply_fallbacks=apply_fallbacks)
 
 
 def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
@@ -168,8 +179,10 @@ def _bare_page_footer_lines(lines: list[dict[str, Any]],
     if not candidates:
         return []
     skipped = {id(line) for line in candidates}
-    # 正文行按含汉字判定：公式碎片、选项标号「A．」与底边水印都会把中位数
-    # 拉低，拿它们当基准会把真正的页码也放过去（哈九中第 1 页就是这样）。
+    # 正文行按含汉字判定：全行中位数会被选项标号、公式碎片和底边水印
+    # 拉到 8.32pt，页码 8.15pt 乘 0.85 后只有 7.07pt，反而过不了关；只看
+    # 含汉字的正文行，中位数落在 9.81pt，0.85 倍为 8.34pt，页码才过线。
+    # 也就是说 0.85 是踩着正文行中位数过的，不是全行中位数。
     body = [line for line in lines
             if id(line) not in skipped and _has_hanzi(line["text"])]
     if not body:
@@ -188,24 +201,33 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
                       pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
                       first_page: bool = False,
-                      words: Any = None) -> list[dict[str, Any]]:
+                      words: Any = None,
+                      apply_fallbacks: bool = True) -> list[dict[str, Any]]:
     """行清单 → 每道题的像素包围盒。
 
     题号链只取「最长且连续递增」的一段：卷首作答说明也带「1. 2. 3.」，
     先按说明关键词滤掉；首页再从第一个大节标题（如「一、选择题」）之后找题号，
     双保险。纵向从本题题号行起、到下一题题号行前留一道缝；页尾题块最后按
     页面图的真实墨迹裁掉尾部空白（有图的地方墨迹会把它留住）。
+
+    ``apply_fallbacks`` 默认真：保留单页兜底（``_PDF_FOOTER`` 正则与裸页码
+    三判据）。上层做了全卷跨页剥离后传假，避免两份判据互相打架；页数 ≤2
+    的卷子也传假，做到一行不剔、原样切题。
     """
     if not lines or page_width <= 0 or page_height <= 0:
         return []
     if pixel_width <= 0 or pixel_height <= 0:
         return []
-    footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
-    footer_lines.extend(_bare_page_footer_lines(lines, page_height))
-    # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
-    footer_top = max((line["top"] for line in footer_lines), default=None)
-    footer_ids = {id(line) for line in footer_lines}
-    content = [line for line in lines if id(line) not in footer_ids]
+    if apply_fallbacks:
+        footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
+        footer_lines.extend(_bare_page_footer_lines(lines, page_height))
+        # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
+        footer_top = max((line["top"] for line in footer_lines), default=None)
+        footer_ids = {id(line) for line in footer_lines}
+        content = [line for line in lines if id(line) not in footer_ids]
+    else:
+        footer_top = None
+        content = list(lines)
     start_at = 0
     if first_page:
         section = next((index for index, line in enumerate(content)
@@ -217,9 +239,14 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
         if position < start_at:
             continue
         matched = _PDF_HEAD.match(line["text"])
-        if not matched or _PDF_INSTRUCTION.search(line["text"]):
+        if matched and not _PDF_INSTRUCTION.search(line["text"]):
+            heads.append((position, int(matched.group(1))))
             continue
-        heads.append((position, int(matched.group(1))))
+        # 行首没题号时，再看句末/大节标题后是否并着一个题号。这类行常带
+        # 「答题卡」等说明词，不能拿行首说明的过滤器把它连带丢掉。
+        embedded = _PDF_EMBEDDED_HEAD.search(line["text"])
+        if embedded:
+            heads.append((position, int(embedded.group(1))))
     run = _longest_number_run(heads)
     if not run:
         return []

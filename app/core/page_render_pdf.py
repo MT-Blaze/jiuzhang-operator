@@ -14,9 +14,10 @@ import zlib
 from pathlib import Path
 from typing import Any
 
+from app.core import page_furniture
 from app.core.pending_assets import write_generated_asset
 from app.core.page_render_common import MAX_PAGES, PDF_CROP_DPI, PDF_RENDER_DPI, _entry
-from app.core.page_render_regions import _ink_rows, _pdf_page_regions, _pdf_text_lines
+from app.core.page_render_regions import _ink_rows, _pdf_text_lines, _question_regions
 
 try:  # 内置渲染器缺席只该降级，不该让整个模块导入失败。
     import pypdfium2 as _pdfium
@@ -121,22 +122,45 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                 words_by_page = _pdftotext_words(data, min(total_pages, MAX_PAGES))
             return words_by_page.get(page_no) or []
 
+        # 先扫全卷的行：跨页页眉页脚只能在全卷视角下判定。页数 ≤2 时
+        # filter_pages 原样返回，连兜底都不跑。
+        scanned: list[dict[str, Any]] = []
         for index in range(min(total_pages, MAX_PAGES)):
+            page = document[index]
+            try:
+                try:
+                    page_width, page_height = (float(value)
+                                               for value in page.get_size())
+                    lines = _pdf_text_lines(page)
+                finally:
+                    page.close()
+            except Exception:  # noqa: BLE001 - 单页文本层坏了照样出页图
+                page_width, page_height, lines = 0.0, 0.0, []
+            scanned.append({"width": page_width, "height": page_height,
+                            "lines": lines})
+        kept_lines = page_furniture.filter_pages(scanned)
+
+        for index, info in enumerate(scanned):
             try:
                 page = document[index]
-                bitmap = page.render(scale=PDF_RENDER_DPI / 72.0)
                 try:
-                    raw = bytes(bitmap.buffer)
-                    width = int(bitmap.width)
-                    height = int(bitmap.height)
-                    png = _png_from_bitmap(bitmap, raw)
-                    ink = _ink_rows(raw, width, height, int(bitmap.stride),
-                                    int(bitmap.n_channels))
-                    regions = _pdf_page_regions(
-                        page, width, height, ink_rows=ink, first_page=index == 0,
-                        words=lambda page_no=index + 1: page_words(page_no))
+                    bitmap = page.render(scale=PDF_RENDER_DPI / 72.0)
+                    try:
+                        raw = bytes(bitmap.buffer)
+                        width = int(bitmap.width)
+                        height = int(bitmap.height)
+                        png = _png_from_bitmap(bitmap, raw)
+                        ink = _ink_rows(raw, width, height, int(bitmap.stride),
+                                        int(bitmap.n_channels))
+                    finally:
+                        bitmap.close()
+                    regions = _question_regions(
+                        kept_lines[index], info["width"], info["height"], width, height,
+                        ink_rows=ink, first_page=index == 0,
+                        words=lambda page_no=index + 1: page_words(page_no),
+                        apply_fallbacks=False)
                 finally:
-                    bitmap.close()
+                    page.close()
                 entries.append(_entry(write_generated_asset(png, "image/png"), index + 1,
                                       width=width, height=height, regions=regions))
             except Exception:  # noqa: BLE001 - 单页失败事小，不拖垮整份卷子

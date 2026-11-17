@@ -27,8 +27,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core import (  # noqa: E402
-    page_render, page_render_cross, pending_assets, pending_bank, pending_batches,
-    pending_db,
+    page_furniture, page_render, page_render_cross, pending_assets, pending_bank,
+    pending_batches, pending_db,
 )
 
 PLUGIN_ID = "org.jiuzhang.editor"
@@ -218,6 +218,22 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertEqual([region["no"] for region in regions], [1, 2])
         self.assertIn("第一题题干", regions[0]["text"])
         self.assertNotIn("招生考试", regions[0]["text"])
+
+    def test_08a2b_head_embedded_after_section_line_is_found(self) -> None:
+        """文本层把「1．」并进上一句/大节标题时，题号链仍要从 1 开始。"""
+        lines = [
+            {"text": "一、单选题：共 8 小题，每小题 5 分", "left": 72, "bottom": 810,
+             "right": 523, "top": 820},
+            {"text": "是符合题目要求的. 1．", "left": 72, "bottom": 780,
+             "right": 523, "top": 790},
+            {"text": "sin1050 的值为", "left": 72, "bottom": 760, "right": 523, "top": 770},
+            {"text": "2．已知扇形的圆心角为 2rad", "left": 72, "bottom": 700,
+             "right": 523, "top": 710},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                first_page=True)
+        self.assertEqual([region["no"] for region in regions], [1, 2])
+        self.assertIn("sin1050", regions[0]["text"])
 
     def test_08a3_regions_leave_a_gap_so_boxes_do_not_overlap(self) -> None:
         """相邻两题之间至少留出一道缝；上下题号行不重叠。"""
@@ -431,6 +447,180 @@ class TextFacsimileTest(PageRenderTestCase):
         width, height = struct.unpack(">II", raw[16:24])
         self.assertAlmostEqual(width, 1653, delta=2)
         self.assertAlmostEqual(height, 2339, delta=2)
+
+
+class PageFurnitureTest(unittest.TestCase):
+    """全卷页眉页脚：同一位置 + 同一文字跨页重复才剔，页数少一律不动。"""
+
+    @staticmethod
+    def _line(text: str, top: float, bottom: float,
+              left: float = 72.0, right: float = 523.0) -> dict:
+        # 两个 y 值不要求先后：PDF 的 top（上沿）永远大于 bottom（下沿）。
+        return {"text": text, "left": left, "bottom": min(top, bottom),
+                "right": right, "top": max(top, bottom), "missing": 0}
+
+    @staticmethod
+    def _page(lines: list[dict], height: float = 842.0) -> dict:
+        return {"width": 595.0, "height": height, "lines": lines}
+
+    @staticmethod
+    def _texts(kept: list[list[dict]]) -> list[list[str]]:
+        return [[line["text"] for line in lines] for lines in kept]
+
+    def test_01_single_page_is_returned_untouched(self) -> None:
+        """单页卷不判页眉页脚：行清单必须原样交给切题。"""
+        lines = [
+            self._line("1. 第一题题干", 700, 710),
+            self._line("A. 选项甲 B. 选项乙", 680, 690),
+            self._line("第1页（共1页）", 20, 30),
+        ]
+        kept = page_furniture.filter_pages([self._page(lines)])
+        self.assertIs(kept[0], lines, "单页卷一个字都不许剔，且不能换新列表")
+
+    def test_02_two_pages_keep_repeated_footer(self) -> None:
+        """两页卷同样不判：即使两页都有页脚，也要原样返回。"""
+        pages = [
+            self._page([self._line("1. 第一题题干", 700, 710),
+                        self._line("第1页（共2页）", 20, 30)]),
+            self._page([self._line("2. 第二题题干", 760, 770),
+                        self._line("第2页（共2页）", 20, 30)]),
+        ]
+        kept = page_furniture.filter_pages(pages)
+        for index, page in enumerate(pages):
+            self.assertIs(kept[index], page["lines"])
+
+    def test_03_three_pages_require_all_three(self) -> None:
+        """三页卷 3/3 全中才剔；只出现在两页的同位置行必须留下。"""
+        def pages_with(header_pages: int) -> list[dict]:
+            pages = []
+            for index in range(3):
+                header = (self._line("哈九中高一数学 第1页", 800, 810)
+                          if index < header_pages
+                          else self._line("一、选择题", 800, 810))
+                pages.append(self._page([header,
+                                         self._line("1. 第一题题干", 700, 710)]))
+            return pages
+
+        kept = page_furniture.filter_pages(pages_with(2))
+        for page_texts in self._texts(kept)[:2]:
+            self.assertIn("哈九中高一数学 第1页", page_texts[0])
+        self.assertIn("一、选择题", self._texts(kept)[2])
+
+        kept = page_furniture.filter_pages(pages_with(3))
+        for page_texts in self._texts(kept):
+            self.assertNotIn("哈九中高一数学 第1页", page_texts)
+
+    def test_04_four_pages_use_two_thirds(self) -> None:
+        """四页卷 2/3 即可（向上取整 = 3 页）；两页重复仍不算。"""
+        def pages_with(header_pages: int) -> list[dict]:
+            return [
+                self._page([
+                    (self._line("试卷页眉", 800, 810) if index < header_pages
+                     else self._line("一、选择题", 800, 810)),
+                    self._line("1. 第一题题干", 700, 710)])
+                for index in range(4)
+            ]
+
+        kept = page_furniture.filter_pages(pages_with(2))
+        self.assertIn("试卷页眉", self._texts(kept)[0])
+        kept = page_furniture.filter_pages(pages_with(3))
+        for page_texts in self._texts(kept):
+            self.assertNotIn("试卷页眉", page_texts)
+
+    def test_05_similar_option_rows_are_never_furniture(self) -> None:
+        """每页都有的选项行位置相同、文字只差一两个字符，也绝不删。"""
+        rows = [
+            "A. 1/3 B. 2/3 C. 1/12 D. 5/12",
+            "A. 1/4 B. 3/4 C. 1/12 D. 5/12",
+            "A. 1/5 B. 4/5 C. 1/12 D. 5/12",
+            "A. 1/6 B. 5/6 C. 1/12 D. 5/12",
+        ]
+        pages = [self._page([self._line("1. 第一题题干", 700, 710),
+                             self._line(row, 60, 70)]) for row in rows]
+        kept = page_furniture.filter_pages(pages)
+        for index, row in enumerate(rows):
+            self.assertIn(row, self._texts(kept)[index])
+
+    def test_06_last_question_pressed_to_bottom_is_kept(self) -> None:
+        """末题正文压进页底带、只在少数页出现：文本不同/页数不够都不得删。"""
+        pages = []
+        for index in range(4):
+            pages.append(self._page([
+                self._line("18. 末题题干", 720, 731),
+                self._line("（2）求实数 a 的取值范围．" if index < 2
+                           else "（2）证明不等式成立．", 50, 62),
+            ]))
+        kept = page_furniture.filter_pages(pages)
+        self.assertEqual(self._texts(kept)[0][-1], "（2）求实数 a 的取值范围．")
+        self.assertEqual(self._texts(kept)[2][-1], "（2）证明不等式成立．")
+
+    def test_07_small_numeric_page_numbers_are_removed(self) -> None:
+        """四页起：页底纯数字页码只要行高小于正文中位数，少数页也认。"""
+        pages = []
+        for number in range(1, 5):
+            pages.append(self._page([
+                self._line("1. 正文行", 700, 712),
+                self._line(str(number), 20, 28),
+            ]))
+        kept = page_furniture.filter_pages(pages)
+        for page_texts in self._texts(kept):
+            self.assertEqual(page_texts, ["1. 正文行"])
+
+    def test_08_same_size_numeric_answer_is_kept(self) -> None:
+        """与正文同字号的页底数字答案：行高过不了页码判据，必须留下。"""
+        pages = []
+        for _ in range(4):
+            pages.append(self._page([
+                self._line("1. 正文行", 700, 712),
+                self._line("3", 60, 72),
+            ]))
+        kept = page_furniture.filter_pages(pages)
+        self.assertIn("3", self._texts(kept)[0])
+
+    def test_09_three_page_numeric_requires_all_three(self) -> None:
+        """三页卷的纯数字页码也按 3/3：只出现在两页时不许剔。"""
+        two = [
+            self._page([self._line("1. 正文行", 700, 712),
+                        self._line(str(number), 20, 28)])
+            for number in (1, 2)
+        ]
+        two.append(self._page([self._line("1. 正文行", 700, 712)]))
+        kept = page_furniture.filter_pages(two)
+        self.assertIn("1", self._texts(kept)[0])
+        self.assertIn("2", self._texts(kept)[1])
+
+        three = [
+            self._page([self._line("1. 正文行", 700, 712),
+                        self._line(str(number), 20, 28)])
+            for number in (1, 2, 3)
+        ]
+        kept = page_furniture.filter_pages(three)
+        for page_texts in self._texts(kept):
+            self.assertEqual(page_texts, ["1. 正文行"])
+
+    def test_10_footer_with_changing_page_numbers_is_one_template(self) -> None:
+        """「第N页（共M页）」数字逐页变化，归一化后仍是同一条页脚。"""
+        pages = [
+            self._page([self._line("1. 正文行", 700, 712),
+                        self._line("第%d页（共4页）" % number, 20, 30)])
+            for number in range(1, 5)
+        ]
+        kept = page_furniture.filter_pages(pages)
+        for page_texts in self._texts(kept):
+            self.assertEqual(page_texts, ["1. 正文行"])
+
+    def test_11_question_regions_can_skip_legacy_fallbacks(self) -> None:
+        """兜底判据保留可调：默认照旧剔除页脚，上层可显式关掉。"""
+        lines = [
+            self._line("1. 第一题题干", 700, 710),
+            self._line("A. 选项甲 B. 选项乙", 680, 690),
+            self._line("第1页（共3页）", 30, 40),
+        ]
+        legacy = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertNotIn("第1页", legacy[-1]["text"])
+        raw = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                            apply_fallbacks=False)
+        self.assertIn("第1页", raw[-1]["text"])
 
 
 class WordEnrichmentTest(unittest.TestCase):
