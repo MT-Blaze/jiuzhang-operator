@@ -22,7 +22,8 @@ _PDF_INSTRUCTION = re.compile(
     r"答题卡|答卷前|考试结束|考生|考场|座位号|注意事项|绝密|启用前|"
     r"姓名|班级|考号|准考证|密封线|本试卷共")
 _PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
-_PDF_FOOTER = re.compile(r"第\s*\d+\s*页\s*[（(]\s*共\s*\d+\s*页")
+_PDF_FOOTER = re.compile(
+    r"第\s*\d+\s*页\s*(?:[（(]\s*共\s*\d+\s*页\s*[）)]?|[/／]\s*共\s*\d+\s*页)")
 _REGION_TEXT_LIMIT = 2000
 _REGION_LABEL_LIMIT = 48
 # 题块上下各留一点呼吸位；相邻题之间至少留 5pt（约 14 像素 @200dpi），
@@ -176,7 +177,18 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
     regions: list[dict[str, Any]] = []
     for order, (position, number) in enumerate(run):
         line = content[position]
-        top_pt = line["top"] + _HEAD_PAD_PT
+        # 同一视觉行常被拆成多段：公式行往往比题号行更高。纵向区间与题号行
+        # 重叠的行取最高那条的 top，公式上沿才不会在框外；只往重叠行看，
+        # 上一题（在题号行上方且不重叠）与下一行（top 更低）都扩不进来。
+        head_top = line["top"]
+        for other in content:
+            if other is line:
+                continue
+            overlap = min(other["top"], line["top"]) - max(other["bottom"],
+                                                             line["bottom"])
+            if overlap > 0:
+                head_top = max(head_top, other["top"])
+        top_pt = head_top + _HEAD_PAD_PT
         if order + 1 < len(run):
             stop = run[order + 1][0]
             bottom_pt = content[stop]["top"] + _REGION_GAP_PT

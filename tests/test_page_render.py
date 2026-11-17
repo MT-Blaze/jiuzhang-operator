@@ -27,7 +27,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core import (  # noqa: E402
-    page_render, pending_assets, pending_bank, pending_batches, pending_db,
+    page_render, page_render_cross, pending_assets, pending_bank, pending_batches,
+    pending_db,
 )
 
 PLUGIN_ID = "org.jiuzhang.editor"
@@ -244,6 +245,61 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertEqual(top2, 42)
         self.assertEqual(height2, 6)
 
+    def test_08a5_footer_in_paren_form_is_not_joined_into_last_text(self) -> None:
+        """「第1页（共3页）」是页脚：末题的 text 与框底都不能把它吃进去。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "第1页（共3页）", "left": 260, "bottom": 30, "right": 335, "top": 40},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1])
+        last = regions[-1]
+        self.assertNotIn("第1页", last["text"])
+        self.assertNotIn("共3页", last["text"])
+        self.assertIn("选项甲", last["text"])
+        footer_top_px = (842 - 40) * (2339 / 842)
+        self.assertLessEqual(last["y"] + last["h"], footer_top_px,
+                             "末题框底必须停在页脚上沿之上")
+
+    def test_08a6_footer_in_slash_form_is_not_joined_into_last_text(self) -> None:
+        """「第1页/共3页」也要认：这条真实素材的写法漏认会让页脚并进末题。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "第1页/共3页", "left": 260, "bottom": 30, "right": 335, "top": 40},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1])
+        last = regions[-1]
+        self.assertNotIn("第1页", last["text"])
+        self.assertNotIn("共3页", last["text"])
+        self.assertIn("选项甲", last["text"])
+        footer_top_px = (842 - 40) * (2339 / 842)
+        self.assertLessEqual(last["y"] + last["h"], footer_top_px,
+                             "末题框底必须停在页脚上沿之上")
+
+    def test_08a7_head_top_covers_overlapping_formula_row(self) -> None:
+        """题号行上方 20pt 内的公式行与题号行纵向重叠：框顶必须含住公式行顶。"""
+        lines = [
+            {"text": "上一题残余，不该被吃进来", "left": 72, "bottom": 730,
+             "right": 523, "top": 740},
+            {"text": "A={x∈N|−√3≤x≤√3}", "left": 200, "bottom": 655,
+             "right": 500, "top": 680},
+            {"text": "1. 已知集合", "left": 72, "bottom": 650, "right": 300, "top": 660},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 620,
+             "right": 480, "top": 630},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1])
+        scale_y = 2339 / 842
+        formula_top_px = (842 - 680) * scale_y
+        previous_bottom_px = (842 - 730) * scale_y
+        self.assertLessEqual(regions[0]["y"], formula_top_px,
+                             "框顶必须高过公式行顶，不能留下 72px 的切口")
+        self.assertGreater(regions[0]["y"], previous_bottom_px,
+                           "上沿不许越过上一题残余行的底边")
+
     def test_08b_real_paper_has_nineteen_regions(self) -> None:
         """模拟1.pdf 自带文本层：五页共 19 道题，每题一块，页脚不切。"""
         pdf = Path(__file__).resolve().parents[2] / "testdata" / "20261105" / "模拟1.pdf"
@@ -391,6 +447,148 @@ class WordEnrichmentTest(unittest.TestCase):
         first = entries[0]["regions"][0]["text"]
         self.assertIn("𝜋", first)
         self.assertIn("𝑥", first)
+
+
+class CrossPageStitchTest(unittest.TestCase):
+    """D15：跨页题续页归属与同题纵向拼接。"""
+
+    def _line(self, text: str, top: float, bottom: float,
+              left: float = 40, right: float = 2900) -> dict:
+        return {"text": text, "left": left, "top": top,
+                "right": right, "bottom": bottom}
+
+    def _page(self, lines, regions, *, page_no: int = 1,
+              document: str = "paper.pdf", dpi: int = 200,
+              width: int = 3000, height: int = 4739):
+        return page_render_cross.PageView(
+            document=document, page_no=page_no, dpi=dpi, width=width,
+            height=height, lines=tuple(lines), regions=tuple(regions))
+
+    def _first_page(self, *, last_bottom: float = 4600) -> object:
+        lines = [
+            self._line("7. 上一题", 3600, 3700),
+            self._line("8. 设数集 M", 4000, 4100),
+            self._line("第1页/共3页", 4600, 4640),
+        ]
+        regions = [
+            {"no": 7, "x": 30, "y": 3580, "w": 2900, "h": 300},
+            {"no": 8, "x": 30, "y": 3980, "w": 2900, "h": last_bottom - 3980},
+        ]
+        return self._page(lines, regions)
+
+    def _second_page(self, *extra) -> object:
+        lines = [
+            self._line("A. 1/3", 150, 230),
+            self._line("B. 2/3", 150, 230),
+            self._line("C. 1/12", 150, 230),
+            self._line("D. 5/12", 150, 230),
+        ]
+        return self._page(list(lines) + list(extra), [], page_no=2)
+
+    def test_09a_continuation_is_assigned_and_stops_before_next_section(self) -> None:
+        """三判据成立：续段归到 Q8，截止在下一节标题之前，标题不进续段。"""
+        next_page = self._second_page(
+            self._line("二、多项选择题", 360, 400),
+            self._line("9. 下一节第一题", 500, 540))
+        found = page_render_cross.select_continuation(self._first_page(), next_page)
+        self.assertIsNotNone(found)
+        self.assertEqual(found.question_no, 8)
+        self.assertEqual(found.stop_kind, "next_section")
+        self.assertLess(found.bottom, 360, "续段必须停在下一节标题上方")
+        texts = [line["text"] for line in found.lines]
+        self.assertEqual(texts, ["A. 1/3", "B. 2/3", "C. 1/12", "D. 5/12"])
+
+    def test_09b_no_link_when_last_region_stops_above_footer(self) -> None:
+        """本页末题下沿离页脚还远：不算跨页，绝不硬拼。"""
+        page = self._first_page(last_bottom=4400)
+        self.assertIsNone(page_render_cross.select_continuation(
+            page, self._second_page(self._line("二、多项选择题", 360, 400))))
+
+    def test_09c_no_link_when_next_page_opens_with_a_question_head(self) -> None:
+        """下一页第一行就是题号行：那是新题，不是本题续段。"""
+        next_page = self._page(
+            [self._line("9. 下一题", 100, 180), self._line("A. 选项", 200, 280)],
+            [], page_no=2)
+        self.assertIsNone(page_render_cross.select_continuation(
+            self._first_page(), next_page))
+
+    def test_09d_cutoff_is_the_next_head_not_the_page_bottom(self) -> None:
+        """没有下一节标题时，截止点仍是下一个题号行，之后的行不许吃进来。"""
+        next_page = self._second_page(
+            self._line("9. 下一题", 500, 540),
+            self._line("A. 下一题的选项", 560, 600))
+        found = page_render_cross.select_continuation(self._first_page(), next_page)
+        self.assertIsNotNone(found)
+        self.assertEqual(found.stop_kind, "next_head")
+        self.assertLess(found.bottom, 500)
+        self.assertNotIn("下一题的选项", [line["text"] for line in found.lines])
+
+    def _png(self, width: int, height: int, shade: int) -> bytes:
+        rows = [bytes([shade]) * (width * 3)] * height
+        return page_render_cross._encode_png(width, height, rows)
+
+    def _segments(self, **changes):
+        values = {
+            "document": "paper.pdf", "question_no": 8, "page_no": 1, "dpi": 200,
+            "page_width": 3000, "box": (10, 20, 16, 23),
+            "png": self._png(6, 3, 0),
+        }
+        values.update(changes.get("top", {}))
+        top = page_render_cross.Segment(**values)
+        values = {
+            "document": "paper.pdf", "question_no": 8, "page_no": 2, "dpi": 200,
+            "page_width": 3000, "box": (10, 100, 16, 102),
+            "png": self._png(6, 2, 0),
+        }
+        values.update(changes.get("bottom", {}))
+        bottom = page_render_cross.Segment(**values)
+        return top, bottom
+
+    def test_09e_stitch_keeps_both_segments_and_inserts_seam(self) -> None:
+        """拼图保留两段原图与坐标；接缝为纯白，宽度与两段一致。"""
+        top, bottom = self._segments()
+        stitched = page_render_cross.stitch_cross_page(top, bottom, seam_px=10)
+        self.assertIs(stitched.top, top)
+        self.assertIs(stitched.bottom, bottom)
+        self.assertEqual(stitched.seam_px, 10)
+        self.assertEqual((stitched.width, stitched.height), (6, 3 + 10 + 2))
+        raster = page_render_cross._decode_png(stitched.png)
+        for row in raster.rows[3:13]:
+            self.assertEqual(row, b"\xff" * 18, "接缝必须留白，不许直接粘死")
+
+    def test_09f_stitch_rejects_a_mismatched_question_or_paper(self) -> None:
+        top, bottom = self._segments(bottom={"question_no": 9})
+        with self.assertRaises(page_render_cross.CrossPageError) as caught:
+            page_render_cross.stitch_cross_page(top, bottom)
+        self.assertTrue(any("同题同卷" in item for item in caught.exception.problems))
+        top, bottom = self._segments(bottom={"document": "other.pdf"})
+        with self.assertRaises(page_render_cross.CrossPageError):
+            page_render_cross.stitch_cross_page(top, bottom)
+
+    def test_09g_stitch_rejects_mismatched_dpi_or_page_width(self) -> None:
+        top, bottom = self._segments(bottom={"dpi": 300})
+        with self.assertRaises(page_render_cross.CrossPageError) as caught:
+            page_render_cross.stitch_cross_page(top, bottom)
+        self.assertTrue(any("dpi" in item for item in caught.exception.problems))
+        top, bottom = self._segments(bottom={"page_width": 2480})
+        with self.assertRaises(page_render_cross.CrossPageError) as caught:
+            page_render_cross.stitch_cross_page(top, bottom)
+        self.assertTrue(any("页宽" in item for item in caught.exception.problems))
+
+    def test_09h_stitch_rejects_a_seam_outside_eight_to_twelve_px(self) -> None:
+        top, bottom = self._segments()
+        for seam in (7, 13):
+            with self.assertRaises(page_render_cross.CrossPageError) as caught:
+                page_render_cross.stitch_cross_page(top, bottom, seam_px=seam)
+            self.assertTrue(any("8–12" in item for item in caught.exception.problems))
+        page_render_cross.stitch_cross_page(top, bottom, seam_px=8)
+        page_render_cross.stitch_cross_page(top, bottom, seam_px=12)
+
+    def test_09i_stitch_rejects_crop_widths_that_do_not_match(self) -> None:
+        top, bottom = self._segments(bottom={"png": self._png(5, 2, 0)})
+        with self.assertRaises(page_render_cross.CrossPageError) as caught:
+            page_render_cross.stitch_cross_page(top, bottom)
+        self.assertTrue(any("宽度" in item for item in caught.exception.problems))
 
 
 class ImagePageTest(PageRenderTestCase):
