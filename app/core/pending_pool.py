@@ -704,7 +704,7 @@ def _missing_required(document: dict[str, Any]) -> list[str]:
     return missing
 
 
-_PLACEHOLDER_MARKS = ("（待识别", "(待识别", "待补", "【待", "___")
+_PLACEHOLDER_MARKS = ("（待识别", "(待识别", "待补", "【待", "___", "[公式图")
 
 
 def _placeholder_hits(document: dict[str, Any]) -> list[str]:

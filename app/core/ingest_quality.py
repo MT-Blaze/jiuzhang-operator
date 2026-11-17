@@ -1,14 +1,15 @@
-"""本地极速提取的坏题体检：四特征判定，只报不改。
+"""本地极速提取的坏题体检：五特征判定，只报不改。
 
 本地提取追求速度，代价是公式字体、题块切分与版式怪癖会把个别题啃坏。
 这里不猜「怎么修」，只回答「哪几道看起来坏了」——修补由 ``ingest_route``
 按坏题率决定：低于阈值只补坏题，高于阈值整批改走并发全量 OCR。
 
-四条特征都只认**看得见的残缺**，绝不因为模型不认识某个公式就判坏：
+五条特征都只认**看得见的残缺**，绝不因为模型不认识某个公式就判坏：
 1. 连续空选项：选择题选项连空两格，多半是版式或 OCR 串行；
 2. 掉变量句式：出现「求的值」「已知，」或 ``$+$`` 这类被吃掉变量的公式；
 3. 内联小图多但无公式：题面挂着好几张占位小图、却一个公式都没有；
-4. 长文无符号：题干很长却没有任何数字、等号或数学运算符。
+4. 长文无符号：题干很长却没有任何数字、等号或数学运算符；
+5. 公式图未补：题面/选项/解析里还留着 ``[公式图:N]``，必须交 AI 补识别。
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ _MISSING_VAR_RE = re.compile(r"(求|已知|设|若|则)\s*(?:的值|的取值|�
 _BARE_OPERATOR_RE = re.compile(r"\$\s*[+\-*/=<>]\s*\$")
 _EMPTY_SCRIPT_RE = re.compile(r"[$^_]\s*\{\s*\}")
 _INLINE_IMAGE_RE = re.compile(r"\\includegraphics|\\begin\{tikzpicture\}|\[无法辨认\]|\ufffc")
+_FORMULA_IMAGE_MARK = "[公式图:"
 _MATH_SYMBOL_RE = re.compile(r"[$=＝≠≤≥<>+\-×÷·/^_\\\d]")
 _PLACEHOLDER_HEADS = ("（自动切题", "（待识别", "（自动 OCR", "（正在解析")
 
@@ -29,6 +31,13 @@ MAX_STEM_CHARS_WITHOUT_SYMBOL = 120
 def _options(document: dict[str, Any]) -> list[dict[str, Any]]:
     raw = document.get("options")
     return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
+def _has_formula_image_mark(document: dict[str, Any]) -> bool:
+    """题面/选项/解析任意一处留着公式图占位，就说明这道题还没补全。"""
+    bodies = [str(document.get("stem") or ""), str(document.get("solution") or "")]
+    bodies.extend(str(option.get("content") or "") for option in _options(document))
+    return any(_FORMULA_IMAGE_MARK in body for body in bodies)
 
 
 def _longest_empty_option_run(options: list[dict[str, Any]]) -> int:
@@ -55,6 +64,9 @@ def question_reasons(document: dict[str, Any]) -> list[str]:
         reasons.append("掉变量句式")
     if len(_INLINE_IMAGE_RE.findall(stem)) >= 2 and "$" not in stem:
         reasons.append("内联小图多但无公式")
+    # 独立判定：一道题可能既有 OMML 公式又有公式图片，不能套「无公式」前置条件。
+    if _has_formula_image_mark(document):
+        reasons.append("公式图未补")
     if len(stem) >= MAX_STEM_CHARS_WITHOUT_SYMBOL and not _MATH_SYMBOL_RE.search(stem):
         reasons.append("长文无符号")
     return reasons

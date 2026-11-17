@@ -1,11 +1,12 @@
 """PDF 一律当原卷大图的入库判据。
 
-钉住五条：
+钉住六条：
 - 不管有没有文本层，PDF **一条占位题都不落池**——只渲染原卷页图；
 - 页面图与题块坐标挂到批次上，解析完成后每个识别框直接裁图、
   连同题块文字生成一道带原题图的待审题排进中间栏；
 - 页数按**实际渲染出的页面图**算，不认文本解析猜的数；
 - 渲染器缺席时同样不造假题，批次空着等老师处理；Word 仍走自动切题；
+- 扫描版 Word 在 word/media 页图渲染补齐前落一条占位题，不交空批次；
 - 自动切图落池失败只记警告，页图与手动框选照旧可用。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_ingest_scan``
@@ -46,13 +47,32 @@ class PdfAlwaysPageSourceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("自动裁好" in warning for warning in warnings))
 
     async def test_word_keeps_auto_split(self) -> None:
-        with mock.patch.object(ingest_media, "extract_docx_text",
-                               return_value="1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。"):
+        with mock.patch.object(ingest_media, "extract_docx_document",
+                               return_value=(
+                                   "1. 求 $x+1=2$ 的解。\n2. 求 $x-1=0$ 的解。", [], False)):
             documents, _warnings, kind, _text, scan = await ingest._items_from_file(
                 "闭环样卷.docx", b"PK")
         self.assertFalse(scan)
         self.assertEqual(kind, "docx")
         self.assertGreaterEqual(len(documents), 2)
+
+    async def test_scanned_word_gets_placeholder_not_empty_batch(self) -> None:
+        """C 类扫描 Word 在页图渲染补齐前先落一条占位题，不许返回空批次。"""
+        notes = ["整页扫描图：word/media 中检测到整页大图、文字近乎为零，"
+                 "按页面图处理，不生成题目"]
+        with mock.patch.object(ingest_media, "extract_docx_document",
+                               return_value=("", notes, True)):
+            documents, warnings, kind, text, scan = await ingest._items_from_file(
+                "扫描样卷.docx", b"PK")
+        self.assertEqual(kind, "docx")
+        self.assertFalse(scan, "页图渲染补齐前不许走原卷大图分支，否则占位题会被清掉")
+        self.assertEqual(text, "")
+        self.assertEqual(warnings, notes)
+        self.assertEqual(len(documents), 1)
+        stem = documents[0]["stem"]
+        self.assertIn("整页扫描件", stem)
+        self.assertIn("原卷图暂不支持", stem)
+        self.assertIn("请提供 PDF 或图片", stem)
 
 
 class StagePdfBatchTest(unittest.TestCase):
@@ -242,6 +262,27 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(saved), 2)
         self.assertEqual([item["question"]["stem"] for item in saved], ["真题一道", "真题两道"])
         self.assertEqual(saved[0]["pending_id"], "p_placeholder03")
+
+    async def test_scanned_word_lands_a_placeholder_question(self) -> None:
+        saved: list[dict[str, Any]] = []
+
+        def capture(items: Any, **_kwargs: Any) -> dict[str, Any]:
+            saved.extend(items)
+            return {"saved_ids": ["p_scan01"]}
+
+        with mock.patch.object(
+                ingest_media, "extract_docx_document",
+                return_value=("", ["整页扫描图：按页面图处理"], True)), \
+                mock.patch.object(ingest.page_render, "build_pages",
+                                  return_value=([], [], [])), \
+                mock.patch.object(pending_bank, "save_draft", side_effect=capture):
+            await ingest.run_ingest_jobs("B-005", [{
+                "pending_id": "p_placeholder04", "name": "扫描样卷.docx", "data": b"PK",
+            }])
+
+        self.assertEqual(len(saved), 1, "扫描 Word 不许交空批次")
+        self.assertEqual(saved[0]["pending_id"], "p_placeholder04")
+        self.assertIn("整页扫描件", saved[0]["question"]["stem"])
 
 
 if __name__ == "__main__":

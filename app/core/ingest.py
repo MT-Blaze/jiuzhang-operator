@@ -231,6 +231,12 @@ def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _append_notes(route: dict[str, Any], notes: list[str]) -> None:
+    """把单文件分拣的如实说明并进批次路由，老师重开批次时能看到。"""
+    if notes:
+        route["note"] = (str(route.get("note") or "") + " " + " ".join(notes)).strip()
+
+
 def _apply_layout(page_images: list[dict[str, Any]],
                   layout: dict[str, Any] | None) -> None:
     """把版面引擎探出的题块就地写回页图；没探到就保留原有绿框。"""
@@ -274,6 +280,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         doc_pages: list[int] = []
         scan_mode = page_only
         image_ocr = False
+        notes: list[str] = []
         if page_only:
             documents, kind, source_text = [], "pdf", ""
         else:
@@ -284,7 +291,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 documents, kind, source_text, scan_mode = [], "image", "", False
             else:
                 try:
-                    documents, _notes, kind, source_text, scan_mode = await _items_from_file(name, data)
+                    documents, notes, kind, source_text, scan_mode = \
+                        await _items_from_file(name, data)
                 except Exception:  # noqa: BLE001 - 后台单份失败不许带崩整批
                     documents = []
                     kind = ""
@@ -300,6 +308,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         if scan_mode:
             health = page_render.pdf_text_health(data)
             route = scan_route(picked_layout, picked_recognize, health)
+            _append_notes(route, notes)
             if page_images:
                 layout = await layout_router.run(name, data, page_images, picked_layout)
                 _apply_layout(page_images, layout)
@@ -343,6 +352,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         health = text_health.text_health(source_text)
         route = route_payload("image" if kind == "image" else "text", health,
                                False if kind == "image" else None)
+        _append_notes(route, notes)
         items: list[dict[str, Any]] = []
         if documents:
             items.append({"question": documents[0], "pending_id": pending_id,

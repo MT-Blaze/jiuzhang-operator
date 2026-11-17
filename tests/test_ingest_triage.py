@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""双引擎路由、四特征坏题体检与 30% 分诊契约。
+"""双引擎路由、五特征坏题体检与 30% 分诊契约。
 
 钉住六件事：
 1. 版面/识别两套引擎的白名单与瀑布顺序是单源；老四通道名仍能映射；
-2. 四特征（连续空选项 / 掉变量句式 / 内联小图多但无公式 / 长文无符号）各报各的；
+2. 五特征（连续空选项 / 掉变量句式 / 内联小图多但无公式 / 长文无符号 / 公式图未补）各报各的；
 3. 每次解析静默打一行 ``[STAT] 本次解析总题数: X, 坏题数: Y, 坏题率: Z%``；
 4. 坏题率低于阈值只补坏题，达到阈值自动改走并发全量 OCR；
 5. MinerU 引擎逐题发送单题截图（绝不发整卷 PDF），进度逐题写进路由；
@@ -56,6 +56,8 @@ def broken_doc(kind: str) -> dict:
                 "stem": "\\includegraphics{a.png} 与 \\includegraphics{b.png} 的关系是"}
     if kind == "long_no_symbol":
         return {"type": "solution", "stem": "题干" * 80}
+    if kind == "formula_image":
+        return {"type": "solution", "stem": "已知 $x+1=2$，求 [公式图:1] 的值。"}
     raise AssertionError(kind)
 
 
@@ -124,12 +126,20 @@ class EngineConstantTest(unittest.TestCase):
                     f"{path.name} 超过 400 行")
 
 
-class FourFeatureTest(unittest.TestCase):
+class BadFeatureTest(unittest.TestCase):
     def test_01_each_feature_is_reported(self) -> None:
         self.assertIn("连续空选项", question_reasons(broken_doc("empty_options")))
         self.assertIn("掉变量句式", question_reasons(broken_doc("dropped_var")))
         self.assertIn("内联小图多但无公式", question_reasons(broken_doc("images_no_formula")))
         self.assertIn("长文无符号", question_reasons(broken_doc("long_no_symbol")))
+        self.assertIn("公式图未补", question_reasons(broken_doc("formula_image")))
+
+    def test_05_formula_image_mark_has_no_dollar_precondition(self) -> None:
+        """既有 OMML 公式（含 ``$``）又有图片公式时，仍必须判「公式图未补」。"""
+        document = {"type": "solution",
+                    "stem": "计算 $x^2$ 后看图 [公式图:2]，写出结果。"}
+        self.assertTrue(question_reasons(document))
+        self.assertIn("公式图未补", question_reasons(document))
 
     def test_02_clean_question_is_not_flagged(self) -> None:
         self.assertEqual(question_reasons(clean_doc()), [])

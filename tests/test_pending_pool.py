@@ -573,6 +573,19 @@ class PoolActionsTest(PoolCase):
         self.assertFalse(again["ok"], again)
         self.assertIn("占位符未清", again["missing"])
 
+    def test_16b_formula_image_placeholder_blocks_writing(self) -> None:
+        """B 类题带着 [公式图:N] 占位不许入库：必须报「占位符未清」。"""
+        topic = self._seed_topic("8")
+        pool_id = self._prepare_pool(_doc(taxonomy=topic))[1]
+        pending = _doc(taxonomy=topic)
+        pending["stem"] = "已知 $x^2-5x+6=0$，求 [公式图:1] 所示函数的根之和。"
+        self._set_doc(pool_id, pending)
+        result = self.pending_pool.keep_separate(pool_id)
+        self.assertFalse(result["ok"], result)
+        self.assertFalse(result["written"])
+        self.assertIn("占位符未清", result["missing"])
+        self.assertEqual(self.pending_pool.list_pool()["total"], 1)
+
     def test_17_delete_removes_only_the_pool_entry(self) -> None:
         """4.7 删除：只删池内这条与它自己的 ``cimg_``；主库题与批次目录一张都不碰。
 

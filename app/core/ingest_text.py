@@ -9,7 +9,7 @@ import re
 import zipfile
 from typing import Any
 
-from app.core import question_parser
+from app.core import docx_classify, question_parser
 
 __all__ = [
     "DEFAULT_DIFFICULTY",
@@ -24,6 +24,7 @@ __all__ = [
     "classify",
     "decode_bytes",
     "decode_text",
+    "extract_docx_document",
     "extract_docx_text",
     "suffix_of",
 ]
@@ -156,6 +157,25 @@ def extract_docx_text(data: bytes) -> str:
 def _unescape_xml(text: str) -> str:
     return (text.replace("&lt;", "<").replace("&gt;", ">")
             .replace("&quot;", '"').replace("&apos;", "'").replace("&amp;", "&"))
+
+
+def extract_docx_document(data: bytes) -> tuple[str, list[str], bool]:
+    """``.docx`` → (文本, 警告, 是否整页扫描图)。
+
+    A/B 类正文里保留 ``$...$`` 与 ``[公式图:N]`` 占位；C 类只交整页图信号，
+    不生成题目；D 类本阶段退回纯文本并给出排版警告。
+    """
+    try:
+        result = docx_classify.classify_docx(data)
+    except zipfile.BadZipFile as exc:
+        raise IngestError("这个 .docx 文件损坏，解不开") from exc
+    except docx_classify.DocxProbeError as exc:
+        raise IngestError(str(exc)) from exc
+    if result.page_only:
+        return "", result.warnings, True
+    if result.kind == "D":
+        return extract_docx_text(data), result.warnings, False
+    return result.text, result.warnings, False
 
 
 def _split_exam_zh(text: str) -> list[dict[str, Any]]:

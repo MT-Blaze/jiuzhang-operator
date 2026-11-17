@@ -12,7 +12,7 @@ from app.core.ingest_text import (
     build_documents,
     classify,
     decode_text,
-    extract_docx_text,
+    extract_docx_document,
     suffix_of,
 )
 
@@ -73,6 +73,7 @@ async def _items_from_file(name: str, data: bytes) -> tuple[
 
     最后一个 ``True`` 表示这份 PDF 只当原卷大图：**一道题都不落池**，
     只把每页渲染成页面图并附带文本层抽出的题块坐标，老师在左栏确认切分。
+    C 类扫描 Word 在 word/media 页图渲染补齐前不走这条原卷分支，改落一条占位题。
     """
     kind = classify(name)
     warnings: list[str] = []
@@ -81,9 +82,14 @@ async def _items_from_file(name: str, data: bytes) -> tuple[
         documents, notes = build_documents(text)
         return documents, warnings + notes, kind, text, False
     if kind == "docx":
-        text = extract_docx_text(data)
-        documents, notes = build_documents(text)
-        return documents, warnings + notes, kind, text, False
+        text, notes, page_only = extract_docx_document(data)
+        warnings.extend(notes)
+        if page_only:
+            # 页图渲染还不支持 word/media：先落一条占位题，绝不交空批次。
+            label = f"（待识别：{name}，整页扫描件，原卷图暂不支持，请提供 PDF 或图片）"
+            return [_placeholder(label)], warnings, kind, "", False
+        documents, split_notes = build_documents(text)
+        return documents, warnings + split_notes, kind, text, False
     if kind == "pdf":
         # 这里只负责分拣：页图、题块坐标与自动切图都在后台解析完成后做。
         warnings.append(
