@@ -435,7 +435,7 @@ def fetch_models(
             exc.code, f"HTTP {exc.code}"
         )
         return {"ok": False, "models": [], "host": host, "detail": f"接口可达但报错：{hint}"}
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         return {"ok": False, "models": [], "host": host, "detail": f"连不上：{reason}"}
 

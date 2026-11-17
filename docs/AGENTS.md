@@ -152,7 +152,7 @@
 | `.venv\Scripts\python.exe -m unittest tests.<模块>` | 单模块测试；**系统 Python 会把全部模块打成假报错** |
 | `.venv\Scripts\python.exe tools\run_all_tests.py` | 全模块回归，失败模块 → rc=1 |
 | `bash scripts/check-quick-gate.sh` / `check-release-gate.sh` | 两档门禁 |
-| `.venv\Scripts\python.exe tools\audit_code.py` | 静态红线（基线 ERROR 0 / WARN 36 / INFO 4） |
+| `.venv\Scripts\python.exe tools\audit_code.py` | 静态红线（基线 ERROR 0 / WARN 34 / INFO 3） |
 | `.venv\Scripts\python.exe tools\<名>_probe.py` | 真机探针，产物 `.system_generated/<探针名>/<tag>/probe.toml` + 截图 |
 | `.venv\Scripts\python.exe tools\build_plugin.py --all` | 打插件 zip（写 `dist/`） |
 | `build_release.bat` | 打底座纯净包（写 `dist/`，同时产出稳定名 `jiuzhang-operator.zip`；不含 `plugins/`、`data/`、`tests`/`tools`/`.qoder`） |

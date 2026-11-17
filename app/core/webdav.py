@@ -91,7 +91,7 @@ def _request(
         if exc.code in expected:
             return exc.code, body
         raise WebdavError(f"{method} {url} 返回 HTTP {exc.code}{('：' + detail) if detail else ''}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, OSError) as exc:
         raise WebdavError(f"{method} {url} 失败：{exc}") from exc
     if status not in expected:
         raise WebdavError(f"{method} {url} 返回 HTTP {status}")

@@ -27,7 +27,7 @@ TARGET_SUFFIXES = {".py", ".js", ".html", ".css"}
 # vendor/ 是第三方随包库（目前只有 MathJax）：源码原样入库、不得改写，
 # 它们自己的 eval / new Function 不是本仓库的红线问题，按许可证与来源单独核对。
 SKIP_DIRS = {".git", ".venv", "__pycache__", "node_modules", ".pytest_cache",
-             ".system_generated", "vendor"}
+             ".system_generated", "vendor", "engines"}
 SKIP_ROOT_DIRS = {"dist", "data"}
 
 
