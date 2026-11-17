@@ -26,7 +26,8 @@ from app.core.bank_schema import (
     REVIEW_FLAGS,
     TEXTBOOK_ID_RE,
     TOPIC_ID_RE,
-    _like, _placeholders,
+    _like,
+    _placeholders,
     connect,
 )
 from app.core.contract import normalize_difficulty

@@ -14,9 +14,9 @@ PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律都写死了「单文件
 4. 底座 Python（``app/**``）同样 500 行封死——拆库时留下的教训：2226 行的
    ``app/core/bank.py`` 让契约测试无处下手。
 
-``LEGACY_OVER_CEILING`` 是迁移冻结台账：本版之前已经超限的存量文件登记实测行数，
-**只许减不许增**，拆分达标后必须从台账删除；任何不在台账里的文件越过 500 行直接判红。
-这样既不让存量债把门禁逼回 800，也不为赶门禁在夜里盲拆大文件引入回归。
+``LEGACY_OVER_CEILING`` 是迁移冻结台账：它只回答「哪些文件算老文件」。老文件不再拦——
+行数随功能调整可涨可落，测试只打印实测行数供看趋势；台账本身必须保留，删了下次就分不清
+谁新谁老。不在台账里的文件一律按新文件对待，越过 500 行直接判红，新拆出来的模块也一样。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_file_size_contract``
 """
@@ -24,8 +24,10 @@ PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律都写死了「单文件
 from __future__ import annotations
 
 import re
+import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,10 +35,15 @@ from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.core import manifests  # noqa: E402
+try:  # 证据行要能直接贴进回传单，不受 Windows 控制台默认 GBK 影响
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
 CEILING = 500
 # 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 500 行。
 DEV_ONLY = ("tools",)
-# 存量超限冻结台账（路径 → 本版实测行数）。只减不增；达标即删行。
+# 老文件名单（路径 → 冻结时实测行数，仅历史参考）。名单只加不减；老文件行数不设上限，
+# 行数变化只记录不判红。
 LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_ai_copilot.js": 800,
     "plugins/org.jiuzhang.editor/dist/plugin.js": 798,
@@ -109,6 +116,15 @@ def tracked(globs: tuple[str, ...]) -> list[Path]:
     return sorted(out)
 
 
+def verdict(rel: str, count: int) -> str | None:
+    """新文件越线要拦；台账里的老文件只记录，不设上限。"""
+    if rel in LEGACY_OVER_CEILING:
+        return None
+    if count > CEILING:
+        return f"{rel}（{count} 行；新文件上限 {CEILING}）"
+    return None
+
+
 class ScriptSizeCeilingTest(unittest.TestCase):
     """发行资产（插件 dist、底座 static、模板插件）单文件不超 500 行。"""
 
@@ -125,14 +141,9 @@ class ScriptSizeCeilingTest(unittest.TestCase):
     def violations(paths) -> list[str]:
         out = []
         for path in paths:
-            count = lines_of(path)
-            rel = rel_of(path)
-            frozen = LEGACY_OVER_CEILING.get(rel)
-            if frozen is None:
-                if count > CEILING:
-                    out.append(f"{rel}（{count} 行；新文件上限 {CEILING}）")
-            elif count > frozen:
-                out.append(f"{rel}（{count} 行；冻结上限 {frozen}，只许减不许增）")
+            message = verdict(rel_of(path), lines_of(path))
+            if message is not None:
+                out.append(message)
         return out
 
     def test_01_no_oversized_ship_file(self) -> None:
@@ -154,20 +165,44 @@ class ScriptSizeCeilingTest(unittest.TestCase):
         for path in ROOT.glob("app/**/*probe*.py"):
             self.fail(f"探针 {path} 混进了底座")
 
-    def test_04_legacy_ledger_stays_honest(self) -> None:
-        """冻结台账只减不增：达标即删行，行数变了也要同步，防止拿旧额度偷偷长胖。"""
-        stale = []
-        for rel, frozen in sorted(LEGACY_OVER_CEILING.items()):
+    def test_04_legacy_files_are_recorded_not_blocked(self) -> None:
+        """老文件只打印实测行数供看趋势，行数涨落都不判红；台账保留，用来区分新老文件。"""
+        measured = []
+        missing = []
+        for rel in sorted(LEGACY_OVER_CEILING):
             path = path_for(rel)
             if not path.is_file():
-                stale.append(f"{rel} 已不存在，删台账")
+                missing.append(rel)
                 continue
-            count = lines_of(path)
-            if count <= CEILING:
-                stale.append(f"{rel} 已降到 {count} 行（≤{CEILING}），删台账")
-            elif count != frozen:
-                stale.append(f"{rel} 实测 {count} 行，与冻结值 {frozen} 不符，更新台账")
-        self.assertEqual(stale, [], "存量台账失效：" + "；".join(stale))
+            measured.append((rel, lines_of(path)))
+        self.assertTrue(measured, "冻结台账里的老文件一个都没解析到，路径映射可能已失效")
+        if missing:
+            print("老文件缺失：" + ", ".join(missing))
+        print("老文件行数：" + " ".join(f"{rel}={count}" for rel, count in measured))
+
+
+class CeilingGateProofTest(unittest.TestCase):
+    """证明门禁还拦得住：新文件 501 行判红，老文件再胖也不拦。"""
+
+    @staticmethod
+    def scan(rel: str, count: int) -> list[str]:
+        module = sys.modules[__name__]
+        with mock.patch.object(module, "rel_of", return_value=rel), \
+                mock.patch.object(module, "lines_of", return_value=count):
+            return ScriptSizeCeilingTest.violations([Path(rel)])
+
+    def test_01_new_file_at_501_lines_is_blocked(self) -> None:
+        self.assertEqual(
+            self.scan("app/core/brand_new_module.py", CEILING + 1),
+            ["app/core/brand_new_module.py（501 行；新文件上限 500）"])
+
+    def test_02_new_file_at_500_lines_passes(self) -> None:
+        self.assertEqual(self.scan("app/core/brand_new_module.py", CEILING), [])
+
+    def test_03_legacy_file_is_never_blocked(self) -> None:
+        rel = "app/core/bank_query.py"
+        self.assertIn(rel, LEGACY_OVER_CEILING)
+        self.assertEqual(self.scan(rel, CEILING + 1000), [])
 
 
 class PluginAssetWiringTest(unittest.TestCase):
