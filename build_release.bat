@@ -56,7 +56,7 @@ mkdir "%STAGE%"
 rem ---------- Step 2: copy runtime tree, excluding dev / heavy / generated ----------
 echo [1/4] Copying runtime files...
 robocopy "%~dp0." "%STAGE%" /E /NFL /NDL /NJH /NJS /NP ^
-  /XD .venv venv .git .github .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins" "%~dp0tests" "%~dp0tools" "%~dp0scripts" "%~dp0examples" "%~dp0docs" "%~dp0.qoder" ^
+  /XD .venv venv engines .git .github .pytest_cache .system_generated __pycache__ node_modules .ruff_cache .mypy_cache .idea .vscode .scratch* "%~dp0dist" "%~dp0data" "%~dp0plugins" "%~dp0tests" "%~dp0tools" "%~dp0scripts" "%~dp0examples" "%~dp0docs" "%~dp0.qoder" ^
   /XF .env *.log *.pyc *.pyo Thumbs.db .DS_Store *.db *.db-shm *.db-wal *.db-journal *.bak backup_*.zst manifest_*.json "%~dp0examples\template-plugin.zip" install.bat build_release.bat .gitignore .gitattributes
 if errorlevel 8 (
     echo.

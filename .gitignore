@@ -16,6 +16,8 @@ data/*
 data/backups/
 static/uploads/
 .system_generated/
+# 本地引擎（切题/OCR 等按机器装出来的环境）：底座升级不覆盖，也绝不入库。
+engines/
 *.log
 
 # 首启静默安装的种子插件是运行时产物（源头在 examples/demo_plugin.zip）

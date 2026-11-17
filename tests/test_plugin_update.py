@@ -671,7 +671,7 @@ class UpdateScriptTest(unittest.TestCase):
     def test_01_every_excluded_dir_is_listed_for_robocopy(self):
         self.assertEqual(HOST_EXCLUDED_DIRS,
                          ("data", "plugins", ".venv", ".git", "dist", "__pycache__",
-                          ".system_generated"))
+                          ".system_generated", "engines"))
         self.assertIn("/XD", self.robocopy)
         # 传目标绝对路径在「阶段 → 根」方向不生效（update_probe 沙箱真跑抓出），
         # 所以 /XD 只认目录名；裸名会在源与目标两侧同时跳过该目录。

@@ -59,7 +59,7 @@ HOST_MAX_UNCOMPRESSED_BYTES = 600 * 1024 * 1024
 # 插件热更通道负责（那边按合并语义落地并保住本机数据文件），底座自更新
 # 只管程序文件，绝不碰插件目录。
 HOST_EXCLUDED_DIRS = ("data", "plugins", ".venv", ".git", "dist", "__pycache__",
-                      ".system_generated")
+                      ".system_generated", "engines")
 HOST_EXCLUDED_FILES = ("*.pyc", "*.pyo")
 
 # 插件目录里属于「老师财产」的文件：更新覆盖时必须原样保住
