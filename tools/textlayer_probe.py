@@ -24,7 +24,7 @@ a) 题号主链从 1 开始且无断号，且每页题块数与该页题号一�
 b) 「第N页（共M页）」「第N页/共M页」与页底裸数字页码都不进任何题 text/框。
 c) 框顶覆盖同段最高行（题号行与公式/上标同视觉行时不被裁掉）。
 d) 任一题 text 不含下一题题干开头。
-e) 主链末题 text 不含页码/水印/卷名，框底不压真实页脚。
+e) 整卷末题 text 不含页码/水印/卷名，框底不压真实页脚。
 f) 改前/改后差异全部能归因（取顶 / 跨页页眉页脚 / 裸页码）。
 """
 
@@ -284,14 +284,6 @@ def _bottom_furniture(raw: list[dict[str, Any]], removed: list[dict[str, Any]],
             seen.add(id(line))
             unique.append(line)
     return unique
-
-
-def _last_region(page: dict[str, Any], number: int | None) -> dict[str, Any] | None:
-    if number is not None:
-        for region in reversed(page["regions"]):
-            if region["no"] == number:
-                return region
-    return page["regions"][-1] if page["regions"] else None
 
 
 def main() -> int:
@@ -576,10 +568,10 @@ def main() -> int:
                                        "next_no": head["no"]})
     criterion_d = not cross_failures and not page_tail_failures
 
-    # ---------- e) 主链末题洁净 ----------
-    last_number = main_numbers[-1] if main_numbers else None
-    last_page = next((page for page in pages if page["page"] == main_last_page), None)
-    last_region = _last_region(last_page, last_number) if last_page else None
+    # ---------- e) 整卷末题洁净 ----------
+    paper_pages = [page for page in pages if page["regions"]]
+    last_page = paper_pages[-1] if paper_pages else None
+    last_region = last_page["regions"][-1] if last_page is not None else None
     last_detail: dict[str, Any] = {}
     criterion_e = False
     if last_page is not None and last_region is not None:
@@ -695,21 +687,16 @@ def main() -> int:
             (out_dir / "q01_p1.png").write_bytes(
                 _crop_png(raw, width, height, stride, channels, rev, first))
             shots.append("q01_p1.png")
-        if last_region is not None and main_last_page:
+        if last_region is not None and last_page is not None:
             raw, width, height, stride, channels, rev = _render_raw(
-                shot_document, main_last_page - 1)
-            name = "q%02d_p%d.png" % (last_region["no"], main_last_page)
+                shot_document, last_page["page"] - 1)
+            name = "q%02d_p%d.png" % (last_region["no"], last_page["page"])
             (out_dir / name).write_bytes(
                 _crop_png(raw, width, height, stride, channels, rev, last_region))
             shots.append(name)
-        last_page_info = next(page for page in pages if page["page"] == page_count)
-        if last_page_info["regions"]:
-            last = last_page_info["regions"][-1]
-            raw, width, height, stride, channels, rev = _render_raw(
-                shot_document, page_count - 1)
-            name = "q_last_p%d.png" % page_count
+            name = "q_last_p%d.png" % last_page["page"]
             (out_dir / name).write_bytes(
-                _crop_png(raw, width, height, stride, channels, rev, last))
+                _crop_png(raw, width, height, stride, channels, rev, last_region))
             shots.append(name)
     finally:
         shot_document.close()

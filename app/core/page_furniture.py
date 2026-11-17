@@ -43,6 +43,7 @@ def filter_pages(pages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         return [page.get("lines") or [] for page in pages]
 
     removed: set[tuple[int, int]] = set()
+    removed |= _off_page_lines(pages)
     removed |= _repeated_furniture(pages)
     removed |= _numeric_page_numbers(pages)
     return [
@@ -50,6 +51,23 @@ def filter_pages(pages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
          if (page_index, index) not in removed]
         for page_index, page in enumerate(pages)
     ]
+
+
+def _off_page_lines(pages: list[dict[str, Any]]) -> set[tuple[int, int]]:
+    """可见区之外的行：文本层会把裁切掉的水印碎片记成 ``bottom < 0``。
+
+    这类行在页面上根本看不见，既不是正文也不是页眉页脚候选，直接剔掉；
+    页数 ≤2 时 filter_pages 不走到这里，单页/两页仍一行不剔。
+    """
+    removed: set[tuple[int, int]] = set()
+    for page_index, page in enumerate(pages):
+        height = _height(page)
+        for line_index, line in enumerate(page.get("lines") or []):
+            bottom = float(line.get("bottom") or 0)
+            top = float(line.get("top") or 0)
+            if bottom < 0 or (height > 0 and top > height):
+                removed.add((page_index, line_index))
+    return removed
 
 
 def _repeated_furniture(pages: list[dict[str, Any]]) -> set[tuple[int, int]]:

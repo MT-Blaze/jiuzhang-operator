@@ -609,6 +609,22 @@ class PageFurnitureTest(unittest.TestCase):
         for page_texts in self._texts(kept):
             self.assertEqual(page_texts, ["1. 正文行"])
 
+    def test_12_out_of_page_watermark_fragment_is_removed(self) -> None:
+        """文本层把裁切水印记成 bottom<0：三页起剔掉，两页仍原样不动。"""
+        watermark = self._line("{#{QQABYYKAgggoQABAABhCEwXACgGQkhAAASg=}#}", 3.6, -1.0,
+                               left=0.3, right=183.2)
+        pages = [self._page([self._line("1. 正文行", 700, 712)])
+                 for _ in range(3)]
+        pages[1] = self._page([self._line("1. 正文行", 700, 712), watermark])
+        kept = page_furniture.filter_pages(pages)
+        self.assertEqual(self._texts(kept)[1], ["1. 正文行"])
+
+        two = [self._page([self._line("1. 正文行", 700, 712), dict(watermark)])
+               for _ in range(2)]
+        kept = page_furniture.filter_pages(two)
+        self.assertEqual(len(kept[0]), 2)
+        self.assertEqual(len(kept[1]), 2)
+
     def test_11_question_regions_can_skip_legacy_fallbacks(self) -> None:
         """兜底判据保留可调：默认照旧剔除页脚，上层可显式关掉。"""
         lines = [
