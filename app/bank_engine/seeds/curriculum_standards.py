@@ -22,6 +22,9 @@ SUBJECT_THOUGHT_ROWS: tuple[tuple[int, str, str, int, int, str], ...] = (
     (9004, 'math_logical_reasoning_thought', '逻辑推理', 2, 2, '高中'),
     (9005, 'math_modeling_thought', '数学建模', 3, 2, '高中'),
     (9006, 'math_number_shape_senior', '数形结合', 4, 2, '高中'),
+    (9007, 'math_classification_thought', '分类讨论思想', 5, 2, '高中'),
+    (9008, 'math_reduction_transformation_thought', '化归与转化思想', 6, 2, '高中'),
+    (9009, 'math_function_equation_thought', '函数与方程思想', 7, 2, '高中'),
     # 物理：课标未单列「学科思想」清单，按初高中物理教研大纲的通用思想名整理。
     (9121, 'physics_junior_ideal_model_thought', '理想模型', 1, 4, '初中'),
     (9122, 'physics_junior_equivalent_substitution_thought', '等效替代', 2, 4, '初中'),

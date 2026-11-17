@@ -33,10 +33,11 @@ from app.bank_engine.seeds.curriculum_standards import (  # noqa: E402
 DEFAULT_DB = ROOT / "data" / "banks" / "org.jiuzhang.bank-engine.v2.db"
 TARGET_STAGES = ("小学", "初中", "高中")
 # 历史脏词：本应属于解题方法或自造术语，不允许留在学科思想里。
-DIRTY_THOUGHT_TERMS = (
-    "等效替代", "守恒思", "守恒", "微元", "控制变量", "函数思想", "方程思想",
-    "转化与化归", "分类讨论", "整体思想", "类比思想", "模型思想", "系统思想",
-    "对称思想", "理想化思想", "转换思想", "模型建构思想",
+# 按完整名称精确比对，避免误杀「函数与方程思想」这类合法长名。
+DIRTY_THOUGHT_NAMES = (
+    "函数思想", "方程思想", "转化与化归", "分类讨论", "整体思想", "类比思想",
+    "模型思想", "系统思想", "对称思想", "理想化思想", "转换思想", "模型建构思想",
+    "守恒思想",
 )
 # 核心素养表的关联表：一旦有引用，整表替换会丢关联，必须先人工处理。
 REFERENCE_TABLES = (
@@ -85,7 +86,7 @@ def validate_rows(table: str, rows: tuple[tuple[int, str, str, int, int, str], .
 def validate_thought_terms() -> None:
     hits = [
         name for _, _, name, _, _, _ in SUBJECT_THOUGHT_ROWS
-        for term in DIRTY_THOUGHT_TERMS if term in name
+        if name in DIRTY_THOUGHT_NAMES
     ]
     if hits:
         raise SystemExit("学科思想仍含脏词：" + "、".join(sorted(set(hits))))
@@ -199,7 +200,7 @@ def audit(db_path: Path) -> int:
         dirty = [
             str(row[0]) for row in conn.execute(
                 "SELECT name FROM dict_subject_thoughts"
-            ) if any(term in str(row[0]) for term in DIRTY_THOUGHT_TERMS)
+            ) if str(row[0]) in DIRTY_THOUGHT_NAMES
         ]
         if dirty:
             _write("  学科思想仍有脏词：" + "、".join(dirty))

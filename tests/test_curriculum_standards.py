@@ -73,7 +73,10 @@ EXPECTED: dict[tuple[int, str], tuple[str, ...]] = {
 EXPECTED_THOUGHTS: dict[tuple[int, str], tuple[str, ...]] = {
     (2, "小学"): ("数形结合",),
     (2, "初中"): ("数形结合",),
-    (2, "高中"): ("数学抽象", "逻辑推理", "数学建模", "数形结合"),
+    (2, "高中"): (
+        "数学抽象", "逻辑推理", "数学建模", "数形结合",
+        "分类讨论思想", "化归与转化思想", "函数与方程思想",
+    ),
     # 初高中物理教研大纲的通用思想名，顺序即清单顺序。
     (4, "初中"): (
         "理想模型", "等效替代", "控制变量", "比值定义", "转换", "类比",
@@ -85,11 +88,13 @@ EXPECTED_THOUGHTS: dict[tuple[int, str], tuple[str, ...]] = {
     ),
 }
 
-DIRTY_TERMS = (
+# 历史脏名按完整名称精确比对，避免误杀「函数与方程思想」这类合法长名；
+# 带学科后缀的脏名仍按子串过滤。
+DIRTY_NAMES = (
     "函数思想", "方程思想", "转化与化归", "分类讨论", "整体思想",
     "模型思想", "系统思想", "理想化思想", "转换思想", "模型建构思想",
-    "（生物）", "（科学）", "（美术）",
 )
+DIRTY_SUBSTRINGS = ("（生物）", "（科学）", "（美术）")
 
 
 def _groups(rows: tuple[tuple[int, str, str, int, int, str], ...]) -> dict:
@@ -124,7 +129,8 @@ class CurriculumStandardsTest(unittest.TestCase):
     def test_no_dirty_or_self_invented_terms(self) -> None:
         for rows in (CORE_COMPETENCY_ROWS, SUBJECT_THOUGHT_ROWS):
             for _, _, name, _, _, _ in rows:
-                for term in DIRTY_TERMS:
+                self.assertNotIn(name, DIRTY_NAMES)
+                for term in DIRTY_SUBSTRINGS:
                     self.assertNotIn(term, name)
 
     def test_ids_and_codes_are_unique(self) -> None:
@@ -136,9 +142,9 @@ class CurriculumStandardsTest(unittest.TestCase):
 
     def test_counts_follow_seed_source(self) -> None:
         self.assertEqual(len(CORE_COMPETENCY_ROWS), 168)
-        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 29)
+        self.assertEqual(len(SUBJECT_THOUGHT_ROWS), 32)
         self.assertEqual(CURRICULUM_COUNTS["dict_core_competencies"], 168)
-        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 29)
+        self.assertEqual(CURRICULUM_COUNTS["dict_subject_thoughts"], 32)
 
 
 if __name__ == "__main__":
