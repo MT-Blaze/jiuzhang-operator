@@ -64,15 +64,18 @@ class ModelStoreTest(unittest.TestCase):
         store._DOWNLOADS.clear()
         store._THREADS.clear()
 
-    def test_01_real_config_has_mirrors_and_versions(self) -> None:
+    def test_01_real_config_ships_full_only(self) -> None:
         document = toml_io.load(PLUGIN_DIR / "model_config.toml", {})
-        for kind in ("full", "quantized"):
-            entry = document["models"][kind]
-            self.assertEqual(entry["version"], "v1.0")
-            self.assertGreater(entry["min_bytes"], 0)
-            joined = " ".join(entry["urls"])
-            self.assertIn("gitee.com", joined)
-            self.assertIn("gh-proxy.com", joined)
+        models = document["models"]
+        self.assertIn("full", models)
+        self.assertNotIn("quantized", models,
+                         "量化版暂未发布，配置里不得出现没有下载源的型号")
+        entry = models["full"]
+        self.assertEqual(entry["version"], "v1.0")
+        self.assertGreater(entry["min_bytes"], 0)
+        joined = " ".join(entry["urls"])
+        self.assertIn("gitee.com", joined)
+        self.assertIn("gh-proxy.com", joined)
 
     def test_02_undersized_file_is_not_loadable(self) -> None:
         target = store.model_path("full")

@@ -1,7 +1,7 @@
 """本地 YOLO 模型仓库的 HTTP 口子：查状态、按需下载。
 
 查状态只读；下载是写操作且会出网，必须由老师点击后带写令牌发起。
-下载地址只来自插件目录的 ``model_config.toml``，请求体只能选 full / quantized。
+下载地址只来自插件目录的 ``model_config.toml``，请求体只能选其中已配置的型号。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def models_status() -> dict[str, Any]:
 @router.post(
     "/api/layout/models/download",
     status_code=202,
-    summary="按需下载本地 YOLO 模型（满血版 / 量化版）",
+    summary="按需下载本地 YOLO 模型（当前发行：满血版）",
     dependencies=[Depends(require_write_token)],
 )
 def models_download(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:

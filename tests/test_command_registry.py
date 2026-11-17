@@ -483,7 +483,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "2.12.1",
+            "version": "2.12.2",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",

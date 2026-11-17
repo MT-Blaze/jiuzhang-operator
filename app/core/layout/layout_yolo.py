@@ -1,7 +1,8 @@
-"""本地 YOLO 版面探路：本机 ONNX 四级瀑布（满血 > 量化 > CPU > 云端）。
+"""本地 YOLO 版面探路：本机 ONNX 瀑布（满血 > 量化 > 云端）。
 
 模型不进插件包，第一次由界面点击按需下载到当前工作区的插件目录。
-加载顺序严格按军令：满血+GPU → 量化+GPU → 量化+CPU → 失败交云端。
+加载顺序按：满血+GPU → 量化+GPU → 量化+CPU → 失败交云端；当前发行只发布
+满血版，``model_config.toml`` 没有量化条目时那两档会自动跳过。
 每一级都把「版本 + 硬件」写进 status，宿主中继到【运行日志】。
 
 YOLO 只交坐标、不交文字；页图读不到或单页推理失败只丢那一页。
@@ -18,7 +19,7 @@ from app.core.layout import layout_model_store, layout_yolo_runtime
 logger = logging.getLogger(__name__)
 
 KIND_LABEL = {"full": "满血版", "quantized": "量化版"}
-OOM_WARNING = "⚠️ 显存不足，加载满血版失败，正在自动降级为量化版..."
+OOM_WARNING = "⚠️ 显存不足，加载满血版失败，正在尝试降级加载..."
 CLOUD_WARNING = "[WARN] 本地 YOLO 彻底失败，已自动降级至云端版面 API"
 OOM_MARKERS = (
     "out of memory", "outofmemory", "cuda_error_out_of_memory",

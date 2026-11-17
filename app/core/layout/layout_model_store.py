@@ -24,7 +24,7 @@ MODEL_KINDS = ("full", "quantized")
 CHUNK_BYTES = 1024 * 1024
 PART_SUFFIX = ".tmp"
 # 完整性下限：半截文件绝不允许改名成 .onnx 进入加载环节。
-# 满血版按已核实的真实文件（75,324,598 字节）取下限，量化版按军令 >10MB。
+# 满血版按已核实的真实文件（75,324,598 字节）取下限；量化档暂未发布，仅保留未来接缝。
 MIN_BYTES = {"full": 70 * 1000 * 1000, "quantized": 10 * 1024 * 1024}
 DOWNLOAD_TIMEOUT = 30.0
 

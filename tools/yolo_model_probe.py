@@ -6,8 +6,9 @@
 隔离：独立 ``JZO_DATA_DIR`` / ``JZO_PLUGINS_DIR`` / 端口，不写本机 data。
 
 判据：
-1. 选【YOLO】且本机无模型 → 弹出模型下载窗，文案同时含「满血版 / 量化版」与体积；
-2. 取消后不拦截老师继续换引擎；
+1. 选【YOLO】且本机无模型 → 弹出模型下载窗，只给满血版入口与体积，
+   不再出现未发布的轻量量化版；
+2. 取消后本会话不再拦截，老师可继续换引擎/开始解析；
 3. 纯图 PDF 走 YOLO 降级链，批次 route 上带 ``layout_status``；
 4. 该状态经宿主中继落进底部【运行日志】，原文含
    ``[WARN] 本地 YOLO 彻底失败，已自动降级至云端版面 API``。
@@ -220,22 +221,32 @@ def main() -> int:
             modal = canvas.locator("#edModelModal")
             expect(modal).to_be_visible(timeout=10000)
             note = canvas.locator("#edModelNote").inner_text()
-            hint = canvas.locator("#edModelHint").inner_text()
             full_text = canvas.locator("#edModelFull").inner_text()
+            modal_text = modal.inner_text()
             check("模型弹窗给出满血版入口", "满血版" in full_text,
                   {"note": note, "full": full_text})
-            check("模型弹窗提示量化版", "量化版" in hint, {"hint": hint})
-            check("两个下载入口都可点",
+            check("模型弹窗不再出现轻量量化版",
+                  "量化" not in modal_text
+                  and canvas.locator("#edModelQuantized").count() == 0,
+                  {"modal": modal_text})
+            check("满血版与暂不下载都可点",
                   canvas.locator("#edModelFull").is_enabled()
-                  and canvas.locator("#edModelQuantized").is_enabled())
+                  and canvas.locator("#edModelCancel").is_enabled())
             page.screenshot(path=str(shots / "model-modal.png"), full_page=False)
             canvas.locator("#edModelCancel").click()
             expect(modal).to_be_hidden(timeout=5000)
 
-            # ---------- 造一个「已下载」的量化模型，放行 YOLO 解析 ----------
+            # ---------- 取消后本会话不再拦路 ----------
+            engine.select_option("auto")
+            page.wait_for_timeout(300)
+            engine.select_option("yolo")
+            page.wait_for_timeout(800)
+            check("取消后不再弹窗拦路", modal.is_hidden())
+
+            # ---------- 造一个「已下载」的满血版，放行 YOLO 解析 ----------
             models_dir = plugin_dir / "models"
             models_dir.mkdir(exist_ok=True)
-            (models_dir / "doclayout_yolo_int8_v1.0.onnx").write_bytes(b"0" * (11 * 1024 * 1024))
+            (models_dir / "doclayout_yolo_full_v1.0.onnx").write_bytes(b"0" * (70 * 1000 * 1000))
             engine.select_option("auto")
             page.wait_for_timeout(300)
             engine.select_option("yolo")
