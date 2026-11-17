@@ -279,6 +279,63 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertLessEqual(last["y"] + last["h"], footer_top_px,
                              "末题框底必须停在页脚上沿之上")
 
+    def test_08a7a_bare_page_number_at_page_bottom_is_a_footer(self) -> None:
+        """页底裸数字页码：纯数字、贴底、行高比正文小——既不入 text 也不进框。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "1", "left": 295, "bottom": 21.4, "right": 300, "top": 29.5},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1])
+        last = regions[-1]
+        self.assertNotIn("1", [line.strip() for line in last["text"].splitlines()])
+        self.assertIn("选项甲", last["text"])
+        footer_top_px = (842 - 29.5) * (2339 / 842)
+        self.assertLessEqual(last["y"] + last["h"], footer_top_px,
+                             "末题框底必须停在裸页码上沿之上")
+
+    def test_08a7b_same_size_digit_answer_at_page_bottom_is_kept(self) -> None:
+        """答案区贴底的单行纯数字答案与正文同字号：行高不满足页脚判据，必须保留。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "3", "left": 280, "bottom": 20, "right": 285, "top": 30},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        last = regions[-1]
+        self.assertEqual([line.strip() for line in last["text"].splitlines()][-1], "3")
+        self.assertGreater(last["y"] + last["h"], (842 - 30) * (2339 / 842),
+                           "答案行既然不是页脚，框底就得盖住它")
+
+    def test_08a7c_question_head_and_option_are_not_bare_page_numbers(self) -> None:
+        """「4.」题号行与「A.7」选项行不是纯数字：裸页码判据不得误伤。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A.7 选项甲", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "4. 第四题（题号不连续）", "left": 72, "bottom": 30, "right": 523, "top": 40},
+        ]
+        self.assertEqual(page_render._bare_page_footer_lines(lines, 842), [])
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        last = regions[-1]
+        self.assertIn("A.7", last["text"])
+        self.assertIn("4. 第四题", last["text"])
+
+    def test_08a7d_chinese_page_forms_stay_on_the_original_branch(self) -> None:
+        """「第1页（共3页）」「第1页/共3页」仍走原正则分支，裸页码判据不接管。"""
+        for footer in ("第1页（共3页）", "第1页/共3页"):
+            lines = [
+                {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+                {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+                {"text": footer, "left": 260, "bottom": 30, "right": 335, "top": 40},
+            ]
+            self.assertEqual(page_render._bare_page_footer_lines(lines, 842), [])
+            regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+            last = regions[-1]
+            self.assertNotIn("第1页", last["text"])
+            self.assertNotIn("共3页", last["text"])
+            self.assertLessEqual(last["y"] + last["h"], (842 - 40) * (2339 / 842))
+
     def test_08a7_head_top_covers_overlapping_formula_row(self) -> None:
         """题号行上方 20pt 内的公式行与题号行纵向重叠：框顶必须含住公式行顶。"""
         lines = [

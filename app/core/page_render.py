@@ -52,6 +52,7 @@ from app.core.page_render_pdf import (  # noqa: F401 - 测试按旧路径打桩
     pdf_text_health,
 )
 from app.core.page_render_regions import (  # noqa: F401 - 测试按旧路径取用
+    _bare_page_footer_lines,
     _ink_rows,
     _line_words_text,
     _longest_number_run,

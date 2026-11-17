@@ -24,6 +24,7 @@ _PDF_INSTRUCTION = re.compile(
 _PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
 _PDF_FOOTER = re.compile(
     r"第\s*\d+\s*页\s*(?:[（(]\s*共\s*\d+\s*页\s*[）)]?|[/／]\s*共\s*\d+\s*页)")
+_PDF_BARE_PAGE = re.compile(r"^\s*\d{1,3}\s*$")
 _REGION_TEXT_LIMIT = 2000
 _REGION_LABEL_LIMIT = 48
 # 题块上下各留一点呼吸位；相邻题之间至少留 5pt（约 14 像素 @200dpi），
@@ -39,6 +40,12 @@ _WORD_GAP_PT = 0.8
 _WORD_LINE_TOL_PT = 7.5
 # 词的底边比正文基线高出多少就算上标；低于多少就算下标（点）。
 _SCRIPT_SHIFT_PT = 1.5
+# PDFium 偶尔把页脚裸页码和底边水印塞进同一条「行」：同一行内纵向跳变
+# 超过这个距离、且后一段整段是 1-3 位纯数字，就拆成两行。
+_LINE_JUMP_PT = 7.5
+# 页底裸页码：纯数字 + 行顶落在页面底部 8% + 行高不足正文中位数的 0.85 倍。
+_BARE_PAGE_ZONE = 0.08
+_BARE_PAGE_HEIGHT_RATIO = 0.85
 
 
 def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
@@ -72,9 +79,24 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
         chars: list[str] = []
         bounds = [math.inf, math.inf, -math.inf, -math.inf]
         missing = 0
+        last_top: float | None = None
+        last_bottom: float | None = None
+
+        def starts_page_number(position: int) -> bool:
+            """从 position 起到本行换行前，是否只落着一个 1-3 位纯数字。"""
+            chunk = textpage.get_text_range(position, 8)
+            head = re.split(r"[\r\n]", chunk, maxsplit=1)[0]
+            return bool(_PDF_BARE_PAGE.match(head))
+
+        def jumped(bottom: float, top: float) -> bool:
+            """新字形与当前行是否纵向拉开到不可能同属一行。"""
+            if last_top is None or last_bottom is None:
+                return False
+            return (top < last_bottom - _LINE_JUMP_PT
+                    or bottom > last_top + _LINE_JUMP_PT)
 
         def flush() -> None:
-            nonlocal chars, bounds, missing
+            nonlocal chars, bounds, missing, last_top, last_bottom
             text = "".join(chars).strip()
             if text and bounds[0] < bounds[2] and bounds[1] < bounds[3]:
                 lines.append({
@@ -88,6 +110,7 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
             chars = []
             bounds = [math.inf, math.inf, -math.inf, -math.inf]
             missing = 0
+            last_top = last_bottom = None
 
         for index in range(total):
             char = textpage.get_text_range(index, 1)
@@ -110,20 +133,55 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
                 bounds[3] = max(bounds[3], top)
                 if chars and chars[-1] != " ":
                     chars.append(" ")
+                last_top, last_bottom = top, bottom
                 continue
             if not char.strip():
                 if chars and chars[-1] != " ":
                     chars.append(" ")
                 continue
+            if chars and jumped(bottom, top) and starts_page_number(index):
+                flush()
             chars.append(char)
             bounds[0] = min(bounds[0], left)
             bounds[1] = min(bounds[1], bottom)
             bounds[2] = max(bounds[2], right)
             bounds[3] = max(bounds[3], top)
+            last_top, last_bottom = top, bottom
         flush()
         return lines
     finally:
         textpage.close()
+
+
+def _bare_page_footer_lines(lines: list[dict[str, Any]],
+                            page_height: float) -> list[dict[str, Any]]:
+    """页底裸页码：纯数字、行顶贴底、行高明显小于本页正文行高中位数。
+
+    三条同时成立才算。答案区贴底的纯数字答案只要字号与正文一致，行高就
+    过不了第三关，不会被当成页脚删掉。
+    """
+    if page_height <= 0:
+        return []
+    zone = page_height * _BARE_PAGE_ZONE
+    candidates = [line for line in lines
+                  if line["top"] <= zone and _PDF_BARE_PAGE.match(line["text"])]
+    if not candidates:
+        return []
+    skipped = {id(line) for line in candidates}
+    # 正文行按含汉字判定：公式碎片、选项标号「A．」与底边水印都会把中位数
+    # 拉低，拿它们当基准会把真正的页码也放过去（哈九中第 1 页就是这样）。
+    body = [line for line in lines
+            if id(line) not in skipped and _has_hanzi(line["text"])]
+    if not body:
+        body = [line for line in lines if id(line) not in skipped]
+    heights = sorted(line["top"] - line["bottom"] for line in body)
+    if not heights:
+        return []
+    middle = len(heights) // 2
+    median = (heights[middle] if len(heights) % 2
+              else (heights[middle - 1] + heights[middle]) / 2)
+    limit = median * _BARE_PAGE_HEIGHT_RATIO
+    return [line for line in candidates if line["top"] - line["bottom"] < limit]
 
 
 def _question_regions(lines: list[dict[str, Any]], page_width: float, page_height: float,
@@ -142,9 +200,12 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
         return []
     if pixel_width <= 0 or pixel_height <= 0:
         return []
-    footer_top = min((line["top"] for line in lines if _PDF_FOOTER.search(line["text"])),
-                     default=None)
-    content = [line for line in lines if not _PDF_FOOTER.search(line["text"])]
+    footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
+    footer_lines.extend(_bare_page_footer_lines(lines, page_height))
+    # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
+    footer_top = max((line["top"] for line in footer_lines), default=None)
+    footer_ids = {id(line) for line in footer_lines}
+    content = [line for line in lines if id(line) not in footer_ids]
     start_at = 0
     if first_page:
         section = next((index for index, line in enumerate(content)
@@ -223,6 +284,10 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
 
 def _has_cjk(text: str) -> bool:
     return any(unicodedata.east_asian_width(char) in ("W", "F") for char in text)
+
+
+def _has_hanzi(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
 
 
 def _starts_cjk(text: str) -> bool:
