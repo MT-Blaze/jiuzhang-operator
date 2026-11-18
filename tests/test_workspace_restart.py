@@ -33,7 +33,7 @@ from unittest import mock
 
 from app.api import health, workspaces as workspaces_api
 from app.core.bank import service as core_bank
-from app.core import host_restart
+from app.core.workspace.startup import host_restart
 from app.core.config import settings, switch_workspace
 from tests.core_sources import settings_source, stage_source  # noqa: E402
 
@@ -169,7 +169,7 @@ class PrepareAndLaunchTest(unittest.TestCase):
         prepared = {"script_path": self.root / "r.bat", "log_path": self.root / "r.log",
                     "root": self.root}
         (self.root / "r.bat").write_text("@echo off\r\n", encoding="ascii")
-        with mock.patch("app.core.host_restart.subprocess.Popen") as popen, \
+        with mock.patch("app.core.workspace.startup.host_restart.subprocess.Popen") as popen, \
              mock.patch.object(host_restart, "_exit_process") as exit_now:
             host_restart.launch_restart(prepared, delay=0.05)
             args, kwargs = popen.call_args

@@ -26,7 +26,8 @@ from unittest import mock
 from fastapi import HTTPException
 
 from app.api import workspaces
-from app.core import toml_io, workspace_removal
+from app.core import toml_io
+from app.core.workspace.lifecycle import removal as workspace_removal
 from app.core.config import settings
 from tests.core_sources import settings_source  # noqa: E402
 

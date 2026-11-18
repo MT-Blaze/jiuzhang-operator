@@ -31,11 +31,13 @@ from types import SimpleNamespace
 from unittest import mock
 
 from app.api import workspaces as workspaces_api
-from app.core import startup_prefs, toml_io, wire
+from app.core.workspace.startup import startup_prefs
+from app.core import toml_io, wire
 from app.core.bank import provider as bank_provider
 from app.core.plugins import state as plugin_state
 from app.core.plugins.lifecycle import update as plugin_update
-from app.core import config, workspace_bootstrap, workspace_paths, workspace_removal
+from app.core import config, workspace_paths
+from app.core.workspace.lifecycle import bootstrap as workspace_bootstrap, removal as workspace_removal
 from app.core.config import current_workspace_id, env_file_path, plugins_dir, settings
 
 ROOT = Path(__file__).resolve().parents[1]

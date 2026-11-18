@@ -21,7 +21,7 @@ from app.core import toml_io
 from app.core.backup import restore as restore_core
 from app.core.backup import service as backup_core
 from app.core.backup import webdav
-from app.core.startup_prefs import StartupRejected, resolve, set_target
+from app.core.workspace.startup.startup_prefs import StartupRejected, resolve, set_target
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["system"])

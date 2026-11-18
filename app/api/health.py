@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter
 
 from app import __version__
-from app.core.host_restart import boot_id
+from app.core.workspace.startup.host_restart import boot_id
 
 router = APIRouter(tags=["system"])
 

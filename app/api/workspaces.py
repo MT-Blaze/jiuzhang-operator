@@ -15,7 +15,9 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core import host_restart, state_store, workspace_removal
+from app.core.workspace.startup import host_restart
+from app.core import state_store
+from app.core.workspace.lifecycle import removal as workspace_removal
 from app.core.bank import provider as bank_provider
 from app.core.bank import service as core_bank
 from app.core.config import (
@@ -27,7 +29,7 @@ from app.core.config import (
 )
 from app.core.db import init_db
 from app.core.security import require_write_token
-from app.core.workspace_bootstrap import ensure_workspace_layout
+from app.core.workspace.lifecycle.bootstrap import ensure_workspace_layout
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 DEFAULT_WORKSPACE_ID = "default"

@@ -49,7 +49,7 @@ class StartupPrefsTest(unittest.TestCase):
     """core 层：读宽容、写严格、回退如实。"""
 
     def setUp(self) -> None:
-        from app.core import startup_prefs
+        from app.core.workspace.startup import startup_prefs
 
         self.mod = startup_prefs
         self.tmp = tempfile.TemporaryDirectory()
@@ -242,7 +242,7 @@ class StartupCandidatesIntegrationTest(unittest.TestCase):
     """候选清单必须真来自插件发现结果（含仓库自带的数据看板）。"""
 
     def test_01_candidates_come_from_discovery(self) -> None:
-        from app.core import startup_prefs
+        from app.core.workspace.startup import startup_prefs
 
         with mock.patch.dict(os.environ, {"JZO_PLUGINS_DIR": str(PLUGIN_SOURCE_DIR)}):
             ids = [item["id"] for item in startup_prefs.candidates()]

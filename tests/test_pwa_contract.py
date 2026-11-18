@@ -20,7 +20,7 @@ def _read(path: Path) -> str:
 
 class PwaManifestTest(unittest.TestCase):
     def test_01_manifest_has_installable_fields(self) -> None:
-        from app.core import pwa
+        from app.core.workspace.startup import pwa
 
         data = pwa.MANIFEST.as_dict()
         self.assertTrue(data["name"])
@@ -34,7 +34,7 @@ class PwaManifestTest(unittest.TestCase):
 
     def test_02_manifest_is_served_by_route_not_json_file(self) -> None:
         from app.main import app
-        from app.core import pwa
+        from app.core.workspace.startup import pwa
 
         self.assertFalse((STATIC / "manifest.json").exists(), "磁盘上不许再有 .json 清单")
         paths = {getattr(route, "path", None) for route in app.routes}
