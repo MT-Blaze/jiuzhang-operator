@@ -16,6 +16,8 @@ data/*
 data/backups/
 static/uploads/
 .system_generated/
+# 测试样本库：二进制试卷只作本地弹药库，绝不入库（manifest 随库本地留存）。
+test_papers/
 # 本地引擎（切题/OCR 等按机器装出来的环境）：底座升级不覆盖，也绝不入库。
 engines/
 *.log
