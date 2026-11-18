@@ -25,7 +25,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from app.core import ai_center, wire
+from app.core import wire
+from app.core.ai.platform import center as ai_center
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN = "ai-center-test-token"

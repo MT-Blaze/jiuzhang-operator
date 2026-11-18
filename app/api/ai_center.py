@@ -12,7 +12,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from app.core import ai_center, ai_recognize
+from app.core.ai.platform import center as ai_center
+from app.core.ai.recognition import recognize as ai_recognize
 from app.core.security import require_write_token
 
 router = APIRouter(prefix="/api/ai-center", tags=["ai-center"])

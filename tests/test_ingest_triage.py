@@ -18,7 +18,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import ai_center, ingest_route, pending_bank
+from app.core import ingest_route, pending_bank
+from app.core.ai.platform import center as ai_center
 from app.core.ingest_quality import question_reasons, triage_documents
 from app.core.layout import layout_router
 from app.core.recognize import (recognize_ai, recognize_mineru, recognize_router)

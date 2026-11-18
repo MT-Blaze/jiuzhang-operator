@@ -10,7 +10,8 @@ import asyncio
 import logging
 from typing import Any, Callable
 
-from app.core import ai_center, mineru_extract
+from app.core import mineru_extract
+from app.core.ai.platform import center as ai_center
 from app.core.recognize import recognize_shared
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ Ollama 自带 OpenAI 兼容接口（默认 ``http://127.0.0.1:11434/v1``），
 
 from __future__ import annotations
 
-from app.core.providers import ProviderProfile, env_value
+from app.core.ai.providers import ProviderProfile, env_value
 
 OLLAMA = "ollama"
 

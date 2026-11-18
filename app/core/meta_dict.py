@@ -19,7 +19,8 @@ import re
 import secrets
 from typing import Any
 
-from app.core import ai_client, pending_db, questions, wire
+from app.core import pending_db, questions, wire
+from app.core.ai.platform import client as ai_client
 from app.core.content import pinyin
 
 

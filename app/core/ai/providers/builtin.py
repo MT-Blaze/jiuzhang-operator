@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from app.core.providers import ProviderProfile, env_value
+from app.core.ai.providers import ProviderProfile, env_value
 
 OPENAI_COMPATIBLE = "openai-compatible"
 BAILIAN = "bailian"

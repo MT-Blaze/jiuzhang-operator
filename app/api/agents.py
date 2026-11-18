@@ -1,7 +1,7 @@
 """Agent 接口：AI 副驾改写与确定性 LaTeX 清洗。
 
 常驻对话/拆题/审题智能体已于 2026-11-05 随 AI 助手一并下架。
-改写遵循 docs/API_REFERENCE.md §6「Agent Prompt 契约」，调用 app.core.ai_client
+改写遵循 docs/API_REFERENCE.md §6「Agent Prompt 契约」，调用 app.core.ai.platform.client
 完成大模型交互；无 API Key 时自动降级 Mock，保证前端不挂。``/clean_latex`` 不经过模型。
 """
 
@@ -13,7 +13,8 @@ from typing import Any
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.core import ai_client, wire
+from app.core import wire
+from app.core.ai.platform import client as ai_client
 from app.core.content import question_parser
 
 router = APIRouter(prefix="/api/agent", tags=["agents"])

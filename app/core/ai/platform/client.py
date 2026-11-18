@@ -1,6 +1,6 @@
 """OpenAI 兼容的大模型客户端（Provider 实现）。
 
-配置一律来自 ``app.core.providers`` 的注册表（密钥只走环境变量 / 仓库根 .env）；
+配置一律来自 ``app.core.ai.providers`` 的注册表（密钥只走环境变量 / 仓库根 .env）；
 配置档缺席密钥时自动降级为 Mock 实现，保证前端不挂。
 遵循 STACK §1.4 缓存友好原则：系统提示词固定前置，可变内容仅追加尾部。
 
@@ -16,8 +16,9 @@ import urllib.request
 import urllib.error
 from typing import Any
 
-from app.core import providers, wire
-from app.core.provider import AIProvider
+from app.core import wire
+from app.core.ai import providers
+from app.core.ai.platform.provider import AIProvider
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_TIMEOUT_SECONDS = 30

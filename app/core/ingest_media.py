@@ -31,7 +31,7 @@ async def ocr_image(data: bytes, mime: str) -> tuple[str, str]:
 
     认不出就是认不出：失败时**不编**任何题目文字，由调用方记「待识别」。
     """
-    from app.core import ai_client
+    from app.core.ai.platform import client as ai_client
 
     client = ai_client.get_client()
     if client.is_mock:

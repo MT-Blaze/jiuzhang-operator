@@ -8,7 +8,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from app.core import ai_center
+from app.core.ai.platform import center as ai_center
 from app.core.recognize import recognize_router
 
 ITEMS = [{"id": "p%d" % index, "page_no": 1,

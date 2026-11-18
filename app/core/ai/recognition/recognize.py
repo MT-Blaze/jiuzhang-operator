@@ -1,6 +1,6 @@
 """单题 AI 识别（人机共驾 · 方案 A）。
 
-模型只负责「看题图，吐结构化正文」，环境骨架由 :mod:`app.core.exam_source`
+模型只负责「看题图，吐结构化正文」，环境骨架由 :mod:`app.core.ai.recognition.exam_source`
 统一套壳。任何失败都收敛成 ``{ok: false, detail}``，绝不抛给前端弹窗——
 按钮点红点、详细现场进报错诊断即可。
 
@@ -17,11 +17,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import ai_center, wire
-from app.core.ai_client import OpenAICompatibleProvider
+from app.core import wire
+from app.core.ai.platform import center as ai_center
+from app.core.ai.platform.client import OpenAICompatibleProvider
+from app.core.ai.recognition.exam_source import OPTION_KEYS, build_exam_source
 from app.core.config import settings
 from app.core.content import latex_style_dict, question_parser
-from app.core.exam_source import OPTION_KEYS, build_exam_source
 
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from app.core import ai_center
+from app.core.ai.platform import center as ai_center
 from app.core.recognize import recognize_ai, recognize_local, recognize_mineru, recognize_shared
 
 RECOGNIZE_AUTO = "auto"

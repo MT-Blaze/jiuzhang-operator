@@ -16,8 +16,10 @@ import base64
 import unittest
 from unittest import mock
 
-from app.core import ai_center, ai_recognize, wire
-from app.core.exam_source import build_exam_source
+from app.core import wire
+from app.core.ai.platform import center as ai_center
+from app.core.ai.recognition import recognize as ai_recognize
+from app.core.ai.recognition.exam_source import build_exam_source
 
 IMAGE = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nfake").decode("ascii")
 BINDING = ai_center.TaskBinding(

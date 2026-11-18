@@ -11,8 +11,9 @@ import base64
 import re
 from typing import Any
 
-from app.core import ai_center, pending_assets, wire
-from app.core.ai_client import OpenAICompatibleProvider
+from app.core import pending_assets, wire
+from app.core.ai.platform import center as ai_center
+from app.core.ai.platform.client import OpenAICompatibleProvider
 
 MAX_PAGES = 20
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
