@@ -694,11 +694,69 @@
     return false;
   }
 
-  /** relay() 的「Models」分支族：模型注册表（只读聚合，不出网、不碰库）。 */
+  /** relay() 的「Models」分支族：注册表只读＋MinerU 一键装＋配置勾选代笔。 */
   function relayModels(ctx) {
-    if (ctx.method !== "models.registry_status") return false;
-    fetchJson("/api/models/registry").then(ctx.done, ctx.fail);
-    return true;
+    var tab = ctx.tab, message = ctx.message, method = ctx.method, payload = ctx.payload;
+    var done = ctx.done, fail = ctx.fail;
+
+    if (method.indexOf("models.") !== 0) return false;
+
+    if (method === "models.registry_status") {
+      // 只读：目录×三态＋硬件快照＋档位表＋默认选择。不出网、不碰库。
+      fetchJson("/api/models/registry").then(done, fail);
+      return true;
+    }
+
+    if (method === "models.mineru_status") {
+      // 只读：安装进度（state/step/人话），配置页轮询用。
+      fetchJson("/api/models/mineru/status").then(done, fail);
+      return true;
+    }
+
+    if (method === "models.mineru_install" || method === "models.prefs_save") {
+      // 写口：安装会出网（老师点击才发起），勾选代笔进插件目录；都要写令牌。
+      var modelPerms = (tab.plugin && tab.plugin.permissions) || [];
+      if (modelPerms.indexOf("questions:write") < 0) {
+        replyHost(tab, message, false, {
+          code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能改模型配置"
+        });
+        return true;
+      }
+      if (method === "models.mineru_install") {
+        withWriteToken("/api/models/mineru/install", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}"
+        }).then(done, fail);
+        return true;
+      }
+      var body = {};
+      if (payload && Array.isArray(payload.disabled)) {
+        var disabled = [];
+        payload.disabled.forEach(function (item) {
+          var id = String(item == null ? "" : item);
+          if (id && id.length <= 80 && disabled.indexOf(id) < 0 && disabled.length < 64) {
+            disabled.push(id);
+          }
+        });
+        body.disabled = disabled;
+      }
+      if (payload && payload.default_layout !== undefined) {
+        body.default_layout = textValue(payload, "default_layout", 80);
+      }
+      if (payload && payload.default_recognize !== undefined) {
+        body.default_recognize = textValue(payload, "default_recognize", 80);
+      }
+      withWriteToken("/api/models/prefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }).then(done, fail);
+      return true;
+    }
+
+    return false;
   }
 
     return {

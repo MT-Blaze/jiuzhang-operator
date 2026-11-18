@@ -320,9 +320,15 @@ class EngineUiContractTest(unittest.TestCase):
         # 单源 registry：配置页取清单灌下拉，ui_intake 不再硬编码引擎名单。
         config_js = (PLUGIN_DIR / "dist" / "ui_model_config.js").read_text(encoding="utf-8")
         self.assertIn('hostCall("models.registry_status"', config_js)
-        self.assertIn("applyEngines(entries)", config_js)
+        self.assertIn("applyEngines(entries, defaults)", config_js)
         self.assertIn("function applyRegistry(", INTAKE_JS)
         self.assertIn('entry.state !== "ready"', INTAKE_JS)
+        self.assertIn("entry.enabled === false", INTAKE_JS)
+        # 四合一：一键装＋勾选代笔＋大白话说明都走宿主 relay，插件不自落状态。
+        self.assertIn('hostCall("models.mineru_install"', config_js)
+        self.assertIn('hostCall("models.prefs_save"', config_js)
+        self.assertIn("summary_usage", config_js)
+        self.assertIn("defs.layout", INTAKE_JS)
         self.assertNotIn("LAYOUT_ENGINES", INTAKE_JS)
         self.assertNotIn("RECOGNIZE_ENGINES", INTAKE_JS)
         # 可整块下架：模块不在时 plugin.js 落 null，不许写死 create。
