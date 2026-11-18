@@ -87,8 +87,7 @@
   `.venv\Scripts\python.exe -m unittest tests.test_plugin_install_url`；全量回归逐模块跑
   `for /f %f in ('dir /b tests\test_*.py') do .venv\Scripts\python.exe -m unittest tests.%~nf`。
   `python -m unittest discover` 会因 `tests/` 无 `__init__.py` 收集到零个用例——2026-11-02 实跑是
-  `Ran 0 tests in 0.000s / NO TESTS RAN`，**绿色假通过，比直接报错更危险**，别用（`STACK.md` §7 第 91 行的
-  discover 写法是旧口径，见到别照抄）。全量回归用 `.venv\Scripts\python.exe tools\run_all_tests.py`。
+  `Ran 0 tests in 0.000s / NO TESTS RAN`，**绿色假通过，比直接报错更危险**，别用。全量回归用 `.venv\Scripts\python.exe tools\run_all_tests.py`。
   必须用 `.venv` 里的解释器——系统 Python 缺依赖，会把全部模块打成假报错。
 - 新增契约必须带测试。
 - 修改前端后必须在浏览器中实际打开页面验证，不得只依赖静态检查。
@@ -99,11 +98,11 @@
 ## 7.1 机械证据回传单（军令 #12，2026-10-23 起长期铁律）
 
 主线工作流固定为三段闭环：**军令任务卡（下行）→ 机械证据回传单（上行）→ 云端复审**。
-每次交付必须按 `PROJECT_MEMORY.md` §5.6 的单子逐项给证据，**严禁只写「全绿」「已完成」**。
+每次交付必须按 `docs/RECEIPT_TEMPLATE.md` 的单子逐项给证据，**严禁只写「全绿」「已完成」**。
 五项缺一不可：
 
 1. **【改动清单】**：新增/修改/删除了哪些文件（逐个点名，修改带行号或函数名）；
-   并自查有没有动到禁改区——`LICENSE`、本文件铁律一与铁律二、`schemas/` 破坏性变更、用户 `data/` 目录。
+   并自查有没有动到禁改区——`LICENSE`、本文件铁律一与铁律二、`app/core/question_contract.py` 契约破坏性变更、用户 `data/` 目录。
 2. **【包结构自检】**（涉及插件才填）：顶层目录名 == `plugin.toml` 的 `id`；无 `backend` 字段；
    附 Apache-2.0 `LICENSE` 全文；`min_host_version` / `engine.host_version` 与当前底座版本的关系如实写明。
 3. **【三查结果】**：`fetch(`、`parent.document`、`localStorage` 三项 grep 命中数（插件侧必须为 0）；
@@ -119,7 +118,7 @@
 
 ## 8. AI 代理工作方式
 
-1. 开工前先读本文件、`PLUGIN_SPEC.md` 与相关 Schema。
+1. 开工前先读本文件与 `PLUGIN_SPEC.md` §1 红线；其余章节按本次改动面查 `PLUGIN_SPEC.md` 顶部章节导航按需读；题目契约以 `app/core/question_contract.py` dataclass 为准（无独立 Schema 文件）。
 2. 先确认范围，再动手；不擅自扩大改动面。
 3. 严格遵守干净房间原则，不参考旧项目实现细节。
 4. 如实报告验证结果；没有验证就明确说“未验证”，不得用推测代替证据。
@@ -138,7 +137,7 @@
 1. 铁律一干净房间：diff 中不得有任何来自旧项目的逐字内容。
 2. 铁律二插件化：插件侧 `fetch(` / `parent.document` / `localStorage` 命中必须为 0；插件不得直连数据库、文件系统、环境变量；插件间不得直接调用。
 3. 出网铁律：任何出网必须由界面当场点击发起，禁止定时器轮询与启动时顺手拉。
-4. 本地 `plugins.toml` 与兄弟仓库 `E:/jiuzhang-plugins/plugins.json` 的条目集合、版本号、镜像描述必须语义一致（`tools/sync_plugin_index.py` 同步、`scripts/check_plugin_index_parity.py` 校验）；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
+4. 本地 `plugins.toml` 与兄弟仓库 `E:/jiuzhang/jiuzhang-plugins/plugins.json` 的条目集合、版本号、镜像描述必须语义一致（`tools/sync_plugin_index.py` 同步、`scripts/check_plugin_index_parity.py` 校验）；官方插件清单以 `tools/sync_plugin_index.py` 的 `PLUGIN_DIRS` 为准。
 5. 版本单一事实源 `app/__init__.py`；`plugin.toml` 顶层 `id` == 目录名、无 `backend`、必带 Apache-2.0 `LICENSE`。
 6. `data/` 是用户财产，底座可写范围仅 `data/update_state.toml` 与 `data/workspaces/<id>/*.toml`。
 7. 测试只能用 `.venv` 解释器逐模块跑；禁止 pytest、禁止 `unittest discover`（零用例假通过）。
@@ -167,7 +166,7 @@
 | `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |
 | `.venv\Scripts\python.exe tools\sync_plugin_index.py` | 同步两份插件索引（需兄弟仓库 `E:/jiuzhang/jiuzhang-plugins` 存在） |
 
-环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 第 92 行要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里他人的在途改动不得 stage/恢复。
+环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里他人的在途改动不得 stage/恢复。
 
 ### 9.4 交付证据口径
 

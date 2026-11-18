@@ -12,15 +12,15 @@ description: 在九章算子新增一条 Host API / 请求族 / 命令面端点�
 
 ```
 插件 postMessage → stage_inbound.js(id 校验) → stage.js(白名单/限流/权限)
-→ stage_relay_*.js(HTTP) → app/api/*.py(鉴权) → app/core/*.py(Schema 校验) → SQLite
+→ stage_relay_*.js(HTTP) → app/api/*.py(鉴权) → app/core/*.py(契约校验) → SQLite
 ```
 
-1. **core 层**：在 `app/core/` 对应域写函数；涉及题目必须经 `app/core/questions.py:86-101` 的唯一校验器（`Draft202012Validator`），失败抛域异常（`QuestionError` 子类，`questions.py:64-79`）。
-2. **api 层**：`app/api/<域>.py` 加路由，**写接口必须 `Depends(require_write_token)`**（`app/core/security.py:69-89`）；按现有惯例把域异常 try/except 翻成 `HTTPException`（**没有全局 handler**，`app/main.py:147-169`）。返回裸 dict，不要造统一外壳（R02 §1）。
-3. **挂载**：若是新路由模块，在 `app/main.py:166-167` 处 include（先例：pending 域）。
-4. **宿主 relay**：`static/js/stage.js:330-356` 白名单登记请求族 + `static/js/stage_relay_<域>.js` 发起 `fetchJson`（先例 `stage_relay_bank.js:89-113`）。
-5. **错误码**：宿主侧新增码用大写蛇形并放进现有码集（`stage.js:334-402`），必须决定 `retryable`；后端域码沿用小写（`plugin_install.py:135` 式）。
-6. **命令面**（对外暴露给 AI/插件的可调用命令）：在插件 `plugin.json` 的 `contributes.commands` 声明，命名空间闸与先到先得规则见 `app/core/commands.py:1-27`；命令必须 64KB/串行/pending 上限约束齐备（军令 #19/#20 的能力字典口径）。
+1. **core 层**：在 `app/core/` 对应域写函数；涉及题目必须经 `app/core/question_contract.py` 的 dataclass 契约校验（`validate`:444），失败抛域异常（`QuestionError`/`ValidationError`，`app/core/bank/questions.py:60,72`）。
+2. **api 层**：`app/api/<域>.py` 加路由，**写接口必须 `Depends(require_write_token)`**（`app/core/security.py:69`）；按现有惯例把域异常 try/except 翻成 `HTTPException`（**没有全局 handler**，`app/main.py`）。返回裸 dict，不要造统一外壳（R02 §1）。
+3. **挂载**：若是新路由模块，在 `app/main.py` 处 include（先例：pending 域）。
+4. **宿主 relay**：`static/js/stage.js` 白名单登记请求族 + `static/js/stage_relay_<域>.js` 发起 `fetchJson`（先例 `stage_relay_bank.js`）。
+5. **错误码**：宿主侧新增码用大写蛇形并放进现有码集（`stage.js`），必须决定 `retryable`；后端域码沿用小写（`app/core/plugins/lifecycle/install.py` 式）。
+6. **命令面**（对外暴露给 AI/插件的可调用命令）：在插件 `plugin.toml` 的 `[contributes]` commands 声明，命名空间闸与先到先得规则见 `app/core/plugins/contract/commands.py`；命令必须 64KB/串行/pending 上限约束齐备（军令 #19/#20 的能力字典口径）。
 7. **测试**：`tests/test_<域>_api.py`，断言按 `Trigger→Action→Effect`；起 uvicorn 的用例设 `JZO_RESTART_DISABLED=1`；**先读 HTML/初始态再写断言**（Toggle 默认 active 之类会造出假失败）。
 8. **探针**：需要真机证据时扩 `tools/<域>_probe.py` 的 `check(name, passed, detail)`，禁止写死端口与令牌（走 `tools/probe_paths.py`）。
 

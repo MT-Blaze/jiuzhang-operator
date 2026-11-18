@@ -17,14 +17,14 @@ description: 九章算子的全量回归与证据采集动线：快门禁 → �
 
 ## 步骤
 
-1. **先看在途状态**：`git status --short`——分清「已完成未提交」与真欠账。当前基线里 4 支 demo 插件是用户人为删除（不恢复不暂存），4 个 handoff 文件是别人的在途工作（**不要 stage**）。
+1. **先看在途状态**：`git status --short`——分清「已完成未提交」与真欠账；他人的在途改动不 stage、不恢复、不修，以当次实测快照为准（不照抄旧快照）。
 2. **快门禁**：`bash scripts/check-quick-gate.sh`，记录 6 项里哪项红。
 3. **逐模块单测**：
    - 单模块：`.venv/Scripts/python.exe -m unittest tests.<模块名>`
    - 全量：`.venv/Scripts/python.exe tools/run_all_tests.py`（末行给「模块 N 个，用例 N 个，失败模块 N 个」）
    - **[L0] 禁止**：系统 `python`（实测导入即崩）、`python -m unittest discover`（实测 `Ran 0 tests / NO TESTS RAN`，绿色假通过）、pytest（未装且违反 STACK §6）
    - 22 个起 uvicorn 的模块清单见 R04 §1.6；触碰切库/重启端点的用例要 `JZO_RESTART_DISABLED=1`，否则服务把自己重启带走。
-4. **真机探针**：按改动面挑对应 `tools/*_probe.py` 跑（**无统一 runner，属已知欠账**）；产物落 `.system_generated/<探针名>/<tag>/probe.json` + 截图；跑完用 `bash scripts/check-probe-reports.sh` 归一判最新跑批。
+4. **真机探针**：按改动面挑对应 `tools/*_probe.py` 跑（**无统一 runner，属已知欠账**）；产物落 `.system_generated/<探针名>/<tag>/probe.toml` + 截图；跑完用 `bash scripts/check-probe-reports.sh` 归一判最新跑批。
    - 探针判据可能跑在死代码上：涉及滚动/布局的改动，先确认被测路径真在生效（行高不锁 → 滚动逻辑全是死代码）。
    - 程序化 `focus()` 不算人手操作；假时钟推不动 `setTimeout` 链。
 5. **前端真人路径**：browser-use 打开底座 `http://127.0.0.1:65496/e`（唯一标准入口），点/拖/滚/键盘走一遍用户路径，截图存档。
@@ -34,6 +34,6 @@ description: 九章算子的全量回归与证据采集动线：快门禁 → �
 ## 自检
 
 - [ ] 每个数字都有当次原始输出可回溯（`Ran N tests`、`passed/total` 原样粘贴）
-- [ ] 探针报告能被 `check-probe-reports.sh` 识别（三种历史 schema 之一）
+- [ ] 探针报告能被 `check-probe-reports.sh` 识别（probe.toml；识别不了的 schema 判不通过）
 - [ ] 未验证项显式写「未验证」，不用推测代替证据
-- [ ] 回传单第 4 项（测试与探针）已填全：跑了哪些模块、各自 N/N、探针 passed/total、截图与 probe.json 落盘路径
+- [ ] 回传单第 4 项（测试与探针）已填全：跑了哪些模块、各自 N/N、探针 passed/total、截图与 probe.toml 落盘路径

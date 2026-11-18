@@ -29,7 +29,8 @@
    底座只做鉴权、导航、数据总线、插件生命周期、安全边界与错误隔离。插件不得直连数据库或文件系统，
    只能经 Host API；插件间只能经数据总线协作；沙箱 iframe + 白名单 HTML 净化。
 3. **底座极简、坏了能用了**：任一插件加载失败/超时/连续报错，底座必须仍可浏览与导出，走兜底渲染。
-4. **数据契约唯一**：`schemas/question.json` 是题目在底座/插件/导入导出之间流转的唯一标准结构；
+4. **数据契约唯一**：`app/core/question_contract.py` 的 Question dataclass 是题目在底座/插件/导入导出之间流转的唯一标准结构
+   （结构版本 `app/core/contract.py` 的 `CONTRACT_VERSION`，现为 2.1；不存在独立 Schema 文件）；
    文本一律 Markdown + LaTeX（`$...$` / `$$...$$`），不得另造公式方言；题目全局身份只有 `id`（`q_` 前缀），
    原卷题号只属于来源关系；插件私有数据只能写进 `extensions`，键用反向域名前缀。
 5. **白嫖不可撤销**：个人版永久开源免费（Apache-2.0），底座与插件免注册、免卡密、无签名校验、
@@ -38,7 +39,7 @@
    三个口子都必须人在界面上当场点击发起：①插件索引拉取；②单条目在线安装；③双轨更新（检查更新 /
    更新 / 一键更新全部插件 / 底座更新并重启）。**无定时器、无启动顺手拉、无后台轮询。**
    更新的写范围只有 `plugins/<id>/` 代码目录与底座程序文件，**严禁触碰 `data/`**（唯一例外：
-   `data/update_state.json` 只记版本号与待办 id，不含题目数据）。详见 `PLUGIN_SPEC.md` §1.7。
+   `data/update_state.toml` 只记版本号与待办 id，不含题目数据）。详见 `PLUGIN_SPEC.md` §1.7。
 6. **干净房间（铁律一）**：所有代码与文档原创，严禁从 `E:\math-question-bank-main` 等历史目录复制源码、
    样式、脚本、测试、图片与目录结构。依赖白名单 Apache/MIT/BSD/ISC，**禁止 AGPL/GPL**。
 7. **AI 代理不得**执行 `git push`、建远端、改写历史或发布 Release，**除非用户明确要求**。
@@ -967,7 +968,8 @@ zip 下载与校验、临时脚本内容（robocopy 排除清单逐条断言）�
 **同步落地的规范修订（军令 #07 批复 1）**：`AGENTS.md` §7 原写 `python -m pytest tests/`，
 与本机实况冲突（系统 Python 与 `.venv` 都没装 pytest，`STACK.md` §6 也明令不引入 pytest 依赖），
 已整段改为 unittest 口径：单模块 `.venv\Scripts\python.exe -m unittest tests.<模块>`、
-全量用 cmd 的 `for /f` 逐模块循环，并点名 `unittest discover` 因 `tests/` 无 `__init__.py` 会直接报错、
+全量用 cmd 的 `for /f` 逐模块循环，并点名 `unittest discover` 因 `tests/` 无 `__init__.py` 会收集零用例、绿色假通过
+（2026-11-02 实跑口径，见 `docs/AGENTS.md` §7；原写「会直接报错」不准）、
 必须用 `.venv` 解释器（系统 Python 缺依赖会把所有模块打成假报错）。
 
 ### ADR-009：AI 助手降格为普通插件——权限只有 API 一条路（主公 2026-10-24 军令 #15 定调）
@@ -1423,57 +1425,16 @@ B 区看不到也取不到 A 区插件、切回后草稿自动接上）。
 
 ### 5.6 上行 · 机械证据回传单（军令 #12 锁死，2026-10-23 起长期生效）
 
-主线工作流固化为三段闭环：**军令任务卡（下行）→ 机械证据回传单（上行）→ 云端复审**。
-回执抬头仍按 §5.3 四项写，正文**必须**换成下面这张单子——**严禁只写「全绿」「已完成」**，
-每一项都要能被主公或复审代理照着重跑一遍。证据一律用实测输出（命令 + 数字 + 路径），
-测不到就写「未验证」，不许用推测填坑。
-
-```
-【改动清单】
-- 新增：<路径> ×N（逐个点名，一句话说明它是什么）
-- 修改：<路径>:<行号或函数> —— 改了什么、为什么
-- 删除：<路径> —— 为什么可以删（零引用证据）
-- 禁改区自查：LICENSE / AGENTS.md 铁律一二 / schemas 破坏性变更 / data 目录 —— 是否触碰（是/否 + 依据）
-
-【包结构自检】（涉及插件才填，不涉及就写「本次不涉及插件」）
-- 顶层目录名 == plugin.toml 的 id？
-- 有无 backend 字段（底座不支持，必须为空/不存在）？
-- 有无 Apache-2.0 LICENSE 全文？
-- min_host_version / engine.host_version 与当前 app.__version__ 的关系？
-
-【三查结果】（grep 实测，逐条给命令与命中数）
-- `fetch(` 命中 0？（插件必须走 postMessage，不许自己发 HTTP）
-- `parent.document` 命中 0？（沙箱不透明源，摸不到宿主 DOM）
-- `localStorage` 命中 0？（插件禁碰浏览器存储）
-- 请求 id 是否全部符合 `^[A-Za-z0-9_-]{1,80}$` 且**不含点号**？（含点号必被 BAD_REQUEST_ID 拒）
-
-【测试与探针】
-- 单测：跑了哪些模块（逐个点名）、各自 N/N 绿、总用例数；解释器必须是 `.venv/Scripts/python.exe`
-- 真机探针：跑没跑、哪个脚本、判据 passed/total、截图落在哪个目录（绝对路径）
-- 前端改动：是否在浏览器里真人路径走过一遍（AGENTS §7），走过写清看到了什么
-
-【未决问题与偏离】
-- 欠账：没做完的、下次接着干的（写清阻塞原因）
-- 偏离：与军令字面或 PLUGIN_SPEC / AGENTS 契约不一致的地方 + 我的处理与理由
-- 解释性口径：军令用词有歧义时我采的口径（如「已落库总数 = 总数 − 待审核」）
-- 未验证：环境或工具限制导致测不到的部分，直说
-```
-
-**执行侧配套铁律**（与 §7 提交口径合流）：
-
-1. 每完成一个【大阶段】立即 `git commit`，提交信息标注阶段（如 `feat(api): #11 第一阶段看板API与接口文档`）；
-   **测试不绿绝不许 commit**；多阶段军令严禁一口气写完再提交，全部干完后统一 `git push`（需军令明确授权）。
-2. 回传单里的每个数字都必须来自当次实测输出（探针 `probe.json`、unittest 汇总行），
-   不许沿用上一轮的数字；引用旧证据必须注明是哪一轮。
-3. 探针产物（截图、`probe.json`）落在 `.system_generated/` 下，**不进 git**，但路径要写进回传单备查。
+本节模板已抽至 `docs/RECEIPT_TEMPLATE.md`（唯一事实源，含原 §5.3 回执抬头四项），2026-11-18 抽出。
+此处仅留路标，保留本节编号防悬空；回单一律按新文件逐项给证据。
 
 ---
 
 ## 六、环境与工具备忘（省下次会话的摸索时间）
 
-- 解释器：`.venv/Scripts/python.exe`（Python 3.14）。**venv 里没有 pytest**，跑测试一律
-  `.venv/Scripts/python.exe -m unittest discover -s tests -p "test_*.py"`（`AGENTS.md` 写的
-  `python -m pytest` 在本机跑不通）。
+- 解释器：`.venv/Scripts/python.exe`（Python 3.14）。**venv 里没有 pytest，禁止引入**；跑测试逐模块
+  `.venv\Scripts\python.exe -m unittest tests.<模块>`，全量 `.venv\Scripts\python.exe tools\run_all_tests.py`。
+  **禁止 `unittest discover`**（`tests/` 无 `__init__.py`，零用例绿色假通过，见 `docs/AGENTS.md` §7）。
 - SQLite 3.50：JSON 函数可用（`json_valid` / `json_type` / `json_array_length`）；
   **`ON DELETE SET DEFAULT` 能建表但运行时照样违反外键**，`AUTOINCREMENT` 只能写在列级
   `INTEGER PRIMARY KEY AUTOINCREMENT`；`GLOB` 不支持 `{n}` 量词。
