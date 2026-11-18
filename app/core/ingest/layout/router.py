@@ -51,6 +51,23 @@ def default_providers() -> dict[str, Callable[[dict[str, Any]], Any]]:
     }
 
 
+async def run_scan(name: str, data: bytes, pages: list[dict[str, Any]],
+                   engine: str = LAYOUT_AUTO,
+                   health: dict[str, Any] | None = None,
+                   providers: dict[str, Callable[[dict[str, Any]], Any]] | None = None
+                   ) -> dict[str, Any]:
+    """图片型卷 OCR 主路优先（决策台账 D7）：OCR 不达标才退回原版面瀑布。
+
+    文本型卷一字不动直走瀑布；YOLO 降为图片卷的辅助兜底，不主导。
+    """
+    if not (health or {}).get("has_text_layer"):
+        from app.core.ingest.recognize import ocr as recognize_ocr
+        layout = recognize_ocr.detect(name, data, pages)
+        if layout.get("ok"):
+            return layout
+    return await run(name, data, pages, engine, providers)
+
+
 async def run(name: str, data: bytes, pages: list[dict[str, Any]],
               engine: str = LAYOUT_AUTO,
               providers: dict[str, Callable[[dict[str, Any]], Any]] | None = None) -> dict[str, Any]:

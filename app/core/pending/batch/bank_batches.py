@@ -115,6 +115,19 @@ def _page_regions(raw: Any, width: float, height: float) -> list[dict[str, Any]]
         pending_id = str(item.get("pending_id") or "")
         if PENDING_ID_RE.match(pending_id):
             region["pending_id"] = pending_id
+        # 跨页纵拼的追溯坐标（T8/D15）：两段原图随题留存，框上记得住拼缝与截止。
+        cross = item.get("cross_page")
+        if isinstance(cross, dict) and isinstance(cross.get("pages"), list):
+            try:
+                region["cross_page"] = {
+                    "pages": [int(p) for p in cross["pages"]][:2],
+                    "top_box": [float(v) for v in (cross.get("top_box") or [])][:4],
+                    "bottom_box": [float(v) for v in (cross.get("bottom_box") or [])][:4],
+                    "seam_px": int(cross.get("seam_px") or 0),
+                    "stop_kind": str(cross.get("stop_kind") or "")[:24],
+                }
+            except (TypeError, ValueError):
+                pass
         regions.append(region)
     return regions
 

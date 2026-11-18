@@ -14,7 +14,9 @@ from typing import Any
 from app.core.ingest import quality as ingest_quality
 from app.core.ingest.render import service as page_render
 from app.core.ingest.layout import router as layout_router
-from app.core.ingest.recognize import local as recognize_local, router as recognize_router
+from app.core.ingest.recognize import (
+    crosspage, guards, local as recognize_local, router as recognize_router,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,19 +193,33 @@ def auto_split_shell(page_no: int, number: Any, asset_id: str, title: str,
 
 
 def auto_split_pages(name: str, data: bytes, batch_id: str,
-                     page_images: list[dict[str, Any]]) -> list[str]:
+                     page_images: list[dict[str, Any]],
+                     layout: dict[str, Any] | None = None,
+                     ledger: dict[str, Any] | None = None) -> list[str]:
     """把页图上的题块全部裁成待审题；失败只记警告，绝不拖垮页图与手动框选。
 
     题块坐标是页面图像素，``page_render.crop_pdf_regions`` 换回 PDF 点后
     按 300 dpi 直接从原 PDF 裁图。19 块一次落池，顺序就是卷面顺序。
+    裁前先过题号链门禁（回跳/密度），OCR 卷再判跨页续段并纵拼（T8）。
     """
     import base64
 
     from app.core.pending import service
 
-    crops, notes = page_render.crop_pdf_regions(data, page_images)
+    lines_by_page = (layout or {}).get("lines_by_page") or {}
+    columns = (layout or {}).get("columns") or {}
+    notes = guards.apply_chain_guards(page_images, lines_by_page,
+                                      ledger=ledger, file=name)
+    crops, crop_notes = page_render.crop_pdf_regions(data, page_images)
+    notes += crop_notes
     if not crops:
         return notes
+    extra, trace, cross_notes = crosspage.stitch_cross_questions(
+        name, data, page_images, lines_by_page, columns, crops)
+    notes += cross_notes
+    if trace and ledger is not None:
+        ledger_progress(ledger, "%s 跨页题 %d 道已按 D15 纵拼，两段原图随题留存"
+                        % (name, len(trace)), "ok")
     title = str(Path(name or "").stem or name or "")[:120]
     items: list[dict[str, Any]] = []
     regions: list[dict[str, Any]] = []
@@ -214,15 +230,16 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
             continue
         for crop in crops.get(page_no) or []:
             region = crop["region"]
-            asset_id = "img_auto_%d_%d" % (page_no, int(crop["index"]))
+            key = (page_no, int(crop["index"]))
+            region.update(trace.get(key) or {})
+            asset_id = "img_auto_%d_%d" % key
             items.append({
                 "question": auto_split_shell(page_no, crop.get("no"), asset_id,
                                              title, region),
-                "assets": [{
-                    "id": asset_id,
-                    "data_url": "data:image/png;base64,"
-                                + base64.b64encode(crop["png"]).decode("ascii"),
-                }],
+                "assets": [{"id": asset_id,
+                            "data_url": "data:image/png;base64,"
+                                        + base64.b64encode(crop["png"]).decode("ascii")}]
+                          + (extra.get(key) or []),
                 "page_no": page_no,
             })
             regions.append(region)

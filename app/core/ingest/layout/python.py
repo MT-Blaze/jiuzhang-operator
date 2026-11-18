@@ -82,7 +82,9 @@ def _content_lines(info: dict[str, Any]) -> list[dict[str, Any]]:
             if not _PDF_FOOTER.search(str(line.get("text") or ""))]
 
 
-def _column_split(info: dict[str, Any]) -> float | None:
+def _column_split(info: dict[str, Any],
+                  gutter_ratio: float = 0.02,
+                  min_heads: int = 2) -> float | None:
     """左右两半都有成串题号、且中间有空槽，才认作双栏；返回空槽中心。"""
     width = float(info.get("width_pt") or 0)
     lines = _content_lines(info)
@@ -95,17 +97,27 @@ def _column_split(info: dict[str, Any]) -> float | None:
             heads.append(line)
     left = [line for line in heads if (line["left"] + line["right"]) / 2 < width * 0.5]
     right = [line for line in heads if (line["left"] + line["right"]) / 2 > width * 0.5]
-    if len(left) < 2 or len(right) < 2:
+    if len(left) < min_heads or len(right) < min_heads:
         return None
     left_edge = max(line["right"] for line in left)
     right_edge = min(line["left"] for line in right)
-    if right_edge - left_edge < max(_GUTTER_MIN_PT, width * 0.02):
+    if right_edge - left_edge < max(_GUTTER_MIN_PT, width * gutter_ratio):
         return None
     return (left_edge + right_edge) / 2
 
 
+def _increasing_heads(heads: list[tuple[int, dict[str, Any]]]
+                      ) -> list[tuple[int, dict[str, Any]]]:
+    """栏内题号自上而下单调递增：OCR 把分数碎片认成题号（如 1.1）时在此滤掉。"""
+    kept: list[tuple[int, dict[str, Any]]] = []
+    for number, line in heads:
+        if not kept or number > kept[-1][0]:
+            kept.append((number, line))
+    return kept
+
+
 def _column_regions(info: dict[str, Any], entry: dict[str, Any],
-                    split: float) -> list[dict[str, Any]]:
+                    split: float, increasing: bool = False) -> list[dict[str, Any]]:
     """按栏切题：先左栏后右栏，栏内按纵向坐标从上到下。"""
     width = float(info["width_pt"])
     height = float(info["height_pt"])
@@ -122,6 +134,8 @@ def _column_regions(info: dict[str, Any], entry: dict[str, Any],
             if matched and not _PDF_INSTRUCTION.search(str(line.get("text") or "")):
                 heads.append((int(matched.group(1)), line))
         heads.sort(key=lambda pair: pair[1]["top"], reverse=True)
+        if increasing:
+            heads = _increasing_heads(heads)
         if not heads:
             continue
         floor_pt = min((line["bottom"] for line in column_lines), default=0.0)

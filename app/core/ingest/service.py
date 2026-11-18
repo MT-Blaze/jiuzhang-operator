@@ -310,7 +310,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             route = scan_route(picked_layout, picked_recognize, health)
             append_notes(route, notes)
             if page_images:
-                layout = await layout_router.run(name, data, page_images, picked_layout)
+                layout = await layout_router.run_scan(name, data, page_images, picked_layout, health)
                 apply_layout(page_images, layout)
                 attach_layout(route, layout)
                 blocks = sum(len(r) for r in ((layout or {}).get("pages") or {}).values()
@@ -325,7 +325,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                     drop_assets(page_images)
                     continue
                 # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
-                split_notes = auto_split_pages(name, data, batch_id, page_images)
+                split_notes = auto_split_pages(name, data, batch_id, page_images, layout, ledger)
                 if split_notes:
                     ledger_failure(ledger, file=name, page_no=0, step="自动切题",
                                    reason="；".join(split_notes),

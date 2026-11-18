@@ -2,7 +2,7 @@
 
 判定只看机械判据，三条同时成立才算跨页题：
 
-a) 本页最后一个题块的下沿已到页脚 / 页底；
+a) 本页最后一个题块的下沿已到页脚 / 页底（框下无内容行且框底紧贴末行墨迹时，空白不算内容）；
 b) 下一页第一个内容行不是题号行（``_PDF_HEAD`` 不匹配）；
 c) 下一页从顶部到下一个题号行（或下一节标题）之前的行，属于本题续段。
 
@@ -167,7 +167,15 @@ def select_continuation(page: PageView, next_page: PageView) -> Continuation | N
     reach_tol = _REACH_TOL_PT * page.dpi / 72.0
     bottom = float(last["y"]) + float(last["h"])
     if limit - bottom > reach_tol:  # (a) 下沿没到页脚 / 页底
-        return None
+        # 墨迹裁边后题块与页脚之间常有一道空白：空白不算内容，
+        # 框下再无任何内容行、且框底紧贴末行墨迹时，仍视为「写到页内容尽头」。
+        below = [line for line in page_lines if float(line["top"]) >= bottom]
+        if below:
+            return None
+        if page_lines:
+            ink_bottom = max(float(line["bottom"]) for line in page_lines)
+            if bottom - ink_bottom > reach_tol:
+                return None  # 框内尾部还有一大段空白，不算写到尽头
     if page_lines:
         final = max(page_lines, key=lambda line: float(line["bottom"]))
         center = (float(final["top"]) + float(final["bottom"])) / 2
