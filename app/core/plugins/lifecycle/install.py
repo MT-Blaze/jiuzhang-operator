@@ -24,9 +24,15 @@ from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from app.core import manifests, plugin_suite, toml_io, wire
+from app.core import toml_io, wire
 from app.core.config import plugins_dir
-from app.core.plugins import _PLUGIN_ID, PluginRejected, discover_plugins, validate_plugin
+from app.core.plugins.contract import manifests, suite as plugin_suite
+from app.core.plugins.registry import (
+    _PLUGIN_ID,
+    PluginRejected,
+    discover_plugins,
+    validate_plugin,
+)
 
 # 上传的 zip 本体上限（50 MB）：个人插件是文本 + 少量图片，用不到更多。
 MAX_ZIP_BYTES = 50 * 1024 * 1024

@@ -25,7 +25,8 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import manifests, question_contract, toml_io, wire  # noqa: E402
+from app.core import question_contract, toml_io, wire  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 
 SYNC = ROOT / "tools" / "sync_plugin_index.py"
 failures: list[str] = []

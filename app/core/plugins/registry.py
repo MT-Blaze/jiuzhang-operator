@@ -11,9 +11,11 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from app.core import commands as command_registry
-from app.core import manifests, plugin_state, plugin_suite, toml_io
+from app.core import toml_io
 from app.core.config import plugins_dir
+from app.core.plugins import state as plugin_state
+from app.core.plugins.contract import commands as command_registry
+from app.core.plugins.contract import manifests, suite as plugin_suite
 
 PROTOCOL = "jzo-plugin/1"
 SUPPORTED_API_MAJOR = 1

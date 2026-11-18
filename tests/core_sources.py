@@ -117,7 +117,7 @@ def bundle_local_scripts(html_path: Path) -> str:
 
 def plugin_entry(plugin_id: str) -> Path:
     """插件入口页：路径以清单的 ``entry.frontend`` 为准（dist/ 或 webui/）。"""
-    from app.core import manifests
+    from app.core.plugins.contract import manifests
 
     manifest = manifests.load_manifest(PLUGINS_DIR / plugin_id)
     frontend = (manifest.get("entry") or {}).get("frontend") or "dist/index.html"

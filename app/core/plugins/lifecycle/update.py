@@ -37,10 +37,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app import __version__
-from app.core import manifests, state_store
+from app.core import state_store
 from app.core.config import current_workspace_id, plugins_dir, settings, workspace_storage_dir
-from app.core.plugin_download import download_plugin_zip_sources
-from app.core.plugin_install import (
+from app.core.plugins.contract import manifests
+from app.core.plugins.lifecycle.download import download_plugin_zip_sources
+from app.core.plugins.lifecycle.install import (
     MAX_ENTRIES,
     PluginInstallError,
     _check_entry,
@@ -174,7 +175,7 @@ def check_updates(index: dict[str, Any], installed: list[dict[str, Any]] | None 
     单条对不上（索引里没有、版本写坏、不兼容）只让它自己出局并带上原因，
     不牵连其他插件，也不影响底座自己的更新判定。
     """
-    from app.core.plugins import discover_plugins  # 局部导入：避免与插件发现互相持有
+    from app.core.plugins.registry import discover_plugins  # 局部导入：避免与插件发现互相持有
 
     if installed is None:
         discovered = discover_plugins()

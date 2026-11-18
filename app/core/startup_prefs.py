@@ -1,6 +1,6 @@
 """启动行为：老师选「打开软件先落在哪个界面」，选择落盘在当前工作区目录。
 
-与 :mod:`app.core.plugin_state` 同款定位——只属于当前工作区的易失配置，
+与 :mod:`app.core.plugins.state` 同款定位——只属于当前工作区的易失配置，
 文件缺失或损坏一律当作「没配过」，回落**默认启动页**（数据看板），绝不抛错
 挡住启动：底座的第一原则是「插件坏了，底座还能用」（AGENTS §2），启动
 路径上更不允许因为一个失效的偏好把老师关在门外。
@@ -25,7 +25,7 @@ from typing import Any
 
 from app.core import state_store
 from app.core.config import current_workspace_id, workspace_storage_dir
-from app.core.plugins import discover_plugins
+from app.core.plugins.registry import discover_plugins
 
 logger = logging.getLogger("jzo.startup")
 

@@ -70,7 +70,7 @@ class PluginStatePrefsTest(unittest.TestCase):
     """core 层：昵称 / 左栏树 / 停用时间。"""
 
     def setUp(self) -> None:
-        from app.core import plugin_state
+        from app.core.plugins import state as plugin_state
 
         self.mod = plugin_state
         self.tmp = tempfile.TemporaryDirectory()
@@ -197,7 +197,7 @@ class ManifestWeightTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def _validate(self, manifest: dict) -> dict:
-        from app.core.plugins import validate_plugin
+        from app.core.plugins.registry import validate_plugin
 
         return validate_plugin(_plugin_dir(self.root, manifest), manifest)
 
@@ -219,7 +219,8 @@ class DiscoveryPrefsTest(unittest.TestCase):
     """发现层：偏好投影进清单，左栏树就是顺序的唯一事实来源。"""
 
     def setUp(self) -> None:
-        from app.core import plugin_state, plugins as plugins_core
+        from app.core.plugins import registry as plugins_core
+        from app.core.plugins import state as plugin_state
 
         self.core = plugins_core
         self.state = plugin_state
@@ -310,7 +311,7 @@ class PrefsRouteTest(unittest.TestCase):
                 self.assertIn("require_write_token", block, "写偏好必须带本机写令牌")
 
     def test_03_state_layer_write_scope_is_one_file(self) -> None:
-        source = (ROOT / "app" / "core" / "plugin_state.py").read_text(encoding="utf-8")
+        source = (ROOT / "app" / "core" / "plugins" / "state.py").read_text(encoding="utf-8")
         for banned in ("shutil", "rmtree", "unlink", "plugins_dir", "bank.db", "sqlite3"):
             self.assertNotIn(banned, source, f"状态层不许碰 {banned}（ADR-007）")
 

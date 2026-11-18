@@ -21,9 +21,10 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugin_update, toml_io, wire
+from app.core import toml_io, wire
 from app.core.config import Settings, plugin_source_root
-from app.core.plugin_update import (
+from app.core.plugins.lifecycle import update as plugin_update
+from app.core.plugins.lifecycle.update import (
     HOST_EXCLUDED_DIRS,
     HOST_EXCLUDED_FILES,
     UpdateRejected,
@@ -473,7 +474,7 @@ class ApplyPluginUpdateTest(IsolatedDirsMixin):
 
     def test_11_contract_invalid_package_is_rejected(self):
         """包本身不合格（缺 LICENSE / 清单坏）走安装链同款校验，落地前整体丢弃。"""
-        from app.core.plugin_install import PluginInstallError
+        from app.core.plugins.lifecycle.install import PluginInstallError
         self.install_local("1.0.0")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as zf:
@@ -953,7 +954,8 @@ class NoSilentNetworkTest(unittest.TestCase):
     """出网铁律（AGENTS §2 / PLUGIN_SPEC §1.7 裁决 1、2）的静态守卫。"""
 
     def setUp(self) -> None:
-        self.source = (Path(__file__).resolve().parents[1] / "app" / "core" / "plugin_update.py") \
+        self.source = (Path(__file__).resolve().parents[1] / "app" / "core" / "plugins"
+                       / "lifecycle" / "update.py") \
             .read_text(encoding="utf-8")
 
     def test_01_module_never_opens_a_socket_itself(self):

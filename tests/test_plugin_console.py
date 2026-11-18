@@ -33,9 +33,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from app.core import manifests, plugin_lifecycle, plugin_state, toml_io, wire
+from app.core import toml_io, wire
 from app.core.config import root_data_dir, settings
-from app.core.plugins import discover_plugins, validate_plugin
+from app.core.plugins import state as plugin_state
+from app.core.plugins.contract import manifests
+from app.core.plugins.lifecycle import uninstall as plugin_lifecycle
+from app.core.plugins.registry import discover_plugins, validate_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
 

@@ -18,8 +18,8 @@ import re
 import unittest
 from pathlib import Path
 
-from app.core import manifests
-from app.core.plugins import _normalize_bus
+from app.core.plugins.contract import manifests
+from app.core.plugins.registry import _normalize_bus
 from tests.core_sources import plugin_bundle
 
 ROOT = Path(__file__).resolve().parents[1]

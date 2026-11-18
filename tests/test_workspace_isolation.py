@@ -31,7 +31,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 from app.api import workspaces as workspaces_api
-from app.core import bank_provider, plugin_state, plugin_update, startup_prefs, toml_io, wire
+from app.core import bank_provider, startup_prefs, toml_io, wire
+from app.core.plugins import state as plugin_state
+from app.core.plugins.lifecycle import update as plugin_update
 from app.core import config, workspace_bootstrap, workspace_paths, workspace_removal
 from app.core.config import current_workspace_id, env_file_path, plugins_dir, settings
 

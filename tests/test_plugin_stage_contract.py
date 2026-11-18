@@ -24,9 +24,11 @@ import unittest
 from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
-from app.core import manifests, plugins, toml_io
+from app.core import toml_io
 from app.core.config import plugin_source_root
-from app.core.plugins import PluginRejected, validate_plugin
+from app.core.plugins import registry as plugins
+from app.core.plugins.contract import manifests
+from app.core.plugins.registry import PluginRejected, validate_plugin
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (_path(__file__).resolve().parents[1] / "plugins")
 PLUGIN_ID = "com.example.stage-probe"

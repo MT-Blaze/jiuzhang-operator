@@ -31,8 +31,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import manifests, toml_io, wire
-from app.core.plugins import validate_plugin
+from app.core import toml_io, wire
+from app.core.plugins.contract import manifests
+from app.core.plugins.registry import validate_plugin
 from tools.build_plugin import build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
 
@@ -2384,7 +2385,7 @@ class EditorThreeSegmentPanelTest(unittest.TestCase):
         host = stage_source()
         self.assertIn('"editor.canvas_state"', host, "宿主白名单里没有这条主题")
         self.assertIn('notify(panel, "editor.canvas_state"', host, "宿主没有把它投给右栏面板")
-        whitelist = (ROOT / "app" / "core" / "plugins.py").read_text(encoding="utf-8")
+        whitelist = (ROOT / "app" / "core" / "plugins" / "registry.py").read_text(encoding="utf-8")
         self.assertIn('"editor.canvas_state"', whitelist, "底座白名单里没有这条主题")
 
     def test_09_no_duplicate_ids_in_the_panel(self) -> None:

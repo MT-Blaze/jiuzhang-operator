@@ -24,7 +24,8 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from app.core import plugins as plugins_core, toml_io
+from app.core import toml_io
+from app.core.plugins import registry as plugins_core
 from tools.build_plugin import BuildError, build_plugin
 from tests.core_sources import stage_source, workspace_source  # noqa: E402
 

@@ -23,7 +23,7 @@ from typing import Any
 
 from app.core import state_store
 from app.core.config import current_workspace_id, workspace_storage_dir
-from app.core.plugins import discover_plugins
+from app.core.plugins.registry import discover_plugins
 
 # 默认 provider 的**唯一**出处：全仓其它地方一律读本常量，不许再写字面量。
 DEFAULT_PROVIDER_ID = "org.jiuzhang.bank-engine"

@@ -29,9 +29,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank, manifests, wire
+from app.core import bank, wire
 from app.core.config import settings
-from app.core.plugins import PluginRejected, discover_plugins, validate_plugin
+from app.core.plugins.contract import manifests
+from app.core.plugins.registry import PluginRejected, discover_plugins, validate_plugin
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -274,7 +275,7 @@ class HostGateTest(unittest.TestCase):
     """宿主门禁：查重与跳转只认能力，不认插件 id。"""
 
     def test_01_both_capabilities_are_declared_by_the_host(self) -> None:
-        source = (ROOT / "app" / "core" / "plugins.py").read_text(encoding="utf-8")
+        source = (ROOT / "app" / "core" / "plugins" / "registry.py").read_text(encoding="utf-8")
         self.assertIn('"bank.provider"', source)
         self.assertIn('"bank.view"', source)
 

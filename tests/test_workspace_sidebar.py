@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 import unittest
 from pathlib import Path
-from app.core import manifests  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 from tests.core_sources import workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -24,7 +24,7 @@ from tests.core_sources import stage_source, workspace_css, workspace_source  # 
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from app.core import manifests  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 STATIC = ROOT / "static"
 STAGE = stage_source()
 WORKSPACE = workspace_source()

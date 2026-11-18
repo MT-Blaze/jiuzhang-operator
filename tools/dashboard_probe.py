@@ -165,7 +165,7 @@ def run(tag: str) -> dict:
             }
             """)
             report["notes"]["sidebar_order"] = sidebar_first
-            # 左栏顺序 = 用户排的序 + 树上还没有的按发现顺序追加（app/core/plugins.py
+            # 左栏顺序 = 用户排的序 + 树上还没有的按发现顺序追加（app/core/plugins/registry.py
             # _sidebar_with_unlisted 的既有设计）；本判据只验「看板入口在不在、能不能点开」，不锁死第一位。
             check("左栏列出数据看板", any("数据看板" in text for text in sidebar_first),
                   wire.dumps(sidebar_first, ensure_ascii=False))

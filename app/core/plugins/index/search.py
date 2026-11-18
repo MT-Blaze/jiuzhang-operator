@@ -16,9 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.core import plugin_index, state_store, ui_cards, wire
+from app.core import state_store, wire
 from app.core.config import root_data_dir
-from app.core.plugins import discover_plugins
+from app.core.plugins.contract import cards as ui_cards
+from app.core.plugins.index import catalog as plugin_index
+from app.core.plugins.registry import discover_plugins
 
 TOOL_SEARCH = "search_available_plugins"
 TOOL_SUGGEST = "suggest_install"

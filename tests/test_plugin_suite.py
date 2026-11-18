@@ -20,8 +20,10 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import bank_query, plugin_install, plugin_suite, toml_io
-from app.core.plugins import discover_plugins
+from app.core import bank_query, toml_io
+from app.core.plugins.contract import suite as plugin_suite
+from app.core.plugins.lifecycle import install as plugin_install
+from app.core.plugins.registry import discover_plugins
 
 ROOT = Path(__file__).resolve().parents[1]
 from app.core.config import plugin_source_root  # noqa: E402

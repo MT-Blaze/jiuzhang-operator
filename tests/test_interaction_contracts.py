@@ -166,7 +166,7 @@ class LegacyOrderTest(unittest.TestCase):
         self.assertIn("data.sidebar_customized", block)
         self.assertIn("JzoPrefs.legacyTree()", block)
         self.assertIn('"sidebar_customized": bool(sidebar)',
-                      (ROOT / "app" / "core" / "plugins.py").read_text(encoding="utf-8"))
+                      (ROOT / "app" / "core" / "plugins" / "registry.py").read_text(encoding="utf-8"))
 
     def test_03_prefs_layer_carries_the_migration_keys(self) -> None:
         self.assertIn('var LEGACY_ORDER_KEY = "jzo.sidebar.order";', PREFS_JS)

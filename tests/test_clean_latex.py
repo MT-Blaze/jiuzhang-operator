@@ -21,7 +21,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
-from app.core import manifests, plugins, toml_io
+from app.core import toml_io
+from app.core.plugins import registry as plugins
+from app.core.plugins.contract import manifests
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -149,7 +151,7 @@ class EditorAiCleanerTest(unittest.TestCase):
         """清单声明了就得真通：Python 白名单与 core_bus 发布白名单都要认这两条。
 
         2026-11-02 实跑抓到的漏：插件清单与 dist 代码都写好了 editor.clean_review，
-        但 ``app/core/plugins.py`` 的两张白名单没加——``_normalize_bus`` 会静默丢弃，
+        但 ``app/core/plugins/registry.py`` 的两张白名单没加——``_normalize_bus`` 会静默丢弃，
         「清单写着、通道不存在」正是 bus_parity 判据要拦的那类暗通道。
         """
         core_bus = (ROOT / "static" / "js" / "core_bus.js").read_text(encoding="utf-8")

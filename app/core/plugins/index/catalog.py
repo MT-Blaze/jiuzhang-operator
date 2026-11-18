@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.core import plugin_sources, toml_io, wire
+from app.core import toml_io, wire
 from app.core.config import PROJECT_ROOT
+from app.core.plugins.index import sources as plugin_sources
 
 INDEX_VERSION = "1.0"
 MAX_INDEX_BYTES = 512 * 1024

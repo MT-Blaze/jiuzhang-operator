@@ -55,7 +55,7 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core.plugin_update import (  # noqa: E402
+from app.core.plugins.lifecycle.update import (  # noqa: E402
     HOST_EXCLUDED_DIRS,
     _batch_encoding,
     _write_batch_script,

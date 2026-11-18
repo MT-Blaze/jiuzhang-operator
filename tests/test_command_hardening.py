@@ -24,8 +24,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import commands, manifests, toml_io
-from app.core.plugins import validate_plugin
+from app.core import toml_io
+from app.core.plugins.contract import commands, manifests
+from app.core.plugins.registry import validate_plugin
 from tests.core_sources import settings_source, stage_source, template_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

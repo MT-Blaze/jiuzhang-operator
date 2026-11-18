@@ -14,8 +14,12 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 
-from app.core.plugin_index import IndexRejected, describe_public_url, validate_index_url
-from app.core.plugin_install import MAX_ZIP_BYTES, PluginInstallError
+from app.core.plugins.index.catalog import (
+    IndexRejected,
+    describe_public_url,
+    validate_index_url,
+)
+from app.core.plugins.lifecycle.install import MAX_ZIP_BYTES, PluginInstallError
 
 DOWNLOAD_TIMEOUT_SECONDS = 30.0
 MIRROR_TIMEOUT_SECONDS = 20.0

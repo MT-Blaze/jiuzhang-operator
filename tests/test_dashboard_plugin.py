@@ -21,7 +21,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import manifests, plugins as plugins_core
+from app.core.plugins import registry as plugins_core
+from app.core.plugins.contract import manifests
 from tests.core_sources import stage_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

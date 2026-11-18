@@ -28,7 +28,7 @@ from app.core.config import plugin_source_root  # noqa: E402
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 from app.bank_engine import builder, seeding, service  # noqa: E402
 from app.bank_engine.models import Textbook  # noqa: E402
-from app.core import manifests  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 
 SCHEMA = PLUGIN_SOURCE_DIR / "org.jiuzhang.bank-engine" / "bank" / "schema.sql"
 CONSOLE_DIR = ROOT / "static" / "js" / "dict_console"

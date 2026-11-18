@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import manifests  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 
 PLUGIN_DIRS_RE = re.compile(r"PLUGIN_DIRS\s*=\s*\((.*?)\)", re.S)
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*){2,}$")

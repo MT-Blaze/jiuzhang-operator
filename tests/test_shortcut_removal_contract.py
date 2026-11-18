@@ -94,7 +94,7 @@ class BackendEvaporatedTest(unittest.TestCase):
         self.assertNotIn("shortcuts", schema, "清单模型不许再声明快捷键字段")
 
     def test_04_state_view_has_no_shortcuts_key(self) -> None:
-        from app.core import plugin_state
+        from app.core.plugins import state as plugin_state
 
         self.assertNotIn("shortcuts", plugin_state.state())
 

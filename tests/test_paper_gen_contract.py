@@ -19,8 +19,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import manifests
-from app.core.plugins import validate_plugin
+from app.core.plugins.contract import manifests
+from app.core.plugins.registry import validate_plugin
 from tests.core_sources import bundle_local_assets
 from tools.build_plugin import build_plugin
 

@@ -12,16 +12,20 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from app.core import manifests, plugin_index, plugin_search, plugin_state, plugin_update
 from app.core.config import plugins_dir
-from app.core.plugin_download import download_plugin_zip_sources
-from app.core.plugin_install import (
+from app.core.plugins import state as plugin_state
+from app.core.plugins.contract import manifests
+from app.core.plugins.index import catalog as plugin_index
+from app.core.plugins.index import search as plugin_search
+from app.core.plugins.lifecycle import update as plugin_update
+from app.core.plugins.lifecycle.download import download_plugin_zip_sources
+from app.core.plugins.lifecycle.install import (
     MAX_ZIP_BYTES,
     PluginInstallError,
     install_plugin_from_zip,
 )
-from app.core.plugin_lifecycle import PluginUninstallError, uninstall_plugin
-from app.core.plugins import (
+from app.core.plugins.lifecycle.uninstall import PluginUninstallError, uninstall_plugin
+from app.core.plugins.registry import (
     PluginAssetError,
     discover_plugins,
     resolve_plugin_asset,

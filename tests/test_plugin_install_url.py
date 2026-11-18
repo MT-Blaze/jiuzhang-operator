@@ -32,13 +32,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.core import manifests, plugin_index, plugin_sources, toml_io  # noqa: E402
-from app.core.plugin_download import (  # noqa: E402
+from app.core import toml_io  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
+from app.core.plugins.index import catalog as plugin_index  # noqa: E402
+from app.core.plugins.index import sources as plugin_sources  # noqa: E402
+from app.core.plugins.lifecycle.download import (  # noqa: E402
     download_plugin_zip,
     download_plugin_zip_sources,
 )
-from app.core.plugin_install import PluginInstallError  # noqa: E402
-from app.core.plugins import validate_plugin  # noqa: E402
+from app.core.plugins.lifecycle.install import PluginInstallError  # noqa: E402
+from app.core.plugins.registry import validate_plugin  # noqa: E402
 from tests.core_sources import stage_source, template_source  # noqa: E402
 
 TOKEN = "install-url-test-token"

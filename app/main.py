@@ -33,10 +33,11 @@ from app.api.settings import router as settings_router
 from app.api.tikz import router as tikz_router
 from app.api.workspaces import router as workspaces_router
 from app.api.workspace_rename import router as workspace_rename_router
-from app.core import plugin_update, pwa, workspace_bootstrap
+from app.core import pwa, workspace_bootstrap
 from app.core.config import current_workspace_id, settings
 from app.core.db import init_db
-from app.core.plugins import discover_plugins
+from app.core.plugins.lifecycle import update as plugin_update
+from app.core.plugins.registry import discover_plugins
 from app.core.security import local_write_token
 
 

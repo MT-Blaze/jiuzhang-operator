@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import manifests  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 try:  # 证据行要能直接贴进回传单，不受 Windows 控制台默认 GBK 影响
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except (AttributeError, OSError):
@@ -60,8 +60,8 @@ LEGACY_OVER_CEILING = {
     "plugins/org.jiuzhang.editor/dist/ui_crop.js": 771,
     "static/css/settings.css": 743,
     "plugins/org.jiuzhang.editor/dist/layout.css": 746,
-    "app/core/plugin_update.py": 741,
-    "app/core/plugins.py": 729,
+    "app/core/plugins/lifecycle/update.py": 741,
+    "app/core/plugins/registry.py": 729,
     "plugins/org.jiuzhang.paper-gen/dist/core_layout.js": 695,
     "static/js/stage_relay_io.js": 706,
     "app/core/pending_db.py": 676,

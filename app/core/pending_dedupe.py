@@ -149,7 +149,7 @@ def batch_duplicate_groups(batch_id: str, provider_id: str, *,
 # 所以 warm_batch_scan 同时写 ``dedupe_scans``（账目/状态）与 ``dedupe_findings``
 # （每条候选一行）；scan_state 在缓存未命中时回读库。两张表只存结论、不存题目，
 # 池内容永远是事实来源——重算一遍自然覆盖。
-# 写法对齐既有先例 ``app/core/basket.py:23``、``app/core/plugin_state.py:20``：
+# 写法对齐既有先例 ``app/core/basket.py:23``、``app/core/plugins/state.py:20``：
 # 模块级 ``threading.Lock`` + 进程内状态。
 _scan_lock = threading.Lock()
 _scan_cache: dict[str, dict[str, Any]] = {}

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from app.api.plugins import InstalledPlugin
 from app.core import toml_io
-from app.core.plugins import PluginRejected, validate_plugin
+from app.core.plugins.registry import PluginRejected, validate_plugin
 from tests.core_sources import stage_source, workspace_css, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

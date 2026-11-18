@@ -26,8 +26,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import commands, manifests, toml_io
-from app.core.plugins import discover_plugins, validate_plugin
+from app.core import toml_io
+from app.core.plugins.contract import commands, manifests
+from app.core.plugins.registry import discover_plugins, validate_plugin
 from tests.core_sources import plugin_bundle, stage_source, template_source, workspace_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]

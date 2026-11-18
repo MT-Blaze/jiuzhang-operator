@@ -20,7 +20,8 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import manifests, toml_io, wire  # noqa: E402
+from app.core import toml_io, wire  # noqa: E402
+from app.core.plugins.contract import manifests  # noqa: E402
 
 INDEX_MAIN = ROOT / "plugins.toml"
 INDEX_REPO = ROOT.parent / "jiuzhang-plugins" / "plugins.json"

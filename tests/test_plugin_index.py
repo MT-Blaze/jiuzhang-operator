@@ -28,7 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app import __version__  # noqa: E402
-from app.core import plugin_index, plugin_search, plugin_sources, toml_io  # noqa: E402
+from app.core import toml_io  # noqa: E402
+from app.core.plugins.index import catalog as plugin_index  # noqa: E402
+from app.core.plugins.index import search as plugin_search  # noqa: E402
+from app.core.plugins.index import sources as plugin_sources  # noqa: E402
 
 TOKEN = "index-test-token"
 

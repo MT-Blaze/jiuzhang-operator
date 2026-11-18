@@ -10,7 +10,7 @@
 设计口径（PLUGIN_SPEC §1.2 / §1.8）：
 - zip 只是分发容器，单插件包顶层必须是 ``<id>/``，解压即用；
 - 套件包顶层是 ``suite.toml`` + 各子插件目录，一次安装、同进同退；
-- 打包前必须通过 ``app.core.plugins.validate_plugin`` 全套契约校验，校验不过不产出；
+- 打包前必须通过 ``app.core.plugins.registry.validate_plugin`` 全套契约校验，校验不过不产出；
 - 套件必须自带全部依赖（requires 闭包），否则等于发一个空壳套件；
 - 拒绝把密钥、临时文件、嵌套 zip、符号链接、缓存打进去；
 - 同一输入重复打包得到稳定条目顺序（按路径排序），便于人工比对。
@@ -30,8 +30,9 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import manifests, plugin_suite, toml_io  # noqa: E402
-from app.core.plugins import PluginRejected, validate_plugin  # noqa: E402
+from app.core import toml_io  # noqa: E402
+from app.core.plugins.contract import manifests, suite as plugin_suite  # noqa: E402
+from app.core.plugins.registry import PluginRejected, validate_plugin  # noqa: E402
 
 DENY_NAMES = {
     ".env",

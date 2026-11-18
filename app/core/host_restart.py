@@ -5,7 +5,7 @@
 在原目录用同一解释器拉起 uvicorn → 自删。等待循环用 ``for /f`` 读 tasklist
 的 CSV 输出（不碰 ``find``，Git Bash 的 find.exe 会抢占 PATH 让整篇脚本终止），
 睡眠用 ``ping``（DETACHED_PROCESS 没有控制台，``timeout`` 不可靠）——两条
-都是 v0.9.0 真机压测换来的教训，见 :mod:`app.core.plugin_update`。
+都是 v0.9.0 真机压测换来的教训，见 :mod:`app.core.plugins.lifecycle.update`。
 
 ``/healthz`` 回 ``boot_id``：每次进程启动生成一次。前端只有在看到 boot_id
 变化后才重载页面，旧进程退出前的 200 不会被误认成「已经恢复」。
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.core.plugin_update import _write_batch_script
+from app.core.plugins.lifecycle.update import _write_batch_script
 
 BOOT_ID = uuid.uuid4().hex
 
