@@ -7,7 +7,7 @@
 - 云端：python → cloud（跳过 YOLO）
 
 每一级都返回同一个 JSON 结构：``{ok, engine, pages, columns, detail}``；
-``pages`` 是 ``{页码: [题块]}``，题块字段与 ``page_render`` 完全一致。
+``pages`` 是 ``{页码: [题块]}``，题块字段与 ``render.service`` 完全一致。
 各级实现由调用方注入，测试不必真的起 YOLO 或云端。
 """
 
@@ -42,7 +42,7 @@ def plan(engine: Any) -> tuple[str, ...]:
 
 def default_providers() -> dict[str, Callable[[dict[str, Any]], Any]]:
     """默认实现按需导入：三个子模块共用同一份请求结构，互不依赖。"""
-    from app.core.layout import layout_cloud, layout_python, layout_yolo
+    from app.core.ingest.layout import cloud as layout_cloud, python as layout_python, yolo as layout_yolo
 
     return {
         "python": layout_python.detect,

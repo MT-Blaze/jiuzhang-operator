@@ -11,7 +11,7 @@ import struct
 import unittest
 import zipfile
 
-from app.core.docx_classify import DocxProbeError, classify_docx
+from app.core.ingest.intake.docx_classify import DocxProbeError, classify_docx
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 M = "http://schemas.openxmlformats.org/officeDocument/2006/math"

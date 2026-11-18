@@ -26,7 +26,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import page_furniture, page_render, page_render_cross  # noqa: E402
+from app.core.ingest.render import furniture as page_furniture  # noqa: E402
+from app.core.ingest.render import service as page_render  # noqa: E402
+from app.core.ingest.render import cross as page_render_cross  # noqa: E402
 from app.core.pending import assets  # noqa: E402
 from app.core.pending import service  # noqa: E402
 from app.core.pending.batch import batches  # noqa: E402

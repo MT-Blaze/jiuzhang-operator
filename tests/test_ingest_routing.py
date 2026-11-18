@@ -21,7 +21,9 @@ import unittest
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from app.core import ingest_route, mineru_extract, wire
+from app.core.ingest import route as ingest_route
+from app.core.ingest.recognize import mineru_extract
+from app.core import wire
 from app.core.content import text_health
 
 

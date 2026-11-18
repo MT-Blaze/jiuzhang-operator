@@ -24,7 +24,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import ingest, ingest_media, ingest_route  # noqa: E402
+from app.core.ingest import service as ingest  # noqa: E402
+from app.core.ingest.intake import media as ingest_media  # noqa: E402
+from app.core.ingest import route as ingest_route  # noqa: E402
 from app.core.pending import service  # noqa: E402
 
 

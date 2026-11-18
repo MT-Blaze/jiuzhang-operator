@@ -10,9 +10,9 @@ import asyncio
 import logging
 from typing import Any, Callable
 
-from app.core import mineru_extract
+from app.core.ingest.recognize import mineru_extract
 from app.core.ai.platform import center as ai_center
-from app.core.recognize import recognize_shared
+from app.core.ingest.recognize import shared as recognize_shared
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
     if binding is None:
         return {"ok": False, "attempted": 0, "filled": 0, "filled_indexes": [],
                 "detail": "没有可用的 MinerU 账号"}
-    from app.core.ingest import build_documents
+    from app.core.ingest.service import build_documents
 
     filled_indexes: list[int] = []
     total = len(indexes)

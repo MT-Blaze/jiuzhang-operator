@@ -11,7 +11,7 @@ from typing import Any
 
 from app.core.ai.platform import center as ai_center
 from app.core.ai.recognition import recognize as ai_recognize
-from app.core.recognize import recognize_shared
+from app.core.ingest.recognize import shared as recognize_shared
 
 OCR_CONCURRENCY = 5
 

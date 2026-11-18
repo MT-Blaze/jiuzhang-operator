@@ -268,7 +268,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     # HTTP 时长与主库行数解耦，老师不需要点任何查重按钮。
     # 拖拽两段式的**占位轮不挂任务**：那次池里只有「（待识别：…）」占位题，扫了
     # 只会让卡片闪一次 redundant==0 的假象。识别口径只有一条：origin=="ingest"
-    # 且本次调用**未传** batch_id（`app/core/ingest.py:687` 不带、`:729` 带）。
+    # 且本次调用**未传** batch_id（`app/core/ingest/service.py:687` 不带、`:729` 带）。
     dedupe_queued = not (str(origin or "") == "ingest" and not str(batch_id or "").strip())
     # 原卷大图批次（auto-split 拍出来的空壳）**只查不抽**：查重命中只把红牌亮在
     # 辅助栏与批次卡片上，一条都不许从待审池搬走——19 个框必须始终对应 19 道待审题。

@@ -1,4 +1,4 @@
-"""页面渲染的共享常量与条目标签（page_render 家族内部使用）。"""
+"""页面渲染的共享常量与条目标签（render 家族内部使用）。"""
 
 from __future__ import annotations
 

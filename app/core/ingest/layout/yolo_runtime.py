@@ -1,6 +1,6 @@
 """本地 YOLO 的 ONNX 运行时：解码页图、前处理、推理与后处理。
 
-只被 ``layout_yolo`` 调用。``onnxruntime`` / ``numpy`` 都是懒加载：
+只被 ``yolo`` 调用。``onnxruntime`` / ``numpy`` 都是懒加载：
 没装运行库时上层走降级路线，底座绝不因为缺一个可选依赖起不来。
 """
 

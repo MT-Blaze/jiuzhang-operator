@@ -1,8 +1,8 @@
-"""解析路由账本与自动切图（从 ``ingest`` 拆出；具体引擎在 layout/ 与 recognize/）。
+"""解析路由账本与自动切图（从 ``ingest.service`` 拆出；具体引擎在 layout/ 与 recognize/）。
 
 本模块只做三件事：解析体检 → 批次路由标记；页图题块 → 自动切图入池；
 切完题后的坏题统计与「交给识别调度员」。版面探测与识别算法本身归
-``app.core.layout`` / ``app.core.recognize``，这里只传参、只记账。
+``app.core.ingest.layout`` / ``app.core.ingest.recognize``，这里只传参、只记账。
 """
 
 from __future__ import annotations
@@ -11,9 +11,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from app.core import ingest_quality, page_render
-from app.core.layout import layout_router
-from app.core.recognize import recognize_local, recognize_router
+from app.core.ingest import quality as ingest_quality
+from app.core.ingest.render import service as page_render
+from app.core.ingest.layout import router as layout_router
+from app.core.ingest.recognize import local as recognize_local, router as recognize_router
 
 logger = logging.getLogger(__name__)
 

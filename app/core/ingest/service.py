@@ -15,8 +15,8 @@
 **认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
 老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
 
-本文件只负责批次编排与后台作业；文本切题在 ``ingest_text``，
-单文件分拣与 OCR 在 ``ingest_media``，版面与识别引擎各自住在 ``layout/``、``recognize/``。
+本文件只负责批次编排与后台作业；文本切题在 ``intake.text``，
+单文件分拣与 OCR 在 ``intake.media``，版面与识别引擎各自住在 ``layout/``、``recognize/``。
 """
 
 from __future__ import annotations
@@ -24,10 +24,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.core import page_render, wire
+from app.core.ingest.render import service as page_render
+from app.core import wire
 from app.core.content import text_health
-from app.core.ingest_media import _items_from_file, _page_of, _placeholder
-from app.core.ingest_route import (
+from app.core.ingest.intake.media import _items_from_file, _page_of, _placeholder
+from app.core.ingest.route import (
     attach_layout,
     auto_split_pages,
     fill_scan_batch,
@@ -36,7 +37,7 @@ from app.core.ingest_route import (
     save_route,
     scan_route,
 )
-from app.core.ingest_text import (
+from app.core.ingest.intake.text import (
     DEFAULT_DIFFICULTY,
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -49,8 +50,8 @@ from app.core.ingest_text import (
     decode_text,
     extract_docx_text,
 )
-from app.core.layout import layout_router
-from app.core.recognize import recognize_router
+from app.core.ingest.layout import router as layout_router
+from app.core.ingest.recognize import router as recognize_router
 
 __all__ = [
     "classify",

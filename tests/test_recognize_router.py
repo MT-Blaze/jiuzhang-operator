@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from app.core.ai.platform import center as ai_center
-from app.core.recognize import recognize_router
+from app.core.ingest.recognize import router as recognize_router
 
 ITEMS = [{"id": "p%d" % index, "page_no": 1,
           "question": {"stem": "题干", "images": [

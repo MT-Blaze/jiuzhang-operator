@@ -47,19 +47,19 @@ if str(ROOT) not in sys.path:
 import pypdfium2 as pdfium  # noqa: E402
 
 from app.core import toml_io  # noqa: E402
-from app.core.page_render_common import PDF_RENDER_DPI  # noqa: E402
-from app.core.page_render_regions import (  # noqa: E402
+from app.core.ingest.render.common import PDF_RENDER_DPI  # noqa: E402
+from app.core.ingest.render.regions import (  # noqa: E402
     _PDF_FOOTER, _PDF_HEAD, _PDF_INSTRUCTION, _PDF_SECTION,
     _ink_rows, _longest_number_run, _pdf_text_lines, _question_regions,
 )
 
 try:  # 基线工作树还没有「并入句末的题号」识别。
-    from app.core.page_render_regions import _PDF_EMBEDDED_HEAD  # noqa: E402
+    from app.core.ingest.render.regions import _PDF_EMBEDDED_HEAD  # noqa: E402
 except ImportError:  # noqa: BLE001
     _PDF_EMBEDDED_HEAD = None
 
 try:  # 基线工作树没有这个模块：退回逐页兜底，仍能出改前对照。
-    from app.core import page_furniture  # noqa: E402
+    from app.core.ingest.render import furniture as page_furniture  # noqa: E402
 except Exception:  # noqa: BLE001
     page_furniture = None
 

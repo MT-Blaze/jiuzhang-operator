@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from app.core.pending import assets
-from app.core.layout import layout_model_store, layout_yolo_runtime
+from app.core.ingest.layout import model_store as layout_model_store, yolo_runtime as layout_yolo_runtime
 
 logger = logging.getLogger(__name__)
 

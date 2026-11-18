@@ -17,9 +17,9 @@ from pathlib import Path
 from unittest import mock
 
 from app.core import toml_io
-from app.core.layout import layout_model_store as store
-from app.core.layout import layout_router, layout_yolo, layout_yolo_runtime
-from app.core import ingest_route
+from app.core.ingest.layout import model_store as store
+from app.core.ingest.layout import router as layout_router, yolo as layout_yolo, yolo_runtime as layout_yolo_runtime
+from app.core.ingest import route as ingest_route
 from tools import build_plugin as builder
 
 ROOT = Path(__file__).resolve().parents[1]

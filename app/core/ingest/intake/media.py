@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from app.core.ingest_text import (
+from app.core.ingest.intake.text import (
     DEFAULT_DIFFICULTY,
     IMAGE_MIME,
     MAX_IMAGE_BYTES,

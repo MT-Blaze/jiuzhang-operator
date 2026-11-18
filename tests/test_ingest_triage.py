@@ -18,12 +18,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import ingest_route
+from app.core.ingest import route as ingest_route
 from app.core.pending import service
 from app.core.ai.platform import center as ai_center
-from app.core.ingest_quality import question_reasons, triage_documents
-from app.core.layout import layout_router
-from app.core.recognize import (recognize_ai, recognize_mineru, recognize_router)
+from app.core.ingest.quality import question_reasons, triage_documents
+from app.core.ingest.layout import router as layout_router
+from app.core.ingest.recognize import (ai as recognize_ai, mineru as recognize_mineru, router as recognize_router)
 
 ROOT = Path(__file__).resolve().parents[1]
 from app.core.config import plugin_source_root  # noqa: E402
@@ -108,18 +108,16 @@ class EngineConstantTest(unittest.TestCase):
 
     def test_04_engine_modules_stay_under_four_hundred_lines(self) -> None:
         modules = [
-            ROOT / "app" / "core" / "layout" / name
-            for name in ("layout_router.py", "layout_python.py",
-                         "layout_yolo.py", "layout_cloud.py")
+            ROOT / "app" / "core" / "ingest" / "layout" / name
+            for name in ("router.py", "python.py", "yolo.py", "cloud.py")
         ] + [
-            ROOT / "app" / "core" / "recognize" / name
-            for name in ("recognize_router.py", "recognize_local.py",
-                         "recognize_ai.py", "recognize_mineru.py",
-                         "recognize_shared.py")
+            ROOT / "app" / "core" / "ingest" / "recognize" / name
+            for name in ("router.py", "local.py", "ai.py", "mineru.py",
+                         "shared.py")
         ] + [
-            ROOT / "app" / "core" / name
-            for name in ("ingest.py", "ingest_text.py", "ingest_media.py",
-                         "ingest_route.py")
+            ROOT / "app" / "core" / "ingest" / name
+            for name in ("service.py", "intake/text.py", "intake/media.py",
+                         "route.py")
         ]
         for path in modules:
             with self.subTest(module=path.name):
@@ -164,7 +162,7 @@ class StatLogTest(unittest.TestCase):
     def test_stat_line_is_exactly_one_silent_line(self) -> None:
         docs = [clean_doc(index) for index in range(8)] + [
             broken_doc("empty_options"), broken_doc("dropped_var")]
-        with self.assertLogs("app.core.ingest_route", level="INFO") as captured:
+        with self.assertLogs("app.core.ingest.route", level="INFO") as captured:
             ingest_route.log_documents(docs)
         self.assertEqual(len(captured.records), 1)
         self.assertIn(
@@ -205,7 +203,7 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
     async def test_below_threshold_patches_only_bad_questions(self) -> None:
         docs = [clean_doc(index) for index in range(8)] + [
             broken_doc("empty_options"), broken_doc("dropped_var")]
-        with self.assertLogs("app.core.ingest_route", level="INFO") as captured:
+        with self.assertLogs("app.core.ingest.route", level="INFO") as captured:
             outcome = await self._run(docs)
         self.assertEqual(outcome["recognize"].await_count, 2, "低坏题率只补坏题")
         self.assertEqual(len(outcome["saved"]), 2)
@@ -288,7 +286,7 @@ class MineruPerQuestionTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(recognize_mineru.mineru_extract, "extract",
                                   side_effect=fake_extract), \
                 mock.patch.object(ingest_route, "save_route") as save_route:
-            with self.assertLogs("app.core.recognize.recognize_mineru",
+            with self.assertLogs("app.core.ingest.recognize.mineru",
                                  level="INFO") as captured:
                 route = await ingest_route.fill_scan_batch(
                     "B-002", recognize_router.RECOGNIZE_MINERU,

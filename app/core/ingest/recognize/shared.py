@@ -1,7 +1,7 @@
 """识别引擎共用的小零件：取题图、拼契约题目、单题回填。
 
 只做无状态搬运，不决定走哪一级，也不直接出网——路由与降级归
-``recognize_router``，具体引擎只管「怎么认、认出来怎么落」。
+``router``，具体引擎只管「怎么认、认出来怎么落」。
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def context_of(item: dict[str, Any]) -> dict[str, Any]:
 
 def document_from_ai(question: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
     """AI 识别结果 → 契约题目；题图与来源沿用本地切题那一条，绝不丢。"""
-    from app.core.ingest import DEFAULT_DIFFICULTY, _document
+    from app.core.ingest.service import DEFAULT_DIFFICULTY, _document
 
     options = [
         {"key": str(option.get("key") or ""), "content": str(option.get("content") or "")}

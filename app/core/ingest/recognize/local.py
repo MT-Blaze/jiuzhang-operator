@@ -18,7 +18,7 @@ def build_document(region: dict[str, Any] | None, page_no: int, number: Any,
     题干、选项、答案与解析都从题块坐标内的文字还原（Unicode 数学字符折成
     LaTeX，公式包 ``$...$``）；原题图始终挂在题身上，切图与文字互为对照。
     """
-    from app.core.ingest import DEFAULT_DIFFICULTY, _document
+    from app.core.ingest.service import DEFAULT_DIFFICULTY, _document
 
     label = str(number or "")
     parsed = scan_text.parse_scan_text((region or {}).get("text"), label)

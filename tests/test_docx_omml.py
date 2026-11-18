@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 import xml.etree.ElementTree as ET
 
-from app.core.docx_omml import omml_to_latex
+from app.core.ingest.intake.docx_omml import omml_to_latex
 
 MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 

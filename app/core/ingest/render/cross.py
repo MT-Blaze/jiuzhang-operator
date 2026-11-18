@@ -11,7 +11,7 @@ c) 下一页从顶部到下一个题号行（或下一节标题）之前的行�
 ``StitchedCrop`` 一并带回，只拼不留原图不算完成。
 
 本模块只做「判据 + 拼图」，坐标一律用页面图像素系（y 向下），与
-``page_render_regions`` 输出的 region 同一坐标系。
+``regions`` 输出的 region 同一坐标系。
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import zlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.page_render_regions import _PDF_FOOTER, _PDF_HEAD, _PDF_SECTION
+from app.core.ingest.render.regions import _PDF_FOOTER, _PDF_HEAD, _PDF_SECTION
 
 SEAM_MIN_PX = 8
 SEAM_MAX_PX = 12

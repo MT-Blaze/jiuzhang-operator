@@ -9,7 +9,7 @@ import re
 import zipfile
 from typing import Any
 
-from app.core import docx_classify
+from app.core.ingest.intake import docx_classify
 from app.core.content import question_parser
 
 __all__ = [

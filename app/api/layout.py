@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from app.core.layout import layout_model_store as store
+from app.core.ingest.layout import model_store as store
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["layout"])

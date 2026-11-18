@@ -8,7 +8,7 @@ import unicodedata
 from typing import Any
 
 from app.core.pending.assets import write_generated_asset
-from app.core.page_render_common import (
+from app.core.ingest.render.common import (
     FONT_SIZE, FOOTER_Y, LINE_HEIGHT, MARGIN_TOP, MARGIN_X, MAX_LINES,
     PAGE_HEIGHT, PAGE_WIDTH, TEXT_WIDTH, _FONT_FAMILY, _entry, _spread_pages,
 )

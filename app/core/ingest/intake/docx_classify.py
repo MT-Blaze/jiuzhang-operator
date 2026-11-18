@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
 
-from app.core.docx_omml import omml_to_latex
+from app.core.ingest.intake.docx_omml import omml_to_latex
 
 __all__ = [
     "DocxProbeError",

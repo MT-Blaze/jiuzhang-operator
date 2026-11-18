@@ -15,11 +15,11 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
-from app.core import ingest
+from app.core.ingest import service as ingest
 from app.core.pending import service
 from app.core.bank import questions
-from app.core.layout import layout_router
-from app.core.recognize import recognize_router
+from app.core.ingest.layout import router as layout_router
+from app.core.ingest.recognize import router as recognize_router
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["ingest"])

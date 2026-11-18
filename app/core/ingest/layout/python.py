@@ -1,7 +1,7 @@
 """纯本地版面探路：文本层坐标 → 单栏 / 双栏题块。
 
 这是矩阵里永远排第一的一级——不联网、不加载模型、没有密钥也能跑。
-标准单栏直接沿用 ``page_render`` 算好的题块，只把阅读顺序按坐标校正；
+标准单栏直接沿用 ``render.service`` 算好的题块，只把阅读顺序按坐标校正；
 双栏卷则按栏切开，先左栏从上到下、再右栏从上到下重排，避免 PDF 内容流
 把左右两栏的题号串成一条假链。
 """
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core import page_render
-from app.core.page_render_regions import (
+from app.core.ingest.render import service as page_render
+from app.core.ingest.render.regions import (
     _HEAD_PAD_PT,
     _PDF_FOOTER,
     _PDF_HEAD,

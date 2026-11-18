@@ -14,7 +14,7 @@
 
 SVG 页与 PNG 页在左栏是同一种东西：``<img>`` 读得出来、切图台裁得动。
 
-实现按域拆在同目录的 ``page_render_*`` 模块里；本文件是对外入口，并把
+实现按域拆在同目录的分域模块里；本文件是对外入口，并把
 分域模块的名字重新导出——``ingest`` 与测试都按 ``page_render.xxx`` 取用。
 """
 
@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.pending.assets import write_generated_asset
-from app.core.page_render_common import (  # noqa: F401 - 常量沿用旧路径对外
+from app.core.ingest.render.common import (  # noqa: F401 - 常量沿用旧路径对外
     FONT_SIZE,
     FOOTER_Y,
     LINE_HEIGHT,
@@ -40,7 +40,7 @@ from app.core.page_render_common import (  # noqa: F401 - 常量沿用旧路径�
     _entry,
     _spread_pages,
 )
-from app.core.page_render_pdf import (  # noqa: F401 - 测试按旧路径打桩
+from app.core.ingest.render.pdf import (  # noqa: F401 - 测试按旧路径打桩
     _pdf_pages_builtin,
     _pdf_pages_pdftoppm,
     _pdfium,
@@ -51,7 +51,7 @@ from app.core.page_render_pdf import (  # noqa: F401 - 测试按旧路径打桩
     pdf_page_lines,
     pdf_text_health,
 )
-from app.core.page_render_regions import (  # noqa: F401 - 测试按旧路径取用
+from app.core.ingest.render.regions import (  # noqa: F401 - 测试按旧路径取用
     _bare_page_footer_lines,
     _ink_rows,
     _line_words_text,
@@ -62,7 +62,7 @@ from app.core.page_render_regions import (  # noqa: F401 - 测试按旧路径取
     _trim_to_ink,
     _words_region_text,
 )
-from app.core.page_render_text import (  # noqa: F401 - 测试按旧路径取用
+from app.core.ingest.render.text import (  # noqa: F401 - 测试按旧路径取用
     _anchors,
     _char_width,
     _facsimile,

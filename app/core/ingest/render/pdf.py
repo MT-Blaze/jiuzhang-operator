@@ -14,10 +14,10 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from app.core import page_furniture
+from app.core.ingest.render import furniture as page_furniture
 from app.core.pending.assets import write_generated_asset
-from app.core.page_render_common import MAX_PAGES, PDF_CROP_DPI, PDF_RENDER_DPI, _entry
-from app.core.page_render_regions import _ink_rows, _pdf_text_lines, _question_regions
+from app.core.ingest.render.common import MAX_PAGES, PDF_CROP_DPI, PDF_RENDER_DPI, _entry
+from app.core.ingest.render.regions import _ink_rows, _pdf_text_lines, _question_regions
 
 try:  # 内置渲染器缺席只该降级，不该让整个模块导入失败。
     import pypdfium2 as _pdfium
