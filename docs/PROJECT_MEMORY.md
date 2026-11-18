@@ -179,7 +179,7 @@
 > 的宽容分支绕过了入参校验。①② 是夹具坑，③ 是实现该收紧。
 > **未做/边界（如实报）**：`bank.dedupe_scan` / `bank.dedupe_merge` 两个 relay 方法**留给阶段五**
 > （前端双栏面板才需要，本轮不开插件口子，`static/js/stage.js` 的 `RELAY_METHODS` 未动）；扫描是全库一次性
-> 内存分组 + 每组走读路径装配，456 题量级无压力，万题级需分页或增量指纹缓存（未做）；`differing_fields`
+> 内存分组 + 每组走读路径装配，456 题量级无压力（历史示例口径，2026-11-18 实测现网空库），万题级需分页或增量指纹缓存（未做）；`differing_fields`
 > 的 `extensions` 维度只比键集合、不比取值（键同值异时靠 `documents` 逐题看）。
 > **下一步**：阶段五 core-bank 查重前端 UI——顶部【查重清洗】页签 + 【一键扫描】，审查模式接管画布与右栏
 > 1:1 双栏（2 题左 1 右 1、3 题左 2 右 1、4 题左 2 右 2），题卡单选保留项 + 【确认合并】，审一组存一组不阻塞；
@@ -570,7 +570,7 @@
 | 冻结表结构 | `plugins/org.jiuzhang.core-bank/bank/schema.sql`，7 张业务表 + `bank_meta`，SHA-256 `3ba41e999b4b…`（本轮仅补 `sources.grade`） |
 | 空库（0 数据） | `plugins/org.jiuzhang.core-bank/bank/v063.db`，159,744 B，`user_version=1` |
 | 灌库产物 | `plugins/org.jiuzhang.core-bank/bank/v063_migrated.db` |
-| 入表数据 | 题 456 · 大纲节点 701（册 5 / 章 18 / 节 84 / 考向 594，其中 draft 12）· 学校 347 · 试卷 27 · 题-考向 456 · 题-来源 456 · 教研笔记 150 |
+| 入表数据 | 题 456（历史示例口径，2026-11-18 实测现网空库）· 大纲节点 701（册 5 / 章 18 / 节 84 / 考向 594，其中 draft 12）· 学校 347 · 试卷 27 · 题-考向 456 · 题-来源 456 · 教研笔记 150 |
 | 难度口径 | 恢复 L1–L4 原码（42 / 140 / 134 / 140），不再折成 basic/medium/hard |
 | 自检 | `PRAGMA foreign_key_check` 无违规，`integrity_check=ok`，全量单测 **358/358 OK**（v0.6.3 封版时为 347） |
 | 迁移工具 | `tools/build_bank_schema.py`（建空库+自检+报告）、`tools/migrate_bank_v063.py`（灌库）、`tools/verify_bank_empty.py`（逐表 COUNT 核对） |
@@ -578,7 +578,7 @@
 
 **现网已切（P0#1 完成）**：`app/core/bank.py` 的读写路径、`app/api/bank.py` 的 HTTP 通道与
 `static/js/stage.js` 的数据白名单全部走 7 张关系表；现网工作区库
-`data/banks/org.jiuzhang.core-bank.db` 已是新结构（456 题，`user_version=1`）。
+`data/banks/org.jiuzhang.core-bank.db` 当时已是新结构（456 题，`user_version=1`；历史示例口径，2026-11-18 实测现网空库）。
 旧宽表整套改名为 `data/banks/org.jiuzhang.core-bank.legacy.db`（含 `-wal`/`-shm`）作历史备份，**未覆写**。
 两处仍需下一棒当心：① **种子库 `plugins/org.jiuzhang.core-bank/bank/bank.db` 仍是 v0.6.2 宽表**——
 新装的机器首次建库会读到宽表，底座 `connect()` 有结构守卫会如实报 `BankError` 并指向

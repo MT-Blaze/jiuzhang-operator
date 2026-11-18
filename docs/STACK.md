@@ -4,7 +4,7 @@
 
 ## 0. 总则
 - 轻底座、插件化。不引重型前端框架，不引非必要运行时依赖。
-- 新增运行时依赖须报主公批准。现行 `requirements.txt` 钉版四项：`fastapi` / `jsonschema` / `pypdfium2` / `uvicorn`；其中 `jsonschema` 代码零引用（2026-11-18 grep app/scripts/tools/tests 实测），是否移除待主公裁决。
+- 新增运行时依赖须报主公批准。现行 `requirements.txt` 钉版三项：`fastapi` / `pypdfium2` / `uvicorn`；`jsonschema` 于 2026-11-18 主公拍板移除（代码零引用）；`playwright` 同日拍板补入（不钉版，首次安装时钉版）。
 - 一切写操作必须过 `X-JZO-Token`，AI 不得擅自动手。
 - 本文用 RFC 2119 措辞：必须 / 禁止 / 应当 / 可以。
 
@@ -89,7 +89,7 @@
 ## 7. 构建与运行 · Shell
 - 启动：`start.bat` 是唯一官方启动器（固定端口 65496，见 `docs/AGENTS.md` §9.3）；`uvicorn app.main:app --reload` 仅作开发备注，不是官方入口。
 - 测试：禁用 `python -m unittest discover`（`tests/` 无 `__init__.py`，会零用例假通过）；单模块用 `.venv\Scripts\python.exe -m unittest tests.<模块>`，全量用 `.venv\Scripts\python.exe tools/run_all_tests.py`。
-- 依赖声明于 `requirements.txt`，锁定版本，禁止隐式安装。
+- 依赖声明于 `requirements.txt`，锁定版本，禁止隐式安装（唯一例外：`playwright` 暂不钉版、首次安装时钉版，2026-11-18 主公拍板）。
 
 ## 8. 禁止项（红线）
 1. 禁止未经令牌的写操作。

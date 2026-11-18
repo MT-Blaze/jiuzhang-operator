@@ -19,9 +19,9 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 4. **[L0] 两条禁令**：
    - 不许用系统 `python`：实测 `python -m unittest tests.test_clean_latex` → `Ran 1 test / FAILED (errors=1)`，导入即崩。
    - 不许用 `python -m unittest discover`：实测 `Ran 0 tests in 0.000s / NO TESTS RAN`——**这是绿色假通过，比报错更危险**（`docs/AGENTS.md` §7，2026-11-02 已修正为实跑口径；旧写法"直接报错"不准）。
-5. **[L1] 全量回归**：`.venv/Scripts/python.exe tools/run_all_tests.py`（逐模块跑，正则抓 `Ran N tests`，末行 `模块 %d 个，用例 %d 个，失败模块 %d 个` + `全绿`，失败 `sys.exit(1)`）。等价 bash 版 `tools/sweep_units.sh` 按「退出码 + `grep -q "^OK"`」判定并把日志写入 `.system_generated/sweep/`（**会落盘，非只读**）。
-6. **[L0] 22 个模块会真起 uvicorn**（含 `Popen|uvicorn`）：`agent_plugin_tools`、`assets_api`、`bank_api`、`bank_batch_io`、`bank_dashboard`、`bank_dedupe`、`host_prefs`、`meta_api`、`pending_api`、`pending_meta`、`plugin_console`、`plugin_index`、`plugin_install`、`plugin_install_url`、`plugin_update`、`provider_config`、`providers_api`、`pwa_contract`、`questions_api`、`rich_card_ui`、`startup_prefs`、`workspace_restart`。
-   其中显式设 `JZO_RESTART_DISABLED=1` 保住回包链路的：`tests/test_questions_api.py`、`test_bank_dedupe.py`、`test_plugin_console.py`、`test_workspace_isolation.py`、`test_workspace_restart.py`（总闸 `app/core/workspace/startup/host_restart.py`）。**新写触碰切库/重启端点的测试必须照加这个闸**，否则测试在跟自己的服务对话。
+5. **[L1] 全量回归能免则免（2026-11-18 主公拍板）**：默认只跑改动沾到的测试模块（逐个 unittest）＋快门禁；全量 `.venv/Scripts/python.exe tools/run_all_tests.py` 仅在大面积/契约级改动、发版收口、或主公点名时跑。不绿不 commit 不变（绿＝定向＋门禁绿）。全量逐模块跑，正则抓 `Ran N tests`，末行 `模块 %d 个，用例 %d 个，失败模块 %d 个` + `全绿`，失败 `sys.exit(1)`。等价 bash 版 `tools/sweep_units.sh` 按「退出码 + `grep -q "^OK"`」判定并把日志写入 `.system_generated/sweep/`（**会落盘，非只读**）。
+6. **[L0] 19 个模块会真起 uvicorn**（含 `Popen|uvicorn`，2026-11-18 grep 实测）：`assets_api`、`ai_center`、`bank_api`、`bank_batch_io`、`bank_dashboard`、`bank_dedupe`、`host_prefs`、`meta_api`、`pending_api`、`pending_dedupe_scan`、`pending_meta`、`plugin_console`、`plugin_index`、`plugin_install`、`plugin_install_url`、`plugin_update`、`questions_api`、`startup_prefs`、`workspace_restart`。
+   显式设 `JZO_RESTART_DISABLED=1` 保住回包链路的：`tests/test_questions_api.py`、`test_bank_dedupe.py`、`test_plugin_console.py`、`test_workspace_isolation.py`、`test_workspace_restart.py`（总闸 `app/core/workspace/startup/host_restart.py`）。**新写触碰切库/重启端点的测试必须照加这个闸**，否则测试在跟自己的服务对话。
 7. **[L1] 断言纪律**：`Trigger → Action → Effect` 三元组锚业务意图；断言来源四件套 = [REQ] + [DESIGN] + 代码 diff + 存量测试；**测试逻辑必须匹配 HTML 初始态**（Toggle 默认 active 时不许断言切换前为 false——先读 DOM 再写断言）。
 
 ## 2. 真机探针（L1）
@@ -45,7 +45,7 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 2. **[L1] 提交信息**：中文，Conventional 前缀（`feat/fix/chore/docs/release/test`），说明"为什么"而不只"改了什么"；实测最近 15 条都无前缀外的阶段标注——阶段标注写在 `docs/PROJECT_MEMORY.md`，不在 commit subject 里堆。
 3. **[L0] AI 代理不得 `git push`、建远端、改写历史、发 Release**，除非用户明确要求（`docs/AGENTS.md` §7）。多阶段任务按授权统一 push。
 4. **[L1] commit trailer**：本机 `.git/hooks/commit-msg` 会剥离 `Co-authored-by` 等 AI trailer（未入库，换机即失效）——别依赖它。作者一律 `MT-Blaze <tianxiulaoshi@163.com>`。
-5. **[L0] 交付证据口径（2026-11-02 主公裁决）**：**机械证据回传单是唯一的对外交付证据**，模板唯一事实源 `docs/RECEIPT_TEMPLATE.md`（五项：改动清单 / 包结构自检 / 三查结果 / 测试与探针 / 未决问题与偏离）。`.qoder/records/biz/` 只是流水线工序内的过程稿，**不做双写同步**。
+5. **[L0] 交付证据口径（2026-11-02 主公裁决）**：**机械证据回传单是唯一的对外交付证据**，模板唯一事实源 `docs/RECEIPT_TEMPLATE.md`（五项：改动清单 / 包结构自检 / 三查结果 / 测试与探针 / 未决问题与偏离）。`.qoder/records/biz/` 只是过程稿，**不做双写同步**。
 6. **[L1] 续做先查在途工作**：动手前 `git status` 分清「已完成未提交」与真欠账；不要 stage/恢复他人的在途改动。`docs/handoff/`、`tools/handoff.py`、`tests/test_handoff.py` 均已入库（2026-11-05 核对），可直接依赖。
 7. **[L1] 文档分工**：根 `AGENTS.md`＝1 行路标；`docs/AGENTS.md`＝铁律 + §9 工作流入口；`docs/PLUGIN_SPEC.md`＝插件契约唯一事实源；`docs/STACK.md`＝语言红线；`docs/PROJECT_MEMORY.md`＝进度/ADR/待办/军令模板/环境备忘；`tools/handoff.py`＋`docs/handoff/README.md`＝四席位一轮流程（已入库，2026-11-05 核对）。
 8. **[L0] 禁改区**：`LICENSE`、`docs/AGENTS.md` 铁律一与铁律二、`app/core/question_contract.py` 契约破坏性变更（须升 `app/core/contract.py` 的 `CONTRACT_VERSION` + 同步示例 + 迁移说明 + 校验测试）、用户 `data/` 目录。
@@ -55,7 +55,7 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 | 档 | 命令 | 何时跑 | 内容 |
 |---|---|---|---|
 | 快门禁 | `bash scripts/check-quick-gate.sh` | **每个阶段收尾** | 命名 + 插件三查 + 插件包结构只读校验 + 两份索引语义一致与契约校验 + `audit_code` + `test_version_consistency` |
-| 收尾门禁 | `bash scripts/check-release-gate.sh` | **工序 06、发版前** | 快门禁全部 + `tools/run_all_tests.py` 全模块 + `scripts/check-probe-reports.sh` |
+| 收尾门禁 | `bash scripts/check-release-gate.sh` | **发版收口前** | 快门禁全部 + `tools/run_all_tests.py` 全模块 + `scripts/check-probe-reports.sh` |
 
 - **[L0] 门禁不绿 = 未完成**，不许用"应该能过"的描述代替 rc。
 - **[L1] 只读性**：门禁脚本一律不得写 `dist/`、`data/`、`plugins/`；`clean_for_release.py` 在门禁里只允许 `--dry-run`。
@@ -66,5 +66,5 @@ description: 九章算子测试、探针、像素证据与提交流程约束。�
 - [ ] 起服务的测试带 `JZO_RESTART_DISABLED=1`；没引入 pytest 或 discover
 - [ ] 前端改动有浏览器真人路径 +（视觉类）截图与像素行段结论
 - [ ] 新探针无写死端口/令牌；probe.toml 能被归一脚本识别
-- [ ] 快门禁绿，收尾阶段全量绿；未 stage 别人的在途改动
+- [ ] 快门禁绿＋改动沾到的模块绿；全量仅在大面积/契约级改动、发版收口或主公点名时跑（§1.5）；未 stage 别人的在途改动
 - [ ] 机械证据回传单五项齐备，未验证项显式写「未验证」

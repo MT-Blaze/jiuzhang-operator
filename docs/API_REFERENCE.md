@@ -49,6 +49,8 @@
   "result": { "items": [ ... ], "total": 456, "page": 1, "page_size": 12, "total_pages": 38 } }
 ```
 
+> 示例数字属历史示例口径（456 题时代；2026-11-18 实测现网空库），非现网数据断言。
+
 失败（`code` 常见值见 §1.4）：
 
 ```json
@@ -170,6 +172,8 @@ payload：无。result：
   "meta": { "...": "bank_meta 表的键值" } }
 ```
 
+> 示例数字属历史示例口径（456 题时代；2026-11-18 实测现网空库），非现网数据断言。
+
 ### 2.4 `bank.get` — 单题全文（活跃公共题库）
 
 payload：`{"id": "q_..."}`（须匹配 `^[A-Za-z0-9_-]{1,80}$`）。result：题目标准结构。查无回 `HOST_404`。
@@ -259,6 +263,8 @@ payload：无。result：
   "recent": [ { "id": "q_...", "type": "single_choice", "difficulty": "L3",
                 "stem": "题干前 80 字…", "created_at": "2026-10-23T11:00:00+08:00" } ] }
 ```
+
+> 示例数字属历史示例口径（456 题时代；2026-11-18 实测现网空库），非现网数据断言。
 
 口径：`total_questions` = 题库总行数；`today_added` = 按 `created_at`（东八区本地日）等于今天的入库数；
 `pending_review` = 仍带未清审核标记的题数（与 `bank.review` 的 `flag=any` 同判据）；

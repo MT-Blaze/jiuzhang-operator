@@ -53,7 +53,7 @@ WAL 只在建库/初始化时设且静默回退，`connect()` 不设（`db.py`�
 
 - 主库只有 2 张：18 列旧宽表 `questions` + `question_tombstones`（`db.py`），读写走 `app/core/bank/questions.py` + `app/api/questions.py`。
 - 题库是**七表 + 两版本表**，唯一口径在 `app/core/bank/engine/schema.py`；DDL 真身在兄弟仓 `E:/jiuzhang/jiuzhang-plugins/src/org.jiuzhang.bank-engine/bank/schema.sql`（2026-11-18 核实在盘）；建库/自检脚本 `tools/build_bank_schema.py`。
-- v0.6.2 的 `bank_questions` 宽表被守卫拒绝并指向 `tools/migrate_bank_v063.py --promote`（`bank/engine/schema.py`）。**对外题数口径是 456，不是 457。**
+- v0.6.2 的 `bank_questions` 宽表被守卫拒绝并指向 `tools/migrate_bank_v063.py --promote`（`bank/engine/schema.py`）。**对外题数以当次实测为准，不写死（旧口径「456 不是 457」属历史示例，2026-11-18 实测现网空库）。**
 
 ### 2.4 契约校验与 extensions
 

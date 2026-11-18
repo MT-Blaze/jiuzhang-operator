@@ -13,17 +13,18 @@ description: 九章算子的全量回归与证据采集动线：快门禁 → �
 | 档 | 命令 | 耗时 | 用在 |
 |---|---|---|---|
 | 快门禁 | `bash scripts/check-quick-gate.sh` | 秒级 | 每个阶段收尾 |
-| 收尾门禁 | `bash scripts/check-release-gate.sh` | 分钟级 | 工序 06、发版前 |
+| 收尾门禁 | `bash scripts/check-release-gate.sh` | 分钟级 | 发版收口前 |
 
 ## 步骤
 
 1. **先看在途状态**：`git status --short`——分清「已完成未提交」与真欠账；他人的在途改动不 stage、不恢复、不修，以当次实测快照为准（不照抄旧快照）。
 2. **快门禁**：`bash scripts/check-quick-gate.sh`，记录 6 项里哪项红。
 3. **逐模块单测**：
+   - **默认只跑改动沾到的测试模块（逐个 unittest）＋快门禁；全量仅在大面积/契约级改动、发版收口、或主公点名时跑。不绿不 commit 不变（绿＝定向＋门禁绿）。2026-11-18 主公拍板。**
    - 单模块：`.venv/Scripts/python.exe -m unittest tests.<模块名>`
    - 全量：`.venv/Scripts/python.exe tools/run_all_tests.py`（末行给「模块 N 个，用例 N 个，失败模块 N 个」）
    - **[L0] 禁止**：系统 `python`（实测导入即崩）、`python -m unittest discover`（实测 `Ran 0 tests / NO TESTS RAN`，绿色假通过）、pytest（未装且违反 STACK §6）
-   - 22 个起 uvicorn 的模块清单见 R04 §1.6；触碰切库/重启端点的用例要 `JZO_RESTART_DISABLED=1`，否则服务把自己重启带走。
+   - 19 个起 uvicorn 的模块清单见 R04 §1.6（2026-11-18 实测）；触碰切库/重启端点的用例要 `JZO_RESTART_DISABLED=1`，否则服务把自己重启带走。
 4. **真机探针**：按改动面挑对应 `tools/*_probe.py` 跑（**无统一 runner，属已知欠账**）；产物落 `.system_generated/<探针名>/<tag>/probe.toml` + 截图；跑完用 `bash scripts/check-probe-reports.sh` 归一判最新跑批。
    - 探针判据可能跑在死代码上：涉及滚动/布局的改动，先确认被测路径真在生效（行高不锁 → 滚动逻辑全是死代码）。
    - 程序化 `focus()` 不算人手操作；假时钟推不动 `setTimeout` 链。

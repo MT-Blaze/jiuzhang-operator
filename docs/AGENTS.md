@@ -34,7 +34,7 @@
 - `app/core/question_contract.py` 的 Question dataclass 是题目在底座、插件、导入导出之间流转的**唯一标准结构**；字段定义与校验同住一处，不另存 Schema 文件。
 - 文本字段统一为 Markdown + LaTeX：行内公式 `$...$`，独立公式 `$$...$$`。不得另造公式方言。
 - 题目全局身份只有 `id`（`q_` 前缀的稳定字符串）。原卷题号只属于来源关系（`source.question_no`），不得当作全局身份。
-- 变更 Schema 必须：升 `schema_version`、同步更新示例、说明迁移方式、补充校验测试。破坏性变更升主版本。
+- 变更题目契约（`question_contract.py` dataclass）必须：升 `app/core/contract.py` 的 `CONTRACT_VERSION`（题目文档 `schema_version` 字段随之归一）、同步更新示例、说明迁移方式、补充校验测试。破坏性变更升主版本。
 - 插件私有数据只能写入 `extensions`，键使用反向域名前缀（如 `org.example.handwriting`），底座不得解释或改写这些数据。
 - 不得把展示态内容（渲染后的 HTML、缓存、UI 状态）写回题目结构。
 
@@ -84,10 +84,12 @@
 
 - 修改后端后至少运行：`tests/test_question_contract.py`（涉及题目契约时）、启动服务并请求 `/healthz`。
 - 有测试后必须运行 `unittest`（**不许引入 pytest**，见 `STACK.md` §6）：单模块用
-  `.venv\Scripts\python.exe -m unittest tests.test_plugin_install_url`；全量回归逐模块跑
-  `for /f %f in ('dir /b tests\test_*.py') do .venv\Scripts\python.exe -m unittest tests.%~nf`。
+  `.venv\Scripts\python.exe -m unittest tests.test_plugin_install_url`。
+  **默认只跑改动沾到的测试模块（逐个 unittest）＋快门禁；全量 `tools/run_all_tests.py` 仅在大面积/契约级改动、发版收口、或主公点名时跑。不绿不 commit 不变（绿＝定向＋门禁绿）。2026-11-18 主公拍板。**
+  全量回归逐模块跑 `for /f %f in ('dir /b tests\test_*.py') do .venv\Scripts\python.exe -m unittest tests.%~nf`，
+  或 `.venv\Scripts\python.exe tools\run_all_tests.py`。
   `python -m unittest discover` 会因 `tests/` 无 `__init__.py` 收集到零个用例——2026-11-02 实跑是
-  `Ran 0 tests in 0.000s / NO TESTS RAN`，**绿色假通过，比直接报错更危险**，别用。全量回归用 `.venv\Scripts\python.exe tools\run_all_tests.py`。
+  `Ran 0 tests in 0.000s / NO TESTS RAN`，**绿色假通过，比直接报错更危险**，别用。
   必须用 `.venv` 里的解释器——系统 Python 缺依赖，会把全部模块打成假报错。
 - 新增契约必须带测试。
 - 修改前端后必须在浏览器中实际打开页面验证，不得只依赖静态检查。
@@ -166,7 +168,7 @@
 | `.venv\Scripts\python.exe tools\clean_for_release.py --dry-run` | 发版前大扫除预演；**不带 `--dry-run` 会真删并跑 `git gc`，须主公当场授权** |
 | `.venv\Scripts\python.exe tools\sync_plugin_index.py` | 同步两份插件索引（需兄弟仓库 `E:/jiuzhang/jiuzhang-plugins` 存在） |
 
-环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium，而 **`playwright` 未写进 `requirements.txt`**（`STACK.md` §7 要求"锁定版本、禁止隐式安装"，是否补入待主公裁决）；⑦ 5 支探针手依 8765/8777、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里他人的在途改动不得 stage/恢复。
+环境坑（每条都有过返工）：① `unittest discover` 零用例假通过；② `.bat` 非 ASCII 或非 CRLF 会哑弹；③ Git Bash 的 `find.exe` 抢占 PATH 会中断批处理；④ 无控制台时 `timeout`/`echo` 不可靠；⑤ `tools/verify_bank_empty.py` 曾写死 `E:\jiuzhang-operator` 盘符（已改为按 `__file__` 推导）；⑥ 探针需 playwright + chromium；`playwright` 已于 2026-11-18 主公拍板补入 `requirements.txt`（不钉版，首次安装时钉版）；⑦ 4 支探针手依 8765/8777（console_panel/fold/split/tab_group，2026-11-18 实测）、2 支写死 `dev-token-2026`，而底座令牌是一次性轮换——新探针禁止写死端口与令牌；⑧ 禁止 `taskkill /F /IM python.exe`；⑨ `JZO_LOCAL_TOKEN` 非空即令整套轮换失效；⑩ 工作树里他人的在途改动不得 stage/恢复。
 
 ### 9.4 交付证据口径
 

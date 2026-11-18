@@ -25,7 +25,7 @@ description: 在九章算子新增表/新增一类持久化数据或做一次 SQ
 - **[L0] extensions 双向映射**：库内有序数组 ↔ 契约反向域名对象（`app/core/bank/engine/codec.py` 写/读），`images`/`tags`/`taxonomy`/`grade` 寄生在 extensions 里、出参要还原顶层（`bank/engine/write.py`、`bank/engine/codec.py`）。加字段前先决定它进不进 extensions。
 - **[L1] 查重把 extensions 拼进指纹**（`bank/engine/dedupe.py`），合并时同名键保留项赢——新字段会影响查重命中。
 - **[L1] 两套库并存**：主库是 18 列旧宽表 + tombstones（`db.py`），题库是七表 + 两版本表（`bank/engine/schema.py`，DDL 在兄弟仓 `E:/jiuzhang/jiuzhang-plugins/src/org.jiuzhang.bank-engine/bank/schema.sql`）。写代码前先确认自己在哪套库上；`bank_questions` 宽表已被守卫拒绝（`bank/engine/schema.py`）。
-- **[L1] 对外题数口径是 456，不是 457。**
+- **[L1] 对外题数以当次实测为准，不写死（旧口径「456 不是 457」属历史示例，2026-11-18 实测现网空库）。**
 
 ## 自检
 

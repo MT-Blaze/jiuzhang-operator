@@ -639,6 +639,8 @@ frontend = "dist/index.html"
   result: { items: [...], total: 456, page: 1, page_size: 12, total_pages: 38 } }
 ```
 
+> 示例中 `total: 456` 等数字属历史示例口径（2026-11-18 实测现网空库），不是契约语义的一部分。
+
 | 方法 | 用途 | 关键约束 |
 | --- | --- | --- |
 | `bank.list` | 分页取题 | `grade` / `difficulty` / `type` / `chapter` / `textbook` / `q` / `page` / `page_size`；`page_size` ≤100，搜索词 ≤100 字；面板的展示值「全部」由宿主翻译为「不过滤」 |
