@@ -376,7 +376,7 @@ frontend = "dist/index.html"
 | `license` | 是 | 只接受 `"Apache-2.0"`；目录里还必须真有 `LICENSE` 文件 |
 | `entry` | 是 | 表，只认 `entry.frontend`：包内相对路径，必须位于 `dist/` 下，且文件真实存在 |
 | `slots` | 是 | 非空数组，取值 `question.card` / `question.detail` / `question.paper` / `answer.panel` / `stage.center`（v0.6.0，中央画布，见 §2.4）/ `sidebar.right`（右栏辅助面板，见 §2.9） |
-| `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export` / `question.edit`（v0.6.2 录题写入）/ `paper.generate` / `handout.render`；`renderer` 必须含 `question.render` |
+| `capabilities` | 是 | 非空数组，取值 `question.render` / `question.import` / `question.export` / `question.edit`（v0.6.2 录题写入）/ `paper.generate` / `handout.render` / `bank.provider` / `bank.view`（§2.6.1）/ `models.catalog`（§2.6.2）；`renderer` 必须含 `question.render` |
 | `permissions` | 是 | 数组，可为空；取值 `questions:read` / `questions:write` / `assets:read` / `assets:write` / `storage:plugin` / `ai:invoke` / `export:file` |
 | `author` | 否 | 字符串 |
 | `ui` | 否 | 右侧面板控件声明（v0.5.5，见下）；只允许「文本 + 指令模板」，禁止 HTML/脚本；坏控件逐条丢弃，全坏回落到底座按能力生成的默认面板 |
@@ -697,6 +697,16 @@ provider 不再兼任视图。任何第三方插件只要满足三条，就能�
 - **契约不变**：换 provider 不换协议。`question.json` 是唯一标准结构（§2.5 与 AGENTS §3），provider 私有数据只能写进 `extensions`，底座不解释。
 
 > **当前边界（如实说明，别当已交付）**：官方 provider 的存储层仍是 v0.6.3 冻结的 7 张关系表 + 两张版本表，`app/core/bank.py` 的结构守卫按 `bank/schema.sql` 校验。第三方若要用 JSON / MySQL / 自研结构**服务同一套 `bank.*`**，还缺一个 provider 反向 RPC 运行时（§2.2 数据源插件的预留位，与 §6.1「后端插件运行时」同源）；在那之前，可替换的是**路由与身份**，不是**存储引擎本身**。
+
+#### 2.6.2 模型目录归插件（models.catalog，2026-11-19 配置归插件卡）——底座不写死模型名单
+
+模型清单、三态判定规则、人话说明、显存门槛与勾选语义是**插件财产**，不是底座业务：
+
+1. **清单声明能力** `capabilities: ["models.catalog"]`，并在插件根目录随包发行 `catalog.toml`（`[[entries]]` 数组＋`vram_note`/`[[vram_tier]]`）。目录随插件更新**整份覆盖**＝清单可更新；老师的勾选偏好 `model_prefs.toml` 是教师财产，升级时保留（与 `models/` 权重同口径）。
+2. **底座只做通用规则解释器**：每条 entry 声明 `rule`，取值 `import_probe` / `weight_present` / `task_assign` / `mineru_local` / `vram_gate` / `blocked` 六种＋参数；三态（ready/degraded/blocked）与人话文案全部来自目录数据。底座不认识某条 rule 时判 blocked 并明说「底座不认识这条规则，请更新底座」，绝不静默。
+3. **路由按声明找提供者**：底座按 `models.catalog` 能力发现已启用插件，读其安装目录 `plugins/<id>/catalog.toml`；目录缺失或损坏＝空目录，引擎下拉只剩 auto。版面/识别的具体档队列（`plan_layout`/`plan_recognize`）、旧名兼容（`aliases_layout`/`aliases_recognize`）与路由人话注记（`route_note_layout`/`route_note_recognize`）同样由目录声明，底座只认步骤实现名（python/yolo/cloud/ocr/local/ai/mineru），不认模型 id。
+4. **勾选代笔只写请求插件自己的目录**：`models.prefs_save` 按页签 `plugin.id` 落盘，未声明 `models.catalog` 的插件回 FORBIDDEN（宿主 relay 与后端双重校验）；写令牌鉴权不变。`data/` 全树不得出现 `model_prefs.toml`。
+5. **三态规则是通用契约留底座**：Python 录题路由同步要用三态闸口，问不了沙箱 iframe，所以规则解释器与闸口（`_gate` 不静默）留在底座；模型清单/说明/门槛/勾选全归插件 catalog＋prefs。
 
 ### 2.7 多版本教材与考向并集（v0.8.2 地基）
 

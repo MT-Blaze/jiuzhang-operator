@@ -1,7 +1,8 @@
-"""模型注册表（2026-11-18 拍板）：目录×运行时三态、闸口残留值、只读 API。
+"""模型注册表（配置归插件卡）：插件目录×通用规则解释器×运行时三态、闸口、只读 API。
 
-四合一卡增量：目录数据驱动 toml＋大白话说明＋硬件门＋MinerU 本地座＋
-启用/停用与默认选择（插件目录）。
+目录是插件财产：夹具造一个声明 models.catalog 的最小 headless 插件，
+catalog.toml 从插件源码仓原样拷来（tests/catalog_fixture.py）。底座只认
+六个规则名，不认任何模型 id；未知规则＝blocked＋提示更新底座，绝不静默。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_models_registry``
 """
@@ -9,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 import unittest
 from contextlib import contextmanager
 from unittest import mock
@@ -16,6 +18,7 @@ from unittest import mock
 from app.api import models as models_api
 from app.core.ai.platform import center as ai_center
 from app.core.ingest import registry
+from tests.catalog_fixture import CATALOG_CAPABILITY, EDITOR, CatalogIsolated
 
 _HW_16G = {"vram_gb": 16.0, "vram_label": "16.0G", "gpu_name": "测试卡",
            "vram_source": "nvidia-smi", "detail": ""}
@@ -48,7 +51,7 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              health: dict | None = None,
              install: dict | None = None,
              prefs: dict | None = None):
-    with mock.patch.object(registry, "_rapidocr_installed", return_value=ocr), \
+    with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
             mock.patch.object(registry.ai_center, "resolve_task",
                               return_value=vision if vision is not None else _vision(False)), \
@@ -68,7 +71,7 @@ def _states(entries: list[dict]) -> dict[str, dict]:
     return {entry["id"]: entry for entry in entries}
 
 
-class RegistryStatusTest(unittest.TestCase):
+class RegistryStatusTest(CatalogIsolated):
     def test_all_ready_catalog_has_three_states_and_names(self) -> None:
         with _runtime(yolo=True, vision=_vision(), mineru=_mineru()):
             entries = _states(registry.status()["entries"])
@@ -102,25 +105,15 @@ class RegistryStatusTest(unittest.TestCase):
         self.assertEqual(entries["rapidocr_accurate"]["action"], "")
 
     def test_status_is_recomputed_every_call(self) -> None:
-        with mock.patch.object(registry, "_rapidocr_installed", return_value=True), \
+        with _runtime(yolo=False), \
                 mock.patch.object(registry.model_store, "present",
-                                  side_effect=[False, True]), \
-                mock.patch.object(registry.ai_center, "resolve_task",
-                                  return_value=_vision(False)), \
-                mock.patch.object(registry.ai_center, "find_mineru", return_value=None), \
-                mock.patch.object(registry.hardware, "probe", return_value=_HW_16G), \
-                mock.patch.object(registry.mineru_setup, "health",
-                                  return_value=_HEALTH_MISSING), \
-                mock.patch.object(registry.mineru_setup, "status",
-                                  return_value={"state": "idle"}), \
-                mock.patch.object(registry.model_prefs, "load",
-                                  return_value=dict(_PREFS_EMPTY)):
+                                  side_effect=[False, True]):
             first = _states(registry.status()["entries"])["yolo"]["state"]
             second = _states(registry.status()["entries"])["yolo"]["state"]
         self.assertEqual((first, second), ("degraded", "ready"))
 
 
-class RegistryGateTest(unittest.TestCase):
+class RegistryGateTest(CatalogIsolated):
     def test_ready_pick_passes_without_note(self) -> None:
         with _runtime(yolo=True):
             self.assertEqual(registry.gate_layout("yolo"), ("yolo", ""))
@@ -173,16 +166,20 @@ class RegistryGateTest(unittest.TestCase):
         self.assertIn("YOLO·版面未就绪", route["note"])
 
 
-class CatalogDataTest(unittest.TestCase):
-    """目录数据驱动：toml 单源，加条目不改代码；每条必带大白话说明。"""
+class CatalogDataTest(CatalogIsolated):
+    """目录数据驱动：toml 单源住插件目录，加条目不改底座代码。"""
 
-    def test_catalog_comes_from_toml_and_keeps_original_five(self) -> None:
+    def test_catalog_comes_from_plugin_dir_and_keeps_original_five(self) -> None:
+        provider = registry.catalog_provider()
+        self.assertIsNotNone(provider)
+        self.assertEqual(provider["id"], EDITOR)
+        self.assertIn(CATALOG_CAPABILITY, provider["capabilities"])
+        self.assertTrue((self.plugin / registry.CATALOG_FILENAME).is_file())
         ids = [item["id"] for item in registry.catalog()]
         for original in ("rapidocr_fast", "rapidocr_accurate", "yolo",
                          "cloud_vision", "mineru"):
             self.assertIn(original, ids)
         self.assertIn("mineru_local", ids)
-        self.assertTrue(registry.CATALOG_PATH.is_file())
 
     def test_every_entry_has_plain_usage(self) -> None:
         for item in registry.catalog():
@@ -190,6 +187,11 @@ class CatalogDataTest(unittest.TestCase):
                             "%s 缺大白话使用说明" % item["id"])
             self.assertIn("min_vram", item)
             self.assertIn("can_cpu", item)
+
+    def test_every_entry_declares_a_known_rule(self) -> None:
+        for item in registry.catalog():
+            self.assertIn(str(item.get("rule")), registry.RULES,
+                          "%s 的 rule 不在通用契约里" % item["id"])
 
     def test_vlm_families_registered_with_six_g_floor(self) -> None:
         vlms = [item for item in registry.catalog() if item.get("family") == "vlm"]
@@ -211,7 +213,69 @@ class CatalogDataTest(unittest.TestCase):
         self.assertNotIn(4, [int(t["min_gb"]) for t in tiers])
 
 
-class HardwareGateTest(unittest.TestCase):
+class GenericRuleTest(CatalogIsolated):
+    """解释器只认规则名：未知规则＝blocked＋人话提示更新底座，绝不静默。"""
+
+    def _rewrite_catalog(self, text: str) -> None:
+        (self.plugin / registry.CATALOG_FILENAME).write_text(text, encoding="utf-8")
+
+    def test_unknown_rule_is_blocked_with_update_hint(self) -> None:
+        self._rewrite_catalog(
+            '[[entry]]\nid = "future_model"\nname = "未来模型"\n'
+            'capability = "layout"\nrule = "quantum_probe"\n')
+        with _runtime():
+            entry = _states(registry.status()["entries"])["future_model"]
+        self.assertEqual(entry["state"], "blocked")
+        self.assertIn("底座不认识这条规则", entry["detail"])
+        self.assertIn("quantum_probe", entry["detail"])
+        self.assertIn("更新底座", entry["detail"])
+
+    def test_missing_rule_is_blocked_not_silent(self) -> None:
+        self._rewrite_catalog(
+            '[[entry]]\nid = "ruleless"\nname = "没写规则"\ncapability = "layout"\n')
+        with _runtime():
+            entry = _states(registry.status()["entries"])["ruleless"]
+        self.assertEqual(entry["state"], "blocked")
+        self.assertIn("缺 rule 声明", entry["detail"])
+
+    def test_six_rules_are_the_whole_contract(self) -> None:
+        self.assertEqual(sorted(registry.RULES),
+                         sorted(["import_probe", "weight_present", "task_assign",
+                                 "mineru_local", "vram_gate", "blocked"]))
+
+
+class MissingCatalogTest(CatalogIsolated):
+    """无提供者/目录损坏＝空目录：下拉只剩 auto，闸口不静默也不崩。"""
+
+    def test_no_provider_means_empty_catalog_and_auto_defaults(self) -> None:
+        shutil.rmtree(self.plugin)
+        with _runtime():
+            payload = registry.status()
+        self.assertEqual(payload["entries"], [])
+        self.assertEqual(payload["defaults"],
+                         {"layout": "auto", "recognize": "auto"})
+        self.assertEqual(registry.catalog(), ())
+        self.assertEqual(registry.gate_layout("yolo"), ("auto", ""))
+
+    def test_corrupt_catalog_degrades_to_empty(self) -> None:
+        (self.plugin / registry.CATALOG_FILENAME).write_text(
+            "这不是 toml = = =", encoding="utf-8")
+        with _runtime():
+            payload = registry.status()
+        self.assertEqual(payload["entries"], [])
+        self.assertEqual(registry.gate_recognize("mineru"), ("auto", ""))
+
+    def test_undeclared_plugin_is_not_a_provider(self) -> None:
+        from app.core import toml_io
+        manifest = self.plugin / "plugin.toml"
+        data = toml_io.load(manifest, {})
+        data["capabilities"] = ["question.edit"]
+        toml_io.write(manifest, data)
+        self.assertIsNone(registry.catalog_provider())
+        self.assertEqual(registry.catalog(), ())
+
+
+class HardwareGateTest(CatalogIsolated):
     def test_low_vram_says_unsupported_and_points_to_cloud(self) -> None:
         with _runtime(hw=_HW_LOW):
             entries = _states(registry.status()["entries"])
@@ -245,7 +309,7 @@ class HardwareGateTest(unittest.TestCase):
         self.assertIn("约", payload["vram_note"])
 
 
-class MineruLocalTest(unittest.TestCase):
+class MineruLocalTest(CatalogIsolated):
     def test_not_installed_is_degraded_with_install_action(self) -> None:
         with _runtime():
             entry = _states(registry.status()["entries"])["mineru_local"]
@@ -295,7 +359,7 @@ class MineruLocalTest(unittest.TestCase):
         self.assertTrue(str(entry.get("gate_note") or ""))
 
 
-class PrefsGateTest(unittest.TestCase):
+class PrefsGateTest(CatalogIsolated):
     def test_disabled_entry_hidden_from_ready_and_gated_with_reason(self) -> None:
         prefs = {"disabled": ["yolo"], "default_layout": "auto",
                  "default_recognize": "auto"}
@@ -317,7 +381,7 @@ class PrefsGateTest(unittest.TestCase):
                          {"layout": "yolo", "recognize": "mineru"})
 
 
-class RegistryApiTest(unittest.TestCase):
+class RegistryApiTest(CatalogIsolated):
     def test_endpoint_returns_registry_payload(self) -> None:
         payload = {"ok": True, "entries": [{"id": "yolo", "state": "ready"}]}
         with mock.patch.object(registry, "status", return_value=payload):
@@ -343,11 +407,32 @@ class RegistryApiTest(unittest.TestCase):
 
     def test_prefs_endpoint_rejects_unknown_id(self) -> None:
         from fastapi import HTTPException
-        with mock.patch.object(registry, "catalog",
-                               return_value=({"id": "yolo"},)):
-            with self.assertRaises(HTTPException) as caught:
-                models_api.models_prefs({"disabled": ["不存在的引擎"]})
+        with self.assertRaises(HTTPException) as caught:
+            models_api.models_prefs({"disabled": ["不存在的引擎"]}, plugin_id=EDITOR)
         self.assertEqual(caught.exception.status_code, 400)
+
+    def test_prefs_endpoint_writes_only_requesting_plugin_dir(self) -> None:
+        saved = models_api.models_prefs({"disabled": ["yolo"]}, plugin_id=EDITOR)
+        self.assertEqual(saved["disabled"], ["yolo"])
+        self.assertTrue((self.plugin / "model_prefs.toml").is_file())
+
+    def test_prefs_endpoint_forbids_undeclared_plugin(self) -> None:
+        from fastapi import HTTPException
+        from app.core import toml_io
+        manifest = self.plugin / "plugin.toml"
+        data = toml_io.load(manifest, {})
+        data["capabilities"] = ["question.edit"]
+        toml_io.write(manifest, data)
+        with self.assertRaises(HTTPException) as caught:
+            models_api.models_prefs({"disabled": []}, plugin_id=EDITOR)
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertIn("models.catalog", caught.exception.detail)
+
+    def test_prefs_endpoint_forbids_absent_plugin(self) -> None:
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as caught:
+            models_api.models_prefs({"disabled": []}, plugin_id="org.example.ghost")
+        self.assertEqual(caught.exception.status_code, 403)
 
     def test_install_endpoint_translates_setup_error(self) -> None:
         from fastapi import HTTPException

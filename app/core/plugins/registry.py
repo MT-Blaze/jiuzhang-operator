@@ -48,9 +48,9 @@ _CAPABILITIES = {
     "handout.render",
     # v0.8.2：声明自己可当作「活跃题库」的插件（默认是官方 bank-engine）
     "bank.provider",
-    # 军令 #20：纯视图插件——只读活跃题库、可走查重扫描与合并的宿主通道，
-    # 自己不持有题库。与 bank.provider 分离，界面换皮不必动数据引擎。
+    # 军令 #20：纯视图插件——只读活跃题库、自己不持有题库，与 bank.provider 分离。
     "bank.view",
+    "models.catalog",  # 配置归插件卡：模型目录提供者，底座按声明读其安装目录 catalog.toml。
 }
 _PERMISSIONS = {
     "questions:read",

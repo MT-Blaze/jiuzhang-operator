@@ -24,6 +24,7 @@ from app.core.ai.platform import center as ai_center
 from app.core.ingest.quality import question_reasons, triage_documents
 from app.core.ingest.layout import router as layout_router
 from app.core.ingest.recognize import (ai as recognize_ai, mineru as recognize_mineru, router as recognize_router)
+from tests.catalog_fixture import CatalogIsolated
 
 ROOT = Path(__file__).resolve().parents[1]
 from app.core.config import plugin_source_root  # noqa: E402
@@ -82,7 +83,9 @@ def binding(task: str = "ocr") -> ai_center.TaskBinding:
                                  model="vision")
 
 
-class EngineConstantTest(unittest.TestCase):
+class EngineConstantTest(CatalogIsolated):
+    """引擎名单与队列单源在插件 catalog（配置归插件卡）；瀑布实现名归底座。"""
+
     def test_01_layout_matrix_auto_waterfall_specific_single(self) -> None:
         self.assertEqual(layout_router.plan("auto"), ("python", "yolo", "cloud"))
         self.assertEqual(layout_router.plan("rapidocr_fast"), ("ocr",))
@@ -171,7 +174,7 @@ class StatLogTest(unittest.TestCase):
         )
 
 
-class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
+class TriagePolicyTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     async def _run(self, documents: list[dict],
                    engine: str = recognize_router.RECOGNIZE_AUTO) -> dict:
         items = [item("p_test%02d" % index, document) for index, document in enumerate(documents)]
@@ -227,7 +230,7 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_cloud_vision_engine_ignores_threshold(self) -> None:
         docs = [clean_doc(index) for index in range(10)]
-        outcome = await self._run(docs, engine=recognize_router.RECOGNIZE_CLOUD)
+        outcome = await self._run(docs, engine="cloud_vision")
         self.assertEqual(outcome["recognize"].await_count, 10)
         self.assertEqual(outcome["route"]["mode"], "cloud_vision")
 
@@ -244,7 +247,7 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(recognize_mineru.recognize_shared, "item_image_bytes",
                                   return_value=b""):
             route = await ingest_route.fill_scan_batch(
-                "B-003", recognize_router.RECOGNIZE_MINERU,
+                "B-003", "mineru",
                 {"has_text_layer": False, "garbled": False})
         recognize.assert_not_called()
         self.assertEqual(route["recognize_engine"], "mineru")
@@ -255,12 +258,12 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
                                return_value={"items": items}), \
                 mock.patch.object(ai_center, "find_mineru", return_value=None):
             route = await ingest_route.fill_scan_batch(
-                "B-004", recognize_router.RECOGNIZE_MINERU,
+                "B-004", "mineru",
                 {"has_text_layer": False, "garbled": False})
         self.assertIn("MinerU 没有可用的账号", route["note"])
 
 
-class MineruPerQuestionTest(unittest.IsolatedAsyncioTestCase):
+class MineruPerQuestionTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     async def test_single_question_screenshots_not_the_whole_pdf(self) -> None:
         items = [item("p_mineru%02d" % index, broken_doc("dropped_var"))
                  for index in range(3)]
@@ -289,7 +292,7 @@ class MineruPerQuestionTest(unittest.IsolatedAsyncioTestCase):
             with self.assertLogs("app.core.ingest.recognize.mineru",
                                  level="INFO") as captured:
                 route = await ingest_route.fill_scan_batch(
-                    "B-002", recognize_router.RECOGNIZE_MINERU,
+                    "B-002", "mineru",
                     {"has_text_layer": False, "garbled": False})
 
         self.assertEqual(seen_names, ["第1题.png", "第2题.png", "第3题.png"])

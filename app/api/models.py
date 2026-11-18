@@ -1,16 +1,17 @@
 """模型注册表的 HTTP 口子：只读聚合＋MinerU 一键装＋配置勾选代笔。
 
-注册表状态每次现算（目录 × 运行时体检），不出网、不碰库；下载与指派
-动作走既有的 layout.model_download 与 API 配置中心。新增两条写口都带
-写令牌：MinerU 安装只由老师点击发起（国内镜像）；启用/停用＋默认选择
-代笔进插件目录 model_prefs.toml，绝不落宿主 data/。
+注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
+下载与指派动作走既有的 layout.model_download 与 API 配置中心。新增两条写口
+都带写令牌：MinerU 安装只由老师点击发起（国内镜像）；启用/停用＋默认选择
+用请求插件自身 id 代笔进其插件目录 model_prefs.toml，绝不落宿主 data/；
+未声明 models.catalog 的插件没有目录就没有勾选语义，一律 403。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.core.ingest import mineru_setup, model_prefs, registry
 from app.core.security import require_write_token
@@ -41,13 +42,33 @@ def mineru_install() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _catalog_plugin(plugin_id: str) -> None:
+    """代笔资格：已安装、启用且声明 models.catalog；不合格一律 403。"""
+    from app.core.plugins.registry import discover_plugins
+
+    for info in discover_plugins().get("plugins", []):
+        if info["id"] != plugin_id:
+            continue
+        if registry.CATALOG_CAPABILITY not in (info.get("capabilities") or []):
+            raise HTTPException(
+                status_code=403,
+                detail="插件未声明 models.catalog 能力，没有模型目录就没有勾选语义")
+        if not info.get("enabled"):
+            raise HTTPException(status_code=403, detail="插件已停用，不能改模型配置")
+        return
+    raise HTTPException(status_code=403, detail="插件未安装，不能代笔模型配置")
+
+
 @router.post(
     "/api/models/prefs",
-    summary="启用/停用＋默认选择（代笔进插件目录，不落 data/）",
+    summary="启用/停用＋默认选择（代笔进请求插件自身目录，不落 data/）",
     dependencies=[Depends(require_write_token)],
 )
-def models_prefs(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def models_prefs(payload: dict[str, Any] = Body(...),
+                 plugin_id: str = Query("")) -> dict[str, Any]:
+    _catalog_plugin(plugin_id)
     try:
-        return model_prefs.save(payload, [item["id"] for item in registry.catalog()])
+        return model_prefs.save(
+            payload, [item["id"] for item in registry.catalog(plugin_id)], plugin_id)
     except model_prefs.PrefsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

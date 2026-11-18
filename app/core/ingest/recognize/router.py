@@ -1,11 +1,12 @@
 """识别引擎总调度：自动走瀑布，选了谁就只走谁（2026-11-18 主公拍板）。
 
 - 自动：local → ai → mineru（本地无坏题就停；有坏题只补坏题，坏题率 ≥30% 转全量）；
-- 云端视觉：整批单题截图只交视觉模型，失败显性化，不偷换 MinerU；
-- MinerU：整批单题截图只交 MinerU，失败显性化，不偷换视觉模型。
+- 具体档：引擎名单与要走的步骤全由插件 catalog 声明（plan_recognize／
+  aliases_recognize），底座只认步骤实现名、不认模型；目录缺失一律归自动。
 
-老插件的四通道名兼容映射：local_ai→自动、full_ocr→云端视觉（旧「全量OCR」
-兜底 MinerU 的瀑布语义随主公拍板退场，只走选中的通道）。
+老插件的四通道名兼容：local_ai→自动；full_ocr 等旧名经 catalog 别名映射
+（旧「全量OCR」兜底 MinerU 的瀑布语义随主公拍板退场，只走选中的通道）。
+具体档失败 ok=False 显性化，不级联、不偷换。
 """
 
 from __future__ import annotations
@@ -16,40 +17,46 @@ from app.core.ai.platform import center as ai_center
 from app.core.ingest.recognize import ai as recognize_ai, local as recognize_local, mineru as recognize_mineru, shared as recognize_shared
 
 RECOGNIZE_AUTO = "auto"
-RECOGNIZE_CLOUD = "cloud_vision"
-RECOGNIZE_MINERU = "mineru"
-RECOGNIZE_ENGINES = (RECOGNIZE_AUTO, RECOGNIZE_CLOUD, RECOGNIZE_MINERU)
 BAD_RATE_THRESHOLD = 0.30
+# 自动永远从 local 起；具体档队列由 catalog 的 plan_recognize 数据声明。
+_AUTO_PLAN = ("local", "ai", "mineru")
 
-_PLANS = {
-    RECOGNIZE_AUTO: ("local", "ai", "mineru"),
-    RECOGNIZE_CLOUD: ("ai",),
-    RECOGNIZE_MINERU: ("mineru",),
-}
 
-# 老插件只会发四通道名：映射到新的识别引擎，旧调用方不必跟着改。
-_LEGACY_CHANNELS = {
-    "auto": RECOGNIZE_AUTO,
-    "local_ai": RECOGNIZE_AUTO,
-    "full_ocr": RECOGNIZE_CLOUD,
-    "mineru": RECOGNIZE_MINERU,
-}
+def _recognize_entries() -> list[dict[str, Any]]:
+    from app.core.ingest import registry
+
+    return [item for item in registry.catalog()
+            if str(item.get("capability") or "") in ("recognize", "both")]
 
 
 def normalize_engine(value: Any) -> str:
+    """前端交来的引擎名 → 目录内的一个；认不出就当自动，绝不猜。"""
     text = str(value or "").strip().lower()
-    if text in RECOGNIZE_ENGINES:
-        return text
-    return _LEGACY_CHANNELS.get(text, RECOGNIZE_AUTO)
+    if not text or text in (RECOGNIZE_AUTO, "local_ai"):
+        return RECOGNIZE_AUTO
+    for item in _recognize_entries():
+        entry_id = str(item["id"])
+        if text == entry_id.lower():
+            return entry_id
+        if text in [str(alias).lower() for alias in item.get("aliases_recognize") or []]:
+            return entry_id
+    return RECOGNIZE_AUTO
 
 
 def from_legacy_channel(value: Any) -> str:
     """四通道老口径 → 识别引擎；认不出就当自动。"""
-    return _LEGACY_CHANNELS.get(str(value or "").strip().lower(), RECOGNIZE_AUTO)
+    return normalize_engine(value)
 
 
 def plan(engine: Any) -> tuple[str, ...]:
-    return _PLANS[normalize_engine(engine)]
+    """本次选择要依次尝试的通道队列；具体档队列来自 catalog 数据。"""
+    picked = normalize_engine(engine)
+    if picked == RECOGNIZE_AUTO:
+        return _AUTO_PLAN
+    for item in _recognize_entries():
+        if str(item["id"]) == picked:
+            return tuple(str(step) for step in item.get("plan_recognize") or [])
+    return ()
 
 
 def _surface(route: dict[str, Any], step: str, reason: str, detail: str) -> None:
@@ -68,12 +75,13 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                        on_progress: Callable[[dict[str, Any]], None] | None) -> dict[str, Any]:
     """具体档：整批只走选中的通道，失败 ok=False 显性化，不级联不偷换。"""
     pending = list(range(total))
-    if picked == RECOGNIZE_CLOUD:
+    steps = plan(picked)
+    if steps == ("ai",):
         ai = await recognize_shared.guard(recognize_ai.run, batch_id, items, "all",
                                           {"total": total, "bad": total, "rate": 1.0,
                                            "bad_indexes": pending})
         pending = recognize_shared.remaining(pending, ai)
-        route["mode"] = "cloud_vision"
+        route["mode"] = picked
         if ai.get("ok") and not pending:
             route["note"] = "云端视觉逐题识别完成：%d/%d 道回填成功。" % (
                 ai["filled"], ai["attempted"])
@@ -82,10 +90,10 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                 ai.get("detail") or "不可用")
             route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
             _surface(route, "识别·云端视觉", reason, str(ai.get("detail") or ""))
-    else:
+    elif steps == ("mineru",):
         binding = ai_center.find_mineru()
         if binding is None:
-            route["mode"] = "mineru"
+            route["mode"] = picked
             reason = "MinerU 没有可用的账号：先在【API 配置】里指派云端解析，保留本地切图待人工核对。"
             route["note"] = reason
             _surface(route, "识别·MinerU", reason, "账号池里没有可用的 MinerU 指派")
@@ -95,7 +103,7 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                 route, on_progress)
             mineru["binding"] = True
             pending = recognize_shared.remaining(pending, mineru)
-            route["mode"] = "mineru"
+            route["mode"] = picked
             if mineru.get("ok") and not pending:
                 route["note"] = "MinerU 逐题解析完成：%d/%d 道回填成功。" % (
                     mineru["filled"], mineru["attempted"])
@@ -104,6 +112,12 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                     mineru.get("detail") or "不可用")
                 route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
                 _surface(route, "识别·MinerU", reason, str(mineru.get("detail") or ""))
+    else:
+        route["mode"] = picked
+        reason = "选中引擎的解析通道尚未接线（%s），保留本地切图待人工核对。" % (
+            "/".join(steps) if steps else "目录未声明步骤")
+        route["note"] = reason
+        _surface(route, "识别·选中引擎", reason, "catalog plan_recognize 未接到底座通道")
     route["phase"] = "done"
     route["done"] = True
     return route

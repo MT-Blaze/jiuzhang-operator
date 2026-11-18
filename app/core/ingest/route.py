@@ -300,6 +300,17 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
 # ---------------------------------------------------------------- 坏题分诊与回填
 
 
+def _engine_note(picked: str, kind: str, auto_note: str) -> str:
+    """具体档的人话路由说明由 catalog 的 route_note_* 声明；自动档底座自述。"""
+    if picked == "auto":
+        return auto_note
+    from app.core.ingest import registry
+    for item in registry.catalog():
+        if str(item.get("id")) == picked and item.get("route_note_" + kind):
+            return str(item["route_note_" + kind])
+    return "版面：只跑选中的版面引擎，失败不降级其他引擎。" if kind == "layout" else "识别：只交选中的识别引擎，失败不降级。"
+
+
 def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
                recognize_engine: str = recognize_router.RECOGNIZE_AUTO,
                health: dict[str, Any] | None = None,
@@ -315,23 +326,11 @@ def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
     route["recognize_engine"] = picked_recognize
     route["phase"] = "parsing"
     route["done"] = False
-    if picked_layout == layout_router.LAYOUT_CLOUD:
-        layout_note = "版面：只交云端视觉，失败不降级其他引擎。"
-    elif picked_layout == layout_router.LAYOUT_YOLO:
-        layout_note = "版面：只跑本机 YOLO，失败不降级其他引擎。"
-    elif picked_layout == layout_router.LAYOUT_OCR:
-        layout_note = "版面：只跑本地 RapidOCR 切题，失败不降级其他引擎。"
-    else:
-        layout_note = ("版面：自动，图片卷先本地 OCR 切题，"
-                       "不达标退回文本层 → 本机 YOLO → 云端。")
-    if picked_recognize == recognize_router.RECOGNIZE_MINERU:
-        recognize_note = "识别：只交 MinerU 云端，本地切好单题截图后逐题发送，失败不降级。"
-    elif picked_recognize == recognize_router.RECOGNIZE_CLOUD:
-        recognize_note = "识别：只交云端视觉，整批单题截图并发识别，失败不降级。"
-    else:
-        recognize_note = ("识别：自动，本地先提取；坏题交 AI 修补，"
-                          "坏题率≥30% 转全量，最后 MinerU 兜底。")
-    route["note"] = layout_note + recognize_note
+    route["note"] = (
+        _engine_note(picked_layout, "layout",
+                     "版面：自动，图片卷先本地 OCR 切题，不达标退回文本层 → 本机 YOLO → 云端。")
+        + _engine_note(picked_recognize, "recognize",
+                       "识别：自动，本地先提取；坏题交 AI 修补，坏题率≥30% 转全量，最后 MinerU 兜底。"))
     if not text_layer:
         route["note"] += " 本卷没有文本层，本地切题可能留下占位题。"
     if health.get("garbled"):

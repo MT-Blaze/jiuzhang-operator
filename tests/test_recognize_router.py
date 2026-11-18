@@ -1,15 +1,20 @@
 """识别调度矩阵（2026-11-18 拍板）：自动走瀑布，具体档只走选中通道。
 
+具体档队列与旧通道名兼容全由插件 catalog 数据声明（配置归插件卡）：
+夹具见 tests/catalog_fixture.py；目录缺失时具体档一律归自动。
+
 运行：``.venv/Scripts/python.exe -m unittest tests.test_recognize_router``
 """
 
 from __future__ import annotations
 
+import shutil
 import unittest
 from unittest import mock
 
 from app.core.ai.platform import center as ai_center
 from app.core.ingest.recognize import router as recognize_router
+from tests.catalog_fixture import CatalogIsolated
 
 ITEMS = [{"id": "p%d" % index, "page_no": 1,
           "question": {"stem": "题干", "images": [
@@ -28,7 +33,7 @@ def binding() -> ai_center.TaskBinding:
                                  model="mineru")
 
 
-class RecognizePlanTest(unittest.TestCase):
+class RecognizePlanTest(CatalogIsolated):
     def test_matrix(self) -> None:
         self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
         self.assertEqual(recognize_router.plan("cloud_vision"), ("ai",))
@@ -44,7 +49,7 @@ class RecognizePlanTest(unittest.TestCase):
         self.assertEqual(recognize_router.normalize_engine("乱填"), "auto")
 
 
-class RecognizeFillTest(unittest.IsolatedAsyncioTestCase):
+class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     async def _run(self, engine: str, policy: dict,
                    ai_result: dict | None = None,
                    mineru_result: dict | None = None,
@@ -187,6 +192,30 @@ class RecognizeFillTest(unittest.IsolatedAsyncioTestCase):
             ai_result={"ok": True, "attempted": 1, "filled": 1,
                        "filled_indexes": [0], "detail": ""})
         outcome["mineru"].assert_not_called()
+
+
+class RecognizeNoCatalogTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
+    """目录缺失/未接线通道：归自动或诚实失败，底座不猜模型。"""
+
+    def test_missing_catalog_normalizes_specific_pick_to_auto(self) -> None:
+        shutil.rmtree(self.plugin)
+        self.assertEqual(recognize_router.normalize_engine("mineru"), "auto")
+        self.assertEqual(recognize_router.from_legacy_channel("full_ocr"), "auto")
+        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+
+    async def test_unwired_plan_surfaces_failure_without_fallback(self) -> None:
+        (self.plugin / "catalog.toml").write_text(
+            '[[entry]]\nid = "unwired"\nname = "未接线"\n'
+            'capability = "recognize"\nrule = "blocked"\nplan_recognize = ["local"]\n',
+            encoding="utf-8")
+        route: dict = {}
+        result = await recognize_router.fill_batch(
+            "B-001", ITEMS, "unwired", report(0.0, []), route)
+        self.assertTrue(result["done"])
+        self.assertEqual(result["mode"], "unwired")
+        self.assertIn("尚未接线", result["note"])
+        steps = [entry["step"] for entry in result.get("failures") or []]
+        self.assertIn("识别·选中引擎", steps)
 
 
 if __name__ == "__main__":

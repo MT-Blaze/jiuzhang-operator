@@ -714,21 +714,24 @@
     }
 
     if (method === "models.mineru_install" || method === "models.prefs_save") {
-      // 写口：安装会出网（老师点击才发起），勾选代笔进插件目录；都要写令牌。
+      // 写口：安装会出网（老师点击才发起），勾选代笔进请求插件自身目录；都要写令牌。
       var modelPerms = (tab.plugin && tab.plugin.permissions) || [];
       if (modelPerms.indexOf("questions:write") < 0) {
-        replyHost(tab, message, false, {
-          code: "FORBIDDEN",
-          message: "插件未声明 questions:write 权限，不能改模型配置"
-        });
+        replyHost(tab, message, false, { code: "FORBIDDEN",
+          message: "插件未声明 questions:write 权限，不能改模型配置" });
         return true;
       }
+      if (method === "models.prefs_save") {
+        // 没目录就没有勾选语义：只许声明了 models.catalog 的插件代笔（后端同样校验）。
+        var modelCaps = (tab.plugin && tab.plugin.capabilities) || [];
+        if (modelCaps.indexOf("models.catalog") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN", message: "插件未声明 models.catalog 能力，没有模型目录就没有勾选语义" });
+          return true;
+        }
+      }
       if (method === "models.mineru_install") {
-        withWriteToken("/api/models/mineru/install", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: "{}"
-        }).then(done, fail);
+        withWriteToken("/api/models/mineru/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
         return true;
       }
       var body = {};
@@ -736,9 +739,7 @@
         var disabled = [];
         payload.disabled.forEach(function (item) {
           var id = String(item == null ? "" : item);
-          if (id && id.length <= 80 && disabled.indexOf(id) < 0 && disabled.length < 64) {
-            disabled.push(id);
-          }
+          if (id && id.length <= 80 && disabled.indexOf(id) < 0 && disabled.length < 64) disabled.push(id);
         });
         body.disabled = disabled;
       }
@@ -748,7 +749,7 @@
       if (payload && payload.default_recognize !== undefined) {
         body.default_recognize = textValue(payload, "default_recognize", 80);
       }
-      withWriteToken("/api/models/prefs", {
+      withWriteToken("/api/models/prefs?plugin_id=" + encodeURIComponent(tab.plugin.id), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)

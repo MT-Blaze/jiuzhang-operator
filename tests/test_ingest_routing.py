@@ -25,6 +25,7 @@ from app.core.ingest import route as ingest_route
 from app.core.ingest.recognize import mineru_extract
 from app.core import wire
 from app.core.content import text_health
+from tests.catalog_fixture import CatalogIsolated
 
 
 class TextHealthTest(unittest.TestCase):
@@ -57,7 +58,9 @@ class RoutePayloadTest(unittest.TestCase):
         self.assertIn("切图模式", route["note"])
 
 
-class ScanRouteNoteTest(unittest.TestCase):
+class ScanRouteNoteTest(CatalogIsolated):
+    """具体档路由人话注记由插件 catalog 的 route_note_* 声明（配置归插件卡）。"""
+
     def test_cloud_layout_says_single_engine_no_fallback(self) -> None:
         route = ingest_route.scan_route("cloud", "mineru",
                                         {"has_text_layer": True, "garbled": False})

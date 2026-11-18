@@ -1,14 +1,20 @@
 """版面调度矩阵（2026-11-18 拍板）：自动走瀑布，具体档只走选中一级。
 
+具体档队列与旧名兼容全由插件 catalog 数据声明（配置归插件卡）：
+夹具见 tests/catalog_fixture.py；目录缺失时具体档一律归自动。
+
 运行：``.venv/Scripts/python.exe -m unittest tests.test_layout_router``
 """
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 import unittest
 from unittest import mock
 
 from app.core.ingest.layout import python as layout_python, router as layout_router
+from tests.catalog_fixture import CatalogIsolated
 
 
 def line(text: str, left: float, top: float, right: float) -> dict:
@@ -35,7 +41,7 @@ def two_column_info() -> dict:
     }
 
 
-class LayoutPlanTest(unittest.TestCase):
+class LayoutPlanTest(CatalogIsolated):
     def test_auto_waterfall_starts_with_python(self) -> None:
         self.assertEqual(layout_router.plan("auto")[0], "python")
 
@@ -55,7 +61,7 @@ class LayoutPlanTest(unittest.TestCase):
         self.assertEqual(layout_router.normalize_engine(None), "auto")
 
 
-class LayoutRunTest(unittest.IsolatedAsyncioTestCase):
+class LayoutRunTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     def _provider(self, calls: list[str], key: str, ok: bool = True):
         def run(request: dict) -> dict:
             calls.append(key)
@@ -166,6 +172,31 @@ class LayoutRunTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["ok"])
         self.assertEqual(len(outcome["attempts"]), 3)
         self.assertIn("都没找到题块", outcome["detail"])
+
+
+class LayoutNoCatalogTest(CatalogIsolated):
+    """目录缺失/未声明步骤：具体档归自动或诚实失败，底座不猜模型。"""
+
+    def test_missing_catalog_normalizes_specific_pick_to_auto(self) -> None:
+        shutil.rmtree(self.plugin)
+        self.assertEqual(layout_router.normalize_engine("yolo"), "auto")
+        self.assertEqual(layout_router.normalize_engine("cloud"), "auto")
+        self.assertEqual(layout_router.plan("auto"), ("python", "yolo", "cloud"))
+
+    def test_entry_without_plan_fails_honestly(self) -> None:
+        (self.plugin / "catalog.toml").write_text(
+            '[[entry]]\nid = "planless"\nname = "没写队列"\n'
+            'capability = "layout"\nrule = "blocked"\n', encoding="utf-8")
+        self.assertEqual(layout_router.normalize_engine("planless"), "planless")
+        self.assertEqual(layout_router.plan("planless"), ())
+
+        async def scenario() -> dict:
+            return await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}],
+                                           "planless", {})
+
+        outcome = asyncio.run(scenario())
+        self.assertFalse(outcome["ok"])
+        self.assertIn("只走选中引擎，不降级", outcome["detail"])
 
 
 class LayoutPythonTest(unittest.TestCase):

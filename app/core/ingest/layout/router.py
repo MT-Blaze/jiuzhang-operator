@@ -1,11 +1,10 @@
 """版面引擎总调度：自动走瀑布，选了谁就只走谁（2026-11-18 主公拍板）。
 
 - 自动：图片卷 OCR 主路优先（D7），不达标退回 python → yolo → cloud 瀑布；
-- RapidOCR·快：只跑本地 OCR 切题；
-- YOLO·版面：只跑本机 YOLO；
-- 云端视觉：只跑云端版面。
+- 具体档：引擎名单与要走的步骤全由插件 catalog 声明（plan_layout／
+  aliases_layout），底座只认步骤实现名、不认模型；目录缺失一律归自动。
 
-具体档失败 ok=False 显性化，不级联、不偷换；旧值 cloud 兼容映射到云端视觉。
+具体档失败 ok=False 显性化，不级联、不偷换；旧引擎名经 catalog 别名兼容映射。
 每一级都返回同一个 JSON 结构：``{ok, engine, pages, columns, detail}``；
 ``pages`` 是 ``{页码: [题块]}``，题块字段与 ``render.service`` 完全一致。
 各级实现由调用方注入，测试不必真的起 YOLO 或云端。
@@ -17,34 +16,40 @@ import inspect
 from typing import Any, Callable
 
 LAYOUT_AUTO = "auto"
-LAYOUT_OCR = "rapidocr_fast"
-LAYOUT_YOLO = "yolo"
-LAYOUT_CLOUD = "cloud_vision"
-LAYOUT_ENGINES = (LAYOUT_AUTO, LAYOUT_OCR, LAYOUT_YOLO, LAYOUT_CLOUD)
+# 自动永远从 python 起；具体档队列由 catalog 的 plan_layout 数据声明。
+_AUTO_PLAN = ("python", "yolo", "cloud")
 
-# 老插件只会发旧引擎名：映射到新档位，旧调用方不必跟着改。
-_ALIASES = {"cloud": LAYOUT_CLOUD, "ocr": LAYOUT_OCR}
 
-# 队列里只写引擎名；自动永远从 python 起，具体档只有一级。
-_PLANS = {
-    LAYOUT_AUTO: ("python", "yolo", "cloud"),
-    LAYOUT_OCR: ("ocr",),
-    LAYOUT_YOLO: ("yolo",),
-    LAYOUT_CLOUD: ("cloud",),
-}
+def _layout_entries() -> list[dict[str, Any]]:
+    from app.core.ingest import registry
+
+    return [item for item in registry.catalog()
+            if str(item.get("capability") or "") in ("layout", "both")]
 
 
 def normalize_engine(value: Any) -> str:
-    """前端交来的引擎名 → 白名单内的一个；认不出就当自动，绝不猜。"""
+    """前端交来的引擎名 → 目录内的一个；认不出就当自动，绝不猜。"""
     text = str(value or "").strip().lower()
-    if text in LAYOUT_ENGINES:
-        return text
-    return _ALIASES.get(text, LAYOUT_AUTO)
+    if not text or text == LAYOUT_AUTO:
+        return LAYOUT_AUTO
+    for item in _layout_entries():
+        entry_id = str(item["id"])
+        if text == entry_id.lower():
+            return entry_id
+        if text in [str(alias).lower() for alias in item.get("aliases_layout") or []]:
+            return entry_id
+    return LAYOUT_AUTO
 
 
 def plan(engine: Any) -> tuple[str, ...]:
-    """本次选择要依次尝试的引擎队列。"""
-    return _PLANS[normalize_engine(engine)]
+    """本次选择要依次尝试的引擎队列；具体档队列来自 catalog 数据。"""
+    picked = normalize_engine(engine)
+    if picked == LAYOUT_AUTO:
+        return _AUTO_PLAN
+    for item in _layout_entries():
+        if str(item["id"]) == picked:
+            return tuple(str(step) for step in item.get("plan_layout") or [])
+    return ()
 
 
 def default_providers() -> dict[str, Callable[[dict[str, Any]], Any]]:
