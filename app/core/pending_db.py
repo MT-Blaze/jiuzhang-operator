@@ -19,7 +19,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.core import bank, questions, wire
+from app.core import wire
+from app.core.bank import questions
+from app.core.bank import service as bank
 from app.core.config import settings
 from app.core.content import pinyin
 

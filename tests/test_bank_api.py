@@ -156,7 +156,7 @@ class BankApiContractTest(unittest.TestCase):
         cls.seed_path = seed_dir / "bank.db"
 
         sys.path.insert(0, str(ROOT))
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         documents = []
         for index in range(1, 121):
@@ -1186,7 +1186,7 @@ class MigratedBankIntegrityTest(unittest.TestCase):
         os.environ["JZO_DATA_DIR"] = str(data_dir)
         os.environ["JZO_PLUGINS_DIR"] = str(PLUGIN_SOURCE_DIR)
         sys.path.insert(0, str(ROOT))
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         cls.bank = bank
 
@@ -1235,7 +1235,7 @@ class MigratedBankIntegrityTest(unittest.TestCase):
             con.close()
 
     def test_every_document_survives_the_round_trip_and_passes_schema(self) -> None:
-        from app.core.questions import validate_question  # noqa: PLC0415
+        from app.core.bank.questions import validate_question  # noqa: PLC0415
 
         documents = self._documents()
         self.assertEqual(len(documents), 456)
@@ -1360,7 +1360,7 @@ class LegacyWideTableSeedTest(unittest.TestCase):
 
         self.addCleanup(restore)
 
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         with self.assertRaises(bank.BankError) as ctx:
             bank.stats(PLUGIN_ID)

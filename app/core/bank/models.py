@@ -1,7 +1,7 @@
 """Pydantic 响应模型：题目单题与分页列表。
 
 这些模型用于 FastAPI 路由的 ``response_model``，确保返回结构稳定、类型安全。
-注意：模型字段必须与 ``app.core.questions._row_to_document`` 返回结构一致。
+注意：模型字段必须与 ``app.core.bank.questions._row_to_document`` 返回结构一致。
 """
 
 from __future__ import annotations

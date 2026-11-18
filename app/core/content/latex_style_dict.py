@@ -175,7 +175,7 @@ def rewrite_alias_spans(text: str) -> str:
     """只在数学段内把等价写法收敛到统一写法；段外原样。
 
     这是 ``normalize_latex`` 沿用的旧口径，逐字保持不变——查重指纹链（
-    ``app/core/bank_dedupe.py``）直接依赖它的输出。
+    ``app/core/bank/engine/dedupe.py``）直接依赖它的输出。
     """
     if not isinstance(text, str):
         return ""

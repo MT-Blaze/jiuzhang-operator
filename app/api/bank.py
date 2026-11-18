@@ -17,9 +17,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 
-from app.core import bank, basket, questions
-from app.core import bank_provider as provider
-from app.core import bank_transfer as transfer
+from app.core.bank import basket, questions
+from app.core.bank import provider
+from app.core.bank import service as bank
+from app.core.bank.engine import transfer
 from app.core.security import require_write_token
 from app.api import workspaces as workspace_api
 

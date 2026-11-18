@@ -11,7 +11,7 @@
 3. **兜底**：配置失效时回退默认 provider 并如实带 ``fallback_reason``——
    「插件坏了，底座还能用」（AGENTS §2），绝不静默换成别的插件。
 
-这里不解释题目结构、不碰数据库：题目读写仍由 ``app/core/bank.py`` 与
+这里不解释题目结构、不碰数据库：题目读写仍由 ``app/core/bank/service.py`` 与
 ``app/api/bank.py`` 按传入的 plugin_id 完成。
 """
 

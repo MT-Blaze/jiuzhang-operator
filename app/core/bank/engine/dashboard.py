@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from app.core.bank_schema import EXT_MIGRATION_KEY, LOCAL_TZ, connect
+from app.core.bank.engine.schema import EXT_MIGRATION_KEY, LOCAL_TZ, connect
 from datetime import datetime, timedelta
 from typing import Any
 

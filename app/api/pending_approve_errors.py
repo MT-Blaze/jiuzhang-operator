@@ -5,7 +5,9 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from app.bank_engine.writer import EntryRejected
-from app.core import bank, pending_bank, questions
+from app.core import pending_bank
+from app.core.bank import questions
+from app.core.bank import service as bank
 
 
 def approve_error(exc: Exception) -> HTTPException:

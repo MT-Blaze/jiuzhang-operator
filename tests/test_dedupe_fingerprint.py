@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import unittest
 
-from app.core import bank_dedupe, pending_dedupe
+from app.core import pending_dedupe
+from app.core.bank.engine import dedupe as bank_dedupe
 
 PLACEHOLDER = bank_dedupe.SKELETON_PLACEHOLDER
 

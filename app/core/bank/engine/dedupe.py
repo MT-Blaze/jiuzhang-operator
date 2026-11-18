@@ -31,8 +31,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from app.core import bank, wire
-from app.core import bank_fts
+from app.core import wire
+from app.core.bank import service as bank
+from app.core.bank.engine import fts as bank_fts
 
 MAX_GROUPS = 200      # 一次最多回多少组：再多就该分页看，不许把全库倒进 iframe
 MAX_GROUP_SIZE = 20   # 单组最多装配多少条全文；正常不会触及，触及说明库里有一大坨同款
@@ -58,8 +59,8 @@ def _stamp() -> str:
 
 
 # 军令 #32 · S5b：判据纯函数层已拆到 dedupe_signature（本文件原 914 行撞破 800 行上限）。
-# 这里原位 re-export，外部仍按 bank_dedupe.<名字> 取用；搬动零改语义，别在这儿再写第二份口径。
-from app.core.dedupe_signature import (  # noqa: F401
+# 这里原位 re-export，外部仍按 ``app.core.bank.engine.dedupe``.<名字> 取用；搬动零改语义，别在这儿再写第二份口径。
+from app.core.bank.engine.dedupe_signature import (  # noqa: F401
     _compare_form,
     normalize_text,
     _json_list,

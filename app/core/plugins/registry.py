@@ -592,7 +592,7 @@ def _retired_plugin_ids(root: Path) -> set[str]:
     旧视图插件已物理并入 bank-engine，老工作区残留目录也不再作为第二个插件
     出现在控制台（否则老师会被要求分别更新两个包）；目录原样保留以便回退。
     """
-    from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
+    from app.core.bank.provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 
     retired = {"org.jiuzhang.bank-ui"}
     if manifests.manifest_path(root / DEFAULT_PROVIDER_ID) is None:

@@ -9,8 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
-from app.core import questions as store
-from app.core.models import Question, QuestionPage
+from app.core.bank import questions as store
+from app.core.bank.models import Question, QuestionPage
 from app.core.security import require_write_token
 
 router = APIRouter(prefix="/api/questions", tags=["questions"])

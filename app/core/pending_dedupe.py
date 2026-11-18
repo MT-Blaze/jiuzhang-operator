@@ -17,7 +17,10 @@ import os
 import threading
 from typing import Any
 
-from app.core import bank, bank_dedupe, questions, wire
+from app.core import wire
+from app.core.bank import questions
+from app.core.bank import service as bank
+from app.core.bank.engine import dedupe as bank_dedupe
 from app.core.pending_batches import batch_row
 from app.core.pending_db import PendingNotFound, connect
 
@@ -149,7 +152,7 @@ def batch_duplicate_groups(batch_id: str, provider_id: str, *,
 # 所以 warm_batch_scan 同时写 ``dedupe_scans``（账目/状态）与 ``dedupe_findings``
 # （每条候选一行）；scan_state 在缓存未命中时回读库。两张表只存结论、不存题目，
 # 池内容永远是事实来源——重算一遍自然覆盖。
-# 写法对齐既有先例 ``app/core/basket.py:23``、``app/core/plugins/state.py:20``：
+# 写法对齐既有先例 ``app/core/bank/basket.py:23``、``app/core/plugins/state.py:20``：
 # 模块级 ``threading.Lock`` + 进程内状态。
 _scan_lock = threading.Lock()
 _scan_cache: dict[str, dict[str, Any]] = {}
@@ -726,7 +729,7 @@ def warm_dedupe_scan(batch_id: str, *, admit: bool = True) -> None:
     """
     provider_id = ""
     try:
-        from app.core import bank_provider
+        from app.core.bank import provider as bank_provider
 
         provider_id = str(bank_provider.resolve().get("plugin_id") or "")
     except Exception as error:  # 只作降级：取不到题库就把空 id 交给下游的 failed 分支

@@ -23,7 +23,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from app.core import bank, wire
+from app.core import wire
+from app.core.bank import service as bank
 from app.core.config import settings
 from app.core.pending_db import (
     DATA_URL_RE,

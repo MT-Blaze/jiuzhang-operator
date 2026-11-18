@@ -89,7 +89,7 @@ class PendingApiContractTest(unittest.TestCase):
         # ``banks/<id>.db`` 落成没有表的空文件，随后 approve 的结构守卫报 400
         # 「题库 … 缺表：bank_meta」（S6k 十跑第 5 跑实证）。这是夹具时序，
         # 不是产品要判的账（不改产品读路径）。
-        from app.core import bank_schema
+        from app.core.bank.engine import schema as bank_schema
 
         (cls.data_dir / "banks").mkdir(parents=True, exist_ok=True)
         bank_schema.init_bank(PLUGIN_ID, db_path=cls.data_dir / "banks" / f"{PLUGIN_ID}.db")
@@ -666,7 +666,7 @@ class PoolEvictionHttpTest(unittest.TestCase):
         # 后台初查线程会抢先把 ``banks/<id>.db`` 落成一个**没有表的空文件**，
         # 于是随后 ``approve`` 的结构守卫报 400「库缺少 questions/topic_notes/…」。
         # 这是夹具的时序，不是产品要判的账，所以先把库摆正（不改产品读路径）。
-        from app.core import bank_schema
+        from app.core.bank.engine import schema as bank_schema
 
         (cls.data_dir / "banks").mkdir(parents=True, exist_ok=True)
         bank_schema.init_bank(PLUGIN_ID, db_path=cls.data_dir / "banks" / f"{PLUGIN_ID}.db")
@@ -1111,7 +1111,7 @@ class FinalGateHttpTest(PoolEvictionHttpTest):
         seed_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql",
                         seed_dir / "schema.sql")
-        from app.core import bank_schema
+        from app.core.bank.engine import schema as bank_schema
 
         (cls.data_dir / "banks").mkdir(parents=True, exist_ok=True)
         bank_schema.init_bank(PLUGIN_ID, db_path=cls.data_dir / "banks" / f"{PLUGIN_ID}.db")

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from app.core import questions as question_contract, wire
-from app.core.bank_codec import _grade_from, answer_to_storage, extensions_to_array
-from app.core.bank_query import _fts_clear, _fts_upsert, get_question
-from app.core.bank_schema import (
+from app.core import wire
+from app.core.bank import questions as question_contract
+from app.core.bank.engine.codec import _grade_from, answer_to_storage, extensions_to_array
+from app.core.bank.engine.query import _fts_clear, _fts_upsert, get_question
+from app.core.bank.engine.schema import (
     BLOCKING_ISSUES,
     BankConflict,
     BankError,

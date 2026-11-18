@@ -24,8 +24,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.core import bank, bank_dedupe, wire
-from app.core.bank_codec import answer_from_storage
+from app.core import wire
+from app.core.bank import service as bank
+from app.core.bank.engine import dedupe as bank_dedupe
+from app.core.bank.engine.codec import answer_from_storage
 from app.core.config import settings
 from app.core.pending_db import (
     PENDING_ASSET_URI_PREFIX,

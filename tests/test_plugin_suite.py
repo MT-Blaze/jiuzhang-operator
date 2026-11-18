@@ -20,7 +20,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import bank_query, toml_io
+from app.core import toml_io
+from app.core.bank.engine import query as bank_query
 from app.core.plugins.contract import suite as plugin_suite
 from app.core.plugins.lifecycle import install as plugin_install
 from app.core.plugins.registry import discover_plugins

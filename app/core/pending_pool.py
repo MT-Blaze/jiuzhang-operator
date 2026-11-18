@@ -26,8 +26,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from app.core import bank, bank_dedupe, pending_assets, pending_batches, wire
-from app.core import pending_dedupe, questions
+from app.core import pending_assets, pending_batches, pending_dedupe, wire
+from app.core.bank import questions
+from app.core.bank import service as bank
+from app.core.bank.engine import dedupe as bank_dedupe
 from app.core.pending_db import (
     PENDING_ASSET_URI_PREFIX,
     POOL_ID_RE,

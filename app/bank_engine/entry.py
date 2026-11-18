@@ -18,7 +18,7 @@ from app.bank_engine.models import (
     NewSupplement,
 )
 from app.bank_engine.writer import EntryRejected, normalize_exam_type
-from app.core.exam_name import parse_mock_round
+from app.core.bank.exam_name import parse_mock_round
 
 _IMAGE_ROLES = {"stem": "stem", "option": "option", "solution": "solution", "answer": "answer"}
 

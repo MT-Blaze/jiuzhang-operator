@@ -15,8 +15,9 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core import bank as core_bank
-from app.core import bank_provider, host_restart, state_store, workspace_removal
+from app.core import host_restart, state_store, workspace_removal
+from app.core.bank import provider as bank_provider
+from app.core.bank import service as core_bank
 from app.core.config import (
     default_database_path,
     root_data_dir,

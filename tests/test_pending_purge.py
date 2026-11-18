@@ -66,8 +66,9 @@ class PurgeCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import (bank, pending_bank, pending_bank_batches,
+        from app.core import (pending_bank, pending_bank_batches,
                               pending_batches, pending_dedupe, pending_db)
+        from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank

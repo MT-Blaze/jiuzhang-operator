@@ -45,7 +45,8 @@ from app.core.config import plugin_source_root  # noqa: E402
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 # ``settings.data_dir`` 每次求值都现读 ``JZO_DATA_DIR``（app/core/config.py:66 是 property，
 # 不是导入期死值），所以底座可以在这里照常顶层 import，临时工作区在 setUp 里换。
-from app.core import bank_dedupe, pending_dedupe, pending_db  # noqa: E402
+from app.core import pending_dedupe, pending_db  # noqa: E402
+from app.core.bank.engine import dedupe as bank_dedupe
 
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STEM_POOL = r"已知向量 $\vec{a}=(1,2)$，$\vec{b}=(x,4)$，若 $\vec{a}\parallel\vec{b}$，则 $x$ 的值为（　　）。"
@@ -224,7 +225,8 @@ class _ScanCase(unittest.TestCase):
     """带临时工作区的整链路用例：入池 → 初查 → 清空缓存 → 再读。"""
 
     def setUp(self) -> None:
-        from app.core import bank, pending_bank, pending_batches, pending_db as pdb
+        from app.core import pending_bank, pending_batches, pending_db as pdb
+        from app.core.bank import service as bank
         from app.core.config import settings
 
         self.bank = bank

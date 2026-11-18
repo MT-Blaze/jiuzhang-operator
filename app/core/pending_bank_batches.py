@@ -12,7 +12,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from app.core import bank, pending_dedupe, questions, wire
+from app.core import pending_dedupe, wire
+from app.core.bank import questions
+from app.core.bank import service as bank
 from app.core.pending_assets import backup_path, backup_paths, drop_assets
 from app.core.pending_batches import batch_card, batch_row, refresh_batch
 from app.core.pending_db import (

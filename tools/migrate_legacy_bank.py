@@ -40,9 +40,9 @@ if str(ROOT) not in sys.path:
 from app.core.config import plugin_source_root  # noqa: E402
 
 PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
-from app.core import bank  # noqa: E402
+from app.core.bank import service as bank  # noqa: E402
 from app.core.config import settings  # noqa: E402
-from app.core.questions import validate_question  # noqa: E402
+from app.core.bank.questions import validate_question  # noqa: E402
 
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 DEFAULT_SOURCE = Path("E:/math-question-bank-main/math_question_bank.db")

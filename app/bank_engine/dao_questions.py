@@ -21,7 +21,7 @@ from app.bank_engine.models import (
     QuestionSummary,
     QuestionSupplement,
 )
-from app.core.exam_name import compose_exam_name
+from app.core.bank.exam_name import compose_exam_name
 
 QUESTION_COLUMNS = (
     "id, stem, subject_id, question_type_id, difficulty_id, quality_id, "

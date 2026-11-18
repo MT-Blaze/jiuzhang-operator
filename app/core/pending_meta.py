@@ -21,8 +21,10 @@ import secrets
 import sqlite3
 from typing import Any
 
-from app.core import bank, questions, wire
-from app.core.exam_name import compose_exam_name
+from app.core import wire
+from app.core.bank import questions
+from app.core.bank import service as bank
+from app.core.bank.exam_name import compose_exam_name
 from app.core.pending_db import (
     GROUP_ITEM_SEP,
     GROUP_SEP,
@@ -339,7 +341,7 @@ def sync_approved_sources(batch_id: str, meta: dict[str, Any]) -> tuple[int, lis
     这一步是尽力而为：主库写不进去时如实报出来，绝不假装同步成功，
     也绝不因为主库暂时不可用就把池子里的同步一起回滚。
     """
-    from app.core import bank_provider
+    from app.core.bank import provider as bank_provider
 
     con = connect()
     try:

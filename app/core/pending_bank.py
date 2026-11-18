@@ -41,7 +41,10 @@ import hashlib
 import threading
 from typing import Any
 
-from app.core import bank, bank_dedupe, pending_dedupe, questions, wire
+from app.core import pending_dedupe, wire
+from app.core.bank import questions
+from app.core.bank import service as bank
+from app.core.bank.engine import dedupe as bank_dedupe
 from app.core.pending_assets import (
     backup_path,
     decode_data_url,

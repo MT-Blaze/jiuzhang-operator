@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
-from app.core import bank_fts
+from app.core.bank.engine import fts as bank_fts
 
 
 class SegmentTest(unittest.TestCase):

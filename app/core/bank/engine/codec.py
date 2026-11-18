@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from app.core.bank_schema import (
+from app.core.bank.engine.schema import (
     CHOICE_TYPES,
     EXTENSION_LABELS,
     EXTENSION_ORDER,

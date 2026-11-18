@@ -9,7 +9,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from app.core import questions, wire
+from app.core import wire
+from app.core.bank import questions
 from app.core.pending_db import PendingError, PendingNotFound, connect
 
 _EDITABLE_FIELDS = ("type", "stem", "options", "answer", "solution")

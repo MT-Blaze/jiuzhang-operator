@@ -12,7 +12,7 @@ PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律以 500 行为中心、�
 3. 按 ``create(deps)`` 拆模块后，被依赖的命名空间必须**在加载次序里排在前面**，
    否则组合根执行时 ``window.Jzo*`` 还不存在，白屏都算轻的——插件与底座两条链都钉这条；
 4. 底座 Python（``app/**``）同样按三档判——拆库时留下的教训：2226 行的
-   ``app/core/bank.py`` 让契约测试无处下手。
+   ``app/core/bank/service.py`` 让契约测试无处下手。
 
 ``LEGACY_OVER_CEILING`` 是迁移冻结台账：它只回答「哪些文件算老文件」。老文件不再拦、也不警告——
 行数随功能调整可涨可落，测试只打印实测行数供看趋势；台账本身必须保留，删了下次就分不清
@@ -66,13 +66,13 @@ LEGACY_OVER_CEILING = {
     "static/js/stage_relay_io.js": 706,
     "app/core/pending_db.py": 676,
     "app/core/pending_bank.py": 639,
-    "app/core/bank_schema.py": 624,
-    "app/core/bank_write.py": 623,
+    "app/core/bank/engine/schema.py": 624,
+    "app/core/bank/engine/write.py": 623,
     "plugins/org.jiuzhang.editor/dist/ui_intake.js": 595,
-    "app/core/bank_query.py": 593,
+    "app/core/bank/engine/query.py": 593,
     "static/js/st_workspace.js": 564,
     "plugins/org.jiuzhang.paper-gen/dist/plugin.css": 563,
-    "app/core/dedupe_signature.py": 540,
+    "app/core/bank/engine/dedupe_signature.py": 540,
     "static/js/stage_command.js": 541,
     "static/js/st_backup.js": 537,
     "app/core/backup/restore.py": 532,
@@ -257,7 +257,7 @@ class CeilingGateProofTest(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_05_legacy_file_is_never_blocked_nor_warned(self) -> None:
-        rel = "app/core/bank_query.py"
+        rel = "app/core/bank/engine/query.py"
         self.assertIn(rel, LEGACY_OVER_CEILING)
         failures, warnings = self.scan(rel, 1500)
         self.assertEqual(failures, [])

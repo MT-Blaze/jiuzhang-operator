@@ -1,8 +1,8 @@
 """题库批量导入导出：``.json`` / ``.zip`` 题目包的解析、逐题校验、批量写入与导出回灌。
 
 两道关口各守一头：
-- 包这一层（``app/core/bank_transfer.py``）：坏 JSON、坏 zip、空包、超限都要拒；
-- 题目这一层（``app/core/bank.py`` + ``app/core/question_contract.py``）：逐题校验，一题不过整批回滚。
+- 包这一层（``app/core/bank/engine/transfer.py``）：坏 JSON、坏 zip、空包、超限都要拒；
+- 题目这一层（``app/core/bank/service.py`` + ``app/core/question_contract.py``）：逐题校验，一题不过整批回滚。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_bank_batch_io``
 """
@@ -68,7 +68,7 @@ class BundleParsingTest(unittest.TestCase):
 
     def setUp(self) -> None:
         sys.path.insert(0, str(ROOT))
-        from app.core import bank_transfer  # noqa: PLC0415
+        from app.core.bank.engine import transfer as bank_transfer  # noqa: PLC0415
 
         self.transfer = bank_transfer
 
@@ -156,7 +156,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql", seed_dir / "schema.sql")
 
         sys.path.insert(0, str(ROOT))
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         cls.bank = bank
         bank.import_documents(
@@ -344,7 +344,7 @@ class BankBatchIoHttpTest(unittest.TestCase):
         self.assertEqual(bundle["count"], len(bundle["questions"]))
         self.assertEqual(bundle["count"], self._total())
 
-        from app.core.questions import validate_question  # noqa: PLC0415
+        from app.core.bank.questions import validate_question  # noqa: PLC0415
 
         for document in bundle["questions"]:
             validate_question(document)

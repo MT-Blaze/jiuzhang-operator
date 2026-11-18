@@ -37,7 +37,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.core.bank_provider import PROVIDER_CAPABILITY
+from app.core.bank.provider import PROVIDER_CAPABILITY
 from app.core.plugins.contract import manifests
 from app.core.config import plugins_dir, settings
 

@@ -10,9 +10,10 @@
 from __future__ import annotations
 
 import sqlite3
-from app.core import bank_fts, wire
-from app.core.bank_codec import _assemble
-from app.core.bank_schema import (
+from app.core import wire
+from app.core.bank.engine import fts as bank_fts
+from app.core.bank.engine.codec import _assemble
+from app.core.bank.engine.schema import (
     ASSEMBLE_CHUNK,
     BankError,
     BankNotFound,

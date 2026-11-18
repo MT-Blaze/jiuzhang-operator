@@ -168,8 +168,8 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
         return Path(args.bank_db), Path(args.pending_db)
 
     from app.core import config
-    from app.core.bank_provider import DEFAULT_PROVIDER_ID
-    from app.core.bank_schema import bank_db_path
+    from app.core.bank.provider import DEFAULT_PROVIDER_ID
+    from app.core.bank.engine.schema import bank_db_path
     from app.core.pending_db import pending_db_path
 
     config.load_current_workspace()

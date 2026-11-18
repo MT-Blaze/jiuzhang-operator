@@ -20,7 +20,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.core import bank as bank_core
+from app.core.bank import service as bank_core
 from app.core.config import settings
 from tools.build_plugin import build_plugin
 from tests.core_sources import settings_source, workspace_source  # noqa: E402

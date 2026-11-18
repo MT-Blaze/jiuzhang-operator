@@ -121,7 +121,8 @@ class DedupeScanCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import bank, pending_bank, pending_batches, pending_dedupe, pending_db
+        from app.core import pending_bank, pending_batches, pending_dedupe, pending_db
+        from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank
@@ -487,7 +488,7 @@ class DegradedTest(DedupeScanCase):
         """补漏 8：bank_provider.resolve() 抛异常只落 failed，绝不冒出线程。"""
         saved = self._draft(_doc(STEM_A))
         batch_id = saved["batch_id"]
-        with mock.patch("app.core.bank_provider.resolve",
+        with mock.patch("app.core.bank.provider.resolve",
                         side_effect=RuntimeError("模拟 provider 解析炸了")):
             self.assertEqual(self._drain(), 1, "线程内异常必须被就地接住")
             state = self.dedupe.scan_state(batch_id)

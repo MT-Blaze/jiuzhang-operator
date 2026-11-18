@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 
 from app.bank_engine.seeds.exam_seed import EXAM_TYPE_ROWS
-from app.core.exam_name import parse_mock_round
+from app.core.bank.exam_name import parse_mock_round
 
 EXAMS_TABLE = "exams"
 TYPES_TABLE = "dict_exam_types"

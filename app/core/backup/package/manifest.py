@@ -96,7 +96,7 @@ def select_bank_db(stage: Path) -> Path | None:
     """挑出当前工作区的题库库：活跃 provider 优先，其次任意 banks/*.db。"""
     wanted = ""
     try:
-        from app.core import bank_provider
+        from app.core.bank import provider as bank_provider
 
         wanted = bank_provider.resolve().get("plugin_id") or ""
     except Exception:  # noqa: BLE001 - 发现层异常不该阻断备份

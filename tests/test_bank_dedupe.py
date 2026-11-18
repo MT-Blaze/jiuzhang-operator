@@ -89,7 +89,7 @@ def _options(spec: list[dict[str, str]], *, shuffle: bool = False, dfrac: bool =
 
 
 def _extensions(entries: dict[str, object]) -> str:
-    from app.core import bank  # noqa: PLC0415
+    from app.core.bank import service as bank  # noqa: PLC0415
 
     return _encode(bank.extensions_to_array(entries))
 
@@ -160,7 +160,7 @@ def _cursor(path: Path):
 
 def build_bank(path: Path) -> None:
     """按冻结 schema 建库并铺夹具：1 个版本、2 张 source、3 个考向、6 道题（两组重复 + 一道独苗）。"""
-    from app.core import bank  # noqa: PLC0415
+    from app.core.bank import service as bank  # noqa: PLC0415
 
     bank.init_bank(PLUGIN_ID, db_path=path)
     with _cursor(path) as con:
@@ -202,7 +202,7 @@ class DedupeCase(unittest.TestCase):
 
     def setUp(self) -> None:
         sys.path.insert(0, str(ROOT))
-        from app.core import bank_dedupe
+        from app.core.bank.engine import dedupe as bank_dedupe
         from app.core.config import settings
 
         self.dedupe = bank_dedupe
@@ -463,7 +463,7 @@ class MergeTest(DedupeCase):
         self.assertEqual(self._count("question_topics"), 7)
 
     def test_20_fts_index_keeps_no_ghost_of_the_copy(self) -> None:
-        from app.core import bank_fts  # noqa: PLC0415
+        from app.core.bank.engine import fts as bank_fts  # noqa: PLC0415
 
         if not bank_fts.available():
             self.skipTest("当前 SQLite 没有编译 FTS5")
@@ -478,7 +478,7 @@ class MergeTest(DedupeCase):
         self.assertNotIn("q_dup002", indexed, "搜索里留着已删副本，点进去就是 404")
 
     def test_21_rejected_inputs_leave_the_library_alone(self) -> None:
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         cases = [
             (("q_dup001", []), self.dedupe.MergeRejected, "副本列表为空"),

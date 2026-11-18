@@ -24,7 +24,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from app.core import bank_provider, startup_prefs
+from app.core import startup_prefs
+from app.core.bank import provider as bank_provider
 from app.core.plugins import state as plugin_state
 from app.core.plugins.lifecycle import update as plugin_update
 from app.core.config import (

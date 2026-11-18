@@ -2,7 +2,7 @@
 
 守的是四条不读代码就想不到的底线：
 
-1. **官方库只是默认值**：默认 provider id 只允许出现在 ``bank_provider.DEFAULT_PROVIDER_ID``
+1. **官方库只是默认值**：默认 provider id 只允许出现在 ``app.core.bank.provider.DEFAULT_PROVIDER_ID``
    一处，宿主与其余模块一律走解析结果；
 2. **不合规的插件选不上题库**：必须已安装**且**声明 ``bank.provider`` 能力；
 3. **配置失效要回退且要说人话**：被选中的库卸载后，读取回退默认库并带 ``fallback_reason``，
@@ -26,7 +26,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank_provider, toml_io, wire
+from app.core import toml_io, wire
+from app.core.bank import provider as bank_provider
 from app.core.config import settings
 from tests.core_sources import stage_source  # noqa: E402
 
@@ -96,7 +97,7 @@ class ProviderResolutionTest(_Isolated):
                     offenders.append(f"{path.relative_to(ROOT)}:{number}")
         self.assertEqual([], offenders, "这些行把官方题库 id 写死成了路由目标：" + ", ".join(offenders))
         # 默认值的唯一出处必须在 provider 解析器里
-        source = (ROOT / "app" / "core" / "bank_provider.py").read_text(encoding="utf-8")
+        source = (ROOT / "app" / "core" / "bank" / "provider.py").read_text(encoding="utf-8")
         self.assertIn(f'DEFAULT_PROVIDER_ID = "{literal}"', source)
 
     def test_03_declared_capability_is_required_to_be_eligible(self) -> None:
@@ -227,7 +228,7 @@ class ProviderChannelTest(unittest.TestCase):
         from fastapi import HTTPException
 
         from app.api import bank as bank_api
-        from app.core import bank
+        from app.core.bank import service as bank
 
         with mock.patch.object(bank, "textbooks", side_effect=bank.BankNotFound("没有这座库")):
             with self.assertRaises(HTTPException) as caught:

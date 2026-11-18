@@ -4,7 +4,7 @@
 ``_check_structure`` 守卫结构，``upgrade_structure`` 走 v0.8.2 升级（自检不过整事务回滚）。
 常量与错误类型也是这一层的对外口径——表名、列名、层别码只从这里取，绝不接受插件输入。
 
-上层按域分工：编解码 bank_codec.py、查询 bank_query.py、写入 bank_write.py、看板 bank_dashboard.py、审核 bank_review.py；对外入口仍是 ``app.core.bank``。
+上层按域分工：编解码 codec.py、查询 query.py、写入 write.py、看板 dashboard.py、审核 review.py；对外入口仍是 ``app.core.bank.service``。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import re
 import shutil
 import sqlite3
 import threading
-from app.core.bank_provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
+from app.core.bank.provider import DEFAULT_PROVIDER_ID, LEGACY_PROVIDER_IDS
 from app.core.config import DEFAULT_WORKSPACE_ID, current_workspace_id, plugins_dir, settings
 from app.legacy import LEGACY_SCHEMA_PATH
 from datetime import datetime, timedelta, timezone

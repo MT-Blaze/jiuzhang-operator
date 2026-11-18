@@ -15,7 +15,8 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
-from app.core import ingest, pending_bank, questions
+from app.core import ingest, pending_bank
+from app.core.bank import questions
 from app.core.layout import layout_router
 from app.core.recognize import recognize_router
 from app.core.security import require_write_token

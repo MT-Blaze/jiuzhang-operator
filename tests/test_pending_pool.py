@@ -115,8 +115,9 @@ class PoolCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import (bank, pending_assets, pending_bank, pending_batches,
+        from app.core import (pending_assets, pending_bank, pending_batches,
                               pending_db, pending_dedupe, pending_pool)
+        from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank

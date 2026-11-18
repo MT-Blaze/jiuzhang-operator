@@ -69,9 +69,10 @@ class BatchLifecycleCase(unittest.TestCase):
     """隔离临时工作区；后台初查线程按名 join，Windows 上不抢 SQLite 句柄。"""
 
     def setUp(self) -> None:
-        from app.core import (bank, pending_assets, pending_bank,
+        from app.core import (pending_assets, pending_bank,
                               pending_bank_batches, pending_batches, pending_db,
                               pending_dedupe)
+        from app.core.bank import service as bank
 
         self.bank = bank
         self.pending_assets = pending_assets

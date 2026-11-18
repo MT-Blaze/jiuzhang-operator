@@ -6,10 +6,10 @@ FTS 索引——主库里不留孤儿行。"""
 
 from __future__ import annotations
 
-from app.core import questions as question_contract
-from app.core.bank_codec import _extension_value
-from app.core.bank_query import _fts_remove, _fts_upsert, get_question
-from app.core.bank_schema import (
+from app.core.bank import questions as question_contract
+from app.core.bank.engine.codec import _extension_value
+from app.core.bank.engine.query import _fts_remove, _fts_upsert, get_question
+from app.core.bank.engine.schema import (
     BankNotFound,
     CHOICE_TYPES,
     EXT_GRADE_KEY,
@@ -18,7 +18,7 @@ from app.core.bank_schema import (
     _now,
     connect,
 )
-from app.core.bank_write import (
+from app.core.bank.engine.write import (
     _intake_document,
     _link_sources,
     _normalize_sources,

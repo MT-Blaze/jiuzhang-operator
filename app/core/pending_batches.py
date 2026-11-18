@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core import questions, wire
+from app.core import wire
+from app.core.bank import questions
 from app.core.pending_db import (
     BATCH_ID_RE,
     PENDING_ID_RE,

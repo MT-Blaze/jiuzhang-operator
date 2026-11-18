@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank
+from app.core.bank import service as bank
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]

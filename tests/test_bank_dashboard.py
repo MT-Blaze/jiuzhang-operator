@@ -85,7 +85,7 @@ class DashboardApiTest(unittest.TestCase):
         cls.seed_path = seed_dir / "bank.db"
 
         sys.path.insert(0, str(ROOT))
-        from app.core import bank  # noqa: PLC0415
+        from app.core.bank import service as bank  # noqa: PLC0415
 
         # 3 题今天、2 题昨天、5 题更早；其中 2 题带待审标记（1 今天 + 1 早期）
         documents = [

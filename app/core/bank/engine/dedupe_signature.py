@@ -1,12 +1,12 @@
 """查重判据的纯函数层：归一、四要素指纹、正文骨架、公式签名、置信度档位（军令 #32 · S5b 拆出）。
 
-**来源**：本模块整块搬自 ``app/core/bank_dedupe.py``（原 914 行撞破 800 行上限），
+**来源**：本模块整块搬自 ``app/core/bank/engine/dedupe.py``（原 914 行撞破 800 行上限），
 搬运动作为纯 extract-module——函数体、常量值、注释、判据口径逐字未改，
-``bank_dedupe`` 原位 re-export 全部名字，所有调用点（``api/pending.py``、``pending_pool.py``、
+``dedupe`` 原位 re-export 全部名字，所有调用点（``api/pending.py``、``pending_pool.py``、
 ``pending_dedupe.py``、``tests/*``）语义不变。
 
 **边界**：这里只有**字符串与结构**的比对，不碰数据库、不起事务、不认识「批次」或「池子」。
-读库扫描与收敛合并事务仍住 ``bank_dedupe``；中转站侧的配图内容哈希住 ``pending_compare``。
+读库扫描与收敛合并事务仍住 ``engine/dedupe.py``；中转站侧的配图内容哈希住 ``pending_compare``。
 
 **禁区**：
 - 指纹口径的唯一事实来源在这里（题型 ‖ 归一题干 ‖ 归一选项 ‖ 归一配图），别处不得另说一套；
@@ -22,7 +22,8 @@ import hashlib
 import unicodedata
 from typing import Any, Iterable
 
-from app.core import bank, wire
+from app.core import wire
+from app.core.bank import service as bank
 from app.core.content import latex_style_dict
 from app.core.content.question_parser import normalize_latex
 

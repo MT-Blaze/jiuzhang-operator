@@ -22,7 +22,8 @@ import unittest
 from pathlib import Path
 
 from app.api import workspaces
-from app.core import bank, toml_io
+from app.core import toml_io
+from app.core.bank import service as bank
 from app.core.config import settings
 
 ROOT = Path(__file__).resolve().parents[1]

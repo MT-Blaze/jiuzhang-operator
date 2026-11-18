@@ -29,7 +29,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.core import bank, wire
+from app.core import wire
+from app.core.bank import service as bank
 from app.core.config import settings
 from app.core.plugins.contract import manifests
 from app.core.plugins.registry import PluginRejected, discover_plugins, validate_plugin

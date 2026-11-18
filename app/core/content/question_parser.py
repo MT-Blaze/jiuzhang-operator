@@ -87,7 +87,7 @@ def normalize_latex(text: str) -> str:
     """定界符与等价记号归一；不动正文里的中文与人名，也不改写公式内容本身。
 
     记号归一的规则表在 ``app/core/content/latex_style_dict.SYMBOL_ALIASES``，本函数的
-    输出口径保持不变——查重指纹（``app/core/bank_dedupe.py``）直接复用它。
+    输出口径保持不变——查重指纹（``app/core/bank/engine/dedupe.py``）直接复用它。
     """
     if not isinstance(text, str):
         return ""

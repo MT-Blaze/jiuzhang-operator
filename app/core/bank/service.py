@@ -7,7 +7,7 @@
 
 存储层是 7 张关系表（schools / topics / questions / topic_notes / sources /
 question_topics / question_sources + bank_meta），对外仍然只给
-``app/core/question_contract.py`` 的标准文档结构。两者的差异全部在 ``bank_codec.py`` 里抹平：
+``app/core/question_contract.py`` 的标准文档结构。两者的差异全部在 ``engine/codec.py`` 里抹平：
 
 - ``extensions``：库内是有序数组 ``[{key,label,value}]``，契约是反向域名对象；
 - ``answer``：库内是单个文本列（选择题存 "A,C"，非选择题存答案正文），契约是
@@ -20,15 +20,15 @@ question_topics / question_sources + bank_meta），对外仍然只给
 
 实现按域切成六块（PLUGIN_SPEC §2.8 的单文件上限口径，Python 侧同理）：
 
-- ``bank_schema.py``    —— 库文件落点、建库与结构守卫、v0.8.2 升级、通用编解码原语与常量；
-- ``bank_codec.py``     —— 表结构 ⇄ 契约文档的编解码与出参装配；
-- ``bank_query.py``     —— 过滤装配、分页检索、大纲树、统计与 FTS 索引维护；
-- ``bank_write.py``     —— 收题、落库、批量导入与建题；
-- ``bank_dashboard.py`` —— 数据看板的只读聚合；
-- ``bank_review.py``    —— 人工审核、改题与删题。
+- ``engine/schema.py``    —— 库文件落点、建库与结构守卫、v0.8.2 升级、通用编解码原语与常量；
+- ``engine/codec.py``     —— 表结构 ⇄ 契约文档的编解码与出参装配；
+- ``engine/query.py``     —— 过滤装配、分页检索、大纲树、统计与 FTS 索引维护；
+- ``engine/write.py``     —— 收题、落库、批量导入与建题；
+- ``engine/dashboard.py`` —— 数据看板的只读聚合；
+- ``engine/review.py``    —— 人工审核、改题与删题。
 
-本文件只把六块的名字汇总成 ``app.core.bank`` 这一个入口：调用方（HTTP 路由、
-其它 core 模块、测试）一律 ``from app.core import bank``，不需要知道里面切了几刀。
+本文件只把六块的名字汇总成 ``app.core.bank.service`` 这一个入口：调用方（HTTP 路由、
+其它 core 模块、测试）一律 ``from app.core.bank import service as bank``，不需要知道里面切了几刀。
 
 安全边界：
 - 插件 ID 必须匹配反向域名；数据库文件路径由底座拼装，插件传不了任意路径；
@@ -41,7 +41,7 @@ question_topics / question_sources + bank_meta），对外仍然只给
 
 from __future__ import annotations
 
-from app.core.bank_schema import (
+from app.core.bank.engine.schema import (
     ASSEMBLE_CHUNK,
     BLOCKING_ISSUES,
     BankConflict,
@@ -106,7 +106,7 @@ from app.core.bank_schema import (
     upgrade_structure,
     validate_plugin_id,
 )
-from app.core.bank_codec import (
+from app.core.bank.engine.codec import (
     _assemble,
     _document_from,
     _extension_value,
@@ -119,7 +119,7 @@ from app.core.bank_codec import (
     extensions_to_array,
     extensions_to_object,
 )
-from app.core.bank_query import (
+from app.core.bank.engine.query import (
     _build_where,
     _flag_clause,
     _fts_clear,
@@ -143,7 +143,7 @@ from app.core.bank_query import (
     topic_notes,
     topics,
 )
-from app.core.bank_write import (
+from app.core.bank.engine.write import (
     SOURCE_FIELDS,
     _clean_source_entry,
     _ensure_school,
@@ -165,11 +165,11 @@ from app.core.bank_write import (
     prepare_import_documents,
     upsert_school,
 )
-from app.core.bank_dashboard import (
+from app.core.bank.engine.dashboard import (
     daily_counts,
     dashboard_stats,
 )
-from app.core.bank_review import (
+from app.core.bank.engine.review import (
     _strip_flags,
     delete_question,
     review_summary,

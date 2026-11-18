@@ -105,7 +105,7 @@ def main() -> int:
     seed_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / "app" / "legacy" / "bank_schema_v1.sql", seed_dir / "schema.sql")
     sys.path.insert(0, str(ROOT))
-    from app.core import bank  # noqa: PLC0415
+    from app.core.bank import service as bank  # noqa: PLC0415
 
     # 表结构按 plugins_dir() 现取现算（app/core/config.py:93 的 JZO_PLUGINS_DIR 口子），
     # 所以这两个变量必须在进程内调用 bank.* 之前就位——否则 schema.sql 会去默认工作区找。

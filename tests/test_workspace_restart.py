@@ -32,7 +32,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from app.api import health, workspaces as workspaces_api
-from app.core import bank as core_bank
+from app.core.bank import service as core_bank
 from app.core import host_restart
 from app.core.config import settings, switch_workspace
 from tests.core_sources import settings_source, stage_source  # noqa: E402

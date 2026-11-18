@@ -15,8 +15,9 @@ from __future__ import annotations
 import sqlite3
 import unittest
 
-from app.core import bank, bank_fts
-from app.core.questions import QuestionValidationError
+from app.core.bank import service as bank
+from app.core.bank.engine import fts as bank_fts
+from app.core.bank.questions import QuestionValidationError
 
 
 def _document(**overrides) -> dict:

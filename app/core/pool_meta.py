@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core import bank
+from app.core.bank import service as bank
 from app.core.pending_db import PendingError
 
 SOURCE_TITLE_FIELD = "paper_title"

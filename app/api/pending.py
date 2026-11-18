@@ -16,8 +16,9 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from app.core import bank, pending_bank, pending_dedupe, pending_pool, questions
-from app.core import bank_provider as provider
+from app.core import pending_bank, pending_dedupe, pending_pool
+from app.core.bank import provider, questions
+from app.core.bank import service as bank
 from app.core.pending_db import BATCH_ID_RE
 from app.core.security import require_write_token
 from app.bank_engine.writer import EntryRejected

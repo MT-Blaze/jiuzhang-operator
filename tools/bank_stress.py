@@ -48,8 +48,9 @@ os.environ["JZO_LOCAL_TOKEN"] = TOKEN
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import bank, basket  # noqa: E402
-from app.core.questions import validate_question  # noqa: E402
+from app.core.bank import basket  # noqa: E402
+from app.core.bank import service as bank  # noqa: E402
+from app.core.bank.questions import validate_question  # noqa: E402
 
 
 def free_port() -> int:
