@@ -116,3 +116,17 @@
   active 不动（机制在案），探针只实测批次列表屏 400px 非零滚动还原，未进批次再开配置；
   ②触控真机（触摸屏）未摸，只量命中区几何≥44px；③reduced-motion 无新增动画（ep-ai-spin
   存量规则未动），未单独实测；④真人抽检未做（全工具驱动）。
+
+## 补证 · 内联前后对比截图结论（2026-11-19 03:5x 追加）
+
+「前」用 git archive 基线 d89e9d5 解出隔离副本起服真点取证（脚本
+`.system_generated/canvas-inline-config/before_shot.py`，住证据目录不进 git；
+隔离口径同主探针，收口端口复验关闭 PASS，读数 `before/before.toml`）：
+- 00-before-model-modal.png／00-before-api-modal.png：旧形态＝画布上压 rgba(42,36,29,0.42)
+  暗遮罩＋居中浮卡，computed position=fixed、aria-modal=true、role=dialog，批次列表在遮罩后仍可见。
+- 02-model-config-inline.png／05-api-config-inline.png：新形态＝无遮罩（可见 .ep-modal 计数 0）、
+  position 非 fixed、无 aria-modal/role，视图顶【返回批次】＋标题，内容铺满画布帧随画布滚动，
+  批次列表整块隐藏，辅助栏与顶栏原样。
+结论：两配置中心已从浮层模态变为画布内联整屏视图，前后对比截图与 computed 形状读数互证。
+本补证随底座第三笔 docs commit 入库（偏离②的 commit 数由两笔更正为三笔：施工＋探针／
+biz＋回单／本补证；不 amend 铁律优先）。
