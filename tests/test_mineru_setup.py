@@ -70,6 +70,17 @@ class HealthTest(unittest.TestCase):
         self.assertEqual((first, second), (False, True))
         self.assertEqual(run.call_count, 2)
 
+    def test_weights_ready_parses_readonly_probe(self) -> None:
+        (self.root / "python.exe").write_bytes(b"stub")
+        for rc, text, expected in ((0, "WEIGHTS_MISSING=\n", True),
+                                   (0, "WEIGHTS_MISSING=repoA,repoB\n", False),
+                                   (1, "boom", False)):
+            with mock.patch.object(setup, "_run", return_value=(rc, text)):
+                self.assertEqual(setup.weights_ready(), expected)
+
+    def test_weights_missing_when_no_env(self) -> None:
+        self.assertFalse(setup.weights_ready())
+
 
 class InstallTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -156,13 +167,63 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(setup.status()["state"], "error")
         self.assertIn("体检失败", setup.status()["message"])
 
+    def _prefetch_run(self, calls, download, weights="WEIGHTS_MISSING=\n"):
+        def run(cmd, timeout):
+            calls.append(cmd)
+            if cmd[1:3] == ["-m", "venv"]:
+                self._materialize()
+                return 0, ""
+            if cmd[1:3] == ["-m", "pip"]:
+                return 0, "ok"
+            if cmd[0] == str(setup._models_download_exe()):
+                return download
+            if cmd[1] == "-c" and setup._WEIGHT_CHECK_CODE in cmd:
+                return 0, weights
+            return 0, "MINERU_VERSION=4.2.3\n"
+        return run
+
+    def test_install_prefetches_weights_in_same_click(self) -> None:
+        calls = []
+        with mock.patch.object(setup, "_run",
+                               side_effect=self._prefetch_run(calls, (0, "ok"))):
+            setup._install()
+        state = setup.status()
+        self.assertEqual(state["state"], "done")
+        self.assertIn("解析模型已预取", state["message"])
+        download = [cmd for cmd in calls
+                    if cmd[0] == str(setup._models_download_exe())]
+        self.assertEqual(len(download), 1)
+        self.assertIn("modelscope", download[0])
+        self.assertIn("standard", download[0])
+
+    def test_prefetch_failure_is_done_with_lazy_download_note(self) -> None:
+        calls = []
+        with mock.patch.object(setup, "_run",
+                               side_effect=self._prefetch_run(calls, (1, "timed out"))):
+            setup._install()
+        state = setup.status()
+        self.assertEqual(state["state"], "done")
+        self.assertIn("首次解析时会再试下载", state["message"])
+
     def test_start_install_short_circuits_when_ready(self) -> None:
         ready = {"ok": True, "state": "ready", "version": "4.2.3", "message": ""}
         with mock.patch.object(setup, "health", return_value=ready), \
+                mock.patch.object(setup, "weights_ready", return_value=True), \
                 mock.patch.object(setup.threading, "Thread") as thread:
             state = setup.start_install()
         self.assertEqual(state["state"], "done")
         thread.assert_not_called()
+
+    def test_start_install_prefetches_when_weights_missing(self) -> None:
+        ready = {"ok": True, "state": "ready", "version": "4.2.3", "message": ""}
+        with mock.patch.object(setup, "health", return_value=ready), \
+                mock.patch.object(setup, "weights_ready", return_value=False), \
+                mock.patch.object(setup.threading, "Thread") as thread:
+            state = setup.start_install()
+        self.assertEqual(state["state"], "installing")
+        self.assertEqual(state["step"], "预取模型")
+        thread.assert_called_once()
+        self.addCleanup(setattr, setup, "_THREAD", None)
 
     def test_start_install_rejects_old_python(self) -> None:
         with mock.patch.object(setup.sys, "version_info", (3, 10, 0)):

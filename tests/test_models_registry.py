@@ -341,7 +341,7 @@ class MineruLocalTest(CatalogIsolated):
         self.assertEqual(entry["state"], "blocked")
         self.assertEqual(entry["action"], "install")
 
-    def test_gate_explains_pending_wiring_instead_of_silent_auto(self) -> None:
+    def test_gate_not_ready_falls_auto_ready_passes_through(self) -> None:
         with _runtime():
             picked, note = registry.gate_recognize("mineru_local")
         self.assertEqual(picked, "auto")
@@ -350,13 +350,13 @@ class MineruLocalTest(CatalogIsolated):
         health = {"ok": True, "state": "ready", "version": "4.2.3", "message": ""}
         with _runtime(health=health):
             picked, note = registry.gate_recognize("mineru_local")
-        self.assertEqual(picked, "auto")
-        self.assertIn("接线", note)
-        self.assertIn("云端 MinerU 兜底", note)
+        self.assertEqual(picked, "mineru_local")
+        self.assertEqual(note, "")
 
-    def test_gate_note_is_data_driven_single_source(self) -> None:
+    def test_wired_entry_declares_plan_and_no_gate_note(self) -> None:
         entry = next(item for item in registry.catalog() if item["id"] == "mineru_local")
-        self.assertTrue(str(entry.get("gate_note") or ""))
+        self.assertEqual(entry.get("plan_recognize"), ["mineru_local"])
+        self.assertFalse(str(entry.get("gate_note") or ""))
 
 
 class PrefsGateTest(CatalogIsolated):

@@ -11,10 +11,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable
 
 from app.core.ai.platform import center as ai_center
-from app.core.ingest.recognize import ai as recognize_ai, local as recognize_local, mineru as recognize_mineru, shared as recognize_shared
+from app.core.ingest.recognize import ai as recognize_ai, local as recognize_local, mineru as recognize_mineru, mineru_local as recognize_mineru_local, mineru_service, shared as recognize_shared
 
 RECOGNIZE_AUTO = "auto"
 BAD_RATE_THRESHOLD = 0.30
@@ -112,6 +113,28 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                     mineru.get("detail") or "不可用")
                 route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
                 _surface(route, "识别·MinerU", reason, str(mineru.get("detail") or ""))
+    elif steps == ("mineru_local",):
+        ready = await asyncio.to_thread(mineru_service.ensure_ready)
+        if not ready.get("ok"):
+            route["mode"] = picked
+            reason = "本地 MinerU 服务不可用（%s），只走选中引擎，不降级，保留本地切图待人工核对。" % (
+                ready.get("detail") or "未知原因")
+            route["note"] = reason
+            _surface(route, "识别·MinerU本地", reason, str(ready.get("detail") or ""))
+        else:
+            local = await recognize_shared.guard(
+                recognize_mineru_local.run, batch_id, items, pending, ready,
+                route, on_progress)
+            pending = recognize_shared.remaining(pending, local)
+            route["mode"] = picked
+            if local.get("ok") and not pending:
+                route["note"] = "MinerU 本地逐题解析完成：%d/%d 道回填成功。" % (
+                    local["filled"], local["attempted"])
+            else:
+                reason = "MinerU 本地解析未全部成功（%s），只走选中引擎，不降级，保留本地切图待人工核对。" % (
+                    local.get("detail") or "不可用")
+                route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
+                _surface(route, "识别·MinerU本地", reason, str(local.get("detail") or ""))
     else:
         route["mode"] = picked
         reason = "选中引擎的解析通道尚未接线（%s），保留本地切图待人工核对。" % (

@@ -28,12 +28,22 @@ MIN_PYTHON = (3, 11)
 VENV_TIMEOUT = 300
 INSTALL_TIMEOUT = 1800
 HEALTH_TIMEOUT = 180
+WEIGHT_TIMEOUT = 1800
 TAIL_LINES = 12
 
 _CHECK_CODE = (
     "from importlib.metadata import version\n"
     "import mineru\n"
     "print('MINERU_VERSION=' + version('mineru'))\n"
+)
+
+# 权重就绪只读探查（不出网）：standard 档＝onnx 小模型＋llama-cpp 本地小 VLM。
+_WEIGHT_CHECK_CODE = (
+    "from mineru.model.registry import model_repos_for_tier\n"
+    "from mineru.model.download import verify_model_repo\n"
+    "repos = model_repos_for_tier('standard', small_backend='onnx', vlm_engine='llama-cpp')\n"
+    "missing = [r.name for r in repos if not verify_model_repo(r).ready]\n"
+    "print('WEIGHTS_MISSING=' + ','.join(missing))\n"
 )
 
 _NETWORK_MARKERS = (
@@ -119,6 +129,41 @@ def status() -> dict[str, str]:
         return dict(_STATE)
 
 
+def weights_ready() -> bool:
+    """standard 档权重在不在本机（只读探查，不出网）；探不到一律当不在。"""
+    py = python_exe()
+    if not py.is_file():
+        return False
+    rc, out = _run([str(py), "-c", _WEIGHT_CHECK_CODE], HEALTH_TIMEOUT)
+    if rc != 0:
+        return False
+    for line in out.splitlines():
+        if line.startswith("WEIGHTS_MISSING="):
+            return not line.split("=", 1)[1].strip()
+    return False
+
+
+def _models_download_exe() -> Path:
+    folder = engine_dir()
+    if sys.platform == "win32":
+        return folder / "Scripts" / "mineru-models-download.exe"
+    return folder / "bin" / "mineru-models-download"
+
+
+def _prefetch_weights() -> bool:
+    """包自带预取入口并入安装点击：modelscope 国内源，standard 档 onnx 路线。"""
+    _set(step="预取模型",
+         message="正在从国内镜像预取解析模型（standard 档，约 1–3GB），请耐心等待。")
+    rc, out = _run(
+        [str(_models_download_exe()), "--tier", "standard",
+         "--small-backend", "onnx", "--vlm-engine", "llama-cpp",
+         "--source", "modelscope"], WEIGHT_TIMEOUT)
+    if rc != 0:
+        logger.warning("[WARN] MinerU 模型预取失败：%s", _classify(out))
+        return False
+    return weights_ready()
+
+
 def _set(**fields: str) -> None:
     with _LOCK:
         _STATE.update(fields)
@@ -132,15 +177,19 @@ def start_install() -> dict[str, str]:
             "底座 Python %d.%d 太旧：MinerU 4.2.3 需要 3.11–3.14。"
             % sys.version_info[:2])
     check = health()
-    if check["ok"]:
+    if check["ok"] and weights_ready():
         _set(state="done", step="体检",
              message="本地 MinerU 已就绪（%s）。" % check["version"])
         return status()
     with _LOCK:
         if _THREAD is not None and _THREAD.is_alive():
             return dict(_STATE)
-        _STATE.update({"state": "installing", "step": "创建隔离环境",
-                       "message": "正在创建 engines/mineru/ 独立环境，不碰底座 .venv。"})
+        if check["ok"]:
+            _STATE.update({"state": "installing", "step": "预取模型",
+                           "message": "环境已装好，正在补齐解析模型权重（国内镜像）。"})
+        else:
+            _STATE.update({"state": "installing", "step": "创建隔离环境",
+                           "message": "正在创建 engines/mineru/ 独立环境，不碰底座 .venv。"})
         _THREAD = threading.Thread(target=_install, name="jzo-mineru-install",
                                    daemon=True)
     _THREAD.start()
@@ -176,8 +225,13 @@ def _install() -> None:
         check = health()
         if not check["ok"]:
             raise MineruSetupError(check["message"])
-        _set(state="done", step="完成",
-             message="本地 MinerU 已就绪（%s）。" % check["version"])
+        if _prefetch_weights():
+            _set(state="done", step="完成",
+                 message="本地 MinerU 已就绪（%s），解析模型已预取。" % check["version"])
+        else:
+            _set(state="done", step="完成",
+                 message="本地 MinerU 已就绪（%s）；模型预取未成功，首次解析时会再试下载"
+                         "（需网络，进度见批次日志）。" % check["version"])
         logger.info("[INFO] 本地 MinerU 安装完成：%s", check["version"])
     except MineruSetupError as exc:
         _set(state="error", message=str(exc))

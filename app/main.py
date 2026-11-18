@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -177,7 +178,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；
     # 插件一律由用户在「设置 → 插件管理与控制」里亲手装。
     threading.Thread(target=_resume_plugin_updates, name="jzo-update-resume", daemon=True).start()
-    yield
+    try:
+        yield
+    finally:
+        # 本地 MinerU 服务是懒起服的子进程：收口必须显式停＋端口复验，孤儿零容忍。
+        from app.core.ingest.recognize import mineru_service
+
+        await asyncio.to_thread(mineru_service.stop)
 
 
 def create_app() -> FastAPI:

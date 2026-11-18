@@ -218,5 +218,87 @@ class RecognizeNoCatalogTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         self.assertIn("识别·选中引擎", steps)
 
 
+class RecognizeMineruLocalTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
+    """MinerU·本地具体档：只走本地服务，失败显性不降级（任务卡 §4）。"""
+
+    READY = {"ok": True, "base_url": "http://127.0.0.1:43210", "token": "tok",
+             "detail": "本地 MinerU 服务已就绪"}
+
+    async def _run(self, ready: dict, local_result: dict | None = None,
+                   on_progress=None) -> dict:
+        route: dict = {}
+        local_mock = mock.AsyncMock(return_value=local_result or {
+            "ok": True, "attempted": 3, "filled": 3,
+            "filled_indexes": [0, 1, 2], "detail": "",
+        })
+        ai_mock = mock.AsyncMock()
+        mineru_mock = mock.AsyncMock()
+        with mock.patch.object(recognize_router.mineru_service, "ensure_ready",
+                               return_value=ready), \
+                mock.patch.object(recognize_router.recognize_mineru_local, "run",
+                                  local_mock), \
+                mock.patch.object(recognize_router.recognize_ai, "run", ai_mock), \
+                mock.patch.object(recognize_router.recognize_mineru, "run", mineru_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, "mineru_local", report(0.0, []), route, on_progress)
+        return {"route": result, "local": local_mock, "ai": ai_mock,
+                "mineru": mineru_mock}
+
+    def test_plan_comes_from_catalog(self) -> None:
+        self.assertEqual(recognize_router.normalize_engine("mineru_local"),
+                         "mineru_local")
+        self.assertEqual(recognize_router.plan("mineru_local"), ("mineru_local",))
+        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+
+    async def test_local_engine_skips_cloud_channels(self) -> None:
+        outcome = await self._run(self.READY)
+        outcome["ai"].assert_not_called()
+        outcome["mineru"].assert_not_called()
+        outcome["local"].assert_awaited_once()
+        self.assertEqual(outcome["route"]["mode"], "mineru_local")
+        self.assertIn("3/3", outcome["route"]["note"])
+        self.assertIn("本地", outcome["route"]["note"])
+        self.assertEqual(outcome["local"].call_args.args[3], self.READY)
+
+    async def test_service_unavailable_surfaces_failure_without_fallback(self) -> None:
+        outcome = await self._run({"ok": False, "detail": "本地 MinerU 未就绪（未安装）。"})
+        outcome["local"].assert_not_called()
+        outcome["ai"].assert_not_called()
+        outcome["mineru"].assert_not_called()
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        self.assertIn("未就绪", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·MinerU本地", steps)
+        self.assertTrue(route["failures"][0]["retryable"])
+
+    async def test_partial_failure_keeps_local_cuts_without_fallback(self) -> None:
+        outcome = await self._run(self.READY, {
+            "ok": True, "attempted": 3, "filled": 1,
+            "filled_indexes": [0], "detail": "只有 1/3 道回来了"})
+        outcome["ai"].assert_not_called()
+        outcome["mineru"].assert_not_called()
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        self.assertIn("2 道保持本地切图", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·MinerU本地", steps)
+
+    async def test_all_failure_is_explicit(self) -> None:
+        outcome = await self._run(self.READY, {
+            "ok": False, "attempted": 3, "filled": 0,
+            "filled_indexes": [], "detail": "只有 0/3 道回来了"})
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        self.assertIn("3 道保持本地切图", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·MinerU本地", steps)
+
+    async def test_progress_callback_reaches_local(self) -> None:
+        sentinel = lambda snapshot: None  # noqa: E731
+        outcome = await self._run(self.READY, on_progress=sentinel)
+        self.assertIs(outcome["local"].call_args.args[5], sentinel)
+
+
 if __name__ == "__main__":
     unittest.main()
