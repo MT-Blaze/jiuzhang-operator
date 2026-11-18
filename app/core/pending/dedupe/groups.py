@@ -1,15 +1,15 @@
 """批次查重清单的归并与剔除计划（军令 #32 · S5b 拆出）。
 
-**来源**：整块搬自 ``app/core/pending_dedupe.py``，纯 extract-module，判据口径逐字未改；
-``pending_dedupe`` 原位 re-export 本模块全部名字。
+**来源**：整块搬自 ``app/core/pending/dedupe/engine.py``，纯 extract-module，判据口径逐字未改；
+``pending.dedupe.engine`` 原位 re-export 本模块全部名字。
 
 **边界**：输入是**已经取好的行**（中转站行 + 主库快照行），输出是「哪些算重复、按指纹该剔谁」
 ——组与计划都是纯结构计算，不读库、不写库、不碰扫描缓存。
-取主库快照的 ``bank_rows_snapshot`` 留在 ``pending_dedupe``（后台初查链与测试都在那儿打桩），
-读它之后再把行交给本模块。指纹与置信度口径来自 ``pending_compare``／``dedupe_signature``。
+取主库快照的 ``bank_rows_snapshot`` 留在 ``pending.dedupe.engine``（后台初查链与测试都在那儿打桩），
+读它之后再把行交给本模块。指纹与置信度口径来自 ``pending/dedupe/compare.py``／``dedupe_signature``。
 
 **禁区**：
-- 「一键剔除」只出**计划**，实际删除仍由 ``pending_dedupe.batch_duplicate_groups`` 与批次清退走写库；
+- 「一键剔除」只出**计划**，实际删除仍由 ``dedupe.batch_duplicate_groups`` 与批次清退走写库；
 - 组内保留谁、剔谁按指纹与题号定序，别处不许另立一套成序规则。
 """
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 from app.core import wire  # noqa: E402
 from typing import Any
 
-from app.core.pending_compare import (
+from app.core.pending.dedupe.compare import (
     _bank_image_hashes,
     _fingerprint,
     _pending_image_hashes,

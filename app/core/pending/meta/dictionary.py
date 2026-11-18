@@ -19,7 +19,8 @@ import re
 import secrets
 from typing import Any
 
-from app.core import pending_db, wire
+from app.core import wire
+from app.core.pending import db
 from app.core.bank import questions
 from app.core.ai.platform import client as ai_client
 from app.core.content import pinyin
@@ -72,7 +73,7 @@ def list_schools(query: str = "", limit: int = SCHOOL_LIMIT) -> dict[str, Any]:
     """按全称/简称模糊查学校；最近改过的排前面。"""
     text = _clean(query, 60)
     size = max(1, min(int(limit or SCHOOL_LIMIT), 100))
-    con = pending_db.connect()
+    con = db.connect()
     try:
         if text:
             pattern = _like(text)
@@ -103,7 +104,7 @@ def get_schools(school_ids: list[str], *, strict: bool = True) -> list[dict[str,
             raise MetaDictError(f"学校编号不合法：{school_id[:40]}")
     unique = list(dict.fromkeys(wanted))
     placeholders = ",".join("?" for _ in unique)
-    con = pending_db.connect()
+    con = db.connect()
     try:
         rows = con.execute(
             f"SELECT id, full_name, short_name FROM schools WHERE id IN ({placeholders})",
@@ -147,7 +148,7 @@ def create_school(full_name: Any, short_name: Any = "") -> dict[str, Any]:
         short = full[:60]
     if len(full) < 2 or len(short) < 1:
         raise MetaDictError("学校名称太短，请写全")
-    con = pending_db.connect()
+    con = db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         existing = con.execute(
@@ -180,7 +181,7 @@ def find_or_create_by_name(name: Any) -> dict[str, Any]:
     text = _clean(name, 120)
     if not text:
         raise MetaDictError("学校名不能为空")
-    con = pending_db.connect()
+    con = db.connect()
     try:
         row = con.execute(
             "SELECT id, full_name, short_name FROM schools"
@@ -249,7 +250,7 @@ def _parse_suggestion(content: str) -> tuple[str, float]:
 
 
 def list_scenes() -> dict[str, Any]:
-    con = pending_db.connect()
+    con = db.connect()
     try:
         rows = con.execute(
             "SELECT id, name, sort_order FROM scene_types ORDER BY sort_order ASC, name ASC"
@@ -269,9 +270,9 @@ def normalize_scene(value: Any) -> str:
     name = _clean(value, 64)
     if not name:
         return ""
-    if name not in pending_db.SCENE_BY_NAME:
+    if name not in db.SCENE_BY_NAME:
         raise MetaDictError(
-            "不认识的场景「" + name + "」，可选：" + "、".join(pending_db.SCENE_NAMES)
+            "不认识的场景「" + name + "」，可选：" + "、".join(db.SCENE_NAMES)
         )
     return name
 
@@ -291,7 +292,7 @@ def list_tags(scene: Any = "", query: Any = "", limit: int = TAG_LIMIT) -> dict[
     scene_name = _clean(scene, 64)
     text = _clean(query, 32)
     size = max(1, min(int(limit or TAG_LIMIT), 50))
-    con = pending_db.connect()
+    con = db.connect()
     try:
         if text:
             # 原文一条路、拼音首字母一条路：敲「J」捞集合。
@@ -355,7 +356,7 @@ def remember_tag(name: Any, scene: Any = "") -> dict[str, Any]:
         raise MetaDictError("标签不能为空")
     scene_name = normalize_scene(scene)
     now = questions.now_iso()
-    con = pending_db.connect()
+    con = db.connect()
     try:
         con.execute("BEGIN IMMEDIATE")
         con.execute(

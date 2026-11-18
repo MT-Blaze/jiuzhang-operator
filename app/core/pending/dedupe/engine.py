@@ -6,8 +6,8 @@
 判据四要素：题型、归一题干、归一选项、配图内容全一致。先比文字键再比图：
 文字键不同的题连图都不用算，几百道题扫一遍也只是几次字符串归一。
 
-**军令 #32 · S5b**：本文件原 1065 行撞破 800 行上限，比对层整块搬到 ``pending_compare``、
-批次归并层搬到 ``pending_groups``，名字在下方原位 re-export，外部用法一字不改；
+**军令 #32 · S5b**：本文件原 1065 行撞破 800 行上限，比对层整块搬到 ``pending/dedupe/compare.py``、
+批次归并层搬到 ``pending/dedupe/groups.py``，名字在下方原位 re-export，外部用法一字不改；
 留下的只有扫描缓存、扫描持久化、后台初查链与抽走进池。
 """
 from __future__ import annotations
@@ -21,15 +21,15 @@ from app.core import wire
 from app.core.bank import questions
 from app.core.bank import service as bank
 from app.core.bank.engine import dedupe as bank_dedupe
-from app.core.pending_batches import batch_row
-from app.core.pending_db import PendingNotFound, connect
+from app.core.pending.batch.batches import batch_row
+from app.core.pending.db import PendingNotFound, connect
 
 
 
 # 军令 #32 · S5b：比对层与批次归并层已拆出（本文件原 1065 行撞破 800 行上限）。
-# 原位 re-export：外部照旧用 pending_dedupe.<名字>；本文件后半段的初查链也照旧按模块全局名
-# 取用，测试里 monkeypatch pending_dedupe.bank_rows_snapshot / _scan_seq / admit_into_pool 不受影响。
-from app.core.pending_compare import (  # noqa: F401
+# 原位 re-export：外部照旧用 dedupe.<名字>；本文件后半段的初查链也照旧按模块全局名
+# 取用，测试里 monkeypatch dedupe.bank_rows_snapshot / _scan_seq / admit_into_pool 不受影响。
+from app.core.pending.dedupe.compare import (  # noqa: F401
     _sha256_file,
     _text_key,
     _fingerprint,
@@ -53,13 +53,13 @@ from app.core.pending_compare import (  # noqa: F401
     similarity_report,
     # 军令 #32 · G7：候选层的四个纯函数整体搬到比对层（本文件曾 816 行撞破 800 上限）。
     # 它们只被 ``collect_candidates`` 内部调用，测试既不 patch 也不直接引用，
-    # 外部按 ``pending_dedupe.<名字>`` 的取法一字不变。
+    # 外部按 ``dedupe.<名字>`` 的取法一字不变。
     _pair_confidence,
     _better,
     _candidate_entry,
     _bank_entry,
 )
-from app.core.pending_groups import (  # noqa: F401
+from app.core.pending.dedupe.groups import (  # noqa: F401
     bank_fingerprint_map,
     _pool_entry,
     group_duplicates,
@@ -324,7 +324,7 @@ def _write_scan_rows(con: Any, batch_id: str, state: dict[str, Any],
 
     这是抽走事务要用的那一半（军令 #32 · S6 缺陷 2 收口）：「写池行＋删待审行＋
     刷新批次账目＋落 ``done``」必须一次提交同时对外可见，所以这几条 SQL 得跟着
-    ``pending_pool.admit_from_scan`` 那把 ``BEGIN IMMEDIATE`` 走，而不是等它提交完
+    ``pool.admit_from_scan`` 那把 ``BEGIN IMMEDIATE`` 走，而不是等它提交完
     再另起连接补写——那正是「池里已经有题、卡片还说全在待审」这一拍的来源。
 
     回 ``True`` 表示真的写了这一代；被世代号挡下（库里已有更晚发起的结论）回 ``False``。
@@ -510,7 +510,7 @@ def _run_scan(key: str, provider_id: str, seq: int) -> dict[str, Any]:
     # **重复条数只有一把尺子**（G2·C2）：批内／主库两个分区都来自 ``groups`` 的 drop，
     # ``redundant`` 就取这两个分区之和，与 ``app/api/pending.py:233``「redundant 是两组
     # drop 的并集条数」以及批次卡片「疑似重复 N（批内 X ／ 主库 Y）」三数相加同源。
-    # ``pending_groups`` 的 ``recompute``／``drop_ids`` 仍是默认勾选集与重算集，
+    # ``pending/dedupe/groups.py`` 的 ``recompute``／``drop_ids`` 仍是默认勾选集与重算集，
     # 但它们不再充当「重复条数」——两套口径并存时卡片迟早对不平（判据 5.4）。
     redundant_total = batch_count + bank_count
     try:
@@ -665,7 +665,7 @@ def scan_state(batch_id: str, *, pooled: int | None = None,
 
     ``pooled``／``con`` 由调用方给定时（``batch_list`` 的同一快照批量数，G5）就**不再自开
     连接**，结论也改从那条读事务里回读；两个都不传仍是原样——各开各的缓存与实时行数，
-    ``pending_pool`` 那类单点调用与其他测试的行为一字不变。
+    ``pending.pool.service`` 那类单点调用与其他测试的行为一字不变。
     """
     view = _scan_state_body(batch_id, con)
     view["pooled"] = (int(pooled) if pooled is not None
@@ -743,7 +743,7 @@ def admit_into_pool(batch_id: str, provider_id: str, *,
     """把初查判出的主库命中**抽走**（判据 3.5）：只搬、不发布，结论归调用方。
 
     抽走发生在数据落库阶段，而且**结论 ``done`` 就写在这同一条事务里**——
-    ``pending_pool.admit_from_scan`` 提交后回投 ``scan_persisted=True``，
+    ``pool.admit_from_scan`` 提交后回投 ``scan_persisted=True``，
     ``warm_batch_scan`` 于是只补内存缓存、不再另起连接补写库：库里根本不存在
     「池行已提交、done 还没落」或反过来的一拍（S6 缺陷 2 的最终形态）。
     失败只记日志：待审行原样留着、初查结论原样摆着，审核照旧一张一张能过，
@@ -770,10 +770,10 @@ def admit_into_pool(batch_id: str, provider_id: str, *,
     if str(os.environ.get("JZO_POOL_ADMIT_DISABLED") or "") == "1":
         return disabled
     try:
-        # 延迟导入：``pending_pool`` 顶层就 import 本模块，放到函数里断开循环。
-        from app.core import pending_pool
+        # 延迟导入：``pending.pool.service`` 顶层就 import 本模块，放到函数里断开循环。
+        from app.core.pending.pool import service as pool
 
-        result = pending_pool.admit_from_scan(batch_id, provider_id=provider_id,
+        result = pool.admit_from_scan(batch_id, provider_id=provider_id,
                                              state=state)
     except Exception as error:  # 抽走是增强，任何异常都只落一条日志
         logging.getLogger("uvicorn.error").warning(

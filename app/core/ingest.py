@@ -82,15 +82,15 @@ async def ingest_files(files: Any, layout_engine: str = layout_router.LAYOUT_AUT
                               group["layout_engine"], group["recognize_engine"])
     if groups:
         # 同步版跑完要按解析后的真账回报：题数与 id 都可能变了。
-        from app.core import pending_bank
+        from app.core.pending import service
         refreshed: list[dict[str, Any]] = []
         saved_ids: list[str] = []
         for one in staged["batches"]:
-            rows = pending_bank.list_batch_questions(one["batch_id"])
+            rows = service.list_batch_questions(one["batch_id"])
             ids = [row["id"] for row in rows["items"]]
             saved_ids.extend(ids)
             card = one.get("batch")
-            for entry in pending_bank.batch_list()["batches"]:
+            for entry in service.batch_list()["batches"]:
                 if entry["batch_id"] == one["batch_id"]:
                     card = entry
                     break
@@ -185,19 +185,19 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     Word / 文本类先放一条「正在解析」的占位题，识别完就地替换；
     PDF 一律当原卷大图，连占位题都不放——只立批次，页图由后台渲染后挂到批次上。
     """
-    from app.core import pending_bank
+    from app.core.pending import service
 
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
-    backup = wire.dumps([pending_bank.store_source_backup(name, data)],
+    backup = wire.dumps([service.store_source_backup(name, data)],
                         ensure_ascii=False, separators=(",", ":"))
     scan_only = _is_scan_source(name)
     if scan_only:
-        result = pending_bank.create_batch(source_backup=backup, source_name=name,
+        result = service.create_batch(source_backup=backup, source_name=name,
                                            scan=True)
         warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后，"
                     "识别出的每道题会自动裁好并排进待审池，左侧绿框可拖拽微调。"]
     else:
-        result = pending_bank.save_draft(
+        result = service.save_draft(
             [{"question": _placeholder(f"（正在解析：{name}）")}],
             source_backup=backup,
             source_name=name,
@@ -263,8 +263,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
     - PDF：先出原卷页图，版面引擎（纯 Python 永远第一）探出题块，再自动切图；
       切完由识别引擎（本地 → AI → MinerU）按坏题率决定补哪些题。
     """
-    from app.core import pending_bank
-    from app.core.pending_assets import drop_assets
+    from app.core.pending import service
+    from app.core.pending.assets import drop_assets
 
     picked_layout = layout_router.normalize_engine(layout_engine)
     picked_recognize = recognize_router.normalize_engine(recognize_engine)
@@ -315,7 +315,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 _apply_layout(page_images, layout)
                 attach_layout(route, layout)
                 try:
-                    pending_bank.set_batch_pages(batch_id, page_images)
+                    service.set_batch_pages(batch_id, page_images)
                 except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
                     drop_assets(page_images)
                     continue
@@ -327,10 +327,10 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
-                    pending_bank.delete_pending(pending_id)
-                except pending_bank.PendingError:
+                    service.delete_pending(pending_id)
+                except service.PendingError:
                     pass
-            save_route(pending_bank, batch_id, route)
+            save_route(service, batch_id, route)
             continue
 
         if image_ocr:
@@ -339,7 +339,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             route = scan_route(picked_layout, picked_recognize, health)
             shell = _image_shell(name, page_images)
             try:
-                pending_bank.save_draft(
+                service.save_draft(
                     [{"question": shell, "pending_id": pending_id, "page_no": 1}],
                     batch_id=batch_id, origin="ingest.ai_ocr", page_images=page_images)
             except Exception:  # noqa: BLE001 - 写不进去就退回占位题，卷子不能丢
@@ -347,7 +347,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                     drop_assets(page_images)
                 continue
             route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout)
-            save_route(pending_bank, batch_id, route)
+            save_route(service, batch_id, route)
             continue
 
         health = text_health.text_health(source_text)
@@ -367,11 +367,11 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 "page_no": 1,
             })
         try:
-            pending_bank.save_draft(items, batch_id=batch_id, origin="ingest",
+            service.save_draft(items, batch_id=batch_id, origin="ingest",
                                     page_images=page_images)
         except Exception:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
             if page_images:
                 drop_assets(page_images)
             continue
         log_documents(documents)
-        save_route(pending_bank, batch_id, route)
+        save_route(service, batch_id, route)

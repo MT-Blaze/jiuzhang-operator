@@ -170,7 +170,7 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     from app.core import config
     from app.core.bank.provider import DEFAULT_PROVIDER_ID
     from app.core.bank.engine.schema import bank_db_path
-    from app.core.pending_db import pending_db_path
+    from app.core.pending.db import pending_db_path
 
     config.load_current_workspace()
     bank = Path(args.bank_db) if args.bank_db else bank_db_path(DEFAULT_PROVIDER_ID, create=False)

@@ -2,12 +2,12 @@
 
 裁判台只该看「两边确实不一样」的东西：标签 / 来源给并集，题型 / 难度是唯一属性，
 两边都有且不同时必须由老师二选一。本模块只做纯计算，不碰库、不发请求，
-``pending_pool`` 与后续调用方共用这一份口径。
+``pending.pool.service`` 与后续调用方共用这一份口径。
 
 ``resolutions`` 是唯一属性的裁决参数：只收 ``main`` / ``incoming``，别的键与值
 一律拒绝——界面上的锁只是提示，真正的闸门在这里。
 
-单文件拆出的理由与 ``pending_pool`` 相同：PLUGIN_SPEC §2.8 的单文件行数上限。
+单文件拆出的理由与 ``pending.pool.service`` 相同：PLUGIN_SPEC §2.8 的单文件行数上限。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.bank import service as bank
-from app.core.pending_db import PendingError
+from app.core.pending.db import PendingError
 
 SOURCE_TITLE_FIELD = "paper_title"
 REQUIRED_UNIQUE_FIELDS = ("type", "difficulty")

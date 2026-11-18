@@ -1,4 +1,4 @@
-"""一键剔除本批次重复题：``app/core/pending_bank.py::purge_batch_duplicates`` 的裁决口径。
+"""一键剔除本批次重复题：``app/core/pending/service.py::purge_batch_duplicates`` 的裁决口径。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_purge``
 
@@ -66,17 +66,20 @@ class PurgeCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import (pending_bank, pending_bank_batches,
-                              pending_batches, pending_dedupe, pending_db)
+        from app.core.pending import service
+        from app.core.pending.batch import bank_batches
+        from app.core.pending.batch import batches
+        from app.core.pending.dedupe import engine as dedupe
+        from app.core.pending import db
         from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank
-        self.pending_bank = pending_bank
-        self.pending_bank_batches = pending_bank_batches
-        self.pending_batches = pending_batches
-        self.pending_dedupe = pending_dedupe
-        self.pending_db = pending_db
+        self.service = service
+        self.bank_batches = bank_batches
+        self.batches = batches
+        self.dedupe = dedupe
+        self.db = db
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
@@ -159,11 +162,11 @@ class PurgeCase(unittest.TestCase):
         payload = [{"question": document} for document in docs]
         if batch_id:
             kwargs["batch_id"] = batch_id
-        saved = self.pending_bank.save_draft(payload, **kwargs)
+        saved = self.service.save_draft(payload, **kwargs)
         return saved["batch_id"], saved["saved_ids"]
 
     def _pool_ids(self, batch_id: str) -> list[str]:
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             rows = con.execute(
                 "SELECT id FROM pending_questions WHERE batch_id = ? ORDER BY seq ASC, id ASC",
@@ -174,31 +177,31 @@ class PurgeCase(unittest.TestCase):
         return [str(row["id"]) for row in rows]
 
     def _pool_count(self) -> int:
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             return int(con.execute("SELECT COUNT(*) FROM pending_questions").fetchone()[0])
         finally:
             con.close()
 
     def _card(self, batch_id: str) -> dict:
-        for card in self.pending_batches.batch_list()["batches"]:
+        for card in self.batches.batch_list()["batches"]:
             if card["batch_id"] == batch_id:
                 return card
         raise AssertionError(f"批次列表里没有 {batch_id}")
 
     def _groups(self, batch_id: str) -> dict:
-        return self.pending_dedupe.batch_duplicate_groups(batch_id, PLUGIN_ID)
+        return self.dedupe.batch_duplicate_groups(batch_id, PLUGIN_ID)
 
     def _purge(self, batch_id: str, drop_ids: list[str], *,
                expected: list[str] | None = None, allow_empty: bool = False) -> dict:
-        return self.pending_bank.purge_batch_duplicates(
+        return self.service.purge_batch_duplicates(
             batch_id, PLUGIN_ID, drop_ids,
             sorted(drop_ids) if expected is None else expected,
             allow_empty=allow_empty,
         )
 
     def _assert_code(self, code: str, batch_id: str, drop_ids: list[str], **kwargs) -> None:
-        with self.assertRaises(self.pending_bank.BatchPurgeError) as caught:
+        with self.assertRaises(self.service.BatchPurgeError) as caught:
             self._purge(batch_id, drop_ids, **kwargs)
         self.assertEqual(caught.exception.code, code)
 
@@ -308,7 +311,7 @@ class PurgeCase(unittest.TestCase):
         batch_id, ids = self._draft(_doc(), _doc(), _doc())
         before = (self._pool_count(), self._card(batch_id)["total"],
                   self._card(batch_id)["pending_count"])
-        with mock.patch.object(self.pending_bank_batches, "refresh_batch",
+        with mock.patch.object(self.bank_batches, "refresh_batch",
                                side_effect=RuntimeError("账目写不进去")):
             with self.assertRaises(RuntimeError):
                 self._purge(batch_id, ids[1:])
@@ -349,7 +352,7 @@ class PurgeCase(unittest.TestCase):
         right = _doc(STEM.replace("6", "7"))
         batch_id, ids = self._draft(left, right)
         self.assertGreaterEqual(
-            self.pending_dedupe.similarity(left["stem"], right["stem"]), 0.9,
+            self.dedupe.similarity(left["stem"], right["stem"]), 0.9,
             "夹具必须先真的相似，判据才有意义")
         plan = self._groups(batch_id)
         self.assertEqual(plan["groups"], [])

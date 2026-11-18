@@ -17,7 +17,7 @@
 （时间、动作、来源批次、主库题 id），也是**已裁决标记**：拖档重扫再命中同一条，
 :func:`admit_from_scan` 照它挡住复活（判据 4.9 与第五步的 5.3 在数据层的这一半）。
 
-终局闸门不在这里：`pending_bank.approve` 里的精确判重一个字不动，
+终局闸门不在这里：`service.approve` 里的精确判重一个字不动，
 ``keep_separate`` 走的是**本模块的显式动作**，不是「把闸门拆了」。
 """
 
@@ -26,11 +26,14 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from app.core import pending_assets, pending_batches, pending_dedupe, wire
+from app.core import wire
+from app.core.pending import assets
+from app.core.pending.batch import batches
+from app.core.pending.dedupe import engine as dedupe
 from app.core.bank import questions
 from app.core.bank import service as bank
 from app.core.bank.engine import dedupe as bank_dedupe
-from app.core.pending_db import (
+from app.core.pending.db import (
     PENDING_ASSET_URI_PREFIX,
     POOL_ID_RE,
     PendingConflict,
@@ -40,8 +43,8 @@ from app.core.pending_db import (
     new_pool_action_id,
     new_pool_id,
 )
-from app.core.pending_meta import contract_probe
-from app.core.pool_meta import (
+from app.core.pending.meta.rules import contract_probe
+from app.core.pending.pool.meta import (
     FIELD_LABELS as META_FIELD_LABELS,
     REQUIRED_UNIQUE_FIELDS,
     SOURCE_TITLE_FIELD,
@@ -50,8 +53,8 @@ from app.core.pool_meta import (
     meta_value as _unique_values,
     resolutions as _resolutions,
 )
-# 源码回写拆在独立舱位（单文件 800 行红线），对外仍从 pending_pool 取。
-from app.core.pool_source import update_document  # noqa: F401
+# 源码回写拆在独立舱位（单文件 800 行红线），对外仍从 pool.service 取。
+from app.core.pending.pool.source import update_document  # noqa: F401
 
 ACTIONS = ("merge_metadata", "add_solution", "keep_separate", "delete")
 
@@ -73,7 +76,7 @@ class PoolActionRefused(PendingError):
 
 
 def _label(level: str) -> str:
-    return pending_dedupe.LEVEL_LABELS_TEXT.get(str(level or ""), "")
+    return dedupe.LEVEL_LABELS_TEXT.get(str(level or ""), "")
 
 
 def _row_view(row: Any) -> dict[str, Any]:
@@ -165,13 +168,13 @@ def get_entry(pool_id: str, *, tier: Any = None) -> dict[str, Any]:
     entry["existing"] = existing
     # 裁判台只看差异：多选属性给并集，唯一属性冲突点名并要求二选一（军令·查重三栏）。
     entry["meta_diff"] = _meta_diff(existing, entry["incoming"])
-    answer_state = pending_dedupe.answer_mismatch(existing.get("answer"),
+    answer_state = dedupe.answer_mismatch(existing.get("answer"),
                                                  entry["incoming"].get("answer"))
     entry["answer"] = {
         "same": None if answer_state is None else not answer_state,
         "mismatch": answer_state is True,
-        "main": pending_dedupe.answer_key(existing.get("answer")),
-        "incoming": pending_dedupe.answer_key(entry["incoming"].get("answer")),
+        "main": dedupe.answer_key(existing.get("answer")),
+        "incoming": dedupe.answer_key(entry["incoming"].get("answer")),
     }
     # 锁前两项这件事只有一条出处：答案明确不同就是锁，不给界面自己判。
     entry["locked_actions"] = [action for action in ANSWER_GATED if answer_state is True]
@@ -211,7 +214,7 @@ _PENDING_COLUMNS = ("id, batch_id, doc_json, assets_json, origin,"
                    " created_at, updated_at, seq")
 
 
-def _copy_row_assets(assets: list[Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def _copy_row_assets(asset_list: list[Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """把这一条的成品图逐份复制进 ``pool_assets/``，返回（池内资产清单，旧 uri → 新 uri）。
 
     任一份图文件不在就抛：调用方按「这一条整条不搬」处理——池里宁可没有这条，
@@ -219,11 +222,11 @@ def _copy_row_assets(assets: list[Any]) -> tuple[list[dict[str, Any]], dict[str,
     """
     copied: list[dict[str, Any]] = []
     mapping: dict[str, str] = {}
-    for asset in assets:
+    for asset in asset_list:
         if not isinstance(asset, dict) or not str(asset.get("name") or ""):
             continue
         old_name = str(asset["name"])
-        entry = pending_assets.copy_pending_asset_to_pool(asset)
+        entry = assets.copy_pending_asset_to_pool(asset)
         copied.append(entry)
         mapping[PENDING_ASSET_URI_PREFIX + old_name] = str(entry["uri"])
     return copied, mapping
@@ -259,7 +262,7 @@ def admit_from_scan(batch_id: str, *, provider_id: Any = None, tier: Any = None,
     - 绝不会留下「池里有了、批次里还留着」，也不会留下反过来的一半。
 
     另三件事照旧定死：一条一题（``item_id`` 唯一）、已裁决不复活（审计表挡）、
-    本函数不判重（尺子只在 ``pending_dedupe`` 那一把）。批次未审数在同一事务里
+    本函数不判重（尺子只在 ``pending.dedupe.engine`` 那一把）。批次未审数在同一事务里
     ``refresh_batch`` 重算，抽完账就对得上（判据 5.4）。**初查结论 ``done`` 也在
     同一条事务里落库**（S6 缺陷 2）：读的人一旦看见 ``done``，池表、待审行与批次
     账目必然已经是抽完的样子，回投里 ``scan_persisted`` 如实报这件事做没做。
@@ -269,7 +272,7 @@ def admit_from_scan(batch_id: str, *, provider_id: Any = None, tier: Any = None,
     不传就照旧读已落盘／已缓存的结论——同步入口 ``POST /api/pending/pool/collect``
     与测试都走这一条。
     """
-    state = pending_dedupe.scan_state(batch_id) if state is None else dict(state)
+    state = dedupe.scan_state(batch_id) if state is None else dict(state)
     if str(state.get("status") or "") != "done":
         return {
             "batch_id": str(batch_id),
@@ -351,15 +354,15 @@ def admit_from_scan(batch_id: str, *, provider_id: Any = None, tier: Any = None,
             touched_batches.add(item_batch)
             admitted.append(item_id)
         for moved_batch in sorted(touched_batches):
-            pending_batches.refresh_batch(con, moved_batch)
+            batches.refresh_batch(con, moved_batch)
         # 落 ``done`` 挤进同一条事务（军令 #32 · S6 缺陷 2 的收口）：池行、待审删除、
         # 批次账目、初查结论四件事一起提交，一起被外面读到。分成两步就必然存在
         # 「池里已经有题、卡片还说全在待审」或者反过来的一拍，靠轮询多等一刻遮不住。
-        scan_persisted = bool(pending_dedupe.persist_scan_in_txn(con, batch_id, state))
+        scan_persisted = bool(dedupe.persist_scan_in_txn(con, batch_id, state))
         con.commit()
     except BaseException:
         con.rollback()
-        pending_assets.drop_pool_assets(created_assets)
+        assets.drop_pool_assets(created_assets)
         raise
     finally:
         con.close()
@@ -395,16 +398,16 @@ def _batch_cards(batch_ids: set[str]) -> list[dict[str, Any]]:
     try:
         con.execute("BEGIN")  # 只读事务：本连接一行都不写
         try:
-            pooled = pending_dedupe.pooled_counts(con)
+            pooled = dedupe.pooled_counts(con)
             cards: list[dict[str, Any]] = []
             for text in sorted(batch_ids):
-                row = pending_batches.batch_row(con, text)
+                row = batches.batch_row(con, text)
                 if row is None:
                     continue
                 live = int(con.execute(
                     "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (text,)
                 ).fetchone()[0])
-                cards.append(pending_batches.batch_card(row, live,
+                cards.append(batches.batch_card(row, live,
                                                         pooled=pooled.get(text, 0), con=con))
             return cards
         finally:
@@ -419,15 +422,15 @@ def _batch_cards(batch_ids: set[str]) -> list[dict[str, Any]]:
 def _answer_gate(row: Any, main: dict[str, Any], action: str) -> None:
     """答案明确不同 → 合并元数据与新增解析一起锁死（判据 4.8）。"""
     incoming = _json_object(row["doc_json"])
-    if pending_dedupe.answer_mismatch(main.get("answer"), incoming.get("answer")) is not True:
+    if dedupe.answer_mismatch(main.get("answer"), incoming.get("answer")) is not True:
         return
     raise PoolActionRefused(
         "这一条与主库那道题的答案明确不同：合并会把两套互相矛盾的解法并到一道题上。"
         "请改走「不重复（分开存）」或删除。",
         code="answer_mismatch",
         action=action,
-        main_answer=pending_dedupe.answer_key(main.get("answer")),
-        incoming_answer=pending_dedupe.answer_key(incoming.get("answer")),
+        main_answer=dedupe.answer_key(main.get("answer")),
+        incoming_answer=dedupe.answer_key(incoming.get("answer")),
     )
 
 
@@ -563,7 +566,7 @@ def add_solution(pool_id: str) -> dict[str, Any]:
     """把池里这条的解析接成主库那道题的下一个解法，并追加来源（判据 4.5）。
 
     写法复用底座查重引擎的 :func:`bank_dedupe.append_solution`——「解法二」那段
-    措辞全仓只有一处，``pending_bank._merge_solution`` 用的也是它。
+    措辞全仓只有一处，``service._merge_solution`` 用的也是它。
     """
     row = _pool_row(pool_id)
     main = _require_main(row)
@@ -577,16 +580,16 @@ def add_solution(pool_id: str) -> dict[str, Any]:
     ordinal = base.count("**解法") + 1
     # 解析正文里引用的图是池内那一份（``pool_assets/``）：给主库**复制**成 uploads
     # 里的长期件再改 URI，池里那份等这条裁决退场时由 ``_finish`` 收掉。
-    mapping = pending_assets.copy_pool_assets_to_uploads(_json_list(row["assets_json"]))
+    mapping = assets.copy_pool_assets_to_uploads(_json_list(row["assets_json"]))
     merged = bank_dedupe.append_solution(
-        base, pending_assets.rewrite_uri_text(body, mapping), ordinal)
+        base, assets.rewrite_uri_text(body, mapping), ordinal)
     extra = _source_entry(incoming)
     sources = _extra_sources(row["provider_id"], main, extra)
     try:
         question = bank.update_question(str(row["provider_id"]), str(row["main_id"]),
                                         {"solution": merged}, sources=sources)
     except BaseException:
-        pending_assets.remove_uploaded_copies(mapping)
+        assets.remove_uploaded_copies(mapping)
         raise
     return _finish(row, "add_solution", {
         "main_id": str(row["main_id"]),
@@ -601,7 +604,7 @@ def keep_separate(pool_id: str) -> dict[str, Any]:
     """当一道独立新题写进主库：主库原题不动，闸门照走**显式动作**（判据 4.6/5.5）。
 
     校验与审核画布入库同一套：答案、占位符、考向三项先点名，再整体过契约
-    （``questions.validate_question(contract_probe(...))``，与 ``pending_bank`` 暂存时
+    （``questions.validate_question(contract_probe(...))``，与 ``pending.service`` 暂存时
     同一句）。**不过就不写库**，条目留在池里，把缺项原样回给老师。
     """
     row = _pool_row(pool_id)
@@ -621,14 +624,14 @@ def keep_separate(pool_id: str) -> dict[str, Any]:
             "message": "这一条缺项，未写入主库：" + "、".join(missing) + "。请补齐后再裁决。",
         }
 
-    assets = _json_list(row["assets_json"])
-    mapping = pending_assets.copy_pool_assets_to_uploads(assets)
-    pending_assets.rewrite_asset_uris(document, mapping)
+    asset_list = _json_list(row["assets_json"])
+    mapping = assets.copy_pool_assets_to_uploads(asset_list)
+    assets.rewrite_asset_uris(document, mapping)
     try:
         questions.validate_question(contract_probe(document))
         question = bank.create_question(str(row["provider_id"]), document)
     except questions.QuestionValidationError as error:
-        pending_assets.remove_uploaded_copies(mapping)
+        assets.remove_uploaded_copies(mapping)
         return {
             "ok": False,
             "action": "keep_separate",
@@ -641,7 +644,7 @@ def keep_separate(pool_id: str) -> dict[str, Any]:
             "message": "这一条不符合契约，未写入主库，仍留在池里。",
         }
     except BaseException:
-        pending_assets.remove_uploaded_copies(mapping)
+        assets.remove_uploaded_copies(mapping)
         raise
     return _finish(row, "keep_separate", {
         "main_id": str(row["main_id"] or ""),
@@ -730,7 +733,7 @@ def _drop_unreferenced_assets(row: Any) -> int:
     图已经复制进 ``uploads/``（主库读那份）、删除本就冲着它来。失败没退场的路径
     （缺项、被锁、校验不过）不会走到这里，图原样留着等老师补齐再裁。
     """
-    return pending_assets.drop_pool_assets(_json_list(row["assets_json"]))
+    return assets.drop_pool_assets(_json_list(row["assets_json"]))
 
 
 def _finish(row: Any, action: str, payload: dict[str, Any]) -> dict[str, Any]:

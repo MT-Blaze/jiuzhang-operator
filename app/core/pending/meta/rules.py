@@ -25,7 +25,7 @@ from app.core import wire
 from app.core.bank import questions
 from app.core.bank import service as bank
 from app.core.bank.exam_name import compose_exam_name
-from app.core.pending_db import (
+from app.core.pending.db import (
     GROUP_ITEM_SEP,
     GROUP_SEP,
     HIDDEN_TAG_PREFIX,
@@ -35,7 +35,7 @@ from app.core.pending_db import (
     UPLOAD_ASSET_URI_PREFIX,
     connect,
 )
-from app.core.pending_batches import (
+from app.core.pending.batch.batches import (
     batch_row,
     read_approved,
 )
@@ -85,7 +85,7 @@ def build_standard_name(meta: dict[str, Any]) -> str:
 
 def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
     """明细学校一律落字典 ID；老客户端送校名时按名字找档（找不到就建档）。"""
-    from app.core import meta_dict
+    from app.core.pending.meta import dictionary
 
     ids: list[str] = []
     raw_ids = payload.get("school_ids")
@@ -102,8 +102,8 @@ def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
                 if not name:
                     continue
                 try:
-                    record = meta_dict.find_or_create_by_name(name)
-                except meta_dict.MetaDictError as exc:
+                    record = dictionary.find_or_create_by_name(name)
+                except dictionary.MetaDictError as exc:
                     raise PendingError(str(exc)) from exc
                 if record["id"] not in ids:
                     ids.append(record["id"])
@@ -111,8 +111,8 @@ def _school_ids_from_payload(payload: dict[str, Any]) -> list[str]:
         raise PendingError(f"明细学校最多 {META_SCHOOL_LIMIT} 所")
     if ids:
         try:
-            meta_dict.get_schools(ids)
-        except meta_dict.MetaDictError as exc:
+            dictionary.get_schools(ids)
+        except dictionary.MetaDictError as exc:
             raise PendingError(str(exc)) from exc
     return ids
 
@@ -136,7 +136,7 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
     - 标准名默认由底座重算；``name_mode=manual`` 且元数据没再变时保留手改值，
       之后任何一项元数据再改，自动拼接立刻恢复（主公 2026-11-01 双向联动）。
     """
-    from app.core import meta_dict
+    from app.core.pending.meta import dictionary
 
     if payload is None:
         payload = {}
@@ -185,8 +185,8 @@ def normalize_batch_meta(payload: Any, previous: Any = None) -> dict[str, Any]:
         raise PendingError("学期只能是上学期或下学期")
 
     try:
-        scene_type = meta_dict.normalize_scene(merged.get("scene_type"))
-    except meta_dict.MetaDictError as exc:
+        scene_type = dictionary.normalize_scene(merged.get("scene_type"))
+    except dictionary.MetaDictError as exc:
         raise PendingError(str(exc)) from exc
 
     meta = {
@@ -482,7 +482,7 @@ def sync_dictionary_schools(provider_id: str, document: dict[str, Any]) -> None:
     题目里只有 ``school_id``；题库的 ``sources.school_id`` 要指向一张真实存在的
     ``schools`` 行，否则来源表挂空、按学校名搜也搜不到。字典是权威，题库是副本。
     """
-    from app.core import meta_dict
+    from app.core.pending.meta import dictionary
 
     source = document.get("source")
     if not isinstance(source, dict):
@@ -493,6 +493,6 @@ def sync_dictionary_schools(provider_id: str, document: dict[str, Any]) -> None:
         ids.insert(0, primary)
     if not ids:
         return
-    schools = meta_dict.get_schools(ids, strict=False)
+    schools = dictionary.get_schools(ids, strict=False)
     for school in schools:
         bank.upsert_school(provider_id, school, str(source.get("region") or ""))

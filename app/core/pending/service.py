@@ -23,12 +23,12 @@
 
 四块实现在同目录（PLUGIN_SPEC §2.8 的单文件上限口径，Python 侧同理）：
 
-- ``pending_db.py``       —— 库文件、号段、结构版本迁移与字典基线；
-- ``pending_batches.py``  —— 批次与条目的读写（``batches`` / ``pending_questions``）；
-- ``pending_bank_batches.py`` —— 批次生命周期（立批、挂页图、整批删、剔重收口）；
-- ``pending_assets.py``   —— 暂存配图与原文件只读副本的落盘、入库时的搬迁；
-- ``pending_dedupe.py``   —— 与 core-bank 同源的查重口径（配图按内容哈希比）；
-- ``pending_meta.py``     —— 公共元数据规则与向题目文档的同步。
+- ``pending/db.py``       —— 库文件、号段、结构版本迁移与字典基线；
+- ``pending/batch/batches.py``  —— 批次与条目的读写（``batches`` / ``pending_questions``）；
+- ``pending/batch/bank_batches.py`` —— 批次生命周期（立批、挂页图、整批删、剔重收口）；
+- ``pending/assets.py``   —— 暂存配图与原文件只读副本的落盘、入库时的搬迁；
+- ``pending/dedupe/engine.py``   —— 与 core-bank 同源的查重口径（配图按内容哈希比）；
+- ``pending/meta/rules.py``     —— 公共元数据规则与向题目文档的同步。
 
 本文件留「审核动作」这一层：暂存（save_draft）、改公共元数据（set_batch_meta）、
 存入主库（approve）、彻底删除（delete_pending），以及批次收口时的物理清理。
@@ -41,11 +41,12 @@ import hashlib
 import threading
 from typing import Any
 
-from app.core import pending_dedupe, wire
+from app.core import wire
+from app.core.pending.dedupe import engine as dedupe
 from app.core.bank import questions
 from app.core.bank import service as bank
 from app.core.bank.engine import dedupe as bank_dedupe
-from app.core.pending_assets import (
+from app.core.pending.assets import (
     backup_path,
     decode_data_url,
     drop_assets,
@@ -55,7 +56,7 @@ from app.core.pending_assets import (
     store_source_backup,
     write_pending_asset,
 )
-from app.core.pending_bank_batches import (
+from app.core.pending.batch.bank_batches import (
     BatchPurgeError,
     _page_entries,
     _settle_batch,
@@ -65,7 +66,7 @@ from app.core.pending_bank_batches import (
     set_batch_pages,
     set_batch_route,
 )
-from app.core.pending_batches import (
+from app.core.pending.batch.batches import (
     batch_card,
     batch_list,
     batch_row,
@@ -77,7 +78,7 @@ from app.core.pending_batches import (
     refresh_batch,
     remember_approved,
 )
-from app.core.pending_db import (
+from app.core.pending.db import (
     BATCH_ID_RE,
     MAX_BATCH_QUESTIONS,
     PENDING_ASSET_URI_PREFIX,
@@ -93,14 +94,14 @@ from app.core.pending_db import (
     new_pending_id,
     next_batch_id,
 )
-from app.core.pending_finish import finish_pending
-from app.core.pending_dedupe import (
+from app.core.pending.batch.finish import finish_pending
+from app.core.pending.dedupe.engine import (
     answer_key,
     answer_mismatch,
     find_duplicate,
     similarity_report,
 )
-from app.core.pending_meta import (
+from app.core.pending.meta.rules import (
     apply_meta_to_document,
     clean_text,
     contract_probe,
@@ -253,7 +254,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
         # 结论也从这条连接回读（给 con 就不读也不回填进程内缓存，G5 定的口径），
         # 于是卡片三个数与 ``dedupe.status`` 全落在本次事务的同一份状态上。
         card = batch_card(batch_row(con, target_batch), live,
-                          pooled=pending_dedupe.pooled_counts(con).get(target_batch, 0),
+                          pooled=dedupe.pooled_counts(con).get(target_batch, 0),
                           con=con)
         con.commit()
     except BaseException:
@@ -274,7 +275,7 @@ def save_draft(items: Any, *, batch_id: Any = None, source_backup: Any = "",
     # 普通文件导入仍走既有的「命中即抽进重题池」。
     auto_evict = not bool(card.get("scan_batch"))
     if dedupe_queued:
-        threading.Thread(target=pending_dedupe.warm_dedupe_scan,
+        threading.Thread(target=dedupe.warm_dedupe_scan,
                          args=(target_batch,),
                          kwargs={"admit": auto_evict},
                          name="jzo-dedupe-warm", daemon=True).start()
@@ -388,7 +389,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     以及这一批已经进主库的题（补写主库的 ``sources``）。
     同步不上的题一条也不动，并如实报出原因。
     """
-    from app.core import meta_dict
+    from app.core.pending.meta import dictionary
 
     if not BATCH_ID_RE.match(str(batch_id or "")):
         raise PendingNotFound("批次编号不合法")
@@ -430,7 +431,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
         ).fetchone()[0])
         # G6：同 :205 —— 卡片的所有读数出自本次事务这条连接。
         card = batch_card(batch_row(con, batch_id), live,
-                          pooled=pending_dedupe.pooled_counts(con).get(batch_id, 0),
+                          pooled=dedupe.pooled_counts(con).get(batch_id, 0),
                           con=con)
         con.commit()
     except BaseException:
@@ -444,7 +445,7 @@ def set_batch_meta(batch_id: str, payload: Any) -> dict[str, Any]:
     return {
         "batch_id": batch_id,
         "batch": card,
-        "meta": meta_dict.decorate_meta(meta),
+        "meta": dictionary.decorate_meta(meta),
         "synced": synced,
         "skipped": skipped,
         "patched": patched,
@@ -560,7 +561,7 @@ def approve(pending_id: str, provider_id: str, *, force: bool = False,
 
     item = get_pending(pending_id)
     if engine:
-        from app.core.pending_engine import approve_engine
+        from app.core.pending.batch.engine import approve_engine
 
         return approve_engine(pending_id, item, document)
     assets = item.get("assets") or []

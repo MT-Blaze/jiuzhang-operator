@@ -10,8 +10,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from app.core.pending_assets import move_assets_to_uploads, restore_assets, rewrite_asset_uris
-from app.core.pending_finish import finish_pending
+from app.core.pending.assets import move_assets_to_uploads, restore_assets, rewrite_asset_uris
+from app.core.pending.batch.finish import finish_pending
 
 
 def approve_engine(

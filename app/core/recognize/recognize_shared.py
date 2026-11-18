@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core import pending_assets
+from app.core.pending import assets
 
 _URI_PREFIXES = ("/static/pending/", "/static/uploads/")
 
@@ -35,13 +35,13 @@ def item_image_bytes(item: dict[str, Any]) -> bytes:
         if not name:
             continue
         try:
-            return pending_assets.asset_path(name).read_bytes()
+            return assets.asset_path(name).read_bytes()
         except Exception:  # noqa: BLE001 - 单个资产读不到就试下一个，绝不编图
             continue
     uri = first_image_uri(item)
     if uri.startswith("/static/pending/"):
         try:
-            return pending_assets.asset_path(uri.rsplit("/", 1)[-1]).read_bytes()
+            return assets.asset_path(uri.rsplit("/", 1)[-1]).read_bytes()
         except Exception:  # noqa: BLE001
             return b""
     return b""
@@ -101,10 +101,10 @@ def merge_local(incoming: dict[str, Any], local: dict[str, Any]) -> dict[str, An
 def save_back(item: dict[str, Any], document: dict[str, Any], batch_id: str,
               origin: str) -> bool:
     """单题回填；失败只丢这一道，不拖垮整批。"""
-    from app.core import pending_bank
+    from app.core.pending import service
 
     try:
-        pending_bank.save_draft(
+        service.save_draft(
             [{"question": document, "pending_id": item.get("id"),
               "page_no": item.get("page_no", 1)}],
             batch_id=batch_id,

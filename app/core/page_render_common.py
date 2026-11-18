@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.pending_db import PENDING_ASSET_URI_PREFIX
+from app.core.pending.db import PENDING_ASSET_URI_PREFIX
 
 # A4 @150dpi：1240 × 1754 像素。页面图只做对照，不冒充 300dpi 的成品切图。
 PAGE_WIDTH = 1240
@@ -22,7 +22,7 @@ PDF_RENDER_DPI = 200
 # 自动切图另按 300 dpi 从原 PDF 直接裁：成品题图不经过 200 dpi 页图的二次采样。
 PDF_CROP_DPI = 300
 
-# XML 里禁用标签的检查在 pending_assets；这里只负责生成干净内容。
+# XML 里禁用标签的检查在 pending.assets；这里只负责生成干净内容。
 _FONT_FAMILY = ("'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',"
                 "'SimSun',sans-serif")
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.core import pending_assets
+from app.core.pending import assets
 from app.core.layout import layout_model_store, layout_yolo_runtime
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ def _page_image(entry: dict[str, Any]) -> bytes | None:
     if not name:
         return None
     try:
-        raw = pending_assets.asset_path(name).read_bytes()
+        raw = assets.asset_path(name).read_bytes()
     except Exception:  # noqa: BLE001 - 页图不在就交给下一级
         return None
     return raw or None

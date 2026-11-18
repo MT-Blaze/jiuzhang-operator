@@ -11,7 +11,8 @@ import base64
 import re
 from typing import Any
 
-from app.core import pending_assets, wire
+from app.core import wire
+from app.core.pending import assets
 from app.core.ai.platform import center as ai_center
 from app.core.ai.platform.client import OpenAICompatibleProvider
 
@@ -90,7 +91,7 @@ def _image_data_url(entry: dict[str, Any]) -> str:
     if not name:
         return ""
     try:
-        raw = pending_assets.asset_path(name).read_bytes()
+        raw = assets.asset_path(name).read_bytes()
     except Exception:  # noqa: BLE001 - 页图不在就不出网
         return ""
     if not raw or len(raw) > MAX_IMAGE_BYTES:

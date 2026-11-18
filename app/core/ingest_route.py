@@ -43,10 +43,10 @@ def route_payload(kind: str, health: dict[str, Any],
     }
 
 
-def save_route(pending_bank: Any, batch_id: str, route: dict[str, Any]) -> None:
+def save_route(service: Any, batch_id: str, route: dict[str, Any]) -> None:
     """路由标记是增强信息：写不进去只影响提示，绝不回滚已入池的题目。"""
     try:
-        pending_bank.set_batch_route(batch_id, route)
+        service.set_batch_route(batch_id, route)
     except Exception:  # noqa: BLE001 - 老批次/并发删除都不该拖垮解析
         pass
 
@@ -77,7 +77,7 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
     """
     import base64
 
-    from app.core import pending_bank
+    from app.core.pending import service
 
     crops, notes = page_render.crop_pdf_regions(data, page_images)
     if not crops:
@@ -107,7 +107,7 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
     if not items:
         return notes
     try:
-        result = pending_bank.save_draft(items, batch_id=batch_id,
+        result = service.save_draft(items, batch_id=batch_id,
                                          origin="ingest.auto_split")
     except Exception as error:  # noqa: BLE001 - 自动落池失败仍保留页图与绿框
         notes.append(f"自动切图落池失败（{error}），可在左侧逐框确认切分")
@@ -118,7 +118,7 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
             region["pending_id"] = pending_id
     try:
         # 题块与待审题绑定后再写回一次：老师重开批次时框上就知道「已入池」。
-        pending_bank.set_batch_pages(batch_id, page_images)
+        service.set_batch_pages(batch_id, page_images)
     except Exception:  # noqa: BLE001 - 绑定写不进去只影响重开批次的状态标记
         pass
     return notes
@@ -190,10 +190,10 @@ async def fill_scan_batch(batch_id: str,
     返回值就是写回批次的 route：老师重开批次时能看到这次选了哪两个引擎、
     实际由谁探出题块、坏题率多少、最后补回几道。
     """
-    from app.core import pending_bank
+    from app.core.pending import service
 
     try:
-        items = pending_bank.list_batch_questions(batch_id).get("items") or []
+        items = service.list_batch_questions(batch_id).get("items") or []
     except Exception:  # noqa: BLE001 - 批次刚被删/库读不通时只影响统计
         items = []
     report = ingest_quality.triage_documents([item.get("question") for item in items])
@@ -215,7 +215,7 @@ async def fill_scan_batch(batch_id: str,
         return route
 
     def progress(snapshot: dict[str, Any]) -> None:
-        save_route(pending_bank, batch_id, snapshot)
+        save_route(service, batch_id, snapshot)
 
     return await recognize_router.fill_batch(
         batch_id, items, recognize_engine, report, route, progress)

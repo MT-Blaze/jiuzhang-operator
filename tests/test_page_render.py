@@ -26,10 +26,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import (  # noqa: E402
-    page_furniture, page_render, page_render_cross, pending_assets, pending_bank,
-    pending_batches, pending_db,
-)
+from app.core import page_furniture, page_render, page_render_cross  # noqa: E402
+from app.core.pending import assets  # noqa: E402
+from app.core.pending import service  # noqa: E402
+from app.core.pending.batch import batches  # noqa: E402
+from app.core.pending import db  # noqa: E402
 
 PLUGIN_ID = "org.jiuzhang.editor"
 PNG_1X1 = base64.b64decode(
@@ -75,8 +76,8 @@ class PageRenderTestCase(unittest.TestCase):
 
     def _asset_file(self, entry: dict) -> Path:
         name = str(entry["name"])
-        self.assertTrue(pending_db.PENDING_ASSET_RE.match(name), name)
-        path = pending_db.pending_assets_dir() / name
+        self.assertTrue(db.PENDING_ASSET_RE.match(name), name)
+        path = db.pending_assets_dir() / name
         self.assertTrue(path.is_file(), f"页面图没落盘：{name}")
         return path
 
@@ -114,8 +115,8 @@ class TextFacsimileTest(PageRenderTestCase):
         self.assertNotIn("<script", body.lower())
         self.assertIn("&lt;script&gt;", body)
 
-        with self.assertRaises(pending_db.PendingError):
-            pending_assets.write_generated_asset(
+        with self.assertRaises(db.PendingError):
+            assets.write_generated_asset(
                 b'<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>',
                 "image/svg+xml")
 
@@ -883,8 +884,8 @@ class ImagePageTest(PageRenderTestCase):
 class BatchPageImageTest(PageRenderTestCase):
     def _save(self, *args, **kwargs) -> dict:
         # 落池即扫是生产行为；这些用例只验页面图，别让后台线程攥着临时库不放。
-        with mock.patch.object(pending_bank.pending_dedupe, "warm_dedupe_scan"):
-            return pending_bank.save_draft(*args, **kwargs)
+        with mock.patch.object(service.dedupe, "warm_dedupe_scan"):
+            return service.save_draft(*args, **kwargs)
 
     def _draft(self, *, page_images=None) -> dict:
         return self._save(
@@ -894,12 +895,12 @@ class BatchPageImageTest(PageRenderTestCase):
     def test_01_page_images_are_kept_on_the_batch_not_the_question(self) -> None:
         entries = [{"name": "pimg_" + "a" * 16 + ".svg", "page": 1}]
         for entry in entries:
-            (pending_db.pending_assets_dir()).mkdir(parents=True, exist_ok=True)
-            (pending_db.pending_assets_dir() / entry["name"]).write_text(
+            (db.pending_assets_dir()).mkdir(parents=True, exist_ok=True)
+            (db.pending_assets_dir() / entry["name"]).write_text(
                 "<svg/>", encoding="utf-8")
         result = self._draft(page_images=entries)
         batch_id = result["batch_id"]
-        listed = pending_batches.list_batch_questions(batch_id)
+        listed = batches.list_batch_questions(batch_id)
         self.assertEqual(listed["page_images"], [
             {"name": entries[0]["name"], "uri": "/static/pending/" + entries[0]["name"],
              "page": 1},
@@ -911,8 +912,8 @@ class BatchPageImageTest(PageRenderTestCase):
     def test_01a_auto_regions_survive_batch_round_trip(self) -> None:
         """自动切分框随页图存进批次；越界的坏框直接丢，不让前端画出鬼框。"""
         name = "pimg_" + "f" * 16 + ".png"
-        pending_db.pending_assets_dir().mkdir(parents=True, exist_ok=True)
-        (pending_db.pending_assets_dir() / name).write_bytes(PNG_1X1)
+        db.pending_assets_dir().mkdir(parents=True, exist_ok=True)
+        (db.pending_assets_dir() / name).write_bytes(PNG_1X1)
         entry = {
             "name": name, "page": 1, "width": 1000, "height": 1400,
             "regions": [
@@ -922,7 +923,7 @@ class BatchPageImageTest(PageRenderTestCase):
             ],
         }
         result = self._draft(page_images=[entry])
-        listed = pending_batches.list_batch_questions(result["batch_id"])
+        listed = batches.list_batch_questions(result["batch_id"])
         page = listed["page_images"][0]
         self.assertEqual((page["width"], page["height"]), (1000, 1400))
         self.assertEqual(len(page["regions"]), 1)
@@ -931,20 +932,20 @@ class BatchPageImageTest(PageRenderTestCase):
 
     def test_02_autosave_without_page_images_does_not_clear_them(self) -> None:
         name = "pimg_" + "b" * 16 + ".svg"
-        pending_db.pending_assets_dir().mkdir(parents=True, exist_ok=True)
-        (pending_db.pending_assets_dir() / name).write_text("<svg/>", encoding="utf-8")
+        db.pending_assets_dir().mkdir(parents=True, exist_ok=True)
+        (db.pending_assets_dir() / name).write_text("<svg/>", encoding="utf-8")
         first = self._draft(page_images=[{"name": name, "page": 1}])
         # 编辑端自动保存只回一道题的正文，不带 page_no：原页号必须原地保留。
         second = self._save({"question": _doc("2")},
                             batch_id=first["batch_id"], origin="editor")
-        listed = pending_batches.list_batch_questions(first["batch_id"])
+        listed = batches.list_batch_questions(first["batch_id"])
         self.assertEqual([entry["name"] for entry in listed["page_images"]], [name])
         self.assertEqual([item["page_no"] for item in listed["items"]], [2, 1])
         # 明确带了页号才改：老师把这道题重新定位到第 4 页。
         self._save({"question": _doc("2"), "page_no": 4,
                     "pending_id": second["saved_ids"][0]},
                    batch_id=first["batch_id"], origin="editor")
-        listed = pending_batches.list_batch_questions(first["batch_id"])
+        listed = batches.list_batch_questions(first["batch_id"])
         self.assertEqual([item["page_no"] for item in listed["items"]], [2, 4])
         self.assertTrue(second["saved_ids"])
 

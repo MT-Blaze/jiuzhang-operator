@@ -1,4 +1,4 @@
-"""高度相似（软查重）引擎的判据：``app/core/pending_dedupe.py``。
+"""高度相似（软查重）引擎的判据：``app/core/pending/dedupe/engine.py``。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_dedupe``
 
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import pending_dedupe as dedupe  # noqa: E402
+from app.core.pending.dedupe import engine as dedupe  # noqa: E402
 
 
 class AnswerKeyTest(unittest.TestCase):

@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.core import ingest, ingest_media, ingest_route, pending_bank  # noqa: E402
+from app.core import ingest, ingest_media, ingest_route  # noqa: E402
+from app.core.pending import service  # noqa: E402
 
 
 def _pages(count: int) -> list[dict[str, Any]]:
@@ -81,10 +82,10 @@ class StagePdfBatchTest(unittest.TestCase):
     def test_text_pdf_creates_batch_without_questions(self) -> None:
         created = {"batch_id": "B-001", "batch": {"batch_id": "B-001"},
                    "saved_ids": [], "dedupe_queued": False}
-        with mock.patch.object(pending_bank, "store_source_backup",
+        with mock.patch.object(service, "store_source_backup",
                                return_value="pending_backup/x.pdf"), \
-                mock.patch.object(pending_bank, "create_batch", return_value=created) as create, \
-                mock.patch.object(pending_bank, "save_draft") as save:
+                mock.patch.object(service, "create_batch", return_value=created) as create, \
+                mock.patch.object(service, "save_draft") as save:
             result = ingest._stage_one_batch("模拟1.pdf", b"%PDF")
         create.assert_called_once()
         self.assertTrue(create.call_args.kwargs["scan"])
@@ -98,9 +99,9 @@ class StagePdfBatchTest(unittest.TestCase):
     def test_word_still_uses_parsing_placeholder(self) -> None:
         saved = {"batch_id": "B-002", "batch": {"batch_id": "B-002"},
                  "saved_ids": ["p_placeholder01"], "dedupe_queued": False}
-        with mock.patch.object(pending_bank, "store_source_backup",
+        with mock.patch.object(service, "store_source_backup",
                                return_value="pending_backup/y.docx"), \
-                mock.patch.object(pending_bank, "save_draft", return_value=saved) as save:
+                mock.patch.object(service, "save_draft", return_value=saved) as save:
             result = ingest._stage_one_batch("闭环样卷.docx", b"PK")
         save.assert_called_once()
         self.assertEqual(result["jobs"][0]["pending_id"], "p_placeholder01")
@@ -136,9 +137,9 @@ class AutoSplitPagesTest(unittest.TestCase):
         with mock.patch.object(ingest.page_render, "crop_pdf_regions",
                                return_value=(crops, [])), \
                 mock.patch.object(
-                    pending_bank, "save_draft",
+                    service, "save_draft",
                     return_value={"saved_ids": ["p_auto0001", "p_auto0002"]}) as save, \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
+                mock.patch.object(service, "set_batch_pages") as set_pages:
             notes = ingest_route.auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
 
         self.assertEqual(notes, [])
@@ -171,8 +172,8 @@ class AutoSplitPagesTest(unittest.TestCase):
     def test_no_regions_means_no_pending_questions(self) -> None:
         with mock.patch.object(ingest.page_render, "crop_pdf_regions",
                                return_value=({}, ["没有渲染器"])), \
-                mock.patch.object(pending_bank, "save_draft") as save, \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
+                mock.patch.object(service, "save_draft") as save, \
+                mock.patch.object(service, "set_batch_pages") as set_pages:
             notes = ingest_route.auto_split_pages("无框.pdf", b"%PDF", "B-001", self._pages())
         self.assertEqual(notes, ["没有渲染器"])
         save.assert_not_called()
@@ -184,9 +185,9 @@ class AutoSplitPagesTest(unittest.TestCase):
                       "png": b"\x89PNG", "width": 10, "height": 10}]}
         with mock.patch.object(ingest.page_render, "crop_pdf_regions",
                                return_value=(crops, [])), \
-                mock.patch.object(pending_bank, "save_draft",
+                mock.patch.object(service, "save_draft",
                                   side_effect=RuntimeError("池子满了")), \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages:
+                mock.patch.object(service, "set_batch_pages") as set_pages:
             notes = ingest_route.auto_split_pages("模拟1.pdf", b"%PDF", "B-001", pages)
         self.assertTrue(any("自动切图落池失败" in note for note in notes))
         set_pages.assert_not_called()
@@ -200,10 +201,10 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
         pages = _pages(2)
         with mock.patch.object(ingest.page_render, "build_pages",
                                return_value=(pages, [1, 2], [])), \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages, \
+                mock.patch.object(service, "set_batch_pages") as set_pages, \
                 mock.patch.object(ingest, "auto_split_pages",
                                   return_value=[]) as auto_split, \
-                mock.patch.object(pending_bank, "save_draft") as save:
+                mock.patch.object(service, "save_draft") as save:
             await ingest.run_ingest_jobs("B-001", [{
                 "pending_id": "", "name": "模拟1.pdf", "data": b"%PDF", "page_only": True,
             }])
@@ -214,9 +215,9 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
     async def test_renderer_missing_still_saves_nothing(self) -> None:
         with mock.patch.object(ingest.page_render, "build_pages",
                                return_value=([], [], [])), \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages, \
+                mock.patch.object(service, "set_batch_pages") as set_pages, \
                 mock.patch.object(ingest, "auto_split_pages") as auto_split, \
-                mock.patch.object(pending_bank, "save_draft") as save:
+                mock.patch.object(service, "save_draft") as save:
             await ingest.run_ingest_jobs("B-002", [{
                 "pending_id": "", "name": "无渲染器.pdf", "data": b"%PDF", "page_only": True,
             }])
@@ -231,9 +232,9 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
                 new=mock.AsyncMock(return_value=([], [], "pdf", "", True))), \
                 mock.patch.object(ingest.page_render, "build_pages",
                                   return_value=(pages, [1], [])), \
-                mock.patch.object(pending_bank, "set_batch_pages") as set_pages, \
-                mock.patch.object(pending_bank, "delete_pending") as delete, \
-                mock.patch.object(pending_bank, "save_draft") as save:
+                mock.patch.object(service, "set_batch_pages") as set_pages, \
+                mock.patch.object(service, "delete_pending") as delete, \
+                mock.patch.object(service, "save_draft") as save:
             await ingest.run_ingest_jobs("B-003", [{
                 "pending_id": "p_placeholder02", "name": "老占位.pdf", "data": b"%PDF",
             }])
@@ -254,7 +255,7 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
                 new=mock.AsyncMock(return_value=(documents, [], "docx", "源文本", False))), \
                 mock.patch.object(ingest.page_render, "build_pages",
                                   return_value=([], [1, 1], [])), \
-                mock.patch.object(pending_bank, "save_draft", side_effect=capture):
+                mock.patch.object(service, "save_draft", side_effect=capture):
             await ingest.run_ingest_jobs("B-004", [{
                 "pending_id": "p_placeholder03", "name": "卷子.docx", "data": b"PK",
             }])
@@ -275,7 +276,7 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
                 return_value=("", ["整页扫描图：按页面图处理"], True)), \
                 mock.patch.object(ingest.page_render, "build_pages",
                                   return_value=([], [], [])), \
-                mock.patch.object(pending_bank, "save_draft", side_effect=capture):
+                mock.patch.object(service, "save_draft", side_effect=capture):
             await ingest.run_ingest_jobs("B-005", [{
                 "pending_id": "p_placeholder04", "name": "扫描样卷.docx", "data": b"PK",
             }])

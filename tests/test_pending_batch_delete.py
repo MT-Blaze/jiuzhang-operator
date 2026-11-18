@@ -69,18 +69,21 @@ class BatchLifecycleCase(unittest.TestCase):
     """隔离临时工作区；后台初查线程按名 join，Windows 上不抢 SQLite 句柄。"""
 
     def setUp(self) -> None:
-        from app.core import (pending_assets, pending_bank,
-                              pending_bank_batches, pending_batches, pending_db,
-                              pending_dedupe)
+        from app.core.pending import assets
+        from app.core.pending import service
+        from app.core.pending.batch import bank_batches
+        from app.core.pending.batch import batches
+        from app.core.pending import db
+        from app.core.pending.dedupe import engine as dedupe
         from app.core.bank import service as bank
 
         self.bank = bank
-        self.pending_assets = pending_assets
-        self.pending_bank = pending_bank
-        self.pending_bank_batches = pending_bank_batches
-        self.pending_batches = pending_batches
-        self.pending_db = pending_db
-        self.pending_dedupe = pending_dedupe
+        self.assets = assets
+        self.service = service
+        self.bank_batches = bank_batches
+        self.batches = batches
+        self.db = db
+        self.dedupe = dedupe
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         from app.core.config import settings
@@ -119,13 +122,13 @@ class BatchLifecycleCase(unittest.TestCase):
     # ---------- 夹具 ----------
 
     def _card(self, batch_id: str) -> dict:
-        for card in self.pending_batches.batch_list()["batches"]:
+        for card in self.batches.batch_list()["batches"]:
             if card["batch_id"] == batch_id:
                 return card
         raise AssertionError(f"批次列表里没有 {batch_id}")
 
     def _count(self, table: str, batch_id: str) -> int:
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             return int(con.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE batch_id = ?", (batch_id,)
@@ -134,12 +137,12 @@ class BatchLifecycleCase(unittest.TestCase):
             con.close()
 
     def _scan_batch(self, **kwargs) -> str:
-        return self.pending_bank.create_batch(
+        return self.service.create_batch(
             source_name="模拟1.pdf", scan=True, **kwargs)["batch_id"]
 
     def _attach_page(self, batch_id: str) -> str:
-        name = self.pending_assets.write_pending_asset(PNG, "image/png")
-        self.pending_bank.set_batch_pages(batch_id, [{"name": name, "page": 1}])
+        name = self.assets.write_pending_asset(PNG, "image/png")
+        self.service.set_batch_pages(batch_id, [{"name": name, "page": 1}])
         return name
 
     # ---------- 立批与页图 ----------
@@ -147,7 +150,7 @@ class BatchLifecycleCase(unittest.TestCase):
     def test_01_scan_batch_starts_with_zero_questions(self) -> None:
         """纯图片 PDF 只立批次：没有占位题，卡片也不谎报「原卷页」。"""
         batch_id = self._scan_batch()
-        data = self.pending_batches.list_batch_questions(batch_id)
+        data = self.batches.list_batch_questions(batch_id)
         self.assertEqual(data["items"], [])
         self.assertTrue(data["scan_batch"])
         self.assertEqual(data["page_images"], [])
@@ -160,7 +163,7 @@ class BatchLifecycleCase(unittest.TestCase):
 
     def test_02_attach_pages_turns_card_into_page_only(self) -> None:
         """页图挂上后卡片可点开继续框选，读列表也带 scan_batch。"""
-        from app.core.pending_db import PENDING_ASSET_URI_PREFIX
+        from app.core.pending.db import PENDING_ASSET_URI_PREFIX
 
         batch_id = self._scan_batch()
         name = self._attach_page(batch_id)
@@ -169,7 +172,7 @@ class BatchLifecycleCase(unittest.TestCase):
         self.assertTrue(card["scan_batch"])
         self.assertEqual(card["page_count"], 1)
 
-        data = self.pending_batches.list_batch_questions(batch_id)
+        data = self.batches.list_batch_questions(batch_id)
         self.assertEqual(data["page_images"], [
             {"name": name, "uri": PENDING_ASSET_URI_PREFIX + name, "page": 1},
         ])
@@ -179,12 +182,12 @@ class BatchLifecycleCase(unittest.TestCase):
         """删掉最后一道切出来的题，原卷页图不能被「批次收口」一并清掉。"""
         batch_id = self._scan_batch()
         page_name = self._attach_page(batch_id)
-        saved = self.pending_bank.save_draft([{"question": _doc()}], batch_id=batch_id)
+        saved = self.service.save_draft([{"question": _doc()}], batch_id=batch_id)
         self.assertEqual(len(saved["saved_ids"]), 1)
 
-        self.pending_bank.delete_pending(saved["saved_ids"][0])
+        self.service.delete_pending(saved["saved_ids"][0])
         self.assertEqual(self._count("pending_questions", batch_id), 0)
-        page_path = self.pending_assets.asset_path(page_name)
+        page_path = self.assets.asset_path(page_name)
         self.assertTrue(page_path.is_file(), "纯原卷批次还要留着页图让老师继续框选")
         self.assertTrue(self._card(batch_id)["page_only"])
 
@@ -194,18 +197,18 @@ class BatchLifecycleCase(unittest.TestCase):
         """框选切出来的新题排在右侧三栏最上面，后切的仍压在最前。"""
         batch_id, first_ids = (
             lambda saved: (saved["batch_id"], saved["saved_ids"])
-        )(self.pending_bank.save_draft(
+        )(self.service.save_draft(
             [{"question": _doc(f"已有题 {n}：$x^2={n}$ 的解。（　　）。")} for n in (1, 2, 3)]))
         self.assertEqual(len(first_ids), 3)
 
-        top_one = self.pending_bank.save_draft(
+        top_one = self.service.save_draft(
             [{"question": _doc("先框出来的一题：$x+1=2$。（　　）。")}],
             batch_id=batch_id, position="top")["saved_ids"][0]
-        top_two = self.pending_bank.save_draft(
+        top_two = self.service.save_draft(
             [{"question": _doc("后框出来的一题：$x+2=3$。（　　）。")}],
             batch_id=batch_id, position="top")["saved_ids"][0]
 
-        items = self.pending_batches.list_batch_questions(batch_id)["items"]
+        items = self.batches.list_batch_questions(batch_id)["items"]
         self.assertEqual([str(item["id"]) for item in items[:2]], [top_two, top_one])
         self.assertEqual([str(item["id"]) for item in items[2:]], first_ids)
 
@@ -213,10 +216,10 @@ class BatchLifecycleCase(unittest.TestCase):
 
     def test_05_delete_batch_clears_rows_files_and_backup(self) -> None:
         """整批删除：待审题、初查账、页图、配图与只读副本一起清，主库不动。"""
-        backup = self.pending_assets.store_source_backup("模拟1.pdf", b"%PDF-1.4 fake")
+        backup = self.assets.store_source_backup("模拟1.pdf", b"%PDF-1.4 fake")
         batch_id = self._scan_batch(source_backup=backup)
         page_name = self._attach_page(batch_id)
-        saved = self.pending_bank.save_draft(
+        saved = self.service.save_draft(
             [{"question": _doc(images=[{"id": "img_a", "role": "stem",
                                         "uri": "/static/uploads/img_a.png", "alt": "题图"}]),
               "assets": [{"id": "img_a",
@@ -226,7 +229,7 @@ class BatchLifecycleCase(unittest.TestCase):
         # 先等这一批的后台初查收口：它和「删除批次」同时跑会在删完之后补写结论行，
         # 那时再断言「初查账清空」就变成跟线程赛跑，测的也不是删除本身了。
         self._settle_dedupe_threads()
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             item_asset = wire.loads(con.execute(
                 "SELECT assets_json FROM pending_questions WHERE id = ?", (item_id,)
@@ -243,30 +246,30 @@ class BatchLifecycleCase(unittest.TestCase):
         finally:
             con.close()
         item_asset_name = str(item_asset[0]["name"])
-        item_path = self.pending_assets.asset_path(item_asset_name)
+        item_path = self.assets.asset_path(item_asset_name)
         self.assertTrue(item_path.is_file())
-        backup_file = self.pending_assets.backup_path(backup)
+        backup_file = self.assets.backup_path(backup)
         self.assertTrue(backup_file.is_file())
 
-        result = self.pending_bank.delete_batch(batch_id)
+        result = self.service.delete_batch(batch_id)
         self.assertEqual(result["batch_id"], batch_id)
         self.assertEqual(result["deleted_questions"], 1)
         self.assertEqual(result["deleted_pages"], 1)
 
         batch_ids = {card["batch_id"]
-                     for card in self.pending_batches.batch_list()["batches"]}
+                     for card in self.batches.batch_list()["batches"]}
         self.assertNotIn(batch_id, batch_ids)
         for table in ("pending_questions", "dedupe_scans", "dedupe_findings"):
             self.assertEqual(self._count(table, batch_id), 0, table)
-        self.assertFalse(self.pending_assets.asset_path(page_name).exists())
+        self.assertFalse(self.assets.asset_path(page_name).exists())
         self.assertFalse(item_path.exists())
         self.assertFalse(backup_file.exists())
 
     def test_06_delete_unknown_or_invalid_batch_is_not_found(self) -> None:
-        with self.assertRaises(self.pending_bank.PendingNotFound):
-            self.pending_bank.delete_batch("B-999")
-        with self.assertRaises(self.pending_bank.PendingNotFound):
-            self.pending_bank.delete_batch("not-a-batch")
+        with self.assertRaises(self.service.PendingNotFound):
+            self.service.delete_batch("B-999")
+        with self.assertRaises(self.service.PendingNotFound):
+            self.service.delete_batch("not-a-batch")
 
     def test_07_delete_route_is_a_write(self) -> None:
         """删除批次挂 DELETE，且必须过写令牌——删的是老师整批原卷。"""

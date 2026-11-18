@@ -1,7 +1,7 @@
 """重题池的源码回写：老师在新题源码区的编辑只改题面四件。
 
-从 ``pending_pool.py`` 拆出来的独立舱位（单文件 800 行红线）：这一支只管
-「池内文档里的题面字段怎么被安全改写」，裁决动作仍归 ``pending_pool``。
+从 ``pending/pool/service.py`` 拆出来的独立舱位（单文件 800 行红线）：这一支只管
+「池内文档里的题面字段怎么被安全改写」，裁决动作仍归 ``pending.pool.service``。
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Any
 
 from app.core import wire
 from app.core.bank import questions
-from app.core.pending_db import PendingError, PendingNotFound, connect
+from app.core.pending.db import PendingError, PendingNotFound, connect
 
 _EDITABLE_FIELDS = ("type", "stem", "options", "answer", "solution")
 _QUESTION_TYPES = ("single_choice", "multiple_choice", "fill_blank", "solution",
@@ -110,16 +110,16 @@ def update_document(pool_id: str, patch: Any) -> dict[str, Any]:
     池内文档可能还没补齐入库要件，所以这里只做**字段级**校验，不跑整份 Schema——
     补齐欠项仍是老师点裁决时的事。
     """
-    # 迟到的导入：pending_pool 在模块顶部引本函数，这里反过来引它会成环。
-    from app.core import pending_pool
+    # 迟到的导入：pool.service 在模块顶部引本函数，这里反过来引它会成环。
+    from app.core.pending.pool import service as pool
 
-    row = pending_pool._pool_row(pool_id)
+    row = pool._pool_row(pool_id)
     if not isinstance(patch, dict) or not patch:
         raise PendingError("没有要保存的字段")
     unknown = [key for key in patch if key not in _EDITABLE_FIELDS]
     if unknown:
         raise PendingError("源码区不能改这些字段：" + "、".join(sorted(unknown)))
-    document = copy.deepcopy(pending_pool._json_object(row["doc_json"]))
+    document = copy.deepcopy(pool._json_object(row["doc_json"]))
     before = copy.deepcopy(document)
     if "type" in patch:
         value = str(patch["type"] or "")

@@ -1,9 +1,9 @@
 """中转站里「批次」这一层的生命周期：立批、挂原卷页图、整批删、剔重后收口。
 
-与 ``pending_bank.py`` 的分工：那边管一道题的来去（暂存、入库、单条删除），
+与 ``pending/service.py`` 的分工：那边管一道题的来去（暂存、入库、单条删除），
 这边管一个批次从生到死——扫描版 PDF 先立一个空批次再挂页图；老师说不要了
 就整批删干净（待审题、初查账、原卷资产与只读副本一起）；未审数归零时统一
-清残留文件。两边共用 ``pending_db`` 的连接与号段、``pending_batches`` 的读写，
+清残留文件。两边共用 ``pending.db`` 的连接与号段、``pending.batch.batches`` 的读写，
 所以拆文件不拆口径。
 """
 
@@ -12,12 +12,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from app.core import pending_dedupe, wire
+from app.core import wire
+from app.core.pending.dedupe import engine as dedupe
 from app.core.bank import questions
 from app.core.bank import service as bank
-from app.core.pending_assets import backup_path, backup_paths, drop_assets
-from app.core.pending_batches import batch_card, batch_row, refresh_batch
-from app.core.pending_db import (
+from app.core.pending.assets import backup_path, backup_paths, drop_assets
+from app.core.pending.batch.batches import batch_card, batch_row, refresh_batch
+from app.core.pending.db import (
     BATCH_ID_RE,
     PENDING_ASSET_RE,
     PENDING_ASSET_URI_PREFIX,
@@ -29,7 +30,7 @@ from app.core.pending_db import (
     local_now,
     next_batch_id,
 )
-from app.core.pending_meta import clean_text
+from app.core.pending.meta.rules import clean_text
 
 
 def _page_entries(raw: Any) -> list[dict[str, Any]] | None:
@@ -151,7 +152,7 @@ def create_batch(*, source_backup: Any = "", source_name: Any = "",
              1 if scan else 0),
         )
         card = batch_card(batch_row(con, target_batch), 0,
-                          pooled=pending_dedupe.pooled_counts(con).get(target_batch, 0),
+                          pooled=dedupe.pooled_counts(con).get(target_batch, 0),
                           con=con)
         con.commit()
     except BaseException:
@@ -183,7 +184,7 @@ def set_batch_pages(batch_id: Any, page_images: Any) -> dict[str, Any]:
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (text,)
         ).fetchone()[0])
         card = batch_card(batch_row(con, text), live,
-                          pooled=pending_dedupe.pooled_counts(con).get(text, 0), con=con)
+                          pooled=dedupe.pooled_counts(con).get(text, 0), con=con)
         con.commit()
     except BaseException:
         con.rollback()
@@ -213,7 +214,7 @@ def set_batch_route(batch_id: Any, payload: Any) -> dict[str, Any]:
             "SELECT COUNT(*) FROM pending_questions WHERE batch_id = ?", (text,)
         ).fetchone()[0])
         card = batch_card(batch_row(con, text), live,
-                          pooled=pending_dedupe.pooled_counts(con).get(text, 0), con=con)
+                          pooled=dedupe.pooled_counts(con).get(text, 0), con=con)
         con.commit()
     except BaseException:
         con.rollback()
@@ -336,7 +337,7 @@ def purge_batch_duplicates(batch_id: str, provider_id: str, drop_ids: Any,
 
     # 主库快照必须在事务外：中转站库的写锁锁不住主库，进了事务再读只是把窗口拉长。
     try:
-        main_rows = pending_dedupe.bank_rows_snapshot(provider_id)
+        main_rows = dedupe.bank_rows_snapshot(provider_id)
     except bank.BankNotFound as exc:
         raise BatchPurgeError(str(exc) or "题库未安装或未启用",
                               code="batch_purge_bank_not_found", status=404) from exc
@@ -364,7 +365,7 @@ def purge_batch_duplicates(batch_id: str, provider_id: str, drop_ids: Any,
                 "这些条目不属于本批：" + "、".join(outsiders[:5]),
                 code="batch_purge_pending_not_in_batch")
         # 事务内重算：主库用的仍是事务外那一份快照，进事务后不再碰主库连接。
-        planned = pending_dedupe.group_duplicates(rows, main_rows)
+        planned = dedupe.group_duplicates(rows, main_rows)
         recompute = set(planned["recompute"])
         keeps = set(planned["keep_ids"])
         # 保留者保护先判：keep 本来就不在重复全集里，先判 stale 会让 keep_selected 永不可达。
@@ -449,7 +450,7 @@ def _settle_batch(batch_id: str) -> dict[str, Any]:
             # 池内条数与初查结论都从这条连接读（给 con 就不碰进程内缓存），
             # 于是卡片不再出现「待审 2 ＋ 池内 2 而总数才 2」那种跨提交混代帧。
             card = batch_card(row, live,
-                              pooled=pending_dedupe.pooled_counts(con).get(str(batch_id), 0),
+                              pooled=dedupe.pooled_counts(con).get(str(batch_id), 0),
                               con=con)
             assets = wire.loads(row["assets_json"] or "[]")
             page_assets = wire.loads(row["page_assets_json"] or "[]")

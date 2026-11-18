@@ -14,7 +14,7 @@ from typing import Any
 
 from app.core import wire
 from app.core.bank import questions
-from app.core.pending_db import (
+from app.core.pending.db import (
     BATCH_ID_RE,
     PENDING_ID_RE,
     PendingError,
@@ -76,9 +76,10 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
 
     ``pooled``／``con``（G5）是调用方**在同一条读事务里**给好的池内条数与那条连接：
     给了就照用、结论也从这条连接回读；都不传才让 ``scan_state`` 按老样子自己开连接——
-    单点调用方（``pending_bank``、``pending_pool``）行为不变。
+    单点调用方（``pending.service``、``pending.pool.service``）行为不变。
     """
-    from app.core import meta_dict, pending_dedupe
+    from app.core.pending.meta import dictionary
+    from app.core.pending.dedupe import engine as dedupe
 
     batch_id = str(row["batch_id"])
     return {
@@ -88,7 +89,7 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
         "updated_at": str(row["updated_at"]),
         "source_backup": str(row["source_backup"] or ""),
         "source_name": str(row["source_name"] or ""),
-        "meta": meta_dict.decorate_meta(read_meta(row)),
+        "meta": dictionary.decorate_meta(read_meta(row)),
         "approved_count": len(read_approved(row)),
         "total": int(row["total"] or 0),
         "pending_count": live,
@@ -102,7 +103,7 @@ def batch_card(row: sqlite3.Row, live: int, *, pooled: int | None = None,
         "route": read_route(row),
         "page_count": len(_page_images(row)),
         # 后台初查的进程内注解（3.1a）：纯读、不发 IO，无缓存即 pending。
-        "dedupe": pending_dedupe.scan_state(batch_id, pooled=pooled, con=con),
+        "dedupe": dedupe.scan_state(batch_id, pooled=pooled, con=con),
     }
 
 
@@ -120,7 +121,7 @@ def batch_list() -> dict[str, Any]:
     「待审 2 ＋ 池内 2，总数才 2」这种重复计数的帧，或反过来「``done`` 配 ``pooled=0``」
     的空窗帧。卡片是在读事务内构造的，``BEGIN`` 之后到 ``rollback`` 之前不落任何人提交。
     """
-    from app.core import pending_dedupe
+    from app.core.pending.dedupe import engine as dedupe
 
     con = connect()
     try:
@@ -130,7 +131,7 @@ def batch_list() -> dict[str, Any]:
             live = {str(row["batch_id"]): int(row["n"]) for row in con.execute(
                 "SELECT batch_id, COUNT(*) AS n FROM pending_questions GROUP BY batch_id"
             )}
-            pooled = pending_dedupe.pooled_counts(con)
+            pooled = dedupe.pooled_counts(con)
             cards = [batch_card(row, live.get(str(row["batch_id"]), 0),
                                  pooled=pooled.get(str(row["batch_id"]), 0), con=con)
                      for row in rows]

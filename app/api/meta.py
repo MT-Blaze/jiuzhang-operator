@@ -11,14 +11,15 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
-from app.core import meta_dict, pending_bank
+from app.core.pending.meta import dictionary
+from app.core.pending import service
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["meta"])
 
 
 def _error(exc: Exception) -> HTTPException:
-    if isinstance(exc, meta_dict.SchoolShortNameConflict):
+    if isinstance(exc, dictionary.SchoolShortNameConflict):
         return HTTPException(
             status_code=409,
             detail={
@@ -28,7 +29,7 @@ def _error(exc: Exception) -> HTTPException:
                 "existing_full_name": exc.existing_full_name,
             },
         )
-    if isinstance(exc, pending_bank.PendingError):
+    if isinstance(exc, service.PendingError):
         return HTTPException(status_code=400, detail=str(exc))
     return HTTPException(status_code=400, detail=str(exc))
 
@@ -36,16 +37,16 @@ def _error(exc: Exception) -> HTTPException:
 @router.get("/api/meta/scenes", summary="11 个主场景")
 def meta_scenes() -> dict[str, Any]:
     try:
-        return meta_dict.list_scenes()
-    except pending_bank.PendingError as exc:
+        return dictionary.list_scenes()
+    except service.PendingError as exc:
         raise _error(exc) from exc
 
 
 @router.get("/api/meta/schools", summary="查学校字典（全称/简称模糊匹配）")
 def meta_schools(q: str = "", limit: int = Query(default=30, ge=1, le=100)) -> dict[str, Any]:
     try:
-        return meta_dict.list_schools(q, limit)
-    except (meta_dict.MetaDictError, pending_bank.PendingError) as exc:
+        return dictionary.list_schools(q, limit)
+    except (dictionary.MetaDictError, service.PendingError) as exc:
         raise _error(exc) from exc
 
 
@@ -61,10 +62,10 @@ def meta_schools_create(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     try:
-        result = meta_dict.create_school(payload.get("full_name"), payload.get("short_name"))
-    except meta_dict.SchoolShortNameConflict as exc:
+        result = dictionary.create_school(payload.get("full_name"), payload.get("short_name"))
+    except dictionary.SchoolShortNameConflict as exc:
         raise _error(exc) from exc
-    except (meta_dict.MetaDictError, pending_bank.PendingError) as exc:
+    except (dictionary.MetaDictError, service.PendingError) as exc:
         raise _error(exc) from exc
     response.status_code = 201 if result.get("created") else 200
     return result
@@ -81,12 +82,12 @@ async def meta_schools_suggest(payload: dict[str, Any] = Body(...)) -> dict[str,
     if not str(payload.get("short_name") or "").strip():
         raise HTTPException(status_code=400, detail="先填一个简称或别名，才能让 AI 补全")
     try:
-        return await meta_dict.suggest_school_full_name(
+        return await dictionary.suggest_school_full_name(
             payload.get("short_name"), payload.get("region")
         )
-    except meta_dict.MetaDictError as exc:
+    except dictionary.MetaDictError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise _error(exc) from exc
 
 
@@ -97,8 +98,8 @@ def meta_tags(
     limit: int = Query(default=20, ge=1, le=50),
 ) -> dict[str, Any]:
     try:
-        return meta_dict.list_tags(scene, q, limit)
-    except (meta_dict.MetaDictError, pending_bank.PendingError) as exc:
+        return dictionary.list_tags(scene, q, limit)
+    except (dictionary.MetaDictError, service.PendingError) as exc:
         raise _error(exc) from exc
 
 
@@ -111,6 +112,6 @@ def meta_tags_remember(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     try:
-        return meta_dict.remember_tag(payload.get("name"), payload.get("scene"))
-    except (meta_dict.MetaDictError, pending_bank.PendingError) as exc:
+        return dictionary.remember_tag(payload.get("name"), payload.get("scene"))
+    except (dictionary.MetaDictError, service.PendingError) as exc:
         raise _error(exc) from exc

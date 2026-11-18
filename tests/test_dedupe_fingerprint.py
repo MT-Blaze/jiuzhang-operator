@@ -7,7 +7,7 @@
 2. **符号一个都不省**：``A\\cap B`` 与 ``A\\cup B`` 签名不同，``x^2-3x+2`` 与
    ``x^2-5x+6`` 绝不能判「确定」——误报的下一站是删数据（2.2／2.3）；
 3. **只有一把尺子**：旧 ``HIGH_SIMILARITY=0.92`` 并进 ``very_similar`` 档，
-   ``pending_dedupe`` 不再另设阈值（2.6）；
+   ``pending.dedupe.engine`` 不再另设阈值（2.6）；
 4. **百分比只是档位内的排序刻度**：很像 ≤89，措辞永不出「98% 是同一道题」（2.5）；
 5. **指纹拿比对归一算**，不拿原始源码算：同一句话两种打法同指纹，旧归一口径不回退。
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.core import pending_dedupe
+from app.core.pending.dedupe import engine as dedupe
 from app.core.bank.engine import dedupe as bank_dedupe
 
 PLACEHOLDER = bank_dedupe.SKELETON_PLACEHOLDER
@@ -248,15 +248,15 @@ class SingleRulerTest(unittest.TestCase):
 
     def test_01_very_similar_level_is_the_old_threshold(self) -> None:
         self.assertEqual(bank_dedupe.SKELETON_LEVELS["very_similar"], 0.92)
-        self.assertEqual(pending_dedupe.HIGH_SIMILARITY,
+        self.assertEqual(dedupe.HIGH_SIMILARITY,
                          bank_dedupe.SKELETON_LEVELS["very_similar"])
 
     def test_02_no_second_ruler_in_pending_dedupe(self) -> None:
         # 相似比只能来自底座那一把尺子；这里再算一遍就是第二把
-        self.assertEqual(pending_dedupe.similarity("已知则", "已知则值"),
+        self.assertEqual(dedupe.similarity("已知则", "已知则值"),
                          bank_dedupe.text_similarity("已知则", "已知则值"))
-        self.assertEqual(pending_dedupe.similarity("已知则", ""), 0.0)
-        self.assertNotIn("difflib", vars(pending_dedupe))
+        self.assertEqual(dedupe.similarity("已知则", ""), 0.0)
+        self.assertNotIn("difflib", vars(dedupe))
 
     def test_03_tiers_and_default_wide(self) -> None:
         self.assertEqual(bank_dedupe.TIER_LEVELS["strict"], ("certain",))

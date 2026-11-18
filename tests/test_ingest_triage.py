@@ -18,7 +18,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app.core import ingest_route, pending_bank
+from app.core import ingest_route
+from app.core.pending import service
 from app.core.ai.platform import center as ai_center
 from app.core.ingest_quality import question_reasons, triage_documents
 from app.core.layout import layout_router
@@ -182,9 +183,9 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
             saved.extend(rows)
             return {"saved_ids": [row.get("pending_id") for row in rows]}
 
-        with mock.patch.object(pending_bank, "list_batch_questions",
+        with mock.patch.object(service, "list_batch_questions",
                                return_value={"items": items}), \
-                mock.patch.object(pending_bank, "save_draft", side_effect=capture), \
+                mock.patch.object(service, "save_draft", side_effect=capture), \
                 mock.patch.object(recognize_ai.ai_center, "resolve_task",
                                   return_value=binding()), \
                 mock.patch.object(recognize_ai.ai_recognize, "recognize",
@@ -239,7 +240,7 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_mineru_engine_skips_ai(self) -> None:
         items = [item("p_mine%02d" % index, clean_doc(index)) for index in range(2)]
-        with mock.patch.object(pending_bank, "list_batch_questions",
+        with mock.patch.object(service, "list_batch_questions",
                                return_value={"items": items}), \
                 mock.patch.object(recognize_ai.ai_recognize, "recognize") as recognize, \
                 mock.patch.object(recognize_mineru.recognize_shared, "item_image_bytes",
@@ -252,7 +253,7 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_mineru_account_is_reported(self) -> None:
         items = [item("p_none%02d" % index, clean_doc(index)) for index in range(2)]
-        with mock.patch.object(pending_bank, "list_batch_questions",
+        with mock.patch.object(service, "list_batch_questions",
                                return_value={"items": items}), \
                 mock.patch.object(ai_center, "find_mineru", return_value=None):
             route = await ingest_route.fill_scan_batch(
@@ -276,9 +277,9 @@ class MineruPerQuestionTest(unittest.IsolatedAsyncioTestCase):
                              "MinerU 等待时限必须放宽到 900 秒")
             return {"ok": True, "markdown": "1. 求 $x+1=2$ 的解。", "detail": "ok"}
 
-        with mock.patch.object(pending_bank, "list_batch_questions",
+        with mock.patch.object(service, "list_batch_questions",
                                return_value={"items": items}), \
-                mock.patch.object(pending_bank, "save_draft",
+                mock.patch.object(service, "save_draft",
                                   side_effect=lambda rows, **kwargs: saved.extend(rows)), \
                 mock.patch.object(recognize_mineru.recognize_shared, "item_image_bytes",
                                   side_effect=lambda _item: b"\x89PNG-question"), \

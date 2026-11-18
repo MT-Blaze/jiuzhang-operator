@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.pending_assets import write_generated_asset
+from app.core.pending.assets import write_generated_asset
 from app.core.page_render_common import (  # noqa: F401 - 常量沿用旧路径对外
     FONT_SIZE,
     FOOTER_Y,

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.pending_assets import drop_assets
-from app.core.pending_bank_batches import _settle_batch
-from app.core.pending_batches import remember_approved
-from app.core.pending_db import connect
+from app.core.pending.assets import drop_assets
+from app.core.pending.batch.bank_batches import _settle_batch
+from app.core.pending.batch.batches import remember_approved
+from app.core.pending.db import connect
 
 
 def finish_pending(item: dict[str, Any], pending_id: str,

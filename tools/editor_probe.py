@@ -2681,7 +2681,7 @@ def main() -> int:
                                          {"questions": payload50, "origin": origin})
                 return time.perf_counter() - start, status, body
 
-            # 占位轮口径（app/core/pending_bank.py:219）：origin=="ingest" 且本次不传
+            # 占位轮口径（app/core/pending/service.py:219）：origin=="ingest" 且本次不传
             # batch_id 就不挂初查任务——拿它当「未挂初查基线」，与挂了的做同payload差值。
             base_rounds = [b31a_import("ingest") for _ in range(2)]
             hook_rounds = [b31a_import("probe.recognize") for _ in range(2)]

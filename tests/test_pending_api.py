@@ -1085,7 +1085,7 @@ class FinalGateHttpTest(PoolEvictionHttpTest):
     **关着自动抽走**（``JZO_POOL_ADMIT_DISABLED=1``，与 :class:`PendingApiContractTest`
     同一开关、同一段理由）——抽走与闸门互斥：开着抽走时，重题在 ``approve`` 之前就被
     搬进池里，``approve`` 只会撞 404，闸门根本没机会出手（S6g 侦察实测：单题批次
-    approve 前扫不动、收口后又被抽回池）。要看住的是 ``pending_bank.approve`` 里
+    approve 前扫不动、收口后又被抽回池）。要看住的是 ``service.approve`` 里
     ``find_duplicate`` 那一闸本身，它跟抽走无关，关掉抽走只是把待审行留在原地。
 
     本类**不继承**父类那两条用例（``unittest`` 只收集类自己定义的 ``test_*``），
@@ -1227,7 +1227,7 @@ class FinalGateHttpTest(PoolEvictionHttpTest):
         同一条被拦的待审行上：``{"action": "keep_separate"}`` → **400**，``detail`` 逐字
         「不认识的入库动作：keep_separate（只收 overwrite / merge_solution）」——动作校验
         在判重**之前**，连闸门都不给碰。旁证两条：源码里 ``approve`` 只收
-        ``DERIVED_ACTIONS``；``pending_pool.ACTIONS`` 才是含 ``keep_separate`` 的那张名单，
+        ``DERIVED_ACTIONS``；``pool.ACTIONS`` 才是含 ``keep_separate`` 的那张名单，
         且它只挂在 ``POST /api/pending/pool/{id}/act`` 显式动作上。
         """
         stem = "闸门口径题：已知 $3x-2=7$，求 $x$。"
@@ -1248,8 +1248,8 @@ class FinalGateHttpTest(PoolEvictionHttpTest):
         self.assertEqual(body["detail"],
                          "不认识的入库动作：keep_separate（只收 overwrite / merge_solution）")
 
-        from app.core import pending_bank as _bank
-        from app.core import pending_pool as _pool
+        from app.core.pending import service as _bank
+        from app.core.pending.pool import service as _pool
         source = inspect.getsource(_bank.approve)
         self.assertIn("DERIVED_ACTIONS", source,
                       "approve 的动作白名单必须写在闸门函数里")
@@ -1286,13 +1286,15 @@ class BatchCardSnapshotTest(unittest.TestCase):
     def setUp(self) -> None:
         from unittest import mock
         from app.core.config import settings
-        from app.core import pending_batches, pending_db, pending_dedupe
+        from app.core.pending.batch import batches
+        from app.core.pending import db
+        from app.core.pending.dedupe import engine as dedupe
 
         self.mock = mock
         self.settings = settings
-        self.pending_batches = pending_batches
-        self.pending_db = pending_db
-        self.pending_dedupe = pending_dedupe
+        self.batches = batches
+        self.db = db
+        self.dedupe = dedupe
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
@@ -1300,7 +1302,7 @@ class BatchCardSnapshotTest(unittest.TestCase):
         self.addCleanup(self._restore_env)
         os.environ["JZO_DATA_DIR"] = self.tmp.name
         settings.workspace_id = None
-        con = self.pending_db.connect()          # 建库并把结构迁到当前版本
+        con = self.db.connect()          # 建库并把结构迁到当前版本
         try:
             con.execute("INSERT INTO batches (batch_id, label, created_at, updated_at, total)"
                         " VALUES ('B-001', '快照卡', ?, ?, 2)", (self.STAMP, self.STAMP))
@@ -1315,7 +1317,7 @@ class BatchCardSnapshotTest(unittest.TestCase):
             con.close()
 
     def tearDown(self) -> None:
-        self.pending_dedupe._scan_cache.clear()
+        self.dedupe._scan_cache.clear()
 
     def _restore_env(self) -> None:
         for key, value in zip(("JZO_DATA_DIR", "JZO_PLUGINS_DIR"), self._saved[:2]):
@@ -1327,7 +1329,7 @@ class BatchCardSnapshotTest(unittest.TestCase):
 
     def _evict_like_commit(self) -> None:
         """另一条连接里把一次抽走事务整份提交＝写池行＋删待审行＋落 ``done``。"""
-        con = sqlite3.connect(self.pending_db.pending_db_path(), timeout=10.0)
+        con = sqlite3.connect(self.db.pending_db_path(), timeout=10.0)
         try:
             for index in (1, 2):
                 con.execute(
@@ -1351,7 +1353,7 @@ class BatchCardSnapshotTest(unittest.TestCase):
     def test_52_g5_card_counts_share_one_read_snapshot(self) -> None:
         calls: list[object] = []
         mutated = [False]
-        original = self.pending_dedupe.pooled_counts
+        original = self.dedupe.pooled_counts
 
         def hooked(con=None):
             if not mutated[0]:
@@ -1360,8 +1362,8 @@ class BatchCardSnapshotTest(unittest.TestCase):
             calls.append(con)
             return original(con)
 
-        with self.mock.patch.object(self.pending_dedupe, "pooled_counts", side_effect=hooked):
-            card = next(item for item in self.pending_batches.batch_list()["batches"]
+        with self.mock.patch.object(self.dedupe, "pooled_counts", side_effect=hooked):
+            card = next(item for item in self.batches.batch_list()["batches"]
                         if item["batch_id"] == "B-001")
         pooled = card["dedupe"]["pooled"]
         status = str(card["dedupe"]["status"])

@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from app.bank_engine.writer import EntryRejected
-from app.core import pending_bank
+from app.core.pending import service
 from app.core.bank import questions
 from app.core.bank import service as bank
 
@@ -17,7 +17,7 @@ def approve_error(exc: Exception) -> HTTPException:
             status_code=422,
             detail={"code": "entry_rejected", "message": str(exc), "errors": exc.errors},
         )
-    if isinstance(exc, pending_bank.PendingDuplicateAnswer):
+    if isinstance(exc, service.PendingDuplicateAnswer):
         return HTTPException(
             status_code=409,
             detail={"message": str(exc), "existing_id": exc.existing_id, "duplicate": True,
@@ -25,22 +25,22 @@ def approve_error(exc: Exception) -> HTTPException:
                     "existing_answer": exc.existing_answer,
                     "incoming_answer": exc.incoming_answer},
         )
-    if isinstance(exc, pending_bank.PendingDuplicate):
+    if isinstance(exc, service.PendingDuplicate):
         return HTTPException(
             status_code=409,
             detail={"message": str(exc), "existing_id": exc.existing_id, "duplicate": True},
         )
-    if isinstance(exc, pending_bank.PendingNotFound) or isinstance(exc, bank.BankNotFound):
+    if isinstance(exc, service.PendingNotFound) or isinstance(exc, bank.BankNotFound):
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, questions.QuestionValidationError):
         return HTTPException(
             status_code=422, detail={"message": "题目不符合 Schema", "errors": exc.errors}
         )
-    if isinstance(exc, pending_bank.PendingConflict):
+    if isinstance(exc, service.PendingConflict):
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, bank.BankError):
         return HTTPException(status_code=400, detail=str(exc))
-    if isinstance(exc, pending_bank.PendingError):
+    if isinstance(exc, service.PendingError):
         return HTTPException(status_code=400, detail=str(exc))
     return HTTPException(status_code=500, detail="入库失败")
 

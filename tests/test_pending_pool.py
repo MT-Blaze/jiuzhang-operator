@@ -1,4 +1,4 @@
-"""重题池数据层（军令 #32 · 第四步）：``app/core/pending_pool.py`` 的判据回归。
+"""重题池数据层（军令 #32 · 第四步）：``app/core/pending/pool/service.py`` 的判据回归。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_pool``
 
@@ -115,18 +115,22 @@ class PoolCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import (pending_assets, pending_bank, pending_batches,
-                              pending_db, pending_dedupe, pending_pool)
+        from app.core.pending import assets
+        from app.core.pending import service
+        from app.core.pending.batch import batches
+        from app.core.pending import db
+        from app.core.pending.dedupe import engine as dedupe
+        from app.core.pending.pool import service as pool
         from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank
-        self.pending_bank = pending_bank
-        self.pending_batches = pending_batches
-        self.pending_db = pending_db
-        self.pending_dedupe = pending_dedupe
-        self.pending_pool = pending_pool
-        self.pending_assets = pending_assets
+        self.service = service
+        self.batches = batches
+        self.db = db
+        self.dedupe = dedupe
+        self.pool = pool
+        self.assets = assets
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
@@ -143,8 +147,8 @@ class PoolCase(unittest.TestCase):
         # ``_scan_cache`` 是进程内的，键只有批次号：每个用例从空缓存起步，否则上一条
         # 用例记在内存里的「B-001 已扫完」会被这一条读到（本模块所有用例的批次号都是
         # B-001）。真机换工作区必然重启进程，读不到别人的缓存，所以只在用例侧收口。
-        pending_dedupe._scan_cache.clear()
-        self.addCleanup(pending_dedupe._scan_cache.clear)
+        dedupe._scan_cache.clear()
+        self.addCleanup(dedupe._scan_cache.clear)
 
     def tearDown(self) -> None:
         self._settle_dedupe_threads()
@@ -170,7 +174,7 @@ class PoolCase(unittest.TestCase):
     # ---------- 夹具 ----------
 
     def _con(self) -> sqlite3.Connection:
-        con = self.pending_db.connect()
+        con = self.db.connect()
         self.addCleanup(con.close)
         return con
 
@@ -222,25 +226,25 @@ class PoolCase(unittest.TestCase):
         ``hold_admit=True`` 把自动抽走按住，只留自动初查——失败注入那两条要用
         「扫完了但还没抽」这个中间态，才有地方塞损坏。
         """
-        original = self.pending_dedupe.admit_into_pool
+        original = self.dedupe.admit_into_pool
         if hold_admit:
-            self.pending_dedupe.admit_into_pool = lambda *_a, **_k: None
+            self.dedupe.admit_into_pool = lambda *_a, **_k: None
         try:
             payload = [{"question": document, "assets": assets or []}
                        for document in documents]
-            saved = self.pending_bank.save_draft(payload, source_name=source_name)
+            saved = self.service.save_draft(payload, source_name=source_name)
             self._settle_dedupe_threads()
         finally:
-            self.pending_dedupe.admit_into_pool = original
+            self.dedupe.admit_into_pool = original
         return saved["batch_id"], saved["saved_ids"]
 
     def _scan(self, batch_id: str) -> dict[str, Any]:
         """同步跑一次整批初查：省掉 daemon 线程，结论照样落 ``dedupe_findings``。"""
-        self.pending_dedupe.warm_batch_scan(batch_id, PLUGIN_ID)
-        return self.pending_dedupe.scan_state(batch_id)
+        self.dedupe.warm_batch_scan(batch_id, PLUGIN_ID)
+        return self.dedupe.scan_state(batch_id)
 
     def _admit(self, batch_id: str, **kwargs) -> dict[str, Any]:
-        return self.pending_pool.admit_from_scan(batch_id, provider_id=PLUGIN_ID, **kwargs)
+        return self.pool.admit_from_scan(batch_id, provider_id=PLUGIN_ID, **kwargs)
 
     def _prepare_pool(self, incoming: dict, *, assets: list | None = None,
                       seed: bool = True) -> tuple[str, str]:
@@ -250,7 +254,7 @@ class PoolCase(unittest.TestCase):
         """
         main_ids = self._seed_bank(_doc()) if seed else ["q_pool0001"]
         batch_id, item_ids = self._draft(incoming, assets=assets)
-        entries = self.pending_pool.list_pool()["items"]
+        entries = self.pool.list_pool()["items"]
         self.assertEqual(len(entries), 1, f"后台链没把这条抽进池子：{entries}")
         self.assertEqual(entries[0]["main_id"], main_ids[0])
         self.assertEqual(self._live_count(batch_id), 0,
@@ -306,7 +310,7 @@ class PoolAdmissionTest(PoolCase):
         self.assertEqual(again["admitted"], 0)
         rows = self._con().execute("SELECT COUNT(*) FROM duplicate_pool").fetchone()[0]
         self.assertEqual(int(rows), 1)
-        entry = self.pending_pool.list_pool()["items"][0]
+        entry = self.pool.list_pool()["items"][0]
         self.assertEqual(entry["level"], "certain")
         self.assertTrue(entry["label"])
         self.assertEqual(entry["item_id"], self._con().execute(
@@ -317,7 +321,7 @@ class PoolAdmissionTest(PoolCase):
         self._seed_bank(_doc(), _doc(stem="重题池口径题：已知 $x^2-7x+12=0$，求根之和（　　）。"))
         batch_id, item_ids = self._draft(
             _doc(), _doc(stem="重题池口径题：已知 $x^2-7x+12=0$，求根之和（　　）。"))
-        items = self.pending_pool.list_pool()["items"]
+        items = self.pool.list_pool()["items"]
         self.assertEqual(len(items), 2, items)
         self.assertEqual({item["item_id"] for item in items}, set(item_ids))
         self.assertEqual({item["main_id"] for item in items},
@@ -334,13 +338,13 @@ class PoolAdmissionTest(PoolCase):
         con = self._con()
         con.execute("DELETE FROM batches WHERE batch_id = ?", (batch_id,))
         con.commit()
-        entry = self.pending_pool.get_entry(pool_id)
+        entry = self.pool.get_entry(pool_id)
         self.assertEqual(entry["batch_id"], batch_id)
         self.assertEqual(entry["incoming"]["stem"], STEM)
         self.assertEqual(entry["existing"]["id"], "q_pool0001")
         self.assertTrue(entry["existing"]["stem"])
         name = self._pool_asset_names(pool_id)[0]
-        path = self.pending_assets.pool_asset_path(name)
+        path = self.assets.pool_asset_path(name)
         self.assertEqual(path.name, name)
         self.assertTrue(path.is_file(), "批次都没了，池里这条的成品图照样要能读")
         self.assertEqual(entry["incoming"]["images"][0]["uri"], f"/static/pool/{name}",
@@ -357,7 +361,7 @@ class PoolAdmissionTest(PoolCase):
         blob = f"{row['doc_json']}{row['assets_json']}{row['source_name']}"
         for mark in ("page", "backup", "pending_sources", ".pdf", ".docx\""):
             self.assertNotIn(mark, blob, f"池内记录里不该出现整页底图的痕迹：{mark}")
-        self.assertEqual(self.pending_pool.get_entry(pool_id)["asset_count"], 1)
+        self.assertEqual(self.pool.get_entry(pool_id)["asset_count"], 1)
 
     def test_04b_images_are_copied_not_shared(self) -> None:
         """3.6 的图归属：抽走复制出 ``cimg_``，批次那枚 ``pimg_`` 原样留在 ``pending_assets/``。
@@ -369,8 +373,8 @@ class PoolAdmissionTest(PoolCase):
         pool_name = self._pool_asset_names(pool_id)[0]
         item_id = str(self._pool_raw(pool_id)["item_id"])
         batch_name = "pimg_" + pool_name[len("cimg_"):]
-        self.assertTrue(self.pending_assets.pool_asset_path(pool_name).is_file())
-        self.assertTrue(self.pending_assets.asset_path(batch_name).is_file(),
+        self.assertTrue(self.assets.pool_asset_path(pool_name).is_file())
+        self.assertTrue(self.assets.asset_path(batch_name).is_file(),
                         "批次的成品图不该被搬走，它还没审完")
         self.assertEqual(self._con().execute(
             "SELECT 1 FROM pending_questions WHERE id = ?", (item_id,)).fetchone(), None,
@@ -385,8 +389,8 @@ class PoolAdmissionTest(PoolCase):
         """读接口按档位取候选（4.3）：档位不落盘，只在取的时候过滤一次。"""
         self._insert_row("pool_aaaaaaaa", "p_" + "a" * 24, "certain", 100)
         self._insert_row("pool_bbbbbbbb", "p_" + "b" * 24, "possible", 32)
-        loose = self.pending_pool.list_pool(tier="loose")["items"]
-        strict = self.pending_pool.list_pool(tier="strict")["items"]
+        loose = self.pool.list_pool(tier="loose")["items"]
+        strict = self.pool.list_pool(tier="strict")["items"]
         self.assertEqual([item["pool_id"] for item in loose],
                          ["pool_aaaaaaaa", "pool_bbbbbbbb"])
         self.assertNotIn("pool_bbbbbbbb", [item["pool_id"] for item in strict])
@@ -399,7 +403,7 @@ class PoolAdmissionTest(PoolCase):
     def test_06_failed_scan_admits_nothing(self) -> None:
         """3.4 的下游：初查失败时进池接口照实报，不伪装成「本批没有重题」。"""
         self._seed_bank(_doc())
-        result = self.pending_pool.admit_from_scan("B-900", provider_id=PLUGIN_ID)
+        result = self.pool.admit_from_scan("B-900", provider_id=PLUGIN_ID)
         self.assertEqual(result["admitted"], 0)
         self.assertEqual(result["status"], "pending")
 
@@ -429,7 +433,7 @@ class PoolActionsTest(PoolCase):
         incoming = _doc(tags=["函数与方程"], taxonomy={"topic_ids": [topic_incoming]})
         batch_id, pool_id = self._prepare_pool(incoming, seed=False)
 
-        result = self.pending_pool.merge_metadata(pool_id)
+        result = self.pool.merge_metadata(pool_id)
         self.assertTrue(result["ok"])
         after = self._bank_row(main_id)
         for field in ("stem", "options", "answer", "solution", "images"):
@@ -440,22 +444,22 @@ class PoolActionsTest(PoolCase):
         self.assertIn(topic_incoming, after["taxonomy"]["topic_ids"])
         self.assertEqual(after["difficulty"], "L2")
         self.assertEqual(result["conflicts"], [])
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0)
+        self.assertEqual(self.pool.list_pool()["total"], 0)
 
     def test_11_merge_metadata_unique_conflict_needs_resolution(self) -> None:
         """4.4＋查重三栏：难度冲突未二选一 → 拒绝合并；选了才按选择落库。"""
         pool_id = self._prepare_pool(_doc(difficulty="L4", tags=["新标签"]))[1]
-        entry = self.pending_pool.get_entry(pool_id)
+        entry = self.pool.get_entry(pool_id)
         self.assertEqual(entry["meta_diff"]["requires_resolution"], ["difficulty"])
         self.assertEqual(entry["meta_diff"]["conflicts"],
                          [{"field": "difficulty", "main": "L2", "incoming": "L4"}])
-        with self.assertRaises(self.pending_pool.PoolActionRefused) as caught:
-            self.pending_pool.merge_metadata(pool_id)
+        with self.assertRaises(self.pool.PoolActionRefused) as caught:
+            self.pool.merge_metadata(pool_id)
         self.assertEqual(caught.exception.code, "meta_conflict")
         self.assertEqual(self._bank_row("q_pool0001")["difficulty"], "L2")
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1, "被拒后条目仍留在池里")
+        self.assertEqual(self.pool.list_pool()["total"], 1, "被拒后条目仍留在池里")
 
-        result = self.pending_pool.merge_metadata(
+        result = self.pool.merge_metadata(
             pool_id, resolutions={"difficulty": "incoming"})
         self.assertTrue(result["ok"])
         self.assertEqual(result["changed"]["difficulty"], "L4")
@@ -467,7 +471,7 @@ class PoolActionsTest(PoolCase):
         pool_id = self._prepare_pool(incoming)[1]
         incoming["type"] = "multiple_choice"
         self._set_doc(pool_id, incoming)
-        result = self.pending_pool.merge_metadata(
+        result = self.pool.merge_metadata(
             pool_id, resolutions={"type": "main", "difficulty": "main"})
         self.assertTrue(result["ok"])
         bank_row = self._bank_row("q_pool0001")
@@ -479,7 +483,7 @@ class PoolActionsTest(PoolCase):
         pool_id = self._prepare_pool(_doc(
             tags=["基础", "函数"],
             source={"paper_title": "期末卷", "question_no": "7", "year": 2026}))[1]
-        diff = self.pending_pool.get_entry(pool_id)["meta_diff"]
+        diff = self.pool.get_entry(pool_id)["meta_diff"]
         fields = [item["field"] for item in diff["multi"]]
         self.assertIn("tags", fields)
         self.assertIn("source", fields)
@@ -505,7 +509,7 @@ class PoolActionsTest(PoolCase):
             con.close()
         pool_id = self._prepare_pool(_doc(source={"paper_title": "期末卷",
                                                   "question_no": "7", "year": 2026}), seed=False)[1]
-        self.pending_pool.merge_metadata(pool_id)
+        self.pool.merge_metadata(pool_id)
         titles = {item["paper_title"] for item in
                   self.bank.question_sources(PLUGIN_ID, main_id)["items"]}
         self.assertEqual(titles, {"期中卷", "期末卷"})
@@ -515,7 +519,7 @@ class PoolActionsTest(PoolCase):
         pool_id = self._prepare_pool(_doc(solution="另解：因式分解 $(x-2)(x-3)=0$。",
                                           source={"paper_title": "竞赛模拟卷",
                                                   "question_no": "1"}))[1]
-        result = self.pending_pool.add_solution(pool_id)
+        result = self.pool.add_solution(pool_id)
         self.assertTrue(result["ok"])
         solution = self._bank_row("q_pool0001")["solution"]
         self.assertIn("因式分解", solution)
@@ -530,23 +534,23 @@ class PoolActionsTest(PoolCase):
         blank = _doc()
         blank["solution"] = "   "
         self._set_doc(pool_id, blank)
-        with self.assertRaises(self.pending_bank.PendingError):
-            self.pending_pool.add_solution(pool_id)
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1, "失败后条目必须还在池里")
+        with self.assertRaises(self.service.PendingError):
+            self.pool.add_solution(pool_id)
+        self.assertEqual(self.pool.list_pool()["total"], 1, "失败后条目必须还在池里")
 
     def test_15_keep_separate_creates_new_question(self) -> None:
         """4.6 不重复：主库新增一道独立题，原题逐字不动。"""
         topic = self._seed_topic("3")
         main_id = "q_pool0001"
         pool_id = self._prepare_pool(_doc(taxonomy=topic))[1]
-        result = self.pending_pool.keep_separate(pool_id)
+        result = self.pool.keep_separate(pool_id)
         self.assertTrue(result["ok"], result)
         self.assertTrue(result["written"])
         created = str(result["created_id"])
         self.assertTrue(created.startswith("q_") and created != main_id)
         self.assertEqual(self._bank_row(main_id)["stem"], STEM)
         self.assertEqual(self._bank_row(created)["taxonomy"]["topic_ids"], topic["topic_ids"])
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0)
+        self.assertEqual(self.pool.list_pool()["total"], 0)
 
     def test_16_keep_separate_missing_items_stays_in_pool(self) -> None:
         """4.6 缺项不写库：缺答案与缺考向都留在池里，并把缺什么原样回给老师。"""
@@ -554,13 +558,13 @@ class PoolActionsTest(PoolCase):
         stripped = _doc()
         stripped.pop("answer", None)
         self._set_doc(pool_id, stripped)
-        result = self.pending_pool.keep_separate(pool_id)
+        result = self.pool.keep_separate(pool_id)
         self.assertFalse(result["ok"])
         self.assertFalse(result["written"])
         self.assertTrue(result["kept_in_pool"])
         self.assertIn("答案", result["missing"])
         self.assertIn("考向", result["missing"])
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1)
+        self.assertEqual(self.pool.list_pool()["total"], 1)
         main_con = sqlite3.connect(self.db_path)
         try:
             self.assertEqual(
@@ -570,7 +574,7 @@ class PoolActionsTest(PoolCase):
         placeholder = _doc(taxonomy=self._seed_topic("9"))
         placeholder["stem"] = "（待识别：题干未清）已知 $x^2-5x+6=0$，求根之和（　　）。"
         self._set_doc(result["pool_id"], placeholder)
-        again = self.pending_pool.keep_separate(result["pool_id"])
+        again = self.pool.keep_separate(result["pool_id"])
         self.assertFalse(again["ok"], again)
         self.assertIn("占位符未清", again["missing"])
 
@@ -581,11 +585,11 @@ class PoolActionsTest(PoolCase):
         pending = _doc(taxonomy=topic)
         pending["stem"] = "已知 $x^2-5x+6=0$，求 [公式图:1] 所示函数的根之和。"
         self._set_doc(pool_id, pending)
-        result = self.pending_pool.keep_separate(pool_id)
+        result = self.pool.keep_separate(pool_id)
         self.assertFalse(result["ok"], result)
         self.assertFalse(result["written"])
         self.assertIn("占位符未清", result["missing"])
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1)
+        self.assertEqual(self.pool.list_pool()["total"], 1)
 
     def test_17_delete_removes_only_the_pool_entry(self) -> None:
         """4.7 删除：只删池内这条与它自己的 ``cimg_``；主库题与批次目录一张都不碰。
@@ -600,14 +604,14 @@ class PoolActionsTest(PoolCase):
             "SELECT assets_json FROM batches WHERE batch_id = ?", (batch_id,)).fetchone()[0])
         self.assertTrue(batch_names, "批次侧的残留切图清单本该记着这枚 pimg_")
 
-        result = self.pending_pool.delete_entry(pool_id)
+        result = self.pool.delete_entry(pool_id)
         self.assertTrue(result["ok"])
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0)
+        self.assertEqual(self.pool.list_pool()["total"], 0)
         self.assertEqual(self._bank_row("q_pool0001")["stem"], STEM)
         for name in batch_names:
-            self.assertTrue(self.pending_assets.asset_path(name).is_file(),
+            self.assertTrue(self.assets.asset_path(name).is_file(),
                             f"批次的图 {name} 不许被池内删除动到")
-        self.assertFalse(self.pending_assets.pool_asset_path(pool_name).is_file())
+        self.assertFalse(self.assets.pool_asset_path(pool_name).is_file())
         self.assertEqual(result["deleted_assets"], 1)
 
     def test_18_delete_drops_asset_once_unreferenced(self) -> None:
@@ -615,10 +619,10 @@ class PoolActionsTest(PoolCase):
         batch_id, pool_id = self._prepare_pool(_doc(images=[_IMAGE]), assets=_ASSET)
         pool_name = self._pool_asset_names(pool_id)[0]
         batch_name = "pimg_" + pool_name[len("cimg_"):]
-        result = self.pending_pool.delete_entry(pool_id)
+        result = self.pool.delete_entry(pool_id)
         self.assertEqual(result["deleted_assets"], 1)
-        self.assertFalse(self.pending_assets.pool_asset_path(pool_name).is_file())
-        self.assertTrue(self.pending_assets.asset_path(batch_name).is_file(),
+        self.assertFalse(self.assets.pool_asset_path(pool_name).is_file())
+        self.assertTrue(self.assets.asset_path(batch_name).is_file(),
                         "批次那一份留到 _settle_batch 统一清，池子不越界")
 
     def test_19_answer_mismatch_locks_first_two_only(self) -> None:
@@ -629,24 +633,24 @@ class PoolActionsTest(PoolCase):
         batch_id, _ = self._draft(incoming)
         self._scan(batch_id)
         self._admit(batch_id)
-        pool_id = self.pending_pool.list_pool()["items"][0]["pool_id"]
-        entry = self.pending_pool.get_entry(pool_id)
+        pool_id = self.pool.list_pool()["items"][0]["pool_id"]
+        entry = self.pool.get_entry(pool_id)
         self.assertTrue(entry["answer"]["mismatch"])
         self.assertEqual(entry["locked_actions"], ["merge_metadata", "add_solution"])
         for action in ("merge_metadata", "add_solution"):
-            with self.assertRaises(self.pending_pool.PoolActionRefused) as caught:
-                self.pending_pool.act(pool_id, action)
+            with self.assertRaises(self.pool.PoolActionRefused) as caught:
+                self.pool.act(pool_id, action)
             self.assertEqual(caught.exception.code, "answer_mismatch")
         self.assertEqual(self._bank_row("q_pool0001")["answer"]["final"], "A")
-        kept = self.pending_pool.act(pool_id, "keep_separate")
+        kept = self.pool.act(pool_id, "keep_separate")
         self.assertTrue(kept["ok"], kept)
 
     def test_20a_source_edit_writes_back_to_pool_document(self) -> None:
         """老师改源码 → 防抖/强保存写回池内文档；只动题面四件，别的字段原样保留。"""
         topic = self._seed_topic("5")
         pool_id = self._prepare_pool(_doc(taxonomy=topic, tags=["原标签"]))[1]
-        before = self.pending_pool.get_entry(pool_id)["incoming"]
-        result = self.pending_pool.update_document(pool_id, {
+        before = self.pool.get_entry(pool_id)["incoming"]
+        result = self.pool.update_document(pool_id, {
             "type": "single_choice",
             "stem": "改过的题干（　　）。",
             "options": [{"key": "A", "content": "$7$"}, {"key": "B", "content": "$8$"}],
@@ -656,7 +660,7 @@ class PoolActionsTest(PoolCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["changed"],
                          ["stem", "options", "answer", "solution"])
-        after = self.pending_pool.get_entry(pool_id)["incoming"]
+        after = self.pool.get_entry(pool_id)["incoming"]
         self.assertEqual(after["stem"], "改过的题干（　　）。")
         self.assertEqual([one["content"] for one in after["options"]], ["$7$", "$8$"])
         self.assertEqual(after["answer"]["final"], "B")
@@ -668,7 +672,7 @@ class PoolActionsTest(PoolCase):
     def test_20b_source_edit_refuses_fields_outside_the_source_pane(self) -> None:
         """源码区不归标签/来源/难度管：越权字段与坏形态一律拒绝，池内文档不动。"""
         pool_id = self._prepare_pool(_doc())[1]
-        original = self.pending_pool.get_entry(pool_id)["incoming"]
+        original = self.pool.get_entry(pool_id)["incoming"]
         bad_patches = [
             {"tags": ["偷改"]},
             {"difficulty": "L4"},
@@ -679,20 +683,20 @@ class PoolActionsTest(PoolCase):
         ]
         for patch in bad_patches:
             with self.subTest(patch=patch):
-                with self.assertRaises(self.pending_bank.PendingError):
-                    self.pending_pool.update_document(pool_id, patch)
-        self.assertEqual(self.pending_pool.get_entry(pool_id)["incoming"], original)
+                with self.assertRaises(self.service.PendingError):
+                    self.pool.update_document(pool_id, patch)
+        self.assertEqual(self.pool.get_entry(pool_id)["incoming"], original)
 
     def test_20c_keep_separate_writes_the_edited_source(self) -> None:
         """改完源码点【不重复】：入库后的题干/解析必须是修改后的最新值。"""
         topic = self._seed_topic("6")
         pool_id = self._prepare_pool(_doc(taxonomy=topic))[1]
-        self.pending_pool.update_document(pool_id, {
+        self.pool.update_document(pool_id, {
             "stem": "回写探针题干（　　）。",
             "solution": "回写探针解析：先移项再合并。",
             "answer": {"kind": "choice", "choice_keys": ["C"], "final": "C"},
         })
-        result = self.pending_pool.act(pool_id, "keep_separate")
+        result = self.pool.act(pool_id, "keep_separate")
         self.assertTrue(result["ok"], result)
         created = self.bank.get_question(PLUGIN_ID, result["created_id"])
         self.assertEqual(created["stem"], "回写探针题干（　　）。")
@@ -702,19 +706,19 @@ class PoolActionsTest(PoolCase):
     def test_20d_merge_gate_reads_the_edited_answer(self) -> None:
         """改答案后点【合并】：底座按池内最新答案判定，冲突即拒。"""
         pool_id = self._prepare_pool(_doc())[1]
-        self.pending_pool.update_document(pool_id, {
+        self.pool.update_document(pool_id, {
             "answer": {"kind": "choice", "choice_keys": ["B"], "final": "B"},
         })
-        with self.assertRaises(self.pending_pool.PoolActionRefused) as caught:
-            self.pending_pool.act(pool_id, "merge_metadata")
+        with self.assertRaises(self.pool.PoolActionRefused) as caught:
+            self.pool.act(pool_id, "merge_metadata")
         self.assertEqual(caught.exception.code, "answer_mismatch")
 
     def test_20_unknown_action_is_refused(self) -> None:
         """池里只有四个动作：【覆盖】【放弃】与任何别的名字都不认。"""
         pool_id = self._prepare_pool(_doc())[1]
         for action in ("overwrite", "give_up", "", "删除"):
-            with self.assertRaises(self.pending_bank.PendingError):
-                self.pending_pool.act(pool_id, action)
+            with self.assertRaises(self.service.PendingError):
+                self.pool.act(pool_id, action)
 
 
 class PoolPersistenceTest(PoolCase):
@@ -723,7 +727,7 @@ class PoolPersistenceTest(PoolCase):
     def test_30_restart_reads_entries_and_adjudications(self) -> None:
         """4.9 重启可读：条目与已裁决状态都在库里，换一个连接照样读。"""
         pool_id = self._prepare_pool(_doc())[1]
-        self.pending_pool.delete_entry(pool_id)
+        self.pool.delete_entry(pool_id)
         fresh = sqlite3.connect(Path(self.tmp.name) / "pending.db")
         fresh.row_factory = sqlite3.Row
         self.addCleanup(fresh.close)
@@ -738,7 +742,7 @@ class PoolPersistenceTest(PoolCase):
         self.assertEqual(row["main_id"], "q_pool0001")
         self.assertTrue(str(row["created_at"]))
         self.assertEqual(fresh.execute("PRAGMA user_version").fetchone()[0],
-                         self.pending_db.SCHEMA_VERSION)
+                         self.db.SCHEMA_VERSION)
 
     def test_31_rescan_does_not_resurrect_adjudicated_item(self) -> None:
         """已裁决不复活（5.3 的数据层）：同一条待审号再被扫到，进池接口照旧挡下。
@@ -749,13 +753,13 @@ class PoolPersistenceTest(PoolCase):
         batch_id, pool_id = self._prepare_pool(_doc())
         raw = self._pool_raw(pool_id)
         item_id = str(raw["item_id"])
-        self.pending_pool.delete_entry(pool_id)
+        self.pool.delete_entry(pool_id)
         self._reinsert_pending(raw)
         self._scan(batch_id)
         result = self._admit(batch_id, tier="loose")
         self.assertEqual(result["admitted"], 0, result)
         self.assertEqual(result["skipped_adjudicated"], 1, result)
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0)
+        self.assertEqual(self.pool.list_pool()["total"], 0)
         self.assertEqual(self._con().execute(
             "SELECT COUNT(*) FROM pool_actions WHERE item_id = ?",
             (item_id,)).fetchone()[0], 1)
@@ -779,13 +783,13 @@ class PoolPersistenceTest(PoolCase):
         self._seed_bank(_doc())
         batch_id, item_ids = self._draft(_doc(), hold_admit=True)
         self._scan(batch_id)
-        with self.assertRaises(self.pending_bank.PendingDuplicate) as caught:
-            self.pending_bank.approve(item_ids[0], PLUGIN_ID)
+        with self.assertRaises(self.service.PendingDuplicate) as caught:
+            self.service.approve(item_ids[0], PLUGIN_ID)
         self.assertEqual(caught.exception.existing_id, "q_pool0001")
 
     def test_33_schema_version_and_tables(self) -> None:
         """结构底线：``SCHEMA_VERSION`` 到 11，旧库连上自动补池表、页面图列与扫描批标记。"""
-        self.assertEqual(self.pending_db.SCHEMA_VERSION, 11)
+        self.assertEqual(self.db.SCHEMA_VERSION, 11)
         names = {row[0] for row in self._con().execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")}
         self.assertIn("duplicate_pool", names)
@@ -798,7 +802,7 @@ class PoolPersistenceTest(PoolCase):
         batch_id, _ = self._prepare_pool(_doc())
         again = self._admit(batch_id)
         self.assertEqual(again["admitted"], 0, again)
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1)
+        self.assertEqual(self.pool.list_pool()["total"], 1)
         ids = [row[0] for row in self._con().execute(
             "SELECT pool_id FROM duplicate_pool ORDER BY pool_id")]
         self.assertEqual(len(ids), 1)
@@ -809,14 +813,14 @@ class PoolPersistenceTest(PoolCase):
 
         from app.api import pending as pending_api
 
-        error = self.pending_bank.PendingError("中转站结构版本 99 高于程序支持的 9")
-        with mock.patch.object(self.pending_pool, "list_pool", side_effect=error):
+        error = self.service.PendingError("中转站结构版本 99 高于程序支持的 9")
+        with mock.patch.object(self.pool, "list_pool", side_effect=error):
             with self.assertRaises(HTTPException) as caught:
                 pending_api.pending_pool_list(tier="loose")
         self.assertEqual(caught.exception.status_code, 400)
         self.assertIn("99", str(caught.exception.detail))
 
-        with mock.patch.object(self.pending_pool, "get_entry", side_effect=error):
+        with mock.patch.object(self.pool, "get_entry", side_effect=error):
             with self.assertRaises(HTTPException) as caught:
                 pending_api.pending_pool_item("pool_x", tier="loose")
         self.assertEqual(caught.exception.status_code, 400)
@@ -844,17 +848,17 @@ class PoolEvictionTest(PoolCase):
         所以读到的应当还是 ``pending``——判据 3.5 那个 0.4 秒空窗就藏在这一步的次序里。
         """
         records: list[dict[str, Any]] = []
-        real = self.pending_dedupe.admit_into_pool
+        real = self.dedupe.admit_into_pool
 
         def spy(batch_id: str, provider_id: str, **kwargs):
             records.append({
                 "pre": dict(kwargs.get("state") or {}),
-                "readable": self.pending_dedupe.scan_state(batch_id),
+                "readable": self.dedupe.scan_state(batch_id),
             })
             return real(batch_id, provider_id, **kwargs)
 
-        self.pending_dedupe.admit_into_pool = spy
-        self.addCleanup(setattr, self.pending_dedupe, "admit_into_pool", real)
+        self.dedupe.admit_into_pool = spy
+        self.addCleanup(setattr, self.dedupe, "admit_into_pool", real)
         return records
 
     def test_39_scan_batch_never_evicts_shells_on_dedupe_hit(self) -> None:
@@ -864,22 +868,22 @@ class PoolEvictionTest(PoolCase):
         亮在辅助栏；不许再「静默吞题」。普通文件导入仍走「命中即抽进重题池」。
         """
         self._seed_bank(_doc())
-        created = self.pending_bank.create_batch(scan=True, source_name="模拟1.pdf")
+        created = self.service.create_batch(scan=True, source_name="模拟1.pdf")
         batch_id = created["batch_id"]
-        saved = self.pending_bank.save_draft(
+        saved = self.service.save_draft(
             [{"question": _doc()}, {"question": _other_doc()}],
             batch_id=batch_id, origin="ingest.auto_split")
         self._settle_dedupe_threads()
 
-        state = self.pending_dedupe.scan_state(batch_id)
+        state = self.dedupe.scan_state(batch_id)
         self.assertEqual(state["status"], "done", state)
         self.assertEqual(state["bank_redundant"], 1, "初查仍要如实报出主库命中")
         self.assertEqual(len(saved["saved_ids"]), 2, saved)
         self.assertEqual(sorted(self._pending_ids(batch_id)), sorted(saved["saved_ids"]),
                          "命中也不许吞题：两条空壳都留在待审池")
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0,
+        self.assertEqual(self.pool.list_pool()["total"], 0,
                          "扫描批次的自动初查只查不抽")
-        card = next(c for c in self.pending_batches.batch_list()["batches"]
+        card = next(c for c in self.batches.batch_list()["batches"]
                     if c["batch_id"] == batch_id)
         self.assertEqual((card["pending_count"], card["total"]), (2, 2), card)
         self.assertEqual(card["dedupe"]["redundant"], 1, card["dedupe"])
@@ -892,14 +896,14 @@ class PoolEvictionTest(PoolCase):
         """
         self._seed_bank(_doc())
         batch_id, item_ids = self._draft(_doc())          # 只有 save_draft，没有手动扫、没有手动抽
-        state = self.pending_dedupe.scan_state(batch_id)
+        state = self.dedupe.scan_state(batch_id)
         self.assertEqual(state["status"], "done", state)
         self.assertEqual(state["pooled"], 1, "初查结论要能报出这批已抽走几条")
         self.assertEqual(self._pending_ids(batch_id), [],
                          "首次读到的就该是抽完的集合，不许等前端拉一次才少")
         self.assertEqual([item["item_id"] for item in
-                          self.pending_pool.list_pool()["items"]], item_ids)
-        card = next(c for c in self.pending_batches.batch_list()["batches"]
+                          self.pool.list_pool()["items"]], item_ids)
+        card = next(c for c in self.batches.batch_list()["batches"]
                     if c["batch_id"] == batch_id)
         self.assertEqual((card["pending_count"], card["total"]), (0, 1), card)
 
@@ -912,7 +916,7 @@ class PoolEvictionTest(PoolCase):
         result = self._admit(batch_id)
         self.assertEqual(result["admitted"], 0, result)
         self.assertEqual(result["evicted"], 0, result)
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1)
+        self.assertEqual(self.pool.list_pool()["total"], 1)
         self.assertEqual(self._pending_ids(batch_id), [])
 
     def test_42_missing_image_file_moves_nothing_for_that_row(self) -> None:
@@ -924,12 +928,12 @@ class PoolEvictionTest(PoolCase):
         batch_id, item_ids = self._draft(_doc(images=[_IMAGE]), assets=_ASSET,
                                          hold_admit=True)
         name = self._pending_asset_names(batch_id)[0]
-        self.pending_assets.asset_path(name).unlink()
+        self.assets.asset_path(name).unlink()
 
         result = self._admit(batch_id)
         self.assertEqual(result["admitted"], 0, result)
         self.assertEqual(result["skipped_missing_asset"], item_ids, result)
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0)
+        self.assertEqual(self.pool.list_pool()["total"], 0)
         self.assertEqual(self._pending_ids(batch_id), item_ids, "待审行一条都没少")
         self.assertEqual(self._pool_dir_files(), [], "复制失败的产物不许留在池目录里")
 
@@ -952,12 +956,12 @@ class PoolEvictionTest(PoolCase):
         finally:
             con.execute("DROP TRIGGER inj_fail_before_delete")
             con.commit()
-        self.assertEqual(self.pending_pool.list_pool()["total"], 0,
+        self.assertEqual(self.pool.list_pool()["total"], 0,
                          "回滚后池里一条都不该多出来")
         self.assertEqual(sorted(self._pending_ids(batch_id)), sorted(item_ids),
                          "回滚后待审池一条都不该少")
         self.assertEqual(self._pool_dir_files(), [], "回滚要把这次复制的成品图一并删干净")
-        self.assertEqual(self.pending_batches.batch_list()["batches"]
+        self.assertEqual(self.batches.batch_list()["batches"]
                          [0]["pending_count"], 2, "未审数也得跟着回滚")
         # 触发器拆掉后同一次抽走照样成功：证明回滚没把库留在半截状态上。
         after = self._admit(batch_id)
@@ -975,23 +979,23 @@ class PoolEvictionTest(PoolCase):
         self._seed_bank(_doc())
         batch_id, item_ids = self._draft(_doc(images=[_IMAGE]), _other_doc(taxonomy=topic),
                                          assets=_ASSET)
-        entry = self.pending_pool.list_pool()["items"][0]
+        entry = self.pool.list_pool()["items"][0]
         pool_id = entry["pool_id"]
         pool_name = self._pool_asset_names(pool_id)[0]
         self.assertEqual(self._pending_ids(batch_id), [item_ids[1]],
                          "命中的那条已抽走，没命中的那条留在批次里等审")
 
-        approved = self.pending_bank.approve(item_ids[1], PLUGIN_ID)
+        approved = self.service.approve(item_ids[1], PLUGIN_ID)
         self.assertTrue(approved.get("question") or approved.get("ok") or approved,
                         approved)
-        card = self.pending_bank._settle_batch(batch_id)
+        card = self.service._settle_batch(batch_id)
         self.assertTrue(card["done"], card)
-        self.assertFalse(self.pending_assets.asset_path(
+        self.assertFalse(self.assets.asset_path(
             "pimg_" + pool_name[len("cimg_"):]).is_file(),
             "批次的残留切图确实被清掉了——这张就是池内条目唯一还读得到的图")
-        detail = self.pending_pool.get_entry(pool_id)
+        detail = self.pool.get_entry(pool_id)
         self.assertEqual(detail["incoming"]["stem"], STEM)
-        self.assertTrue(self.pending_assets.pool_asset_path(pool_name).is_file(),
+        self.assertTrue(self.assets.pool_asset_path(pool_name).is_file(),
                         "整批入库、副本删干净之后，池内这条的成品图仍要能读")
         self.assertEqual(detail["incoming"]["images"][0]["uri"], f"/static/pool/{pool_name}")
 
@@ -1003,20 +1007,20 @@ class PoolEvictionTest(PoolCase):
         pooled_id = item_ids[0]
         self.assertEqual(self._pending_ids(batch_id), [item_ids[1]])
 
-        report = self.pending_dedupe.batch_duplicate_groups(batch_id, PLUGIN_ID)
+        report = self.dedupe.batch_duplicate_groups(batch_id, PLUGIN_ID)
         self.assertEqual(report["scanned"], 1, report)
         self.assertNotIn(pooled_id, report["drop_ids"],
                          "池内那条不再算待审重复，一键剔除的清单里不许有它")
 
-        with self.assertRaises(self.pending_bank.BatchPurgeError) as caught:
-            self.pending_bank.purge_batch_duplicates(batch_id, PLUGIN_ID,
+        with self.assertRaises(self.service.BatchPurgeError) as caught:
+            self.service.purge_batch_duplicates(batch_id, PLUGIN_ID,
                                                      [pooled_id], [pooled_id])
         self.assertEqual(caught.exception.code, "batch_purge_pending_not_in_batch",
                          "池内那条早已不在待审池，一键剔除直接认它「不在本批」，整批不动")
-        self.assertEqual(self.pending_pool.list_pool()["total"], 1,
+        self.assertEqual(self.pool.list_pool()["total"], 1,
                          "剔除失败不该把池内条目一起带走")
 
-        listed = self.pending_batches.list_batch_questions(batch_id)
+        listed = self.batches.list_batch_questions(batch_id)
         self.assertEqual(listed["pending_count"], 1)
         self.assertEqual(listed["total"], 2, "总题数记的是这一批导入了几道，不因抽而走")
         self.assertEqual([item["id"] for item in listed["items"]], [item_ids[1]])
@@ -1034,7 +1038,7 @@ class PoolEvictionTest(PoolCase):
         main_ids = self._seed_bank(_doc())
         records = self._spy_admit()
         # 逐题带自己的 assets——与 S6 探针那一批完全同形：只有第一道配图。
-        saved = self.pending_bank.save_draft([
+        saved = self.service.save_draft([
             {"question": _doc(images=[_IMAGE]), "assets": _ASSET},
             {"question": _doc(solution="另解：因式分解 $(x-2)(x-3)=0$，和为 $5$。"),
              "assets": []},
@@ -1055,7 +1059,7 @@ class PoolEvictionTest(PoolCase):
         self.assertEqual({c["existing_id"] for c in pre["candidates"]}, set(main_ids))
         self.assertEqual({c["item_id"] for c in pre["candidates"]}, set(item_ids[:4]))
 
-        state = self.pending_dedupe.scan_state(batch_id)
+        state = self.dedupe.scan_state(batch_id)
         self.assertEqual(state["status"], "done", state)
         self.assertEqual(state["pooled"], 4, "四道命中一条不留")
         self.assertEqual(self._pending_ids(batch_id), [item_ids[4]],
@@ -1070,7 +1074,7 @@ class PoolEvictionTest(PoolCase):
                          "findings 行数与池行对不上＝抽走与结论分了两张账")
         self.assertEqual(state["scanned"], 5, "结论报的是整批初查的账，不是抽剩的账")
 
-        entries = self.pending_pool.list_pool()["items"]
+        entries = self.pool.list_pool()["items"]
         self.assertEqual(len(entries), 4, "一条一题：四道命中就是四条池内条目")
         by_item = {entry["item_id"]: entry for entry in entries}
         self.assertEqual(set(by_item), set(item_ids[:4]))
@@ -1105,14 +1109,14 @@ class PoolEvictionTest(PoolCase):
                                 f"抽走落库时 done 已经可读，空窗又回来了：{record['readable']}")
         self.assertEqual(records[0]["pre"]["candidate_count"], 2, records[0]["pre"])
 
-        state = self.pending_dedupe.scan_state(batch_id)
+        state = self.dedupe.scan_state(batch_id)
         self.assertEqual(state["status"], "done", state)
         rows = int(self._con().execute(
             "SELECT COUNT(*) FROM duplicate_pool WHERE batch_id = ?",
             (batch_id,)).fetchone()[0])
         self.assertEqual(state["pooled"], rows,
                          "读到 done 就得给出抽完的池内条数，不能先报 0 再补")
-        card = next(c for c in self.pending_batches.batch_list()["batches"]
+        card = next(c for c in self.batches.batch_list()["batches"]
                     if c["batch_id"] == batch_id)
         self.assertEqual(card["pending_count"] + state["pooled"], card["total"],
                          "5.4 的账在 done 第一帧就对平：未审＋池内＝本批总数")
@@ -1135,7 +1139,7 @@ class PoolEvictionTest(PoolCase):
         ``reason=bank`` 的行数，``pending_count``＝待审实际行数，``pool_total`` 对得上。
         """
         self._seed_bank(_doc())
-        real = self.pending_dedupe.persist_scan_in_txn
+        real = self.dedupe.persist_scan_in_txn
         shots: list[dict[str, Any]] = []
         wal = str(self._con().execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
 
@@ -1166,7 +1170,7 @@ class PoolEvictionTest(PoolCase):
             # 挂 addCleanup 会让主线程去关别人的连接（sqlite3 直接报 ProgrammingError）。
             outside = None
             if wal:
-                probe = self.pending_db.connect()
+                probe = self.db.connect()
                 try:
                     outside = snap(probe)
                 finally:
@@ -1174,8 +1178,8 @@ class PoolEvictionTest(PoolCase):
             shots.append({"in_txn": in_txn, "outside": outside})
             return wrote
 
-        self.pending_dedupe.persist_scan_in_txn = spy
-        self.addCleanup(setattr, self.pending_dedupe, "persist_scan_in_txn", real)
+        self.dedupe.persist_scan_in_txn = spy
+        self.addCleanup(setattr, self.dedupe, "persist_scan_in_txn", real)
         batch_id, item_ids = self._draft(_doc(), _doc(answer="B"), _other_doc())
 
         self.assertTrue(shots, "抽走事务里根本没落初查结论，四合一就无从谈起")
@@ -1191,13 +1195,13 @@ class PoolEvictionTest(PoolCase):
                                                    "findings": 0, "status": ""},
                                  "提交前对外还看得见中间态＝分两步落库，空窗又回来了")
 
-        state = self.pending_dedupe.scan_state(batch_id)
+        state = self.dedupe.scan_state(batch_id)
         self.assertEqual(state["status"], "done", state)
         self.assertEqual(state["pooled"], 2, state)
         self.assertEqual(self._pending_ids(batch_id), [item_ids[2]])
-        card = next(c for c in self.pending_batches.batch_list()["batches"]
+        card = next(c for c in self.batches.batch_list()["batches"]
                     if c["batch_id"] == batch_id)
-        pool = self.pending_pool.list_pool()
+        pool = self.pool.list_pool()
         self.assertEqual(
             (card["pending_count"], len(self._pending_ids(batch_id)),
              state["pooled"], card["dedupe"]["pooled"]),
@@ -1226,15 +1230,15 @@ class PoolEvictionTest(PoolCase):
         self._seed_bank(_doc())
         batch_id, _item_ids = self._draft(_doc(), _doc(answer="B"))
         self.assertEqual(pool_rows(), 2, "前置：两条已经抽进池")
-        self.pending_dedupe.warm_batch_scan(batch_id, "org.jiuzhang.bank-missing")
-        failed = self.pending_dedupe.scan_state(batch_id)
+        self.dedupe.warm_batch_scan(batch_id, "org.jiuzhang.bank-missing")
+        failed = self.dedupe.scan_state(batch_id)
         self.assertEqual(failed["status"], "failed", msg=str(failed))
         self.assertEqual(failed["pooled"], pool_rows(), "C1：失败态给的池内数＝池表数")
-        self.pending_dedupe._scan_cache.clear()
-        off_db = self.pending_dedupe.scan_state(batch_id)
+        self.dedupe._scan_cache.clear()
+        off_db = self.dedupe.scan_state(batch_id)
         self.assertEqual((off_db["status"], off_db["pooled"]), ("failed", 2),
                          "重启回库读到的同一拍：状态是失败，池内数不跟着丢")
-        card = next(c for c in self.pending_batches.batch_list()["batches"]
+        card = next(c for c in self.batches.batch_list()["batches"]
                     if c["batch_id"] == batch_id)
         self.assertEqual(card["dedupe"]["pooled"], 2)
         self.assertEqual(card["pending_count"] + card["dedupe"]["pooled"], card["total"],
@@ -1243,8 +1247,8 @@ class PoolEvictionTest(PoolCase):
     def test_50_g2_i7_crash_before_commit_leaves_no_half_account(self) -> None:
         """军令 #32 · G2 欠账 7：「抽走中途重启」——commit 前被打断，账目整批退回。
 
-        断点钉在 :func:`pending_dedupe.persist_scan_in_txn` 上，那是抽走事务的**最里侧**
-        一步（``pending_pool.py:346``，紧挨着 ``con.commit()``）：进程恰好在这里没掉，
+        断点钉在 :func:`dedupe.persist_scan_in_txn` 上，那是抽走事务的**最里侧**
+        一步（``pending/pool/service.py:346``，紧挨着 ``con.commit()``）：进程恰好在这里没掉，
         事务里前面写下的池行、待审删除、``refresh_batch`` 都还只在这条连接里。判据三拍：
         ① 打断后另起连接读四件事＝**抽走前那一拍**（池 0／待审原样／卡片账没动／
         初查世代号没被这一代写进去）；②「重启」（清进程内缓存）后 ``pooled`` 与池表同源＝0；
@@ -1256,7 +1260,7 @@ class PoolEvictionTest(PoolCase):
                 "pool": int(con.execute("SELECT COUNT(*) FROM duplicate_pool"
                                         " WHERE batch_id = ?", (batch_id,)).fetchone()[0]),
                 "pending": self._live_count(batch_id),
-                "card": int(next(c for c in self.pending_batches.batch_list()["batches"]
+                "card": int(next(c for c in self.batches.batch_list()["batches"]
                                  if c["batch_id"] == batch_id)["pending_count"]),
                 "findings": int(con.execute(
                     "SELECT COUNT(*) FROM dedupe_findings WHERE batch_id = ?",
@@ -1271,13 +1275,13 @@ class PoolEvictionTest(PoolCase):
         before = frame()
         self.assertEqual((before["pool"], before["pending"], before["card"]), (0, 1, 1), before)
         self.assertGreaterEqual(before["findings"], 1, "前置：初查已经把候选账落好了")
-        with mock.patch.object(self.pending_dedupe, "persist_scan_in_txn",
+        with mock.patch.object(self.dedupe, "persist_scan_in_txn",
                                side_effect=RuntimeError("模拟 commit 前进程被打断")):
             with self.assertRaises(RuntimeError):
                 self._admit(batch_id)
         self.assertEqual(frame(), before, "打断后四件事必须整批退回，不许留半截账")
-        self.pending_dedupe._scan_cache.clear()
-        restarted = self.pending_dedupe.scan_state(batch_id)
+        self.dedupe._scan_cache.clear()
+        restarted = self.dedupe.scan_state(batch_id)
         self.assertEqual(restarted["status"], "done", "重启后读到的还是抽走前那一代结论")
         self.assertEqual(restarted["pooled"], 0, "pooled 与池表同源＝0，不是抽走的 1")
         outcome = self._admit(batch_id)
@@ -1290,7 +1294,7 @@ class PoolEvictionTest(PoolCase):
         # 但「谁在什么时机写结论」这条口径必须写明白，否则看用例的人会以为四件都在这里落。
         self.assertEqual(after["generation"], before["generation"])
         self.assertEqual(after["findings"], before["findings"])
-        self.assertEqual(self.pending_dedupe.scan_state(batch_id)["pooled"], after["pool"],
+        self.assertEqual(self.dedupe.scan_state(batch_id)["pooled"], after["pool"],
                          "对外第一帧的 pooled＝池表数＝抽走的条数")
 
     def test_51_g2_p13_account_homology_holds_without_wal(self) -> None:
@@ -1303,7 +1307,7 @@ class PoolEvictionTest(PoolCase):
         """
         mode_seen: list[str] = []
         mid: list[dict[str, Any]] = []
-        real_connect = self.pending_pool.connect
+        real_connect = self.pool.connect
 
         def opener() -> sqlite3.Connection:
             con = real_connect()
@@ -1312,14 +1316,14 @@ class PoolEvictionTest(PoolCase):
             return con
 
         def reader() -> sqlite3.Connection:
-            # 不走 pending_db.connect()：它每次都把文件拧回 WAL，前提就没了
-            con = sqlite3.connect(str(self.pending_db.pending_db_path()), timeout=2.0)
+            # 不走 db.connect()：它每次都把文件拧回 WAL，前提就没了
+            con = sqlite3.connect(str(self.db.pending_db_path()), timeout=2.0)
             con.row_factory = sqlite3.Row
             return con
 
         self._seed_bank(_doc())
         batch_id, _item_ids = self._draft(_doc(), hold_admit=True)
-        real_persist = self.pending_dedupe.persist_scan_in_txn
+        real_persist = self.dedupe.persist_scan_in_txn
 
         def spy(con: Any, target: str, state: dict[str, Any]) -> bool:
             wrote = real_persist(con, target, state)
@@ -1341,8 +1345,8 @@ class PoolEvictionTest(PoolCase):
             mid.append(probe)
             return wrote
 
-        with mock.patch.object(self.pending_pool, "connect", opener), \
-                mock.patch.object(self.pending_dedupe, "persist_scan_in_txn", spy):
+        with mock.patch.object(self.pool, "connect", opener), \
+                mock.patch.object(self.dedupe, "persist_scan_in_txn", spy):
             outcome = self._admit(batch_id)
         self.assertEqual(outcome["admitted"], 1, outcome)
         self.assertTrue(mid, "没进事务里那一拍，本用例无从判起")

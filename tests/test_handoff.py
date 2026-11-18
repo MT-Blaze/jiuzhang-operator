@@ -49,7 +49,7 @@ def _receipt(*, test_line: str = "| `tests.test_pending_api` | Ran 16 tests | �
 {forbidden}
 
 ```
- M app/core/pending_dedupe.py
+ M app/core/pending/dedupe/engine.py
 ```
 
 ## 【包结构自检】

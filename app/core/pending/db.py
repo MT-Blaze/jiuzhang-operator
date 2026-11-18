@@ -1,8 +1,8 @@
 """中转站的库层：独立 SQLite、号段、结构版本与字典基线。
 
 只回答三个问题：库文件在哪、表结构怎么升、基线字典（学校/场景/交叉标签）怎么播。
-「批次与条目怎么读写」见 pending_batches.py，「元数据规则」见 pending_meta.py，
-「审核动作」见 pending_bank.py。
+「批次与条目怎么读写」见 pending/batch/batches.py，「元数据规则」见 pending/meta/rules.py，
+「审核动作」见 pending/service.py。
 
 结构版本写在 ``PRAGMA user_version``，与主库同一套规矩：版本只能往前走，
 高于程序支持的版本号直接拒绝启动，绝不猜测怎么降级。
@@ -483,7 +483,7 @@ def _migrate_v4_dictionary(con: sqlite3.Connection) -> None:
     标准名与可见标签都不动——升级不替老师改题。
     """
     now = questions.now_iso()
-    from app.core.pending_meta import build_standard_name  # 元数据层建在本库之上，只能就地取
+    from app.core.pending.meta.rules import build_standard_name  # 元数据层建在本库之上，只能就地取
 
     rows = con.execute("SELECT batch_id, meta_json FROM batches").fetchall()
     for row in rows:

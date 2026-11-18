@@ -1841,7 +1841,7 @@ class EditorCropMagnifierTest(unittest.TestCase):
 
     def test_09_the_pending_bank_echoes_the_real_asset_address(self) -> None:
         """插件切完图要知道底座把字节写到哪去了：题面里的 uri 得跟着换。"""
-        bank = (ROOT / "app" / "core" / "pending_bank.py").read_text(encoding="utf-8")
+        bank = (ROOT / "app" / "core" / "pending/service.py").read_text(encoding="utf-8")
         self.assertIn('"saved_assets":', bank)
         self.assertIn("PENDING_ASSET_URI_PREFIX", bank)
 

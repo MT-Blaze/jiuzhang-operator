@@ -1,5 +1,5 @@
-"""导入批次后台自动初查（军令 #31 · 3.1a）：``pending_dedupe.warm_batch_scan`` /
-``scan_state`` 与 ``pending_bank.save_draft`` 的落池即扫挂点。
+"""导入批次后台自动初查（军令 #31 · 3.1a）：``dedupe.warm_batch_scan`` /
+``scan_state`` 与 ``service.save_draft`` 的落池即扫挂点。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_pending_dedupe_scan``
 
@@ -54,7 +54,7 @@ PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGIN_ID = "org.jiuzhang.bank-engine"
 STAMP = "2026-01-15T09:00:00+08:00"
 FAIL_CODE = "dedupe_scan_bank_unavailable"
-# 卡片既有 11 键（app/core/pending_batches.py:67-79），v9 加原卷页图两键，
+# 卡片既有 11 键（app/core/pending/batch/batches.py:67-79），v9 加原卷页图两键，
 # v10 再加扫描批标记，第 15 键才是 dedupe
 CARD_KEYS = {
     "batch_id", "label", "created_at", "updated_at", "source_backup", "source_name",
@@ -90,7 +90,7 @@ def _doc(stem: str) -> dict:
 
 
 class _ThreadProxy:
-    """``pending_bank.threading`` 的替身：只换 ``Thread``，其余属性一律转发真模块。
+    """``service.threading`` 的替身：只换 ``Thread``，其余属性一律转发真模块。
 
     造出来的线程默认**卡在闸上不干活**，由测试显式 ``_drain()`` 放行并 ``join``：
     这样「``save_draft`` 返回时刻缓存里什么都没有」是确定的事实，不是赌出来的。
@@ -121,15 +121,18 @@ class DedupeScanCase(unittest.TestCase):
 
     def setUp(self) -> None:
         from app.core.config import settings
-        from app.core import pending_bank, pending_batches, pending_dedupe, pending_db
+        from app.core.pending import service
+        from app.core.pending.batch import batches
+        from app.core.pending.dedupe import engine as dedupe
+        from app.core.pending import db
         from app.core.bank import service as bank
 
         self.settings = settings
         self.bank = bank
-        self.pending_bank = pending_bank
-        self.pending_batches = pending_batches
-        self.dedupe = pending_dedupe
-        self.pending_db = pending_db
+        self.service = service
+        self.batches = batches
+        self.dedupe = dedupe
+        self.db = db
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._saved = (os.environ.get("JZO_DATA_DIR"), os.environ.get("JZO_PLUGINS_DIR"),
@@ -155,7 +158,7 @@ class DedupeScanCase(unittest.TestCase):
         self.gate = threading.Event()
         self.addCleanup(self._settle_threads)
         self._thread_patcher = mock.patch.object(
-            self.pending_bank, "threading", _ThreadProxy(self.threads, self.gate))
+            self.service, "threading", _ThreadProxy(self.threads, self.gate))
         self._thread_patcher.start()
         self.addCleanup(self._thread_patcher.stop)
 
@@ -204,7 +207,7 @@ class DedupeScanCase(unittest.TestCase):
         return ids
 
     def _draft(self, *docs: dict, **kwargs) -> dict:
-        return self.pending_bank.save_draft([{"question": document} for document in docs],
+        return self.service.save_draft([{"question": document} for document in docs],
                                             **kwargs)
 
     def _drain(self, timeout: float = 20.0) -> int:
@@ -219,13 +222,13 @@ class DedupeScanCase(unittest.TestCase):
         return dict(self.dedupe._scan_cache)
 
     def _card_from_list(self, batch_id: str) -> dict:
-        for card in self.pending_batches.batch_list()["batches"]:
+        for card in self.batches.batch_list()["batches"]:
             if card["batch_id"] == batch_id:
                 return card
         raise AssertionError(f"批次列表里没有 {batch_id}")
 
     def _pool_count(self, batch_id: str | None = None) -> int:
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             if batch_id is None:
                 return int(con.execute("SELECT COUNT(*) FROM pending_questions").fetchone()[0])
@@ -333,7 +336,7 @@ class AutoScanTest(DedupeScanCase):
         ``tests/test_pending_pool.py`` 的 ``test_49`` 里抽完真题再钉。
         """
         def pool_table(batch_id: str) -> int:
-            con = self.pending_db.connect()
+            con = self.db.connect()
             try:
                 return int(con.execute("SELECT COUNT(*) FROM duplicate_pool WHERE batch_id = ?",
                                        (batch_id,)).fetchone()[0])
@@ -436,7 +439,7 @@ class AutoScanTest(DedupeScanCase):
                          "自匹配的来源：代 2 才有的行被当成「主库已有」")
         # 只进不出：主库快照不许跟着结论一起进缓存／落库（G4 硬约束②）
         self.assertNotIn("main_rows", state)
-        con = self.pending_db.connect()
+        con = self.db.connect()
         try:
             columns = {row[1] for row in con.execute("PRAGMA table_info(dedupe_scans)")}
             self.assertNotIn("main_rows", columns)
@@ -556,8 +559,8 @@ class CardCompatTest(DedupeScanCase):
     def test_05c_routes_are_wired_to_those_two_cards(self) -> None:
         """判据 5 的接线守卫：本模块不起 uvicorn，用源码锚点说明两处入口即上面两处。"""
         api = (ROOT / "app" / "api" / "pending.py").read_text(encoding="utf-8")
-        self.assertIn("return pending_bank.batch_list()", api)
-        self.assertIn("return pending_bank.save_draft(", api)
+        self.assertIn("return service.batch_list()", api)
+        self.assertIn("return service.save_draft(", api)
         self.assertIn('origin=str(payload.get("origin") or "")', api)
 
 
@@ -596,7 +599,7 @@ class PerfTest(DedupeScanCase):
         耗时做差值断言：线程只 ``start`` 不 ``join``，初查开销不该进导入的 HTTP 时长。
         真机侧的 50 题往返差值归 ``tools/editor_probe.py`` 的 3.1a 场景。
         """
-        limit = getattr(self.pending_bank, "MAX_BATCH_QUESTIONS", 0)
+        limit = getattr(self.service, "MAX_BATCH_QUESTIONS", 0)
         if limit < 50:
             self.skipTest(f"MAX_BATCH_QUESTIONS={limit} 不足以造 50 题一批")
         docs = [_doc(f"性能口径题 {i}：已知 $x^2+{i}=0$，求 $x$。") for i in range(50)]

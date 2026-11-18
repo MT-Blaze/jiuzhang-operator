@@ -1,7 +1,7 @@
 """中转站（待审核池）Host API：给沙箱插件提供受控的批次暂存通道。
 
 插件不直接碰数据库、不直接碰文件系统（AGENTS §2）；它把题目交给宿主，
-宿主落进与主库物理隔离的中转站（``app/core/pending_bank.py``），老师审核
+宿主落进与主库物理隔离的中转站（``app/core/pending/service.py``），老师审核
 通过后才转成正式题目写进主库。
 
 - 写接口（存草稿 / 通过入库 / 彻底删除 / 剔除重复）必须带一次性写令牌（AGENTS §5）；
@@ -16,10 +16,12 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from app.core import pending_bank, pending_dedupe, pending_pool
+from app.core.pending import service
+from app.core.pending.dedupe import engine as dedupe
+from app.core.pending.pool import service as pool
 from app.core.bank import provider, questions
 from app.core.bank import service as bank
-from app.core.pending_db import BATCH_ID_RE
+from app.core.pending.db import BATCH_ID_RE
 from app.core.security import require_write_token
 from app.bank_engine.writer import EntryRejected
 from app.api.pending_approve_errors import approve_error
@@ -34,8 +36,8 @@ def pending_batches() -> dict[str, Any]:
     有未审的批次在前，已审完的沉在最后——老师一眼看见「还欠多少」。
     """
     try:
-        return pending_bank.batch_list()
-    except pending_bank.PendingError as exc:
+        return service.batch_list()
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -46,10 +48,10 @@ def pending_batches() -> dict[str, Any]:
 def pending_batch_questions(batch_id: str) -> dict[str, Any]:
     """返回的每一条都带完整题目文档，审核界面拿到就能直接渲染。"""
     try:
-        return pending_bank.list_batch_questions(batch_id)
-    except pending_bank.PendingNotFound as exc:
+        return service.list_batch_questions(batch_id)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -61,10 +63,10 @@ def pending_batch_questions(batch_id: str) -> dict[str, Any]:
 def pending_delete_batch(batch_id: str) -> dict[str, Any]:
     """只删中转站里这一批，主库一个字节都不碰。"""
     try:
-        return pending_bank.delete_batch(batch_id)
-    except pending_bank.PendingNotFound as exc:
+        return service.delete_batch(batch_id)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -82,10 +84,10 @@ def pending_set_pages(batch_id: str,
     if not isinstance(pages, list) or not pages:
         raise HTTPException(status_code=400, detail="缺少 page_images 数组")
     try:
-        return pending_bank.set_batch_pages(batch_id, pages)
-    except pending_bank.PendingNotFound as exc:
+        return service.set_batch_pages(batch_id, pages)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -96,8 +98,8 @@ def pending_set_pages(batch_id: str,
 def pending_meta_history() -> dict[str, Any]:
     """最近用过的地区 / 主体 / 考试类型 / 学科 / 明细学校，开新批次时自动带出。"""
     try:
-        return pending_bank.meta_history()
-    except pending_bank.PendingError as exc:
+        return service.meta_history()
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -119,10 +121,10 @@ def pending_set_meta(batch_id: str, payload: dict[str, Any] = Body(...)) -> dict
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
     try:
-        return pending_bank.set_batch_meta(batch_id, payload)
-    except pending_bank.PendingNotFound as exc:
+        return service.set_batch_meta(batch_id, payload)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -151,7 +153,7 @@ def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if not isinstance(items, list) or not items:
         raise HTTPException(status_code=400, detail="缺少 questions 数组")
     try:
-        return pending_bank.save_draft(
+        return service.save_draft(
             items,
             batch_id=payload.get("batch_id"),
             source_backup=payload.get("source_backup"),
@@ -163,11 +165,11 @@ def pending_save_draft(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(
             status_code=422, detail={"message": "题目不符合 Schema", "errors": exc.errors}
         ) from exc
-    except pending_bank.PendingNotFound as exc:
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingConflict as exc:
+    except service.PendingConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -185,10 +187,10 @@ def pending_duplicate(pending_id: str) -> dict[str, Any]:
     """
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        report = pending_bank.duplicate_report(pending_id, plugin_id)
-    except pending_bank.PendingNotFound as exc:
+        report = service.duplicate_report(pending_id, plugin_id)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     report["blocked"] = bool(report.get("hit")) and report["answer"]["same"] is False
     return report
@@ -210,7 +212,7 @@ def pending_approve(pending_id: str, payload: dict[str, Any] | None = Body(defau
 
     ``action`` 取 ``overwrite`` / ``merge_solution`` 时若两边**答案不同**，一律回
     **409** 且 ``detail.answer_mismatch`` 为真：这一条只许放弃，覆盖与合并都封死
-    （见 ``pending_bank`` 里的说明）。
+    （见 ``pending.service`` 里的说明）。
     """
     body = payload if isinstance(payload, dict) else {}
     force = body.get("force") is True
@@ -219,10 +221,10 @@ def pending_approve(pending_id: str, payload: dict[str, Any] | None = Body(defau
     document = body.get("question") if isinstance(body.get("question"), dict) else None
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        return pending_bank.approve(pending_id, plugin_id, force=force,
+        return service.approve(pending_id, plugin_id, force=force,
                                     action=str(action or ""), engine=engine,
                                     document=document)
-    except (EntryRejected, pending_bank.PendingError, bank.BankError,
+    except (EntryRejected, service.PendingError, bank.BankError,
             questions.QuestionValidationError) as exc:
         raise approve_error(exc) from exc
 
@@ -235,10 +237,10 @@ def pending_approve(pending_id: str, payload: dict[str, Any] | None = Body(defau
 def pending_delete(pending_id: str) -> dict[str, Any]:
     """连同它在 ``pending_assets/`` 里的配图一起删；主库一个字节都不碰。"""
     try:
-        return pending_bank.delete_pending(pending_id)
-    except pending_bank.PendingNotFound as exc:
+        return service.delete_pending(pending_id)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -270,8 +272,8 @@ def pending_batch_duplicates(batch_id: str) -> dict[str, Any]:
         )
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        return pending_dedupe.batch_duplicate_groups(text_batch, plugin_id)
-    except pending_bank.PendingNotFound as exc:
+        return dedupe.batch_duplicate_groups(text_batch, plugin_id)
+    except service.PendingNotFound as exc:
         raise HTTPException(
             status_code=404,
             detail={"code": "batch_purge_batch_not_found", "message": str(exc),
@@ -289,7 +291,7 @@ def pending_batch_duplicates(batch_id: str) -> dict[str, Any]:
             detail={"code": "batch_purge_bank_unavailable", "message": str(exc),
                     "retryable": True},
         ) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -317,12 +319,12 @@ def pending_purge_duplicates(batch_id: str,
     body = payload if isinstance(payload, dict) else {}
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        return pending_bank.purge_batch_duplicates(
+        return service.purge_batch_duplicates(
             batch_id, plugin_id,
             body.get("drop_ids"), body.get("expected_drop_ids"),
             allow_empty=body.get("allow_empty") is True,
         )
-    except pending_bank.BatchPurgeError as exc:
+    except service.BatchPurgeError as exc:
         raise HTTPException(
             status_code=exc.status,
             detail={"code": exc.code, "message": str(exc), "retryable": exc.retryable},
@@ -331,11 +333,11 @@ def pending_purge_duplicates(batch_id: str,
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except pending_bank.PendingNotFound as exc:
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingConflict as exc:
+    except service.PendingConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -353,8 +355,8 @@ def pending_pool_list(tier: str = "") -> dict[str, Any]:
     第五步的画布拖档时带着它重新取一次即可；不传就是全给。
     """
     try:
-        return pending_pool.list_pool(tier=tier or None)
-    except pending_bank.PendingError as exc:
+        return pool.list_pool(tier=tier or None)
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -369,12 +371,12 @@ def pending_pool_item(pool_id: str, tier: str = "") -> dict[str, Any]:
     前端只认这个数组，不许自己再算一遍答案像不像。
     """
     try:
-        return pending_pool.get_entry(pool_id, tier=tier or None)
-    except pending_bank.PendingNotFound as exc:
+        return pool.get_entry(pool_id, tier=tier or None)
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -395,10 +397,10 @@ def pending_pool_update_doc(
     """
     body = payload if isinstance(payload, dict) else {}
     try:
-        return pending_pool.update_document(pool_id, body.get("patch"))
-    except pending_bank.PendingNotFound as exc:
+        return pool.update_document(pool_id, body.get("patch"))
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -415,8 +417,8 @@ def pending_pool_collect(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     绝不伪装成「本批没有重题」。
 
     **这个接口是补拉，不是主路径**：正常链路是落池即扫的后台线程——初查算出的结论
-    **不单独发布**，而是随抽走一并落库（``pending_dedupe.warm_batch_scan(admit=True)``
-    → ``pending_pool.admit_from_scan``，判据 3.5；军令 #32 · S6 缺陷 2 的收口）。
+    **不单独发布**，而是随抽走一并落库（``dedupe.warm_batch_scan(admit=True)``
+    → ``pool.admit_from_scan``，判据 3.5；军令 #32 · S6 缺陷 2 的收口）。
     前端不需要等它、也不该靠它才让题消失。一条事务里「写池行＋删待审行＋刷新批次未审数
     ＋落 ``dedupe_scans``/``dedupe_findings``」四件事同时成立、一次提交，所以对外读得到
     ``done`` 的那一刻，卡片账目与池表已经是抽完的样子；``admitted`` 与 ``evicted`` 永远
@@ -431,12 +433,12 @@ def pending_pool_collect(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="批次号不合法")
     try:
         plugin_id = provider.resolve()["plugin_id"]
-        return pending_pool.admit_from_scan(
+        return pool.admit_from_scan(
             batch_id, provider_id=plugin_id, tier=body.get("tier") or None,
         )
     except bank.BankNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -460,16 +462,16 @@ def pending_pool_act(pool_id: str, payload: dict[str, Any] = Body(...)) -> dict[
     """
     body = payload if isinstance(payload, dict) else {}
     try:
-        return pending_pool.act(pool_id, body.get("action"),
+        return pool.act(pool_id, body.get("action"),
                                 resolutions=body.get("resolutions"))
-    except pending_pool.PoolActionRefused as exc:
+    except pool.PoolActionRefused as exc:
         raise HTTPException(
             status_code=409,
             detail={"code": exc.code, "message": str(exc), "action": exc.action, **exc.detail},
         ) from exc
-    except pending_bank.PendingNotFound as exc:
+    except service.PendingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except pending_bank.PendingConflict as exc:
+    except service.PendingConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except questions.QuestionValidationError as exc:
         raise HTTPException(
@@ -479,5 +481,5 @@ def pending_pool_act(pool_id: str, payload: dict[str, Any] = Body(...)) -> dict[
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except bank.BankError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except pending_bank.PendingError as exc:
+    except service.PendingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

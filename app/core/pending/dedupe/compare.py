@@ -1,11 +1,11 @@
 """中转站的比对口径：四要素指纹、单条命中与软查重置信度（军令 #32 · S5b 拆出）。
 
-**来源**：整块搬自 ``app/core/pending_dedupe.py``（原 1065 行撞破 800 行上限）——
-纯 extract-module，函数体、常量值、注释与判据口径逐字未改。``pending_dedupe`` 原位
-re-export 本模块全部名字，调用点（``api/pending.py``、``pending_pool.py``、
-``pending_bank.py``、``pending_batches.py``、``tools/editor_probe.py``、``tests/*``）
-用法一字不改；``pending_dedupe`` 里留下的扫描缓存／初查链／抽走进池照旧按模块全局取用，
-测试 monkeypatch ``pending_dedupe.bank_rows_snapshot`` 的口径不受影响（该函数仍在 ``pending_dedupe``）。
+**来源**：整块搬自 ``app/core/pending/dedupe/engine.py``（原 1065 行撞破 800 行上限）——
+纯 extract-module，函数体、常量值、注释与判据口径逐字未改。``pending.dedupe.engine`` 原位
+re-export 本模块全部名字，调用点（``api/pending.py``、``pending/pool/service.py``、
+``pending/service.py``、``pending/batch/batches.py``、``tools/editor_probe.py``、``tests/*``）
+用法一字不改；``pending.dedupe.engine`` 里留下的扫描缓存／初查链／抽走进池照旧按模块全局取用，
+测试 monkeypatch ``dedupe.bank_rows_snapshot`` 的口径不受影响（该函数仍在本层之上）。
 
 **边界**：这里只做**读库比对**——把中转站待审题与主库存量题摆一起判「像不像」，
 不碰进程内缓存、不写 ``dedupe_scans`` / ``dedupe_findings``、不入池。
@@ -29,7 +29,7 @@ from app.core.bank import service as bank
 from app.core.bank.engine import dedupe as bank_dedupe
 from app.core.bank.engine.codec import answer_from_storage
 from app.core.config import settings
-from app.core.pending_db import (
+from app.core.pending.db import (
     PENDING_ASSET_URI_PREFIX,
     UPLOAD_ASSET_URI_PREFIX,
 )

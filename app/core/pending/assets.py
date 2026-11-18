@@ -7,7 +7,7 @@
 - 入库那一刻才把 ``pimg_x`` 搬进 ``uploads/`` 并改名 ``img_x``；写主库失败就原样搬回，
   绝不出现「图进了主库、题没进」的半截状态。
 
-号段/路径常量与错误类型见 pending_db.py。
+号段/路径常量与错误类型见 pending/db.py。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from typing import Any, Iterable
 from app.core import wire
 from app.core.bank import service as bank
 from app.core.config import settings
-from app.core.pending_db import (
+from app.core.pending.db import (
     DATA_URL_RE,
     EXTENSIONS,
     MAX_ASSET_BYTES,
@@ -299,7 +299,7 @@ def copy_pending_asset_to_pool(asset: Any) -> dict[str, Any]:
     是复制不是搬：待审行在同一条事务里才被删掉，文件先搬走的话事务一旦回滚
     就再也拼不回来——「池里有了、批次里还留着」可以是半态，「图没了、题也没了」
     是真丢数据。批次 ``assets_json`` 仍记着 ``pimg_`` 那一份，未审数归零时由
-    ``pending_bank._settle_batch`` 统一清，与本目录互不相干。
+    ``service._settle_batch`` 统一清，与本目录互不相干。
 
     源文件不在就是失败（原判据 3.6 的「图文件缺失」一路）：宁可整条不搬，
     也不让池里躺着一条点开是死链的题。
