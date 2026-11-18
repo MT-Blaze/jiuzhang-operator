@@ -29,13 +29,21 @@ from app.core import wire
 from app.core.content import text_health
 from app.core.ingest.intake.media import _items_from_file, _page_of, _placeholder
 from app.core.ingest.route import (
+    append_notes,
+    apply_layout,
     attach_layout,
+    attach_surface,
     auto_split_pages,
     fill_scan_batch,
+    ledger_failure,
+    ledger_progress,
+    ledger_stats,
     log_documents,
+    new_ledger,
     route_payload,
     save_route,
     scan_route,
+    surface_failure,
 )
 from app.core.ingest.intake.text import (
     DEFAULT_DIFFICULTY,
@@ -233,28 +241,6 @@ def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
-def _append_notes(route: dict[str, Any], notes: list[str]) -> None:
-    """把单文件分拣的如实说明并进批次路由，老师重开批次时能看到。"""
-    if notes:
-        route["note"] = (str(route.get("note") or "") + " " + " ".join(notes)).strip()
-
-
-def _apply_layout(page_images: list[dict[str, Any]],
-                  layout: dict[str, Any] | None) -> None:
-    """把版面引擎探出的题块就地写回页图；没探到就保留原有绿框。"""
-    found = (layout or {}).get("pages") or {}
-    if not found:
-        return
-    for entry in page_images:
-        try:
-            page_no = int(entry.get("page") or 0)
-        except (TypeError, ValueError):
-            continue
-        regions = found.get(page_no) or found.get(str(page_no))
-        if isinstance(regions, list) and regions:
-            entry["regions"] = regions
-
-
 async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                           layout_engine: str = layout_router.LAYOUT_AUTO,
                           recognize_engine: str = recognize_router.RECOGNIZE_AUTO) -> None:
@@ -269,6 +255,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
 
     picked_layout = layout_router.normalize_engine(layout_engine)
     picked_recognize = recognize_router.normalize_engine(recognize_engine)
+    # 失败显性化账本：过程与成因累积在这里，随 save_route 落进批次 route_json。
+    ledger = new_ledger()
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
@@ -283,6 +271,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         scan_mode = page_only
         image_ocr = False
         notes: list[str] = []
+        ledger_progress(ledger, f"开始解析 {name}")
         if page_only:
             documents, kind, source_text = [], "pdf", ""
         else:
@@ -295,7 +284,11 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 try:
                     documents, notes, kind, source_text, scan_mode = \
                         await _items_from_file(name, data)
-                except Exception:  # noqa: BLE001 - 后台单份失败不许带崩整批
+                    ledger_progress(ledger, f"{name} 解析完成，拆出 {len(documents)} 道题")
+                except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
+                    surface_failure(service, batch_id, ledger, file=name, page_no=1,
+                                    step="解析", error=error,
+                                    fallback="这份文件没解析开，已留占位，可对着原卷补录")
                     documents = []
                     kind = ""
                     source_text = ""
@@ -304,34 +297,54 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         try:
             page_images, doc_pages, _page_notes = page_render.build_pages(
                 name, kind, data, source_text, documents)
-        except Exception:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
+            if page_images:
+                ledger_progress(ledger, f"{name} 原卷页图渲染完成，共 {len(page_images)} 页")
+        except Exception as error:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
+            surface_failure(service, batch_id, ledger, file=name, page_no=1,
+                            step="渲染页图", error=error,
+                            fallback="原卷页图没渲染出来，左栏暂时看不到原卷，可重新拖入这份文件")
             page_images, doc_pages = [], []
 
         if scan_mode:
             health = page_render.pdf_text_health(data)
             route = scan_route(picked_layout, picked_recognize, health)
-            _append_notes(route, notes)
+            append_notes(route, notes)
             if page_images:
                 layout = await layout_router.run(name, data, page_images, picked_layout)
-                _apply_layout(page_images, layout)
+                apply_layout(page_images, layout)
                 attach_layout(route, layout)
+                blocks = sum(len(r) for r in ((layout or {}).get("pages") or {}).values()
+                             if isinstance(r, list))
+                ledger_progress(ledger, f"{name} 版面探测完成，探出 {blocks} 个题块")
                 try:
                     service.set_batch_pages(batch_id, page_images)
-                except Exception:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
+                except Exception as error:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
+                    surface_failure(service, batch_id, ledger, file=name, page_no=1,
+                                    step="挂页图", error=error, persist=True,
+                                    fallback="原卷页图挂到批次上失败，批次留着，可重新拖入这份文件")
                     drop_assets(page_images)
                     continue
                 # 自动切图入池：坐标已经算好，不再等老师逐框点确认。
-                auto_split_pages(name, data, batch_id, page_images)
+                split_notes = auto_split_pages(name, data, batch_id, page_images)
+                if split_notes:
+                    ledger_failure(ledger, file=name, page_no=0, step="自动切题",
+                                   reason="；".join(split_notes),
+                                   detail="\n".join(split_notes))
                 if any((entry.get("regions") or []) for entry in page_images):
+                    if not split_notes:
+                        ledger_progress(ledger, f"{name} 自动切题落池完成，逐题识别开工")
                     route = await fill_scan_batch(
                         batch_id, picked_recognize, health, picked_layout, layout)
+                    ledger_stats(ledger, name, route)
+                else:
+                    ledger_progress(ledger, f"{name} 没有可自动切出的题块，可在左栏框选切题", "warn")
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
                     service.delete_pending(pending_id)
                 except service.PendingError:
                     pass
-            save_route(service, batch_id, route)
+            save_route(service, batch_id, attach_surface(route, ledger))
             continue
 
         if image_ocr:
@@ -343,18 +356,23 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 service.save_draft(
                     [{"question": shell, "pending_id": pending_id, "page_no": 1}],
                     batch_id=batch_id, origin="ingest.ai_ocr", page_images=page_images)
-            except Exception:  # noqa: BLE001 - 写不进去就退回占位题，卷子不能丢
+            except Exception as error:  # noqa: BLE001 - 写不进去就退回占位题，卷子不能丢
+                surface_failure(service, batch_id, ledger, file=name, page_no=1,
+                                step="落池", error=error, persist=True,
+                                fallback="识别结果写不进待审池，卷子留着，可对着原卷补录")
                 if page_images:
                     drop_assets(page_images)
                 continue
+            ledger_progress(ledger, f"{name} 占位壳已落池，整页识别开工")
             route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout)
-            save_route(service, batch_id, route)
+            ledger_stats(ledger, name, route)
+            save_route(service, batch_id, attach_surface(route, ledger))
             continue
 
         health = text_health.text_health(source_text)
         route = route_payload("image" if kind == "image" else "text", health,
                                False if kind == "image" else None)
-        _append_notes(route, notes)
+        append_notes(route, notes)
         items: list[dict[str, Any]] = []
         if documents:
             items.append({"question": documents[0], "pending_id": pending_id,
@@ -370,9 +388,13 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         try:
             service.save_draft(items, batch_id=batch_id, origin="ingest",
                                     page_images=page_images)
-        except Exception:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
+        except Exception as error:  # noqa: BLE001 - 这一份写不进去就留着占位题，不动别的
+            surface_failure(service, batch_id, ledger, file=name, page_no=1,
+                            step="落池", error=error, persist=True,
+                            fallback="这一份写不进待审池，占位题留着，可对着原卷补录")
             if page_images:
                 drop_assets(page_images)
             continue
+        ledger_progress(ledger, f"{name} 落池完成，{len(items)} 条待审题就位", "ok")
         log_documents(documents)
-        save_route(service, batch_id, route)
+        save_route(service, batch_id, attach_surface(route, ledger))

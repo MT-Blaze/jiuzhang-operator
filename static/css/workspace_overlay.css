@@ -166,6 +166,15 @@
   font-weight: 600;
 }
 
+/* 失败显性化「看完整诊断」定位到的那一条：粗描边 + 左侧重条，不只靠颜色。
+   整块下架：删掉本段与 core_log.js 的 is-located 判定即可。 */
+.ws-dock-item.is-located {
+  border-color: var(--accent, #b27a30);
+  border-width: 2px;
+  box-shadow: inset 3px 0 0 var(--accent, #b27a30);
+  background: rgba(178, 122, 48, 0.08);
+}
+
 /* 系统终端：等宽、整行不截断，像看日志文件一样看宿主事件；整屏灰字，与业务日志分家。 */
 .ws-dock-log[data-view="terminal"] {
   font-family: ui-monospace, Consolas, "Courier New", monospace;

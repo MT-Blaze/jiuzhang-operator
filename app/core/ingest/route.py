@@ -45,11 +45,132 @@ def route_payload(kind: str, health: dict[str, Any],
 
 
 def save_route(service: Any, batch_id: str, route: dict[str, Any]) -> None:
-    """路由标记是增强信息：写不进去只影响提示，绝不回滚已入池的题目。"""
+    """路由标记是增强信息：写不进去只影响提示，绝不回滚已入池的题目。
+
+    失败显性化（2026-11-18 卡）：识别调度员中途会用全新 route 快照重写批次，
+    快照里没带 failures/progress 时把库里已有的那两份旧账保全进来，
+    成因与过程流水不因快照重写而丢。note 等其余键语义一字不动。
+    """
     try:
+        if "failures" not in route or "progress" not in route:
+            stored = service.read_batch_route(batch_id)
+            for key in ("failures", "progress"):
+                if key not in route and stored.get(key):
+                    route[key] = stored[key]
         service.set_batch_route(batch_id, route)
     except Exception:  # noqa: BLE001 - 老批次/并发删除都不该拖垮解析
         pass
+
+
+# ---------------------------------------------------------------- 失败显性化账本
+# 口径（2026-11-18 拍板）：过程进运行日志、成因进报错诊断、成因落盘挂批次。
+# 账本随每次解析在内存里累积，经 save_route 落进 route_json 的 failures/progress
+# 两键（零 schema 迁移，route_json 本身即先例）。整块下架：删掉本段与
+# service.py 里的 ledger_* 调用点即可，保批保卷行为不受影响。
+
+PROGRESS_LIMIT = 40
+
+
+def new_ledger() -> dict[str, Any]:
+    """一份文件一个账本：failures 按 file+step 去重，progress 环形上限 40 条。"""
+    return {"failures": [], "progress": [], "seq": 0}
+
+
+def ledger_progress(ledger: dict[str, Any], text: str, level: str = "info") -> None:
+    """记一条过程摘要（人话一句）；seq 单调递增，前端据此增量播报不刷屏。"""
+    ledger["seq"] = int(ledger.get("seq") or 0) + 1
+    ledger["progress"].append(
+        {"seq": ledger["seq"], "text": str(text)[:400], "level": str(level)})
+    if len(ledger["progress"]) > PROGRESS_LIMIT:
+        del ledger["progress"][:len(ledger["progress"]) - PROGRESS_LIMIT]
+
+
+def failure_reason(error: BaseException, fallback: str) -> str:
+    """成因翻成人话：质检拒收有固定口径，其余异常按步骤给兜底句。"""
+    from app.core.bank import questions
+
+    if isinstance(error, questions.QuestionValidationError):
+        return "识别结果没通过题目质检（缺必填字段），已留占位，可对着原卷补录"
+    return fallback
+
+
+def failure_detail(error: BaseException) -> str:
+    """完整现场：质检拒收给 ValidationError 原文，其余给异常原文＋堆栈尾段。"""
+    import traceback
+
+    from app.core.bank import questions
+
+    if isinstance(error, questions.QuestionValidationError):
+        return "QuestionValidationError: " + "；".join(error.errors)
+    lines = traceback.format_exception(type(error), error, error.__traceback__)
+    return "".join(lines)[-2000:]
+
+
+def ledger_failure(ledger: dict[str, Any], *, file: str, page_no: int, step: str,
+                   reason: str, detail: str, retryable: bool = True) -> None:
+    """记一条失败成因：按 file+step 去重追加，同时落一条 error 级过程行。"""
+    key = (str(file), str(step))
+    for entry in ledger["failures"]:
+        if (entry.get("file"), entry.get("step")) == key:
+            return
+    ledger["failures"].append({
+        "file": str(file), "page_no": int(page_no or 0), "step": str(step),
+        "reason": str(reason)[:400], "detail": str(detail)[:4000],
+        "retryable": bool(retryable),
+    })
+    ledger_progress(ledger, "%s %s失败：%s" % (file, step, reason), "error")
+
+
+def attach_surface(route: dict[str, Any], ledger: dict[str, Any]) -> dict[str, Any]:
+    """把账本挂到 route 上随 save_route 落盘；空账不挂键，成功批次不留失败痕。"""
+    if ledger.get("failures"):
+        route["failures"] = list(ledger["failures"])
+    if ledger.get("progress"):
+        route["progress"] = list(ledger["progress"])
+    return route
+
+
+def surface_failure(service: Any, batch_id: str, ledger: dict[str, Any], *,
+                    file: str, page_no: int, step: str, error: BaseException,
+                    fallback: str, persist: bool = False) -> None:
+    """吞异常点的统一开口：成因翻人话落账；早退路径 persist=True 立刻落盘。"""
+    ledger_failure(ledger, file=file, page_no=page_no, step=step,
+                   reason=failure_reason(error, fallback),
+                   detail=failure_detail(error))
+    if persist:
+        save_route(service, batch_id, attach_surface({}, ledger))
+
+
+def ledger_stats(ledger: dict[str, Any], name: str, route: dict[str, Any]) -> None:
+    """识别收口后把坏题账翻成一条过程摘要：无坏题绿字，有坏题黄字。"""
+    stats = route.get("stats") or {}
+    if stats:
+        ledger_progress(
+            ledger, "%s 识别完成：共 %s 题，坏题 %s 道" % (
+                name, stats.get("total"), stats.get("bad")),
+            "warn" if stats.get("bad") else "ok")
+
+
+def append_notes(route: dict[str, Any], notes: list[str]) -> None:
+    """把单文件分拣的如实说明并进批次路由，老师重开批次时能看到。"""
+    if notes:
+        route["note"] = (str(route.get("note") or "") + " " + " ".join(notes)).strip()
+
+
+def apply_layout(page_images: list[dict[str, Any]],
+                 layout: dict[str, Any] | None) -> None:
+    """把版面引擎探出的题块就地写回页图；没探到就保留原有绿框。"""
+    found = (layout or {}).get("pages") or {}
+    if not found:
+        return
+    for entry in page_images:
+        try:
+            page_no = int(entry.get("page") or 0)
+        except (TypeError, ValueError):
+            continue
+        regions = found.get(page_no) or found.get(str(page_no))
+        if isinstance(regions, list) and regions:
+            entry["regions"] = regions
 
 
 def attach_layout(route: dict[str, Any], layout: dict[str, Any] | None) -> dict[str, Any]:

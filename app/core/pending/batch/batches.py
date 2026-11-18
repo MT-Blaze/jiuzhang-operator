@@ -40,6 +40,18 @@ def read_route(row: sqlite3.Row) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def read_batch_route(batch_id: str) -> dict[str, Any]:
+    """只读一个批次的解析路由（失败显性化写侧保全旧账用）；批次不在就当空对象。"""
+    if not BATCH_ID_RE.match(str(batch_id or "")):
+        return {}
+    con = connect()
+    try:
+        row = batch_row(con, batch_id)
+        return read_route(row) if row is not None else {}
+    finally:
+        con.close()
+
+
 def read_approved(row: sqlite3.Row) -> list[dict[str, Any]]:
     """这一批已经进主库的题号（公共元数据后改时还要补写它们）。"""
     try:

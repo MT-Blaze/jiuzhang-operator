@@ -37,12 +37,18 @@
         logEl.appendChild(empty);
         return;
       }
+      var located = ctx.located && ctx.located();
       shown.forEach(function (entry) {
         var item = document.createElement("li");
         item.className = "ws-dock-item";
         item.setAttribute("data-level", entry.level);
         // 报错诊断复制的是完整现场；没有现场才退回那一行摘要。
         item.setAttribute("data-copy", entry.detail || entry.line);
+        // 插件「看完整诊断」定位到的那一条：描边高亮，不只靠颜色（AGENTS §6）。
+        if (located && entry === located) {
+          item.classList.add("is-located");
+          item.setAttribute("data-located", "true");
+        }
         var time = document.createElement("span");
         time.className = "ws-dock-time";
         time.textContent = entry.time;
@@ -74,6 +80,11 @@
         }
         logEl.appendChild(item);
       });
+      var locatedEl = located ? logEl.querySelector(".ws-dock-item.is-located") : null;
+      if (locatedEl && typeof locatedEl.scrollIntoView === "function") {
+        locatedEl.scrollIntoView({ block: "nearest" });
+        return;
+      }
       var scrollEl = ctx.scrollEl && ctx.scrollEl();
       if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
     }

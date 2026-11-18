@@ -12,6 +12,8 @@
     var dockLog = deps.dockLog;
     var dockOpen = deps.dockOpen;
     var dockTabs = deps.dockTabs;
+    // 可选：插件「看完整诊断」定位时把底栏拉开。没交就当底栏常开（模块可整块下架）。
+    var openDock = deps.openDock || null;
     var wsState = deps.wsState;
 
   // ============ 底栏输出区：EventBus 的 region.dock 落点 ============
@@ -20,10 +22,13 @@
   var DOCK_MAX = 120;
   // 三级视图的过滤与渲染已拆到 core_log.js（底座微内核），这里只留账本与事件接线。
   var DOCK_VIEWS = window.JzoCoreLog.DOCK_VIEWS;
+  // 「看完整诊断」定位到的那条账：渲染时描边高亮并滚到它，清空账本时一并忘掉。
+  var locatedEntry = null;
   var dockCore = window.JzoCoreLog.create({
     el: dockLog,
     entries: function () { return entriesForView(); },
     view: function () { return wsState.dockView; },
+    located: function () { return locatedEntry; },
     scrollEl: function () {
       return dockOpen() ? document.getElementById("wsDockBody") : null;
     }
@@ -65,7 +70,32 @@
   function clearDock() {
     wsState.sysEntries = [];
     wsState.runtimeEntries = [];
+    locatedEntry = null;
     renderDock();
+  }
+
+  /**
+   * 插件「看完整诊断」/「定位原卷页」的定位请求（region.dock 带 locate 字段）：
+   * 不新记一行，只在两本账里认出原来那条，拉开底栏、切到报错诊断、描边滚到它。
+   * 旧账已被清掉时才按同一口径补记一条，定位绝不让老师扑空。
+   */
+  function locateDock(locate) {
+    var text = String((locate && locate.text) || "");
+    var detail = String((locate && locate.detail) || "");
+    var found = null;
+    allEntries().forEach(function (entry) {
+      if (found) return;
+      if ((detail && entry.detail === detail) ||
+          (text && (entry.text === text || entry.text === "⚠ " + text))) found = entry;
+    });
+    if (!found) {
+      dockLine("⚠ " + text, "editor.warn", "warn", detail, "runtime");
+      var ledger = wsState.runtimeEntries;
+      found = ledger.length ? ledger[ledger.length - 1] : null;
+    }
+    locatedEntry = found;
+    if (openDock) openDock(true);
+    setDockView("error");
   }
 
   // 只判级别与语气，不做内容猜谜；落哪本账由 route 决定，不靠 level 兼任。
@@ -246,6 +276,12 @@
     // 两条独立订阅、两本账：region.dock 按语义来源分流，layout.changed 只进系统终端。
     window.JzoBus.on("region.dock", function (event) {
       var payload = event.payload || {};
+      // 带 locate 的是「跳到那条诊断」的定位请求，不是新日志：认旧账、不刷屏。
+      var locate = payload.raw && payload.raw.locate;
+      if (locate && typeof locate === "object") {
+        locateDock(locate);
+        return;
+      }
       // tone 是老口径、level 是新口径：两者都收，warn/error 一律进【报错诊断】。
       var tone = normalizeLevel(payload.level || payload.tone);
       var detail = typeof payload.detail === "string" ? payload.detail

@@ -68,6 +68,8 @@
     dockLog: dockLog,
     // 循环引用：dockOpen 归更下面的 wsRail，本块排得靠前，只能等它就位后再取。
     dockOpen: function () { return wsRail.dockOpen.apply(wsRail, arguments); },
+    // 失败显性化定位：插件「看完整诊断」要把底栏拉开（可整块下架，删这一行即恢复）。
+    openDock: function (open) { return wsRail.setDock(open); },
     dockTabs: dockTabs,
     wsState: wsState,
   });
