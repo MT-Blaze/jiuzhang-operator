@@ -124,9 +124,18 @@ def ledger_failure(ledger: dict[str, Any], *, file: str, page_no: int, step: str
 
 
 def attach_surface(route: dict[str, Any], ledger: dict[str, Any]) -> dict[str, Any]:
-    """把账本挂到 route 上随 save_route 落盘；空账不挂键，成功批次不留失败痕。"""
+    """把账本挂到 route 上随 save_route 落盘；空账不挂键，成功批次不留失败痕。
+
+    route 里已有的失败条目（识别具体档失败显性化）与账本按 file+step 合并，
+    两边都不丢。
+    """
     if ledger.get("failures"):
-        route["failures"] = list(ledger["failures"])
+        merged = list(route.get("failures") or [])
+        seen = {(entry.get("file"), entry.get("step")) for entry in merged}
+        for entry in ledger["failures"]:
+            if (entry.get("file"), entry.get("step")) not in seen:
+                merged.append(entry)
+        route["failures"] = merged
     if ledger.get("progress"):
         route["progress"] = list(ledger["progress"])
     return route
@@ -153,10 +162,35 @@ def ledger_stats(ledger: dict[str, Any], name: str, route: dict[str, Any]) -> No
             "warn" if stats.get("bad") else "ok")
 
 
-def append_notes(route: dict[str, Any], notes: list[str]) -> None:
+def append_notes(route: dict[str, Any], notes: list[str]) -> dict[str, Any]:
     """把单文件分拣的如实说明并进批次路由，老师重开批次时能看到。"""
     if notes:
         route["note"] = (str(route.get("note") or "") + " " + " ".join(notes)).strip()
+    return route
+
+
+def open_ledger(layout_engine: str, recognize_engine: str
+                ) -> tuple[str, str, dict[str, Any], str]:
+    """闸口＋开账（2026-11-18 拍板）：残留值未就绪 → 回 auto，原因进账本与批次 note，不静默。"""
+    from app.core.ingest import registry
+
+    picked_layout, layout_note = registry.gate_layout(layout_engine)
+    picked_recognize, recognize_note = registry.gate_recognize(recognize_engine)
+    gate_note = " ".join(note for note in (layout_note, recognize_note) if note)
+    ledger = new_ledger()
+    if gate_note:
+        ledger_progress(ledger, gate_note, "warn")
+    return picked_layout, picked_recognize, ledger, gate_note
+
+
+def note_layout_failure(ledger: dict[str, Any], name: str,
+                        picked_layout: str, layout: dict[str, Any] | None) -> None:
+    """具体档版面失败显性化：只走选中引擎，没探到就如实记成因，不偷换。"""
+    if picked_layout == layout_router.LAYOUT_AUTO or (layout or {}).get("ok"):
+        return
+    ledger_failure(ledger, file=name, page_no=0, step="版面探测",
+                   reason=str((layout or {}).get("detail") or "选中的版面引擎没找到题块"),
+                   detail=str((layout or {}).get("attempts") or ""))
 
 
 def apply_layout(page_images: list[dict[str, Any]],
@@ -268,7 +302,8 @@ def auto_split_pages(name: str, data: bytes, batch_id: str,
 
 def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
                recognize_engine: str = recognize_router.RECOGNIZE_AUTO,
-               health: dict[str, Any] | None = None) -> dict[str, Any]:
+               health: dict[str, Any] | None = None,
+               gate_note: str = "") -> dict[str, Any]:
     """本次解析走哪条路：只描述计划，真正的坏题率等切完再算。"""
     health = health or {}
     picked_layout = layout_router.normalize_engine(layout_engine)
@@ -281,15 +316,18 @@ def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
     route["phase"] = "parsing"
     route["done"] = False
     if picked_layout == layout_router.LAYOUT_CLOUD:
-        layout_note = "版面：本地文本层优先，失败跳过 YOLO 直交云端。"
+        layout_note = "版面：只交云端视觉，失败不降级其他引擎。"
     elif picked_layout == layout_router.LAYOUT_YOLO:
-        layout_note = "版面：本地文本层优先，失败强制交本机 YOLO，再失败交云端。"
+        layout_note = "版面：只跑本机 YOLO，失败不降级其他引擎。"
+    elif picked_layout == layout_router.LAYOUT_OCR:
+        layout_note = "版面：只跑本地 RapidOCR 切题，失败不降级其他引擎。"
     else:
-        layout_note = "版面：本地文本层优先，失败交本机 YOLO，再失败交云端。"
+        layout_note = ("版面：自动，图片卷先本地 OCR 切题，"
+                       "不达标退回文本层 → 本机 YOLO → 云端。")
     if picked_recognize == recognize_router.RECOGNIZE_MINERU:
-        recognize_note = "识别：MinerU 云端，先本地切出单题截图再逐题发送。"
-    elif picked_recognize == recognize_router.RECOGNIZE_FULL_OCR:
-        recognize_note = "识别：全量 OCR，整批单题截图并发识别，失败再交 MinerU。"
+        recognize_note = "识别：只交 MinerU 云端，本地切好单题截图后逐题发送，失败不降级。"
+    elif picked_recognize == recognize_router.RECOGNIZE_CLOUD:
+        recognize_note = "识别：只交云端视觉，整批单题截图并发识别，失败不降级。"
     else:
         recognize_note = ("识别：自动，本地先提取；坏题交 AI 修补，"
                           "坏题率≥30% 转全量，最后 MinerU 兜底。")
@@ -299,6 +337,7 @@ def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
     if health.get("garbled"):
         route["note"] += (" 文本层有 %d 个字形读不出，已标记待人工核对。"
                           % int(health.get("missing_chars") or 0))
+    append_notes(route, [gate_note])
     return route
 
 
@@ -323,11 +362,12 @@ async def fill_scan_batch(batch_id: str,
                           recognize_engine: str = recognize_router.RECOGNIZE_AUTO,
                           health: dict[str, Any] | None = None,
                           layout_engine: str = layout_router.LAYOUT_AUTO,
-                          layout: dict[str, Any] | None = None) -> dict[str, Any]:
+                          layout: dict[str, Any] | None = None,
+                          gate_note: str = "") -> dict[str, Any]:
     """切完题后的分诊：算坏题率、打一行静默统计，再交给识别调度员。
 
     返回值就是写回批次的 route：老师重开批次时能看到这次选了哪两个引擎、
-    实际由谁探出题块、坏题率多少、最后补回几道。
+    实际由谁探出题块、坏题率多少、最后补回几道；闸口归一原因不被识别汇总吞掉。
     """
     from app.core.pending import service
 
@@ -337,7 +377,7 @@ async def fill_scan_batch(batch_id: str,
         items = []
     report = ingest_quality.triage_documents([item.get("question") for item in items])
     log_stats(report)
-    route = scan_route(layout_engine, recognize_engine, health)
+    route = scan_route(layout_engine, recognize_engine, health, gate_note)
     attach_layout(route, layout)
     if layout:
         route["layout_detected"] = str(layout.get("engine") or "")
@@ -356,5 +396,5 @@ async def fill_scan_batch(batch_id: str,
     def progress(snapshot: dict[str, Any]) -> None:
         save_route(service, batch_id, snapshot)
 
-    return await recognize_router.fill_batch(
-        batch_id, items, recognize_engine, report, route, progress)
+    return append_notes(await recognize_router.fill_batch(
+        batch_id, items, recognize_engine, report, route, progress), [gate_note])

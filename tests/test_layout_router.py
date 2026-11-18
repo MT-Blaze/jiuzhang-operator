@@ -1,4 +1,4 @@
-"""版面瀑布矩阵：纯 Python 永远第一，三种选择只决定后面怎么降级。
+"""版面调度矩阵（2026-11-18 拍板）：自动走瀑布，具体档只走选中一级。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_layout_router``
 """
@@ -36,14 +36,19 @@ def two_column_info() -> dict:
 
 
 class LayoutPlanTest(unittest.TestCase):
-    def test_python_is_always_first(self) -> None:
-        for engine in layout_router.LAYOUT_ENGINES:
-            self.assertEqual(layout_router.plan(engine)[0], "python")
+    def test_auto_waterfall_starts_with_python(self) -> None:
+        self.assertEqual(layout_router.plan("auto")[0], "python")
 
     def test_matrix(self) -> None:
         self.assertEqual(layout_router.plan("auto"), ("python", "yolo", "cloud"))
-        self.assertEqual(layout_router.plan("yolo"), ("python", "yolo", "cloud"))
-        self.assertEqual(layout_router.plan("cloud"), ("python", "cloud"))
+        self.assertEqual(layout_router.plan("rapidocr_fast"), ("ocr",))
+        self.assertEqual(layout_router.plan("yolo"), ("yolo",))
+        self.assertEqual(layout_router.plan("cloud_vision"), ("cloud",))
+
+    def test_legacy_aliases_stay_compatible(self) -> None:
+        self.assertEqual(layout_router.normalize_engine("cloud"), "cloud_vision")
+        self.assertEqual(layout_router.normalize_engine("ocr"), "rapidocr_fast")
+        self.assertEqual(layout_router.plan("cloud"), ("cloud",))
 
     def test_unknown_engine_falls_back_to_auto(self) -> None:
         self.assertEqual(layout_router.normalize_engine("乱填"), "auto")
@@ -76,45 +81,60 @@ class LayoutRunTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([step["engine"] for step in outcome["attempts"]],
                          ["python", "yolo"])
 
-    async def test_yolo_falls_back_to_cloud(self) -> None:
+    async def test_yolo_only_runs_yolo_and_fails_honestly(self) -> None:
         calls: list[str] = []
         outcome = await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}], "yolo", {
-            "python": self._provider(calls, "python", ok=False),
+            "python": self._provider(calls, "python"),
             "yolo": self._provider(calls, "yolo", ok=False),
             "cloud": self._provider(calls, "cloud"),
         })
-        self.assertEqual(calls, ["python", "yolo", "cloud"])
-        self.assertEqual(outcome["engine"], "cloud")
+        self.assertEqual(calls, ["yolo"])
+        self.assertFalse(outcome["ok"])
+        self.assertEqual([step["engine"] for step in outcome["attempts"]], ["yolo"])
+        self.assertIn("只走选中引擎，不降级", outcome["detail"])
 
-    async def test_cloud_skips_yolo_entirely(self) -> None:
+    async def test_cloud_only_runs_cloud(self) -> None:
         calls: list[str] = []
 
         def forbidden(request: dict) -> dict:
-            raise AssertionError("云端档不许碰 YOLO")
+            raise AssertionError("云端档不许碰文本层与 YOLO")
 
         async def cloud(request: dict) -> dict:
             calls.append("cloud")
             return {"ok": True, "pages": {1: [{"no": 1}]}, "columns": {}, "detail": ""}
 
         outcome = await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}], "cloud", {
-            "python": self._provider(calls, "python", ok=False),
+            "python": forbidden,
             "yolo": forbidden,
             "cloud": cloud,
         })
-        self.assertEqual(calls, ["python", "cloud"])
+        self.assertEqual(calls, ["cloud"])
         self.assertEqual(outcome["engine"], "cloud")
+        self.assertEqual(outcome["requested"], "cloud_vision")
 
-    async def test_python_success_stops_the_waterfall(self) -> None:
-        for engine in layout_router.LAYOUT_ENGINES:
-            calls: list[str] = []
-            with self.subTest(engine=engine):
-                outcome = await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}], engine, {
-                    "python": self._provider(calls, "python"),
-                    "yolo": self._provider(calls, "yolo"),
-                    "cloud": self._provider(calls, "cloud"),
-                })
-                self.assertEqual(calls, ["python"])
-                self.assertEqual(outcome["engine"], "python")
+    async def test_rapidocr_fast_single_level_forwards_lines(self) -> None:
+        calls: list[str] = []
+
+        def ocr(request: dict) -> dict:
+            calls.append("ocr")
+            return {"ok": True, "pages": {1: [{"no": 8}]}, "columns": {1: 1},
+                    "lines_by_page": {1: [{"text": "8. 设数集 M"}]}, "detail": ""}
+
+        outcome = await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}],
+                                          "rapidocr_fast", {"ocr": ocr})
+        self.assertEqual(calls, ["ocr"])
+        self.assertEqual(outcome["engine"], "ocr")
+        self.assertEqual(outcome["lines_by_page"][1][0]["text"], "8. 设数集 M")
+
+    async def test_auto_python_success_stops_the_waterfall(self) -> None:
+        calls: list[str] = []
+        outcome = await layout_router.run("卷.pdf", b"%PDF", [{"page": 1}], "auto", {
+            "python": self._provider(calls, "python"),
+            "yolo": self._provider(calls, "yolo"),
+            "cloud": self._provider(calls, "cloud"),
+        })
+        self.assertEqual(calls, ["python"])
+        self.assertEqual(outcome["engine"], "python")
 
     async def test_provider_exception_degrades(self) -> None:
         calls: list[str] = []

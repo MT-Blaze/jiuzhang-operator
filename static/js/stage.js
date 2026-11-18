@@ -237,6 +237,7 @@
   var relayPending = stageRelayIo.relayPending;
   var relayText = stageRelayIo.relayText;
   var relayLayout = stageRelayIo.relayLayout;
+  var relayModels = stageRelayIo.relayModels;
   var stageRelayBank = window.JzoStageRelayBank.create({
     ID_RE: ID_RE,
     TOPIC_ID_RE: TOPIC_ID_RE,
@@ -472,7 +473,7 @@
       base: base, sharedBase: sharedBase,
       done: done, fail: fail, failWith: failWith, emitPendingUpdated: emitPendingUpdated,
     };
-    var families = [relayText, relayPending, relayMeta, relayIngest, relayBank, relayBasket, relayLayout];
+    var families = [relayText, relayPending, relayMeta, relayIngest, relayBank, relayBasket, relayLayout, relayModels];
     for (var f = 0; f < families.length; f += 1) {
       if (families[f](ctx)) return;
     }

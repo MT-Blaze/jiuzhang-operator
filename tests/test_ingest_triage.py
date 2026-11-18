@@ -83,28 +83,28 @@ def binding(task: str = "ocr") -> ai_center.TaskBinding:
 
 
 class EngineConstantTest(unittest.TestCase):
-    def test_01_layout_waterfall_matrix(self) -> None:
+    def test_01_layout_matrix_auto_waterfall_specific_single(self) -> None:
         self.assertEqual(layout_router.plan("auto"), ("python", "yolo", "cloud"))
-        self.assertEqual(layout_router.plan("yolo"), ("python", "yolo", "cloud"))
-        self.assertEqual(layout_router.plan("cloud"), ("python", "cloud"))
-        for engine in ("auto", "yolo", "cloud"):
-            self.assertEqual(layout_router.plan(engine)[0], "python",
-                             "纯 Python 探路必须永远排第一")
+        self.assertEqual(layout_router.plan("rapidocr_fast"), ("ocr",))
+        self.assertEqual(layout_router.plan("yolo"), ("yolo",))
+        self.assertEqual(layout_router.plan("cloud_vision"), ("cloud",))
         self.assertEqual(layout_router.normalize_engine("乱填"), layout_router.LAYOUT_AUTO)
         self.assertEqual(layout_router.normalize_engine(None), layout_router.LAYOUT_AUTO)
 
-    def test_02_recognize_waterfall_matrix(self) -> None:
+    def test_02_recognize_matrix_auto_waterfall_specific_single(self) -> None:
         self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
-        self.assertEqual(recognize_router.plan("full_ocr"), ("local", "ai", "mineru"))
-        self.assertEqual(recognize_router.plan("mineru"), ("local", "mineru"))
+        self.assertEqual(recognize_router.plan("cloud_vision"), ("ai",))
+        self.assertEqual(recognize_router.plan("mineru"), ("mineru",))
         self.assertEqual(recognize_router.BAD_RATE_THRESHOLD, 0.30)
         self.assertEqual(ingest_route.INGEST_BAD_RATE_THRESHOLD, 0.30)
 
     def test_03_legacy_channels_still_map(self) -> None:
         self.assertEqual(recognize_router.from_legacy_channel("local_ai"), "auto")
-        self.assertEqual(recognize_router.from_legacy_channel("full_ocr"), "full_ocr")
+        self.assertEqual(recognize_router.from_legacy_channel("full_ocr"), "cloud_vision")
         self.assertEqual(recognize_router.from_legacy_channel("mineru"), "mineru")
         self.assertEqual(recognize_router.from_legacy_channel("乱填"), "auto")
+        self.assertEqual(layout_router.normalize_engine("cloud"), "cloud_vision")
+        self.assertEqual(layout_router.normalize_engine("ocr"), "rapidocr_fast")
 
     def test_04_engine_modules_stay_under_four_hundred_lines(self) -> None:
         modules = [
@@ -225,11 +225,11 @@ class TriagePolicyTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome["route"]["mode"], "full_ocr")
         self.assertIn("并发全量 OCR", outcome["route"]["note"])
 
-    async def test_full_ocr_engine_ignores_threshold(self) -> None:
+    async def test_cloud_vision_engine_ignores_threshold(self) -> None:
         docs = [clean_doc(index) for index in range(10)]
-        outcome = await self._run(docs, engine=recognize_router.RECOGNIZE_FULL_OCR)
+        outcome = await self._run(docs, engine=recognize_router.RECOGNIZE_CLOUD)
         self.assertEqual(outcome["recognize"].await_count, 10)
-        self.assertEqual(outcome["route"]["mode"], "full_ocr")
+        self.assertEqual(outcome["route"]["mode"], "cloud_vision")
 
     async def test_clean_batch_does_not_call_ai(self) -> None:
         outcome = await self._run([clean_doc(index) for index in range(5)])
@@ -312,12 +312,28 @@ class EngineUiContractTest(unittest.TestCase):
         self.assertLess(col.index('id="edLayoutEngine"'),
                         col.index('id="edRecognizeEngine"'),
                         "左版面、右识别")
-        for value in ("auto", "yolo", "cloud"):
-            self.assertIn('<option value="%s"' % value, col)
-        for value in ("auto", "full_ocr", "mineru"):
-            self.assertIn('<option value="%s"' % value, col)
-        self.assertGreaterEqual(col.count("title="), 6,
+        self.assertEqual(col.count("<option"), 2,
+                         "静态只留「自动」；就绪条目由宿主 registry 动态注入")
+        self.assertIn('<option value="auto"', col)
+        self.assertGreaterEqual(col.count("title="), 2,
                                 "每个下拉选项都要有原生 title 提示")
+        # 单源 registry：配置页取清单灌下拉，ui_intake 不再硬编码引擎名单。
+        config_js = (PLUGIN_DIR / "dist" / "ui_model_config.js").read_text(encoding="utf-8")
+        self.assertIn('hostCall("models.registry_status"', config_js)
+        self.assertIn("applyEngines(entries)", config_js)
+        self.assertIn("function applyRegistry(", INTAKE_JS)
+        self.assertIn('entry.state !== "ready"', INTAKE_JS)
+        self.assertNotIn("LAYOUT_ENGINES", INTAKE_JS)
+        self.assertNotIn("RECOGNIZE_ENGINES", INTAKE_JS)
+        # 可整块下架：模块不在时 plugin.js 落 null，不许写死 create。
+        plugin_js = (PLUGIN_DIR / "dist" / "plugin.js").read_text(encoding="utf-8")
+        self.assertIn("window.JzoEditorModelConfig ?", plugin_js)
+        # 宿主两道转发（relay＋intake）也不许二次白名单：名单单源后端 normalize_engine，
+        # 否则新引擎名（rapidocr_fast/cloud_vision）会被半路碾回 auto（2026-11-18 实测踩坑）。
+        for name in ("stage_relay_bank.js", "intake.js"):
+            host_js = (ROOT / "static" / "js" / name).read_text(encoding="utf-8")
+            self.assertNotIn('"auto", "yolo", "cloud"', host_js, name)
+            self.assertNotIn('"auto", "full_ocr", "mineru"', host_js, name)
 
     def test_02_selection_rides_the_next_ingest_only(self) -> None:
         self.assertIn('hostCall("ingest.files"', INTAKE_JS)

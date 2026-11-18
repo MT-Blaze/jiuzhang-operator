@@ -694,9 +694,17 @@
     return false;
   }
 
+  /** relay() 的「Models」分支族：模型注册表（只读聚合，不出网、不碰库）。 */
+  function relayModels(ctx) {
+    if (ctx.method !== "models.registry_status") return false;
+    fetchJson("/api/models/registry").then(ctx.done, ctx.fail);
+    return true;
+  }
+
     return {
       relayLayout: relayLayout,
       relayMeta: relayMeta,
+      relayModels: relayModels,
       relayPending: relayPending,
       relayText: relayText,
     };

@@ -211,7 +211,8 @@ class RunJobsScanExpansionTest(unittest.IsolatedAsyncioTestCase):
                 "pending_id": "", "name": "模拟1.pdf", "data": b"%PDF", "page_only": True,
             }])
         set_pages.assert_called_once_with("B-001", pages)
-        auto_split.assert_called_once_with("模拟1.pdf", b"%PDF", "B-001", pages)
+        auto_split.assert_called_once_with("模拟1.pdf", b"%PDF", "B-001", pages,
+                                           mock.ANY, mock.ANY)
         save.assert_not_called()
 
     async def test_renderer_missing_still_saves_nothing(self) -> None:

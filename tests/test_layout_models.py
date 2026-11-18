@@ -253,7 +253,7 @@ class RouteStatusTest(unittest.TestCase):
             return {"ok": True, "pages": {1: [{"no": 1}]}, "columns": {1: 1}, "detail": ""}
 
         result = asyncio.run(layout_router.run(
-            "a.pdf", b"", [{"page": 1}], "yolo",
+            "a.pdf", b"", [{"page": 1}], "auto",
             providers={"python": lambda _r: {"ok": False}, "yolo": yolo, "cloud": cloud}))
         self.assertTrue(result["ok"])
         self.assertEqual(result["status"][0]["text"], layout_yolo.OOM_WARNING)

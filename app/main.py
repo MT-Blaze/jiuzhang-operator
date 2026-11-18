@@ -26,6 +26,7 @@ from app.api.health import router as health_router
 from app.api.ingest import router as ingest_router
 from app.api.layout import router as layout_router
 from app.api.meta import router as meta_router
+from app.api.models import router as models_router
 from app.api.pending import router as pending_router
 from app.api.plugins import router as plugins_router
 from app.api.questions import router as questions_router
@@ -204,6 +205,7 @@ def create_app() -> FastAPI:
     app.include_router(meta_router)
     app.include_router(ingest_router)
     app.include_router(layout_router)
+    app.include_router(models_router)
     app.include_router(settings_router)
     app.include_router(tikz_router)
 

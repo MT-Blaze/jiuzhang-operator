@@ -149,15 +149,15 @@
    */
   function ingestEntries(entries, options) {
     var opts = options || {};
+    // 引擎名单单源后端 normalize_engine＋registry 闸口：宿主不再二次白名单，
+    // 新值（rapidocr_fast/cloud_vision）与旧别名原样递进去，乱填值由后端归一回 auto。
     var layoutEngine = String(opts.layout_engine || "auto");
-    if (["auto", "yolo", "cloud"].indexOf(layoutEngine) < 0) layoutEngine = "auto";
     var recognizeEngine = String(opts.recognize_engine || "");
     if (!recognizeEngine && opts.channel) {
       // 老插件只发四通道名：映射到新识别引擎，旧调用方不必跟着改。
       recognizeEngine = { auto: "auto", local_ai: "auto", full_ocr: "full_ocr",
         mineru: "mineru" }[String(opts.channel)] || "auto";
     }
-    if (["auto", "full_ocr", "mineru"].indexOf(recognizeEngine) < 0) recognizeEngine = "auto";
     var prepared = [];
     var oversized = 0;
     for (var i = 0; i < (entries || []).length; i += 1) {

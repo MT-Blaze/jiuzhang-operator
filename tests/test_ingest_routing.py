@@ -58,12 +58,13 @@ class RoutePayloadTest(unittest.TestCase):
 
 
 class ScanRouteNoteTest(unittest.TestCase):
-    def test_cloud_layout_skips_yolo_in_the_note(self) -> None:
+    def test_cloud_layout_says_single_engine_no_fallback(self) -> None:
         route = ingest_route.scan_route("cloud", "mineru",
                                         {"has_text_layer": True, "garbled": False})
-        self.assertEqual(route["layout_engine"], "cloud")
+        self.assertEqual(route["layout_engine"], "cloud_vision")
         self.assertEqual(route["recognize_engine"], "mineru")
-        self.assertIn("跳过 YOLO", route["note"])
+        self.assertIn("只交云端视觉", route["note"])
+        self.assertIn("失败不降级", route["note"])
         self.assertIn("MinerU", route["note"])
         self.assertEqual(route["phase"], "parsing")
         self.assertFalse(route["done"])

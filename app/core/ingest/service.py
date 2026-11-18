@@ -39,7 +39,8 @@ from app.core.ingest.route import (
     ledger_progress,
     ledger_stats,
     log_documents,
-    new_ledger,
+    note_layout_failure,
+    open_ledger,
     route_payload,
     save_route,
     scan_route,
@@ -247,16 +248,14 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
     """第二段：识别。
 
     - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF：先出原卷页图，版面引擎（纯 Python 永远第一）探出题块，再自动切图；
-      切完由识别引擎（本地 → AI → MinerU）按坏题率决定补哪些题。
+    - PDF：先出原卷页图，版面引擎探出题块（自动走瀑布，具体档只走选中一级），
+      再自动切图；切完由识别引擎按选择回填，失败显性化不偷换。
     """
     from app.core.pending import service
     from app.core.pending.assets import drop_assets
 
-    picked_layout = layout_router.normalize_engine(layout_engine)
-    picked_recognize = recognize_router.normalize_engine(recognize_engine)
-    # 失败显性化账本：过程与成因累积在这里，随 save_route 落进批次 route_json。
-    ledger = new_ledger()
+    picked_layout, picked_recognize, ledger, gate_note = open_ledger(
+        layout_engine, recognize_engine)
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
@@ -307,12 +306,13 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
 
         if scan_mode:
             health = page_render.pdf_text_health(data)
-            route = scan_route(picked_layout, picked_recognize, health)
+            route = scan_route(picked_layout, picked_recognize, health, gate_note)
             append_notes(route, notes)
             if page_images:
                 layout = await layout_router.run_scan(name, data, page_images, picked_layout, health)
                 apply_layout(page_images, layout)
                 attach_layout(route, layout)
+                note_layout_failure(ledger, name, picked_layout, layout)
                 blocks = sum(len(r) for r in ((layout or {}).get("pages") or {}).values()
                              if isinstance(r, list))
                 ledger_progress(ledger, f"{name} 版面探测完成，探出 {blocks} 个题块")
@@ -334,7 +334,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                     if not split_notes:
                         ledger_progress(ledger, f"{name} 自动切题落池完成，逐题识别开工")
                     route = await fill_scan_batch(
-                        batch_id, picked_recognize, health, picked_layout, layout)
+                        batch_id, picked_recognize, health, picked_layout, layout, gate_note)
                     ledger_stats(ledger, name, route)
                 else:
                     ledger_progress(ledger, f"{name} 没有可自动切出的题块，可在左栏框选切题", "warn")
@@ -350,7 +350,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         if image_ocr:
             health = {"has_text_layer": False, "garbled": False,
                       "text_chars": 0, "missing_chars": 0}
-            route = scan_route(picked_layout, picked_recognize, health)
+            route = scan_route(picked_layout, picked_recognize, health, gate_note)
             shell = _image_shell(name, page_images)
             try:
                 service.save_draft(
@@ -364,7 +364,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                     drop_assets(page_images)
                 continue
             ledger_progress(ledger, f"{name} 占位壳已落池，整页识别开工")
-            route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout)
+            route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout, None, gate_note)
             ledger_stats(ledger, name, route)
             save_route(service, batch_id, attach_surface(route, ledger))
             continue

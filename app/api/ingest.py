@@ -35,9 +35,11 @@ async def ingest_files(background: BackgroundTasks,
                        payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """请求体形如 ``{"files": [...], "layout_engine": "auto", "recognize_engine": "auto"}``。
 
-    ``layout_engine`` 取 ``auto`` / ``yolo`` / ``cloud``，``recognize_engine``
-    取 ``auto`` / ``full_ocr`` / ``mineru``；老插件仍可只发 ``channel``，
-    后端会映射到新的识别引擎。后端按**后缀**分拣：文本类与 Word 走轻量解析，
+    ``layout_engine`` 取 ``auto`` / ``rapidocr_fast`` / ``yolo`` / ``cloud_vision``，
+    ``recognize_engine`` 取 ``auto`` / ``cloud_vision`` / ``mineru``；
+    老插件的 ``cloud`` / ``full_ocr`` / ``channel`` 旧值兼容映射。
+    具体档只走选中的引擎，失败显性化；未就绪的残留值归一回 auto 并在批次 note 说明。
+    后端按**后缀**分拣：文本类与 Word 走轻量解析，
     PDF 一律渲染成原卷大图，图片走识别引擎。``.zip`` 静默忽略。
 
     **一个文件一个批次**：拖 9 份卷子就立 9 个批次（B-002、B-003……），

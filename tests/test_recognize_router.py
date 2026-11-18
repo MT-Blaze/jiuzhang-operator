@@ -1,4 +1,4 @@
-"""识别瀑布矩阵：本地永远第一，之后按选择降级；坏题率只影响 AI 的范围。
+"""识别调度矩阵（2026-11-18 拍板）：自动走瀑布，具体档只走选中通道。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_recognize_router``
 """
@@ -29,12 +29,16 @@ def binding() -> ai_center.TaskBinding:
 
 
 class RecognizePlanTest(unittest.TestCase):
-    def test_python_first_matrix(self) -> None:
+    def test_matrix(self) -> None:
         self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
-        self.assertEqual(recognize_router.plan("full_ocr"), ("local", "ai", "mineru"))
-        self.assertEqual(recognize_router.plan("mineru"), ("local", "mineru"))
-        for engine in recognize_router.RECOGNIZE_ENGINES:
-            self.assertEqual(recognize_router.plan(engine)[0], "local")
+        self.assertEqual(recognize_router.plan("cloud_vision"), ("ai",))
+        self.assertEqual(recognize_router.plan("mineru"), ("mineru",))
+
+    def test_legacy_channels_stay_compatible(self) -> None:
+        self.assertEqual(recognize_router.normalize_engine("local_ai"), "auto")
+        self.assertEqual(recognize_router.normalize_engine("full_ocr"), "cloud_vision")
+        self.assertEqual(recognize_router.plan("full_ocr"), ("ai",))
+        self.assertEqual(recognize_router.from_legacy_channel("minerU"), "mineru")
 
     def test_unknown_engine_falls_back_to_auto(self) -> None:
         self.assertEqual(recognize_router.normalize_engine("乱填"), "auto")
@@ -96,14 +100,28 @@ class RecognizeFillTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome["route"]["mode"], "full_ocr")
         self.assertIn("并发全量 OCR", outcome["route"]["note"])
 
-    async def test_full_ocr_ignores_clean_batch(self) -> None:
+    async def test_cloud_vision_sends_whole_batch_even_if_clean(self) -> None:
         outcome = await self._run(
             "full_ocr", {"rate": 0.0, "bad_indexes": []},
             ai_result={"ok": True, "attempted": 3, "filled": 3,
                        "filled_indexes": [0, 1, 2], "detail": ""})
         outcome["ai"].assert_awaited_once()
         self.assertEqual(outcome["ai"].call_args.args[2], "all")
-        self.assertEqual(outcome["route"]["mode"], "full_ocr")
+        outcome["mineru"].assert_not_called()
+        self.assertEqual(outcome["route"]["mode"], "cloud_vision")
+        self.assertIn("3/3", outcome["route"]["note"])
+
+    async def test_cloud_failure_does_not_switch_to_mineru(self) -> None:
+        outcome = await self._run(
+            "cloud_vision", {"rate": 0.0, "bad_indexes": []},
+            ai_result={"ok": False, "attempted": 3, "filled": 0,
+                       "filled_indexes": [], "detail": "视觉模型超时"})
+        outcome["mineru"].assert_not_called()
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·云端视觉", steps)
+        self.assertTrue(route["failures"][0]["retryable"])
 
     async def test_mineru_engine_skips_ai(self) -> None:
         outcome = await self._run(
@@ -119,7 +137,22 @@ class RecognizeFillTest(unittest.IsolatedAsyncioTestCase):
         outcome = await self._run("mineru", {"rate": 0.0, "bad_indexes": []},
                                   mineru_binding=False)
         outcome["mineru"].assert_not_called()
+        outcome["ai"].assert_not_called()
         self.assertIn("MinerU 没有可用的账号", outcome["route"]["note"])
+        steps = [entry["step"] for entry in outcome["route"].get("failures") or []]
+        self.assertIn("识别·MinerU", steps)
+
+    async def test_mineru_failure_surfaces_without_fallback(self) -> None:
+        outcome = await self._run(
+            "mineru", {"rate": 0.0, "bad_indexes": []},
+            mineru_result={"ok": False, "attempted": 3, "filled": 1,
+                           "filled_indexes": [0], "detail": "解析服务限流"})
+        outcome["ai"].assert_not_called()
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        self.assertIn("2 道保持本地切图", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·MinerU", steps)
 
     async def test_ai_failure_falls_back_to_mineru(self) -> None:
         outcome = await self._run(

@@ -67,13 +67,10 @@
         return true;
       }
       var layoutEngine = textValue(payload, "layout_engine", 16) || "auto";
-      if (["auto", "yolo", "cloud"].indexOf(layoutEngine) < 0) layoutEngine = "auto";
       var recognizeEngine = textValue(payload, "recognize_engine", 16)
         || textValue(payload, "channel", 16) || "auto";
-      // 老调用方仍发 local_ai：归到自动识别，不再单独占一种模式。
-      if (["auto", "full_ocr", "mineru"].indexOf(recognizeEngine) < 0) {
-        recognizeEngine = "auto";
-      }
+      // 引擎名单单源后端 normalize_engine＋registry 闸口：relay 不再二次白名单，
+      // 新值（rapidocr_fast/cloud_vision）与旧别名原样递进去，乱填值由后端归一回 auto。
       intake.ingestEntries(prepared, {
         silent: true,
         layout_engine: layoutEngine,
