@@ -43,16 +43,21 @@
 2. **归档位改迁**：卡定 `.qoder/records/archive/`，但 `scripts/check-naming.sh` R00 正则只认 `records/{biz|sys|reports}/{YYYY-MM}/` 直下，records 树内归档目录必判红。主公拍板改迁 `docs/archive/retired-records/`（门禁只扫 `.qoder/`），与 retired-templates 同款先例。
 3. **3 个证据目录随记录归档**（卡清单外扩面，主公点头「随记录一起归档」）。
 4. `docs/STACK.md` §7 playwright 括注、`docs/PLUGIN_SPEC.md` §2.6 注记为裁决配套最小落点，超出卡字面清单，在此申报。
+5. 卡要求单 commit；收口复核发现本记录欠账节一条失实，按「不 amend、不改写历史」铁律以**第二个修正 commit** 落地（主 fc81b14 + 修正），偏离单 commit 字面，回传单同步申报。
 
-### 五、欠账登记（本次不动，留给后续）
+### 五、欠账登记（本次不动，留给后续；逐条当次实测核过）
 
-- `app/core/bank/engine/cross.py` D15 注释仍指已归档 CORE_TARGET_TREE（零代码改动铁律；migration-blueprint README 已兜底映射）。
-- `.gitignore` 中 skill-bank 模板注释指向旧位（只登记）。
-- `scripts/check-naming.sh` 的 agents 检查项扫的目录已不存在（死检查，零代码不改）。
-- `docs/question-cutting-pipeline.md` 三处旧盘符链接（清单外新税，只登记）。
+- `.gitignore:56` 注释仍提已退役资产 `skill-bank.json` 与 `.qoder/agents/`（2026-11-05 已删，非本次归档件；只登记）。
+- `scripts/check-naming.sh` 的 agents 检查项扫的 `.qoder/agents/` 已不存在（死检查，零代码不改）。
+- `docs/question-cutting-pipeline.md` 史料条目内多处 `file:///E:/jiuzhang-operator/` 旧仓库根链接（2026-11-02 批次历史叙述，清单外只登记）。
+- `.system_generated/footer-strip/probe.py:10` 探针产物仍写旧证据目录路径（非 git 资产、一次性已跑完，只登记）。
 - 台账「未决问题1」待主公拍板（只登记）。
 - 空目录壳 `.qoder/templates/`、`.qoder/records/archive/` 留在原地（git 不追踪空目录，无门禁影响）。
 - 后续瘦身卡若引 CORE_TARGET_TREE，改指 `tests/test_file_size_contract.py`（冻结台账 35 条）。
+
+> 更正注：本节初版曾误记「cross.py D15 注释指已归档 CORE_TARGET_TREE」。收口复核实测：
+> `app/core/ingest/render/cross.py` 的 D15 注释指向**活台账** `docs/识别引擎-决策台账.md` D15 行，
+> 全仓代码对 CORE 三件套零引用，无悬空。初版永存 git 历史（主 commit fc81b14），本版为修正 commit。
 
 ## 涉及文件
 
