@@ -1,22 +1,23 @@
 # -*- coding: utf-8 -*-
 """单文件体积门禁（最高铁律【500行红线】/ 军令任务四、五）：巨无霸文件一律不许存在。
 
-PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律都写死了「单文件不超过 500 行」，
-光写在文档里守不住：录题插件曾经一份 plugin.js 冲到 5876 行。这个测试把红线变成机械判据，
-覆盖四处：
+PLUGIN_SPEC §2.8.1 与根 ``AGENTS.md`` 的最高铁律以 500 行为中心、上下各留 10%：
+**≤450 行正常；451–550 行拉警报并排队拆；>550 行硬拦**。光写在文档里守不住：
+录题插件曾经一份 plugin.js 冲到 5876 行。这个测试把红线变成机械判据，覆盖四处：
 
 1. 发行包内的 JS 与 CSS（``plugins/*/dist``）、底座静态资源（``static/js``、``static/css``）、
-   模板插件（``examples/template-plugin``）——**每份都不许超过 500 行**；
+   模板插件（``examples/template-plugin``）——**每份都按三档判**；
 2. 插件 ``dist`` 里的每个本地 JS/CSS 都必须被 ``index.html`` 引到，写了不引等于没发货；
    底座同样：``static/js``、``static/css`` 里的每一份都得有加载页引它（HostAssetWiringTest）；
 3. 按 ``create(deps)`` 拆模块后，被依赖的命名空间必须**在加载次序里排在前面**，
    否则组合根执行时 ``window.Jzo*`` 还不存在，白屏都算轻的——插件与底座两条链都钉这条；
-4. 底座 Python（``app/**``）同样 500 行封死——拆库时留下的教训：2226 行的
+4. 底座 Python（``app/**``）同样按三档判——拆库时留下的教训：2226 行的
    ``app/core/bank.py`` 让契约测试无处下手。
 
-``LEGACY_OVER_CEILING`` 是迁移冻结台账：它只回答「哪些文件算老文件」。老文件不再拦——
+``LEGACY_OVER_CEILING`` 是迁移冻结台账：它只回答「哪些文件算老文件」。老文件不再拦、也不警告——
 行数随功能调整可涨可落，测试只打印实测行数供看趋势；台账本身必须保留，删了下次就分不清
-谁新谁老。不在台账里的文件一律按新文件对待，越过 500 行直接判红，新拆出来的模块也一样。
+谁新谁老。不在台账里的文件一律按新文件对待：451–550 行只发警告（允许存在，但须排队拆），
+越过 550 行直接判红，新拆出来的模块也一样。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_file_size_contract``
 """
@@ -27,6 +28,7 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from typing import NamedTuple
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,8 +41,9 @@ try:  # 证据行要能直接贴进回传单，不受 Windows 控制台默认 GB
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except (AttributeError, OSError):
     pass
-CEILING = 500
-# 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套 500 行。
+HARD_CEILING = 550
+WARN_AT = 450
+# 开发期脚本不在发行范围里，探针本身就是要一口气跑完一条链，不套体积三档。
 DEV_ONLY = ("tools",)
 # 老文件名单（路径 → 冻结时实测行数，仅历史参考）。名单只加不减；老文件行数不设上限，
 # 行数变化只记录不判红。
@@ -116,17 +119,40 @@ def tracked(globs: tuple[str, ...]) -> list[Path]:
     return sorted(out)
 
 
-def verdict(rel: str, count: int) -> str | None:
-    """新文件越线要拦；台账里的老文件只记录，不设上限。"""
+class Finding(NamedTuple):
+    warning: bool
+    message: str
+
+
+def verdict(rel: str, count: int) -> Finding | None:
+    """新文件三档：≤450 正常；451–550 只警告；>550 硬拦。台账老文件只记录、不拦也不警告。"""
     if rel in LEGACY_OVER_CEILING:
         return None
-    if count > CEILING:
-        return f"{rel}（{count} 行；新文件上限 {CEILING}）"
+    if count > HARD_CEILING:
+        return Finding(
+            False, f"{rel}（{count} 行；超过硬上限 {HARD_CEILING}）")
+    if count > WARN_AT:
+        return Finding(
+            True,
+            f"[WARN] 接近上限：{rel}={count} 行"
+            f"（{WARN_AT + 1}–{HARD_CEILING} 区间，须排队拆）")
     return None
 
 
+def findings(paths) -> tuple[list[str], list[str]]:
+    """返回（硬拦列表，警告列表）；警告只提示，不参与失败判定。"""
+    failures: list[str] = []
+    warnings: list[str] = []
+    for path in paths:
+        finding = verdict(rel_of(path), lines_of(path))
+        if finding is None:
+            continue
+        (warnings if finding.warning else failures).append(finding.message)
+    return failures, warnings
+
+
 class ScriptSizeCeilingTest(unittest.TestCase):
-    """发行资产（插件 dist、底座 static、模板插件）单文件不超 500 行。"""
+    """发行资产（插件 dist、底座 static、模板插件）单文件按 ≤450/451–550/>550 三档判。"""
 
     GLOBS = (
         "plugins/*/dist/**/*.js",
@@ -138,25 +164,24 @@ class ScriptSizeCeilingTest(unittest.TestCase):
     )
 
     @staticmethod
-    def violations(paths) -> list[str]:
-        out = []
-        for path in paths:
-            message = verdict(rel_of(path), lines_of(path))
-            if message is not None:
-                out.append(message)
-        return out
+    def violations(paths) -> tuple[list[str], list[str]]:
+        return findings(paths)
 
     def test_01_no_oversized_ship_file(self) -> None:
-        oversized = self.violations(tracked(self.GLOBS))
+        oversized, warnings = self.violations(tracked(self.GLOBS))
+        for message in warnings:
+            print(message)
         self.assertEqual(
             oversized, [],
-            "以下文件越过 500 行红线，按功能拆小再交：%s" % ", ".join(oversized))
+            "以下文件越过 550 行硬上限，按功能拆小再交：%s" % ", ".join(oversized))
 
     def test_02_no_oversized_host_python(self) -> None:
-        oversized = self.violations(tracked(("app/**/*.py",)))
+        oversized, warnings = self.violations(tracked(("app/**/*.py",)))
+        for message in warnings:
+            print(message)
         self.assertEqual(
             oversized, [],
-            "底座 Python 越过 500 行红线：[%s]" % ", ".join(oversized))
+            "底座 Python 越过 550 行硬上限：[%s]" % ", ".join(oversized))
 
     def test_03_probe_scripts_are_dev_only(self) -> None:
         """开发期探针不参与门禁，但必须只待在 tools/ 里，不许混进发行目录。"""
@@ -181,28 +206,62 @@ class ScriptSizeCeilingTest(unittest.TestCase):
         print("老文件行数：" + " ".join(f"{rel}={count}" for rel, count in measured))
 
 
+CONTRACT_GLOBS = ScriptSizeCeilingTest.GLOBS + ("app/**/*.py",)
+
+
+def print_size_warnings() -> int:
+    """打印全部 451–550 行新文件的警告，供快门禁透出；只看不拦，不参与判定。"""
+    _, warnings = findings(tracked(CONTRACT_GLOBS))
+    for message in warnings:
+        print(message)
+    print(f"体积预警：{len(warnings)} 份文件处于 451–550 行区间，须排队拆")
+    return len(warnings)
+
+
 class CeilingGateProofTest(unittest.TestCase):
-    """证明门禁还拦得住：新文件 501 行判红，老文件再胖也不拦。"""
+    """证明门禁还拦得住：551 行新文件判红，451–550 行只警告，老文件再胖也不拦。"""
 
     @staticmethod
-    def scan(rel: str, count: int) -> list[str]:
+    def scan(rel: str, count: int) -> tuple[list[str], list[str]]:
         module = sys.modules[__name__]
         with mock.patch.object(module, "rel_of", return_value=rel), \
                 mock.patch.object(module, "lines_of", return_value=count):
-            return ScriptSizeCeilingTest.violations([Path(rel)])
+            return findings([Path(rel)])
 
-    def test_01_new_file_at_501_lines_is_blocked(self) -> None:
+    def test_01_new_file_at_551_lines_is_blocked(self) -> None:
+        failures, warnings = self.scan("app/core/brand_new_module.py", HARD_CEILING + 1)
         self.assertEqual(
-            self.scan("app/core/brand_new_module.py", CEILING + 1),
-            ["app/core/brand_new_module.py（501 行；新文件上限 500）"])
+            failures,
+            ["app/core/brand_new_module.py（551 行；超过硬上限 550）"])
+        self.assertEqual(warnings, [])
 
-    def test_02_new_file_at_500_lines_passes(self) -> None:
-        self.assertEqual(self.scan("app/core/brand_new_module.py", CEILING), [])
+    def test_02_new_file_at_550_lines_passes_with_warning(self) -> None:
+        failures, warnings = self.scan("app/core/brand_new_module.py", HARD_CEILING)
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            warnings,
+            ["[WARN] 接近上限：app/core/brand_new_module.py=550 行"
+             "（451–550 区间，须排队拆）"])
 
-    def test_03_legacy_file_is_never_blocked(self) -> None:
+    def test_03_new_file_at_451_lines_passes_with_warning(self) -> None:
+        failures, warnings = self.scan("app/core/brand_new_module.py", WARN_AT + 1)
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            warnings,
+            ["[WARN] 接近上限：app/core/brand_new_module.py=451 行"
+             "（451–550 区间，须排队拆）"])
+
+    def test_04_new_file_at_450_lines_passes_without_warning(self) -> None:
+        failures, warnings = self.scan("app/core/brand_new_module.py", WARN_AT)
+        self.assertEqual(failures, [])
+        self.assertEqual(warnings, [])
+
+    def test_05_legacy_file_is_never_blocked_nor_warned(self) -> None:
         rel = "app/core/bank_query.py"
         self.assertIn(rel, LEGACY_OVER_CEILING)
-        self.assertEqual(self.scan(rel, CEILING + 1000), [])
+        failures, warnings = self.scan(rel, 1500)
+        self.assertEqual(failures, [])
+        self.assertEqual(warnings, [])
 
 
 class PluginAssetWiringTest(unittest.TestCase):

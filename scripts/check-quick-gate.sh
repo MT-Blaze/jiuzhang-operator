@@ -34,6 +34,11 @@ run_step "索引全等与 Schema"   "$PY" scripts/check_plugin_index_parity.py
 run_step "静态红线审计"        "$PY" tools/audit_code.py
 run_step "版本单源与 bat 编码" "$PY" -m unittest tests.test_version_consistency
 
+# 体积预警只透出输出，不参与 failures：451–550 行该拆不假，但硬拦判定在契约测试里。
+echo "── [体积预警 451–550 行（只看不拦）]"
+"$PY" -c "from tests.test_file_size_contract import print_size_warnings; print_size_warnings()" \
+  || echo "   (体积预警输出失败；硬拦判定仍归 tests.test_file_size_contract)"
+
 echo "════════════════════════════════════════"
 if [ "$failures" -eq 0 ]; then
   echo "check-quick-gate: PASS（$steps 项全过）"
