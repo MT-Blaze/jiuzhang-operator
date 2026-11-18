@@ -3,7 +3,7 @@
 【回执编号】 #CV-01
 【回执时间】 2026-11-19T03:49:28+08:00
 【实际耗时】 30 分 55 秒（会话转录文件创建 03:18:33 → 收口读数 03:49:28，系统钟实测）
-【执行结果】 成功：定向 8 模块 353/353 绿、快门禁 6 项 PASS、索引 parity PASS、真机探针 23/23 PASS、JS 语法 60/60 OK、两仓 commit 不 push（插件 a8c800e ／ 底座 f9cb2d5＋本记录 docs commit）
+【执行结果】 成功：定向 8 模块 353/353 绿、快门禁 6 项 PASS、索引 parity PASS、真机探针 23/23 PASS、JS 语法 60/60 OK、两仓 commit 不 push（插件 a8c800e ／ 底座 f9cb2d5＋三笔 docs：1898c65 biz＋回单、fe9ab82 补证、本笔回单定稿）
 
 正文逐条对齐卡§改法 1–6 与不动面；biz 记录
 `.qoder/records/biz/2026-11/20261119_config-center-canvas-inline.md`；
@@ -104,8 +104,8 @@
   隐藏」的必然结果），故「再点同按钮收」只对辅助栏常驻的 API 入口成立（探针实测 PASS）；
   模型视图收走【返回批次】。open()/openConfig() 的同屏 toggle 语义保留（探针 API 可达）。
   未新增顶栏/辅助栏钮（卡「按钮不动」）。
-- 偏离②：底座两 commit（f9cb2d5 施工＋探针；本 docs commit 装 biz＋回单）。卡「底座单
-  commit」前提是「仅 parity 两文件」，本次交付含探针与记录资产；不 amend 铁律优先，故拆两笔。
+- 偏离②：底座多笔 commit（f9cb2d5 施工＋探针，另三笔 docs 见补证节）。卡「底座单
+  commit」前提是「仅 parity 两文件」，本次交付含探针与记录资产；不 amend 铁律优先，故拆笔。
 - 偏离③（修补披露）：迷你钮 ::after 外扩按 padding box 算实测命中区 42px（24 本体扣 2 边框
   ＋20），不足 44；在 panel_dialog.css 加 scoped 规则 `.ed-config-view-head .ep-mini-btn::after
   { inset: -11px 0; }` 补到 44px，只影响两视图返回钮，全局迷你钮约定未动。
@@ -117,7 +117,7 @@
   ②触控真机（触摸屏）未摸，只量命中区几何≥44px；③reduced-motion 无新增动画（ep-ai-spin
   存量规则未动），未单独实测；④真人抽检未做（全工具驱动）。
 
-## 补证 · 内联前后对比截图结论（2026-11-19 03:5x 追加）
+## 补证 · 内联前后对比截图结论（2026-11-19 03:53 追加）
 
 「前」用 git archive 基线 d89e9d5 解出隔离副本起服真点取证（脚本
 `.system_generated/canvas-inline-config/before_shot.py`，住证据目录不进 git；
@@ -128,5 +128,5 @@
   position 非 fixed、无 aria-modal/role，视图顶【返回批次】＋标题，内容铺满画布帧随画布滚动，
   批次列表整块隐藏，辅助栏与顶栏原样。
 结论：两配置中心已从浮层模态变为画布内联整屏视图，前后对比截图与 computed 形状读数互证。
-本补证随底座第三笔 docs commit 入库（偏离②的 commit 数由两笔更正为三笔：施工＋探针／
-biz＋回单／本补证；不 amend 铁律优先）。
+本补证与回单定稿各随独立 docs commit 入库（底座共四笔：施工＋探针／biz＋回单／
+补证／回单定稿；偏离②「单 commit」前提不成立，不 amend 铁律优先）。
