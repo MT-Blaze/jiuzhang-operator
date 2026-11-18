@@ -7,7 +7,9 @@ fastapi==0.141.1
 # 许可 Apache-2.0 / BSD-3-Clause，符合铁律一白名单（AGPL 的 PyMuPDF 严禁引入）。
 pypdfium2==5.9.0
 uvicorn==0.52.1
-playwright  # 2026-11-18 主公拍板补入；首次安装时钉版
+# 取证与真机探针驱动（Apache-2.0）：2026-11-18 首次安装实测钉版；
+# 内核另跑 `playwright install chromium`（一次性下载，之后离线可用）。
+playwright==1.65.2
 # 图片型卷自动切题（T4）：RapidOCR 本地轻量 OCR，随包三个 onnx 模型均 Apache-2.0
 # （哈希与 MODEL_LICENSES.md 已核，见 docs/识别引擎-决策台账.md 变更记录 2026-11-17）。
 # PyPI 实名是 rapidocr（3.x 起统一包名；rapidocr_onnxruntime 系列止于 1.4.x 且不支持 3.14）。
