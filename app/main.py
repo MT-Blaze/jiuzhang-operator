@@ -30,6 +30,7 @@ from app.api.meta import router as meta_router
 from app.api.models import router as models_router
 from app.api.pending import router as pending_router
 from app.api.pending_reidentify import router as pending_reidentify_router
+from app.api.pending_return import router as pending_return_router
 from app.api.plugins import router as plugins_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
@@ -212,6 +213,7 @@ def create_app() -> FastAPI:
     app.include_router(assets_router)
     app.include_router(pending_router)
     app.include_router(pending_reidentify_router)
+    app.include_router(pending_return_router)
     app.include_router(meta_router)
     app.include_router(ingest_router)
     app.include_router(layout_router)

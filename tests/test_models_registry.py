@@ -456,6 +456,70 @@ class VlmLocalRuleTest(CatalogIsolated):
         self.assertEqual(seats["auto_text_formula_seat"], "formula_pp_m")
 
 
+class ComboChainTest(CatalogIsolated):
+    """组合路三链（2.20.0 卡§2）：复用既有七规则，不造第八规则；链路不是模型。"""
+
+    VLM_OK = {"ok": True, "state": "ready", "version": "0.2.3",
+              "engine": "vulkan", "message": ""}
+
+    def test_three_combos_declare_plan_and_seat(self) -> None:
+        catalog = {entry["id"]: entry for entry in registry.catalog()}
+        expected = {"combo_cloud": "cloud_vision", "combo_vlm": "vlm_qwen",
+                    "combo_pp_m": "formula_pp_m"}
+        for combo_id, seat in expected.items():
+            with self.subTest(combo=combo_id):
+                entry = catalog[combo_id]
+                self.assertEqual(entry["capability"], "recognize")
+                self.assertEqual(entry["plan_recognize"], ["combo"])
+                self.assertEqual(entry["combo_seat"], seat)
+                self.assertIn("文字层取", entry["summary_usage"])
+                self.assertIn("纯图卷", entry["summary_usage"])
+
+    def test_combo_cloud_follows_vision_assignment(self) -> None:
+        with _runtime():
+            entry = _states(registry.status()["entries"])["combo_cloud"]
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "assign")
+        with _runtime(vision=_vision()):
+            entry = _states(registry.status()["entries"])["combo_cloud"]
+        self.assertEqual(entry["state"], "ready")
+        self.assertIn("视觉一号", entry["detail"])
+        self.assertIn("组合路就绪", entry["detail"])
+
+    def test_combo_vlm_follows_local_vlm_health(self) -> None:
+        with _runtime():
+            entry = _states(registry.status()["entries"])["combo_vlm"]
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "install_vlm")
+        with _runtime(vlm_health=self.VLM_OK, vlm_weights=True):
+            entry = _states(registry.status()["entries"])["combo_vlm"]
+        self.assertEqual(entry["state"], "ready")
+        self.assertIn("组合路就绪", entry["detail"])
+
+    def test_combo_pp_m_ready_but_discloses_d_card(self) -> None:
+        with _runtime():
+            entry = _states(registry.status()["entries"])["combo_pp_m"]
+        self.assertEqual(entry["state"], "ready")
+        self.assertIn("D 卡", entry["detail"])
+        self.assertIn("待核", entry["detail"])
+
+    def test_combo_gate_passes_ready_and_falls_auto_degraded(self) -> None:
+        with _runtime(vision=_vision()):
+            picked, note = registry.gate_recognize("combo_cloud")
+        self.assertEqual(picked, "combo_cloud")
+        self.assertEqual(note, "")
+        with _runtime():
+            picked, note = registry.gate_recognize("combo_cloud")
+        self.assertEqual(picked, "auto")
+        self.assertIn("未就绪", note)
+
+    def test_auto_defaults_stay_single_seats_not_combos(self) -> None:
+        with _runtime():
+            seats = registry.auto_seats()
+        self.assertNotIn("combo", seats["auto_image_seat"])
+        self.assertNotIn("combo", seats["auto_text_formula_seat"])
+
+
 class MineruLocalTest(CatalogIsolated):
     def test_not_installed_is_degraded_with_install_action(self) -> None:
         with _runtime():
@@ -552,6 +616,7 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/ocr/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
+        self.assertIn("/api/pending/return_batch", paths)
 
     def test_write_routes_declare_write_token(self) -> None:
         from app.core.security import require_write_token

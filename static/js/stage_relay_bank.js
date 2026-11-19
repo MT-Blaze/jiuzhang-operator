@@ -55,7 +55,7 @@
         var fileUrl = typeof entry.data_url === "string" ? entry.data_url : "";
         if (!fileName || !fileUrl) continue;
         if (fileUrl.length > 48 * 1024 * 1024) continue;
-        prepared.push({ name: fileName, data_url: fileUrl });
+        prepared.push({ name: fileName, data_url: fileUrl, meta: plainObject(entry.meta) });
       }
       if (!prepared.length) {
         replyHost(tab, message, false, { code: "BAD_REQUEST", message: "没有可解析的文件" });

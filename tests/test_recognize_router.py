@@ -209,6 +209,71 @@ class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         self.assertIs(outcome["mineru"].call_args.args[5], sentinel)
 
 
+class RecognizeComboPickTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
+    """老师点选组合路（2.20.0 卡§2）：纯图卷显性拒绝，文字卷只走声明的公式座。"""
+
+    COMBO_OK = {"ok": True, "attempted": 3, "filled": 3, "filled_indexes": [0, 1, 2],
+                "no_coord_indexes": [], "pending_marks": 0, "seat_ready": True,
+                "seat_reason": "", "detail": ""}
+
+    async def _run(self, engine: str, route: dict) -> dict:
+        combo_mock = mock.AsyncMock(return_value=dict(self.COMBO_OK))
+        ai_mock = mock.AsyncMock()
+        mineru_mock = mock.AsyncMock()
+        with mock.patch.object(recognize_router.recognize_local, "probe",
+                               return_value={"ok": True, "bad_indexes": []}), \
+                mock.patch.object(recognize_router.recognize_formula, "batch_context",
+                                  return_value=([], None)), \
+                mock.patch.object(recognize_router.recognize_formula, "run_combo",
+                                  combo_mock), \
+                mock.patch.object(recognize_router.recognize_ai, "run", ai_mock), \
+                mock.patch.object(recognize_router.recognize_mineru, "run", mineru_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, engine, report(0.0, []), route)
+        return {"route": result, "combo": combo_mock, "ai": ai_mock,
+                "mineru": mineru_mock}
+
+    def test_combo_plan_comes_from_catalog(self) -> None:
+        for engine in ("combo_cloud", "combo_vlm", "combo_pp_m"):
+            with self.subTest(engine=engine):
+                self.assertEqual(recognize_router.normalize_engine(engine), engine)
+                self.assertEqual(recognize_router.plan(engine), ("combo",))
+
+    async def test_pure_image_pick_is_explicit_no_engine_runs(self) -> None:
+        outcome = await self._run("combo_cloud", {"text_layer": False})
+        outcome["combo"].assert_not_called()
+        outcome["ai"].assert_not_called()
+        outcome["mineru"].assert_not_called()
+        route = outcome["route"]
+        self.assertEqual(route["mode"], "combo_cloud")
+        self.assertIn("纯图卷", route["note"])
+        self.assertIn("不偷换", route["note"])
+        self.assertTrue(route["done"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·组合路", steps)
+
+    async def test_untriaged_route_also_refuses_combo(self) -> None:
+        outcome = await self._run("combo_vlm", {})
+        outcome["combo"].assert_not_called()
+        self.assertIn("纯图卷", outcome["route"]["note"])
+
+    async def test_text_layer_pick_runs_declared_seat_only(self) -> None:
+        for engine, seat in (("combo_cloud", "cloud_vision"),
+                             ("combo_vlm", "vlm_qwen"),
+                             ("combo_pp_m", "formula_pp_m")):
+            with self.subTest(engine=engine):
+                outcome = await self._run(engine, {"text_layer": True})
+                outcome["combo"].assert_awaited_once()
+                self.assertEqual(outcome["combo"].call_args.args[3], seat)
+                outcome["ai"].assert_not_called()
+                outcome["mineru"].assert_not_called()
+                route = outcome["route"]
+                self.assertEqual(route["mode"], engine)
+                self.assertIn("组合路", route["note"])
+                self.assertIn(seat, route["note"])
+                self.assertTrue(route["done"])
+
+
 class RecognizeNoCatalogTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     """目录缺失/未接线通道：归自动或诚实失败，底座不猜模型。"""
 

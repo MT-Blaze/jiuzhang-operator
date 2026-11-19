@@ -217,6 +217,9 @@ async def dispatch(entry: dict[str, Any], png: bytes,
         return {"ok": False, "detail": "公式块裁不出来（坐标落在题图外或太小）"}
     steps = [str(step) for step in entry.get("plan_recognize") or []]
     step = steps[0] if steps else ""
+    if step == "combo":
+        return {"ok": False,
+                "detail": "组合路是整批链路（文字直取＋公式裁图），不支持单块公式重认；请选公式专科座。"}
     if step == "ai":
         binding = ai_center.resolve_task("ocr")
         if not binding.is_configured:

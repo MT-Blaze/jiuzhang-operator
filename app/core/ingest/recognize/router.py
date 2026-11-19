@@ -7,6 +7,8 @@
 - 默认座未就绪/未装 → 显性失败清单＋人话引导（装/指派/改默认），绝不静默换座。
 - 具体档：引擎名单与步骤全由插件 catalog 声明（plan_recognize／aliases_recognize），
   底座只认步骤实现名、不认模型；失败 ok=False 显性化，不级联、不偷换。
+- 组合路（plan_recognize=["combo"]＋combo_seat）：只支持文字卷，文字直取＋公式裁图
+  送指定公式座；纯图卷显性失败引导选整题座，绝不静默降级。
 """
 
 from __future__ import annotations
@@ -87,7 +89,8 @@ def _auto_seat(kind: str) -> tuple[str, dict[str, Any] | None]:
 async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                        total: int, route: dict[str, Any],
                        on_progress: Callable[[dict[str, Any]], None] | None,
-                       indexes: list[int] | None = None) -> dict[str, Any]:
+                       indexes: list[int] | None = None,
+                       report: dict[str, Any] | None = None) -> dict[str, Any]:
     """具体档：只走选中的通道，失败 ok=False 显性化，不级联不偷换。"""
     pending = list(range(total)) if indexes is None else list(indexes)
     steps = plan(picked)
@@ -153,6 +156,21 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
                     label, local.get("detail") or "不可用")
                 route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
                 _surface(route, "识别·" + label, reason, str(local.get("detail") or ""))
+    elif steps == ("combo",):
+        seat = ""
+        for item in _recognize_entries():
+            if str(item["id"]) == picked:
+                seat = str(item.get("combo_seat") or "")
+        route["mode"] = picked
+        if not bool(route.get("text_layer")):
+            reason = ("组合路只支持带文字层的卷子：这份是纯图卷，文字直取无从谈起。"
+                      "请选整题直转座（MinerU·本地/云端、本地VLM、云端视觉），不降级不偷换。")
+            route["note"] = reason
+            _surface(route, "识别·组合路", reason, "text_layer=False，组合路只支持文字卷")
+        else:
+            await _combo_fill(batch_id, items, report or {}, route, on_progress, seat,
+                              "组合路（公式座「%s」）" % (seat or "空"))
+            route["mode"] = picked
     else:
         route["mode"] = picked
         reason = "选中引擎的解析通道尚未接线（%s），保留本地切图待人工核对。" % (
@@ -194,21 +212,20 @@ async def _auto_image(batch_id: str, items: list[dict[str, Any]],
     return route
 
 
-async def _auto_text(batch_id: str, items: list[dict[str, Any]],
-                     report: dict[str, Any], route: dict[str, Any],
-                     on_progress: Callable[[dict[str, Any]], None] | None) -> dict[str, Any]:
-    """文字卷组合路：文字直取正文＋公式裁图送默认公式座；无坐标/坏题整题兜底。"""
+async def _combo_fill(batch_id: str, items: list[dict[str, Any]],
+                      report: dict[str, Any], route: dict[str, Any],
+                      on_progress: Callable[[dict[str, Any]], None] | None,
+                      seat: str, prefix: str) -> dict[str, Any]:
+    """组合路共用：文字直取正文＋公式裁图送指定座；无坐标/坏题整题兜底并明示。"""
     total = len(items)
     local = recognize_local.probe(items, report)
     bad = set(local["bad_indexes"])
     good = [index for index in range(total) if index not in bad]
-    seat, _entry = _auto_seat("text_formula")
-    route["auto_formula_seat"] = seat
     page_images, pdf_bytes = await asyncio.to_thread(
         recognize_formula.batch_context, batch_id)
     combo = await recognize_formula.run_combo(
         batch_id, items, good, seat, route, on_progress, page_images, pdf_bytes)
-    notes = ["自动分流（文字卷）→组合路：文字直取正文。"]
+    notes = ["%s→组合路：文字直取正文。" % prefix]
     if combo["attempted"]:
         notes.append("公式裁图 %d 道交「%s」，%d 道原位回填。" % (
             combo["attempted"], seat or "无", combo["filled"]))
@@ -223,8 +240,19 @@ async def _auto_text(batch_id: str, items: list[dict[str, Any]],
         await _auto_image(batch_id, items, route, on_progress, indexes=fallback,
                           prefix="整题兜底")
         notes.append(str(route.get("note") or ""))
-    route["mode"] = "auto_combo"
     route["note"] = " ".join(note for note in notes if note)
+    return route
+
+
+async def _auto_text(batch_id: str, items: list[dict[str, Any]],
+                     report: dict[str, Any], route: dict[str, Any],
+                     on_progress: Callable[[dict[str, Any]], None] | None) -> dict[str, Any]:
+    """文字卷自动分流：默认公式座走组合路。"""
+    seat, _entry = _auto_seat("text_formula")
+    route["auto_formula_seat"] = seat
+    await _combo_fill(batch_id, items, report, route, on_progress, seat,
+                      "自动分流（文字卷）")
+    route["mode"] = "auto_combo"
     route["phase"] = "done"
     route["done"] = True
     return route
@@ -237,7 +265,8 @@ async def fill_batch(batch_id: str, items: list[dict[str, Any]], engine: str,
     picked = normalize_engine(engine)
     total = len(items)
     if picked != RECOGNIZE_AUTO:
-        return await _fill_single(picked, batch_id, items, total, route, on_progress)
+        return await _fill_single(picked, batch_id, items, total, route, on_progress,
+                                  report=report)
     if bool(route.get("text_layer")):
         return await _auto_text(batch_id, items, report, route, on_progress)
     return await _auto_image(batch_id, items, route, on_progress)

@@ -46,6 +46,9 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
     """整题重认：按 catalog 步骤名送席，返回契约题目或 MinerU markdown。"""
     steps = [str(step) for step in entry.get("plan_recognize") or []]
     step = steps[0] if steps else ""
+    if step == "combo":
+        return {"ok": False,
+                "detail": "组合路是整批链路（文字直取＋公式裁图），不支持单题重认；请选整题座。"}
     url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     if step == "ai":
         binding = ai_center.resolve_task("ocr")

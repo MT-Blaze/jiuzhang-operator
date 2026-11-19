@@ -1,4 +1,4 @@
-/* T6 转发家族（转码七链路路由与审核重认）：本地 VLM 安装/进度＋审核重认。
+/* T6 转发家族（转码七链路路由与审核重认）：本地 VLM 安装/进度＋审核重认＋整批打回。
  *
  * 与 stage_relay_io.js 同一套 create(deps) 口径，独立成文件是为了整块下架：
  * 删本文件＋workspace.html 的 script 行＋stage.js 里 relayT6 两处点名即可，
@@ -110,6 +110,21 @@
         withWriteToken("/api/pending/reidentify", { method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body), timeout: 960000 }).then(done, fail);
+        return true;
+      }
+
+      if (method === "pending.return_batch") {
+        // 写口：整批打回收集框（源文件＋元数据原样），未入库随批作废、已入库留库。
+        var returnPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (returnPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能整批打回重新识别" });
+          return true;
+        }
+        var returnBody = { batch_id: textValue(payload || {}, "batch_id", 40) };
+        withWriteToken("/api/pending/return_batch", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(returnBody), timeout: 120000 }).then(done, fail);
         return true;
       }
 

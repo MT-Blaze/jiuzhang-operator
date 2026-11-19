@@ -161,6 +161,18 @@ class CoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["code"], "RECOGNIZE_FAILED")
         self.assertIn("下一卡开", result["detail"])
 
+    async def test_combo_chain_refused_for_whole_question(self) -> None:
+        self._seat(_entry("combo"))
+        result = await reidentify.reidentify(PID, "seat_x")
+        self.assertEqual(result["code"], "RECOGNIZE_FAILED")
+        self.assertIn("不支持单题重认", result["detail"])
+
+    async def test_combo_chain_refused_for_formula_block(self) -> None:
+        result = await reidentify.recognize_formula.dispatch(
+            _entry("combo"), b"png", self.item)
+        self.assertFalse(result["ok"])
+        self.assertIn("不支持单块公式重认", result["detail"])
+
     async def test_formula_without_coords_points_to_whole_question(self) -> None:
         self._seat(_entry("ai"))
         with mock.patch.object(reidentify.recognize_formula, "batch_context",

@@ -129,7 +129,7 @@ def stage_ingest(files: Any, layout_engine: str = layout_router.LAYOUT_AUTO,
     picked_recognize = recognize_router.normalize_engine(recognize_engine)
 
     ignored: list[str] = []
-    loaded: list[tuple[str, bytes]] = []
+    loaded: list[tuple[str, bytes, Any]] = []
 
     # 先把整包验一遍再落批次：后面的文件不合格时，前面的批次不该已经建出来。
     for entry in files:
@@ -145,7 +145,7 @@ def stage_ingest(files: Any, layout_engine: str = layout_router.LAYOUT_AUTO,
             raise IngestError(f"{name}：文件太大（上限 32 MiB）")
         if not data:
             raise IngestError(f"{name}：文件是空的")
-        loaded.append((name, data))
+        loaded.append((name, data, entry.get("meta")))
 
     if not loaded:
         return {"batch_id": "", "batch_ids": [], "batches": [], "saved_ids": [],
@@ -156,8 +156,8 @@ def stage_ingest(files: Any, layout_engine: str = layout_router.LAYOUT_AUTO,
     kinds: list[str] = []
     saved_ids: list[str] = []
     job_groups: list[dict[str, Any]] = []
-    for name, data in loaded:
-        one = _stage_one_batch(name, data)
+    for name, data, meta in loaded:
+        one = _stage_one_batch(name, data, meta)
         one_jobs = one.pop("jobs", [])
         if one_jobs:
             job_groups.append({"batch_id": one["batch_id"], "jobs": one_jobs,
@@ -189,7 +189,7 @@ def _is_scan_source(name: str) -> bool:
     return classify(name) == "pdf"
 
 
-def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
+def _stage_one_batch(name: str, data: bytes, meta: Any = None) -> dict[str, Any]:
     """一份文件立一个批次。
 
     Word / 文本类先放一条「正在解析」的占位题，识别完就地替换；
@@ -198,12 +198,10 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
     from app.core.pending import service
 
     # 原件在老师自己的盘上，底座只在工作区里留一份只读副本，批次审完即删。
-    backup = wire.dumps([service.store_source_backup(name, data)],
-                        ensure_ascii=False, separators=(",", ":"))
+    backup = wire.dumps([service.store_source_backup(name, data)], ensure_ascii=False, separators=(",", ":"))
     scan_only = _is_scan_source(name)
     if scan_only:
-        result = service.create_batch(source_backup=backup, source_name=name,
-                                           scan=True)
+        result = service.create_batch(source_backup=backup, source_name=name, scan=True)
         warnings = [f"{name}：已按原卷大图导入。页面图渲染完成后，"
                     "识别出的每道题会自动裁好并排进待审池，左侧绿框可拖拽微调。"]
     else:
@@ -214,6 +212,8 @@ def _stage_one_batch(name: str, data: bytes) -> dict[str, Any]:
             origin="ingest",
         )
         warnings = []
+    if isinstance(meta, dict) and meta:  # 打回重入（卡§2）：元数据原样落批，后切的题经 save_draft 继承
+        result["batch"] = service.set_batch_meta(result["batch_id"], meta)["batch"]
     result["warnings"] = warnings
     result["ignored"] = []
     result["kinds"] = [classify(name)]
@@ -231,7 +231,7 @@ def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]
     """图片走全量 OCR 前先落一条占位题：题图立刻可见，正文等模型回填。"""
     entry = page_images[0] if page_images else {}
     uri = str(entry.get("uri") or "")
-    asset_id = str(entry.get("name") or "page_1")
+    asset_id = "img_" + Path(str(entry.get("name") or "page_1")).stem
     return {
         "schema_version": "2.0",
         "type": "solution",

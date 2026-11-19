@@ -166,7 +166,7 @@
       var dataUrl = typeof entry.data_url === "string" ? entry.data_url : "";
       if (!name || !dataUrl) continue;
       if (dataUrl.length > 48 * 1024 * 1024) { oversized += 1; continue; }
-      prepared.push({ name: name, data_url: dataUrl });
+      prepared.push({ name: name, data_url: dataUrl, meta: entry.meta && typeof entry.meta === "object" && !Array.isArray(entry.meta) ? entry.meta : {} });
       if (prepared.length >= MAX_FILES) break;
     }
     if (!prepared.length) {

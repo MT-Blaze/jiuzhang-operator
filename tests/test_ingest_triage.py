@@ -394,9 +394,13 @@ class EngineUiContractTest(unittest.TestCase):
         self.assertIn('entry.state !== "ready"', INTAKE_JS)
         self.assertIn("entry.enabled === false", INTAKE_JS)
         # 四合一：一键装＋勾选代笔＋大白话说明都走宿主 relay，插件不自落状态。
-        self.assertIn('hostCall("models.mineru_install"', config_js)
+        # 2.20.0 卡§1 拆兄弟模块：安装链住 ui_model_install.js（kind 泛化），
+        # 大白话说明住 ui_model_table.js；契约意图不变，只认调用形状。
+        install_js = (PLUGIN_DIR / "dist" / "ui_model_install.js").read_text(encoding="utf-8")
+        table_js = (PLUGIN_DIR / "dist" / "ui_model_table.js").read_text(encoding="utf-8")
+        self.assertIn('hostCall("models." + kind + "_install"', install_js)
         self.assertIn('hostCall("models.prefs_save"', config_js)
-        self.assertIn("summary_usage", config_js)
+        self.assertIn("summary_usage", table_js)
         self.assertIn("defs.layout", INTAKE_JS)
         self.assertNotIn("LAYOUT_ENGINES", INTAKE_JS)
         self.assertNotIn("RECOGNIZE_ENGINES", INTAKE_JS)
