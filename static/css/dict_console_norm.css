@@ -1,7 +1,7 @@
 /**
- * dict_console_norm.css —— 记号标准字典·闭集五列＋开集待审（2.21.0 卡 §4）。
- * 复用 app.css 的主题变量；五列用 minmax(0,1fr) 网格防溢出，公式格内部横向滚动，
- * 375px 窄屏入口头与对照格自动堆叠，页面零横向溢出。状态不只靠颜色（筹码加粗＋描边＋aria-pressed）。
+ * dict_console_norm.css —— 记号标准字典·闭集六列平表＋开集待审（平表砍头小卡 §2）。
+ * 复用 app.css 的主题变量；表容器横向滚动（min-width 保列不挤烂），375px 窄屏
+ * 页面零横向溢出；行高约 36px。状态不只靠颜色（筹码加粗＋描边＋aria-pressed）。
  * 整块下架：删本文件与 dict_console.html 的引用行即可。
  */
 
@@ -79,60 +79,57 @@
 
 .dc-norm-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.dc-norm-list { display: flex; flex-direction: column; gap: 14px; }
+.dc-norm-list { max-width: 100%; overflow-x: auto; }
 
-.dc-norm-entry {
+.dc-norm-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--card);
-  padding: 12px 14px;
 }
 
-.dc-norm-entry-top {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+.dc-norm-table th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-strong);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--faint);
+  text-align: left;
+  white-space: nowrap;
 }
+
+.dc-norm-table td {
+  height: 36px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  font-size: 0.86rem;
+}
+
+.dc-norm-table tbody tr:last-child td { border-bottom: 0; }
+
+.dc-norm-name-cell { min-width: 140px; }
 
 .dc-norm-family {
+  display: inline-block;
   padding: 2px 9px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--paper-deep);
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
-.dc-norm-name-box { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.dc-norm-name { display: block; font-weight: 700; font-size: 0.92rem; color: var(--ink); }
 
-.dc-norm-name { font-weight: 700; font-size: 0.98rem; color: var(--ink); }
+.dc-norm-key { display: block; font-size: 0.74rem; color: var(--faint); }
 
-.dc-norm-key { font-size: 0.76rem; color: var(--faint); }
+.dc-norm-default-state { margin: 4px 0 0; font-size: 0.74rem; color: var(--muted); }
 
-.dc-norm-default-state { margin: 6px 0 10px; font-size: 0.78rem; color: var(--muted); }
-
-.dc-norm-vhead,
-.dc-norm-vrow {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 3rem;
-  align-items: center;
-  gap: 10px;
-}
-
-.dc-norm-vhead {
-  padding: 4px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.74rem;
-  color: var(--faint);
-}
-
-.dc-norm-vrow { padding: 8px 0; border-bottom: 1px dashed var(--line); }
-
-.dc-norm-vrow:last-child { border-bottom: 0; }
-
-.dc-norm-vcode { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.dc-norm-code-cell { min-width: 150px; }
 
 .dc-norm-code {
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -151,9 +148,13 @@
   white-space: nowrap;
 }
 
-.dc-norm-vrender { min-width: 0; overflow-x: auto; }
+.dc-norm-source-cell { white-space: nowrap; }
 
-.dc-norm-vpick { display: flex; justify-content: center; }
+.dc-norm-render-cell { min-width: 180px; max-width: 280px; overflow-x: auto; }
+
+.dc-norm-pick-cell { text-align: center; }
+
+.dc-norm-op-cell { min-width: 120px; white-space: nowrap; }
 
 .dc-norm-radio { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
 
@@ -162,7 +163,7 @@
 .dc-norm-math,
 .dc-norm-math-block { display: inline-block; max-width: 100%; }
 
-.dc-norm-vrender mjx-container,
+.dc-norm-render-cell mjx-container,
 .dc-norm-preview mjx-container,
 .dc-norm-compare-cell mjx-container { max-width: 100%; }
 
@@ -242,7 +243,5 @@
 .dc-norm-reject { border-color: var(--down); color: var(--down); }
 
 @media (max-width: 480px) {
-  .dc-norm-entry-top { grid-template-columns: minmax(0, 1fr) auto; }
-  .dc-norm-family { grid-column: 1 / -1; justify-self: start; }
   .dc-norm-compare { grid-template-columns: minmax(0, 1fr); }
 }

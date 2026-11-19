@@ -1,8 +1,9 @@
 /**
- * norm_dict.js —— 记号标准字典·闭集五列对照（2.21.0 卡 §4）。
+ * norm_dict.js —— 记号标准字典·闭集六列平表（2.21.0 卡 §4 落地，平表砍头小卡 §2 改形）。
  *
  * 整机库 data/latex_norm.db 住底座，本页是宿主（同源 DcClient），不经沙箱 relay。
- * 五列：①记号族 ②名称 ③各来源代码行＋标签筹码 ④逐行对齐 MathJax 渲染 ⑤默认单选。
+ * 六列：名称／代码／来源／渲染／默认／操作；一行一个变体，同记号名称格与操作格
+ * rowspan 合并，恢复出厂按记号一枚。进页直接见筹码＋搜索＋表（无页内大标题）。
  * 闭集内容出厂冻结，老师只写选择（choose）；恢复出厂＝选择回退（reset），出厂默认永不动。
  * 单轴过滤＝记号族筹码＋名称/代码搜索；开集待审区交 DcNormInbox 挂在下方第二块。
  * 公式经 JzoMath.render 取 SVG 串再用 DOMParser 落节点，绝不拼 innerHTML（控制台红线）。
@@ -117,37 +118,43 @@
         listHost.appendChild(el("p", "dc-panel-state", "没有匹配的记号，换个族或关键词试试。"));
         return;
       }
-      shown.forEach(function (entry) { listHost.appendChild(entryBlock(entry)); });
+      var table = el("table", "dc-norm-table");
+      var headRow = el("tr");
+      ["名称", "代码", "来源", "渲染", "默认", "操作"].forEach(function (label) {
+        headRow.appendChild(el("th", null, label));
+      });
+      var thead = el("thead");
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      var tbody = el("tbody");
+      shown.forEach(function (entry) { entryRows(entry, tbody); });
+      table.appendChild(tbody);
+      listHost.appendChild(table);
     }
 
-    function syncDefault(entry, variantId, block) {
+    function syncDefault(entry, variantId, group) {
       entry.chosen_default_variant_id = variantId;
       entry.effective_default_variant_id = variantId || entry.factory_default_variant_id;
-      var radios = block.querySelectorAll("input[type=radio]");
-      Array.prototype.forEach.call(radios, function (radio) {
+      group.radios.forEach(function (radio) {
         radio.checked = Number(radio.value) === entry.effective_default_variant_id;
       });
-      var resetBtn = block.querySelector(".dc-norm-reset");
-      if (resetBtn) resetBtn.disabled = entry.chosen_default_variant_id == null;
-      var stateLine = block.querySelector(".dc-norm-default-state");
-      if (stateLine) {
-        stateLine.textContent = entry.chosen_default_variant_id == null
-          ? "当前：出厂默认" : "当前：老师已选默认";
-      }
+      group.resetBtn.disabled = entry.chosen_default_variant_id == null;
+      group.stateLine.textContent = entry.chosen_default_variant_id == null
+        ? "当前：出厂默认" : "当前：老师已选默认";
     }
 
-    function choose(entry, variantId, radio, block) {
+    function choose(entry, variantId, radio, group) {
       busy(radio, true);
       window.DcClient.writeJson("/api/norm/choose",
         { entry_key: entry.entry_key, variant_id: variantId }).then(function () {
-        syncDefault(entry, variantId, block);
+        syncDefault(entry, variantId, group);
       }).catch(function (error) {
-        syncDefault(entry, entry.chosen_default_variant_id, block);
+        syncDefault(entry, entry.chosen_default_variant_id, group);
         fail("选择默认字形失败", error, radio);
       }).finally(function () { busy(radio, false); });
     }
 
-    function reset(entry, button, block) {
+    function reset(entry, button, group) {
       window.DcDialog.open({
         title: "恢复出厂默认",
         message: "把「" + entry.name + "」的默认字形回退到出厂默认？\n出厂内容本身不会被改动。",
@@ -157,76 +164,80 @@
           button.disabled = true;
           button.setAttribute("aria-busy", "true");
           window.DcClient.writeJson("/api/norm/reset", { entry_key: entry.entry_key })
-            .then(function () { syncDefault(entry, null, block); })
+            .then(function () { syncDefault(entry, null, group); })
             .catch(function (error) { button.disabled = false; fail("恢复出厂失败", error, button); })
             .finally(function () { button.setAttribute("aria-busy", "false"); });
         }
       });
     }
 
-    function variantRow(entry, variant, block) {
-      var row = el("div", "dc-norm-vrow");
-      var codeCell = el("div", "dc-norm-vcode");
-      codeCell.appendChild(el("code", "dc-norm-code", variant.latex_code));
-      codeCell.appendChild(el("span", "dc-norm-label", variant.source_label));
-      row.appendChild(codeCell);
+    /** 一个记号一组行：一行一个变体，名称格与操作格按记号 rowspan 合并（恢复出厂一枚）。 */
+    function entryRows(entry, tbody) {
+      var variants = entry.variants || [];
+      var span = variants.length;
+      var group = { radios: [], resetBtn: null, stateLine: null };
 
-      var renderCell = el("div", "dc-norm-vrender");
-      if (variant.render_supported) {
-        renderCell.appendChild(mathNode(variant.latex_code, true));
-      } else {
-        renderCell.appendChild(el("code", "dc-norm-code", variant.latex_code));
-        renderCell.appendChild(el("span", "dc-norm-unsupported",
-          variant.render_note || "此字形 MathJax 不支持渲染，已排除改写"));
-      }
-      row.appendChild(renderCell);
-
-      var pickCell = el("div", "dc-norm-vpick");
-      var radio = el("input", "dc-norm-radio");
-      radio.type = "radio";
-      radio.name = "dc-norm-default-" + entry.entry_key;
-      radio.value = String(variant.id);
-      radio.checked = variant.id === entry.effective_default_variant_id;
-      radio.setAttribute("aria-label",
-        entry.name + " 默认字形 " + variant.latex_code + "（" + variant.source_label + "）");
-      radio.addEventListener("change", function () {
-        if (radio.checked) choose(entry, variant.id, radio, block);
-      });
-      pickCell.appendChild(radio);
-      row.appendChild(pickCell);
-      return row;
-    }
-
-    function entryBlock(entry) {
-      var block = el("section", "dc-norm-entry");
-      block.setAttribute("aria-label", entry.name);
-
-      var top = el("div", "dc-norm-entry-top");
-      top.appendChild(el("span", "dc-norm-family", entry.category));
-      var nameBox = el("div", "dc-norm-name-box");
-      nameBox.appendChild(el("span", "dc-norm-name", entry.name));
-      nameBox.appendChild(el("code", "dc-norm-key", entry.entry_key));
-      top.appendChild(nameBox);
       var resetBtn = el("button", "dc-btn dc-norm-reset", "恢复出厂");
       resetBtn.type = "button";
       resetBtn.disabled = entry.chosen_default_variant_id == null;
-      resetBtn.addEventListener("click", function () { reset(entry, resetBtn, block); });
-      top.appendChild(resetBtn);
-      block.appendChild(top);
+      resetBtn.addEventListener("click", function () { reset(entry, resetBtn, group); });
+      group.resetBtn = resetBtn;
+      group.stateLine = el("p", "dc-norm-default-state",
+        entry.chosen_default_variant_id == null ? "当前：出厂默认" : "当前：老师已选默认");
 
-      block.appendChild(el("p", "dc-norm-default-state",
-        entry.chosen_default_variant_id == null ? "当前：出厂默认" : "当前：老师已选默认"));
+      variants.forEach(function (variant, index) {
+        var row = el("tr", "dc-norm-row");
+        if (index === 0) {
+          var nameCell = el("td", "dc-norm-name-cell");
+          if (span > 1) nameCell.rowSpan = span;
+          nameCell.appendChild(el("span", "dc-norm-family", entry.category));
+          nameCell.appendChild(el("span", "dc-norm-name", entry.name));
+          nameCell.appendChild(el("code", "dc-norm-key", entry.entry_key));
+          row.appendChild(nameCell);
+        }
 
-      var cols = el("div", "dc-norm-vhead");
-      cols.appendChild(el("span", "dc-norm-vcode", "代码 / 来源"));
-      cols.appendChild(el("span", "dc-norm-vrender", "渲染"));
-      cols.appendChild(el("span", "dc-norm-vpick", "默认"));
-      block.appendChild(cols);
+        var codeCell = el("td", "dc-norm-code-cell");
+        codeCell.appendChild(el("code", "dc-norm-code", variant.latex_code));
+        row.appendChild(codeCell);
 
-      (entry.variants || []).forEach(function (variant) {
-        block.appendChild(variantRow(entry, variant, block));
+        var sourceCell = el("td", "dc-norm-source-cell");
+        sourceCell.appendChild(el("span", "dc-norm-label", variant.source_label));
+        row.appendChild(sourceCell);
+
+        var renderCell = el("td", "dc-norm-render-cell");
+        if (variant.render_supported) {
+          renderCell.appendChild(mathNode(variant.latex_code, true));
+        } else {
+          renderCell.appendChild(el("code", "dc-norm-code", variant.latex_code));
+          renderCell.appendChild(el("span", "dc-norm-unsupported",
+            variant.render_note || "此字形 MathJax 不支持渲染，已排除改写"));
+        }
+        row.appendChild(renderCell);
+
+        var pickCell = el("td", "dc-norm-pick-cell");
+        var radio = el("input", "dc-norm-radio");
+        radio.type = "radio";
+        radio.name = "dc-norm-default-" + entry.entry_key;
+        radio.value = String(variant.id);
+        radio.checked = variant.id === entry.effective_default_variant_id;
+        radio.setAttribute("aria-label",
+          entry.name + " 默认字形 " + variant.latex_code + "（" + variant.source_label + "）");
+        radio.addEventListener("change", function () {
+          if (radio.checked) choose(entry, variant.id, radio, group);
+        });
+        pickCell.appendChild(radio);
+        row.appendChild(pickCell);
+        group.radios.push(radio);
+
+        if (index === 0) {
+          var opCell = el("td", "dc-norm-op-cell");
+          if (span > 1) opCell.rowSpan = span;
+          opCell.appendChild(resetBtn);
+          opCell.appendChild(group.stateLine);
+          row.appendChild(opCell);
+        }
+        tbody.appendChild(row);
       });
-      return block;
     }
 
     var loading = el("p", "dc-panel-state", "正在读取记号标准字典…");
