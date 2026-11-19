@@ -327,7 +327,7 @@ def start_install() -> dict[str, str]:
 
 def _install_engine() -> None:
     """测速选源装 mineru-llama-cpp；pip 全败迁移 engines/mineru 现成栈。"""
-    _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（2 秒超时）…")
+    _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（6 秒超时）…")
     raced = mirrors.race(mirrors.pip_candidates("mineru-llama-cpp"))
     _set(step="安装发动机", message=mirrors.pick_note(raced))
     last_error = "没有可用镜像"

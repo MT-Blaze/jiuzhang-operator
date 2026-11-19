@@ -201,7 +201,7 @@ def _install() -> None:
                            VENV_TIMEOUT)
             if rc != 0:
                 raise MineruSetupError("隔离环境创建失败：%s" % _classify(out))
-        _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（2 秒超时）…")
+        _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（6 秒超时）…")
         raced = mirrors.race(mirrors.pip_candidates("mineru"))
         _set(step="安装依赖",
              message="%s 安装 %s，首次约 1–2GB，请耐心等待。"

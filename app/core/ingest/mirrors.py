@@ -1,6 +1,6 @@
 """国内镜像测速选路（2.20.0 卡§7）：安装点击内并行小请求选最快，源健康现算。
 
-只读测速（GET 前 256 字节、2 秒超时），不安装、不写盘、不缓存名次；
+只读测速（GET 前 256 字节、6 秒超时），不安装、不写盘、不缓存名次；
 pip 四家＋权重三源全走国内，禁 GitHub。今日快的源明日未必快，每次点击重测。
 测速在【安装】点击发起的后台作业里跑＝出网合规（卡§0/§7）。
 """
@@ -12,7 +12,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-RACE_TIMEOUT = 2.0
+# hf-mirror 冷启动重定向实测可超 2 秒（座3 探针 run2 因此丢源、只剩 GitCode 假通页）；
+# 6 秒并行测速仍是一次点击内的小请求，不拖安装。
+RACE_TIMEOUT = 6.0
 # hf-mirror 非 LFS 小件（词表/yml）的 CDN 对脚本 UA 回 403（座3 探针实证：
 # Python-urllib 与带 JiuzhangOperator 记号的 UA 全拒，浏览器/curl/Wget UA 全通）；
 # 测速与下载同用此 UA，测速结果才代表真下载能力。
