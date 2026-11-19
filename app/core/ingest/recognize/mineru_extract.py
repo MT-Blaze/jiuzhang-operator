@@ -14,10 +14,12 @@ MinerU 只是备选通道，绝不能因为它连不上就吞掉整批卷子。
 from __future__ import annotations
 
 from app.core import wire  # noqa: E402
+import http.client
 import io
 import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from typing import Any, Callable
@@ -37,20 +39,38 @@ def _api_root(base_url: str) -> str:
 
 
 def _request(url: str, *, method: str = "GET", token: str = "",
-             payload: dict[str, Any] | None = None, raw: bytes | None = None,
+             payload: dict[str, Any] | None = None,
              timeout: float = REQUEST_TIMEOUT) -> bytes:
     headers = {"Accept": "application/json"}
-    data = raw
+    data = None
     if token:
         headers["Authorization"] = f"Bearer {token}"
     if payload is not None:
         data = wire.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    elif raw is not None:
-        headers["Content-Type"] = "application/octet-stream"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read(MAX_ZIP_BYTES)
+
+
+def _put_raw(url: str, data: bytes, timeout: float) -> None:
+    """签名地址上传必须线上零 Content-Type：OSS 没把它签进签名，带任何值都 403
+    SignatureDoesNotMatch；urllib 对带 body 请求会自动补 x-www-form-urlencoded，
+    删显式头也躲不掉，所以用 http.client 直发（2026-11-19 同 URL 双 PUT 实证）。"""
+    parts = urllib.parse.urlsplit(url)
+    connection_type = (http.client.HTTPSConnection if parts.scheme == "https"
+                       else http.client.HTTPConnection)
+    connection = connection_type(parts.hostname, parts.port, timeout=timeout)
+    target = parts.path + ("?" + parts.query if parts.query else "")
+    try:
+        connection.request("PUT", target, body=data)
+        response = connection.getresponse()
+        response.read(MAX_ZIP_BYTES)
+        if not 200 <= response.status < 300:
+            raise urllib.error.HTTPError(
+                url, response.status, response.reason, None, None)
+    finally:
+        connection.close()
 
 
 def _pick_markdown(blob: bytes) -> str:
@@ -104,8 +124,9 @@ def extract(name: str, data: bytes, base_url: str, token: str, *,
         return {"ok": False, "detail": "MinerU 没有返回上传地址或 batch_id"}
 
     try:
-        _request(upload_url, method="PUT", raw=data, timeout=UPLOAD_TIMEOUT)
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+        _put_raw(upload_url, data, UPLOAD_TIMEOUT)
+    except (urllib.error.URLError, urllib.error.HTTPError, http.client.HTTPException,
+            TimeoutError, OSError) as exc:
         return {"ok": False, "detail": f"MinerU 上传原文件失败：{exc}"}
 
     deadline = clock() + max(1.0, wait)
