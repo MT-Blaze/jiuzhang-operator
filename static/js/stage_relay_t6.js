@@ -25,6 +25,12 @@
         return true;
       }
 
+      if (method === "models.ocr_status") {
+        // 只读：RapidOCR·准权重安装进度（2.20.0 卡§6），配置页轮询用。
+        fetchJson("/api/models/ocr/status").then(done, fail);
+        return true;
+      }
+
       if (method === "pending.reidentify_spans") {
         // 只读：公式块清单（坐标来源 MinerU 公式块/文字层），审核渲染列画块级钮用。
         var readPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -56,17 +62,32 @@
         return true;
       }
 
-      if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru") {
-        // 写口：卸载先停服再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
+      if (method === "models.ocr_install") {
+        // 写口：准档权重下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var ocrPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (ocrPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起 RapidOCR 准档安装" });
+          return true;
+        }
+        withWriteToken("/api/models/ocr/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
+      if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru" ||
+          method === "models.uninstall_ocr") {
+        // 写口：卸载先停服/丢缓存再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
         var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
         if (uninstallPerms.indexOf("questions:write") < 0) {
           replyHost(tab, message, false, { code: "FORBIDDEN",
             message: "插件未声明 questions:write 权限，不能卸载本地引擎" });
           return true;
         }
-        var uninstallPath = method === "models.uninstall_vlm"
-          ? "/api/models/vlm/uninstall" : "/api/models/mineru/uninstall";
-        withWriteToken(uninstallPath, { method: "POST",
+        var uninstallPaths = { "models.uninstall_vlm": "/api/models/vlm/uninstall",
+          "models.uninstall_mineru": "/api/models/mineru/uninstall",
+          "models.uninstall_ocr": "/api/models/ocr/uninstall" };
+        withWriteToken(uninstallPaths[method], { method: "POST",
           headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
         return true;
       }

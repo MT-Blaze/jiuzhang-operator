@@ -19,18 +19,35 @@ from app.core.ingest.render.common import PDF_RENDER_DPI
 
 logger = logging.getLogger(__name__)
 
-_ENGINE: Any = None
+_ENGINES: dict[str, Any] = {}
 _FOOTER_SLASH = re.compile(r"第\s*(\d+)\s*页\s*[/／]\s*共\s*(\d+)\s*页")
 _DOTLESS = re.compile(r"^(\d{1,2})\s+(?=\S)")
 
 
-def _engine() -> Any:
-    global _ENGINE
-    if _ENGINE is None:
+def _engine(tier: str = "small") -> Any:
+    if tier not in _ENGINES:
         from rapidocr import RapidOCR
         logging.getLogger("rapidocr").setLevel(logging.ERROR)
-        _ENGINE = RapidOCR()
-    return _ENGINE
+        if tier == "medium":
+            from app.core.ingest import ocr_setup
+            if not ocr_setup.weights_ready():
+                raise RuntimeError("准档权重未安装，先在模型配置中心点【安装】")
+            det, rec = ocr_setup.model_paths()
+            # model_path 指入 engines/ocr/models/：包见本地路径就不走自带下载通道。
+            _ENGINES[tier] = RapidOCR(params={
+                "Det.model_type": "medium", "Rec.model_type": "medium",
+                "Det.model_path": str(det), "Rec.model_path": str(rec)})
+        else:
+            _ENGINES[tier] = RapidOCR()
+    return _ENGINES[tier]
+
+
+def reset(tier: str | None = None) -> None:
+    """丢引擎缓存（卸载权重前调用，防会话占着文件）；不给档位＝全丢。"""
+    if tier is None:
+        _ENGINES.clear()
+    else:
+        _ENGINES.pop(tier, None)
 
 
 def _rows(engine: Any, arr: Any) -> list[dict[str, Any]]:
@@ -191,18 +208,24 @@ def _down_lines(rows: list[dict[str, Any]], rot: int,
 
 
 def detect(name: str, data: bytes,
-           page_images: list[dict[str, Any]]) -> dict[str, Any]:
-    """整份图片卷 → 版面引擎同形状的题块 dict；另带 y 向下行清单供跨页判定。"""
+           page_images: list[dict[str, Any]], tier: str = "small") -> dict[str, Any]:
+    """整份图片卷 → 版面引擎同形状的题块 dict；另带 y 向下行清单供跨页判定。
+
+    tier=small（快档，随底座自带）行为不变；tier=medium（准档，2.20.0 卡§6）
+    走 engines/ocr/models/ 的 medium 权重，未安装显性 ok=False 不偷换快档。
+    """
     import cv2
     import numpy as np
-    empty = {"ok": False, "engine": "ocr", "pages": {}, "columns": {},
+    label = "ocr" if tier == "small" else "ocr_medium"
+    say_name = "RapidOCR" if tier == "small" else "RapidOCR·准"
+    empty = {"ok": False, "engine": label, "pages": {}, "columns": {},
              "lines_by_page": {}, "status": []}
     if pdf_render._pdfium is None:
         return dict(empty, detail="内置 PDF 渲染器（pypdfium2）没有装上，OCR 切题未执行")
     try:
-        engine = _engine()
+        engine = _engine(tier)
     except Exception as error:  # noqa: BLE001 - 引擎缺装只该降级，不该拖垮整批
-        return dict(empty, detail=f"RapidOCR 没装上或起不来（{error}）")
+        return dict(empty, detail=f"{say_name} 没装上或起不来（{error}）")
     try:
         doc = pdf_render._pdfium.PdfDocument(data)
     except Exception as error:  # noqa: BLE001
@@ -253,7 +276,7 @@ def detect(name: str, data: bytes,
         doc.close()
     ok = bool(pages)
     blocks = sum(len(value) for value in pages.values())
-    return {"ok": ok, "engine": "ocr", "pages": pages, "columns": columns,
+    return {"ok": ok, "engine": label, "pages": pages, "columns": columns,
             "lines_by_page": lines_by_page, "status": status,
-            "detail": (f"RapidOCR 本地识别切出 {blocks} 个题块" if ok
-                       else "RapidOCR 没探出题号链")}
+            "detail": (f"{say_name} 本地识别切出 {blocks} 个题块" if ok
+                       else f"{say_name} 没探出题号链")}

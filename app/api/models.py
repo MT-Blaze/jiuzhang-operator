@@ -1,4 +1,4 @@
-"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM 一键装＋配置勾选代笔。
+"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档一键装＋配置勾选代笔。
 
 注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
 下载与指派动作走既有的 layout.model_download 与 API 配置中心。写口都带写令牌：
@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.core.ingest import mineru_setup, model_prefs, registry, vlm_setup
+from app.core.ingest import mineru_setup, model_prefs, ocr_setup, registry, vlm_setup
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["models"])
@@ -88,6 +88,36 @@ def mineru_uninstall() -> dict[str, Any]:
     try:
         return mineru_setup.uninstall()
     except mineru_setup.MineruSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/ocr/status", summary="RapidOCR·准权重安装进度（只读）")
+def ocr_status() -> dict[str, Any]:
+    return ocr_setup.status()
+
+
+@router.post(
+    "/api/models/ocr/install",
+    status_code=202,
+    summary="一键安装 RapidOCR·准（engines/ocr/models/ 两件 medium 权重，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def ocr_install() -> dict[str, Any]:
+    try:
+        return ocr_setup.start_install()
+    except ocr_setup.OcrSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/ocr/uninstall",
+    summary="卸载 RapidOCR·准（丢引擎缓存再删 engines/ocr/，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def ocr_uninstall() -> dict[str, Any]:
+    try:
+        return ocr_setup.uninstall()
+    except ocr_setup.OcrSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

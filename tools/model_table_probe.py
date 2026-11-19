@@ -32,6 +32,7 @@ from app.core import toml_io  # noqa: E402
 from app.core.config import plugin_source_root  # noqa: E402
 
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -154,7 +155,8 @@ def main() -> int:
                 url = request.url
                 if "/api/models/registry" in url:
                     result["registry_requests"].append(url)
-                if "/api/models/vlm/install" in url or "/api/models/mineru/install" in url:
+                if "/api/models/vlm/install" in url or "/api/models/mineru/install" in url \
+                        or "/api/models/ocr/install" in url:
                     result["install_requests"].append(url)
                 if "/uninstall" in url and "/api/models/" in url:
                     result["uninstall_requests"].append(url)
@@ -201,6 +203,29 @@ def main() -> int:
                      return !!(seats && firstGroup &&
                        (seats.compareDocumentPosition(firstGroup) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
             check("自动分流默认组置顶（在首个工种组之前）", bool(top))
+
+            # ---------- §6 名单：VLM 六→三、Pix2Text 改名、准档解锁 ----------
+            vlm_count = canvas.locator(".ep-mt-row", has_text="（本地）").count()
+            check("VLM 六→三（千问/面壁/书生）", vlm_count == 3, vlm_count)
+            for gone in ("SmolVLM", "Phi 视觉", "Gemma 视觉"):
+                check("剔座不再上屏：%s" % gone,
+                      canvas.locator(".ep-mt-row", has_text=gone).count() == 0)
+            check("Pix2Text·MFR 改名上屏",
+                  canvas.locator(".ep-mt-row", has_text="Pix2Text·MFR").count() == 1)
+            check("旧名 pix2tex 不再上屏（大小写敏感）",
+                  canvas.locator(".ep-mt-row", has_text=re.compile("pix2tex")).count() == 0)
+            acc_row = canvas.locator(".ep-mt-row", has_text="RapidOCR·准")
+            check("准档解锁：未就绪徽章＋真安装按钮",
+                  acc_row.locator(".ep-mt-badge").text_content() == "未就绪"
+                  and acc_row.locator(".ep-mt-act", has_text="安装").count() == 1)
+            acc_row.locator(".ep-mt-act", has_text="安装").click()
+            page.wait_for_timeout(400)
+            check("准档安装确认弹窗摆 139MB 成本",
+                  bool(result["dialogs"]) and "139MB" in result["dialogs"][-1],
+                  result["dialogs"][-1:])
+            check("dismiss 后零准档安装请求（出网只由点头发起）",
+                  not [u for u in result["install_requests"] if "/ocr/install" in u],
+                  result["install_requests"])
             page.screenshot(path=str(shots / "01-table-wide.png"))
 
             # ---------- §5 活字：徽章＋简要带本机显存 ----------

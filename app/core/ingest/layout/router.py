@@ -60,11 +60,16 @@ def default_providers() -> dict[str, Callable[[dict[str, Any]], Any]]:
     def ocr(request: dict[str, Any]) -> Any:
         return recognize_ocr.detect(request["name"], request["data"], request["pages"])
 
+    def ocr_medium(request: dict[str, Any]) -> Any:
+        return recognize_ocr.detect(request["name"], request["data"], request["pages"],
+                                    tier="medium")
+
     return {
         "python": layout_python.detect,
         "yolo": layout_yolo.detect,
         "cloud": layout_cloud.detect,
         "ocr": ocr,
+        "ocr_medium": ocr_medium,
     }
 
 

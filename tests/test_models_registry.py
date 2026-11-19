@@ -17,7 +17,7 @@ from unittest import mock
 
 from app.api import models as models_api
 from app.core.ai.platform import center as ai_center
-from app.core.ingest import registry
+from app.core.ingest import ocr_setup, registry
 from tests.catalog_fixture import CATALOG_CAPABILITY, EDITOR, CatalogIsolated
 
 _HW_16G = {"vram_gb": 16.0, "vram_label": "16.0G", "gpu_name": "测试卡",
@@ -55,7 +55,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              prefs: dict | None = None,
              vlm_health: dict | None = None,
              vlm_install: dict | None = None,
-             vlm_weights: bool = False):
+             vlm_weights: bool = False,
+             ocr_weights: bool = False,
+             ocr_install: dict | None = None):
     with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
             mock.patch.object(registry.ai_center, "resolve_task",
@@ -72,6 +74,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
             mock.patch.object(registry.vlm_setup, "status",
                               return_value=vlm_install if vlm_install is not None else {"state": "idle"}), \
             mock.patch.object(registry.vlm_setup, "weights_ready", return_value=vlm_weights), \
+            mock.patch.object(ocr_setup, "weights_ready", return_value=ocr_weights), \
+            mock.patch.object(ocr_setup, "status",
+                              return_value=ocr_install if ocr_install is not None else {"state": "idle"}), \
             mock.patch.object(registry.model_prefs, "load",
                               return_value=prefs if prefs is not None else dict(_PREFS_EMPTY)):
         yield
@@ -90,8 +95,9 @@ class RegistryStatusTest(CatalogIsolated):
         self.assertEqual(entries["cloud_vision"]["state"], "ready")
         self.assertEqual(entries["cloud_vision"]["assigned"], "视觉一号")
         self.assertEqual(entries["mineru"]["state"], "ready")
-        self.assertEqual(entries["rapidocr_accurate"]["state"], "blocked")
-        self.assertIn("模型未核实、暂不开下载", entries["rapidocr_accurate"]["detail"])
+        self.assertEqual(entries["rapidocr_accurate"]["state"], "degraded")
+        self.assertIn("权重未下载", entries["rapidocr_accurate"]["detail"])
+        self.assertEqual(entries["rapidocr_accurate"]["action"], "install_ocr")
 
     def test_unconfigured_entries_are_degraded_with_real_actions(self) -> None:
         with _runtime():
@@ -109,10 +115,33 @@ class RegistryStatusTest(CatalogIsolated):
             entries = _states(registry.status()["entries"])
         self.assertEqual(entries["rapidocr_fast"]["state"], "degraded")
 
-    def test_accurate_never_offers_a_fake_download(self) -> None:
-        with _runtime(yolo=True, vision=_vision(), mineru=_mineru()):
+    def test_accurate_unlocks_real_install_and_ready(self) -> None:
+        """2.20.0 卡§6：准档 blocked→weight_present，权重在＝就绪、不在＝真安装动作。"""
+        with _runtime(ocr_weights=True):
             entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["rapidocr_accurate"]["state"], "ready")
         self.assertEqual(entries["rapidocr_accurate"]["action"], "")
+        self.assertIn("medium 权重已落地", entries["rapidocr_accurate"]["detail"])
+        with _runtime():
+            entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["rapidocr_accurate"]["state"], "degraded")
+        self.assertEqual(entries["rapidocr_accurate"]["action"], "install_ocr")
+
+    def test_accurate_install_error_is_blocked_with_retry(self) -> None:
+        with _runtime(ocr_install={"state": "error", "message": "权重源全不通"}):
+            entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["rapidocr_accurate"]["state"], "blocked")
+        self.assertIn("权重源全不通", entries["rapidocr_accurate"]["detail"])
+        self.assertEqual(entries["rapidocr_accurate"]["action"], "install_ocr")
+
+    def test_accurate_ready_pick_runs_only_ocr_medium(self) -> None:
+        from app.core.ingest.layout import router as layout_router
+
+        with _runtime(ocr_weights=True):
+            self.assertEqual(registry.gate_layout("rapidocr_accurate"),
+                             ("rapidocr_accurate", ""))
+            self.assertEqual(layout_router.plan("rapidocr_accurate"), ("ocr_medium",))
+        self.assertIn("ocr_medium", layout_router.default_providers())
 
     def test_status_is_recomputed_every_call(self) -> None:
         with _runtime(yolo=False), \
@@ -204,17 +233,30 @@ class CatalogDataTest(CatalogIsolated):
                           "%s 的 rule 不在通用契约里" % item["id"])
 
     def test_vlm_families_registered_with_six_g_floor(self) -> None:
+        """2.20.0 卡§6：六→三，留千问/面壁/书生，剔 SmolVLM/Phi/Gemma 全族。"""
         vlms = [item for item in registry.catalog() if item.get("family") == "vlm"]
-        self.assertEqual(len(vlms), 6)
+        self.assertEqual(sorted(item["id"] for item in vlms),
+                         ["vlm_intern", "vlm_minicpm", "vlm_qwen"])
         for item in vlms:
             self.assertGreaterEqual(int(item["min_vram"]), 6)
-            self.assertFalse(item["can_cpu"])
+        by_id = {item["id"]: item for item in vlms}
+        self.assertTrue(by_id["vlm_qwen"]["can_cpu"])
+        self.assertFalse(by_id["vlm_intern"]["can_cpu"])
+        self.assertFalse(by_id["vlm_minicpm"]["can_cpu"])
 
     def test_formula_four_registered(self) -> None:
         formulas = [item["id"] for item in registry.catalog()
                     if item.get("family") == "formula"]
         self.assertEqual(sorted(formulas),
                          ["formula_p2t", "formula_pp_l", "formula_pp_m", "formula_texify"])
+
+    def test_p2t_renamed_to_pix2text(self) -> None:
+        """卡§6：pix2tex 与 Pix2Text 是两家，全族文案改 Pix2Text·MFR。"""
+        entry = next(item for item in registry.catalog() if item["id"] == "formula_p2t")
+        self.assertEqual(entry["name"], "Pix2Text·MFR（公式专科）")
+        self.assertIn("Pix2Text", entry["summary"])
+        for item in registry.catalog():
+            self.assertNotIn("pix2tex", str(item.get("name", "")) + str(item.get("summary", "")))
 
     def test_tier_table_starts_at_six_g_no_four_g(self) -> None:
         tiers = registry.vram_tiers()
@@ -505,6 +547,9 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/vlm/status", paths)
         self.assertIn("/api/models/vlm/uninstall", paths)
         self.assertIn("/api/models/mineru/uninstall", paths)
+        self.assertIn("/api/models/ocr/install", paths)
+        self.assertIn("/api/models/ocr/status", paths)
+        self.assertIn("/api/models/ocr/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
 
@@ -512,7 +557,7 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 5)
+        self.assertEqual(len(writes), 7)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
@@ -539,6 +584,26 @@ class RegistryApiTest(CatalogIsolated):
                 models_api.mineru_uninstall()
         self.assertEqual(caught.exception.status_code, 400)
         self.assertIn("安装中", caught.exception.detail)
+
+    def test_ocr_uninstall_delegates_and_refusal_is_400(self) -> None:
+        from fastapi import HTTPException
+        with mock.patch.object(ocr_setup, "uninstall",
+                               return_value={"ok": True, "message": "已卸载"}):
+            self.assertTrue(models_api.ocr_uninstall()["ok"])
+        with mock.patch.object(ocr_setup, "uninstall",
+                               side_effect=ocr_setup.OcrSetupError("安装中，不能卸载")):
+            with self.assertRaises(HTTPException) as caught:
+                models_api.ocr_uninstall()
+        self.assertEqual(caught.exception.status_code, 400)
+
+    def test_ocr_install_refusal_is_400(self) -> None:
+        from fastapi import HTTPException
+        with mock.patch.object(ocr_setup, "start_install",
+                               side_effect=ocr_setup.OcrSetupError("权重源全不通")):
+            with self.assertRaises(HTTPException) as caught:
+                models_api.ocr_install()
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("权重源全不通", caught.exception.detail)
 
     def test_prefs_endpoint_rejects_unknown_id(self) -> None:
         from fastapi import HTTPException
