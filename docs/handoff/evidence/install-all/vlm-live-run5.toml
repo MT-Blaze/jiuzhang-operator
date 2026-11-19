@@ -1,0 +1,464 @@
+tag = "run5"
+base = "http://127.0.0.1:26646"
+operator_head = "d745a1870357aeb12b6d86d68f069d72617dc2ec"
+plugins_head = "b730a7e592b5a2ab85cb7d4c178b5acb742bfb97"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = ["http://127.0.0.1:26646/api/models/vlm_intern/install", "http://127.0.0.1:26646/api/models/vlm_minicpm/install"]
+dialogs = ["安装要下约 1.74GB（权重 1.12G＋视觉部件 0.63G）占磁盘，走国内镜像。发动机与千问座共享 engines/vlm/，已装过则只下本座权重。仍要安装？", "安装要下约 4.85GB（权重 3.81G＋视觉部件 1.04G）占磁盘，走国内镜像。发动机与千问座共享 engines/vlm/，已装过则只下本座权重。权重许可为 MiniCPM Model License：个人/研究免费，商用须遵官方条款。仍要安装？", "确认卸载「书生 InternVL3-2B（本地）」？在跑本座会先停服，再删除 engines/vlm/models/ 里本座两件权重（其他座不受影响；各座全卸空才连发动机目录一起删），下次使用要重新安装。已入库题目不受影响。", "确认卸载「面壁 MiniCPM-V-2.6（本地）」？在跑本座会先停服，再删除 engines/vlm/models/ 里本座两件权重（其他座不受影响；各座全卸空才连发动机目录一起删），下次使用要重新安装。已入库题目不受影响。"]
+deviations = ["prefs auto_image_seat=cloud_vision：冒烟显式选座，自动兜底不触 CPU 停跑令", "冒烟用 960×200 渲染小题（远低于 RDNA1 Vulkan 批宽阈值），非耗时基准", "发动机：py3.14 无 mineru-llama-cpp 0.2.3 预编译轮，pip 测速全败后走 engines/mineru 离线迁移（真机同款，不算出网）；副本预置迁移源复现真机前置（mineru 本地座已装），非抄代码", "GGUF 权重资产住副本 engines/vlm/models/（真机暖驻留零接触）"]
+switch_log = []
+ok = true
+elapsed_s = 1945.2
+
+[timing]
+
+[timing.intern]
+total_wall_s = 66.9
+
+[timing.intern.per_question_wall_s]
+"书生小题1.png" = 30.5
+"书生小题2.png" = 48.7
+"书生小题3.png" = 66.9
+
+[timing.minicpm]
+total_wall_s = 375.4
+
+[timing.minicpm.per_question_wall_s]
+"面壁小题1.png" = 139.4
+"面壁小题2.png" = 258.4
+"面壁小题3.png" = 375.4
+
+[servers]
+
+[[servers.intern]]
+pid = 19288
+parent = "16128"
+cmdline = "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\llama-bin\\llama-server.exe --model E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\InternVL3-2B.Q4_K_M.gguf --mmproj E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\InternVL3-2B.mmproj-f16.gguf --host 127.0.0.1 --port 26758 --api-key fdfe9af20593e548ddbb38ebeebd5c26 -ngl 999 --ctx-size 8192 --jinja"
+
+[[servers.minicpm]]
+pid = 22900
+parent = "16128"
+cmdline = "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\llama-bin\\llama-server.exe --model E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\ggml-model-Q3_K_M.gguf --mmproj E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\mmproj-model-f16.gguf --host 127.0.0.1 --port 27908 --api-key 6a84cabcf2bf1fc39a10ef1696766303 -ngl 999 --ctx-size 8192 --jinja"
+
+[install_status_intern]
+state = "done"
+step = "完成"
+message = "书生 InternVL3-2B 已就绪（mineru-llama-cpp 0.2.1，Vulkan 发动机），GGUF 权重已预取。"
+
+[install_status_minicpm]
+state = "done"
+step = "完成"
+message = "面壁 MiniCPM-V-2.6 已就绪（mineru-llama-cpp 0.2.1，Vulkan 发动机），GGUF 权重已预取。"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "d745a187"
+plugins = "b730a7e5"
+
+[[checks]]
+name = "起服前无其他探针 llama-server（暖驻留父=65496 零接触）"
+ok = true
+
+[checks.detail]
+before_pids = [15024]
+
+[[checks]]
+name = "初始 vlm_intern 未就绪＋install_vlm_intern（vlm_local/can_cpu）"
+ok = true
+
+[checks.detail]
+id = "vlm_intern"
+name = "书生 InternVL3-2B（本地）"
+capability = "recognize"
+family = "vlm"
+min_vram = 6
+can_cpu = true
+summary = "本地视觉大模型主力之一：中文卷面理解强；已接一键装与逐题推理，与千问座共享发动机、单活座切换。"
+brief = "本地 VLM·书生 2B：免费、卷子不出本机。要 6G 以上显存；你这台 6.0G → 显存够格，装完按真发动机包加速。"
+summary_usage = "干啥：本地视觉大模型读题写 LaTeX（行内 $...$、独立 $$...$$），中文卷面理解强，试卷不出本机，也能接公式裁图重认。准不准：2B 参数 int4 量化（Q4_K_M），日常印刷卷够用，复杂公式不如大档。快慢：2B 小档比千问 3B 更轻，显存够格走显卡加速；CPU 兜底明显更慢（慢一个数量级），首载模型更慢。吃不吃卡：吃，6G 显存起步走显卡；低于 6G 仍可安装，但只能 CPU 慢兜底，也可改云端视觉或 MinerU。免不免费：免费（Apache-2.0），权重约 1.74GB（Q4_K_M 约 1.12GB＋视觉投影 mmproj 约 0.63GB）从国内镜像点击预取；发动机与千问座共享 engines/vlm/，不碰底座、不装 torch。现状：推理通道已接线，选中后解析作业自动起本地服务；同一时刻只跑一座，切座先停旧座，失败显性列清单、不偷换引擎。"
+rule = "vlm_local"
+ready_detail = "已安装（llama-cpp {version}），书生座权重就绪且显存 {vram_label} 够 {min_vram}G 门槛；逐题本地推理已接线，试卷不出本机。"
+missing_detail = "未安装。点【安装】一键补齐书生座 GGUF 权重（国内镜像，约 1.74GB）；发动机与千问座共享，已装过则只下权重。"
+broken_detail = "{message}"
+install_error_detail = "安装失败：{message}"
+plan_recognize = ["vlm_local"]
+route_note_recognize = "识别：只交本地书生 VLM，本地切好单题截图后逐题交本机服务推理，失败不降级。"
+state = "degraded"
+detail = "未安装。点【安装】一键补齐书生座 GGUF 权重（国内镜像，约 1.74GB）；发动机与千问座共享，已装过则只下权重。"
+action = "install_vlm_intern"
+assigned = ""
+badge = "未安装"
+enabled = true
+
+[[checks]]
+name = "初始 vlm_minicpm 未就绪＋install_vlm_minicpm（vlm_local/can_cpu）"
+ok = true
+
+[checks.detail]
+id = "vlm_minicpm"
+name = "面壁 MiniCPM-V-2.6（本地）"
+capability = "recognize"
+family = "vlm"
+min_vram = 6
+can_cpu = true
+summary = "本地视觉大模型主力之一：小显存友好，6G 档可跑 Q3_K_M；已接一键装与逐题推理，与千问座共享发动机、单活座切换。"
+brief = "本地 VLM·面壁 8B·Q3：权重免费（商用须遵官方许可）、卷子不出本机。要 6G 以上显存；你这台 6.0G → 显存够格，装完按真发动机包加速。"
+summary_usage = "干啥：本地视觉大模型读题写 LaTeX（行内 $...$、独立 $$...$$），小显存友好，试卷不出本机，也能接公式裁图重认。准不准：8B 参数 Q3_K_M 量化，日常卷面理解好于 2B/3B 小档，极复杂公式仍不如云端大模型。快慢：显存够格走显卡加速；Q3_K_M 约 5.7G 显存占用，6G 卡稳进；CPU 兜底明显更慢（慢一个数量级），首载模型更慢。吃不吃卡：吃，6G 显存起步走显卡；低于 6G 仍可安装，但只能 CPU 慢兜底，也可改云端视觉或 MinerU。免不免费：权重免费下载（约 4.85GB：Q3_K_M 约 3.81GB＋视觉投影 mmproj 约 1.04GB，国内镜像点击预取），许可为 MiniCPM Model License——个人/学术研究免费，商用须遵守官方许可条款（按要求登记）；发动机与千问座共享 engines/vlm/，不碰底座、不装 torch。现状：推理通道已接线，选中后解析作业自动起本地服务；同一时刻只跑一座，切座先停旧座，失败显性列清单、不偷换引擎。"
+rule = "vlm_local"
+ready_detail = "已安装（llama-cpp {version}），面壁座权重就绪且显存 {vram_label} 够 {min_vram}G 门槛；逐题本地推理已接线，试卷不出本机。"
+missing_detail = "未安装。点【安装】一键补齐面壁座 GGUF 权重（国内镜像，约 4.85GB）；发动机与千问座共享，已装过则只下权重。商用前请阅读 MiniCPM Model License 官方条款。"
+broken_detail = "{message}"
+install_error_detail = "安装失败：{message}"
+plan_recognize = ["vlm_local"]
+route_note_recognize = "识别：只交本地面壁 VLM，本地切好单题截图后逐题交本机服务推理，失败不降级。"
+state = "degraded"
+detail = "未安装。点【安装】一键补齐面壁座 GGUF 权重（国内镜像，约 4.85GB）；发动机与千问座共享，已装过则只下权重。商用前请阅读 MiniCPM Model License 官方条款。"
+action = "install_vlm_minicpm"
+assigned = ""
+badge = "未安装"
+enabled = true
+
+[[checks]]
+name = "千问座/组合路未装引导＋texify 登记跳过不动"
+ok = true
+
+[checks.detail]
+vlm_qwen = "degraded"
+combo_vlm = "degraded"
+formula_texify = "blocked"
+
+[[checks]]
+name = "未安装行：书生/面壁 未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（未安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "书生 1.74GB＋共享发动机确认弹窗已摆并 accept"
+ok = true
+detail = ["安装要下约 1.74GB（权重 1.12G＋视觉部件 0.63G）占磁盘，走国内镜像。发动机与千问座共享 engines/vlm/，已装过则只下本座权重。仍要安装？"]
+
+[[checks]]
+name = "书生安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "书生 InternVL3-2B 已就绪（mineru-llama-cpp 0.2.1，Vulkan 发动机），GGUF 权重已预取。"
+
+[[checks]]
+name = "书生两件 GGUF 落地 sha256 逐字一致"
+ok = true
+
+[[checks.detail]]
+name = "InternVL3-2B.Q4_K_M.gguf"
+bytes = 1116759488
+sha256 = "201270a0982bdd0d246040c9aef46f35456f0cb1e60c2a96280b0c706052b7e8"
+match = true
+
+[[checks.detail]]
+name = "InternVL3-2B.mmproj-f16.gguf"
+bytes = 628237888
+sha256 = "99bc7344acdafbe38c908ee14439cfb68475aefbbd692cb7436cb80f0b8fef6b"
+match = true
+
+[[checks]]
+name = "书生已安装行：就绪＋【卸载】钮"
+ok = true
+
+[[checks]]
+name = "发动机真二进制现算＝Vulkan（副本内 ggml-vulkan.dll）"
+ok = true
+
+[checks.detail]
+bin = "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\llama-bin"
+origin = "迁移"
+
+[[checks]]
+name = "GPU 锁自持（起 llama-server 前）"
+ok = true
+
+[[checks]]
+name = "就绪后 vlm_intern 进识别下拉"
+ok = true
+detail = ["auto", "vlm_intern", "combo_pp_m"]
+
+[[checks]]
+name = "书生 三图一批次各立（解析请求 201）"
+ok = true
+detail = 201
+
+[[checks]]
+name = "书生 三批全部识别收口"
+ok = true
+
+[checks.detail]
+done = ["书生小题1.png", "书生小题2.png", "书生小题3.png"]
+elapsed_s = 66.9
+
+[[checks]]
+name = "书生 各批 1 道非占位待审题＋零失败清单"
+ok = true
+
+[[checks.detail]]
+name = "书生小题1.png"
+items = 1
+failures = []
+stem = "1. 解方程：$x + 3 = 7$，求 $x$ 的值。"
+
+[[checks.detail]]
+name = "书生小题2.png"
+items = 1
+failures = []
+stem = "2. 解方程：$2x - 5 = 9$，求 $x$ 的值。"
+
+[[checks.detail]]
+name = "书生小题3.png"
+items = 1
+failures = []
+stem = "3. 若 $3x = 12$，求 $x$ 的值。"
+
+[[checks]]
+name = "书生冒烟时 llama-server 挂书生权重（InternVL3-2B.Q4_K_M）"
+ok = true
+
+[[checks.detail]]
+pid = 19288
+model = "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\InternVL3-2B.Q4_K_M.gguf"
+
+[[checks]]
+name = "面壁 4.85GB＋MiniCPM Model License 确认弹窗已摆并 accept"
+ok = true
+detail = ["安装要下约 4.85GB（权重 3.81G＋视觉部件 1.04G）占磁盘，走国内镜像。发动机与千问座共享 engines/vlm/，已装过则只下本座权重。权重许可为 MiniCPM Model License：个人/研究免费，商用须遵官方条款。仍要安装？"]
+
+[[checks]]
+name = "面壁安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "面壁 MiniCPM-V-2.6 已就绪（mineru-llama-cpp 0.2.1，Vulkan 发动机），GGUF 权重已预取。"
+
+[[checks]]
+name = "面壁两件 sha256 逐字一致且书生两件仍在（共享目录共存）"
+ok = true
+
+[checks.detail]
+intern_present = ["InternVL3-2B.Q4_K_M.gguf", "InternVL3-2B.mmproj-f16.gguf"]
+
+[[checks.detail.minicpm]]
+name = "ggml-model-Q3_K_M.gguf"
+bytes = 3806596448
+sha256 = "5a050acc927498ca4e05d38207bbd89d013154a7b9b24ac9ff4e45c870bc7f62"
+match = true
+
+[[checks.detail.minicpm]]
+name = "mmproj-model-f16.gguf"
+bytes = 1044425152
+sha256 = "4485f68a0f1aa404c391e788ea88ea653c100d8e98fe572698f701e5809711fd"
+match = true
+
+[[checks]]
+name = "就绪后 vlm_minicpm 进识别下拉"
+ok = true
+detail = ["auto", "vlm_intern", "vlm_minicpm", "combo_pp_m"]
+
+[[checks]]
+name = "面壁 三图一批次各立（解析请求 201）"
+ok = true
+detail = 201
+
+[[checks]]
+name = "面壁 三批全部识别收口"
+ok = true
+
+[checks.detail]
+done = ["面壁小题1.png", "面壁小题2.png", "面壁小题3.png"]
+elapsed_s = 375.4
+
+[[checks]]
+name = "面壁 各批 1 道非占位待审题＋零失败清单"
+ok = true
+
+[[checks.detail]]
+name = "面壁小题1.png"
+items = 1
+failures = []
+stem = "解方程：x + 3 = 7，求 x 的值。"
+
+[[checks.detail]]
+name = "面壁小题2.png"
+items = 1
+failures = []
+stem = "解方程：2x - 5 = 9，求 x 的值。"
+
+[[checks.detail]]
+name = "面壁小题3.png"
+items = 1
+failures = []
+stem = "3. 若 3x = 12，求 x 的值。"
+
+[[checks]]
+name = "面壁冒烟时 llama-server 改挂面壁权重（ggml-model-Q3_K_M）"
+ok = true
+
+[[checks.detail]]
+pid = 22900
+model = "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\vlm-live\\run5\\operator\\engines\\vlm\\models\\ggml-model-Q3_K_M.gguf"
+
+[[checks]]
+name = "切座真证：书生 llama-server 进程已停（单活座）"
+ok = true
+
+[checks.detail]
+intern_pids = [19288]
+minicpm_pids = [22900]
+
+[[checks]]
+name = "卸载确认弹窗摆明本座两件（其他座不受影响）"
+ok = true
+detail = ["确认卸载「书生 InternVL3-2B（本地）」？在跑本座会先停服，再删除 engines/vlm/models/ 里本座两件权重（其他座不受影响；各座全卸空才连发动机目录一起删），下次使用要重新安装。已入库题目不受影响。"]
+
+[[checks]]
+name = "卸书生只删两件"
+ok = true
+
+[[checks]]
+name = "面壁两件与发动机目录原样保留（互不误删）"
+ok = true
+
+[checks.detail]
+minicpm_present = ["ggml-model-Q3_K_M.gguf", "mmproj-model-f16.gguf"]
+
+[[checks]]
+name = "卸书生后面壁仍就绪、书生回未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "面壁卸载弹窗摆明在跑先停服"
+ok = true
+detail = ["确认卸载「面壁 MiniCPM-V-2.6（本地）」？在跑本座会先停服，再删除 engines/vlm/models/ 里本座两件权重（其他座不受影响；各座全卸空才连发动机目录一起删），下次使用要重新安装。已入库题目不受影响。"]
+
+[[checks]]
+name = "再卸面壁目录删净（全空才连发动机删）＋在跑服务已停"
+ok = true
+
+[checks.detail]
+engines_vlm_exists = false
+servers = []
+
+[[checks]]
+name = "三查 fetch(/parent.document/localStorage=0"
+ok = true
+
+[checks.detail]
+"fetch(" = 0
+"parent.document" = 0
+localStorage = 0
+
+[[checks]]
+name = "页面零 JS 异常"
+ok = true
+detail = []
+
+[[checks]]
+name = "全程零 HTTP 失败"
+ok = true
+detail = []
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 26646
+
+[[checks]]
+name = "GPU 锁用完已删"
+ok = true
+
+[[checks]]
+name = "llama-server 零孤儿（lifespan 停服）"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[checks]]
+name = "副本服务 python 孤儿零"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[weights_intern]]
+name = "InternVL3-2B.Q4_K_M.gguf"
+bytes = 1116759488
+sha256 = "201270a0982bdd0d246040c9aef46f35456f0cb1e60c2a96280b0c706052b7e8"
+match = true
+
+[[weights_intern]]
+name = "InternVL3-2B.mmproj-f16.gguf"
+bytes = 628237888
+sha256 = "99bc7344acdafbe38c908ee14439cfb68475aefbbd692cb7436cb80f0b8fef6b"
+match = true
+
+[[smoke_intern]]
+name = "书生小题1.png"
+items = 1
+failures = []
+stem = "1. 解方程：$x + 3 = 7$，求 $x$ 的值。"
+
+[[smoke_intern]]
+name = "书生小题2.png"
+items = 1
+failures = []
+stem = "2. 解方程：$2x - 5 = 9$，求 $x$ 的值。"
+
+[[smoke_intern]]
+name = "书生小题3.png"
+items = 1
+failures = []
+stem = "3. 若 $3x = 12$，求 $x$ 的值。"
+
+[[weights_minicpm]]
+name = "ggml-model-Q3_K_M.gguf"
+bytes = 3806596448
+sha256 = "5a050acc927498ca4e05d38207bbd89d013154a7b9b24ac9ff4e45c870bc7f62"
+match = true
+
+[[weights_minicpm]]
+name = "mmproj-model-f16.gguf"
+bytes = 1044425152
+sha256 = "4485f68a0f1aa404c391e788ea88ea653c100d8e98fe572698f701e5809711fd"
+match = true
+
+[[smoke_minicpm]]
+name = "面壁小题1.png"
+items = 1
+failures = []
+stem = "解方程：x + 3 = 7，求 x 的值。"
+
+[[smoke_minicpm]]
+name = "面壁小题2.png"
+items = 1
+failures = []
+stem = "解方程：2x - 5 = 9，求 x 的值。"
+
+[[smoke_minicpm]]
+name = "面壁小题3.png"
+items = 1
+failures = []
+stem = "3. 若 3x = 12，求 x 的值。"
