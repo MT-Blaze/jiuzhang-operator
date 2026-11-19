@@ -13,6 +13,10 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 RACE_TIMEOUT = 2.0
+# hf-mirror 非 LFS 小件（词表/yml）的 CDN 对脚本 UA 回 403（座3 探针实证：
+# Python-urllib 与带 JiuzhangOperator 记号的 UA 全拒，浏览器/curl/Wget UA 全通）；
+# 测速与下载同用此 UA，测速结果才代表真下载能力。
+WEIGHT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 PIP_MIRRORS = (
     ("阿里云", "https://mirrors.aliyun.com/pypi/simple/"),
     ("清华", "https://pypi.tuna.tsinghua.edu.cn/simple"),
@@ -30,8 +34,7 @@ def _probe(name: str, url: str) -> dict[str, Any]:
     started = time.monotonic()
     ok = False
     try:
-        request = urllib.request.Request(
-            url, headers={"User-Agent": "JiuzhangOperator/1.0 (+mirror-race)"})
+        request = urllib.request.Request(url, headers={"User-Agent": WEIGHT_UA})
         with urllib.request.urlopen(request, timeout=RACE_TIMEOUT) as response:
             response.read(256)
             ok = 200 <= response.status < 400

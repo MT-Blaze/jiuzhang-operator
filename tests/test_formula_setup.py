@@ -16,7 +16,7 @@ from unittest import mock
 
 import numpy as np
 
-from app.core.ingest import formula_setup, registry
+from app.core.ingest import formula_setup, mirrors, registry
 from app.core.ingest.recognize import formula_p2t, formula_pp_l, formula_pp_m
 
 # 测试用小权重规格（形状与真 VARIANTS 一致：name, size, sha256, repo, rel）。
@@ -112,6 +112,16 @@ class InstallTest(unittest.TestCase):
         self.assertFalse(target.with_suffix(".onnx.part").exists())
         self.assertEqual(opened.call_count, 1)
 
+    def test_download_sends_mirror_compatible_user_agent(self) -> None:
+        # hf-mirror 非 LFS 小件对脚本 UA 回 403（座3 探针 run1 实证）；下载必须带 WEIGHT_UA。
+        payload = b"ua-check-bytes"
+        spec = self._spec("tiny.onnx", payload)
+        with mock.patch.object(formula_setup.urllib.request, "urlopen",
+                               return_value=_Response(payload)) as opened:
+            formula_setup._download_one("m", spec, self._source())
+        request = opened.call_args[0][0]
+        self.assertEqual(request.get_header("User-agent"), mirrors.WEIGHT_UA)
+
     def test_sha_mismatch_retries_then_switches_and_all_fail_is_loud(self) -> None:
         payload = b"wrong-bytes"
         spec = self._spec("tiny.onnx", payload, "0" * 64)
@@ -146,7 +156,7 @@ class InstallTest(unittest.TestCase):
         with mock.patch.object(formula_setup.urllib.request, "urlopen",
                                return_value=_Response(payload)) as opened:
             formula_setup._download_one("m", spec, raced)
-        url = opened.call_args[0][0]
+        url = opened.call_args[0][0].full_url
         self.assertIn("/PP-FormulaNet_plus-M/m.yml", url)
         self.assertNotIn("m.onnx", url)
 
@@ -160,7 +170,7 @@ class InstallTest(unittest.TestCase):
         with mock.patch.object(formula_setup.urllib.request, "urlopen",
                                return_value=_Response(payload)) as opened:
             formula_setup._download_one("l", spec, raced)
-        url = opened.call_args[0][0]
+        url = opened.call_args[0][0].full_url
         self.assertIn("/PaddlePaddle/PP-FormulaNet_plus-L/resolve/master/inference.yml", url)
         self.assertNotIn("RapidDoc", url)
 

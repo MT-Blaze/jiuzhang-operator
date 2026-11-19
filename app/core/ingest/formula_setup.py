@@ -151,7 +151,9 @@ def _download_one(variant: str, spec: tuple, sources: list[dict[str, Any]]) -> N
             hasher = hashlib.sha256()
             written = 0
             try:
-                with urllib.request.urlopen(url, timeout=WEIGHT_TIMEOUT) as response, \
+                request = urllib.request.Request(
+                    url, headers={"User-Agent": mirrors.WEIGHT_UA})
+                with urllib.request.urlopen(request, timeout=WEIGHT_TIMEOUT) as response, \
                         part.open("wb") as sink:
                     while True:
                         chunk = response.read(1024 * 1024)
