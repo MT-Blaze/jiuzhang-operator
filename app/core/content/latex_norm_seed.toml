@@ -1,0 +1,2177 @@
+# 记号标准字典·闭集种子（2.21.0 卡 §2）。整机一套，出厂冻结。
+# 来源标签只到标准族级（条款级核对＝显性欠账，见 docs/handoff/evidence/latex-norm-recon/standards.toml）。
+# 合法来源仅三类：ISO/GB-T（同码合写）、ISO 80000-2、GB 3102.11（不一致才分写）、教材版式约定。
+# 非标与 OCR 误识一律住开集 norm_corrections，不进本种子。
+# code 用 TOML 字面量串（单引号），反斜杠逐字保留；default 是变体 0 基下标。
+# 多 token 样例码（环境/ infix 形）只作展示与渲染，不进命令级别名改写（latex_norm._command_name 双向跳过）。
+
+seed_version = 1
+entry_count = 223
+variant_count = 271
+
+# ═══════════════ 集合逻辑（32 条目） ═══════════════
+
+[[entries]]
+key = "empty_set"
+name = "空集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\varnothing'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\emptyset'
+label = "教材版式约定"
+
+[[entries]]
+key = "element_of"
+name = "属于"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\in'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "not_element_of"
+name = "不属于"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\notin'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\not\in'
+label = "教材版式约定"
+
+[[entries]]
+key = "contains_member"
+name = "包含元素"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\ni'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\owns'
+label = "教材版式约定"
+
+[[entries]]
+key = "subset"
+name = "子集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\subset'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "subset_eq"
+name = "子集或等于"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\subseteq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "subset_neq"
+name = "真子集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\subsetneq'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varsubsetneq'
+label = "教材版式约定"
+
+[[entries]]
+key = "supset"
+name = "超集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\supset'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "supset_eq"
+name = "超集或等于"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\supseteq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "supset_neq"
+name = "真超集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\supsetneq'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varsupsetneq'
+label = "教材版式约定"
+
+[[entries]]
+key = "not_subset_eq"
+name = "不包含于"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\nsubseteq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "not_supset_eq"
+name = "不包含"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\nsupseteq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "union"
+name = "并集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\cup'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "intersection"
+name = "交集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\cap'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "big_union"
+name = "大并集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\bigcup'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "big_intersection"
+name = "大交集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\bigcap'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "set_minus"
+name = "差集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\setminus'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\smallsetminus'
+label = "教材版式约定"
+
+[[entries]]
+key = "complement"
+name = "补集"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\complement'
+label = "教材版式约定"
+
+[[entries]]
+key = "forall"
+name = "全称量词"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\forall'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "exists"
+name = "存在量词"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\exists'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "not_exists"
+name = "不存在量词"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\nexists'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "negation"
+name = "逻辑非"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\neg'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\lnot'
+label = "教材版式约定"
+
+[[entries]]
+key = "conjunction"
+name = "逻辑与"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\land'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\wedge'
+label = "教材版式约定"
+
+[[entries]]
+key = "disjunction"
+name = "逻辑或"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\lor'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\vee'
+label = "教材版式约定"
+
+[[entries]]
+key = "implies"
+name = "蕴含"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\implies'
+label = "教材版式约定"
+
+[[entries]]
+key = "iff"
+name = "当且仅当"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\iff'
+label = "教材版式约定"
+
+[[entries]]
+key = "therefore"
+name = "所以"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\therefore'
+label = "教材版式约定"
+
+[[entries]]
+key = "because"
+name = "因为"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\because'
+label = "教材版式约定"
+
+[[entries]]
+key = "top"
+name = "顶（真）"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\top'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "bot"
+name = "底（假）"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\bot'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "vdash"
+name = "语法推出"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\vdash'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "models"
+name = "语义满足"
+category = "集合逻辑"
+default = 0
+[[entries.variants]]
+code = '\models'
+label = "ISO/GB-T"
+
+# ═══════════════ 关系不等（19 条目） ═══════════════
+
+[[entries]]
+key = "le"
+name = "小于等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\leqslant'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\le'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\leq'
+label = "教材版式约定"
+
+[[entries]]
+key = "ge"
+name = "大于等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\geqslant'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\ge'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\geq'
+label = "教材版式约定"
+
+[[entries]]
+key = "ne"
+name = "不等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\ne'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\neq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "eq"
+name = "等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '='
+label = "ISO/GB-T"
+
+[[entries]]
+key = "lt"
+name = "小于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\lt'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "gt"
+name = "大于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\gt'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "ll"
+name = "远小于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\ll'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "gg"
+name = "远大于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\gg'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "equiv"
+name = "恒等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\equiv'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "sim"
+name = "相似"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\sim'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "simeq"
+name = "渐近等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\simeq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "approx"
+name = "约等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\approx'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "cong"
+name = "全等"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\cong'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "asymp"
+name = "渐近"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\asymp'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "propto"
+name = "正比于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\propto'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "prec"
+name = "前序"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\prec'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "succ"
+name = "后序"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\succ'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "doteq"
+name = "点等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\doteq'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "triangleq"
+name = "三角等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\triangleq'
+label = "教材版式约定"
+
+# ═══════════════ 运算分数（36 条目） ═══════════════
+
+[[entries]]
+key = "frac"
+name = "分数"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\frac'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\dfrac'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\tfrac'
+label = "教材版式约定"
+[[entries.variants]]
+code = '{a \over b}'
+label = "教材版式约定"
+
+[[entries]]
+key = "binom"
+name = "二项式系数"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\binom'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\dbinom'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\tbinom'
+label = "教材版式约定"
+[[entries.variants]]
+code = '{n \choose k}'
+label = "教材版式约定"
+
+[[entries]]
+key = "sqrt"
+name = "根号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\sqrt'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "surd"
+name = "根号签"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\surd'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "plus_minus"
+name = "正负号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\pm'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "minus_plus"
+name = "负正号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\mp'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "times"
+name = "乘号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\times'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "cdot"
+name = "点乘"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\cdot'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "div"
+name = "除号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\div'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "ast"
+name = "星号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\ast'
+label = "教材版式约定"
+
+[[entries]]
+key = "star"
+name = "五角星"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\star'
+label = "教材版式约定"
+
+[[entries]]
+key = "circ"
+name = "空心圆"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\circ'
+label = "教材版式约定"
+
+[[entries]]
+key = "bullet"
+name = "实心圆点"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\bullet'
+label = "教材版式约定"
+
+[[entries]]
+key = "oplus"
+name = "直和"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\oplus'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "ominus"
+name = "直差"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\ominus'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "otimes"
+name = "张量积"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\otimes'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "odot"
+name = "点积圆"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\odot'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "oslash"
+name = "斜杠圆"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\oslash'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "sum"
+name = "求和"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\sum'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "prod"
+name = "求积"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\prod'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "int"
+name = "积分"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\int'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "iint"
+name = "二重积分"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\iint'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "iiint"
+name = "三重积分"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\iiint'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "oint"
+name = "环路积分"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\oint'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "partial"
+name = "偏微分"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\partial'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "nabla"
+name = "梯度算子"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\nabla'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "infty"
+name = "无穷大"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\infty'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "lim"
+name = "极限"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\lim'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "aleph"
+name = "阿列夫数"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\aleph'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "hbar"
+name = "约化普朗克常量"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\hbar'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "ell"
+name = "手写体 l"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\ell'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "real_part"
+name = "实部"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\Re'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "imag_part"
+name = "虚部"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\Im'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "weierstrass_p"
+name = "魏尔斯特拉斯 p"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\wp'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "prime"
+name = "撇号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\prime'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "backprime"
+name = "反撇号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\backprime'
+label = "教材版式约定"
+
+# ═══════════════ 结构环境（25 条目） ═══════════════
+
+[[entries]]
+key = "matrix_paren"
+name = "圆括号矩阵"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{pmatrix} a & b \\ c & d \end{pmatrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "matrix_bracket"
+name = "方括号矩阵"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{bmatrix} a & b \\ c & d \end{bmatrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "matrix_vert"
+name = "行列式"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{vmatrix} a & b \\ c & d \end{vmatrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "matrix_norm"
+name = "双竖线矩阵"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{Vmatrix} a & b \\ c & d \end{Vmatrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "matrix_plain"
+name = "无括号矩阵"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{matrix} a & b \\ c & d \end{matrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "matrix_small"
+name = "小型矩阵"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}'
+label = "教材版式约定"
+
+[[entries]]
+key = "cases"
+name = "分段函数"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{cases} a, & x > 0 \\ b, & x \le 0 \end{cases}'
+label = "教材版式约定"
+
+[[entries]]
+key = "dcases"
+name = "显示式分段"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{dcases} a, & x > 0 \\ b, & x \le 0 \end{dcases}'
+label = "教材版式约定"
+
+[[entries]]
+key = "aligned"
+name = "多行对齐"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{aligned} a &= b \\ &= c \end{aligned}'
+label = "教材版式约定"
+
+[[entries]]
+key = "array"
+name = "数组"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\begin{array}{cc} a & b \\ c & d \end{array}'
+label = "教材版式约定"
+
+[[entries]]
+key = "left_right"
+name = "自适应定界"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\left( \frac{a}{b} \right)'
+label = "教材版式约定"
+
+[[entries]]
+key = "big_delim"
+name = "手动大定界"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\bigl( \frac{a}{b} \bigr)'
+label = "教材版式约定"
+
+[[entries]]
+key = "langle"
+name = "左角括号"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\langle'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "rangle"
+name = "右角括号"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\rangle'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "lvert"
+name = "左竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\lvert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "rvert"
+name = "右竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\rvert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "vert"
+name = "竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\vert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "lVert"
+name = "左双竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\lVert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "rVert"
+name = "右双竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\rVert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Vert"
+name = "双竖线"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\Vert'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "lbrace"
+name = "左花括号"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\lbrace'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\{'
+label = "教材版式约定"
+
+[[entries]]
+key = "rbrace"
+name = "右花括号"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\rbrace'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\}'
+label = "教材版式约定"
+
+[[entries]]
+key = "overset"
+name = "上置"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\overset'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\stackrel'
+label = "教材版式约定"
+
+[[entries]]
+key = "underset"
+name = "下置"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\underset'
+label = "教材版式约定"
+
+[[entries]]
+key = "substack"
+name = "多行上下标"
+category = "结构环境"
+default = 0
+[[entries.variants]]
+code = '\sum_{\substack{i < n \\ j < m}}'
+label = "教材版式约定"
+
+# ═══════════════ 希腊变体（35 条目） ═══════════════
+
+[[entries]]
+key = "alpha"
+name = "希腊字母 α（alpha）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\alpha'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "beta"
+name = "希腊字母 β（beta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\beta'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "gamma"
+name = "希腊字母 γ（gamma）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\gamma'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "delta"
+name = "希腊字母 δ（delta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\delta'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "epsilon"
+name = "希腊字母 ε（epsilon）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\epsilon'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varepsilon'
+label = "教材版式约定"
+
+[[entries]]
+key = "zeta"
+name = "希腊字母 ζ（zeta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\zeta'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "eta"
+name = "希腊字母 η（eta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\eta'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "theta"
+name = "希腊字母 θ（theta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\theta'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\vartheta'
+label = "教材版式约定"
+
+[[entries]]
+key = "iota"
+name = "希腊字母 ι（iota）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\iota'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "kappa"
+name = "希腊字母 κ（kappa）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\kappa'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varkappa'
+label = "教材版式约定"
+
+[[entries]]
+key = "lambda"
+name = "希腊字母 λ（lambda）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\lambda'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "mu"
+name = "希腊字母 μ（mu）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\mu'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "nu"
+name = "希腊字母 ν（nu）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\nu'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "xi"
+name = "希腊字母 ξ（xi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\xi'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "omicron"
+name = "希腊字母 ο（omicron）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\omicron'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "pi"
+name = "希腊字母 π（pi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\pi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varpi'
+label = "教材版式约定"
+
+[[entries]]
+key = "rho"
+name = "希腊字母 ρ（rho）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\rho'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varrho'
+label = "教材版式约定"
+
+[[entries]]
+key = "sigma"
+name = "希腊字母 σ（sigma）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\sigma'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varsigma'
+label = "教材版式约定"
+
+[[entries]]
+key = "tau"
+name = "希腊字母 τ（tau）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\tau'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "upsilon"
+name = "希腊字母 υ（upsilon）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\upsilon'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "phi"
+name = "希腊字母 φ（phi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\varphi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\phi'
+label = "教材版式约定"
+
+[[entries]]
+key = "chi"
+name = "希腊字母 χ（chi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\chi'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "psi"
+name = "希腊字母 ψ（psi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\psi'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "omega"
+name = "希腊字母 ω（omega）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\omega'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Gamma"
+name = "希腊大写 Γ（Gamma）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Gamma'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varGamma'
+label = "教材版式约定"
+
+[[entries]]
+key = "Delta"
+name = "希腊大写 Δ（Delta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Delta'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varDelta'
+label = "教材版式约定"
+
+[[entries]]
+key = "Theta"
+name = "希腊大写 Θ（Theta）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Theta'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varTheta'
+label = "教材版式约定"
+
+[[entries]]
+key = "Lambda"
+name = "希腊大写 Λ（Lambda）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Lambda'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varLambda'
+label = "教材版式约定"
+
+[[entries]]
+key = "Xi"
+name = "希腊大写 Ξ（Xi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Xi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varXi'
+label = "教材版式约定"
+
+[[entries]]
+key = "Pi"
+name = "希腊大写 Π（Pi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Pi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varPi'
+label = "教材版式约定"
+
+[[entries]]
+key = "Sigma"
+name = "希腊大写 Σ（Sigma）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Sigma'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varSigma'
+label = "教材版式约定"
+
+[[entries]]
+key = "Upsilon"
+name = "希腊大写 Υ（Upsilon）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Upsilon'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varUpsilon'
+label = "教材版式约定"
+
+[[entries]]
+key = "Phi"
+name = "希腊大写 Φ（Phi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Phi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varPhi'
+label = "教材版式约定"
+
+[[entries]]
+key = "Psi"
+name = "希腊大写 Ψ（Psi）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Psi'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varPsi'
+label = "教材版式约定"
+
+[[entries]]
+key = "Omega"
+name = "希腊大写 Ω（Omega）"
+category = "希腊变体"
+default = 0
+[[entries.variants]]
+code = '\Omega'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\varOmega'
+label = "教材版式约定"
+
+# ═══════════════ 箭头映射（30 条目） ═══════════════
+
+[[entries]]
+key = "to"
+name = "右箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\to'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\rightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "gets"
+name = "左箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\leftarrow'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\gets'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "leftrightarrow"
+name = "双向箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\leftrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Rightarrow"
+name = "右双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Rightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Leftarrow"
+name = "左双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Leftarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Leftrightarrow"
+name = "双向双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Leftrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "longrightarrow"
+name = "长右箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\longrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "longleftarrow"
+name = "长左箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\longleftarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Longrightarrow"
+name = "长右双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Longrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Longleftarrow"
+name = "长左双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Longleftarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "longleftrightarrow"
+name = "长双向箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\longleftrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Longleftrightarrow"
+name = "长双向双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Longleftrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "mapsto"
+name = "映射箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\mapsto'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "longmapsto"
+name = "长映射箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\longmapsto'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "uparrow"
+name = "上箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\uparrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "downarrow"
+name = "下箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\downarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "updownarrow"
+name = "上下箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\updownarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Uparrow"
+name = "上双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Uparrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Downarrow"
+name = "下双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Downarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "Updownarrow"
+name = "上下双箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\Updownarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "nearrow"
+name = "右上箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\nearrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "searrow"
+name = "右下箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\searrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "swarrow"
+name = "左下箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\swarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "nwarrow"
+name = "左上箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\nwarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "hookrightarrow"
+name = "右钩箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\hookrightarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "hookleftarrow"
+name = "左钩箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\hookleftarrow'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "rightsquigarrow"
+name = "右波浪箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\rightsquigarrow'
+label = "教材版式约定"
+
+[[entries]]
+key = "leadsto"
+name = " leads 箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\leadsto'
+label = "教材版式约定"
+
+[[entries]]
+key = "rightleftharpoons"
+name = "右平衡箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\rightleftharpoons'
+label = "教材版式约定"
+
+[[entries]]
+key = "leftrightharpoons"
+name = "左平衡箭头"
+category = "箭头映射"
+default = 0
+[[entries.variants]]
+code = '\leftrightharpoons'
+label = "教材版式约定"
+
+# ═══════════════ 重音装饰（27 条目） ═══════════════
+
+[[entries]]
+key = "hat"
+name = "帽饰"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\hat'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\widehat'
+label = "教材版式约定"
+
+[[entries]]
+key = "tilde"
+name = "波浪饰"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\tilde'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\widetilde'
+label = "教材版式约定"
+
+[[entries]]
+key = "bar"
+name = "横线饰"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\bar'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\overline'
+label = "教材版式约定"
+
+[[entries]]
+key = "vec"
+name = "向量箭头"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\vec'
+label = "教材版式约定"
+
+[[entries]]
+key = "dot"
+name = "一阶导数点"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\dot'
+label = "教材版式约定"
+
+[[entries]]
+key = "ddot"
+name = "二阶导数点"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\ddot'
+label = "教材版式约定"
+
+[[entries]]
+key = "dddot"
+name = "三阶导数点"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\dddot'
+label = "教材版式约定"
+
+[[entries]]
+key = "acute"
+name = "锐音符"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\acute'
+label = "教材版式约定"
+
+[[entries]]
+key = "grave"
+name = "钝音符"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\grave'
+label = "教材版式约定"
+
+[[entries]]
+key = "check"
+name = "抑扬符"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\check'
+label = "教材版式约定"
+
+[[entries]]
+key = "breve"
+name = "短音符"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\breve'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathring"
+name = "环音符"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathring'
+label = "教材版式约定"
+
+[[entries]]
+key = "overrightarrow"
+name = "上右箭头"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\overrightarrow'
+label = "教材版式约定"
+
+[[entries]]
+key = "overleftarrow"
+name = "上左箭头"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\overleftarrow'
+label = "教材版式约定"
+
+[[entries]]
+key = "overleftrightarrow"
+name = "上双向箭头"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\overleftrightarrow'
+label = "教材版式约定"
+
+[[entries]]
+key = "overbrace"
+name = "上花括号"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\overbrace'
+label = "教材版式约定"
+
+[[entries]]
+key = "underbrace"
+name = "下花括号"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\underbrace'
+label = "教材版式约定"
+
+[[entries]]
+key = "underline"
+name = "下划线"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\underline'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathbb"
+name = "黑板粗体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathbb'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathbf"
+name = "粗体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathbf'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathrm"
+name = "罗马体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathrm'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathcal"
+name = "花体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathcal'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathit"
+name = "意大利体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathit'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathsf"
+name = "无衬线体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathsf'
+label = "教材版式约定"
+
+[[entries]]
+key = "mathtt"
+name = "打字机体"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\mathtt'
+label = "教材版式约定"
+
+[[entries]]
+key = "boldsymbol"
+name = "粗符号"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\boldsymbol'
+label = "教材版式约定"
+
+[[entries]]
+key = "operatorname"
+name = "算子名"
+category = "重音装饰"
+default = 0
+[[entries.variants]]
+code = '\operatorname'
+label = "教材版式约定"
+
+# ═══════════════ 单位杂项（19 条目） ═══════════════
+
+[[entries]]
+key = "degree"
+name = "角度符号"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '^{\circ}'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\degree'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "percent"
+name = "百分号"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\%'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "differential_d"
+name = "微分 d（正体）"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\mathrm{d}'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "euler_e"
+name = "自然常数 e（正体）"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\mathrm{e}'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "imaginary_i"
+name = "虚数单位 i（正体）"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\mathrm{i}'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "angle"
+name = "角"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\angle'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "measuredangle"
+name = "量角"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\measuredangle'
+label = "教材版式约定"
+
+[[entries]]
+key = "triangle"
+name = "三角形"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\triangle'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "square"
+name = "正方形"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\square'
+label = "教材版式约定"
+[[entries.variants]]
+code = '\Box'
+label = "教材版式约定"
+
+[[entries]]
+key = "diamond"
+name = "菱形"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\diamond'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "parallel"
+name = "平行"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\parallel'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "perp"
+name = "垂直"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\perp'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "mid"
+name = "整除"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\mid'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "nmid"
+name = "不整除"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\nmid'
+label = "ISO/GB-T"
+
+[[entries]]
+key = "smile"
+name = "微笑弧"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\smile'
+label = "教材版式约定"
+
+[[entries]]
+key = "frown"
+name = "皱眉弧"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\frown'
+label = "教材版式约定"
+
+[[entries]]
+key = "checkmark"
+name = "勾号"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\checkmark'
+label = "教材版式约定"
+
+[[entries]]
+key = "dagger"
+name = "剑号"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\dagger'
+label = "教材版式约定"
+
+[[entries]]
+key = "ddagger"
+name = "双剑号"
+category = "单位杂项"
+default = 0
+[[entries.variants]]
+code = '\ddagger'
+label = "教材版式约定"

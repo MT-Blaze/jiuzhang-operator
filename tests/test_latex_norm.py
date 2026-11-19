@@ -1,4 +1,4 @@
-"""记号标准字典整机库（2.21.0 卡 §1/§6）阶段A一案：结构/迁移/四态/备份机器层。
+"""记号标准字典整机库（2.21.0 卡 §1/§2/§6）阶段A/B一案：结构/迁移/四态/备份机器层/种子四保险/渲染回写。
 
 运行：.venv/Scripts/python.exe -m unittest tests.test_latex_norm
 隔离：JZO_DATA_DIR 指临时目录，整机库与备份全在副本里，不碰用户 data/。
@@ -11,6 +11,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app.core import config
 from app.core.backup import service as backup
@@ -295,6 +296,169 @@ class NormBackupMachineLayerTest(unittest.TestCase):
         machine = config.settings.latex_norm_db_path
         self.assertEqual(machine.parent, self.data)
         self.assertNotIn("workspaces", machine.parts)
+
+
+class NormSeedTest(unittest.TestCase):
+    """阶段B：全量种子四保险＋渲染回写（卡 §2/§6）。隔离同上，不碰用户 data/。"""
+
+    _MINI = '''seed_version = 1
+entry_count = 2
+variant_count = 3
+[[entries]]
+key = "le"
+name = "小于等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\\leqslant'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\\le'
+label = "教材版式约定"
+[[entries]]
+key = "sqrt"
+name = "根号"
+category = "运算分数"
+default = 0
+[[entries.variants]]
+code = '\\sqrt'
+label = "ISO/GB-T"
+'''
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self.tmp.name) / "data"
+        self.data.mkdir()
+        self._old = os.environ.get("JZO_DATA_DIR")
+        os.environ["JZO_DATA_DIR"] = str(self.data)
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = self._old
+        self.tmp.cleanup()
+
+    def _write(self, text):
+        path = Path(self.tmp.name) / "mini_seed.toml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def _counts(self):
+        con = latex_norm.connect()
+        try:
+            return (con.execute("SELECT COUNT(*) FROM norm_entries").fetchone()[0],
+                    con.execute("SELECT COUNT(*) FROM norm_variants").fetchone()[0])
+        finally:
+            con.close()
+
+    def test_01_full_seed_counts_and_every_entry_has_factory_default(self):
+        report = latex_norm.import_seed()
+        self.assertEqual(report["entries_added"], 223)
+        self.assertEqual(report["variants_added"], 271)
+        self.assertEqual(self._counts(), (223, 271))
+        for entry in latex_norm.list_entries():
+            self.assertIn(entry["category"], latex_norm.FAMILIES)
+            self.assertTrue(entry["variants"])
+            ids = [v["id"] for v in entry["variants"]]
+            self.assertIn(entry["factory_default_variant_id"], ids)
+            for variant in entry["variants"]:
+                self.assertIn(variant["source_label"], latex_norm.SOURCE_LABELS)
+                self.assertTrue(variant["latex_code"])
+
+    def test_02_manifest_mismatch_fails_and_rolls_back(self):
+        with self.assertRaises(latex_norm.NormError):
+            latex_norm.import_seed(self._write(self._MINI.replace("entry_count = 2", "entry_count = 99")))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_03_illegal_label_fails_and_rolls_back(self):
+        text = self._MINI.replace('label = "ISO/GB-T"', 'label = "OCR 误识"', 1)
+        with self.assertRaises(latex_norm.NormError):
+            latex_norm.import_seed(self._write(text))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_04_injected_reconcile_failure_rolls_back_whole_transaction(self):
+        with mock.patch.object(latex_norm, "_reconcile",
+                               side_effect=latex_norm.NormError("注入失败")):
+            with self.assertRaises(latex_norm.NormError):
+                latex_norm.import_seed(self._write(self._MINI))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_05_idempotent_rerun_preserves_teacher_choice(self):
+        latex_norm.import_seed()
+        le = latex_norm.get_entry("le")
+        other = next(v["id"] for v in le["variants"]
+                     if v["id"] != le["factory_default_variant_id"])
+        latex_norm.choose_default("le", other)
+        report = latex_norm.import_seed()
+        self.assertEqual(report["entries_added"], 0)
+        self.assertEqual(report["entries_skipped"], 223)
+        after = latex_norm.get_entry("le")
+        self.assertEqual(after["chosen_default_variant_id"], other)
+        self.assertEqual(after["factory_default_variant_id"], le["factory_default_variant_id"])
+
+    def test_06_gap_fill_restores_only_missing_entry(self):
+        latex_norm.import_seed()
+        ge = latex_norm.get_entry("ge")
+        other = next(v["id"] for v in ge["variants"]
+                     if v["id"] != ge["factory_default_variant_id"])
+        latex_norm.choose_default("ge", other)
+        con = latex_norm.connect()
+        try:
+            con.execute("DELETE FROM norm_entries WHERE entry_key = 'le'")
+            con.commit()
+        finally:
+            con.close()
+        report = latex_norm.import_seed()
+        self.assertEqual(report["entries_added"], 1)
+        self.assertEqual(report["entries_skipped"], 222)
+        self.assertEqual(latex_norm.get_entry("ge")["chosen_default_variant_id"], other)
+        self.assertIsNotNone(latex_norm.get_entry("le"))
+
+    def test_07_seed_version_mismatch_rejected(self):
+        with self.assertRaises(latex_norm.NormError):
+            latex_norm.import_seed(self._write(self._MINI.replace("seed_version = 1", "seed_version = 99")))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_08_duplicate_key_rejected(self):
+        dup = self._MINI + '''[[entries]]
+key = "le"
+name = "小于等于"
+category = "关系不等"
+default = 0
+[[entries.variants]]
+code = '\\leqslant'
+label = "ISO/GB-T"
+[[entries.variants]]
+code = '\\le'
+label = "教材版式约定"
+'''
+        dup = dup.replace("entry_count = 2", "entry_count = 3").replace("variant_count = 3", "variant_count = 5")
+        with self.assertRaises(latex_norm.NormError):
+            latex_norm.import_seed(self._write(dup))
+        self.assertEqual(self._counts(), (0, 0))
+
+    def test_09_apply_render_report_flags_unsupported_and_excludes_from_rewrite(self):
+        latex_norm.import_seed()
+        self.assertEqual(latex_norm.rewrite_aliases().get("varGamma"), "Gamma")
+        updated = latex_norm.apply_render_report([
+            {"entry_key": "Gamma", "row_order": 1, "supported": False,
+             "note": "MathJax 不认 \\varGamma"}])
+        self.assertEqual(updated, 1)
+        self.assertNotIn("varGamma", latex_norm.rewrite_aliases())
+        gamma = latex_norm.get_entry("Gamma")
+        flagged = next(v for v in gamma["variants"] if v["row_order"] == 1)
+        self.assertEqual(flagged["render_supported"], 0)
+        self.assertIn("MathJax", flagged["render_note"])
+        self.assertEqual(gamma["factory_default_variant_id"],
+                         next(v["id"] for v in gamma["variants"] if v["row_order"] == 0))
+
+    def test_10_infix_and_structural_commands_never_rewritten(self):
+        latex_norm.import_seed()
+        aliases = latex_norm.rewrite_aliases()
+        for name in ("over", "root", "of", "choose", "atop", "left", "right",
+                     "begin", "end", "not", "displaystyle"):
+            self.assertNotIn(name, aliases)
 
 
 if __name__ == "__main__":

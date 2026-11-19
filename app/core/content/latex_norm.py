@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from app.core import toml_io
 from app.core.config import settings
 
 SCHEMA_VERSION = 1
@@ -35,6 +36,18 @@ FAMILIES = (
 # 闭集变体只收这三类合法来源（卡 §2）；非标与 OCR 误识一律住开集。
 SOURCE_LABELS = frozenset({"ISO/GB-T", "ISO 80000-2", "GB 3102.11", "教材版式约定"})
 STATUSES = ("pending", "confirmed", "rejected", "archived")
+
+SEED_PATH = Path(__file__).with_name("latex_norm_seed.toml")
+SUPPORTED_SEED_VERSION = 1
+# infix／结构命令换了会破坏参数结构（{a \over b} 改成 \frac 就错），永不进命令级改写；
+# 即便未来种子误收单命令码也兜住（三硬规矩·不认识就不动的安全闸）。
+_NO_REWRITE = frozenset({
+    "over", "atop", "choose", "above", "root", "of", "not",
+    "overwithdelims", "atopwithdelims", "abovewithdelims",
+    "left", "right", "middle", "begin", "end",
+    "bigl", "bigr", "Bigl", "Bigr", "bigm", "Bigm", "big", "Big", "bigg", "Bigg",
+    "displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle",
+})
 
 
 class NormError(Exception):
@@ -315,13 +328,13 @@ def rewrite_aliases() -> dict[str, str] | None:
         canonical = next(
             (v["latex_code"] for v in entry["variants"] if v["id"] == default_id), "")
         canonical_name = _command_name(canonical)
-        if not canonical_name:
+        if not canonical_name or canonical_name in _NO_REWRITE:
             continue
         for variant in entry["variants"]:
             if variant["id"] == default_id or not variant["render_supported"]:
                 continue
             name = _command_name(variant["latex_code"])
-            if name and name != canonical_name:
+            if name and name != canonical_name and name not in _NO_REWRITE:
                 aliases[name] = canonical_name
     return aliases
 
@@ -335,3 +348,96 @@ def confirmed_corrections() -> dict[str, str]:
         return {row["raw_code"]: row["target_code"] for row in rows}
     finally:
         con.close()
+
+
+# --- 闭集种子：全量写入四保险（卡 §2） ---
+
+def load_seed(path: Path | None = None) -> dict[str, Any]:
+    """读种子并前置校验：版本／清单计数／合法族／合法来源／默认下标／唯一键，任一不符显性失败。"""
+    data = toml_io.loads((path or SEED_PATH).read_text(encoding="utf-8"))
+    if data.get("seed_version") != SUPPORTED_SEED_VERSION:
+        raise NormError(f"种子版本 {data.get('seed_version')} 与程序支持的 {SUPPORTED_SEED_VERSION} 不符")
+    entries = data.get("entries") or []
+    if len(entries) != data.get("entry_count"):
+        raise NormError("种子清单条目数与实数不符")
+    if sum(len(e.get("variants") or []) for e in entries) != data.get("variant_count"):
+        raise NormError("种子清单变体数与实数不符")
+    seen: set[str] = set()
+    for entry in entries:
+        key = entry.get("key") or ""
+        if not key or key in seen:
+            raise NormError(f"种子条目键缺失或重复：{key}")
+        seen.add(key)
+        if entry.get("category") not in FAMILIES:
+            raise NormError(f"条目 {key} 记号族非法：{entry.get('category')}")
+        variants = entry.get("variants") or []
+        if not variants or not (0 <= entry.get("default", -1) < len(variants)):
+            raise NormError(f"条目 {key} 变体为空或出厂默认越界")
+        for variant in variants:
+            if not variant.get("code") or variant.get("label") not in SOURCE_LABELS:
+                raise NormError(f"条目 {key} 变体代码为空或来源标签非法")
+    return data
+
+
+def _reconcile(con: sqlite3.Connection, seed: dict[str, Any]) -> None:
+    """导入后逐件对账：每条种子条目须在库、变体数与内容、出厂默认皆符；不符即抛（调用方回滚）。"""
+    for entry in seed["entries"]:
+        row = con.execute("SELECT factory_default_variant_id FROM norm_entries WHERE entry_key = ?",
+                          (entry["key"],)).fetchone()
+        if row is None:
+            raise NormError(f"对账失败：条目 {entry['key']} 未落库")
+        variants = con.execute("SELECT id, latex_code, source_label FROM norm_variants"
+                               " WHERE entry_key = ? ORDER BY row_order", (entry["key"],)).fetchall()
+        if len(variants) != len(entry["variants"]):
+            raise NormError(f"对账失败：条目 {entry['key']} 变体数不符")
+        for got, want in zip(variants, entry["variants"]):
+            if got["latex_code"] != want["code"] or got["source_label"] != want["label"]:
+                raise NormError(f"对账失败：条目 {entry['key']} 变体内容不符")
+        if variants[entry["default"]]["id"] != row["factory_default_variant_id"]:
+            raise NormError(f"对账失败：条目 {entry['key']} 出厂默认不符")
+
+
+def import_seed(path: Path | None = None) -> dict[str, Any]:
+    """四保险：①单事务 ②清单＋导入后逐件对账 ③幂等补差按 entry_key（已有条目整条跳过，
+    老师选择与出厂内容永不被覆盖）④版本对账通过后才落。任何失败整体回滚。"""
+    seed = load_seed(path)
+    added = skipped = variants_added = 0
+    with transaction() as con:
+        for entry in seed["entries"]:
+            if con.execute("SELECT 1 FROM norm_entries WHERE entry_key = ?",
+                           (entry["key"],)).fetchone():
+                skipped += 1
+                continue
+            con.execute("INSERT INTO norm_entries (entry_key, name, category,"
+                        " factory_default_variant_id, updated_at) VALUES (?, ?, ?, 0, ?)",
+                        (entry["key"], entry["name"], entry["category"], now_iso()))
+            ids: list[int] = []
+            for order, variant in enumerate(entry["variants"]):
+                cursor = con.execute(
+                    "INSERT INTO norm_variants (entry_key, latex_code, source_label, row_order)"
+                    " VALUES (?, ?, ?, ?)",
+                    (entry["key"], variant["code"], variant["label"], order))
+                ids.append(int(cursor.lastrowid))
+            con.execute("UPDATE norm_entries SET factory_default_variant_id = ? WHERE entry_key = ?",
+                        (ids[entry["default"]], entry["key"]))
+            added += 1
+            variants_added += len(ids)
+        _reconcile(con, seed)
+    return {"seed_version": seed["seed_version"], "entries_added": added,
+            "entries_skipped": skipped, "variants_added": variants_added,
+            "entry_count": seed["entry_count"], "variant_count": seed["variant_count"]}
+
+
+def apply_render_report(results: list[dict[str, Any]]) -> int:
+    """渲染探针结论回写：只动 render_supported/render_note，不碰出厂内容。
+    不认的命令显性 0＋原因（全量红线不静默丢），改写驱动据此排除。"""
+    updated = 0
+    with transaction() as con:
+        for item in results:
+            cursor = con.execute(
+                "UPDATE norm_variants SET render_supported = ?, render_note = ?"
+                " WHERE entry_key = ? AND row_order = ?",
+                (1 if item.get("supported") else 0, str(item.get("note") or ""),
+                 item["entry_key"], int(item["row_order"])))
+            updated += int(cursor.rowcount)
+    return updated

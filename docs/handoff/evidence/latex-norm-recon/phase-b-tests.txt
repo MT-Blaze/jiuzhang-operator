@@ -1,0 +1,11 @@
+== tests.test_latex_norm ==
+Ran 29 tests in 1.217s
+OK
+== quick gate ==
+check-quick-gate: PASS（6 项全过）
+== render probe ==
+variant_total = 271
+supported = 271
+unsupported = 0
+applied_to_isolated_db = 271
+supported = true
