@@ -1,0 +1,52 @@
+# PP-M ONNX CPU 真测计时（2026-11-19，开发机 .venv onnxruntime 1.32.0 CPUExecutionProvider）
+# 夹具：真卷（东北师大附中2023-2024高一第一次月考，纯图卷）RapidOCR 行框裁纯公式行 @300dpi
+# 判定：秒级（0.76–1.20s/块），非分钟级，按卡 §0 继续不停报
+
+[session]
+load_seconds = 3.0
+provider = "CPUExecutionProvider"
+input = "x [B,1,384,384] float32"
+output = "fetch_name_0 [B,seq] int64（自回归循环在图内，贪心解码）"
+warnings = "加载时大量 Removing initializer … not used（paddle2onnx 导出残留，无害）"
+
+[[run]]
+fixture = "f1.png"
+ocr_text = "A={x∈ N|−√3≤x≤√3}"
+infer_seconds = 1.20
+tokens = 50
+eos = true
+latex = 'A=\left\{x\in\mathrm{N}^*\mid-\sqrt{3}\leq x\leq\sqrt{3}\right\}'
+
+[[run]]
+fixture = "f2.png"
+ocr_text = "B. ∀x∈ R, x²−2x+1≤0"
+infer_seconds = 0.93
+tokens = 37
+eos = true
+latex = '\forall x\in\mathbf{R},\quad x^{2}-2x+1\leq0'
+
+[[run]]
+fixture = "f3.png"
+ocr_text = "A. {a| a≥2}"
+infer_seconds = 0.76
+tokens = 21
+eos = true
+latex = '\left\{a\mid a\geq2\right\}'
+
+[[run]]
+fixture = "f4.png"
+ocr_text = "A. αkB =(−∞,−1)∪(2,+∞)"
+infer_seconds = 0.99
+tokens = 36
+eos = true
+latex = '\bar{Q}_{R}B=(-\infty,-1)\cup(2,+\infty)'
+note = "OCR 读 αkB，模型读 \\bar{Q}_{R}B（原卷补集记号，模型输出合理）"
+
+[[run]]
+fixture = "f5.png"
+ocr_text = "≤x²+y²≤8"
+infer_seconds = 0.81
+tokens = 30
+eos = true
+latex = '\frac{1}{2}\leq x^{2}+y^{2}\leq8'
+note = "OCR 丢分数 1/2，模型认出——专科比通用 OCR 稳的实证"

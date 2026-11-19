@@ -1,0 +1,38 @@
+source_pdf = "20261118-223910_c45feb_东北师大附中2023-2024高一上学期第一次月考试题.pdf"
+dpi = 300
+engine = "rapidocr-small"
+
+[[fixture]]
+file = "f1.png"
+page = 1
+text = "A={x∈ N|−√3≤x≤√3}"
+width = 1199
+height = 208
+
+[[fixture]]
+file = "f2.png"
+page = 1
+text = "B. ∀x∈ R, x²−2x+1≤0"
+width = 1132
+height = 137
+
+[[fixture]]
+file = "f3.png"
+page = 1
+text = "A. {a| a≥2}"
+width = 612
+height = 187
+
+[[fixture]]
+file = "f4.png"
+page = 2
+text = "A. αkB =(−∞,−1)∪(2,+∞)"
+width = 1203
+height = 165
+
+[[fixture]]
+file = "f5.png"
+page = 2
+text = "≤x²+y²≤8"
+width = 615
+height = 187

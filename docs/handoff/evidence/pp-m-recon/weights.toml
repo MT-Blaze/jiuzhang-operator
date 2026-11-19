@@ -1,0 +1,35 @@
+# PP-FormulaNet_plus-M 权重两件登记（侦查实测，2026-11-19）
+# 来源仓：ModelScope RapidAI/RapidDoc（Apache License 2.0），formula/PP-FormulaNet_plus-M/
+# 原始权重出处：ModelScope PaddlePaddle/PP-FormulaNet_plus-M（apache-2.0）
+# 落地：engines/formula/models/（隔离目录，不入包不 stage）
+
+[source]
+host = "modelscope"
+repo = "RapidAI/RapidDoc"
+revision = "master"
+license_repo = "Apache License 2.0"
+license_upstream = "apache-2.0"
+upstream_repo = "PaddlePaddle/PP-FormulaNet_plus-M"
+url_base = "https://modelscope.cn/models/RapidAI/RapidDoc/resolve/master/formula/PP-FormulaNet_plus-M/"
+
+[[file]]
+name = "pp_formulanet_plus_m.onnx"
+task = "formula"
+size = 593908338
+sha256 = "52afa60ff51ad66cd7840a74188a058fe99081e617d3bd780117a2d67d94f50d"
+remote_sha256_match = true
+
+[[file]]
+name = "pp_formulanet_plus_m_inference.yml"
+task = "formula"
+size = 2244564
+sha256 = "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538"
+remote_sha256_match = true
+note = "内嵌完整 tokenizer（fast_tokenizer_file BPE vocab 50000＋tokenizer_config_file），无需另下词表"
+
+[mirrors]
+# 三源实测（2026-11-19，curl range GET 验内容）：
+modelscope = "可达：resolve 302→CDN LFS，206＋Content-Range bytes 0-15/593908338，ONNX protobuf 魔数 080a 真文件"
+hf_mirror = "不可用：RapidAI/RapidDoc 无此仓库（resolve 真 404）；对照 RapidAI/RapidOCR det 得 429 限流证明站本身活着"
+gitcode = "不可用：无 RapidDoc 仓库，resolve/raw 返回 200 但 Content-Type text/html（3575 字节页面），range GET 识破假可达"
+conclusion = "modelscope 唯一可达，非「全不可达」不停链；安装链 mirrors.race 单源退化仍复用"
