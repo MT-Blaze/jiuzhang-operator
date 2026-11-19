@@ -1,44 +1,32 @@
-"""本地 VLM 一键装（2.20.0 卡§4/§7 修实）：engines/vlm/ 隔离环境＋真 GPU 发动机。
+"""本地 VLM 一键装（2.20.0 卡§4/§7＋安装接线卡座5/6 多座泛化）：engines/vlm/ 隔离环境。
 
-mineru-llama-cpp 国内 wheel 自带 Vulkan 版 llama-server（N/A 卡通用 Vulkan 后端，
-无独显 -ngl 0 走 CPU 慢兜底）；CUDA 专轮国内不可达＝显性欠账不静默兜底。
+发动机（mineru-llama-cpp 自带 Vulkan 版 llama-server）三座共享；权重按座
+（qwen/intern/minicpm）住 engines/vlm/models/，装拆按件互不误删。
 pip 四家点击内测速选最快；pip 全败可迁移 engines/mineru 现成 Vulkan 栈
-（engines 内迁移不算出网）。GGUF 三源测速选路＋sha256 逐件校验。
+（engines 内迁移不算出网）。GGUF 三源测速选路＋sha256 逐件校验（vlm_weights）。
 安装/卸载只由老师界面点击发起；体检每次现算（D3b）；失败显性化：人话进状态。
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import shutil
 import subprocess
 import sys
 import threading
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 from app.core import config, toml_io
-from app.core.ingest import mirrors
+from app.core.ingest import mirrors, vlm_weights
 
 logger = logging.getLogger(__name__)
 
 ENGINE_PACKAGE = "mineru-llama-cpp==0.2.3"
 ENGINE_MODULE = "mineru_llama_cpp"
-MODEL_REPO = "unsloth/Qwen2.5-VL-3B-Instruct-GGUF"
-# （文件名, 字节数, sha256）：modelscope 仓库页实测核对（2026-11-19）。
-GGUF_FILES = (
-    ("Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf", 1929901408,
-     "c47e8c1f6fb3e8cff6ec58909baff16dbeffb64a5bb3b746b96e05e6334c129f"),
-    ("mmproj-F16.gguf", 1338428256,
-     "4c1240f514de94c81b70709b0f9a80c7e3297598ea7c83f39dc00b18ee5be60c"),
-)
 MIN_PYTHON = (3, 11)
 VENV_TIMEOUT = 300
 INSTALL_TIMEOUT = 1800
-WEIGHT_TIMEOUT = 3600
 TAIL_LINES = 12
 ENGINE_LABELS = {"cuda": "CUDA", "vulkan": "Vulkan", "cpu": "CPU"}
 
@@ -53,12 +41,21 @@ _NO_MATCH_MARKERS = (
     "from versions: none")
 
 _LOCK = threading.Lock()
-_STATE: dict[str, str] = {"state": "idle", "step": "", "message": ""}
-_THREAD: threading.Thread | None = None
+_ENGINE_LOCK = threading.Lock()
+_STATE: dict[str, dict[str, str]] = {
+    seat: {"state": "idle", "step": "", "message": ""} for seat in vlm_weights.SEATS}
+_THREAD: dict[str, threading.Thread | None] = {seat: None for seat in vlm_weights.SEATS}
 
 
 class VlmSetupError(Exception):
     """安装前置不满足或安装失败（人话原因）。"""
+
+
+def _seat(seat: str) -> str:
+    try:
+        return vlm_weights.seat_of("vlm_" + seat)
+    except vlm_weights.VlmWeightsError as exc:
+        raise VlmSetupError(str(exc)) from exc
 
 
 def engine_dir() -> Path:
@@ -70,10 +67,14 @@ def python_exe() -> Path:
     return folder / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
 
-def model_paths() -> tuple[Path, Path]:
-    """（主题重 GGUF, 视觉投影 mmproj）落地路径；只读，不触发起服。"""
-    folder = engine_dir() / "models"
-    return folder / GGUF_FILES[0][0], folder / GGUF_FILES[1][0]
+def model_paths(seat: str = "qwen") -> tuple[Path, Path]:
+    """本座（主题重 GGUF, 视觉投影 mmproj）落地路径；只读，不触发起服。"""
+    return vlm_weights.model_paths(seat)
+
+
+def weights_ready(seat: str = "qwen") -> bool:
+    """本座 GGUF 两件在不在本机；缺一律当不在。"""
+    return vlm_weights.weights_ready(seat)
 
 
 def _server_name() -> str:
@@ -169,21 +170,11 @@ def health() -> dict[str, Any]:
     return {"ok": True, "state": "ready", "version": _engine_version(), "engine": engine_type(), "message": ""}
 
 
-def status() -> dict[str, str]:
-    """安装进度快照（只读）：state=idle/installing/done/error＋step＋人话。"""
+def status(seat: str = "qwen") -> dict[str, str]:
+    """本座安装进度快照（只读）：state=idle/installing/done/error＋step＋人话。"""
+    _seat(seat)
     with _LOCK:
-        return dict(_STATE)
-
-
-def weights_ready() -> bool:
-    """GGUF 两件在不在本机（只读按字节数核对，不出网）；缺一律当不在。"""
-    for path, (_name, size, _digest) in zip(model_paths(), GGUF_FILES):
-        try:
-            if not path.is_file() or path.stat().st_size != size:
-                return False
-        except OSError:
-            return False
-    return True
+        return dict(_STATE[seat])
 
 
 def gpu_ready(min_vram: int) -> bool:
@@ -194,74 +185,9 @@ def gpu_ready(min_vram: int) -> bool:
         hardware.probe().get("vram_gb") or 0) >= min_vram
 
 
-def _set(**fields: str) -> None:
+def _set(seat: str, **fields: str) -> None:
     with _LOCK:
-        _STATE.update(fields)
-
-
-def _weight_urls(name: str) -> list[tuple[str, str]]:
-    """权重三源候选（国内）：gitcode 仓路径未核实时测速自然判不通，不硬编结论。"""
-    return [
-        ("ModelScope", "https://modelscope.cn/models/%s/resolve/master/%s" % (MODEL_REPO, name)),
-        ("hf-mirror", "https://hf-mirror.com/%s/resolve/main/%s" % (MODEL_REPO, name)),
-        ("GitCode", "https://gitcode.com/%s/resolve/main/%s" % (MODEL_REPO, name))]
-
-
-def _download_gguf(name: str, size: int, digest: str,
-                   sources: list[dict[str, Any]]) -> None:
-    """单件流式下载＋sha256＋原子改名；中断换下一家；全败抛人话错误。"""
-    target = engine_dir() / "models" / name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    part = target.with_suffix(target.suffix + ".part")
-    last_error = "没有可达的权重源"
-    for row in sources:
-        url = row["url"]
-        hasher = hashlib.sha256()
-        written = 0
-        try:
-            with urllib.request.urlopen(url, timeout=120) as response, \
-                    part.open("wb") as sink:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    sink.write(chunk)
-                    hasher.update(chunk)
-                    written += len(chunk)
-                    _set(message="正在从 %s 下载 %s（%.1f/%.1fGB）…"
-                         % (row["name"], name, written / 1e9, size / 1e9))
-            if written != size or hasher.hexdigest() != digest:
-                raise OSError("字节数或 sha256 与仓库登记不符")
-            part.replace(target)
-            return
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            part.unlink(missing_ok=True)
-            last_error = "%s → %s" % (row["name"], _classify(str(exc)))
-            logger.warning("本地 VLM 权重源失败：%s", last_error)
-            _set(message="权重源失败，换下一家（%s）" % last_error)
-    raise VlmSetupError("权重下载全败（%s）：%s" % (name, last_error))
-
-
-def _prefetch_weights() -> bool:
-    """GGUF 预取并入安装点击：三源测速选路，两件逐一校验。"""
-    _set(step="预取权重", message="正在测速选权重源（modelscope/hf-mirror/gitcode），随后预取约 3.3GB。")
-    raced = mirrors.race(_weight_urls(GGUF_FILES[0][0]))
-    sources = [row for row in raced if row["ok"]]
-    _set(message=mirrors.pick_note(raced))
-    if not sources:
-        _set(message="权重源全不通，GGUF 无法预取。")
-        return False
-    try:
-        for name, size, digest in GGUF_FILES:
-            target = engine_dir() / "models" / name
-            if target.is_file() and target.stat().st_size == size:
-                continue
-            _download_gguf(name, size, digest, sources)
-    except VlmSetupError as exc:
-        logger.warning("[WARN] 本地 VLM 权重预取失败：%s", exc)
-        _set(message=str(exc))
-        return False
-    return weights_ready()
+        _STATE[seat].update(fields)
 
 
 def _mineru_bin() -> Path | None:
@@ -276,7 +202,7 @@ def _mineru_bin() -> Path | None:
     return None
 
 
-def _migrate_engine() -> bool:
+def _migrate_engine(seat: str) -> bool:
     """pip 全败时的离线兜底：engines 内迁移现成 Vulkan binary（不算出网）。"""
     source = _mineru_bin()
     if source is None:
@@ -295,41 +221,42 @@ def _migrate_engine() -> bool:
     except OSError as exc:
         logger.warning("[WARN] VLM 发动机迁移失败：%s", exc)
         return False
-    _set(message="pip 源全败，已从 engines/mineru 迁移现成 Vulkan 发动机（离线，不出网）。")
+    _set(seat, message="pip 源全败，已从 engines/mineru 迁移现成 Vulkan 发动机（离线，不出网）。")
     return True
 
 
-def start_install() -> dict[str, str]:
+def start_install(seat: str = "qwen") -> dict[str, str]:
     """老师点击才走到这里：已装直接 done；在装复用；否则起后台线程。"""
-    global _THREAD
+    _seat(seat)
+    label = vlm_weights.SEATS[seat]["label"]
     if sys.version_info < MIN_PYTHON:
         raise VlmSetupError("底座 Python %d.%d 太旧：mineru-llama-cpp 预编译轮需要 3.11+。"
                             % sys.version_info[:2])
     check = health()
-    if check["ok"] and weights_ready():
-        _set(state="done", step="体检", message="本地 VLM 已就绪（%s %s 发动机）。" % (
-            check["version"], ENGINE_LABELS.get(check["engine"], check["engine"])))
-        return status()
+    if check["ok"] and weights_ready(seat):
+        _set(seat, state="done", step="体检", message="%s 已就绪（%s %s 发动机）。" % (
+            label, check["version"], ENGINE_LABELS.get(check["engine"], check["engine"])))
+        return status(seat)
     with _LOCK:
-        if _THREAD is not None and _THREAD.is_alive():
-            return dict(_STATE)
+        if _THREAD[seat] is not None and _THREAD[seat].is_alive():
+            return dict(_STATE[seat])
         if check["ok"]:
-            _STATE.update({"state": "installing", "step": "预取权重",
-                           "message": "发动机已装好，正在补齐 GGUF 权重（国内源测速选路）。"})
+            _STATE[seat].update({"state": "installing", "step": "预取权重",
+                                 "message": "发动机已装好，正在补齐 %s 的 GGUF 权重（国内源测速选路）。" % label})
         else:
-            _STATE.update({"state": "installing", "step": "创建隔离环境",
-                           "message": "正在创建 engines/vlm/ 独立环境，不碰底座 .venv。"})
-        _THREAD = threading.Thread(target=_install, name="jzo-vlm-install",
-                                   daemon=True)
-    _THREAD.start()
-    return status()
+            _STATE[seat].update({"state": "installing", "step": "创建隔离环境",
+                                 "message": "正在创建 engines/vlm/ 独立环境，不碰底座 .venv。"})
+        _THREAD[seat] = threading.Thread(target=_install, args=(seat,),
+                                         name="jzo-vlm-%s-install" % seat, daemon=True)
+    _THREAD[seat].start()
+    return status(seat)
 
 
-def _install_engine() -> None:
+def _install_engine(seat: str) -> None:
     """测速选源装 mineru-llama-cpp；pip 全败迁移 engines/mineru 现成栈。"""
-    _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（6 秒超时）…")
+    _set(seat, step="测速选源", message="正在并行测速 pip 四家国内镜像（6 秒超时）…")
     raced = mirrors.race(mirrors.pip_candidates("mineru-llama-cpp"))
-    _set(step="安装发动机", message=mirrors.pick_note(raced))
+    _set(seat, step="安装发动机", message=mirrors.pick_note(raced))
     last_error = "没有可用镜像"
     for row in raced:
         if not row["ok"]:
@@ -340,62 +267,76 @@ def _install_engine() -> None:
                         "--only-binary", ENGINE_MODULE,
                         "--index-url", row["url"], ENGINE_PACKAGE], INSTALL_TIMEOUT)
         if rc == 0:
-            _set(message="发动机已从 %s 装好（%s）。" % (row["name"], ENGINE_PACKAGE))
+            _set(seat, message="发动机已从 %s 装好（%s）。" % (row["name"], ENGINE_PACKAGE))
             return
         last_error = "%s → %s" % (row["name"], _classify(out))
         logger.warning("本地 VLM 镜像安装失败：%s", last_error)
-        _set(message="镜像失败，换源重试中（%s）" % last_error)
-    if _migrate_engine():
+        _set(seat, message="镜像失败，换源重试中（%s）" % last_error)
+    if _migrate_engine(seat):
         return
     raise VlmSetupError("发动机安装全败：%s。CUDA 专轮国内镜像无货（欠账），"
                         "本机也没有可迁移的现成 Vulkan 栈。" % last_error)
 
 
-def _install() -> None:
+def _install(seat: str) -> None:
+    label = vlm_weights.SEATS[seat]["label"]
     try:
-        if not python_exe().is_file():
-            rc, out = _run([sys.executable, "-m", "venv", str(engine_dir())], VENV_TIMEOUT)
-            if rc != 0:
-                raise VlmSetupError("隔离环境创建失败：%s" % _classify(out))
-        if not health()["ok"]:
-            _install_engine()
-        _set(step="体检", message="发动机安装完成，正在现算包类型体检。")
+        with _ENGINE_LOCK:
+            if not python_exe().is_file():
+                rc, out = _run([sys.executable, "-m", "venv", str(engine_dir())], VENV_TIMEOUT)
+                if rc != 0:
+                    raise VlmSetupError("隔离环境创建失败：%s" % _classify(out))
+            if not health()["ok"]:
+                _install_engine(seat)
+        _set(seat, step="体检", message="发动机安装完成，正在现算包类型体检。")
         check = health()
         if not check["ok"]:
             raise VlmSetupError(check["message"])
-        label = ENGINE_LABELS.get(check["engine"], check["engine"])
-        if _prefetch_weights():
-            _set(state="done", step="完成",
-                 message="本地 VLM 已就绪（mineru-llama-cpp %s，%s 发动机），GGUF 权重已预取。" % (
-                     check["version"], label))
+        engine_label = ENGINE_LABELS.get(check["engine"], check["engine"])
+        if vlm_weights.prefetch(seat, lambda **fields: _set(seat, **fields)):
+            _set(seat, state="done", step="完成",
+                 message="%s 已就绪（mineru-llama-cpp %s，%s 发动机），GGUF 权重已预取。" % (
+                     label, check["version"], engine_label))
         else:
-            _set(state="error", step="预取权重",
-                 message="发动机已装好（%s %s），但 GGUF 权重没预取成功：%s"
-                         % (check["version"], label, status().get("message") or "见运行日志"))
-        logger.info("[INFO] 本地 VLM 安装收口：%s", status().get("message"))
+            _set(seat, state="error", step="预取权重",
+                 message="发动机已装好（%s %s），但 %s 的 GGUF 权重没预取成功：%s"
+                         % (check["version"], engine_label, label,
+                            status(seat).get("message") or "见运行日志"))
+        logger.info("[INFO] %s 安装收口：%s", label, status(seat).get("message"))
     except VlmSetupError as exc:
-        _set(state="error", message=str(exc))
-        logger.warning("[WARN] 本地 VLM 安装失败：%s", exc)
+        _set(seat, state="error", message=str(exc))
+        logger.warning("[WARN] %s 安装失败：%s", label, exc)
     except Exception as exc:  # noqa: BLE001 - 后台线程任何异常都要显性化
-        _set(state="error", message="安装异常：%s" % exc)
-        logger.warning("[WARN] 本地 VLM 安装异常：%s", exc)
+        _set(seat, state="error", message="安装异常：%s" % exc)
+        logger.warning("[WARN] %s 安装异常：%s", label, exc)
 
 
-def uninstall() -> dict[str, Any]:
-    """老师点【卸载】＋确认后才走到这里：整个 engines/vlm/ 删掉（含权重）。"""
+def uninstall(seat: str = "qwen") -> dict[str, Any]:
+    """老师点【卸载】＋确认后才走到这里：只删本座两件权重（其他座不受影响）；
+    全部座权重都空了才连发动机目录一起删。"""
+    _seat(seat)
+    label = vlm_weights.SEATS[seat]["label"]
     with _LOCK:
-        if _THREAD is not None and _THREAD.is_alive():
+        if _THREAD[seat] is not None and _THREAD[seat].is_alive():
             raise VlmSetupError("正在安装中，不能同时卸载；等安装收口后再试。")
     folder = engine_dir()
     if folder.parent != config.PROJECT_ROOT / "engines":
         raise VlmSetupError("卸载路径不对（%s），拒绝动手。" % folder)
     if not folder.exists():
-        _set(state="idle", step="", message="")
-        return {"ok": True, "message": "本地 VLM 本来就没装，无需卸载。"}
+        _set(seat, state="idle", step="", message="")
+        return {"ok": True, "message": "%s 本来就没装，无需卸载。" % label}
+    models = folder / "models"
     try:
-        shutil.rmtree(folder)
+        for path in model_paths(seat):
+            path.unlink(missing_ok=True)
+        remaining = sorted(models.glob("*")) if models.is_dir() else []
+        if not remaining:
+            shutil.rmtree(folder)
+            _set(seat, state="idle", step="", message="")
+            logger.info("[INFO] 本地 VLM 已全卸：%s", folder)
+            return {"ok": True, "message": "本地 VLM 已卸载（发动机＋权重全删）。"}
     except OSError as exc:
         raise VlmSetupError("卸载删不掉 engines/vlm/：%s（可能有服务占用，先停再试）" % exc)
-    _set(state="idle", step="", message="")
-    logger.info("[INFO] 本地 VLM 已卸载：%s", folder)
-    return {"ok": True, "message": "本地 VLM 已卸载（发动机＋权重全删）。"}
+    _set(seat, state="idle", step="", message="")
+    logger.info("[INFO] %s 权重已卸载（其他座保留）", label)
+    return {"ok": True, "message": "%s 本座两件权重已删（其他座不受影响）。" % label}

@@ -62,7 +62,7 @@
     // 模型注册表：目录 × 运行时三态（只读），配置页与引擎下拉的单源。
     "models.registry_status",
     // MinerU 本地一键装（老师点击才出网）＋安装进度只读＋启用/停用与默认选择代笔。
-    "models.mineru_install", "models.mineru_status", "models.prefs_save", "models.vlm_install", "models.vlm_status", "models.ocr_install", "models.ocr_status", "models.uninstall_vlm", "models.uninstall_mineru", "models.uninstall_ocr", "models.formula_install", "models.formula_status", "models.uninstall_formula", "models.formula_l_install", "models.formula_l_status", "models.uninstall_formula_l", "models.formula_p2t_install", "models.formula_p2t_status", "models.uninstall_formula_p2t", "pending.reidentify", "pending.reidentify_spans", "pending.return_batch",
+    "models.mineru_install", "models.mineru_status", "models.prefs_save", "models.vlm_install", "models.vlm_status", "models.ocr_install", "models.ocr_status", "models.uninstall_vlm", "models.uninstall_mineru", "models.uninstall_ocr", "models.formula_install", "models.formula_status", "models.uninstall_formula", "models.formula_l_install", "models.formula_l_status", "models.uninstall_formula_l", "models.formula_p2t_install", "models.formula_p2t_status", "models.uninstall_formula_p2t", "models.vlm_intern_install", "models.vlm_intern_status", "models.uninstall_vlm_intern", "models.vlm_minicpm_install", "models.vlm_minicpm_status", "models.uninstall_vlm_minicpm", "pending.reidentify", "pending.reidentify_spans", "pending.return_batch",
     "draft.save", "draft.load",
     // 军令 #21：脏 LaTeX 清洗是确定性规则，不调模型也不碰题库；
     // 单独开一个通道，是为了让录题端与底座共用同一份清洗实现。

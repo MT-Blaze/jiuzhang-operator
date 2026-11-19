@@ -186,6 +186,16 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         recognize.assert_not_called()
         self.assertEqual(result["filled"], 0)
 
+    async def test_progress_note_names_the_active_seat(self) -> None:
+        endpoint = {**ENDPOINT, "seat_label": "书生 InternVL3-2B"}
+        with mock.patch.object(vlm_local.recognize_shared, "item_image_bytes",
+                               return_value=b""), \
+                mock.patch.object(vlm_local, "recognize_image"):
+            route: dict = {}
+            await vlm_local.run("B-001", [_item()], [0], endpoint, route)
+        self.assertIn("书生 InternVL3-2B", route["note"])
+        self.assertNotIn("千问", route["note"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -237,7 +237,8 @@ async def dispatch(entry: dict[str, Any], png: bytes,
         return {"ok": bool(latex), "latex": latex,
                 "detail": "" if latex else "云端视觉返回的公式正文为空"}
     if step == "vlm_local":
-        ready = await asyncio.to_thread(vlm_service.ensure_ready)
+        ready = await asyncio.to_thread(
+            vlm_service.ensure_ready, str(entry.get("id") or "").removeprefix("vlm_"))
         if not ready.get("ok"):
             return {"ok": False, "detail": str(ready.get("detail") or "本地 VLM 不可用")}
         outcome = await asyncio.to_thread(

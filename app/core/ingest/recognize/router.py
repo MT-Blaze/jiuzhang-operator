@@ -135,7 +135,11 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
         runner = (recognize_mineru_local if steps[0] == "mineru_local"
                   else recognize_vlm_local)
         label = "MinerU本地" if steps[0] == "mineru_local" else "本地VLM"
-        ready = await asyncio.to_thread(service.ensure_ready)
+        if steps[0] == "mineru_local":
+            ready = await asyncio.to_thread(service.ensure_ready)
+        else:
+            ready = await asyncio.to_thread(
+                service.ensure_ready, picked.removeprefix("vlm_"))
         if not ready.get("ok"):
             route["mode"] = picked
             reason = "%s 服务不可用（%s），只走选中引擎，不降级，保留本地切图待人工核对。" % (

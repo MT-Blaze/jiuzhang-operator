@@ -20,8 +20,20 @@
       var done = ctx.done, fail = ctx.fail;
 
       if (method === "models.vlm_status") {
-        // 只读：engines/vlm 安装进度（state/step/人话），配置页轮询用。
+        // 只读：engines/vlm 千问座安装进度（state/step/人话），配置页轮询用。
         fetchJson("/api/models/vlm/status").then(done, fail);
+        return true;
+      }
+
+      if (method === "models.vlm_intern_status") {
+        // 只读：本地 VLM·书生座安装进度（安装接线卡座5），配置页轮询用。
+        fetchJson("/api/models/vlm_intern/status").then(done, fail);
+        return true;
+      }
+
+      if (method === "models.vlm_minicpm_status") {
+        // 只读：本地 VLM·面壁座安装进度（安装接线卡座6），配置页轮询用。
+        fetchJson("/api/models/vlm_minicpm/status").then(done, fail);
         return true;
       }
 
@@ -80,6 +92,32 @@
         return true;
       }
 
+      if (method === "models.vlm_intern_install") {
+        // 写口：书生座 GGUF 下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var internPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (internPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起本地 VLM·书生安装" });
+          return true;
+        }
+        withWriteToken("/api/models/vlm_intern/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
+      if (method === "models.vlm_minicpm_install") {
+        // 写口：面壁座 GGUF 下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var minicpmPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (minicpmPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起本地 VLM·面壁安装" });
+          return true;
+        }
+        withWriteToken("/api/models/vlm_minicpm/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
       if (method === "models.ocr_install") {
         // 写口：准档权重下载会出网（老师点击才发起），要写令牌＋questions:write。
         var ocrPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -134,7 +172,8 @@
 
       if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru" ||
           method === "models.uninstall_ocr" || method === "models.uninstall_formula" ||
-          method === "models.uninstall_formula_l" || method === "models.uninstall_formula_p2t") {
+          method === "models.uninstall_formula_l" || method === "models.uninstall_formula_p2t" ||
+          method === "models.uninstall_vlm_intern" || method === "models.uninstall_vlm_minicpm") {
         // 写口：卸载先停服/丢缓存再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
         var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
         if (uninstallPerms.indexOf("questions:write") < 0) {
@@ -147,7 +186,9 @@
           "models.uninstall_ocr": "/api/models/ocr/uninstall",
           "models.uninstall_formula": "/api/models/formula/uninstall",
           "models.uninstall_formula_l": "/api/models/formula_l/uninstall",
-          "models.uninstall_formula_p2t": "/api/models/formula_p2t/uninstall" };
+          "models.uninstall_formula_p2t": "/api/models/formula_p2t/uninstall",
+          "models.uninstall_vlm_intern": "/api/models/vlm_intern/uninstall",
+          "models.uninstall_vlm_minicpm": "/api/models/vlm_minicpm/uninstall" };
         withWriteToken(uninstallPaths[method], { method: "POST",
           headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
         return true;

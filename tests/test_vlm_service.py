@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""本地 VLM 服务编排（2.20.0 卡§4）：fake subprocess，绝不起真 llama-server。
+"""本地 VLM 服务编排（2.20.0 卡§4＋安装接线卡座5/6 多座）：fake subprocess，绝不起真 llama-server。
 
 镜像 test_mineru_service 的收口纪律：未安装/权重缺诚实失败引导点安装／
 懒起原生 llama-server（Vulkan/CUDA -ngl 999，显存不够 -ngl 0 CPU 慢兜底）／
-动态端口＋每次随机令牌／健康复用／并发锁防双起／提前退出与超时显性失败／
-stop 杀整棵进程树＋端口复验／endpoint 只读不触发起服。
+动态端口＋每次随机令牌／健康同座复用／异座显式切换先停旧座／并发锁防双起／
+提前退出与超时显性失败／stop 杀整棵进程树＋端口复验／endpoint 只读不触发起服。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_vlm_service``
 """
 
@@ -42,14 +42,19 @@ class VlmServiceTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
-        for name in ("_PROC", "_PORT", "_TOKEN", "_LOG_HANDLE"):
+        for name in ("_PROC", "_PORT", "_TOKEN", "_SEAT", "_LOG_HANDLE"):
             self.addCleanup(setattr, service, name, getattr(service, name))
         self.addCleanup(self._close_log)
         service._PROC = None
         service._PORT = 0
         service._TOKEN = ""
+        service._SEAT = ""
         service._LOG_HANDLE = None
         patcher = mock.patch.object(service.vlm_setup, "engine_dir",
+                                    return_value=self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(service.vlm_weights, "engine_dir",
                                     return_value=self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -74,13 +79,13 @@ class VlmServiceTest(unittest.TestCase):
             service._LOG_HANDLE.close()
             service._LOG_HANDLE = None
 
-    def _materialize(self) -> None:
+    def _materialize(self, seat: str = "qwen") -> None:
         bin_dir = self.root / "llama-bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
         (bin_dir / service.vlm_setup._server_name()).write_bytes(b"stub")
         (bin_dir / "ggml.dll").write_bytes(b"stub")
         (bin_dir / "ggml-vulkan.dll").write_bytes(b"stub")
-        for path in service.vlm_setup.model_paths():
+        for path in service.vlm_setup.model_paths(seat):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"stub-gguf")
 
@@ -95,7 +100,7 @@ class VlmServiceTest(unittest.TestCase):
                 self._popen() as popen:
             result = service.ensure_ready()
         self.assertFalse(result["ok"])
-        self.assertIn("安装本地 VLM", result["detail"])
+        self.assertIn("点【安装】", result["detail"])
         popen.assert_not_called()
 
     def test_missing_weights_is_honest_failure(self) -> None:
@@ -241,6 +246,65 @@ class VlmServiceTest(unittest.TestCase):
         endpoint = service.endpoint()
         self.assertEqual(endpoint["base_url"], "http://127.0.0.1:43210")
         self.assertTrue(endpoint["token"])
+
+    def test_seat_switch_stops_old_and_spawns_new_with_seat_weights(self) -> None:
+        self._materialize("qwen")
+        self._materialize("intern")
+        with self._popen() as popen, \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            first = service.start("qwen")
+            self.assertEqual(service.active_seat(), "qwen")
+            second = service.start("intern")
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(popen.call_count, 2)
+        self.kill_run.assert_called()
+        self.assertEqual(service.active_seat(), "intern")
+        self.assertEqual(second["seat"], "intern")
+        self.assertIn("书生", second["seat_label"])
+        cmd = popen.call_args_list[1].args[0]
+        self.assertIn("InternVL3-2B.Q4_K_M.gguf", cmd[cmd.index("--model") + 1])
+        self.assertIn("InternVL3-2B.mmproj-f16.gguf", cmd[cmd.index("--mmproj") + 1])
+
+    def test_same_seat_healthy_reuse_does_not_kill(self) -> None:
+        self._materialize("intern")
+        with self._popen() as popen, \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            service.start("intern")
+            again = service.start("intern")
+        self.assertIn("复用", again["detail"])
+        self.assertEqual(popen.call_count, 1)
+        self.kill_run.assert_not_called()
+
+    def test_active_seat_empty_when_stopped(self) -> None:
+        self.assertEqual(service.active_seat(), "")
+        self._materialize()
+        with self._popen(), \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            service.start()
+        self.assertEqual(service.active_seat(), "qwen")
+        service.stop()
+        self.assertEqual(service.active_seat(), "")
+
+    def test_ensure_ready_checks_requested_seat_weights(self) -> None:
+        ready = {"ok": True, "state": "ready", "version": "0.2.3", "message": ""}
+        with mock.patch.object(service.vlm_setup, "health", return_value=ready), \
+                mock.patch.object(service.vlm_setup, "weights_ready",
+                                  return_value=False) as weights, \
+                self._popen() as popen:
+            result = service.ensure_ready("minicpm")
+        weights.assert_called_once_with("minicpm")
+        self.assertFalse(result["ok"])
+        self.assertIn("面壁", result["detail"])
+        popen.assert_not_called()
+
+    def test_min_vram_reads_matching_seat_catalog_entry(self) -> None:
+        entries = [{"id": "vlm_qwen", "min_vram": 6},
+                   {"id": "vlm_intern", "min_vram": 4}]
+        with mock.patch("app.core.ingest.registry.catalog", return_value=entries):
+            self.assertEqual(service._min_vram("intern"), 4)
+            self.assertEqual(service._min_vram("qwen"), 6)
+            self.assertEqual(service._min_vram("minicpm"), 6)
 
 
 if __name__ == "__main__":

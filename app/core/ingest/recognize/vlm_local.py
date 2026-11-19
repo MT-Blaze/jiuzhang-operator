@@ -126,10 +126,11 @@ async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
                 "detail": "没有需要交给本地 VLM 的题"}
     filled_indexes: list[int] = []
     total = len(indexes)
+    seat_label = str(endpoint.get("seat_label") or "本地 VLM")
     for position, index in enumerate(indexes, start=1):
         item = items[index]
-        note = "正在将第 %d/%d 题交本地千问 VLM 推理（首载 GGUF 较慢，单题最长等 15 分钟）..." % (
-            position, total)
+        note = "正在将第 %d/%d 题交%s推理（首载 GGUF 较慢，单题最长等 15 分钟）..." % (
+            position, total, seat_label)
         logger.info(note)
         route["note"] = note
         _progress(on_progress, route)

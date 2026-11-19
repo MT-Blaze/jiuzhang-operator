@@ -243,16 +243,15 @@ class CatalogDataTest(CatalogIsolated):
                           "%s 的 rule 不在通用契约里" % item["id"])
 
     def test_vlm_families_registered_with_six_g_floor(self) -> None:
-        """2.20.0 卡§6：六→三，留千问/面壁/书生，剔 SmolVLM/Phi/Gemma 全族。"""
+        """2.20.0 卡§6：六→三，留千问/面壁/书生；安装接线卡座5/6 三座全接线。"""
         vlms = [item for item in registry.catalog() if item.get("family") == "vlm"]
         self.assertEqual(sorted(item["id"] for item in vlms),
                          ["vlm_intern", "vlm_minicpm", "vlm_qwen"])
         for item in vlms:
             self.assertGreaterEqual(int(item["min_vram"]), 6)
-        by_id = {item["id"]: item for item in vlms}
-        self.assertTrue(by_id["vlm_qwen"]["can_cpu"])
-        self.assertFalse(by_id["vlm_intern"]["can_cpu"])
-        self.assertFalse(by_id["vlm_minicpm"]["can_cpu"])
+            self.assertTrue(item["can_cpu"])
+            self.assertEqual(item["rule"], "vlm_local")
+            self.assertEqual(item["plan_recognize"], ["vlm_local"])
 
     def test_formula_four_registered(self) -> None:
         formulas = [item["id"] for item in registry.catalog()
@@ -356,14 +355,22 @@ class HardwareGateTest(CatalogIsolated):
         self.assertEqual(entry["state"], "degraded")
         self.assertEqual(entry["action"], "install_vlm")
 
-    def test_enough_vram_still_blocked_pending_t6_with_tier(self) -> None:
+    def test_vlm_intern_minicpm_wired_with_per_seat_install_actions(self) -> None:
+        """安装接线卡座5/6：书生/面壁不再 vram_gate 登记，走 vlm_local 三态＋按座安装动作。"""
         with _runtime(hw=_HW_16G):
             entries = _states(registry.status()["entries"])
-        entry = entries["vlm_minicpm"]
-        self.assertEqual(entry["state"], "blocked")
-        self.assertIn("尚未接线", entry["detail"])
-        self.assertIn("7B fp16 / 26B int4", entry["detail"])
-        self.assertEqual(entry["action"], "")
+        self.assertEqual(entries["vlm_intern"]["state"], "degraded")
+        self.assertEqual(entries["vlm_intern"]["action"], "install_vlm_intern")
+        self.assertEqual(entries["vlm_minicpm"]["state"], "degraded")
+        self.assertEqual(entries["vlm_minicpm"]["action"], "install_vlm_minicpm")
+        self.assertIn("1.74GB", entries["vlm_intern"]["detail"])
+        self.assertIn("4.85GB", entries["vlm_minicpm"]["detail"])
+        ready_health = {"ok": True, "state": "ready", "version": "0.2.3",
+                        "engine": "vulkan", "message": ""}
+        with _runtime(hw=_HW_16G, vlm_health=ready_health, vlm_weights=True):
+            entries = _states(registry.status()["entries"])
+        for seat in ("vlm_qwen", "vlm_intern", "vlm_minicpm"):
+            self.assertEqual(entries[seat]["state"], "ready")
 
     def test_formula_entries_blocked_pending_d_card(self) -> None:
         with _runtime():
@@ -649,6 +656,12 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/vlm/install", paths)
         self.assertIn("/api/models/vlm/status", paths)
         self.assertIn("/api/models/vlm/uninstall", paths)
+        self.assertIn("/api/models/vlm_intern/install", paths)
+        self.assertIn("/api/models/vlm_intern/status", paths)
+        self.assertIn("/api/models/vlm_intern/uninstall", paths)
+        self.assertIn("/api/models/vlm_minicpm/install", paths)
+        self.assertIn("/api/models/vlm_minicpm/status", paths)
+        self.assertIn("/api/models/vlm_minicpm/uninstall", paths)
         self.assertIn("/api/models/mineru/uninstall", paths)
         self.assertIn("/api/models/ocr/install", paths)
         self.assertIn("/api/models/ocr/status", paths)
@@ -670,7 +683,7 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 13)
+        self.assertEqual(len(writes), 17)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
@@ -703,17 +716,51 @@ class RegistryApiTest(CatalogIsolated):
         install.assert_called_once_with("p2t")
         uninstall.assert_called_once_with("p2t")
 
-    def test_vlm_uninstall_stops_service_before_deleting(self) -> None:
+    def test_vlm_uninstall_stops_service_only_when_this_seat_active(self) -> None:
         from app.core.ingest import vlm_setup
         calls = []
-        with mock.patch("app.core.ingest.recognize.vlm_service.stop",
-                        side_effect=lambda: calls.append("stop")), \
+        with mock.patch("app.core.ingest.recognize.vlm_service.active_seat",
+                        return_value="qwen"), \
+                mock.patch("app.core.ingest.recognize.vlm_service.stop",
+                           side_effect=lambda: calls.append("stop")), \
                 mock.patch.object(vlm_setup, "uninstall",
-                                  side_effect=lambda: calls.append("uninstall")
+                                  side_effect=lambda seat="qwen": calls.append("uninstall")
                                   or {"ok": True, "message": "已卸载"}):
             result = models_api.vlm_uninstall()
         self.assertEqual(calls, ["stop", "uninstall"])
         self.assertTrue(result["ok"])
+        calls.clear()
+        with mock.patch("app.core.ingest.recognize.vlm_service.active_seat",
+                        return_value="intern"), \
+                mock.patch("app.core.ingest.recognize.vlm_service.stop",
+                           side_effect=lambda: calls.append("stop")), \
+                mock.patch.object(vlm_setup, "uninstall",
+                                  side_effect=lambda seat="qwen": calls.append("uninstall")
+                                  or {"ok": True, "message": "已卸载"}):
+            models_api.vlm_uninstall()
+        self.assertEqual(calls, ["uninstall"], "别座在跑不停服，只删本座权重")
+
+    def test_vlm_intern_minicpm_endpoints_pass_seat_through(self) -> None:
+        from app.core.ingest import vlm_setup
+        for seat, status_fn, install_fn, uninstall_fn in (
+                ("intern", models_api.vlm_intern_status,
+                 models_api.vlm_intern_install, models_api.vlm_intern_uninstall),
+                ("minicpm", models_api.vlm_minicpm_status,
+                 models_api.vlm_minicpm_install, models_api.vlm_minicpm_uninstall)):
+            with mock.patch.object(vlm_setup, "status",
+                                   return_value={"state": "idle"}) as status, \
+                    mock.patch.object(vlm_setup, "start_install",
+                                      return_value={"state": "installing"}) as install, \
+                    mock.patch.object(vlm_setup, "uninstall",
+                                      return_value={"ok": True}) as uninstall, \
+                    mock.patch("app.core.ingest.recognize.vlm_service.active_seat",
+                               return_value=""):
+                status_fn()
+                install_fn()
+                uninstall_fn()
+            status.assert_called_once_with(seat)
+            install.assert_called_once_with(seat)
+            uninstall.assert_called_once_with(seat)
 
     def test_mineru_uninstall_refusal_is_400(self) -> None:
         from fastapi import HTTPException

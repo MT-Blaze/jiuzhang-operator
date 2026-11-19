@@ -72,7 +72,8 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
             return {"ok": False, "detail": str(outcome.get("detail") or "云端视觉没认出这道题")}
         return {"ok": True, "question": outcome["question"]}
     if step == "vlm_local":
-        ready = await asyncio.to_thread(vlm_service.ensure_ready)
+        ready = await asyncio.to_thread(
+            vlm_service.ensure_ready, str(entry.get("id") or "").removeprefix("vlm_"))
         if not ready.get("ok"):
             return {"ok": False, "detail": str(ready.get("detail") or "本地 VLM 不可用")}
         outcome = await asyncio.to_thread(

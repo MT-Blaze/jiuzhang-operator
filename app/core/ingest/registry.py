@@ -185,13 +185,16 @@ def _rule_mineru_local(item: dict[str, Any], ctx: dict[str, Any],
 
 def _rule_vlm_local(item: dict[str, Any], ctx: dict[str, Any],
                     hw: dict[str, Any], tiers: list[dict[str, Any]]) -> dict[str, str]:
-    """本地 VLM 座（2.20.0 卡§4/§5）：装没装×权重×显存门；显存不够不灰死安装，
-    装好了就 CPU 慢兜底照跑（就绪＋披露），没装就引导安装（选择权在老师）。
+    """本地 VLM 座（2.20.0 卡§4/§5＋安装接线卡座5/6 多座）：装没装×本座权重×显存门；
+    显存不够不灰死安装，装好了就 CPU 慢兜底照跑（就绪＋披露），没装就引导安装。
     badge/brief 是§5 活字：徽章按事实、简要一行带本机显存现算。"""
+    entry_id = str(item.get("combo_seat") or item.get("id") or "")
+    seat = entry_id.removeprefix("vlm_")
+    action = "install_vlm" if seat == "qwen" else "install_vlm_" + seat
     need = int(item.get("min_vram") or 6)
     vram = float(hw.get("vram_gb") or 0)
     label = str(hw.get("vram_label") or "读不到")
-    install = vlm_setup.status()
+    install = vlm_setup.status(seat)
     check = vlm_setup.health()
     engine = str(check.get("engine") or "")
     engine_label = {"cuda": "CUDA", "vulkan": "Vulkan", "cpu": "CPU"}.get(engine, engine)
@@ -201,14 +204,14 @@ def _rule_vlm_local(item: dict[str, Any], ctx: dict[str, Any],
     if install.get("state") == "error":
         filled["message"] = install.get("message", "")
         verdict, badge = _verdict("blocked", _say(item.get("install_error_detail"), filled),
-                                  "install_vlm"), "安装失败"
+                                  action), "安装失败"
     elif check["state"] == "error":
         filled["message"] = check["message"]
         verdict, badge = _verdict("blocked", _say(item.get("broken_detail"), filled),
-                                  "install_vlm"), "安装残缺"
-    elif not check["ok"] or not vlm_setup.weights_ready():
+                                  action), "安装残缺"
+    elif not check["ok"] or not vlm_setup.weights_ready(seat):
         verdict, badge = _verdict("degraded", _say(item.get("missing_detail"), filled),
-                                  "install_vlm"), "未安装"
+                                  action), "未安装"
     elif vram < need:
         detail = _say(item.get("low_ready_detail")
                       or "已安装·本机显存 {vram_label} 不足 {min_vram}G 门槛·CPU 慢兜底"

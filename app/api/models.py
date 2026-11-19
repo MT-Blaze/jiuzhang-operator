@@ -1,4 +1,4 @@
-"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档/公式专科（PP-M/L＋p2t）一键装＋配置勾选代笔。
+"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM 三座（千问/书生/面壁）/RapidOCR 准档/公式专科（PP-M/L＋p2t）一键装＋配置勾选代笔。
 
 注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
 下载与指派动作走既有的 layout.model_download 与 API 配置中心。写口都带写令牌：
@@ -45,7 +45,7 @@ def mineru_install() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/api/models/vlm/status", summary="本地 VLM 安装进度（只读）")
+@router.get("/api/models/vlm/status", summary="本地 VLM·千问 安装进度（只读）")
 def vlm_status() -> dict[str, Any]:
     return vlm_setup.status()
 
@@ -53,7 +53,7 @@ def vlm_status() -> dict[str, Any]:
 @router.post(
     "/api/models/vlm/install",
     status_code=202,
-    summary="一键安装本地 VLM（engines/vlm/ 隔离环境＋GGUF 权重，国内镜像）",
+    summary="一键安装本地 VLM·千问（engines/vlm/ 隔离环境＋GGUF 权重，国内镜像）",
     dependencies=[Depends(require_write_token)],
 )
 def vlm_install() -> dict[str, Any]:
@@ -65,15 +65,84 @@ def vlm_install() -> dict[str, Any]:
 
 @router.post(
     "/api/models/vlm/uninstall",
-    summary="卸载本地 VLM（先停服再删 engines/vlm/，老师点击＋确认发起）",
+    summary="卸载本地 VLM·千问（在跑本座先停服，再删本座两件权重；全座空才删发动机）",
     dependencies=[Depends(require_write_token)],
 )
 def vlm_uninstall() -> dict[str, Any]:
     from app.core.ingest.recognize import vlm_service
 
-    vlm_service.stop()
+    if vlm_service.active_seat() == "qwen":
+        vlm_service.stop()
     try:
         return vlm_setup.uninstall()
+    except vlm_setup.VlmSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/vlm_intern/status", summary="本地 VLM·书生 安装进度（只读）")
+def vlm_intern_status() -> dict[str, Any]:
+    return vlm_setup.status("intern")
+
+
+@router.post(
+    "/api/models/vlm_intern/install",
+    status_code=202,
+    summary="一键安装本地 VLM·书生 InternVL3-2B（共享发动机＋本座 GGUF 两件，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_intern_install() -> dict[str, Any]:
+    try:
+        return vlm_setup.start_install("intern")
+    except vlm_setup.VlmSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/vlm_intern/uninstall",
+    summary="卸载本地 VLM·书生（在跑本座先停服，再删本座两件权重；其他座不受影响）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_intern_uninstall() -> dict[str, Any]:
+    from app.core.ingest.recognize import vlm_service
+
+    if vlm_service.active_seat() == "intern":
+        vlm_service.stop()
+    try:
+        return vlm_setup.uninstall("intern")
+    except vlm_setup.VlmSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/vlm_minicpm/status", summary="本地 VLM·面壁 安装进度（只读）")
+def vlm_minicpm_status() -> dict[str, Any]:
+    return vlm_setup.status("minicpm")
+
+
+@router.post(
+    "/api/models/vlm_minicpm/install",
+    status_code=202,
+    summary="一键安装本地 VLM·面壁 MiniCPM-V-2.6（共享发动机＋本座 GGUF 两件，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_minicpm_install() -> dict[str, Any]:
+    try:
+        return vlm_setup.start_install("minicpm")
+    except vlm_setup.VlmSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/vlm_minicpm/uninstall",
+    summary="卸载本地 VLM·面壁（在跑本座先停服，再删本座两件权重；其他座不受影响）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_minicpm_uninstall() -> dict[str, Any]:
+    from app.core.ingest.recognize import vlm_service
+
+    if vlm_service.active_seat() == "minicpm":
+        vlm_service.stop()
+    try:
+        return vlm_setup.uninstall("minicpm")
     except vlm_setup.VlmSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

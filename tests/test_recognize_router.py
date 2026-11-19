@@ -380,5 +380,40 @@ class RecognizeMineruLocalTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase
         self.assertIs(outcome["local"].call_args.args[5], sentinel)
 
 
+class RecognizeVlmMultiSeatTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
+    """本地 VLM 三座具体档（安装接线卡座5/6）：按选中座传 seat 起服，失败显性不降级。"""
+
+    async def _run(self, picked: str, ready: dict) -> dict:
+        route: dict = {}
+        local_mock = mock.AsyncMock(return_value={
+            "ok": True, "attempted": 3, "filled": 3,
+            "filled_indexes": [0, 1, 2], "detail": ""})
+        ready_mock = mock.Mock(return_value=ready)
+        with mock.patch.object(recognize_router.vlm_service, "ensure_ready", ready_mock), \
+                mock.patch.object(recognize_router.recognize_vlm_local, "run", local_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, picked, report(0.0, []), route)
+        return {"route": result, "local": local_mock, "ready": ready_mock}
+
+    async def test_each_seat_passes_its_key_to_ensure_ready(self) -> None:
+        ready = {"ok": True, "base_url": "http://127.0.0.1:43210", "token": "tok",
+                 "seat": "intern", "seat_label": "书生 InternVL3-2B", "detail": "就绪"}
+        for picked, seat in (("vlm_qwen", "qwen"), ("vlm_intern", "intern"),
+                             ("vlm_minicpm", "minicpm")):
+            with self.subTest(picked=picked):
+                outcome = await self._run(picked, ready)
+                outcome["ready"].assert_called_once_with(seat)
+                outcome["local"].assert_awaited_once()
+                self.assertEqual(outcome["route"]["mode"], picked)
+
+    async def test_seat_unavailable_surfaces_failure_without_fallback(self) -> None:
+        outcome = await self._run("vlm_intern", {"ok": False, "detail": "书生权重不在本机。"})
+        outcome["local"].assert_not_called()
+        route = outcome["route"]
+        self.assertIn("不降级", route["note"])
+        steps = [entry["step"] for entry in route.get("failures") or []]
+        self.assertIn("识别·本地VLM", steps)
+
+
 if __name__ == "__main__":
     unittest.main()
