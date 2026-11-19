@@ -204,6 +204,12 @@ class EngineBuildTest(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(lambda _: open_read(), range(8)))
         self.assertTrue(fresh.is_file())
+        conn = dao_base.connect(fresh)
+        try:
+            mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0])
+        finally:
+            conn.close()
+        self.assertEqual(mode.lower(), "wal")
 
 
 class EngineDaoTest(unittest.TestCase):

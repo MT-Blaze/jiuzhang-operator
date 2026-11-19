@@ -171,6 +171,8 @@ def _build_into(path: Path, schema: Path) -> dict[str, int]:
     conn = sqlite3.connect(temp, timeout=30.0)
     try:
         conn.execute("PRAGMA foreign_keys = ON")
+        # 建库期就落 WAL：否则首启并发连接各自切日志模式抢排它锁致 database is locked。
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(body)
         with conn:
             counts = seeding.apply_seeds(conn)
