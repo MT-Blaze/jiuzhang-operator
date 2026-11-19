@@ -8,9 +8,10 @@
 Playwright 自驱 chromium（非内置浏览器，绕开隐藏 surface 坑），宿主 /dict 同源页
 直接 page.locator（norm UI 住宿主字典控制台，不经沙箱 iframe）。
 
-走用户路径：五列对照＋八族筹码过滤＋名称/代码搜索＋选默认 radio＋恢复出厂（对话框
+走用户路径：六列平表＋八族筹码过滤＋名称/代码搜索＋选默认 radio＋恢复出厂（对话框
 Esc/焦点归位/确认）＋开集待审收编（须目标＋预览）/驳回（黑名单对话框）＋375px 零横溢。
 判据落 probe.toml，关键态截图存 shots/；收口点杀进程＋端口复验关闭。
+平表砍头小卡后断言随 UI 改形同步（AGENTS §8.6）：卡片→真 table、砍头、单枚标签条隐藏。
 """
 from __future__ import annotations
 
@@ -143,7 +144,6 @@ def main() -> int:
               {"pending": pending_codes})
         _, ent = http_json(base + "/api/norm/entries")
         le = next(e for e in ent["entries"] if e["entry_key"] == "le")
-        le_name = le["name"]
         upright_id = next(v["id"] for v in le["variants"] if v["latex_code"] == r"\le")
         factory_id = le["factory_default_variant_id"]
 
@@ -159,72 +159,72 @@ def main() -> int:
                     if re.search(r"/api/(agent/recognize|models/|ingest)", r.url) else None)
             page.goto(base + "/dict?cat=notation&sub=norm-dict", wait_until="networkidle")
 
-            expect(page.locator(".dc-norm-head h2.dc-panel-title")).to_be_visible(timeout=20000)
-            expect(page.locator(".dc-norm-entry").first).to_be_visible(timeout=20000)
+            expect(page.locator(".dc-norm-table")).to_be_visible(timeout=20000)
             page.wait_for_function("document.querySelectorAll('mjx-container').length > 0",
                                    timeout=60000)
-            entry_count = page.locator(".dc-norm-entry").count()
+            row_count = page.locator(".dc-norm-table tbody tr").count()
             chip_count = page.locator(".dc-norm-chip").count()
             mjx = page.locator("mjx-container").count()
-            result["metrics"]["desktop"] = {"entries": entry_count, "chips": chip_count,
+            total_variants = sum(len(e["variants"]) for e in ent["entries"])
+            result["metrics"]["desktop"] = {"rows": row_count, "chips": chip_count,
                                             "mjx": mjx, "viewport": [1440, 900]}
-            check("闭集全量 223 条目渲染＋八族筹码（含全部＝9）＋MathJax 真渲染",
-                  entry_count == 223 and chip_count == 9 and mjx > 0,
+            check("闭集全量平表 271 变体行＋八族筹码（含全部＝9）＋MathJax 真渲染",
+                  row_count == total_variants == 271 and chip_count == 9 and mjx > 0,
                   result["metrics"]["desktop"])
-            page.screenshot(path=str(shot("01-desktop-five-col.png")), full_page=True)
+            page.screenshot(path=str(shot("01-desktop-table.png")), full_page=True)
 
-            first = page.locator(".dc-norm-entry").first
-            five = {
-                "family": first.locator(".dc-norm-family").count(),
-                "name": first.locator(".dc-norm-name").count(),
-                "vhead": first.locator(".dc-norm-vhead > span").count(),
-                "code_label": first.locator(".dc-norm-vrow .dc-norm-vcode .dc-norm-label").count(),
-                "render": first.locator(".dc-norm-vrow .dc-norm-vrender").count(),
-                "radio": first.locator(".dc-norm-vrow .dc-norm-vpick input[type=radio]").count(),
-            }
-            check("五列齐全：①记号族②名称③代码＋来源筹码④逐行渲染⑤默认 radio",
-                  five["family"] == 1 and five["name"] == 1 and five["vhead"] == 3
-                  and five["code_label"] >= 1 and five["render"] >= 1 and five["radio"] >= 1,
-                  five)
-            badge_panel = page.locator(".dc-norm-machine-badge").inner_text()
+            heads = page.locator(".dc-norm-table thead th").all_inner_texts()
+            name_cells = page.locator(".dc-norm-name-cell").count()
+            reset_btns = page.locator(".dc-norm-reset").count()
+            check("六列齐全：名称/代码/来源/渲染/默认/操作＋名称格与恢复出厂按记号合并各 223",
+                  heads == ["名称", "代码", "来源", "渲染", "默认", "操作"]
+                  and name_cells == 223 and reset_btns == 223,
+                  {"heads": heads, "name_cells": name_cells, "reset_buttons": reset_btns})
+            badge_panel = page.locator(".dc-norm-machine-badge").count()
             badge_nav = page.locator(".dc-cat-machine").count()
-            check("整机生效徽标：面板头＋左栏导航各一处",
-                  badge_panel == "整机生效" and badge_nav >= 1,
-                  {"panel": badge_panel, "nav": badge_nav})
+            subtab_bars = page.locator(".dc-subtabs").count()
+            check("砍头：面板无整机生效徽章＋单枚二级标签条不渲染；左栏导航徽标照旧",
+                  badge_panel == 0 and subtab_bars == 0 and badge_nav >= 1,
+                  {"panel_badge": badge_panel, "bars": subtab_bars, "nav": badge_nav})
 
             # 单轴过滤：记号族筹码
             page.locator(".dc-norm-chip", has_text="关系不等").click()
             page.wait_for_timeout(300)
-            fams = page.locator(".dc-norm-entry .dc-norm-family").all_inner_texts()
-            shown = page.locator(".dc-norm-entry").count()
+            fams = page.locator(".dc-norm-family").all_inner_texts()
+            shown = page.locator(".dc-norm-table tbody tr").count()
+            fam_variants = sum(len(e["variants"]) for e in ent["entries"]
+                               if e["category"] == "关系不等")
             on_chip = page.locator(".dc-norm-chip.is-on").inner_text()
             pressed = page.locator(".dc-norm-chip.is-on").get_attribute("aria-pressed")
-            check("记号族筹码过滤「关系不等」：19 条全族一致＋选中态不只靠颜色（aria-pressed）",
-                  shown == 19 and all(f == "关系不等" for f in fams)
+            check("记号族筹码过滤「关系不等」：行数＝该族变体数＋族标全一致＋aria-pressed",
+                  shown == fam_variants and all(f == "关系不等" for f in fams)
                   and on_chip == "关系不等" and pressed == "true",
-                  {"shown": shown, "on": on_chip, "pressed": pressed})
+                  {"shown": shown, "expected": fam_variants, "on": on_chip, "pressed": pressed})
             page.screenshot(path=str(shot("02-filter-family.png")), full_page=True)
 
             # 名称/代码搜索
             page.locator(".dc-norm-search").fill("leqslant")
             page.wait_for_timeout(300)
-            search_shown = page.locator(".dc-norm-entry").count()
-            check("代码搜索 leqslant：命中收窄（少于全族 19、大于 0）",
-                  0 < search_shown < 19, {"shown": search_shown})
+            search_shown = page.locator(".dc-norm-table tbody tr").count()
+            check("代码搜索 leqslant：命中收窄（少于全族、大于 0）",
+                  0 < search_shown < fam_variants, {"shown": search_shown})
             page.locator(".dc-norm-search").fill("")
             page.locator(".dc-norm-chip", has_text="全部").click()
             page.wait_for_timeout(300)
-            check("清空搜索＋回「全部」：恢复 223 条",
-                  page.locator(".dc-norm-entry").count() == 223,
-                  {"shown": page.locator(".dc-norm-entry").count()})
+            check("清空搜索＋回「全部」：恢复 271 变体行",
+                  page.locator(".dc-norm-table tbody tr").count() == 271,
+                  {"shown": page.locator(".dc-norm-table tbody tr").count()})
 
             # 选默认 radio（le 条目，选非出厂的 \le 直立形）
-            le_sec = page.locator('section.dc-norm-entry[aria-label="%s"]' % le_name)
-            expect(le_sec).to_be_visible(timeout=10000)
-            le_sec.locator('input.dc-norm-radio[value="%d"]' % upright_id).click()
-            expect(le_sec.locator(".dc-norm-default-state")).to_have_text(
+            # le 组首行只含首个变体 radio；upright 在该组第二行，按 name+value 全页定位。
+            le_row = page.locator("tr.dc-norm-row",
+                                  has=page.locator('input[name="dc-norm-default-le"]')).first
+            expect(le_row).to_be_visible(timeout=10000)
+            page.locator('input.dc-norm-radio[name="dc-norm-default-le"][value="%d"]'
+                         % upright_id).click()
+            expect(le_row.locator(".dc-norm-default-state")).to_have_text(
                 "当前：老师已选默认", timeout=10000)
-            expect(le_sec.locator(".dc-norm-reset")).to_be_enabled(timeout=10000)
+            expect(le_row.locator(".dc-norm-reset")).to_be_enabled(timeout=10000)
             _, ent2 = http_json(base + "/api/norm/entries")
             le2 = next(e for e in ent2["entries"] if e["entry_key"] == "le")
             check("点选默认 radio：状态翻「老师已选默认」＋恢复出厂键启用＋库 chosen 落值",
@@ -233,7 +233,7 @@ def main() -> int:
             page.screenshot(path=str(shot("03-chosen-default.png")), full_page=True)
 
             # 恢复出厂：先 Esc 验焦点陷阱＋归位，再确认回退
-            le_sec.locator(".dc-norm-reset").click()
+            le_row.locator(".dc-norm-reset").click()
             dialog = page.locator(".dc-dialog")
             expect(dialog).to_be_visible(timeout=10000)
             dlg_title = dialog.locator(".dc-dialog-title").inner_text()
@@ -245,12 +245,12 @@ def main() -> int:
             check("恢复出厂对话框：Esc 收窗＋焦点归位到恢复出厂键（焦点陷阱）",
                   dlg_title == "恢复出厂默认" and "dc-norm-reset" in restored,
                   {"title": dlg_title, "activeElement": restored})
-            le_sec.locator(".dc-norm-reset").click()
+            le_row.locator(".dc-norm-reset").click()
             expect(page.locator(".dc-dialog")).to_be_visible(timeout=10000)
             page.locator(".dc-dialog .dc-btn-primary").click()
-            expect(le_sec.locator(".dc-norm-default-state")).to_have_text(
+            expect(le_row.locator(".dc-norm-default-state")).to_have_text(
                 "当前：出厂默认", timeout=10000)
-            expect(le_sec.locator(".dc-norm-reset")).to_be_disabled(timeout=10000)
+            expect(le_row.locator(".dc-norm-reset")).to_be_disabled(timeout=10000)
             _, ent3 = http_json(base + "/api/norm/entries")
             le3 = next(e for e in ent3["entries"] if e["entry_key"] == "le")
             check("确认恢复出厂：选择回退出厂（chosen=NULL）＋出厂默认不动＋键禁用",
@@ -301,28 +301,26 @@ def main() -> int:
                   {"title": rej_title, "rejected": rej_codes})
             page.screenshot(path=str(shot("07-inbox-empty.png")), full_page=True)
 
-            # 375px 窄屏零横溢
+            # 375px 窄屏零横溢（表容器内部横滚，页面不溢）
             page.set_viewport_size({"width": 375, "height": 812})
             page.wait_for_timeout(500)
             narrow = page.evaluate("""() => {
               const de = document.documentElement, b = document.body;
-              const panel = document.querySelector('.dc-norm-head').closest('.dc-subpanel');
-              const entries = Array.from(document.querySelectorAll('.dc-norm-entry'));
+              const list = document.querySelector('.dc-norm-list');
+              const table = document.querySelector('.dc-norm-table');
               const rows = Array.from(document.querySelectorAll('.dc-norm-inbox-row'));
               const over = (el) => el ? el.scrollWidth - el.clientWidth : 0;
               return {
                 doc: Math.max(de.scrollWidth, b.scrollWidth),
-                panel: panel ? panel.scrollWidth - panel.clientWidth : null,
-                maxEntry: Math.max(0, ...entries.map(over)),
-                maxRow: Math.max(0, ...rows.map(over)),
-                familyStacked: getComputedStyle(document.querySelector('.dc-norm-family')).gridColumn
+                listScroll: list ? list.scrollWidth - list.clientWidth : null,
+                tableWidth: table ? table.getBoundingClientRect().width : null,
+                maxRow: Math.max(0, ...rows.map(over))
               };
             }""")
             result["metrics"]["narrow"] = dict(narrow, viewport=[375, 812])
-            check("375px 零横溢：文档≤375＋面板/条目/待审行无内部横溢＋族筹码堆叠",
-                  narrow["doc"] <= 376 and (narrow["panel"] or 0) <= 1
-                  and narrow["maxEntry"] <= 1 and narrow["maxRow"] <= 1
-                  and "1 / -1" in str(narrow["familyStacked"]),
+            check("375px 零横溢：文档≤375＋表容器内部横滚保列＋待审行无内部横溢",
+                  narrow["doc"] <= 376 and (narrow["listScroll"] or 0) > 0
+                  and (narrow["tableWidth"] or 0) >= 760 and narrow["maxRow"] <= 1,
                   result["metrics"]["narrow"])
             page.screenshot(path=str(shot("08-narrow-375.png")), full_page=True)
 

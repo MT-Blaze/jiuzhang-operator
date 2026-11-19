@@ -1,0 +1,173 @@
+probe = "latex_norm_ui"
+tag = "t6-standalone"
+nonce = "4938ae747608fd46"
+base = "http://127.0.0.1:18079"
+port = 18079
+console_errors = []
+page_errors = []
+http_failures = []
+engine_calls = []
+shots = ["E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\01-desktop-table.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\02-filter-family.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\03-chosen-default.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\04-reset-dialog.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\05-inbox-pending.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\06-inbox-confirm-preview.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\07-inbox-empty.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\latex-norm\\ui\\t6-standalone\\shots\\08-narrow-375.png"]
+passed = 18
+total = 18
+
+[metrics]
+port_closed_after_kill = true
+
+[metrics.desktop]
+rows = 271
+chips = 9
+mjx = 231
+viewport = [1440, 900]
+
+[metrics.narrow]
+doc = 360
+listScroll = 435
+tableWidth = 760
+maxRow = 0
+viewport = [375, 812]
+
+[[checks]]
+name = "清洗写路真实落两条开集待审候选"
+ok = true
+
+[checks.detail]
+pending = ["zqprobe", "zqreject"]
+
+[[checks]]
+name = "闭集全量平表 271 变体行＋八族筹码（含全部＝9）＋MathJax 真渲染"
+ok = true
+
+[checks.detail]
+rows = 271
+chips = 9
+mjx = 231
+viewport = [1440, 900]
+
+[[checks]]
+name = "六列齐全：名称/代码/来源/渲染/默认/操作＋名称格与恢复出厂按记号合并各 223"
+ok = true
+
+[checks.detail]
+heads = ["名称", "代码", "来源", "渲染", "默认", "操作"]
+name_cells = 223
+reset_buttons = 223
+
+[[checks]]
+name = "砍头：面板无整机生效徽章＋单枚二级标签条不渲染；左栏导航徽标照旧"
+ok = true
+
+[checks.detail]
+panel_badge = 0
+bars = 0
+nav = 1
+
+[[checks]]
+name = "记号族筹码过滤「关系不等」：行数＝该族变体数＋族标全一致＋aria-pressed"
+ok = true
+
+[checks.detail]
+shown = 24
+expected = 24
+on = "关系不等"
+pressed = "true"
+
+[[checks]]
+name = "代码搜索 leqslant：命中收窄（少于全族、大于 0）"
+ok = true
+
+[checks.detail]
+shown = 3
+
+[[checks]]
+name = "清空搜索＋回「全部」：恢复 271 变体行"
+ok = true
+
+[checks.detail]
+shown = 271
+
+[[checks]]
+name = "点选默认 radio：状态翻「老师已选默认」＋恢复出厂键启用＋库 chosen 落值"
+ok = true
+
+[checks.detail]
+chosen = 43
+upright = 43
+
+[[checks]]
+name = "恢复出厂对话框：Esc 收窗＋焦点归位到恢复出厂键（焦点陷阱）"
+ok = true
+
+[checks.detail]
+title = "恢复出厂默认"
+activeElement = "dc-btn dc-norm-reset"
+
+[[checks]]
+name = "确认恢复出厂：选择回退出厂（chosen=NULL）＋出厂默认不动＋键禁用"
+ok = true
+
+[checks.detail]
+effective = 42
+factory = 42
+
+[[checks]]
+name = "开集待审区：徽标「待审 2」＋两行＋原始/收编后对照格"
+ok = true
+
+[checks.detail]
+rows = 2
+compare_cells = 4
+
+[[checks]]
+name = "收编 zqprobe→leqslant：预览渲染＋按钮由禁转启＋行移除＋库 confirmed"
+ok = true
+
+[checks.detail]
+confirmed = ["zqprobe"]
+
+[[checks]]
+name = "驳回 zqreject：黑名单对话框确认＋待审归零＋库 rejected"
+ok = true
+
+[checks.detail]
+title = "驳回进黑名单"
+rejected = ["zqreject"]
+
+[[checks]]
+name = "375px 零横溢：文档≤375＋表容器内部横滚保列＋待审行无内部横溢"
+ok = true
+
+[checks.detail]
+doc = 360
+listScroll = 435
+tableWidth = 760
+maxRow = 0
+viewport = [375, 812]
+
+[[checks]]
+name = "全程零引擎请求（无 recognize/models/ingest 调用）"
+ok = true
+
+[checks.detail]
+engine_calls = []
+
+[[checks]]
+name = "宿主页零未捕获 JS 错误"
+ok = true
+
+[checks.detail]
+page_errors = []
+
+[[checks]]
+name = "全程零 4xx/5xx 响应"
+ok = true
+
+[checks.detail]
+http_failures = []
+
+[[checks]]
+name = "零控制台报错"
+ok = true
+
+[checks.detail]
+console_errors = []

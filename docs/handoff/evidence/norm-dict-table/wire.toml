@@ -1,0 +1,25 @@
+tag = "t6"
+
+[[exchanges]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/choose"
+status = 200
+
+[exchanges.request]
+entry_key = "le"
+variant_id = 43
+
+[exchanges.response]
+entry_key = "le"
+chosen_default_variant_id = 43
+
+[[exchanges]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/reset"
+status = 200
+
+[exchanges.request]
+entry_key = "le"
+
+[exchanges.response]
+entry_key = "le"

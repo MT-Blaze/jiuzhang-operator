@@ -1,0 +1,218 @@
+probe = "norm_dict_table"
+tag = "t6"
+nonce = "ed6dd6b7d28325a7"
+head = "fe7bc9a3278c14ca0aefa9f5965d430af4746fe0"
+base = "http://127.0.0.1:18067"
+port = 18067
+isolated = "git-archive-HEAD"
+console_errors = []
+page_errors = []
+http_failures = []
+engine_calls = []
+shots = ["E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\norm-dict-table\\t6\\shots\\01-workspace-wide.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\norm-dict-table\\t6\\shots\\02-table-wide.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\norm-dict-table\\t6\\shots\\03-chosen-default.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\norm-dict-table\\t6\\shots\\04-workspace-narrow-375.png", "E:\\jiuzhang\\jiuzhang-operator\\.system_generated\\norm-dict-table\\t6\\shots\\05-table-narrow-375.png"]
+passed = 16
+total = 16
+
+[metrics]
+port_closed_after_kill = true
+orphan_processes = "0"
+service_65496_untouched = true
+
+[metrics.desktop]
+heads = ["名称", "代码", "来源", "渲染", "默认", "操作"]
+rows = 271
+name_cells = 223
+reset_buttons = 223
+viewport = [1440, 900]
+
+[metrics.narrow]
+doc = 375
+inner = 375
+listScroll = 400
+tableMin = 760
+host_doc = 375
+viewport = [375, 812]
+
+[[checks]]
+name = "隔离副本自举闭集全量（223 条目/271 变体）"
+ok = true
+
+[checks.detail]
+entries = 223
+variants = 271
+
+[[checks]]
+name = "右栏「记号标准」真点→画布原地层平表（沙箱插件帧→宿主字典帧）"
+ok = true
+
+[checks.detail]
+rail_url = "http://127.0.0.1:18067/plugin-assets/org.jiuzhang.dashboard/dist/index.html"
+dict_url = "http://127.0.0.1:18067/dict?embedded=1&cat=notation&sub=norm-dict"
+
+[[checks]]
+name = "六列平表：表头名称/代码/来源/渲染/默认/操作＋全过滤行数＝变体总数 271"
+ok = true
+
+[checks.detail]
+heads = ["名称", "代码", "来源", "渲染", "默认", "操作"]
+rows = 271
+name_cells = 223
+reset_buttons = 223
+viewport = [1440, 900]
+
+[[checks]]
+name = "一行一变体：名称格与恢复出厂按记号 rowspan 合并各 223 枚"
+ok = true
+
+[checks.detail]
+name_cells = 223
+reset_buttons = 223
+
+[[checks]]
+name = "砍头四断言：面板无标题 h2/无整机生效徽章/无说明段/单枚标签条不渲染（pane 照铺；壳层仅 sr-only 无障碍标题）"
+ok = true
+
+[checks.detail]
+panel_h2 = 0
+panel_title = 0
+badge = false
+hint = false
+bar = false
+pane = true
+
+[[checks.detail.shell_h2]]
+text = "全局设置"
+cls = "dc-sr-only"
+
+[[checks.detail.shell_h2]]
+text = "字典分类"
+cls = "dc-sr-only"
+
+[[checks]]
+name = "radio 真点非默认变体：写库 chosen/effective 翻值＋choose 回执 200"
+ok = true
+
+[checks.detail]
+chosen = 43
+effective = 43
+
+[[checks.detail.wire]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/choose"
+status = 200
+
+[checks.detail.wire.request]
+entry_key = "le"
+variant_id = 43
+
+[checks.detail.wire.response]
+entry_key = "le"
+chosen_default_variant_id = 43
+
+[[checks]]
+name = "恢复出厂真点：对话框确认→chosen 回 NULL/effective 回出厂＋reset 回执 200"
+ok = true
+
+[checks.detail]
+effective = 42
+factory = 42
+
+[[checks.detail.wire]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/reset"
+status = 200
+
+[checks.detail.wire.request]
+entry_key = "le"
+
+[checks.detail.wire.response]
+entry_key = "le"
+
+[[checks]]
+name = "chips 切族真点「关系不等」：行数＝该族变体数＋名称格族标全一致"
+ok = true
+
+[checks.detail]
+rows = 24
+expected = 24
+pressed = "true"
+
+[[checks]]
+name = "搜索真点 leqslant：行数＝matches 同口径对账（收窄且非空）"
+ok = true
+
+[checks.detail]
+rows = 3
+expected = 3
+
+[[checks]]
+name = "清空搜索回全量 271 行"
+ok = true
+
+[[checks]]
+name = "开集待审区在位（norm_inbox 一字不动）"
+ok = true
+
+[[checks]]
+name = "375px：表容器内部横滚（min-width 保列）＋字典帧与宿主画布零横溢"
+ok = true
+
+[checks.detail]
+doc = 375
+inner = 375
+listScroll = 400
+tableMin = 760
+host_doc = 375
+viewport = [375, 812]
+
+[[checks]]
+name = "全程零引擎请求"
+ok = true
+
+[checks.detail]
+engine_calls = []
+
+[[checks]]
+name = "全程零未捕获 JS 错误（宿主＋全部 iframe）"
+ok = true
+
+[checks.detail]
+page_errors = []
+
+[[checks]]
+name = "全程零 4xx/5xx 响应"
+ok = true
+
+[checks.detail]
+http_failures = []
+
+[[checks]]
+name = "零控制台报错"
+ok = true
+
+[checks.detail]
+console_errors = []
+
+[[wire]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/choose"
+status = 200
+
+[wire.request]
+entry_key = "le"
+variant_id = 43
+
+[wire.response]
+entry_key = "le"
+chosen_default_variant_id = 43
+
+[[wire]]
+method = "POST"
+url = "http://127.0.0.1:18067/api/norm/reset"
+status = 200
+
+[wire.request]
+entry_key = "le"
+
+[wire.response]
+entry_key = "le"
