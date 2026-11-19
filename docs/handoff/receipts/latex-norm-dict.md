@@ -157,7 +157,7 @@
 3. **继承重做卡欠账（不在本卡修）**：CUDA／大图 mtmd 掉设备／CPU 耗时证据／准档升默认待点头／MinerU 真填充。
 
 **需主公点头：**
-- **两仓 push 授权**（hold：底座 ahead 28／插件 ahead 10，含本卡新增；卡红线两仓不 push，待主公明确授权才推）。
+- **两仓 push 授权**（hold：底座封版 parity ahead 28＋回单文档 commit／插件 ahead 10，含本卡新增；push 时以当次 `git rev-list` 实数为准；卡红线两仓不 push，待主公明确授权才推）。
 - 标准标签条款级欠账是否另案补齐（需 ISO 全文付费/GB 全文版权许可）。
 - 存量批量回写另案是否开卡。
 
@@ -168,7 +168,7 @@
 - **杀树＋端口复验**：本卡三支探针＋标准核验全部自终止；本卡五端口 1994/2279/2416/2680/63533 复验**全闭合**（netstat 无 LISTENING）；本卡孤儿**零**。（ui/e1 首跑曾 port_closed=false，其端口 2279 现已闭合；e2 起探针加 25×0.2s 端口闭合重试 loop。）
 - **他会话进程**：65496 正式服务、2889 他会话残留均未触碰（见偏离③）。
 - **git 状态（两仓干净，只余卡红线豁免 untracked）：**
-  - 底座：工作树无 M／无新增 ??（`tools/onnx_probe.py` 原地 untracked 遵卡红线不碰）；ahead 28。
+  - 底座：工作树无 M／无新增 ??（`tools/onnx_probe.py` 原地 untracked 遵卡红线不碰）；封版 parity HEAD d649fdf ahead 28（回单及勘误文档 commit 另计，push 时以 `git rev-list` 实数为准）。
   - 插件：只余 `?? src/org.jiuzhang.editor/model_prefs.toml`＋`?? src/org.jiuzhang.editor/models/`（遵卡红线不 stage）；ahead 10。
 - **不 push、不 amend、不改写历史**：两仓均未 push；逐阶段新 commit；插件仓 MT-Blaze 瞬态身份未写 git config。
 - **本卡零引擎跑、产品运行时零出网、字典不进任何模型提示词（零 token 本地 SQLite）、学科不分类（唯一轴＝记号族）**：探针①②③全程零引擎请求实测钉住。
