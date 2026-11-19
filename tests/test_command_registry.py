@@ -280,12 +280,16 @@ class HostApiContractTest(unittest.TestCase):
                        "models.uninstall_vlm", "models.uninstall_mineru", "models.uninstall_ocr",
                        "models.formula_install", "models.formula_status", "models.uninstall_formula",
                        "models.formula_l_install", "models.formula_l_status",
-                       "models.uninstall_formula_l"):
+                       "models.uninstall_formula_l",
+                       "models.formula_p2t_install", "models.formula_p2t_status",
+                       "models.uninstall_formula_p2t"):
             self.assertIn('"%s"' % method, relay)
         for method in ("pending.return_batch", "models.ocr_install", "models.uninstall_vlm",
                        "models.formula_install", "models.formula_status", "models.uninstall_formula",
                        "models.formula_l_install", "models.formula_l_status",
-                       "models.uninstall_formula_l"):
+                       "models.uninstall_formula_l",
+                       "models.formula_p2t_install", "models.formula_p2t_status",
+                       "models.uninstall_formula_p2t"):
             self.assertIn('method === "%s"' % method, self.stage)
 
     def test_15_dispatch_precedes_the_tail_refusal(self) -> None:

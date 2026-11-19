@@ -239,6 +239,27 @@ class DispatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("权重未安装", outcome["detail"])
         self.assertIn("安装", outcome["detail"])
 
+    async def test_p2t_success_passes_engine_contract_through(self) -> None:
+        recognize = mock.Mock(return_value={"ok": True, "latex": r"\frac{1}{2}",
+                                            "detail": "Pix2Text·MFR 公式已转写"})
+        with mock.patch.object(formula.formula_p2t, "recognize", recognize):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_p2t"]},
+                                             b"png", _item())
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["latex"], r"\frac{1}{2}")
+        self.assertEqual(outcome["detail"], "Pix2Text·MFR 公式已转写")
+        recognize.assert_called_once_with(b"png")
+
+    async def test_p2t_uninstalled_guides_to_install_button(self) -> None:
+        formula.formula_p2t.reset()
+        with mock.patch.object(formula.formula_p2t.formula_setup, "weights_ready",
+                               return_value=False):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_p2t"]},
+                                             b"png", _item())
+        self.assertFalse(outcome["ok"])
+        self.assertIn("权重未安装", outcome["detail"])
+        self.assertIn("安装", outcome["detail"])
+
 
 class ReplaceTest(unittest.TestCase):
     def test_textlayer_replaces_original_run_in_place(self) -> None:

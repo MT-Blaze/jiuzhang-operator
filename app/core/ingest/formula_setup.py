@@ -1,12 +1,14 @@
-"""PP-FormulaNet 公式专科权重一键装（M/L 变体，2.22.0 卡§2＋全模型安装接线卡座2）。
+"""公式专科权重一键装（PP-FormulaNet M/L＋Pix2Text·MFR，2.22.0 卡§2＋安装接线卡座2/3）。
 
-权重住 engines/formula/models/（M/L 共享目录，按件落地/按件卸载，互不误删）。
-底座 .venv 已带 onnxruntime（零新依赖、不建隔离环境）；每变体只缺 onnx＋yml 两件
-（yml 内嵌完整 tokenizer，M/L 词表同源；输入尺寸 M=384/L=768 由引擎硬编码）。
-主源 modelscope（onnx 取 RapidAI/RapidDoc 仓、L 的 yml 取 PaddlePaddle/PP-FormulaNet_plus-L
-官方仓，字节数＋sha256 已核实，Apache-2.0），hf-mirror/gitcode 同路径候选参与点击内
-测速选路——侦查实测两家无此仓库，测速/校验自然判不通；下载后 sha256 逐件校验，
-绝不拿错文件加载。安装/卸载只由老师界面点击发起；失败显性化，不静默。
+权重住 engines/formula/models/（各档共享目录，按件落地/按件卸载，互不误删）。
+底座 .venv 已带 onnxruntime（零新依赖、不建隔离环境）；PP 每变体只缺 onnx＋yml 两件
+（yml 内嵌完整 tokenizer，M/L 词表同源；输入尺寸 M=384/L=768 由引擎硬编码）；
+p2t 缺 encoder/decoder/tokenizer 三件（TrOCR 系官方 ONNX，词表 ByteLevel 解码）。
+PP 主源 modelscope（onnx 取 RapidAI/RapidDoc 仓、L 的 yml 取 PaddlePaddle/PP-FormulaNet_plus-L
+官方仓，字节数＋sha256 已核实，Apache-2.0）；p2t 主源 hf-mirror（breezedeus/pix2text-mfr
+官方仓，lfs.oid 逐字核实，Apache-2.0）；其余镜像同路径候选参与点击内测速选路——
+侦查实测无仓的家测速/校验自然判不通；下载后 sha256 逐件校验，绝不拿错文件加载。
+安装/卸载只由老师界面点击发起；失败显性化，不静默。
 """
 
 from __future__ import annotations
@@ -25,9 +27,11 @@ from app.core.ingest import mirrors
 
 logger = logging.getLogger(__name__)
 
-# 每变体两件套（文件名, 字节数, sha256, 仓, 仓内相对路径）：modelscope 仓库页实测核对。
-# M 两件同出 RapidAI/RapidDoc；L 的 onnx 出 RapidDoc、yml 出 PaddlePaddle 官方仓（RapidDoc
-# 的 L 文件夹只有 onnx 无 yml）。落地文件名统一带变体后缀，避免共享目录里相互覆盖。
+# 每变体件表（文件名, 字节数, sha256, 仓, 仓内相对路径）：仓库页实测核对。
+# PP-M 两件同出 RapidAI/RapidDoc；PP-L 的 onnx 出 RapidDoc、yml 出 PaddlePaddle 官方仓
+# （RapidDoc 的 L 文件夹只有 onnx 无 yml）；p2t 三件出 hf-mirror breezedeus/pix2text-mfr
+# 官方仓（encoder/decoder 的 sha256 取 lfs.oid，tokenizer 非 LFS 按官方 resolve 副本核）。
+# 落地文件名统一带变体前/后缀，避免共享目录里相互覆盖。
 VARIANTS: dict[str, dict[str, Any]] = {
     "m": {
         "label": "PP-FormulaNet·M",
@@ -53,6 +57,21 @@ VARIANTS: dict[str, dict[str, Any]] = {
              "PaddlePaddle/PP-FormulaNet_plus-L", "inference.yml"),
         ),
     },
+    "p2t": {
+        "label": "Pix2Text·MFR",
+        "size_note": "约 118MB",
+        "files": (
+            ("p2t_encoder.onnx", 87496990,
+             "bd8d5c322792e9ec45793af5569e9748f82a3d728a9e00213dbfc56c1486f37d",
+             "breezedeus/pix2text-mfr", "encoder_model.onnx"),
+            ("p2t_decoder.onnx", 30114937,
+             "fd0f92d7a012f3dae41e1ac79421aea0ea888b5a66cb3f9a004e424f82f3daed",
+             "breezedeus/pix2text-mfr", "decoder_model.onnx"),
+            ("p2t_tokenizer.json", 39161,
+             "3e2ab757277d22639bec28c9d7972e352d3d1dba223051fa674002dc5ab64df3",
+             "breezedeus/pix2text-mfr", "tokenizer.json"),
+        ),
+    },
 }
 WEIGHT_TIMEOUT = 120
 
@@ -76,15 +95,15 @@ def engine_dir() -> Path:
     return config.PROJECT_ROOT / "engines" / "formula"
 
 
-def model_paths(variant: str = "m") -> tuple[Path, Path]:
-    """（onnx, yml）落地路径；只读，不触发下载。"""
+def model_paths(variant: str = "m") -> tuple[Path, ...]:
+    """本变体各件落地路径；只读，不触发下载。"""
     files = _variant(variant)["files"]
     folder = engine_dir() / "models"
-    return folder / files[0][0], folder / files[1][0]
+    return tuple(folder / spec[0] for spec in files)
 
 
 def weights_ready(variant: str = "m") -> bool:
-    """两件在不在本机（只读按字节数核对，不出网）；缺一律当不在。"""
+    """各件在不在本机（只读按字节数核对，不出网）；缺一律当不在。"""
     files = _variant(variant)["files"]
     for path, (_name, size, _digest, _repo, _rel) in zip(model_paths(variant), files):
         try:
@@ -196,7 +215,7 @@ def _install(variant: str) -> None:
                 continue
             _download_one(variant, file_spec, sources)
         _set(variant, state="done", step="完成",
-             message="%s 已就绪（onnx/yml 两件权重校验通过）。" % label)
+             message="%s 已就绪（各件权重 sha256 校验通过）。" % label)
         logger.info("[INFO] %s 安装收口：%s", label, status(variant).get("message"))
     except FormulaSetupError as exc:
         _set(variant, state="error", message=str(exc))
@@ -207,7 +226,7 @@ def _install(variant: str) -> None:
 
 
 def uninstall(variant: str = "m") -> dict[str, Any]:
-    """老师点【卸载】＋确认后才走到这里：只删本变体两件（M/L 共享目录互不误删）。"""
+    """老师点【卸载】＋确认后才走到这里：只删本变体各件（共享目录互不误删）。"""
     spec = _variant(variant)
     label = spec["label"]
     with _LOCK:
@@ -216,14 +235,11 @@ def uninstall(variant: str = "m") -> dict[str, Any]:
     folder = engine_dir()
     if folder.parent != config.PROJECT_ROOT / "engines":
         raise FormulaSetupError("卸载路径不对（%s），拒绝动手。" % folder)
-    from app.core.ingest.recognize import formula_pp_m  # noqa: PLC0415 - 按需导入防循环
+    from app.core.ingest.recognize import (  # noqa: PLC0415 - 按需导入防循环
+        formula_p2t, formula_pp_l, formula_pp_m,
+    )
 
-    if variant == "m":
-        formula_pp_m.reset()
-    else:
-        from app.core.ingest.recognize import formula_pp_l  # noqa: PLC0415
-
-        formula_pp_l.reset()
+    {"m": formula_pp_m, "l": formula_pp_l, "p2t": formula_p2t}[variant].reset()
     paths = model_paths(variant)
     if not any(p.is_file() for p in paths):
         _set(variant, state="idle", step="", message="")

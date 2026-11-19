@@ -1,4 +1,4 @@
-"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档/PP-FormulaNet·M/L 一键装＋配置勾选代笔。
+"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档/公式专科（PP-M/L＋p2t）一键装＋配置勾选代笔。
 
 注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
 下载与指派动作走既有的 layout.model_download 与 API 配置中心。写口都带写令牌：
@@ -179,6 +179,36 @@ def formula_l_install() -> dict[str, Any]:
 def formula_l_uninstall() -> dict[str, Any]:
     try:
         return formula_setup.uninstall("l")
+    except formula_setup.FormulaSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/formula_p2t/status", summary="Pix2Text·MFR 权重安装进度（只读）")
+def formula_p2t_status() -> dict[str, Any]:
+    return formula_setup.status("p2t")
+
+
+@router.post(
+    "/api/models/formula_p2t/install",
+    status_code=202,
+    summary="一键安装 Pix2Text·MFR（engines/formula/models/ 三件权重，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_p2t_install() -> dict[str, Any]:
+    try:
+        return formula_setup.start_install("p2t")
+    except formula_setup.FormulaSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/formula_p2t/uninstall",
+    summary="卸载 Pix2Text·MFR（丢引擎缓存再删本档三件权重，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_p2t_uninstall() -> dict[str, Any]:
+    try:
+        return formula_setup.uninstall("p2t")
     except formula_setup.FormulaSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

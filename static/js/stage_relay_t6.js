@@ -43,6 +43,12 @@
         return true;
       }
 
+      if (method === "models.formula_p2t_status") {
+        // 只读：Pix2Text·MFR 权重安装进度（安装接线卡座3），配置页轮询用。
+        fetchJson("/api/models/formula_p2t/status").then(done, fail);
+        return true;
+      }
+
       if (method === "pending.reidentify_spans") {
         // 只读：公式块清单（坐标来源 MinerU 公式块/文字层），审核渲染列画块级钮用。
         var readPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -113,9 +119,22 @@
         return true;
       }
 
+      if (method === "models.formula_p2t_install") {
+        // 写口：Pix2Text·MFR 权重下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var p2tPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (p2tPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起 Pix2Text·MFR 安装" });
+          return true;
+        }
+        withWriteToken("/api/models/formula_p2t/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
       if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru" ||
           method === "models.uninstall_ocr" || method === "models.uninstall_formula" ||
-          method === "models.uninstall_formula_l") {
+          method === "models.uninstall_formula_l" || method === "models.uninstall_formula_p2t") {
         // 写口：卸载先停服/丢缓存再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
         var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
         if (uninstallPerms.indexOf("questions:write") < 0) {
@@ -127,7 +146,8 @@
           "models.uninstall_mineru": "/api/models/mineru/uninstall",
           "models.uninstall_ocr": "/api/models/ocr/uninstall",
           "models.uninstall_formula": "/api/models/formula/uninstall",
-          "models.uninstall_formula_l": "/api/models/formula_l/uninstall" };
+          "models.uninstall_formula_l": "/api/models/formula_l/uninstall",
+          "models.uninstall_formula_p2t": "/api/models/formula_p2t/uninstall" };
         withWriteToken(uninstallPaths[method], { method: "POST",
           headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
         return true;

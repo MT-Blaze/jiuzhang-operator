@@ -115,8 +115,8 @@ def _rule_weight_present(item: dict[str, Any], ctx: dict[str, Any],
         return _ocr_medium_verdict(item, ctx)
     if store == "formula":
         return _formula_verdict(item, ctx)
-    if store == "formula_l":
-        return _formula_verdict(item, ctx, "l")
+    if store in ("formula_l", "formula_p2t"):
+        return _formula_verdict(item, ctx, store.removeprefix("formula_"))
     if model_store.present(store):
         return _verdict("ready", _say(item.get("ready_detail"), ctx))
     return _verdict("degraded", _say(item.get("degraded_detail"), ctx),
@@ -139,10 +139,10 @@ def _ocr_medium_verdict(item: dict[str, Any], ctx: dict[str, Any]) -> dict[str, 
 
 def _formula_verdict(item: dict[str, Any], ctx: dict[str, Any],
                      variant: str = "m") -> dict[str, str]:
-    """PP-FormulaNet M/L 权重档：安装态×权重在不在，动作 install_formula[_l]。"""
+    """公式专科权重档（PP-M/L＋p2t）：安装态×权重在不在，动作 install_formula[_变体]。"""
     from app.core.ingest import formula_setup
 
-    action = "install_formula" if variant == "m" else "install_formula_l"
+    action = "install_formula" if variant == "m" else "install_formula_" + variant
     install = formula_setup.status(variant)
     if install.get("state") == "error":
         filled = {**ctx, "message": install.get("message", "")}

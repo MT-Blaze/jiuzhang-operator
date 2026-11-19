@@ -1,4 +1,4 @@
-"""PP-FormulaNet M/L 安装链＋引擎口径＋三态（2.22.0 卡＋安装接线卡座2）。
+"""公式专科 M/L/p2t 安装链＋引擎口径＋三态（2.22.0 卡＋安装接线卡座2/3）。
 
 不出网：urlopen 与 mirrors.race 全 mock；落地目录指临时目录，不碰真 engines/。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_formula_setup``
@@ -17,7 +17,7 @@ from unittest import mock
 import numpy as np
 
 from app.core.ingest import formula_setup, registry
-from app.core.ingest.recognize import formula_pp_l, formula_pp_m
+from app.core.ingest.recognize import formula_p2t, formula_pp_l, formula_pp_m
 
 # 测试用小权重规格（形状与真 VARIANTS 一致：name, size, sha256, repo, rel）。
 FAKE_VARIANTS = {
@@ -30,6 +30,10 @@ FAKE_VARIANTS = {
         ("l.onnx", 16, "2" * 64, "RapidAI/RapidDoc",
          "formula/PP-FormulaNet_plus-L/l.onnx"),
         ("l.yml", 24, "3" * 64, "PaddlePaddle/PP-FormulaNet_plus-L", "inference.yml"))},
+    "p2t": {"label": "Pix2Text·MFR", "size_note": "约 1KB", "files": (
+        ("p2t_encoder.onnx", 16, "4" * 64, "breezedeus/pix2text-mfr", "encoder_model.onnx"),
+        ("p2t_decoder.onnx", 24, "5" * 64, "breezedeus/pix2text-mfr", "decoder_model.onnx"),
+        ("p2t_tokenizer.json", 32, "6" * 64, "breezedeus/pix2text-mfr", "tokenizer.json"))},
 }
 
 
@@ -86,6 +90,16 @@ class InstallTest(unittest.TestCase):
         yml.write_bytes(b"x" * FAKE_VARIANTS["l"]["files"][1][1])
         self.assertTrue(formula_setup.weights_ready("l"))
         self.assertFalse(formula_setup.weights_ready("m"))
+
+    def test_weights_ready_p2t_needs_all_three_files(self) -> None:
+        paths = formula_setup.model_paths("p2t")
+        self.assertEqual(len(paths), 3)
+        paths[0].parent.mkdir(parents=True, exist_ok=True)
+        for idx, (path, spec) in enumerate(zip(paths, FAKE_VARIANTS["p2t"]["files"])):
+            path.write_bytes(b"x" * spec[1])
+            self.assertEqual(formula_setup.weights_ready("p2t"), idx == 2)
+        paths[1].unlink()
+        self.assertFalse(formula_setup.weights_ready("p2t"))
 
     def test_download_verifies_sha_and_renames_atomically(self) -> None:
         payload = b"formula-weight-byte"
@@ -194,6 +208,29 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(formula_setup.status("m")["state"], "idle")
         self.assertEqual(thread.call_args.kwargs.get("args"), ("l",))
 
+    def test_start_install_p2t_spawns_p2t_thread_only(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=False), \
+                mock.patch.object(formula_setup.threading, "Thread") as thread:
+            state = formula_setup.start_install("p2t")
+        self.assertEqual(state["state"], "installing")
+        self.assertEqual(formula_setup.status("m")["state"], "idle")
+        self.assertEqual(formula_setup.status("l")["state"], "idle")
+        self.assertEqual(thread.call_args.kwargs.get("args"), ("p2t",))
+
+    def test_install_p2t_races_first_file_and_downloads_all_three(self) -> None:
+        raced = [{"name": "hf-mirror", "url": "https://mirror.test/enc", "ok": True, "ms": 12}]
+        with mock.patch.object(formula_setup.mirrors, "race", return_value=raced) as race, \
+                mock.patch.object(formula_setup, "_download_one") as download:
+            formula_setup._install("p2t")
+        self.assertEqual(race.call_count, 1)
+        raced_urls = [url for _name, url in race.call_args[0][0]]
+        self.assertTrue(all("breezedeus/pix2text-mfr" in u and "encoder_model.onnx" in u
+                            for u in raced_urls))
+        self.assertEqual(download.call_count, 3)
+        self.assertEqual(formula_setup.status("p2t")["state"], "done")
+        self.assertIn("校验通过", formula_setup.status("p2t")["message"])
+        self.assertNotIn("两件", formula_setup.status("p2t")["message"])
+
     def test_unknown_variant_is_loud(self) -> None:
         with self.assertRaises(formula_setup.FormulaSetupError):
             formula_setup.status("xl")
@@ -219,7 +256,7 @@ class UninstallTest(unittest.TestCase):
                                  formula_setup._THREAD.update(saved_thread)))
         _reset_state()
 
-    def _write(self, variant: str) -> tuple[Path, Path]:
+    def _write(self, variant: str) -> tuple[Path, ...]:
         paths = formula_setup.model_paths(variant)
         paths[0].parent.mkdir(parents=True, exist_ok=True)
         for path, spec in zip(paths, FAKE_VARIANTS[variant]["files"]):
@@ -251,6 +288,31 @@ class UninstallTest(unittest.TestCase):
         self.assertTrue(all(p.is_file() for p in m_paths))
         self.assertTrue(folder.is_dir())
 
+    def test_uninstall_p2t_keeps_m_and_l_weights(self) -> None:
+        folder = self.tmp / "engines" / "formula"
+        m_paths = self._write("m")
+        l_paths = self._write("l")
+        p2t_paths = self._write("p2t")
+        with mock.patch.object(formula_p2t, "reset") as reset_p2t, \
+                mock.patch.object(formula_pp_m, "reset") as reset_m, \
+                mock.patch.object(formula_pp_l, "reset") as reset_l:
+            result = formula_setup.uninstall("p2t")
+        reset_p2t.assert_called_once()
+        reset_m.assert_not_called()
+        reset_l.assert_not_called()
+        self.assertTrue(result["ok"])
+        self.assertFalse(any(p.exists() for p in p2t_paths))
+        self.assertTrue(all(p.is_file() for p in m_paths + l_paths))
+        self.assertTrue(folder.is_dir())
+
+    def test_uninstall_last_variant_removes_folder(self) -> None:
+        folder = self.tmp / "engines" / "formula"
+        self._write("p2t")
+        with mock.patch.object(formula_p2t, "reset"):
+            result = formula_setup.uninstall("p2t")
+        self.assertTrue(result["ok"])
+        self.assertFalse(folder.exists())
+
     def test_uninstall_missing_dir_is_noop(self) -> None:
         with mock.patch.object(formula_pp_m, "reset"):
             result = formula_setup.uninstall()
@@ -278,8 +340,10 @@ class EngineTest(unittest.TestCase):
     def setUp(self) -> None:
         formula_pp_m.reset()
         formula_pp_l.reset()
+        formula_p2t.reset()
         self.addCleanup(formula_pp_m.reset)
         self.addCleanup(formula_pp_l.reset)
+        self.addCleanup(formula_p2t.reset)
 
     def test_without_weights_is_loud_not_silent_fallback(self) -> None:
         with mock.patch.object(formula_setup, "weights_ready", return_value=False):
@@ -380,15 +444,66 @@ class EngineTest(unittest.TestCase):
         self.assertIsNone(formula_pp_l._ENGINE)
         self.assertIsNone(formula_pp_l._DECODE)
 
+    def test_p2t_without_weights_is_loud_not_silent_fallback(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=False):
+            result = formula_p2t.recognize(b"fake-png")
+        self.assertFalse(result["ok"])
+        self.assertIn("Pix2Text·MFR", result["detail"])
+        self.assertIn("未安装", result["detail"])
+        self.assertIn("安装", result["detail"])
+
+    def test_p2t_empty_png_is_explicit(self) -> None:
+        result = formula_p2t.recognize(b"")
+        self.assertFalse(result["ok"])
+        self.assertIn("为空", result["detail"])
+
+    def test_p2t_bad_png_is_explicit(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=True), \
+                mock.patch.object(formula_p2t, "_sessions", return_value=(None, None)):
+            result = formula_p2t.recognize(b"not-an-image")
+        self.assertFalse(result["ok"])
+        self.assertIn("解码失败", result["detail"])
+
+    def test_p2t_preprocess_shape_dtype_and_deit_norm(self) -> None:
+        from PIL import Image
+
+        img = Image.new("RGB", (200, 60), "white")
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        x = formula_p2t._preprocess(buf.getvalue())
+        self.assertEqual(x.shape, (1, 3, 384, 384))
+        self.assertEqual(x.dtype, np.float32)
+        # 纯白 255 → (1-0.5)/0.5 = 1.0（DeiT mean/std 0.5 口径）。
+        self.assertAlmostEqual(float(x[0, 0, 0, 0]), 1.0, places=5)
+
+    def test_p2t_preprocess_bad_bytes_returns_none(self) -> None:
+        self.assertIsNone(formula_p2t._preprocess(b"not-an-image"))
+
+    def test_p2t_decode_skips_specials_and_bytelevel(self) -> None:
+        enc = {b: c for c, b in formula_pp_m._byte_decoder().items()}
+        tok = {"vocab": {10: "x", 11: "+", 12: "1", 13: enc[0xC2] + enc[0xBD]},
+               "special": {0, 1, 2, 3, 4}, "bytes": formula_pp_m._byte_decoder()}
+        self.assertEqual(formula_p2t._decode([10, 11, 12, 2], tok), "x+1")
+        self.assertEqual(formula_p2t._decode([10, 1, 13], tok), "x½")
+
+    def test_p2t_reset_drops_engine_and_tokenizer(self) -> None:
+        formula_p2t._ENGINE = (object(), object())
+        formula_p2t._TOK = {"vocab": {}}
+        formula_p2t.reset()
+        self.assertIsNone(formula_p2t._ENGINE)
+        self.assertIsNone(formula_p2t._TOK)
+
 
 class VerdictTest(unittest.TestCase):
-    """registry 三态特例（store=formula/formula_l）：就绪/未装引导安装/安装失败 blocked。"""
+    """registry 三态特例（store=formula/formula_l/formula_p2t）：就绪/未装引导安装/安装失败 blocked。"""
 
     ITEM_M = {"id": "formula_pp_m", "name": "PP-FormulaNet·M", "rule": "weight_present",
               "store": "formula", "ready_detail": "就绪", "degraded_detail": "未装",
               "install_error_detail": "安装失败：{message}"}
     ITEM_L = {**ITEM_M, "id": "formula_pp_l", "name": "PP-FormulaNet·L",
               "store": "formula_l"}
+    ITEM_P2T = {**ITEM_M, "id": "formula_p2t", "name": "Pix2Text·MFR",
+                "store": "formula_p2t"}
 
     def test_ready_when_weights_present(self) -> None:
         with mock.patch.object(formula_setup, "weights_ready", return_value=True), \
@@ -435,6 +550,29 @@ class VerdictTest(unittest.TestCase):
             verdict = registry._judge(self.ITEM_L, {}, [])
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(verdict["action"], "install_formula_l")
+        self.assertIn("源全不通", verdict["detail"])
+
+    def test_p2t_degraded_guides_install_formula_p2t(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=False), \
+                mock.patch.object(formula_setup, "status",
+                                  return_value={"state": "idle"}):
+            verdict = registry._judge(self.ITEM_P2T, {}, [])
+        self.assertEqual(verdict["state"], "degraded")
+        self.assertEqual(verdict["action"], "install_formula_p2t")
+
+    def test_p2t_ready_when_weights_present(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=True), \
+                mock.patch.object(formula_setup, "status",
+                                  return_value={"state": "idle"}):
+            verdict = registry._judge(self.ITEM_P2T, {}, [])
+        self.assertEqual(verdict["state"], "ready")
+
+    def test_p2t_install_error_is_blocked_with_message(self) -> None:
+        with mock.patch.object(formula_setup, "status",
+                               return_value={"state": "error", "message": "源全不通"}):
+            verdict = registry._judge(self.ITEM_P2T, {}, [])
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(verdict["action"], "install_formula_p2t")
         self.assertIn("源全不通", verdict["detail"])
 
 

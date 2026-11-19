@@ -181,6 +181,13 @@ class CoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("公式专科座", result["detail"])
         self.assertIn("整题座", result["detail"])
 
+    async def test_p2t_whole_question_refused_with_seat_guide(self) -> None:
+        self._seat(_entry("formula_p2t"))
+        result = await reidentify.reidentify(PID, "seat_x")
+        self.assertEqual(result["code"], "RECOGNIZE_FAILED")
+        self.assertIn("公式专科座", result["detail"])
+        self.assertIn("整题座", result["detail"])
+
     async def test_pp_m_formula_block_replaces_in_place(self) -> None:
         self._seat(_entry("formula_pp_m"))
         save_back = self._save()

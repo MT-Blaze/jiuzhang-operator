@@ -55,6 +55,9 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
     if step == "formula_pp_l":
         return {"ok": False,
                 "detail": "PP-FormulaNet·L 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
+    if step == "formula_p2t":
+        return {"ok": False,
+                "detail": "Pix2Text·MFR 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
     url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     if step == "ai":
         binding = ai_center.resolve_task("ocr")
