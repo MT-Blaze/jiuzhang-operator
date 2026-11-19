@@ -1,6 +1,6 @@
 # 记号标准字典（闭集＋开集）· 2.21.0
 
-- 状态：进行中
+- 状态：已发布（本地封版 2.21.0；两仓 push 待主公授权 hold）
 - 发起日期：2026-11-19（主公点头「那这个就开干吧」＋术语纠正「不是B级 是闭集 和开集」）
 - 任务卡：E:\jiuzhang\记号标准字典闭集开集任务卡.md
 - 基线：底座 830ca19 ／ 插件 af7884d（2.20.0）；交付 2.21.0 四处 parity＋zip 确定性双建同哈希
@@ -102,3 +102,59 @@ test_file_size_contract 13、test_dict_console＋test_dict_console_subtabs 31、
 冻结面持线：stage.js 776、stage_command.js 545；新文件均 ≤450（norm_dict 266/inbox 200/css 248/relay 120/api 98）。
 
 使用的 skill：add-host-api（norm.* 动线）、sync-biz-record（本记录）。
+
+## [IMPL] 2026-11-19 (3)
+
+阶段E：测试全案＋三支探针＋2.21.0 封版 parity。
+
+- 修阶段D 真缺陷：norm_dict.js（267，≤450）恢复出厂 onConfirm 旧 `.finally(busy(button,false))`
+  把 syncDefault 设的 disabled=true 冲掉，致回出厂后键仍误启用；改为成功交 syncDefault 掌管禁用态、
+  catch 才重新启用、finally 只清 aria-busy。探针②「确认恢复出厂键禁用」案钉住。
+- 新增探针：tools/latex_norm_ui_probe.py（373）＋tools/latex_norm_clean_probe.py（244），
+  动态端口＋随机令牌＋隔离副本，零引擎、零出网；Playwright 自带 chromium 真人路径（CDP 真点击）。
+- parity：插件仓 plugin.toml:4／plugins.json editor／主仓 plugins.toml:51（sync rc=0）／包内 plugin.toml
+  四处同版 2.21.0；zip 确定性双建同哈希 0982b4c4…691c（build1==build2，325.9KB）。
+  插件仓 commit 87e1729 用 MT-Blaze 瞬态身份，只 stage plugin.toml/plugins.json/zip，
+  model_prefs.toml＋models/ 原地 untracked 不碰。底座 parity commit d649fdf。
+
+使用的 skill：prove-visual-change（探针②真浏览器取证）、build-release（parity＋双建＋包结构自检）、sync-biz-record（本记录）。
+
+## [VERIFY] 2026-11-19
+
+单测 19 模块 / 419 案全 OK（逐模块 `.venv\Scripts\python.exe -m unittest tests.<模块>`，禁 pytest/discover）：
+latex_norm 37／latex_style_dict 30／norm_api 8／question_parser 47／clean_latex 13／bank_dedupe 21／
+dedupe_fingerprint 38／ai_recognize 18／recognize_router 24／pending_dedupe 14／pending_dedupe_candidates 20／
+pending_dedupe_scan 18／cleanup_tools 15／dict_console 14／dict_console_subtabs 17／file_size_contract 13／
+ai_plugin_boundary 8／command_registry 35／version_consistency 29。
+证据：docs/handoff/evidence/latex-norm-recon/phase-e-tests.txt。
+
+快门禁 check-quick-gate.sh PASS（6 项全过，ERROR 0）；体积预警 23 份 451–550 行＝基线零新增。
+冻结面持线：latex_style_dict 506／stage.js 776／stage_command.js 545／restore.py 532／st_backup.js 537。
+
+三支探针（零引擎、零出网）：①渲染 e1 271/271（unsupported 0，端口 1994 闭合）；
+②UI e2 18/18（五列＋整机徽章＋族过滤 19 条＋搜索＋choose＋reset 弹窗 Esc 焦点归位＋键禁用＋
+开集收编/驳回＋375px 零横溢 family grid-column 1/-1＋零引擎/零 pageerror/零 4xx5xx/零 console 错；
+端口 2416 port_closed=true；8 截图）；③清洗 e1 9/9（5 微批逐字命中＋幂等＋unknown 落 pending＋
+choose/reset 往返＋rejected 黑名单永不改写；端口 2680 port_closed=true）。
+证据：.system_generated/latex-norm/{render/e1,ui/e2,clean/e1}/。
+
+三查 check-plugin-boundary.sh PASS（fetch(/parent.document/localStorage 各 0 命中、插件零 Python）；
+check-plugin-index-parity.sh PASS（两份索引语义一致、版本一致、示例题过契约）。
+标准核验浏览器真人路径：GB/T 3102.11-1993＋ISO 80000-2:2019＋前身链三跳全证（standards.toml）。
+
+收口：本卡五端口 1994/2279/2416/2680/63533 复验全闭合、本卡孤儿零；
+65496 正式服务与 2889 他会话残留（parent 已死、非本卡端口）未触碰。
+两仓不 push（底座 ahead 28／插件 ahead 10）、不 amend、不改写历史。
+
+## [RELEASE] 2026-11-19
+
+本地封版 2.21.0（记号标准字典·闭集＋开集）。
+- 四处 parity 同版 2.21.0；zip 确定性双建同哈希 sha256 0982b4c4bb983b5879b7b7500face4be6ce7f32d6f4d174854d180b84657691c
+  （325.9KB / 333732 bytes，落 plugins/org.jiuzhang.editor.zip）。
+- 包结构自检：顶层目录==id、无 backend、Apache-2.0 LICENSE 全文 202 行、违禁条目零（db/zip/pyc/onnx/data/models/dev）、
+  min_host_version 1.0.0≤底座 1.2.0（app/__init__.py:8 单源未改）、无 [engine] 节。
+- 底座 commit 链：A 3995984／B 288fa39／C 0ac58ad／D 93a17f2／E ab6f414／parity d649fdf（ahead 28）。
+  插件仓 parity 87e1729（MT-Blaze 瞬态身份，ahead 10）。
+- 回单：docs/handoff/receipts/latex-norm-dict.md（LND-01，五项＋收口复验）。
+- **两仓 push 待主公授权（hold）**；标准标签条款级＝显性欠账（GB 版权不公开全文/ISO 全文付费）；
+  存量批量回写＝另案；CUDA/大图 mtmd/CPU 耗时/准档升默认/MinerU 真填充＝继承重做卡欠账不在本卡修。
