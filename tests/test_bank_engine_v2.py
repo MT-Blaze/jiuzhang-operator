@@ -186,6 +186,25 @@ class EngineBuildTest(unittest.TestCase):
         self.assertEqual(report.schema_version, engine_paths.SCHEMA_VERSION)
         self.assertEqual(report.counts["dim_knowledge_points"], 11577)
 
+    def test_concurrent_first_connect_builds_once_without_lock_error(self) -> None:
+        # 空库首启并发读（看板/编辑器同开）：懒建库须串行，不得 database is locked。
+        from concurrent.futures import ThreadPoolExecutor
+
+        from app.bank_engine import dao_base
+
+        fresh = self.tmp / "concurrent-first.v2.db"
+
+        def open_read() -> None:
+            conn = dao_base.connect(fresh)
+            try:
+                conn.execute("SELECT COUNT(*) FROM dict_subjects").fetchone()
+            finally:
+                conn.close()
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(lambda _: open_read(), range(8)))
+        self.assertTrue(fresh.is_file())
+
 
 class EngineDaoTest(unittest.TestCase):
     @classmethod

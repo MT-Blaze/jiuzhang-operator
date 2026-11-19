@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -10,6 +11,10 @@ from app.bank_engine import paths
 from app.bank_engine.models import ExamDirection, KnowledgePoint
 
 ASSEMBLE_CHUNK = 300
+
+# 空库首启并发读（看板/编辑器同开）会各自触发懒建库，.part 与 WAL/SHM 互删致
+# database is locked；进程内串行化，双检避免热路径拿锁。
+_BUILD_LOCK = threading.Lock()
 
 
 class EngineNotReady(RuntimeError):
@@ -23,9 +28,11 @@ class QuestionNotFound(EngineNotReady):
 def connect(db_path: Path | None = None) -> sqlite3.Connection:
     path = Path(db_path) if db_path else paths.engine_db_path()
     if not path.is_file():
-        from app.bank_engine.builder import build_engine
+        with _BUILD_LOCK:
+            if not path.is_file():
+                from app.bank_engine.builder import build_engine
 
-        build_engine(db_path=path)
+                build_engine(db_path=path)
     conn = sqlite3.connect(path, timeout=15.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
