@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""本地 VLM 服务编排（T6 §3）：fake subprocess，绝不起真 llama-server。
+"""本地 VLM 服务编排（2.20.0 卡§4）：fake subprocess，绝不起真 llama-server。
 
 镜像 test_mineru_service 的收口纪律：未安装/权重缺诚实失败引导点安装／
-懒起服动态端口＋每次随机令牌／健康复用／并发锁防双起／提前退出与超时
-显性失败／stop 杀整棵进程树＋端口复验／endpoint 只读不触发起服。
+懒起原生 llama-server（Vulkan/CUDA -ngl 999，显存不够 -ngl 0 CPU 慢兜底）／
+动态端口＋每次随机令牌／健康复用／并发锁防双起／提前退出与超时显性失败／
+stop 杀整棵进程树＋端口复验／endpoint 只读不触发起服。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_vlm_service``
 """
 
@@ -64,6 +65,9 @@ class VlmServiceTest(unittest.TestCase):
         patcher = mock.patch.object(service.subprocess, "run")
         self.kill_run = patcher.start()
         self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(service.vlm_setup, "gpu_ready", return_value=True)
+        self.gpu_ready = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _close_log(self) -> None:
         if service._LOG_HANDLE is not None:
@@ -71,9 +75,11 @@ class VlmServiceTest(unittest.TestCase):
             service._LOG_HANDLE = None
 
     def _materialize(self) -> None:
-        exe = service.vlm_setup.python_exe()
-        exe.parent.mkdir(parents=True, exist_ok=True)
-        exe.write_bytes(b"stub")
+        bin_dir = self.root / "llama-bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / service.vlm_setup._server_name()).write_bytes(b"stub")
+        (bin_dir / "ggml.dll").write_bytes(b"stub")
+        (bin_dir / "ggml-vulkan.dll").write_bytes(b"stub")
         for path in service.vlm_setup.model_paths():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"stub-gguf")
@@ -110,7 +116,7 @@ class VlmServiceTest(unittest.TestCase):
         self.assertIn("重试安装", result["detail"])
         popen.assert_not_called()
 
-    def test_start_uses_dynamic_port_random_token_and_cpu(self) -> None:
+    def test_start_uses_dynamic_port_random_token_and_gpu(self) -> None:
         self._materialize()
         with self._popen() as popen, \
                 mock.patch.object(service, "_health_ok", return_value=True):
@@ -124,13 +130,26 @@ class VlmServiceTest(unittest.TestCase):
         self.assertTrue(token_one)
         self.assertNotEqual(token_one, second["token"])
         cmd = popen.call_args_list[0].args[0]
-        self.assertEqual(cmd[1:3], ["-m", "llama_cpp.server"])
+        self.assertTrue(cmd[0].endswith(service.vlm_setup._server_name()))
         self.assertEqual(cmd[cmd.index("--port") + 1], "43210")
-        self.assertEqual(cmd[cmd.index("--api_key") + 1], token_one)
-        self.assertEqual(cmd[cmd.index("--chat_format") + 1], "qwen2.5-vl")
-        self.assertIn("--clip_model_path", cmd)
-        self.assertEqual(cmd[cmd.index("--n_gpu_layers") + 1], "0")
+        self.assertEqual(cmd[cmd.index("--api-key") + 1], token_one)
+        self.assertIn("--mmproj", cmd)
+        self.assertIn("--jinja", cmd)
+        self.assertEqual(cmd[cmd.index("--ctx-size") + 1], "8192")
+        self.assertEqual(cmd[cmd.index("-ngl") + 1], "999")
         self.assertEqual(cmd[cmd.index("--host") + 1], "127.0.0.1")
+        self.assertIn("显卡加速", first["detail"])
+
+    def test_start_low_vram_falls_back_to_cpu_layers(self) -> None:
+        self._materialize()
+        self.gpu_ready.return_value = False
+        with self._popen() as popen, \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            result = service.start()
+        self.assertTrue(result["ok"])
+        cmd = popen.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("-ngl") + 1], "0")
+        self.assertIn("CPU 慢兜底", result["detail"])
 
     def test_running_healthy_service_is_reused(self) -> None:
         self._materialize()

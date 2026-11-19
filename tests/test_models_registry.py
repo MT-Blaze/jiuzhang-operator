@@ -287,23 +287,22 @@ class MissingCatalogTest(CatalogIsolated):
 
 
 class HardwareGateTest(CatalogIsolated):
-    def test_low_vram_says_unsupported_and_points_to_cloud(self) -> None:
-        vlm_ok = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
+    def test_low_vram_installed_is_ready_with_cpu_fallback(self) -> None:
+        vlm_ok = {"ok": True, "state": "ready", "version": "0.2.3",
+                  "engine": "vulkan", "message": ""}
         with _runtime(hw=_HW_LOW, vlm_health=vlm_ok, vlm_weights=True):
             entries = _states(registry.status()["entries"])
         entry = entries["vlm_qwen"]
-        self.assertEqual(entry["state"], "blocked")
-        self.assertIn("电脑硬件不支持", entry["detail"])
+        self.assertEqual(entry["state"], "ready")
+        self.assertIn("CPU 慢兜底", entry["detail"])
+        self.assertIn("4.0G", entry["detail"])
         self.assertIn("6G", entry["detail"])
-        self.assertEqual(entry["action"], "assign")
 
-    def test_low_vram_disclosure_appended_when_hardware_underreports(self) -> None:
-        hw = dict(_HW_LOW, detail="WMI 只读到 4.0G，实际显存可能更高")
-        vlm_ok = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
-        with _runtime(hw=hw, vlm_health=vlm_ok, vlm_weights=True):
+    def test_low_vram_not_installed_still_offers_install(self) -> None:
+        with _runtime(hw=_HW_LOW):
             entry = _states(registry.status()["entries"])["vlm_qwen"]
-        self.assertEqual(entry["state"], "blocked")
-        self.assertIn("WMI 只读到 4.0G", entry["detail"])
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "install_vlm")
 
     def test_enough_vram_still_blocked_pending_t6_with_tier(self) -> None:
         with _runtime(hw=_HW_16G):
@@ -331,9 +330,10 @@ class HardwareGateTest(CatalogIsolated):
 
 
 class VlmLocalRuleTest(CatalogIsolated):
-    """本地 VLM 座（T6）：安装体检＋权重＋显存门组合，三态与人话全来自目录。"""
+    """本地 VLM 座（2.20.0 卡§4/§5）：安装体检＋权重＋显存门；不够不灰死安装。"""
 
-    VLM_OK = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
+    VLM_OK = {"ok": True, "state": "ready", "version": "0.2.3",
+              "engine": "vulkan", "message": ""}
 
     def test_not_installed_is_degraded_with_install_action(self) -> None:
         with _runtime():
@@ -352,7 +352,7 @@ class VlmLocalRuleTest(CatalogIsolated):
         with _runtime(vlm_health=self.VLM_OK, vlm_weights=True):
             entry = _states(registry.status()["entries"])["vlm_qwen"]
         self.assertEqual(entry["state"], "ready")
-        self.assertIn("0.3.36", entry["detail"])
+        self.assertIn("0.2.3", entry["detail"])
         self.assertEqual(entry["action"], "")
 
     def test_install_failure_is_blocked_with_reason_and_retry(self) -> None:
@@ -479,6 +479,8 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/prefs", paths)
         self.assertIn("/api/models/vlm/install", paths)
         self.assertIn("/api/models/vlm/status", paths)
+        self.assertIn("/api/models/vlm/uninstall", paths)
+        self.assertIn("/api/models/mineru/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
 
@@ -486,10 +488,33 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 3)
+        self.assertEqual(len(writes), 5)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
+
+    def test_vlm_uninstall_stops_service_before_deleting(self) -> None:
+        from app.core.ingest import vlm_setup
+        calls = []
+        with mock.patch("app.core.ingest.recognize.vlm_service.stop",
+                        side_effect=lambda: calls.append("stop")), \
+                mock.patch.object(vlm_setup, "uninstall",
+                                  side_effect=lambda: calls.append("uninstall")
+                                  or {"ok": True, "message": "已卸载"}):
+            result = models_api.vlm_uninstall()
+        self.assertEqual(calls, ["stop", "uninstall"])
+        self.assertTrue(result["ok"])
+
+    def test_mineru_uninstall_refusal_is_400(self) -> None:
+        from fastapi import HTTPException
+        from app.core.ingest import mineru_setup
+        with mock.patch("app.core.ingest.recognize.mineru_service.stop"), \
+                mock.patch.object(mineru_setup, "uninstall",
+                                  side_effect=mineru_setup.MineruSetupError("安装中，不能卸载")):
+            with self.assertRaises(HTTPException) as caught:
+                models_api.mineru_uninstall()
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("安装中", caught.exception.detail)
 
     def test_prefs_endpoint_rejects_unknown_id(self) -> None:
         from fastapi import HTTPException

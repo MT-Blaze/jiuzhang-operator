@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import sys
 import threading
@@ -16,14 +17,11 @@ from pathlib import Path
 from typing import Any
 
 from app.core import config
+from app.core.ingest import mirrors
 
 logger = logging.getLogger(__name__)
 
 PACKAGE_SPEC = "mineru==4.2.3"
-MIRRORS = (
-    "https://pypi.tuna.tsinghua.edu.cn/simple",
-    "https://mirrors.aliyun.com/pypi/simple/",
-)
 MIN_PYTHON = (3, 11)
 VENV_TIMEOUT = 300
 INSTALL_TIMEOUT = 1800
@@ -203,20 +201,25 @@ def _install() -> None:
                            VENV_TIMEOUT)
             if rc != 0:
                 raise MineruSetupError("隔离环境创建失败：%s" % _classify(out))
+        _set(step="测速选源", message="正在并行测速 pip 四家国内镜像（2 秒超时）…")
+        raced = mirrors.race(mirrors.pip_candidates("mineru"))
         _set(step="安装依赖",
-             message="从国内镜像安装 %s，首次约 1–2GB，请耐心等待。" % PACKAGE_SPEC)
+             message="%s 安装 %s，首次约 1–2GB，请耐心等待。"
+                     % (mirrors.pick_note(raced), PACKAGE_SPEC))
         installed = False
         last_error = "没有可用镜像"
-        for index in MIRRORS:
+        for row in raced:
+            if not row["ok"]:
+                continue
             rc, out = _run(
                 [str(python_exe()), "-m", "pip", "install",
                  "--no-input", "--disable-pip-version-check",
                  "--progress-bar", "off", "--timeout", "60", "--retries", "2",
-                 "--index-url", index, PACKAGE_SPEC], INSTALL_TIMEOUT)
+                 "--index-url", row["url"], PACKAGE_SPEC], INSTALL_TIMEOUT)
             if rc == 0:
                 installed = True
                 break
-            last_error = "%s → %s" % (index, _classify(out))
+            last_error = "%s → %s" % (row["name"], _classify(out))
             logger.warning("MinerU 镜像安装失败：%s", last_error)
             _set(message="镜像失败，换源重试中（%s）" % last_error)
         if not installed:
@@ -239,3 +242,24 @@ def _install() -> None:
     except Exception as exc:  # noqa: BLE001 - 后台线程任何异常都要显性化
         _set(state="error", message="安装异常：%s" % exc)
         logger.warning("[WARN] 本地 MinerU 安装异常：%s", exc)
+
+
+def uninstall() -> dict[str, Any]:
+    """老师点【卸载】＋确认后才走到这里：整个 engines/mineru/ 删掉（含权重）。"""
+    with _LOCK:
+        if _THREAD is not None and _THREAD.is_alive():
+            raise MineruSetupError("正在安装中，不能同时卸载；等安装收口后再试。")
+    folder = engine_dir()
+    if folder.parent != config.PROJECT_ROOT / "engines":
+        raise MineruSetupError("卸载路径不对（%s），拒绝动手。" % folder)
+    if not folder.exists():
+        _set(state="idle", step="", message="")
+        return {"ok": True, "message": "本地 MinerU 本来就没装，无需卸载。"}
+    try:
+        shutil.rmtree(folder)
+    except OSError as exc:
+        raise MineruSetupError(
+            "卸载删不掉 engines/mineru/：%s（可能有服务占用，先停再试）" % exc)
+    _set(state="idle", step="", message="")
+    logger.info("[INFO] 本地 MinerU 已卸载：%s", folder)
+    return {"ok": True, "message": "本地 MinerU 已卸载（隔离环境＋权重全删）。"}

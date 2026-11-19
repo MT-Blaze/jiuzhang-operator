@@ -60,6 +60,36 @@ def vlm_install() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post(
+    "/api/models/vlm/uninstall",
+    summary="卸载本地 VLM（先停服再删 engines/vlm/，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_uninstall() -> dict[str, Any]:
+    from app.core.ingest.recognize import vlm_service
+
+    vlm_service.stop()
+    try:
+        return vlm_setup.uninstall()
+    except vlm_setup.VlmSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/mineru/uninstall",
+    summary="卸载本地 MinerU（先停服再删 engines/mineru/，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def mineru_uninstall() -> dict[str, Any]:
+    from app.core.ingest.recognize import mineru_service
+
+    mineru_service.stop()
+    try:
+        return mineru_setup.uninstall()
+    except mineru_setup.MineruSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _catalog_plugin(plugin_id: str) -> None:
     """代笔资格：已安装、启用且声明 models.catalog；不合格一律 403。"""
     from app.core.plugins.registry import discover_plugins

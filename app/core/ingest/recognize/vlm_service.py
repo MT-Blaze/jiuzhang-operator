@@ -1,9 +1,11 @@
-"""本地 VLM 服务编排（T6 §3）：懒起服＋动态端口＋随机令牌＋健康轮询＋孤儿零容忍。
+"""本地 VLM 服务编排（T6 §3／2.20.0 卡§4）：懒起 llama-server＋动态端口＋随机令牌。
 
 镜像 mineru_service 的收口纪律：只有解析/重认作业真要用才起服（出网铁律：
 绝不在 app 启动时顺手起）；安装只由老师点【安装本地 VLM】发起，未安装一律
-诚实失败引导去点安装。服务起不来/推理失败＝作业失败清单显性（router 口径），
-不静默回 auto。stop 杀整棵进程树＋端口复验，挂 lifespan shutdown 收口。
+诚实失败引导去点安装。发动机＝mineru-llama-cpp 自带的原生 llama-server
+（Vulkan/CUDA 后端 -ngl 999；显存不够或纯 CPU 包 -ngl 0 慢兜底，卡§5）。
+服务起不来/推理失败＝作业失败清单显性（router 口径），不静默回 auto。
+stop 杀整棵进程树＋端口复验，挂 lifespan shutdown 收口。
 """
 
 from __future__ import annotations
@@ -78,6 +80,19 @@ def ensure_ready() -> dict[str, Any]:
     return start()
 
 
+def _min_vram() -> int:
+    """显存门槛是插件 catalog 数据（rule=vlm_local 条目）；目录缺失按 6G 保守。"""
+    from app.core.ingest import registry  # noqa: PLC0415 - 按需导入防循环
+
+    for item in registry.catalog():
+        if str(item.get("rule") or "") == "vlm_local":
+            try:
+                return int(item.get("min_vram") or 6)
+            except (TypeError, ValueError):
+                return 6
+    return 6
+
+
 def start() -> dict[str, Any]:
     """起本地推理服务：动态空闲端口＋每次随机令牌；并发锁防双起。"""
     global _PROC, _PORT, _TOKEN, _LOG_HANDLE
@@ -88,11 +103,13 @@ def start() -> dict[str, Any]:
                 return {"ok": True, "base_url": base_url, "token": _TOKEN,
                         "detail": "复用已在跑的本地 VLM 服务"}
             _kill_locked()
-        py = vlm_setup.python_exe()
+        exe = vlm_setup.server_exe()
         model, mmproj = vlm_setup.model_paths()
-        if not py.is_file() or not model.is_file() or not mmproj.is_file():
+        if exe is None or not model.is_file() or not mmproj.is_file():
             return {"ok": False,
-                    "detail": "本地 VLM 服务入口或权重不在（%s），请在【模型配置】重试安装。" % model}
+                    "detail": "本地 VLM 发动机或权重不在（%s），请在【模型配置】重试安装。" % model}
+        gpu = vlm_setup.gpu_ready(_min_vram())
+        layers = "999" if gpu else "0"
         _PORT = _free_port()
         _TOKEN = secrets.token_hex(16)
         base_url = "http://127.0.0.1:%d" % _PORT
@@ -104,11 +121,10 @@ def start() -> dict[str, Any]:
             if sys.platform == "win32":
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             _PROC = subprocess.Popen(
-                [str(py), "-m", "llama_cpp.server",
-                 "--model", str(model), "--chat_format", "qwen2.5-vl",
-                 "--clip_model_path", str(mmproj),
+                [str(exe), "--model", str(model), "--mmproj", str(mmproj),
                  "--host", "127.0.0.1", "--port", str(_PORT),
-                 "--api_key", _TOKEN, "--n_gpu_layers", "0", "--n_ctx", "8192"],
+                 "--api-key", _TOKEN, "-ngl", layers,
+                 "--ctx-size", "8192", "--jinja"],
                 stdout=_LOG_HANDLE, stderr=subprocess.STDOUT, env=env,
                 cwd=str(vlm_setup.engine_dir()), **kwargs)
         except OSError as exc:
@@ -122,9 +138,11 @@ def start() -> dict[str, Any]:
                 return {"ok": False,
                         "detail": "本地 VLM 服务提前退出：%s" % tail}
             if _health_ok(base_url):
-                logger.info("[INFO] 本地 VLM 服务就绪：端口 %d", _PORT)
+                logger.info("[INFO] 本地 VLM 服务就绪：端口 %d（%s）", _PORT,
+                            "GPU -ngl 999" if gpu else "CPU 慢兜底 -ngl 0")
                 return {"ok": True, "base_url": base_url, "token": _TOKEN,
-                        "detail": "本地 VLM 服务已就绪"}
+                        "detail": "本地 VLM 服务已就绪（%s）"
+                                  % ("显卡加速" if gpu else "CPU 慢兜底")}
             time.sleep(HEALTH_POLL_SECONDS)
         _kill_locked()
         return {"ok": False,

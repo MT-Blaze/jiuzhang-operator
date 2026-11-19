@@ -23,10 +23,15 @@ class LayoutTest(unittest.TestCase):
 
     def test_package_and_mirrors_are_pinned_domestic(self) -> None:
         self.assertEqual(setup.PACKAGE_SPEC, "mineru==4.2.3")
-        joined = " ".join(setup.MIRRORS)
+        names = [name for name, _url in setup.mirrors.PIP_MIRRORS]
+        self.assertEqual(len(names), 4)
+        joined = " ".join(url for _name, url in setup.mirrors.PIP_MIRRORS)
         self.assertIn("tsinghua", joined)
         self.assertIn("aliyun", joined)
+        self.assertIn("tencent", joined)
+        self.assertIn("ustc", joined)
         self.assertNotIn("pypi.org", joined)
+        self.assertNotIn("github", joined.lower())
 
 
 class HealthTest(unittest.TestCase):
@@ -96,6 +101,14 @@ class InstallTest(unittest.TestCase):
         setup._THREAD = None
         self.addCleanup(setup._STATE.update,
                         {"state": "idle", "step": "", "message": ""})
+        patcher = mock.patch.object(
+            setup.mirrors, "race",
+            return_value=[{"name": "阿里云", "url": "https://aliyun.test/simple/mineru/",
+                           "ok": True, "ms": 90},
+                          {"name": "清华", "url": "https://tsinghua.test/simple/mineru/",
+                           "ok": True, "ms": 150}])
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _materialize(self) -> None:
         py = setup.python_exe()
