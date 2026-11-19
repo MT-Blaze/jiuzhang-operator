@@ -1,13 +1,10 @@
 """本地 VLM 一键装（2.20.0 卡§4/§7 修实）：engines/vlm/ 隔离环境＋真 GPU 发动机。
 
-旧坑：llama-cpp-python 0.3.36 国内只有 sdist，CPU 预编译轮在 GitHub（禁），
-装完也是纯 CPU（无 llama-server.exe／ggml-vulkan.dll）。本刀改包：
-mineru-llama-cpp 国内 wheel 自带 Vulkan 版 llama-server（N/A 卡通用 Vulkan
-后端，无独显 -ngl 0 走 CPU 慢兜底）；CUDA 专轮国内不可达＝显性欠账不静默兜底。
+mineru-llama-cpp 国内 wheel 自带 Vulkan 版 llama-server（N/A 卡通用 Vulkan 后端，
+无独显 -ngl 0 走 CPU 慢兜底）；CUDA 专轮国内不可达＝显性欠账不静默兜底。
 pip 四家点击内测速选最快；pip 全败可迁移 engines/mineru 现成 Vulkan 栈
-（engines 内迁移不算出网）。GGUF 权重三源（modelscope/hf-mirror/gitcode）
-测速选路＋sha256 逐件校验。安装/卸载只由老师界面点击发起；体检每次现算（D3b）；
-失败显性化：人话原因进状态，不静默。
+（engines 内迁移不算出网）。GGUF 三源测速选路＋sha256 逐件校验。
+安装/卸载只由老师界面点击发起；体检每次现算（D3b）；失败显性化：人话进状态。
 """
 
 from __future__ import annotations
@@ -48,15 +45,12 @@ ENGINE_LABELS = {"cuda": "CUDA", "vulkan": "Vulkan", "cpu": "CPU"}
 _NETWORK_MARKERS = (
     "connection refused", "connection reset", "connectionerror",
     "max retries exceeded", "failed to establish", "timed out", "timeout",
-    "proxyerror", "sslerror", "certificate verify failed",
-    "temporary failure in name resolution", "getaddrinfo",
-    "network is unreachable", "no route to host", "bad gateway",
-    "service unavailable", "403", "404",
-)
+    "proxyerror", "sslerror", "certificate verify failed", "getaddrinfo",
+    "temporary failure in name resolution", "network is unreachable",
+    "no route to host", "bad gateway", "service unavailable", "403", "404")
 _NO_MATCH_MARKERS = (
     "no matching distribution", "could not find a version that satisfies",
-    "from versions: none",
-)
+    "from versions: none")
 
 _LOCK = threading.Lock()
 _STATE: dict[str, str] = {"state": "idle", "step": "", "message": ""}
@@ -96,8 +90,7 @@ def _venv_site_packages() -> Path:
 
 def bin_dir() -> Path | None:
     """发动机二进制目录：pip 装的优先，其次离线迁移目录；都没有返回 None。"""
-    for folder in (_venv_site_packages() / ENGINE_MODULE / "bin",
-                   engine_dir() / "llama-bin"):
+    for folder in (_venv_site_packages() / ENGINE_MODULE / "bin", engine_dir() / "llama-bin"):
         if (folder / _server_name()).is_file():
             return folder
     return None
@@ -170,13 +163,10 @@ def health() -> dict[str, Any]:
     """装好没有：llama-server 真二进制＋后端库现算（不出网、不起进程）。"""
     folder = bin_dir()
     if folder is None:
-        return {"ok": False, "state": "missing", "version": "", "engine": "",
-                "message": "本地 VLM 发动机未安装（缺 llama-server）。"}
+        return {"ok": False, "state": "missing", "version": "", "engine": "", "message": "本地 VLM 发动机未安装（缺 llama-server）。"}
     if not _has_lib(folder, "ggml"):
-        return {"ok": False, "state": "error", "version": "", "engine": "",
-                "message": "VLM 发动机文件残缺（ggml 运行库不在），请重试安装。"}
-    return {"ok": True, "state": "ready", "version": _engine_version(),
-            "engine": engine_type(), "message": ""}
+        return {"ok": False, "state": "error", "version": "", "engine": "", "message": "VLM 发动机文件残缺（ggml 运行库不在），请重试安装。"}
+    return {"ok": True, "state": "ready", "version": _engine_version(), "engine": engine_type(), "message": ""}
 
 
 def status() -> dict[str, str]:
@@ -214,8 +204,7 @@ def _weight_urls(name: str) -> list[tuple[str, str]]:
     return [
         ("ModelScope", "https://modelscope.cn/models/%s/resolve/master/%s" % (MODEL_REPO, name)),
         ("hf-mirror", "https://hf-mirror.com/%s/resolve/main/%s" % (MODEL_REPO, name)),
-        ("GitCode", "https://gitcode.com/%s/resolve/main/%s" % (MODEL_REPO, name)),
-    ]
+        ("GitCode", "https://gitcode.com/%s/resolve/main/%s" % (MODEL_REPO, name))]
 
 
 def _download_gguf(name: str, size: int, digest: str,
@@ -255,8 +244,7 @@ def _download_gguf(name: str, size: int, digest: str,
 
 def _prefetch_weights() -> bool:
     """GGUF 预取并入安装点击：三源测速选路，两件逐一校验。"""
-    _set(step="预取权重",
-         message="正在测速选权重源（modelscope/hf-mirror/gitcode），随后预取约 3.3GB。")
+    _set(step="预取权重", message="正在测速选权重源（modelscope/hf-mirror/gitcode），随后预取约 3.3GB。")
     raced = mirrors.race(_weight_urls(GGUF_FILES[0][0]))
     sources = [row for row in raced if row["ok"]]
     _set(message=mirrors.pick_note(raced))
@@ -302,9 +290,8 @@ def _migrate_engine() -> bool:
         for info in source.parent.parent.glob(ENGINE_MODULE + "-*.dist-info"):
             stem = info.name[: -len(".dist-info")]
             version = stem.split("-", 1)[1] if "-" in stem else ""
-        toml_io.write(target / "engine.toml",
-                      {"package": ENGINE_MODULE, "version": version or "0.2.1",
-                       "origin": "engines/mineru 离线迁移"})
+        toml_io.write(target / "engine.toml", {"package": ENGINE_MODULE,
+                      "version": version or "0.2.1", "origin": "engines/mineru 离线迁移"})
     except OSError as exc:
         logger.warning("[WARN] VLM 发动机迁移失败：%s", exc)
         return False
@@ -316,14 +303,12 @@ def start_install() -> dict[str, str]:
     """老师点击才走到这里：已装直接 done；在装复用；否则起后台线程。"""
     global _THREAD
     if sys.version_info < MIN_PYTHON:
-        raise VlmSetupError(
-            "底座 Python %d.%d 太旧：mineru-llama-cpp 预编译轮需要 3.11+。"
-            % sys.version_info[:2])
+        raise VlmSetupError("底座 Python %d.%d 太旧：mineru-llama-cpp 预编译轮需要 3.11+。"
+                            % sys.version_info[:2])
     check = health()
     if check["ok"] and weights_ready():
-        _set(state="done", step="体检",
-             message="本地 VLM 已就绪（%s %s 发动机）。"
-                     % (check["version"], ENGINE_LABELS.get(check["engine"], check["engine"])))
+        _set(state="done", step="体检", message="本地 VLM 已就绪（%s %s 发动机）。" % (
+            check["version"], ENGINE_LABELS.get(check["engine"], check["engine"])))
         return status()
     with _LOCK:
         if _THREAD is not None and _THREAD.is_alive():
@@ -349,12 +334,11 @@ def _install_engine() -> None:
     for row in raced:
         if not row["ok"]:
             continue
-        rc, out = _run(
-            [str(python_exe()), "-m", "pip", "install",
-             "--no-input", "--disable-pip-version-check",
-             "--progress-bar", "off", "--timeout", "60", "--retries", "2",
-             "--only-binary", ENGINE_MODULE,
-             "--index-url", row["url"], ENGINE_PACKAGE], INSTALL_TIMEOUT)
+        rc, out = _run([str(python_exe()), "-m", "pip", "install",
+                        "--no-input", "--disable-pip-version-check",
+                        "--progress-bar", "off", "--timeout", "60", "--retries", "2",
+                        "--only-binary", ENGINE_MODULE,
+                        "--index-url", row["url"], ENGINE_PACKAGE], INSTALL_TIMEOUT)
         if rc == 0:
             _set(message="发动机已从 %s 装好（%s）。" % (row["name"], ENGINE_PACKAGE))
             return
@@ -363,16 +347,14 @@ def _install_engine() -> None:
         _set(message="镜像失败，换源重试中（%s）" % last_error)
     if _migrate_engine():
         return
-    raise VlmSetupError(
-        "发动机安装全败：%s。CUDA 专轮国内镜像无货（欠账），"
-        "本机也没有可迁移的现成 Vulkan 栈。" % last_error)
+    raise VlmSetupError("发动机安装全败：%s。CUDA 专轮国内镜像无货（欠账），"
+                        "本机也没有可迁移的现成 Vulkan 栈。" % last_error)
 
 
 def _install() -> None:
     try:
         if not python_exe().is_file():
-            rc, out = _run([sys.executable, "-m", "venv", str(engine_dir())],
-                           VENV_TIMEOUT)
+            rc, out = _run([sys.executable, "-m", "venv", str(engine_dir())], VENV_TIMEOUT)
             if rc != 0:
                 raise VlmSetupError("隔离环境创建失败：%s" % _classify(out))
         if not health()["ok"]:
@@ -384,8 +366,8 @@ def _install() -> None:
         label = ENGINE_LABELS.get(check["engine"], check["engine"])
         if _prefetch_weights():
             _set(state="done", step="完成",
-                 message="本地 VLM 已就绪（mineru-llama-cpp %s，%s 发动机），GGUF 权重已预取。"
-                         % (check["version"], label))
+                 message="本地 VLM 已就绪（mineru-llama-cpp %s，%s 发动机），GGUF 权重已预取。" % (
+                     check["version"], label))
         else:
             _set(state="error", step="预取权重",
                  message="发动机已装好（%s %s），但 GGUF 权重没预取成功：%s"
