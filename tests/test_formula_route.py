@@ -234,6 +234,23 @@ class ReplaceTest(unittest.TestCase):
         span = {"text": "y+2", "latex": "y^2", "origin": "mineru"}
         self.assertIsNone(formula.replace_fragment("已知 $x^2$，求值。", span, "x^3"))
 
+    def test_textlayer_normalized_stem_matches_derived_known(self) -> None:
+        # 文字直取已把强数学串归一包 $...$：原串不在题面里，按同规则推已知片段匹配。
+        span = {"text": " x > 0", "latex": "", "origin": "textlayer"}
+        out = formula.replace_fragment("已知 $x > 0$，求值。", span, "x^3")
+        self.assertEqual(out, "已知 $x^3$，求值。")
+
+    def test_textlayer_roundtrip_with_scan_text_normalization(self) -> None:
+        from app.core.content import scan_text
+        stem = scan_text.text_to_latex("已知 x∈R，求值。")
+        span = {"text": "x∈R", "latex": "", "origin": "textlayer"}
+        out = formula.replace_fragment(stem, span, "x^3")
+        self.assertEqual(out, "已知 $x^3$，求值。")
+
+    def test_textlayer_mismatch_still_returns_none(self) -> None:
+        span = {"text": "y+2", "latex": "", "origin": "textlayer"}
+        self.assertIsNone(formula.replace_fragment("已知 $x^2$，求值。", span, "x^3"))
+
 
 class ComboTest(unittest.IsolatedAsyncioTestCase):
     async def test_unready_seat_marks_pending_and_surfaces_failure(self) -> None:

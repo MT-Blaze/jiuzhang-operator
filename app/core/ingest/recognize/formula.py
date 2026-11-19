@@ -276,12 +276,16 @@ async def dispatch(entry: dict[str, Any], png: bytes,
 
 
 def replace_fragment(stem: str, span: dict[str, Any], new_latex: str) -> str | None:
-    """原位替换（D12）：文字层按原串替换；MinerU 按已有 LaTeX 片段匹配。"""
+    """原位替换（D12）：文字层按原串替换，原串已被归一包 $ 时按同规则推已知片段；
+    MinerU 按已有 LaTeX 片段匹配。"""
     text = str(stem or "")
     original = str(span.get("text") or "")
     if original and original in text:
         return text.replace(original, "$%s$" % new_latex, 1)
     known = _strip_math(str(span.get("latex") or ""))
+    if not known and str(span.get("origin") or "") == "textlayer" and original.strip(" \t"):
+        # 题面已经 scan_text 归一包成 $...$，原串不复存在：按同一归一规则推已知片段。
+        known = scan_text._run_to_latex(list(original.strip(" \t")))
     if known:
         for match in re.finditer(r"\$\$?([^$]+)\$\$?", text):
             if _strip_math(match.group(1)).replace(" ", "") == known.replace(" ", ""):
