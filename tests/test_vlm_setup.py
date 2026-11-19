@@ -463,6 +463,10 @@ class WeightsTest(unittest.TestCase):
         raced_urls = race.call_args.args[0]
         self.assertTrue(all("a.gguf" in url for _name, url in raced_urls))
         self.assertEqual(urlopen.call_count, 2)
+        download_urls = [c.args[0].full_url for c in urlopen.call_args_list]
+        self.assertIn("a.gguf", download_urls[0])
+        self.assertIn("b.gguf", download_urls[1])
+        self.assertNotIn("b.gguf", download_urls[0])
         folder = vlm_weights.engine_dir() / "models"
         self.assertEqual((folder / "a.gguf").read_bytes(), b"abcd")
         self.assertEqual((folder / "b.gguf").read_bytes(), b"abcd")

@@ -114,10 +114,16 @@ def download_gguf(seat: str, name: str, size: int, digest: str,
     target = engine_dir() / "models" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_suffix(target.suffix + ".part")
+    # sources 由首件测速排序而来，row["url"] 指向首件；本件须按件名重建同序 URL，
+    # 否则第二件会误下首件（run4 实证：mmproj 实收主 GGUF 字节数）。
+    url_by_source = dict(weight_urls(seat, name))
     last_error = "没有可达的权重源"
     for row in sources:
+        url = url_by_source.get(row["name"])
+        if not url:
+            continue
         request = urllib.request.Request(
-            row["url"], headers={"User-Agent": mirrors.WEIGHT_UA})
+            url, headers={"User-Agent": mirrors.WEIGHT_UA})
         for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
             hasher = hashlib.sha256()
             written = 0
