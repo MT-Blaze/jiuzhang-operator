@@ -42,3 +42,16 @@ mineru_extract.py:49-50 给 raw PUT 强加 Content-Type: application/octet-strea
 - 收口：stop2.signal→CTRL_BREAK rc=3；端口 4863 复验 0；孤儿零。
 - 回单：docs/handoff/receipts/mineru-put-fix.md（MPF-01，五项＋红线逐项）。
 - 两仓 push hold。
+
+## [VERIFY-2] 2026-11-19 §5 双吐续跑（枢纽复核全过＋放行裁）
+
+- 直调 6/6 PASS 零重试（3 探针×LaTeX/Typst，同席 qwen4-max-preview）：
+  latex 合计墙钟 19.8s／token 2768（completion 833 含 reasoning 399）；
+  typst 30.2s／3254（1304 含 931）。raw 逐字 wire/fix_dual_calls.md＋raw_fix/。
+- 渲染对照（零出网）：MathJax 3/3（0.97/0.74/0.70s）；typst 2/3（0.34/0.30s）。
+  失败逐字 TypstError: unknown variable: ABC＝模型 Typst 腿 $ABC$ 多字符数学标识符
+  语义差异（LaTeX 腿同处合法），非编译器缺陷。字形目检两腿箭头/分数/中文均正常。
+  只摆事实，不排座不写弃用结论。总账 fix_probe.toml＋renders/×5。
+- ahead 更正：rev-list 实测 32（原回单 ahead 2 误，只数本卡两笔）；补充节 commit 后 33。
+- 范围锁死：零产品改动／零新 pip／出网仅 6 直调／7 题解析缺口未修（另卡待用户点头）／
+  65496 零接触／push hold。回单补充节 append（不 amend），新 docs commit。

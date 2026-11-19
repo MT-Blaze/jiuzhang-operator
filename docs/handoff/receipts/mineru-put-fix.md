@@ -112,3 +112,56 @@
 - 截图：`shots/fix_01-seats.png`／`fix_02-l2-batches.png`／`fix_03-l2-review.png`
 - 脚本：`fix_diag.py`／`fix_host2_setup.py`／`fix_host2_launch.py`／`fix_l2_probe.py`／`fix_dual_probe.py`（备）／`fix_render_probe.py`（备）
 - 宿主日志：`server2.out.log`／`server2.err.log`
+
+---
+
+## 补充节 · §5 双吐续跑（枢纽 aa2dcda2 裁：MPF-01 收讫＋§5 放行，2026-11-19）
+
+枢纽复核全过（定向 7 模块自跑全 OK＋快门禁 PASS＋wire 对账＋端口闭＋孤儿零＋key 无明文＋plugins 零写入）。
+裁：§5 放行（上传链已真证绿，build_documents 缺口与双吐无依赖）；范围锁死（零产品改动、零新 pip、
+出网仅 2×3 直调、微批 3、7 题解析缺口另卡待用户点头不修）；ahead 实数更正见下。
+
+### §5 直调（6/6 PASS，零重试；阿里百炼 qwen4-max-preview，temperature=0.1 max_tokens=4000）
+
+raw 逐字不清洗：`wire/fix_dual_calls.md`＋`raw_fix/<stem>_<leg>.md`；元数据 `fix_dual_meta.toml`。
+
+| 探针 | 腿 | status | 墙钟 | prompt | completion（含 reasoning） | total |
+|---|---|---|---|---|---|---|
+| pimg_0c95e344 | latex | 200 | 9.5s | 374 | 415（228） | 789 |
+| pimg_0c95e344 | typst | 200 | 14.2s | 379 | 606（447） | 985 |
+| pimg_20545879 | latex | 200 | 5.3s | 698 | 240（95） | 938 |
+| pimg_20545879 | typst | 200 | 12.0s | 703 | 529（416） | 1232 |
+| pimg_3eff7495 | latex | 200 | 5.0s | 863 | 178（76） | 1041 |
+| pimg_3eff7495 | typst | 200 | 4.0s | 868 | 169（68） | 1037 |
+| **合计** | latex | — | **19.8s** | 1935 | 833（399） | 2768 |
+| **合计** | typst | — | **30.2s** | 1950 | 1304（931） | 3254 |
+
+### 第2步渲染对照（零出网；只摆事实，不排座、不写弃用结论）
+
+P1＝仓内本地 MathJax tex-svg-full.js（Playwright 真渲染截 PNG）；P2＝pylibs typst 0.15.2
+本地编译 PNG（ppi=144，font_paths=C:/Windows/Fonts）。总账 `fix_probe.toml`，图 `renders/`。
+
+| 探针 | MathJax | typst |
+|---|---|---|
+| pimg_0c95e344 | ok 0.97s（mjx 13） | **失败 2.39s** |
+| pimg_20545879 | ok 0.74s（mjx 8） | ok 0.34s |
+| pimg_3eff7495 | ok 0.70s（mjx 4） | ok 0.30s |
+| 成功率 | **3/3** | **2/3** |
+
+typst 失败报错码逐字：`TypstError: unknown variable: ABC`。
+事实定位：模型 Typst 腿把三角形写成 `$ABC$`——Typst 数学模式多字符标识符按未知变量解析；
+同处 LaTeX 腿 `$ABC$` 合法（渲染为斜体 ABC）。属模型吐字对两种语法语义差异，非编译器缺陷。
+
+字形目检（pimg_20545879 成对 PNG）：两腿向量箭头、分数、括号、中文均正常成形；
+版面差异＝模型输出本身（MathJax 腿选项独立成行、typst 腿选项行内连排），非引擎差异。
+其余 PNG 均在 renders/ 可复核。
+
+### 更正与红线
+
+- **ahead 更正**：原回单「ahead 2」只数本卡两笔，误。`git rev-list --count @{u}..HEAD` 实测＝**32**
+  （与枢纽实测一致）；本补充节 docs commit 后＝33。push 时以 rev-list 实数为准（LND-01 勘误口径）。
+- 范围锁死自查：零产品代码改动 ✓（本节只增证据与文档）；零新 pip ✓；出网仅 6 次直调 ✓（无账外腿）；
+  key 全 mask ✓（只内存态）；JSON 禁落盘 ✓（TOML/MD/PNG）；65496 零接触 ✓；两仓 push hold ✓；
+  7 题解析缺口未修 ✓（另卡待用户点头）。
+- 证据索引增补：`fix_dual_meta.toml`、`wire/fix_dual_calls.md`、`raw_fix/`×6、`fix_probe.toml`、
+  `renders/`×5 PNG＋`_mathjax_shell.html`。
