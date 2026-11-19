@@ -59,6 +59,7 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              ocr_weights: bool = False,
              ocr_install: dict | None = None,
              formula_weights: bool = False,
+             formula_l_weights: bool = False,
              formula_install: dict | None = None):
     with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
@@ -79,7 +80,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
             mock.patch.object(ocr_setup, "weights_ready", return_value=ocr_weights), \
             mock.patch.object(ocr_setup, "status",
                               return_value=ocr_install if ocr_install is not None else {"state": "idle"}), \
-            mock.patch.object(formula_setup, "weights_ready", return_value=formula_weights), \
+            mock.patch.object(formula_setup, "weights_ready",
+                              side_effect=lambda variant="m": (
+                                  formula_l_weights if variant == "l" else formula_weights)), \
             mock.patch.object(formula_setup, "status",
                               return_value=formula_install if formula_install is not None else {"state": "idle"}), \
             mock.patch.object(registry.model_prefs, "load",
@@ -363,19 +366,29 @@ class HardwareGateTest(CatalogIsolated):
     def test_formula_entries_blocked_pending_d_card(self) -> None:
         with _runtime():
             entries = _states(registry.status()["entries"])
-        for entry_id in ("formula_pp_l", "formula_p2t", "formula_texify"):
+        for entry_id in ("formula_p2t", "formula_texify"):
             self.assertEqual(entries[entry_id]["state"], "blocked")
             self.assertIn("下一卡开", entries[entry_id]["detail"])
             self.assertEqual(entries[entry_id]["capability"], "formula")
-        # PP-M 本卡接线（2.22.0）：权重三态，未装引导安装，不再 blocked。
+        # PP-M/L 已接线：权重三态，未装引导安装，不再 blocked。
         self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
         self.assertEqual(entries["formula_pp_m"]["action"], "install_formula")
+        self.assertEqual(entries["formula_pp_l"]["state"], "degraded")
+        self.assertEqual(entries["formula_pp_l"]["action"], "install_formula_l")
 
     def test_formula_pp_m_ready_when_weights_present(self) -> None:
         with _runtime(formula_weights=True):
             entries = _states(registry.status()["entries"])
         self.assertEqual(entries["formula_pp_m"]["state"], "ready")
         self.assertEqual(entries["formula_pp_m"]["capability"], "formula")
+        self.assertEqual(entries["formula_pp_l"]["state"], "degraded")
+
+    def test_formula_pp_l_ready_when_weights_present(self) -> None:
+        with _runtime(formula_l_weights=True):
+            entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["formula_pp_l"]["state"], "ready")
+        self.assertEqual(entries["formula_pp_l"]["capability"], "formula")
+        self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
 
     def test_status_carries_hardware_and_tiers(self) -> None:
         with _runtime(hw=_HW_16G):
@@ -510,11 +523,11 @@ class ComboChainTest(CatalogIsolated):
         self.assertEqual(entry["state"], "ready")
         self.assertIn("组合路就绪", entry["detail"])
 
-    def test_combo_pp_m_ready_but_discloses_d_card(self) -> None:
+    def test_combo_pp_m_ready_and_discloses_uninstalled_weights(self) -> None:
         with _runtime():
             entry = _states(registry.status()["entries"])["combo_pp_m"]
         self.assertEqual(entry["state"], "ready")
-        self.assertIn("D 卡", entry["detail"])
+        self.assertIn("PP-FormulaNet·M", entry["detail"])
         self.assertIn("待核", entry["detail"])
 
     def test_combo_gate_passes_ready_and_falls_auto_degraded(self) -> None:
@@ -631,6 +644,9 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/formula/install", paths)
         self.assertIn("/api/models/formula/status", paths)
         self.assertIn("/api/models/formula/uninstall", paths)
+        self.assertIn("/api/models/formula_l/install", paths)
+        self.assertIn("/api/models/formula_l/status", paths)
+        self.assertIn("/api/models/formula_l/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
         self.assertIn("/api/pending/return_batch", paths)
@@ -639,10 +655,24 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 9)
+        self.assertEqual(len(writes), 11)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
+
+    def test_formula_l_endpoints_pass_variant_through(self) -> None:
+        with mock.patch.object(formula_setup, "status",
+                               return_value={"state": "idle"}) as status, \
+                mock.patch.object(formula_setup, "start_install",
+                                  return_value={"state": "installing"}) as install, \
+                mock.patch.object(formula_setup, "uninstall",
+                                  return_value={"ok": True}) as uninstall:
+            models_api.formula_l_status()
+            models_api.formula_l_install()
+            models_api.formula_l_uninstall()
+        status.assert_called_once_with("l")
+        install.assert_called_once_with("l")
+        uninstall.assert_called_once_with("l")
 
     def test_vlm_uninstall_stops_service_before_deleting(self) -> None:
         from app.core.ingest import vlm_setup

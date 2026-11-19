@@ -115,6 +115,8 @@ def _rule_weight_present(item: dict[str, Any], ctx: dict[str, Any],
         return _ocr_medium_verdict(item, ctx)
     if store == "formula":
         return _formula_verdict(item, ctx)
+    if store == "formula_l":
+        return _formula_verdict(item, ctx, "l")
     if model_store.present(store):
         return _verdict("ready", _say(item.get("ready_detail"), ctx))
     return _verdict("degraded", _say(item.get("degraded_detail"), ctx),
@@ -135,18 +137,19 @@ def _ocr_medium_verdict(item: dict[str, Any], ctx: dict[str, Any]) -> dict[str, 
     return _verdict("degraded", _say(item.get("degraded_detail"), ctx), "install_ocr")
 
 
-def _formula_verdict(item: dict[str, Any], ctx: dict[str, Any]) -> dict[str, str]:
-    """PP-FormulaNet·M 权重档（2.22.0 卡§2）：安装态×权重在不在，动作 install_formula。"""
+def _formula_verdict(item: dict[str, Any], ctx: dict[str, Any],
+                     variant: str = "m") -> dict[str, str]:
+    """PP-FormulaNet M/L 权重档：安装态×权重在不在，动作 install_formula[_l]。"""
     from app.core.ingest import formula_setup
 
-    install = formula_setup.status()
+    action = "install_formula" if variant == "m" else "install_formula_l"
+    install = formula_setup.status(variant)
     if install.get("state") == "error":
         filled = {**ctx, "message": install.get("message", "")}
-        return _verdict("blocked", _say(item.get("install_error_detail"), filled),
-                        "install_formula")
-    if formula_setup.weights_ready():
+        return _verdict("blocked", _say(item.get("install_error_detail"), filled), action)
+    if formula_setup.weights_ready(variant):
         return _verdict("ready", _say(item.get("ready_detail"), ctx))
-    return _verdict("degraded", _say(item.get("degraded_detail"), ctx), "install_formula")
+    return _verdict("degraded", _say(item.get("degraded_detail"), ctx), action)
 
 
 def _rule_task_assign(item: dict[str, Any], ctx: dict[str, Any],

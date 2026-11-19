@@ -218,6 +218,27 @@ class DispatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome["ok"])
         self.assertIn("推理失败", outcome["detail"])
 
+    async def test_pp_l_success_passes_engine_contract_through(self) -> None:
+        recognize = mock.Mock(return_value={"ok": True, "latex": r"\frac{1}{2}",
+                                            "detail": "PP-FormulaNet·L 公式已转写"})
+        with mock.patch.object(formula.formula_pp_l, "recognize", recognize):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_pp_l"]},
+                                             b"png", _item())
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["latex"], r"\frac{1}{2}")
+        self.assertEqual(outcome["detail"], "PP-FormulaNet·L 公式已转写")
+        recognize.assert_called_once_with(b"png")
+
+    async def test_pp_l_uninstalled_guides_to_install_button(self) -> None:
+        formula.formula_pp_l.reset()
+        with mock.patch.object(formula.formula_pp_l.formula_setup, "weights_ready",
+                               return_value=False):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_pp_l"]},
+                                             b"png", _item())
+        self.assertFalse(outcome["ok"])
+        self.assertIn("权重未安装", outcome["detail"])
+        self.assertIn("安装", outcome["detail"])
+
 
 class ReplaceTest(unittest.TestCase):
     def test_textlayer_replaces_original_run_in_place(self) -> None:

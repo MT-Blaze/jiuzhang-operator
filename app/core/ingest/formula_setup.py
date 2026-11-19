@@ -1,9 +1,11 @@
-"""PP-FormulaNet·M 权重一键装（2.22.0 卡§2）：engines/formula/models/ 权重目录。
+"""PP-FormulaNet 公式专科权重一键装（M/L 变体，2.22.0 卡§2＋全模型安装接线卡座2）。
 
-底座 .venv 已带 onnxruntime（零新依赖、不建隔离环境）；只缺 onnx＋yml 两件权重
-（yml 内嵌完整 tokenizer，无需另下词表）。主源 modelscope（RapidAI/RapidDoc 仓
-已核实字节数＋sha256，Apache-2.0），hf-mirror/gitcode 同路径候选参与点击内测速
-选路——侦查实测两家无此仓库，测速/校验自然判不通；下载后 sha256 逐件校验，
+权重住 engines/formula/models/（M/L 共享目录，按件落地/按件卸载，互不误删）。
+底座 .venv 已带 onnxruntime（零新依赖、不建隔离环境）；每变体只缺 onnx＋yml 两件
+（yml 内嵌完整 tokenizer，M/L 词表同源；输入尺寸 M=384/L=768 由引擎硬编码）。
+主源 modelscope（onnx 取 RapidAI/RapidDoc 仓、L 的 yml 取 PaddlePaddle/PP-FormulaNet_plus-L
+官方仓，字节数＋sha256 已核实，Apache-2.0），hf-mirror/gitcode 同路径候选参与点击内
+测速选路——侦查实测两家无此仓库，测速/校验自然判不通；下载后 sha256 逐件校验，
 绝不拿错文件加载。安装/卸载只由老师界面点击发起；失败显性化，不静默。
 """
 
@@ -23,37 +25,68 @@ from app.core.ingest import mirrors
 
 logger = logging.getLogger(__name__)
 
-# （任务, 文件名, 字节数, sha256）：modelscope RapidAI/RapidDoc 仓库页实测核对（2026-11-19）。
-WEIGHT_FILES = (
-    ("model", "pp_formulanet_plus_m.onnx", 593908338,
-     "52afa60ff51ad66cd7840a74188a058fe99081e617d3bd780117a2d67d94f50d"),
-    ("config", "pp_formulanet_plus_m_inference.yml", 2244564,
-     "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538"),
-)
+# 每变体两件套（文件名, 字节数, sha256, 仓, 仓内相对路径）：modelscope 仓库页实测核对。
+# M 两件同出 RapidAI/RapidDoc；L 的 onnx 出 RapidDoc、yml 出 PaddlePaddle 官方仓（RapidDoc
+# 的 L 文件夹只有 onnx 无 yml）。落地文件名统一带变体后缀，避免共享目录里相互覆盖。
+VARIANTS: dict[str, dict[str, Any]] = {
+    "m": {
+        "label": "PP-FormulaNet·M",
+        "size_note": "约 596MB",
+        "files": (
+            ("pp_formulanet_plus_m.onnx", 593908338,
+             "52afa60ff51ad66cd7840a74188a058fe99081e617d3bd780117a2d67d94f50d",
+             "RapidAI/RapidDoc", "formula/PP-FormulaNet_plus-M/pp_formulanet_plus_m.onnx"),
+            ("pp_formulanet_plus_m_inference.yml", 2244564,
+             "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538",
+             "RapidAI/RapidDoc", "formula/PP-FormulaNet_plus-M/pp_formulanet_plus_m_inference.yml"),
+        ),
+    },
+    "l": {
+        "label": "PP-FormulaNet·L",
+        "size_note": "约 737MB",
+        "files": (
+            ("pp_formulanet_plus_l.onnx", 735058717,
+             "f6686782c2bb5f84000ff9da4788ac672e736fa2d0652f483a140fa8401b3d32",
+             "RapidAI/RapidDoc", "formula/PP-FormulaNet_plus-L/pp_formulanet_plus_l.onnx"),
+            ("pp_formulanet_plus_l_inference.yml", 2244564,
+             "afc92a2737268da0499c37b0b6741da268c369fd7424667fcfeb8fa6c7b22d30",
+             "PaddlePaddle/PP-FormulaNet_plus-L", "inference.yml"),
+        ),
+    },
+}
 WEIGHT_TIMEOUT = 120
 
 _LOCK = threading.Lock()
-_STATE: dict[str, str] = {"state": "idle", "step": "", "message": ""}
-_THREAD: threading.Thread | None = None
+_STATE: dict[str, dict[str, str]] = {
+    v: {"state": "idle", "step": "", "message": ""} for v in VARIANTS}
+_THREAD: dict[str, threading.Thread | None] = {v: None for v in VARIANTS}
 
 
 class FormulaSetupError(Exception):
     """安装前置不满足或安装失败（人话原因）。"""
 
 
+def _variant(variant: str) -> dict[str, Any]:
+    if variant not in VARIANTS:
+        raise FormulaSetupError("公式变体只认 %s" % "/".join(VARIANTS))
+    return VARIANTS[variant]
+
+
 def engine_dir() -> Path:
     return config.PROJECT_ROOT / "engines" / "formula"
 
 
-def model_paths() -> tuple[Path, Path]:
+def model_paths(variant: str = "m") -> tuple[Path, Path]:
     """（onnx, yml）落地路径；只读，不触发下载。"""
+    files = _variant(variant)["files"]
     folder = engine_dir() / "models"
-    return folder / WEIGHT_FILES[0][1], folder / WEIGHT_FILES[1][1]
+    return folder / files[0][0], folder / files[1][0]
 
 
-def weights_ready() -> bool:
+def weights_ready(variant: str = "m") -> bool:
     """两件在不在本机（只读按字节数核对，不出网）；缺一律当不在。"""
-    for path, (_task, _name, size, _digest) in zip(model_paths(), WEIGHT_FILES):
+    files = _variant(variant)["files"]
+    for path, (_name, size, _digest, _repo, _rel) in zip(model_paths(variant), files):
         try:
             if not path.is_file() or path.stat().st_size != size:
                 return False
@@ -62,36 +95,36 @@ def weights_ready() -> bool:
     return True
 
 
-def status() -> dict[str, str]:
+def status(variant: str = "m") -> dict[str, str]:
     """安装进度快照（只读）：state=idle/installing/done/error＋step＋人话。"""
+    _variant(variant)
     with _LOCK:
-        return dict(_STATE)
+        return dict(_STATE[variant])
 
 
-def _set(**fields: str) -> None:
+def _set(variant: str, **fields: str) -> None:
     with _LOCK:
-        _STATE.update(fields)
+        _STATE[variant].update(fields)
 
 
-def _weight_urls(task: str, name: str) -> list[tuple[str, str]]:
-    rel = "formula/PP-FormulaNet_plus-M/%s" % name
+def _weight_urls(repo: str, rel: str) -> list[tuple[str, str]]:
     return [
-        ("ModelScope", "https://modelscope.cn/models/RapidAI/RapidDoc/"
-                       "resolve/master/" + rel),
-        ("hf-mirror", "https://hf-mirror.com/RapidAI/RapidDoc/resolve/main/" + rel),
-        ("GitCode", "https://gitcode.com/RapidAI/RapidDoc/resolve/main/" + rel),
+        ("ModelScope", "https://modelscope.cn/models/%s/resolve/master/%s" % (repo, rel)),
+        ("hf-mirror", "https://hf-mirror.com/%s/resolve/main/%s" % (repo, rel)),
+        ("GitCode", "https://gitcode.com/%s/resolve/main/%s" % (repo, rel)),
     ]
 
 
-def _download_one(task: str, name: str, size: int, digest: str,
-                  sources: list[dict[str, Any]]) -> None:
+def _download_one(variant: str, spec: tuple, sources: list[dict[str, Any]]) -> None:
     """单件流式下载＋sha256＋原子改名；中断同源重试一次再换下一家；全败抛人话错误。"""
+    name, size, digest, repo, rel = spec
+    label = VARIANTS[variant]["label"]
     target = engine_dir() / "models" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_suffix(target.suffix + ".part")
-    # 测速只探首件链接，各家延迟排序可复用；但每件必须按自己的文件名重新解析
+    # 测速只探首件链接，各家延迟排序可复用；但每件必须按自己的仓/路径重新解析
     # 链接——拿 onnx 的链接下 yml 会收错文件（2.20.0 探针实证同款坑）。
-    urls = dict(_weight_urls(task, name))
+    urls = dict(_weight_urls(repo, rel))
     last_error = "没有可达的权重源"
     for row in sources:
         url = urls.get(row["name"], row["url"])
@@ -108,7 +141,7 @@ def _download_one(task: str, name: str, size: int, digest: str,
                         sink.write(chunk)
                         hasher.update(chunk)
                         written += len(chunk)
-                        _set(message="正在从 %s 下载 %s（%.1f/%.1fMB）…"
+                        _set(variant, message="正在从 %s 下载 %s（%.1f/%.1fMB）…"
                              % (row["name"], name, written / 1e6, size / 1e6))
                 if written != size or hasher.hexdigest() != digest:
                     raise OSError("字节数或 sha256 与仓库登记不符（实收 %d/%d 字节）"
@@ -118,72 +151,92 @@ def _download_one(task: str, name: str, size: int, digest: str,
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 part.unlink(missing_ok=True)
                 last_error = "%s → %s" % (row["name"], exc)
-                logger.warning("PP-FormulaNet·M 权重源失败（第 %d 次）：%s", attempt, last_error)
+                logger.warning("%s 权重源失败（第 %d 次）：%s", label, attempt, last_error)
                 if attempt == 1:
-                    _set(message="下载中断，同源重试中（%s）" % last_error)
+                    _set(variant, message="下载中断，同源重试中（%s）" % last_error)
                     continue
-                _set(message="权重源失败，换下一家（%s）" % last_error)
+                _set(variant, message="权重源失败，换下一家（%s）" % last_error)
     raise FormulaSetupError("权重下载全败（%s）：%s" % (name, last_error))
 
 
-def start_install() -> dict[str, str]:
+def start_install(variant: str = "m") -> dict[str, str]:
     """老师点击才走到这里：已装直接 done；在装复用；否则起后台线程。"""
-    global _THREAD
-    if weights_ready():
-        _set(state="done", step="体检", message="PP-FormulaNet·M 权重已在本机，无需再下。")
-        return status()
+    spec = _variant(variant)
+    label, size_note = spec["label"], spec["size_note"]
+    if weights_ready(variant):
+        _set(variant, state="done", step="体检",
+             message="%s 权重已在本机，无需再下。" % label)
+        return status(variant)
     with _LOCK:
-        if _THREAD is not None and _THREAD.is_alive():
-            return dict(_STATE)
-        _STATE.update({"state": "installing", "step": "测速选源",
-                       "message": "正在测速选权重源（modelscope/hf-mirror/gitcode），"
-                                  "随后下载约 596MB。"})
-        _THREAD = threading.Thread(target=_install, name="jzo-formula-install", daemon=True)
-    _THREAD.start()
-    return status()
+        if _THREAD[variant] is not None and _THREAD[variant].is_alive():
+            return dict(_STATE[variant])
+        _STATE[variant].update({"state": "installing", "step": "测速选源",
+                                "message": "正在测速选权重源（modelscope/hf-mirror/gitcode），"
+                                           "随后下载%s。" % size_note})
+        _THREAD[variant] = threading.Thread(
+            target=_install, args=(variant,), name="jzo-formula-%s-install" % variant,
+            daemon=True)
+    _THREAD[variant].start()
+    return status(variant)
 
 
-def _install() -> None:
+def _install(variant: str) -> None:
+    spec = _variant(variant)
+    label = spec["label"]
     try:
-        raced = mirrors.race(_weight_urls(*WEIGHT_FILES[0][:2]))
+        first = spec["files"][0]
+        raced = mirrors.race(_weight_urls(first[3], first[4]))
         sources = [row for row in raced if row["ok"]]
-        _set(step="下载权重", message=mirrors.pick_note(raced))
+        _set(variant, step="下载权重", message=mirrors.pick_note(raced))
         if not sources:
             raise FormulaSetupError("权重源全不通（modelscope/hf-mirror/gitcode），无法下载。")
-        for task, name, size, digest in WEIGHT_FILES:
-            target = engine_dir() / "models" / name
-            if target.is_file() and target.stat().st_size == size:
+        for file_spec in spec["files"]:
+            target = engine_dir() / "models" / file_spec[0]
+            if target.is_file() and target.stat().st_size == file_spec[1]:
                 continue
-            _download_one(task, name, size, digest, sources)
-        _set(state="done", step="完成",
-             message="PP-FormulaNet·M 已就绪（onnx/yml 两件权重校验通过）。")
-        logger.info("[INFO] PP-FormulaNet·M 安装收口：%s", status().get("message"))
+            _download_one(variant, file_spec, sources)
+        _set(variant, state="done", step="完成",
+             message="%s 已就绪（onnx/yml 两件权重校验通过）。" % label)
+        logger.info("[INFO] %s 安装收口：%s", label, status(variant).get("message"))
     except FormulaSetupError as exc:
-        _set(state="error", message=str(exc))
-        logger.warning("[WARN] PP-FormulaNet·M 安装失败：%s", exc)
+        _set(variant, state="error", message=str(exc))
+        logger.warning("[WARN] %s 安装失败：%s", label, exc)
     except Exception as exc:  # noqa: BLE001 - 后台线程任何异常都要显性化
-        _set(state="error", message="安装异常：%s" % exc)
-        logger.warning("[WARN] PP-FormulaNet·M 安装异常：%s", exc)
+        _set(variant, state="error", message="安装异常：%s" % exc)
+        logger.warning("[WARN] %s 安装异常：%s", label, exc)
 
 
-def uninstall() -> dict[str, Any]:
-    """老师点【卸载】＋确认后才走到这里：整个 engines/formula/ 删掉（含权重）。"""
+def uninstall(variant: str = "m") -> dict[str, Any]:
+    """老师点【卸载】＋确认后才走到这里：只删本变体两件（M/L 共享目录互不误删）。"""
+    spec = _variant(variant)
+    label = spec["label"]
     with _LOCK:
-        if _THREAD is not None and _THREAD.is_alive():
+        if _THREAD[variant] is not None and _THREAD[variant].is_alive():
             raise FormulaSetupError("正在安装中，不能同时卸载；等安装收口后再试。")
     folder = engine_dir()
     if folder.parent != config.PROJECT_ROOT / "engines":
         raise FormulaSetupError("卸载路径不对（%s），拒绝动手。" % folder)
     from app.core.ingest.recognize import formula_pp_m  # noqa: PLC0415 - 按需导入防循环
 
-    formula_pp_m.reset()
-    if not folder.exists():
-        _set(state="idle", step="", message="")
-        return {"ok": True, "message": "PP-FormulaNet·M 权重本来就没下，无需卸载。"}
+    if variant == "m":
+        formula_pp_m.reset()
+    else:
+        from app.core.ingest.recognize import formula_pp_l  # noqa: PLC0415
+
+        formula_pp_l.reset()
+    paths = model_paths(variant)
+    if not any(p.is_file() for p in paths):
+        _set(variant, state="idle", step="", message="")
+        return {"ok": True, "message": "%s 权重本来就没下，无需卸载。" % label}
     try:
-        shutil.rmtree(folder)
+        for path in paths:
+            path.unlink(missing_ok=True)
+        # 共享目录里别的变体还在就保留；全空了才连目录删（保 M 单座卸载删净口径）。
+        models_folder = folder / "models"
+        if models_folder.is_dir() and not any(models_folder.iterdir()):
+            shutil.rmtree(folder)
     except OSError as exc:
-        raise FormulaSetupError("卸载删不掉 engines/formula/：%s（可能有会话占用，稍后再试）" % exc)
-    _set(state="idle", step="", message="")
-    logger.info("[INFO] PP-FormulaNet·M 已卸载：%s", folder)
-    return {"ok": True, "message": "PP-FormulaNet·M 已卸载（权重全删，底座 OCR 不受影响）。"}
+        raise FormulaSetupError("卸载删不掉 %s 权重：%s（可能有会话占用，稍后再试）" % (label, exc))
+    _set(variant, state="idle", step="", message="")
+    logger.info("[INFO] %s 已卸载：%s", label, paths)
+    return {"ok": True, "message": "%s 已卸载（本档权重删净，其他公式档与底座 OCR 不受影响）。" % label}

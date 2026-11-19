@@ -68,21 +68,26 @@ def _byte_decoder() -> dict[str, int]:
     return {chr(c): b for b, c in zip(bs, cs)}
 
 
+def _build_decoder(yml: Any) -> dict[str, Any]:
+    """自 yml 内嵌 tokenizer 建解码表（M/L 词表同源，纯函数供兄弟引擎复用）。"""
+    import yaml
+
+    cfg = yaml.safe_load(yml.read_text(encoding="utf-8"))
+    tok = cfg["PostProcess"]["character_dict"]["fast_tokenizer_file"]
+    return {
+        "vocab": {i: t for t, i in tok["model"]["vocab"].items()},
+        "special": {t["id"] for t in tok["added_tokens"]},
+        "bytes": _byte_decoder(),
+    }
+
+
 def _decoder() -> dict[str, Any]:
     """词表自 yml 内嵌 tokenizer（无需另下词表）；懒加载随引擎缓存同丢。"""
     global _DECODE
     with _LOCK:
         if _DECODE is None:
-            import yaml
-
             _onnx, yml = formula_setup.model_paths()
-            cfg = yaml.safe_load(yml.read_text(encoding="utf-8"))
-            tok = cfg["PostProcess"]["character_dict"]["fast_tokenizer_file"]
-            _DECODE = {
-                "vocab": {i: t for t, i in tok["model"]["vocab"].items()},
-                "special": {t["id"] for t in tok["added_tokens"]},
-                "bytes": _byte_decoder(),
-            }
+            _DECODE = _build_decoder(yml)
         return _DECODE
 
 
@@ -103,8 +108,8 @@ def _crop_margin(img: Any) -> Any:
     return img.crop((x, y, x + w, y + h))
 
 
-def _preprocess(png: bytes) -> Any:
-    """公式图 → [1,1,384,384] float32；裁边→短边384→只缩→居中补黑→归一化。"""
+def _preprocess(png: bytes, size: int = _SIZE) -> Any:
+    """公式图 → [1,1,size,size] float32；裁边→短边size→只缩→居中补黑→归一化。"""
     from PIL import Image, ImageOps
 
     try:
@@ -115,10 +120,10 @@ def _preprocess(png: bytes) -> Any:
     if img.width == 0 or img.height == 0:
         return None
     w, h = img.size
-    nw, nh = (_SIZE, int(_SIZE * h / w)) if w <= h else (int(_SIZE * w / h), _SIZE)
+    nw, nh = (size, int(size * h / w)) if w <= h else (int(size * w / h), size)
     img = img.resize((nw, nh), resample=2)
-    img.thumbnail((_SIZE, _SIZE))
-    dw, dh = _SIZE - img.width, _SIZE - img.height
+    img.thumbnail((size, size))
+    dw, dh = size - img.width, size - img.height
     pad = (dw // 2, dh // 2, dw - dw // 2, dh - dh // 2)
     arr = np.array(ImageOps.expand(img, pad)).astype(np.float32)
     arr = (arr / 255.0 - _MEAN) / _STD
@@ -149,9 +154,9 @@ def _tidy(s: str) -> str:
     return s.replace("XXXXXXX", " ")
 
 
-def _decode(ids: Any) -> str:
+def _decode(ids: Any, dec: dict[str, Any] | None = None) -> str:
     """token ids → LaTeX：eos 截断→特词跳过→ByteLevel 拼字节→中文解包→空白压缩。"""
-    dec = _decoder()
+    dec = dec if dec is not None else _decoder()
     seq = [int(i) for i in np.array(ids).reshape(-1)]
     if _EOS in seq:
         seq = seq[:seq.index(_EOS)]
