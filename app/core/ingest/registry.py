@@ -3,7 +3,7 @@
 目录是插件财产（配置归插件卡，2026-11-18）：底座按「声明了 models.catalog 的
 启用插件」找目录提供者（同 bank.provider 路由口径），读其安装目录 catalog.toml；
 缺失/损坏＝空目录，下拉只剩自动。三态规则是通用契约留底座（Python ingest 路由
-同步要用，问不了 iframe）：解释器只认六个规则名，不认任何模型；有哪些模型、
+同步要用，问不了 iframe）：解释器只认七个规则名，不认任何模型；有哪些模型、
 说明怎么写、硬件门槛多少、启用停用，全归插件 catalog＋model_prefs.toml。
 
 状态每次现算，不缓存体检结论（D3b）。本模块只读状态、不开新下载通道：
@@ -25,15 +25,16 @@ from typing import Any, Callable
 
 from app.core.ai.platform import center as ai_center
 from app.core.config import plugins_dir
-from app.core.ingest import hardware, mineru_setup, model_prefs
+from app.core.ingest import hardware, mineru_setup, model_prefs, vlm_setup
 from app.core.ingest.layout import model_store
 
 CATALOG_CAPABILITY = "models.catalog"
 CATALOG_FILENAME = "catalog.toml"
 # 规则集＝契约（同 capabilities 校验口径）：catalog 声明规则名，底座解释。
 RULES = ("import_probe", "weight_present", "task_assign",
-         "mineru_local", "vram_gate", "blocked")
-_AUTO_PREFS = {"disabled": [], "default_layout": "auto", "default_recognize": "auto"}
+         "mineru_local", "vlm_local", "vram_gate", "blocked")
+_AUTO_PREFS = {"disabled": [], "default_layout": "auto", "default_recognize": "auto",
+               "auto_image_seat": "auto", "auto_text_formula_seat": "auto"}
 
 
 def catalog_provider() -> dict[str, Any] | None:
@@ -146,6 +147,35 @@ def _rule_mineru_local(item: dict[str, Any], ctx: dict[str, Any],
     return _verdict("degraded", _say(item.get("missing_detail"), ctx), "install")
 
 
+def _rule_vlm_local(item: dict[str, Any], ctx: dict[str, Any],
+                    hw: dict[str, Any], tiers: list[dict[str, Any]]) -> dict[str, str]:
+    """本地 VLM 座（T6）：安装体检＋权重＋显存门组合；显存门沿用 hardware.probe。"""
+    install = vlm_setup.status()
+    if install.get("state") == "error":
+        filled = {**ctx, "message": install.get("message", "")}
+        return _verdict("blocked", _say(item.get("install_error_detail"), filled), "install_vlm")
+    check = vlm_setup.health()
+    if not check["ok"]:
+        if check["state"] == "error":
+            filled = {**ctx, "message": check["message"]}
+            return _verdict("blocked", _say(item.get("broken_detail"), filled), "install_vlm")
+        return _verdict("degraded", _say(item.get("missing_detail"), ctx), "install_vlm")
+    if not vlm_setup.weights_ready():
+        return _verdict("degraded", _say(item.get("missing_detail"), ctx), "install_vlm")
+    need = int(item.get("min_vram") or 6)
+    vram = float(hw.get("vram_gb") or 0)
+    label = str(hw.get("vram_label") or "读不到")
+    if vram < need:
+        filled = {**ctx, "vram_label": label, "min_vram": need}
+        detail = _say(item.get("low_detail"), filled)
+        disclosure = str(hw.get("detail") or "")
+        if disclosure:
+            detail += "（%s）" % disclosure
+        return _verdict("blocked", detail, str(item.get("low_action") or "assign"))
+    filled = {**ctx, "version": check["version"], "vram_label": label, "min_vram": need}
+    return _verdict("ready", _say(item.get("ready_detail"), filled))
+
+
 def _rule_vram_gate(item: dict[str, Any], ctx: dict[str, Any],
                     hw: dict[str, Any], tiers: list[dict[str, Any]]) -> dict[str, str]:
     need = int(item.get("min_vram") or 6)
@@ -173,6 +203,7 @@ _HANDLERS: dict[str, Callable[..., dict[str, str]]] = {
     "weight_present": _rule_weight_present,
     "task_assign": _rule_task_assign,
     "mineru_local": _rule_mineru_local,
+    "vlm_local": _rule_vlm_local,
     "vram_gate": _rule_vram_gate,
     "blocked": _rule_blocked,
 }
@@ -210,8 +241,38 @@ def status() -> dict[str, Any]:
     return {"ok": True, "entries": entries, "hardware": hw,
             "vram_tiers": tiers,
             "vram_note": str(doc.get("vram_note") or ""),
+            "auto_seats": auto_seats(plugin_id),
             "defaults": {"layout": prefs["default_layout"],
-                         "recognize": prefs["default_recognize"]}}
+                         "recognize": prefs["default_recognize"],
+                         "auto_image_seat": prefs.get("auto_image_seat", "auto"),
+                         "auto_text_formula_seat": prefs.get("auto_text_formula_seat", "auto")}}
+
+
+def auto_seats(plugin_id: str | None = None) -> dict[str, str]:
+    """自动分流生效座（T6）：prefs 改座优先，选「自动」沿用 catalog [auto] 段。
+
+    空串＝目录没给默认座：调用方必须显性失败引导，绝不静默换座。
+    """
+    if plugin_id is None:
+        provider = catalog_provider()
+        plugin_id = str(provider["id"]) if provider else None
+    doc = _document(plugin_id) if plugin_id else {}
+    section = doc.get("auto") if isinstance(doc.get("auto"), dict) else {}
+    prefs = model_prefs.load(plugin_id) if plugin_id else dict(_AUTO_PREFS)
+    seats: dict[str, str] = {}
+    for key, catalog_key in (("auto_image_seat", "image_seat"),
+                             ("auto_text_formula_seat", "text_formula_seat")):
+        value = str(prefs.get(key) or "auto")
+        seats[key] = str(section.get(catalog_key) or "") if value == "auto" else value
+    return seats
+
+
+def entry_state(seat_id: str) -> dict[str, Any] | None:
+    """按 id 取一条目录×三态（重认/分流取席用）；不在目录返回 None。"""
+    for entry in status()["entries"]:
+        if entry["id"] == str(seat_id or ""):
+            return entry
+    return None
 
 
 def _gate(value: Any, normalize: Callable[[Any], str],

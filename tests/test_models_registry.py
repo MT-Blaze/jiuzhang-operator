@@ -2,7 +2,7 @@
 
 目录是插件财产：夹具造一个声明 models.catalog 的最小 headless 插件，
 catalog.toml 从插件源码仓原样拷来（tests/catalog_fixture.py）。底座只认
-六个规则名，不认任何模型 id；未知规则＝blocked＋提示更新底座，绝不静默。
+七个规则名，不认任何模型 id；未知规则＝blocked＋提示更新底座，绝不静默。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_models_registry``
 """
@@ -26,6 +26,8 @@ _HW_LOW = {"vram_gb": 4.0, "vram_label": "4.0G", "gpu_name": "",
            "vram_source": "wmi", "detail": ""}
 _HEALTH_MISSING = {"ok": False, "state": "missing", "version": "",
                    "message": "本地 MinerU 未安装。"}
+_VLM_HEALTH_MISSING = {"ok": False, "state": "missing", "version": "",
+                       "message": "本地 VLM 未安装。"}
 _PREFS_EMPTY = {"disabled": [], "default_layout": "auto", "default_recognize": "auto"}
 
 
@@ -50,7 +52,10 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              hw: dict | None = None,
              health: dict | None = None,
              install: dict | None = None,
-             prefs: dict | None = None):
+             prefs: dict | None = None,
+             vlm_health: dict | None = None,
+             vlm_install: dict | None = None,
+             vlm_weights: bool = False):
     with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
             mock.patch.object(registry.ai_center, "resolve_task",
@@ -62,6 +67,11 @@ def _runtime(ocr: bool = True, yolo: bool = False,
                               return_value=health if health is not None else _HEALTH_MISSING), \
             mock.patch.object(registry.mineru_setup, "status",
                               return_value=install if install is not None else {"state": "idle"}), \
+            mock.patch.object(registry.vlm_setup, "health",
+                              return_value=vlm_health if vlm_health is not None else dict(_VLM_HEALTH_MISSING)), \
+            mock.patch.object(registry.vlm_setup, "status",
+                              return_value=vlm_install if vlm_install is not None else {"state": "idle"}), \
+            mock.patch.object(registry.vlm_setup, "weights_ready", return_value=vlm_weights), \
             mock.patch.object(registry.model_prefs, "load",
                               return_value=prefs if prefs is not None else dict(_PREFS_EMPTY)):
         yield
@@ -238,10 +248,10 @@ class GenericRuleTest(CatalogIsolated):
         self.assertEqual(entry["state"], "blocked")
         self.assertIn("缺 rule 声明", entry["detail"])
 
-    def test_six_rules_are_the_whole_contract(self) -> None:
+    def test_seven_rules_are_the_whole_contract(self) -> None:
         self.assertEqual(sorted(registry.RULES),
                          sorted(["import_probe", "weight_present", "task_assign",
-                                 "mineru_local", "vram_gate", "blocked"]))
+                                 "mineru_local", "vlm_local", "vram_gate", "blocked"]))
 
 
 class MissingCatalogTest(CatalogIsolated):
@@ -253,7 +263,8 @@ class MissingCatalogTest(CatalogIsolated):
             payload = registry.status()
         self.assertEqual(payload["entries"], [])
         self.assertEqual(payload["defaults"],
-                         {"layout": "auto", "recognize": "auto"})
+                         {"layout": "auto", "recognize": "auto",
+                          "auto_image_seat": "auto", "auto_text_formula_seat": "auto"})
         self.assertEqual(registry.catalog(), ())
         self.assertEqual(registry.gate_layout("yolo"), ("auto", ""))
 
@@ -277,7 +288,8 @@ class MissingCatalogTest(CatalogIsolated):
 
 class HardwareGateTest(CatalogIsolated):
     def test_low_vram_says_unsupported_and_points_to_cloud(self) -> None:
-        with _runtime(hw=_HW_LOW):
+        vlm_ok = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
+        with _runtime(hw=_HW_LOW, vlm_health=vlm_ok, vlm_weights=True):
             entries = _states(registry.status()["entries"])
         entry = entries["vlm_qwen"]
         self.assertEqual(entry["state"], "blocked")
@@ -285,21 +297,30 @@ class HardwareGateTest(CatalogIsolated):
         self.assertIn("6G", entry["detail"])
         self.assertEqual(entry["action"], "assign")
 
+    def test_low_vram_disclosure_appended_when_hardware_underreports(self) -> None:
+        hw = dict(_HW_LOW, detail="WMI 只读到 4.0G，实际显存可能更高")
+        vlm_ok = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
+        with _runtime(hw=hw, vlm_health=vlm_ok, vlm_weights=True):
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "blocked")
+        self.assertIn("WMI 只读到 4.0G", entry["detail"])
+
     def test_enough_vram_still_blocked_pending_t6_with_tier(self) -> None:
         with _runtime(hw=_HW_16G):
             entries = _states(registry.status()["entries"])
         entry = entries["vlm_minicpm"]
         self.assertEqual(entry["state"], "blocked")
-        self.assertIn("待 T6", entry["detail"])
+        self.assertIn("尚未接线", entry["detail"])
         self.assertIn("7B fp16 / 26B int4", entry["detail"])
         self.assertEqual(entry["action"], "")
 
-    def test_formula_entries_blocked_pending_t6(self) -> None:
+    def test_formula_entries_blocked_pending_d_card(self) -> None:
         with _runtime():
             entries = _states(registry.status()["entries"])
         for entry_id in ("formula_pp_m", "formula_pp_l", "formula_p2t", "formula_texify"):
             self.assertEqual(entries[entry_id]["state"], "blocked")
-            self.assertIn("待 T6", entries[entry_id]["detail"])
+            self.assertIn("下一卡开", entries[entry_id]["detail"])
+            self.assertEqual(entries[entry_id]["capability"], "formula")
 
     def test_status_carries_hardware_and_tiers(self) -> None:
         with _runtime(hw=_HW_16G):
@@ -307,6 +328,66 @@ class HardwareGateTest(CatalogIsolated):
         self.assertEqual(payload["hardware"]["vram_gb"], 16.0)
         self.assertEqual(len(payload["vram_tiers"]), 7)
         self.assertIn("约", payload["vram_note"])
+
+
+class VlmLocalRuleTest(CatalogIsolated):
+    """本地 VLM 座（T6）：安装体检＋权重＋显存门组合，三态与人话全来自目录。"""
+
+    VLM_OK = {"ok": True, "state": "ready", "version": "0.3.36", "message": ""}
+
+    def test_not_installed_is_degraded_with_install_action(self) -> None:
+        with _runtime():
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "install_vlm")
+        self.assertIn("安装本地 VLM", entry["detail"])
+
+    def test_weights_missing_is_degraded_even_if_env_ok(self) -> None:
+        with _runtime(vlm_health=self.VLM_OK, vlm_weights=False):
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "install_vlm")
+
+    def test_installed_with_weights_and_vram_is_ready(self) -> None:
+        with _runtime(vlm_health=self.VLM_OK, vlm_weights=True):
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "ready")
+        self.assertIn("0.3.36", entry["detail"])
+        self.assertEqual(entry["action"], "")
+
+    def test_install_failure_is_blocked_with_reason_and_retry(self) -> None:
+        install = {"state": "error", "step": "预取权重",
+                   "message": "权重校验和不符，已丢弃"}
+        with _runtime(vlm_install=install):
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "blocked")
+        self.assertIn("权重校验和不符", entry["detail"])
+        self.assertEqual(entry["action"], "install_vlm")
+
+    def test_broken_env_is_blocked(self) -> None:
+        broken = {"ok": False, "state": "error", "version": "",
+                  "message": "llama-cpp 环境在但体检失败：dll load failed"}
+        with _runtime(vlm_health=broken):
+            entry = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(entry["state"], "blocked")
+        self.assertIn("dll load failed", entry["detail"])
+        self.assertEqual(entry["action"], "install_vlm")
+
+    def test_wired_entry_declares_plan(self) -> None:
+        entry = next(item for item in registry.catalog() if item["id"] == "vlm_qwen")
+        self.assertEqual(entry.get("plan_recognize"), ["vlm_local"])
+
+    def test_auto_seats_come_from_catalog_and_prefs_override(self) -> None:
+        with _runtime():
+            seats = registry.auto_seats()
+        self.assertEqual(seats["auto_image_seat"], "mineru_local")
+        self.assertEqual(seats["auto_text_formula_seat"], "formula_pp_m")
+        prefs = dict(_PREFS_EMPTY, auto_image_seat="cloud_vision",
+                     auto_text_formula_seat="auto")
+        with _runtime(prefs=prefs, vision=_vision()):
+            seats = registry.auto_seats()
+        self.assertEqual(seats["auto_image_seat"], "cloud_vision")
+        self.assertEqual(seats["auto_text_formula_seat"], "formula_pp_m")
 
 
 class MineruLocalTest(CatalogIsolated):
@@ -378,7 +459,8 @@ class PrefsGateTest(CatalogIsolated):
             payload = registry.status()
         self.assertTrue(all(entry["enabled"] for entry in payload["entries"]))
         self.assertEqual(payload["defaults"],
-                         {"layout": "yolo", "recognize": "mineru"})
+                         {"layout": "yolo", "recognize": "mineru",
+                          "auto_image_seat": "auto", "auto_text_formula_seat": "auto"})
 
 
 class RegistryApiTest(CatalogIsolated):
@@ -395,12 +477,16 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/mineru/install", paths)
         self.assertIn("/api/models/mineru/status", paths)
         self.assertIn("/api/models/prefs", paths)
+        self.assertIn("/api/models/vlm/install", paths)
+        self.assertIn("/api/models/vlm/status", paths)
+        self.assertIn("/api/pending/reidentify", paths)
+        self.assertIn("/api/pending/reidentify/spans", paths)
 
     def test_write_routes_declare_write_token(self) -> None:
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 2)
+        self.assertEqual(len(writes), 3)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])

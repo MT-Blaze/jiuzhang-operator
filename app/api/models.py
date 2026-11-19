@@ -1,8 +1,8 @@
-"""模型注册表的 HTTP 口子：只读聚合＋MinerU 一键装＋配置勾选代笔。
+"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM 一键装＋配置勾选代笔。
 
 注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
-下载与指派动作走既有的 layout.model_download 与 API 配置中心。新增两条写口
-都带写令牌：MinerU 安装只由老师点击发起（国内镜像）；启用/停用＋默认选择
+下载与指派动作走既有的 layout.model_download 与 API 配置中心。写口都带写令牌：
+MinerU 与本地 VLM 安装只由老师点击发起（国内镜像）；启用/停用＋默认选择
 用请求插件自身 id 代笔进其插件目录 model_prefs.toml，绝不落宿主 data/；
 未声明 models.catalog 的插件没有目录就没有勾选语义，一律 403。
 """
@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.core.ingest import mineru_setup, model_prefs, registry
+from app.core.ingest import mineru_setup, model_prefs, registry, vlm_setup
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["models"])
@@ -39,6 +39,24 @@ def mineru_install() -> dict[str, Any]:
     try:
         return mineru_setup.start_install()
     except mineru_setup.MineruSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/vlm/status", summary="本地 VLM 安装进度（只读）")
+def vlm_status() -> dict[str, Any]:
+    return vlm_setup.status()
+
+
+@router.post(
+    "/api/models/vlm/install",
+    status_code=202,
+    summary="一键安装本地 VLM（engines/vlm/ 隔离环境＋GGUF 权重，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def vlm_install() -> dict[str, Any]:
+    try:
+        return vlm_setup.start_install()
+    except vlm_setup.VlmSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

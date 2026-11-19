@@ -72,12 +72,15 @@ class ScanRouteNoteTest(CatalogIsolated):
         self.assertEqual(route["phase"], "parsing")
         self.assertFalse(route["done"])
 
-    def test_auto_layout_mentions_both_fallbacks(self) -> None:
+    def test_auto_layout_fallbacks_and_recognize_split(self) -> None:
         route = ingest_route.scan_route("auto", "auto",
                                         {"has_text_layer": False, "garbled": False})
         self.assertIn("本机 YOLO", route["note"])
         self.assertIn("云端", route["note"])
-        self.assertIn("全量", route["note"])
+        # T6：识别自动＝按卷型分流，不再是坏题率阈值瀑布。
+        self.assertIn("按卷型分流", route["note"])
+        self.assertIn("默认整题座", route["note"])
+        self.assertIn("不偷换", route["note"])
         self.assertIn("没有文本层", route["note"])
 
 

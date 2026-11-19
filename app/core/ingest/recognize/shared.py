@@ -128,35 +128,3 @@ def remaining(pending: list[int], outcome: dict[str, Any]) -> list[int]:
     """这一级回填成功后，还没人接手的下标。"""
     done = set(int(index) for index in outcome.get("filled_indexes") or [])
     return [index for index in pending if index not in done]
-
-
-def note_for(picked: str, full: bool, rate: float,
-             ai: dict[str, Any] | None, mineru: dict[str, Any] | None,
-             total: int, pending: list[int], threshold: float) -> str:
-    """把整条瀑布的结果写成老师能读懂的一句路由账。"""
-    total = max(total, 1)
-    left = ("，%d 道保持本地切图" % len(pending)) if pending else ""
-    if picked == "mineru":
-        if mineru is None or not mineru.get("binding"):
-            return "MinerU 没有可用的账号：先在【API 配置】里指派云端解析，保留本地切图待人工核对。"
-        return "MinerU 逐题解析完成：%d/%d 道回填成功%s。" % (
-            mineru["filled"], mineru["attempted"], left)
-    if ai and ai["filled"]:
-        if full:
-            trigger = "（达到分诊线）" if rate >= threshold else ""
-            return "坏题率 %.1f%%%s：已触发并发全量 OCR，%d/%d 道回填成功%s。" % (
-                rate * 100.0, trigger, ai["filled"], ai["attempted"], left)
-        return "坏题率 %.1f%% 低于分诊线，已局部修补 %d/%d 道坏题%s。" % (
-            rate * 100.0, ai["filled"], ai["attempted"], left)
-    if mineru and mineru["filled"]:
-        return "AI 未成功（%s），已改用 MinerU：%d/%d 道回填成功%s。" % (
-            (ai or {}).get("detail") or "不可用", mineru["filled"],
-            mineru["attempted"], left)
-    if mineru is not None and not mineru.get("binding"):
-        return "AI 未成功（%s），MinerU 也没有可用账号：保留本地切图待人工核对。" % (
-            (ai or {}).get("detail") or "不可用")
-    if mineru is not None:
-        return "云端识别都没成功（MinerU：%s），保留本地切图待人工核对。" % (
-            mineru.get("detail") or "不可用")
-    return "AI 未成功（%s），保留本地切图待人工核对。" % (
-        (ai or {}).get("detail") or "不可用")

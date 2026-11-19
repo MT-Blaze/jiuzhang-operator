@@ -17,6 +17,8 @@ from app.core import config, toml_io
 
 FILENAME = "model_prefs.toml"
 DEFAULT_ENGINE = "auto"
+# 自动分流默认座（T6）：auto＝沿用 catalog [auto] 段的擂台默认，其余值必须是目录内座 id。
+AUTO_SEAT_KEYS = ("auto_image_seat", "auto_text_formula_seat")
 _PLUGIN_ID = re.compile(r"^[a-z0-9]+(\.[a-z0-9-]+)+$")
 
 
@@ -36,7 +38,7 @@ def load(plugin_id: str) -> dict[str, Any]:
     disabled = [str(item) for item in (document.get("disabled") or [])
                 if isinstance(item, str) and item and item != DEFAULT_ENGINE]
     result: dict[str, Any] = {"disabled": list(dict.fromkeys(disabled))}
-    for key in ("default_layout", "default_recognize"):
+    for key in ("default_layout", "default_recognize") + AUTO_SEAT_KEYS:
         result[key] = str(document.get(key) or DEFAULT_ENGINE)
     return result
 
@@ -64,7 +66,7 @@ def save(payload: dict[str, Any], valid_ids: Iterable[str],
                 picked.append(entry_id)
         disabled = picked
     document: dict[str, Any] = {"disabled": disabled}
-    for key in ("default_layout", "default_recognize"):
+    for key in ("default_layout", "default_recognize") + AUTO_SEAT_KEYS:
         value = str(payload.get(key) or current[key]) if key in payload else current[key]
         if value != DEFAULT_ENGINE and value not in catalog_ids:
             raise PrefsError("目录里没有这个引擎：%s" % value)

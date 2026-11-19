@@ -91,6 +91,8 @@ def start() -> dict[str, Any]:
             if _health_ok(base_url):
                 return {"ok": True, "base_url": base_url, "token": _TOKEN,
                         "detail": "复用已在跑的本地 MinerU 服务"}
+            logger.warning("[WARN] 本地 MinerU 在跑但不健康，杀旧起新（pid %s，端口 %d）",
+                           _PROC.pid, _PORT)
             _kill_locked()
         api = _api_executable()
         if not os.path.isfile(api):
@@ -123,6 +125,8 @@ def start() -> dict[str, Any]:
         while time.monotonic() < deadline:
             if _PROC.poll() is not None:
                 tail = _log_tail(log_path)
+                logger.warning("[WARN] 本地 MinerU 服务提前退出（pid %s，端口 %d）：%s",
+                               _PROC.pid, _PORT, tail)
                 _kill_locked()
                 return {"ok": False,
                         "detail": "本地 MinerU 服务提前退出：%s" % tail}
@@ -131,6 +135,8 @@ def start() -> dict[str, Any]:
                 return {"ok": True, "base_url": base_url, "token": _TOKEN,
                         "detail": "本地 MinerU 服务已就绪"}
             time.sleep(HEALTH_POLL_SECONDS)
+        logger.warning("[WARN] 本地 MinerU 服务 %d 秒没就绪，杀树收口（pid %s，端口 %d）",
+                       START_TIMEOUT, _PROC.pid if _PROC else 0, _PORT)
         _kill_locked()
         return {"ok": False,
                 "detail": "本地 MinerU 服务 %d 秒内没就绪（首载模型可能超时），"

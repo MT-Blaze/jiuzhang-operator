@@ -44,7 +44,24 @@ class PrefsStoreTest(unittest.TestCase):
     def test_missing_file_means_all_enabled_auto(self) -> None:
         self.assertEqual(prefs.load(PLUGIN_ID),
                          {"disabled": [], "default_layout": "auto",
-                          "default_recognize": "auto"})
+                          "default_recognize": "auto",
+                          "auto_image_seat": "auto", "auto_text_formula_seat": "auto"})
+
+    def test_auto_seat_keys_roundtrip_and_validate(self) -> None:
+        saved = prefs.save({"auto_image_seat": "mineru_local",
+                            "auto_text_formula_seat": "formula_pp_m"},
+                           ["mineru_local", "formula_pp_m"], PLUGIN_ID)
+        self.assertEqual(saved["auto_image_seat"], "mineru_local")
+        self.assertEqual(saved["auto_text_formula_seat"], "formula_pp_m")
+        self.assertEqual(prefs.load(PLUGIN_ID)["auto_image_seat"], "mineru_local")
+        back = prefs.save({"auto_image_seat": "auto"},
+                          ["mineru_local", "formula_pp_m"], PLUGIN_ID)
+        self.assertEqual(back["auto_image_seat"], "auto")
+        self.assertEqual(back["auto_text_formula_seat"], "formula_pp_m")
+        with self.assertRaises(prefs.PrefsError):
+            prefs.save({"auto_image_seat": "乱填"}, ["mineru_local"], PLUGIN_ID)
+        with self.assertRaises(prefs.PrefsError):
+            prefs.save({"auto_text_formula_seat": "乱填"}, ["formula_pp_m"], PLUGIN_ID)
 
     def test_save_roundtrip(self) -> None:
         saved = prefs.save({"disabled": ["yolo", "mineru"],

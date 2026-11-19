@@ -743,12 +743,9 @@
         });
         body.disabled = disabled;
       }
-      if (payload && payload.default_layout !== undefined) {
-        body.default_layout = textValue(payload, "default_layout", 80);
-      }
-      if (payload && payload.default_recognize !== undefined) {
-        body.default_recognize = textValue(payload, "default_recognize", 80);
-      }
+      ["default_layout", "default_recognize", "auto_image_seat", "auto_text_formula_seat"].forEach(function (key) {
+        if (payload && payload[key] !== undefined) body[key] = textValue(payload, key, 80);
+      });
       withWriteToken("/api/models/prefs?plugin_id=" + encodeURIComponent(tab.plugin.id), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

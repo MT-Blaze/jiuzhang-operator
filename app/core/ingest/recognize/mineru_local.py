@@ -71,6 +71,43 @@ def _pick_markdown(blob: bytes) -> str:
         return archive.read(preferred).decode("utf-8", errors="replace")
 
 
+def _equation_boxes(blob: bytes) -> list[dict[str, Any]]:
+    """结果包 middle_json.json 里的公式块坐标（T6 §4）：归一化 0–1 bbox。
+
+    单题图解析只有一页，bbox 相对整张题图＝「同张题图」坐标（D12），
+    审核重认按它裁块。只取显示公式块（interline_equation/equation/equation_interline，
+    带 bbox）；行内公式 equation_inline 是无 bbox 的 span，裁不出，一律当没有，不猜。
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            name = next((n for n in archive.namelist()
+                         if n.rsplit("/", 1)[-1] == "middle_json.json"), None)
+            if not name:
+                return []
+            data = wire.loads(archive.read(name).decode("utf-8", errors="replace"))
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return []
+    boxes: list[dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            bbox = node.get("bbox")
+            if (str(node.get("type") or "") in ("equation", "interline_equation",
+                                                "equation_interline")
+                    and isinstance(bbox, list) and len(bbox) == 4
+                    and all(isinstance(v, (int, float)) for v in bbox)):
+                boxes.append({"bbox": [float(v) for v in bbox],
+                              "latex": str(node.get("content") or "")[:2000]})
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(data)
+    return boxes[:32]
+
+
 def parse_image(name: str, data: bytes, endpoint: dict[str, str], *,
                 wait: float = MINERU_LOCAL_WAIT_SECONDS,
                 sleep: Callable[[float], None] = time.sleep,
@@ -128,12 +165,13 @@ def parse_image(name: str, data: bytes, endpoint: dict[str, str], *,
     try:
         blob = _request(result_url, token, timeout=UPLOAD_TIMEOUT)
         markdown = _pick_markdown(blob)
+        boxes = _equation_boxes(blob)
     except (urllib.error.URLError, TimeoutError, OSError, zipfile.BadZipFile) as exc:
         return {"ok": False, "detail": "本地 MinerU 结果包下载/解压失败：%s" % _error_text(exc)}
     if not markdown.strip():
         return {"ok": False, "detail": "本地 MinerU 结果包里没有 Markdown"}
     return {"ok": True, "markdown": markdown[:MAX_MARKDOWN_CHARS],
-            "detail": "本地 MinerU 已识别"}
+            "formula_boxes": boxes, "detail": "本地 MinerU 已识别"}
 
 
 async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
@@ -171,6 +209,13 @@ async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
             continue
         document = recognize_shared.merge_local(
             documents[0], item.get("question") or {})
+        boxes = outcome.get("formula_boxes") or []
+        if boxes:
+            extensions = dict(document.get("extensions") or {})
+            editor = dict(extensions.get("org.jiuzhang.editor") or {})
+            editor["formula_boxes"] = boxes
+            extensions["org.jiuzhang.editor"] = editor
+            document["extensions"] = extensions
         if recognize_shared.save_back(item, document, batch_id, "ingest.mineru_local"):
             filled_indexes.append(index)
     filled = len(filled_indexes)

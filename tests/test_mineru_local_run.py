@@ -130,6 +130,37 @@ class ParseImageTest(unittest.TestCase):
         self.assertIn("服务地址缺失", result["detail"])
 
 
+class EquationBoxesTest(unittest.TestCase):
+    def _blob(self, middle: dict) -> bytes:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("out/middle_json.json", _json(middle))
+        return buffer.getvalue()
+
+    def test_display_equation_blocks_extract_normalized_bbox(self) -> None:
+        middle = {"pages": [{"para_blocks": [
+            {"type": "text", "bbox": [0.1, 0.1, 0.9, 0.2], "lines": [
+                {"spans": [{"type": "equation_inline", "content": "x^2"}]}]},
+            {"type": "interline_equation", "bbox": [0.2, 0.3, 0.8, 0.45],
+             "content": "\\frac{1}{a}+\\frac{4}{b}=1"},
+            {"type": "equation", "bbox": [0.2, 0.5, 0.8, 0.6], "content": "a+b"},
+        ]}]}
+        boxes = mineru_local._equation_boxes(self._blob(middle))
+        self.assertEqual(len(boxes), 2)
+        self.assertEqual(boxes[0]["bbox"], [0.2, 0.3, 0.8, 0.45])
+        self.assertIn("\\frac", boxes[0]["latex"])
+
+    def test_inline_equations_without_bbox_are_skipped(self) -> None:
+        middle = {"pages": [{"para_blocks": [
+            {"type": "text", "bbox": [0.1, 0.1, 0.9, 0.9], "lines": [
+                {"spans": [{"type": "equation_inline", "content": "a>0"}]}]},
+        ]}]}
+        self.assertEqual(mineru_local._equation_boxes(self._blob(middle)), [])
+
+    def test_missing_middle_json_returns_empty(self) -> None:
+        self.assertEqual(mineru_local._equation_boxes(_zip("# 题干")), [])
+
+
 class RunTest(unittest.IsolatedAsyncioTestCase):
     def _patches(self, outcomes, *, save_ok: bool = True,
                  image_bytes: list[bytes] | None = None):

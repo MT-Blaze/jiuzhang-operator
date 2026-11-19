@@ -330,7 +330,7 @@ def scan_route(layout_engine: str = layout_router.LAYOUT_AUTO,
         _engine_note(picked_layout, "layout",
                      "版面：自动，图片卷先本地 OCR 切题，不达标退回文本层 → 本机 YOLO → 云端。")
         + _engine_note(picked_recognize, "recognize",
-                       "识别：自动，本地先提取；坏题交 AI 修补，坏题率≥30% 转全量，最后 MinerU 兜底。"))
+                       "识别：自动按卷型分流——纯图卷走默认整题座；文字卷文字直取＋公式裁图送默认公式座，失败显性不偷换。"))
     if not text_layer:
         route["note"] += " 本卷没有文本层，本地切题可能留下占位题。"
     if health.get("garbled"):

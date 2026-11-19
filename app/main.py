@@ -29,6 +29,7 @@ from app.api.layout import router as layout_router
 from app.api.meta import router as meta_router
 from app.api.models import router as models_router
 from app.api.pending import router as pending_router
+from app.api.pending_reidentify import router as pending_reidentify_router
 from app.api.plugins import router as plugins_router
 from app.api.questions import router as questions_router
 from app.api.settings import router as settings_router
@@ -181,10 +182,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        # 本地 MinerU 服务是懒起服的子进程：收口必须显式停＋端口复验，孤儿零容忍。
-        from app.core.ingest.recognize import mineru_service
+        # 本地 MinerU / VLM 服务是懒起服的子进程：收口必须显式停＋端口复验，孤儿零容忍。
+        from app.core.ingest.recognize import mineru_service, vlm_service
 
         await asyncio.to_thread(mineru_service.stop)
+        await asyncio.to_thread(vlm_service.stop)
 
 
 def create_app() -> FastAPI:
@@ -209,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(bank_engine_router)
     app.include_router(assets_router)
     app.include_router(pending_router)
+    app.include_router(pending_reidentify_router)
     app.include_router(meta_router)
     app.include_router(ingest_router)
     app.include_router(layout_router)

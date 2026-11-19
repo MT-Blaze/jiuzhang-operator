@@ -1,5 +1,6 @@
-"""识别调度矩阵（2026-11-18 拍板）：自动走瀑布，具体档只走选中通道。
+"""识别调度矩阵（T6 拍板）：自动＝按卷类型分流，具体档只走选中通道。
 
+自动不再走瀑布：纯图卷→默认整题座直转；文字卷→组合路（详见 tests.test_auto_split）。
 具体档队列与旧通道名兼容全由插件 catalog 数据声明（配置归插件卡）：
 夹具见 tests/catalog_fixture.py；目录缺失时具体档一律归自动。
 
@@ -35,7 +36,7 @@ def binding() -> ai_center.TaskBinding:
 
 class RecognizePlanTest(CatalogIsolated):
     def test_matrix(self) -> None:
-        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+        self.assertEqual(recognize_router.plan("auto"), ())
         self.assertEqual(recognize_router.plan("cloud_vision"), ("ai",))
         self.assertEqual(recognize_router.plan("mineru"), ("mineru",))
 
@@ -80,30 +81,69 @@ class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
                 route, on_progress)
         return {"route": result, "ai": ai_mock, "mineru": mineru_mock}
 
-    async def test_clean_auto_stops_at_local(self) -> None:
-        outcome = await self._run("auto", {"rate": 0.0, "bad_indexes": []})
-        outcome["ai"].assert_not_called()
-        outcome["mineru"].assert_not_called()
-        self.assertEqual(outcome["route"]["mode"], "local")
-        self.assertTrue(outcome["route"]["done"])
-        self.assertIn("未发现坏题", outcome["route"]["note"])
+    async def test_auto_image_routes_to_default_seat(self) -> None:
+        from app.core.ingest import registry
+        route: dict = {}
+        ready = {"ok": True, "base_url": "http://127.0.0.1:43210", "token": "tok",
+                 "detail": "本地 MinerU 服务已就绪"}
+        local_mock = mock.AsyncMock(return_value={
+            "ok": True, "attempted": 3, "filled": 3,
+            "filled_indexes": [0, 1, 2], "detail": ""})
+        with mock.patch.object(registry, "auto_seats", return_value={
+                "auto_image_seat": "mineru_local", "auto_text_formula_seat": "formula_pp_m"}), \
+                mock.patch.object(registry, "entry_state", return_value={
+                    "id": "mineru_local", "name": "MinerU·本地",
+                    "state": "ready", "enabled": True}), \
+                mock.patch.object(recognize_router.mineru_service, "ensure_ready",
+                                  return_value=ready), \
+                mock.patch.object(recognize_router.recognize_mineru_local, "run", local_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, "auto", report(0.0, []), route)
+        local_mock.assert_awaited_once()
+        self.assertEqual(result["mode"], "mineru_local")
+        self.assertIn("自动分流（纯图卷）→默认座", result["note"])
 
-    async def test_below_threshold_patches_only_bad(self) -> None:
-        outcome = await self._run("auto", {"rate": 0.2, "bad_indexes": [1]})
-        outcome["ai"].assert_awaited_once()
-        self.assertEqual(outcome["ai"].call_args.args[2], "bad")
-        outcome["mineru"].assert_not_called()
-        self.assertEqual(outcome["route"]["mode"], "partial_ai")
-        self.assertIn("局部修补", outcome["route"]["note"])
+    async def test_auto_image_unready_seat_is_explicit_no_swap(self) -> None:
+        from app.core.ingest import registry
+        route: dict = {}
+        ai_mock = mock.AsyncMock()
+        mineru_mock = mock.AsyncMock()
+        with mock.patch.object(registry, "auto_seats", return_value={
+                "auto_image_seat": "mineru_local", "auto_text_formula_seat": ""}), \
+                mock.patch.object(registry, "entry_state", return_value={
+                    "id": "mineru_local", "name": "MinerU·本地",
+                    "state": "degraded", "enabled": True, "detail": "未安装"}), \
+                mock.patch.object(recognize_router.recognize_ai, "run", ai_mock), \
+                mock.patch.object(recognize_router.recognize_mineru, "run", mineru_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, "auto", report(0.0, []), route)
+        ai_mock.assert_not_called()
+        mineru_mock.assert_not_called()
+        self.assertIn("未就绪", result["note"])
+        self.assertIn("不偷换", result["note"])
+        steps = [entry["step"] for entry in result.get("failures") or []]
+        self.assertIn("识别·自动分流", steps)
+        self.assertTrue(result["done"])
 
-    async def test_threshold_switches_to_full_ocr(self) -> None:
-        outcome = await self._run(
-            "auto", {"rate": 0.3, "bad_indexes": [0, 1, 2]},
-            ai_result={"ok": True, "attempted": 3, "filled": 3,
-                       "filled_indexes": [0, 1, 2], "detail": ""})
-        self.assertEqual(outcome["ai"].call_args.args[2], "all")
-        self.assertEqual(outcome["route"]["mode"], "full_ocr")
-        self.assertIn("并发全量 OCR", outcome["route"]["note"])
+    async def test_auto_text_layer_delegates_to_combo(self) -> None:
+        from app.core.ingest import registry
+        route: dict = {"text_layer": True}
+        combo_mock = mock.AsyncMock(return_value={
+            "ok": True, "attempted": 3, "filled": 3, "filled_indexes": [0, 1, 2],
+            "no_coord_indexes": [], "pending_marks": 0, "seat_ready": True,
+            "seat_reason": "", "detail": ""})
+        with mock.patch.object(registry, "auto_seats", return_value={
+                "auto_image_seat": "mineru_local", "auto_text_formula_seat": "formula_pp_m"}), \
+                mock.patch.object(recognize_router.recognize_local, "probe",
+                                  return_value={"ok": True, "bad_indexes": []}), \
+                mock.patch.object(recognize_router.recognize_formula, "batch_context",
+                                  return_value=([], None)), \
+                mock.patch.object(recognize_router.recognize_formula, "run_combo", combo_mock):
+            result = await recognize_router.fill_batch(
+                "B-001", ITEMS, "auto", report(0.0, []), route)
+        combo_mock.assert_awaited_once()
+        self.assertEqual(result["mode"], "auto_combo")
+        self.assertIn("组合路", result["note"])
 
     async def test_cloud_vision_sends_whole_batch_even_if_clean(self) -> None:
         outcome = await self._run(
@@ -159,24 +199,6 @@ class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         steps = [entry["step"] for entry in route.get("failures") or []]
         self.assertIn("识别·MinerU", steps)
 
-    async def test_ai_failure_falls_back_to_mineru(self) -> None:
-        outcome = await self._run(
-            "auto", {"rate": 0.2, "bad_indexes": [0]},
-            ai_result={"ok": False, "attempted": 1, "filled": 0,
-                       "filled_indexes": [], "detail": "模型超时"},
-            mineru_result={"ok": True, "attempted": 1, "filled": 1,
-                           "filled_indexes": [0], "detail": ""})
-        outcome["mineru"].assert_awaited_once()
-        self.assertIn("已改用 MinerU", outcome["route"]["note"])
-
-    async def test_ai_exception_degrades_without_crash(self) -> None:
-        outcome = await self._run(
-            "auto", {"rate": 0.2, "bad_indexes": [0]},
-            ai_error=RuntimeError("网络断了"), mineru_binding=False)
-        self.assertTrue(outcome["route"]["done"])
-        self.assertIn("AI 未成功", outcome["route"]["note"])
-        self.assertIn("识别引擎异常", outcome["route"]["note"])
-
     async def test_progress_callback_reaches_mineru(self) -> None:
         sentinel = lambda snapshot: None  # noqa: E731
         outcome = await self._run(
@@ -186,13 +208,6 @@ class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
             on_progress=sentinel)
         self.assertIs(outcome["mineru"].call_args.args[5], sentinel)
 
-    async def test_ai_filling_all_bad_skips_mineru(self) -> None:
-        outcome = await self._run(
-            "auto", {"rate": 0.2, "bad_indexes": [0]},
-            ai_result={"ok": True, "attempted": 1, "filled": 1,
-                       "filled_indexes": [0], "detail": ""})
-        outcome["mineru"].assert_not_called()
-
 
 class RecognizeNoCatalogTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
     """目录缺失/未接线通道：归自动或诚实失败，底座不猜模型。"""
@@ -201,7 +216,7 @@ class RecognizeNoCatalogTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         shutil.rmtree(self.plugin)
         self.assertEqual(recognize_router.normalize_engine("mineru"), "auto")
         self.assertEqual(recognize_router.from_legacy_channel("full_ocr"), "auto")
-        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+        self.assertEqual(recognize_router.plan("auto"), ())
 
     async def test_unwired_plan_surfaces_failure_without_fallback(self) -> None:
         (self.plugin / "catalog.toml").write_text(
@@ -248,7 +263,7 @@ class RecognizeMineruLocalTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase
         self.assertEqual(recognize_router.normalize_engine("mineru_local"),
                          "mineru_local")
         self.assertEqual(recognize_router.plan("mineru_local"), ("mineru_local",))
-        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+        self.assertEqual(recognize_router.plan("auto"), ())
 
     async def test_local_engine_skips_cloud_channels(self) -> None:
         outcome = await self._run(self.READY)

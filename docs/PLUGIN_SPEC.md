@@ -703,10 +703,11 @@ provider 不再兼任视图。任何第三方插件只要满足三条，就能�
 模型清单、三态判定规则、人话说明、显存门槛与勾选语义是**插件财产**，不是底座业务：
 
 1. **清单声明能力** `capabilities: ["models.catalog"]`，并在插件根目录随包发行 `catalog.toml`（`[[entries]]` 数组＋`vram_note`/`[[vram_tier]]`）。目录随插件更新**整份覆盖**＝清单可更新；老师的勾选偏好 `model_prefs.toml` 是教师财产，升级时保留（与 `models/` 权重同口径）。
-2. **底座只做通用规则解释器**：每条 entry 声明 `rule`，取值 `import_probe` / `weight_present` / `task_assign` / `mineru_local` / `vram_gate` / `blocked` 六种＋参数；三态（ready/degraded/blocked）与人话文案全部来自目录数据。底座不认识某条 rule 时判 blocked 并明说「底座不认识这条规则，请更新底座」，绝不静默。
-3. **路由按声明找提供者**：底座按 `models.catalog` 能力发现已启用插件，读其安装目录 `plugins/<id>/catalog.toml`；目录缺失或损坏＝空目录，引擎下拉只剩 auto。版面/识别的具体档队列（`plan_layout`/`plan_recognize`）、旧名兼容（`aliases_layout`/`aliases_recognize`）与路由人话注记（`route_note_layout`/`route_note_recognize`）同样由目录声明，底座只认步骤实现名（python/yolo/cloud/ocr/local/ai/mineru），不认模型 id。
+2. **底座只做通用规则解释器**：每条 entry 声明 `rule`，取值 `import_probe` / `weight_present` / `task_assign` / `mineru_local` / `vlm_local` / `vram_gate` / `blocked` 七种＋参数；三态（ready/degraded/blocked）与人话文案全部来自目录数据。底座不认识某条 rule 时判 blocked 并明说「底座不认识这条规则，请更新底座」，绝不静默。
+3. **路由按声明找提供者**：底座按 `models.catalog` 能力发现已启用插件，读其安装目录 `plugins/<id>/catalog.toml`；目录缺失或损坏＝空目录，引擎下拉只剩 auto。版面/识别的具体档队列（`plan_layout`/`plan_recognize`）、旧名兼容（`aliases_layout`/`aliases_recognize`）与路由人话注记（`route_note_layout`/`route_note_recognize`）同样由目录声明，底座只认步骤实现名（python/yolo/cloud/ocr/local/ai/mineru/mineru_local/vlm_local），不认模型 id。
 4. **勾选代笔只写请求插件自己的目录**：`models.prefs_save` 按页签 `plugin.id` 落盘，未声明 `models.catalog` 的插件回 FORBIDDEN（宿主 relay 与后端双重校验）；写令牌鉴权不变。`data/` 全树不得出现 `model_prefs.toml`。
 5. **三态规则是通用契约留底座**：Python 录题路由同步要用三态闸口，问不了沙箱 iframe，所以规则解释器与闸口（`_gate` 不静默）留在底座；模型清单/说明/门槛/勾选全归插件 catalog＋prefs。
+6. **自动分流与重认取席也归目录（T6）**：catalog 可带 `[auto]` 段（`image_seat`/`text_formula_seat`）声明自动分流的默认座；老师在配置页「自动分流默认」改座经 `models.prefs_save` 落 `auto_image_seat`/`auto_text_formula_seat`（选「自动」沿用 `[auto]`）。entry 可声明 `capability = "formula"`：不进识别下拉，只供审核重认与组合路公式座取席。默认座未就绪＝显性失败清单＋人话引导，绝不静默换座。配套宿主转发：`models.vlm_status`（只读安装进度）/`models.vlm_install`（点击发起，写令牌＋questions:write）/`pending.reidentify`（审核重认写口，同权限），实现在 `static/js/stage_relay_t6.js`（整块下架：删该文件＋workspace.html script 行＋stage.js 两处点名）。
 
 ### 2.7 多版本教材与考向并集（v0.8.2 地基）
 

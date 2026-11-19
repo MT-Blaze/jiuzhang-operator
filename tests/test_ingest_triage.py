@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""双引擎路由、五特征坏题体检与 30% 分诊契约。
+"""双引擎路由、五特征坏题体检与分诊统计契约（T6 分流语义）。
 
 钉住六件事：
-1. 版面/识别两套引擎的白名单与瀑布顺序是单源；老四通道名仍能映射；
+1. 版面/识别两套引擎的白名单单源在插件 catalog；老四通道名仍能映射；
+   识别自动＝按卷型分流（不再是步骤队列），具体档选谁只走谁；
 2. 五特征（连续空选项 / 掉变量句式 / 内联小图多但无公式 / 长文无符号 / 公式图未补）各报各的；
 3. 每次解析静默打一行 ``[STAT] 本次解析总题数: X, 坏题数: Y, 坏题率: Z%``；
-4. 坏题率低于阈值只补坏题，达到阈值自动改走并发全量 OCR；
+4. 坏题率只供统计口径：自动＋文字卷走组合路，坏题/无坐标走整题兜底，
+   不再按 30% 阈值切换全量 OCR（T6 拍板）；
 5. MinerU 引擎逐题发送单题截图（绝不发整卷 PDF），进度逐题写进路由；
 6. 双下拉框带原生 title，只影响下一次解析，且单文件不超过 400 行。
 
@@ -84,7 +86,7 @@ def binding(task: str = "ocr") -> ai_center.TaskBinding:
 
 
 class EngineConstantTest(CatalogIsolated):
-    """引擎名单与队列单源在插件 catalog（配置归插件卡）；瀑布实现名归底座。"""
+    """引擎名单单源在插件 catalog（配置归插件卡）；自动＝分流，步骤实现名归底座。"""
 
     def test_01_layout_matrix_auto_waterfall_specific_single(self) -> None:
         self.assertEqual(layout_router.plan("auto"), ("python", "yolo", "cloud"))
@@ -94,10 +96,12 @@ class EngineConstantTest(CatalogIsolated):
         self.assertEqual(layout_router.normalize_engine("乱填"), layout_router.LAYOUT_AUTO)
         self.assertEqual(layout_router.normalize_engine(None), layout_router.LAYOUT_AUTO)
 
-    def test_02_recognize_matrix_auto_waterfall_specific_single(self) -> None:
-        self.assertEqual(recognize_router.plan("auto"), ("local", "ai", "mineru"))
+    def test_02_recognize_matrix_auto_splits_specific_single(self) -> None:
+        # T6：自动不再是步骤队列，按卷型分流（纯图→整题座；文字→组合路）。
+        self.assertEqual(recognize_router.plan("auto"), ())
         self.assertEqual(recognize_router.plan("cloud_vision"), ("ai",))
         self.assertEqual(recognize_router.plan("mineru"), ("mineru",))
+        self.assertEqual(recognize_router.plan("mineru_local"), ("mineru_local",))
         self.assertEqual(recognize_router.BAD_RATE_THRESHOLD, 0.30)
         self.assertEqual(ingest_route.INGEST_BAD_RATE_THRESHOLD, 0.30)
 
@@ -203,30 +207,88 @@ class TriagePolicyTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
                 "B-001", engine, {"has_text_layer": True, "garbled": False})
         return {"route": route, "saved": saved, "recognize": recognize}
 
-    async def test_below_threshold_patches_only_bad_questions(self) -> None:
+    async def _run_split(self, documents: list[dict]) -> dict:
+        """自动＋文字卷：走真实组合路接线，外部座全 mock（绝不触真引擎）。"""
+        from app.core.ingest import registry
+
+        items = [item("p_test%02d" % index, document) for index, document in enumerate(documents)]
+        saved: list[dict] = []
+
+        def capture(rows, **_kwargs):
+            saved.extend(rows)
+            return {"saved_ids": [row.get("pending_id") for row in rows]}
+
+        def fake_local_run(batch_id, rows, pending, ready, route, on_progress):
+            capture([{"pending_id": rows[index]["id"]} for index in pending])
+            return {"ok": True, "attempted": len(pending), "filled": len(pending),
+                    "filled_indexes": list(pending), "detail": ""}
+
+        async def fake_combo(batch_id, rows, good, seat, route, on_progress,
+                             page_images, pdf_bytes):
+            return {"ok": True, "attempted": len(good), "filled": 0,
+                    "filled_indexes": [], "no_coord_indexes": [],
+                    "pending_marks": len(good), "seat_ready": False,
+                    "seat_reason": "专科推理通道下一卡开（D 卡）", "detail": ""}
+
+        combo = mock.AsyncMock(side_effect=fake_combo)
+        local = mock.AsyncMock(side_effect=fake_local_run)
+        ready = {"ok": True, "base_url": "http://127.0.0.1:43210", "token": "tok",
+                 "detail": "本地 MinerU 服务已就绪"}
+        with mock.patch.object(service, "list_batch_questions",
+                               return_value={"items": items}), \
+                mock.patch.object(service, "save_draft", side_effect=capture), \
+                mock.patch.object(registry, "auto_seats", return_value={
+                    "auto_image_seat": "mineru_local",
+                    "auto_text_formula_seat": "formula_pp_m"}), \
+                mock.patch.object(registry, "entry_state", return_value={
+                    "id": "mineru_local", "name": "MinerU·本地",
+                    "state": "ready", "enabled": True}), \
+                mock.patch.object(recognize_router.recognize_formula, "batch_context",
+                                  return_value=([], None)), \
+                mock.patch.object(recognize_router.recognize_formula, "run_combo", combo), \
+                mock.patch.object(recognize_router.mineru_service, "ensure_ready",
+                                  return_value=ready), \
+                mock.patch.object(recognize_router.recognize_mineru_local, "run", local), \
+                mock.patch.object(recognize_ai.ai_recognize, "recognize") as recognize:
+            route = await ingest_route.fill_scan_batch(
+                "B-001", recognize_router.RECOGNIZE_AUTO,
+                {"has_text_layer": True, "garbled": False})
+        return {"route": route, "saved": saved, "combo": combo,
+                "local": local, "recognize": recognize}
+
+    async def test_auto_text_combo_fallback_only_bad_questions(self) -> None:
         docs = [clean_doc(index) for index in range(8)] + [
             broken_doc("empty_options"), broken_doc("dropped_var")]
         with self.assertLogs("app.core.ingest.route", level="INFO") as captured:
-            outcome = await self._run(docs)
-        self.assertEqual(outcome["recognize"].await_count, 2, "低坏题率只补坏题")
-        self.assertEqual(len(outcome["saved"]), 2)
+            outcome = await self._run_split(docs)
+        route = outcome["route"]
+        self.assertIn("坏题率: 20.0%", captured.output[0])
+        self.assertEqual(route["stats"]["bad"], 2)
+        self.assertEqual(outcome["combo"].await_args.args[2], list(range(8)),
+                         "好题保留文字直取，只把公式送座")
+        self.assertEqual(outcome["local"].await_args.args[2], [8, 9],
+                         "只有坏题走整题兜底")
         self.assertEqual([row["pending_id"] for row in outcome["saved"]],
                          ["p_test08", "p_test09"])
-        self.assertIn("局部修补", outcome["route"]["note"])
-        self.assertFalse(outcome["route"].get("mode") == "full_ocr")
-        self.assertIn("坏题率: 20.0%", captured.output[0])
-        self.assertEqual(outcome["route"]["layout_engine"], "auto")
-        self.assertEqual(outcome["route"]["recognize_engine"], "auto")
+        self.assertEqual(route["mode"], "auto_combo")
+        self.assertIn("组合路", route["note"])
+        self.assertIn("整题兜底", route["note"])
+        self.assertIn("待核", route["note"])
+        outcome["recognize"].assert_not_called()
+        self.assertEqual(route["layout_engine"], "auto")
+        self.assertEqual(route["recognize_engine"], "auto")
 
-    async def test_at_threshold_switches_to_full_ocr(self) -> None:
+    async def test_at_threshold_still_combo_not_full_ocr(self) -> None:
         docs = [clean_doc(index) for index in range(7)] + [
             broken_doc("empty_options"), broken_doc("dropped_var"),
             broken_doc("long_no_symbol")]
-        outcome = await self._run(docs)
-        self.assertEqual(outcome["recognize"].await_count, 10,
-                         "坏题率达到 30% 就整批改走并发全量 OCR")
-        self.assertEqual(outcome["route"]["mode"], "full_ocr")
-        self.assertIn("并发全量 OCR", outcome["route"]["note"])
+        outcome = await self._run_split(docs)
+        route = outcome["route"]
+        self.assertEqual(route["stats"]["rate"], 30.0)
+        self.assertEqual(route["mode"], "auto_combo",
+                         "坏题率只供统计：达到 30% 也不再切换全量 OCR（T6）")
+        self.assertNotIn("并发全量 OCR", route["note"])
+        self.assertEqual(outcome["local"].await_args.args[2], [7, 8, 9])
 
     async def test_cloud_vision_engine_ignores_threshold(self) -> None:
         docs = [clean_doc(index) for index in range(10)]
@@ -234,10 +296,14 @@ class TriagePolicyTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome["recognize"].await_count, 10)
         self.assertEqual(outcome["route"]["mode"], "cloud_vision")
 
-    async def test_clean_batch_does_not_call_ai(self) -> None:
-        outcome = await self._run([clean_doc(index) for index in range(5)])
-        self.assertEqual(outcome["recognize"].await_count, 0)
-        self.assertIn("未发现坏题", outcome["route"]["note"])
+    async def test_clean_batch_combo_without_whole_question_fallback(self) -> None:
+        outcome = await self._run_split([clean_doc(index) for index in range(5)])
+        route = outcome["route"]
+        self.assertEqual(route["mode"], "auto_combo")
+        self.assertIn("文字直取正文", route["note"])
+        outcome["local"].assert_not_called()
+        outcome["recognize"].assert_not_called()
+        self.assertEqual(outcome["saved"], [])
 
     async def test_mineru_engine_skips_ai(self) -> None:
         items = [item("p_mine%02d" % index, clean_doc(index)) for index in range(2)]

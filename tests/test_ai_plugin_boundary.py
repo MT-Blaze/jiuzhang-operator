@@ -65,7 +65,9 @@ class HostGuardTest(unittest.TestCase):
 
     def test_07_every_agent_branch_is_dispatched(self) -> None:
         start = STAGE_JS.index("function relayAgent(")
-        body = STAGE_JS[start: STAGE_JS.index("  function relay(tab, message)")]
+        # 切到本模块自己的导出标记为止：拼接源里后面还有别的 relay 兄弟族，
+        # 旧边界（切到 stage.js 的 relay()）会把邻族的分支误算进 relayAgent。
+        body = STAGE_JS[start: STAGE_JS.index("global.JzoStageRelayAgent", start)]
         handled = set(re.findall(r'if \(method === "([^"]+)"', body))
         self.assertTrue(handled, "relayAgent 一条分支都没有，这条测失效了")
         ai_only = _array("AI_ONLY_METHODS")
