@@ -402,13 +402,15 @@ class RestoreUiContractTest(unittest.TestCase):
     def test_every_backend_group_has_a_labelled_section(self) -> None:
         preview = restore.preview_view(self._manifest())
         self.assertEqual(
-            ["bank", "other", "plugins", "uploads"], sorted(preview["groups"])
+            ["bank", "machine", "other", "plugins", "uploads"], sorted(preview["groups"])
         )
         self.assertEqual([], preview["groups"]["plugins"])
+        self.assertEqual([], preview["groups"]["machine"])  # 2.21.0 整机层常驻分组，无文件时为空
         self.assertIn("ws/plugin_state.toml", preview["groups"]["other"])
         for group, label in (("bank", "题库数据（必选）"),
                              ("uploads", "图片资产（必选）"),
-                             ("other", "其他数据文件（可选，默认勾选）")):
+                             ("other", "其他数据文件（可选，默认勾选）"),
+                             ("machine", "整机记号字典（必选）")):
             self.assertIn(group, preview["groups"], f"后端少了 {group} 分组")
             self.assertIn(label, self.js, f"前端少了 {group} 这一组的标题")
 

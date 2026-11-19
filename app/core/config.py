@@ -82,6 +82,11 @@ class Settings:
         return self.data_dir / "pending.db"
 
     @property
+    def latex_norm_db_path(self) -> Path:
+        """记号标准字典整机库（2.21.0 卡 §1）：住根 data，不随工作区漂移。"""
+        return root_data_dir() / "latex_norm.db"
+
+    @property
     def pending_assets_dir(self) -> Path:
         """中转站的配图目录：入库前配图只落在这里，不进 uploads/。"""
         return self.data_dir / "pending_assets"

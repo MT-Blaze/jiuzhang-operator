@@ -22,6 +22,8 @@ from app.core.backup.package.files import (
     BACKUP_STEM_RE,
     GLOBAL_FILES,
     HOST_ONLY_FILES,
+    MACHINE_DB_NAME,
+    MACHINE_PREFIX,
     MANIFEST_FILE_RE,
     OVERLAY_PLUGINS_PREFIX,
     OVERLAY_PREFIX,
@@ -41,6 +43,7 @@ from app.core.backup.package.files import (
     is_sqlite,
     iter_overlay_files,
     iter_workspace_files,
+    machine_target,
     now_iso,
     overlay_dir,
     overlay_rel,
@@ -81,13 +84,14 @@ from app.core.backup.settings import (
 __all__ = [
     # 常量与命名
     "BACKUP_FILE_RE", "BACKUP_STEM_RE", "GLOBAL_FILES", "HOST_ONLY_FILES",
-    "MANIFEST_FILE_RE", "MANIFEST_VERSION", "OVERLAY_PLUGINS_PREFIX", "OVERLAY_PREFIX",
+    "MACHINE_DB_NAME", "MACHINE_PREFIX", "MANIFEST_FILE_RE", "MANIFEST_VERSION",
+    "OVERLAY_PLUGINS_PREFIX", "OVERLAY_PREFIX",
     "OVERLAY_STATE_FILES", "PLUGIN_ID_RE", "SECRET_FILES", "SIDECAR_SUFFIXES", "SQLITE_MAGIC",
     "WORKSPACE_ID_RE", "WORKSPACE_SKIP_DIRS", "BackupError",
     # 路径与清单
     "backup_file_plan", "backup_settings_path", "category_of", "current_workspace_id",
     "default_local_dir", "is_sqlite", "iter_overlay_files", "iter_workspace_files",
-    "now_iso", "overlay_dir", "overlay_rel", "overlay_target",
+    "machine_target", "now_iso", "overlay_dir", "overlay_rel", "overlay_target",
     "root_data_dir", "sha256_file", "stamp_now", "validate_local_dir", "workspace_dir",
     # 快照与 manifest
     "build_manifest", "manifest_question_hashes_ok", "plugins_inventory",

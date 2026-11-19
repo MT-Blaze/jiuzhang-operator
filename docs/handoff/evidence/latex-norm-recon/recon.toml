@@ -1,0 +1,112 @@
+# 记号标准字典（闭集＋开集）2.21.0 卡侦查结论（机读）。原始读数见 recon-run.txt。
+# 侦查日 2026-11-19；本文件是结论抄录，数字以当次实测为准。
+
+[card]
+name = "记号标准字典（闭集＋开集）任务卡"
+version = "2.21.0"
+card_path = "E:/jiuzhang/记号标准字典闭集开集任务卡.md"
+
+[baseline]
+operator_head = "830ca19"
+operator_ahead = 22
+plugins_head = "af7884d"
+plugins_ahead = 9
+operator_untracked = ["tools/onnx_probe.py"]
+plugins_untracked = ["src/org.jiuzhang.editor/models/", "src/org.jiuzhang.editor/model_prefs.toml"]
+# model_prefs.toml 为重做卡运行期产物，与 models/ 同口径：不碰不 stage。
+
+[frozen_line_counts]
+# 全部与卡面一致（wc -l 实测，见 recon-run.txt）
+"static/js/stage.js" = 776
+"static/js/stage_command.js" = 545
+"app/core/content/latex_style_dict.py" = 506
+"app/api/pending.py" = 485
+"app/core/backup/restore.py" = 532
+"editor/dist/index.html" = 898
+"editor/dist/plugin.js" = 828
+"editor/dist/ui_columns.js" = 788
+"editor/dist/ui_approve.js" = 454
+"editor/dist/ui_batches.js" = 780
+"editor/dist/ui_school_dict.js" = 520
+
+[version_parity]
+# 四处定义沿用 2.20.0 回单（docs/handoff/receipts/model-config-redo.md:108）
+places = [
+  "jiuzhang-plugins/src/org.jiuzhang.editor/plugin.toml:4",
+  "jiuzhang-plugins/plugins.json:68",
+  "jiuzhang-operator/plugins.toml:51",
+  "包内 plugin.toml（tools/build_plugin.py 重打 zip）",
+]
+current = "2.20.0"
+target = "2.21.0"
+host_version = "1.2.0"  # app/__init__.py:8 底座版号独立，不动
+sync_tool = "tools/sync_plugin_index.py"
+
+[ui_entry]
+# 卡面「与校本字典/行政区/考项/教材章节同层」的解释性口径：
+# 字典族真入口 = 数据字典控制台（static/dict_console.html ＋ static/js/dict_console/catalog.js
+# 的 DcCatalog.CATEGORIES：foundation/entity/teaching 三族）。
+# editor dist/ui_school_dict.js 是录题插件元数据面板的校本输入模块，不是控制台入口。
+landing = "DcCatalog 新增 norm 族（记号标准字典，整机生效徽章）＋ dict_console 画布新面板"
+console_api_pattern = "DcClient（static/js/dict_console/client.js）：读直接 fetch，写先 GET /api/settings 取新鲜令牌"
+console_frozen = false  # dict_console.html 148 行 / catalog.js 118 行均不在冻结台账
+mathjax_precedent = "static/workspace.html:239-240 两个 vendor script；dict_console.html 尚未装载，需补"
+relay_still_required = "norm.* 命令族按卡建：stage_command.js RELAY_METHODS 同线追加＋stage.js:476 families 同线＋新兄弟 stage_relay_norm.js"
+
+[cleaning_wiring]
+alias_lookup = "app/core/content/latex_style_dict.py:287（alias = SYMBOL_ALIASES.get(name)）——唯一「字典从参数取」接线点"
+docstring_sync = "latex_style_dict.py:14-20 台账49三铁律叙述，unknown 落盘口径需同步"
+callers = [
+  "app/core/content/question_parser.py:103 rewrite_alias_spans",
+  "app/core/content/question_parser.py:166 clean_for_write（contract）",
+  "app/core/content/question_parser.py:243 clean_for_write（exam_source）",
+  "app/core/bank/engine/dedupe_signature.py:48 normalize_for_compare",
+  "app/core/ai/recognition/recognize.py:124 clean_for_write",
+]
+ledger49_location = "docs/question-cutting-pipeline.md:75"
+ledger49_revision_landing = "卡面原话：records 追加一条修订记录＋模块 docstring 同步；台账原文保留为历史，修订指针追加不改写原句"
+
+[backup_wiring]
+# restore.py 冻结 532 只减不增 → 全部同线原地改；新逻辑进 files.py（277 行，未冻结）
+plan = [
+  "files.py：MACHINE_PREFIX='machine/'；latex_norm.db 进 GLOBAL_FILES（default 根扫描不双收）",
+  "files.py backup_file_plan：追加 ('machine/latex_norm.db', root_data_dir()/latex_norm.db)（存在才进计划）",
+  "files.py category_of：machine/ 前缀 → ('machine', True)（整机库必选，防半恢复）",
+  "files.py overlay_target：顶部加 machine/ 分派 → root_data_dir()/latex_norm.db（越界拒）",
+  "restore.py:29 CATEGORIES 同线加 'machine'；:279 preview_view groups 同线加 machine 键",
+  "restore.py:442 _restore_target 首分支同线改双前缀元组（零增行）",
+  "manifest.py 快照侧零改动：.db 一律 sqlite_snapshot（:78），library 挑选只看 banks/ 与 jiuzhang.db，machine/ 不误选",
+  "create_pre_restore_backup 零改动：遍历 plan 的 .db 自动给机器库留 .pre-restore.bak",
+]
+workspace_import = "app/api/workspaces.py:341 import 只落单个上传 .db 到 workspaces/<wsid>/banks/，机器库天然不随行（实测读码确认）"
+followup = "st_backup.js（冻结 537）预览分组渲染是否写死四组，阶段A核；写死则同线接线"
+
+[new_store]
+path_property = "app/core/config.py 新 property → root_data_dir()/'latex_norm.db'（整机级，不进 workspaces/）"
+template = "app/core/pending/db.py 三段结构；逐句 execute 禁 executescript；BEGIN IMMEDIATE；user_version 版本化＋.pre-vN.bak＋回滚"
+seed_path = "app/core/content/latex_norm_seed.toml（平铺 ≤3 层）"
+driver_path = "app/core/content/latex_norm.py（≤450，store/provider/改写驱动）"
+api_path = "app/api/norm.py → app/main.py include_router（:204-222 链）"
+auth = "写接口 Depends(require_write_token)（app/core/security.py:69）；JZO_LOCAL_TOKEN 非空禁轮换（探针口径）"
+data_whitelist_note = "docs/agents.md §9.1 L0#6 data/ 白名单未列 latex_norm.db；卡面主公明令整机库落 data/ 根，先例 pending.db/banks 同层；解释性口径记回单"
+
+[test_rerun_list]
+new = ["tests/test_latex_norm.py"]
+touched = [
+  "tests.test_latex_style_dict", "tests.test_clean_latex", "tests.test_question_parser",
+  "tests.test_editor_contract", "tests.test_tikz_render",
+  "tests.test_bank_dedupe", "tests.test_dedupe_fingerprint",
+  "tests.test_pending_dedupe", "tests.test_pending_dedupe_candidates", "tests.test_pending_dedupe_scan",
+  "tests.test_backup_package", "tests.test_backup_snapshot", "tests.test_backup_codec",
+  "tests.test_restore", "tests.test_webdav_backup",
+  "tests.test_dict_console", "tests.test_dict_console_stage2", "tests.test_dict_console_stage3", "tests.test_dict_console_subtabs",
+  "tests.test_command_registry", "tests.test_version_consistency", "tests.test_file_size_contract",
+  "tests.test_pending_api",
+]
+gate = "bash scripts/check-quick-gate.sh 每阶段末绿"
+
+[stop_chain_check]
+# §7 停链条件逐条预核：均未触发
+frozen_wiring_feasible = true   # 全部接线点可同线/兄弟模块落地
+standard_labels_pending = "标准原文核验在阶段B前做（任务#2）；核不到＝显性欠账不编，不触发停链除非标签整体无法如实"
+recon_verdict = "继续施工"

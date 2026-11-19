@@ -26,7 +26,7 @@ from app.core.backup import service as backup
 from app.core.backup.package.codec import open_package
 
 REQUIRED_CATEGORIES = {"bank", "uploads"}
-CATEGORIES = {"bank", "uploads", "other", "plugins"}
+CATEGORIES = {"bank", "uploads", "other", "plugins", "machine"}
 CONFIRM_TEXT = "确认恢复"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SIDECAR_SUFFIXES = backup.SIDECAR_SUFFIXES
@@ -276,7 +276,7 @@ def preview_view(manifest: dict[str, Any]) -> dict[str, Any]:
         }
         for item in manifest["files"]
     ]
-    groups: dict[str, list[str]] = {"bank": [], "uploads": [], "plugins": [], "other": []}
+    groups: dict[str, list[str]] = {"bank": [], "uploads": [], "plugins": [], "other": [], "machine": []}
     for item in files:
         groups[item["category"]].append(item["path"])
     package = manifest.get("package") or {}
@@ -439,7 +439,7 @@ def _rollback(applied: list[tuple[Path, bool, Path | None]]) -> None:
 
 def _restore_target(relative: str, workspace_id: str) -> Path:
     """清单内相对路径 → 本机落点；``ws/`` 走覆盖层根，越界一律拒。"""
-    if relative.startswith(backup.OVERLAY_PREFIX):
+    if relative.startswith((backup.OVERLAY_PREFIX, backup.MACHINE_PREFIX)):
         return backup.overlay_target(relative, workspace_id)
     root = backup.workspace_dir(workspace_id).resolve()
     target = (root / relative).resolve()

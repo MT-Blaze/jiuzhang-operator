@@ -1,0 +1,57 @@
+== 基线 ==
+830ca19 docs: 2.20.0 回单 #MCR-01 五项＋biz 记录——改动清单/包结构自检/三查 0/测试探针 307+四探针/偏离九条与欠账六条全披露；真测腿 VLM GPU 稳态 4–5s/题＋OCR bench 事实摆明不替选
+?? docs/handoff/evidence/latex-norm-recon/
+?? tools/onnx_probe.py
+22
+== plugins 仓 ==
+af7884d chore(editor): 2.20.0 封版 parity——配置中心四栏表重做＋重新识别打回＋安装链修实（VLM Vulkan 真发动机/准档 medium 解锁）；zip 确定性双建 sha256 2ca17477…，四处 parity 一致（plugin.toml/plugins.json/主仓 plugins.toml/包内），JS 139/139
+9
+?? src/org.jiuzhang.editor/model_prefs.toml
+?? src/org.jiuzhang.editor/models/
+== 冻结面行数 ==
+   143 static/index.html
+wc: static/js/plugin.js: No such file or directory
+   776 static/js/stage.js
+   545 static/js/stage_command.js
+   506 app/core/content/latex_style_dict.py
+   485 app/api/pending.py
+   898 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/index.html
+   828 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/plugin.js
+   788 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/ui_columns.js
+   454 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/ui_approve.js
+   780 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/ui_batches.js
+   520 ../jiuzhang-plugins/src/org.jiuzhang.editor/dist/ui_school_dict.js
+  6723 total
+== 四处 parity 现值 ==
+plugins.toml:51:version = "2.20.0"
+../jiuzhang-plugins/plugins.json:68:      "version": "2.20.0",
+../jiuzhang-plugins/src/org.jiuzhang.editor/plugin.toml:4:version = "2.20.0"
+== 清洗链接线点 ==
+193:def clean_for_write(text: Any) -> dict[str, Any]:
+202:def normalize_for_compare(text: Any) -> dict[str, Any]:
+207:def _rewrite(text: Any, *, compare: bool) -> dict[str, Any]:
+246:def _rewrite_span(segment: str, compare: bool) -> tuple[str, list[str], list[str]]:
+287:            alias = SYMBOL_ALIASES.get(name)
+app/core/content/question_parser.py:19:from app.core.content import latex_style_dict
+app/core/content/question_parser.py:33:# 等价记号的写法字典住在 app/core/content/latex_style_dict.py——全仓唯一一份（军令 #32 · S1）。
+app/core/content/question_parser.py:83:    return latex_style_dict.math_spans(text)
+app/core/content/question_parser.py:89:    记号归一的规则表在 ``app/core/content/latex_style_dict.SYMBOL_ALIASES``，本函数的
+app/core/content/question_parser.py:103:    text = latex_style_dict.rewrite_alias_spans(text)
+app/core/content/question_parser.py:140:    if latex_style_dict.contains_alias(text):
+app/core/content/question_parser.py:165:    # 都只在数学段内按命令切词改写（app/core/content/latex_style_dict，全仓唯一一份字典）。
+app/core/content/question_parser.py:166:    written = latex_style_dict.clean_for_write(normalized)
+app/core/content/question_parser.py:182:    统一取自 ``app/core/content/latex_style_dict.clean_for_write``——编辑器的
+app/core/content/question_parser.py:226:    ``\\frac`` 显式参数 / 减号统一全部取自 ``app/core/content/latex_style_dict.clean_for_write``
+app/core/content/question_parser.py:238:    if latex_style_dict.contains_alias(text):
+app/core/content/question_parser.py:243:    written = latex_style_dict.clean_for_write(normalized)
+app/core/bank/engine/dedupe_signature.py:27:from app.core.content import latex_style_dict
+app/core/bank/engine/dedupe_signature.py:48:    return latex_style_dict.normalize_for_compare(normalize_latex(value))["text"]
+app/core/bank/engine/dedupe_signature.py:218:    for start, end, _unclosed in latex_style_dict.math_spans(text):
+app/core/bank/engine/dedupe_signature.py:264:    for start, end, _unclosed in latex_style_dict.math_spans(text):
+app/core/bank/engine/dedupe_signature.py:305:            name, tail = latex_style_dict.read_command(segment, i)
+app/core/bank/engine/dedupe_signature.py:340:                    end = latex_style_dict.match_group(segment, tail)
+app/core/bank/engine/dedupe_signature.py:381:        end = latex_style_dict.match_group(segment, i)
+app/core/ai/recognition/recognize.py:25:from app.core.content import latex_style_dict, question_parser
+app/core/ai/recognition/recognize.py:124:    text = latex_style_dict.clean_for_write(text)["text"]
+== 台账49 ==
+75:49. **AI 写出的公式源码必须全局统一：一份字典＋一个清�

@@ -33,6 +33,7 @@ MANIFEST_FILE_RE = re.compile(r"^manifest_(\d{8}_\d{6}_\d{3})\.(?:toml|json)$")
 # 不属于「当前工作区数据」的宿主级文件：备份既不打包它们，恢复也不碰。
 GLOBAL_FILES = {
     ".local_token",
+    "latex_norm.db",  # 整机记号字典：非工作区数据，走 machine/ 层进包，工作区扫描不双收
     "workspaces.toml", "workspaces.json",
     "plugin_state.toml", "plugin_state.json",
     "plugin_index_cache.toml", "plugin_index_cache.json",
@@ -71,6 +72,11 @@ OVERLAY_STATE_FILES = (
     "bank_provider.toml", "bank_provider.json",
     "update_state.toml", "update_state.json",
 )
+# ---------- 整机层：记号标准字典（2.21.0 卡 §1） ----------
+# latex_norm.db 住根 data/、整机一套，不属任何工作区：快照用 machine/ 前缀标记，
+# 恢复落回根 data/；工作区扫描按名跳过（GLOBAL_FILES），避免 default 区双收。
+MACHINE_PREFIX = "machine/"
+MACHINE_DB_NAME = "latex_norm.db"
 PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{2,80}$")
 
 
@@ -197,7 +203,9 @@ def overlay_rel(path: Path, workspace_id: str | None = None) -> str:
 
 
 def overlay_target(relative: str, workspace_id: str | None = None) -> Path:
-    """``ws/...`` → 本机落点；越界与旧插件代码路径一律拒。"""
+    """``ws/...`` → 本机落点；越界与旧插件代码路径一律拒。``machine/`` 分派整机层。"""
+    if isinstance(relative, str) and relative.startswith(MACHINE_PREFIX):
+        return machine_target(relative)
     if not isinstance(relative, str) or not relative.startswith(OVERLAY_PREFIX):
         raise BackupError("不是覆盖层路径")
     tail = relative[len(OVERLAY_PREFIX):]
@@ -212,6 +220,15 @@ def overlay_target(relative: str, workspace_id: str | None = None) -> Path:
     except ValueError as exc:
         raise BackupError("配置恢复目标越界") from exc
     return target
+
+
+def machine_target(relative: str) -> Path:
+    """``machine/...`` → 根 data/ 落点；整机层只认记号字典库，其余一律拒。"""
+    if not isinstance(relative, str) or not relative.startswith(MACHINE_PREFIX):
+        raise BackupError("不是整机层路径")
+    if relative[len(MACHINE_PREFIX):] != MACHINE_DB_NAME:
+        raise BackupError("整机层只接收记号标准字典库")
+    return root_data_dir().resolve() / MACHINE_DB_NAME
 
 
 def iter_overlay_files(workspace_id: str | None = None) -> list[Path]:
@@ -232,6 +249,9 @@ def backup_file_plan(workspace_id: str | None = None) -> list[tuple[str, Path]]:
     ws_id = workspace_id or current_workspace_id()
     pairs = [(_relative(path, ws_id), path) for path in iter_workspace_files(ws_id)]
     pairs += [(overlay_rel(path, ws_id), path) for path in iter_overlay_files(ws_id)]
+    machine = root_data_dir().resolve() / MACHINE_DB_NAME
+    if machine.is_file():
+        pairs.append((MACHINE_PREFIX + MACHINE_DB_NAME, machine))
     seen = {rel for rel, _ in pairs}
     if len(seen) != len(pairs):
         raise BackupError("快照内路径冲突，已拒绝备份")
@@ -243,6 +263,9 @@ def category_of(relative: str) -> tuple[str, bool]:
     if relative.startswith(OVERLAY_PLUGINS_PREFIX):
         # 插件代码可以只恢复数据不动代码——老师可能刚手动装了新版本。
         return "plugins", False
+    if relative.startswith(MACHINE_PREFIX):
+        # 整机字典必选：半恢复会丢老师选择与开集裁决，宁可整库回滚也不留半套。
+        return "machine", True
     if relative.endswith(".db"):
         return "bank", True
     if relative == "uploads" or relative.startswith("uploads/"):

@@ -268,7 +268,7 @@
     [
       ["bank", "题库数据（必选）"],
       ["uploads", "图片资产（必选）"],
-      ["other", "其他数据文件（可选，默认勾选）"],
+      ["other", "其他数据文件（可选，默认勾选）"], ["machine", "整机记号字典（必选）"],
     ].forEach(function (group) {
       var paths = (preview.groups || {})[group[0]] || [];
       var box = el("div", "st-restore-group");

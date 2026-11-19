@@ -1,0 +1,59 @@
+# 标准原文核验结论（2.21.0 卡 §2 施工前置）。2026-11-19 Playwright 真人路径实测。
+# 原始证据（截图＋页面文本＋standards.toml 机读报告）：
+#   .system_generated/latex-norm/standards/（不进 git，路径备查）
+# 核验脚本：tools/latex_norm_standards_check.py（公开页搜索→真点击→详情页，无静默抓取）
+
+[method]
+tool = "Playwright chromium 有头真浏览器（iso.org 有 Cloudflare 盾，headless 被拦；有头＋真人点 consent 后放行）"
+path_gb = "openstd.samr.gov.cn 首页搜索框输 3102.11 → 点 #searchBtn → 点结果行 → newGbInfo 详情页"
+path_iso = "iso.org/standards.html → 点 Accept All（Usercentrics consent）→ 搜索框输 ISO 80000-2 回车 → 点结果 → 64973 详情页 → 生命周期点 2009 版（31887）→ 再点 ISO 31-11（3653）"
+runs = "16:00 首跑 GB 按钮歧义/ISO 撞盾；16:02 GB 输入框修正/ISO consent 选择器未中；16:04 GB 绿 ISO 盾过；16:06 GB 官网瞬时超时 ISO 绿；16:08 双绿＋前身链三跳全证"
+
+[gb]
+verified = true
+current_number = "GB/T 3102.11-1993"
+card_number = "GB 3102.11-1993"
+number_note = "1993 发布时为强制性 GB；据 2017 年第 7 号公告自 2017-03-23 转化为推荐性 GB/T（详情页备注原文）。卡面「GB 3102.11」族号标签口径不受影响。"
+title_zh = "物理科学和技术中使用的数学符号"
+title_en = "Mathematical signs and symbols for use in the physical sciences and technology"
+status = "现行"
+issued = "1993-07-01"
+implemented = "1994-07-01"
+replaces = "GB 3102.11-1986"
+adoption = "采标（采用 ISO 等国际国外组织标准；版权原因官方系统不提供在线阅读）"
+url = "https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=3DE79450D562E62D41CB6E79FF411054"
+evidence = ["gb-01-home.png", "gb-02-results.png", "gb-03-detail.png", "gb-03-detail.txt"]
+
+[iso]
+verified = true
+current_number = "ISO 80000-2:2019"
+title = "Quantities and units — Part 2: Mathematics"
+edition = 2
+published = "2019-08"
+corrected = "2021-11"
+status = "Published（stage 90.92 to be revised；ISO/AWI 80000-2 修订中）"
+pages = 36
+tc = "ISO/TC 12"
+ics = "01.060"
+url = "https://www.iso.org/standard/64973.html"
+evidence = ["iso-01-home.png", "iso-02-results.png", "iso-03-detail.png", "iso-03-detail.txt"]
+
+[iso_lineage]
+# 卡面「前身 ISO 31-11」实证：三跳官方页生命周期互指
+chain = [
+  "ISO 31-11:1992（Ed2, 1992-12, Withdrawn）页：New version available: ISO 80000-2:2009",
+  "ISO 80000-2:2009（Ed1, 2009-12, Withdrawn）页：Previously ISO 31-11:1992；New version available: ISO 80000-2:2019",
+  "ISO 80000-2:2019 页：Previously Withdrawn ISO 80000-2:2009",
+]
+iso_31_11_title = "Quantities and units — Part 11: Mathematical signs and symbols for use in the physical sciences and technology"
+iso_31_11_url = "https://www.iso.org/standard/3653.html"
+iso_2009_url = "https://www.iso.org/standard/31887.html"
+evidence = ["iso-04-2009.png", "iso-04-2009.txt", "iso-05-31-11.png", "iso-05-31-11.txt"]
+
+[label_ruling]
+# 标签口径裁定（卡面 §2 三种合法来源）
+merged = "ISO 与 GB/T 同码行合并标「ISO/GB-T」——两标准同码事实由采标关系＋现行状态支撑"
+split_iso = "ISO 80000-2"
+split_gb = "GB 3102.11"
+textbook = "教材版式约定"
+debt = "逐符号条款级原文对照未做：GB 采标版权不公开全文、ISO 全文付费（仅摘要＋Read sample）。来源标签只到标准族级，不写条款号；符号集按两标准通行的长符号表口径编纂，条款级核对登记为显性欠账（卡面预注册：核不到＝欠账不编）。"

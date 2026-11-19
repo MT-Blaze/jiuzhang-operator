@@ -1,0 +1,23 @@
+== tests.test_latex_norm ==
+Ran 19 tests in 0.737s
+OK
+== tests.test_backup_codec ==
+Ran 6 tests in 0.054s
+OK
+== tests.test_backup_package ==
+Ran 7 tests in 0.478s
+OK
+== tests.test_backup_snapshot ==
+Ran 9 tests in 0.579s
+OK
+== tests.test_restore ==
+Ran 17 tests in 2.084s
+OK
+== tests.test_webdav_backup ==
+Ran 8 tests in 1.868s
+OK
+== tests.test_file_size_contract ==
+Ran 13 tests in 0.413s
+OK
+== quick gate ==
+check-quick-gate: PASS（6 项全过）
