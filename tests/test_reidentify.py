@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """审核重认（T6 §4）：老师点选席位→同张题图裁块/整题→原位替换，失败显性。
 
-覆盖：席位未知/未就绪/已停用/无图各有人话错误码／整题重认四条通道
-（云 VLM/本地 VLM/MinerU 云/MinerU 本地）／公式块重认（无坐标/序号越界/
+覆盖：席位未知/未就绪/已停用/无图各有人话错误码／整题重认各通道
+（云 VLM/本地 VLM/MinerU 云/本地/PP-M 专科拒整题）／公式块重认（无坐标/序号越界/
 原位替换/定位不到不裸拼）／失败挂批次失败清单 retryable／回填来源
 review.reidentify＋待核旗清除／list_spans 只读／HTTP 口子形状校验。
 外部引擎与池子全 mock，绝不触真服务真库。
@@ -166,6 +166,39 @@ class CoreTest(unittest.IsolatedAsyncioTestCase):
         result = await reidentify.reidentify(PID, "seat_x")
         self.assertEqual(result["code"], "RECOGNIZE_FAILED")
         self.assertIn("不支持单题重认", result["detail"])
+
+    async def test_pp_m_whole_question_refused_with_seat_guide(self) -> None:
+        self._seat(_entry("formula_pp_m"))
+        result = await reidentify.reidentify(PID, "seat_x")
+        self.assertEqual(result["code"], "RECOGNIZE_FAILED")
+        self.assertIn("公式专科座", result["detail"])
+        self.assertIn("整题座", result["detail"])
+
+    async def test_pp_m_formula_block_replaces_in_place(self) -> None:
+        self._seat(_entry("formula_pp_m"))
+        save_back = self._save()
+        span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
+                "origin": "textlayer"}
+        recognize = mock.Mock(return_value={"ok": True, "latex": "x^3",
+                                            "detail": "PP-FormulaNet·M 公式已转写"})
+        with mock.patch.object(reidentify.recognize_formula, "batch_context",
+                               return_value=([], b"")), \
+                mock.patch.object(reidentify.recognize_formula, "discover_spans",
+                                  return_value=[span]), \
+                mock.patch.object(reidentify.recognize_formula, "crop_png",
+                                  return_value=b"crop"), \
+                mock.patch.object(reidentify.recognize_formula.formula_pp_m,
+                                  "recognize", recognize):
+            result = await reidentify.reidentify(PID, "seat_x", target="formula")
+        self.assertTrue(result["ok"])
+        self.assertEqual(save_back.call_args.args[1]["stem"], "已知 $x^3$，求值。")
+        recognize.assert_called_once_with(b"crop")
+
+    async def test_pp_m_uninstalled_seat_not_ready_guides_install(self) -> None:
+        self._seat(_entry("formula_pp_m", state="degraded"))
+        result = await reidentify.reidentify(PID, "seat_x", target="formula")
+        self.assertEqual(result["code"], "SEAT_NOT_READY")
+        self.assertIn("未就绪", result["detail"])
 
     async def test_combo_chain_refused_for_formula_block(self) -> None:
         result = await reidentify.recognize_formula.dispatch(

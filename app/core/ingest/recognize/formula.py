@@ -4,8 +4,8 @@
 归一化 bbox（存题身 extensions org.jiuzhang.editor 前缀）；文字卷文字层
 charbox（pypdfium2）按题块区域换算到同张题图像素（D12：不撞老师框的图）。
 无坐标＝不裸拼，交回整题重认兜底。通道按 catalog plan_recognize 步骤名
-分派：ai＝云 VLM 单图、vlm_local＝本地千问、mineru/mineru_local＝MinerU；
-专科（capability=formula）本卡 blocked 显性「下一卡开」。失败 ok=False。
+分派：ai＝云 VLM 单图、vlm_local＝本地千问、mineru/mineru_local＝MinerU、
+formula_pp_m＝PP-FormulaNet·M 专科；其余专科座 blocked 显性。失败 ok=False。
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from app.core.ai.platform import center as ai_center
 from app.core.ai.recognition import recognize as ai_recognize
 from app.core.content import scan_text
 from app.core.ingest.recognize import (
-    mineru_extract, mineru_local, mineru_service, shared as recognize_shared,
-    vlm_local, vlm_service,
+    formula_pp_m, mineru_extract, mineru_local, mineru_service,
+    shared as recognize_shared, vlm_local, vlm_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -266,6 +266,10 @@ async def dispatch(entry: dict[str, Any], png: bytes,
         latex = _strip_math(str(outcome.get("markdown") or ""))
         return {"ok": bool(latex), "latex": latex,
                 "detail": "" if latex else "MinerU 返回的公式正文为空"}
+    if step == "formula_pp_m":
+        outcome = await asyncio.to_thread(formula_pp_m.recognize, png)
+        return {"ok": bool(outcome.get("ok")), "latex": str(outcome.get("latex") or ""),
+                "detail": str(outcome.get("detail") or "")}
     return {"ok": False,
             "detail": str(entry.get("detail") or "")
             or "专科推理通道下一卡开（D 卡擂台），本卡只登记；请选其他就绪座。"}

@@ -49,6 +49,9 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
     if step == "combo":
         return {"ok": False,
                 "detail": "组合路是整批链路（文字直取＋公式裁图），不支持单题重认；请选整题座。"}
+    if step == "formula_pp_m":
+        return {"ok": False,
+                "detail": "PP-FormulaNet·M 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
     url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     if step == "ai":
         binding = ai_center.resolve_task("ocr")

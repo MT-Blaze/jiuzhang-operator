@@ -2,8 +2,8 @@
 """公式裁图通道（T6 §2 组合路＋§4 重认裁块）：坐标→同张题图裁块→送席→原位替换。
 
 覆盖：裁块像素边界（太小/越界/坏图不编图）／MinerU 归一化 bbox→像素／
-无坐标＝空交整题兜底／席位按 catalog 步骤名分派（云 VLM/本地 VLM/MinerU，
-专科 blocked 显性「下一卡开」）／原位替换两条匹配（文字层原串/MinerU LaTeX）／
+无坐标＝空交整题兜底／席位按 catalog 步骤名分派（云 VLM/本地 VLM/MinerU/
+PP-M 专科真跑＋未装引导，其余专科 blocked 显性）／原位替换两条匹配／
 组合路：公式座未就绪→标待核＋失败清单，正文不动不整题降级。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_formula_route``
 """
@@ -188,6 +188,36 @@ class DispatchTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome["ok"])
         self.assertEqual(outcome["latex"], "x^2")
 
+    async def test_pp_m_success_passes_engine_contract_through(self) -> None:
+        recognize = mock.Mock(return_value={"ok": True, "latex": r"\frac{1}{2}",
+                                            "detail": "PP-FormulaNet·M 公式已转写"})
+        with mock.patch.object(formula.formula_pp_m, "recognize", recognize):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_pp_m"]},
+                                             b"png", _item())
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["latex"], r"\frac{1}{2}")
+        self.assertEqual(outcome["detail"], "PP-FormulaNet·M 公式已转写")
+        recognize.assert_called_once_with(b"png")
+
+    async def test_pp_m_uninstalled_guides_to_install_button(self) -> None:
+        formula.formula_pp_m.reset()
+        with mock.patch.object(formula.formula_pp_m.formula_setup, "weights_ready",
+                               return_value=False):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_pp_m"]},
+                                             b"png", _item())
+        self.assertFalse(outcome["ok"])
+        self.assertIn("权重未安装", outcome["detail"])
+        self.assertIn("安装", outcome["detail"])
+
+    async def test_pp_m_engine_failure_is_explicit(self) -> None:
+        with mock.patch.object(formula.formula_pp_m, "recognize",
+                               return_value={"ok": False, "latex": "",
+                                             "detail": "PP-FormulaNet·M 推理失败：会话崩了"}):
+            outcome = await formula.dispatch({"plan_recognize": ["formula_pp_m"]},
+                                             b"png", _item())
+        self.assertFalse(outcome["ok"])
+        self.assertIn("推理失败", outcome["detail"])
+
 
 class ReplaceTest(unittest.TestCase):
     def test_textlayer_replaces_original_run_in_place(self) -> None:
@@ -293,6 +323,56 @@ class ComboTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["pending_marks"], 1)
         self.assertEqual(save_back.call_args.args[1]["stem"], item["question"]["stem"])
         self.assertIn("超时", route["failures"][0]["reason"])
+
+    async def test_pp_m_seat_ready_runs_real_dispatch_and_replaces(self) -> None:
+        item = _item(pending=True)
+        entry = {"id": "formula_pp_m", "name": "PP-FormulaNet·M", "state": "ready",
+                 "enabled": True, "plan_recognize": ["formula_pp_m"]}
+        span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
+                "origin": "textlayer"}
+        recognize = mock.Mock(return_value={"ok": True, "latex": "x^3",
+                                            "detail": "PP-FormulaNet·M 公式已转写"})
+        with mock.patch.object(registry, "entry_state", return_value=entry), \
+                mock.patch.object(formula.recognize_shared, "item_image_bytes",
+                                  return_value=_png()), \
+                mock.patch.object(formula, "discover_spans", return_value=[span]), \
+                mock.patch.object(formula.formula_pp_m, "recognize", recognize), \
+                mock.patch.object(formula.recognize_shared, "save_back",
+                                  return_value=True) as save_back:
+            route: dict = {}
+            result = await formula.run_combo(
+                "B-001", [item], [0], "formula_pp_m", route, None, [], b"")
+        self.assertTrue(result["seat_ready"])
+        self.assertEqual(result["filled_indexes"], [0])
+        self.assertEqual(result["pending_marks"], 0)
+        recognize.assert_called_once()
+        document = save_back.call_args.args[1]
+        self.assertEqual(document["stem"], "已知 $x^3$，求值。")
+        self.assertFalse(document["extensions"][formula.EDITOR_NS].get("formula_pending"))
+        self.assertNotIn("failures", route)
+
+    async def test_pp_m_seat_uninstalled_marks_pending_with_install_guide(self) -> None:
+        item = _item()
+        entry = {"id": "formula_pp_m", "name": "PP-FormulaNet·M", "state": "degraded",
+                 "enabled": True,
+                 "detail": "权重未安装（约 596MB，国内镜像），点【安装】一键下。"}
+        span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
+                "origin": "textlayer"}
+        with mock.patch.object(registry, "entry_state", return_value=entry), \
+                mock.patch.object(formula.recognize_shared, "item_image_bytes",
+                                  return_value=_png()), \
+                mock.patch.object(formula, "discover_spans", return_value=[span]), \
+                mock.patch.object(formula.recognize_shared, "save_back",
+                                  return_value=True) as save_back:
+            route: dict = {}
+            result = await formula.run_combo(
+                "B-001", [item], [0], "formula_pp_m", route, None, [], b"")
+        self.assertFalse(result["seat_ready"])
+        self.assertIn("权重未安装", result["seat_reason"])
+        self.assertEqual(result["pending_marks"], 1)
+        self.assertEqual(save_back.call_args.args[1]["stem"], item["question"]["stem"],
+                         "正文保留文字直取，不整题降级")
+        self.assertIn("权重未安装", route["failures"][0]["reason"])
 
 
 if __name__ == "__main__":
