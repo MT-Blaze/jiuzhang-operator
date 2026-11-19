@@ -55,13 +55,6 @@
     host.textContent = "";
     var state = { entries: [], families: [], family: "", q: "" };
 
-    var head = el("div", "dc-norm-head");
-    head.appendChild(el("h2", "dc-panel-title", "记号标准字典"));
-    head.appendChild(el("span", "dc-norm-machine-badge", "整机生效"));
-    host.appendChild(head);
-    host.appendChild(el("p", "dc-panel-hint",
-      "闭集出厂冻结，老师只选默认字形；恢复出厂＝回退出厂默认。整机库随整机备份，不随工作区漂移。"));
-
     var filterBar = el("div", "dc-norm-filter");
     filterBar.setAttribute("role", "group");
     filterBar.setAttribute("aria-label", "按记号族过滤");

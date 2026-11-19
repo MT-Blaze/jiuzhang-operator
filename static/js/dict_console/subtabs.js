@@ -1,6 +1,7 @@
 /**
  * 字典控制台二级标签：分类面板内的一排横向页签（浏览器页签观感）。
  * 一个标签只显示一个子页面：子面板懒渲染，切换只改 display，绝不纵向堆叠。
+ * 仅一枚子页时整条标签条不渲染（pane 照铺），多枚照旧。
  * 键盘与主标签一致：左右方向键切换、Home/End 跳首尾。
  * 整块下架：删本文件、dict_console_subtabs.css 与 panels.js 的 DcSubTabs.mount 调用。
  */
@@ -19,31 +20,40 @@
     var items = opts.items || [];
     var prefix = opts.idPrefix || "sub";
     var activeKey = null;
+    // 仅一枚子页时整条标签条不渲染（pane 照铺）：独苗没必要让用户再点一次页签。
+    var solo = items.length === 1;
 
     var wrap = el("div", "dc-subtabs-wrap");
-    var bar = el("div", "dc-subtabs");
-    bar.setAttribute("role", "tablist");
-    bar.setAttribute("aria-label", opts.label || "二级标签");
+    var bar = null;
+    if (!solo) {
+      bar = el("div", "dc-subtabs");
+      bar.setAttribute("role", "tablist");
+      bar.setAttribute("aria-label", opts.label || "二级标签");
+      wrap.appendChild(bar);
+    }
     var body = el("div", "dc-subpanels");
-    wrap.appendChild(bar);
     wrap.appendChild(body);
     host.appendChild(wrap);
 
     var entries = items.map(function (item) {
-      var button = el("button", "dc-subtab", item.label);
-      button.type = "button";
-      button.id = "dcSubTab-" + prefix + "-" + item.key;
-      button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", "false");
-      button.setAttribute("aria-controls", "dcSubPanel-" + prefix + "-" + item.key);
-      button.tabIndex = -1;
-      button.addEventListener("click", function () { activate(item.key); });
-      bar.appendChild(button);
+      var button = null;
+      if (!solo) {
+        button = el("button", "dc-subtab", item.label);
+        button.type = "button";
+        button.id = "dcSubTab-" + prefix + "-" + item.key;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", "false");
+        button.setAttribute("aria-controls", "dcSubPanel-" + prefix + "-" + item.key);
+        button.tabIndex = -1;
+        button.addEventListener("click", function () { activate(item.key); });
+        bar.appendChild(button);
+      }
 
       var pane = el("section", "dc-subpanel");
       pane.id = "dcSubPanel-" + prefix + "-" + item.key;
       pane.setAttribute("role", "tabpanel");
-      pane.setAttribute("aria-labelledby", button.id);
+      if (button) pane.setAttribute("aria-labelledby", button.id);
+      else pane.setAttribute("aria-label", item.label);
       pane.style.display = "none";
       body.appendChild(pane);
       return { item: item, button: button, pane: pane, rendered: false };
@@ -62,8 +72,10 @@
       activeKey = target.item.key;
       entries.forEach(function (entry) {
         var on = entry === target;
-        entry.button.setAttribute("aria-selected", on ? "true" : "false");
-        entry.button.tabIndex = on ? 0 : -1;
+        if (entry.button) {
+          entry.button.setAttribute("aria-selected", on ? "true" : "false");
+          entry.button.tabIndex = on ? 0 : -1;
+        }
         entry.pane.style.display = on ? "block" : "none";
       });
       if (!target.rendered) {
@@ -73,7 +85,7 @@
       if (!silent && typeof opts.onActivate === "function") opts.onActivate(activeKey);
     }
 
-    bar.addEventListener("keydown", function (event) {
+    if (bar) bar.addEventListener("keydown", function (event) {
       var keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
       if (keys.indexOf(event.key) === -1) return;
       var current = get(activeKey);
