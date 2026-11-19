@@ -397,14 +397,26 @@ class WeightsTest(unittest.TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("User-agent"), vlm_weights.mirrors.WEIGHT_UA)
 
-    def test_download_interrupted_switches_to_next_source(self) -> None:
+    def test_download_transient_reset_retries_same_source(self) -> None:
         digest = hashlib.sha256(b"abc").hexdigest()
         with mock.patch.object(vlm_weights.urllib.request, "urlopen",
                                side_effect=[OSError("connection reset"),
                                             _FakeResponse([b"abc"])]) as urlopen:
             vlm_weights.download_gguf("qwen", "a.gguf", 3, digest,
-                                      _sources("ModelScope", "hf-mirror"), lambda _m: None)
+                                      _sources("hf-mirror"), lambda _m: None)
         self.assertEqual(urlopen.call_count, 2)
+        target = vlm_weights.engine_dir() / "models" / "a.gguf"
+        self.assertEqual(target.read_bytes(), b"abc")
+
+    def test_download_retries_exhaust_then_switches_source(self) -> None:
+        digest = hashlib.sha256(b"abc").hexdigest()
+        attempts = vlm_weights.DOWNLOAD_ATTEMPTS
+        with mock.patch.object(vlm_weights.urllib.request, "urlopen",
+                               side_effect=[OSError("connection reset")] * attempts
+                               + [_FakeResponse([b"abc"])]) as urlopen:
+            vlm_weights.download_gguf("qwen", "a.gguf", 3, digest,
+                                      _sources("ModelScope", "hf-mirror"), lambda _m: None)
+        self.assertEqual(urlopen.call_count, attempts + 1)
         target = vlm_weights.engine_dir() / "models" / "a.gguf"
         self.assertEqual(target.read_bytes(), b"abc")
 

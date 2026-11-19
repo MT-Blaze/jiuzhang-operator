@@ -20,6 +20,8 @@ from app.core.ingest import mirrors
 
 logger = logging.getLogger(__name__)
 
+DOWNLOAD_ATTEMPTS = 3  # 每源网络中断有限重试次数（hf-mirror 大文件中途重置常见）
+
 # （文件名, 字节数, sha256）：镜像仓 LFS oid 逐字核对（2026-11-19 侦查）。
 SEATS: dict[str, dict[str, Any]] = {
     "qwen": {
@@ -107,7 +109,8 @@ def weight_urls(seat: str, name: str) -> list[tuple[str, str]]:
 def download_gguf(seat: str, name: str, size: int, digest: str,
                   sources: list[dict[str, Any]],
                   notify: Callable[[str], None]) -> None:
-    """单件流式下载＋sha256＋原子改名；中断换下一家；全败抛人话错误。"""
+    """单件流式下载＋sha256＋原子改名；网络中断本源重试，重试耗尽或校验不符换下一家；
+    全败抛人话错误。hf-mirror 大文件中途重置连接（WinError 10054）常见，重试不赌单次。"""
     target = engine_dir() / "models" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_suffix(target.suffix + ".part")
@@ -115,30 +118,40 @@ def download_gguf(seat: str, name: str, size: int, digest: str,
     for row in sources:
         request = urllib.request.Request(
             row["url"], headers={"User-Agent": mirrors.WEIGHT_UA})
-        hasher = hashlib.sha256()
-        written = 0
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response, \
-                    part.open("wb") as sink:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    sink.write(chunk)
-                    hasher.update(chunk)
-                    written += len(chunk)
-                    notify("正在从 %s 下载 %s（%.1f/%.1fGB）…"
-                           % (row["name"], name, written / 1e9, size / 1e9))
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            hasher = hashlib.sha256()
+            written = 0
+            try:
+                with urllib.request.urlopen(request, timeout=120) as response, \
+                        part.open("wb") as sink:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        sink.write(chunk)
+                        hasher.update(chunk)
+                        written += len(chunk)
+                        notify("正在从 %s 下载 %s（%.1f/%.1fGB）…"
+                               % (row["name"], name, written / 1e9, size / 1e9))
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                part.unlink(missing_ok=True)
+                last_error = "%s → %s" % (row["name"], exc)
+                logger.warning("%s 权重源失败：%s", _spec(seat)["label"], last_error)
+                if attempt < DOWNLOAD_ATTEMPTS:
+                    notify("权重源 %s 第 %d/%d 次中断（%s），重试…"
+                           % (row["name"], attempt, DOWNLOAD_ATTEMPTS, exc))
+                    continue
+                notify("权重源重试耗尽，换下一家（%s）" % last_error)
+                break
             if written != size or hasher.hexdigest() != digest:
-                raise OSError("字节数或 sha256 与仓库登记不符（实收 %d/%d 字节）"
-                              % (written, size))
+                part.unlink(missing_ok=True)
+                last_error = ("%s → 字节数或 sha256 与仓库登记不符（实收 %d/%d 字节）"
+                              % (row["name"], written, size))
+                logger.warning("%s 权重校验不符：%s", _spec(seat)["label"], last_error)
+                notify("权重源校验不符，换下一家（%s）" % last_error)
+                break
             part.replace(target)
             return
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            part.unlink(missing_ok=True)
-            last_error = "%s → %s" % (row["name"], exc)
-            logger.warning("%s 权重源失败：%s", _spec(seat)["label"], last_error)
-            notify("权重源失败，换下一家（%s）" % last_error)
     raise VlmWeightsError("权重下载全败（%s）：%s" % (name, last_error))
 
 
