@@ -274,12 +274,14 @@ class HostApiContractTest(unittest.TestCase):
 
     def test_15b_return_batch_and_engine_writes_whitelisted_and_dispatched(self) -> None:
         # 2.20.0 真机探针实证：relay 分支写了、白名单漏了＝宿主静默拒发，
-        # 打回请求根本不出插件。安装/卸载/准档同族一并钉死。
+        # 打回请求根本不出插件。安装/卸载/准档/公式专科同族一并钉死。
         relay = self._array_block("RELAY_METHODS")
         for method in ("pending.return_batch", "models.ocr_install", "models.ocr_status",
-                       "models.uninstall_vlm", "models.uninstall_mineru", "models.uninstall_ocr"):
+                       "models.uninstall_vlm", "models.uninstall_mineru", "models.uninstall_ocr",
+                       "models.formula_install", "models.formula_status", "models.uninstall_formula"):
             self.assertIn('"%s"' % method, relay)
-        for method in ("pending.return_batch", "models.ocr_install", "models.uninstall_vlm"):
+        for method in ("pending.return_batch", "models.ocr_install", "models.uninstall_vlm",
+                       "models.formula_install", "models.formula_status", "models.uninstall_formula"):
             self.assertIn('method === "%s"' % method, self.stage)
 
     def test_15_dispatch_precedes_the_tail_refusal(self) -> None:

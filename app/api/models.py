@@ -1,4 +1,4 @@
-"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档一键装＋配置勾选代笔。
+"""模型注册表的 HTTP 口子：只读聚合＋MinerU/本地 VLM/RapidOCR 准档/PP-FormulaNet·M 一键装＋配置勾选代笔。
 
 注册表状态每次现算（插件目录 × 通用规则 × 运行时体检），不出网、不碰库；
 下载与指派动作走既有的 layout.model_download 与 API 配置中心。写口都带写令牌：
@@ -13,7 +13,9 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.core.ingest import mineru_setup, model_prefs, ocr_setup, registry, vlm_setup
+from app.core.ingest import (
+    formula_setup, mineru_setup, model_prefs, ocr_setup, registry, vlm_setup,
+)
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["models"])
@@ -118,6 +120,36 @@ def ocr_uninstall() -> dict[str, Any]:
     try:
         return ocr_setup.uninstall()
     except ocr_setup.OcrSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/models/formula/status", summary="PP-FormulaNet·M 权重安装进度（只读）")
+def formula_status() -> dict[str, Any]:
+    return formula_setup.status()
+
+
+@router.post(
+    "/api/models/formula/install",
+    status_code=202,
+    summary="一键安装 PP-FormulaNet·M（engines/formula/models/ 两件权重，国内镜像）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_install() -> dict[str, Any]:
+    try:
+        return formula_setup.start_install()
+    except formula_setup.FormulaSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/formula/uninstall",
+    summary="卸载 PP-FormulaNet·M（丢引擎缓存再删 engines/formula/，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_uninstall() -> dict[str, Any]:
+    try:
+        return formula_setup.uninstall()
+    except formula_setup.FormulaSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

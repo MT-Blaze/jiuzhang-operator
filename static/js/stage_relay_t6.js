@@ -31,6 +31,12 @@
         return true;
       }
 
+      if (method === "models.formula_status") {
+        // 只读：PP-FormulaNet·M 权重安装进度（2.22.0 卡§2），配置页轮询用。
+        fetchJson("/api/models/formula/status").then(done, fail);
+        return true;
+      }
+
       if (method === "pending.reidentify_spans") {
         // 只读：公式块清单（坐标来源 MinerU 公式块/文字层），审核渲染列画块级钮用。
         var readPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -75,8 +81,21 @@
         return true;
       }
 
+      if (method === "models.formula_install") {
+        // 写口：PP-FormulaNet·M 权重下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var formulaPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (formulaPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起 PP-FormulaNet·M 安装" });
+          return true;
+        }
+        withWriteToken("/api/models/formula/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
       if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru" ||
-          method === "models.uninstall_ocr") {
+          method === "models.uninstall_ocr" || method === "models.uninstall_formula") {
         // 写口：卸载先停服/丢缓存再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
         var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
         if (uninstallPerms.indexOf("questions:write") < 0) {
@@ -86,7 +105,8 @@
         }
         var uninstallPaths = { "models.uninstall_vlm": "/api/models/vlm/uninstall",
           "models.uninstall_mineru": "/api/models/mineru/uninstall",
-          "models.uninstall_ocr": "/api/models/ocr/uninstall" };
+          "models.uninstall_ocr": "/api/models/ocr/uninstall",
+          "models.uninstall_formula": "/api/models/formula/uninstall" };
         withWriteToken(uninstallPaths[method], { method: "POST",
           headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
         return true;

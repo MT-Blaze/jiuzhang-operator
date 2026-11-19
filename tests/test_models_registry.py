@@ -17,7 +17,7 @@ from unittest import mock
 
 from app.api import models as models_api
 from app.core.ai.platform import center as ai_center
-from app.core.ingest import ocr_setup, registry
+from app.core.ingest import formula_setup, ocr_setup, registry
 from tests.catalog_fixture import CATALOG_CAPABILITY, EDITOR, CatalogIsolated
 
 _HW_16G = {"vram_gb": 16.0, "vram_label": "16.0G", "gpu_name": "测试卡",
@@ -57,7 +57,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              vlm_install: dict | None = None,
              vlm_weights: bool = False,
              ocr_weights: bool = False,
-             ocr_install: dict | None = None):
+             ocr_install: dict | None = None,
+             formula_weights: bool = False,
+             formula_install: dict | None = None):
     with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
             mock.patch.object(registry.ai_center, "resolve_task",
@@ -77,6 +79,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
             mock.patch.object(ocr_setup, "weights_ready", return_value=ocr_weights), \
             mock.patch.object(ocr_setup, "status",
                               return_value=ocr_install if ocr_install is not None else {"state": "idle"}), \
+            mock.patch.object(formula_setup, "weights_ready", return_value=formula_weights), \
+            mock.patch.object(formula_setup, "status",
+                              return_value=formula_install if formula_install is not None else {"state": "idle"}), \
             mock.patch.object(registry.model_prefs, "load",
                               return_value=prefs if prefs is not None else dict(_PREFS_EMPTY)):
         yield
@@ -358,10 +363,19 @@ class HardwareGateTest(CatalogIsolated):
     def test_formula_entries_blocked_pending_d_card(self) -> None:
         with _runtime():
             entries = _states(registry.status()["entries"])
-        for entry_id in ("formula_pp_m", "formula_pp_l", "formula_p2t", "formula_texify"):
+        for entry_id in ("formula_pp_l", "formula_p2t", "formula_texify"):
             self.assertEqual(entries[entry_id]["state"], "blocked")
             self.assertIn("下一卡开", entries[entry_id]["detail"])
             self.assertEqual(entries[entry_id]["capability"], "formula")
+        # PP-M 本卡接线（2.22.0）：权重三态，未装引导安装，不再 blocked。
+        self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
+        self.assertEqual(entries["formula_pp_m"]["action"], "install_formula")
+
+    def test_formula_pp_m_ready_when_weights_present(self) -> None:
+        with _runtime(formula_weights=True):
+            entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["formula_pp_m"]["state"], "ready")
+        self.assertEqual(entries["formula_pp_m"]["capability"], "formula")
 
     def test_status_carries_hardware_and_tiers(self) -> None:
         with _runtime(hw=_HW_16G):
@@ -614,6 +628,9 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/ocr/install", paths)
         self.assertIn("/api/models/ocr/status", paths)
         self.assertIn("/api/models/ocr/uninstall", paths)
+        self.assertIn("/api/models/formula/install", paths)
+        self.assertIn("/api/models/formula/status", paths)
+        self.assertIn("/api/models/formula/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
         self.assertIn("/api/pending/return_batch", paths)
@@ -622,7 +639,7 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 7)
+        self.assertEqual(len(writes), 9)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
