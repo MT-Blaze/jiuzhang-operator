@@ -40,6 +40,8 @@ DENY_NAMES = {
     "Thumbs.db",
     ".local_token",
     "plugin.zip",
+    # 老师模型勾选是运行时财产，更新时原地保留，绝不随包发行覆盖老师选择。
+    "model_prefs.toml",
 }
 DENY_SUFFIXES = {".pyc", ".pyo", ".zip", ".log", ".tmp", ".bak", ".db-shm", ".db-wal",
                  ".db-journal", ".db", ".part",

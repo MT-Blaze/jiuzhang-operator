@@ -1,0 +1,413 @@
+tag = "run6"
+base = "http://127.0.0.1:14261"
+operator_head = "9843f538f43609ac47912235ad6994fa3d58c720"
+plugins_head = "66591d1c62552333975454b60915e6e8bc840866"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = ["http://127.0.0.1:14261/api/models/formula/install"]
+dialogs = ["安装 PP-FormulaNet·M 要下约 596MB 权重（模型 594MB＋配置 2.2MB，国内镜像）占磁盘。装好后公式专科与组合路公式步生效。仍要安装？", "确认卸载「PP-FormulaNet·M（公式专科）」？将丢弃引擎缓存并删除 engines/formula/ 整个目录（含已下权重），下次使用要重新安装。已入库题目不受影响。"]
+deviations = ["prefs auto_image_seat=cloud_vision（未指派）：组合路无坐标整题兜底走显性失败，避 MinerU 本地 CPU 停跑令；公式步真跑不受影响", "原串批次经自动分流默认公式座（PP-M 未装）显性标待核产出，先于安装跑——引擎下拉只列就绪且启用座，未装座无从直选；run2 选 ai 超时即此因"]
+raw_batch = "B-001"
+batch = "B-002"
+combo_filled_spans = 93
+reidentify_filled = 4
+ok = true
+elapsed_s = 450.2
+
+[install_status]
+state = "done"
+step = "完成"
+message = "PP-FormulaNet·M 已就绪（onnx/yml 两件权重校验通过）。"
+
+[combo_route]
+channel = "text"
+text_layer = true
+garbled = false
+text_chars = 2878
+missing_chars = 0
+note = "组合路（公式座「formula_pp_m」）→组合路：文字直取正文。 公式裁图 14 道交「formula_pp_m」，14 道原位回填。 3 道无公式坐标或坏题，走整题重认兜底并明示。 整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"
+layout_engine = "auto"
+recognize_engine = "combo_pp_m"
+phase = "done"
+done = true
+layout_detected = "python"
+mode = "combo_pp_m"
+auto_image_seat = "cloud_vision"
+
+[combo_route.stats]
+total = 17
+bad = 3
+rate = 17.6
+
+[[combo_route.layout_attempts]]
+engine = "python"
+ok = true
+detail = "本地文本层探出 4 页题块"
+
+[[combo_route.failures]]
+file = ""
+page_no = 0
+step = "识别·自动分流"
+reason = "整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"
+detail = "未指派视觉识别账号。"
+retryable = true
+
+[[combo_route.progress]]
+seq = 1
+text = "开始解析 A3_2027【绵阳一诊】.pdf"
+level = "info"
+
+[[combo_route.progress]]
+seq = 2
+text = "A3_2027【绵阳一诊】.pdf 原卷页图渲染完成，共 4 页"
+level = "info"
+
+[[combo_route.progress]]
+seq = 3
+text = "A3_2027【绵阳一诊】.pdf 版面探测完成，探出 17 个题块"
+level = "info"
+
+[[combo_route.progress]]
+seq = 4
+text = "A3_2027【绵阳一诊】.pdf 自动切题落池完成，逐题识别开工"
+level = "info"
+
+[[combo_route.progress]]
+seq = 5
+text = "A3_2027【绵阳一诊】.pdf 识别完成：共 17 题，坏题 3 道"
+level = "warn"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "9843f538"
+plugins = "66591d1c"
+
+[[checks]]
+name = "初始 PP-M 未就绪＋install_formula（副本无权重）"
+ok = true
+
+[checks.detail]
+id = "formula_pp_m"
+name = "PP-FormulaNet·M（公式专科）"
+capability = "formula"
+family = "formula"
+min_vram = 0
+can_cpu = true
+summary = "Paddle 公式识别移动档：专把公式图转 LaTeX；权重一键装（约 596MB），CPU 秒级。"
+summary_usage = "干啥：公式专科，只把公式图转 LaTeX。准不准：专用公式模型，复杂公式比通用 OCR 稳。快慢：快，CPU 一块约 1 秒。吃不吃卡：不吃，CPU 可跑。免不免费：免费开源（Apache-2.0）；权重约 596MB 一键装，擂台留 D 卡。"
+rule = "weight_present"
+store = "formula"
+plan_recognize = ["formula_pp_m"]
+ready_detail = "权重已装（onnx＋yml 两件 sha256 校验通过），公式专科通道就绪。"
+degraded_detail = "权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。"
+degraded_action = "install_formula"
+install_error_detail = "安装失败：{message}"
+state = "degraded"
+detail = "权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。"
+action = "install_formula"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "其余五座口径不动（三专科 blocked／两 VLM 硬件门）"
+ok = true
+
+[checks.detail]
+formula_pp_l = "blocked"
+formula_p2t = "blocked"
+formula_texify = "blocked"
+vlm_intern = "blocked"
+vlm_minicpm = "blocked"
+
+[[checks]]
+name = "未安装行：未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（未安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "原串批次立起（自动文字卷，PP-M 未装）"
+ok = true
+
+[checks.detail]
+raw = "B-001"
+
+[[checks]]
+name = "公式座未装显性标待核（零 MinerU/VLM 引擎、零出网）"
+ok = true
+
+[checks.detail]
+failures = ["公式座「PP-FormulaNet·M（公式专科）」未就绪（权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。）。", "整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"]
+
+[[checks]]
+name = "原串批次公式显性标待核零回填（正文留文字直取）"
+ok = true
+
+[checks.detail]
+note = "自动分流（文字卷）→组合路：文字直取正文。 公式裁图 14 道交「formula_pp_m」，0 道原位回填。 14 道题公式标待核（公式座「PP-FormulaNet·M（公式专科）」未就绪（权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。）。），正文保留文字直取、不整题降级。 3 道无公式坐标或坏题，走整题重认兜底并明示。 整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"
+
+[[checks]]
+name = "596MB 成本确认弹窗已摆并 accept"
+ok = true
+detail = ["安装 PP-FormulaNet·M 要下约 596MB 权重（模型 594MB＋配置 2.2MB，国内镜像）占磁盘。装好后公式专科与组合路公式步生效。仍要安装？"]
+
+[[checks]]
+name = "安装请求确由界面点击发起"
+ok = true
+detail = ["http://127.0.0.1:14261/api/models/formula/install"]
+
+[[checks]]
+name = "安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "PP-FormulaNet·M 已就绪（onnx/yml 两件权重校验通过）。"
+
+[[checks]]
+name = "双件权重落地 sha256 逐字一致"
+ok = true
+
+[[checks.detail]]
+name = "pp_formulanet_plus_m.onnx"
+bytes = 593908338
+sha256 = "52afa60ff51ad66cd7840a74188a058fe99081e617d3bd780117a2d67d94f50d"
+match = true
+
+[[checks.detail]]
+name = "pp_formulanet_plus_m_inference.yml"
+bytes = 2244564
+sha256 = "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538"
+match = true
+
+[[checks]]
+name = "已安装行：就绪＋【卸载】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（已安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "组合路第二卷立批次"
+ok = true
+
+[checks.detail]
+batch = "B-002"
+
+[[checks]]
+name = "组合路 combo_pp_m 文字卷真路（text_layer＋mode）"
+ok = true
+
+[checks.detail]
+mode = "combo_pp_m"
+text_layer = true
+
+[[checks]]
+name = "组合路注记：文字直取＋公式裁图交 PP-M"
+ok = true
+
+[checks.detail]
+note = "组合路（公式座「formula_pp_m」）→组合路：文字直取正文。 公式裁图 14 道交「formula_pp_m」，14 道原位回填。 3 道无公式坐标或坏题，走整题重认兜底并明示。 整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"
+
+[[checks]]
+name = "公式原位回填有实证（路由注记 N 道原位回填 ≥1）"
+ok = true
+
+[checks.detail]
+backfilled_items = "14"
+dollar_spans = 93
+items = 17
+
+[[checks]]
+name = "文字直取正文非空"
+ok = true
+
+[checks.detail]
+items = 17
+
+[[checks]]
+name = "无坐标整题兜底显性失败（云未指派，零 MinerU/VLM 引擎）"
+ok = true
+
+[checks.detail]
+fallback_failures = 1
+
+[[checks]]
+name = "公式坐标上页（文字层 span，≥3 题可供微批）"
+ok = true
+
+[checks.detail]
+targets = 5
+
+[[checks]]
+name = "重认微批 3–5 块真跑原位替换"
+ok = true
+
+[checks.detail]
+done = 4
+
+[[checks.detail.targets]]
+pid = "p_596384857b008ba7bb6efdad"
+index = 0
+preview = " x > 0"
+outcome = "OK"
+before = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+after = "已知 $x>0,\\quad y>0,\\quad 且 \\quad x+y=2,\\quad 则 \\quad xy 的最大值为$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+
+[[checks.detail.targets]]
+pid = "p_25cdc1125522f1a3f7dfb251"
+index = 0
+preview = " A = "
+outcome = "OK"
+before = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+after = "已知集合 $A=\\{0,1,2,3\\},\\quad B=\\{x|\\mathrm{lg}x>0\\},\\quad A\\cap B=$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+
+[[checks.detail.targets]]
+pid = "p_90a9e01b350a4dc7b2b39394"
+index = 0
+preview = " x ∈ R"
+outcome = "OK"
+before = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+after = "设 $x\\in\\mathbb{R},\\quad 则“\\tan x=1”是“x=\\frac{\\pi}{4}”的$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+
+[[checks.detail.targets]]
+pid = "p_b812d2e8e501071f5690e4dd"
+index = 0
+preview = " a > b > 0"
+outcome = "OK"
+before = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+after = "已知 $a>b>0,\\quad c>0,\\quad 则下列不等式一定正确的是$， $c > 0$，则下列不等式一定正确的是"
+
+[[checks.detail.targets]]
+pid = "p_51c3c2776e0f97ea7656b752"
+index = 0
+preview = "= F0\r\n⋅ 2\r\n-\r\ntτ "
+outcome = "FAIL:认出了新公式，但题面里定位不到原公式片段，未原位替换（D12 不裸拼）。"
+before = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+after = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+
+[[checks]]
+name = "整题重认选 PP-M 显性拒绝（公式专科座只认裁图）"
+ok = true
+
+[checks.detail]
+note = "PP-FormulaNet·M 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"
+
+[[checks]]
+name = "375px 重认工具行不横向溢出"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "卸载确认弹窗已摆并 accept"
+ok = true
+detail = ["确认卸载「PP-FormulaNet·M（公式专科）」？将丢弃引擎缓存并删除 engines/formula/ 整个目录（含已下权重），下次使用要重新安装。已入库题目不受影响。"]
+
+[[checks]]
+name = "卸载删净 engines/formula（副本内）"
+ok = true
+
+[[checks]]
+name = "卸载后回到未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "三查 fetch(/parent.document/localStorage=0"
+ok = true
+
+[checks.detail]
+"fetch(" = 0
+"parent.document" = 0
+localStorage = 0
+
+[[checks]]
+name = "页面零 JS 异常"
+ok = true
+detail = []
+
+[[checks]]
+name = "全程零 HTTP 失败"
+ok = true
+detail = []
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 14261
+
+[[checks]]
+name = "副本服务孤儿零"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[weights]]
+name = "pp_formulanet_plus_m.onnx"
+bytes = 593908338
+sha256 = "52afa60ff51ad66cd7840a74188a058fe99081e617d3bd780117a2d67d94f50d"
+match = true
+
+[[weights]]
+name = "pp_formulanet_plus_m_inference.yml"
+bytes = 2244564
+sha256 = "87b5f3d7f2b2fe553627d77b37f496608ca150ebd0ef62d362591edca47b5538"
+match = true
+
+[[reidentify_targets]]
+pid = "p_596384857b008ba7bb6efdad"
+index = 0
+preview = " x > 0"
+outcome = "OK"
+before = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+after = "已知 $x>0,\\quad y>0,\\quad 且 \\quad x+y=2,\\quad 则 \\quad xy 的最大值为$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+
+[[reidentify_targets]]
+pid = "p_25cdc1125522f1a3f7dfb251"
+index = 0
+preview = " A = "
+outcome = "OK"
+before = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+after = "已知集合 $A=\\{0,1,2,3\\},\\quad B=\\{x|\\mathrm{lg}x>0\\},\\quad A\\cap B=$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+
+[[reidentify_targets]]
+pid = "p_90a9e01b350a4dc7b2b39394"
+index = 0
+preview = " x ∈ R"
+outcome = "OK"
+before = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+after = "设 $x\\in\\mathbb{R},\\quad 则“\\tan x=1”是“x=\\frac{\\pi}{4}”的$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+
+[[reidentify_targets]]
+pid = "p_b812d2e8e501071f5690e4dd"
+index = 0
+preview = " a > b > 0"
+outcome = "OK"
+before = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+after = "已知 $a>b>0,\\quad c>0,\\quad 则下列不等式一定正确的是$， $c > 0$，则下列不等式一定正确的是"
+
+[[reidentify_targets]]
+pid = "p_51c3c2776e0f97ea7656b752"
+index = 0
+preview = "= F0\r\n⋅ 2\r\n-\r\ntτ "
+outcome = "FAIL:认出了新公式，但题面里定位不到原公式片段，未原位替换（D12 不裸拼）。"
+before = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+after = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"

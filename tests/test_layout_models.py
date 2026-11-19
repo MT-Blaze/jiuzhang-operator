@@ -288,6 +288,17 @@ class PackagingIsolationTest(unittest.TestCase):
                 names = archive.namelist()
         self.assertFalse([item for item in names if item.endswith(".onnx")])
         self.assertFalse([item for item in names if "/models/" in item])
+        self.assertFalse([item for item in names if item.endswith("model_prefs.toml")])
+
+    def test_04_payload_skips_model_prefs_runtime_property(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            plugin = Path(name)
+            (plugin / "dist").mkdir()
+            (plugin / "dist" / "app.js").write_text("x", encoding="utf-8")
+            (plugin / "model_prefs.toml").write_text(
+                'default_recognize = "auto"\n', encoding="utf-8")
+            names = [relative.as_posix() for relative, _ in builder._iter_payload(plugin)]
+        self.assertEqual(names, ["dist/app.js"])
 
     def test_03_oversized_package_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as name, \
