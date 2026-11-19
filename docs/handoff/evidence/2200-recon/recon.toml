@@ -1,0 +1,85 @@
+# 2.20.0 卡侦查结论（机读）。原始读数见 recon-run.txt；本文件是结论抄录。
+# 侦查时间 2026-11-19（本机实测）；只读取证，未发起任何安装。
+
+[meta]
+card = "模型配置中心重做与重新识别任务卡（2.20.0）"
+baseline_operator = "5195d28"
+baseline_plugins = "54aadc3"
+stop_chain_hit = false
+stop_chain_note = "冻结面可原地接线（有先例）；国内源非全不可达；registry 真值可取。无停链条件。"
+
+[registry_vram]
+# §3：注册表 64 位真值 vs WMI 32 位上限
+primary_sub = "0003"
+primary_name = "AMD Radeon RX 5600 XT"
+qw_memory_size = 6425673728          # HardwareInformation.qwMemorySize（REG_QWORD）
+qw_gb = 5.98                          # → vram_label 6.0G，vlm_qwen min_vram=6 门转就绪
+wmi_adapter_ram = 4293918720          # WMI 32 位上限约 4G（现 probe 读 4.0G/wmi 的成因）
+other_adapters = "0000 无值／0002 OrayIddDriver 无值／0004+0005 Microsoft Remote Display Adapter 无值"
+multi_card_rule = "多卡取主显示卡：有 qwMemorySize 的物理卡优先；虚拟/远程适配器无值跳过；全缺回 WMI"
+override = "不加（卡§3 明令）"
+
+[pip_mirrors]
+# §7：四家 pip 镜像今日全可达（延迟现算，安装点击内再测速选路，不写死）
+aliyun_ms = 90
+tsinghua_ms = 157
+tencent_ms = 375
+ustc_ms = 465
+llama_cpp_python_wheels = "四家全只有 sdist（0.3.36），零 wheel"
+cuda_wheel_verdict = "CUDA 轮国内不可达（abetlen GitHub whl 独有）→ 显性 gate_note＋欠账，禁 GitHub 静默兜底"
+cpu_wheel_verdict = "CPU 轮同样 GitHub-only → CPU 路径改走 mineru_llama_cpp 自带 llama-server -ngl 0（偏离记回单）"
+
+[weight_sources]
+modelscope_ms = 386
+hf_mirror_ms = 1339
+gitcode_home_ms = 788
+gguf_repo = "unsloth/Qwen2.5-VL-3B-Instruct-GGUF（modelscope resolve/master 200）"
+
+[vulkan_wheel]
+# §4 A 卡路：mineru-llama-cpp 国内 wheel 自带 Vulkan llama-server 全栈
+package = "mineru-llama-cpp==0.2.3"
+wheel = "mineru_llama_cpp-0.2.3-cp311-abi3-win_amd64.whl"
+wheel_bytes = 19547120
+wheel_sha256 = "78adc79a5d82aada539e98ae124567905a969d9a447a699656e23d570fe4328b"
+llama_server_build = "0.6.0-dev build 86a2835（--help 全文见 llama-server-help.txt）"
+flags = "--mmproj / -ngl / --api-key / --port / --host / --jinja / --ctx-size 全支持"
+existing_binary = "engines/mineru/Lib/site-packages/mineru_llama_cpp/bin/（0.2.1 已装，ggml-vulkan.dll 43,682,816B）"
+migration = "engines 内迁移现成 Vulkan binary 不算出网（卡§4 允许）；新装走国内 wheel"
+vlm_service_fix = "现 vlm_service.py:106-113 用 python -m llama_cpp.server --n_gpu_layers 0（纯 CPU 陷阱）→ 改 llama-server.exe -ngl 999（A卡Vulkan）/ -ngl 0（无独显CPU）"
+
+[rapidocr_medium]
+# §6 准档解锁：rapidocr 3.10.0 在底座 .venv（engines/rapidocr 是无人引用的平铺副本，不用）
+package_version = "3.10.0"
+switch = "RapidOCR(params={'Det.model_type':'medium','Rec.model_type':'medium'})，ocr_version 默认已 PP-OCRv6"
+det_url = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_medium.onnx"
+det_bytes = 62119454
+det_sha256 = "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2"
+rec_url = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx"
+rec_bytes = 76629984
+rec_sha256 = "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b"
+reach = "两文件 GET Range 206，310ms/256ms（modelscope 国内源，包内置通道同款 URL）"
+weights_home = "engines/ocr/models/（新目录，不污染 .venv site-packages；RapidOCR 以 model_path 参数指入）"
+bench = "3 样本 small vs medium：安装走 UI 点击（出网铁律），bench 工具离线跑行清单/得分/耗时对比"
+catalog_change = "rapidocr_accurate rule blocked→weight_present store=ocr_medium＋plan_layout=[ocr_medium]＋安装文案"
+
+[dedupe]
+# §2 侦查：剔除重复是批内还是跨库？
+verdict = "跨库查重已存在，补刀条件不成立"
+evidence = "app/core/pending/dedupe/engine.py DUPLICATE_REASONS=(batch,bank)；bank_rows_snapshot＋group_duplicates 把批内组升级成库命中；dry-run plan 含 batch_redundant/bank_redundant"
+
+[wiring]
+# §1/§2 冻结面接线点（行数只减不增、原地接线允许）
+index_html_scripts = "870 行 ui_model_config.js 单行 → 同行挂新兄弟（先例：895 行两 script 一行）"
+index_html_css = "18 行 panel_model_config.css → 同行挂新 CSS（先例：27 行两 link 一行）"
+plugin_js_compose = "291 行 renderDeleteBatchButton 注入点 → 组合调用新 ui_batch_return 渲染器（先例：325 行追加创建）"
+ui_batches_hooks = "259 renderDeleteBatchButton(card,row)／261 renderBatchFailure(card,row)；行点击 265-271 closest 白名单 → 新按钮必须 stopPropagation"
+ui_intake_frozen = "656 行台账冻结 → 7 链路下拉经 applyRegistry/兄弟模块 decorate，不增行"
+wiring_test = "PluginAssetWiringTest 正则按行扫 <script src=，多 script 一行可过；命名空间先用后建检查须守序"
+
+[seven_chains]
+# T6 回单权威口径
+whole = "mineru_local／mineru云／vlm_qwen本地VLM／cloud_vision（4 整题直转）"
+combo = "文字直取＋公式裁图送 专科formula_pp_m／本地VLM／云VLM（3 组合路，仅文字卷）"
+auto = "按卷型分流：text_layer→组合路；纯图→image_seat（初值 mineru_local）"
+return_flow = "重新识别＝整批打回文件收集框（source_backup＋meta 原样）→ 老师重选链路 → ingest.files 只跑一条；未入库随批作废、已入库留库"
+combo_dropdown = "组合路三选项进识别下拉（catalog 新条目 plan_recognize=[combo]＋combo_seat）；纯图卷灰＋人话"

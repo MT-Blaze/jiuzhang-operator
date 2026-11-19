@@ -1,4 +1,4 @@
-"""只读显存探针（四合一卡 §3）：nvidia-smi 优先、WMI 兜底、读不到如实报。
+"""只读显存探针（四合一卡 §3／2.20.0 卡§3）：nvidia-smi → 注册表 64 位 → WMI 兜底。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_ingest_hardware``
 """
@@ -30,6 +30,7 @@ class ProbeTest(unittest.TestCase):
 
     def test_wmi_fallback_discloses_cap(self) -> None:
         with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry", return_value=None), \
                 mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
             info = hardware.probe()
         self.assertEqual(info["vram_gb"], 4.0)
@@ -38,6 +39,7 @@ class ProbeTest(unittest.TestCase):
 
     def test_no_probe_reports_unknown_not_a_guess(self) -> None:
         with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry", return_value=None), \
                 mock.patch.object(hardware, "_wmi", return_value=None):
             info = hardware.probe()
         self.assertEqual(info["vram_gb"], 0.0)
@@ -55,10 +57,67 @@ class ProbeTest(unittest.TestCase):
     def test_nvidia_failure_falls_through_to_wmi(self) -> None:
         with mock.patch.object(hardware, "_run_text",
                                side_effect=[(1, ""), (0, "8589934592\n")]), \
+                mock.patch.object(hardware, "_registry", return_value=None), \
                 mock.patch.object(hardware.sys, "platform", "win32"):
             info = hardware.probe()
         self.assertEqual(info["vram_source"], "wmi")
         self.assertEqual(info["vram_gb"], 8.0)
+
+
+class RegistryVramTest(unittest.TestCase):
+    """2.20.0 卡§3 四例：registry 优先／WMI 兜底／缺值回退／多卡取主卡。"""
+
+    AMD_ROW = {"name": "AMD Radeon RX 5600 XT", "qw": 6425673728}
+
+    def test_registry_preferred_over_wmi(self) -> None:
+        with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry_rows",
+                                  return_value=[dict(self.AMD_ROW)]), \
+                mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
+            info = hardware.probe()
+        self.assertEqual(info["vram_gb"], 6.0)
+        self.assertEqual(info["vram_label"], "6.0G")
+        self.assertEqual(info["vram_source"], "registry")
+        self.assertEqual(info["gpu_name"], "AMD Radeon RX 5600 XT")
+        self.assertNotIn("低估", info["detail"])
+
+    def test_empty_registry_falls_back_to_wmi(self) -> None:
+        with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry_rows", return_value=[]), \
+                mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
+            info = hardware.probe()
+        self.assertEqual(info["vram_source"], "wmi")
+        self.assertEqual(info["vram_gb"], 4.0)
+        self.assertIn("低估", info["detail"])
+
+    def test_missing_qw_falls_back_without_error(self) -> None:
+        rows = [{"name": "OrayIddDriver Device", "qw": None},
+                {"name": "Microsoft Remote Display Adapter", "qw": None}]
+        with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry_rows", return_value=rows), \
+                mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
+            info = hardware.probe()
+        self.assertEqual(info["vram_source"], "wmi")
+        with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry_rows",
+                                  side_effect=OSError("注册表读不了")), \
+                mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
+            info = hardware.probe()
+        self.assertEqual(info["vram_source"], "wmi")
+        self.assertEqual(info["vram_gb"], 4.0)
+
+    def test_multi_card_takes_primary_physical(self) -> None:
+        rows = [{"name": "Microsoft Remote Display Adapter", "qw": 16 * 1024 ** 3},
+                {"name": "OrayIddDriver Device", "qw": None},
+                dict(self.AMD_ROW),
+                {"name": "副卡", "qw": 4 * 1024 ** 3}]
+        with mock.patch.object(hardware, "_nvidia", return_value=None), \
+                mock.patch.object(hardware, "_registry_rows", return_value=rows), \
+                mock.patch.object(hardware, "_wmi", return_value=(4.0, "")):
+            info = hardware.probe()
+        self.assertEqual(info["gpu_name"], "AMD Radeon RX 5600 XT")
+        self.assertEqual(info["vram_gb"], 6.0)
+        self.assertEqual(info["vram_source"], "registry")
 
 
 class TierTest(unittest.TestCase):
