@@ -22,7 +22,10 @@ import asyncio
 import contextlib
 import inspect
 import io
+import os
+import tempfile
 import unittest
+from pathlib import Path
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
 from app.core.content import latex_style_dict, question_parser
@@ -239,7 +242,25 @@ class TwoRulersTest(unittest.TestCase):
 
 
 class HostChainTest(unittest.TestCase):
-    """判据 1.6 + 雷区：规则表只有一处，normalize_latex 的旧口径一个字不变。"""
+    """判据 1.6 + 雷区：规则表只有一处，normalize_latex 的旧口径一个字不变。
+
+    宿主链经清洗驱动读整机字典库；这里把 JZO_DATA_DIR 指到未播种的临时副本，
+    驱动取不到闭集即回落冻结基线，使向后兼容断言不依赖开发机真库是否已播种。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self.tmp.name) / "data"
+        self.data.mkdir()
+        self._old = os.environ.get("JZO_DATA_DIR")
+        os.environ["JZO_DATA_DIR"] = str(self.data)
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = self._old
+        self.tmp.cleanup()
 
     def test_01_normalize_latex_output_is_unchanged(self) -> None:
         self.assertEqual(question_parser.normalize_latex(r"求 \(x^2\) 的值"), "求 $x^2$ 的值")

@@ -24,7 +24,7 @@ from typing import Any, Iterable
 
 from app.core import wire
 from app.core.bank import service as bank
-from app.core.content import latex_style_dict
+from app.core.content import latex_norm, latex_style_dict
 from app.core.content.question_parser import normalize_latex
 
 
@@ -45,7 +45,7 @@ def _compare_form(value: Any) -> str:
     """
     if not isinstance(value, str) or not value:
         return ""
-    return latex_style_dict.normalize_for_compare(normalize_latex(value))["text"]
+    return latex_norm.clean(normalize_latex(value), compare=True)["text"]
 
 
 def normalize_text(value: Any) -> str:

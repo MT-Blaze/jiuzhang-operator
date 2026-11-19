@@ -17,7 +17,7 @@
    ``\\text{}`` 里的汉字、``\\begin{cases}`` 的环境名一个字都不动。
 2. **幂等**——洗一遍与洗十遍结果逐字相同。
 3. **不认识就不动**——原样保留，并把命令名记进返回值的 ``unknown`` 清单；
-   清单只随返回值交给调用方，不落盘、不打印、不进日志。
+   清单交调用方送开集待审（台账 49 修订·2.21.0），仍不打印、不进日志。
 """
 
 from __future__ import annotations
@@ -190,21 +190,21 @@ def rewrite_alias_spans(text: str) -> str:
     return "".join(pieces)
 
 
-def clean_for_write(text: Any) -> dict[str, Any]:
+def clean_for_write(text: Any, aliases: dict | None = None) -> dict[str, Any]:
     """写库清洗：改正文，保守——不碰 ``\\left``/``\\right``，不动间距与空格。
 
     返回 ``{"text", "changed", "rules", "unknown"}``；``rules`` 是命中的规则名，
     ``unknown`` 是没认得的命令名（原样保留，只回给调用方）。
     """
-    return _rewrite(text, compare=False)
+    return _rewrite(text, compare=False, aliases=aliases)
 
 
-def normalize_for_compare(text: Any) -> dict[str, Any]:
+def normalize_for_compare(text: Any, aliases: dict | None = None) -> dict[str, Any]:
     """比对归一：只供算指纹。排版命令与段内空白视为透明，返回**副本**不改原文。"""
-    return _rewrite(text, compare=True)
+    return _rewrite(text, compare=True, aliases=aliases)
 
 
-def _rewrite(text: Any, *, compare: bool) -> dict[str, Any]:
+def _rewrite(text: Any, *, compare: bool, aliases: dict | None = None) -> dict[str, Any]:
     if not isinstance(text, str):
         return {"text": "", "changed": False, "rules": [], "unknown": []}
     pieces: list[str] = []
@@ -215,7 +215,7 @@ def _rewrite(text: Any, *, compare: bool) -> dict[str, Any]:
     for start, end, _unclosed in spans:
         pieces.append(_collapse_prose_whitespace(text[cursor:start]) if compare
                       else text[cursor:start])
-        segment, hits, missing = _rewrite_span(text[start:end], compare)
+        segment, hits, missing = _rewrite_span(text[start:end], compare, aliases if aliases is not None else SYMBOL_ALIASES)
         if not compare:
             segment, spaced = _thin_space_scripts(segment)
             if spaced:
@@ -243,7 +243,7 @@ def _note(items: list[str], name: str) -> None:
         items.append(name)
 
 
-def _rewrite_span(segment: str, compare: bool) -> tuple[str, list[str], list[str]]:
+def _rewrite_span(segment: str, compare: bool, aliases: dict) -> tuple[str, list[str], list[str]]:
     """在一个数学段内按命令切词改写；段外的正文由调用方原样搬运。
 
     ``compare`` 态丢空白时会在「字母命令 + 紧随的字母或数字」之间补回一个空格——
@@ -284,7 +284,7 @@ def _rewrite_span(segment: str, compare: bool) -> tuple[str, list[str], list[str
                 _note(rules, "compare_layout")
                 i = tail
                 continue
-            alias = SYMBOL_ALIASES.get(name)
+            alias = aliases.get(name)
             if alias is not None:
                 _note(rules, "symbols")
                 # 别名改写后立刻按统一写法继续补显式参数，否则 \dfrac12 要两轮才收敛。

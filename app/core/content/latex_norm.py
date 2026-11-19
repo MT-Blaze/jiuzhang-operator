@@ -1,18 +1,12 @@
 """记号标准字典（闭集＋开集）整机库层（2.21.0 卡 §1/§3）。
 
-三表：``norm_entries``（条目）／``norm_variants``（变体行）／``norm_corrections``（开集四态）。
-铁律一表表平等：变体独立成表，禁 JSON 字段藏跨表语义；读取分步查＋应用层组装，不做三表连级 JOIN。
-
-- 闭集内容出厂冻结：种子只补差（按 entry_key），老师只写 ``chosen_default_variant_id``；
-  恢复出厂＝选择回退（置 NULL），出厂默认永不动。
-- 开集四态人闸：只有 confirmed 参与改写；收编＝状态翻转；raw_code 唯一键去重 hit_count+1；
-  rejected＝黑名单永不再问；pending 命中排序、久未命中 archived；pending 一律不生效。
-- 整机库住根 ``data/latex_norm.db``（config.latex_norm_db_path），不随工作区漂移；
-  备份走 ``machine/`` 层，工作区导入不携带。
-
-WAL 选边（add-data-store 坑）：照主库 ``db.py`` 先例只在建库/迁移时设——
-字典读多写少，读连接不该为设日志模式去抢写锁（pending 每连必设是它写频繁的场景）。
-本模块不碰 HTTP；清洗接线在 ``latex_style_dict``（字典从参数取），种子导入见 ``import_seed``。
+三表 norm_entries／norm_variants／norm_corrections（铁律一表表平等：变体独立成表，
+禁 JSON 藏跨表语义；分步查＋应用层组装，不做三表连级 JOIN）。闭集出厂冻结，老师只写
+chosen_default_variant_id，恢复出厂＝置 NULL；开集只有 confirmed 参与改写，raw_code
+唯一键去重 hit+1，rejected 黑名单，pending 命中排序、久未命中 archived、一律不生效。
+整机库住根 data/latex_norm.db（不随工作区漂移），备份走 machine/ 层、工作区导入不携带。
+WAL 照主库 db.py 只在建库/迁移时设。本模块不碰 HTTP；清洗驱动 clean 合并闭集＋开集
+（按库路径＋写代数缓存，写口 bump 即常新）交 latex_style_dict 切词改写（字典从参数取）。
 """
 
 from __future__ import annotations
@@ -42,12 +36,14 @@ SUPPORTED_SEED_VERSION = 1
 # infix／结构命令换了会破坏参数结构（{a \over b} 改成 \frac 就错），永不进命令级改写；
 # 即便未来种子误收单命令码也兜住（三硬规矩·不认识就不动的安全闸）。
 _NO_REWRITE = frozenset({
-    "over", "atop", "choose", "above", "root", "of", "not",
-    "overwithdelims", "atopwithdelims", "abovewithdelims",
-    "left", "right", "middle", "begin", "end",
+    "over", "atop", "choose", "above", "root", "of", "not", "overwithdelims",
+    "atopwithdelims", "abovewithdelims", "left", "right", "middle", "begin", "end",
     "bigl", "bigr", "Bigl", "Bigr", "bigm", "Bigm", "big", "Big", "bigg", "Bigg",
-    "displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle",
-})
+    "displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle"})
+
+# 改写驱动缓存：键＝库路径，值＝(写代数, 合并字典)；写口全在 transaction，提交后 bump 代数即失效＝常新（查重热路不逐次开库）。
+_CACHE: dict[str, tuple[int, dict[str, str]]] = {}
+_GENERATION = [0]
 
 
 class NormError(Exception):
@@ -132,18 +128,15 @@ def _backup_before_migration(path: Path) -> Path:
 def _ensure_schema(con: sqlite3.Connection) -> None:
     version = int(con.execute("PRAGMA user_version").fetchone()[0])
     if version > SCHEMA_VERSION:
-        raise NormError(
-            f"记号字典结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级程序或恢复备份。"
-        )
+        raise NormError(f"记号字典结构版本 {version} 高于程序支持的 {SCHEMA_VERSION}，请升级程序或恢复备份。")
     if version == SCHEMA_VERSION:
         return
     if _table_names(con):
         # 库里已有对象才备份；全新空文件无可备。迁移失败时 .pre-vN.bak 可整库回退。
         _backup_before_migration(Path(con.execute("PRAGMA database_list").fetchone()[2]))
     for statement in _SCHEMA.strip().split(";"):
-        text = statement.strip()
-        if text:
-            con.execute(text)
+        if statement.strip():
+            con.execute(statement.strip())
     con.execute("PRAGMA journal_mode = WAL")
     con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     con.commit()
@@ -156,6 +149,7 @@ def transaction() -> Iterator[sqlite3.Connection]:
         con.execute("BEGIN IMMEDIATE")
         yield con
         con.commit()
+        _GENERATION[0] += 1
     except BaseException:
         con.rollback()
         raise
@@ -182,9 +176,7 @@ def list_entries() -> list[dict[str, Any]]:
         by_entry.setdefault(variant["entry_key"], []).append(variant)
     for entry in entries:
         entry["variants"] = by_entry.get(entry["entry_key"], [])
-        entry["effective_default_variant_id"] = (
-            entry["chosen_default_variant_id"] or entry["factory_default_variant_id"]
-        )
+        entry["effective_default_variant_id"] = entry["chosen_default_variant_id"] or entry["factory_default_variant_id"]
     return entries
 
 
@@ -248,11 +240,7 @@ def reset_default(entry_key: str) -> dict[str, Any]:
 
 
 def record_unknown(raw_code: str) -> dict[str, Any]:
-    """开集候选登记：唯一键去重，再犯 hit_count+1 不新增行。
-
-    rejected 永不再问（只涨命中数）；archived 再犯回 pending（不再「久未命中」）；
-    confirmed 保持 confirmed（其纠正已在生效）。候选不打印、不进日志（台账 49 修订）。
-    """
+    """开集候选登记：唯一键去重再犯 hit+1；rejected 永不再问、archived 再犯回 pending、confirmed 保持；候选不打印不进日志（台账 49 修订）。"""
     code = (raw_code or "").strip()
     if not code:
         raise NormError("开集候选代码不能为空")
@@ -314,11 +302,7 @@ def _command_name(code: str) -> str:
 
 
 def rewrite_aliases() -> dict[str, str] | None:
-    """闭集别名映射（命令名→命令名）：非默认且可渲染的变体 → 选中默认。
-
-    库里一条条目都没有（种子未导入）回 None，调用方回落冻结基线字典，
-    保证新装环境清洗不断档；种子落地后以库为准。
-    """
+    """闭集别名映射（命令名→命令名）：非默认且可渲染变体→选中默认，infix/结构命令排除；库空回 None，调用方回落冻结基线保证新装不断档。"""
     entries = list_entries()
     if not entries:
         return None
@@ -398,8 +382,7 @@ def _reconcile(con: sqlite3.Connection, seed: dict[str, Any]) -> None:
 
 
 def import_seed(path: Path | None = None) -> dict[str, Any]:
-    """四保险：①单事务 ②清单＋导入后逐件对账 ③幂等补差按 entry_key（已有条目整条跳过，
-    老师选择与出厂内容永不被覆盖）④版本对账通过后才落。任何失败整体回滚。"""
+    """四保险：①单事务 ②清单＋导入后逐件对账 ③幂等补差按 entry_key（已有条目整条跳过，老师选择与出厂内容永不覆盖）④版本对账通过后才落；任何失败整体回滚。"""
     seed = load_seed(path)
     added = skipped = variants_added = 0
     with transaction() as con:
@@ -423,14 +406,13 @@ def import_seed(path: Path | None = None) -> dict[str, Any]:
             added += 1
             variants_added += len(ids)
         _reconcile(con, seed)
-    return {"seed_version": seed["seed_version"], "entries_added": added,
-            "entries_skipped": skipped, "variants_added": variants_added,
-            "entry_count": seed["entry_count"], "variant_count": seed["variant_count"]}
+    return {"seed_version": seed["seed_version"], "entries_added": added, "entries_skipped": skipped,
+            "variants_added": variants_added, "entry_count": seed["entry_count"],
+            "variant_count": seed["variant_count"]}
 
 
 def apply_render_report(results: list[dict[str, Any]]) -> int:
-    """渲染探针结论回写：只动 render_supported/render_note，不碰出厂内容。
-    不认的命令显性 0＋原因（全量红线不静默丢），改写驱动据此排除。"""
+    """渲染探针结论回写：只动 render_supported/render_note，不碰出厂内容；不认显性 0＋原因不静默丢。"""
     updated = 0
     with transaction() as con:
         for item in results:
@@ -441,3 +423,28 @@ def apply_render_report(results: list[dict[str, Any]]) -> int:
                  item["entry_key"], int(item["row_order"])))
             updated += int(cursor.rowcount)
     return updated
+
+
+def clean(text: Any, *, compare: bool = False) -> dict[str, Any]:
+    """清洗驱动：闭集＋开集 confirmed 合并（传递闭包保幂等，按库路径＋写代数缓存）交老模块切词改写；写路 unknown 送开集待审不打印不进日志，比对路只归一。"""
+    from app.core.content import latex_style_dict as style
+    path = str(settings.latex_norm_db_path)
+    hit = _CACHE.get(path)
+    if hit is not None and hit[0] == _GENERATION[0]:
+        merged = hit[1]
+    else:
+        closed = rewrite_aliases()
+        merged = dict(style.SYMBOL_ALIASES if closed is None else closed)
+        merged.update(confirmed_corrections())
+        for key in list(merged):
+            seen, target = {key}, merged[key]
+            while target in merged and target not in seen:
+                seen.add(target)
+                target = merged[target]
+            merged[key] = target
+        _CACHE[path] = (_GENERATION[0], merged)
+    out = style.normalize_for_compare(text, merged) if compare else style.clean_for_write(text, merged)
+    if not compare:
+        for name in out["unknown"]:
+            record_unknown(name)
+    return out

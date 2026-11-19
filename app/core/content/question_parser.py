@@ -16,7 +16,7 @@ import re
 import unicodedata
 from typing import Any
 
-from app.core.content import latex_style_dict
+from app.core.content import latex_norm, latex_style_dict
 from app.core.content.question_images import is_remote_image, strip_derived_fields
 
 __all__ = [
@@ -163,7 +163,7 @@ def _clean_fragment(text: str, rules: list[str]) -> str:
     normalized = normalize_latex(text)
     # 定界符换成 $ 之后才交给写法字典：上标补括号、\frac 显式参数、减号统一
     # 都只在数学段内按命令切词改写（app/core/content/latex_style_dict，全仓唯一一份字典）。
-    written = latex_style_dict.clean_for_write(normalized)
+    written = latex_norm.clean(normalized)
     if written["changed"]:
         rules.extend(written["rules"])
         return written["text"]
@@ -240,7 +240,7 @@ def clean_exam_source(text: Any) -> dict[str, Any]:
     if _WHITESPACE_DIRT.search(text):
         rules.append("whitespace")
     normalized = normalize_latex(text)
-    written = latex_style_dict.clean_for_write(normalized)
+    written = latex_norm.clean(normalized)
     for name in written["rules"]:
         if name not in rules:
             rules.append(name)

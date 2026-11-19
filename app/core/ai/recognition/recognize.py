@@ -22,7 +22,7 @@ from app.core.ai.platform import center as ai_center
 from app.core.ai.platform.client import OpenAICompatibleProvider
 from app.core.ai.recognition.exam_source import OPTION_KEYS, build_exam_source
 from app.core.config import settings
-from app.core.content import latex_style_dict, question_parser
+from app.core.content import latex_norm, latex_style_dict, question_parser
 
 MAX_IMAGES = 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -121,7 +121,7 @@ def _clean_text(value: Any, limit: int) -> str:
     再按写法字典补显式脚本与相邻变量的细空格。不合规的公式语法绝不落库。"""
     text = unicodedata.normalize("NFC", str(value or "")).strip()
     text = question_parser.normalize_latex(text)
-    text = latex_style_dict.clean_for_write(text)["text"]
+    text = latex_norm.clean(text)["text"]
     return text[:limit]
 
 

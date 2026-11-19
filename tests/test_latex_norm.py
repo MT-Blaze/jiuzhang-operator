@@ -461,5 +461,88 @@ label = "教材版式约定"
             self.assertNotIn(name, aliases)
 
 
+class NormCleanDriverTest(unittest.TestCase):
+    """阶段C：清洗字典驱动（卡 §3/§6）——闭集选中默认＋开集 confirmed 合并改写、
+    normalize 同口径、三硬规矩、unknown 进待审、写代数缓存常新。隔离同上。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self.tmp.name) / "data"
+        self.data.mkdir()
+        self._old = os.environ.get("JZO_DATA_DIR")
+        os.environ["JZO_DATA_DIR"] = str(self.data)
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("JZO_DATA_DIR", None)
+        else:
+            os.environ["JZO_DATA_DIR"] = self._old
+        self.tmp.cleanup()
+
+    def _le_variant(self, code):
+        entry = latex_norm.get_entry("le")
+        return next(v["id"] for v in entry["variants"] if v["latex_code"] == code)
+
+    def test_01_dictionary_drives_write_clean(self):
+        latex_norm.import_seed()
+        out = latex_norm.clean(r"$x\le 1$ 与 $\dfrac{1}{2}$")
+        self.assertEqual(out["text"], r"$x\leqslant 1$ 与 $\frac{1}{2}$")
+        self.assertTrue(out["changed"])
+        self.assertIn("symbols", out["rules"])
+
+    def test_02_choice_flip_invalidates_cache(self):
+        latex_norm.import_seed()
+        self.assertEqual(latex_norm.clean(r"$x\le 1$")["text"], r"$x\leqslant 1$")
+        latex_norm.choose_default("le", self._le_variant(r"\le"))
+        self.assertEqual(latex_norm.clean(r"$x\leqslant 1$")["text"], r"$x\le 1$")
+        latex_norm.reset_default("le")
+        self.assertEqual(latex_norm.clean(r"$x\le 1$")["text"], r"$x\leqslant 1$")
+
+    def test_03_compare_same_caliber_and_read_only(self):
+        latex_norm.import_seed()
+        written = latex_norm.clean(r"$x\le 1$")["text"]
+        compared = latex_norm.clean(r"$x\le 1$", compare=True)["text"]
+        self.assertIn(r"\leqslant", written)
+        self.assertIn(r"\leqslant", compared)
+        self.assertEqual(latex_norm.list_corrections("pending"), [])
+
+    def test_04_three_hard_rules(self):
+        latex_norm.import_seed()
+        self.assertEqual(latex_norm.clean(r"$\left(x\right)$")["text"], r"$\left(x\right)$")
+        self.assertEqual(latex_norm.clean(r"$\text{汉字}x$")["text"], r"$\text{汉字}x$")
+        once = latex_norm.clean(r"$\dfrac12\le x$")["text"]
+        self.assertEqual(latex_norm.clean(once)["text"], once)
+        self.assertIn(r"\foo", latex_norm.clean(r"$\foo{x}$")["text"])
+
+    def test_05_unknown_goes_pending_on_write_only(self):
+        latex_norm.import_seed()
+        latex_norm.clean(r"$\foo$")
+        pending = [c["raw_code"] for c in latex_norm.list_corrections("pending")]
+        self.assertIn("foo", pending)
+        latex_norm.clean(r"$\bar$", compare=True)
+        pending = [c["raw_code"] for c in latex_norm.list_corrections("pending")]
+        self.assertNotIn("bar", pending)
+
+    def test_06_confirmed_correction_rewrites_pending_does_not(self):
+        latex_norm.import_seed()
+        latex_norm.record_unknown("foo")
+        self.assertEqual(latex_norm.clean(r"$\foo$")["text"], r"$\foo$")
+        latex_norm.decide_correction("foo", "confirmed", "le")
+        self.assertEqual(latex_norm.clean(r"$\foo$")["text"], r"$\leqslant$")
+
+    def test_07_transitive_closure_idempotent(self):
+        latex_norm.import_seed()
+        latex_norm.record_unknown("foo")
+        latex_norm.decide_correction("foo", "confirmed", "le")
+        once = latex_norm.clean(r"$\foo$")["text"]
+        self.assertEqual(once, r"$\leqslant$")
+        self.assertEqual(latex_norm.clean(once)["text"], once)
+
+    def test_08_empty_db_falls_back_to_baseline(self):
+        self.assertIsNone(latex_norm.rewrite_aliases())
+        self.assertEqual(latex_norm.clean(r"$\dfrac{1}{2}\leq x$")["text"],
+                         r"$\frac{1}{2}\le x$")
+
+
 if __name__ == "__main__":
     unittest.main()
