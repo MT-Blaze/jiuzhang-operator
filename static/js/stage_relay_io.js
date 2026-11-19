@@ -703,7 +703,7 @@
 
     if (method === "models.registry_status") {
       // 只读：目录×三态＋硬件快照＋档位表＋默认选择。不出网、不碰库。
-      fetchJson("/api/models/registry").then(done, fail);
+      fetchJson("/api/models/registry?probe=" + ((payload && payload.probe === 0) ? "0" : "1")).then(done, fail);
       return true;
     }
 

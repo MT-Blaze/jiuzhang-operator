@@ -150,34 +150,47 @@ def _rule_mineru_local(item: dict[str, Any], ctx: dict[str, Any],
 def _rule_vlm_local(item: dict[str, Any], ctx: dict[str, Any],
                     hw: dict[str, Any], tiers: list[dict[str, Any]]) -> dict[str, str]:
     """本地 VLM 座（2.20.0 卡§4/§5）：装没装×权重×显存门；显存不够不灰死安装，
-    装好了就 CPU 慢兜底照跑（就绪＋披露），没装就引导安装（选择权在老师）。"""
+    装好了就 CPU 慢兜底照跑（就绪＋披露），没装就引导安装（选择权在老师）。
+    badge/brief 是§5 活字：徽章按事实、简要一行带本机显存现算。"""
     need = int(item.get("min_vram") or 6)
     vram = float(hw.get("vram_gb") or 0)
     label = str(hw.get("vram_label") or "读不到")
     install = vlm_setup.status()
-    if install.get("state") == "error":
-        filled = {**ctx, "message": install.get("message", ""),
-                  "vram_label": label, "min_vram": need}
-        return _verdict("blocked", _say(item.get("install_error_detail"), filled), "install_vlm")
     check = vlm_setup.health()
     engine = str(check.get("engine") or "")
     engine_label = {"cuda": "CUDA", "vulkan": "Vulkan", "cpu": "CPU"}.get(engine, engine)
     filled = {**ctx, "vram_label": label, "min_vram": need,
               "version": check.get("version") or "", "engine": engine,
               "engine_label": engine_label}
-    if not check["ok"]:
-        if check["state"] == "error":
-            filled["message"] = check["message"]
-            return _verdict("blocked", _say(item.get("broken_detail"), filled), "install_vlm")
-        return _verdict("degraded", _say(item.get("missing_detail"), filled), "install_vlm")
-    if not vlm_setup.weights_ready():
-        return _verdict("degraded", _say(item.get("missing_detail"), filled), "install_vlm")
-    if vram < need:
+    if install.get("state") == "error":
+        filled["message"] = install.get("message", "")
+        verdict, badge = _verdict("blocked", _say(item.get("install_error_detail"), filled),
+                                  "install_vlm"), "安装失败"
+    elif check["state"] == "error":
+        filled["message"] = check["message"]
+        verdict, badge = _verdict("blocked", _say(item.get("broken_detail"), filled),
+                                  "install_vlm"), "安装残缺"
+    elif not check["ok"] or not vlm_setup.weights_ready():
+        verdict, badge = _verdict("degraded", _say(item.get("missing_detail"), filled),
+                                  "install_vlm"), "未安装"
+    elif vram < need:
         detail = _say(item.get("low_ready_detail")
                       or "已安装·本机显存 {vram_label} 不足 {min_vram}G 门槛·CPU 慢兜底"
                          "（比显卡慢一个数量级），也可改云视觉（花小钱、快）。", filled)
-        return _verdict("ready", detail)
-    return _verdict("ready", _say(item.get("ready_detail"), filled))
+        verdict = _verdict("ready", detail)
+        badge = "已安装·本机显存不足·CPU 慢兜底"
+    else:
+        verdict = _verdict("ready", _say(item.get("ready_detail"), filled))
+        badge = "已安装·就绪（%s）" % (engine_label or "CPU")
+    if vram < need:
+        filled["vram_verdict"] = "装了也只能 CPU 慢兜底"
+    elif engine in ("cuda", "vulkan"):
+        filled["vram_verdict"] = "显存够格，走 %s 显卡加速" % engine_label
+    else:
+        filled["vram_verdict"] = "显存够格，装完按真发动机包加速"
+    verdict["badge"] = badge
+    verdict["brief"] = _say(item.get("brief"), filled)
+    return verdict
 
 
 def _rule_vram_gate(item: dict[str, Any], ctx: dict[str, Any],
@@ -226,14 +239,18 @@ def _judge(item: dict[str, Any], hw: dict[str, Any],
     return handler(item, ctx, hw, tiers)
 
 
-def status() -> dict[str, Any]:
-    """整块给配置页与下拉：目录全量×三态＋硬件快照＋档位表＋默认选择。"""
+def status(probe_hardware: bool = True) -> dict[str, Any]:
+    """整块给配置页与下拉：目录全量×三态＋硬件快照＋档位表＋默认选择。
+
+    probe_hardware=False（启动注入下拉）复用上次真测快照，不跑探针；
+    老师点进配置中心那一刻才真测（2.20.0 卡§1）。三态本身每次现算（D3b）。
+    """
     provider = catalog_provider()
     plugin_id = str(provider["id"]) if provider else None
     doc = _document(plugin_id) if plugin_id else {}
     prefs = model_prefs.load(plugin_id) if plugin_id else dict(_AUTO_PREFS)
     disabled = set(prefs["disabled"])
-    hw = hardware.probe()
+    hw = hardware.probe() if probe_hardware else hardware.snapshot()
     tiers = [dict(row) for row in doc.get("vram_tier") or []
              if isinstance(row, dict)]
     entries: list[dict[str, Any]] = []

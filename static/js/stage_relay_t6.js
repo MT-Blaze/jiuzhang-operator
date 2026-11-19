@@ -56,6 +56,21 @@
         return true;
       }
 
+      if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru") {
+        // 写口：卸载先停服再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
+        var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (uninstallPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能卸载本地引擎" });
+          return true;
+        }
+        var uninstallPath = method === "models.uninstall_vlm"
+          ? "/api/models/vlm/uninstall" : "/api/models/mineru/uninstall";
+        withWriteToken(uninstallPath, { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
       if (method === "pending.reidentify") {
         // 写口：同张题图裁块/整题送选中席，原位替换；失败进批次失败清单。
         var perms = (tab.plugin && tab.plugin.permissions) || [];

@@ -1,4 +1,7 @@
-"""只读显存探针（四合一卡 §3／2.20.0 卡§3）：本机显存一次一测，不缓存（D3b）。
+"""只读显存探针（四合一卡 §3／2.20.0 卡§3）：真测一次一算，不缓存结论（D3b）。
+
+2.20.0 卡§1：真测只在老师点进配置中心那一刻发起；启动注入下拉用 snapshot()
+复用上次真测快照（没测过＝中性「未检测」），不在启动/轮询里跑探针。
 
 只读三条路：NVIDIA 驱动自带的 nvidia-smi 优先；其次 Windows 注册表
 HardwareInformation.qwMemorySize（64 位真值，大显存不封顶）；最后 WMI
@@ -131,6 +134,7 @@ def _wmi() -> tuple[float, str] | None:
 
 def probe() -> dict[str, Any]:
     """本机显存快照：vram_gb / vram_label / gpu_name / vram_source / detail。"""
+    global _LAST
     found = _nvidia()
     source, detail = "nvidia-smi", ""
     if found is None:
@@ -143,12 +147,26 @@ def probe() -> dict[str, Any]:
             detail = ("WMI 的 AdapterRAM 读数上限约 4G，大显存可能被低估；"
                       "NVIDIA 卡以 nvidia-smi 为准。")
     if found is None:
-        return {"vram_gb": 0.0, "vram_label": "读不到", "gpu_name": "",
-                "vram_source": "",
-                "detail": "只读显存探针都不可用（nvidia-smi / 注册表 / WMI 均无），按不支持处理。"}
+        _LAST = {"vram_gb": 0.0, "vram_label": "读不到", "gpu_name": "",
+                 "vram_source": "",
+                 "detail": "只读显存探针都不可用（nvidia-smi / 注册表 / WMI 均无），按不支持处理。"}
+        return dict(_LAST)
     gb, name = found
-    return {"vram_gb": round(gb, 1), "vram_label": "%.1fG" % gb,
-            "gpu_name": name, "vram_source": source, "detail": detail}
+    _LAST = {"vram_gb": round(gb, 1), "vram_label": "%.1fG" % gb,
+             "gpu_name": name, "vram_source": source, "detail": detail}
+    return dict(_LAST)
+
+
+# 2.20.0 卡§1：硬件检测只在老师点进配置中心那一刻跑；启动注入下拉复用上次快照。
+_LAST: dict[str, Any] | None = None
+
+
+def snapshot() -> dict[str, Any]:
+    """上次真测快照（没测过＝中性「未检测」，不猜数）；只供启动下拉，不替代现算。"""
+    if _LAST is not None:
+        return dict(_LAST)
+    return {"vram_gb": 0.0, "vram_label": "未检测", "gpu_name": "",
+            "vram_source": "", "detail": ""}
 
 
 def tier_for(vram_gb: float, tiers: list[dict[str, Any]]) -> dict[str, Any] | None:

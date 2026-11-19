@@ -354,6 +354,30 @@ class VlmLocalRuleTest(CatalogIsolated):
         self.assertEqual(entry["state"], "ready")
         self.assertIn("0.2.3", entry["detail"])
         self.assertEqual(entry["action"], "")
+        self.assertEqual(entry["badge"], "已安装·就绪（Vulkan）")
+
+    def test_badge_and_brief_are_live_per_vram(self) -> None:
+        with _runtime(hw=_HW_LOW, vlm_health=self.VLM_OK, vlm_weights=True):
+            low = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(low["badge"], "已安装·本机显存不足·CPU 慢兜底")
+        self.assertIn("4.0G", low["brief"])
+        self.assertIn("CPU 慢兜底", low["brief"])
+        with _runtime(hw=_HW_LOW):
+            missing = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertEqual(missing["badge"], "未安装")
+        self.assertIn("4.0G", missing["brief"])
+        with _runtime(vlm_health=self.VLM_OK, vlm_weights=True):
+            ok = _states(registry.status()["entries"])["vlm_qwen"]
+        self.assertIn("Vulkan", ok["brief"])
+
+    def test_boot_refresh_reuses_snapshot_without_probing(self) -> None:
+        with _runtime():
+            with mock.patch.object(registry.hardware, "snapshot",
+                                   return_value=dict(_HW_LOW)) as snap:
+                payload = registry.status(probe_hardware=False)
+                registry.hardware.probe.assert_not_called()
+        snap.assert_called_once()
+        self.assertEqual(payload["hardware"]["vram_label"], "4.0G")
 
     def test_install_failure_is_blocked_with_reason_and_retry(self) -> None:
         install = {"state": "error", "step": "预取权重",

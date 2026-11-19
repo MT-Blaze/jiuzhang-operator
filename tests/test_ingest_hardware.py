@@ -64,6 +64,37 @@ class ProbeTest(unittest.TestCase):
         self.assertEqual(info["vram_gb"], 8.0)
 
 
+class SnapshotTest(unittest.TestCase):
+    """2.20.0 卡§1：启动下拉复用上次真测快照，没测过不猜数。"""
+
+    def setUp(self) -> None:
+        saved = hardware._LAST
+        self.addCleanup(setattr, hardware, "_LAST", saved)
+        hardware._LAST = None
+
+    def test_before_any_probe_snapshot_is_neutral(self) -> None:
+        info = hardware.snapshot()
+        self.assertEqual(info["vram_gb"], 0.0)
+        self.assertEqual(info["vram_label"], "未检测")
+        self.assertEqual(info["detail"], "")
+
+    def test_snapshot_reuses_last_probe_without_rerunning(self) -> None:
+        with mock.patch.object(hardware, "_nvidia", return_value=(6.0, "测试卡")) as nvidia:
+            first = hardware.probe()
+            again = hardware.snapshot()
+        self.assertEqual(nvidia.call_count, 1)
+        self.assertEqual(again, first)
+        self.assertIsNot(again, hardware._LAST)
+
+    def test_probe_still_recomputes_and_updates_snapshot(self) -> None:
+        with mock.patch.object(hardware, "_nvidia",
+                               side_effect=[(8.0, "卡"), (48.0, "换机卡")]):
+            hardware.probe()
+            self.assertEqual(hardware.snapshot()["vram_gb"], 8.0)
+            hardware.probe()
+        self.assertEqual(hardware.snapshot()["vram_gb"], 48.0)
+
+
 class RegistryVramTest(unittest.TestCase):
     """2.20.0 卡§3 四例：registry 优先／WMI 兜底／缺值回退／多卡取主卡。"""
 

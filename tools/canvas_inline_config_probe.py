@@ -219,7 +219,7 @@ def main() -> int:
             canvas.locator("#epModelConfigList").click()
             view = canvas.locator("#edModelConfigModal")
             expect(view).to_be_visible(timeout=10000)
-            expect(canvas.locator(".ep-model-config-row").first).to_be_visible(timeout=15000)
+            expect(canvas.locator(".ep-mt-row").first).to_be_visible(timeout=15000)
             shape = canvas.locator("#edRoot").evaluate(VIEW_SHAPE, "edModelConfigModal")
             check("模型配置无遮罩/无 aria-modal/非 fixed/批次隐藏",
                   shape["overlays"] == 0 and not shape["inModal"]
@@ -252,7 +252,9 @@ def main() -> int:
                   and any(s["tag"] == "SELECT" for s in seen), seen[:10])
 
             # ---------- 键盘改默认选择：落隔离插件目录 ----------
-            layout_select = canvas.locator(".ep-model-config-default-select").first
+            layout_select = canvas.locator(
+                ".ep-model-config-defaults:not(.ep-model-config-auto-seats) "
+                ".ep-model-config-default-select").first
             expected_default = layout_select.evaluate("node => node.options[1].value")
             layout_select.click()
             page.keyboard.press("ArrowDown")
@@ -269,8 +271,8 @@ def main() -> int:
 
             # ---------- 停用 YOLO：下拉不显示＋状态住插件目录 ----------
             engine = canvas.locator("#edLayoutEngine")
-            yolo_row = canvas.locator(".ep-model-config-row", has_text="YOLO·版面")
-            yolo_row.locator(".ep-model-config-toggle").click()
+            yolo_row = canvas.locator(".ep-mt-row", has_text="YOLO·版面")
+            yolo_row.locator(".ep-mt-toggle").click()
             expect(engine.locator('option[value="yolo"]')).to_have_count(0, timeout=15000)
             prefs = toml_io.load(prefs_file, {})
             check("UI 停用经 relay 落插件目录", "yolo" in prefs.get("disabled", []),
@@ -298,7 +300,7 @@ def main() -> int:
             # ---------- 重开启用恢复；模型入口住批次屏头部随屏隐藏，收走【返回批次】 ----------
             canvas.locator("#epModelConfigList").click()
             expect(view).to_be_visible(timeout=10000)
-            yolo_row.locator(".ep-model-config-toggle").click()
+            yolo_row.locator(".ep-mt-toggle").click()
             expect(engine.locator('option[value="yolo"]')).to_have_count(1, timeout=15000)
             canvas.locator("#edModelConfigBack").click()
             expect(view).to_be_hidden(timeout=5000)
@@ -308,7 +310,7 @@ def main() -> int:
             # ---------- 模型→API 跳转：返回仍落批次屏 ----------
             canvas.locator("#epModelConfigList").click()
             expect(view).to_be_visible(timeout=10000)
-            assign = canvas.locator(".ep-model-config-act", has_text="去 API 配置指派").first
+            assign = canvas.locator(".ep-mt-act", has_text="去 API 配置").first
             expect(assign).to_be_visible(timeout=10000)
             assign.click()
             ai_view = canvas.locator("#epAiConfigModal")

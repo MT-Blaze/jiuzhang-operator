@@ -20,8 +20,9 @@ router = APIRouter(tags=["models"])
 
 
 @router.get("/api/models/registry", summary="模型目录 × 运行时三态（ready/degraded/blocked）")
-def models_registry() -> dict[str, Any]:
-    return registry.status()
+def models_registry(probe: int = Query(1)) -> dict[str, Any]:
+    # probe=0＝启动注入下拉：复用上次硬件快照，不跑探针（2.20.0 卡§1）。
+    return registry.status(probe_hardware=bool(probe))
 
 
 @router.get("/api/models/mineru/status", summary="本地 MinerU 安装进度（只读）")
