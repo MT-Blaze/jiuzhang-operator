@@ -1,0 +1,419 @@
+# BDP-01 修后快照（产品入口 service.build_documents）
+
+[[fixture]]
+no = 1
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "1. 已知集合 $A = \\left\\{ x \\in \\mathbb{N}^{*} \\mid -\\sqrt{3} \\le x \\le \\sqrt{3} \\right\\}$ , 则必有 ( )"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$-1 \\in A$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "$0 \\in A$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$1 \\in A$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "$2 \\in A$"
+
+[[fixture]]
+no = 2
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "2. 命题 “ $\\forall x\\in R,\\quad x^{2}-2x+1\\ge0$ ” 的否定是（）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$\\exists x\\in R,\\quad x^{2}-2x+1\\le0$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "$\\forall x\\in R,\\quad x^{2}-2x+1\\le0$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$\\exists x\\in R,\\quad x^{2}-2x+1<0$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "$\\forall x\\in R,\\quad x^{2}-2x+1<0$"
+
+[[fixture]]
+no = 3
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "3. 满足 $M \\subseteq \\{a_{1}, a_{2}, a_{3}, a_{4}\\}$ , 且 $M \\cap \\{a_{1}, a_{2}, a_{3}\\} = \\{a_{1}, a_{2}\\}$ 的集合 $M$ 的个数是 ( )"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "1"
+
+[[fixture.documents.options]]
+key = "B"
+content = "2"
+
+[[fixture.documents.options]]
+key = "C"
+content = "3"
+
+[[fixture.documents.options]]
+key = "D"
+content = "4"
+
+[[fixture]]
+no = 4
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "4. 已知 $a, b \\in \\mathbb{R}$ , 则“ $ab = 0$ ”是“ $a^2 + b^2 = 0$ ”的（）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "充分不必要条件"
+
+[[fixture.documents.options]]
+key = "B"
+content = "必要不充分条件"
+
+[[fixture.documents.options]]
+key = "C"
+content = "充要条件"
+
+[[fixture.documents.options]]
+key = "D"
+content = "既不充分又不必要条件"
+
+[[fixture]]
+no = 5
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "5. 若 a > 0, b > 0，且 $\\frac{1}{a} + \\frac{4}{b} = 1$ ，则 $a + b$ 的最小值为（）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "7"
+
+[[fixture.documents.options]]
+key = "B"
+content = "8"
+
+[[fixture.documents.options]]
+key = "C"
+content = "9"
+
+[[fixture.documents.options]]
+key = "D"
+content = "10"
+
+[[fixture]]
+no = 6
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "6. 设集合 $A = \\{x \\mid x(x - 1)(x - 2) \\ge 0\\}$ , $B = \\{x \\mid x \\ge 2a - 2\\}$ , 若 $A \\cup B = A$ , 则实数 $a$ 的取值范围是 ( )"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$\\{a \\mid a \\ge 2\\}$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "$\\{a \\mid a \\le 2\\}$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$\\{a \\mid a > 2\\}$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "$\\{a \\mid a < 2\\}$"
+
+[[fixture]]
+no = 7
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "7. 设 $a \\ge b \\ge c$ ，且 1 是关于 $x$ 的一元二次方程 $ax^2 + bx + c = 0$ 的一个实根，则 $\\frac{c}{a}$ 的取值范围是（）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$\\left[-2, -\\frac{1}{2}\\right]$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "$\\left(-2, -\\frac{1}{2}\\right)$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$(-∞, -2) ∪ \\left(-\\frac{1}{2}, +∞\\right)$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "$(-∞, -2] ∪ \\left[-\\frac{1}{2}, +∞\\right)$"
+
+[[fixture]]
+no = 8
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "8. 设数集 $M = \\{x \\mid m \\le x \\le m + \\frac{3}{4}\\}, N = \\{x \\mid n - \\frac{1}{3} \\le x \\le n\\}$ , 且 M、N 都是集合 $\\{x \\mid 0 \\le x \\le 1\\}$ 的子集, 如果把 $b - a$ 叫做集合 $\\{x \\mid a \\le x \\le b\\}$ 的“长度”, 那么集合 M ∩ N 的“长度”的最小值是"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$\\frac{1}{3}$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "$\\frac{2}{3}$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$\\frac{1}{12}$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "$\\frac{5}{12}$"
+
+[[fixture]]
+no = 9
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "9. 下列四个命题中，正确的是（ ）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "若 a > b, c > d，则 a - d > b - c."
+
+[[fixture.documents.options]]
+key = "B"
+content = "若 a > b，且 $\\frac{1}{a} > \\frac{1}{b}$ ，则 ab < 0"
+
+[[fixture.documents.options]]
+key = "C"
+content = "若 a < b < 0, c > 0，则 ac > bc"
+
+[[fixture.documents.options]]
+key = "D"
+content = "若 a < b < 0，则 $\\frac{a}{b} > \\frac{b}{a}$"
+
+[[fixture]]
+no = 10
+doc_count = 1
+warnings = ["题干图片行已剥离（MinerU 转写图，题图以本地切图为准）：images/8f9fa9825f742e3347e2bf165aee75028af1f50c49ba79e86e6bc348d93f8d50.jpg"]
+
+[[fixture.documents]]
+stem = "10. 已知集合 $A = \\{x \\mid 0 < x < a\\}$ , $B = \\{x \\mid y = \\sqrt{-x^2 + x + 2}\\}$ , 则下列结论正确的是 ( )"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "$\\delta_R B = (-\\infty, -1) \\cup (2, +\\infty)$"
+
+[[fixture.documents.options]]
+key = "B"
+content = "若 $a = 3$ , 则 $A \\cap B = (2, 3)$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "若 $a = 3$ , 则 $A \\cup B = [-1, 3)$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "若 $A \\subseteq B$ , 则 $a$ 的取值范围是 $(0, 2]$"
+
+[[fixture]]
+no = 11
+doc_count = 1
+warnings = ["题干图片行已剥离（MinerU 转写图，题图以本地切图为准）：images/e68c934ffcac406bbe534e4d4bf67bdc58eaa7e0b70112393d9c425db6d73c7a.jpg"]
+
+[[fixture.documents]]
+stem = "11. 设矩形 $ABCD(AB > AD)$ 的周长为 4cm，将 $\\triangle ABC$ 沿 AC 向 $\\triangle ADC$ 折叠，AB 折过去后交 DC 于点 P。设 AB = xcm，则下列结论正确的是（）"
+difficulty = "L2"
+type = "single_choice"
+
+[[fixture.documents.options]]
+key = "A"
+content = "x 的取值范围为 (0,2)"
+
+[[fixture.documents.options]]
+key = "B"
+content = "设 PD = ycm，则 y 与 x 的关系是 $y = 2\\left(1 - \\frac{1}{x}\\right)(1 < x < 2)$"
+
+[[fixture.documents.options]]
+key = "C"
+content = "$\\triangle ADP$ 的面积 S 与 x 的关系是 $S = 3 - x - \\frac{2}{x}(1 < x < 2)$"
+
+[[fixture.documents.options]]
+key = "D"
+content = "当 $\\triangle ADP$ 的面积 S 最大时，矩形 ABCD 的面积为 $(2\\sqrt{2} - 2)\\mathrm{cm}^{2}$"
+
+[[fixture]]
+no = 12
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "三、填空题：本大题共4小题，每小题5分，共20分."
+difficulty = "L2"
+type = "solution"
+
+[[fixture]]
+no = 13
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "13. \\text {   不等式   } \\frac {x + 1}{x} \\geq 2 \\text {   的解集为   }"
+difficulty = "L2"
+type = "solution"
+
+[[fixture]]
+no = 14
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "14. 命题“ $\\exists x \\in [-2, 1], x^{2} + 1 > a$ ”为假命题，则实数 $a$ 的取值范围是 ____."
+difficulty = "L2"
+type = "fill_blank"
+
+[[fixture]]
+no = 15
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "15. \\text { 若 } x > 0, y > 0 \\text { ,   且 } 2 x + y + x y = \\frac {5}{2}. \\text { 则 } 2 x + y \\text { 的最小值为 }"
+difficulty = "L2"
+type = "solution"
+
+[[fixture]]
+no = 16
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "16. 已知 $a < 0$ , 若 $(4x^{2} + a)(2x + b) \\ge 0$ 在 $x \\in (a, b)$ 上恒成立, 则 $0$ \\_\\_\\_\\_ $(a, b)$ (用“∈”、“∉”、“关系不能确定”填空); $b - a$ 的最大值为 \\_\\_\\_\\_. 四、解答题: 本大题共 4 小题, 共 40 分. 解答应写出文字说明、证明过程或演算步骤."
+difficulty = "L2"
+type = "solution"
+
+[[fixture]]
+no = 17
+doc_count = 2
+warnings = []
+
+[[fixture.documents]]
+stem = "(1) 若 $x \\in A$ 是 $x \\in B$ 的充分条件, 求实数 $a$ 的取值范围;"
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "1"
+
+[[fixture.documents]]
+stem = "(2) 若命题: “ $\\forall x \\in A, x \\notin B$ ”是真命题, 求实数 $a$ 的取值范围."
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "2"
+
+[[fixture]]
+no = 18
+doc_count = 2
+warnings = []
+
+[[fixture.documents]]
+stem = "(1) 若不等式 $y > 0$ 的解集是 $\\{x \\mid -1 < x < 3\\}$ , 求实数 $a, b$ 的值:"
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "1"
+
+[[fixture.documents]]
+stem = "(2) 当 $b = 2, a > 0$ 时, 求不等式 $y > 0$ 的解集."
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "2"
+
+[[fixture]]
+no = 19
+doc_count = 1
+warnings = []
+
+[[fixture.documents]]
+stem = "19. 不等关系是数学中一种最基本的数关系, 生活中随处可见. 例如. 已知 $b$ 克糖水中含有 $a$ 克糖 $(b > a > 0)$ , 再添加 $m$ 克糖 $(m > 0)$ (假设全部溶解), 糖水变甜了. (1) 请将这一事实表示为一个不等式. 并证明这个不等式成立: (2) 利用 (1) 中的结论证明: 若 $a, b, c$ 为三角形的三边长, 则 $\\frac{a}{b + c} + \\frac{b}{a + c} + \\frac{c}{a + b} < 2$ ."
+difficulty = "L2"
+type = "solution"
+
+[[fixture]]
+no = 20
+doc_count = 3
+warnings = []
+
+[[fixture.documents]]
+stem = "(1) 若 y < 3 - 2x 恒成立，求实数 a 的取值范围；"
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "1"
+
+[[fixture.documents]]
+stem = "(2) 若对 $\\forall a \\in [-2, -1], y > 1$ 恒成立，求实数 $x$ 的取值范围："
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "2"
+
+[[fixture.documents]]
+stem = "(3) 若存在 $m > 0$ 使关于 $x$ 的方程 $ax^2 - (a + 2)|x| + 2 = m + \\frac{1}{m} + 1$ 有四个不同的实根, 求实数 $a$ 的取值范围."
+difficulty = "L2"
+type = "solution"
+
+[fixture.documents.source]
+question_no = "3"
+
