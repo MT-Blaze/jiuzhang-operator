@@ -34,8 +34,10 @@ def _engine(tier: str = "small") -> Any:
                 raise RuntimeError("准档权重未安装，先在模型配置中心点【安装】")
             det, rec = ocr_setup.model_paths()
             # model_path 指入 engines/ocr/models/：包见本地路径就不走自带下载通道。
+            # 钉版 rapidocr 的 model_type 只认 Enum，字符串会被 ParseParams 拒。
+            from rapidocr.utils.typings import ModelType
             _ENGINES[tier] = RapidOCR(params={
-                "Det.model_type": "medium", "Rec.model_type": "medium",
+                "Det.model_type": ModelType.MEDIUM, "Rec.model_type": ModelType.MEDIUM,
                 "Det.model_path": str(det), "Rec.model_path": str(rec)})
         else:
             _ENGINES[tier] = RapidOCR()

@@ -4,14 +4,14 @@
 用法：``.venv/Scripts/python.exe tools/model_table_probe.py [tag]``
 
 隔离：独立 JZO_DATA_DIR / JZO_PLUGINS_DIR 副本＋动态空闲端口＋每次随机令牌，
-不碰用户 data/ 与正式服务；engines/ 只读体检（本机 MinerU 已装＝卸载弹窗分支，
-VLM 缺 llama-server＝安装弹窗分支），弹窗一律 dismiss，绝不真装真删。
+不碰用户 data/ 与正式服务；engines/ 只读体检，VLM/准档按本机真实现状分支
+（未装＝安装弹窗分支，已装＝就绪徽章＋卸载钮），弹窗一律 dismiss，绝不真装真删。
 收口点杀进程并复验端口关闭。产物落 .system_generated/model-table/<tag>/。
 
 判据：
 1. 启动注入下拉 registry?probe=0（不跑硬件探针）；点进配置中心那一刻 probe=1；
 2. 四栏表上屏：名称/简要/状态/操作；三工种分组；自动分流默认组置顶；
-3. §5 活字：vlm 徽章「未安装」、简要带本机显存现算（你这台 X G）；
+3. §5 活字：vlm 徽章按本机现状（未装「未安装」／已装含「就绪」）、简要带本机显存现算；
 4. 宽屏左列表＋右详情：点名称出详情，先简要用法，「详细说明」再点才出；
 5. 键盘：Tab 摸到名称钮，Enter 展开/收起，收起焦点还原；
 6. 安装确认弹窗摆 3.3GB 成本，dismiss 后零安装请求（出网铁律）；
@@ -30,6 +30,7 @@ _sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
 
 from app.core import toml_io  # noqa: E402
 from app.core.config import plugin_source_root  # noqa: E402
+from app.core.ingest import ocr_setup, vlm_setup  # noqa: E402
 
 import os
 import re
@@ -215,14 +216,20 @@ def main() -> int:
             check("旧名 pix2tex 不再上屏（大小写敏感）",
                   canvas.locator(".ep-mt-row", has_text=re.compile("pix2tex")).count() == 0)
             acc_row = canvas.locator(".ep-mt-row", has_text="RapidOCR·准")
-            check("准档解锁：未就绪徽章＋真安装按钮",
-                  acc_row.locator(".ep-mt-badge").text_content() == "未就绪"
-                  and acc_row.locator(".ep-mt-act", has_text="安装").count() == 1)
-            acc_row.locator(".ep-mt-act", has_text="安装").click()
-            page.wait_for_timeout(400)
-            check("准档安装确认弹窗摆 139MB 成本",
-                  bool(result["dialogs"]) and "139MB" in result["dialogs"][-1],
-                  result["dialogs"][-1:])
+            ocr_ready = ocr_setup.weights_ready()
+            if ocr_ready:
+                check("准档已装：就绪徽章＋卸载钮（本机权重已落地）",
+                      "就绪" in acc_row.locator(".ep-mt-badge").text_content()
+                      and acc_row.locator(".ep-mt-act", has_text="卸载").count() == 1)
+            else:
+                check("准档解锁：未就绪徽章＋真安装按钮",
+                      acc_row.locator(".ep-mt-badge").text_content() == "未就绪"
+                      and acc_row.locator(".ep-mt-act", has_text="安装").count() == 1)
+                acc_row.locator(".ep-mt-act", has_text="安装").click()
+                page.wait_for_timeout(400)
+                check("准档安装确认弹窗摆 139MB 成本",
+                      bool(result["dialogs"]) and "139MB" in result["dialogs"][-1],
+                      result["dialogs"][-1:])
             check("dismiss 后零准档安装请求（出网只由点头发起）",
                   not [u for u in result["install_requests"] if "/ocr/install" in u],
                   result["install_requests"])
@@ -232,7 +239,11 @@ def main() -> int:
             vlm_row = canvas.locator(".ep-mt-row", has_text="千问 Qwen2.5-VL")
             badge = vlm_row.locator(".ep-mt-badge").text_content()
             brief = vlm_row.locator(".ep-mt-cell-brief").text_content()
-            check("VLM 未安装徽章（本机缺 llama-server）", badge == "未安装", badge)
+            vlm_installed = vlm_setup.health()["ok"]
+            if vlm_installed:
+                check("VLM 已装徽章（本机 llama-server 在）", "就绪" in badge, badge)
+            else:
+                check("VLM 未安装徽章（本机缺 llama-server）", badge == "未安装", badge)
             check("简要活字带本机显存现算", "你这台" in brief and hw_label in brief
                   and "显存" in brief, brief)
             hw_line = canvas.locator(".ep-model-config-hw-line").text_content()
@@ -250,8 +261,12 @@ def main() -> int:
             more.locator("summary").click()
             expect(panel.locator(".ep-mt-detail-text")).to_be_visible(timeout=3000)
             detail_text = panel.locator(".ep-mt-detail-text").text_content()
-            check("再点才出体检详情（安装引导）", "安装本地 VLM" in detail_text,
-                  detail_text[:80])
+            if vlm_installed:
+                check("再点才出体检详情（已装事实）", "已安装" in detail_text,
+                      detail_text[:80])
+            else:
+                check("再点才出体检详情（安装引导）", "安装本地 VLM" in detail_text,
+                      detail_text[:80])
             page.screenshot(path=str(shots / "02-detail-wide.png"))
 
             # ---------- 键盘：Enter 展开/收起＋焦点还原 ----------
@@ -276,11 +291,16 @@ def main() -> int:
 
             # ---------- 安装确认弹窗：摆成本，dismiss 零出网 ----------
             vlm_row = canvas.locator(".ep-mt-row", has_text="千问 Qwen2.5-VL")
-            vlm_row.locator(".ep-mt-act", has_text="安装").click()
-            page.wait_for_timeout(400)
-            install_dialogs = [m for m in result["dialogs"] if "3.3GB" in m]
-            check("安装确认弹窗摆 3.3GB 成本", bool(install_dialogs),
-                  result["dialogs"][-1:])
+            if vlm_installed:
+                check("VLM 已装行出【卸载】（不再出安装钮）",
+                      vlm_row.locator(".ep-mt-act", has_text="卸载").count() == 1
+                      and vlm_row.locator(".ep-mt-act", has_text="安装").count() == 0)
+            else:
+                vlm_row.locator(".ep-mt-act", has_text="安装").click()
+                page.wait_for_timeout(400)
+                install_dialogs = [m for m in result["dialogs"] if "3.3GB" in m]
+                check("安装确认弹窗摆 3.3GB 成本", bool(install_dialogs),
+                      result["dialogs"][-1:])
             check("dismiss 后零安装请求（出网只由点头发起）",
                   not result["install_requests"], result["install_requests"])
 

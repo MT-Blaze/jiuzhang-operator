@@ -67,17 +67,44 @@ class InstallTest(unittest.TestCase):
         self.assertFalse(target.with_suffix(".onnx.part").exists())
         self.assertEqual(opened.call_count, 1)
 
-    def test_sha_mismatch_switches_source_and_all_fail_is_loud(self) -> None:
+    def test_sha_mismatch_retries_same_source_then_switches_and_all_fail_is_loud(self) -> None:
         payload = b"wrong-bytes"
         with mock.patch.object(ocr_setup.urllib.request, "urlopen",
                                side_effect=lambda *a, **k: _Response(payload)) as opened:
             with self.assertRaises(ocr_setup.OcrSetupError) as caught:
                 ocr_setup._download_one("det", "tiny.onnx", len(payload), "0" * 64,
                                         self._source("甲") + self._source("乙"))
-        self.assertEqual(opened.call_count, 2)
+        self.assertEqual(opened.call_count, 4)  # 每家同源重试一次再换下一家
         self.assertIn("全败", str(caught.exception))
+        self.assertIn("实收", str(caught.exception))
         self.assertFalse((self.tmp / "models" / "tiny.onnx").exists())
         self.assertFalse((self.tmp / "models" / "tiny.onnx.part").exists())
+
+    def test_truncated_stream_recovers_on_same_source_retry(self) -> None:
+        import hashlib
+        payload = b"full-weight-bytes"
+        digest = hashlib.sha256(payload).hexdigest()
+        with mock.patch.object(ocr_setup.urllib.request, "urlopen",
+                               side_effect=[_Response(b"full-weigh"),
+                                            _Response(payload)]) as opened:
+            ocr_setup._download_one("det", "tiny.onnx", len(payload), digest,
+                                    self._source("甲"))
+        self.assertEqual(opened.call_count, 2)
+        self.assertEqual((self.tmp / "models" / "tiny.onnx").read_bytes(), payload)
+        self.assertFalse((self.tmp / "models" / "tiny.onnx.part").exists())
+
+    def test_each_file_resolves_its_own_url_not_the_raced_one(self) -> None:
+        # 2.20.0 探针实证：测速只探首件（det）链接，rec 若复用该链接会收错文件。
+        payload = b"rec-weight-bytes"
+        digest = hashlib.sha256(payload).hexdigest()
+        raced = [{"name": "ModelScope", "url": "https://mirror.test/det_medium.onnx",
+                  "ok": True, "ms": 12}]
+        with mock.patch.object(ocr_setup.urllib.request, "urlopen",
+                               return_value=_Response(payload)) as opened:
+            ocr_setup._download_one("rec", "rec_medium.onnx", len(payload), digest, raced)
+        url = opened.call_args[0][0]
+        self.assertIn("/rec/rec_medium.onnx", url)
+        self.assertNotIn("det_medium", url)
 
     def test_install_races_sources_and_skips_present_files(self) -> None:
         det, _rec = ocr_setup.model_paths()
@@ -175,6 +202,7 @@ class TierEngineTest(unittest.TestCase):
         self.assertIn("准档权重未安装", result["detail"])
 
     def test_medium_params_point_at_local_weights(self) -> None:
+        from rapidocr.utils.typings import ModelType
         det, rec = ocr_setup.model_paths()
         built = {}
 
@@ -183,11 +211,12 @@ class TierEngineTest(unittest.TestCase):
             return object()
 
         with mock.patch.object(ocr_setup, "weights_ready", return_value=True), \
-                mock.patch.dict("sys.modules", {"rapidocr": mock.Mock(
-                    RapidOCR=fake_rapidocr)}):
+                mock.patch.dict("sys.modules", {
+                    "rapidocr": mock.Mock(RapidOCR=fake_rapidocr),
+                    "rapidocr.utils.typings": mock.Mock(ModelType=ModelType)}):
             self.ocr._engine("medium")
-        self.assertEqual(built["Det.model_type"], "medium")
-        self.assertEqual(built["Rec.model_type"], "medium")
+        self.assertIs(built["Det.model_type"], ModelType.MEDIUM)
+        self.assertIs(built["Rec.model_type"], ModelType.MEDIUM)
         self.assertEqual(built["Det.model_path"], str(det))
         self.assertEqual(built["Rec.model_path"], str(rec))
 

@@ -85,36 +85,44 @@ def _weight_urls(task: str, name: str) -> list[tuple[str, str]]:
 
 def _download_one(task: str, name: str, size: int, digest: str,
                   sources: list[dict[str, Any]]) -> None:
-    """单件流式下载＋sha256＋原子改名；中断换下一家；全败抛人话错误。"""
+    """单件流式下载＋sha256＋原子改名；中断同源重试一次再换下一家；全败抛人话错误。"""
     target = engine_dir() / "models" / name
     target.parent.mkdir(parents=True, exist_ok=True)
     part = target.with_suffix(target.suffix + ".part")
+    # 测速只探首件链接，各家延迟排序可复用；但每件必须按自己的任务/文件名
+    # 重新解析链接——拿 det 的链接下 rec 会收错文件（2.20.0 探针实证）。
+    urls = dict(_weight_urls(task, name))
     last_error = "没有可达的权重源"
     for row in sources:
-        url = row["url"]
-        hasher = hashlib.sha256()
-        written = 0
-        try:
-            with urllib.request.urlopen(url, timeout=WEIGHT_TIMEOUT) as response, \
-                    part.open("wb") as sink:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    sink.write(chunk)
-                    hasher.update(chunk)
-                    written += len(chunk)
-                    _set(message="正在从 %s 下载 %s（%.1f/%.1fMB）…"
-                         % (row["name"], name, written / 1e6, size / 1e6))
-            if written != size or hasher.hexdigest() != digest:
-                raise OSError("字节数或 sha256 与仓库登记不符")
-            part.replace(target)
-            return
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            part.unlink(missing_ok=True)
-            last_error = "%s → %s" % (row["name"], exc)
-            logger.warning("RapidOCR 准档权重源失败：%s", last_error)
-            _set(message="权重源失败，换下一家（%s）" % last_error)
+        url = urls.get(row["name"], row["url"])
+        for attempt in (1, 2):
+            hasher = hashlib.sha256()
+            written = 0
+            try:
+                with urllib.request.urlopen(url, timeout=WEIGHT_TIMEOUT) as response, \
+                        part.open("wb") as sink:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        sink.write(chunk)
+                        hasher.update(chunk)
+                        written += len(chunk)
+                        _set(message="正在从 %s 下载 %s（%.1f/%.1fMB）…"
+                             % (row["name"], name, written / 1e6, size / 1e6))
+                if written != size or hasher.hexdigest() != digest:
+                    raise OSError("字节数或 sha256 与仓库登记不符（实收 %d/%d 字节）"
+                                  % (written, size))
+                part.replace(target)
+                return
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                part.unlink(missing_ok=True)
+                last_error = "%s → %s" % (row["name"], exc)
+                logger.warning("RapidOCR 准档权重源失败（第 %d 次）：%s", attempt, last_error)
+                if attempt == 1:
+                    _set(message="下载中断，同源重试中（%s）" % last_error)
+                    continue
+                _set(message="权重源失败，换下一家（%s）" % last_error)
     raise OcrSetupError("权重下载全败（%s）：%s" % (name, last_error))
 
 
