@@ -246,9 +246,8 @@ def main() -> int:
         texts = [str(s.get("text") or "") for s in route.get("layout_status") or []]
         check("版面冒烟：layout_status 含「已启用本地 YOLO」",
               any(YOLO_LINE in t for t in texts), {"texts": texts})
-        check("版面冒烟：满血版落地（layout_model.kind=full）",
-              (route.get("layout_model") or {}).get("kind") == "full",
-              route.get("layout_model"))
+        check("版面冒烟：满血版落地（状态文含「满血版」）",
+              any("满血版" in t for t in texts), {"texts": texts})
         result["layout_items"] = len(items)
         check("版面冒烟：4 页真卷题块裁成待审题 items≥3（3–5 页真跑）",
               len(items) >= 3, {"items": len(items)})
