@@ -21,6 +21,8 @@
   <link rel="stylesheet" href="/static/css/dict_console_entities.css?v=20261113g" />
   <!-- 辅助栏极简瘦身（2026-11-11）：折叠设置 + 字典小标签，整块下架删本行即可 -->
   <link rel="stylesheet" href="/static/css/dict_console_sidebar.css?v=20261113g" />
+  <!-- 记号标准字典（2.21.0）：闭集五列＋开集待审，整块下架删本行即可 -->
+  <link rel="stylesheet" href="/static/css/dict_console_norm.css?v=20261119" />
 </head>
 <body>
   <div class="dc-page">
@@ -107,6 +109,9 @@
 
   <!-- 请求报错现场：最先加载，之后每笔 fetch 的非 2xx 都有完整记录 -->
   <script src="/static/js/http.js?v=20261113g"></script>
+  <!-- 公式：本地 MathJax（SVG 输出，离线可用），记号标准字典逐行渲染用；整块下架删这两行 -->
+  <script src="/static/vendor/mathjax/jzo_mathjax.js?v=20261119"></script>
+  <script src="/static/vendor/mathjax/tex-svg-full.js?v=20261119"></script>
   <!-- 控制台自有模块：全部收在 dict_console/ 一个目录，整块下架删目录即可 -->
   <script src="/static/js/dict_console/catalog.js?v=20261113g"></script>
   <script src="/static/js/dict_console/ops_log.js?v=20261113g"></script>
@@ -140,6 +145,9 @@
   <script src="/static/js/dict_console/textbook_stage_tree.js?v=20261113g"></script>
   <script src="/static/js/dict_console/entity_textbook_add.js?v=20261113g"></script>
   <script src="/static/js/dict_console/entity_textbooks.js?v=20261113g"></script>
+  <!-- 记号标准字典（2.21.0）：闭集五列＋开集待审；整块下架删这两行与 panels.js 的 norm-dict 分支 -->
+  <script src="/static/js/dict_console/norm_inbox.js?v=20261119"></script>
+  <script src="/static/js/dict_console/norm_dict.js?v=20261119"></script>
   <script src="/static/js/dict_console/panels.js?v=20261113g"></script>
   <script src="/static/js/dict_console/import.js?v=20261113g"></script>
   <script src="/static/js/dict_console/sidebar.js?v=20261113g"></script>

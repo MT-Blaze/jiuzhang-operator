@@ -1,0 +1,249 @@
+/**
+ * dict_console_norm.css —— 记号标准字典·闭集五列＋开集待审（2.21.0 卡 §4）。
+ * 复用 app.css 的主题变量；五列用 minmax(0,1fr) 网格防溢出，公式格内部横向滚动，
+ * 375px 窄屏入口头与对照格自动堆叠，页面零横向溢出。状态不只靠颜色（筹码加粗＋描边＋aria-pressed）。
+ * 整块下架：删本文件与 dict_console.html 的引用行即可。
+ */
+
+.dc-norm-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dc-norm-machine-badge,
+.dc-norm-inbox-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dc-cat-machine {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.dc-norm-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.dc-norm-chip {
+  padding: 5px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.dc-norm-chip:hover { background: var(--card-hover); }
+
+.dc-norm-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.dc-norm-chip.is-on {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.dc-norm-search {
+  width: 100%;
+  max-width: 420px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.dc-norm-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.dc-norm-list { display: flex; flex-direction: column; gap: 14px; }
+
+.dc-norm-entry {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px 14px;
+}
+
+.dc-norm-entry-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.dc-norm-family {
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--paper-deep);
+  color: var(--muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.dc-norm-name-box { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+
+.dc-norm-name { font-weight: 700; font-size: 0.98rem; color: var(--ink); }
+
+.dc-norm-key { font-size: 0.76rem; color: var(--faint); }
+
+.dc-norm-default-state { margin: 6px 0 10px; font-size: 0.78rem; color: var(--muted); }
+
+.dc-norm-vhead,
+.dc-norm-vrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: 10px;
+}
+
+.dc-norm-vhead {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.74rem;
+  color: var(--faint);
+}
+
+.dc-norm-vrow { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+
+.dc-norm-vrow:last-child { border-bottom: 0; }
+
+.dc-norm-vcode { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+
+.dc-norm-code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.84rem;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.dc-norm-label {
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--paper-deep);
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.dc-norm-vrender { min-width: 0; overflow-x: auto; }
+
+.dc-norm-vpick { display: flex; justify-content: center; }
+
+.dc-norm-radio { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
+.dc-norm-radio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.dc-norm-math,
+.dc-norm-math-block { display: inline-block; max-width: 100%; }
+
+.dc-norm-vrender mjx-container,
+.dc-norm-preview mjx-container,
+.dc-norm-compare-cell mjx-container { max-width: 100%; }
+
+.dc-norm-unsupported { display: block; margin-top: 4px; font-size: 0.74rem; color: var(--down); }
+
+.dc-norm-inbox-block {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 2px solid var(--line-strong);
+}
+
+.dc-norm-counts { margin: 0 0 12px; font-size: 0.78rem; color: var(--muted); }
+
+.dc-norm-inbox-list { display: flex; flex-direction: column; gap: 12px; }
+
+.dc-norm-inbox-row {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--card);
+  padding: 12px 14px;
+}
+
+.dc-norm-inbox-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.dc-norm-hit {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.dc-norm-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.dc-norm-compare-cell {
+  min-width: 0;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.dc-norm-compare-cap { display: block; margin-bottom: 4px; font-size: 0.72rem; color: var(--faint); }
+
+.dc-norm-preview { min-height: 1.6em; }
+
+.dc-norm-muted { font-size: 0.78rem; color: var(--faint); }
+
+.dc-norm-target { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+
+.dc-norm-target-cap { font-size: 0.8rem; color: var(--muted); }
+
+.dc-norm-target-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.86rem;
+}
+
+.dc-norm-target-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.dc-norm-inbox-tools { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.dc-norm-reject { border-color: var(--down); color: var(--down); }
+
+@media (max-width: 480px) {
+  .dc-norm-entry-top { grid-template-columns: minmax(0, 1fr) auto; }
+  .dc-norm-family { grid-column: 1 / -1; justify-self: start; }
+  .dc-norm-compare { grid-template-columns: minmax(0, 1fr); }
+}

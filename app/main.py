@@ -28,6 +28,7 @@ from app.api.ingest import router as ingest_router
 from app.api.layout import router as layout_router
 from app.api.meta import router as meta_router
 from app.api.models import router as models_router
+from app.api.norm import router as norm_router
 from app.api.pending import router as pending_router
 from app.api.pending_reidentify import router as pending_reidentify_router
 from app.api.pending_return import router as pending_return_router
@@ -168,6 +169,19 @@ def _ensure_bank_engine() -> None:
     logger.info("题库引擎 v2 就绪：%s（本次新建=%s）", report.db_path, report.created)
 
 
+def _seed_latex_norm() -> None:
+    """记号标准字典闭集种子自举（2.21.0 卡 §2）：幂等补差按 entry_key，老师选择永不覆盖。
+    失败不挡底座启动——清洗驱动取不到闭集即回落冻结基线，字典 UI 显示空态。"""
+    try:
+        from app.core.content import latex_norm
+
+        report = latex_norm.import_seed()
+    except Exception:  # noqa: BLE001 - 种子自举失败不得挡住底座启动
+        logger.exception("记号标准字典种子自举失败，已跳过；清洗回落冻结基线")
+        return
+    logger.info("记号标准字典就绪：新增条目=%s 跳过=%s", report["entries_added"], report["entries_skipped"])
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # 军令 #34：先装载工作区指针、生成工作区数据目录（banks/ 与状态文件，
@@ -175,6 +189,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     workspace_bootstrap.bootstrap()
     init_db()
     _ensure_bank_engine()
+    _seed_latex_norm()
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     _log_plugin_dependency_problems()
     # v0.8.0：不再首启自动安装示例题库插件（demo-bank 属历史包袱）；
@@ -215,6 +230,7 @@ def create_app() -> FastAPI:
     app.include_router(pending_reidentify_router)
     app.include_router(pending_return_router)
     app.include_router(meta_router)
+    app.include_router(norm_router)
     app.include_router(ingest_router)
     app.include_router(layout_router)
     app.include_router(models_router)

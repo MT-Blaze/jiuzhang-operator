@@ -72,7 +72,7 @@
     "agent.refine", "plugins.list", "workspace.state",
     "plugin.install_url", "ui.params.set", "editor.apply_patch",
     "stage.overlay", "stage.open_bank", "stage.open_editor",
-    "dict.catalog", "dict.open", "dict.globals_get", "dict.globals_save",
+    "dict.catalog", "dict.open", "dict.globals_get", "dict.globals_save", "norm.list", "norm.choose", "norm.reset", "norm.corrections", "norm.decide",
     // 军令 #19：能力路由字典。任何插件都能查表与调度；目标未安装/未声明
     // 一律回明确错误，绝不悄悄落到别的插件上。
     "command.list", "command.execute",

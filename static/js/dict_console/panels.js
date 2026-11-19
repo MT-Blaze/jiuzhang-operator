@@ -76,8 +76,13 @@
         var card = el("div", "dc-card");
         card.appendChild(el("h3", "dc-card-name", category.title));
         var count = el("p", "dc-card-count");
-        count.appendChild(el("strong", "", String(categoryCount(category, status.counts || {}))));
-        count.appendChild(document.createTextNode(" 行 · " + category.items.length + " 张表"));
+        if (category.machine) {
+          count.appendChild(el("strong", "", "整机生效"));
+          count.appendChild(document.createTextNode(" · 闭集＋开集"));
+        } else {
+          count.appendChild(el("strong", "", String(categoryCount(category, status.counts || {}))));
+          count.appendChild(document.createTextNode(" 行 · " + category.items.length + " 张表"));
+        }
         card.appendChild(count);
         card.appendChild(el("p", "dc-card-desc", category.desc));
         var btn = el("button", "dc-btn", "打开分类");
@@ -106,6 +111,10 @@
     }
     if (sub.mode === "textbooks-chapters") {
       if (window.DcEntityTextbooks) window.DcEntityTextbooks.mount(host, ctx);
+      return;
+    }
+    if (sub.mode === "norm-dict") {
+      if (window.DcNormDict) window.DcNormDict.mount(host, ctx);
       return;
     }
     if (sub.mode === "chapters") {

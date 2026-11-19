@@ -237,7 +237,7 @@
   var relayPending = stageRelayIo.relayPending;
   var relayText = stageRelayIo.relayText;
   var relayLayout = stageRelayIo.relayLayout;
-  var relayModels = stageRelayIo.relayModels; var stageRelayT6 = window.JzoStageRelayT6.create({ fetchJson: fetchJson, intValue: intValue, replyHost: replyHost, textValue: textValue, withWriteToken: withWriteToken }); var relayT6 = stageRelayT6.relayT6;
+  var relayModels = stageRelayIo.relayModels; var stageRelayT6 = window.JzoStageRelayT6.create({ fetchJson: fetchJson, intValue: intValue, replyHost: replyHost, textValue: textValue, withWriteToken: withWriteToken }); var relayT6 = stageRelayT6.relayT6; var stageRelayNorm = window.JzoStageRelayNorm.create({ fetchJson: fetchJson, intValue: intValue, replyHost: replyHost, textValue: textValue, withWriteToken: withWriteToken }); var relayNorm = stageRelayNorm.relayNorm;
   var stageRelayBank = window.JzoStageRelayBank.create({
     ID_RE: ID_RE,
     TOPIC_ID_RE: TOPIC_ID_RE,
@@ -473,7 +473,7 @@
       base: base, sharedBase: sharedBase,
       done: done, fail: fail, failWith: failWith, emitPendingUpdated: emitPendingUpdated,
     };
-    var families = [relayText, relayPending, relayMeta, relayIngest, relayBank, relayBasket, relayLayout, relayModels, relayT6];
+    var families = [relayText, relayPending, relayMeta, relayIngest, relayBank, relayBasket, relayLayout, relayModels, relayT6, relayNorm];
     for (var f = 0; f < families.length; f += 1) {
       if (families[f](ctx)) return;
     }

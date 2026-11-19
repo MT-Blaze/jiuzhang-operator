@@ -23,6 +23,12 @@
       button.type = "button";
       button.className = "dc-cat-btn";
       button.textContent = label;
+      if (category.machine) {
+        var badge = document.createElement("span");
+        badge.className = "dc-cat-machine";
+        badge.textContent = "整机生效";
+        button.appendChild(badge);
+      }
       button.title = category.desc;
       button.setAttribute("aria-label", "在画布打开「" + label + "」分类");
       button.addEventListener("click", function () { ctx.openCategory(category.key); });

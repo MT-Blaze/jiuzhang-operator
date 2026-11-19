@@ -70,6 +70,19 @@
         { key: "dict_solution_methods", label: "解题方法", table: "dict_solution_methods" },
         { key: "dict_core_competencies", label: "核心素养", table: "dict_core_competencies" }
       ]
+    },
+    {
+      key: "notation",
+      title: "记号标准字典",
+      desc: "整机生效的 LaTeX 记号标准：闭集出厂冻结、老师只选默认字形；开集待审由老师收编或驳回。住整机库，不随工作区漂移。",
+      stage: 3,
+      machine: true,
+      items: [
+        { name: "记号标准字典", desc: "闭集五列对照＋开集待审 inbox。", sub: "norm-dict" }
+      ],
+      subs: [
+        { key: "norm-dict", label: "记号标准字典", mode: "norm-dict" }
+      ]
     }
   ];
 
