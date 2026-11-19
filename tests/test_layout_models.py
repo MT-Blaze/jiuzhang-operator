@@ -126,6 +126,46 @@ class ModelStoreTest(unittest.TestCase):
             store.start_download("quantized")
         self.assertFalse(target.exists())
 
+    def _set_full_sha256(self, value: str) -> None:
+        document = toml_io.load(self.plugin / "model_config.toml", {})
+        document["models"]["full"]["sha256"] = value
+        toml_io.write(self.plugin / "model_config.toml", document)
+
+    def test_07_download_sha256_match_lands(self) -> None:
+        import hashlib
+        payload = b"x" * 16
+        self._set_full_sha256(hashlib.sha256(payload).hexdigest())
+
+        def fake_stream(kind, url, part):
+            part.write_bytes(payload)
+            return 16, 16
+
+        with mock.patch.object(store, "_stream", side_effect=fake_stream):
+            store._download("full", store._entry("full"), store.model_path("full"))
+        self.assertTrue(store.model_path("full").is_file())
+        self.assertEqual(store._DOWNLOADS["full"]["state"], "done")
+
+    def test_08_download_sha256_mismatch_discarded(self) -> None:
+        self._set_full_sha256("0" * 64)
+
+        def fake_stream(kind, url, part):
+            part.write_bytes(b"x" * 16)
+            return 16, 16
+
+        with mock.patch.object(store, "_stream", side_effect=fake_stream):
+            store._download("full", store._entry("full"), store.model_path("full"))
+        self.assertFalse(store.model_path("full").exists())
+        self.assertFalse(store.model_path("full").with_name(
+            store.model_path("full").name + store.PART_SUFFIX).exists())
+        self.assertEqual(store._DOWNLOADS["full"]["state"], "error")
+        self.assertIn("sha256", store._DOWNLOADS["full"]["message"])
+
+    def test_09_real_config_full_has_sha256(self) -> None:
+        document = toml_io.load(PLUGIN_DIR / "model_config.toml", {})
+        entry = document["models"]["full"]
+        self.assertRegex(str(entry.get("sha256") or ""), r"^[0-9a-f]{64}$",
+                         "满血版配置须带 sha256 供下载逐字校验")
+
 
 class HardwareTest(unittest.TestCase):
     def _fake_ort(self, providers: list[str]) -> types.ModuleType:
@@ -241,6 +281,32 @@ class YoloFallbackTest(unittest.TestCase):
         wrapped.__cause__ = MemoryError("vram")
         self.assertTrue(layout_yolo._is_oom(wrapped))
         self.assertFalse(layout_yolo._is_oom(ValueError("bad shape")))
+
+    def test_08_no_gpu_full_present_uses_full_cpu(self) -> None:
+        result = self._run(
+            {"ready": True, "gpu": "", "hardware_label": "CPU运行"},
+            {"full": True}, lambda path, providers: "session")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"][-1]["text"],
+                         "[INFO] 版面分析：已启用本地 YOLO（满血版 / CPU运行）")
+        self.assertEqual(result["model"]["provider"], "CPUExecutionProvider")
+        self.assertEqual(result["model"]["kind"], "full")
+
+    def test_09_no_gpu_full_cpu_oom_degrades_quantized(self) -> None:
+        errors = [layout_yolo_runtime.RuntimeErrorYolo("out of memory")]
+
+        def load(path, providers):
+            if errors:
+                raise errors.pop(0)
+            return "session"
+
+        result = self._run(
+            {"ready": True, "gpu": "", "hardware_label": "CPU运行"},
+            {"full": True, "quantized": True}, load)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"][0]["text"], layout_yolo.OOM_WARNING)
+        self.assertEqual(result["status"][-1]["text"],
+                         "[INFO] 版面分析：内存不足，已降级为本地 YOLO（量化版 / CPU运行）")
 
 
 class RouteStatusTest(unittest.TestCase):

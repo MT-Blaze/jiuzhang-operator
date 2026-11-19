@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -213,6 +214,9 @@ def _download(kind: str, entry: dict[str, Any], target: Path) -> None:
                 raise OSError(f"下载不完整（{received}/{total} 字节）")
             if received < minimum:
                 raise OSError(f"文件过小（{received} 字节，至少需要 {minimum}）")
+            expected = str(entry.get("sha256") or "").strip().lower()
+            if expected and _sha256(part) != expected:
+                raise OSError("sha256 校验不符，丢弃换源")
             os.replace(part, target)
         except Exception as exc:  # noqa: BLE001 - 换下一个镜像，全部失败才报错
             last_error = f"{url} → {exc}"
@@ -235,6 +239,14 @@ def _download(kind: str, entry: dict[str, Any], target: Path) -> None:
     with _STATE_LOCK:
         _DOWNLOADS[kind].update({"state": "error", "message": last_error[:300]})
     logger.warning("[WARN] 本地 YOLO 模型下载失败：%s", last_error)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _stream(kind: str, url: str, part: Path) -> tuple[int, int]:

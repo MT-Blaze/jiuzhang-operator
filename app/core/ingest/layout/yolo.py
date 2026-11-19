@@ -92,7 +92,7 @@ def detect(request: dict[str, Any]) -> dict[str, Any]:
 
 def _pick_session(hardware: dict[str, Any],
                   statuses: list[dict[str, str]]) -> tuple[Any, tuple[str, str] | None, str]:
-    """严格按 满血+GPU → 量化+GPU → 量化+CPU 选，返回 (会话, (型号, 提供者), 前缀)。"""
+    """按 满血+GPU → 量化+GPU →（纯 CPU 机）满血+CPU → 量化+CPU 选，返回 (会话, (型号, 提供者), 前缀)。"""
     gpu_provider = {"cuda": "CUDAExecutionProvider",
                     "directml": "DmlExecutionProvider"}.get(str(hardware.get("gpu") or ""), "")
     reason = "已启用"
@@ -118,6 +118,14 @@ def _pick_session(hardware: dict[str, Any],
         elif reason == "已启用":
             reason = "显卡加速不可用，已降级为"
 
+    if not gpu_provider and layout_model_store.present("full"):
+        session, error = _load("full", ["CPUExecutionProvider"])
+        if session is not None:
+            return session, ("full", "CPUExecutionProvider"), reason
+        if _is_oom(error):
+            statuses.append(_line("error", OOM_WARNING))
+            logger.warning(OOM_WARNING)
+            reason = "内存不足，已降级为"
     session, error = _load("quantized", ["CPUExecutionProvider"])
     if session is not None:
         return session, ("quantized", "CPUExecutionProvider"), reason
