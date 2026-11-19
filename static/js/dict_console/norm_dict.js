@@ -161,11 +161,12 @@
         confirmText: "恢复出厂",
         anchor: button,
         onConfirm: function () {
-          busy(button, true);
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
           window.DcClient.writeJson("/api/norm/reset", { entry_key: entry.entry_key })
             .then(function () { syncDefault(entry, null, block); })
-            .catch(function (error) { fail("恢复出厂失败", error, button); })
-            .finally(function () { busy(button, false); });
+            .catch(function (error) { button.disabled = false; fail("恢复出厂失败", error, button); })
+            .finally(function () { button.setAttribute("aria-busy", "false"); });
         }
       });
     }

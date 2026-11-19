@@ -1,0 +1,103 @@
+===== test_latex_norm =====
+----------------------------------------------------------------------
+Ran 37 tests in 1.769s
+
+OK
+===== test_latex_style_dict =====
+----------------------------------------------------------------------
+Ran 30 tests in 0.130s
+
+OK
+===== test_norm_api =====
+----------------------------------------------------------------------
+Ran 8 tests in 2.992s
+
+OK
+===== test_question_parser =====
+----------------------------------------------------------------------
+Ran 47 tests in 0.014s
+
+OK
+===== test_clean_latex =====
+----------------------------------------------------------------------
+Ran 13 tests in 0.023s
+
+OK
+===== test_bank_dedupe =====
+----------------------------------------------------------------------
+Ran 21 tests in 1.899s
+
+OK
+===== test_dedupe_fingerprint =====
+----------------------------------------------------------------------
+Ran 38 tests in 0.019s
+
+OK
+===== test_ai_recognize =====
+----------------------------------------------------------------------
+Ran 18 tests in 0.045s
+
+OK
+===== test_recognize_router =====
+----------------------------------------------------------------------
+Ran 24 tests in 1.905s
+
+OK
+===== test_pending_dedupe =====
+----------------------------------------------------------------------
+Ran 14 tests in 0.010s
+
+OK
+===== test_pending_dedupe_candidates =====
+----------------------------------------------------------------------
+Ran 20 tests in 1.178s
+
+OK
+===== test_pending_dedupe_scan =====
+----------------------------------------------------------------------
+Ran 18 tests in 3.134s
+
+OK
+===== test_cleanup_tools =====
+[中止] 目标 E:\jiuzhang\jiuzhang-operator\examples\demo_plugin.zip 落在禁改区 E:\jiuzhang\jiuzhang-operator\examples
+[中止] 目标 E:\jiuzhang\jiuzhang-operator\.git\config 落在禁改区 E:\jiuzhang\jiuzhang-operator\.git
+[中止] 目标 E:\jiuzhang\somewhere-else\plugins.json 逃出仓库根 E:\jiuzhang\jiuzhang-operator
+[中止] 指定的保留项 C:\Users\15972\AppData\Local\Temp\sneaky 不在 C:\Users\15972\AppData\Local\Temp\tmpqaek60o6 内
+===== test_dict_console =====
+----------------------------------------------------------------------
+Ran 14 tests in 1.384s
+
+OK
+===== test_dict_console_subtabs =====
+----------------------------------------------------------------------
+Ran 17 tests in 0.583s
+
+OK
+===== test_file_size_contract =====
+[WARN] 接近上限：app/core/pending/batch/bank_batches.py=491 行（451–550 区间，须排队拆）
+[WARN] 接近上限：app/core/pending/meta/rules.py=498 行（451–550 区间，须排队拆）
+[WARN] 接近上限：app/core/plugins/index/search.py=472 行（451–550 区间，须排队拆）
+老文件行数：app/api/bank.py=517 app/core/backup/restore.py=532 app/core/bank/engine/dedupe_signature.py=541 app/core/bank/engine/query.py=595 app/core/bank/engine/schema.py=624 app/core/bank/engine/write.py=625 app/core/content/latex_style_dict.py=506 app/core/pending/db.py=679 app/core/pending/dedupe/engine.py=786 app/core/pending/pool/service.py=778 app/core/pending/service.py=644 app/core/plugins/lifecycle/update.py=742 app/core/plugins/registry.py=731 plugins/org.jiuzhang.editor/dist/layout.css=746 plugins/org.jiuzhang.editor/dist/layout_canvas.css=791 plugins/org.jiuzhang.editor/dist/plugin.js=828 plugins/org.jiuzhang.editor/dist/ui_ai.js=529 plugins/org.jiuzhang.editor/dist/ui_ai_copilot.js=800 plugins/org.jiuzhang.editor/dist/ui_batches.js=780 plugins/org.jiuzhang.editor/dist/ui_columns.js=788 plugins/org.jiuzhang.editor/dist/ui_crop.js=771 plugins/org.jiuzhang.editor/dist/ui_intake.js=656 plugins/org.jiuzhang.editor/dist/ui_school_dict.js=520 plugins/org.jiuzhang.editor/dist/ui_split_board.js=779 plugins/org.jiuzhang.handout/dist/plugin.js=515 plugins/org.jiuzhang.paper-gen/dist/core_layout.js=695 plugins/org.jiuzhang.paper-gen/dist/plugin.css=563 plugins/org.jiuzhang.paper-gen/dist/plugin.js=520 static/css/settings.css=743 static/js/st_backup.js=537 static/js/st_workspace.js=564 static/js/stage.js=776 static/js/stage_command.js=545 static/js/stage_frame.js=521 static/js/stage_relay_io.js=770
+===== test_ai_plugin_boundary =====
+----------------------------------------------------------------------
+Ran 8 tests in 0.003s
+
+OK
+===== test_command_registry =====
+----------------------------------------------------------------------
+Ran 35 tests in 0.845s
+
+OK
+===== test_version_consistency =====
+----------------------------------------------------------------------
+Ran 29 tests in 0.034s
+
+OK
+===== SUMMARY =====
+17
+===== test_cleanup_tools (confirm) =====
+Ran 15 tests OK
+===== test_file_size_contract (confirm) =====
+Ran 13 tests OK
+===== TALLY =====
+19 modules / 419 tests / all OK (37+30+8+47+13+21+38+18+24+14+20+18+15+14+17+13+8+35+29)
