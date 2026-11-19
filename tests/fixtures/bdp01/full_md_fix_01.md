@@ -1,0 +1,1 @@
+1. 已知集合 $A = \left\{ x \in \mathbb{N}^{*} \mid -\sqrt{3} \leq x \leq \sqrt{3} \right\}$ , 则必有 ( ) A. $-1 \in A$ B. $0 \in A$ C. $1 \in A$ D. $2 \in A$

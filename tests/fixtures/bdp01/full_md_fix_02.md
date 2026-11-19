@@ -1,0 +1,2 @@
+2. 命题 “ $\forall x\in R,\quad x^{2}-2x+1\geq0$ ” 的否定是（） 
+A. $\exists x\in R,\quad x^{2}-2x+1\leq0$ B. $\forall x\in R,\quad x^{2}-2x+1\leq0$ C. $\exists x\in R,\quad x^{2}-2x+1<0$ D. $\forall x\in R,\quad x^{2}-2x+1<0$

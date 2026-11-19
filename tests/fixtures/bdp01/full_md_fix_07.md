@@ -1,0 +1,1 @@
+7. 设 $a \geq b \geq c$ ，且 1 是关于 $x$ 的一元二次方程 $ax^2 + bx + c = 0$ 的一个实根，则 $\frac{c}{a}$ 的取值范围是（） A. $\left[-2, -\frac{1}{2}\right]$ B. $\left(-2, -\frac{1}{2}\right)$ C. $(-∞, -2) ∪ \left(-\frac{1}{2}, +∞\right)$ D. $(-∞, -2] ∪ \left[-\frac{1}{2}, +∞\right)$

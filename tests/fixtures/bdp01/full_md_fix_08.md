@@ -1,0 +1,2 @@
+8. 设数集 $M = \{x \mid m \leq x \leq m + \frac{3}{4}\}, N = \{x \mid n - \frac{1}{3} \leq x \leq n\}$ , 且 M、N 都是集合 $\{x \mid 0 \leq x \leq 1\}$ 的子集, 如果把 $b - a$ 叫做集合 $\{x \mid a \leq x \leq b\}$ 的“长度”, 那么集合 M ∩ N 的“长度”的最小值是
+A. $\frac{1}{3}$ B. $\frac{2}{3}$ C. $\frac{1}{12}$ D. $\frac{5}{12}$

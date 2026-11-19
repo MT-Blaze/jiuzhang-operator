@@ -369,11 +369,17 @@ def build_documents(text: str) -> tuple[list[dict[str, Any]], list[str]]:
         if documents:
             return documents, warnings
     documents = []
-    for segment, number in _split_numbered(text):
+    from app.core.ingest.intake import shapes
+    normalized, shape_warnings = shapes.normalize(text)
+    warnings.extend(shape_warnings)
+    segments = _split_numbered(normalized)
+    single = len(segments) == 1
+    for segment, number in segments:
         parsed = question_parser.parse_question(segment)
         if not str(parsed.get("stem") or "").strip():
             continue
-        if not number and not _looks_like_question(segment, parsed):
+        numbered = bool(number) or (single and bool(_HEAD_NUM_RE.match(segment)))
+        if not numbered and not _looks_like_question(segment, parsed):
             continue
         options = [
             {"key": str(option.get("label") or ""), "content": str(option.get("text") or "")}
