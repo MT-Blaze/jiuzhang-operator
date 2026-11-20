@@ -155,7 +155,7 @@ def main() -> int:
         status, registry = http_json(base, "/api/models/registry")
         entries = registry.get("entries") or []
         by_id = {str(item.get("id")): item for item in entries}
-        check("registry 200 且 16 条目", status == 200 and len(entries) == 16,
+        check("registry 200 且 18 条目", status == 200 and len(entries) == 18,
               {"status": status, "count": len(entries)})
         check("每条目带大白话使用说明",
               all(str(item.get("summary_usage") or "") for item in entries))

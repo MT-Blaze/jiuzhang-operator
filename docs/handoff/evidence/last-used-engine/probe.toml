@@ -1,0 +1,190 @@
+tag = "run2"
+base = "http://127.0.0.1:48350"
+viewport = "1440x900"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = []
+ok = true
+
+[[checks]]
+name = "隔离副本 18 条目＋5 组合全就绪（云账号本地种＋真实公式/VLM 权重）"
+ok = true
+
+[checks.detail]
+count = 18
+ready_combos = ["combo_cloud", "combo_vlm", "combo_pp_m", "combo_pp_l", "combo_p2t"]
+
+[[checks]]
+name = "项6 首次干净识别＝自动"
+ok = true
+
+[[checks]]
+name = "项6 首次干净版面＝自动"
+ok = true
+
+[[checks]]
+name = "项6 首次 prefs 未落盘"
+ok = true
+
+[[checks]]
+name = "项1 ①自动设置上页（改名成功）"
+ok = true
+detail = "自动设置（按卷型分流走哪座；默认座未就绪会显性提示，不偷换）："
+
+[[checks]]
+name = "项1 ②默认引擎整行已砍（无独立默认组）"
+ok = true
+
+[[checks]]
+name = "项1 配置页无「默认引擎」字样"
+ok = true
+
+[[checks]]
+name = "项2 识别下拉两组组头＝整题OCR／文字直取+公式·X"
+ok = true
+detail = ["整题OCR", "文字直取+公式·X"]
+
+[[checks]]
+name = "项2 底组 5 组合全列（就绪才出现）"
+ok = true
+detail = ["combo_cloud", "combo_vlm", "combo_pp_m", "combo_pp_l", "combo_p2t"]
+
+[[checks]]
+name = "项2 顶组含 auto＋就绪整题座（不含组合）"
+ok = true
+detail = ["auto", "cloud_vision", "mineru_local", "vlm_qwen", "vlm_intern", "vlm_minicpm"]
+
+[[checks]]
+name = "项2 版面下拉平铺无 optgroup"
+ok = true
+
+[[checks]]
+name = "项7 纯图卷组合路置灰"
+ok = true
+
+[checks.detail]
+disabled = true
+title = "组合路只支持文字卷：筐里这份是纯图卷，文字直取无从谈起，请选整题直转座（MinerU/本地VLM/云端视觉）。"
+
+[[checks]]
+name = "项7 置灰带人话（纯图卷·文字直取无从谈起）"
+ok = true
+detail = "组合路只支持文字卷：筐里这份是纯图卷，文字直取无从谈起，请选整题直转座（MinerU/本地VLM/云端视觉）。"
+
+[[checks]]
+name = "项7 整题座不受纯图卷置灰"
+ok = true
+detail = false
+
+[[checks]]
+name = "项3 停用组合座经代笔落隔离插件目录"
+ok = true
+
+[[checks]]
+name = "项3 data/ 全树无 model_prefs.toml"
+ok = true
+
+[[checks]]
+name = "项3 停用后识别下拉摘除 combo_pp_l"
+ok = true
+
+[[checks]]
+name = "项3 启用后识别下拉恢复 combo_pp_l"
+ok = true
+
+[[checks]]
+name = "项4 画布选识别座回写上次（default_recognize）"
+ok = true
+detail = "combo_pp_l"
+
+[[checks]]
+name = "项4 刷新后识别初值＝上次 combo_pp_l"
+ok = true
+detail = "combo_pp_l"
+
+[[checks]]
+name = "项4 画布选版面座回写上次（default_layout）"
+ok = true
+detail = "yolo"
+
+[[checks]]
+name = "项4 版面/识别各记各的（改版面不擦识别记忆）"
+ok = true
+
+[[checks]]
+name = "项4 刷新后版面初值＝上次 yolo（独立）"
+ok = true
+
+[[checks]]
+name = "项4 刷新后识别初值仍＝combo_pp_l（独立）"
+ok = true
+
+[[checks]]
+name = "项4 识别归自动回写 auto"
+ok = true
+detail = "auto"
+
+[[checks]]
+name = "项4 归自动不擦版面记忆"
+ok = true
+
+[[checks]]
+name = "项5 存过的座被停用→识别初值归自动"
+ok = true
+detail = "auto"
+
+[[checks]]
+name = "项5 归自动不擦 prefs 记忆（default_recognize 仍 combo_pp_l）"
+ok = true
+
+[checks.detail]
+disabled = ["combo_pp_l"]
+default_layout = "yolo"
+default_recognize = "combo_pp_l"
+auto_image_seat = "auto"
+auto_text_formula_seat = "auto"
+
+[[checks]]
+name = "项5 启用后刷新识别初值恢复 combo_pp_l"
+ok = true
+detail = "combo_pp_l"
+
+[[checks]]
+name = "项8 三查 fetch(/parent.document/localStorage=0"
+ok = true
+
+[checks.detail]
+"fetch(" = 0
+"parent.document" = 0
+localStorage = 0
+
+[[checks]]
+name = "项8 页面零 JS 异常"
+ok = true
+detail = []
+
+[[checks]]
+name = "项8 全程零 HTTP 失败"
+ok = true
+detail = []
+
+[[checks]]
+name = "项8 零安装请求（出网只由点头发起，本卡零出网）"
+ok = true
+detail = []
+
+[[checks]]
+name = "项8 收口端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 48350
+
+[[checks]]
+name = "项8 收口孤儿进程零"
+ok = true
+
+[checks.detail]
+port = 48350
+count = "0"

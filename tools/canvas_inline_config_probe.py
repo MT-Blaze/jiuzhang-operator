@@ -251,23 +251,23 @@ def main() -> int:
                   and any(s["tag"] == "BUTTON" for s in seen)
                   and any(s["tag"] == "SELECT" for s in seen), seen[:10])
 
-            # ---------- 键盘改默认选择：落隔离插件目录 ----------
-            layout_select = canvas.locator(
-                ".ep-model-config-defaults:not(.ep-model-config-auto-seats) "
-                ".ep-model-config-default-select").first
-            expected_default = layout_select.evaluate("node => node.options[1].value")
-            layout_select.click()
-            page.keyboard.press("ArrowDown")
-            page.keyboard.press("Enter")
+            # ---------- 记上次：画布选版面座回写 default_layout（②手动默认行已砍） ----------
+            canvas.locator("#edModelConfigBack").click()
+            expect(view).to_be_hidden(timeout=5000)
+            layout_engine = canvas.locator("#edLayoutEngine")
+            expected_default = layout_engine.evaluate("node => node.options[1].value")
+            layout_engine.select_option(expected_default)
             deadline = time.time() + 15
             picked = ""
             while time.time() < deadline:
                 picked = str(toml_io.load(prefs_file, {}).get("default_layout") or "")
-                if picked and picked != "auto":
+                if picked == expected_default:
                     break
                 page.wait_for_timeout(300)
-            check("键盘改默认落插件目录", picked == expected_default,
+            check("记上次：画布选版面座回写插件目录", picked == expected_default,
                   {"default_layout": picked, "expected": expected_default})
+            canvas.locator("#epModelConfigList").click()
+            expect(view).to_be_visible(timeout=10000)
 
             # ---------- 停用 YOLO：下拉不显示＋状态住插件目录 ----------
             engine = canvas.locator("#edLayoutEngine")

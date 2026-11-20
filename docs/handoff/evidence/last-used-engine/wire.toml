@@ -1,0 +1,7 @@
+base = "http://127.0.0.1:48350"
+viewport = "1440x900"
+http_failures = []
+install_requests = []
+page_errors = []
+console_errors = []
+note = "零出网：云账号 base_url 用 probe.invalid 域仅本地配置，全程无 install/recognize/models 出网请求；隔离副本 git archive HEAD，动态端口随机令牌，65496 零接触。"

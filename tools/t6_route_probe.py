@@ -134,7 +134,7 @@ def main() -> int:
         entries = registry.get("entries") or []
         by_id = {str(e.get("id")): e for e in entries}
         result["hardware"] = registry.get("hardware") or {}
-        check("registry 16 条目", len(entries) == 16, {"count": len(entries)})
+        check("registry 18 条目", len(entries) == 18, {"count": len(entries)})
         check("auto 默认座＝mineru_local/formula_pp_m",
               (registry.get("auto_seats") or {}) == {
                   "auto_image_seat": "mineru_local", "auto_text_formula_seat": "formula_pp_m"},
