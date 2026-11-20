@@ -56,6 +56,7 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              vlm_health: dict | None = None,
              vlm_install: dict | None = None,
              vlm_weights: bool = False,
+             vlm_weights_by_seat: dict | None = None,
              ocr_weights: bool = False,
              ocr_install: dict | None = None,
              formula_weights: bool = False,
@@ -78,7 +79,9 @@ def _runtime(ocr: bool = True, yolo: bool = False,
                               return_value=vlm_health if vlm_health is not None else dict(_VLM_HEALTH_MISSING)), \
             mock.patch.object(registry.vlm_setup, "status",
                               return_value=vlm_install if vlm_install is not None else {"state": "idle"}), \
-            mock.patch.object(registry.vlm_setup, "weights_ready", return_value=vlm_weights), \
+            mock.patch.object(registry.vlm_setup, "weights_ready",
+                              side_effect=lambda seat: (vlm_weights_by_seat or {}).get(
+                                  seat, vlm_weights)), \
             mock.patch.object(ocr_setup, "weights_ready", return_value=ocr_weights), \
             mock.patch.object(ocr_setup, "status",
                               return_value=ocr_install if ocr_install is not None else {"state": "idle"}), \
@@ -518,9 +521,11 @@ class ComboChainTest(CatalogIsolated):
     VLM_OK = {"ok": True, "state": "ready", "version": "0.2.3",
               "engine": "vulkan", "message": ""}
 
-    def test_six_combos_declare_plan_and_seat(self) -> None:
+    def test_eight_combos_declare_plan_and_seat(self) -> None:
         catalog = {entry["id"]: entry for entry in registry.catalog()}
-        expected = {"combo_cloud": "cloud_vision", "combo_vlm": "vlm_qwen",
+        expected = {"combo_cloud": "cloud_vision",
+                    "combo_vlm_qwen": "vlm_qwen", "combo_vlm_intern": "vlm_intern",
+                    "combo_vlm_minicpm": "vlm_minicpm",
                     "combo_pp_m": "formula_pp_m", "combo_pp_l": "formula_pp_l",
                     "combo_p2t": "formula_p2t", "combo_texify": "formula_texify"}
         for combo_id, seat in expected.items():
@@ -531,6 +536,7 @@ class ComboChainTest(CatalogIsolated):
                 self.assertEqual(entry["combo_seat"], seat)
                 self.assertIn("文字层取", entry["summary_usage"])
                 self.assertIn("纯图卷", entry["summary_usage"])
+        self.assertNotIn("combo_vlm", catalog)
 
     def test_formula_combos_use_weight_rule_matching_seat(self) -> None:
         """全组合（记上次卡＋COMBO-PPM-READY-01）：公式组合一律 weight_present＋store
@@ -556,7 +562,7 @@ class ComboChainTest(CatalogIsolated):
             entries = _states(registry.status()["entries"])
             self.assertEqual(entries["combo_pp_l"]["state"], "ready")
             self.assertEqual(entries["combo_pp_l"]["state"], entries["formula_pp_l"]["state"])
-            self.assertIn("组合路就绪", entries["combo_pp_l"]["detail"])
+            self.assertIn("正文文字直取", entries["combo_pp_l"]["detail"])
 
     def test_combo_p2t_follows_formula_p2t_weights(self) -> None:
         with _runtime():
@@ -568,7 +574,7 @@ class ComboChainTest(CatalogIsolated):
             entries = _states(registry.status()["entries"])
             self.assertEqual(entries["combo_p2t"]["state"], "ready")
             self.assertEqual(entries["combo_p2t"]["state"], entries["formula_p2t"]["state"])
-            self.assertIn("组合路就绪", entries["combo_p2t"]["detail"])
+            self.assertIn("正文文字直取", entries["combo_p2t"]["detail"])
 
     def test_combo_texify_follows_formula_texify_weights(self) -> None:
         with _runtime():
@@ -580,7 +586,7 @@ class ComboChainTest(CatalogIsolated):
             entries = _states(registry.status()["entries"])
             self.assertEqual(entries["combo_texify"]["state"], "ready")
             self.assertEqual(entries["combo_texify"]["state"], entries["formula_texify"]["state"])
-            self.assertIn("组合路就绪", entries["combo_texify"]["detail"])
+            self.assertIn("正文文字直取", entries["combo_texify"]["detail"])
 
     def test_formula_combo_ready_only_when_its_own_seat_ready(self) -> None:
         """装 L 不连带 p2t/texify：各组合只随各自公式座，互不串。"""
@@ -609,17 +615,31 @@ class ComboChainTest(CatalogIsolated):
             entry = _states(registry.status()["entries"])["combo_cloud"]
         self.assertEqual(entry["state"], "ready")
         self.assertIn("视觉一号", entry["detail"])
-        self.assertIn("组合路就绪", entry["detail"])
+        self.assertIn("正文文字直取", entry["detail"])
 
     def test_combo_vlm_follows_local_vlm_health(self) -> None:
-        with _runtime():
-            entry = _states(registry.status()["entries"])["combo_vlm"]
-        self.assertEqual(entry["state"], "degraded")
-        self.assertEqual(entry["action"], "install_vlm")
-        with _runtime(vlm_health=self.VLM_OK, vlm_weights=True):
-            entry = _states(registry.status()["entries"])["combo_vlm"]
-        self.assertEqual(entry["state"], "ready")
-        self.assertIn("组合路就绪", entry["detail"])
+        """三条本地 VLM 组合各自随本座：权重只认本座，动作分座引导，互不串。"""
+        for combo_id, seat, action in (("combo_vlm_qwen", "qwen", "install_vlm"),
+                                       ("combo_vlm_intern", "intern", "install_vlm_intern"),
+                                       ("combo_vlm_minicpm", "minicpm",
+                                        "install_vlm_minicpm")):
+            with self.subTest(combo=combo_id):
+                with _runtime():
+                    entry = _states(registry.status()["entries"])[combo_id]
+                self.assertEqual(entry["state"], "degraded")
+                self.assertEqual(entry["action"], action)
+                with _runtime(vlm_health=self.VLM_OK,
+                              vlm_weights_by_seat={seat: True}):
+                    entries = _states(registry.status()["entries"])
+                entry = entries[combo_id]
+                self.assertEqual(entry["state"], "ready")
+                self.assertEqual(entry["state"], entries["vlm_" + seat]["state"])
+                self.assertIn("正文文字直取", entry["detail"])
+                others = {"qwen", "intern", "minicpm"} - {seat}
+                for other in others:
+                    self.assertEqual(
+                        entries["combo_vlm_" + other]["state"], "degraded",
+                        "只装 %s 座不得连带 %s 座组合就绪" % (seat, other))
 
     def test_combo_pp_m_follows_formula_m_weights(self) -> None:
         with _runtime():
@@ -632,7 +652,7 @@ class ComboChainTest(CatalogIsolated):
             entry = entries["combo_pp_m"]
             self.assertEqual(entry["state"], "ready")
             self.assertEqual(entry["state"], entries["formula_pp_m"]["state"])
-            self.assertIn("组合路就绪", entry["detail"])
+            self.assertIn("正文文字直取", entry["detail"])
 
     def test_combo_gate_passes_ready_and_falls_auto_degraded(self) -> None:
         with _runtime(vision=_vision()):

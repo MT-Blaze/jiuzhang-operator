@@ -6,20 +6,23 @@
 隔离：插件副本走 ``git archive HEAD``（禁抄工作树，models/ 与 model_prefs.toml
 天然不入副本）＋独立 JZO_DATA_DIR / JZO_PLUGINS_DIR＋动态空闲端口＋每次随机
 本地令牌（不写死端口与令牌），不碰用户 data/ 与正式服务（65496 零接触）。
-engines/ 只读体检走本机真实权重（公式 M/L/p2t＋VLM 三座已就绪）；云视觉座由
-宿主写口本地种一个 dummy 账号（base_url 用 .invalid 域，零出网）使 combo_cloud
-就绪。收口点杀进程并复验端口关闭＋孤儿零。产物落
+engines/ 只读体检走本机真实权重（装了几座公式/VLM 座就认几座，底组不写死）；
+云视觉座由宿主写口本地种一个 dummy 账号（base_url 用 .invalid 域，零出网）使
+combo_cloud 就绪。收口点杀进程并复验端口关闭＋孤儿零。产物落
 .system_generated/last-used-engine/<tag>/，证据另拷 docs/handoff/evidence/last-used-engine/。
 
 八项判据（只验本卡契约，不跑识别、不出网）：
 1. 配置页①自动设置在、②默认引擎整行已砍；
-2. 识别下拉两组（整题OCR／文字直取+公式·X）＋底组 5 组合；版面下拉平铺无组；
+2. 识别下拉自动单独置顶＋两条禁用表头（—— 整题OCR ——／—— 文字直取＋公式 ——）
+   全平铺，底组＝registry 实际就绪组合（本机装几座 VLM 就几条）；版面下拉平铺无组；
 3. 停用组合座→下拉摘除→启用恢复；
 4. 画布选座→回写上次→刷新初值＝上次；版面/识别各记各的；归自动；
 5. 存过的座被停用→初值归自动但 prefs 不擦→启用后刷新恢复；
 6. 首次干净＝自动；
-7. 纯图卷进筐→组合路置灰＋人话；
+7. 纯图卷进筐→组合项置灰＋人话；
 8. 零 JS 异常、零 HTTP 失败、三查=0、收口端口关闭、孤儿零。
+
+截图另拷 ``.system_generated/engine-dropdown/<tag>/``（只作证据，git 忽略）。
 """
 
 from __future__ import annotations
@@ -51,8 +54,9 @@ PLUGIN_SOURCE_DIR = plugin_source_root() or (ROOT / "plugins")
 PLUGINS_REPO = PLUGIN_SOURCE_DIR.parent
 EDITOR_ID = "org.jiuzhang.editor"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
-COMBOS = ["combo_cloud", "combo_vlm", "combo_pp_m", "combo_pp_l", "combo_p2t"]
-GROUP_HEADS = ["整题OCR", "文字直取+公式·X"]
+GROUP_HEADS = ["—— 整题OCR ——", "—— 文字直取＋公式 ——"]
+EXPECTED_ENTRIES = 21
+EXPECTED_COMBOS = 8
 # 1×1 透明 PNG（纯图卷进筐触组合路置灰，零出网）。
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -216,13 +220,30 @@ def main() -> int:
         wait_health(base, process, server_log)
         seed_cloud_account(base, token)
         _, reg = http_json(base, "/api/models/registry?probe=0")
-        by_id = {str(e.get("id")): e for e in reg.get("entries") or []}
-        ready_combos = [c for c in COMBOS
+        entries = reg.get("entries") or []
+        by_id = {str(e.get("id")): e for e in entries}
+
+        def _combos(rows):
+            return [str(e.get("id")) for e in rows
+                    if "combo" in (e.get("plan_recognize") or [])]
+
+        declared_combos = _combos(entries)
+        ready_combos = [c for c in declared_combos
                         if (by_id.get(c) or {}).get("state") == "ready"
                         and (by_id.get(c) or {}).get("enabled") is not False]
-        check("隔离副本 18 条目＋5 组合全就绪（云账号本地种＋真实公式/VLM 权重）",
-              len(reg.get("entries") or []) == 18 and ready_combos == COMBOS,
-              {"count": len(reg.get("entries") or []), "ready_combos": ready_combos})
+        whole_ready = [str(e.get("id")) for e in entries
+                       if "combo" not in (e.get("plan_recognize") or [])
+                       and e.get("capability") in ("recognize", "both")
+                       and e.get("state") == "ready"
+                       and e.get("enabled") is not False]
+        pick = ("combo_pp_l" if "combo_pp_l" in ready_combos
+                else (ready_combos[0] if ready_combos else ""))
+        check("隔离副本 %d 条目＋%d 条组合声明（底组按本机就绪事实）"
+              % (EXPECTED_ENTRIES, EXPECTED_COMBOS),
+              len(entries) == EXPECTED_ENTRIES and len(declared_combos) == EXPECTED_COMBOS
+              and bool(pick),
+              {"count": len(entries), "declared_combos": declared_combos,
+               "ready_combos": ready_combos, "pick": pick})
 
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
@@ -261,28 +282,77 @@ def main() -> int:
             canvas.locator("#edModelConfigBack").click()
             expect(view).to_be_hidden(timeout=5000)
 
-            # ---------- 项2：识别两组＋5 组合；版面平铺 ----------
-            rec_groups = canvas.locator("#edRecognizeEngine optgroup").evaluate_all(
-                "nodes => nodes.map(n => n.label)")
-            check("项2 识别下拉两组组头＝整题OCR／文字直取+公式·X",
-                  rec_groups == GROUP_HEADS, rec_groups)
-            bottom = canvas.locator("#edRecognizeEngine optgroup[label='文字直取+公式·X'] option")
-            bottom_vals = bottom.evaluate_all("nodes => nodes.map(n => n.value)")
-            check("项2 底组 5 组合全列（就绪才出现）",
-                  sorted(bottom_vals) == sorted(COMBOS), bottom_vals)
-            top = canvas.locator("#edRecognizeEngine optgroup[label='整题OCR'] option")
-            top_vals = top.evaluate_all("nodes => nodes.map(n => n.value)")
-            check("项2 顶组含 auto＋就绪整题座（不含组合）",
-                  "auto" in top_vals and not (set(top_vals) & set(COMBOS)), top_vals)
+            # ---------- 项2：自动置顶＋两条禁用表头＋全平铺；版面平铺 ----------
+            rec = canvas.locator("#edRecognizeEngine").evaluate("""
+                sel => {
+                  const opts = Array.from(sel.options);
+                  const heads = [];
+                  opts.forEach((o, i) => {
+                    if (o.disabled && o.textContent.startsWith("——")) {
+                      heads.push({index: i, text: o.textContent});
+                    }
+                  });
+                  const groups = heads.map((h, k) => ({
+                    head: h.text,
+                    values: opts.slice(
+                      h.index + 1,
+                      k + 1 < heads.length ? heads[k + 1].index : opts.length
+                    ).map(o => o.value)
+                  }));
+                  return {
+                    values: opts.map(o => o.value),
+                    texts: opts.map(o => o.textContent),
+                    heads: heads.map(h => ({index: h.index, text: h.text})),
+                    groups: groups
+                  };
+                }
+            """)
+            header_texts = [h["text"] for h in rec["heads"]]
+            check("项2 两条禁用表头＝—— 整题OCR ——／—— 文字直取＋公式 ——",
+                  header_texts == GROUP_HEADS, header_texts)
+            check("项2 识别下拉零 optgroup（全平铺）",
+                  canvas.locator("#edRecognizeEngine optgroup").count() == 0)
+            check("项2 自动单独置顶（第 0 项且在任何表头之前）",
+                  bool(rec["values"]) and rec["values"][0] == "auto"
+                  and all(h["index"] > 0 for h in rec["heads"]), rec["values"][:3])
+            combo_vals = rec["groups"][1]["values"] if len(rec["groups"]) > 1 else []
+            whole_vals = rec["groups"][0]["values"] if rec["groups"] else []
+            check("项2 底组＝registry 实际就绪组合（本机装几座 VLM 就几条）",
+                  sorted(combo_vals) == sorted(ready_combos),
+                  {"dropdown": combo_vals, "registry_ready": ready_combos})
+            check("项2 顶组＝就绪整题座（不含 auto／组合）",
+                  sorted(whole_vals) == sorted(whole_ready)
+                  and "auto" not in whole_vals and not (set(whole_vals) & set(declared_combos)),
+                  {"dropdown": whole_vals, "registry_ready": whole_ready})
+            check("项2 条目无「组合路」与「文字直取＋公式·」前缀",
+                  not any("组合路" in t or "文字直取＋公式·" in t for t in rec["texts"]),
+                  [t for t in rec["texts"] if "组合路" in t or "文字直取＋公式·" in t])
             check("项2 版面下拉平铺无 optgroup",
                   canvas.locator("#edLayoutEngine optgroup").count() == 0)
-            page.screenshot(path=str(shots / "02-recognize-groups.png"))
+            # 原生下拉展开层抓不到，克隆到固定浮层拉成 listbox 截图（内容仍来自真 select）。
+            def listbox_shot(select_id: str, name: str) -> None:
+                canvas.locator("#" + select_id).evaluate("""
+                    sel => {
+                      const clone = sel.cloneNode(true);
+                      clone.id = "edProbeListbox";
+                      clone.size = clone.options.length;
+                      clone.style.cssText = "position:fixed;left:24px;top:24px;width:360px;"
+                        + "height:auto;z-index:99999;background:#fff;border:1px solid #888;"
+                        + "box-shadow:0 4px 18px rgba(0,0,0,.25);font-size:14px;";
+                      document.body.appendChild(clone);
+                    }
+                """)
+                page.screenshot(path=str(shots / name))
+                canvas.locator("#edProbeListbox").evaluate("node => node.remove()")
 
-            # ---------- 项7：纯图卷进筐→组合路置灰＋人话 ----------
+            listbox_shot("edRecognizeEngine", "02-recognize-flat.png")
+            listbox_shot("edLayoutEngine", "02b-layout-flat.png")
+
+            # ---------- 项7：纯图卷进筐→组合项置灰＋人话 ----------
             canvas.locator("#edBasketFile").set_input_files(str(png_file))
             expect(canvas.locator("#edBasketList li").first).to_be_visible(timeout=10000)
             page.wait_for_timeout(400)
-            gray = canvas.locator("#edRecognizeEngine option[value='combo_pp_l']").evaluate(
+            gray = canvas.locator("#edRecognizeEngine option[value='%s']" % pick).evaluate(
                 "n => ({disabled: n.disabled, title: n.title})")
             check("项7 纯图卷组合路置灰", gray["disabled"] is True, gray)
             check("项7 置灰带人话（纯图卷·文字直取无从谈起）",
@@ -291,51 +361,51 @@ def main() -> int:
                 "n => n.disabled") if canvas.locator(
                     "#edRecognizeEngine option[value='mineru_local']").count() else False
             check("项7 整题座不受纯图卷置灰", whole_gray is False, whole_gray)
-            page.screenshot(path=str(shots / "03-pure-image-gray.png"))
+            listbox_shot("edRecognizeEngine", "03-pure-image-gray.png")
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
 
             # ---------- 项3：停用组合座→下拉摘除→启用恢复 ----------
             # 组合条目不进配置四栏表（ui_model_table 滤 combo），老师经勾选代笔停用；
             # applyRegistry 按 entry.enabled 摘除（§0 保持现行隐藏语义）。
-            set_prefs({"disabled": ["combo_pp_l"]})
+            set_prefs({"disabled": [pick]})
             check("项3 停用组合座经代笔落隔离插件目录",
-                  "combo_pp_l" in toml_io.load(prefs_file, {}).get("disabled", []))
+                  pick in toml_io.load(prefs_file, {}).get("disabled", []))
             check("项3 data/ 全树无 model_prefs.toml",
                   not list(data_dir.rglob("model_prefs.toml")))
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
-            expect(canvas.locator("#edRecognizeEngine option[value='combo_pp_l']")).to_have_count(
+            expect(canvas.locator("#edRecognizeEngine option[value='%s']" % pick)).to_have_count(
                 0, timeout=15000)
-            check("项3 停用后识别下拉摘除 combo_pp_l", True)
+            check("项3 停用后识别下拉摘除 %s" % pick, True)
             page.screenshot(path=str(shots / "03-combo-disabled.png"))
             set_prefs({"disabled": []})
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
-            expect(canvas.locator("#edRecognizeEngine option[value='combo_pp_l']")).to_have_count(
+            expect(canvas.locator("#edRecognizeEngine option[value='%s']" % pick)).to_have_count(
                 1, timeout=15000)
-            check("项3 启用后识别下拉恢复 combo_pp_l", True)
+            check("项3 启用后识别下拉恢复 %s" % pick, True)
 
             # ---------- 项4：选座→回写上次→刷新初值＝上次；版面独立；归自动 ----------
-            canvas.locator("#edRecognizeEngine").select_option("combo_pp_l")
-            got = wait_prefs("default_recognize", "combo_pp_l")
-            check("项4 画布选识别座回写上次（default_recognize）", got == "combo_pp_l", got)
+            canvas.locator("#edRecognizeEngine").select_option(pick)
+            got = wait_prefs("default_recognize", pick)
+            check("项4 画布选识别座回写上次（default_recognize）", got == pick, got)
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
-            check("项4 刷新后识别初值＝上次 combo_pp_l",
-                  canvas.locator("#edRecognizeEngine").input_value() == "combo_pp_l",
+            check("项4 刷新后识别初值＝上次 %s" % pick,
+                  canvas.locator("#edRecognizeEngine").input_value() == pick,
                   canvas.locator("#edRecognizeEngine").input_value())
             canvas.locator("#edLayoutEngine").select_option("yolo")
             got_l = wait_prefs("default_layout", "yolo")
             check("项4 画布选版面座回写上次（default_layout）", got_l == "yolo", got_l)
             check("项4 版面/识别各记各的（改版面不擦识别记忆）",
-                  toml_io.load(prefs_file, {}).get("default_recognize") == "combo_pp_l")
+                  toml_io.load(prefs_file, {}).get("default_recognize") == pick)
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
             check("项4 刷新后版面初值＝上次 yolo（独立）",
                   canvas.locator("#edLayoutEngine").input_value() == "yolo")
-            check("项4 刷新后识别初值仍＝combo_pp_l（独立）",
-                  canvas.locator("#edRecognizeEngine").input_value() == "combo_pp_l")
+            check("项4 刷新后识别初值仍＝%s（独立）" % pick,
+                  canvas.locator("#edRecognizeEngine").input_value() == pick)
             canvas.locator("#edRecognizeEngine").select_option("auto")
             got_a = wait_prefs("default_recognize", "auto")
             check("项4 识别归自动回写 auto", got_a == "auto", got_a)
@@ -344,20 +414,20 @@ def main() -> int:
             page.screenshot(path=str(shots / "04-last-used.png"))
 
             # ---------- 项5：存过的座被停用→初值归自动 prefs 不擦→启用恢复 ----------
-            set_prefs({"default_recognize": "combo_pp_l", "disabled": ["combo_pp_l"]})
+            set_prefs({"default_recognize": pick, "disabled": [pick]})
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
             check("项5 存过的座被停用→识别初值归自动",
                   canvas.locator("#edRecognizeEngine").input_value() == "auto",
                   canvas.locator("#edRecognizeEngine").input_value())
-            check("项5 归自动不擦 prefs 记忆（default_recognize 仍 combo_pp_l）",
-                  toml_io.load(prefs_file, {}).get("default_recognize") == "combo_pp_l",
+            check("项5 归自动不擦 prefs 记忆（default_recognize 仍 %s）" % pick,
+                  toml_io.load(prefs_file, {}).get("default_recognize") == pick,
                   toml_io.load(prefs_file, {}))
             set_prefs({"disabled": []})
             page.reload(wait_until="networkidle")
             canvas = open_plugin(page)
-            check("项5 启用后刷新识别初值恢复 combo_pp_l",
-                  canvas.locator("#edRecognizeEngine").input_value() == "combo_pp_l",
+            check("项5 启用后刷新识别初值恢复 %s" % pick,
+                  canvas.locator("#edRecognizeEngine").input_value() == pick,
                   canvas.locator("#edRecognizeEngine").input_value())
             page.screenshot(path=str(shots / "05-stored-disabled.png"))
             browser.close()
@@ -396,6 +466,13 @@ def main() -> int:
             capture_output=True, text=True)
         orphan_count = (orphans.stdout or "").strip()
         check("项8 收口孤儿进程零", orphan_count in ("0", ""), {"port": port, "count": orphan_count})
+
+    evidence = ROOT / ".system_generated" / "engine-dropdown" / tag
+    if evidence.exists():
+        shutil.rmtree(evidence)
+    if shots.exists():
+        shutil.copytree(shots, evidence)
+        result["evidence"] = str(evidence)
 
     failed = [c for c in result["checks"] if not c["ok"]]
     result["ok"] = not failed and not result.get("error")

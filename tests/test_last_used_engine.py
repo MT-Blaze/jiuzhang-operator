@@ -12,10 +12,12 @@ EngineUiContractTest / test_editor_contract）；行为的真证由 Playwright �
    default_layout/default_recognize（复用既有键，不新增键）；失败显性 dockWarn 不阻塞；
    加载期 applyRegistry 兜底归 auto **不回写**（卸座不擦记忆）。
 3. 读口不动：applyRegistry 仍按 defs.layout/defs.recognize 注入初值、未就绪归 auto。
-4. 识别下拉两 optgroup（整题OCR／文字直取+公式·X），版面下拉保持扁平；
-   纯图卷筐 combo 置灰＋人话保留；无就绪组合＝底组整组不显示。
+4. 识别下拉自动单独置顶，其余按禁用表头「—— 整题OCR ——／—— 文字直取＋公式 ——」
+   全平铺（不建 optgroup）；版面下拉保持扁平；纯图卷筐 combo 置灰＋人话保留；
+   某组为空＝不出该表头行。
 5. 全组合：catalog 增 combo_pp_l/combo_p2t，weight_present＋store 与公式座同档
-   （就绪随座，零 registry/router 代码改），combo_seat/plan_recognize/capability 齐。
+   （就绪随座，零 registry/router 代码改），combo_seat/plan_recognize/capability 齐；
+   本地 VLM 组合拆三条（千问/书生/面壁），各自随本座就绪。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_last_used_engine``
 """
@@ -102,25 +104,35 @@ class LastUsedWriteBackTest(unittest.TestCase):
 
 
 class RecognizeGroupingTest(unittest.TestCase):
-    """识别下拉两 optgroup；版面扁平；纯图卷 combo 灰保留（卡 §2.4）。"""
+    """自动置顶＋两条禁用表头＋全平铺；版面扁平；纯图卷 combo 灰保留（卡 §2.4）。"""
 
-    def test_two_optgroups_with_card_labels(self) -> None:
+    def test_flat_with_disabled_headers(self) -> None:
         paint = region(INTAKE_JS, "function paintEngineOptions()", "function applyRegistry(")
-        self.assertIn('document.createElement("optgroup")', paint)
-        self.assertIn('whole.label = "整题OCR"', paint)
-        self.assertIn('combo.label = "文字直取+公式·X"', paint)
-        # 组合进底组、其余进顶组。
-        self.assertIn("comboIds.indexOf(id) >= 0 ? combo : whole", paint)
+        # 识别分支不再建 optgroup，改用禁用 option 当表头。
+        self.assertNotIn('document.createElement("optgroup")', paint)
+        self.assertIn('groupHead("—— 整题OCR ——")', paint)
+        self.assertIn('groupHead("—— 文字直取＋公式 ——")', paint)
+        self.assertIn("option.disabled = true", INTAKE_JS)
+        # auto 是自动分流，单独置顶，必须排在两条表头之前。
+        self.assertLess(paint.index('engineOption("auto", spec[0])'),
+                        paint.index('groupHead("—— 整题OCR ——")'))
+        self.assertLess(paint.index('engineOption("auto", spec[0])'),
+                        paint.index('groupHead("—— 文字直取＋公式 ——")'))
+        # 归属仍按 comboIds；auto 显式排除在两组之外。
+        self.assertIn('id !== "auto"', paint)
+        self.assertIn("comboIds.indexOf(id) >= 0", paint)
 
     def test_layout_dropdown_stays_flat(self) -> None:
         paint = region(INTAKE_JS, "function paintEngineOptions()", "function applyRegistry(")
-        # 只有 edRecognizeEngine 分支建 optgroup；版面走 else 扁平 append。
+        # 分组只发生在 edRecognizeEngine 分支；版面走 else 扁平 append。
         self.assertIn('if (spec[0] === "edRecognizeEngine")', paint)
         self.assertIn("select.appendChild(engineOption(id, spec[0]))", paint)
 
-    def test_empty_combo_group_hidden(self) -> None:
+    def test_empty_group_header_hidden(self) -> None:
         paint = region(INTAKE_JS, "function paintEngineOptions()", "function applyRegistry(")
-        self.assertIn("if (combo.childNodes.length) select.appendChild(combo)", paint)
+        self.assertIn("if (whole.length)", paint)
+        self.assertIn("if (combos.length)", paint)
+        self.assertNotIn("childNodes.length", paint)
 
     def test_pure_image_combo_disable_preserved(self) -> None:
         helper = region(INTAKE_JS, "function engineOption(", "function paintEngineOptions(")
@@ -154,8 +166,26 @@ class FullComboCatalogTest(unittest.TestCase):
                 self.assertIn('store = "%s"' % store, block)
 
     def test_new_combo_names_follow_card(self) -> None:
-        self.assertIn('name = "文字直取+公式·PP-FormulaNet·L"', CATALOG)
-        self.assertIn('name = "文字直取+公式·Pix2Text·MFR"', CATALOG)
+        for name in ("PP-FormulaNet·M", "PP-FormulaNet·L", "Pix2Text·MFR", "Texify"):
+            with self.subTest(name=name):
+                self.assertIn('name = "%s"' % name, CATALOG)
+        self.assertIn('name = "云端 AI OCR"', CATALOG)
+
+    def test_vlm_combo_split_into_three_seats(self) -> None:
+        self.assertNotIn('id = "combo_vlm"', CATALOG,
+                         "旧的合体 combo_vlm 已拆三座，不得残留")
+        for combo_id, seat, name in (
+                ("combo_vlm_qwen", "vlm_qwen", "千问 Qwen2.5-VL（本地）"),
+                ("combo_vlm_intern", "vlm_intern", "书生 InternVL3-2B（本地）"),
+                ("combo_vlm_minicpm", "vlm_minicpm", "面壁 MiniCPM-V-2.6（本地）")):
+            with self.subTest(combo=combo_id):
+                block = region(CATALOG, 'id = "%s"' % combo_id, "[[entry]]")
+                self.assertIn('name = "%s"' % name, block)
+                self.assertIn('rule = "vlm_local"', block)
+                self.assertIn('combo_seat = "%s"' % seat, block)
+                self.assertIn('plan_recognize = ["combo"]', block)
+                self.assertIn("文字层取", block)
+                self.assertIn("纯图卷", block)
 
     def test_combo_pp_m_untouched(self) -> None:
         # 转正（COMBO-PPM-READY-01）：import_probe「能导入就恒绿」已修，

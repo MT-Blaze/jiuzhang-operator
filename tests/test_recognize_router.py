@@ -234,7 +234,7 @@ class RecognizeComboPickTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
                 "mineru": mineru_mock}
 
     def test_combo_plan_comes_from_catalog(self) -> None:
-        for engine in ("combo_cloud", "combo_vlm", "combo_pp_m"):
+        for engine in ("combo_cloud", "combo_vlm_qwen", "combo_pp_m"):
             with self.subTest(engine=engine):
                 self.assertEqual(recognize_router.normalize_engine(engine), engine)
                 self.assertEqual(recognize_router.plan(engine), ("combo",))
@@ -253,13 +253,14 @@ class RecognizeComboPickTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         self.assertIn("识别·组合路", steps)
 
     async def test_untriaged_route_also_refuses_combo(self) -> None:
-        outcome = await self._run("combo_vlm", {})
+        outcome = await self._run("combo_vlm_qwen", {})
         outcome["combo"].assert_not_called()
         self.assertIn("纯图卷", outcome["route"]["note"])
 
     async def test_text_layer_pick_runs_declared_seat_only(self) -> None:
         for engine, seat in (("combo_cloud", "cloud_vision"),
-                             ("combo_vlm", "vlm_qwen"),
+                             ("combo_vlm_qwen", "vlm_qwen"),
+                             ("combo_vlm_intern", "vlm_intern"),
                              ("combo_pp_m", "formula_pp_m")):
             with self.subTest(engine=engine):
                 outcome = await self._run(engine, {"text_layer": True})

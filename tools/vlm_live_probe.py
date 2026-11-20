@@ -332,11 +332,11 @@ def main() -> int:
             check("初始 vlm_%s 未就绪＋install_vlm_%s（vlm_local/can_cpu）" % (seat, seat),
                   entry.get("state") == "degraded" and entry.get("action") == "install_vlm_" + seat
                   and entry.get("rule") == "vlm_local" and entry.get("can_cpu") is True, entry)
-        check("千问座/组合路未装引导＋texify 登记跳过不动",
+        check("千问座/千问组合未装引导＋texify 登记跳过不动",
               (by_id.get("vlm_qwen") or {}).get("action") == "install_vlm"
-              and (by_id.get("combo_vlm") or {}).get("state") == "degraded"
+              and (by_id.get("combo_vlm_qwen") or {}).get("state") == "degraded"
               and (by_id.get("formula_texify") or {}).get("state") == "blocked",
-              {k: (by_id.get(k) or {}).get("state") for k in ("vlm_qwen", "combo_vlm", "formula_texify")})
+              {k: (by_id.get(k) or {}).get("state") for k in ("vlm_qwen", "combo_vlm_qwen", "formula_texify")})
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 900})
