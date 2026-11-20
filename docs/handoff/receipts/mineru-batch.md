@@ -37,7 +37,8 @@ LICENSE/铁律一二/question_contract.py/用户 data/ 禁改；onnx_probe.py �
   - 新增 `tests/test_mineru_batch.py`（497 行，20 用例）。
 - `8cd8b20` chore(index)：`plugins.toml` 同步 editor 2.23.1（sync_plugin_index rc0）。
 - `24375c1` test(ingest)：新增 `tools/mineru_batch_live_probe.py`（414 行真机探针）＋`docs/handoff/evidence/mineru-batch-live/{make_fixture.py,wiretap_sitecustomize.py,run4/(probe.toml,wireA.toml,wireB.toml,shots×10)}`＋`docs/handoff/evidence/mineru-batch-recon/live-receipt-check.md`（§1.2 回执核）。
-- 本回单＋biz 记录（收口笔，见下）。
+- `121d4a7` docs(receipt)：本回单 `docs/handoff/receipts/mineru-batch.md`＋biz 记录 `.qoder/records/biz/2026-11/20261120_mineru-batch.md`（收口笔）。
+- 本勘误笔：回单 ahead 计数勘误（按笔数记，免随 commit 漂移）。
 
 ### 插件仓（E:\jiuzhang\jiuzhang-plugins）
 
@@ -95,6 +96,6 @@ LICENSE/铁律一二/question_contract.py/用户 data/ 禁改；onnx_probe.py �
 
 ## 需主公点什么
 
-- 两仓 push 授权（本卡奉令 hold，未 push；operator 现 ahead 65／plugins ahead 19）。
+- 两仓 push 授权（本卡奉令 hold，未 push；operator 本卡六笔＝侦查/代码/同步/探针证据/回单/本勘误，基线 ahead 61→现 ahead 67／plugins 一笔，基线 ahead 18→现 ahead 19）。
 - 正式产品（65496 PID 12000）若要享受整批提速，需主公重启加载新码（本卡零接触正式服务，新码已在隔离副本真测验证）；editor 2.23.1 zip 已就绪（`3405a49a…`），按既有安装链落地即可。
 - 官方 50 vs 200 上限矛盾：若主公愿意，可向 MinerU 官方澄清后放宽 BATCH_MAX_FILES（现保守 50 不影响任何≤50 题批次）。
