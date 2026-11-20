@@ -5,6 +5,7 @@
 懒起原生 llama-server（Vulkan/CUDA -ngl 999，显存不够 -ngl 0 CPU 慢兜底）／
 动态端口＋每次随机令牌／健康同座复用／异座显式切换先停旧座／并发锁防双起／
 提前退出与超时显性失败／stop 杀整棵进程树＋端口复验／endpoint 只读不触发起服。
+生命周期小刀：/props 自检模型名（死实例不复用，fail-closed）／20 分钟闲停看门狗。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_vlm_service``
 """
 
@@ -13,9 +14,11 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
+from app.core import wire
 from app.core.ingest.recognize import vlm_service as service
 
 
@@ -37,12 +40,28 @@ class FakeProc:
         pass
 
 
+class FakePropsResponse:
+    def __init__(self, body: bytes = b"", status: int = 200) -> None:
+        self._body = body
+        self.status = status
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> "FakePropsResponse":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        return None
+
+
 class VlmServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
-        for name in ("_PROC", "_PORT", "_TOKEN", "_SEAT", "_LOG_HANDLE"):
+        for name in ("_PROC", "_PORT", "_TOKEN", "_SEAT", "_LOG_HANDLE",
+                     "_LAST_USED", "_WATCHDOG"):
             self.addCleanup(setattr, service, name, getattr(service, name))
         self.addCleanup(self._close_log)
         service._PROC = None
@@ -50,6 +69,12 @@ class VlmServiceTest(unittest.TestCase):
         service._TOKEN = ""
         service._SEAT = ""
         service._LOG_HANDLE = None
+        service._LAST_USED = 0.0
+        service._WATCHDOG = None
+        self.real_start_watchdog = service._start_watchdog
+        patcher = mock.patch.object(service, "_start_watchdog")
+        self.watchdog_start = patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(service.vlm_setup, "engine_dir",
                                     return_value=self.root)
         patcher.start()
@@ -159,7 +184,9 @@ class VlmServiceTest(unittest.TestCase):
     def test_running_healthy_service_is_reused(self) -> None:
         self._materialize()
         with self._popen() as popen, \
-                mock.patch.object(service, "_health_ok", return_value=True):
+                mock.patch.object(service, "_health_ok", return_value=True), \
+                mock.patch.object(service, "_serves_expected_model",
+                                  return_value=True):
             service.start()
             again = service.start()
         self.assertTrue(again["ok"])
@@ -170,7 +197,9 @@ class VlmServiceTest(unittest.TestCase):
         self._materialize()
         results: list[dict] = []
         with self._popen() as popen, \
-                mock.patch.object(service, "_health_ok", return_value=True):
+                mock.patch.object(service, "_health_ok", return_value=True), \
+                mock.patch.object(service, "_serves_expected_model",
+                                  return_value=True):
             threads = [threading.Thread(target=lambda: results.append(service.start()))
                        for _ in range(2)]
             for thread in threads:
@@ -269,12 +298,133 @@ class VlmServiceTest(unittest.TestCase):
     def test_same_seat_healthy_reuse_does_not_kill(self) -> None:
         self._materialize("intern")
         with self._popen() as popen, \
-                mock.patch.object(service, "_health_ok", return_value=True):
+                mock.patch.object(service, "_health_ok", return_value=True), \
+                mock.patch.object(service, "_serves_expected_model",
+                                  return_value=True):
             service.start("intern")
             again = service.start("intern")
         self.assertIn("复用", again["detail"])
         self.assertEqual(popen.call_count, 1)
         self.kill_run.assert_not_called()
+
+    def test_healthy_service_with_expected_weights_is_reused(self) -> None:
+        self._materialize()
+        model = service.vlm_setup.model_paths("qwen")[0]
+        body = wire.dumps({"model_path": str(model)}).encode("utf-8")
+        with self._popen() as popen, \
+                mock.patch.object(service, "_health_ok", return_value=True), \
+                mock.patch.object(service.urllib.request, "urlopen",
+                                  return_value=FakePropsResponse(body)):
+            service.start()
+            again = service.start()
+        self.assertTrue(again["ok"])
+        self.assertIn("复用", again["detail"])
+        self.assertEqual(popen.call_count, 1)
+        self.kill_run.assert_not_called()
+
+    def test_healthy_service_with_stale_weights_is_restarted(self) -> None:
+        self._materialize()
+        body = wire.dumps({"model_path": "E:/old/Old-Qwen.gguf"}).encode("utf-8")
+        with self._popen() as popen, \
+                mock.patch.object(service, "_health_ok", return_value=True), \
+                mock.patch.object(service.urllib.request, "urlopen",
+                                  return_value=FakePropsResponse(body)), \
+                self.assertLogs(service.logger, level="WARNING") as logs:
+            service.start()
+            again = service.start()
+        self.assertTrue(again["ok"])
+        self.assertNotIn("复用", again["detail"])
+        self.assertEqual(popen.call_count, 2)
+        self.kill_run.assert_called()
+        self.assertTrue(any("复用自检不通过" in line for line in logs.output))
+
+    def test_props_selfcheck_compares_expected_model_name(self) -> None:
+        model = service.vlm_setup.model_paths("qwen")[0]
+        body = wire.dumps({"model_path": "D:/weights/" + model.name}).encode("utf-8")
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               return_value=FakePropsResponse(body)) as urlopen:
+            result = service._serves_expected_model("http://127.0.0.1:1", "tok", model)
+        self.assertTrue(result)
+        request = urlopen.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/props"))
+        self.assertEqual(request.get_header("Authorization"), "Bearer tok")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 5)
+
+    def test_props_selfcheck_mismatch_or_failures_are_fail_closed(self) -> None:
+        model = service.vlm_setup.model_paths("qwen")[0]
+        args = ("http://127.0.0.1:1", "tok", model)
+        stale = wire.dumps({"model_path": "D:/weights/Old-Qwen.gguf"}).encode("utf-8")
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               return_value=FakePropsResponse(stale)):
+            self.assertFalse(service._serves_expected_model(*args))
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               return_value=FakePropsResponse(b"", status=404)):
+            self.assertFalse(service._serves_expected_model(*args))
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               side_effect=urllib.error.URLError("refused")):
+            self.assertFalse(service._serves_expected_model(*args))
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               side_effect=TimeoutError("timeout")):
+            self.assertFalse(service._serves_expected_model(*args))
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               return_value=FakePropsResponse(b"not-json")):
+            self.assertFalse(service._serves_expected_model(*args))
+        with mock.patch.object(service.urllib.request, "urlopen",
+                               return_value=FakePropsResponse(wire.dumps({}).encode())):
+            self.assertFalse(service._serves_expected_model(*args))
+
+    def test_watchdog_stops_only_when_idle_expired(self) -> None:
+        self.assertTrue(service._idle_expired(
+            100.0, 100.0 + service.WARM_IDLE_SECONDS + 1))
+        self.assertFalse(service._idle_expired(
+            100.0, 100.0 + service.WARM_IDLE_SECONDS))
+        self.assertFalse(service._idle_expired(0.0, 10 ** 9))
+        self._materialize()
+        with self._popen(FakeProc(pid=777)), \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            service.start()
+        now = service.time.monotonic()
+        service._LAST_USED = now - (service.WARM_IDLE_SECONDS + 1)
+        self.assertTrue(service._watchdog_tick(now))
+        self.assertIsNone(service._PROC)
+        self.assertIsNone(service.endpoint())
+        self.assertEqual(self.kill_run.call_args.args[0],
+                         ["taskkill", "/PID", "777", "/T", "/F"])
+
+    def test_watchdog_keeps_service_within_idle_window(self) -> None:
+        self._materialize()
+        with self._popen(), \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            service.start()
+        self.assertFalse(service._watchdog_tick(service.time.monotonic()))
+        self.assertIsNotNone(service._PROC)
+        self.kill_run.assert_not_called()
+
+    def test_touch_refreshes_idle_clock(self) -> None:
+        self._materialize()
+        with self._popen(), \
+                mock.patch.object(service, "_health_ok", return_value=True):
+            service.start()
+        now = service.time.monotonic()
+        service._LAST_USED = now - (service.WARM_IDLE_SECONDS + 60)
+        service.touch()
+        self.assertFalse(service._watchdog_tick(now))
+        self.assertIsNotNone(service._PROC)
+        self.kill_run.assert_not_called()
+
+    def test_touch_without_running_service_is_silent(self) -> None:
+        service._LAST_USED = 123.0
+        service.touch()
+        self.assertEqual(service._LAST_USED, 123.0)
+
+    def test_watchdog_thread_starts_only_once(self) -> None:
+        service._WATCHDOG = None
+        with mock.patch.object(service.threading, "Thread") as thread_cls:
+            thread_cls.return_value.is_alive.return_value = True
+            self.real_start_watchdog()
+            self.real_start_watchdog()
+        self.assertEqual(thread_cls.call_count, 1)
+        thread_cls.return_value.start.assert_called_once()
 
     def test_active_seat_empty_when_stopped(self) -> None:
         self.assertEqual(service.active_seat(), "")

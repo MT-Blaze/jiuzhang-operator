@@ -47,6 +47,15 @@ def _data_url(png: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
+def _touch() -> None:
+    """闲停计时划线；延迟 import 防循环依赖，失败不许影响识别。"""
+    try:
+        from app.core.ingest.recognize import vlm_service  # noqa: PLC0415
+        vlm_service.touch()
+    except Exception:  # noqa: BLE001 - 计时写不进去不该打断识别
+        pass
+
+
 def _chat(png: bytes, prompt: str, endpoint: dict[str, str], *,
           wait: float = VLM_LOCAL_WAIT_SECONDS) -> dict[str, Any]:
     """一次 chat completions（单图＋提示词）；失败如实回报，不抛。"""
@@ -69,6 +78,7 @@ def _chat(png: bytes, prompt: str, endpoint: dict[str, str], *,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + token},
         method="POST")
+    _touch()
     try:
         with urllib.request.urlopen(request, timeout=max(1.0, wait)) as response:
             body = wire.loads(response.read().decode("utf-8", errors="replace"))
@@ -76,6 +86,8 @@ def _chat(png: bytes, prompt: str, endpoint: dict[str, str], *,
         return {"ok": False, "detail": "本地 VLM 推理失败：HTTP %d" % exc.code}
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         return {"ok": False, "detail": "本地 VLM 推理失败：%s" % str(exc)[:200]}
+    finally:
+        _touch()
     choices = body.get("choices") if isinstance(body, dict) else None
     message = (choices[0] or {}).get("message") if isinstance(choices, list) and choices else None
     text = str((message or {}).get("content") or "").strip()
