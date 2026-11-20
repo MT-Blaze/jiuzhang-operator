@@ -21,8 +21,9 @@ from app.core.ai.platform import center as ai_center
 from app.core.ai.recognition import recognize as ai_recognize
 from app.core.content import scan_text
 from app.core.ingest.recognize import (
-    formula_p2t, formula_pp_l, formula_pp_m, formula_texify, mineru_extract, mineru_local,
-    mineru_service, shared as recognize_shared, vlm_local, vlm_service,
+    formula_p2t, formula_pp_l, formula_pp_m, formula_texify, inline_formula_images,
+    mineru_extract, mineru_local, mineru_service, shared as recognize_shared,
+    vlm_local, vlm_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -202,7 +203,9 @@ def discover_spans(item: dict[str, Any], page_images: list[dict[str, Any]] | Non
     if spans:
         return spans
     if page_images and pdf_bytes:
-        return _textlayer_spans(item, page_images, pdf_bytes)
+        spans = _textlayer_spans(item, page_images, pdf_bytes)
+        inline = inline_formula_images.discover(item, page_images, pdf_bytes, spans)
+        return inline_formula_images.merge_spans(spans, inline)
     return []
 
 
