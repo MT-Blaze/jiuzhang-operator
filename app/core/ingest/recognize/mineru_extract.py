@@ -11,7 +11,8 @@
 MinerU 只是备选通道，绝不能因为它连不上就吞掉整批卷子。
 
 整批识别走 ``extract_batch``（一次申请整批地址、并行上传、单循环轮询、
-逐份 outcome 与入参同序）；单题 ``extract`` 保留给单题重认路，一字不动。
+逐份 outcome 与入参同序）；生产路径的超量拆批调度在 ``mineru_batching``，
+单题 ``extract`` 保留给单题重认路，一字不动。
 """
 
 from __future__ import annotations
@@ -36,8 +37,10 @@ MAX_WAIT_SECONDS = 900.0
 MAX_ZIP_BYTES = 64 * 1024 * 1024
 MAX_MARKDOWN_CHARS = 600_000
 # 官方接口节逐字「单次申请链接不能超过 50 个」（总表写 200，取保守侧；
-# 证据 docs/handoff/evidence/mineru-batch-recon/recon.md）。超出按 50 切批。
-BATCH_MAX_FILES = 50
+# 证据 docs/handoff/evidence/mineru-batch-recon/recon.md）。产品侧再收紧：
+# 2026-11-20 拍板单批 40 页稳定，80 页会让第二批进云端排队、行为不可控，
+# 故 40 页/批；生产路径的分批调度见 mineru_batching。
+BATCH_MAX_FILES = 40
 UPLOAD_WORKERS = 4
 
 

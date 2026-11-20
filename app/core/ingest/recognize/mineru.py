@@ -1,8 +1,9 @@
-"""MinerU 云端识别：本地切好单题截图后整批一次发送、逐题回填。
+"""MinerU 云端识别：本地切好单题截图后整批发送、逐题回填。
 
 绝不整卷上传，也绝不把别家题的结果套到这一道上：一批 N 份单题截图一次
 申请上传地址，轮询按 data_id 认行，题↔结果一一对应。整批等待上限沿用
 15 分钟口径；到点已回的行照回填，未回的行逐题显性失败账本，不整批作废。
+超过单批上限时由 ``mineru_batching`` 拆批顺序发送，前一批回来才发下一批；
 进度逐题写回批次路由，老师在底部日志里看得见「已回 N/M 题」。
 """
 
@@ -12,7 +13,7 @@ import asyncio
 import logging
 from typing import Any, Callable
 
-from app.core.ingest.recognize import mineru_extract
+from app.core.ingest.recognize import mineru_batching
 from app.core.ai.platform import center as ai_center
 from app.core.ingest.recognize import shared as recognize_shared
 
@@ -43,7 +44,10 @@ async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
         prepared.append((position, index, data))
     filled_indexes: list[int] = []
     if prepared:
-        note = "已将 %d 题单题截图整批发送至 MinerU 云端解析..." % len(prepared)
+        rounds = mineru_batching.batch_count(len(prepared))
+        note = ("已将 %d 题单题截图分 %d 批发送至 MinerU 云端解析..." % (len(prepared), rounds)
+                if rounds > 1
+                else "已将 %d 题单题截图整批发送至 MinerU 云端解析..." % len(prepared))
         logger.info(note)
         route["note"] = note
         _progress(on_progress, route)
@@ -52,14 +56,19 @@ async def run(batch_id: str, items: list[dict[str, Any]], indexes: list[int],
             route["note"] = "MinerU 云端整批解析中：已回 %d/%d 题" % (settled, count)
             _progress(on_progress, route)
 
+        def poll_batch(number: int, total_batches: int, _first: int, _last: int) -> None:
+            route["note"] = "分批识别中（第 %d/%d 批）" % (number, total_batches)
+            _progress(on_progress, route)
+
         outcomes = await asyncio.to_thread(
-            mineru_extract.extract_batch,
+            mineru_batching.extract_in_batches,
             [("第%d题.png" % position, data) for position, _index, data in prepared],
             binding.base_url,
             binding.api_key,
             model=binding.model or "mineru",
             wait=MINERU_WAIT_SECONDS,
             on_progress=poll_progress,
+            on_batch=poll_batch,
         )
         for (position, index, _data), outcome in zip(prepared, outcomes):
             if not outcome.get("ok"):

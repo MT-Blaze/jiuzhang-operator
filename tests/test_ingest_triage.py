@@ -25,7 +25,8 @@ from app.core.pending import service
 from app.core.ai.platform import center as ai_center
 from app.core.ingest.quality import question_reasons, triage_documents
 from app.core.ingest.layout import router as layout_router
-from app.core.ingest.recognize import (ai as recognize_ai, mineru as recognize_mineru, router as recognize_router)
+from app.core.ingest.recognize import (ai as recognize_ai, mineru as recognize_mineru,
+                                       mineru_extract, router as recognize_router)
 from tests.catalog_fixture import CatalogIsolated
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -359,9 +360,9 @@ class MineruPerQuestionTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
                                   side_effect=lambda _item: b"\x89PNG-question"), \
                 mock.patch.object(ai_center, "find_mineru",
                                   return_value=binding("mineru")), \
-                mock.patch.object(recognize_mineru.mineru_extract, "extract_batch",
+                mock.patch.object(mineru_extract, "extract_batch",
                                   side_effect=fake_extract_batch) as extract_batch, \
-                mock.patch.object(recognize_mineru.mineru_extract, "extract") as extract, \
+                mock.patch.object(mineru_extract, "extract") as extract, \
                 mock.patch.object(ingest_route, "save_route",
                                   side_effect=capture_route) as save_route:
             with self.assertLogs("app.core.ingest.recognize.mineru",
