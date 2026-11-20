@@ -9,7 +9,7 @@ import re
 import zipfile
 from typing import Any
 
-from app.core.ingest.intake import docx_classify
+from app.core.ingest.intake import docx_classify, exam_zh
 from app.core.content import dollar_number, question_parser
 
 __all__ = [
@@ -49,11 +49,6 @@ IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg",
 
 _DATA_URL_RE = re.compile(r"^data:([\w./+-]+);base64,([A-Za-z0-9+/=]+)$")
 
-# exam-zh 版式（录题工作台的源码格式）。
-_ENV_RE = re.compile(r"\\begin\{(question|problem)\}([\s\S]*?)\\end\{\1\}")
-_SOLUTION_RE = re.compile(r"\\begin\{solution\}([\s\S]*?)\\end\{solution\}")
-_CHOICES_RE = re.compile(r"\\begin\{choices\}([\s\S]*?)\\end\{choices\}")
-_ITEM_SPLIT_RE = re.compile(r"\\item\b")
 _ANSWER_HEAD_RE = re.compile(r"^\s*答案\s*[:：]\s*([^\n]*)")
 
 # 普通文本的题号头：「1.」「1、」「（1）」「第 1 题」。
@@ -182,35 +177,6 @@ def extract_docx_document(data: bytes) -> tuple[str, list[str], bool]:
     return result.text, result.warnings, False
 
 
-def _split_exam_zh(text: str) -> list[dict[str, Any]]:
-    """把整段 exam-zh 源码切成一道道题。"""
-    blocks: list[dict[str, Any]] = []
-    matches = list(_ENV_RE.finditer(text))
-    for index, match in enumerate(matches):
-        stop = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        tail = text[match.end():stop]
-        solution = _SOLUTION_RE.search(tail)
-        blocks.append({
-            "env": match.group(1),
-            "body": match.group(2),
-            "solution": solution.group(1) if solution else "",
-        })
-    return blocks
-
-
-def _choices_of(body: str) -> tuple[str, list[str]]:
-    """从题干里摘出 ``\\begin{choices}`` 选项块，返回 (剩下的题干, 选项列表)。"""
-    match = _CHOICES_RE.search(body)
-    if not match:
-        return body, []
-    items = [item.strip() for item in _ITEM_SPLIT_RE.split(match.group(1))]
-    choices = [item for item in items if item]
-    if len(choices) < 2:
-        return body, []
-    rest = body[:match.start()] + body[match.end():]
-    return rest, choices
-
-
 def _match_choice_keys(answer_text: str, options: list[dict[str, str]]) -> list[str]:
     """把答案文字对上选项字母：对不上就返回空（**绝不猜**）。"""
     text = str(answer_text or "").strip()
@@ -270,7 +236,7 @@ def _document(stem: str, options: list[dict[str, str]], answer_text: str,
 
 def _document_from_exam_zh(block: dict[str, Any]) -> dict[str, Any] | None:
     """一段 exam-zh 源码 → 一道题；拆不出题干就返回 None（如实跳过）。"""
-    body, choices = _choices_of(block["body"])
+    body, choices = exam_zh.choices_of(block["body"])
     stem = body.strip()
     if not stem:
         return None
@@ -363,7 +329,7 @@ def build_documents(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     先认 exam-zh 版式；认不出再按题号切；再不行按空行切。
     """
     warnings: list[str] = []
-    blocks = _split_exam_zh(text)
+    blocks = exam_zh.split_exam_zh(text)
     if blocks:
         documents: list[dict[str, Any]] = []
         for block in blocks:
