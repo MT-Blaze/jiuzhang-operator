@@ -240,6 +240,31 @@ class CleanQuestionTest(unittest.TestCase):
         self.assertIn("$3$", document["stem"], "入参不许被就地修改")
 
 
+class DollarNumberCleanQuestionTest(unittest.TestCase):
+    """#CLEAN-DOLLAR-NUMBER-01T：clean_question 各字段拆纯数字 $ 的集成断言。"""
+
+    def test_fields_are_unwrapped_and_source_kept(self) -> None:
+        document = {
+            "stem": "已知有 $3$ 个",
+            "solution": "答案 $3$",
+            "options": [
+                {"key": "A", "content": "$2x$"},
+                {"key": "B", "content": "$5$"},
+            ],
+            "answer": {"kind": "text", "content": "$3$"},
+        }
+        cleaned, _issues = clean_question(document)
+        self.assertEqual(cleaned["stem"], "已知有 3 个")
+        self.assertEqual(cleaned["solution"], "答案 3")
+        self.assertEqual([option["content"] for option in cleaned["options"]], ["$2x$", "5"])
+        self.assertEqual(cleaned["answer"]["content"], "3")
+        self.assertIsNot(cleaned, document)
+        self.assertEqual(document["stem"], "已知有 $3$ 个")
+        self.assertEqual(document["solution"], "答案 $3$")
+        self.assertEqual(document["options"][1]["content"], "$5$")
+        self.assertEqual(document["answer"]["content"], "$3$")
+
+
 class ParseQuestionTest(unittest.TestCase):
     def test_01_end_to_end_pipeline(self) -> None:
         source = (

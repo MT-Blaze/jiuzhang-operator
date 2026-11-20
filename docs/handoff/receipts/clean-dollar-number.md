@@ -80,3 +80,6 @@ Ran 146 tests ... OK  rc=0
   非法嵌套 `$3$` 会被行内支拆掉，补了「先整段跳过 `$$`」的边界补丁（模块 21→33 行）；因卡面
   「不 amend」未改写首笔，该补丁随本收口笔一并提交（本笔含 `dollar_number.py` 一处代码改动），
   两笔合计仍为 ahead 101→103。三处接入、插件、版本号均无额外改动。
+- 补测（#CLEAN-DOLLAR-NUMBER-01T）：`tests/test_question_parser.py` 新增 `DollarNumberCleanQuestionTest`，
+  断言 `clean_question` 对 stem/solution/options/answer 拆纯数字 `$`（`$2x$` 保留）且不就地修改入参；
+  commit hash 见本笔。
