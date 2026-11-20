@@ -7,7 +7,7 @@
 天然不入副本）＋独立 JZO_DATA_DIR / JZO_PLUGINS_DIR＋动态空闲端口＋每次随机
 本地令牌（不写死端口与令牌），不碰用户 data/ 与正式服务（65496 零接触）。
 engines/ 只读体检走本机真实权重（装了几座公式/VLM 座就认几座，底组不写死）；
-云视觉座由宿主写口本地种一个 dummy 账号（base_url 用 .invalid 域，零出网）使
+云端 AI OCR 座由宿主写口本地种一个 dummy 账号（base_url 用 .invalid 域，零出网）使
 combo_cloud 就绪。收口点杀进程并复验端口关闭＋孤儿零。产物落
 .system_generated/last-used-engine/<tag>/，证据另拷 docs/handoff/evidence/last-used-engine/。
 
@@ -121,9 +121,9 @@ def archive_plugin(plugin_dir: Path) -> None:
 
 
 def seed_cloud_account(base: str, token: str) -> None:
-    """本地种一个 dummy 云视觉账号＋指派 ocr 任务（.invalid 域零出网），使 combo_cloud 就绪。"""
+    """本地种一个 dummy 云端 AI OCR 账号＋指派 ocr 任务（.invalid 域零出网），使 combo_cloud 就绪。"""
     code, body = http_json(base, "/api/ai-center/accounts",
-                           {"name": "探针云视觉", "base_url": "https://probe.invalid/v1",
+                           {"name": "探针云端 AI OCR", "base_url": "https://probe.invalid/v1",
                             "api_key": "probe-dummy-key"}, token=token)
     if code != 200:
         raise RuntimeError("种云账号失败：%s %s" % (code, body))

@@ -101,13 +101,13 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
         pending = recognize_shared.remaining(pending, ai)
         route["mode"] = picked
         if ai.get("ok") and not pending:
-            route["note"] = "云端视觉逐题识别完成：%d/%d 道回填成功。" % (
+            route["note"] = "云端 AI OCR 逐题识别完成：%d/%d 道回填成功。" % (
                 ai["filled"], ai["attempted"])
         else:
-            reason = "云端视觉识别未全部成功（%s），只走选中引擎，不降级，保留本地切图待人工核对。" % (
+            reason = "云端 AI OCR 识别未全部成功（%s），只走选中引擎，不降级，保留本地切图待人工核对。" % (
                 ai.get("detail") or "不可用")
             route["note"] = reason + (("，%d 道保持本地切图" % len(pending)) if pending else "")
-            _surface(route, "识别·云端视觉", reason, str(ai.get("detail") or ""))
+            _surface(route, "识别·云端 AI OCR", reason, str(ai.get("detail") or ""))
     elif steps == ("mineru",):
         binding = ai_center.find_mineru()
         if binding is None:
@@ -168,7 +168,7 @@ async def _fill_single(picked: str, batch_id: str, items: list[dict[str, Any]],
         route["mode"] = picked
         if not bool(route.get("text_layer")):
             reason = ("组合路只支持带文字层的卷子：这份是纯图卷，文字直取无从谈起。"
-                      "请选整题直转座（MinerU·本地/云端、本地VLM、云端视觉），不降级不偷换。")
+                      "请选整题直转座（MinerU·本地/云端、本地VLM、云端 AI OCR），不降级不偷换。")
             route["note"] = reason
             _surface(route, "识别·组合路", reason, "text_layer=False，组合路只支持文字卷")
         else:

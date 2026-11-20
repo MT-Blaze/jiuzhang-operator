@@ -51,16 +51,16 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
                 "detail": "组合路是整批链路（文字直取＋公式裁图），不支持单题重认；请选整题座。"}
     if step == "formula_pp_m":
         return {"ok": False,
-                "detail": "PP-FormulaNet·M 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
+                "detail": "PP-FormulaNet·M 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端 AI OCR/本地VLM）。"}
     if step == "formula_pp_l":
         return {"ok": False,
-                "detail": "PP-FormulaNet·L 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
+                "detail": "PP-FormulaNet·L 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端 AI OCR/本地VLM）。"}
     if step == "formula_p2t":
         return {"ok": False,
-                "detail": "Pix2Text·MFR 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
+                "detail": "Pix2Text·MFR 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端 AI OCR/本地VLM）。"}
     if step == "formula_texify":
         return {"ok": False,
-                "detail": "Texify 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"}
+                "detail": "Texify 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端 AI OCR/本地VLM）。"}
     url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     if step == "ai":
         binding = ai_center.resolve_task("ocr")
@@ -70,9 +70,9 @@ async def _whole_question(entry: dict[str, Any], png: bytes,
             outcome = await ai_recognize.recognize(
                 [url], context=recognize_shared.context_of(item), task="ocr")
         except Exception as exc:  # noqa: BLE001 - 出网失败显性
-            return {"ok": False, "detail": "云端视觉识别失败：%s" % str(exc)[:200]}
+            return {"ok": False, "detail": "云端 AI OCR 识别失败：%s" % str(exc)[:200]}
         if not outcome.get("ok") or not outcome.get("question"):
-            return {"ok": False, "detail": str(outcome.get("detail") or "云端视觉没认出这道题")}
+            return {"ok": False, "detail": str(outcome.get("detail") or "云端 AI OCR 没认出这道题")}
         return {"ok": True, "question": outcome["question"]}
     if step == "vlm_local":
         ready = await asyncio.to_thread(

@@ -148,7 +148,7 @@ class DispatchTest(unittest.IsolatedAsyncioTestCase):
                                   mock.AsyncMock(side_effect=RuntimeError("出网断了"))):
             outcome = await formula.dispatch({"plan_recognize": ["ai"]}, b"png", _item())
         self.assertFalse(outcome["ok"])
-        self.assertIn("云端视觉公式识别失败", outcome["detail"])
+        self.assertIn("云端 AI OCR 公式识别失败", outcome["detail"])
 
     async def test_local_vlm_seat_reuses_single_image_ability(self) -> None:
         ready = {"ok": True, "base_url": "http://127.0.0.1:43210", "token": "tok"}

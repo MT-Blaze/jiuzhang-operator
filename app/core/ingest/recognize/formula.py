@@ -230,12 +230,12 @@ async def dispatch(entry: dict[str, Any], png: bytes,
                 [url], context={"type": "formula", "stem": "", "question_no": ""},
                 task="ocr")
         except Exception as exc:  # noqa: BLE001 - 出网失败显性
-            return {"ok": False, "detail": "云端视觉公式识别失败：%s" % str(exc)[:200]}
+            return {"ok": False, "detail": "云端 AI OCR 公式识别失败：%s" % str(exc)[:200]}
         if not outcome.get("ok") or not outcome.get("question"):
-            return {"ok": False, "detail": str(outcome.get("detail") or "云端视觉没认出公式")}
+            return {"ok": False, "detail": str(outcome.get("detail") or "云端 AI OCR 没认出公式")}
         latex = _strip_math(str(outcome["question"].get("stem") or ""))
         return {"ok": bool(latex), "latex": latex,
-                "detail": "" if latex else "云端视觉返回的公式正文为空"}
+                "detail": "" if latex else "云端 AI OCR 返回的公式正文为空"}
     if step == "vlm_local":
         ready = await asyncio.to_thread(
             vlm_service.ensure_ready, str(entry.get("id") or "").removeprefix("vlm_"))

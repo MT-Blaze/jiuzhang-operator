@@ -165,7 +165,7 @@ class RecognizeFillTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
         route = outcome["route"]
         self.assertIn("不降级", route["note"])
         steps = [entry["step"] for entry in route.get("failures") or []]
-        self.assertIn("识别·云端视觉", steps)
+        self.assertIn("识别·云端 AI OCR", steps)
         self.assertTrue(route["failures"][0]["retryable"])
 
     async def test_mineru_engine_skips_ai(self) -> None:

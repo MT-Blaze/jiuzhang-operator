@@ -215,7 +215,7 @@ def _rule_vlm_local(item: dict[str, Any], ctx: dict[str, Any],
     elif vram < need:
         detail = _say(item.get("low_ready_detail")
                       or "已安装·本机显存 {vram_label} 不足 {min_vram}G 门槛·CPU 慢兜底"
-                         "（比显卡慢一个数量级），也可改云视觉（花小钱、快）。", filled)
+                         "（比显卡慢一个数量级），也可改云端 AI OCR（花小钱、快）。", filled)
         verdict = _verdict("ready", detail)
         badge = "已安装·本机显存不足·CPU 慢兜底"
     else:
