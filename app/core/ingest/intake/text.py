@@ -115,13 +115,16 @@ def decode_bytes(data: bytes) -> bytes:
 
 
 def decode_text(data: bytes) -> str:
-    """文本解码：UTF-8 优先，GBK 兜底（老师的卷子多是 GBK 存的）。"""
+    """文本解码：UTF-8 优先，GBK 兜底；返回前换行单源归一 LF（防 \\r 致行尾正则失配）。"""
     for encoding in ("utf-8", "utf-8-sig", "gb18030"):
         try:
-            return data.decode(encoding)
+            text = data.decode(encoding)
+            break
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+    else:
+        text = data.decode("utf-8", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def extract_docx_text(data: bytes) -> str:

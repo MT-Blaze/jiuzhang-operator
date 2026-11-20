@@ -1,0 +1,26 @@
+# crlf-normalize 卡⑤离线回放判据（read_bytes 落池路，零端口零引擎）
+passed = 15
+total = 15
+
+[checks]
+crlf_note_has_warning = true
+crlf_warning_exactly_one = true
+cr_note_has_warning = true
+cr_warning_exactly_one = true
+lf_note_has_warning = true
+crlf_note_equals_lf = true
+cr_note_equals_lf = true
+crlf_questions_equal_lf = true
+cr_questions_equal_lf = true
+plain_note_empty = true
+decode_crlf_verbatim_lf = true
+decode_cr_verbatim_lf = true
+shapes_strips_after_decode = true
+crlf_one_question = true
+cr_one_question = true
+
+[batches]
+lf_warn = "B-001"
+crlf_warn = "B-002"
+cr_warn = "B-003"
+crlf_plain = "B-004"
