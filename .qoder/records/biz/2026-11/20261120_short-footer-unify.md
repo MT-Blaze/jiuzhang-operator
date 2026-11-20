@@ -72,3 +72,16 @@
 - 遗留挂号：①三页卷纯数字页码仍要求同位置三页全中（furniture 既有判据，本卡零改）；
   ②`tools/textlayer_probe.py` 的 baseline 对照仍指向 baa9e56 时代的旧模块路径，
   属工具历史包袱，非本卡回归；③triage 已知红于上一卡已清零，本卡保持全绿。
+
+## [VERIFY] 2026-11-20 补记（枢纽复核回修）
+
+- 枢纽复核指出回放证据不可复跑：`replay_short_footer.py` 首版用动态 `git show HEAD:…`
+  取改动前模块，提交后 HEAD 变新码，复跑即 `TypeError: _question_regions() got an
+  unexpected keyword argument 'apply_fallbacks'`。
+- 回修：基线钉死 `3f7f3e6:app/core/ingest/render/regions.py`（该版本带 apply_fallbacks
+  参数），`load_old_regions` docstring 写明「基线钉死 3f7f3e6 不随 HEAD 漂移」；
+  判据与比较零放宽，仅改基线来源。
+- 复跑 `.venv/Scripts/python.exe docs/handoff/evidence/short-footer-unify/replay_short_footer.py`
+  **7/7 PASS**，与当次产物同值（probe.toml/replay_report.md 一字未改）。
+- 回单 §4 补「提交后复跑由钉死 3f7f3e6 保证，可无限次复现」；偏离登记新增⑧。
+- 新增一笔回修 commit（不改前两笔），ahead 86→87，仍不 push。

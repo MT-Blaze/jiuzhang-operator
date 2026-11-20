@@ -32,6 +32,9 @@ OUT = ROOT / ".system_generated" / "short-footer-unify"
 SOURCE_NAME = "哈尔滨市第六中学校2026-2027年高三学年阶段性测试（一） 数学.pdf"
 DESKTOP_SOURCE = Path("E:/15972/Desktop") / SOURCE_NAME
 EXPECTED_SHA256 = "a65347866e545a01cb8633518b907b632ae33bc53582f74328eeaba12f6d6b0f"
+# 基线钉死 3f7f3e6 不随 HEAD 漂移：该版本仍带 apply_fallbacks 参数，
+# 提交后回放测的永远是「本刀之前」的模块。
+BASELINE_COMMIT = "3f7f3e6"
 
 # ⑥（af069bf）已交证据的钉死值：第 1 页六框 (y, h) 与四页链、末框底。
 PINNED_PAGE1 = [(612.0, 196.0), (801.0, 185.0), (984.0, 198.0),
@@ -61,11 +64,11 @@ def prepare_source() -> Path:
 
 
 def load_old_regions() -> Any:
-    """改动前（HEAD=3f7f3e6）的 regions 模块，落在产物目录里导入；不碰工作树。"""
+    """改动前（钉死 3f7f3e6，不随 HEAD 漂移）的 regions 模块，落在产物目录里导入。"""
     baseline = OUT / "baseline"
     baseline.mkdir(parents=True, exist_ok=True)
     source = subprocess.run(
-        ["git", "show", "HEAD:app/core/ingest/render/regions.py"],
+        ["git", "show", BASELINE_COMMIT + ":app/core/ingest/render/regions.py"],
         cwd=ROOT, capture_output=True, check=True).stdout
     path = baseline / "regions_head.py"
     path.write_bytes(source)

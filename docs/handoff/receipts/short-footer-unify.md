@@ -112,6 +112,10 @@ biz 记录：`.qoder/records/biz/2026-11/20261120_short-footer-unify.md`。
 | J2b_page4_three_regions_and_lone_two_kept | true | p4_regions=3，q19 题干含孤字「2」 |
 | J3_no_footer_text_in_any_region | true | 四页各 1 条「第 N页，共 4 页」regex 命中，题干零泄漏 |
 
+提交后复跑由钉死 `3f7f3e6` 保证，可无限次复现（2026-11-20 枢纽复核后回修并补跑
+7/7 同值；判据键名 `J1a_…vs_head` 为历史命名，实际比对对象已钉死基线
+`3f7f3e6:app/core/ingest/render/regions.py`，probe.toml/replay_report.md 值一字未变）。
+
 快门禁 `bash scripts/check-quick-gate.sh`：**PASS（6 项全过）**；体积预警 23 份
 （regions.py 460 行仍在 451–550 带内，集合与基线逐文件全同，零新增）。
 `regions.py` 467→460 净减 7；`furniture.py` 218→229；`pdf.py` 436 不变——均 ≤450 或
@@ -141,6 +145,11 @@ biz 记录：`.qoder/records/biz/2026-11/20261120_short-footer-unify.md`。
 非业务链路；`ocr.py` 仅删实参。
 ⑦ **规则边界（如实登记）**：≤2 页页眉无法凭「跨页重复」证据剥离——一页/两页没有重复
 可比。这是规则本身的边界，不是本刀例外；页脚与不可见水印已在所有页数统一处理。
+⑧ **基线曾取动态 HEAD，收口后回修钉死**：`replay_short_footer.py` 首版用
+`git show HEAD:…` 取改动前模块，当次运行时 HEAD 还是 `3f7f3e6` 所以通过；提交后
+HEAD 已是新码，任何人复跑都会取到新码再传旧参数而 `TypeError`。枢纽复核后把基线
+钉死为 `3f7f3e6:app/core/ingest/render/regions.py`（docstring 同步「不随 HEAD 漂移」），
+判据与比较未放宽；复跑 7/7 PASS 同值，probe/report 未变。
 
 ### restart 提示
 
