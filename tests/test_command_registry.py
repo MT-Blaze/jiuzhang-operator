@@ -283,6 +283,8 @@ class HostApiContractTest(unittest.TestCase):
                        "models.uninstall_formula_l",
                        "models.formula_p2t_install", "models.formula_p2t_status",
                        "models.uninstall_formula_p2t",
+                       "models.formula_texify_install", "models.formula_texify_status",
+                       "models.uninstall_formula_texify",
                        "models.vlm_intern_install", "models.vlm_intern_status",
                        "models.uninstall_vlm_intern",
                        "models.vlm_minicpm_install", "models.vlm_minicpm_status",
@@ -294,6 +296,8 @@ class HostApiContractTest(unittest.TestCase):
                        "models.uninstall_formula_l",
                        "models.formula_p2t_install", "models.formula_p2t_status",
                        "models.uninstall_formula_p2t",
+                       "models.formula_texify_install", "models.formula_texify_status",
+                       "models.uninstall_formula_texify",
                        "models.vlm_intern_install", "models.vlm_intern_status",
                        "models.uninstall_vlm_intern",
                        "models.vlm_minicpm_install", "models.vlm_minicpm_status",
@@ -512,7 +516,7 @@ class OfficialPluginCommandsTest(unittest.TestCase):
             "headless": False,
         },
         "org.jiuzhang.editor": {
-            "version": "2.24.0",
+            "version": "2.25.0",
             "commands": [
                 "org.jiuzhang.action.input.open_question",
                 "org.jiuzhang.action.process.clean_latex",

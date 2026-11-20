@@ -61,6 +61,12 @@
         return true;
       }
 
+      if (method === "models.formula_texify_status") {
+        // 只读：Texify 权重安装进度（接线卡④），配置页轮询用。
+        fetchJson("/api/models/formula_texify/status").then(done, fail);
+        return true;
+      }
+
       if (method === "pending.reidentify_spans") {
         // 只读：公式块清单（坐标来源 MinerU 公式块/文字层），审核渲染列画块级钮用。
         var readPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -170,9 +176,23 @@
         return true;
       }
 
+      if (method === "models.formula_texify_install") {
+        // 写口：Texify 权重下载会出网（老师点击才发起），要写令牌＋questions:write。
+        var texifyPerms = (tab.plugin && tab.plugin.permissions) || [];
+        if (texifyPerms.indexOf("questions:write") < 0) {
+          replyHost(tab, message, false, { code: "FORBIDDEN",
+            message: "插件未声明 questions:write 权限，不能发起 Texify 安装" });
+          return true;
+        }
+        withWriteToken("/api/models/formula_texify/install", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: "{}" }).then(done, fail);
+        return true;
+      }
+
       if (method === "models.uninstall_vlm" || method === "models.uninstall_mineru" ||
           method === "models.uninstall_ocr" || method === "models.uninstall_formula" ||
           method === "models.uninstall_formula_l" || method === "models.uninstall_formula_p2t" ||
+          method === "models.uninstall_formula_texify" ||
           method === "models.uninstall_vlm_intern" || method === "models.uninstall_vlm_minicpm") {
         // 写口：卸载先停服/丢缓存再删 engines/ 目录（老师点击＋确认发起），要写令牌＋questions:write。
         var uninstallPerms = (tab.plugin && tab.plugin.permissions) || [];
@@ -187,6 +207,7 @@
           "models.uninstall_formula": "/api/models/formula/uninstall",
           "models.uninstall_formula_l": "/api/models/formula_l/uninstall",
           "models.uninstall_formula_p2t": "/api/models/formula_p2t/uninstall",
+          "models.uninstall_formula_texify": "/api/models/formula_texify/uninstall",
           "models.uninstall_vlm_intern": "/api/models/vlm_intern/uninstall",
           "models.uninstall_vlm_minicpm": "/api/models/vlm_minicpm/uninstall" };
         withWriteToken(uninstallPaths[method], { method: "POST",

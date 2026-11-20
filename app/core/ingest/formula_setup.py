@@ -1,9 +1,11 @@
-"""公式专科权重一键装（PP-FormulaNet M/L＋Pix2Text·MFR，2.22.0 卡§2＋安装接线卡座2/3）。
+"""公式专科权重一键装（PP-FormulaNet M/L＋Pix2Text·MFR＋Texify，2.22.0 卡§2＋安装接线卡座2/3＋接线卡④）。
 
 权重住 engines/formula/models/（各档共享目录，按件落地/按件卸载，互不误删）。
 底座 .venv 已带 onnxruntime（零新依赖、不建隔离环境）；PP 每变体只缺 onnx＋yml 两件
 （yml 内嵌完整 tokenizer，M/L 词表同源；输入尺寸 M=384/L=768 由引擎硬编码）；
-p2t 缺 encoder/decoder/tokenizer 三件（TrOCR 系官方 ONNX，词表 ByteLevel 解码）。
+p2t 缺 encoder/decoder/tokenizer 三件（TrOCR 系官方 ONNX，词表 ByteLevel 解码）；
+texify 缺 fp16 encoder/decoder_merged＋四小件共六件（社区 ONNX，cc-by-sa-4.0 权重
+内容许可＝署名＋相同方式共享，安装弹窗/目录文案/回单三处告知）。
 PP 主源 modelscope（onnx 取 RapidAI/RapidDoc 仓、L 的 yml 取 PaddlePaddle/PP-FormulaNet_plus-L
 官方仓，字节数＋sha256 已核实，Apache-2.0）；p2t 主源 hf-mirror（breezedeus/pix2text-mfr
 官方仓，lfs.oid 逐字核实，Apache-2.0）；其余镜像同路径候选参与点击内测速选路——
@@ -30,7 +32,9 @@ logger = logging.getLogger(__name__)
 # 每变体件表（文件名, 字节数, sha256, 仓, 仓内相对路径）：仓库页实测核对。
 # PP-M 两件同出 RapidAI/RapidDoc；PP-L 的 onnx 出 RapidDoc、yml 出 PaddlePaddle 官方仓
 # （RapidDoc 的 L 文件夹只有 onnx 无 yml）；p2t 三件出 hf-mirror breezedeus/pix2text-mfr
-# 官方仓（encoder/decoder 的 sha256 取 lfs.oid，tokenizer 非 LFS 按官方 resolve 副本核）。
+# 官方仓（encoder/decoder 的 sha256 取 lfs.oid，tokenizer 非 LFS 按官方 resolve 副本核）；
+# texify 六件出 hf-mirror Spedon/texify-fp16-onnx 社区仓（两 onnx 的 sha256 取 lfs.oid
+# 逐字核实，四小件非 LFS 按侦查 resolve 副本算钉；int8 仓早判红弃用，见 recon 证据）。
 # 落地文件名统一带变体前/后缀，避免共享目录里相互覆盖。
 VARIANTS: dict[str, dict[str, Any]] = {
     "m": {
@@ -70,6 +74,30 @@ VARIANTS: dict[str, dict[str, Any]] = {
             ("p2t_tokenizer.json", 39161,
              "3e2ab757277d22639bec28c9d7972e352d3d1dba223051fa674002dc5ab64df3",
              "breezedeus/pix2text-mfr", "tokenizer.json"),
+        ),
+    },
+    "texify": {
+        "label": "Texify",
+        "size_note": "约 628MB",
+        "files": (
+            ("texify_encoder.onnx", 151072055,
+             "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46",
+             "Spedon/texify-fp16-onnx", "encoder_model.onnx"),
+            ("texify_decoder_merged.onnx", 477396232,
+             "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f",
+             "Spedon/texify-fp16-onnx", "decoder_model_merged.onnx"),
+            ("texify_tokenizer.json", 2140041,
+             "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2",
+             "Spedon/texify-fp16-onnx", "tokenizer.json"),
+            ("texify_config.json", 4890,
+             "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375",
+             "Spedon/texify-fp16-onnx", "config.json"),
+            ("texify_preprocessor_config.json", 523,
+             "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478",
+             "Spedon/texify-fp16-onnx", "preprocessor_config.json"),
+            ("texify_generation_config.json", 200,
+             "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6",
+             "Spedon/texify-fp16-onnx", "generation_config.json"),
         ),
     },
 }
@@ -238,10 +266,11 @@ def uninstall(variant: str = "m") -> dict[str, Any]:
     if folder.parent != config.PROJECT_ROOT / "engines":
         raise FormulaSetupError("卸载路径不对（%s），拒绝动手。" % folder)
     from app.core.ingest.recognize import (  # noqa: PLC0415 - 按需导入防循环
-        formula_p2t, formula_pp_l, formula_pp_m,
+        formula_p2t, formula_pp_l, formula_pp_m, formula_texify,
     )
 
-    {"m": formula_pp_m, "l": formula_pp_l, "p2t": formula_p2t}[variant].reset()
+    {"m": formula_pp_m, "l": formula_pp_l, "p2t": formula_p2t,
+     "texify": formula_texify}[variant].reset()
     paths = model_paths(variant)
     if not any(p.is_file() for p in paths):
         _set(variant, state="idle", step="", message="")

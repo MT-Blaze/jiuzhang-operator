@@ -188,6 +188,33 @@ class CoreTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("公式专科座", result["detail"])
         self.assertIn("整题座", result["detail"])
 
+    async def test_texify_whole_question_refused_with_seat_guide(self) -> None:
+        self._seat(_entry("formula_texify"))
+        result = await reidentify.reidentify(PID, "seat_x")
+        self.assertEqual(result["code"], "RECOGNIZE_FAILED")
+        self.assertIn("公式专科座", result["detail"])
+        self.assertIn("整题座", result["detail"])
+
+    async def test_texify_formula_block_replaces_in_place(self) -> None:
+        self._seat(_entry("formula_texify"))
+        save_back = self._save()
+        span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
+                "origin": "textlayer"}
+        recognize = mock.Mock(return_value={"ok": True, "latex": "x^3",
+                                            "detail": "Texify 公式已转写"})
+        with mock.patch.object(reidentify.recognize_formula, "batch_context",
+                               return_value=([], b"")), \
+                mock.patch.object(reidentify.recognize_formula, "discover_spans",
+                                  return_value=[span]), \
+                mock.patch.object(reidentify.recognize_formula, "crop_png",
+                                  return_value=b"crop"), \
+                mock.patch.object(reidentify.recognize_formula.formula_texify,
+                                  "recognize", recognize):
+            result = await reidentify.reidentify(PID, "seat_x", target="formula")
+        self.assertTrue(result["ok"])
+        self.assertEqual(save_back.call_args.args[1]["stem"], "已知 $x^3$，求值。")
+        recognize.assert_called_once_with(b"crop")
+
     async def test_pp_m_formula_block_replaces_in_place(self) -> None:
         self._seat(_entry("formula_pp_m"))
         save_back = self._save()

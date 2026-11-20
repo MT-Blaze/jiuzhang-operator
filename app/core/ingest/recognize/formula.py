@@ -5,7 +5,7 @@
 charbox（pypdfium2）按题块区域换算到同张题图像素（D12：不撞老师框的图）。
 无坐标＝不裸拼，交回整题重认兜底。通道按 catalog plan_recognize 步骤名
 分派：ai＝云 VLM 单图、vlm_local＝本地千问、mineru/mineru_local＝MinerU、
-formula_pp_m/formula_pp_l/formula_p2t＝公式专科（PP-M/L＋Pix2Text）；其余专科座 blocked 显性。失败 ok=False。
+formula_pp_m/formula_pp_l/formula_p2t/formula_texify＝公式专科（PP-M/L＋Pix2Text＋Texify）；其余专科座 blocked 显性。失败 ok=False。
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from app.core.ai.platform import center as ai_center
 from app.core.ai.recognition import recognize as ai_recognize
 from app.core.content import scan_text
 from app.core.ingest.recognize import (
-    formula_p2t, formula_pp_l, formula_pp_m, mineru_extract, mineru_local, mineru_service,
-    shared as recognize_shared, vlm_local, vlm_service,
+    formula_p2t, formula_pp_l, formula_pp_m, formula_texify, mineru_extract, mineru_local,
+    mineru_service, shared as recognize_shared, vlm_local, vlm_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -277,6 +277,10 @@ async def dispatch(entry: dict[str, Any], png: bytes,
                 "detail": str(outcome.get("detail") or "")}
     if step == "formula_p2t":
         outcome = await asyncio.to_thread(formula_p2t.recognize, png)
+        return {"ok": bool(outcome.get("ok")), "latex": str(outcome.get("latex") or ""),
+                "detail": str(outcome.get("detail") or "")}
+    if step == "formula_texify":
+        outcome = await asyncio.to_thread(formula_texify.recognize, png)
         return {"ok": bool(outcome.get("ok")), "latex": str(outcome.get("latex") or ""),
                 "detail": str(outcome.get("detail") or "")}
     return {"ok": False,

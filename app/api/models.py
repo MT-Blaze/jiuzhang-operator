@@ -282,6 +282,36 @@ def formula_p2t_uninstall() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/api/models/formula_texify/status", summary="Texify 权重安装进度（只读）")
+def formula_texify_status() -> dict[str, Any]:
+    return formula_setup.status("texify")
+
+
+@router.post(
+    "/api/models/formula_texify/install",
+    status_code=202,
+    summary="一键安装 Texify（engines/formula/models/ 六件 fp16 权重，国内镜像，cc-by-sa-4.0）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_texify_install() -> dict[str, Any]:
+    try:
+        return formula_setup.start_install("texify")
+    except formula_setup.FormulaSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/models/formula_texify/uninstall",
+    summary="卸载 Texify（丢引擎缓存再删本档六件权重，老师点击＋确认发起）",
+    dependencies=[Depends(require_write_token)],
+)
+def formula_texify_uninstall() -> dict[str, Any]:
+    try:
+        return formula_setup.uninstall("texify")
+    except formula_setup.FormulaSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _catalog_plugin(plugin_id: str) -> None:
     """代笔资格：已安装、启用且声明 models.catalog；不合格一律 403。"""
     from app.core.plugins.registry import discover_plugins

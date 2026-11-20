@@ -61,6 +61,7 @@ def _runtime(ocr: bool = True, yolo: bool = False,
              formula_weights: bool = False,
              formula_l_weights: bool = False,
              formula_p2t_weights: bool = False,
+             formula_texify_weights: bool = False,
              formula_install: dict | None = None):
     with mock.patch.object(registry, "_import_ok", return_value=ocr), \
             mock.patch.object(registry.model_store, "present", return_value=yolo), \
@@ -84,7 +85,8 @@ def _runtime(ocr: bool = True, yolo: bool = False,
             mock.patch.object(formula_setup, "weights_ready",
                               side_effect=lambda variant="m": (
                                   {"l": formula_l_weights,
-                                   "p2t": formula_p2t_weights}.get(variant, formula_weights))), \
+                                   "p2t": formula_p2t_weights,
+                                   "texify": formula_texify_weights}.get(variant, formula_weights))), \
             mock.patch.object(formula_setup, "status",
                               return_value=formula_install if formula_install is not None else {"state": "idle"}), \
             mock.patch.object(registry.model_prefs, "load",
@@ -372,12 +374,12 @@ class HardwareGateTest(CatalogIsolated):
         for seat in ("vlm_qwen", "vlm_intern", "vlm_minicpm"):
             self.assertEqual(entries[seat]["state"], "ready")
 
-    def test_formula_entries_blocked_pending_d_card(self) -> None:
+    def test_formula_entries_all_wired_weight_tri_state(self) -> None:
         with _runtime():
             entries = _states(registry.status()["entries"])
-        # texify 侦查门判跳过（官方无 ONNX、底座零 torch）：blocked 文案改实。
-        self.assertEqual(entries["formula_texify"]["state"], "blocked")
-        self.assertIn("登记跳过", entries["formula_texify"]["detail"])
+        # 接线卡④：Texify 社区 fp16 ONNX 已接线，四座全走权重三态，不再 blocked。
+        self.assertEqual(entries["formula_texify"]["state"], "degraded")
+        self.assertEqual(entries["formula_texify"]["action"], "install_formula_texify")
         self.assertEqual(entries["formula_texify"]["capability"], "formula")
         # PP-M/L＋p2t 已接线：权重三态，未装引导安装，不再 blocked。
         self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
@@ -408,6 +410,14 @@ class HardwareGateTest(CatalogIsolated):
         self.assertEqual(entries["formula_p2t"]["capability"], "formula")
         self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
         self.assertEqual(entries["formula_pp_l"]["state"], "degraded")
+
+    def test_formula_texify_ready_when_weights_present(self) -> None:
+        with _runtime(formula_texify_weights=True):
+            entries = _states(registry.status()["entries"])
+        self.assertEqual(entries["formula_texify"]["state"], "ready")
+        self.assertEqual(entries["formula_texify"]["capability"], "formula")
+        self.assertEqual(entries["formula_pp_m"]["state"], "degraded")
+        self.assertEqual(entries["formula_p2t"]["state"], "degraded")
 
     def test_status_carries_hardware_and_tiers(self) -> None:
         with _runtime(hw=_HW_16G):
@@ -508,11 +518,11 @@ class ComboChainTest(CatalogIsolated):
     VLM_OK = {"ok": True, "state": "ready", "version": "0.2.3",
               "engine": "vulkan", "message": ""}
 
-    def test_five_combos_declare_plan_and_seat(self) -> None:
+    def test_six_combos_declare_plan_and_seat(self) -> None:
         catalog = {entry["id"]: entry for entry in registry.catalog()}
         expected = {"combo_cloud": "cloud_vision", "combo_vlm": "vlm_qwen",
                     "combo_pp_m": "formula_pp_m", "combo_pp_l": "formula_pp_l",
-                    "combo_p2t": "formula_p2t"}
+                    "combo_p2t": "formula_p2t", "combo_texify": "formula_texify"}
         for combo_id, seat in expected.items():
             with self.subTest(combo=combo_id):
                 entry = catalog[combo_id]
@@ -528,7 +538,8 @@ class ComboChainTest(CatalogIsolated):
         （那会与权重无关，违背「按就绪公式座枚举」）。"""
         catalog = {entry["id"]: entry for entry in registry.catalog()}
         for combo_id, seat_id, store in (("combo_pp_l", "formula_pp_l", "formula_l"),
-                                         ("combo_p2t", "formula_p2t", "formula_p2t")):
+                                         ("combo_p2t", "formula_p2t", "formula_p2t"),
+                                         ("combo_texify", "formula_texify", "formula_texify")):
             with self.subTest(combo=combo_id):
                 self.assertEqual(catalog[combo_id]["rule"], "weight_present")
                 self.assertEqual(catalog[combo_id]["store"], store)
@@ -558,16 +569,35 @@ class ComboChainTest(CatalogIsolated):
             self.assertEqual(entries["combo_p2t"]["state"], entries["formula_p2t"]["state"])
             self.assertIn("组合路就绪", entries["combo_p2t"]["detail"])
 
+    def test_combo_texify_follows_formula_texify_weights(self) -> None:
+        with _runtime():
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_texify"]["state"], "degraded")
+            self.assertEqual(entries["combo_texify"]["state"], entries["formula_texify"]["state"])
+            self.assertEqual(entries["combo_texify"]["action"], "install_formula_texify")
+        with _runtime(formula_texify_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_texify"]["state"], "ready")
+            self.assertEqual(entries["combo_texify"]["state"], entries["formula_texify"]["state"])
+            self.assertIn("组合路就绪", entries["combo_texify"]["detail"])
+
     def test_formula_combo_ready_only_when_its_own_seat_ready(self) -> None:
-        """装 L 不连带 p2t：各组合只随各自公式座，互不串。"""
+        """装 L 不连带 p2t/texify：各组合只随各自公式座，互不串。"""
         with _runtime(formula_l_weights=True):
             entries = _states(registry.status()["entries"])
             self.assertEqual(entries["combo_pp_l"]["state"], "ready")
             self.assertEqual(entries["combo_p2t"]["state"], "degraded")
+            self.assertEqual(entries["combo_texify"]["state"], "degraded")
         with _runtime(formula_p2t_weights=True):
             entries = _states(registry.status()["entries"])
             self.assertEqual(entries["combo_p2t"]["state"], "ready")
             self.assertEqual(entries["combo_pp_l"]["state"], "degraded")
+            self.assertEqual(entries["combo_texify"]["state"], "degraded")
+        with _runtime(formula_texify_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_texify"]["state"], "ready")
+            self.assertEqual(entries["combo_pp_l"]["state"], "degraded")
+            self.assertEqual(entries["combo_p2t"]["state"], "degraded")
 
     def test_combo_cloud_follows_vision_assignment(self) -> None:
         with _runtime():
@@ -723,6 +753,9 @@ class RegistryApiTest(CatalogIsolated):
         self.assertIn("/api/models/formula_p2t/install", paths)
         self.assertIn("/api/models/formula_p2t/status", paths)
         self.assertIn("/api/models/formula_p2t/uninstall", paths)
+        self.assertIn("/api/models/formula_texify/install", paths)
+        self.assertIn("/api/models/formula_texify/status", paths)
+        self.assertIn("/api/models/formula_texify/uninstall", paths)
         self.assertIn("/api/pending/reidentify", paths)
         self.assertIn("/api/pending/reidentify/spans", paths)
         self.assertIn("/api/pending/return_batch", paths)
@@ -731,7 +764,7 @@ class RegistryApiTest(CatalogIsolated):
         from app.core.security import require_write_token
         writes = [route for route in models_api.router.routes
                   if getattr(route, "methods", set()) & {"POST"}]
-        self.assertEqual(len(writes), 17)
+        self.assertEqual(len(writes), 19)
         for route in writes:
             self.assertIn(require_write_token,
                           [dep.dependency for dep in route.dependencies])
@@ -763,6 +796,20 @@ class RegistryApiTest(CatalogIsolated):
         status.assert_called_once_with("p2t")
         install.assert_called_once_with("p2t")
         uninstall.assert_called_once_with("p2t")
+
+    def test_formula_texify_endpoints_pass_variant_through(self) -> None:
+        with mock.patch.object(formula_setup, "status",
+                               return_value={"state": "idle"}) as status, \
+                mock.patch.object(formula_setup, "start_install",
+                                  return_value={"state": "installing"}) as install, \
+                mock.patch.object(formula_setup, "uninstall",
+                                  return_value={"ok": True}) as uninstall:
+            models_api.formula_texify_status()
+            models_api.formula_texify_install()
+            models_api.formula_texify_uninstall()
+        status.assert_called_once_with("texify")
+        install.assert_called_once_with("texify")
+        uninstall.assert_called_once_with("texify")
 
     def test_vlm_uninstall_stops_service_only_when_this_seat_active(self) -> None:
         from app.core.ingest import vlm_setup

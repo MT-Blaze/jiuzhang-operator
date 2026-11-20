@@ -1,4 +1,4 @@
-"""公式专科 M/L/p2t 安装链＋引擎口径＋三态（2.22.0 卡＋安装接线卡座2/3）。
+"""公式专科 M/L/p2t/texify 安装链＋引擎口径＋三态（2.22.0 卡＋安装接线卡座2/3＋接线卡④）。
 
 不出网：urlopen 与 mirrors.race 全 mock；落地目录指临时目录，不碰真 engines/。
 运行：``.venv/Scripts/python.exe -m unittest tests.test_formula_setup``
@@ -17,7 +17,7 @@ from unittest import mock
 import numpy as np
 
 from app.core.ingest import formula_setup, mirrors, registry
-from app.core.ingest.recognize import formula_p2t, formula_pp_l, formula_pp_m
+from app.core.ingest.recognize import formula_p2t, formula_pp_l, formula_pp_m, formula_texify
 
 # 测试用小权重规格（形状与真 VARIANTS 一致：name, size, sha256, repo, rel）。
 FAKE_VARIANTS = {
@@ -34,6 +34,16 @@ FAKE_VARIANTS = {
         ("p2t_encoder.onnx", 16, "4" * 64, "breezedeus/pix2text-mfr", "encoder_model.onnx"),
         ("p2t_decoder.onnx", 24, "5" * 64, "breezedeus/pix2text-mfr", "decoder_model.onnx"),
         ("p2t_tokenizer.json", 32, "6" * 64, "breezedeus/pix2text-mfr", "tokenizer.json"))},
+    "texify": {"label": "Texify", "size_note": "约 1KB", "files": (
+        ("texify_encoder.onnx", 16, "7" * 64, "Spedon/texify-fp16-onnx", "encoder_model.onnx"),
+        ("texify_decoder_merged.onnx", 24, "8" * 64, "Spedon/texify-fp16-onnx",
+         "decoder_model_merged.onnx"),
+        ("texify_tokenizer.json", 32, "9" * 64, "Spedon/texify-fp16-onnx", "tokenizer.json"),
+        ("texify_config.json", 40, "a" * 64, "Spedon/texify-fp16-onnx", "config.json"),
+        ("texify_preprocessor_config.json", 48, "b" * 64, "Spedon/texify-fp16-onnx",
+         "preprocessor_config.json"),
+        ("texify_generation_config.json", 56, "c" * 64, "Spedon/texify-fp16-onnx",
+         "generation_config.json"))},
 }
 
 
@@ -245,6 +255,38 @@ class InstallTest(unittest.TestCase):
         with self.assertRaises(formula_setup.FormulaSetupError):
             formula_setup.status("xl")
 
+    def test_weights_ready_texify_needs_all_six_files(self) -> None:
+        paths = formula_setup.model_paths("texify")
+        self.assertEqual(len(paths), 6)
+        paths[0].parent.mkdir(parents=True, exist_ok=True)
+        for idx, (path, spec) in enumerate(zip(paths, FAKE_VARIANTS["texify"]["files"])):
+            path.write_bytes(b"x" * spec[1])
+            self.assertEqual(formula_setup.weights_ready("texify"), idx == 5)
+        paths[3].unlink()
+        self.assertFalse(formula_setup.weights_ready("texify"))
+
+    def test_start_install_texify_spawns_texify_thread_only(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=False), \
+                mock.patch.object(formula_setup.threading, "Thread") as thread:
+            state = formula_setup.start_install("texify")
+        self.assertEqual(state["state"], "installing")
+        self.assertEqual(formula_setup.status("m")["state"], "idle")
+        self.assertEqual(formula_setup.status("p2t")["state"], "idle")
+        self.assertEqual(thread.call_args.kwargs.get("args"), ("texify",))
+
+    def test_install_texify_races_fp16_repo_and_downloads_all_six(self) -> None:
+        raced = [{"name": "hf-mirror", "url": "https://mirror.test/enc", "ok": True, "ms": 12}]
+        with mock.patch.object(formula_setup.mirrors, "race", return_value=raced) as race, \
+                mock.patch.object(formula_setup, "_download_one") as download:
+            formula_setup._install("texify")
+        self.assertEqual(race.call_count, 1)
+        raced_urls = [url for _name, url in race.call_args[0][0]]
+        self.assertTrue(all("Spedon/texify-fp16-onnx" in u and "encoder_model.onnx" in u
+                            for u in raced_urls))
+        self.assertEqual(download.call_count, 6)
+        self.assertEqual(formula_setup.status("texify")["state"], "done")
+        self.assertIn("校验通过", formula_setup.status("texify")["message"])
+
 
 class UninstallTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -328,6 +370,31 @@ class UninstallTest(unittest.TestCase):
             result = formula_setup.uninstall()
         self.assertTrue(result["ok"])
         self.assertIn("没下", result["message"])
+
+    def test_uninstall_texify_keeps_other_formula_variants(self) -> None:
+        folder = self.tmp / "engines" / "formula"
+        m_paths = self._write("m")
+        p2t_paths = self._write("p2t")
+        texify_paths = self._write("texify")
+        with mock.patch.object(formula_texify, "reset") as reset_texify, \
+                mock.patch.object(formula_pp_m, "reset") as reset_m, \
+                mock.patch.object(formula_p2t, "reset") as reset_p2t:
+            result = formula_setup.uninstall("texify")
+        reset_texify.assert_called_once()
+        reset_m.assert_not_called()
+        reset_p2t.assert_not_called()
+        self.assertTrue(result["ok"])
+        self.assertFalse(any(p.exists() for p in texify_paths))
+        self.assertTrue(all(p.is_file() for p in m_paths + p2t_paths))
+        self.assertTrue(folder.is_dir())
+
+    def test_uninstall_texify_last_variant_removes_folder(self) -> None:
+        folder = self.tmp / "engines" / "formula"
+        self._write("texify")
+        with mock.patch.object(formula_texify, "reset"):
+            result = formula_setup.uninstall("texify")
+        self.assertTrue(result["ok"])
+        self.assertFalse(folder.exists())
 
     def test_uninstall_refuses_while_installing(self) -> None:
         alive = mock.Mock()
@@ -505,7 +572,7 @@ class EngineTest(unittest.TestCase):
 
 
 class VerdictTest(unittest.TestCase):
-    """registry 三态特例（store=formula/formula_l/formula_p2t）：就绪/未装引导安装/安装失败 blocked。"""
+    """registry 三态特例（store=formula/formula_l/formula_p2t/formula_texify）：就绪/未装引导安装/安装失败 blocked。"""
 
     ITEM_M = {"id": "formula_pp_m", "name": "PP-FormulaNet·M", "rule": "weight_present",
               "store": "formula", "ready_detail": "就绪", "degraded_detail": "未装",
@@ -514,6 +581,8 @@ class VerdictTest(unittest.TestCase):
               "store": "formula_l"}
     ITEM_P2T = {**ITEM_M, "id": "formula_p2t", "name": "Pix2Text·MFR",
                 "store": "formula_p2t"}
+    ITEM_TEXIFY = {**ITEM_M, "id": "formula_texify", "name": "Texify",
+                   "store": "formula_texify"}
 
     def test_ready_when_weights_present(self) -> None:
         with mock.patch.object(formula_setup, "weights_ready", return_value=True), \
@@ -583,6 +652,29 @@ class VerdictTest(unittest.TestCase):
             verdict = registry._judge(self.ITEM_P2T, {}, [])
         self.assertEqual(verdict["state"], "blocked")
         self.assertEqual(verdict["action"], "install_formula_p2t")
+        self.assertIn("源全不通", verdict["detail"])
+
+    def test_texify_degraded_guides_install_formula_texify(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=False), \
+                mock.patch.object(formula_setup, "status",
+                                  return_value={"state": "idle"}):
+            verdict = registry._judge(self.ITEM_TEXIFY, {}, [])
+        self.assertEqual(verdict["state"], "degraded")
+        self.assertEqual(verdict["action"], "install_formula_texify")
+
+    def test_texify_ready_when_weights_present(self) -> None:
+        with mock.patch.object(formula_setup, "weights_ready", return_value=True), \
+                mock.patch.object(formula_setup, "status",
+                                  return_value={"state": "idle"}):
+            verdict = registry._judge(self.ITEM_TEXIFY, {}, [])
+        self.assertEqual(verdict["state"], "ready")
+
+    def test_texify_install_error_is_blocked_with_message(self) -> None:
+        with mock.patch.object(formula_setup, "status",
+                               return_value={"state": "error", "message": "源全不通"}):
+            verdict = registry._judge(self.ITEM_TEXIFY, {}, [])
+        self.assertEqual(verdict["state"], "blocked")
+        self.assertEqual(verdict["action"], "install_formula_texify")
         self.assertIn("源全不通", verdict["detail"])
 
 

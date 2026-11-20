@@ -115,7 +115,7 @@ def _rule_weight_present(item: dict[str, Any], ctx: dict[str, Any],
         return _ocr_medium_verdict(item, ctx)
     if store == "formula":
         return _formula_verdict(item, ctx)
-    if store in ("formula_l", "formula_p2t"):
+    if store in ("formula_l", "formula_p2t", "formula_texify"):
         return _formula_verdict(item, ctx, store.removeprefix("formula_"))
     if model_store.present(store):
         return _verdict("ready", _say(item.get("ready_detail"), ctx))
@@ -139,7 +139,7 @@ def _ocr_medium_verdict(item: dict[str, Any], ctx: dict[str, Any]) -> dict[str, 
 
 def _formula_verdict(item: dict[str, Any], ctx: dict[str, Any],
                      variant: str = "m") -> dict[str, str]:
-    """公式专科权重档（PP-M/L＋p2t）：安装态×权重在不在，动作 install_formula[_变体]。"""
+    """公式专科权重档（PP-M/L＋p2t＋texify）：安装态×权重在不在，动作 install_formula[_变体]。"""
     from app.core.ingest import formula_setup
 
     action = "install_formula" if variant == "m" else "install_formula_" + variant
