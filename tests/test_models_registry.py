@@ -508,10 +508,11 @@ class ComboChainTest(CatalogIsolated):
     VLM_OK = {"ok": True, "state": "ready", "version": "0.2.3",
               "engine": "vulkan", "message": ""}
 
-    def test_three_combos_declare_plan_and_seat(self) -> None:
+    def test_five_combos_declare_plan_and_seat(self) -> None:
         catalog = {entry["id"]: entry for entry in registry.catalog()}
         expected = {"combo_cloud": "cloud_vision", "combo_vlm": "vlm_qwen",
-                    "combo_pp_m": "formula_pp_m"}
+                    "combo_pp_m": "formula_pp_m", "combo_pp_l": "formula_pp_l",
+                    "combo_p2t": "formula_p2t"}
         for combo_id, seat in expected.items():
             with self.subTest(combo=combo_id):
                 entry = catalog[combo_id]
@@ -520,6 +521,53 @@ class ComboChainTest(CatalogIsolated):
                 self.assertEqual(entry["combo_seat"], seat)
                 self.assertIn("文字层取", entry["summary_usage"])
                 self.assertIn("纯图卷", entry["summary_usage"])
+
+    def test_formula_combos_use_weight_rule_matching_seat(self) -> None:
+        """全组合（记上次卡）：PP-L/p2t 组合用 weight_present＋store 与公式座同档，
+        就绪完全随座（零 registry/router 代码改）；不照抄 combo_pp_m 的 import_probe
+        （那会与权重无关，违背「按就绪公式座枚举」）。"""
+        catalog = {entry["id"]: entry for entry in registry.catalog()}
+        for combo_id, seat_id, store in (("combo_pp_l", "formula_pp_l", "formula_l"),
+                                         ("combo_p2t", "formula_p2t", "formula_p2t")):
+            with self.subTest(combo=combo_id):
+                self.assertEqual(catalog[combo_id]["rule"], "weight_present")
+                self.assertEqual(catalog[combo_id]["store"], store)
+                self.assertEqual(catalog[combo_id]["store"], catalog[seat_id]["store"])
+
+    def test_combo_pp_l_follows_formula_l_weights(self) -> None:
+        with _runtime():
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_pp_l"]["state"], "degraded")
+            self.assertEqual(entries["combo_pp_l"]["state"], entries["formula_pp_l"]["state"])
+            self.assertEqual(entries["combo_pp_l"]["action"], "install_formula_l")
+        with _runtime(formula_l_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_pp_l"]["state"], "ready")
+            self.assertEqual(entries["combo_pp_l"]["state"], entries["formula_pp_l"]["state"])
+            self.assertIn("组合路就绪", entries["combo_pp_l"]["detail"])
+
+    def test_combo_p2t_follows_formula_p2t_weights(self) -> None:
+        with _runtime():
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_p2t"]["state"], "degraded")
+            self.assertEqual(entries["combo_p2t"]["state"], entries["formula_p2t"]["state"])
+            self.assertEqual(entries["combo_p2t"]["action"], "install_formula_p2t")
+        with _runtime(formula_p2t_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_p2t"]["state"], "ready")
+            self.assertEqual(entries["combo_p2t"]["state"], entries["formula_p2t"]["state"])
+            self.assertIn("组合路就绪", entries["combo_p2t"]["detail"])
+
+    def test_formula_combo_ready_only_when_its_own_seat_ready(self) -> None:
+        """装 L 不连带 p2t：各组合只随各自公式座，互不串。"""
+        with _runtime(formula_l_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_pp_l"]["state"], "ready")
+            self.assertEqual(entries["combo_p2t"]["state"], "degraded")
+        with _runtime(formula_p2t_weights=True):
+            entries = _states(registry.status()["entries"])
+            self.assertEqual(entries["combo_p2t"]["state"], "ready")
+            self.assertEqual(entries["combo_pp_l"]["state"], "degraded")
 
     def test_combo_cloud_follows_vision_assignment(self) -> None:
         with _runtime():

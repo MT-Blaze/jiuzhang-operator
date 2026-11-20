@@ -79,6 +79,20 @@ class PrefsStoreTest(unittest.TestCase):
         self.assertEqual(saved["disabled"], ["yolo"])
         self.assertEqual(saved["default_recognize"], "mineru")
 
+    def test_last_used_defaults_roundtrip_and_independent(self) -> None:
+        """记上次（默认引擎记上次卡）：default_* 复用为「上次选择」，不新增键不迁移；
+        组合路 id 可存；版面/识别各写各的，改一个不擦另一个的记忆。"""
+        ids = ["rapidocr_fast", "yolo", "combo_pp_l", "combo_p2t", "mineru_local"]
+        saved = prefs.save({"default_recognize": "combo_pp_l"}, ids, PLUGIN_ID)
+        self.assertEqual(saved["default_recognize"], "combo_pp_l")
+        self.assertEqual(saved["default_layout"], "auto")
+        saved = prefs.save({"default_layout": "yolo"}, ids, PLUGIN_ID)
+        self.assertEqual(saved["default_layout"], "yolo")
+        self.assertEqual(saved["default_recognize"], "combo_pp_l")
+        saved = prefs.save({"default_recognize": "auto"}, ids, PLUGIN_ID)
+        self.assertEqual(saved["default_recognize"], "auto")
+        self.assertEqual(saved["default_layout"], "yolo")
+
     def test_unknown_id_rejected(self) -> None:
         with self.assertRaises(prefs.PrefsError):
             prefs.save({"disabled": ["乱填"]}, ["yolo"], PLUGIN_ID)
