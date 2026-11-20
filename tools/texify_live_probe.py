@@ -15,7 +15,7 @@ JZO_PLUGINS_DIR＋动态空闲端口＋每次随机令牌；服务 cwd＝副本�
 1. 未安装三态：texify 行未就绪＋【安装】钮；combo_texify 随座未就绪；余座口径不动；
 2. 安装真证：真点→628MB＋cc-by-sa-4.0 弹窗 accept→POST 真请求→六件 sha256 逐字落地
    →就绪＋【卸载】钮＋combo_texify 随座就绪；
-3. 重认微批 3–5 块真路：公式重认→选 Texify（公式专科）→原位替换存回；整题选它显性拒绝；
+3. 重认微批 3–5 块真路：公式重认→选 Texify→原位替换存回；整题选它显性拒绝；
 4. 共享目录真证：p2t 也装→九件共存；卸 texify 只删六件、p2t 三件与就绪态不动；
    再卸 p2t 目录删净；combo_texify 随座回未就绪；
 5. 零 JS 异常、零 HTTP 失败、三查 0、收口端口闭＋孤儿零。
@@ -55,7 +55,7 @@ EDITOR_ID = "org.jiuzhang.editor"
 CANVAS = "#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame"
 SAMPLE_TXT = ROOT / "test_papers" / "C3_【数学】内蒙古呼和浩特市2025-2026学年高三下学期二模考试试题（含答案）.pdf.pdf"
 INSTALL_CAP, COMBO_CAP, SEAT_CAP = 1800, 600, 240
-TEXIFY_ROW = "Texify（公式专科）"
+TEXIFY_ROW = "Texify"
 WEIGHTS_TEXIFY = {n: (s, h) for n, s, h, _r, _p in VARIANTS["texify"]["files"]}
 WEIGHTS_P2T = {n: (s, h) for n, s, h, _r, _p in VARIANTS["p2t"]["files"]}
 
@@ -220,7 +220,7 @@ def main() -> int:
             # ---------- ① 未安装三态＋375px ----------
             canvas.locator("#epModelConfigList").click()
             expect(canvas.locator(".ep-mt-table").first).to_be_visible(timeout=15000)
-            row_tex = canvas.locator(".ep-mt-row", has_text=TEXIFY_ROW)
+            row_tex = canvas.locator('.ep-mt-name[data-id="formula_texify"]').locator("xpath=ancestor::tr")
             expect(row_tex.locator(".ep-mt-badge")).to_have_text("未就绪", timeout=15000)
             check("未安装行：未就绪＋【安装】钮",
                   row_tex.locator(".ep-mt-act", has_text="安装").count() == 1)
@@ -360,8 +360,8 @@ def main() -> int:
             expect(canvas.locator("#edRoot")).to_be_visible(timeout=30000)
             canvas.locator("#epModelConfigList").click()
             expect(canvas.locator(".ep-mt-table").first).to_be_visible(timeout=15000)
-            row_tex = canvas.locator(".ep-mt-row", has_text=TEXIFY_ROW)
-            row_p2t = canvas.locator(".ep-mt-row", has_text="Pix2Text·MFR")
+            row_tex = canvas.locator('.ep-mt-name[data-id="formula_texify"]').locator("xpath=ancestor::tr")
+            row_p2t = canvas.locator('.ep-mt-name[data-id="formula_p2t"]').locator("xpath=ancestor::tr")
             with page.expect_request(
                     lambda r: "/api/models/formula_p2t/install" in r.url and r.method == "POST",
                     timeout=30000) as req_p2t:

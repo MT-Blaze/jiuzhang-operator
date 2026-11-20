@@ -66,7 +66,7 @@ class ScanRouteNoteTest(CatalogIsolated):
                                         {"has_text_layer": True, "garbled": False})
         self.assertEqual(route["layout_engine"], "cloud_vision")
         self.assertEqual(route["recognize_engine"], "mineru")
-        self.assertIn("只交云端视觉", route["note"])
+        self.assertIn("只交云端 AI OCR", route["note"])
         self.assertIn("失败不降级", route["note"])
         self.assertIn("MinerU", route["note"])
         self.assertEqual(route["phase"], "parsing")

@@ -329,7 +329,7 @@ def main() -> int:
                 if seats.is_hidden():
                     bar.locator(".ed-reidentify-btn", has_text="整题重认").click()
                 expect(seats).to_be_visible(timeout=20000)
-            seats.locator(".ed-reidentify-seat", has_text="云端视觉").click()
+            seats.locator(".ed-reidentify-seat", has_text="云端 AI OCR").click()
             expect(note).to_have_class(re.compile("is-error"), timeout=60000)
             cloud_text = note.inner_text()
             check("云 VLM 无账号＝显性失败不偷换", "指派" in cloud_text, {"note": cloud_text})

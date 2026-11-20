@@ -191,7 +191,7 @@ class RegistryGateTest(CatalogIsolated):
         with _runtime():
             picked, note = registry.gate_layout("cloud")
         self.assertEqual(picked, "auto")
-        self.assertIn("云端视觉", note)
+        self.assertIn("云端 AI OCR", note)
 
     def test_recognize_mineru_unassigned_returns_auto_with_reason(self) -> None:
         with _runtime():
@@ -267,10 +267,25 @@ class CatalogDataTest(CatalogIsolated):
     def test_p2t_renamed_to_pix2text(self) -> None:
         """卡§6：pix2tex 与 Pix2Text 是两家，全族文案改 Pix2Text·MFR。"""
         entry = next(item for item in registry.catalog() if item["id"] == "formula_p2t")
-        self.assertEqual(entry["name"], "Pix2Text·MFR（公式专科）")
+        self.assertEqual(entry["name"], "Pix2Text·MFR")
         self.assertIn("Pix2Text", entry["summary"])
         for item in registry.catalog():
             self.assertNotIn("pix2tex", str(item.get("name", "")) + str(item.get("summary", "")))
+
+    def test_combo_names_match_their_seat(self) -> None:
+        """MODEL-NAME-ALIGN-01：识别下拉（组合条目）与模型配置表（座条目）同名逐字一致。"""
+        catalog = {item["id"]: item for item in registry.catalog()}
+        combos = [item for item in catalog.values()
+                  if "combo" in (item.get("plan_recognize") or [])]
+        self.assertTrue(combos, "目录里应有组合条目")
+        for combo in combos:
+            with self.subTest(combo=combo["id"]):
+                seat_id = str(combo.get("combo_seat") or "")
+                self.assertTrue(seat_id, "%s 缺 combo_seat" % combo["id"])
+                seat = catalog.get(seat_id)
+                self.assertIsNotNone(seat, "%s 的 seat=%s 不在目录" % (combo["id"], seat_id))
+                self.assertEqual(combo["name"], seat["name"],
+                                 "%s 与座 %s 名字不一致" % (combo["id"], seat_id))
 
     def test_tier_table_starts_at_six_g_no_four_g(self) -> None:
         tiers = registry.vram_tiers()

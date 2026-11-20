@@ -368,7 +368,7 @@ class ComboTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_ready_seat_replaces_in_place_and_clears_pending(self) -> None:
         item = _item(pending=True)
-        entry = {"id": "cloud_vision", "name": "云端视觉", "state": "ready",
+        entry = {"id": "cloud_vision", "name": "云端 AI OCR", "state": "ready",
                  "enabled": True, "plan_recognize": ["ai"]}
         span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
                 "origin": "textlayer"}
@@ -393,7 +393,7 @@ class ComboTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_dispatch_failure_marks_pending_not_whole_downgrade(self) -> None:
         item = _item()
-        entry = {"id": "cloud_vision", "name": "云端视觉", "state": "ready",
+        entry = {"id": "cloud_vision", "name": "云端 AI OCR", "state": "ready",
                  "enabled": True, "plan_recognize": ["ai"]}
         span = {"bbox": [10, 10, 40, 20], "text": "x+1=2", "latex": "",
                 "origin": "textlayer"}
