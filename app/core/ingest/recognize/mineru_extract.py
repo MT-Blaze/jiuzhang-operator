@@ -9,11 +9,15 @@
 
 任何一步失败都返回 ``{ok: False, detail}``，由调用方退回切图模式：
 MinerU 只是备选通道，绝不能因为它连不上就吞掉整批卷子。
+
+整批识别走 ``extract_batch``（一次申请整批地址、并行上传、单循环轮询、
+逐份 outcome 与入参同序）；单题 ``extract`` 保留给单题重认路，一字不动。
 """
 
 from __future__ import annotations
 
 from app.core import wire  # noqa: E402
+import concurrent.futures
 import http.client
 import io
 import secrets
@@ -31,6 +35,10 @@ POLL_SECONDS = 2.0
 MAX_WAIT_SECONDS = 900.0
 MAX_ZIP_BYTES = 64 * 1024 * 1024
 MAX_MARKDOWN_CHARS = 600_000
+# 官方接口节逐字「单次申请链接不能超过 50 个」（总表写 200，取保守侧；
+# 证据 docs/handoff/evidence/mineru-batch-recon/recon.md）。超出按 50 切批。
+BATCH_MAX_FILES = 50
+UPLOAD_WORKERS = 4
 
 
 def _api_root(base_url: str) -> str:
@@ -176,3 +184,176 @@ def extract(name: str, data: bytes, base_url: str, token: str, *,
         "markdown": markdown[:MAX_MARKDOWN_CHARS],
         "detail": "MinerU 已识别",
     }
+
+
+def extract_batch(files: list[tuple[str, bytes]], base_url: str, token: str, *,
+                  model: str = "", wait: float = MAX_WAIT_SECONDS,
+                  sleep: Callable[[float], None] = time.sleep,
+                  clock: Callable[[], float] = time.monotonic,
+                  on_progress: Callable[[int, int], None] | None = None,
+                  ) -> list[dict[str, Any]]:
+    """整批提交 N 份文件并等结果；返回与入参同序的 outcome 列表。
+
+    一次 POST 申请整批上传地址（file_urls 与 files 按下标对应，官方示例实证），
+    并行 PUT（沿用 _put_raw 零 Content-Type 铁口径），单轮询循环按 data_id 认行；
+    done 行并行取 zip 解 Markdown，failed/error 行逐份 err_msg。
+    整批共用 wait 上限：到点已 done 的行照回填，未 done 的行逐题显性失败，不整批作废。
+    on_progress(已结算份数, 总份数) 在结算数变化时回调（done＋failed 都算已回）。
+    """
+    total = len(files)
+    if not total:
+        return []
+    if not token:
+        return [{"ok": False, "detail": "MinerU 账号没有可用的 API Key"}
+                for _ in files]
+    root = _api_root(base_url)
+    if not root.startswith(("http://", "https://")):
+        return [{"ok": False, "detail": "MinerU Base URL 不是 http(s) 地址"}
+                for _ in files]
+    version = model if model in ("vlm", "pipeline") else "vlm"
+    outcomes: list[dict[str, Any] | None] = [None] * total
+    for start in range(0, total, BATCH_MAX_FILES):
+        _extract_chunk(files[start:start + BATCH_MAX_FILES], start, root, token,
+                       version, wait, sleep, clock, on_progress, outcomes)
+    return [outcome if outcome is not None
+            else {"ok": False, "detail": "MinerU 没有返回这份文件的结果"}
+            for outcome in outcomes]
+
+
+def _extract_chunk(chunk: list[tuple[str, bytes]], offset: int, root: str,
+                   token: str, version: str, wait: float,
+                   sleep: Callable[[float], None], clock: Callable[[], float],
+                   on_progress: Callable[[int, int], None] | None,
+                   outcomes: list[dict[str, Any] | None]) -> None:
+    """一批（≤BATCH_MAX_FILES 份）的申请→上传→轮询→取包；outcome 写回全局同序表。"""
+    count = len(chunk)
+    total = len(outcomes)
+    data_ids = ["jzo-%d-%s" % (offset + i, secrets.token_hex(4))
+                for i in range(count)]
+    zip_urls: dict[int, str] = {}
+
+    def notify() -> None:
+        if on_progress is None:
+            return
+        settled = sum(1 for outcome in outcomes if outcome is not None) + len(zip_urls)
+        try:
+            on_progress(settled, total)
+        except Exception:  # noqa: BLE001 - 进度写不进去不该打断识别
+            pass
+
+    def fail_all(detail: str) -> None:
+        for i in range(count):
+            outcomes[offset + i] = {"ok": False, "detail": detail}
+        notify()
+
+    try:
+        raw = _request(
+            root + "/file-urls/batch",
+            method="POST",
+            token=token,
+            payload={
+                "enable_formula": True,
+                "language": "ch",
+                "files": [{"name": name, "data_id": data_id}
+                          for (name, _data), data_id in zip(chunk, data_ids)],
+                "model_version": version,
+            },
+        )
+        document = wire.loads(raw.decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
+            ValueError) as exc:
+        fail_all(f"MinerU 申请上传地址失败：{exc}")
+        return
+    code = document.get("code") if isinstance(document, dict) else None
+    if not isinstance(document, dict) or code is None or int(code) != 0:
+        detail = document.get("msg") if isinstance(document, dict) else document
+        fail_all(f"MinerU 拒绝了这批文件：{detail}")
+        return
+    body = document.get("data") if isinstance(document.get("data"), dict) else {}
+    batch_id = str(body.get("batch_id") or "")
+    urls = body.get("file_urls") if isinstance(body.get("file_urls"), list) else []
+    if not batch_id or len(urls) != count:
+        fail_all("MinerU 没有返回 batch_id，或上传地址数量与文件数不符")
+        return
+
+    uploaded: list[int] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=UPLOAD_WORKERS) as pool:
+        futures = {pool.submit(_put_raw, str(urls[i]), chunk[i][1], UPLOAD_TIMEOUT): i
+                   for i in range(count)}
+        for future in concurrent.futures.as_completed(futures):
+            i = futures[future]
+            try:
+                future.result()
+                uploaded.append(i)
+            except (urllib.error.URLError, urllib.error.HTTPError,
+                    http.client.HTTPException, TimeoutError, OSError) as exc:
+                outcomes[offset + i] = {
+                    "ok": False, "detail": f"MinerU 上传原文件失败：{exc}"}
+    notify()
+    if not uploaded:
+        return
+
+    pending = set(uploaded)
+    last_states: dict[int, str] = {}
+    deadline = clock() + max(1.0, wait)
+    poll_error = ""
+    while pending and clock() < deadline:
+        sleep(POLL_SECONDS)
+        try:
+            raw = _request(root + "/extract-results/batch/" + batch_id, token=token)
+            document = wire.loads(raw.decode("utf-8", errors="replace"))
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
+                ValueError) as exc:
+            poll_error = f"MinerU 查询结果失败：{exc}"
+            break
+        body = document.get("data") if isinstance(document, dict) else {}
+        rows = body.get("extract_result") if isinstance(body, dict) else None
+        by_id = {str(row.get("data_id") or ""): row
+                 for row in (rows or []) if isinstance(row, dict)}
+        for i in sorted(pending):
+            row = by_id.get(data_ids[i])
+            if not isinstance(row, dict):
+                continue
+            state = str(row.get("state") or "")
+            last_states[i] = state
+            if state == "done":
+                zip_urls[i] = str(row.get("full_zip_url") or "")
+                pending.discard(i)
+            elif state in ("failed", "error"):
+                detail = row.get("err_msg") or row.get("message") or state
+                outcomes[offset + i] = {
+                    "ok": False, "detail": f"MinerU 解析失败：{detail}"}
+                pending.discard(i)
+        notify()
+    for i in sorted(pending):
+        if poll_error:
+            detail = poll_error
+        else:
+            state = last_states.get(i, "")
+            detail = ("MinerU 在等待时限内没有返回结果"
+                      + (f"（最后状态：{state}）" if state else ""))
+        outcomes[offset + i] = {"ok": False, "detail": detail}
+
+    def fetch(i: int) -> dict[str, Any]:
+        url = zip_urls[i]
+        if not url:
+            return {"ok": False, "detail": "MinerU 没有返回结果包地址"}
+        try:
+            blob = _request(url, timeout=UPLOAD_TIMEOUT)
+            markdown = _pick_markdown(blob)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError,
+                zipfile.BadZipFile) as exc:
+            return {"ok": False, "detail": f"MinerU 结果包下载/解压失败：{exc}"}
+        if not markdown.strip():
+            return {"ok": False, "detail": "MinerU 结果包里没有 Markdown"}
+        return {"ok": True, "markdown": markdown[:MAX_MARKDOWN_CHARS],
+                "detail": "MinerU 已识别"}
+
+    if zip_urls:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=UPLOAD_WORKERS) as pool:
+            futures = {pool.submit(fetch, i): i for i in zip_urls}
+            for future in concurrent.futures.as_completed(futures):
+                i = futures[future]
+                outcomes[offset + i] = future.result()
+                del zip_urls[i]
+                notify()
