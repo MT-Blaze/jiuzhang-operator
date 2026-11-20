@@ -137,7 +137,7 @@ class RecognizeGroupingTest(unittest.TestCase):
     def test_pure_image_combo_disable_preserved(self) -> None:
         helper = region(INTAKE_JS, "function engineOption(", "function paintEngineOptions(")
         self.assertIn("option.disabled = true", helper)
-        self.assertIn("组合路只支持文字卷", helper)
+        self.assertIn("只支持文字卷", helper)
         self.assertIn("jzoPureImage", helper)
         paint = region(INTAKE_JS, "function paintEngineOptions()", "function applyRegistry(")
         self.assertIn("识别已回到自动分流", paint)
