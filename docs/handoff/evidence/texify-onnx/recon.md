@@ -151,3 +151,22 @@ fp16 权重两件 sha256 逐字==卡钉（§3）。fp16 导出为真 float16 I/O
    卡意图满足。
 6. 基线已知红一案（tests.test_ingest_triage 单题截图 seen_names 空）非本卡回归，
    零触 MinerU 路，不治不混，回单照挂。
+## 7 真测期改正（append-only，2026-11-20 微批挂死根因三层实证后）
+
+1. **预处理误读改正**：§2 初版「直缩 420² 吐字正确」只在近方形金标上成立。官方
+   preprocessor_config.json 实为 do_thumbnail=true＋do_pad=true（长边保比例缩 420＋
+   补边）。真文字层紧裁图是宽扁条（宽高比 3–10），直缩把字形压毁→吐 \bigstar/\bigwedge
+   漫环或错字。五解释擂台（squash/白补左上/白补居中/黑补左上/归一后补0左上 × 真裁图6＋
+   金标3，fp16 no-cache 帽96）实证：保比例四档真图全收敛吐字正确（I2 '1≤x<6}' →
+   `1\leq x<6\}` 逐字对；C3/I3 结构正确），金标 f01/f03/f10 五档输出逐字相同零回归。
+   引擎取归一后补 0 左上（=官方 thumbnail+pad 语义）。证据：texify-recon/
+   debug_pad_variants.py 输出＋padcrop_*.png。
+2. **生成帽改正**：§6 偏离2 的 1536 是位置嵌入天花板不是生成预算；no-cache 全前缀重喂
+   步耗随序列线性涨（实测 step250=113s，1536 漫环约 70 分钟挂死单题重认）。引擎加
+   _MAX_NEW=256 生成预算（max_new=min(max_pos,256)），达帽未收敛＝显性 ok=False 绝不把
+   漫环当成功（旧版达帽静默返回漫环＝隐性失败，已修）。最坏约 2 分钟＜UI 15 分钟窗。
+3. **微批样卷改正**：A3 绵阳一诊文字层 charbox 退化（span 文本紧但 bbox=整行 6120×30px
+   长条），裁出整行条不是公式图。样卷换 C3 呼和浩特二模（全页普查 54 个公式形 span），
+   探针微批改 tools/texify_span_select.py 只读选块器按形状滤（单行/无汉字/宽60–700/
+   高≥20/宽高比1–12）挑 span 序号再 UI 真点；多行串（A2 π/6 跨行）四档预处理皆漫环，
+   形状滤排除。证据：scan_all_pages.py／debug_tight_crops.py 输出。

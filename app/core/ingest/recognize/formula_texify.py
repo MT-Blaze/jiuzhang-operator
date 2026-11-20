@@ -5,9 +5,12 @@ cc-by-sa-4.0 权重内容许可，署名＋相同方式共享；底座代码手�
 贪心环每步重喂全序列（use_cache_branch=False＋空 past）：侦查实锤两档 merged 导出
 cache 分支 present 接线损坏（自喂必崩），no-cache 分支两档全绿——可以慢不能不稳。
 权重住 engines/formula/models/（formula_setup 变体 texify 一键装，hf-mirror 主源）。
-预处理按 DonutImageProcessor 口径（resize 420² bilinear＋1/255＋ImageNet mean/std，
-侦查实证直缩吐字正确）；解码按 tokenizer.json ByteLevel 口径（vocab 50000，
-start=0/eos=2，生成帽取 config decoder.max_position_embeddings=1536；零新依赖，
+预处理按 DonutImageProcessor 口径（do_thumbnail＋do_pad：长边保比例缩 420＋
+归一后补 0 到 420²＋1/255＋ImageNet mean/std；侦查初版误读成直缩，真宽扁裁图
+实测吐字全毁，保比例擂台实证改正）；解码按 tokenizer.json ByteLevel 口径（vocab 50000，
+start=0/eos=2；生成预算 256 token——config 的 1536 是位置嵌入天花板不是生成预算，
+no-cache 全前缀重喂步耗随序列线性涨，1536 漫环实测约 70 分钟会挂死单题重认；
+256 帽最坏约 2 分钟且达帽未收敛＝显性失败绝不把漫环输出当成功；零新依赖，
 不装 torch/tokenizers/sentencepiece）。张量名侦查实证：pixel_values →
 last_hidden_state [B,196,1024] float16；input_ids＋encoder_hidden_states＋空 past →
 logits [B,seq,50000]。未安装＝显性引导去点安装，绝不静默换座；推理失败 ok=False
@@ -35,6 +38,8 @@ _TOK: dict[str, Any] | None = None
 _SIZE = 420
 _START = 0
 _EOS = 2
+# 生成预算（token）：金标实测 ≤26、真紧裁图实测收敛于百内；256 留足余量且最坏步耗可控。
+_MAX_NEW = 256
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
@@ -81,7 +86,8 @@ def _sessions() -> tuple[Any, Any, dict[str, Any]]:
             if not past or not has_branch:
                 raise RuntimeError("Texify 解码器不是 merged 导出（缺 past/use_cache_branch 输入）")
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            max_new = int((cfg.get("decoder") or {}).get("max_position_embeddings") or 1536)
+            max_pos = int((cfg.get("decoder") or {}).get("max_position_embeddings") or 1536)
+            max_new = min(max_pos, _MAX_NEW)
             out_names = [o.name for o in dec.get_outputs()]
             if out_names[0] != "logits":
                 raise RuntimeError("Texify 解码器首输出不是 logits，与引擎口径不符")
@@ -106,17 +112,23 @@ def _tokenizer(tok_path: Any) -> dict[str, Any]:
 
 
 def _preprocess(png: bytes) -> Any:
-    """公式图 → [1,3,420,420] float16；RGB→resize bilinear→1/255→ImageNet 归一。"""
+    """公式图 → [1,3,420,420] float16；官方 do_thumbnail＋do_pad 口径：长边缩到 420
+    保比例 → 1/255 → ImageNet 归一 → 左上对齐、余区补 0 到 420²。
+    直缩 420² 会把宽扁真裁图的字形压毁（实测吐 \\bigstar 漫环），保比例才吐字正确。"""
     from PIL import Image
 
     try:
         img = Image.open(io.BytesIO(png)).convert("RGB")
     except Exception:  # noqa: BLE001 - 坏图只影响这一块，显性交空
         return None
-    img = img.resize((_SIZE, _SIZE), resample=2)
-    arr = np.array(img).astype(np.float32) / 255.0
-    arr = (arr - _MEAN) / _STD
-    return arr.transpose(2, 0, 1)[np.newaxis, :, :, :].astype(np.float16)
+    width, height = img.size
+    ratio = _SIZE / max(width, height)
+    img = img.resize((max(1, round(width * ratio)), max(1, round(height * ratio))),
+                     resample=2)
+    arr = (np.array(img).astype(np.float32) / 255.0 - _MEAN) / _STD
+    canvas = np.zeros((_SIZE, _SIZE, 3), dtype=np.float32)
+    canvas[:img.height, :img.width] = arr
+    return canvas.transpose(2, 0, 1)[np.newaxis, :, :, :].astype(np.float16)
 
 
 def _decode(ids: list[int], tok: dict[str, Any]) -> str:
@@ -152,6 +164,7 @@ def recognize(png: bytes) -> dict[str, Any]:
         empty = {name: np.zeros(shape, dtype=spec["past_dtype"])
                  for name, shape in spec["past"].items()}
         ids = [_START]
+        converged = False
         for _ in range(spec["max_new"]):
             feed = {"input_ids": np.array([ids], dtype=np.int64),
                     "encoder_hidden_states": hidden,
@@ -160,8 +173,13 @@ def recognize(png: bytes) -> dict[str, Any]:
             logits = dec.run(spec["out_names"], feed)[0]
             nxt = int(logits[0, -1].argmax())
             if nxt == _EOS:
+                converged = True
                 break
             ids.append(nxt)
+        if not converged:
+            return {"ok": False, "latex": "",
+                    "detail": "Texify 达生成帽（%d token）未收敛，该块不产出；"
+                              "请改选整题座或换公式裁图" % spec["max_new"]}
         latex = _decode(ids[1:], _tokenizer(spec["tok_path"]))
     except Exception as exc:  # noqa: BLE001 - 单块推理失败显性进失败账本
         logger.warning("Texify 推理失败：%s", exc)

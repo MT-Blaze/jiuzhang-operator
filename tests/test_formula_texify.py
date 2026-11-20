@@ -138,6 +138,13 @@ class EngineTest(unittest.TestCase):
     def test_preprocess_bad_bytes_returns_none(self) -> None:
         self.assertIsNone(formula_texify._preprocess(b"not-an-image"))
 
+    def test_preprocess_thumbnail_preserves_aspect_and_pads_zero(self) -> None:
+        # 120×40 白图 → 长边 420 保比例 → 420×140 内容左上、余区归一后补 0。
+        x = formula_texify._preprocess(_png())
+        self.assertAlmostEqual(float(x[0, 0, 139, 0]), (1 - 0.485) / 0.229, places=2)
+        self.assertEqual(float(x[0, 0, 140, 0]), 0.0)
+        self.assertEqual(float(x[0, 2, 419, 419]), 0.0)
+
     def test_decode_bytelevel_specials_and_space_piece(self) -> None:
         enc = {b: c for c, b in formula_pp_m._byte_decoder().items()}
         tok = {"vocab": {10: "x", 11: "+", 12: "1", 13: enc[0x20] + "x",
@@ -172,15 +179,25 @@ class EngineTest(unittest.TestCase):
         self.assertIn("没认出公式内容", out["detail"])
         self.assertEqual(dec.calls, 1)
 
-    def test_max_new_cap_from_config_stops_runaway(self) -> None:
+    def test_max_new_cap_no_eos_is_explicit_failure(self) -> None:
         (self.tmp / "config.json").write_text(
             json.dumps({"decoder": {"max_position_embeddings": 5}}), encoding="utf-8")
         dec = FakeDec([10])
         with self._sessions(dec):
             out = formula_texify.recognize(_png())
-        self.assertEqual(dec.calls, 5, "生成帽取 config decoder.max_position_embeddings")
-        self.assertTrue(out["ok"])
-        self.assertEqual(out["latex"], "xxxxx")
+        self.assertEqual(dec.calls, 5, "生成帽取 config 位置天花板与预算的较小者")
+        self.assertFalse(out["ok"], "达帽未收敛绝不把漫环输出当成功")
+        self.assertIn("未收敛", out["detail"])
+
+    def test_generation_budget_capped_at_256(self) -> None:
+        (self.tmp / "config.json").write_text(
+            json.dumps({"decoder": {"max_position_embeddings": 1536}}), encoding="utf-8")
+        dec = FakeDec([10])
+        with self._sessions(dec):
+            out = formula_texify.recognize(_png())
+        self.assertEqual(dec.calls, 256, "1536 是位置天花板，生成预算 256 防漫环挂死")
+        self.assertFalse(out["ok"])
+        self.assertIn("256", out["detail"])
 
     def test_dollar_wrapper_is_stripped_to_bare_latex(self) -> None:
         (self.tmp / "tokenizer.json").write_text(
