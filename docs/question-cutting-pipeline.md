@@ -535,3 +535,90 @@ jpg/png 输入不需要渲染器：原图就是底图，现有放大镜已能放
 **LaTeX 在我们的定位彻底变成"内部表示"**：只服务三件事——AI 读写、KaTeX 实时渲染、查重指纹。**它不是交付格式，也从来不该是。**
 
 **交接给输出侧（不归本清单）**：真正要打通的是 Word 模板，而底座目前**没有生成 .docx 的能力**（`requirements.txt` 无 python-docx，[ingest.py:153](file:///E:/jiuzhang-operator/app/core/ingest.py#L153) 只能读；[agents.py:81](file:///E:/jiuzhang-operator/app/api/agents.py#L81) 声明的 `export_paper: docx` 那一支没实现）。好消息是题目是**结构化存储**，所以套模板只是**加一个导出器**，不动存储与渲染。**输入侧只需守住一条**：图片 `role` 分得清题干图/选项图/答案图/解析图（第 5 步给枚举加 `answer` 就是为这个），否则套模板时会把答案图排进题干页。许可预判：优先 MIT 的 `python-docx`，`docxtpl` 是 LGPL 别用。→ 这件事由输出插件排期，**不阻塞切题第一批**。
+
+---
+
+## 条款级判定表（NDT-01 条款级审计）
+
+> 2026-11-20 拍板 A：只做条款级，存量回写不做、不碰 `data/`。本表逐条把 §2 的 57 条落成**可写单测的判定条件**；原有 57 条文字一字未改。
+> 状态口径：**已落**＝代码里有可 grep 的落点；**纸面**＝口径已定、当前不需要代码动作（多为“不做某事”）；**缺口**＝条文要求存在、代码未见或与条文相抵，需另卡。
+> 落点核不到函数名的，一律写「缺口」并说明，不编。
+
+| 条号 | 规则一句话 | 判定条件（输入→判据→输出） | 正例 | 反例 | 落点（模块/函数或「纸面」） | 状态 |
+|---|---|---|---|---|---|---|
+| 1 | 产品自足，联网由用户当场发起 | 插件源码 grep `fetch(`、`parent.document`、`localStorage` → 命中数均 0，且模型列表仅由点击触发 → PASS | `bash scripts/check-plugin-boundary.sh` PASS | 插件源码出现 `fetch(` → FAIL | `scripts/check-plugin-boundary.sh`；`app/core/ai/platform/center.py:398 fetch_models`（点击触发） | 已落 |
+| 2 | 首批只收文本层 PDF 与干净图片 | 输入扩展名 → `intake/text.classify` 归 pdf/docx/txt/image；pdf 走页图，image 走 OCR → 各自建档 | `a.pdf` 走 pdf 路；`b.png` 走 image 路 | 旧二进制 `.doc` 被当首批输入 → 违反 | `app/core/ingest/intake/text.py:81 classify`；`media.py:70 _items_from_file` | 已落 |
+| 3 | 扫描件整桶后置 | 输入 PDF 无文字层 → `_is_scan_source` 真 → 只立页图批次、不落占位题 → 老师手动框选 | 纯图 PDF 批次 `page_only=true` | 扫描件被自动切成题卡 → FAIL | `app/core/ingest/service.py:187 _is_scan_source`、`:192 _stage_one_batch`；`batch/batches.py:109` | 已落 |
+| 4 | 只认横平竖直矩形，自动框不重叠 | 框选手势 → `rectBetween` 产轴对齐矩形；自动题块按纵向区间切分 → 任意两自动块纵向交叠 ≤0 | 斜向拖拽仍得正矩形；自动 1..N 块互不重叠 | 自动块纵向交叠 → FAIL | `split_board_geom.js:47 rectBetween`、`:56 clampRect`；`render/regions.py:165 _question_regions` | 已落 |
+| 5 | 打印出来的图不能糊 | 裁图请求 → `PDF_CROP_DPI=300` 渲染；页图 200dpi → 成品图短边像素达可打印阈值 | 300dpi 裁块 PNG 清晰可打印 | 72dpi 裁图放大打印发糊 → FAIL | `app/core/ingest/render/common.py`（`PDF_CROP_DPI`）；`render/pdf.py:175 crop_pdf_regions` | 已落 |
+| 6 | 图分四类（题干/选项/答案/解析） | 题目 `images[].role` → 枚举校验 → 只接受 `stem/option/solution`；`answer` 被拒 | `role=stem` 通过 | `role=answer` 报枚举错 → 答案图无法入库 | `app/core/question_contract.py:30 IMAGE_ROLES`、`:73 role 校验` | 缺口 |
+| 7 | 批次存副本，原路径只读 | 导入文件 → `store_source_backup` 在工作区留只读副本；删批次只删副本/备份 → 原始路径无写操作 | 删批次后老师原文件仍在 | 删批次调用原路径 unlink → FAIL | `app/core/ingest/service.py:201 store_source_backup`；`batch/bank_batches.py:240 delete_batch` | 已落 |
+| 8 | tikz 代码不在录题台产生，另开插件 | 录题工作台源码 → 不生成 tikz；渲染请求 → `tikz_render_code` 仅编译现有代码 | 已有 tikz 代码渲染成图 | 在录题台生成新 tikz 代码 → 违反 | `app/api/tikz.py:24 tikz_render_code`；专用 tikz 生成插件未见 | 缺口 |
+| 9 | 旧库不参与，新建测试工作区 | 创建请求 → `create_workspace` 建独立 id/目录/空库 → 与现网库隔离 | 新工作区题库计数 0 | 在现网库直接灌测试题 → 违反 | `app/api/workspaces.py:276 create_workspace` | 已落 |
+| 10 | 旧脏数据不清库、只在新库跑 | 验收动作 → 对现网库无 DELETE/清表调用；测试只在新建区 | 现网库行数不变 | 执行清理脚本动现网库 → 违反 | 纸面（政策口径，无代码动作） | 纸面 |
+| 11 | 切错只手动重切；手动可重叠、自动不许 | 画布手势 → 新框=补题、框住已有=覆盖；手动框允许相交；自动块相交即判坏 | 手动两框重叠合法 | 自动切出两框重叠 → FAIL | `ui_split_board.js`；`split_board_geom.js`；`pending.delete`（`service.py:631`） | 已落 |
+| 12 | 单独答案文件不做跨文件配对 | 一次导入 → 只处理本文件内题号-答案；不存在跨文件 join 路径 | 试卷+答案合并成一份后正常 | 系统自动匹配另一份答案文件 → 违反 | 纸面（设计上不提供跨文件入口） | 纸面 |
+| 13 | 小题不拆 | 题干含 `（1）（2）（3）` → 解析器不按小问切卡 → 整道一条 | `（1）…（2）…` 仍为一道题 | 被拆成两张题卡 → FAIL | `question_parser.py`、`scan_text.py:335`（无小问拆分路径） | 已落 |
+| 14 | 公式占位不许入库 | 入库文档 → 检查题干/选项/解析是否含占位标记 → 有则拒收 | `[公式图:1]` 被拦 | `pending.approve` 直连接口放过占位 → 违反 | 池：`pool/service.py:698 _missing_required`、`:715 _placeholder_hits`；UI：`ui_amber.js:71`；`pending.approve` 后端未查占位 | 缺口 |
+| 15 | 图按角色落位（题干末/选项后/答案后/解析原位） | 图片 role + 题块坐标 → 插入位置规则 → 生成源码 | 题干图接题干末尾 | 解析图全堆解析末尾（有坐标却不用）→ FAIL | `ui_illustration.js`（仅光标手工插入）；自动按 role 落位未见 | 缺口 |
+| 16 | `%` 到行尾＝注释，不渲染不进指纹 | 源码行含 `%` → 渲染器截断该行；指纹归一忽略注释 → 输出无注释文字 | `% 题干图` 不印在卷面 | 卷面印出「题干图」三字 → FAIL | `core_rich.js`（INLINE_RE 未处理 `%`）；paper-gen 渲染器未见 `%` 处理 | 缺口 |
+| 17 | 图片可一图一题或一图多题，先切再送模型 | 图片输入 → 本地 OCR+题号链切题；0/1 题号整页一题，≥2 切 → 逐题送模型 | 一页两题切成两卡 | 整页 1024 宽直送模型致公式糊 → FAIL | `ingest/intake/media.py:70 _items_from_file`；`render/regions.py` | 已落 |
+| 18 | AI 任何题可做；官方答案为准；不替换官方解析 | 解题请求 → 有官方答案则以其为准，解析另起段并标 AI；不覆盖原文 | 官方答案 B，AI 推导一致写解析 | AI 改写官方答案为 C → FAIL | `app/core/ai/recognition/recognize.py:53 SOLVE_SYSTEM_PROMPT` | 已落 |
+| 19 | AI 段落只写 `% AI生成`，不写未审核 | AI 回填 → 解析前置 `% AI生成`；屏幕预览浅灰字，打印不显示 | 源码含 `% AI生成` 一行 | AI 文本无标记或写「未审核」→ FAIL | 未见标记常量/渲染分支 | 缺口 |
+| 20 | 必须开思考模式，档位低/中，高不开 | 模型调用 → 请求体带思考档位 low/medium；高不开；不支持明说 | 请求 `reasoning=medium` | 静默降级为无思考 → FAIL | `client.py:63 chat_completion`（无档位参数） | 缺口 |
+| 21 | Ctrl+Z 只撤程序写入，快照逐步回退 | 程序写入前 → 压快照入栈；Ctrl+Z → 弹栈还原含 `% AI生成` | AI 写入后一次撤销回到写入前 | 写入后无法撤销 → FAIL | 未见快照栈；`ui_format.js:130` 仅注释提到原生撤销栈 | 缺口 |
+| 22 | 答案四形态：速查表/紧凑行/摘要行/略 | 答案区文本 → 依次识别四种写法；认不出或矛盾标待核 | `1-12 AC BCD…` 速查表解析成 choice_keys | `19.略` 被猜成答案 → FAIL | `scan_text.py:311 _split_answer`（仅 `【答案】/【详解】`）；速查表/紧凑行未落 | 缺口 |
+| 23 | 格式样例库：一格式一样例一规则一测试 | 老师点收录 → 片段写插件私有抽屉；不动当场解析；规则由代码+测试上线 | 新答案格式收样后解析结果不变 | 点按钮即改判据 → FAIL | 未见样例库与收样命令 | 缺口 |
+| 24 | 封面/目录/答题卡/空白页跳过且写明 | 页特征 → 题号 0 且文字量低=跳过；答题卡页识别丢弃 → 批次卡列页号与原因 | 目录页被跳过并注明 | 空白页当题干进池 → FAIL | `render/furniture.py:43 filter_pages`（仅页眉页脚/重复家具）；封面目录答题卡未分 | 缺口 |
+| 25 | 重切后按新框重识别并重配答案 | 重切请求 → `reidentify` 按坐标/整图重识别 → 原位替换，失败显性 | 改框后题干更新、答案重配 | 重切后仍用旧识别 → FAIL | `app/core/ingest/recognize/reidentify.py:124 reidentify`；`ui_reidentify.js:106 run` | 已落 |
+| 26 | 左栏连续纸带，跨页一框 | 多页 → 按阅读顺序拼接、页界细线；框只认纸带坐标 → 存库按页拆坐标 | 一框跨两页仍是一题 | 强制翻页、跨页框被切开 → FAIL | `split_board_dom.js:70`、`split_board_geom.js:81 piecesOf`；`ui_columns_scan.js:74` | 已落 |
+| 27 | 重开回到未审完批次，否则默认启动页；不自动重跑 | 启动 → 有未审批次则恢复该批该题；无则数据看板；不自动触发解析 | 重开落在上次未审题 | 启动自动重跑识别 → FAIL | `workspace/startup/startup_prefs.py:129 resolve`（只选插件启动页）；无未审批次回跳 | 缺口 |
+| 28 | 一题多考向，第一个为主 | 入库 taxonomy.topic_ids → 校验 ≤MAX；第 0 个 `is_primary=1` → 检索主考向优先 | `[t1,t2]` 存 t1 主 | 多考向等权或丢次考向 → FAIL | `bank/engine/write.py:243 _link_topics`、`:259 is_primary` | 已落 |
+| 29 | 审完入库后批次副本自动删，删失败列名 | 批次 live=0 → 自动删批次副本/页图 → 返回未删文件名 | 全入库后批次目录消失 | 留副本不删或删原路径 → FAIL | `batch/bank_batches.py:240 delete_batch`（手动入口）；全入库后自动触发未接 | 缺口 |
+| 30 | 图里连答案：按【答案】【详解】切；无字样只当题干 | 题块文本 → 命中 `【答案】/【详解】/【解析】` → 前题干、后答案解析；无命中答案留空 | 含【详解】的题块拆出解析 | 无字样却硬猜答案 → FAIL | `scan_text.py:285 _ANSWER`、`:286 _SOLUTION`、`:311 _split_answer` | 已落 |
+| 31 | 解析已有答案空：从「故答案为/故选/综上/因此」摘 | 答案空且解析非空 → 扫收口句 → 命中填答案，否则留空 | `故答案为 B` 摘出 B | 无收口句仍硬猜 → FAIL | 未见收口句提取 | 缺口 |
+| 32 | 解题模型单独选，控件在批次画布栏 | 批次画布 → 有解题槽选择器，读 Provider /models 带推荐字段 | 画布选解题模型并持久化 | 解题模型只能进底座设置页 → FAIL | `ingest/model_prefs.py`（识别/版面座）；无解题槽选择器 | 缺口 |
+| 33 | AI 三槽：识图/打考向/解题各配模型 | 配置中心 → 三个独立槽位与能力判定 | 三槽各自绑定模型 | 三任务混用一槽 → FAIL | `ai/platform/center.py:35 TASKS`（ocr/solve/meta/tikz/mineru，非三槽） | 缺口 |
+| 34 | 切完自动打考向，候选写草稿，不覆盖老师选择 | 解析完成 → 后台逐题出考向候选 → 写候选字段；不覆盖已选 | 新批次题带候选、老师已选保留 | 覆盖老师主考向 → FAIL | 未见自动考向任务 | 缺口 |
+| 35 | 考向按树逐级下钻，每级留说不准 | 打标 → 教材→章→节→考向逐级；每级可停 | 拿不准停在章级 | 无依据硬猜到考向 → FAIL | 考向树已下线（`ui_topics.js:5`）；逐级 AI 未见 | 缺口 |
+| 36 | 入库被拒写底部日志，只拒该题 | approve 失败 → 返回错误码/原因 → 前端 `dockWarn` 一行题号+原因；其他题继续 | 一题考向非法，其他题入库 | 整批回滚或弹窗 → FAIL | `api/pending_approve_errors.py:13 approve_error`；`ui_approve.js:220 dock` | 已落 |
+| 37 | 思考档位低/中实测后再定默认 | 同批题低/中两跑 → 按题型分桶比准确率、耗时 → 准确率优先 | 出分桶对照表 | 未实测就写死默认 → FAIL | 纸面/未实测；`client.py` 无档位参数 | 缺口 |
+| 38 | 讲义库/试卷库成品库（范围外登记） | 打开旧成品 → 还原内容与引用；改后重生成 | 旧讲义可打开继续改 | 生成后即丢、无法翻出 → FAIL | `org.jiuzhang.paper-gen`（组卷生成）；成品库未见 | 缺口 |
+| 39 | 成品只认 q_ 全局 ID，不存原卷题号作身份 | 成品引用 → 只保存 `q_…`；题号只在 `source.question_no` | 讲义引用 `q_abc` | 用题号当身份致重号 → FAIL | `question_contract.py`（q_ 身份）；成品库未建 | 纸面 |
+| 40 | 只存样本，不当场改判据 | 收录按钮 → 写插件私有抽屉；当前解析不变 | 收样后当前题解析不变 | 点按钮即换判据 → FAIL | 未见收录命令 | 缺口 |
+| 41 | 考向必填，缺了不入库 | 入库文档 → topic_ids 非空；空则拒收/亮琥珀 | 空考向被拒 | 空考向入库 → FAIL | `pool/service.py:698 _missing_required`；`ui_amber.js:83`；`write.py` 考向链接 | 已落 |
+| 42 | 有未清项亮琥珀呼吸灯 | 题卡状态 → 待核/占位/缺考向任一 → `data-amber=on`；清掉才熄；reduced-motion 静态 | 缺考向题卡常亮琥珀 | 仅悬停才亮 → FAIL | `ui_amber.js:88 paintBlock`、`:113`；effects.css | 已落 |
+| 43 | 点入库先全批扫灯，有问题跳到最上 | 全部入库点击 → 扫全批 amber；有则拦下并跳第一题；干净才提交 | 第 3 题缺考向 → 跳到第 3 题 | 带灯批次直接入库 → FAIL | `ui_amber.js:192`（扫灯→拦下/逐题入库）、`:215` | 已落 |
+| 44 | 难度由 AI 与考向同一次动作判 | 识别请求 → 同一响应含 topic 候选与 difficulty → 落库 | 一次调用同时出难度与考向 | 另开第二次调用判难度 → FAIL | `recognize.py:47`（prompt 含 difficulty）、`:185`；兜底仍 L2 与条文有偏差 | 已落 |
+| 45 | 无模型时难度老师手选，不回落默认 L2 | 无 AI/失败 → 难度控件必填，老师点 L1–L4 | 老师选 L3 入库 | 静默填 L2 → FAIL | `ui_panel.js:300`（difficulty 下拉）；`core_save.js:157` | 已落 |
+| 46 | 底部只留全部入库/单题入库/彻底删除 | 底部栏 → 无【存为待审】；删除与入库留间隔 | 三钮布局 | 仍有【存为待审】→ FAIL | `ui_approve.js:255`（仍有三钮含存为待审）；`ui_amber.js` 全部入库 | 缺口 |
+| 47 | 整批先查重，重题进独立重题池 | 解析完成 → 整批 warm scan；命中抽进 pool；审核画布不闪红 | 命中的题进池、待审数减 | 审到哪查到哪 → FAIL | `pending/dedupe/engine.py:717 warm_dedupe_scan`；`pool/service.py:248 admit_from_scan` | 已落 |
+| 48 | 同题判据=题型+归一题干+归一选项+配图哈希 | 两题 → 四要素全等 → 判重；答案不参与指纹 | 四要素同 → 命中 | 仅题干同就判重 → FAIL | `pending/dedupe/compare.py:58 _fingerprint`、`:131 find_duplicate` | 已落 |
+| 49 | 一份写法字典+全局清洗器，AI 写公式统一 | 清洗输入 → 闭集选中默认+开集 confirmed 合并 → 切词改写；幂等 | `\dfrac12` 与 `\frac{1}{2}` 统一 | 字符串替换把 `\left` 拆坏 → FAIL | `content/latex_norm.py:428 clean`；`latex_style_dict.py` | 已落 |
+| 50 | 查重两边先过清洗器再算指纹 | 原始源码 → `_compare_form` 清洗 → 指纹；不改库正文 | `\dfrac`/`\frac` 撞同一指纹 | 直接比原始源码漏报 → FAIL | `dedupe_signature.py:_compare_form`、`:98 fingerprint` | 已落 |
+| 51 | 跨来源查重=正文骨架+公式签名 | 题面 → 挖公式留占位得骨架；公式抽数字/字母/运算符签名 → 骨架召回、签名全等判重 | 换数字模板题被挡 | 忽略 `\cap` 与 `\cup` 差异 → FAIL | `dedupe_signature.py:211 skeleton`、`:282 formula_signature` | 已落 |
+| 52 | 置信度三档（严/标准/宽），默认宽 | 候选对 → 信号加权得档位标签 → 读侧按 tier 过滤；档位不落盘 | 默认宽档全收 | 0–100 裸滑杆 → FAIL | `dedupe_signature.py:389 confidence`；`compare.py:246`；`pool/service.py:139 normalize_tier` | 已落 |
+| 53 | PDF 一律原卷页图，不抽文本不自动切 | PDF 导入 → 逐页 200dpi 渲染、`scan_batch=true`、不落占位题 | 扫描 PDF 只有页图 | 自动切成题卡 → FAIL | `ingest/service.py:187`、`:192`；`batch/batches.py:113 scan_batch` | 已落 |
+| 54 | 文字层 PDF 解析后自动切图入池 | 文字层 PDF → 题号链切块 → 裁题图+文字层还原题干/选项/答案/解析 | 文字层 PDF 自动出 N 道题 | 有文字层仍要求手框 → FAIL | `render/regions.py:165`、`render/pdf.py:175`、`scan_text.py:335` | 已落 |
+| 55 | 原卷批次只查不抽，待审数=绿框数 | 原卷批次查重命中 → 只在卡上提示，不抽离池 → 待审数等于框数 | 19 框=19 待审 | 命中即静默抽走 → FAIL | `batch/batches.py:109 page_only`；`pool/service.py:248`（默认不抽） | 已落 |
+| 56 | 写法字典升整机闭集+开集，修订硬条件③ | unknown 候选 → `record_unknown` 写 pending；confirmed 参与改写、rejected 黑名单；仍不打印 | unknown 进待审、确认后生效 | unknown 直接改正文 → FAIL | `latex_norm.py:242 record_unknown`、`:262 decide_correction`、`:428 clean` | 已落 |
+| 57 | `$` 只圈数学表达式，不圈裸数字 | 正文 → 行内纯数字 `$3$` 拆成 `3`；`$x=3$` 保留 | `已知有 $3$ 个` → `3`；`$n=3$` 保留 | `3 cm` 被包成 `$3$ cm` → FAIL | `content/dollar_number.py`；`question_parser.py:416 _without_bare_number_dollars`、`:420 clean_question` | 已落 |
+
+**计数核对（2026-11-20 实跑）：**
+
+- 原清单条数：
+  `awk 'NR>=20 && NR<=84' docs/question-cutting-pipeline.md | grep -cE '^[0-9]+\. '` → **57**
+- 本表数据行数：
+  `awk '/^## 条款级判定表/{f=1;next} f && /^\| [0-9]+ \|/{n++} END{print n}' docs/question-cutting-pipeline.md` → **57**
+- 状态分布：
+  `awk -F'|' '/^\| [0-9]+ \|/{gsub(/ /,"",$8); c[$8]++} END{for(k in c) print k, c[k]}' docs/question-cutting-pipeline.md` → **已落 32 / 纸面 3 / 缺口 22**
+
+**缺口清单（22 条，均需另卡，不并入本卡）：** 6（答案图 role）、8（独立 tikz 插件）、14（pending.approve 后端占位校验）、15（按角色自动落图）、16（`%` 注释渲染）、19（`% AI生成` 标记）、20（思考档位）、21（Ctrl+Z 快照）、22（四种答案形态）、23（格式样例库）、24（封面/目录/答题卡页清理）、27（未审批次续做）、29（入库后自动删批次副本）、31（从解析摘答案）、32（解题槽选择器）、33（三槽拆分）、34（自动打考向）、35（考向树逐级）、37（思考档位实测）、38（成品库）、40（收样按钮）、46（撤【存为待审】）。
+
+### 标准条款出处复核（限时 15 分钟）
+
+- **GB/T 3102.11-1993**：公开详情页可读，确认标准号、中文名《物理科学和技术中使用的数学符号》、状态「现行」、采标标记「采」、代替 GB 3102.11-1986。页面原文明确：**“该标准采用了ISO、IEC等国际国外组织的标准，由于涉及版权保护问题，本系统暂不提供在线阅读服务。”** → 全文不可公开阅读，**可核到 0 个条款号**。
+- **ISO 80000-2:2019**：本轮直取 `iso.org/standard/64973.html` 与 OBP 公开页均返回 **HTTP 403**，被访问策略拦截；沿用 2026-11-19 有头浏览器历史证据（36 页、Published、ISO/TC 12）但本轮**未能复核**。全文付费，**可核到 0 个条款号**。
+- **覆盖符号族**：来源标签只到族级（ISO/GB-T、ISO 80000-2、GB 3102.11、教材版式约定），覆盖关系与不等、运算与算子、集合与逻辑、几何与向量、微积分、上下标与根式、特殊常数、文本与间距八族；**逐符号条款号全部「未核」**。
+- **证据**：`.system_generated/ndt-clause/standards-2026-11-20.toml`（页面原文摘录＋403 阻塞记录；无截图，不伪造）。
+- **结论**：条款级审计的“条款出处”部分核不到，按口径登记为欠账；本表不引用任何标准条款号，**绝不编造**。
