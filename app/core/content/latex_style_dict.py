@@ -8,8 +8,9 @@
   ``\\right``，不动间距命令与空格。
 - ``normalize_for_compare(text)``——**比对归一**：只用来算指纹。在写库清洗的
   全部规则之上，再把排版命令（``\\left`` / ``\\right`` / ``\\quad`` / ``\\,``）
-  与数学段内的空白视为透明。返回的是**新字符串**，调用方拿它算指纹，
-  绝不回填原文。
+  与数学段内的空白视为透明，并按台账第 57 条把只圈数字的 ``$`` 拆成裸数字
+  （写路已这么写，比对路不同口径就会让同一道题在两侧对不上）。返回的是
+  **新字符串**，调用方拿它算指纹，绝不回填原文。
 
 三条硬规矩（台账第 49 条）：
 
@@ -24,6 +25,8 @@ from __future__ import annotations
 
 import re
 from typing import Any
+
+from app.core.content import dollar_number
 
 __all__ = [
     "SYMBOL_ALIASES",
@@ -207,9 +210,18 @@ def normalize_for_compare(text: Any, aliases: dict | None = None) -> dict[str, A
 def _rewrite(text: Any, *, compare: bool, aliases: dict | None = None) -> dict[str, Any]:
     if not isinstance(text, str):
         return {"text": "", "changed": False, "rules": [], "unknown": []}
+    source = text
+    if compare:
+        # 台账第 57 条：写路把只圈数字的 $ 拆成裸数字，比对路必须在切段之前同拆，
+        # 否则「$0$」与「0」算出的指纹/骨架/签名互不相等（存量库与新入库题对不上）。
+        text, unwrapped = dollar_number.unwrap_bare_number_dollars(text)
+    else:
+        unwrapped = 0
     pieces: list[str] = []
     rules: list[str] = []
     unknown: list[str] = []
+    if unwrapped:
+        _note(rules, "dollar_number")
     cursor = 0
     spans = math_spans(text)
     for start, end, _unclosed in spans:
@@ -232,7 +244,7 @@ def _rewrite(text: Any, *, compare: bool, aliases: dict | None = None) -> dict[s
         cleaned = cleaned.strip()
     return {
         "text": cleaned,
-        "changed": cleaned != text,
+        "changed": cleaned != source,
         "rules": rules,
         "unknown": unknown[:MAX_UNKNOWN],
     }

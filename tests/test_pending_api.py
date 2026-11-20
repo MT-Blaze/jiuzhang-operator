@@ -20,6 +20,7 @@ from pathlib import Path as _path
 _sys.path.insert(0, str(_path(__file__).resolve().parents[1]))
 
 from app.core import wire  # noqa: E402
+from app.core.content.dollar_number import unwrap_bare_number_dollars  # noqa: E402
 
 import base64
 import inspect
@@ -1071,7 +1072,9 @@ class PoolEvictionHttpTest(unittest.TestCase):
         finally:
             con.close()
         self.assertIsNotNone(new_stem, created_id)
-        self.assertEqual(str(new_stem[0]), stem)
+        # 主库写路按台账第 57 条把只圈数字的 $ 拆成裸数字（池内原文照存），
+        # 所以与主库逐字比的是**拆后**的题面：内容一字不差，只差这层记号归一。
+        self.assertEqual(str(new_stem[0]), unwrap_bare_number_dollars(stem)[0])
         status, pool_after = self._request("/api/pending/pool")
         left = [p for p in pool_after["items"] if p["batch_id"] == dup["batch_id"]]
         self.assertEqual(len(left), 1, "裁决过的那条退场，另一条还在池里")

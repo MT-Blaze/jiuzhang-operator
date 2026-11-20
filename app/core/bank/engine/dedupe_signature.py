@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import re
 import unicodedata
 from typing import Any, Iterable
 
@@ -185,6 +186,8 @@ _SIGN_TEXT_COMMANDS = frozenset({"text", "mbox", "textrm", "operatorname"})
 # 签名里丢掉的字符：花括号与波浪号只是分组，比对态已由写法字典补齐括号。
 _SIGN_DROP = frozenset("{}~")
 _SIGN_DROP_CONTROLS = frozenset({",", ";", ":", "!", " ", "\t"})
+# 正文裸数字（第 57 条后数字住在正文里），口径与 _scan_math 的数字一致。
+_BARE_NUMBER = re.compile(r"\d+(?:\.\d+)*")
 
 
 def text_similarity(left: str, right: str) -> float:
@@ -256,8 +259,8 @@ def _skeleton_prose(segment: str) -> str:
 def _math_runs(text: str) -> list[str]:
     """把**相邻的**数学段并成一段：``$a$$b$`` 与 ``$ab$`` 写的是一回事，不分边界。
 
-    签名与数字序列共用这一个口径。段与段之间只有正文时留下一个 ``SEGMENT_MARK``
-    空位——否则 ``$a$ 且 $b$`` 与 ``$ab$``（两个变量挨着写）会长出同一个签名。
+    外部仍经 ``dedupe`` re-export 取用；签名扫描现按原顺序同扫正文裸数字。段与段
+    之间只有正文时留 ``SEGMENT_MARK``——否则 ``$a$ 且 $b$`` 与 ``$ab$`` 会长出同一个签名。
     """
     pieces: list[str] = []
     cursor = 0
@@ -270,17 +273,23 @@ def _math_runs(text: str) -> list[str]:
 
 
 def _scan_runs(value: Any) -> tuple[list[str], list[str]]:
-    """一个题面 → ``(签名 token 序列, 数字序列)``。"""
+    """一个题面 → ``(签名 token 序列, 数字序列)``；第 57 条起数学段与正文裸数字同扫。"""
     tokens: list[str] = []
     numbers: list[str] = []
     text = _compare_form(value)
-    for run in _math_runs(text):
-        _scan_math(run, tokens, numbers)
+    cursor = 0
+    tail = (len(text), len(text), False)
+    for start, end, _unclosed in [*latex_style_dict.math_spans(text), tail]:
+        found = _BARE_NUMBER.findall(text[cursor:start])
+        tokens.extend(found)
+        numbers.extend(found)
+        _scan_math(text[start:end], tokens, numbers)
+        cursor = end
     return tokens, numbers
 
 
 def formula_signature(value: Any) -> str:
-    """公式签名：**只由数学段组成**（正文的活儿归骨架），按顺序的空格分隔 token 串。"""
+    """公式签名：数学段＋正文裸数字（正文汉字归骨架），按顺序的空格分隔 token 串。"""
     return " ".join(_scan_runs(value)[0])
 
 
