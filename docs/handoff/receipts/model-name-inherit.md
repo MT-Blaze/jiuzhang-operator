@@ -101,3 +101,36 @@ UI 隔离宿主真浏览器 **15/15 PASS**，4 张截图落底座仓
   未写 git config；未 amend；stage 逐个点名。
 - 未触碰：LICENSE、根 agents.md、AGENTS 铁律一二、app/core/question_contract.py、用户 data/、
   router.py 旧名错误文案、65496/PID 16992、两仓旧 stash。
+
+## 收口补记（枢纽复核）
+
+- 原报「147/147 全绿」系 editor 升 2.26.3 **之前**所跑；升版后未重跑即提交，导致
+  `tests/test_command_registry.py` 的 EXPECTED 版本表仍写 `org.jiuzhang.editor: 2.26.2`，
+  与插件 manifest 2.26.3 不符，枢纽复跑发现 1 条红。
+- 修正：`tests/test_command_registry.py:519` 版本表 `2.26.2` → `2.26.3`（只改这一处）。
+- 复跑定向 4 模块（models_registry / last_used_engine / command_registry / file_size_contract）
+  → `Ran 147 tests / OK`，rc=0；快门禁 PASS（6 项，体积预警 23 份不变）。
+- 本笔 commit `f4a1c8d`「tests：版本表随 editor 2.26.3（继承卡补记）」，底座 ahead 99→100。
+
+### 作废 stash 取证与清理（主公已拍板删除）
+
+两仓各一个 `cancelled-seat-removal-20261120`（stash@{0}），先取证后删除：
+
+**底座仓 jiuzhang-operator**（29 文件，+126/−1495）：
+
+- `app/api/models.py`、`app/core/ingest/formula_setup.py`、`app/core/ingest/recognize/formula.py`、
+  `formula_texify.py`（-200）、`reidentify.py`、`vlm_service.py`、`app/core/ingest/registry.py`、
+  `vlm_setup.py`、`vlm_weights.py`
+- `plugins.toml`、`static/js/stage_command.js`、`static/js/stage_relay_t6.js`
+- tests 12 个：command_registry、formula_route、formula_setup、formula_texify（-284）、
+  last_used_engine、models_registry、recognize_router、reidentify、vlm_service、vlm_setup
+- tools 8 个：mineru_four_probe、p2t_live_probe、pp_l_live_probe、pp_m_live_probe、
+  texify_live_probe（-451）、texify_span_select、vlm_live_probe
+
+**插件仓 jiuzhang-plugins**（6 文件，+20/−96）：`plugins.json`、`plugins/org.jiuzhang.editor.zip`、
+`src/org.jiuzhang.editor/catalog.toml`、`dist/ui_model_install.js`、`dist/ui_model_table.js`、
+`plugin.toml`
+
+处理结果：message 与应用名完全一致后 `git stash drop stash@{0}` 各一次
+（底座 f39969d、插件 d03b9c6），两仓 `git stash list` **均为空**；无其它 stash 被触碰。
+本补记与 biz 补记并入 `f4a1c8d` 之后的第 2 笔 commit（ahead 100→101）。

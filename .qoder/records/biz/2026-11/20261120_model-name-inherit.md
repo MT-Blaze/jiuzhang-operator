@@ -37,3 +37,10 @@ status() 组装时单源继承，_judge 之前生效；缺座/空名显性 block
   零 JS 异常、零 HTTP 失败；4 张截图落 .system_generated/model-name-align/inherit/。
 - 偏离：combo_texify 未装权重不入下拉（三处核座行名）；router.py 旧名文案按卡另议未动；
   live 65496 未动，生效需重启一次。
+
+## 补记（枢纽复核）
+
+- 原 147/147 为升 2.26.3 前所跑；EXPECTED 版本表漏升（test_command_registry.py:519 仍 2.26.2），
+  已改 2.26.3 并复跑 147/147 OK，commit f4a1c8d（底座 ahead 100）；快门禁 PASS（6 项）。
+- 作废 stash cancelled-seat-removal-20261120 已取证（底座 29 文件、插件 6 文件）后各 drop 一次，
+  两仓 stash list 均为空。
