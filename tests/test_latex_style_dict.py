@@ -28,7 +28,7 @@ import unittest
 from pathlib import Path
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
-from app.core.content import latex_style_dict, question_parser
+from app.core.content import latex_compare, latex_style_dict, question_parser
 
 
 def write(text: str) -> str:
@@ -332,6 +332,29 @@ class HostChainTest(unittest.TestCase):
                       inspect.getsource(question_parser.clean_exam_source))
         self.assertIs(question_parser.latex_style_dict, latex_style_dict,
                       "批量入口与本字典必须是同一个模块对象")
+
+
+class CompareEntryTest(unittest.TestCase):
+    """比对入口 ``latex_compare``：拆裸数字 ``$`` 与写路同口径（台账第 57 条）。
+
+    冻结模块 ``latex_style_dict`` 按第 56 条维持 506 行只减不增，拆包入口住外面；
+    这里只钉行为等价，行数由 ``wc -l`` 核，不设护栏测试。
+    """
+
+    def test_01_bare_number_dollar_unwrapped_before_compare(self) -> None:
+        self.assertEqual(
+            latex_compare.normalize_for_compare("则 $0$ ____")["text"],
+            latex_style_dict.normalize_for_compare("则 0 ____")["text"])
+        self.assertEqual(
+            latex_compare.normalize_for_compare("$1$ $2$")["text"],
+            latex_style_dict.normalize_for_compare("1 2")["text"])
+        hit = latex_compare.normalize_for_compare("则 $0$ ____")
+        self.assertIn("dollar_number", hit["rules"])
+        self.assertTrue(hit["changed"])
+
+    def test_02_non_string_passes_through(self) -> None:
+        for value in (None, 3, b"$1$"):
+            self.assertEqual(latex_compare.normalize_for_compare(value)["text"], "")
 
 
 if __name__ == "__main__":

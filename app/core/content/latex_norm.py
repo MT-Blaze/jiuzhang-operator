@@ -427,7 +427,7 @@ def apply_render_report(results: list[dict[str, Any]]) -> int:
 
 def clean(text: Any, *, compare: bool = False) -> dict[str, Any]:
     """清洗驱动：闭集＋开集 confirmed 合并（传递闭包保幂等，按库路径＋写代数缓存）交老模块切词改写；写路 unknown 送开集待审不打印不进日志，比对路只归一。"""
-    from app.core.content import latex_style_dict as style
+    from app.core.content import latex_compare, latex_style_dict as style
     path = str(settings.latex_norm_db_path)
     hit = _CACHE.get(path)
     if hit is not None and hit[0] == _GENERATION[0]:
@@ -443,7 +443,7 @@ def clean(text: Any, *, compare: bool = False) -> dict[str, Any]:
                 target = merged[target]
             merged[key] = target
         _CACHE[path] = (_GENERATION[0], merged)
-    out = style.normalize_for_compare(text, merged) if compare else style.clean_for_write(text, merged)
+    out = latex_compare.normalize_for_compare(text, merged) if compare else style.clean_for_write(text, merged)
     if not compare:
         for name in out["unknown"]:
             record_unknown(name)
