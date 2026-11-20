@@ -272,20 +272,49 @@ class CatalogDataTest(CatalogIsolated):
         for item in registry.catalog():
             self.assertNotIn("pix2tex", str(item.get("name", "")) + str(item.get("summary", "")))
 
-    def test_combo_names_match_their_seat(self) -> None:
-        """MODEL-NAME-ALIGN-01：识别下拉（组合条目）与模型配置表（座条目）同名逐字一致。"""
-        catalog = {item["id"]: item for item in registry.catalog()}
-        combos = [item for item in catalog.values()
+    def test_combo_entries_have_no_name_field(self) -> None:
+        """MODEL-NAME-INHERIT-01：组合条目不再抄座名，名字由宿主单源继承。"""
+        combos = [item for item in registry.catalog()
                   if "combo" in (item.get("plan_recognize") or [])]
-        self.assertTrue(combos, "目录里应有组合条目")
+        self.assertEqual(len(combos), 8, "应有八个组合条目")
+        for combo in combos:
+            with self.subTest(combo=combo["id"]):
+                self.assertNotIn("name", combo, "%s 不得再写 name" % combo["id"])
+
+    def test_status_combo_names_match_their_seat(self) -> None:
+        """status() 输出里组合名与 combo_seat 座名逐字相等（云端＋VLM 三座＋公式四座）。"""
+        with _runtime():
+            entries = _states(registry.status()["entries"])
+        combos = [entry for entry in entries.values()
+                  if "combo" in (entry.get("plan_recognize") or [])]
+        self.assertEqual(len(combos), 8)
         for combo in combos:
             with self.subTest(combo=combo["id"]):
                 seat_id = str(combo.get("combo_seat") or "")
-                self.assertTrue(seat_id, "%s 缺 combo_seat" % combo["id"])
-                seat = catalog.get(seat_id)
-                self.assertIsNotNone(seat, "%s 的 seat=%s 不在目录" % (combo["id"], seat_id))
-                self.assertEqual(combo["name"], seat["name"],
-                                 "%s 与座 %s 名字不一致" % (combo["id"], seat_id))
+                self.assertIn(seat_id, entries, "%s 的 seat=%s 不在目录"
+                              % (combo["id"], seat_id))
+                self.assertEqual(combo["name"], entries[seat_id]["name"])
+
+    def test_combo_name_follows_seat_injection(self) -> None:
+        """注入式：磁盘目录不动，改座名后同一组装函数组合名自动跟随（真引用非抄写）。"""
+        raw = [dict(item) for item in registry.catalog()]
+        seat = next(item for item in raw if item["id"] == "cloud_vision")
+        seat["name"] = "改名后的云座"
+        resolved = {item["id"]: item for item in registry.resolve_entries(raw)}
+        self.assertEqual(resolved["combo_cloud"]["name"], "改名后的云座")
+        self.assertEqual(resolved["cloud_vision"]["name"], "改名后的云座")
+
+    def test_combo_with_missing_seat_is_blocked_not_blank(self) -> None:
+        """座缺失／座名空：status 显性 blocked＋修目录动作，绝不静默空名。"""
+        raw = [dict(item) for item in registry.catalog()
+               if item["id"] != "cloud_vision"]
+        with _runtime(), mock.patch.object(registry, "_document",
+                                           return_value={"entry": raw}):
+            combo = _states(registry.status()["entries"])["combo_cloud"]
+        self.assertEqual(combo["name"], "")
+        self.assertEqual(combo["state"], "blocked")
+        self.assertEqual(combo["action"], "fix_catalog")
+        self.assertIn("不存在或没名字", combo["detail"])
 
     def test_tier_table_starts_at_six_g_no_four_g(self) -> None:
         tiers = registry.vram_tiers()

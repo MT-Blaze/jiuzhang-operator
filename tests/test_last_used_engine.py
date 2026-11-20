@@ -180,7 +180,10 @@ class FullComboCatalogTest(unittest.TestCase):
                 ("combo_vlm_minicpm", "vlm_minicpm", "面壁 MiniCPM-V-2.6（本地）")):
             with self.subTest(combo=combo_id):
                 block = region(CATALOG, 'id = "%s"' % combo_id, "[[entry]]")
-                self.assertIn('name = "%s"' % name, block)
+                self.assertNotIn("name =", block,
+                                 "组合条目名字由座继承（MODEL-NAME-INHERIT-01）")
+                seat_block = region(CATALOG, 'id = "%s"' % seat, "[[entry]]")
+                self.assertIn('name = "%s"' % name, seat_block)
                 self.assertIn('rule = "vlm_local"', block)
                 self.assertIn('combo_seat = "%s"' % seat, block)
                 self.assertIn('plan_recognize = ["combo"]', block)

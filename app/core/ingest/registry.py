@@ -278,6 +278,32 @@ def _judge(item: dict[str, Any], hw: dict[str, Any],
     return handler(item, ctx, hw, tiers)
 
 
+def resolve_entries(entries: tuple[dict[str, Any], ...] | list[dict[str, Any]]
+                    ) -> list[dict[str, Any]]:
+    """组合条目名字从 combo_seat 座继承（单源），在 _judge 之前生效。
+
+    无论组合条目自带/旧包残留什么 name，一律以座名为准；座缺失或座名空
+    ＝显性 catalog_error（status 里落 blocked），绝不静默空名。
+    """
+    seat_names = {str(item.get("id")): str(item.get("name") or "")
+                  for item in entries if str(item.get("id") or "")}
+    resolved: list[dict[str, Any]] = []
+    for item in entries:
+        entry = dict(item)
+        if "combo" in (entry.get("plan_recognize") or []):
+            seat_id = str(entry.get("combo_seat") or "")
+            seat_name = seat_names.get(seat_id, "") if seat_id else ""
+            if seat_name:
+                entry["name"] = seat_name
+            else:
+                entry["name"] = ""
+                entry["catalog_error"] = (
+                    "组合条目「%s」指向的座「%s」不存在或没名字，请更新插件目录后再用该条目。"
+                    % (entry.get("id") or "?", seat_id or "缺 combo_seat"))
+        resolved.append(entry)
+    return resolved
+
+
 def status(probe_hardware: bool = True) -> dict[str, Any]:
     """整块给配置页与下拉：目录全量×三态＋硬件快照＋档位表＋默认选择。
 
@@ -293,9 +319,13 @@ def status(probe_hardware: bool = True) -> dict[str, Any]:
     tiers = [dict(row) for row in doc.get("vram_tier") or []
              if isinstance(row, dict)]
     entries: list[dict[str, Any]] = []
-    for item in _entries(doc):
+    for item in resolve_entries(_entries(doc)):
         entry = dict(item)
-        entry.update(_judge(item, hw, tiers))
+        catalog_error = str(entry.pop("catalog_error", "") or "")
+        if catalog_error:
+            entry.update(_verdict("blocked", catalog_error, "fix_catalog"))
+        else:
+            entry.update(_judge(entry, hw, tiers))
         entry["enabled"] = entry["id"] not in disabled
         entries.append(entry)
     return {"ok": True, "entries": entries, "hardware": hw,
