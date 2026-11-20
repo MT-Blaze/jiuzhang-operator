@@ -71,6 +71,9 @@
     ④ 既有生命周期例外明文承认（不新增例外）：`app/core/pending/batch/`、`app/core/bank/engine/`、
     `app/core/plugins/lifecycle/` 三处「字面够格 2×2 但判平铺」属已裁生命周期例外，照归档判例保留；
     出处：`docs/archive/migration-blueprint/CORE_TARGET_TREE.md` §4。
+    **证据目录豁免（2026-11-20 主公裁）**：`.system_generated/` 下的探针与证据产物不受层数限制
+    （按产物自身结构组织即可）；`app/`、`static/`、`plugins/`、`docs/`、`tests/`、`scripts/`、`tools/`
+    等代码与文档目录仍守 ≤3 层。
 - 禁止在根目录堆放业务模块。
 
 ## 5. 安全规范
