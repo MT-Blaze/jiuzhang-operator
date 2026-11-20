@@ -8,7 +8,7 @@
 3. 每次解析静默打一行 ``[STAT] 本次解析总题数: X, 坏题数: Y, 坏题率: Z%``；
 4. 坏题率只供统计口径：自动＋文字卷走组合路，坏题/无坐标走整题兜底，
    不再按 30% 阈值切换全量 OCR（T6 拍板）；
-5. MinerU 引擎逐题发送单题截图（绝不发整卷 PDF），进度逐题写进路由；
+5. MinerU 引擎整批一次发送单题截图（绝不发整卷 PDF），轮询进度逐轮写回路由；
 6. 双下拉框带原生 title，只影响下一次解析，且单文件不超过 400 行。
 
 运行：``.venv/Scripts/python.exe -m unittest tests.test_ingest_triage``
@@ -330,19 +330,26 @@ class TriagePolicyTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
 
 
 class MineruPerQuestionTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
+    """提速①整批化后的现实：单题截图一次整批发送，逐题独立回填，轮询逐轮写路由。"""
+
     async def test_single_question_screenshots_not_the_whole_pdf(self) -> None:
         items = [item("p_mineru%02d" % index, broken_doc("dropped_var"))
                  for index in range(3)]
         saved: list[dict] = []
-        seen_names: list[str] = []
-        seen_bytes: list[bytes] = []
+        seen_files: list[tuple[str, bytes]] = []
+        seen_wait: list[float] = []
+        route_notes: list[str] = []
 
-        def fake_extract(name, data, base_url, token, **kwargs):
-            seen_names.append(name)
-            seen_bytes.append(data)
-            self.assertEqual(kwargs.get("wait"), 900.0,
-                             "MinerU 等待时限必须放宽到 900 秒")
-            return {"ok": True, "markdown": "1. 求 $x+1=2$ 的解。", "detail": "ok"}
+        def fake_extract_batch(files, base_url, token, **kwargs):
+            seen_files.extend(files)
+            seen_wait.append(kwargs.get("wait"))
+            kwargs["on_progress"](1, 3)
+            kwargs["on_progress"](3, 3)
+            return [{"ok": True, "markdown": "1. 求 $x+1=2$ 的解。", "detail": "ok"}
+                    for _ in files]
+
+        def capture_route(_service, _batch_id, snapshot):
+            route_notes.append(str(snapshot.get("note") or ""))
 
         with mock.patch.object(service, "list_batch_questions",
                                return_value={"items": items}), \
@@ -352,23 +359,45 @@ class MineruPerQuestionTest(CatalogIsolated, unittest.IsolatedAsyncioTestCase):
                                   side_effect=lambda _item: b"\x89PNG-question"), \
                 mock.patch.object(ai_center, "find_mineru",
                                   return_value=binding("mineru")), \
-                mock.patch.object(recognize_mineru.mineru_extract, "extract",
-                                  side_effect=fake_extract), \
-                mock.patch.object(ingest_route, "save_route") as save_route:
+                mock.patch.object(recognize_mineru.mineru_extract, "extract_batch",
+                                  side_effect=fake_extract_batch) as extract_batch, \
+                mock.patch.object(recognize_mineru.mineru_extract, "extract") as extract, \
+                mock.patch.object(ingest_route, "save_route",
+                                  side_effect=capture_route) as save_route:
             with self.assertLogs("app.core.ingest.recognize.mineru",
                                  level="INFO") as captured:
                 route = await ingest_route.fill_scan_batch(
                     "B-002", "mineru",
                     {"has_text_layer": False, "garbled": False})
 
-        self.assertEqual(seen_names, ["第1题.png", "第2题.png", "第3题.png"])
-        self.assertEqual(seen_bytes, [b"\x89PNG-question"] * 3)
+        extract_batch.assert_called_once()
+        extract.assert_not_called()
+        self.assertEqual(seen_files, [
+            ("第1题.png", b"\x89PNG-question"),
+            ("第2题.png", b"\x89PNG-question"),
+            ("第3题.png", b"\x89PNG-question"),
+        ], "发的是单题截图且一次整批，绝不是整卷 PDF")
+        self.assertEqual(seen_wait, [900.0],
+                         "MinerU 等待时限必须放宽到 900 秒")
         self.assertEqual(len(saved), 3, "每道题独立回填，互不干扰")
-        progress = [line for line in captured.output
-                    if "正在将第" in line and "MinerU 云端解析" in line]
-        self.assertEqual(len(progress), 3)
-        self.assertIn("正在将第 1 题发送至 MinerU 云端解析...", progress[0])
-        self.assertEqual(save_route.call_count, 3, "进度要逐题写回批次路由")
+        self.assertEqual([row["pending_id"] for row in saved],
+                         ["p_mineru00", "p_mineru01", "p_mineru02"])
+        for row in saved:
+            self.assertIn("求 $x+1=2$ 的解。", row["question"]["stem"],
+                          "云端正文字段替换本地坏题干")
+            self.assertEqual(row["question"]["images"][0]["uri"],
+                             "/static/pending/" + row["pending_id"] + ".png",
+                             "题图仍认本地这一道，不许串题")
+        self.assertEqual(save_route.call_count, 3,
+                         "整批发送 1 次＋两轮轮询各 1 次写回批次路由")
+        self.assertIn("整批发送", route_notes[0])
+        self.assertIn("已回 1/3 题", route_notes[1])
+        self.assertIn("已回 3/3 题", route_notes[2])
+        self.assertFalse(any("没成功" in note for note in route_notes),
+                         "全部成功时不留失败 note")
+        batch_lines = [line for line in captured.output if "整批发送" in line]
+        self.assertEqual(len(batch_lines), 1)
+        self.assertIn("已将 3 题单题截图整批发送至 MinerU 云端解析...", batch_lines[0])
         self.assertIn("3/3", route["note"])
 
 
