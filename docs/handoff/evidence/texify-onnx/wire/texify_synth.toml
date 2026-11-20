@@ -1,0 +1,549 @@
+seat = "formula_texify"
+link = "公式裁图专科（fp16 no-cache 贪心）"
+operator_head = "11e8b97719b5c606f7529f09dab816e5f97db9a6"
+plugins_head = "0841ccd176d798bb52cfaef01fe021d15ff43171"
+cloud_calls = 0
+n = 30
+ok = 30
+exact = 5
+ref_exact = 16
+render_ok = 30
+exact_rate = 0.1667
+ref_exact_rate = 0.5333
+ok_rate = 1.0
+render_rate = 1.0
+sim_mean = 0.7894
+elapsed_s = 923.2
+whole_caliber = "整题图喂公式通道，输出对金标公式span拼接归一精确（公式座无整题JSON契约）"
+real_consistency = []
+
+[whole]
+n = 4
+ok = 2
+exact = 0
+sim_mean = 0.4024
+
+[[whole.rows]]
+id = "q1"
+ok = false
+raw = ""
+detail = "Texify 达生成帽（256 token）未收敛，该块不产出；请改选整题座或换公式裁图"
+gold_norm = "f(x)=\\begin{cases}x^2+1,&x\\leq 0\\\\2x,&x>0\\end{cases} f(f(-1))"
+out_norm = ""
+exact = false
+sim = 0.0
+span_recall = [0, 2]
+render_ok = false
+
+[[whole.rows]]
+id = "q2"
+ok = true
+raw = "\\mathbb{E}\\triangle ABC\\oplus,\\ \\ \\mathbb{B}\\ \\mathbb{A},B,C\\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A},b,c_{5}\\ \\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A}=2,\\ b=\\sqrt{3},\\ B=60^{\\circ},\\ \\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A},"
+detail = "Texify 公式已转写"
+gold_norm = "\\triangle ABC A,B,C a,b,c a=2 b=\\sqrt{3} B=60^\\circ A"
+out_norm = "\\mathbb{E}\\triangle ABC\\oplus,\\ \\ \\mathbb{B}\\ \\mathbb{A},B,C\\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A},b,c_{5}\\ \\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A}=2,\\ b=\\sqrt{3},\\ B=60^{\\circ},\\ \\ \\mathbb{B}\\mathbb{B}\\mathbb{B}\\ \\mathbb{A},"
+exact = false
+sim = 0.192
+span_recall = [2, 5]
+render_ok = true
+
+[[whole.rows]]
+id = "q3"
+ok = true
+raw = "\\int_{0}^{1}(x^{2}+1)\\,{\\rm d}x"
+detail = "Texify 公式已转写"
+gold_norm = "\\int_0^1 (x^2+1)\\,\\mathrm{d}x"
+out_norm = "\\int_{0}^{1}(x^{2}+1)\\,{\\rm d}x"
+exact = false
+sim = 0.6129
+span_recall = [0, 1]
+render_ok = true
+
+[[whole.rows]]
+id = "q4"
+ok = false
+raw = ""
+detail = "Texify 达生成帽（256 token）未收敛，该块不产出；请改选整题座或换公式裁图"
+gold_norm = "\\{a_n\\} a_1=1 d=2 a_n n S_n"
+out_norm = ""
+exact = false
+sim = 0.0
+span_recall = [0, 2]
+render_ok = false
+
+[[weights]]
+name = "texify_encoder.onnx"
+bytes = 151072055
+sha256 = "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46"
+match = true
+
+[[weights]]
+name = "texify_decoder_merged.onnx"
+bytes = 477396232
+sha256 = "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f"
+match = true
+
+[[weights]]
+name = "texify_tokenizer.json"
+bytes = 2140041
+sha256 = "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2"
+match = true
+
+[[weights]]
+name = "texify_config.json"
+bytes = 4890
+sha256 = "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375"
+match = true
+
+[[weights]]
+name = "texify_preprocessor_config.json"
+bytes = 523
+sha256 = "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478"
+match = true
+
+[[weights]]
+name = "texify_generation_config.json"
+bytes = 200
+sha256 = "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6"
+match = true
+
+[[rows]]
+id = "f01"
+shape = "分数"
+ok = true
+raw = "\\frac{a^{2}-b^{2}}{a+b}=a-b"
+detail = "Texify 公式已转写"
+gold_norm = "\\frac{a^2-b^2}{a+b}=a-b"
+out_norm = "\\frac{a^{2}-b^{2}}{a+b}=a-b"
+exact = false
+ref_exact = true
+sim = 0.8519
+elapsed_s = 12.8
+render_ok = true
+
+[[rows]]
+id = "f02"
+shape = "分数"
+ok = true
+raw = "{\\frac{{\\frac{1}{x}}+1}{x-1}}={\\frac{1+x}{x(x-1)}}"
+detail = "Texify 公式已转写"
+gold_norm = "\\frac{\\frac{1}{x}+1}{x-1}=\\frac{1+x}{x(x-1)}"
+out_norm = "{\\frac{{\\frac{1}{x}}+1}{x-1}}={\\frac{1+x}{x(x-1)}}"
+exact = false
+ref_exact = false
+sim = 0.88
+elapsed_s = 12.3
+render_ok = true
+
+[[rows]]
+id = "f03"
+shape = "根式"
+ok = true
+raw = "\\sqrt{12}=2\\sqrt{3}"
+detail = "Texify 公式已转写"
+gold_norm = "\\sqrt{12}=2\\sqrt{3}"
+out_norm = "\\sqrt{12}=2\\sqrt{3}"
+exact = true
+ref_exact = true
+sim = 1.0
+elapsed_s = 4.4
+render_ok = true
+
+[[rows]]
+id = "f04"
+shape = "根式"
+ok = true
+raw = "\\sqrt[3]{-27}=-3"
+detail = "Texify 公式已转写"
+gold_norm = "\\sqrt[3]{-27}=-3"
+out_norm = "\\sqrt[3]{-27}=-3"
+exact = true
+ref_exact = true
+sim = 1.0
+elapsed_s = 4.6
+render_ok = true
+
+[[rows]]
+id = "f05"
+shape = "指数对数"
+ok = true
+raw = "a^{\\frac{m}{n}}=\\sqrt[n]{a^{m}}"
+detail = "Texify 公式已转写"
+gold_norm = "a^{\\frac{m}{n}}=\\sqrt[n]{a^m}"
+out_norm = "a^{\\frac{m}{n}}=\\sqrt[n]{a^{m}}"
+exact = false
+ref_exact = true
+sim = 0.9355
+elapsed_s = 7.3
+render_ok = true
+
+[[rows]]
+id = "f06"
+shape = "指数对数"
+ok = true
+raw = "(a^{m})^{n}=a^{m n}"
+detail = "Texify 公式已转写"
+gold_norm = "(a^m)^n=a^{mn}"
+out_norm = "(a^{m})^{n}=a^{m n}"
+exact = false
+ref_exact = true
+sim = 0.7368
+elapsed_s = 5.6
+render_ok = true
+
+[[rows]]
+id = "f07"
+shape = "指数对数"
+ok = true
+raw = "\\log_{a}(M N)=\\log_{a}M+\\log_{a}N"
+detail = "Texify 公式已转写"
+gold_norm = "\\log_a(MN)=\\log_a M+\\log_a N"
+out_norm = "\\log_{a}(M N)=\\log_{a}M+\\log_{a}N"
+exact = false
+ref_exact = true
+sim = 0.7879
+elapsed_s = 9.1
+render_ok = true
+
+[[rows]]
+id = "f08"
+shape = "指数对数"
+ok = true
+raw = "\\ln{\\frac{a}{b}}=\\ln a-\\ln b"
+detail = "Texify 公式已转写"
+gold_norm = "\\ln\\frac{a}{b}=\\ln a-\\ln b"
+out_norm = "\\ln{\\frac{a}{b}}=\\ln a-\\ln b"
+exact = false
+ref_exact = false
+sim = 0.9286
+elapsed_s = 7.1
+render_ok = true
+
+[[rows]]
+id = "f09"
+shape = "指数对数"
+ok = true
+raw = "\\lg100=2"
+detail = "Texify 公式已转写"
+gold_norm = "\\lg 100=2"
+out_norm = "\\lg100=2"
+exact = false
+ref_exact = true
+sim = 0.8889
+elapsed_s = 3.9
+render_ok = true
+
+[[rows]]
+id = "f10"
+shape = "三角恒等"
+ok = true
+raw = "\\sin^{2}\\alpha+\\cos^{2}\\alpha=1"
+detail = "Texify 公式已转写"
+gold_norm = "\\sin^2\\alpha+\\cos^2\\alpha=1"
+out_norm = "\\sin^{2}\\alpha+\\cos^{2}\\alpha=1"
+exact = false
+ref_exact = true
+sim = 0.871
+elapsed_s = 11.4
+render_ok = true
+
+[[rows]]
+id = "f11"
+shape = "三角恒等"
+ok = true
+raw = "\\sin(\\alpha+\\beta)=\\sin\\alpha\\cos\\beta+\\cos\\alpha\\sin\\beta"
+detail = "Texify 公式已转写"
+gold_norm = "\\sin(\\alpha+\\beta)=\\sin\\alpha\\cos\\beta+\\cos\\alpha\\sin\\beta"
+out_norm = "\\sin(\\alpha+\\beta)=\\sin\\alpha\\cos\\beta+\\cos\\alpha\\sin\\beta"
+exact = true
+ref_exact = true
+sim = 1.0
+elapsed_s = 12.6
+render_ok = true
+
+[[rows]]
+id = "f12"
+shape = "三角恒等"
+ok = true
+raw = "a^{2}=b^{2}+c^{2}-2b c\\cos A"
+detail = "Texify 公式已转写"
+gold_norm = "a^2=b^2+c^2-2bc\\cos A"
+out_norm = "a^{2}=b^{2}+c^{2}-2b c\\cos A"
+exact = false
+ref_exact = true
+sim = 0.75
+elapsed_s = 12.9
+render_ok = true
+
+[[rows]]
+id = "f13"
+shape = "定积分"
+ok = true
+raw = "\\int_{0}^{1}x^{2}\\,\\mathrm{d}x=\\frac{1}{3}"
+detail = "Texify 公式已转写"
+gold_norm = "\\int_0^1 x^2\\,\\mathrm{d}x=\\frac{1}{3}"
+out_norm = "\\int_{0}^{1}x^{2}\\,\\mathrm{d}x=\\frac{1}{3}"
+exact = false
+ref_exact = true
+sim = 0.8571
+elapsed_s = 16.8
+render_ok = true
+
+[[rows]]
+id = "f14"
+shape = "求和"
+ok = true
+raw = "\\sum_{i=1}^{n}i=\\frac{n(n+1)}{2}"
+detail = "Texify 公式已转写"
+gold_norm = "\\sum_{i=1}^{n}i=\\frac{n(n+1)}{2}"
+out_norm = "\\sum_{i=1}^{n}i=\\frac{n(n+1)}{2}"
+exact = true
+ref_exact = true
+sim = 1.0
+elapsed_s = 14.5
+render_ok = true
+
+[[rows]]
+id = "f15"
+shape = "矩阵"
+ok = true
+raw = "\\left(\\begin{matrix}1&2\\\\ 3&4\\end{matrix}\\right)\\left(\\begin{matrix}x\\\\ y\\end{matrix}\\right)=\\left(\\begin{matrix}x+2y\\\\ 3x+4y\\end{matrix}\\right)"
+detail = "Texify 公式已转写"
+gold_norm = "\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\begin{pmatrix}x\\\\y\\end{pmatrix}=\\begin{pmatrix}x+2y\\\\3x+4y\\end{pmatrix}"
+out_norm = "\\left(\\begin{matrix}1&2\\\\ 3&4\\end{matrix}\\right)\\left(\\begin{matrix}x\\\\ y\\end{matrix}\\right)=\\left(\\begin{matrix}x+2y\\\\ 3x+4y\\end{matrix}\\right)"
+exact = false
+ref_exact = false
+sim = 0.6667
+elapsed_s = 23.9
+render_ok = true
+
+[[rows]]
+id = "f16"
+shape = "分段函数"
+ok = true
+raw = "f(x)=\\left\\{\\begin{array}{l l}{{x^{2}+1,}}&{{x\\leq0}}\\\\ {{2x,}}&{{x>0}}\\end{array}\\right."
+detail = "Texify 公式已转写"
+gold_norm = "f(x)=\\begin{cases}x^2+1,&x\\leq 0\\\\2x,&x>0\\end{cases}"
+out_norm = "f(x)=\\left\\{\\begin{array}{l l}{{x^{2}+1,}}&{{x\\leq0}}\\\\ {{2x,}}&{{x>0}}\\end{array}\\right."
+exact = false
+ref_exact = false
+sim = 0.4607
+elapsed_s = 18.1
+render_ok = true
+
+[[rows]]
+id = "f17"
+shape = "向量"
+ok = true
+raw = "\\vec{a}\\cdot\\vec{b}=|\\vec{a}||\\vec{b}|\\cos\\theta"
+detail = "Texify 公式已转写"
+gold_norm = "\\vec{a}\\cdot\\vec{b}=|\\vec{a}||\\vec{b}|\\cos\\theta"
+out_norm = "\\vec{a}\\cdot\\vec{b}=|\\vec{a}||\\vec{b}|\\cos\\theta"
+exact = true
+ref_exact = true
+sim = 1.0
+elapsed_s = 8.8
+render_ok = true
+
+[[rows]]
+id = "f18"
+shape = "向量"
+ok = true
+raw = "{\\vec{a}}+{\\vec{b}}=(x_{1}+x_{2},\\,y_{1}+y_{2})"
+detail = "Texify 公式已转写"
+gold_norm = "\\vec{a}+\\vec{b}=(x_1+x_2,\\ y_1+y_2)"
+out_norm = "{\\vec{a}}+{\\vec{b}}=(x_{1}+x_{2},\\,y_{1}+y_{2})"
+exact = false
+ref_exact = false
+sim = 0.7234
+elapsed_s = 12.2
+render_ok = true
+
+[[rows]]
+id = "f19"
+shape = "希腊字母"
+ok = true
+raw = "\\alpha$, $\\beta$, $\\gamma$, $\\Delta$, $\\theta$, $\\lambda$, $\\mu$, $\\pi$, $\\sigma$, $\\rho$, $\\omega"
+detail = "Texify 公式已转写"
+gold_norm = "\\alpha,\\ \\beta,\\ \\gamma,\\ \\Delta,\\ \\theta,\\ \\lambda,\\ \\mu,\\ \\pi,\\ \\sigma,\\ \\varphi,\\ \\omega"
+out_norm = "\\alpha$,$\\beta$,$\\gamma$,$\\Delta$,$\\theta$,$\\lambda$,$\\mu$,$\\pi$,$\\sigma$,$\\rho$,$\\omega"
+exact = false
+ref_exact = false
+sim = 0.6264
+elapsed_s = 18.5
+render_ok = true
+
+[[rows]]
+id = "f20"
+shape = "中文text"
+ok = true
+raw = "f(x)>0\\ !\\exists\\exists\\exists\\exists\\exists\\exists\\exists"
+detail = "Texify 公式已转写"
+gold_norm = "f(x)>0\\text{ 恒成立}"
+out_norm = "f(x)>0\\ !\\exists\\exists\\exists\\exists\\exists\\exists\\exists"
+exact = false
+ref_exact = false
+sim = 0.1897
+elapsed_s = 6.7
+render_ok = true
+
+[[rows]]
+id = "f21"
+shape = "多行aligned"
+ok = true
+raw = "\\begin{array}{l}{{(a+b)^{2}=a^{2}+2a b+b^{2}}}\\\\ {{(a-b)^{2}=a^{2}-2a b+b^{2}}}\\end{array}"
+detail = "Texify 公式已转写"
+gold_norm = "\\begin{aligned}(a+b)^2&=a^2+2ab+b^2\\\\(a-b)^2&=a^2-2ab+b^2\\end{aligned}"
+out_norm = "\\begin{array}{l}{{(a+b)^{2}=a^{2}+2a b+b^{2}}}\\\\ {{(a-b)^{2}=a^{2}-2a b+b^{2}}}\\end{array}"
+exact = false
+ref_exact = false
+sim = 0.6
+elapsed_s = 21.2
+render_ok = true
+
+[[rows]]
+id = "f22"
+shape = "行内$"
+ok = true
+raw = "x=\\frac{-b\\pm\\sqrt{b^{2}-4a c}}{2a}"
+detail = "Texify 公式已转写"
+gold_norm = "x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}"
+out_norm = "x=\\frac{-b\\pm\\sqrt{b^{2}-4a c}}{2a}"
+exact = false
+ref_exact = true
+sim = 0.9143
+elapsed_s = 7.6
+render_ok = true
+
+[[rows]]
+id = "f23"
+shape = "独立$$"
+ok = true
+raw = "S_{n}=\\frac{n(a_{1}+a_{n})}{2}"
+detail = "Texify 公式已转写"
+gold_norm = "S_n=\\frac{n(a_1+a_n)}{2}"
+out_norm = "S_{n}=\\frac{n(a_{1}+a_{n})}{2}"
+exact = false
+ref_exact = true
+sim = 0.8
+elapsed_s = 7.6
+render_ok = true
+
+[[rows]]
+id = "f24"
+shape = "集合"
+ok = true
+raw = "\\{x|-1\\leq x<3\\}"
+detail = "Texify 公式已转写"
+gold_norm = "\\{x\\mid -1\\leq x<3\\}"
+out_norm = "\\{x|-1\\leq x<3\\}"
+exact = false
+ref_exact = false
+sim = 0.75
+elapsed_s = 4.4
+render_ok = true
+
+[[rows]]
+id = "f25"
+shape = "组合数"
+ok = true
+raw = "C_{n}^{m}=\\frac{n!}{m!(n-m)!}"
+detail = "Texify 公式已转写"
+gold_norm = "\\mathrm{C}_n^m=\\frac{n!}{m!(n-m)!}"
+out_norm = "C_{n}^{m}=\\frac{n!}{m!(n-m)!}"
+exact = false
+ref_exact = false
+sim = 0.6471
+elapsed_s = 7.5
+render_ok = true
+
+[[rows]]
+id = "f26"
+shape = "数列递推"
+ok = true
+raw = "a_{n+1}=2a_{n}+1"
+detail = "Texify 公式已转写"
+gold_norm = "a_{n+1}=2a_n+1"
+out_norm = "a_{n+1}=2a_{n}+1"
+exact = false
+ref_exact = true
+sim = 0.875
+elapsed_s = 5.0
+render_ok = true
+
+[[rows]]
+id = "f27"
+shape = "极限"
+ok = true
+raw = "\\operatorname*{lim}_{n\\to\\infty}\\frac{1}{n}=0"
+detail = "Texify 公式已转写"
+gold_norm = "\\lim_{n\\to\\infty}\\frac{1}{n}=0"
+out_norm = "\\operatorname*{lim}_{n\\to\\infty}\\frac{1}{n}=0"
+exact = false
+ref_exact = false
+sim = 0.6667
+elapsed_s = 7.0
+render_ok = true
+
+[[rows]]
+id = "f28"
+shape = "导数"
+ok = true
+raw = "f^{\\prime}(x)=\\operatorname*{lim}_{\\Delta x\\to0}{\\frac{f(x+\\Delta x)-f(x)}{\\Delta x}}"
+detail = "Texify 公式已转写"
+gold_norm = "f'(x)=\\lim_{\\Delta x\\to 0}\\frac{f(x+\\Delta x)-f(x)}{\\Delta x}"
+out_norm = "f^{\\prime}(x)=\\operatorname*{lim}_{\\Delta x\\to0}{\\frac{f(x+\\Delta x)-f(x)}{\\Delta x}}"
+exact = false
+ref_exact = false
+sim = 0.6824
+elapsed_s = 13.7
+render_ok = true
+
+[[rows]]
+id = "f29"
+shape = "复数"
+ok = true
+raw = "z=a+b\\mathbf{i},\\,\\bar{z}=a-b\\mathbf{i}"
+detail = "Texify 公式已转写"
+gold_norm = "z=a+b\\mathrm{i},\\ \\overline{z}=a-b\\mathrm{i}"
+out_norm = "z=a+b\\mathbf{i},\\,\\bar{z}=a-b\\mathbf{i}"
+exact = false
+ref_exact = false
+sim = 0.7273
+elapsed_s = 7.8
+render_ok = true
+
+[[rows]]
+id = "f30"
+shape = "立体几何"
+ok = true
+raw = "S=4\\pi R^{2},\\,V=\\frac{4}{3}\\pi R^{3}"
+detail = "Texify 公式已转写"
+gold_norm = "S=4\\pi R^2,\\ V=\\frac{4}{3}\\pi R^3"
+out_norm = "S=4\\pi R^{2},\\,V=\\frac{4}{3}\\pi R^{3}"
+exact = false
+ref_exact = false
+sim = 0.8649
+elapsed_s = 8.4
+render_ok = true
+
+[[real_crops]]
+id = "探针小题1"
+ok = false
+raw = ""
+norm = ""
+detail = "Texify 达生成帽（256 token）未收敛，该块不产出；请改选整题座或换公式裁图"
+
+[[real_crops]]
+id = "探针小题2"
+ok = false
+raw = ""
+norm = ""
+detail = "Texify 达生成帽（256 token）未收敛，该块不产出；请改选整题座或换公式裁图"
+
+[[real_crops]]
+id = "探针小题3"
+ok = false
+raw = ""
+norm = ""
+detail = "Texify 达生成帽（256 token）未收敛，该块不产出；请改选整题座或换公式裁图"

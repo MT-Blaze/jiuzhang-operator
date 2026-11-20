@@ -1,0 +1,221 @@
+tag = "run2"
+base = "http://127.0.0.1:52928"
+operator_head = "11e8b97719b5c606f7529f09dab816e5f97db9a6"
+plugins_head = "0841ccd176d798bb52cfaef01fe021d15ff43171"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = ["http://127.0.0.1:52928/api/models/formula_texify/install"]
+dialogs = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？"]
+deviations = ["prefs auto_image_seat=cloud_vision（未指派）：组合路无坐标整题兜底走显性失败，避 MinerU/VLM CPU 停跑令", "原串批次经自动分流默认公式座（PP-M 未装）显性标待核产出，先于安装跑——引擎下拉只列就绪且启用座", "p2t 118MB 顺带装拆：只为 texify/p2t 共享目录按件卸载互不误删的真证，非 p2t 座重复验收", "fp16 no-cache 全前缀重喂贪心：卡§3 past KV 处方偏离——merged 导出 cache 分支 present 病灶（recon.md），输出与正路逐字一致", "int8 早判红弃用换 fp16 主档（卡§1 显式 fallback 条款触发，一次换定不反复）", "texify 四小件是模型权重资产（词表/配置），住 engines/ 副本内，非证据记录 JSON"]
+raw_batch = "B-001"
+error = "AssertionError: Locator expected to have text '就绪'\nActual value: 暂不可用 \nCall log:\n  - Expect \"to_have_text\" locator(\"#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame\").content_frame.locator(\".ep-mt-row\").filter(has_text=\"Texify（公式专科）\").locator(\".ep-mt-badge\") with timeout 30000ms\n  - waiting for locator(\"#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame\").content_frame.locator(\".ep-mt-row\").filter(has_text=\"Texify（公式专科）\").locator(\".ep-mt-badge\")\n    63 × locator resolved to <span class=\"ep-mt-badge ep-mt-badge-blocked\">暂不可用</span>\n       - unexpected value \"暂不可用\"\n\nAria snapshot:\n- text: 暂不可用"
+ok = false
+elapsed_s = 621.8
+
+[install_status_texify]
+state = "error"
+step = "下载权重"
+message = "权重下载全败（texify_encoder.onnx）：hf-mirror → The read operation timed out"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "11e8b977"
+plugins = "0841ccd1"
+
+[[checks]]
+name = "初始 texify 未就绪＋install_formula_texify（副本无权重）"
+ok = true
+
+[checks.detail]
+id = "formula_texify"
+name = "Texify（公式专科）"
+capability = "formula"
+family = "formula"
+min_vram = 0
+can_cpu = true
+summary = "Texify 公式转 LaTeX：社区 ONNX 干净房间接线，零新依赖；权重一键装（约 628MB fp16），CPU 可跑。"
+summary_usage = "干啥：公式专科，把公式图转 LaTeX。准不准：专用公式模型，印刷公式稳，与 MinerU 生态同源。快慢：CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享）——个人/教研免费用，商用或二次分发须遵官方相同方式共享条款；权重约 628MB 一键装（fp16 编码器＋解码器＋四小件共六件）。现状：社区 ONNX 已接线（int8 档早判红弃用，fp16 稳态路），权重未装时点【安装】。"
+rule = "weight_present"
+store = "formula_texify"
+plan_recognize = ["formula_texify"]
+ready_detail = "权重已装（fp16 六件 sha256 校验通过），公式专科 Texify 通道就绪。"
+degraded_detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+degraded_action = "install_formula_texify"
+install_error_detail = "安装失败：{message}"
+state = "degraded"
+detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "combo_texify 随座未就绪（weight_present 真随权重）"
+ok = true
+
+[checks.detail]
+id = "combo_texify"
+name = "文字直取+公式·Texify"
+capability = "recognize"
+min_vram = 0
+can_cpu = true
+summary = "文字卷组合路：正文文字直取，公式裁图送 Texify 专科（已接线）。"
+summary_usage = "干啥：带文字层的卷子，正文直接从文字层取，公式裁图送公式专科 Texify。准不准：正文零误差；专用公式模型印刷公式稳。快慢：正文即取，公式 CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。现状：公式专科 Texify 通道已接线，本组合随公式座 Texify 档就绪（权重未装不显示）；纯图卷选它会显性报错。"
+rule = "weight_present"
+store = "formula_texify"
+ready_detail = "组合路就绪：正文文字直取；公式裁图交 Texify 专科通道。"
+degraded_detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+plan_recognize = ["combo"]
+combo_seat = "formula_texify"
+route_note_recognize = "识别：组合路——正文文字直取，公式裁图交 Texify 专科。"
+state = "degraded"
+detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "其余座口径不动（PP-M/L/p2t 未装引导安装）"
+ok = true
+
+[checks.detail]
+formula_pp_m = "degraded"
+formula_pp_l = "degraded"
+formula_p2t = "degraded"
+
+[[checks]]
+name = "未安装行：未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（未安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "原串批次立起（自动文字卷，公式座未装）"
+ok = true
+
+[checks.detail]
+raw = "B-001"
+
+[[checks]]
+name = "公式座未装显性标待核（零 MinerU/VLM 引擎、零出网）"
+ok = true
+
+[checks.detail]
+failures = ["公式座「PP-FormulaNet·M（公式专科）」未就绪（权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。）。", "整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"]
+
+[[checks]]
+name = "628MB＋cc-by-sa-4.0 成本/许可确认弹窗已摆并 accept"
+ok = true
+detail = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？"]
+
+[[checks]]
+name = "安装请求确由界面点击发起"
+ok = true
+detail = ["http://127.0.0.1:52928/api/models/formula_texify/install"]
+
+[[checks]]
+name = "texify 安装收口 done"
+ok = false
+
+[checks.detail]
+state = "error"
+step = "下载权重"
+message = "权重下载全败（texify_encoder.onnx）：hf-mirror → The read operation timed out"
+
+[[checks]]
+name = "texify 六件权重落地 sha256 逐字一致"
+ok = false
+
+[[checks.detail]]
+name = "texify_encoder.onnx"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks.detail]]
+name = "texify_decoder_merged.onnx"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks.detail]]
+name = "texify_tokenizer.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks.detail]]
+name = "texify_config.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks.detail]]
+name = "texify_preprocessor_config.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks.detail]]
+name = "texify_generation_config.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 52928
+
+[[checks]]
+name = "副本服务孤儿零"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[weights_texify]]
+name = "texify_encoder.onnx"
+bytes = 0
+sha256 = ""
+match = false
+
+[[weights_texify]]
+name = "texify_decoder_merged.onnx"
+bytes = 0
+sha256 = ""
+match = false
+
+[[weights_texify]]
+name = "texify_tokenizer.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[weights_texify]]
+name = "texify_config.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[weights_texify]]
+name = "texify_preprocessor_config.json"
+bytes = 0
+sha256 = ""
+match = false
+
+[[weights_texify]]
+name = "texify_generation_config.json"
+bytes = 0
+sha256 = ""
+match = false

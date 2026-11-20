@@ -1,0 +1,341 @@
+tag = "run1"
+base = "http://127.0.0.1:51314"
+operator_head = "1e61cf250a83069db18b7ffa48572d63ae506995"
+plugins_head = "0841ccd176d798bb52cfaef01fe021d15ff43171"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = ["http://127.0.0.1:51314/api/models/formula_texify/install"]
+dialogs = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？"]
+deviations = ["prefs auto_image_seat=cloud_vision（未指派）：组合路无坐标整题兜底走显性失败，避 MinerU 本地 CPU 停跑令；公式步真跑不受影响", "原串批次经自动分流默认公式座（PP-M 未装）显性标待核产出，先于安装跑——引擎下拉只列就绪且启用座，未装座无从直选", "p2t 118MB 顺带装拆：只为 texify/p2t 共享目录按件卸载互不误删的真证，非 p2t 座重复验收", "fp16 no-cache 全前缀重喂贪心：卡§3 past KV 处方偏离——两档 merged 导出 cache 分支present 接线病灶（recon.md 钉死），no-cache 输出与 cache 正路逐字一致，只弃broken加速路", "int8 早判红弃用换 fp16 主档（卡§1 显式 fallback 条款触发，一次换定不反复）", "texify_tokenizer.json 等四小件是模型权重资产（词表/配置），住 engines/ 副本内，非证据记录 JSON"]
+raw_batch = "B-001"
+reidentify_filled = 0
+error = "AssertionError: Locator expected to have class 're.compile('is-error')'\nActual value: ed-reidentify-note \nCall log:\n  - Expect \"to_have_class\" locator(\"#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame\").content_frame.locator(\".ed-reidentify[data-pending-id='p_045442f49c44bff07662ec56']\").locator(\".ed-reidentify-note\") with timeout 60000ms\n  - waiting for locator(\"#wsPanel_plugin_org_jiuzhang_editor .ws-plugin-frame\").content_frame.locator(\".ed-reidentify[data-pending-id='p_045442f49c44bff07662ec56']\").locator(\".ed-reidentify-note\")\n    120 × locator resolved to <span role=\"status\" class=\"ed-reidentify-note\">正在送席重认…单题最长等 15 分钟，请别关页签。</span>\n        - unexpected value \"ed-reidentify-note\"\n\nAria snapshot:\n- status: 正在送席重认…单题最长等 15 分钟，请别关页签。"
+ok = false
+elapsed_s = 1356.5
+
+[install_status_texify]
+state = "done"
+step = "完成"
+message = "Texify 已就绪（各件权重 sha256 校验通过）。"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "1e61cf25"
+plugins = "0841ccd1"
+
+[[checks]]
+name = "初始 texify 未就绪＋install_formula_texify（副本无权重）"
+ok = true
+
+[checks.detail]
+id = "formula_texify"
+name = "Texify（公式专科）"
+capability = "formula"
+family = "formula"
+min_vram = 0
+can_cpu = true
+summary = "Texify 公式转 LaTeX：社区 ONNX 干净房间接线，零新依赖；权重一键装（约 628MB fp16），CPU 可跑。"
+summary_usage = "干啥：公式专科，把公式图转 LaTeX。准不准：专用公式模型，印刷公式稳，与 MinerU 生态同源。快慢：CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享）——个人/教研免费用，商用或二次分发须遵官方相同方式共享条款；权重约 628MB 一键装（fp16 编码器＋解码器＋四小件共六件）。现状：社区 ONNX 已接线（int8 档早判红弃用，fp16 稳态路），权重未装时点【安装】。"
+rule = "weight_present"
+store = "formula_texify"
+plan_recognize = ["formula_texify"]
+ready_detail = "权重已装（fp16 六件 sha256 校验通过），公式专科 Texify 通道就绪。"
+degraded_detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+degraded_action = "install_formula_texify"
+install_error_detail = "安装失败：{message}"
+state = "degraded"
+detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "combo_texify 随座未就绪（weight_present 真随权重）"
+ok = true
+
+[checks.detail]
+id = "combo_texify"
+name = "文字直取+公式·Texify"
+capability = "recognize"
+min_vram = 0
+can_cpu = true
+summary = "文字卷组合路：正文文字直取，公式裁图送 Texify 专科（已接线）。"
+summary_usage = "干啥：带文字层的卷子，正文直接从文字层取，公式裁图送公式专科 Texify。准不准：正文零误差；专用公式模型印刷公式稳。快慢：正文即取，公式 CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。现状：公式专科 Texify 通道已接线，本组合随公式座 Texify 档就绪（权重未装不显示）；纯图卷选它会显性报错。"
+rule = "weight_present"
+store = "formula_texify"
+ready_detail = "组合路就绪：正文文字直取；公式裁图交 Texify 专科通道。"
+degraded_detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+plan_recognize = ["combo"]
+combo_seat = "formula_texify"
+route_note_recognize = "识别：组合路——正文文字直取，公式裁图交 Texify 专科。"
+state = "degraded"
+detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "其余座口径不动（PP-M/L/p2t 未装引导安装）"
+ok = true
+
+[checks.detail]
+formula_pp_m = "degraded"
+formula_pp_l = "degraded"
+formula_p2t = "degraded"
+
+[[checks]]
+name = "未安装行：未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（未安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "原串批次立起（自动文字卷，公式座未装）"
+ok = true
+
+[checks.detail]
+raw = "B-001"
+
+[[checks]]
+name = "公式座未装显性标待核（零 MinerU/VLM 引擎、零出网）"
+ok = true
+
+[checks.detail]
+failures = ["公式座「PP-FormulaNet·M（公式专科）」未就绪（权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。）。", "整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"]
+
+[[checks]]
+name = "628MB＋cc-by-sa-4.0 成本/许可确认弹窗已摆并 accept"
+ok = true
+detail = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？"]
+
+[[checks]]
+name = "安装请求确由界面点击发起"
+ok = true
+detail = ["http://127.0.0.1:51314/api/models/formula_texify/install"]
+
+[[checks]]
+name = "texify 安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "Texify 已就绪（各件权重 sha256 校验通过）。"
+
+[[checks]]
+name = "texify 六件权重落地 sha256 逐字一致"
+ok = true
+
+[[checks.detail]]
+name = "texify_encoder.onnx"
+bytes = 151072055
+sha256 = "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46"
+match = true
+
+[[checks.detail]]
+name = "texify_decoder_merged.onnx"
+bytes = 477396232
+sha256 = "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f"
+match = true
+
+[[checks.detail]]
+name = "texify_tokenizer.json"
+bytes = 2140041
+sha256 = "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2"
+match = true
+
+[[checks.detail]]
+name = "texify_config.json"
+bytes = 4890
+sha256 = "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375"
+match = true
+
+[[checks.detail]]
+name = "texify_preprocessor_config.json"
+bytes = 523
+sha256 = "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478"
+match = true
+
+[[checks.detail]]
+name = "texify_generation_config.json"
+bytes = 200
+sha256 = "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6"
+match = true
+
+[[checks]]
+name = "已安装行：就绪＋【卸载】钮"
+ok = true
+
+[[checks]]
+name = "combo_texify 装后随座就绪"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（已安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "公式坐标上页（文字层 span，≥3 题可供微批）"
+ok = true
+
+[checks.detail]
+targets = 5
+
+[[checks]]
+name = "重认微批 3–5 块真跑原位替换（texify fp16 no-cache 引擎）"
+ok = false
+
+[checks.detail]
+done = 0
+
+[[checks.detail.targets]]
+pid = "p_045442f49c44bff07662ec56"
+index = 0
+preview = " x > 0"
+elapsed_s = 241.0
+outcome = "TIMEOUT"
+before = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+after = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+
+[[checks.detail.targets]]
+pid = "p_d8b0e43dabf28a3dcfa06438"
+index = 0
+preview = " A = "
+elapsed_s = 240.5
+outcome = "TIMEOUT"
+before = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+after = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+
+[[checks.detail.targets]]
+pid = "p_b4e1b590b358ba65f6d6579e"
+index = 0
+preview = " x ∈ R"
+elapsed_s = 240.7
+outcome = "TIMEOUT"
+before = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+after = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+
+[[checks.detail.targets]]
+pid = "p_ce415f02adfcf646c04ecb27"
+index = 0
+preview = " a > b > 0"
+elapsed_s = 240.8
+outcome = "TIMEOUT"
+before = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+after = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+
+[[checks.detail.targets]]
+pid = "p_c25508aae8653c060ecd7d63"
+index = 0
+preview = "= F0\r\n⋅ 2\r\n-\r\ntτ "
+elapsed_s = 240.1
+outcome = "TIMEOUT"
+before = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+after = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 51314
+
+[[checks]]
+name = "副本服务孤儿零"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[weights_texify]]
+name = "texify_encoder.onnx"
+bytes = 151072055
+sha256 = "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46"
+match = true
+
+[[weights_texify]]
+name = "texify_decoder_merged.onnx"
+bytes = 477396232
+sha256 = "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f"
+match = true
+
+[[weights_texify]]
+name = "texify_tokenizer.json"
+bytes = 2140041
+sha256 = "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2"
+match = true
+
+[[weights_texify]]
+name = "texify_config.json"
+bytes = 4890
+sha256 = "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375"
+match = true
+
+[[weights_texify]]
+name = "texify_preprocessor_config.json"
+bytes = 523
+sha256 = "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478"
+match = true
+
+[[weights_texify]]
+name = "texify_generation_config.json"
+bytes = 200
+sha256 = "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6"
+match = true
+
+[[reidentify_targets]]
+pid = "p_045442f49c44bff07662ec56"
+index = 0
+preview = " x > 0"
+elapsed_s = 241.0
+outcome = "TIMEOUT"
+before = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+after = "已知 $x > 0$， $y > 0$，且 $x + y = 2$，则 xy 的最大值为"
+
+[[reidentify_targets]]
+pid = "p_d8b0e43dabf28a3dcfa06438"
+index = 0
+preview = " A = "
+elapsed_s = 240.5
+outcome = "TIMEOUT"
+before = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+after = "已知集合 $A =$ 0,1,2,3 ， $B =$ $x|lgx>0$ ，则 $A \\cap B =$"
+
+[[reidentify_targets]]
+pid = "p_b4e1b590b358ba65f6d6579e"
+index = 0
+preview = " x ∈ R"
+elapsed_s = 240.7
+outcome = "TIMEOUT"
+before = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+after = "设 $x \\in R$，则“$tanx = 1$”是“$x =$\n$\\pi$\n4 ”的"
+
+[[reidentify_targets]]
+pid = "p_ce415f02adfcf646c04ecb27"
+index = 0
+preview = " a > b > 0"
+elapsed_s = 240.8
+outcome = "TIMEOUT"
+before = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+after = "已知 $a > b > 0$， $c > 0$，则下列不等式一定正确的是"
+
+[[reidentify_targets]]
+pid = "p_c25508aae8653c060ecd7d63"
+index = 0
+preview = "= F0\r\n⋅ 2\r\n-\r\ntτ "
+elapsed_s = 240.1
+outcome = "TIMEOUT"
+before = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"
+after = "在量子存储实验中，量子态的保真度 F 随存储时间 t(单位：微秒) 呈指数衰减，满足模型\nFt $= F0$\n$\\cdot 2$\n$-$\n$t\\tau$ ，其中 F0为初始保真度 $(F0 > 0)$， $\\tau$ 为特征时间常数．若"

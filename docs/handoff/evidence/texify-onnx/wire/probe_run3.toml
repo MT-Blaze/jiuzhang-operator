@@ -1,0 +1,412 @@
+tag = "run3"
+base = "http://127.0.0.1:53536"
+operator_head = "11e8b97719b5c606f7529f09dab816e5f97db9a6"
+plugins_head = "0841ccd176d798bb52cfaef01fe021d15ff43171"
+console_errors = []
+page_errors = []
+http_failures = []
+install_requests = ["http://127.0.0.1:53536/api/models/formula_texify/install", "http://127.0.0.1:53536/api/models/formula_p2t/install"]
+dialogs = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？", "安装 Pix2Text·MFR 要下约 118MB 权重（编码器 87MB＋解码器 30MB＋词表 39KB，国内镜像）占磁盘。装好后公式专科 p2t 档生效。仍要安装？", "确认卸载「Texify（公式专科）」？将丢弃引擎缓存并删除 engines/formula/models/ 里本档六件权重（其他公式档不受影响），下次使用要重新安装。已入库题目不受影响。", "确认卸载「Pix2Text·MFR（公式专科）」？将丢弃引擎缓存并删除 engines/formula/models/ 里本档三件权重（其他公式档不受影响），下次使用要重新安装。已入库题目不受影响。"]
+deviations = ["prefs auto_image_seat=cloud_vision（未指派）：组合路无坐标整题兜底走显性失败，避 MinerU/VLM CPU 停跑令", "原串批次经自动分流默认公式座（PP-M 未装）显性标待核产出，先于安装跑——引擎下拉只列就绪且启用座", "p2t 118MB 顺带装拆：只为 texify/p2t 共享目录按件卸载互不误删的真证，非 p2t 座重复验收", "fp16 no-cache 全前缀重喂贪心：卡§3 past KV 处方偏离——merged 导出 cache 分支 present 病灶（recon.md），输出与正路逐字一致", "int8 早判红弃用换 fp16 主档（卡§1 显式 fallback 条款触发，一次换定不反复）", "texify 四小件是模型权重资产（词表/配置），住 engines/ 副本内，非证据记录 JSON"]
+raw_batch = "B-001"
+reidentify_filled = 3
+ok = true
+elapsed_s = 177.2
+
+[install_status_texify]
+state = "done"
+step = "完成"
+message = "Texify 已就绪（各件权重 sha256 校验通过）。"
+
+[install_status_p2t]
+state = "done"
+step = "完成"
+message = "Pix2Text·MFR 已就绪（各件权重 sha256 校验通过）。"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "11e8b977"
+plugins = "0841ccd1"
+
+[[checks]]
+name = "初始 texify 未就绪＋install_formula_texify（副本无权重）"
+ok = true
+
+[checks.detail]
+id = "formula_texify"
+name = "Texify（公式专科）"
+capability = "formula"
+family = "formula"
+min_vram = 0
+can_cpu = true
+summary = "Texify 公式转 LaTeX：社区 ONNX 干净房间接线，零新依赖；权重一键装（约 628MB fp16），CPU 可跑。"
+summary_usage = "干啥：公式专科，把公式图转 LaTeX。准不准：专用公式模型，印刷公式稳，与 MinerU 生态同源。快慢：CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享）——个人/教研免费用，商用或二次分发须遵官方相同方式共享条款；权重约 628MB 一键装（fp16 编码器＋解码器＋四小件共六件）。现状：社区 ONNX 已接线（int8 档早判红弃用，fp16 稳态路），权重未装时点【安装】。"
+rule = "weight_present"
+store = "formula_texify"
+plan_recognize = ["formula_texify"]
+ready_detail = "权重已装（fp16 六件 sha256 校验通过），公式专科 Texify 通道就绪。"
+degraded_detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+degraded_action = "install_formula_texify"
+install_error_detail = "安装失败：{message}"
+state = "degraded"
+detail = "权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好公式专科 Texify 档生效。权重许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "combo_texify 随座未就绪（weight_present 真随权重）"
+ok = true
+
+[checks.detail]
+id = "combo_texify"
+name = "文字直取+公式·Texify"
+capability = "recognize"
+min_vram = 0
+can_cpu = true
+summary = "文字卷组合路：正文文字直取，公式裁图送 Texify 专科（已接线）。"
+summary_usage = "干啥：带文字层的卷子，正文直接从文字层取，公式裁图送公式专科 Texify。准不准：正文零误差；专用公式模型印刷公式稳。快慢：正文即取，公式 CPU 一块数秒（fp16 稳态路）。吃不吃卡：不吃，CPU 可跑。免不免费：权重免费，许可 cc-by-sa-4.0（署名＋相同方式共享），商用须遵官方条款。现状：公式专科 Texify 通道已接线，本组合随公式座 Texify 档就绪（权重未装不显示）；纯图卷选它会显性报错。"
+rule = "weight_present"
+store = "formula_texify"
+ready_detail = "组合路就绪：正文文字直取；公式裁图交 Texify 专科通道。"
+degraded_detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+plan_recognize = ["combo"]
+combo_seat = "formula_texify"
+route_note_recognize = "识别：组合路——正文文字直取，公式裁图交 Texify 专科。"
+state = "degraded"
+detail = "Texify 权重未安装（约 628MB fp16，国内镜像），点【安装】一键下；装好本组合路随公式座 Texify 档就绪。"
+action = "install_formula_texify"
+assigned = ""
+enabled = true
+
+[[checks]]
+name = "其余座口径不动（PP-M/L/p2t 未装引导安装）"
+ok = true
+
+[checks.detail]
+formula_pp_m = "degraded"
+formula_pp_l = "degraded"
+formula_p2t = "degraded"
+
+[[checks]]
+name = "未安装行：未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（未安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "原串批次立起（自动文字卷，公式座未装）"
+ok = true
+
+[checks.detail]
+raw = "B-001"
+
+[[checks]]
+name = "公式座未装显性标待核（零 MinerU/VLM 引擎、零出网）"
+ok = true
+
+[checks.detail]
+failures = ["公式座「PP-FormulaNet·M（公式专科）」未就绪（权重未安装（约 596MB，国内镜像），点【安装】一键下；装好公式专科与组合路公式步生效。）。", "整题兜底：默认座「云端视觉」未就绪（未指派视觉识别账号。）。不偷换引擎：请到【模型配置】安装/指派，或在「自动分流默认」改选就绪座。"]
+
+[[checks]]
+name = "628MB＋cc-by-sa-4.0 成本/许可确认弹窗已摆并 accept"
+ok = true
+detail = ["安装 Texify 要下约 628MB 权重（fp16 编码器 151MB＋解码器 477MB＋四小件，国内镜像）占磁盘。权重许可 cc-by-sa-4.0（署名＋相同方式共享）：个人/教研免费用，商用或二次分发须遵官方相同方式共享条款。装好后公式专科 Texify 档与组合路公式步生效。仍要安装？"]
+
+[[checks]]
+name = "安装请求确由界面点击发起"
+ok = true
+detail = ["http://127.0.0.1:53536/api/models/formula_texify/install", "http://127.0.0.1:53536/api/models/formula_p2t/install"]
+
+[[checks]]
+name = "texify 安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "Texify 已就绪（各件权重 sha256 校验通过）。"
+
+[[checks]]
+name = "texify 六件权重落地 sha256 逐字一致"
+ok = true
+
+[[checks.detail]]
+name = "texify_encoder.onnx"
+bytes = 151072055
+sha256 = "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46"
+match = true
+
+[[checks.detail]]
+name = "texify_decoder_merged.onnx"
+bytes = 477396232
+sha256 = "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f"
+match = true
+
+[[checks.detail]]
+name = "texify_tokenizer.json"
+bytes = 2140041
+sha256 = "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2"
+match = true
+
+[[checks.detail]]
+name = "texify_config.json"
+bytes = 4890
+sha256 = "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375"
+match = true
+
+[[checks.detail]]
+name = "texify_preprocessor_config.json"
+bytes = 523
+sha256 = "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478"
+match = true
+
+[[checks.detail]]
+name = "texify_generation_config.json"
+bytes = 200
+sha256 = "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6"
+match = true
+
+[[checks]]
+name = "已安装行：就绪＋【卸载】钮"
+ok = true
+
+[[checks]]
+name = "combo_texify 装后随座就绪"
+ok = true
+
+[[checks]]
+name = "375px 模型表不横向溢出（已安装态）"
+ok = true
+
+[checks.detail]
+overflow_px = 0
+
+[[checks]]
+name = "公式坐标上页（文字层公式形 span，≥3 题可供微批）"
+ok = true
+
+[checks.detail]
+targets = 5
+select_rc = 0
+
+[[checks]]
+name = "重认微批 3–5 块真跑原位替换（texify fp16 no-cache 引擎）"
+ok = true
+
+[checks.detail]
+done = 3
+
+[[checks.detail.targets]]
+pid = "p_c282c287e3aa37d1d9dadac2"
+index = 2
+preview = "z=(2+i)(1-i)"
+elapsed_s = 1.1
+outcome = "FAIL:公式块裁不出来（坐标落在题图外或太小）"
+before = "已知集合$U=(0.1,2.3.4,5),A=\\{1.2\\},B=(2,3,4),$则$BO(CuA)=$"
+after = "已知集合$U=(0.1,2.3.4,5),A=\\{1.2\\},B=(2,3,4),$则$BO(CuA)=$"
+
+[[checks.detail.targets]]
+pid = "p_fb49568b219d3bb562aae264"
+index = 0
+preview = "z=(2+i)(1-i)"
+elapsed_s = 26.6
+outcome = "OK"
+before = "复数$z=(2+i)(1-i)$在复平面内对应的点位于"
+after = "复数$$(1+i)(1-i)\\not\\in\\{1,2\\}$$在复平面内对应的点位于"
+
+[[checks.detail.targets]]
+pid = "p_a3ef61fb8a52b6f87fa6d470"
+index = 2
+preview = "a,+S,=14.aa+S"
+elapsed_s = 1.1
+outcome = "FAIL:公式块裁不出来（坐标落在题图外或太小）"
+before = "某乐队展演中，原定的5个节目已排成节目单，开演前临时增加了2个新节目，如果将\n这两个节目插入原节目单中，那么不同的插法有"
+after = "某乐队展演中，原定的5个节目已排成节目单，开演前临时增加了2个新节目，如果将\n这两个节目插入原节目单中，那么不同的插法有"
+
+[[checks.detail.targets]]
+pid = "p_ccdc3cc1474741dd4f8d0101"
+index = 2
+preview = "a,+S,=14.aa+S"
+elapsed_s = 16.0
+outcome = "OK"
+before = "已知S为等差数列$\\{a$。$\\}$的前n项和，若$a,+S,=14.aa+S$?$=23,$则$S,=$\nA.49 B.64 C81 D.100"
+after = "已知S为等差数列$\\{a$。$\\}$的前n项和，若$$14\\cdot a_{4}+S_{4}=23\\,,$$?$=23,$则$S,=$\nA.49 B.64 C81 D.100"
+
+[[checks.detail.targets]]
+pid = "p_f01ee57e072820a64962109b"
+index = 1
+preview = "f(x)= cos 6x,g(x)=e,"
+elapsed_s = 33.9
+outcome = "OK"
+before = "$(222-3))$‘的展开式中x3的系数为\n$A.-216 B.216 C-96 D.96$\n首发微信公众号《高三标答》 6.已知函数$f(x)= cos 6x,g(x)=e,$若下图是函数F(x)图象的一部分，则F(x)可能等于\ny\n0"
+after = "$(222-3))$‘的展开式中x3的系数为\n$A.-216 B.216 C-96 D.96$\n首发微信公众号《高三标答》 6.已知函数$$## 1 Introduction\n\nThe _Fractional State_ of the U"
+
+[[checks]]
+name = "整题重认选 texify 显性拒绝（公式专科座只认裁图）"
+ok = true
+
+[checks.detail]
+note = "Texify 是公式专科座，只认公式裁图，不支持整题重认；请选整题座（MinerU/云端视觉/本地VLM）。"
+
+[[checks]]
+name = "p2t 顺带安装收口 done"
+ok = true
+
+[checks.detail]
+state = "done"
+step = "完成"
+message = "Pix2Text·MFR 已就绪（各件权重 sha256 校验通过）。"
+
+[[checks]]
+name = "p2t 三件 sha256 逐字一致且 texify 六件仍在（九件共存）"
+ok = true
+
+[checks.detail]
+texify_present = ["texify_encoder.onnx", "texify_decoder_merged.onnx", "texify_tokenizer.json", "texify_config.json", "texify_preprocessor_config.json", "texify_generation_config.json"]
+
+[[checks.detail.p2t]]
+name = "p2t_encoder.onnx"
+bytes = 87496990
+sha256 = "bd8d5c322792e9ec45793af5569e9748f82a3d728a9e00213dbfc56c1486f37d"
+match = true
+
+[[checks.detail.p2t]]
+name = "p2t_decoder.onnx"
+bytes = 30114937
+sha256 = "fd0f92d7a012f3dae41e1ac79421aea0ea888b5a66cb3f9a004e424f82f3daed"
+match = true
+
+[[checks.detail.p2t]]
+name = "p2t_tokenizer.json"
+bytes = 39161
+sha256 = "3e2ab757277d22639bec28c9d7972e352d3d1dba223051fa674002dc5ab64df3"
+match = true
+
+[[checks]]
+name = "卸载确认弹窗摆明本档六件（不吓唬整目录）"
+ok = true
+detail = ["确认卸载「Texify（公式专科）」？将丢弃引擎缓存并删除 engines/formula/models/ 里本档六件权重（其他公式档不受影响），下次使用要重新安装。已入库题目不受影响。"]
+
+[[checks]]
+name = "卸 texify 只删六件"
+ok = true
+
+[[checks]]
+name = "p2t 三件与目录原样保留（互不误删）"
+ok = true
+
+[checks.detail]
+p2t_present = ["p2t_encoder.onnx", "p2t_decoder.onnx", "p2t_tokenizer.json"]
+
+[[checks]]
+name = "卸 texify 后 p2t 仍就绪、texify 回未就绪＋【安装】钮"
+ok = true
+
+[[checks]]
+name = "combo_texify 卸后随座回未就绪"
+ok = true
+
+[[checks]]
+name = "p2t 卸载确认弹窗摆明本档三件"
+ok = true
+detail = ["确认卸载「Pix2Text·MFR（公式专科）」？将丢弃引擎缓存并删除 engines/formula/models/ 里本档三件权重（其他公式档不受影响），下次使用要重新安装。已入库题目不受影响。"]
+
+[[checks]]
+name = "再卸 p2t 目录删净（全空才连目录删）"
+ok = true
+
+[[checks]]
+name = "三查 fetch(/parent.document/localStorage=0"
+ok = true
+
+[checks.detail]
+"fetch(" = 0
+"parent.document" = 0
+localStorage = 0
+
+[[checks]]
+name = "页面零 JS 异常"
+ok = true
+detail = []
+
+[[checks]]
+name = "全程零 HTTP 失败"
+ok = true
+detail = []
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 53536
+
+[[checks]]
+name = "副本服务孤儿零"
+ok = true
+
+[checks.detail]
+pids = []
+
+[[weights_texify]]
+name = "texify_encoder.onnx"
+bytes = 151072055
+sha256 = "6083149d64fb17dcfacf85b6137c2cf316b33eb1c80a3fde58fcb869c3f17f46"
+match = true
+
+[[weights_texify]]
+name = "texify_decoder_merged.onnx"
+bytes = 477396232
+sha256 = "4b9241793ee344c754944e79049f310173bf87902be6f3e85aeb4a538a5ae83f"
+match = true
+
+[[weights_texify]]
+name = "texify_tokenizer.json"
+bytes = 2140041
+sha256 = "06506d8033a4080bba741ed86b416ef238cae52b169cb0045404d6032fd657c2"
+match = true
+
+[[weights_texify]]
+name = "texify_config.json"
+bytes = 4890
+sha256 = "e1f358f06180ef9533c188f39b46554ccd68d52b2de89ea47a999f52dda4e375"
+match = true
+
+[[weights_texify]]
+name = "texify_preprocessor_config.json"
+bytes = 523
+sha256 = "07bbb730a28a5a37d70fd9530ef1a2a367b11852bc1f2881acb83933f867e478"
+match = true
+
+[[weights_texify]]
+name = "texify_generation_config.json"
+bytes = 200
+sha256 = "aa08c04e00a1d384bee28e0a56d465d65442625459917002e1686cb15aed94c6"
+match = true
+
+[[weights_p2t]]
+name = "p2t_encoder.onnx"
+bytes = 87496990
+sha256 = "bd8d5c322792e9ec45793af5569e9748f82a3d728a9e00213dbfc56c1486f37d"
+match = true
+
+[[weights_p2t]]
+name = "p2t_decoder.onnx"
+bytes = 30114937
+sha256 = "fd0f92d7a012f3dae41e1ac79421aea0ea888b5a66cb3f9a004e424f82f3daed"
+match = true
+
+[[weights_p2t]]
+name = "p2t_tokenizer.json"
+bytes = 39161
+sha256 = "3e2ab757277d22639bec28c9d7972e352d3d1dba223051fa674002dc5ab64df3"
+match = true
