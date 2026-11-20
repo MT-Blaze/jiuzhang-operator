@@ -642,6 +642,89 @@ class PageFurnitureTest(unittest.TestCase):
         self.assertIn("第1页", raw[-1]["text"])
 
 
+class LastRegionBottomDirectionTest(unittest.TestCase):
+    """末题框底限额的方向：PDF 坐标自页底向上数，减缝才是向下留呼吸位。"""
+
+    SCALE_Y = 2339 / 842
+
+    def test_01_no_footer_fallback_off_limit_goes_down_not_up(self) -> None:
+        """无页脚＋关兜底＋无墨迹：末题框底逐字等于 (页高-(最低行底-5pt))×比例。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "2. 第二题题干", "left": 72, "bottom": 600, "right": 523, "top": 610},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                ink_rows=None, apply_fallbacks=False)
+        self.assertEqual([region["no"] for region in regions], [1, 2])
+        expected = round((842 - (600 - 5)) * self.SCALE_Y, 1)
+        self.assertEqual(round(regions[-1]["y"] + regions[-1]["h"], 1), expected,
+                         "旧错方向是 +5pt 往上切进末行，修正后必须向下留 5pt")
+
+    def test_02_no_footer_synthetic_ink_keeps_whole_option_row(self) -> None:
+        """无页脚＋合成墨迹：末题框底盖住最低行墨迹底＋6px，且不越过限额。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "2. 第二题题干", "left": 72, "bottom": 600, "right": 523, "top": 610},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 580, "right": 480, "top": 590},
+        ]
+        ink = bytearray(2339)
+        ink[645:657] = b"\x01" * 12          # 题号行墨迹
+        ink[705:728] = b"\x01" * 23          # 选项行墨迹：底像素 728
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                ink_rows=ink, apply_fallbacks=False)
+        last = regions[-1]
+        bottom = last["y"] + last["h"]
+        self.assertIn("选项甲", last["text"])
+        self.assertGreaterEqual(bottom, 728 + 6, "选项墨迹必须全进框并留 6px 呼吸位")
+        self.assertLessEqual(bottom, (842 - (580 - 5)) * self.SCALE_Y,
+                             "框底不许越过最低行底减 5pt 的限额")
+
+    def test_03_footer_kept_in_lines_limit_still_stops_above_footer(self) -> None:
+        """≤2 页语义：行清单留着页脚一行不剔，框底仍停在页脚上沿＋5pt 换算像素。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "第1页（共3页）", "left": 260, "bottom": 30, "right": 335, "top": 40},
+        ]
+        snapshot = [dict(line) for line in lines]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                ink_rows=None, apply_fallbacks=False)
+        self.assertEqual(len(lines), 3, "输入行清单不许被剔行")
+        self.assertEqual(lines, snapshot)
+        last = regions[-1]
+        self.assertIn("第1页", last["text"], "≤2 页卷 text 语义不动：页脚行仍在清单里")
+        expected = round((842 - (40 + 5)) * self.SCALE_Y, 1)
+        self.assertEqual(round(last["y"] + last["h"], 1), expected)
+        footer_top_px = (842 - 40) * self.SCALE_Y
+        self.assertLess(last["y"] + last["h"], footer_top_px, "框底不吃页脚墨迹")
+        ink = bytearray(2339)
+        ink[365:451] = b"\x01" * 86          # 正文墨迹
+        ink[2230:2256] = b"\x01" * 26        # 页脚墨迹：落在限额之外
+        trimmed = page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                                ink_rows=ink, apply_fallbacks=False)
+        self.assertLessEqual(trimmed[-1]["y"] + trimmed[-1]["h"], footer_top_px)
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines, snapshot)
+
+    def test_04_fallback_on_legacy_semantics_unchanged(self) -> None:
+        """开兜底旧语义钉死：页脚照剔，有页脚限额与修前逐字同。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "第1页（共3页）", "left": 260, "bottom": 30, "right": 335, "top": 40},
+        ]
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertEqual([region["no"] for region in regions], [1])
+        last = regions[-1]
+        self.assertNotIn("第1页", last["text"])
+        self.assertNotIn("共3页", last["text"])
+        self.assertIn("选项甲", last["text"])
+        expected = round((842 - (40 + 5)) * self.SCALE_Y, 1)
+        self.assertEqual(round(last["y"] + last["h"], 1), expected,
+                         "有页脚分支一字未动：限额仍是页脚上沿＋5pt")
+
+
 class WordEnrichmentTest(unittest.TestCase):
     """数学字形读不出来时，用 Poppler 的按词坐标把文字补回来（可选兜底）。"""
 

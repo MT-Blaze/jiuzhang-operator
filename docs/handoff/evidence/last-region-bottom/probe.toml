@@ -1,0 +1,21 @@
+# 末题框底方向修正卡⑥ 离线回放判据（当次实跑）
+source_sha256 = "a65347866e545a01cb8633518b907b632ae33bc53582f74328eeaba12f6d6b0f"
+passed = 15
+total = 15
+
+[criteria]
+render_4_pages_no_warning = true
+p1_C1_last_bottom_covers_lowest_ink = true
+p1_C2_last_bottom_above_footer = true
+p1_C5_number_chain = true
+p2_C1_last_bottom_covers_lowest_ink = true
+p2_C2_last_bottom_above_footer = true
+p2_C5_number_chain = true
+p3_C1_last_bottom_covers_lowest_ink = true
+p3_C2_last_bottom_above_footer = true
+p3_C5_number_chain = true
+p4_C1_last_bottom_covers_lowest_ink = true
+p4_C2_last_bottom_above_footer = true
+p4_C5_number_chain = true
+p1_C3_region6_bottom_in_1827_1831 = true
+p1_C4_regions1to5_pinned = true

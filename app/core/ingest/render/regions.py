@@ -61,8 +61,8 @@ def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
     """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。
 
     ``lines`` 可由上层先扫全卷、剥离页眉页脚后传进来；不传才现读。
-    ``apply_fallbacks`` 为假时不跑单页兜底（页脚正则与裸页码三判据）——
-    全卷跨页判定已经接管，单页、两页卷则连兜底也不该动行清单。
+    ``apply_fallbacks`` 为假时不做单页兜底剔行（页脚正则与裸页码三判据）——
+    全卷跨页判定已经接管，单页、两页卷一行不剔；页脚判定仍为末题框底定限额。
     ``words`` 可以是词清单，也可以是按需返回词清单的函数——只在某一行真有
     读不出的字形时才会被调用。
     """
@@ -210,23 +210,23 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
     双保险。纵向从本题题号行起、到下一题题号行前留一道缝；页尾题块最后按
     页面图的真实墨迹裁掉尾部空白（有图的地方墨迹会把它留住）。
 
-    ``apply_fallbacks`` 默认真：保留单页兜底（``_PDF_FOOTER`` 正则与裸页码
+    ``apply_fallbacks`` 默认真：保留单页兜底剔行（``_PDF_FOOTER`` 正则与裸页码
     三判据）。上层做了全卷跨页剥离后传假，避免两份判据互相打架；页数 ≤2
-    的卷子也传假，做到一行不剔、原样切题。
+    的卷子也传假，一行不剔、原样切题。页脚判定不受开关：假时仍借页脚上沿定末题框底。
     """
     if not lines or page_width <= 0 or page_height <= 0:
         return []
     if pixel_width <= 0 or pixel_height <= 0:
         return []
+    # 页脚判定与剔行解耦：兜底真假都认页脚定框底限额；剔行仅兜底开启时做，≤2 页一行不剔。
+    footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
+    footer_lines.extend(_bare_page_footer_lines(lines, page_height))
+    # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
+    footer_top = max((line["top"] for line in footer_lines), default=None)
     if apply_fallbacks:
-        footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
-        footer_lines.extend(_bare_page_footer_lines(lines, page_height))
-        # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
-        footer_top = max((line["top"] for line in footer_lines), default=None)
         footer_ids = {id(line) for line in footer_lines}
         content = [line for line in lines if id(line) not in footer_ids]
     else:
-        footer_top = None
         content = list(lines)
     start_at = 0
     if first_page:
@@ -259,8 +259,9 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
         return []
     box_x = left * scale_x
     box_w = max(1.0, (right - left) * scale_x)
+    # PDF 坐标自页底向上数：末题限额须减缝向下留呼吸位，加缝反而切进末行。
     page_bottom = (footer_top + _REGION_GAP_PT if footer_top is not None
-                   else min(line["bottom"] for line in content) + _REGION_GAP_PT)
+                   else max(0.0, min(line["bottom"] for line in content) - _REGION_GAP_PT))
 
     regions: list[dict[str, Any]] = []
     for order, (position, number) in enumerate(run):
