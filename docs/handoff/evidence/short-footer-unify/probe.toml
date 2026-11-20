@@ -1,0 +1,13 @@
+# 短卷页脚统一卡 #SHORT-FOOTER-UNIFY-01 离线回放判据（当次实跑）
+source_sha256 = "a65347866e545a01cb8633518b907b632ae33bc53582f74328eeaba12f6d6b0f"
+passed = 7
+total = 7
+
+[criteria]
+sha256_matches_previous_card = true
+render_4_pages_no_warning = true
+J1a_no_coordinate_drift_vs_head = true
+J1b_page1_boxes_match_previous_evidence = true
+J2a_question_chains_and_last_bottoms = true
+J2b_page4_three_regions_and_lone_two_kept = true
+J3_no_footer_text_in_any_region = true

@@ -151,8 +151,7 @@ def _chain(up: list[dict[str, Any]], width: int, height: int,
                 score += len(text_layout._increasing_heads(heads))
             return regions, 2, score
     regions = chain._question_regions(up, float(width), float(height), width, height,
-                                      ink_rows=ink, first_page=first_page,
-                                      apply_fallbacks=True)
+                                      ink_rows=ink, first_page=first_page)
     return regions, 1, len(chain._longest_number_run(_heads(up)))
 
 

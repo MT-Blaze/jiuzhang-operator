@@ -122,8 +122,8 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                 words_by_page = _pdftotext_words(data, min(total_pages, MAX_PAGES))
             return words_by_page.get(page_no) or []
 
-        # 先扫全卷的行：跨页页眉页脚只能在全卷视角下判定。页数 ≤2 时
-        # filter_pages 原样返回，连兜底都不跑。
+        # 先扫全卷的行：跨页页眉页脚只能在全卷视角下判定；页脚与不可见水印
+        # 碎片由切题层按同一套规则统一叠加，不区分页数。
         scanned: list[dict[str, Any]] = []
         for index in range(min(total_pages, MAX_PAGES)):
             page = document[index]
@@ -154,11 +154,11 @@ def _pdf_pages_builtin(data: bytes) -> tuple[list[dict[str, Any]], list[str]]:
                                         int(bitmap.n_channels))
                     finally:
                         bitmap.close()
+                    # 页脚剥离不分页数，同一套规则（2026-11-20 主公裁决）。
                     regions = _question_regions(
                         kept_lines[index], info["width"], info["height"], width, height,
                         ink_rows=ink, first_page=index == 0,
-                        words=lambda page_no=index + 1: page_words(page_no),
-                        apply_fallbacks=False)
+                        words=lambda page_no=index + 1: page_words(page_no))
                 finally:
                     page.close()
                 entries.append(_entry(write_generated_asset(png, "image/png"), index + 1,

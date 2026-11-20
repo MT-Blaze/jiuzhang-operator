@@ -453,7 +453,7 @@ class TextFacsimileTest(PageRenderTestCase):
 
 
 class PageFurnitureTest(unittest.TestCase):
-    """全卷页眉页脚：同一位置 + 同一文字跨页重复才剔，页数少一律不动。"""
+    """全卷页眉页脚：同一位置 + 同一文字跨页重复才剔；不可见行不分页数一律剔。"""
 
     @staticmethod
     def _line(text: str, top: float, bottom: float,
@@ -613,7 +613,7 @@ class PageFurnitureTest(unittest.TestCase):
             self.assertEqual(page_texts, ["1. 正文行"])
 
     def test_12_out_of_page_watermark_fragment_is_removed(self) -> None:
-        """文本层把裁切水印记成 bottom<0：三页起剔掉，两页仍原样不动。"""
+        """文本层把裁切水印记成 bottom<0：不分页数一律剔（1–2 页也剔）。"""
         watermark = self._line("{#{QQABYYKAgggoQABAABhCEwXACgGQkhAAASg=}#}", 3.6, -1.0,
                                left=0.3, right=183.2)
         pages = [self._page([self._line("1. 正文行", 700, 712)])
@@ -625,21 +625,20 @@ class PageFurnitureTest(unittest.TestCase):
         two = [self._page([self._line("1. 正文行", 700, 712), dict(watermark)])
                for _ in range(2)]
         kept = page_furniture.filter_pages(two)
-        self.assertEqual(len(kept[0]), 2)
-        self.assertEqual(len(kept[1]), 2)
+        self.assertEqual(self._texts(kept), [["1. 正文行"], ["1. 正文行"]])
 
-    def test_11_question_regions_can_skip_legacy_fallbacks(self) -> None:
-        """兜底判据保留可调：默认照旧剔除页脚，上层可显式关掉。"""
+    def test_11_question_regions_always_strip_footers(self) -> None:
+        """兜底开关已删：任何页数都不需要额外参数，页脚一律剔除。"""
         lines = [
             self._line("1. 第一题题干", 700, 710),
             self._line("A. 选项甲 B. 选项乙", 680, 690),
             self._line("第1页（共3页）", 30, 40),
         ]
-        legacy = page_render._question_regions(lines, 595, 842, 1654, 2339)
-        self.assertNotIn("第1页", legacy[-1]["text"])
-        raw = page_render._question_regions(lines, 595, 842, 1654, 2339,
-                                            apply_fallbacks=False)
-        self.assertIn("第1页", raw[-1]["text"])
+        regions = page_render._question_regions(lines, 595, 842, 1654, 2339)
+        self.assertNotIn("第1页", regions[-1]["text"])
+        with self.assertRaises(TypeError):
+            page_render._question_regions(lines, 595, 842, 1654, 2339,
+                                          apply_fallbacks=False)
 
 
 class LastRegionBottomDirectionTest(unittest.TestCase):
@@ -647,15 +646,15 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
 
     SCALE_Y = 2339 / 842
 
-    def test_01_no_footer_fallback_off_limit_goes_down_not_up(self) -> None:
-        """无页脚＋关兜底＋无墨迹：末题框底逐字等于 (页高-(最低行底-5pt))×比例。"""
+    def test_01_no_footer_limit_goes_down_not_up(self) -> None:
+        """无页脚＋无墨迹：末题框底逐字等于 (页高-(最低行底-5pt))×比例。"""
         lines = [
             {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
             {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
             {"text": "2. 第二题题干", "left": 72, "bottom": 600, "right": 523, "top": 610},
         ]
         regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
-                                                ink_rows=None, apply_fallbacks=False)
+                                                ink_rows=None)
         self.assertEqual([region["no"] for region in regions], [1, 2])
         expected = round((842 - (600 - 5)) * self.SCALE_Y, 1)
         self.assertEqual(round(regions[-1]["y"] + regions[-1]["h"], 1), expected,
@@ -672,7 +671,7 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
         ink[645:657] = b"\x01" * 12          # 题号行墨迹
         ink[705:728] = b"\x01" * 23          # 选项行墨迹：底像素 728
         regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
-                                                ink_rows=ink, apply_fallbacks=False)
+                                                ink_rows=ink)
         last = regions[-1]
         bottom = last["y"] + last["h"]
         self.assertIn("选项甲", last["text"])
@@ -680,8 +679,8 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
         self.assertLessEqual(bottom, (842 - (580 - 5)) * self.SCALE_Y,
                              "框底不许越过最低行底减 5pt 的限额")
 
-    def test_03_footer_kept_in_lines_limit_still_stops_above_footer(self) -> None:
-        """≤2 页语义：行清单留着页脚一行不剔，框底仍停在页脚上沿＋5pt 换算像素。"""
+    def test_03_short_paper_footer_removed_and_box_stops_above_it(self) -> None:
+        """≤2 页同样剔页脚：题干干净，框底仍停在页脚上沿＋5pt（⑥ 方向判定保留）。"""
         lines = [
             {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
             {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
@@ -689,11 +688,12 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
         ]
         snapshot = [dict(line) for line in lines]
         regions = page_render._question_regions(lines, 595, 842, 1654, 2339,
-                                                ink_rows=None, apply_fallbacks=False)
-        self.assertEqual(len(lines), 3, "输入行清单不许被剔行")
-        self.assertEqual(lines, snapshot)
+                                                ink_rows=None)
+        self.assertEqual([region["no"] for region in regions], [1])
         last = regions[-1]
-        self.assertIn("第1页", last["text"], "≤2 页卷 text 语义不动：页脚行仍在清单里")
+        self.assertNotIn("第1页", last["text"], "页脚行必须从题干剔除")
+        self.assertNotIn("共3页", last["text"])
+        self.assertIn("选项甲", last["text"])
         expected = round((842 - (40 + 5)) * self.SCALE_Y, 1)
         self.assertEqual(round(last["y"] + last["h"], 1), expected)
         footer_top_px = (842 - 40) * self.SCALE_Y
@@ -702,13 +702,12 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
         ink[365:451] = b"\x01" * 86          # 正文墨迹
         ink[2230:2256] = b"\x01" * 26        # 页脚墨迹：落在限额之外
         trimmed = page_render._question_regions(lines, 595, 842, 1654, 2339,
-                                                ink_rows=ink, apply_fallbacks=False)
+                                                ink_rows=ink)
         self.assertLessEqual(trimmed[-1]["y"] + trimmed[-1]["h"], footer_top_px)
-        self.assertEqual(len(lines), 3)
-        self.assertEqual(lines, snapshot)
+        self.assertEqual(lines, snapshot, "输入行清单不被原地修改")
 
-    def test_04_fallback_on_legacy_semantics_unchanged(self) -> None:
-        """开兜底旧语义钉死：页脚照剔，有页脚限额与修前逐字同。"""
+    def test_04_footer_stripped_semantics_unchanged(self) -> None:
+        """页脚剔除恒开：有页脚限额与修前逐字同。"""
         lines = [
             {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
             {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
@@ -723,6 +722,78 @@ class LastRegionBottomDirectionTest(unittest.TestCase):
         expected = round((842 - (40 + 5)) * self.SCALE_Y, 1)
         self.assertEqual(round(last["y"] + last["h"], 1), expected,
                          "有页脚分支一字未动：限额仍是页脚上沿＋5pt")
+
+    def test_05_single_page_off_page_line_is_removed_first(self) -> None:
+        """1 页卷的 bottom<0 水印碎片由 filter_pages 剔掉，不影响框底与题干。"""
+        base = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+        ]
+        watermark = {"text": "{#{QQABYYKAgggoQABAABhCEwXACgGQkhAAASg=}#}",
+                     "left": 0.3, "bottom": -1.0, "right": 183.2, "top": 3.6}
+        page = {"width": 595.0, "height": 842.0, "lines": base + [watermark]}
+        kept = page_furniture.filter_pages([page])
+        self.assertEqual([line["text"] for line in kept[0]],
+                         ["1. 第一题题干", "A. 选项甲 B. 选项乙"])
+        clean = page_render._question_regions(base, 595, 842, 1654, 2339)
+        filtered = page_render._question_regions(kept[0], 595, 842, 1654, 2339)
+        self.assertEqual(filtered, clean, "水印碎片不得影响框底或题干")
+
+    def test_06_one_page_with_footer_is_stripped(self) -> None:
+        """1 页卷三种真实页脚写法（括号/空白/全角逗号）都剔，框底停页脚上沿。"""
+        for footer in ("第 1 页（共 1 页）", "第 1 页 共 1 页", "第 1页，共 1 页"):
+            with self.subTest(footer=footer):
+                lines = [
+                    {"text": "1. 第一题题干", "left": 72, "bottom": 700,
+                     "right": 523, "top": 710},
+                    {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680,
+                     "right": 480, "top": 690},
+                    {"text": footer, "left": 260, "bottom": 30, "right": 335,
+                     "top": 40},
+                ]
+                page = {"width": 595.0, "height": 842.0, "lines": lines}
+                kept = page_furniture.filter_pages([page])[0]
+                regions = page_render._question_regions(kept, 595, 842, 1654, 2339)
+                last = regions[-1]
+                self.assertNotIn(footer, last["text"])
+                self.assertIn("选项甲", last["text"])
+                self.assertLessEqual(last["y"] + last["h"],
+                                     (842 - 40) * self.SCALE_Y,
+                                     "框底必须停在页脚上沿之上")
+
+    def test_07_bottom_digit_answer_of_body_height_is_kept(self) -> None:
+        """1 页卷贴底纯数字答案行高≈正文：三判据不全，必须留下并盖进框。"""
+        lines = [
+            {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+            {"text": "A. 选项甲 B. 选项乙", "left": 80, "bottom": 680, "right": 480, "top": 690},
+            {"text": "3", "left": 280, "bottom": 20, "right": 285, "top": 30},
+        ]
+        page = {"width": 595.0, "height": 842.0, "lines": lines}
+        kept = page_furniture.filter_pages([page])[0]
+        regions = page_render._question_regions(kept, 595, 842, 1654, 2339)
+        last = regions[-1]
+        self.assertEqual([line.strip() for line in last["text"].splitlines()][-1], "3")
+        self.assertGreater(last["y"] + last["h"], (842 - 30) * self.SCALE_Y,
+                           "答案行既然不是页脚，框底就得盖住它")
+
+    def test_08_two_page_paper_strips_footers_on_both_pages(self) -> None:
+        """2 页卷两页页脚都剔，题号链 1→2 不受影响。"""
+        pages = [
+            {"width": 595.0, "height": 842.0, "lines": [
+                {"text": "1. 第一题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+                {"text": "第1页（共2页）", "left": 260, "bottom": 30, "right": 335, "top": 40}]},
+            {"width": 595.0, "height": 842.0, "lines": [
+                {"text": "2. 第二题题干", "left": 72, "bottom": 700, "right": 523, "top": 710},
+                {"text": "第2页（共2页）", "left": 260, "bottom": 30, "right": 335, "top": 40}]},
+        ]
+        kept = page_furniture.filter_pages(pages)
+        collected = []
+        for index, page_lines in enumerate(kept):
+            regions = page_render._question_regions(page_lines, 595, 842, 1654, 2339)
+            self.assertEqual([region["no"] for region in regions], [index + 1])
+            self.assertNotIn("共2页", regions[-1]["text"])
+            collected.append(regions[-1]["no"])
+        self.assertEqual(collected, [1, 2], "跨页题号链不受页脚剥离影响")
 
 
 class WordEnrichmentTest(unittest.TestCase):

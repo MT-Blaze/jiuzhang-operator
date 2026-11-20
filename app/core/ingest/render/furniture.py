@@ -1,11 +1,14 @@
 """全卷页眉页脚剥离：同一位置、同一文字跨页反复出现，才整行剔除。
 
-只认「跨页共识」：一页、两页没有重复可言，行清单原样交回；三页必须三页
-全中，四页起才允许 2/3（向上取整）。候选行还必须同时命中位置与文字——
-同一位置上的 A./B./C./D. 选项文字各不相同，绝不会被当成页眉页脚删掉。
+只认「跨页共识」：一页、两页判不出重复页眉，但仍剔掉可见区外的水印碎片；
+三页必须三页全中，四页起才允许 2/3（向上取整）。候选行还必须同时命中位置与
+文字——同一位置上的 A./B./C./D. 选项文字各不相同，绝不会被当成页眉页脚删掉。
 
 纯数字页码是唯一不看文字的例外：它在带内、且行高小于正文（含汉字行）
 中位数，才认作页脚；三页卷仍要求同一位置三页都在。
+
+页脚行本身（如「第 N 页 共 M 页」）在页数不足时交给切题层统一剔除：
+``regions._question_regions`` 对所有页数用同一套页脚判据。
 """
 
 from __future__ import annotations
@@ -36,11 +39,19 @@ _DIGITS = re.compile(r"\d+")
 def filter_pages(pages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """全卷行清单 → 逐页剔除页眉页脚后的行清单。
 
-    ``pages`` 每项至少要有 ``height``（PDF 点）与 ``lines``。页数 ≤2 时直接
-    返回原列表（同一个对象），保证上层「原样交给切题」。
+    ``pages`` 每项至少要有 ``height``（PDF 点）与 ``lines``。页数 ≤2 时只剔
+    可见区外的水印碎片，其余原样交回（无剔除时连列表都不换）；页脚行由切题层
+    按同一套判据统一剔除。
     """
     if len(pages) < _MIN_CROSS_PAGES:
-        return [page.get("lines") or [] for page in pages]
+        removed = _off_page_lines(pages)
+        if not removed:
+            return [page.get("lines") or [] for page in pages]
+        return [
+            [line for index, line in enumerate(page.get("lines") or [])
+             if (page_index, index) not in removed]
+            for page_index, page in enumerate(pages)
+        ]
 
     removed: set[tuple[int, int]] = set()
     removed |= _off_page_lines(pages)
@@ -57,7 +68,7 @@ def _off_page_lines(pages: list[dict[str, Any]]) -> set[tuple[int, int]]:
     """可见区之外的行：文本层会把裁切掉的水印碎片记成 ``bottom < 0``。
 
     这类行在页面上根本看不见，既不是正文也不是页眉页脚候选，直接剔掉；
-    页数 ≤2 时 filter_pages 不走到这里，单页/两页仍一行不剔。
+    不需跨页证据，因此页数 ≤2 时同样生效。
     """
     removed: set[tuple[int, int]] = set()
     for page_index, page in enumerate(pages):

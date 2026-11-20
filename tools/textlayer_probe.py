@@ -2,10 +2,9 @@
 """文字层 PDF 真卷复验：跨页页眉页脚、题号链与末题洁净度。
 
 链路照生产：``pypdfium2`` 取字 → ``_pdf_text_lines`` 行清单 →
-``page_furniture.filter_pages``（全卷）→ ``_question_regions``
-（``apply_fallbacks=False``）。页数 ≤2 时 filter_pages 原样返回，探针与
-生产一致：一行不剔、照常切题。没有 ``page_furniture`` 的基线工作树退回
-逐页兜底，用来做改前对照。
+``page_furniture.filter_pages``（全卷，跨页页眉页脚）→ ``_question_regions``
+（页脚不分页数统一剔除，2026-11-20 主公裁决）。没有 ``page_furniture`` 的
+基线工作树退回逐页兜底，用来做改前对照。
 
 产物：``.system_generated/textlayer_probe/<tag>/``
 - ``regions.toml``：每页每题的 (no, x, y, w, h) 与 label；
@@ -159,14 +158,10 @@ def _load_baseline(out_dir: Path) -> Any | None:
 
 
 def _regions(module: Any, lines: list[dict[str, Any]], page: dict[str, Any],
-             ink: bytearray | None, first_page: bool,
-             no_fallback: bool) -> list[dict[str, Any]]:
-    kwargs: dict[str, Any] = {"ink_rows": ink, "first_page": first_page}
-    if no_fallback:
-        kwargs["apply_fallbacks"] = False
+             ink: bytearray | None, first_page: bool) -> list[dict[str, Any]]:
     return module._question_regions(
         lines, page["page_width"], page["page_height"], page["width"],
-        page["height"], **kwargs)
+        page["height"], ink_rows=ink, first_page=first_page)
 
 
 def _page_view(lines: list[dict[str, Any]], first_page: bool) -> dict[str, Any]:
@@ -353,21 +348,18 @@ def main() -> int:
         mode = "legacy_fallback"
 
     head_hits: list[dict[str, Any]] = []
-    no_fallback = page_furniture is not None
     for page, kept in zip(pages, kept_by_page):
         kept_ids = {id(line) for line in kept}
         page["kept"] = kept
         page["removed"] = [line for line in page["lines"] if id(line) not in kept_ids]
-        page["regions"] = _regions(current, kept, page, page["ink"],
-                                   page["page"] == 1, no_fallback=no_fallback)
-        page["regions_noink"] = _regions(current, kept, page, None,
-                                         page["page"] == 1, no_fallback=no_fallback)
+        page["regions"] = _regions(current, kept, page, page["ink"], page["page"] == 1)
+        page["regions_noink"] = _regions(current, kept, page, None, page["page"] == 1)
         page["view"] = _page_view(kept, page["page"] == 1)
         page["old_regions"] = (_regions(baseline, page["lines"], page, page["ink"],
-                                        page["page"] == 1, no_fallback=False)
+                                        page["page"] == 1)
                                if baseline is not None else None)
         page["old_noink"] = (_regions(baseline, page["lines"], page, None,
-                                      page["page"] == 1, no_fallback=False)
+                                      page["page"] == 1)
                              if baseline is not None else None)
         for position, number in page["view"]["heads"]:
             head_hits.append({"page": page["page"], "no": number,
@@ -431,7 +423,7 @@ def main() -> int:
             text = ("第%d页（共%d页）" % (page["page"], page_count) if form == "paren"
                     else "第%d页/共%d页" % (page["page"], page_count))
             regions = _regions(current, kept, page, page["ink"],
-                               page["page"] == 1, no_fallback=no_fallback)
+                               page["page"] == 1)
             footer_line = min(injected, key=lambda line: line["bottom"])
             footer_top_px = (page["page_height"] - footer_line["top"]) * SCALE
             leaked_text = [region["no"] for region in regions
@@ -442,7 +434,7 @@ def main() -> int:
             old_flags: dict[str, Any] = {}
             if baseline is not None:
                 old_regions = _regions(baseline, injected, page, page["ink"],
-                                       page["page"] == 1, no_fallback=False)
+                                       page["page"] == 1)
                 old_flags = {
                     "old_text_leak": [region["no"] for region in old_regions
                                       if _normalise(text) in _normalise(region["text"])],

@@ -26,8 +26,10 @@ _PDF_INSTRUCTION = re.compile(
     r"答题卡|答卷前|考试结束|考生|考场|座位号|注意事项|绝密|启用前|"
     r"姓名|班级|考号|准考证|密封线|本试卷共")
 _PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
+# 「第 N 页」式页脚：括号、斜杠、逗号、空白四种连接都认。真实素材里
+# 「第 1页，共 4 页」（全角逗号、无括号）常见，只认括号/斜杠会整条漏掉。
 _PDF_FOOTER = re.compile(
-    r"第\s*\d+\s*页\s*(?:[（(]\s*共\s*\d+\s*页\s*[）)]?|[/／]\s*共\s*\d+\s*页)")
+    r"第\s*\d+\s*页\s*(?:[（(]\s*共\s*\d+\s*页\s*[）)]?|[/／,，、]?\s*共\s*\d+\s*页)")
 _PDF_BARE_PAGE = re.compile(r"^\s*\d{1,3}\s*$")
 _REGION_TEXT_LIMIT = 2000
 _REGION_LABEL_LIMIT = 48
@@ -56,13 +58,10 @@ def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
                       first_page: bool = False,
                       words: Any = None,
-                      lines: list[dict[str, Any]] | None = None,
-                      apply_fallbacks: bool = True) -> list[dict[str, Any]]:
+                      lines: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """一页 PDF → 题块清单（页面图像素坐标）；文本层读不出来就当没有。
 
     ``lines`` 可由上层先扫全卷、剥离页眉页脚后传进来；不传才现读。
-    ``apply_fallbacks`` 为假时不做单页兜底剔行（页脚正则与裸页码三判据）——
-    全卷跨页判定已经接管，单页、两页卷一行不剔；页脚判定仍为末题框底定限额。
     ``words`` 可以是词清单，也可以是按需返回词清单的函数——只在某一行真有
     读不出的字形时才会被调用。
     """
@@ -73,8 +72,7 @@ def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
     except Exception:  # noqa: BLE001 - 文本层坏了只影响自动框，不影响页图
         return []
     return _question_regions(lines, page_width, page_height, pixel_width, pixel_height,
-                             ink_rows=ink_rows, first_page=first_page, words=words,
-                             apply_fallbacks=apply_fallbacks)
+                             ink_rows=ink_rows, first_page=first_page, words=words)
 
 
 def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
@@ -201,8 +199,7 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
                       pixel_width: int, pixel_height: int, *,
                       ink_rows: bytearray | None = None,
                       first_page: bool = False,
-                      words: Any = None,
-                      apply_fallbacks: bool = True) -> list[dict[str, Any]]:
+                      words: Any = None) -> list[dict[str, Any]]:
     """行清单 → 每道题的像素包围盒。
 
     题号链只取「最长且连续递增」的一段：卷首作答说明也带「1. 2. 3.」，
@@ -210,24 +207,20 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
     双保险。纵向从本题题号行起、到下一题题号行前留一道缝；页尾题块最后按
     页面图的真实墨迹裁掉尾部空白（有图的地方墨迹会把它留住）。
 
-    ``apply_fallbacks`` 默认真：保留单页兜底剔行（``_PDF_FOOTER`` 正则与裸页码
-    三判据）。上层做了全卷跨页剥离后传假，避免两份判据互相打架；页数 ≤2
-    的卷子也传假，一行不剔、原样切题。页脚判定不受开关：假时仍借页脚上沿定末题框底。
+    页脚不分页数、一律先剔：``_PDF_FOOTER`` 正则与裸页码三判据认出的页脚行
+    既不进题干，也借其最高上沿给末题框底定限额（2026-11-20 主公裁决：
+    多少页都沿用同一套规则）。
     """
     if not lines or page_width <= 0 or page_height <= 0:
         return []
     if pixel_width <= 0 or pixel_height <= 0:
         return []
-    # 页脚判定与剔行解耦：兜底真假都认页脚定框底限额；剔行仅兜底开启时做，≤2 页一行不剔。
     footer_lines = [line for line in lines if _PDF_FOOTER.search(line["text"])]
     footer_lines.extend(_bare_page_footer_lines(lines, page_height))
     # 多条页脚时取最高那条的上沿：框底要停在所有页脚之上。
     footer_top = max((line["top"] for line in footer_lines), default=None)
-    if apply_fallbacks:
-        footer_ids = {id(line) for line in footer_lines}
-        content = [line for line in lines if id(line) not in footer_ids]
-    else:
-        content = list(lines)
+    footer_ids = {id(line) for line in footer_lines}
+    content = [line for line in lines if id(line) not in footer_ids]
     start_at = 0
     if first_page:
         section = next((index for index, line in enumerate(content)
