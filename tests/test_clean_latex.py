@@ -22,6 +22,8 @@ from pydantic import ValidationError
 
 from app.api.agents import CleanLatexRequest, agent_clean_latex
 from app.core import toml_io
+from app.core.content.dollar_number import unwrap_bare_number_dollars
+from app.core.content.question_parser import clean_dirty_latex
 from app.core.plugins import registry as plugins
 from app.core.plugins.contract import manifests
 from tests.core_sources import plugin_bundle, stage_source  # noqa: E402
@@ -204,6 +206,41 @@ class EditorAiCleanerTest(unittest.TestCase):
                       "降级态哪怕被点到也不许发 editor.apply_patch 补丁")
         self.assertIn('if (clean.degraded) lines.push("画布未打开，无法替换：只保留摘要，四个按钮已锁定。")',
                       body("renderClean"), "摘要必须如实说明降级原因，不能只灰按钮不吭声")
+
+
+class DollarNumberCleanerTest(unittest.TestCase):
+    """第 57 条落清洗器（#CLEAN-DOLLAR-NUMBER-01）：``$`` 只圈数学表达式，不圈数字本身。"""
+
+    def test_01_four_pinned_examples(self) -> None:
+        self.assertEqual(clean_dirty_latex("已知有 $3$ 个")["text"], "已知有 3 个")
+        self.assertEqual(clean_dirty_latex("$3$")["text"], "3")
+        self.assertEqual(clean_dirty_latex("当 $n=3$ 时")["text"], "当 $n=3$ 时")
+        self.assertEqual(clean_dirty_latex("$x=3.5$")["text"], "$x=3.5$")
+        self.assertEqual(clean_dirty_latex("3 cm")["text"], "3 cm")
+
+    def test_02_rule_is_recorded_only_when_unwrapped(self) -> None:
+        self.assertIn("dollar_number", clean_dirty_latex("已知有 $3$ 个")["rules"])
+        self.assertNotIn("dollar_number", clean_dirty_latex("$x=3$")["rules"])
+
+    def test_03_counter_examples_keep_their_dollars(self) -> None:
+        for source in (r"$2x$", r"$a_1$", r"$\frac{1}{2}$", r"$1.5\times10^3$",
+                       "$$3$$", r"\$3\$", "$3"):
+            self.assertEqual(unwrap_bare_number_dollars(source), (source, 0))
+        self.assertEqual(clean_dirty_latex("$$3$$")["text"], "$$3$$")
+        self.assertEqual(clean_dirty_latex(r"\$3\$")["text"], r"\$3\$")
+        self.assertEqual(clean_dirty_latex("$3")["text"], "$3")
+        self.assertEqual(clean_dirty_latex(r"$3\text{ cm}$")["text"], r"$3\text{ cm}$")
+
+    def test_04_percent_sign_and_degree_forms(self) -> None:
+        self.assertEqual(clean_dirty_latex(r"$50\%$")["text"], r"50\%")
+        self.assertEqual(unwrap_bare_number_dollars("$50%$"), ("50%", 1))
+        self.assertEqual(unwrap_bare_number_dollars("$+3$"), ("+3", 1))
+        self.assertEqual(unwrap_bare_number_dollars("$\u22125$"), ("\u22125", 1))
+        self.assertEqual(unwrap_bare_number_dollars("$30\u00b0$"), ("30\u00b0", 1))
+
+    def test_05_unwrapping_is_idempotent(self) -> None:
+        once = clean_dirty_latex("已知有 $3$ 个，答 $x=3$")["text"]
+        self.assertEqual(clean_dirty_latex(once)["text"], once)
 
 
 if __name__ == "__main__":

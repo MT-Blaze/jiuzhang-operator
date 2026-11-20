@@ -224,6 +224,21 @@ class CleanQuestionTest(unittest.TestCase):
         self.assertEqual(cleaned, "不是对象")
         self.assertEqual([item["code"] for item in issues], ["invalid_document"])
 
+    def test_06_bare_number_dollars_are_unwrapped_in_every_field(self) -> None:
+        """第 57 条：#CLEAN-DOLLAR-NUMBER-01 保存前清洗同样拆纯数字的 $，表达式不动。"""
+        document = self.document(
+            stem="已知有 $3$ 个，当 $n=3$ 时取到。",
+            options=[{"key": "A", "content": "$3$"}, {"key": "B", "content": "$x=3$"}],
+            answer={"kind": "text", "content": "$3$", "final": "$4$"},
+            solution="所以答案是 $5$。",
+        )
+        cleaned, _issues = clean_question(document)
+        self.assertEqual(cleaned["stem"], "已知有 3 个，当 $n=3$ 时取到。")
+        self.assertEqual([option["content"] for option in cleaned["options"]], ["3", "$x=3$"])
+        self.assertEqual(cleaned["answer"], {"kind": "text", "content": "3", "final": "4"})
+        self.assertEqual(cleaned["solution"], "所以答案是 5。")
+        self.assertIn("$3$", document["stem"], "入参不许被就地修改")
+
 
 class ParseQuestionTest(unittest.TestCase):
     def test_01_end_to_end_pipeline(self) -> None:

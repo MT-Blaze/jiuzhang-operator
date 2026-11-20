@@ -16,7 +16,7 @@ import re
 import unicodedata
 from typing import Any
 
-from app.core.content import latex_norm, latex_style_dict
+from app.core.content import dollar_number, latex_norm, latex_style_dict
 from app.core.content.question_images import is_remote_image, strip_derived_fields
 
 __all__ = [
@@ -161,6 +161,9 @@ def _clean_fragment(text: str, rules: list[str]) -> str:
     if _WHITESPACE_DIRT.search(text):
         rules.append("whitespace")
     normalized = normalize_latex(text)
+    normalized, unwrapped = dollar_number.unwrap_bare_number_dollars(normalized)
+    if unwrapped:
+        rules.append("dollar_number")
     # 定界符换成 $ 之后才交给写法字典：上标补括号、\frac 显式参数、减号统一
     # 都只在数学段内按命令切词改写（app/core/content/latex_style_dict，全仓唯一一份字典）。
     written = latex_norm.clean(normalized)
@@ -410,6 +413,10 @@ def sanity_check(
     return issues
 
 
+def _without_bare_number_dollars(text: str) -> str:
+    return dollar_number.unwrap_bare_number_dollars(text)[0]
+
+
 def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
     """保存前清洗：归一文本口径并体检，返回 ``(副本, 问题列表)``。
 
@@ -423,7 +430,7 @@ def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
     strip_derived_fields(cleaned.get("images"))
     for field in ("stem", "solution"):
         if isinstance(cleaned.get(field), str):
-            cleaned[field] = normalize_latex(cleaned[field])
+            cleaned[field] = _without_bare_number_dollars(normalize_latex(cleaned[field]))
 
     option_rows: list[dict[str, str]] = []
     options = cleaned.get("options")
@@ -432,7 +439,7 @@ def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
             if not isinstance(option, dict):
                 continue
             if isinstance(option.get("content"), str):
-                option["content"] = normalize_latex(option["content"])
+                option["content"] = _without_bare_number_dollars(normalize_latex(option["content"]))
             option_rows.append({
                 "label": str(option.get("key") or ""),
                 "text": str(option.get("content") or ""),
@@ -443,7 +450,7 @@ def clean_question(document: Any) -> tuple[Any, list[dict[str, str]]]:
     if isinstance(answer, dict):
         for field in ("content", "final"):
             if isinstance(answer.get(field), str):
-                answer[field] = normalize_latex(answer[field])
+                answer[field] = _without_bare_number_dollars(normalize_latex(answer[field]))
         if answer.get("kind") == "choice":
             keys = answer.get("choice_keys")
             if isinstance(keys, list):

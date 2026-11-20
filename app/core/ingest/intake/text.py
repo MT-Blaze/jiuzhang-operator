@@ -10,7 +10,7 @@ import zipfile
 from typing import Any
 
 from app.core.ingest.intake import docx_classify
-from app.core.content import question_parser
+from app.core.content import dollar_number, question_parser
 
 __all__ = [
     "DEFAULT_DIFFICULTY",
@@ -232,10 +232,13 @@ def _document(stem: str, options: list[dict[str, str]], answer_text: str,
               blanks: int, solution: str = "", question_no: str = "") -> dict[str, Any]:
     """按解析结果拼一道**契约口径**的题目文档。"""
     stem = question_parser.normalize_latex(stem)
+    stem = dollar_number.unwrap_bare_number_dollars(stem)[0]
     stem = _FILLIN_RE.sub("＿＿＿＿", stem)
     document: dict[str, Any] = {"stem": stem, "difficulty": DEFAULT_DIFFICULTY}
     clean_options = [
-        {"key": option["key"], "content": question_parser.normalize_latex(option["content"])}
+        {"key": option["key"],
+         "content": dollar_number.unwrap_bare_number_dollars(
+             question_parser.normalize_latex(option["content"]))[0]}
         for option in options
     ]
     if clean_options:
