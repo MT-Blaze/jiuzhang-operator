@@ -1,0 +1,218 @@
+tag = "run4"
+base = "http://127.0.0.1:44466"
+operator_head = "8cd8b208c457670eaf521b9897e5bbedb20fd35c"
+plugins_head = "1083f4a381e85d284df824207ab204a4c86c0bc4"
+console_errors = []
+page_errors = []
+http_failures = []
+deviations = ["微批夹具＝A1 纯图真卷第 2 页管线题块裁 4 道（题 6–9）成 4 页纯图 PDF，每页一题，ocr.detect 复核 4 题；make_fixture.py 可复现", "wiretap＝sitecustomize 导入钩子包 _request/_put_raw，只观测＋委托 HEAD 原函数，批量逻辑一字不动；OSS PUT 200 即证零 Content-Type（带任何值都 403）", "Run B 失败注入＝控制文件 corrupt_last 把最后一份 PUT body 换坏字节真上传 OSS，MinerU 解析失败→逐题账本（卡允许 mock/坏图）", "云账号只读复制用户 MinerU 绑定进隔离 data（assignment＋账号＋.env 密钥），禁碰用户 data/"]
+runA_batch = "B-001"
+progress_notes = ["MinerU 云端整批解析中：已回 0/4 题", "MinerU 云端整批解析中：已回 1/4 题", "MinerU 云端整批解析中：已回 2/4 题", "MinerU 云端整批解析中：已回 3/4 题"]
+runB_batch = "B-002"
+ok = true
+elapsed_s = 113.5
+
+[runA]
+batch = "B-001"
+note = "MinerU 逐题解析完成：4/4 道回填成功。"
+filled_note = [["4", "4"]]
+failures = []
+items = 4
+posts = 1
+files_n = 4
+puts = 4
+puts_ok = 4
+poll_batch_ids = ["30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"]
+zips = 4
+stem_lengths = [157, 142, 112, 133]
+
+[runB]
+batch = "B-002"
+note = "MinerU 解析未全部成功（只有 3/4 道回来了），只走选中引擎，不降级，保留本地切图待人工核对。，1 道保持本地切图"
+puts = 4
+corrupted = 1
+corrupted_index = [3]
+note_progression = ["MinerU 云端整批解析中：已回 0/4 题", "MinerU 云端整批解析中：已回 1/4 题", "MinerU 云端整批解析中：已回 2/4 题", "MinerU 云端整批解析中：已回 3/4 题"]
+per_item_fail_notes = ["第 4/4 题 MinerU 没成功（MinerU 解析失败：unsupported file type），继续下一题。"]
+
+[[runB.failures]]
+file = ""
+page_no = 0
+step = "识别·MinerU"
+reason = "MinerU 解析未全部成功（只有 3/4 道回来了），只走选中引擎，不降级，保留本地切图待人工核对。"
+detail = "只有 3/4 道回来了"
+retryable = true
+
+[[runB.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[runB.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[runB.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[quota_pages]
+runA_submitted = 4
+runB_submitted = 4
+runB_parsed_ok = 3
+total_submitted = 8
+note = "每份单题截图＝1 页；两批共提交 8 页，成功解析 7 页（坏图 1 页失败）"
+
+[[checks]]
+name = "隔离副本起服务（git archive HEAD，非工作树）"
+ok = true
+
+[checks.detail]
+operator = "8cd8b208"
+plugins = "1083f4a3"
+
+[[checks]]
+name = "隔离绑定 MinerU 云座 ready"
+ok = true
+
+[checks.detail]
+detail = "已指派：Mineru。"
+
+[checks.detail.binding]
+account_id = "acc_7ae191d903"
+model = "mineru"
+
+[[checks]]
+name = "RunA 一次 POST file-urls/batch files=4"
+ok = true
+
+[checks.detail]
+posts = 1
+files_n = 4
+
+[[checks]]
+name = "RunA 4 次 PUT 全 ok（OSS 200⇒零 Content-Type）"
+ok = true
+
+[checks.detail]
+puts = 4
+ok = 4
+
+[[checks]]
+name = "RunA 单 batch_id 轮询"
+ok = true
+
+[checks.detail]
+batch_ids = ["30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"]
+
+[[checks]]
+name = "RunA 4 份结果包 zip 取回"
+ok = true
+
+[checks.detail]
+zips = 4
+
+[[checks]]
+name = "RunA 路由 4/4 回填＋failures 空"
+ok = true
+
+[checks.detail]
+note = "MinerU 逐题解析完成：4/4 道回填成功。"
+failures = []
+
+[[checks]]
+name = "RunA 4 题题干均回填非空"
+ok = true
+
+[checks.detail]
+nonempty = 4
+lengths = [157, 142, 112, 133]
+
+[[checks]]
+name = "RunA 进度「已回 N/M」真出现"
+ok = true
+
+[checks.detail]
+notes = ["MinerU 云端整批解析中：已回 0/4 题", "MinerU 云端整批解析中：已回 3/4 题"]
+
+[[checks]]
+name = "RunB 坏图注入恰一份 PUT"
+ok = true
+
+[checks.detail]
+corrupted = 1
+index = [3]
+
+[[checks]]
+name = "RunB MinerU 真返 failed 态（坏图解析失败）"
+ok = true
+
+[checks.detail]
+
+[[checks.detail.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[checks.detail.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[checks.detail.failed_states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[checks]]
+name = "RunB 3/4 回填＋1 逐题失败账本显性"
+ok = true
+
+[checks.detail]
+note = "MinerU 解析未全部成功（只有 3/4 道回来了），只走选中引擎，不降级，保留本地切图待人工核对。，1 道保持本地切图"
+failures_n = 1
+
+[[checks]]
+name = "RunB 失败不级联不偷换（其余 3 题照回填）"
+ok = true
+
+[checks.detail]
+failures = ["MinerU 解析未全部成功（只有 3/4 道回来了），只走选中引擎，不降级，保留本地切图待人工核对。"]
+
+[[checks]]
+name = "RunB 逐题失败注记显性（第 X/N 题没成功，wiretap 录 _progress 注记）"
+ok = true
+
+[checks.detail]
+fail_notes = ["第 4/4 题 MinerU 没成功（MinerU 解析失败：unsupported file type），继续下一题。"]
+progress_writes = 24
+
+[[checks]]
+name = "RunB 失败清单 UI 可见（徽标＋点开清单）"
+ok = true
+
+[[checks]]
+name = "页面零 JS 异常"
+ok = true
+detail = []
+
+[[checks]]
+name = "全程零 HTTP 失败"
+ok = true
+detail = []
+
+[[checks]]
+name = "收口服务端口复验关闭"
+ok = true
+
+[checks.detail]
+port = 44466
+
+[[checks]]
+name = "副本服务孤儿零"
+ok = true
+
+[checks.detail]
+pids = []

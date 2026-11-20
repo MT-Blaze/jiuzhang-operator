@@ -1,0 +1,487 @@
+tag = "run4"
+run = "A"
+
+[[exchanges]]
+fn = "_progress"
+note = "已将 4 题单题截图整批发送至 MinerU 云端解析..."
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/file-urls/batch"
+method = "POST"
+resp_bytes = 1212
+batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+file_urls_n = 4
+
+[exchanges.payload]
+enable_formula = true
+language = "ch"
+model_version = "vlm"
+
+[[exchanges.payload.files]]
+name = "第1题.png"
+data_id = "jzo-0-d4e2e522"
+
+[[exchanges.payload.files]]
+name = "第2题.png"
+data_id = "jzo-1-424dd7eb"
+
+[[exchanges.payload.files]]
+name = "第3题.png"
+data_id = "jzo-2-d3b81193"
+
+[[exchanges.payload.files]]
+name = "第4题.png"
+data_id = "jzo-3-6406626a"
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d/c2cb40bc-064d-4a59-988c-5d945e1a09cd.png?Expires=1795231816&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=QORVJ%2FmzXkwQ%2FXu%2Bq%2BXs%2BAuLIyE%3D"
+body_len = 143466
+put_seq = 4
+file_index = 3
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d/3400b249-097d-4754-938e-d38fb837731a.png?Expires=1795231816&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=tgrDTaoOG6Kd6WCqSf1yQIMPShY%3D"
+body_len = 254821
+put_seq = 2
+file_index = 1
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d/8008aae8-cd58-497d-a5cc-dfcbf2610791.png?Expires=1795231816&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=FMgOeOPL%2FHLh3Wbt%2FfhwQtq1Nvg%3D"
+body_len = 294305
+put_seq = 1
+file_index = 0
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d/17ee7bd4-5b89-4a33-b38a-7a132f1a1e58.png?Expires=1795231816&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=w6BPdDttLiJv%2Boy3BLGbxSzxsIA%3D"
+body_len = 429342
+put_seq = 3
+file_index = 2
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 489
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 581
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 581
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "pending"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 896
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "done"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 3/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+method = "GET"
+resp_bytes = 909
+poll_batch_id = "30ca2ccc-9cd6-47d4-9b69-8ee6a5cef22d"
+
+[[exchanges.states]]
+data_id = "jzo-0-d4e2e522"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-424dd7eb"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-d3b81193"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-6406626a"
+state = "done"
+err_msg = ""
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/01a51ae4-b0d4-414d-9874-e78348a51b97.zip"
+method = "GET"
+resp_bytes = 59064
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/95619e16-0286-4d5b-a1ee-4cf44ec97dbf.zip"
+method = "GET"
+resp_bytes = 118056
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/2f06575f-b404-4189-a3d4-36150f91f9d3.zip"
+method = "GET"
+resp_bytes = 101242
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/6ef72c96-e769-4ba0-8395-6195da2d8f9e.zip"
+method = "GET"
+resp_bytes = 173735
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"

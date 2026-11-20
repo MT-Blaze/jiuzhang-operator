@@ -1,0 +1,667 @@
+tag = "run4"
+run = "B"
+
+[[exchanges]]
+fn = "_progress"
+note = "已将 4 题单题截图整批发送至 MinerU 云端解析..."
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/file-urls/batch"
+method = "POST"
+resp_bytes = 1204
+batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+file_urls_n = 4
+
+[exchanges.payload]
+enable_formula = true
+language = "ch"
+model_version = "vlm"
+
+[[exchanges.payload.files]]
+name = "第1题.png"
+data_id = "jzo-0-a0520a78"
+
+[[exchanges.payload.files]]
+name = "第2题.png"
+data_id = "jzo-1-de9aa244"
+
+[[exchanges.payload.files]]
+name = "第3题.png"
+data_id = "jzo-2-c58940d7"
+
+[[exchanges.payload.files]]
+name = "第4题.png"
+data_id = "jzo-3-33b9eed9"
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/c2ab0f21-9de4-41e1-b122-c5db386b2569/377e3c94-d257-4d5e-845a-7b9a7ab981fb.png?Expires=1795231854&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=Fqms8azzVHhoCUdttAHZ2%2Bw1kZU%3D"
+body_len = 23
+put_seq = 4
+file_index = 3
+corrupted = true
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/c2ab0f21-9de4-41e1-b122-c5db386b2569/8b185908-649b-4397-a7fb-04e6a169b50d.png?Expires=1795231854&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=zep1SGOhAGiC%2FPXcTV36l0a63cY%3D"
+body_len = 294305
+put_seq = 1
+file_index = 0
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/c2ab0f21-9de4-41e1-b122-c5db386b2569/f0649cd5-03be-44d7-ac70-87c7091e504e.png?Expires=1795231854&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=YHjpijP93BWE%2BDS%2BELkHKmrUjs4%3D"
+body_len = 254821
+put_seq = 2
+file_index = 1
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_put_raw"
+url = "https://mineru.oss-cn-shanghai.aliyuncs.com/api-upload/extract/2026-11-20/c2ab0f21-9de4-41e1-b122-c5db386b2569/128ed0ae-a173-44f4-9b24-1008a6ca75f3.png?Expires=1795231854&OSSAccessKeyId=LTAI5t6sXp5gszd8yWZ85dAL&Signature=vtfEPmdwlc9dc4gfmH10Go5rdLo%3D"
+body_len = 429342
+put_seq = 3
+file_index = 2
+corrupted = false
+ok = true
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 0/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 509
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 601
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 601
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 1/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 614
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 2/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 719
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "pending"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 3/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 811
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "running"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 3/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://mineru.net/api/v4/extract-results/batch/c2ab0f21-9de4-41e1-b122-c5db386b2569"
+method = "GET"
+resp_bytes = 824
+poll_batch_id = "c2ab0f21-9de4-41e1-b122-c5db386b2569"
+
+[[exchanges.states]]
+data_id = "jzo-0-a0520a78"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-1-de9aa244"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-2-c58940d7"
+state = "done"
+err_msg = ""
+
+[[exchanges.states]]
+data_id = "jzo-3-33b9eed9"
+state = "failed"
+err_msg = "unsupported file type"
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/2e7c2bc6-599e-49ad-a66d-78aece4007bf.zip"
+method = "GET"
+resp_bytes = 101385
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/1fbc5932-fcb9-433d-97bf-b4c7b849bf9f.zip"
+method = "GET"
+resp_bytes = 173734
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_request"
+url = "https://cdn-mineru.openxlab.org.cn/pdf/2026-11-20/a10ab913-7db5-47b0-8f4f-fffdd48f6ef7.zip"
+method = "GET"
+resp_bytes = 118055
+
+[[exchanges]]
+fn = "_progress"
+note = "MinerU 云端整批解析中：已回 4/4 题"
+
+[[exchanges]]
+fn = "_progress"
+note = "第 4/4 题 MinerU 没成功（MinerU 解析失败：unsupported file type），继续下一题。"
