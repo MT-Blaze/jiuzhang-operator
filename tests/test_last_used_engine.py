@@ -158,14 +158,20 @@ class FullComboCatalogTest(unittest.TestCase):
         self.assertIn('name = "文字直取+公式·Pix2Text·MFR"', CATALOG)
 
     def test_combo_pp_m_untouched(self) -> None:
-        # 不动面：既有 combo_pp_m 仍 import_probe（本卡只增两条，不改旧组合）。
+        # 转正（COMBO-PPM-READY-01）：import_probe「能导入就恒绿」已修，
+        # combo_pp_m 与公式座 PP-M 同口径，就绪真跟权重走。
         block = region(CATALOG, 'id = "combo_pp_m"', 'id = "combo_pp_l"')
-        self.assertIn('rule = "import_probe"', block)
+        self.assertIn('rule = "weight_present"', block)
+        self.assertIn('store = "formula"', block)
+        self.assertNotIn("probe =", block)
         self.assertIn('combo_seat = "formula_pp_m"', block)
 
-    def test_texify_combo_not_prebuilt(self) -> None:
-        # texify 组合由卡④接线时补，本卡不预建。
-        self.assertNotIn('id = "combo_texify"', CATALOG)
+    def test_texify_combo_prebuilt_with_seat(self) -> None:
+        # 旧「不预建」已被卡④（editor 2.25.0）真值取代，随插件仓转正。
+        block = region(CATALOG, 'id = "combo_texify"', "[[entry]]")
+        self.assertIn('rule = "weight_present"', block)
+        self.assertIn('store = "formula_texify"', block)
+        self.assertIn('combo_seat = "formula_texify"', block)
 
 
 if __name__ == "__main__":

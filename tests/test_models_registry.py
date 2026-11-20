@@ -533,11 +533,12 @@ class ComboChainTest(CatalogIsolated):
                 self.assertIn("纯图卷", entry["summary_usage"])
 
     def test_formula_combos_use_weight_rule_matching_seat(self) -> None:
-        """全组合（记上次卡）：PP-L/p2t 组合用 weight_present＋store 与公式座同档，
-        就绪完全随座（零 registry/router 代码改）；不照抄 combo_pp_m 的 import_probe
-        （那会与权重无关，违背「按就绪公式座枚举」）。"""
+        """全组合（记上次卡＋COMBO-PPM-READY-01）：公式组合一律 weight_present＋store
+        与公式座同档，就绪完全随座（零 registry/router 代码改）；import_probe
+        会与权重无关、恒显示就绪，违背「按就绪公式座枚举」。"""
         catalog = {entry["id"]: entry for entry in registry.catalog()}
-        for combo_id, seat_id, store in (("combo_pp_l", "formula_pp_l", "formula_l"),
+        for combo_id, seat_id, store in (("combo_pp_m", "formula_pp_m", "formula"),
+                                         ("combo_pp_l", "formula_pp_l", "formula_l"),
                                          ("combo_p2t", "formula_p2t", "formula_p2t"),
                                          ("combo_texify", "formula_texify", "formula_texify")):
             with self.subTest(combo=combo_id):
@@ -620,12 +621,18 @@ class ComboChainTest(CatalogIsolated):
         self.assertEqual(entry["state"], "ready")
         self.assertIn("组合路就绪", entry["detail"])
 
-    def test_combo_pp_m_ready_and_discloses_uninstalled_weights(self) -> None:
+    def test_combo_pp_m_follows_formula_m_weights(self) -> None:
         with _runtime():
             entry = _states(registry.status()["entries"])["combo_pp_m"]
-        self.assertEqual(entry["state"], "ready")
+        self.assertEqual(entry["state"], "degraded")
+        self.assertEqual(entry["action"], "install_formula")
         self.assertIn("PP-FormulaNet·M", entry["detail"])
-        self.assertIn("待核", entry["detail"])
+        with _runtime(formula_weights=True):
+            entries = _states(registry.status()["entries"])
+            entry = entries["combo_pp_m"]
+            self.assertEqual(entry["state"], "ready")
+            self.assertEqual(entry["state"], entries["formula_pp_m"]["state"])
+            self.assertIn("组合路就绪", entry["detail"])
 
     def test_combo_gate_passes_ready_and_falls_auto_degraded(self) -> None:
         with _runtime(vision=_vision()):
