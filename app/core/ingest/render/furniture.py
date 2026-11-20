@@ -34,6 +34,10 @@ _NUMERIC_HEIGHT_RATIO = 0.85
 _OPTION_START = re.compile(r"^\s*[A-Ha-hＡ-Ｈａ-ｈ]\s*[.．、]")
 _BARE_NUMBER = re.compile(r"\d{1,3}")
 _DIGITS = re.compile(r"\d+")
+# 页底裸页码：纯数字 + 行顶落在页面底部 8% + 行高不足正文中位数的 0.85 倍。
+_PDF_BARE_PAGE = re.compile(r"^\s*\d{1,3}\s*$")
+_BARE_PAGE_ZONE = 0.08
+_BARE_PAGE_HEIGHT_RATIO = 0.85
 
 
 def filter_pages(pages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -152,6 +156,39 @@ def _numeric_page_numbers(pages: list[dict[str, Any]]) -> set[tuple[int, int]]:
                 if len(group["pages"]) >= _MIN_CROSS_PAGES
                 for item in group["items"]}
     return {(page_index, line_index) for page_index, line_index, _line in small}
+
+
+def _bare_page_footer_lines(lines: list[dict[str, Any]],
+                            page_height: float) -> list[dict[str, Any]]:
+    """页底裸页码：纯数字、行顶贴底、行高明显小于本页正文行高中位数。
+
+    三条同时成立才算。答案区贴底的纯数字答案只要字号与正文一致，行高就
+    过不了第三关，不会被当成页脚删掉。
+    """
+    if page_height <= 0:
+        return []
+    zone = page_height * _BARE_PAGE_ZONE
+    candidates = [line for line in lines
+                  if line["top"] <= zone and _PDF_BARE_PAGE.match(line["text"])]
+    if not candidates:
+        return []
+    skipped = {id(line) for line in candidates}
+    # 正文行按含汉字判定：全行中位数会被选项标号、公式碎片和底边水印
+    # 拉到 8.32pt，页码 8.15pt 乘 0.85 后只有 7.07pt，反而过不了关；只看
+    # 含汉字的正文行，中位数落在 9.81pt，0.85 倍为 8.34pt，页码才过线。
+    # 也就是说 0.85 是踩着正文行中位数过的，不是全行中位数。
+    body = [line for line in lines
+            if id(line) not in skipped and _has_hanzi(line["text"])]
+    if not body:
+        body = [line for line in lines if id(line) not in skipped]
+    heights = sorted(line["top"] - line["bottom"] for line in body)
+    if not heights:
+        return []
+    middle = len(heights) // 2
+    median = (heights[middle] if len(heights) % 2
+              else (heights[middle - 1] + heights[middle]) / 2)
+    limit = median * _BARE_PAGE_HEIGHT_RATIO
+    return [line for line in candidates if line["top"] - line["bottom"] < limit]
 
 
 def _required_pages(page_count: int) -> int:

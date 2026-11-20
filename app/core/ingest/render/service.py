@@ -51,8 +51,10 @@ from app.core.ingest.render.pdf import (  # noqa: F401 - 测试按旧路径打�
     pdf_page_lines,
     pdf_text_health,
 )
-from app.core.ingest.render.regions import (  # noqa: F401 - 测试按旧路径取用
+from app.core.ingest.render.furniture import (  # noqa: F401 - 测试按旧路径取用
     _bare_page_footer_lines,
+)
+from app.core.ingest.render.regions import (  # noqa: F401 - 测试按旧路径取用
     _ink_rows,
     _line_words_text,
     _longest_number_run,

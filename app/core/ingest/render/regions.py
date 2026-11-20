@@ -11,6 +11,10 @@ import re
 import unicodedata
 from typing import Any
 
+from app.core.content import pua_symbols
+from app.core.ingest.render.furniture import (_PDF_BARE_PAGE,
+                                               _bare_page_footer_lines)
+
 # ---------- PDF 文本层 → 题块坐标（自动切分框的底账）----------
 #
 # 文本层只认「行」：每一行拿到 PDF 点坐标后换算成页面图像素坐标。题号连续
@@ -30,7 +34,6 @@ _PDF_SECTION = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]")
 # 「第 1页，共 4 页」（全角逗号、无括号）常见，只认括号/斜杠会整条漏掉。
 _PDF_FOOTER = re.compile(
     r"第\s*\d+\s*页\s*(?:[（(]\s*共\s*\d+\s*页\s*[）)]?|[/／,，、]?\s*共\s*\d+\s*页)")
-_PDF_BARE_PAGE = re.compile(r"^\s*\d{1,3}\s*$")
 _REGION_TEXT_LIMIT = 2000
 _REGION_LABEL_LIMIT = 48
 # 题块上下各留一点呼吸位；相邻题之间至少留 5pt（约 14 像素 @200dpi），
@@ -49,9 +52,6 @@ _SCRIPT_SHIFT_PT = 1.5
 # PDFium 偶尔把页脚裸页码和底边水印塞进同一条「行」：同一行内纵向跳变
 # 超过这个距离、且后一段整段是 1-3 位纯数字，就拆成两行。
 _LINE_JUMP_PT = 7.5
-# 页底裸页码：纯数字 + 行顶落在页面底部 8% + 行高不足正文中位数的 0.85 倍。
-_BARE_PAGE_ZONE = 0.08
-_BARE_PAGE_HEIGHT_RATIO = 0.85
 
 
 def _pdf_page_regions(page: Any, pixel_width: int, pixel_height: int, *,
@@ -122,7 +122,7 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
             last_top = last_bottom = None
 
         for index in range(total):
-            char = textpage.get_text_range(index, 1)
+            char = pua_symbols.read_char(textpage, index)
             if char in ("\r", "\n"):
                 flush()
                 continue
@@ -160,39 +160,6 @@ def _pdf_text_lines(page: Any) -> list[dict[str, Any]]:
         return lines
     finally:
         textpage.close()
-
-
-def _bare_page_footer_lines(lines: list[dict[str, Any]],
-                            page_height: float) -> list[dict[str, Any]]:
-    """页底裸页码：纯数字、行顶贴底、行高明显小于本页正文行高中位数。
-
-    三条同时成立才算。答案区贴底的纯数字答案只要字号与正文一致，行高就
-    过不了第三关，不会被当成页脚删掉。
-    """
-    if page_height <= 0:
-        return []
-    zone = page_height * _BARE_PAGE_ZONE
-    candidates = [line for line in lines
-                  if line["top"] <= zone and _PDF_BARE_PAGE.match(line["text"])]
-    if not candidates:
-        return []
-    skipped = {id(line) for line in candidates}
-    # 正文行按含汉字判定：全行中位数会被选项标号、公式碎片和底边水印
-    # 拉到 8.32pt，页码 8.15pt 乘 0.85 后只有 7.07pt，反而过不了关；只看
-    # 含汉字的正文行，中位数落在 9.81pt，0.85 倍为 8.34pt，页码才过线。
-    # 也就是说 0.85 是踩着正文行中位数过的，不是全行中位数。
-    body = [line for line in lines
-            if id(line) not in skipped and _has_hanzi(line["text"])]
-    if not body:
-        body = [line for line in lines if id(line) not in skipped]
-    heights = sorted(line["top"] - line["bottom"] for line in body)
-    if not heights:
-        return []
-    middle = len(heights) // 2
-    median = (heights[middle] if len(heights) % 2
-              else (heights[middle - 1] + heights[middle]) / 2)
-    limit = median * _BARE_PAGE_HEIGHT_RATIO
-    return [line for line in candidates if line["top"] - line["bottom"] < limit]
 
 
 def _question_regions(lines: list[dict[str, Any]], page_width: float, page_height: float,
@@ -305,10 +272,6 @@ def _question_regions(lines: list[dict[str, Any]], page_width: float, page_heigh
 
 def _has_cjk(text: str) -> bool:
     return any(unicodedata.east_asian_width(char) in ("W", "F") for char in text)
-
-
-def _has_hanzi(text: str) -> bool:
-    return any("\u4e00" <= char <= "\u9fff" for char in text)
 
 
 def _starts_cjk(text: str) -> bool:
