@@ -7,7 +7,7 @@ route.note 冲掉剥图警告」的冲掉点不存在——dedupe 族零 route �
 本模块钉死：
 - LF 带卷首图夹具走全接线 ingest_files→落池→dedupe 后，note 含剥图警告且只一条；
 - 无警告夹具 note 与现状逐字一致（干净文字批 note 为空串）；
-- dedupe 抽走启用态：route 写盘只有一笔（save_route），警告不被第二笔重写；
+- dedupe 抽走启用态：route 写盘全经 save_route（过程流水多笔），dedupe 零直写，警告不丢；
 - CRLF 转正（卡⑤ decode_text 归一后）：CRLF 也剥也警告，且与 LF 同文逐字同语义；
 - 老 Mac lone \\r 行尾同样剥图警告。
 
@@ -118,15 +118,21 @@ class NoteWarnMergeTest(_Isolated):
         rows = pending.list_batch_questions(batch_id)
         self.assertEqual(len(rows["items"]), 1)
 
-    async def test_dedupe_enabled_single_route_write_keeps_warning(self) -> None:
-        """抽走启用态：route 写盘只有一笔（save_route），dedupe 不重写 note。"""
+    async def test_dedupe_enabled_route_writes_keep_warning(self) -> None:
+        """抽走启用态：过程流水多笔落盘但全经 save_route，dedupe 零直写，警告不丢。"""
         os.environ.pop("JZO_POOL_ADMIT_DISABLED", None)
         with mock.patch.object(pending, "set_batch_route",
-                               wraps=pending.set_batch_route) as spy:
+                               wraps=pending.set_batch_route) as spy_set, \
+                mock.patch.object(ingest, "save_route",
+                                  wraps=ingest.save_route) as spy_save:
             batch_id = await self._ingest("lf_warn_dedupe.md", WARN_MD)
         self._join_dedupe()
-        self.assertEqual(spy.call_count, 1, "ingest 全程 route 只该写一笔")
-        self.assertIn(WARN_PHRASE, self._note(batch_id))
+        self.assertGreaterEqual(spy_save.call_count, 1, "过程流水至少要落一笔")
+        self.assertEqual(spy_set.call_count, spy_save.call_count,
+                         "route 写盘只许经 save_route，dedupe 不许直写")
+        note = self._note(batch_id)
+        self.assertIn(WARN_PHRASE, note)
+        self.assertEqual(note.count(WARN_PHRASE), 1, "多笔落盘不许把警告写成两条")
 
     async def test_crlf_header_image_warning_normalized(self) -> None:
         """CRLF 转正（卡⑤）：decode_text 归一后 CRLF 也剥图也警告，只一条。

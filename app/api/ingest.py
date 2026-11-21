@@ -11,6 +11,9 @@ PDF 只立空批次），识别、页图渲染与 OCR 在响应之后的后台�
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
@@ -23,6 +26,22 @@ from app.core.ingest.recognize import router as recognize_router
 from app.core.security import require_write_token
 
 router = APIRouter(tags=["ingest"])
+
+logger = logging.getLogger(__name__)
+
+# 解析重活（页图渲染 / OCR / 裁图）一律进这条单工作线程：事件循环只负责回包，
+# 老师点「开始解析」后 /healthz 与批次轮询不再被堵成假卡死。
+# 单槽保证多文件仍串行解析，内存不爆；整块下架＝恢复直接 add_task(run_ingest_jobs)。
+_JOB_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jzo-ingest")
+
+
+def _run_job_sync(batch_id: str, jobs: list[dict[str, Any]],
+                  layout_engine: str, recognize_engine: str) -> None:
+    """工作线程入口：自开事件循环跑完整段后台解析；异常必须留痕，不许被线程池吞掉。"""
+    try:
+        asyncio.run(ingest.run_ingest_jobs(batch_id, jobs, layout_engine, recognize_engine))
+    except Exception:  # noqa: BLE001 - 单批失败只记日志，不带崩底座
+        logger.exception("后台解析失败：批次 %s", batch_id)
 
 
 @router.post(
@@ -62,9 +81,10 @@ async def ingest_files(background: BackgroundTasks,
         staged = ingest.stage_ingest(files, layout_engine=layout_engine,
                                      recognize_engine=recognize_engine)
         job_groups = staged.pop("jobs", [])
-        # 一个文件一个批次：每批各排各的后台解析，互不拖累。
+        # 一个文件一个批次：每批各排各的后台解析，互不拖累；
+        # submit 本身瞬间返回，重活在 _JOB_POOL 的工作线程里跑，不占事件循环。
         for group in job_groups:
-            background.add_task(ingest.run_ingest_jobs, group["batch_id"],
+            background.add_task(_JOB_POOL.submit, _run_job_sync, group["batch_id"],
                                 group["jobs"], group["layout_engine"],
                                 group["recognize_engine"])
         staged["parsing"] = bool(job_groups)

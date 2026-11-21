@@ -538,7 +538,7 @@ class PendingMetaContractTest(unittest.TestCase):
         })
         self.assertEqual(status, 201, body)
         self.assertTrue(body["batch_id"], "认不出也要有批次")
-        items = self._batch_items(body["batch_id"])
+        items = self._wait_parsed(body["batch_id"], "待识别")
         self.assertTrue(items, "批次里至少留一条")
         stems = [str(item["question"]["stem"]) for item in items]
         self.assertTrue(any("待识别" in stem for stem in stems),

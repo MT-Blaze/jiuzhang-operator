@@ -1,22 +1,14 @@
 """拖入文件的分拣与解析：PDF / Word / TeX / MD / 图片 → 中转站里的一批待审题。
 
-分拣**只看后缀**：老师拖进来的是什么就按什么走，绝不信文件自报的 MIME。
+分拣**只看后缀**，绝不信文件自报的 MIME：文本类（.tex/.md/.txt）轻量解析，
+认 exam-zh 源码与普通文本两种版式；.docx 解出纯文本走同一条路；
+.pdf 一律当原卷大图，渲染页图、探题块、按坐标裁图落池；图片走 OCR；
+.zip 静默忽略（插件安装包走另一条道）。
 
-- 文本类（``.tex`` / ``.md`` / ``.txt``）：轻量解析。认得两种版式——
-  录题工作台的 exam-zh 源码（``\\begin{question}`` / ``\\begin{solution}``），
-  以及普通文本（按题号切题，再拆选项、提答案）。
-- ``.docx``：标准库 ``zipfile`` 解出 ``word/document.xml`` 的纯文本，再走文本类同一条路。
-- ``.pdf``：**一律当原卷大图**，逐页渲染成页图；文本层抽出题号、文字与坐标，
-  左栏自动画切分框。解析完成后底座直接按每块坐标从原 PDF 裁图，把识别出的
-  题全部生成待审题排进中间栏。
-- 图片：走 OCR（AI 视觉）。
-- ``.zip``：**静默忽略**——插件安装包走的是另一条道。
-
-**认不出就不编**：OCR 失败时如实记一条「待识别」的待审题（图片挂在那儿，题干留占位），
-老师自己在审核台里补。底座宁可交白卷，也不生成一道凭空捏造的题。
+**认不出就不编**：OCR 失败如实留「待识别」占位题，老师对着原卷补录。
 
 本文件只负责批次编排与后台作业；文本切题在 ``intake.text``，
-单文件分拣与 OCR 在 ``intake.media``，版面与识别引擎各自住在 ``layout/``、``recognize/``。
+单文件分拣与 OCR 在 ``intake.media``，版面与识别引擎住 ``layout/``、``recognize/``。
 """
 
 from __future__ import annotations
@@ -245,17 +237,22 @@ def _image_shell(name: str, page_images: list[dict[str, Any]]) -> dict[str, Any]
 async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                           layout_engine: str = layout_router.LAYOUT_AUTO,
                           recognize_engine: str = recognize_router.RECOGNIZE_AUTO) -> None:
-    """第二段：识别。
-
-    - Word / 文本类：识别出来的题**就地替换**那条「正在解析」的占位题；
-    - PDF：先出原卷页图，版面引擎探出题块（自动走瀑布，具体档只走选中一级），
-      再自动切图；切完由识别引擎按选择回填，失败显性化不偷换。
+    """第二段：识别。Word/文本类就地替换「正在解析」占位题；PDF 先出页图、
+    版面探块（自动走瀑布，具体档只走选中一级）、自动切图，再由识别引擎回填，
+    失败显性化不偷换。过程流水随记随落盘，老师中途轮询就能看到。
     """
     from app.core.pending import service
     from app.core.pending.assets import drop_assets
 
     picked_layout, picked_recognize, ledger, gate_note = open_ledger(
         layout_engine, recognize_engine)
+    route: dict[str, Any] = {}
+
+    def progress(text: str, level: str = "info") -> None:
+        """记一条并立刻落盘：解析中途老师轮询批次就能看到流水（seq 增量播报）。"""
+        ledger_progress(ledger, text, level)
+        save_route(service, batch_id, attach_surface(route, ledger))
+
     for job in jobs or []:
         pending_id = str((job or {}).get("pending_id") or "")
         name = str((job or {}).get("name") or "")
@@ -270,7 +267,8 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
         scan_mode = page_only
         image_ocr = False
         notes: list[str] = []
-        ledger_progress(ledger, f"开始解析 {name}")
+        route = {}
+        progress(f"开始解析 {name}")
         if page_only:
             documents, kind, source_text = [], "pdf", ""
         else:
@@ -283,7 +281,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 try:
                     documents, notes, kind, source_text, scan_mode = \
                         await _items_from_file(name, data)
-                    ledger_progress(ledger, f"{name} 解析完成，拆出 {len(documents)} 道题")
+                    progress(f"{name} 解析完成，拆出 {len(documents)} 道题")
                 except Exception as error:  # noqa: BLE001 - 后台单份失败不许带崩整批
                     surface_failure(service, batch_id, ledger, file=name, page_no=1,
                                     step="解析", error=error,
@@ -297,7 +295,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             page_images, doc_pages, _page_notes = page_render.build_pages(
                 name, kind, data, source_text, documents)
             if page_images:
-                ledger_progress(ledger, f"{name} 原卷页图渲染完成，共 {len(page_images)} 页")
+                progress(f"{name} 原卷页图渲染完成，共 {len(page_images)} 页")
         except Exception as error:  # noqa: BLE001 - 页面图失败只影响左栏，不耽误拆题
             surface_failure(service, batch_id, ledger, file=name, page_no=1,
                             step="渲染页图", error=error,
@@ -315,7 +313,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 note_layout_failure(ledger, name, picked_layout, layout)
                 blocks = sum(len(r) for r in ((layout or {}).get("pages") or {}).values()
                              if isinstance(r, list))
-                ledger_progress(ledger, f"{name} 版面探测完成，探出 {blocks} 个题块")
+                progress(f"{name} 版面探测完成，探出 {blocks} 个题块")
                 try:
                     service.set_batch_pages(batch_id, page_images)
                 except Exception as error:  # noqa: BLE001 — 挂不上页图就清掉文件，批次留着
@@ -330,14 +328,15 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                     ledger_failure(ledger, file=name, page_no=0, step="自动切题",
                                    reason="；".join(split_notes),
                                    detail="\n".join(split_notes))
+                    save_route(service, batch_id, attach_surface(route, ledger))
                 if any((entry.get("regions") or []) for entry in page_images):
                     if not split_notes:
-                        ledger_progress(ledger, f"{name} 自动切题落池完成，逐题识别开工")
+                        progress(f"{name} 自动切题落池完成，逐题识别开工")
                     route = await fill_scan_batch(
                         batch_id, picked_recognize, health, picked_layout, layout, gate_note)
                     ledger_stats(ledger, name, route)
                 else:
-                    ledger_progress(ledger, f"{name} 没有可自动切出的题块，可在左栏框选切题", "warn")
+                    progress(f"{name} 没有可自动切出的题块，可在左栏框选切题", "warn")
             if pending_id:
                 # 老式占位轮留下的那条占位题：页图已挂上，清掉它不再占池。
                 try:
@@ -363,7 +362,7 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
                 if page_images:
                     drop_assets(page_images)
                 continue
-            ledger_progress(ledger, f"{name} 占位壳已落池，整页识别开工")
+            progress(f"{name} 占位壳已落池，整页识别开工")
             route = await fill_scan_batch(batch_id, picked_recognize, health, picked_layout, None, gate_note)
             ledger_stats(ledger, name, route)
             save_route(service, batch_id, attach_surface(route, ledger))
@@ -395,6 +394,6 @@ async def run_ingest_jobs(batch_id: str, jobs: list[dict[str, Any]],
             if page_images:
                 drop_assets(page_images)
             continue
-        ledger_progress(ledger, f"{name} 落池完成，{len(items)} 条待审题就位", "ok")
+        progress(f"{name} 落池完成，{len(items)} 条待审题就位", "ok")
         log_documents(documents)
         save_route(service, batch_id, attach_surface(route, ledger))
